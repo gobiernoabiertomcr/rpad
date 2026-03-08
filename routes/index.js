@@ -69,8 +69,15 @@ import {
   updateHito,
   deleteHito,
   getTimeline,
-  exportarMetricasCSV
+  exportarMetricasCSV,
+  uploadProyectoDocumentos,
+  descargarProyectoDocumento,
+  deleteProyectoDocumento,
+  uploadHitoArchivos,
+  descargarHitoArchivo,
+  deleteHitoArchivo
 } from '../controllers/gestionController.js';
+import { uploadProyectoMiddleware, uploadHitoMiddleware } from '../config/upload.js';
 
 const router = Router();
 
@@ -227,6 +234,16 @@ router.delete('/gestion/proyectos/:id', authMiddleware, adminOnly, deleteProyect
 router.post('/gestion/proyectos/:proyecto_id/hitos', authMiddleware, adminOnly, createHito);
 router.put('/gestion/hitos/:id', authMiddleware, adminOnly, updateHito);
 router.delete('/gestion/hitos/:id', authMiddleware, adminOnly, deleteHito);
+
+// Documentos de proyecto (solo admin)
+router.post('/gestion/proyectos/:id/documentos', authMiddleware, adminOnly, uploadProyectoMiddleware, uploadProyectoDocumentos);
+router.get('/gestion/proyectos/:id/documentos/:docId/descargar', authMiddleware, adminOnly, descargarProyectoDocumento);
+router.delete('/gestion/proyectos/:id/documentos/:docId', authMiddleware, adminOnly, deleteProyectoDocumento);
+
+// Archivos de hitos (solo admin)
+router.post('/gestion/hitos/:id/archivos', authMiddleware, adminOnly, uploadHitoMiddleware, uploadHitoArchivos);
+router.get('/gestion/hitos/:id/archivos/:archivoId/descargar', authMiddleware, adminOnly, descargarHitoArchivo);
+router.delete('/gestion/hitos/:id/archivos/:archivoId', authMiddleware, adminOnly, deleteHitoArchivo);
 
 // Timeline (todos los autenticados)
 router.get('/gestion/timeline', authMiddleware, getTimeline);

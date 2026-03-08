@@ -10,6 +10,7 @@ let editandoProyectoId = null;
 let editandoHitoId = null;
 let proyectoDetalleId = null;
 let vistaActual = 'lista';
+let hitoDropZoneInstance = null;
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MESES_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -558,6 +559,48 @@ function renderProyectoDetalle(p) {
       </div>
     </div>
 
+    <!-- Panel de Documentos -->
+    <div class="detail-panel">
+      <div class="detail-header">
+        <h3 style="margin:0;">Documentos</h3>
+        ${isAdmin ? `<button class="btn btn-primary btn-sm" onclick="toggleDropZoneProyecto(${p.id})">Subir Archivo</button>` : ''}
+      </div>
+      <div id="proyecto-drop-zone-container" style="display:none; margin-bottom: 12px;">
+        <div class="file-drop-zone" id="proyecto-drop-zone">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+          <p>Arrastrá archivos aquí o hacé clic para seleccionar</p>
+          <p class="drop-hint">PDF, DOCX, XLSX, CSV, imágenes, ZIP (máx. 10 MB)</p>
+          <input type="file" id="proyecto-file-input" multiple accept=".pdf,.docx,.xlsx,.csv,.odt,.ods,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z" style="display:none;">
+        </div>
+        <div class="file-list-container" id="proyecto-file-list"></div>
+        <div style="margin-top:8px; text-align:right;">
+          <button class="btn btn-primary btn-sm" onclick="ejecutarSubidaProyecto(${p.id})">Subir</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDropZoneProyecto()">Cancelar</button>
+        </div>
+      </div>`;
+
+  // Documentos existentes
+  if (p.documentos && p.documentos.length > 0) {
+    for (const doc of p.documentos) {
+      html += `
+      <div class="doc-item">
+        <div class="file-icon">${getFileExtIcon(doc.nombre_archivo)}</div>
+        <div class="file-info">
+          <div class="file-name" title="${Utils.escapeHtml(doc.nombre_archivo)}">${Utils.escapeHtml(doc.nombre_archivo)}</div>
+          <div class="file-size">${formatFileSize(doc.tamano)}</div>
+        </div>
+        <div class="file-actions" style="display:flex;gap:4px;">
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;" onclick="descargarDocumento(${p.id}, ${doc.id}, '${Utils.escapeHtml(doc.nombre_archivo)}')">Descargar</button>
+          ${isAdmin ? `<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;color:#ef4444;" onclick="eliminarDocumento(${p.id}, ${doc.id})">Eliminar</button>` : ''}
+        </div>
+      </div>`;
+    }
+  } else {
+    html += '<p style="color:var(--gray-500);font-size:0.85rem;">No hay documentos adjuntos</p>';
+  }
+
+  html += `</div>
+
     <div class="detail-panel">
       <div class="detail-header">
         <h3 style="margin:0;">Hitos</h3>
@@ -575,6 +618,23 @@ function renderProyectoDetalle(p) {
               <div class="timeline-title">${Utils.escapeHtml(h.titulo)}</div>
               ${h.descripcion ? `<div class="timeline-desc">${Utils.escapeHtml(h.descripcion)}</div>` : ''}
               ${h.evidencia_url ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
+              ${h.archivos && h.archivos.length > 0 ? `
+                <div style="margin-top:8px;">
+                  ${h.archivos.map(a => `
+                    <div class="doc-item" style="margin-bottom:4px;">
+                      <div class="file-icon">${getFileExtIcon(a.nombre_archivo)}</div>
+                      <div class="file-info">
+                        <div class="file-name" title="${Utils.escapeHtml(a.nombre_archivo)}">${Utils.escapeHtml(a.nombre_archivo)}</div>
+                        <div class="file-size">${formatFileSize(a.tamano)}</div>
+                      </div>
+                      <div class="file-actions" style="display:flex;gap:4px;">
+                        <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.7rem;" onclick="descargarHitoArchivo(${h.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}')">Descargar</button>
+                        ${isAdmin ? `<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.7rem;color:#ef4444;" onclick="eliminarHitoArchivo(${h.id}, ${a.id}, ${p.id})">Eliminar</button>` : ''}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
             </div>
             ${isAdmin ? `
               <div style="display:flex;gap:4px;">
@@ -600,6 +660,46 @@ function volverALista() {
   proyectoDetalleId = null;
   setVistaProyectos(vistaActual);
   cargarProyectos();
+}
+
+let proyectoDropZoneInstance = null;
+
+function toggleDropZoneProyecto(proyectoId) {
+  const container = document.getElementById('proyecto-drop-zone-container');
+  if (!container) return;
+
+  if (container.style.display === 'none') {
+    container.style.display = '';
+    // Inicializar drop zone si no existe
+    const existingDocs = document.querySelectorAll('#proyecto-detalle .doc-item').length;
+    proyectoDropZoneInstance = inicializarDropZone({
+      dropZoneId: 'proyecto-drop-zone',
+      fileInputId: 'proyecto-file-input',
+      fileListId: 'proyecto-file-list',
+      maxFiles: 10,
+      existingCount: existingDocs
+    });
+  } else {
+    container.style.display = 'none';
+    if (proyectoDropZoneInstance) {
+      proyectoDropZoneInstance.reset();
+      proyectoDropZoneInstance = null;
+    }
+  }
+}
+
+async function ejecutarSubidaProyecto(proyectoId) {
+  if (!proyectoDropZoneInstance) return;
+  const files = proyectoDropZoneInstance.getFiles();
+  if (files.length === 0) {
+    showToast('No hay archivos seleccionados', 'error');
+    return;
+  }
+  const ok = await subirDocumentosProyecto(proyectoId, files);
+  if (ok) {
+    proyectoDropZoneInstance = null;
+    await verProyecto(proyectoId);
+  }
 }
 
 // =====================================================
@@ -728,6 +828,38 @@ function abrirModalHito(proyectoId, hitoData = null) {
   document.getElementById('hito-evidencia-tipo').value = hitoData?.evidencia_tipo || 'ninguno';
   document.getElementById('hito-evidencia-url').value = hitoData?.evidencia_url || '';
 
+  // Mostrar/ocultar sección de archivos y renderizar existentes
+  const archivosSection = document.getElementById('hito-archivos-section');
+  const archivosExistentes = document.getElementById('hito-archivos-existentes');
+  archivosSection.style.display = '';
+  archivosExistentes.innerHTML = '';
+
+  const existingCount = hitoData?.archivos?.length || 0;
+  if (hitoData && hitoData.archivos && hitoData.archivos.length > 0) {
+    archivosExistentes.innerHTML = hitoData.archivos.map(a => `
+      <div class="doc-item" style="margin-bottom:4px;">
+        <div class="file-icon">${getFileExtIcon(a.nombre_archivo)}</div>
+        <div class="file-info">
+          <div class="file-name" title="${Utils.escapeHtml(a.nombre_archivo)}">${Utils.escapeHtml(a.nombre_archivo)}</div>
+          <div class="file-size">${formatFileSize(a.tamano)}</div>
+        </div>
+        <div class="file-actions" style="display:flex;gap:4px;">
+          <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;" type="button" onclick="descargarHitoArchivo(${hitoData.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}')">Descargar</button>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;color:#ef4444;" type="button" onclick="eliminarHitoArchivoDesdeModal(${hitoData.id}, ${a.id}, ${proyectoId})">Eliminar</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Inicializar drop zone
+  hitoDropZoneInstance = inicializarDropZone({
+    dropZoneId: 'hito-drop-zone',
+    fileInputId: 'hito-file-input',
+    fileListId: 'hito-file-list',
+    maxFiles: 3,
+    existingCount
+  });
+
   // Store proyecto_id for save
   document.getElementById('modal-hito').dataset.proyectoId = proyectoId;
   document.getElementById('modal-hito').classList.add('active');
@@ -736,6 +868,38 @@ function abrirModalHito(proyectoId, hitoData = null) {
 function cerrarModalHito() {
   document.getElementById('modal-hito').classList.remove('active');
   editandoHitoId = null;
+  hitoDropZoneInstance = null;
+}
+
+async function eliminarHitoArchivoDesdeModal(hitoId, archivoId, proyectoId) {
+  if (!confirm('¿Eliminar este archivo?')) return;
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/gestion/hitos/${hitoId}/archivos/${archivoId}`, {
+      method: 'DELETE',
+      headers: Auth.getAuthHeaders()
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+
+    showToast('Archivo eliminado', 'success');
+    // Recargar datos del hito y re-abrir modal
+    const projResponse = await fetch(`${CONFIG.API_URL}/gestion/proyectos/${proyectoId}`, { headers: Auth.getAuthHeaders() });
+    const projResult = await projResponse.json();
+    if (projResult.success) {
+      const hito = projResult.data.hitos.find(h => h.id === hitoId);
+      if (hito) {
+        // Re-open modal with updated data (preserve pending files)
+        const pendingFiles = hitoDropZoneInstance ? hitoDropZoneInstance.getFiles() : [];
+        abrirModalHito(proyectoId, hito);
+        // Re-add pending files
+        if (pendingFiles.length > 0 && hitoDropZoneInstance) {
+          // No direct way to re-add, user will need to re-select
+        }
+      }
+    }
+  } catch (error) {
+    Utils.showError(error.message || 'Error al eliminar archivo');
+  }
 }
 
 async function editarHito(hitoId, proyectoId) {
@@ -785,6 +949,15 @@ async function guardarHito() {
     const result = await response.json();
     if (!result.success) throw new Error(result.error);
 
+    // Subir archivos pendientes si hay
+    const hitoId = editandoHitoId || result.data.id;
+    if (hitoDropZoneInstance) {
+      const pendingFiles = hitoDropZoneInstance.getFiles();
+      if (pendingFiles.length > 0) {
+        await subirArchivosHito(hitoId, pendingFiles);
+      }
+    }
+
     showToast(result.message || 'Hito guardado', 'success');
     cerrarModalHito();
     await verProyecto(parseInt(proyectoId));
@@ -807,5 +980,241 @@ async function eliminarHito(hitoId, proyectoId) {
     await verProyecto(proyectoId);
   } catch (error) {
     Utils.showError(error.message || 'Error al eliminar hito');
+  }
+}
+
+// =====================================================
+// FILE UPLOAD - DROP ZONE
+// =====================================================
+
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.xlsx', '.csv', '.odt', '.ods', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.zip', '.rar', '.7z'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function getFileExtIcon(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const icons = {
+    pdf: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>',
+    jpg: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>'
+  };
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return icons.jpg;
+  return icons.pdf;
+}
+
+function inicializarDropZone(config) {
+  const { dropZoneId, fileInputId, fileListId, maxFiles, existingCount = 0 } = config;
+  const dropZone = document.getElementById(dropZoneId);
+  const fileInput = document.getElementById(fileInputId);
+  const fileList = document.getElementById(fileListId);
+  if (!dropZone || !fileInput || !fileList) return null;
+
+  let pendingFiles = [];
+  let currentExisting = existingCount;
+
+  const renderPending = () => {
+    fileList.innerHTML = pendingFiles.map((f, i) => `
+      <div class="file-pending-item">
+        <div class="file-icon">${getFileExtIcon(f.name)}</div>
+        <div class="file-info">
+          <div class="file-name" title="${Utils.escapeHtml(f.name)}">${Utils.escapeHtml(f.name)}</div>
+          <div class="file-size">${formatFileSize(f.size)}</div>
+        </div>
+        <div class="file-remove">
+          <button class="file-remove-btn" onclick="event.stopPropagation(); window._dropZoneRemove_${dropZoneId}(${i})" title="Quitar">&times;</button>
+        </div>
+      </div>
+    `).join('');
+  };
+
+  const addFiles = (files) => {
+    for (const file of files) {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        showToast(`Tipo no permitido: ${ext}`, 'error');
+        continue;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        showToast(`${file.name} excede 10 MB`, 'error');
+        continue;
+      }
+      if (currentExisting + pendingFiles.length >= maxFiles) {
+        showToast(`Máximo ${maxFiles} archivos permitidos`, 'error');
+        break;
+      }
+      // Evitar duplicados
+      if (!pendingFiles.some(f => f.name === file.name && f.size === file.size)) {
+        pendingFiles.push(file);
+      }
+    }
+    renderPending();
+  };
+
+  // Remove handler (global para onclick)
+  window[`_dropZoneRemove_${dropZoneId}`] = (index) => {
+    pendingFiles.splice(index, 1);
+    renderPending();
+  };
+
+  // Click to select
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    addFiles(e.target.files);
+    fileInput.value = '';
+  });
+
+  // Drag & drop
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles(e.dataTransfer.files);
+  });
+
+  return {
+    getFiles: () => pendingFiles,
+    reset: () => { pendingFiles = []; renderPending(); },
+    setExistingCount: (count) => { currentExisting = count; }
+  };
+}
+
+// =====================================================
+// DOCUMENTOS DE PROYECTO (upload, download, delete)
+// =====================================================
+
+async function subirDocumentosProyecto(proyectoId, files) {
+  if (!files || files.length === 0) return;
+
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('archivos', file);
+  }
+
+  try {
+    const token = Auth.getToken();
+    const response = await fetch(`${CONFIG.API_URL}/gestion/proyectos/${proyectoId}/documentos`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+    showToast(result.message, 'success');
+    return true;
+  } catch (error) {
+    Utils.showError(error.message || 'Error al subir documentos');
+    return false;
+  }
+}
+
+async function descargarDocumento(proyectoId, docId, nombreArchivo) {
+  try {
+    const token = Auth.getToken();
+    const response = await fetch(`${CONFIG.API_URL}/gestion/proyectos/${proyectoId}/documentos/${docId}/descargar`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Error al descargar');
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    Utils.showError(error.message || 'Error al descargar documento');
+  }
+}
+
+async function eliminarDocumento(proyectoId, docId) {
+  if (!confirm('¿Eliminar este documento?')) return;
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/gestion/proyectos/${proyectoId}/documentos/${docId}`, {
+      method: 'DELETE',
+      headers: Auth.getAuthHeaders()
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+
+    showToast('Documento eliminado', 'success');
+    await verProyecto(proyectoId);
+  } catch (error) {
+    Utils.showError(error.message || 'Error al eliminar documento');
+  }
+}
+
+// =====================================================
+// ARCHIVOS DE HITOS (upload, download, delete)
+// =====================================================
+
+async function subirArchivosHito(hitoId, files) {
+  if (!files || files.length === 0) return true;
+
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('archivos', file);
+  }
+
+  try {
+    const token = Auth.getToken();
+    const response = await fetch(`${CONFIG.API_URL}/gestion/hitos/${hitoId}/archivos`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+    showToast(result.message, 'success');
+    return true;
+  } catch (error) {
+    Utils.showError(error.message || 'Error al subir archivos');
+    return false;
+  }
+}
+
+async function descargarHitoArchivo(hitoId, archivoId, nombreArchivo) {
+  try {
+    const token = Auth.getToken();
+    const response = await fetch(`${CONFIG.API_URL}/gestion/hitos/${hitoId}/archivos/${archivoId}/descargar`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Error al descargar');
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    Utils.showError(error.message || 'Error al descargar archivo');
+  }
+}
+
+async function eliminarHitoArchivo(hitoId, archivoId, proyectoId) {
+  if (!confirm('¿Eliminar este archivo?')) return;
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/gestion/hitos/${hitoId}/archivos/${archivoId}`, {
+      method: 'DELETE',
+      headers: Auth.getAuthHeaders()
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+
+    showToast('Archivo eliminado', 'success');
+    await verProyecto(proyectoId);
+  } catch (error) {
+    Utils.showError(error.message || 'Error al eliminar archivo');
   }
 }

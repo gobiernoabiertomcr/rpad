@@ -404,6 +404,96 @@
             border-color: var(--primary);
         }
 
+        /* File Upload Drop Zone */
+        .file-drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--gray-50, #f9fafb);
+            margin-bottom: 12px;
+        }
+        .file-drop-zone:hover, .file-drop-zone.drag-over {
+            border-color: var(--primary);
+            background: #eff6ff;
+        }
+        .file-drop-zone svg { color: var(--gray-400); margin-bottom: 8px; }
+        .file-drop-zone p { margin: 0; font-size: 0.85rem; color: var(--gray-500); }
+        .file-drop-zone .drop-hint { font-size: 0.75rem; color: var(--gray-400); margin-top: 4px; }
+
+        .file-list-container { margin-top: 8px; }
+        .file-pending-item, .doc-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+        }
+        .file-pending-item .file-icon, .doc-item .file-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #eff6ff;
+            color: var(--primary);
+            flex-shrink: 0;
+        }
+        .file-pending-item .file-info, .doc-item .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .file-pending-item .file-name, .doc-item .file-name {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-pending-item .file-size, .doc-item .file-size {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+        }
+        .file-pending-item .file-remove, .doc-item .file-actions {
+            flex-shrink: 0;
+        }
+        .file-remove-btn {
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+        .file-remove-btn:hover { color: #ef4444; background: #fef2f2; }
+
+        .upload-progress {
+            margin-top: 8px;
+            display: none;
+        }
+        .upload-progress.active { display: block; }
+        .upload-progress-bar {
+            height: 4px;
+            background: var(--gray-200, #e5e7eb);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .upload-progress-bar-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 2px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
         @media (max-width: 768px) {
             .charts-grid { grid-template-columns: 1fr; }
             .kpi-grid { grid-template-columns: repeat(2, 1fr); }
@@ -791,6 +881,18 @@
                         <label class="form-label">URL de evidencia</label>
                         <input type="url" id="hito-evidencia-url" class="form-input" placeholder="https://...">
                     </div>
+                </div>
+                <!-- Archivos del hito -->
+                <div class="form-group" id="hito-archivos-section" style="display:none;">
+                    <label class="form-label">Archivos adjuntos (máx. 3, 10 MB c/u)</label>
+                    <div id="hito-archivos-existentes"></div>
+                    <div class="file-drop-zone" id="hito-drop-zone">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                        <p>Arrastrá archivos aquí o hacé clic para seleccionar</p>
+                        <p class="drop-hint">PDF, DOCX, XLSX, CSV, imágenes, ZIP (máx. 10 MB)</p>
+                        <input type="file" id="hito-file-input" multiple accept=".pdf,.docx,.xlsx,.csv,.odt,.ods,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z" style="display:none;">
+                    </div>
+                    <div class="file-list-container" id="hito-file-list"></div>
                 </div>
             </div>
             <div class="modal-footer">

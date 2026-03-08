@@ -1,4 +1,7 @@
 import pool from '../config/database.js';
+import path from 'path';
+import fs from 'fs/promises';
+import { UPLOADS_BASE } from '../config/upload.js';
 
 // =====================================================
 // MÉTRICAS AUTOMÁTICAS
@@ -310,11 +313,19 @@ export const getProyectoById = async (req, res) => {
       'SELECT * FROM proyecto_hitos WHERE proyecto_id = ? ORDER BY fecha DESC',
       [id]
     );
+    // Cargar archivos de cada hito
+    for (const hito of hitos) {
+      const [archivos] = await pool.execute(
+        'SELECT id, nombre_archivo, tamano, mime_type, created_at FROM hito_archivos WHERE hito_id = ? ORDER BY created_at DESC',
+        [hito.id]
+      );
+      hito.archivos = archivos;
+    }
     proyecto.hitos = hitos;
 
     // Cargar documentos
     const [documentos] = await pool.execute(
-      'SELECT * FROM proyecto_documentos WHERE proyecto_id = ? ORDER BY created_at DESC',
+      'SELECT id, nombre_archivo, tamano, mime_type, created_at FROM proyecto_documentos WHERE proyecto_id = ? ORDER BY created_at DESC',
       [id]
     );
     proyecto.documentos = documentos;
@@ -533,6 +544,195 @@ export const getTimeline = async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo timeline:', error);
     res.status(500).json({ success: false, error: 'Error al obtener timeline' });
+  }
+};
+
+// =====================================================
+// DOCUMENTOS DE PROYECTO
+// =====================================================
+
+// Helper: validar que la ruta resuelta esté dentro de uploads/
+const validarPathSeguro = (filePath) => {
+  const resolved = path.resolve(filePath);
+  const uploadsResolved = path.resolve(UPLOADS_BASE);
+  return resolved.startsWith(uploadsResolved);
+};
+
+export const uploadProyectoDocumentos = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar proyecto activo
+    const [proyecto] = await pool.execute('SELECT id FROM proyectos WHERE id = ? AND activo = TRUE', [id]);
+    if (proyecto.length === 0) {
+      return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, error: 'No se enviaron archivos' });
+    }
+
+    // Verificar límite de 10
+    const [existing] = await pool.execute('SELECT COUNT(*) as total FROM proyecto_documentos WHERE proyecto_id = ?', [id]);
+    const totalActual = existing[0].total;
+    if (totalActual + req.files.length > 10) {
+      return res.status(400).json({ success: false, error: `Se excede el límite de 10 documentos por proyecto (actuales: ${totalActual})` });
+    }
+
+    const insertados = [];
+    for (const file of req.files) {
+      const [result] = await pool.execute(
+        'INSERT INTO proyecto_documentos (proyecto_id, nombre_archivo, nombre_almacenado, tamano, mime_type) VALUES (?, ?, ?, ?, ?)',
+        [id, file.originalname, file.filename, file.size, file.mimetype]
+      );
+      insertados.push({ id: result.insertId, nombre_archivo: file.originalname, tamano: file.size, mime_type: file.mimetype });
+    }
+
+    res.status(201).json({ success: true, data: insertados, message: `${insertados.length} documento(s) subido(s)` });
+  } catch (error) {
+    console.error('Error subiendo documentos de proyecto:', error);
+    res.status(500).json({ success: false, error: 'Error al subir documentos' });
+  }
+};
+
+export const descargarProyectoDocumento = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+    const [rows] = await pool.execute(
+      'SELECT nombre_archivo, nombre_almacenado FROM proyecto_documentos WHERE id = ? AND proyecto_id = ?',
+      [docId, id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Documento no encontrado' });
+    }
+
+    const filePath = path.join(UPLOADS_BASE, 'proyectos', String(id), rows[0].nombre_almacenado);
+    if (!validarPathSeguro(filePath)) {
+      return res.status(400).json({ success: false, error: 'Ruta de archivo inválida' });
+    }
+
+    res.download(filePath, rows[0].nombre_archivo);
+  } catch (error) {
+    console.error('Error descargando documento:', error);
+    res.status(500).json({ success: false, error: 'Error al descargar documento' });
+  }
+};
+
+export const deleteProyectoDocumento = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+    const [rows] = await pool.execute(
+      'SELECT nombre_almacenado FROM proyecto_documentos WHERE id = ? AND proyecto_id = ?',
+      [docId, id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Documento no encontrado' });
+    }
+
+    // Eliminar archivo del disco (ignorar si no existe)
+    const filePath = path.join(UPLOADS_BASE, 'proyectos', String(id), rows[0].nombre_almacenado);
+    if (validarPathSeguro(filePath)) {
+      await fs.unlink(filePath).catch(() => {});
+    }
+
+    await pool.execute('DELETE FROM proyecto_documentos WHERE id = ?', [docId]);
+    res.json({ success: true, message: 'Documento eliminado' });
+  } catch (error) {
+    console.error('Error eliminando documento:', error);
+    res.status(500).json({ success: false, error: 'Error al eliminar documento' });
+  }
+};
+
+// =====================================================
+// ARCHIVOS DE HITOS
+// =====================================================
+
+export const uploadHitoArchivos = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar hito existe y proyecto activo
+    const [hito] = await pool.execute(
+      `SELECT ph.id, ph.proyecto_id FROM proyecto_hitos ph
+       JOIN proyectos p ON p.id = ph.proyecto_id
+       WHERE ph.id = ? AND p.activo = TRUE`,
+      [id]
+    );
+    if (hito.length === 0) {
+      return res.status(404).json({ success: false, error: 'Hito no encontrado' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, error: 'No se enviaron archivos' });
+    }
+
+    // Verificar límite de 3
+    const [existing] = await pool.execute('SELECT COUNT(*) as total FROM hito_archivos WHERE hito_id = ?', [id]);
+    const totalActual = existing[0].total;
+    if (totalActual + req.files.length > 3) {
+      return res.status(400).json({ success: false, error: `Se excede el límite de 3 archivos por hito (actuales: ${totalActual})` });
+    }
+
+    const insertados = [];
+    for (const file of req.files) {
+      const [result] = await pool.execute(
+        'INSERT INTO hito_archivos (hito_id, nombre_archivo, nombre_almacenado, tamano, mime_type) VALUES (?, ?, ?, ?, ?)',
+        [id, file.originalname, file.filename, file.size, file.mimetype]
+      );
+      insertados.push({ id: result.insertId, nombre_archivo: file.originalname, tamano: file.size, mime_type: file.mimetype });
+    }
+
+    res.status(201).json({ success: true, data: insertados, message: `${insertados.length} archivo(s) subido(s)` });
+  } catch (error) {
+    console.error('Error subiendo archivos de hito:', error);
+    res.status(500).json({ success: false, error: 'Error al subir archivos' });
+  }
+};
+
+export const descargarHitoArchivo = async (req, res) => {
+  try {
+    const { id, archivoId } = req.params;
+    const [rows] = await pool.execute(
+      'SELECT nombre_archivo, nombre_almacenado FROM hito_archivos WHERE id = ? AND hito_id = ?',
+      [archivoId, id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Archivo no encontrado' });
+    }
+
+    const filePath = path.join(UPLOADS_BASE, 'hitos', String(id), rows[0].nombre_almacenado);
+    if (!validarPathSeguro(filePath)) {
+      return res.status(400).json({ success: false, error: 'Ruta de archivo inválida' });
+    }
+
+    res.download(filePath, rows[0].nombre_archivo);
+  } catch (error) {
+    console.error('Error descargando archivo de hito:', error);
+    res.status(500).json({ success: false, error: 'Error al descargar archivo' });
+  }
+};
+
+export const deleteHitoArchivo = async (req, res) => {
+  try {
+    const { id, archivoId } = req.params;
+    const [rows] = await pool.execute(
+      'SELECT nombre_almacenado FROM hito_archivos WHERE id = ? AND hito_id = ?',
+      [archivoId, id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Archivo no encontrado' });
+    }
+
+    const filePath = path.join(UPLOADS_BASE, 'hitos', String(id), rows[0].nombre_almacenado);
+    if (validarPathSeguro(filePath)) {
+      await fs.unlink(filePath).catch(() => {});
+    }
+
+    await pool.execute('DELETE FROM hito_archivos WHERE id = ?', [archivoId]);
+    res.json({ success: true, message: 'Archivo eliminado' });
+  } catch (error) {
+    console.error('Error eliminando archivo de hito:', error);
+    res.status(500).json({ success: false, error: 'Error al eliminar archivo' });
   }
 };
 

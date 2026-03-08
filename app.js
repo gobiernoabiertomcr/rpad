@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { testConnection } from './config/database.js';
 import { inicializar as inicializarBlockchain } from './services/blockchainService.js';
@@ -14,6 +15,9 @@ dotenv.config();
 // Para ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Crear directorio de uploads si no existe
+fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
