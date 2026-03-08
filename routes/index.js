@@ -69,6 +69,7 @@ import {
   updateHito,
   deleteHito,
   getTimeline,
+  createLogro,
   exportarMetricasCSV,
   uploadProyectoDocumentos,
   descargarProyectoDocumento,
@@ -229,6 +230,9 @@ router.get('/gestion/proyectos/:id', authMiddleware, getProyectoById);
 router.post('/gestion/proyectos', authMiddleware, adminOnly, createProyecto);
 router.put('/gestion/proyectos/:id', authMiddleware, adminOnly, updateProyecto);
 router.delete('/gestion/proyectos/:id', authMiddleware, adminOnly, deleteProyecto);
+
+// Logros del Área (hitos sin proyecto, solo admin)
+router.post('/gestion/logros', authMiddleware, adminOnly, createLogro);
 
 // Hitos (solo admin)
 router.post('/gestion/proyectos/:proyecto_id/hitos', authMiddleware, adminOnly, createHito);

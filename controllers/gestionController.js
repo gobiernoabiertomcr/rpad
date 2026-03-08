@@ -258,7 +258,8 @@ export const getProyectos = async (req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT p.*, u.nombre_completo as creado_por_nombre,
-              (SELECT COUNT(*) FROM proyecto_hitos ph WHERE ph.proyecto_id = p.id) as cantidad_hitos
+              (SELECT COUNT(*) FROM proyecto_hitos ph WHERE ph.proyecto_id = p.id) as cantidad_hitos,
+              (SELECT COUNT(*) FROM proyecto_hitos ph WHERE ph.proyecto_id = p.id AND ph.fecha <= CURDATE()) as hitos_completados
        FROM proyectos p
        JOIN usuarios u ON u.id = p.created_by
        WHERE p.activo = TRUE
@@ -444,6 +445,33 @@ export const deleteProyecto = async (req, res) => {
 };
 
 // =====================================================
+// LOGROS DEL ÁREA (hitos sin proyecto)
+// =====================================================
+
+export const createLogro = async (req, res) => {
+  try {
+    const { titulo, fecha, descripcion, evidencia_tipo, evidencia_url } = req.body;
+
+    if (!titulo || !fecha) {
+      return res.status(400).json({ success: false, error: 'Título y fecha son requeridos' });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO proyecto_hitos (proyecto_id, titulo, fecha, descripcion, evidencia_tipo, evidencia_url)
+       VALUES (NULL, ?, ?, ?, ?, ?)`,
+      [titulo, fecha, descripcion || null,
+       evidencia_tipo || 'ninguno', evidencia_url || null]
+    );
+
+    const [rows] = await pool.execute('SELECT * FROM proyecto_hitos WHERE id = ?', [result.insertId]);
+    res.status(201).json({ success: true, data: rows[0], message: 'Logro registrado' });
+  } catch (error) {
+    console.error('Error creando logro:', error);
+    res.status(500).json({ success: false, error: 'Error al registrar logro' });
+  }
+};
+
+// =====================================================
 // HITOS
 // =====================================================
 
@@ -534,12 +562,23 @@ export const deleteHito = async (req, res) => {
 export const getTimeline = async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT ph.*, p.nombre as proyecto_nombre, p.color as proyecto_color, p.categoria
+      `SELECT ph.*, p.nombre as proyecto_nombre, p.color as proyecto_color,
+              p.categoria, p.icono as proyecto_icono
        FROM proyecto_hitos ph
-       JOIN proyectos p ON p.id = ph.proyecto_id
-       WHERE p.activo = TRUE
+       LEFT JOIN proyectos p ON p.id = ph.proyecto_id
+       WHERE (ph.proyecto_id IS NULL OR p.activo = TRUE)
        ORDER BY ph.fecha DESC`
     );
+
+    // Cargar archivos de cada hito
+    for (const hito of rows) {
+      const [archivos] = await pool.execute(
+        'SELECT id, nombre_archivo, tamano, mime_type, created_at FROM hito_archivos WHERE hito_id = ? ORDER BY created_at DESC',
+        [hito.id]
+      );
+      hito.archivos = archivos;
+    }
+
     res.json({ success: true, data: rows });
   } catch (error) {
     console.error('Error obteniendo timeline:', error);
@@ -651,11 +690,11 @@ export const uploadHitoArchivos = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verificar hito existe y proyecto activo
+    // Verificar hito existe y proyecto activo (o hito sin proyecto)
     const [hito] = await pool.execute(
       `SELECT ph.id, ph.proyecto_id FROM proyecto_hitos ph
-       JOIN proyectos p ON p.id = ph.proyecto_id
-       WHERE ph.id = ? AND p.activo = TRUE`,
+       LEFT JOIN proyectos p ON p.id = ph.proyecto_id
+       WHERE ph.id = ? AND (ph.proyecto_id IS NULL OR p.activo = TRUE)`,
       [id]
     );
     if (hito.length === 0) {
