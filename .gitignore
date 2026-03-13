@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.log
+debug.log
+
+# Documentos internos - no subir al repo
+AUDITORIA_*.md
+RPAD_BFA_*.md
+INSTRUCCIONES_*.md
+prompt_*.md
+multiarchivo.md
+.claude/
