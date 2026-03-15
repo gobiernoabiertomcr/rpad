@@ -807,11 +807,11 @@
             gap: 12px;
             margin-bottom: 20px;
             align-items: center;
+            flex-wrap: wrap;
         }
         .repositorio-search-wrap {
             position: relative;
-            flex: 1;
-            max-width: 360px;
+            width: 220px;
         }
         .repositorio-search-wrap svg {
             position: absolute;
@@ -825,9 +825,10 @@
         }
         .repositorio-search-wrap .form-input {
             padding-left: 34px;
+            width: 100%;
         }
         #repositorio-categoria {
-            min-width: 180px;
+            width: 200px;
         }
 
         /* Paginación */
@@ -883,9 +884,9 @@
             .proyectos-grid { grid-template-columns: 1fr; }
             .detail-info { grid-template-columns: 1fr; }
             .toolbar { flex-direction: column; align-items: stretch; }
-            .repositorio-toolbar { flex-direction: column; }
-            .repositorio-search-wrap { max-width: 100%; }
-            #repositorio-categoria { min-width: 0; width: 100%; }
+            .repositorio-toolbar { flex-direction: column; align-items: stretch; }
+            .repositorio-search-wrap { width: 100%; }
+            #repositorio-categoria { width: 100%; }
             #logros-area,
             #proyectos-timeline {
                 max-width: 100%;
