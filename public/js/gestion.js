@@ -813,9 +813,14 @@ function renderProyectoDetalle(p) {
           <div class="detail-field"><label>Áreas</label><span>${Utils.escapeHtml(areasText)}</span></div>
           ${p.enlace_externo ? (() => {
             const isGoogle = /drive\.google\.com|docs\.google\.com/.test(p.enlace_externo);
-            const label = isGoogle ? 'Borrador' : 'Enlace';
-            const text = isGoogle ? 'Ver borrador ↗' : Utils.truncate(p.enlace_externo, 50);
-            return `<div class="detail-field"><label>${label}</label><span><a href="${Utils.escapeHtml(p.enlace_externo)}" target="_blank" rel="noopener">${Utils.escapeHtml(text)}</a></span></div>`;
+            if (isGoogle) {
+              return `<div class="detail-field"><label>Borrador</label><span>
+                <a href="${Utils.escapeHtml(p.enlace_externo)}" target="_blank" rel="noopener" class="btn-borrador-preview">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+                  Ver borrador
+                </a></span></div>`;
+            }
+            return `<div class="detail-field"><label>Enlace</label><span><a href="${Utils.escapeHtml(p.enlace_externo)}" target="_blank" rel="noopener">${Utils.escapeHtml(Utils.truncate(p.enlace_externo, 50))}</a></span></div>`;
           })() : ''}
         </div>
       </div>
