@@ -46,6 +46,13 @@ const PRIORIDAD_LABELS = {
   baja: 'Baja'
 };
 
+const ESTADO_ICONS = {
+  idea: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>',
+  en_curso: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>',
+  completado: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  suspendido: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>'
+};
+
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#e11d48'];
 
 // =====================================================
@@ -444,41 +451,34 @@ function filtrarYRenderizar() {
   let html = '<div class="proyectos-grid">';
   for (const p of pagina) {
     const color = Utils.escapeHtml(p.color || '#3b82f6');
-    const totalHitos = p.cantidad_hitos || 0;
-    const completados = p.hitos_completados || 0;
-    const porcentaje = totalHitos > 0 ? Math.round((completados / totalHitos) * 100) : 0;
-    const areasHtml = p.areas && p.areas.length > 0
-      ? `<div class="proyecto-card-areas">${p.areas.map(a => `<span class="area-chip">${Utils.escapeHtml(a.nombre)}</span>`).join('')}</div>`
-      : '';
     const responsableHtml = p.responsable
       ? `<div class="proyecto-card-responsable">${Icons.user.replace(/width="\d+"/, 'width="12"').replace(/height="\d+"/, 'height="12"')} ${Utils.escapeHtml(p.responsable)}</div>`
       : '';
 
     html += `
         <div class="proyecto-card" onclick="verProyecto(${p.id})">
-          <div class="proyecto-card-top" style="background:${color}"></div>
-          <div class="proyecto-card-body">
-            <div class="proyecto-card-header">
-              <div class="proyecto-card-icon" style="background:${color}">
-                ${getIconSvg(p.icono, 20)}
+          <div class="proyecto-card-header-bg" style="background:linear-gradient(135deg, ${color} 0%, ${color}dd 100%)">
+            <div class="proyecto-card-header-content">
+              <div class="proyecto-card-icon-lg">
+                ${getIconSvg(p.icono, 22)}
               </div>
-              <div style="flex:1;min-width:0;margin-left:12px;">
+              <div class="proyecto-card-header-text">
                 <h4>${Utils.escapeHtml(p.nombre)}</h4>
-                ${p.descripcion ? `<p>${Utils.escapeHtml(p.descripcion)}</p>` : ''}
+                <span class="proyecto-card-categoria">${CATEGORIA_LABELS[p.categoria] || p.categoria}</span>
               </div>
             </div>
-            ${totalHitos > 0 ? `
-              <div class="proyecto-progress-bar">
-                <div class="proyecto-progress-fill" style="width:${porcentaje}%;background:${color}"></div>
-              </div>
-              <div class="proyecto-progress-text">${completados}/${totalHitos} hitos (${porcentaje}%)</div>
-            ` : ''}
-            <div class="proyecto-meta">
-              <span class="badge badge-estado-${p.estado}">${ESTADO_LABELS[p.estado] || p.estado}</span>
-              <span class="badge badge-prioridad-${p.prioridad}">${PRIORIDAD_LABELS[p.prioridad] || p.prioridad}</span>
+            <div class="proyecto-card-estado-badge estado-${p.estado}">
+              ${ESTADO_ICONS[p.estado] || ''} ${ESTADO_LABELS[p.estado] || p.estado}
             </div>
-            ${areasHtml}
-            ${responsableHtml}
+          </div>
+          <div class="proyecto-card-body">
+            ${p.descripcion ? `<p class="proyecto-card-desc">${Utils.escapeHtml(p.descripcion)}</p>` : ''}
+            <div class="proyecto-card-footer">
+              <span class="proyecto-card-prioridad prioridad-${p.prioridad}">
+                <span class="prioridad-dot"></span> ${PRIORIDAD_LABELS[p.prioridad] || p.prioridad}
+              </span>
+              ${responsableHtml}
+            </div>
           </div>
         </div>`;
   }
