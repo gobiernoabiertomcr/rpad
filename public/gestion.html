@@ -671,22 +671,6 @@
 
         .proyecto-hero-estado-badge { gap: 4px; }
 
-        .btn-borrador-preview {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 12px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: opacity 0.15s;
-        }
-        .btn-borrador-preview:hover { opacity: 0.85; }
-
         /* Modal */
         .modal-overlay {
             display: none;
@@ -1451,22 +1435,6 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModalLogro()">Cancelar</button>
                 <button class="btn btn-primary" onclick="guardarLogro()">Guardar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Borrador -->
-    <div class="modal-overlay" id="modal-borrador">
-        <div class="modal" style="max-width: 1200px; width: 95vw;">
-            <div class="modal-header">
-                <h3>Borrador del proyecto</h3>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <a id="modal-borrador-link" href="#" target="_blank" class="btn btn-secondary btn-sm">Abrir en Drive</a>
-                    <button class="modal-close" onclick="cerrarModalBorrador()">&times;</button>
-                </div>
-            </div>
-            <div class="modal-body" style="padding:0; height:75vh;">
-                <iframe id="modal-borrador-iframe" src="" style="width:100%; height:100%; border:none; border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);"></iframe>
             </div>
         </div>
     </div>
