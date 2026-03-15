@@ -15,6 +15,8 @@ let hitoDropZoneInstance = null;
 let logroDropZoneInstance = null;
 let timelineData = [];
 let proyectosCache = [];
+let paginaActual = 1;
+const PROYECTOS_POR_PAGINA = 20;
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MESES_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -68,6 +70,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mesSelect = document.getElementById('metrica-mes');
   if (anioInput) anioInput.value = now.getFullYear();
   if (mesSelect) mesSelect.value = now.getMonth() + 1;
+
+  // Event listeners para filtros de repositorio
+  document.getElementById('repositorio-search').addEventListener('input', () => { paginaActual = 1; filtrarYRenderizar(); });
+  document.getElementById('repositorio-categoria').addEventListener('change', () => { paginaActual = 1; filtrarYRenderizar(); });
 
   await cargarAreasSelect();
   await cargarProyectos();
@@ -400,42 +406,55 @@ async function cargarProyectos() {
 }
 
 function renderProyectosLista(proyectos) {
+  proyectosCache = proyectos;
+  paginaActual = 1;
+  filtrarYRenderizar();
+}
+
+function filtrarYRenderizar() {
   const container = document.getElementById('proyectos-lista');
   if (!container) return;
-  proyectosCache = proyectos;
 
-  if (proyectos.length === 0) {
+  const busqueda = (document.getElementById('repositorio-search')?.value || '').toLowerCase();
+  const catFiltro = document.getElementById('repositorio-categoria')?.value || '';
+
+  let filtrados = proyectosCache;
+
+  if (busqueda) {
+    filtrados = filtrados.filter(p =>
+      (p.nombre || '').toLowerCase().includes(busqueda) ||
+      (p.descripcion || '').toLowerCase().includes(busqueda)
+    );
+  }
+  if (catFiltro) {
+    filtrados = filtrados.filter(p => p.categoria === catFiltro);
+  }
+
+  if (filtrados.length === 0) {
     container.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:40px;">No hay proyectos registrados</p>';
+    renderizarPaginacion(0);
     return;
   }
 
-  // Agrupar por categoría
-  const grupos = {};
-  for (const p of proyectos) {
-    if (!grupos[p.categoria]) grupos[p.categoria] = [];
-    grupos[p.categoria].push(p);
-  }
+  const totalPaginas = Math.ceil(filtrados.length / PROYECTOS_POR_PAGINA);
+  if (paginaActual > totalPaginas) paginaActual = totalPaginas;
+  const inicio = (paginaActual - 1) * PROYECTOS_POR_PAGINA;
+  const pagina = filtrados.slice(inicio, inicio + PROYECTOS_POR_PAGINA);
 
-  const orden = ['tecnologia', 'normativa', 'difusion'];
-  let html = '';
+  let html = '<div class="proyectos-grid">';
+  for (const p of pagina) {
+    const color = Utils.escapeHtml(p.color || '#3b82f6');
+    const totalHitos = p.cantidad_hitos || 0;
+    const completados = p.hitos_completados || 0;
+    const porcentaje = totalHitos > 0 ? Math.round((completados / totalHitos) * 100) : 0;
+    const areasHtml = p.areas && p.areas.length > 0
+      ? `<div class="proyecto-card-areas">${p.areas.map(a => `<span class="area-chip">${Utils.escapeHtml(a.nombre)}</span>`).join('')}</div>`
+      : '';
+    const responsableHtml = p.responsable
+      ? `<div class="proyecto-card-responsable">${Icons.user.replace(/width="\d+"/, 'width="12"').replace(/height="\d+"/, 'height="12"')} ${Utils.escapeHtml(p.responsable)}</div>`
+      : '';
 
-  for (const cat of orden) {
-    if (!grupos[cat]) continue;
-    html += `<div class="categoria-header">${CATEGORIA_LABELS[cat]}</div>`;
-    html += '<div class="proyectos-grid">';
-    for (const p of grupos[cat]) {
-      const color = Utils.escapeHtml(p.color || '#3b82f6');
-      const totalHitos = p.cantidad_hitos || 0;
-      const completados = p.hitos_completados || 0;
-      const porcentaje = totalHitos > 0 ? Math.round((completados / totalHitos) * 100) : 0;
-      const areasHtml = p.areas && p.areas.length > 0
-        ? `<div class="proyecto-card-areas">${p.areas.map(a => `<span class="area-chip">${Utils.escapeHtml(a.nombre)}</span>`).join('')}</div>`
-        : '';
-      const responsableHtml = p.responsable
-        ? `<div class="proyecto-card-responsable">${Icons.user.replace(/width="\d+"/, 'width="12"').replace(/height="\d+"/, 'height="12"')} ${Utils.escapeHtml(p.responsable)}</div>`
-        : '';
-
-      html += `
+    html += `
         <div class="proyecto-card" onclick="verProyecto(${p.id})">
           <div class="proyecto-card-top" style="background:${color}"></div>
           <div class="proyecto-card-body">
@@ -445,7 +464,7 @@ function renderProyectosLista(proyectos) {
               </div>
               <div style="flex:1;min-width:0;margin-left:12px;">
                 <h4>${Utils.escapeHtml(p.nombre)}</h4>
-                ${p.descripcion ? `<p style="margin:4px 0 0;">${Utils.escapeHtml(Utils.truncate(p.descripcion, 80))}</p>` : ''}
+                ${p.descripcion ? `<p>${Utils.escapeHtml(p.descripcion)}</p>` : ''}
               </div>
             </div>
             ${totalHitos > 0 ? `
@@ -462,11 +481,35 @@ function renderProyectosLista(proyectos) {
             ${responsableHtml}
           </div>
         </div>`;
-    }
-    html += '</div>';
   }
+  html += '</div>';
 
   container.innerHTML = html;
+  renderizarPaginacion(filtrados.length);
+}
+
+function renderizarPaginacion(totalItems) {
+  const paginacionEl = document.getElementById('proyectos-paginacion');
+  if (!paginacionEl) return;
+
+  if (totalItems <= PROYECTOS_POR_PAGINA) {
+    paginacionEl.style.display = 'none';
+    return;
+  }
+
+  const totalPaginas = Math.ceil(totalItems / PROYECTOS_POR_PAGINA);
+  paginacionEl.style.display = '';
+  paginacionEl.innerHTML = `
+    <button class="pag-btn" ${paginaActual <= 1 ? 'disabled' : ''} onclick="cambiarPagina(-1)">&larr; Anterior</button>
+    <span class="pag-info">Página ${paginaActual} de ${totalPaginas}</span>
+    <button class="pag-btn" ${paginaActual >= totalPaginas ? 'disabled' : ''} onclick="cambiarPagina(1)">Siguiente &rarr;</button>
+  `;
+}
+
+function cambiarPagina(dir) {
+  paginaActual += dir;
+  filtrarYRenderizar();
+  document.getElementById('proyectos-lista')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function cargarTimeline() {
@@ -650,6 +693,8 @@ function setVistaProyectos(vista) {
   const logrosArea = document.getElementById('logros-area');
   const btnNuevoProyecto = document.getElementById('btn-nuevo-proyecto');
   const btnNuevoLogro = document.getElementById('btn-nuevo-logro');
+  const toolbar = document.getElementById('repositorio-toolbar');
+  const paginacion = document.getElementById('proyectos-paginacion');
   const isAdmin = Auth.isAdmin();
 
   if (vista === 'lista') {
@@ -659,6 +704,9 @@ function setVistaProyectos(vista) {
     if (logrosArea) logrosArea.style.display = 'none';
     if (isAdmin && btnNuevoProyecto) btnNuevoProyecto.style.display = '';
     if (btnNuevoLogro) btnNuevoLogro.style.display = 'none';
+    if (toolbar) toolbar.style.display = '';
+    paginaActual = 1;
+    filtrarYRenderizar();
   } else if (vista === 'logros') {
     lista.style.display = 'none';
     timeline.style.display = 'none';
@@ -666,6 +714,8 @@ function setVistaProyectos(vista) {
     if (logrosArea) logrosArea.style.display = '';
     if (btnNuevoProyecto) btnNuevoProyecto.style.display = 'none';
     if (isAdmin && btnNuevoLogro) btnNuevoLogro.style.display = '';
+    if (toolbar) toolbar.style.display = 'none';
+    if (paginacion) paginacion.style.display = 'none';
   } else {
     lista.style.display = 'none';
     timeline.style.display = '';
@@ -673,6 +723,8 @@ function setVistaProyectos(vista) {
     if (logrosArea) logrosArea.style.display = 'none';
     if (btnNuevoProyecto) btnNuevoProyecto.style.display = 'none';
     if (btnNuevoLogro) btnNuevoLogro.style.display = 'none';
+    if (toolbar) toolbar.style.display = 'none';
+    if (paginacion) paginacion.style.display = 'none';
   }
 }
 
