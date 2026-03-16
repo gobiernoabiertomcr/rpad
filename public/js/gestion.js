@@ -503,11 +503,16 @@ function renderizarPaginacion(totalItems) {
   }
 
   const totalPaginas = Math.ceil(totalItems / PROYECTOS_POR_PAGINA);
+  const inicio = (paginaActual - 1) * PROYECTOS_POR_PAGINA + 1;
+  const fin = Math.min(paginaActual * PROYECTOS_POR_PAGINA, totalItems);
   paginacionEl.style.display = '';
   paginacionEl.innerHTML = `
-    <button class="pag-btn" ${paginaActual <= 1 ? 'disabled' : ''} onclick="cambiarPagina(-1)">&larr; Anterior</button>
-    <span class="pag-info">Página ${paginaActual} de ${totalPaginas}</span>
-    <button class="pag-btn" ${paginaActual >= totalPaginas ? 'disabled' : ''} onclick="cambiarPagina(1)">Siguiente &rarr;</button>
+    <span class="pag-info">Mostrando ${inicio}–${fin} de ${totalItems}</span>
+    <div class="pag-controls">
+      <button class="btn btn-outline btn-sm" ${paginaActual <= 1 ? 'disabled' : ''} onclick="cambiarPagina(-1)">← Anterior</button>
+      <span class="pag-pagina">Página ${paginaActual} de ${totalPaginas}</span>
+      <button class="btn btn-outline btn-sm" ${paginaActual >= totalPaginas ? 'disabled' : ''} onclick="cambiarPagina(1)">Siguiente →</button>
+    </div>
   `;
 }
 
@@ -522,11 +527,16 @@ function renderPaginacionGeneral(containerId, paginaActualVal, totalItems, items
   if (!el) return;
   if (totalItems <= itemsPorPagina) { el.style.display = 'none'; return; }
   const totalPaginas = Math.ceil(totalItems / itemsPorPagina);
+  const inicio = (paginaActualVal - 1) * itemsPorPagina + 1;
+  const fin = Math.min(paginaActualVal * itemsPorPagina, totalItems);
   el.style.display = '';
   el.innerHTML = `
-    <button class="pag-btn" ${paginaActualVal <= 1 ? 'disabled' : ''} onclick="${onCambiarFn}(-1)">&larr; Anterior</button>
-    <span class="pag-info">Página ${paginaActualVal} de ${totalPaginas}</span>
-    <button class="pag-btn" ${paginaActualVal >= totalPaginas ? 'disabled' : ''} onclick="${onCambiarFn}(1)">Siguiente &rarr;</button>
+    <span class="pag-info">Mostrando ${inicio}–${fin} de ${totalItems}</span>
+    <div class="pag-controls">
+      <button class="btn btn-outline btn-sm" ${paginaActualVal <= 1 ? 'disabled' : ''} onclick="${onCambiarFn}(-1)">← Anterior</button>
+      <span class="pag-pagina">Página ${paginaActualVal} de ${totalPaginas}</span>
+      <button class="btn btn-outline btn-sm" ${paginaActualVal >= totalPaginas ? 'disabled' : ''} onclick="${onCambiarFn}(1)">Siguiente →</button>
+    </div>
   `;
 }
 
