@@ -198,6 +198,20 @@
                 align-items: flex-start;
             }
         }
+        .nd-switch-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+        .nd-switch { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+        .nd-proximas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+        .nd-proxima { border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; font-size: 0.875rem; }
+        .nd-alerta { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 0.875rem; }
+        .nd-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+        .nd-filtros .form-select { width: auto; min-width: 150px; }
+        .nd-check { display: flex; align-items: center; gap: 6px; font-size: 0.875rem; }
+        .nd-marco { width: 100%; height: 560px; border: 1px solid var(--gray-200); border-radius: 8px; margin-top: 12px; background: #ffffff; }
+        .nd-config fieldset { border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px 16px; margin: 0 0 12px; }
+        .nd-config legend { font-weight: 600; padding: 0 6px; }
+        .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
+        .nd-modal { max-width: 900px; width: 95%; }
+        .nd-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
     </style>
 </head>
 <body>
@@ -305,115 +319,160 @@
 
             <div id="message-container"></div>
 
-            <!-- Card: Conexión SMTP -->
+            <!-- Estado -->
             <div class="smtp-card">
                 <div class="smtp-card-header">
                     <div class="smtp-card-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
                     </div>
-                    <h3>Estado del Servidor SMTP</h3>
+                    <h3>Estado</h3>
                 </div>
-                
                 <div class="smtp-status-row">
-                    <button onclick="verificarConexionSMTP()" class="btn btn-secondary">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                        Verificar Conexión
-                    </button>
-                    <span id="smtp-status" class="smtp-status">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
-                        Sin verificar
-                    </span>
+                    <button type="button" id="btn-verificar-smtp" class="btn btn-secondary">Verificar conexión SMTP</button>
+                    <span id="smtp-status" class="smtp-status">Sin verificar</span>
                 </div>
+                <div class="nd-switch-row">
+                    <label class="nd-switch" for="envio-activo">
+                        <input type="checkbox" id="envio-activo">
+                        <span>Envío automático de Notas Digitales</span>
+                    </label>
+                    <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
+                </div>
+                <div id="nd-alertas"></div>
+                <div id="nd-proximas" class="nd-proximas"></div>
+                <p class="test-hint">Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 30 días antes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 21 días o más que siguen pendientes. Solo en días hábiles.</p>
             </div>
 
-            <!-- Card: Probar Alertas -->
+            <!-- Libro de Notas Digitales -->
             <div class="smtp-card">
                 <div class="smtp-card-header">
                     <div class="smtp-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
                     </div>
-                    <h3>Probar Alertas por Email</h3>
+                    <h3>Libro de Notas Digitales</h3>
                 </div>
-
-                <div class="test-controls">
-                    <select id="tipo-notificacion" class="form-select">
-                        <optgroup label="Gestión Interna">
-                            <option value="interno-60">Planificación (-60 días)</option>
-                            <option value="interno-30">Vencimiento (-30 días)</option>
-                            <option value="interno-vencido">Atrasados (Resumen mensual)</option>
-                        </optgroup>
-                        <optgroup label="Gestión Externa">
-                            <option value="externo-60">Redacción de Notas (-30 días)</option>
-                            <option value="externo-40">Distribución (-10 días)</option>
-                            <option value="externo-5">Recordatorio de seguimiento (+25 días vencidos)</option>
-                            <option value="externo-vencido">Sin Respuesta (Resumen mensual)</option>
-                        </optgroup>
-                        <optgroup label="Aviso a Áreas">
-                            <option value="area-aviso-40">Aviso a Áreas (-40 días)</option>
-                        </optgroup>
+                <div class="nd-filtros">
+                    <select id="filtro-anio" class="form-select" aria-label="Año"><option value="">Todos los años</option></select>
+                    <select id="filtro-tipo" class="form-select" aria-label="Tipo">
+                        <option value="">Aviso y reiteración</option>
+                        <option value="aviso">Aviso</option>
+                        <option value="reiteracion">Reiteración</option>
                     </select>
-                    
-                    <button onclick="verPreviewEmail()" class="btn btn-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        Preview
-                    </button>
-                    
-                    <button onclick="enviarEmailPrueba()" class="btn btn-outline">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                        Enviar Email Real
-                    </button>
+                    <select id="filtro-gestion" class="form-select" aria-label="Gestión">
+                        <option value="">Interna y externa</option>
+                        <option value="interna">Interna</option>
+                        <option value="externa">Externa</option>
+                    </select>
+                    <select id="filtro-estado" class="form-select" aria-label="Estado">
+                        <option value="">Todos los estados</option>
+                        <option value="enviada">Enviada</option>
+                        <option value="fallida">Fallida</option>
+                        <option value="pendiente">Pendiente</option>
+                    </select>
+                    <select id="filtro-dataset" class="form-select" aria-label="Dataset"><option value="">Todos los datasets</option></select>
+                    <label class="nd-check"><input type="checkbox" id="filtro-pruebas"> Incluir pruebas</label>
                 </div>
-                
-                <p class="test-hint">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; vertical-align: middle;"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
-                    El preview usa datos reales o de ejemplo si no hay datasets en esa fecha.
-                </p>
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Gestión</th><th>Datasets</th><th>Para / CC</th><th>Estado</th><th></th></tr>
+                        </thead>
+                        <tbody id="libro-cuerpo"><tr><td colspan="8">Cargando…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
 
-                <!-- Info sobre tipos de alertas -->
-                <div class="info-cards">
-                    <div class="info-card interna">
-                        <h4>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                            Gestión Interna
-                        </h4>
-                        <ul>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                -60 días: Planificación
-                            </li>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                -30 días: Aviso de vencimiento
-                            </li>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                Mensual: Resumen de atrasados
-                            </li>
-                        </ul>
+            <!-- Vista previa y prueba -->
+            <div class="smtp-card">
+                <div class="smtp-card-header">
+                    <div class="smtp-card-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                     </div>
-                    <div class="info-card externa">
-                        <h4>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-                            Gestión Externa
-                        </h4>
-                        <ul>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                -30 días: Redacción de notas
-                            </li>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                -10 días: Distribución + aviso a áreas
-                            </li>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                +25 días: Recordatorio de seguimiento
-                            </li>
-                            <li>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                Mensual: Sin respuesta
-                            </li>
-                        </ul>
+                    <h3>Vista previa y prueba</h3>
+                </div>
+                <div class="test-controls">
+                    <select id="preview-tipo" class="form-select" aria-label="Tipo de nota">
+                        <option value="aviso">Aviso</option>
+                        <option value="reiteracion">Reiteración</option>
+                    </select>
+                    <select id="preview-gestion" class="form-select" aria-label="Gestión">
+                        <option value="interna">Gestión interna</option>
+                        <option value="externa">Gestión externa</option>
+                    </select>
+                    <button type="button" id="btn-preview" class="btn btn-primary">Vista previa</button>
+                    <button type="button" id="btn-prueba" class="btn btn-outline">Enviarme una prueba</button>
+                </div>
+                <p id="preview-aviso" class="test-hint" hidden></p>
+                <iframe id="preview-marco" class="nd-marco" sandbox="" title="Vista previa de la nota" hidden></iframe>
+            </div>
+
+            <!-- Configuración -->
+            <div class="smtp-card">
+                <div class="smtp-card-header">
+                    <div class="smtp-card-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </div>
+                    <h3>Configuración</h3>
+                </div>
+                <form id="form-config" class="nd-config">
+                    <fieldset>
+                        <legend>Gestión interna</legend>
+                        <div class="form-group"><label class="form-label" for="para_interna">Para</label><input id="para_interna" class="form-input" autocomplete="off"></div>
+                        <div class="form-group"><label class="form-label" for="cc_interna">CC</label><input id="cc_interna" class="form-input" autocomplete="off"></div>
+                        <div class="form-group"><label class="form-label" for="linea_cc_interna">Línea de CC al pie de la nota</label><input id="linea_cc_interna" class="form-input" maxlength="200"></div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Gestión externa</legend>
+                        <div class="form-group"><label class="form-label" for="para_externa">Para</label><input id="para_externa" class="form-input" autocomplete="off"></div>
+                        <div class="form-group"><label class="form-label" for="cc_externa">CC</label><input id="cc_externa" class="form-input" autocomplete="off"></div>
+                        <div class="form-group"><label class="form-label" for="linea_cc_externa">Línea de CC al pie de la nota</label><input id="linea_cc_externa" class="form-input" maxlength="200"></div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Respaldo y pruebas</legend>
+                        <div class="form-group"><label class="form-label" for="cco">Copia oculta (CCO) de respaldo</label><input id="cco" class="form-input" autocomplete="off"></div>
+                        <div class="form-group"><label class="form-label" for="casillas_prueba">Casillas de prueba</label><input id="casillas_prueba" class="form-input" autocomplete="off"></div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Firma</legend>
+                        <div class="form-group"><label class="form-label" for="firma_nombre">Nombre</label><input id="firma_nombre" class="form-input" maxlength="150"></div>
+                        <div class="form-group"><label class="form-label" for="firma_cargo">Cargo</label><input id="firma_cargo" class="form-input" maxlength="200"></div>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
+                            <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
+                            <img id="firma-vista" class="nd-firma" alt="Firma cargada" hidden>
+                        </div>
+                    </fieldset>
+                    <p class="form-hint">Separá varias direcciones con coma.</p>
+                    <button type="submit" class="btn btn-primary">Guardar configuración</button>
+                </form>
+            </div>
+
+            <!-- Aviso a las áreas -->
+            <div class="smtp-card">
+                <div class="smtp-card-header">
+                    <div class="smtp-card-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                    </div>
+                    <h3>Aviso a las áreas (40 días)</h3>
+                </div>
+                <p class="test-hint">Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba se envía solo a las casillas de prueba.</p>
+                <div class="test-controls">
+                    <button type="button" id="btn-preview-area" class="btn btn-primary">Vista previa</button>
+                    <button type="button" id="btn-prueba-area" class="btn btn-outline">Enviarme una prueba</button>
+                </div>
+                <iframe id="preview-area-marco" class="nd-marco" sandbox="" title="Vista previa del aviso a áreas" hidden></iframe>
+            </div>
+
+            <!-- Modal: nota enviada -->
+            <div class="modal-overlay" id="modal-nota">
+                <div class="modal nd-modal" role="dialog" aria-modal="true" aria-labelledby="modal-nota-titulo">
+                    <div class="modal-header">
+                        <h3 class="modal-title" id="modal-nota-titulo">Nota</h3>
+                        <button type="button" class="modal-close" id="modal-nota-cerrar" aria-label="Cerrar">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="modal-nota-datos" class="test-hint"></p>
+                        <iframe id="modal-nota-marco" class="nd-marco" sandbox="" title="Nota enviada"></iframe>
                     </div>
                 </div>
             </div>
@@ -455,7 +514,7 @@
     <script src="js/config.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/main.js"></script>
-    <script src="js/api.js?v=20261012"></script>
-    <script src="js/correos.js"></script>
+    <script src="js/api.js?v=20261013"></script>
+    <script src="js/correos.js?v=20261013"></script>
 </body>
 </html>

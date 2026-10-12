@@ -163,13 +163,77 @@ async registrarActualizacion(id, datos = {}) {
     return await response.text();
   },
 
-  async enviarNotificacionPrueba(tipo) {
-    const response = await fetch(`${CONFIG.API_URL}/notificaciones/prueba/${tipo}`, {
-      method: 'GET',
-      headers: Auth.getAuthHeaders()
+  // Pedido JSON autenticado: lanza un Error con el mensaje del servidor si falla
+  async pedirJson(metodo, ruta, body) {
+    const response = await fetch(`${CONFIG.API_URL}${ruta}`, {
+      method: metodo,
+      headers: Auth.getAuthHeaders(),
+      body: body === undefined ? undefined : JSON.stringify(body)
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Error ${response.status}`);
     return data;
+  },
+
+  async pedirArchivo(ruta) {
+    const response = await fetch(`${CONFIG.API_URL}${ruta}`, { headers: Auth.getAuthHeaders() });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `Error ${response.status}`);
+    }
+    return response.blob();
+  },
+
+  async enviarPruebaAvisoArea() {
+    return this.pedirJson('POST', '/notificaciones/prueba-area');
+  },
+
+  // === NOTAS DIGITALES ===
+  async getEstadoNotas() {
+    return (await this.pedirJson('GET', '/notificaciones/notas-digitales/estado')).data;
+  },
+
+  async getLibroNotas(filtros = {}) {
+    const params = new URLSearchParams(Object.entries(filtros).filter(([, valor]) => valor !== '' && valor != null));
+    const query = params.toString();
+    return (await this.pedirJson('GET', `/notificaciones/notas-digitales${query ? `?${query}` : ''}`)).data;
+  },
+
+  async getNota(id) {
+    return (await this.pedirJson('GET', `/notificaciones/notas-digitales/${id}`)).data;
+  },
+
+  async getNotaPdf(id) {
+    return this.pedirArchivo(`/notificaciones/notas-digitales/${id}/pdf`);
+  },
+
+  async reintentarNota(id) {
+    return this.pedirJson('POST', `/notificaciones/notas-digitales/${id}/reintentar`);
+  },
+
+  async previewNota(tipo, gestion) {
+    const query = new URLSearchParams({ tipo, gestion }).toString();
+    return (await this.pedirJson('GET', `/notificaciones/notas-digitales/preview?${query}`)).data;
+  },
+
+  async enviarPruebaNota(tipo, gestion) {
+    return this.pedirJson('POST', '/notificaciones/notas-digitales/prueba', { tipo, gestion });
+  },
+
+  async getConfigNotas() {
+    return (await this.pedirJson('GET', '/notificaciones/notas-digitales/config')).data;
+  },
+
+  async guardarConfigNotas(datos) {
+    return this.pedirJson('PUT', '/notificaciones/notas-digitales/config', datos);
+  },
+
+  async subirFirmaNotas(imagen, mime) {
+    return this.pedirJson('PUT', '/notificaciones/notas-digitales/config/firma', { imagen, mime });
+  },
+
+  async getFirmaNotas() {
+    return this.pedirArchivo('/notificaciones/notas-digitales/config/firma');
   },
 
   // === PERFIL ===
