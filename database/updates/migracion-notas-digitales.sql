@@ -68,6 +68,11 @@ CREATE TABLE `notas_digitales_config` (
   `casillas_prueba` varchar(500) NOT NULL DEFAULT '',
   `reiteracion_evaluada_interna` char(7) DEFAULT NULL,
   `reiteracion_evaluada_externa` char(7) DEFAULT NULL,
+  `ultima_corrida_fecha` date DEFAULT NULL,
+  `ultima_corrida_inicio` datetime DEFAULT NULL,
+  `ultima_corrida_fin` datetime DEFAULT NULL,
+  `ultima_corrida_resultado` varchar(1000) DEFAULT NULL,
+  `ultima_corrida_con_errores` tinyint(1) NOT NULL DEFAULT 0,
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `updated_by` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`)

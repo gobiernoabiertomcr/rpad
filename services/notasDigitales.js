@@ -5,7 +5,8 @@ import { sendEmail, listaDeCorreos } from './emailService.js';
 import { construirNota, renderHtml, renderTexto } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import {
-  hoyArgentina, esDiaHabil, proximoDiaHabil, primerDiaHabilDelMes, periodoDe, periodoSiguiente, sumarDias
+  hoyArgentina, ahoraArgentina, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe, periodoSiguiente,
+  sumarDias, formatoCorto
 } from './notasDigitalesCalendario.js';
 import {
   VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, pendientesDeAviso, antecedentesDe, areasDe
@@ -160,41 +161,114 @@ export const reintentarNota = async (id) => {
   return corrida.resultado;
 };
 
-export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
-  const resumen = { fecha: hoy, ejecutado: false, motivo: null, generadas: [], enviadas: 0, fallidas: 0 };
-  const corrida = await conBloqueo(async () => {
-    const config = await obtenerConfig();
-    if (!config.envio_activo) return { ...resumen, motivo: 'Envío automático desactivado' };
-    const faltan = configuracionCompleta(config);
-    if (faltan.length) return { ...resumen, motivo: `Configuración incompleta: ${faltan.join(', ')}` };
-    if (!esDiaHabil(hoy)) return { ...resumen, motivo: 'Día no hábil' };
+// =====================================================
+// Corrida diaria
+// =====================================================
+const LARGO_RESULTADO = 1000;
 
-    resumen.ejecutado = true;
-    const contar = (resultado) => {
+// 'aviso interna', 'reintento (nota 12)'...
+const pasoDe = ({ tipo, gestion, id }) => `${tipo}${gestion ? ` ${gestion}` : ''}${id ? ` (nota ${id})` : ''}`;
+const describirError = (error) => `${pasoDe(error)}: ${error.mensaje}`;
+
+// Un paso que falla queda en el resumen (y en el log del servidor) y la corrida sigue con los demás
+const anotarError = (resumen, contexto, error) => {
+  // Solo la pila: los errores de mysql2 traen la consulta entera, con el PDF de la nota
+  console.error(`❌ Notas Digitales, ${pasoDe(contexto)}:`, error?.stack ?? error);
+  resumen.errores.push({ ...contexto, mensaje: String(error?.message ?? error) });
+};
+
+// Texto legible para el Estado: el motivo por el que no corrió, o lo enviado y los errores
+const textoResultado = (resumen) => {
+  const base = resumen.motivo ?? `${resumen.enviadas} enviada(s), ${resumen.fallidas} fallida(s)`;
+  const errores = resumen.errores.length
+    ? `. ${resumen.errores.length} error(es): ${resumen.errores.map(describirError).join('; ')}`
+    : '';
+  return `${base}${errores}`.slice(0, LARGO_RESULTADO);
+};
+
+// Registro de la última corrida en la configuración. Si el UPDATE falla se informa en el log y la corrida
+// sigue: el registro no puede tapar su resultado. updated_at = updated_at: no es un cambio de configuración.
+// asignaciones es texto fijo de este módulo; los valores van como parámetros.
+const registrarCorrida = async (asignaciones, parametros) => {
+  try {
+    await pool.query(`UPDATE notas_digitales_config SET ${asignaciones}, updated_at = updated_at WHERE id = 1`, parametros);
+  } catch (error) {
+    console.error('⚠️ No se pudo registrar la corrida de Notas Digitales:', error.message);
+  }
+};
+
+const registrarInicio = (hoy) => registrarCorrida(
+  `ultima_corrida_fecha = ?, ultima_corrida_inicio = ?, ultima_corrida_fin = NULL, ultima_corrida_resultado = NULL,
+   ultima_corrida_con_errores = 0`,
+  [hoy, ahoraArgentina()]
+);
+
+const registrarFin = (resumen) => registrarCorrida(
+  'ultima_corrida_fin = ?, ultima_corrida_resultado = ?, ultima_corrida_con_errores = ?',
+  [ahoraArgentina(), textoResultado(resumen), resumen.errores.length ? 1 : 0]
+);
+
+// Los pasos de una corrida (spec 8.1). Cada reintento, cada aviso y cada reiteración van aislados.
+const correrPasos = async (resumen, hoy, usuarioId) => {
+  const config = await obtenerConfig();
+  if (!config.envio_activo) {
+    resumen.motivo = 'Envío automático desactivado';
+    return;
+  }
+  const faltan = configuracionCompleta(config);
+  if (faltan.length) {
+    resumen.motivo = `Configuración incompleta: ${faltan.join(', ')}`;
+    return;
+  }
+  if (!esDiaHabil(hoy)) {
+    resumen.motivo = 'Día no hábil';
+    return;
+  }
+  resumen.ejecutado = true;
+
+  // Envía una nota ya generada; una excepción (no un envío fallido) queda como error del paso
+  const enviar = async (id, contexto) => {
+    try {
+      const resultado = await enviarNota(id);
       if (resultado.success) resumen.enviadas++;
       else resumen.fallidas++;
-    };
+    } catch (error) {
+      anotarError(resumen, { ...contexto, id }, error);
+    }
+  };
 
-    // 1. Reintentos de notas pendientes o fallidas
-    const [pendientes] = await pool.query(
+  // 1. Reintentos de notas pendientes o fallidas
+  let pendientes = [];
+  try {
+    [pendientes] = await pool.query(
       "SELECT id FROM notas_digitales WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? ORDER BY id",
       [MAX_INTENTOS]
     );
-    for (const { id } of pendientes) contar(await enviarNota(id));
+  } catch (error) {
+    anotarError(resumen, { tipo: 'reintento' }, error);
+  }
+  for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
-    // 2. Avisos
-    for (const gestion of GESTIONES) {
+  // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
+  for (const gestion of GESTIONES) {
+    let id;
+    try {
       const datasets = await seleccionarParaAviso(gestion, hoy);
       if (!datasets.length) continue;
-      const id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId });
+      id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId });
       resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
-      contar(await enviarNota(id));
+    } catch (error) {
+      anotarError(resumen, { tipo: 'aviso', gestion }, error);
+      continue;
     }
+    await enviar(id, { tipo: 'aviso', gestion });
+  }
 
-    // 3. Reiteraciones: una evaluación por mes y gestión
-    const periodo = periodoDe(hoy);
-    for (const gestion of GESTIONES) {
-      if (config[`reiteracion_evaluada_${gestion}`] === periodo) continue;
+  // 3. Reiteraciones: una evaluación por mes y gestión
+  const periodo = periodoDe(hoy);
+  for (const gestion of GESTIONES) {
+    if (config[`reiteracion_evaluada_${gestion}`] === periodo) continue;
+    try {
       const [[existente]] = await pool.query(
         "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'reiteracion' AND gestion = ? AND periodo = ? AND es_prueba = 0",
         [gestion, periodo]
@@ -202,14 +276,33 @@ export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId =
       if (Number(existente.cantidad) === 0) {
         const datasets = await seleccionarParaReiteracion(gestion, hoy);
         if (datasets.length) {
+          // Si la generación lanza una excepción se sale al catch sin marcar el mes: se reintenta en la próxima corrida
           const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId });
           resumen.generadas.push({ id, tipo: 'reiteracion', gestion, datasets: datasets.length });
-          contar(await enviarNota(id));
+          await enviar(id, { tipo: 'reiteracion', gestion });
         }
       }
+      // Generada (aunque el envío haya fallado) o sin datasets: el mes queda evaluado.
       // El nombre de columna sale de GESTIONES, una lista fija del código
       await pool.query(`UPDATE notas_digitales_config SET reiteracion_evaluada_${gestion} = ? WHERE id = 1`, [periodo]);
+    } catch (error) {
+      anotarError(resumen, { tipo: 'reiteracion', gestion }, error);
     }
+  }
+};
+
+export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
+  const resumen = { fecha: hoy, ejecutado: false, motivo: null, generadas: [], enviadas: 0, fallidas: 0, errores: [] };
+  // Con el bloqueo ocupado no se registra nada: la corrida que lo tiene es la que registra
+  const corrida = await conBloqueo(async () => {
+    await registrarInicio(hoy);
+    try {
+      await correrPasos(resumen, hoy, usuarioId);
+    } catch (error) {
+      // Lo que falla fuera de los pasos aislados (por ejemplo, leer la configuración)
+      anotarError(resumen, { tipo: 'corrida' }, error);
+    }
+    await registrarFin(resumen);
     return resumen;
   });
   return corrida.ocupado ? { ...resumen, motivo: 'Otra corrida en curso' } : corrida.resultado;
@@ -290,10 +383,63 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       reiteracion: { fecha: fechaReiteracion, cantidad: (await seleccionarParaReiteracion(gestion, fechaReiteracion)).length }
     };
   }
+  const ultimaCorrida = await leerUltimaCorrida();
   return {
     envio_activo: Boolean(config.envio_activo),
     configuracion_faltante: configuracionCompleta(config),
     fallidas: Number(fallidas),
-    proximas
+    proximas,
+    ultima_corrida: ultimaCorrida,
+    alertas: alertasDeCorrida(config, ultimaCorrida, hoy)
   };
+};
+
+// Última corrida registrada (null si nunca hubo una). en_curso: empezó, no terminó y el bloqueo sigue tomado.
+const leerUltimaCorrida = async () => {
+  const [[fila]] = await pool.query(
+    `SELECT DATE_FORMAT(ultima_corrida_fecha, '%Y-%m-%d') AS fecha,
+            DATE_FORMAT(ultima_corrida_inicio, '%Y-%m-%d %H:%i') AS inicio,
+            DATE_FORMAT(ultima_corrida_fin, '%Y-%m-%d %H:%i') AS fin,
+            ultima_corrida_resultado AS resultado, ultima_corrida_con_errores AS con_errores,
+            IS_FREE_LOCK(?) AS bloqueo_libre
+     FROM notas_digitales_config WHERE id = 1`,
+    [BLOQUEO]
+  );
+  if (!fila?.inicio) return null;
+  const { bloqueo_libre: libre, ...corrida } = fila;
+  return { ...corrida, con_errores: Boolean(Number(corrida.con_errores)), en_curso: !corrida.fin && Number(libre) !== 1 };
+};
+
+const fechaHora = (texto) => `${formatoCorto(texto.slice(0, 10))} ${texto.slice(11, 16)}`;
+
+// Alertas de la corrida diaria para la pantalla de Estado (spec: "nunca dejar de enviar en silencio")
+const alertasDeCorrida = (config, corrida, hoy) => {
+  const alertas = [];
+  if (corrida?.con_errores) {
+    alertas.push({
+      tipo: 'corrida-con-errores', nivel: 'error',
+      mensaje: `La última corrida (${formatoCorto(corrida.fecha)}) terminó con errores: ${corrida.resultado}`
+    });
+  }
+  if (corrida && !corrida.fin && !corrida.en_curso) {
+    alertas.push({
+      tipo: 'corrida-interrumpida', nivel: 'error',
+      mensaje: `La corrida que empezó el ${fechaHora(corrida.inicio)} no terminó: el proceso se interrumpió. Revisá el libro y el registro del servidor.`
+    });
+  }
+  if (config.envio_activo) {
+    const debioCorrer = diaHabilAnterior(hoy);
+    if (!corrida) {
+      alertas.push({
+        tipo: 'sin-corrida', nivel: 'error',
+        mensaje: 'El envío automático está activado pero no hay registro de ninguna corrida diaria: el cron no está llamando a /api/cron/notificaciones.'
+      });
+    } else if (corrida.fecha && corrida.fecha < debioCorrer) {
+      alertas.push({
+        tipo: 'sin-corrida', nivel: 'error',
+        mensaje: `No hubo corrida diaria desde el ${formatoCorto(corrida.fecha)} (tenía que correr el ${formatoCorto(debioCorrer)}): el cron no está llamando a /api/cron/notificaciones.`
+      });
+    }
+  }
+  return alertas;
 };

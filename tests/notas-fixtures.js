@@ -6,7 +6,7 @@ const sufijo = () => crypto.randomBytes(3).toString('hex');
 
 // Guarda: query() usa DB_NAME, que en .env apunta a la copia local de producción.
 // Lo que borra o reescribe datos solo corre si la base activa es de prueba.
-const asegurarBaseDePrueba = async () => {
+export const asegurarBaseDePrueba = async () => {
   const [{ base }] = await query('SELECT DATABASE() AS base');
   if (!/^rpad_test_[a-z0-9_]+$/.test(base ?? '')) {
     throw new Error('Los fixtures de Notas Digitales solo pueden borrar o modificar datos en una base rpad_test_* (la base activa no lo es)');
@@ -72,7 +72,26 @@ export const limpiarBase = async () => {
   await query('DELETE FROM notificaciones_log');
   await query('DELETE FROM datasets');
   await query('DELETE FROM areas');
-  await query('UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL, reiteracion_evaluada_externa = NULL WHERE id = 1');
+  await query(`UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL, reiteracion_evaluada_externa = NULL,
+    firma_imagen = NULL, firma_mime = NULL, ultima_corrida_fecha = NULL, ultima_corrida_inicio = NULL, ultima_corrida_fin = NULL,
+    ultima_corrida_resultado = NULL, ultima_corrida_con_errores = 0 WHERE id = 1`);
+};
+
+// Simula una falla de la base en un paso de la corrida: mientras corre fn, un trigger de la base de prueba
+// rechaza el INSERT o UPDATE de notas_digitales que cumpla la condición (texto fijo escrito en el test)
+export const conFallaSimulada = async (evento, condicion, fn) => {
+  await asegurarBaseDePrueba();
+  if (!['INSERT', 'UPDATE'].includes(evento)) throw new Error(`Evento inválido: ${evento}`);
+  await query('DROP TRIGGER IF EXISTS falla_simulada');
+  await query(`CREATE TRIGGER falla_simulada BEFORE ${evento} ON notas_digitales FOR EACH ROW
+    BEGIN
+      IF ${condicion} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Falla simulada'; END IF;
+    END`);
+  try {
+    return await fn();
+  } finally {
+    await query('DROP TRIGGER IF EXISTS falla_simulada');
+  }
 };
 
 export const configurarNotas = async (cambios = {}) => {

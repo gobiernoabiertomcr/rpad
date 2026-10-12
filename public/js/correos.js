@@ -20,6 +20,8 @@ const conBotonBloqueado = async (boton, tarea) => {
 };
 // 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date (evita corrimientos de zona horaria)
 const fecha = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
+// 'AAAA-MM-DD HH:MM' → 'dd/mm/aaaa HH:MM'
+const fechaHora = (texto) => `${fecha(texto)} ${texto.slice(11, 16)}`;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!Auth.isAuthenticated()) {
@@ -78,12 +80,17 @@ async function cargarEstado() {
 
     const alertas = [];
     if (estado.configuracion_faltante.length) {
-      alertas.push(`Configuración incompleta: falta ${estado.configuracion_faltante.join(', ')}. Sin esto no se envían notas.`);
+      alertas.push({ nivel: 'error', mensaje: `Configuración incompleta: falta ${estado.configuracion_faltante.join(', ')}. Sin esto no se envían notas.` });
     }
     if (estado.fallidas > 0) {
-      alertas.push(`Hay ${estado.fallidas} nota(s) que no se pudieron enviar. Revisalas en el libro con el filtro "Fallida".`);
+      alertas.push({ nivel: 'error', mensaje: `Hay ${estado.fallidas} nota(s) que no se pudieron enviar. Revisalas en el libro con el filtro "Fallida".` });
     }
-    document.getElementById('nd-alertas').innerHTML = alertas.map(a => `<div class="nd-alerta">${Utils.escapeHtml(a)}</div>`).join('');
+    // Las del servidor: corrida con errores o interrumpida, cron que no llama
+    alertas.push(...(estado.alertas ?? []));
+    document.getElementById('nd-alertas').innerHTML = alertas
+      .map(a => `<div class="nd-alerta${a.nivel === 'advertencia' ? ' nd-advertencia' : ''}">${Utils.escapeHtml(a.mensaje)}</div>`)
+      .join('');
+    document.getElementById('nd-ultima-corrida').textContent = textoUltimaCorrida(estado.ultima_corrida);
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
     document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
@@ -95,6 +102,13 @@ async function cargarEstado() {
   } catch (error) {
     avisar(`No se pudo cargar el estado: ${error.message}`, 'error');
   }
+}
+
+function textoUltimaCorrida(corrida) {
+  if (!corrida) return 'Última corrida diaria: sin registro todavía.';
+  if (corrida.en_curso) return `Corrida diaria en curso (empezó el ${fechaHora(corrida.inicio)}).`;
+  if (!corrida.fin) return `Última corrida diaria: empezó el ${fechaHora(corrida.inicio)} y no terminó.`;
+  return `Última corrida diaria: ${fechaHora(corrida.inicio)} – ${corrida.resultado}`;
 }
 
 async function cambiarEnvioAutomatico(evento) {

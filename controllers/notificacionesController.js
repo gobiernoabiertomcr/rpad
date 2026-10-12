@@ -156,21 +156,26 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
   const resultados = { fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null };
 
   try {
-    // Aviso directo a las áreas de gestión externa (40 días antes)
-    const areasPorNotificar = await getDatasetsExternosPorArea(40);
-    for (const areaData of areasPorNotificar) {
-      const { subject, html } = templates.areaAviso40dias(areaData);
-      const destinatarios = [areaData.email_principal, areaData.email_secundario].filter(Boolean);
-      const result = await sendEmailToArea({ subject, html, to: destinatarios });
-      const datasetsIds = areaData.datasets.map(d => d.id);
-      await logNotificacion('area-aviso-40', areaData.area_id, destinatarios.join(','), datasetsIds, result.success, result.error);
-      if (result.success) {
-        resultados.enviados.push({ tipo: 'area-aviso-40', area: areaData.area_nombre, cantidad: areaData.datasets.length });
-      } else {
-        resultados.errores.push({ tipo: 'area-aviso-40', area: areaData.area_nombre, error: result.error });
+    // Aviso directo a las áreas de gestión externa (40 días antes). Va aislado: un error acá no saltea las Notas Digitales
+    try {
+      const areasPorNotificar = await getDatasetsExternosPorArea(40);
+      for (const areaData of areasPorNotificar) {
+        const { subject, html } = templates.areaAviso40dias(areaData);
+        const destinatarios = [areaData.email_principal, areaData.email_secundario].filter(Boolean);
+        const result = await sendEmailToArea({ subject, html, to: destinatarios });
+        const datasetsIds = areaData.datasets.map(d => d.id);
+        await logNotificacion('area-aviso-40', areaData.area_id, destinatarios.join(','), datasetsIds, result.success, result.error);
+        if (result.success) {
+          resultados.enviados.push({ tipo: 'area-aviso-40', area: areaData.area_nombre, cantidad: areaData.datasets.length });
+        } else {
+          resultados.errores.push({ tipo: 'area-aviso-40', area: areaData.area_nombre, error: result.error });
+        }
       }
+      if (areasPorNotificar.length === 0) resultados.sinDatasets.push('area-aviso-40');
+    } catch (error) {
+      console.error('Error en el aviso a las áreas:', error);
+      resultados.errores.push({ tipo: 'area-aviso-40', error: 'Error ejecutando el aviso a las áreas' });
     }
-    if (areasPorNotificar.length === 0) resultados.sinDatasets.push('area-aviso-40');
 
     // Notas Digitales (reemplazan los avisos de gestión interna y externa).
     // creado_por: el admin que pidió la corrida; el cron no tiene req.user y queda en NULL
@@ -178,6 +183,10 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
       resultados.notasDigitales = await ejecutarNotasDigitales({ hoy: hoyArgentina(), usuarioId: req.user?.userId ?? null });
       if (resultados.notasDigitales.fallidas > 0) {
         resultados.errores.push({ tipo: 'notas-digitales', error: `${resultados.notasDigitales.fallidas} nota(s) no se pudieron enviar` });
+      }
+      // Pasos que fallaron con una excepción: también quedan en la última corrida que muestra Correos > Estado
+      for (const fallo of resultados.notasDigitales.errores ?? []) {
+        resultados.errores.push({ tipo: 'notas-digitales', paso: fallo.tipo, gestion: fallo.gestion, id: fallo.id, error: fallo.mensaje });
       }
     } catch (error) {
       console.error('Error en Notas Digitales:', error);

@@ -2,7 +2,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, db } from './helpers.js';
-import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea } from './notas-fixtures.js';
+import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada } from './notas-fixtures.js';
+import { pngsDanados } from './firma-fixtures.js';
 
 let base, motor, dbReal;
 
@@ -34,6 +35,13 @@ const notas = () => query('SELECT id, numero, anio, tipo, gestion, estado, inten
 const direcciones = (lista) => (lista || []).map(d => d.Address);
 const ejecutar = (hoy) => motor.ejecutarNotasDigitales({ hoy });
 const BLOQUEO = 'rpad_notas_digitales';
+const ultimaCorrida = async () => (await query(
+  `SELECT DATE_FORMAT(ultima_corrida_fecha, '%Y-%m-%d') AS fecha, DATE_FORMAT(ultima_corrida_inicio, '%Y-%m-%d %H:%i:%s') AS inicio,
+          DATE_FORMAT(ultima_corrida_fin, '%Y-%m-%d %H:%i:%s') AS fin, ultima_corrida_resultado AS resultado,
+          ultima_corrida_con_errores AS con_errores
+   FROM notas_digitales_config WHERE id = 1`
+))[0];
+const FECHA_HORA = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 // Simula otra corrida (otro proceso): una conexión propia que tiene tomado el bloqueo hasta liberarlo
 const tomarBloqueoAjeno = async () => {
@@ -253,6 +261,8 @@ describe('fallas, reintentos y concurrencia', () => {
       assert.equal(resumen.motivo, 'Otra corrida en curso');
       assert.equal(resumen.ejecutado, false);
       assert.equal((await notas()).length, 0);
+      // La corrida que tiene el bloqueo es la que registra: esta no escribe nada
+      assert.equal((await ultimaCorrida()).inicio, null);
     } finally {
       await liberar();
     }
@@ -295,6 +305,155 @@ describe('fallas, reintentos y concurrencia', () => {
     await assert.rejects(motor.reintentarNota(999999), motor.ErrorDeUso);
     const [{ libre }] = await query('SELECT IS_FREE_LOCK(?) AS libre', [BLOQUEO]);
     assert.equal(Number(libre), 1);
+  });
+});
+
+describe('registro de la corrida y aislamiento de fallas', () => {
+  it('registra cada corrida con su fecha, inicio, fin y resultado, también cuando sale sin hacer nada', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await ejecutar('2026-11-01');
+    const feriado = await ultimaCorrida();
+    assert.equal(feriado.fecha, '2026-11-01');
+    assert.match(feriado.inicio, FECHA_HORA);
+    assert.match(feriado.fin, FECHA_HORA);
+    assert.equal(feriado.resultado, 'Día no hábil');
+    assert.equal(feriado.con_errores, 0);
+
+    await configurarNotas({ envio_activo: 0 });
+    await ejecutar('2026-11-02');
+    assert.equal((await ultimaCorrida()).resultado, 'Envío automático desactivado');
+
+    await configurarNotas({ firma_nombre: '' });
+    await ejecutar('2026-11-02');
+    assert.equal((await ultimaCorrida()).resultado, 'Configuración incompleta: nombre de la firma');
+
+    await configurarNotas();
+    await ejecutar('2026-11-02');
+    const corrida = await ultimaCorrida();
+    assert.equal(corrida.fecha, '2026-11-02');
+    assert.equal(corrida.resultado, '1 enviada(s), 0 fallida(s)');
+    assert.equal(corrida.con_errores, 0);
+    assert.ok(corrida.fin >= corrida.inicio);
+  });
+
+  it('si falla el aviso interno igual salen el aviso externo y la reiteración, y el error queda registrado', async () => {
+    const avisado = await crearDataset({ titulo: 'Avisado en octubre', vencimiento: '2026-11-30' });
+    await crearNota({ fecha: '2026-10-01', numero: 1, datasets: [{ id: avisado, vencimiento: '2026-11-30' }] });
+    await crearDataset({ titulo: 'Interno nuevo', vencimiento: '2026-12-31' });
+    await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2026-11-30' });
+
+    const resumen = await conFallaSimulada('INSERT', "NEW.tipo = 'aviso' AND NEW.gestion = 'interna'", () => ejecutar('2026-11-02'));
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion]), [['aviso', 'interna']]);
+    assert.match(resumen.errores[0].mensaje, /Falla simulada/);
+    assert.equal(resumen.enviadas, 2);
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion, n.estado]),
+      [['aviso', 'interna', 'enviada'], ['aviso', 'externa', 'enviada'], ['reiteracion', 'interna', 'enviada']]);
+    assert.equal((await mailpit.mensajes()).length, 2);
+
+    const corrida = await ultimaCorrida();
+    assert.equal(corrida.con_errores, 1);
+    assert.match(corrida.resultado, /^2 enviada\(s\), 0 fallida\(s\)\. 1 error\(es\): aviso interna: .*Falla simulada/);
+    assert.match(corrida.fin, FECHA_HORA);
+  });
+
+  it('si falla la generación de una reiteración el mes no queda evaluado y sale en la corrida siguiente', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await ejecutar('2026-11-02');
+
+    const resumen = await conFallaSimulada('INSERT', "NEW.tipo = 'reiteracion'", () => ejecutar('2026-12-01'));
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion]), [['reiteracion', 'interna']]);
+    const [marcas] = await query('SELECT reiteracion_evaluada_interna AS interna, reiteracion_evaluada_externa AS externa FROM notas_digitales_config WHERE id = 1');
+    assert.deepEqual(marcas, { interna: '2026-11', externa: '2026-12' });
+
+    await ejecutar('2026-12-02');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.estado]), [['aviso', 'enviada'], ['reiteracion', 'enviada']]);
+    assert.equal((await ultimaCorrida()).con_errores, 0);
+  });
+
+  it('un reintento que lanza una excepción no corta la corrida', async () => {
+    const id = await crearNotaFallida();
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
+
+    const resumen = await conFallaSimulada('UPDATE', `OLD.id = ${Number(id)}`, () => ejecutar('2026-11-03'));
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.id]), [['reintento', id]]);
+    assert.equal(resumen.enviadas, 1);
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion, n.estado]), [['aviso', 'interna', 'fallida'], ['aviso', 'externa', 'enviada']]);
+  });
+
+  it('una firma dañada ya guardada deja el error registrado en cada gestión y no tumba el proceso', async () => {
+    await configurarNotas({ firma_imagen: pngsDanados()['IDAT con la cabecera zlib rota'], firma_mime: 'image/png' });
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
+
+    const resumen = await ejecutar('2026-11-02');
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion]), [['aviso', 'interna'], ['aviso', 'externa']]);
+    assert.match(resumen.errores[0].mensaje, /imagen de la firma/);
+    assert.equal((await notas()).length, 0);
+    // La descompresión de png-js es asíncrona: si la imagen hubiera llegado a PDFKit, el error aparecería ahora
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const corrida = await ultimaCorrida();
+    assert.equal(corrida.con_errores, 1);
+    assert.match(corrida.resultado, /imagen de la firma/);
+  });
+});
+
+describe('estado: última corrida y alertas', () => {
+  const tipos = async (hoy) => (await motor.estadoNotas({ hoy })).alertas.map(a => a.tipo);
+  const corrida = (fecha, cambios = {}) => configurarNotas({
+    ultima_corrida_fecha: fecha, ultima_corrida_inicio: `${fecha} 08:00:00`, ultima_corrida_fin: `${fecha} 08:00:05`,
+    ultima_corrida_resultado: '0 enviada(s), 0 fallida(s)', ultima_corrida_con_errores: 0, ...cambios
+  });
+
+  it('devuelve la última corrida', async () => {
+    assert.equal((await motor.estadoNotas({ hoy: '2026-11-02' })).ultima_corrida, null);
+    await ejecutar('2026-11-02');
+    const { ultima_corrida: ultima } = await motor.estadoNotas({ hoy: '2026-11-02' });
+    assert.equal(ultima.fecha, '2026-11-02');
+    assert.match(ultima.inicio, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    assert.match(ultima.fin, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    assert.equal(ultima.resultado, '0 enviada(s), 0 fallida(s)');
+    assert.equal(ultima.con_errores, false);
+    assert.equal(ultima.en_curso, false);
+  });
+
+  it('avisa si la última corrida terminó con errores, con su resultado', async () => {
+    await corrida('2026-11-02', { ultima_corrida_con_errores: 1, ultima_corrida_resultado: '0 enviada(s), 0 fallida(s). 1 error(es): aviso interna: algo' });
+    const { alertas } = await motor.estadoNotas({ hoy: '2026-11-03' });
+    const alerta = alertas.find(a => a.tipo === 'corrida-con-errores');
+    assert.equal(alerta.nivel, 'error');
+    assert.match(alerta.mensaje, /02\/11\/2026.*aviso interna: algo/);
+  });
+
+  it('avisa si la última corrida empezó y no terminó, salvo que siga en curso', async () => {
+    await corrida('2026-11-02', { ultima_corrida_fin: null, ultima_corrida_resultado: null });
+    assert.ok((await tipos('2026-11-03')).includes('corrida-interrumpida'));
+
+    const liberar = await tomarBloqueoAjeno();
+    try {
+      const estado = await motor.estadoNotas({ hoy: '2026-11-03' });
+      assert.ok(!estado.alertas.some(a => a.tipo === 'corrida-interrumpida'));
+      assert.equal(estado.ultima_corrida.en_curso, true);
+    } finally {
+      await liberar();
+    }
+  });
+
+  it('con el envío activado avisa si no hubo corrida en el último día hábil anterior a hoy', async () => {
+    assert.ok((await tipos('2026-11-03')).includes('sin-corrida'), 'nunca hubo corrida');
+
+    await corrida('2026-11-02');
+    assert.ok(!(await tipos('2026-11-03')).includes('sin-corrida'), 'corrió el lunes y hoy es martes');
+    assert.ok(!(await tipos('2026-11-02')).includes('sin-corrida'), 'corrió hoy');
+
+    await corrida('2026-10-30');
+    assert.ok(!(await tipos('2026-11-02')).includes('sin-corrida'), 'corrió el viernes y hoy es lunes');
+    assert.ok((await tipos('2026-11-03')).includes('sin-corrida'), 'no corrió el lunes');
+
+    await corrida('2026-10-31');
+    assert.ok(!(await tipos('2026-11-02')).includes('sin-corrida'), 'corrió el sábado (día no hábil)');
+
+    await configurarNotas({ envio_activo: 0 });
+    assert.ok(!(await tipos('2026-12-15')).includes('sin-corrida'), 'con el envío desactivado no se espera corrida');
   });
 });
 

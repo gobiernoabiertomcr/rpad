@@ -38,6 +38,21 @@ describe('días hábiles', () => {
     assert.equal(cal.proximoDiaHabil('2026-11-01'), '2026-11-02');
     assert.equal(cal.proximoDiaHabil('2026-11-02'), '2026-11-02');
   });
+
+  it('último día hábil anterior (sin contar el día dado)', () => {
+    assert.equal(cal.diaHabilAnterior('2026-11-03'), '2026-11-02');
+    assert.equal(cal.diaHabilAnterior('2026-11-02'), '2026-10-30');
+    assert.equal(cal.diaHabilAnterior('2026-11-01'), '2026-10-30');
+    assert.equal(cal.diaHabilAnterior('2027-01-04'), '2026-12-31');
+  });
+});
+
+describe('ahoraArgentina', () => {
+  it('da fecha y hora de Argentina en formato AAAA-MM-DD HH:MM:SS', () => {
+    assert.equal(cal.ahoraArgentina(new Date('2026-11-02T02:30:05Z')), '2026-11-01 23:30:05');
+    assert.equal(cal.ahoraArgentina(new Date('2026-11-02T03:00:00Z')), '2026-11-02 00:00:00');
+    assert.equal(cal.ahoraArgentina(new Date('2026-11-02T11:00:00Z')), '2026-11-02 08:00:00');
+  });
 });
 
 describe('aritmética de fechas', () => {

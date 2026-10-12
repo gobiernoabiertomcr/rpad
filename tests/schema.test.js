@@ -82,6 +82,12 @@ describe('database/schema.sql', () => {
     assert.equal(config.firma_nombre, '');
     assert.equal(config.firma_imagen, null);
     assert.equal(config.casillas_prueba, '');
+    // Sin corridas registradas todavía
+    assert.equal(config.ultima_corrida_fecha, null);
+    assert.equal(config.ultima_corrida_inicio, null);
+    assert.equal(config.ultima_corrida_fin, null);
+    assert.equal(config.ultima_corrida_resultado, null);
+    assert.equal(config.ultima_corrida_con_errores, 0);
   });
 
   for (const tabla of ['temas', 'frecuencias', 'formatos']) {

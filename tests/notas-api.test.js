@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
-import { crearDataset, limpiarBase, configurarNotas } from './notas-fixtures.js';
+import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { pngRgba, pngsDanados } from './firma-fixtures.js';
 import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
@@ -320,6 +320,32 @@ describe('corrida diaria', () => {
     const notas = await query('SELECT creado_por FROM notas_digitales WHERE es_prueba = 0');
     assert.equal(notas.length, 1);
     assert.equal(notas[0].creado_por, null);
+  });
+
+  // Vale cualquier día: la corrida queda registrada también cuando sale por "Día no hábil"
+  it('un error en el aviso a las áreas no saltea las Notas Digitales, que dejan registrada la corrida', async () => {
+    await asegurarBaseDePrueba();
+    await query('ALTER TABLE areas RENAME COLUMN celular_area TO celular_area_oculta');
+    try {
+      const res = await api.get('/cron/notificaciones', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+      assert.equal(res.status, 207);
+      assert.ok(res.body.data.errores.some(e => e.tipo === 'area-aviso-40'), JSON.stringify(res.body.data.errores));
+      assert.ok(res.body.data.notasDigitales);
+    } finally {
+      await query('ALTER TABLE areas RENAME COLUMN celular_area_oculta TO celular_area');
+    }
+    const [corrida] = await query(
+      "SELECT DATE_FORMAT(ultima_corrida_fecha, '%Y-%m-%d') AS fecha, ultima_corrida_fin AS fin FROM notas_digitales_config WHERE id = 1"
+    );
+    assert.equal(corrida.fecha, hoy);
+    assert.ok(corrida.fin);
+  });
+
+  it('el estado devuelve la última corrida y las alertas', async () => {
+    const res = await api.get('/notificaciones/notas-digitales/estado', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.ultima_corrida, null);
+    assert.ok(res.body.data.alertas.some(a => a.tipo === 'sin-corrida'));
   });
 });
 

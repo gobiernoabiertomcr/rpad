@@ -13,6 +13,26 @@ export const hoyArgentina = (ahora = new Date()) => new Intl.DateTimeFormat('en-
   timeZone: ZONA_HORARIA, year: 'numeric', month: '2-digit', day: '2-digit'
 }).format(ahora);
 
+// Partes numéricas de la fecha y la hora de Argentina, sin depender del formato de texto de un idioma
+const partesArgentina = (ahora) => {
+  const partes = {};
+  const formato = new Intl.DateTimeFormat('en-US', {
+    timeZone: ZONA_HORARIA, numberingSystem: 'latn', hourCycle: 'h23',
+    year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'
+  });
+  for (const { type, value } of formato.formatToParts(ahora)) {
+    if (type !== 'literal') partes[type] = Number(value);
+  }
+  return partes;
+};
+const dosCifras = (numero) => String(numero).padStart(2, '0');
+
+// 'AAAA-MM-DD HH:MM:SS' en hora de Argentina (registro de la corrida diaria)
+export const ahoraArgentina = (ahora = new Date()) => {
+  const { year, month, day, hour, minute, second } = partesArgentina(ahora);
+  return `${year}-${dosCifras(month)}-${dosCifras(day)} ${dosCifras(hour % 24)}:${dosCifras(minute)}:${dosCifras(second)}`;
+};
+
 export const sumarDias = (iso, dias) => {
   const fecha = aFecha(iso);
   fecha.setUTCDate(fecha.getUTCDate() + dias);
@@ -29,6 +49,13 @@ export const esDiaHabil = (iso) => {
 export const proximoDiaHabil = (iso) => {
   let fecha = iso;
   while (!esDiaHabil(fecha)) fecha = sumarDias(fecha, 1);
+  return fecha;
+};
+
+// Último día hábil antes de iso (sin contarlo)
+export const diaHabilAnterior = (iso) => {
+  let fecha = sumarDias(iso, -1);
+  while (!esDiaHabil(fecha)) fecha = sumarDias(fecha, -1);
   return fecha;
 };
 
