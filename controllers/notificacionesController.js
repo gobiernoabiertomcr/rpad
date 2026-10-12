@@ -172,9 +172,10 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
     }
     if (areasPorNotificar.length === 0) resultados.sinDatasets.push('area-aviso-40');
 
-    // Notas Digitales (reemplazan los avisos de gestión interna y externa)
+    // Notas Digitales (reemplazan los avisos de gestión interna y externa).
+    // creado_por: el admin que pidió la corrida; el cron no tiene req.user y queda en NULL
     try {
-      resultados.notasDigitales = await ejecutarNotasDigitales({ hoy: hoyArgentina() });
+      resultados.notasDigitales = await ejecutarNotasDigitales({ hoy: hoyArgentina(), usuarioId: req.user?.userId ?? null });
       if (resultados.notasDigitales.fallidas > 0) {
         resultados.errores.push({ tipo: 'notas-digitales', error: `${resultados.notasDigitales.fallidas} nota(s) no se pudieron enviar` });
       }

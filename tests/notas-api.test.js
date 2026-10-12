@@ -5,6 +5,7 @@ import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas } from './notas-fixtures.js';
+import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const BLOQUEO = 'rpad_notas_digitales';
@@ -91,6 +92,74 @@ describe('configuración', () => {
     const grande = Buffer.concat([PNG, Buffer.alloc(600 * 1024)]);
     assert.equal((await enviar(grande.toString('base64'), 'image/png')).status, 400);
     assert.equal((await query('SELECT firma_imagen FROM notas_digitales_config WHERE id = 1'))[0].firma_imagen, null);
+  });
+
+  it('un mime que es una propiedad heredada de Object o no es texto da 400 y el servidor sigue en pie', async () => {
+    const enviar = (imagen, mime) => api.put('/notificaciones/notas-digitales/config/firma', { imagen, mime }, comoAdmin());
+    for (const mime of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      assert.equal((await enviar('AAAA', mime)).status, 400, mime);
+    }
+    // Un array o un objeto no deben pasar por un mime válido ('image/png' se convierte a texto al usarlo como clave)
+    assert.equal((await enviar(PNG.toString('base64'), ['image/png'])).status, 400);
+    assert.equal((await enviar(PNG.toString('base64'), { a: 1 })).status, 400);
+    assert.equal((await enviar(PNG.toString('base64'))).status, 400);
+    assert.equal((await enviar({ a: 1 }, 'image/png')).status, 400);
+
+    // El proceso del servidor no se cayó
+    assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
+    assert.equal((await query('SELECT firma_imagen FROM notas_digitales_config WHERE id = 1'))[0].firma_imagen, null);
+  });
+
+  it('un texto en null no se guarda como la palabra "null" ni deja activar el envío', async () => {
+    const config = () => api.get('/notificaciones/notas-digitales/config', comoAdmin());
+
+    // Con el envío activo, vaciar la firma deja la configuración incompleta: se rechaza y no se guarda nada
+    const activo = await api.put('/notificaciones/notas-digitales/config', { firma_nombre: null }, comoAdmin());
+    assert.equal(activo.status, 400);
+    assert.match(activo.body.error, /nombre de la firma/);
+    assert.equal((await config()).body.data.firma_nombre, 'Firma de Prueba');
+
+    // Con el envío apagado, null se guarda como texto vacío (nunca como "null")
+    await configurarNotas({ envio_activo: 0 });
+    const vacio = await api.put('/notificaciones/notas-digitales/config', { firma_nombre: null, linea_cc_interna: null }, comoAdmin());
+    assert.equal(vacio.status, 200);
+    const guardada = (await config()).body.data;
+    assert.equal(guardada.firma_nombre, '');
+    assert.equal(guardada.linea_cc_interna, '');
+
+    // y con la firma vacía no se puede activar el envío
+    const activar = await api.put('/notificaciones/notas-digitales/config', { envio_activo: true }, comoAdmin());
+    assert.equal(activar.status, 400);
+    assert.match(activar.body.error, /nombre de la firma/);
+  });
+
+  it('un texto que no es string se rechaza sin guardar nada', async () => {
+    await configurarNotas({ envio_activo: 0 });
+    for (const valor of [{ a: 1 }, 5, true, ['x']]) {
+      const res = await api.put('/notificaciones/notas-digitales/config', { firma_cargo: valor, firma_nombre: 'Otro nombre' }, comoAdmin());
+      assert.equal(res.status, 400, JSON.stringify(valor));
+    }
+    const [fila] = await query('SELECT firma_nombre, firma_cargo FROM notas_digitales_config WHERE id = 1');
+    assert.deepEqual(fila, { firma_nombre: 'Firma de Prueba', firma_cargo: 'Cargo de Prueba' });
+  });
+
+  it('las listas de direcciones aceptan null (vacío) y arrays de texto, y rechazan otros tipos', async () => {
+    const ruta = '/notificaciones/notas-digitales/config';
+    const vacia = await api.put(ruta, { cc_interna: null }, comoAdmin());
+    assert.equal(vacia.status, 200);
+    assert.equal(vacia.body.data.cc_interna, '');
+
+    const array = await api.put(ruta, { cc_interna: ['a@x.gov.ar', ' b@y.gov.ar '] }, comoAdmin());
+    assert.equal(array.status, 200);
+    assert.equal(array.body.data.cc_interna, 'a@x.gov.ar, b@y.gov.ar');
+
+    for (const valor of [5, true, { a: 1 }, [1], [{ a: 1 }], [['a@x.gov.ar']]]) {
+      assert.equal((await api.put(ruta, { cc_externa: valor }, comoAdmin())).status, 400, JSON.stringify(valor));
+    }
+    // El Para obligatorio sigue fallando con null
+    assert.equal((await api.put(ruta, { para_interna: null }, comoAdmin())).status, 400);
+    const [fila] = await query('SELECT para_interna, cc_externa FROM notas_digitales_config WHERE id = 1');
+    assert.deepEqual(fila, { para_interna: 'mit@rpad.test', cc_externa: 'adm@rpad.test' });
   });
 });
 
@@ -193,6 +262,37 @@ describe('libro', () => {
     const res = await api.get('/gestion/metricas', { token: usuarios.lector.token });
     const total = res.body.data.notificaciones_por_mes.reduce((s, r) => s + r.cantidad, 0);
     assert.equal(total, 1);
+  });
+});
+
+describe('corrida diaria', () => {
+  // La corrida usa la fecha real: en un día no hábil el motor no genera nada y no hay qué comprobar
+  const hoy = hoyArgentina();
+
+  it('una corrida pedida por un admin deja su id como creado_por de la nota', async (t) => {
+    if (!esDiaHabil(hoy)) return t.skip('hoy no es día hábil');
+    await crearDataset({ vencimiento: sumarDias(hoy, -10) });
+
+    const res = await api.get('/notificaciones/ejecutar', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.notasDigitales.generadas.length, 1);
+
+    const notas = await query('SELECT creado_por, estado FROM notas_digitales WHERE es_prueba = 0');
+    assert.equal(notas.length, 1);
+    assert.equal(notas[0].estado, 'enviada');
+    assert.equal(notas[0].creado_por, usuarios.adminA.id);
+  });
+
+  it('una corrida del cron deja creado_por vacío', async (t) => {
+    if (!esDiaHabil(hoy)) return t.skip('hoy no es día hábil');
+    await crearDataset({ vencimiento: sumarDias(hoy, -10) });
+
+    const res = await api.get('/cron/notificaciones', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+    assert.equal(res.status, 200);
+
+    const notas = await query('SELECT creado_por FROM notas_digitales WHERE es_prueba = 0');
+    assert.equal(notas.length, 1);
+    assert.equal(notas[0].creado_por, null);
   });
 });
 

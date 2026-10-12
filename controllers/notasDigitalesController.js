@@ -29,6 +29,15 @@ const configPublica = ({ firma_imagen, ...resto }) => ({
   ...resto, envio_activo: Boolean(resto.envio_activo), tiene_firma: Boolean(firma_imagen)
 });
 
+// Lista de direcciones que llega en el cuerpo: texto separado por comas, array de textos o null (lista vacía).
+// Cualquier otro tipo devuelve null (inválido): no se convierte a texto para no guardar "5" o "[object Object]".
+const correosDelCuerpo = (valor) => {
+  if (valor === null) return [];
+  if (typeof valor === 'string') return listaDeCorreos(valor);
+  if (Array.isArray(valor) && valor.every(elemento => typeof elemento === 'string')) return listaDeCorreos(valor);
+  return null;
+};
+
 export const listarNotas = async (req, res) => {
   try {
     const { anio, tipo, gestion, estado, dataset_id, incluir_pruebas } = req.query;
@@ -119,11 +128,11 @@ export const verEstado = async (req, res) => {
 };
 
 export const verPreview = async (req, res) => {
-  const { tipo, gestion } = req.query;
-  if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
-    return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
-  }
   try {
+    const { tipo, gestion } = req.query;
+    if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
+      return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
+    }
     res.json({ success: true, data: await notas.previewNota({ tipo, gestion }) });
   } catch (error) {
     errorInterno(res, 'Error al generar la vista previa', error);
@@ -131,11 +140,11 @@ export const verPreview = async (req, res) => {
 };
 
 export const enviarPrueba = async (req, res) => {
-  const { tipo, gestion } = req.body ?? {};
-  if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
-    return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
-  }
   try {
+    const { tipo, gestion } = req.body ?? {};
+    if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
+      return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
+    }
     const resultado = await notas.enviarPrueba({ tipo, gestion, usuarioId: req.user?.userId ?? null });
     if (!resultado.success) return res.status(502).json({ success: false, error: `No se pudo enviar la prueba: ${resultado.error}` });
     res.json({
@@ -165,7 +174,11 @@ export const guardarConfig = async (req, res) => {
 
     for (const [campo, obligatoria] of Object.entries(LISTAS)) {
       if (cuerpo[campo] === undefined) continue;
-      const correos = listaDeCorreos(cuerpo[campo]);
+      const correos = correosDelCuerpo(cuerpo[campo]);
+      if (correos === null) {
+        errores.push(`${campo}: debe ser un texto con direcciones separadas por coma`);
+        continue;
+      }
       const invalidos = correos.filter(c => !EMAIL_VALIDO.test(c));
       if (invalidos.length) errores.push(`${campo}: direcciones inválidas (${invalidos.join(', ')})`);
       else if (obligatoria && correos.length === 0) errores.push(`${campo}: debe tener al menos una dirección`);
@@ -173,8 +186,14 @@ export const guardarConfig = async (req, res) => {
       else cambios[campo] = correos.join(', ');
     }
     for (const [campo, maximo] of Object.entries(TEXTOS)) {
-      if (cuerpo[campo] === undefined) continue;
-      const texto = String(cuerpo[campo]).trim();
+      const valor = cuerpo[campo];
+      if (valor === undefined) continue;
+      // null equivale a vacío; cualquier otro valor que no sea texto se rechaza (String(null) guardaría "null")
+      if (valor !== null && typeof valor !== 'string') {
+        errores.push(`${campo}: debe ser un texto`);
+        continue;
+      }
+      const texto = (valor ?? '').trim();
       if (texto.length > maximo) errores.push(`${campo}: máximo ${maximo} caracteres`);
       else cambios[campo] = texto;
     }
@@ -204,23 +223,26 @@ export const guardarConfig = async (req, res) => {
 };
 
 export const subirFirma = async (req, res) => {
-  const { imagen, mime } = req.body ?? {};
-  const cabecera = FIRMAS[mime];
-  if (!cabecera || typeof imagen !== 'string') {
-    return res.status(400).json({ success: false, error: 'La firma debe ser una imagen PNG o JPEG' });
-  }
-  const base64 = imagen.replace(/^data:[^;]+;base64,/, '');
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
-    return res.status(400).json({ success: false, error: 'La imagen no es base64 válido' });
-  }
-  const datos = Buffer.from(base64, 'base64');
-  if (datos.length === 0 || datos.length > FIRMA_MAX_BYTES) {
-    return res.status(400).json({ success: false, error: 'La imagen debe pesar como máximo 500 KB' });
-  }
-  if (!cabecera.every((byte, i) => datos[i] === byte)) {
-    return res.status(400).json({ success: false, error: 'El contenido no corresponde a una imagen PNG o JPEG' });
-  }
+  // Todo el cuerpo del handler va dentro del try: Express 4 no atrapa los rechazos de un handler async
+  // y una excepción sin atrapar tumbaría el proceso.
   try {
+    const { imagen, mime } = req.body ?? {};
+    // Object.hasOwn: 'constructor' o '__proto__' no son firmas válidas aunque existan en Object.prototype
+    if (typeof mime !== 'string' || !Object.hasOwn(FIRMAS, mime) || typeof imagen !== 'string') {
+      return res.status(400).json({ success: false, error: 'La firma debe ser una imagen PNG o JPEG' });
+    }
+    const cabecera = FIRMAS[mime];
+    const base64 = imagen.replace(/^data:[^;]+;base64,/, '');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+      return res.status(400).json({ success: false, error: 'La imagen no es base64 válido' });
+    }
+    const datos = Buffer.from(base64, 'base64');
+    if (datos.length === 0 || datos.length > FIRMA_MAX_BYTES) {
+      return res.status(400).json({ success: false, error: 'La imagen debe pesar como máximo 500 KB' });
+    }
+    if (!cabecera.every((byte, i) => datos[i] === byte)) {
+      return res.status(400).json({ success: false, error: 'El contenido no corresponde a una imagen PNG o JPEG' });
+    }
     await pool.query('UPDATE notas_digitales_config SET firma_imagen = ?, firma_mime = ?, updated_by = ? WHERE id = 1',
       [datos, mime, req.user?.userId ?? null]);
     res.json({ success: true, message: 'Firma guardada' });
