@@ -5,6 +5,8 @@ let urlFirma = null;
 const CAMPOS_CONFIG = ['para_interna', 'cc_interna', 'linea_cc_interna', 'para_externa', 'cc_externa', 'linea_cc_externa',
   'cco', 'casillas_prueba', 'firma_nombre', 'firma_cargo'];
 const ETIQUETAS = { aviso: 'Aviso', reiteracion: 'Reiteración', interna: 'Interna', externa: 'Externa', enviada: 'Enviada', fallida: 'Fallida', pendiente: 'Pendiente' };
+// Máximo de notas que devuelve la API del libro (las más recientes)
+const LIMITE_LIBRO = 500;
 const CLASE_ESTADO = { enviada: 'badge-success', fallida: 'badge-danger', pendiente: 'badge-warning' };
 
 // Los mensajes del servidor se escapan: showToast inserta HTML
@@ -158,12 +160,16 @@ async function cargarLibro() {
     dataset_id: document.getElementById('filtro-dataset').value,
     incluir_pruebas: document.getElementById('filtro-pruebas').checked ? '1' : ''
   };
+  const limite = document.getElementById('libro-limite');
+  limite.hidden = true;
   try {
     const notas = await API.getLibroNotas(filtros);
     if (!notas.length) {
       cuerpo.innerHTML = '<tr><td colspan="8">No hay notas con estos filtros.</td></tr>';
       return;
     }
+    // La API corta en las 500 más recientes: se avisa que puede haber más
+    limite.hidden = notas.length < LIMITE_LIBRO;
     cuerpo.innerHTML = notas.map((n) => {
       const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
       const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
@@ -205,8 +211,13 @@ async function accionDelLibro(evento) {
         `Para: ${nota.para}`,
         nota.cc ? `CC: ${nota.cc}` : '',
         nota.cco ? `CCO: ${nota.cco}` : '',
+        `Estado: ${ETIQUETAS[nota.estado]} (${nota.intentos} intento/s)`,
         nota.respuesta_smtp ? `Servidor: ${nota.respuesta_smtp}` : ''
       ].filter(Boolean).join(' · ');
+      // El error del último envío, visible también en pantallas táctiles (en el libro solo está en el tooltip)
+      const errorNota = document.getElementById('modal-nota-error');
+      errorNota.textContent = nota.ultimo_error ? `Último error: ${nota.ultimo_error}` : '';
+      errorNota.hidden = !nota.ultimo_error;
       document.getElementById('modal-nota-marco').srcdoc = nota.html;
       document.getElementById('modal-nota').classList.add('active');
     } else if (boton.dataset.accion === 'pdf') {

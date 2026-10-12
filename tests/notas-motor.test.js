@@ -3,7 +3,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, db } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada } from './notas-fixtures.js';
-import { pngsDanados } from './firma-fixtures.js';
+import { pngRgba, pngsDanados } from './firma-fixtures.js';
 
 let base, motor, dbReal;
 
@@ -472,6 +472,16 @@ describe('estado: última corrida y alertas', () => {
 
     await configurarNotas({ envio_activo: 0 });
     assert.ok(!(await tipos('2026-12-15')).includes('sin-corrida'), 'con el envío desactivado no se espera corrida');
+  });
+
+  it('advierte, sin bloquear el envío, si no hay imagen de la firma', async () => {
+    const estado = await motor.estadoNotas({ hoy: '2026-11-02' });
+    assert.deepEqual(estado.alertas.find(a => a.tipo === 'sin-firma'),
+      { tipo: 'sin-firma', nivel: 'advertencia', mensaje: 'No hay imagen de la firma: las notas saldrían sin la firma escaneada.' });
+    assert.deepEqual(estado.configuracion_faltante, []);
+
+    await configurarNotas({ firma_imagen: pngRgba(), firma_mime: 'image/png' });
+    assert.ok(!(await tipos('2026-11-02')).includes('sin-firma'));
   });
 });
 

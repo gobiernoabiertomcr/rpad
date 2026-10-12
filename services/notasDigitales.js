@@ -396,7 +396,13 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
     fallidas: Number(fallidas),
     proximas,
     ultima_corrida: ultimaCorrida,
-    alertas: alertasDeCorrida(config, ultimaCorrida, hoy)
+    alertas: [
+      ...alertasDeCorrida(config, ultimaCorrida, hoy),
+      // Advertencia que no bloquea el envío (la imagen no está en configuracionCompleta)
+      ...(config.firma_imagen ? [] : [{
+        tipo: 'sin-firma', nivel: 'advertencia', mensaje: 'No hay imagen de la firma: las notas saldrían sin la firma escaneada.'
+      }])
+    ]
   };
 };
 
