@@ -1,0 +1,49 @@
+# Entorno de desarrollo local (NO se usa en producción)
+#   - db:      MariaDB 10.11, misma versión que el servidor cPanel
+#   - mailpit: captura TODOS los emails que envía la app (UI en http://localhost:8025)
+#
+# Las variables (${DB_*}) se leen del archivo .env de la raíz.
+# Si database/dump-local/ tiene un .sql (o .sql.gz) se importa automáticamente
+# la PRIMERA vez que se crea el contenedor. Para reimportar: docker compose down -v
+name: rpad
+
+services:
+  db:
+    image: mariadb:10.11
+    container_name: rpad-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # Producción corre sin STRICT_TRANS_TABLES (hay filas con NOT NULL vacíos en proyecto_documentos)
+      - --sql-mode=ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+    ports:
+      - "127.0.0.1:${DB_PORT}:3306"
+    volumes:
+      - rpad-db-data:/var/lib/mysql
+      - ./database/dump-local:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    container_name: rpad-mailpit
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
+volumes:
+  rpad-db-data:

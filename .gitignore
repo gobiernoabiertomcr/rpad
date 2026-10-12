@@ -11,3 +11,5 @@ INSTRUCCIONES_*.md
 prompt_*.md
 multiarchivo.md
 .claude/
+# Dump local de la base de producción (datos personales, NO subir)
+database/dump-local/
