@@ -1,7 +1,7 @@
 // Motor de Notas Digitales: calendario, numeración, envío, reintentos y concurrencia (base de prueba + Mailpit)
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
+import { crearBaseDePrueba, cerrarDb, query, mailpit, db } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea } from './notas-fixtures.js';
 
 let base, motor, dbReal;
@@ -33,6 +33,29 @@ beforeEach(async () => {
 const notas = () => query('SELECT id, numero, anio, tipo, gestion, estado, intentos, asunto, html, respuesta_smtp, message_id FROM notas_digitales ORDER BY id');
 const direcciones = (lista) => (lista || []).map(d => d.Address);
 const ejecutar = (hoy) => motor.ejecutarNotasDigitales({ hoy });
+const BLOQUEO = 'rpad_notas_digitales';
+
+// Simula otra corrida (otro proceso): una conexión propia que tiene tomado el bloqueo hasta liberarlo
+const tomarBloqueoAjeno = async () => {
+  const conexion = await db().getConnection();
+  const [[{ tomado }]] = await conexion.query('SELECT GET_LOCK(?, 0) AS tomado', [BLOQUEO]);
+  assert.equal(Number(tomado), 1);
+  return async () => {
+    await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+    conexion.release();
+  };
+};
+
+// Deja una nota real en estado 'fallida' (el envío se bloquea con EMAIL_SOLO_A) y devuelve su id
+const crearNotaFallida = async () => {
+  await crearDataset({ vencimiento: '2026-12-31' });
+  process.env.EMAIL_SOLO_A = 'nadie@rpad.test';
+  await ejecutar('2026-11-02');
+  process.env.EMAIL_SOLO_A = '';
+  const [nota] = await notas();
+  assert.equal(nota.estado, 'fallida');
+  return nota.id;
+};
 
 describe('condiciones para ejecutar', () => {
   it('con el envío desactivado no genera nada', async () => {
@@ -161,6 +184,17 @@ describe('reiteraciones', () => {
     assert.deepEqual((await notas()).map(n => n.tipo), ['aviso', 'reiteracion']);
   });
 
+  it('un mes sin datasets para reiterar queda evaluado: no se reitera más tarde en ese mismo mes', async () => {
+    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2027-01-19' });
+    await ejecutar('2026-11-20');
+    await ejecutar('2026-12-01'); // solo pasaron 11 días: nada para reiterar, pero diciembre queda evaluado
+    await ejecutar('2026-12-11'); // ya pasaron 21 días, pero diciembre ya fue evaluado
+    assert.deepEqual((await notas()).map(n => n.tipo), ['aviso']);
+
+    await ejecutar('2027-01-04');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.numero, n.anio]), [['aviso', 1, 2026], ['reiteracion', 1, 2027]]);
+  });
+
   it('nunca genera dos reiteraciones de la misma gestión en el mismo mes', async () => {
     await crearDataset({ vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
@@ -209,6 +243,58 @@ describe('fallas, reintentos y concurrencia', () => {
     await Promise.all([ejecutar('2026-11-02'), ejecutar('2026-11-02')]);
     assert.equal((await notas()).length, 1);
     assert.equal((await mailpit.mensajes()).length, 1);
+  });
+
+  it('una corrida con el bloqueo ocupado no hace nada', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    const liberar = await tomarBloqueoAjeno();
+    try {
+      const resumen = await ejecutar('2026-11-02');
+      assert.equal(resumen.motivo, 'Otra corrida en curso');
+      assert.equal(resumen.ejecutado, false);
+      assert.equal((await notas()).length, 0);
+    } finally {
+      await liberar();
+    }
+    assert.equal((await ejecutar('2026-11-02')).enviadas, 1);
+  });
+
+  it('el reintento manual no envía mientras otra corrida tiene el bloqueo y después envía una sola vez', async () => {
+    const id = await crearNotaFallida();
+    const liberar = await tomarBloqueoAjeno();
+    try {
+      const resultado = await motor.reintentarNota(id);
+      assert.equal(resultado.success, false);
+      assert.equal(resultado.enCurso, true);
+      assert.match(resultado.error, /corrida de Notas Digitales en curso/);
+      const [nota] = await notas();
+      assert.equal(nota.estado, 'fallida');
+      assert.equal(nota.intentos, 1);
+      assert.equal((await mailpit.mensajes()).length, 0);
+    } finally {
+      await liberar();
+    }
+
+    const reenviada = await motor.reintentarNota(id);
+    assert.equal(reenviada.success, true);
+    assert.equal((await notas())[0].estado, 'enviada');
+    assert.equal((await mailpit.mensajes()).length, 1);
+  });
+
+  it('dos reintentos manuales simultáneos de la misma nota envían un solo email', async () => {
+    const id = await crearNotaFallida();
+    const resultados = await Promise.all([motor.reintentarNota(id), motor.reintentarNota(id)]);
+    assert.ok(resultados.some(r => r.success));
+    assert.equal((await mailpit.mensajes()).length, 1);
+    const [nota] = await notas();
+    assert.equal(nota.estado, 'enviada');
+    assert.equal(nota.intentos, 2);
+  });
+
+  it('un reintento manual que falla no deja el bloqueo tomado', async () => {
+    await assert.rejects(motor.reintentarNota(999999), motor.ErrorDeUso);
+    const [{ libre }] = await query('SELECT IS_FREE_LOCK(?) AS libre', [BLOQUEO]);
+    assert.equal(Number(libre), 1);
   });
 });
 

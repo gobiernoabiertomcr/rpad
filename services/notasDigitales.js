@@ -123,67 +123,96 @@ export const enviarNota = async (id) => {
   return resultado;
 };
 
-export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
-  const resumen = { fecha: hoy, ejecutado: false, motivo: null, generadas: [], enviadas: 0, fallidas: 0 };
-  const conexionBloqueo = await pool.getConnection();
+// Ejecuta fn con el bloqueo de Notas Digitales tomado. El bloqueo vive en la base (vale para todos los
+// procesos de Passenger) y pertenece a la conexión que lo pidió, así que se mantiene una conexión
+// dedicada hasta liberarlo. Si está ocupado, devuelve { ocupado: true } sin ejecutar fn.
+const conBloqueo = async (fn) => {
+  const conexion = await pool.getConnection();
+  let descartar = false;
   try {
-    const [[{ bloqueo }]] = await conexionBloqueo.query('SELECT GET_LOCK(?, 0) AS bloqueo', [BLOQUEO]);
-    if (Number(bloqueo) !== 1) return { ...resumen, motivo: 'Otra corrida en curso' };
+    const [[{ bloqueo }]] = await conexion.query('SELECT GET_LOCK(?, 0) AS bloqueo', [BLOQUEO]);
+    // GET_LOCK devuelve 1 si lo tomó, 0 si está ocupado y NULL ante un error
+    if (Number(bloqueo) !== 1) return { ocupado: true };
     try {
-      const config = await obtenerConfig();
-      if (!config.envio_activo) return { ...resumen, motivo: 'Envío automático desactivado' };
-      const faltan = configuracionCompleta(config);
-      if (faltan.length) return { ...resumen, motivo: `Configuración incompleta: ${faltan.join(', ')}` };
-      if (!esDiaHabil(hoy)) return { ...resumen, motivo: 'Día no hábil' };
-
-      resumen.ejecutado = true;
-      const contar = (resultado) => {
-        if (resultado.success) resumen.enviadas++;
-        else resumen.fallidas++;
-      };
-
-      // 1. Reintentos de notas pendientes o fallidas
-      const [pendientes] = await pool.query(
-        "SELECT id FROM notas_digitales WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? ORDER BY id",
-        [MAX_INTENTOS]
-      );
-      for (const { id } of pendientes) contar(await enviarNota(id));
-
-      // 2. Avisos
-      for (const gestion of GESTIONES) {
-        const datasets = await seleccionarParaAviso(gestion, hoy);
-        if (!datasets.length) continue;
-        const id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId });
-        resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
-        contar(await enviarNota(id));
-      }
-
-      // 3. Reiteraciones: una evaluación por mes y gestión
-      const periodo = periodoDe(hoy);
-      for (const gestion of GESTIONES) {
-        if (config[`reiteracion_evaluada_${gestion}`] === periodo) continue;
-        const [[existente]] = await pool.query(
-          "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'reiteracion' AND gestion = ? AND periodo = ? AND es_prueba = 0",
-          [gestion, periodo]
-        );
-        if (Number(existente.cantidad) === 0) {
-          const datasets = await seleccionarParaReiteracion(gestion, hoy);
-          if (datasets.length) {
-            const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId });
-            resumen.generadas.push({ id, tipo: 'reiteracion', gestion, datasets: datasets.length });
-            contar(await enviarNota(id));
-          }
-        }
-        // El nombre de columna sale de GESTIONES, una lista fija del código
-        await pool.query(`UPDATE notas_digitales_config SET reiteracion_evaluada_${gestion} = ? WHERE id = 1`, [periodo]);
-      }
-      return resumen;
+      return { ocupado: false, resultado: await fn() };
     } finally {
-      await conexionBloqueo.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+      try {
+        await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+      } catch (error) {
+        // No tapa el resultado ni el error de fn. Sin RELEASE_LOCK la conexión se cierra:
+        // al terminar la sesión la base libera el bloqueo igual.
+        console.error('⚠️ No se pudo liberar el bloqueo de Notas Digitales:', error.message);
+        descartar = true;
+      }
     }
   } finally {
-    conexionBloqueo.release();
+    if (descartar) conexion.destroy();
+    else conexion.release();
   }
+};
+
+// Reintento manual de una nota: comparte el bloqueo con la corrida diaria para no enviar dos veces la misma nota
+export const reintentarNota = async (id) => {
+  const corrida = await conBloqueo(() => enviarNota(id));
+  if (corrida.ocupado) {
+    return { success: false, enCurso: true, error: 'Hay una corrida de Notas Digitales en curso; reintentá en unos minutos' };
+  }
+  return corrida.resultado;
+};
+
+export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
+  const resumen = { fecha: hoy, ejecutado: false, motivo: null, generadas: [], enviadas: 0, fallidas: 0 };
+  const corrida = await conBloqueo(async () => {
+    const config = await obtenerConfig();
+    if (!config.envio_activo) return { ...resumen, motivo: 'Envío automático desactivado' };
+    const faltan = configuracionCompleta(config);
+    if (faltan.length) return { ...resumen, motivo: `Configuración incompleta: ${faltan.join(', ')}` };
+    if (!esDiaHabil(hoy)) return { ...resumen, motivo: 'Día no hábil' };
+
+    resumen.ejecutado = true;
+    const contar = (resultado) => {
+      if (resultado.success) resumen.enviadas++;
+      else resumen.fallidas++;
+    };
+
+    // 1. Reintentos de notas pendientes o fallidas
+    const [pendientes] = await pool.query(
+      "SELECT id FROM notas_digitales WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? ORDER BY id",
+      [MAX_INTENTOS]
+    );
+    for (const { id } of pendientes) contar(await enviarNota(id));
+
+    // 2. Avisos
+    for (const gestion of GESTIONES) {
+      const datasets = await seleccionarParaAviso(gestion, hoy);
+      if (!datasets.length) continue;
+      const id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId });
+      resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
+      contar(await enviarNota(id));
+    }
+
+    // 3. Reiteraciones: una evaluación por mes y gestión
+    const periodo = periodoDe(hoy);
+    for (const gestion of GESTIONES) {
+      if (config[`reiteracion_evaluada_${gestion}`] === periodo) continue;
+      const [[existente]] = await pool.query(
+        "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'reiteracion' AND gestion = ? AND periodo = ? AND es_prueba = 0",
+        [gestion, periodo]
+      );
+      if (Number(existente.cantidad) === 0) {
+        const datasets = await seleccionarParaReiteracion(gestion, hoy);
+        if (datasets.length) {
+          const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId });
+          resumen.generadas.push({ id, tipo: 'reiteracion', gestion, datasets: datasets.length });
+          contar(await enviarNota(id));
+        }
+      }
+      // El nombre de columna sale de GESTIONES, una lista fija del código
+      await pool.query(`UPDATE notas_digitales_config SET reiteracion_evaluada_${gestion} = ? WHERE id = 1`, [periodo]);
+    }
+    return resumen;
+  });
+  return corrida.ocupado ? { ...resumen, motivo: 'Otra corrida en curso' } : corrida.resultado;
 };
 
 // Datos de ejemplo para la vista previa y las pruebas cuando hoy no hay datasets para esa nota
