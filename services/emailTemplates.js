@@ -685,8 +685,8 @@ export const contactoTemplate = (datos) => ({
           <tr>
             <td style="background-color: ${COLORS.light}; padding: 16px 24px; border-top: 1px solid ${COLORS.border};">
               <p style="margin: 0; color: ${COLORS.muted}; font-size: 11px; text-align: center;">
-                Recibido el ${datos.fecha}<br>
-                <span style="color: ${COLORS.muted};">IP: ${datos.ip}</span>
+                Recibido el ${escapeHtml(datos.fecha)}<br>
+                <span style="color: ${COLORS.muted};">IP: ${escapeHtml(datos.ip)}</span>
               </p>
             </td>
           </tr>

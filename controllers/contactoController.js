@@ -55,15 +55,11 @@ const verificarRateLimit = (ip) => {
 };
 
 /**
- * Obtiene la IP real del cliente (considerando proxies)
+ * Obtiene la IP real del cliente.
+ * req.ip ya resuelve el proxy según 'trust proxy' (app.js): toma la IP que agrega
+ * Apache, no la primera de X-Forwarded-For, que el cliente puede inventar.
  */
-const obtenerIP = (req) => {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-         req.headers['x-real-ip'] || 
-         req.connection?.remoteAddress || 
-         req.ip || 
-         'unknown';
-};
+const obtenerIP = (req) => req.ip || 'unknown';
 
 /**
  * Validaciones del formulario

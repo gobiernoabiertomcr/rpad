@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware, adminOnly, cronAuth } from '../middleware/auth.js';
+import { limiteLoginPorIp, limiteLoginPorUsuario } from '../middleware/rateLimit.js';
 
 // Controladores
 import { login, verifySession, changePassword, updateProfile, getProfile } from '../controllers/authController.js';
@@ -78,8 +79,8 @@ const router = Router();
 // Rutas públicas (sin autenticación)
 // =====================================================
 
-// Auth
-router.post('/auth/login', login);
+// Auth (con límite de intentos fallidos)
+router.post('/auth/login', limiteLoginPorIp, limiteLoginPorUsuario, login);
 
 // Datasets (lectura)
 router.get('/datasets', getDatasets);
