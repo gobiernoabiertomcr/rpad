@@ -38,7 +38,9 @@ const calcularAnchos = (doc, seccion, ancho) => {
   return anchos.map((a, i) => a - exceso * holguras[i] / totalHolgura);
 };
 
-const dibujarTabla = (doc, seccion, ancho) => {
+// Prepara la tabla de una sección: devuelve cuánto alto necesitan el encabezado y la primera fila (con su
+// antecedente) para que quepan juntos, y la función que la dibuja
+const prepararTabla = (doc, seccion, ancho) => {
   const anchos = calcularAnchos(doc, seccion, ancho);
   const limite = () => doc.page.height - MARGENES.bottom;
   const izquierda = MARGENES.left;
@@ -72,7 +74,7 @@ const dibujarTabla = (doc, seccion, ancho) => {
     doc.y = y + alto;
   };
 
-  const encabezado = (reserva = 0) => fila(seccion.columnas, NEGRITA, null, reserva);
+  const encabezado = () => fila(seccion.columnas, NEGRITA);
 
   const filaAncha = (texto) => {
     const alto = altoAncha(texto);
@@ -88,11 +90,18 @@ const dibujarTabla = (doc, seccion, ancho) => {
   };
 
   const primera = seccion.filas[0];
-  encabezado(primera ? altoDe(primera.valores, NORMAL) + (primera.antecedente ? altoAncha(primera.antecedente) : 0) : 0);
-  for (const f of seccion.filas) {
-    fila(f.valores, NORMAL, f.url, f.antecedente ? altoAncha(f.antecedente) : 0);
-    if (f.antecedente) filaAncha(f.antecedente);
-  }
+  const altoInicio = altoDe(seccion.columnas, NEGRITA)
+    + (primera ? altoDe(primera.valores, NORMAL) + (primera.antecedente ? altoAncha(primera.antecedente) : 0) : 0);
+
+  const dibujar = () => {
+    encabezado();
+    for (const f of seccion.filas) {
+      fila(f.valores, NORMAL, f.url, f.antecedente ? altoAncha(f.antecedente) : 0);
+      if (f.antecedente) filaAncha(f.antecedente);
+    }
+  };
+
+  return { altoInicio, dibujar };
 };
 
 const agregarPies = (doc, nota, ancho) => {
@@ -124,7 +133,8 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
   try {
     const ancho = doc.page.width - MARGENES.left - MARGENES.right;
     const asegurarEspacio = (alto) => {
-      if (doc.y + alto > doc.page.height - MARGENES.bottom) doc.addPage();
+      // (si ya está arriba de una hoja, un bloque más alto que la hoja no justifica dejarla en blanco)
+      if (doc.y + alto > doc.page.height - MARGENES.bottom && doc.y > MARGENES.top + 1) doc.addPage();
     };
     const altoTexto = (texto, tamano = 12) => {
       doc.font(NORMAL).fontSize(tamano);
@@ -144,10 +154,12 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
     parrafo(nota.parrafoInicial);
 
     for (const seccion of nota.secciones) {
-      asegurarEspacio(120); // título + introducción + encabezado y primera fila de la tabla
+      // El título, la introducción, el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
+      const tabla = prepararTabla(doc, seccion, ancho);
+      asegurarEspacio(altoTexto(seccion.titulo) + altoTexto(seccion.introduccion) + 10 + tabla.altoInicio);
       parrafo(seccion.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.3 });
       parrafo(seccion.introduccion, { espacio: 0.4 });
-      dibujarTabla(doc, seccion, ancho);
+      tabla.dibujar();
       doc.moveDown(0.8);
     }
 
@@ -161,14 +173,16 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
       }
     }
 
-    asegurarEspacio(25 + altoTexto(nota.justificacion[0] || ''));
+    // El título viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
+    // Si hay un solo párrafo (o ninguno) es a la vez el primero y el último: se reserva todo junto antes
+    // de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
+    const ultimo = nota.justificacion.length - 1;
+    asegurarEspacio(25 + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? ALTO_CIERRE : 0));
     parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
-    // El último párrafo viaja con el remitente, la firma y la línea CC
     nota.justificacion.forEach((texto, i) => {
-      if (i === nota.justificacion.length - 1) asegurarEspacio(altoTexto(texto) + ALTO_CIERRE);
+      if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + ALTO_CIERRE);
       parrafo(texto);
     });
-    if (!nota.justificacion.length) asegurarEspacio(ALTO_CIERRE);
 
     doc.moveDown(0.6);
     doc.font(NEGRITA).fontSize(12).text(nota.remitente, MARGENES.left, doc.y, { underline: true, continued: true })
