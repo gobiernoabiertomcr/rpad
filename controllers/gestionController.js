@@ -36,15 +36,20 @@ export const getMetricasAutomaticas = async (req, res) => {
       [desde]
     );
 
-    // Notificaciones enviadas por mes
+    // Notificaciones enviadas por mes: emails del log + Notas Digitales enviadas (sin pruebas)
     const [notificaciones] = await pool.execute(
-      `SELECT YEAR(enviado_at) as anio, MONTH(enviado_at) as mes,
-              COUNT(*) as cantidad
-       FROM notificaciones_log
-       WHERE enviado_at >= ? AND success = TRUE
-       GROUP BY YEAR(enviado_at), MONTH(enviado_at)
+      `SELECT anio, mes, CAST(SUM(cantidad) AS UNSIGNED) AS cantidad FROM (
+         SELECT YEAR(enviado_at) AS anio, MONTH(enviado_at) AS mes, COUNT(*) AS cantidad
+         FROM notificaciones_log WHERE enviado_at >= ? AND success = TRUE
+         GROUP BY YEAR(enviado_at), MONTH(enviado_at)
+         UNION ALL
+         SELECT YEAR(enviada_at), MONTH(enviada_at), COUNT(*)
+         FROM notas_digitales WHERE enviada_at >= ? AND estado = 'enviada' AND es_prueba = 0
+         GROUP BY YEAR(enviada_at), MONTH(enviada_at)
+       ) t
+       GROUP BY anio, mes
        ORDER BY anio, mes`,
-      [desde]
+      [desde, desde]
     );
 
     // Cambios aprobados/rechazados por mes
@@ -806,14 +811,19 @@ export const exportarMetricasCSV = async (req, res) => {
       [desde]
     );
 
-    // Notificaciones por mes
+    // Notificaciones por mes: emails del log + Notas Digitales enviadas (sin pruebas)
     const [notificaciones] = await pool.execute(
-      `SELECT YEAR(enviado_at) as anio, MONTH(enviado_at) as mes,
-              COUNT(*) as cantidad, 'notificaciones_enviadas' as tipo
-       FROM notificaciones_log
-       WHERE enviado_at >= ? AND success = TRUE
-       GROUP BY YEAR(enviado_at), MONTH(enviado_at)`,
-      [desde]
+      `SELECT anio, mes, CAST(SUM(cantidad) AS UNSIGNED) AS cantidad, 'notificaciones_enviadas' AS tipo FROM (
+         SELECT YEAR(enviado_at) AS anio, MONTH(enviado_at) AS mes, COUNT(*) AS cantidad
+         FROM notificaciones_log WHERE enviado_at >= ? AND success = TRUE
+         GROUP BY YEAR(enviado_at), MONTH(enviado_at)
+         UNION ALL
+         SELECT YEAR(enviada_at), MONTH(enviada_at), COUNT(*)
+         FROM notas_digitales WHERE enviada_at >= ? AND estado = 'enviada' AND es_prueba = 0
+         GROUP BY YEAR(enviada_at), MONTH(enviada_at)
+       ) t
+       GROUP BY anio, mes`,
+      [desde, desde]
     );
 
     // Métricas manuales

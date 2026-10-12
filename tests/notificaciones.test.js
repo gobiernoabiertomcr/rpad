@@ -21,7 +21,7 @@ after(async () => {
   await servidor?.detener();
 });
 
-const TIPOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido', 'area-aviso-40'];
+const TIPOS = ['area-aviso-40'];
 
 describe('previews', () => {
   for (const tipo of TIPOS) {
@@ -32,6 +32,13 @@ describe('previews', () => {
       assert.match(res.body, /<html/i);
     });
   }
+
+  it('los siete avisos reemplazados ya no tienen vista previa', async () => {
+    for (const tipo of ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido']) {
+      const res = await api.get(`/notificaciones/preview/${tipo}`, { token: usuarios.adminA.token });
+      assert.equal(res.status, 400, tipo);
+    }
+  });
 
   it('rechaza un tipo inexistente', async () => {
     const res = await api.get('/notificaciones/preview/no-existe', { token: usuarios.adminA.token });

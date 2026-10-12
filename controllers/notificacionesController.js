@@ -1,56 +1,9 @@
 import pool from '../config/database.js';
-import { sendEmail, sendEmailToArea, verifyConnection } from '../services/emailService.js';
+import { sendEmail, sendEmailToArea, verifyConnection, listaDeCorreos } from '../services/emailService.js';
 import * as templates from '../services/emailTemplates.js';
-
-/**
- * Obtiene datasets por tipo de gestión y días hasta vencimiento
- * @param {string} tipoGestion - 'interna' o 'externa'
- * @param {number} dias - Días exactos hasta vencimiento (negativo para vencidos)
- * @param {boolean} vencidos - Si es true, busca todos los vencidos (ignora dias)
- */
-const getDatasetsByDias = async (tipoGestion, dias, vencidos = false) => {
-  let query;
-  let params;
-
-  if (vencidos) {
-    // Todos los vencidos (proxima_actualizacion < hoy)
-    query = `
-      SELECT d.id, d.titulo, d.url_dataset, d.proxima_actualizacion, d.area_id,
-             f.nombre AS frecuencia_nombre,
-             a.nombre AS area_nombre, a.area_superior, a.email_principal, a.email_secundario,
-             a.telefono_area, a.celular_area, a.nombre_contacto, a.telefono_contacto, a.email_contacto
-      FROM datasets d
-      JOIN frecuencias f ON d.frecuencia_id = f.id
-      JOIN areas a ON d.area_id = a.id
-      WHERE d.activo = TRUE 
-        AND d.tipo_gestion = ?
-        AND d.proxima_actualizacion < CURDATE()
-        AND f.dias IS NOT NULL
-      ORDER BY d.proxima_actualizacion ASC
-    `;
-    params = [tipoGestion];
-  } else {
-    // Exactamente X días hasta vencimiento
-    query = `
-      SELECT d.id, d.titulo, d.url_dataset, d.proxima_actualizacion, d.area_id,
-             f.nombre AS frecuencia_nombre,
-             a.nombre AS area_nombre, a.area_superior, a.email_principal, a.email_secundario,
-             a.telefono_area, a.celular_area, a.nombre_contacto, a.telefono_contacto, a.email_contacto
-      FROM datasets d
-      JOIN frecuencias f ON d.frecuencia_id = f.id
-      JOIN areas a ON d.area_id = a.id
-      WHERE d.activo = TRUE 
-        AND d.tipo_gestion = ?
-        AND d.proxima_actualizacion = DATE_ADD(CURDATE(), INTERVAL ? DAY)
-        AND f.dias IS NOT NULL
-      ORDER BY d.titulo ASC
-    `;
-    params = [tipoGestion, dias];
-  }
-
-  const [rows] = await pool.execute(query, params);
-  return rows;
-};
+import { ejecutarNotasDigitales } from '../services/notasDigitales.js';
+import { obtenerConfig } from '../services/notasDigitalesDatos.js';
+import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 
 /**
  * Obtiene datasets externos agrupados por área para el aviso de -40 días
@@ -103,6 +56,24 @@ const getDatasetsExternosPorArea = async (dias) => {
   });
 
   return Object.values(porArea);
+};
+
+// Área de ejemplo para la vista previa y la prueba del aviso a áreas cuando hoy no hay datos
+const AREA_DE_EJEMPLO = {
+  area_id: 0,
+  area_nombre: 'Dirección de Ejemplo',
+  area_superior: 'Secretaría de Ejemplo',
+  email_principal: 'ejemplo@comodoro.gov.ar',
+  email_secundario: null,
+  telefono_area: '297 4XXXXXX',
+  celular_area: null,
+  nombre_contacto: 'Persona de contacto',
+  telefono_contacto: null,
+  email_contacto: null,
+  datasets: [
+    { id: 1, titulo: 'Dataset de Ejemplo 1', frecuencia_nombre: 'Anualmente', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo' },
+    { id: 2, titulo: 'Dataset de Ejemplo 2', frecuencia_nombre: 'Cada medio año', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-2' }
+  ]
 };
 
 /**
@@ -179,114 +150,13 @@ const getAdminsConEmail = async () => {
 };
 
 /**
- * Ejecuta el proceso de notificaciones diarias
- * Llamado por cron a las 8:00 AM
+ * Proceso diario (cron de las 8:00): aviso directo a las áreas y Notas Digitales
  */
 export const ejecutarNotificacionesDiarias = async (req, res) => {
-  const resultados = {
-    fecha: new Date().toISOString(),
-    enviados: [],
-    errores: [],
-    sinDatasets: []
-  };
+  const resultados = { fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null };
 
   try {
-    const hoy = new Date();
-    const esDia1 = hoy.getDate() === 1;
-
-    // =====================================================
-    // INTERNOS
-    // =====================================================
-
-    // -60 días
-    const internos60 = await getDatasetsByDias('interna', 60);
-    if (internos60.length > 0) {
-      const { subject, html } = templates.interno60dias(internos60);
-      const result = await sendEmail({ subject, html });
-      const datasetsIds = internos60.map(d => d.id);
-      await logNotificacion('interno-60', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-      if (result.success) {
-        resultados.enviados.push({ tipo: 'interno-60', cantidad: internos60.length });
-      } else {
-        resultados.errores.push({ tipo: 'interno-60', error: result.error });
-      }
-    } else {
-      resultados.sinDatasets.push('interno-60');
-    }
-
-    // -30 días
-    const internos30 = await getDatasetsByDias('interna', 30);
-    if (internos30.length > 0) {
-      const { subject, html } = templates.interno30dias(internos30);
-      const result = await sendEmail({ subject, html });
-      const datasetsIds = internos30.map(d => d.id);
-      await logNotificacion('interno-30', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-      if (result.success) {
-        resultados.enviados.push({ tipo: 'interno-30', cantidad: internos30.length });
-      } else {
-        resultados.errores.push({ tipo: 'interno-30', error: result.error });
-      }
-    } else {
-      resultados.sinDatasets.push('interno-30');
-    }
-
-    // Vencidos (solo día 1)
-    if (esDia1) {
-      const internosVencidos = await getDatasetsByDias('interna', 0, true);
-      if (internosVencidos.length > 0) {
-        const { subject, html } = templates.internoVencido(internosVencidos);
-        const result = await sendEmail({ subject, html });
-        const datasetsIds = internosVencidos.map(d => d.id);
-        await logNotificacion('interno-vencido', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-        if (result.success) {
-          resultados.enviados.push({ tipo: 'interno-vencido', cantidad: internosVencidos.length });
-        } else {
-          resultados.errores.push({ tipo: 'interno-vencido', error: result.error });
-        }
-      } else {
-        resultados.sinDatasets.push('interno-vencido');
-      }
-    }
-
-    // =====================================================
-    // EXTERNOS
-    // =====================================================
-
-    // -60 días
-    const externos60 = await getDatasetsByDias('externa', 60);
-    if (externos60.length > 0) {
-      const { subject, html } = templates.externo60dias(externos60);
-      const result = await sendEmail({ subject, html });
-      const datasetsIds = externos60.map(d => d.id);
-      await logNotificacion('externo-60', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-      if (result.success) {
-        resultados.enviados.push({ tipo: 'externo-60', cantidad: externos60.length });
-      } else {
-        resultados.errores.push({ tipo: 'externo-60', error: result.error });
-      }
-    } else {
-      resultados.sinDatasets.push('externo-60');
-    }
-
-    // -40 días (notificación a DGMIT)
-    const externos40 = await getDatasetsByDias('externa', 40);
-    if (externos40.length > 0) {
-      const { subject, html } = templates.externo40dias(externos40);
-      const result = await sendEmail({ subject, html });
-      const datasetsIds = externos40.map(d => d.id);
-      await logNotificacion('externo-40', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-      if (result.success) {
-        resultados.enviados.push({ tipo: 'externo-40', cantidad: externos40.length });
-      } else {
-        resultados.errores.push({ tipo: 'externo-40', error: result.error });
-      }
-    } else {
-      resultados.sinDatasets.push('externo-40');
-    }
-
-    // =====================================================
-    // -40 días: AVISO A ÁREAS EXTERNAS (nuevo)
-    // =====================================================
+    // Aviso directo a las áreas de gestión externa (40 días antes)
     const areasPorNotificar = await getDatasetsExternosPorArea(40);
     for (const areaData of areasPorNotificar) {
       const { subject, html } = templates.areaAviso40dias(areaData);
@@ -300,167 +170,53 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
         resultados.errores.push({ tipo: 'area-aviso-40', area: areaData.area_nombre, error: result.error });
       }
     }
-    if (areasPorNotificar.length === 0) {
-      resultados.sinDatasets.push('area-aviso-40');
-    }
+    if (areasPorNotificar.length === 0) resultados.sinDatasets.push('area-aviso-40');
 
-    // -5 días
-    const externos5 = await getDatasetsByDias('externa', 5);
-    if (externos5.length > 0) {
-      const { subject, html } = templates.externo5dias(externos5);
-      const result = await sendEmail({ subject, html });
-      const datasetsIds = externos5.map(d => d.id);
-      await logNotificacion('externo-5', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-      if (result.success) {
-        resultados.enviados.push({ tipo: 'externo-5', cantidad: externos5.length });
-      } else {
-        resultados.errores.push({ tipo: 'externo-5', error: result.error });
+    // Notas Digitales (reemplazan los avisos de gestión interna y externa)
+    try {
+      resultados.notasDigitales = await ejecutarNotasDigitales({ hoy: hoyArgentina() });
+      if (resultados.notasDigitales.fallidas > 0) {
+        resultados.errores.push({ tipo: 'notas-digitales', error: `${resultados.notasDigitales.fallidas} nota(s) no se pudieron enviar` });
       }
-    } else {
-      resultados.sinDatasets.push('externo-5');
+    } catch (error) {
+      console.error('Error en Notas Digitales:', error);
+      resultados.errores.push({ tipo: 'notas-digitales', error: 'Error ejecutando Notas Digitales' });
     }
 
-    // Vencidos (solo día 1)
-    if (esDia1) {
-      const externosVencidos = await getDatasetsByDias('externa', 0, true);
-      if (externosVencidos.length > 0) {
-        const { subject, html } = templates.externoVencido(externosVencidos);
-        const result = await sendEmail({ subject, html });
-        const datasetsIds = externosVencidos.map(d => d.id);
-        await logNotificacion('externo-vencido', null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-        if (result.success) {
-          resultados.enviados.push({ tipo: 'externo-vencido', cantidad: externosVencidos.length });
-        } else {
-          resultados.errores.push({ tipo: 'externo-vencido', error: result.error });
-        }
-      } else {
-        resultados.sinDatasets.push('externo-vencido');
-      }
-    }
-
-    // Respuesta
     const success = resultados.errores.length === 0;
     res.status(success ? 200 : 207).json({
       success,
-      message: success 
-        ? `Proceso completado. ${resultados.enviados.length} emails enviados.`
-        : `Proceso completado con ${resultados.errores.length} errores.`,
+      message: success ? 'Proceso completado.' : `Proceso completado con ${resultados.errores.length} errores.`,
       data: resultados
     });
-
   } catch (error) {
     console.error('Error en notificaciones:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error ejecutando notificaciones',
-      details: error.message
-    });
+    res.status(500).json({ success: false, error: 'Error ejecutando notificaciones' });
   }
 };
 
 /**
- * Endpoint de prueba para enviar un tipo específico de notificación
- * Útil para testear sin esperar al cron
+ * Prueba del aviso a áreas: se envía solo a las casillas de prueba de Notas Digitales
  */
-export const pruebaNotificacion = async (req, res) => {
-  const { tipo } = req.params;
-  
-  // Mapeo de tipos válidos
-  const tiposValidos = {
-    'interno-60': { tipoGestion: 'interna', dias: 60, template: templates.interno60dias },
-    'interno-30': { tipoGestion: 'interna', dias: 30, template: templates.interno30dias },
-    'interno-vencido': { tipoGestion: 'interna', vencidos: true, template: templates.internoVencido },
-    'externo-60': { tipoGestion: 'externa', dias: 60, template: templates.externo60dias },
-    'externo-40': { tipoGestion: 'externa', dias: 40, template: templates.externo40dias },
-    'externo-5': { tipoGestion: 'externa', dias: 5, template: templates.externo5dias },
-    'externo-vencido': { tipoGestion: 'externa', vencidos: true, template: templates.externoVencido },
-    'area-aviso-40': { special: 'area-aviso' }
-  };
-
-  if (!tiposValidos[tipo]) {
-    return res.status(400).json({
-      success: false,
-      error: 'Tipo no válido',
-      tiposDisponibles: Object.keys(tiposValidos)
-    });
-  }
-
+export const pruebaAvisoArea = async (req, res) => {
   try {
-    const config = tiposValidos[tipo];
-
-    // Caso especial: area-aviso-40
-    if (config.special === 'area-aviso') {
-      const areasPorNotificar = await getDatasetsExternosPorArea(40);
-      if (areasPorNotificar.length === 0) {
-        return res.json({
-          success: true,
-          message: 'No hay áreas con datasets que cumplan los criterios (40 días, gestión externa, con email)',
-          tipo,
-          areasEncontradas: 0
-        });
-      }
-
-      // Enviar a todas las áreas
-      const resultadosAreas = [];
-      for (const areaData of areasPorNotificar) {
-        const { subject, html } = templates.areaAviso40dias(areaData);
-        const destinatarios = [areaData.email_principal, areaData.email_secundario].filter(Boolean);
-        const result = await sendEmailToArea({ subject, html, to: destinatarios });
-        const datasetsIds = areaData.datasets.map(d => d.id);
-        await logNotificacion('area-aviso-40', areaData.area_id, destinatarios.join(','), datasetsIds, result.success, result.error);
-        resultadosAreas.push({
-          area: areaData.area_nombre,
-          destinatarios,
-          datasets: areaData.datasets.length,
-          success: result.success,
-          error: result.error
-        });
-      }
-
-      return res.json({
-        success: resultadosAreas.every(r => r.success),
-        message: 'Emails de aviso a áreas enviados',
-        tipo,
-        areasNotificadas: resultadosAreas
-      });
+    const casillas = listaDeCorreos((await obtenerConfig()).casillas_prueba);
+    if (casillas.length === 0) {
+      return res.status(400).json({ success: false, error: 'No hay casillas de prueba configuradas (Correos > Configuración)' });
     }
-
-    // Casos normales
-    const datasets = await getDatasetsByDias(
-      config.tipoGestion, 
-      config.dias || 0, 
-      config.vencidos || false
-    );
-
-    if (datasets.length === 0) {
-      return res.json({
-        success: true,
-        message: 'No hay datasets que cumplan los criterios',
-        tipo,
-        datasetsEncontrados: 0
-      });
-    }
-
-    const { subject, html } = config.template(datasets);
-    const result = await sendEmail({ subject, html });
-    const datasetsIds = datasets.map(d => d.id);
-    await logNotificacion(tipo, null, 'datospublicos@comodoro.gov.ar,mit@comodoro.gov.ar,investigacionterritorial@comodoro.gov.ar', datasetsIds, result.success, result.error);
-
+    const [area] = await getDatasetsExternosPorArea(40);
+    const datosArea = area ?? AREA_DE_EJEMPLO;
+    const { subject, html } = templates.areaAviso40dias(datosArea);
+    const result = await sendEmailToArea({ subject: `[PRUEBA] ${subject}`, html, to: casillas });
+    if (!result.success) return res.status(502).json({ success: false, error: `No se pudo enviar la prueba: ${result.error}` });
     res.json({
-      success: result.success,
-      message: result.success ? 'Email de prueba enviado' : 'Error enviando email',
-      tipo,
-      datasetsEncontrados: datasets.length,
-      datasets: datasets.map(d => d.titulo),
-      ...(result.error && { error: result.error })
+      success: true,
+      message: `Prueba enviada a ${casillas.join(', ')}${area ? '' : ' (con datos de ejemplo)'}`,
+      data: { area: datosArea.area_nombre, ejemplo: !area, destinatarios: casillas }
     });
-
   } catch (error) {
-    console.error('Error en prueba:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    console.error('Error en prueba de aviso a áreas:', error);
+    res.status(500).json({ success: false, error: 'Error enviando la prueba' });
   }
 };
 
@@ -478,117 +234,20 @@ export const verificarSMTP = async (req, res) => {
 };
 
 /**
- * Preview de email (sin enviar)
- * Devuelve el HTML para visualizar
+ * Vista previa del aviso a áreas (sin enviar)
  */
 export const previewEmail = async (req, res) => {
-  const { tipo } = req.params;
-  
-  const tiposValidos = {
-    'interno-60': { tipoGestion: 'interna', dias: 60, template: templates.interno60dias },
-    'interno-30': { tipoGestion: 'interna', dias: 30, template: templates.interno30dias },
-    'interno-vencido': { tipoGestion: 'interna', vencidos: true, template: templates.internoVencido },
-    'externo-60': { tipoGestion: 'externa', dias: 60, template: templates.externo60dias },
-    'externo-40': { tipoGestion: 'externa', dias: 40, template: templates.externo40dias },
-    'externo-5': { tipoGestion: 'externa', dias: 5, template: templates.externo5dias },
-    'externo-vencido': { tipoGestion: 'externa', vencidos: true, template: templates.externoVencido },
-    'area-aviso-40': { special: 'area-aviso' }
-  };
-
-  if (!tiposValidos[tipo]) {
-    return res.status(400).json({
-      success: false,
-      error: 'Tipo no válido',
-      tiposDisponibles: Object.keys(tiposValidos)
-    });
+  if (req.params.tipo !== 'area-aviso-40') {
+    return res.status(400).json({ success: false, error: 'Tipo no válido', tiposDisponibles: ['area-aviso-40'] });
   }
-
   try {
-    const config = tiposValidos[tipo];
-
-    // Caso especial: area-aviso-40
-    if (config.special === 'area-aviso') {
-      let areasPorNotificar = await getDatasetsExternosPorArea(40);
-      
-      // Si no hay datos reales, usar ejemplo
-      if (areasPorNotificar.length === 0) {
-        areasPorNotificar = [{
-          area_id: 0,
-          area_nombre: 'Dirección de Ejemplo',
-          area_superior: 'Secretaría de Ejemplo',
-          email_principal: 'ejemplo@comodoro.gov.ar',
-          email_secundario: 'ejemplo2@comodoro.gov.ar',
-          telefono_area: '297 4XXXXXX',
-          celular_area: '297 XXXXXXX',
-          nombre_contacto: 'Juan Pérez',
-          telefono_contacto: '297 XXXXXXX',
-          email_contacto: 'juan.perez@email.com',
-          datasets: [
-            { id: 1, titulo: 'Dataset de Ejemplo 1', frecuencia_nombre: 'Mensual', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo' },
-            { id: 2, titulo: 'Dataset de Ejemplo 2', frecuencia_nombre: 'Trimestral', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-2' }
-          ]
-        }];
-      }
-
-      const { subject, html } = templates.areaAviso40dias(areasPorNotificar[0]);
-      res.setHeader('Content-Type', 'text/html');
-      return res.send(html);
-    }
-
-    // Casos normales
-    let datasets = await getDatasetsByDias(
-      config.tipoGestion, 
-      config.dias || 0, 
-      config.vencidos || false
-    );
-
-    // Si no hay datasets reales, usar datos de ejemplo
-    if (datasets.length === 0) {
-      datasets = [
-        {
-          id: 1,
-          titulo: 'Dataset de Ejemplo 1',
-          frecuencia_nombre: 'Mensual',
-          area_nombre: 'Área de Ejemplo',
-          area_superior: 'Secretaría de Ejemplo',
-          email_principal: 'area@comodoro.gov.ar',
-          email_secundario: null,
-          telefono_area: '297 4XXXXXX',
-          celular_area: null,
-          nombre_contacto: 'Juan Pérez',
-          telefono_contacto: '297 XXXXXXX',
-          email_contacto: 'juan@email.com',
-          url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo'
-        },
-        {
-          id: 2,
-          titulo: 'Dataset de Ejemplo 2',
-          frecuencia_nombre: 'Trimestral',
-          area_nombre: 'Otra Área de Ejemplo',
-          area_superior: 'Subsecretaría de Ejemplo',
-          email_principal: 'otra@comodoro.gov.ar',
-          email_secundario: 'otra2@comodoro.gov.ar',
-          telefono_area: null,
-          celular_area: '297 XXXXXXX',
-          nombre_contacto: null,
-          telefono_contacto: null,
-          email_contacto: null,
-          url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-2'
-        }
-      ];
-    }
-
-    const { subject, html } = config.template(datasets);
-
-    // Devolver HTML para previsualizar en el navegador
+    const [area] = await getDatasetsExternosPorArea(40);
+    const { html } = templates.areaAviso40dias(area ?? AREA_DE_EJEMPLO);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
-
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    console.error('Error en vista previa:', error);
+    res.status(500).json({ success: false, error: 'Error generando la vista previa' });
   }
 };
 

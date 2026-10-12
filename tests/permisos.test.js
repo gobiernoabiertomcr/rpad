@@ -36,9 +36,18 @@ const RUTAS_SOLO_ADMIN = [
   ['POST', '/cambios-pendientes/1/aprobar'],
   ['POST', '/cambios-pendientes/1/rechazar'],
   ['GET', '/notificaciones/ejecutar'],
-  ['GET', '/notificaciones/prueba/interno-60'],
   ['GET', '/notificaciones/verificar-smtp'],
-  ['GET', '/notificaciones/preview/interno-60'],
+  ['POST', '/notificaciones/prueba-area'],
+  ['GET', '/notificaciones/preview/area-aviso-40'],
+  ['GET', '/notificaciones/notas-digitales'],
+  ['GET', '/notificaciones/notas-digitales/estado'],
+  ['GET', '/notificaciones/notas-digitales/preview?tipo=aviso&gestion=interna'],
+  ['POST', '/notificaciones/notas-digitales/prueba'],
+  ['GET', '/notificaciones/notas-digitales/config'],
+  ['PUT', '/notificaciones/notas-digitales/config'],
+  ['PUT', '/notificaciones/notas-digitales/config/firma'],
+  ['GET', '/notificaciones/notas-digitales/1/pdf'],
+  ['POST', '/notificaciones/notas-digitales/1/reintentar'],
   ['GET', '/notificaciones/cambios-pendientes'],
   ['GET', '/notificaciones/preview-cambios-pendientes']
 ];
@@ -88,7 +97,9 @@ describe('admin', () => {
     '/cambios-pendientes/mis-cambios',
     '/cambios-pendientes/datasets-bloqueados',
     '/notificaciones/verificar-smtp',
-    '/notificaciones/preview/interno-60',
+    '/notificaciones/preview/area-aviso-40',
+    '/notificaciones/notas-digitales',
+    '/notificaciones/notas-digitales/estado',
     '/notificaciones/preview-cambios-pendientes'
   ]) {
     it(`puede usar GET ${ruta}`, async () => {

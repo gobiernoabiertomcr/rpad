@@ -24,12 +24,25 @@ import {
 } from '../controllers/areasController.js';
 import {
   ejecutarNotificacionesDiarias,
-  pruebaNotificacion,
+  pruebaAvisoArea,
   verificarSMTP,
   previewEmail,
   ejecutarNotificacionCambiosPendientes,
   previewCambiosPendientes
 } from '../controllers/notificacionesController.js';
+import {
+  listarNotas,
+  obtenerNota,
+  descargarPdf,
+  reintentarNota,
+  verEstado,
+  verPreview,
+  enviarPrueba,
+  verConfig,
+  guardarConfig,
+  subirFirma,
+  verFirma
+} from '../controllers/notasDigitalesController.js';
 import {
   reporteEstadoGeneral,
   reporteHistorialNotificaciones,
@@ -141,11 +154,24 @@ router.post('/cambios-pendientes/:id/rechazar', authMiddleware, adminOnly, recha
 // Notificaciones (protegidas - solo admin)
 // =====================================================
 router.get('/notificaciones/ejecutar', authMiddleware, adminOnly, ejecutarNotificacionesDiarias);
-router.get('/notificaciones/prueba/:tipo', authMiddleware, adminOnly, pruebaNotificacion);
+router.post('/notificaciones/prueba-area', authMiddleware, adminOnly, pruebaAvisoArea);
 router.get('/notificaciones/verificar-smtp', authMiddleware, adminOnly, verificarSMTP);
 router.get('/notificaciones/preview/:tipo', authMiddleware, adminOnly, previewEmail);
 router.get('/notificaciones/cambios-pendientes', authMiddleware, adminOnly, ejecutarNotificacionCambiosPendientes);
 router.get('/notificaciones/preview-cambios-pendientes', authMiddleware, adminOnly, previewCambiosPendientes);
+
+// Notas Digitales (solo admin)
+router.get('/notificaciones/notas-digitales', authMiddleware, adminOnly, listarNotas);
+router.get('/notificaciones/notas-digitales/estado', authMiddleware, adminOnly, verEstado);
+router.get('/notificaciones/notas-digitales/preview', authMiddleware, adminOnly, verPreview);
+router.post('/notificaciones/notas-digitales/prueba', authMiddleware, adminOnly, enviarPrueba);
+router.get('/notificaciones/notas-digitales/config', authMiddleware, adminOnly, verConfig);
+router.put('/notificaciones/notas-digitales/config', authMiddleware, adminOnly, guardarConfig);
+router.get('/notificaciones/notas-digitales/config/firma', authMiddleware, adminOnly, verFirma);
+router.put('/notificaciones/notas-digitales/config/firma', authMiddleware, adminOnly, subirFirma);
+router.get('/notificaciones/notas-digitales/:id', authMiddleware, adminOnly, obtenerNota);
+router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly, descargarPdf);
+router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);
 
 // =====================================================
 // Reportes PDF (protegidas)
