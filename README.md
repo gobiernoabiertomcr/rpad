@@ -283,7 +283,12 @@ https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET
 | Día semana | * |
 | Comando | `curl -s "https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET" > /dev/null` |
 
-Esto ejecuta las notificaciones todos los días a las 8:00 AM.
+Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días antes) y las **Notas Digitales**:
+
+- **Aviso**: gestión interna 60 días antes del vencimiento, gestión externa 30 días antes.
+- **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 21 días o más que siguen pendientes.
+- Solo en días hábiles. Cada nota se numera (`Nota Digital N° 12/26`), se envía con el PDF adjunto y queda en el libro de la pantalla de Correos.
+- El envío automático arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 
 ---
 
@@ -368,6 +373,9 @@ Esto ejecuta las notificaciones todos los días a las 8:00 AM.
 ### Notificaciones no se envían
 - Verificar conexión SMTP desde panel Admin
 - Revisar que CRON_SECRET coincide en `.env` y cron job
+- En Correos, revisar que el envío automático de Notas Digitales esté activado y que no haya alertas de configuración incompleta
+- Revisar en el libro de Notas Digitales las notas "Fallida" (el detalle del error está en el estado) y reintentarlas
+- En desarrollo, `EMAIL_SOLO_A` en `.env` limita los envíos a esas casillas
 
 ### PDFs con páginas en blanco
 - Actualizar a v1.3.0 (corregido con `bufferPages: true`)
