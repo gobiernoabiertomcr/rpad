@@ -4,6 +4,15 @@ import { query } from './helpers.js';
 
 const sufijo = () => crypto.randomBytes(3).toString('hex');
 
+// Guarda: query() usa DB_NAME, que en .env apunta a la copia local de producción.
+// Lo que borra o reescribe datos solo corre si la base activa es de prueba.
+const asegurarBaseDePrueba = async () => {
+  const [{ base }] = await query('SELECT DATABASE() AS base');
+  if (!/^rpad_test_[a-z0-9_]+$/.test(base ?? '')) {
+    throw new Error('Los fixtures de Notas Digitales solo pueden borrar o modificar datos en una base rpad_test_* (la base activa no lo es)');
+  }
+};
+
 export const crearArea = async (datos = {}) => {
   const fila = {
     nombre: `Área de prueba ${sufijo()}`, area_superior: null, email_principal: null, email_secundario: null,
@@ -58,6 +67,7 @@ export const crearEmailViejo = ({ tipo, datasetIds, enviado, success = 1 }) => q
 );
 
 export const limpiarBase = async () => {
+  await asegurarBaseDePrueba();
   await query('DELETE FROM notas_digitales');
   await query('DELETE FROM notificaciones_log');
   await query('DELETE FROM datasets');
@@ -66,6 +76,7 @@ export const limpiarBase = async () => {
 };
 
 export const configurarNotas = async (cambios = {}) => {
+  await asegurarBaseDePrueba();
   const valores = {
     envio_activo: 1, para_interna: 'mit@rpad.test', cc_interna: 'geo@rpad.test', para_externa: 'mit@rpad.test',
     cc_externa: 'adm@rpad.test', cco: 'respaldo@rpad.test', firma_nombre: 'Firma de Prueba',
