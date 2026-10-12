@@ -6,7 +6,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "setup-admin": "node scripts/setup-admin.js"
+    "setup-admin": "node scripts/setup-admin.js",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.js\""
   },
   "keywords": [
     "rpad",
