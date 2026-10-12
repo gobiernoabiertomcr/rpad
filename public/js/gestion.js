@@ -655,7 +655,7 @@ function renderTimelineItems(hitos) {
       let archivosHtml = '';
       if (h.archivos && h.archivos.length > 0) {
         archivosHtml = '<div style="margin-top:8px;">' + h.archivos.map(a =>
-          `<span class="timeline-archivo-chip" onclick="event.stopPropagation(); previewArchivo(${h.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}', ${a.tamano}, '${Utils.escapeHtml(a.mime_type || '')}')" title="${Utils.escapeHtml(a.nombre_archivo)}">
+          `<span class="timeline-archivo-chip" onclick="event.stopPropagation(); previewArchivo(${h.id}, ${a.id}, ${Utils.jsArg(a.nombre_archivo)}, ${a.tamano}, ${Utils.jsArg(a.mime_type || '')})" title="${Utils.escapeHtml(a.nombre_archivo)}">
             ${getFileExtIcon(a.nombre_archivo)} ${Utils.escapeHtml(Utils.truncate(a.nombre_archivo, 20))}
           </span>`
         ).join('') + '</div>';
@@ -670,7 +670,7 @@ function renderTimelineItems(hitos) {
           <div class="timeline-title">${Utils.escapeHtml(h.titulo)}</div>
           <div class="timeline-proyecto">${proyectoLabel}</div>
           ${h.descripcion ? `<div class="timeline-desc">${Utils.escapeHtml(h.descripcion)}</div>` : ''}
-          ${h.evidencia_url ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
+          ${Utils.esUrlSegura(h.evidencia_url) ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
           ${archivosHtml}
         </div>`;
     }
@@ -707,7 +707,7 @@ function renderLogrosArea(logros) {
     let archivosHtml = '';
     if (h.archivos && h.archivos.length > 0) {
       archivosHtml = '<div style="margin-top:6px;">' + h.archivos.map(a =>
-        `<span class="timeline-archivo-chip" onclick="event.stopPropagation(); previewArchivo(${h.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}', ${a.tamano}, '${Utils.escapeHtml(a.mime_type || '')}')" title="${Utils.escapeHtml(a.nombre_archivo)}">
+        `<span class="timeline-archivo-chip" onclick="event.stopPropagation(); previewArchivo(${h.id}, ${a.id}, ${Utils.jsArg(a.nombre_archivo)}, ${a.tamano}, ${Utils.jsArg(a.mime_type || '')})" title="${Utils.escapeHtml(a.nombre_archivo)}">
           ${getFileExtIcon(a.nombre_archivo)} ${Utils.escapeHtml(Utils.truncate(a.nombre_archivo, 20))}
         </span>`
       ).join('') + '</div>';
@@ -723,7 +723,7 @@ function renderLogrosArea(logros) {
             <div class="timeline-date">${formatDate(h.fecha)}</div>
             <div class="timeline-title">${Utils.escapeHtml(h.titulo)}</div>
             ${h.descripcion ? `<div class="timeline-desc">${Utils.escapeHtml(h.descripcion)}</div>` : ''}
-            ${h.evidencia_url ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
+            ${Utils.esUrlSegura(h.evidencia_url) ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
             ${archivosHtml}
           </div>
           ${isAdmin ? `
@@ -879,7 +879,7 @@ function renderProyectoDetalle(p) {
           <div class="detail-field"><label>Fecha de elevación</label><span>${formatDate(p.fecha_inicio)}</span></div>
           <div class="detail-field"><label>Autor</label><span>${Utils.escapeHtml(p.responsable || '-')}</span></div>
           <div class="detail-field"><label>Áreas</label><span>${Utils.escapeHtml(areasText)}</span></div>
-          ${p.enlace_externo ? (() => {
+          ${Utils.esUrlSegura(p.enlace_externo) ? (() => {
             const isGoogle = /drive\.google\.com|docs\.google\.com/.test(p.enlace_externo);
             if (isGoogle) {
               return `<div class="detail-field"><label>Borrador</label><span>
@@ -914,11 +914,11 @@ function renderProyectoDetalle(p) {
               <div class="timeline-date">${formatDate(h.fecha)} ${completado ? '<span style="color:#10b981;font-weight:600;">Completado</span>' : '<span style="color:var(--gray-400);">Pendiente</span>'}</div>
               <div class="timeline-title">${Utils.escapeHtml(h.titulo)}</div>
               ${h.descripcion ? `<div class="timeline-desc">${Utils.escapeHtml(h.descripcion)}</div>` : ''}
-              ${h.evidencia_url ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
+              ${Utils.esUrlSegura(h.evidencia_url) ? `<a href="${Utils.escapeHtml(h.evidencia_url)}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Ver evidencia</a>` : ''}
               ${h.archivos && h.archivos.length > 0 ? `
                 <div style="margin-top:8px;">
                   ${h.archivos.map(a => `
-                    <span class="timeline-archivo-chip" onclick="previewArchivo(${h.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}', ${a.tamano}, '${Utils.escapeHtml(a.mime_type || '')}')" title="${Utils.escapeHtml(a.nombre_archivo)}">
+                    <span class="timeline-archivo-chip" onclick="previewArchivo(${h.id}, ${a.id}, ${Utils.jsArg(a.nombre_archivo)}, ${a.tamano}, ${Utils.jsArg(a.mime_type || '')})" title="${Utils.escapeHtml(a.nombre_archivo)}">
                       ${getFileExtIcon(a.nombre_archivo)} ${Utils.escapeHtml(Utils.truncate(a.nombre_archivo, 25))}
                     </span>
                   `).join('')}
@@ -971,8 +971,8 @@ function renderProyectoDetalle(p) {
           <div class="file-size">${formatFileSize(doc.tamano)}</div>
         </div>
         <div class="file-actions" style="display:flex;gap:4px;">
-          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;" onclick="previewDocumentoProyecto(${p.id}, ${doc.id}, '${Utils.escapeHtml(doc.nombre_archivo)}', ${doc.tamano}, '${Utils.escapeHtml(doc.mime_type || '')}')">Ver</button>
-          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;" onclick="descargarDocumento(${p.id}, ${doc.id}, '${Utils.escapeHtml(doc.nombre_archivo)}')">Descargar</button>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;" onclick="previewDocumentoProyecto(${p.id}, ${doc.id}, ${Utils.jsArg(doc.nombre_archivo)}, ${doc.tamano}, ${Utils.jsArg(doc.mime_type || '')})">Ver</button>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;" onclick="descargarDocumento(${p.id}, ${doc.id}, ${Utils.jsArg(doc.nombre_archivo)})">Descargar</button>
           ${isAdmin ? `<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.75rem;color:#ef4444;" onclick="eliminarDocumento(${p.id}, ${doc.id})">Eliminar</button>` : ''}
         </div>
       </div>`;
@@ -1213,7 +1213,7 @@ function abrirModalHito(proyectoId, hitoData = null) {
           <div class="file-size">${formatFileSize(a.tamano)}</div>
         </div>
         <div class="file-actions" style="display:flex;gap:4px;">
-          <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;" type="button" onclick="descargarHitoArchivo(${hitoData.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}')">Descargar</button>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;" type="button" onclick="descargarHitoArchivo(${hitoData.id}, ${a.id}, ${Utils.jsArg(a.nombre_archivo)})">Descargar</button>
           <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;color:#ef4444;" type="button" onclick="eliminarHitoArchivoDesdeModal(${hitoData.id}, ${a.id}, ${proyectoId})">Eliminar</button>
         </div>
       </div>
@@ -1379,7 +1379,7 @@ function abrirModalLogro(logroData = null) {
           <div class="file-size">${formatFileSize(a.tamano)}</div>
         </div>
         <div class="file-actions" style="display:flex;gap:4px;">
-          <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;" type="button" onclick="descargarHitoArchivo(${logroData.id}, ${a.id}, '${Utils.escapeHtml(a.nombre_archivo)}')">Descargar</button>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;" type="button" onclick="descargarHitoArchivo(${logroData.id}, ${a.id}, ${Utils.jsArg(a.nombre_archivo)})">Descargar</button>
           <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:0.7rem;color:#ef4444;" type="button" onclick="eliminarLogroArchivo(${logroData.id}, ${a.id})">Eliminar</button>
         </div>
       </div>
@@ -1754,7 +1754,7 @@ async function previewArchivo(hitoId, archivoId, nombre, tamano, mimeType) {
 
   footer.innerHTML = `
     <span style="font-size:0.8rem;color:var(--gray-500);">${formatFileSize(tamano)} &middot; ${ext.toUpperCase()}</span>
-    <button class="btn btn-primary btn-sm" onclick="descargarHitoArchivo(${hitoId}, ${archivoId}, '${Utils.escapeHtml(nombre)}')">
+    <button class="btn btn-primary btn-sm" onclick="descargarHitoArchivo(${hitoId}, ${archivoId}, ${Utils.jsArg(nombre)})">
       ${Icons.download.replace(/width="\d+"/, 'width="16"').replace(/height="\d+"/, 'height="16"')} Descargar
     </button>`;
 
@@ -1809,7 +1809,7 @@ async function previewDocumentoProyecto(proyectoId, docId, nombre, tamano, mimeT
 
   footer.innerHTML = `
     <span style="font-size:0.8rem;color:var(--gray-500);">${formatFileSize(tamano)} &middot; ${ext.toUpperCase()}</span>
-    <button class="btn btn-primary btn-sm" onclick="descargarDocumento(${proyectoId}, ${docId}, '${Utils.escapeHtml(nombre)}')">
+    <button class="btn btn-primary btn-sm" onclick="descargarDocumento(${proyectoId}, ${docId}, ${Utils.jsArg(nombre)})">
       ${Icons.download.replace(/width="\d+"/, 'width="16"').replace(/height="\d+"/, 'height="16"')} Descargar
     </button>`;
 

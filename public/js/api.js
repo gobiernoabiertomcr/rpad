@@ -293,27 +293,25 @@ async registrarActualizacion(id, datos = {}) {
   },
 
   // === REPORTES PDF ===
+  // El token viaja en el header Authorization (descargarPDF), nunca en la URL
   getReporteEstadoGeneralUrl() {
-    const token = Auth.getToken();
-    return `${CONFIG.API_URL}/reportes/estado-general?token=${token}`;
+    return `${CONFIG.API_URL}/reportes/estado-general`;
   },
 
   getReporteHistorialUrl(desde, hasta) {
-    const token = Auth.getToken();
-    let url = `${CONFIG.API_URL}/reportes/historial-notificaciones?token=${token}`;
-    if (desde) url += `&desde=${desde}`;
-    if (hasta) url += `&hasta=${hasta}`;
-    return url;
+    const params = new URLSearchParams();
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    const query = params.toString();
+    return `${CONFIG.API_URL}/reportes/historial-notificaciones${query ? `?${query}` : ''}`;
   },
 
   getReportePorAreaUrl(areaId) {
-    const token = Auth.getToken();
-    return `${CONFIG.API_URL}/reportes/por-area/${areaId}?token=${token}`;
+    return `${CONFIG.API_URL}/reportes/por-area/${areaId}`;
   },
 
   getReporteCumplimientoUrl(periodo) {
-    const token = Auth.getToken();
-    return `${CONFIG.API_URL}/reportes/cumplimiento?token=${token}&periodo=${periodo}`;
+    return `${CONFIG.API_URL}/reportes/cumplimiento?periodo=${periodo}`;
   },
 
   // === NOTAS DOCX ===
@@ -420,19 +418,32 @@ const Utils = {
     return textos[tipoGestion] || tipoGestion;
   },
 
-  // Escapar HTML
+  // Escapar HTML (también comillas, así sirve dentro de atributos)
   escapeHtml(text) {
     if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   },
 
-  // URL segura para un href: solo http/https, escapada para usar dentro de atributos.
-  // Devuelve null si la URL no es válida (ej: javascript:)
+  // Texto como argumento de un handler inline: onclick="f(${Utils.jsArg(nombre)})".
+  // La función recibe el valor exacto aunque tenga comillas, barras o HTML
+  jsArg(valor) {
+    return this.escapeHtml(JSON.stringify(String(valor ?? '')));
+  },
+
+  // ¿Es una URL http/https? Rechaza javascript:, data:, etc.
+  esUrlSegura(url) {
+    return typeof url === 'string' && /^https?:\/\//i.test(url.trim());
+  },
+
+  // URL lista para un href dentro de HTML, o null si no es http/https
   safeUrl(url) {
-    if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) return null;
-    return this.escapeHtml(url.trim()).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    if (!this.esUrlSegura(url)) return null;
+    return this.escapeHtml(url.trim());
   },
 
   // Truncar texto

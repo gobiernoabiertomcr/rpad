@@ -65,10 +65,10 @@ function renderDataset(d) {
     document.getElementById('dataset-observaciones').textContent = d.observaciones;
   }
 
-  // URL - el backend usa url_dataset
-  if (d.url_dataset) {
+  // URL - el backend usa url_dataset (solo http/https: un javascript: se ejecutaría al hacer click)
+  if (Utils.esUrlSegura(d.url_dataset)) {
     document.getElementById('url-card').classList.remove('hidden');
-    document.getElementById('dataset-url').href = d.url_dataset;
+    document.getElementById('dataset-url').href = d.url_dataset.trim();
   }
 
   // Fechas
