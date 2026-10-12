@@ -162,7 +162,7 @@ const getCambiosPendientesParaAdmin = async (adminId) => {
   // Parsear datos_nuevos JSON
   return rows.map(row => ({
     ...row,
-    datos_nuevos: row.datos_nuevos ? JSON.parse(row.datos_nuevos) : null
+    datos_nuevos: typeof row.datos_nuevos === 'string' ? JSON.parse(row.datos_nuevos) : row.datos_nuevos
   }));
 };
 

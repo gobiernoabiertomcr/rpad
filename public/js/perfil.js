@@ -401,9 +401,10 @@ function renderComparador(cambio) {
     urlPortal = cambio.datos_anteriores?.url_dataset || cambio.dataset_url;
   }
 
-  // Generar link al portal si existe URL
-  const linkPortalHtml = urlPortal ? `
-    <a href="${Utils.escapeHtml(urlPortal)}" target="_blank" rel="noopener noreferrer" class="link-portal-revision">
+  // Generar link al portal si existe URL (solo http/https)
+  const urlPortalSegura = Utils.safeUrl(urlPortal);
+  const linkPortalHtml = urlPortalSegura ? `
+    <a href="${urlPortalSegura}" target="_blank" rel="noopener noreferrer" class="link-portal-revision">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       Ver en Portal de Datos Abiertos
     </a>
@@ -435,7 +436,7 @@ function renderComparador(cambio) {
         html += `
           <div class="comparador-field">
             <div class="comparador-field-label">${campo.label}</div>
-            <div class="comparador-field-value">${valor}</div>
+            <div class="comparador-field-value">${Utils.escapeHtml(valor)}</div>
           </div>
         `;
       }
@@ -460,7 +461,7 @@ function renderComparador(cambio) {
         html += `
           <div class="comparador-field">
             <div class="comparador-field-label">${campo.label}</div>
-            <div class="comparador-field-value">${valor}</div>
+            <div class="comparador-field-value">${Utils.escapeHtml(valor)}</div>
           </div>
         `;
       }
@@ -489,7 +490,7 @@ function renderComparador(cambio) {
     cambio.campos_modificados.forEach(mod => {
       htmlCambios += `
         <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--gray-50); border-radius: var(--radius);">
-          <div style="font-weight: 600; font-size: 0.8125rem; color: var(--gray-600); margin-bottom: 0.5rem;">${mod.campo}</div>
+          <div style="font-weight: 600; font-size: 0.8125rem; color: var(--gray-600); margin-bottom: 0.5rem;">${Utils.escapeHtml(mod.campo)}</div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
                 <div style="font-size: 0.6875rem; color: var(--danger); text-transform: uppercase; margin-bottom: 0.25rem;">Antes</div>

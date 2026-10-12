@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, adminOnly } from '../middleware/auth.js';
+import { authMiddleware, adminOnly, cronAuth } from '../middleware/auth.js';
 
 // Controladores
 import { login, verifySession, changePassword, updateProfile, getProfile } from '../controllers/authController.js';
@@ -113,38 +113,38 @@ router.post('/auth/change-password', authMiddleware, changePassword);
 router.get('/auth/profile', authMiddleware, getProfile);
 router.put('/auth/profile', authMiddleware, updateProfile);
 
-// Datasets (escritura)
-router.post('/datasets', authMiddleware, createDataset);
-router.put('/datasets/:id', authMiddleware, updateDataset);
-router.delete('/datasets/:id', authMiddleware, deleteDataset);
-router.post('/datasets/:id/actualizar', authMiddleware, registrarActualizacion);
+// Datasets (escritura - solo admin)
+router.post('/datasets', authMiddleware, adminOnly, createDataset);
+router.put('/datasets/:id', authMiddleware, adminOnly, updateDataset);
+router.delete('/datasets/:id', authMiddleware, adminOnly, deleteDataset);
+router.post('/datasets/:id/actualizar', authMiddleware, adminOnly, registrarActualizacion);
 
-// Áreas (escritura)
-router.post('/areas', authMiddleware, createArea);
-router.put('/areas/:id', authMiddleware, updateArea);
-router.delete('/areas/:id', authMiddleware, deleteArea);
+// Áreas (escritura - solo admin)
+router.post('/areas', authMiddleware, adminOnly, createArea);
+router.put('/areas/:id', authMiddleware, adminOnly, updateArea);
+router.delete('/areas/:id', authMiddleware, adminOnly, deleteArea);
 
 // =====================================================
 // Cambios Pendientes (protegidas - solo admin)
 // =====================================================
-router.get('/cambios-pendientes/contador', authMiddleware, getContadorPendientes);
-router.get('/cambios-pendientes/para-revisar', authMiddleware, getCambiosPendientesParaRevisar);
-router.get('/cambios-pendientes/mis-cambios', authMiddleware, getMisCambios);
-router.get('/cambios-pendientes/datasets-bloqueados', authMiddleware, getDatasetsConPendientes);
-router.get('/cambios-pendientes/:id', authMiddleware, getCambioPendienteById);
-router.get('/cambios-pendientes/verificar/:datasetId', authMiddleware, verificarDatasetBloqueado);
-router.post('/cambios-pendientes/:id/aprobar', authMiddleware, aprobarCambio);
-router.post('/cambios-pendientes/:id/rechazar', authMiddleware, rechazarCambio);
+router.get('/cambios-pendientes/contador', authMiddleware, adminOnly, getContadorPendientes);
+router.get('/cambios-pendientes/para-revisar', authMiddleware, adminOnly, getCambiosPendientesParaRevisar);
+router.get('/cambios-pendientes/mis-cambios', authMiddleware, adminOnly, getMisCambios);
+router.get('/cambios-pendientes/datasets-bloqueados', authMiddleware, adminOnly, getDatasetsConPendientes);
+router.get('/cambios-pendientes/:id', authMiddleware, adminOnly, getCambioPendienteById);
+router.get('/cambios-pendientes/verificar/:datasetId', authMiddleware, adminOnly, verificarDatasetBloqueado);
+router.post('/cambios-pendientes/:id/aprobar', authMiddleware, adminOnly, aprobarCambio);
+router.post('/cambios-pendientes/:id/rechazar', authMiddleware, adminOnly, rechazarCambio);
 
 // =====================================================
-// Notificaciones (protegidas)
+// Notificaciones (protegidas - solo admin)
 // =====================================================
-router.get('/notificaciones/ejecutar', authMiddleware, ejecutarNotificacionesDiarias);
-router.get('/notificaciones/prueba/:tipo', authMiddleware, pruebaNotificacion);
-router.get('/notificaciones/verificar-smtp', authMiddleware, verificarSMTP);
-router.get('/notificaciones/preview/:tipo', authMiddleware, previewEmail);
-router.get('/notificaciones/cambios-pendientes', ejecutarNotificacionCambiosPendientes);
-router.get('/notificaciones/preview-cambios-pendientes', authMiddleware, previewCambiosPendientes);
+router.get('/notificaciones/ejecutar', authMiddleware, adminOnly, ejecutarNotificacionesDiarias);
+router.get('/notificaciones/prueba/:tipo', authMiddleware, adminOnly, pruebaNotificacion);
+router.get('/notificaciones/verificar-smtp', authMiddleware, adminOnly, verificarSMTP);
+router.get('/notificaciones/preview/:tipo', authMiddleware, adminOnly, previewEmail);
+router.get('/notificaciones/cambios-pendientes', authMiddleware, adminOnly, ejecutarNotificacionCambiosPendientes);
+router.get('/notificaciones/preview-cambios-pendientes', authMiddleware, adminOnly, previewCambiosPendientes);
 
 // =====================================================
 // Reportes PDF (protegidas)
@@ -162,21 +162,8 @@ router.post('/notas/generar', authMiddleware, generarNota);
 // =====================================================
 // Cron (protegido por clave secreta)
 // =====================================================
-router.get('/cron/notificaciones', (req, res, next) => {
-  const secret = req.query.secret || req.headers['x-cron-secret'];
-  if (secret !== process.env.CRON_SECRET) {
-    return res.status(403).json({ success: false, error: 'Acceso denegado' });
-  }
-  next();
-}, ejecutarNotificacionesDiarias);
-
-router.get('/cron/cambios-pendientes', (req, res, next) => {
-  const secret = req.query.secret || req.headers['x-cron-secret'];
-  if (secret !== process.env.CRON_SECRET) {
-    return res.status(403).json({ success: false, error: 'Acceso denegado' });
-  }
-  next();
-}, ejecutarNotificacionCambiosPendientes);
+router.get('/cron/notificaciones', cronAuth, ejecutarNotificacionesDiarias);
+router.get('/cron/cambios-pendientes', cronAuth, ejecutarNotificacionCambiosPendientes);
 
 // =====================================================
 // Gestión: Métricas y Proyectos (protegidas)

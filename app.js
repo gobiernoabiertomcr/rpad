@@ -1,15 +1,13 @@
+// Cargar variables de entorno antes que cualquier otro módulo (auth.js lee JWT_SECRET al importarse)
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import helmet from 'helmet';
 import { fileURLToPath } from 'url';
 import { testConnection } from './config/database.js';
 import routes from './routes/index.js';
-
-// Cargar variables de entorno
-dotenv.config();
 
 // Para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -107,6 +105,10 @@ const startServer = async () => {
   if (!dbConnected) {
     console.error('❌ No se pudo conectar a la base de datos.');
     process.exit(1);
+  }
+
+  if (!process.env.CRON_SECRET) {
+    console.warn('⚠️  CRON_SECRET no está configurado: /api/cron/* va a rechazar todos los pedidos.');
   }
 
   app.listen(PORT, () => {

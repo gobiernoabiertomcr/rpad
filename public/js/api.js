@@ -428,6 +428,13 @@ const Utils = {
     return div.innerHTML;
   },
 
+  // URL segura para un href: solo http/https, escapada para usar dentro de atributos.
+  // Devuelve null si la URL no es válida (ej: javascript:)
+  safeUrl(url) {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) return null;
+    return this.escapeHtml(url.trim()).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  },
+
   // Truncar texto
   truncate(text, maxLength) {
     if (!text) return '';
