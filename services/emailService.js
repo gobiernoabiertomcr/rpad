@@ -26,23 +26,56 @@ const DEFAULT_RECIPIENTS = [
 ];
 
 /**
- * Envía un email a los destinatarios por defecto (DGMIT)
- * @param {Object} options - Opciones del email
- * @param {string} options.subject - Asunto
- * @param {string} options.html - Contenido HTML
- * @param {string[]} [options.to] - Destinatarios (opcional, usa DEFAULT_RECIPIENTS)
+ * Convierte "a@x, b@y; c@z" o ['a@x', ...] en una lista limpia de direcciones
  */
-export const sendEmail = async ({ subject, html, to = DEFAULT_RECIPIENTS }) => {
+export const listaDeCorreos = (valor) => {
+  if (!valor) return [];
+  const partes = Array.isArray(valor) ? valor : String(valor).split(/[,;]/);
+  return partes.map(correo => String(correo).trim()).filter(Boolean);
+};
+
+/**
+ * Barrera de pruebas: si EMAIL_SOLO_A tiene direcciones, solo se puede enviar a esas casillas.
+ * En producción EMAIL_SOLO_A no se define y no filtra nada.
+ */
+export const filtrarDestinatarios = (lista, permitidos = process.env.EMAIL_SOLO_A) => {
+  const autorizados = listaDeCorreos(permitidos).map(correo => correo.toLowerCase());
+  const correos = listaDeCorreos(lista);
+  if (autorizados.length === 0) return correos;
+  return correos.filter(correo => autorizados.includes(correo.toLowerCase()));
+};
+
+/**
+ * Envía un email. to, cc y bcc aceptan un string separado por comas o un array.
+ * Devuelve { success: true, messageId, response } o { success: false, error, bloqueado? }
+ */
+export const sendEmail = async ({ subject, html, text, to = DEFAULT_RECIPIENTS, cc, bcc, replyTo, from, attachments }) => {
+  const para = filtrarDestinatarios(to);
+  const copia = filtrarDestinatarios(cc);
+  const oculta = filtrarDestinatarios(bcc);
+
+  if (para.length + copia.length + oculta.length === 0) {
+    const bloqueado = listaDeCorreos(process.env.EMAIL_SOLO_A).length > 0;
+    const error = bloqueado ? 'Bloqueado por EMAIL_SOLO_A' : 'No hay destinatarios';
+    console.warn(`⚠️ Email no enviado (${subject}): ${error}`);
+    return bloqueado ? { success: false, error, bloqueado } : { success: false, error };
+  }
+
   try {
     const info = await transporter.sendMail({
-      from: `"RPAD - Notificaciones" <${process.env.SMTP_USER}>`,
-      to: to.join(', '),
+      from: from || `"RPAD - Notificaciones" <${process.env.SMTP_USER}>`,
+      to: para.length ? para.join(', ') : undefined,
+      cc: copia.length ? copia.join(', ') : undefined,
+      bcc: oculta.length ? oculta.join(', ') : undefined,
+      replyTo,
       subject,
-      html
+      html,
+      text,
+      attachments
     });
 
     console.log(`✉️ Email enviado: ${subject} → ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    return { success: true, messageId: info.messageId, response: info.response };
   } catch (error) {
     console.error('❌ Error enviando email:', error.message);
     return { success: false, error: error.message };
@@ -50,32 +83,14 @@ export const sendEmail = async ({ subject, html, to = DEFAULT_RECIPIENTS }) => {
 };
 
 /**
- * Envía un email a un área específica (para avisos de -40 días)
- * @param {Object} options - Opciones del email
- * @param {string} options.subject - Asunto
- * @param {string} options.html - Contenido HTML
- * @param {string[]} options.to - Destinatarios del área
+ * Envía un email a un área (aviso de 40 días)
  */
-export const sendEmailToArea = async ({ subject, html, to }) => {
-  if (!to || to.length === 0) {
-    return { success: false, error: 'No hay destinatarios' };
-  }
-
-  try {
-    const info = await transporter.sendMail({
-      from: `"RPAD - Datos Abiertos MCR" <${process.env.SMTP_USER}>`,
-      to: to.join(', '),
-      subject,
-      html
-    });
-
-    console.log(`✉️ Email a área enviado: ${subject} → ${to.join(', ')} (${info.messageId})`);
-    return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.error('❌ Error enviando email a área:', error.message);
-    return { success: false, error: error.message };
-  }
-};
+export const sendEmailToArea = ({ subject, html, to }) => sendEmail({
+  subject,
+  html,
+  to: to || [],
+  from: `"RPAD - Datos Abiertos MCR" <${process.env.SMTP_USER}>`
+});
 
 /**
  * Verifica la conexión SMTP
