@@ -1,0 +1,76 @@
+// Datos de prueba para los tests de Notas Digitales. Solo se usan sobre bases creadas con crearBaseDePrueba.
+import crypto from 'crypto';
+import { query } from './helpers.js';
+
+const sufijo = () => crypto.randomBytes(3).toString('hex');
+
+export const crearArea = async (datos = {}) => {
+  const fila = {
+    nombre: `Área de prueba ${sufijo()}`, area_superior: null, email_principal: null, email_secundario: null,
+    telefono_area: null, celular_area: null, nombre_contacto: null, telefono_contacto: null, email_contacto: null,
+    ...datos
+  };
+  const columnas = Object.keys(fila);
+  const resultado = await query(
+    `INSERT INTO areas (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`,
+    Object.values(fila)
+  );
+  return resultado.insertId;
+};
+
+export const crearDataset = async ({
+  titulo = `Dataset de prueba ${sufijo()}`, gestion = 'interna', vencimiento, ultima = null, areaId,
+  frecuencia = 'Anualmente', activo = 1, url = 'https://datos.comodoro.gov.ar/dataset/prueba'
+}) => {
+  const [f] = await query('SELECT id FROM frecuencias WHERE nombre = ?', [frecuencia]);
+  if (!f) throw new Error(`No existe la frecuencia ${frecuencia}`);
+  const [tema] = await query('SELECT id FROM temas ORDER BY id LIMIT 1');
+  const area = areaId ?? await crearArea();
+  const resultado = await query(
+    `INSERT INTO datasets (titulo, area_id, frecuencia_id, ultima_actualizacion, proxima_actualizacion,
+       tema_principal_id, url_dataset, tipo_gestion, activo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [titulo, area, f.id, ultima, vencimiento ?? null, tema.id, url, gestion, activo]
+  );
+  return resultado.insertId;
+};
+
+export const crearNota = async ({
+  tipo = 'aviso', gestion = 'interna', fecha, numero = null, anio, estado = 'enviada', esPrueba = 0, intentos = 1, datasets = []
+}) => {
+  const resultado = await query(
+    `INSERT INTO notas_digitales (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, html, texto, pdf, estado, intentos)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'Nota de prueba', 'prueba@rpad.test', '', '', '', ?, ?)`,
+    [numero, anio ?? (esPrueba ? null : Number(fecha.slice(0, 4))), tipo, gestion,
+      tipo === 'reiteracion' ? fecha.slice(0, 7) : null, fecha, esPrueba, estado, intentos]
+  );
+  for (const d of datasets) {
+    await query('INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento) VALUES (?, ?, ?, ?)',
+      [resultado.insertId, d.id, d.seccion ?? 'proximo', d.vencimiento]);
+  }
+  return resultado.insertId;
+};
+
+export const crearEmailViejo = ({ tipo, datasetIds, enviado, success = 1 }) => query(
+  `INSERT INTO notificaciones_log (tipo, area_id, destinatarios, datasets_ids, cantidad_datasets, enviado_at, success)
+   VALUES (?, NULL, 'mit@rpad.test', ?, ?, ?, ?)`,
+  [tipo, datasetIds.join(','), datasetIds.length, enviado, success]
+);
+
+export const limpiarBase = async () => {
+  await query('DELETE FROM notas_digitales');
+  await query('DELETE FROM notificaciones_log');
+  await query('DELETE FROM datasets');
+  await query('DELETE FROM areas');
+  await query('UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL, reiteracion_evaluada_externa = NULL WHERE id = 1');
+};
+
+export const configurarNotas = async (cambios = {}) => {
+  const valores = {
+    envio_activo: 1, para_interna: 'mit@rpad.test', cc_interna: 'geo@rpad.test', para_externa: 'mit@rpad.test',
+    cc_externa: 'adm@rpad.test', cco: 'respaldo@rpad.test', firma_nombre: 'Firma de Prueba',
+    firma_cargo: 'Cargo de Prueba', casillas_prueba: 'prueba@rpad.test', ...cambios
+  };
+  const columnas = Object.keys(valores);
+  await query(`UPDATE notas_digitales_config SET ${columnas.map(c => `${c} = ?`).join(', ')} WHERE id = 1`, Object.values(valores));
+};
