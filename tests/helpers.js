@@ -76,7 +76,24 @@ const conexionRoot = () => mysql.createConnection({
   multipleStatements: true
 });
 
+// Solo nombres rpad_test_*, nunca la base real (DB_NAME) y solo con la base en un host local.
+// Se valida antes de abrir cualquier conexión, también al borrar.
+const PATRON_BASE_PRUEBA = /^rpad_test_[a-z0-9_]+$/;
+
+const validarDestinoBasePrueba = (nombre) => {
+  if (!PATRON_BASE_PRUEBA.test(nombre)) {
+    throw new Error(`Nombre de base de prueba inválido "${nombre}": debe coincidir con ${PATRON_BASE_PRUEBA}`);
+  }
+  if (nombre === process.env.DB_NAME) {
+    throw new Error(`Nombre de base de prueba inválido "${nombre}": es la base real (DB_NAME)`);
+  }
+  if (!['127.0.0.1', 'localhost'].includes(process.env.DB_HOST)) {
+    throw new Error('DB_HOST debe ser 127.0.0.1 o localhost para crear o borrar bases de prueba');
+  }
+};
+
 export const crearBaseDePrueba = async (nombre) => {
+  validarDestinoBasePrueba(nombre);
   await verificarEntornoLocal();
   if (!process.env.DB_ROOT_PASSWORD) throw new Error('Falta DB_ROOT_PASSWORD en .env (base Docker local)');
   const root = await conexionRoot();
@@ -92,6 +109,7 @@ export const crearBaseDePrueba = async (nombre) => {
   return {
     nombre,
     borrar: async () => {
+      validarDestinoBasePrueba(nombre);
       const conexion = await conexionRoot();
       await conexion.query(`DROP DATABASE IF EXISTS \`${nombre}\``);
       await conexion.end();

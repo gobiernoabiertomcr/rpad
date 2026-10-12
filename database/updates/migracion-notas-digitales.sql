@@ -6,6 +6,8 @@
 -- Ejecutar: mysql -u USUARIO -p NOMBRE_BASE < migracion-notas-digitales.sql
 -- =====================================================
 
+SET NAMES utf8mb4;
+
 CREATE TABLE `notas_digitales` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `numero` int(11) DEFAULT NULL,

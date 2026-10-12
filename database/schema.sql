@@ -420,6 +420,8 @@ UNLOCK TABLES;
 -- Notas Digitales (database/updates/migracion-notas-digitales.sql)
 -- =====================================================
 
+SET NAMES utf8mb4;
+
 CREATE TABLE `notas_digitales` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `numero` int(11) DEFAULT NULL,
