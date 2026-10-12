@@ -3,7 +3,8 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import { construirNota } from '../services/notasDigitalesContenido.js';
-import { renderPdf } from '../services/notasDigitalesPdf.js';
+import { renderPdf, validarImagenFirma } from '../services/notasDigitalesPdf.js';
+import { pngRgba, pngsDanados, jpegMinimo } from './firma-fixtures.js';
 
 // PNG válido de 1x1 píxel
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -70,6 +71,57 @@ describe('renderPdf', () => {
 
   it('una nota corta ocupa una sola hoja', async () => {
     assert.equal(paginas(await renderPdf(nota(1))), 1);
+  });
+
+  it('una firma PNG RGBA sana (también entrelazada) sale en el PDF con su transparencia', async () => {
+    for (const imagen of [pngRgba(), pngRgba({ ancho: 37, alto: 23, entrelazado: true })]) {
+      const pdf = texto(await renderPdf(nota(1), { firmaImagen: imagen }));
+      assert.ok(pdf.includes('/Subtype /Image'));
+      assert.ok(pdf.includes('/SMask'));
+    }
+  });
+
+  it('una firma PNG con los datos dañados rechaza la promesa sin tumbar el proceso', async () => {
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      await assert.rejects(renderPdf(nota(1), { firmaImagen: imagen }), /firma/, caso);
+    }
+    // La descompresión de png-js es asíncrona: si alguna imagen llegara a PDFKit, su error aparecería después
+    await new Promise(resolve => setTimeout(resolve, 300));
+  });
+});
+
+describe('validarImagenFirma', () => {
+  it('acepta PNG (también RGBA) y JPEG sanos, con el mime o deduciéndolo de los bytes', () => {
+    const sanas = [[PNG, 'image/png'], [pngRgba(), 'image/png'], [pngRgba({ ancho: 300, alto: 120 }), 'image/png'],
+      [pngRgba({ ancho: 37, alto: 23, entrelazado: true }), 'image/png'], [jpegMinimo(), 'image/jpeg']];
+    for (const [imagen, mime] of sanas) {
+      assert.doesNotThrow(() => validarImagenFirma(imagen, mime));
+      assert.doesNotThrow(() => validarImagenFirma(imagen));
+    }
+  });
+
+  it('rechaza los PNG con la cabecera válida y los datos dañados, con un mensaje claro', () => {
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      assert.throws(() => validarImagenFirma(imagen, 'image/png'), (error) => {
+        assert.ok(error instanceof Error, caso);
+        assert.match(error.message, /^La imagen de la firma no es válida: /, caso);
+        return true;
+      });
+    }
+  });
+
+  it('rechaza un PNG demasiado grande para decodificarlo', () => {
+    assert.throws(() => validarImagenFirma(pngRgba({ ancho: 4001, alto: 1 }), 'image/png'), /4001 × 1 píxeles/);
+  });
+
+  it('rechaza JPEG incompletos o sin cabecera de imagen, y un mime que no corresponde', () => {
+    const jpeg = jpegMinimo();
+    assert.throws(() => validarImagenFirma(jpeg.subarray(0, jpeg.length - 2), 'image/jpeg'), /falta el final del JPEG/);
+    const sinCuadro = Buffer.concat([jpeg.subarray(0, 89), jpeg.subarray(102)]); // sin el segmento SOF0
+    assert.throws(() => validarImagenFirma(sinCuadro, 'image/jpeg'), /firma no es válida/);
+    assert.throws(() => validarImagenFirma(jpeg, 'image/png'), /no es un PNG/);
+    assert.throws(() => validarImagenFirma(PNG, 'image/gif'), /PNG o JPEG/);
+    assert.throws(() => validarImagenFirma(Buffer.alloc(0)), /vacío/);
   });
 });
 

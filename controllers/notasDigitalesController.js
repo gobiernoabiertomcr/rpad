@@ -3,6 +3,7 @@
 import pool from '../config/database.js';
 import * as notas from '../services/notasDigitales.js';
 import { obtenerConfig } from '../services/notasDigitalesDatos.js';
+import { validarImagenFirma, ImagenInvalida } from '../services/notasDigitalesPdf.js';
 import { listaDeCorreos } from '../services/emailService.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
@@ -153,7 +154,10 @@ export const enviarPrueba = async (req, res) => {
       data: { id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios }
     });
   } catch (error) {
-    if (error instanceof notas.ErrorDeUso) return res.status(400).json({ success: false, error: error.message });
+    // Sin casillas de prueba o con una firma guardada que no se puede leer: el admin lo corrige en Configuración
+    if (error instanceof notas.ErrorDeUso || error instanceof ImagenInvalida) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     errorInterno(res, 'Error al enviar la prueba', error);
   }
 };
@@ -242,6 +246,12 @@ export const subirFirma = async (req, res) => {
     }
     if (!cabecera.every((byte, i) => datos[i] === byte)) {
       return res.status(400).json({ success: false, error: 'El contenido no corresponde a una imagen PNG o JPEG' });
+    }
+    // Una imagen dañada con la cabecera correcta se guardaría y haría fallar cada nota: se decodifica antes de guardarla
+    try {
+      validarImagenFirma(datos, mime);
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error.message });
     }
     await pool.query('UPDATE notas_digitales_config SET firma_imagen = ?, firma_mime = ?, updated_by = ? WHERE id = 1',
       [datos, mime, req.user?.userId ?? null]);

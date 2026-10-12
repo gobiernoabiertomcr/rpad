@@ -5,6 +5,7 @@ import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas } from './notas-fixtures.js';
+import { pngRgba, pngsDanados } from './firma-fixtures.js';
 import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -108,6 +109,32 @@ describe('configuración', () => {
     // El proceso del servidor no se cayó
     assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
     assert.equal((await query('SELECT firma_imagen FROM notas_digitales_config WHERE id = 1'))[0].firma_imagen, null);
+  });
+
+  it('una firma PNG RGBA con los datos dañados da 400, no se guarda y el servidor sigue en pie', async () => {
+    const enviar = (imagen) => api.put('/notificaciones/notas-digitales/config/firma', { imagen: imagen.toString('base64'), mime: 'image/png' }, comoAdmin());
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      const res = await enviar(imagen);
+      assert.equal(res.status, 400, caso);
+      assert.match(res.body.error, /imagen de la firma/, caso);
+    }
+    assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
+    assert.equal((await query('SELECT firma_imagen FROM notas_digitales_config WHERE id = 1'))[0].firma_imagen, null);
+
+    // Una firma RGBA sana se guarda y la prueba genera su PDF
+    assert.equal((await enviar(pngRgba())).status, 200);
+    assert.equal((await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'aviso', gestion: 'interna' }, comoAdmin())).status, 200);
+  });
+
+  it('con una firma dañada ya guardada la prueba responde 400 y el servidor sigue en pie', async () => {
+    await configurarNotas({ firma_imagen: pngsDanados()['IDAT con la cabecera zlib rota'], firma_mime: 'image/png' });
+    const res = await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'aviso', gestion: 'interna' }, comoAdmin());
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /imagen de la firma/);
+    // Esperar a la descompresión asíncrona de png-js: si la imagen hubiera llegado a PDFKit, el proceso se caería
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
+    assert.equal((await mailpit.mensajes()).length, 0);
   });
 
   it('un texto en null no se guarda como la palabra "null" ni deja activar el envío', async () => {
