@@ -62,11 +62,27 @@ describe('database/schema.sql', () => {
     assert.equal(rol.defecto, "'lector'");
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales']) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
   }
+
+  it('trae la configuración inicial de Notas Digitales, sin firma ni casillas de prueba', async () => {
+    const [[config]] = await root.query(`SELECT * FROM \`${BASE_TEMPORAL}\`.notas_digitales_config`);
+    assert.equal(config.id, 1);
+    assert.equal(config.envio_activo, 0);
+    assert.equal(config.para_interna, 'mit@comodoro.gov.ar');
+    assert.equal(config.cc_interna, 'geoestadisticas@comodoro.gov.ar');
+    assert.equal(config.para_externa, 'mit@comodoro.gov.ar');
+    assert.equal(config.cc_externa, 'investigacionterritorial@comodoro.gov.ar');
+    assert.equal(config.cco, 'datospublicos@comodoro.gov.ar');
+    assert.equal(config.linea_cc_interna, 'CC. Dir. de Investigación Territorial');
+    assert.equal(config.linea_cc_externa, 'CC. Dir. Administrativa');
+    assert.equal(config.firma_nombre, '');
+    assert.equal(config.firma_imagen, null);
+    assert.equal(config.casillas_prueba, '');
+  });
 
   for (const tabla of ['temas', 'frecuencias', 'formatos']) {
     it(`trae el catálogo completo de ${tabla}`, async () => {

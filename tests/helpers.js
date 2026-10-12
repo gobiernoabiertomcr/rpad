@@ -4,6 +4,7 @@
 import 'dotenv/config';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
@@ -16,7 +17,7 @@ export const PREFIJO_TEST = '[TEST]';
 // =====================================================
 // Protección: nunca correr contra producción
 // =====================================================
-const verificarEntornoLocal = async () => {
+export const verificarEntornoLocal = async () => {
   const errores = [];
   if (process.env.RPAD_TESTS_DB_LOCAL !== '1') {
     errores.push('RPAD_TESTS_DB_LOCAL=1 no está en .env (habilitarlo solo en la base Docker local)');
@@ -65,17 +66,51 @@ export const catalogos = async () => {
   return { areaId: area.id, frecuenciaId: frecuencia.id, temaId: tema.id, formatoId: formato.id };
 };
 
+// Crea una base vacía a partir de database/schema.sql, para tests que necesitan datos controlados.
+// El usuario de la app recibe permisos sobre ella.
+const conexionRoot = () => mysql.createConnection({
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '3306'),
+  user: 'root',
+  password: process.env.DB_ROOT_PASSWORD,
+  multipleStatements: true
+});
+
+export const crearBaseDePrueba = async (nombre) => {
+  await verificarEntornoLocal();
+  if (!process.env.DB_ROOT_PASSWORD) throw new Error('Falta DB_ROOT_PASSWORD en .env (base Docker local)');
+  const root = await conexionRoot();
+  try {
+    await root.query(`DROP DATABASE IF EXISTS \`${nombre}\``);
+    await root.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${nombre}\``);
+    await root.query(fs.readFileSync(path.join(ROOT, 'database', 'schema.sql'), 'utf8'));
+    await root.query(`GRANT ALL PRIVILEGES ON \`${nombre}\`.* TO ?@'%'`, [process.env.DB_USER]);
+  } finally {
+    await root.end();
+  }
+  return {
+    nombre,
+    borrar: async () => {
+      const conexion = await conexionRoot();
+      await conexion.query(`DROP DATABASE IF EXISTS \`${nombre}\``);
+      await conexion.end();
+    }
+  };
+};
+
 // =====================================================
 // Servidor
 // =====================================================
-export const iniciarServidor = async () => {
+export const iniciarServidor = async ({ env = {} } = {}) => {
   await verificarEntornoLocal();
 
   const puerto = 31000 + crypto.randomInt(0, 999);
   const salida = [];
+  // EMAIL_SOLO_A vacío: los tests verifican los destinatarios reales en Mailpit
   const proceso = spawn(process.execPath, ['app.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(puerto) },
+    env: { ...process.env, PORT: String(puerto), EMAIL_SOLO_A: '', ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   proceso.stdout.on('data', d => salida.push(d.toString()));
