@@ -56,18 +56,21 @@ rpad/
 │   ├── andinoController.js        # Integración con portal de datos
 │   ├── cambiosPendientesController.js  # Sistema de doble verificación
 │   ├── contactoController.js      # Formulario de contacto público
-│   ├── notificacionesController.js  # Sistema de alertas por email
+│   ├── notificacionesController.js  # Cron diario: aviso a áreas y Notas Digitales
+│   ├── notasDigitalesController.js  # API de Notas Digitales (libro, prueba, configuración)
 │   ├── notasController.js         # Generador de notas DOCX
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
 │   ├── emailService.js            # Configuración SMTP y envío
-│   └── emailTemplates.js          # Plantillas HTML para emails
+│   ├── emailTemplates.js          # Plantillas HTML para emails
+│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido y PDF
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD
 │   └── updates/                   # Scripts de migración
 │       ├── migracion-v1.2.0-v1.3.0.sql
 │       ├── migracion-v1.3.0-v1.4.0.sql
-│       └── migracion-v1.4.0-v1.5.0.sql
+│       ├── migracion-v1.4.0-v1.5.0.sql
+│       └── migracion-notas-digitales.sql
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -142,6 +145,29 @@ Desde **phpMyAdmin** en cPanel:
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
 | `historial_actualizaciones` | Log de actualizaciones realizadas |
 | `notificaciones_log` | Registro de notificaciones enviadas |
+
+### Migración: Notas Digitales
+
+⚠️ Requisito: la base tiene que tener aplicadas las migraciones anteriores. La migración crea las tablas `notas_digitales` (libro), `notas_digitales_datasets` y `notas_digitales_config` (destinatarios iniciales, envío automático **desactivado** y registro de la última corrida diaria).
+
+Secuencia de despliegue, en este orden:
+
+1. **Backup de la base de producción**, por ejemplo:
+   ```bash
+   mysqldump -u USUARIO -p NOMBRE_BASE > backup-antes-de-notas-digitales.sql
+   ```
+2. **Ejecutar la migración antes de subir el código.** El script no tiene `USE`: hay que indicar la base en el comando.
+   ```bash
+   mysql -u USUARIO -p NOMBRE_BASE < database/updates/migracion-notas-digitales.sql
+   ```
+   La migración no se puede correr dos veces. Si falla a mitad de camino, restaurar el backup antes de reintentar.
+3. **Subir el código**, correr `npm install` y reiniciar la app (**Restart** en Setup Node.js App).
+4. **Verificar SMTP** en Correos → Estado ("Verificar conexión SMTP"). Si la conexión es rechazada, habilitar la salida SMTP de la cuenta en WHM ("SMTP Restrictions").
+5. En Correos → Configuración, **cargar la firma** (nombre, cargo e imagen) y las **casillas de prueba**. Después, **enviar una prueba de cada variante** (aviso y reiteración, de gestión interna y externa) y revisar las cuatro en las casillas de prueba, con su PDF.
+6. **Recién entonces, activar el envío automático** en Correos → Estado. Las notas las dispara el mismo cron diario de `/api/cron/notificaciones` (ver [Configurar Cron Job](#configurar-cron-job-notificaciones-automáticas)).
+7. **El primer día hábil siguiente**, revisar Correos → Estado: la línea "Última corrida diaria" tiene que mostrar la corrida de las 08:00 sin errores y no tiene que haber alertas. Revisar también el libro de Notas Digitales.
+
+Los siete emails de aviso anteriores (interno y externo) dejan de salir apenas se sube el código; las Notas Digitales empiezan cuando se activa el envío automático.
 
 ### Migración desde v1.4.0 a v1.5.0
 
@@ -288,6 +314,7 @@ Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días 
 - **Aviso**: gestión interna 60 días antes del vencimiento, gestión externa 30 días antes.
 - **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 21 días o más que siguen pendientes.
 - Solo en días hábiles. Cada nota se numera (`Nota Digital N° 12/26`), se envía con el PDF adjunto y queda en el libro de la pantalla de Correos.
+- La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
 - El envío automático arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 
 ---
@@ -374,7 +401,8 @@ Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días 
 - Verificar conexión SMTP desde panel Admin
 - Revisar que CRON_SECRET coincide en `.env` y cron job
 - En Correos, revisar que el envío automático de Notas Digitales esté activado y que no haya alertas de configuración incompleta
-- Revisar en el libro de Notas Digitales las notas "Fallida" (el detalle del error está en el estado) y reintentarlas
+- En Correos → Estado, revisar la línea "Última corrida diaria" y sus alertas (corrida con errores, interrumpida o que no llegó)
+- Revisar en el libro de Notas Digitales las notas "Fallida" (el último error se ve con el botón "Ver") y reintentarlas
 - En desarrollo, `EMAIL_SOLO_A` en `.env` limita los envíos a esas casillas
 
 ### PDFs con páginas en blanco
