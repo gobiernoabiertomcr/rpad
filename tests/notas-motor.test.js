@@ -87,6 +87,24 @@ describe('condiciones para ejecutar', () => {
     assert.equal((await ejecutar('2026-11-01')).motivo, 'Día no hábil');
     assert.equal((await notas()).length, 0);
   });
+
+  it('una fecha que no es AAAA-MM-DD queda registrada como corrida con error, sin seleccionar nada', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    const resumen = await ejecutar('11/02/2026');
+    assert.equal(resumen.ejecutado, false);
+    assert.equal(resumen.motivo, 'Fecha de corrida inválida');
+    assert.deepEqual(resumen.errores.map(e => e.tipo), ['fecha']);
+    assert.equal((await notas()).length, 0);
+
+    const corrida = await ultimaCorrida();
+    assert.equal(corrida.fecha, null);
+    assert.match(corrida.inicio, FECHA_HORA);
+    assert.match(corrida.fin, FECHA_HORA);
+    assert.equal(corrida.con_errores, 1);
+    assert.match(corrida.resultado, /^Fecha de corrida inválida\. 1 error\(es\): fecha: "11\/02\/2026"/);
+    const [marcas] = await query('SELECT reiteracion_evaluada_interna AS interna, reiteracion_evaluada_externa AS externa FROM notas_digitales_config WHERE id = 1');
+    assert.deepEqual(marcas, { interna: null, externa: null });
+  });
 });
 
 describe('avisos', () => {

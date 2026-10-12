@@ -8,6 +8,28 @@ describe('hoyArgentina', () => {
     assert.equal(cal.hoyArgentina(new Date('2026-11-02T02:00:00Z')), '2026-11-01');
     assert.equal(cal.hoyArgentina(new Date('2026-11-02T11:00:00Z')), '2026-11-02');
   });
+
+  it('no depende del formato de texto de un idioma (un Node con small-icu no tiene en-CA)', () => {
+    // Cualquier idioma pedido se resuelve como alemán (02.11.2026): el resultado tiene que seguir siendo AAAA-MM-DD
+    const Original = Intl.DateTimeFormat;
+    Intl.DateTimeFormat = function DateTimeFormat(_idioma, opciones) { return new Original('de-DE', opciones); };
+    try {
+      assert.equal(cal.hoyArgentina(new Date('2026-11-02T11:00:00Z')), '2026-11-02');
+      assert.equal(cal.ahoraArgentina(new Date('2026-11-02T11:05:09Z')), '2026-11-02 08:05:09');
+    } finally {
+      Intl.DateTimeFormat = Original;
+    }
+  });
+});
+
+describe('esFechaIso', () => {
+  it('acepta solo AAAA-MM-DD de un día que existe', () => {
+    assert.equal(cal.esFechaIso('2026-11-02'), true);
+    assert.equal(cal.esFechaIso('2028-02-29'), true);
+    for (const valor of ['11/02/2026', '2026-11-2', '2026-13-01', '2026-02-30', '2026-11-02 08:00', '', null, undefined, 20261102]) {
+      assert.equal(cal.esFechaIso(valor), false, String(valor));
+    }
+  });
 });
 
 describe('días hábiles', () => {

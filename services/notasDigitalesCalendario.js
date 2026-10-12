@@ -9,10 +9,6 @@ const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', '
 const aFecha = (iso) => new Date(`${iso}T12:00:00Z`);
 const aIso = (fecha) => fecha.toISOString().slice(0, 10);
 
-export const hoyArgentina = (ahora = new Date()) => new Intl.DateTimeFormat('en-CA', {
-  timeZone: ZONA_HORARIA, year: 'numeric', month: '2-digit', day: '2-digit'
-}).format(ahora);
-
 // Partes numéricas de la fecha y la hora de Argentina, sin depender del formato de texto de un idioma
 const partesArgentina = (ahora) => {
   const partes = {};
@@ -32,6 +28,13 @@ export const ahoraArgentina = (ahora = new Date()) => {
   const { year, month, day, hour, minute, second } = partesArgentina(ahora);
   return `${year}-${dosCifras(month)}-${dosCifras(day)} ${dosCifras(hour % 24)}:${dosCifras(minute)}:${dosCifras(second)}`;
 };
+
+// 'AAAA-MM-DD' de hoy en Argentina, armado con formatToParts (antes dependía de que 'en-CA' existiera en el ICU de Node)
+export const hoyArgentina = (ahora = new Date()) => ahoraArgentina(ahora).slice(0, 10);
+
+// true si es un string 'AAAA-MM-DD' de un día que existe
+export const esFechaIso = (valor) => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor)
+  && !Number.isNaN(aFecha(valor).getTime()) && aIso(aFecha(valor)) === valor;
 
 export const sumarDias = (iso, dias) => {
   const fecha = aFecha(iso);

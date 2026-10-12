@@ -5,8 +5,8 @@ import { sendEmail, listaDeCorreos } from './emailService.js';
 import { construirNota, renderHtml, renderTexto } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import {
-  hoyArgentina, ahoraArgentina, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe, periodoSiguiente,
-  sumarDias, formatoCorto
+  hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
+  periodoSiguiente, sumarDias, formatoCorto
 } from './notasDigitalesCalendario.js';
 import {
   VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, pendientesDeAviso, antecedentesDe, areasDe
@@ -200,7 +200,7 @@ const registrarCorrida = async (asignaciones, parametros) => {
 const registrarInicio = (hoy) => registrarCorrida(
   `ultima_corrida_fecha = ?, ultima_corrida_inicio = ?, ultima_corrida_fin = NULL, ultima_corrida_resultado = NULL,
    ultima_corrida_con_errores = 0`,
-  [hoy, ahoraArgentina()]
+  [esFechaIso(hoy) ? hoy : null, ahoraArgentina()]
 );
 
 const registrarFin = (resumen) => registrarCorrida(
@@ -210,6 +210,12 @@ const registrarFin = (resumen) => registrarCorrida(
 
 // Los pasos de una corrida (spec 8.1). Cada reintento, cada aviso y cada reiteración van aislados.
 const correrPasos = async (resumen, hoy, usuarioId) => {
+  // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
+  if (!esFechaIso(hoy)) {
+    resumen.motivo = 'Fecha de corrida inválida';
+    anotarError(resumen, { tipo: 'fecha' }, new Error(`"${hoy}" no es una fecha AAAA-MM-DD`));
+    return;
+  }
   const config = await obtenerConfig();
   if (!config.envio_activo) {
     resumen.motivo = 'Envío automático desactivado';
