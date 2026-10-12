@@ -160,7 +160,10 @@ Secuencia de despliegue, en este orden:
    ```bash
    mysql -u USUARIO -p NOMBRE_BASE < database/updates/migracion-notas-digitales.sql
    ```
-   La migración no se puede correr dos veces. Si falla a mitad de camino, restaurar el backup antes de reintentar.
+   La migración no se puede correr dos veces. Solo crea tablas nuevas y no modifica las existentes. Si falla a mitad de camino, borrar las que se hayan creado y volver a correrla. No restaurar el backup por esto: se perdería lo que se cargó en el sistema desde que se hizo.
+   ```sql
+   DROP TABLE IF EXISTS notas_digitales_datasets, notas_digitales_config, notas_digitales;
+   ```
 3. **Subir el código**, correr `npm install` y reiniciar la app (**Restart** en Setup Node.js App).
 4. **Verificar SMTP** en Correos → Estado ("Verificar conexión SMTP"). Si la conexión es rechazada, habilitar la salida SMTP de la cuenta en WHM ("SMTP Restrictions").
 5. En Correos → Configuración, **cargar la firma** (nombre, cargo e imagen) y las **casillas de prueba**. Después, **enviar una prueba de cada variante** (aviso y reiteración, de gestión interna y externa) y revisar las cuatro en las casillas de prueba, con su PDF.
