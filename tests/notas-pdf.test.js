@@ -268,6 +268,38 @@ describe('renderPdf: maquetación', () => {
     assert.ok(cortes > 10, `el barrido apenas cortó hojas (${cortes})`);
   });
 
+  it('el título de los contactos nunca queda solo al pie de una hoja y cada área va entera', async () => {
+    const TITULO = 'Datos de contacto de las áreas responsables';
+    // Áreas con los 8 campos de contacto cargados: el bloque más alto que puede tener un contacto
+    const areaCompleta = (k) => ({
+      id: k, nombre: `Área completa ${k}`, area_superior: `Secretaría de prueba ${k}`, email_principal: `area${k}@rpad.test`,
+      email_secundario: `alternativa${k}@rpad.test`, telefono_area: '297 400-0000', celular_area: '297 15 400-0000',
+      nombre_contacto: `Persona de contacto ${k}`, telefono_contacto: '297 400-0001', email_contacto: `contacto${k}@rpad.test`
+    });
+    let cortes = 0;
+    for (const estilo of ['largo', 'corto', 'variado']) {
+      for (let cantidad = 1; cantidad <= 40; cantidad++) {
+        const n = nota(cantidad, {
+          datasets: Array.from({ length: cantidad }, (_, i) => ({ ...dataset(i + 1), titulo: titulos[estilo](i + 1) })),
+          areas: [1, 2, 3].map(areaCompleta)
+        });
+        const etiqueta = `${estilo} con ${cantidad} datasets`;
+        const hojas = lineasPorHoja(await renderPdf(n));
+        const conTitulo = hojas.filter(lineas => lineas.includes(TITULO));
+        assert.equal(conTitulo.length, 1, etiqueta);
+        const siguientes = conTitulo[0].slice(conTitulo[0].indexOf(TITULO) + 1).filter(linea => !esPie(linea));
+        assert.equal(siguientes[0], n.contactos[0].nombre, `${etiqueta}: el título quedó solo al pie de la hoja`);
+        for (const contacto of n.contactos) {
+          assert.equal(contacto.lineas.length, 8);
+          const hoja = hojas.find(lineas => lineas.includes(contacto.nombre));
+          assert.ok(contacto.lineas.every(linea => hoja.includes(linea)), `${etiqueta}: ${contacto.nombre} quedó partida entre hojas`);
+        }
+        if (hojas.indexOf(conTitulo[0]) > 0 && hojas[hojas.indexOf(conTitulo[0]) - 1].some(esFila)) cortes++;
+      }
+    }
+    assert.ok(cortes > 10, `el barrido apenas cortó hojas antes de los contactos (${cortes})`);
+  });
+
   it('las notas de reiteración (7 columnas) no cortan fechas ni palabras de la tabla', () => {
     const { hojas } = renderizadas.find(r => r.etiqueta === 'reiteracion/externa/largo con 5 datasets');
     const lineas = hojas.flat();

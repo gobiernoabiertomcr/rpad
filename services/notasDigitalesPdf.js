@@ -269,10 +269,18 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
       // (si ya está arriba de una hoja, un bloque más alto que la hoja no justifica dejarla en blanco)
       if (doc.y + alto > doc.page.height - MARGENES.bottom && doc.y > MARGENES.top + 1) doc.addPage();
     };
-    const altoTexto = (texto, tamano = 12) => {
-      doc.font(NORMAL).fontSize(tamano);
+    const altoTexto = (texto, tamano = 12, fuente = NORMAL) => {
+      doc.font(fuente).fontSize(tamano);
       return doc.heightOfString(texto, { width: ancho });
     };
+    // Lo que avanza doc.moveDown(espacio) con esa fuente
+    const altoEspacio = (espacio, tamano, fuente = NORMAL) => {
+      doc.font(fuente).fontSize(tamano);
+      return doc.currentLineHeight(true) * espacio;
+    };
+    // Alto real de un contacto como lo dibuja el bucle de abajo: nombre en negrita 10, espacio y líneas en 10
+    const altoContacto = (contacto) => altoTexto(contacto.nombre, 10, NEGRITA) + altoEspacio(0.1, 10, NEGRITA)
+      + altoTexto(contacto.lineas.join('\n'), 10);
     const parrafo = (texto, { fuente = NORMAL, tamano = 12, align = 'justify', underline = false, espacio = 0.6 } = {}) => {
       doc.font(fuente).fontSize(tamano).text(texto, MARGENES.left, doc.y, { width: ancho, align, underline });
       doc.moveDown(espacio);
@@ -297,10 +305,12 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
     }
 
     if (nota.contactos.length) {
-      asegurarEspacio(70);
-      parrafo('Datos de contacto de las áreas responsables', { fuente: NEGRITA, align: 'left', espacio: 0.4 });
+      // El título viaja con el primer contacto entero (medido, no estimado): nunca queda solo al pie de una hoja
+      const titulo = 'Datos de contacto de las áreas responsables';
+      asegurarEspacio(altoTexto(titulo, 12, NEGRITA) + altoEspacio(0.4, 12, NEGRITA) + altoContacto(nota.contactos[0]));
+      parrafo(titulo, { fuente: NEGRITA, align: 'left', espacio: 0.4 });
       for (const contacto of nota.contactos) {
-        asegurarEspacio(14 * (contacto.lineas.length + 1));
+        asegurarEspacio(altoContacto(contacto));
         parrafo(contacto.nombre, { fuente: NEGRITA, tamano: 10, align: 'left', espacio: 0.1 });
         parrafo(contacto.lineas.join('\n'), { tamano: 10, align: 'left', espacio: 0.5 });
       }
