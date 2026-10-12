@@ -1,6 +1,12 @@
 import pool from '../config/database.js';
 import { crearCambioPendiente, datasetTieneCambiosPendientes } from './cambiosPendientesController.js';
 
+// Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
+const responderBloqueado = (res, accion) => res.status(409).json({
+  success: false,
+  error: `Este dataset tiene cambios pendientes de aprobación. No se puede ${accion} hasta que sean revisados.`
+});
+
 /**
  * Funcion auxiliar: Normalizar valor para comparacion
  * Maneja fechas, nulls y strings de forma consistente
@@ -309,10 +315,7 @@ export const updateDataset = async (req, res) => {
     // Verificar si el dataset tiene cambios pendientes (bloqueado)
     const bloqueado = await datasetTieneCambiosPendientes(id);
     if (bloqueado) {
-      return res.status(409).json({
-        success: false,
-        error: 'Este dataset tiene cambios pendientes de aprobación. No se puede editar hasta que sean revisados.'
-      });
+      return responderBloqueado(res, 'editar');
     }
 
     // Validar tipo_gestion si se proporciona
@@ -399,6 +402,9 @@ export const updateDataset = async (req, res) => {
 
     // Crear cambio pendiente
     const cambioId = await crearCambioPendiente('editar', Number(id), datosNuevos, datosAnteriores, usuarioId);
+    if (!cambioId) {
+      return responderBloqueado(res, 'editar');
+    }
 
     res.json({
       success: true,
@@ -436,10 +442,7 @@ export const deleteDataset = async (req, res) => {
     // Verificar si el dataset tiene cambios pendientes (bloqueado)
     const bloqueado = await datasetTieneCambiosPendientes(id);
     if (bloqueado) {
-      return res.status(409).json({
-        success: false,
-        error: 'Este dataset tiene cambios pendientes de aprobación. No se puede eliminar hasta que sean revisados.'
-      });
+      return responderBloqueado(res, 'eliminar');
     }
 
     const datasetActual = existing[0];
@@ -455,6 +458,9 @@ export const deleteDataset = async (req, res) => {
 
     // Crear cambio pendiente de eliminación
     const cambioId = await crearCambioPendiente('eliminar', Number(id), { eliminado: true }, datosAnteriores, usuarioId);
+    if (!cambioId) {
+      return responderBloqueado(res, 'eliminar');
+    }
 
     res.json({
       success: true,
@@ -579,10 +585,7 @@ export const registrarActualizacion = async (req, res) => {
     // Verificar si el dataset tiene cambios pendientes (bloqueado)
     const bloqueado = await datasetTieneCambiosPendientes(id);
     if (bloqueado) {
-      return res.status(409).json({
-        success: false,
-        error: 'Este dataset tiene cambios pendientes de aprobación. No se puede marcar como actualizado hasta que sean revisados.'
-      });
+      return responderBloqueado(res, 'marcar como actualizado');
     }
 
     const dataset = datasetRows[0];
@@ -611,6 +614,9 @@ export const registrarActualizacion = async (req, res) => {
 
     // Crear cambio pendiente
     const cambioId = await crearCambioPendiente('editar', Number(id), datosNuevos, datosAnteriores, usuarioId);
+    if (!cambioId) {
+      return responderBloqueado(res, 'marcar como actualizado');
+    }
 
     res.json({
       success: true,

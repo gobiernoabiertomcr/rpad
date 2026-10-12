@@ -361,20 +361,24 @@ export const verificarDatasetBloqueado = async (req, res) => {
  * Aprobar un cambio pendiente
  */
 export const aprobarCambio = async (req, res) => {
-  const connection = await pool.getConnection();
+  let connection;
 
   try {
     const { id } = req.params;
     const revisorId = req.user?.userId;
 
-    // Obtener el cambio pendiente
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Bloquear el cambio hasta el commit: un doble click o un rechazo simultáneo
+    // esperan acá y después lo encuentran ya procesado
     const [cambios] = await connection.execute(
-      'SELECT * FROM cambios_pendientes WHERE id = ? AND estado = ?',
-      [id, 'pendiente']
+      'SELECT * FROM cambios_pendientes WHERE id = ? FOR UPDATE',
+      [id]
     );
 
-    if (cambios.length === 0) {
-      connection.release();
+    if (cambios.length === 0 || cambios[0].estado !== 'pendiente') {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
         error: 'Cambio pendiente no encontrado o ya fue procesado'
@@ -385,18 +389,16 @@ export const aprobarCambio = async (req, res) => {
 
     // Verificar que no sea su propio cambio
     if (cambio.usuario_id === revisorId) {
-      connection.release();
+      await connection.rollback();
       return res.status(403).json({
         success: false,
         error: 'No puede aprobar sus propios cambios'
       });
     }
 
-    const datosNuevos = typeof cambio.datos_nuevos === 'string' 
-      ? JSON.parse(cambio.datos_nuevos) 
+    const datosNuevos = typeof cambio.datos_nuevos === 'string'
+      ? JSON.parse(cambio.datos_nuevos)
       : cambio.datos_nuevos;
-
-    await connection.beginTransaction();
 
     let datasetId = cambio.dataset_id;
 
@@ -496,7 +498,6 @@ export const aprobarCambio = async (req, res) => {
     );
 
     await connection.commit();
-    connection.release();
 
     res.json({
       success: true,
@@ -505,13 +506,14 @@ export const aprobarCambio = async (req, res) => {
     });
 
   } catch (error) {
-    await connection.rollback();
-    connection.release();
+    await connection?.rollback().catch(() => {});
     console.error('Error aprobando cambio:', error);
     res.status(500).json({
       success: false,
       error: 'Error al aprobar el cambio'
     });
+  } finally {
+    connection?.release();
   }
 };
 
@@ -519,6 +521,8 @@ export const aprobarCambio = async (req, res) => {
  * Rechazar un cambio pendiente
  */
 export const rechazarCambio = async (req, res) => {
+  let connection;
+
   try {
     const { id } = req.params;
     const { comentario } = req.body;
@@ -531,13 +535,17 @@ export const rechazarCambio = async (req, res) => {
       });
     }
 
-    // Obtener el cambio pendiente
-    const [cambios] = await pool.execute(
-      'SELECT * FROM cambios_pendientes WHERE id = ? AND estado = ?',
-      [id, 'pendiente']
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Mismo bloqueo que aprobarCambio: no se puede rechazar algo que se está aprobando
+    const [cambios] = await connection.execute(
+      'SELECT * FROM cambios_pendientes WHERE id = ? FOR UPDATE',
+      [id]
     );
 
-    if (cambios.length === 0) {
+    if (cambios.length === 0 || cambios[0].estado !== 'pendiente') {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
         error: 'Cambio pendiente no encontrado o ya fue procesado'
@@ -548,6 +556,7 @@ export const rechazarCambio = async (req, res) => {
 
     // Verificar que no sea su propio cambio
     if (cambio.usuario_id === revisorId) {
+      await connection.rollback();
       return res.status(403).json({
         success: false,
         error: 'No puede rechazar sus propios cambios'
@@ -555,12 +564,14 @@ export const rechazarCambio = async (req, res) => {
     }
 
     // Marcar como rechazado
-    await pool.execute(
-      `UPDATE cambios_pendientes 
-       SET estado = 'rechazado', revisor_id = ?, comentario_rechazo = ?, revisado_at = NOW() 
+    await connection.execute(
+      `UPDATE cambios_pendientes
+       SET estado = 'rechazado', revisor_id = ?, comentario_rechazo = ?, revisado_at = NOW()
        WHERE id = ?`,
       [revisorId, comentario.trim(), id]
     );
+
+    await connection.commit();
 
     res.json({
       success: true,
@@ -568,11 +579,14 @@ export const rechazarCambio = async (req, res) => {
     });
 
   } catch (error) {
+    await connection?.rollback().catch(() => {});
     console.error('Error rechazando cambio:', error);
     res.status(500).json({
       success: false,
       error: 'Error al rechazar el cambio'
     });
+  } finally {
+    connection?.release();
   }
 };
 
@@ -590,29 +604,48 @@ export const datasetTieneCambiosPendientes = async (datasetId) => {
 
 /**
  * Función auxiliar: Crear un cambio pendiente (para usar desde datasetController)
+ * Devuelve el id del cambio, o null si el dataset ya tiene un cambio pendiente.
+ * La fila del dataset queda bloqueada mientras se verifica, así dos propuestas
+ * simultáneas no pueden pasar las dos el control de bloqueo.
  */
 export const crearCambioPendiente = async (tipoCambio, datasetId, datosNuevos, datosAnteriores, usuarioId) => {
-  // Si ya existe un cambio pendiente del mismo usuario para este dataset, lo sobreescribimos
-  if (datasetId) {
-    await pool.execute(
-      'DELETE FROM cambios_pendientes WHERE dataset_id = ? AND usuario_id = ? AND estado = ?',
-      [datasetId, usuarioId, 'pendiente']
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    if (datasetId) {
+      await connection.execute('SELECT id FROM datasets WHERE id = ? FOR UPDATE', [datasetId]);
+      const [pendientes] = await connection.execute(
+        'SELECT COUNT(*) as count FROM cambios_pendientes WHERE dataset_id = ? AND estado = ?',
+        [datasetId, 'pendiente']
+      );
+      if (pendientes[0].count > 0) {
+        await connection.rollback();
+        return null;
+      }
+    }
+
+    const [result] = await connection.execute(
+      `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, datos_anteriores, usuario_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        tipoCambio,
+        datasetId,
+        JSON.stringify(datosNuevos),
+        datosAnteriores ? JSON.stringify(datosAnteriores) : null,
+        usuarioId
+      ]
     );
+
+    await connection.commit();
+    return result.insertId;
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
   }
-
-  const [result] = await pool.execute(
-    `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, datos_anteriores, usuario_id)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      tipoCambio,
-      datasetId,
-      JSON.stringify(datosNuevos),
-      datosAnteriores ? JSON.stringify(datosAnteriores) : null,
-      usuarioId
-    ]
-  );
-
-  return result.insertId;
 };
 
 /**
