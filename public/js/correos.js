@@ -1,5 +1,6 @@
 // Correos: estado, libro de Notas Digitales, vista previa, configuración y aviso a las áreas
 let configActual = null;
+let urlFirma = null;
 
 const CAMPOS_CONFIG = ['para_interna', 'cc_interna', 'linea_cc_interna', 'para_externa', 'cc_externa', 'linea_cc_externa',
   'cco', 'casillas_prueba', 'firma_nombre', 'firma_cargo'];
@@ -8,6 +9,15 @@ const CLASE_ESTADO = { enviada: 'badge-success', fallida: 'badge-danger', pendie
 
 // Los mensajes del servidor se escapan: showToast inserta HTML
 const avisar = (mensaje, tipo = 'info') => showToast(Utils.escapeHtml(mensaje), tipo);
+// Deshabilita el botón mientras dura el pedido: evita vistas previas y pruebas duplicadas por clics repetidos
+const conBotonBloqueado = async (boton, tarea) => {
+  boton.disabled = true;
+  try {
+    await tarea();
+  } finally {
+    boton.disabled = false;
+  }
+};
 // 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date (evita corrimientos de zona horaria)
 const fecha = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
 
@@ -26,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ['filtro-anio', 'filtro-tipo', 'filtro-gestion', 'filtro-estado', 'filtro-dataset', 'filtro-pruebas']
     .forEach(id => document.getElementById(id).addEventListener('change', cargarLibro));
   document.getElementById('libro-cuerpo').addEventListener('click', accionDelLibro);
+  ['preview-tipo', 'preview-gestion'].forEach(id => document.getElementById(id).addEventListener('change', ocultarVistaPrevia));
   document.getElementById('btn-preview').addEventListener('click', verVistaPrevia);
   document.getElementById('btn-prueba').addEventListener('click', enviarmePrueba);
   document.getElementById('form-config').addEventListener('submit', guardarConfiguracion);
@@ -79,7 +90,7 @@ async function cargarEstado() {
       <div class="nd-proxima">
         <strong>${nombres[gestion]}</strong><br>
         Próximo aviso: ${p.aviso ? `${fecha(p.aviso.fecha)} (${p.aviso.cantidad} dataset/s)` : 'sin datasets pendientes'}<br>
-        Próxima reiteración: ${fecha(p.reiteracion.fecha)} (${p.reiteracion.cantidad} dataset/s)
+        Próxima reiteración: ${p.reiteracion.cantidad > 0 ? `${fecha(p.reiteracion.fecha)} (${p.reiteracion.cantidad} dataset/s)` : 'sin datasets pendientes'}
       </div>`).join('');
   } catch (error) {
     avisar(`No se pudo cargar el estado: ${error.message}`, 'error');
@@ -148,16 +159,18 @@ async function cargarLibro() {
         <td>${fecha(n.fecha)}</td>
         <td>${ETIQUETAS[n.tipo]}</td>
         <td>${ETIQUETAS[n.gestion]}</td>
-        <td>${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}</td>
+        <td>${n.es_prueba ? '—' : `${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}`}</td>
         <td>${Utils.escapeHtml(n.para)}${n.cc ? `<br><small>CC: ${Utils.escapeHtml(n.cc)}</small>` : ''}</td>
         <td>
           <span class="badge ${CLASE_ESTADO[n.estado]}" title="${Utils.escapeHtml(detalleEstado)}">${ETIQUETAS[n.estado]}</span>
           ${n.enviada_at ? `<br><small>${Utils.escapeHtml(n.enviada_at)}</small>` : ''}
         </td>
-        <td class="nd-acciones">
-          <button type="button" class="btn btn-secondary btn-sm" data-accion="ver" data-id="${n.id}">Ver</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-accion="pdf" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivo)}">PDF</button>
-          ${n.estado !== 'enviada' ? `<button type="button" class="btn btn-outline btn-sm" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
+        <td>
+          <div class="nd-acciones">
+            <button type="button" class="btn btn-secondary btn-sm" data-accion="ver" data-id="${n.id}">Ver</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-accion="pdf" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivo)}">PDF</button>
+            ${n.estado !== 'enviada' ? `<button type="button" class="btn btn-outline btn-sm" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -188,7 +201,7 @@ async function accionDelLibro(evento) {
       enlace.href = url;
       enlace.download = boton.dataset.archivo;
       enlace.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } else if (boton.dataset.accion === 'reintentar') {
       boton.disabled = true;
       const resultado = await API.reintentarNota(id);
@@ -217,33 +230,46 @@ const tipoYGestion = () => ({
   gestion: document.getElementById('preview-gestion').value
 });
 
-async function verVistaPrevia() {
-  const { tipo, gestion } = tipoYGestion();
-  try {
-    const vista = await API.previewNota(tipo, gestion);
-    const aviso = document.getElementById('preview-aviso');
-    aviso.hidden = false;
-    aviso.textContent = vista.ejemplo
-      ? 'Hoy no saldría ninguna nota de este tipo: se muestran datos de ejemplo.'
-      : `Con los datos de hoy esta nota incluiría ${vista.cantidad} dataset(s). Asunto: ${vista.asunto}`;
-    const marco = document.getElementById('preview-marco');
-    marco.srcdoc = vista.html;
-    marco.hidden = false;
-  } catch (error) {
-    avisar(error.message, 'error');
-  }
+// Al cambiar el tipo o la gestión, la vista previa anterior ya no corresponde: se oculta hasta pedir otra
+function ocultarVistaPrevia() {
+  document.getElementById('preview-aviso').hidden = true;
+  document.getElementById('preview-marco').hidden = true;
+}
+
+function verVistaPrevia() {
+  return conBotonBloqueado(document.getElementById('btn-preview'), async () => {
+    const { tipo, gestion } = tipoYGestion();
+    try {
+      const vista = await API.previewNota(tipo, gestion);
+      // Si mientras tanto cambió la selección, la respuesta ya no corresponde
+      const actual = tipoYGestion();
+      if (actual.tipo !== tipo || actual.gestion !== gestion) return;
+      const aviso = document.getElementById('preview-aviso');
+      aviso.hidden = false;
+      aviso.textContent = vista.ejemplo
+        ? 'Hoy no saldría ninguna nota de este tipo: se muestran datos de ejemplo.'
+        : `Con los datos de hoy esta nota incluiría ${vista.cantidad} dataset(s). Asunto: ${vista.asunto}`;
+      const marco = document.getElementById('preview-marco');
+      marco.srcdoc = vista.html;
+      marco.hidden = false;
+    } catch (error) {
+      avisar(error.message, 'error');
+    }
+  });
 }
 
 async function enviarmePrueba() {
   const { tipo, gestion } = tipoYGestion();
   if (!confirm('Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas. ¿Continuar?')) return;
-  try {
-    const resultado = await API.enviarPruebaNota(tipo, gestion);
-    avisar(resultado.message, 'success');
-    cargarLibro();
-  } catch (error) {
-    avisar(error.message, 'error');
-  }
+  await conBotonBloqueado(document.getElementById('btn-prueba'), async () => {
+    try {
+      const resultado = await API.enviarPruebaNota(tipo, gestion);
+      avisar(resultado.message, 'success');
+      cargarLibro();
+    } catch (error) {
+      avisar(error.message, 'error');
+    }
+  });
 }
 
 // =====================================================
@@ -261,17 +287,28 @@ async function cargarConfiguracion() {
   }
 }
 
+// Libera el blob URL de la firma mostrada antes de reemplazarla u ocultarla
+function liberarUrlFirma() {
+  if (urlFirma) URL.revokeObjectURL(urlFirma);
+  urlFirma = null;
+}
+
 async function mostrarFirma() {
   const imagen = document.getElementById('firma-vista');
   if (!configActual?.tiene_firma) {
     imagen.hidden = true;
+    liberarUrlFirma();
     return;
   }
   try {
-    imagen.src = URL.createObjectURL(await API.getFirmaNotas());
+    const blob = await API.getFirmaNotas();
+    liberarUrlFirma();
+    urlFirma = URL.createObjectURL(blob);
+    imagen.src = urlFirma;
     imagen.hidden = false;
   } catch {
     imagen.hidden = true;
+    liberarUrlFirma();
   }
 }
 
@@ -306,7 +343,9 @@ function subirFirma(evento) {
     try {
       await API.subirFirmaNotas(lector.result, archivo.type);
       avisar('Firma guardada', 'success');
-      await cargarConfiguracion();
+      // No se recarga el formulario: pisaría lo que se escribió y todavía no se guardó
+      configActual = { ...configActual, tiene_firma: true };
+      mostrarFirma();
       cargarEstado();
     } catch (error) {
       avisar(error.message, 'error');
@@ -331,10 +370,12 @@ async function verVistaPreviaArea() {
 
 async function enviarmePruebaArea() {
   if (!confirm('Se enviará el aviso a áreas marcado como PRUEBA solo a las casillas de prueba. ¿Continuar?')) return;
-  try {
-    const resultado = await API.enviarPruebaAvisoArea();
-    avisar(resultado.message, 'success');
-  } catch (error) {
-    avisar(error.message, 'error');
-  }
+  await conBotonBloqueado(document.getElementById('btn-prueba-area'), async () => {
+    try {
+      const resultado = await API.enviarPruebaAvisoArea();
+      avisar(resultado.message, 'success');
+    } catch (error) {
+      avisar(error.message, 'error');
+    }
+  });
 }
