@@ -171,17 +171,20 @@ La nota se construye una vez como estructura de datos (párrafos, secciones, tab
 - **PDF** (adjunto `Nota-Digital-{n}-{aa}.pdf`) con PDFKit:
   - hoja oficio de 216 × 330 mm;
   - **membrete municipal en todas las hojas**, configurable desde la pantalla de Correos (7.3 y 10):
-    - **banner** (la imagen cargada): arriba de la hoja, en x = 0, y = 0, con el ancho completo de la hoja y alto proporcional. Si el alto proporcional pasara de 45 mm, se achica para entrar en 45 mm, centrado. El archivo guarda la imagen una sola vez aunque se dibuje en todas las hojas;
-    - **pie del membrete** (el texto cargado, por ejemplo `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.`): Helvetica 10, centrado, con su línea de base a 12,5 mm del borde inferior. Un texto que no entra en una línea se escribe en una sola línea con la letra achicada lo justo;
+    - **banner** (la imagen cargada): arriba de la hoja, en x = 0, y = 0, con el ancho completo de la hoja y alto proporcional. Si el alto proporcional pasara de 45 mm, se achica para entrar en 45 mm, centrado. Se usa el tamaño a la vista: un JPEG guardado girado (orientación EXIF 5 a 8) se dibuja derecho, como lo muestra la pantalla. El archivo guarda la imagen una sola vez aunque se dibuje en todas las hojas;
+    - **pie del membrete** (el texto cargado, por ejemplo `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.`): Helvetica 10, centrado, con su línea de base a 12,5 mm del borde inferior. Un texto que no entra en una línea se escribe en una sola línea con la letra achicada lo justo, nunca por debajo de 7 puntos (la configuración no guarda un pie que no entre en una línea ni así);
   - márgenes:
     - superior de **todas** las hojas: el alto del banner más 9 mm, nunca menos de 2,5 cm (con el banner real, de 1241 × 178 píxeles, unos 31 mm + 9 mm = 40 mm, como el membrete en Word). Sin banner, 2,5 cm;
     - inferior de 2,5 cm para el contenido; izquierda y derecha de 3 cm;
     - las reglas de "mantener juntos" (título con su tabla, antecedente con su fila, "Justificación:", contactos, cierre con la firma) usan el margen de la hoja, no una medida fija;
   - Helvetica 12, interlineado simple, justificado;
   - firma escaneada sobre el nombre y el cargo;
-  - si ocupa más de una hoja, pie `Nota Digital N° {n}/{aa} – Página {p} de {t}`, Helvetica 8 centrado: a 12,5 mm del borde inferior si no hay pie del membrete; con pie del membrete, arriba de él (línea de base a 17,5 mm), sin superponerse y debajo del margen del contenido;
+  - si ocupa más de una hoja, pie `Nota Digital N° {n}/{aa} – Página {p} de {t}`, Helvetica 8 centrado:
+    - sin pie del membrete, con el borde superior del texto a 12,5 mm del borde inferior de la hoja, como antes (su línea de base queda a unos 10,5 mm);
+    - con pie del membrete, arriba de él, con la línea de base a 17,5 mm del borde inferior: sin superponerse con el pie y debajo del margen del contenido;
   - el banner y los pies se dibujan al final, hoja por hoja, sin agregar hojas;
-  - sin banner ni pie del membrete el PDF queda sin encabezado, como antes; nunca lleva sello escalera.
+  - sin banner ni pie del membrete el PDF queda sin encabezado, como antes; nunca lleva sello escalera;
+  - **solo texto que Helvetica puede escribir.** Las fuentes estándar del PDF escriben un byte por carácter (WinAnsi, CP1252): otro carácter (☎, →, emojis, uso privado, el acento suelto de un texto NFD) saldría como basura y desordenaría el resto de la línea. Todo texto que se escribe o se mide en el PDF (títulos, áreas, contactos, firma, línea CC, pie) pasa por un único resguardo: se normaliza a NFC, el tabulador pasa a espacio y lo que no se puede escribir sale como `?`. Además, la configuración no guarda textos para el PDF con esos caracteres (sección 9).
 
 El membrete va solo en el PDF: el cuerpo del email (HTML y texto) no cambia. El banner y el texto del pie se leen de la configuración al generar la nota y quedan congelados en su PDF: un reintento reenvía el PDF guardado aunque después cambie el membrete.
 
@@ -299,7 +302,7 @@ Todas bajo `/api/notificaciones/notas-digitales`, con `authMiddleware` y `adminO
 | GET | `/preview/pdf?tipo=&gestion=` | PDF de la vista previa (`application/pdf`): el mismo contenido que la vista previa HTML, con `N° XX`, el membrete y la firma; no guarda ni envía nada. Misma validación de `tipo` y `gestion` |
 | POST | `/prueba` | `{ tipo, gestion }`: envía la nota marcada como prueba a `casillas_prueba` |
 | GET | `/config` | Configuración sin las imágenes: indica si hay firma y banner cargados (`tiene_firma`, `tiene_membrete`) y devuelve `membrete_pie` |
-| PUT | `/config` | Guarda destinatarios, líneas de CC, firma (nombre y cargo), texto del pie del membrete (`membrete_pie`: texto recortado de hasta 300 caracteres; `''` o `null` = sin pie), casillas de prueba e interruptor |
+| PUT | `/config` | Guarda destinatarios, líneas de CC, firma (nombre y cargo), texto del pie del membrete (`membrete_pie`: texto recortado de hasta 300 caracteres que entre en una línea del PDF con letra de 7 puntos; `''` o `null` = sin pie), casillas de prueba e interruptor. Los textos que van al PDF (`membrete_pie`, `firma_nombre`, `firma_cargo`, `linea_cc_interna`, `linea_cc_externa`) se guardan en NFC, y uno con caracteres que el PDF no puede escribir responde 400 listándolos (por ejemplo `membrete_pie: caracteres que el PDF no puede escribir: ☎ →`) |
 | PUT | `/config/firma` | `{ imagen: base64, mime }`, PNG o JPEG de 500 KB como máximo |
 | GET | `/config/firma` | Imagen de la firma, para la vista previa en la pantalla |
 | PUT | `/config/membrete` | `{ imagen: base64, mime }`: banner del membrete, PNG o JPEG de 500 KB como máximo, con la misma validación que la firma |
