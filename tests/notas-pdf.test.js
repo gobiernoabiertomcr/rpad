@@ -125,6 +125,23 @@ describe('renderPdf: membrete', () => {
     assert.ok(cerca(tope(textosPorHoja(pdf)[0][0]), 54 * MM));
   });
 
+  it('un banner JPEG guardado girado (orientación EXIF 5 a 8) se dibuja derecho, a lo ancho, con el margen de su alto a la vista', async () => {
+    // Guardado vertical (40 × 200 píxeles); con la orientación EXIF se ve apaisado, 200 × 40, como en la pantalla
+    const alto = ANCHO_HOJA * 40 / 200;
+    for (const orientacion of [5, 6, 7, 8]) {
+      const pdf = await renderPdf(nota(1), { membreteImagen: jpegMinimo({ ancho: 40, alto: 200, orientacion }) });
+      const [banner] = imagenesPorHoja(pdf)[0];
+      assert.ok(cerca(banner.x, 0) && cerca(banner.y, 0) && cerca(banner.ancho, ANCHO_HOJA) && cerca(banner.alto, alto),
+        `orientación ${orientacion}: ${JSON.stringify(banner)}`);
+      assert.ok(cerca(tope(textosPorHoja(pdf)[0][0]), alto + 9 * MM), `orientación ${orientacion}`);
+    }
+    // Sin giro (o girado 180°) el tamaño guardado es el que se ve: un JPEG apaisado de 200 × 40
+    for (const orientacion of [null, 1, 3]) {
+      const [banner] = imagenesPorHoja(await renderPdf(nota(1), { membreteImagen: jpegMinimo({ ancho: 200, alto: 40, orientacion }) }))[0];
+      assert.ok(cerca(banner.ancho, ANCHO_HOJA) && cerca(banner.alto, alto), `orientación ${orientacion}: ${JSON.stringify(banner)}`);
+    }
+  });
+
   it('con un banner muy bajo el margen superior no baja de 25 mm', async () => {
     const pdf = await renderPdf(nota(1), conMembrete({ membreteImagen: pngRgb({ ancho: 1000, alto: 20 }) }));
     const [banner] = imagenesPorHoja(pdf)[0];

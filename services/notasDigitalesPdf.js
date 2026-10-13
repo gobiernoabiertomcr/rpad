@@ -179,7 +179,7 @@ const validarJpeg = (datos) => {
 
 const tipoDeImagen = (datos) => ({ 0x89: 'image/png', 0xff: 'image/jpeg' }[datos[0]] ?? null);
 
-// Valida de forma síncrona una imagen (PNG o JPEG) y devuelve su tamaño en píxeles. Si no sirve, lanza
+// Valida de forma síncrona una imagen (PNG o JPEG) y devuelve su tamaño a la vista en píxeles. Si no sirve, lanza
 // ImagenInvalida con un mensaje para mostrar que nombra la imagen ("de la firma", "del membrete").
 // Sin mime, el tipo se deduce de los primeros bytes, como hace PDFKit.
 const validarImagen = (datos, mime, uso) => {
@@ -192,7 +192,9 @@ const validarImagen = (datos, mime, uso) => {
     else throw defecto('debe ser PNG o JPEG');
     // Último control: el lector de PDFKit (síncrono) tiene que poder abrirla
     const imagen = new PDFDocument({ autoFirstPage: false }).openImage(datos);
-    return { ancho: imagen.width, alto: imagen.height };
+    // El tamaño a la vista: un JPEG con orientación EXIF 5 a 8 está guardado girado 90° y PDFKit lo dibuja derecho
+    const girada = imagen.orientation > 4;
+    return { ancho: girada ? imagen.height : imagen.width, alto: girada ? imagen.width : imagen.height };
   } catch (error) {
     if (error instanceof Defecto) throw invalida(error.message);
     throw invalida(`no se puede leer (${error?.message ?? error})`);

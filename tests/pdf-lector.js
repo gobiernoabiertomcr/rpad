@@ -8,19 +8,26 @@ const texto = (pdf) => pdf.toString('latin1');
 const CP1252 = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
 const winAnsi = (bytes) => bytes.toString('latin1').replace(/[\x80-\x9f]/g, c => CP1252[c.charCodeAt(0) - 0x80]);
 
-// Flujo de contenido (descomprimido) de cada hoja, en el orden de las hojas
-export const contenidoPorHoja = (pdf) => {
+// Cada hoja, en orden: su flujo de contenido (descomprimido) y su alto en puntos
+const hojasDelPdf = (pdf) => {
   const objetos = new Map();
   for (const m of texto(pdf).matchAll(/(\d+) 0 obj\r?\n([\s\S]*?)endobj/g)) objetos.set(Number(m[1]), m[2]);
   const raiz = [...objetos.values()].find(cuerpo => /\/Type \/Pages/.test(cuerpo));
   const hojas = [...raiz.match(/\/Kids \[([^\]]*)\]/)[1].matchAll(/(\d+) 0 R/g)].map(m => Number(m[1]));
   return hojas.map(id => {
-    const flujo = objetos.get(Number(objetos.get(id).match(/\/Contents (\d+) 0 R/)[1]));
+    const hoja = objetos.get(id);
+    const flujo = objetos.get(Number(hoja.match(/\/Contents (\d+) 0 R/)[1]));
     const inicio = flujo.match(/stream\r?\n/);
     const datos = flujo.substr(inicio.index + inicio[0].length, Number(flujo.match(/\/Length (\d+)/)[1]));
-    return zlib.inflateSync(Buffer.from(datos, 'latin1')).toString('latin1');
+    return {
+      contenido: zlib.inflateSync(Buffer.from(datos, 'latin1')).toString('latin1'),
+      alto: Number(hoja.match(/\/MediaBox \[\s*[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s*\]/)[1])
+    };
   });
 };
+
+// Flujo de contenido (descomprimido) de cada hoja, en el orden de las hojas
+export const contenidoPorHoja = (pdf) => hojasDelPdf(pdf).map(hoja => hoja.contenido);
 
 // Texto de un operador TJ. En el texto justificado PDFKit no escribe los espacios: los reemplaza por ajustes
 // negativos grandes (más de 250 milésimas de em). El interletrado normal (kerning) es de unas pocas decenas.
@@ -42,12 +49,37 @@ export const textosPorHoja = (pdf) => contenidoPorHoja(pdf).map(contenido =>
 // Texto de cada hoja: las líneas (operadores TJ) en el orden en que se dibujaron
 export const lineasPorHoja = (pdf) => textosPorHoja(pdf).map(textos => textos.map(t => t.texto));
 
-// Imágenes dibujadas en cada hoja: { nombre, x, y, ancho, alto }, con y medida desde el borde superior.
-// PDFKit dibuja una imagen con "ancho 0 0 -alto x y+alto cm /I1 Do" sobre su sistema con origen arriba a la izquierda.
-export const imagenesPorHoja = (pdf) => contenidoPorHoja(pdf).map(contenido =>
-  [...contenido.matchAll(/(-?[\d.]+) 0 0 (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm\s+\/(\w+) Do/g)].map(([, a, d, e, f, nombre]) => ({
-    nombre, x: Number(e), y: Number(f) + Number(d), ancho: Number(a), alto: -Number(d)
-  })));
+// Producto de matrices afines de PDF [a b c d e f]: primero m, después n (como "cm" encadena la matriz actual)
+const componer = ([a, b, c, d, e, f], [A, B, C, D, E, F]) => [
+  a * A + b * C, a * B + b * D, c * A + d * C, c * B + d * D, e * A + f * C + E, e * B + f * D + F
+];
+
+// Imágenes dibujadas en cada hoja: { nombre, x, y, ancho, alto }, el rectángulo que ocupan en la hoja (también si
+// PDFKit las gira por la orientación EXIF), con x e y medidas desde el borde izquierdo y el superior.
+// Sigue las matrices "cm" y el apilado q/Q del flujo hasta cada "/I1 Do", que dibuja el cuadrado unitario.
+export const imagenesPorHoja = (pdf) => hojasDelPdf(pdf).map(({ contenido, alto: altoHoja }) => {
+  const imagenes = [];
+  const pila = [];
+  let actual = [1, 0, 0, 1, 0, 0];
+  const operadores = /(?:^|\s)(q|Q)(?=\s|$)|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|\/(\w+) Do/g;
+  for (const [, apilado, a, b, c, d, e, f, nombre] of contenido.matchAll(operadores)) {
+    if (apilado === 'q') pila.push(actual);
+    else if (apilado === 'Q') actual = pila.pop();
+    else if (nombre) {
+      const [ma, mb, mc, md, me, mf] = actual;
+      const esquinas = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [ma * x + mc * y + me, mb * x + md * y + mf]);
+      const xs = esquinas.map(p => p[0]);
+      const ys = esquinas.map(p => p[1]);
+      imagenes.push({
+        nombre, x: Math.min(...xs), y: altoHoja - Math.max(...ys),
+        ancho: Math.max(...xs) - Math.min(...xs), alto: Math.max(...ys) - Math.min(...ys)
+      });
+    } else {
+      actual = componer([a, b, c, d, e, f].map(Number), actual);
+    }
+  }
+  return imagenes;
+});
 
 // Imágenes guardadas en el archivo: { ancho, alto } en píxeles de cada XObject de imagen (una imagen dibujada en
 // varias hojas se guarda una vez; un PNG con transparencia suma otra para su máscara, del mismo tamaño)
