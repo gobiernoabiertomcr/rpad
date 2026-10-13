@@ -69,23 +69,31 @@ describe('seleccionarParaAviso', () => {
 });
 
 describe('seleccionarParaReiteracion', () => {
-  it('toma los avisados hace 21 días o más que siguen con el mismo vencimiento', async () => {
+  it('toma los avisados hace 20 días o más que siguen con el mismo vencimiento', async () => {
     const hace29 = await crearDataset({ vencimiento: '2026-12-31' });
-    const hace21 = await crearDataset({ vencimiento: '2026-12-31' });
+    const hace20 = await crearDataset({ vencimiento: '2026-12-31' });
     const hace11 = await crearDataset({ vencimiento: '2027-01-19' });
     const avisoFallido = await crearDataset({ vencimiento: '2026-11-30' });
     const actualizado = await crearDataset({ vencimiento: '2027-10-31' });
     await crearNota({ fecha: '2026-11-02', numero: 1, datasets: [{ id: hace29, vencimiento: '2026-12-31' }] });
-    await crearNota({ fecha: '2026-11-10', numero: 2, datasets: [{ id: hace21, vencimiento: '2026-12-31' }] });
+    await crearNota({ fecha: '2026-11-11', numero: 2, datasets: [{ id: hace20, vencimiento: '2026-12-31' }] });
     await crearNota({ fecha: '2026-11-20', numero: 3, datasets: [{ id: hace11, vencimiento: '2027-01-19' }] });
     await crearNota({ fecha: '2026-10-01', numero: 4, estado: 'fallida', datasets: [{ id: avisoFallido, vencimiento: '2026-11-30' }] });
     await crearNota({ fecha: '2026-10-01', numero: 5, datasets: [{ id: actualizado, vencimiento: '2026-10-31' }] });
 
     const resultado = await datos.seleccionarParaReiteracion('interna', '2026-12-01');
-    assert.deepEqual(ids(resultado).sort(), [hace29, hace21].sort());
+    assert.deepEqual(ids(resultado).sort(), [hace29, hace20].sort());
     const primero = resultado.find(d => d.id === hace29);
     assert.deepEqual(primero.informado, { numero: 1, anio: 2026, fecha: '2026-11-02' });
     assert.equal(primero.reiteraciones, 0);
+  });
+
+  it('un aviso del 13/10/2026 entra en la reiteración del 02/11/2026 (20 días); uno del 14/10/2026 no', async () => {
+    const del13 = await crearDataset({ vencimiento: '2026-12-12' });
+    const del14 = await crearDataset({ vencimiento: '2026-12-13' });
+    await crearNota({ fecha: '2026-10-13', numero: 1, datasets: [{ id: del13, vencimiento: '2026-12-12' }] });
+    await crearNota({ fecha: '2026-10-14', numero: 2, datasets: [{ id: del14, vencimiento: '2026-12-13' }] });
+    assert.deepEqual(ids(await datos.seleccionarParaReiteracion('interna', '2026-11-02')), [del13]);
   });
 
   it('cuenta solo las reiteraciones enviadas del mismo ciclo', async () => {

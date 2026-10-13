@@ -74,7 +74,7 @@ Para cada gestión, la reiteración se **evalúa una sola vez por mes calendario
 Incluye los datasets que cumplen todo lo siguiente:
 - siguen activos y con frecuencia con días;
 - tienen un **aviso enviado** para su vencimiento actual; eso significa que no se actualizaron;
-- la fecha de ese aviso es **anterior o igual a hoy − 21 días**.
+- la fecha de ese aviso es **anterior o igual a hoy − 20 días**. Por ejemplo, los avisos del 13/10/2026 se reiteran el 02/11/2026 y los del 14/10/2026, recién en diciembre.
 
 Se agrupan en las mismas dos secciones. Un dataset vencido se reitera todos los meses hasta que se actualice.
 
@@ -274,7 +274,7 @@ Un módulo nuevo, `services/notasDigitales.js`, expone `ejecutarNotasDigitales({
 3. Si `hoy` no es día hábil: terminar.
 4. Reintentar las notas fallidas (7.4).
 5. Para cada gestión, generar y enviar el aviso (5.2) si hay datasets.
-6. Para cada gestión cuyo `reiteracion_evaluada_*` sea distinto del mes actual: generar y enviar la reiteración si hay datasets (5.3) y registrar el mes como evaluado. Los datasets incluidos en un aviso del mismo día no entran, porque la regla de 21 días ya los excluye.
+6. Para cada gestión cuyo `reiteracion_evaluada_*` sea distinto del mes actual: generar y enviar la reiteración si hay datasets (5.3) y registrar el mes como evaluado. Los datasets incluidos en un aviso del mismo día no entran, porque la regla de 20 días ya los excluye.
 7. Liberar el bloqueo y devolver un resumen: notas generadas, enviadas y fallidas.
 
 Generar una nota significa: en una transacción, asignar el número, insertar la nota como `pendiente` con su contenido renderizado e insertar sus filas en `notas_digitales_datasets`; confirmar la transacción y recién entonces enviar.
@@ -355,7 +355,7 @@ Se aplica TDD con la batería existente (`npm test`, contra Docker y Mailpit). T
 - **Calendario:**
   - aviso a los 60 días (interna) y a los 30 (externa);
   - un solo aviso por ciclo, y aviso nuevo cuando cambia el vencimiento;
-  - reiteración el primer día hábil y regla de 21 días;
+  - reiteración el primer día hábil y regla de 20 días;
   - fines de semana y feriados fijos;
   - si falla el primer día hábil, sale al siguiente, pero nunca dos reiteraciones por mes y gestión;
   - los vencidos sin aviso previo entran en el aviso;

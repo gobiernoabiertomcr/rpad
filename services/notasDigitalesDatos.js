@@ -3,7 +3,7 @@
 import pool from '../config/database.js';
 
 export const VENTANA_DIAS = { interna: 60, externa: 30 };
-export const DIAS_PARA_REITERAR = 21;
+export const DIAS_PARA_REITERAR = 20;
 export const TIPOS_EMAIL_REEMPLAZADOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido'];
 
 const COLUMNAS_DATASET = `

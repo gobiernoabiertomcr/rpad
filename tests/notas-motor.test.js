@@ -171,7 +171,7 @@ describe('avisos', () => {
 });
 
 describe('reiteraciones', () => {
-  it('el primer día hábil reitera los avisados hace 21 días o más', async () => {
+  it('el primer día hábil reitera los avisados hace 20 días o más', async () => {
     await crearDataset({ titulo: 'Avisado temprano', vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
     await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2027-01-19' });
@@ -185,6 +185,22 @@ describe('reiteraciones', () => {
     assert.ok(html.includes('Avisado temprano'));
     assert.ok(!html.includes('Avisado tarde'));
     assert.ok(html.includes('Nota Digital N° 1/26 (02/11/2026)'));
+  });
+
+  it('los avisos del 13/10/2026 se reiteran el 02/11/2026 (20 días); los del 14/10/2026, no', async () => {
+    await crearDataset({ titulo: 'Avisado el 13', vencimiento: '2026-12-12' });
+    await crearDataset({ titulo: 'Avisado el 14', gestion: 'externa', vencimiento: '2026-11-13' });
+    await ejecutar('2026-10-13');
+    await ejecutar('2026-10-14');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion]), [['aviso', 'interna'], ['aviso', 'externa']]);
+    await mailpit.vaciar();
+
+    await ejecutar('2026-11-02');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion]), [['aviso', 'interna'], ['aviso', 'externa'], ['reiteracion', 'interna']]);
+    const [mensaje] = await mailpit.mensajes();
+    const html = await mailpit.html(mensaje.ID);
+    assert.ok(html.includes('Avisado el 13'));
+    assert.ok(html.includes('Nota Digital N° 1/26 (13/10/2026)'));
   });
 
   it('se evalúa una sola vez por mes y la primera de enero es N° 1 del año nuevo', async () => {
@@ -217,7 +233,7 @@ describe('reiteraciones', () => {
     await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2027-01-19' });
     await ejecutar('2026-11-20');
     await ejecutar('2026-12-01'); // solo pasaron 11 días: nada para reiterar, pero diciembre queda evaluado
-    await ejecutar('2026-12-11'); // ya pasaron 21 días, pero diciembre ya fue evaluado
+    await ejecutar('2026-12-11'); // ya pasaron más de 20 días, pero diciembre ya fue evaluado
     assert.deepEqual((await notas()).map(n => n.tipo), ['aviso']);
 
     await ejecutar('2027-01-04');
