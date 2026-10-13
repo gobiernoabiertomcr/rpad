@@ -1,9 +1,21 @@
 // Correos: estado, libro de Notas Digitales, vista previa, configuración y aviso a las áreas
 let configActual = null;
-let urlFirma = null;
 
 const CAMPOS_CONFIG = ['para_interna', 'cc_interna', 'linea_cc_interna', 'para_externa', 'cc_externa', 'linea_cc_externa',
-  'cco', 'casillas_prueba', 'firma_nombre', 'firma_cargo'];
+  'cco', 'casillas_prueba', 'firma_nombre', 'firma_cargo', 'membrete_pie'];
+// Imágenes de la configuración: la firma y el banner del membrete se suben y se muestran igual.
+// url: el blob URL de la vista previa que se está mostrando (se libera al reemplazarla u ocultarla).
+const IMAGENES_CONFIG = {
+  firma: {
+    archivo: 'firma-archivo', vista: 'firma-vista', tiene: 'tiene_firma', nombre: 'La firma', guardada: 'Firma guardada',
+    subir: (imagen, mime) => API.subirFirmaNotas(imagen, mime), obtener: () => API.getFirmaNotas(), url: null
+  },
+  membrete: {
+    archivo: 'membrete-archivo', vista: 'membrete-vista', tiene: 'tiene_membrete', nombre: 'El banner del membrete',
+    guardada: 'Membrete guardado', subir: (imagen, mime) => API.subirMembreteNotas(imagen, mime),
+    obtener: () => API.getMembreteNotas(), url: null
+  }
+};
 const ETIQUETAS = { aviso: 'Aviso', reiteracion: 'Reiteración', interna: 'Interna', externa: 'Externa', enviada: 'Enviada', fallida: 'Fallida', pendiente: 'Pendiente' };
 // Máximo de notas que devuelve la API del libro (las más recientes)
 const LIMITE_LIBRO = 500;
@@ -19,6 +31,15 @@ const conBotonBloqueado = async (boton, tarea) => {
   } finally {
     boton.disabled = false;
   }
+};
+// Descarga un Blob con ese nombre de archivo y libera su URL
+const descargarBlob = (blob, nombre) => {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 // 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date (evita corrimientos de zona horaria)
 const fecha = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
@@ -42,9 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('libro-cuerpo').addEventListener('click', accionDelLibro);
   ['preview-tipo', 'preview-gestion'].forEach(id => document.getElementById(id).addEventListener('change', ocultarVistaPrevia));
   document.getElementById('btn-preview').addEventListener('click', verVistaPrevia);
+  document.getElementById('btn-preview-pdf').addEventListener('click', verPdfDeVistaPrevia);
   document.getElementById('btn-prueba').addEventListener('click', enviarmePrueba);
   document.getElementById('form-config').addEventListener('submit', guardarConfiguracion);
-  document.getElementById('firma-archivo').addEventListener('change', subirFirma);
+  Object.entries(IMAGENES_CONFIG).forEach(([clave, imagen]) => {
+    document.getElementById(imagen.archivo).addEventListener('change', evento => subirImagen(clave, evento));
+  });
   document.getElementById('btn-preview-area').addEventListener('click', verVistaPreviaArea);
   document.getElementById('btn-prueba-area').addEventListener('click', enviarmePruebaArea);
   document.getElementById('modal-nota-cerrar').addEventListener('click', cerrarModalNota);
@@ -221,12 +245,7 @@ async function accionDelLibro(evento) {
       document.getElementById('modal-nota-marco').srcdoc = nota.html;
       document.getElementById('modal-nota').classList.add('active');
     } else if (boton.dataset.accion === 'pdf') {
-      const url = URL.createObjectURL(await API.getNotaPdf(id));
-      const enlace = document.createElement('a');
-      enlace.href = url;
-      enlace.download = boton.dataset.archivo;
-      enlace.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      descargarBlob(await API.getNotaPdf(id), boton.dataset.archivo);
     } else if (boton.dataset.accion === 'reintentar') {
       boton.disabled = true;
       const resultado = await API.reintentarNota(id);
@@ -283,6 +302,18 @@ function verVistaPrevia() {
   });
 }
 
+// El PDF de la vista previa, con el membrete y la firma cargados, para el tipo y la gestión elegidos
+function verPdfDeVistaPrevia() {
+  return conBotonBloqueado(document.getElementById('btn-preview-pdf'), async () => {
+    const { tipo, gestion } = tipoYGestion();
+    try {
+      descargarBlob(await API.previewNotaPdf(tipo, gestion), `Nota-Digital-vista-previa-${tipo}-${gestion}.pdf`);
+    } catch (error) {
+      avisar(error.message, 'error');
+    }
+  });
+}
+
 async function enviarmePrueba() {
   const { tipo, gestion } = tipoYGestion();
   if (!confirm('Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas. ¿Continuar?')) return;
@@ -306,34 +337,37 @@ async function cargarConfiguracion() {
     CAMPOS_CONFIG.forEach((campo) => {
       document.getElementById(campo).value = configActual[campo] ?? '';
     });
-    mostrarFirma();
+    Object.keys(IMAGENES_CONFIG).forEach(mostrarImagen);
   } catch (error) {
     avisar(`No se pudo cargar la configuración: ${error.message}`, 'error');
   }
 }
 
-// Libera el blob URL de la firma mostrada antes de reemplazarla u ocultarla
-function liberarUrlFirma() {
-  if (urlFirma) URL.revokeObjectURL(urlFirma);
-  urlFirma = null;
+// Libera el blob URL de la imagen mostrada antes de reemplazarla u ocultarla
+function liberarUrlImagen(clave) {
+  const imagen = IMAGENES_CONFIG[clave];
+  if (imagen.url) URL.revokeObjectURL(imagen.url);
+  imagen.url = null;
 }
 
-async function mostrarFirma() {
-  const imagen = document.getElementById('firma-vista');
-  if (!configActual?.tiene_firma) {
-    imagen.hidden = true;
-    liberarUrlFirma();
+// Vista previa de la firma o del banner del membrete: oculta (de verdad, con hidden) si no hay imagen cargada
+async function mostrarImagen(clave) {
+  const { vista, tiene, obtener } = IMAGENES_CONFIG[clave];
+  const elemento = document.getElementById(vista);
+  if (!configActual?.[tiene]) {
+    elemento.hidden = true;
+    liberarUrlImagen(clave);
     return;
   }
   try {
-    const blob = await API.getFirmaNotas();
-    liberarUrlFirma();
-    urlFirma = URL.createObjectURL(blob);
-    imagen.src = urlFirma;
-    imagen.hidden = false;
+    const blob = await obtener();
+    liberarUrlImagen(clave);
+    IMAGENES_CONFIG[clave].url = URL.createObjectURL(blob);
+    elemento.src = IMAGENES_CONFIG[clave].url;
+    elemento.hidden = false;
   } catch {
-    imagen.hidden = true;
-    liberarUrlFirma();
+    elemento.hidden = true;
+    liberarUrlImagen(clave);
   }
 }
 
@@ -350,11 +384,13 @@ async function guardarConfiguracion(evento) {
   }
 }
 
-function subirFirma(evento) {
+// Sube la firma o el banner del membrete apenas se elige el archivo
+function subirImagen(clave, evento) {
+  const { nombre, guardada, tiene, subir } = IMAGENES_CONFIG[clave];
   const archivo = evento.target.files[0];
   if (!archivo) return;
   if (!['image/png', 'image/jpeg'].includes(archivo.type)) {
-    avisar('La firma debe ser una imagen PNG o JPEG', 'error');
+    avisar(`${nombre} debe ser una imagen PNG o JPEG`, 'error');
     evento.target.value = '';
     return;
   }
@@ -366,11 +402,11 @@ function subirFirma(evento) {
   const lector = new FileReader();
   lector.onload = async () => {
     try {
-      await API.subirFirmaNotas(lector.result, archivo.type);
-      avisar('Firma guardada', 'success');
+      await subir(lector.result, archivo.type);
+      avisar(guardada, 'success');
       // No se recarga el formulario: pisaría lo que se escribió y todavía no se guardó
-      configActual = { ...configActual, tiene_firma: true };
-      mostrarFirma();
+      configActual = { ...configActual, [tiene]: true };
+      mostrarImagen(clave);
       cargarEstado();
     } catch (error) {
       avisar(error.message, 'error');

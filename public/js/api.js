@@ -216,6 +216,12 @@ async registrarActualizacion(id, datos = {}) {
     return (await this.pedirJson('GET', `/notificaciones/notas-digitales/preview?${query}`)).data;
   },
 
+  // PDF de la vista previa (N° XX, con el membrete y la firma cargados), como Blob
+  async previewNotaPdf(tipo, gestion) {
+    const query = new URLSearchParams({ tipo, gestion }).toString();
+    return this.pedirArchivo(`/notificaciones/notas-digitales/preview/pdf?${query}`);
+  },
+
   async enviarPruebaNota(tipo, gestion) {
     return this.pedirJson('POST', '/notificaciones/notas-digitales/prueba', { tipo, gestion });
   },
@@ -234,6 +240,14 @@ async registrarActualizacion(id, datos = {}) {
 
   async getFirmaNotas() {
     return this.pedirArchivo('/notificaciones/notas-digitales/config/firma');
+  },
+
+  async subirMembreteNotas(imagen, mime) {
+    return this.pedirJson('PUT', '/notificaciones/notas-digitales/config/membrete', { imagen, mime });
+  },
+
+  async getMembreteNotas() {
+    return this.pedirArchivo('/notificaciones/notas-digitales/config/membrete');
   },
 
   // === PERFIL ===

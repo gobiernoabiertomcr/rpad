@@ -212,6 +212,7 @@
         .nd-config legend { font-weight: 600; padding: 0 6px; }
         .nd-firma[hidden] { display: none; }
         .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
+        .nd-firma.nd-membrete { max-width: 100%; max-height: 120px; }
         .nd-modal { max-width: 900px; width: 95%; }
         .nd-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
     </style>
@@ -404,6 +405,7 @@
                         <option value="externa">Gestión externa</option>
                     </select>
                     <button type="button" id="btn-preview" class="btn btn-primary">Vista previa</button>
+                    <button type="button" id="btn-preview-pdf" class="btn btn-secondary">Ver PDF</button>
                     <button type="button" id="btn-prueba" class="btn btn-outline">Enviarme una prueba</button>
                 </div>
                 <p id="preview-aviso" class="test-hint" hidden></p>
@@ -445,6 +447,16 @@
                             <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
                             <img id="firma-vista" class="nd-firma" alt="Firma cargada" hidden>
                         </div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Membrete del PDF</legend>
+                        <div class="form-group">
+                            <label class="form-label" for="membrete-archivo">Banner del encabezado (PNG o JPEG, máximo 500 KB)</label>
+                            <input type="file" id="membrete-archivo" class="form-input" accept="image/png,image/jpeg">
+                            <img id="membrete-vista" class="nd-firma nd-membrete" alt="Banner del membrete cargado" hidden>
+                        </div>
+                        <div class="form-group"><label class="form-label" for="membrete_pie">Texto del pie</label><input id="membrete_pie" class="form-input" maxlength="300"></div>
+                        <p class="form-hint">El banner va arriba de cada hoja del PDF, a lo ancho de la hoja, y el texto del pie va centrado al pie de cada hoja (vacío: sin pie). El cuerpo del email no cambia.</p>
                     </fieldset>
                     <p class="form-hint">Separá varias direcciones con coma.</p>
                     <button type="submit" class="btn btn-primary">Guardar configuración</button>
@@ -519,7 +531,7 @@
     <script src="js/config.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/main.js"></script>
-    <script src="js/api.js?v=20261013"></script>
-    <script src="js/correos.js?v=20261016"></script>
+    <script src="js/api.js?v=20261014"></script>
+    <script src="js/correos.js?v=20261017"></script>
 </body>
 </html>
