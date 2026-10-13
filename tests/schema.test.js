@@ -68,7 +68,7 @@ describe('database/schema.sql', () => {
     });
   }
 
-  it('trae la configuración inicial de Notas Digitales, sin firma ni casillas de prueba', async () => {
+  it('trae la configuración inicial de Notas Digitales, sin firma, banner del membrete ni casillas de prueba', async () => {
     const [[config]] = await root.query(`SELECT * FROM \`${BASE_TEMPORAL}\`.notas_digitales_config`);
     assert.equal(config.id, 1);
     assert.equal(config.envio_activo, 0);
@@ -81,6 +81,10 @@ describe('database/schema.sql', () => {
     assert.equal(config.linea_cc_externa, 'CC. Dir. Administrativa');
     assert.equal(config.firma_nombre, '');
     assert.equal(config.firma_imagen, null);
+    // El banner del membrete se carga desde Correos (no se versiona); el texto del pie es información pública
+    assert.equal(config.membrete_imagen, null);
+    assert.equal(config.membrete_mime, null);
+    assert.equal(config.membrete_pie, 'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.');
     assert.equal(config.casillas_prueba, '');
     // Sin corridas registradas todavía
     assert.equal(config.ultima_corrida_fecha, null);
@@ -88,6 +92,16 @@ describe('database/schema.sql', () => {
     assert.equal(config.ultima_corrida_fin, null);
     assert.equal(config.ultima_corrida_resultado, null);
     assert.equal(config.ultima_corrida_con_errores, 0);
+  });
+
+  it('la configuración de Notas Digitales tiene las columnas del membrete del PDF, después de la firma', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('notas_digitales_config.'));
+    const posicion = (columna) => lista.findIndex(c => c.startsWith(`notas_digitales_config.${columna} `));
+    assert.deepEqual(['firma_mime', 'membrete_imagen', 'membrete_mime', 'membrete_pie', 'casillas_prueba'].map(posicion),
+      [12, 13, 14, 15, 16], lista.join('\n'));
+    assert.ok(lista.includes('notas_digitales_config.membrete_imagen mediumblob null=YES default=NULL key='), lista.join('\n'));
+    assert.ok(lista.includes('notas_digitales_config.membrete_mime varchar(20) null=YES default=NULL key='), lista.join('\n'));
+    assert.ok(lista.includes('notas_digitales_config.membrete_pie varchar(300) null=YES default=NULL key='), lista.join('\n'));
   });
 
   for (const tabla of ['temas', 'frecuencias', 'formatos']) {

@@ -479,6 +479,9 @@ CREATE TABLE `notas_digitales_config` (
   `firma_cargo` varchar(200) NOT NULL DEFAULT '',
   `firma_imagen` mediumblob DEFAULT NULL,
   `firma_mime` varchar(50) DEFAULT NULL,
+  `membrete_imagen` mediumblob DEFAULT NULL,
+  `membrete_mime` varchar(20) DEFAULT NULL,
+  `membrete_pie` varchar(300) DEFAULT NULL,
   `casillas_prueba` varchar(500) NOT NULL DEFAULT '',
   `reiteracion_evaluada_interna` char(7) DEFAULT NULL,
   `reiteracion_evaluada_externa` char(7) DEFAULT NULL,
@@ -493,8 +496,10 @@ CREATE TABLE `notas_digitales_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `notas_digitales_config`
-  (`id`, `para_interna`, `cc_interna`, `para_externa`, `cc_externa`, `cco`, `linea_cc_interna`, `linea_cc_externa`)
+  (`id`, `para_interna`, `cc_interna`, `para_externa`, `cc_externa`, `cco`, `linea_cc_interna`, `linea_cc_externa`,
+   `membrete_pie`)
 VALUES
   (1, 'mit@comodoro.gov.ar', 'geoestadisticas@comodoro.gov.ar', 'mit@comodoro.gov.ar',
    'investigacionterritorial@comodoro.gov.ar', 'datospublicos@comodoro.gov.ar',
-   'CC. Dir. de Investigación Territorial', 'CC. Dir. Administrativa');
+   'CC. Dir. de Investigación Territorial', 'CC. Dir. Administrativa',
+   'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.');
