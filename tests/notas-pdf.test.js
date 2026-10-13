@@ -1,13 +1,31 @@
 // PDF de las Notas Digitales
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
-import zlib from 'node:zlib';
+import PDFDocument from 'pdfkit';
 import { construirNota } from '../services/notasDigitalesContenido.js';
-import { renderPdf, validarImagenFirma } from '../services/notasDigitalesPdf.js';
-import { pngRgba, pngsDanados, jpegMinimo } from './firma-fixtures.js';
+import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
+import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
+import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
 
 // PNG válido de 1x1 píxel
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+
+const MM = 72 / 25.4;
+const ANCHO_HOJA = 216 * MM;
+const ALTO_HOJA = 330 * MM;
+// Banner con las proporciones del real (1241 × 178 píxeles), generado acá: la imagen institucional no se versiona
+const BANNER = pngRgb({ ancho: 1241, alto: 178 });
+const ALTO_BANNER = ANCHO_HOJA * 178 / 1241;
+const PIE = 'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.';
+// Helvetica: ascendente y descendente, en fracción del tamaño de la letra
+const ASCENDENTE = 0.718;
+const DESCENDENTE = 0.207;
+const cerca = (a, b, tolerancia = 0.01) => Math.abs(a - b) <= tolerancia;
+// Borde superior de una línea de texto medido desde arriba de la hoja (donde la ubicó PDFKit)
+const tope = (t) => ALTO_HOJA - t.base - ASCENDENTE * t.tamano;
+const anchoDe = (texto, tamano) => new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(tamano).widthOfString(texto);
+const esPaginacion = (linea) => /Página \d+ de \d+/.test(linea);
+const esDelMembrete = (error) => error instanceof Error && /^La imagen del membrete no es válida: /.test(error.message);
 
 const config = { linea_cc_interna: 'CC. Dir. de Investigación Territorial', linea_cc_externa: 'CC. Dir. Administrativa', firma_nombre: 'Nombre', firma_cargo: 'Cargo' };
 
@@ -26,30 +44,6 @@ const nota = (cantidad, cambios = {}) => construirNota({
 
 const texto = (pdf) => pdf.toString('latin1');
 const paginas = (pdf) => (texto(pdf).match(/\/Type \/Page[^s]/g) || []).length;
-
-// Texto de cada hoja del PDF: las líneas (operadores TJ) en el orden en que se dibujaron.
-// Los flujos de contenido de PDFKit vienen comprimidos (Flate) y el texto en hexadecimal (WinAnsi).
-// (el TextDecoder de Node trata windows-1252 como latin1: se completa a mano el rango 0x80-0x9f)
-const CP1252 = '\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178';
-const winAnsi = (bytes) => bytes.toString('latin1').replace(/[\x80-\x9f]/g, c => CP1252[c.charCodeAt(0) - 0x80]);
-const lineasPorHoja = (pdf) => {
-  const objetos = new Map();
-  for (const m of texto(pdf).matchAll(/(\d+) 0 obj\r?\n([\s\S]*?)endobj/g)) objetos.set(Number(m[1]), m[2]);
-  const raiz = [...objetos.values()].find(cuerpo => /\/Type \/Pages/.test(cuerpo));
-  const hojas = [...raiz.match(/\/Kids \[([^\]]*)\]/)[1].matchAll(/(\d+) 0 R/g)].map(m => Number(m[1]));
-  return hojas.map(id => {
-    const flujo = objetos.get(Number(objetos.get(id).match(/\/Contents (\d+) 0 R/)[1]));
-    const inicio = flujo.match(/stream\r?\n/);
-    const datos = flujo.substr(inicio.index + inicio[0].length, Number(flujo.match(/\/Length (\d+)/)[1]));
-    const contenido = zlib.inflateSync(Buffer.from(datos, 'latin1')).toString('latin1');
-    // En el texto justificado PDFKit no escribe los espacios: los reemplaza por ajustes negativos grandes del TJ
-    // (más de 250 milésimas de em). El interletrado normal (kerning) es de unas pocas decenas.
-    return [...contenido.matchAll(/\[([^\]]*)\]\s*TJ/g)].map(tj =>
-      [...tj[1].matchAll(/<([0-9a-f]*)>|(-?\d+(?:\.\d+)?)/gi)]
-        .map(([, hex, ajuste]) => hex !== undefined ? winAnsi(Buffer.from(hex, 'hex')) : (Number(ajuste) < -150 ? ' ' : ''))
-        .join('').replace(/\s+/g, ' ').trim());
-  });
-};
 
 describe('renderPdf', () => {
   it('genera un PDF oficio con el número en el título', async () => {
@@ -90,6 +84,135 @@ describe('renderPdf', () => {
   });
 });
 
+describe('renderPdf: membrete', () => {
+  const conMembrete = (cambios = {}) => ({ membreteImagen: BANNER, membretePie: PIE, ...cambios });
+  const enElBorde = (imagen) => cerca(imagen.y, 0);
+
+  it('dibuja el banner arriba de todas las hojas, a lo ancho de la hoja con su alto proporcional, y lo guarda una sola vez', async () => {
+    const pdf = await renderPdf(nota(60), { firmaImagen: PNG, ...conMembrete() });
+    const hojas = imagenesPorHoja(pdf);
+    assert.ok(hojas.length >= 3, `hojas: ${hojas.length}`);
+    hojas.forEach((imagenes, i) => {
+      const banners = imagenes.filter(enElBorde);
+      assert.equal(banners.length, 1, `hoja ${i + 1}: ${JSON.stringify(imagenes)}`);
+      const [banner] = banners;
+      assert.ok(cerca(banner.x, 0) && cerca(banner.ancho, ANCHO_HOJA) && cerca(banner.alto, ALTO_BANNER), `hoja ${i + 1}: ${JSON.stringify(banner)}`);
+    });
+    // Todas las hojas dibujan el mismo objeto: el archivo guarda el banner una sola vez
+    assert.equal(new Set(hojas.flat().filter(enElBorde).map(imagen => imagen.nombre)).size, 1);
+    assert.deepEqual(imagenesGuardadas(pdf).filter(imagen => imagen.ancho === 1241), [{ ancho: 1241, alto: 178 }]);
+  });
+
+  it('el contenido de cada hoja empieza debajo del banner: margen superior del alto del banner más 9 mm (40 mm con el real)', async () => {
+    const margen = ALTO_BANNER + 9 * MM;
+    assert.ok(cerca(margen / MM, 40, 0.1), `margen: ${margen / MM} mm`);
+    const hojas = textosPorHoja(await renderPdf(nota(60), conMembrete()));
+    assert.ok(hojas.length >= 3);
+    assert.ok(hojas[0][0].texto.startsWith('REF.:'), hojas[0][0].texto);
+    assert.ok(cerca(tope(hojas[0][0]), margen), `REF.: a ${tope(hojas[0][0]) / MM} mm del borde`);
+    hojas.forEach((lineas, i) => {
+      // La primera línea de cada hoja va en el margen (o 3 puntos abajo, dentro de la celda del encabezado de la tabla)
+      const arriba = Math.min(...lineas.map(tope));
+      assert.ok(arriba >= margen - 0.01 && arriba <= margen + 3.01, `hoja ${i + 1}: la primera línea está a ${arriba / MM} mm del borde`);
+    });
+  });
+
+  it('un banner alto se achica para entrar en 45 mm, centrado, y el margen superior queda en 54 mm', async () => {
+    const pdf = await renderPdf(nota(1), conMembrete({ membreteImagen: pngRgb({ ancho: 200, alto: 100 }) }));
+    const [banner] = imagenesPorHoja(pdf)[0];
+    assert.ok(cerca(banner.alto, 45 * MM) && cerca(banner.ancho, 90 * MM), JSON.stringify(banner));
+    assert.ok(cerca(banner.x, (ANCHO_HOJA - 90 * MM) / 2) && cerca(banner.y, 0), JSON.stringify(banner));
+    assert.ok(cerca(tope(textosPorHoja(pdf)[0][0]), 54 * MM));
+  });
+
+  it('con un banner muy bajo el margen superior no baja de 25 mm', async () => {
+    const pdf = await renderPdf(nota(1), conMembrete({ membreteImagen: pngRgb({ ancho: 1000, alto: 20 }) }));
+    const [banner] = imagenesPorHoja(pdf)[0];
+    assert.ok(cerca(banner.ancho, ANCHO_HOJA) && cerca(banner.alto, ANCHO_HOJA * 20 / 1000), JSON.stringify(banner));
+    assert.ok(cerca(tope(textosPorHoja(pdf)[0][0]), 25 * MM));
+  });
+
+  it('el pie del membrete va en todas las hojas: Helvetica 10, centrado, con la línea de base a 12,5 mm del borde inferior', async () => {
+    const hojas = textosPorHoja(await renderPdf(nota(60), conMembrete()));
+    assert.ok(hojas.length >= 3);
+    hojas.forEach((lineas, i) => {
+      const pies = lineas.filter(t => t.texto === PIE);
+      assert.equal(pies.length, 1, `hoja ${i + 1}`);
+      const [pie] = pies;
+      assert.equal(pie.tamano, 10);
+      assert.ok(cerca(pie.base, 12.5 * MM), `hoja ${i + 1}: línea de base a ${pie.base / MM} mm`);
+      assert.ok(cerca(pie.x + anchoDe(PIE, 10) / 2, ANCHO_HOJA / 2), `hoja ${i + 1}: no está centrado`);
+    });
+  });
+
+  it('"Página p de t" va arriba del pie del membrete sin tocarlo, y los dos quedan debajo del contenido', async () => {
+    for (const [caso, opciones] of [['banner y pie', conMembrete()], ['solo el pie', { membretePie: PIE }]]) {
+      const hojas = textosPorHoja(await renderPdf(nota(60), opciones));
+      assert.ok(hojas.length >= 3, caso);
+      hojas.forEach((lineas, i) => {
+        const etiqueta = `${caso}, hoja ${i + 1}`;
+        const pagina = lineas.find(t => esPaginacion(t.texto));
+        const pie = lineas.find(t => t.texto === PIE);
+        assert.ok(pagina && pie, etiqueta);
+        const separacion = (pagina.base - DESCENDENTE * pagina.tamano) - (pie.base + ASCENDENTE * pie.tamano);
+        assert.ok(separacion >= 2, `${etiqueta}: "Página" y el pie del membrete están a ${separacion} puntos`);
+        // El contenido termina en el margen inferior de 25 mm; "Página" queda más abajo, con aire
+        assert.ok(pagina.base + ASCENDENTE * pagina.tamano <= 25 * MM - 2, `${etiqueta}: "Página" invade el margen inferior`);
+        for (const t of lineas.filter(l => l !== pagina && l !== pie)) {
+          assert.ok(t.base - DESCENDENTE * t.tamano >= 25 * MM - 0.01, `${etiqueta}: "${t.texto}" baja del margen inferior`);
+        }
+      });
+    }
+  });
+
+  it('sin pie del membrete, "Página p de t" queda donde estaba, a 12,5 mm del borde inferior', async () => {
+    for (const opciones of [{}, { membreteImagen: BANNER }, { membreteImagen: BANNER, membretePie: '   ' }, { membretePie: null }]) {
+      const hojas = textosPorHoja(await renderPdf(nota(60), opciones));
+      assert.ok(hojas.length >= 3);
+      hojas.forEach((lineas, i) => {
+        const etiqueta = `${JSON.stringify(Object.keys(opciones))}, hoja ${i + 1}`;
+        assert.ok(!lineas.some(t => t.texto.includes('comodoroweb')), etiqueta);
+        const pagina = lineas.find(t => esPaginacion(t.texto));
+        assert.ok(cerca(tope(pagina), ALTO_HOJA - 12.5 * MM), `${etiqueta}: "Página" a ${(ALTO_HOJA - tope(pagina)) / MM} mm del borde`);
+      });
+    }
+  });
+
+  it('sin banner ni pie el PDF queda como antes: margen superior de 25 mm, sin imágenes ni membrete', async () => {
+    for (const opciones of [{}, { membreteImagen: null, membretePie: null }, { membretePie: '' }]) {
+      const pdf = await renderPdf(nota(60), opciones);
+      const hojas = textosPorHoja(pdf);
+      assert.ok(cerca(tope(hojas[0][0]), 25 * MM));
+      assert.deepEqual(imagenesGuardadas(pdf), []);
+      hojas.forEach(lineas => assert.ok(!lineas.some(t => t.texto.includes('comodoroweb'))));
+    }
+  });
+
+  it('un pie larguísimo o con saltos de línea se escribe en una sola línea, achicado para entrar entre los márgenes', async () => {
+    const largo = `${'Texto institucional del pie '.repeat(10)}fin`.slice(0, 300);
+    for (const [pie, esperado] of [[largo, largo.replace(/\s+/g, ' ').trim()], ['Primera línea\nSegunda  línea ', 'Primera línea Segunda línea']]) {
+      const hojas = textosPorHoja(await renderPdf(nota(60), { membretePie: pie }));
+      hojas.forEach((lineas, i) => {
+        const pies = lineas.filter(t => t.texto === esperado);
+        assert.equal(pies.length, 1, `hoja ${i + 1}: ${lineas.slice(-3).map(t => t.texto).join(' | ')}`);
+        const [linea] = pies;
+        const ancho = anchoDe(esperado, linea.tamano);
+        assert.ok(linea.tamano <= 10, `tamaño ${linea.tamano}`);
+        assert.ok(linea.x >= 30 * MM - 0.01 && linea.x + ancho <= ANCHO_HOJA - 30 * MM + 0.01, `x: ${linea.x}, ancho: ${ancho}`);
+        assert.ok(cerca(linea.base, 12.5 * MM));
+      });
+    }
+    assert.ok(anchoDe(largo, 10) > ANCHO_HOJA - 60 * MM, 'el pie de prueba entraba sin achicarlo');
+  });
+
+  it('un banner con los datos dañados rechaza la promesa con un mensaje del membrete, sin tumbar el proceso', async () => {
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      await assert.rejects(renderPdf(nota(1), { membreteImagen: imagen }), esDelMembrete, caso);
+    }
+    await new Promise(resolve => setTimeout(resolve, 300));
+  });
+});
+
 describe('validarImagenFirma', () => {
   it('acepta PNG (también RGBA) y JPEG sanos, con el mime o deduciéndolo de los bytes', () => {
     const sanas = [[PNG, 'image/png'], [pngRgba(), 'image/png'], [pngRgba({ ancho: 300, alto: 120 }), 'image/png'],
@@ -125,186 +248,233 @@ describe('validarImagenFirma', () => {
   });
 });
 
-// Maquetación: se renderizan notas de 1 a 30 datasets (avisos y reiteraciones, 6 y 7 columnas)
-// y se revisan las reglas de la hoja oficio en cada una.
-describe('renderPdf: maquetación', () => {
-  // Distintos largos de título dan alturas de fila distintas y, con ellas, cortes de hoja en lugares distintos
-  const titulos = {
-    largo: (i) => `Dataset ${i} con un título bastante largo para que ocupe más de una línea en la tabla del PDF`,
-    corto: (i) => `Dataset ${i}`,
-    variado: (i) => `Dataset ${i} ${'palabra '.repeat((i * 7) % 23)}`.trim()
-  };
-  const CASOS = [
-    { tipo: 'aviso', gestion: 'externa', titulo: 'largo' },
-    { tipo: 'aviso', gestion: 'externa', titulo: 'corto' },
-    { tipo: 'aviso', gestion: 'interna', titulo: 'variado' },
-    { tipo: 'reiteracion', gestion: 'externa', titulo: 'largo' },
-    { tipo: 'reiteracion', gestion: 'interna', titulo: 'variado' }
-  ];
-  const informado = { numero: 9, anio: 2026, fecha: '2026-10-01' };
-  const notaDe = ({ tipo, gestion, titulo }, cantidad) => nota(cantidad, {
-    tipo, gestion,
-    datasets: Array.from({ length: cantidad }, (_, i) => ({
-      ...dataset(i + 1), titulo: titulos[titulo](i + 1),
-      ...(tipo === 'aviso' ? {} : { antecedente: null, informado, reiteraciones: 1 })
-    }))
-  });
-
-  const renderizadas = [];
-  before(async () => {
-    for (const caso of CASOS) {
-      for (let cantidad = 1; cantidad <= 30; cantidad++) {
-        const n = notaDe(caso, cantidad);
-        renderizadas.push({ etiqueta: `${caso.tipo}/${caso.gestion}/${caso.titulo} con ${cantidad} datasets`, nota: n, hojas: lineasPorHoja(await renderPdf(n)) });
-      }
+describe('validarImagenMembrete', () => {
+  it('acepta un banner PNG o JPEG sano y rechaza los dañados con un mensaje que dice "membrete"', () => {
+    for (const [imagen, mime] of [[BANNER, 'image/png'], [pngRgba(), 'image/png'], [jpegMinimo(), 'image/jpeg']]) {
+      assert.doesNotThrow(() => validarImagenMembrete(imagen, mime));
+      assert.doesNotThrow(() => validarImagenMembrete(imagen));
     }
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      assert.throws(() => validarImagenMembrete(imagen, 'image/png'), esDelMembrete, caso);
+    }
+    assert.throws(() => validarImagenMembrete(Buffer.alloc(0)), (error) => error.message === 'La imagen del membrete no es válida: el archivo está vacío');
+    assert.throws(() => validarImagenMembrete(PNG, 'image/gif'), (error) => error.message === 'La imagen del membrete no es válida: debe ser PNG o JPEG');
   });
+});
 
-  const juntas = (lineas) => lineas.join(' ');
-  const esPie = (linea) => /Página \d+ de \d+/.test(linea);
-  const esFila = (linea) => /^Dataset \d+\b/.test(linea);
+// Maquetación: se renderizan notas de 1 a 30 datasets (avisos y reiteraciones, 6 y 7 columnas)
+// y se revisan las reglas de la hoja oficio en cada una, sin membrete y con el banner y el pie del membrete
+// (el banner corre hacia abajo el margen superior de todas las hojas).
+const VARIANTES = [
+  { nombre: 'sin membrete', opciones: {} },
+  { nombre: 'con el banner y el pie del membrete', opciones: { membreteImagen: BANNER, membretePie: PIE } }
+];
 
-  // Tablas mal cortadas en una hoja: título de sección sin su encabezado, o encabezado sin su primera fila
-  const problemasDeTabla = (lineas, titulos) => {
-    const problemas = [];
-    lineas.forEach((linea, i) => {
-      const fila = lineas.findIndex((l, j) => j > i && esFila(l));
-      if (titulos.includes(linea)) {
-        const encabezado = lineas.indexOf('Conjunto de datos', i);
-        if (encabezado === -1 || (fila !== -1 && fila < encabezado)) problemas.push(`el título "${linea}" quedó sin su tabla`);
-      }
-      if (linea === 'Conjunto de datos') {
-        const corte = lineas.findIndex((l, j) => j > i && (l === 'Conjunto de datos' || titulos.includes(l) || l === 'Justificación:' || l.startsWith('Datos de contacto')));
-        if (fila === -1 || (corte !== -1 && corte < fila)) problemas.push('encabezado de tabla sin su primera fila');
+for (const variante of VARIANTES) {
+  describe(`renderPdf: maquetación ${variante.nombre}`, () => {
+    const render = (n, opciones = {}) => renderPdf(n, { ...variante.opciones, ...opciones });
+    // Distintos largos de título dan alturas de fila distintas y, con ellas, cortes de hoja en lugares distintos
+    const titulos = {
+      largo: (i) => `Dataset ${i} con un título bastante largo para que ocupe más de una línea en la tabla del PDF`,
+      corto: (i) => `Dataset ${i}`,
+      variado: (i) => `Dataset ${i} ${'palabra '.repeat((i * 7) % 23)}`.trim()
+    };
+    const CASOS = [
+      { tipo: 'aviso', gestion: 'externa', titulo: 'largo' },
+      { tipo: 'aviso', gestion: 'externa', titulo: 'corto' },
+      { tipo: 'aviso', gestion: 'interna', titulo: 'variado' },
+      { tipo: 'reiteracion', gestion: 'externa', titulo: 'largo' },
+      { tipo: 'reiteracion', gestion: 'interna', titulo: 'variado' }
+    ];
+    const informado = { numero: 9, anio: 2026, fecha: '2026-10-01' };
+    const notaDe = ({ tipo, gestion, titulo }, cantidad) => nota(cantidad, {
+      tipo, gestion,
+      datasets: Array.from({ length: cantidad }, (_, i) => ({
+        ...dataset(i + 1), titulo: titulos[titulo](i + 1),
+        ...(tipo === 'aviso' ? {} : { antecedente: null, informado, reiteraciones: 1 })
+      }))
+    });
+
+    const renderizadas = [];
+    before(async () => {
+      for (const caso of CASOS) {
+        for (let cantidad = 1; cantidad <= 30; cantidad++) {
+          const n = notaDe(caso, cantidad);
+          const textos = textosPorHoja(await render(n));
+          renderizadas.push({
+            etiqueta: `${caso.tipo}/${caso.gestion}/${caso.titulo} con ${cantidad} datasets`, nota: n, textos,
+            hojas: textos.map(lineas => lineas.map(t => t.texto))
+          });
+        }
       }
     });
-    return problemas;
-  };
 
-  it('el extractor de texto lee las hojas del PDF', () => {
-    const { hojas } = renderizadas[0];
-    assert.equal(hojas.length, 1);
-    assert.ok(hojas[0].includes('Conjunto de datos'), hojas[0].join(' | '));
-    assert.ok(hojas[0].some(l => l.startsWith('REF.:')));
-  });
+    const juntas = (lineas) => lineas.join(' ');
+    // Los pies de cada hoja: "Página p de t" y el del membrete
+    const esPie = (linea) => esPaginacion(linea) || linea === PIE;
+    const esFila = (linea) => /^Dataset \d+\b/.test(linea);
 
-  it('las notas de varias hojas llevan un solo pie "Página p de t" por hoja y las de una hoja ninguno', () => {
-    for (const { etiqueta, nota: n, hojas } of renderizadas) {
-      hojas.forEach((lineas, i) => {
-        const esperado = hojas.length === 1 ? [] : [`Nota Digital N° ${n.numeroTexto} – Página ${i + 1} de ${hojas.length}`];
-        assert.deepEqual(lineas.filter(esPie), esperado, `${etiqueta}, hoja ${i + 1}`);
+    // Tablas mal cortadas en una hoja: título de sección sin su encabezado, o encabezado sin su primera fila
+    const problemasDeTabla = (lineas, titulos) => {
+      const problemas = [];
+      lineas.forEach((linea, i) => {
+        const fila = lineas.findIndex((l, j) => j > i && esFila(l));
+        if (titulos.includes(linea)) {
+          const encabezado = lineas.indexOf('Conjunto de datos', i);
+          if (encabezado === -1 || (fila !== -1 && fila < encabezado)) problemas.push(`el título "${linea}" quedó sin su tabla`);
+        }
+        if (linea === 'Conjunto de datos') {
+          const corte = lineas.findIndex((l, j) => j > i && (l === 'Conjunto de datos' || titulos.includes(l) || l === 'Justificación:' || l.startsWith('Datos de contacto')));
+          if (fila === -1 || (corte !== -1 && corte < fila)) problemas.push('encabezado de tabla sin su primera fila');
+        }
+      });
+      return problemas;
+    };
+
+    it('el extractor de texto lee las hojas del PDF', () => {
+      const { hojas } = renderizadas[0];
+      assert.equal(hojas.length, 1);
+      assert.ok(hojas[0].includes('Conjunto de datos'), hojas[0].join(' | '));
+      assert.ok(hojas[0].some(l => l.startsWith('REF.:')));
+    });
+
+    it('las notas de varias hojas llevan un solo pie "Página p de t" por hoja y las de una hoja ninguno', () => {
+      for (const { etiqueta, nota: n, hojas } of renderizadas) {
+        hojas.forEach((lineas, i) => {
+          const esperado = hojas.length === 1 ? [] : [`Nota Digital N° ${n.numeroTexto} – Página ${i + 1} de ${hojas.length}`];
+          assert.deepEqual(lineas.filter(esPaginacion), esperado, `${etiqueta}, hoja ${i + 1}`);
+        });
+      }
+      assert.ok(renderizadas.some(r => r.hojas.length >= 3), 'ningún caso llegó a 3 hojas');
+    });
+
+    it('una nota de 60 datasets numera todas sus hojas', async () => {
+      const hojas = lineasPorHoja(await render(nota(60), { firmaImagen: PNG }));
+      assert.ok(hojas.length >= 3);
+      hojas.forEach((lineas, i) => assert.deepEqual(lineas.filter(esPaginacion), [`Nota Digital N° 12/26 – Página ${i + 1} de ${hojas.length}`]));
+    });
+
+    if (variante.opciones.membretePie) {
+      it('el pie del membrete va una vez en cada hoja y ninguna línea invade el banner, el margen inferior ni los pies', () => {
+        const margen = ALTO_BANNER + 9 * MM;
+        for (const { etiqueta, textos } of renderizadas) {
+          textos.forEach((lineas, i) => {
+            const donde = `${etiqueta}, hoja ${i + 1}`;
+            assert.equal(lineas.filter(t => t.texto === PIE).length, 1, donde);
+            const pagina = lineas.find(t => esPaginacion(t.texto));
+            const pie = lineas.find(t => t.texto === PIE);
+            if (pagina) assert.ok(pagina.base - DESCENDENTE * pagina.tamano >= pie.base + ASCENDENTE * pie.tamano + 2, `${donde}: "Página" toca el pie`);
+            for (const t of lineas.filter(l => !esPie(l.texto))) {
+              assert.ok(tope(t) >= margen - 0.01, `${donde}: "${t.texto}" invade el banner`);
+              assert.ok(t.base - DESCENDENTE * t.tamano >= 25 * MM - 0.01, `${donde}: "${t.texto}" baja del margen inferior`);
+            }
+          });
+        }
       });
     }
-    assert.ok(renderizadas.some(r => r.hojas.length >= 3), 'ningún caso llegó a 3 hojas');
-  });
 
-  it('una nota de 60 datasets numera todas sus hojas', async () => {
-    const hojas = lineasPorHoja(await renderPdf(nota(60), { firmaImagen: PNG }));
-    assert.ok(hojas.length >= 3);
-    hojas.forEach((lineas, i) => assert.deepEqual(lineas.filter(esPie), [`Nota Digital N° 12/26 – Página ${i + 1} de ${hojas.length}`]));
-  });
-
-  it('"Justificación:" y su párrafo están siempre en la misma hoja', () => {
-    for (const { etiqueta, nota: n, hojas } of renderizadas) {
-      const inicio = n.justificacion[0].slice(0, 25);
-      const conTitulo = hojas.filter(lineas => lineas.includes('Justificación:'));
-      assert.equal(conTitulo.length, 1, etiqueta);
-      assert.ok(juntas(conTitulo[0]).includes(inicio), `${etiqueta}: el título quedó sin su párrafo`);
-    }
-  });
-
-  it('el último párrafo, el remitente, la firma y la línea CC cierran la última hoja', () => {
-    for (const { etiqueta, nota: n, hojas } of renderizadas) {
-      const ultima = hojas.at(-1);
-      assert.ok(juntas(ultima).includes(n.justificacion.at(-1).slice(0, 25)), `${etiqueta}: falta el último párrafo`);
-      assert.ok(juntas(ultima).includes(n.remitente), `${etiqueta}: falta el remitente`);
-      assert.ok(ultima.includes(n.firma.nombre) && ultima.includes(n.firma.cargo), `${etiqueta}: falta la firma`);
-      assert.ok(juntas(ultima).includes(n.lineaCc), `${etiqueta}: falta la línea CC`);
-      for (const anterior of hojas.slice(0, -1)) {
-        assert.ok(!juntas(anterior).includes(n.remitente) && !anterior.includes(n.firma.nombre), `${etiqueta}: el cierre se partió entre hojas`);
+    it('"Justificación:" y su párrafo están siempre en la misma hoja', () => {
+      for (const { etiqueta, nota: n, hojas } of renderizadas) {
+        const inicio = n.justificacion[0].slice(0, 25);
+        const conTitulo = hojas.filter(lineas => lineas.includes('Justificación:'));
+        assert.equal(conTitulo.length, 1, etiqueta);
+        assert.ok(juntas(conTitulo[0]).includes(inicio), `${etiqueta}: el título quedó sin su párrafo`);
       }
-    }
-  });
+    });
 
-  it('cada antecedente está en la misma hoja que su dataset', () => {
-    let total = 0;
-    for (const { etiqueta, hojas } of renderizadas.filter(r => r.nota.tipo === 'aviso')) {
-      for (const lineas of hojas) {
-        let ultimo = null;
-        for (const linea of lineas) {
-          const fila = linea.match(/^Dataset (\d+)\b/);
-          if (fila) ultimo = Number(fila[1]);
-          if (linea.startsWith('Antecedente:')) {
-            total++;
-            assert.ok(ultimo !== null && ultimo % 3 === 0, `${etiqueta}: antecedente sin su dataset en la hoja (último: ${ultimo})`);
+    it('el último párrafo, el remitente, la firma y la línea CC cierran la última hoja', () => {
+      for (const { etiqueta, nota: n, hojas } of renderizadas) {
+        const ultima = hojas.at(-1);
+        assert.ok(juntas(ultima).includes(n.justificacion.at(-1).slice(0, 25)), `${etiqueta}: falta el último párrafo`);
+        assert.ok(juntas(ultima).includes(n.remitente), `${etiqueta}: falta el remitente`);
+        assert.ok(ultima.includes(n.firma.nombre) && ultima.includes(n.firma.cargo), `${etiqueta}: falta la firma`);
+        assert.ok(juntas(ultima).includes(n.lineaCc), `${etiqueta}: falta la línea CC`);
+        for (const anterior of hojas.slice(0, -1)) {
+          assert.ok(!juntas(anterior).includes(n.remitente) && !anterior.includes(n.firma.nombre), `${etiqueta}: el cierre se partió entre hojas`);
+        }
+      }
+    });
+
+    it('cada antecedente está en la misma hoja que su dataset', () => {
+      let total = 0;
+      for (const { etiqueta, hojas } of renderizadas.filter(r => r.nota.tipo === 'aviso')) {
+        for (const lineas of hojas) {
+          let ultimo = null;
+          for (const linea of lineas) {
+            const fila = linea.match(/^Dataset (\d+)\b/);
+            if (fila) ultimo = Number(fila[1]);
+            if (linea.startsWith('Antecedente:')) {
+              total++;
+              assert.ok(ultimo !== null && ultimo % 3 === 0, `${etiqueta}: antecedente sin su dataset en la hoja (último: ${ultimo})`);
+            }
           }
         }
       }
-    }
-    // Tienen antecedente los múltiplos de 3: una nota de n datasets muestra floor(n / 3)
-    const porCaso = Array.from({ length: 30 }, (_, i) => Math.floor((i + 1) / 3)).reduce((a, b) => a + b, 0);
-    assert.equal(total, porCaso * CASOS.filter(c => c.tipo === 'aviso').length);
-  });
-
-  it('el encabezado de la tabla se repite en cada hoja que tiene filas y nunca queda solo', () => {
-    for (const { etiqueta, nota: n, hojas } of renderizadas) {
-      const titulos = n.secciones.map(seccion => seccion.titulo);
-      hojas.forEach((lineas, i) => {
-        assert.equal(lineas.includes('Conjunto de datos'), lineas.some(esFila), `${etiqueta}, hoja ${i + 1}: filas sin encabezado`);
-        assert.deepEqual(problemasDeTabla(lineas, titulos), [], `${etiqueta}, hoja ${i + 1}`);
-      });
-    }
-  });
-
-  it('el título de cada sección, su encabezado y su primera fila no se separan aunque la fila sea alta', async () => {
-    let cortes = 0;
-    for (let palabras = 0; palabras <= 150; palabras += 3) {
-      const n = nota(3, { datasets: [1, 2, 3].map(i => ({ ...dataset(i), titulo: `Dataset ${i} ${'palabra '.repeat(palabras)}`.trim() })) });
-      const hojas = lineasPorHoja(await renderPdf(n));
-      cortes += hojas.length - 1;
-      const titulos = n.secciones.map(seccion => seccion.titulo);
-      hojas.forEach((lineas, i) => assert.deepEqual(problemasDeTabla(lineas, titulos), [], `títulos de ${palabras} palabras, hoja ${i + 1}`));
-    }
-    assert.ok(cortes > 10, `el barrido apenas cortó hojas (${cortes})`);
-  });
-
-  it('el título de los contactos nunca queda solo al pie de una hoja y cada área va entera', async () => {
-    const TITULO = 'Datos de contacto de las áreas responsables';
-    // Áreas con los 8 campos de contacto cargados: el bloque más alto que puede tener un contacto
-    const areaCompleta = (k) => ({
-      id: k, nombre: `Área completa ${k}`, area_superior: `Secretaría de prueba ${k}`, email_principal: `area${k}@rpad.test`,
-      email_secundario: `alternativa${k}@rpad.test`, telefono_area: '297 400-0000', celular_area: '297 15 400-0000',
-      nombre_contacto: `Persona de contacto ${k}`, telefono_contacto: '297 400-0001', email_contacto: `contacto${k}@rpad.test`
+      // Tienen antecedente los múltiplos de 3: una nota de n datasets muestra floor(n / 3)
+      const porCaso = Array.from({ length: 30 }, (_, i) => Math.floor((i + 1) / 3)).reduce((a, b) => a + b, 0);
+      assert.equal(total, porCaso * CASOS.filter(c => c.tipo === 'aviso').length);
     });
-    let cortes = 0;
-    for (const estilo of ['largo', 'corto', 'variado']) {
-      for (let cantidad = 1; cantidad <= 40; cantidad++) {
-        const n = nota(cantidad, {
-          datasets: Array.from({ length: cantidad }, (_, i) => ({ ...dataset(i + 1), titulo: titulos[estilo](i + 1) })),
-          areas: [1, 2, 3].map(areaCompleta)
-        });
-        const etiqueta = `${estilo} con ${cantidad} datasets`;
-        const hojas = lineasPorHoja(await renderPdf(n));
-        const conTitulo = hojas.filter(lineas => lineas.includes(TITULO));
-        assert.equal(conTitulo.length, 1, etiqueta);
-        const siguientes = conTitulo[0].slice(conTitulo[0].indexOf(TITULO) + 1).filter(linea => !esPie(linea));
-        assert.equal(siguientes[0], n.contactos[0].nombre, `${etiqueta}: el título quedó solo al pie de la hoja`);
-        for (const contacto of n.contactos) {
-          assert.equal(contacto.lineas.length, 8);
-          const hoja = hojas.find(lineas => lineas.includes(contacto.nombre));
-          assert.ok(contacto.lineas.every(linea => hoja.includes(linea)), `${etiqueta}: ${contacto.nombre} quedó partida entre hojas`);
-        }
-        if (hojas.indexOf(conTitulo[0]) > 0 && hojas[hojas.indexOf(conTitulo[0]) - 1].some(esFila)) cortes++;
-      }
-    }
-    assert.ok(cortes > 10, `el barrido apenas cortó hojas antes de los contactos (${cortes})`);
-  });
 
-  it('las notas de reiteración (7 columnas) no cortan fechas ni palabras de la tabla', () => {
-    const { hojas } = renderizadas.find(r => r.etiqueta === 'reiteracion/externa/largo con 5 datasets');
-    const lineas = hojas.flat();
-    for (const palabra of ['Anualmente', '31/12/2026', 'Frecuencia', 'actualización']) {
-      assert.ok(lineas.some(l => l.includes(palabra)), `no se encontró "${palabra}" entera`);
-    }
+    it('el encabezado de la tabla se repite en cada hoja que tiene filas y nunca queda solo', () => {
+      for (const { etiqueta, nota: n, hojas } of renderizadas) {
+        const titulos = n.secciones.map(seccion => seccion.titulo);
+        hojas.forEach((lineas, i) => {
+          assert.equal(lineas.includes('Conjunto de datos'), lineas.some(esFila), `${etiqueta}, hoja ${i + 1}: filas sin encabezado`);
+          assert.deepEqual(problemasDeTabla(lineas, titulos), [], `${etiqueta}, hoja ${i + 1}`);
+        });
+      }
+    });
+
+    it('el título de cada sección, su encabezado y su primera fila no se separan aunque la fila sea alta', async () => {
+      let cortes = 0;
+      for (let palabras = 0; palabras <= 150; palabras += 3) {
+        const n = nota(3, { datasets: [1, 2, 3].map(i => ({ ...dataset(i), titulo: `Dataset ${i} ${'palabra '.repeat(palabras)}`.trim() })) });
+        const hojas = lineasPorHoja(await render(n));
+        cortes += hojas.length - 1;
+        const titulos = n.secciones.map(seccion => seccion.titulo);
+        hojas.forEach((lineas, i) => assert.deepEqual(problemasDeTabla(lineas, titulos), [], `títulos de ${palabras} palabras, hoja ${i + 1}`));
+      }
+      assert.ok(cortes > 10, `el barrido apenas cortó hojas (${cortes})`);
+    });
+
+    it('el título de los contactos nunca queda solo al pie de una hoja y cada área va entera', async () => {
+      const TITULO = 'Datos de contacto de las áreas responsables';
+      // Áreas con los 8 campos de contacto cargados: el bloque más alto que puede tener un contacto
+      const areaCompleta = (k) => ({
+        id: k, nombre: `Área completa ${k}`, area_superior: `Secretaría de prueba ${k}`, email_principal: `area${k}@rpad.test`,
+        email_secundario: `alternativa${k}@rpad.test`, telefono_area: '297 400-0000', celular_area: '297 15 400-0000',
+        nombre_contacto: `Persona de contacto ${k}`, telefono_contacto: '297 400-0001', email_contacto: `contacto${k}@rpad.test`
+      });
+      let cortes = 0;
+      for (const estilo of ['largo', 'corto', 'variado']) {
+        for (let cantidad = 1; cantidad <= 40; cantidad++) {
+          const n = nota(cantidad, {
+            datasets: Array.from({ length: cantidad }, (_, i) => ({ ...dataset(i + 1), titulo: titulos[estilo](i + 1) })),
+            areas: [1, 2, 3].map(areaCompleta)
+          });
+          const etiqueta = `${estilo} con ${cantidad} datasets`;
+          const hojas = lineasPorHoja(await render(n));
+          const conTitulo = hojas.filter(lineas => lineas.includes(TITULO));
+          assert.equal(conTitulo.length, 1, etiqueta);
+          const siguientes = conTitulo[0].slice(conTitulo[0].indexOf(TITULO) + 1).filter(linea => !esPie(linea));
+          assert.equal(siguientes[0], n.contactos[0].nombre, `${etiqueta}: el título quedó solo al pie de la hoja`);
+          for (const contacto of n.contactos) {
+            assert.equal(contacto.lineas.length, 8);
+            const hoja = hojas.find(lineas => lineas.includes(contacto.nombre));
+            assert.ok(contacto.lineas.every(linea => hoja.includes(linea)), `${etiqueta}: ${contacto.nombre} quedó partida entre hojas`);
+          }
+          if (hojas.indexOf(conTitulo[0]) > 0 && hojas[hojas.indexOf(conTitulo[0]) - 1].some(esFila)) cortes++;
+        }
+      }
+      assert.ok(cortes > 10, `el barrido apenas cortó hojas antes de los contactos (${cortes})`);
+    });
+
+    it('las notas de reiteración (7 columnas) no cortan fechas ni palabras de la tabla', () => {
+      const { hojas } = renderizadas.find(r => r.etiqueta === 'reiteracion/externa/largo con 5 datasets');
+      const lineas = hojas.flat();
+      for (const palabra of ['Anualmente', '31/12/2026', 'Frecuencia', 'actualización']) {
+        assert.ok(lineas.some(l => l.includes(palabra)), `no se encontró "${palabra}" entera`);
+      }
+    });
   });
-});
+}

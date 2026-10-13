@@ -1,11 +1,20 @@
-// PDF de la Nota Digital con el formato de la Resolución 2820/2022: hoja oficio, Helvetica 12.
+// PDF de la Nota Digital con el formato de la Resolución 2820/2022: hoja oficio, Helvetica 12, membrete municipal.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6.6)
 import zlib from 'node:zlib';
 import PDFDocument from 'pdfkit';
 
 const MM = 72 / 25.4;
 const PAGINA = [216 * MM, 330 * MM];
+// Sin banner del membrete el margen superior es de 25 mm; con banner, el alto del banner más 9 mm (nunca menos de 25)
 const MARGENES = { top: 25 * MM, bottom: 25 * MM, left: 30 * MM, right: 30 * MM };
+// El banner ocupa el ancho de la hoja con su alto proporcional, salvo que pase de 45 mm: entonces se achica, centrado
+const ALTO_MAXIMO_BANNER = 45 * MM;
+const SEPARACION_BANNER = 9 * MM;
+// Pie del membrete: Helvetica 10 centrado, con la línea de base a 12,5 mm del borde inferior. Con ese pie,
+// "Página p de t" sube a 17,5 mm: queda entre el contenido (que termina a 25 mm) y el pie, sin tocar ninguno.
+const TAMANO_PIE = 10;
+const BASE_PIE = 12.5 * MM;
+const BASE_PAGINACION = 17.5 * MM;
 const NORMAL = 'Helvetica';
 const NEGRITA = 'Helvetica-Bold';
 const CURSIVA = 'Helvetica-Oblique';
@@ -19,16 +28,21 @@ const MINIMO_TITULO = 55;
 const ALTO_CIERRE = 200;
 
 // =====================================================
-// Validación de la imagen de la firma
+// Validación de las imágenes (firma y banner del membrete)
 // =====================================================
 // PDFKit decodifica los PNG con transparencia (o entrelazados) con png-js, que descomprime en un callback de zlib
 // y lanza sus errores ahí: un PNG dañado no rechaza la promesa de renderPdf, tumba el proceso. Esta validación
 // es síncrona y recorre la imagen como lo hará png-js, para rechazarla antes de que llegue a PDFKit.
 export class ImagenInvalida extends Error {}
-const imagenInvalida = (detalle) => new ImagenInvalida(`La imagen de la firma no es válida: ${detalle}`);
+// Defecto encontrado al recorrer la imagen: validarImagen lo convierte en ImagenInvalida con el nombre de la imagen
+class Defecto extends Error {}
+const imagenInvalida = (detalle) => new Defecto(detalle);
+// Cómo nombra a cada imagen el mensaje de error
+const NOMBRES_IMAGEN = { firma: 'de la firma', membrete: 'del membrete' };
 
 const FIRMA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-// Una firma ocupa 140 × 60 puntos en la nota: el límite solo acota la memoria que usa png-js al decodificarla
+// La firma ocupa 140 × 60 puntos y el banner, el ancho de la hoja: el límite solo acota la memoria que usa png-js
+// al decodificarlas (4000 píxeles a lo ancho de una hoja oficio son unos 470 puntos por pulgada)
 const MAXIMO_LADO_PNG = 4000;
 // Tipo de color PNG → canales por píxel y profundidades válidas
 const TIPOS_COLOR_PNG = { 0: [1, [1, 2, 4, 8, 16]], 2: [3, [8, 16]], 3: [1, [1, 2, 4, 8]], 4: [2, [8, 16]], 6: [4, [8, 16]] };
@@ -131,22 +145,38 @@ const validarJpeg = (datos) => {
 
 const tipoDeImagen = (datos) => ({ 0x89: 'image/png', 0xff: 'image/jpeg' }[datos[0]] ?? null);
 
-// Valida de forma síncrona una imagen de firma (PNG o JPEG). Lanza un Error con un mensaje para mostrar si no sirve.
+// Valida de forma síncrona una imagen (PNG o JPEG) y devuelve su tamaño en píxeles. Si no sirve, lanza
+// ImagenInvalida con un mensaje para mostrar que nombra la imagen ("de la firma", "del membrete").
 // Sin mime, el tipo se deduce de los primeros bytes, como hace PDFKit.
-export const validarImagenFirma = (datos, mime) => {
-  if (!Buffer.isBuffer(datos) || datos.length === 0) throw imagenInvalida('el archivo está vacío');
+const validarImagen = (datos, mime, uso) => {
+  const invalida = (detalle) => new ImagenInvalida(`La imagen ${NOMBRES_IMAGEN[uso]} no es válida: ${detalle}`);
+  if (!Buffer.isBuffer(datos) || datos.length === 0) throw invalida('el archivo está vacío');
   const tipo = mime ?? tipoDeImagen(datos);
   try {
     if (tipo === 'image/png') validarPng(datos);
     else if (tipo === 'image/jpeg') validarJpeg(datos);
     else throw imagenInvalida('debe ser PNG o JPEG');
     // Último control: el lector de PDFKit (síncrono) tiene que poder abrirla
-    new PDFDocument({ autoFirstPage: false }).openImage(datos);
+    const imagen = new PDFDocument({ autoFirstPage: false }).openImage(datos);
+    return { ancho: imagen.width, alto: imagen.height };
   } catch (error) {
-    if (error instanceof ImagenInvalida) throw error;
-    throw imagenInvalida(`no se puede leer (${error?.message ?? error})`);
+    if (error instanceof Defecto) throw invalida(error.message);
+    throw invalida(`no se puede leer (${error?.message ?? error})`);
   }
 };
+
+export const validarImagenFirma = (datos, mime) => validarImagen(datos, mime, 'firma');
+export const validarImagenMembrete = (datos, mime) => validarImagen(datos, mime, 'membrete');
+
+// Tamaño y posición del banner en la hoja (en puntos), a partir de su tamaño en píxeles
+const medidasBanner = ({ ancho, alto }) => {
+  const anchoHoja = PAGINA[0];
+  const escala = Math.min(anchoHoja / ancho, ALTO_MAXIMO_BANNER / alto);
+  return { ancho: ancho * escala, alto: alto * escala, x: (anchoHoja - ancho * escala) / 2 };
+};
+
+// Texto del pie del membrete en una sola línea; null si no hay
+const textoPie = (pie) => String(pie ?? '').replace(/\s+/g, ' ').trim() || null;
 
 // Ancho de cada columna: la proporción base, ampliada lo justo para que no se corten fechas,
 // frecuencias ni encabezados, y recortada de las columnas que tienen holgura
@@ -173,7 +203,7 @@ const calcularAnchos = (doc, seccion, ancho) => {
 // antecedente) para que quepan juntos, y la función que la dibuja
 const prepararTabla = (doc, seccion, ancho) => {
   const anchos = calcularAnchos(doc, seccion, ancho);
-  const limite = () => doc.page.height - MARGENES.bottom;
+  const limite = () => doc.page.height - doc.page.margins.bottom;
   const izquierda = MARGENES.left;
 
   const altoDe = (valores, fuente) => {
@@ -235,39 +265,63 @@ const prepararTabla = (doc, seccion, ancho) => {
   return { altoInicio, dibujar };
 };
 
-const agregarPies = (doc, nota, ancho) => {
+// Membrete (banner y pie) y numeración de cada hoja: se dibujan al final, cuando ya se sabe cuántas hojas hay.
+// banner: { imagen (abierta con doc.openImage, así el archivo la guarda una sola vez), ancho, alto, x } o null.
+const agregarMembreteYPies = (doc, nota, ancho, { banner, pie }) => {
   const { start, count } = doc.bufferedPageRange();
-  if (count < 2) return;
+  if (count < 2 && !banner && !pie) return;
+  // Un pie más ancho que el texto de la hoja se achica para entrar en una línea (hacia abajo, al centésimo de punto).
+  // Se centra a mano y se escribe sin ancho: el ajuste de líneas de PDFKit mide palabra por palabra, sin el
+  // interletrado entre el espacio y la palabra siguiente, y podría partir en dos un pie que sí entra.
+  doc.font(NORMAL).fontSize(TAMANO_PIE);
+  const tamanoPie = pie ? Math.min(TAMANO_PIE, Math.floor(TAMANO_PIE * ancho / doc.widthOfString(pie) * 100) / 100) : null;
+  const xPie = pie ? MARGENES.left + (ancho - doc.fontSize(tamanoPie).widthOfString(pie)) / 2 : null;
   for (let i = 0; i < count; i++) {
     doc.switchToPage(start + i);
     // Sin margen inferior temporalmente: escribir debajo del margen agregaría una hoja
     const inferior = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
-    doc.font(NORMAL).fontSize(8).text(`Nota Digital N° ${nota.numeroTexto} – Página ${i + 1} de ${count}`,
-      MARGENES.left, doc.page.height - inferior / 2, { width: ancho, align: 'center', lineBreak: false });
+    if (banner) doc.image(banner.imagen, banner.x, 0, { width: banner.ancho, height: banner.alto });
+    // Con baseline 'alphabetic' la y es la de la línea de base
+    if (pie) doc.font(NORMAL).fontSize(tamanoPie).text(pie, xPie, doc.page.height - BASE_PIE, { lineBreak: false, baseline: 'alphabetic' });
+    if (count > 1) {
+      const paginacion = `Nota Digital N° ${nota.numeroTexto} – Página ${i + 1} de ${count}`;
+      doc.font(NORMAL).fontSize(8);
+      if (pie) {
+        doc.text(paginacion, MARGENES.left, doc.page.height - BASE_PAGINACION, { width: ancho, align: 'center', lineBreak: false, baseline: 'alphabetic' });
+      } else {
+        doc.text(paginacion, MARGENES.left, doc.page.height - inferior / 2, { width: ancho, align: 'center', lineBreak: false });
+      }
+    }
     doc.page.margins.bottom = inferior;
   }
 };
 
-export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((resolve, reject) => {
-  const doc = new PDFDocument({
-    size: PAGINA,
-    margins: MARGENES,
-    bufferPages: true,
-    info: { Title: `Nota Digital ${nota.numeroTexto}`, Author: 'Dirección de Datos Públicos y Comunicación', Subject: nota.asunto }
-  });
-  const partes = [];
-  doc.on('data', parte => partes.push(parte));
-  doc.on('end', () => resolve(Buffer.concat(partes)));
-  doc.on('error', reject);
-
+export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, membretePie = null } = {}) => new Promise((resolve, reject) => {
   try {
     // Una imagen dañada rechaza la promesa acá, antes de llegar a PDFKit (que tumbaría el proceso)
     if (firmaImagen) validarImagenFirma(firmaImagen);
+    const banner = membreteImagen ? medidasBanner(validarImagenMembrete(membreteImagen)) : null;
+    const pie = textoPie(membretePie);
+
+    // El margen superior vale para todas las hojas (PDFKit lo aplica también a las que agrega addPage)
+    const superior = banner ? Math.max(MARGENES.top, banner.alto + SEPARACION_BANNER) : MARGENES.top;
+    const doc = new PDFDocument({
+      size: PAGINA,
+      margins: { ...MARGENES, top: superior },
+      bufferPages: true,
+      info: { Title: `Nota Digital ${nota.numeroTexto}`, Author: 'Dirección de Datos Públicos y Comunicación', Subject: nota.asunto }
+    });
+    const partes = [];
+    doc.on('data', parte => partes.push(parte));
+    doc.on('end', () => resolve(Buffer.concat(partes)));
+    doc.on('error', reject);
+    if (banner) banner.imagen = doc.openImage(membreteImagen);
+
     const ancho = doc.page.width - MARGENES.left - MARGENES.right;
     const asegurarEspacio = (alto) => {
       // (si ya está arriba de una hoja, un bloque más alto que la hoja no justifica dejarla en blanco)
-      if (doc.y + alto > doc.page.height - MARGENES.bottom && doc.y > MARGENES.top + 1) doc.addPage();
+      if (doc.y + alto > doc.page.height - doc.page.margins.bottom && doc.y > doc.page.margins.top + 1) doc.addPage();
     };
     const altoTexto = (texto, tamano = 12, fuente = NORMAL) => {
       doc.font(fuente).fontSize(tamano);
@@ -287,7 +341,7 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
     };
 
     // REF., número y destinatario
-    doc.font(NEGRITA).fontSize(12).text('REF.:', MARGENES.left, MARGENES.top, { underline: true, continued: true })
+    doc.font(NEGRITA).fontSize(12).text('REF.:', MARGENES.left, doc.page.margins.top, { underline: true, continued: true })
       .font(NORMAL).text(` "${nota.ref}"`, { underline: false });
     doc.moveDown(0.3);
     parrafo(`Nota Digital N° ${nota.numeroTexto}`, { fuente: NEGRITA, align: 'right', espacio: 1.2 });
@@ -348,7 +402,7 @@ export const renderPdf = (nota, { firmaImagen = null } = {}) => new Promise((res
     doc.moveDown(1.5);
     parrafo(nota.lineaCc, { tamano: 11, align: 'left' });
 
-    agregarPies(doc, nota, ancho);
+    agregarMembreteYPies(doc, nota, ancho, { banner, pie });
     doc.end();
   } catch (error) {
     reject(error);

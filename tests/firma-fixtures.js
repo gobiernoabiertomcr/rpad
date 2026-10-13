@@ -1,4 +1,5 @@
-// Imágenes de firma para los tests: PNG y JPEG armados byte a byte, sanos o dañados.
+// Imágenes para los tests (firma y banner del membrete): PNG y JPEG armados byte a byte, sanos o dañados.
+// Nunca se versionan las imágenes institucionales reales: estas se generan en cada test.
 import zlib from 'node:zlib';
 
 const crc32 = (datos) => {
@@ -52,6 +53,26 @@ export const pngRgba = ({ ancho = 40, alto = 20, entrelazado = false, idat } = {
     FIRMA_PNG,
     bloque('IHDR', cabecera),
     bloque('IDAT', idat ?? zlib.deflateSync(crudo)),
+    bloque('IEND', Buffer.alloc(0))
+  ]);
+};
+
+// PNG RGB (tipo de color 2, sin transparencia), como un banner exportado de Word: PDFKit lo guarda sin decodificarlo
+export const pngRgb = ({ ancho = 40, alto = 20 } = {}) => {
+  const cabecera = Buffer.alloc(13);
+  cabecera.writeUInt32BE(ancho, 0);
+  cabecera.writeUInt32BE(alto, 4);
+  cabecera[8] = 8; // bits por canal
+  cabecera[9] = 2; // RGB
+  const crudo = Buffer.concat(Array.from({ length: alto }, (_, y) => {
+    const fila = Buffer.alloc(1 + ancho * 3);
+    for (let i = 1; i < fila.length; i++) fila[i] = (y * 5 + i * 3) % 256;
+    return fila;
+  }));
+  return Buffer.concat([
+    FIRMA_PNG,
+    bloque('IHDR', cabecera),
+    bloque('IDAT', zlib.deflateSync(crudo)),
     bloque('IEND', Buffer.alloc(0))
   ]);
 };
