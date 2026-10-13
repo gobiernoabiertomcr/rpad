@@ -57,12 +57,20 @@ La fecha de "hoy" se calcula siempre en la zona horaria `America/Argentina/Bueno
 En cada corrida de un día hábil, para cada gestión se arma **como máximo una nota de aviso** con los datasets que cumplen todo lo siguiente:
 - `activo = TRUE`;
 - su frecuencia tiene días definidos (los "Eventual" quedan afuera);
-- `proxima_actualizacion` no es nula y es **menor o igual a hoy + ventana**; esto incluye los ya vencidos;
+- `proxima_actualizacion` no es nula y:
+  - es **menor o igual a hoy + ventana**; esto incluye los ya vencidos; **o**
+  - vence en el **mismo mes (año-mes)** que algún dataset de la misma gestión que ya entró en la ventana. Ese otro dataset se busca entre los que cumplen las dos condiciones anteriores (activo y con frecuencia con días) y tienen vencimiento, **tengan o no aviso**;
 - **no tienen un aviso** (no prueba) para su vencimiento actual.
+
+En otras palabras, un mes "se abre" para una gestión cuando el **primer** vencimiento de ese mes queda a la distancia de la ventana, y ese día se avisan juntos todos los datasets de la gestión que vencen ese mes. Así un mismo mes no se parte en dos notas casi seguidas cuando algunos datasets vencen el 29 o el 30 y la mayoría el último día. Por ejemplo, en la gestión externa, si unos vencen el 30/01 y otros el 31/01, salen todos en el aviso del 31/12; en la interna, si unos vencen el 29/03 y otros el 31/03, salen todos el 28/01. Si el primero del mes ya se avisó (por ejemplo, ayer) y aparece otro dataset sin aviso que vence ese mismo mes, entra en la corrida siguiente aunque todavía no esté en la ventana. No se mezclan meses distintos ni gestiones distintas.
+
+Un dataset vencido que nunca tuvo aviso para su vencimiento actual (por ejemplo, porque se cargó una fecha en el pasado) entra en el próximo aviso de su gestión como su primer aviso formal: está dentro de la ventana, así que la regla del mes no lo cambia.
 
 Se agrupan en dos secciones: **próximos a vencer** (vencimiento ≥ hoy) y **vencidos** (vencimiento < hoy).
 
 Como el criterio es por rango y no por fecha exacta, si un día no hubo corrida o la fecha cae en un día no hábil, el dataset entra en el siguiente día hábil.
+
+La pantalla de Estado (sección 10) muestra como fecha del próximo aviso de cada gestión el primer día hábil, desde hoy, en que esta selección devolvería algún dataset, y como cantidad los datasets que devolvería ese día.
 
 ### 5.3 Reiteraciones
 
@@ -354,6 +362,7 @@ Se aplica TDD con la batería existente (`npm test`, contra Docker y Mailpit). T
 
 - **Calendario:**
   - aviso a los 60 días (interna) y a los 30 (externa);
+  - el aviso agrupa los datasets de la gestión que vencen el mismo mes, sin mezclar meses ni gestiones;
   - un solo aviso por ciclo, y aviso nuevo cuando cambia el vencimiento;
   - reiteración el primer día hábil y regla de 20 días;
   - fines de semana y feriados fijos;

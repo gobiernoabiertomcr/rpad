@@ -21,6 +21,13 @@ const SIN_AVISO = `NOT EXISTS (
   JOIN notas_digitales n ON n.id = ndd.nota_id
   WHERE ndd.dataset_id = d.id AND ndd.vencimiento = d.proxima_actualizacion
     AND n.tipo = 'aviso' AND n.es_prueba = 0)`;
+// Primer vencimiento del mes (año-mes) de d entre los datasets de su gestión que cumplen la condición base,
+// tengan o no aviso. El mes "se abre" para el aviso cuando ese vencimiento entra en la ventana (spec 5.2).
+const PRIMER_VENCIMIENTO_DEL_MES = `(
+  SELECT MIN(e.proxima_actualizacion) FROM datasets e
+  JOIN frecuencias fe ON fe.id = e.frecuencia_id
+  WHERE e.activo = TRUE AND e.tipo_gestion = d.tipo_gestion AND fe.dias IS NOT NULL AND e.proxima_actualizacion IS NOT NULL
+    AND DATE_FORMAT(e.proxima_actualizacion, '%Y-%m') = DATE_FORMAT(d.proxima_actualizacion, '%Y-%m'))`;
 
 export const obtenerConfig = async () => {
   const [filas] = await pool.query('SELECT * FROM notas_digitales_config WHERE id = 1');
@@ -28,11 +35,14 @@ export const obtenerConfig = async () => {
   return filas[0];
 };
 
+// Los que vencen dentro de la ventana (incluye los vencidos) y los demás de la gestión que vencen el mismo mes que
+// alguno que ya entró en ella. Como d es parte de su mes, "el primer vencimiento del mes está en la ventana" cubre
+// las dos condiciones.
 export const seleccionarParaAviso = async (gestion, hoy) => {
   const [filas] = await pool.query(
     `SELECT ${COLUMNAS_DATASET} ${DESDE_DATASETS}
      WHERE ${CONDICION_BASE}
-       AND d.proxima_actualizacion <= DATE_ADD(?, INTERVAL ? DAY)
+       AND ${PRIMER_VENCIMIENTO_DEL_MES} <= DATE_ADD(?, INTERVAL ? DAY)
        AND ${SIN_AVISO}
      ORDER BY d.proxima_actualizacion, d.titulo`,
     [gestion, hoy, VENTANA_DIAS[gestion]]
@@ -63,14 +73,16 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
   }));
 };
 
-export const pendientesDeAviso = async (gestion) => {
-  const [filas] = await pool.query(
-    `SELECT DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento ${DESDE_DATASETS}
+// Vencimiento que abre el próximo aviso de la gestión: el primer vencimiento del mes más próximo que tiene datasets
+// sin aviso (null si no hay ninguno). El aviso sale cuando ese vencimiento entra en la ventana.
+export const aperturaDelProximoAviso = async (gestion) => {
+  const [[fila]] = await pool.query(
+    `SELECT DATE_FORMAT(${PRIMER_VENCIMIENTO_DEL_MES}, '%Y-%m-%d') AS apertura ${DESDE_DATASETS}
      WHERE ${CONDICION_BASE} AND ${SIN_AVISO}
-     ORDER BY d.proxima_actualizacion`,
+     ORDER BY apertura LIMIT 1`,
     [gestion]
   );
-  return filas.map(f => f.vencimiento);
+  return fila?.apertura ?? null;
 };
 
 export const antecedentesDe = async (ids) => {

@@ -161,6 +161,20 @@ describe('avisos', () => {
     assert.equal((await mailpit.mensajes()).length, 1);
   });
 
+  it('el aviso sale cuando se abre el mes y lleva todos los datasets de la gestión que vencen ese mes', async () => {
+    const del30 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
+    const del31 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
+    await ejecutar('2026-12-30');
+    assert.equal((await notas()).length, 0);
+
+    await ejecutar('2026-12-31');
+    const [nota, ...otras] = await notas();
+    assert.deepEqual([nota.tipo, nota.gestion, otras.length], ['aviso', 'externa', 0]);
+    const filas = await query('SELECT dataset_id FROM notas_digitales_datasets WHERE nota_id = ? ORDER BY dataset_id', [nota.id]);
+    assert.deepEqual(filas.map(f => f.dataset_id), [del30, del31].sort((a, b) => a - b));
+    assert.equal((await mailpit.mensajes()).length, 1);
+  });
+
   it('si cambia el vencimiento recibe un aviso nuevo con el número siguiente', async () => {
     const id = await crearDataset({ vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
@@ -590,5 +604,18 @@ describe('pruebas, vista previa y estado', () => {
     assert.deepEqual(estado.proximas.interna.aviso, { fecha: '2026-12-02', cantidad: 1 });
     assert.deepEqual(estado.proximas.interna.reiteracion, { fecha: '2026-11-02', cantidad: 0 });
     assert.equal(estado.proximas.externa.aviso, null);
+  });
+
+  it('el próximo aviso del estado agrupa los datasets que vencen el mismo mes', async () => {
+    await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
+    await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
+    await crearDataset({ gestion: 'externa', vencimiento: '2027-02-28' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-11-02' })).proximas.externa.aviso, { fecha: '2026-12-31', cantidad: 2 });
+
+    // Marzo ya se abrió con el 29/03 (avisado el 28/01): el 31/03 sale en la corrida siguiente
+    const avisado = await crearDataset({ vencimiento: '2027-03-29' });
+    await crearNota({ fecha: '2027-01-28', numero: 1, datasets: [{ id: avisado, vencimiento: '2027-03-29' }] });
+    await crearDataset({ vencimiento: '2027-03-31' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2027-01-29' })).proximas.interna.aviso, { fecha: '2027-01-29', cantidad: 1 });
   });
 });

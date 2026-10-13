@@ -9,7 +9,7 @@ import {
   periodoSiguiente, sumarDias, formatoCorto
 } from './notasDigitalesCalendario.js';
 import {
-  VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, pendientesDeAviso, antecedentesDe, areasDe
+  VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe
 } from './notasDigitalesDatos.js';
 
 export const MAX_INTENTOS = 5;
@@ -388,13 +388,15 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
   const periodoActual = periodoDe(hoy);
   const proximas = {};
   for (const gestion of GESTIONES) {
-    const fechasAviso = (await pendientesDeAviso(gestion))
-      .map(vencimiento => {
-        const desde = sumarDias(vencimiento, -VENTANA_DIAS[gestion]);
-        return proximoDiaHabil(desde > hoy ? desde : hoy);
-      })
-      .sort();
-    const fechaAviso = fechasAviso[0] ?? null;
+    // Primer día hábil desde hoy en que se abre un mes con datasets sin aviso; la cantidad es lo que se
+    // seleccionaría ese día (todo el mes, más lo que ya esté en la ventana)
+    const apertura = await aperturaDelProximoAviso(gestion);
+    let aviso = null;
+    if (apertura) {
+      const desde = sumarDias(apertura, -VENTANA_DIAS[gestion]);
+      const fecha = proximoDiaHabil(desde > hoy ? desde : hoy);
+      aviso = { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length };
+    }
 
     const evaluado = config[`reiteracion_evaluada_${gestion}`] === periodoActual;
     const fechaReiteracion = evaluado
@@ -402,7 +404,7 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       : proximoDiaHabil(primerDiaHabilDelMes(periodoActual) > hoy ? primerDiaHabilDelMes(periodoActual) : hoy);
 
     proximas[gestion] = {
-      aviso: fechaAviso ? { fecha: fechaAviso, cantidad: fechasAviso.filter(f => f === fechaAviso).length } : null,
+      aviso,
       reiteracion: { fecha: fechaReiteracion, cantidad: (await seleccionarParaReiteracion(gestion, fechaReiteracion)).length }
     };
   }

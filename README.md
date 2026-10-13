@@ -314,7 +314,7 @@ https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET
 
 Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días antes) y las **Notas Digitales**:
 
-- **Aviso**: gestión interna 60 días antes del vencimiento, gestión externa 30 días antes.
+- **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes.
 - **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes.
 - Solo en días hábiles. Cada nota se numera (`Nota Digital N° 12/26`), se envía con el PDF adjunto y queda en el libro de la pantalla de Correos.
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
