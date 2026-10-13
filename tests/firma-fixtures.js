@@ -57,7 +57,8 @@ export const pngRgba = ({ ancho = 40, alto = 20, entrelazado = false, idat } = {
   ]);
 };
 
-// PNG RGB (tipo de color 2, sin transparencia), como un banner exportado de Word: PDFKit lo guarda sin decodificarlo
+// PNG RGB (tipo de color 2, sin transparencia): PDFKit lo guarda sin decodificarlo. El banner real es RGBA (ver
+// pngRgba), que PDFKit decodifica aparte para separarle la máscara de transparencia
 export const pngRgb = ({ ancho = 40, alto = 20 } = {}) => {
   const cabecera = Buffer.alloc(13);
   cabecera.writeUInt32BE(ancho, 0);

@@ -15,7 +15,11 @@ const ANCHO_HOJA = 216 * MM;
 const ALTO_HOJA = 330 * MM;
 // Banner con las proporciones del real (1241 × 178 píxeles), generado acá: la imagen institucional no se versiona
 const BANNER = pngRgb({ ancho: 1241, alto: 178 });
+// El banner real es RGBA: PDFKit lo decodifica con png-js (asíncrono) y le separa la máscara de transparencia
+const BANNER_RGBA = pngRgba({ ancho: 1241, alto: 178 });
 const ALTO_BANNER = ANCHO_HOJA * 178 / 1241;
+// Un banner que llega al tope de 45 mm: margen superior de 54 mm, el peor caso de espacio útil en la hoja
+const BANNER_TOPE = pngRgba({ ancho: 400, alto: 300 });
 const PIE = 'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.';
 // Helvetica: ascendente y descendente, en fracción del tamaño de la letra
 const ASCENDENTE = 0.718;
@@ -89,18 +93,21 @@ describe('renderPdf: membrete', () => {
   const enElBorde = (imagen) => cerca(imagen.y, 0);
 
   it('dibuja el banner arriba de todas las hojas, a lo ancho de la hoja con su alto proporcional, y lo guarda una sola vez', async () => {
-    const pdf = await renderPdf(nota(60), { firmaImagen: PNG, ...conMembrete() });
-    const hojas = imagenesPorHoja(pdf);
-    assert.ok(hojas.length >= 3, `hojas: ${hojas.length}`);
-    hojas.forEach((imagenes, i) => {
-      const banners = imagenes.filter(enElBorde);
-      assert.equal(banners.length, 1, `hoja ${i + 1}: ${JSON.stringify(imagenes)}`);
-      const [banner] = banners;
-      assert.ok(cerca(banner.x, 0) && cerca(banner.ancho, ANCHO_HOJA) && cerca(banner.alto, ALTO_BANNER), `hoja ${i + 1}: ${JSON.stringify(banner)}`);
-    });
-    // Todas las hojas dibujan el mismo objeto: el archivo guarda el banner una sola vez
-    assert.equal(new Set(hojas.flat().filter(enElBorde).map(imagen => imagen.nombre)).size, 1);
-    assert.deepEqual(imagenesGuardadas(pdf).filter(imagen => imagen.ancho === 1241), [{ ancho: 1241, alto: 178 }]);
+    // RGB, y RGBA como el real (PDFKit lo decodifica aparte y le agrega su máscara de transparencia)
+    for (const [banner, guardadas] of [[BANNER, 1], [BANNER_RGBA, 2]]) {
+      const pdf = await renderPdf(nota(60), { firmaImagen: PNG, ...conMembrete({ membreteImagen: banner }) });
+      const hojas = imagenesPorHoja(pdf);
+      assert.ok(hojas.length >= 3, `hojas: ${hojas.length}`);
+      hojas.forEach((imagenes, i) => {
+        const banners = imagenes.filter(enElBorde);
+        assert.equal(banners.length, 1, `hoja ${i + 1}: ${JSON.stringify(imagenes)}`);
+        const [dibujado] = banners;
+        assert.ok(cerca(dibujado.x, 0) && cerca(dibujado.ancho, ANCHO_HOJA) && cerca(dibujado.alto, ALTO_BANNER), `hoja ${i + 1}: ${JSON.stringify(dibujado)}`);
+      });
+      // Todas las hojas dibujan el mismo objeto: el archivo guarda el banner una sola vez (y su máscara, si es RGBA)
+      assert.equal(new Set(hojas.flat().filter(enElBorde).map(imagen => imagen.nombre)).size, 1);
+      assert.deepEqual(imagenesGuardadas(pdf).filter(imagen => imagen.ancho === 1241), Array(guardadas).fill({ ancho: 1241, alto: 178 }));
+    }
   });
 
   it('el contenido de cada hoja empieza debajo del banner: margen superior del alto del banner más 9 mm (40 mm con el real)', async () => {
@@ -336,10 +343,18 @@ describe('validarImagenMembrete', () => {
 
 // Maquetación: se renderizan notas de 1 a 30 datasets (avisos y reiteraciones, 6 y 7 columnas)
 // y se revisan las reglas de la hoja oficio en cada una, sin membrete y con el banner y el pie del membrete
-// (el banner corre hacia abajo el margen superior de todas las hojas).
+// (el banner corre hacia abajo el margen superior de todas las hojas): con un banner RGBA de las proporciones del
+// real (margen de unos 40 mm) y con uno en el tope de 45 mm (margen de 54 mm).
 const VARIANTES = [
   { nombre: 'sin membrete', opciones: {} },
-  { nombre: 'con el banner y el pie del membrete', opciones: { membreteImagen: BANNER, membretePie: PIE } }
+  {
+    nombre: 'con el banner real (RGBA) y el pie del membrete', margen: ALTO_BANNER + 9 * MM,
+    opciones: { membreteImagen: BANNER_RGBA, membretePie: PIE }
+  },
+  {
+    nombre: 'con un banner en el tope de 45 mm y el pie del membrete', margen: 54 * MM,
+    opciones: { membreteImagen: BANNER_TOPE, membretePie: PIE }
+  }
 ];
 
 for (const variante of VARIANTES) {
@@ -404,10 +419,12 @@ for (const variante of VARIANTES) {
     };
 
     it('el extractor de texto lee las hojas del PDF', () => {
+      // (con el banner en el tope de 45 mm, hasta una nota de un dataset pasa a una segunda hoja)
       const { hojas } = renderizadas[0];
-      assert.equal(hojas.length, 1);
+      assert.ok(hojas.length >= 1 && hojas.length <= 2, `hojas: ${hojas.length}`);
       assert.ok(hojas[0].includes('Conjunto de datos'), hojas[0].join(' | '));
-      assert.ok(hojas[0].some(l => l.startsWith('REF.:')));
+      assert.ok(hojas[0][0].startsWith('REF.:'), hojas[0][0]);
+      assert.ok(hojas.at(-1).includes(renderizadas[0].nota.lineaCc), hojas.at(-1).join(' | '));
     });
 
     it('las notas de varias hojas llevan un solo pie "Página p de t" por hoja y las de una hoja ninguno', () => {
@@ -428,7 +445,7 @@ for (const variante of VARIANTES) {
 
     if (variante.opciones.membretePie) {
       it('el pie del membrete va una vez en cada hoja y ninguna línea invade el banner, el margen inferior ni los pies', () => {
-        const margen = ALTO_BANNER + 9 * MM;
+        const { margen } = variante;
         for (const { etiqueta, textos } of renderizadas) {
           textos.forEach((lineas, i) => {
             const donde = `${etiqueta}, hoja ${i + 1}`;
@@ -436,10 +453,14 @@ for (const variante of VARIANTES) {
             const pagina = lineas.find(t => esPaginacion(t.texto));
             const pie = lineas.find(t => t.texto === PIE);
             if (pagina) assert.ok(pagina.base - DESCENDENTE * pagina.tamano >= pie.base + ASCENDENTE * pie.tamano + 2, `${donde}: "Página" toca el pie`);
-            for (const t of lineas.filter(l => !esPie(l.texto))) {
+            const contenido = lineas.filter(l => !esPie(l.texto));
+            for (const t of contenido) {
               assert.ok(tope(t) >= margen - 0.01, `${donde}: "${t.texto}" invade el banner`);
               assert.ok(t.base - DESCENDENTE * t.tamano >= 25 * MM - 0.01, `${donde}: "${t.texto}" baja del margen inferior`);
             }
+            // La hoja empieza en el margen (o 3 puntos abajo, dentro de la celda del encabezado de la tabla)
+            const arriba = Math.min(...contenido.map(tope));
+            assert.ok(arriba <= margen + 3.01, `${donde}: la primera línea está a ${arriba / MM} mm del borde`);
           });
         }
       });
