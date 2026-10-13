@@ -4,11 +4,21 @@ import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
-import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba } from './notas-fixtures.js';
-import { pngRgba, pngsDanados } from './firma-fixtures.js';
+import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
+import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
+import { textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
 import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+// Banner del membrete generado para los tests (la imagen institucional no se versiona)
+const BANNER = pngRgb({ ancho: 1241, alto: 178 });
+const RUTA_MEMBRETE = '/notificaciones/notas-digitales/config/membrete';
+// Cada hoja del PDF lleva el banner arriba (x = 0, y = 0) y el pie del membrete
+const conMembreteEnCadaHoja = (pdf, pie) => {
+  const imagenes = imagenesPorHoja(pdf);
+  return textosPorHoja(pdf).every((lineas, i) => lineas.filter(t => t.texto === pie).length === 1
+    && imagenes[i].filter(imagen => Math.abs(imagen.x) < 0.01 && Math.abs(imagen.y) < 0.01).length === 1);
+};
 const BLOQUEO = 'rpad_notas_digitales';
 let base, servidor, api, usuarios, motor, dbReal;
 
@@ -51,6 +61,77 @@ describe('configuración', () => {
     assert.equal(res.body.data.para_interna, 'mit@rpad.test');
     assert.equal(res.body.data.tiene_firma, false);
     assert.equal('firma_imagen' in res.body.data, false);
+  });
+
+  it('devuelve el pie del membrete y si hay banner, sin la imagen del banner', async () => {
+    const res = await api.get('/notificaciones/notas-digitales/config', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.membrete_pie, PIE_MEMBRETE);
+    assert.equal(res.body.data.tiene_membrete, false);
+    assert.equal('membrete_imagen' in res.body.data, false);
+  });
+
+  it('guarda un banner PNG, lo devuelve y la configuración indica que hay membrete', async () => {
+    assert.equal((await api.get(RUTA_MEMBRETE, comoAdmin())).status, 404);
+    const res = await api.put(RUTA_MEMBRETE, { imagen: `data:image/png;base64,${BANNER.toString('base64')}`, mime: 'image/png' }, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.message, 'Membrete guardado');
+
+    const banner = await api.get(RUTA_MEMBRETE, comoAdmin());
+    assert.equal(banner.status, 200);
+    assert.match(banner.headers.get('content-type'), /image\/png/);
+    assert.deepEqual(banner.body, BANNER);
+    const config = (await api.get('/notificaciones/notas-digitales/config', comoAdmin())).body.data;
+    assert.equal(config.tiene_membrete, true);
+    assert.equal('membrete_imagen' in config, false);
+    // El banner no toca la firma
+    assert.equal(config.tiene_firma, false);
+    assert.equal((await api.get('/notificaciones/notas-digitales/config/firma', comoAdmin())).status, 404);
+  });
+
+  it('un banner dañado, que no es PNG o JPEG o que pesa más de 500 KB da 400, no se guarda y el servidor sigue en pie', async () => {
+    const enviar = (imagen, mime = 'image/png') => api.put(RUTA_MEMBRETE, { imagen, mime }, comoAdmin());
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      const res = await enviar(imagen.toString('base64'));
+      assert.equal(res.status, 400, caso);
+      assert.match(res.body.error, /^La imagen del membrete no es válida: /, caso);
+    }
+    assert.match((await enviar(BANNER.toString('base64'), 'image/gif')).body.error, /membrete debe ser una imagen PNG o JPEG/);
+    for (const mime of ['constructor', '__proto__', ['image/png'], null]) {
+      assert.equal((await enviar(BANNER.toString('base64'), mime)).status, 400, String(mime));
+    }
+    assert.equal((await api.put(RUTA_MEMBRETE, { imagen: BANNER.toString('base64') }, comoAdmin())).status, 400);
+    assert.equal((await enviar('esto no es base64!!')).status, 400);
+    assert.equal((await enviar(Buffer.from('texto plano').toString('base64'))).status, 400);
+    assert.equal((await enviar(Buffer.concat([BANNER, Buffer.alloc(600 * 1024)]).toString('base64'))).status, 400);
+    assert.equal((await enviar({ a: 1 })).status, 400);
+
+    assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
+    assert.deepEqual(await query('SELECT membrete_imagen, membrete_mime FROM notas_digitales_config WHERE id = 1'),
+      [{ membrete_imagen: null, membrete_mime: null }]);
+  });
+
+  it('guarda el pie del membrete recortado ("" o null = sin pie) y valida el largo y el tipo', async () => {
+    const ruta = '/notificaciones/notas-digitales/config';
+    const pieGuardado = async () => (await query('SELECT membrete_pie FROM notas_digitales_config WHERE id = 1'))[0].membrete_pie;
+
+    const res = await api.put(ruta, { membrete_pie: '  Comodoro Rivadavia – Pie nuevo  ' }, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.membrete_pie, 'Comodoro Rivadavia – Pie nuevo');
+
+    for (const vacio of ['', '   ', null]) {
+      assert.equal((await api.put(ruta, { membrete_pie: vacio }, comoAdmin())).status, 200, JSON.stringify(vacio));
+      assert.equal(await pieGuardado(), '', JSON.stringify(vacio));
+    }
+
+    assert.equal((await api.put(ruta, { membrete_pie: 'x'.repeat(300) }, comoAdmin())).status, 200);
+    const largo = await api.put(ruta, { membrete_pie: 'y'.repeat(301) }, comoAdmin());
+    assert.equal(largo.status, 400);
+    assert.match(largo.body.error, /membrete_pie: máximo 300 caracteres/);
+    for (const valor of [5, true, { a: 1 }, ['x']]) {
+      assert.equal((await api.put(ruta, { membrete_pie: valor }, comoAdmin())).status, 400, JSON.stringify(valor));
+    }
+    assert.equal(await pieGuardado(), 'x'.repeat(300));
   });
 
   it('normaliza listas de direcciones y rechaza las inválidas sin guardar', async () => {
@@ -215,6 +296,59 @@ describe('vista previa y prueba', () => {
     await configurarNotas({ casillas_prueba: '' });
     const res = await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'aviso', gestion: 'interna' }, comoAdmin());
     assert.equal(res.status, 400);
+  });
+
+  it('la prueba lleva en su PDF el banner y el pie del membrete cargados desde la pantalla', async () => {
+    assert.equal((await api.put(RUTA_MEMBRETE, { imagen: BANNER.toString('base64'), mime: 'image/png' }, comoAdmin())).status, 200);
+    assert.equal((await api.put('/notificaciones/notas-digitales/config', { membrete_pie: 'Pie de la prueba' }, comoAdmin())).status, 200);
+    const res = await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'aviso', gestion: 'externa' }, comoAdmin());
+    assert.equal(res.status, 200);
+    const [{ pdf }] = await query('SELECT pdf FROM notas_digitales WHERE es_prueba = 1');
+    assert.ok(conMembreteEnCadaHoja(pdf, 'Pie de la prueba'));
+  });
+
+  it('el PDF de la vista previa tiene el contenido de la vista previa, con N° XX, membrete y firma, y no guarda ni envía nada', async () => {
+    await configurarNotas({ firma_imagen: pngRgba(), firma_mime: 'image/png', membrete_imagen: BANNER, membrete_mime: 'image/png' });
+    const res = await api.get('/notificaciones/notas-digitales/preview/pdf?tipo=reiteracion&gestion=externa', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+
+    const lineas = textosPorHoja(res.body).flat().map(t => t.texto);
+    assert.ok(lineas.includes('Nota Digital N° XX'), lineas.join(' | '));
+    // Los mismos datos (de ejemplo, porque no hay datasets para reiterar) que la vista previa HTML
+    const vista = (await api.get('/notificaciones/notas-digitales/preview?tipo=reiteracion&gestion=externa', comoAdmin())).body.data;
+    assert.equal(vista.ejemplo, true);
+    assert.ok(vista.html.includes('Dataset de ejemplo vencido'));
+    assert.ok(lineas.join(' ').includes('Dataset de ejemplo vencido'), lineas.join(' | '));
+    assert.ok(lineas.includes('Firma de Prueba'));
+    assert.ok(conMembreteEnCadaHoja(res.body, PIE_MEMBRETE));
+    // Banner y firma (con su máscara de transparencia)
+    assert.deepEqual(imagenesGuardadas(res.body).map(i => `${i.ancho}x${i.alto}`).sort(), ['1241x178', '40x20', '40x20']);
+
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 0);
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('el PDF de la vista previa rechaza tipo o gestión inválidos', async () => {
+    for (const consulta of ['tipo=otro&gestion=interna', 'tipo=aviso&gestion=otra', 'tipo=aviso', '']) {
+      const res = await api.get(`/notificaciones/notas-digitales/preview/pdf?${consulta}`, comoAdmin());
+      assert.equal(res.status, 400, consulta);
+      assert.equal(res.body.success, false);
+    }
+  });
+
+  it('con un banner dañado ya guardado la prueba y el PDF de la vista previa responden 400 y el servidor sigue en pie', async () => {
+    await configurarNotas({ membrete_imagen: pngsDanados()['IDAT con la cabecera zlib rota'], membrete_mime: 'image/png' });
+    const prueba = await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'aviso', gestion: 'interna' }, comoAdmin());
+    assert.equal(prueba.status, 400);
+    assert.match(prueba.body.error, /imagen del membrete/);
+    const vista = await api.get('/notificaciones/notas-digitales/preview/pdf?tipo=aviso&gestion=interna', comoAdmin());
+    assert.equal(vista.status, 400);
+    assert.match(vista.body.error, /imagen del membrete/);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
+    assert.equal((await mailpit.mensajes()).length, 0);
   });
 });
 

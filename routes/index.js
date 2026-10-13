@@ -37,11 +37,14 @@ import {
   reintentarNota,
   verEstado,
   verPreview,
+  verPreviewPdf,
   enviarPrueba,
   verConfig,
   guardarConfig,
   subirFirma,
-  verFirma
+  verFirma,
+  subirMembrete,
+  verMembrete
 } from '../controllers/notasDigitalesController.js';
 import {
   reporteEstadoGeneral,
@@ -164,11 +167,14 @@ router.get('/notificaciones/preview-cambios-pendientes', authMiddleware, adminOn
 router.get('/notificaciones/notas-digitales', authMiddleware, adminOnly, listarNotas);
 router.get('/notificaciones/notas-digitales/estado', authMiddleware, adminOnly, verEstado);
 router.get('/notificaciones/notas-digitales/preview', authMiddleware, adminOnly, verPreview);
+router.get('/notificaciones/notas-digitales/preview/pdf', authMiddleware, adminOnly, verPreviewPdf);
 router.post('/notificaciones/notas-digitales/prueba', authMiddleware, adminOnly, enviarPrueba);
 router.get('/notificaciones/notas-digitales/config', authMiddleware, adminOnly, verConfig);
 router.put('/notificaciones/notas-digitales/config', authMiddleware, adminOnly, guardarConfig);
 router.get('/notificaciones/notas-digitales/config/firma', authMiddleware, adminOnly, verFirma);
 router.put('/notificaciones/notas-digitales/config/firma', authMiddleware, adminOnly, subirFirma);
+router.get('/notificaciones/notas-digitales/config/membrete', authMiddleware, adminOnly, verMembrete);
+router.put('/notificaciones/notas-digitales/config/membrete', authMiddleware, adminOnly, subirMembrete);
 router.get('/notificaciones/notas-digitales/:id', authMiddleware, adminOnly, obtenerNota);
 router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly, descargarPdf);
 router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);

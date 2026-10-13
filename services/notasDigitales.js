@@ -46,6 +46,11 @@ const destinatarios = (config, gestion, esPrueba) => (esPrueba
     cco: listaDeCorreos(config.cco)
   });
 
+// Imágenes y pie del membrete con que se arma el PDF (se congelan en la nota al generarla)
+const opcionesPdf = (config) => ({
+  firmaImagen: config.firma_imagen, membreteImagen: config.membrete_imagen, membretePie: config.membrete_pie
+});
+
 // Asigna el número, renderiza HTML, texto y PDF y deja la nota registrada como pendiente
 export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null }) => {
   const contenido = preparado ?? await prepararContenido({ tipo, gestion, datasets });
@@ -62,7 +67,7 @@ export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPr
       numero = Number(fila.siguiente);
     }
     const nota = construirNota({ tipo, gestion, numero, anio, esPrueba, fecha, datasets: contenido.datasets, areas: contenido.areas, config });
-    const pdf = await renderPdf(nota, { firmaImagen: config.firma_imagen });
+    const pdf = await renderPdf(nota, opcionesPdf(config));
     const [resultado] = await conexion.query(
       `INSERT INTO notas_digitales
          (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, creado_por)
@@ -344,11 +349,23 @@ const contenidoParaMostrar = async (tipo, gestion, hoy) => {
   return { ...ejemplo(tipo, hoy), ejemplo: true };
 };
 
-export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
+// La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX
+const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
   const config = await obtenerConfig();
   const { datasets, areas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const nota = construirNota({ tipo, gestion, numero: null, anio: null, esPrueba: false, fecha: hoy, datasets, areas, config });
-  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
+  return { nota, config, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
+};
+
+export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
+  const { nota, ejemplo: esEjemplo, cantidad } = await notaDeVistaPrevia({ tipo, gestion, hoy });
+  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad };
+};
+
+// PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía
+export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
+  const { nota, config } = await notaDeVistaPrevia({ tipo, gestion, hoy });
+  return renderPdf(nota, opcionesPdf(config));
 };
 
 export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null }) => {
@@ -398,9 +415,12 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
     ultima_corrida: ultimaCorrida,
     alertas: [
       ...alertasDeCorrida(config, ultimaCorrida, hoy),
-      // Advertencia que no bloquea el envío (la imagen no está en configuracionCompleta)
+      // Advertencias que no bloquean el envío (las imágenes no están en configuracionCompleta)
       ...(config.firma_imagen ? [] : [{
         tipo: 'sin-firma', nivel: 'advertencia', mensaje: 'No hay imagen de la firma: las notas saldrían sin la firma escaneada.'
+      }]),
+      ...(config.membrete_imagen ? [] : [{
+        tipo: 'sin-membrete', nivel: 'advertencia', mensaje: 'No hay imagen del membrete: las notas saldrían sin el encabezado institucional.'
       }])
     ]
   };

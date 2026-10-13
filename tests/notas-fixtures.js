@@ -73,7 +73,7 @@ export const limpiarBase = async () => {
   await query('DELETE FROM datasets');
   await query('DELETE FROM areas');
   await query(`UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL, reiteracion_evaluada_externa = NULL,
-    firma_imagen = NULL, firma_mime = NULL, ultima_corrida_fecha = NULL, ultima_corrida_inicio = NULL, ultima_corrida_fin = NULL,
+    firma_imagen = NULL, firma_mime = NULL, membrete_imagen = NULL, membrete_mime = NULL, ultima_corrida_fecha = NULL, ultima_corrida_inicio = NULL, ultima_corrida_fin = NULL,
     ultima_corrida_resultado = NULL, ultima_corrida_con_errores = 0 WHERE id = 1`);
 };
 
@@ -94,12 +94,15 @@ export const conFallaSimulada = async (evento, condicion, fn) => {
   }
 };
 
+// Texto del pie del membrete que carga la migración (información pública)
+export const PIE_MEMBRETE = 'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.';
+
 export const configurarNotas = async (cambios = {}) => {
   await asegurarBaseDePrueba();
   const valores = {
     envio_activo: 1, para_interna: 'mit@rpad.test', cc_interna: 'geo@rpad.test', para_externa: 'mit@rpad.test',
     cc_externa: 'adm@rpad.test', cco: 'respaldo@rpad.test', firma_nombre: 'Firma de Prueba',
-    firma_cargo: 'Cargo de Prueba', casillas_prueba: 'prueba@rpad.test', ...cambios
+    firma_cargo: 'Cargo de Prueba', casillas_prueba: 'prueba@rpad.test', membrete_pie: PIE_MEMBRETE, ...cambios
   };
   const columnas = Object.keys(valores);
   await query(`UPDATE notas_digitales_config SET ${columnas.map(c => `${c} = ?`).join(', ')} WHERE id = 1`, Object.values(valores));

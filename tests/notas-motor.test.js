@@ -3,8 +3,11 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, db } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada } from './notas-fixtures.js';
-import { pngRgba, pngsDanados } from './firma-fixtures.js';
+import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
+import { textosPorHoja, imagenesPorHoja } from './pdf-lector.js';
 
+// Banner del membrete generado para los tests (la imagen institucional no se versiona)
+const BANNER = pngRgb({ ancho: 1241, alto: 178 });
 let base, motor, dbReal;
 
 before(async () => {
@@ -249,6 +252,29 @@ describe('fallas, reintentos y concurrencia', () => {
     assert.equal(todas[0].html, fallida.html);
   });
 
+  it('el PDF lleva el membrete configurado al generar la nota y el reintento reenvía ese mismo PDF', async () => {
+    await configurarNotas({ membrete_imagen: BANNER, membrete_mime: 'image/png', membrete_pie: 'Pie del membrete de prueba' });
+    await crearDataset({ vencimiento: '2026-12-31' });
+    process.env.EMAIL_SOLO_A = 'nadie@rpad.test';
+    await ejecutar('2026-11-02');
+    const [{ id, pdf, estado }] = await query('SELECT id, pdf, estado FROM notas_digitales');
+    assert.equal(estado, 'fallida');
+    const textos = textosPorHoja(pdf);
+    const imagenes = imagenesPorHoja(pdf);
+    textos.forEach((lineas, i) => {
+      assert.equal(lineas.filter(t => t.texto === 'Pie del membrete de prueba').length, 1, `hoja ${i + 1}`);
+      assert.equal(imagenes[i].filter(imagen => Math.abs(imagen.y) < 0.01 && Math.abs(imagen.x) < 0.01).length, 1, `hoja ${i + 1}: falta el banner`);
+    });
+
+    // Cambia el membrete: el reintento manda el PDF congelado al generar la nota
+    await configurarNotas({ membrete_imagen: null, membrete_mime: null, membrete_pie: 'Otro pie' });
+    process.env.EMAIL_SOLO_A = '';
+    await ejecutar('2026-11-03');
+    const [despues] = await query('SELECT estado, pdf FROM notas_digitales WHERE id = ?', [id]);
+    assert.equal(despues.estado, 'enviada');
+    assert.deepEqual(despues.pdf, pdf);
+  });
+
   it('después de 5 intentos no reintenta solo, pero se puede reintentar a mano', async () => {
     await crearDataset({ vencimiento: '2026-12-31' });
     process.env.EMAIL_SOLO_A = 'nadie@rpad.test';
@@ -398,6 +424,19 @@ describe('registro de la corrida y aislamiento de fallas', () => {
     assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion, n.estado]), [['aviso', 'interna', 'fallida'], ['aviso', 'externa', 'enviada']]);
   });
 
+  it('un banner del membrete dañado ya guardado deja el error registrado en cada gestión y no tumba el proceso', async () => {
+    await configurarNotas({ membrete_imagen: pngsDanados()['IDAT truncado'], membrete_mime: 'image/png' });
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
+
+    const resumen = await ejecutar('2026-11-02');
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion]), [['aviso', 'interna'], ['aviso', 'externa']]);
+    assert.match(resumen.errores[0].mensaje, /imagen del membrete/);
+    assert.equal((await notas()).length, 0);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.match((await ultimaCorrida()).resultado, /imagen del membrete/);
+  });
+
   it('una firma dañada ya guardada deja el error registrado en cada gestión y no tumba el proceso', async () => {
     await configurarNotas({ firma_imagen: pngsDanados()['IDAT con la cabecera zlib rota'], firma_mime: 'image/png' });
     await crearDataset({ vencimiento: '2026-12-31' });
@@ -482,6 +521,18 @@ describe('estado: última corrida y alertas', () => {
 
     await configurarNotas({ firma_imagen: pngRgba(), firma_mime: 'image/png' });
     assert.ok(!(await tipos('2026-11-02')).includes('sin-firma'));
+  });
+
+  it('advierte, sin bloquear el envío, si no hay imagen del membrete', async () => {
+    const estado = await motor.estadoNotas({ hoy: '2026-11-02' });
+    assert.deepEqual(estado.alertas.find(a => a.tipo === 'sin-membrete'), {
+      tipo: 'sin-membrete', nivel: 'advertencia',
+      mensaje: 'No hay imagen del membrete: las notas saldrían sin el encabezado institucional.'
+    });
+    assert.deepEqual(estado.configuracion_faltante, []);
+
+    await configurarNotas({ membrete_imagen: BANNER, membrete_mime: 'image/png' });
+    assert.ok(!(await tipos('2026-11-02')).includes('sin-membrete'));
   });
 });
 

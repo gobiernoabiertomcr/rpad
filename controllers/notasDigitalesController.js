@@ -3,18 +3,33 @@
 import pool from '../config/database.js';
 import * as notas from '../services/notasDigitales.js';
 import { obtenerConfig } from '../services/notasDigitalesDatos.js';
-import { validarImagenFirma, ImagenInvalida } from '../services/notasDigitalesPdf.js';
+import { validarImagenFirma, validarImagenMembrete, ImagenInvalida } from '../services/notasDigitalesPdf.js';
 import { listaDeCorreos } from '../services/emailService.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 const GESTIONES = ['interna', 'externa'];
 const ESTADOS = ['pendiente', 'enviada', 'fallida'];
 const EMAIL_VALIDO = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
-const FIRMA_MAX_BYTES = 500 * 1024;
+const IMAGEN_MAX_BYTES = 500 * 1024;
+// Primeros bytes de cada formato aceptado (en la firma y en el banner del membrete)
 const FIRMAS = { 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/jpeg': [0xff, 0xd8, 0xff] };
+// Imágenes de la configuración: columnas (texto fijo del código), validador y mensajes
+const IMAGENES = {
+  firma: {
+    imagen: 'firma_imagen', mime: 'firma_mime', validar: validarImagenFirma,
+    tipoInvalido: 'La firma debe ser una imagen PNG o JPEG', guardada: 'Firma guardada', falta: 'No hay firma cargada',
+    errorGuardar: 'Error al guardar la firma', errorObtener: 'Error al obtener la firma'
+  },
+  membrete: {
+    imagen: 'membrete_imagen', mime: 'membrete_mime', validar: validarImagenMembrete,
+    tipoInvalido: 'El membrete debe ser una imagen PNG o JPEG', guardada: 'Membrete guardado', falta: 'No hay membrete cargado',
+    errorGuardar: 'Error al guardar el membrete', errorObtener: 'Error al obtener el membrete'
+  }
+};
 // Listas de direcciones: true = obligatoria
 const LISTAS = { para_interna: true, para_externa: true, cc_interna: false, cc_externa: false, cco: false, casillas_prueba: false };
-const TEXTOS = { linea_cc_interna: 200, linea_cc_externa: 200, firma_nombre: 150, firma_cargo: 200 };
+// Textos: largo máximo. membrete_pie vacío = PDF sin pie del membrete
+const TEXTOS = { linea_cc_interna: 200, linea_cc_externa: 200, firma_nombre: 150, firma_cargo: 200, membrete_pie: 300 };
 
 const errorInterno = (res, mensaje, error) => {
   console.error(`${mensaje}:`, error);
@@ -26,8 +41,9 @@ const idDe = (valor) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
-const configPublica = ({ firma_imagen, ...resto }) => ({
-  ...resto, envio_activo: Boolean(resto.envio_activo), tiene_firma: Boolean(firma_imagen)
+// La configuración sin las imágenes: solo si están cargadas
+const configPublica = ({ firma_imagen, membrete_imagen, ...resto }) => ({
+  ...resto, envio_activo: Boolean(resto.envio_activo), tiene_firma: Boolean(firma_imagen), tiene_membrete: Boolean(membrete_imagen)
 });
 
 // Lista de direcciones que llega en el cuerpo: texto separado por comas, array de textos o null (lista vacía).
@@ -140,6 +156,24 @@ export const verPreview = async (req, res) => {
   }
 };
 
+// El PDF de la vista previa (N° XX, con el membrete y la firma cargados): no se guarda ni se envía
+export const verPreviewPdf = async (req, res) => {
+  try {
+    const { tipo, gestion } = req.query;
+    if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
+      return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
+    }
+    const pdf = await notas.previewPdf({ tipo, gestion });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Nota-Digital-vista-previa-${tipo}-${gestion}.pdf"`);
+    res.send(pdf);
+  } catch (error) {
+    // Una firma o un banner guardados que no se pueden leer: el admin los reemplaza en Configuración
+    if (error instanceof ImagenInvalida) return res.status(400).json({ success: false, error: error.message });
+    errorInterno(res, 'Error al generar el PDF de la vista previa', error);
+  }
+};
+
 export const enviarPrueba = async (req, res) => {
   try {
     const { tipo, gestion } = req.body ?? {};
@@ -154,7 +188,7 @@ export const enviarPrueba = async (req, res) => {
       data: { id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios }
     });
   } catch (error) {
-    // Sin casillas de prueba o con una firma guardada que no se puede leer: el admin lo corrige en Configuración
+    // Sin casillas de prueba o con una firma o un banner guardados que no se pueden leer: el admin lo corrige en Configuración
     if (error instanceof notas.ErrorDeUso || error instanceof ImagenInvalida) {
       return res.status(400).json({ success: false, error: error.message });
     }
@@ -226,14 +260,16 @@ export const guardarConfig = async (req, res) => {
   }
 };
 
-export const subirFirma = async (req, res) => {
+// PUT de una imagen de la configuración (firma o banner del membrete): { imagen: base64 o data URL, mime }
+const subirImagen = (uso) => async (req, res) => {
+  const definicion = IMAGENES[uso];
   // Todo el cuerpo del handler va dentro del try: Express 4 no atrapa los rechazos de un handler async
   // y una excepción sin atrapar tumbaría el proceso.
   try {
     const { imagen, mime } = req.body ?? {};
-    // Object.hasOwn: 'constructor' o '__proto__' no son firmas válidas aunque existan en Object.prototype
+    // Object.hasOwn: 'constructor' o '__proto__' no son formatos válidos aunque existan en Object.prototype
     if (typeof mime !== 'string' || !Object.hasOwn(FIRMAS, mime) || typeof imagen !== 'string') {
-      return res.status(400).json({ success: false, error: 'La firma debe ser una imagen PNG o JPEG' });
+      return res.status(400).json({ success: false, error: definicion.tipoInvalido });
     }
     const cabecera = FIRMAS[mime];
     const base64 = imagen.replace(/^data:[^;]+;base64,/, '');
@@ -241,7 +277,7 @@ export const subirFirma = async (req, res) => {
       return res.status(400).json({ success: false, error: 'La imagen no es base64 válido' });
     }
     const datos = Buffer.from(base64, 'base64');
-    if (datos.length === 0 || datos.length > FIRMA_MAX_BYTES) {
+    if (datos.length === 0 || datos.length > IMAGEN_MAX_BYTES) {
       return res.status(400).json({ success: false, error: 'La imagen debe pesar como máximo 500 KB' });
     }
     if (!cabecera.every((byte, i) => datos[i] === byte)) {
@@ -249,25 +285,33 @@ export const subirFirma = async (req, res) => {
     }
     // Una imagen dañada con la cabecera correcta se guardaría y haría fallar cada nota: se decodifica antes de guardarla
     try {
-      validarImagenFirma(datos, mime);
+      definicion.validar(datos, mime);
     } catch (error) {
       return res.status(400).json({ success: false, error: error.message });
     }
-    await pool.query('UPDATE notas_digitales_config SET firma_imagen = ?, firma_mime = ?, updated_by = ? WHERE id = 1',
+    // Las columnas salen de IMAGENES, texto fijo del código
+    await pool.query(`UPDATE notas_digitales_config SET ${definicion.imagen} = ?, ${definicion.mime} = ?, updated_by = ? WHERE id = 1`,
       [datos, mime, req.user?.userId ?? null]);
-    res.json({ success: true, message: 'Firma guardada' });
+    res.json({ success: true, message: definicion.guardada });
   } catch (error) {
-    errorInterno(res, 'Error al guardar la firma', error);
+    errorInterno(res, definicion.errorGuardar, error);
   }
 };
 
-export const verFirma = async (req, res) => {
+// GET de una imagen de la configuración, para la vista previa de la pantalla (404 si no hay)
+const verImagen = (uso) => async (req, res) => {
+  const definicion = IMAGENES[uso];
   try {
-    const config = await obtenerConfig();
-    if (!config.firma_imagen) return res.status(404).json({ success: false, error: 'No hay firma cargada' });
-    res.setHeader('Content-Type', config.firma_mime || 'image/png');
-    res.send(config.firma_imagen);
+    const guardada = await obtenerConfig();
+    if (!guardada[definicion.imagen]) return res.status(404).json({ success: false, error: definicion.falta });
+    res.setHeader('Content-Type', guardada[definicion.mime] || 'image/png');
+    res.send(guardada[definicion.imagen]);
   } catch (error) {
-    errorInterno(res, 'Error al obtener la firma', error);
+    errorInterno(res, definicion.errorObtener, error);
   }
 };
+
+export const subirFirma = subirImagen('firma');
+export const verFirma = verImagen('firma');
+export const subirMembrete = subirImagen('membrete');
+export const verMembrete = verImagen('membrete');
