@@ -96,7 +96,7 @@ describe('configuración', () => {
       assert.equal(res.status, 400, caso);
       assert.match(res.body.error, /^La imagen del membrete no es válida: /, caso);
     }
-    assert.match((await enviar(BANNER.toString('base64'), 'image/gif')).body.error, /membrete debe ser una imagen PNG o JPEG/);
+    assert.match((await enviar(BANNER.toString('base64'), 'image/gif')).body.error, /^El banner del membrete debe ser una imagen PNG o JPEG$/);
     for (const mime of ['constructor', '__proto__', ['image/png'], null]) {
       assert.equal((await enviar(BANNER.toString('base64'), mime)).status, 400, String(mime));
     }

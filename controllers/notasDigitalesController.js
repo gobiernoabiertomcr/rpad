@@ -22,7 +22,7 @@ const IMAGENES = {
   },
   membrete: {
     imagen: 'membrete_imagen', mime: 'membrete_mime', validar: validarImagenMembrete,
-    tipoInvalido: 'El membrete debe ser una imagen PNG o JPEG', guardada: 'Membrete guardado', falta: 'No hay membrete cargado',
+    tipoInvalido: 'El banner del membrete debe ser una imagen PNG o JPEG', guardada: 'Membrete guardado', falta: 'No hay membrete cargado',
     errorGuardar: 'Error al guardar el membrete', errorObtener: 'Error al obtener el membrete'
   }
 };
