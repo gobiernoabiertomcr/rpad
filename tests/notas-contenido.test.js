@@ -86,9 +86,9 @@ describe('secciones', () => {
   it('antecedente de emails anteriores, solo en avisos', () => {
     const antecedente = (datos, tipo = 'aviso') => nota({ tipo, datasets: [dataset({ antecedente: datos })] }).secciones[0].filas[0].antecedente;
     assert.equal(antecedente({ cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' }),
-      'Antecedente: notificado por correo electrónico en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026.');
+      'Antecedente: notificado a la DGMIT por correo electrónico en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026.');
     assert.equal(antecedente({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }),
-      'Antecedente: notificado por correo electrónico el 01/10/2026.');
+      'Antecedente: notificado a la DGMIT por correo electrónico el 01/10/2026.');
     assert.equal(antecedente({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }, 'reiteracion'), null);
   });
 });

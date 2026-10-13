@@ -83,9 +83,9 @@ const textoInformado = (dataset) => {
 const textoAntecedente = (antecedente) => {
   if (!antecedente) return null;
   if (antecedente.cantidad === 1) {
-    return `Antecedente: notificado por correo electrónico el ${formatoCorto(antecedente.primera)}.`;
+    return `Antecedente: notificado a la DGMIT por correo electrónico el ${formatoCorto(antecedente.primera)}.`;
   }
-  return `Antecedente: notificado por correo electrónico en ${antecedente.cantidad} oportunidades, entre el ${formatoCorto(antecedente.primera)} y el ${formatoCorto(antecedente.ultima)}.`;
+  return `Antecedente: notificado a la DGMIT por correo electrónico en ${antecedente.cantidad} oportunidades, entre el ${formatoCorto(antecedente.primera)} y el ${formatoCorto(antecedente.ultima)}.`;
 };
 
 export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config }) => {

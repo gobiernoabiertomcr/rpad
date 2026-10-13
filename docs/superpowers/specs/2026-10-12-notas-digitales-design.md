@@ -140,9 +140,11 @@ Introducción de cada sección:
 | Informado en | | ✓ | `Nota Digital N° 9/26 (02/11/2026)` y, si corresponde, `– reiterado N veces` (reiteraciones anteriores del mismo ciclo) |
 
 **Antecedente por emails anteriores (solo en avisos).** Si el dataset aparece en `notificaciones_log` en alguno de los siete tipos reemplazados, con `success = 1` y `enviado_at` posterior a su `ultima_actualizacion` (o sin `ultima_actualizacion`), debajo de su fila va:
-> *Antecedente: notificado por correo electrónico en {N} oportunidades, entre el {primera} y el {última}.*
+> *Antecedente: notificado a la DGMIT por correo electrónico en {N} oportunidades, entre el {primera} y el {última}.*
 
-Si N = 1: *"Antecedente: notificado por correo electrónico el {fecha}."*
+Si N = 1: *"Antecedente: notificado a la DGMIT por correo electrónico el {fecha}."*
+
+Los siete emails reemplazados se enviaban a la casilla de la DGMIT, por eso la línea la nombra.
 
 Esto cubre la transición. Como esos emails dejan de existir, la línea desaparece sola cuando cada dataset empieza un ciclo nuevo.
 

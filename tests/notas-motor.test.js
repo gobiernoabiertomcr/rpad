@@ -149,7 +149,7 @@ describe('avisos', () => {
     const [mensaje] = await mailpit.mensajes();
     const html = await mailpit.html(mensaje.ID);
     assert.ok(html.includes('Plazo de actualización vencido'));
-    assert.ok(html.includes('Antecedente: notificado por correo electrónico en 2 oportunidades, entre el 01/01/2026 y el 01/10/2026.'));
+    assert.ok(html.includes('Antecedente: notificado a la DGMIT por correo electrónico en 2 oportunidades, entre el 01/01/2026 y el 01/10/2026.'));
   });
 
   it('un dataset recibe un solo aviso por vencimiento', async () => {
