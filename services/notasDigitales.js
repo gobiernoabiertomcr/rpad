@@ -18,7 +18,7 @@ const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
-const remitente = () => `"Dirección de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
+const remitente = () => `"Dir. de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
 
 export const configuracionCompleta = (config) => {
   const faltan = [];

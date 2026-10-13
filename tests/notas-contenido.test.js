@@ -139,6 +139,13 @@ describe('HTML', () => {
     assert.ok(html.includes('CC. Dir. de Investigación Territorial'));
   });
 
+  it('empieza avisando, en bordó y negrita, que la nota va adjunta en PDF', () => {
+    const html = renderHtml(nota());
+    const aviso = '<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTA NOTA EN PDF</p>';
+    assert.ok(html.includes(aviso));
+    assert.ok(html.indexOf(aviso) < html.indexOf('REF.:'));
+  });
+
   it('la reiteración usa la justificación abreviada', () => {
     const html = renderHtml(nota({ tipo: 'reiteracion' }));
     assert.ok(html.includes('Informo a Ud. el estado, al día de la fecha'));
@@ -149,7 +156,7 @@ describe('HTML', () => {
 describe('texto plano', () => {
   it('lleva los mismos datos que el HTML', () => {
     const texto = renderTexto(nota({ gestion: 'externa', areas: [{ id: 10, nombre: 'Área Uno', email_principal: 'uno@comodoro.gov.ar' }] }));
-    assert.ok(texto.includes(`REF.: "${REF}"`));
+    assert.ok(texto.startsWith(`SE ADJUNTA NOTA EN PDF\n\nREF.: "${REF}"`));
     assert.ok(texto.includes('Nota Digital N° 12/26'));
     assert.ok(texto.includes('- Dataset A (https://datos.comodoro.gov.ar/dataset/a)'));
     assert.ok(texto.includes('    Situación: Faltan 59 días'));

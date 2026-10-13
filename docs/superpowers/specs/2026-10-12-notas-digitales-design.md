@@ -40,7 +40,7 @@ Hay **cuatro variantes** de nota: aviso interna, aviso externa, reiteración int
 | CCO (respaldo) | `datospublicos@comodoro.gov.ar` | `datospublicos@comodoro.gov.ar` |
 | Línea al pie de la nota | `CC. Dir. de Investigación Territorial` | `CC. Dir. Administrativa` |
 
-- Remitente: `"Dirección de Datos Públicos y Comunicación" <SMTP_USER>`; en producción, `datospublicos@comodoro.gov.ar`.
+- Remitente: `"Dir. de Datos Públicos y Comunicación" <SMTP_USER>`. Se buscaba `datospublicos@comodoro.gov.ar`, pero desde el 13/10/2026 producción envía con `datospublicosmcr@gmail.com`: el servidor de correo oficial rechaza SMTP desde la IP del VPS. Cambiar de cuenta es solo cambiar `SMTP_*` y reiniciar.
 - `Reply-To`: el mismo remitente.
 - Todos los valores de esta tabla son **configurables desde la pantalla de Correos** (sección 10). Los de la tabla son los valores iniciales.
 
@@ -176,7 +176,7 @@ Los textos de las secciones 6.1 a 6.5 son fijos en el código y están en un sol
 
 La nota se construye una vez como estructura de datos (párrafos, secciones, tablas, firma) y se renderiza en tres formatos con el mismo contenido:
 
-- **HTML** (cuerpo del email). Estilo de documento: fuente Arial, texto negro, sin colores, gradientes, emojis ni imágenes. REF. y destinatario en negrita y subrayado, párrafos justificados y tablas con borde. Todo dato proveniente de la base se escapa.
+- **HTML** (cuerpo del email). Estilo de documento: fuente Arial, texto negro, sin gradientes, emojis ni imágenes. La única excepción de color es la primera línea, **SE ADJUNTA NOTA EN PDF**, en negrita y bordó (`#800000`). El texto plano también empieza con esa línea. REF. y destinatario en negrita y subrayado, párrafos justificados y tablas con borde. Todo dato proveniente de la base se escapa.
 - **Texto plano** (parte alternativa del mismo email).
 - **PDF** (adjunto `Nota-Digital-{n}-{aa}.pdf`) con PDFKit:
   - hoja oficio de 216 × 330 mm;

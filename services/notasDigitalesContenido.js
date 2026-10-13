@@ -141,6 +141,8 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
 };
 
 const ESTILO_CELDA = 'border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;';
+// Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto
+const AVISO_ADJUNTO = 'SE ADJUNTA NOTA EN PDF';
 
 export const renderHtml = (nota) => {
   const parrafo = (texto) => `<p style="margin:0 0 12px;text-align:justify;">${escapeHtml(texto)}</p>`;
@@ -175,6 +177,7 @@ export const renderHtml = (nota) => {
 <html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(nota.asunto)}</title></head>
 <body style="margin:0;padding:24px;background:#ffffff;">
 <div style="max-width:760px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:#000000;">
+<p style="margin:0 0 20px;color:#800000;font-weight:bold;">${AVISO_ADJUNTO}</p>
 <p style="margin:0 0 4px;"><b><u>REF.:</u></b> "${escapeHtml(nota.ref)}"</p>
 <p style="margin:0 0 24px;text-align:right;"><b>Nota Digital N°</b> ${escapeHtml(nota.numeroTexto)}</p>
 <p style="margin:0 0 16px;"><b><u>${escapeHtml(nota.destinatario)}</u></b></p>
@@ -190,7 +193,7 @@ ${nota.justificacion.map(parrafo).join('\n')}
 };
 
 export const renderTexto = (nota) => {
-  const lineas = [`REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
+  const lineas = [AVISO_ADJUNTO, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
   for (const seccion of nota.secciones) {
     lineas.push(seccion.titulo, seccion.introduccion, '');
     for (const fila of seccion.filas) {
