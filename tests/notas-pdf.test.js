@@ -188,16 +188,16 @@ describe('renderPdf: membrete', () => {
     }
   });
 
-  it('un pie larguísimo o con saltos de línea se escribe en una sola línea, achicado para entrar entre los márgenes', async () => {
-    const largo = `${'Texto institucional del pie '.repeat(10)}fin`.slice(0, 300);
-    for (const [pie, esperado] of [[largo, largo.replace(/\s+/g, ' ').trim()], ['Primera línea\nSegunda  línea ', 'Primera línea Segunda línea']]) {
+  it('un pie largo o con saltos de línea se escribe en una sola línea, achicado para entrar entre los márgenes', async () => {
+    const largo = 'Texto institucional del pie '.repeat(4).trim();
+    for (const [pie, esperado] of [[largo, largo], ['Primera línea\nSegunda  línea ', 'Primera línea Segunda línea']]) {
       const hojas = textosPorHoja(await renderPdf(nota(60), { membretePie: pie }));
       hojas.forEach((lineas, i) => {
         const pies = lineas.filter(t => t.texto === esperado);
         assert.equal(pies.length, 1, `hoja ${i + 1}: ${lineas.slice(-3).map(t => t.texto).join(' | ')}`);
         const [linea] = pies;
         const ancho = anchoDe(esperado, linea.tamano);
-        assert.ok(linea.tamano <= 10, `tamaño ${linea.tamano}`);
+        assert.ok(linea.tamano <= 10 && linea.tamano >= 7, `tamaño ${linea.tamano}`);
         assert.ok(linea.x >= 30 * MM - 0.01 && linea.x + ancho <= ANCHO_HOJA - 30 * MM + 0.01, `x: ${linea.x}, ancho: ${ancho}`);
         assert.ok(cerca(linea.base, 12.5 * MM));
       });
@@ -205,11 +205,66 @@ describe('renderPdf: membrete', () => {
     assert.ok(anchoDe(largo, 10) > ANCHO_HOJA - 60 * MM, 'el pie de prueba entraba sin achicarlo');
   });
 
+  it('el pie nunca baja de 7 puntos: uno que no entra ni así sale en 7 puntos, centrado (la configuración no lo deja guardar)', async () => {
+    const larguisimo = `${'Texto institucional del pie '.repeat(10)}fin`.slice(0, 300);
+    assert.ok(anchoDe(larguisimo, 7) > ANCHO_HOJA - 60 * MM, 'el pie de prueba entraba en 7 puntos');
+    const hojas = textosPorHoja(await renderPdf(nota(60), { membretePie: larguisimo }));
+    hojas.forEach((lineas, i) => {
+      const [linea] = lineas.filter(t => t.texto === larguisimo);
+      assert.ok(linea, `hoja ${i + 1}`);
+      assert.equal(linea.tamano, 7);
+      assert.ok(cerca(linea.x + anchoDe(larguisimo, 7) / 2, ANCHO_HOJA / 2), `hoja ${i + 1}: no está centrado`);
+    });
+  });
+
   it('un banner con los datos dañados rechaza la promesa con un mensaje del membrete, sin tumbar el proceso', async () => {
     for (const [caso, imagen] of Object.entries(pngsDanados())) {
       await assert.rejects(renderPdf(nota(1), { membreteImagen: imagen }), esDelMembrete, caso);
     }
     await new Promise(resolve => setTimeout(resolve, 300));
+  });
+});
+
+// Helvetica escribe un byte por carácter (WinAnsi, CP1252): cualquier otro carácter salía como basura y desordenaba
+// el resto de la línea. Todo texto pasa por NFC y lo que no se puede escribir sale como "?".
+describe('renderPdf: texto que Helvetica puede escribir', () => {
+  const NFD = (cadena) => cadena.normalize('NFD');
+  // Una línea limpia solo tiene caracteres de CP1252 imprimibles (la basura traía controles y desplazamientos)
+  const limpia = (linea) => /^[\x20-\x7e\xa0-\xff€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]*$/.test(linea);
+
+  it('un pie y un título de dataset con los acentos descompuestos (NFD) se escriben bien', async () => {
+    const titulo = 'Información pública de Gestión';
+    const pie = 'Gestión Comodoro Rivadavia – Atención al vecino';
+    assert.notEqual(NFD(titulo), titulo);
+    const n = nota(2, { datasets: [{ ...dataset(1), titulo: NFD(titulo) }, dataset(2)] });
+    const lineas = lineasPorHoja(await renderPdf(n, { membretePie: NFD(pie) })).flat();
+    assert.ok(lineas.includes(pie), lineas.slice(-3).join(' | '));
+    assert.ok(lineas.join(' ').includes(titulo), lineas.join(' | '));
+    assert.ok(lineas.every(limpia), lineas.filter(l => !limpia(l)).join(' | '));
+  });
+
+  it('un carácter que Helvetica no tiene (☎, →, emojis, uso privado) sale como "?" y el resto de la fila queda en su lugar', async () => {
+    const n = nota(2, { datasets: [{ ...dataset(1), titulo: 'Dataset 1 ☎ Teléfono → Sí 😀 fin' }, dataset(2)] });
+    const hojas = lineasPorHoja(await renderPdf(n));
+    const lineas = hojas.flat();
+    assert.ok(lineas.join(' ').includes('Dataset 1 ? Teléfono ? Sí ? fin?'), lineas.join(' | '));
+    assert.ok(lineas.every(limpia), lineas.filter(l => !limpia(l)).join(' | '));
+    // Las demás celdas de la fila siguen enteras
+    for (const celda of ['Área de prueba', 'Anualmente', '31/12/2025', '31/12/2026']) assert.ok(lineas.includes(celda), celda);
+  });
+
+  it('todo texto de la nota pasa por el resguardo: área, contactos, firma, línea CC y pie del membrete', async () => {
+    const n = nota(1, {
+      datasets: [{ ...dataset(1), area_nombre: NFD('Área ☎ Norte') }],
+      areas: [{ id: 1, nombre: NFD('Área ☎ Norte'), email_principal: 'area@rpad.test', telefono_area: '☎ 297 400-0000\t(int. 12)' }],
+      config: { ...config, firma_nombre: NFD('José Pérez'), firma_cargo: 'Director → Datos', linea_cc_externa: NFD('CC. Dirección ✉ Administrativa') }
+    });
+    const lineas = lineasPorHoja(await renderPdf(n, { firmaImagen: PNG, membretePie: 'Pie ✉ correo' })).flat();
+    const todo = lineas.join(' ');
+    for (const esperado of ['Área ? Norte', '? 297 400-0000 (int. 12)', 'José Pérez', 'Director ? Datos', 'CC. Dirección ? Administrativa', 'Pie ? correo']) {
+      assert.ok(todo.includes(esperado), `falta "${esperado}": ${lineas.join(' | ')}`);
+    }
+    assert.ok(lineas.every(limpia), lineas.filter(l => !limpia(l)).join(' | '));
   });
 });
 

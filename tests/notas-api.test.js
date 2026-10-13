@@ -124,14 +124,56 @@ describe('configuración', () => {
       assert.equal(await pieGuardado(), '', JSON.stringify(vacio));
     }
 
-    assert.equal((await api.put(ruta, { membrete_pie: 'x'.repeat(300) }, comoAdmin())).status, 200);
+    // Un pie largo que entra en una línea achicando la letra (entre 10 y 7 puntos) se guarda
+    const largoQueEntra = 'Texto institucional del pie '.repeat(4).trim();
+    assert.equal((await api.put(ruta, { membrete_pie: largoQueEntra }, comoAdmin())).status, 200);
     const largo = await api.put(ruta, { membrete_pie: 'y'.repeat(301) }, comoAdmin());
     assert.equal(largo.status, 400);
     assert.match(largo.body.error, /membrete_pie: máximo 300 caracteres/);
     for (const valor of [5, true, { a: 1 }, ['x']]) {
       assert.equal((await api.put(ruta, { membrete_pie: valor }, comoAdmin())).status, 400, JSON.stringify(valor));
     }
-    assert.equal(await pieGuardado(), 'x'.repeat(300));
+    assert.equal(await pieGuardado(), largoQueEntra);
+  });
+
+  it('rechaza un pie del membrete que no entra en una línea ni con la letra de 7 puntos', async () => {
+    const ruta = '/notificaciones/notas-digitales/config';
+    for (const pie of ['x'.repeat(200), 'Comodoro Rivadavia '.repeat(10).trim()]) {
+      const res = await api.put(ruta, { membrete_pie: pie }, comoAdmin());
+      assert.equal(res.status, 400, pie);
+      assert.equal(res.body.error, 'membrete_pie: no entra en una línea al pie del PDF ni con la letra más chica (7 puntos); acortalo');
+    }
+    assert.equal((await query('SELECT membrete_pie FROM notas_digitales_config WHERE id = 1'))[0].membrete_pie, PIE_MEMBRETE);
+  });
+
+  it('guarda en NFC los textos que van al PDF y rechaza los caracteres que el PDF no puede escribir', async () => {
+    const ruta = '/notificaciones/notas-digitales/config';
+    const NFD = (texto) => texto.normalize('NFD');
+    const columnas = 'SELECT membrete_pie, firma_nombre, firma_cargo, linea_cc_interna, linea_cc_externa FROM notas_digitales_config WHERE id = 1';
+    const nfc = {
+      membrete_pie: 'Gestión Comodoro Rivadavia – Atención al vecino', firma_nombre: 'José Pérez', firma_cargo: 'Dirección de Datos',
+      linea_cc_interna: 'CC. Dirección de Investigación', linea_cc_externa: 'CC. Dirección Administrativa'
+    };
+    const enviado = Object.fromEntries(Object.entries(nfc).map(([campo, texto]) => [campo, NFD(texto)]));
+    assert.ok(Object.keys(nfc).every(campo => enviado[campo] !== nfc[campo]), 'el texto de prueba no tenía acentos descompuestos');
+    const res = await api.put(ruta, enviado, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.deepEqual((await query(columnas))[0], nfc);
+
+    const mal = await api.put(ruta, {
+      membrete_pie: 'Tel. ☎ 297 400-0000 → www.x.gov.ar ☎', firma_nombre: 'Otro nombre', firma_cargo: 'Director 😀',
+      linea_cc_externa: 'CC. q́'
+    }, comoAdmin());
+    assert.equal(mal.status, 400);
+    assert.match(mal.body.error, /membrete_pie: caracteres que el PDF no puede escribir: ☎ →(\.|$)/);
+    assert.match(mal.body.error, /firma_cargo: caracteres que el PDF no puede escribir: 😀(\.|$)/);
+    assert.match(mal.body.error, /linea_cc_externa: caracteres que el PDF no puede escribir: U\+0301(\.|$)/);
+    assert.doesNotMatch(mal.body.error, /firma_nombre/);
+    // No se guardó nada, tampoco el campo válido
+    assert.deepEqual((await query(columnas))[0], nfc);
+
+    // Tabuladores y saltos de línea siguen como antes: no se rechazan
+    assert.equal((await api.put(ruta, { firma_cargo: 'Director\tGeneral', linea_cc_interna: 'CC.\nDirección' }, comoAdmin())).status, 200);
   });
 
   it('normaliza listas de direcciones y rechaza las inválidas sin guardar', async () => {

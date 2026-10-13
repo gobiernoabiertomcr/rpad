@@ -3,7 +3,9 @@
 import pool from '../config/database.js';
 import * as notas from '../services/notasDigitales.js';
 import { obtenerConfig } from '../services/notasDigitalesDatos.js';
-import { validarImagenFirma, validarImagenMembrete, ImagenInvalida } from '../services/notasDigitalesPdf.js';
+import {
+  validarImagenFirma, validarImagenMembrete, ImagenInvalida, caracteresNoEscribibles, pieEntraEnUnaLinea
+} from '../services/notasDigitalesPdf.js';
 import { listaDeCorreos } from '../services/emailService.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
@@ -28,7 +30,8 @@ const IMAGENES = {
 };
 // Listas de direcciones: true = obligatoria
 const LISTAS = { para_interna: true, para_externa: true, cc_interna: false, cc_externa: false, cco: false, casillas_prueba: false };
-// Textos: largo máximo. membrete_pie vacío = PDF sin pie del membrete
+// Textos que van al PDF: largo máximo. Se guardan en NFC y sin caracteres que Helvetica no puede escribir.
+// membrete_pie vacío = PDF sin pie del membrete; si no, tiene que entrar en una línea con letra de 7 puntos.
 const TEXTOS = { linea_cc_interna: 200, linea_cc_externa: 200, firma_nombre: 150, firma_cargo: 200, membrete_pie: 300 };
 
 const errorInterno = (res, mensaje, error) => {
@@ -231,9 +234,15 @@ export const guardarConfig = async (req, res) => {
         errores.push(`${campo}: debe ser un texto`);
         continue;
       }
-      const texto = (valor ?? '').trim();
+      // Todos estos textos van al PDF: se guardan en NFC (un acento descompuesto, típico al pegar desde macOS, se
+      // escribiría mal) y se rechazan los caracteres que Helvetica no puede escribir (☎, →, emojis…)
+      const texto = (valor ?? '').normalize('NFC').trim();
+      const noEscribibles = caracteresNoEscribibles(texto);
       if (texto.length > maximo) errores.push(`${campo}: máximo ${maximo} caracteres`);
-      else cambios[campo] = texto;
+      else if (noEscribibles.length) errores.push(`${campo}: caracteres que el PDF no puede escribir: ${noEscribibles.join(' ')}`);
+      else if (campo === 'membrete_pie' && !pieEntraEnUnaLinea(texto)) {
+        errores.push('membrete_pie: no entra en una línea al pie del PDF ni con la letra más chica (7 puntos); acortalo');
+      } else cambios[campo] = texto;
     }
     if (cuerpo.envio_activo !== undefined) {
       cambios.envio_activo = [true, 1, '1', 'true'].includes(cuerpo.envio_activo) ? 1 : 0;

@@ -10,9 +10,13 @@ const MARGENES = { top: 25 * MM, bottom: 25 * MM, left: 30 * MM, right: 30 * MM 
 // El banner ocupa el ancho de la hoja con su alto proporcional, salvo que pase de 45 mm: entonces se achica, centrado
 const ALTO_MAXIMO_BANNER = 45 * MM;
 const SEPARACION_BANNER = 9 * MM;
-// Pie del membrete: Helvetica 10 centrado, con la línea de base a 12,5 mm del borde inferior. Con ese pie,
-// "Página p de t" sube a 17,5 mm: queda entre el contenido (que termina a 25 mm) y el pie, sin tocar ninguno.
+// Ancho del texto de la hoja (entre los márgenes izquierdo y derecho)
+const ANCHO_TEXTO = PAGINA[0] - MARGENES.left - MARGENES.right;
+// Pie del membrete: Helvetica 10 centrado, con la línea de base a 12,5 mm del borde inferior. Si no entra en una
+// línea se achica, nunca por debajo de 7 puntos (la configuración no guarda un pie que no entre ni así). Con ese
+// pie, "Página p de t" sube a 17,5 mm: queda entre el contenido (que termina a 25 mm) y el pie, sin tocar ninguno.
 const TAMANO_PIE = 10;
+const TAMANO_MINIMO_PIE = 7;
 const BASE_PIE = 12.5 * MM;
 const BASE_PAGINACION = 17.5 * MM;
 const NORMAL = 'Helvetica';
@@ -28,6 +32,36 @@ const MINIMO_TITULO = 55;
 const ALTO_CIERRE = 200;
 
 // =====================================================
+// Texto que Helvetica puede escribir (WinAnsi / CP1252)
+// =====================================================
+// Las fuentes estándar de PDFKit escriben un byte por carácter: los imprimibles de Latin-1 más los 27 caracteres
+// que CP1252 pone en 0x80-0x9F. Cualquier otro (☎, →, emojis, uso privado, el acento suelto de un texto NFD) y los
+// caracteres de control salen como basura y desordenan el resto de la línea.
+const CP1252_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+const NO_ESCRIBIBLE = new RegExp(`[^\\n\\x20-\\x7e\\xa0-\\xff${CP1252_EXTRA}]`, 'gu');
+
+// Último resguardo, para todo texto que se escribe o se mide en el PDF (DocumentoNota lo aplica siempre): NFC, los
+// saltos de línea de Windows como "\n", el tabulador como espacio y lo que Helvetica no puede escribir como "?"
+export const textoParaPdf = (texto) => String(texto ?? '').normalize('NFC')
+  .replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(NO_ESCRIBIBLE, '?');
+
+// Caracteres de un texto (ya en NFC) que el PDF no puede escribir, sin repetir, como se muestran en un mensaje
+// (los invisibles, como U+0301). El tabulador y los saltos de línea no se marcan.
+export const caracteresNoEscribibles = (texto) => [...new Set(String(texto).match(NO_ESCRIBIBLE) ?? [])]
+  .filter(caracter => !'\t\r'.includes(caracter))
+  .map(caracter => (/[\p{C}\p{M}\p{Z}]/u.test(caracter)
+    ? `U+${caracter.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}` : caracter));
+
+// PDFKit con el resguardo: todo lo que se escribe (text) y se mide (widthOfString, heightOfString) pasa por
+// textoParaPdf, así ninguna escritura de la nota puede saltearlo y las medidas coinciden con lo escrito.
+// PDFKit llama a widthOfString por dentro con texto ya resguardado: aplicarlo de nuevo no lo cambia.
+class DocumentoNota extends PDFDocument {
+  text(texto, ...resto) { return super.text(textoParaPdf(texto), ...resto); }
+  widthOfString(texto, ...resto) { return super.widthOfString(textoParaPdf(texto), ...resto); }
+  heightOfString(texto, ...resto) { return super.heightOfString(textoParaPdf(texto), ...resto); }
+}
+
+// =====================================================
 // Validación de las imágenes (firma y banner del membrete)
 // =====================================================
 // PDFKit decodifica los PNG con transparencia (o entrelazados) con png-js, que descomprime en un callback de zlib
@@ -36,7 +70,7 @@ const ALTO_CIERRE = 200;
 export class ImagenInvalida extends Error {}
 // Defecto encontrado al recorrer la imagen: validarImagen lo convierte en ImagenInvalida con el nombre de la imagen
 class Defecto extends Error {}
-const imagenInvalida = (detalle) => new Defecto(detalle);
+const defecto = (detalle) => new Defecto(detalle);
 // Cómo nombra a cada imagen el mensaje de error
 const NOMBRES_IMAGEN = { firma: 'de la firma', membrete: 'del membrete' };
 
@@ -50,19 +84,19 @@ const TIPOS_COLOR_PNG = { 0: [1, [1, 2, 4, 8, 16]], 2: [3, [8, 16]], 3: [1, [1, 
 const ADAM7 = [[0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4], [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2]];
 
 const validarPng = (datos) => {
-  if (datos.length < FIRMA_PNG.length || !datos.subarray(0, FIRMA_PNG.length).equals(FIRMA_PNG)) throw imagenInvalida('no es un PNG');
+  if (datos.length < FIRMA_PNG.length || !datos.subarray(0, FIRMA_PNG.length).equals(FIRMA_PNG)) throw defecto('no es un PNG');
   let cabecera = null;
   let paleta = false;
   const comprimidos = [];
   for (let pos = FIRMA_PNG.length, fin = false; !fin;) {
-    if (pos + 12 > datos.length) throw imagenInvalida('el archivo está incompleto (falta el final del PNG)');
+    if (pos + 12 > datos.length) throw defecto('el archivo está incompleto (falta el final del PNG)');
     const largo = datos.readUInt32BE(pos);
     const tipo = datos.toString('latin1', pos + 4, pos + 8);
-    if (largo > 0x7fffffff || pos + 12 + largo > datos.length) throw imagenInvalida('el archivo está incompleto o tiene un bloque dañado');
+    if (largo > 0x7fffffff || pos + 12 + largo > datos.length) throw defecto('el archivo está incompleto o tiene un bloque dañado');
     const contenido = datos.subarray(pos + 8, pos + 8 + largo);
-    if (!cabecera && tipo !== 'IHDR') throw imagenInvalida('falta la cabecera del PNG');
+    if (!cabecera && tipo !== 'IHDR') throw defecto('falta la cabecera del PNG');
     if (tipo === 'IHDR') {
-      if (largo !== 13) throw imagenInvalida('la cabecera del PNG está dañada');
+      if (largo !== 13) throw defecto('la cabecera del PNG está dañada');
       cabecera = {
         ancho: contenido.readUInt32BE(0), alto: contenido.readUInt32BE(4), bits: contenido[8], color: contenido[9],
         compresion: contenido[10], filtro: contenido[11], entrelazado: contenido[12]
@@ -80,14 +114,14 @@ const validarPng = (datos) => {
   const { ancho, alto, bits, color, compresion, filtro, entrelazado } = cabecera;
   const tipoColor = TIPOS_COLOR_PNG[color];
   if (!tipoColor || !tipoColor[1].includes(bits) || compresion !== 0 || filtro !== 0 || ![0, 1].includes(entrelazado)) {
-    throw imagenInvalida('el formato del PNG no es válido');
+    throw defecto('el formato del PNG no es válido');
   }
-  if (ancho < 1 || alto < 1) throw imagenInvalida('la imagen no tiene píxeles');
+  if (ancho < 1 || alto < 1) throw defecto('la imagen no tiene píxeles');
   if (ancho > MAXIMO_LADO_PNG || alto > MAXIMO_LADO_PNG) {
-    throw imagenInvalida(`mide ${ancho} × ${alto} píxeles y el máximo es ${MAXIMO_LADO_PNG} × ${MAXIMO_LADO_PNG}`);
+    throw defecto(`mide ${ancho} × ${alto} píxeles y el máximo es ${MAXIMO_LADO_PNG} × ${MAXIMO_LADO_PNG}`);
   }
-  if (color === 3 && !paleta) throw imagenInvalida('falta la paleta de colores del PNG');
-  if (comprimidos.length === 0) throw imagenInvalida('el PNG no tiene datos de imagen');
+  if (color === 3 && !paleta) throw defecto('falta la paleta de colores del PNG');
+  if (comprimidos.length === 0) throw defecto('el PNG no tiene datos de imagen');
 
   // Filas de cada pasada como las arma png-js: un byte de filtro y ceil(bytes por píxel × ancho) bytes de datos
   const bytesPorPixel = (bits * tipoColor[0]) / 8;
@@ -100,13 +134,13 @@ const validarPng = (datos) => {
   try {
     crudo = zlib.inflateSync(Buffer.concat(comprimidos), { maxOutputLength: esperado + 1024 });
   } catch {
-    throw imagenInvalida('los datos de la imagen están dañados y no se pueden descomprimir');
+    throw defecto('los datos de la imagen están dañados y no se pueden descomprimir');
   }
-  if (crudo.length < esperado) throw imagenInvalida('los datos de la imagen están incompletos');
+  if (crudo.length < esperado) throw defecto('los datos de la imagen están incompletos');
   let inicioFila = 0;
   for (const { filas, largoFila } of pasadas) {
     for (let fila = 0; fila < filas; fila++, inicioFila += largoFila) {
-      if (crudo[inicioFila] > 4) throw imagenInvalida('los datos de la imagen están dañados (filtro de fila inválido)');
+      if (crudo[inicioFila] > 4) throw defecto('los datos de la imagen están dañados (filtro de fila inválido)');
     }
   }
 };
@@ -117,30 +151,30 @@ const FIN_JPEG = Buffer.from([0xff, 0xd9]);
 
 // Recorre los segmentos hasta el inicio de los datos (SOS): tiene que haber un SOF válido antes y el EOI al final
 const validarJpeg = (datos) => {
-  if (datos.length < 4 || datos[0] !== 0xff || datos[1] !== 0xd8) throw imagenInvalida('no es un JPEG');
+  if (datos.length < 4 || datos[0] !== 0xff || datos[1] !== 0xd8) throw defecto('no es un JPEG');
   let pos = 2;
   let cuadro = false;
   for (;;) {
-    if (pos + 4 > datos.length) throw imagenInvalida('el archivo está incompleto');
-    if (datos[pos] !== 0xff) throw imagenInvalida('la estructura del JPEG está dañada');
+    if (pos + 4 > datos.length) throw defecto('el archivo está incompleto');
+    if (datos[pos] !== 0xff) throw defecto('la estructura del JPEG está dañada');
     const marcador = datos[pos + 1];
     if (marcador === 0xff) { pos += 1; continue; } // byte de relleno
     if (marcador === 0x01 || (marcador >= 0xd0 && marcador <= 0xd7)) { pos += 2; continue; } // marcadores sin largo
-    if (marcador === 0xd8 || marcador === 0xd9) throw imagenInvalida('la estructura del JPEG está dañada');
+    if (marcador === 0xd8 || marcador === 0xd9) throw defecto('la estructura del JPEG está dañada');
     const largo = datos.readUInt16BE(pos + 2);
-    if (largo < 2 || pos + 2 + largo > datos.length) throw imagenInvalida('el archivo está incompleto o tiene un segmento dañado');
+    if (largo < 2 || pos + 2 + largo > datos.length) throw defecto('el archivo está incompleto o tiene un segmento dañado');
     if (MARCADORES_SOF.includes(marcador)) {
-      if (largo < 8) throw imagenInvalida('la cabecera del JPEG está dañada');
+      if (largo < 8) throw defecto('la cabecera del JPEG está dañada');
       const alto = datos.readUInt16BE(pos + 5);
       const ancho = datos.readUInt16BE(pos + 7);
-      if (!alto || !ancho || ![1, 3, 4].includes(datos[pos + 9])) throw imagenInvalida('la cabecera del JPEG no es válida');
+      if (!alto || !ancho || ![1, 3, 4].includes(datos[pos + 9])) throw defecto('la cabecera del JPEG no es válida');
       cuadro = true;
     }
     pos += 2 + largo;
     if (marcador === 0xda) break;
   }
-  if (!cuadro) throw imagenInvalida('falta la cabecera de la imagen JPEG');
-  if (datos.indexOf(FIN_JPEG, pos) === -1) throw imagenInvalida('el archivo está incompleto (falta el final del JPEG)');
+  if (!cuadro) throw defecto('falta la cabecera de la imagen JPEG');
+  if (datos.indexOf(FIN_JPEG, pos) === -1) throw defecto('el archivo está incompleto (falta el final del JPEG)');
 };
 
 const tipoDeImagen = (datos) => ({ 0x89: 'image/png', 0xff: 'image/jpeg' }[datos[0]] ?? null);
@@ -155,7 +189,7 @@ const validarImagen = (datos, mime, uso) => {
   try {
     if (tipo === 'image/png') validarPng(datos);
     else if (tipo === 'image/jpeg') validarJpeg(datos);
-    else throw imagenInvalida('debe ser PNG o JPEG');
+    else throw defecto('debe ser PNG o JPEG');
     // Último control: el lector de PDFKit (síncrono) tiene que poder abrirla
     const imagen = new PDFDocument({ autoFirstPage: false }).openImage(datos);
     return { ancho: imagen.width, alto: imagen.height };
@@ -175,8 +209,16 @@ const medidasBanner = ({ ancho, alto }) => {
   return { ancho: ancho * escala, alto: alto * escala, x: (anchoHoja - ancho * escala) / 2 };
 };
 
-// Texto del pie del membrete en una sola línea; null si no hay
-const textoPie = (pie) => String(pie ?? '').replace(/\s+/g, ' ').trim() || null;
+// Texto del pie del membrete (resguardado) en una sola línea; null si no hay
+const textoPie = (pie) => textoParaPdf(pie).replace(/\s+/g, ' ').trim() || null;
+
+// Si el pie del membrete entra en una línea con la letra más chica que se usa (7 puntos), medido con PDFKit sobre
+// el ancho real del texto de la hoja. Un pie vacío entra.
+export const pieEntraEnUnaLinea = (pie) => {
+  const texto = textoPie(pie);
+  if (!texto) return true;
+  return new DocumentoNota({ autoFirstPage: false }).font(NORMAL).fontSize(TAMANO_MINIMO_PIE).widthOfString(texto) <= ANCHO_TEXTO;
+};
 
 // Ancho de cada columna: la proporción base, ampliada lo justo para que no se corten fechas,
 // frecuencias ni encabezados, y recortada de las columnas que tienen holgura
@@ -270,11 +312,14 @@ const prepararTabla = (doc, seccion, ancho) => {
 const agregarMembreteYPies = (doc, nota, ancho, { banner, pie }) => {
   const { start, count } = doc.bufferedPageRange();
   if (count < 2 && !banner && !pie) return;
-  // Un pie más ancho que el texto de la hoja se achica para entrar en una línea (hacia abajo, al centésimo de punto).
+  // Un pie más ancho que el texto de la hoja se achica para entrar en una línea (hacia abajo, al centésimo de punto),
+  // hasta 7 puntos: uno que no entra ni así (la configuración no lo guarda) sale en 7 puntos, centrado.
   // Se centra a mano y se escribe sin ancho: el ajuste de líneas de PDFKit mide palabra por palabra, sin el
   // interletrado entre el espacio y la palabra siguiente, y podría partir en dos un pie que sí entra.
   doc.font(NORMAL).fontSize(TAMANO_PIE);
-  const tamanoPie = pie ? Math.min(TAMANO_PIE, Math.floor(TAMANO_PIE * ancho / doc.widthOfString(pie) * 100) / 100) : null;
+  const tamanoPie = pie
+    ? Math.max(TAMANO_MINIMO_PIE, Math.min(TAMANO_PIE, Math.floor(TAMANO_PIE * ancho / doc.widthOfString(pie) * 100) / 100))
+    : null;
   const xPie = pie ? MARGENES.left + (ancho - doc.fontSize(tamanoPie).widthOfString(pie)) / 2 : null;
   for (let i = 0; i < count; i++) {
     doc.switchToPage(start + i);
@@ -306,7 +351,7 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
 
     // El margen superior vale para todas las hojas (PDFKit lo aplica también a las que agrega addPage)
     const superior = banner ? Math.max(MARGENES.top, banner.alto + SEPARACION_BANNER) : MARGENES.top;
-    const doc = new PDFDocument({
+    const doc = new DocumentoNota({
       size: PAGINA,
       margins: { ...MARGENES, top: superior },
       bufferPages: true,
@@ -318,7 +363,7 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
     doc.on('error', reject);
     if (banner) banner.imagen = doc.openImage(membreteImagen);
 
-    const ancho = doc.page.width - MARGENES.left - MARGENES.right;
+    const ancho = ANCHO_TEXTO;
     const asegurarEspacio = (alto) => {
       // (si ya está arriba de una hoja, un bloque más alto que la hoja no justifica dejarla en blanco)
       if (doc.y + alto > doc.page.height - doc.page.margins.bottom && doc.y > doc.page.margins.top + 1) doc.addPage();
