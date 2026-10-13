@@ -170,11 +170,20 @@ La nota se construye una vez como estructura de datos (párrafos, secciones, tab
 - **Texto plano** (parte alternativa del mismo email).
 - **PDF** (adjunto `Nota-Digital-{n}-{aa}.pdf`) con PDFKit:
   - hoja oficio de 216 × 330 mm;
-  - márgenes de 2,5 cm arriba y abajo y 3 cm a izquierda y derecha;
+  - **membrete municipal en todas las hojas**, configurable desde la pantalla de Correos (7.3 y 10):
+    - **banner** (la imagen cargada): arriba de la hoja, en x = 0, y = 0, con el ancho completo de la hoja y alto proporcional. Si el alto proporcional pasara de 45 mm, se achica para entrar en 45 mm, centrado. El archivo guarda la imagen una sola vez aunque se dibuje en todas las hojas;
+    - **pie del membrete** (el texto cargado, por ejemplo `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.`): Helvetica 10, centrado, con su línea de base a 12,5 mm del borde inferior. Un texto que no entra en una línea se escribe en una sola línea con la letra achicada lo justo;
+  - márgenes:
+    - superior de **todas** las hojas: el alto del banner más 9 mm, nunca menos de 2,5 cm (con el banner real, de 1241 × 178 píxeles, unos 31 mm + 9 mm = 40 mm, como el membrete en Word). Sin banner, 2,5 cm;
+    - inferior de 2,5 cm para el contenido; izquierda y derecha de 3 cm;
+    - las reglas de "mantener juntos" (título con su tabla, antecedente con su fila, "Justificación:", contactos, cierre con la firma) usan el margen de la hoja, no una medida fija;
   - Helvetica 12, interlineado simple, justificado;
   - firma escaneada sobre el nombre y el cargo;
-  - si ocupa más de una hoja, pie `Nota Digital N° {n}/{aa} – Página {p} de {t}`;
-  - sin encabezado, escudo ni sello escalera.
+  - si ocupa más de una hoja, pie `Nota Digital N° {n}/{aa} – Página {p} de {t}`, Helvetica 8 centrado: a 12,5 mm del borde inferior si no hay pie del membrete; con pie del membrete, arriba de él (línea de base a 17,5 mm), sin superponerse y debajo del margen del contenido;
+  - el banner y los pies se dibujan al final, hoja por hoja, sin agregar hojas;
+  - sin banner ni pie del membrete el PDF queda sin encabezado, como antes; nunca lleva sello escalera.
+
+El membrete va solo en el PDF: el cuerpo del email (HTML y texto) no cambia. El banner y el texto del pie se leen de la configuración al generar la nota y quedan congelados en su PDF: un reintento reenvía el PDF guardado aunque después cambie el membrete.
 
 Las notas de prueba usan `N° PRUEBA` en lugar del número y anteponen `[PRUEBA] ` al asunto. La vista previa usa `N° XX`.
 
@@ -228,11 +237,13 @@ Columnas:
 - `para_interna`, `cc_interna`, `para_externa`, `cc_externa`, `cco`;
 - `linea_cc_interna`, `linea_cc_externa`;
 - `firma_nombre`, `firma_cargo`, `firma_imagen` (MEDIUMBLOB), `firma_mime`;
+- `membrete_imagen` (MEDIUMBLOB NULL), `membrete_mime` (VARCHAR(20) NULL): banner del membrete del PDF (6.6), PNG o JPEG;
+- `membrete_pie` (VARCHAR(300) NULL): texto del pie del membrete del PDF; vacío = sin pie;
 - `casillas_prueba`;
 - `reiteracion_evaluada_interna`, `reiteracion_evaluada_externa` (CHAR(7) `AAAA-MM`, NULL): último mes en que se evaluó la reiteración de cada gestión (5.3);
 - `updated_at`, `updated_by`.
 
-La migración inserta los destinatarios y las líneas de CC de la sección 4. La firma (nombre, cargo e imagen) y las casillas de prueba quedan vacías y se cargan desde la pantalla de Correos. **Ni la firma ni las casillas personales se versionan en el repositorio.**
+La migración inserta los destinatarios y las líneas de CC de la sección 4 y el texto del pie del membrete, `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.` (información pública). La firma (nombre, cargo e imagen), el banner del membrete y las casillas de prueba quedan vacíos y se cargan desde la pantalla de Correos; el texto del pie también se cambia ahí (el slogan cambia con cada gestión). **Ni la firma, ni el banner del membrete, ni las casillas personales se versionan en el repositorio** (el banner es público, pero es una imagen institucional que cambia con cada gestión).
 
 ### 7.4 Numeración y reintentos
 
@@ -285,11 +296,16 @@ Todas bajo `/api/notificaciones/notas-digitales`, con `authMiddleware` y `adminO
 | GET | `/:id/pdf` | PDF guardado |
 | POST | `/:id/reintentar` | Reintento manual de una nota fallida |
 | GET | `/preview?tipo=&gestion=` | HTML con los datos de hoy y `N° XX`; no escribe nada |
+| GET | `/preview/pdf?tipo=&gestion=` | PDF de la vista previa (`application/pdf`): el mismo contenido que la vista previa HTML, con `N° XX`, el membrete y la firma; no guarda ni envía nada. Misma validación de `tipo` y `gestion` |
 | POST | `/prueba` | `{ tipo, gestion }`: envía la nota marcada como prueba a `casillas_prueba` |
-| GET | `/config` | Configuración (sin la imagen; indica si hay firma cargada) |
-| PUT | `/config` | Guarda destinatarios, líneas de CC, firma (nombre y cargo), casillas de prueba e interruptor |
+| GET | `/config` | Configuración sin las imágenes: indica si hay firma y banner cargados (`tiene_firma`, `tiene_membrete`) y devuelve `membrete_pie` |
+| PUT | `/config` | Guarda destinatarios, líneas de CC, firma (nombre y cargo), texto del pie del membrete (`membrete_pie`: texto recortado de hasta 300 caracteres; `''` o `null` = sin pie), casillas de prueba e interruptor |
 | PUT | `/config/firma` | `{ imagen: base64, mime }`, PNG o JPEG de 500 KB como máximo |
 | GET | `/config/firma` | Imagen de la firma, para la vista previa en la pantalla |
+| PUT | `/config/membrete` | `{ imagen: base64, mime }`: banner del membrete, PNG o JPEG de 500 KB como máximo, con la misma validación que la firma |
+| GET | `/config/membrete` | Banner del membrete, para la vista previa en la pantalla (404 si no hay) |
+
+Las imágenes (firma y banner) se decodifican antes de guardarlas: una imagen dañada responde 400 con un mensaje que nombra la imagen ("La imagen de la firma no es válida: …", "La imagen del membrete no es válida: …"). Si una imagen guardada no se puede leer, la prueba y el PDF de la vista previa responden 400. Las rutas fijas (`/preview/pdf`, `/config/...`) van antes que las de `/:id`.
 
 Para el aviso a las áreas: `POST /api/notificaciones/prueba-area` envía el aviso de 40 días a `casillas_prueba` en lugar de a las áreas. Se eliminan las rutas `GET /api/notificaciones/prueba/:tipo` y `GET /api/notificaciones/preview/:tipo` de los siete tipos reemplazados. La vista previa de `area-aviso-40` se mantiene.
 
@@ -299,7 +315,8 @@ Para el aviso a las áreas: `POST /api/notificaciones/prueba-area` envía el avi
    - verificación SMTP;
    - interruptor de envío automático;
    - qué saldrá en el próximo aviso y en la próxima reiteración de cada gestión, con fecha y cantidad de datasets;
-   - alerta si hay notas fallidas.
+   - alerta si hay notas fallidas;
+   - advertencias que no bloquean el envío si falta una imagen: "No hay imagen de la firma: las notas saldrían sin la firma escaneada." y "No hay imagen del membrete: las notas saldrían sin el encabezado institucional."
 2. **Libro de Notas Digitales.**
    - Tabla con número, fecha, tipo, gestión, cantidad de datasets, destinatarios y estado.
    - Filtros de la API, incluido un selector de dataset que funciona como historial por dataset.
@@ -308,8 +325,11 @@ Para el aviso a las áreas: `POST /api/notificaciones/prueba-area` envía el avi
 3. **Vista previa y prueba.**
    - Se elige aviso o reiteración e interna o externa.
    - "Vista previa" muestra la nota en un `iframe` con `sandbox`.
+   - "Ver PDF" descarga el PDF de la vista previa para el tipo y la gestión elegidos, con el membrete y la firma (el botón queda bloqueado mientras se pide).
    - "Enviarme una prueba" la envía a las casillas de prueba.
-4. **Configuración.** Destinatarios, líneas de CC, firma (nombre, cargo e imagen con vista previa) y casillas de prueba.
+4. **Configuración.** Destinatarios, líneas de CC, firma (nombre, cargo e imagen con vista previa), membrete del PDF y casillas de prueba.
+   - El grupo "Membrete del PDF" tiene el archivo del banner (PNG o JPEG, máximo 500 KB) con vista previa y el campo "Texto del pie", que se guarda con "Guardar configuración".
+   - Las imágenes (firma y banner) se suben apenas se eligen, sin recargar el formulario: no pisan los campos que todavía no se guardaron. La vista previa se oculta (con `hidden`) cuando no hay imagen y se liberan las URLs de blob al reemplazarla.
 5. **Aviso a las áreas.** Vista previa y prueba a las casillas de prueba.
 
 Se eliminan el selector de los siete tipos reemplazados y las tarjetas que explicaban su calendario. En su lugar va una explicación breve del calendario de la sección 5.
@@ -348,7 +368,8 @@ Se aplica TDD con la batería existente (`npm test`, contra Docker y Mailpit). T
   - antecedente de emails anteriores;
   - contactos agrupados por área;
   - escape de títulos con HTML;
-  - el PDF adjunto es válido, mide 216 × 330 mm y contiene el número.
+  - el PDF adjunto es válido, mide 216 × 330 mm y contiene el número;
+  - el PDF lleva el banner y el pie del membrete en todas las hojas, y los barridos de diagramación corren con y sin membrete.
 - **Barrera `EMAIL_SOLO_A`:** filtra Para, CC y CCO, y bloquea si no queda ningún destinatario.
 - **Pruebas:** sin número oficial, sin filas en `notas_digitales_datasets` y solo a `casillas_prueba`.
 - **Esquema:** `tests/schema.test.js` incluye las tres tablas nuevas.
@@ -361,7 +382,7 @@ Después se hace una verificación manual en el navegador de la pantalla de Corr
 1. Ejecutar `migracion-notas-digitales.sql` en producción.
 2. Subir el código. No hay dependencias nuevas.
 3. En Correos, "Verificar SMTP" desde el VPS. Si la conexión a `mail.comodoro.gov.ar:465` es rechazada, habilitar la salida SMTP de la cuenta en WHM ("SMTP Restrictions").
-4. Cargar la firma (nombre, cargo e imagen) y las casillas de prueba; enviar una prueba de cada variante.
+4. Cargar la firma (nombre, cargo e imagen), el membrete del PDF (el banner y, si cambió, el texto del pie) y las casillas de prueba; revisar el PDF con "Ver PDF" y enviar una prueba de cada variante.
 5. Activar el interruptor. En la siguiente corrida salen los primeros avisos, que incluyen los datasets vencidos con su antecedente de emails anteriores.
 6. Los siete emails reemplazados dejan de salir apenas se despliega el código; las notas empiezan cuando se activa el interruptor.
 

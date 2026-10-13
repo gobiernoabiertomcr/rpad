@@ -148,7 +148,7 @@ Desde **phpMyAdmin** en cPanel:
 
 ### Migración: Notas Digitales
 
-⚠️ Requisito: la base tiene que tener aplicadas las migraciones anteriores. La migración crea las tablas `notas_digitales` (libro), `notas_digitales_datasets` y `notas_digitales_config` (destinatarios iniciales, envío automático **desactivado** y registro de la última corrida diaria).
+⚠️ Requisito: la base tiene que tener aplicadas las migraciones anteriores. La migración crea las tablas `notas_digitales` (libro), `notas_digitales_datasets` y `notas_digitales_config` (destinatarios iniciales, texto del pie del membrete del PDF, envío automático **desactivado** y registro de la última corrida diaria).
 
 Secuencia de despliegue, en este orden:
 
@@ -166,7 +166,7 @@ Secuencia de despliegue, en este orden:
    ```
 3. **Subir el código**, correr `npm install` y reiniciar la app (**Restart** en Setup Node.js App).
 4. **Verificar SMTP** en Correos → Estado ("Verificar conexión SMTP"). Si la conexión es rechazada, habilitar la salida SMTP de la cuenta en WHM ("SMTP Restrictions").
-5. En Correos → Configuración, **cargar la firma** (nombre, cargo e imagen) y las **casillas de prueba**. Después, **enviar una prueba de cada variante** (aviso y reiteración, de gestión interna y externa) y revisar las cuatro en las casillas de prueba, con su PDF.
+5. En Correos → Configuración, **cargar la firma** (nombre, cargo e imagen), el **membrete del PDF** (la imagen del banner y, si cambió, el texto del pie; la migración deja cargado `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.`) y las **casillas de prueba**. El banner no está en el repositorio: se sube desde esa pantalla. Revisar el PDF con "Ver PDF" en Correos → Vista previa y prueba. Después, **enviar una prueba de cada variante** (aviso y reiteración, de gestión interna y externa) y revisar las cuatro en las casillas de prueba, con su PDF.
 6. **Recién entonces, activar el envío automático** en Correos → Estado. Las notas las dispara el mismo cron diario de `/api/cron/notificaciones` (ver [Configurar Cron Job](#configurar-cron-job-notificaciones-automáticas)).
 7. **El primer día hábil siguiente**, revisar Correos → Estado: la línea "Última corrida diaria" tiene que mostrar la corrida de las 08:00 sin errores y no tiene que haber alertas. Revisar también el libro de Notas Digitales.
 
