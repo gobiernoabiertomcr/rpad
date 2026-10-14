@@ -13,3 +13,5 @@ multiarchivo.md
 .claude/
 # Dump local de la base de producción (datos personales, NO subir)
 database/dump-local/
+# Archivos de los datasets del portal (solo local, para redactar "Qué se solicita")
+datasets/
