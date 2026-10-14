@@ -79,11 +79,13 @@ describe('construirAnexo', () => {
 //   la letra (de la línea de ascendentes a la de descendentes), sin el interlineado de la última línea.
 // - bloques: los rectángulos redondeados (estado, tarjeta del QR, descripción, observaciones, contacto).
 // - lineas: las líneas finas (rectángulos de hasta 1 punto de alto y 50 o más de ancho: encabezado, ficha, pie).
+// - acentos: el filete vertical del acento a la izquierda del recuadro destacado.
 // Cada uno: { hoja, texto, x0, y0, x1, y1 }, con y desde el borde superior.
 const diagramacion = async (datos) => {
   const textos = [];
   const bloques = [];
   const lineas = [];
+  const acentos = [];
   const hojas = [];
   const indice = (hoja) => {
     if (!hojas.includes(hoja)) hojas.push(hoja);
@@ -98,6 +100,8 @@ const diagramacion = async (datos) => {
   };
   DocumentoNota.prototype.rect = function (x, y, ancho, alto) {
     if (alto <= 1 && ancho >= 50) lineas.push({ hoja: indice(this.page), texto: `línea ${lineas.length}`, x0: x, y0: y, x1: x + ancho, y1: y + alto });
+    // Filete vertical del acento, en el borde izquierdo del recuadro destacado
+    if (ancho <= 5 && alto >= 20 && Math.abs(x - 15 * MM) < 0.1) acentos.push({ hoja: indice(this.page), texto: 'acento', x0: x, y0: y, x1: x + ancho, y1: y + alto });
     return rect.call(this, x, y, ancho, alto);
   };
   DocumentoNota.prototype.text = function (texto, x, y, opciones = {}) {
@@ -126,7 +130,7 @@ const diagramacion = async (datos) => {
     delete DocumentoNota.prototype.roundedRect;
     delete DocumentoNota.prototype.rect;
   }
-  return { textos, bloques, lineas };
+  return { textos, bloques, lineas, acentos };
 };
 
 const seCruzan = (a, b) => a.x0 < b.x1 - 0.1 && b.x0 < a.x1 - 0.1 && a.y0 < b.y1 - 0.1 && b.y0 < a.y1 - 0.1;
@@ -218,7 +222,7 @@ describe('renderAnexo', () => {
     assert.ok(!hojas[1].some(l => l.includes('https://')), hojas[1].join(' | '));
   });
 
-  it('de arriba abajo: encabezado, título, estado, línea de tiempo, qué se solicita, ficha, descripción, contacto y pie', async () => {
+  it('de arriba abajo: encabezado, título, estado, línea de tiempo, descripción, ficha, qué se solicita, observaciones, contacto y pie', async () => {
     const pdf = await renderAnexo(anexo([fichaReal()]));
     const textos = textosPorHoja(pdf)[0];
     const buscar = (buscado) => {
@@ -228,20 +232,39 @@ describe('renderAnexo', () => {
     };
     // base: altura de la línea de base desde el borde inferior; cuanto más abajo en la hoja, menor
     const orden = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Áreas específicas de género', 'Vence el 30/11/2026',
-      'ÚLTIMA ACTUALIZACIÓN', 'QUÉ SE SOLICITA', 'Listado actualizado de las áreas', 'ÁREA RESPONSABLE', 'DESCRIPCIÓN',
-      'Listado de las áreas municipales', 'OBSERVACIONES', 'Las coordenadas corresponden', 'CONTACTO DEL ÁREA RESPONSABLE',
+      'ÚLTIMA ACTUALIZACIÓN', 'DESCRIPCIÓN', 'Listado de las áreas municipales', 'ÁREA RESPONSABLE', 'QUÉ SE SOLICITA',
+      'Listado actualizado de las áreas', 'OBSERVACIONES', 'Las coordenadas corresponden', 'CONTACTO DEL ÁREA RESPONSABLE',
       'area@ejemplo.gov.ar', 'Hoja 1 de 1'].map(t => buscar(t).base);
     orden.slice(1).forEach((valor, i) => assert.ok(valor < orden[i], `fuera de orden en la posición ${i + 1}: ${orden.join(', ')}`));
-    // "Qué se solicita" es el bloque más destacado: letra más grande que la de la descripción
-    assert.ok(buscar('Listado actualizado de las áreas').tamano > buscar('Listado de las áreas municipales').tamano);
+    // La descripción es el bloque destacado: letra más grande que la de qué se solicita y la de las observaciones
+    const descripcion = buscar('Listado de las áreas municipales').tamano;
+    assert.ok(descripcion > buscar('Listado actualizado de las áreas').tamano);
+    assert.ok(descripcion > buscar('Las coordenadas corresponden').tamano);
   });
 
-  it('"Qué se solicita" va en un recuadro propio, también con el texto por defecto', async () => {
-    const { textos, bloques } = await diagramacion(anexo([ficha()]));
-    const titulo = textos.find(t => t.texto === 'QUÉ SE SOLICITA');
-    const texto = textos.find(t => t.texto === SOLICITA_POR_DEFECTO);
-    assert.ok(titulo && texto, textos.map(t => t.texto).join(' | '));
-    assert.ok(bloques.some(b => contiene(b, titulo) && contiene(b, texto)), 'el título y el texto no están en el mismo recuadro');
+  it('la descripción va en el recuadro destacado (filete del acento) y "Qué se solicita" en uno gris, también con el texto por defecto', async () => {
+    const { textos, bloques, acentos } = await diagramacion(anexo([ficha()]));
+    const texto = (buscado) => {
+      const encontrado = textos.find(t => t.texto === buscado);
+      assert.ok(encontrado, `falta "${buscado}" en ${textos.map(t => t.texto).join(' | ')}`);
+      return encontrado;
+    };
+    const recuadroDe = (rotulo, contenido) => {
+      const recuadro = bloques.find(b => contiene(b, texto(rotulo)));
+      assert.ok(recuadro && contiene(recuadro, texto(contenido)), `"${rotulo}" y su texto no están en el mismo recuadro`);
+      return recuadro;
+    };
+    const conAcento = (recuadro) => acentos.some(a => Math.abs(a.y0 - recuadro.y0) < 0.1 && Math.abs(a.y1 - recuadro.y1) < 0.1);
+    assert.ok(conAcento(recuadroDe('DESCRIPCIÓN', ficha().descripcion)), 'la descripción no está en el recuadro destacado');
+    assert.ok(!conAcento(recuadroDe('QUÉ SE SOLICITA', SOLICITA_POR_DEFECTO)), '"Qué se solicita" no está en un recuadro gris');
+    assert.equal(acentos.length, 1);
+  });
+
+  it('aunque una descripción larguísima se achique, no queda más chica que qué se solicita ni que las observaciones', async () => {
+    const textos = textosPorHoja(await renderAnexo(anexo([fichaReal({ descripcion: 'Descripción larguísima del conjunto. '.repeat(150) })])))[0];
+    const tamano = (inicio) => textos.find(t => t.texto.startsWith(inicio)).tamano;
+    assert.ok(tamano('Descripción larguísima') >= tamano('Listado actualizado de las áreas'), textos.map(t => `${t.tamano} ${t.texto.slice(0, 30)}`).join(' | '));
+    assert.ok(tamano('Descripción larguísima') >= tamano('Las coordenadas corresponden'));
   });
 
   it('un "Depende de" largo como los reales ocupa la fila entera y no se corta', async () => {

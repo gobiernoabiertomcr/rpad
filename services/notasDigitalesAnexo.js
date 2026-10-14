@@ -34,22 +34,23 @@ const DESCENDENTE = 0.207;
 
 // Perfiles tipográficos, del más generoso al más compacto. La hoja usa el primero con el que todo entra en su
 // tamaño (sin achicar ni cortar nada); el último es también la base de los niveles de compactación (dibujarHoja).
-// "aire" multiplica las separaciones entre las partes de la hoja.
+// "aire" multiplica las separaciones entre las partes de la hoja. "destacado" es la letra de la descripción (el
+// recuadro destacado, la más grande después del título) y "texto", la de qué se solicita y las observaciones.
 const PERFILES = [
-  { titulo: 24, etiqueta: 7.5, estado: 9.5, fecha: 10.5, rotulo: 7, solicita: 12.5, texto: 11, valor: 10.5, link: 9, contacto: 10, nombre: 11.5, aire: 1.25 },
-  { titulo: 22, etiqueta: 7.5, estado: 9, fecha: 10, rotulo: 7, solicita: 12, texto: 10.5, valor: 10, link: 9, contacto: 9.5, nombre: 11, aire: 1.1 },
-  { titulo: 20, etiqueta: 7, estado: 8.5, fecha: 9.5, rotulo: 6.5, solicita: 11, texto: 10, valor: 9.5, link: 8.5, contacto: 9, nombre: 10, aire: 1 }
+  { titulo: 24, etiqueta: 7.5, estado: 9.5, fecha: 10.5, rotulo: 7, destacado: 12.5, texto: 11, valor: 10.5, link: 9, contacto: 10, nombre: 11.5, aire: 1.25 },
+  { titulo: 22, etiqueta: 7.5, estado: 9, fecha: 10, rotulo: 7, destacado: 12, texto: 10.5, valor: 10, link: 9, contacto: 9.5, nombre: 11, aire: 1.1 },
+  { titulo: 20, etiqueta: 7, estado: 8.5, fecha: 9.5, rotulo: 6.5, destacado: 11, texto: 10, valor: 9.5, link: 8.5, contacto: 9, nombre: 10, aire: 1 }
 ];
 // Separaciones entre las partes, de arriba abajo (multiplicadas por el "aire" del perfil): encabezado → etiqueta,
-// estado → línea de tiempo, línea de tiempo → qué se solicita, qué se solicita → ficha, ficha → descripción
+// estado → línea de tiempo, línea de tiempo → descripción, descripción → ficha, ficha → qué se solicita
 const SEPARACIONES = [18, 18, 16, 16, 14];
 // Lo que puede crecer cada separación para que la hoja quede llena; lo que sobre aún va arriba del contacto
 const EXTRA_MAXIMO = 16;
-// Entre descripción y observaciones, y como mínimo arriba del contacto (que va abajo, cerca del pie)
+// Entre qué se solicita y observaciones, y como mínimo arriba del contacto (que va abajo, cerca del pie)
 const ENTRE_BLOQUES = 10;
 const SOBRE_PIE = 10;
 // Líneas que conservan los textos largos, como mínimo y en la letra más chica, cuando falta lugar
-const MINIMO_LINEAS = { solicita: 2, descripcion: 3, observaciones: 2 };
+const MINIMO_LINEAS = { descripcion: 3, solicita: 2, observaciones: 2 };
 
 const SEPARACION_COLUMNAS = 5 * MM;
 const anchoDeColumna = (ancho, columnas) => (ancho - SEPARACION_COLUMNAS * (columnas - 1)) / columnas;
@@ -418,8 +419,9 @@ const prepararContacto = (doc, hoja, p, nivel) => {
   };
 };
 
-// Textos largos: "Qué se solicita" (destacado: fondo del acento suave, filete del acento a la izquierda, letra más
-// grande), descripción y observaciones (fondo gris). Cada uno, con su rótulo arriba.
+// Textos largos: la descripción (destacada: fondo del acento suave, filete del acento a la izquierda, letra más
+// grande; presenta el dataset) y, después de la ficha, qué se solicita y observaciones (fondo gris, contexto
+// operativo). Cada uno, con su rótulo arriba. El primero es siempre el destacado (dibujarHoja).
 const bloquesDeTexto = (hoja, p) => {
   const bloque = (clave, titulo, texto, tamano, destacado) => {
     const rotulo = destacado ? p.rotulo + 0.5 : p.rotulo;
@@ -432,8 +434,8 @@ const bloquesDeTexto = (hoja, p) => {
     };
   };
   return [
-    bloque('solicita', 'Qué se solicita', hoja.queSeSolicita, p.solicita, true),
-    bloque('descripcion', 'Descripción', hoja.descripcion, p.texto, false),
+    bloque('descripcion', 'Descripción', hoja.descripcion, p.destacado, true),
+    bloque('solicita', 'Qué se solicita', hoja.queSeSolicita, p.texto, false),
     ...(hoja.observaciones ? [bloque('observaciones', 'Observaciones', hoja.observaciones, p.texto, false)] : [])
   ].map(b => ({ ...b, ancho: CONTENIDO - b.izquierda - b.derecha }));
 };
@@ -518,31 +520,38 @@ const planificar = (doc, hoja, alto) => {
     const ultimo = i === INTENTOS.length - 1;
     if (todoEnSuTamano ? suma(necesarios) <= libre : (suma(minimos) <= libre || ultimo)) {
       const asignados = repartir(necesarios, minimos, libre);
-      const ajustes = bloques.map((b, k) => ajustar(doc, b.texto, {
-        ancho: b.ancho, alto: asignados[k], max: b.tamano, min: MINIMO, opciones: b.opciones, corte: CORTE
-      }));
+      const ajustarBloque = (k, max) => ajustar(doc, bloques[k].texto, {
+        ancho: bloques[k].ancho, alto: asignados[k], max, min: MINIMO, opciones: bloques[k].opciones, corte: CORTE
+      });
+      const ajustes = bloques.map((b, k) => ajustarBloque(k, b.tamano));
+      // La descripción (destacada) no queda más chica que los otros textos: si se achicó, ellos van medio punto
+      // debajo (más chicos ocupan menos, así que siguen entrando en lo asignado)
+      const tope = Math.max(MINIMO, ajustes[0].tamano - 0.5);
+      ajustes.forEach((ajuste, k) => {
+        if (k > 0 && ajuste.tamano > tope) ajustes[k] = ajustarBloque(k, tope);
+      });
       return { p, cabecera, ficha, contacto, bloques, ajustes, separaciones, sobra: Math.max(0, libre - suma(ajustes.map(a => a.alto))) };
     }
   }
   return null;
 };
 
-// Una hoja: de arriba abajo, encabezado, cabecera, línea de tiempo, qué se solicita, ficha, descripción y
-// observaciones, contacto (abajo, cerca del pie) y pie. El espacio que sobra agranda las separaciones (hasta
+// Una hoja: de arriba abajo, encabezado, cabecera, línea de tiempo, descripción (destacada), ficha, qué se solicita
+// y observaciones, contacto (abajo, cerca del pie) y pie. El espacio que sobra agranda las separaciones (hasta
 // EXTRA_MAXIMO cada una; la de arriba del título, la mitad) y el resto queda arriba del contacto.
 const dibujarHoja = (doc, anexo, hoja, i, total) => {
   const arriba = dibujarEncabezado(doc, anexo);
   const limite = dibujarPie(doc, anexo, i, total) - SOBRE_PIE;
   const { p, cabecera, ficha, contacto, bloques, ajustes, separaciones, sobra } = planificar(doc, hoja, limite - arriba);
   const extra = Math.min(EXTRA_MAXIMO, sobra / (separaciones.length - 0.5));
-  const [solicita, ...textos] = bloques;
-  const [ajusteSolicita, ...ajustesTextos] = ajustes;
+  const [descripcion, ...textos] = bloques;
+  const [ajusteDescripcion, ...ajustesTextos] = ajustes;
   let y = arriba + separaciones[0] + extra / 2;
   cabecera.dibujar(y);
   y += cabecera.alto + separaciones[1] + extra;
   dibujarLineaDeTiempo(doc, hoja.linea, y, p);
   y += altoLineaDeTiempo(p) + separaciones[2] + extra;
-  y += dibujarBloque(doc, solicita, ajusteSolicita, y) + separaciones[3] + extra;
+  y += dibujarBloque(doc, descripcion, ajusteDescripcion, y) + separaciones[3] + extra;
   ficha.dibujar(y);
   y += ficha.alto + separaciones[4] + extra;
   textos.forEach((bloque, k) => {
