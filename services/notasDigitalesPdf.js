@@ -34,6 +34,12 @@ const TAMANO_SECUNDARIO = 7;
 const SEPARACION_SECUNDARIO = 1.5;
 // Alto que necesitan el remitente, la firma y la línea CC: van juntos, sin que la firma quede sola en una hoja
 const ALTO_CIERRE = 200;
+// Espacio debajo de cada párrafo (en líneas de su letra) y alto que se reserva para el título "Justificación:"
+const ESPACIO_PARRAFO = 0.6;
+const ALTO_TITULO_JUSTIFICACION = 25;
+// Aire de más arriba de la línea del anexo (puntos): con él queda más separada del último contacto (o de la tabla)
+// que los contactos entre sí, y un poco más que de "Justificación:"
+const AIRE_ANEXO = 6;
 
 // =====================================================
 // Texto que Helvetica puede escribir (WinAnsi / CP1252)
@@ -404,7 +410,7 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
     // Alto real de un contacto como lo dibuja el bucle de abajo: nombre en negrita 10, espacio y líneas en 10
     const altoContacto = (contacto) => altoTexto(contacto.nombre, 10, NEGRITA) + altoEspacio(0.1, 10, NEGRITA)
       + altoTexto(contacto.lineas.join('\n'), 10);
-    const parrafo = (texto, { fuente = NORMAL, tamano = 12, align = 'justify', underline = false, espacio = 0.6 } = {}) => {
+    const parrafo = (texto, { fuente = NORMAL, tamano = 12, align = 'justify', underline = false, espacio = ESPACIO_PARRAFO } = {}) => {
       doc.font(fuente).fontSize(tamano).text(texto, MARGENES.left, doc.y, { width: ancho, align, underline });
       doc.moveDown(espacio);
     };
@@ -439,18 +445,22 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
       }
     }
 
-    // La línea del anexo (solo avisos) viaja con el título de la justificación y su primer párrafo: se reserva
-    // también el espacio que deja debajo (si no, el reservado a continuación puede mandar el título a otra hoja)
+    // La línea del anexo (solo avisos) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
+    // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con el título de la justificación y su
+    // primer párrafo: se reserva también el espacio que deja debajo (si no, el reservado a continuación puede
+    // mandar el título a otra hoja).
     if (nota.anexo) {
-      asegurarEspacio(altoTexto(nota.anexo) + altoEspacio(0.6, 12) + 25 + altoTexto(nota.justificacion[0] || ''));
-      parrafo(nota.anexo, { align: 'left', espacio: 0.6 });
+      asegurarEspacio(AIRE_ANEXO + altoTexto(nota.anexo) + altoEspacio(ESPACIO_PARRAFO, 12) + ALTO_TITULO_JUSTIFICACION
+        + altoTexto(nota.justificacion[0] || ''));
+      if (doc.y > doc.page.margins.top + 1) doc.y += AIRE_ANEXO;
+      parrafo(nota.anexo, { align: 'left', espacio: ESPACIO_PARRAFO });
     }
 
     // El título viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
     // Si hay un solo párrafo (o ninguno) es a la vez el primero y el último: se reserva todo junto antes
     // de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
     const ultimo = nota.justificacion.length - 1;
-    asegurarEspacio(25 + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? ALTO_CIERRE : 0));
+    asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? ALTO_CIERRE : 0));
     parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
     nota.justificacion.forEach((texto, i) => {
       if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + ALTO_CIERRE);

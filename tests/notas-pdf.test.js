@@ -81,6 +81,24 @@ describe('renderPdf', () => {
     assert.ok(!reiteracion.some(l => l.startsWith('Anexo:')), reiteracion.join(' | '));
   });
 
+  it('la línea del anexo es un párrafo propio: tiene más aire arriba que el que separa dos contactos, y no menos que abajo', async () => {
+    const areas = [1, 2].map(k => ({ id: k, nombre: `Área ${k}`, email_principal: `area${k}@rpad.test`, telefono_area: '297 400-0000' }));
+    const textos = textosPorHoja(await renderPdf(nota(2, { areas }))).flat();
+    // Borde superior e inferior del texto de una línea, desde el borde inferior de la hoja
+    const arriba = (t) => t.base + ASCENDENTE * t.tamano;
+    const abajo = (t) => t.base - DESCENDENTE * t.tamano;
+    const indice = (texto) => textos.findIndex(t => t.texto === texto);
+    const anexo = indice('Anexo: reporte de los conjuntos de datos (2 hojas).');
+    const segundo = indice('Área 2');
+    assert.ok(anexo > 0 && segundo > 0, textos.map(t => t.texto).join(' | '));
+    const entreContactos = abajo(textos[segundo - 1]) - arriba(textos[segundo]);
+    const antes = abajo(textos[anexo - 1]) - arriba(textos[anexo]);
+    const despues = abajo(textos[anexo]) - arriba(textos[indice('Justificación:')]);
+    assert.equal(textos[anexo - 1].texto, 'Teléfono: 297 400-0000');
+    assert.ok(antes > entreContactos + 3, `arriba del anexo ${antes.toFixed(1)} pt; entre dos contactos ${entreContactos.toFixed(1)} pt`);
+    assert.ok(antes >= despues, `arriba del anexo ${antes.toFixed(1)} pt; abajo ${despues.toFixed(1)} pt`);
+  });
+
   it('una firma PNG RGBA sana (también entrelazada) sale en el PDF con su transparencia', async () => {
     for (const imagen of [pngRgba(), pngRgba({ ancho: 37, alto: 23, entrelazado: true })]) {
       const pdf = texto(await renderPdf(nota(1), { firmaImagen: imagen }));
