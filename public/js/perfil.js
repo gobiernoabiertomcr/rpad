@@ -422,6 +422,7 @@ function renderComparador(cambio) {
     { key: 'ultima_actualizacion', label: 'Ultima Actualizacion' },
     { key: 'proxima_actualizacion', label: 'Proxima Actualizacion' },
     { key: 'url_dataset', label: 'URL en Portal' },
+    { key: 'observaciones', label: 'Observaciones' },
     { key: 'que_se_solicita', label: 'Qué se solicita' },
     { key: 'formatos_nombres', label: 'Formatos' }
   ];

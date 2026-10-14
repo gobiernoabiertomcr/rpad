@@ -157,6 +157,18 @@ describe('baja y registro de actualización', () => {
   });
 });
 
+describe('revisión de un cambio de Observaciones', () => {
+  it('muestra el antes y el después aunque sea el único campo que cambió', async () => {
+    const id = await crearDatasetAprobado('revisión de observaciones');
+    const edicion = await api.put(`/datasets/${id}`, { observaciones: 'Observación nueva.' }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 200);
+
+    const detalle = await api.get(`/cambios-pendientes/${edicion.body.data.cambio_pendiente_id}`, { token: usuarios.adminB.token });
+    assert.equal(detalle.status, 200);
+    assert.deepEqual(detalle.body.data.campos_modificados, [{ campo: 'Observaciones', antes: '-', despues: 'Observación nueva.' }]);
+  });
+});
+
 describe('campo "Qué se solicita"', () => {
   const TEXTO = 'El listado completo de registros del período, con las mismas columnas que el archivo del portal, en CSV.';
   const solicitaEnDb = async (id) => (await datasetEnDb(id)).que_se_solicita;
