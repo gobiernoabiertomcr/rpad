@@ -439,6 +439,7 @@ CREATE TABLE `notas_digitales` (
   `html` mediumtext NOT NULL,
   `texto` mediumtext NOT NULL,
   `pdf` mediumblob NOT NULL,
+  `anexo_pdf` mediumblob DEFAULT NULL,
   `estado` enum('pendiente','enviada','fallida') NOT NULL DEFAULT 'pendiente',
   `intentos` int(11) NOT NULL DEFAULT 0,
   `ultimo_error` text DEFAULT NULL,

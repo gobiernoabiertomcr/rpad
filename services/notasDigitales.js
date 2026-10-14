@@ -1,15 +1,17 @@
 // Motor de Notas Digitales: genera, numera, envía y reintenta los avisos y reiteraciones.
-// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 7.4 y 8)
+// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8)
 import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos } from './emailService.js';
-import { construirNota, renderHtml, renderTexto } from './notasDigitalesContenido.js';
+import { construirNota, construirAnexo, renderHtml, renderTexto } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
+import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
   periodoSiguiente, sumarDias, formatoCorto
 } from './notasDigitalesCalendario.js';
 import {
-  VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe
+  VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe,
+  fichasDe
 } from './notasDigitalesDatos.js';
 
 export const MAX_INTENTOS = 5;
@@ -30,14 +32,35 @@ export const configuracionCompleta = (config) => {
   return faltan;
 };
 
-// Agrega a cada dataset lo que la nota muestra: antecedentes y contactos (externa)
+// Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas son las de la
+// nota (las de la selección): el anexo coincide con la tabla aunque el dataset cambie mientras se genera, y nunca
+// pasa al anexo una ficha sin vencimiento.
+const fichasDelAviso = async (datasets) => {
+  const fichasPorId = await fichasDe(datasets.map(d => d.id));
+  return datasets
+    .filter(d => fichasPorId.has(d.id))
+    .map(d => ({ ...fichasPorId.get(d.id), ultima_actualizacion: d.ultima_actualizacion ?? null, vencimiento: d.vencimiento ?? null }))
+    .filter(f => f.vencimiento);
+};
+
+// Agrega a cada dataset lo que la nota muestra: antecedentes y contactos (externa); en los avisos, las fichas del anexo
 const prepararContenido = async ({ tipo, gestion, datasets }) => {
   // Antecedente de los emails anteriores: en los avisos y en las filas "Sin aviso previo" de las reiteraciones
   const conAntecedente = datasets.filter(d => tipo === 'aviso' || !d.informado).map(d => d.id);
   const antecedentes = await antecedentesDe(conAntecedente);
   const conDatos = datasets.map(d => ({ informado: null, reiteraciones: 0, ...d, antecedente: antecedentes.get(d.id) ?? null }));
   const areas = gestion === 'externa' ? await areasDe([...new Set(datasets.map(d => d.area_id))]) : [];
-  return { datasets: conDatos, areas };
+  const fichas = tipo === 'aviso' ? await fichasDelAviso(datasets) : [];
+  return { datasets: conDatos, areas, fichas };
+};
+
+// El anexo tiene una hoja por dataset, como anuncia la nota: si a algún dataset le falta la ficha (o su vencimiento),
+// el aviso no se genera en lugar de salir con un anexo incompleto
+const validarFichas = ({ datasets, fichas = [] }) => {
+  if (fichas.length !== datasets.length || fichas.some(f => !f.vencimiento)) {
+    throw new Error(`El anexo del aviso necesita una ficha con vencimiento por cada dataset (${fichas.length} de ${datasets.length})`);
+  }
+  return fichas;
 };
 
 const destinatarios = (config, gestion, esPrueba) => (esPrueba
@@ -53,9 +76,10 @@ const opcionesPdf = (config) => ({
   firmaImagen: config.firma_imagen, membreteImagen: config.membrete_imagen, membretePie: config.membrete_pie
 });
 
-// Asigna el número, renderiza HTML, texto y PDF y deja la nota registrada como pendiente
+// Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente
 export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null }) => {
   const contenido = preparado ?? await prepararContenido({ tipo, gestion, datasets });
+  const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
   const { para, cc, cco } = destinatarios(config, gestion, esPrueba);
   const conexion = await pool.getConnection();
   try {
@@ -70,12 +94,14 @@ export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPr
     }
     const nota = construirNota({ tipo, gestion, numero, anio, esPrueba, fecha, datasets: contenido.datasets, areas: contenido.areas, config });
     const pdf = await renderPdf(nota, opcionesPdf(config));
+    // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo
+    const anexoPdf = fichas ? await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas })) : null;
     const [resultado] = await conexion.query(
       `INSERT INTO notas_digitales
-         (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, creado_por)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, creado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [numero, anio, tipo, gestion, tipo === 'reiteracion' ? periodoDe(fecha) : null, fecha, esPrueba ? 1 : 0,
-        nota.asunto, para.join(', '), cc.join(', '), cco.join(', '), renderHtml(nota), renderTexto(nota), pdf, usuarioId]
+        nota.asunto, para.join(', '), cc.join(', '), cco.join(', '), renderHtml(nota), renderTexto(nota), pdf, anexoPdf, usuarioId]
     );
     if (!esPrueba) {
       for (const d of contenido.datasets) {
@@ -98,12 +124,15 @@ export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPr
 // Envía el contenido guardado de la nota (un reintento manda exactamente lo mismo)
 export const enviarNota = async (id) => {
   const [[nota]] = await pool.query(
-    'SELECT id, numero, anio, es_prueba, asunto, para, cc, cco, html, texto, pdf, estado FROM notas_digitales WHERE id = ?', [id]
+    'SELECT id, numero, anio, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, estado FROM notas_digitales WHERE id = ?', [id]
   );
   if (!nota) throw new ErrorDeUso(`No existe la nota ${id}`);
   if (nota.estado === 'enviada') return { success: true, yaEnviada: true };
 
-  const archivo = nota.es_prueba ? 'Nota-Digital-PRUEBA.pdf' : `Nota-Digital-${nota.numero}-${String(nota.anio).slice(-2)}.pdf`;
+  // La nota y, en los avisos, su anexo (spec 6.7): los dos PDF guardados al generarla
+  const sufijo = nota.es_prueba ? 'PRUEBA' : `${nota.numero}-${String(nota.anio).slice(-2)}`;
+  const adjuntos = [{ filename: `Nota-Digital-${sufijo}.pdf`, content: nota.pdf, contentType: 'application/pdf' }];
+  if (nota.anexo_pdf) adjuntos.push({ filename: `Anexo-Nota-Digital-${sufijo}.pdf`, content: nota.anexo_pdf, contentType: 'application/pdf' });
   const resultado = await sendEmail({
     from: remitente(),
     replyTo: process.env.SMTP_USER,
@@ -113,7 +142,7 @@ export const enviarNota = async (id) => {
     subject: nota.asunto,
     html: nota.html,
     text: nota.texto,
-    attachments: [{ filename: archivo, content: nota.pdf, contentType: 'application/pdf' }]
+    attachments: adjuntos
   });
 
   if (resultado.success) {
@@ -323,11 +352,21 @@ export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId =
 
 // Datos de ejemplo para la vista previa y las pruebas cuando hoy no hay datasets para esa nota.
 // El aviso solo informa datasets a vencer (spec 5.2): su ejemplo no tiene el vencido, y el antecedente pasa al a vencer.
-const ejemplo = (tipo, hoy) => {
+// Los datasets de ejemplo traen también los campos de la ficha del anexo (spec 6.7), con el área de ejemplo.
+const ejemplo = (tipo, gestion, hoy) => {
+  const area = {
+    id: 0, nombre: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', email_principal: 'area@ejemplo.gov.ar',
+    email_secundario: null, telefono_area: '297 400-0000', celular_area: null, nombre_contacto: 'Persona de contacto',
+    telefono_contacto: null, email_contacto: null
+  };
+  const { id: areaId, nombre: areaNombre, ...contactoDelArea } = area;
   const informado = tipo === 'reiteracion' ? { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: sumarDias(hoy, -30) } : null;
   const comun = {
-    url_dataset: 'https://datos.comodoro.gov.ar', area_id: 0, area_nombre: 'Área de ejemplo',
-    frecuencia_nombre: 'Anualmente', informado
+    url_dataset: 'https://datos.comodoro.gov.ar', area_id: areaId, area_nombre: areaNombre,
+    frecuencia_nombre: 'Anualmente', informado,
+    descripcion: 'Descripción de ejemplo del conjunto de datos: qué información reúne, de dónde proviene y para qué sirve. En una nota real, acá va la descripción cargada en el registro del dataset.',
+    observaciones: null, que_se_solicita: null, tipo_gestion: gestion,
+    tema_principal: 'Tema de ejemplo', tema_secundario: null, formatos: 'CSV', ...contactoDelArea
   };
   const proximo = {
     ...comun, id: 0, titulo: 'Dataset de ejemplo próximo a vencer', ultima_actualizacion: sumarDias(hoy, -335), vencimiento: sumarDias(hoy, 30), reiteraciones: 0,
@@ -339,18 +378,16 @@ const ejemplo = (tipo, hoy) => {
   };
   return {
     datasets: tipo === 'aviso' ? [proximo] : [proximo, vencido],
-    areas: [{
-      id: 0, nombre: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', email_principal: 'area@ejemplo.gov.ar',
-      email_secundario: null, telefono_area: '297 400-0000', celular_area: null, nombre_contacto: 'Persona de contacto',
-      telefono_contacto: null, email_contacto: null
-    }]
+    areas: [area],
+    // El anexo del aviso: la ficha del dataset a vencer (el aviso no lleva vencidos)
+    fichas: tipo === 'aviso' ? [proximo] : []
   };
 };
 
 const contenidoParaMostrar = async (tipo, gestion, hoy) => {
   const reales = tipo === 'aviso' ? await seleccionarParaAviso(gestion, hoy) : await seleccionarParaReiteracion(gestion, hoy);
   if (reales.length) return { ...(await prepararContenido({ tipo, gestion, datasets: reales })), ejemplo: false };
-  return { ...ejemplo(tipo, hoy), ejemplo: true };
+  return { ...ejemplo(tipo, gestion, hoy), ejemplo: true };
 };
 
 // La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX
@@ -372,13 +409,19 @@ export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
   return renderPdf(nota, opcionesPdf(config));
 };
 
+// Anexo del aviso de la vista previa (N° XX): no se guarda ni se envía
+export const previewAnexo = async ({ gestion, hoy = hoyArgentina() }) => {
+  const { fichas } = await contenidoParaMostrar('aviso', gestion, hoy);
+  return renderAnexo(construirAnexo({ numero: null, anio: null, fecha: hoy, fichas }));
+};
+
 export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null }) => {
   const config = await obtenerConfig();
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
-  const { datasets, areas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
+  const { datasets, areas, fichas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const id = await generarNota({
-    tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas }
+    tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }
   });
   const resultado = await enviarNota(id);
   return { id, ejemplo: esEjemplo, destinatarios: casillas, ...resultado };

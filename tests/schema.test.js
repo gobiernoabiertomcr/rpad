@@ -60,6 +60,13 @@ describe('database/schema.sql', () => {
     assert.equal(posicion('que_se_solicita'), posicion('observaciones') + 1, lista.join('\n'));
   });
 
+  it('la nota digital tiene la columna anexo_pdf (MEDIUMBLOB NULL), justo después de pdf', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('notas_digitales.'));
+    const posicion = (columna) => lista.findIndex(c => c.startsWith(`notas_digitales.${columna} `));
+    assert.ok(lista.includes('notas_digitales.anexo_pdf mediumblob null=YES default=NULL key='), lista.join('\n'));
+    assert.equal(posicion('anexo_pdf'), posicion('pdf') + 1, lista.join('\n'));
+  });
+
   it('crea un usuario nuevo con rol lector por defecto', async () => {
     const [[rol]] = await root.query(
       `SELECT COLUMN_DEFAULT AS defecto FROM information_schema.COLUMNS

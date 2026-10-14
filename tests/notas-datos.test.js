@@ -1,7 +1,7 @@
 // Selección de datasets para avisos y reiteraciones (base de prueba propia)
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearBaseDePrueba, cerrarDb } from './helpers.js';
+import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, crearArea } from './notas-fixtures.js';
 
 let base, datos, dbReal;
@@ -281,6 +281,70 @@ describe('antecedentesDe', () => {
 
   it('sin datasets devuelve un mapa vacío', async () => {
     assert.equal((await datos.antecedentesDe([])).size, 0);
+  });
+});
+
+describe('fichasDe', () => {
+  const idDe = async (tabla, nombre) => (await query(`SELECT id FROM ${tabla} WHERE nombre = ?`, [nombre]))[0].id;
+
+  it('devuelve la ficha completa de cada dataset para el anexo, con las fechas como AAAA-MM-DD', async () => {
+    const area = await crearArea({
+      nombre: 'Área de la ficha', area_superior: 'Secretaría de la ficha', email_principal: 'ficha@rpad.test',
+      email_secundario: 'ficha2@rpad.test', telefono_area: '297 400-1111', celular_area: '297 15 400-2222',
+      nombre_contacto: 'Ana Pérez', telefono_contacto: '297 400-3333', email_contacto: 'ana@rpad.test'
+    });
+    const id = await crearDataset({
+      titulo: 'Dataset con ficha', gestion: 'externa', vencimiento: '2026-11-30', ultima: '2025-11-30', areaId: area,
+      url: 'https://datos.comodoro.gov.ar/dataset/ficha'
+    });
+    await query(
+      `UPDATE datasets SET descripcion = ?, observaciones = ?, que_se_solicita = ?, tema_principal_id = ?, tema_secundario_id = ?
+       WHERE id = ?`,
+      ['Descripción de la ficha.', 'Observación de la ficha.', 'Planilla con los registros del año.',
+        await idDe('temas', 'Medio Ambiente'), await idDe('temas', 'Servicios Públicos'), id]
+    );
+    // Cargados fuera de orden: la ficha los lista ordenados por nombre
+    for (const formato of ['XLSX', 'CSV']) {
+      await query('INSERT INTO dataset_formatos (dataset_id, formato_id) VALUES (?, ?)', [id, await idDe('formatos', formato)]);
+    }
+
+    const fichas = await datos.fichasDe([id]);
+    assert.equal(fichas.size, 1);
+    assert.deepEqual({ ...fichas.get(id) }, {
+      id, titulo: 'Dataset con ficha', descripcion: 'Descripción de la ficha.', observaciones: 'Observación de la ficha.',
+      url_dataset: 'https://datos.comodoro.gov.ar/dataset/ficha', tipo_gestion: 'externa', frecuencia_nombre: 'Anualmente',
+      ultima_actualizacion: '2025-11-30', vencimiento: '2026-11-30',
+      tema_principal: 'Medio Ambiente', tema_secundario: 'Servicios Públicos', formatos: 'CSV, XLSX',
+      que_se_solicita: 'Planilla con los registros del año.',
+      area_nombre: 'Área de la ficha', area_superior: 'Secretaría de la ficha', email_principal: 'ficha@rpad.test',
+      email_secundario: 'ficha2@rpad.test', telefono_area: '297 400-1111', celular_area: '297 15 400-2222',
+      nombre_contacto: 'Ana Pérez', telefono_contacto: '297 400-3333', email_contacto: 'ana@rpad.test'
+    });
+  });
+
+  it('sin tema secundario, formatos, "qué se solicita" ni última actualización, esos campos vienen en null', async () => {
+    const id = await crearDataset({ vencimiento: '2026-12-31' });
+    const ficha = (await datos.fichasDe([id])).get(id);
+    assert.equal(ficha.tipo_gestion, 'interna');
+    assert.equal(ficha.vencimiento, '2026-12-31');
+    for (const campo of ['tema_secundario', 'formatos', 'que_se_solicita', 'ultima_actualizacion', 'descripcion', 'observaciones']) {
+      assert.equal(ficha[campo], null, campo);
+    }
+    assert.ok(ficha.tema_principal);
+  });
+
+  it('devuelve una ficha por cada dataset pedido', async () => {
+    const a = await crearDataset({ vencimiento: '2026-12-31' });
+    const b = await crearDataset({ vencimiento: '2026-11-30' });
+    await crearDataset({ vencimiento: '2026-11-30' }); // no pedido
+    const fichas = await datos.fichasDe([a, b]);
+    assert.deepEqual([...fichas.keys()].sort((x, y) => x - y), [a, b].sort((x, y) => x - y));
+  });
+
+  it('sin datasets devuelve un mapa vacío', async () => {
+    const fichas = await datos.fichasDe([]);
+    assert.ok(fichas instanceof Map);
+    assert.equal(fichas.size, 0);
   });
 });
 

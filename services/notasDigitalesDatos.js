@@ -1,5 +1,5 @@
-// Consultas de Notas Digitales: configuración y selección de datasets.
-// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5 y 6.4)
+// Consultas de Notas Digitales: configuración, selección de datasets y fichas del anexo.
+// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.4 y 6.7)
 import pool from '../config/database.js';
 
 export const VENTANA_DIAS = { interna: 60, externa: 30 };
@@ -111,6 +111,30 @@ export const antecedentesDe = async (ids) => {
     [ids, TIPOS_EMAIL_REEMPLAZADOS]
   );
   return new Map(filas.map(f => [f.id, { cantidad: Number(f.cantidad), primera: f.primera, ultima: f.ultima }]));
+};
+
+// Ficha completa de cada dataset para el anexo de los avisos (spec 6.7). Las fechas salen como 'AAAA-MM-DD'.
+export const fichasDe = async (ids) => {
+  if (ids.length === 0) return new Map();
+  const [filas] = await pool.query(
+    `SELECT d.id, d.titulo, d.descripcion, d.observaciones, d.url_dataset, d.tipo_gestion, f.nombre AS frecuencia_nombre,
+            DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') AS ultima_actualizacion,
+            DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento,
+            tp.nombre AS tema_principal, ts.nombre AS tema_secundario,
+            (SELECT GROUP_CONCAT(fo.nombre ORDER BY fo.nombre SEPARATOR ', ')
+               FROM dataset_formatos df JOIN formatos fo ON fo.id = df.formato_id WHERE df.dataset_id = d.id) AS formatos,
+            d.que_se_solicita,
+            a.nombre AS area_nombre, a.area_superior, a.email_principal, a.email_secundario, a.telefono_area, a.celular_area,
+            a.nombre_contacto, a.telefono_contacto, a.email_contacto
+     FROM datasets d
+     JOIN frecuencias f ON f.id = d.frecuencia_id
+     JOIN areas a ON a.id = d.area_id
+     LEFT JOIN temas tp ON tp.id = d.tema_principal_id
+     LEFT JOIN temas ts ON ts.id = d.tema_secundario_id
+     WHERE d.id IN (?)`,
+    [ids]
+  );
+  return new Map(filas.map(f => [f.id, f]));
 };
 
 export const areasDe = async (ids) => {
