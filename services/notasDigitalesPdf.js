@@ -486,8 +486,10 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
     });
 
     doc.moveDown(0.6);
+    // La fecha con espacios que no se cortan: si no entra en el renglón del remitente pasa entera al siguiente
+    // (nunca "2 de noviembre de" / "2026.")
     doc.font(NEGRITA).fontSize(12).text(nota.remitente, MARGENES.left, doc.y, { underline: true, continued: true })
-      .font(NORMAL).text(`, ${nota.fechaLarga}.`, { underline: false });
+      .font(NORMAL).text(`, ${nota.fechaLarga.replace(/ /g, ' ')}.`, { underline: false });
 
     // Firma a la derecha: imagen (si está cargada), nombre y cargo
     const anchoFirma = 200;

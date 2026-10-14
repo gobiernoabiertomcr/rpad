@@ -49,6 +49,16 @@ const nota = (cantidad, cambios = {}) => construirNota({
 const texto = (pdf) => pdf.toString('latin1');
 const paginas = (pdf) => (texto(pdf).match(/\/Type \/Page[^s]/g) || []).length;
 
+describe('renderPdf: fecha del remitente', () => {
+  it('no parte la fecha: "2 de noviembre de 2026." queda entera en un renglón', async () => {
+    for (const fecha of ['2026-11-02', '2026-09-30', '2026-02-01']) {
+      const ultima = lineasPorHoja(await renderPdf(nota(2, { fecha }))).at(-1).map(l => l.replace(/ /g, ' '));
+      const larga = { '2026-11-02': '2 de noviembre de 2026.', '2026-09-30': '30 de septiembre de 2026.', '2026-02-01': '1 de febrero de 2026.' }[fecha];
+      assert.ok(ultima.some(l => l.includes(larga)), `la fecha ${larga} se partió: ${JSON.stringify(ultima.filter(l => /20\d\d|de /.test(l)))}`);
+    }
+  });
+});
+
 describe('renderPdf', () => {
   it('genera un PDF oficio con el número en el título', async () => {
     const pdf = await renderPdf(nota(2));
