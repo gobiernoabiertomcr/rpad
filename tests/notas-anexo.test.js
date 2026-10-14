@@ -1,6 +1,9 @@
 // Anexo de los avisos: una hoja A4 por dataset (spec 6.7)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { construirAnexo } from '../services/notasDigitalesContenido.js';
 import { renderAnexo } from '../services/notasDigitalesAnexo.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
@@ -352,6 +355,41 @@ describe('renderAnexo', () => {
         assert.ok(t.base - 0.207 * t.tamano >= 15 * MM - 0.01 && t.base + 0.718 * t.tamano <= 282 * MM + 0.01, `"${t.texto}" sale de los márgenes`);
       }
     }
+  });
+
+  it('si falta la librería qrcode, los módulos se importan igual (la app arranca) y solo el anexo falla, con un error claro', async () => {
+    // Otro proceso de Node en el que "qrcode" no se puede resolver, como si faltara node_modules/qrcode
+    const gancho = `export const resolve = (especificador, contexto, siguiente) => (especificador === 'qrcode'
+      ? Promise.reject(Object.assign(new Error("Cannot find package 'qrcode'"), { code: 'ERR_MODULE_NOT_FOUND' }))
+      : siguiente(especificador, contexto));`;
+    const codigo = `
+      import { register } from 'node:module';
+      register('data:text/javascript,' + encodeURIComponent(${JSON.stringify(gancho)}));
+      const salida = {};
+      try { await import('qrcode'); salida.qrcode = 'cargó'; } catch { salida.qrcode = 'falta'; }
+      try {
+        await import('./services/notasDigitales.js');
+        const { renderAnexo } = await import('./services/notasDigitalesAnexo.js');
+        const { construirAnexo } = await import('./services/notasDigitalesContenido.js');
+        salida.importa = true;
+        const ficha = { titulo: 'Dataset', tipo_gestion: 'interna', vencimiento: '2026-11-30', url_dataset: 'https://datos.comodoro.gov.ar' };
+        try {
+          await renderAnexo(construirAnexo({ numero: 1, anio: 2026, fecha: '2026-11-02', fichas: [ficha] }));
+          salida.anexo = 'se dibujó';
+        } catch (error) {
+          salida.anexo = error.message;
+        }
+      } catch (error) {
+        salida.importa = error.message;
+      }
+      console.log(JSON.stringify(salida));
+      process.exit(0);`;
+    const raiz = fileURLToPath(new URL('..', import.meta.url));
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', codigo], { cwd: raiz });
+    const salida = JSON.parse(stdout.trim().split('\n').at(-1));
+    assert.equal(salida.qrcode, 'falta', 'el gancho no simuló la falta de qrcode');
+    assert.equal(salida.importa, true, `no se pudieron importar los módulos: ${salida.importa}`);
+    assert.match(salida.anexo, /^No se pudo cargar la librería qrcode, que dibuja el código QR del anexo \(¿falta correr "npm install"\?\)/);
   });
 
   it('con textos larguísimos corta título, qué se solicita, descripción y observaciones con "… (continúa en el portal)"', async () => {

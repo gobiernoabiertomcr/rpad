@@ -1,8 +1,21 @@
 // Anexo de los avisos de Notas Digitales: una hoja A4 por dataset, con un diseño de ficha monocromático.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6.7)
-import QRCode from 'qrcode';
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
+
+// qrcode se carga recién al dibujar el primer anexo, y queda cargado. Si faltara la dependencia (por ejemplo, si no se
+// corrió "npm install" después de subir el código), falla solo el aviso, que queda registrado con su alerta, y no el
+// arranque de toda la app (este módulo llega a app.js por las rutas).
+let QRCode = null;
+const cargarQrcode = async () => {
+  if (!QRCode) {
+    try {
+      QRCode = (await import('qrcode')).default;
+    } catch (error) {
+      throw new Error(`No se pudo cargar la librería qrcode, que dibuja el código QR del anexo (¿falta correr "npm install"?): ${error.message}`);
+    }
+  }
+};
 
 const MM = 72 / 25.4;
 const ANCHO = 210 * MM;
@@ -560,7 +573,12 @@ const dibujarHoja = (doc, anexo, hoja, i, total) => {
   contacto.dibujar(limite - contacto.alto);
 };
 
-export const renderAnexo = (anexo) => new Promise((resolve, reject) => {
+export const renderAnexo = async (anexo) => {
+  await cargarQrcode();
+  return dibujarAnexo(anexo);
+};
+
+const dibujarAnexo = (anexo) => new Promise((resolve, reject) => {
   try {
     // Márgenes de PDFKit en 0: la diagramación es fija y nada se escribe donde PDFKit agregaría una hoja
     const doc = new DocumentoNota({

@@ -219,8 +219,9 @@ Secuencia de despliegue, en este orden:
    Solo completa los datasets que todavía no tienen texto (`que_se_solicita IS NULL`): no pisa un texto ya cargado o aprobado desde RPAD, así que se puede correr también si alguien ya editó alguno.
 5. **Subir el código.**
 6. En **Setup Node.js App**, **Run NPM Install**: hay una dependencia nueva, `qrcode` (el código QR del anexo).
-7. **Restart** de la app.
-8. En **Correos → Vista previa y prueba**, revisar con "Ver PDF" y "Ver anexo" que se vean bien, y **enviar una prueba de un aviso** a las casillas de prueba: tiene que llegar con **2 adjuntos** (`Nota-Digital-PRUEBA.pdf` y `Anexo-Nota-Digital-PRUEBA.pdf`).
+7. **Antes del Restart, verificar que exista la carpeta `node_modules/qrcode`** (en el Administrador de archivos de cPanel, dentro de la carpeta de la app). Si no está, volver a correr Run NPM Install. Sin ella la app arranca igual, pero cada aviso falla con el error "No se pudo cargar la librería qrcode" (queda en Correos → Estado, con su alerta) y no sale.
+8. **Restart** de la app.
+9. En **Correos → Vista previa y prueba**, revisar con "Ver PDF" y "Ver anexo" que se vean bien, y **enviar una prueba de un aviso** a las casillas de prueba: tiene que llegar con **2 adjuntos** (`Nota-Digital-PRUEBA.pdf` y `Anexo-Nota-Digital-PRUEBA.pdf`).
 
 Por qué importa el orden: **las tres migraciones se corren antes de reiniciar con el código nuevo**.
 
