@@ -81,7 +81,7 @@ Para cada gestión, la reiteración se **evalúa una sola vez por mes calendario
 
 Incluye los datasets activos y con frecuencia con días que cumplen **una** de estas dos condiciones:
 1. tienen un **aviso enviado** para su vencimiento actual (eso significa que no se actualizaron) y la fecha de ese aviso es **anterior o igual a hoy − 20 días**. Por ejemplo, los avisos del 13/10/2026 se reiteran el 02/11/2026 y los del 14/10/2026, recién en diciembre;
-2. están **vencidos** (vencimiento < hoy) y **nunca tuvieron aviso** (no prueba) para su vencimiento actual. Entran sin esperar los 20 días, porque ya están atrasados. En la columna "Informado en" dicen **"Sin aviso previo"** y, si los avisaron los emails anteriores, llevan la línea de antecedente (6.4).
+2. están **vencidos** (vencimiento < hoy) y **nunca tuvieron aviso** (no prueba) para su vencimiento actual. Entran sin esperar los 20 días, porque ya están atrasados. En la columna "Informado en" dicen **"Sin aviso previo"** y, si los avisaron los emails anteriores, el antecedente en letra más chica (6.4).
 
 Se agrupan en dos secciones: **próximos a vencer** (vencimiento ≥ hoy) y **vencidos** (vencimiento < hoy). Un dataset vencido se reitera todos los meses hasta que se actualice.
 
@@ -147,12 +147,14 @@ Introducción de cada sección:
 | Última actualización | ✓ | ✓ | `dd/mm/aaaa`, o "—" |
 | Vence / Venció | ✓ | ✓ | `dd/mm/aaaa` |
 | Situación | ✓ | ✓ | "Faltan N días", "Vence hoy" o "Vencido hace N días", calculado a la fecha de la nota |
-| Informado en | | ✓ | `Nota Digital N° 9/26 (02/11/2026)` y, si corresponde, `– reiterado N veces` (reiteraciones anteriores del mismo ciclo). Para un vencido que nunca tuvo aviso (5.3, condición 2): `Sin aviso previo` y, si corresponde, `– reiterado N veces` |
+| Informado en | | ✓ | `Nota Digital N° 9/26 (02/11/2026)` y, si corresponde, `– reiterado N veces` (reiteraciones anteriores del mismo ciclo). Para un vencido que nunca tuvo aviso (5.3, condición 2): `Sin aviso previo` y, si corresponde, `– reiterado N veces`. Si el dataset tiene antecedente de emails anteriores, en la misma celda y con **letra más chica** sigue: `Anteriormente notificado DGMIT por e-mail en {N} oportunidades, entre el {primera} y el {última}` (o `… por e-mail el {fecha}` si fue una sola vez) |
 
-**Antecedente por emails anteriores (en avisos y en las filas "Sin aviso previo" de las reiteraciones).** Si el dataset aparece en `notificaciones_log` en alguno de los siete tipos reemplazados, con `success = 1` y `enviado_at` posterior a su `ultima_actualizacion` (o sin `ultima_actualizacion`), debajo de su fila va:
-> *Antecedente: notificado a la DGMIT por correo electrónico en {N} oportunidades, entre el {primera} y el {última}.*
+**Antecedente por emails anteriores.** Si el dataset aparece en `notificaciones_log` en alguno de los siete tipos reemplazados, con `success = 1` y `enviado_at` posterior a su `ultima_actualizacion` (o sin `ultima_actualizacion`):
+- **en los avisos**, debajo de su fila va, a todo el ancho de la tabla:
+  > *Antecedente: notificado a la DGMIT por correo electrónico en {N} oportunidades, entre el {primera} y el {última}.*
 
-Si N = 1: *"Antecedente: notificado a la DGMIT por correo electrónico el {fecha}."*
+  Si N = 1: *"Antecedente: notificado a la DGMIT por correo electrónico el {fecha}."*
+- **en las reiteraciones** (todas las filas, tengan aviso o no; pedido del usuario el 14/10/2026), va dentro de la celda "Informado en", en letra más chica, después del texto de la nota: por ejemplo, `Nota Digital N° 2/26 (13/10/2026). Anteriormente notificado DGMIT por e-mail en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026`. Las reiteraciones no llevan la fila a todo el ancho.
 
 Los siete emails reemplazados se enviaban a la casilla de la DGMIT, por eso la línea la nombra.
 
