@@ -6,7 +6,10 @@
 -- y aprobados por el Director de Datos Públicos y Comunicación el 14/10/2026.
 -- Requiere migracion-que-se-solicita.sql (la columna). Es la única carga que no pasa por la doble
 -- verificación, porque inicializa un campo nuevo; después cada cambio se propone y se aprueba en RPAD.
--- Solo completa los datasets que todavía no tienen texto: no pisa un cambio ya aprobado en RPAD.
+-- Solo completa los datasets que todavía no tienen texto: no pisa un texto cargado o aprobado en RPAD.
+-- SE CORRE UNA SOLA VEZ, durante el despliegue de la segunda entrega de Notas Digitales. No volver a correrla
+-- más adelante: un texto que un admin vació con un cambio aprobado también queda en NULL, y esta carga lo volvería
+-- a llenar sin doble verificación.
 -- Ejecutar: mysql -u USUARIO -p NOMBRE_BASE < migracion-que-se-solicita-datos.sql
 -- =====================================================
 

@@ -45,7 +45,7 @@ Cada dataset tiene un campo opcional **"Qué se solicita"**: qué información c
 - **Dónde se edita:** en el formulario del dataset del panel de administración (`admin.html`).
 - **Doble verificación:** es un dato del dataset como los demás. Quien lo edita lo propone y otro admin lo aprueba o rechaza; al revisar el cambio se ve el texto anterior y el nuevo. Un campo vacío queda sin texto (`NULL`).
 - **Dónde se muestra:** en la página pública del dataset (`dataset.html`), en el recuadro "Qué se solicita" (si el dataset no tiene texto, no se muestra), y en el **anexo** que acompaña a los avisos de las Notas Digitales. Si un dataset no lo tiene cargado, el anexo usa un texto genérico.
-- **Carga inicial:** la migración `database/updates/migracion-que-se-solicita-datos.sql` carga el texto de los 80 datasets activos (ver [Segunda entrega de Notas Digitales](#segunda-entrega-de-notas-digitales)).
+- **Carga inicial:** la migración `database/updates/migracion-que-se-solicita-datos.sql` carga el texto de los 80 datasets activos (ver [Segunda entrega de Notas Digitales](#segunda-entrega-de-notas-digitales)). Se corre una sola vez, en ese despliegue: después, cada texto se cambia solo con doble verificación.
 
 ## Estructura del proyecto
 
@@ -217,6 +217,7 @@ Secuencia de despliegue, en este orden:
    mysql -u USUARIO -p NOMBRE_BASE < database/updates/migracion-que-se-solicita-datos.sql
    ```
    Solo completa los datasets que todavía no tienen texto (`que_se_solicita IS NULL`): no pisa un texto ya cargado o aprobado desde RPAD, así que se puede correr también si alguien ya editó alguno.
+   ⚠️ **Se corre una sola vez, durante este despliegue.** No volver a correrla meses después: un texto que un admin vació con un cambio aprobado también queda en `NULL`, y la carga lo volvería a llenar sin doble verificación.
 5. **Subir el código.**
 6. En **Setup Node.js App**, **Run NPM Install**: hay una dependencia nueva, `qrcode` (el código QR del anexo).
 7. **Antes del Restart, verificar que exista la carpeta `node_modules/qrcode`** (en el Administrador de archivos de cPanel, dentro de la carpeta de la app). Si no está, volver a correr Run NPM Install. Sin ella la app arranca igual, pero cada aviso falla con el error "No se pudo cargar la librería qrcode" (queda en Correos → Estado, con su alerta) y no sale.
@@ -229,7 +230,7 @@ Por qué importa el orden: **las tres migraciones se corren antes de reiniciar c
 - Sin la columna `que_se_solicita` (paso 3), falla aprobar cambios sobre los datasets.
 - Si la carga inicial (paso 4) se corre después de que alguien aprobó una edición de "Qué se solicita", no la pisa. Es lo esperado.
 
-En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin → Importar**, con la base seleccionada y el archivo en UTF-8, en el mismo orden. Los pasos 2 y 3 agregan una columna: si se corren dos veces, la segunda falla con "Duplicate column name" y no cambia nada. El paso 4 se puede repetir sin problema.
+En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin → Importar**, con la base seleccionada y el archivo en UTF-8, en el mismo orden. Los pasos 2 y 3 agregan una columna: si se corren dos veces, la segunda falla con "Duplicate column name" y no cambia nada. El paso 4 se puede repetir sin problema dentro de este mismo despliegue (por ejemplo, si se cortó a mitad); después ya no se vuelve a correr.
 
 ### Migración desde v1.4.0 a v1.5.0
 
