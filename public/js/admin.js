@@ -437,6 +437,7 @@ function openModal(dataset = null, andinoData = null) {
     document.getElementById('proxima_actualizacion').value = dataset.proxima_actualizacion ? dataset.proxima_actualizacion.split('T')[0] : '';
     document.getElementById('url_dataset').value = dataset.url_dataset || '';
     document.getElementById('observaciones').value = dataset.observaciones || '';
+    document.getElementById('que_se_solicita').value = dataset.que_se_solicita || '';
     document.getElementById('tipo_gestion').value = dataset.tipo_gestion || '';
     
     // Cargar formatos existentes
@@ -658,6 +659,7 @@ document.getElementById('dataset-form').addEventListener('submit', async (e) => 
     proxima_actualizacion: document.getElementById('proxima_actualizacion').value || null,
     url_dataset: document.getElementById('url_dataset').value || null,
     observaciones: document.getElementById('observaciones').value || null,
+    que_se_solicita: document.getElementById('que_se_solicita').value.trim() || null,
     tipo_gestion: document.getElementById('tipo_gestion').value
   };
 

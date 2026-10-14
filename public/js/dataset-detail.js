@@ -59,6 +59,12 @@ function renderDataset(d) {
   // Descripción
   document.getElementById('dataset-descripcion').textContent = d.descripcion || 'Sin descripción disponible';
 
+  // Qué se solicita (textContent: es texto cargado por los administradores)
+  if (d.que_se_solicita) {
+    document.getElementById('que-se-solicita-card').classList.remove('hidden');
+    document.getElementById('dataset-que-se-solicita').textContent = d.que_se_solicita;
+  }
+
   // Observaciones
   if (d.observaciones) {
     document.getElementById('observaciones-card').classList.remove('hidden');

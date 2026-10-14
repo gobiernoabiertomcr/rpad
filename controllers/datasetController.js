@@ -29,6 +29,15 @@ const normalizarValor = (valor) => {
   return String(valor);
 };
 
+// Texto opcional: sin espacios en los extremos; vacío o en blanco queda en NULL
+const normalizarTextoOpcional = (valor) => {
+  if (valor === null || valor === undefined) return null;
+  return valor.trim() || null;
+};
+
+// El texto opcional puede faltar, venir null o ser un string (cualquier otro tipo es un error del cliente)
+const esTextoOpcionalValido = (valor) => valor === undefined || valor === null || typeof valor === 'string';
+
 /**
  * Funcion auxiliar: Comparar dos objetos para detectar si hay cambios reales
  * Retorna true si hay al menos un cambio
@@ -37,7 +46,7 @@ const hayCambiosReales = (antes, despues) => {
   const camposComparar = [
     'titulo', 'descripcion', 'area_id', 'frecuencia_id',
     'tema_principal_id', 'tema_secundario_id', 'tipo_gestion',
-    'ultima_actualizacion', 'proxima_actualizacion', 'url_dataset', 'observaciones'
+    'ultima_actualizacion', 'proxima_actualizacion', 'url_dataset', 'observaciones', 'que_se_solicita'
   ];
 
   // Comparar campos simples
@@ -243,6 +252,13 @@ export const createDataset = async (req, res) => {
       });
     }
 
+    if (!esTextoOpcionalValido(data.que_se_solicita)) {
+      return res.status(400).json({
+        success: false,
+        error: 'que_se_solicita debe ser un texto'
+      });
+    }
+
     // Extraer IDs de formatos (pueden venir como objetos o números)
     const formatoIds = data.formatos.map(f => typeof f === 'object' ? f.id : f);
     
@@ -271,6 +287,7 @@ export const createDataset = async (req, res) => {
       tema_secundario_id: data.tema_secundario_id || null,
       url_dataset: data.url_dataset || null,
       observaciones: data.observaciones || null,
+      que_se_solicita: normalizarTextoOpcional(data.que_se_solicita),
       tipo_gestion: data.tipo_gestion,
       formatos: formatoIds
     };
@@ -326,6 +343,13 @@ export const updateDataset = async (req, res) => {
       });
     }
 
+    if (!esTextoOpcionalValido(data.que_se_solicita)) {
+      return res.status(400).json({
+        success: false,
+        error: 'que_se_solicita debe ser un texto'
+      });
+    }
+
     // Validar formatos si se proporcionan
     let formatoIds = null;
     if (data.formatos !== undefined) {
@@ -372,6 +396,7 @@ export const updateDataset = async (req, res) => {
       tema_secundario_id: datasetActual.tema_secundario_id,
       url_dataset: datasetActual.url_dataset,
       observaciones: datasetActual.observaciones,
+      que_se_solicita: datasetActual.que_se_solicita,
       tipo_gestion: datasetActual.tipo_gestion,
       formatos: formatosActuales.map(f => f.formato_id)
     };
@@ -388,6 +413,7 @@ export const updateDataset = async (req, res) => {
       tema_secundario_id: data.tema_secundario_id !== undefined ? (data.tema_secundario_id || null) : datasetActual.tema_secundario_id,
       url_dataset: data.url_dataset !== undefined ? (data.url_dataset || null) : datasetActual.url_dataset,
       observaciones: data.observaciones !== undefined ? (data.observaciones || null) : datasetActual.observaciones,
+      que_se_solicita: data.que_se_solicita !== undefined ? normalizarTextoOpcional(data.que_se_solicita) : datasetActual.que_se_solicita,
       tipo_gestion: data.tipo_gestion !== undefined ? data.tipo_gestion : datasetActual.tipo_gestion,
       formatos: formatoIds !== null ? formatoIds : formatosActuales.map(f => f.formato_id)
     };

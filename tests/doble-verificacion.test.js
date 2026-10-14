@@ -156,3 +156,118 @@ describe('baja y registro de actualización', () => {
     assert.equal(fechas.dias, fechas.dias_frecuencia);
   });
 });
+
+describe('campo "Qué se solicita"', () => {
+  const TEXTO = 'El listado completo de registros del período, con las mismas columnas que el archivo del portal, en CSV.';
+  const solicitaEnDb = async (id) => (await datasetEnDb(id)).que_se_solicita;
+
+  // Crea un dataset de prueba ya aprobado, con el texto indicado en el alta
+  const crearConTexto = async (titulo, texto) => {
+    const alta = await api.post('/datasets', { ...datosAlta(titulo), que_se_solicita: texto }, { token: usuarios.adminA.token });
+    assert.equal(alta.status, 201);
+    const aprobacion = await aprobar(alta.body.data.cambio_pendiente_id, usuarios.adminB);
+    assert.equal(aprobacion.status, 200);
+    return aprobacion.body.data.dataset_id;
+  };
+
+  it('crear un dataset con el campo lo guarda al aprobarse, no antes', async () => {
+    const titulo = `${PREFIJO_TEST} alta con qué se solicita`;
+    const alta = await api.post('/datasets', { ...datosAlta('alta con qué se solicita'), que_se_solicita: TEXTO }, { token: usuarios.adminA.token });
+    assert.equal(alta.status, 201);
+    assert.equal((await query('SELECT id FROM datasets WHERE titulo = ?', [titulo])).length, 0);
+
+    const aprobacion = await aprobar(alta.body.data.cambio_pendiente_id, usuarios.adminB);
+    assert.equal(aprobacion.status, 200);
+    assert.equal(await solicitaEnDb(aprobacion.body.data.dataset_id), TEXTO);
+  });
+
+  it('un dataset sin el campo queda con NULL', async () => {
+    const id = await crearDatasetAprobado('alta sin qué se solicita');
+    assert.equal(await solicitaEnDb(id), null);
+  });
+
+  it('un texto vacío o solo de espacios queda en NULL al crear y se guarda sin espacios sobrantes', async () => {
+    assert.equal(await solicitaEnDb(await crearConTexto('alta vacía', '')), null);
+    assert.equal(await solicitaEnDb(await crearConTexto('alta en blanco', ' \n\t  ')), null);
+    assert.equal(await solicitaEnDb(await crearConTexto('alta con márgenes', `  ${TEXTO}\n`)), TEXTO);
+  });
+
+  it('proponer una edición no modifica el dataset hasta que otro admin la aprueba', async () => {
+    const id = await crearDatasetAprobado('edición de qué se solicita');
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: TEXTO }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 200);
+    assert.equal(await solicitaEnDb(id), null);
+
+    // Mientras está pendiente, el detalle público sigue sin el texto
+    assert.equal((await api.get(`/datasets/${id}`)).body.data.que_se_solicita, null);
+
+    assert.equal((await aprobar(edicion.body.data.cambio_pendiente_id, usuarios.adminB)).status, 200);
+    assert.equal(await solicitaEnDb(id), TEXTO);
+  });
+
+  it('la revisión muestra el cambio de "Qué se solicita" con el antes y el después', async () => {
+    const id = await crearConTexto('revisión de qué se solicita', 'Texto anterior.');
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: TEXTO }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 200);
+
+    const detalle = await api.get(`/cambios-pendientes/${edicion.body.data.cambio_pendiente_id}`, { token: usuarios.adminB.token });
+    assert.equal(detalle.status, 200);
+    assert.deepEqual(detalle.body.data.campos_modificados, [{ campo: 'Qué se solicita', antes: 'Texto anterior.', despues: TEXTO }]);
+  });
+
+  it('rechazar la edición deja el texto como estaba', async () => {
+    const id = await crearConTexto('rechazo de qué se solicita', 'Texto vigente.');
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: TEXTO }, { token: usuarios.adminA.token });
+    assert.equal((await rechazar(edicion.body.data.cambio_pendiente_id, usuarios.adminB)).status, 200);
+    assert.equal(await solicitaEnDb(id), 'Texto vigente.');
+  });
+
+  it('editar otros campos conserva el texto', async () => {
+    const id = await crearConTexto('conserva qué se solicita', TEXTO);
+    const edicion = await api.put(`/datasets/${id}`, { titulo: `${PREFIJO_TEST} conserva v2` }, { token: usuarios.adminA.token });
+    assert.equal((await aprobar(edicion.body.data.cambio_pendiente_id, usuarios.adminB)).status, 200);
+    assert.equal(await solicitaEnDb(id), TEXTO);
+  });
+
+  it('vaciar el texto en una edición lo deja en NULL al aprobarse', async () => {
+    for (const [nombre, vacio] of [['cadena vacía', ''], ['solo espacios', '   \n '], ['null', null]]) {
+      const id = await crearConTexto(`vaciado ${nombre}`, TEXTO);
+      const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: vacio }, { token: usuarios.adminA.token });
+      assert.equal(edicion.status, 200, nombre);
+      assert.equal(await solicitaEnDb(id), TEXTO, `${nombre}: no cambia antes de aprobar`);
+      assert.equal((await aprobar(edicion.body.data.cambio_pendiente_id, usuarios.adminB)).status, 200, nombre);
+      assert.equal(await solicitaEnDb(id), null, nombre);
+    }
+  });
+
+  it('un texto en blanco sobre un dataset sin texto no cuenta como cambio', async () => {
+    const id = await crearDatasetAprobado('en blanco sin cambio');
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: '  ' }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 400);
+    assert.equal((await query('SELECT id FROM cambios_pendientes WHERE dataset_id = ? AND estado = ?', [id, 'pendiente'])).length, 0);
+  });
+
+  it('con una edición pendiente el dataset sigue bloqueado y el texto no se pisa', async () => {
+    const id = await crearConTexto('bloqueo de qué se solicita', 'Texto vigente.');
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: TEXTO }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 200);
+    const otra = await api.put(`/datasets/${id}`, { que_se_solicita: 'Otro texto.' }, { token: usuarios.adminB.token });
+    assert.equal(otra.status, 409);
+    assert.equal(await solicitaEnDb(id), 'Texto vigente.');
+  });
+
+  it('rechaza un valor que no es texto', async () => {
+    const alta = await api.post('/datasets', { ...datosAlta('alta inválida'), que_se_solicita: { a: 1 } }, { token: usuarios.adminA.token });
+    assert.equal(alta.status, 400);
+    const id = await crearDatasetAprobado('edición inválida');
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: 42 }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 400);
+  });
+
+  it('el detalle público del dataset lo devuelve, sin iniciar sesión', async () => {
+    const id = await crearConTexto('público con qué se solicita', TEXTO);
+    const res = await api.get(`/datasets/${id}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.que_se_solicita, TEXTO);
+  });
+});

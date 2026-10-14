@@ -72,6 +72,7 @@ const calcularCambios = (antes, despues) => {
     { key: 'ultima_actualizacion', label: 'Ultima Actualizacion' },
     { key: 'proxima_actualizacion', label: 'Proxima Actualizacion' },
     { key: 'url_dataset', label: 'URL en Portal' },
+    { key: 'que_se_solicita', label: 'Qué se solicita' },
     { key: 'formatos_nombres', label: 'Formatos', keyAntes: 'formatos', keyDespues: 'formatos' }
   ];
   
@@ -410,8 +411,8 @@ export const aprobarCambio = async (req, res) => {
           titulo, descripcion, area_id, frecuencia_id, 
           ultima_actualizacion, proxima_actualizacion, 
           tema_principal_id, tema_secundario_id, 
-          url_dataset, observaciones, tipo_gestion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          url_dataset, observaciones, que_se_solicita, tipo_gestion
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           datosNuevos.titulo,
           datosNuevos.descripcion || null,
@@ -423,6 +424,7 @@ export const aprobarCambio = async (req, res) => {
           datosNuevos.tema_secundario_id || null,
           datosNuevos.url_dataset || null,
           datosNuevos.observaciones || null,
+          datosNuevos.que_se_solicita || null,
           datosNuevos.tipo_gestion
         ]
       );
@@ -448,7 +450,7 @@ export const aprobarCambio = async (req, res) => {
         'titulo', 'descripcion', 'area_id', 'frecuencia_id',
         'ultima_actualizacion', 'proxima_actualizacion',
         'tema_principal_id', 'tema_secundario_id',
-        'url_dataset', 'observaciones', 'tipo_gestion'
+        'url_dataset', 'observaciones', 'que_se_solicita', 'tipo_gestion'
       ];
 
       campos.forEach(campo => {

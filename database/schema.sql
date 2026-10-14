@@ -102,6 +102,7 @@ CREATE TABLE `datasets` (
   `tema_secundario_id` int(11) DEFAULT NULL,
   `url_dataset` varchar(500) DEFAULT NULL,
   `observaciones` text DEFAULT NULL,
+  `que_se_solicita` text DEFAULT NULL,
   `tipo_gestion` enum('interna','externa') NOT NULL DEFAULT 'externa',
   `activo` tinyint(1) DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),

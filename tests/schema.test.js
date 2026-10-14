@@ -53,6 +53,13 @@ describe('database/schema.sql', () => {
     assert.deepEqual(obtenido, esperado);
   });
 
+  it('el dataset tiene la columna que_se_solicita (TEXT NULL), justo después de observaciones', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('datasets.'));
+    const posicion = (columna) => lista.findIndex(c => c.startsWith(`datasets.${columna} `));
+    assert.ok(lista.includes('datasets.que_se_solicita text null=YES default=NULL key='), lista.join('\n'));
+    assert.equal(posicion('que_se_solicita'), posicion('observaciones') + 1, lista.join('\n'));
+  });
+
   it('crea un usuario nuevo con rol lector por defecto', async () => {
     const [[rol]] = await root.query(
       `SELECT COLUMN_DEFAULT AS defecto FROM information_schema.COLUMNS
