@@ -318,16 +318,6 @@ function generarNotaInterna(fecha, numero, area, datasets) {
         underline: {}
       }),
       new TextRun({ 
-        text: ', o vía WhatsApp al ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: '+54 9 2974 05-6894',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
         text: '. Los mismos, una vez recibidos, serán publicados en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza, garantizando su disponibilidad en formatos abiertos y reutilizables para generar valor económico y social.',
         font: 'Arial', 
         size: 24 
@@ -538,16 +528,6 @@ function generarNotaExterna(fecha, numero, area, datasets) {
         underline: {}
       }),
       new TextRun({ 
-        text: ', o vía WhatsApp al ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: '+54 9 2974 05-6894',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
         text: '.',
         font: 'Arial', 
         size: 24 
@@ -753,16 +733,6 @@ function generarNotaEscalonada(fecha, numero, area, datasets) {
         font: 'Arial', 
         size: 24,
         underline: {}
-      }),
-      new TextRun({ 
-        text: ', o vía WhatsApp al ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: '+54 9 2974 05-6894',
-        font: 'Arial', 
-        size: 24 
       }),
       new TextRun({ 
         text: '. Los mismos, una vez recibidos, serán publicados en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza, garantizando su disponibilidad en formatos abiertos y reutilizables para generar valor económico y social.',

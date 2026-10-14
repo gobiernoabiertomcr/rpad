@@ -33,6 +33,11 @@ describe('previews', () => {
     });
   }
 
+  it('el aviso a las áreas no menciona el WhatsApp', async () => {
+    const res = await api.get('/notificaciones/preview/area-aviso-40', { token: usuarios.adminA.token });
+    assert.doesNotMatch(res.body, /whatsapp|405-?6894/i);
+  });
+
   it('los siete avisos reemplazados ya no tienen vista previa', async () => {
     for (const tipo of ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido']) {
       const res = await api.get(`/notificaciones/preview/${tipo}`, { token: usuarios.adminA.token });

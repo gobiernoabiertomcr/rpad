@@ -110,7 +110,6 @@ const areaAviso40diasTemplate = (areaData) => {
                     <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">Dirección de Datos Públicos y Comunicación</p>
                     <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 13px;">Dirección General de Modernización e Investigación Territorial</p>
                     <p style="margin: 12px 0 0 0; color: ${COLORS.muted}; font-size: 13px;">
-                      📱 Whatsapp: 297 4056894<br>
                       📧 E-mail: <a href="mailto:datospublicos@comodoro.gov.ar" style="color: ${COLORS.primary}; text-decoration: none;">datospublicos@comodoro.gov.ar</a>
                     </p>
                   </td>
