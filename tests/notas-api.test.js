@@ -454,6 +454,8 @@ describe('libro', () => {
 
     const filtrada = await api.get(`/notificaciones/notas-digitales?dataset_id=${incluido}`, comoAdmin());
     assert.equal(filtrada.body.data[0].seccion_dataset, 'proximo');
+    // Con el filtro por dataset la columna opcional va después de tiene_anexo: sigue llegando
+    assert.strictEqual(filtrada.body.data[0].tiene_anexo, true);
     assert.equal((await api.get(`/notificaciones/notas-digitales?dataset_id=${otro}`, comoAdmin())).body.data.length, 0);
   });
 

@@ -321,26 +321,35 @@ function verPdfDeVistaPrevia() {
   });
 }
 
-// El anexo solo existe en los avisos: con una reiteración el botón queda deshabilitado
+// Si hay un pedido del anexo en curso: mientras tanto el botón sigue deshabilitado aunque cambie el tipo
+let anexoEnCurso = false;
+
+// El anexo solo existe en los avisos: con una reiteración (o con un pedido en curso) el botón queda deshabilitado
 function actualizarBotonAnexo() {
   const esAviso = document.getElementById('preview-tipo').value === 'aviso';
   const boton = document.getElementById('btn-preview-anexo');
-  boton.disabled = !esAviso;
+  boton.disabled = !esAviso || anexoEnCurso;
   boton.title = esAviso ? '' : 'Solo los avisos llevan anexo';
 }
 
 // El anexo del aviso de la vista previa (N° XX) para la gestión elegida
 async function verAnexoDeVistaPrevia() {
-  await conBotonBloqueado(document.getElementById('btn-preview-anexo'), async () => {
-    const { gestion } = tipoYGestion();
-    try {
-      descargarBlob(await API.previewNotaAnexo(gestion), `Anexo-vista-previa-${gestion}.pdf`);
-    } catch (error) {
-      avisar(error.message, 'error');
-    }
-  });
-  // conBotonBloqueado lo habilita al terminar: si mientras tanto se eligió una reiteración, vuelve a quedar deshabilitado
-  actualizarBotonAnexo();
+  if (anexoEnCurso) return;
+  anexoEnCurso = true;
+  try {
+    await conBotonBloqueado(document.getElementById('btn-preview-anexo'), async () => {
+      const { gestion } = tipoYGestion();
+      try {
+        descargarBlob(await API.previewNotaAnexo(gestion), `Anexo-vista-previa-${gestion}.pdf`);
+      } catch (error) {
+        avisar(error.message, 'error');
+      }
+    });
+  } finally {
+    anexoEnCurso = false;
+    // conBotonBloqueado lo habilita al terminar: si mientras tanto se eligió una reiteración, vuelve a quedar deshabilitado
+    actualizarBotonAnexo();
+  }
 }
 
 async function enviarmePrueba() {
