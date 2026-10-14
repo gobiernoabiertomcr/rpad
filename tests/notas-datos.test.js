@@ -301,7 +301,7 @@ describe('fichasDe', () => {
     const area = await crearArea({
       nombre: 'Área de la ficha', area_superior: 'Secretaría de la ficha', email_principal: 'ficha@rpad.test',
       email_secundario: 'ficha2@rpad.test', telefono_area: '297 400-1111', celular_area: '297 15 400-2222',
-      nombre_contacto: 'Ana Pérez', telefono_contacto: '297 400-3333', email_contacto: 'ana@rpad.test'
+      nombre_contacto: 'Persona de contacto', telefono_contacto: '297 400-3333', email_contacto: 'contacto@rpad.test'
     });
     const id = await crearDataset({
       titulo: 'Dataset con ficha', gestion: 'externa', vencimiento: '2026-11-30', ultima: '2025-11-30', areaId: area,
@@ -328,7 +328,7 @@ describe('fichasDe', () => {
       que_se_solicita: 'Planilla con los registros del año.',
       area_nombre: 'Área de la ficha', area_superior: 'Secretaría de la ficha', email_principal: 'ficha@rpad.test',
       email_secundario: 'ficha2@rpad.test', telefono_area: '297 400-1111', celular_area: '297 15 400-2222',
-      nombre_contacto: 'Ana Pérez', telefono_contacto: '297 400-3333', email_contacto: 'ana@rpad.test'
+      nombre_contacto: 'Persona de contacto', telefono_contacto: '297 400-3333', email_contacto: 'contacto@rpad.test'
     });
   });
 

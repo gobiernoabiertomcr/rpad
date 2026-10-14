@@ -153,7 +153,7 @@ describe('configuración', () => {
     const NFD = (texto) => texto.normalize('NFD');
     const columnas = 'SELECT membrete_pie, firma_nombre, firma_cargo, linea_cc_interna, linea_cc_externa FROM notas_digitales_config WHERE id = 1';
     const nfc = {
-      membrete_pie: 'Gestión Comodoro Rivadavia – Atención al vecino', firma_nombre: 'José Pérez', firma_cargo: 'Dirección de Datos',
+      membrete_pie: 'Gestión Comodoro Rivadavia – Atención al vecino', firma_nombre: 'Nombre de la Firma Pública', firma_cargo: 'Dirección de Datos',
       linea_cc_interna: 'CC. Dirección de Investigación', linea_cc_externa: 'CC. Dirección Administrativa'
     };
     const enviado = Object.fromEntries(Object.entries(nfc).map(([campo, texto]) => [campo, NFD(texto)]));

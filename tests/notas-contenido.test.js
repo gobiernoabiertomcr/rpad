@@ -165,14 +165,14 @@ describe('reiteración: antecedente en "Informado en"', () => {
 });
 
 describe('contactos', () => {
-  const area = { id: 10, nombre: 'Área Uno', area_superior: 'Secretaría X', email_principal: 'uno@comodoro.gov.ar',
+  const area = { id: 10, nombre: 'Área Uno', area_superior: 'Secretaría X', email_principal: 'uno@ejemplo.gov.ar',
     email_secundario: null, telefono_area: '', celular_area: null, nombre_contacto: 'Persona', telefono_contacto: null, email_contacto: null };
 
   it('una entrada por área en la gestión externa, sin campos vacíos', () => {
     const externa = nota({ gestion: 'externa', datasets: [dataset(), dataset({ id: 2 })], areas: [area] });
     assert.deepEqual(externa.contactos, [{
       nombre: 'Área Uno',
-      lineas: ['Depende de: Secretaría X', 'Email: uno@comodoro.gov.ar', 'Persona de contacto: Persona']
+      lineas: ['Depende de: Secretaría X', 'Email: uno@ejemplo.gov.ar', 'Persona de contacto: Persona']
     }]);
   });
 
@@ -226,12 +226,12 @@ describe('HTML', () => {
 
 describe('texto plano', () => {
   it('lleva los mismos datos que el HTML', () => {
-    const texto = renderTexto(nota({ gestion: 'externa', areas: [{ id: 10, nombre: 'Área Uno', email_principal: 'uno@comodoro.gov.ar' }] }));
+    const texto = renderTexto(nota({ gestion: 'externa', areas: [{ id: 10, nombre: 'Área Uno', email_principal: 'uno@ejemplo.gov.ar' }] }));
     assert.ok(texto.startsWith(`SE ADJUNTAN NOTA Y ANEXO EN PDF\n\nREF.: "${REF}"`));
     assert.ok(texto.includes('Nota Digital N° 12/26'));
     assert.ok(texto.includes('- Dataset A (https://datos.comodoro.gov.ar/dataset/a)'));
     assert.ok(texto.includes('    Situación: Faltan 59 días'));
-    assert.ok(texto.includes('    Email: uno@comodoro.gov.ar'));
+    assert.ok(texto.includes('    Email: uno@ejemplo.gov.ar'));
     assert.ok(texto.trimEnd().endsWith('CC. Dir. Administrativa'));
   });
 });

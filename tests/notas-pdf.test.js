@@ -393,11 +393,11 @@ describe('renderPdf: texto que Helvetica puede escribir', () => {
     const n = nota(1, {
       datasets: [{ ...dataset(1), area_nombre: NFD('Área ☎ Norte') }],
       areas: [{ id: 1, nombre: NFD('Área ☎ Norte'), email_principal: 'area@rpad.test', telefono_area: '☎ 297 400-0000\t(int. 12)' }],
-      config: { ...config, firma_nombre: NFD('José Pérez'), firma_cargo: 'Director → Datos', linea_cc_externa: NFD('CC. Dirección ✉ Administrativa') }
+      config: { ...config, firma_nombre: NFD('Nombre de la Firma Pública'), firma_cargo: 'Director → Datos', linea_cc_externa: NFD('CC. Dirección ✉ Administrativa') }
     });
     const lineas = lineasPorHoja(await renderPdf(n, { firmaImagen: PNG, membretePie: 'Pie ✉ correo' })).flat();
     const todo = lineas.join(' ');
-    for (const esperado of ['Área ? Norte', '? 297 400-0000 (int. 12)', 'José Pérez', 'Director ? Datos', 'CC. Dirección ? Administrativa', 'Pie ? correo']) {
+    for (const esperado of ['Área ? Norte', '? 297 400-0000 (int. 12)', 'Nombre de la Firma Pública', 'Director ? Datos', 'CC. Dirección ? Administrativa', 'Pie ? correo']) {
       assert.ok(todo.includes(esperado), `falta "${esperado}": ${lineas.join(' | ')}`);
     }
     assert.ok(lineas.every(limpia), lineas.filter(l => !limpia(l)).join(' | '));

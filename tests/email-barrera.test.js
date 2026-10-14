@@ -72,7 +72,7 @@ describe('sendEmail', () => {
     process.env.EMAIL_SOLO_A = 'permitida@rpad.test,segunda@rpad.test';
     const resultado = await email.sendEmail({
       subject: 'Barrera', html: '<p>x</p>',
-      to: ['permitida@rpad.test', 'real@comodoro.gov.ar'], cc: 'otra@comodoro.gov.ar', bcc: 'segunda@rpad.test'
+      to: ['permitida@rpad.test', 'real@ejemplo.gov.ar'], cc: 'otra@ejemplo.gov.ar', bcc: 'segunda@rpad.test'
     });
     assert.equal(resultado.success, true);
     const [mensaje] = await mailpit.mensajes();
@@ -83,14 +83,14 @@ describe('sendEmail', () => {
 
   it('con EMAIL_SOLO_A no envía nada si ningún destinatario está permitido', async () => {
     process.env.EMAIL_SOLO_A = 'permitida@rpad.test';
-    const resultado = await email.sendEmail({ subject: 'Bloqueado', html: '<p>x</p>', to: 'real@comodoro.gov.ar' });
+    const resultado = await email.sendEmail({ subject: 'Bloqueado', html: '<p>x</p>', to: 'real@ejemplo.gov.ar' });
     assert.deepEqual(resultado, { success: false, error: 'Bloqueado por EMAIL_SOLO_A', bloqueado: true });
     assert.equal((await mailpit.mensajes()).length, 0);
   });
 
   it('también filtra los emails a áreas', async () => {
     process.env.EMAIL_SOLO_A = 'permitida@rpad.test';
-    const resultado = await email.sendEmailToArea({ subject: 'Área', html: '<p>x</p>', to: ['area@comodoro.gov.ar'] });
+    const resultado = await email.sendEmailToArea({ subject: 'Área', html: '<p>x</p>', to: ['area@ejemplo.gov.ar'] });
     assert.equal(resultado.success, false);
     assert.equal((await mailpit.mensajes()).length, 0);
   });

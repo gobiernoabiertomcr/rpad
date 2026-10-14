@@ -32,7 +32,7 @@ const fichaReal = (cambios = {}) => ficha({
   descripcion: 'Listado de las áreas municipales con funciones específicas en materia de género y diversidad, con su dependencia jerárquica, dirección, teléfono, correo electrónico y horario de atención. Incluye las oficinas de atención a personas en situación de violencia por motivos de género y los espacios de articulación con organizaciones de la sociedad civil, con su ubicación georreferenciada en el ejido municipal.',
   observaciones: 'Las coordenadas corresponden al relevamiento municipal de marzo de 2024.',
   que_se_solicita: SOLICITA, area_superior: DEPENDE_REAL, tema_secundario: 'Gobierno',
-  nombre_contacto: 'Laura Gómez', email_contacto: 'lgomez@ejemplo.gov.ar', ...cambios
+  nombre_contacto: 'Persona de contacto', email_contacto: 'contacto@ejemplo.gov.ar', ...cambios
 });
 
 describe('construirAnexo', () => {
@@ -174,10 +174,10 @@ const fichaLarguisima = (cambios = {}) => ficha({
   tema_secundario: 'Gobierno abierto, transparencia activa, participación ciudadana y rendición de cuentas',
   frecuencia_nombre: 'Trimestralmente o cuando haya cambios relevantes en la normativa',
   url_dataset: `https://datos.comodoro.gov.ar/dataset/${'conjunto-de-datos-con-nombre-muy-largo-'.repeat(4)}`,
-  email_principal: 'direccion.general.de.ambiente.y.desarrollo.sustentable@comodoro.gov.ar',
-  email_secundario: 'mesa.de.entradas.de.la.secretaria.de.ambiente@comodoro.gov.ar', celular_area: '297 400-0001',
-  nombre_contacto: 'María de los Ángeles Fernández Rodríguez de la Fuente', telefono_contacto: '297 400-0002 / 297 400-0003 interno 1234',
-  email_contacto: 'maria.de.los.angeles.fernandez.rodriguez@comodoro.gov.ar', ...cambios
+  email_principal: 'direccion.general.de.ambiente.y.desarrollo.sustentable@ejemplo.gov.ar',
+  email_secundario: 'mesa.de.entradas.de.la.secretaria.de.ambiente@ejemplo.gov.ar', celular_area: '297 400-0001',
+  nombre_contacto: 'Persona de contacto con un nombre larguísimo de prueba', telefono_contacto: '297 400-0002 / 297 400-0003 interno 1234',
+  email_contacto: 'persona.de.contacto.con.un.nombre.larguisimo@ejemplo.gov.ar', ...cambios
 });
 
 describe('renderAnexo', () => {
