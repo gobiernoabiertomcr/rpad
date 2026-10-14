@@ -21,39 +21,39 @@ const COLOR = {
   tinta: '#1F2933', gris: '#52606D', rotulo: '#7B8794', grisClaro: '#9AA5B1', linea: '#D9DEE3', fondo: '#F3F5F8',
   acento: '#3E6A99', acentoSuave: '#E4ECF5', blanco: '#FFFFFF'
 };
+// Cortes: los textos largos (título, qué se solicita, descripción, observaciones) remiten al portal; los valores
+// cortos (ficha y contacto) terminan en "…"
 const CORTE = '… (continúa en el portal)';
+const PUNTOS = '…';
+// Letra mínima legible (spec 6.7)
+const MINIMO = 8;
 // Helvetica (regular y negrita): la línea de ascendentes (y de mayúsculas) está a 0,718 em sobre la línea de base
 // y la de descendentes, a 0,207 em debajo. PDFKit ubica el texto por el borde superior de la línea.
 const ASCENDENTE = 0.718;
 const DESCENDENTE = 0.207;
 
-// Separaciones verticales entre las partes de la hoja
-const DESPUES_ENCABEZADO = 20;
-const ANTES_LINEA_DE_TIEMPO = 20;
-const ANTES_FICHA = 20;
-const ANTES_TEXTOS = 16;
+// Perfiles tipográficos, del más generoso al más compacto. La hoja usa el primero con el que todo entra en su
+// tamaño (sin achicar ni cortar nada); el último es también la base de los niveles de compactación (dibujarHoja).
+// "aire" multiplica las separaciones entre las partes de la hoja.
+const PERFILES = [
+  { titulo: 24, etiqueta: 7.5, estado: 9.5, fecha: 10.5, rotulo: 7, solicita: 12.5, texto: 11, valor: 10.5, link: 9, contacto: 10, nombre: 11.5, aire: 1.25 },
+  { titulo: 22, etiqueta: 7.5, estado: 9, fecha: 10, rotulo: 7, solicita: 12, texto: 10.5, valor: 10, link: 9, contacto: 9.5, nombre: 11, aire: 1.1 },
+  { titulo: 20, etiqueta: 7, estado: 8.5, fecha: 9.5, rotulo: 6.5, solicita: 11, texto: 10, valor: 9.5, link: 8.5, contacto: 9, nombre: 10, aire: 1 }
+];
+// Separaciones entre las partes, de arriba abajo (multiplicadas por el "aire" del perfil): encabezado → etiqueta,
+// estado → línea de tiempo, línea de tiempo → qué se solicita, qué se solicita → ficha, ficha → descripción
+const SEPARACIONES = [18, 18, 16, 16, 14];
+// Lo que puede crecer cada separación para que la hoja quede llena; lo que sobre aún va arriba del contacto
+const EXTRA_MAXIMO = 16;
+// Entre descripción y observaciones, y como mínimo arriba del contacto (que va abajo, cerca del pie)
 const ENTRE_BLOQUES = 10;
-const SOBRE_PIE = 12;
+const SOBRE_PIE = 10;
+// Líneas que conservan los textos largos, como mínimo y en la letra más chica, cuando falta lugar
+const MINIMO_LINEAS = { solicita: 2, descripcion: 3, observaciones: 2 };
 
-// Rótulos (mayúsculas chicas con interletrado) y valores de la ficha y del contacto, en columnas
-const ROTULO = 6.5;
-const ALTO_ROTULO = 9.5;
 const SEPARACION_COLUMNAS = 5 * MM;
 const anchoDeColumna = (ancho, columnas) => (ancho - SEPARACION_COLUMNAS * (columnas - 1)) / columnas;
-// Textos de los bloques (descripción y observaciones): de 10 a 8 puntos, con algo de aire entre líneas
-const TEXTO_MAXIMO = 10;
-const TEXTO_MINIMO = 8;
-const INTERLINEA_TEXTO = 1.2;
-const RELLENO = 11;
-const ANCHO_INTERIOR = CONTENIDO - 2 * RELLENO;
-// Alto de un bloque sin su texto: rótulo arriba y relleno abajo
-const SOBRE_TEXTO = 22;
-const BAJO_TEXTO = 7;
-// Líneas que la descripción y las observaciones conservan, como mínimo, cuando falta lugar
-const MINIMO_LINEAS = { descripcion: 3, observaciones: 2 };
-
-const ALTO_ESTADO = 20;
-const ALTO_LINEA_DE_TIEMPO = 44;
+const altoRotulo = (tamano) => tamano * 1.45;
 const LADO_QR = 30 * MM;
 const RELLENO_QR = 6;
 const ANCHO_TARJETA_QR = LADO_QR + 2 * RELLENO_QR;
@@ -62,10 +62,12 @@ const SEPARACION_QR = 7 * MM;
 
 // y del borde superior de un texto para que su línea de base quede en "base"
 const desdeBase = (base, tamano) => base - ASCENDENTE * tamano;
+const suma = (valores) => valores.reduce((a, b) => a + b, 0);
 
-// Texto de la base listo para medir: sin espacios en los extremos de cada línea ni más de una línea en blanco seguida
-const limpiar = (texto) => String(texto ?? '').replace(/\r\n?/g, '\n').split('\n').map(l => l.trim()).join('\n')
-  .replace(/\n{3,}/g, '\n\n').trim();
+// Texto de la base listo para medir: espacios seguidos como uno, sin espacios en los extremos de cada línea ni más
+// de una línea en blanco seguida
+const limpiar = (texto) => String(texto ?? '').replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ')
+  .split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
 // Mayor n entre 0 y tope que cumple la condición (que vale para todos los menores)
 const mayorQueCumple = (tope, cumple) => {
@@ -79,27 +81,54 @@ const mayorQueCumple = (tope, cumple) => {
   return desde;
 };
 
+// Medidas de un texto en una fuente, un ancho y unas opciones (que pueden depender del tamaño: el interlineado)
+const medidor = (doc, { ancho, fuente = NORMAL, opciones = {} }) => {
+  const opcionesDe = typeof opciones === 'function' ? opciones : () => opciones;
+  const medidas = (tamano) => ({ width: ancho, ...opcionesDe(tamano) });
+  const interlinea = (tamano) => doc.font(fuente).fontSize(tamano).currentLineHeight(true) + (opcionesDe(tamano).lineGap ?? 0);
+  return {
+    medidas,
+    interlinea,
+    alto: (texto, tamano) => doc.font(fuente).fontSize(tamano).heightOfString(texto, medidas(tamano)),
+    // Acota un texto antes de medirlo: lo que entra en n líneas de un ancho no puede ocupar más que n veces ese
+    // ancho (más un espacio por línea, el que se pierde en cada corte). Un texto más largo se recorta a la cota y
+    // un carácter más, así sigue sin entrar. Sin esto, PDFKit tarda segundos con una palabra de decenas de miles
+    // de letras (parte las palabras que no entran en una línea letra por letra).
+    acotar: (texto, lineas, tamano) => {
+      doc.font(fuente).fontSize(tamano);
+      const capacidad = (lineas + 1) * (ancho + tamano);
+      // Ningún carácter de Helvetica (con su interletrado) mide menos de 0,1 em: más que esos no pueden entrar
+      const previo = texto.slice(0, Math.ceil(capacidad / (0.1 * tamano)) + 1);
+      if (doc.widthOfString(previo) <= capacidad) return previo;
+      return previo.slice(0, mayorQueCumple(previo.length, n => doc.widthOfString(previo.slice(0, n)) <= capacidad) + 1);
+    }
+  };
+};
+
 // Ajusta un texto a un ancho y a un alto (o a una cantidad de líneas): achica la letra de max a min, de a medio
-// punto, y si aun así no entra lo corta en el último fin de palabra que entra, seguido de CORTE (si no entra ni una
-// palabra, corta entre letras). Mide con las mismas opciones con las que lo escribe "escribir".
+// punto, y si aun así no entra lo corta en el último fin de palabra que entra, seguido de "corte" (si no entra ni
+// una palabra, corta entre letras). Mide con las mismas opciones con las que lo escribe "escribir".
 // Devuelve { texto, tamano, alto, fuente, opciones, cortado }, con el alto que ocupa.
-const ajustar = (doc, texto, { ancho, alto = null, lineas = null, max, min = max, fuente = NORMAL, opciones = {} }) => {
-  const limpio = limpiar(texto);
-  const medidas = { width: ancho, ...opciones };
-  const medir = (t, tamano) => doc.font(fuente).fontSize(tamano).heightOfString(t, medidas);
-  const tope = (tamano) => (alto ?? lineas * (doc.font(fuente).fontSize(tamano).currentLineHeight(true) + (opciones.lineGap ?? 0))) + 0.01;
+const ajustar = (doc, texto, { ancho, alto = null, lineas = null, max, min = max, fuente = NORMAL, opciones = {}, corte = PUNTOS }) => {
+  const medida = medidor(doc, { ancho, fuente, opciones });
+  const tope = (tamano) => (alto ?? lineas * medida.interlinea(tamano)) + 0.01;
+  const limpio = medida.acotar(limpiar(texto), Math.floor(tope(min) / medida.interlinea(min)) + 1, min);
   for (let tamano = max; tamano >= min; tamano -= 0.5) {
-    const ocupa = medir(limpio, tamano);
-    if (ocupa <= tope(tamano)) return { texto: limpio, tamano, alto: ocupa, fuente, opciones: medidas, cortado: false };
+    const ocupa = medida.alto(limpio, tamano);
+    if (ocupa <= tope(tamano)) return { texto: limpio, tamano, alto: ocupa, fuente, opciones: medida.medidas(tamano), cortado: false };
   }
-  const entra = (t) => medir(t, min) <= tope(min);
-  const conCorte = (hasta) => `${limpio.slice(0, hasta).replace(/[\s.,;:–-]+$/u, '')}${CORTE}`;
+  const entra = (t) => medida.alto(t, min) <= tope(min);
+  const conCorte = (hasta) => `${limpio.slice(0, hasta).replace(/[\s.,;:–-]+$/u, '')}${corte}`;
   const finesDePalabra = [...limpio.matchAll(/\S(?=\s)/gu)].map(m => m.index + m[0].length);
   const palabras = mayorQueCumple(finesDePalabra.length, k => entra(conCorte(finesDePalabra[k - 1])));
   const hasta = palabras > 0 ? finesDePalabra[palabras - 1] : mayorQueCumple(limpio.length, k => entra(conCorte(k)));
   const cortado = conCorte(hasta);
-  return { texto: cortado, tamano: min, alto: medir(cortado, min), fuente, opciones: medidas, cortado: true };
+  return { texto: cortado, tamano: min, alto: medida.alto(cortado, min), fuente, opciones: medida.medidas(min), cortado: true };
 };
+
+// Si un texto entra, sin achicarlo, en una cantidad de líneas de un ancho
+const entraEn = (doc, texto, { ancho, lineas, tamano, fuente = NORMAL }) =>
+  !ajustar(doc, texto, { ancho, lineas, max: tamano, fuente }).cortado;
 
 // Escribe un texto ajustado con su borde superior en y. La holgura en el alto evita que un redondeo deje afuera la
 // última línea y no alcanza para una línea más. Con interlineado negativo suma ese interlineado: PDFKit decide si
@@ -118,9 +147,9 @@ const renglon = (doc, texto, x, y, { ancho, tamano, fuente = NORMAL, color = COL
   });
 };
 
-const rotulo = (doc, texto, x, y, ancho, color = COLOR.rotulo, align = 'left') => renglon(doc, String(texto).toUpperCase(), x, y, {
-  ancho, tamano: ROTULO, fuente: NEGRITA, color, align, espaciado: 0.5
-});
+// Rótulo: mayúsculas chicas en negrita, con interletrado
+const rotulo = (doc, texto, x, y, { ancho, tamano, color = COLOR.rotulo, align = 'left' }) =>
+  renglon(doc, String(texto).toUpperCase(), x, y, { ancho, tamano, fuente: NEGRITA, color, align, espaciado: 0.5 });
 
 // Línea fina horizontal (un rectángulo lleno: más nítido que un trazo de medio punto)
 const filete = (doc, x, y, ancho, color = COLOR.linea) => doc.rect(x, y - 0.3, ancho, 0.6).fill(color);
@@ -159,36 +188,42 @@ const dibujarPie = (doc, anexo, i, total) => {
 };
 
 // Indicador de estado: píldora con el acento suave, un punto y el texto en el acento
-const dibujarEstado = (doc, estado, x, y) => {
-  const tamano = 8.5;
+const dibujarEstado = (doc, estado, x, y, tamano, alto) => {
   doc.font(NEGRITA).fontSize(tamano);
-  const anchoTexto = Math.min(CONTENIDO - 31, doc.widthOfString(estado) + 2);
-  doc.roundedRect(x, y, anchoTexto + 31, ALTO_ESTADO, ALTO_ESTADO / 2).fill(COLOR.acentoSuave);
-  doc.circle(x + 11, y + ALTO_ESTADO / 2, 2.6).fill(COLOR.acento);
+  const relleno = alto * 0.55;
+  const anchoTexto = Math.min(CONTENIDO - 3 * relleno, doc.widthOfString(estado) + 2);
+  doc.roundedRect(x, y, anchoTexto + 2.6 * relleno, alto, alto / 2).fill(COLOR.acentoSuave);
+  doc.circle(x + relleno, y + alto / 2, tamano * 0.3).fill(COLOR.acento);
   // Las mayúsculas, centradas en el alto de la píldora
-  renglon(doc, estado, x + 19, y + (ALTO_ESTADO - ASCENDENTE * tamano) / 2, { ancho: anchoTexto, tamano, fuente: NEGRITA, color: COLOR.acento });
+  renglon(doc, estado, x + 1.75 * relleno, y + (alto - ASCENDENTE * tamano) / 2, { ancho: anchoTexto, tamano, fuente: NEGRITA, color: COLOR.acento });
 };
 
-// Etiqueta, título (hasta 3 líneas; 2 si falta lugar) e indicador de estado
-const prepararCabecera = (doc, hoja, nivel) => {
-  const titulo = ajustar(doc, hoja.titulo, {
-    ancho: CONTENIDO, lineas: nivel < 2 ? 3 : 2, max: 20, min: 14, fuente: NEGRITA, opciones: { lineGap: -1.5 }
-  });
-  const yTitulo = 14;
-  const yEstado = yTitulo + titulo.alto + 8;
+// Etiqueta, título e indicador de estado. El título va en hasta 2 líneas achicándose hasta 4 puntos; si no entra,
+// en 3 (2 en el nivel 2) y hasta 14 puntos.
+const prepararCabecera = (doc, hoja, p, nivel) => {
+  const opciones = (tamano) => ({ lineGap: -0.075 * tamano });
+  const ajustarTitulo = (lineas, max, min) => ajustar(doc, hoja.titulo, { ancho: CONTENIDO, lineas, max, min, fuente: NEGRITA, opciones, corte: CORTE });
+  let titulo = ajustarTitulo(2, p.titulo, p.titulo - 4);
+  if (titulo.cortado && nivel < 2) titulo = ajustarTitulo(3, p.titulo - 4, 14);
+  else if (titulo.cortado) titulo = ajustarTitulo(2, p.titulo - 4, 14);
+  const altoEstado = Math.round(p.estado * 2.35);
+  const yTitulo = p.etiqueta * 2;
+  const yEstado = yTitulo + titulo.alto + 8 * p.aire;
   return {
-    alto: yEstado + ALTO_ESTADO,
+    alto: yEstado + altoEstado,
     dibujar: (y) => {
-      renglon(doc, hoja.etiqueta, IZQUIERDA, y, { ancho: CONTENIDO, tamano: 7, fuente: NEGRITA, color: COLOR.acento, espaciado: 1.2 });
+      renglon(doc, hoja.etiqueta, IZQUIERDA, y, { ancho: CONTENIDO, tamano: p.etiqueta, fuente: NEGRITA, color: COLOR.acento, espaciado: 1.2 });
       escribir(doc, titulo, IZQUIERDA, y + yTitulo, COLOR.tinta);
-      dibujarEstado(doc, hoja.estado, IZQUIERDA, y + yEstado);
+      dibujarEstado(doc, hoja.estado, IZQUIERDA, y + yEstado, p.estado, altoEstado);
     }
   };
 };
 
 // Línea de tiempo: barra desde la última actualización hasta el vencimiento, con lo transcurrido en el acento y la
 // marca de hoy (con su fecha arriba). Sin última actualización, la barra es punteada y arranca en "Sin registro".
-const dibujarLineaDeTiempo = (doc, { inicio, fin, hoy }, y) => {
+const altoLineaDeTiempo = (p) => 15 + 11 + altoRotulo(p.rotulo) + (ASCENDENTE + DESCENDENTE) * p.fecha;
+
+const dibujarLineaDeTiempo = (doc, { inicio, fin, hoy }, y, p) => {
   const yBarra = y + 15;
   const x0 = IZQUIERDA + 7;
   const x1 = DERECHA - 7;
@@ -227,21 +262,27 @@ const dibujarLineaDeTiempo = (doc, { inicio, fin, hoy }, y) => {
   }
   doc.restore();
   const mitad = CONTENIDO / 2;
-  rotulo(doc, 'Última actualización', IZQUIERDA, yBarra + 11, mitad);
-  rotulo(doc, 'Vencimiento', IZQUIERDA + mitad, yBarra + 11, mitad, COLOR.rotulo, 'right');
-  renglon(doc, inicio ? formatoCorto(inicio) : 'Sin registro', IZQUIERDA, yBarra + 20,
-    { ancho: mitad, tamano: 9.5, fuente: NEGRITA, color: inicio ? COLOR.tinta : COLOR.gris });
-  renglon(doc, formatoCorto(fin), IZQUIERDA + mitad, yBarra + 20, { ancho: mitad, tamano: 9.5, fuente: NEGRITA, align: 'right' });
+  const yFecha = yBarra + 11 + altoRotulo(p.rotulo);
+  rotulo(doc, 'Última actualización', IZQUIERDA, yBarra + 11, { ancho: mitad, tamano: p.rotulo });
+  rotulo(doc, 'Vencimiento', IZQUIERDA + mitad, yBarra + 11, { ancho: mitad, tamano: p.rotulo, align: 'right' });
+  renglon(doc, inicio ? formatoCorto(inicio) : 'Sin registro', IZQUIERDA, yFecha,
+    { ancho: mitad, tamano: p.fecha, fuente: NEGRITA, color: inicio ? COLOR.tinta : COLOR.gris });
+  renglon(doc, formatoCorto(fin), IZQUIERDA + mitad, yFecha, { ancho: mitad, tamano: p.fecha, fuente: NEGRITA, align: 'right' });
 };
 
-// Grilla de pares rótulo/valor: el rótulo arriba y el valor debajo, en columnas. Una celda "completa" ocupa toda
-// la fila. Con "divisorias", una línea fina separa las filas (y cierra arriba y abajo).
-// Los valores de una misma fila van en el mismo tamaño: el del que más se tuvo que achicar.
-const prepararGrilla = (doc, celdas, { ancho, columnas, lineas, divisorias, valor = { max: 9.5, min: 8 } }) => {
-  const separacion = SEPARACION_COLUMNAS;
+// Grilla de pares rótulo/valor: el rótulo arriba y el valor debajo, en columnas. Con "filaEntera", un valor que no
+// entra en esas líneas de media columna (en su tamaño) ocupa la fila entera, y también la ocupa una celda que queda
+// sola en su fila. Los valores de una misma fila van en el mismo tamaño: el del que más se tuvo que achicar.
+// Con "divisorias", una línea fina separa las filas (y cierra arriba y abajo).
+const prepararGrilla = (doc, celdas, { ancho, columnas, lineas, tamanos, tamanoRotulo, divisorias, filaEntera = null, aire = 1 }) => {
   const anchoColumna = anchoDeColumna(ancho, columnas);
-  const arriba = divisorias ? 7 : 0;
-  const abajo = divisorias ? 4 : 5;
+  const arriba = divisorias ? 7 * aire : 0;
+  const abajo = divisorias ? 4 * aire : 5 * aire;
+  for (const celda of celdas) {
+    if (!celda.completa && filaEntera && !entraEn(doc, celda.valor, { ancho: anchoColumna, lineas: filaEntera.lineas, tamano: filaEntera.tamano })) {
+      celda.completa = true;
+    }
+  }
   const filas = [];
   for (const celda of celdas) {
     const ultima = filas.at(-1);
@@ -249,28 +290,30 @@ const prepararGrilla = (doc, celdas, { ancho, columnas, lineas, divisorias, valo
     else filas.push({ completa: Boolean(celda.completa), celdas: [celda] });
   }
   for (const fila of filas) {
-    const ajustarCelda = (celda, tamanos) => ajustar(doc, celda.valor, {
-      ancho: fila.completa ? ancho : anchoColumna, lineas: celda.lineas ?? lineas, ...tamanos
+    if (fila.celdas.length < columnas) fila.completa = true;
+    const ajustarCelda = (celda, medidas) => ajustar(doc, celda.valor, {
+      ancho: fila.completa ? ancho : anchoColumna, lineas: celda.lineas ?? lineas, ...medidas
     });
-    for (const celda of fila.celdas) celda.ajuste = ajustarCelda(celda, celda.tamanos ?? valor);
+    for (const celda of fila.celdas) celda.ajuste = ajustarCelda(celda, celda.tamanos ?? tamanos);
     // Más chico, un valor que ya entraba sigue entrando (en las mismas líneas o menos)
     const tamano = Math.min(...fila.celdas.map(c => c.ajuste.tamano));
     for (const celda of fila.celdas) {
       if (celda.ajuste.tamano > tamano) celda.ajuste = ajustarCelda(celda, { max: tamano, min: tamano });
     }
-    fila.alto = arriba + ALTO_ROTULO + Math.max(...fila.celdas.map(c => c.ajuste.alto)) + abajo;
+    fila.alto = arriba + altoRotulo(tamanoRotulo) + Math.max(...fila.celdas.map(c => c.ajuste.alto)) + abajo;
   }
   return {
-    alto: filas.reduce((total, fila) => total + fila.alto, 0) - (divisorias ? 0 : abajo),
+    alto: suma(filas.map(f => f.alto)) - (divisorias ? 0 : abajo),
     dibujar: (x, y) => {
       let yFila = y;
       for (const fila of filas) {
         if (divisorias) filete(doc, x, yFila, ancho);
         fila.celdas.forEach((celda, k) => {
-          const xCelda = x + k * (anchoColumna + separacion);
+          const xCelda = x + k * (anchoColumna + SEPARACION_COLUMNAS);
           const anchoCelda = fila.completa ? ancho : anchoColumna;
-          rotulo(doc, celda.etiqueta, xCelda, yFila + arriba, anchoCelda);
-          escribir(doc, celda.ajuste, xCelda, yFila + arriba + ALTO_ROTULO, celda.color ?? COLOR.tinta, celda.link ? { link: celda.link } : {});
+          rotulo(doc, celda.etiqueta, xCelda, yFila + arriba, { ancho: anchoCelda, tamano: tamanoRotulo });
+          escribir(doc, celda.ajuste, xCelda, yFila + arriba + altoRotulo(tamanoRotulo), celda.color ?? COLOR.tinta,
+            celda.link ? { link: celda.link } : {});
         });
         yFila += fila.alto;
       }
@@ -313,16 +356,22 @@ const dibujarTarjetaQr = (doc, url, x, y) => {
 };
 
 // Ficha: los campos en dos columnas y el link al portal, con el QR a la derecha (sin link válido no hay QR).
-// Los valores ocupan hasta 2 líneas; 1 si falta lugar.
-const prepararFicha = (doc, hoja, nivel) => {
+// Los valores ocupan hasta 2 líneas de media columna y, si no entran, la fila entera (nivel 0); en el nivel 1, una
+// línea, también con la fila entera si hace falta; en el nivel 2, una línea de media columna.
+const prepararFicha = (doc, hoja, p, nivel) => {
   const ancho = hoja.url ? CONTENIDO - ANCHO_TARJETA_QR - SEPARACION_QR : CONTENIDO;
+  const lineas = nivel === 0 ? 2 : 1;
   const celdas = hoja.campos.map(([etiqueta, valor]) => ({ etiqueta, valor }));
   if (hoja.url) {
     celdas.push({
-      etiqueta: 'Link al portal', valor: hoja.url, completa: true, link: hoja.url, color: COLOR.acento, lineas: 2, tamanos: { max: 8.5, min: 7 }
+      etiqueta: 'Link al portal', valor: hoja.url, completa: true, link: hoja.url, color: COLOR.acento, lineas: 2,
+      tamanos: { max: p.link, min: MINIMO }
     });
   }
-  const grilla = prepararGrilla(doc, celdas, { ancho, columnas: 2, lineas: nivel === 0 ? 2 : 1, divisorias: true });
+  const grilla = prepararGrilla(doc, celdas, {
+    ancho, columnas: 2, lineas, tamanos: { max: p.valor, min: MINIMO }, tamanoRotulo: p.rotulo, divisorias: true,
+    filaEntera: nivel < 2 ? { lineas, tamano: p.valor } : null, aire: p.aire
+  });
   return {
     alto: Math.max(grilla.alto, hoja.url ? ALTO_TARJETA_QR : 0),
     dibujar: (y) => {
@@ -336,113 +385,170 @@ const prepararFicha = (doc, hoja, nivel) => {
 // pasa a rótulo y valor). Un dato que no entra en una línea de media columna (un email largo) ocupa toda la fila,
 // así no se corta (en el nivel 2, el último recurso, no: todo va en dos columnas). Sin datos, la única línea va
 // como texto.
-const prepararContacto = (doc, hoja, nivel) => {
-  const valor = { max: 9, min: 8 };
-  const mitad = anchoDeColumna(ANCHO_INTERIOR, 2);
-  // El nombre del área, en una línea (de 10 a 9 puntos); si no entra, en dos (salvo que falte lugar)
-  const ajustarNombre = (lineas, max) => ajustar(doc, hoja.contacto.nombre, { ancho: ANCHO_INTERIOR, lineas, max, min: 9, fuente: NEGRITA });
-  let nombre = hoja.contacto.nombre ? ajustarNombre(1, 10) : null;
-  if (nombre?.cortado && nivel === 0) nombre = ajustarNombre(2, 9);
+const prepararContacto = (doc, hoja, p, nivel) => {
+  const relleno = 12;
+  const ancho = CONTENIDO - 2 * relleno;
+  // El nombre del área, en una línea (achicándose 1,5 puntos); si no entra, en dos (salvo que falte lugar)
+  const ajustarNombre = (lineas, max) => ajustar(doc, hoja.contacto.nombre, { ancho, lineas, max, min: p.nombre - 1.5, fuente: NEGRITA });
+  let nombre = hoja.contacto.nombre ? ajustarNombre(1, p.nombre) : null;
+  if (nombre?.cortado && nivel === 0) nombre = ajustarNombre(2, p.nombre - 1.5);
   const celdas = hoja.contacto.lineas.map((linea) => {
     const partes = /^([^:\n]{1,40}): ([\s\S]+)$/.exec(linea);
-    if (!partes) return null;
-    const largo = doc.font(NORMAL).fontSize(valor.min).heightOfString(partes[2], { width: mitad })
-      > doc.currentLineHeight(true) + 0.01;
-    return { etiqueta: partes[1], valor: partes[2], completa: largo && nivel < 2 };
+    return partes ? { etiqueta: partes[1], valor: partes[2] } : null;
   });
   const contenido = celdas.every(Boolean)
-    ? prepararGrilla(doc, celdas, { ancho: ANCHO_INTERIOR, columnas: 2, lineas: nivel === 0 ? 2 : 1, divisorias: false, valor })
+    ? prepararGrilla(doc, celdas, {
+      ancho, columnas: 2, lineas: nivel === 0 ? 2 : 1, tamanos: { max: p.contacto, min: MINIMO }, tamanoRotulo: p.rotulo,
+      divisorias: false, filaEntera: nivel < 2 ? { lineas: 1, tamano: p.contacto } : null, aire: p.aire
+    })
     : (() => {
-      const texto = ajustar(doc, hoja.contacto.lineas.join('\n'), { ancho: ANCHO_INTERIOR, lineas: 3, max: 9, min: 8 });
+      const texto = ajustar(doc, hoja.contacto.lineas.join('\n'), { ancho, lineas: 3, max: p.contacto, min: MINIMO });
       return { alto: texto.alto, dibujar: (x, y) => escribir(doc, texto, x, y, COLOR.gris) };
     })();
-  const yNombre = 21;
-  const yContenido = yNombre + (nombre ? nombre.alto + 6 : 0);
+  const yNombre = 10 + altoRotulo(p.rotulo) + 3;
+  const yContenido = yNombre + (nombre ? nombre.alto + 5 : 0);
   return {
-    alto: yContenido + contenido.alto + 8,
-    dibujar: (y, alto) => {
-      doc.roundedRect(IZQUIERDA, y, CONTENIDO, alto, 6).lineWidth(0.8).strokeColor(COLOR.linea).stroke();
-      rotulo(doc, 'Contacto del área responsable', IZQUIERDA + RELLENO, y + 9, ANCHO_INTERIOR, COLOR.gris);
-      if (nombre) escribir(doc, nombre, IZQUIERDA + RELLENO, y + yNombre, COLOR.tinta);
-      contenido.dibujar(IZQUIERDA + RELLENO, y + yContenido);
-    }
-  };
-};
-
-// Alto mínimo de un bloque de texto: su rótulo, el relleno y las líneas mínimas en la letra más chica
-const altoMinimoBloque = (doc, lineas) => SOBRE_TEXTO + BAJO_TEXTO
-  + lineas * (doc.font(NORMAL).fontSize(TEXTO_MINIMO).currentLineHeight(true) + INTERLINEA_TEXTO);
-
-const bloquesDeTexto = (hoja) => [
-  { titulo: 'Descripción', texto: hoja.descripcion, minimo: MINIMO_LINEAS.descripcion },
-  ...(hoja.observaciones ? [{ titulo: 'Observaciones', texto: hoja.observaciones, minimo: MINIMO_LINEAS.observaciones }] : [])
-];
-
-const altoMinimoTextos = (doc, hoja) => bloquesDeTexto(hoja)
-  .reduce((total, bloque, i) => total + (i ? ENTRE_BLOQUES : 0) + altoMinimoBloque(doc, bloque.minimo), 0);
-
-// Descripción y observaciones en el espacio que queda: si entran con la letra más grande van así; si no, se reparte
-// el espacio (las observaciones, hasta un 35 %, salvo que la descripción necesite menos) y cada una se achica hasta
-// 8 puntos y, si aun así no entra, se corta con CORTE.
-const prepararTextos = (doc, hoja, espacio) => {
-  const bloques = bloquesDeTexto(hoja);
-  const opciones = { align: 'justify', lineGap: INTERLINEA_TEXTO };
-  const medida = { ancho: ANCHO_INTERIOR, max: TEXTO_MAXIMO, min: TEXTO_MINIMO, opciones };
-  const libre = espacio - bloques.length * (SOBRE_TEXTO + BAJO_TEXTO) - (bloques.length - 1) * ENTRE_BLOQUES;
-  const naturales = bloques.map(b => ajustar(doc, b.texto, { ...medida, min: TEXTO_MAXIMO, alto: Infinity }).alto);
-  let asignados = naturales;
-  if (naturales.reduce((a, b) => a + b, 0) > libre) {
-    const minimos = bloques.map(b => altoMinimoBloque(doc, b.minimo) - SOBRE_TEXTO - BAJO_TEXTO);
-    if (bloques.length === 1) {
-      asignados = [Math.max(libre, minimos[0])];
-    } else {
-      const observaciones = Math.max(minimos[1], Math.min(naturales[1], Math.max(libre * 0.35, libre - naturales[0]), libre - minimos[0]));
-      asignados = [Math.max(minimos[0], libre - observaciones), observaciones];
-    }
-  }
-  const ajustes = bloques.map((b, i) => ajustar(doc, b.texto, { ...medida, alto: asignados[i] }));
-  const altos = ajustes.map(a => SOBRE_TEXTO + a.alto + BAJO_TEXTO);
-  return {
-    alto: altos.reduce((a, b) => a + b, 0) + (bloques.length - 1) * ENTRE_BLOQUES,
+    alto: yContenido + contenido.alto + 9,
     dibujar: (y) => {
-      let yBloque = y;
-      bloques.forEach((bloque, i) => {
-        doc.roundedRect(IZQUIERDA, yBloque, CONTENIDO, altos[i], 6).fill(COLOR.fondo);
-        rotulo(doc, bloque.titulo, IZQUIERDA + RELLENO, yBloque + 9, ANCHO_INTERIOR, COLOR.gris);
-        escribir(doc, ajustes[i], IZQUIERDA + RELLENO, yBloque + SOBRE_TEXTO, COLOR.tinta);
-        yBloque += altos[i] + ENTRE_BLOQUES;
-      });
+      doc.roundedRect(IZQUIERDA, y, CONTENIDO, yContenido + contenido.alto + 9, 6).lineWidth(0.8).strokeColor(COLOR.linea).stroke();
+      rotulo(doc, 'Contacto del área responsable', IZQUIERDA + relleno, y + 10, { ancho, tamano: p.rotulo, color: COLOR.gris });
+      if (nombre) escribir(doc, nombre, IZQUIERDA + relleno, y + yNombre, COLOR.tinta);
+      contenido.dibujar(IZQUIERDA + relleno, y + yContenido);
     }
   };
 };
 
-// Una hoja: de arriba abajo, encabezado, cabecera, línea de tiempo, ficha, descripción y observaciones, contacto y
-// pie. La diagramación es fija; si la descripción y las observaciones no tendrían su lugar mínimo, se compacta la
-// hoja por niveles: 1, valores de la ficha y del contacto (y el nombre del área) en una línea; 2, además, el título
-// en dos líneas y los datos de contacto siempre en dos columnas. Todo tiene un tope de líneas (el título, cada
-// valor, el link, el contacto), así que con el nivel 2 aun el peor caso deja ese lugar mínimo (unos 26 puntos de
-// sobra con 9 campos, link y 7 datos de contacto larguísimos).
-const dibujarHoja = (doc, anexo, hoja, i, total) => {
-  const yCabecera = dibujarEncabezado(doc, anexo) + DESPUES_ENCABEZADO;
-  const limite = dibujarPie(doc, anexo, i, total) - SOBRE_PIE;
-  const minimo = altoMinimoTextos(doc, hoja);
-  let plan;
-  for (const nivel of [0, 1, 2]) {
-    const cabecera = prepararCabecera(doc, hoja, nivel);
-    const ficha = prepararFicha(doc, hoja, nivel);
-    const contacto = prepararContacto(doc, hoja, nivel);
-    const yLinea = yCabecera + cabecera.alto + ANTES_LINEA_DE_TIEMPO;
-    const yFicha = yLinea + ALTO_LINEA_DE_TIEMPO + ANTES_FICHA;
-    const yTextos = yFicha + ficha.alto + ANTES_TEXTOS;
-    plan = { cabecera, ficha, contacto, yLinea, yFicha, yTextos, espacio: limite - contacto.alto - ENTRE_BLOQUES - yTextos };
-    if (plan.espacio >= minimo) break;
+// Textos largos: "Qué se solicita" (destacado: fondo del acento suave, filete del acento a la izquierda, letra más
+// grande), descripción y observaciones (fondo gris). Cada uno, con su rótulo arriba.
+const bloquesDeTexto = (hoja, p) => {
+  const bloque = (clave, titulo, texto, tamano, destacado) => {
+    const rotulo = destacado ? p.rotulo + 0.5 : p.rotulo;
+    return {
+      clave, titulo, texto, tamano, destacado, rotulo, minimo: MINIMO_LINEAS[clave],
+      izquierda: destacado ? 20 : 12, derecha: destacado ? 16 : 12,
+      arriba: destacado ? 12 : 10, sobre: (destacado ? 12 : 10) + altoRotulo(rotulo) + (destacado ? 5 : 3), bajo: destacado ? 9 : 7,
+      // El destacado va sin justificar: con letra grande, el justificado abre huecos entre palabras
+      opciones: (t) => (destacado ? { lineGap: t * 0.16 } : { align: 'justify', lineGap: t * 0.12 })
+    };
+  };
+  return [
+    bloque('solicita', 'Qué se solicita', hoja.queSeSolicita, p.solicita, true),
+    bloque('descripcion', 'Descripción', hoja.descripcion, p.texto, false),
+    ...(hoja.observaciones ? [bloque('observaciones', 'Observaciones', hoja.observaciones, p.texto, false)] : [])
+  ].map(b => ({ ...b, ancho: CONTENIDO - b.izquierda - b.derecha }));
+};
+
+// Alto mínimo del texto de un bloque: sus líneas mínimas en la letra más chica
+const minimoDe = (doc, bloque) => bloque.minimo * medidor(doc, { ancho: bloque.ancho, opciones: bloque.opciones }).interlinea(MINIMO);
+
+// Lo que necesita el texto de un bloque en su tamaño (Infinity si no entra en "libre")
+const necesarioDe = (doc, bloque, libre) => {
+  const ajuste = ajustar(doc, bloque.texto, { ancho: bloque.ancho, alto: Math.max(0, libre), max: bloque.tamano, opciones: bloque.opciones });
+  return ajuste.cortado ? Infinity : ajuste.alto;
+};
+
+// Reparte "libre" entre los textos: cada uno recibe lo que necesita hasta un nivel común (el que hace que la suma
+// dé "libre"), nunca menos que su mínimo
+const repartir = (necesarios, minimos, libre) => {
+  if (suma(necesarios) <= libre) return necesarios;
+  const total = (nivel) => suma(necesarios.map((n, k) => Math.max(minimos[k], Math.min(n, nivel))));
+  let bajo = 0;
+  let alto = Math.max(libre, 0);
+  for (let i = 0; i < 50; i++) {
+    const medio = (bajo + alto) / 2;
+    if (total(medio) > libre) alto = medio;
+    else bajo = medio;
   }
-  const textos = prepararTextos(doc, hoja, plan.espacio);
-  plan.cabecera.dibujar(yCabecera);
-  dibujarLineaDeTiempo(doc, hoja.linea, plan.yLinea);
-  plan.ficha.dibujar(plan.yFicha);
-  textos.dibujar(plan.yTextos);
-  plan.contacto.dibujar(plan.yTextos + textos.alto + ENTRE_BLOQUES, plan.contacto.alto);
+  return necesarios.map((n, k) => Math.max(minimos[k], Math.min(n, bajo)));
+};
+
+const dibujarBloque = (doc, bloque, ajuste, y) => {
+  const alto = bloque.sobre + ajuste.alto + bloque.bajo;
+  if (bloque.destacado) {
+    doc.save();
+    doc.roundedRect(IZQUIERDA, y, CONTENIDO, alto, 6).clip();
+    doc.rect(IZQUIERDA, y, CONTENIDO, alto).fill(COLOR.acentoSuave);
+    doc.rect(IZQUIERDA, y, 4, alto).fill(COLOR.acento);
+    doc.restore();
+  } else {
+    doc.roundedRect(IZQUIERDA, y, CONTENIDO, alto, 6).fill(COLOR.fondo);
+  }
+  rotulo(doc, bloque.titulo, IZQUIERDA + bloque.izquierda, y + bloque.arriba, {
+    ancho: bloque.ancho, tamano: bloque.rotulo, color: bloque.destacado ? COLOR.acento : COLOR.gris
+  });
+  escribir(doc, ajuste, IZQUIERDA + bloque.izquierda, y + bloque.sobre, COLOR.tinta);
+  return alto;
+};
+
+// =====================================================
+// La hoja
+// =====================================================
+
+// Intentos de diagramación, en orden: cada perfil con todo en su tamaño y, con el perfil compacto, los niveles de
+// compactación. En ellos las separaciones se achican primero (hasta un 40 %) y después los textos largos se achican
+// hasta 8 puntos y se cortan: 1, valores de la ficha y del contacto (y el nombre del área) en una línea; 2, además,
+// el título en dos líneas y los datos de contacto siempre en dos columnas. Todo tiene un tope de líneas, así que
+// con el nivel 2 aun el peor caso deja el lugar mínimo de los textos largos (lo comprueba el test de diagramación
+// con todos los campos, link y 7 datos de contacto larguísimos).
+const INTENTOS = [
+  ...PERFILES.slice(0, -1).map(p => ({ p, nivel: 0, todoEnSuTamano: true })),
+  ...[0, 1, 2].map(nivel => ({ p: PERFILES.at(-1), nivel, todoEnSuTamano: false }))
+];
+const SEPARACIONES_COMPRIMIBLES = 0.4;
+
+const planificar = (doc, hoja, alto) => {
+  for (const [i, { p, nivel, todoEnSuTamano }] of INTENTOS.entries()) {
+    const cabecera = prepararCabecera(doc, hoja, p, nivel);
+    const ficha = prepararFicha(doc, hoja, p, nivel);
+    const contacto = prepararContacto(doc, hoja, p, nivel);
+    const bloques = bloquesDeTexto(hoja, p);
+    let separaciones = SEPARACIONES.map(s => s * p.aire);
+    const fijo = suma(separaciones) + cabecera.alto + altoLineaDeTiempo(p) + ficha.alto + contacto.alto + ENTRE_BLOQUES
+      + suma(bloques.map(b => b.sobre + b.bajo)) + (bloques.length - 2) * ENTRE_BLOQUES;
+    const comprimible = todoEnSuTamano ? 0 : suma(separaciones) * SEPARACIONES_COMPRIMIBLES;
+    let libre = alto - fijo;
+    const minimos = bloques.map(b => minimoDe(doc, b));
+    const necesarios = bloques.map(b => necesarioDe(doc, b, libre + comprimible));
+    // Lo que falta para que todo vaya en su tamaño sale primero de las separaciones
+    const quita = Math.min(comprimible, Math.max(0, suma(necesarios) - libre));
+    if (quita > 0) {
+      separaciones = separaciones.map(s => s * (1 - quita / suma(SEPARACIONES.map(b => b * p.aire))));
+      libre += quita;
+    }
+    const ultimo = i === INTENTOS.length - 1;
+    if (todoEnSuTamano ? suma(necesarios) <= libre : (suma(minimos) <= libre || ultimo)) {
+      const asignados = repartir(necesarios, minimos, libre);
+      const ajustes = bloques.map((b, k) => ajustar(doc, b.texto, {
+        ancho: b.ancho, alto: asignados[k], max: b.tamano, min: MINIMO, opciones: b.opciones, corte: CORTE
+      }));
+      return { p, cabecera, ficha, contacto, bloques, ajustes, separaciones, sobra: Math.max(0, libre - suma(ajustes.map(a => a.alto))) };
+    }
+  }
+  return null;
+};
+
+// Una hoja: de arriba abajo, encabezado, cabecera, línea de tiempo, qué se solicita, ficha, descripción y
+// observaciones, contacto (abajo, cerca del pie) y pie. El espacio que sobra agranda las separaciones (hasta
+// EXTRA_MAXIMO cada una; la de arriba del título, la mitad) y el resto queda arriba del contacto.
+const dibujarHoja = (doc, anexo, hoja, i, total) => {
+  const arriba = dibujarEncabezado(doc, anexo);
+  const limite = dibujarPie(doc, anexo, i, total) - SOBRE_PIE;
+  const { p, cabecera, ficha, contacto, bloques, ajustes, separaciones, sobra } = planificar(doc, hoja, limite - arriba);
+  const extra = Math.min(EXTRA_MAXIMO, sobra / (separaciones.length - 0.5));
+  const [solicita, ...textos] = bloques;
+  const [ajusteSolicita, ...ajustesTextos] = ajustes;
+  let y = arriba + separaciones[0] + extra / 2;
+  cabecera.dibujar(y);
+  y += cabecera.alto + separaciones[1] + extra;
+  dibujarLineaDeTiempo(doc, hoja.linea, y, p);
+  y += altoLineaDeTiempo(p) + separaciones[2] + extra;
+  y += dibujarBloque(doc, solicita, ajusteSolicita, y) + separaciones[3] + extra;
+  ficha.dibujar(y);
+  y += ficha.alto + separaciones[4] + extra;
+  textos.forEach((bloque, k) => {
+    y += dibujarBloque(doc, bloque, ajustesTextos[k], y) + ENTRE_BLOQUES;
+  });
+  contacto.dibujar(limite - contacto.alto);
 };
 
 export const renderAnexo = (anexo) => new Promise((resolve, reject) => {

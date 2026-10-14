@@ -71,7 +71,7 @@ const textoNumero = ({ numero, anio, esPrueba = false }) => {
 
 const situacion = (vencimiento, fecha) => {
   const dias = diasEntre(fecha, vencimiento);
-  if (dias > 0) return `Faltan ${cantidad(dias, 'día', 'días')}`;
+  if (dias > 0) return `${dias === 1 ? 'Falta' : 'Faltan'} ${cantidad(dias, 'día', 'días')}`;
   if (dias === 0) return 'Vence hoy';
   return `Vencido hace ${cantidad(-dias, 'día', 'días')}`;
 };
@@ -159,7 +159,11 @@ const estadoDelAnexo = (vencimiento, fecha) => {
   return `Vence el ${formatoCorto(vencimiento)} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
 };
 
-// Anexo de los avisos: una hoja por dataset con su ficha completa (spec 6.7)
+// "Qué se solicita" de un dataset que no lo tiene cargado (spec 6.7.4)
+const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
+
+// Anexo de los avisos: una hoja por dataset con su ficha completa (spec 6.7). Las fechas no se repiten en la ficha:
+// están en la línea de tiempo.
 export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, fecha, fichas }) => ({
   numeroTexto: textoNumero({ numero, anio, esPrueba }),
   fechaLarga: formatoLargo(fecha),
@@ -178,8 +182,6 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
         ['Depende de', f.area_superior],
         ['Gestión', f.tipo_gestion === 'externa' ? 'Externa' : 'Interna'],
         ['Frecuencia', f.frecuencia_nombre],
-        ['Última actualización', f.ultima_actualizacion ? formatoCorto(f.ultima_actualizacion) : 'Sin registro'],
-        ['Vencimiento', formatoCorto(f.vencimiento)],
         ['Tema principal', f.tema_principal],
         ['Tema secundario', f.tema_secundario],
         ['Formatos', f.formatos]
@@ -187,6 +189,7 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
       url: urlSegura(f.url_dataset),
       descripcion: String(f.descripcion ?? '').trim() || 'Sin descripción registrada.',
       observaciones: String(f.observaciones ?? '').trim() || null,
+      queSeSolicita: String(f.que_se_solicita ?? '').trim() || QUE_SE_SOLICITA_POR_DEFECTO,
       contacto: { nombre: f.area_nombre, lineas: lineas.length ? lineas : ['Sin datos de contacto registrados'] }
     };
   })

@@ -56,7 +56,7 @@ describe('secciones', () => {
       return s.filas[0].valores[5];
     };
     assert.equal(situacion('2026-12-31'), 'Faltan 59 días');
-    assert.equal(situacion('2026-11-03'), 'Faltan 1 día');
+    assert.equal(situacion('2026-11-03'), 'Falta 1 día');
     assert.equal(situacion('2026-11-02'), 'Vence hoy');
     assert.equal(situacion('2026-10-31'), 'Vencido hace 2 días');
   });

@@ -19,6 +19,18 @@ const ficha = (cambios = {}) => ({
 const anexo = (fichas, extra = {}) => construirAnexo({ numero: 3, anio: 2026, fecha: '2026-11-02', fichas, ...extra });
 // Cantidad de rectángulos dibujados en una hoja: el QR se dibuja con decenas de ellos
 const rectangulos = (contenido) => (contenido.match(/ re\b/g) ?? []).length;
+const CORTE = '… (continúa en el portal)';
+const SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
+const SOLICITA = 'Listado actualizado de las áreas e instituciones especializadas en género, con un registro por área y estos datos: nombre, dependencia, dirección, barrio, teléfono, correo electrónico y coordenadas (latitud y longitud). Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.';
+const DEPENDE_REAL = 'Subsecretaría de Modernización y Transparencia. / Secretaría de Gobierno, Modernización y Transparencia';
+// Ficha con textos del largo de los reales: descripción de unos 430 caracteres (van de 300 a 510), observaciones de
+// hasta 90, "qué se solicita" de 200 a 450 y un "Depende de" de 101 caracteres como el más largo de la base
+const fichaReal = (cambios = {}) => ficha({
+  descripcion: 'Listado de las áreas municipales con funciones específicas en materia de género y diversidad, con su dependencia jerárquica, dirección, teléfono, correo electrónico y horario de atención. Incluye las oficinas de atención a personas en situación de violencia por motivos de género y los espacios de articulación con organizaciones de la sociedad civil, con su ubicación georreferenciada en el ejido municipal.',
+  observaciones: 'Las coordenadas corresponden al relevamiento municipal de marzo de 2024.',
+  que_se_solicita: SOLICITA, area_superior: DEPENDE_REAL, tema_secundario: 'Gobierno',
+  nombre_contacto: 'Laura Gómez', email_contacto: 'lgomez@ejemplo.gov.ar', ...cambios
+});
 
 describe('construirAnexo', () => {
   it('arma una hoja por ficha, con estado, línea de tiempo y campos', () => {
@@ -47,6 +59,18 @@ describe('construirAnexo', () => {
   it('un día de plazo va en singular; un vencimiento pasado (datos de ejemplo) no dice "faltan" días negativos', () => {
     assert.equal(anexo([ficha({ vencimiento: '2026-11-03' })]).hojas[0].estado, 'Vence el 03/11/2026 · falta 1 día');
     assert.equal(anexo([ficha({ vencimiento: '2026-10-30' })]).hojas[0].estado, 'Venció el 30/10/2026 · hace 3 días');
+  });
+
+  it('"Qué se solicita": el texto del dataset sin espacios de más o, si no tiene, el texto por defecto de la spec', () => {
+    assert.equal(anexo([ficha({ que_se_solicita: `  ${SOLICITA}\n ` })]).hojas[0].queSeSolicita, SOLICITA);
+    for (const vacio of [undefined, null, '', '  \n  ']) {
+      assert.equal(anexo([ficha({ que_se_solicita: vacio })]).hojas[0].queSeSolicita, SOLICITA_POR_DEFECTO);
+    }
+  });
+
+  it('la ficha no repite las fechas, que ya están en la línea de tiempo', () => {
+    assert.deepEqual(anexo([ficha({ tema_secundario: 'Gobierno' })]).hojas[0].campos.map(([etiqueta]) => etiqueta),
+      ['Área responsable', 'Depende de', 'Gestión', 'Frecuencia', 'Tema principal', 'Tema secundario', 'Formatos']);
   });
 });
 
@@ -126,10 +150,10 @@ const verificarDiagramacion = ({ textos, bloques, lineas }) => {
   for (const [linea, otro] of deLaMismaHoja(lineas, [...textos, ...bloques])) assert.ok(!seCruzan(linea, otro), `${nombre(linea)} cruza ${nombre(otro)}`);
 };
 
-// Ficha con todos los textos al máximo: título, campos, descripción, observaciones y todos los contactos
+// Ficha con todos los textos al máximo: título, qué se solicita, campos, descripción, observaciones y contactos
 const fichaLarguisima = (cambios = {}) => ficha({
   titulo: 'Título larguísimo '.repeat(18), descripcion: 'Texto muy largo de la descripción del dataset. '.repeat(120),
-  observaciones: 'Observación larga. '.repeat(80),
+  observaciones: 'Observación larga. '.repeat(80), que_se_solicita: 'Solicitud larga de datos. '.repeat(60),
   formatos: Array.from({ length: 20 }, (_, i) => `FORMATO${i}`).join(', '),
   area_nombre: 'Secretaría de Ambiente, Desarrollo Sustentable, Cambio Climático y Gestión Integral de Residuos Urbanos y Rurales del Municipio',
   area_superior: 'Subsecretaría de Coordinación General de Políticas Públicas Territoriales y Planificación Estratégica Municipal',
@@ -194,19 +218,77 @@ describe('renderAnexo', () => {
     assert.ok(!hojas[1].some(l => l.includes('https://')), hojas[1].join(' | '));
   });
 
-  it('de arriba abajo: encabezado, título, estado, línea de tiempo, ficha, descripción, contacto y pie', async () => {
-    const pdf = await renderAnexo(anexo([ficha({ observaciones: 'Se publica con cortes trimestrales.' })]));
+  it('de arriba abajo: encabezado, título, estado, línea de tiempo, qué se solicita, ficha, descripción, contacto y pie', async () => {
+    const pdf = await renderAnexo(anexo([fichaReal()]));
     const textos = textosPorHoja(pdf)[0];
-    // base: altura de la línea de base desde el borde inferior; cuanto más abajo en la hoja, menor
-    const base = (buscado) => {
+    const buscar = (buscado) => {
       const encontrado = textos.find(t => t.texto.includes(buscado));
       assert.ok(encontrado, `falta "${buscado}" en ${textos.map(t => t.texto).join(' | ')}`);
-      return encontrado.base;
+      return encontrado;
     };
+    // base: altura de la línea de base desde el borde inferior; cuanto más abajo en la hoja, menor
     const orden = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Áreas específicas de género', 'Vence el 30/11/2026',
-      'ÚLTIMA ACTUALIZACIÓN', 'ÁREA RESPONSABLE', 'DESCRIPCIÓN', 'Listado de áreas municipales', 'OBSERVACIONES',
-      'Se publica con cortes', 'CONTACTO DEL ÁREA RESPONSABLE', 'area@ejemplo.gov.ar', 'Hoja 1 de 1'].map(base);
+      'ÚLTIMA ACTUALIZACIÓN', 'QUÉ SE SOLICITA', 'Listado actualizado de las áreas', 'ÁREA RESPONSABLE', 'DESCRIPCIÓN',
+      'Listado de las áreas municipales', 'OBSERVACIONES', 'Las coordenadas corresponden', 'CONTACTO DEL ÁREA RESPONSABLE',
+      'area@ejemplo.gov.ar', 'Hoja 1 de 1'].map(t => buscar(t).base);
     orden.slice(1).forEach((valor, i) => assert.ok(valor < orden[i], `fuera de orden en la posición ${i + 1}: ${orden.join(', ')}`));
+    // "Qué se solicita" es el bloque más destacado: letra más grande que la de la descripción
+    assert.ok(buscar('Listado actualizado de las áreas').tamano > buscar('Listado de las áreas municipales').tamano);
+  });
+
+  it('"Qué se solicita" va en un recuadro propio, también con el texto por defecto', async () => {
+    const { textos, bloques } = await diagramacion(anexo([ficha()]));
+    const titulo = textos.find(t => t.texto === 'QUÉ SE SOLICITA');
+    const texto = textos.find(t => t.texto === SOLICITA_POR_DEFECTO);
+    assert.ok(titulo && texto, textos.map(t => t.texto).join(' | '));
+    assert.ok(bloques.some(b => contiene(b, titulo) && contiene(b, texto)), 'el título y el texto no están en el mismo recuadro');
+  });
+
+  it('un "Depende de" largo como los reales ocupa la fila entera y no se corta', async () => {
+    const lineas = lineasPorHoja(await renderAnexo(anexo([fichaReal()])))[0];
+    assert.ok(lineas.join(' ').includes(DEPENDE_REAL), lineas.join(' | '));
+    assert.ok(!lineas.some(l => l.includes('…')), lineas.join(' | '));
+  });
+
+  it('los valores de la ficha y del contacto se cortan con "…"; "(continúa en el portal)" queda para los textos largos', async () => {
+    const { textos } = await diagramacion(anexo([fichaLarguisima({ area_superior: 'Subsecretaría '.repeat(40), email_contacto: 'x'.repeat(400) })]));
+    const largos = ['Título larguísimo', 'Solicitud larga', 'Texto muy largo', 'Observación larga'];
+    for (const t of textos.filter(t => t.texto.endsWith(CORTE))) {
+      assert.ok(largos.some(inicio => t.texto.startsWith(inicio)), `"${t.texto.slice(0, 60)}" se cortó con "(continúa en el portal)"`);
+    }
+    assert.ok(textos.some(t => t.texto.startsWith('Subsecretaría') && t.texto.endsWith('…') && !t.texto.endsWith(CORTE)), 'el "Depende de" no se cortó con "…"');
+    assert.ok(textos.some(t => t.texto.startsWith('xxx') && t.texto.endsWith('…') && !t.texto.endsWith(CORTE)), 'el email no se cortó con "…"');
+  });
+
+  it('el link al portal no baja de 8 puntos', async () => {
+    const url = `https://datos.comodoro.gov.ar/dataset/${'conjunto-de-datos-con-nombre-muy-largo-'.repeat(7)}`;
+    const textos = textosPorHoja(await renderAnexo(anexo([ficha({ url_dataset: url })])))[0].filter(t => t.texto.includes('conjunto-de-datos'));
+    assert.ok(textos.length > 0);
+    for (const t of textos) assert.ok(t.tamano >= 8, `el link va en ${t.tamano} puntos`);
+  });
+
+  it('aprovecha la A4: con textos reales, el contacto queda abajo, cerca del pie, y no quedan huecos grandes', async () => {
+    for (const real of [fichaReal(), fichaReal({ url_dataset: null }), fichaReal({ observaciones: null, area_superior: 'Intendencia' })]) {
+      const { textos, bloques, lineas } = await diagramacion(anexo([real]));
+      const lineaDelPie = lineas.reduce((a, b) => (b.y0 > a.y0 ? b : a));
+      const rotulo = textos.find(t => t.texto === 'CONTACTO DEL ÁREA RESPONSABLE');
+      const contacto = bloques.find(b => contiene(b, rotulo));
+      assert.ok(lineaDelPie.y0 - contacto.y1 <= 8 * MM, `entre el contacto y el pie quedan ${((lineaDelPie.y0 - contacto.y1) / MM).toFixed(1)} mm`);
+      // Recorriendo la hoja de arriba abajo, ningún espacio vacío de más de 14 mm entre lo dibujado
+      const cosas = [...textos, ...bloques, ...lineas].sort((a, b) => a.y0 - b.y0);
+      let hasta = cosas[0].y1;
+      for (const c of cosas) {
+        assert.ok(c.y0 - hasta <= 14 * MM, `hueco de ${((c.y0 - hasta) / MM).toFixed(1)} mm antes de ${nombre(c)}`);
+        hasta = Math.max(hasta, c.y1);
+      }
+    }
+  });
+
+  it('un texto larguísimo sin espacios no demora el render', async () => {
+    const inicio = performance.now();
+    await renderAnexo(anexo([ficha({ descripcion: 'x'.repeat(30000), que_se_solicita: 'y'.repeat(30000), area_superior: 'z'.repeat(5000), email_contacto: 'w'.repeat(5000) })]));
+    const demora = performance.now() - inicio;
+    assert.ok(demora < 2000, `tardó ${Math.round(demora)} ms`);
   });
 
   it('nada sale de los márgenes ni se superpone, tampoco con todos los textos al máximo', async () => {
@@ -215,6 +297,8 @@ describe('renderAnexo', () => {
       'nombre_contacto', 'telefono_contacto', 'email_contacto'].map(campo => [campo, `${campo} `.repeat(30)]));
     const casos = [
       [ficha()],
+      [fichaReal()],
+      [fichaReal({ url_dataset: null, ultima_actualizacion: null, observaciones: null, que_se_solicita: null })],
       [ficha({ url_dataset: null, ultima_actualizacion: null, observaciones: 'Sin cambios.', area_superior: null })],
       [ficha({ vencimiento: '2026-11-03' }), ficha({ ultima_actualizacion: '2026-11-01' }), ficha({ vencimiento: '2026-11-02' })],
       [fichaLarguisima()],
@@ -235,10 +319,11 @@ describe('renderAnexo', () => {
     }
   });
 
-  it('con textos larguísimos corta descripción, observaciones y título con "… (continúa en el portal)"', async () => {
+  it('con textos larguísimos corta título, qué se solicita, descripción y observaciones con "… (continúa en el portal)"', async () => {
     const cajas = (await diagramacion(anexo([fichaLarguisima()]))).textos;
-    const cortados = cajas.filter(c => c.texto.endsWith('… (continúa en el portal)'));
+    const cortados = cajas.filter(c => c.texto.endsWith(CORTE));
     assert.ok(cortados.some(c => c.texto.startsWith('Título larguísimo')), 'el título no se cortó');
+    assert.ok(cortados.some(c => c.texto.startsWith('Solicitud larga')), 'qué se solicita no se cortó');
     assert.ok(cortados.some(c => c.texto.startsWith('Texto muy largo')), 'la descripción no se cortó');
     assert.ok(cortados.some(c => c.texto.startsWith('Observación larga')), 'las observaciones no se cortaron');
   });
