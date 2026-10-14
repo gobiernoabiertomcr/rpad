@@ -38,6 +38,25 @@ const normalizarTextoOpcional = (valor) => {
 // El texto opcional puede faltar, venir null o ser un string (cualquier otro tipo es un error del cliente)
 const esTextoOpcionalValido = (valor) => valor === undefined || valor === null || typeof valor === 'string';
 
+// Tope de los textos largos del dataset: se rechaza al proponer, con un mensaje claro, en lugar de fallar al aprobar.
+// "Qué se solicita" se guarda sin los espacios de los extremos, así que se cuenta sin ellos.
+const LARGO_MAXIMO_TEXTO = 4000;
+const TEXTOS_LARGOS = [
+  ['que_se_solicita', 'Qué se solicita', (valor) => valor.trim()],
+  ['observaciones', 'Observaciones', (valor) => valor]
+];
+// El primer texto largo que se pasa del tope, como mensaje de error; null si están todos bien
+const textoDemasiadoLargo = (data) => {
+  for (const [campo, etiqueta, comoSeGuarda] of TEXTOS_LARGOS) {
+    if (typeof data[campo] !== 'string') continue;
+    const caracteres = [...comoSeGuarda(data[campo])].length;
+    if (caracteres > LARGO_MAXIMO_TEXTO) {
+      return `${etiqueta} no puede tener más de ${LARGO_MAXIMO_TEXTO} caracteres (tiene ${caracteres})`;
+    }
+  }
+  return null;
+};
+
 /**
  * Funcion auxiliar: Comparar dos objetos para detectar si hay cambios reales
  * Retorna true si hay al menos un cambio
@@ -259,6 +278,11 @@ export const createDataset = async (req, res) => {
       });
     }
 
+    const largoAlta = textoDemasiadoLargo(data);
+    if (largoAlta) {
+      return res.status(400).json({ success: false, error: largoAlta });
+    }
+
     // Extraer IDs de formatos (pueden venir como objetos o números)
     const formatoIds = data.formatos.map(f => typeof f === 'object' ? f.id : f);
     
@@ -348,6 +372,11 @@ export const updateDataset = async (req, res) => {
         success: false,
         error: 'que_se_solicita debe ser un texto'
       });
+    }
+
+    const largoEdicion = textoDemasiadoLargo(data);
+    if (largoEdicion) {
+      return res.status(400).json({ success: false, error: largoEdicion });
     }
 
     // Validar formatos si se proporcionan

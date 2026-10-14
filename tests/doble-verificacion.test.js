@@ -276,6 +276,32 @@ describe('campo "Qué se solicita"', () => {
     assert.equal(edicion.status, 400);
   });
 
+  it('"Qué se solicita" y "Observaciones" de más de 4000 caracteres se rechazan al proponer (alta y edición), con un mensaje claro', async () => {
+    const largo = 'á'.repeat(4001);
+    const casos = [['que_se_solicita', 'Qué se solicita'], ['observaciones', 'Observaciones']];
+    for (const [campo, etiqueta] of casos) {
+      const alta = await api.post('/datasets', { ...datosAlta(`alta larga ${campo}`), [campo]: largo }, { token: usuarios.adminA.token });
+      assert.equal(alta.status, 400, campo);
+      assert.equal(alta.body.error, `${etiqueta} no puede tener más de 4000 caracteres (tiene 4001)`);
+    }
+    const id = await crearDatasetAprobado('edición con textos largos');
+    for (const [campo, etiqueta] of casos) {
+      const edicion = await api.put(`/datasets/${id}`, { [campo]: largo }, { token: usuarios.adminA.token });
+      assert.equal(edicion.status, 400, campo);
+      assert.equal(edicion.body.error, `${etiqueta} no puede tener más de 4000 caracteres (tiene 4001)`);
+    }
+    assert.equal((await query('SELECT id FROM cambios_pendientes WHERE dataset_id = ? AND estado = ?', [id, 'pendiente'])).length, 0);
+
+    // 4000 justos (sin contar los espacios de los extremos de "Qué se solicita") se aceptan y se guardan al aprobarse
+    const justo = 'á'.repeat(4000);
+    const edicion = await api.put(`/datasets/${id}`, { que_se_solicita: `  ${justo}  `, observaciones: justo }, { token: usuarios.adminA.token });
+    assert.equal(edicion.status, 200, edicion.body.error);
+    assert.equal((await aprobar(edicion.body.data.cambio_pendiente_id, usuarios.adminB)).status, 200);
+    const guardado = await datasetEnDb(id);
+    assert.equal(guardado.que_se_solicita, justo);
+    assert.equal(guardado.observaciones, justo);
+  });
+
   it('el detalle público del dataset lo devuelve, sin iniciar sesión', async () => {
     const id = await crearConTexto('público con qué se solicita', TEXTO);
     const res = await api.get(`/datasets/${id}`);
