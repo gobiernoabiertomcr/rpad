@@ -71,6 +71,16 @@ describe('renderPdf', () => {
     assert.equal(paginas(await renderPdf(nota(1))), 1);
   });
 
+  it('el aviso lleva la línea del anexo antes de "Justificación:"; la reiteración no', async () => {
+    for (const [cantidad, linea] of [[1, 'Anexo: reporte de los conjuntos de datos (1 hoja).'], [2, 'Anexo: reporte de los conjuntos de datos (2 hojas).']]) {
+      const lineas = lineasPorHoja(await renderPdf(nota(cantidad))).flat();
+      assert.equal(lineas.filter(l => l === linea).length, 1, lineas.join(' | '));
+      assert.ok(lineas.indexOf(linea) < lineas.indexOf('Justificación:'), lineas.join(' | '));
+    }
+    const reiteracion = lineasPorHoja(await renderPdf(nota(2, { tipo: 'reiteracion' }))).flat();
+    assert.ok(!reiteracion.some(l => l.startsWith('Anexo:')), reiteracion.join(' | '));
+  });
+
   it('una firma PNG RGBA sana (también entrelazada) sale en el PDF con su transparencia', async () => {
     for (const imagen of [pngRgba(), pngRgba({ ancho: 37, alto: 23, entrelazado: true })]) {
       const pdf = texto(await renderPdf(nota(1), { firmaImagen: imagen }));
@@ -473,6 +483,22 @@ for (const variante of VARIANTES) {
         assert.equal(conTitulo.length, 1, etiqueta);
         assert.ok(juntas(conTitulo[0]).includes(inicio), `${etiqueta}: el título quedó sin su párrafo`);
       }
+    });
+
+    it('la línea del anexo (solo avisos) está en la misma hoja que "Justificación:", justo antes', () => {
+      let avisos = 0;
+      for (const { etiqueta, nota: n, hojas } of renderizadas) {
+        const conAnexo = hojas.filter(lineas => lineas.some(l => l.startsWith('Anexo:')));
+        if (n.tipo === 'reiteracion') {
+          assert.equal(conAnexo.length, 0, etiqueta);
+          continue;
+        }
+        avisos++;
+        assert.equal(conAnexo.length, 1, etiqueta);
+        const lineas = conAnexo[0].filter(l => !esPie(l));
+        assert.equal(lineas[lineas.indexOf(n.anexo) + 1], 'Justificación:', `${etiqueta}: el anexo no quedó junto al título de la justificación`);
+      }
+      assert.ok(avisos > 0);
     });
 
     it('el último párrafo, el remitente, la firma y la línea CC cierran la última hoja', () => {

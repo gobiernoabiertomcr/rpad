@@ -417,6 +417,13 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
       }
     }
 
+    // La línea del anexo (solo avisos) viaja con el título de la justificación y su primer párrafo: se reserva
+    // también el espacio que deja debajo (si no, el reservado a continuación puede mandar el título a otra hoja)
+    if (nota.anexo) {
+      asegurarEspacio(altoTexto(nota.anexo) + altoEspacio(0.6, 12) + 25 + altoTexto(nota.justificacion[0] || ''));
+      parrafo(nota.anexo, { align: 'left', espacio: 0.6 });
+    }
+
     // El título viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
     // Si hay un solo párrafo (o ninguno) es a la vez el primero y el último: se reserva todo junto antes
     // de imprimir el título, para que no se cambie de hoja justo después de escribirlo.

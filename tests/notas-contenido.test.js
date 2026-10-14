@@ -139,9 +139,9 @@ describe('HTML', () => {
     assert.ok(html.includes('CC. Dir. de Investigación Territorial'));
   });
 
-  it('empieza avisando, en bordó y negrita, que la nota va adjunta en PDF', () => {
+  it('empieza avisando, en bordó y negrita, que la nota y su anexo van adjuntos en PDF', () => {
     const html = renderHtml(nota());
-    const aviso = '<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTA NOTA EN PDF</p>';
+    const aviso = '<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTAN NOTA Y ANEXO EN PDF</p>';
     assert.ok(html.includes(aviso));
     assert.ok(html.indexOf(aviso) < html.indexOf('REF.:'));
   });
@@ -156,11 +156,51 @@ describe('HTML', () => {
 describe('texto plano', () => {
   it('lleva los mismos datos que el HTML', () => {
     const texto = renderTexto(nota({ gestion: 'externa', areas: [{ id: 10, nombre: 'Área Uno', email_principal: 'uno@comodoro.gov.ar' }] }));
-    assert.ok(texto.startsWith(`SE ADJUNTA NOTA EN PDF\n\nREF.: "${REF}"`));
+    assert.ok(texto.startsWith(`SE ADJUNTAN NOTA Y ANEXO EN PDF\n\nREF.: "${REF}"`));
     assert.ok(texto.includes('Nota Digital N° 12/26'));
     assert.ok(texto.includes('- Dataset A (https://datos.comodoro.gov.ar/dataset/a)'));
     assert.ok(texto.includes('    Situación: Faltan 59 días'));
     assert.ok(texto.includes('    Email: uno@comodoro.gov.ar'));
     assert.ok(texto.trimEnd().endsWith('CC. Dir. Administrativa'));
+  });
+});
+
+describe('textos del 14/10/2026', () => {
+  it('el aviso interno dice "En tal sentido, solicito"', () => {
+    assert.ok(nota().parrafoInicial.includes('requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización'));
+  });
+
+  it('ninguna justificación menciona el WhatsApp', () => {
+    for (const tipo of ['aviso', 'reiteracion']) {
+      const texto = nota({ tipo }).justificacion.join(' ');
+      assert.ok(!texto.includes('WhatsApp'), tipo);
+      assert.ok(texto.includes('datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar'), tipo);
+    }
+    assert.equal(nota().justificacion[2],
+      'La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.');
+    assert.equal(nota({ tipo: 'reiteracion' }).justificacion[0],
+      'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.');
+  });
+
+  it('el aviso lleva la línea del anexo con la cantidad de hojas; la reiteración no', () => {
+    assert.equal(nota().anexo, 'Anexo: reporte de los conjuntos de datos (1 hoja).');
+    assert.equal(nota({ datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B' })] }).anexo,
+      'Anexo: reporte de los conjuntos de datos (2 hojas).');
+    assert.equal(nota({ tipo: 'reiteracion' }).anexo, null);
+  });
+
+  it('la línea del anexo va antes de "Justificación:" en el HTML y en el texto', () => {
+    const linea = 'Anexo: reporte de los conjuntos de datos (1 hoja).';
+    const html = renderHtml(nota());
+    assert.ok(html.includes(linea) && html.indexOf(linea) < html.indexOf('Justificación:'));
+    const texto = renderTexto(nota());
+    assert.ok(texto.includes(linea) && texto.indexOf(linea) < texto.indexOf('Justificación:'));
+    assert.ok(!renderHtml(nota({ tipo: 'reiteracion' })).includes('Anexo:'));
+  });
+
+  it('el email del aviso anuncia nota y anexo; el de la reiteración, solo la nota', () => {
+    assert.ok(renderHtml(nota()).includes('>SE ADJUNTAN NOTA Y ANEXO EN PDF</p>'));
+    assert.ok(renderTexto(nota()).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\n'));
+    assert.ok(renderHtml(nota({ tipo: 'reiteracion' })).includes('>SE ADJUNTA NOTA EN PDF</p>'));
   });
 });

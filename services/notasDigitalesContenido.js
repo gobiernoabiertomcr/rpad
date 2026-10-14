@@ -8,7 +8,7 @@ const REMITENTE = 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN';
 
 const PARRAFO_INICIAL = {
   aviso: {
-    interna: 'Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. Solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
+    interna: 'Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
     externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.).'
   },
   reiteracion: {
@@ -32,10 +32,10 @@ const JUSTIFICACION = {
   aviso: [
     'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos, tanto de áreas municipales como de organismos externos, en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar).',
     'Cabe destacar que Comodoro Rivadavia se encuentra entre los primeros puestos del Índice Nacional de Datos Abiertos. En este marco, mantener la información actualizada contribuye directamente a sostener y fortalecer este posicionamiento.',
-    'La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, o vía WhatsApp al +54 9 2974 05-6894. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.'
+    'La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.'
   ],
   reiteracion: [
-    'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, o vía WhatsApp al +54 9 2974 05-6894, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.'
+    'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.'
   ]
 };
 
@@ -49,6 +49,9 @@ const CAMPOS_CONTACTO = [
   ['telefono_contacto', 'Teléfono de contacto'],
   ['email_contacto', 'Email de contacto']
 ];
+
+// Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto, y el aviso suma su anexo
+const AVISO_ADJUNTO = { aviso: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', reiteracion: 'SE ADJUNTA NOTA EN PDF' };
 
 export const escapeHtml = (texto) => String(texto ?? '')
   .replace(/&/g, '&amp;')
@@ -129,9 +132,12 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     asunto,
     ref,
     destinatario: DESTINATARIO,
+    avisoAdjunto: AVISO_ADJUNTO[tipo],
     parrafoInicial: PARRAFO_INICIAL[tipo][gestion],
     secciones,
     contactos,
+    // Una hoja del anexo por dataset (spec 6.7); solo los avisos llevan anexo
+    anexo: tipo === 'aviso' ? `Anexo: reporte de los conjuntos de datos (${cantidad(datasets.length, 'hoja', 'hojas')}).` : null,
     justificacion: JUSTIFICACION[tipo],
     remitente: REMITENTE,
     fechaLarga: formatoLargo(fecha),
@@ -141,8 +147,6 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
 };
 
 const ESTILO_CELDA = 'border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;';
-// Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto
-const AVISO_ADJUNTO = 'SE ADJUNTA NOTA EN PDF';
 
 export const renderHtml = (nota) => {
   const parrafo = (texto) => `<p style="margin:0 0 12px;text-align:justify;">${escapeHtml(texto)}</p>`;
@@ -177,13 +181,14 @@ export const renderHtml = (nota) => {
 <html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(nota.asunto)}</title></head>
 <body style="margin:0;padding:24px;background:#ffffff;">
 <div style="max-width:760px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:#000000;">
-<p style="margin:0 0 20px;color:#800000;font-weight:bold;">${AVISO_ADJUNTO}</p>
+<p style="margin:0 0 20px;color:#800000;font-weight:bold;">${escapeHtml(nota.avisoAdjunto)}</p>
 <p style="margin:0 0 4px;"><b><u>REF.:</u></b> "${escapeHtml(nota.ref)}"</p>
 <p style="margin:0 0 24px;text-align:right;"><b>Nota Digital N°</b> ${escapeHtml(nota.numeroTexto)}</p>
 <p style="margin:0 0 16px;"><b><u>${escapeHtml(nota.destinatario)}</u></b></p>
 ${parrafo(nota.parrafoInicial)}
 ${secciones}
 ${contactos}
+${nota.anexo ? `<p style="margin:16px 0 0;">${escapeHtml(nota.anexo)}</p>` : ''}
 <p style="margin:16px 0 6px;"><b>Justificación:</b></p>
 ${nota.justificacion.map(parrafo).join('\n')}
 <p style="margin:24px 0 0;"><b><u>${escapeHtml(nota.remitente)}</u></b>, ${escapeHtml(nota.fechaLarga)}.</p>
@@ -193,7 +198,7 @@ ${nota.justificacion.map(parrafo).join('\n')}
 };
 
 export const renderTexto = (nota) => {
-  const lineas = [AVISO_ADJUNTO, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
+  const lineas = [nota.avisoAdjunto, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
   for (const seccion of nota.secciones) {
     lineas.push(seccion.titulo, seccion.introduccion, '');
     for (const fila of seccion.filas) {
@@ -208,7 +213,7 @@ export const renderTexto = (nota) => {
     for (const contacto of nota.contactos) lineas.push(contacto.nombre, ...contacto.lineas.map(l => `    ${l}`));
     lineas.push('');
   }
-  lineas.push('Justificación:', ...nota.justificacion, '', `${nota.remitente}, ${nota.fechaLarga}.`, '',
+  lineas.push(...(nota.anexo ? [nota.anexo, ''] : []), 'Justificación:', ...nota.justificacion, '', `${nota.remitente}, ${nota.fechaLarga}.`, '',
     nota.firma.nombre, nota.firma.cargo, '', nota.lineaCc);
   return lineas.join('\n');
 };
