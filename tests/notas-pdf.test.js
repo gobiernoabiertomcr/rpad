@@ -98,6 +98,57 @@ describe('renderPdf', () => {
   });
 });
 
+// Reiteración externa con los valores reales del 02/11/2026 (títulos, áreas y frecuencias del portal, públicos):
+// la tabla de 7 columnas es la más angosta, y las áreas y frecuencias traen palabras largas
+const REITERACION_REAL = [
+  ['Parque Automotor (Patentamiento)', 'Dirección de Información Tributaria. Dirección General de Análisis y Administración Tributaria', 'Anualmente', '2022-12-31', '2024-01-31'],
+  ['Siniestros viales por categoría', 'Agencia Provincial de Seguridad Vial', 'Anualmente', '2023-12-31', '2025-01-31'],
+  ['Ejecución presupuestaria', 'Subsecretaria de Coordinación Económica y Control de Gestión', 'Cada medio año', '2025-06-30', '2025-07-31'],
+  ['Presupuesto Municipal', 'Secretaría de Economía, Finanzas y Control de Gestión', 'Anualmente', '2025-01-31', '2026-01-31'],
+  ['Obra Pública', 'Secretaría de Infraestructura, Obras y Servicios Públicos', 'Cada medio año', '2025-07-31', '2026-01-31'],
+  ['Listado de Proveedores', 'Dirección General de Servicios Administrativos', 'Anualmente', '2025-09-29', '2026-07-31'],
+  ['Directores Generales de Planta Permanente', 'Dirección General de Relaciones Laborales', 'Cada medio año', '2026-02-04', '2026-07-31'],
+  ['Pedidos de Acceso a la Información Pública', 'Agencia de Acceso a la Información Pública', 'Cuatrimestralmente', '2026-06-30', '2026-11-30']
+].map(([titulo, area, frecuencia, ultima, vencimiento], i) => ({
+  id: i + 1, titulo, url_dataset: `https://datos.comodoro.gov.ar/dataset/${i + 1}`, area_id: i + 1, area_nombre: area,
+  frecuencia_nombre: frecuencia, ultima_actualizacion: ultima, vencimiento, informado: { numero: 2, anio: 2026, fecha: '2026-10-13' },
+  reiteraciones: 0, antecedente: null
+}));
+const reiteracionReal = (cambios = {}) => nota(0, { tipo: 'reiteracion', datasets: REITERACION_REAL, areas: [], ...cambios });
+// Palabras de un texto como las separa PDFKit para partir líneas (en los espacios)
+const palabras = (texto) => String(texto).split(/\s+/).filter(Boolean);
+
+describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales', () => {
+  it('no parte ninguna palabra de las columnas que no son el título: "Secretaría de Infraestructura, …" entera', async () => {
+    const n = reiteracionReal();
+    const lineas = lineasPorHoja(await renderPdf(n)).flat();
+    const enteras = new Set(lineas.flatMap(palabras));
+    // Ninguna línea termina en una letra suelta ni empieza con el resto de "Infraestructura,"
+    assert.ok(!lineas.some(l => / I$/.test(l) || l.startsWith('nfraestructura')), lineas.join(' | '));
+    const partidas = [];
+    for (const seccion of n.secciones) {
+      for (const texto of [...seccion.columnas.slice(1), ...seccion.filas.flatMap(f => f.valores.slice(1))]) {
+        for (const palabra of palabras(texto)) if (!enteras.has(palabra)) partidas.push(`"${palabra}" (de "${texto}")`);
+      }
+    }
+    assert.deepEqual(partidas, [], lineas.join(' | '));
+  });
+
+  it('si los mínimos de las columnas no entran, cede primero el título y las demás palabras siguen enteras', async () => {
+    // En la sección de próximos a vencer (una fila, con "Cuatrimestralmente"), un área con una palabra de 91 puntos:
+    // con el título en su mínimo de siempre la tabla no entra
+    const datasets = REITERACION_REAL.map(d => (d.frecuencia_nombre === 'Cuatrimestralmente' ? { ...d, area_nombre: 'Dirección de Interjurisdiccionalidades' } : d));
+    const n = reiteracionReal({ datasets });
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    const enteras = new Set(textos.flatMap(t => palabras(t.texto)));
+    const partidas = n.secciones.flatMap(s => [...s.columnas.slice(1), ...s.filas.flatMap(f => f.valores.slice(1))])
+      .flatMap(palabras).filter(palabra => !enteras.has(palabra));
+    assert.deepEqual(partidas, [], textos.map(t => t.texto).join(' | '));
+    // Y la tabla sigue dentro de los márgenes
+    for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
+  });
+});
+
 describe('renderPdf: membrete', () => {
   const conMembrete = (cambios = {}) => ({ membreteImagen: BANNER, membretePie: PIE, ...cambios });
   const enElBorde = (imagen) => cerca(imagen.y, 0);

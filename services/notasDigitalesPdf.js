@@ -28,6 +28,10 @@ const TAMANO_TABLA = 8.5;
 const RELLENO = 3;
 // La primera columna (título del dataset) puede partir palabras larguísimas; las demás no
 const MINIMO_TITULO = 55;
+// Segunda parte, en letra más chica, de la celda "Informado en" de las reiteraciones (antecedente de los emails
+// anteriores, spec 6.4), debajo del texto de la nota
+const TAMANO_SECUNDARIO = 7;
+const SEPARACION_SECUNDARIO = 1.5;
 // Alto que necesitan el remitente, la firma y la línea CC: van juntos, sin que la firma quede sola en una hoja
 const ALTO_CIERRE = 200;
 
@@ -223,19 +227,36 @@ export const pieEntraEnUnaLinea = (pie) => {
   return new DocumentoNota({ autoFirstPage: false }).font(NORMAL).fontSize(TAMANO_MINIMO_PIE).widthOfString(texto) <= ANCHO_TEXTO;
 };
 
-// Ancho de cada columna: la proporción base, ampliada lo justo para que no se corten fechas,
-// frecuencias ni encabezados, y recortada de las columnas que tienen holgura
+// Palabra más ancha de un texto como la mide PDFKit al partir líneas: cada palabra con el espacio que la sigue (la
+// última, sin él). Si una palabra así no entra en el ancho de la celda, PDFKit la parte entre letras.
+const palabraMasAncha = (doc, texto, fuente, tamano) => {
+  doc.font(fuente).fontSize(tamano);
+  const palabras = String(texto ?? '').split(/\s+/).filter(Boolean);
+  return Math.max(0, ...palabras.map((palabra, i) => doc.widthOfString(i < palabras.length - 1 ? `${palabra} ` : palabra)));
+};
+
+// Ancho de cada columna: la proporción base, ampliada lo justo para que ninguna palabra de las columnas que no son
+// el título se parta (fechas, frecuencias, áreas, encabezados), y recortada de las columnas que tienen holgura.
+// Si los mínimos no entran, cede primero el título (que puede partir palabras larguísimas).
 const calcularAnchos = (doc, seccion, ancho) => {
   const base = PROPORCIONES[seccion.columnas.length].map(p => (p / 100) * ancho);
-  const palabraMasLarga = (texto, fuente) => {
-    doc.font(fuente).fontSize(TAMANO_TABLA);
-    return Math.max(...String(texto).split(/\s+/).map(palabra => doc.widthOfString(palabra)));
-  };
+  const ultima = seccion.columnas.length - 1;
   const minimos = seccion.columnas.map((titulo, i) => {
-    const largo = Math.max(palabraMasLarga(titulo, NEGRITA), ...seccion.filas.map(f => palabraMasLarga(f.valores[i], NORMAL)));
+    const largo = Math.max(
+      palabraMasAncha(doc, titulo, NEGRITA, TAMANO_TABLA),
+      ...seccion.filas.map(f => palabraMasAncha(doc, f.valores[i], NORMAL, TAMANO_TABLA)),
+      // La segunda parte, en letra más chica, de la última celda ("Informado en" de las reiteraciones)
+      ...(i === ultima ? seccion.filas.map(f => palabraMasAncha(doc, f.informadoAnterior, NORMAL, TAMANO_SECUNDARIO)) : [])
+    );
     return Math.min(largo, i === 0 ? MINIMO_TITULO : Infinity) + 2 * RELLENO + 1;
   });
-  if (minimos.reduce((a, b) => a + b, 0) > ancho) return base;
+  const otras = minimos.slice(1).reduce((a, b) => a + b, 0);
+  if (otras + minimos[0] > ancho) {
+    // El título cede hasta el ancho de su encabezado; si ni así entran, las demás se reparten lo que queda en
+    // proporción a su mínimo (alguna palabra se partirá: no hay ancho para todas)
+    const titulo = Math.max(palabraMasAncha(doc, seccion.columnas[0], NEGRITA, TAMANO_TABLA) + 2 * RELLENO + 1, ancho - otras);
+    return [titulo, ...minimos.slice(1).map(m => m * Math.min(1, (ancho - titulo) / otras))];
+  }
   const anchos = base.map((a, i) => Math.max(a, minimos[i]));
   const exceso = anchos.reduce((a, b) => a + b, 0) - ancho;
   if (exceso <= 0) return anchos;
