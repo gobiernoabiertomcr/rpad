@@ -83,13 +83,42 @@ describe('secciones', () => {
     assert.equal(informado(2), 'Nota Digital N° 9/26 (01/10/2026) – reiterado 2 veces');
   });
 
-  it('antecedente de emails anteriores, solo en avisos', () => {
-    const antecedente = (datos, tipo = 'aviso') => nota({ tipo, datasets: [dataset({ antecedente: datos })] }).secciones[0].filas[0].antecedente;
+  it('antecedente de emails anteriores en avisos, y en reiteraciones solo para los que no tienen aviso', () => {
+    const antecedente = (datos, tipo = 'aviso', informado = null) => nota({ tipo, datasets: [dataset({ antecedente: datos, informado })] }).secciones[0].filas[0].antecedente;
     assert.equal(antecedente({ cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' }),
       'Antecedente: notificado a la DGMIT por correo electrónico en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026.');
     assert.equal(antecedente({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }),
       'Antecedente: notificado a la DGMIT por correo electrónico el 01/10/2026.');
-    assert.equal(antecedente({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }, 'reiteracion'), null);
+    assert.equal(antecedente({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }, 'reiteracion', { numero: 1, anio: 2026, fecha: '2026-10-13' }), null);
+    assert.equal(antecedente({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }, 'reiteracion'),
+      'Antecedente: notificado a la DGMIT por correo electrónico el 01/10/2026.');
+  });
+
+  it('reiteración: un vencido sin aviso dice "Sin aviso previo" y lleva su antecedente', () => {
+    const n = nota({ tipo: 'reiteracion', datasets: [dataset({ vencimiento: '2026-09-30', informado: null, reiteraciones: 2,
+      antecedente: { cantidad: 3, primera: '2026-07-01', ultima: '2026-09-01' } })] });
+    const fila = n.secciones[0].filas[0];
+    assert.equal(fila.valores.at(-1), 'Sin aviso previo – reiterado 2 veces');
+    assert.equal(fila.antecedente, 'Antecedente: notificado a la DGMIT por correo electrónico en 3 oportunidades, entre el 01/07/2026 y el 01/09/2026.');
+  });
+
+  it('reiteración: un dataset con aviso no lleva antecedente aunque lo tenga', () => {
+    const n = nota({ tipo: 'reiteracion', datasets: [dataset({ informado: { numero: 1, anio: 2026, fecha: '2026-10-13' },
+      antecedente: { cantidad: 3, primera: '2026-07-01', ultima: '2026-09-01' } })] });
+    assert.equal(n.secciones[0].filas[0].antecedente, null);
+  });
+
+  it('"Sin aviso previo" sin reiteraciones previas va sin sufijo, y el antecedente sale en el HTML y en el texto', () => {
+    const n = nota({ tipo: 'reiteracion', datasets: [dataset({ vencimiento: '2026-09-30', informado: null, reiteraciones: 0,
+      antecedente: { cantidad: 1, primera: '2026-09-01', ultima: '2026-09-01' } })] });
+    const fila = n.secciones[0].filas[0];
+    assert.equal(fila.valores.at(-1), 'Sin aviso previo');
+    const html = renderHtml(n);
+    assert.ok(html.includes('>Sin aviso previo</td>'));
+    assert.ok(html.includes('Antecedente: notificado a la DGMIT por correo electrónico el 01/09/2026.'));
+    const texto = renderTexto(n);
+    assert.ok(texto.includes('    Informado en: Sin aviso previo'));
+    assert.ok(texto.includes('    Antecedente: notificado a la DGMIT por correo electrónico el 01/09/2026.'));
   });
 });
 

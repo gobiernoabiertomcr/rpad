@@ -474,7 +474,7 @@ describe('corrida diaria', () => {
 
   it('una corrida pedida por un admin deja su id como creado_por de la nota', async (t) => {
     if (!esDiaHabil(hoy)) return t.skip('hoy no es día hábil');
-    await crearDataset({ vencimiento: sumarDias(hoy, -10) });
+    await crearDataset({ vencimiento: sumarDias(hoy, 10) });
 
     const res = await api.get('/notificaciones/ejecutar', comoAdmin());
     assert.equal(res.status, 200);
@@ -488,7 +488,7 @@ describe('corrida diaria', () => {
 
   it('una corrida del cron deja creado_por vacío', async (t) => {
     if (!esDiaHabil(hoy)) return t.skip('hoy no es día hábil');
-    await crearDataset({ vencimiento: sumarDias(hoy, -10) });
+    await crearDataset({ vencimiento: sumarDias(hoy, 10) });
 
     const res = await api.get('/cron/notificaciones', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
     assert.equal(res.status, 200);

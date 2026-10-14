@@ -27,14 +27,14 @@ beforeEach(() => limpiarBase());
 const ids = (lista) => lista.map(d => d.id);
 
 describe('seleccionarParaAviso', () => {
-  it('toma los que vencen dentro de la ventana y los vencidos, ordenados por vencimiento', async () => {
+  it('toma los que vencen dentro de la ventana, ordenados por vencimiento, y deja afuera los vencidos', async () => {
     const enVentana = await crearDataset({ vencimiento: '2026-12-31' });
     const justo60 = await crearDataset({ vencimiento: '2027-01-01' });
     await crearDataset({ vencimiento: '2027-02-01' }); // fuera de la ventana y de otro mes
-    const vencido = await crearDataset({ vencimiento: '2026-09-30' });
+    await crearDataset({ vencimiento: '2026-09-30' }); // vencido: va a la reiteración
     const resultado = await datos.seleccionarParaAviso('interna', '2026-11-02');
-    assert.deepEqual(ids(resultado), [vencido, enVentana, justo60]);
-    assert.equal(resultado[0].vencimiento, '2026-09-30');
+    assert.deepEqual(ids(resultado), [enVentana, justo60]);
+    assert.equal(resultado[0].vencimiento, '2026-12-31');
   });
 
   it('respeta la ventana de 30 días de la gestión externa y separa por gestión', async () => {
@@ -65,6 +65,27 @@ describe('seleccionarParaAviso', () => {
     const id = await crearDataset({ vencimiento: '2026-12-15' });
     await crearNota({ fecha: '2026-11-02', numero: 1, datasets: [{ id, vencimiento: '2026-11-30' }] });
     assert.deepEqual(ids(await datos.seleccionarParaAviso('interna', '2026-11-03')), [id]);
+  });
+});
+
+describe('avisos solo a vencer (14/10/2026)', () => {
+  it('el aviso no toma vencidos, aunque nunca hayan tenido aviso', async () => {
+    const vencido = await crearDataset({ gestion: 'interna', vencimiento: '2026-09-30' });
+    const aVencer = await crearDataset({ gestion: 'interna', vencimiento: '2026-11-30' });
+    const seleccionados = ids(await datos.seleccionarParaAviso('interna', '2026-10-14'));
+    assert.ok(seleccionados.includes(aVencer));
+    assert.ok(!seleccionados.includes(vencido));
+  });
+
+  it('un dataset que vence hoy todavía entra en el aviso', async () => {
+    const hoy = await crearDataset({ gestion: 'externa', vencimiento: '2026-10-14' });
+    assert.ok((await datos.seleccionarParaAviso('externa', '2026-10-14')).some(d => d.id === hoy));
+  });
+
+  it('un vencido del mismo mes que uno a vencer no lo arrastra al aviso: se queda para la reiteración', async () => {
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-01' });
+    const aVencer = await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
+    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-11-02')), [aVencer]);
   });
 });
 
@@ -154,11 +175,66 @@ describe('seleccionarParaReiteracion', () => {
   });
 });
 
+describe('reiteración: vencidos sin aviso', () => {
+  it('entran sin esperar 20 días, con informado null', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-10-31' });
+    const fila = (await datos.seleccionarParaReiteracion('externa', '2026-11-02')).find(d => d.id === id);
+    assert.ok(fila);
+    assert.equal(fila.informado, null);
+    assert.equal(fila.reiteraciones, 0);
+  });
+
+  it('no entran si todavía no vencieron, ni si tienen un aviso registrado (aunque haya fallado)', async () => {
+    const aVencer = await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
+    const conAvisoFallido = await crearDataset({ gestion: 'externa', vencimiento: '2026-10-31' });
+    await crearNota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-10-01', numero: 90, estado: 'fallida',
+      datasets: [{ id: conAvisoFallido, vencimiento: '2026-10-31' }] });
+    const seleccionados = ids(await datos.seleccionarParaReiteracion('externa', '2026-11-02'));
+    assert.ok(!seleccionados.includes(aVencer));
+    assert.ok(!seleccionados.includes(conAvisoFallido));
+  });
+
+  it('cuenta las reiteraciones anteriores del mismo vencimiento', async () => {
+    const id = await crearDataset({ gestion: 'interna', vencimiento: '2026-09-30' });
+    await crearNota({ tipo: 'reiteracion', gestion: 'interna', fecha: '2026-10-01', numero: 91,
+      datasets: [{ id, vencimiento: '2026-09-30', seccion: 'vencido' }] });
+    const fila = (await datos.seleccionarParaReiteracion('interna', '2026-11-02')).find(d => d.id === id);
+    assert.equal(fila.reiteraciones, 1);
+    assert.equal(fila.informado, null);
+  });
+
+  it('el aviso de una prueba no cuenta como aviso: el vencido sigue entrando sin aviso previo', async () => {
+    const id = await crearDataset({ vencimiento: '2026-10-31' });
+    await crearNota({ fecha: '2026-10-01', esPrueba: 1, datasets: [{ id, vencimiento: '2026-10-31' }] });
+    const fila = (await datos.seleccionarParaReiteracion('interna', '2026-11-02')).find(d => d.id === id);
+    assert.ok(fila);
+    assert.equal(fila.informado, null);
+  });
+
+  it('un vencido con aviso de hace menos de 20 días no entra por ninguna de las dos condiciones', async () => {
+    const id = await crearDataset({ vencimiento: '2026-10-31' });
+    await crearNota({ fecha: '2026-10-20', numero: 1, datasets: [{ id, vencimiento: '2026-10-31' }] });
+    assert.deepEqual(await datos.seleccionarParaReiteracion('interna', '2026-11-02'), []);
+  });
+
+  it('junta en un solo resultado los avisados y los vencidos sin aviso, ordenados por vencimiento y título', async () => {
+    const sinAviso = await crearDataset({ titulo: 'B sin aviso', vencimiento: '2026-10-15' });
+    const conAviso = await crearDataset({ titulo: 'A con aviso', vencimiento: '2026-12-31' });
+    const sinAvisoTardio = await crearDataset({ titulo: 'A sin aviso', vencimiento: '2026-10-31' });
+    await crearNota({ fecha: '2026-10-05', numero: 7, datasets: [{ id: conAviso, vencimiento: '2026-12-31' }] });
+    const resultado = await datos.seleccionarParaReiteracion('interna', '2026-11-02');
+    assert.deepEqual(ids(resultado), [sinAviso, sinAvisoTardio, conAviso]);
+    assert.deepEqual(resultado.map(d => d.informado), [null, null, { numero: 7, anio: 2026, fecha: '2026-10-05' }]);
+  });
+});
+
 describe('aperturaDelProximoAviso', () => {
+  const HOY = '2026-11-02';
+
   it('devuelve el primer vencimiento del mes más próximo con datasets sin aviso, sin límite de ventana', async () => {
-    assert.equal(await datos.aperturaDelProximoAviso('externa'), null);
+    assert.equal(await datos.aperturaDelProximoAviso('externa', HOY), null);
     await crearDataset({ gestion: 'externa', vencimiento: '2027-06-30' });
-    assert.equal(await datos.aperturaDelProximoAviso('externa'), '2027-06-30');
+    assert.equal(await datos.aperturaDelProximoAviso('externa', HOY), '2027-06-30');
 
     // Un mes con todos sus datasets avisados no cuenta
     const avisadoSolo = await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
@@ -169,7 +245,22 @@ describe('aperturaDelProximoAviso', () => {
     await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
     // Los de la otra gestión no cuentan
     await crearDataset({ gestion: 'interna', vencimiento: '2027-01-02' });
-    assert.equal(await datos.aperturaDelProximoAviso('externa'), '2027-01-30');
+    assert.equal(await datos.aperturaDelProximoAviso('externa', HOY), '2027-01-30');
+  });
+
+  it('ignora los vencidos: un mes que solo tiene vencidos sin aviso no abre un aviso', async () => {
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-09-30' });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-10-31' });
+    assert.equal(await datos.aperturaDelProximoAviso('externa', HOY), null);
+
+    await crearDataset({ gestion: 'externa', vencimiento: '2027-03-31' });
+    assert.equal(await datos.aperturaDelProximoAviso('externa', HOY), '2027-03-31');
+  });
+
+  it('un dataset que vence hoy todavía cuenta, y mañana ya no', async () => {
+    await crearDataset({ gestion: 'interna', vencimiento: HOY });
+    assert.equal(await datos.aperturaDelProximoAviso('interna', HOY), HOY);
+    assert.equal(await datos.aperturaDelProximoAviso('interna', '2026-11-03'), null);
   });
 });
 

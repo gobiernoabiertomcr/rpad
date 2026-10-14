@@ -76,10 +76,11 @@ const situacion = (vencimiento, fecha) => {
   return `Vencido hace ${cantidad(-dias, 'día', 'días')}`;
 };
 
+// Un vencido que nunca tuvo aviso (spec 5.3, condición 2) dice "Sin aviso previo"
 const textoInformado = (dataset) => {
-  if (!dataset.informado) return '—';
-  const { numero, anio, fecha } = dataset.informado;
-  const base = `Nota Digital N° ${textoNumero({ numero, anio })} (${formatoCorto(fecha)})`;
+  const base = dataset.informado
+    ? `Nota Digital N° ${textoNumero(dataset.informado)} (${formatoCorto(dataset.informado.fecha)})`
+    : 'Sin aviso previo';
   return dataset.reiteraciones > 0 ? `${base} – reiterado ${cantidad(dataset.reiteraciones, 'vez', 'veces')}` : base;
 };
 
@@ -108,7 +109,8 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
       return {
         valores,
         url: urlSegura(d.url_dataset),
-        antecedente: tipo === 'aviso' ? textoAntecedente(d.antecedente) : null
+        // Antecedente de los emails anteriores: en los avisos y en las filas "Sin aviso previo" de las reiteraciones
+        antecedente: tipo === 'aviso' || !d.informado ? textoAntecedente(d.antecedente) : null
       };
     });
     return { clave, ...SECCIONES[clave], columnas, filas };

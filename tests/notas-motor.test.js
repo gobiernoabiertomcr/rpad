@@ -141,15 +141,26 @@ describe('avisos', () => {
     assert.ok((await mailpit.html(mensaje.ID)).includes('Email: externa@rpad.test'));
   });
 
-  it('los vencidos sin aviso entran con el antecedente de emails anteriores', async () => {
-    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-07-31', ultima: '2025-07-31' });
-    await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-01-01 08:00:00' });
-    await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-10-01 08:00:00' });
+  it('los a vencer llevan el antecedente de emails anteriores', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30', ultima: '2025-11-30' });
+    await crearEmailViejo({ tipo: 'externo-60', datasetIds: [id], enviado: '2026-01-01 08:00:00' });
+    await crearEmailViejo({ tipo: 'externo-40', datasetIds: [id], enviado: '2026-10-01 08:00:00' });
     await ejecutar('2026-11-02');
     const [mensaje] = await mailpit.mensajes();
     const html = await mailpit.html(mensaje.ID);
-    assert.ok(html.includes('Plazo de actualización vencido'));
+    assert.ok(html.includes('Próximos a vencer'));
     assert.ok(html.includes('Antecedente: notificado a la DGMIT por correo electrónico en 2 oportunidades, entre el 01/01/2026 y el 01/10/2026.'));
+  });
+
+  it('un dataset vencido que nunca tuvo aviso no sale en el aviso', async () => {
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-07-31', ultima: '2025-07-31' });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30', titulo: 'A vencer' });
+    await ejecutar('2026-11-02');
+    const avisos = (await notas()).filter(n => n.tipo === 'aviso');
+    assert.equal(avisos.length, 1);
+    assert.ok(!avisos[0].html.includes('Plazo de actualización vencido'));
+    assert.ok(avisos[0].html.includes('A vencer'));
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets WHERE nota_id = ?', [avisos[0].id]))[0].n, 1);
   });
 
   it('un dataset recibe un solo aviso por vencimiento', async () => {
@@ -261,6 +272,65 @@ describe('reiteraciones', () => {
     await query('UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL WHERE id = 1');
     await ejecutar('2026-12-02');
     assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1);
+  });
+});
+
+describe('vencidos sin aviso (14/10/2026)', () => {
+  it('no salen en ningún aviso y sí en la reiteración del primer día hábil del mes siguiente, como "Sin aviso previo"', async () => {
+    await ejecutar('2026-10-01'); // octubre queda evaluado sin nada para reiterar
+    const id = await crearDataset({ titulo: 'Cargado vencido', gestion: 'externa', vencimiento: '2026-09-30', ultima: '2025-09-30' });
+    await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-01-01 08:00:00' });
+    await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-10-01 08:00:00' });
+    await mailpit.vaciar();
+
+    await ejecutar('2026-10-14');
+    assert.deepEqual(await notas(), []);
+    assert.equal((await mailpit.mensajes()).length, 0);
+
+    const resumen = await ejecutar('2026-11-02');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion, n.estado]), [['reiteracion', 'externa', 'enviada']]);
+    assert.equal(resumen.enviadas, 1);
+    const [mensaje] = await mailpit.mensajes();
+    assert.match(mensaje.Subject, /Reiteración – /);
+    const html = await mailpit.html(mensaje.ID);
+    assert.ok(html.includes('Cargado vencido'));
+    assert.ok(html.includes('Plazo de actualización vencido'));
+    assert.ok(html.includes('Sin aviso previo'));
+    assert.ok(html.includes('Antecedente: notificado a la DGMIT por correo electrónico en 2 oportunidades, entre el 01/01/2026 y el 01/10/2026.'));
+    const [fila] = await query('SELECT seccion, DATE_FORMAT(vencimiento, "%Y-%m-%d") AS vencimiento FROM notas_digitales_datasets WHERE dataset_id = ?', [id]);
+    assert.deepEqual(fila, { seccion: 'vencido', vencimiento: '2026-09-30' });
+  });
+
+  it('se reiteran todos los meses con "Sin aviso previo – reiterado N veces", hasta que se actualiza', async () => {
+    await ejecutar('2026-10-01');
+    const id = await crearDataset({ gestion: 'interna', vencimiento: '2026-09-30' });
+    await ejecutar('2026-11-02');
+    await mailpit.vaciar();
+    await ejecutar('2026-12-01');
+    const [mensaje] = await mailpit.mensajes();
+    const html = await mailpit.html(mensaje.ID);
+    assert.ok(html.includes('Sin aviso previo – reiterado 1 vez'));
+    assert.deepEqual((await notas()).map(n => n.tipo), ['reiteracion', 'reiteracion']);
+
+    await query('UPDATE datasets SET proxima_actualizacion = ? WHERE id = ?', ['2027-10-31', id]);
+    await mailpit.vaciar();
+    await ejecutar('2027-01-04');
+    assert.deepEqual((await notas()).map(n => n.tipo), ['reiteracion', 'reiteracion']);
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('el estado cuenta el vencido sin aviso en la próxima reiteración y no en el próximo aviso', async () => {
+    await ejecutar('2026-10-01'); // octubre ya evaluado: la próxima reiteración es la de noviembre
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-09-30' });
+    const { proximas } = await motor.estadoNotas({ hoy: '2026-10-14' });
+    assert.equal(proximas.externa.aviso, null);
+    assert.deepEqual(proximas.externa.reiteracion, { fecha: '2026-11-02', cantidad: 1 });
+
+    // Con uno a vencer, el aviso cuenta solo ese
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31' });
+    const despues = await motor.estadoNotas({ hoy: '2026-10-14' });
+    assert.deepEqual(despues.proximas.externa.aviso, { fecha: '2026-12-01', cantidad: 1 });
+    assert.deepEqual(despues.proximas.externa.reiteracion, { fecha: '2026-11-02', cantidad: 1 });
   });
 });
 
@@ -592,6 +662,35 @@ describe('pruebas, vista previa y estado', () => {
     assert.equal(vista.ejemplo, true);
     assert.ok(vista.html.includes('Nota Digital N°</b> XX'));
     assert.equal((await notas()).length, 0);
+  });
+
+  it('la vista previa del aviso sin datos reales usa un solo ejemplo, a vencer, con su antecedente y sin sección de vencidos', async () => {
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(vista.ejemplo, true);
+    assert.ok(vista.html.includes('Dataset de ejemplo próximo a vencer'));
+    assert.ok(vista.html.includes('Próximos a vencer'));
+    assert.ok(!vista.html.includes('Plazo de actualización vencido'));
+    assert.ok(!vista.html.includes('Dataset de ejemplo vencido'));
+    assert.ok(vista.html.includes('Anexo: reporte de los conjuntos de datos (1 hoja).'));
+    assert.ok(vista.html.includes('Antecedente: notificado a la DGMIT por correo electrónico en 3 oportunidades'));
+  });
+
+  it('la vista previa de la reiteración sin datos reales conserva el ejemplo a vencer y el vencido, ambos con su aviso', async () => {
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(vista.ejemplo, true);
+    assert.ok(vista.html.includes('Dataset de ejemplo próximo a vencer'));
+    assert.ok(vista.html.includes('Dataset de ejemplo vencido'));
+    assert.ok(vista.html.includes('Plazo de actualización vencido'));
+    assert.ok(!vista.html.includes('Sin aviso previo'));
+  });
+
+  it('la prueba de un aviso sin datos reales tampoco manda vencidos de ejemplo', async () => {
+    const resultado = await motor.enviarPrueba({ tipo: 'aviso', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(resultado.ejemplo, true);
+    const [mensaje] = await mailpit.mensajes();
+    const html = await mailpit.html(mensaje.ID);
+    assert.ok(html.includes('Dataset de ejemplo próximo a vencer'));
+    assert.ok(!html.includes('Plazo de actualización vencido'));
   });
 
   it('el estado informa la configuración, las fallidas y los próximos envíos', async () => {

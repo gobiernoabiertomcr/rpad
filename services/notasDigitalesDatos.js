@@ -35,52 +35,64 @@ export const obtenerConfig = async () => {
   return filas[0];
 };
 
-// Los que vencen dentro de la ventana (incluye los vencidos) y los demás de la gestión que vencen el mismo mes que
-// alguno que ya entró en ella. Como d es parte de su mes, "el primer vencimiento del mes está en la ventana" cubre
-// las dos condiciones.
+// Solo datasets a vencer (spec 5.2): los que vencen dentro de la ventana y los demás de la gestión que vencen el mismo
+// mes que alguno que ya entró en ella. Como d es parte de su mes, "el primer vencimiento del mes está en la ventana"
+// cubre las dos condiciones. Los vencidos sin aviso van a la reiteración (5.3).
 export const seleccionarParaAviso = async (gestion, hoy) => {
   const [filas] = await pool.query(
     `SELECT ${COLUMNAS_DATASET} ${DESDE_DATASETS}
      WHERE ${CONDICION_BASE}
+       AND d.proxima_actualizacion >= ?
        AND ${PRIMER_VENCIMIENTO_DEL_MES} <= DATE_ADD(?, INTERVAL ? DAY)
        AND ${SIN_AVISO}
      ORDER BY d.proxima_actualizacion, d.titulo`,
-    [gestion, hoy, VENTANA_DIAS[gestion]]
+    [gestion, hoy, hoy, VENTANA_DIAS[gestion]]
   );
   return filas;
 };
 
+// Reiteraciones previas enviadas del mismo vencimiento (el mismo ciclo)
+const REITERACIONES_PREVIAS = `(SELECT COUNT(*) FROM notas_digitales_datasets r
+   JOIN notas_digitales rn ON rn.id = r.nota_id
+  WHERE r.dataset_id = d.id AND r.vencimiento = d.proxima_actualizacion
+    AND rn.tipo = 'reiteracion' AND rn.es_prueba = 0 AND rn.estado = 'enviada')`;
+
+// Las dos condiciones de la spec 5.3, excluyentes entre sí (una exige un aviso enviado y la otra que no haya ninguno):
+// 1. avisados (aviso enviado) hace DIAS_PARA_REITERAR días o más y que siguen con el mismo vencimiento;
+// 2. vencidos que nunca tuvieron aviso, que entran sin esperar (informado: null).
 export const seleccionarParaReiteracion = async (gestion, hoy) => {
   const [filas] = await pool.query(
-    `SELECT ${COLUMNAS_DATASET},
-            av.numero AS aviso_numero, av.anio AS aviso_anio, DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha,
-            (SELECT COUNT(*) FROM notas_digitales_datasets r
-               JOIN notas_digitales rn ON rn.id = r.nota_id
-              WHERE r.dataset_id = d.id AND r.vencimiento = d.proxima_actualizacion
-                AND rn.tipo = 'reiteracion' AND rn.es_prueba = 0 AND rn.estado = 'enviada') AS reiteraciones
-     ${DESDE_DATASETS}
-     JOIN notas_digitales_datasets avd ON avd.dataset_id = d.id AND avd.vencimiento = d.proxima_actualizacion
-     JOIN notas_digitales av ON av.id = avd.nota_id AND av.tipo = 'aviso' AND av.es_prueba = 0 AND av.estado = 'enviada'
-     WHERE ${CONDICION_BASE}
-       AND av.fecha <= DATE_SUB(?, INTERVAL ? DAY)
-     ORDER BY d.proxima_actualizacion, d.titulo`,
-    [gestion, hoy, DIAS_PARA_REITERAR]
+    `SELECT * FROM (
+       SELECT ${COLUMNAS_DATASET}, av.numero AS aviso_numero, av.anio AS aviso_anio,
+              DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha, ${REITERACIONES_PREVIAS} AS reiteraciones
+       ${DESDE_DATASETS}
+       JOIN notas_digitales_datasets avd ON avd.dataset_id = d.id AND avd.vencimiento = d.proxima_actualizacion
+       JOIN notas_digitales av ON av.id = avd.nota_id AND av.tipo = 'aviso' AND av.es_prueba = 0 AND av.estado = 'enviada'
+       WHERE ${CONDICION_BASE} AND av.fecha <= DATE_SUB(?, INTERVAL ? DAY)
+       UNION ALL
+       SELECT ${COLUMNAS_DATASET}, NULL, NULL, NULL, ${REITERACIONES_PREVIAS}
+       ${DESDE_DATASETS}
+       WHERE ${CONDICION_BASE} AND d.proxima_actualizacion < ? AND ${SIN_AVISO}
+     ) AS x
+     ORDER BY x.vencimiento, x.titulo`,
+    [gestion, hoy, DIAS_PARA_REITERAR, gestion, hoy]
   );
   return filas.map(({ aviso_numero, aviso_anio, aviso_fecha, reiteraciones, ...dataset }) => ({
     ...dataset,
-    informado: { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha },
+    informado: aviso_fecha ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null,
     reiteraciones: Number(reiteraciones)
   }));
 };
 
-// Vencimiento que abre el próximo aviso de la gestión: el primer vencimiento del mes más próximo que tiene datasets
-// sin aviso (null si no hay ninguno). El aviso sale cuando ese vencimiento entra en la ventana.
-export const aperturaDelProximoAviso = async (gestion) => {
+// Vencimiento que abre el próximo aviso de la gestión: el primer vencimiento del mes más próximo que tiene datasets a
+// vencer (no vencidos, que van a la reiteración) sin aviso; null si no hay ninguno. El aviso sale cuando ese
+// vencimiento entra en la ventana.
+export const aperturaDelProximoAviso = async (gestion, hoy) => {
   const [[fila]] = await pool.query(
     `SELECT DATE_FORMAT(${PRIMER_VENCIMIENTO_DEL_MES}, '%Y-%m-%d') AS apertura ${DESDE_DATASETS}
-     WHERE ${CONDICION_BASE} AND ${SIN_AVISO}
+     WHERE ${CONDICION_BASE} AND d.proxima_actualizacion >= ? AND ${SIN_AVISO}
      ORDER BY apertura LIMIT 1`,
-    [gestion]
+    [gestion, hoy]
   );
   return fila?.apertura ?? null;
 };
