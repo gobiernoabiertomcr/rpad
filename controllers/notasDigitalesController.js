@@ -78,14 +78,15 @@ export const listarNotas = async (req, res) => {
       `SELECT n.id, n.numero, n.anio, n.tipo, n.gestion, DATE_FORMAT(n.fecha, '%Y-%m-%d') AS fecha, n.es_prueba,
               n.asunto, n.para, n.cc, n.cco, n.estado, n.intentos, n.ultimo_error, n.respuesta_smtp,
               DATE_FORMAT(n.enviada_at, '%Y-%m-%d %H:%i') AS enviada_at,
-              (SELECT COUNT(*) FROM notas_digitales_datasets c WHERE c.nota_id = n.id) AS cantidad_datasets
+              (SELECT COUNT(*) FROM notas_digitales_datasets c WHERE c.nota_id = n.id) AS cantidad_datasets,
+              (n.anexo_pdf IS NOT NULL) AS tiene_anexo
               ${datasetId ? ', (SELECT s.seccion FROM notas_digitales_datasets s WHERE s.nota_id = n.id AND s.dataset_id = ?) AS seccion_dataset' : ''}
        FROM notas_digitales n ${where}
        ORDER BY n.fecha DESC, n.id DESC
        LIMIT 500`,
       datasetId ? [datasetId, ...parametros] : parametros
     );
-    res.json({ success: true, data: filas });
+    res.json({ success: true, data: filas.map(fila => ({ ...fila, tiene_anexo: Boolean(fila.tiene_anexo) })) });
   } catch (error) {
     errorInterno(res, 'Error al obtener el libro de notas', error);
   }
@@ -96,7 +97,8 @@ export const obtenerNota = async (req, res) => {
     const id = idDe(req.params.id);
     const [[nota]] = await pool.query(
       `SELECT id, numero, anio, tipo, gestion, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, es_prueba, asunto, para, cc, cco,
-              html, estado, intentos, ultimo_error, message_id, respuesta_smtp, DATE_FORMAT(enviada_at, '%Y-%m-%d %H:%i') AS enviada_at
+              html, estado, intentos, ultimo_error, message_id, respuesta_smtp, DATE_FORMAT(enviada_at, '%Y-%m-%d %H:%i') AS enviada_at,
+              (anexo_pdf IS NOT NULL) AS tiene_anexo
        FROM notas_digitales WHERE id = ?`, [id]
     );
     if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
@@ -105,7 +107,7 @@ export const obtenerNota = async (req, res) => {
        FROM notas_digitales_datasets x JOIN datasets d ON d.id = x.dataset_id
        WHERE x.nota_id = ? ORDER BY x.vencimiento, d.titulo`, [id]
     );
-    res.json({ success: true, data: { ...nota, datasets } });
+    res.json({ success: true, data: { ...nota, tiene_anexo: Boolean(nota.tiene_anexo), datasets } });
   } catch (error) {
     errorInterno(res, 'Error al obtener la nota', error);
   }
@@ -121,6 +123,22 @@ export const descargarPdf = async (req, res) => {
     res.send(nota.pdf);
   } catch (error) {
     errorInterno(res, 'Error al descargar el PDF', error);
+  }
+};
+
+// El anexo guardado de un aviso (las reiteraciones no tienen)
+export const descargarAnexo = async (req, res) => {
+  try {
+    const id = idDe(req.params.id);
+    const [[nota]] = await pool.query('SELECT numero, anio, es_prueba, anexo_pdf FROM notas_digitales WHERE id = ?', [id]);
+    if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
+    if (!nota.anexo_pdf) return res.status(404).json({ success: false, error: 'La nota no tiene anexo' });
+    const archivo = nota.es_prueba ? `Anexo-Nota-Digital-PRUEBA-${id}.pdf` : `Anexo-Nota-Digital-${nota.numero}-${String(nota.anio).slice(-2)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${archivo}"`);
+    res.send(nota.anexo_pdf);
+  } catch (error) {
+    errorInterno(res, 'Error al descargar el anexo', error);
   }
 };
 
@@ -174,6 +192,22 @@ export const verPreviewPdf = async (req, res) => {
     // Una firma o un banner guardados que no se pueden leer: el admin los reemplaza en Configuración
     if (error instanceof ImagenInvalida) return res.status(400).json({ success: false, error: error.message });
     errorInterno(res, 'Error al generar el PDF de la vista previa', error);
+  }
+};
+
+// El anexo del aviso de la vista previa (N° XX): no se guarda ni se envía. Solo los avisos llevan anexo.
+export const verPreviewAnexo = async (req, res) => {
+  try {
+    const { gestion } = req.query;
+    if (!GESTIONES.includes(gestion)) {
+      return res.status(400).json({ success: false, error: 'Gestión inválida' });
+    }
+    const pdf = await notas.previewAnexo({ gestion });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Anexo-vista-previa-${gestion}.pdf"`);
+    res.send(pdf);
+  } catch (error) {
+    errorInterno(res, 'Error al generar el anexo de la vista previa', error);
   }
 };
 

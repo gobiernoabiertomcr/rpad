@@ -64,6 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
   ['preview-tipo', 'preview-gestion'].forEach(id => document.getElementById(id).addEventListener('change', ocultarVistaPrevia));
   document.getElementById('btn-preview').addEventListener('click', verVistaPrevia);
   document.getElementById('btn-preview-pdf').addEventListener('click', verPdfDeVistaPrevia);
+  document.getElementById('btn-preview-anexo').addEventListener('click', verAnexoDeVistaPrevia);
+  document.getElementById('preview-tipo').addEventListener('change', actualizarBotonAnexo);
   document.getElementById('btn-prueba').addEventListener('click', enviarmePrueba);
   document.getElementById('form-config').addEventListener('submit', guardarConfiguracion);
   Object.entries(IMAGENES_CONFIG).forEach(([clave, imagen]) => {
@@ -73,6 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-prueba-area').addEventListener('click', enviarmePruebaArea);
   document.getElementById('modal-nota-cerrar').addEventListener('click', cerrarModalNota);
 
+  actualizarBotonAnexo();
   inicializarFiltros();
   cargarEstado();
   cargarConfiguracion();
@@ -196,6 +199,7 @@ async function cargarLibro() {
     limite.hidden = notas.length < LIMITE_LIBRO;
     cuerpo.innerHTML = notas.map((n) => {
       const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
+      const archivoAnexo = `Anexo-${archivo}`;
       const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
       return `
       <tr>
@@ -213,6 +217,7 @@ async function cargarLibro() {
           <div class="nd-acciones">
             <button type="button" class="btn btn-secondary btn-sm" data-accion="ver" data-id="${n.id}">Ver</button>
             <button type="button" class="btn btn-secondary btn-sm" data-accion="pdf" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivo)}">PDF</button>
+            ${n.tiene_anexo ? `<button type="button" class="btn btn-secondary btn-sm" data-accion="anexo" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivoAnexo)}">Anexo</button>` : ''}
             ${n.estado !== 'enviada' ? `<button type="button" class="btn btn-outline btn-sm" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
           </div>
         </td>
@@ -246,6 +251,8 @@ async function accionDelLibro(evento) {
       document.getElementById('modal-nota').classList.add('active');
     } else if (boton.dataset.accion === 'pdf') {
       descargarBlob(await API.getNotaPdf(id), boton.dataset.archivo);
+    } else if (boton.dataset.accion === 'anexo') {
+      descargarBlob(await API.getNotaAnexo(id), boton.dataset.archivo);
     } else if (boton.dataset.accion === 'reintentar') {
       boton.disabled = true;
       const resultado = await API.reintentarNota(id);
@@ -312,6 +319,28 @@ function verPdfDeVistaPrevia() {
       avisar(error.message, 'error');
     }
   });
+}
+
+// El anexo solo existe en los avisos: con una reiteración el botón queda deshabilitado
+function actualizarBotonAnexo() {
+  const esAviso = document.getElementById('preview-tipo').value === 'aviso';
+  const boton = document.getElementById('btn-preview-anexo');
+  boton.disabled = !esAviso;
+  boton.title = esAviso ? '' : 'Solo los avisos llevan anexo';
+}
+
+// El anexo del aviso de la vista previa (N° XX) para la gestión elegida
+async function verAnexoDeVistaPrevia() {
+  await conBotonBloqueado(document.getElementById('btn-preview-anexo'), async () => {
+    const { gestion } = tipoYGestion();
+    try {
+      descargarBlob(await API.previewNotaAnexo(gestion), `Anexo-vista-previa-${gestion}.pdf`);
+    } catch (error) {
+      avisar(error.message, 'error');
+    }
+  });
+  // conBotonBloqueado lo habilita al terminar: si mientras tanto se eligió una reiteración, vuelve a quedar deshabilitado
+  actualizarBotonAnexo();
 }
 
 async function enviarmePrueba() {

@@ -34,10 +34,12 @@ import {
   listarNotas,
   obtenerNota,
   descargarPdf,
+  descargarAnexo,
   reintentarNota,
   verEstado,
   verPreview,
   verPreviewPdf,
+  verPreviewAnexo,
   enviarPrueba,
   verConfig,
   guardarConfig,
@@ -168,6 +170,7 @@ router.get('/notificaciones/notas-digitales', authMiddleware, adminOnly, listarN
 router.get('/notificaciones/notas-digitales/estado', authMiddleware, adminOnly, verEstado);
 router.get('/notificaciones/notas-digitales/preview', authMiddleware, adminOnly, verPreview);
 router.get('/notificaciones/notas-digitales/preview/pdf', authMiddleware, adminOnly, verPreviewPdf);
+router.get('/notificaciones/notas-digitales/preview/anexo', authMiddleware, adminOnly, verPreviewAnexo);
 router.post('/notificaciones/notas-digitales/prueba', authMiddleware, adminOnly, enviarPrueba);
 router.get('/notificaciones/notas-digitales/config', authMiddleware, adminOnly, verConfig);
 router.put('/notificaciones/notas-digitales/config', authMiddleware, adminOnly, guardarConfig);
@@ -177,6 +180,7 @@ router.get('/notificaciones/notas-digitales/config/membrete', authMiddleware, ad
 router.put('/notificaciones/notas-digitales/config/membrete', authMiddleware, adminOnly, subirMembrete);
 router.get('/notificaciones/notas-digitales/:id', authMiddleware, adminOnly, obtenerNota);
 router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly, descargarPdf);
+router.get('/notificaciones/notas-digitales/:id/anexo', authMiddleware, adminOnly, descargarAnexo);
 router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);
 
 // =====================================================

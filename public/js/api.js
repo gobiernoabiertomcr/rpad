@@ -207,6 +207,11 @@ async registrarActualizacion(id, datos = {}) {
     return this.pedirArchivo(`/notificaciones/notas-digitales/${id}/pdf`);
   },
 
+  // Anexo guardado de un aviso, como Blob
+  async getNotaAnexo(id) {
+    return this.pedirArchivo(`/notificaciones/notas-digitales/${id}/anexo`);
+  },
+
   async reintentarNota(id) {
     return this.pedirJson('POST', `/notificaciones/notas-digitales/${id}/reintentar`);
   },
@@ -220,6 +225,12 @@ async registrarActualizacion(id, datos = {}) {
   async previewNotaPdf(tipo, gestion) {
     const query = new URLSearchParams({ tipo, gestion }).toString();
     return this.pedirArchivo(`/notificaciones/notas-digitales/preview/pdf?${query}`);
+  },
+
+  // Anexo del aviso de la vista previa (N° XX), como Blob
+  async previewNotaAnexo(gestion) {
+    const query = new URLSearchParams({ gestion }).toString();
+    return this.pedirArchivo(`/notificaciones/notas-digitales/preview/anexo?${query}`);
   },
 
   async enviarPruebaNota(tipo, gestion) {

@@ -6,7 +6,7 @@ import {
 } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
-import { textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
+import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
 import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -53,6 +53,8 @@ beforeEach(async () => {
 });
 
 const comoAdmin = () => ({ token: usuarios.adminA.token });
+// La vista previa usa la fecha real de hoy: los datasets de estos tests vencen en 5 días (dentro de cualquier ventana)
+const hoyMasDias = (dias) => sumarDias(hoyArgentina(), dias);
 
 describe('configuración', () => {
   it('devuelve la configuración sin la imagen de la firma', async () => {
@@ -392,6 +394,40 @@ describe('vista previa y prueba', () => {
     assert.equal((await api.get('/notificaciones/notas-digitales/config', comoAdmin())).status, 200);
     assert.equal((await mailpit.mensajes()).length, 0);
   });
+
+  it('el anexo de la vista previa es un PDF del aviso de hoy con N° XX y no guarda ni envía nada', async () => {
+    await crearDataset({ titulo: 'Real externo a vencer', gestion: 'externa', vencimiento: hoyMasDias(5) });
+    await crearDataset({ titulo: 'Real interno', gestion: 'interna', vencimiento: hoyMasDias(5) });
+    const res = await api.get('/notificaciones/notas-digitales/preview/anexo?gestion=externa', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    assert.equal(res.headers.get('content-disposition'), 'inline; filename="Anexo-vista-previa-externa.pdf"');
+    assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+
+    const hojas = lineasPorHoja(res.body);
+    assert.equal(hojas.length, 1);
+    assert.ok(hojas[0].includes('Real externo a vencer'), hojas[0].join(' | '));
+    assert.ok(hojas[0].includes('Anexo – Nota Digital N° XX · Hoja 1 de 1'), hojas[0].join(' | '));
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 0);
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('el anexo de la vista previa sin datasets reales usa el ejemplo', async () => {
+    const res = await api.get('/notificaciones/notas-digitales/preview/anexo?gestion=interna', comoAdmin());
+    assert.equal(res.status, 200);
+    const hojas = lineasPorHoja(res.body);
+    assert.equal(hojas.length, 1);
+    assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
+  });
+
+  it('el anexo de la vista previa rechaza una gestión inválida o ausente', async () => {
+    for (const consulta of ['gestion=otra', 'gestion=', 'tipo=aviso', '']) {
+      const res = await api.get(`/notificaciones/notas-digitales/preview/anexo?${consulta}`, comoAdmin());
+      assert.equal(res.status, 400, consulta);
+      assert.equal(res.body.success, false);
+    }
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 0);
+  });
 });
 
 describe('libro', () => {
@@ -419,6 +455,79 @@ describe('libro', () => {
     const filtrada = await api.get(`/notificaciones/notas-digitales?dataset_id=${incluido}`, comoAdmin());
     assert.equal(filtrada.body.data[0].seccion_dataset, 'proximo');
     assert.equal((await api.get(`/notificaciones/notas-digitales?dataset_id=${otro}`, comoAdmin())).body.data.length, 0);
+  });
+
+  // Un aviso (con anexo) y, un mes después, su reiteración (sin anexo), generados por el motor
+  const avisoYReiteracion = async () => {
+    await crearDataset({ titulo: 'Dataset avisado', vencimiento: '2026-12-31' });
+    await motor.ejecutarNotasDigitales({ hoy: '2026-11-02' });
+    await motor.ejecutarNotasDigitales({ hoy: '2026-12-01' });
+    const [aviso, reiteracion] = await query('SELECT id, tipo, anexo_pdf FROM notas_digitales ORDER BY id');
+    assert.equal(aviso.tipo, 'aviso');
+    assert.ok(aviso.anexo_pdf);
+    assert.equal(reiteracion.tipo, 'reiteracion');
+    assert.equal(reiteracion.anexo_pdf, null);
+    return { aviso, reiteracion };
+  };
+
+  it('el libro y el detalle indican si la nota tiene anexo (true en los avisos, false en las reiteraciones) sin traer el PDF', async () => {
+    const { aviso, reiteracion } = await avisoYReiteracion();
+
+    const lista = await api.get('/notificaciones/notas-digitales', comoAdmin());
+    assert.equal(lista.status, 200);
+    const filas = Object.fromEntries(lista.body.data.map(n => [n.id, n]));
+    assert.strictEqual(filas[aviso.id].tiene_anexo, true);
+    assert.strictEqual(filas[reiteracion.id].tiene_anexo, false);
+    for (const fila of lista.body.data) assert.equal('anexo_pdf' in fila, false);
+
+    for (const [nota, esperado] of [[aviso, true], [reiteracion, false]]) {
+      const detalle = await api.get(`/notificaciones/notas-digitales/${nota.id}`, comoAdmin());
+      assert.equal(detalle.status, 200);
+      assert.strictEqual(detalle.body.data.tiene_anexo, esperado);
+      assert.equal('anexo_pdf' in detalle.body.data, false);
+      assert.equal('pdf' in detalle.body.data, false);
+    }
+  });
+
+  it('descarga el anexo guardado de un aviso como Anexo-Nota-Digital-{n}-{aa}.pdf', async () => {
+    const { aviso } = await avisoYReiteracion();
+    const res = await api.get(`/notificaciones/notas-digitales/${aviso.id}/anexo`, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    assert.equal(res.headers.get('content-disposition'), 'attachment; filename="Anexo-Nota-Digital-1-26.pdf"');
+    assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+    assert.deepEqual(res.body, aviso.anexo_pdf);
+    const hojas = lineasPorHoja(res.body);
+    assert.ok(hojas[0].includes('Anexo – Nota Digital N° 1/26 · Hoja 1 de 1'), hojas[0].join(' | '));
+  });
+
+  it('el anexo de una prueba se descarga como Anexo-Nota-Digital-PRUEBA-{id}.pdf y figura con anexo en el libro', async () => {
+    assert.equal((await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'aviso', gestion: 'externa' }, comoAdmin())).status, 200);
+    const [prueba] = await query('SELECT id, anexo_pdf FROM notas_digitales WHERE es_prueba = 1');
+    assert.ok(prueba.anexo_pdf);
+
+    const res = await api.get(`/notificaciones/notas-digitales/${prueba.id}/anexo`, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-disposition'), `attachment; filename="Anexo-Nota-Digital-PRUEBA-${prueba.id}.pdf"`);
+    assert.deepEqual(res.body, prueba.anexo_pdf);
+
+    const lista = await api.get('/notificaciones/notas-digitales?incluir_pruebas=1', comoAdmin());
+    assert.strictEqual(lista.body.data.find(n => n.id === prueba.id).tiene_anexo, true);
+  });
+
+  it('una reiteración no tiene anexo: 404 con el mensaje "La nota no tiene anexo"', async () => {
+    const { reiteracion } = await avisoYReiteracion();
+    const res = await api.get(`/notificaciones/notas-digitales/${reiteracion.id}/anexo`, comoAdmin());
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, { success: false, error: 'La nota no tiene anexo' });
+  });
+
+  it('el anexo de una nota inexistente o con un id inválido responde 404', async () => {
+    for (const id of ['999999', '0', 'abc']) {
+      const res = await api.get(`/notificaciones/notas-digitales/${id}/anexo`, comoAdmin());
+      assert.equal(res.status, 404, id);
+      assert.deepEqual(res.body, { success: false, error: 'Nota no encontrada' });
+    }
   });
 
   it('no reintenta una nota ya enviada y responde 404 para una inexistente', async () => {
