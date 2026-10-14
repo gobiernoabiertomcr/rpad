@@ -883,6 +883,23 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.ok(!texto.includes('Sin registro'), texto);
   });
 
+  it('un anexo que falla al dibujarse (dentro de la transacción) no deja la nota ni sus datasets y no consume el número', async () => {
+    const id = await crearDataset({ titulo: 'Anexo que falla', vencimiento: '2026-12-31', ultima: '2025-12-31' });
+    const [dataset] = await datos.seleccionarParaAviso('interna', '2026-11-02');
+    const ficha = (await datos.fichasDe([id])).get(id);
+    // Una ficha con la fecha cero de MariaDB pasa validarFichas (tiene vencimiento) y hace fallar a renderAnexo
+    await assert.rejects(motor.generarNota({
+      tipo: 'aviso', gestion: 'interna', fecha: '2026-11-02', datasets: [dataset], config: await datos.obtenerConfig(),
+      preparado: { datasets: [dataset], areas: [], fichas: [{ ...ficha, vencimiento: '0000-00-00' }] }
+    }), /NaN/);
+    assert.equal((await notas()).length, 0);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets'))[0].n, 0);
+
+    // El aviso siguiente toma el N° 1
+    await ejecutar('2026-11-02');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.numero, n.estado]), [['aviso', 1, 'enviada']]);
+  });
+
   it('un aviso con un dataset sin vencimiento no se genera ni toma número: el anexo nunca recibe una ficha sin vencimiento', async () => {
     const area = await crearArea({ nombre: 'Área sin fechas' });
     const id = await crearDataset({ titulo: 'Sin vencimiento', vencimiento: null, areaId: area });
