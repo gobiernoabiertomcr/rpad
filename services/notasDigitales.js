@@ -45,9 +45,9 @@ const fichasDelAviso = async (datasets) => {
 
 // Agrega a cada dataset lo que la nota muestra: antecedentes y contactos (externa); en los avisos, las fichas del anexo
 const prepararContenido = async ({ tipo, gestion, datasets }) => {
-  // Antecedente de los emails anteriores: en los avisos y en las filas "Sin aviso previo" de las reiteraciones
-  const conAntecedente = datasets.filter(d => tipo === 'aviso' || !d.informado).map(d => d.id);
-  const antecedentes = await antecedentesDe(conAntecedente);
+  // Antecedente de los emails anteriores, de todos los datasets: en los avisos va en una fila a todo el ancho y en
+  // las reiteraciones, en la celda "Informado en" (spec 6.4)
+  const antecedentes = await antecedentesDe(datasets.map(d => d.id));
   const conDatos = datasets.map(d => ({ informado: null, reiteraciones: 0, ...d, antecedente: antecedentes.get(d.id) ?? null }));
   const areas = gestion === 'externa' ? await areasDe([...new Set(datasets.map(d => d.area_id))]) : [];
   const fichas = tipo === 'aviso' ? await fichasDelAviso(datasets) : [];
@@ -351,7 +351,8 @@ export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId =
 };
 
 // Datos de ejemplo para la vista previa y las pruebas cuando hoy no hay datasets para esa nota.
-// El aviso solo informa datasets a vencer (spec 5.2): su ejemplo no tiene el vencido, y el antecedente pasa al a vencer.
+// El aviso solo informa datasets a vencer (spec 5.2): su ejemplo no tiene el vencido. El a vencer lleva antecedente de
+// emails anteriores: en el aviso sale en su fila a todo el ancho y en la reiteración, en "Informado en".
 // Los datasets de ejemplo traen también los campos de la ficha del anexo (spec 6.7), con el área de ejemplo.
 const ejemplo = (tipo, gestion, hoy) => {
   const area = {
@@ -370,7 +371,7 @@ const ejemplo = (tipo, gestion, hoy) => {
   };
   const proximo = {
     ...comun, id: 0, titulo: 'Dataset de ejemplo próximo a vencer', ultima_actualizacion: sumarDias(hoy, -335), vencimiento: sumarDias(hoy, 30), reiteraciones: 0,
-    antecedente: tipo === 'aviso' ? { cantidad: 3, primera: sumarDias(hoy, -90), ultima: sumarDias(hoy, -30) } : null
+    antecedente: { cantidad: 3, primera: sumarDias(hoy, -90), ultima: sumarDias(hoy, -30) }
   };
   const vencido = {
     ...comun, id: -1, titulo: 'Dataset de ejemplo vencido', ultima_actualizacion: sumarDias(hoy, -380), vencimiento: sumarDias(hoy, -15),

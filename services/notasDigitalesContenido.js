@@ -84,12 +84,21 @@ const textoInformado = (dataset) => {
   return dataset.reiteraciones > 0 ? `${base} – reiterado ${cantidad(dataset.reiteraciones, 'vez', 'veces')}` : base;
 };
 
+// Antecedente de los emails anteriores (spec 6.4). En los avisos, una fila a todo el ancho debajo de la del dataset:
 const textoAntecedente = (antecedente) => {
   if (!antecedente) return null;
   if (antecedente.cantidad === 1) {
     return `Antecedente: notificado a la DGMIT por correo electrónico el ${formatoCorto(antecedente.primera)}.`;
   }
   return `Antecedente: notificado a la DGMIT por correo electrónico en ${antecedente.cantidad} oportunidades, entre el ${formatoCorto(antecedente.primera)} y el ${formatoCorto(antecedente.ultima)}.`;
+};
+
+// En las reiteraciones, la segunda oración de la celda "Informado en", en letra más chica (pedido del usuario el
+// 14/10/2026): va después del texto de la nota, que entonces termina en punto
+const textoAnteriormente = (antecedente) => {
+  if (!antecedente) return null;
+  if (antecedente.cantidad === 1) return `Anteriormente notificado DGMIT por e-mail el ${formatoCorto(antecedente.primera)}`;
+  return `Anteriormente notificado DGMIT por e-mail en ${antecedente.cantidad} oportunidades, entre el ${formatoCorto(antecedente.primera)} y el ${formatoCorto(antecedente.ultima)}`;
 };
 
 export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config }) => {
@@ -105,12 +114,16 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     const filas = incluidos.map((d) => {
       const valores = [d.titulo, d.area_nombre, d.frecuencia_nombre, formatoCorto(d.ultima_actualizacion),
         formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha)];
-      if (tipo === 'reiteracion') valores.push(textoInformado(d));
+      // Reiteraciones: el antecedente de los emails anteriores es la segunda parte de la celda "Informado en", en
+      // todas las filas (con aviso o "Sin aviso previo"); cada formato la escribe en letra más chica
+      const informadoAnterior = tipo === 'reiteracion' ? textoAnteriormente(d.antecedente) : null;
+      if (tipo === 'reiteracion') valores.push(`${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
       return {
         valores,
         url: urlSegura(d.url_dataset),
-        // Antecedente de los emails anteriores: en los avisos y en las filas "Sin aviso previo" de las reiteraciones
-        antecedente: tipo === 'aviso' || !d.informado ? textoAntecedente(d.antecedente) : null
+        // Avisos: el antecedente va en una fila a todo el ancho, debajo de la del dataset
+        antecedente: tipo === 'aviso' ? textoAntecedente(d.antecedente) : null,
+        informadoAnterior
       };
     });
     return { clave, ...SECCIONES[clave], columnas, filas };
@@ -207,7 +220,10 @@ export const renderHtml = (nota) => {
       const celdaTitulo = fila.url
         ? `<a href="${escapeHtml(fila.url)}" style="color:#000000;">${escapeHtml(titulo)}</a>`
         : escapeHtml(titulo);
-      const principal = `<tr><td style="${ESTILO_CELDA}">${celdaTitulo}</td>${resto.map(v => `<td style="${ESTILO_CELDA}">${escapeHtml(v)}</td>`).join('')}</tr>`;
+      // La segunda parte de la última celda ("Informado en" de las reiteraciones), debajo y en letra más chica
+      const segunda = (k) => (k === resto.length - 1 && fila.informadoAnterior
+        ? `<br><span style="font-size:11px">${escapeHtml(fila.informadoAnterior)}</span>` : '');
+      const principal = `<tr><td style="${ESTILO_CELDA}">${celdaTitulo}</td>${resto.map((v, k) => `<td style="${ESTILO_CELDA}">${escapeHtml(v)}${segunda(k)}</td>`).join('')}</tr>`;
       const antecedente = fila.antecedente
         ? `<tr><td colspan="${seccion.columnas.length}" style="${ESTILO_CELDA}font-style:italic;font-size:12px;">${escapeHtml(fila.antecedente)}</td></tr>`
         : '';
@@ -252,7 +268,11 @@ export const renderTexto = (nota) => {
     lineas.push(seccion.titulo, seccion.introduccion, '');
     for (const fila of seccion.filas) {
       lineas.push(`- ${fila.valores[0]}${fila.url ? ` (${fila.url})` : ''}`);
-      seccion.columnas.slice(1).forEach((columna, i) => lineas.push(`    ${columna}: ${fila.valores[i + 1]}`));
+      // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea
+      seccion.columnas.slice(1).forEach((columna, i) => {
+        const segunda = i + 1 === seccion.columnas.length - 1 && fila.informadoAnterior ? ` ${fila.informadoAnterior}` : '';
+        lineas.push(`    ${columna}: ${fila.valores[i + 1]}${segunda}`);
+      });
       if (fila.antecedente) lineas.push(`    ${fila.antecedente}`);
     }
     lineas.push('');

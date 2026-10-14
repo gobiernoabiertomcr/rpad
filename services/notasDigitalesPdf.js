@@ -24,6 +24,9 @@ const NEGRITA = 'Helvetica-Bold';
 const CURSIVA = 'Helvetica-Oblique';
 // Proporción del ancho de cada columna: 6 columnas en avisos, 7 en reiteraciones
 const PROPORCIONES = { 6: [32, 17, 12, 13, 11, 15], 7: [26, 14, 10, 11, 10, 13, 16] };
+// Si alguna fila lleva el antecedente de los emails anteriores en "Informado en" (reiteraciones, en letra más chica),
+// esa columna necesita más ancho para que la fila no crezca de más: lo cede sobre todo el título
+const PROPORCIONES_CON_SEGUNDA = { 7: [18, 16, 10, 11, 10, 10, 25] };
 const TAMANO_TABLA = 8.5;
 const RELLENO = 3;
 // La primera columna (título del dataset) puede partir palabras larguísimas; las demás no
@@ -245,7 +248,8 @@ const palabraMasAncha = (doc, texto, fuente, tamano) => {
 // el título se parta (fechas, frecuencias, áreas, encabezados), y recortada de las columnas que tienen holgura.
 // Si los mínimos no entran, cede primero el título (que puede partir palabras larguísimas).
 const calcularAnchos = (doc, seccion, ancho) => {
-  const base = PROPORCIONES[seccion.columnas.length].map(p => (p / 100) * ancho);
+  const proporciones = (seccion.filas.some(f => f.informadoAnterior) ? PROPORCIONES_CON_SEGUNDA : PROPORCIONES)[seccion.columnas.length];
+  const base = proporciones.map(p => (p / 100) * ancho);
   const ultima = seccion.columnas.length - 1;
   const minimos = seccion.columnas.map((titulo, i) => {
     const largo = Math.max(
@@ -272,16 +276,24 @@ const calcularAnchos = (doc, seccion, ancho) => {
 };
 
 // Prepara la tabla de una sección: devuelve cuánto alto necesitan el encabezado y la primera fila (con su
-// antecedente) para que quepan juntos, y la función que la dibuja
+// antecedente) para que quepan juntos, y la función que la dibuja.
+// Una fila es { valores, url, antecedente, informadoAnterior }: el antecedente de los avisos va en una fila a todo el
+// ancho debajo; informadoAnterior (reiteraciones) es la segunda parte de la última celda, debajo del texto de la nota
+// y en letra más chica.
 const prepararTabla = (doc, seccion, ancho) => {
   const anchos = calcularAnchos(doc, seccion, ancho);
   const limite = () => doc.page.height - doc.page.margins.bottom;
   const izquierda = MARGENES.left;
+  const ultima = seccion.columnas.length - 1;
 
-  const altoDe = (valores, fuente) => {
-    doc.font(fuente).fontSize(TAMANO_TABLA);
-    return Math.max(...valores.map((v, i) => doc.heightOfString(String(v), { width: anchos[i] - 2 * RELLENO }))) + 2 * RELLENO;
-  };
+  // Alto del texto principal de una celda y, en la última, el de la segunda parte (con su separación)
+  const altoPrincipal = (valor, i, fuente) => doc.font(fuente).fontSize(TAMANO_TABLA)
+    .heightOfString(String(valor), { width: anchos[i] - 2 * RELLENO });
+  const altoSegunda = (i, segunda) => (i === ultima && segunda
+    ? SEPARACION_SECUNDARIO + doc.font(NORMAL).fontSize(TAMANO_SECUNDARIO).heightOfString(segunda, { width: anchos[i] - 2 * RELLENO })
+    : 0);
+  const altoDe = (valores, fuente, segunda = null) =>
+    Math.max(...valores.map((v, i) => altoPrincipal(v, i, fuente) + altoSegunda(i, segunda))) + 2 * RELLENO;
 
   const altoAncha = (texto) => {
     doc.font(CURSIVA).fontSize(TAMANO_TABLA);
@@ -289,8 +301,8 @@ const prepararTabla = (doc, seccion, ancho) => {
   };
 
   // reserva: alto que debe quedar libre a continuación (el antecedente no se separa de su fila)
-  const fila = (valores, fuente, url = null, reserva = 0) => {
-    const alto = altoDe(valores, fuente);
+  const fila = (valores, fuente, { url = null, reserva = 0, segunda = null } = {}) => {
+    const alto = altoDe(valores, fuente, segunda);
     if (doc.y + alto + reserva > limite()) {
       doc.addPage();
       if (fuente !== NEGRITA) encabezado();
@@ -298,9 +310,15 @@ const prepararTabla = (doc, seccion, ancho) => {
     const y = doc.y;
     let x = izquierda;
     valores.forEach((valor, i) => {
+      const anchoTexto = anchos[i] - 2 * RELLENO;
       doc.lineWidth(0.5).rect(x, y, anchos[i], alto).stroke();
       doc.font(fuente).fontSize(TAMANO_TABLA)
-        .text(String(valor), x + RELLENO, y + RELLENO, { width: anchos[i] - 2 * RELLENO, link: i === 0 && url ? url : null });
+        .text(String(valor), x + RELLENO, y + RELLENO, { width: anchoTexto, link: i === 0 && url ? url : null });
+      if (i === ultima && segunda) {
+        // (se mide antes de elegir la letra chica: medir cambia la letra del documento)
+        const ySegunda = y + RELLENO + altoPrincipal(valor, i, fuente) + SEPARACION_SECUNDARIO;
+        doc.font(NORMAL).fontSize(TAMANO_SECUNDARIO).text(segunda, x + RELLENO, ySegunda, { width: anchoTexto });
+      }
       x += anchos[i];
     });
     doc.x = izquierda;
@@ -324,12 +342,12 @@ const prepararTabla = (doc, seccion, ancho) => {
 
   const primera = seccion.filas[0];
   const altoInicio = altoDe(seccion.columnas, NEGRITA)
-    + (primera ? altoDe(primera.valores, NORMAL) + (primera.antecedente ? altoAncha(primera.antecedente) : 0) : 0);
+    + (primera ? altoDe(primera.valores, NORMAL, primera.informadoAnterior) + (primera.antecedente ? altoAncha(primera.antecedente) : 0) : 0);
 
   const dibujar = () => {
     encabezado();
     for (const f of seccion.filas) {
-      fila(f.valores, NORMAL, f.url, f.antecedente ? altoAncha(f.antecedente) : 0);
+      fila(f.valores, NORMAL, { url: f.url, reserva: f.antecedente ? altoAncha(f.antecedente) : 0, segunda: f.informadoAnterior });
       if (f.antecedente) filaAncha(f.antecedente);
     }
   };

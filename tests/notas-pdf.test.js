@@ -152,6 +152,39 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
     assert.deepEqual(partidas, [], lineas.join(' | '));
   });
 
+  it('el antecedente va en la celda "Informado en", en letra más chica, y no hay fila a todo el ancho', async () => {
+    const ANTECEDENTE = { cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' };
+    const SEGUNDA = 'Anteriormente notificado DGMIT por e-mail en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026';
+    // Las dos primeras filas de los vencidos (Parque Automotor y Siniestros viales) llevan antecedente
+    const datasets = REITERACION_REAL.map((d, i) => (i < 2 ? { ...d, antecedente: ANTECEDENTE } : d));
+    const n = reiteracionReal({ datasets });
+    const [hoja] = textosPorHoja(await renderPdf(n));
+    const lineas = hoja.map(t => t.texto);
+    assert.ok(!lineas.some(l => l.startsWith('Antecedente:')), lineas.join(' | '));
+
+    // La segunda oración, dos veces, en 7 puntos
+    const chicas = hoja.filter(t => t.tamano === 7);
+    assert.equal(chicas.map(t => t.texto).join(' '), `${SEGUNDA} ${SEGUNDA}`);
+    // La columna se ensancha para ella (lo cede el título): la oración ocupa a lo sumo 5 líneas, no 7 u 8
+    assert.ok(chicas.length / 2 <= 5, `la segunda oración ocupa ${chicas.length / 2} líneas`);
+    // Ninguna de sus palabras se parte
+    const enteras = new Set(lineas.flatMap(palabras));
+    assert.deepEqual(palabras(SEGUNDA).filter(palabra => !enteras.has(palabra)), []);
+
+    // Arriba, en la misma celda (la misma x), el texto de la nota con su punto, en la letra de la tabla
+    const principal = hoja[hoja.indexOf(chicas[0]) - 1];
+    assert.ok(principal.texto.endsWith('(13/10/2026).') && principal.tamano === 8.5, principal.texto);
+    assert.ok(chicas.every(t => Math.abs(t.x - principal.x) < 0.01), JSON.stringify(chicas));
+    assert.ok(chicas[0].base < principal.base);
+
+    // El alto de la fila cuenta las dos partes: la fila siguiente empieza debajo de la segunda oración (las dos
+    // oraciones son iguales y ocupan las mismas líneas)
+    const finDeLaPrimera = chicas[chicas.length / 2 - 1];
+    const siguiente = hoja.find(t => t.texto === 'Siniestros viales por' || t.texto.startsWith('Siniestros viales'));
+    assert.ok(siguiente.base + ASCENDENTE * siguiente.tamano < finDeLaPrimera.base - DESCENDENTE * 7 - 2 * 3,
+      `la fila siguiente (${siguiente.base}) se superpone con la segunda oración (${finDeLaPrimera.base})`);
+  });
+
   it('si los mínimos de las columnas no entran, cede primero el título y las demás palabras siguen enteras', async () => {
     // En la sección de próximos a vencer (una fila, con "Cuatrimestralmente"), un área con una palabra de 91 puntos:
     // con el título en su mínimo de siempre la tabla no entra
@@ -457,7 +490,8 @@ for (const variante of VARIANTES) {
       tipo, gestion,
       datasets: Array.from({ length: cantidad }, (_, i) => ({
         ...dataset(i + 1), titulo: titulos[titulo](i + 1),
-        ...(tipo === 'aviso' ? {} : { antecedente: null, informado, reiteraciones: 1 })
+        // En las reiteraciones, los múltiplos de 3 llevan su antecedente en "Informado en" (filas más altas)
+        ...(tipo === 'aviso' ? {} : { informado, reiteraciones: 1 })
       }))
     });
 
@@ -479,6 +513,8 @@ for (const variante of VARIANTES) {
     // Los pies de cada hoja: "Página p de t" y el del membrete
     const esPie = (linea) => esPaginacion(linea) || linea === PIE;
     const esFila = (linea) => /^Dataset \d+\b/.test(linea);
+    // Primera línea del encabezado de la tabla (con el título angosto de las reiteraciones con antecedente, sale en dos)
+    const esEncabezado = (linea) => linea === 'Conjunto de datos' || linea === 'Conjunto de';
 
     // Tablas mal cortadas en una hoja: título de sección sin su encabezado, o encabezado sin su primera fila
     const problemasDeTabla = (lineas, titulos) => {
@@ -486,11 +522,11 @@ for (const variante of VARIANTES) {
       lineas.forEach((linea, i) => {
         const fila = lineas.findIndex((l, j) => j > i && esFila(l));
         if (titulos.includes(linea)) {
-          const encabezado = lineas.indexOf('Conjunto de datos', i);
+          const encabezado = lineas.findIndex((l, j) => j >= i && esEncabezado(l));
           if (encabezado === -1 || (fila !== -1 && fila < encabezado)) problemas.push(`el título "${linea}" quedó sin su tabla`);
         }
-        if (linea === 'Conjunto de datos') {
-          const corte = lineas.findIndex((l, j) => j > i && (l === 'Conjunto de datos' || titulos.includes(l) || l === 'Justificación:' || l.startsWith('Datos de contacto')));
+        if (esEncabezado(linea)) {
+          const corte = lineas.findIndex((l, j) => j > i && (esEncabezado(l) || titulos.includes(l) || l === 'Justificación:' || l.startsWith('Datos de contacto')));
           if (fila === -1 || (corte !== -1 && corte < fila)) problemas.push('encabezado de tabla sin su primera fila');
         }
       });
@@ -607,7 +643,7 @@ for (const variante of VARIANTES) {
       for (const { etiqueta, nota: n, hojas } of renderizadas) {
         const titulos = n.secciones.map(seccion => seccion.titulo);
         hojas.forEach((lineas, i) => {
-          assert.equal(lineas.includes('Conjunto de datos'), lineas.some(esFila), `${etiqueta}, hoja ${i + 1}: filas sin encabezado`);
+          assert.equal(lineas.some(esEncabezado), lineas.some(esFila), `${etiqueta}, hoja ${i + 1}: filas sin encabezado`);
           assert.deepEqual(problemasDeTabla(lineas, titulos), [], `${etiqueta}, hoja ${i + 1}`);
         });
       }

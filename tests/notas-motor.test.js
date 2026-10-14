@@ -238,6 +238,26 @@ describe('reiteraciones', () => {
     assert.ok(html.includes('Nota Digital N° 1/26 (13/10/2026)'));
   });
 
+  it('un avisado con antecedente de emails anteriores lo lleva en "Informado en" (HTML, texto y PDF), sin fila a todo el ancho', async () => {
+    const id = await crearDataset({ titulo: 'Avisado con antecedente', gestion: 'externa', vencimiento: '2026-11-12', ultima: '2025-11-12' });
+    await crearEmailViejo({ tipo: 'externo-40', datasetIds: [id], enviado: '2026-01-05 08:00:00' });
+    await crearEmailViejo({ tipo: 'externo-5', datasetIds: [id], enviado: '2026-10-01 08:00:00' });
+    await ejecutar('2026-10-13');
+    await mailpit.vaciar();
+
+    await ejecutar('2026-11-02');
+    const reiteracion = (await notas()).find(n => n.tipo === 'reiteracion');
+    assert.ok(reiteracion);
+    const segunda = 'Anteriormente notificado DGMIT por e-mail en 2 oportunidades, entre el 05/01/2026 y el 01/10/2026';
+    assert.ok(reiteracion.html.includes(`>Nota Digital N° 1/26 (13/10/2026).<br><span style="font-size:11px">${segunda}</span></td>`), reiteracion.html);
+    assert.ok(!reiteracion.html.includes('Antecedente:'));
+    const [{ texto, pdf }] = await query('SELECT texto, pdf FROM notas_digitales WHERE id = ?', [reiteracion.id]);
+    assert.ok(texto.includes(`    Informado en: Nota Digital N° 1/26 (13/10/2026). ${segunda}\n`), texto);
+    const lineas = textosPorHoja(pdf).flat();
+    assert.equal(lineas.filter(t => t.tamano === 7).map(t => t.texto).join(' '), segunda);
+    assert.ok(!lineas.some(t => t.texto.startsWith('Antecedente:')));
+  });
+
   it('se evalúa una sola vez por mes y la primera de enero es N° 1 del año nuevo', async () => {
     await crearDataset({ titulo: 'Avisado temprano', vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
@@ -305,8 +325,9 @@ describe('vencidos sin aviso (14/10/2026)', () => {
     const html = await mailpit.html(mensaje.ID);
     assert.ok(html.includes('Cargado vencido'));
     assert.ok(html.includes('Plazo de actualización vencido'));
-    assert.ok(html.includes('Sin aviso previo'));
-    assert.ok(html.includes('Antecedente: notificado a la DGMIT por correo electrónico en 2 oportunidades, entre el 01/01/2026 y el 01/10/2026.'));
+    // El antecedente va en la celda "Informado en", en letra más chica (spec 6.4)
+    assert.ok(html.includes('>Sin aviso previo.<br><span style="font-size:11px">Anteriormente notificado DGMIT por e-mail en 2 oportunidades, entre el 01/01/2026 y el 01/10/2026</span></td>'), html);
+    assert.ok(!html.includes('Antecedente:'));
     const [fila] = await query('SELECT seccion, DATE_FORMAT(vencimiento, "%Y-%m-%d") AS vencimiento FROM notas_digitales_datasets WHERE dataset_id = ?', [id]);
     assert.deepEqual(fila, { seccion: 'vencido', vencimiento: '2026-09-30' });
   });
@@ -692,6 +713,8 @@ describe('pruebas, vista previa y estado', () => {
     assert.ok(vista.html.includes('Dataset de ejemplo vencido'));
     assert.ok(vista.html.includes('Plazo de actualización vencido'));
     assert.ok(!vista.html.includes('Sin aviso previo'));
+    // El a vencer muestra cómo sale el antecedente de los emails anteriores en una reiteración
+    assert.ok(vista.html.includes('<br><span style="font-size:11px">Anteriormente notificado DGMIT por e-mail en 3 oportunidades, entre el 04/08/2026 y el 03/10/2026</span>'), vista.html);
   });
 
   it('la prueba de un aviso sin datos reales tampoco manda vencidos de ejemplo', async () => {
