@@ -51,6 +51,16 @@ describe('seleccionarParaAviso', () => {
     assert.deepEqual(await datos.seleccionarParaAviso('interna', '2026-11-02'), []);
   });
 
+  it('un vencimiento con la fecha cero de MariaDB (sql_mode no estricto) no entra en avisos ni en reiteraciones', async () => {
+    const cero = await crearDataset({ vencimiento: '2026-11-30' });
+    await query("UPDATE datasets SET proxima_actualizacion = '0000-00-00' WHERE id = ?", [cero]);
+    assert.equal((await query("SELECT DATE_FORMAT(proxima_actualizacion, '%Y-%m-%d') AS v FROM datasets WHERE id = ?", [cero]))[0].v, '0000-00-00');
+    // Antes salía en la reiteración como vencido sin aviso, con "Vencido hace NaN días"
+    assert.deepEqual(await datos.seleccionarParaReiteracion('interna', '2026-11-02'), []);
+    assert.deepEqual(await datos.seleccionarParaAviso('interna', '2026-11-02'), []);
+    assert.equal(await datos.aperturaDelProximoAviso('interna', '2026-11-02'), null);
+  });
+
   it('un aviso (aunque haya fallado) bloquea un segundo aviso del mismo vencimiento; una prueba no', async () => {
     const avisado = await crearDataset({ vencimiento: '2026-12-31' });
     const fallido = await crearDataset({ vencimiento: '2026-12-31' });

@@ -68,6 +68,12 @@ describe('construirAnexo', () => {
     }
   });
 
+  it('una última actualización que no es una fecha (la fecha cero de MariaDB) se toma como sin registro', () => {
+    for (const valor of ['0000-00-00', '2026-02-30', '', undefined]) {
+      assert.equal(anexo([ficha({ ultima_actualizacion: valor })]).hojas[0].linea.inicio, null, String(valor));
+    }
+  });
+
   it('la ficha no repite las fechas, que ya están en la línea de tiempo', () => {
     assert.deepEqual(anexo([ficha({ tema_secundario: 'Gobierno' })]).hojas[0].campos.map(([etiqueta]) => etiqueta),
       ['Área responsable', 'Depende de', 'Gestión', 'Frecuencia', 'Tema principal', 'Tema secundario', 'Formatos']);
@@ -207,6 +213,12 @@ describe('renderAnexo', () => {
   it('sin última actualización, la línea de tiempo dice "Sin registro"', async () => {
     const hojas = lineasPorHoja(await renderAnexo(anexo([ficha({ ultima_actualizacion: null })])));
     assert.ok(hojas[0].some(l => l.includes('Sin registro')));
+  });
+
+  it('con la fecha cero de MariaDB como última actualización, el anexo se dibuja con "Sin registro" (antes fallaba con NaN)', async () => {
+    const hojas = lineasPorHoja(await renderAnexo(anexo([ficha({ ultima_actualizacion: '0000-00-00' })])));
+    assert.ok(hojas[0].some(l => l.includes('Sin registro')), hojas[0].join(' | '));
+    assert.ok(!hojas[0].some(l => l.includes('00/00/0000')), hojas[0].join(' | '));
   });
 
   it('escribe solo texto que Helvetica puede escribir', async () => {

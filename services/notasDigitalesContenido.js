@@ -1,6 +1,6 @@
 // Contenido de las Notas Digitales: textos fijos, estructura de la nota y versiones HTML y texto plano.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6)
-import { formatoCorto, formatoLargo, mesYAnio, diasEntre } from './notasDigitalesCalendario.js';
+import { formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso } from './notasDigitalesCalendario.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -189,7 +189,9 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
       titulo: f.titulo,
       etiqueta: `CONJUNTO DE DATOS · ${ETIQUETA_GESTION[f.tipo_gestion] ?? ''}`.trim(),
       estado: estadoDelAnexo(f.vencimiento, fecha),
-      linea: { inicio: f.ultima_actualizacion ?? null, fin: f.vencimiento, hoy: fecha },
+      // Una última actualización que no es una fecha (la fecha cero de MariaDB, '0000-00-00', con sql_mode no
+      // estricto) se toma como sin registro: con ella la línea de tiempo no se puede dibujar
+      linea: { inicio: esFechaIso(f.ultima_actualizacion) ? f.ultima_actualizacion : null, fin: f.vencimiento, hoy: fecha },
       campos: [
         ['Área responsable', f.area_nombre],
         ['Depende de', f.area_superior],

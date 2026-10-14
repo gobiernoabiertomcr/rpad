@@ -14,7 +14,10 @@ const DESDE_DATASETS = `
   FROM datasets d
   JOIN frecuencias f ON f.id = d.frecuencia_id
   JOIN areas a ON a.id = d.area_id`;
-const CONDICION_BASE = 'd.activo = TRUE AND d.tipo_gestion = ? AND f.dias IS NOT NULL AND d.proxima_actualizacion IS NOT NULL';
+// Un vencimiento con la fecha cero de MariaDB ('0000-00-00', posible con sql_mode no estricto) no es una fecha: no entra
+// en avisos ni en reiteraciones (saldría "Vencido hace NaN días")
+const CONDICION_BASE = `d.activo = TRUE AND d.tipo_gestion = ? AND f.dias IS NOT NULL AND d.proxima_actualizacion IS NOT NULL
+  AND d.proxima_actualizacion > '1900-01-01'`;
 // Sin aviso (de cualquier estado, sin contar pruebas) para su vencimiento actual
 const SIN_AVISO = `NOT EXISTS (
   SELECT 1 FROM notas_digitales_datasets ndd
@@ -27,6 +30,7 @@ const PRIMER_VENCIMIENTO_DEL_MES = `(
   SELECT MIN(e.proxima_actualizacion) FROM datasets e
   JOIN frecuencias fe ON fe.id = e.frecuencia_id
   WHERE e.activo = TRUE AND e.tipo_gestion = d.tipo_gestion AND fe.dias IS NOT NULL AND e.proxima_actualizacion IS NOT NULL
+    AND e.proxima_actualizacion > '1900-01-01'
     AND DATE_FORMAT(e.proxima_actualizacion, '%Y-%m') = DATE_FORMAT(d.proxima_actualizacion, '%Y-%m'))`;
 
 export const obtenerConfig = async () => {
