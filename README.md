@@ -25,6 +25,7 @@ RPAD permite registrar datasets, asignarles frecuencias de actualización y moni
 - **Email**: Nodemailer
 - **PDFs**: PDFKit
 - **DOCX:** docx (generación programática de documentos Word)
+- **QR:** qrcode (código QR del anexo de las Notas Digitales, dibujado como vectores en el PDF)
 
 ## Roles de Usuario
 
@@ -36,6 +37,15 @@ El sistema cuenta con dos roles de usuario:
 | `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, áreas, reportes, notas) sin poder modificar datos. |
 
 Los cambios sobre datasets requieren doble verificación: un admin propone y otro admin distinto aprueba o rechaza. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
+
+## Campo "Qué se solicita" de los datasets
+
+Cada dataset tiene un campo opcional **"Qué se solicita"**: qué información concreta tiene que enviar el área responsable para actualizarlo (registros, campos, cobertura y formato). Es un texto que vale para cualquier ciclo de actualización, sin fechas puntuales.
+
+- **Dónde se edita:** en el formulario del dataset del panel de administración (`admin.html`).
+- **Doble verificación:** es un dato del dataset como los demás. Quien lo edita lo propone y otro admin lo aprueba o rechaza; al revisar el cambio se ve el texto anterior y el nuevo. Un campo vacío queda sin texto (`NULL`).
+- **Dónde se muestra:** en la página pública del dataset (`dataset.html`), en el recuadro "Qué se solicita" (si el dataset no tiene texto, no se muestra), y en el **anexo** que acompaña a los avisos de las Notas Digitales. Si un dataset no lo tiene cargado, el anexo usa un texto genérico.
+- **Carga inicial:** la migración `database/updates/migracion-que-se-solicita-datos.sql` carga el texto de los 80 datasets activos (ver [Segunda entrega de Notas Digitales](#segunda-entrega-de-notas-digitales)).
 
 ## Estructura del proyecto
 
@@ -63,14 +73,17 @@ rpad/
 ├── services/
 │   ├── emailService.js            # Configuración SMTP y envío
 │   ├── emailTemplates.js          # Plantillas HTML para emails
-│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido y PDF
+│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD
 │   └── updates/                   # Scripts de migración
 │       ├── migracion-v1.2.0-v1.3.0.sql
 │       ├── migracion-v1.3.0-v1.4.0.sql
 │       ├── migracion-v1.4.0-v1.5.0.sql
-│       └── migracion-notas-digitales.sql
+│       ├── migracion-notas-digitales.sql
+│       ├── migracion-notas-digitales-anexo.sql   # Segunda entrega: columna anexo_pdf
+│       ├── migracion-que-se-solicita.sql         # Segunda entrega: columna que_se_solicita
+│       └── migracion-que-se-solicita-datos.sql   # Segunda entrega: carga inicial de los textos
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -140,7 +153,7 @@ Desde **phpMyAdmin** en cPanel:
 | `frecuencias` | Catálogo de frecuencias de actualización |
 | `formatos` | Catálogo de formatos de archivo (CSV, XLSX, etc.) con distinción de habituales |
 | `areas` | Áreas responsables con contactos, emails y artículos gramaticales (el/la) |
-| `datasets` | Registro principal de datasets (sin columnas de formato fijas) |
+| `datasets` | Registro principal de datasets (sin columnas de formato fijas), con el texto opcional "Qué se solicita" (`que_se_solicita`) |
 | `dataset_formatos` | Tabla intermedia para la relación muchos-a-muchos entre datasets y formatos |
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
 | `historial_actualizaciones` | Log de actualizaciones realizadas |
@@ -171,6 +184,51 @@ Secuencia de despliegue, en este orden:
 7. **El primer día hábil siguiente**, revisar Correos → Estado: la línea "Última corrida diaria" tiene que mostrar la corrida de las 08:00 sin errores y no tiene que haber alertas. Revisar también el libro de Notas Digitales.
 
 Los siete emails de aviso anteriores (interno y externo) dejan de salir apenas se sube el código; las Notas Digitales empiezan cuando se activa el envío automático.
+
+#### Segunda entrega de Notas Digitales
+
+⚠️ Requisito: la primera entrega (la secuencia anterior) ya tiene que estar aplicada.
+
+Qué cambia en esta entrega:
+
+- **El aviso informa solo datasets a vencer** (todavía no vencidos). Un dataset vencido que nunca tuvo aviso ya no va en el aviso: entra en la **reiteración** mensual, con "Sin aviso previo" en la columna "Informado en".
+- **Cada aviso viaja con un segundo PDF, el anexo**: una hoja A4 por dataset, con la descripción, la ficha (con código QR al portal), "Qué se solicita", las observaciones y el contacto del área. Se genera junto con la nota y se guarda en el libro. Las reiteraciones no llevan anexo.
+- **Campo nuevo "Qué se solicita"** en los datasets (ver [Campo "Qué se solicita"](#campo-qué-se-solicita-de-los-datasets)), con doble verificación; se muestra en la página pública del dataset y en el anexo.
+- **Correos**: botón "Ver anexo" en Vista previa y prueba (solo para avisos) y botón "Anexo" en cada aviso del libro.
+- **Textos**: se quitaron las menciones a WhatsApp y las notas dicen "En tal sentido, solicito…".
+- **Revisión de cambios**: el campo "Observaciones" muestra el valor anterior y el nuevo.
+
+Secuencia de despliegue, en este orden:
+
+1. **Backup de la base de producción**, por ejemplo:
+   ```bash
+   mysqldump -u USUARIO -p NOMBRE_BASE > backup-antes-del-anexo-de-avisos.sql
+   ```
+2. **Columna del anexo.** Los scripts no tienen `USE`: hay que indicar la base en el comando.
+   ```bash
+   mysql -u USUARIO -p NOMBRE_BASE < database/updates/migracion-notas-digitales-anexo.sql
+   ```
+3. **Columna "Qué se solicita".**
+   ```bash
+   mysql -u USUARIO -p NOMBRE_BASE < database/updates/migracion-que-se-solicita.sql
+   ```
+4. **Carga inicial de "Qué se solicita".** Va después del paso 3, porque necesita la columna.
+   ```bash
+   mysql -u USUARIO -p NOMBRE_BASE < database/updates/migracion-que-se-solicita-datos.sql
+   ```
+   Solo completa los datasets que todavía no tienen texto (`que_se_solicita IS NULL`): no pisa un texto ya cargado o aprobado desde RPAD, así que se puede correr también si alguien ya editó alguno.
+5. **Subir el código.**
+6. En **Setup Node.js App**, **Run NPM Install**: hay una dependencia nueva, `qrcode` (el código QR del anexo).
+7. **Restart** de la app.
+8. En **Correos → Vista previa y prueba**, revisar con "Ver PDF" y "Ver anexo" que se vean bien, y **enviar una prueba de un aviso** a las casillas de prueba: tiene que llegar con **2 adjuntos** (`Nota-Digital-PRUEBA.pdf` y `Anexo-Nota-Digital-PRUEBA.pdf`).
+
+Por qué importa el orden: **las tres migraciones se corren antes de reiniciar con el código nuevo**.
+
+- Sin la columna `anexo_pdf` (paso 2), falla generar y enviar las notas.
+- Sin la columna `que_se_solicita` (paso 3), falla aprobar cambios sobre los datasets.
+- Si la carga inicial (paso 4) se corre después de que alguien aprobó una edición de "Qué se solicita", no la pisa. Es lo esperado.
+
+En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin → Importar**, con la base seleccionada y el archivo en UTF-8, en el mismo orden. Los pasos 2 y 3 agregan una columna: si se corren dos veces, la segunda falla con "Duplicate column name" y no cambia nada. El paso 4 se puede repetir sin problema.
 
 ### Migración desde v1.4.0 a v1.5.0
 
@@ -314,9 +372,9 @@ https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET
 
 Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días antes) y las **Notas Digitales**:
 
-- **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes.
-- **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes.
-- Solo en días hábiles. Cada nota se numera (`Nota Digital N° 12/26`), se envía con el PDF adjunto y queda en el libro de la pantalla de Correos.
+- **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
+- **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Lleva solo el PDF de la nota, sin anexo.
+- Solo en días hábiles. Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
 - El envío automático arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 

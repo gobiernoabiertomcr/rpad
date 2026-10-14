@@ -206,7 +206,7 @@ Las notas de prueba usan `N° PRUEBA` en lugar del número y anteponen `[PRUEBA]
 
 ### 6.7 Anexo de los avisos
 
-Cada **aviso** (no las reiteraciones) se envía con un segundo PDF adjunto, `Anexo-Nota-Digital-{n}-{aa}.pdf` (en pruebas `Anexo-Nota-Digital-PRUEBA-{id}.pdf`): un reporte con **una hoja por dataset**, en el mismo orden que la tabla de la nota.
+Cada **aviso** (no las reiteraciones) se envía con un segundo PDF adjunto, `Anexo-Nota-Digital-{n}-{aa}.pdf` (en pruebas, el adjunto del email se llama `Anexo-Nota-Digital-PRUEBA.pdf` y la descarga desde el libro, `Anexo-Nota-Digital-PRUEBA-{id}.pdf`): un reporte con **una hoja por dataset**, en el mismo orden que la tabla de la nota.
 
 **Formato:**
 - hoja **A4 vertical** (210 × 297 mm), márgenes de 15 mm;
