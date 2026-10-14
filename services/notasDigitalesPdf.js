@@ -55,7 +55,8 @@ export const caracteresNoEscribibles = (texto) => [...new Set(String(texto).matc
 // PDFKit con el resguardo: todo lo que se escribe (text) y se mide (widthOfString, heightOfString) pasa por
 // textoParaPdf, así ninguna escritura de la nota puede saltearlo y las medidas coinciden con lo escrito.
 // PDFKit llama a widthOfString por dentro con texto ya resguardado: aplicarlo de nuevo no lo cambia.
-class DocumentoNota extends PDFDocument {
+// También lo usa el anexo de los avisos (notasDigitalesAnexo.js).
+export class DocumentoNota extends PDFDocument {
   text(texto, ...resto) { return super.text(textoParaPdf(texto), ...resto); }
   widthOfString(texto, ...resto) { return super.widthOfString(textoParaPdf(texto), ...resto); }
   heightOfString(texto, ...resto) { return super.heightOfString(textoParaPdf(texto), ...resto); }

@@ -148,6 +148,50 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
   };
 };
 
+const ETIQUETA_GESTION = { interna: 'GESTIÓN INTERNA', externa: 'GESTIÓN EXTERNA' };
+
+// Indicador de estado del anexo. Los avisos solo llevan datasets a vencer; un vencimiento pasado (posible con los
+// datos de ejemplo de la vista previa) se dice como tal en lugar de "faltan" días negativos.
+const estadoDelAnexo = (vencimiento, fecha) => {
+  const dias = diasEntre(fecha, vencimiento);
+  if (dias === 0) return 'Vence hoy';
+  if (dias < 0) return `Venció el ${formatoCorto(vencimiento)} · hace ${cantidad(-dias, 'día', 'días')}`;
+  return `Vence el ${formatoCorto(vencimiento)} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
+};
+
+// Anexo de los avisos: una hoja por dataset con su ficha completa (spec 6.7)
+export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, fecha, fichas }) => ({
+  numeroTexto: textoNumero({ numero, anio, esPrueba }),
+  fechaLarga: formatoLargo(fecha),
+  hojas: fichas.map((f) => {
+    // Los mismos datos que los contactos de la nota (6.4); "Depende de" ya está en la ficha
+    const lineas = CAMPOS_CONTACTO
+      .filter(([campo]) => campo !== 'area_superior' && String(f[campo] ?? '').trim())
+      .map(([campo, etiqueta]) => `${etiqueta}: ${f[campo]}`);
+    return {
+      titulo: f.titulo,
+      etiqueta: `CONJUNTO DE DATOS · ${ETIQUETA_GESTION[f.tipo_gestion] ?? ''}`.trim(),
+      estado: estadoDelAnexo(f.vencimiento, fecha),
+      linea: { inicio: f.ultima_actualizacion ?? null, fin: f.vencimiento, hoy: fecha },
+      campos: [
+        ['Área responsable', f.area_nombre],
+        ['Depende de', f.area_superior],
+        ['Gestión', f.tipo_gestion === 'externa' ? 'Externa' : 'Interna'],
+        ['Frecuencia', f.frecuencia_nombre],
+        ['Última actualización', f.ultima_actualizacion ? formatoCorto(f.ultima_actualizacion) : 'Sin registro'],
+        ['Vencimiento', formatoCorto(f.vencimiento)],
+        ['Tema principal', f.tema_principal],
+        ['Tema secundario', f.tema_secundario],
+        ['Formatos', f.formatos]
+      ].filter(([, valor]) => String(valor ?? '').trim()),
+      url: urlSegura(f.url_dataset),
+      descripcion: String(f.descripcion ?? '').trim() || 'Sin descripción registrada.',
+      observaciones: String(f.observaciones ?? '').trim() || null,
+      contacto: { nombre: f.area_nombre, lineas: lineas.length ? lineas : ['Sin datos de contacto registrados'] }
+    };
+  })
+});
+
 const ESTILO_CELDA = 'border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;';
 
 export const renderHtml = (nota) => {
