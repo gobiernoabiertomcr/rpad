@@ -695,6 +695,32 @@ export const renderAnexo = (anexo) => new Promise((resolve, reject) => {
 
 - [ ] **Step 7: PUNTO DE CONTROL DEL USUARIO (lo hace el controlador, no el implementador).** El controlador genera, con datos reales de la copia local (`fichasDe` todavía no existe: armá las fichas con una consulta de solo lectura en un script del scratchpad), el anexo de uno o dos datasets reales, se lo manda al usuario y **espera su OK o sus cambios de diseño** antes de seguir con la Task 4. Los cambios de diseño que pida se hacen en esta misma tarea (otra ronda del implementador) antes de avanzar.
 
+- [ ] **Step 8: Ronda de diseño (pedida por el usuario el 14/10/2026 al ver la muestra).** Sobre lo hecho en esta tarea, con sus tests:
+  - **Qué se solicita** (spec 6.7.4): `construirAnexo` agrega a cada hoja `queSeSolicita` = `ficha.que_se_solicita` recortado o, si está vacío, el texto por defecto de la spec. `renderAnexo` lo dibuja después de la línea de tiempo, en un recuadro destacado (fondo `acentoSuave`, filete del acento a la izquierda, título "QUÉ SE SOLICITA", letra más grande que la descripción), con las mismas reglas de achicar y cortar.
+  - **Aprovechar la A4** (spec 6.7, último párrafo): con los textos reales no queda un cuarto de hoja en blanco; letra y espacios más generosos y el contacto abajo, cerca del pie.
+  - **Ficha sin fechas repetidas** (ya están en la línea de tiempo), y un valor que no entra en dos líneas de media columna ocupa la fila entera (hallazgo Important de la revisión: un "Depende de" largo se cortaba aunque sobraba lugar).
+  - **Singular:** "falta 1 día" en el anexo y "Falta 1 día" en la tabla de la nota (`situacion` en `services/notasDigitalesContenido.js`).
+  - Después el controlador regenera la muestra real (con algún `que_se_solicita` de prueba) y vuelve a esperar el OK del usuario.
+
+---
+
+## Task 3b: Campo `que_se_solicita` del dataset
+
+**Files:**
+- Create: `database/updates/migracion-que-se-solicita.sql` (`ALTER TABLE datasets ADD COLUMN que_se_solicita TEXT NULL AFTER observaciones;`)
+- Modify: `database/schema.sql`, `tests/schema.test.js`
+- Modify: `controllers/datasetController.js` y `controllers/cambiosPendientesController.js` (crear, proponer y aplicar cambios: el campo viaja en `datos_nuevos` / `datos_anteriores` y se aplica al aprobar), `public/admin.html` + `public/js/admin.js` (textarea "Qué se solicita" junto a observaciones), `public/dataset.html` + `public/js/dataset-detail.js` (tarjeta "Qué se solicita" como la de observaciones), y cualquier lugar que liste o compare los campos de un cambio pendiente.
+- Test: los tests de datasets y de cambios pendientes que ya existen.
+
+**Spec:** 7.6. Seguí exactamente el recorrido que hoy hace `observaciones` (buscá `observaciones` en `controllers/` y `public/`): crear, editar con doble verificación, aprobar y mostrar.
+
+- [ ] Tests que fallan: proponer un cambio de `que_se_solicita` no modifica el dataset hasta que otro admin lo aprueba; al aprobarlo se aplica; la ficha pública lo devuelve; un texto vacío queda en NULL; crear un dataset con el campo lo guarda.
+- [ ] Implementación siguiendo a `observaciones`; aplicar el `ALTER` a la base local de Docker y reportar el SQL.
+- [ ] `npm test` completo en verde.
+- [ ] Commit: `feat: campo "Qué se solicita" de los datasets, con doble verificación`.
+
+**Carga inicial (no la hace el implementador):** el controlador redacta un borrador por dataset activo a partir de la descripción, la API pública del portal y las columnas de los archivos locales de `datasets/` (carpeta local, fuera del repo); el usuario lo revisa, y recién entonces se arma `database/updates/migracion-que-se-solicita-datos.sql` con un `UPDATE datasets SET que_se_solicita = '…' WHERE id = N;` por dataset, con los textos aprobados.
+
 ---
 
 ## Task 4: El motor genera, guarda y adjunta el anexo
@@ -760,6 +786,7 @@ export const fichasDe = async (ids) => {
             tp.nombre AS tema_principal, ts.nombre AS tema_secundario,
             (SELECT GROUP_CONCAT(fo.nombre ORDER BY fo.nombre SEPARATOR ', ')
                FROM dataset_formatos df JOIN formatos fo ON fo.id = df.formato_id WHERE df.dataset_id = d.id) AS formatos,
+            d.que_se_solicita,
             a.nombre AS area_nombre, a.area_superior, a.email_principal, a.email_secundario, a.telefono_area, a.celular_area,
             a.nombre_contacto, a.telefono_contacto, a.email_contacto
      FROM datasets d

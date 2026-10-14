@@ -216,12 +216,15 @@ Cada **aviso** (no las reiteraciones) se envía con un segundo PDF adjunto, `Ane
 
 **Contenido de cada hoja, de arriba abajo:**
 1. **Encabezado:** "Dirección de Datos Públicos y Comunicación", "Anexo – Nota Digital N° {n}/{aa}" y la fecha de la nota.
-2. **Título** del dataset, grande, y un **indicador de estado**: `Vence el {dd/mm/aaaa} · faltan N días` (o `Vence hoy`).
+2. **Título** del dataset, grande, y un **indicador de estado**: `Vence el {dd/mm/aaaa} · faltan N días` (`falta 1 día`; `Vence hoy`).
 3. **Línea de tiempo:** una barra desde la última actualización hasta el vencimiento, con la marca de hoy y las fechas en los extremos. Sin última actualización, la barra arranca en "Sin registro".
-4. **Ficha:** área responsable y de quién depende (`area_superior`), gestión (interna o externa), frecuencia, última actualización, vencimiento, temas (principal y secundario), formatos y link al portal (`url_dataset`, si es http/https), con un **código QR** al lado que abre ese link. Sin link válido no hay QR.
-5. **Descripción** y **observaciones** (si las hay).
-6. **Contacto del área responsable:** los mismos datos que los contactos de la nota (6.4), o "Sin datos de contacto registrados".
-7. **Pie:** `Anexo – Nota Digital N° {n}/{aa} · Hoja {i} de {t}`.
+4. **Qué se solicita:** recuadro destacado (el acento azul suave) con el texto `que_se_solicita` del dataset (7.6): qué información concreta tiene que remitir el área. Si el dataset no lo tiene cargado, dice: "La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal."
+5. **Ficha:** área responsable y de quién depende (`area_superior`), gestión (interna o externa), frecuencia, temas (principal y secundario), formatos y link al portal (`url_dataset`, si es http/https), con un **código QR** al lado que abre ese link. Sin link válido no hay QR. Las fechas no se repiten en la ficha: están en la línea de tiempo. Un valor que no entra en dos líneas de media columna ocupa la fila entera.
+6. **Descripción** y **observaciones** (si las hay).
+7. **Contacto del área responsable:** los mismos datos que los contactos de la nota (6.4), o "Sin datos de contacto registrados".
+8. **Pie:** `Anexo – Nota Digital N° {n}/{aa} · Hoja {i} de {t}`.
+
+La hoja **aprovecha la A4**: con los textos reales (descripciones de 300 a 510 caracteres, observaciones de hasta 90), la letra y los espacios son generosos y el contacto queda abajo, cerca del pie, sin dejar un cuarto de hoja en blanco. Las reglas de achicar y cortar siguen valiendo solo para textos fuera de lo común.
 
 El QR se dibuja como vectores (cuadrados) a partir de la matriz que calcula la librería `qrcode`, sin imagen intermedia.
 
@@ -298,6 +301,13 @@ La migración inserta los destinatarios y las líneas de CC de la sección 4 y e
 - `notificaciones_log` se mantiene para `area-aviso-40`. Las filas de los siete tipos reemplazados se conservan como historial y se usan para el antecedente (6.4).
 - El indicador mensual "Notificaciones enviadas" de Gestión suma las filas exitosas de `notificaciones_log` y las notas digitales enviadas que no son prueba.
 - El PDF "Historial de notificaciones" de Reportes no cambia. El historial de notas es el libro de la pantalla de Correos.
+
+### 7.6 `datasets.que_se_solicita`
+
+Columna nueva `que_se_solicita` (TEXT NULL) en `datasets`, mediante `database/updates/migracion-que-se-solicita.sql` (más `schema.sql` y `tests/schema.test.js`): qué información concreta se le pide al área cuando hay que actualizar el dataset (registros, campos, cobertura y formato), en un texto que vale para cualquier ciclo (no menciona fechas puntuales).
+
+- Es un dato del dataset como los demás: se edita en el formulario del dataset del panel de administración y **pasa por la doble verificación** (se propone, otro admin aprueba). Se muestra en la ficha pública del dataset y en el anexo de los avisos (6.7).
+- **Carga inicial:** una migración de datos (`database/updates/migracion-que-se-solicita-datos.sql`) con un texto por dataset activo, redactado a partir de la descripción del dataset, los recursos del portal (API pública de datos.comodoro.gov.ar) y las columnas de sus archivos, y **revisado por el usuario** antes de correrla. Es la única carga que no pasa por la doble verificación, porque inicializa un campo nuevo.
 
 ## 8. Motor de envío
 
@@ -434,7 +444,7 @@ Después se hace una verificación manual en el navegador de la pantalla de Corr
 6. Los siete emails reemplazados dejan de salir apenas se despliega el código; las notas empiezan cuando se activa el interruptor.
 
 **Segunda entrega (anexo, avisos solo a vencer y textos, desde el 14/10/2026):**
-1. Ejecutar `migracion-notas-digitales-anexo.sql` en producción, antes de subir el código.
+1. Ejecutar `migracion-notas-digitales-anexo.sql` y `migracion-que-se-solicita.sql` en producción, antes de subir el código; después, `migracion-que-se-solicita-datos.sql` (los textos revisados).
 2. Subir el código y correr "Run NPM Install": hay una dependencia nueva, `qrcode`.
 3. Restart y revisar con "Ver PDF" y "Ver anexo" en Correos; enviar una prueba de un aviso.
 
