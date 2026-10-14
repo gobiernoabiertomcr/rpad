@@ -195,6 +195,22 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
       `la fila siguiente (${siguiente.base}) se superpone con la segunda oración (${finDeLaPrimera.base})`);
   });
 
+  it('la oración chica en la última fila no le quita aire a lo que sigue debajo de la tabla', async () => {
+    const ANTECEDENTE = { cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' };
+    // Dos vencidos; el primero con antecedente en los dos casos (las mismas proporciones de columnas) y el último con
+    // un título tan largo que su celda es la más alta de la fila con o sin la oración chica: la tabla termina igual
+    const largo = { ...REITERACION_REAL[1], titulo: 'Siniestros viales por categoría '.repeat(6).trim() };
+    const justificacion = async (antecedente) => {
+      const datasets = [{ ...REITERACION_REAL[0], antecedente: ANTECEDENTE }, { ...largo, antecedente }];
+      const [hoja] = textosPorHoja(await renderPdf(reiteracionReal({ datasets })));
+      assert.ok(hoja.some(t => t.tamano === 7 && t.texto.startsWith('Anteriormente')));
+      return hoja.find(t => t.texto === 'Justificación:');
+    };
+    const sin = await justificacion(null);
+    const con = await justificacion(ANTECEDENTE);
+    assert.ok(cerca(con.base, sin.base), `"Justificación:" ${(con.base - sin.base).toFixed(2)} pt más cerca de la tabla`);
+  });
+
   it('si los mínimos de las columnas no entran, cede primero el título y las demás palabras siguen enteras', async () => {
     // En la sección de próximos a vencer (una fila, con "Cuatrimestralmente"), un área con una palabra de 91 puntos:
     // con el título en su mínimo de siempre la tabla no entra

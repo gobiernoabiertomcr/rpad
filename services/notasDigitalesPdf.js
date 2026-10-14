@@ -318,6 +318,8 @@ const prepararTabla = (doc, seccion, ancho) => {
         // (se mide antes de elegir la letra chica: medir cambia la letra del documento)
         const ySegunda = y + RELLENO + altoPrincipal(valor, i, fuente) + SEPARACION_SECUNDARIO;
         doc.font(NORMAL).fontSize(TAMANO_SECUNDARIO).text(segunda, x + RELLENO, ySegunda, { width: anchoTexto });
+        // Vuelve a la letra de la tabla: el aire que se deja debajo de ella se mide con la letra del documento
+        doc.font(fuente).fontSize(TAMANO_TABLA);
       }
       x += anchos[i];
     });
