@@ -57,16 +57,16 @@ La fecha de "hoy" se calcula siempre en la zona horaria `America/Argentina/Bueno
 En cada corrida de un día hábil, para cada gestión se arma **como máximo una nota de aviso** con los datasets que cumplen todo lo siguiente:
 - `activo = TRUE`;
 - su frecuencia tiene días definidos (los "Eventual" quedan afuera);
-- `proxima_actualizacion` no es nula y:
-  - es **menor o igual a hoy + ventana**; esto incluye los ya vencidos; **o**
+- `proxima_actualizacion` no es nula y **no está vencida** (es mayor o igual a hoy), y además:
+  - es **menor o igual a hoy + ventana**; **o**
   - vence en el **mismo mes (año-mes)** que algún dataset de la misma gestión que ya entró en la ventana. Ese otro dataset se busca entre los que cumplen las dos condiciones anteriores (activo y con frecuencia con días) y tienen vencimiento, **tengan o no aviso**;
 - **no tienen un aviso** (no prueba) para su vencimiento actual.
 
+Desde el 14/10/2026 el aviso informa **solo datasets a vencer**. La primera corrida en producción (13/10/2026, N° 1/26 y N° 2/26) avisó también todos los vencidos de ese momento como antecedente formal; a partir de ahí, un vencido sin aviso es un caso raro (una fecha cargada en el pasado, un dataset reactivado) y va a la reiteración (5.3).
+
 En otras palabras, un mes "se abre" para una gestión cuando el **primer** vencimiento de ese mes queda a la distancia de la ventana, y ese día se avisan juntos todos los datasets de la gestión que vencen ese mes. Así un mismo mes no se parte en dos notas casi seguidas cuando algunos datasets vencen el 29 o el 30 y la mayoría el último día. Por ejemplo, en la gestión externa, si unos vencen el 30/01 y otros el 31/01, salen todos en el aviso del 31/12; en la interna, si unos vencen el 29/03 y otros el 31/03, salen todos el 28/01. Si el primero del mes ya se avisó (por ejemplo, ayer) y aparece otro dataset sin aviso que vence ese mismo mes, entra en la corrida siguiente aunque todavía no esté en la ventana. No se mezclan meses distintos ni gestiones distintas.
 
-Un dataset vencido que nunca tuvo aviso para su vencimiento actual (por ejemplo, porque se cargó una fecha en el pasado) entra en el próximo aviso de su gestión como su primer aviso formal: está dentro de la ventana, así que la regla del mes no lo cambia.
-
-Se agrupan en dos secciones: **próximos a vencer** (vencimiento ≥ hoy) y **vencidos** (vencimiento < hoy).
+Como solo entran datasets a vencer, el aviso tiene una sola sección: **próximos a vencer**. Cada aviso va acompañado de un **anexo** con una hoja por dataset (6.7).
 
 Como el criterio es por rango y no por fecha exacta, si un día no hubo corrida o la fecha cae en un día no hábil, el dataset entra en el siguiente día hábil.
 
@@ -79,12 +79,13 @@ Para cada gestión, la reiteración se **evalúa una sola vez por mes calendario
 - si ese día no hubo corrida (por ejemplo, porque falló el cron), se evalúa en la siguiente corrida de un día hábil;
 - el mes evaluado se registra (sección 7.3) haya salido nota o no. Así, si ese día no había nada para reiterar, no se vuelve a evaluar a mitad de mes, y nunca se generan dos reiteraciones de la misma gestión en el mismo mes.
 
-Incluye los datasets que cumplen todo lo siguiente:
-- siguen activos y con frecuencia con días;
-- tienen un **aviso enviado** para su vencimiento actual; eso significa que no se actualizaron;
-- la fecha de ese aviso es **anterior o igual a hoy − 20 días**. Por ejemplo, los avisos del 13/10/2026 se reiteran el 02/11/2026 y los del 14/10/2026, recién en diciembre.
+Incluye los datasets activos y con frecuencia con días que cumplen **una** de estas dos condiciones:
+1. tienen un **aviso enviado** para su vencimiento actual (eso significa que no se actualizaron) y la fecha de ese aviso es **anterior o igual a hoy − 20 días**. Por ejemplo, los avisos del 13/10/2026 se reiteran el 02/11/2026 y los del 14/10/2026, recién en diciembre;
+2. están **vencidos** (vencimiento < hoy) y **nunca tuvieron aviso** (no prueba) para su vencimiento actual. Entran sin esperar los 20 días, porque ya están atrasados. En la columna "Informado en" dicen **"Sin aviso previo"** y, si los avisaron los emails anteriores, llevan la línea de antecedente (6.4).
 
-Se agrupan en las mismas dos secciones. Un dataset vencido se reitera todos los meses hasta que se actualice.
+Se agrupan en dos secciones: **próximos a vencer** (vencimiento ≥ hoy) y **vencidos** (vencimiento < hoy). Un dataset vencido se reitera todos los meses hasta que se actualice.
+
+La pantalla de Estado (sección 10) cuenta en la próxima reiteración los datasets de las dos condiciones.
 
 ### 5.4 Interruptor general
 
@@ -110,17 +111,18 @@ En este orden, siguiendo el Anexo I (sin saludo ni despedida):
 5. Sección **Próximos a vencer**, solo si tiene datasets.
 6. Sección **Plazo de actualización vencido**, solo si tiene datasets.
 7. Solo en la gestión externa: **Datos de contacto de las áreas responsables**.
-8. **Justificación** (6.5).
-9. Remitente: `DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN` en negrita y subrayado, seguido de `, {fecha larga}.` (por ejemplo, "2 de noviembre de 2026").
-10. Firma, a la derecha: imagen de la firma (solo en el PDF), nombre y cargo configurados.
-11. Línea de CC según la gestión.
+8. Solo en los avisos, una línea propia: `Anexo: reporte de los conjuntos de datos ({N} hoja/s).`, donde N es la cantidad de datasets (una hoja del anexo por dataset; "1 hoja", "4 hojas").
+9. **Justificación** (6.5).
+10. Remitente: `DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN` en negrita y subrayado, seguido de `, {fecha larga}.` (por ejemplo, "2 de noviembre de 2026").
+11. Firma, a la derecha: imagen de la firma (solo en el PDF), nombre y cargo configurados.
+12. Línea de CC según la gestión.
 
-Si las dos secciones están vacías, la nota no se genera.
+Si las secciones están vacías, la nota no se genera. El aviso solo tiene la sección de próximos a vencer (5.2).
 
 ### 6.3 Párrafo inicial
 
 **Aviso, gestión interna:**
-> Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. Solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.
+> Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.
 
 **Aviso, gestión externa:**
 > Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.).
@@ -145,9 +147,9 @@ Introducción de cada sección:
 | Última actualización | ✓ | ✓ | `dd/mm/aaaa`, o "—" |
 | Vence / Venció | ✓ | ✓ | `dd/mm/aaaa` |
 | Situación | ✓ | ✓ | "Faltan N días", "Vence hoy" o "Vencido hace N días", calculado a la fecha de la nota |
-| Informado en | | ✓ | `Nota Digital N° 9/26 (02/11/2026)` y, si corresponde, `– reiterado N veces` (reiteraciones anteriores del mismo ciclo) |
+| Informado en | | ✓ | `Nota Digital N° 9/26 (02/11/2026)` y, si corresponde, `– reiterado N veces` (reiteraciones anteriores del mismo ciclo). Para un vencido que nunca tuvo aviso (5.3, condición 2): `Sin aviso previo` y, si corresponde, `– reiterado N veces` |
 
-**Antecedente por emails anteriores (solo en avisos).** Si el dataset aparece en `notificaciones_log` en alguno de los siete tipos reemplazados, con `success = 1` y `enviado_at` posterior a su `ultima_actualizacion` (o sin `ultima_actualizacion`), debajo de su fila va:
+**Antecedente por emails anteriores (en avisos y en las filas "Sin aviso previo" de las reiteraciones).** Si el dataset aparece en `notificaciones_log` en alguno de los siete tipos reemplazados, con `success = 1` y `enviado_at` posterior a su `ultima_actualizacion` (o sin `ultima_actualizacion`), debajo de su fila va:
 > *Antecedente: notificado a la DGMIT por correo electrónico en {N} oportunidades, entre el {primera} y el {última}.*
 
 Si N = 1: *"Antecedente: notificado a la DGMIT por correo electrónico el {fecha}."*
@@ -165,10 +167,12 @@ Esto cubre la transición. Como esos emails dejan de existir, la línea desapare
 >
 > Cabe destacar que Comodoro Rivadavia se encuentra entre los primeros puestos del Índice Nacional de Datos Abiertos. En este marco, mantener la información actualizada contribuye directamente a sostener y fortalecer este posicionamiento.
 >
-> La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, o vía WhatsApp al +54 9 2974 05-6894. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.
+> La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.
 
 **Reiteración (texto abreviado):**
-> La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, o vía WhatsApp al +54 9 2974 05-6894, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.
+> La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.
+
+(Desde el 14/10/2026 no se menciona el WhatsApp.)
 
 Los textos de las secciones 6.1 a 6.5 son fijos en el código y están en un solo módulo.
 
@@ -176,7 +180,7 @@ Los textos de las secciones 6.1 a 6.5 son fijos en el código y están en un sol
 
 La nota se construye una vez como estructura de datos (párrafos, secciones, tablas, firma) y se renderiza en tres formatos con el mismo contenido:
 
-- **HTML** (cuerpo del email). Estilo de documento: fuente Arial, texto negro, sin gradientes, emojis ni imágenes. La única excepción de color es la primera línea, **SE ADJUNTA NOTA EN PDF**, en negrita y bordó (`#800000`). El texto plano también empieza con esa línea. REF. y destinatario en negrita y subrayado, párrafos justificados y tablas con borde. Todo dato proveniente de la base se escapa.
+- **HTML** (cuerpo del email). Estilo de documento: fuente Arial, texto negro, sin gradientes, emojis ni imágenes. La única excepción de color es la primera línea, en negrita y bordó (`#800000`): **SE ADJUNTAN NOTA Y ANEXO EN PDF** en los avisos y **SE ADJUNTA NOTA EN PDF** en las reiteraciones. El texto plano también empieza con esa línea. REF. y destinatario en negrita y subrayado, párrafos justificados y tablas con borde. Todo dato proveniente de la base se escapa.
 - **Texto plano** (parte alternativa del mismo email).
 - **PDF** (adjunto `Nota-Digital-{n}-{aa}.pdf`) con PDFKit:
   - hoja oficio de 216 × 330 mm;
@@ -200,9 +204,32 @@ El membrete va solo en el PDF: el cuerpo del email (HTML y texto) no cambia. El 
 
 Las notas de prueba usan `N° PRUEBA` en lugar del número y anteponen `[PRUEBA] ` al asunto. La vista previa usa `N° XX`.
 
+### 6.7 Anexo de los avisos
+
+Cada **aviso** (no las reiteraciones) se envía con un segundo PDF adjunto, `Anexo-Nota-Digital-{n}-{aa}.pdf` (en pruebas `Anexo-Nota-Digital-PRUEBA-{id}.pdf`): un reporte con **una hoja por dataset**, en el mismo orden que la tabla de la nota.
+
+**Formato:**
+- hoja **A4 vertical** (210 × 297 mm), márgenes de 15 mm;
+- **sin membrete**: diseño propio de ficha, **monocromático** (texto gris oscuro, grises claros para fondos y líneas y un único acento azul suave), legible impreso en blanco y negro;
+- Helvetica (regular y negrita) con el mismo resguardo de texto que la nota (6.6): NFC y `?` para lo que no se puede escribir;
+- **siempre una sola hoja por dataset**: la diagramación es fija y los textos largos (descripción, observaciones) achican la letra hasta un mínimo legible (8 puntos) y, si aun así no entran en su espacio, se cortan con `… (continúa en el portal)`.
+
+**Contenido de cada hoja, de arriba abajo:**
+1. **Encabezado:** "Dirección de Datos Públicos y Comunicación", "Anexo – Nota Digital N° {n}/{aa}" y la fecha de la nota.
+2. **Título** del dataset, grande, y un **indicador de estado**: `Vence el {dd/mm/aaaa} · faltan N días` (o `Vence hoy`).
+3. **Línea de tiempo:** una barra desde la última actualización hasta el vencimiento, con la marca de hoy y las fechas en los extremos. Sin última actualización, la barra arranca en "Sin registro".
+4. **Ficha:** área responsable y de quién depende (`area_superior`), gestión (interna o externa), frecuencia, última actualización, vencimiento, temas (principal y secundario), formatos y link al portal (`url_dataset`, si es http/https), con un **código QR** al lado que abre ese link. Sin link válido no hay QR.
+5. **Descripción** y **observaciones** (si las hay).
+6. **Contacto del área responsable:** los mismos datos que los contactos de la nota (6.4), o "Sin datos de contacto registrados".
+7. **Pie:** `Anexo – Nota Digital N° {n}/{aa} · Hoja {i} de {t}`.
+
+El QR se dibuja como vectores (cuadrados) a partir de la matriz que calcula la librería `qrcode`, sin imagen intermedia.
+
+El anexo se genera junto con la nota, se guarda en el libro y queda **congelado** igual que la nota: un reintento reenvía los mismos dos PDF. La vista previa y las pruebas de un aviso también lo incluyen (en la vista previa, con `N° XX`); sin datasets reales, la vista previa usa los datos de ejemplo.
+
 ## 7. Datos
 
-Tres tablas nuevas, mediante la migración `database/updates/migracion-notas-digitales.sql`. También se agregan a `database/schema.sql`; `tests/schema.test.js` exige que coincidan.
+Tres tablas nuevas, mediante la migración `database/updates/migracion-notas-digitales.sql`. También se agregan a `database/schema.sql`; `tests/schema.test.js` exige que coincidan. El anexo de los avisos (6.7) agrega una columna, mediante `database/updates/migracion-notas-digitales-anexo.sql`.
 
 ### 7.1 `notas_digitales` (libro)
 
@@ -221,6 +248,7 @@ Tres tablas nuevas, mediante la migración `database/updates/migracion-notas-dig
 | `html` | MEDIUMTEXT | Cuerpo exacto enviado |
 | `texto` | MEDIUMTEXT | Parte de texto plano |
 | `pdf` | MEDIUMBLOB | PDF exacto adjuntado |
+| `anexo_pdf` | MEDIUMBLOB NULL | Anexo exacto adjuntado (6.7); solo en avisos |
 | `estado` | ENUM('pendiente','enviada','fallida') DEFAULT 'pendiente' | |
 | `intentos` | INT DEFAULT 0 | |
 | `ultimo_error` | TEXT NULL | |
@@ -261,7 +289,7 @@ La migración inserta los destinatarios y las líneas de CC de la sección 4 y e
 ### 7.4 Numeración y reintentos
 
 - El número se asigna al **generar** la nota: `MAX(numero) + 1` del año de la fecha de la nota, dentro de una transacción y bajo el bloqueo del motor (8.1). La numeración vuelve a 1 cada año.
-- Al generar la nota se renderizan y guardan el HTML, el texto y el PDF. **Un reintento reenvía exactamente el contenido guardado**, con el mismo número y la misma fecha.
+- Al generar la nota se renderizan y guardan el HTML, el texto, el PDF y, en los avisos, el anexo. **Un reintento reenvía exactamente el contenido guardado**, con el mismo número y la misma fecha.
 - Si el envío falla: `estado = 'fallida'`, se incrementa `intentos` y se guarda `ultimo_error`. Cada corrida reintenta las notas fallidas con menos de 5 intentos. Después de 5 intentos, la nota queda fallida y visible en el libro, con un botón para reintentar manualmente.
 - Un dataset cuyo aviso está fallido no se reitera, porque no tiene aviso **enviado**. Tampoco recibe un aviso nuevo, porque ya tiene un aviso registrado para ese vencimiento.
 
@@ -307,10 +335,12 @@ Todas bajo `/api/notificaciones/notas-digitales`, con `authMiddleware` y `adminO
 | GET | `/estado` | Interruptor, notas fallidas y qué saldrá en el próximo aviso y la próxima reiteración de cada gestión |
 | GET | `/:id` | Detalle: datos, HTML enviado y datasets incluidos |
 | GET | `/:id/pdf` | PDF guardado |
+| GET | `/:id/anexo` | Anexo guardado (404 si la nota no tiene anexo) |
 | POST | `/:id/reintentar` | Reintento manual de una nota fallida |
 | GET | `/preview?tipo=&gestion=` | HTML con los datos de hoy y `N° XX`; no escribe nada |
 | GET | `/preview/pdf?tipo=&gestion=` | PDF de la vista previa (`application/pdf`): el mismo contenido que la vista previa HTML, con `N° XX`, el membrete y la firma; no guarda ni envía nada. Misma validación de `tipo` y `gestion` |
-| POST | `/prueba` | `{ tipo, gestion }`: envía la nota marcada como prueba a `casillas_prueba` |
+| GET | `/preview/anexo?gestion=` | Anexo del aviso de la vista previa (`application/pdf`), con `N° XX`; no guarda ni envía nada |
+| POST | `/prueba` | `{ tipo, gestion }`: envía la nota marcada como prueba a `casillas_prueba` (con su anexo si es un aviso) |
 | GET | `/config` | Configuración sin las imágenes: indica si hay firma y banner cargados (`tiene_firma`, `tiene_membrete`) y devuelve `membrete_pie` |
 | PUT | `/config` | Guarda destinatarios, líneas de CC, firma (nombre y cargo), texto del pie del membrete (`membrete_pie`: texto recortado de hasta 300 caracteres que entre en una línea del PDF con letra de 7 puntos; `''` o `null` = sin pie), casillas de prueba e interruptor. Los textos que van al PDF (`membrete_pie`, `firma_nombre`, `firma_cargo`, `linea_cc_interna`, `linea_cc_externa`) se guardan en NFC, y uno con caracteres que el PDF no puede escribir responde 400 listándolos (por ejemplo `membrete_pie: caracteres que el PDF no puede escribir: ☎ →`) |
 | PUT | `/config/firma` | `{ imagen: base64, mime }`, PNG o JPEG de 500 KB como máximo |
@@ -333,12 +363,13 @@ Para el aviso a las áreas: `POST /api/notificaciones/prueba-area` envía el avi
 2. **Libro de Notas Digitales.**
    - Tabla con número, fecha, tipo, gestión, cantidad de datasets, destinatarios y estado.
    - Filtros de la API, incluido un selector de dataset que funciona como historial por dataset.
-   - Por nota: ver el email enviado y descargar el PDF.
+   - Por nota: ver el email enviado y descargar el PDF y, si es un aviso, el anexo (botón "Anexo").
    - Las pruebas están ocultas salvo que se marque "incluir pruebas".
 3. **Vista previa y prueba.**
    - Se elige aviso o reiteración e interna o externa.
    - "Vista previa" muestra la nota en un `iframe` con `sandbox`.
    - "Ver PDF" descarga el PDF de la vista previa para el tipo y la gestión elegidos, con el membrete y la firma (el botón queda bloqueado mientras se pide).
+   - "Ver anexo" descarga el anexo del aviso de la vista previa; solo está habilitado cuando el tipo elegido es aviso.
    - "Enviarme una prueba" la envía a las casillas de prueba.
 4. **Configuración.** Destinatarios, líneas de CC, firma (nombre, cargo e imagen con vista previa), membrete del PDF y casillas de prueba.
    - El grupo "Membrete del PDF" tiene el archivo del banner (PNG o JPEG, máximo 500 KB) con vista previa y el campo "Texto del pie", que se guarda con "Guardar configuración".
@@ -367,7 +398,7 @@ Se aplica TDD con la batería existente (`npm test`, contra Docker y Mailpit). T
   - reiteración el primer día hábil y regla de 20 días;
   - fines de semana y feriados fijos;
   - si falla el primer día hábil, sale al siguiente, pero nunca dos reiteraciones por mes y gestión;
-  - los vencidos sin aviso previo entran en el aviso;
+  - el aviso lleva solo datasets a vencer; los vencidos sin aviso previo entran en la próxima reiteración, sin esperar 20 días, con "Sin aviso previo" y su antecedente;
   - los Eventual, los inactivos y los que no tienen fecha quedan afuera;
   - con el interruptor apagado no sale nada.
 - **Robustez:**
@@ -383,7 +414,9 @@ Se aplica TDD con la batería existente (`npm test`, contra Docker y Mailpit). T
   - contactos agrupados por área;
   - escape de títulos con HTML;
   - el PDF adjunto es válido, mide 216 × 330 mm y contiene el número;
-  - el PDF lleva el banner y el pie del membrete en todas las hojas, y los barridos de diagramación corren con y sin membrete.
+  - el PDF lleva el banner y el pie del membrete en todas las hojas, y los barridos de diagramación corren con y sin membrete;
+  - el aviso adjunta el anexo: A4, una hoja por dataset (también con descripciones y observaciones muy largas), con título, estado, QR solo si hay link válido y el pie "Hoja i de t"; la reiteración no lleva anexo;
+  - un reintento reenvía los mismos dos PDF.
 - **Barrera `EMAIL_SOLO_A`:** filtra Para, CC y CCO, y bloquea si no queda ningún destinatario.
 - **Pruebas:** sin número oficial, sin filas en `notas_digitales_datasets` y solo a `casillas_prueba`.
 - **Esquema:** `tests/schema.test.js` incluye las tres tablas nuevas.
@@ -399,6 +432,11 @@ Después se hace una verificación manual en el navegador de la pantalla de Corr
 4. Cargar la firma (nombre, cargo e imagen), el membrete del PDF (el banner y, si cambió, el texto del pie) y las casillas de prueba; revisar el PDF con "Ver PDF" y enviar una prueba de cada variante.
 5. Activar el interruptor. En la siguiente corrida salen los primeros avisos, que incluyen los datasets vencidos con su antecedente de emails anteriores.
 6. Los siete emails reemplazados dejan de salir apenas se despliega el código; las notas empiezan cuando se activa el interruptor.
+
+**Segunda entrega (anexo, avisos solo a vencer y textos, desde el 14/10/2026):**
+1. Ejecutar `migracion-notas-digitales-anexo.sql` en producción, antes de subir el código.
+2. Subir el código y correr "Run NPM Install": hay una dependencia nueva, `qrcode`.
+3. Restart y revisar con "Ver PDF" y "Ver anexo" en Correos; enviar una prueba de un aviso.
 
 ## 14. Fuera de alcance
 
