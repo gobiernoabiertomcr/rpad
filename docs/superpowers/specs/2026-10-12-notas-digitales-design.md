@@ -218,9 +218,9 @@ Cada **aviso** (no las reiteraciones) se envía con un segundo PDF adjunto, `Ane
 1. **Encabezado:** "Dirección de Datos Públicos y Comunicación", "Anexo – Nota Digital N° {n}/{aa}" y la fecha de la nota.
 2. **Título** del dataset, grande, y un **indicador de estado**: `Vence el {dd/mm/aaaa} · faltan N días` (`falta 1 día`; `Vence hoy`).
 3. **Línea de tiempo:** una barra desde la última actualización hasta el vencimiento, con la marca de hoy y las fechas en los extremos. Sin última actualización, la barra arranca en "Sin registro".
-4. **Qué se solicita:** recuadro destacado (el acento azul suave) con el texto `que_se_solicita` del dataset (7.6): qué información concreta tiene que remitir el área. Si el dataset no lo tiene cargado, dice: "La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal."
+4. **Descripción:** recuadro destacado (el acento azul suave, con la letra más grande de la hoja después del título): presenta el dataset y tiene el rol principal.
 5. **Ficha:** área responsable y de quién depende (`area_superior`), gestión (interna o externa), frecuencia, temas (principal y secundario), formatos y link al portal (`url_dataset`, si es http/https), con un **código QR** al lado que abre ese link. Sin link válido no hay QR. Las fechas no se repiten en la ficha: están en la línea de tiempo. Un valor que no entra en dos líneas de media columna ocupa la fila entera.
-6. **Descripción** y **observaciones** (si las hay).
+6. **Qué se solicita** (recuadro gris, como contexto operativo) con el texto `que_se_solicita` del dataset (7.6): qué información concreta tiene que remitir el área. Si el dataset no lo tiene cargado, dice: "La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal." Debajo, **observaciones** (si las hay). (Orden pedido por el usuario el 14/10/2026: la descripción arriba y destacada; "Qué se solicita" después de la ficha.)
 7. **Contacto del área responsable:** los mismos datos que los contactos de la nota (6.4), o "Sin datos de contacto registrados".
 8. **Pie:** `Anexo – Nota Digital N° {n}/{aa} · Hoja {i} de {t}`.
 
