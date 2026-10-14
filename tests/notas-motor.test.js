@@ -738,6 +738,14 @@ describe('pruebas, vista previa y estado', () => {
     assert.equal(estado.proximas.externa.aviso, null);
   });
 
+  it('un sábado, el próximo aviso no cuenta un dataset que vence ese fin de semana (el lunes ya estaría vencido)', async () => {
+    // Sábado 31/10/2026: la próxima corrida es el lunes 02/11, cuando el que vence hoy ya va a la reiteración
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-10-31' });
+    assert.equal((await motor.estadoNotas({ hoy: '2026-10-31' })).proximas.externa.aviso, null);
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-31' })).proximas.externa.aviso, { fecha: '2026-12-01', cantidad: 1 });
+  });
+
   it('el próximo aviso del estado agrupa los datasets que vencen el mismo mes', async () => {
     await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
     await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });

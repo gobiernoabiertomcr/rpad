@@ -437,12 +437,14 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
   const proximas = {};
   for (const gestion of GESTIONES) {
     // Primer día hábil desde hoy en que se abre un mes con datasets a vencer sin aviso (los vencidos van a la
-    // reiteración); la cantidad es lo que se seleccionaría ese día (todo el mes, más lo que ya esté en la ventana)
-    const apertura = await aperturaDelProximoAviso(gestion, hoy);
+    // reiteración); la cantidad es lo que se seleccionaría ese día (todo el mes, más lo que ya esté en la ventana).
+    // Se cuenta desde la próxima corrida posible: un sábado, lo que vence ese fin de semana el lunes ya está vencido.
+    const corrida = proximoDiaHabil(hoy);
+    const apertura = await aperturaDelProximoAviso(gestion, corrida);
     let aviso = null;
     if (apertura) {
       const desde = sumarDias(apertura, -VENTANA_DIAS[gestion]);
-      const fecha = proximoDiaHabil(desde > hoy ? desde : hoy);
+      const fecha = proximoDiaHabil(desde > corrida ? desde : corrida);
       aviso = { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length };
     }
 
