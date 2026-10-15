@@ -15,3 +15,5 @@ multiarchivo.md
 database/dump-local/
 # Archivos de los datasets del portal (solo local, para redactar "Qué se solicita")
 datasets/
+# Cargas de datos de personas (roles, cargos, vínculos): se corren a mano en producción, NO subir
+database/privado/
