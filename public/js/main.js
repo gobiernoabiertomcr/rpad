@@ -171,9 +171,9 @@ function initHeader() {
         const user = Auth.getUser();
         const nombre = user?.nombre_completo || user?.username || 'Usuario';
         const initials = getInitials(nombre);
-        const rolText = user?.rol === 'admin' ? 'Administrador' : 'Lector';
+        const rolText = Auth.getRoleText();
 
-        const isAdmin = user?.rol === 'admin';
+        const isAdmin = Auth.isAdmin();
         
         headerActions.innerHTML = `
             ${isAdmin ? `
@@ -403,15 +403,41 @@ async function cargarContadorNotificaciones() {
     }
 }
 
+// Páginas que se pueden ver sin sesión: si la sesión dejó de valer, se quedan en la página
+const PAGINAS_PUBLICAS = ['', 'index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
+
+/**
+ * Confirma la sesión con el servidor (spec 5.3): si la cuenta se desactivó o la contraseña cambió en otro lado,
+ * la cierra; si cambió el rol o el nombre, actualiza el header y el menú.
+ */
+async function refrescarSesionGuardada() {
+    if (!Auth.isAuthenticated()) return;
+    const antes = JSON.stringify(Auth.getUser());
+    const resultado = await Auth.refrescarSesion();
+    if (resultado === 'invalida') {
+        Auth.clearSession();
+        const pagina = window.location.pathname.split('/').pop();
+        if (!PAGINAS_PUBLICAS.includes(pagina)) {
+            window.location.href = 'login.html';
+            return;
+        }
+    }
+    if (JSON.stringify(Auth.getUser()) !== antes) {
+        initHeader();
+        updateSidebarAuth();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Verificar si el token expiró antes de inicializar
     if (Auth.isAuthenticated() && Auth.isTokenExpired()) {
         Auth.clearSession();
     }
-    
+
     initHeader();
     initSidebar();
     updateSidebarAuth();
     setActiveSidebarLink();
+    refrescarSesionGuardada();
 });
 

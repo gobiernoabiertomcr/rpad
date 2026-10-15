@@ -107,3 +107,46 @@ describe('URLs de reportes', () => {
     }
   });
 });
+
+describe('usuarios', () => {
+  it('sugiere el usuario con las iniciales de los nombres y el último apellido, sin tildes', () => {
+    assert.equal(Utils.sugerirUsername('Laura Inés Fernández'), 'LIFERNANDEZ');
+    assert.equal(Utils.sugerirUsername('María de los Ángeles Ruiz'), 'MARUIZ');
+    assert.equal(Utils.sugerirUsername('Juan Peña'), 'JPENA');
+    assert.equal(Utils.sugerirUsername('  laura   fernández '), 'LFERNANDEZ');
+    assert.equal(Utils.sugerirUsername(''), '');
+  });
+
+  it('si el usuario sugerido ya existe, le agrega un número', () => {
+    assert.equal(Utils.sugerirUsername('Laura Inés Fernández', ['lifernandez']), 'LIFERNANDEZ2');
+    assert.equal(Utils.sugerirUsername('Laura Inés Fernández', ['LIFERNANDEZ', 'LIFERNANDEZ2']), 'LIFERNANDEZ3');
+  });
+
+  it('el cargo de alguien con contrato se muestra sin designación formal', () => {
+    assert.equal(Utils.textoCargo('Jefa de Departamento', 'contrato'), 'Cumple funciones de Jefa de Departamento (sin designación formal)');
+    assert.equal(Utils.textoCargo('Directora', 'planta_permanente'), 'Directora');
+    assert.equal(Utils.textoCargo(null, 'contrato'), '');
+  });
+
+  it('texto del vínculo', () => {
+    assert.equal(Utils.textoVinculo('planta_permanente'), 'Planta permanente');
+    assert.equal(Utils.textoVinculo('planta_politica'), 'Planta política');
+    assert.equal(Utils.textoVinculo('contrato'), 'Contrato');
+    assert.equal(Utils.textoVinculo(null), '');
+  });
+});
+
+describe('API.pedirJson', () => {
+  it('el error trae el status y el campo del servidor', async () => {
+    const codigo = fs.readFileSync(new URL('../public/js/api.js', import.meta.url), 'utf8');
+    const contexto = vm.createContext({
+      CONFIG: { API_URL: '/api' },
+      Auth: { getAuthHeaders: () => ({}) },
+      fetch: async () => ({ ok: false, status: 409, json: async () => ({ success: false, error: 'Ese usuario ya existe', campo: 'username' }) }),
+      console
+    });
+    vm.runInContext(`${codigo}\n;globalThis.API = API;`, contexto);
+    await assert.rejects(() => contexto.API.pedirJson('POST', '/usuarios', {}), (error) =>
+      error.message === 'Ese usuario ya existe' && error.status === 409 && error.campo === 'username');
+  });
+});

@@ -37,6 +37,14 @@ async function cargarPerfil() {
     document.getElementById('perfil-username').value = user.username;
     document.getElementById('perfil-nombre').value = user.nombre_completo;
     document.getElementById('perfil-email').value = user.email;
+
+    // Cargo y vínculo: solo lectura, los actualiza un administrador desde el panel de usuarios
+    const cargo = Utils.textoCargo(user.cargo, user.vinculo);
+    const vinculo = Utils.textoVinculo(user.vinculo);
+    document.getElementById('perfil-cargo').value = cargo;
+    document.getElementById('perfil-cargo-grupo').style.display = cargo ? '' : 'none';
+    document.getElementById('perfil-vinculo').value = vinculo;
+    document.getElementById('perfil-vinculo-grupo').style.display = vinculo ? '' : 'none';
   } catch (error) {
     console.error('Error cargando perfil:', error);
     Utils.showError('Error al cargar datos del perfil');
@@ -141,6 +149,11 @@ async function cambiarPassword() {
     
     if (!response.ok) {
       throw new Error(data.error || 'Error al cambiar contraseña');
+    }
+
+    // El servidor cierra las demás sesiones y devuelve un token nuevo para esta (spec 5.2)
+    if (data.data?.token) {
+      Auth.saveSession(data.data.token, Auth.getUser());
     }
 
     Utils.showSuccess('Contraseña cambiada correctamente');

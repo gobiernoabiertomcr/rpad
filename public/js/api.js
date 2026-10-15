@@ -171,7 +171,12 @@ async registrarActualizacion(id, datos = {}) {
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `Error ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(data.error || `Error ${response.status}`);
+      error.status = response.status;
+      error.campo = data.campo;
+      throw error;
+    }
     return data;
   },
 
@@ -186,6 +191,36 @@ async registrarActualizacion(id, datos = {}) {
 
   async enviarPruebaAvisoArea() {
     return this.pedirJson('POST', '/notificaciones/prueba-area');
+  },
+
+  // === USUARIOS (panel) ===
+  async getUsuarios() {
+    return (await this.pedirJson('GET', '/usuarios')).data;
+  },
+
+  async getUsuario(id) {
+    return (await this.pedirJson('GET', `/usuarios/${id}`)).data;
+  },
+
+  // Las acciones devuelven la respuesta completa: la pantalla muestra el message del servidor
+  async crearUsuario(datos) {
+    return this.pedirJson('POST', '/usuarios', datos);
+  },
+
+  async actualizarUsuario(id, datos) {
+    return this.pedirJson('PUT', `/usuarios/${id}`, datos);
+  },
+
+  async desactivarUsuario(id) {
+    return this.pedirJson('POST', `/usuarios/${id}/desactivar`);
+  },
+
+  async reactivarUsuario(id) {
+    return this.pedirJson('POST', `/usuarios/${id}/reactivar`);
+  },
+
+  async enviarAccesoUsuario(id) {
+    return this.pedirJson('POST', `/usuarios/${id}/enviar-acceso`);
   },
 
   // === NOTAS DIGITALES ===
@@ -505,6 +540,35 @@ const Utils = {
       'externa': 'Externa (otra área)'
     };
     return textos[tipoGestion] || tipoGestion;
+  },
+
+  // Usuario sugerido con el patrón del RPAD: iniciales de los nombres + último apellido, en mayúsculas y
+  // sin tildes. Si ya existe, le agrega un número (spec 8.4)
+  sugerirUsername(nombreCompleto, existentes = []) {
+    const PARTICULAS = ['de', 'del', 'la', 'las', 'los', 'y'];
+    const palabras = String(nombreCompleto || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^A-Za-z\s]/g, ' ')
+      .split(/\s+/)
+      .filter(palabra => palabra && !PARTICULAS.includes(palabra.toLowerCase()));
+    if (palabras.length === 0) return '';
+    const ultima = palabras[palabras.length - 1];
+    const base = (palabras.slice(0, -1).map(palabra => palabra[0]).join('') + ultima).toUpperCase().slice(0, 48);
+    const usados = new Set(existentes.map(usuario => String(usuario).toUpperCase()));
+    if (!usados.has(base)) return base;
+    let numero = 2;
+    while (usados.has(`${base}${numero}`)) numero++;
+    return `${base}${numero}`;
+  },
+
+  // Cargo para mostrar: con contrato, "Cumple funciones de … (sin designación formal)" (spec 12.2)
+  textoCargo(cargo, vinculo) {
+    if (!cargo) return '';
+    return vinculo === 'contrato' ? `Cumple funciones de ${cargo} (sin designación formal)` : cargo;
+  },
+
+  textoVinculo(vinculo) {
+    return { planta_permanente: 'Planta permanente', planta_politica: 'Planta política', contrato: 'Contrato' }[vinculo] || '';
   },
 
   // Escapar HTML (también comillas, así sirve dentro de atributos)

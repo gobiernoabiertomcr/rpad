@@ -17,9 +17,38 @@ const Auth = {
     return user?.rol || null;
   },
 
-  // Verificar si es administrador
+  // Verificar si es administrador: admin y superadmin pasan todo lo de administración
   isAdmin() {
-    return this.getRole() === 'admin';
+    return ['admin', 'superadmin'].includes(this.getRole());
+  },
+
+  // Verificar si es superadmin
+  isSuperadmin() {
+    return this.getRole() === 'superadmin';
+  },
+
+  // Rol para mostrar en el header
+  getRoleText() {
+    return { superadmin: 'Superadmin', admin: 'Administrador' }[this.getRole()] || 'Lector';
+  },
+
+  // Confirma la sesión con el servidor y actualiza el usuario guardado (rol, nombre, cargo).
+  // Devuelve 'ok', 'invalida' (401: cuenta desactivada o contraseña cambiada) o 'sin-conexion'.
+  async refrescarSesion() {
+    const token = this.getToken();
+    if (!token) return 'invalida';
+    try {
+      const response = await fetch(`${CONFIG.API_URL}/auth/verify`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.status === 401) return 'invalida';
+      if (!response.ok) return 'sin-conexion';
+      const data = await response.json();
+      localStorage.setItem(CONFIG.USER_KEY, JSON.stringify({ ...this.getUser(), ...data.data.user }));
+      return 'ok';
+    } catch {
+      return 'sin-conexion';
+    }
   },
 
   // Verificar si está autenticado
