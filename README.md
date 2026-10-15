@@ -29,14 +29,27 @@ RPAD permite registrar datasets, asignarles frecuencias de actualización y moni
 
 ## Roles de Usuario
 
-El sistema cuenta con dos roles de usuario:
+El sistema cuenta con tres roles de usuario:
 
 | Rol | Descripción | Permisos |
 |-----|-------------|----------|
-| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otro admin. Gestionar áreas. Configurar notificaciones SMTP. Generar reportes y notas. |
-| `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, áreas, reportes, notas) sin poder modificar datos. |
+| `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro admin crea un admin, cambia un rol o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
+| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otro admin. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
+| `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, reportes, notas) sin poder modificar datos. |
 
-Los cambios sobre datasets requieren doble verificación: un admin propone y otro admin distinto aprueba o rechaza. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
+Los cambios sobre datasets requieren doble verificación: un admin (o el superadmin) propone y otro distinto aprueba o rechaza. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
+
+### Panel de usuarios
+
+En **Administración → Usuarios**, admin y superadmin pueden:
+
+- **Crear usuarios.** El usuario nuevo recibe un email con un link para elegir su contraseña (vence en 72 h). Nadie ve ni envía contraseñas.
+- **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin o lector).
+- **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
+- **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación.
+- **Ver el historial** de cambios de cada usuario.
+
+Siempre tiene que haber al menos **2 usuarios que puedan aprobar cambios**: el panel no deja desactivar ni pasar a lector a un admin si quedarían menos. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
 ## Campo "Qué se solicita" de los datasets
 
@@ -158,6 +171,26 @@ Desde **phpMyAdmin** en cPanel:
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
 | `historial_actualizaciones` | Log de actualizaciones realizadas |
 | `notificaciones_log` | Registro de notificaciones enviadas |
+
+### Migración: Usuarios (superadmin y panel de usuarios)
+
+⚠️ Requisito: las migraciones anteriores aplicadas. No hay dependencias nuevas de npm.
+
+Secuencia de despliegue, **en este orden** (todo desde cPanel):
+
+1. **Backup de la base:** phpMyAdmin → base del RPAD → **Exportar** (método rápido, formato SQL). Guardar el archivo.
+2. **Backup de los archivos:** Administrador de archivos → carpeta de la app → seleccionar `controllers`, `middleware`, `routes`, `services`, `scripts` y `public` → **Comprimir** → descargar el zip.
+3. **Migración de estructura:** phpMyAdmin → base del RPAD → pestaña **SQL** → pegar el contenido de `database/updates/migracion-usuarios-superadmin.sql` → **Continuar**. Solo agrega columnas y tablas, y el código actual sigue funcionando con la estructura nueva: si los pasos siguientes se demoran, no pasa nada.
+4. **Subir los archivos** con el Administrador de archivos, reemplazando los existentes. La lista exacta está en el pedido de despliegue (`git diff --name-only` contra la versión anterior, sin `tests/`, `docs/` ni `database/`).
+5. **Setup Node.js App** → la app del RPAD → **Environment variables** → agregar `APP_URL` = `https://rpad.mcrmodernizacion.gob.ar` → **Save**. Después, **Restart**.
+6. **Datos de usuarios:** phpMyAdmin → pestaña **SQL** → pegar el contenido de `database/privado/usuarios-superadmin-datos.sql`. Ese archivo no está en el repositorio: lo tiene el Director de Datos Públicos y Comunicación. Tiene que ir **después** del Restart: el código anterior no conoce el rol superadmin. El `SELECT` final muestra los usuarios con su rol, cargo y vínculo para revisar.
+7. **Verificar:**
+   - el superadmin ve "Superadmin" en el header;
+   - Administración → Usuarios muestra a todos con su cargo;
+   - "Nuevo usuario" con una casilla propia de prueba: la invitación llega y el link funciona;
+   - desactivar ese usuario de prueba.
+
+**Si algo sale mal:** subir de nuevo los archivos del backup del paso 2 → Restart → phpMyAdmin → pestaña SQL → pegar `database/updates/rollback-usuarios-superadmin.sql`. El rollback deja la estructura exactamente como estaba; se pierden los cargos, vínculos e historial de usuarios.
 
 ### Migración: Notas Digitales
 
@@ -474,6 +507,13 @@ Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días 
 ---
 
 ## Changelog
+
+### Usuarios y superadmin (2026-10)
+- Rol `superadmin`, con la cuenta protegida y avisos por email de cambios hechos por otros admins
+- Panel de usuarios: alta, edición, cargo y vínculo, roles, activación, links de acceso e historial
+- Contraseñas por link de un solo uso (invitación y recuperación) y "¿Olvidaste tu contraseña?"
+- Desactivar a alguien o cambiarle el rol tiene efecto inmediato
+- Mínimo de 2 aprobadores activos para la doble verificación
 
 ### v1.5.0 (2026-02-06)
 - Sistema de doble verificación para cambios en datasets: un operador propone y otro aprueba o rechaza.

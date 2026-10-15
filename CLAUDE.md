@@ -13,6 +13,7 @@ Sistema de gestión de datos abiertos para la Municipalidad de Comodoro Rivadavi
 ## Comandos
 - `npm start` — Inicia el servidor (puerto 3001)
 - `npm run setup-admin` — Crea usuario administrador
+- `npm test` — Tests de integración: requieren `docker compose up -d` (MariaDB + Mailpit) y `RPAD_TESTS_DB_LOCAL=1` en el `.env` local
 - Migraciones: ejecutar manualmente con `mysql -u root -p < database/updates/migracion-vX-vY.sql`
 
 ## Estructura del proyecto
@@ -72,11 +73,14 @@ Todo cambio a datasets pasa por doble verificación:
 - Si un dataset tiene cambio pendiente, queda bloqueado para nuevas ediciones
 
 ### Roles
-- **admin:** CRUD datasets, áreas, aprobación de cambios, reportes, notificaciones
+- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol o desactiva a alguien. Se asigna por SQL, nunca desde la aplicación.
+- **admin:** CRUD datasets (con doble verificación), áreas, panel de usuarios, aprobación de cambios, reportes, notificaciones
 - **lector:** solo lectura de datos públicos + perfil
+- El rol y el estado activo se leen de la base en cada pedido (`authMiddleware`): desactivar o cambiar un rol tiene efecto inmediato. `esAdmin(rol)` (services/usuariosReglas.js) y `Auth.isAdmin()` incluyen al superadmin: no comparar con `'admin'` a mano.
+- Siempre tiene que haber al menos 2 aprobadores activos (admin o superadmin): el panel no deja bajar de ese mínimo.
 
 ### Base de datos
-- 10 tablas: usuarios, datasets, areas, cambios_pendientes, formatos, dataset_formatos, temas, frecuencias, historial_actualizaciones, notificaciones_log
+- 21 tablas (ver `database/schema.sql`). Usuarios: `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash) y `usuarios_auditoria` (historial del panel)
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -101,4 +105,11 @@ PORT, CORS_ORIGIN
 DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 JWT_SECRET (obligatorio), CRON_SECRET
 SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+APP_URL (links de los emails; por defecto la URL de producción)
+EMAIL_SOLO_A, RPAD_TESTS_DB_LOCAL, DB_ROOT_PASSWORD (solo desarrollo local)
 ```
+
+## Despliegue (producción)
+- cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), los archivos se suben con el Administrador de archivos, y las variables de entorno, "Run NPM Install" y Restart se manejan en Setup Node.js App. El cron se configura en Tareas Cron.
+- Las migraciones van antes que el código. Las cargas de datos de personas (roles, cargos) van en `database/privado/` (no versionado) y se corren después del código.
+- Regla del proyecto: no romper nada de lo implementado. Correr `npm test` completo antes y después de cada cambio.
