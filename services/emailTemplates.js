@@ -3,6 +3,8 @@
  * Colores institucionales basados en styles.css
  */
 
+import { TEXTO_ROL } from './usuariosReglas.js';
+
 const COLORS = {
   primary: '#0066cc',
   success: '#28a745',
@@ -15,7 +17,16 @@ const COLORS = {
   border: '#e9ecef'
 };
 
-const RPAD_URL = 'https://rpad.mcrmodernizacion.gob.ar';
+// URL pública del RPAD para los links de los emails. En local se configura APP_URL (spec 7.1)
+export const RPAD_URL = (process.env.APP_URL || 'https://rpad.mcrmodernizacion.gob.ar').replace(/\/+$/, '');
+
+// Fecha y hora en 24 h y en la hora de Argentina: "18 de octubre de 2026 a las 14:30" (el conector lo da el idioma de Node).
+// hourCycle 'h23': es-AR usa por defecto 12 h ("02:30 p. m.") y los emails agregan " h" a continuación.
+const FORMATO_FECHA_HORA = new Intl.DateTimeFormat('es-AR', {
+  timeZone: 'America/Argentina/Buenos_Aires', day: 'numeric', month: 'long', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+});
+export const fechaHoraArgentina = (fecha) => FORMATO_FECHA_HORA.format(fecha);
 
 /**
  * Escapa caracteres HTML
@@ -374,4 +385,122 @@ export const cambiosPendientesTemplate = (cambios) => ({
 </body>
 </html>
 `
+});
+
+// =====================================================
+// PLANTILLAS DE USUARIOS: acceso al RPAD y avisos al superadmin (spec 10)
+// =====================================================
+
+/**
+ * Email simple con el formato de los demás: encabezado, título, párrafos, botón y notas al pie.
+ * parrafos y notas: HTML ya escapado (pueden traer <strong>). boton: { texto, url } o null.
+ */
+export const plantillaSimple = ({ titulo, parrafos, boton = null, notas = [] }) => `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(titulo)}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td style="padding: 20px;">
+        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">RPAD</h1>
+              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Registro Permanente de Actualización de Datasets</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 24px 8px 24px;">
+              <h2 style="color: ${COLORS.dark}; margin: 0 0 16px 0; font-size: 20px; font-weight: 600;">${escapeHtml(titulo)}</h2>
+              ${parrafos.map(p => `<p style="margin: 0 0 12px 0; color: ${COLORS.dark}; font-size: 14px; line-height: 1.6;">${p}</p>`).join('')}
+            </td>
+          </tr>
+          ${boton ? `
+          <tr>
+            <td style="padding: 8px 24px 24px 24px; text-align: center;">
+              <a href="${escapeHtml(boton.url)}" style="display: inline-block; background-color: ${COLORS.primary}; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">${escapeHtml(boton.texto)}</a>
+            </td>
+          </tr>` : ''}
+          ${notas.length > 0 ? `
+          <tr>
+            <td style="padding: 0 24px 24px 24px;">
+              ${notas.map(n => `<p style="margin: 0 0 8px 0; color: ${COLORS.muted}; font-size: 12px; line-height: 1.5;">${n}</p>`).join('')}
+            </td>
+          </tr>` : ''}
+          <tr>
+            <td style="background-color: ${COLORS.light}; padding: 16px 24px; text-align: center; border-top: 1px solid ${COLORS.border};">
+              <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">
+                Dirección de Datos Públicos y Comunicación<br>
+                Municipalidad de Comodoro Rivadavia
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+// Invitación: el usuario elige su contraseña por primera vez (spec 10.1). vence: texto de fecha y hora
+export const invitacionTemplate = ({ nombre_completo, username, rol, link, vence }) => {
+  const rolTexto = TEXTO_ROL[rol] || rol;
+  return {
+    subject: 'Tu acceso al RPAD',
+    html: plantillaSimple({
+      titulo: 'Tu acceso al RPAD',
+      parrafos: [
+        `Hola, ${escapeHtml(nombre_completo)}.`,
+        `Te dieron acceso al Registro Permanente de Actualización de Datasets (RPAD) con el usuario <strong>${escapeHtml(username)}</strong> y el rol <strong>${escapeHtml(rolTexto)}</strong>.`,
+        'Para empezar, elegí tu contraseña con el botón de abajo.'
+      ],
+      boton: { texto: 'Elegir mi contraseña', url: link },
+      notas: [
+        `El link sirve una sola vez y vence el ${escapeHtml(vence)} h.`,
+        'Si vence, pedí uno nuevo desde "¿Olvidaste tu contraseña?" en la pantalla de ingreso, o pedíselo a un administrador.'
+      ]
+    }),
+    text: [
+      `Hola, ${nombre_completo}.`,
+      '',
+      `Te dieron acceso al RPAD con el usuario ${username} y el rol ${rolTexto}.`,
+      'Elegí tu contraseña en este link:',
+      link,
+      '',
+      `El link sirve una sola vez y vence el ${vence} h.`,
+      'Si vence, pedí uno nuevo desde "¿Olvidaste tu contraseña?" en la pantalla de ingreso, o pedíselo a un administrador.'
+    ].join('\n')
+  };
+};
+
+// Recuperación: reset desde el panel o "¿Olvidaste tu contraseña?" (spec 10.2)
+export const recuperacionTemplate = ({ nombre_completo, username, link, vence }) => ({
+  subject: 'Restablecé tu contraseña del RPAD',
+  html: plantillaSimple({
+    titulo: 'Restablecé tu contraseña',
+    parrafos: [
+      `Hola, ${escapeHtml(nombre_completo)}.`,
+      `Recibimos un pedido para restablecer la contraseña del usuario <strong>${escapeHtml(username)}</strong> en el RPAD.`
+    ],
+    boton: { texto: 'Elegir una contraseña nueva', url: link },
+    notas: [
+      `El link sirve una sola vez y vence el ${escapeHtml(vence)} h.`,
+      'Si no lo pediste, ignorá este email: tu contraseña actual sigue funcionando.'
+    ]
+  }),
+  text: [
+    `Hola, ${nombre_completo}.`,
+    '',
+    `Recibimos un pedido para restablecer la contraseña del usuario ${username} en el RPAD.`,
+    'Elegí una contraseña nueva en este link:',
+    link,
+    '',
+    `El link sirve una sola vez y vence el ${vence} h.`,
+    'Si no lo pediste, ignorá este email: tu contraseña actual sigue funcionando.'
+  ].join('\n')
 });

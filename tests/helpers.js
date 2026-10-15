@@ -245,5 +245,20 @@ export const cerrarDb = async () => {
 export const mailpit = {
   vaciar: () => fetch(`${MAILPIT_URL}/api/v1/messages`, { method: 'DELETE' }),
   mensajes: async () => (await (await fetch(`${MAILPIT_URL}/api/v1/messages`)).json()).messages,
-  html: async (id) => (await (await fetch(`${MAILPIT_URL}/api/v1/message/${id}`)).json()).HTML
+  html: async (id) => (await (await fetch(`${MAILPIT_URL}/api/v1/message/${id}`)).json()).HTML,
+  // Espera (hasta ~5 s) a que llegue algún mensaje que cumpla la condición; devuelve los que la cumplen
+  esperar: async (condicion, { intentos = 50, ms = 100 } = {}) => {
+    for (let i = 0; i < intentos; i++) {
+      const encontrados = (await mailpit.mensajes()).filter(condicion);
+      if (encontrados.length > 0) return encontrados;
+      await new Promise(r => setTimeout(r, ms));
+    }
+    return [];
+  }
 };
+
+// Filtro de mensajes de Mailpit por destinatario
+export const paraCasilla = (email) => (mensaje) => mensaje.To.some(t => t.Address === email);
+
+// Token de un link de acceso dentro del HTML de un email
+export const tokenDelLink = (html) => html.match(/establecer-contrasena\.html#token=([A-Za-z0-9_-]+)/)?.[1];

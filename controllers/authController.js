@@ -4,6 +4,7 @@ import pool from '../config/database.js';
 import { generateToken } from '../middleware/auth.js';
 import { registrarAuditoria } from '../services/usuariosAuditoriaService.js';
 import { validarContrasena, emailValido, camposCambiados } from '../services/usuariosReglas.js';
+import { validarLink, establecerContrasena, enviarLinkDeAcceso, ErrorLink } from '../services/accesoService.js';
 
 // Hash de referencia: si el usuario no existe o no tiene contraseña, igual se compara contra este hash,
 // para que el tiempo de respuesta no revele si la cuenta existe (spec 5.4)
@@ -312,5 +313,69 @@ export const getProfile = async (req, res) => {
       success: false,
       error: 'Error interno del servidor'
     });
+  }
+};
+
+// =====================================================
+// Links de acceso (spec 7.3 y 7.4)
+// =====================================================
+
+const MENSAJE_RECUPERAR = 'Si los datos corresponden a una cuenta activa, te enviamos un email con un link. Revisá también la carpeta de spam.';
+
+// "¿Olvidaste tu contraseña?": siempre la misma respuesta, exista o no la cuenta.
+// Se responde antes de buscar y enviar: el tiempo de respuesta tampoco revela si la cuenta existe.
+export const recuperarContrasena = async (req, res) => {
+  const identificador = String(req.body?.identificador ?? '').trim();
+  res.json({ success: true, message: MENSAJE_RECUPERAR });
+
+  if (!identificador || identificador.length > 100) return;
+  try {
+    const [filas] = await pool.execute(
+      `SELECT id, username, nombre_completo, email, rol, (password_hash IS NOT NULL) AS tiene_contrasena
+       FROM usuarios
+       WHERE activo = TRUE AND (username = ? OR email = ?)
+       LIMIT 1`,
+      [identificador, identificador.toLowerCase()]
+    );
+    const usuario = filas[0];
+    if (!usuario) return;
+    // Si nunca eligió contraseña, se le reenvía la invitación
+    await enviarLinkDeAcceso({
+      usuario,
+      tipo: usuario.tiene_contrasena ? 'recuperacion' : 'invitacion',
+      actorId: null,
+      origen: 'login'
+    });
+  } catch (error) {
+    console.error('Error en el pedido de recuperación de contraseña:', error);
+  }
+};
+
+// Estado de un link (la pantalla lo consulta al abrirse)
+export const validarLinkDeAcceso = async (req, res) => {
+  try {
+    res.json({ success: true, data: await validarLink(req.body?.token) });
+  } catch (error) {
+    console.error('Error validando el link de acceso:', error);
+    res.status(500).json({ success: false, error: 'Error interno del servidor' });
+  }
+};
+
+// Guarda la contraseña elegida con un link
+export const establecerContrasenaConLink = async (req, res) => {
+  const { token, password } = req.body ?? {};
+  const errorContrasena = validarContrasena(password);
+  if (errorContrasena) {
+    return res.status(400).json({ success: false, error: errorContrasena });
+  }
+  try {
+    await establecerContrasena(token, password);
+    res.json({ success: true, message: 'Tu contraseña quedó guardada. Ya podés ingresar.' });
+  } catch (error) {
+    if (error instanceof ErrorLink) {
+      return res.status(400).json({ success: false, error: error.message, motivo: error.motivo });
+    }
+    console.error('Error estableciendo la contraseña:', error);
+    res.status(500).json({ success: false, error: 'Error interno del servidor' });
   }
 };

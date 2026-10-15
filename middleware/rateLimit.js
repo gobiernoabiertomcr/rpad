@@ -34,3 +34,38 @@ export const limiteLoginPorIp = rateLimit({
   legacyHeaders: false,
   message: respuestaBloqueo
 });
+
+// "¿Olvidaste tu contraseña?" (spec 7.3): cuentan todos los pedidos, no solo los fallidos
+const HORA_MS = 60 * 60 * 1000;
+const respuestaRecuperar = {
+  success: false,
+  error: 'Demasiados pedidos de recuperación. Intente nuevamente en una hora.'
+};
+
+// 5 pedidos por IP por hora
+export const limiteRecuperarPorIp = rateLimit({
+  windowMs: HORA_MS,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: respuestaRecuperar
+});
+
+// 3 pedidos por usuario o email por hora, desde cualquier IP
+export const limiteRecuperarPorIdentificador = rateLimit({
+  windowMs: HORA_MS,
+  limit: 3,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => `recuperar|${String(req.body?.identificador ?? '').trim().toLowerCase()}`,
+  message: respuestaRecuperar
+});
+
+// Validar un link y elegir la contraseña (spec 7.4): 20 pedidos cada 15 minutos por IP, entre las dos rutas
+export const limiteLinkDeAcceso = rateLimit({
+  windowMs: VENTANA_MS,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { success: false, error: 'Demasiados intentos. Intente nuevamente en 15 minutos.' }
+});

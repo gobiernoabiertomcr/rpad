@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { authMiddleware, adminOnly, cronAuth } from '../middleware/auth.js';
-import { limiteLoginPorIp, limiteLoginPorUsuario } from '../middleware/rateLimit.js';
+import { limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso } from '../middleware/rateLimit.js';
 
 // Controladores
-import { login, verifySession, changePassword, updateProfile, getProfile } from '../controllers/authController.js';
+import {
+  login, verifySession, changePassword, updateProfile, getProfile,
+  recuperarContrasena, validarLinkDeAcceso, establecerContrasenaConLink
+} from '../controllers/authController.js';
 import {
   getDatasets,
   getDatasetById,
@@ -99,6 +102,11 @@ const router = Router();
 
 // Auth (con límite de intentos fallidos)
 router.post('/auth/login', limiteLoginPorIp, limiteLoginPorUsuario, login);
+
+// Links de acceso: "¿Olvidaste tu contraseña?" y elegir contraseña (con límite de pedidos)
+router.post('/auth/recuperar', limiteRecuperarPorIp, limiteRecuperarPorIdentificador, recuperarContrasena);
+router.post('/auth/link/validar', limiteLinkDeAcceso, validarLinkDeAcceso);
+router.post('/auth/establecer-contrasena', limiteLinkDeAcceso, establecerContrasenaConLink);
 
 // Datasets (lectura)
 router.get('/datasets', getDatasets);
