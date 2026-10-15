@@ -291,6 +291,22 @@
             border: 1px solid #fecaca;
         }
 
+        .alert-success {
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #a7f3d0;
+        }
+
+        .login-olvido {
+            text-align: right;
+            margin: -0.5rem 0 1rem;
+            font-size: 0.875rem;
+        }
+
+        .login-olvido a {
+            color: #2a5a8a;
+        }
+
         /* === FOOTER DEL LOGIN === */
         .login-footer {
             margin-top: 2.5rem;
@@ -387,6 +403,10 @@
                 <h1 class="login-box-title">Bienvenido</h1>
                 <p class="login-box-subtitle">Ingrese sus credenciales para acceder al sistema</p>
 
+                <div id="alertExito" class="alert alert-success" role="status" style="display: none;">
+                    <span>Tu contraseña quedó guardada. Ya podés ingresar.</span>
+                </div>
+
                 <div id="alertError" class="alert alert-danger" style="display: none;">
                     <!-- Icono Lucide: alert-circle -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -433,6 +453,10 @@
                         </div>
                     </div>
 
+                    <div class="login-olvido">
+                        <a href="establecer-contrasena.html">¿Olvidaste tu contraseña?</a>
+                    </div>
+
                     <button type="submit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 0.5rem;" id="btnLogin">
                         Iniciar Sesión
                     </button>
@@ -454,6 +478,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             if (Auth.isAuthenticated()) {
                 window.location.href = 'index.html';
+            }
+
+            // Llegó desde "Elegir contraseña": se avisa y se limpia la URL
+            if (new URLSearchParams(window.location.search).get('contrasena') === 'ok') {
+                document.getElementById('alertExito').style.display = 'flex';
+                history.replaceState(null, '', 'login.html');
             }
         });
 
