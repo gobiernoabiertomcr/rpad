@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usuarios - RPAD</title>
+    <meta name="description" content="Gestión de usuarios del RPAD">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <style>
+        /* El atributo hidden tiene que ganarle a los display: flex de las clases de esta pantalla */
+        [hidden] { display: none !important; }
+
+        /* Grupos de la lista */
+        .grupo-usuarios { background: var(--bg-card); border-radius: var(--border-radius-lg); box-shadow: var(--shadow); margin-bottom: 24px; overflow: hidden; }
+        .grupo-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
+        .grupo-encabezado h2, .grupo-desactivados summary h2 { display: inline; font-size: 1rem; font-weight: 600; color: var(--gray-800); margin: 0; }
+        .grupo-contador { color: var(--gray-500); font-size: 0.875rem; }
+
+        /* El elemento distintivo: quiénes pueden aprobar hoy y cuántos quedan */
+        .aprobadores-resumen { display: flex; align-items: center; gap: 12px; }
+        .aprobadores-iniciales { display: flex; }
+        .aprobadores-iniciales .usuario-avatar { margin-left: -6px; border: 2px solid var(--bg-card); }
+        .aprobadores-iniciales .usuario-avatar:first-child { margin-left: 0; }
+        .aprobadores-contador { font-size: 0.875rem; font-weight: 600; color: var(--primary); background: var(--info-light); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+        .aprobadores-resumen.en-el-minimo .aprobadores-contador { color: #92400e; background: var(--warning-light); }
+
+        /* Filas */
+        .fila-usuario { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--gray-100); }
+        .fila-usuario:last-child { border-bottom: none; }
+        .fila-desactivada { opacity: 0.6; }
+        .usuario-avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 600; font-size: 0.875rem; background: var(--gray-200); color: var(--gray-700); }
+        .usuario-avatar.rol-superadmin { background: var(--primary); color: #fff; }
+        .usuario-avatar.rol-admin { background: var(--info-light); color: var(--primary); }
+        .usuario-avatar.mini { width: 28px; height: 28px; font-size: 0.7rem; }
+        .usuario-datos { flex: 1; min-width: 0; }
+        .usuario-nombre { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--gray-800); }
+        .usuario-detalle { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 2px; font-size: 0.875rem; color: var(--gray-600); }
+        .usuario-username { font-weight: 500; color: var(--gray-700); }
+        .usuario-ingreso { margin-top: 2px; font-size: 0.8rem; }
+        .lista-vacia { padding: 20px; color: var(--gray-500); font-size: 0.875rem; margin: 0; }
+
+        /* Etiquetas */
+        .etiqueta { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; line-height: 1.5; }
+        .etiqueta.rol-superadmin { background: var(--primary); color: #fff; }
+        .etiqueta.rol-admin { background: var(--info-light); color: var(--primary); }
+        .etiqueta.rol-lector { background: var(--gray-100); color: var(--gray-600); }
+        .etiqueta-contrato { background: var(--purple-light); color: var(--purple); }
+        .etiqueta-pendiente { background: var(--warning-light); color: #92400e; }
+        .etiqueta-sin-email { background: var(--danger-light); color: #b91c1c; }
+
+        /* Desactivados plegados */
+        .grupo-desactivados summary { display: flex; align-items: center; gap: 8px; padding: 16px 20px; cursor: pointer; list-style: none; }
+        .grupo-desactivados summary::-webkit-details-marker { display: none; }
+        .grupo-desactivados summary::before { content: '▸'; color: var(--gray-500); transition: transform 0.2s; }
+        .grupo-desactivados[open] summary::before { transform: rotate(90deg); }
+        .grupo-desactivados[open] summary { border-bottom: 1px solid var(--border-color); }
+
+        /* Modal */
+        .modal-encabezado-etiquetas { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; margin-right: 12px; }
+        .usuario-pestanas { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--border-color); }
+        .usuario-pestana { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; font-weight: 500; color: var(--gray-500); cursor: pointer; }
+        .usuario-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
+        .usuario-pestana:focus-visible, .fila-usuario .btn:focus-visible, .grupo-desactivados summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .requerido { color: var(--danger); }
+        .campo-error { color: #b91c1c; font-size: 0.8rem; margin: 4px 0 0; }
+        .form-input[aria-invalid="true"] { border-color: var(--danger); }
+        .aviso { padding: 12px 14px; border-radius: var(--border-radius); font-size: 0.875rem; margin-bottom: 16px; }
+        .aviso-error { background: var(--danger-light); color: #b91c1c; }
+        .aviso-info { background: var(--info-light); color: var(--primary); }
+        .acciones-form { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+        .bloque-acceso { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+        .bloque-acceso h4 { font-size: 0.9rem; color: var(--gray-700); margin: 0 0 6px; }
+        .bloque-acceso-botones { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+        .historial-usuario { list-style: none; margin: 0; padding: 0; }
+        .historial-usuario li { padding: 12px 0; border-bottom: 1px solid var(--gray-100); font-size: 0.875rem; }
+        .historial-cabecera { display: flex; justify-content: space-between; gap: 12px; }
+        .historial-cabecera time { color: var(--gray-500); white-space: nowrap; }
+
+        @media (max-width: 768px) {
+            .form-row { grid-template-columns: 1fr; }
+            .grupo-encabezado { padding: 14px 16px; }
+            .fila-usuario { padding: 12px 16px; align-items: flex-start; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .grupo-desactivados summary::before { transition: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" title="Menú">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <img src="img/logo.png" alt="Logo" class="header-logo">
+                <div>
+                    <div class="header-title">RPAD</div>
+                    <div class="header-subtitle">Registro Permanente de Actualización de Datasets</div>
+                </div>
+            </div>
+            <div class="header-right" id="header-actions">
+                <a href="login.html" class="btn btn-primary btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+                    Ingresar
+                </a>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <img src="img/logo-blanco.png" alt="RPAD" class="sidebar-logo">
+    </div>
+    <nav class="sidebar-nav">
+        <!-- PRINCIPAL (solo admin) -->
+        <div class="sidebar-section hidden" id="sidebarPrincipal">
+            <div class="sidebar-section-title">Principal</div>
+            <a href="index.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                <span>Tablero</span>
+            </a>
+            <a href="calendario.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+                <span>Calendario</span>
+            </a>
+            <a href="datasets.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                <span>Datasets</span>
+            </a>
+        </div>
+
+        <!-- ADMINISTRACIÓN (solo admin) -->
+        <div class="sidebar-section hidden" id="sidebarAdmin">
+            <div class="sidebar-section-title">Administración</div>
+            <a href="admin.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>Gestión de Datasets</span>
+            </a>
+            <a href="areas.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+                <span>Áreas</span>
+            </a>
+            <a href="usuarios.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Usuarios</span>
+            </a>
+            <a href="correos.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                <span>Correos</span>
+            </a>
+        </div>
+
+        <!-- HERRAMIENTAS (todos los usuarios logueados) -->
+        <div class="sidebar-section hidden" id="sidebarTools">
+            <div class="sidebar-section-title">Herramientas</div>
+            <a href="reportes.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                <span>Reportes</span>
+            </a>
+            <a href="notas.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
+                <span>Notas</span>
+            </a>
+            <a href="gestion.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+                <span>Gestión</span>
+            </a>
+        </div>
+
+        <!-- MI CUENTA (todos los usuarios logueados) -->
+        <div class="sidebar-section hidden" id="sidebarAccount">
+            <div class="sidebar-section-title">Mi Cuenta</div>
+            <a href="perfil.html" class="sidebar-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span>Mi Perfil</span>
+            </a>
+        </div>
+    </nav>
+</aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header">
+                <h1 class="page-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Usuarios
+                </h1>
+                <button type="button" class="btn btn-primary" id="btn-nuevo-usuario">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Nuevo usuario
+                </button>
+            </div>
+
+            <div class="card mb-5">
+                <div class="filters-bar" style="margin-bottom: 0;">
+                    <div class="filter-group" style="flex: 1;">
+                        <label for="buscar-usuario">Buscar</label>
+                        <input type="search" id="buscar-usuario" class="form-input" placeholder="Buscar por nombre, usuario, cargo o email...">
+                    </div>
+                </div>
+            </div>
+
+            <section class="grupo-usuarios" aria-labelledby="titulo-aprobadores">
+                <div class="grupo-encabezado">
+                    <h2 id="titulo-aprobadores">Pueden aprobar cambios</h2>
+                    <div class="aprobadores-resumen" id="aprobadores-resumen"></div>
+                </div>
+                <div id="lista-aprobadores"><div class="loading"><div class="spinner"></div></div></div>
+            </section>
+
+            <section class="grupo-usuarios" aria-labelledby="titulo-lectores">
+                <div class="grupo-encabezado">
+                    <h2 id="titulo-lectores">Solo lectura</h2>
+                    <span class="grupo-contador" id="contador-lectores"></span>
+                </div>
+                <div id="lista-lectores"></div>
+            </section>
+
+            <details class="grupo-usuarios grupo-desactivados">
+                <summary><h2>Desactivados (<span id="contador-desactivados">0</span>)</h2></summary>
+                <div id="lista-desactivados"></div>
+            </details>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-cards">
+                    <div class="footer-card">
+                        <div class="footer-card-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+                        </div>
+                        <h4>Dirección de Datos Públicos y Comunicación</h4>
+                        <p>Dir. Gral. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-card">
+                        <div class="footer-card-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                        </div>
+                        <h4>Canales de Atención</h4>
+                        <p><a href="contacto.html">Formulario de contacto</a><br><a href="https://datos.comodoro.gov.ar" target="_blank">datos.comodoro.gov.ar</a></p>
+                    </div>
+                    <div class="footer-card">
+                        <div class="footer-card-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                        </div>
+                        <h4>Marco Legal</h4>
+                        <p>Ordenanza N° 17.662/23 - Art. 8°<br>Licencia: CC BY-SA 4.0</p>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© 2025 Secretaría de Gobierno, Modernización y Transparencia - Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v1.4.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Modal Usuario -->
+    <div class="modal-overlay" id="modal-usuario">
+        <div class="modal" style="max-width: 720px;" role="dialog" aria-modal="true" aria-labelledby="modal-usuario-titulo">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-usuario-titulo">Nuevo usuario</h3>
+                <span class="modal-encabezado-etiquetas" id="modal-usuario-etiquetas"></span>
+                <button type="button" class="modal-close" id="modal-usuario-cerrar" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="usuario-pestanas" id="usuario-pestanas" role="tablist">
+                <button type="button" class="usuario-pestana activa" data-pestana="datos" role="tab" aria-selected="true">Datos</button>
+                <button type="button" class="usuario-pestana" data-pestana="historial" role="tab" aria-selected="false">Historial</button>
+            </div>
+            <div class="modal-body">
+                <div id="usuario-error" class="aviso aviso-error" role="alert" hidden></div>
+                <div id="aviso-protegida" class="aviso aviso-info" hidden>Esta cuenta solo la modifica su titular.</div>
+
+                <div id="pestana-datos">
+                    <form id="form-usuario" novalidate>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="u-nombre">Nombre completo <span class="requerido">*</span></label>
+                                <input type="text" id="u-nombre" class="form-input" maxlength="100" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="u-username">Usuario <span class="requerido">*</span></label>
+                                <input type="text" id="u-username" class="form-input" maxlength="50" required autocomplete="off" spellcheck="false">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="u-email">Email <span class="requerido">*</span></label>
+                                <input type="email" id="u-email" class="form-input" maxlength="100" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="u-rol">Rol</label>
+                                <select id="u-rol" class="form-input">
+                                    <option value="lector">Lector</option>
+                                    <option value="admin">Admin</option>
+                                    <option value="superadmin" hidden>Superadmin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="u-cargo">Cargo</label>
+                            <input type="text" id="u-cargo" class="form-input" maxlength="200" placeholder="Ej.: Directora Administrativa">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="u-vinculo">Vínculo</label>
+                            <select id="u-vinculo" class="form-input">
+                                <option value="">Sin dato</option>
+                                <option value="planta_permanente">Planta permanente</option>
+                                <option value="planta_politica">Planta política</option>
+                                <option value="contrato">Contrato (sin designación formal)</option>
+                            </select>
+                        </div>
+                        <div class="acciones-form" id="acciones-form">
+                            <button type="button" class="btn btn-secondary" id="btn-cancelar-usuario">Cancelar</button>
+                            <button type="submit" class="btn btn-primary" id="btn-guardar-usuario">Guardar cambios</button>
+                        </div>
+                    </form>
+
+                    <div class="bloque-acceso" id="bloque-acceso" hidden>
+                        <h4>Acceso</h4>
+                        <p id="acceso-detalle" class="text-muted"></p>
+                        <div class="bloque-acceso-botones">
+                            <button type="button" class="btn btn-secondary" id="btn-enviar-acceso">Enviar link para restablecer la contraseña</button>
+                            <button type="button" class="btn btn-danger" id="btn-cambiar-estado">Desactivar</button>
+                        </div>
+                        <p class="text-muted" id="acceso-nota" style="font-size: 0.8rem;"></p>
+                    </div>
+                </div>
+
+                <div id="pestana-historial" hidden>
+                    <ol class="historial-usuario" id="historial-usuario"></ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/auth.js?v=20261016"></script>
+    <script src="js/main.js?v=20261016"></script>
+    <script src="js/api.js?v=20261016"></script>
+    <script src="js/usuarios.js?v=20261016"></script>
+</body>
+</html>
