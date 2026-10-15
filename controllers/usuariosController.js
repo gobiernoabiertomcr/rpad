@@ -236,6 +236,13 @@ export const actualizarUsuario = async (req, res) => {
         valores.push(rolNuevo);
       }
       await conexion.execute(`UPDATE usuarios SET ${asignaciones.join(', ')} WHERE id = ?`, [...valores, id]);
+      // Un link mandado a un email que se corrigió no debe seguir sirviendo
+      if (campos.email) {
+        await conexion.execute(
+          'UPDATE usuarios_tokens SET anulado_at = NOW() WHERE usuario_id = ? AND usado_at IS NULL AND anulado_at IS NULL',
+          [id]
+        );
+      }
       if (Object.keys(campos).length > 0) {
         await registrarAuditoria(conexion, { usuarioId: id, actorId: req.user.userId, accion: 'edicion', detalle: { campos } });
       }
@@ -318,16 +325,37 @@ export const desactivarUsuario = async (req, res) => {
 export const reactivarUsuario = async (req, res) => {
   const id = idDeRuta(req);
   if (!id) return responderError(res, 404, 'Usuario no encontrado');
+  let conexion;
   try {
-    const usuario = await buscarUsuario(pool, id);
-    if (!usuario) return responderError(res, 404, 'Usuario no encontrado');
-    if (usuario.rol === 'superadmin' && req.user.userId !== id) return responderError(res, 403, MENSAJE_PROTEGIDA);
-    if (usuario.activo) return responderError(res, 409, 'El usuario ya está activo');
-    await pool.execute('UPDATE usuarios SET activo = TRUE WHERE id = ?', [id]);
-    await registrarAuditoria(pool, { usuarioId: id, actorId: req.user.userId, accion: 'reactivacion' });
+    conexion = await pool.getConnection();
+    await conexion.beginTransaction();
+    // Se bloquean los usuarios: con dos pedidos simultáneos, el segundo encuentra al usuario ya activo
+    await bloquearUsuarios(conexion);
+    const usuario = await buscarUsuario(conexion, id);
+    let rechazo = null;
+    if (!usuario) rechazo = [404, 'Usuario no encontrado'];
+    else if (usuario.rol === 'superadmin' && req.user.userId !== id) rechazo = [403, MENSAJE_PROTEGIDA];
+    else if (usuario.activo) rechazo = [409, 'El usuario ya está activo'];
+    if (rechazo) {
+      await conexion.rollback();
+      return responderError(res, ...rechazo);
+    }
+
+    await conexion.execute('UPDATE usuarios SET activo = TRUE WHERE id = ?', [id]);
+    await registrarAuditoria(conexion, { usuarioId: id, actorId: req.user.userId, accion: 'reactivacion' });
+    await conexion.commit();
+  } catch (error) {
+    await conexion?.rollback().catch(() => {});
+    console.error('Error reactivando usuario:', error);
+    return responderError(res, 500, MENSAJE_ERROR);
+  } finally {
+    conexion?.release();
+  }
+
+  try {
     res.json({ success: true, data: aRespuesta(await buscarUsuario(pool, id)), message: 'Usuario reactivado' });
   } catch (error) {
-    console.error('Error reactivando usuario:', error);
+    console.error('Error respondiendo la reactivación del usuario:', error);
     responderError(res, 500, MENSAJE_ERROR);
   }
 };

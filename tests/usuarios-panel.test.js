@@ -198,6 +198,34 @@ describe('edición', () => {
     const [fila] = await auditoria(x.id, 'cambio_rol');
     assert.deepEqual(detalleDe(fila), { antes: 'lector', despues: 'admin' });
   });
+
+  const altaConInvitacion = async (username, email) => {
+    const alta = await api.post('/usuarios', nuevo({ nombre_completo: 'Con Invitación', username, email }), comoA());
+    assert.equal(alta.status, 201);
+    const [mensaje] = await mailpit.esperar(paraCasilla(email));
+    return { id: alta.body.data.usuario.id, token: tokenDelLink(await mailpit.html(mensaje.ID)) };
+  };
+
+  it('cambiar el email anula los links pendientes: el de la dirección vieja deja de servir', async () => {
+    const { id, token } = await altaConInvitacion('EMAILMAL', 'mal-cargado@rpad.test');
+    assert.equal((await api.post('/auth/link/validar', { token })).body.data.valido, true);
+
+    assert.equal((await api.put(`/usuarios/${id}`, { email: 'bien-cargado@rpad.test' }, comoA())).status, 200);
+
+    const validacion = await api.post('/auth/link/validar', { token });
+    assert.equal(validacion.body.data.valido, false);
+    assert.equal(validacion.body.data.motivo, 'invalido');
+    const detalle = (await api.get(`/usuarios/${id}`, comoA())).body.data;
+    assert.equal(detalle.estado, 'invitacion_pendiente');
+    assert.equal(detalle.invitacion_vence, null);
+  });
+
+  it('editar otros datos no anula los links pendientes', async () => {
+    const { id, token } = await altaConInvitacion('SIGUEVIGENTE', 'sigue-vigente@rpad.test');
+    assert.equal((await api.put(`/usuarios/${id}`, { cargo: 'Cargo nuevo' }, comoA())).status, 200);
+    assert.equal((await api.post('/auth/link/validar', { token })).body.data.valido, true);
+    assert.ok((await api.get(`/usuarios/${id}`, comoA())).body.data.invitacion_vence);
+  });
 });
 
 describe('cuenta del superadmin', () => {
@@ -291,6 +319,17 @@ describe('desactivar y reactivar', () => {
     const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
     await query('UPDATE usuarios SET password_hash = NULL, activo = 0 WHERE id = ?', [x.id]);
     assert.equal((await api.post(`/usuarios/${x.id}/reactivar`, {}, comoA())).body.data.estado, 'invitacion_pendiente');
+  });
+
+  it('dos reactivaciones simultáneas del mismo usuario: una sola se aplica y queda un solo registro', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [x.id]);
+    const resultados = await Promise.all([
+      api.post(`/usuarios/${x.id}/reactivar`, {}, comoA()),
+      api.post(`/usuarios/${x.id}/reactivar`, {}, comoB())
+    ]);
+    assert.deepEqual(resultados.map(r => r.status).sort(), [200, 409]);
+    assert.equal((await auditoria(x.id, 'reactivacion')).length, 1);
   });
 
   it('no se puede desactivar dos veces ni reactivar a alguien activo', async () => {
