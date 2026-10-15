@@ -195,10 +195,13 @@ export const crearCliente = (baseUrl) => {
 // =====================================================
 // Usuarios de prueba
 // =====================================================
-// Crea admin A, admin B y un lector con contraseñas aleatorias. Devuelve sus datos y tokens.
-export const crearUsuariosPrueba = async (cliente) => {
+// Crea usuarios de prueba con contraseñas aleatorias. Por defecto: admin A, admin B, un lector y un superadmin.
+// Devuelve sus datos y tokens.
+export const crearUsuariosPrueba = async (
+  cliente,
+  definiciones = { adminA: 'admin', adminB: 'admin', lector: 'lector', superadmin: 'superadmin' }
+) => {
   const sufijo = crypto.randomBytes(4).toString('hex');
-  const definiciones = { adminA: 'admin', adminB: 'admin', lector: 'lector' };
   const usuarios = {};
 
   for (const [clave, rol] of Object.entries(definiciones)) {
@@ -223,6 +226,9 @@ export const limpiarDatosPrueba = async (usuarios = {}) => {
   await db().query('DELETE FROM datasets WHERE titulo LIKE ?', [`${PREFIJO_TEST}%`]);
   const ids = Object.values(usuarios).map(u => u.id);
   if (ids.length > 0) {
+    // Historial y links de acceso de los usuarios de prueba (sus FK no borran en cascada)
+    await db().query('DELETE FROM usuarios_auditoria WHERE usuario_id IN (?)', [ids]);
+    await db().query('DELETE FROM usuarios_tokens WHERE usuario_id IN (?)', [ids]);
     await db().query('DELETE FROM cambios_pendientes WHERE usuario_id IN (?)', [ids]);
     await db().query('DELETE FROM usuarios WHERE id IN (?)', [ids]);
   }

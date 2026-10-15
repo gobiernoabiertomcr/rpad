@@ -89,6 +89,9 @@ describe('email de cambios pendientes', () => {
     for (const mensaje of para(usuarios.adminA.email)) {
       assert.doesNotMatch(await mailpit.html(mensaje.ID), /aviso de cambio pendiente/);
     }
+    const paraSuperadmin = para(usuarios.superadmin.email);
+    assert.equal(paraSuperadmin.length, 1, 'el superadmin también recibe el resumen');
+    assert.match(await mailpit.html(paraSuperadmin[0].ID), /aviso de cambio pendiente/);
     assert.equal(para(usuarios.lector.email).length, 0, 'el lector no recibe avisos');
   });
 });

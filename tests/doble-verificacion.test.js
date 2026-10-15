@@ -71,6 +71,18 @@ describe('alta de dataset', () => {
     assert.equal(res.status, 403);
   });
 
+  it('el superadmin tampoco puede aprobar ni rechazar sus propios cambios', async () => {
+    const alta = await api.post('/datasets', datosAlta('autoaprobación del superadmin'), { token: usuarios.superadmin.token });
+    assert.equal(alta.status, 201);
+    assert.equal((await aprobar(alta.body.data.cambio_pendiente_id, usuarios.superadmin)).status, 403);
+    assert.equal((await rechazar(alta.body.data.cambio_pendiente_id, usuarios.superadmin)).status, 403);
+  });
+
+  it('el superadmin aprueba el cambio de otro admin', async () => {
+    const alta = await api.post('/datasets', datosAlta('aprobada por el superadmin'), { token: usuarios.adminA.token });
+    assert.equal((await aprobar(alta.body.data.cambio_pendiente_id, usuarios.superadmin)).status, 200);
+  });
+
   it('otro admin aprueba y el dataset se crea con sus formatos', async () => {
     const id = await crearDatasetAprobado('alta aprobada');
     const dataset = await datasetEnDb(id);

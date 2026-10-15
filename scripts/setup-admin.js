@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import pool from '../config/database.js';
 import readline from 'readline';
+import { emailValido, validarContrasena } from '../services/usuariosReglas.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -16,7 +17,7 @@ const question = (prompt) => {
 const setupAdmin = async () => {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════════╗');
-  console.log('║   🔐 Configuración de Usuario Administrador - RPAD        ║');
+  console.log('║   🔐 Configuración de Usuario - RPAD                       ║');
   console.log('╚═══════════════════════════════════════════════════════════╝');
   console.log('');
 
@@ -28,7 +29,7 @@ const setupAdmin = async () => {
 
     if (existing[0].count > 0) {
       console.log('⚠️  Ya existe un usuario en el sistema.');
-      const continuar = await question('¿Desea crear otro usuario administrador? (s/n): ');
+      const continuar = await question('¿Desea crear otro usuario? (s/n): ');
       
       if (continuar.toLowerCase() !== 's') {
         console.log('Operación cancelada.');
@@ -41,11 +42,18 @@ const setupAdmin = async () => {
     const nombre_completo = await question('Nombre completo: ');
     const email = await question('Email: ');
     const password = await question('Contraseña (mínimo 8 caracteres): ');
-    const rolInput = await question('Rol (admin/lector) [admin]: ');
-    const rol = (rolInput.toLowerCase() === 'lector') ? 'lector' : 'admin';
+    const rolInput = await question('Rol (superadmin/admin/lector) [lector]: ');
+    const rolElegido = rolInput.trim().toLowerCase();
+    const rol = ['superadmin', 'admin', 'lector'].includes(rolElegido) ? rolElegido : 'lector';
 
-    if (password.length < 8) {
-      console.error('❌ La contraseña debe tener al menos 8 caracteres.');
+    if (!emailValido(email.trim().toLowerCase())) {
+      console.error('❌ El email no es válido.');
+      process.exit(1);
+    }
+
+    const errorContrasena = validarContrasena(password);
+    if (errorContrasena) {
+      console.error(`❌ ${errorContrasena}.`);
       process.exit(1);
     }
 
@@ -56,7 +64,7 @@ const setupAdmin = async () => {
     await pool.execute(
       `INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol) 
        VALUES (?, ?, ?, ?, ?)`,
-      [username, password_hash, nombre_completo, email, rol]
+      [username.trim(), password_hash, nombre_completo.trim(), email.trim().toLowerCase(), rol]
     );
 
     console.log('');

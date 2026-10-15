@@ -144,7 +144,7 @@ const getAdminsConEmail = async () => {
   const [rows] = await pool.execute(
     `SELECT id, username, nombre_completo, email 
      FROM usuarios 
-     WHERE rol = 'admin' AND activo = TRUE AND email IS NOT NULL`
+     WHERE rol IN ('admin', 'superadmin') AND activo = TRUE AND email IS NOT NULL`
   );
   return rows;
 };

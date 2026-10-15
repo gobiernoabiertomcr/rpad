@@ -96,24 +96,29 @@ describe('visitante sin sesión', () => {
   });
 });
 
-describe('admin', () => {
-  for (const ruta of [
-    '/cambios-pendientes/contador',
-    '/cambios-pendientes/para-revisar',
-    '/cambios-pendientes/mis-cambios',
-    '/cambios-pendientes/datasets-bloqueados',
-    '/notificaciones/verificar-smtp',
-    '/notificaciones/preview/area-aviso-40',
-    '/notificaciones/notas-digitales',
-    '/notificaciones/notas-digitales/estado',
-    '/notificaciones/preview-cambios-pendientes'
-  ]) {
-    it(`puede usar GET ${ruta}`, async () => {
-      const res = await api.get(ruta, { token: usuarios.adminA.token });
-      assert.equal(res.status, 200);
-    });
-  }
-});
+// GET de administración que se pueden llamar sin efectos sobre la base local
+const RUTAS_GET_ADMIN = [
+  '/cambios-pendientes/contador',
+  '/cambios-pendientes/para-revisar',
+  '/cambios-pendientes/mis-cambios',
+  '/cambios-pendientes/datasets-bloqueados',
+  '/notificaciones/verificar-smtp',
+  '/notificaciones/preview/area-aviso-40',
+  '/notificaciones/notas-digitales',
+  '/notificaciones/notas-digitales/estado',
+  '/notificaciones/preview-cambios-pendientes'
+];
+
+for (const clave of ['adminA', 'superadmin']) {
+  describe(clave === 'adminA' ? 'admin' : 'superadmin', () => {
+    for (const ruta of RUTAS_GET_ADMIN) {
+      it(`puede usar GET ${ruta}`, async () => {
+        const res = await api.get(ruta, { token: usuarios[clave].token });
+        assert.equal(res.status, 200);
+      });
+    }
+  });
+}
 
 describe('cron', () => {
   it('rechaza sin clave', async () => {

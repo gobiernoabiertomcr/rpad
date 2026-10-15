@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import pool from '../config/database.js';
+import { esAdmin } from '../services/usuariosReglas.js';
 
 // Sin JWT_SECRET cualquiera podría firmar tokens válidos: no se permite iniciar
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -20,8 +22,9 @@ export const verifyToken = (token) => {
   }
 };
 
-// Middleware para rutas protegidas
-export const authMiddleware = (req, res, next) => {
+// Middleware para rutas protegidas. Además de verificar el token, lee de la base el rol, si el usuario
+// sigue activo y su versión de sesión: desactivar o cambiar el rol tiene efecto en el pedido siguiente (spec 5.1)
+export const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -34,20 +37,37 @@ export const authMiddleware = (req, res, next) => {
   const token = authHeader.split(' ')[1];
   const payload = verifyToken(token);
 
-  if (!payload) {
+  if (!payload || !Number.isInteger(payload.userId)) {
     return res.status(401).json({
       success: false,
       error: 'Token inválido o expirado'
     });
   }
 
-  req.user = payload;
+  let usuario;
+  try {
+    const [filas] = await pool.execute('SELECT rol, activo, sesion_version FROM usuarios WHERE id = ?', [payload.userId]);
+    usuario = filas[0];
+  } catch (error) {
+    console.error('Error verificando la sesión:', error);
+    return res.status(500).json({ success: false, error: 'Error interno del servidor' });
+  }
+
+  // Un token sin versión (emitido antes de que existiera sesion_version) cuenta como versión 0
+  if (!usuario || !usuario.activo || (payload.v ?? 0) !== usuario.sesion_version) {
+    return res.status(401).json({
+      success: false,
+      error: 'La sesión ya no es válida. Iniciá sesión nuevamente.'
+    });
+  }
+
+  req.user = { ...payload, rol: usuario.rol };
   next();
 };
 
-// Middleware para rutas solo de administradores
+// Middleware para rutas de administración: admin y superadmin
 export const adminOnly = (req, res, next) => {
-  if (req.user?.rol !== 'admin') {
+  if (!esAdmin(req.user?.rol)) {
     return res.status(403).json({
       success: false,
       error: 'Acceso denegado. Se requiere rol de administrador.'
