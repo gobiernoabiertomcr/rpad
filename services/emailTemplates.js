@@ -504,3 +504,30 @@ export const recuperacionTemplate = ({ nombre_completo, username, link, vence })
     'Si no lo pediste, ignorá este email: tu contraseña actual sigue funcionando.'
   ].join('\n')
 });
+
+// Aviso al superadmin cuando otro admin crea un admin, cambia un rol o desactiva a alguien (spec 10.3)
+export const avisoSuperadminTemplate = ({ actor, afectado, cambio, fecha }) => {
+  const cuando = fechaHoraArgentina(fecha);
+  const quien = `${actor.nombre_completo} (${actor.username})`;
+  const aQuien = `${afectado.nombre_completo} (${afectado.username})`;
+  return {
+    subject: 'RPAD: cambio en los usuarios',
+    html: plantillaSimple({
+      titulo: 'Cambio en los usuarios del RPAD',
+      parrafos: [
+        `<strong>${escapeHtml(quien)}</strong> hizo este cambio:`,
+        `${escapeHtml(aQuien)}: <strong>${escapeHtml(cambio)}</strong>`,
+        `Fecha: ${escapeHtml(cuando)} h`
+      ],
+      boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/usuarios.html` },
+      notas: ['Este aviso te llega porque sos superadmin y el cambio lo hizo otro administrador.']
+    }),
+    text: [
+      `${quien} hizo este cambio:`,
+      `${aQuien}: ${cambio}`,
+      `Fecha: ${cuando} h`,
+      '',
+      `Panel de usuarios: ${RPAD_URL}/usuarios.html`
+    ].join('\n')
+  };
+};

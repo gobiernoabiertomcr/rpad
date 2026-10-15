@@ -68,6 +68,15 @@ import {
   rechazarCambio,
   getDatasetsConPendientes
 } from '../controllers/cambiosPendientesController.js';
+import {
+  listarUsuarios,
+  obtenerUsuario,
+  crearUsuario,
+  actualizarUsuario,
+  desactivarUsuario,
+  reactivarUsuario,
+  enviarAcceso
+} from '../controllers/usuariosController.js';
 import { enviarContacto } from '../controllers/contactoController.js';
 import {
   getMetricasAutomaticas,
@@ -162,6 +171,17 @@ router.get('/cambios-pendientes/:id', authMiddleware, adminOnly, getCambioPendie
 router.get('/cambios-pendientes/verificar/:datasetId', authMiddleware, adminOnly, verificarDatasetBloqueado);
 router.post('/cambios-pendientes/:id/aprobar', authMiddleware, adminOnly, aprobarCambio);
 router.post('/cambios-pendientes/:id/rechazar', authMiddleware, adminOnly, rechazarCambio);
+
+// =====================================================
+// Usuarios (panel: admin y superadmin)
+// =====================================================
+router.get('/usuarios', authMiddleware, adminOnly, listarUsuarios);
+router.post('/usuarios', authMiddleware, adminOnly, crearUsuario);
+router.get('/usuarios/:id', authMiddleware, adminOnly, obtenerUsuario);
+router.put('/usuarios/:id', authMiddleware, adminOnly, actualizarUsuario);
+router.post('/usuarios/:id/desactivar', authMiddleware, adminOnly, desactivarUsuario);
+router.post('/usuarios/:id/reactivar', authMiddleware, adminOnly, reactivarUsuario);
+router.post('/usuarios/:id/enviar-acceso', authMiddleware, adminOnly, enviarAcceso);
 
 // =====================================================
 // Notificaciones (protegidas - solo admin)

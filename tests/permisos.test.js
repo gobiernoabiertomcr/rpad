@@ -55,7 +55,14 @@ const RUTAS_SOLO_ADMIN = [
   ['GET', '/notificaciones/notas-digitales/1/anexo'],
   ['POST', '/notificaciones/notas-digitales/1/reintentar'],
   ['GET', '/notificaciones/cambios-pendientes'],
-  ['GET', '/notificaciones/preview-cambios-pendientes']
+  ['GET', '/notificaciones/preview-cambios-pendientes'],
+  ['GET', '/usuarios'],
+  ['POST', '/usuarios'],
+  ['GET', '/usuarios/1'],
+  ['PUT', '/usuarios/1'],
+  ['POST', '/usuarios/1/desactivar'],
+  ['POST', '/usuarios/1/reactivar'],
+  ['POST', '/usuarios/1/enviar-acceso']
 ];
 
 const pedir = (metodo, ruta, token) => {
@@ -106,7 +113,8 @@ const RUTAS_GET_ADMIN = [
   '/notificaciones/preview/area-aviso-40',
   '/notificaciones/notas-digitales',
   '/notificaciones/notas-digitales/estado',
-  '/notificaciones/preview-cambios-pendientes'
+  '/notificaciones/preview-cambios-pendientes',
+  '/usuarios'
 ];
 
 for (const clave of ['adminA', 'superadmin']) {
