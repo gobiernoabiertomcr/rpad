@@ -204,7 +204,6 @@ describe('HTML', () => {
     assert.ok(html.includes('Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación'));
     assert.ok(html.includes('<b><u>DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL</u></b>'));
     assert.ok(html.includes('Ordenanza N° 17.662/23'));
-    assert.ok(html.includes('Índice Nacional de Datos Abiertos'));
     assert.ok(html.includes('<b><u>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</u></b>, 2 de noviembre de 2026.'));
     assert.ok(html.includes('Nombre de Firma<br>Cargo de Firma'));
     assert.ok(html.includes('CC. Dir. de Investigación Territorial'));
@@ -247,7 +246,7 @@ describe('textos del 14/10/2026', () => {
       assert.ok(!texto.includes('WhatsApp'), tipo);
       assert.ok(texto.includes('datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar'), tipo);
     }
-    assert.equal(nota().justificacion[2],
+    assert.equal(nota().justificacion[1],
       'La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.');
     assert.equal(nota({ tipo: 'reiteracion' }).justificacion[0],
       'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.');
@@ -273,5 +272,23 @@ describe('textos del 14/10/2026', () => {
     assert.ok(renderHtml(nota()).includes('>SE ADJUNTAN NOTA Y ANEXO EN PDF</p>'));
     assert.ok(renderTexto(nota()).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\n'));
     assert.ok(renderHtml(nota({ tipo: 'reiteracion' })).includes('>SE ADJUNTA NOTA EN PDF</p>'));
+  });
+});
+
+describe('textos del 15/10/2026', () => {
+  it('ninguna nota menciona el Índice Nacional de Datos Abiertos: el aviso queda con dos párrafos de justificación', () => {
+    for (const tipo of ['aviso', 'reiteracion']) {
+      for (const gestion of ['interna', 'externa']) {
+        const n = nota({ tipo, gestion });
+        for (const texto of [n.justificacion.join(' '), renderHtml(n), renderTexto(n)]) {
+          assert.ok(!texto.includes('Índice Nacional'), `${tipo} ${gestion}`);
+          assert.ok(!texto.includes('Cabe destacar'), `${tipo} ${gestion}`);
+        }
+      }
+    }
+    assert.deepEqual(nota().justificacion, [
+      'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos, tanto de áreas municipales como de organismos externos, en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar).',
+      'La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.'
+    ]);
   });
 });

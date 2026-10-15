@@ -167,14 +167,12 @@ Esto cubre la transición. Como esos emails dejan de existir, la línea desapare
 **Aviso (texto completo):**
 > La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos, tanto de áreas municipales como de organismos externos, en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar).
 >
-> Cabe destacar que Comodoro Rivadavia se encuentra entre los primeros puestos del Índice Nacional de Datos Abiertos. En este marco, mantener la información actualizada contribuye directamente a sostener y fortalecer este posicionamiento.
->
 > La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.
 
 **Reiteración (texto abreviado):**
 > La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.
 
-(Desde el 14/10/2026 no se menciona el WhatsApp.)
+(Desde el 14/10/2026 no se menciona el WhatsApp. Desde el 15/10/2026 ninguna nota, tampoco las de Word, menciona el Índice Nacional de Datos Abiertos.)
 
 Los textos de las secciones 6.1 a 6.5 son fijos en el código y están en un solo módulo.
 

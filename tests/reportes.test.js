@@ -1,6 +1,8 @@
 // Reportes PDF y notas DOCX
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+// jszip llega con docx (lo usa para armar el .docx): acá abre la nota para leer su texto
+import JSZip from 'jszip';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 
 let servidor, api, usuarios;
@@ -55,4 +57,19 @@ describe('notas DOCX', () => {
       assert.equal(res.body.subarray(0, 2).toString(), 'PK');
     });
   }
+
+  it('ninguna nota menciona el Índice Nacional de Datos Abiertos', async () => {
+    const [dataset] = await query('SELECT id, area_id FROM datasets WHERE activo = 1 LIMIT 1');
+    for (const tipo of ['interna', 'externa', 'escalonada']) {
+      const res = await api.post('/notas/generar', {
+        fecha: '2026-10-15', numero: '124/2026', area_id: dataset.area_id, tipo,
+        datasets: [{ id: dataset.id, periodo_inicial: '2025', periodo_final: '2026' }]
+      }, { token: usuarios.adminA.token });
+      assert.equal(res.status, 200, tipo);
+      const documento = await (await JSZip.loadAsync(res.body)).file('word/document.xml').async('string');
+      // El texto se lee: la Ordenanza sí está
+      assert.ok(documento.includes('Ordenanza N° 17.662/23'), tipo);
+      assert.ok(!documento.includes('Índice Nacional') && !documento.includes('Cabe destacar'), tipo);
+    }
+  });
 });

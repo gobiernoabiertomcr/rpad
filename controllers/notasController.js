@@ -697,18 +697,6 @@ function generarNotaEscalonada(fecha, numero, area, datasets) {
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: 200 }
   }));
-  
-    childrenHoja1.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Cabe destacar que Comodoro Rivadavia se encuentra entre los primeros puestos del Índice Nacional de Datos Abiertos. En este marco, su colaboración contribuye directamente a mantener y fortalecer este posicionamiento.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 200 }
-  }));
 
   childrenHoja1.push(new Paragraph({
     children: [
