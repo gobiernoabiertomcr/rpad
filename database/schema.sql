@@ -3,7 +3,7 @@
 -- Estructura de la base de datos (MariaDB 10.6+)
 -- =====================================================
 -- Generado desde la estructura de producción (MariaDB 10.11) el 2026-10-12.
--- Incluye las 16 tablas, índices y claves foráneas, y los catálogos
+-- Incluye todas las tablas, índices y claves foráneas, y los catálogos
 -- (temas, frecuencias, formatos). NO incluye usuarios, áreas, datasets ni
 -- ningún otro dato real: este archivo es público en el repositorio.
 --
@@ -305,11 +305,15 @@ CREATE TABLE `temas` (
 CREATE TABLE `usuarios` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `username` varchar(50) NOT NULL,
-  `password_hash` varchar(255) NOT NULL,
+  `password_hash` varchar(255) DEFAULT NULL,
   `nombre_completo` varchar(100) NOT NULL,
   `email` varchar(100) NOT NULL,
-  `rol` enum('admin','lector') NOT NULL DEFAULT 'lector',
+  `rol` enum('superadmin','admin','lector') NOT NULL DEFAULT 'lector',
+  `cargo` varchar(200) DEFAULT NULL,
+  `vinculo` enum('planta_permanente','planta_politica','contrato') DEFAULT NULL,
   `activo` tinyint(1) DEFAULT 1,
+  `ultimo_ingreso` timestamp NULL DEFAULT NULL,
+  `sesion_version` int(11) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
@@ -505,3 +509,38 @@ VALUES
    'investigacionterritorial@comodoro.gov.ar', 'datospublicos@comodoro.gov.ar',
    'CC. Dir. de Investigación Territorial', 'CC. Dir. Administrativa',
    'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.');
+
+-- =====================================================
+-- Usuarios: links de acceso y auditoría (database/updates/migracion-usuarios-superadmin.sql)
+-- =====================================================
+CREATE TABLE `usuarios_tokens` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL,
+  `tipo` enum('invitacion','recuperacion') NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `expira_at` datetime NOT NULL,
+  `usado_at` datetime DEFAULT NULL,
+  `anulado_at` datetime DEFAULT NULL,
+  `creado_por` int(11) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_usuarios_tokens_hash` (`token_hash`),
+  KEY `idx_usuarios_tokens_usuario` (`usuario_id`,`tipo`),
+  KEY `fk_usuarios_tokens_creado_por` (`creado_por`),
+  CONSTRAINT `fk_usuarios_tokens_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`),
+  CONSTRAINT `fk_usuarios_tokens_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `usuarios_auditoria` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL,
+  `actor_id` int(11) DEFAULT NULL,
+  `accion` enum('alta','edicion','cambio_rol','desactivacion','reactivacion','invitacion_enviada','recuperacion_enviada','contrasena_establecida','contrasena_cambiada','perfil_editado') NOT NULL,
+  `detalle` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`detalle`)),
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_usuarios_auditoria_usuario` (`usuario_id`,`created_at`),
+  KEY `fk_usuarios_auditoria_actor` (`actor_id`),
+  CONSTRAINT `fk_usuarios_auditoria_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`),
+  CONSTRAINT `fk_usuarios_auditoria_actor` FOREIGN KEY (`actor_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

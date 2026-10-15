@@ -76,7 +76,28 @@ describe('database/schema.sql', () => {
     assert.equal(rol.defecto, "'lector'");
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets']) {
+  it('usuarios admite el rol superadmin, contraseña nula, cargo, vínculo, último ingreso y versión de sesión', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('usuarios.'));
+    for (const esperada of [
+      "usuarios.rol enum('superadmin','admin','lector') null=NO default='lector' key=",
+      'usuarios.password_hash varchar(255) null=YES default=NULL key=',
+      'usuarios.cargo varchar(200) null=YES default=NULL key=',
+      "usuarios.vinculo enum('planta_permanente','planta_politica','contrato') null=YES default=NULL key=",
+      'usuarios.ultimo_ingreso timestamp null=YES default=NULL key=',
+      'usuarios.sesion_version int(11) null=NO default=0 key='
+    ]) {
+      assert.ok(lista.includes(esperada), `falta: ${esperada}\n${lista.join('\n')}`);
+    }
+  });
+
+  it('las tablas de links de acceso y de auditoría guardan solo el hash del token y el detalle como JSON', async () => {
+    const lista = await columnas(root, BASE_TEMPORAL);
+    assert.ok(lista.includes('usuarios_tokens.token_hash char(64) null=NO default=null key=UNI'), lista.join('\n'));
+    assert.ok(lista.includes("usuarios_tokens.tipo enum('invitacion','recuperacion') null=NO default=null key="), lista.join('\n'));
+    assert.ok(lista.some(c => c.startsWith('usuarios_auditoria.detalle longtext null=YES')), lista.join('\n'));
+  });
+
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
