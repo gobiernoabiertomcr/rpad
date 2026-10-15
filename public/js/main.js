@@ -124,6 +124,19 @@ function getIconSvg(iconName, size) {
 // =====================================================
 
 /**
+ * Escapar HTML (también comillas, así sirve dentro de atributos). main.js se carga en páginas que no cargan
+ * api.js (contacto.html), por eso no se usa Utils.escapeHtml.
+ */
+function escaparHtml(texto) {
+    return String(texto ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
  * Obtener iniciales de un nombre
  */
 function getInitials(nombre) {
@@ -184,10 +197,10 @@ function initHeader() {
             ` : ''}
             <a href="perfil.html" class="header-user" title="Mi Perfil">
                 <div class="header-user-info">
-                    <div class="header-user-name">${nombre}</div>
-                    <div class="header-user-role">${rolText}</div>
+                    <div class="header-user-name">${escaparHtml(nombre)}</div>
+                    <div class="header-user-role">${escaparHtml(rolText)}</div>
                 </div>
-                <div class="header-user-avatar">${initials}</div>
+                <div class="header-user-avatar">${escaparHtml(initials)}</div>
             </a>
             <button class="btn btn-secondary btn-sm" onclick="Auth.logout()">
                 ${Icons.logOut}
