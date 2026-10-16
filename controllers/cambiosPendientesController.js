@@ -4,23 +4,16 @@
  */
 
 import pool from '../config/database.js';
+import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditoriaService.js';
+import { permisoParaAuditar } from '../services/auditoriaReglas.js';
+import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 
-/**
- * Funcion auxiliar: Cargar catalogos para enriquecer datos
- */
-const cargarCatalogos = async () => {
-  const [areas] = await pool.execute('SELECT id, nombre FROM areas');
-  const [frecuencias] = await pool.execute('SELECT id, nombre FROM frecuencias');
-  const [temas] = await pool.execute('SELECT id, nombre FROM temas');
-  const [formatos] = await pool.execute('SELECT id, nombre FROM formatos');
-  
-  return {
-    areas: Object.fromEntries(areas.map(a => [a.id, a.nombre])),
-    frecuencias: Object.fromEntries(frecuencias.map(f => [f.id, f.nombre])),
-    temas: Object.fromEntries(temas.map(t => [t.id, t.nombre])),
-    formatos: Object.fromEntries(formatos.map(f => [f.id, f.nombre]))
-  };
-};
+// ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2): un
+// auditor siempre; un editor, solo de respaldo. conexion: la de la transacción o el pool.
+// Devuelve { puede: true, respaldo } o { puede: false, mensaje }.
+const permisoParaAuditarHoy = async (conexion, usuario, proponenteId) => permisoParaAuditar(
+  { id: usuario.userId, rol: usuario.rol }, proponenteId, await personasDeAuditoria(hoyArgentina(), conexion)
+);
 
 /**
  * Funcion auxiliar: Enriquecer datos con nombres de catalogos
@@ -298,7 +291,7 @@ export const getCambioPendienteById = async (req, res) => {
       : null;
 
     // Cargar catalogos y enriquecer datos
-    const catalogos = await cargarCatalogos();
+    const catalogos = await catalogosParaAuditoria();
     const datosNuevosEnriquecidos = enriquecerDatos(datosNuevos, catalogos);
     const datosAnterioresEnriquecidos = enriquecerDatos(datosAnteriores, catalogos);
 
@@ -308,11 +301,18 @@ export const getCambioPendienteById = async (req, res) => {
       camposModificados = calcularCambios(datosAnterioresEnriquecidos, datosNuevosEnriquecidos);
     }
 
+    // Si quien mira puede aprobarlo o rechazarlo hoy (spec 2026-10-15, 8.2): Mi Perfil deshabilita los botones con el motivo
+    const sinAuditar = rows[0].estado !== 'pendiente' || rows[0].usuario_id === req.user.userId;
+    const auditoria = sinAuditar
+      ? { puede: false, respaldo: false, mensaje: null }
+      : { respaldo: false, mensaje: null, ...(await permisoParaAuditarHoy(pool, req.user, rows[0].usuario_id)) };
+
     const cambio = {
       ...rows[0],
       datos_nuevos: datosNuevosEnriquecidos,
       datos_anteriores: datosAnterioresEnriquecidos,
-      campos_modificados: camposModificados
+      campos_modificados: camposModificados,
+      auditoria
     };
 
     res.json({
@@ -396,6 +396,13 @@ export const aprobarCambio = async (req, res) => {
         success: false,
         error: 'No puede aprobar sus propios cambios'
       });
+    }
+
+    // Regla de respaldo (spec 2026-10-15, 8.2), con la fecha de hoy en Argentina
+    const permiso = await permisoParaAuditarHoy(connection, req.user, cambio.usuario_id);
+    if (!permiso.puede) {
+      await connection.rollback();
+      return res.status(403).json({ success: false, error: permiso.mensaje });
     }
 
     const datosNuevos = typeof cambio.datos_nuevos === 'string'
@@ -494,10 +501,10 @@ export const aprobarCambio = async (req, res) => {
 
     // Marcar cambio como aprobado
     await connection.execute(
-      `UPDATE cambios_pendientes 
-       SET estado = 'aprobado', revisor_id = ?, revisado_at = NOW() 
+      `UPDATE cambios_pendientes
+       SET estado = 'aprobado', revisor_id = ?, revisado_at = NOW(), revisado_como_respaldo = ?
        WHERE id = ?`,
-      [revisorId, id]
+      [revisorId, permiso.respaldo ? 1 : 0, id]
     );
 
     await connection.commit();
@@ -566,12 +573,19 @@ export const rechazarCambio = async (req, res) => {
       });
     }
 
+    // Regla de respaldo (spec 2026-10-15, 8.2), con la fecha de hoy en Argentina
+    const permiso = await permisoParaAuditarHoy(connection, req.user, cambio.usuario_id);
+    if (!permiso.puede) {
+      await connection.rollback();
+      return res.status(403).json({ success: false, error: permiso.mensaje });
+    }
+
     // Marcar como rechazado
     await connection.execute(
       `UPDATE cambios_pendientes
-       SET estado = 'rechazado', revisor_id = ?, comentario_rechazo = ?, revisado_at = NOW()
+       SET estado = 'rechazado', revisor_id = ?, comentario_rechazo = ?, revisado_at = NOW(), revisado_como_respaldo = ?
        WHERE id = ?`,
-      [revisorId, comentario.trim(), id]
+      [revisorId, comentario.trim(), permiso.respaldo ? 1 : 0, id]
     );
 
     await connection.commit();
