@@ -285,7 +285,7 @@ export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) =>
       respaldo ? avisoDestacado('<strong>Te llega como respaldo: no hay auditores disponibles.</strong>') : null,
       tituloSeccion('Cambios pendientes:')
         + tarjetas(cambios.map(c => contenidoDeCambio(c, [`Propuesto por: ${c.usuario_nombre || c.usuario_username || ''}`, c.tiempo_pendiente]))),
-      boton({ texto: 'Revisar cambios en RPAD', url: `${RPAD_URL}/perfil.html` })
+      boton({ texto: 'Revisar cambios en RPAD', url: `${RPAD_URL}/perfil.html#para-revisar` })
     ]
   })
 });

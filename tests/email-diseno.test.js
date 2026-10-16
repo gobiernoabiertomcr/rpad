@@ -140,6 +140,11 @@ describe('Diseño de los emails: un marco común', () => {
     assert.ok(!/null|undefined/.test(html));
   });
 
+  it('el botón del recordatorio de cambios lleva a Para revisar', () => {
+    const { html } = plantillas.cambiosPendientesTemplate([{ tipo_cambio: 'editar', dataset_titulo: 'X', usuario_nombre: 'Y' }]);
+    assert.ok(html.includes('/perfil.html#para-revisar"'));
+  });
+
   it('cada cambio y cada dataset van en una tarjeta blanca con borde fino', () => {
     const tarjeta = 'background-color: #FFFFFF; border: 1px solid #E4E9EF; border-radius: 6px';
     const cuenta = (html) => html.split(tarjeta).length - 1;

@@ -5,7 +5,7 @@
 
 import pool from '../config/database.js';
 import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditoriaService.js';
-import { permisoParaAuditar } from '../services/auditoriaReglas.js';
+import { permisoParaAuditar, quienesAuditan } from '../services/auditoriaReglas.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 
 // ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2): un
@@ -47,6 +47,12 @@ const enriquecerDatos = (datos, catalogos) => {
   
   return enriquecido;
 };
+
+// Las fechas se comparan por el día. Al proponer un cambio, las guardadas llegan con hora ("2026-03-15T03:00:00.000Z") y las
+// editadas sin ella ("2026-03-15"): el día es el de los primeros 10 caracteres (igual que valorComparable de
+// services/notasDigitalesContenido.js, que arma la comparación de las notas de auditoría)
+const CAMPOS_DE_FECHA = ['ultima_actualizacion', 'proxima_actualizacion'];
+const comparable = (key, texto) => (CAMPOS_DE_FECHA.includes(key) ? texto.slice(0, 10) : texto);
 
 /**
  * Funcion auxiliar: Calcular campos que cambiaron
@@ -104,7 +110,7 @@ const calcularCambios = (antes, despues) => {
       return;
     }
     
-    if (antesStr !== despuesStr) {
+    if (comparable(campo.key, antesStr) !== comparable(campo.key, despuesStr)) {
       cambios.push({
         campo: campo.label,
         antes: antesStr || '-',
@@ -114,6 +120,24 @@ const calcularCambios = (antes, despues) => {
   });
   
   return cambios;
+};
+
+// El JSON de datos llega como texto o ya parseado, según el driver
+const parsearDatos = (datos) => (typeof datos === 'string' ? JSON.parse(datos) : datos);
+
+/**
+ * Una fila de cambios_pendientes con sus datos parseados y enriquecidos con los nombres de catálogo, y los campos que
+ * cambiaron (solo en una edición; en un alta o una baja, null). La usan el detalle y las dos listas de Mi Perfil.
+ */
+const detallarCambio = (fila, catalogos) => {
+  const datosNuevos = enriquecerDatos(parsearDatos(fila.datos_nuevos), catalogos);
+  const datosAnteriores = enriquecerDatos(fila.datos_anteriores ? parsearDatos(fila.datos_anteriores) : null, catalogos);
+  return {
+    ...fila,
+    datos_nuevos: datosNuevos,
+    datos_anteriores: datosAnteriores,
+    campos_modificados: fila.tipo_cambio === 'editar' && datosAnteriores && datosNuevos ? calcularCambios(datosAnteriores, datosNuevos) : null
+  };
 };
 
 /**
@@ -157,6 +181,7 @@ export const getCambiosPendientesParaRevisar = async (req, res) => {
              u.nombre_completo as usuario_nombre,
              u.username as usuario_username,
              d.titulo as dataset_titulo,
+             d.url_dataset as dataset_url,
              r.nombre_completo as revisor_nombre
       FROM cambios_pendientes cp
       JOIN usuarios u ON cp.usuario_id = u.id
@@ -185,12 +210,24 @@ export const getCambiosPendientesParaRevisar = async (req, res) => {
 
     const [rows] = await pool.execute(query, params);
 
-    // Parsear JSON de datos
-    const cambios = rows.map(row => ({
-      ...row,
-      datos_nuevos: typeof row.datos_nuevos === 'string' ? JSON.parse(row.datos_nuevos) : row.datos_nuevos,
-      datos_anteriores: row.datos_anteriores ? (typeof row.datos_anteriores === 'string' ? JSON.parse(row.datos_anteriores) : row.datos_anteriores) : null
-    }));
+    // Datos parseados y enriquecidos, y la comparación, como en el detalle
+    const catalogos = await catalogosParaAuditoria();
+    // Quiénes pueden auditar hoy, una sola vez por pedido y solo si hay algún cambio pendiente
+    const personas = rows.some(row => row.estado === 'pendiente') ? await personasDeAuditoria(hoyArgentina()) : [];
+    const cambios = rows.map(row => {
+      // Como en el detalle: si quien mira puede aprobarlo o rechazarlo hoy (auditoria) y, además, quiénes lo auditan
+      let auditoria = { puede: false, respaldo: false, mensaje: null, auditan: [] };
+      if (row.estado === 'pendiente') {
+        const { personas: quienes, respaldo } = quienesAuditan(personas, row.usuario_id);
+        auditoria = {
+          respaldo: false,
+          mensaje: null,
+          ...permisoParaAuditar({ id: userId, rol: req.user.rol }, row.usuario_id, personas),
+          auditan: respaldo ? [] : quienes.map(p => p.nombre_completo)
+        };
+      }
+      return { ...detallarCambio(row, catalogos), auditoria };
+    });
 
     res.json({
       success: true,
@@ -216,6 +253,7 @@ export const getMisCambios = async (req, res) => {
     let query = `
       SELECT cp.*, 
              d.titulo as dataset_titulo,
+             d.url_dataset as dataset_url,
              r.nombre_completo as revisor_nombre
       FROM cambios_pendientes cp
       LEFT JOIN datasets d ON cp.dataset_id = d.id
@@ -233,12 +271,9 @@ export const getMisCambios = async (req, res) => {
 
     const [rows] = await pool.execute(query, params);
 
-    // Parsear JSON de datos
-    const cambios = rows.map(row => ({
-      ...row,
-      datos_nuevos: typeof row.datos_nuevos === 'string' ? JSON.parse(row.datos_nuevos) : row.datos_nuevos,
-      datos_anteriores: row.datos_anteriores ? (typeof row.datos_anteriores === 'string' ? JSON.parse(row.datos_anteriores) : row.datos_anteriores) : null
-    }));
+    // Datos parseados y enriquecidos, y la comparación, como en el detalle
+    const catalogos = await catalogosParaAuditoria();
+    const cambios = rows.map(row => detallarCambio(row, catalogos));
 
     res.json({
       success: true,
@@ -282,24 +317,8 @@ export const getCambioPendienteById = async (req, res) => {
       });
     }
 
-    // Parsear JSON
-    const datosNuevos = typeof rows[0].datos_nuevos === 'string' 
-      ? JSON.parse(rows[0].datos_nuevos) 
-      : rows[0].datos_nuevos;
-    const datosAnteriores = rows[0].datos_anteriores 
-      ? (typeof rows[0].datos_anteriores === 'string' ? JSON.parse(rows[0].datos_anteriores) : rows[0].datos_anteriores) 
-      : null;
-
-    // Cargar catalogos y enriquecer datos
-    const catalogos = await catalogosParaAuditoria();
-    const datosNuevosEnriquecidos = enriquecerDatos(datosNuevos, catalogos);
-    const datosAnterioresEnriquecidos = enriquecerDatos(datosAnteriores, catalogos);
-
-    // Calcular solo los campos que cambiaron (para edicion)
-    let camposModificados = null;
-    if (rows[0].tipo_cambio === 'editar' && datosAnterioresEnriquecidos && datosNuevosEnriquecidos) {
-      camposModificados = calcularCambios(datosAnterioresEnriquecidos, datosNuevosEnriquecidos);
-    }
+    // Datos parseados y enriquecidos con los nombres de catalogo, y solo los campos que cambiaron (para edicion)
+    const cambio = detallarCambio(rows[0], await catalogosParaAuditoria());
 
     // Si quien mira puede aprobarlo o rechazarlo hoy (spec 2026-10-15, 8.2): Mi Perfil deshabilita los botones con el motivo
     const sinAuditar = rows[0].estado !== 'pendiente' || rows[0].usuario_id === req.user.userId;
@@ -307,17 +326,9 @@ export const getCambioPendienteById = async (req, res) => {
       ? { puede: false, respaldo: false, mensaje: null }
       : { respaldo: false, mensaje: null, ...(await permisoParaAuditarHoy(pool, req.user, rows[0].usuario_id)) };
 
-    const cambio = {
-      ...rows[0],
-      datos_nuevos: datosNuevosEnriquecidos,
-      datos_anteriores: datosAnterioresEnriquecidos,
-      campos_modificados: camposModificados,
-      auditoria
-    };
-
     res.json({
       success: true,
-      data: cambio
+      data: { ...cambio, auditoria }
     });
   } catch (error) {
     console.error('Error obteniendo cambio pendiente:', error);
