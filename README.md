@@ -52,7 +52,7 @@ En **Administración → Usuarios**, admin y superadmin pueden:
 
 Siempre tiene que haber al menos **2 usuarios que puedan aprobar cambios**: el panel no deja desactivar ni pasar a lector a un admin si quedarían menos. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
-El superadmin recibe un aviso por email cuando otro admin crea un administrador, cambia un rol, cambia el email de un administrador, reactiva a un administrador o desactiva a alguien.
+El superadmin recibe un aviso por email cuando otro admin crea un administrador, cambia un rol, cambia el email de un administrador, reactiva a un administrador o desactiva a alguien. Durante su licencia esos avisos se retienen: a la vuelta le llega un solo email de resumen con todos.
 
 ## Campo "Qué se solicita" de los datasets
 
@@ -215,6 +215,9 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 5. **Verificar:** el firmante entra a Mi Perfil → Mi firma y revisa el nombre y el cargo con que firma; Correos → Configuración muestra al firmante titular y "Ver PDF" sale con su firma; Usuarios → Licencias carga y lista; Correos → Estado sin alertas nuevas.
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-licencias-firmas.sql`. Las notas vuelven a salir con la firma cargada en Correos (la migración no la toca).
+
+- El rollback deja la estructura como estaba; se pierden las licencias, las firmas cargadas en Mi Perfil, el firmante titular, quién firmó y quién presentó cada nota, el historial de licencias y los avisos al superadmin retenidos (que ya no se envían). Las notas de autorización quedan en el libro, que en la versión anterior las muestra con el tipo y la gestión vacíos ("undefined").
+- Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
 
 ### Migración: Notas Digitales
 

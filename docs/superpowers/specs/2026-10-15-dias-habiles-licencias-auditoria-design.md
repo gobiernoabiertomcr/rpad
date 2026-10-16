@@ -79,7 +79,7 @@ Cargan licencias el superadmin, los admins y (desde la entrega 3) los editores, 
 | Estado de la licencia | Qué se puede hacer |
 |---|---|
 | **Futura** (`desde` > hoy) | Editar las fechas o anular |
-| **En curso** (`desde` ≤ hoy ≤ `hasta`) | Cambiar solo `hasta`, a una fecha ≥ ayer (y ≥ `desde`): sirve para extenderla o para cortarla si la persona vuelve antes |
+| **En curso** (`desde` ≤ hoy ≤ `hasta`) | Cambiar solo `hasta`, a una fecha ≥ ayer (y ≥ `desde`): sirve para extenderla o para cortarla si la persona vuelve antes. Si empieza hoy, también se puede anular: como `hasta` no puede quedar antes de `desde`, no hay otra forma de dejarla sin efecto |
 | **Pasada** | Nada |
 
 Validaciones:
@@ -392,7 +392,7 @@ El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `edito
 | GET | `/api/usuarios/licencias` | admin | Licencias en curso y futuras; `?incluir_pasadas=1` agrega pasadas y anuladas |
 | POST | `/api/usuarios/licencias` | admin | Alta `{ usuario_id, desde, hasta, autorizado_id? }` |
 | PUT | `/api/usuarios/licencias/:id` | admin | Edición según la tabla 5.2 |
-| POST | `/api/usuarios/licencias/:id/anular` | admin | Solo licencias futuras |
+| POST | `/api/usuarios/licencias/:id/anular` | admin | Solo licencias futuras o que empiezan hoy |
 | GET | `/api/auth/profile/firma` | admin | Nombre, cargo y si hay imagen, de la propia firma |
 | PUT | `/api/auth/profile/firma` | admin | `{ nombre, cargo, imagen?, mime? }` de la propia firma |
 | GET | `/api/auth/profile/firma/imagen` | admin | Imagen de la propia firma |

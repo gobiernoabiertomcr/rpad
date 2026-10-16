@@ -3,10 +3,12 @@
 -- =====================================================
 -- Usar solo si hay que volver a la versión anterior del código.
 -- ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto en phpMyAdmin (pestaña SQL).
--- Se pierden las licencias, las firmas cargadas en Mi Perfil, el firmante titular, quién firmó cada nota y los avisos
--- al superadmin retenidos. Las notas vuelven a salir con la firma cargada en Correos (que la migración no tocó).
+-- Se pierden las licencias, las firmas cargadas en Mi Perfil, el firmante titular, quién firmó cada nota, el historial
+-- de licencias (borra de usuarios_auditoria las filas licencia_cargada, licencia_editada y licencia_anulada) y los
+-- avisos al superadmin retenidos. Las notas vuelven a salir con la firma cargada en Correos (que la migración no tocó).
 -- notas_digitales.tipo (con 'autorizacion') y notas_digitales.gestion (que admite NULL) quedan ampliados a propósito:
--- las notas de autorización son notas numeradas del libro y no se borran. El código anterior funciona igual con ellas.
+-- las notas de autorización son notas numeradas del libro y no se borran. El código anterior no falla con ellas, pero
+-- su libro las muestra con el tipo y la gestión vacíos ("undefined"): no conoce el tipo 'autorizacion'.
 -- =====================================================
 
 SET NAMES utf8mb4;

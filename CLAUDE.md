@@ -73,7 +73,7 @@ Todo cambio a datasets pasa por doble verificación:
 - Si un dataset tiene cambio pendiente, queda bloqueado para nuevas ediciones
 
 ### Roles
-- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien. Se asigna por SQL, nunca desde la aplicación.
+- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien; durante su licencia esos avisos se retienen y a la vuelta le llega un resumen. Se asigna por SQL, nunca desde la aplicación.
 - **admin:** CRUD datasets (con doble verificación), áreas, panel de usuarios, aprobación de cambios, reportes, notificaciones
 - **lector:** solo lectura de datos públicos + perfil
 - **Licencias:** superadmin, admins (y editores) pueden tener licencias (pestaña Licencias de Usuarios). Durante la licencia no reciben emails del sistema; los avisos al superadmin se retienen y le llega un resumen a la vuelta. Ver services/licenciasReglas.js y services/avisosSuperadminService.js.
@@ -81,7 +81,7 @@ Todo cambio a datasets pasa por doble verificación:
 - Siempre tiene que haber al menos 2 aprobadores activos (admin o superadmin): el panel no deja bajar de ese mínimo.
 
 ### Base de datos
-- 23 tablas (ver `database/schema.sql`). Usuarios: `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash) y `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas)
+- 23 tablas (ver `database/schema.sql`). Usuarios: `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas)
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
