@@ -65,6 +65,7 @@ const RUTAS_SOLO_ADMIN = [
   ['POST', '/usuarios/1/reactivar'],
   ['POST', '/usuarios/1/enviar-acceso'],
   ['GET', '/usuarios/licencias'],
+  ['GET', '/usuarios/licencias/sin-auditor'],
   ['POST', '/usuarios/licencias'],
   ['PUT', '/usuarios/licencias/1'],
   ['POST', '/usuarios/licencias/1/anular'],
@@ -126,6 +127,7 @@ const RUTAS_GET_ADMIN = [
   '/notificaciones/preview-cambios-pendientes',
   '/usuarios',
   '/usuarios/licencias',
+  '/usuarios/licencias/sin-auditor',
   '/auth/profile/firma',
   '/notificaciones/notas-digitales/config/firmantes'
 ];

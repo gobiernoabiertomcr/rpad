@@ -76,6 +76,11 @@ const auditorias = () => query(
 );
 const incluidos = (notaId) => query('SELECT cambio_id, seccion FROM notas_digitales_cambios WHERE nota_id = ? ORDER BY cambio_id', [notaId]);
 const libro = () => query('SELECT numero, tipo FROM notas_digitales WHERE es_prueba = 0 ORDER BY id');
+// La próxima nota de auditoría en el Estado (los días sin auditor, que el Estado suma al lado, tienen su propio test)
+const notaDelEstado = async (hoy) => {
+  const { canal_nota: canalNota, proxima } = (await motor.estadoNotas({ hoy })).auditoria;
+  return { canal_nota: canalNota, proxima };
+};
 
 describe('ejemplo 9.4: propone el titular el viernes y hay otro auditor disponible', () => {
   it('el lunes sale la nota con el cambio nuevo, a los destinatarios de auditoría, firmada por el titular', async () => {
@@ -237,32 +242,57 @@ describe('una por día, numeración del libro, reintentos, autorización e inter
     const resumen = await correr('2026-10-19');
     assert.deepEqual(resumen.errores, []);
     assert.deepEqual((await libro()).map(n => n.tipo), ['aviso']);
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 0, proxima: null });
+    assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 0, proxima: null });
   });
 });
 
 describe('Correos: Estado, vista previa y prueba (spec 10.4)', () => {
   it('el Estado cuenta los cambios del canal nota y da la fecha de la próxima nota de auditoría', async () => {
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 0, proxima: null });
+    assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 0, proxima: null });
     await proponer(titular);
     await proponer(editor);
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-19' });
+    assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 1, proxima: '2026-10-19' });
     await correr('2026-10-19');
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-26' });
+    assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 1, proxima: '2026-10-26' });
     // Un sábado mira la corrida del lunes
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-24' })).auditoria, { canal_nota: 1, proxima: '2026-10-26' });
+    assert.deepEqual(await notaDelEstado('2026-10-24'), { canal_nota: 1, proxima: '2026-10-26' });
   });
 
   it('el Estado no promete una nota que no va a salir: con el envío automático apagado o sin Para de auditoría, no cuenta el cambio', async () => {
     await proponer(titular);
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-19' });
+    assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 1, proxima: '2026-10-19' });
     for (const apagado of [{ envio_activo: 0 }, { para_auditoria: '' }, { para_interna: '' }]) {
       await configurarNotas({ para_auditoria: 'auditoria@rpad.test', ...apagado });
-      assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 0, proxima: null }, JSON.stringify(apagado));
+      assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 0, proxima: null }, JSON.stringify(apagado));
     }
     // Al encenderlo de nuevo, el cambio vuelve al canal nota
     await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-19' });
+    assert.deepEqual(await notaDelEstado('2026-10-19'), { canal_nota: 1, proxima: '2026-10-19' });
+  });
+
+  it('días sin auditor: los cambios que no tienen hoy quién los audite y los períodos sin auditor de los próximos 60 días', async () => {
+    // El caso de la simulación: el titular de licencia del 09/12 al 08/01, el otro auditor del 28/12 al 13/01 y la editora
+    // propone un cambio
+    await licencia(titular, '2026-12-09', '2027-01-08');
+    await licencia(auditor, '2026-12-28', '2027-01-13');
+    await proponer(editor);
+    const periodo = { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: ['Persona editor'] };
+
+    // Antes: el cambio tiene quién lo audite y el período ya se ve, hasta el fin de los 60 días (02/11 + 60 = 01/01, feriado)
+    let { auditoria } = await motor.estadoNotas({ hoy: '2026-11-02' });
+    assert.deepEqual(auditoria, { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [{ ...periodo, hasta: '2026-12-31' }] });
+
+    // Durante: nadie puede auditar el cambio de la editora (es la única editora)
+    ({ auditoria } = await motor.estadoNotas({ hoy: '2026-12-28' }));
+    assert.deepEqual(auditoria, { canal_nota: 0, proxima: null, sin_quien_audite: 1, periodos_sin_auditor: [periodo] });
+    // Un sábado mira la corrida del lunes
+    ({ auditoria } = await motor.estadoNotas({ hoy: '2026-12-26' }));
+    assert.deepEqual([auditoria.sin_quien_audite, auditoria.periodos_sin_auditor], [1, [periodo]]);
+
+    // Con un cambio en el canal nota, los campos nuevos están igual
+    await proponer(titular, { titulo: 'Del titular' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria,
+      { canal_nota: 1, proxima: '2026-10-19', sin_quien_audite: 0, periodos_sin_auditor: [] });
   });
 
   it('la vista previa usa los cambios de hoy o, si no hay, un ejemplo; no escribe nada', async () => {

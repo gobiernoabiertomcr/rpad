@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   quienesAuditan, permisoParaAuditar, mensajeNoCorresponde, canalDelCambio, entraEnRecordatorio, seccionDeAuditoria,
-  ANTIGUEDAD_MINIMA_RECORDATORIO
+  ANTIGUEDAD_MINIMA_RECORDATORIO, disponibilidad, agruparDiasSinAuditor
 } from '../services/auditoriaReglas.js';
 
 // El firmante titular (1), otro auditor (2) y dos editores (3 y 4), todos disponibles salvo que se diga otra cosa
@@ -119,5 +119,72 @@ describe('recordatorio y sección de la nota (spec 9.2 y 9.3)', () => {
     // el martes 08/12 es feriado: del lunes 07/12, el 14/12 son 4 días hábiles y el 15/12, 5
     assert.equal(seccionDeAuditoria('2026-12-07', '2026-12-14'), null);
     assert.equal(seccionDeAuditoria('2026-12-07', '2026-12-15'), 'reiterado');
+  });
+});
+
+describe('disponible un día (spec 3): la única definición', () => {
+  const LICENCIAS = [{ desde: '2026-12-09', hasta: '2027-01-08' }];
+  const habilitada = { activo: true, tiene_contrasena: true };
+
+  it('activa, con contraseña y sin licencia ese día; los dos extremos de la licencia son de licencia', () => {
+    assert.deepEqual(disponibilidad(habilitada, LICENCIAS, '2026-12-08'), { de_licencia: false, ausente_por_licencia: false, disponible: true });
+    for (const fecha of ['2026-12-09', '2026-12-25', '2027-01-08']) {
+      assert.deepEqual(disponibilidad(habilitada, LICENCIAS, fecha), { de_licencia: true, ausente_por_licencia: true, disponible: false }, fecha);
+    }
+    assert.equal(disponibilidad(habilitada, LICENCIAS, '2027-01-09').disponible, true);
+    assert.equal(disponibilidad(habilitada, [], '2026-12-25').disponible, true);
+  });
+
+  it('inactiva o sin contraseña: no está disponible ni ausente por licencia, tenga licencia o no', () => {
+    for (const usuario of [{ activo: false, tiene_contrasena: true }, { activo: true, tiene_contrasena: false }]) {
+      assert.deepEqual(disponibilidad(usuario, LICENCIAS, '2026-12-10'), { de_licencia: true, ausente_por_licencia: false, disponible: false });
+      assert.deepEqual(disponibilidad(usuario, [], '2026-12-10'), { de_licencia: false, ausente_por_licencia: false, disponible: false });
+    }
+  });
+});
+
+describe('períodos sin auditor: días hábiles seguidos sin ningún auditor disponible', () => {
+  // Un día con el auditor (2) disponible o no y con las editoras disponibles que se indiquen; el titular (1), nunca
+  const dia = (fecha, { auditor = false, editoras = [] } = {}) => ({
+    fecha,
+    personas: [
+      { id: 1, rol: 'superadmin', nombre_completo: 'Persona Titular', disponible: false },
+      { id: 2, rol: 'admin', nombre_completo: 'Persona Auditora', disponible: auditor },
+      { id: 3, rol: 'editor', nombre_completo: 'Zulema Editora', disponible: editoras.includes(3) },
+      { id: 4, rol: 'editor', nombre_completo: 'Ana Editora', disponible: editoras.includes(4) }
+    ]
+  });
+
+  it('un feriado y un fin de semana en el medio no cortan el período; un día hábil con auditor lo corta', () => {
+    const dias = [
+      dia('2026-12-29', { auditor: true }),
+      dia('2026-12-30', { editoras: [3] }),
+      dia('2026-12-31'),
+      // feriado, sábado y domingo: no cuentan, aunque tengan auditor
+      dia('2027-01-01', { auditor: true }), dia('2027-01-02', { auditor: true }), dia('2027-01-03', { auditor: true }),
+      dia('2027-01-04', { editoras: [4, 3] }),
+      dia('2027-01-05', { auditor: true }),
+      dia('2027-01-06')
+    ];
+    // Los editores disponibles no evitan el día sin auditor: son el respaldo, del nombre a la Z y sin repetir
+    assert.deepEqual(agruparDiasSinAuditor(dias, '2027-01-06'), [
+      { desde: '2026-12-30', hasta: '2027-01-04', vuelve: '2027-01-05', respaldo: ['Ana Editora', 'Zulema Editora'] },
+      { desde: '2027-01-06', hasta: '2027-01-06', vuelve: null, respaldo: [] }
+    ]);
+  });
+
+  it('el período termina en hasta; los días que siguen solo sirven para encontrar vuelve', () => {
+    const dias = [dia('2027-01-04'), dia('2027-01-05'), dia('2027-01-06', { editoras: [3] }), dia('2027-01-07', { auditor: true }), dia('2027-01-08')];
+    assert.deepEqual(agruparDiasSinAuditor(dias, '2027-01-05'),
+      [{ desde: '2027-01-04', hasta: '2027-01-05', vuelve: '2027-01-07', respaldo: [] }]);
+    // Un período que empieza después de hasta no aparece
+    assert.deepEqual(agruparDiasSinAuditor([dia('2027-01-04', { auditor: true }), dia('2027-01-05')], '2027-01-04'), []);
+    // Sin ningún día con auditor después, vuelve es null
+    assert.deepEqual(agruparDiasSinAuditor([dia('2027-01-04'), dia('2027-01-05')], '2027-01-04'),
+      [{ desde: '2027-01-04', hasta: '2027-01-04', vuelve: null, respaldo: [] }]);
+  });
+
+  it('con un auditor disponible todos los días hábiles no hay períodos', () => {
+    assert.deepEqual(agruparDiasSinAuditor([dia('2027-01-04', { auditor: true }), dia('2027-01-09'), dia('2027-01-11', { auditor: true })], '2027-01-11'), []);
   });
 });

@@ -221,3 +221,80 @@ describe('seleccionarParaAuditoria (spec 9.3 y Decisiones del plan 5)', () => {
     assert.ok(Object.values(catalogos.frecuencias).includes('Anualmente'));
   });
 });
+
+describe('personasPorDia: la disponibilidad de personasDeAuditoria, para un rango', () => {
+  it('solo los días hábiles, cada uno con lo mismo que daría personasDeAuditoria ese día', async () => {
+    await licencia(auditor, '2026-12-30', '2027-01-05');
+    await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta, anulada) VALUES (?, ?, ?, 1)', [editor.id, '2026-12-29', '2027-01-06']);
+    const porDia = await servicio.personasPorDia('2026-12-29', '2027-01-06');
+    assert.deepEqual([...porDia.keys()], ['2026-12-29', '2026-12-30', '2026-12-31', '2027-01-04', '2027-01-05', '2027-01-06']);
+    for (const [fecha, personas] of porDia) assert.deepEqual(personas, await servicio.personasDeAuditoria(fecha), fecha);
+    assert.deepEqual(['2026-12-29', '2026-12-30', '2027-01-06'].map(f => porDia.get(f).find(p => p.id === auditor.id).disponible), [true, false, true]);
+  });
+});
+
+describe('periodosSinAuditor: días hábiles seguidos sin ningún auditor disponible', () => {
+  // El caso de la simulación, con fechas inventadas: el titular de licencia del 09/12 al 08/01 y el otro auditor del 28/12
+  // al 13/01
+  const licenciasDelCaso = async () => {
+    await licencia(titular, '2026-12-09', '2027-01-08');
+    return (await licencia(auditor, '2026-12-28', '2027-01-13')).insertId;
+  };
+  const PERIODO_DEL_CASO = { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: ['Persona editor'] };
+
+  it('del 28/12 al 08/01 (el feriado y el fin de semana no lo cortan), vuelve el 11/01, con la editora de respaldo', async () => {
+    await licenciasDelCaso();
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-01', '2027-01-31'), [PERIODO_DEL_CASO]);
+    // Un rango que termina en el medio: el período llega hasta el último día hábil del rango y vuelve se busca después
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-11-02', '2027-01-03'),
+      [{ ...PERIODO_DEL_CASO, hasta: '2026-12-31' }]);
+  });
+
+  it('respaldo: la editora cuenta si está disponible al menos un día del período', async () => {
+    await licenciasDelCaso();
+    await licencia(editor, '2026-12-28', '2027-01-07');
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-01', '2027-01-31'), [PERIODO_DEL_CASO]);
+    await query('UPDATE usuarios_licencias SET hasta = ? WHERE usuario_id = ?', ['2027-01-08', editor.id]);
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-01', '2027-01-31'), [{ ...PERIODO_DEL_CASO, respaldo: [] }]);
+  });
+
+  it('licenciaSimulada cuenta como una licencia más, sin guardarla', async () => {
+    await licencia(titular, '2026-12-09', '2027-01-08');
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-28', '2027-01-13'), []);
+    const licenciaSimulada = { usuario_id: auditor.id, desde: '2026-12-28', hasta: '2027-01-13' };
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-28', '2027-01-13', { licenciaSimulada }), [PERIODO_DEL_CASO]);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias'))[0].n, 1);
+  });
+
+  it('excluirLicenciaId ignora esa licencia guardada: al editarla no se cuenta dos veces', async () => {
+    const id = await licenciasDelCaso();
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-01', '2027-01-31', { excluirLicenciaId: id }), []);
+    // La misma licencia, editada para que empiece el 04/01: el período se achica
+    const licenciaSimulada = { usuario_id: auditor.id, desde: '2027-01-04', hasta: '2027-01-13' };
+    assert.deepEqual(await servicio.periodosSinAuditor('2026-12-01', '2027-01-31', { excluirLicenciaId: id, licenciaSimulada }),
+      [{ ...PERIODO_DEL_CASO, desde: '2027-01-04' }]);
+  });
+
+  it('sin ningún auditor activo, vuelve es null', async () => {
+    await query("UPDATE usuarios SET activo = 0 WHERE rol IN ('superadmin', 'admin')");
+    assert.deepEqual(await servicio.periodosSinAuditor('2027-01-04', '2027-01-15'),
+      [{ desde: '2027-01-04', hasta: '2027-01-15', vuelve: null, respaldo: ['Persona editor'] }]);
+  });
+});
+
+describe('proximoDiaConQuienAudite: el primer día hábil en que alguien que no lo propuso puede auditar el cambio', () => {
+  it('cuentan los auditores y los editores de respaldo, nunca quien lo propuso', async () => {
+    await licencia(titular, '2026-12-09', '2027-01-08');
+    await licencia(auditor, '2026-12-28', '2027-01-13');
+    // Lo propuso la editora: nadie hasta que vuelve el titular, el lunes 11/01
+    assert.equal(await servicio.proximoDiaConQuienAudite(editor.id, '2026-12-29'), '2027-01-11');
+    // Lo propuso el auditor: la editora, de respaldo; desde un sábado, el lunes
+    assert.equal(await servicio.proximoDiaConQuienAudite(auditor.id, '2026-12-29'), '2026-12-29');
+    assert.equal(await servicio.proximoDiaConQuienAudite(auditor.id, '2027-01-02'), '2027-01-04');
+  });
+
+  it('si en 366 días no hay nadie, null', async () => {
+    await query('UPDATE usuarios SET activo = 0 WHERE id <> ?', [editor.id]);
+    assert.equal(await servicio.proximoDiaConQuienAudite(editor.id, '2026-12-29'), null);
+  });
+});

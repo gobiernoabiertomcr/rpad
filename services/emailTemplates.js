@@ -4,6 +4,7 @@
  */
 
 import { TEXTO_ROL } from './usuariosReglas.js';
+import { formatoCorto } from './notasDigitalesCalendario.js';
 
 const COLORS = {
   primary: '#0066cc',
@@ -270,6 +271,18 @@ export const contactoTemplate = (datos) => ({
 // PLANTILLA PARA CAMBIOS PENDIENTES DE APROBACIÓN
 // =====================================================
 
+// Etiqueta y color del tipo de cambio en la lista de cambios de los emails
+const badgeDeTipo = (tipo) => ({
+  'crear': { color: COLORS.success, texto: 'CREAR' },
+  'editar': { color: COLORS.warning, texto: 'EDITAR' },
+  'eliminar': { color: COLORS.danger, texto: 'ELIMINAR' }
+}[tipo] || { color: COLORS.muted, texto: tipo.toUpperCase() });
+
+// Título del conjunto de datos de un cambio: el propuesto en un alta, el del dataset en los demás
+const tituloDelCambio = (c) => (c.tipo_cambio === 'crear'
+  ? (c.datos_nuevos?.titulo || 'Nuevo dataset')
+  : (c.dataset_titulo || 'Dataset'));
+
 // Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2). respaldo: la persona lo recibe
 // porque no hay auditores disponibles
 export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) => ({
@@ -336,15 +349,8 @@ export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) =>
             <td style="padding: 0 24px;">
               <p style="margin: 0 0 16px 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">Cambios pendientes:</p>
               ${cambios.map((c, i) => {
-                const tipoBadge = {
-                  'crear': { color: COLORS.success, texto: 'CREAR' },
-                  'editar': { color: COLORS.warning, texto: 'EDITAR' },
-                  'eliminar': { color: COLORS.danger, texto: 'ELIMINAR' }
-                }[c.tipo_cambio] || { color: COLORS.muted, texto: c.tipo_cambio.toUpperCase() };
-                
-                const titulo = c.tipo_cambio === 'crear' 
-                  ? (c.datos_nuevos?.titulo || 'Nuevo dataset')
-                  : (c.dataset_titulo || 'Dataset');
+                const tipoBadge = badgeDeTipo(c.tipo_cambio);
+                const titulo = tituloDelCambio(c);
 
                 return `
                 <table role="presentation" style="width: 100%; margin-bottom: 12px; background-color: #ffffff; border: 1px solid ${COLORS.border}; border-radius: 6px;">
@@ -389,6 +395,125 @@ export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) =>
 </html>
 `
 });
+
+/**
+ * Aviso a quien propuso cambios que no tienen a nadie disponible para auditarlos (recordatorio de las 14:00).
+ * cambios: los suyos, con tipo_cambio, dataset_titulo, datos_nuevos y fecha_propuesta ('AAAA-MM-DD').
+ * hasta: el primer día hábil en que alguien puede auditarlos ('AAAA-MM-DD'), o null si no hay uno a la vista.
+ */
+export const sinAuditorTemplate = (cambios, { hasta = null } = {}) => {
+  const uno = cambios.length === 1;
+  const plazo = hasta ? `hasta el ${formatoCorto(hasta)}` : 'por ahora';
+  const situacion = `${hasta ? `Hasta el ${formatoCorto(hasta)}` : 'Por ahora'} no hay ningún auditor disponible para revisar ${uno ? 'este cambio' : 'estos cambios'} (los auditores están de licencia).`;
+  const cierre = 'Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio.';
+  return {
+    subject: uno
+      ? `[RPAD] Tu cambio en ${tituloDelCambio(cambios[0])} queda sin auditor disponible ${plazo}`
+      : `[RPAD] ${cambios.length} cambios tuyos quedan sin auditor disponible ${plazo}`,
+    html: `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sin auditor disponible</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td style="padding: 20px;">
+        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">RPAD</h1>
+              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Sistema de Aprobaciones</p>
+            </td>
+          </tr>
+
+          <!-- Accent Bar -->
+          <tr>
+            <td style="background-color: ${COLORS.warning}; height: 4px;"></td>
+          </tr>
+
+          <!-- Title -->
+          <tr>
+            <td style="padding: 24px 24px 16px 24px;">
+              <h2 style="color: ${COLORS.dark}; margin: 0; font-size: 20px; font-weight: 600;">Sin auditor disponible</h2>
+            </td>
+          </tr>
+
+          <!-- Situación -->
+          <tr>
+            <td style="padding: 0 24px;">
+              <table role="presentation" style="width: 100%; background-color: ${COLORS.light}; border-radius: 6px; border-left: 4px solid ${COLORS.warning};">
+                <tr>
+                  <td style="padding: 16px;">
+                    <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px;">${escapeHtml(situacion)}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 24px;">
+              <hr style="border: none; border-top: 1px solid ${COLORS.border}; margin: 0;">
+            </td>
+          </tr>
+
+          <!-- Cambios List -->
+          <tr>
+            <td style="padding: 0 24px;">
+              <p style="margin: 0 0 16px 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">Cambios pendientes:</p>
+              ${cambios.map((c) => {
+                const tipoBadge = badgeDeTipo(c.tipo_cambio);
+                return `
+                <table role="presentation" style="width: 100%; margin-bottom: 12px; background-color: #ffffff; border: 1px solid ${COLORS.border}; border-radius: 6px;">
+                  <tr>
+                    <td style="padding: 12px;">
+                      <p style="margin: 0 0 8px 0;">
+                        <span style="display: inline-block; background-color: ${tipoBadge.color}; color: #ffffff; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">${escapeHtml(tipoBadge.texto)}</span>
+                      </p>
+                      <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">${escapeHtml(tituloDelCambio(c))}</p>
+                      <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 12px;">Fecha de la propuesta: ${escapeHtml(formatoCorto(c.fecha_propuesta))}</p>
+                    </td>
+                  </tr>
+                </table>
+              `;
+              }).join('')}
+            </td>
+          </tr>
+
+          <!-- Cierre -->
+          <tr>
+            <td style="padding: 12px 24px 24px 24px;">
+              <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; line-height: 1.6;">${escapeHtml(cierre)}</p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: ${COLORS.light}; padding: 16px 24px; text-align: center; border-top: 1px solid ${COLORS.border};">
+              <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">
+                Sistema de Notificaciones RPAD v1.5.0<br>
+                Direccion de Datos Publicos y Comunicacion<br>
+                Municipalidad de Comodoro Rivadavia
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`
+  };
+};
 
 // =====================================================
 // PLANTILLAS DE USUARIOS: acceso al RPAD y avisos al superadmin (spec 10)

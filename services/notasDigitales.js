@@ -23,9 +23,10 @@ import {
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { emailValido } from './usuariosReglas.js';
 import {
-  contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe
+  contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe, periodosSinAuditor,
+  DIAS_PERIODOS_SIN_AUDITOR
 } from './auditoriaService.js';
-import { DIAS_HABILES_PARA_REITERAR_AUDITORIA } from './auditoriaReglas.js';
+import { DIAS_HABILES_PARA_REITERAR_AUDITORIA, quienesAuditan } from './auditoriaReglas.js';
 
 export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
@@ -689,12 +690,20 @@ const licenciaDelFirmante = async (config, hoy) => {
  * Nota de auditoría en el Estado (spec 2026-10-15, 10.4): cuántos cambios están en el canal nota en la próxima corrida
  * posible (hoy si es hábil) y la fecha de la próxima nota: la de esa corrida si alguno todavía no estuvo en una nota (o el
  * día hábil siguiente si la de esa fecha ya salió), y si no, 5 días hábiles después de la última nota de cada uno.
- * { canal_nota, proxima: 'AAAA-MM-DD' | null }
+ * Días sin auditor: sin_quien_audite, cuántos cambios pendientes no tienen en esa corrida a nadie que pueda auditarlos
+ * (quienesAuditan vacío), y periodos_sin_auditor, los de esa corrida a hoy + 60 días (auditoriaService.periodosSinAuditor).
+ * { canal_nota, proxima: 'AAAA-MM-DD' | null, sin_quien_audite, periodos_sin_auditor }
  */
 const estadoAuditoria = async (config, hoy) => {
   const corrida = proximoDiaHabil(hoy);
-  const delCanal = (await cambiosConCanal(corrida, await contextoDeCanal(corrida, config))).filter(c => c.canal === 'nota');
-  if (delCanal.length === 0) return { canal_nota: 0, proxima: null };
+  const contexto = await contextoDeCanal(corrida, config);
+  const cambios = await cambiosConCanal(corrida, contexto);
+  const sinAuditor = {
+    sin_quien_audite: cambios.filter(c => quienesAuditan(contexto.personas, c.usuario_id).personas.length === 0).length,
+    periodos_sin_auditor: await periodosSinAuditor(corrida, sumarDias(hoy, DIAS_PERIODOS_SIN_AUDITOR))
+  };
+  const delCanal = cambios.filter(c => c.canal === 'nota');
+  if (delCanal.length === 0) return { canal_nota: 0, proxima: null, ...sinAuditor };
   const previas = await notasDeAuditoriaDe(delCanal.map(c => c.id));
   const primeraLibre = (await hayNotaDeAuditoria(corrida)) ? proximoDiaHabil(sumarDias(corrida, 1)) : corrida;
   const fechas = delCanal.map((cambio) => {
@@ -702,7 +711,7 @@ const estadoAuditoria = async (config, hoy) => {
     const fecha = ultima ? sumarDiasHabiles(ultima, DIAS_HABILES_PARA_REITERAR_AUDITORIA) : primeraLibre;
     return fecha < primeraLibre ? primeraLibre : fecha;
   });
-  return { canal_nota: delCanal.length, proxima: fechas.sort()[0] };
+  return { canal_nota: delCanal.length, proxima: fechas.sort()[0], ...sinAuditor };
 };
 
 export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {

@@ -17,7 +17,8 @@ ALTER TABLE `usuarios`
 
 ALTER TABLE `cambios_pendientes`
   ADD COLUMN IF NOT EXISTS `primer_recordatorio_at` datetime DEFAULT NULL AFTER `revisado_at`,
-  ADD COLUMN IF NOT EXISTS `revisado_como_respaldo` tinyint(1) NOT NULL DEFAULT 0 AFTER `primer_recordatorio_at`;
+  ADD COLUMN IF NOT EXISTS `revisado_como_respaldo` tinyint(1) NOT NULL DEFAULT 0 AFTER `primer_recordatorio_at`,
+  ADD COLUMN IF NOT EXISTS `aviso_sin_auditores_at` datetime DEFAULT NULL AFTER `revisado_como_respaldo`;
 
 ALTER TABLE `notas_digitales`
   MODIFY COLUMN `tipo` enum('aviso','reiteracion','autorizacion','auditoria') NOT NULL;

@@ -135,6 +135,7 @@ describe('database/schema.sql', () => {
       "usuarios.rol enum('superadmin','admin','editor','lector') null=NO default='lector' key=",
       'cambios_pendientes.primer_recordatorio_at datetime null=YES default=NULL key=',
       'cambios_pendientes.revisado_como_respaldo tinyint(1) null=NO default=0 key=',
+      'cambios_pendientes.aviso_sin_auditores_at datetime null=YES default=NULL key=',
       'notas_digitales_cambios.nota_id int(11) null=NO default=null key=PRI',
       'notas_digitales_cambios.cambio_id int(11) null=NO default=null key=PRI',
       "notas_digitales_cambios.seccion enum('nuevo','reiterado') null=NO default=null key=",
@@ -145,6 +146,10 @@ describe('database/schema.sql', () => {
     }
     assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion','auditoria') null=NO")),
       lista.filter(c => c.startsWith('notas_digitales.tipo')).join('\n'));
+    // El aviso a quien propone cuando no hay auditor disponible va justo después de la marca de respaldo
+    const deCambios = lista.filter(c => c.startsWith('cambios_pendientes.'));
+    const posicion = (columna) => deCambios.findIndex(c => c.startsWith(`cambios_pendientes.${columna} `));
+    assert.equal(posicion('aviso_sin_auditores_at'), posicion('revisado_como_respaldo') + 1, deCambios.join('\n'));
   });
 
   for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios']) {
@@ -231,7 +236,7 @@ describe('rollback y migración de la entrega 3 (editor y auditoría)', () => {
     const [filas] = await root.query(`SELECT username, rol FROM \`${BASE_ROLLBACK}\`.usuarios ORDER BY username`);
     assert.deepEqual(filas.map(f => [f.username, f.rol]), [['t_admin', 'admin'], ['t_editor', 'admin'], ['t_lector', 'lector']]);
     for (const quitada of ['cambios_pendientes.primer_recordatorio_at ', 'cambios_pendientes.revisado_como_respaldo ',
-      'notas_digitales_config.para_auditoria ', 'notas_digitales_config.cc_auditoria ', 'notas_digitales_cambios.']) {
+      'cambios_pendientes.aviso_sin_auditores_at ', 'notas_digitales_config.para_auditoria ', 'notas_digitales_config.cc_auditoria ', 'notas_digitales_cambios.']) {
       assert.ok(!lista.some(c => c.startsWith(quitada)), `quedó: ${quitada}`);
     }
     assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion','auditoria') null=NO")),

@@ -68,6 +68,7 @@ CREATE TABLE `cambios_pendientes` (
   `revisado_at` timestamp NULL DEFAULT NULL,
   `primer_recordatorio_at` datetime DEFAULT NULL,
   `revisado_como_respaldo` tinyint(1) NOT NULL DEFAULT 0,
+  `aviso_sin_auditores_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `revisor_id` (`revisor_id`),
   KEY `idx_estado` (`estado`),

@@ -1,12 +1,12 @@
-// Avisos diarios por email que no son Notas Digitales: el aviso directo a las áreas (40 días antes) y el recordatorio de
-// cambios pendientes a quienes pueden auditarlos. Salen solo en días hábiles y la fecha se recibe como parámetro, para
-// poder probarlos con cualquier día.
+// Avisos diarios por email que no son Notas Digitales: el aviso directo a las áreas (40 días antes), el recordatorio de
+// cambios pendientes a quienes pueden auditarlos y el aviso a quien propuso cambios que nadie puede auditar. Salen solo en
+// días hábiles y la fecha se recibe como parámetro, para poder probarlos con cualquier día.
 // Spec: docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (secciones 4 y 9.2)
 import pool from '../config/database.js';
 import { sendEmail, sendEmailToArea } from './emailService.js';
 import * as templates from './emailTemplates.js';
-import { ahoraArgentina, esDiaHabil, rangoDeAviso } from './notasDigitalesCalendario.js';
-import { contextoDeCanal, cambiosConCanal } from './auditoriaService.js';
+import { ahoraArgentina, esDiaHabil, rangoDeAviso, sumarDias } from './notasDigitalesCalendario.js';
+import { contextoDeCanal, cambiosConCanal, proximoDiaConQuienAudite } from './auditoriaService.js';
 import { quienesAuditan, entraEnRecordatorio } from './auditoriaReglas.js';
 import { emailValido } from './usuariosReglas.js';
 
@@ -159,13 +159,14 @@ export const tiempoPendiente = (segundos) => {
  * email lo dice. Quien está de licencia no lo recibe (5.3). La primera vez que un cambio va en un email enviado se
  * guarda primer_recordatorio_at = ahora ('AAAA-MM-DD HH:MM:SS' en hora de Argentina, ahoraArgentina() salvo en los tests
  * con fecha fija: Decisiones del plan 4).
+ * Además, a quien propuso cambios que hoy no tienen a nadie que los audite le llega un aviso (avisarSinAuditor).
  * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes, respaldo }], sinPendientes: [username],
- *   deLicencia: [username], canal_nota, errores: [{ admin, error }] }
+ *   deLicencia: [username], canal_nota, sin_auditor: [{ usuario, cambios, hasta }], errores: [{ admin, error }] }
  */
 export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() }) => {
   const resultados = {
     fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], deLicencia: [],
-    canal_nota: 0, errores: []
+    canal_nota: 0, sin_auditor: [], errores: []
   };
   if (!resultados.dia_habil) return resultados;
 
@@ -219,5 +220,51 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
       resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del primer recordatorio: ${error.message}` });
     }
   }
+  await avisarSinAuditor({ hoy, ahora, contexto, cambios, resultados });
   return resultados;
+};
+
+/**
+ * Aviso a quien propone cuando nadie puede auditar sus cambios: los del recordatorio de hoy que no tienen a nadie que los
+ * audite (quienesAuditan vacío: ni auditores ni editores de respaldo disponibles) y que nunca tuvieron este aviso. Un email
+ * por persona con todos sus cambios en esa situación, solo si está disponible: de licencia no se manda (le llega a su
+ * vuelta, si sigue sin auditor); inactiva o sin rol de auditoría o edición, tampoco. hasta: el primer día hábil desde
+ * mañana en que alguien puede auditarlos. Si el email salió, se guarda aviso_sin_auditores_at = ahora, para no repetirlo.
+ * Suma a resultados.sin_auditor [{ usuario, cambios, hasta }] y los errores a resultados.errores.
+ */
+const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) => {
+  const porProponente = new Map();
+  for (const cambio of cambios.filter(c => entraEnRecordatorio(c))) {
+    if (cambio.aviso_sin_auditores_at) continue;
+    if (quienesAuditan(contexto.personas, cambio.usuario_id).personas.length > 0) continue;
+    if (!porProponente.has(cambio.usuario_id)) porProponente.set(cambio.usuario_id, []);
+    porProponente.get(cambio.usuario_id).push(cambio);
+  }
+
+  for (const [proponenteId, suyos] of porProponente) {
+    const persona = contexto.personas.find(p => p.id === proponenteId);
+    if (!persona?.disponible) continue;
+    if (!emailValido(persona.email)) {
+      resultados.errores.push({ admin: persona.username, error: 'No tiene un email válido' });
+      continue;
+    }
+    const hasta = await proximoDiaConQuienAudite(proponenteId, sumarDias(hoy, 1));
+    const { subject, html } = templates.sinAuditorTemplate(suyos, { hasta });
+    const envio = await sendEmail({ subject, html, to: [persona.email] });
+    if (!envio.success) {
+      resultados.errores.push({ admin: persona.username, error: envio.error });
+      continue;
+    }
+    resultados.sin_auditor.push({ usuario: persona.username, cambios: suyos.length, hasta });
+    // El email ya salió: si guardar la fecha falla, se anota el error (mañana se volvería a avisar)
+    try {
+      await pool.query(
+        'UPDATE cambios_pendientes SET aviso_sin_auditores_at = ? WHERE id IN (?) AND aviso_sin_auditores_at IS NULL',
+        [ahora, suyos.map(c => c.id)]
+      );
+    } catch (error) {
+      console.error(`Error guardando el aviso sin auditor (${persona.username}):`, error);
+      resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del aviso sin auditor: ${error.message}` });
+    }
+  }
 };

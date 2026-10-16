@@ -63,7 +63,7 @@ const dia = (n) => sumarDias(hoy, n);
 
 describe('lo que el editor puede (spec 8.1)', () => {
   it('entra a todo el área de administración: usuarios, historial, licencias, cambios, correos y su firma', async () => {
-    for (const ruta of ['/usuarios', `/usuarios/${usuarios.adminA.id}`, '/usuarios/licencias', '/cambios-pendientes/para-revisar',
+    for (const ruta of ['/usuarios', `/usuarios/${usuarios.adminA.id}`, '/usuarios/licencias', '/usuarios/licencias/sin-auditor', '/cambios-pendientes/para-revisar',
       '/cambios-pendientes/contador', '/notificaciones/notas-digitales/estado', '/notificaciones/notas-digitales/config',
       '/auth/profile/firma']) {
       assert.equal((await api.get(ruta, como('editor'))).status, 200, ruta);

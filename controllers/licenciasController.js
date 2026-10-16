@@ -3,13 +3,18 @@
 import pool from '../config/database.js';
 import { registrarAuditoria } from '../services/usuariosAuditoriaService.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
-import { hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior } from '../services/notasDigitalesCalendario.js';
+import {
+  hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior, esFechaIso, sumarDias, diasEntre
+} from '../services/notasDigitalesCalendario.js';
 import {
   ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse
 } from '../services/licenciasReglas.js';
+import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
 
 const MENSAJE_ERROR = 'Error interno del servidor';
 const MENSAJE_SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
+// Rango máximo de la consulta de días sin auditor, contando los dos extremos
+const MAXIMO_DIAS_SIN_AUDITOR = 366;
 
 const responderError = (res, status, error, campo) =>
   res.status(status).json({ success: false, error, ...(campo ? { campo } : {}) });
@@ -152,6 +157,43 @@ export const listarLicencias = async (req, res) => {
     });
   } catch (error) {
     console.error('Error listando licencias:', error);
+    responderError(res, 500, MENSAJE_ERROR);
+  }
+};
+
+/**
+ * GET /usuarios/licencias/sin-auditor: los períodos sin auditor (días hábiles sin ningún superadmin ni admin disponible)
+ * entre desde y hasta ('AAAA-MM-DD'; sin ninguna de las dos, de hoy a hoy + 60 días). Para que el formulario de licencias
+ * advierta los que dejaría la licencia que se carga: usuario_id simula una licencia de esa persona con las mismas fechas,
+ * y excluir es la licencia guardada que se está editando (no cuenta, para no contarla dos veces).
+ * { periodos: [{ desde, hasta, vuelve, respaldo }] }
+ */
+export const listarDiasSinAuditor = async (req, res) => {
+  const hoy = hoyArgentina();
+  const { usuario_id: usuarioPedido, excluir: excluirPedido } = req.query;
+  const sinFechas = req.query.desde === undefined && req.query.hasta === undefined;
+  const desde = sinFechas ? hoy : req.query.desde;
+  const hasta = sinFechas ? sumarDias(hoy, DIAS_PERIODOS_SIN_AUDITOR) : req.query.hasta;
+  if (!esFechaIso(desde) || !esFechaIso(hasta)) {
+    return responderError(res, 400, 'Las fechas tienen que ser días válidos (AAAA-MM-DD).', 'fechas');
+  }
+  if (desde > hasta) return responderError(res, 400, 'La fecha de inicio no puede ser posterior a la de fin.', 'fechas');
+  if (diasEntre(desde, hasta) + 1 > MAXIMO_DIAS_SIN_AUDITOR) {
+    return responderError(res, 400, `El rango puede abarcar como máximo ${MAXIMO_DIAS_SIN_AUDITOR} días.`, 'fechas');
+  }
+  const usuarioId = usuarioPedido === undefined ? null : idDe(usuarioPedido);
+  if (usuarioPedido !== undefined && !usuarioId) return responderError(res, 400, 'La persona no es válida.', 'usuario_id');
+  const excluirId = excluirPedido === undefined ? null : idDe(excluirPedido);
+  if (excluirPedido !== undefined && !excluirId) return responderError(res, 400, 'La licencia a excluir no es válida.', 'excluir');
+
+  try {
+    const periodos = await periodosSinAuditor(desde, hasta, {
+      licenciaSimulada: usuarioId ? { usuario_id: usuarioId, desde, hasta } : null,
+      excluirLicenciaId: excluirId
+    });
+    res.json({ success: true, data: { periodos } });
+  } catch (error) {
+    console.error('Error calculando los días sin auditor:', error);
     responderError(res, 500, MENSAJE_ERROR);
   }
 };
