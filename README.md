@@ -573,6 +573,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 - Todos los recordatorios automáticos salen solo en días hábiles (sin fines de semana ni los feriados nacionales fijos)
 - Licencias de los administradores: durante la licencia no reciben emails; resumen al superadmin a la vuelta
 - Firma propia en Mi Perfil y firmante titular de las Notas Digitales
+- Personal contratado (vínculo "contrato"): en las notas, su firma lleva entre el nombre y el cargo, en letra más chica, "Personal contratado, cumpliendo funciones de", y los párrafos lo nombran "personal contratado, cumpliendo funciones de {cargo}"; Mi Perfil le muestra cómo sale. Quien no es contratado firma como siempre
 - Durante la licencia del firmante: avisos anticipados a la víspera, y notas presentadas por una persona autorizada (autorización por Nota Digital, dos firmas y cita de esa nota) o reiteraciones a la vuelta
 - La persona autorizada puede tener una licencia propia que se superponga en parte con la del titular (la autorización se comunica igual en la víspera y los días en que la persona autorizada falta no se generan notas; el formulario lo advierte y Correos → Estado lo muestra como advertencia); si cubre todos los días hábiles de la del titular, no se puede autorizar
 

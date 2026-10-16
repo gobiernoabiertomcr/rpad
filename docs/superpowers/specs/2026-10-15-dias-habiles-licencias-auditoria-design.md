@@ -117,7 +117,9 @@ La pantalla de Usuarios pasa a tener dos pestañas: **Usuarios** (la de hoy) y *
 
 ### 6.1 Firma por persona
 
-Cada usuario con rol `superadmin`, `admin` o `editor` puede cargar **su propia firma** en Mi Perfil: imagen (PNG o JPEG, 500 KB como máximo, con la misma validación que la firma actual), **nombre para la firma** (por ejemplo, "Téc. Nombre Apellido") y **cargo para la firma**. El nombre y el cargo se precargan con `nombre_completo` y `cargo` del usuario y se pueden ajustar. Nadie carga ni ve la firma de otro, salvo en la vista previa de una nota.
+Cada usuario con rol `superadmin`, `admin` o `editor` puede cargar **su propia firma** en Mi Perfil: imagen (PNG o JPEG, 500 KB como máximo, con la misma validación que la firma actual), **nombre para la firma** (por ejemplo, "Nombre Apellido") y **cargo para la firma**. El nombre y el cargo se precargan con `nombre_completo` y `cargo` del usuario y se pueden ajustar. Nadie carga ni ve la firma de otro, salvo en la vista previa de una nota.
+
+**Personal contratado** (`usuarios.vinculo = 'contrato'`, sin designación formal): su firma sale en tres renglones, el nombre, `Personal contratado, cumpliendo funciones de` (en letra más chica que el cargo) y el cargo; Mi Perfil le muestra cómo sale ("Así sale en las notas:"). El cargo guardado en la firma sigue siendo solo el cargo, y quien no es contratado (planta permanente, planta política o sin dato) firma como siempre.
 
 Se guarda en una tabla aparte (`usuarios_firmas`), para que ninguna consulta de usuarios arrastre la imagen. Los textos de la firma pasan por el mismo resguardo de caracteres que el resto del PDF (NFC; se rechazan los caracteres que el PDF no puede escribir).
 
@@ -170,6 +172,8 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 - **Email (HTML y texto):** los dos nombres y cargos, y la misma leyenda.
 - La nota guarda quién firmó como titular y quién la presentó (sección 11.1).
 - Si la nota de autorización no se pudo generar, ese día no se genera ninguna otra nota (se reintenta en la corrida siguiente).
+
+**Personal contratado (6.1).** En el párrafo de la víspera, en la nota de autorización y en la leyenda, el cargo de una persona contratada se nombra en minúscula y en letra normal, `{nombre}, personal contratado, cumpliendo funciones de {cargo}`: *"… autorizo expresamente a {nombre del autorizado}, personal contratado, cumpliendo funciones de {cargo del autorizado}, a presentar …"* y *"Nota presentada por {nombre del autorizado}, personal contratado, cumpliendo funciones de {cargo del autorizado}, en nombre de {nombre del titular}, {cargo del titular}, conforme a …"* (si el titular también fuera contratado, su mención sigue la misma regla). En las dos firmas, el renglón más chico va solo en la de la persona contratada; los nombres y la base de las imágenes siguen alineados y la leyenda va debajo de la firma más alta.
 
 ### 7.3 Sin autorizado
 
@@ -345,7 +349,7 @@ Configurables en Correos → Configuración:
 1. `REF.:` con el texto del asunto, `Nota Digital N°` a la derecha y el destinatario `DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL`, como en las otras notas.
 2. **Párrafo inicial:**
    > Me dirijo a Ud. a fin de solicitarle la auditoría de los cambios propuestos en el Registro Permanente de Actualización de Datasets (RPAD) que se detallan a continuación, que se encuentran pendientes de verificación. Conforme al procedimiento de doble verificación, cada modificación del registro debe ser revisada y aprobada por una persona distinta de quien la propuso antes de aplicarse.
-3. **Cambios pendientes de auditoría** (nuevos) y **Cambios ya solicitados que continúan pendientes** (reiterados, con la columna "Solicitado en": `Nota Digital N° 12/26 (dd/mm/aaaa)` y, si corresponde, `– reiterado N veces`). Columnas comunes: conjunto de datos, tipo de cambio (alta, modificación, baja), propuesto por (nombre y cargo), fecha de la propuesta y **días hábiles pendiente** (días hábiles transcurridos desde la fecha de la propuesta, sin contarla).
+3. **Cambios pendientes de auditoría** (nuevos) y **Cambios ya solicitados que continúan pendientes** (reiterados, con la columna "Solicitado en": `Nota Digital N° 12/26 (dd/mm/aaaa)` y, si corresponde, `– reiterado N veces`). Columnas comunes: conjunto de datos, tipo de cambio (alta, modificación, baja), propuesto por (nombre y cargo; si quien propuso es personal contratado, `{nombre}, personal contratado, cumpliendo funciones de {cargo}`, 6.1), fecha de la propuesta y **días hábiles pendiente** (días hábiles transcurridos desde la fecha de la propuesta, sin contarla).
 4. **Detalle de cada cambio:**
    - **modificación:** los campos que cambian, con el valor anterior y el nuevo;
    - **alta:** los datos principales del dataset propuesto;
