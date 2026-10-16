@@ -16,19 +16,36 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}) => {
   const elementos = new Map();
   const elemento = (id) => {
     if (!elementos.has(id)) {
-      elementos.set(id, { id, value: '', textContent: '', hidden: true, disabled: false, setAttribute() {}, removeAttribute() {} });
+      elementos.set(id, {
+        id, value: '', textContent: '', hidden: true, disabled: false, oyentes: {}, setAttribute() {}, removeAttribute() {},
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        addEventListener(tipo, fn) { (this.oyentes[tipo] ??= []).push(fn); }
+      });
     }
     return elementos.get(id);
   };
-  const document = { addEventListener() {}, getElementById: elemento, querySelectorAll: () => [], querySelector: () => null };
+  let alCargar = () => {};
+  const document = {
+    addEventListener(tipo, fn) { if (tipo === 'DOMContentLoaded') alCargar = fn; },
+    getElementById: elemento, querySelectorAll: () => [], querySelector: (selector) => elemento(selector)
+  };
   const llamadas = [];
-  // Cualquier API.* queda registrado y responde vacío; alPedir ve el estado de la pantalla en el momento del pedido
-  const API = new Proxy({}, { get: (_, nombre) => async () => { alPedir(nombre); llamadas.push(nombre); return { message: '', data: { usuarios: [], resumen: {} } }; } });
+  const pedidos = [];
+  // Cualquier API.* queda registrado (con sus argumentos en pedidos) y responde vacío; alPedir ve el estado de la
+  // pantalla en el momento del pedido
+  const API = new Proxy({}, {
+    get: (_, nombre) => async (...args) => {
+      alPedir(nombre);
+      llamadas.push(nombre);
+      pedidos.push({ nombre, args: JSON.parse(JSON.stringify(args)) });
+      return { message: '', data: { usuarios: [], resumen: {} } };
+    }
+  });
   const contexto = vm.createContext({
     document,
     window: { location: {} },
     Utils: { escapeHtml: (texto) => texto },
-    Auth: { getUser: () => ({ id: 1 }) },
+    Auth: { getUser: () => ({ id: 1 }), isAuthenticated: () => true, isAdmin: () => true },
     API,
     showToast() {},
     confirm: () => { llamadas.push('confirm'); return true; },
@@ -47,7 +64,8 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}) => {
   contexto.__abierto = abierto;
   vm.runInContext('abierto = __abierto', contexto);
   if (abierto) formulario(abierto);
-  return { contexto, elemento, formulario, llamadas };
+  // alCargar: corre lo que la página hace al cargar (registra los oyentes)
+  return { contexto, elemento, formulario, llamadas, pedidos, alCargar: () => alCargar() };
 };
 
 describe('hayCambiosSinGuardar', () => {
@@ -154,5 +172,118 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     assert.match(conAutorizado, /Persona Autorizada presenta las demás notas/);
     assert.match(evaluar(contexto, "efectoEnNotas({ vispera: '2026-11-25' }, null)"), /por adelantado el 25\/11\/2026/);
     assert.match(evaluar(contexto, 'efectoEnNotas(null, null)'), /último día hábil anterior/);
+  });
+
+  it('efecto de una licencia en curso: lo que pasa ahora, sin el anticipo de una víspera pasada', () => {
+    const { contexto } = cargarPanel();
+    const licencia = "{ desde: '2026-11-26', vispera: '2026-11-25' }";
+    const conAutorizado = evaluar(contexto, `efectoEnNotas(${licencia}, 'Persona Autorizada', '2026-12-02')`);
+    assert.match(conAutorizado, /Licencia en curso: Persona Autorizada presenta las notas con las dos firmas/);
+    const sinAutorizado = evaluar(contexto, `efectoEnNotas(${licencia}, null, '2026-12-02')`);
+    assert.match(sinAutorizado, /no se generan notas hasta la vuelta/);
+    assert.match(sinAutorizado, /las reiteraciones salen el primer día hábil después de la licencia/);
+    for (const texto of [conAutorizado, sinAutorizado]) assert.doesNotMatch(texto, /por adelantado|Cargá la licencia/);
+    // Una licencia que empieza hoy ya está en curso; una futura, como siempre
+    assert.match(evaluar(contexto, `efectoEnNotas(${licencia}, null, '2026-11-26')`), /Licencia en curso/);
+    assert.match(evaluar(contexto, `efectoEnNotas(${licencia}, null, '2026-11-10')`), /por adelantado el 25\/11\/2026/);
+  });
+
+  const TITULAR = 1;
+  const LICENCIA = {
+    id: 9, usuario_id: TITULAR, usuario_nombre: 'Persona Titular', desde: '2026-11-26', hasta: '2027-01-14', estado: 'futura',
+    vispera: '2026-11-25', autorizado_id: 8, autorizado_nombre: 'Persona Vieja'
+  };
+  // La pantalla de Licencias con el titular conectado; licencia: la del modal (null = alta)
+  const prepararLicencias = (panel, licencia, hoy = '2026-11-10') => {
+    panel.contexto.__datos = {
+      hoy, firmante_titular_id: TITULAR, soy_titular: true, licencias: [], usuarios: [],
+      autorizables: [{ id: 5, nombre_completo: 'Persona Nueva' }]
+    };
+    panel.contexto.__licencia = licencia;
+    evaluar(panel.contexto, 'datosLicencias = __datos; licenciaAbierta = __licencia');
+    panel.elemento('l-usuario').value = String(TITULAR);
+    panel.elemento('l-desde').value = licencia?.desde ?? '';
+    panel.elemento('l-hasta').value = licencia?.hasta ?? '';
+  };
+  const guardar = async (panel) => {
+    await panel.contexto.guardarLicencia({ preventDefault() {} });
+    return panel.pedidos.find(p => p.nombre === 'editarLicencia' || p.nombre === 'crearLicencia');
+  };
+
+  it('la persona autorizada que ya no cumple las condiciones sigue elegida y marcada, y no se manda si no se cambia', async () => {
+    const panel = cargarPanel();
+    prepararLicencias(panel, LICENCIA);
+    panel.contexto.prepararAutorizado();
+    const selector = panel.elemento('l-autorizado');
+    assert.ok(selector.innerHTML.includes('<option value="8">Persona Vieja (ya no cumple las condiciones)</option>'));
+    assert.ok(selector.innerHTML.includes('<option value="5">Persona Nueva</option>'));
+    assert.equal(selector.value, '8');
+    panel.elemento('l-hasta').value = '2027-01-20';
+    assert.deepEqual((await guardar(panel)).args, [9, { desde: '2026-11-26', hasta: '2027-01-20' }]);
+  });
+
+  it('la persona autorizada se manda cuando cambia: otra persona o nadie; en el alta, solo si se eligió una', async () => {
+    const casos = [
+      { licencia: LICENCIA, elegido: '5', esperado: [9, { desde: '2026-11-26', hasta: '2027-01-14', autorizado_id: '5' }] },
+      { licencia: LICENCIA, elegido: '', esperado: [9, { desde: '2026-11-26', hasta: '2027-01-14', autorizado_id: null }] },
+      { licencia: null, elegido: '', esperado: [{ desde: '2026-12-01', hasta: '2026-12-10', usuario_id: TITULAR }] },
+      { licencia: null, elegido: '5', esperado: [{ desde: '2026-12-01', hasta: '2026-12-10', autorizado_id: '5', usuario_id: TITULAR }] }
+    ];
+    for (const { licencia, elegido, esperado } of casos) {
+      const panel = cargarPanel();
+      prepararLicencias(panel, licencia);
+      if (!licencia) {
+        panel.elemento('l-desde').value = '2026-12-01';
+        panel.elemento('l-hasta').value = '2026-12-10';
+      }
+      panel.contexto.prepararAutorizado();
+      panel.elemento('l-autorizado').value = elegido;
+      assert.deepEqual((await guardar(panel)).args, esperado, JSON.stringify({ licencia: licencia?.id ?? null, elegido }));
+    }
+  });
+
+  it('el efecto se actualiza al cambiar la fecha de inicio', () => {
+    const panel = cargarPanel();
+    panel.alCargar();
+    prepararLicencias(panel, null, '2026-12-02');
+    const desde = panel.elemento('l-desde');
+    assert.ok(desde.oyentes.input?.length, 'l-desde tiene un oyente');
+    const cambiarDesde = (valor) => {
+      desde.value = valor;
+      for (const oyente of desde.oyentes.input) oyente({ target: desde });
+      return panel.elemento('licencia-efecto').textContent;
+    };
+    assert.match(cambiarDesde('2026-12-02'), /Licencia en curso sin persona autorizada/);
+    assert.match(cambiarDesde('2026-12-20'), /por adelantado el último día hábil anterior/);
+  });
+
+  it('después de guardar o anular, recarga las terminadas y anuladas si ese grupo está abierto', async () => {
+    const panel = cargarPanel();
+    panel.elemento('grupo-licencias-pasadas').open = true;
+    const recargoPasadas = () => panel.pedidos.some(p => p.nombre === 'getLicencias' && p.args[0] === true);
+    prepararLicencias(panel, LICENCIA);
+    await guardar(panel);
+    assert.ok(recargoPasadas(), 'al guardar');
+    panel.pedidos.length = 0;
+    prepararLicencias(panel, LICENCIA);
+    await panel.contexto.anularLicencia();
+    assert.ok(panel.pedidos.some(p => p.nombre === 'anularLicencia'));
+    assert.ok(recargoPasadas(), 'al anular');
+  });
+
+  it('historial de una edición de licencia: el cambio de fechas y el de la persona autorizada', () => {
+    const { contexto } = cargarPanel();
+    contexto.__usuarios = [{ id: 5, nombre_completo: 'Persona Nueva' }, { id: 8, nombre_completo: 'Persona Vieja' }];
+    evaluar(contexto, 'usuarios = __usuarios');
+    const detalle = (antes, despues) => contexto.describirDetalle({ accion: 'licencia_editada', detalle: { licencia_id: 9, antes, despues } });
+    const fechas = { desde: '2026-11-26', hasta: '2027-01-14' };
+    const otras = { desde: '2026-11-26', hasta: '2027-01-20' };
+    assert.equal(detalle({ ...fechas, autorizado_id: null }, { ...fechas, autorizado_id: 5 }), 'Persona autorizada: nadie → Persona Nueva');
+    assert.equal(detalle({ ...fechas, autorizado_id: 5 }, { ...otras, autorizado_id: 5 }), 'Del 26/11/2026 al 14/01/2027 → Del 26/11/2026 al 20/01/2027');
+    assert.equal(
+      detalle({ ...fechas, autorizado_id: 8 }, { ...otras, autorizado_id: 99 }),
+      'Del 26/11/2026 al 14/01/2027 → Del 26/11/2026 al 20/01/2027; Persona autorizada: Persona Vieja → otro usuario'
+    );
+    assert.equal(detalle({ ...fechas, autorizado_id: 5 }, { ...fechas, autorizado_id: null }), 'Persona autorizada: Persona Nueva → nadie');
   });
 });

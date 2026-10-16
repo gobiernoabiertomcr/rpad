@@ -37,8 +37,15 @@ const etiquetaLicencia = (l) => {
     ? `<span class="etiqueta etiqueta-licencia">De licencia hasta ${esc(fechaCorta(l.hasta).slice(0, 5))}</span>`
     : `<span class="etiqueta etiqueta-licencia-proxima">Licencia desde ${esc(fechaCorta(l.desde).slice(0, 5))}</span>`;
 };
-// Efecto de la licencia del firmante titular en las notas (spec 7.2 y 7.3)
-const efectoEnNotas = (licencia, autorizadoNombre) => {
+// Efecto de la licencia del firmante titular en las notas (spec 7.2 y 7.3). licencia: { desde, vispera } (la víspera la
+// calcula el servidor; sin ella se nombra en general). Una licencia en curso ya no tiene anticipo: se describe lo que
+// pasa ahora.
+const efectoEnNotas = (licencia, autorizadoNombre, hoy = datosLicencias.hoy) => {
+  if (hoy && licencia?.desde && licencia.desde <= hoy) {
+    return autorizadoNombre
+      ? `Licencia en curso: ${autorizadoNombre} presenta las notas con las dos firmas, citando la nota que comunica la autorización (si todavía no salió, la próxima corrida la genera primero).`
+      : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
+  }
   const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
   return autorizadoNombre
     ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota.`
@@ -115,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('grupo-licencias-pasadas').addEventListener('toggle', cargarLicenciasPasadas);
   document.getElementById('form-licencia').addEventListener('submit', guardarLicencia);
   document.getElementById('l-usuario').addEventListener('change', prepararAutorizado);
+  document.getElementById('l-desde').addEventListener('input', actualizarEfecto);
   document.getElementById('l-autorizado').addEventListener('change', actualizarEfecto);
   document.getElementById('btn-anular-licencia').addEventListener('click', anularLicencia);
   document.getElementById('btn-cancelar-licencia').addEventListener('click', cerrarModalLicencia);
@@ -475,9 +483,22 @@ function describirDetalle({ accion, detalle }) {
     return `Tenía ${plural(d.cambios_pendientes, 'cambio pendiente', 'cambios pendientes')}`;
   }
   if ('email_enviado' in d) return d.email_enviado ? 'Email enviado' : `No se pudo enviar el email${d.error ? `: ${d.error}` : ''}`;
-  if (accion in ACCION_LICENCIA && d.despues) return `${textoPeriodo(d.antes)} → ${textoPeriodo(d.despues)}`;
+  if (accion in ACCION_LICENCIA && d.despues) return describirEdicionLicencia(d.antes ?? {}, d.despues);
   if (accion in ACCION_LICENCIA && d.desde) return textoPeriodo(d);
   return '';
+}
+
+// Persona autorizada de una licencia en el historial: su nombre, "nadie" o "otro usuario" si no está en la lista
+const nombreAutorizado = (id) => (id == null ? 'nadie' : (usuarios ?? []).find(u => u.id === id)?.nombre_completo ?? 'otro usuario');
+
+// Edición de una licencia: el cambio de fechas y el de la persona autorizada, los que haya
+function describirEdicionLicencia(antes, despues) {
+  const cambios = [];
+  if (antes.desde !== despues.desde || antes.hasta !== despues.hasta) cambios.push(`${textoPeriodo(antes)} → ${textoPeriodo(despues)}`);
+  if ((antes.autorizado_id ?? null) !== (despues.autorizado_id ?? null)) {
+    cambios.push(`Persona autorizada: ${nombreAutorizado(antes.autorizado_id)} → ${nombreAutorizado(despues.autorizado_id)}`);
+  }
+  return cambios.join('; ') || textoPeriodo(despues);
 }
 
 function renderHistorial(historial) {
@@ -584,9 +605,16 @@ function prepararAutorizado() {
   document.getElementById('grupo-autorizado').hidden = !puedeAutorizar;
   if (puedeAutorizar) {
     const selector = document.getElementById('l-autorizado');
+    const opciones = datosLicencias.autorizables.map(a => ({ id: a.id, nombre: a.nombre_completo }));
+    // La persona autorizada que ya no está entre las que se pueden elegir sigue elegida, con una marca: si no, guardar
+    // cualquier otro cambio la quitaría sin avisar
+    const actual = licenciaAbierta?.autorizado_id ?? null;
+    if (actual && !opciones.some(o => o.id === actual)) {
+      opciones.push({ id: actual, nombre: `${licenciaAbierta.autorizado_nombre ?? 'Otro usuario'} (ya no cumple las condiciones)` });
+    }
     selector.innerHTML = ['<option value="">Nadie: se anticipan los avisos</option>',
-      ...datosLicencias.autorizables.map(a => `<option value="${esc(a.id)}">${esc(a.nombre_completo)}</option>`)].join('');
-    selector.value = licenciaAbierta?.autorizado_id ? String(licenciaAbierta.autorizado_id) : '';
+      ...opciones.map(o => `<option value="${esc(o.id)}">${esc(o.nombre)}</option>`)].join('');
+    selector.value = actual ? String(actual) : '';
   }
   actualizarEfecto();
 }
@@ -599,14 +627,21 @@ function actualizarEfecto() {
   const elegido = document.getElementById('grupo-autorizado').hidden
     ? licenciaAbierta?.autorizado_nombre
     : datosLicencias.autorizables.find(a => String(a.id) === document.getElementById('l-autorizado').value)?.nombre_completo;
-  efecto.textContent = efectoEnNotas(licenciaAbierta, elegido ?? null);
+  // La víspera es la de la licencia guardada; con otra fecha de inicio se nombra en general
+  const desde = document.getElementById('l-desde').value;
+  const vispera = licenciaAbierta && desde === licenciaAbierta.desde ? licenciaAbierta.vispera : null;
+  efecto.textContent = efectoEnNotas({ desde, vispera }, elegido ?? null);
 }
 
 async function guardarLicencia(evento) {
   evento.preventDefault();
   limpiarErrorLicencia();
   const datos = { desde: document.getElementById('l-desde').value, hasta: document.getElementById('l-hasta').value };
-  if (!document.getElementById('grupo-autorizado').hidden) datos.autorizado_id = document.getElementById('l-autorizado').value || null;
+  // La persona autorizada va solo si cambió respecto de la licencia abierta (en el alta, si se eligió una)
+  if (!document.getElementById('grupo-autorizado').hidden) {
+    const elegido = document.getElementById('l-autorizado').value;
+    if (elegido !== String(licenciaAbierta?.autorizado_id ?? '')) datos.autorizado_id = elegido || null;
+  }
   const boton = document.getElementById('btn-guardar-licencia');
   boton.disabled = true;
   try {
@@ -615,7 +650,8 @@ async function guardarLicencia(evento) {
       : await API.crearLicencia({ ...datos, usuario_id: Number(document.getElementById('l-usuario').value) });
     avisar(res.message, 'success');
     cerrarModalLicencia();
-    await Promise.all([cargarLicencias(), cargarUsuarios()]);
+    // cargarLicenciasPasadas solo recarga si el grupo de terminadas y anuladas está abierto
+    await Promise.all([cargarLicencias(), cargarUsuarios(), cargarLicenciasPasadas()]);
   } catch (error) {
     mostrarErrorLicencia(error);
   } finally {
@@ -630,7 +666,7 @@ async function anularLicencia() {
     const res = await API.anularLicencia(l.id);
     avisar(res.message, 'success');
     cerrarModalLicencia();
-    await Promise.all([cargarLicencias(), cargarUsuarios()]);
+    await Promise.all([cargarLicencias(), cargarUsuarios(), cargarLicenciasPasadas()]);
   } catch (error) {
     mostrarErrorLicencia(error);
   }
