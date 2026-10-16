@@ -103,7 +103,7 @@ Las notas a casillas institucionales (la DGMIT y sus copias) **no cambian** por 
 
 ### 5.4 Avisos retenidos al superadmin
 
-Si un aviso al superadmin corresponde mientras el superadmin está de licencia, no se envía: la fila del historial queda marcada como **retenida**. En la corrida diaria del primer día hábil posterior a su licencia se le envía **un solo email de resumen** con los cambios retenidos (fecha, quién, qué, a quién) y un enlace al historial; al enviarse, las filas dejan de estar retenidas. Si el envío falla, se reintenta en la corrida del día hábil siguiente. Este paso va aislado en la corrida diaria, como el aviso a las áreas: un error ahí no afecta a las Notas Digitales.
+Si un aviso al superadmin corresponde mientras el superadmin está de licencia, no se envía: la fila del historial guarda el texto del aviso como **retenido**. En la corrida diaria del primer día hábil posterior a su licencia se le envía **un solo email de resumen** con los cambios retenidos (fecha, quién, qué, a quién) y un enlace al historial; al enviarse, las filas dejan de estar retenidas (el texto se borra). Si el envío falla, se reintenta en la corrida del día hábil siguiente. Este paso va aislado en la corrida diaria, como el aviso a las áreas: un error ahí no afecta a las Notas Digitales.
 
 ### 5.5 Pantalla
 
@@ -125,14 +125,16 @@ Se guarda en una tabla aparte (`usuarios_firmas`), para que ninguna consulta de 
 
 - En Correos → Configuración se elige el **firmante titular** entre los usuarios `superadmin` o `admin` activos y con firma cargada. **Solo el superadmin** lo elige; los demás lo ven.
 - Las notas usan la imagen, el nombre y el cargo de la firma del firmante titular.
-- **Compatibilidad:** mientras no haya firmante titular elegido, las notas salen con la firma de la configuración de Correos, como hoy, y las licencias no afectan a las notas. Los campos de firma de Correos se muestran solo en ese caso.
+- **Compatibilidad:** mientras no haya firmante titular elegido, las notas salen con la firma de la configuración de Correos, como hoy, y las licencias no afectan a las notas. Los campos de firma de Correos se editan solo en ese caso; con titular elegido muestran los datos de su firma, sin editarse.
 - La carga inicial (elegir al firmante titular y pasarle la firma actual de Correos) se hace con un SQL privado no versionado (sección 13).
 
 ### 6.3 Autorización
 
 - En una licencia del firmante titular, el campo **"Autorizo a presentar las notas en mi nombre a:"** lo completa, cambia o borra **solo el propio firmante titular**, en cualquier momento antes de que la licencia termine. Si otro usuario carga la licencia, la carga sin autorizado.
 - Se puede autorizar a un usuario `admin` o (desde la entrega 3) `editor`, activo, con firma cargada y sin licencia que se superponga con la del titular.
-- Se registra la fecha y hora de la autorización (`autorizado_at`), que se imprime en la leyenda (sección 7.2), y queda en el historial.
+- Se registra la fecha y hora de la autorización (`autorizado_at`) y queda en el historial.
+- La autorización se comunica formalmente con una Nota Digital numerada (sección 7.2): las notas que presenta la persona autorizada citan ese número.
+- Cambiar o quitar a la persona autorizada, o cambiar las fechas de la licencia, deja sin efecto la nota de autorización anterior (dice a quién y entre qué fechas): si sigue habiendo una persona autorizada, sale una nota nueva (7.2).
 - Si el día de una nota el autorizado ya no cumple las condiciones (fue desactivado o borró su firma), ese día se aplica el comportamiento sin autorizado (sección 7.3) y Correos → Estado muestra una alerta.
 
 ## 7. Notas Digitales durante la licencia del firmante (entrega 2)
@@ -143,39 +145,53 @@ Un día es de licencia del firmante si el firmante titular tiene ese día una li
 
 ### 7.2 Con autorizado
 
-El calendario no cambia: los avisos, las reiteraciones y las notas de auditoría salen en su fecha normal. Cambia el bloque de firma:
+**Víspera: avisos anticipados y autorización.** Los avisos se anticipan igual que sin autorizado (7.3), y cada aviso de la víspera suma, antes de la justificación, el párrafo:
+
+> Asimismo, por medio de la presente autorizo expresamente a {nombre del autorizado}, {cargo del autorizado}, a presentar en mi nombre las Notas Digitales durante mi licencia, del {dd/mm/aaaa} al {dd/mm/aaaa}, con el objetivo de mantener el correcto flujo de trabajo.
+
+Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un tipo nuevo de Nota Digital, sin gestión ni tablas), firmada solo por el titular:
+
+> Por medio de la presente informo que, durante mi licencia del {dd/mm/aaaa} al {dd/mm/aaaa}, autorizo expresamente a {nombre del autorizado}, {cargo del autorizado}, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.
+
+- La nota de autorización va a los destinatarios de las notas (los "Para" de las dos gestiones, sin repetir) con el CCO de respaldo. Su asunto es `Nota Digital N° {n}/{aa} – Ref.: Autorización para la presentación de Notas Digitales (licencia del {dd/mm/aaaa} al {dd/mm/aaaa})`.
+- Las notas que comunican la autorización (los avisos de la víspera o la nota de autorización) llevan en CC el email de la persona autorizada.
+- La licencia guarda cuál fue la **primera** nota que comunicó la autorización (`usuarios_licencias.nota_autorizacion_id`); es la que citan las notas de la persona autorizada.
+- **Autorización tardía o cambiada:** si llega un día hábil, entre la víspera y el fin de la licencia, en que la persona autorizada vigente todavía no tiene nota de autorización (se cargó después de la corrida de la víspera, o se cambió de persona), esa corrida genera primero la nota de autorización, firmada por el titular, y después las demás, que ya la citan.
+
+**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Cambia el bloque de firma:
 
 - **PDF:** dos firmas lado a lado, cada una con su imagen, nombre y cargo: el **firmante titular a la derecha** (la posición habitual) y el **autorizado a la izquierda**. Debajo, a todo el ancho y con letra más chica, la leyenda:
 
-  > *Nota presentada por {nombre del autorizado}, {cargo del autorizado}, en nombre de {nombre del titular}, {cargo del titular}, por autorización previa registrada en el RPAD el {dd/mm/aaaa} (licencia del {dd/mm/aaaa} al {dd/mm/aaaa}).*
+  > *Nota presentada por {nombre del autorizado}, {cargo del autorizado}, en nombre de {nombre del titular}, {cargo del titular}, conforme a la autorización conferida mediante Nota Digital N° {n}/{aa} (licencia del {dd/mm/aaaa} al {dd/mm/aaaa}).*
 
 - **Email (HTML y texto):** los dos nombres y cargos, y la misma leyenda.
-- La nota guarda quién firmó como titular y quién la presentó (sección 11.2).
+- La nota guarda quién firmó como titular y quién la presentó (sección 11.1).
+- Si la nota de autorización no se pudo generar, ese día no se genera ninguna otra nota (se reintenta en la corrida siguiente).
 
 ### 7.3 Sin autorizado
 
-**Avisos.** En la víspera, el aviso de cada gestión incluye, además de lo de ese día, todo lo que se habría avisado durante la licencia: en la selección de la spec de Notas Digitales (5.2), el horizonte `hoy + ventana` se reemplaza por `U + ventana`, donde `U` es el último día hábil de la licencia. Sale **una sola nota por gestión**, con los datasets ordenados por vencimiento, como siempre. El asunto nombra el rango de meses de los vencimientos: `(gestión interna – enero a marzo 2027)`; si es un solo mes, como hoy: `(gestión interna – enero 2027)`.
+**Avisos.** En la víspera (con o sin autorizado), el aviso de cada gestión incluye, además de lo de ese día, todo lo que se habría avisado durante la licencia: en la selección de la spec de Notas Digitales (5.2), el horizonte `hoy + ventana` se reemplaza por `U + ventana`, donde `U` es el último día hábil de la licencia. Sale **una sola nota por gestión**, con los datasets ordenados por vencimiento, como siempre. Hoy el asunto termina con el mes de la nota (`(gestión interna – noviembre 2026)`); en un aviso anticipado, en su lugar va el rango de meses de los vencimientos: `(gestión interna – vencimientos de enero a marzo 2027)`, o `(gestión interna – vencimientos de enero 2027)` si es un solo mes. Un aviso es anticipado si incluye algún dataset que en la selección normal de ese día no habría entrado.
 
 **Días de licencia.** No se generan avisos, reiteraciones ni notas de auditoría. Los reintentos de notas fallidas generadas antes de la licencia siguen, porque su contenido ya está congelado.
 
 **Reiteraciones.** No salen durante la licencia. En el primer día hábil posterior, la reiteración del mes en curso se evalúa si todavía no se evaluó (sección 5.3 de la spec de Notas Digitales): sale **una sola**, aunque la licencia haya cubierto el primer día hábil de más de un mes.
 
-**Un aviso anticipado no adelanta las reiteraciones.** Al guardar un dataset en un aviso, si su fecha normal de aviso (el día en que su mes entraría en la ventana: primer vencimiento del mes − ventana) es posterior a la fecha de la nota, se guarda esa fecha en `notas_digitales_datasets.cuenta_desde`. La regla de los 20 días de la reiteración se cuenta desde `cuenta_desde` cuando existe, y desde la fecha de la nota en los demás casos. En el calendario normal `cuenta_desde` queda vacío y no cambia nada.
+**Un aviso anticipado no adelanta las reiteraciones.** Al guardar un dataset en un aviso, si su fecha normal de aviso (el primer día hábil desde que su mes entra en la ventana: primer vencimiento del mes − ventana) es posterior a la fecha de la nota, se guarda esa fecha en `notas_digitales_datasets.cuenta_desde`. La regla de los 20 días de la reiteración se cuenta desde `cuenta_desde` cuando existe, y desde la fecha de la nota en los demás casos. En el calendario normal `cuenta_desde` queda vacío y no cambia nada.
 
 **Carga tardía.** Si la licencia se carga después de la corrida de su víspera (por ejemplo, por una enfermedad), no hay anticipo: lo que se tendría que haber avisado durante la licencia sale en el primer día hábil posterior, porque la selección es por rango. Lo que para entonces ya venció entra en la reiteración, como cualquier vencido sin aviso.
 
-### 7.4 Ejemplos (sin autorizado)
+### 7.4 Ejemplos
 
 | Licencia | Víspera | Durante la licencia | Primer día hábil posterior |
 |---|---|---|---|
 | 26/11/2026 – 14/01/2027 | mié 25/11/2026: avisos de lo que vence hasta el 14/01/2027 + ventana (interna hasta mediados de marzo, externa hasta mediados de febrero, con los meses completos) | No salen la reiteración de diciembre (01/12) ni la de enero (04/01; el 01/01 es feriado) | vie 15/01/2027: sale la reiteración de enero |
 | 25/01/2027 – 05/03/2027 | vie 22/01/2027 (el 24/01 es domingo) | No salen las reiteraciones del 01/02 ni del 01/03 | lun 08/03/2027: sale la reiteración de marzo |
 
-Con autorizado, en los dos casos todo sale en su fecha normal con las dos firmas.
+Sin autorizado, como en la tabla. Con autorizado, la víspera sale lo mismo y además cada aviso lleva el párrafo de autorización (o sale la nota de autorización si no hay avisos); durante la licencia, las reiteraciones de cada mes (01/12 y 04/01 en el primer ejemplo; 01/02 y 01/03 en el segundo) salen en su fecha, presentadas por la persona autorizada con las dos firmas y la cita de la nota de autorización.
 
 ### 7.5 Correos → Estado
 
-- Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: las notas las presenta {nombre} por autorización"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
+- Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: los avisos se anticipan el 25/11 con la autorización a {nombre}, que presenta las demás notas durante la licencia"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
 - Las fechas de "próximo aviso" y "próxima reiteración" tienen en cuenta la licencia.
 - Alertas: autorizado que dejó de cumplir las condiciones (6.3); firmante titular sin firma cargada.
 
@@ -332,6 +348,7 @@ Todas las migraciones son aditivas e idempotentes (`ADD COLUMN IF NOT EXISTS`, `
 | `desde`, `hasta` | DATE | Ambos incluidos |
 | `autorizado_id` | INT NULL, FK → `usuarios` | Solo en licencias del firmante titular |
 | `autorizado_at` | DATETIME NULL | Cuándo se registró la autorización |
+| `nota_autorizacion_id` | INT NULL | Primera nota que comunicó la autorización vigente (7.2); se vacía al cambiar las fechas o la persona autorizada |
 | `anulada` | TINYINT(1) DEFAULT 0 | |
 | `creado_por` | INT NULL, FK → `usuarios` | |
 | `created_at`, `updated_at` | TIMESTAMP | |
@@ -352,18 +369,19 @@ Todas las migraciones son aditivas e idempotentes (`ADD COLUMN IF NOT EXISTS`, `
 **Columnas nuevas:**
 - `notas_digitales_config.firmante_usuario_id` INT NULL;
 - `notas_digitales.firmante_id` INT NULL y `notas_digitales.presentada_por_id` INT NULL (titular y autorizado de cada nota);
+- `notas_digitales.tipo` suma `'autorizacion'` y `notas_digitales.gestion` admite NULL (la nota de autorización no tiene gestión). Todo el código que lee `gestion` se revisa. El rollback deja estas dos columnas ampliadas, para no borrar notas numeradas del libro: el código anterior funciona igual con ellas;
 - `notas_digitales_datasets.cuenta_desde` DATE NULL (7.3);
-- `usuarios_auditoria.aviso_retenido` TINYINT(1) DEFAULT 0 (5.4).
+- `usuarios_auditoria.aviso_retenido` VARCHAR(300) NULL (5.4): el texto del aviso al superadmin que no se envió; NULL = nada retenido.
 
 ### 11.2 Entrega 3: `migracion-editor-auditoria.sql`
 
 - `usuarios.rol`: `ENUM('superadmin','admin','editor','lector')`.
 - `cambios_pendientes.primer_recordatorio_at` DATETIME NULL y `cambios_pendientes.revisado_como_respaldo` TINYINT(1) DEFAULT 0.
-- `notas_digitales.tipo`: agrega `'auditoria'`; `notas_digitales.gestion` pasa a admitir NULL. Todo el código que lee `gestion` se revisa.
+- `notas_digitales.tipo`: agrega `'auditoria'` (`gestion` ya admite NULL desde la entrega 2).
 - **`notas_digitales_cambios`:** `nota_id` (FK → `notas_digitales` ON DELETE CASCADE), `cambio_id` (FK → `cambios_pendientes` ON DELETE CASCADE), `seccion` ENUM('nuevo','reiterado'). PK `(nota_id, cambio_id)` e índice `(cambio_id)`. Las notas de prueba no registran filas.
 - `notas_digitales_config.para_auditoria` VARCHAR(500) DEFAULT `'mit@comodoro.gov.ar'` y `cc_auditoria` VARCHAR(500) NULL.
 
-El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `editor` y borra las notas de auditoría de prueba. Si hay notas de auditoría reales, no se puede volver atrás el ENUM: el rollback lo informa y se detiene.
+El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `editor`. Como el de la entrega 2, deja `notas_digitales.tipo` ampliado para no borrar notas numeradas del libro.
 
 ## 12. API
 
@@ -412,7 +430,7 @@ TDD con la batería completa antes y después de cada tarea (`npm test`, contra 
   - historial de altas, ediciones y anulaciones.
 - **Notas con licencia del firmante (entrega 2), con los ejemplos de 7.4 como fechas fijas:**
   - sin autorizado: avisos anticipados en la víspera, una nota por gestión, con el asunto con rango de meses; nada durante la licencia; una sola reiteración a la vuelta; `cuenta_desde` retrasa la reiteración de un aviso anticipado; carga tardía;
-  - con autorizado: todo en su fecha, PDF con dos firmas y la leyenda;
+  - con autorizado: la víspera anticipa los avisos con el párrafo de autorización (o sale la nota de autorización si no hay avisos), la licencia guarda esa nota y durante la licencia las reiteraciones salen en su fecha con dos firmas y la leyenda que cita su número; autorización tardía o cambiada;
   - sin firmante titular elegido: todo como hoy (la batería actual de Notas Digitales sigue en verde sin cambios);
   - en el calendario normal, `cuenta_desde` queda vacío y la selección de reiteraciones no cambia.
 - **Editor y auditoría (entrega 3):**
