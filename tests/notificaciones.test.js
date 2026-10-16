@@ -5,6 +5,13 @@ import {
   iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb,
   catalogos, mailpit, query, PREFIJO_TEST
 } from './helpers.js';
+import { esDiaHabil, hoyArgentina } from '../services/notasDigitalesCalendario.js';
+
+// El cron usa la fecha real: los tests de envío corren solo en días hábiles (los de fechas fijas están en
+// tests/avisos-diarios.test.js) y el de día no hábil, solo los fines de semana y feriados
+const HOY_ES_HABIL = esDiaHabil(hoyArgentina());
+const SOLO_HABIL = { skip: HOY_ES_HABIL ? false : 'hoy no es día hábil: lo cubre tests/avisos-diarios.test.js' };
+const SOLO_NO_HABIL = { skip: HOY_ES_HABIL ? 'hoy es día hábil: lo cubre tests/avisos-diarios.test.js' : false };
 
 let servidor, api, usuarios, cat;
 
@@ -66,7 +73,7 @@ describe('SMTP', () => {
 });
 
 describe('email de cambios pendientes', () => {
-  it('le llega al otro admin con el cambio propuesto, y no al que lo propuso', async () => {
+  it('le llega al otro admin con el cambio propuesto, y no al que lo propuso', SOLO_HABIL, async () => {
     const titulo = `${PREFIJO_TEST} aviso de cambio pendiente`;
     const alta = await api.post('/datasets', {
       titulo, area_id: cat.areaId, frecuencia_id: cat.frecuenciaId, tema_principal_id: cat.temaId,
@@ -95,7 +102,7 @@ describe('email de cambios pendientes', () => {
     assert.equal(para(usuarios.lector.email).length, 0, 'el lector no recibe avisos');
   });
 
-  it('no le llega a un admin con la invitación pendiente: todavía no puede ingresar ni aprobar', async () => {
+  it('no le llega a un admin con la invitación pendiente: todavía no puede ingresar ni aprobar', SOLO_HABIL, async () => {
     const { pendiente } = await crearUsuariosPrueba(api, { pendiente: 'admin' });
     try {
       await query('UPDATE usuarios SET password_hash = NULL WHERE id = ?', [pendiente.id]);
@@ -116,5 +123,15 @@ describe('email de cambios pendientes', () => {
     } finally {
       await limpiarDatosPrueba({ pendiente });
     }
+  });
+
+  it('en un día no hábil el cron responde 200 sin enviar nada', SOLO_NO_HABIL, async () => {
+    await mailpit.vaciar();
+    const res = await api.get('/cron/cambios-pendientes', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.message, 'Hoy no es día hábil: no se envían recordatorios.');
+    assert.equal(res.body.data.dia_habil, false);
+    assert.deepEqual(res.body.data.enviados, []);
   });
 });
