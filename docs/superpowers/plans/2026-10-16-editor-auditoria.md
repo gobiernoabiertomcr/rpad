@@ -23,7 +23,7 @@ Casos que la spec no resuelve del todo, decididos acá (los implementadores no l
 4. **`primer_recordatorio_at`** se escribe con `ahoraArgentina()`, nunca con `NOW()`. `enviarCambiosPendientes` lo recibe como parámetro `ahora` (por defecto, `ahoraArgentina()`), para que los tests con fecha fija guarden un momento de ese día. "Ya tuvo su primer recordatorio en un día hábil anterior" = `DATE_FORMAT(primer_recordatorio_at, '%Y-%m-%d') < hoy` (se guardó en hora argentina).
 5. **"Solicitado en … – reiterado N veces".** Se cita la **primera** nota de auditoría (no de prueba) que incluyó el cambio, y N = cantidad de notas de auditoría que lo incluyeron **después de esa y antes de la actual**, en cualquier estado (un cambio cuenta como incluido desde que la nota se genera, spec 9.3). La primera reiteración no agrega nada; la segunda dice "– reiterado 1 vez"; la tercera, "– reiterado 2 veces" (`vez`/`veces`, como las reiteraciones de datasets).
 6. **Sin firmante titular elegido**, la condición 2 de 9.1 se evalúa con **todos** los usuarios `superadmin`: se cumple si ninguno puede auditar el cambio (lo propuso o no está disponible). Sin ningún superadmin, se cumple siempre. La condición 4 se cumple siempre (firma la configuración de Correos).
-7. **Asunto del recordatorio** tal cual la spec, con el "(s)" literal: `[RPAD] 2 cambio(s) esperan tu auditoría` (como "enviada(s)" en el Estado). El cuerpo es el del email de cambios pendientes de hoy más el párrafo de respaldo; de paso se corrige el "Hace Hace 2 horas" que repetía la plantilla.
+7. **Asunto del recordatorio** con el plural calculado, como el email de cambios pendientes de hoy (el "(s)" de la spec es notación de plantilla): `[RPAD] 1 cambio espera tu auditoría` / `[RPAD] 2 cambios esperan tu auditoría`. El cuerpo es el del email de cambios pendientes de hoy más el párrafo de respaldo; de paso se corrige el "Hace Hace 2 horas" que repetía la plantilla.
 8. **Estructura de la nota de auditoría:** los puntos 5 y 6 de 10.3 son apartados con título, como "Justificación:": `Qué implica la auditoría:` (párrafo, cuatro ítems con viñeta y el párrafo del RPAD) e `Importancia:`. Las tablas de nuevos y reiterados no llevan introducción (la spec no la da). El detalle (punto 4) va bajo el título `Detalle de cada cambio`, una tabla por cambio: `Campo | Valor anterior | Valor nuevo` (modificación) o `Campo | Valor` (alta y baja), con las etiquetas de `public/admin.html`, los nombres de los catálogos y `Sin dato` para un valor vacío. La línea CC al pie queda vacía (no hay una para auditoría). En "Propuesto por" va `Nombre, Cargo` (o solo el nombre si no tiene cargo).
 9. **`para_auditoria`** es obligatorio en Correos (no se puede guardar vacío), pero no entra en `configuracionCompleta`: un Para de auditoría vacío no frena las demás notas; el paso de auditoría de la corrida lo anota como error. Las columnas nuevas de `notas_digitales_config` van **después de `casillas_prueba`**, para no mover las posiciones que fija `tests/schema.test.js`.
 10. **El firmante titular no puede pasar a editor ni a lector** desde el panel (409 con mensaje): la spec dice que solo superadmin o admin pueden ser firmante titular (6.2) y que el editor no puede serlo; sin este control, un cambio de rol dejaría a un editor firmando.
@@ -59,7 +59,7 @@ Casos que la spec no resuelve del todo, decididos acá (los implementadores no l
 - **Textos exactos** (copiados de la spec; las llaves son datos):
   - 403 al auditar (8.2): `Este cambio lo auditan {nombres}. Podés auditarlo solo si ninguno está disponible.` (`{nombres}`: `A`, `A y B`, `A, B y C`, del nombre a la Z).
   - Historial (8.2): `Aprobado por {nombre} (respaldo)` (y `Rechazado por {nombre} (respaldo)`, Decisiones 15).
-  - Recordatorio (9.2): asunto `[RPAD] {n} cambio(s) esperan tu auditoría`; respaldo `Te llega como respaldo: no hay auditores disponibles.`
+  - Recordatorio (9.2): asunto `[RPAD] 1 cambio espera tu auditoría` o `[RPAD] {n} cambios esperan tu auditoría` (Decisiones 7); respaldo `Te llega como respaldo: no hay auditores disponibles.`
   - Asunto con cambios nuevos (10.2): `Nota Digital N° {n}/{aa} – Ref.: Solicitud de auditoría de cambios en el Registro Permanente de Actualización de Datasets`.
   - Asunto solo con reiterados (10.2): `Nota Digital N° {n}/{aa} – Ref.: Reiteración – Solicitud de auditoría de cambios en el Registro Permanente de Actualización de Datasets`.
   - Destinatario (10.3): `DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL`; remitente `DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN, {fecha larga}.`
@@ -1919,7 +1919,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `contextoDeCanal`, `cambiosConCanal` (Task 3); `quienesAuditan`, `entraEnRecordatorio` (Task 2); `emailValido`; `ahoraArgentina`.
 - Produces:
-  - `cambiosPendientesTemplate(cambios, { respaldo = false } = {}) → { subject, html }`: asunto `[RPAD] {n} cambio(s) esperan tu auditoría`; con `respaldo`, el párrafo `Te llega como respaldo: no hay auditores disponibles.`
+  - `cambiosPendientesTemplate(cambios, { respaldo = false } = {}) → { subject, html }`: asunto `[RPAD] 1 cambio espera tu auditoría` o `[RPAD] {n} cambios esperan tu auditoría`; con `respaldo`, el párrafo `Te llega como respaldo: no hay auditores disponibles.`
   - `enviarCambiosPendientes({ hoy, ahora? })` (mismo nombre: la ruta `/api/cron/cambios-pendientes` y su ejecución manual no cambian) → `{ fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes, respaldo }], sinPendientes: [username], deLicencia: [username], canal_nota, errores: [{ admin, error }] }`. `ahora` (`'AAAA-MM-DD HH:MM:SS'`, hora de Argentina) es lo que se guarda en `primer_recordatorio_at`; por defecto, `ahoraArgentina()` (Decisiones 4).
 
 - [ ] **Step 1: Tests que fallan.** En `tests/avisos-diarios.test.js`:
@@ -1940,7 +1940,7 @@ const proponerCambio = async (usuarioId, titulo, { haceMinutos = 120 } = {}) => 
 
 ```js
 describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2)', () => {
-  const asunto = (n) => `[RPAD] ${n} cambio(s) esperan tu auditoría`;
+  const asunto = (n) => (n === 1 ? '[RPAD] 1 cambio espera tu auditoría' : `[RPAD] ${n} cambios esperan tu auditoría`);
   const primerRecordatorio = async (id) => (await query(
     "SELECT DATE_FORMAT(primer_recordatorio_at, '%Y-%m-%d %H:%i:%s') AS f FROM cambios_pendientes WHERE id = ?", [id]
   ))[0].f;
@@ -2047,7 +2047,7 @@ por
 // Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2). respaldo: la persona lo recibe
 // porque no hay auditores disponibles
 export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) => ({
-  subject: `[RPAD] ${cambios.length} cambio(s) esperan tu auditoría`,
+  subject: cambios.length === 1 ? '[RPAD] 1 cambio espera tu auditoría' : `[RPAD] ${cambios.length} cambios esperan tu auditoría`,
 ```
 
 (b) Reemplazar
