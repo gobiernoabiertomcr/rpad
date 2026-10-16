@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const VERSION = '20261023';
+// usuarios.js y correos.js cambiaron después (persona autorizada con licencia superpuesta en parte), y perfil.js con la muestra
+// de la firma del personal contratado: su versión es propia
+const VERSION_PANTALLAS = '20261024';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -21,10 +24,11 @@ describe('páginas', () => {
     });
   }
 
-  // Los scripts propios de estas dos pantallas cambiaron con los días sin auditor
-  for (const [pagina, script] of [['usuarios.html', 'usuarios'], ['correos.html', 'correos']]) {
-    it(`${pagina}: ${script}.js con la versión ${VERSION}`, () => {
-      assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION}"`));
+  // Los scripts propios de estas pantallas cambiaron con los días sin auditor y, después, con la superposición parcial (y el
+  // de Mi Perfil, con la muestra de la firma del personal contratado)
+  for (const [pagina, script] of [['usuarios.html', 'usuarios'], ['correos.html', 'correos'], ['perfil.html', 'perfil']]) {
+    it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
+      assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
     });
   }
 

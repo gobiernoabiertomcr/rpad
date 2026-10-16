@@ -4,6 +4,8 @@
  */
 
 let cambioSeleccionado = null;
+// Si quien mira es personal contratado (usuarios.vinculo = 'contrato'): su firma lleva una muestra (cargarPerfil lo lee)
+let perfilContratado = false;
 
 // Inicialización
 document.addEventListener('DOMContentLoaded', async () => {
@@ -20,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (Auth.isAdmin()) {
     document.getElementById('seccion-firma').hidden = false;
     document.getElementById('form-firma').addEventListener('submit', guardarMiFirma);
+    for (const id of ['firma-nombre', 'firma-cargo']) document.getElementById(id).addEventListener('input', actualizarMuestraFirma);
     cargarMiFirma();
     document.getElementById('seccion-cambios').style.display = 'block';
     await cargarMisCambios();
@@ -48,6 +51,7 @@ async function cargarPerfil() {
     document.getElementById('perfil-cargo-grupo').style.display = cargo ? '' : 'none';
     document.getElementById('perfil-vinculo').value = vinculo;
     document.getElementById('perfil-vinculo-grupo').style.display = vinculo ? '' : 'none';
+    perfilContratado = user.vinculo === 'contrato';
   } catch (error) {
     console.error('Error cargando perfil:', error);
     Utils.showError('Error al cargar datos del perfil');
@@ -669,10 +673,34 @@ async function cargarMiFirma() {
     document.getElementById('firma-estado').textContent = firma.cargada
       ? 'Con esta firma salen las notas que firmás o presentás por autorización.'
       : 'Todavía no cargaste tu firma: se proponen tu nombre y tu cargo.';
+    actualizarMuestraFirma();
     await mostrarImagenFirma(firma.tiene_imagen);
   } catch (error) {
     Utils.showError(`No se pudo cargar tu firma: ${error.message}`);
   }
+}
+
+// Renglón que las notas agregan, más chico, entre el nombre y el cargo de la firma del personal contratado (pedido del
+// usuario el 16/10/2026; es RENGLON_FIRMA_CONTRATADO de services/notasDigitalesContenido.js)
+const RENGLON_FIRMA_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
+
+// Muestra de cómo sale la firma del personal contratado en las notas: el nombre, el renglón (más chico) y el cargo. Quien no
+// es contratado no tiene muestra: su firma sale con el nombre y el cargo, como siempre.
+function muestraDeFirma(nombre, cargo, contratado) {
+  if (!contratado) return '';
+  return `<p class="form-hint">Así sale en las notas:</p>
+    <div class="firma-muestra-renglon">${Utils.escapeHtml(nombre)}</div>
+    <div class="firma-muestra-chico">${RENGLON_FIRMA_CONTRATADO}</div>
+    <div class="firma-muestra-renglon">${Utils.escapeHtml(cargo)}</div>`;
+}
+
+// La muestra con lo que está escrito en los campos de la firma (se actualiza al escribir)
+function actualizarMuestraFirma() {
+  const muestra = document.getElementById('firma-muestra');
+  muestra.innerHTML = muestraDeFirma(
+    document.getElementById('firma-nombre').value.trim(), document.getElementById('firma-cargo').value.trim(), perfilContratado
+  );
+  muestra.hidden = !perfilContratado;
 }
 
 async function mostrarImagenFirma(tiene) {

@@ -4,12 +4,13 @@ import pool from '../config/database.js';
 import { registrarAuditoria } from '../services/usuariosAuditoriaService.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
 import {
-  hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior, esFechaIso, sumarDias, diasEntre
+  hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior, esFechaIso, sumarDias, diasEntre, proximoDiaHabil
 } from '../services/notasDigitalesCalendario.js';
 import {
-  ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse
+  ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse, unirAusencias
 } from '../services/licenciasReglas.js';
 import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
+import { disponibilidadDelAutorizado } from '../services/notasDigitalesFirmas.js';
 
 const MENSAJE_ERROR = 'Error interno del servidor';
 const MENSAJE_SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
@@ -75,9 +76,29 @@ const autorizables = async (conexion, titular) => {
   return filas;
 };
 
+// Las licencias en curso y futuras (no anuladas) de cada persona autorizable, para que el formulario advierta una
+// superposición con la licencia del titular. ausencias: esas licencias unidas como en el Estado (seguidas o separadas solo
+// por días no hábiles, licenciasReglas.unirAusencias), con vuelve, el primer día hábil después de cada una
+const conSusLicencias = async (personas, hoy) => {
+  if (!personas.length) return personas;
+  const [filas] = await pool.query(
+    `SELECT usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+     FROM usuarios_licencias WHERE anulada = 0 AND hasta >= ? AND usuario_id IN (?) ORDER BY desde`,
+    [hoy, personas.map(p => p.id)]
+  );
+  return personas.map((p) => {
+    const licencias = filas.filter(f => f.usuario_id === p.id).map(({ desde, hasta }) => ({ desde, hasta }));
+    const ausencias = unirAusencias(licencias).map(a => ({ ...a, vuelve: proximoDiaHabil(sumarDias(a.hasta, 1)) }));
+    return { ...p, licencias, ausencias };
+  });
+};
+
 /**
  * Reglas que necesitan la base (spec 5.2 y 6.3). autorizadoNuevo: la autorización se está dando o cambiando en este
- * pedido (si no, solo se revisa que la persona ya autorizada no tenga licencia en las fechas nuevas).
+ * pedido (si no, solo se revisa que a la persona ya autorizada le quede algún día hábil con las fechas nuevas).
+ * La persona autorizada y el titular pueden faltar algunos días a la vez: se rechaza solo si a ella no le queda ningún día
+ * hábil en toda la licencia del titular (notasDigitalesFirmas.disponibilidadDelAutorizado). Cuentan todos sus días, no
+ * solo desde hoy: si no, con ella de licencia hasta el final no se podría ni acortar una licencia en curso.
  * Devuelve [status, mensaje, campo] si no se puede, o null.
  */
 const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
@@ -91,14 +112,21 @@ const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, has
     [usuarioId, licenciaId, hasta, desde]
   );
   if (propia) return [409, `Se superpone con otra licencia de la misma persona (${periodo(propia)}).`, 'fechas'];
-  const [[comoAutorizada]] = await conexion.query(
-    `SELECT u.nombre_completo, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta
+  // Las licencias en las que esta persona es la autorizada, superpuestas con la que se guarda (contándola, sin la versión
+  // guardada si se edita)
+  const [autorizaciones] = await conexion.query(
+    `SELECT l.autorizado_id, u.nombre_completo, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta
      FROM usuarios_licencias l JOIN usuarios u ON u.id = l.usuario_id
-     WHERE l.autorizado_id = ? AND l.anulada = 0 AND l.id <> ? AND l.desde <= ? AND l.hasta >= ? LIMIT 1`,
+     WHERE l.autorizado_id = ? AND l.anulada = 0 AND l.id <> ? AND l.desde <= ? AND l.hasta >= ? ORDER BY l.desde`,
     [usuarioId, licenciaId, hasta, desde]
   );
-  if (comoAutorizada) {
-    return [409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}): primero hay que cambiar esa autorización.`, 'fechas'];
+  for (const comoAutorizada of autorizaciones) {
+    const disponible = await disponibilidadDelAutorizado(comoAutorizada, {
+      licenciaExtra: { desde, hasta }, excluirLicenciaId: licenciaId, conexion
+    });
+    if (!disponible) {
+      return [409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`, 'fechas'];
+    }
   }
   if (autorizadoId && autorizadoNuevo) {
     const titular = await firmanteTitular(conexion);
@@ -108,11 +136,10 @@ const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, has
     }
   }
   if (autorizadoId) {
-    const [[ocupada]] = await conexion.query(
-      'SELECT 1 AS si FROM usuarios_licencias WHERE usuario_id = ? AND anulada = 0 AND desde <= ? AND hasta >= ? LIMIT 1',
-      [autorizadoId, hasta, desde]
-    );
-    if (ocupada) return [409, 'La persona autorizada tiene una licencia en esas fechas.', 'autorizado_id'];
+    const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { conexion });
+    if (!disponible) {
+      return [409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id'];
+    }
   }
   return null;
 };
@@ -152,7 +179,7 @@ export const listarLicencias = async (req, res) => {
         soy_titular: soyTitular,
         licencias: filas.map(f => aRespuesta(f, hoy, titular)),
         usuarios: conLicencia,
-        autorizables: soyTitular ? await autorizables(pool, titular) : []
+        autorizables: soyTitular ? await conSusLicencias(await autorizables(pool, titular), hoy) : []
       }
     });
   } catch (error) {

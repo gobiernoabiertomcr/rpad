@@ -7,10 +7,16 @@ const TEXTOS = [
   { campo: 'cargo', maximo: 200, etiqueta: 'El cargo de la firma' }
 ];
 
+// La firma de un usuario, o null. contratado: si es personal contratado (usuarios.vinculo = 'contrato'): las notas lo
+// presentan así (pedido del usuario el 16/10/2026). El cargo de la firma sigue siendo solo el cargo.
 export const firmaDeUsuario = async (usuarioId, conexion = pool) => {
   if (!usuarioId) return null;
-  const [[fila]] = await conexion.query('SELECT usuario_id, nombre, cargo, imagen, mime FROM usuarios_firmas WHERE usuario_id = ?', [usuarioId]);
-  return fila ?? null;
+  const [[fila]] = await conexion.query(
+    `SELECT f.usuario_id, f.nombre, f.cargo, f.imagen, f.mime, (u.vinculo <=> 'contrato') AS contratado
+     FROM usuarios_firmas f LEFT JOIN usuarios u ON u.id = f.usuario_id WHERE f.usuario_id = ?`,
+    [usuarioId]
+  );
+  return fila ? { ...fila, contratado: Number(fila.contratado) === 1 } : null;
 };
 
 // Los dos textos van al PDF: obligatorios, en NFC y sin caracteres que Helvetica no puede escribir

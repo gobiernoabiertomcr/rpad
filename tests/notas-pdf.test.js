@@ -878,6 +878,121 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
   });
 });
 
+// Personal contratado (pedido del usuario el 16/10/2026): en la firma, entre el nombre y el cargo, el renglón "Personal
+// contratado, cumpliendo funciones de", más chico que el cargo
+const RENGLON_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
+const LEYENDA_CONTRATADA = 'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
+const firmasContratadas = ({ titular = false, autorizada = false } = {}) => ({
+  titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: titular },
+  presentante: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', contratado: autorizada },
+  leyenda: LEYENDA_CONTRATADA
+});
+
+describe('renderPdf: personal contratado en la firma (pedido del usuario el 16/10/2026)', () => {
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
+  const IMAGENES = { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B };
+  const textosDe = async (n, opciones = IMAGENES) => textosPorHoja(await renderPdf(n, opciones)).flat();
+  const unica = (textos, texto) => {
+    const encontrados = textos.filter(t => t.texto === texto);
+    assert.equal(encontrados.length, 1, `"${texto}": ${encontrados.length} veces`);
+    return encontrados[0];
+  };
+  // Borde inferior e superior de una línea, desde el borde inferior de la hoja
+  const abajo = (t) => t.base - DESCENDENTE * t.tamano;
+  const arriba = (t) => t.base + ASCENDENTE * t.tamano;
+  const centro = (t) => t.x + anchoDe(t.texto, t.tamano) / 2;
+
+  it('el renglón va en la firma de la persona autorizada, entre su nombre y su cargo, centrado y en 9 pt (el nombre y el cargo, en 11)', async () => {
+    const textos = await textosDe(nota(1, { firma: firmasContratadas({ autorizada: true }) }));
+    const renglon = unica(textos, RENGLON_CONTRATADO);
+    const nombre = unica(textos, 'Persona Autorizada');
+    const cargo = unica(textos, 'Cargo Autorizado');
+    assert.deepEqual([nombre.tamano, renglon.tamano, cargo.tamano], [11, 9, 11]);
+    assert.ok(abajo(nombre) >= arriba(renglon) - 0.01 && abajo(renglon) >= arriba(cargo) - 0.01, 'entre el nombre y el cargo, sin pisarlos');
+    // Centrado en el ancho de la firma de la izquierda (200 pt desde el margen), como el nombre y el cargo
+    for (const t of [nombre, renglon, cargo]) assert.ok(cerca(centro(t), 30 * MM + 100, 0.5), `"${t.texto}" no está centrado`);
+    // (la firma del titular, de planta, no lo lleva: hay un solo renglón)
+    assert.ok(renglon.x < unica(textos, 'Persona Titular').x);
+  });
+
+  it('con una sola firma (el titular contratado) el renglón va en la firma de la derecha', async () => {
+    const firma = { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: true }, presentante: null, leyenda: null };
+    const textos = await textosDe(nota(1, { firma }), { firmaImagen: FIRMA_A });
+    const renglon = unica(textos, RENGLON_CONTRATADO);
+    assert.equal(renglon.tamano, 9);
+    assert.ok(cerca(centro(renglon), ANCHO_HOJA - 30 * MM - 100, 0.5), 'centrado en la firma de la derecha');
+    assert.ok(unica(textos, 'Persona Titular').base > renglon.base && renglon.base > unica(textos, 'Cargo Titular').base);
+  });
+
+  it('las dos firmas siguen alineadas: nombre con nombre, la base de las imágenes a la misma altura y la leyenda debajo de la más alta', async () => {
+    // La disposición de siempre (las dos de planta), para comparar
+    const planta = await textosDe(nota(1, { firma: firmasContratadas() }));
+    const leyendaDe = (textos) => textos.find(t => t.texto.startsWith('Nota presentada por'));
+    const aireLeyenda = abajo(unica(planta, 'Cargo Titular')) - arriba(leyendaDe(planta));
+    for (const quien of [{ autorizada: true }, { titular: true }, { titular: true, autorizada: true }]) {
+      const caso = JSON.stringify(quien);
+      const pdf = await renderPdf(nota(1, { firma: firmasContratadas(quien) }), IMAGENES);
+      const textos = textosPorHoja(pdf).flat();
+      const de = (texto) => unica(textos, texto);
+      assert.equal(de('Persona Autorizada').base, de('Persona Titular').base, `${caso}: los nombres a distinta altura`);
+      assert.equal(de('Persona Titular').base, unica(planta, 'Persona Titular').base, `${caso}: los nombres no quedan donde siempre`);
+      const imagenes = imagenesPorHoja(pdf).flat();
+      assert.equal(imagenes.length, 2, caso);
+      assert.ok(cerca(imagenes[0].y + imagenes[0].alto, imagenes[1].y + imagenes[1].alto), `${caso}: la base de las imágenes a distinta altura`);
+      // La leyenda, debajo del cargo más bajo, con el mismo aire que siempre
+      const cargoMasBajo = [de('Cargo Titular'), de('Cargo Autorizado')].reduce((a, b) => (a.base < b.base ? a : b));
+      assert.ok(cerca(abajo(cargoMasBajo) - arriba(leyendaDe(textos)), aireLeyenda), `${caso}: la leyenda no quedó debajo de la firma más alta`);
+      // Una firma de planta tiene su cargo un renglón debajo del nombre, como siempre
+      if (!quien.titular) assert.equal(de('Cargo Titular').base, unica(planta, 'Cargo Titular').base, caso);
+      if (!quien.autorizada) assert.equal(de('Cargo Autorizado').base, unica(planta, 'Cargo Autorizado').base, caso);
+    }
+  });
+
+  // El cierre se reserva con el renglón: el remitente, las firmas y la línea CC no se separan, y la firma no queda sola
+  it('con 1 a 30 datasets, el cierre (remitente, firmas con el renglón, leyenda y línea CC) queda entero en la última hoja', async () => {
+    const solo = { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: true }, presentante: null, leyenda: null };
+    for (const [caso, firma, partes] of [
+      ['una firma contratada', solo, ['Persona Titular', RENGLON_CONTRATADO, 'Cargo Titular']],
+      ['la autorizada contratada', firmasContratadas({ autorizada: true }), ['Persona Autorizada', RENGLON_CONTRATADO, 'Cargo Autorizado', 'Persona Titular', 'conforme a la autorización']],
+      ['las dos contratadas', firmasContratadas({ titular: true, autorizada: true }), ['Persona Autorizada', 'Persona Titular', 'conforme a la autorización']]
+    ]) {
+      for (let cantidad = 1; cantidad <= 30; cantidad++) {
+        const n = nota(cantidad, { firma });
+        const hojas = lineasPorHoja(await renderPdf(n, IMAGENES));
+        const ultima = hojas.at(-1);
+        const donde = `${caso}, ${cantidad} datasets`;
+        for (const parte of [n.justificacion.at(-1).slice(0, 25), n.remitente, n.lineaCc, ...partes]) {
+          assert.ok(ultima.join(' ').includes(parte), `${donde}: falta "${parte}" en la última hoja`);
+        }
+        assert.equal(ultima.filter(l => l === RENGLON_CONTRATADO).length, caso === 'las dos contratadas' ? 2 : 1, donde);
+        for (const anterior of hojas.slice(0, -1)) {
+          assert.ok(!anterior.join(' ').includes(n.remitente) && !anterior.includes('Persona Titular'), `${donde}: el cierre se partió entre hojas`);
+        }
+      }
+    }
+  });
+
+  // ALTO_CIERRE deja aire de sobra, así que el barrido de arriba pasaría aunque la reserva no contara el renglón. Lo que sí
+  // se ve: con el renglón medido, la reserva es más alta y en algunas notas el último párrafo pasa con el cierre a la hoja
+  // siguiente, donde con la firma de planta entraba (sin medirlo, las dos cortan siempre igual)
+  it('la reserva del cierre cuenta el renglón: la firma contratada nunca ocupa menos hojas que la de planta, y en algún caso una más', async () => {
+    const firma = (contratado) => ({ titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado }, presentante: null, leyenda: null });
+    let conUnaMas = 0;
+    for (let cantidadAreas = 1; cantidadAreas <= 5; cantidadAreas++) {
+      const areas = Array.from({ length: cantidadAreas }, (_, i) => ({
+        id: i + 1, nombre: `Área ${i + 1}`, email_principal: 'area@rpad.test', telefono_area: '297 400-0000'
+      }));
+      for (let cantidad = 1; cantidad <= 30; cantidad++) {
+        const [planta, contratada] = await Promise.all([false, true].map(async (contratado) => paginas(await renderPdf(nota(cantidad, { areas, firma: firma(contratado) })))));
+        assert.ok(contratada >= planta, `${cantidadAreas} áreas, ${cantidad} datasets: ${contratada} hojas contra ${planta}`);
+        if (contratada > planta) conUnaMas++;
+      }
+    }
+    assert.ok(conUnaMas > 0, 'ninguna nota corrió el cierre: la reserva no cuenta el renglón');
+  });
+});
+
 describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.3)', () => {
   const LARGA = `Descripción ${'muy '.repeat(150)}larga del conjunto de datos, que se transcribe completa.`;
   const cambio = (i) => ({
@@ -1063,5 +1178,25 @@ describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-
     assert.ok(ultima.includes('Firma Autorizada') && ultima.includes('Firma Titular'));
     assert.ok(incluye(pdf, firma.leyenda));
     assert.equal(imagenesPorHoja(pdf).at(-1).length, 2);
+  });
+
+  // Personal contratado (pedido del usuario el 16/10/2026): con el renglón de más en la firma, "Importancia" sigue viajando con
+  // el remitente y la firma; "Propuesto por" dice "personal contratado, cumpliendo funciones de"
+  it('propuesta por una persona contratada y presentada por la autorizada contratada: "Importancia" va con el remitente y la firma (1 a 12 cambios)', async () => {
+    let conVariasHojas = 0;
+    for (let cantidad = 1; cantidad <= 12; cantidad++) {
+      for (const palabras of [1, 12, 30]) {
+        const nuevos = Array.from({ length: cantidad }, (_, i) => ({ ...cambio(i + 1), usuario_contratado: true, datos_nuevos: { descripcion: textoDe(palabras) } }));
+        const n = auditoria(cantidad, { nuevos, firma: firmasContratadas({ autorizada: true }) });
+        const hojas = lineasPorHoja(await renderPdf(n, { firmaImagen: PNG, presentanteImagen: PNG }));
+        const donde = `${cantidad} cambios, ${palabras} palabras`;
+        cierreConElTexto(n, hojas, donde);
+        assert.ok(hojas.at(-1).includes(RENGLON_CONTRATADO), `${donde}: falta el renglón en la última hoja`);
+        if (hojas.length > 1) conVariasHojas++;
+      }
+    }
+    assert.ok(conVariasHojas > 0, 'el barrido tiene que incluir notas de varias hojas');
+    const contratada = await renderPdf(auditoria(1, { nuevos: [{ ...cambio(1), usuario_contratado: true }] }));
+    assert.ok(incluye(contratada, 'Persona Editora, personal contratado, cumpliendo funciones de Cargo de Prueba'));
   });
 });

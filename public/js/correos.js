@@ -484,9 +484,12 @@ function textoLicenciaFirmante(l) {
   if (l.sin_dias_habiles) return `Licencia del firmante ${periodo}: no tiene días hábiles, las notas no cambian.`;
   if (l.autorizado) {
     const nota = l.nota_autorizacion ? ` (autorización comunicada en la Nota Digital N° ${l.nota_autorizacion.numero}/${String(l.nota_autorizacion.anio).slice(-2)})` : '';
+    // Si la persona autorizada falta el día que se mira (cualquier día de la licencia, también hasta el final), hasta
+    // cuándo (esos días no se generan notas)
+    const autorizado = l.autorizado_de_licencia_hasta ? `${l.autorizado} (de licencia hasta el ${fecha(l.autorizado_de_licencia_hasta)})` : l.autorizado;
     return l.en_curso
-      ? `Licencia del firmante ${periodo}: ${l.autorizado} presenta las notas por autorización, con las dos firmas${nota}.`
-      : `Licencia del firmante ${periodo}: los avisos se anticipan el ${fecha(l.vispera)} con la autorización a ${l.autorizado}, que presenta las demás notas durante la licencia.`;
+      ? `Licencia del firmante ${periodo}: ${autorizado} presenta las notas por autorización, con las dos firmas${nota}.`
+      : `Licencia del firmante ${periodo}: los avisos se anticipan el ${fecha(l.vispera)} con la autorización a ${autorizado}, que presenta las demás notas durante la licencia.`;
   }
   const avisos = l.en_curso ? 'no se generan notas hasta la vuelta' : `los avisos se anticipan el ${fecha(l.vispera)}`;
   return `Licencia del firmante ${periodo}, sin autorizado: ${avisos} y las reiteraciones se postergan al ${fecha(l.vuelta)}.`;

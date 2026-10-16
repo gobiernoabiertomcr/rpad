@@ -122,6 +122,7 @@ const jsonDe = (valor) => (typeof valor === 'string' ? JSON.parse(valor) : valor
 
 /**
  * Cambios pendientes, del más viejo al más nuevo, con su canal en la fecha (spec 9.1). Cada uno suma:
+ * usuario_contratado (quien lo propuso es personal contratado: "Propuesto por" de la nota de auditoría lo dice),
  * fecha_propuesta ('AAAA-MM-DD' en hora de Argentina), antiguedad_segundos, primer_recordatorio_fecha ('AAAA-MM-DD' o null),
  * aviso_sin_auditores_at (cuándo se avisó a quien lo propuso que no tenía auditor disponible, o null) y canal ('nota' o
  * 'recordatorio').
@@ -139,7 +140,7 @@ export const cambiosConCanal = async (fecha, contexto = null) => {
             DATE_FORMAT(cp.primer_recordatorio_at, '%Y-%m-%d') AS primer_recordatorio_fecha,
             DATE_FORMAT(cp.aviso_sin_auditores_at, '%Y-%m-%d %H:%i:%s') AS aviso_sin_auditores_at,
             d.titulo AS dataset_titulo, u.username AS usuario_username, u.nombre_completo AS usuario_nombre,
-            u.cargo AS usuario_cargo
+            u.cargo AS usuario_cargo, (u.vinculo <=> 'contrato') AS usuario_contratado
      FROM cambios_pendientes cp
      JOIN usuarios u ON u.id = cp.usuario_id
      LEFT JOIN datasets d ON d.id = cp.dataset_id
@@ -151,6 +152,7 @@ export const cambiosConCanal = async (fecha, contexto = null) => {
       ...fila,
       datos_nuevos: jsonDe(fila.datos_nuevos),
       datos_anteriores: jsonDe(fila.datos_anteriores),
+      usuario_contratado: Number(fila.usuario_contratado) === 1,
       antiguedad_segundos: Number(fila.antiguedad_segundos),
       fecha_propuesta: hoyArgentina(new Date(Number(creado) * 1000))
     };

@@ -1,9 +1,9 @@
-// Reglas de las licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.1 y 5.2): funciones puras
+// Reglas de las licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.1, 5.2 y 6.3): funciones puras
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ROLES_CON_LICENCIA, MAXIMO_DIAS_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion,
-  puedeAnularse
+  puedeAnularse, diasHabilesLibres, unirAusencias
 } from '../services/licenciasReglas.js';
 
 const HOY = '2026-11-10';
@@ -65,6 +65,57 @@ describe('validarEdicion (spec 5.2)', () => {
 
   it('sin cambios devuelve las mismas fechas', () => {
     assert.deepEqual(validarEdicion(licencia('2026-11-20', '2026-11-30'), {}, HOY), { datos: { desde: '2026-11-20', hasta: '2026-11-30' } });
+  });
+});
+
+describe('diasHabilesLibres (la persona autorizada, spec 6.3)', () => {
+  // Marzo de 2027: el 01 es lunes, el 06 y el 07 son sábado y domingo, y el 24 (miércoles) es feriado
+  const tramo = (desde, hasta) => ({ desde, hasta });
+
+  it('sin licencias, el primer día hábil del rango', () => {
+    assert.deepEqual(diasHabilesLibres('2027-03-06', '2027-03-12', []), { primerDia: '2027-03-08', cubiertos: false });
+  });
+
+  it('con licencias que cubren una parte, el primer día hábil fuera de ellas', () => {
+    assert.deepEqual(
+      diasHabilesLibres('2027-03-01', '2027-03-31', [tramo('2027-02-22', '2027-03-03'), tramo('2027-03-04', '2027-03-04')]),
+      { primerDia: '2027-03-05', cubiertos: false }
+    );
+  });
+
+  it('si cubren todos los días hábiles, cubiertos (aunque quede libre un fin de semana o un feriado fijo)', () => {
+    assert.deepEqual(diasHabilesLibres('2027-03-01', '2027-03-05', [tramo('2027-02-26', '2027-03-08')]), { primerDia: null, cubiertos: true });
+    assert.deepEqual(
+      diasHabilesLibres('2027-03-04', '2027-03-09', [tramo('2027-03-04', '2027-03-05'), tramo('2027-03-08', '2027-03-09')]),
+      { primerDia: null, cubiertos: true }
+    );
+    assert.deepEqual(
+      diasHabilesLibres('2027-03-23', '2027-03-25', [tramo('2027-03-23', '2027-03-23'), tramo('2027-03-25', '2027-03-25')]),
+      { primerDia: null, cubiertos: true }
+    );
+  });
+
+  it('un rango sin días hábiles no queda cubierto: no hay ningún día en que haga falta', () => {
+    assert.deepEqual(diasHabilesLibres('2027-03-06', '2027-03-07', [tramo('2027-03-01', '2027-03-31')]), { primerDia: null, cubiertos: false });
+    assert.deepEqual(diasHabilesLibres('2027-03-10', '2027-03-09', []), { primerDia: null, cubiertos: false });
+  });
+});
+
+describe('unirAusencias (tramos seguidos de licencia)', () => {
+  // Marzo de 2027: el 05 es viernes, el 06 y el 07 sábado y domingo, el 24 (miércoles) feriado
+  const tramo = (desde, hasta) => ({ desde, hasta });
+
+  it('une las seguidas y las separadas solo por días no hábiles (fin de semana o feriado fijo), en orden', () => {
+    assert.deepEqual(unirAusencias([
+      tramo('2027-03-25', '2027-03-26'), tramo('2027-03-01', '2027-03-03'), tramo('2027-03-04', '2027-03-05'),
+      tramo('2027-03-08', '2027-03-10'), tramo('2027-03-22', '2027-03-23')
+    ]), [tramo('2027-03-01', '2027-03-10'), tramo('2027-03-22', '2027-03-26')]);
+  });
+
+  it('no une las separadas por un día hábil', () => {
+    assert.deepEqual(unirAusencias([tramo('2027-03-01', '2027-03-03'), tramo('2027-03-05', '2027-03-05')]),
+      [tramo('2027-03-01', '2027-03-03'), tramo('2027-03-05', '2027-03-05')]);
+    assert.deepEqual(unirAusencias([]), []);
   });
 });
 

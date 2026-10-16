@@ -87,7 +87,7 @@ Validaciones:
 - como máximo 365 días;
 - no se superpone con otra licencia no anulada del mismo usuario;
 - el usuario existe, está activo y tiene un rol que puede tener licencia;
-- un usuario que es autorizado de otra licencia no puede tener una licencia que se superponga con ella (sección 6.3).
+- un usuario que es autorizado de otra licencia no puede tener una licencia que cubra todos los días hábiles de la del titular (sumada a las que ya tiene): una superposición parcial se permite (sección 6.3).
 
 Cada alta, edición y anulación queda en el historial del panel (`usuarios_auditoria`). Si alguien que no es el superadmin carga, edita o anula **una licencia del superadmin**, corresponde el aviso al superadmin de siempre (retenido si ya está de licencia, sección 5.4).
 
@@ -117,7 +117,9 @@ La pantalla de Usuarios pasa a tener dos pestañas: **Usuarios** (la de hoy) y *
 
 ### 6.1 Firma por persona
 
-Cada usuario con rol `superadmin`, `admin` o `editor` puede cargar **su propia firma** en Mi Perfil: imagen (PNG o JPEG, 500 KB como máximo, con la misma validación que la firma actual), **nombre para la firma** (por ejemplo, "Téc. Nombre Apellido") y **cargo para la firma**. El nombre y el cargo se precargan con `nombre_completo` y `cargo` del usuario y se pueden ajustar. Nadie carga ni ve la firma de otro, salvo en la vista previa de una nota.
+Cada usuario con rol `superadmin`, `admin` o `editor` puede cargar **su propia firma** en Mi Perfil: imagen (PNG o JPEG, 500 KB como máximo, con la misma validación que la firma actual), **nombre para la firma** (por ejemplo, "Nombre Apellido") y **cargo para la firma**. El nombre y el cargo se precargan con `nombre_completo` y `cargo` del usuario y se pueden ajustar. Nadie carga ni ve la firma de otro, salvo en la vista previa de una nota.
+
+**Personal contratado** (`usuarios.vinculo = 'contrato'`, sin designación formal): su firma sale en tres renglones, el nombre, `Personal contratado, cumpliendo funciones de` (en letra más chica que el cargo) y el cargo; Mi Perfil le muestra cómo sale ("Así sale en las notas:"). El cargo guardado en la firma sigue siendo solo el cargo, y quien no es contratado (planta permanente, planta política o sin dato) firma como siempre.
 
 Se guarda en una tabla aparte (`usuarios_firmas`), para que ninguna consulta de usuarios arrastre la imagen. Los textos de la firma pasan por el mismo resguardo de caracteres que el resto del PDF (NFC; se rechazan los caracteres que el PDF no puede escribir).
 
@@ -131,7 +133,9 @@ Se guarda en una tabla aparte (`usuarios_firmas`), para que ninguna consulta de 
 ### 6.3 Autorización
 
 - En una licencia del firmante titular, el campo **"Autorizo a presentar las notas en mi nombre a:"** lo completa, cambia o borra **solo el propio firmante titular**, en cualquier momento antes de que la licencia termine. Si otro usuario carga la licencia, la carga sin autorizado.
-- Se puede autorizar a un usuario `admin` o (desde la entrega 3) `editor`, activo, con firma cargada y sin licencia que se superponga con la del titular.
+- Se puede autorizar a un usuario `admin` o (desde la entrega 3) `editor`, activo, con firma cargada y con al menos un día hábil sin licencia dentro de la licencia del titular. Si tiene una licencia propia que se superpone en parte, se la puede autorizar igual: los días en que falta se aplica la sección 7.3 (no se generan notas) y a su vuelta presenta las que correspondan. Si su licencia cubre todos los días hábiles de la del titular, el sistema responde 409: *"La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota."*
+- El formulario de la licencia del titular lo advierte, debajo del selector, sin bloquear el guardado, con un texto por cada superposición: *"{nombre} va a estar de licencia del {dd/mm/aaaa} al {dd/mm/aaaa}: esos días no se generan notas. Desde el {dd/mm/aaaa} las presenta en tu nombre."* (sin la última frase si no vuelve antes de que termine la licencia del titular; *"…de licencia el {dd/mm/aaaa}: ese día no se generan notas."* si es un solo día). Cada texto es una ausencia: sus licencias unidas si las separan solo días no hábiles, como en el Estado (7.5), y recortadas a las fechas del formulario; el "Desde el" es el primer día hábil en que vuelve. Las ausencias las trae la lista de autorizables (sección 12) y el navegador solo las recorta.
+- A la inversa, la persona autorizada puede cargar una licencia que se superponga en parte con la del titular; si con esa licencia (y las que ya tiene) no le quedara ningún día hábil dentro de la del titular, responde 409 y pide cambiar primero la autorización.
 - Se registra la fecha y hora de la autorización (`autorizado_at`) y queda en el historial.
 - La autorización se comunica formalmente con una Nota Digital numerada (sección 7.2): las notas que presenta la persona autorizada citan ese número.
 - Cambiar o quitar a la persona autorizada, o cambiar las fechas de la licencia, deja sin efecto la nota de autorización anterior (dice a quién y entre qué fechas): si sigue habiendo una persona autorizada, sale una nota nueva (7.2).
@@ -156,9 +160,10 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 - La nota de autorización va a los destinatarios de las notas (los "Para" de las dos gestiones, sin repetir) con el CCO de respaldo. Su asunto es `Nota Digital N° {n}/{aa} – Ref.: Autorización para la presentación de Notas Digitales (licencia del {dd/mm/aaaa} al {dd/mm/aaaa})`.
 - Las notas que comunican la autorización (los avisos de la víspera o la nota de autorización) llevan en CC el email de la persona autorizada.
 - La licencia guarda cuál fue la **primera** nota que comunicó la autorización (`usuarios_licencias.nota_autorizacion_id`); es la que citan las notas de la persona autorizada.
-- **Autorización tardía o cambiada:** si llega un día hábil, entre la víspera y el fin de la licencia, en que la persona autorizada vigente todavía no tiene nota de autorización (se cargó después de la corrida de la víspera, o se cambió de persona), esa corrida genera primero la nota de autorización, firmada por el titular, y después las demás, que ya la citan.
+- **La autorización se comunica siempre en la víspera**, aunque la persona autorizada esté de licencia ese día: se la mira por la licencia entera del titular (le queda algún día hábil sin licencia propia, sección 6.3), no por la fecha de la corrida. Firma solo el titular, que todavía no está de licencia, y la persona autorizada va en CC igual. Las notas que presente después citan esa nota; cuando vuelve no sale una nota de autorización aparte.
+- **Autorización tardía o cambiada:** si llega un día hábil, entre la víspera y el fin de la licencia, en que la persona autorizada vigente todavía no tiene nota de autorización (se cargó después de la corrida de la víspera, o se cambió de persona), esa corrida genera primero la nota de autorización, firmada por el titular, y después las demás, que ya la citan. Si ese día la persona autorizada también está de licencia, no sale nada y la nota de autorización sale el primer día hábil en que vuelve.
 
-**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Cambia el bloque de firma:
+**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Los días en que la persona autorizada también está de licencia no se genera ninguna nota (7.3, como sin autorizado); el primer día hábil en que vuelve salen las que correspondan. Cambia el bloque de firma:
 
 - **PDF:** dos firmas lado a lado, cada una con su imagen, nombre y cargo: el **firmante titular a la derecha** (la posición habitual) y el **autorizado a la izquierda**. Debajo, a todo el ancho y con letra más chica, la leyenda:
 
@@ -167,6 +172,8 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 - **Email (HTML y texto):** los dos nombres y cargos, y la misma leyenda.
 - La nota guarda quién firmó como titular y quién la presentó (sección 11.1).
 - Si la nota de autorización no se pudo generar, ese día no se genera ninguna otra nota (se reintenta en la corrida siguiente).
+
+**Personal contratado (6.1).** En el párrafo de la víspera, en la nota de autorización y en la leyenda, el cargo de una persona contratada se nombra en minúscula y en letra normal, `{nombre}, personal contratado, cumpliendo funciones de {cargo}`: *"… autorizo expresamente a {nombre del autorizado}, personal contratado, cumpliendo funciones de {cargo del autorizado}, a presentar …"* y *"Nota presentada por {nombre del autorizado}, personal contratado, cumpliendo funciones de {cargo del autorizado}, en nombre de {nombre del titular}, {cargo del titular}, conforme a …"* (si el titular también fuera contratado, su mención sigue la misma regla). En las dos firmas, el renglón más chico va solo en la de la persona contratada; los nombres y la base de las imágenes siguen alineados y la leyenda va debajo de la firma más alta.
 
 ### 7.3 Sin autorizado
 
@@ -193,7 +200,8 @@ Sin autorizado, como en la tabla. Con autorizado, la víspera sale lo mismo y ad
 
 - Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: los avisos se anticipan el 25/11 con la autorización a {nombre}, que presenta las demás notas durante la licencia"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
 - Las fechas de "próximo aviso" y "próxima reiteración" tienen en cuenta la licencia.
-- Alertas: autorizado que dejó de cumplir las condiciones (6.3); firmante titular sin firma cargada.
+- Si la persona autorizada falta algunos días de la licencia del titular (6.3), al principio, en el medio o hasta el final, el Estado lo muestra mientras la persona autorizada esté de licencia el día que se evalúa (hoy o, si la licencia del titular todavía no empezó, su primer día hábil): la línea la nombra con *"(de licencia hasta el {dd/mm/aaaa})"* y aparece una **advertencia**, no un error: *"La persona autorizada está de licencia hasta el {dd/mm/aaaa}: hasta entonces no se generan notas."* Para el "hasta el", sus licencias cuentan como una sola si las separan solo días no hábiles.
+- Alertas: autorizado que dejó de cumplir las condiciones (6.3: desactivado, sin firma cargada o de licencia todos los días hábiles de la del titular); firmante titular sin firma cargada.
 
 ## 8. Roles: editor y auditores (entrega 3)
 
@@ -248,7 +256,7 @@ En cada corrida de un día hábil, cada cambio pendiente está en **uno** de dos
   1. ya tuvo su primer recordatorio en un día hábil anterior (sección 9.2);
   2. el **firmante titular no puede auditarlo** hoy: lo propuso él, o no está disponible (por ejemplo, está de licencia);
   3. hay **auditores** disponibles para el cambio (no es de respaldo);
-  4. hay quién firme: el firmante titular si no está de licencia, o su autorizado si está de licencia (sección 7).
+  4. hay quién firme: el firmante titular si no está de licencia, o su autorizado si el titular está de licencia y la persona autorizada no (sección 7).
 - **Recordatorio**, en cualquier otro caso.
 
 Si el firmante titular puede auditarlo, una nota suya pidiendo que lo audite otro no tendría sentido: ese cambio sigue con recordatorios. Sin firmante titular elegido (6.2), la condición 2 se evalúa con el usuario superadmin y la condición 4 se cumple siempre (firma la configuración de Correos).
@@ -341,7 +349,7 @@ Configurables en Correos → Configuración:
 1. `REF.:` con el texto del asunto, `Nota Digital N°` a la derecha y el destinatario `DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL`, como en las otras notas.
 2. **Párrafo inicial:**
    > Me dirijo a Ud. a fin de solicitarle la auditoría de los cambios propuestos en el Registro Permanente de Actualización de Datasets (RPAD) que se detallan a continuación, que se encuentran pendientes de verificación. Conforme al procedimiento de doble verificación, cada modificación del registro debe ser revisada y aprobada por una persona distinta de quien la propuso antes de aplicarse.
-3. **Cambios pendientes de auditoría** (nuevos) y **Cambios ya solicitados que continúan pendientes** (reiterados, con la columna "Solicitado en": `Nota Digital N° 12/26 (dd/mm/aaaa)` y, si corresponde, `– reiterado N veces`). Columnas comunes: conjunto de datos, tipo de cambio (alta, modificación, baja), propuesto por (nombre y cargo), fecha de la propuesta y **días hábiles pendiente** (días hábiles transcurridos desde la fecha de la propuesta, sin contarla).
+3. **Cambios pendientes de auditoría** (nuevos) y **Cambios ya solicitados que continúan pendientes** (reiterados, con la columna "Solicitado en": `Nota Digital N° 12/26 (dd/mm/aaaa)` y, si corresponde, `– reiterado N veces`). Columnas comunes: conjunto de datos, tipo de cambio (alta, modificación, baja), propuesto por (nombre y cargo; si quien propuso es personal contratado, `{nombre}, personal contratado, cumpliendo funciones de {cargo}`, 6.1), fecha de la propuesta y **días hábiles pendiente** (días hábiles transcurridos desde la fecha de la propuesta, sin contarla).
 4. **Detalle de cada cambio:**
    - **modificación:** los campos que cambian, con el valor anterior y el nuevo;
    - **alta:** los datos principales del dataset propuesto;
@@ -434,7 +442,7 @@ El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `edito
 | GET | `/api/auth/profile/firma/imagen` | admin | Imagen de la propia firma |
 | PUT | `/api/notificaciones/notas-digitales/config/firmante` | superadmin | `{ usuario_id }` |
 
-"admin" = `adminOnly` (superadmin, admin y, desde la entrega 3, editor). `autorizado_id` solo lo acepta el backend si quien llama es el firmante titular y la licencia es suya; en otro caso responde 403.
+"admin" = `adminOnly` (superadmin, admin y, desde la entrega 3, editor). `autorizado_id` solo lo acepta el backend si quien llama es el firmante titular y la licencia es suya; en otro caso responde 403. Cada persona de `autorizables` (en `GET /api/usuarios/licencias`) trae `licencias: [{ desde, hasta }]`, las suyas no anuladas que no terminaron, y `ausencias: [{ desde, hasta, vuelve }]`, esas mismas unidas si las separan solo días no hábiles, con `vuelve`, el primer día hábil después de cada una: con ellas el formulario arma el aviso de la sección 6.3.
 
 ### Entrega 3
 
@@ -460,7 +468,7 @@ TDD con la batería completa antes y después de cada tarea (`npm test`, contra 
   - aviso a las áreas: un viernes incluye los vencimientos de viernes, sábado y domingo + 40; el día antes de un feriado incluye el del feriado; un día no hábil no envía nada; se usa la fecha argentina.
 - **Licencias (entrega 2):**
   - validaciones de la tabla 5.2, superposición, máximo de 365 días y roles;
-  - solo el firmante titular pone el autorizado; condiciones del autorizado;
+  - solo el firmante titular pone el autorizado; condiciones del autorizado, incluida la licencia propia que se superpone en parte (se permite) o que cubre todos los días hábiles de la del titular (409);
   - un usuario de licencia no recibe el email de cambios pendientes;
   - aviso al superadmin retenido y resumen el primer día hábil posterior, una sola vez;
   - historial de altas, ediciones y anulaciones.

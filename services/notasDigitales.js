@@ -18,9 +18,10 @@ import {
   aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe
 } from './notasDigitalesDatos.js';
 import {
-  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoVigente
+  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
+import { unirAusencias } from './licenciasReglas.js';
 import { emailValido } from './usuariosReglas.js';
 import {
   contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe, periodosSinAuditor,
@@ -95,9 +96,9 @@ const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: nu
 /**
  * Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente.
  * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
- * autorizacion: { nombre, cargo, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo de autorización;
- * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular. En los dos
- * casos va en CC.
+ * autorizacion: { nombre, cargo, contratado, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo
+ * de autorización; con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular.
+ * En los dos casos va en CC.
  * auditoria: { nuevos, reiterados, catalogos } de la nota de auditoría (tipo 'auditoria', sin gestión ni datasets; spec
  * 2026-10-15, 10). Salvo en las pruebas, cada cambio queda en notas_digitales_cambios con su sección: cuenta como incluido
  * desde que la nota se genera (spec 9.3).
@@ -298,9 +299,11 @@ const registrarFin = (resumen) => registrarCorrida(
   [ahoraArgentina(), textoResultado(resumen), resumen.errores.length ? 1 : 0]
 );
 
-// Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2)
+// Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2); contratado: personal
+// contratado, que el texto presenta así
 const datosDeAutorizacion = ({ licencia, autorizado }) => ({
-  nombre: autorizado.nombre, cargo: autorizado.cargo, email: autorizado.email, desde: licencia.desde, hasta: licencia.hasta
+  nombre: autorizado.nombre, cargo: autorizado.cargo, contratado: Boolean(autorizado.contratado), email: autorizado.email,
+  desde: licencia.desde, hasta: licencia.hasta
 });
 
 // Lo que dice el resumen de una corrida en un día de licencia del firmante sin autorizado (spec 2026-10-15, 7.3)
@@ -382,8 +385,8 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     return;
   }
 
-  // La autorización todavía no comunicada (spec 7.2) va en los avisos de la víspera; si no hay avisos, o se dio más tarde,
-  // sale una nota de autorización firmada por el titular
+  // La autorización todavía no comunicada (spec 7.2) va en los avisos de la víspera, aunque ese día la persona autorizada
+  // esté de licencia; si no hay avisos, o se dio más tarde, sale una nota de autorización firmada por el titular
   const pendiente = await autorizacionPendiente(config, hoy);
   const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
   let autorizacionComunicada = false;
@@ -665,9 +668,17 @@ const licenciaDelFirmante = async (config, hoy) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
   if (!licencia) return null;
-  // La persona autorizada se evalúa en el primer día de la licencia (hoy, si ya empezó): que hoy tenga su propia
-  // licencia no afecta a una licencia futura del firmante
-  const autorizado = await autorizadoVigente(licencia, licencia.desde > hoy ? licencia.desde : hoy);
+  // La persona autorizada sirve si le queda algún día hábil de toda la licencia sin licencia propia: puede faltar algunos
+  // días a la vez que el titular, también hasta el final. Si el día que se mira (el primer día hábil desde el inicio de la
+  // licencia, o desde hoy si ya empezó; sin ninguno hasta el fin, ese mismo día) está de licencia, hasta cuándo, con sus
+  // licencias seguidas unidas: esos días no se generan notas
+  const desdeHoy = licencia.desde > hoy ? licencia.desde : hoy;
+  const habil = proximoDiaHabil(desdeHoy);
+  const evaluado = habil <= licencia.hasta ? habil : desdeHoy;
+  const autorizado = await autorizadoParaLicencia(licencia);
+  const ausente = autorizado?.primer_dia_disponible
+    ? unirAusencias(autorizado.ausencias).find(a => a.desde <= evaluado && evaluado <= a.hasta)
+    : null;
   const [[nota]] = licencia.nota_autorizacion_id
     ? await pool.query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [licencia.nota_autorizacion_id])
     : [[null]];
@@ -679,6 +690,7 @@ const licenciaDelFirmante = async (config, hoy) => {
     autorizado: autorizado ? autorizado.nombre : null,
     nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
     autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
+    autorizado_de_licencia_hasta: ausente?.hasta ?? null,
     sin_dias_habiles: ultimoHabil < licencia.desde,
     vispera: diaHabilAnterior(licencia.desde),
     ultimo_habil: ultimoHabil,
@@ -773,9 +785,14 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       ...((config.firmante_usuario_id ? firmaTitular?.imagen : config.firma_imagen) ? [] : [{
         tipo: 'sin-firma', nivel: 'advertencia', mensaje: 'No hay imagen de la firma: las notas saldrían sin la firma escaneada.'
       }]),
+      // La persona autorizada puede faltar algunos días a la vez que el titular: una advertencia, no un error
+      ...(licencia?.autorizado_de_licencia_hasta ? [{
+        tipo: 'autorizado-de-licencia', nivel: 'advertencia',
+        mensaje: `La persona autorizada está de licencia hasta el ${formatoCorto(licencia.autorizado_de_licencia_hasta)}: hasta entonces no se generan notas.`
+      }] : []),
       ...(licencia?.autorizado_no_vigente ? [{
         tipo: 'autorizado-no-vigente', nivel: 'error',
-        mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia: esos días no se generan notas.`
+        mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.`
       }] : []),
       ...(config.membrete_imagen ? [] : [{
         tipo: 'sin-membrete', nivel: 'advertencia', mensaje: 'No hay imagen del membrete: las notas saldrían sin el encabezado institucional.'

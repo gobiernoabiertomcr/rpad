@@ -77,6 +77,23 @@ const diaUtc = (iso) => {
 // 'AAAA-MM-DD' de un día que existe (no 2026-02-30)
 const esFechaValida = (iso) => /^\d{4}-\d{2}-\d{2}$/.test(iso ?? '') && new Date(diaUtc(iso)).toISOString().slice(0, 10) === iso;
 const diasDelRango = (desde, hasta) => (diaUtc(hasta) - diaUtc(desde)) / 86400000 + 1;
+// Persona autorizada con licencia propia dentro de la del titular (spec 6.3): un texto por ausencia, y desde cuándo presenta
+// las notas en nombre del titular. ausencias: las de la persona que llegan en autorizables ([{ desde, hasta, vuelve }]), ya
+// unidas por el servidor como en el Estado, con vuelve, el primer día hábil después de cada una; desde y hasta: las fechas
+// del formulario. Sin persona, sin alguna fecha o sin superposición, no hay texto.
+const textoAusenciasAutorizado = (nombre, ausencias, desde, hasta) => {
+  if (!nombre || !esFechaValida(desde) || !esFechaValida(hasta)) return [];
+  // Cada ausencia recortada a [desde, hasta]; "Desde el" solo si vuelve antes de que termine la licencia del titular
+  return [...(ausencias ?? [])]
+    .sort((x, y) => x.desde.localeCompare(y.desde))
+    .map(({ desde: d, hasta: h, vuelve }) => ({ a: d > desde ? d : desde, b: h < hasta ? h : hasta, vuelve }))
+    .filter(({ a, b }) => a <= b)
+    .map(({ a, b, vuelve }) => {
+      const cuando = a === b ? `el ${fechaCorta(a)}: ese día` : `del ${fechaCorta(a)} al ${fechaCorta(b)}: esos días`;
+      const presenta = vuelve && vuelve <= hasta ? ` Desde el ${fechaCorta(vuelve)} las presenta en tu nombre.` : '';
+      return `${nombre} va a estar de licencia ${cuando} no se generan notas.${presenta}`;
+    });
+};
 // Lo que se le pide a la API para avisar los días sin auditor de una licencia que todavía no está guardada; null si las
 // fechas o la persona no sirven (no se pide nada). excluir: la licencia que se edita, para que no cuente dos veces. hoy: los
 // días que ya pasaron no se consultan (una licencia en curso empezó antes).
@@ -187,6 +204,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('l-usuario').addEventListener('change', prepararAutorizado);
   document.getElementById('l-desde').addEventListener('input', actualizarEfecto);
   document.getElementById('l-autorizado').addEventListener('change', actualizarEfecto);
+  document.getElementById('l-autorizado').addEventListener('change', actualizarAusenciasAutorizado);
+  document.getElementById('l-desde').addEventListener('input', actualizarAusenciasAutorizado);
+  document.getElementById('l-hasta').addEventListener('input', actualizarAusenciasAutorizado);
   document.getElementById('l-usuario').addEventListener('change', programarSinAuditor);
   document.getElementById('l-desde').addEventListener('input', programarSinAuditor);
   document.getElementById('l-hasta').addEventListener('input', programarSinAuditor);
@@ -731,6 +751,21 @@ function prepararAutorizado() {
     selector.value = actual ? String(actual) : '';
   }
   actualizarEfecto();
+  actualizarAusenciasAutorizado();
+}
+
+// Aviso debajo del selector: los días en que la persona elegida tiene licencia propia dentro de las fechas del formulario.
+// Se calcula con las ausencias que ya llegaron en autorizables (sin llamar a la API) y solo avisa: no bloquea el guardado.
+function actualizarAusenciasAutorizado() {
+  const caja = document.getElementById('l-ausencias-autorizado');
+  const elegida = document.getElementById('grupo-autorizado').hidden
+    ? null
+    : datosLicencias.autorizables.find(a => String(a.id) === document.getElementById('l-autorizado').value);
+  const textos = elegida
+    ? textoAusenciasAutorizado(elegida.nombre_completo, elegida.ausencias, document.getElementById('l-desde').value, document.getElementById('l-hasta').value)
+    : [];
+  caja.innerHTML = textos.map(t => `<p>${esc(t)}</p>`).join('');
+  caja.hidden = textos.length === 0;
 }
 
 function actualizarEfecto() {

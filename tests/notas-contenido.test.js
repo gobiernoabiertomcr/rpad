@@ -1,7 +1,9 @@
 // Contenido de las Notas Digitales (funciones puras)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, textoLeyendaAutorizacion, renderHtml, renderTexto } from '../services/notasDigitalesContenido.js';
+import {
+  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, textoLeyendaAutorizacion, renderHtml, renderTexto, cargoEnTexto
+} from '../services/notasDigitalesContenido.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
 
 const config = {
@@ -312,12 +314,12 @@ describe('firma con autorización (spec 2026-10-15-dias-habiles-licencias-audito
   });
 
   it('sin firma usa la de la configuración, sin presentante ni leyenda', () => {
-    assert.deepEqual(nota().firma, { nombre: 'Nombre de Firma', cargo: 'Cargo de Firma', presentante: null, leyenda: null });
+    assert.deepEqual(nota().firma, { nombre: 'Nombre de Firma', cargo: 'Cargo de Firma', contratado: false, presentante: null, leyenda: null });
   });
 
   it('con la firma del titular sola, la nota firma con sus datos', () => {
     const n = nota({ firma: { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' }, presentante: null, leyenda: null } });
-    assert.deepEqual(n.firma, { nombre: 'Persona Titular', cargo: 'Cargo Titular', presentante: null, leyenda: null });
+    assert.deepEqual(n.firma, { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: false, presentante: null, leyenda: null });
   });
 
   it('HTML: las dos firmas lado a lado (quien presenta a la izquierda), escapadas, y la leyenda', () => {
@@ -382,7 +384,7 @@ describe('nota de autorización (spec 7.2)', () => {
     assert.equal(autorizacion.tipo, 'autorizacion');
     assert.equal(autorizacion.gestion, null);
     assert.equal(autorizacion.parrafoInicial, 'Por medio de la presente informo que, durante mi licencia del 26/11/2026 al 14/01/2027, autorizo expresamente a Persona Autorizada, Cargo Autorizado, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.');
-    assert.deepEqual(autorizacion.firma, { nombre: 'Persona Titular', cargo: 'Cargo Titular', presentante: null, leyenda: null });
+    assert.deepEqual(autorizacion.firma, { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: false, presentante: null, leyenda: null });
   });
 
   it('HTML y texto sin "Justificación:" y con el párrafo', () => {
@@ -503,6 +505,20 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
     assert.deepEqual(auditoria({ nuevos: [], reiterados: [BAJA] }).secciones.map(s => s.clave), ['reiterado']);
   });
 
+  // Personal contratado (pedido del usuario el 16/10/2026): "Propuesto por" dice "personal contratado, cumpliendo funciones de"
+  // antes del cargo. La introducción del detalle no nombra el cargo: queda igual.
+  it('"Propuesto por" de una persona contratada; sin contrato, sin cargo y en el detalle, como siempre', () => {
+    const contratada = auditoria({ nuevos: [modificacion({ usuario_contratado: true }), { ...ALTA, usuario_contratado: true }], reiterados: [{ ...BAJA, usuario_contratado: false }] });
+    assert.deepEqual(contratada.secciones.map(s => s.filas.map(f => f.valores[2])), [
+      ['Persona Editora, personal contratado, cumpliendo funciones de Cargo de Prueba', 'Persona Auditora'],
+      ['Persona Titular, Director']
+    ]);
+    assert.equal(auditoria().secciones[0].filas[0].valores[2], 'Persona Editora, Cargo de Prueba');
+    assert.equal(contratada.detalles.secciones[0].introduccion, 'Propuesta por Persona Editora el 16/10/2026. Campos que cambian, con el valor anterior y el nuevo:');
+    assert.ok(renderHtml(contratada).includes('>Persona Editora, personal contratado, cumpliendo funciones de Cargo de Prueba</td>'));
+    assert.ok(renderTexto(contratada).includes('    Propuesto por: Persona Editora, personal contratado, cumpliendo funciones de Cargo de Prueba\n'));
+  });
+
   it('"Solicitado en" cuenta las reiteraciones: 1 vez, 2 veces', () => {
     const solicitado = (reiteraciones) => auditoria({ nuevos: [], reiterados: [{ ...BAJA, solicitado: { ...BAJA.solicitado, reiteraciones } }] })
       .secciones[0].filas[0].valores[5];
@@ -574,5 +590,74 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
     assert.equal(aviso.detalles, undefined);
     assert.equal(aviso.apartados, undefined);
     assert.ok(!renderHtml(aviso).includes('Detalle de cada cambio'));
+  });
+});
+
+// Personal contratado (usuarios.vinculo = 'contrato', pedido del usuario el 16/10/2026): en la firma, un renglón más chico
+// "Personal contratado, cumpliendo funciones de" entre el nombre y el cargo; dentro de los párrafos, en minúscula y en letra
+// normal. Quien no es contratado sale como siempre.
+describe('personal contratado (pedido del usuario el 16/10/2026)', () => {
+  const RENGLON = 'Personal contratado, cumpliendo funciones de';
+  const titular = (contratado = false) => ({ nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado });
+  const autorizada = (contratado = false) => ({ nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', contratado });
+  const LEYENDA_CONTRATADA = 'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
+  const dosFirmas = (presentante, deTitular = titular()) => ({ titular: deTitular, presentante, leyenda: LEYENDA_CONTRATADA });
+
+  it('cargoEnTexto: "personal contratado, cumpliendo funciones de {cargo}" solo para quien es contratado', () => {
+    assert.equal(cargoEnTexto({ cargo: 'Cargo Autorizado', contratado: true }), 'personal contratado, cumpliendo funciones de Cargo Autorizado');
+    assert.equal(cargoEnTexto({ cargo: 'Cargo Autorizado', contratado: false }), 'Cargo Autorizado');
+    assert.equal(cargoEnTexto({ cargo: 'Cargo Autorizado' }), 'Cargo Autorizado');
+  });
+
+  it('leyenda: la persona autorizada contratada y, si también lo es, el titular', () => {
+    const leyenda = (presentante, deTitular) => textoLeyendaAutorizacion({ presentante, titular: deTitular, nota: { numero: 15, anio: 2026 }, licencia: AUTORIZADA });
+    assert.equal(leyenda(autorizada(true), titular()), LEYENDA_CONTRATADA);
+    assert.equal(leyenda(autorizada(false), titular()), LEYENDA);
+    assert.equal(leyenda(autorizada(true), titular(true)),
+      'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, personal contratado, cumpliendo funciones de Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).');
+  });
+
+  it('párrafo de autorización de los avisos de la víspera', () => {
+    assert.equal(nota({ autorizacion: { ...AUTORIZADA, contratado: true } }).autorizacion,
+      'Asimismo, por medio de la presente autorizo expresamente a Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, a presentar en mi nombre las Notas Digitales durante mi licencia, del 26/11/2026 al 14/01/2027, con el objetivo de mantener el correcto flujo de trabajo.');
+    assert.equal(nota({ autorizacion: { ...AUTORIZADA, contratado: false } }).autorizacion, PARRAFO_AUTORIZACION);
+  });
+
+  it('texto de la nota de autorización', () => {
+    const autorizacion = (contratado) => construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25', firma: { titular: titular(), presentante: null, leyenda: null }, autorizacion: { ...AUTORIZADA, contratado }
+    }).parrafoInicial;
+    assert.equal(autorizacion(true), 'Por medio de la presente informo que, durante mi licencia del 26/11/2026 al 14/01/2027, autorizo expresamente a Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.');
+    assert.equal(autorizacion(false), 'Por medio de la presente informo que, durante mi licencia del 26/11/2026 al 14/01/2027, autorizo expresamente a Persona Autorizada, Cargo Autorizado, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.');
+  });
+
+  it('cada firma de la nota dice si es de una persona contratada; la de Correos, nunca', () => {
+    assert.deepEqual(nota({ firma: dosFirmas(autorizada(true), titular(true)) }).firma, {
+      nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: true,
+      presentante: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', contratado: true }, leyenda: LEYENDA_CONTRATADA
+    });
+    assert.equal(nota().firma.contratado, false);
+    const deAutorizacion = construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25', firma: { titular: titular(true), presentante: null, leyenda: null }, autorizacion: AUTORIZADA
+    });
+    assert.equal(deAutorizacion.firma.contratado, true);
+  });
+
+  it('HTML: el renglón va entre el nombre y el cargo, en 12px (el cargo, en los 15px de la nota), en una firma y en las dos', () => {
+    const una = renderHtml(nota({ firma: { titular: titular(true), presentante: null, leyenda: null } }));
+    assert.ok(una.includes(`<p style="margin:32px 0 0;text-align:right;">Persona Titular<br><span style="font-size:12px">${RENGLON}</span><br>Cargo Titular</p>`), una);
+    assert.ok(una.includes('font-family:Arial,Helvetica,sans-serif;font-size:15px;'));
+    const dos = renderHtml(nota({ firma: dosFirmas({ ...autorizada(true), nombre: 'Persona <b>Autorizada</b>' }) }));
+    assert.ok(dos.includes(`>Persona &lt;b&gt;Autorizada&lt;/b&gt;<br><span style="font-size:12px">${RENGLON}</span><br>Cargo Autorizado</td>`), dos);
+    assert.ok(dos.includes('>Persona Titular<br>Cargo Titular</td>'), 'el titular de planta, como siempre');
+    assert.equal(dos.split(RENGLON).length - 1, 1, 'solo la firma de la persona contratada lleva el renglón');
+    assert.ok(dos.includes(LEYENDA_CONTRATADA));
+  });
+
+  it('texto plano: un renglón más, entre el nombre y el cargo', () => {
+    const una = renderTexto(nota({ firma: { titular: titular(true), presentante: null, leyenda: null } }));
+    assert.ok(una.includes(`2 de noviembre de 2026.\n\nPersona Titular\n${RENGLON}\nCargo Titular\n\nCC. Dir. de Investigación Territorial`), una);
+    const dos = renderTexto(nota({ firma: dosFirmas(autorizada(true)) }));
+    assert.ok(dos.includes(`Persona Autorizada\n${RENGLON}\nCargo Autorizado\n\nPersona Titular\nCargo Titular\n\n${LEYENDA_CONTRATADA}\n\nCC. Dir. de Investigación Territorial`), dos);
   });
 });
