@@ -107,6 +107,15 @@ describe('resumen de avisos retenidos (spec 5.4)', () => {
     assert.deepEqual(await servicio.enviarResumenAvisosRetenidos({ hoy: '2026-11-24' }), { enviado: false, cantidad: 0 });
   });
 
+  it('el texto concuerda con la cantidad: "te habría llegado" con un cambio, "te habrían llegado" con varios', async () => {
+    const { resumenAvisosRetenidosTemplate } = await import('../services/emailTemplates.js');
+    const fila = { created_at: '2026-11-10T13:00:00Z', actor_nombre: 'Persona admin', actor_username: 'padmin', afectado_nombre: 'Persona lector', afectado_username: 'plector', cambio: 'Desactivado' };
+    const uno = resumenAvisosRetenidosTemplate([fila]);
+    for (const texto of [uno.html, uno.text]) assert.ok(texto.includes('hubo un cambio que te habría llegado como aviso:'));
+    const dos = resumenAvisosRetenidosTemplate([fila, fila]);
+    for (const texto of [dos.html, dos.text]) assert.ok(texto.includes('hubo 2 cambios que te habrían llegado como aviso:'));
+  });
+
   it('mientras sigue de licencia, o en un día no hábil, no se envía y quedan retenidos', async () => {
     await deLicencia(superadmin, '2026-11-01', '2026-11-20');
     await retener('Desactivado');

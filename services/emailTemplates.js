@@ -541,20 +541,22 @@ export const resumenAvisosRetenidosTemplate = (retenidos) => {
     aQuien: `${r.afectado_nombre} (${r.afectado_username})`,
     cambio: r.cambio
   }));
-  const cuantos = lineas.length === 1 ? 'hubo un cambio' : `hubo ${lineas.length} cambios`;
+  const cuantos = lineas.length === 1
+    ? 'hubo un cambio que te habría llegado'
+    : `hubo ${lineas.length} cambios que te habrían llegado`;
   return {
     subject: 'RPAD: cambios en los usuarios durante tu licencia',
     html: plantillaSimple({
       titulo: 'Cambios en los usuarios durante tu licencia',
       parrafos: [
-        `Mientras estabas de licencia ${cuantos} que te habrían llegado como aviso:`,
+        `Mientras estabas de licencia ${cuantos} como aviso:`,
         ...lineas.map(l => `${escapeHtml(l.cuando)} h – <strong>${escapeHtml(l.quien)}</strong>: ${escapeHtml(l.aQuien)}: <strong>${escapeHtml(l.cambio)}</strong>`)
       ],
       boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/usuarios.html` },
       notas: ['Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia.']
     }),
     text: [
-      `Mientras estabas de licencia ${cuantos} que te habrían llegado como aviso:`,
+      `Mientras estabas de licencia ${cuantos} como aviso:`,
       ...lineas.map(l => `- ${l.cuando} h – ${l.quien}: ${l.aQuien}: ${l.cambio}`),
       '',
       `Panel de usuarios: ${RPAD_URL}/usuarios.html`
