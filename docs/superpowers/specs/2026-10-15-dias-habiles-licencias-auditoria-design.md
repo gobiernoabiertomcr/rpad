@@ -284,6 +284,42 @@ Un cambio cuenta como incluido en una nota desde que la nota se genera, en cualq
 - **Propone el firmante titular; el único otro auditor está de licencia.** Respaldo: recordatorio diario a los editores disponibles. No sale nota.
 - **El firmante titular está de licencia sin autorizado.** Recordatorios a quienes puedan auditar. No sale nota. Al primer día hábil posterior, los cambios que cumplen las condiciones se escalan.
 
+### 9.5 Días sin auditor
+
+Si todos los auditores están de licencia a la vez, el circuito de 9.1 a 9.3 no le avisa a nadie: los cambios quedan sin recordatorio ni nota y los datasets siguen bloqueados. Esta sección lo hace visible en tres lugares: el formulario de licencias, el aviso a quien propone y Correos → Estado.
+
+**Definiciones**
+- **Día sin auditor:** un día hábil (4.1) en el que ninguna persona con rol `superadmin` o `admin` está **disponible** (sección 3: activa, con contraseña y sin licencia ese día). Los editores no cuentan: se informan como **respaldo** (8.2).
+- **Período sin auditor:** días sin auditor seguidos, contando solo días hábiles. Un fin de semana o un feriado en el medio no cortan el período: el 31/12 y el 4/1 quedan en el mismo.
+- **`vuelve`:** el primer día hábil posterior al período en que hay algún auditor disponible. Se busca hasta 366 días hacia adelante; si no hay, `vuelve` es nulo.
+- Un auditor de licencia que igual entra al sistema puede aprobar (8.2): por eso los textos dicen "sin auditor disponible", nunca "nadie puede aprobar".
+- La disponibilidad se decide en un solo lugar (`disponibilidad`, usada por `personasDeAuditoria` y por la lectura por rango `personasPorDia`) y los períodos los calcula `periodosSinAuditor`, con una consulta de usuarios y una de licencias para todo el rango.
+
+**API:** `GET /api/usuarios/licencias/sin-auditor` (`adminOnly`). Con `desde` y `hasta` (`AAAA-MM-DD`) devuelve los períodos dentro de ese rango; `usuario_id` suma esa licencia (la del formulario, todavía sin guardar) y `excluir` ignora la licencia guardada que se está editando. Sin fechas, de hoy a hoy + 60 días. Fechas inválidas o incompletas, `desde` posterior a `hasta` o más de 366 días: 400 con `campo` `fechas`. Respuesta: `{ periodos: [{ desde, hasta, vuelve, respaldo: [nombres] }] }` (`respaldo`: los editores disponibles en al menos uno de los días del período, por nombre y sin repetir).
+
+**Formulario de licencias (5.5).** Debajo de las fechas, un aviso que se actualiza al cambiar la persona o las fechas (con una espera corta, y descartando respuestas viejas). Cuenta la licencia que se está cargando como una más y, al editar, no cuenta dos veces la guardada. No bloquea el guardado, y si las fechas están incompletas o son inválidas no aparece. Los días que ya pasaron no se consultan. Un párrafo por período:
+- Varios días: `Del {dd/mm/aaaa} al {dd/mm/aaaa} no va a haber ningún auditor disponible: los cambios que se propongan en esos días van a quedar pendientes hasta el {vuelve}.`
+- Un solo día: `El {dd/mm/aaaa} no va a haber ningún auditor disponible: los cambios que se propongan ese día van a quedar pendientes hasta el {vuelve}.`
+- Sin `vuelve`: el cierre es `… van a quedar pendientes hasta que haya un auditor disponible.`
+- Con respaldo, se suma ` En esos días solo pueden auditar de respaldo: {nombres separados por coma y "y"} (nunca un cambio propio).` (en un solo día, "ese día").
+
+En la pestaña Licencias, arriba de "En curso y próximas", el encabezado `Próximos días sin auditores disponibles:` y un renglón por período con el mismo texto (hoy + 60 días). Se recarga al guardar o anular una licencia y no se muestra si no hay períodos.
+
+**Aviso a quien propone** (recordatorio de las 14:00, 9.2). Un cambio entra al aviso si cumple las tres:
+1. entra en el recordatorio (canal recordatorio, propuesto hace una hora o más);
+2. hoy no tiene a nadie que pueda auditarlo: ningún auditor disponible ni, de respaldo, ningún editor disponible que no sea quien lo propuso;
+3. todavía no se le avisó a quien lo propuso (`cambios_pendientes.aviso_sin_auditores_at` es NULL).
+
+Se agrupa por quien propuso y se le manda **un email** con todos sus cambios en esa situación, solo si esa persona está disponible. Si está de licencia, no se manda: queda sin marcar y sale a su vuelta, si el cambio sigue sin auditor. Si está inactiva o ya no tiene rol de auditoría ni de edición, no se manda. Si el email se envió, se guarda `aviso_sin_auditores_at` (hora de Argentina): el aviso sale **una sola vez por cambio**. Un email inválido, una falla de envío o de guardado quedan en los errores de la corrida con el usuario.
+- Asunto, con un cambio: `[RPAD] Tu cambio en {dataset} queda sin auditor disponible hasta el {dd/mm/aaaa}`; con varios: `[RPAD] {n} cambios tuyos quedan sin auditor disponible hasta el {dd/mm/aaaa}`. Si no hay fecha, en lugar de "hasta el …": `por ahora`.
+- Cuerpo: `Hasta el {dd/mm/aaaa} no hay ningún auditor disponible para revisar {este cambio | estos cambios} (los auditores están de licencia).` (sin fecha: `Por ahora no hay …`); la lista de cambios (tipo, conjunto de datos y fecha de la propuesta, como en el recordatorio); y el cierre: `Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio.`
+- La fecha es el primer día hábil, desde el siguiente, en que alguien puede auditar el cambio (un auditor o, de respaldo, un editor que no sea quien lo propuso), o ninguna si no hay uno a la vista.
+- El resultado de la corrida suma `sin_auditor: [{ usuario, cambios, hasta }]`.
+
+**Correos → Estado (10.4).** Debajo de la línea de auditoría:
+- si hay cambios pendientes sin nadie que pueda auditarlos en la próxima corrida (`sin_quien_audite`), una alerta: `Hoy {n} cambios no tienen a nadie que pueda auditarlos.` (o `Hoy 1 cambio no tiene a nadie que pueda auditarlo.`);
+- si hay períodos (`periodos_sin_auditor`, de la próxima corrida a hoy + 60 días): `Próximos días sin auditores disponibles: del {dd/mm/aaaa} al {dd/mm/aaaa} (vuelve a haber auditor el {dd/mm/aaaa})`, uno por período, separados por `; ` y terminado en punto; sin `vuelve`: `(sin fecha de vuelta)`.
+
 ## 10. Nota de auditoría: contenido (entrega 3)
 
 Es una **Nota Digital**: mismo libro, numeración correlativa compartida con avisos y reiteraciones, membrete, PDF adjunto, reintentos y estado. No lleva anexo.
@@ -376,12 +412,12 @@ Todas las migraciones son aditivas e idempotentes (`ADD COLUMN IF NOT EXISTS`, `
 ### 11.2 Entrega 3: `migracion-editor-auditoria.sql`
 
 - `usuarios.rol`: `ENUM('superadmin','admin','editor','lector')`.
-- `cambios_pendientes.primer_recordatorio_at` DATETIME NULL y `cambios_pendientes.revisado_como_respaldo` TINYINT(1) DEFAULT 0.
+- `cambios_pendientes.primer_recordatorio_at` DATETIME NULL, `cambios_pendientes.revisado_como_respaldo` TINYINT(1) DEFAULT 0 y `cambios_pendientes.aviso_sin_auditores_at` DATETIME NULL (cuándo se le avisó a quien propuso que su cambio no tiene a nadie que lo audite, 9.5).
 - `notas_digitales.tipo`: agrega `'auditoria'` (`gestion` ya admite NULL desde la entrega 2).
 - **`notas_digitales_cambios`:** `nota_id` (FK → `notas_digitales` ON DELETE CASCADE), `cambio_id` (FK → `cambios_pendientes` ON DELETE CASCADE), `seccion` ENUM('nuevo','reiterado'). PK `(nota_id, cambio_id)` e índice `(cambio_id)`. Las notas de prueba no registran filas.
 - `notas_digitales_config.para_auditoria` VARCHAR(500) DEFAULT `'mit@comodoro.gov.ar'` y `cc_auditoria` VARCHAR(500) NULL.
 
-El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `editor`. Como el de la entrega 2, deja `notas_digitales.tipo` ampliado para no borrar notas numeradas del libro.
+El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `editor` y quita las columnas nuevas de `cambios_pendientes` (se pierde, entre otras, la fecha del aviso de días sin auditor). Como el de la entrega 2, deja `notas_digitales.tipo` ampliado para no borrar notas numeradas del libro.
 
 ## 12. API
 

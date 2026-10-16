@@ -40,6 +40,8 @@ El sistema cuenta con cuatro roles de usuario:
 
 Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
+**Días sin auditor:** un día hábil en el que ningún superadmin ni admin está disponible (activo, con contraseña y sin licencia; los editores no cuentan, se informan como respaldo). Los días hábiles seguidos forman un período (un fin de semana o un feriado en el medio no lo cortan) y cada período dice cuándo vuelve a haber un auditor. El sistema lo avisa en tres lugares: el formulario de licencias advierte los días sin auditor que dejaría esa licencia (sin bloquear el guardado); a quien propone un cambio que hoy no tiene a nadie que lo audite le llega, en el recordatorio de las 14:00, un único aviso por cambio con la fecha de vuelta; y Correos → Estado muestra cuántos cambios no tienen a quién pedirle la auditoría y los próximos períodos.
+
 ### Panel de usuarios
 
 En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y sin cambiar roles):
@@ -49,7 +51,7 @@ En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo 
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
 - **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
-- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número. Si no autoriza a nadie, las reiteraciones salen a la vuelta.
+- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número. Si no autoriza a nadie, las reiteraciones salen a la vuelta. El formulario avisa, debajo de las fechas, los días en que no habría ningún auditor disponible (cuenta las demás licencias y la que se está cargando), y arriba de la lista se muestran los próximos 60 días sin auditores.
 
 Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor o a lector a un admin si quedarían menos, ni pasar a editor o a lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
@@ -210,15 +212,15 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 ⚠️ Requisito: la migración de licencias y firmas aplicada. No hay dependencias nuevas de npm.
 
 1. **Backup de la base** (phpMyAdmin → Exportar → Personalizado, con "Agregar sentencia DROP TABLE / VIEW / PROCEDURE / FUNCTION / EVENT / TRIGGER") y **de los archivos** (comprimir `controllers`, `middleware`, `routes`, `services`, `scripts` y `public` dentro de la carpeta de la app).
-2. **Migración de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-editor-auditoria.sql` → **Continuar**. Agrega el rol `editor`, dos columnas a los cambios pendientes, el tipo de nota `auditoria`, la tabla de los cambios de cada nota de auditoría y los destinatarios de auditoría (Para: `mit@comodoro.gov.ar`); no cambia datos y el código actual sigue funcionando con la estructura nueva. Si se corta a mitad, se puede volver a correr.
+2. **Migración de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-editor-auditoria.sql` → **Continuar**. Agrega el rol `editor`, tres columnas a los cambios pendientes (la fecha del primer recordatorio, la marca de aprobación de respaldo y la fecha del aviso de días sin auditor, `aviso_sin_auditores_at`), el tipo de nota `auditoria`, la tabla de los cambios de cada nota de auditoría y los destinatarios de auditoría (Para: `mit@comodoro.gov.ar`); no cambia datos y el código actual sigue funcionando con la estructura nueva. Si se corta a mitad, se puede volver a correr.
 3. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app) y, enseguida, **Setup Node.js App → Restart**. No hace falta "Run NPM Install".
 4. **Editores:** el superadmin entra a Usuarios y pasa a **Editor** a quien corresponda (Ver → Rol → Guardar cambios). No hace falta SQL privado. El panel no deja bajar de 2 auditores ni pasar a editor a quien firma las notas.
 5. **Destinatarios de auditoría:** Correos → Configuración → "Notas de auditoría": revisar el Para y el CC, y guardar.
-6. **Verificar:** Correos → Vista previa → tipo **Auditoría** → "Vista previa" y "Ver PDF"; Correos → Estado muestra la línea de auditoría; un editor ve su rol en el encabezado y, en Mi Perfil → Para revisar, los botones deshabilitados mientras haya auditores disponibles.
+6. **Verificar:** Correos → Vista previa → tipo **Auditoría** → "Vista previa" y "Ver PDF"; Correos → Estado muestra la línea de auditoría (y, si hay días sin auditor, las líneas de los cambios sin quien los audite y de los próximos períodos); Usuarios → Licencias → Nueva licencia avisa los días sin auditor al cargar las fechas; un editor ve su rol en el encabezado y, en Mi Perfil → Para revisar, los botones deshabilitados mientras haya auditores disponibles.
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-editor-auditoria.sql`.
 
-- El rollback pasa a admin a los editores (vuelven a aprobar cambios como cualquier admin) y deja la estructura como estaba, salvo `notas_digitales.tipo`, que queda ampliado con `auditoria` (las notas de auditoría son notas numeradas del libro y no se borran); se pierden la fecha del primer recordatorio de cada cambio, la marca de aprobación de respaldo, qué cambios incluyó cada nota de auditoría y los destinatarios de auditoría. Las notas de auditoría quedan en el libro, que en la versión anterior las muestra con el tipo vacío ("undefined").
+- El rollback pasa a admin a los editores (vuelven a aprobar cambios como cualquier admin) y deja la estructura como estaba, salvo `notas_digitales.tipo`, que queda ampliado con `auditoria` (las notas de auditoría son notas numeradas del libro y no se borran); se pierden la fecha del primer recordatorio de cada cambio, la marca de aprobación de respaldo, la fecha del aviso de días sin auditor (si el aviso ya salió, al volver a migrar se manda de nuevo), qué cambios incluyó cada nota de auditoría y los destinatarios de auditoría. Las notas de auditoría quedan en el libro, que en la versión anterior las muestra con el tipo vacío ("undefined").
 - Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
 
 ### Migración: Licencias y firmas
@@ -462,6 +464,8 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 
 El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
 
+En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en el recordatorio no tiene a nadie que pueda auditarlo (ningún auditor ni editor de respaldo disponible que no sea quien lo propuso), quien lo propuso recibe un solo email con todos sus cambios en esa situación: hasta cuándo no hay auditor disponible y que el conjunto de datos sigue bloqueado. Sale una vez por cambio (queda registrado en `cambios_pendientes.aviso_sin_auditores_at`); si quien propuso está de licencia, sale a su vuelta, mientras siga sin auditor. Apenas vuelve a haber un auditor disponible, llega el recordatorio de siempre.
+
 ---
 
 ## API Endpoints
@@ -563,6 +567,7 @@ El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada per
 - Mínimo de 2 auditores (superadmin o admins); el firmante titular sigue siendo superadmin o admin
 - Recordatorio de las 14:00 (solo días hábiles) a quienes pueden auditar cada cambio, desde una hora después de propuesto
 - Nota Digital de auditoría a la Dirección General para los cambios que el firmante no puede auditar, reiterada cada 5 días hábiles
+- Días sin auditor: el formulario de licencias los advierte, quien propone un cambio sin nadie que lo audite recibe un aviso (una vez por cambio) con la fecha de vuelta, y Correos → Estado los muestra
 
 ### Días hábiles, licencias y firmas (2026-10)
 - Todos los recordatorios automáticos salen solo en días hábiles (sin fines de semana ni los feriados nacionales fijos)
