@@ -1,0 +1,203 @@
+// API de licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5 y 6.3), contra una base de prueba propia.
+// La API usa la fecha real: las fechas de los tests se arman desde hoy.
+import { describe, it, before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, paraCasilla
+} from './helpers.js';
+import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
+let base, servidor, api, usuarios, dbReal;
+const hoy = hoyArgentina();
+const dia = (n) => sumarDias(hoy, n);
+
+before(async () => {
+  dbReal = process.env.DB_NAME;
+  base = await crearBaseDePrueba('rpad_test_licencias_api');
+  process.env.DB_NAME = base.nombre;
+  servidor = await iniciarServidor({ env: { DB_NAME: base.nombre } });
+  api = crearCliente(servidor.url);
+  usuarios = await crearUsuariosPrueba(api);
+});
+
+after(async () => {
+  await limpiarDatosPrueba(usuarios);
+  await cerrarDb();
+  await servidor?.detener();
+  if (dbReal === undefined) delete process.env.DB_NAME;
+  else process.env.DB_NAME = dbReal;
+  await base?.borrar();
+});
+
+beforeEach(async () => {
+  await mailpit.vaciar();
+  await query('DELETE FROM usuarios_licencias');
+  await query('DELETE FROM usuarios_firmas');
+  await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
+});
+
+const comoA = () => ({ token: usuarios.adminA.token });
+const comoSuper = () => ({ token: usuarios.superadmin.token });
+const conFirma = (usuario) => query(
+  "INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, 'Firma', 'Cargo', ?, 'image/png')", [usuario.id, PNG]
+);
+const titular = (usuario) => query('UPDATE notas_digitales_config SET firmante_usuario_id = ?', [usuario.id]);
+const cargar = (cuerpo, opciones = comoA()) => api.post('/usuarios/licencias', cuerpo, opciones);
+const historial = (usuarioId, accion) =>
+  query('SELECT actor_id, detalle FROM usuarios_auditoria WHERE usuario_id = ? AND accion = ? ORDER BY id', [usuarioId, accion]);
+
+describe('alta', () => {
+  it('carga la licencia de un admin, la lista y deja el historial', async () => {
+    const res = await cargar({ usuario_id: usuarios.adminB.id, desde: dia(5), hasta: dia(10) });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.estado, 'futura');
+    assert.equal(res.body.data.usuario_id, usuarios.adminB.id);
+
+    const lista = await api.get('/usuarios/licencias', comoA());
+    assert.equal(lista.status, 200);
+    assert.deepEqual(lista.body.data.licencias.map(l => [l.usuario_id, l.desde, l.hasta]), [[usuarios.adminB.id, dia(5), dia(10)]]);
+    assert.ok(lista.body.data.usuarios.some(u => u.id === usuarios.superadmin.id));
+    assert.ok(!lista.body.data.usuarios.some(u => u.id === usuarios.lector.id));
+
+    const [fila] = await historial(usuarios.adminB.id, 'licencia_cargada');
+    assert.equal(fila.actor_id, usuarios.adminA.id);
+  });
+
+  it('un lector no puede tener licencia', async () => {
+    const res = await cargar({ usuario_id: usuarios.lector.id, desde: dia(1), hasta: dia(2) });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.campo, 'usuario_id');
+  });
+
+  it('rechaza fechas inválidas y una licencia superpuesta con otra de la misma persona', async () => {
+    assert.equal((await cargar({ usuario_id: usuarios.adminB.id, desde: dia(5), hasta: dia(2) })).status, 400);
+    assert.equal((await cargar({ usuario_id: usuarios.adminB.id, desde: dia(-10), hasta: dia(-1) })).status, 400);
+    assert.equal((await cargar({ usuario_id: usuarios.adminB.id, desde: dia(1), hasta: dia(5) })).status, 201);
+    const repetida = await cargar({ usuario_id: usuarios.adminB.id, desde: dia(5), hasta: dia(8) });
+    assert.equal(repetida.status, 409);
+    assert.match(repetida.body.error, /Se superpone/);
+  });
+
+  it('dos cargas simultáneas superpuestas: se guarda una sola', async () => {
+    const [r1, r2] = await Promise.all([
+      cargar({ usuario_id: usuarios.adminB.id, desde: dia(20), hasta: dia(25) }),
+      cargar({ usuario_id: usuarios.adminB.id, desde: dia(22), hasta: dia(28) }, comoSuper())
+    ]);
+    assert.deepEqual([r1.status, r2.status].sort(), [201, 409]);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias WHERE usuario_id = ?', [usuarios.adminB.id]))[0].n, 1);
+  });
+
+  it('cualquier admin puede cargar la licencia del superadmin, y el superadmin recibe el aviso', async () => {
+    const res = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(30), hasta: dia(40) });
+    assert.equal(res.status, 201);
+    const [aviso] = await mailpit.esperar(m => m.Subject === 'RPAD: cambio en los usuarios' && paraCasilla(usuarios.superadmin.email)(m));
+    assert.match(await mailpit.html(aviso.ID), /Licencia cargada/);
+  });
+});
+
+describe('edición y anulación (spec 5.2)', () => {
+  it('una futura se edita y se anula', async () => {
+    const { body } = await cargar({ usuario_id: usuarios.adminB.id, desde: dia(5), hasta: dia(10) });
+    const editada = await api.put(`/usuarios/licencias/${body.data.id}`, { desde: dia(6), hasta: dia(12) }, comoA());
+    assert.equal(editada.status, 200);
+    assert.deepEqual([editada.body.data.desde, editada.body.data.hasta], [dia(6), dia(12)]);
+    const anulada = await api.post(`/usuarios/licencias/${body.data.id}/anular`, {}, comoA());
+    assert.equal(anulada.status, 200);
+    assert.equal(anulada.body.data.estado, 'anulada');
+    assert.equal((await historial(usuarios.adminB.id, 'licencia_editada')).length, 1);
+    assert.equal((await historial(usuarios.adminB.id, 'licencia_anulada')).length, 1);
+  });
+
+  it('una en curso solo cambia el fin, y no se anula', async () => {
+    const { insertId: id } = await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminB.id, dia(-3), dia(5)]);
+    assert.equal((await api.put(`/usuarios/licencias/${id}`, { desde: dia(-2), hasta: dia(5) }, comoA())).status, 400);
+    const cortada = await api.put(`/usuarios/licencias/${id}`, { desde: dia(-3), hasta: dia(-1) }, comoA());
+    assert.equal(cortada.status, 200);
+    assert.equal(cortada.body.data.estado, 'pasada');
+    const { insertId: otra } = await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminB.id, dia(-1), dia(5)]);
+    assert.equal((await api.post(`/usuarios/licencias/${otra}/anular`, {}, comoA())).status, 409);
+  });
+});
+
+describe('autorización del firmante titular (spec 6.3)', () => {
+  it('solo la licencia del titular lleva autorizado, y solo la carga el titular', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const ajena = await cargar({ usuario_id: usuarios.adminB.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminA.id }, comoSuper());
+    assert.equal(ajena.status, 403);
+    const porOtro = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminA.id });
+    assert.equal(porOtro.status, 403);
+    assert.equal(porOtro.body.error, SOLO_TITULAR);
+
+    const propia = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminA.id }, comoSuper());
+    assert.equal(propia.status, 201, JSON.stringify(propia.body));
+    assert.equal(propia.body.data.autorizado_id, usuarios.adminA.id);
+    assert.match(propia.body.data.autorizado_at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+
+    const lista = await api.get('/usuarios/licencias', comoSuper());
+    assert.equal(lista.body.data.soy_titular, true);
+    assert.deepEqual(lista.body.data.autorizables.map(a => a.id), [usuarios.adminA.id]);
+    assert.ok(lista.body.data.licencias[0].vispera);
+  });
+
+  it('no se puede autorizar a alguien sin firma, ni a alguien de licencia en esas fechas', async () => {
+    await titular(usuarios.superadmin);
+    const sinFirma = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminB.id }, comoSuper());
+    assert.equal(sinFirma.status, 400);
+    assert.equal(sinFirma.body.campo, 'autorizado_id');
+
+    await conFirma(usuarios.adminB);
+    assert.equal((await cargar({ usuario_id: usuarios.adminB.id, desde: dia(8), hasta: dia(12) })).status, 201);
+    const ocupado = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminB.id }, comoSuper());
+    assert.equal(ocupado.status, 409);
+  });
+
+  it('la persona autorizada no puede tomarse una licencia que se superponga', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminA.id }, comoSuper());
+    const res = await cargar({ usuario_id: usuarios.adminA.id, desde: dia(9), hasta: dia(15) });
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /autorizada/);
+  });
+
+  it('cambiar las fechas o la persona autorizada deja sin efecto la nota de autorización', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    await conFirma(usuarios.adminB);
+    const { body } = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminA.id }, comoSuper());
+    const nota = async () => (await query('SELECT nota_autorizacion_id AS n FROM usuarios_licencias WHERE id = ?', [body.data.id]))[0].n;
+    await query('UPDATE usuarios_licencias SET nota_autorizacion_id = 999 WHERE id = ?', [body.data.id]);
+    assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { hasta: dia(12) }, comoSuper())).status, 200);
+    assert.equal(await nota(), null);
+    await query('UPDATE usuarios_licencias SET nota_autorizacion_id = 999 WHERE id = ?', [body.data.id]);
+    assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { autorizado_id: usuarios.adminB.id }, comoSuper())).status, 200);
+    assert.equal(await nota(), null);
+  });
+
+  it('otro admin puede cambiar las fechas de la licencia del titular, pero no la autorización', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const { body } = await cargar({ usuario_id: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizado_id: usuarios.adminA.id }, comoSuper());
+    assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { hasta: dia(11) }, comoA())).status, 200);
+    const quitar = await api.put(`/usuarios/licencias/${body.data.id}`, { autorizado_id: null }, comoA());
+    assert.equal(quitar.status, 403);
+    assert.equal(quitar.body.error, SOLO_TITULAR);
+  });
+});
+
+describe('marca en la lista de usuarios (spec 5.5)', () => {
+  it('en curso y próxima (dentro de 30 días); más lejos no', async () => {
+    await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminB.id, dia(-1), dia(3)]);
+    await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminA.id, dia(10), dia(12)]);
+    await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.superadmin.id, dia(45), dia(50)]);
+    const { body } = await api.get('/usuarios', comoA());
+    const de = (u) => body.data.usuarios.find(x => x.id === u.id).licencia;
+    assert.deepEqual(de(usuarios.adminB), { desde: dia(-1), hasta: dia(3), en_curso: true });
+    assert.deepEqual(de(usuarios.adminA), { desde: dia(10), hasta: dia(12), en_curso: false });
+    assert.equal(de(usuarios.superadmin), null);
+    assert.deepEqual((await api.get(`/usuarios/${usuarios.adminB.id}`, comoA())).body.data.licencia, { desde: dia(-1), hasta: dia(3), en_curso: true });
+  });
+});

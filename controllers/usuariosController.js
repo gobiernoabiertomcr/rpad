@@ -7,6 +7,7 @@ import {
 import { registrarAuditoria, historialDe } from '../services/usuariosAuditoriaService.js';
 import { enviarLinkDeAcceso } from '../services/accesoService.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
+import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const MENSAJE_PROTEGIDA = 'Esta cuenta solo la modifica su titular.';
 const MENSAJE_MINIMO = 'No se puede: quedarían menos de 2 usuarios que puedan aprobar cambios.';
@@ -23,7 +24,7 @@ const COLUMNAS = `
       AND t.expira_at > NOW()) AS invitacion_vence,
   (SELECT COUNT(*) FROM cambios_pendientes cp WHERE cp.usuario_id = u.id AND cp.estado = 'pendiente') AS cambios_pendientes_propuestos`;
 
-const aRespuesta = (u) => ({
+const aRespuesta = (u, licencias = new Map()) => ({
   id: u.id,
   username: u.username,
   nombre_completo: u.nombre_completo,
@@ -36,7 +37,8 @@ const aRespuesta = (u) => ({
   ultimo_ingreso: u.ultimo_ingreso,
   invitacion_vence: u.invitacion_vence,
   cambios_pendientes_propuestos: Number(u.cambios_pendientes_propuestos),
-  created_at: u.created_at
+  created_at: u.created_at,
+  licencia: licencias.get(u.id) ?? null
 });
 
 const responderError = (res, status, error, campo) =>
@@ -50,6 +52,21 @@ const idDeRuta = (req) => {
 const buscarUsuario = async (conexion, id) => {
   const [filas] = await conexion.execute(`SELECT ${COLUMNAS} FROM usuarios u WHERE u.id = ?`, [id]);
   return filas[0] || null;
+};
+
+// Licencia en curso o que empieza en los próximos 30 días de cada usuario (spec 2026-10-15, 5.5): Map id → licencia
+const licenciasVisibles = async () => {
+  const hoy = hoyArgentina();
+  const [filas] = await pool.query(
+    `SELECT usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+     FROM usuarios_licencias WHERE anulada = 0 AND hasta >= ? AND desde <= ? ORDER BY desde`,
+    [hoy, sumarDias(hoy, 30)]
+  );
+  const porUsuario = new Map();
+  for (const f of filas) {
+    if (!porUsuario.has(f.usuario_id)) porUsuario.set(f.usuario_id, { desde: f.desde, hasta: f.hasta, en_curso: f.desde <= hoy });
+  }
+  return porUsuario;
 };
 
 // Bloquea las filas de usuarios (son pocas) hasta el fin de la transacción y devuelve lo necesario para contar
@@ -83,10 +100,11 @@ const avisar = (req, afectado, cambio, auditoriaId) =>
 export const listarUsuarios = async (req, res) => {
   try {
     const [filas] = await pool.execute(`SELECT ${COLUMNAS} FROM usuarios u ORDER BY u.nombre_completo`);
+    const licencias = await licenciasVisibles();
     res.json({
       success: true,
       data: {
-        usuarios: filas.map(aRespuesta),
+        usuarios: filas.map(u => aRespuesta(u, licencias)),
         resumen: { aprobadores_activos: filas.filter(esAprobadorActivo).length, minimo: MINIMO_APROBADORES }
       }
     });
@@ -102,7 +120,7 @@ export const obtenerUsuario = async (req, res) => {
   try {
     const usuario = id && await buscarUsuario(pool, id);
     if (!usuario) return responderError(res, 404, 'Usuario no encontrado');
-    res.json({ success: true, data: { ...aRespuesta(usuario), historial: await historialDe(id) } });
+    res.json({ success: true, data: { ...aRespuesta(usuario, await licenciasVisibles()), historial: await historialDe(id) } });
   } catch (error) {
     console.error('Error obteniendo usuario:', error);
     responderError(res, 500, MENSAJE_ERROR);

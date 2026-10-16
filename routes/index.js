@@ -77,6 +77,7 @@ import {
   reactivarUsuario,
   enviarAcceso
 } from '../controllers/usuariosController.js';
+import { listarLicencias, crearLicencia, editarLicencia, anularLicencia } from '../controllers/licenciasController.js';
 import { enviarContacto } from '../controllers/contactoController.js';
 import {
   getMetricasAutomaticas,
@@ -177,6 +178,11 @@ router.post('/cambios-pendientes/:id/rechazar', authMiddleware, adminOnly, recha
 // =====================================================
 router.get('/usuarios', authMiddleware, adminOnly, listarUsuarios);
 router.post('/usuarios', authMiddleware, adminOnly, crearUsuario);
+// Licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5): antes de /usuarios/:id
+router.get('/usuarios/licencias', authMiddleware, adminOnly, listarLicencias);
+router.post('/usuarios/licencias', authMiddleware, adminOnly, crearLicencia);
+router.put('/usuarios/licencias/:id', authMiddleware, adminOnly, editarLicencia);
+router.post('/usuarios/licencias/:id/anular', authMiddleware, adminOnly, anularLicencia);
 router.get('/usuarios/:id', authMiddleware, adminOnly, obtenerUsuario);
 router.put('/usuarios/:id', authMiddleware, adminOnly, actualizarUsuario);
 router.post('/usuarios/:id/desactivar', authMiddleware, adminOnly, desactivarUsuario);
