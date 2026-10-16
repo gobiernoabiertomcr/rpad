@@ -99,10 +99,21 @@ describe('regla de respaldo al aprobar y rechazar (spec 8.2)', () => {
     assert.deepEqual(await fila(id), { estado: 'rechazado', revisor_id: usuarios.editor2.id, revisado_como_respaldo: 1 });
   });
 
-  it('un editor nunca audita su propio cambio, aunque no haya auditores disponibles; otro editor sí', async () => {
-    await deLicenciaHoy('adminA', 'adminB', 'superadmin');
+  it('un editor nunca audita su propio cambio, haya o no auditores disponibles; otro editor sí', async () => {
     const id = await proponerBaja('editor');
-    assert.equal((await aprobar(id, 'editor')).status, 403);
+    const propios = async () => {
+      for (const [pedir, accion] of [[aprobar, 'aprobar'], [rechazar, 'rechazar']]) {
+        const res = await pedir(id, 'editor');
+        assert.equal(res.status, 403);
+        assert.equal(res.body.error, `No puede ${accion} sus propios cambios`);
+      }
+    };
+    // Con auditores disponibles el mensaje es el del cambio propio y no el de los nombres de los auditores: el control
+    // "no el propio" va antes que la regla de respaldo
+    await propios();
+    await deLicenciaHoy('adminA', 'adminB', 'superadmin');
+    await propios();
+    assert.deepEqual(await fila(id), { estado: 'pendiente', revisor_id: null, revisado_como_respaldo: 0 });
     assert.equal((await aprobar(id, 'editor2')).status, 200);
     assert.equal((await fila(id)).revisado_como_respaldo, 1);
   });
