@@ -127,6 +127,7 @@ describe('avisos', () => {
     assert.equal(resumen.enviadas, 1);
 
     const [mensaje] = await mailpit.mensajes();
+    assert.equal(mensaje.From.Name, 'Dir. de Datos Públicos y Comunicación');
     assert.deepEqual(direcciones(mensaje.To), ['mit@rpad.test']);
     assert.deepEqual(direcciones(mensaje.Cc), ['geo@rpad.test']);
     assert.deepEqual(direcciones(mensaje.Bcc), ['respaldo@rpad.test']);

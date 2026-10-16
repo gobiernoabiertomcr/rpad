@@ -2,7 +2,7 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import pool from '../config/database.js';
-import { sendEmail } from './emailService.js';
+import { sendEmail, remitente } from './emailService.js';
 import { invitacionTemplate, recuperacionTemplate, RPAD_URL, fechaHoraArgentina } from './emailTemplates.js';
 import { registrarAuditoria } from './usuariosAuditoriaService.js';
 import { emailValido } from './usuariosReglas.js';
@@ -126,7 +126,7 @@ export const enviarLinkDeAcceso = async ({ usuario, tipo, actorId = null, origen
   const envio = await sendEmail({
     ...plantilla({ ...usuario, link, vence }),
     to: usuario.email,
-    from: `"RPAD - Datos Abiertos MCR" <${process.env.SMTP_USER}>`
+    from: remitente()
   });
 
   const resultado = envio.success ? { email_enviado: true } : { email_enviado: false, error: envio.error };

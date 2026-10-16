@@ -26,6 +26,12 @@ const DEFAULT_RECIPIENTS = [
 ];
 
 /**
+ * Remitente de todos los emails del sistema (avisos, recordatorios, accesos y Notas Digitales): un solo nombre,
+ * con la casilla de SMTP_USER
+ */
+export const remitente = () => `"Dir. de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
+
+/**
  * Convierte "a@x, b@y; c@z" o ['a@x', ...] en una lista limpia de direcciones
  */
 export const listaDeCorreos = (valor) => {
@@ -63,7 +69,7 @@ export const sendEmail = async ({ subject, html, text, to = DEFAULT_RECIPIENTS, 
 
   try {
     const info = await transporter.sendMail({
-      from: from || `"RPAD - Notificaciones" <${process.env.SMTP_USER}>`,
+      from: from || remitente(),
       to: para.length ? para.join(', ') : undefined,
       cc: copia.length ? copia.join(', ') : undefined,
       bcc: oculta.length ? oculta.join(', ') : undefined,
@@ -89,7 +95,7 @@ export const sendEmailToArea = ({ subject, html, to }) => sendEmail({
   subject,
   html,
   to: to || [],
-  from: `"RPAD - Datos Abiertos MCR" <${process.env.SMTP_USER}>`
+  from: remitente()
 });
 
 /**

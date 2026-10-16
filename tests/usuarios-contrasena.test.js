@@ -169,6 +169,7 @@ describe('¿Olvidaste tu contraseña?', () => {
     await recuperar(x.username);
     const [mensaje] = await mailpit.esperar(paraCasilla(x.email));
     assert.equal(mensaje.Subject, 'Tu acceso al RPAD');
+    assert.equal(mensaje.From.Name, 'Dir. de Datos Públicos y Comunicación');
   });
 
   it('limita a 3 pedidos por hora para un mismo usuario, aunque cambie la IP', async () => {
