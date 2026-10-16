@@ -142,13 +142,14 @@ export const cambiosPendientesParaAdmin = async (adminId) => {
   }));
 };
 
-// "Hace 45 minutos", "Hace 3 horas" o "Hace 2 dias", como en el email anterior
-const tiempoPendiente = (segundos) => {
+// "Hace 45 minutos", "Hace 3 horas" o "Hace 2 dias" (sin tilde, como en el email anterior); con 1, en singular: "Hace 1 hora"
+const unidad = (cantidad, singular, plural) => `${cantidad} ${cantidad === 1 ? singular : plural}`;
+export const tiempoPendiente = (segundos) => {
   const minutos = Math.floor(segundos / 60);
-  if (minutos < 60) return `Hace ${minutos} minutos`;
+  if (minutos < 60) return `Hace ${unidad(minutos, 'minuto', 'minutos')}`;
   const horas = Math.floor(minutos / 60);
-  if (horas < 24) return `Hace ${horas} horas`;
-  return `Hace ${Math.floor(horas / 24)} dias`;
+  if (horas < 24) return `Hace ${unidad(horas, 'hora', 'horas')}`;
+  return `Hace ${unidad(Math.floor(horas / 24), 'dia', 'dias')}`;
 };
 
 /**
@@ -206,11 +207,17 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
     resultados.enviados.push({
       admin: persona.username, email: persona.email, cantidadPendientes: destino.cambios.length, respaldo: destino.respaldo
     });
-    // Solo la primera vez: después se repite cada día hábil sin pisar la fecha (spec 9.2)
-    await pool.query(
-      'UPDATE cambios_pendientes SET primer_recordatorio_at = ? WHERE id IN (?) AND primer_recordatorio_at IS NULL',
-      [ahora, destino.cambios.map(c => c.id)]
-    );
+    // Solo la primera vez: después se repite cada día hábil sin pisar la fecha (spec 9.2). El email ya salió: si guardar la
+    // fecha falla, se anota el error y siguen los demás destinatarios (la fecha se guarda en el próximo recordatorio)
+    try {
+      await pool.query(
+        'UPDATE cambios_pendientes SET primer_recordatorio_at = ? WHERE id IN (?) AND primer_recordatorio_at IS NULL',
+        [ahora, destino.cambios.map(c => c.id)]
+      );
+    } catch (error) {
+      console.error(`Error guardando el primer recordatorio (${persona.username}):`, error);
+      resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del primer recordatorio: ${error.message}` });
+    }
   }
   return resultados;
 };

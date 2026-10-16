@@ -3,8 +3,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
-import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
-import { crearArea, crearDataset, asegurarBaseDePrueba } from './notas-fixtures.js';
+import { crearBaseDePrueba, cerrarDb, query, mailpit, paraCasilla } from './helpers.js';
+import { crearArea, crearDataset, asegurarBaseDePrueba, configurarNotas, conFallaSimulada } from './notas-fixtures.js';
 
 let base, servicio, dbReal;
 
@@ -33,6 +33,7 @@ beforeEach(async () => {
   await query('DELETE FROM areas');
   await query('DELETE FROM usuarios_licencias');
   await query('DELETE FROM usuarios');
+  await query('UPDATE notas_digitales_config SET envio_activo = 0 WHERE id = 1');
   await mailpit.vaciar();
 });
 
@@ -186,6 +187,12 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     assert.match(html, /Propuesto hace 61 minutos/);
     assert.doesNotMatch(html, /Propuesto hace 59 minutos/);
     assert.doesNotMatch(html, /Hace Hace/);
+    // 61 minutos son "1 hora", no "1 horas"
+    assert.match(html, /Hace 1 hora(?!s)/);
+    // El cuerpo concuerda con el asunto y con el rol editor: se audita, y lo proponen otras personas (no solo administradores)
+    assert.match(html, /Hay 1 cambio esperando tu auditoría/);
+    assert.match(html, /cambios propuestos por otras personas\./);
+    assert.doesNotMatch(html, /esperando tu aprobacion|otros administradores/);
     assert.equal(await primerRecordatorio(viejo), '2026-10-16 14:00:00');
     assert.equal(await primerRecordatorio(reciente), null);
   });
@@ -222,16 +229,70 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     assert.equal(para(await mailpit.mensajes(), b.email).length, 0);
   });
 
-  it('un cambio en el canal nota no recibe recordatorio', async () => {
-    const a = await crearUsuario('admin');
-    const b = await crearUsuario('admin');
-    const id = await proponerCambio(a.id, 'Cambio pedido por nota');
-    // Ya tuvo su primer recordatorio y, sin firmante titular ni superadmin, nadie puede auditarlo como titular (9.1)
+  // El cambio que propuso el titular (sin firmante elegido, el superadmin) y que ya tuvo su primer recordatorio el viernes:
+  // el lunes lo puede auditar otro admin, pero no el titular (9.1). Devuelve al otro admin, que es quien lo recibiría.
+  const cambioDelTitularYaRecordado = async () => {
+    const titular = await crearUsuario('superadmin');
+    const otro = await crearUsuario('admin');
+    const id = await proponerCambio(titular.id, 'Cambio del titular');
     await query("UPDATE cambios_pendientes SET primer_recordatorio_at = '2026-10-16 14:00:00' WHERE id = ?", [id]);
+    return otro;
+  };
+
+  it('un cambio en el canal nota no recibe recordatorio', async () => {
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    const otro = await cambioDelTitularYaRecordado();
     const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-10-19' });
     assert.equal(resultado.canal_nota, 1);
     assert.deepEqual(resultado.enviados, []);
-    assert.equal(para(await mailpit.mensajes(), b.email).length, 0);
+    assert.equal(para(await mailpit.mensajes(), otro.email).length, 0);
+  });
+
+  // La nota de auditoría solo puede salir con el envío automático activo, la configuración completa y un Para de auditoría:
+  // si no, el cambio sigue por recordatorio en lugar de quedar sin canal (9.1, condición 4)
+  for (const [descripcion, configuracion] of [
+    ['el envío automático está desactivado', { envio_activo: 0 }],
+    ['no hay Para de auditoría', { para_auditoria: '' }],
+    ['la configuración de las notas está incompleta', { para_externa: '' }]
+  ]) {
+    it(`si ${descripcion}, el cambio del titular sigue recibiendo el recordatorio`, async () => {
+      await configurarNotas({ para_auditoria: 'auditoria@rpad.test', ...configuracion });
+      const otro = await cambioDelTitularYaRecordado();
+      const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-10-19' });
+      assert.equal(resultado.canal_nota, 0);
+      assert.deepEqual(resultado.enviados.map(e => e.email), [otro.email]);
+      assert.equal(para(await mailpit.esperar(m => m.To.some(t => t.Address === otro.email)), otro.email).length, 1);
+    });
+  }
+
+  it('si no se puede guardar el primer recordatorio de una persona, queda como error y siguen las demás', async () => {
+    const a = await crearUsuario('admin');
+    const b = await crearUsuario('admin');
+    const c = await crearUsuario('admin');
+    // a recibe el de b, b el de a y c los dos. La falla simulada rechaza el UPDATE que alcanza al cambio de b
+    // (el de a y el de c); el de b (el email de b) se guarda bien
+    const deA = await proponerCambio(a.id, 'Cambio de la primera persona');
+    const deB = await proponerCambio(b.id, 'Cambio de la segunda persona');
+
+    const resultado = await conFallaSimulada('UPDATE', `NEW.id = ${deB}`, () =>
+      servicio.enviarCambiosPendientes({ hoy: '2026-10-16', ahora: '2026-10-16 14:00:00' }), 'cambios_pendientes');
+
+    assert.deepEqual(resultado.enviados.map(e => e.email), [a.email, b.email, c.email]);
+    assert.deepEqual(resultado.errores.map(e => e.admin), [a.username, c.username]);
+    for (const e of resultado.errores) assert.match(e.error, /primer recordatorio.*Falla simulada/);
+    // Los tres emails salieron, también el de c, que va después de la primera falla
+    for (const persona of [a, b, c]) assert.equal(para(await mailpit.esperar(paraCasilla(persona.email)), persona.email).length, 1);
+    assert.equal(await primerRecordatorio(deA), '2026-10-16 14:00:00');
+    assert.equal(await primerRecordatorio(deB), null);
+  });
+
+  it('cuánto hace que está pendiente: singular con 1, plural con el resto, sin tilde en "dias" como el email anterior', () => {
+    const casos = [
+      [0, 'Hace 0 minutos'], [60, 'Hace 1 minuto'], [119, 'Hace 1 minuto'], [120, 'Hace 2 minutos'], [59 * 60, 'Hace 59 minutos'],
+      [3600, 'Hace 1 hora'], [7199, 'Hace 1 hora'], [7200, 'Hace 2 horas'], [23 * 3600, 'Hace 23 horas'],
+      [86400, 'Hace 1 dia'], [47 * 3600, 'Hace 1 dia'], [48 * 3600, 'Hace 2 dias'], [10 * 86400, 'Hace 10 dias']
+    ];
+    for (const [segundos, esperado] of casos) assert.equal(servicio.tiempoPendiente(segundos), esperado, `${segundos} segundos`);
   });
 
   it('el asunto cuenta los cambios de cada persona', async () => {
