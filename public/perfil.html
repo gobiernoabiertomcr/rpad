@@ -273,6 +273,9 @@
             resize: vertical;
         }
 
+        [hidden] { display: none !important; }
+        .firma-vista { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
+
         @media (max-width: 968px) {
             .profile-grid {
                 grid-template-columns: 1fr;
@@ -457,6 +460,33 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                                 Cambiar Contraseña
                             </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Mi firma (admin y superadmin): la usan las Notas Digitales cuando firmás o presentás una nota -->
+                <div class="profile-card" id="seccion-firma" hidden>
+                    <div class="profile-card-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        <h2>Mi firma</h2>
+                    </div>
+                    <div class="profile-card-body">
+                        <p class="form-hint" id="firma-estado"></p>
+                        <form id="form-firma">
+                            <div class="form-group">
+                                <label class="form-label" for="firma-nombre">Nombre para la firma <span style="color: var(--danger);">*</span></label>
+                                <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Téc. Nombre Apellido">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="firma-cargo">Cargo para la firma <span style="color: var(--danger);">*</span></label>
+                                <input type="text" id="firma-cargo" class="form-input" maxlength="200">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
+                                <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
+                                <img id="firma-vista" class="firma-vista" alt="Tu firma cargada" hidden>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="btn-guardar-firma" style="width: 100%;">Guardar firma</button>
                         </form>
                     </div>
                 </div>

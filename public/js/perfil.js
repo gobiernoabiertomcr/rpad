@@ -18,6 +18,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Mostrar sección de cambios solo para admins
   if (Auth.isAdmin()) {
+    document.getElementById('seccion-firma').hidden = false;
+    document.getElementById('form-firma').addEventListener('submit', guardarMiFirma);
+    cargarMiFirma();
     document.getElementById('seccion-cambios').style.display = 'block';
     await cargarMisCambios();
     await cargarCambiosParaRevisar();
@@ -650,5 +653,73 @@ async function aprobarCambio(id) {
   } catch (error) {
     console.error('Error al aprobar cambio:', error);
     Utils.showError(error.message);
+  }
+}
+
+// =====================================================
+// MI FIRMA (spec 2026-10-15-dias-habiles-licencias-auditoria, 6.1)
+// =====================================================
+let urlImagenFirma = null;
+
+async function cargarMiFirma() {
+  try {
+    const firma = await API.getMiFirma();
+    document.getElementById('firma-nombre').value = firma.nombre ?? '';
+    document.getElementById('firma-cargo').value = firma.cargo ?? '';
+    document.getElementById('firma-estado').textContent = firma.cargada
+      ? 'Con esta firma salen las notas que firmás o presentás por autorización.'
+      : 'Todavía no cargaste tu firma: se proponen tu nombre y tu cargo.';
+    await mostrarImagenFirma(firma.tiene_imagen);
+  } catch (error) {
+    Utils.showError(`No se pudo cargar tu firma: ${error.message}`);
+  }
+}
+
+async function mostrarImagenFirma(tiene) {
+  const vista = document.getElementById('firma-vista');
+  if (urlImagenFirma) URL.revokeObjectURL(urlImagenFirma);
+  urlImagenFirma = null;
+  vista.hidden = true;
+  if (!tiene) return;
+  try {
+    urlImagenFirma = URL.createObjectURL(await API.getImagenMiFirma());
+    vista.src = urlImagenFirma;
+    vista.hidden = false;
+  } catch {
+    // sin vista previa
+  }
+}
+
+const leerComoDataUrl = (archivo) => new Promise((resolve, reject) => {
+  const lector = new FileReader();
+  lector.onload = () => resolve(lector.result);
+  lector.onerror = () => reject(new Error('No se pudo leer la imagen'));
+  lector.readAsDataURL(archivo);
+});
+
+async function guardarMiFirma(evento) {
+  evento.preventDefault();
+  const boton = document.getElementById('btn-guardar-firma');
+  boton.disabled = true;
+  try {
+    const datos = {
+      nombre: document.getElementById('firma-nombre').value.trim(),
+      cargo: document.getElementById('firma-cargo').value.trim()
+    };
+    const archivo = document.getElementById('firma-archivo').files[0];
+    if (archivo) {
+      if (!['image/png', 'image/jpeg'].includes(archivo.type)) throw new Error('La firma debe ser una imagen PNG o JPEG');
+      if (archivo.size > 500 * 1024) throw new Error('La imagen debe pesar como máximo 500 KB');
+      datos.imagen = await leerComoDataUrl(archivo);
+      datos.mime = archivo.type;
+    }
+    const res = await API.guardarMiFirma(datos);
+    Utils.showSuccess(res.message);
+    document.getElementById('firma-archivo').value = '';
+    await cargarMiFirma();
+  } catch (error) {
+    Utils.showError(error.message);
+  } finally {
+    boton.disabled = false;
   }
 }

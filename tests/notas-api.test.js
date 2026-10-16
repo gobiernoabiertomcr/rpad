@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
-import { crearArea, crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
+import { crearArea, crearDataset, crearNota, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
 import { esDiaHabil, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -457,6 +457,22 @@ describe('libro', () => {
     // Con el filtro por dataset la columna opcional va después de tiene_anexo: sigue llegando
     assert.strictEqual(filtrada.body.data[0].tiene_anexo, true);
     assert.equal((await api.get(`/notificaciones/notas-digitales?dataset_id=${otro}`, comoAdmin())).body.data.length, 0);
+  });
+
+  it('el libro filtra por tipo, incluida la nota de autorización (sin gestión); la vista previa y la prueba no la aceptan', async () => {
+    const aviso = await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-11-02', numero: 1 });
+    const autorizacion = await crearNota({ tipo: 'autorizacion', gestion: null, fecha: '2026-11-25', numero: 2 });
+    const ids = async (consulta) => (await api.get(`/notificaciones/notas-digitales${consulta}`, comoAdmin())).body.data.map(n => n.id).sort((a, b) => a - b);
+
+    assert.deepEqual(await ids('?tipo=autorizacion'), [autorizacion]);
+    assert.deepEqual(await ids('?tipo=aviso'), [aviso]);
+    assert.deepEqual(await ids(''), [aviso, autorizacion]);
+    const [fila] = (await api.get('/notificaciones/notas-digitales?tipo=autorizacion', comoAdmin())).body.data;
+    assert.equal(fila.gestion, null);
+    assert.equal(fila.cantidad_datasets, 0);
+
+    assert.equal((await api.get('/notificaciones/notas-digitales/preview?tipo=autorizacion&gestion=interna', comoAdmin())).status, 400);
+    assert.equal((await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'autorizacion', gestion: 'interna' }, comoAdmin())).status, 400);
   });
 
   // Un aviso (con anexo) y, un mes después, su reiteración (sin anexo), generados por el motor

@@ -11,6 +11,8 @@ import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/image
 import { firmaDeUsuario } from '../services/firmasService.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
+// El libro también filtra las notas de autorización; la vista previa y la prueba solo usan TIPOS
+const TIPOS_LIBRO = [...TIPOS, 'autorizacion'];
 const GESTIONES = ['interna', 'externa'];
 const ESTADOS = ['pendiente', 'enviada', 'fallida'];
 const EMAIL_VALIDO = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
@@ -81,7 +83,7 @@ export const listarNotas = async (req, res) => {
     const parametros = [];
     if (incluir_pruebas !== '1') condiciones.push('n.es_prueba = 0');
     if (idDe(anio)) { condiciones.push('YEAR(n.fecha) = ?'); parametros.push(Number(anio)); }
-    if (TIPOS.includes(tipo)) { condiciones.push('n.tipo = ?'); parametros.push(tipo); }
+    if (TIPOS_LIBRO.includes(tipo)) { condiciones.push('n.tipo = ?'); parametros.push(tipo); }
     if (GESTIONES.includes(gestion)) { condiciones.push('n.gestion = ?'); parametros.push(gestion); }
     if (ESTADOS.includes(estado)) { condiciones.push('n.estado = ?'); parametros.push(estado); }
     const datasetId = idDe(dataset_id);

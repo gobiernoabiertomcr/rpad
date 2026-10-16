@@ -9,7 +9,7 @@ import vm from 'vm';
 const cargarCorreos = () => {
   const elementos = {};
   const elemento = (id) => {
-    elementos[id] ??= { id, value: '', disabled: false, title: '', hidden: false, addEventListener() {} };
+    elementos[id] ??= { id, value: '', disabled: false, title: '', hidden: false, textContent: '', addEventListener() {} };
     return elementos[id];
   };
   elemento('preview-tipo').value = 'aviso';
@@ -56,5 +56,48 @@ describe('correos.js: botón "Ver anexo" de la vista previa', () => {
     assert.equal(boton.title, 'Solo los avisos llevan anexo');
     elegirTipo('aviso');
     assert.equal(boton.disabled, false);
+  });
+});
+
+describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-auditoria, 6.2)', () => {
+  it('con firmante, los campos de firma muestran los suyos, no se editan y no se envían al guardar', () => {
+    const { contexto } = cargarCorreos();
+    vm.runInContext("configActual = { firmante: { nombre_completo: 'Persona Titular', nombre: 'Téc. Titular', cargo: 'Director' } }", contexto);
+    contexto.aplicarFirmante();
+    const elemento = (id) => vm.runInContext(`document.getElementById('${id}')`, contexto);
+    assert.equal(elemento('firma_nombre').disabled, true);
+    assert.equal(elemento('firma_nombre').value, 'Téc. Titular');
+    assert.equal(elemento('firma_cargo').value, 'Director');
+    assert.equal(elemento('firma-archivo').disabled, true);
+    assert.match(elemento('firma-ayuda').textContent, /Persona Titular/);
+    assert.deepEqual(Object.keys(vm.runInContext('datosDelFormulario()', contexto)).filter(c => c.startsWith('firma')), []);
+  });
+
+  it('sin firmante, todo como antes', () => {
+    const { contexto } = cargarCorreos();
+    vm.runInContext('configActual = { firmante: null }', contexto);
+    contexto.aplicarFirmante();
+    const elemento = (id) => vm.runInContext(`document.getElementById('${id}')`, contexto);
+    assert.equal(elemento('firma_nombre').disabled, false);
+    assert.ok(Object.keys(vm.runInContext('datosDelFormulario()', contexto)).includes('firma_nombre'));
+  });
+
+  it('texto de la licencia del firmante para el Estado', () => {
+    const { contexto } = cargarCorreos();
+    const texto = (l) => vm.runInContext(`textoLicenciaFirmante(${JSON.stringify(l)})`, contexto);
+    assert.equal(texto(null), '');
+    assert.match(texto({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: false, autorizado: null, vispera: '2026-11-25', vuelta: '2027-01-15' }),
+      /los avisos se anticipan el 25\/11\/2026 y las reiteraciones se postergan al 15\/01\/2027/);
+    assert.match(texto({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: false, autorizado: 'Persona Autorizada', vispera: '2026-11-25' }),
+      /los avisos se anticipan el 25\/11\/2026 con la autorización a Persona Autorizada/);
+    assert.match(texto({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: true, autorizado: 'Persona Autorizada', nota_autorizacion: { numero: 15, anio: 2026 } }),
+      /Persona Autorizada presenta las notas por autorización, con las dos firmas \(autorización comunicada en la Nota Digital N° 15\/26\)/);
+  });
+
+  it('el libro muestra las notas de autorización, sin gestión ni datasets', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(vm.runInContext("ETIQUETAS.autorizacion", contexto), 'Autorización');
+    assert.equal(vm.runInContext("textoGestion(null)", contexto), '—');
+    assert.equal(vm.runInContext("textoGestion('interna')", contexto), 'Interna');
   });
 });

@@ -16,7 +16,9 @@ const IMAGENES_CONFIG = {
     obtener: () => API.getMembreteNotas(), url: null
   }
 };
-const ETIQUETAS = { aviso: 'Aviso', reiteracion: 'Reiteración', interna: 'Interna', externa: 'Externa', enviada: 'Enviada', fallida: 'Fallida', pendiente: 'Pendiente' };
+const ETIQUETAS = { aviso: 'Aviso', reiteracion: 'Reiteración', autorizacion: 'Autorización', interna: 'Interna', externa: 'Externa', enviada: 'Enviada', fallida: 'Fallida', pendiente: 'Pendiente' };
+// La nota de autorización no tiene gestión
+const textoGestion = (gestion) => (gestion ? ETIQUETAS[gestion] : '—');
 // Máximo de notas que devuelve la API del libro (las más recientes)
 const LIMITE_LIBRO = 500;
 const CLASE_ESTADO = { enviada: 'badge-success', fallida: 'badge-danger', pendiente: 'badge-warning' };
@@ -68,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('preview-tipo').addEventListener('change', actualizarBotonAnexo);
   document.getElementById('btn-prueba').addEventListener('click', enviarmePrueba);
   document.getElementById('form-config').addEventListener('submit', guardarConfiguracion);
+  document.getElementById('firmante').addEventListener('change', elegirFirmante);
   Object.entries(IMAGENES_CONFIG).forEach(([clave, imagen]) => {
     document.getElementById(imagen.archivo).addEventListener('change', evento => subirImagen(clave, evento));
   });
@@ -120,6 +123,9 @@ async function cargarEstado() {
       .map(a => `<div class="nd-alerta${a.nivel === 'advertencia' ? ' nd-advertencia' : ''}">${Utils.escapeHtml(a.mensaje)}</div>`)
       .join('');
     document.getElementById('nd-ultima-corrida').textContent = textoUltimaCorrida(estado.ultima_corrida);
+    const licencia = document.getElementById('nd-licencia');
+    licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
+    licencia.hidden = !estado.licencia_firmante;
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
     document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
@@ -206,8 +212,8 @@ async function cargarLibro() {
         <td>${numeroDe(n)}</td>
         <td>${fecha(n.fecha)}</td>
         <td>${ETIQUETAS[n.tipo]}</td>
-        <td>${ETIQUETAS[n.gestion]}</td>
-        <td>${n.es_prueba ? '—' : `${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}`}</td>
+        <td>${textoGestion(n.gestion)}</td>
+        <td>${n.es_prueba || n.tipo === 'autorizacion' ? '—' : `${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}`}</td>
         <td>${Utils.escapeHtml(n.para)}${n.cc ? `<br><small>CC: ${Utils.escapeHtml(n.cc)}</small>` : ''}</td>
         <td>
           <span class="badge ${CLASE_ESTADO[n.estado]}" title="${Utils.escapeHtml(detalleEstado)}">${ETIQUETAS[n.estado]}</span>
@@ -376,9 +382,68 @@ async function cargarConfiguracion() {
       document.getElementById(campo).value = configActual[campo] ?? '';
     });
     Object.keys(IMAGENES_CONFIG).forEach(mostrarImagen);
+    aplicarFirmante();
+    cargarFirmantes();
   } catch (error) {
     avisar(`No se pudo cargar la configuración: ${error.message}`, 'error');
   }
+}
+
+// Con firmante titular elegido, la firma de las notas es la de su Mi Perfil: los campos de firma de esta pantalla muestran
+// sus datos y no se editan (spec 2026-10-15-dias-habiles-licencias-auditoria, 6.2)
+function aplicarFirmante() {
+  const firmante = configActual?.firmante ?? null;
+  for (const id of ['firma_nombre', 'firma_cargo', 'firma-archivo']) document.getElementById(id).disabled = Boolean(firmante);
+  if (firmante) {
+    document.getElementById('firma_nombre').value = firmante.nombre ?? '';
+    document.getElementById('firma_cargo').value = firmante.cargo ?? '';
+  }
+  document.getElementById('firma-ayuda').textContent = firmante
+    ? `Firma ${firmante.nombre_completo}: el nombre, el cargo y la imagen se cambian en su Mi Perfil.`
+    : '';
+}
+
+async function cargarFirmantes() {
+  const selector = document.getElementById('firmante');
+  try {
+    const candidatos = await API.getFirmantesNotas();
+    selector.innerHTML = ['<option value="">Nadie: la firma cargada en esta pantalla</option>',
+      ...candidatos.map(c => `<option value="${c.id}">${Utils.escapeHtml(`${c.nombre_completo} (${c.nombre}, ${c.cargo})`)}</option>`)].join('');
+    selector.value = configActual?.firmante_usuario_id ? String(configActual.firmante_usuario_id) : '';
+    selector.disabled = !Auth.isSuperadmin();
+    document.getElementById('firmante-ayuda').textContent = Auth.isSuperadmin()
+      ? 'Aparecen el superadmin y los admins activos con su firma cargada en Mi Perfil.'
+      : 'Lo elige el superadmin.';
+  } catch (error) {
+    avisar(`No se pudieron cargar los firmantes: ${error.message}`, 'error');
+  }
+}
+
+async function elegirFirmante(evento) {
+  const valor = evento.target.value;
+  try {
+    const res = await API.elegirFirmanteNotas(valor ? Number(valor) : null);
+    avisar(res.message, 'success');
+    cargarEstado();
+  } catch (error) {
+    avisar(error.message, 'error');
+  }
+  await cargarConfiguracion();
+}
+
+// Licencia del firmante para el Estado (spec 7.5)
+function textoLicenciaFirmante(l) {
+  if (!l) return '';
+  const periodo = `del ${fecha(l.desde)} al ${fecha(l.hasta)}`;
+  if (l.sin_dias_habiles) return `Licencia del firmante ${periodo}: no tiene días hábiles, las notas no cambian.`;
+  if (l.autorizado) {
+    const nota = l.nota_autorizacion ? ` (autorización comunicada en la Nota Digital N° ${l.nota_autorizacion.numero}/${String(l.nota_autorizacion.anio).slice(-2)})` : '';
+    return l.en_curso
+      ? `Licencia del firmante ${periodo}: ${l.autorizado} presenta las notas por autorización, con las dos firmas${nota}.`
+      : `Licencia del firmante ${periodo}: los avisos se anticipan el ${fecha(l.vispera)} con la autorización a ${l.autorizado}, que presenta las demás notas durante la licencia.`;
+  }
+  const avisos = l.en_curso ? 'no se generan notas hasta la vuelta' : `los avisos se anticipan el ${fecha(l.vispera)}`;
+  return `Licencia del firmante ${periodo}, sin autorizado: ${avisos} y las reiteraciones se postergan al ${fecha(l.vuelta)}.`;
 }
 
 // Libera el blob URL de la imagen mostrada antes de reemplazarla u ocultarla
@@ -409,9 +474,16 @@ async function mostrarImagen(clave) {
   }
 }
 
+// Los campos del formulario que se guardan: los de la firma deshabilitados (con firmante titular) no se envían
+function datosDelFormulario() {
+  return Object.fromEntries(CAMPOS_CONFIG
+    .filter(campo => !document.getElementById(campo).disabled)
+    .map(campo => [campo, document.getElementById(campo).value]));
+}
+
 async function guardarConfiguracion(evento) {
   evento.preventDefault();
-  const datos = Object.fromEntries(CAMPOS_CONFIG.map(campo => [campo, document.getElementById(campo).value]));
+  const datos = datosDelFormulario();
   try {
     await API.guardarConfigNotas(datos);
     avisar('Configuración guardada', 'success');
