@@ -91,6 +91,11 @@ Calculados dinámicamente según `proxima_actualizacion`:
 - `atrasado` / `sin-respuesta` — vencido (según tipo_gestion interna/externa)
 - `sin-fecha` — sin fecha de próxima actualización
 
+### Recordatorios automáticos
+- Salen solo en días hábiles: lunes a viernes sin los 9 feriados nacionales fijos (`esDiaHabil` en `services/notasDigitalesCalendario.js`). Hoy = `hoyArgentina()`, nunca `CURDATE()`.
+- Cron 8:15 (`/api/cron/notificaciones`): aviso a las áreas (`services/avisosDiariosService.js`) y Notas Digitales (`services/notasDigitales.js`).
+- Cron 14:00 (`/api/cron/cambios-pendientes`): email de cambios pendientes a los admins.
+
 ## Seguridad
 - JWT_SECRET obligatorio al iniciar (process.exit(1) si falta)
 - Rate limiting: login (10/15min), contacto (5/hora por IP)

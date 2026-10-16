@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
-import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
+import { crearArea, crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
-import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { esDiaHabil, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 // Banner del membrete generado para los tests (la imagen institucional no se versiona)
@@ -609,8 +609,9 @@ describe('corrida diaria', () => {
     assert.equal(notas[0].creado_por, null);
   });
 
-  // Vale cualquier día: la corrida queda registrada también cuando sale por "Día no hábil"
-  it('un error en el aviso a las áreas no saltea las Notas Digitales, que dejan registrada la corrida', async () => {
+  // Solo en días hábiles: en un día no hábil el aviso a las áreas no consulta la base (spec 2026-10-15, 4.2)
+  it('un error en el aviso a las áreas no saltea las Notas Digitales, que dejan registrada la corrida', async (t) => {
+    if (!esDiaHabil(hoy)) return t.skip('hoy no es día hábil');
     await asegurarBaseDePrueba();
     await query('ALTER TABLE areas RENAME COLUMN celular_area TO celular_area_oculta');
     try {
@@ -634,6 +635,17 @@ describe('corrida diaria', () => {
     assert.equal(res.body.data.ultima_corrida, null);
     assert.ok(res.body.data.alertas.some(a => a.tipo === 'sin-corrida'));
   });
+
+  // Vale cualquier día: la base de prueba está vacía y no se genera ninguna nota
+  it('la respuesta conserva sus campos y suma dia_habil (spec 2026-10-15, 4.2)', async () => {
+    const res = await api.get('/cron/notificaciones', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    for (const campo of ['fecha', 'enviados', 'errores', 'sinDatasets', 'notasDigitales', 'dia_habil']) {
+      assert.ok(campo in res.body.data, `falta ${campo}`);
+    }
+    assert.equal(res.body.data.dia_habil, esDiaHabil(hoy));
+    assert.deepEqual(res.body.data.sinDatasets, ['area-aviso-40']);
+  });
 });
 
 describe('aviso a las áreas', () => {
@@ -643,5 +655,25 @@ describe('aviso a las áreas', () => {
     const [mensaje] = await mailpit.mensajes();
     assert.deepEqual(mensaje.To.map(t => t.Address), ['prueba@rpad.test']);
     assert.match(mensaje.Subject, /^\[PRUEBA\] /);
+  });
+
+  it('la vista previa responde cualquier día: usa la selección del próximo día hábil o el ejemplo', async () => {
+    const res = await api.get('/notificaciones/preview/area-aviso-40', comoAdmin());
+    assert.equal(res.status, 200);
+    // El HTML del aviso no trae el nombre del área (solo el asunto): el área de ejemplo se reconoce por sus datasets
+    assert.match(res.body, /Dataset de Ejemplo 1/);
+  });
+
+  // Un sábado, hoyArgentina() no tiene rango y mostraría el ejemplo: la selección tiene que salir del próximo día hábil
+  it('la vista previa muestra los datasets que vencen en la ventana del próximo día hábil, no el ejemplo', async () => {
+    const proximo = proximoDiaHabil(hoyArgentina());
+    const areaId = await crearArea({ email_principal: 'area-vista-previa@rpad.test' });
+    await crearDataset({
+      gestion: 'externa', vencimiento: rangoDeAviso(proximo, 40).desde, areaId, titulo: 'Dataset de la vista previa del próximo aviso'
+    });
+    const res = await api.get('/notificaciones/preview/area-aviso-40', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.body, /Dataset de la vista previa del próximo aviso/);
+    assert.doesNotMatch(res.body, /Dataset de Ejemplo 1/);
   });
 });

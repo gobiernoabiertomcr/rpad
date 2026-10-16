@@ -87,6 +87,7 @@ rpad/
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
 │   ├── emailService.js            # Configuración SMTP y envío
+│   ├── avisosDiariosService.js    # Aviso a las áreas y email de cambios pendientes (solo días hábiles)
 │   ├── emailTemplates.js          # Plantillas HTML para emails
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
@@ -224,7 +225,7 @@ Secuencia de despliegue, en este orden:
 4. **Verificar SMTP** en Correos → Estado ("Verificar conexión SMTP"). Si la conexión es rechazada, habilitar la salida SMTP de la cuenta en WHM ("SMTP Restrictions").
 5. En Correos → Configuración, **cargar la firma** (nombre, cargo e imagen), el **membrete del PDF** (la imagen del banner y, si cambió, el texto del pie; la migración deja cargado `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.`) y las **casillas de prueba**. El banner no está en el repositorio: se sube desde esa pantalla. Revisar el PDF con "Ver PDF" en Correos → Vista previa y prueba. Después, **enviar una prueba de cada variante** (aviso y reiteración, de gestión interna y externa) y revisar las cuatro en las casillas de prueba, con su PDF.
 6. **Recién entonces, activar el envío automático** en Correos → Estado. Las notas las dispara el mismo cron diario de `/api/cron/notificaciones` (ver [Configurar Cron Job](#configurar-cron-job-notificaciones-automáticas)).
-7. **El primer día hábil siguiente**, revisar Correos → Estado: la línea "Última corrida diaria" tiene que mostrar la corrida de las 08:00 sin errores y no tiene que haber alertas. Revisar también el libro de Notas Digitales.
+7. **El primer día hábil siguiente**, revisar Correos → Estado: la línea "Última corrida diaria" tiene que mostrar la corrida de las 08:15 sin errores y no tiene que haber alertas. Revisar también el libro de Notas Digitales.
 
 Los siete emails de aviso anteriores (interno y externo) dejan de salir apenas se sube el código; las Notas Digitales empiezan cuando se activa el envío automático.
 
@@ -402,26 +403,30 @@ Respuesta esperada:
 
 ```
 https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET
+https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET
 ```
 
-### 2. Configurar en cPanel → Cron Jobs
+### 2. Configurar en cPanel → Tareas Cron
 
-| Campo | Valor |
-|-------|-------|
-| Minuto | 0 |
-| Hora | 8 |
-| Día | * |
-| Mes | * |
-| Día semana | * |
-| Comando | `curl -s "https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET" > /dev/null` |
+| Minuto | Hora | Día | Mes | Día semana | Comando |
+|--------|------|-----|-----|------------|---------|
+| 15 | 8 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET" > /dev/null` |
+| 0 | 14 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET" > /dev/null` |
 
-Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días antes) y las **Notas Digitales**:
+Los dos corren todos los días: cPanel no conoce los feriados y el sistema decide. **Todos los recordatorios automáticos salen solo en días hábiles**: de lunes a viernes, sin los feriados nacionales de fecha fija (01/01, 24/03, 02/04, 01/05, 25/05, 20/06, 09/07, 08/12 y 25/12). Los feriados trasladables cuentan como hábiles.
 
+Si se cambia el horario de una tarea existente, hacerlo fuera de las 8:00–8:15 y de las 13:00–14:00: editada en ese intervalo, la tarea puede correr dos veces ese día y repetir los emails.
+
+El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales**:
+
+- **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento. Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
 - **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
 - **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Lleva solo el PDF de la nota, sin anexo.
-- Solo en días hábiles. Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
+- Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
 - El envío automático arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
+
+El de las **14:00** envía a cada administrador el email con los cambios pendientes de aprobación que puede revisar (nunca los propios).
 
 ---
 
@@ -475,6 +480,7 @@ Esto ejecuta todos los días a las 8:00 el aviso directo a las áreas (40 días 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/cron/notificaciones?secret=...` | Ejecutar notificaciones (para cron) |
+| GET | `/api/cron/cambios-pendientes?secret=...` | Email de cambios pendientes a los admins (para cron) |
 
 ### Filtros disponibles en `/api/datasets`
 
