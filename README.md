@@ -35,10 +35,10 @@ El sistema cuenta con cuatro roles de usuario:
 |-----|-------------|----------|
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
-| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con dos diferencias: audita cambios de otros solo **de respaldo** (si ese día no hay ningún auditor disponible) y en el panel de usuarios solo crea y modifica lectores. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante, pero no ser firmante titular. |
+| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros solo **de respaldo** (si ese día no hay ningún auditor disponible), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
 | `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, reportes, notas) sin poder modificar datos. |
 
-Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
+Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
 ### Panel de usuarios
 
@@ -218,7 +218,7 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-editor-auditoria.sql`.
 
-- El rollback pasa a admin a los editores (vuelven a aprobar cambios como cualquier admin) y deja la estructura como estaba; se pierden la fecha del primer recordatorio de cada cambio, la marca de aprobación de respaldo, qué cambios incluyó cada nota de auditoría y los destinatarios de auditoría. Las notas de auditoría quedan en el libro, que en la versión anterior las muestra con el tipo vacío ("undefined").
+- El rollback pasa a admin a los editores (vuelven a aprobar cambios como cualquier admin) y deja la estructura como estaba, salvo `notas_digitales.tipo`, que queda ampliado con `auditoria` (las notas de auditoría son notas numeradas del libro y no se borran); se pierden la fecha del primer recordatorio de cada cambio, la marca de aprobación de respaldo, qué cambios incluyó cada nota de auditoría y los destinatarios de auditoría. Las notas de auditoría quedan en el libro, que en la versión anterior las muestra con el tipo vacío ("undefined").
 - Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
 
 ### Migración: Licencias y firmas
@@ -455,12 +455,12 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 - **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento. Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
 - **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
 - **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Lleva solo el PDF de la nota, sin anexo.
-- **Nota de auditoría**: pide a la Dirección General la auditoría de los cambios pendientes que el firmante no puede auditar (los propuso él o está de licencia) y que ya tuvieron su recordatorio un día hábil anterior. Sale una sola por día, después de avisos y reiteraciones, y se reitera cada 5 días hábiles mientras sigan pendientes. Destinatarios en Correos → Configuración → Notas de auditoría.
+- **Nota de auditoría**: pide a la Dirección General la auditoría de los cambios pendientes que el firmante no puede auditar (los propuso él o está de licencia) y que ya tuvieron su recordatorio un día hábil anterior. Sale una sola por día, después de avisos y reiteraciones, y se reitera cada 5 días hábiles mientras sigan pendientes. Comparte el interruptor de **envío automático** con las demás notas y necesita la configuración completa y un Para de auditoría (Correos → Configuración → Notas de auditoría): con el envío automático apagado, la configuración incompleta o sin Para de auditoría no sale ninguna nota, y esos cambios siguen con los recordatorios de las 14:00 en lugar de quedar sin aviso.
 - Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
-- El envío automático arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
+- El envío automático (también el de la nota de auditoría) arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 
-El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios). Quien está de licencia no lo recibe.
+El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
 
 ---
 
