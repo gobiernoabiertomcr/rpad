@@ -159,9 +159,9 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 - Las notas que comunican la autorización (los avisos de la víspera o la nota de autorización) llevan en CC el email de la persona autorizada.
 - La licencia guarda cuál fue la **primera** nota que comunicó la autorización (`usuarios_licencias.nota_autorizacion_id`); es la que citan las notas de la persona autorizada.
 - **La autorización se comunica siempre en la víspera**, aunque la persona autorizada esté de licencia ese día: se la mira por la licencia entera del titular (le queda algún día hábil sin licencia propia, sección 6.3), no por la fecha de la corrida. Firma solo el titular, que todavía no está de licencia, y la persona autorizada va en CC igual. Las notas que presente después citan esa nota; cuando vuelve no sale una nota de autorización aparte.
-- **Autorización tardía o cambiada:** si llega un día hábil, entre la víspera y el fin de la licencia, en que la persona autorizada vigente todavía no tiene nota de autorización (se cargó después de la corrida de la víspera, o se cambió de persona), esa corrida genera primero la nota de autorización, firmada por el titular, y después las demás, que ya la citan.
+- **Autorización tardía o cambiada:** si llega un día hábil, entre la víspera y el fin de la licencia, en que la persona autorizada vigente todavía no tiene nota de autorización (se cargó después de la corrida de la víspera, o se cambió de persona), esa corrida genera primero la nota de autorización, firmada por el titular, y después las demás, que ya la citan. Si ese día la persona autorizada también está de licencia, no sale nada y la nota de autorización sale el primer día hábil en que vuelve.
 
-**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Los días en que ella también está de licencia no se genera ninguna nota (7.3, como sin autorizado); el primer día hábil en que vuelve salen las que correspondan. Cambia el bloque de firma:
+**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Los días en que la persona autorizada también está de licencia no se genera ninguna nota (7.3, como sin autorizado); el primer día hábil en que vuelve salen las que correspondan. Cambia el bloque de firma:
 
 - **PDF:** dos firmas lado a lado, cada una con su imagen, nombre y cargo: el **firmante titular a la derecha** (la posición habitual) y el **autorizado a la izquierda**. Debajo, a todo el ancho y con letra más chica, la leyenda:
 
@@ -196,7 +196,7 @@ Sin autorizado, como en la tabla. Con autorizado, la víspera sale lo mismo y ad
 
 - Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: los avisos se anticipan el 25/11 con la autorización a {nombre}, que presenta las demás notas durante la licencia"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
 - Las fechas de "próximo aviso" y "próxima reiteración" tienen en cuenta la licencia.
-- Si la persona autorizada falta los primeros días de la licencia del titular (6.3), la línea la nombra con *"(de licencia hasta el {dd/mm/aaaa})"* y aparece una **advertencia**, no un error: *"La persona autorizada está de licencia hasta el {dd/mm/aaaa}: hasta entonces no se generan notas."*
+- Si la persona autorizada falta algunos días de la licencia del titular (6.3), al principio, en el medio o hasta el final,, la línea la nombra con *"(de licencia hasta el {dd/mm/aaaa})"* y aparece una **advertencia**, no un error: *"La persona autorizada está de licencia hasta el {dd/mm/aaaa}: hasta entonces no se generan notas."*
 - Alertas: autorizado que dejó de cumplir las condiciones (6.3: desactivado, sin firma cargada o de licencia todos los días hábiles de la del titular); firmante titular sin firma cargada.
 
 ## 8. Roles: editor y auditores (entrega 3)
@@ -252,7 +252,7 @@ En cada corrida de un día hábil, cada cambio pendiente está en **uno** de dos
   1. ya tuvo su primer recordatorio en un día hábil anterior (sección 9.2);
   2. el **firmante titular no puede auditarlo** hoy: lo propuso él, o no está disponible (por ejemplo, está de licencia);
   3. hay **auditores** disponibles para el cambio (no es de respaldo);
-  4. hay quién firme: el firmante titular si no está de licencia, o su autorizado si está de licencia (sección 7).
+  4. hay quién firme: el firmante titular si no está de licencia, o su autorizado si el titular está de licencia y la persona autorizada no (sección 7).
 - **Recordatorio**, en cualquier otro caso.
 
 Si el firmante titular puede auditarlo, una nota suya pidiendo que lo audite otro no tendría sentido: ese cambio sigue con recordatorios. Sin firmante titular elegido (6.2), la condición 2 se evalúa con el usuario superadmin y la condición 4 se cumple siempre (firma la configuración de Correos).

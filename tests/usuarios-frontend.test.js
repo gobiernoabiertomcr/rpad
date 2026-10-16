@@ -309,7 +309,7 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
         assert.deepEqual(textos(contexto, [{ desde: '2027-03-31', hasta: '2027-04-05' }]), [
           `${NOMBRE} va a estar de licencia el 31/03/2027: ese día no se generan notas.`
         ]);
-        // Un solo día por el borde del titular (la licencia de ella empieza antes y termina el primer día)
+        // Un solo día por el borde del titular (la licencia de la persona autorizada empieza antes y termina el primer día)
         assert.deepEqual(textos(contexto, [{ desde: '2027-02-20', hasta: '2027-03-01' }]), [
           `${NOMBRE} va a estar de licencia el 01/03/2027: ese día no se generan notas. Desde el 02/03/2027 las presenta en tu nombre.`
         ]);
@@ -326,7 +326,7 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
         ]);
       });
 
-      it('dos licencias pegadas son una sola ausencia: el "Desde el" no cae en un día en que ella sigue de licencia', () => {
+      it('dos licencias pegadas son una sola ausencia: el "Desde el" no cae en un día en que la persona autorizada sigue de licencia', () => {
         const { contexto } = cargarPanel();
         assert.deepEqual(textos(contexto, [
           { desde: '2027-03-03', hasta: '2027-03-05' },
@@ -434,14 +434,14 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
         abrir(panel);
         elegir(panel, '5');
         assert.equal(caja(panel).hidden, false);
-        // Un "desde" posterior a la licencia de ella: ya no se superponen
+        // Un "desde" posterior a la licencia de la persona autorizada: ya no se superponen
         panel.elemento('l-desde').value = '2027-03-04';
         disparar(panel, 'l-desde', 'input');
         assert.equal(caja(panel).hidden, true);
         panel.elemento('l-desde').value = '2027-03-02';
         disparar(panel, 'l-desde', 'input');
         assert.match(caja(panel).innerHTML, /del 02\/03\/2027 al 03\/03\/2027: esos días no se generan notas\. Desde el 04\/03\/2027/);
-        // Un "hasta" que termina antes de que vuelva: ella cubre hasta el final
+        // Un "hasta" que termina antes de que vuelva: su licencia cubre hasta el final
         panel.elemento('l-hasta').value = '2027-03-03';
         disparar(panel, 'l-hasta', 'input');
         assert.equal(caja(panel).innerHTML, `<p>${NOMBRE} va a estar de licencia del 02/03/2027 al 03/03/2027: esos días no se generan notas.</p>`);
