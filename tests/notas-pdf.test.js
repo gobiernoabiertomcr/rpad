@@ -2,7 +2,7 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
-import { construirNota } from '../services/notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion } from '../services/notasDigitalesContenido.js';
 import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
 import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
@@ -728,3 +728,66 @@ for (const variante of VARIANTES) {
     });
   });
 }
+
+describe('renderPdf: autorización (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.2)', () => {
+  const firma = {
+    titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' },
+    presentante: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado' },
+    leyenda: 'Nota presentada por Persona Autorizada, Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).'
+  };
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
+  const todo = (pdf) => lineasPorHoja(pdf).flat().join(' ');
+
+  it('dibuja las dos imágenes, quien presenta a la izquierda del titular, y la leyenda', async () => {
+    const pdf = await renderPdf(nota(1, { firma }), { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B });
+    const textos = textosPorHoja(pdf).flat();
+    const de = (texto) => textos.find(t => t.texto === texto);
+    assert.ok(de('Persona Autorizada') && de('Persona Titular'));
+    assert.ok(de('Persona Autorizada').x < de('Persona Titular').x, 'quien presenta va a la izquierda');
+    assert.ok(todo(pdf).includes('conforme a la autorización conferida mediante Nota Digital N° 15/26'));
+    assert.equal(imagenesPorHoja(pdf).flat().length, 2);
+  });
+
+  it('una imagen dañada de quien presenta rechaza la promesa, como la del titular', async () => {
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      await assert.rejects(renderPdf(nota(1, { firma }), { firmaImagen: FIRMA_A, presentanteImagen: imagen }), /firma/, caso);
+    }
+    // La descompresión de png-js es asíncrona: si alguna imagen llegara a PDFKit, su error aparecería después
+    await new Promise(resolve => setTimeout(resolve, 300));
+  });
+
+  it('con 1 a 30 datasets, el cierre (remitente, las dos firmas, la leyenda y la línea CC) queda entero en la última hoja', async () => {
+    for (let cantidad = 1; cantidad <= 30; cantidad++) {
+      const n = nota(cantidad, { firma });
+      const hojas = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B }));
+      const ultima = hojas.at(-1).join(' ');
+      for (const parte of [n.remitente, 'Persona Autorizada', 'Persona Titular', 'conforme a la autorización', n.lineaCc]) {
+        assert.ok(ultima.includes(parte), `${cantidad} datasets: falta "${parte}" en la última hoja`);
+      }
+      for (const anterior of hojas.slice(0, -1)) {
+        assert.ok(!anterior.join(' ').includes('Persona Titular'), `${cantidad} datasets: la firma se partió entre hojas`);
+      }
+    }
+  });
+
+  it('el párrafo de autorización de un aviso va en el PDF, antes de la línea del anexo', async () => {
+    const n = nota(3, { autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' } });
+    const texto = todo(await renderPdf(n, { firmaImagen: FIRMA_A }));
+    assert.ok(texto.indexOf('Asimismo, por medio de la presente') > 0);
+    assert.ok(texto.indexOf('Asimismo, por medio de la presente') < texto.indexOf('Anexo: reporte'));
+  });
+
+  it('la nota de autorización: una hoja, el párrafo y la firma del titular, sin "Justificación:"', async () => {
+    const n = construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25', firma: { titular: firma.titular, presentante: null, leyenda: null },
+      autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' }
+    });
+    const hojas = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A }));
+    assert.equal(hojas.length, 1);
+    const texto = hojas[0].join(' ');
+    assert.ok(texto.includes('autorizo expresamente a Persona Autorizada'));
+    assert.ok(texto.includes('Persona Titular'));
+    assert.ok(!texto.includes('Justificación'));
+  });
+});

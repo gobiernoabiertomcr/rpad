@@ -37,6 +37,8 @@ const TAMANO_SECUNDARIO = 7;
 const SEPARACION_SECUNDARIO = 1.5;
 // Alto que necesitan el remitente, la firma y la línea CC: van juntos, sin que la firma quede sola en una hoja
 const ALTO_CIERRE = 200;
+// Aire entre las firmas y la leyenda de una nota presentada por autorización (spec 2026-10-15, 7.2), en líneas de 11 pt
+const ESPACIO_LEYENDA = 0.8;
 // Espacio debajo de cada párrafo (en líneas de su letra) y alto que se reserva para el título "Justificación:"
 const ESPACIO_PARRAFO = 0.6;
 const ALTO_TITULO_JUSTIFICACION = 25;
@@ -392,10 +394,11 @@ const agregarMembreteYPies = (doc, nota, ancho, { banner, pie }) => {
   }
 };
 
-export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, membretePie = null } = {}) => new Promise((resolve, reject) => {
+export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, membreteImagen = null, membretePie = null } = {}) => new Promise((resolve, reject) => {
   try {
     // Una imagen dañada rechaza la promesa acá, antes de llegar a PDFKit (que tumbaría el proceso)
     if (firmaImagen) validarImagenFirma(firmaImagen);
+    if (presentanteImagen) validarImagenFirma(presentanteImagen);
     const banner = membreteImagen ? medidasBanner(validarImagenMembrete(membreteImagen)) : null;
     const pie = textoPie(membretePie);
 
@@ -427,6 +430,10 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
       doc.font(fuente).fontSize(tamano);
       return doc.currentLineHeight(true) * espacio;
     };
+    // Con presentante, el cierre suma la leyenda (medida, no estimada)
+    const altoCierre = ALTO_CIERRE + (nota.firma.presentante
+      ? altoEspacio(ESPACIO_LEYENDA, 11) + altoTexto(nota.firma.leyenda, 9, CURSIVA)
+      : 0);
     // Alto real de un contacto como lo dibuja el bucle de abajo: nombre en negrita 10, espacio y líneas en 10
     const altoContacto = (contacto) => altoTexto(contacto.nombre, 10, NEGRITA) + altoEspacio(0.1, 10, NEGRITA)
       + altoTexto(contacto.lineas.join('\n'), 10);
@@ -465,6 +472,12 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
       }
     }
 
+    // Párrafo de autorización de los avisos de la víspera de la licencia del firmante (spec 2026-10-15, 7.2)
+    if (nota.autorizacion) {
+      asegurarEspacio(altoTexto(nota.autorizacion) + altoEspacio(ESPACIO_PARRAFO, 12));
+      parrafo(nota.autorizacion);
+    }
+
     // La línea del anexo (solo avisos) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
     // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con el título de la justificación y su
     // primer párrafo: se reserva también el espacio que deja debajo (si no, el reservado a continuación puede
@@ -479,13 +492,18 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
     // El título viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
     // Si hay un solo párrafo (o ninguno) es a la vez el primero y el último: se reserva todo junto antes
     // de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
-    const ultimo = nota.justificacion.length - 1;
-    asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? ALTO_CIERRE : 0));
-    parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
-    nota.justificacion.forEach((texto, i) => {
-      if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + ALTO_CIERRE);
-      parrafo(texto);
-    });
+    // (la nota de autorización no tiene justificación: el cierre se reserva solo)
+    if (nota.justificacion.length) {
+      const ultimo = nota.justificacion.length - 1;
+      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? altoCierre : 0));
+      parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
+      nota.justificacion.forEach((texto, i) => {
+        if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + altoCierre);
+        parrafo(texto);
+      });
+    } else {
+      asegurarEspacio(altoCierre);
+    }
 
     doc.moveDown(0.6);
     // La fecha con espacios que no se cortan: si no entra en el renglón del remitente pasa entera al siguiente
@@ -493,19 +511,34 @@ export const renderPdf = (nota, { firmaImagen = null, membreteImagen = null, mem
     doc.font(NEGRITA).fontSize(12).text(nota.remitente, MARGENES.left, doc.y, { underline: true, continued: true })
       .font(NORMAL).text(`, ${nota.fechaLarga.replace(/ /g, ' ')}.`, { underline: false });
 
-    // Firma a la derecha: imagen (si está cargada), nombre y cargo
+    // Firma: imagen (si está cargada), nombre y cargo, centrados en un ancho de 200 pt. Devuelve dónde termina.
     const anchoFirma = 200;
-    const xFirma = MARGENES.left + ancho - anchoFirma;
+    const dibujarFirma = (x, y, imagen, { nombre, cargo }) => {
+      let abajo = y;
+      if (imagen) {
+        doc.image(imagen, x + (anchoFirma - 140) / 2, abajo, { fit: [140, 60], align: 'center', valign: 'bottom' });
+        abajo += 64;
+      } else {
+        abajo += 30;
+      }
+      doc.font(NORMAL).fontSize(11).text(nombre, x, abajo, { width: anchoFirma, align: 'center' });
+      doc.text(cargo, x, doc.y, { width: anchoFirma, align: 'center' });
+      return doc.y;
+    };
+    const xDerecha = MARGENES.left + ancho - anchoFirma;
     doc.moveDown(1.5);
-    let y = doc.y;
-    if (firmaImagen) {
-      doc.image(firmaImagen, xFirma + (anchoFirma - 140) / 2, y, { fit: [140, 60], align: 'center', valign: 'bottom' });
-      y += 64;
+    const yFirmas = doc.y;
+    if (nota.firma.presentante) {
+      // Dos firmas lado a lado: quien presenta a la izquierda, el titular a la derecha; debajo, la leyenda
+      const finIzquierda = dibujarFirma(MARGENES.left, yFirmas, presentanteImagen, nota.firma.presentante);
+      const finDerecha = dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma);
+      doc.y = Math.max(finIzquierda, finDerecha);
+      doc.moveDown(ESPACIO_LEYENDA);
+      doc.font(CURSIVA).fontSize(9).text(nota.firma.leyenda, MARGENES.left, doc.y, { width: ancho, align: 'justify' });
+      doc.font(NORMAL).fontSize(11);
     } else {
-      y += 30;
+      dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma);
     }
-    doc.font(NORMAL).fontSize(11).text(nota.firma.nombre, xFirma, y, { width: anchoFirma, align: 'center' });
-    doc.text(nota.firma.cargo, xFirma, doc.y, { width: anchoFirma, align: 'center' });
 
     doc.moveDown(1.5);
     parrafo(nota.lineaCc, { tamano: 11, align: 'left' });
