@@ -1,0 +1,435 @@
+# Días hábiles, licencias y auditoría de cambios pendientes
+
+**Fecha:** 2026-10-15
+**Estado:** diseño aprobado, pendiente de revisión de esta especificación
+
+## 1. Objetivo
+
+Tres mejoras al sistema de avisos del RPAD, que se diseñan juntas porque se apoyan unas en otras:
+
+1. **Días hábiles.** Ningún recordatorio automático sale en un día no hábil. Hoy las Notas Digitales ya lo respetan, pero el email de cambios pendientes y el aviso a las áreas salen todos los días.
+2. **Licencias.** Los usuarios que reciben avisos pueden tener períodos de licencia en los que el sistema no les escribe. Durante la licencia del firmante de las notas, las notas salen firmadas por una persona que él autorizó o, si no autorizó a nadie, se anticipan los avisos y se postergan las reiteraciones.
+3. **Auditoría de cambios pendientes.** La doble verificación pasa a distinguir a quienes auditan (personal designado) de quienes proponen sin la responsabilidad formal de auditar. Si un cambio no se audita a tiempo, se le pide formalmente a la Dirección General con una Nota Digital numerada, que se reitera cada semana.
+
+## 2. Alcance y entregas
+
+Se implementa y despliega en tres entregas independientes, en este orden:
+
+| Entrega | Contenido | Migración |
+|---|---|---|
+| **1. Días hábiles** | Sección 4 | No |
+| **2. Licencias y firmas** | Secciones 5, 6 y 7 | Sí, aditiva |
+| **3. Editor y auditoría** | Secciones 8, 9 y 10 | Sí, aditiva |
+
+Cada entrega deja el sistema completo y funcionando. La entrega 2 tiene que estar en producción antes de la primera licencia del firmante que se quiera cargar.
+
+**No cambian:** los textos y el formato de los avisos y reiteraciones de Notas Digitales (salvo el bloque de firma de la sección 7.2 y el asunto de la sección 7.3), el anexo, el aviso a las áreas (salvo su calendario), las invitaciones, la recuperación de contraseña y el formulario de contacto.
+
+## 3. Conceptos
+
+| Término | Significado |
+|---|---|
+| **Día hábil** | De lunes a viernes, excepto los feriados nacionales de fecha fija: 01/01, 24/03, 02/04, 01/05, 25/05, 20/06, 09/07, 08/12 y 25/12. Los feriados trasladables no se consideran. Es el calendario que ya usan las Notas Digitales (`services/notasDigitalesCalendario.js`). |
+| **Hoy** | La fecha en `America/Argentina/Buenos_Aires`, nunca `CURDATE()`. |
+| **Licencia** | Período `desde`–`hasta` (ambos incluidos) en el que un usuario no recibe emails del sistema. |
+| **Firmante titular** | El usuario que firma las Notas Digitales. Se elige en la configuración de Correos. |
+| **Autorizado** | Usuario al que el firmante titular autoriza a presentar las notas en su nombre durante una licencia. |
+| **Víspera** | El último día hábil anterior al primer día de una licencia. |
+| **Auditor** | Usuario con rol `superadmin` o `admin`. Aprueba y rechaza cambios de otros (entrega 3). |
+| **Editor** | Rol nuevo (entrega 3): todo lo de un admin, pero audita cambios solo como respaldo (sección 8.2). |
+| **Auditar** | Aprobar o rechazar un cambio pendiente. |
+| **Disponible** (un día dado) | Activo, con contraseña definida y sin licencia ese día. |
+
+## 4. Calendario hábil (entrega 1)
+
+### 4.1 Email de cambios pendientes
+
+`ejecutarNotificacionCambiosPendientes` (cron y ejecución manual) no envía nada si hoy no es día hábil. Responde 200 con `{ success: true, message: 'Hoy no es día hábil: no se envían recordatorios.', data: { dia_habil: false } }`. En un día hábil se comporta como hoy, hasta que la entrega 3 lo reemplaza por el recordatorio (sección 9.2).
+
+### 4.2 Aviso a las áreas (40 días)
+
+Hoy selecciona los datasets que vencen exactamente `CURDATE() + 40`, cualquier día de la semana. Pasa a:
+
+- en un día no hábil no se envía nada;
+- en un día hábil `D`, selecciona los datasets que vencen entre `D + 40` y `S + 39`, donde `S` es el día hábil siguiente a `D`. Así, cada día hábil avisa también lo que habría caído en los días no hábiles que siguen: un viernes avisa los vencimientos de viernes, sábado y domingo + 40; el día anterior a un feriado avisa también el del feriado. El aviso se anticipa, nunca se atrasa;
+- `D` es la fecha de hoy en Argentina, no `CURDATE()`.
+
+La vista previa y la prueba del aviso a las áreas usan la misma selección. Si un día hábil no hubo corrida (falló el cron), esos datasets no se avisan, igual que hoy.
+
+### 4.3 Sin cambios
+
+Las Notas Digitales ya cumplen el calendario. Las invitaciones, la recuperación de contraseña, los avisos al superadmin y el formulario de contacto salen en el momento, porque los dispara una persona.
+
+### 4.4 Tareas cron
+
+Siguen corriendo todos los días: cPanel no conoce los feriados y el código decide. El horario pasa a **8:15** (`/api/cron/notificaciones`) y **14:00** (`/api/cron/cambios-pendientes`). El código no depende de la hora, así que el cambio en cPanel se puede hacer en cualquier momento. Los textos que mencionan "08:00" (confirmación del interruptor en Correos y README) pasan a "08:15".
+
+## 5. Licencias (entrega 2)
+
+### 5.1 Quiénes y qué se guarda
+
+- Pueden tener licencia los usuarios con rol `superadmin`, `admin` o `editor` (los que reciben avisos). Los lectores no.
+- Se guarda: usuario, `desde`, `hasta`, autorizado (sección 6.3), quién la cargó y cuándo. **No se guarda el motivo**: una licencia por enfermedad es un dato sensible.
+- Las licencias no se borran: se **anulan** y quedan registradas.
+
+### 5.2 Carga y edición
+
+Cargan licencias el superadmin, los admins y (desde la entrega 3) los editores, para cualquier usuario que pueda tenerla, incluido el superadmin.
+
+| Estado de la licencia | Qué se puede hacer |
+|---|---|
+| **Futura** (`desde` > hoy) | Editar las fechas o anular |
+| **En curso** (`desde` ≤ hoy ≤ `hasta`) | Cambiar solo `hasta`, a una fecha ≥ ayer (y ≥ `desde`): sirve para extenderla o para cortarla si la persona vuelve antes |
+| **Pasada** | Nada |
+
+Validaciones:
+- `desde` ≤ `hasta`, y `hasta` ≥ hoy al crearla (una licencia pasada no tiene efecto);
+- como máximo 365 días;
+- no se superpone con otra licencia no anulada del mismo usuario;
+- el usuario existe, está activo y tiene un rol que puede tener licencia;
+- un usuario que es autorizado de otra licencia no puede tener una licencia que se superponga con ella (sección 6.3).
+
+Cada alta, edición y anulación queda en el historial del panel (`usuarios_auditoria`). Si alguien que no es el superadmin carga, edita o anula **una licencia del superadmin**, corresponde el aviso al superadmin de siempre (retenido si ya está de licencia, sección 5.4).
+
+### 5.3 Efecto en los emails personales
+
+Mientras dura la licencia, el usuario **no recibe ningún email del sistema dirigido a su persona**:
+- el email de cambios pendientes y, desde la entrega 3, el recordatorio y su respaldo;
+- los avisos al superadmin: se **retienen** (sección 5.4).
+
+Sí recibe los emails que pide él mismo o que son parte de un trámite de acceso: invitación y recuperación de contraseña.
+
+Las notas a casillas institucionales (la DGMIT y sus copias) **no cambian** por la licencia de nadie: un usuario puede tener como email personal una casilla institucional, pero las notas no se dirigen al usuario sino a la casilla configurada. La única licencia que afecta a las notas es la del firmante titular (sección 7).
+
+### 5.4 Avisos retenidos al superadmin
+
+Si un aviso al superadmin corresponde mientras el superadmin está de licencia, no se envía: la fila del historial queda marcada como **retenida**. En la corrida diaria del primer día hábil posterior a su licencia se le envía **un solo email de resumen** con los cambios retenidos (fecha, quién, qué, a quién) y un enlace al historial; al enviarse, las filas dejan de estar retenidas. Si el envío falla, se reintenta en la corrida del día hábil siguiente. Este paso va aislado en la corrida diaria, como el aviso a las áreas: un error ahí no afecta a las Notas Digitales.
+
+### 5.5 Pantalla
+
+La pantalla de Usuarios pasa a tener dos pestañas: **Usuarios** (la de hoy) y **Licencias**.
+
+- **Licencias:** lista de las licencias en curso y futuras (usuario, desde, hasta, autorizado si hay, quién la cargó) y, plegadas, las pasadas y anuladas. Formulario para cargar y editar, con las acciones de la tabla 5.2.
+- **Usuarios:** junto al estado, una marca **"De licencia hasta dd/mm"** para quien está de licencia hoy, y **"Licencia desde dd/mm"** para quien tiene una próxima en los siguientes 30 días.
+- Para el firmante titular, el formulario muestra el efecto en las notas (sección 7) y, si no hay autorizado, una advertencia: *"Los avisos anticipados salen en la corrida de las 8:15 del {víspera}. Cargá la licencia antes."*
+
+## 6. Firmas, firmante titular y autorización (entrega 2)
+
+### 6.1 Firma por persona
+
+Cada usuario con rol `superadmin`, `admin` o `editor` puede cargar **su propia firma** en Mi Perfil: imagen (PNG o JPEG, 500 KB como máximo, con la misma validación que la firma actual), **nombre para la firma** (por ejemplo, "Téc. Nombre Apellido") y **cargo para la firma**. El nombre y el cargo se precargan con `nombre_completo` y `cargo` del usuario y se pueden ajustar. Nadie carga ni ve la firma de otro, salvo en la vista previa de una nota.
+
+Se guarda en una tabla aparte (`usuarios_firmas`), para que ninguna consulta de usuarios arrastre la imagen. Los textos de la firma pasan por el mismo resguardo de caracteres que el resto del PDF (NFC; se rechazan los caracteres que el PDF no puede escribir).
+
+### 6.2 Firmante titular
+
+- En Correos → Configuración se elige el **firmante titular** entre los usuarios `superadmin` o `admin` activos y con firma cargada. **Solo el superadmin** lo elige; los demás lo ven.
+- Las notas usan la imagen, el nombre y el cargo de la firma del firmante titular.
+- **Compatibilidad:** mientras no haya firmante titular elegido, las notas salen con la firma de la configuración de Correos, como hoy, y las licencias no afectan a las notas. Los campos de firma de Correos se muestran solo en ese caso.
+- La carga inicial (elegir al firmante titular y pasarle la firma actual de Correos) se hace con un SQL privado no versionado (sección 13).
+
+### 6.3 Autorización
+
+- En una licencia del firmante titular, el campo **"Autorizo a presentar las notas en mi nombre a:"** lo completa, cambia o borra **solo el propio firmante titular**, en cualquier momento antes de que la licencia termine. Si otro usuario carga la licencia, la carga sin autorizado.
+- Se puede autorizar a un usuario `admin` o (desde la entrega 3) `editor`, activo, con firma cargada y sin licencia que se superponga con la del titular.
+- Se registra la fecha y hora de la autorización (`autorizado_at`), que se imprime en la leyenda (sección 7.2), y queda en el historial.
+- Si el día de una nota el autorizado ya no cumple las condiciones (fue desactivado o borró su firma), ese día se aplica el comportamiento sin autorizado (sección 7.3) y Correos → Estado muestra una alerta.
+
+## 7. Notas Digitales durante la licencia del firmante (entrega 2)
+
+### 7.1 Qué día es "de licencia"
+
+Un día es de licencia del firmante si el firmante titular tiene ese día una licencia no anulada. Todo lo de esta sección se evalúa en cada corrida, con las licencias cargadas en ese momento. Una licencia sin ningún día hábil (por ejemplo, un fin de semana) no tiene efecto en las notas.
+
+### 7.2 Con autorizado
+
+El calendario no cambia: los avisos, las reiteraciones y las notas de auditoría salen en su fecha normal. Cambia el bloque de firma:
+
+- **PDF:** dos firmas lado a lado, cada una con su imagen, nombre y cargo: el **firmante titular a la derecha** (la posición habitual) y el **autorizado a la izquierda**. Debajo, a todo el ancho y con letra más chica, la leyenda:
+
+  > *Nota presentada por {nombre del autorizado}, {cargo del autorizado}, en nombre de {nombre del titular}, {cargo del titular}, por autorización previa registrada en el RPAD el {dd/mm/aaaa} (licencia del {dd/mm/aaaa} al {dd/mm/aaaa}).*
+
+- **Email (HTML y texto):** los dos nombres y cargos, y la misma leyenda.
+- La nota guarda quién firmó como titular y quién la presentó (sección 11.2).
+
+### 7.3 Sin autorizado
+
+**Avisos.** En la víspera, el aviso de cada gestión incluye, además de lo de ese día, todo lo que se habría avisado durante la licencia: en la selección de la spec de Notas Digitales (5.2), el horizonte `hoy + ventana` se reemplaza por `U + ventana`, donde `U` es el último día hábil de la licencia. Sale **una sola nota por gestión**, con los datasets ordenados por vencimiento, como siempre. El asunto nombra el rango de meses de los vencimientos: `(gestión interna – enero a marzo 2027)`; si es un solo mes, como hoy: `(gestión interna – enero 2027)`.
+
+**Días de licencia.** No se generan avisos, reiteraciones ni notas de auditoría. Los reintentos de notas fallidas generadas antes de la licencia siguen, porque su contenido ya está congelado.
+
+**Reiteraciones.** No salen durante la licencia. En el primer día hábil posterior, la reiteración del mes en curso se evalúa si todavía no se evaluó (sección 5.3 de la spec de Notas Digitales): sale **una sola**, aunque la licencia haya cubierto el primer día hábil de más de un mes.
+
+**Un aviso anticipado no adelanta las reiteraciones.** Al guardar un dataset en un aviso, si su fecha normal de aviso (el día en que su mes entraría en la ventana: primer vencimiento del mes − ventana) es posterior a la fecha de la nota, se guarda esa fecha en `notas_digitales_datasets.cuenta_desde`. La regla de los 20 días de la reiteración se cuenta desde `cuenta_desde` cuando existe, y desde la fecha de la nota en los demás casos. En el calendario normal `cuenta_desde` queda vacío y no cambia nada.
+
+**Carga tardía.** Si la licencia se carga después de la corrida de su víspera (por ejemplo, por una enfermedad), no hay anticipo: lo que se tendría que haber avisado durante la licencia sale en el primer día hábil posterior, porque la selección es por rango. Lo que para entonces ya venció entra en la reiteración, como cualquier vencido sin aviso.
+
+### 7.4 Ejemplos (sin autorizado)
+
+| Licencia | Víspera | Durante la licencia | Primer día hábil posterior |
+|---|---|---|---|
+| 26/11/2026 – 14/01/2027 | mié 25/11/2026: avisos de lo que vence hasta el 14/01/2027 + ventana (interna hasta mediados de marzo, externa hasta mediados de febrero, con los meses completos) | No salen la reiteración de diciembre (01/12) ni la de enero (04/01; el 01/01 es feriado) | vie 15/01/2027: sale la reiteración de enero |
+| 25/01/2027 – 05/03/2027 | vie 22/01/2027 (el 24/01 es domingo) | No salen las reiteraciones del 01/02 ni del 01/03 | lun 08/03/2027: sale la reiteración de marzo |
+
+Con autorizado, en los dos casos todo sale en su fecha normal con las dos firmas.
+
+### 7.5 Correos → Estado
+
+- Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: las notas las presenta {nombre} por autorización"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
+- Las fechas de "próximo aviso" y "próxima reiteración" tienen en cuenta la licencia.
+- Alertas: autorizado que dejó de cumplir las condiciones (6.3); firmante titular sin firma cargada.
+
+## 8. Roles: editor y auditores (entrega 3)
+
+### 8.1 Roles
+
+`usuarios.rol` pasa a `ENUM('superadmin','admin','editor','lector')`.
+
+| Acción | superadmin | admin | editor | lector |
+|---|---|---|---|---|
+| Todo el área de administración (datasets, áreas, correos, reportes, gestión) | Sí | Sí | Sí | No |
+| Proponer cambios | Sí | Sí | Sí | No |
+| Auditar cambios de otros | Sí | Sí | Solo de respaldo (8.2) | No |
+| Panel de usuarios: ver, historial, licencias | Sí | Sí | Sí | No |
+| Panel de usuarios: crear, editar, activar, desactivar y enviar links a **lectores** | Sí | Sí | Sí (solo crea lectores) | No |
+| Panel de usuarios: crear admins o editores, cambiar roles, modificar admins o editores | Sí | Sí | **No** | No |
+| Cargar su propia firma (Mi Perfil) | Sí | Sí | Sí | No |
+
+El editor no puede modificar a otros editores: cambiándole el email y enviándole un link podría quedarse con su cuenta.
+
+En el código:
+- `esAdmin(rol)` (acceso al área de administración, `adminOnly`) pasa a incluir `editor`.
+- Se agrega `esAuditor(rol)` (`superadmin` o `admin`). Lo usan: auditar cambios, el mínimo de aprobadores, `esAprobadorActivo` y los destinatarios del recordatorio. **Cada uso actual de `esAdmin` se revisa** para decidir si es acceso o auditoría.
+- Frontend: `Auth.isAdmin()` incluye al editor; se agrega `Auth.isAuditor()`. El header muestra **Editor**.
+- `ROLES_ASIGNABLES` pasa a `['admin', 'editor', 'lector']`.
+- Los avisos al superadmin que hoy se refieren a un admin o a un aprobador (crear, cambiar el email, reactivar) pasan a cubrir también a los editores.
+
+### 8.2 Quién audita un cambio
+
+En un día dado, pueden auditar un cambio:
+1. los **auditores disponibles** que no lo propusieron;
+2. si no hay ninguno, los **editores disponibles** que no lo propusieron (**respaldo**).
+
+El backend aplica la regla al aprobar y al rechazar. Si no corresponde, responde 403 con: *"Este cambio lo auditan {nombres}. Podés auditarlo solo si ninguno está disponible."* Cuando un editor audita de respaldo, el cambio queda marcado (`revisado_como_respaldo`) y el historial de cambios lo muestra: *"Aprobado por {nombre} (respaldo)"*.
+
+En Mi Perfil → Para revisar, el editor ve los cambios, pero los botones de aprobar y rechazar aparecen deshabilitados con el mismo mensaje cuando no le corresponde.
+
+### 8.3 Mínimo de auditores
+
+La regla "siempre al menos 2 aprobadores activos" pasa a contar **auditores** (`superadmin` o `admin`, activos y con contraseña). Pasar a un admin a editor cuenta como quitar un auditor. Las licencias no cuentan para el mínimo, porque son temporales.
+
+### 8.4 Paso inicial
+
+Después del despliegue, el superadmin pasa a editor, desde el panel, a los admins que corresponda. No hace falta SQL privado.
+
+## 9. Circuito de cambios pendientes (entrega 3)
+
+### 9.1 Canal de cada cambio
+
+En cada corrida de un día hábil, cada cambio pendiente está en **uno** de dos canales:
+
+- **Nota**, si se cumplen las cuatro condiciones:
+  1. ya tuvo su primer recordatorio en un día hábil anterior (sección 9.2);
+  2. el **firmante titular no puede auditarlo** hoy: lo propuso él, o no está disponible (por ejemplo, está de licencia);
+  3. hay **auditores** disponibles para el cambio (no es de respaldo);
+  4. hay quién firme: el firmante titular si no está de licencia, o su autorizado si está de licencia (sección 7).
+- **Recordatorio**, en cualquier otro caso.
+
+Si el firmante titular puede auditarlo, una nota suya pidiendo que lo audite otro no tendría sentido: ese cambio sigue con recordatorios. Sin firmante titular elegido (6.2), la condición 2 se evalúa con el usuario superadmin y la condición 4 se cumple siempre (firma la configuración de Correos).
+
+### 9.2 Recordatorio (14:00)
+
+Reemplaza al email de cambios pendientes de las 13:00, en la misma ruta (`/api/cron/cambios-pendientes`) y con su ejecución manual.
+
+- Solo en días hábiles.
+- Incluye los cambios del canal recordatorio propuestos al menos **una hora** antes de la corrida.
+- Cada persona que puede auditarlos (8.2) y está disponible recibe un email con sus cambios, como hoy. Si los recibe como respaldo, el email lo dice: *"Te llega como respaldo: no hay auditores disponibles."*
+- Asunto: `[RPAD] {n} cambio(s) esperan tu auditoría`.
+- La primera vez que un cambio se incluye en un recordatorio enviado con éxito se guarda la fecha (`primer_recordatorio_at`).
+- Se repite cada día hábil mientras el cambio siga pendiente y en el canal recordatorio.
+
+### 9.3 Nota de auditoría (8:15)
+
+En la corrida diaria de las Notas Digitales, después de los avisos y las reiteraciones, bajo el mismo bloqueo y con el mismo interruptor de envío automático:
+
+- **Nuevos:** los cambios del canal nota que nunca estuvieron en una nota de auditoría.
+- **Reiterados:** los cambios del canal nota cuya última nota de auditoría es de hace **5 días hábiles o más**.
+- Si hay alguno, se genera **una sola nota** ese día, con una sección para cada grupo que tenga cambios.
+
+Un cambio en el canal nota no recibe recordatorios. Si deja de cumplir las condiciones (por ejemplo, el auditor se toma licencia y pasa a respaldo), vuelve al canal recordatorio desde la corrida siguiente.
+
+Un cambio cuenta como incluido en una nota desde que la nota se genera, en cualquier estado, como los avisos. Si el envío falla, se reintenta como cualquier Nota Digital.
+
+### 9.4 Ejemplos
+
+- **Propone el firmante titular el viernes a las 10:00; hay otro auditor disponible.** Viernes 14:00: recordatorio al otro auditor. Lunes 8:15: nota de auditoría. Si sigue pendiente, la nota se reitera el lunes siguiente a las 8:15.
+- **Propone un editor; el firmante titular está disponible.** Recordatorio diario al firmante titular y a los demás auditores disponibles. Nunca sale nota.
+- **El firmante titular está de licencia con autorizado; propone un editor.** Recordatorio a los auditores disponibles. Al día hábil siguiente, nota de auditoría con las dos firmas (7.2).
+- **Propone el firmante titular; el único otro auditor está de licencia.** Respaldo: recordatorio diario a los editores disponibles. No sale nota.
+- **El firmante titular está de licencia sin autorizado.** Recordatorios a quienes puedan auditar. No sale nota. Al primer día hábil posterior, los cambios que cumplen las condiciones se escalan.
+
+## 10. Nota de auditoría: contenido (entrega 3)
+
+Es una **Nota Digital**: mismo libro, numeración correlativa compartida con avisos y reiteraciones, membrete, PDF adjunto, reintentos y estado. No lleva anexo.
+
+### 10.1 Destinatarios
+
+Configurables en Correos → Configuración:
+- `para_auditoria`: por defecto `mit@comodoro.gov.ar`;
+- `cc_auditoria`: por defecto vacío;
+- CCO: el `cco` general de las notas.
+
+### 10.2 Asunto
+
+- Con cambios nuevos: `Nota Digital N° {n}/{aa} – Ref.: Solicitud de auditoría de cambios en el Registro Permanente de Actualización de Datasets`.
+- Solo con reiterados: `Nota Digital N° {n}/{aa} – Ref.: Reiteración – Solicitud de auditoría de cambios en el Registro Permanente de Actualización de Datasets`.
+
+### 10.3 Estructura
+
+1. `REF.:` con el texto del asunto, `Nota Digital N°` a la derecha y el destinatario `DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL`, como en las otras notas.
+2. **Párrafo inicial:**
+   > Me dirijo a Ud. a fin de solicitarle la auditoría de los cambios propuestos en el Registro Permanente de Actualización de Datasets (RPAD) que se detallan a continuación, que se encuentran pendientes de verificación. Conforme al procedimiento de doble verificación, cada modificación del registro debe ser revisada y aprobada por una persona distinta de quien la propuso antes de aplicarse.
+3. **Cambios pendientes de auditoría** (nuevos) y **Cambios ya solicitados que continúan pendientes** (reiterados, con la columna "Solicitado en": `Nota Digital N° 12/26 (dd/mm/aaaa)` y, si corresponde, `– reiterado N veces`). Columnas comunes: conjunto de datos, tipo de cambio (alta, modificación, baja), propuesto por (nombre y cargo), fecha de la propuesta y **días hábiles pendiente** (días hábiles transcurridos desde la fecha de la propuesta, sin contarla).
+4. **Detalle de cada cambio:**
+   - **modificación:** los campos que cambian, con el valor anterior y el nuevo;
+   - **alta:** los datos principales del dataset propuesto;
+   - **baja:** el dataset que se daría de baja.
+
+   Las etiquetas de los campos son las del formulario del dataset. Los textos largos se transcriben completos en el PDF.
+5. **Qué implica la auditoría:**
+   > La auditoría consiste en verificar que:
+   > - los datos coincidan con la información remitida por el área responsable;
+   > - el enlace al Portal de Datos Abiertos funcione y muestre la versión informada;
+   > - las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos;
+   > - el título, la descripción, el área, los temas, los formatos y "qué se solicita" sean correctos.
+   >
+   > Cada cambio se aprueba o se rechaza, con un comentario, desde el RPAD: {APP_URL}/perfil.html (sección "Para revisar").
+6. **Importancia:**
+   > Mientras un cambio no se audita, el conjunto de datos permanece bloqueado para nuevas modificaciones y el registro no refleja su estado real, lo que afecta los avisos y reiteraciones que emite esta Dirección y el cumplimiento de la Ordenanza N° 17.662/23. Por ello, solicito tenga a bien realizar la auditoría a la brevedad.
+7. Remitente (`DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN, {fecha larga}.`) y firma: la del firmante titular o, en su licencia con autorizado, las dos firmas con la leyenda (7.2).
+
+El HTML, el texto y el PDF se construyen desde la misma estructura, como las demás notas. Todo dato de la base se escapa en el HTML y pasa por el resguardo de caracteres en el PDF.
+
+### 10.4 Libro y pantalla
+
+- El libro muestra el tipo **Auditoría** y se puede filtrar por él. En las notas de auditoría la columna de gestión queda vacía.
+- El detalle de la nota lista los cambios incluidos.
+- Correos → Vista previa y prueba: se agrega el tipo "auditoría" (con datos reales del día o de ejemplo).
+- Correos → Estado: cantidad de cambios en el canal nota y fecha de la próxima nota de auditoría.
+
+## 11. Datos
+
+Todas las migraciones son aditivas e idempotentes (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`), con su rollback, y se reflejan en `database/schema.sql` y `tests/schema.test.js`.
+
+### 11.1 Entrega 2: `migracion-licencias-firmas.sql`
+
+**`usuarios_licencias`**
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | INT PK AI | |
+| `usuario_id` | INT, FK → `usuarios` | |
+| `desde`, `hasta` | DATE | Ambos incluidos |
+| `autorizado_id` | INT NULL, FK → `usuarios` | Solo en licencias del firmante titular |
+| `autorizado_at` | DATETIME NULL | Cuándo se registró la autorización |
+| `anulada` | TINYINT(1) DEFAULT 0 | |
+| `creado_por` | INT NULL, FK → `usuarios` | |
+| `created_at`, `updated_at` | TIMESTAMP | |
+
+Índice `(usuario_id, desde, hasta)`.
+
+**`usuarios_firmas`**
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `usuario_id` | INT PK, FK → `usuarios` | |
+| `nombre` | VARCHAR(150) | Nombre para la firma |
+| `cargo` | VARCHAR(200) | Cargo para la firma |
+| `imagen` | MEDIUMBLOB | |
+| `mime` | VARCHAR(20) | |
+| `updated_at` | TIMESTAMP | |
+
+**Columnas nuevas:**
+- `notas_digitales_config.firmante_usuario_id` INT NULL;
+- `notas_digitales.firmante_id` INT NULL y `notas_digitales.presentada_por_id` INT NULL (titular y autorizado de cada nota);
+- `notas_digitales_datasets.cuenta_desde` DATE NULL (7.3);
+- `usuarios_auditoria.aviso_retenido` TINYINT(1) DEFAULT 0 (5.4).
+
+### 11.2 Entrega 3: `migracion-editor-auditoria.sql`
+
+- `usuarios.rol`: `ENUM('superadmin','admin','editor','lector')`.
+- `cambios_pendientes.primer_recordatorio_at` DATETIME NULL y `cambios_pendientes.revisado_como_respaldo` TINYINT(1) DEFAULT 0.
+- `notas_digitales.tipo`: agrega `'auditoria'`; `notas_digitales.gestion` pasa a admitir NULL. Todo el código que lee `gestion` se revisa.
+- **`notas_digitales_cambios`:** `nota_id` (FK → `notas_digitales` ON DELETE CASCADE), `cambio_id` (FK → `cambios_pendientes` ON DELETE CASCADE), `seccion` ENUM('nuevo','reiterado'). PK `(nota_id, cambio_id)` e índice `(cambio_id)`. Las notas de prueba no registran filas.
+- `notas_digitales_config.para_auditoria` VARCHAR(500) DEFAULT `'mit@comodoro.gov.ar'` y `cc_auditoria` VARCHAR(500) NULL.
+
+El rollback de la entrega 3 primero pasa a `admin` a los usuarios con rol `editor` y borra las notas de auditoría de prueba. Si hay notas de auditoría reales, no se puede volver atrás el ENUM: el rollback lo informa y se detiene.
+
+## 12. API
+
+### Entrega 2
+
+| Método | Ruta | Quién | Uso |
+|---|---|---|---|
+| GET | `/api/usuarios/licencias` | admin | Licencias en curso y futuras; `?incluir_pasadas=1` agrega pasadas y anuladas |
+| POST | `/api/usuarios/licencias` | admin | Alta `{ usuario_id, desde, hasta, autorizado_id? }` |
+| PUT | `/api/usuarios/licencias/:id` | admin | Edición según la tabla 5.2 |
+| POST | `/api/usuarios/licencias/:id/anular` | admin | Solo licencias futuras |
+| GET | `/api/auth/profile/firma` | admin | Nombre, cargo y si hay imagen, de la propia firma |
+| PUT | `/api/auth/profile/firma` | admin | `{ nombre, cargo, imagen?, mime? }` de la propia firma |
+| GET | `/api/auth/profile/firma/imagen` | admin | Imagen de la propia firma |
+| PUT | `/api/notificaciones/notas-digitales/config/firmante` | superadmin | `{ usuario_id }` |
+
+"admin" = `adminOnly` (superadmin, admin y, desde la entrega 3, editor). `autorizado_id` solo lo acepta el backend si quien llama es el firmante titular y la licencia es suya; en otro caso responde 403.
+
+### Entrega 3
+
+- Se agrega `tipo=auditoria` a vista previa, PDF de vista previa, prueba y filtros del libro.
+- `PUT /config` acepta `para_auditoria` y `cc_auditoria`.
+- Aprobar y rechazar aplican la regla 8.2.
+- Las rutas del panel aplican la tabla 8.1 para el editor (403 con mensaje en lo que no puede hacer).
+
+## 13. Despliegue
+
+Por entrega, siempre: backup (phpMyAdmin → Exportar con DROP TABLE, y zip de las carpetas del código), migración antes que el código, archivos por zip en `/home/datospublicos/rpad`, Restart en Setup Node.js App y verificación. Cada entrega lleva su `PASOS.txt`.
+
+- **Entrega 1:** sin migración. Archivos y Restart. Cambiar en Tareas Cron 8:00 → 8:15 y 13:00 → 14:00 (en cualquier momento).
+- **Entrega 2:** migración, archivos y Restart. Después, SQL privado (`database/privado/`, no versionado) que elige al firmante titular y le copia la firma de la configuración de Correos. Después, cada usuario que pueda ser autorizado carga su firma en Mi Perfil.
+- **Entrega 3:** migración, archivos y Restart. Después, el superadmin pasa a editor a quien corresponda desde el panel y revisa en Correos los destinatarios de auditoría.
+
+## 14. Pruebas
+
+TDD con la batería completa antes y después de cada tarea (`npm test`, contra Docker y Mailpit). Ningún test nuevo rompe uno existente.
+
+- **Calendario (entrega 1):**
+  - el email de cambios pendientes no sale en sábado, domingo ni feriado fijo y sí en un feriado trasladable;
+  - aviso a las áreas: un viernes incluye los vencimientos de viernes, sábado y domingo + 40; el día antes de un feriado incluye el del feriado; un día no hábil no envía nada; se usa la fecha argentina.
+- **Licencias (entrega 2):**
+  - validaciones de la tabla 5.2, superposición, máximo de 365 días y roles;
+  - solo el firmante titular pone el autorizado; condiciones del autorizado;
+  - un usuario de licencia no recibe el email de cambios pendientes;
+  - aviso al superadmin retenido y resumen el primer día hábil posterior, una sola vez;
+  - historial de altas, ediciones y anulaciones.
+- **Notas con licencia del firmante (entrega 2), con los ejemplos de 7.4 como fechas fijas:**
+  - sin autorizado: avisos anticipados en la víspera, una nota por gestión, con el asunto con rango de meses; nada durante la licencia; una sola reiteración a la vuelta; `cuenta_desde` retrasa la reiteración de un aviso anticipado; carga tardía;
+  - con autorizado: todo en su fecha, PDF con dos firmas y la leyenda;
+  - sin firmante titular elegido: todo como hoy (la batería actual de Notas Digitales sigue en verde sin cambios);
+  - en el calendario normal, `cuenta_desde` queda vacío y la selección de reiteraciones no cambia.
+- **Editor y auditoría (entrega 3):**
+  - permisos de la tabla 8.1, incluido que el editor no puede cambiarse el rol ni modificar a otro editor;
+  - regla de respaldo al aprobar y al rechazar, y marca `revisado_como_respaldo`;
+  - mínimo de 2 auditores;
+  - canal de cada cambio en los casos de 9.4;
+  - recordatorio: hora de antigüedad, destinatarios, respaldo y `primer_recordatorio_at`;
+  - nota de auditoría: nuevos, reiterados a los 5 días hábiles, una sola nota por día, numeración compartida, contenido, firma y destinatarios, sobre los emails de Mailpit;
+  - rollback con y sin editores.
+
+Después de cada entrega, verificación manual en el navegador (Usuarios, Licencias, Mi Perfil, Correos) y una prueba real solo a las casillas de prueba.
+
+## 15. Fuera de alcance
+
+- Feriados trasladables y calendario de feriados editable.
+- Licencias de lectores.
+- Delegar la auditoría de una persona a otra durante su licencia (la regla de respaldo cubre la falta de auditores).
+- Notificar al proponente cuando su cambio se aprueba o rechaza.
+- Funciones de Correos exclusivas del superadmin, salvo elegir al firmante titular.
