@@ -70,6 +70,7 @@ const PIE_DIRECCION = ['Dirección de Datos Públicos y Comunicación', 'Municip
 
 /**
  * Marco de todos los emails: página gris muy clara, tarjeta blanca de hasta 600px, encabezado celeste pálido y pie.
+ * Outlook de escritorio ignora max-width: la tarjeta va dentro de una tabla de 600 que solo ve Outlook (comentario mso).
  * titulo: el <title>. encabezado y subtitulo: texto plano. cuerpo: bloques de HTML ya escapado, uno por fila
  * (los null o vacíos se saltean). pie: líneas de HTML ya escapado.
  */
@@ -92,6 +93,7 @@ const marcoEmail = ({ titulo, encabezado = ENCABEZADO_RPAD, subtitulo = SUBTITUL
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; background-color: ${COLORES.pagina}; font-family: ${FUENTE};">
     <tr>
       <td style="padding: 24px 12px;">
+        <!--[if mso]><table role="presentation" width="600" align="center" cellspacing="0" cellpadding="0"><tr><td><![endif]-->
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: ${COLORES.tarjeta}; border: 1px solid ${COLORES.borde}; border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; font-family: ${FUENTE};">
           <tr>
             <td style="background-color: ${COLORES.encabezado}; border-bottom: 1px solid ${COLORES.bordeEncabezado}; padding: 20px 24px; text-align: center;">
@@ -105,6 +107,7 @@ const marcoEmail = ({ titulo, encabezado = ENCABEZADO_RPAD, subtitulo = SUBTITUL
             </td>
           </tr>
         </table>
+        <!--[if mso]></td></tr></table><![endif]-->
       </td>
     </tr>
   </table>
@@ -126,7 +129,7 @@ const parrafo = (html, margen = '0') =>
   `<p style="margin: ${margen}; color: ${COLORES.texto}; font-size: 14px; line-height: 1.6;">${html}</p>`;
 
 // Caja de una sola celda (recuadro, tarjeta o aviso). html: ya escapado
-const caja = (estilo, html, margen = '0') => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; margin: ${margen}; ${estilo}; border-collapse: separate; border-spacing: 0;">
+const caja = (estilo, html) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; ${estilo}; border-collapse: separate; border-spacing: 0;">
                 <tr>
                   <td style="padding: 14px 16px;">
                     ${html}
@@ -138,10 +141,22 @@ const caja = (estilo, html, margen = '0') => `<table role="presentation" width="
 const recuadro = (html) => caja(`background-color: ${COLORES.recuadro}; border: 1px solid ${COLORES.bordeRecuadro}; border-radius: 6px`, html);
 
 // Tarjeta blanca de un ítem (un cambio, un dataset, los datos de quien escribe)
-const tarjeta = (html, margen = '0') => caja(`background-color: ${COLORES.tarjeta}; border: 1px solid ${COLORES.borde}; border-radius: 6px`, html, margen);
+const tarjeta = (html) => caja(`background-color: ${COLORES.tarjeta}; border: 1px solid ${COLORES.borde}; border-radius: 6px`, html);
 
-// Lista de tarjetas, separadas 10px
-const tarjetas = (contenidos) => contenidos.map((html, i) => tarjeta(html, i === 0 ? '0' : '10px 0 0 0')).join('');
+// Lista de tarjetas, una por fila y separadas por filas de 10px de alto (Outlook de escritorio no respeta el margin
+// entre tablas)
+const SEPARADOR_DE_TARJETAS = `
+                <tr>
+                  <td height="10" style="height: 10px; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>`;
+const tarjetas = (contenidos) => (contenidos.length === 0 ? '' : `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${
+  contenidos.map(html => `
+                <tr>
+                  <td>
+                    ${tarjeta(html)}
+                  </td>
+                </tr>`).join(SEPARADOR_DE_TARJETAS)}
+              </table>`);
 
 // Aviso ámbar pálido ("te llega como respaldo"). html: ya escapado
 const avisoDestacado = (html) => caja(
@@ -149,10 +164,21 @@ const avisoDestacado = (html) => caja(
   `<p style="margin: 0; color: ${COLORES.respaldo.texto}; font-size: 14px; line-height: 1.6;">${html}</p>`
 );
 
-// Botón centrado. texto y url: sin escapar
-const boton = ({ texto, url }) => `<div style="text-align: center; padding: 8px 0 0 0;">
-                <a href="${escapeHtml(url)}" style="display: inline-block; background-color: ${COLORES.acento}; color: #FFFFFF; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: 600; text-decoration: none;">${escapeHtml(texto)}</a>
-              </div>`;
+// Botón centrado "a prueba de balas": el color y el padding van en la celda, con el link adentro (Outlook de escritorio
+// no pinta el fondo ni el padding de un <a>). texto y url: sin escapar
+const boton = ({ texto, url }) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td align="center" style="padding: 8px 0 0 0;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse: separate; border-spacing: 0;">
+                      <tr>
+                        <td align="center" bgcolor="${COLORES.acento}" style="background-color: ${COLORES.acento}; border-radius: 6px; padding: 10px 20px; font-size: 14px;">
+                          <a href="${escapeHtml(url)}" style="display: inline-block; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none;">${escapeHtml(texto)}</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>`;
 
 // Link del cuerpo o del pie. href y html: ya escapados
 const enlace = (href, html) => `<a href="${href}" style="color: ${COLORES.acento}; text-decoration: none;">${html}</a>`;
@@ -186,7 +212,7 @@ const areaAviso40diasTemplate = (areaData) => marcoEmail({
       + parrafo('Nos comunicamos desde la <strong>Dirección General de Modernización e Investigación Territorial</strong> de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos:', '16px 0 0 0'),
     tarjetas(areaData.datasets.map((d, i) => `<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${i + 1}. ${escapeHtml(d.titulo)}</p>
                     <p style="margin: 4px 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">Frecuencia de actualización: ${escapeHtml(d.frecuencia_nombre || 'Sin definir')}</p>
-                    ${d.url_dataset ? `<p style="margin: 6px 0 0 0; font-size: 13px;">${enlace(d.url_dataset, 'Ver dataset en el portal')}</p>` : ''}`)),
+                    ${d.url_dataset ? `<p style="margin: 6px 0 0 0; font-size: 13px;">${enlace(escapeHtml(d.url_dataset), 'Ver dataset en el portal')}</p>` : ''}`)),
     parrafo('Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias!'),
     `<table role="presentation" width="100%" style="width: 100%; border-collapse: collapse;">
                 <tr>

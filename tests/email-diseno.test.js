@@ -15,7 +15,8 @@ const fuente = (archivo) => readFileSync(new URL(`../services/${archivo}`, impor
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/u;
 // Colores del diseño anterior: no queda ninguno
 const COLORES_VIEJOS = ['#0066cc', '#1a1a2e', '#28a745', '#ffc107', '#dc3545', '#fd7e14', '#6c757d', '#f8f9fa', '#e9ecef'];
-const BOTON = /<a [^>]*style="[^"]*background-color: #3E6B96; color: #FFFFFF;[^"]*border-radius: 6px;[^"]*padding: 10px 20px;/;
+// Botón "a prueba de balas": el color y el padding van en la celda, con el link adentro (Outlook de escritorio)
+const BOTON = /<td [^>]*bgcolor="#3E6B96" style="background-color: #3E6B96; border-radius: 6px; padding: 10px 20px;[^"]*">\s*<a [^>]*style="[^"]*color: #FFFFFF;/;
 const AREAS = 'aviso a las áreas';
 
 describe('Diseño de los emails: un marco común', () => {
@@ -61,14 +62,46 @@ describe('Diseño de los emails: un marco común', () => {
 
   it('los emails con botón lo pintan azul suave (#3E6B96) y los demás no tienen botón', () => {
     for (const { nombre, email: { html }, boton } of casos) {
-      if (boton) assert.match(html, BOTON, nombre);
-      else assert.ok(!/<a [^>]*background-color/.test(html), nombre);
+      if (boton) {
+        assert.equal(html.split('background-color: #3E6B96').length - 1, 1, nombre);
+        assert.match(html, BOTON, nombre);
+      } else {
+        assert.ok(!html.includes('background-color: #3E6B96'), nombre);
+      }
+      // Ningún link lleva fondo: el del botón es solo el texto blanco
+      assert.ok(!/<a [^>]*background-color/.test(html), nombre);
     }
   });
 
-  it('los links son #3E6B96 (salvo el botón, con texto blanco)', () => {
+  it('los links son #3E6B96 y el del botón, blanco', () => {
+    const color = (valor) => new RegExp(`(^|[;" ])color: ${valor}`);
+    for (const { nombre, email: { html }, boton } of casos) {
+      const links = [...html.matchAll(/<a [^>]*>/g)].map(([link]) => link);
+      const blancos = links.filter(link => color('#FFFFFF').test(link));
+      assert.equal(blancos.length, boton ? 1 : 0, nombre);
+      for (const link of links.filter(l => !blancos.includes(l))) assert.match(link, color('#3E6B96'), `${nombre}: ${link}`);
+    }
+  });
+
+  it('Outlook de escritorio: la tarjeta va dentro de una tabla de 600 solo para Outlook y sigue adaptándose en el celular', () => {
     for (const { nombre, email: { html } } of casos) {
-      for (const [link] of html.matchAll(/<a [^>]*>/g)) assert.ok(link.includes('color: #3E6B96'), `${nombre}: ${link}`);
+      const abre = html.indexOf('<!--[if mso]><table role="presentation" width="600" align="center" cellspacing="0" cellpadding="0"><tr><td><![endif]-->');
+      const tarjeta = html.indexOf('style="width: 100%; max-width: 600px;');
+      const cierra = html.indexOf('<!--[if mso]></td></tr></table><![endif]-->');
+      assert.ok(abre > 0 && abre < tarjeta && tarjeta < cierra, nombre);
+    }
+  });
+
+  it('Outlook de escritorio: las tarjetas se separan con filas de alto fijo, sin margin entre tablas', () => {
+    const separador = '<td height="10" style="height: 10px; font-size: 0; line-height: 0;">&nbsp;</td>';
+    const cuenta = (nombre) => casos.find(c => c.nombre === nombre).email.html.split(separador).length - 1;
+    assert.equal(cuenta('cambios pendientes'), 2);
+    assert.equal(cuenta('sin auditor (varios)'), 1);
+    assert.equal(cuenta('sin auditor (uno)'), 0);
+    assert.equal(cuenta(AREAS), 1);
+    // La única tabla con margin es la tarjeta del marco, centrada (margin: 0 auto)
+    for (const { nombre, email: { html } } of casos) {
+      for (const [tabla] of html.matchAll(/<table [^>]*>/g)) assert.ok(!/margin: (?!0 auto;)/.test(tabla), `${nombre}: ${tabla}`);
     }
   });
 
@@ -113,6 +146,14 @@ describe('Diseño de los emails: un marco común', () => {
     assert.equal(cuenta(casos.find(c => c.nombre === 'cambios pendientes').email.html), 3);
     assert.equal(cuenta(casos.find(c => c.nombre === 'sin auditor (varios)').email.html), 2);
     assert.equal(cuenta(casos.find(c => c.nombre === AREAS).email.html), 2);
+  });
+
+  it('aviso a las áreas: la URL del dataset va escapada en el href (una comilla no rompe el atributo)', () => {
+    const { html } = plantillas.areaAviso40dias({
+      area_nombre: 'Área', datasets: [{ titulo: 'D', frecuencia_nombre: 'Anualmente', url_dataset: 'https://datos.rpad.test/d?a=1&b="x" onclick="alert(1)' }]
+    });
+    assert.ok(html.includes('href="https://datos.rpad.test/d?a=1&amp;b=&quot;x&quot; onclick=&quot;alert(1)"'));
+    assert.ok(!html.includes('onclick="'));
   });
 
   it('aviso a las áreas: la firma lleva un borde izquierdo celeste, sin fondo', () => {

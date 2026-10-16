@@ -59,6 +59,6 @@ export const textoVisible = (html) => (html.match(/<body[^>]*>([\s\S]*)<\/body>/
   .replace(/<!--[\s\S]*?-->/g, ' ')
   .replace(/<\/?(strong|b|em|i|u|span|a)\b[^>]*>/gi, '')
   .replace(/<[^>]+>/g, ' ')
-  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+  .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
   .replace(/\s+/g, ' ')
   .trim();
