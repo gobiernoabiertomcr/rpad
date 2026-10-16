@@ -9,7 +9,7 @@ import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
-  periodoSiguiente, sumarDias, formatoCorto, ultimoDiaHabilHasta
+  periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta
 } from './notasDigitalesCalendario.js';
 import {
   VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe,
@@ -20,7 +20,10 @@ import {
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { emailValido } from './usuariosReglas.js';
-import { contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria } from './auditoriaService.js';
+import {
+  contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe
+} from './auditoriaService.js';
+import { DIAS_HABILES_PARA_REITERAR_AUDITORIA } from './auditoriaReglas.js';
 
 export const MAX_INTENTOS = 5;
 const GESTIONES = ['interna', 'externa'];
@@ -575,6 +578,41 @@ const ejemplo = (tipo, gestion, hoy) => {
   };
 };
 
+// Ejemplo de la nota de auditoría para la vista previa y la prueba cuando hoy no hay cambios para pedir (spec 10.4):
+// una modificación y un alta nuevas, y una baja ya solicitada
+const ejemploAuditoria = (hoy) => {
+  const comun = { usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo', fecha_propuesta: diaHabilAnterior(diaHabilAnterior(hoy)) };
+  return {
+    nuevos: [
+      {
+        ...comun, id: 0, tipo_cambio: 'editar', dataset_titulo: 'Dataset de ejemplo',
+        datos_anteriores: { proxima_actualizacion: sumarDias(hoy, -10), url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo' },
+        datos_nuevos: { proxima_actualizacion: sumarDias(hoy, 355), url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-actualizado' }
+      },
+      {
+        ...comun, id: -1, tipo_cambio: 'crear', dataset_titulo: null, datos_anteriores: null,
+        datos_nuevos: {
+          titulo: 'Dataset nuevo de ejemplo', descripcion: 'Descripción de ejemplo del conjunto de datos propuesto.',
+          tipo_gestion: 'interna', url_dataset: 'https://datos.comodoro.gov.ar/dataset/nuevo'
+        }
+      }
+    ],
+    reiterados: [{
+      ...comun, id: -2, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset de ejemplo a dar de baja', fecha_propuesta: sumarDias(hoy, -14),
+      datos_nuevos: { eliminado: true }, datos_anteriores: { titulo: 'Dataset de ejemplo a dar de baja', tipo_gestion: 'externa' },
+      solicitado: { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: diaHabilAnterior(sumarDias(hoy, -6)), reiteraciones: 0 }
+    }],
+    catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
+  };
+};
+
+// Lo que llevaría hoy la nota de auditoría (spec 9.3) o, si no lleva nada, el ejemplo
+const contenidoDeAuditoriaParaMostrar = async (config, hoy) => {
+  const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+  if (nuevos.length || reiterados.length) return { nuevos, reiterados, catalogos: await catalogosParaAuditoria(), ejemplo: false };
+  return { ...ejemploAuditoria(hoy), ejemplo: true };
+};
+
 const contenidoParaMostrar = async (tipo, gestion, hoy) => {
   const reales = tipo === 'aviso' ? await seleccionarParaAviso(gestion, hoy) : await seleccionarParaReiteracion(gestion, hoy);
   if (reales.length) return { ...(await prepararContenido({ tipo, gestion, datasets: reales })), ejemplo: false };
@@ -582,10 +620,15 @@ const contenidoParaMostrar = async (tipo, gestion, hoy) => {
 };
 
 // La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX, firmada como saldría (en una licencia sin
-// autorizado, como saldría a la vuelta: con la firma del titular)
+// autorizado, como saldría a la vuelta: con la firma del titular). La de auditoría no tiene gestión (spec 2026-10-15, 10.4).
 const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
   const config = await obtenerConfig();
   const { firma } = await firmaParaFecha(config, hoy);
+  if (tipo === 'auditoria') {
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, hoy);
+    const nota = construirNotaDeAuditoria({ numero: null, anio: null, esPrueba: false, fecha: hoy, ...auditoria, firma, config });
+    return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
+  }
   const { datasets, areas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const nota = construirNota({ tipo, gestion, numero: null, anio: null, esPrueba: false, fecha: hoy, datasets, areas, config, firma });
   return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
@@ -613,6 +656,12 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
   const { firma } = await firmaParaFecha(config, hoy);
+  // La prueba de la nota de auditoría: los cambios de hoy o el ejemplo, sin registrar cambios incluidos (spec 2026-10-15, 11.2)
+  if (tipo === 'auditoria') {
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, hoy);
+    const id = await generarNota({ tipo, gestion: null, fecha: hoy, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
+    return { id, ejemplo: esEjemplo, destinatarios: casillas, ...(await enviarNota(id)) };
+  }
   const { datasets, areas, fichas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const id = await generarNota({
     tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }, firma
@@ -645,6 +694,26 @@ const licenciaDelFirmante = async (config, hoy) => {
     ultimo_habil: ultimoHabil,
     vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
   };
+};
+
+/**
+ * Nota de auditoría en el Estado (spec 2026-10-15, 10.4): cuántos cambios están en el canal nota en la próxima corrida
+ * posible (hoy si es hábil) y la fecha de la próxima nota: la de esa corrida si alguno todavía no estuvo en una nota (o el
+ * día hábil siguiente si la de esa fecha ya salió), y si no, 5 días hábiles después de la última nota de cada uno.
+ * { canal_nota, proxima: 'AAAA-MM-DD' | null }
+ */
+const estadoAuditoria = async (config, hoy) => {
+  const corrida = proximoDiaHabil(hoy);
+  const delCanal = (await cambiosConCanal(corrida, await contextoDeCanal(corrida, config))).filter(c => c.canal === 'nota');
+  if (delCanal.length === 0) return { canal_nota: 0, proxima: null };
+  const previas = await notasDeAuditoriaDe(delCanal.map(c => c.id));
+  const primeraLibre = (await hayNotaDeAuditoria(corrida)) ? proximoDiaHabil(sumarDias(corrida, 1)) : corrida;
+  const fechas = delCanal.map((cambio) => {
+    const ultima = previas.get(cambio.id)?.at(-1)?.fecha;
+    const fecha = ultima ? sumarDiasHabiles(ultima, DIAS_HABILES_PARA_REITERAR_AUDITORIA) : primeraLibre;
+    return fecha < primeraLibre ? primeraLibre : fecha;
+  });
+  return { canal_nota: delCanal.length, proxima: fechas.sort()[0] };
 };
 
 export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
@@ -697,6 +766,7 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
     fallidas: Number(fallidas),
     proximas,
     licencia_firmante: licencia,
+    auditoria: await estadoAuditoria(config, hoy),
     ultima_corrida: ultimaCorrida,
     alertas: [
       ...alertasDeCorrida(config, ultimaCorrida, hoy),

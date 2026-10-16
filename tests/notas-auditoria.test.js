@@ -225,3 +225,44 @@ describe('una por día, numeración del libro, reintentos, autorización e inter
     assert.deepEqual((await libro()).map(n => n.tipo), ['aviso']);
   });
 });
+
+describe('Correos: Estado, vista previa y prueba (spec 10.4)', () => {
+  it('el Estado cuenta los cambios del canal nota y da la fecha de la próxima nota de auditoría', async () => {
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 0, proxima: null });
+    await proponer(titular);
+    await proponer(editor);
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-19' });
+    await correr('2026-10-19');
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-26' });
+    // Un sábado mira la corrida del lunes
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-24' })).auditoria, { canal_nota: 1, proxima: '2026-10-26' });
+  });
+
+  it('la vista previa usa los cambios de hoy o, si no hay, un ejemplo; no escribe nada', async () => {
+    const ejemplo = await motor.previewNota({ tipo: 'auditoria', gestion: null, hoy: '2026-10-19' });
+    assert.equal(ejemplo.ejemplo, true);
+    assert.equal(ejemplo.asunto, `Nota Digital N° XX – Ref.: ${REF}`);
+    assert.match(ejemplo.html, /Dataset de ejemplo/);
+    await proponer(titular);
+    const real = await motor.previewNota({ tipo: 'auditoria', gestion: null, hoy: '2026-10-19' });
+    assert.deepEqual([real.ejemplo, real.cantidad], [false, 1]);
+    assert.ok(real.html.includes('Dataset nuevo auditado'));
+    const pdf = await motor.previewPdf({ tipo: 'auditoria', gestion: null, hoy: '2026-10-19' });
+    assert.equal(pdf.subarray(0, 4).toString('latin1'), '%PDF');
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 0);
+  });
+
+  it('la prueba va a las casillas de prueba y no registra cambios: el cambio sigue siendo nuevo para la corrida', async () => {
+    await proponer(titular);
+    const resultado = await motor.enviarPrueba({ tipo: 'auditoria', gestion: null, hoy: '2026-10-19' });
+    assert.equal(resultado.success, true);
+    const [nota] = await query('SELECT tipo, es_prueba, para, asunto, html FROM notas_digitales WHERE id = ?', [resultado.id]);
+    assert.deepEqual([nota.tipo, nota.es_prueba, nota.para], ['auditoria', 1, 'prueba@rpad.test']);
+    assert.match(nota.asunto, /^\[PRUEBA\] Nota Digital N° PRUEBA – Ref\.: /);
+    // Lleva el cambio de hoy (no un cuerpo vacío ni el de otro tipo de nota)
+    assert.ok(nota.html.includes('Dataset nuevo auditado'));
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_cambios'))[0].n, 0);
+    await correr('2026-10-19');
+    assert.equal((await auditorias()).length, 1);
+  });
+});

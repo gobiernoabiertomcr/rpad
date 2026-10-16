@@ -42,6 +42,7 @@ const RUTAS_SOLO_ADMIN = [
   ['GET', '/notificaciones/notas-digitales'],
   ['GET', '/notificaciones/notas-digitales/estado'],
   ['GET', '/notificaciones/notas-digitales/preview?tipo=aviso&gestion=interna'],
+  ['GET', '/notificaciones/notas-digitales/preview?tipo=auditoria'],
   ['POST', '/notificaciones/notas-digitales/prueba'],
   ['GET', '/notificaciones/notas-digitales/config'],
   ['PUT', '/notificaciones/notas-digitales/config'],
