@@ -771,11 +771,30 @@ describe('renderPdf: autorización (spec 2026-10-15-dias-habiles-licencias-audit
     }
   });
 
-  it('el párrafo de autorización de un aviso va en el PDF, antes de la línea del anexo', async () => {
+  it('el párrafo de autorización de un aviso va en el PDF justo después del primer párrafo, antes de la primera sección y del anexo', async () => {
     const n = nota(3, { autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' } });
-    const texto = todo(await renderPdf(n, { firmaImagen: FIRMA_A }));
-    assert.ok(texto.indexOf('Asimismo, por medio de la presente') > 0);
-    assert.ok(texto.indexOf('Asimismo, por medio de la presente') < texto.indexOf('Anexo: reporte'));
+    const pdf = await renderPdf(n, { firmaImagen: FIRMA_A });
+    const texto = todo(pdf);
+    const asimismo = texto.indexOf('Asimismo, por medio de la presente');
+    assert.ok(texto.indexOf('Informo a Ud.') >= 0 && texto.indexOf('Informo a Ud.') < asimismo);
+    assert.ok(asimismo < texto.indexOf('Próximos a vencer'), 'antes del título de la primera sección');
+    assert.ok(asimismo < texto.indexOf('Datos de contacto de las áreas responsables'));
+    assert.ok(asimismo < texto.indexOf('Anexo: reporte'));
+    // Sin nada en el medio: la línea anterior cierra el primer párrafo y la siguiente al de autorización es el título de la sección
+    const lineas = lineasPorHoja(pdf).flat();
+    const desde = lineas.findIndex(l => l.startsWith('Asimismo, por medio de la presente'));
+    const hasta = lineas.findIndex(l => l === 'Próximos a vencer');
+    assert.ok(desde > 0 && hasta > desde, lineas.join(' | '));
+    assert.ok(lineas[desde - 1].endsWith('(Excel, CSV, etc.).'), lineas[desde - 1]);
+    assert.ok(lineas[hasta - 1].endsWith('flujo de trabajo.'), lineas[hasta - 1]);
+  });
+
+  it('el primer párrafo y el de autorización quedan juntos en la primera hoja, también con el banner más alto', async () => {
+    const autorizacion = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' };
+    for (const [caso, opciones] of [['sin membrete', {}], ['con el banner más alto', { membreteImagen: BANNER_TOPE, membretePie: PIE }]]) {
+      const primera = lineasPorHoja(await renderPdf(nota(60, { autorizacion }), { firmaImagen: FIRMA_A, ...opciones }))[0].join(' ');
+      assert.ok(primera.includes('Informo a Ud.') && primera.includes('correcto flujo de trabajo.'), `${caso}: el primer párrafo y el de autorización no están en la misma hoja`);
+    }
   });
 
   it('la nota de autorización: una hoja, el párrafo y la firma del titular, sin "Justificación:"', async () => {

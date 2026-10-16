@@ -338,14 +338,33 @@ describe('firma con autorización (spec 2026-10-15-dias-habiles-licencias-audito
 });
 
 describe('párrafo de autorización en los avisos de la víspera (spec 7.2)', () => {
-  it('va después de las tablas y antes de la línea del anexo, en el HTML y en el texto', () => {
-    const n = nota({ autorizacion: AUTORIZADA });
+  it('va inmediatamente después del primer párrafo, antes de las secciones, los contactos y el anexo, en el HTML y en el texto', () => {
+    const n = nota({ gestion: 'externa', autorizacion: AUTORIZADA, areas: [{ id: 10, nombre: 'Área Uno', email_principal: 'area@rpad.test' }] });
     assert.equal(n.autorizacion, PARRAFO_AUTORIZACION);
     const html = renderHtml(n);
-    assert.ok(html.indexOf('Dataset A') < html.indexOf('Asimismo, por medio de la presente'));
-    assert.ok(html.indexOf('Asimismo, por medio de la presente') < html.indexOf('Anexo: reporte'));
+    const en = (salida, texto) => {
+      const i = salida.indexOf(texto);
+      assert.ok(i >= 0, `falta "${texto}"`);
+      return i;
+    };
+    const ordenado = (salida) => {
+      const orden = ['Informo a Ud. que', 'Asimismo, por medio de la presente', 'Próximos a vencer', 'Dataset A', 'Datos de contacto de las áreas responsables', 'Anexo: reporte']
+        .map(t => en(salida, t));
+      assert.deepEqual(orden, [...orden].sort((a, b) => a - b), `orden: ${orden}`);
+    };
+    ordenado(html);
+    // Nada entre el cierre del primer párrafo y el de autorización, ni entre este y el título de la primera sección
+    assert.ok(html.includes(`${n.parrafoInicial}</p>\n<p style="margin:0 0 12px;text-align:justify;">${PARRAFO_AUTORIZACION}</p>\n<p style="margin:16px 0 6px;"><b>Próximos a vencer</b></p>`));
     const texto = renderTexto(n);
-    assert.ok(texto.includes(`${PARRAFO_AUTORIZACION}\n\nAnexo: reporte`));
+    ordenado(texto);
+    assert.ok(texto.includes(`${n.parrafoInicial}\n\n${PARRAFO_AUTORIZACION}\n\nPróximos a vencer\n`));
+  });
+
+  it('en una reiteración y sin contactos también va después del primer párrafo y antes de las secciones', () => {
+    const n = nota({ tipo: 'reiteracion', autorizacion: AUTORIZADA });
+    const html = renderHtml(n);
+    assert.ok(html.includes(`${n.parrafoInicial}</p>\n<p style="margin:0 0 12px;text-align:justify;">${PARRAFO_AUTORIZACION}</p>\n<p style="margin:16px 0 6px;"><b>Próximos a vencer</b></p>`));
+    assert.ok(renderTexto(n).includes(`${n.parrafoInicial}\n\n${PARRAFO_AUTORIZACION}\n\nPróximos a vencer\n`));
   });
 
   it('sin autorización, la nota no lo lleva', () => {

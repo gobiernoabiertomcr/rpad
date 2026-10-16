@@ -488,7 +488,8 @@ ${a.parrafos.map(parrafo).join('\n')}${a.items.length ? `<ul style="margin:0 0 1
       .map(c => `<p style="margin:0 0 10px;"><b>${escapeHtml(c.nombre)}</b><br>${c.lineas.map(escapeHtml).join('<br>')}</p>`)
       .join('')}`
     : '';
-  const autorizacion = nota.autorizacion ? parrafo(nota.autorizacion) : '';
+  // Párrafo de autorización (avisos de la víspera de la licencia del firmante): inmediatamente después del primer párrafo
+  const autorizacion = nota.autorizacion ? `\n${parrafo(nota.autorizacion)}` : '';
 
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(nota.asunto)}</title></head>
@@ -498,9 +499,9 @@ ${a.parrafos.map(parrafo).join('\n')}${a.items.length ? `<ul style="margin:0 0 1
 <p style="margin:0 0 4px;"><b><u>REF.:</u></b> "${escapeHtml(nota.ref)}"</p>
 <p style="margin:0 0 24px;text-align:right;"><b>Nota Digital N°</b> ${escapeHtml(nota.numeroTexto)}</p>
 <p style="margin:0 0 16px;"><b><u>${escapeHtml(nota.destinatario)}</u></b></p>
-${parrafo(nota.parrafoInicial)}
+${parrafo(nota.parrafoInicial)}${autorizacion}
 ${secciones}
-${detalles}${contactos}${autorizacion}${apartados}
+${detalles}${contactos}${apartados}
 ${nota.anexo ? `<p style="margin:16px 0 0;">${escapeHtml(nota.anexo)}</p>` : ''}
 ${nota.justificacion.length ? `<p style="margin:16px 0 6px;"><b>Justificación:</b></p>
 ${nota.justificacion.map(parrafo).join('\n')}` : ''}
@@ -532,6 +533,8 @@ const lineasDeSeccion = (seccion) => {
 
 export const renderTexto = (nota) => {
   const lineas = [nota.avisoAdjunto, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
+  // Párrafo de autorización (avisos de la víspera de la licencia del firmante): inmediatamente después del primer párrafo
+  if (nota.autorizacion) lineas.push(nota.autorizacion, '');
   for (const seccion of nota.secciones) lineas.push(...lineasDeSeccion(seccion));
   // Nota de auditoría (spec 2026-10-15, 10.3): el detalle de cada cambio
   if (nota.detalles?.secciones.length) {
@@ -543,7 +546,6 @@ export const renderTexto = (nota) => {
     for (const contacto of nota.contactos) lineas.push(contacto.nombre, ...contacto.lineas.map(l => `    ${l}`));
     lineas.push('');
   }
-  if (nota.autorizacion) lineas.push(nota.autorizacion, '');
   for (const apartado of nota.apartados ?? []) {
     lineas.push(apartado.titulo, ...apartado.parrafos, ...apartado.items.map(i => `- ${i}`), ...(apartado.cierre ?? []), '');
   }
