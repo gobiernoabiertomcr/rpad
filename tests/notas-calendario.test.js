@@ -157,3 +157,44 @@ describe('textoRangoMeses', () => {
     assert.equal(cal.textoRangoMeses('2026-12-15', '2027-02-10'), 'diciembre 2026 a febrero 2027');
   });
 });
+
+describe('diasHabilesTranscurridos (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.3)', () => {
+  it('cuenta los días hábiles después de la primera fecha, hasta la segunda inclusive', () => {
+    // viernes 16/10/2026 → lunes 19/10: el fin de semana no cuenta
+    assert.equal(cal.diasHabilesTranscurridos('2026-10-16', '2026-10-19'), 1);
+    assert.equal(cal.diasHabilesTranscurridos('2026-10-19', '2026-10-26'), 5);
+    assert.equal(cal.diasHabilesTranscurridos('2026-10-17', '2026-10-19'), 1);
+    assert.equal(cal.diasHabilesTranscurridos('2026-10-16', '2026-10-16'), 0);
+    assert.equal(cal.diasHabilesTranscurridos('2026-10-19', '2026-10-16'), 0);
+  });
+
+  it('los feriados fijos no cuentan; los trasladables sí', () => {
+    // lunes 07/12/2026 → lunes 14/12: el martes 08/12 es feriado
+    assert.equal(cal.diasHabilesTranscurridos('2026-12-07', '2026-12-14'), 4);
+    // jueves 24/12/2026 → jueves 31/12: el 25/12 es feriado y el 26 y el 27, fin de semana
+    assert.equal(cal.diasHabilesTranscurridos('2026-12-24', '2026-12-31'), 4);
+    // miércoles 07/10/2026 → lunes 19/10: el lunes 12/10 (trasladable) cuenta
+    assert.equal(cal.diasHabilesTranscurridos('2026-10-07', '2026-10-19'), 8);
+  });
+});
+
+describe('sumarDiasHabiles', () => {
+  it('avanza n días hábiles, salteando fines de semana y feriados fijos', () => {
+    assert.equal(cal.sumarDiasHabiles('2026-10-19', 5), '2026-10-26');
+    assert.equal(cal.sumarDiasHabiles('2026-10-16', 1), '2026-10-19');
+    assert.equal(cal.sumarDiasHabiles('2026-12-07', 5), '2026-12-15');
+    // 24/03/2027 es feriado: del lunes 22/03 son 23, 25, 26, 29 y 30
+    assert.equal(cal.sumarDiasHabiles('2027-03-22', 5), '2027-03-30');
+    // 25/12, el fin de semana y el 01/01: del jueves 24/12/2026, el quinto es el lunes 04/01/2027
+    assert.equal(cal.sumarDiasHabiles('2026-12-24', 5), '2027-01-04');
+    assert.equal(cal.sumarDiasHabiles('2026-10-17', 0), '2026-10-17');
+  });
+
+  it('es la inversa de diasHabilesTranscurridos', () => {
+    for (const desde of ['2026-10-16', '2026-12-07', '2026-12-24', '2027-03-22']) {
+      for (const n of [1, 5, 12]) {
+        assert.equal(cal.diasHabilesTranscurridos(desde, cal.sumarDiasHabiles(desde, n)), n, `${desde} + ${n}`);
+      }
+    }
+  });
+});

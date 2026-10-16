@@ -11,6 +11,10 @@ const PATRON_USERNAME = /^[A-Z0-9._-]{3,50}$/;
 // superadmin y admin pasan todo lo de administración (spec 5.3)
 export const esAdmin = (rol) => rol === 'admin' || rol === 'superadmin';
 
+// Auditor: aprueba y rechaza cambios de otros y cuenta para el mínimo de aprobadores
+// (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1). El editor no lo es: audita solo de respaldo.
+export const esAuditor = (rol) => rol === 'admin' || rol === 'superadmin';
+
 // Estado derivado (spec 3): no se guarda, sale de activo y de si tiene contraseña
 export const estadoDeUsuario = ({ activo, tiene_contrasena }) => {
   if (!activo) return 'desactivado';

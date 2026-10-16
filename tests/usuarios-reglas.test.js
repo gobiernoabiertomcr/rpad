@@ -2,7 +2,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  esAdmin, estadoDeUsuario, esAprobadorActivo, violaMinimoAprobadores, emailValido,
+  esAdmin, esAuditor, estadoDeUsuario, esAprobadorActivo, violaMinimoAprobadores, emailValido,
   validarContrasena, validarDatosUsuario, camposCambiados, TEXTO_ROL
 } from '../services/usuariosReglas.js';
 
@@ -18,6 +18,14 @@ describe('roles', () => {
 
   it('textos de los roles', () => {
     assert.deepEqual(TEXTO_ROL, { superadmin: 'Superadmin', admin: 'Administrador', lector: 'Lector' });
+  });
+
+  it('auditores: superadmin y admin (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () => {
+    assert.equal(esAuditor('superadmin'), true);
+    assert.equal(esAuditor('admin'), true);
+    assert.equal(esAuditor('editor'), false);
+    assert.equal(esAuditor('lector'), false);
+    assert.equal(esAuditor(undefined), false);
   });
 });
 

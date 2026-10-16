@@ -103,3 +103,21 @@ export const textoRangoMeses = (desde, hasta) => {
   if (desde.slice(0, 4) === hasta.slice(0, 4)) return `${MESES[Number(desde.slice(5, 7)) - 1]} a ${mesYAnio(hasta)}`;
   return `${mesYAnio(desde)} a ${mesYAnio(hasta)}`;
 };
+
+// Días hábiles después de desde y hasta hasta inclusive (desde no se cuenta): la columna "días hábiles pendiente" de la
+// nota de auditoría y el plazo de sus reiteraciones (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.3 y 10.3).
+// 0 si hasta no es posterior a desde.
+export const diasHabilesTranscurridos = (desde, hasta) => {
+  let cantidad = 0;
+  for (let fecha = sumarDias(desde, 1); fecha <= hasta; fecha = sumarDias(fecha, 1)) {
+    if (esDiaHabil(fecha)) cantidad++;
+  }
+  return cantidad;
+};
+
+// El n-ésimo día hábil después de iso, sin contarlo (iso si n es 0): la próxima reiteración de una nota de auditoría
+export const sumarDiasHabiles = (iso, n) => {
+  let fecha = iso;
+  for (let i = 0; i < n; i++) fecha = proximoDiaHabil(sumarDias(fecha, 1));
+  return fecha;
+};
