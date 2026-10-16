@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8)
 import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos } from './emailService.js';
-import { construirNota, construirAnexo, renderHtml, renderTexto } from './notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion, construirAnexo, renderHtml, renderTexto } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
@@ -13,6 +13,9 @@ import {
   VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe,
   fichasDe
 } from './notasDigitalesDatos.js';
+import {
+  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe
+} from './notasDigitalesFirmas.js';
 
 export const MAX_INTENTOS = 5;
 const GESTIONES = ['interna', 'externa'];
@@ -65,24 +68,41 @@ const validarFichas = ({ datasets, fichas = [] }) => {
   return fichas;
 };
 
-const destinatarios = (config, gestion, esPrueba) => (esPrueba
-  ? { para: listaDeCorreos(config.casillas_prueba), cc: [], cco: [] }
-  : {
-    para: listaDeCorreos(config[`para_${gestion}`]),
-    cc: listaDeCorreos(config[`cc_${gestion}`]),
-    cco: listaDeCorreos(config.cco)
-  });
+// ccAutorizado: el email de la persona autorizada, en las notas que comunican su autorización (spec 2026-10-15, 7.2)
+const destinatarios = (config, gestion, esPrueba, ccAutorizado = null) => {
+  if (esPrueba) return { para: listaDeCorreos(config.casillas_prueba), cc: [], cco: [] };
+  // La nota de autorización no tiene gestión: va a los "Para" de las dos, sin repetir
+  const para = gestion
+    ? listaDeCorreos(config[`para_${gestion}`])
+    : [...new Set(GESTIONES.flatMap(g => listaDeCorreos(config[`para_${g}`])))];
+  const cc = gestion ? listaDeCorreos(config[`cc_${gestion}`]) : [];
+  if (ccAutorizado && !cc.includes(ccAutorizado)) cc.push(ccAutorizado);
+  return { para, cc, cco: listaDeCorreos(config.cco) };
+};
 
-// Imágenes y pie del membrete con que se arma el PDF (se congelan en la nota al generarla)
-const opcionesPdf = (config) => ({
-  firmaImagen: config.firma_imagen, membreteImagen: config.membrete_imagen, membretePie: config.membrete_pie
+// Imágenes de las firmas y del membrete con que se arma el PDF (se congelan en la nota al generarla)
+const opcionesPdf = (config, firma) => ({
+  firmaImagen: firma.titular.imagen, presentanteImagen: firma.presentante?.imagen ?? null,
+  membreteImagen: config.membrete_imagen, membretePie: config.membrete_pie
 });
 
-// Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente
-export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null }) => {
-  const contenido = preparado ?? await prepararContenido({ tipo, gestion, datasets });
+/**
+ * Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente.
+ * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
+ * autorizacion: { nombre, cargo, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo de autorización;
+ * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets). En los dos casos va en CC.
+ */
+export const generarNota = async ({
+  tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null,
+  firma = null, rangoVencimientos = null, autorizacion = null
+}) => {
+  const firmaNota = firma ?? (await firmaParaFecha(config, fecha)).firma;
+  const esAutorizacion = tipo === 'autorizacion';
+  const contenido = esAutorizacion
+    ? { datasets: [], areas: [], fichas: [] }
+    : preparado ?? await prepararContenido({ tipo, gestion, datasets });
   const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
-  const { para, cc, cco } = destinatarios(config, gestion, esPrueba);
+  const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null);
   const conexion = await pool.getConnection();
   try {
     await conexion.beginTransaction();
@@ -94,22 +114,29 @@ export const generarNota = async ({ tipo, gestion, fecha, datasets, config, esPr
       );
       numero = Number(fila.siguiente);
     }
-    const nota = construirNota({ tipo, gestion, numero, anio, esPrueba, fecha, datasets: contenido.datasets, areas: contenido.areas, config });
-    const pdf = await renderPdf(nota, opcionesPdf(config));
+    const nota = esAutorizacion
+      ? construirNotaDeAutorizacion({ numero, anio, esPrueba, fecha, firma: firmaNota, autorizacion })
+      : construirNota({
+        tipo, gestion, numero, anio, esPrueba, fecha, datasets: contenido.datasets, areas: contenido.areas, config,
+        firma: firmaNota, rangoVencimientos, autorizacion
+      });
+    const pdf = await renderPdf(nota, opcionesPdf(config, firmaNota));
     // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo
     const anexoPdf = fichas ? await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas })) : null;
     const [resultado] = await conexion.query(
       `INSERT INTO notas_digitales
-         (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, creado_por)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [numero, anio, tipo, gestion, tipo === 'reiteracion' ? periodoDe(fecha) : null, fecha, esPrueba ? 1 : 0,
-        nota.asunto, para.join(', '), cc.join(', '), cco.join(', '), renderHtml(nota), renderTexto(nota), pdf, anexoPdf, usuarioId]
+         (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, creado_por,
+          firmante_id, presentada_por_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [numero, anio, tipo, gestion ?? null, tipo === 'reiteracion' ? periodoDe(fecha) : null, fecha, esPrueba ? 1 : 0,
+        nota.asunto, para.join(', '), cc.join(', '), cco.join(', '), renderHtml(nota), renderTexto(nota), pdf, anexoPdf, usuarioId,
+        firmaNota.firmanteId, firmaNota.presentanteId]
     );
     if (!esPrueba) {
       for (const d of contenido.datasets) {
         await conexion.query(
-          'INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento) VALUES (?, ?, ?, ?)',
-          [resultado.insertId, d.id, d.vencimiento < fecha ? 'vencido' : 'proximo', d.vencimiento]
+          'INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento, cuenta_desde) VALUES (?, ?, ?, ?, ?)',
+          [resultado.insertId, d.id, d.vencimiento < fecha ? 'vencido' : 'proximo', d.vencimiento, d.cuenta_desde ?? null]
         );
       }
     }
@@ -218,10 +245,11 @@ const anotarError = (resumen, contexto, error) => {
 // Texto legible para el Estado: el motivo por el que no corrió, o lo enviado y los errores
 const textoResultado = (resumen) => {
   const base = resumen.motivo ?? `${resumen.enviadas} enviada(s), ${resumen.fallidas} fallida(s)`;
+  const licencia = resumen.licencia ? `. ${resumen.licencia}` : '';
   const errores = resumen.errores.length
     ? `. ${resumen.errores.length} error(es): ${resumen.errores.map(describirError).join('; ')}`
     : '';
-  return `${base}${errores}`.slice(0, LARGO_RESULTADO);
+  return `${base}${licencia}${errores}`.slice(0, LARGO_RESULTADO);
 };
 
 // Registro de la última corrida en la configuración. Si el UPDATE falla se informa en el log y la corrida
@@ -246,6 +274,25 @@ const registrarFin = (resumen) => registrarCorrida(
   [ahoraArgentina(), textoResultado(resumen), resumen.errores.length ? 1 : 0]
 );
 
+// Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2)
+const datosDeAutorizacion = ({ licencia, autorizado }) => ({
+  nombre: autorizado.nombre, cargo: autorizado.cargo, email: autorizado.email, desde: licencia.desde, hasta: licencia.hasta
+});
+
+// La firma del titular solo (la nota de autorización la firma él, aunque ya esté de licencia)
+const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: null, leyenda: null });
+
+// Datasets del aviso de hoy. En la víspera de una licencia del firmante (anticipo), la selección mira hasta el último día
+// hábil de la licencia y cada dataset que hoy no habría entrado guarda su fecha normal de aviso (cuenta_desde): el primer
+// día hábil desde que su mes entra en la ventana (spec 2026-10-15, 7.3)
+const prepararAviso = async (gestion, hoy, anticipo) => {
+  if (!anticipo) return seleccionarParaAviso(gestion, hoy);
+  const normales = new Set((await seleccionarParaAviso(gestion, hoy)).map(d => d.id));
+  return (await seleccionarParaAviso(gestion, hoy, anticipo.hasta)).map(d => (normales.has(d.id)
+    ? d
+    : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
+};
+
 // Los pasos de una corrida (spec 8.1). Cada reintento, cada aviso y cada reiteración van aislados.
 const correrPasos = async (resumen, hoy, usuarioId) => {
   // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
@@ -259,7 +306,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     resumen.motivo = 'Envío automático desactivado';
     return;
   }
-  const faltan = configuracionCompleta(config);
+  const faltan = configuracionCompleta(config, await firmaTitularDe(config));
   if (faltan.length) {
     resumen.motivo = `Configuración incompleta: ${faltan.join(', ')}`;
     return;
@@ -293,13 +340,63 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
   for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
+  let { modo, firma, licencia } = await firmaParaFecha(config, hoy);
+  // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
+  // arriba siguen: su contenido ya está congelado.
+  if (modo === 'sin_autorizado') {
+    resumen.licencia = `Licencia del firmante del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)} sin autorizado: no se generan notas`;
+    return;
+  }
+
+  // La autorización todavía no comunicada (spec 7.2) va en los avisos de la víspera; si no hay avisos, o se dio más tarde,
+  // sale una nota de autorización firmada por el titular
+  const pendiente = await autorizacionPendiente(config, hoy);
+  const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
+  let autorizacionComunicada = false;
+  const generarAutorizacion = async () => {
+    try {
+      const id = await generarNota({ tipo: 'autorizacion', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma: soloTitular(firma), autorizacion });
+      await registrarNotaDeAutorizacion(pendiente.licencia.id, id);
+      autorizacionComunicada = true;
+      resumen.generadas.push({ id, tipo: 'autorizacion', gestion: null, datasets: 0 });
+      await enviar(id, { tipo: 'autorizacion' });
+    } catch (error) {
+      anotarError(resumen, { tipo: 'autorizacion' }, error);
+    }
+  };
+
+  // En la víspera de una licencia del firmante, el aviso suma lo que se habría avisado durante la licencia
+  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, hoy) : null;
+  if (anticipo) {
+    resumen.licencia = `Víspera de la licencia del firmante: avisos anticipados hasta el ${formatoCorto(anticipo.hasta)} más la ventana${autorizacion ? `, con la autorización a ${autorizacion.nombre}` : ''}`;
+  } else if (pendiente) {
+    // Autorización tardía o cambiada: primero la nota de autorización; sin ella, ese día no salen las demás (spec 7.2)
+    await generarAutorizacion();
+    if (!autorizacionComunicada) return;
+    ({ modo, firma, licencia } = await firmaParaFecha(config, hoy));
+  }
+  if (modo === 'autorizado' && !firma.leyenda) {
+    anotarError(resumen, { tipo: 'autorizacion' }, new Error('Falta la nota de autorización de la licencia del firmante'));
+    return;
+  }
+
   // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
   for (const gestion of GESTIONES) {
     let id;
     try {
-      const datasets = await seleccionarParaAviso(gestion, hoy);
+      const datasets = await prepararAviso(gestion, hoy, anticipo);
       if (!datasets.length) continue;
-      id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId });
+      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3)
+      const rangoVencimientos = datasets.some(d => d.cuenta_desde)
+        ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
+        : null;
+      // En la víspera, el aviso comunica la autorización todavía pendiente
+      const conAutorizacion = anticipo && autorizacion ? autorizacion : null;
+      id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
+      if (conAutorizacion) {
+        await registrarNotaDeAutorizacion(pendiente.licencia.id, id);
+        autorizacionComunicada = true;
+      }
       resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
     } catch (error) {
       anotarError(resumen, { tipo: 'aviso', gestion }, error);
@@ -307,6 +404,9 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     }
     await enviar(id, { tipo: 'aviso', gestion });
   }
+
+  // Víspera sin avisos generados: la autorización sale igual, en su nota (spec 7.2)
+  if (anticipo && autorizacion && !autorizacionComunicada) await generarAutorizacion();
 
   // 3. Reiteraciones: una evaluación por mes y gestión
   const periodo = periodoDe(hoy);
@@ -321,7 +421,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
         const datasets = await seleccionarParaReiteracion(gestion, hoy);
         if (datasets.length) {
           // Si la generación lanza una excepción se sale al catch sin marcar el mes: se reintenta en la próxima corrida
-          const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId });
+          const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId, firma });
           resumen.generadas.push({ id, tipo: 'reiteracion', gestion, datasets: datasets.length });
           await enviar(id, { tipo: 'reiteracion', gestion });
         }
@@ -336,7 +436,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 };
 
 export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
-  const resumen = { fecha: hoy, ejecutado: false, motivo: null, generadas: [], enviadas: 0, fallidas: 0, errores: [] };
+  const resumen = { fecha: hoy, ejecutado: false, motivo: null, licencia: null, generadas: [], enviadas: 0, fallidas: 0, errores: [] };
   // Con el bloqueo ocupado no se registra nada: la corrida que lo tiene es la que registra
   const corrida = await conBloqueo(async () => {
     await registrarInicio(hoy);
@@ -393,12 +493,14 @@ const contenidoParaMostrar = async (tipo, gestion, hoy) => {
   return { ...ejemplo(tipo, gestion, hoy), ejemplo: true };
 };
 
-// La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX
+// La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX, firmada como saldría (en una licencia sin
+// autorizado, como saldría a la vuelta: con la firma del titular)
 const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
   const config = await obtenerConfig();
+  const { firma } = await firmaParaFecha(config, hoy);
   const { datasets, areas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
-  const nota = construirNota({ tipo, gestion, numero: null, anio: null, esPrueba: false, fecha: hoy, datasets, areas, config });
-  return { nota, config, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
+  const nota = construirNota({ tipo, gestion, numero: null, anio: null, esPrueba: false, fecha: hoy, datasets, areas, config, firma });
+  return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
 };
 
 export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
@@ -408,8 +510,8 @@ export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
 
 // PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía
 export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
-  const { nota, config } = await notaDeVistaPrevia({ tipo, gestion, hoy });
-  return renderPdf(nota, opcionesPdf(config));
+  const { nota, config, firma } = await notaDeVistaPrevia({ tipo, gestion, hoy });
+  return renderPdf(nota, opcionesPdf(config, firma));
 };
 
 // Anexo del aviso de la vista previa (N° XX): no se guarda ni se envía
@@ -422,9 +524,10 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
   const config = await obtenerConfig();
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
+  const { firma } = await firmaParaFecha(config, hoy);
   const { datasets, areas, fichas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const id = await generarNota({
-    tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }
+    tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }, firma
   });
   const resultado = await enviarNota(id);
   return { id, ejemplo: esEjemplo, destinatarios: casillas, ...resultado };

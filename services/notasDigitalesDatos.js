@@ -42,15 +42,18 @@ export const obtenerConfig = async () => {
 // Solo datasets a vencer (spec 5.2): los que vencen dentro de la ventana y los demás de la gestión que vencen el mismo
 // mes que alguno que ya entró en ella. Como d es parte de su mes, "el primer vencimiento del mes está en la ventana"
 // cubre las dos condiciones. Los vencidos sin aviso van a la reiteración (5.3).
-export const seleccionarParaAviso = async (gestion, hoy) => {
+// horizonte: hasta qué día se mira la ventana. Es hoy, salvo en la víspera de una licencia del firmante, en que es el
+// último día hábil de la licencia (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.3).
+// apertura_mes: el primer vencimiento del mes de cada dataset (con él se calcula su fecha normal de aviso).
+export const seleccionarParaAviso = async (gestion, hoy, horizonte = hoy) => {
   const [filas] = await pool.query(
-    `SELECT ${COLUMNAS_DATASET} ${DESDE_DATASETS}
+    `SELECT ${COLUMNAS_DATASET}, DATE_FORMAT(${PRIMER_VENCIMIENTO_DEL_MES}, '%Y-%m-%d') AS apertura_mes ${DESDE_DATASETS}
      WHERE ${CONDICION_BASE}
        AND d.proxima_actualizacion >= ?
        AND ${PRIMER_VENCIMIENTO_DEL_MES} <= DATE_ADD(?, INTERVAL ? DAY)
        AND ${SIN_AVISO}
      ORDER BY d.proxima_actualizacion, d.titulo`,
-    [gestion, hoy, hoy, VENTANA_DIAS[gestion]]
+    [gestion, hoy, horizonte, VENTANA_DIAS[gestion]]
   );
   return filas;
 };
@@ -64,6 +67,7 @@ const REITERACIONES_PREVIAS = `(SELECT COUNT(*) FROM notas_digitales_datasets r
 // Las dos condiciones de la spec 5.3, excluyentes entre sí (una exige un aviso enviado y la otra que no haya ninguno):
 // 1. avisados (aviso enviado) hace DIAS_PARA_REITERAR días o más y que siguen con el mismo vencimiento;
 // 2. vencidos que nunca tuvieron aviso, que entran sin esperar (informado: null).
+// Un aviso anticipado por la licencia del firmante cuenta los 20 días desde su fecha normal (cuenta_desde, spec 2026-10-15, 7.3).
 export const seleccionarParaReiteracion = async (gestion, hoy) => {
   const [filas] = await pool.query(
     `SELECT * FROM (
@@ -72,7 +76,7 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
        ${DESDE_DATASETS}
        JOIN notas_digitales_datasets avd ON avd.dataset_id = d.id AND avd.vencimiento = d.proxima_actualizacion
        JOIN notas_digitales av ON av.id = avd.nota_id AND av.tipo = 'aviso' AND av.es_prueba = 0 AND av.estado = 'enviada'
-       WHERE ${CONDICION_BASE} AND av.fecha <= DATE_SUB(?, INTERVAL ? DAY)
+       WHERE ${CONDICION_BASE} AND COALESCE(avd.cuenta_desde, av.fecha) <= DATE_SUB(?, INTERVAL ? DAY)
        UNION ALL
        SELECT ${COLUMNAS_DATASET}, NULL, NULL, NULL, ${REITERACIONES_PREVIAS}
        ${DESDE_DATASETS}
