@@ -104,7 +104,7 @@ Calculados dinámicamente según `proxima_actualizacion`:
 
 ### Auditoría de cambios pendientes
 - Disponible (un día dado) = activo, con contraseña y sin licencia: solo lo calcula `personasDeAuditoria` (`services/auditoriaService.js`). El canal de cada cambio lo decide una sola función pura, `canalDelCambio` (`services/auditoriaReglas.js`), igual para el recordatorio de las 14:00 y la nota de las 8:15.
-- Canal **nota** (spec 9.1): ya tuvo su primer recordatorio un día hábil anterior (`cambios_pendientes.primer_recordatorio_at`), el firmante titular (sin titular, el superadmin) no puede auditarlo, hay auditores disponibles y hay quién firme. Si no, canal **recordatorio**.
+- Canal **nota** (spec 9.1): ya tuvo su primer recordatorio un día hábil anterior (`cambios_pendientes.primer_recordatorio_at`), el firmante titular (sin titular, el superadmin) no puede auditarlo, hay auditores disponibles y la nota puede salir (envío automático activo, configuración de Notas Digitales completa, Para de auditoría cargado y hay quién firme). Si no, canal **recordatorio**.
 - Recordatorio: solo días hábiles, los cambios propuestos hace una hora o más. `created_at` es TIMESTAMP y la base puede estar en UTC: la antigüedad se mide en SQL con `TIMESTAMPDIFF(SECOND, created_at, NOW())` (reloj y zona de la base en los dos extremos), nunca comparando su texto con `ahoraArgentina()`.
 - Nota de auditoría (tipo `auditoria`, sin gestión, numeración del libro): una por día, después de avisos y reiteraciones; nuevos y reiterados a los 5 días hábiles de la última nota; destinatarios `para_auditoria` y `cc_auditoria` de `notas_digitales_config`, con el `cco` general.
 
