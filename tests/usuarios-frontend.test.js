@@ -135,3 +135,24 @@ describe('enviar link y cambiar estado con cambios sin guardar', () => {
     assert.ok(desactivado.llamadas.includes('reactivarUsuario'));
   });
 });
+
+describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+
+  it('período y marca de la lista, sin pasar por Date', () => {
+    const { contexto } = cargarPanel();
+    assert.equal(evaluar(contexto, "textoPeriodo({ desde: '2026-11-26', hasta: '2027-01-14' })"), 'Del 26/11/2026 al 14/01/2027');
+    assert.match(evaluar(contexto, "etiquetaLicencia({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: true })"), /De licencia hasta 14\/01/);
+    assert.match(evaluar(contexto, "etiquetaLicencia({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: false })"), /Licencia desde 26\/11/);
+    assert.equal(evaluar(contexto, 'etiquetaLicencia(null)'), '');
+  });
+
+  it('efecto en las notas: con autorizado, y sin autorizado con la víspera', () => {
+    const { contexto } = cargarPanel();
+    const conAutorizado = evaluar(contexto, "efectoEnNotas({ vispera: '2026-11-25' }, 'Persona Autorizada')");
+    assert.match(conAutorizado, /comunica la autorización a Persona Autorizada/);
+    assert.match(conAutorizado, /Persona Autorizada presenta las demás notas/);
+    assert.match(evaluar(contexto, "efectoEnNotas({ vispera: '2026-11-25' }, null)"), /por adelantado el 25\/11\/2026/);
+    assert.match(evaluar(contexto, 'efectoEnNotas(null, null)'), /último día hábil anterior/);
+  });
+});
