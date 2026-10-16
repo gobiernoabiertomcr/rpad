@@ -281,9 +281,52 @@ describe('autorización del firmante titular (spec 6.3)', () => {
     await guardar(dia(30), dia(31), 1);
     const lista = await api.get('/usuarios/licencias', comoSuper());
     assert.deepEqual(lista.body.data.autorizables, [
-      { id: usuarios.adminA.id, nombre_completo: 'Test adminA', licencias: [{ desde: dia(-5), hasta: dia(0) }, { desde: dia(20), hasta: dia(25) }] },
-      { id: usuarios.adminB.id, nombre_completo: 'Test adminB', licencias: [] }
+      {
+        id: usuarios.adminA.id, nombre_completo: 'Test adminA',
+        licencias: [{ desde: dia(-5), hasta: dia(0) }, { desde: dia(20), hasta: dia(25) }],
+        ausencias: [
+          { desde: dia(-5), hasta: dia(0), vuelve: proximoDiaHabil(dia(1)) },
+          { desde: dia(20), hasta: dia(25), vuelve: proximoDiaHabil(dia(26)) }
+        ]
+      },
+      { id: usuarios.adminB.id, nombre_completo: 'Test adminB', licencias: [], ausencias: [] }
     ]);
+  });
+
+  it('autorizables trae sus ausencias: las licencias separadas solo por días no hábiles, unidas, con el día hábil en que vuelve', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    await conFirma(usuarios.adminB);
+    const guardar = (usuario, desde, hasta) =>
+      query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuario.id, desde, hasta]);
+    const ausencias = async (usuario) =>
+      (await api.get('/usuarios/licencias', comoSuper())).body.data.autorizables.find(a => a.id === usuario.id).ausencias;
+    // Un fin de semana. adminA, del lunes al viernes: vuelve el lunes siguiente
+    await guardar(usuarios.adminA, q(0), q(4));
+    assert.deepEqual(await ausencias(usuarios.adminA), [{ desde: q(0), hasta: q(4), vuelve: q(7) }]);
+    // Y del lunes al martes siguientes: con solo el fin de semana en el medio, es una sola ausencia; con un día hábil
+    // libre en el medio (el miércoles), otra
+    await guardar(usuarios.adminA, q(7), q(8));
+    await guardar(usuarios.adminA, q(10), q(10));
+    assert.deepEqual(await ausencias(usuarios.adminA), [
+      { desde: q(0), hasta: q(8), vuelve: q(9) },
+      { desde: q(10), hasta: q(10), vuelve: q(11) }
+    ]);
+    // Un feriado fijo de semana, entre dos días hábiles (y seguido de otro). adminB, de licencia el día anterior: vuelve
+    // el día siguiente al feriado
+    let feriado = dia(7);
+    const habil = (n) => esDiaHabil(sumarDias(feriado, n));
+    while (esDiaHabil(feriado) || !habil(-1) || !habil(1) || !habil(2)) feriado = sumarDias(feriado, 1);
+    await guardar(usuarios.adminB, sumarDias(feriado, -1), sumarDias(feriado, -1));
+    assert.deepEqual(await ausencias(usuarios.adminB),
+      [{ desde: sumarDias(feriado, -1), hasta: sumarDias(feriado, -1), vuelve: sumarDias(feriado, 1) }]);
+    // Y también el día siguiente: con solo el feriado en el medio, una sola ausencia
+    await guardar(usuarios.adminB, sumarDias(feriado, 1), sumarDias(feriado, 1));
+    assert.deepEqual(await ausencias(usuarios.adminB),
+      [{ desde: sumarDias(feriado, -1), hasta: sumarDias(feriado, 1), vuelve: sumarDias(feriado, 2) }]);
+    // licencias queda como está: una por licencia
+    const { autorizables } = (await api.get('/usuarios/licencias', comoSuper())).body.data;
+    assert.deepEqual(autorizables.find(a => a.id === usuarios.adminA.id).licencias, [{ desde: q(0), hasta: q(4) }, { desde: q(7), hasta: q(8) }, { desde: q(10), hasta: q(10) }]);
   });
 
   it('cambiar las fechas o la persona autorizada deja sin efecto la nota de autorización', async () => {

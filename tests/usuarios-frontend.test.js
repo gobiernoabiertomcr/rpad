@@ -270,107 +270,131 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     // El titular tiene licencia del 01/03/2027 al 31/03/2027
     const DESDE = '2027-03-01';
     const HASTA = '2027-03-31';
-    // La lista sale del contexto aislado (otro Array): se copia para poder compararla con deepEqual
-    const textos = (contexto, licencias, desde = DESDE, hasta = HASTA, nombre = NOMBRE) => JSON.parse(JSON.stringify(
-      vm.runInContext(`textoAusenciasAutorizado(${JSON.stringify(nombre)}, ${JSON.stringify(licencias)}, ${JSON.stringify(desde)}, ${JSON.stringify(hasta)})`, contexto)));
+    // La lista sale del contexto aislado (otro Array): se copia para poder compararla con deepEqual. ausencias: como llegan
+    // en autorizables, ya unidas por el servidor y con vuelve, el primer día hábil después de cada una
+    const textos = (contexto, ausencias, desde = DESDE, hasta = HASTA, nombre = NOMBRE) => JSON.parse(JSON.stringify(
+      vm.runInContext(`textoAusenciasAutorizado(${JSON.stringify(nombre)}, ${JSON.stringify(ausencias)}, ${JSON.stringify(desde)}, ${JSON.stringify(hasta)})`, contexto)));
+    const ausencia = (desde, hasta, vuelve) => ({ desde, hasta, vuelve });
 
     describe('textoAusenciasAutorizado', () => {
-      it('superposición en el medio: avisa que no hay notas y desde cuándo las presenta el titular', () => {
+      it('superposición en el medio: avisa que no hay notas y desde cuándo las presenta, el día hábil en que vuelve', () => {
         const { contexto } = cargarPanel();
-        assert.deepEqual(textos(contexto, [{ desde: '2027-03-08', hasta: '2027-03-12' }]), [
-          `${NOMBRE} va a estar de licencia del 08/03/2027 al 12/03/2027: esos días no se generan notas. Desde el 13/03/2027 las presenta en tu nombre.`
+        // Termina el viernes 12/03: vuelve el lunes 15/03, no el sábado
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-08', '2027-03-12', '2027-03-15')]), [
+          `${NOMBRE} va a estar de licencia del 08/03/2027 al 12/03/2027: esos días no se generan notas. Desde el 15/03/2027 las presenta en tu nombre.`
         ]);
       });
 
       it('al principio de la licencia del titular: se recorta al inicio de la licencia del titular', () => {
         const { contexto } = cargarPanel();
-        assert.deepEqual(textos(contexto, [{ desde: '2027-02-22', hasta: '2027-03-03' }]), [
+        assert.deepEqual(textos(contexto, [ausencia('2027-02-22', '2027-03-03', '2027-03-04')]), [
           `${NOMBRE} va a estar de licencia del 01/03/2027 al 03/03/2027: esos días no se generan notas. Desde el 04/03/2027 las presenta en tu nombre.`
         ]);
       });
 
-      it('al final de la licencia del titular: sin "Desde el", porque ya no queda un tramo en que las presente', () => {
+      it('al final de la licencia del titular: sin "Desde el", porque no vuelve antes de que termine', () => {
         const { contexto } = cargarPanel();
-        assert.deepEqual(textos(contexto, [{ desde: '2027-03-25', hasta: '2027-04-10' }]), [
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-25', '2027-04-10', '2027-04-12')]), [
           `${NOMBRE} va a estar de licencia del 25/03/2027 al 31/03/2027: esos días no se generan notas.`
         ]);
         // Que termine justo el último día también cuenta como "hasta el final"
-        assert.deepEqual(textos(contexto, [{ desde: '2027-03-25', hasta: '2027-03-31' }]), [
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-25', '2027-03-31', '2027-04-01')]), [
           `${NOMBRE} va a estar de licencia del 25/03/2027 al 31/03/2027: esos días no se generan notas.`
+        ]);
+        // Y que termine el viernes con la licencia del titular hasta el domingo: vuelve el lunes, ya sin licencia del titular
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-01', '2027-03-05', '2027-03-08')], DESDE, '2027-03-07'), [
+          `${NOMBRE} va a estar de licencia del 01/03/2027 al 05/03/2027: esos días no se generan notas.`
+        ]);
+        // Si vuelve justo el último día de la licencia del titular, ese día las presenta
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-01', '2027-03-05', '2027-03-08')], DESDE, '2027-03-08'), [
+          `${NOMBRE} va a estar de licencia del 01/03/2027 al 05/03/2027: esos días no se generan notas. Desde el 08/03/2027 las presenta en tu nombre.`
         ]);
       });
 
       it('de un solo día: "el dd/mm/aaaa: ese día", con el "Desde el" si corresponde', () => {
         const { contexto } = cargarPanel();
-        assert.deepEqual(textos(contexto, [{ desde: '2027-03-10', hasta: '2027-03-10' }]), [
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-10', '2027-03-10', '2027-03-11')]), [
           `${NOMBRE} va a estar de licencia el 10/03/2027: ese día no se generan notas. Desde el 11/03/2027 las presenta en tu nombre.`
         ]);
         // Un solo día de una licencia más larga, justo el último de la del titular
-        assert.deepEqual(textos(contexto, [{ desde: '2027-03-31', hasta: '2027-04-05' }]), [
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-31', '2027-04-05', '2027-04-06')]), [
           `${NOMBRE} va a estar de licencia el 31/03/2027: ese día no se generan notas.`
         ]);
         // Un solo día por el borde del titular (la licencia de la persona autorizada empieza antes y termina el primer día)
-        assert.deepEqual(textos(contexto, [{ desde: '2027-02-20', hasta: '2027-03-01' }]), [
+        assert.deepEqual(textos(contexto, [ausencia('2027-02-20', '2027-03-01', '2027-03-02')]), [
           `${NOMBRE} va a estar de licencia el 01/03/2027: ese día no se generan notas. Desde el 02/03/2027 las presenta en tu nombre.`
         ]);
       });
 
-      it('varias licencias: un texto por superposición, en orden de fecha', () => {
+      it('varias ausencias: un texto por superposición, en orden de fecha', () => {
         const { contexto } = cargarPanel();
         assert.deepEqual(textos(contexto, [
-          { desde: '2027-03-22', hasta: '2027-03-24' },
-          { desde: '2027-03-03', hasta: '2027-03-05' }
+          ausencia('2027-03-22', '2027-03-24', '2027-03-25'),
+          ausencia('2027-03-03', '2027-03-05', '2027-03-08')
         ]), [
-          `${NOMBRE} va a estar de licencia del 03/03/2027 al 05/03/2027: esos días no se generan notas. Desde el 06/03/2027 las presenta en tu nombre.`,
+          `${NOMBRE} va a estar de licencia del 03/03/2027 al 05/03/2027: esos días no se generan notas. Desde el 08/03/2027 las presenta en tu nombre.`,
           `${NOMBRE} va a estar de licencia del 22/03/2027 al 24/03/2027: esos días no se generan notas. Desde el 25/03/2027 las presenta en tu nombre.`
         ]);
       });
 
-      it('dos licencias pegadas son una sola ausencia: el "Desde el" no cae en un día en que la persona autorizada sigue de licencia', () => {
+      it('las ausencias llegan unidas del servidor (separadas solo por días no hábiles): el formulario no las vuelve a unir', () => {
         const { contexto } = cargarPanel();
+        // Del lunes 01/03 al viernes 05/03 y del lunes 08/03 al viernes 12/03: el servidor manda una sola, hasta el 12/03
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-01', '2027-03-12', '2027-03-15')]), [
+          `${NOMBRE} va a estar de licencia del 01/03/2027 al 12/03/2027: esos días no se generan notas. Desde el 15/03/2027 las presenta en tu nombre.`
+        ]);
+        // Con un día hábil libre en el medio (el lunes 08/03), dos: ese día las presenta
         assert.deepEqual(textos(contexto, [
-          { desde: '2027-03-03', hasta: '2027-03-05' },
-          { desde: '2027-03-06', hasta: '2027-03-10' }
+          ausencia('2027-03-03', '2027-03-05', '2027-03-08'),
+          ausencia('2027-03-09', '2027-03-10', '2027-03-11')
         ]), [
-          `${NOMBRE} va a estar de licencia del 03/03/2027 al 10/03/2027: esos días no se generan notas. Desde el 11/03/2027 las presenta en tu nombre.`
+          `${NOMBRE} va a estar de licencia del 03/03/2027 al 05/03/2027: esos días no se generan notas. Desde el 08/03/2027 las presenta en tu nombre.`,
+          `${NOMBRE} va a estar de licencia del 09/03/2027 al 10/03/2027: esos días no se generan notas. Desde el 11/03/2027 las presenta en tu nombre.`
         ]);
       });
 
-      it('el día siguiente cruza el fin de mes y de año', () => {
+      it('el "Desde el" es el día hábil en que vuelve, que calcula el servidor: después de un feriado, o el día siguiente', () => {
         const { contexto } = cargarPanel();
-        assert.match(textos(contexto, [{ desde: '2027-03-29', hasta: '2027-03-30' }])[0], /Desde el 31\/03\/2027 las presenta/);
-        assert.match(textos(contexto, [{ desde: '2026-12-28', hasta: '2026-12-31' }], '2026-12-20', '2027-01-15')[0], /Desde el 01\/01\/2027 las presenta/);
+        // Hasta el jueves 31/12/2026: el 01/01 es feriado y el 02 y el 03, fin de semana
+        assert.match(textos(contexto, [ausencia('2026-12-28', '2026-12-31', '2027-01-04')], '2026-12-20', '2027-01-15')[0], /Desde el 04\/01\/2027 las presenta/);
+        assert.match(textos(contexto, [ausencia('2027-03-29', '2027-03-30', '2027-03-31')])[0], /Desde el 31\/03\/2027 las presenta/);
       });
 
-      it('sin superposición no hay texto: ninguna licencia, o licencias fuera de las fechas elegidas', () => {
+      it('sin superposición no hay texto: ninguna ausencia, o ausencias fuera de las fechas elegidas', () => {
         const { contexto } = cargarPanel();
         assert.deepEqual(textos(contexto, []), []);
-        assert.deepEqual(textos(contexto, [{ desde: '2027-02-01', hasta: '2027-02-28' }, { desde: '2027-04-01', hasta: '2027-04-10' }]), []);
+        assert.deepEqual(textos(contexto, [ausencia('2027-02-01', '2027-02-26', '2027-03-01'), ausencia('2027-04-01', '2027-04-09', '2027-04-12')]), []);
         assert.deepEqual(textos(contexto, undefined), []);
       });
 
       it('sin la persona o sin alguna de las fechas no hay texto', () => {
         const { contexto } = cargarPanel();
-        const licencias = [{ desde: '2027-03-08', hasta: '2027-03-12' }];
-        assert.equal(textos(contexto, licencias).length, 1);
-        assert.deepEqual(textos(contexto, licencias, '', HASTA), []);
-        assert.deepEqual(textos(contexto, licencias, DESDE, ''), []);
-        assert.deepEqual(textos(contexto, licencias, DESDE, HASTA, ''), []);
-        assert.deepEqual(textos(contexto, licencias, DESDE, HASTA, null), []);
+        const ausencias = [ausencia('2027-03-08', '2027-03-12', '2027-03-15')];
+        assert.equal(textos(contexto, ausencias).length, 1);
+        assert.deepEqual(textos(contexto, ausencias, '', HASTA), []);
+        assert.deepEqual(textos(contexto, ausencias, DESDE, ''), []);
+        assert.deepEqual(textos(contexto, ausencias, DESDE, HASTA, ''), []);
+        assert.deepEqual(textos(contexto, ausencias, DESDE, HASTA, null), []);
       });
 
       it('con las fechas al revés (hasta antes de desde) no hay texto', () => {
         const { contexto } = cargarPanel();
-        assert.deepEqual(textos(contexto, [{ desde: '2027-03-08', hasta: '2027-03-12' }], HASTA, DESDE), []);
+        assert.deepEqual(textos(contexto, [ausencia('2027-03-08', '2027-03-12', '2027-03-15')], HASTA, DESDE), []);
       });
     });
 
     describe('aviso del formulario', () => {
       const TITULAR = 1;
       const AUTORIZABLES = [
-        { id: 5, nombre_completo: NOMBRE, licencias: [{ desde: '2027-02-22', hasta: '2027-03-03' }] },
-        { id: 6, nombre_completo: 'Persona Sin Licencia', licencias: [] },
-        { id: 7, nombre_completo: 'Persona Con Otra', licencias: [{ desde: '2027-03-10', hasta: '2027-03-12' }] }
+        {
+          id: 5, nombre_completo: NOMBRE,
+          licencias: [{ desde: '2027-02-22', hasta: '2027-03-03' }], ausencias: [ausencia('2027-02-22', '2027-03-03', '2027-03-04')]
+        },
+        { id: 6, nombre_completo: 'Persona Sin Licencia', licencias: [], ausencias: [] },
+        {
+          id: 7, nombre_completo: 'Persona Con Otra',
+          licencias: [{ desde: '2027-03-10', hasta: '2027-03-12' }], ausencias: [ausencia('2027-03-10', '2027-03-12', '2027-03-15')]
+        }
       ];
       // El formulario del titular (puede autorizar); licencia: la del modal (null = alta). Devuelve el panel con los
       // oyentes de la página registrados
@@ -412,6 +436,20 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
         assert.equal(caja(panel).hidden, false);
         assert.equal(caja(panel).innerHTML,
           `<p>${NOMBRE} va a estar de licencia del 01/03/2027 al 03/03/2027: esos días no se generan notas. Desde el 04/03/2027 las presenta en tu nombre.</p>`);
+      });
+
+      it('usa las ausencias que calcula el servidor, no las licencias una por una', () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        // Dos licencias con un fin de semana en el medio: el servidor las manda como una sola ausencia
+        panel.contexto.__datos.autorizables = [{
+          id: 5, nombre_completo: NOMBRE,
+          licencias: [{ desde: '2027-03-01', hasta: '2027-03-05' }, { desde: '2027-03-08', hasta: '2027-03-12' }],
+          ausencias: [ausencia('2027-03-01', '2027-03-12', '2027-03-15')]
+        }];
+        elegir(panel, '5');
+        assert.equal(caja(panel).innerHTML,
+          `<p>${NOMBRE} va a estar de licencia del 01/03/2027 al 12/03/2027: esos días no se generan notas. Desde el 15/03/2027 las presenta en tu nombre.</p>`);
       });
 
       it('al cambiar de persona, el aviso cambia o se oculta', () => {
@@ -486,7 +524,10 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
         const panel = cargarPanel();
         panel.contexto.Utils.escapeHtml = (t) => String(t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
         abrir(panel);
-        panel.contexto.__datos.autorizables = [{ id: 5, nombre_completo: '<b>Persona</b>', licencias: [{ desde: '2027-03-08', hasta: '2027-03-12' }] }];
+        panel.contexto.__datos.autorizables = [{
+          id: 5, nombre_completo: '<b>Persona</b>',
+          licencias: [{ desde: '2027-03-08', hasta: '2027-03-12' }], ausencias: [ausencia('2027-03-08', '2027-03-12', '2027-03-15')]
+        }];
         elegir(panel, '5');
         assert.ok(caja(panel).innerHTML.includes('&lt;b&gt;Persona&lt;/b&gt; va a estar de licencia'));
         assert.ok(!caja(panel).innerHTML.includes('<b>'));

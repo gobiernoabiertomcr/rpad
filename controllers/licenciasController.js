@@ -4,10 +4,10 @@ import pool from '../config/database.js';
 import { registrarAuditoria } from '../services/usuariosAuditoriaService.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
 import {
-  hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior, esFechaIso, sumarDias, diasEntre
+  hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior, esFechaIso, sumarDias, diasEntre, proximoDiaHabil
 } from '../services/notasDigitalesCalendario.js';
 import {
-  ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse
+  ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse, unirAusencias
 } from '../services/licenciasReglas.js';
 import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
 import { disponibilidadDelAutorizado } from '../services/notasDigitalesFirmas.js';
@@ -77,7 +77,8 @@ const autorizables = async (conexion, titular) => {
 };
 
 // Las licencias en curso y futuras (no anuladas) de cada persona autorizable, para que el formulario advierta una
-// superposición con la licencia del titular
+// superposición con la licencia del titular. ausencias: esas licencias unidas como en el Estado (seguidas o separadas solo
+// por días no hábiles, licenciasReglas.unirAusencias), con vuelve, el primer día hábil después de cada una
 const conSusLicencias = async (personas, hoy) => {
   if (!personas.length) return personas;
   const [filas] = await pool.query(
@@ -85,9 +86,11 @@ const conSusLicencias = async (personas, hoy) => {
      FROM usuarios_licencias WHERE anulada = 0 AND hasta >= ? AND usuario_id IN (?) ORDER BY desde`,
     [hoy, personas.map(p => p.id)]
   );
-  return personas.map(p => ({
-    ...p, licencias: filas.filter(f => f.usuario_id === p.id).map(({ desde, hasta }) => ({ desde, hasta }))
-  }));
+  return personas.map((p) => {
+    const licencias = filas.filter(f => f.usuario_id === p.id).map(({ desde, hasta }) => ({ desde, hasta }));
+    const ausencias = unirAusencias(licencias).map(a => ({ ...a, vuelve: proximoDiaHabil(sumarDias(a.hasta, 1)) }));
+    return { ...p, licencias, ausencias };
+  });
 };
 
 /**
