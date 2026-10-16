@@ -37,4 +37,10 @@ describe('páginas', () => {
       assert.equal(leer(pagina).match(/href="usuarios\.html"/g)?.length, 1);
     });
   }
+
+  // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
+  it('usuarios.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
+    const grupo = leer('usuarios.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
+    assert.match(grupo, /<select id="l-autorizado"[^>]*><\/select>\s*<p class="form-hint" id="l-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
+  });
 });
