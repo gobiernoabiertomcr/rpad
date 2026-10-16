@@ -790,3 +790,180 @@ function textoRevisor(cambio) {
   const accion = cambio.estado === 'aprobado' ? 'Aprobado' : 'Rechazado';
   return `${accion} por ${cambio.revisor_nombre}${Number(cambio.revisado_como_respaldo) ? ' (respaldo)' : ''}`;
 }
+
+// =====================================================
+// GESTIÓN DE CAMBIOS: PRESENTACIÓN
+// =====================================================
+// Funciones puras (no tocan el DOM) que arman lo que se ve de un cambio propuesto: el resumen de la fila cerrada, la
+// comparación palabra por palabra de la fila abierta y la marca del editor. Todo dato que devuelven como HTML va escapado.
+
+// Las etiquetas de campo que manda el servidor (campos_modificados, sin tildes) y cómo se muestran
+const ETIQUETAS_DE_CAMPO = {
+  'Titulo': 'Título',
+  'Descripcion': 'Descripción',
+  'Area Responsable': 'Área responsable',
+  'Tema Principal': 'Tema principal',
+  'Tema Secundario': 'Tema secundario',
+  'Tipo de Gestion': 'Tipo de gestión',
+  'Ultima Actualizacion': 'Última actualización',
+  'Proxima Actualizacion': 'Próxima actualización',
+  'URL en Portal': 'URL en el portal'
+};
+
+// Etiquetas del servidor de los campos de texto largo: se comparan palabra por palabra
+const CAMPOS_LARGOS = ['Descripcion', 'Observaciones', 'Qué se solicita'];
+
+function etiquetaDeCampo(campo) {
+  return Object.hasOwn(ETIQUETAS_DE_CAMPO, campo) ? ETIQUETAS_DE_CAMPO[campo] : campo;
+}
+
+// Un valor para mostrar: vacío si no hay (el servidor manda '-'), las fechas como dd/mm/aaaa
+function textoDeValor(valor) {
+  if (valor === null || valor === undefined || valor === '' || valor === '-') return '';
+  if (typeof valor === 'string') return formatearValor(formatearFechaComparador(valor));
+  return formatearValor(valor);
+}
+
+// Si los tokens de los dos textos se multiplican más que esto, no se compara: sale todo quitado y todo agregado
+const LIMITE_DE_COMPARACION = 250000;
+
+// Palabras, espacios y signos de puntuación como tokens separados, para que "semestral." no se pegue al punto
+const palabrasDeTexto = (texto) => texto.split(/(\s+|[,.;:()¿?¡!"])/).filter(token => token);
+
+// Comparación palabra por palabra (subsecuencia común más larga sobre los tokens). Devuelve segmentos { tipo, texto }:
+// '=' sin cambios, '-' quitado, '+' agregado. Ante una diferencia, primero va lo quitado.
+function diffPalabras(antes, despues) {
+  const textoAntes = String(antes ?? '');
+  const textoDespues = String(despues ?? '');
+  if (!textoAntes && !textoDespues) return [];
+  if (!textoAntes) return [{ tipo: '+', texto: textoDespues }];
+  if (!textoDespues) return [{ tipo: '-', texto: textoAntes }];
+
+  const a = palabrasDeTexto(textoAntes);
+  const d = palabrasDeTexto(textoDespues);
+  if (a.length * d.length > LIMITE_DE_COMPARACION) return [{ tipo: '-', texto: textoAntes }, { tipo: '+', texto: textoDespues }];
+
+  // largo[i][j]: tokens en común, en orden, entre a[i..] y d[j..]
+  const largo = Array.from({ length: a.length + 1 }, () => new Array(d.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = d.length - 1; j >= 0; j--) {
+      largo[i][j] = a[i] === d[j] ? largo[i + 1][j + 1] + 1 : Math.max(largo[i + 1][j], largo[i][j + 1]);
+    }
+  }
+
+  const segmentos = [];
+  const agregar = (tipo, texto) => {
+    const ultimo = segmentos[segmentos.length - 1];
+    if (ultimo && ultimo.tipo === tipo) ultimo.texto += texto;
+    else segmentos.push({ tipo, texto });
+  };
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < d.length) {
+    if (a[i] === d[j]) {
+      agregar('=', a[i]);
+      i++;
+      j++;
+    } else if (largo[i + 1][j] >= largo[i][j + 1]) {
+      agregar('-', a[i++]);
+    } else {
+      agregar('+', d[j++]);
+    }
+  }
+  while (i < a.length) agregar('-', a[i++]);
+  while (j < d.length) agregar('+', d[j++]);
+  return segmentos;
+}
+
+// Los segmentos de diffPalabras como HTML: lo quitado en <del>, lo agregado en <ins>, todo escapado
+function htmlDeDiff(segmentos) {
+  return segmentos.map(({ tipo, texto }) => {
+    const html = Utils.escapeHtml(texto);
+    if (tipo === '-') return `<del>${html}</del>`;
+    if (tipo === '+') return `<ins>${html}</ins>`;
+    return html;
+  }).join('');
+}
+
+// "A", "A y B", "A, B y C"
+function listaDeNombres(nombres) {
+  if (nombres.length <= 1) return nombres.join('');
+  return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+}
+
+// Título del dataset al que se refiere el cambio (texto plano; quien lo muestre lo escapa)
+function tituloDelCambio(cambio) {
+  const nuevo = cambio.datos_nuevos?.titulo;
+  if (cambio.tipo_cambio === 'crear' && nuevo) return nuevo;
+  return cambio.dataset_titulo || cambio.datos_anteriores?.titulo || nuevo || 'Dataset';
+}
+
+// Hasta cuántos caracteres puede tener cada valor para que el resumen diga "de A a B"
+const LARGO_MAXIMO_EN_RESUMEN = 40;
+
+const negritaDeCampo = (campo) => `<b>${Utils.escapeHtml(etiquetaDeCampo(campo))}</b>`;
+const valorEnResumen = (valor) => Utils.escapeHtml(textoDeValor(valor) || 'vacío');
+
+// El resumen de una edición. Un solo campo corto: "Frecuencia de A a B" (con ", y N campos más" si hay más); si no, solo
+// los nombres de los campos que cambian
+function resumenDeEdicion(campos) {
+  if (!Array.isArray(campos) || campos.length === 0) return 'Sin cambios en los campos principales';
+  const [primero] = campos;
+  const antes = textoDeValor(primero.antes);
+  const despues = textoDeValor(primero.despues);
+  const cabe = !CAMPOS_LARGOS.includes(primero.campo) && antes.length <= LARGO_MAXIMO_EN_RESUMEN && despues.length <= LARGO_MAXIMO_EN_RESUMEN;
+  if (cabe) {
+    const otros = campos.length - 1;
+    const resto = otros > 0 ? `, y ${otros} campo${otros > 1 ? 's' : ''} más` : '';
+    return `${negritaDeCampo(primero.campo)} de ${valorEnResumen(primero.antes)} a ${valorEnResumen(primero.despues)}${resto}`;
+  }
+  if (campos.length === 1) return `Cambia ${negritaDeCampo(primero.campo)}`;
+  if (campos.length === 2) return `Cambia ${negritaDeCampo(primero.campo)} y ${negritaDeCampo(campos[1].campo)}`;
+  return `Cambia ${negritaDeCampo(primero.campo)}, ${negritaDeCampo(campos[1].campo)} y ${campos.length - 2} más`;
+}
+
+// El resumen de un dataset nuevo: "Dataset nuevo de Ambiente, anualmente", con lo que haya del área y la frecuencia
+function resumenDeCreacion(datos) {
+  const area = datos?.area_nombre ? ` de ${Utils.escapeHtml(datos.area_nombre)}` : '';
+  const frecuencia = datos?.frecuencia_nombre ? `, ${Utils.escapeHtml(String(datos.frecuencia_nombre).toLowerCase())}` : '';
+  return `Dataset nuevo${area}${frecuencia}`;
+}
+
+// Lo que dice la fila cerrada de un cambio, como HTML escapado
+function resumenDelCambio(cambio) {
+  if (cambio.tipo_cambio === 'crear') return resumenDeCreacion(cambio.datos_nuevos);
+  if (cambio.tipo_cambio === 'eliminar') return 'Se quita del registro';
+  if (cambio.tipo_cambio === 'editar') return resumenDeEdicion(cambio.campos_modificados);
+  return '';
+}
+
+// Escudo de Lucide, para la marca de respaldo
+const ICONO_ESCUDO = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>';
+
+// Lo que ve un editor en un cambio pendiente: si lo puede auditar de respaldo o quiénes lo auditan. Sin marca (cadena vacía)
+// para quien no es editor, para un cambio ya resuelto, si el servidor no mandó la auditoría o si no hay a quién nombrar.
+function marcaDeAuditoria(cambio, esEditor) {
+  const auditoria = cambio.auditoria;
+  if (!esEditor || cambio.estado !== 'pendiente' || !auditoria) return '';
+  if (auditoria.puede) {
+    return auditoria.respaldo ? `<span class="pf-marca pf-marca-respaldo">${ICONO_ESCUDO}Podés auditarlo de respaldo</span>` : '';
+  }
+  const nombres = (auditoria.auditan ?? []).map(nombre => Utils.escapeHtml(nombre));
+  return nombres.length ? `<span class="pf-marca">Lo auditan ${listaDeNombres(nombres)}</span>` : '';
+}
+
+const PESTANAS_DEL_PERFIL = ['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'];
+
+// La pestaña con la que abre Mi Perfil: la del hash si existe, y si no, la de revisar para quien administra. Quien no
+// administra solo tiene sus datos personales.
+function pestanaInicial(hash, esAdmin) {
+  if (!esAdmin) return 'mis-datos';
+  const pedida = String(hash ?? '').replace(/^#/, '');
+  return PESTANAS_DEL_PERFIL.includes(pedida) ? pedida : 'para-revisar';
+}
+
+// Un cambio pendiente está demorado si hace más de 2 días que se propuso
+const DEMORA_EN_MS = 2 * 24 * 60 * 60 * 1000;
+function estaDemorado(fecha, ahora = Date.now()) {
+  return ahora - new Date(fecha).getTime() > DEMORA_EN_MS;
+}
