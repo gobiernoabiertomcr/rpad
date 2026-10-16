@@ -349,7 +349,9 @@
                 <div id="nd-proximas" class="nd-proximas"></div>
                 <p id="nd-ultima-corrida" class="test-hint"></p>
                 <p id="nd-licencia" class="test-hint" hidden></p>
+                <p id="nd-auditoria" class="test-hint"></p>
                 <p class="test-hint">Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.</p>
+                <p class="test-hint">Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron su recordatorio un día hábil anterior. Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.</p>
             </div>
 
             <!-- Libro de Notas Digitales -->
@@ -367,6 +369,7 @@
                         <option value="aviso">Aviso</option>
                         <option value="reiteracion">Reiteración</option>
                         <option value="autorizacion">Autorización</option>
+                        <option value="auditoria">Auditoría</option>
                     </select>
                     <select id="filtro-gestion" class="form-select" aria-label="Gestión">
                         <option value="">Interna y externa</option>
@@ -405,6 +408,7 @@
                     <select id="preview-tipo" class="form-select" aria-label="Tipo de nota">
                         <option value="aviso">Aviso</option>
                         <option value="reiteracion">Reiteración</option>
+                        <option value="auditoria">Auditoría</option>
                     </select>
                     <select id="preview-gestion" class="form-select" aria-label="Gestión">
                         <option value="interna">Gestión interna</option>
@@ -439,6 +443,12 @@
                         <div class="form-group"><label class="form-label" for="para_externa">Para</label><input id="para_externa" class="form-input" autocomplete="off"></div>
                         <div class="form-group"><label class="form-label" for="cc_externa">CC</label><input id="cc_externa" class="form-input" autocomplete="off"></div>
                         <div class="form-group"><label class="form-label" for="linea_cc_externa">Línea de CC al pie de la nota</label><input id="linea_cc_externa" class="form-input" maxlength="200"></div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Notas de auditoría</legend>
+                        <div class="form-group"><label class="form-label" for="para_auditoria">Para</label><input id="para_auditoria" class="form-input" autocomplete="off"></div>
+                        <div class="form-group"><label class="form-label" for="cc_auditoria">CC</label><input id="cc_auditoria" class="form-input" autocomplete="off"></div>
+                        <p class="form-hint">La copia oculta (CCO) es la de respaldo, la misma de las demás notas.</p>
                     </fieldset>
                     <fieldset>
                         <legend>Respaldo y pruebas</legend>
@@ -505,6 +515,7 @@
                     <div class="modal-body">
                         <p id="modal-nota-datos" class="test-hint"></p>
                         <p id="modal-nota-error" class="nd-alerta" hidden></p>
+                        <ul id="modal-nota-cambios" class="test-hint" hidden></ul>
                         <iframe id="modal-nota-marco" class="nd-marco" sandbox="" title="Nota enviada"></iframe>
                     </div>
                 </div>
@@ -548,6 +559,6 @@
     <script src="js/auth.js?v=20261022"></script>
     <script src="js/main.js?v=20261022"></script>
     <script src="js/api.js?v=20261022"></script>
-    <script src="js/correos.js?v=20261021"></script>
+    <script src="js/correos.js?v=20261022"></script>
 </body>
 </html>
