@@ -204,7 +204,9 @@ export const updateProfile = async (req, res) => {
       return res.status(400).json({ success: false, error: 'El nombre completo admite hasta 100 caracteres' });
     }
 
-    if (email && !emailValido(String(email).trim().toLowerCase())) {
+    // El email se normaliza una sola vez: el chequeo de duplicado y el UPDATE usan este mismo valor
+    const emailNuevo = email ? String(email).trim().toLowerCase() : null;
+    if (emailNuevo !== null && !emailValido(emailNuevo)) {
       return res.status(400).json({ success: false, error: 'Ingresá un email válido' });
     }
 
@@ -222,10 +224,10 @@ export const updateProfile = async (req, res) => {
     }
 
     // Si se cambia el email, verificar que no esté en uso por otro usuario
-    if (email) {
+    if (emailNuevo) {
       const [existingEmail] = await pool.execute(
         'SELECT id FROM usuarios WHERE email = ? AND id != ?',
-        [email, userId]
+        [emailNuevo, userId]
       );
 
       if (existingEmail.length > 0) {
@@ -247,9 +249,9 @@ export const updateProfile = async (req, res) => {
       values.push(nuevos.nombre_completo);
     }
 
-    if (email) {
+    if (emailNuevo) {
       updates.push('email = ?');
-      nuevos.email = email.trim().toLowerCase();
+      nuevos.email = emailNuevo;
       values.push(nuevos.email);
     }
 
@@ -262,6 +264,13 @@ export const updateProfile = async (req, res) => {
 
     // Historial: solo lo que efectivamente cambió (spec 9)
     const campos = camposCambiados(userRows[0], nuevos, ['nombre_completo', 'email']);
+    // Un link mandado al email anterior no debe seguir sirviendo
+    if (campos.email) {
+      await pool.execute(
+        'UPDATE usuarios_tokens SET anulado_at = NOW() WHERE usuario_id = ? AND usado_at IS NULL AND anulado_at IS NULL',
+        [userId]
+      );
+    }
     if (Object.keys(campos).length > 0) {
       await registrarAuditoria(pool, { usuarioId: userId, actorId: userId, accion: 'perfil_editado', detalle: { campos } });
     }

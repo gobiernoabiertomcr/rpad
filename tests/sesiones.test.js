@@ -6,7 +6,7 @@ import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query
 } from './helpers.js';
 
-let base, servidor, api, usuarios, dbReal;
+let base, servidor, api, usuarios, acceso, pool, dbReal;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -15,10 +15,14 @@ before(async () => {
   servidor = await iniciarServidor({ env: { DB_NAME: base.nombre } });
   api = crearCliente(servidor.url);
   usuarios = await crearUsuariosPrueba(api);
+  // Se importan después de apuntar DB_NAME a la base de prueba: el pool de la app se crea al importarse
+  acceso = await import('../services/accesoService.js');
+  pool = (await import('../config/database.js')).default;
 });
 
 after(async () => {
   await limpiarDatosPrueba(usuarios);
+  await pool?.end();
   await cerrarDb();
   await servidor?.detener();
   // borrar() rechaza la base que está en DB_NAME: se restaura la real antes de borrar la de prueba
@@ -162,5 +166,40 @@ describe('Mi Perfil', () => {
       nombre_completo: { antes: 'Test x', despues: 'Nombre Nuevo' },
       email: { antes: x.email, despues: `nuevo_${x.email}` }
     });
+  });
+
+  const linkVigente = async (usuario) => {
+    const token = await acceso.generarLink(pool, { usuarioId: usuario.id, tipo: 'recuperacion' });
+    assert.equal((await api.post('/auth/link/validar', { token })).body.data.valido, true);
+    return token;
+  };
+
+  it('cambiar el email anula los links pendientes: el de la dirección vieja deja de servir', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    const token = await linkVigente(x);
+    const res = await api.put('/auth/profile', { email: `otro_${x.email}` }, { token: x.token });
+    assert.equal(res.status, 200);
+    const validacion = await api.post('/auth/link/validar', { token });
+    assert.equal(validacion.body.data.valido, false);
+    assert.equal(validacion.body.data.motivo, 'invalido');
+    const [{ vigentes }] = await query('SELECT COUNT(*) AS vigentes FROM usuarios_tokens WHERE usuario_id = ? AND usado_at IS NULL AND anulado_at IS NULL', [x.id]);
+    assert.equal(vigentes, 0);
+  });
+
+  it('editar solo el nombre, o guardar el mismo email, no anula los links pendientes', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    const token = await linkVigente(x);
+    assert.equal((await api.put('/auth/profile', { nombre_completo: 'Solo El Nombre' }, { token: x.token })).status, 200);
+    assert.equal((await api.put('/auth/profile', { email: `  ${x.email.toUpperCase()} ` }, { token: x.token })).status, 200);
+    assert.equal((await api.post('/auth/link/validar', { token })).body.data.valido, true);
+  });
+
+  it('un email con espacios que coincide con el de otro usuario responde 400, no 500', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    const res = await api.put('/auth/profile', { email: `   ${usuarios.lector.email}` }, { token: x.token });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'El email ya está en uso por otro usuario');
+    const [fila] = await query('SELECT email FROM usuarios WHERE id = ?', [x.id]);
+    assert.equal(fila.email, x.email);
   });
 });
