@@ -389,7 +389,7 @@ async function verDetalle(id) {
     if (cambio.estado === 'pendiente' && !esPropioCambio) {
       // Si no le corresponde auditarlo (un editor con auditores disponibles, spec 2026-10-15, 8.2), los botones aparecen
       // deshabilitados y el motivo, debajo del detalle
-      const permiso = cambio.auditoria ?? { puede: true, mensaje: null };
+      const permiso = permisoDeAuditoria(cambio);
       if (!permiso.puede && permiso.mensaje) contenido.insertAdjacentHTML('beforeend', avisoNoCorresponde(permiso.mensaje));
       footer.innerHTML = botonesDeAuditoria(cambio.id, permiso);
     } else {
@@ -727,6 +727,12 @@ async function guardarMiFirma(evento) {
 // =====================================================
 // AUDITAR UN CAMBIO (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2)
 // =====================================================
+// Lo que el servidor dice sobre si quien mira puede auditar el cambio ({ puede, respaldo, mensaje }). Si el detalle no
+// trae el dato, falla cerrado: los botones quedan deshabilitados (el servidor igual decide al aprobar o rechazar)
+function permisoDeAuditoria(cambio) {
+  return cambio.auditoria ?? { puede: false, respaldo: false, mensaje: null };
+}
+
 // Botones del detalle de un cambio. permiso: { puede, mensaje } que manda el servidor; sin permiso, deshabilitados con
 // el motivo
 function botonesDeAuditoria(id, permiso) {
