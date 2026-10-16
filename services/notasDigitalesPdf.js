@@ -466,26 +466,29 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     parrafo(nota.parrafoInicial);
 
     // El título, la introducción (si tiene), el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
-    const altoInicioDe = (seccion, tabla) => altoTexto(seccion.titulo)
+    // (fuenteTitulo: la letra con la que se mide el título; las secciones de siempre lo miden en NORMAL, como hasta ahora, y las
+    // del detalle de la nota de auditoría, que traen el título del dataset y pueden pasar a dos renglones, en NEGRITA, que
+    // es como se dibuja)
+    const altoInicioDe = (seccion, tabla, fuenteTitulo = NORMAL) => altoTexto(seccion.titulo, 12, fuenteTitulo)
       + (seccion.introduccion ? altoTexto(seccion.introduccion) : 0) + 10 + tabla.altoInicio;
-    const dibujarSeccion = (seccion) => {
+    const dibujarSeccion = (seccion, fuenteTitulo = NORMAL) => {
       const tabla = prepararTabla(doc, seccion, ancho);
-      asegurarEspacio(altoInicioDe(seccion, tabla));
+      asegurarEspacio(altoInicioDe(seccion, tabla, fuenteTitulo));
       parrafo(seccion.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.3 });
       if (seccion.introduccion) parrafo(seccion.introduccion, { espacio: 0.4 });
       tabla.dibujar();
       doc.moveDown(0.8);
     };
-    nota.secciones.forEach(dibujarSeccion);
+    nota.secciones.forEach(seccion => dibujarSeccion(seccion));
 
     // Nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.3): el detalle de cada cambio; el título
     // viaja con el primero
     if (nota.detalles?.secciones.length) {
       const primera = nota.detalles.secciones[0];
       asegurarEspacio(altoTexto(nota.detalles.titulo, 12, NEGRITA) + altoEspacio(0.4, 12, NEGRITA)
-        + altoInicioDe(primera, prepararTabla(doc, primera, ancho)));
+        + altoInicioDe(primera, prepararTabla(doc, primera, ancho), NEGRITA));
       parrafo(nota.detalles.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.4 });
-      nota.detalles.secciones.forEach(dibujarSeccion);
+      nota.detalles.secciones.forEach(seccion => dibujarSeccion(seccion, NEGRITA));
     }
 
     if (nota.contactos.length) {
@@ -506,9 +509,11 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       parrafo(nota.autorizacion);
     }
 
-    // Apartados de la nota de auditoría (spec 10.3): título, párrafos, ítems con viñeta y párrafos de cierre. El título
-    // viaja con su primer bloque; y el último bloque del último apartado, con el remitente, la firma y la línea CC (como el
-    // último párrafo de la justificación en las demás notas): la firma no queda sola en una hoja, sin texto de la nota arriba.
+    // Apartados de la nota de auditoría (spec 10.3): título, párrafos, ítems con viñeta y párrafos de cierre. Lo que se reserva
+    // es exactamente lo que se dibuja (el alto de cada bloque y el aire que deja debajo): el título viaja con sus dos primeros
+    // bloques (así "La auditoría consiste en verificar que:" no queda sola al pie de una hoja) y el último bloque del último
+    // apartado, con el remitente, la firma y la línea CC (como el último párrafo de la justificación en las demás notas): la
+    // firma no queda sola en una hoja, sin texto de la nota arriba.
     const apartados = nota.apartados ?? [];
     apartados.forEach((apartado, k) => {
       const anchoItem = ancho - SANGRIA_ITEM - SANGRIA_VINETA;
@@ -518,15 +523,26 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
         ...apartado.items.map(texto => ({ texto, item: true })),
         ...(apartado.cierre ?? []).map(texto => ({ texto, item: false }))
       ];
-      const cierraLaNota = (i) => k === apartados.length - 1 && i === bloques.length - 1;
-      // Lo que se reserva para un bloque: su alto y, si cierra la nota, también el cierre
-      const reservaDe = (i) => altoTexto(bloques[i].texto, 12, NORMAL, bloques[i].item ? anchoItem : ancho)
-        + (cierraLaNota(i) ? altoCierre : 0);
-      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + (bloques.length ? reservaDe(0) : 0));
+      const ultimoApartado = k === apartados.length - 1;
+      const cierraLaNota = (i) => ultimoApartado && i === bloques.length - 1;
+      const alto = (i) => altoTexto(bloques[i].texto, 12, NORMAL, bloques[i].item ? anchoItem : ancho);
+      // Lo que ocupa el bloque: su alto y el aire de debajo (un párrafo, ESPACIO_PARRAFO; un ítem, 0,2 líneas y, el último de
+      // los ítems, 0,4 más)
+      const ocupa = (i) => alto(i) + (bloques[i].item
+        ? altoEspacio(0.2, 12) + (bloques[i + 1]?.item ? 0 : altoEspacio(0.4, 12))
+        : altoEspacio(ESPACIO_PARRAFO, 12));
+      // Lo que se reserva para el bloque: lo que ocupa si le sigue otro, o solo su alto; y, si cierra la nota, lo que ocupa más el cierre
+      const reservaDe = (i) => (cierraLaNota(i) ? ocupa(i) + altoCierre : alto(i));
+      const iniciales = Math.min(2, bloques.length);
+      let reservaInicial = altoTexto(apartado.titulo, 12, NEGRITA) + altoEspacio(0.3, 12, NEGRITA) + (!bloques.length && ultimoApartado ? altoCierre : 0);
+      for (let i = 0; i < iniciales; i++) reservaInicial += i === iniciales - 1 ? reservaDe(i) : ocupa(i);
+      asegurarEspacio(reservaInicial);
       parrafo(apartado.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.3 });
       bloques.forEach(({ texto, item }, i) => {
+        // (los dos primeros bloques ya se reservaron junto con el título)
+        const reservado = i < iniciales;
         if (item) {
-          asegurarEspacio(reservaDe(i));
+          if (!reservado) asegurarEspacio(reservaDe(i));
           const y = doc.y;
           doc.font(NORMAL).fontSize(12).text('•', MARGENES.left + SANGRIA_ITEM, y, { lineBreak: false });
           doc.text(texto, MARGENES.left + SANGRIA_ITEM + SANGRIA_VINETA, y, { width: anchoItem, align: 'left' });
@@ -534,8 +550,7 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
           // Después del último ítem, más aire antes de lo que sigue
           if (!bloques[i + 1]?.item) doc.moveDown(0.4);
         } else {
-          // (el primer bloque ya se reservó junto con el título)
-          if (i > 0 && cierraLaNota(i)) asegurarEspacio(reservaDe(i));
+          if (!reservado && cierraLaNota(i)) asegurarEspacio(reservaDe(i));
           parrafo(texto);
         }
       });
@@ -564,7 +579,8 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
         if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + altoCierre);
         parrafo(texto);
       });
-    } else {
+    } else if (!apartados.length) {
+      // (con apartados, el último bloque del último ya reservó el cierre)
       asegurarEspacio(altoCierre);
     }
 

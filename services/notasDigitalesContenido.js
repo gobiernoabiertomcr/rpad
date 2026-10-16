@@ -293,10 +293,6 @@ const tituloDelCambio = (cambio) =>
   cambio.dataset_titulo ?? cambio.datos_nuevos?.titulo ?? cambio.datos_anteriores?.titulo ?? 'Conjunto de datos sin título';
 const filaSimple = (valores) => ({ valores, url: null, antecedente: null, informadoAnterior: null });
 
-// "Nota Digital N° 12/26 (09/10/2026)" y, si ya se reiteró, " – reiterado N veces" (Decisiones del plan 5)
-const textoSolicitado = (s) => `Nota Digital N° ${textoNumero(s)} (${formatoCorto(s.fecha)})`
-  + `${s.reiteraciones > 0 ? ` – reiterado ${cantidad(s.reiteraciones, 'vez', 'veces')}` : ''}`;
-
 // Fila de las tablas de nuevos y reiterados (spec 10.3, punto 3)
 const filaDeCambio = (cambio, fecha, conSolicitud) => {
   const proponente = cambio.usuario_cargo ? `${cambio.usuario_nombre}, ${cambio.usuario_cargo}` : cambio.usuario_nombre;
@@ -304,7 +300,9 @@ const filaDeCambio = (cambio, fecha, conSolicitud) => {
     tituloDelCambio(cambio), TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio, proponente,
     formatoCorto(cambio.fecha_propuesta), String(diasHabilesTranscurridos(cambio.fecha_propuesta, fecha))
   ];
-  if (conSolicitud) valores.push(textoSolicitado(cambio.solicitado));
+  // "Solicitado en": "Nota Digital N° 12/26 (09/10/2026)" y, si ya se reiteró, " – reiterado N veces" (Decisiones del plan 5): el
+  // mismo formato que "Informado en" de las reiteraciones de datasets
+  if (conSolicitud) valores.push(textoInformado({ informado: cambio.solicitado, reiteraciones: cambio.solicitado.reiteraciones }));
   return filaSimple(valores);
 };
 
