@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, db
 } from './helpers.js';
-import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
+import { crearArea, crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
-import { esDiaHabil, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { esDiaHabil, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 // Banner del membrete generado para los tests (la imagen institucional no se versiona)
@@ -662,5 +662,18 @@ describe('aviso a las áreas', () => {
     assert.equal(res.status, 200);
     // El HTML del aviso no trae el nombre del área (solo el asunto): el área de ejemplo se reconoce por sus datasets
     assert.match(res.body, /Dataset de Ejemplo 1/);
+  });
+
+  // Un sábado, hoyArgentina() no tiene rango y mostraría el ejemplo: la selección tiene que salir del próximo día hábil
+  it('la vista previa muestra los datasets que vencen en la ventana del próximo día hábil, no el ejemplo', async () => {
+    const proximo = proximoDiaHabil(hoyArgentina());
+    const areaId = await crearArea({ email_principal: 'area-vista-previa@rpad.test' });
+    await crearDataset({
+      gestion: 'externa', vencimiento: rangoDeAviso(proximo, 40).desde, areaId, titulo: 'Dataset de la vista previa del próximo aviso'
+    });
+    const res = await api.get('/notificaciones/preview/area-aviso-40', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.body, /Dataset de la vista previa del próximo aviso/);
+    assert.doesNotMatch(res.body, /Dataset de Ejemplo 1/);
   });
 });

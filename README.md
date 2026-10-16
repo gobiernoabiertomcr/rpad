@@ -87,6 +87,7 @@ rpad/
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
 │   ├── emailService.js            # Configuración SMTP y envío
+│   ├── avisosDiariosService.js    # Aviso a las áreas y email de cambios pendientes (solo días hábiles)
 │   ├── emailTemplates.js          # Plantillas HTML para emails
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
@@ -414,6 +415,8 @@ https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET
 
 Los dos corren todos los días: cPanel no conoce los feriados y el sistema decide. **Todos los recordatorios automáticos salen solo en días hábiles**: de lunes a viernes, sin los feriados nacionales de fecha fija (01/01, 24/03, 02/04, 01/05, 25/05, 20/06, 09/07, 08/12 y 25/12). Los feriados trasladables cuentan como hábiles.
 
+Si se cambia el horario de una tarea existente, hacerlo fuera de las 8:00–8:15 y de las 13:00–14:00: editada en ese intervalo, la tarea puede correr dos veces ese día y repetir los emails.
+
 El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales**:
 
 - **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento. Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
@@ -477,6 +480,7 @@ El de las **14:00** envía a cada administrador el email con los cambios pendien
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/cron/notificaciones?secret=...` | Ejecutar notificaciones (para cron) |
+| GET | `/api/cron/cambios-pendientes?secret=...` | Email de cambios pendientes a los admins (para cron) |
 
 ### Filtros disponibles en `/api/datasets`
 
