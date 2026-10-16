@@ -55,11 +55,28 @@ const CAMPOS_CONTACTO = [
 // Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto, y el aviso suma su anexo
 const AVISO_ADJUNTO = { aviso: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', reiteracion: 'SE ADJUNTA NOTA EN PDF' };
 
+// Personal contratado (usuarios.vinculo = 'contrato', sin designación formal; pedido del usuario el 16/10/2026): en la firma,
+// un renglón más chico entre el nombre y el cargo; dentro de los párrafos, en minúscula. Quien no es contratado (o no tiene
+// el dato) sale como siempre. La palabra es neutra: el sistema no infiere el género.
+export const RENGLON_FIRMA_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
+const CONTRATADO_EN_TEXTO = 'personal contratado, cumpliendo funciones de';
+
+// El cargo de una persona como se nombra dentro de un párrafo
+export const cargoEnTexto = ({ cargo, contratado }) => (contratado ? `${CONTRATADO_EN_TEXTO} ${cargo}` : cargo);
+
+// Los renglones de una firma, en orden: el nombre, el renglón del personal contratado (chico: más chico que el cargo) y el
+// cargo. Los dibujan el HTML, el texto y el PDF.
+export const renglonesDeFirma = ({ nombre, cargo, contratado }) => [
+  { texto: nombre, chico: false },
+  ...(contratado ? [{ texto: RENGLON_FIRMA_CONTRATADO, chico: true }] : []),
+  { texto: cargo, chico: false }
+];
+
 // Autorización para presentar las notas durante la licencia del firmante (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.2).
-// a: { nombre, cargo, desde, hasta } de la persona autorizada y la licencia
+// a: { nombre, cargo, contratado, desde, hasta } de la persona autorizada y la licencia
 const periodoLicencia = ({ desde, hasta }) => `del ${formatoCorto(desde)} al ${formatoCorto(hasta)}`;
-const PARRAFO_AUTORIZACION = (a) => `Asimismo, por medio de la presente autorizo expresamente a ${a.nombre}, ${a.cargo}, a presentar en mi nombre las Notas Digitales durante mi licencia, ${periodoLicencia(a)}, con el objetivo de mantener el correcto flujo de trabajo.`;
-const TEXTO_NOTA_AUTORIZACION = (a) => `Por medio de la presente informo que, durante mi licencia ${periodoLicencia(a)}, autorizo expresamente a ${a.nombre}, ${a.cargo}, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.`;
+const PARRAFO_AUTORIZACION = (a) => `Asimismo, por medio de la presente autorizo expresamente a ${a.nombre}, ${cargoEnTexto(a)}, a presentar en mi nombre las Notas Digitales durante mi licencia, ${periodoLicencia(a)}, con el objetivo de mantener el correcto flujo de trabajo.`;
+const TEXTO_NOTA_AUTORIZACION = (a) => `Por medio de la presente informo que, durante mi licencia ${periodoLicencia(a)}, autorizo expresamente a ${a.nombre}, ${cargoEnTexto(a)}, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.`;
 const REF_AUTORIZACION = 'Autorización para la presentación de Notas Digitales';
 
 export const escapeHtml = (texto) => String(texto ?? '')
@@ -80,15 +97,19 @@ const textoNumero = ({ numero, anio, esPrueba = false }) => {
 
 // Leyenda de una nota presentada por la persona autorizada (spec 2026-10-15, 7.2): cita la nota de autorización
 export const textoLeyendaAutorizacion = ({ presentante, titular, nota, licencia }) =>
-  `Nota presentada por ${presentante.nombre}, ${presentante.cargo}, en nombre de ${titular.nombre}, ${titular.cargo}, `
+  `Nota presentada por ${presentante.nombre}, ${cargoEnTexto(presentante)}, en nombre de ${titular.nombre}, ${cargoEnTexto(titular)}, `
   + `conforme a la autorización conferida mediante Nota Digital N° ${textoNumero(nota)} (licencia ${periodoLicencia(licencia)}).`;
 
-// La firma de la nota: la del titular (o la de la configuración, sin firmante elegido) y, durante su licencia con
-// autorización, la de quien la presenta con la leyenda (spec 2026-10-15, 7.2)
+// La firma de la nota: la del titular (o la de la configuración, sin firmante elegido: nunca de personal contratado) y,
+// durante su licencia con autorización, la de quien la presenta con la leyenda (spec 2026-10-15, 7.2). Cada una dice si es
+// de personal contratado.
 const firmaDeLaNota = (firma, config) => ({
   nombre: firma?.titular?.nombre ?? config?.firma_nombre ?? '',
   cargo: firma?.titular?.cargo ?? config?.firma_cargo ?? '',
-  presentante: firma?.presentante ? { nombre: firma.presentante.nombre, cargo: firma.presentante.cargo } : null,
+  contratado: Boolean(firma?.titular?.contratado),
+  presentante: firma?.presentante
+    ? { nombre: firma.presentante.nombre, cargo: firma.presentante.cargo, contratado: Boolean(firma.presentante.contratado) }
+    : null,
   leyenda: firma?.presentante ? firma.leyenda ?? null : null
 });
 
@@ -293,9 +314,12 @@ const tituloDelCambio = (cambio) =>
   cambio.dataset_titulo ?? cambio.datos_nuevos?.titulo ?? cambio.datos_anteriores?.titulo ?? 'Conjunto de datos sin título';
 const filaSimple = (valores) => ({ valores, url: null, antecedente: null, informadoAnterior: null });
 
-// Fila de las tablas de nuevos y reiterados (spec 10.3, punto 3)
+// Fila de las tablas de nuevos y reiterados (spec 10.3, punto 3). "Propuesto por": el nombre y, si tiene, el cargo (con
+// "personal contratado, cumpliendo funciones de" si quien propuso es contratado)
 const filaDeCambio = (cambio, fecha, conSolicitud) => {
-  const proponente = cambio.usuario_cargo ? `${cambio.usuario_nombre}, ${cambio.usuario_cargo}` : cambio.usuario_nombre;
+  const proponente = cambio.usuario_cargo
+    ? `${cambio.usuario_nombre}, ${cargoEnTexto({ cargo: cambio.usuario_cargo, contratado: cambio.usuario_contratado })}`
+    : cambio.usuario_nombre;
   const valores = [
     tituloDelCambio(cambio), TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio, proponente,
     formatoCorto(cambio.fecha_propuesta), String(diasHabilesTranscurridos(cambio.fecha_propuesta, fecha))
@@ -437,13 +461,18 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
 
 const ESTILO_CELDA = 'border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;';
 
+// Los renglones de una firma, uno por línea; el del personal contratado, en 12px (el cargo va en los 15px de la nota)
+const renglonesFirmaHtml = (firma) => renglonesDeFirma(firma)
+  .map(({ texto, chico }) => (chico ? `<span style="font-size:12px">${escapeHtml(texto)}</span>` : escapeHtml(texto)))
+  .join('<br>');
+
 // Una firma (sin presentante): a la derecha, como siempre. Con presentante: las dos lado a lado, quien presenta a la
 // izquierda y el titular a la derecha, y la leyenda debajo
 const bloqueFirmaHtml = (firma) => {
   if (!firma.presentante) {
-    return `<p style="margin:32px 0 0;text-align:right;">${escapeHtml(firma.nombre)}<br>${escapeHtml(firma.cargo)}</p>`;
+    return `<p style="margin:32px 0 0;text-align:right;">${renglonesFirmaHtml(firma)}</p>`;
   }
-  const celda = ({ nombre, cargo }) => `<td style="width:50%;text-align:center;vertical-align:top;">${escapeHtml(nombre)}<br>${escapeHtml(cargo)}</td>`;
+  const celda = (una) => `<td style="width:50%;text-align:center;vertical-align:top;">${renglonesFirmaHtml(una)}</td>`;
   return `<table cellspacing="0" cellpadding="0" style="width:100%;margin:32px 0 0;"><tr>${celda(firma.presentante)}${celda(firma)}</tr></table>
 <p style="margin:12px 0 0;font-size:12px;font-style:italic;text-align:justify;">${escapeHtml(firma.leyenda)}</p>`;
 };
@@ -511,9 +540,10 @@ ${bloqueFirmaHtml(nota.firma)}
 </div></body></html>`;
 };
 
+const lineasDeUnaFirma = (firma) => renglonesDeFirma(firma).map(r => r.texto);
 const lineasFirma = (firma) => (firma.presentante
-  ? [firma.presentante.nombre, firma.presentante.cargo, '', firma.nombre, firma.cargo, '', firma.leyenda]
-  : [firma.nombre, firma.cargo]);
+  ? [...lineasDeUnaFirma(firma.presentante), '', ...lineasDeUnaFirma(firma), '', firma.leyenda]
+  : lineasDeUnaFirma(firma));
 
 // Una sección con tabla en texto plano: el título, la introducción (si tiene) y cada fila con sus columnas
 const lineasDeSeccion = (seccion) => {

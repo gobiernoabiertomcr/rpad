@@ -96,9 +96,9 @@ const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: nu
 /**
  * Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente.
  * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
- * autorizacion: { nombre, cargo, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo de autorización;
- * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular. En los dos
- * casos va en CC.
+ * autorizacion: { nombre, cargo, contratado, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo
+ * de autorización; con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular.
+ * En los dos casos va en CC.
  * auditoria: { nuevos, reiterados, catalogos } de la nota de auditoría (tipo 'auditoria', sin gestión ni datasets; spec
  * 2026-10-15, 10). Salvo en las pruebas, cada cambio queda en notas_digitales_cambios con su sección: cuenta como incluido
  * desde que la nota se genera (spec 9.3).
@@ -299,9 +299,11 @@ const registrarFin = (resumen) => registrarCorrida(
   [ahoraArgentina(), textoResultado(resumen), resumen.errores.length ? 1 : 0]
 );
 
-// Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2)
+// Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2); contratado: personal
+// contratado, que el texto presenta así
 const datosDeAutorizacion = ({ licencia, autorizado }) => ({
-  nombre: autorizado.nombre, cargo: autorizado.cargo, email: autorizado.email, desde: licencia.desde, hasta: licencia.hasta
+  nombre: autorizado.nombre, cargo: autorizado.cargo, contratado: Boolean(autorizado.contratado), email: autorizado.email,
+  desde: licencia.desde, hasta: licencia.hasta
 });
 
 // Lo que dice el resumen de una corrida en un día de licencia del firmante sin autorizado (spec 2026-10-15, 7.3)

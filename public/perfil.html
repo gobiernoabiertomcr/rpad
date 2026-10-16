@@ -275,6 +275,11 @@
 
         [hidden] { display: none !important; }
         .firma-vista { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
+        /* Muestra de la firma del personal contratado: nombre, el renglón (más chico, como en las notas) y cargo */
+        .firma-muestra { margin: 0 0 16px; padding: 10px 12px; border: 1px dashed var(--gray-300); background: #ffffff; text-align: center; line-height: 1.4; }
+        .firma-muestra .form-hint { margin: 0 0 6px; text-align: left; }
+        .firma-muestra-renglon { font-size: 0.9375rem; }
+        .firma-muestra-chico { font-size: 0.75rem; }
 
         /* Un cambio que no le corresponde auditar a quien mira (el editor): botones deshabilitados y el motivo debajo del detalle */
         #modal-detalle-footer .btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -479,7 +484,7 @@
                         <form id="form-firma">
                             <div class="form-group">
                                 <label class="form-label" for="firma-nombre">Nombre para la firma <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Téc. Nombre Apellido">
+                                <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Nombre Apellido">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="firma-cargo">Cargo para la firma <span style="color: var(--danger);">*</span></label>
@@ -490,6 +495,7 @@
                                 <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
                                 <img id="firma-vista" class="firma-vista" alt="Tu firma cargada" hidden>
                             </div>
+                            <div id="firma-muestra" class="firma-muestra" hidden></div>
                             <button type="submit" class="btn btn-primary" id="btn-guardar-firma" style="width: 100%;">Guardar firma</button>
                         </form>
                     </div>
@@ -629,6 +635,6 @@
     <script src="js/auth.js?v=20261023"></script>
     <script src="js/main.js?v=20261023"></script>
     <script src="js/api.js?v=20261023"></script>
-    <script src="js/perfil.js?v=20261022"></script>
+    <script src="js/perfil.js?v=20261024"></script>
 </body>
 </html>

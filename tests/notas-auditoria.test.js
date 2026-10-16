@@ -102,6 +102,17 @@ describe('ejemplo 9.4: propone el titular el viernes y hay otro auditor disponib
     assert.deepEqual(mensaje.Cc.map(t => t.Address), ['cc-auditoria@rpad.test']);
   });
 
+  // Personal contratado (usuarios.vinculo = 'contrato', pedido del usuario el 16/10/2026)
+  it('si quien propuso (y firma) es personal contratado, "Propuesto por" y su firma lo dicen', async () => {
+    await query("UPDATE usuarios SET vinculo = 'contrato' WHERE id = ?", [titular.id]);
+    await proponer(titular);
+    await correr('2026-10-19');
+    const [nota] = await auditorias();
+    assert.ok(nota.html.includes('>Persona superadmin, personal contratado, cumpliendo funciones de Cargo superadmin</td>'), nota.html);
+    assert.ok(nota.html.includes('>Firma superadmin<br><span style="font-size:12px">Personal contratado, cumpliendo funciones de</span><br>Cargo de firma superadmin</p>'));
+    assert.ok(lineasPorHoja(nota.pdf).at(-1).includes('Personal contratado, cumpliendo funciones de'));
+  });
+
   it('no se repite en los días siguientes; a los 5 días hábiles se reitera citando la primera nota, y cuenta las reiteraciones', async () => {
     const id = await proponer(titular);
     for (const dia of ['2026-10-19', '2026-10-20', '2026-10-23']) await correr(dia);

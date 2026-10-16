@@ -170,6 +170,19 @@ describe('cambiosConCanal (spec 9.1 y Decisiones del plan 3)', () => {
     assert.deepEqual([cambio.usuario_nombre, cambio.usuario_cargo, cambio.dataset_titulo], ['Persona editor', 'Cargo editor', null]);
   });
 
+  // "Propuesto por" de la nota de auditoría presenta al personal contratado (pedido del usuario el 16/10/2026)
+  it('dice si quien propuso es personal contratado (usuarios.vinculo = contrato)', async () => {
+    await query("UPDATE usuarios SET vinculo = 'contrato' WHERE id = ?", [editor.id]);
+    await query("UPDATE usuarios SET vinculo = 'planta_permanente' WHERE id = ?", [titular.id]);
+    await proponer(editor, { titulo: 'Del editor' });
+    await proponer(titular, { titulo: 'Del titular', creado: '2026-10-16 11:00:00' });
+    await proponer(auditor, { titulo: 'Del auditor', creado: '2026-10-16 12:00:00' });
+    const cambios = await servicio.cambiosConCanal('2026-10-19');
+    assert.deepEqual(cambios.map(c => [c.datos_nuevos.titulo, c.usuario_cargo, c.usuario_contratado]), [
+      ['Del editor', 'Cargo editor', true], ['Del titular', 'Cargo superadmin', false], ['Del auditor', 'Cargo admin', false]
+    ]);
+  });
+
   it('la antigüedad se mide con el reloj de la base: 61 minutos son 61 minutos, en UTC o en hora argentina', async () => {
     const id = await proponer(editor);
     await query('UPDATE cambios_pendientes SET created_at = NOW() - INTERVAL 61 MINUTE WHERE id = ?', [id]);

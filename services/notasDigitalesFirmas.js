@@ -10,7 +10,10 @@ import { diasHabilesLibres } from './licenciasReglas.js';
 
 const ROLES_AUTORIZABLES = ['admin', 'editor'];
 
-const firmaParaNota = (firma) => ({ nombre: firma?.nombre ?? '', cargo: firma?.cargo ?? '', imagen: firma?.imagen ?? null });
+// contratado: personal contratado, que las notas presentan así (firmasService.firmaDeUsuario)
+const firmaParaNota = (firma) => ({
+  nombre: firma?.nombre ?? '', cargo: firma?.cargo ?? '', contratado: Boolean(firma?.contratado), imagen: firma?.imagen ?? null
+});
 
 // La firma del firmante titular elegido, o null (sin titular, o si el titular no tiene firma)
 export const firmaTitularDe = (config) => firmaDeUsuario(config.firmante_usuario_id);
@@ -91,14 +94,15 @@ const notaDeAutorizacion = async (licencia) => {
  *   autorización (null si todavía no salió: la corrida la genera primero, con autorizacionPendiente);
  * - 'sin_autorizado': está de licencia sin autorizado vigente: ese día no se generan notas (la firma que se devuelve es
  *   la del titular, para las vistas previas, que muestran la nota como saldría a la vuelta).
- * firma: { titular: { nombre, cargo, imagen }, presentante: {...} | null, leyenda, firmanteId, presentanteId }
+ * firma: { titular: { nombre, cargo, contratado, imagen }, presentante: {...} | null, leyenda, firmanteId, presentanteId }
+ * (la firma de Correos no es de una persona: nunca es de personal contratado)
  */
 export const firmaParaFecha = async (config, fecha) => {
   if (!config.firmante_usuario_id) {
     return {
       modo: 'configuracion',
       firma: {
-        titular: { nombre: config.firma_nombre ?? '', cargo: config.firma_cargo ?? '', imagen: config.firma_imagen ?? null },
+        titular: { nombre: config.firma_nombre ?? '', cargo: config.firma_cargo ?? '', contratado: false, imagen: config.firma_imagen ?? null },
         presentante: null, leyenda: null, firmanteId: null, presentanteId: null
       }
     };

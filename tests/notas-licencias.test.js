@@ -234,6 +234,52 @@ describe('licencia con autorizado (spec 7.2)', () => {
   });
 });
 
+// Personal contratado (usuarios.vinculo = 'contrato', pedido del usuario el 16/10/2026): las notas lo leen de la base
+describe('persona autorizada contratada (pedido del usuario el 16/10/2026)', () => {
+  const RENGLON = 'Personal contratado, cumpliendo funciones de';
+  const CONTRATADA = 'Firma admin, personal contratado, cumpliendo funciones de Cargo admin';
+  beforeEach(async () => {
+    await query("UPDATE usuarios SET vinculo = 'contrato' WHERE id = ?", [autorizado.id]);
+    await query("UPDATE usuarios SET vinculo = 'planta_permanente' WHERE id = ?", [titular.id]);
+  });
+
+  it('la víspera, el párrafo del aviso la presenta como personal contratado; la firma del titular, de planta, como siempre', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await crearDataset({ vencimiento: '2027-01-25' });
+    await correr('2026-11-25');
+    const [aviso] = await notas();
+    assert.equal(aviso.tipo, 'aviso');
+    assert.ok(aviso.html.includes(`autorizo expresamente a ${CONTRATADA}, a presentar en mi nombre las Notas Digitales durante mi licencia`), aviso.html);
+    assert.ok(aviso.html.includes('>Firma superadmin<br>Cargo superadmin</p>'));
+    assert.ok(!aviso.html.includes(RENGLON));
+  });
+
+  it('la nota de autorización también', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await correr('2026-11-25');
+    const [nota] = await notas();
+    assert.equal(nota.tipo, 'autorizacion');
+    assert.ok(nota.html.includes(`autorizo expresamente a ${CONTRATADA}, a presentar en mi nombre las Notas Digitales de esta Dirección`));
+  });
+
+  it('durante la licencia, su firma lleva el renglón y la leyenda la presenta como personal contratado', async () => {
+    const licenciaId = await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    const vencido = await crearDataset({ vencimiento: '2026-11-30' });
+    await crearNota({ tipo: 'aviso', fecha: '2026-10-01', numero: 50, anio: 2026, datasets: [{ id: vencido, vencimiento: '2026-11-30' }] });
+    await correr('2026-11-25');
+    const [autorizacion] = await query('SELECT numero FROM notas_digitales WHERE id = ?', [await notaDeAutorizacionDe(licenciaId)]);
+    const { firma } = await firmas.firmaParaFecha(await config(), '2026-12-01');
+    assert.deepEqual([firma.titular.contratado, firma.presentante.contratado], [false, true]);
+    await correr('2026-12-01');
+    const [reiteracion] = (await notas()).filter(n => n.tipo === 'reiteracion' && n.fecha === '2026-12-01');
+    assert.equal(reiteracion.presentada_por_id, autorizado.id);
+    assert.ok(reiteracion.html.includes(`Nota presentada por ${CONTRATADA}, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${autorizacion.numero}/26 (licencia del 26/11/2026 al 14/01/2027).`));
+    assert.ok(reiteracion.html.includes(`>Firma admin<br><span style="font-size:12px">${RENGLON}</span><br>Cargo admin</td>`));
+    assert.ok(reiteracion.html.includes('>Firma superadmin<br>Cargo superadmin</td>'));
+    assert.ok(lineasPorHoja(reiteracion.pdf).at(-1).includes(RENGLON));
+  });
+});
+
 describe('persona autorizada con una licencia que se superpone en parte (del 22/02 al 03/03/2027; el titular, del 01/03 al 31/03/2027)', () => {
   const PARRAFO_MARZO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 01/03/2027 al 31/03/2027, con el objetivo de mantener el correcto flujo de trabajo.';
   const ERROR_NO_VIGENTE = {
