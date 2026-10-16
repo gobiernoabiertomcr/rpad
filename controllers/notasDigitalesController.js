@@ -7,14 +7,13 @@ import {
   validarImagenFirma, validarImagenMembrete, ImagenInvalida, caracteresNoEscribibles, pieEntraEnUnaLinea
 } from '../services/notasDigitalesPdf.js';
 import { listaDeCorreos } from '../services/emailService.js';
+import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
+import { firmaDeUsuario } from '../services/firmasService.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 const GESTIONES = ['interna', 'externa'];
 const ESTADOS = ['pendiente', 'enviada', 'fallida'];
 const EMAIL_VALIDO = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
-const IMAGEN_MAX_BYTES = 500 * 1024;
-// Primeros bytes de cada formato aceptado (en la firma y en el banner del membrete)
-const FIRMAS = { 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/jpeg': [0xff, 0xd8, 0xff] };
 // Imágenes de la configuración: columnas (texto fijo del código), validador y mensajes
 const IMAGENES = {
   firma: {
@@ -44,10 +43,27 @@ const idDe = (valor) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
-// La configuración sin las imágenes: solo si están cargadas
-const configPublica = ({ firma_imagen, membrete_imagen, ...resto }) => ({
-  ...resto, envio_activo: Boolean(resto.envio_activo), tiene_firma: Boolean(firma_imagen), tiene_membrete: Boolean(membrete_imagen)
-});
+// Firmante titular para la pantalla (spec 2026-10-15, 6.2), o null
+const datosFirmante = async (usuarioId) => {
+  if (!usuarioId) return null;
+  const [[fila]] = await pool.query(
+    `SELECT u.id, u.nombre_completo, f.nombre, f.cargo, (f.imagen IS NOT NULL) AS tiene_imagen
+     FROM usuarios u LEFT JOIN usuarios_firmas f ON f.usuario_id = u.id WHERE u.id = ?`, [usuarioId]
+  );
+  return fila ? { ...fila, tiene_imagen: Boolean(fila.tiene_imagen) } : null;
+};
+
+// La configuración sin las imágenes: solo si están cargadas. Con firmante titular, la firma es la suya.
+const configPublica = async ({ firma_imagen, membrete_imagen, ...resto }) => {
+  const firmante = await datosFirmante(resto.firmante_usuario_id);
+  return {
+    ...resto,
+    envio_activo: Boolean(resto.envio_activo),
+    tiene_firma: firmante ? firmante.tiene_imagen : Boolean(firma_imagen),
+    tiene_membrete: Boolean(membrete_imagen),
+    firmante
+  };
+};
 
 // Lista de direcciones que llega en el cuerpo: texto separado por comas, array de textos o null (lista vacía).
 // Cualquier otro tipo devuelve null (inválido): no se convierte a texto para no guardar "5" o "[object Object]".
@@ -235,7 +251,7 @@ export const enviarPrueba = async (req, res) => {
 
 export const verConfig = async (req, res) => {
   try {
-    res.json({ success: true, data: configPublica(await obtenerConfig()) });
+    res.json({ success: true, data: await configPublica(await obtenerConfig()) });
   } catch (error) {
     errorInterno(res, 'Error al obtener la configuración', error);
   }
@@ -286,7 +302,7 @@ export const guardarConfig = async (req, res) => {
     if (Object.keys(cambios).length === 0) return res.status(400).json({ success: false, error: 'No hay cambios para guardar' });
 
     const resultante = { ...(await obtenerConfig()), ...cambios };
-    const faltan = notas.configuracionCompleta(resultante);
+    const faltan = notas.configuracionCompleta(resultante, await firmaDeUsuario(resultante.firmante_usuario_id));
     if (resultante.envio_activo && faltan.length) {
       return res.status(400).json({ success: false, error: `No se puede activar el envío automático: falta ${faltan.join(', ')}` });
     }
@@ -297,7 +313,7 @@ export const guardarConfig = async (req, res) => {
       `UPDATE notas_digitales_config SET ${columnas.map(c => `${c} = ?`).join(', ')}, updated_by = ? WHERE id = 1`,
       [...Object.values(cambios), req.user?.userId ?? null]
     );
-    res.json({ success: true, message: 'Configuración guardada', data: configPublica(await obtenerConfig()) });
+    res.json({ success: true, message: 'Configuración guardada', data: await configPublica(await obtenerConfig()) });
   } catch (error) {
     errorInterno(res, 'Error al guardar la configuración', error);
   }
@@ -309,46 +325,38 @@ const subirImagen = (uso) => async (req, res) => {
   // Todo el cuerpo del handler va dentro del try: Express 4 no atrapa los rechazos de un handler async
   // y una excepción sin atrapar tumbaría el proceso.
   try {
-    const { imagen, mime } = req.body ?? {};
-    // Object.hasOwn: 'constructor' o '__proto__' no son formatos válidos aunque existan en Object.prototype
-    if (typeof mime !== 'string' || !Object.hasOwn(FIRMAS, mime) || typeof imagen !== 'string') {
-      return res.status(400).json({ success: false, error: definicion.tipoInvalido });
+    // Con firmante titular elegido, la firma de las notas es la de su Mi Perfil (spec 2026-10-15, 6.2)
+    if (uso === 'firma' && (await obtenerConfig()).firmante_usuario_id) {
+      return res.status(409).json({ success: false, error: 'Con un firmante titular elegido, la firma se carga en su Mi Perfil.' });
     }
-    const cabecera = FIRMAS[mime];
-    const base64 = imagen.replace(/^data:[^;]+;base64,/, '');
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
-      return res.status(400).json({ success: false, error: 'La imagen no es base64 válido' });
-    }
-    const datos = Buffer.from(base64, 'base64');
-    if (datos.length === 0 || datos.length > IMAGEN_MAX_BYTES) {
-      return res.status(400).json({ success: false, error: 'La imagen debe pesar como máximo 500 KB' });
-    }
-    if (!cabecera.every((byte, i) => datos[i] === byte)) {
-      return res.status(400).json({ success: false, error: 'El contenido no corresponde a una imagen PNG o JPEG' });
-    }
-    // Una imagen dañada con la cabecera correcta se guardaría y haría fallar cada nota: se decodifica antes de guardarla
+    let datos;
     try {
-      definicion.validar(datos, mime);
+      datos = decodificarImagenSubida(req.body ?? {}, definicion);
     } catch (error) {
-      return res.status(400).json({ success: false, error: error.message });
+      if (error instanceof ImagenSubidaInvalida) return res.status(400).json({ success: false, error: error.message });
+      throw error;
     }
     // Las columnas salen de IMAGENES, texto fijo del código
     await pool.query(`UPDATE notas_digitales_config SET ${definicion.imagen} = ?, ${definicion.mime} = ?, updated_by = ? WHERE id = 1`,
-      [datos, mime, req.user?.userId ?? null]);
+      [datos, req.body.mime, req.user?.userId ?? null]);
     res.json({ success: true, message: definicion.guardada });
   } catch (error) {
     errorInterno(res, definicion.errorGuardar, error);
   }
 };
 
-// GET de una imagen de la configuración, para la vista previa de la pantalla (404 si no hay)
+// GET de una imagen de la configuración, para la vista previa de la pantalla (404 si no hay). Con firmante titular, la
+// firma es la de su Mi Perfil.
 const verImagen = (uso) => async (req, res) => {
   const definicion = IMAGENES[uso];
   try {
     const guardada = await obtenerConfig();
-    if (!guardada[definicion.imagen]) return res.status(404).json({ success: false, error: definicion.falta });
-    res.setHeader('Content-Type', guardada[definicion.mime] || 'image/png');
-    res.send(guardada[definicion.imagen]);
+    const fuente = uso === 'firma' && guardada.firmante_usuario_id
+      ? await firmaDeUsuario(guardada.firmante_usuario_id)
+      : { imagen: guardada[definicion.imagen], mime: guardada[definicion.mime] };
+    if (!fuente?.imagen) return res.status(404).json({ success: false, error: definicion.falta });
+    res.setHeader('Content-Type', fuente.mime || 'image/png');
+    res.send(fuente.imagen);
   } catch (error) {
     errorInterno(res, definicion.errorObtener, error);
   }
@@ -358,3 +366,55 @@ export const subirFirma = subirImagen('firma');
 export const verFirma = verImagen('firma');
 export const subirMembrete = subirImagen('membrete');
 export const verMembrete = verImagen('membrete');
+
+// GET /config/firmantes: quiénes pueden ser firmante titular (spec 2026-10-15, 6.2): superadmin o admins activos con su
+// firma cargada en Mi Perfil
+export const listarFirmantes = async (req, res) => {
+  try {
+    const [filas] = await pool.query(
+      `SELECT u.id, u.nombre_completo, u.rol, f.nombre, f.cargo, (f.imagen IS NOT NULL) AS tiene_imagen
+       FROM usuarios u JOIN usuarios_firmas f ON f.usuario_id = u.id
+       WHERE u.rol IN ('superadmin', 'admin') AND u.activo = TRUE
+       ORDER BY u.nombre_completo`
+    );
+    res.json({ success: true, data: filas.map(f => ({ ...f, tiene_imagen: Boolean(f.tiene_imagen) })) });
+  } catch (error) {
+    errorInterno(res, 'Error al obtener los firmantes', error);
+  }
+};
+
+// PUT /config/firmante: { usuario_id } o { usuario_id: null } para volver a la firma de Correos. Solo el superadmin.
+export const elegirFirmante = async (req, res) => {
+  try {
+    if (req.user?.rol !== 'superadmin') {
+      return res.status(403).json({ success: false, error: 'Solo el superadmin elige al firmante titular.' });
+    }
+    const crudo = req.body?.usuario_id;
+    const usuarioId = crudo === null || crudo === '' || crudo === undefined ? null : idDe(crudo);
+    if (crudo !== null && crudo !== '' && crudo !== undefined && !usuarioId) {
+      return res.status(400).json({ success: false, error: 'Firmante inválido' });
+    }
+    if (usuarioId) {
+      const [[candidato]] = await pool.query(
+        `SELECT u.id FROM usuarios u JOIN usuarios_firmas f ON f.usuario_id = u.id
+         WHERE u.id = ? AND u.rol IN ('superadmin', 'admin') AND u.activo = TRUE`, [usuarioId]
+      );
+      if (!candidato) {
+        return res.status(400).json({ success: false, error: 'El firmante titular tiene que ser el superadmin o un admin activo, con su firma cargada en Mi Perfil.' });
+      }
+    }
+    const resultante = { ...(await obtenerConfig()), firmante_usuario_id: usuarioId };
+    const faltan = notas.configuracionCompleta(resultante, await firmaDeUsuario(usuarioId));
+    if (resultante.envio_activo && faltan.length) {
+      return res.status(400).json({ success: false, error: `No se puede con el envío automático activo: faltaría ${faltan.join(', ')}` });
+    }
+    await pool.query('UPDATE notas_digitales_config SET firmante_usuario_id = ?, updated_by = ? WHERE id = 1', [usuarioId, req.user.userId]);
+    res.json({
+      success: true,
+      message: usuarioId ? 'Firmante titular elegido' : 'Las notas vuelven a usar la firma cargada en Correos',
+      data: await configPublica(await obtenerConfig())
+    });
+  } catch (error) {
+    errorInterno(res, 'Error al elegir el firmante titular', error);
+  }
+};

@@ -66,7 +66,12 @@ const RUTAS_SOLO_ADMIN = [
   ['GET', '/usuarios/licencias'],
   ['POST', '/usuarios/licencias'],
   ['PUT', '/usuarios/licencias/1'],
-  ['POST', '/usuarios/licencias/1/anular']
+  ['POST', '/usuarios/licencias/1/anular'],
+  ['GET', '/auth/profile/firma'],
+  ['PUT', '/auth/profile/firma'],
+  ['GET', '/auth/profile/firma/imagen'],
+  ['GET', '/notificaciones/notas-digitales/config/firmantes'],
+  ['PUT', '/notificaciones/notas-digitales/config/firmante']
 ];
 
 const pedir = (metodo, ruta, token) => {
@@ -119,7 +124,9 @@ const RUTAS_GET_ADMIN = [
   '/notificaciones/notas-digitales/estado',
   '/notificaciones/preview-cambios-pendientes',
   '/usuarios',
-  '/usuarios/licencias'
+  '/usuarios/licencias',
+  '/auth/profile/firma',
+  '/notificaciones/notas-digitales/config/firmantes'
 ];
 
 for (const clave of ['adminA', 'superadmin']) {

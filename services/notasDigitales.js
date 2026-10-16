@@ -22,13 +22,15 @@ export class ErrorDeUso extends Error {}
 
 const remitente = () => `"Dir. de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
 
-export const configuracionCompleta = (config) => {
+// firmaTitular: la firma del firmante titular (firmasService.firmaDeUsuario), si hay uno elegido (spec 2026-10-15, 6.2)
+export const configuracionCompleta = (config, firmaTitular = null) => {
   const faltan = [];
   for (const gestion of GESTIONES) {
     if (listaDeCorreos(config[`para_${gestion}`]).length === 0) faltan.push(`Para (gestión ${gestion})`);
   }
-  if (!String(config.firma_nombre ?? '').trim()) faltan.push('nombre de la firma');
-  if (!String(config.firma_cargo ?? '').trim()) faltan.push('cargo de la firma');
+  const firma = config.firmante_usuario_id ? firmaTitular : { nombre: config.firma_nombre, cargo: config.firma_cargo };
+  if (!String(firma?.nombre ?? '').trim()) faltan.push('nombre de la firma');
+  if (!String(firma?.cargo ?? '').trim()) faltan.push('cargo de la firma');
   return faltan;
 };
 
