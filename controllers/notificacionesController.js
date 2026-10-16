@@ -149,9 +149,10 @@ export const previewEmail = async (req, res) => {
 };
 
 /**
- * Ejecuta notificación de cambios pendientes
+ * Ejecuta el recordatorio de cambios pendientes
  * Llamado por cron (14:00); solo envía en días hábiles (spec 4.1)
- * Envía email a cada admin con los cambios que puede revisar (excluye los propios)
+ * Envía un email a cada persona que puede auditar cambios con los que le corresponden (excluye los propios y los que van
+ * por nota de auditoría, spec 2026-10-15, 9.2)
  */
 export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
   try {
@@ -163,7 +164,7 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
     res.status(success ? 200 : 207).json({
       success,
       message: success
-        ? `Notificaciones enviadas a ${resultados.enviados.length} admins.`
+        ? `Recordatorios enviados a ${resultados.enviados.length} ${resultados.enviados.length === 1 ? 'persona' : 'personas'}.`
         : `Proceso completado con ${resultados.errores.length} errores.`,
       data: resultados
     });

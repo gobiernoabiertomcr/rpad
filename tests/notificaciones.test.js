@@ -86,6 +86,9 @@ describe('email de cambios pendientes', () => {
     await mailpit.vaciar();
     const res = await api.get('/cron/cambios-pendientes', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
     assert.equal(res.status, 200);
+    // El mensaje habla de recordatorios y de personas (también los reciben los editores de respaldo)
+    const enviados = res.body.data.enviados.length;
+    assert.equal(res.body.message, `Recordatorios enviados a ${enviados} ${enviados === 1 ? 'persona' : 'personas'}.`);
 
     const mensajes = await mailpit.mensajes();
     const para = (email) => mensajes.filter(m => m.To.some(t => t.Address === email));
