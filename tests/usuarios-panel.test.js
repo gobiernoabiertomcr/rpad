@@ -220,6 +220,19 @@ describe('edición', () => {
     assert.equal(detalle.invitacion_vence, null);
   });
 
+  it('una invitación vencida no muestra fecha de vencimiento: queda sin link vigente', async () => {
+    const { id } = await altaConInvitacion('VENCIDA', 'invitacion-vencida@rpad.test');
+    assert.ok((await api.get(`/usuarios/${id}`, comoA())).body.data.invitacion_vence);
+
+    await query('UPDATE usuarios_tokens SET expira_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE usuario_id = ?', [id]);
+
+    const detalle = (await api.get(`/usuarios/${id}`, comoA())).body.data;
+    assert.equal(detalle.estado, 'invitacion_pendiente');
+    assert.equal(detalle.invitacion_vence, null);
+    const fila = (await api.get('/usuarios', comoA())).body.data.usuarios.find(u => u.id === id);
+    assert.equal(fila.invitacion_vence, null);
+  });
+
   it('editar otros datos no anula los links pendientes', async () => {
     const { id, token } = await altaConInvitacion('SIGUEVIGENTE', 'sigue-vigente@rpad.test');
     assert.equal((await api.put(`/usuarios/${id}`, { cargo: 'Cargo nuevo' }, comoA())).status, 200);
@@ -388,6 +401,56 @@ describe('aviso al superadmin', () => {
     await api.put(`/usuarios/${x.id}`, { cargo: 'Otro cargo' }, comoA());
     await new Promise(r => setTimeout(r, 300));
     assert.equal((await mailpit.mensajes()).filter(m => m.Subject === 'RPAD: cambio en los usuarios').length, 0);
+  });
+
+  const avisosRecibidos = async () => {
+    await new Promise(r => setTimeout(r, 300));
+    return (await mailpit.mensajes()).filter(m => m.Subject === 'RPAD: cambio en los usuarios' && paraCasilla(usuarios.superadmin.email)(m));
+  };
+
+  it('le llega cuando un admin cambia el email de otro admin, con el email nuevo', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'admin' });
+    const res = await api.put(`/usuarios/${x.id}`, { email: 'email-nuevo-x@rpad.test' }, comoA());
+    assert.equal(res.status, 200);
+    const [aviso, ...otros] = await avisos();
+    assert.equal(otros.length, 0);
+    const html = await mailpit.html(aviso.ID);
+    assert.match(html, /Email:/);
+    assert.match(html, /email-nuevo-x@rpad\.test/);
+    assert.match(html, new RegExp(x.email.replace(/\./g, '\\.')));
+  });
+
+  it('si en la misma edición cambia el rol y el email de un admin, llega un solo aviso con los dos cambios', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    const res = await api.put(`/usuarios/${x.id}`, { rol: 'admin', email: 'email-y-rol-x@rpad.test' }, comoA());
+    assert.equal(res.status, 200);
+    const recibidos = await avisosRecibidos();
+    assert.equal(recibidos.length, 1);
+    const html = await mailpit.html(recibidos[0].ID);
+    assert.match(html, /Lector → Administrador; Email: .+ → email-y-rol-x@rpad\.test/);
+  });
+
+  it('no le llega cuando un admin cambia el email de un lector', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    assert.equal((await api.put(`/usuarios/${x.id}`, { email: 'email-nuevo-lector@rpad.test' }, comoA())).status, 200);
+    assert.equal((await avisosRecibidos()).length, 0);
+  });
+
+  it('le llega cuando un admin reactiva a un admin desactivado', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'admin' });
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [x.id]);
+    const res = await api.post(`/usuarios/${x.id}/reactivar`, {}, comoA());
+    assert.equal(res.status, 200);
+    const [aviso, ...otros] = await avisos();
+    assert.equal(otros.length, 0);
+    assert.match(await mailpit.html(aviso.ID), /Reactivado/);
+  });
+
+  it('no le llega cuando un admin reactiva a un lector', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [x.id]);
+    assert.equal((await api.post(`/usuarios/${x.id}/reactivar`, {}, comoA())).status, 200);
+    assert.equal((await avisosRecibidos()).length, 0);
   });
 });
 

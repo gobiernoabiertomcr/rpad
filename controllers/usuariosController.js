@@ -1,7 +1,7 @@
 // Panel de usuarios (spec 8 a 11). Las rutas exigen authMiddleware + adminOnly: admin y superadmin.
 import pool from '../config/database.js';
 import {
-  validarDatosUsuario, violaMinimoAprobadores, estadoDeUsuario, esAprobadorActivo, emailValido, camposCambiados,
+  validarDatosUsuario, violaMinimoAprobadores, estadoDeUsuario, esAprobadorActivo, esAdmin, emailValido, camposCambiados,
   MINIMO_APROBADORES, TEXTO_ROL
 } from '../services/usuariosReglas.js';
 import { registrarAuditoria, historialDe } from '../services/usuariosAuditoriaService.js';
@@ -20,7 +20,8 @@ const COLUMNAS = `
   u.id, u.username, u.nombre_completo, u.email, u.rol, u.cargo, u.vinculo, u.activo, u.ultimo_ingreso, u.created_at,
   (u.password_hash IS NOT NULL) AS tiene_contrasena,
   (SELECT MAX(t.expira_at) FROM usuarios_tokens t
-    WHERE t.usuario_id = u.id AND t.tipo = 'invitacion' AND t.usado_at IS NULL AND t.anulado_at IS NULL) AS invitacion_vence,
+    WHERE t.usuario_id = u.id AND t.tipo = 'invitacion' AND t.usado_at IS NULL AND t.anulado_at IS NULL
+      AND t.expira_at > NOW()) AS invitacion_vence,
   (SELECT COUNT(*) FROM cambios_pendientes cp WHERE cp.usuario_id = u.id AND cp.estado = 'pendiente') AS cambios_pendientes_propuestos`;
 
 const aRespuesta = (u) => ({
@@ -190,6 +191,7 @@ export const actualizarUsuario = async (req, res) => {
   let conexion;
   let antes;
   let rolNuevo = null;
+  let campos = {};
   let sinCambios = false;
   try {
     conexion = await pool.getConnection();
@@ -223,7 +225,7 @@ export const actualizarUsuario = async (req, res) => {
       return responderError(res, 409, MENSAJE_REPETIDO[repetido], repetido);
     }
 
-    const campos = camposCambiados(antes, datos, CAMPOS_EDITABLES);
+    campos = camposCambiados(antes, datos, CAMPOS_EDITABLES);
     sinCambios = Object.keys(campos).length === 0 && !rolNuevo;
     if (sinCambios) {
       await conexion.rollback();
@@ -264,7 +266,11 @@ export const actualizarUsuario = async (req, res) => {
 
   try {
     const despues = await buscarUsuario(pool, id);
-    if (rolNuevo) await avisarAlSuperadmin(req, despues, `${TEXTO_ROL[antes.rol]} → ${TEXTO_ROL[rolNuevo]}`);
+    // Un solo aviso por edición, con todo lo que importa: el rol y el email de quien aprueba cambios (spec 10.3)
+    const avisos = [];
+    if (rolNuevo) avisos.push(`${TEXTO_ROL[antes.rol]} → ${TEXTO_ROL[rolNuevo]}`);
+    if (campos.email && esAdmin(despues.rol)) avisos.push(`Email: ${campos.email.antes ?? '(vacío)'} → ${campos.email.despues}`);
+    if (avisos.length > 0) await avisarAlSuperadmin(req, despues, avisos.join('; '));
     res.json({ success: true, data: aRespuesta(despues), message: sinCambios ? 'Sin cambios' : 'Cambios guardados' });
   } catch (error) {
     console.error('Error respondiendo la actualización del usuario:', error);
@@ -353,7 +359,9 @@ export const reactivarUsuario = async (req, res) => {
   }
 
   try {
-    res.json({ success: true, data: aRespuesta(await buscarUsuario(pool, id)), message: 'Usuario reactivado' });
+    const reactivado = await buscarUsuario(pool, id);
+    if (esAdmin(reactivado.rol)) await avisarAlSuperadmin(req, reactivado, 'Reactivado');
+    res.json({ success: true, data: aRespuesta(reactivado), message: 'Usuario reactivado' });
   } catch (error) {
     console.error('Error respondiendo la reactivación del usuario:', error);
     responderError(res, 500, MENSAJE_ERROR);
