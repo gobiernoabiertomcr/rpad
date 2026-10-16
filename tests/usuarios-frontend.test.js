@@ -265,6 +265,257 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     assert.match(cambiarDesde('2026-12-20'), /por adelantado el último día hábil anterior/);
   });
 
+  describe('persona autorizada con licencia propia dentro de la del titular (spec 6.3)', () => {
+    const NOMBRE = 'Persona Autorizada';
+    // El titular tiene licencia del 01/03/2027 al 31/03/2027
+    const DESDE = '2027-03-01';
+    const HASTA = '2027-03-31';
+    // La lista sale del contexto aislado (otro Array): se copia para poder compararla con deepEqual
+    const textos = (contexto, licencias, desde = DESDE, hasta = HASTA, nombre = NOMBRE) => JSON.parse(JSON.stringify(
+      vm.runInContext(`textoAusenciasAutorizado(${JSON.stringify(nombre)}, ${JSON.stringify(licencias)}, ${JSON.stringify(desde)}, ${JSON.stringify(hasta)})`, contexto)));
+
+    describe('textoAusenciasAutorizado', () => {
+      it('superposición en el medio: avisa que no hay notas y desde cuándo las presenta el titular', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [{ desde: '2027-03-08', hasta: '2027-03-12' }]), [
+          `${NOMBRE} va a estar de licencia del 08/03/2027 al 12/03/2027: esos días no se generan notas. Desde el 13/03/2027 las presenta en tu nombre.`
+        ]);
+      });
+
+      it('al principio de la licencia del titular: se recorta al inicio de la licencia del titular', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [{ desde: '2027-02-22', hasta: '2027-03-03' }]), [
+          `${NOMBRE} va a estar de licencia del 01/03/2027 al 03/03/2027: esos días no se generan notas. Desde el 04/03/2027 las presenta en tu nombre.`
+        ]);
+      });
+
+      it('al final de la licencia del titular: sin "Desde el", porque ya no queda un tramo en que las presente', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [{ desde: '2027-03-25', hasta: '2027-04-10' }]), [
+          `${NOMBRE} va a estar de licencia del 25/03/2027 al 31/03/2027: esos días no se generan notas.`
+        ]);
+        // Que termine justo el último día también cuenta como "hasta el final"
+        assert.deepEqual(textos(contexto, [{ desde: '2027-03-25', hasta: '2027-03-31' }]), [
+          `${NOMBRE} va a estar de licencia del 25/03/2027 al 31/03/2027: esos días no se generan notas.`
+        ]);
+      });
+
+      it('de un solo día: "el dd/mm/aaaa: ese día", con el "Desde el" si corresponde', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [{ desde: '2027-03-10', hasta: '2027-03-10' }]), [
+          `${NOMBRE} va a estar de licencia el 10/03/2027: ese día no se generan notas. Desde el 11/03/2027 las presenta en tu nombre.`
+        ]);
+        // Un solo día de una licencia más larga, justo el último de la del titular
+        assert.deepEqual(textos(contexto, [{ desde: '2027-03-31', hasta: '2027-04-05' }]), [
+          `${NOMBRE} va a estar de licencia el 31/03/2027: ese día no se generan notas.`
+        ]);
+        // Un solo día por el borde del titular (la licencia de ella empieza antes y termina el primer día)
+        assert.deepEqual(textos(contexto, [{ desde: '2027-02-20', hasta: '2027-03-01' }]), [
+          `${NOMBRE} va a estar de licencia el 01/03/2027: ese día no se generan notas. Desde el 02/03/2027 las presenta en tu nombre.`
+        ]);
+      });
+
+      it('varias licencias: un texto por superposición, en orden de fecha', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [
+          { desde: '2027-03-22', hasta: '2027-03-24' },
+          { desde: '2027-03-03', hasta: '2027-03-05' }
+        ]), [
+          `${NOMBRE} va a estar de licencia del 03/03/2027 al 05/03/2027: esos días no se generan notas. Desde el 06/03/2027 las presenta en tu nombre.`,
+          `${NOMBRE} va a estar de licencia del 22/03/2027 al 24/03/2027: esos días no se generan notas. Desde el 25/03/2027 las presenta en tu nombre.`
+        ]);
+      });
+
+      it('dos licencias pegadas son una sola ausencia: el "Desde el" no cae en un día en que ella sigue de licencia', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [
+          { desde: '2027-03-03', hasta: '2027-03-05' },
+          { desde: '2027-03-06', hasta: '2027-03-10' }
+        ]), [
+          `${NOMBRE} va a estar de licencia del 03/03/2027 al 10/03/2027: esos días no se generan notas. Desde el 11/03/2027 las presenta en tu nombre.`
+        ]);
+      });
+
+      it('el día siguiente cruza el fin de mes y de año', () => {
+        const { contexto } = cargarPanel();
+        assert.match(textos(contexto, [{ desde: '2027-03-29', hasta: '2027-03-30' }])[0], /Desde el 31\/03\/2027 las presenta/);
+        assert.match(textos(contexto, [{ desde: '2026-12-28', hasta: '2026-12-31' }], '2026-12-20', '2027-01-15')[0], /Desde el 01\/01\/2027 las presenta/);
+      });
+
+      it('sin superposición no hay texto: ninguna licencia, o licencias fuera de las fechas elegidas', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, []), []);
+        assert.deepEqual(textos(contexto, [{ desde: '2027-02-01', hasta: '2027-02-28' }, { desde: '2027-04-01', hasta: '2027-04-10' }]), []);
+        assert.deepEqual(textos(contexto, undefined), []);
+      });
+
+      it('sin la persona o sin alguna de las fechas no hay texto', () => {
+        const { contexto } = cargarPanel();
+        const licencias = [{ desde: '2027-03-08', hasta: '2027-03-12' }];
+        assert.equal(textos(contexto, licencias).length, 1);
+        assert.deepEqual(textos(contexto, licencias, '', HASTA), []);
+        assert.deepEqual(textos(contexto, licencias, DESDE, ''), []);
+        assert.deepEqual(textos(contexto, licencias, DESDE, HASTA, ''), []);
+        assert.deepEqual(textos(contexto, licencias, DESDE, HASTA, null), []);
+      });
+
+      it('con las fechas al revés (hasta antes de desde) no hay texto', () => {
+        const { contexto } = cargarPanel();
+        assert.deepEqual(textos(contexto, [{ desde: '2027-03-08', hasta: '2027-03-12' }], HASTA, DESDE), []);
+      });
+    });
+
+    describe('aviso del formulario', () => {
+      const TITULAR = 1;
+      const AUTORIZABLES = [
+        { id: 5, nombre_completo: NOMBRE, licencias: [{ desde: '2027-02-22', hasta: '2027-03-03' }] },
+        { id: 6, nombre_completo: 'Persona Sin Licencia', licencias: [] },
+        { id: 7, nombre_completo: 'Persona Con Otra', licencias: [{ desde: '2027-03-10', hasta: '2027-03-12' }] }
+      ];
+      // El formulario del titular (puede autorizar); licencia: la del modal (null = alta). Devuelve el panel con los
+      // oyentes de la página registrados
+      const abrir = (panel, { licencia = null, soyTitular = true, desde = DESDE, hasta = HASTA } = {}) => {
+        panel.alCargar();
+        panel.contexto.__datos = {
+          hoy: '2027-02-15', firmante_titular_id: TITULAR, soy_titular: soyTitular, licencias: [], usuarios: [], autorizables: AUTORIZABLES
+        };
+        panel.contexto.__licencia = licencia;
+        evaluar(panel.contexto, 'datosLicencias = __datos; licenciaAbierta = __licencia');
+        panel.elemento('l-usuario').value = String(TITULAR);
+        panel.elemento('l-desde').value = desde;
+        panel.elemento('l-hasta').value = hasta;
+        panel.contexto.prepararAutorizado();
+        panel.pedidos.length = 0;
+      };
+      const caja = (panel) => panel.elemento('l-ausencias-autorizado');
+      const disparar = (panel, id, tipo) => {
+        assert.ok(panel.elemento(id).oyentes[tipo]?.length, `${id} tiene un oyente de ${tipo}`);
+        for (const oyente of panel.elemento(id).oyentes[tipo]) oyente({ target: panel.elemento(id) });
+      };
+      const elegir = (panel, id) => {
+        panel.elemento('l-autorizado').value = id;
+        disparar(panel, 'l-autorizado', 'change');
+      };
+
+      it('sin persona elegida ("Nadie") no hay aviso', () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        assert.equal(panel.elemento('l-autorizado').value, '');
+        assert.equal(caja(panel).hidden, true);
+        assert.equal(caja(panel).innerHTML ?? '', '');
+      });
+
+      it('al elegir a la persona autorizada con una licencia superpuesta, muestra el aviso', () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        elegir(panel, '5');
+        assert.equal(caja(panel).hidden, false);
+        assert.equal(caja(panel).innerHTML,
+          `<p>${NOMBRE} va a estar de licencia del 01/03/2027 al 03/03/2027: esos días no se generan notas. Desde el 04/03/2027 las presenta en tu nombre.</p>`);
+      });
+
+      it('al cambiar de persona, el aviso cambia o se oculta', () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        elegir(panel, '5');
+        elegir(panel, '7');
+        assert.equal(caja(panel).hidden, false);
+        assert.match(caja(panel).innerHTML, /Persona Con Otra va a estar de licencia del 10\/03\/2027 al 12\/03\/2027/);
+        elegir(panel, '6');
+        assert.equal(caja(panel).hidden, true);
+        elegir(panel, '5');
+        assert.equal(caja(panel).hidden, false);
+        elegir(panel, '');
+        assert.equal(caja(panel).hidden, true);
+      });
+
+      it('al cambiar "desde" o "hasta" se vuelve a calcular, sin llamar a la API', () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        elegir(panel, '5');
+        assert.equal(caja(panel).hidden, false);
+        // Un "desde" posterior a la licencia de ella: ya no se superponen
+        panel.elemento('l-desde').value = '2027-03-04';
+        disparar(panel, 'l-desde', 'input');
+        assert.equal(caja(panel).hidden, true);
+        panel.elemento('l-desde').value = '2027-03-02';
+        disparar(panel, 'l-desde', 'input');
+        assert.match(caja(panel).innerHTML, /del 02\/03\/2027 al 03\/03\/2027: esos días no se generan notas\. Desde el 04\/03\/2027/);
+        // Un "hasta" que termina antes de que vuelva: ella cubre hasta el final
+        panel.elemento('l-hasta').value = '2027-03-03';
+        disparar(panel, 'l-hasta', 'input');
+        assert.equal(caja(panel).innerHTML, `<p>${NOMBRE} va a estar de licencia del 02/03/2027 al 03/03/2027: esos días no se generan notas.</p>`);
+        // Fecha incompleta: nada
+        panel.elemento('l-hasta').value = '';
+        disparar(panel, 'l-hasta', 'input');
+        assert.equal(caja(panel).hidden, true);
+        assert.deepEqual(panel.pedidos.filter(p => p.nombre !== 'getSinAuditor'), []);
+      });
+
+      it('al abrir una licencia guardada con persona autorizada, el aviso aparece enseguida', () => {
+        const panel = cargarPanel();
+        const licencia = { id: 9, usuario_id: TITULAR, usuario_nombre: 'Persona Titular', desde: DESDE, hasta: HASTA, estado: 'futura', vispera: '2027-02-26', autorizado_id: 5, autorizado_nombre: NOMBRE };
+        panel.alCargar();
+        panel.contexto.__datos = {
+          hoy: '2027-02-15', firmante_titular_id: TITULAR, soy_titular: true, licencias: [], usuarios: [{ id: TITULAR, nombre_completo: 'Persona Titular' }], autorizables: AUTORIZABLES
+        };
+        evaluar(panel.contexto, 'datosLicencias = __datos');
+        panel.contexto.abrirModalLicencia(licencia);
+        assert.equal(caja(panel).hidden, false);
+        assert.match(caja(panel).innerHTML, /Persona Autorizada va a estar de licencia del 01\/03\/2027 al 03\/03\/2027/);
+      });
+
+      it('si quien edita no es el titular (no elige a la persona autorizada), no hay aviso', () => {
+        const panel = cargarPanel();
+        abrir(panel, { soyTitular: false });
+        assert.equal(panel.elemento('grupo-autorizado').hidden, true);
+        assert.equal(caja(panel).hidden, true);
+      });
+
+      it('se oculta al pasar a una licencia de otra persona', () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        elegir(panel, '5');
+        assert.equal(caja(panel).hidden, false);
+        panel.elemento('l-usuario').value = '99';
+        disparar(panel, 'l-usuario', 'change');
+        assert.equal(caja(panel).hidden, true);
+      });
+
+      it('todo dato pasa por escapeHtml', () => {
+        const panel = cargarPanel();
+        panel.contexto.Utils.escapeHtml = (t) => String(t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        abrir(panel);
+        panel.contexto.__datos.autorizables = [{ id: 5, nombre_completo: '<b>Persona</b>', licencias: [{ desde: '2027-03-08', hasta: '2027-03-12' }] }];
+        elegir(panel, '5');
+        assert.ok(caja(panel).innerHTML.includes('&lt;b&gt;Persona&lt;/b&gt; va a estar de licencia'));
+        assert.ok(!caja(panel).innerHTML.includes('<b>'));
+      });
+
+      it('no bloquea el guardado: guarda con el aviso a la vista', async () => {
+        const panel = cargarPanel();
+        abrir(panel);
+        elegir(panel, '5');
+        assert.equal(caja(panel).hidden, false);
+        await panel.contexto.guardarLicencia({ preventDefault() {} });
+        assert.deepEqual(panel.pedidos.find(p => p.nombre === 'crearLicencia').args,
+          [{ desde: DESDE, hasta: HASTA, autorizado_id: '5', usuario_id: TITULAR }]);
+        assert.equal(panel.elemento('btn-guardar-licencia').disabled, false);
+      });
+
+      it('si el servidor responde el 409 de la licencia que cubre todos los días hábiles, se muestra como cualquier error del formulario', async () => {
+        const mensaje = 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.';
+        const panel = cargarPanel(USUARIO, () => {}, 'admin', { crearLicencia: () => { throw new Error(mensaje); } });
+        abrir(panel);
+        elegir(panel, '5');
+        await panel.contexto.guardarLicencia({ preventDefault() {} });
+        assert.equal(panel.elemento('licencia-error').textContent, mensaje);
+        assert.equal(panel.elemento('licencia-error').hidden, false);
+        assert.equal(panel.elemento('btn-guardar-licencia').disabled, false);
+      });
+    });
+  });
+
   it('después de guardar o anular, recarga las terminadas y anuladas si ese grupo está abierto', async () => {
     const panel = cargarPanel();
     panel.elemento('grupo-licencias-pasadas').open = true;

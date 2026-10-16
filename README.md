@@ -574,6 +574,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 - Licencias de los administradores: durante la licencia no reciben emails; resumen al superadmin a la vuelta
 - Firma propia en Mi Perfil y firmante titular de las Notas Digitales
 - Durante la licencia del firmante: avisos anticipados a la víspera, y notas presentadas por una persona autorizada (autorización por Nota Digital, dos firmas y cita de esa nota) o reiteraciones a la vuelta
+- La persona autorizada puede tener una licencia propia que se superponga en parte con la del titular (la autorización se comunica igual en la víspera y los días en que ella falta no se generan notas; el formulario lo advierte y Correos → Estado lo muestra como advertencia); si cubre todos los días hábiles de la del titular, no se puede autorizar
 
 ### Usuarios y superadmin (2026-10)
 - Rol `superadmin`, con la cuenta protegida y avisos por email de cambios hechos por otros admins
