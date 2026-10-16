@@ -7,15 +7,16 @@ import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
-  periodoSiguiente, sumarDias, formatoCorto
+  periodoSiguiente, sumarDias, formatoCorto, ultimoDiaHabilHasta
 } from './notasDigitalesCalendario.js';
 import {
   VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe,
   fichasDe
 } from './notasDigitalesDatos.js';
 import {
-  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe
+  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoVigente
 } from './notasDigitalesFirmas.js';
+import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 
 export const MAX_INTENTOS = 5;
 const GESTIONES = ['interna', 'externa'];
@@ -533,8 +534,35 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
   return { id, ejemplo: esEjemplo, destinatarios: casillas, ...resultado };
 };
 
+// Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5)
+const licenciaDelFirmante = async (config, hoy) => {
+  if (!config.firmante_usuario_id) return null;
+  const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
+  if (!licencia) return null;
+  const autorizado = await autorizadoVigente(licencia, hoy);
+  const [[nota]] = licencia.nota_autorizacion_id
+    ? await pool.query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [licencia.nota_autorizacion_id])
+    : [[null]];
+  const ultimoHabil = ultimoDiaHabilHasta(licencia.hasta);
+  return {
+    desde: licencia.desde,
+    hasta: licencia.hasta,
+    en_curso: licencia.desde <= hoy,
+    autorizado: autorizado ? autorizado.nombre : null,
+    nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
+    autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
+    sin_dias_habiles: ultimoHabil < licencia.desde,
+    vispera: diaHabilAnterior(licencia.desde),
+    ultimo_habil: ultimoHabil,
+    vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
+  };
+};
+
 export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
   const config = await obtenerConfig();
+  const firmaTitular = await firmaTitularDe(config);
+  const licencia = await licenciaDelFirmante(config, hoy);
+  const dentro = (fecha) => Boolean(licencia) && !licencia.sin_dias_habiles && fecha >= licencia.desde && fecha <= licencia.hasta;
   const [[{ fallidas }]] = await pool.query(
     "SELECT COUNT(*) AS fallidas FROM notas_digitales WHERE estado = 'fallida' AND es_prueba = 0"
   );
@@ -552,11 +580,21 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       const fecha = proximoDiaHabil(desde > corrida ? desde : corrida);
       aviso = { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length };
     }
+    // Un aviso que caería dentro de una licencia del firmante se anticipa a la víspera, si todavía no pasó; si ya pasó,
+    // sin autorizado sale a la vuelta (con autorizado, en su fecha)
+    if (aviso && dentro(aviso.fecha)) {
+      if (licencia.vispera >= corrida) {
+        aviso = { fecha: licencia.vispera, cantidad: (await seleccionarParaAviso(gestion, licencia.vispera, licencia.ultimo_habil)).length };
+      } else if (!licencia.autorizado) {
+        aviso = { fecha: licencia.vuelta, cantidad: (await seleccionarParaAviso(gestion, licencia.vuelta)).length };
+      }
+    }
 
     const evaluado = config[`reiteracion_evaluada_${gestion}`] === periodoActual;
-    const fechaReiteracion = evaluado
+    let fechaReiteracion = evaluado
       ? primerDiaHabilDelMes(periodoSiguiente(periodoActual))
       : proximoDiaHabil(primerDiaHabilDelMes(periodoActual) > hoy ? primerDiaHabilDelMes(periodoActual) : hoy);
+    if (!licencia?.autorizado && dentro(fechaReiteracion)) fechaReiteracion = licencia.vuelta;
 
     proximas[gestion] = {
       aviso,
@@ -566,16 +604,22 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
   const ultimaCorrida = await leerUltimaCorrida();
   return {
     envio_activo: Boolean(config.envio_activo),
-    configuracion_faltante: configuracionCompleta(config),
+    configuracion_faltante: configuracionCompleta(config, firmaTitular),
     fallidas: Number(fallidas),
     proximas,
+    licencia_firmante: licencia,
     ultima_corrida: ultimaCorrida,
     alertas: [
       ...alertasDeCorrida(config, ultimaCorrida, hoy),
       // Advertencias que no bloquean el envío (las imágenes no están en configuracionCompleta)
-      ...(config.firma_imagen ? [] : [{
+      // La imagen de la firma que usan las notas: la del titular, si hay uno elegido
+      ...((config.firmante_usuario_id ? firmaTitular?.imagen : config.firma_imagen) ? [] : [{
         tipo: 'sin-firma', nivel: 'advertencia', mensaje: 'No hay imagen de la firma: las notas saldrían sin la firma escaneada.'
       }]),
+      ...(licencia?.autorizado_no_vigente ? [{
+        tipo: 'autorizado-no-vigente', nivel: 'error',
+        mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia: esos días no se generan notas.`
+      }] : []),
       ...(config.membrete_imagen ? [] : [{
         tipo: 'sin-membrete', nivel: 'advertencia', mensaje: 'No hay imagen del membrete: las notas saldrían sin el encabezado institucional.'
       }])

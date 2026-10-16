@@ -271,3 +271,54 @@ describe('otros casos', () => {
     assert.match(vista.html, /Firma superadmin<br>Cargo superadmin/);
   });
 });
+
+describe('Estado de Correos (spec 7.5)', () => {
+  it('sin licencia: licencia_firmante es null', async () => {
+    assert.equal((await motor.estadoNotas({ hoy: '2026-11-02' })).licencia_firmante, null);
+  });
+
+  it('licencia próxima sin autorizado: víspera y vuelta, y el próximo aviso pasa a la víspera', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14');
+    await crearDataset({ vencimiento: '2027-01-31' });
+    const estado = await motor.estadoNotas({ hoy: '2026-11-10' });
+    assert.deepEqual(estado.licencia_firmante, {
+      desde: '2026-11-26', hasta: '2027-01-14', en_curso: false, autorizado: null, nota_autorizacion: null,
+      autorizado_no_vigente: false, sin_dias_habiles: false, vispera: '2026-11-25', ultimo_habil: '2027-01-14', vuelta: '2027-01-15'
+    });
+    assert.equal(estado.proximas.interna.aviso.fecha, '2026-11-25');
+  });
+
+  it('licencia en curso sin autorizado: la próxima reiteración es a la vuelta', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14');
+    const estado = await motor.estadoNotas({ hoy: '2026-12-02' });
+    assert.equal(estado.licencia_firmante.en_curso, true);
+    assert.equal(estado.proximas.interna.reiteracion.fecha, '2027-01-15');
+  });
+
+  it('licencia en curso con autorizado: la reiteración queda en su fecha y se informa la nota de autorización', async () => {
+    const licenciaId = await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await correr('2026-11-25');
+    const estado = await motor.estadoNotas({ hoy: '2026-12-02' });
+    assert.equal(estado.licencia_firmante.autorizado, 'Firma admin');
+    const [nota] = await query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [await notaDeAutorizacionDe(licenciaId)]);
+    assert.deepEqual(estado.licencia_firmante.nota_autorizacion, { numero: nota.numero, anio: nota.anio });
+    assert.equal(estado.proximas.interna.reiteracion.fecha, '2026-12-02');
+  });
+
+  it('autorizado que ya no cumple las condiciones: alerta de error', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [autorizado.id]);
+    const estado = await motor.estadoNotas({ hoy: '2026-11-10' });
+    assert.equal(estado.licencia_firmante.autorizado_no_vigente, true);
+    assert.ok(estado.alertas.some(a => a.tipo === 'autorizado-no-vigente' && a.nivel === 'error'));
+  });
+
+  it('titular sin imagen de firma: la advertencia sin-firma mira la suya', async () => {
+    await query('UPDATE usuarios_firmas SET imagen = NULL WHERE usuario_id = ?', [titular.id]);
+    assert.ok((await motor.estadoNotas({ hoy: '2026-11-02' })).alertas.some(a => a.tipo === 'sin-firma'));
+  });
+
+  it('titular con imagen de firma: no hay advertencia sin-firma aunque la configuración no tenga imagen', async () => {
+    assert.ok(!(await motor.estadoNotas({ hoy: '2026-11-02' })).alertas.some(a => a.tipo === 'sin-firma'));
+  });
+});
