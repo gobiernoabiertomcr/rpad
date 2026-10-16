@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
 import { crearDataset, crearNota, limpiarBase, configurarNotas, conFallaSimulada, conCambioSimulado } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
-import { lineasPorHoja } from './pdf-lector.js';
+import { lineasPorHoja, textosPorHoja } from './pdf-lector.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
 const PARRAFO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 26/11/2026 al 14/01/2027, con el objetivo de mantener el correcto flujo de trabajo.';
@@ -454,6 +454,37 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
     const sabado = await motor.estadoNotas({ hoy: '2027-03-06' });
     assert.equal(sabado.licencia_firmante.autorizado_de_licencia_hasta, '2027-03-07');
     assert.deepEqual(alertasDelAutorizado(sabado), [advertencia('07/03/2027')]);
+  });
+
+  it('persona autorizada contratada: la víspera, de licencia, el párrafo la presenta como personal contratado; el 04/03, de vuelta, también la leyenda y su firma', async () => {
+    const RENGLON = 'Personal contratado, cumpliendo funciones de';
+    const CONTRATADA = 'Firma admin, personal contratado, cumpliendo funciones de Cargo admin';
+    await query("UPDATE usuarios SET vinculo = 'contrato' WHERE id = ?", [autorizado.id]);
+    await conReiterable();
+    await crearDataset({ vencimiento: '2027-05-10' });
+    await correr('2027-02-26');
+    const [aviso, ...otras] = (await notas()).filter(n => n.fecha === '2027-02-26');
+    assert.equal(otras.length, 0);
+    assert.equal(aviso.tipo, 'aviso');
+    assert.ok(aviso.html.includes(`Asimismo, por medio de la presente autorizo expresamente a ${CONTRATADA}, a presentar en mi nombre las Notas Digitales durante mi licencia, del 01/03/2027 al 31/03/2027,`), aviso.html);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), aviso.id);
+    for (const dia of ['2027-03-01', '2027-03-02', '2027-03-03', '2027-03-04']) await correr(dia);
+    const [reiteracion, ...demas] = (await notas()).filter(n => n.fecha === '2027-03-04');
+    assert.equal(demas.length, 0);
+    assert.equal(reiteracion.tipo, 'reiteracion');
+    assert.equal(reiteracion.presentada_por_id, autorizado.id);
+    assert.ok(reiteracion.html.includes(`Nota presentada por ${CONTRATADA}, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${aviso.numero}/27 (licencia del 01/03/2027 al 31/03/2027).`));
+    assert.ok(reiteracion.html.includes(`>Firma admin<br><span style="font-size:12px">${RENGLON}</span><br>Cargo admin</td>`));
+    // En el PDF, el renglón chico va en su firma, entre su nombre y su cargo, más chico que el cargo
+    const ultima = textosPorHoja(reiteracion.pdf).at(-1);
+    const de = (texto) => {
+      const encontrados = ultima.filter(t => t.texto === texto);
+      assert.equal(encontrados.length, 1, `"${texto}": ${encontrados.length} veces`);
+      return encontrados[0];
+    };
+    const [nombre, renglon, cargo] = [de('Firma admin'), de(RENGLON), de('Cargo admin')];
+    assert.ok(renglon.tamano < cargo.tamano, `${renglon.tamano} pt contra ${cargo.tamano} pt`);
+    assert.ok(nombre.base > renglon.base && renglon.base > cargo.base);
   });
 
   it('Estado: desactivada, sin firma o de licencia todos los días hábiles, el error de siempre', async () => {
