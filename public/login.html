@@ -474,16 +474,18 @@
     <script src="js/auth.js?v=20261016"></script>
     <script src="js/api.js?v=20261016"></script>
     <script>
-        // Verificar si ya hay sesión activa
         document.addEventListener('DOMContentLoaded', () => {
-            if (Auth.isAuthenticated()) {
-                window.location.href = 'index.html';
-            }
-
-            // Llegó desde "Elegir contraseña": se avisa y se limpia la URL
+            // Llegó desde "Elegir contraseña": se avisa, se limpia la URL y no se redirige aunque haya una sesión abierta,
+            // para que la persona ingrese con su contraseña nueva
             if (new URLSearchParams(window.location.search).get('contrasena') === 'ok') {
                 document.getElementById('alertExito').style.display = 'flex';
                 history.replaceState(null, '', 'login.html');
+                return;
+            }
+
+            // Verificar si ya hay sesión activa
+            if (Auth.isAuthenticated()) {
+                window.location.href = 'index.html';
             }
         });
 
@@ -521,7 +523,8 @@
             const alertError = document.getElementById('alertError');
             const alertErrorText = document.getElementById('alertErrorText');
 
-            // Ocultar error previo
+            // Ocultar avisos previos
+            document.getElementById('alertExito').style.display = 'none';
             alertError.style.display = 'none';
 
             // Deshabilitar botón y mostrar loading

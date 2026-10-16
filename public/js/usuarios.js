@@ -306,7 +306,40 @@ async function guardarUsuario(evento) {
   }
 }
 
+const MENSAJE_SIN_GUARDAR = 'Guardá los cambios antes de continuar.';
+
+// Los datos de un usuario como los guarda el servidor, para comparar el formulario con lo guardado
+const normalizados = ({ nombre, username, email, cargo, vinculo }) => ({
+  nombre: String(nombre ?? '').trim(),
+  username: String(username ?? '').trim().toUpperCase(),
+  email: String(email ?? '').trim().toLowerCase(),
+  cargo: String(cargo ?? '').trim() || null,
+  vinculo: vinculo || null
+});
+
+// ¿El formulario del usuario abierto tiene cambios sin guardar? (en el alta no aplica)
+function hayCambiosSinGuardar() {
+  if (!abierto) return false;
+  const guardado = normalizados({
+    nombre: abierto.nombre_completo, username: abierto.username, email: abierto.email, cargo: abierto.cargo, vinculo: abierto.vinculo
+  });
+  const formulario = normalizados({
+    nombre: leer('u-nombre'), username: leer('u-username'), email: leer('u-email'), cargo: leer('u-cargo'),
+    vinculo: document.getElementById('u-vinculo').value
+  });
+  return Object.keys(guardado).some(campo => guardado[campo] !== formulario[campo]);
+}
+
+// Enviar un link o cambiar el estado vuelve a abrir al usuario con lo guardado: los cambios del formulario se perderían
+function bloqueadoPorCambiosSinGuardar() {
+  limpiarErrores();
+  if (!hayCambiosSinGuardar()) return false;
+  mostrarError({ message: MENSAJE_SIN_GUARDAR });
+  return true;
+}
+
 async function enviarAcceso() {
+  if (bloqueadoPorCambiosSinGuardar()) return;
   const boton = document.getElementById('btn-enviar-acceso');
   boton.disabled = true;
   try {
@@ -320,6 +353,7 @@ async function enviarAcceso() {
 }
 
 async function cambiarEstado() {
+  if (bloqueadoPorCambiosSinGuardar()) return;
   const u = abierto;
   const desactivar = u.estado !== 'desactivado';
   if (desactivar) {
