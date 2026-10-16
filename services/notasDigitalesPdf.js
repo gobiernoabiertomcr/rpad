@@ -507,22 +507,39 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     }
 
     // Apartados de la nota de auditoría (spec 10.3): título, párrafos, ítems con viñeta y párrafos de cierre. El título
-    // viaja con su primer renglón
-    for (const apartado of nota.apartados ?? []) {
-      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(apartado.parrafos[0] ?? apartado.items[0] ?? ''));
+    // viaja con su primer bloque; y el último bloque del último apartado, con el remitente, la firma y la línea CC (como el
+    // último párrafo de la justificación en las demás notas): la firma no queda sola en una hoja, sin texto de la nota arriba.
+    const apartados = nota.apartados ?? [];
+    apartados.forEach((apartado, k) => {
+      const anchoItem = ancho - SANGRIA_ITEM - SANGRIA_VINETA;
+      // Los bloques del apartado en el orden en que se dibujan
+      const bloques = [
+        ...apartado.parrafos.map(texto => ({ texto, item: false })),
+        ...apartado.items.map(texto => ({ texto, item: true })),
+        ...(apartado.cierre ?? []).map(texto => ({ texto, item: false }))
+      ];
+      const cierraLaNota = (i) => k === apartados.length - 1 && i === bloques.length - 1;
+      // Lo que se reserva para un bloque: su alto y, si cierra la nota, también el cierre
+      const reservaDe = (i) => altoTexto(bloques[i].texto, 12, NORMAL, bloques[i].item ? anchoItem : ancho)
+        + (cierraLaNota(i) ? altoCierre : 0);
+      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + (bloques.length ? reservaDe(0) : 0));
       parrafo(apartado.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.3 });
-      apartado.parrafos.forEach(texto => parrafo(texto));
-      apartado.items.forEach((texto) => {
-        const anchoItem = ancho - SANGRIA_ITEM - SANGRIA_VINETA;
-        asegurarEspacio(altoTexto(texto, 12, NORMAL, anchoItem));
-        const y = doc.y;
-        doc.font(NORMAL).fontSize(12).text('•', MARGENES.left + SANGRIA_ITEM, y, { lineBreak: false });
-        doc.text(texto, MARGENES.left + SANGRIA_ITEM + SANGRIA_VINETA, y, { width: anchoItem, align: 'left' });
-        doc.moveDown(0.2);
+      bloques.forEach(({ texto, item }, i) => {
+        if (item) {
+          asegurarEspacio(reservaDe(i));
+          const y = doc.y;
+          doc.font(NORMAL).fontSize(12).text('•', MARGENES.left + SANGRIA_ITEM, y, { lineBreak: false });
+          doc.text(texto, MARGENES.left + SANGRIA_ITEM + SANGRIA_VINETA, y, { width: anchoItem, align: 'left' });
+          doc.moveDown(0.2);
+          // Después del último ítem, más aire antes de lo que sigue
+          if (!bloques[i + 1]?.item) doc.moveDown(0.4);
+        } else {
+          // (el primer bloque ya se reservó junto con el título)
+          if (i > 0 && cierraLaNota(i)) asegurarEspacio(reservaDe(i));
+          parrafo(texto);
+        }
       });
-      if (apartado.items.length) doc.moveDown(0.4);
-      (apartado.cierre ?? []).forEach(texto => parrafo(texto));
-    }
+    });
 
     // La línea del anexo (solo avisos) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
     // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con el título de la justificación y su

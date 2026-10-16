@@ -894,6 +894,39 @@ describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-
     assert.ok(ultima.includes('Nombre') && ultima.includes('Cargo'));
   });
 
+  // La firma nunca queda sola: arriba del remitente va el último apartado ("Importancia:"). El espacio que queda en la hoja
+  // anterior cae en cualquier punto, así que se barre la cantidad de cambios y el largo de lo que cambia
+  it('el remitente y la firma no quedan solos en una hoja: "Importancia" viaja con ellos (1 a 12 cambios, una y dos firmas)', async () => {
+    const dos = {
+      titular: { nombre: 'Firma Titular', cargo: 'Director' }, presentante: { nombre: 'Firma Autorizada', cargo: 'Coordinadora' },
+      leyenda: 'Nota presentada por Firma Autorizada, Coordinadora, en nombre de Firma Titular, Director, conforme a la autorización conferida mediante Nota Digital N° 3/26 (licencia del 19/10/2026 al 30/10/2026).'
+    };
+    const importancia = auditoria(1).apartados.at(-1).parrafos[0].slice(0, 30);
+    let conVariasHojas = 0;
+    for (const [caso, firma, opciones] of [
+      ['una firma', undefined, { firmaImagen: PNG }],
+      ['dos firmas', dos, { firmaImagen: PNG, presentanteImagen: PNG }]
+    ]) {
+      for (let cantidad = 1; cantidad <= 12; cantidad++) {
+        for (const palabras of [1, 12, 30]) {
+          const nuevos = Array.from({ length: cantidad }, (_, i) => ({ ...cambio(i + 1), datos_nuevos: { descripcion: 'palabra '.repeat(palabras).trim() } }));
+          const n = auditoria(cantidad, { nuevos, firma });
+          const hojas = lineasPorHoja(await renderPdf(n, opciones));
+          const donde = `${caso}, ${cantidad} cambios, ${palabras} palabras`;
+          const ultima = hojas.at(-1).join(' ');
+          for (const parte of ['Importancia:', importancia, n.remitente, n.firma.nombre, n.firma.cargo]) {
+            assert.ok(ultima.includes(parte), `${donde}: falta "${parte}" en la última hoja`);
+          }
+          for (const anterior of hojas.slice(0, -1)) {
+            assert.ok(!anterior.join(' ').includes(n.remitente), `${donde}: el remitente quedó en una hoja anterior`);
+          }
+          if (hojas.length > 1) conVariasHojas++;
+        }
+      }
+    }
+    assert.ok(conVariasHojas > 0, 'el barrido tiene que incluir notas de varias hojas');
+  });
+
   it('presentada por la persona autorizada: las dos imágenes y la leyenda', async () => {
     const firma = {
       titular: { nombre: 'Firma Titular', cargo: 'Director', imagen: PNG },
