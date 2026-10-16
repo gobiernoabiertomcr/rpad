@@ -669,9 +669,12 @@ const licenciaDelFirmante = async (config, hoy) => {
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
   if (!licencia) return null;
   // La persona autorizada sirve si le queda algún día hábil de toda la licencia sin licencia propia: puede faltar algunos
-  // días a la vez que el titular, también hasta el final. Si el día que se mira (el primero de la licencia, u hoy si ya
-  // empezó) está de licencia, hasta cuándo, con sus licencias seguidas unidas: esos días no se generan notas
-  const evaluado = licencia.desde > hoy ? licencia.desde : hoy;
+  // días a la vez que el titular, también hasta el final. Si el día que se mira (el primer día hábil desde el inicio de la
+  // licencia, o desde hoy si ya empezó; sin ninguno hasta el fin, ese mismo día) está de licencia, hasta cuándo, con sus
+  // licencias seguidas unidas: esos días no se generan notas
+  const desdeHoy = licencia.desde > hoy ? licencia.desde : hoy;
+  const habil = proximoDiaHabil(desdeHoy);
+  const evaluado = habil <= licencia.hasta ? habil : desdeHoy;
   const autorizado = await autorizadoParaLicencia(licencia);
   const ausente = autorizado?.primer_dia_disponible
     ? unirAusencias(autorizado.ausencias).find(a => a.desde <= evaluado && evaluado <= a.hasta)

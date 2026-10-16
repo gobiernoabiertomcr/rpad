@@ -438,6 +438,24 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
     assert.equal((await motor.estadoNotas({ hoy: '2027-03-13' })).licencia_firmante.autorizado_de_licencia_hasta, '2027-03-15');
   });
 
+  it('Estado: si la licencia del titular empieza un día no hábil, se mira su primer día hábil', async () => {
+    // El titular, desde el sábado 27/02; la persona autorizada, de licencia del lunes 01/03 al miércoles 03/03
+    await query("UPDATE usuarios_licencias SET desde = '2027-02-27' WHERE id = ?", [licenciaId]);
+    await query("UPDATE usuarios_licencias SET desde = '2027-03-01' WHERE id = ?", [licenciaDelAutorizado]);
+    for (const hoy of ['2027-02-25', '2027-02-27']) {
+      const estado = await motor.estadoNotas({ hoy });
+      assert.equal(estado.licencia_firmante.autorizado_de_licencia_hasta, '2027-03-03', hoy);
+      assert.deepEqual(alertasDelAutorizado(estado), [advertencia('03/03/2027')], hoy);
+    }
+    // Sin ningún día hábil hasta el fin de la licencia del titular, se mira el día de hoy: el titular, hasta el domingo
+    // 07/03; la persona autorizada, también de licencia del viernes 05/03 al domingo 07/03
+    await query("UPDATE usuarios_licencias SET hasta = '2027-03-07' WHERE id = ?", [licenciaId]);
+    await licencia(autorizado, '2027-03-05', '2027-03-07');
+    const sabado = await motor.estadoNotas({ hoy: '2027-03-06' });
+    assert.equal(sabado.licencia_firmante.autorizado_de_licencia_hasta, '2027-03-07');
+    assert.deepEqual(alertasDelAutorizado(sabado), [advertencia('07/03/2027')]);
+  });
+
   it('Estado: desactivada, sin firma o de licencia todos los días hábiles, el error de siempre', async () => {
     const conError = async (motivo) => {
       const estado = await motor.estadoNotas({ hoy: '2027-02-24' });
