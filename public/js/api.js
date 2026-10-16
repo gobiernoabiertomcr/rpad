@@ -223,6 +223,36 @@ async registrarActualizacion(id, datos = {}) {
     return this.pedirJson('POST', `/usuarios/${id}/enviar-acceso`);
   },
 
+  // === LICENCIAS (spec 2026-10-15-dias-habiles-licencias-auditoria, 5) ===
+  async getLicencias(incluirPasadas = false) {
+    return (await this.pedirJson('GET', `/usuarios/licencias${incluirPasadas ? '?incluir_pasadas=1' : ''}`)).data;
+  },
+
+  async crearLicencia(datos) {
+    return this.pedirJson('POST', '/usuarios/licencias', datos);
+  },
+
+  async editarLicencia(id, datos) {
+    return this.pedirJson('PUT', `/usuarios/licencias/${id}`, datos);
+  },
+
+  async anularLicencia(id) {
+    return this.pedirJson('POST', `/usuarios/licencias/${id}/anular`);
+  },
+
+  // === MI FIRMA (spec 6.1) ===
+  async getMiFirma() {
+    return (await this.pedirJson('GET', '/auth/profile/firma')).data;
+  },
+
+  async guardarMiFirma(datos) {
+    return this.pedirJson('PUT', '/auth/profile/firma', datos);
+  },
+
+  async getImagenMiFirma() {
+    return this.pedirArchivo('/auth/profile/firma/imagen');
+  },
+
   // === NOTAS DIGITALES ===
   async getEstadoNotas() {
     return (await this.pedirJson('GET', '/notificaciones/notas-digitales/estado')).data;
@@ -294,6 +324,15 @@ async registrarActualizacion(id, datos = {}) {
 
   async getMembreteNotas() {
     return this.pedirArchivo('/notificaciones/notas-digitales/config/membrete');
+  },
+
+  // Firmante titular de las notas (spec 6.2)
+  async getFirmantesNotas() {
+    return (await this.pedirJson('GET', '/notificaciones/notas-digitales/config/firmantes')).data;
+  },
+
+  async elegirFirmanteNotas(usuarioId) {
+    return this.pedirJson('PUT', '/notificaciones/notas-digitales/config/firmante', { usuario_id: usuarioId });
   },
 
   // === PERFIL ===

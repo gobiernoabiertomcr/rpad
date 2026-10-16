@@ -1,6 +1,6 @@
 // Contenido de las Notas Digitales: textos fijos, estructura de la nota y versiones HTML y texto plano.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6)
-import { formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso } from './notasDigitalesCalendario.js';
+import { formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses } from './notasDigitalesCalendario.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -52,6 +52,13 @@ const CAMPOS_CONTACTO = [
 // Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto, y el aviso suma su anexo
 const AVISO_ADJUNTO = { aviso: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', reiteracion: 'SE ADJUNTA NOTA EN PDF' };
 
+// Autorización para presentar las notas durante la licencia del firmante (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.2).
+// a: { nombre, cargo, desde, hasta } de la persona autorizada y la licencia
+const periodoLicencia = ({ desde, hasta }) => `del ${formatoCorto(desde)} al ${formatoCorto(hasta)}`;
+const PARRAFO_AUTORIZACION = (a) => `Asimismo, por medio de la presente autorizo expresamente a ${a.nombre}, ${a.cargo}, a presentar en mi nombre las Notas Digitales durante mi licencia, ${periodoLicencia(a)}, con el objetivo de mantener el correcto flujo de trabajo.`;
+const TEXTO_NOTA_AUTORIZACION = (a) => `Por medio de la presente informo que, durante mi licencia ${periodoLicencia(a)}, autorizo expresamente a ${a.nombre}, ${a.cargo}, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.`;
+const REF_AUTORIZACION = 'Autorización para la presentación de Notas Digitales';
+
 export const escapeHtml = (texto) => String(texto ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -67,6 +74,20 @@ const textoNumero = ({ numero, anio, esPrueba = false }) => {
   if (numero == null) return 'XX';
   return `${numero}/${String(anio).slice(-2)}`;
 };
+
+// Leyenda de una nota presentada por la persona autorizada (spec 2026-10-15, 7.2): cita la nota de autorización
+export const textoLeyendaAutorizacion = ({ presentante, titular, nota, licencia }) =>
+  `Nota presentada por ${presentante.nombre}, ${presentante.cargo}, en nombre de ${titular.nombre}, ${titular.cargo}, `
+  + `conforme a la autorización conferida mediante Nota Digital N° ${textoNumero(nota)} (licencia ${periodoLicencia(licencia)}).`;
+
+// La firma de la nota: la del titular (o la de la configuración, sin firmante elegido) y, durante su licencia con
+// autorización, la de quien la presenta con la leyenda (spec 2026-10-15, 7.2)
+const firmaDeLaNota = (firma, config) => ({
+  nombre: firma?.titular?.nombre ?? config?.firma_nombre ?? '',
+  cargo: firma?.titular?.cargo ?? config?.firma_cargo ?? '',
+  presentante: firma?.presentante ? { nombre: firma.presentante.nombre, cargo: firma.presentante.cargo } : null,
+  leyenda: firma?.presentante ? firma.leyenda ?? null : null
+});
 
 const situacion = (vencimiento, fecha) => {
   const dias = diasEntre(fecha, vencimiento);
@@ -100,10 +121,14 @@ const textoAnteriormente = (antecedente) => {
   return `Anteriormente notificado DGMIT por e-mail en ${antecedente.cantidad} oportunidades, entre el ${formatoCorto(antecedente.primera)} y el ${formatoCorto(antecedente.ultima)}`;
 };
 
-export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config }) => {
+export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config, firma = null, rangoVencimientos = null, autorizacion = null }) => {
   const numeroTexto = textoNumero({ numero, anio, esPrueba });
   const ref = `${tipo === 'reiteracion' ? 'Reiteración – ' : ''}${REF}`;
-  const asunto = `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${ref} (gestión ${gestion} – ${mesYAnio(fecha)})`;
+  // El mes de la nota o, en un aviso anticipado por la licencia del firmante, el rango de meses de los vencimientos (7.3)
+  const cuando = rangoVencimientos
+    ? `vencimientos de ${textoRangoMeses(rangoVencimientos.desde, rangoVencimientos.hasta)}`
+    : mesYAnio(fecha);
+  const asunto = `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${ref} (gestión ${gestion} – ${cuando})`;
 
   const secciones = ['proximo', 'vencido'].map((clave) => {
     const incluidos = datasets.filter(d => (d.vencimiento < fecha ? 'vencido' : 'proximo') === clave);
@@ -152,11 +177,39 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     contactos,
     // Una hoja del anexo por dataset (spec 6.7); solo los avisos llevan anexo
     anexo: tipo === 'aviso' ? `Anexo: reporte de los conjuntos de datos (${cantidad(datasets.length, 'hoja', 'hojas')}).` : null,
+    autorizacion: autorizacion ? PARRAFO_AUTORIZACION(autorizacion) : null,
     justificacion: JUSTIFICACION[tipo],
     remitente: REMITENTE,
     fechaLarga: formatoLargo(fecha),
-    firma: { nombre: config.firma_nombre ?? '', cargo: config.firma_cargo ?? '' },
+    firma: firmaDeLaNota(firma, config),
     lineaCc: (gestion === 'externa' ? config.linea_cc_externa : config.linea_cc_interna) ?? ''
+  };
+};
+
+// Nota de autorización (spec 2026-10-15, 7.2): la que sale cuando la víspera no hay avisos, o cuando la autorización se da
+// después. Firma solo el titular. Tiene la misma forma que las demás notas para que la rendericen las mismas funciones.
+export const construirNotaDeAutorizacion = ({ numero = null, anio = null, esPrueba = false, fecha, firma, autorizacion }) => {
+  const numeroTexto = textoNumero({ numero, anio, esPrueba });
+  return {
+    tipo: 'autorizacion',
+    gestion: null,
+    esPrueba,
+    fecha,
+    numeroTexto,
+    asunto: `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${REF_AUTORIZACION} (licencia ${periodoLicencia(autorizacion)})`,
+    ref: REF_AUTORIZACION,
+    destinatario: DESTINATARIO,
+    avisoAdjunto: AVISO_ADJUNTO.reiteracion,
+    parrafoInicial: TEXTO_NOTA_AUTORIZACION(autorizacion),
+    secciones: [],
+    contactos: [],
+    anexo: null,
+    autorizacion: null,
+    justificacion: [],
+    remitente: REMITENTE,
+    fechaLarga: formatoLargo(fecha),
+    firma: firmaDeLaNota({ titular: firma.titular, presentante: null, leyenda: null }),
+    lineaCc: ''
   };
 };
 
@@ -211,6 +264,17 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
 
 const ESTILO_CELDA = 'border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;';
 
+// Una firma (sin presentante): a la derecha, como siempre. Con presentante: las dos lado a lado, quien presenta a la
+// izquierda y el titular a la derecha, y la leyenda debajo
+const bloqueFirmaHtml = (firma) => {
+  if (!firma.presentante) {
+    return `<p style="margin:32px 0 0;text-align:right;">${escapeHtml(firma.nombre)}<br>${escapeHtml(firma.cargo)}</p>`;
+  }
+  const celda = ({ nombre, cargo }) => `<td style="width:50%;text-align:center;vertical-align:top;">${escapeHtml(nombre)}<br>${escapeHtml(cargo)}</td>`;
+  return `<table cellspacing="0" cellpadding="0" style="width:100%;margin:32px 0 0;"><tr>${celda(firma.presentante)}${celda(firma)}</tr></table>
+<p style="margin:12px 0 0;font-size:12px;font-style:italic;text-align:justify;">${escapeHtml(firma.leyenda)}</p>`;
+};
+
 export const renderHtml = (nota) => {
   const parrafo = (texto) => `<p style="margin:0 0 12px;text-align:justify;">${escapeHtml(texto)}</p>`;
 
@@ -242,6 +306,7 @@ export const renderHtml = (nota) => {
       .map(c => `<p style="margin:0 0 10px;"><b>${escapeHtml(c.nombre)}</b><br>${c.lineas.map(escapeHtml).join('<br>')}</p>`)
       .join('')}`
     : '';
+  const autorizacion = nota.autorizacion ? parrafo(nota.autorizacion) : '';
 
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(nota.asunto)}</title></head>
@@ -253,15 +318,19 @@ export const renderHtml = (nota) => {
 <p style="margin:0 0 16px;"><b><u>${escapeHtml(nota.destinatario)}</u></b></p>
 ${parrafo(nota.parrafoInicial)}
 ${secciones}
-${contactos}
+${contactos}${autorizacion}
 ${nota.anexo ? `<p style="margin:16px 0 0;">${escapeHtml(nota.anexo)}</p>` : ''}
-<p style="margin:16px 0 6px;"><b>Justificación:</b></p>
-${nota.justificacion.map(parrafo).join('\n')}
+${nota.justificacion.length ? `<p style="margin:16px 0 6px;"><b>Justificación:</b></p>
+${nota.justificacion.map(parrafo).join('\n')}` : ''}
 <p style="margin:24px 0 0;"><b><u>${escapeHtml(nota.remitente)}</u></b>, ${escapeHtml(nota.fechaLarga)}.</p>
-<p style="margin:32px 0 0;text-align:right;">${escapeHtml(nota.firma.nombre)}<br>${escapeHtml(nota.firma.cargo)}</p>
+${bloqueFirmaHtml(nota.firma)}
 <p style="margin:24px 0 0;">${escapeHtml(nota.lineaCc)}</p>
 </div></body></html>`;
 };
+
+const lineasFirma = (firma) => (firma.presentante
+  ? [firma.presentante.nombre, firma.presentante.cargo, '', firma.nombre, firma.cargo, '', firma.leyenda]
+  : [firma.nombre, firma.cargo]);
 
 export const renderTexto = (nota) => {
   const lineas = [nota.avisoAdjunto, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
@@ -283,7 +352,8 @@ export const renderTexto = (nota) => {
     for (const contacto of nota.contactos) lineas.push(contacto.nombre, ...contacto.lineas.map(l => `    ${l}`));
     lineas.push('');
   }
-  lineas.push(...(nota.anexo ? [nota.anexo, ''] : []), 'Justificación:', ...nota.justificacion, '', `${nota.remitente}, ${nota.fechaLarga}.`, '',
-    nota.firma.nombre, nota.firma.cargo, '', nota.lineaCc);
+  if (nota.autorizacion) lineas.push(nota.autorizacion, '');
+  lineas.push(...(nota.anexo ? [nota.anexo, ''] : []), ...(nota.justificacion.length ? ['Justificación:', ...nota.justificacion, ''] : []),
+    `${nota.remitente}, ${nota.fechaLarga}.`, '', ...lineasFirma(nota.firma), '', nota.lineaCc);
   return lineas.join('\n');
 };

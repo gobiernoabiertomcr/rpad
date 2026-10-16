@@ -1,7 +1,7 @@
 // Contenido de las Notas Digitales (funciones puras)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { construirNota, renderHtml, renderTexto } from '../services/notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion, textoLeyendaAutorizacion, renderHtml, renderTexto } from '../services/notasDigitalesContenido.js';
 
 const config = {
   linea_cc_interna: 'CC. Dir. de Investigación Territorial',
@@ -290,5 +290,102 @@ describe('textos del 15/10/2026', () => {
       'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos, tanto de áreas municipales como de organismos externos, en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar).',
       'La información actualizada puede ser remitida a los correos electrónicos datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar. Una vez recibida, será publicada en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza.'
     ]);
+  });
+});
+
+const AUTORIZADA = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' };
+const PARRAFO_AUTORIZACION = 'Asimismo, por medio de la presente autorizo expresamente a Persona Autorizada, Cargo Autorizado, a presentar en mi nombre las Notas Digitales durante mi licencia, del 26/11/2026 al 14/01/2027, con el objetivo de mantener el correcto flujo de trabajo.';
+const LEYENDA = 'Nota presentada por Persona Autorizada, Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
+
+describe('firma con autorización (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.2)', () => {
+  const firma = {
+    titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' },
+    presentante: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado' },
+    leyenda: LEYENDA
+  };
+
+  it('la leyenda cita la nota de autorización', () => {
+    assert.equal(textoLeyendaAutorizacion({
+      presentante: firma.presentante, titular: firma.titular, nota: { numero: 15, anio: 2026 }, licencia: AUTORIZADA
+    }), LEYENDA);
+  });
+
+  it('sin firma usa la de la configuración, sin presentante ni leyenda', () => {
+    assert.deepEqual(nota().firma, { nombre: 'Nombre de Firma', cargo: 'Cargo de Firma', presentante: null, leyenda: null });
+  });
+
+  it('con la firma del titular sola, la nota firma con sus datos', () => {
+    const n = nota({ firma: { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' }, presentante: null, leyenda: null } });
+    assert.deepEqual(n.firma, { nombre: 'Persona Titular', cargo: 'Cargo Titular', presentante: null, leyenda: null });
+  });
+
+  it('HTML: las dos firmas lado a lado (quien presenta a la izquierda), escapadas, y la leyenda', () => {
+    const html = renderHtml(nota({ firma: { ...firma, presentante: { nombre: 'Persona <b>Autorizada</b>', cargo: 'Cargo Autorizado' } } }));
+    const izquierda = html.indexOf('Persona &lt;b&gt;Autorizada&lt;/b&gt;<br>Cargo Autorizado');
+    const derecha = html.indexOf('Persona Titular<br>Cargo Titular');
+    assert.ok(izquierda > 0 && derecha > izquierda, 'quien presenta va antes (a la izquierda) que el titular');
+    assert.ok(html.includes('conforme a la autorización conferida mediante Nota Digital N° 15/26'));
+  });
+
+  it('HTML sin presentante: el bloque de firma queda exactamente como antes', () => {
+    assert.ok(renderHtml(nota()).includes('<p style="margin:32px 0 0;text-align:right;">Nombre de Firma<br>Cargo de Firma</p>'));
+  });
+
+  it('texto plano: quien presenta, el titular y la leyenda, antes de la línea de CC', () => {
+    assert.ok(renderTexto(nota({ firma })).includes(`Persona Autorizada\nCargo Autorizado\n\nPersona Titular\nCargo Titular\n\n${LEYENDA}\n\nCC. Dir. de Investigación Territorial`));
+  });
+});
+
+describe('párrafo de autorización en los avisos de la víspera (spec 7.2)', () => {
+  it('va después de las tablas y antes de la línea del anexo, en el HTML y en el texto', () => {
+    const n = nota({ autorizacion: AUTORIZADA });
+    assert.equal(n.autorizacion, PARRAFO_AUTORIZACION);
+    const html = renderHtml(n);
+    assert.ok(html.indexOf('Dataset A') < html.indexOf('Asimismo, por medio de la presente'));
+    assert.ok(html.indexOf('Asimismo, por medio de la presente') < html.indexOf('Anexo: reporte'));
+    const texto = renderTexto(n);
+    assert.ok(texto.includes(`${PARRAFO_AUTORIZACION}\n\nAnexo: reporte`));
+  });
+
+  it('sin autorización, la nota no lo lleva', () => {
+    assert.equal(nota().autorizacion, null);
+    assert.ok(!renderHtml(nota()).includes('Asimismo'));
+  });
+});
+
+describe('nota de autorización (spec 7.2)', () => {
+  const firmaTitular = { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' }, presentante: null, leyenda: null };
+  const autorizacion = construirNotaDeAutorizacion({ numero: 15, anio: 2026, fecha: '2026-11-25', firma: firmaTitular, autorizacion: AUTORIZADA });
+
+  it('asunto, texto y firma del titular, sin gestión, tablas ni justificación', () => {
+    assert.equal(autorizacion.asunto, 'Nota Digital N° 15/26 – Ref.: Autorización para la presentación de Notas Digitales (licencia del 26/11/2026 al 14/01/2027)');
+    assert.equal(autorizacion.tipo, 'autorizacion');
+    assert.equal(autorizacion.gestion, null);
+    assert.equal(autorizacion.parrafoInicial, 'Por medio de la presente informo que, durante mi licencia del 26/11/2026 al 14/01/2027, autorizo expresamente a Persona Autorizada, Cargo Autorizado, a presentar en mi nombre las Notas Digitales de esta Dirección, con el objetivo de mantener el correcto flujo de trabajo.');
+    assert.deepEqual(autorizacion.firma, { nombre: 'Persona Titular', cargo: 'Cargo Titular', presentante: null, leyenda: null });
+  });
+
+  it('HTML y texto sin "Justificación:" y con el párrafo', () => {
+    for (const salida of [renderHtml(autorizacion), renderTexto(autorizacion)]) {
+      assert.ok(!salida.includes('Justificación'));
+      assert.ok(salida.includes('autorizo expresamente a Persona Autorizada'));
+      assert.ok(salida.includes('SE ADJUNTA NOTA EN PDF'));
+    }
+  });
+
+  it('prueba: N° PRUEBA y [PRUEBA] en el asunto', () => {
+    const prueba = construirNotaDeAutorizacion({ esPrueba: true, fecha: '2026-11-25', firma: firmaTitular, autorizacion: AUTORIZADA });
+    assert.match(prueba.asunto, /^\[PRUEBA\] Nota Digital N° PRUEBA – /);
+  });
+});
+
+describe('asunto de un aviso anticipado (spec 7.3)', () => {
+  it('nombra el rango de meses de los vencimientos en lugar del mes de la nota', () => {
+    assert.equal(nota({ rangoVencimientos: { desde: '2027-01-20', hasta: '2027-03-31' } }).asunto,
+      `Nota Digital N° 12/26 – Ref.: ${REF} (gestión interna – vencimientos de enero a marzo 2027)`);
+    assert.equal(nota({ rangoVencimientos: { desde: '2026-12-15', hasta: '2027-02-10' } }).asunto,
+      `Nota Digital N° 12/26 – Ref.: ${REF} (gestión interna – vencimientos de diciembre 2026 a febrero 2027)`);
+    assert.equal(nota({ rangoVencimientos: { desde: '2027-01-20', hasta: '2027-01-31' } }).asunto,
+      `Nota Digital N° 12/26 – Ref.: ${REF} (gestión interna – vencimientos de enero 2027)`);
   });
 });

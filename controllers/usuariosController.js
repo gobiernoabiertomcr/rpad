@@ -6,8 +6,8 @@ import {
 } from '../services/usuariosReglas.js';
 import { registrarAuditoria, historialDe } from '../services/usuariosAuditoriaService.js';
 import { enviarLinkDeAcceso } from '../services/accesoService.js';
-import { sendEmail } from '../services/emailService.js';
-import { avisoSuperadminTemplate } from '../services/emailTemplates.js';
+import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
+import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const MENSAJE_PROTEGIDA = 'Esta cuenta solo la modifica su titular.';
 const MENSAJE_MINIMO = 'No se puede: quedarían menos de 2 usuarios que puedan aprobar cambios.';
@@ -24,7 +24,7 @@ const COLUMNAS = `
       AND t.expira_at > NOW()) AS invitacion_vence,
   (SELECT COUNT(*) FROM cambios_pendientes cp WHERE cp.usuario_id = u.id AND cp.estado = 'pendiente') AS cambios_pendientes_propuestos`;
 
-const aRespuesta = (u) => ({
+const aRespuesta = (u, licencias = new Map()) => ({
   id: u.id,
   username: u.username,
   nombre_completo: u.nombre_completo,
@@ -37,7 +37,8 @@ const aRespuesta = (u) => ({
   ultimo_ingreso: u.ultimo_ingreso,
   invitacion_vence: u.invitacion_vence,
   cambios_pendientes_propuestos: Number(u.cambios_pendientes_propuestos),
-  created_at: u.created_at
+  created_at: u.created_at,
+  licencia: licencias.get(u.id) ?? null
 });
 
 const responderError = (res, status, error, campo) =>
@@ -51,6 +52,21 @@ const idDeRuta = (req) => {
 const buscarUsuario = async (conexion, id) => {
   const [filas] = await conexion.execute(`SELECT ${COLUMNAS} FROM usuarios u WHERE u.id = ?`, [id]);
   return filas[0] || null;
+};
+
+// Licencia en curso o que empieza en los próximos 30 días de cada usuario (spec 2026-10-15, 5.5): Map id → licencia
+const licenciasVisibles = async () => {
+  const hoy = hoyArgentina();
+  const [filas] = await pool.query(
+    `SELECT usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+     FROM usuarios_licencias WHERE anulada = 0 AND hasta >= ? AND desde <= ? ORDER BY desde`,
+    [hoy, sumarDias(hoy, 30)]
+  );
+  const porUsuario = new Map();
+  for (const f of filas) {
+    if (!porUsuario.has(f.usuario_id)) porUsuario.set(f.usuario_id, { desde: f.desde, hasta: f.hasta, en_curso: f.desde <= hoy });
+  }
+  return porUsuario;
 };
 
 // Bloquea las filas de usuarios (son pocas) hasta el fin de la transacción y devuelve lo necesario para contar
@@ -76,29 +92,19 @@ const campoRepetido = async (conexion, { username, email }, exceptoId = 0) => {
 
 const MENSAJE_REPETIDO = { username: 'Ese usuario ya existe', email: 'Ese email ya lo usa otro usuario' };
 
-// Spec 10.3: si el cambio no lo hizo un superadmin, se avisa a los superadmin activos. Nunca hace fallar la operación.
-const avisarAlSuperadmin = async (req, afectado, cambio) => {
-  if (req.user.rol === 'superadmin') return;
-  try {
-    const [destinatarios] = await pool.execute("SELECT email FROM usuarios WHERE rol = 'superadmin' AND activo = TRUE");
-    const correos = destinatarios.map(d => d.email).filter(emailValido);
-    if (correos.length === 0) return;
-    const [[actor]] = await pool.execute('SELECT nombre_completo, username FROM usuarios WHERE id = ?', [req.user.userId]);
-    const envio = await sendEmail({ ...avisoSuperadminTemplate({ actor, afectado, cambio, fecha: new Date() }), to: correos });
-    if (!envio.success) console.error('No se pudo avisar al superadmin:', envio.error);
-  } catch (error) {
-    console.error('No se pudo avisar al superadmin:', error);
-  }
-};
+// Aviso al superadmin por un cambio de este pedido (spec 10.3): lo retiene si está de licencia (spec 2026-10-15, 5.4)
+const avisar = (req, afectado, cambio, auditoriaId) =>
+  avisarAlSuperadmin({ actor: { id: req.user.userId, rol: req.user.rol }, afectado, cambio, auditoriaId });
 
 // GET /usuarios
 export const listarUsuarios = async (req, res) => {
   try {
     const [filas] = await pool.execute(`SELECT ${COLUMNAS} FROM usuarios u ORDER BY u.nombre_completo`);
+    const licencias = await licenciasVisibles();
     res.json({
       success: true,
       data: {
-        usuarios: filas.map(aRespuesta),
+        usuarios: filas.map(u => aRespuesta(u, licencias)),
         resumen: { aprobadores_activos: filas.filter(esAprobadorActivo).length, minimo: MINIMO_APROBADORES }
       }
     });
@@ -114,7 +120,7 @@ export const obtenerUsuario = async (req, res) => {
   try {
     const usuario = id && await buscarUsuario(pool, id);
     if (!usuario) return responderError(res, 404, 'Usuario no encontrado');
-    res.json({ success: true, data: { ...aRespuesta(usuario), historial: await historialDe(id) } });
+    res.json({ success: true, data: { ...aRespuesta(usuario, await licenciasVisibles()), historial: await historialDe(id) } });
   } catch (error) {
     console.error('Error obteniendo usuario:', error);
     responderError(res, 500, MENSAJE_ERROR);
@@ -130,6 +136,7 @@ export const crearUsuario = async (req, res) => {
 
   let conexion;
   let id;
+  let auditoriaId;
   try {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
@@ -144,7 +151,7 @@ export const crearUsuario = async (req, res) => {
       [datos.username, datos.nombre_completo, datos.email, datos.rol, datos.cargo ?? null, datos.vinculo ?? null]
     );
     id = resultado.insertId;
-    await registrarAuditoria(conexion, {
+    auditoriaId = await registrarAuditoria(conexion, {
       usuarioId: id,
       actorId: req.user.userId,
       accion: 'alta',
@@ -166,7 +173,7 @@ export const crearUsuario = async (req, res) => {
   try {
     const usuario = await buscarUsuario(pool, id);
     const envio = await enviarLinkDeAcceso({ usuario, tipo: 'invitacion', actorId: req.user.userId, origen: 'panel' });
-    if (datos.rol === 'admin') await avisarAlSuperadmin(req, usuario, `Alta como ${TEXTO_ROL.admin}`);
+    if (datos.rol === 'admin') await avisar(req, usuario, `Alta como ${TEXTO_ROL.admin}`, auditoriaId);
     res.status(201).json({
       success: true,
       data: { usuario: aRespuesta(await buscarUsuario(pool, id)), email_enviado: envio.email_enviado },
@@ -192,6 +199,7 @@ export const actualizarUsuario = async (req, res) => {
   let antes;
   let rolNuevo = null;
   let campos = {};
+  let auditoriaId = null;
   let sinCambios = false;
   try {
     conexion = await pool.getConnection();
@@ -246,10 +254,10 @@ export const actualizarUsuario = async (req, res) => {
         );
       }
       if (Object.keys(campos).length > 0) {
-        await registrarAuditoria(conexion, { usuarioId: id, actorId: req.user.userId, accion: 'edicion', detalle: { campos } });
+        auditoriaId = await registrarAuditoria(conexion, { usuarioId: id, actorId: req.user.userId, accion: 'edicion', detalle: { campos } });
       }
       if (rolNuevo) {
-        await registrarAuditoria(conexion, {
+        auditoriaId = await registrarAuditoria(conexion, {
           usuarioId: id, actorId: req.user.userId, accion: 'cambio_rol', detalle: { antes: antes.rol, despues: rolNuevo }
         });
       }
@@ -270,7 +278,7 @@ export const actualizarUsuario = async (req, res) => {
     const avisos = [];
     if (rolNuevo) avisos.push(`${TEXTO_ROL[antes.rol]} → ${TEXTO_ROL[rolNuevo]}`);
     if (campos.email && esAdmin(despues.rol)) avisos.push(`Email: ${campos.email.antes ?? '(vacío)'} → ${campos.email.despues}`);
-    if (avisos.length > 0) await avisarAlSuperadmin(req, despues, avisos.join('; '));
+    if (avisos.length > 0) await avisar(req, despues, avisos.join('; '), auditoriaId);
     res.json({ success: true, data: aRespuesta(despues), message: sinCambios ? 'Sin cambios' : 'Cambios guardados' });
   } catch (error) {
     console.error('Error respondiendo la actualización del usuario:', error);
@@ -284,6 +292,7 @@ export const desactivarUsuario = async (req, res) => {
   if (!id) return responderError(res, 404, 'Usuario no encontrado');
   let conexion;
   let usuario;
+  let auditoriaId;
   try {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
@@ -305,7 +314,7 @@ export const desactivarUsuario = async (req, res) => {
       'UPDATE usuarios_tokens SET anulado_at = NOW() WHERE usuario_id = ? AND usado_at IS NULL AND anulado_at IS NULL',
       [id]
     );
-    await registrarAuditoria(conexion, {
+    auditoriaId = await registrarAuditoria(conexion, {
       usuarioId: id, actorId: req.user.userId, accion: 'desactivacion',
       detalle: { cambios_pendientes: Number(usuario.cambios_pendientes_propuestos) }
     });
@@ -319,7 +328,7 @@ export const desactivarUsuario = async (req, res) => {
   }
 
   try {
-    await avisarAlSuperadmin(req, usuario, 'Desactivado');
+    await avisar(req, usuario, 'Desactivado', auditoriaId);
     res.json({ success: true, data: aRespuesta(await buscarUsuario(pool, id)), message: 'Usuario desactivado' });
   } catch (error) {
     console.error('Error respondiendo la desactivación del usuario:', error);
@@ -332,6 +341,7 @@ export const reactivarUsuario = async (req, res) => {
   const id = idDeRuta(req);
   if (!id) return responderError(res, 404, 'Usuario no encontrado');
   let conexion;
+  let auditoriaId;
   try {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
@@ -348,7 +358,7 @@ export const reactivarUsuario = async (req, res) => {
     }
 
     await conexion.execute('UPDATE usuarios SET activo = TRUE WHERE id = ?', [id]);
-    await registrarAuditoria(conexion, { usuarioId: id, actorId: req.user.userId, accion: 'reactivacion' });
+    auditoriaId = await registrarAuditoria(conexion, { usuarioId: id, actorId: req.user.userId, accion: 'reactivacion' });
     await conexion.commit();
   } catch (error) {
     await conexion?.rollback().catch(() => {});
@@ -360,7 +370,7 @@ export const reactivarUsuario = async (req, res) => {
 
   try {
     const reactivado = await buscarUsuario(pool, id);
-    if (esAdmin(reactivado.rol)) await avisarAlSuperadmin(req, reactivado, 'Reactivado');
+    if (esAdmin(reactivado.rol)) await avisar(req, reactivado, 'Reactivado', auditoriaId);
     res.json({ success: true, data: aRespuesta(reactivado), message: 'Usuario reactivado' });
   } catch (error) {
     console.error('Error respondiendo la reactivación del usuario:', error);

@@ -139,25 +139,37 @@ export const cambiosPendientesParaAdmin = async (adminId) => {
   }));
 };
 
-// Admins activos con email que ya pueden ingresar y aprobar (con contraseña definida)
-const adminsConEmail = async () => {
+// Admins activos con email que ya pueden ingresar y aprobar (con contraseña definida), y si están de licencia en la fecha
+const adminsConEmail = async (hoy) => {
   const [rows] = await pool.execute(
-    `SELECT id, username, nombre_completo, email
-     FROM usuarios
-     WHERE rol IN ('admin', 'superadmin') AND activo = TRUE AND email IS NOT NULL AND password_hash IS NOT NULL`
+    `SELECT u.id, u.username, u.nombre_completo, u.email,
+       EXISTS (SELECT 1 FROM usuarios_licencias l
+               WHERE l.usuario_id = u.id AND l.anulada = 0 AND l.desde <= ? AND l.hasta >= ?) AS de_licencia
+     FROM usuarios u
+     WHERE u.rol IN ('admin', 'superadmin') AND u.activo = TRUE AND u.email IS NOT NULL AND u.password_hash IS NOT NULL`,
+    [hoy, hoy]
   );
-  return rows;
+  return rows.map(r => ({ ...r, de_licencia: Boolean(Number(r.de_licencia)) }));
 };
 
 /**
  * Email de cambios pendientes (spec 4.1): a cada admin, los cambios que puede revisar. Solo en días hábiles.
- * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes }], sinPendientes: [username], errores: [{ admin, error }] }
+ * Quien está de licencia ese día no recibe el email (spec 5.3).
+ * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes }], sinPendientes: [username], deLicencia: [username],
+ *   errores: [{ admin, error }] }
  */
 export const enviarCambiosPendientes = async ({ hoy }) => {
-  const resultados = { fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], errores: [] };
+  const resultados = {
+    fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], deLicencia: [], errores: []
+  };
   if (!resultados.dia_habil) return resultados;
 
-  for (const admin of await adminsConEmail()) {
+  for (const admin of await adminsConEmail(hoy)) {
+    // Durante la licencia no recibe emails del sistema (spec 2026-10-15, 5.3)
+    if (admin.de_licencia) {
+      resultados.deLicencia.push(admin.username);
+      continue;
+    }
     const cambiosPendientes = await cambiosPendientesParaAdmin(admin.id);
     if (cambiosPendientes.length === 0) {
       resultados.sinPendientes.push(admin.username);

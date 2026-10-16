@@ -6,6 +6,7 @@ import { hoyArgentina, proximoDiaHabil, esDiaHabil } from '../services/notasDigi
 import {
   datasetsExternosPorArea, enviarAvisoAreas, cambiosPendientesParaAdmin, enviarCambiosPendientes
 } from '../services/avisosDiariosService.js';
+import { enviarResumenAvisosRetenidos } from '../services/avisosSuperadminService.js';
 
 // Área de ejemplo para la vista previa y la prueba del aviso a áreas cuando hoy no hay datos
 const AREA_DE_EJEMPLO = {
@@ -34,7 +35,10 @@ const fechaDelProximoAviso = () => proximoDiaHabil(hoyArgentina());
  */
 export const ejecutarNotificacionesDiarias = async (req, res) => {
   const hoy = hoyArgentina();
-  const resultados = { fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null, dia_habil: null };
+  const resultados = {
+    fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null, dia_habil: null,
+    avisos_retenidos: null
+  };
 
   try {
     // Aviso directo a las áreas de gestión externa (40 días antes, solo en días hábiles). Va aislado: un error acá
@@ -50,6 +54,15 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
       resultados.errores.push({ tipo: 'area-aviso-40', error: 'Error ejecutando el aviso a las áreas' });
     }
     resultados.dia_habil ??= esDiaHabil(hoy);
+
+    // Resumen de los avisos al superadmin retenidos durante su licencia (spec 2026-10-15, 5.4). Aislado: un error acá no
+    // saltea las Notas Digitales y los avisos quedan retenidos para el día hábil siguiente
+    try {
+      resultados.avisos_retenidos = await enviarResumenAvisosRetenidos({ hoy });
+    } catch (error) {
+      console.error('Error en el resumen de avisos retenidos:', error);
+      resultados.errores.push({ tipo: 'avisos-retenidos', error: error.message });
+    }
 
     // Notas Digitales (reemplazan los avisos de gestión interna y externa). Deciden solas si hoy es día hábil.
     // creado_por: el admin que pidió la corrida; el cron no tiene req.user y queda en NULL

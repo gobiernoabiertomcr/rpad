@@ -49,8 +49,11 @@ import {
   subirFirma,
   verFirma,
   subirMembrete,
-  verMembrete
+  verMembrete,
+  listarFirmantes,
+  elegirFirmante
 } from '../controllers/notasDigitalesController.js';
+import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
   reporteEstadoGeneral,
   reporteHistorialNotificaciones,
@@ -77,6 +80,7 @@ import {
   reactivarUsuario,
   enviarAcceso
 } from '../controllers/usuariosController.js';
+import { listarLicencias, crearLicencia, editarLicencia, anularLicencia } from '../controllers/licenciasController.js';
 import { enviarContacto } from '../controllers/contactoController.js';
 import {
   getMetricasAutomaticas,
@@ -149,6 +153,11 @@ router.post('/auth/change-password', authMiddleware, changePassword);
 router.get('/auth/profile', authMiddleware, getProfile);
 router.put('/auth/profile', authMiddleware, updateProfile);
 
+// Mi firma (spec 2026-10-15-dias-habiles-licencias-auditoria, 6.1): admin y superadmin
+router.get('/auth/profile/firma', authMiddleware, adminOnly, verMiFirma);
+router.put('/auth/profile/firma', authMiddleware, adminOnly, guardarMiFirma);
+router.get('/auth/profile/firma/imagen', authMiddleware, adminOnly, verImagenMiFirma);
+
 // Datasets (escritura - solo admin)
 router.post('/datasets', authMiddleware, adminOnly, createDataset);
 router.put('/datasets/:id', authMiddleware, adminOnly, updateDataset);
@@ -177,6 +186,11 @@ router.post('/cambios-pendientes/:id/rechazar', authMiddleware, adminOnly, recha
 // =====================================================
 router.get('/usuarios', authMiddleware, adminOnly, listarUsuarios);
 router.post('/usuarios', authMiddleware, adminOnly, crearUsuario);
+// Licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5): antes de /usuarios/:id
+router.get('/usuarios/licencias', authMiddleware, adminOnly, listarLicencias);
+router.post('/usuarios/licencias', authMiddleware, adminOnly, crearLicencia);
+router.put('/usuarios/licencias/:id', authMiddleware, adminOnly, editarLicencia);
+router.post('/usuarios/licencias/:id/anular', authMiddleware, adminOnly, anularLicencia);
 router.get('/usuarios/:id', authMiddleware, adminOnly, obtenerUsuario);
 router.put('/usuarios/:id', authMiddleware, adminOnly, actualizarUsuario);
 router.post('/usuarios/:id/desactivar', authMiddleware, adminOnly, desactivarUsuario);
@@ -206,6 +220,8 @@ router.get('/notificaciones/notas-digitales/config/firma', authMiddleware, admin
 router.put('/notificaciones/notas-digitales/config/firma', authMiddleware, adminOnly, subirFirma);
 router.get('/notificaciones/notas-digitales/config/membrete', authMiddleware, adminOnly, verMembrete);
 router.put('/notificaciones/notas-digitales/config/membrete', authMiddleware, adminOnly, subirMembrete);
+router.get('/notificaciones/notas-digitales/config/firmantes', authMiddleware, adminOnly, listarFirmantes);
+router.put('/notificaciones/notas-digitales/config/firmante', authMiddleware, adminOnly, elegirFirmante);
 router.get('/notificaciones/notas-digitales/:id', authMiddleware, adminOnly, obtenerNota);
 router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly, descargarPdf);
 router.get('/notificaciones/notas-digitales/:id/anexo', authMiddleware, adminOnly, descargarAnexo);

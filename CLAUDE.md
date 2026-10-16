@@ -73,14 +73,15 @@ Todo cambio a datasets pasa por doble verificación:
 - Si un dataset tiene cambio pendiente, queda bloqueado para nuevas ediciones
 
 ### Roles
-- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien. Se asigna por SQL, nunca desde la aplicación.
+- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien; durante su licencia esos avisos se retienen y a la vuelta le llega un resumen. Se asigna por SQL, nunca desde la aplicación.
 - **admin:** CRUD datasets (con doble verificación), áreas, panel de usuarios, aprobación de cambios, reportes, notificaciones
 - **lector:** solo lectura de datos públicos + perfil
+- **Licencias:** superadmin, admins (y editores) pueden tener licencias (pestaña Licencias de Usuarios). Durante la licencia no reciben emails del sistema; los avisos al superadmin se retienen y le llega un resumen a la vuelta. Ver services/licenciasReglas.js y services/avisosSuperadminService.js.
 - El rol y el estado activo se leen de la base en cada pedido (`authMiddleware`): desactivar o cambiar un rol tiene efecto inmediato. `esAdmin(rol)` (services/usuariosReglas.js) y `Auth.isAdmin()` incluyen al superadmin: no comparar con `'admin'` a mano.
 - Siempre tiene que haber al menos 2 aprobadores activos (admin o superadmin): el panel no deja bajar de ese mínimo.
 
 ### Base de datos
-- 21 tablas (ver `database/schema.sql`). Usuarios: `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash) y `usuarios_auditoria` (historial del panel)
+- 23 tablas (ver `database/schema.sql`). Usuarios: `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas)
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -95,6 +96,10 @@ Calculados dinámicamente según `proxima_actualizacion`:
 - Salen solo en días hábiles: lunes a viernes sin los 9 feriados nacionales fijos (`esDiaHabil` en `services/notasDigitalesCalendario.js`). Hoy = `hoyArgentina()`, nunca `CURDATE()`.
 - Cron 8:15 (`/api/cron/notificaciones`): aviso a las áreas (`services/avisosDiariosService.js`) y Notas Digitales (`services/notasDigitales.js`).
 - Cron 14:00 (`/api/cron/cambios-pendientes`): email de cambios pendientes a los admins.
+
+### Firma de las Notas Digitales y licencia del firmante
+- Cada usuario carga su firma en Mi Perfil (`usuarios_firmas`). El superadmin elige al firmante titular en Correos (`notas_digitales_config.firmante_usuario_id`). Sin titular elegido, las notas usan la firma cargada en Correos, como antes.
+- `services/notasDigitalesFirmas.js` decide cómo se firma cada fecha (`firmaParaFecha`). La víspera de la licencia del titular se anticipan los avisos (`anticipoPorLicencia`). Con persona autorizada, esos avisos (o una nota de tipo `autorizacion`) comunican la autorización (`autorizacionPendiente`); la licencia guarda esa nota (`usuarios_licencias.nota_autorizacion_id`) y durante la licencia las notas salen con las dos firmas y una leyenda que la cita. Sin autorizado, durante la licencia no se generan notas y las reiteraciones salen a la vuelta. Un aviso anticipado cuenta los 20 días de la reiteración desde `notas_digitales_datasets.cuenta_desde`.
 
 ## Seguridad
 - JWT_SECRET obligatorio al iniciar (process.exit(1) si falta)

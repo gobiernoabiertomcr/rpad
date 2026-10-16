@@ -2,7 +2,7 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
-import { construirNota } from '../services/notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion } from '../services/notasDigitalesContenido.js';
 import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
 import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
@@ -728,3 +728,133 @@ for (const variante of VARIANTES) {
     });
   });
 }
+
+describe('renderPdf: autorización (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.2)', () => {
+  const firma = {
+    titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' },
+    presentante: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado' },
+    leyenda: 'Nota presentada por Persona Autorizada, Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).'
+  };
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
+  const todo = (pdf) => lineasPorHoja(pdf).flat().join(' ');
+
+  it('dibuja las dos imágenes, quien presenta a la izquierda del titular, y la leyenda', async () => {
+    const pdf = await renderPdf(nota(1, { firma }), { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B });
+    const textos = textosPorHoja(pdf).flat();
+    const de = (texto) => textos.find(t => t.texto === texto);
+    assert.ok(de('Persona Autorizada') && de('Persona Titular'));
+    assert.ok(de('Persona Autorizada').x < de('Persona Titular').x, 'quien presenta va a la izquierda');
+    assert.ok(todo(pdf).includes('conforme a la autorización conferida mediante Nota Digital N° 15/26'));
+    assert.equal(imagenesPorHoja(pdf).flat().length, 2);
+  });
+
+  it('una imagen dañada de quien presenta rechaza la promesa, como la del titular', async () => {
+    for (const [caso, imagen] of Object.entries(pngsDanados())) {
+      await assert.rejects(renderPdf(nota(1, { firma }), { firmaImagen: FIRMA_A, presentanteImagen: imagen }), /firma/, caso);
+    }
+    // La descompresión de png-js es asíncrona: si alguna imagen llegara a PDFKit, su error aparecería después
+    await new Promise(resolve => setTimeout(resolve, 300));
+  });
+
+  it('con 1 a 30 datasets, el cierre (remitente, las dos firmas, la leyenda y la línea CC) queda entero en la última hoja', async () => {
+    for (let cantidad = 1; cantidad <= 30; cantidad++) {
+      const n = nota(cantidad, { firma });
+      const hojas = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B }));
+      const ultima = hojas.at(-1).join(' ');
+      for (const parte of [n.remitente, 'Persona Autorizada', 'Persona Titular', 'conforme a la autorización', n.lineaCc]) {
+        assert.ok(ultima.includes(parte), `${cantidad} datasets: falta "${parte}" en la última hoja`);
+      }
+      for (const anterior of hojas.slice(0, -1)) {
+        assert.ok(!anterior.join(' ').includes('Persona Titular'), `${cantidad} datasets: la firma se partió entre hojas`);
+      }
+    }
+  });
+
+  it('el párrafo de autorización de un aviso va en el PDF, antes de la línea del anexo', async () => {
+    const n = nota(3, { autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' } });
+    const texto = todo(await renderPdf(n, { firmaImagen: FIRMA_A }));
+    assert.ok(texto.indexOf('Asimismo, por medio de la presente') > 0);
+    assert.ok(texto.indexOf('Asimismo, por medio de la presente') < texto.indexOf('Anexo: reporte'));
+  });
+
+  it('la nota de autorización: una hoja, el párrafo y la firma del titular, sin "Justificación:"', async () => {
+    const n = construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25', firma: { titular: firma.titular, presentante: null, leyenda: null },
+      autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' }
+    });
+    const hojas = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A }));
+    assert.equal(hojas.length, 1);
+    const texto = hojas[0].join(' ');
+    assert.ok(texto.includes('autorizo expresamente a Persona Autorizada'));
+    assert.ok(texto.includes('Persona Titular'));
+    assert.ok(!texto.includes('Justificación'));
+  });
+});
+
+describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos largos', () => {
+  const titular = { nombre: 'Persona Titular', cargo: 'Cargo Titular' };
+  const presentante = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado' };
+  const leyenda = 'Nota presentada por Persona Autorizada, Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
+
+  it('con una sola de las dos imágenes, los nombres y los cargos quedan a la misma altura', async () => {
+    const firma = { titular, presentante, leyenda };
+    const bases = {};
+    for (const [caso, imagenes, cantidadImagenes] of [
+      ['solo el titular', { firmaImagen: FIRMA_A }, 1],
+      ['solo quien presenta', { presentanteImagen: FIRMA_B }, 1],
+      ['las dos', { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B }, 2],
+      ['ninguna', {}, 0]
+    ]) {
+      const pdf = await renderPdf(nota(1, { firma }), imagenes);
+      const textos = textosPorHoja(pdf).flat();
+      const de = (texto) => textos.find(t => t.texto === texto);
+      assert.equal(imagenesPorHoja(pdf).flat().length, cantidadImagenes, caso);
+      assert.equal(de('Persona Autorizada').base, de('Persona Titular').base, `${caso}: los nombres a distinta altura`);
+      assert.equal(de('Cargo Autorizado').base, de('Cargo Titular').base, `${caso}: los cargos a distinta altura`);
+      bases[caso] = de('Persona Titular').base;
+    }
+    // Con alguna imagen, el nombre baja lo mismo que cuando están las dos
+    assert.equal(bases['solo el titular'], bases['las dos']);
+    assert.equal(bases['solo quien presenta'], bases['las dos']);
+  });
+
+  // Textos del largo de los cargos reales de la oficina (hasta unos 68 caracteres): no entran en una línea de 200 pt
+  const NOMBRE_LARGO = 'Persona Titular con Apellido Compuesto y Nombre Extenso';
+  const CARGO_LARGO = 'Cargo Titular de la Dirección General de Prueba y de su Departamento Legal';
+  const NOMBRE_LARGO_2 = 'Persona Autorizada con Apellido Compuesto y Nombre Extenso';
+  const CARGO_LARGO_2 = 'Cargo Autorizado de la Dirección General de Prueba y de su Departamento Legal';
+
+  // El cierre se reserva antes del último párrafo: hay que barrer también la cantidad de áreas (cada una suma líneas de contacto),
+  // porque la falla solo aparece cuando el espacio que queda cae justo entre lo reservado y lo que ocupa el cierre
+  it('con nombres y cargos largos, el cierre (remitente, firmas, leyenda y línea CC) queda entero en la última hoja, con 1 a 30 datasets y 1 a 5 áreas', async () => {
+    assert.ok(NOMBRE_LARGO.length >= 52 && CARGO_LARGO.length >= 68, 'los textos de prueba tienen que ser largos');
+    const largo = { nombre: NOMBRE_LARGO, cargo: CARGO_LARGO };
+    const solo = { titular: largo, presentante: null, leyenda: null };
+    const dos = { titular: largo, presentante: { nombre: NOMBRE_LARGO_2, cargo: CARGO_LARGO_2 }, leyenda };
+    for (const [caso, firma, partes] of [
+      ['una firma', solo, [NOMBRE_LARGO, CARGO_LARGO]],
+      ['dos firmas', dos, [NOMBRE_LARGO, CARGO_LARGO, NOMBRE_LARGO_2, CARGO_LARGO_2, 'conforme a la autorización']]
+    ]) {
+      for (let cantidadAreas = 1; cantidadAreas <= 5; cantidadAreas++) {
+        const areas = Array.from({ length: cantidadAreas }, (_, i) => ({
+          id: i + 1, nombre: `Área de prueba ${i + 1}`, email_principal: 'area@rpad.test', telefono_area: '297 400-0000'
+        }));
+        for (let cantidad = 1; cantidad <= 30; cantidad++) {
+          const n = nota(cantidad, { firma, areas });
+          const hojas = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B }));
+          const ultima = hojas.at(-1).join(' ');
+          const donde = `${caso}, ${cantidad} datasets, ${cantidadAreas} áreas`;
+          for (const parte of [n.remitente, n.lineaCc, ...partes]) {
+            assert.ok(ultima.includes(parte), `${donde}: falta "${parte}" en la última hoja`);
+          }
+          for (const anterior of hojas.slice(0, -1)) {
+            assert.ok(!anterior.join(' ').includes('Persona Titular'), `${donde}: la firma se partió entre hojas`);
+          }
+        }
+      }
+    }
+  });
+});

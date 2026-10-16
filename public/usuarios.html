@@ -81,6 +81,11 @@
         .historial-cabecera { display: flex; justify-content: space-between; gap: 12px; }
         .historial-cabecera time { color: var(--gray-500); white-space: nowrap; }
 
+        /* Licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5) */
+        .pagina-pestanas { padding: 0; margin-bottom: 20px; }
+        .etiqueta-licencia { background: var(--warning-light); color: #92400e; }
+        .etiqueta-licencia-proxima { background: var(--gray-100); color: var(--gray-700); }
+
         @media (max-width: 768px) {
             .form-row { grid-template-columns: 1fr; }
             .grupo-encabezado { padding: 14px 16px; }
@@ -201,6 +206,13 @@
                 </button>
             </div>
 
+            <div class="usuario-pestanas pagina-pestanas" id="pagina-pestanas" role="tablist">
+                <button type="button" class="usuario-pestana activa" data-vista="usuarios" role="tab" aria-selected="true">Usuarios</button>
+                <button type="button" class="usuario-pestana" data-vista="licencias" role="tab" aria-selected="false">Licencias</button>
+            </div>
+
+            <div id="vista-usuarios">
+
             <div class="card mb-5">
                 <div class="filters-bar" style="margin-bottom: 0;">
                     <div class="filter-group" style="flex: 1;">
@@ -230,6 +242,23 @@
                 <summary><h2>Desactivados (<span id="contador-desactivados">0</span>)</h2></summary>
                 <div id="lista-desactivados"></div>
             </details>
+
+            </div>
+
+            <div id="vista-licencias" hidden>
+                <section class="grupo-usuarios" aria-labelledby="titulo-licencias">
+                    <div class="grupo-encabezado">
+                        <h2 id="titulo-licencias">En curso y próximas</h2>
+                        <button type="button" class="btn btn-primary btn-sm" id="btn-nueva-licencia">Nueva licencia</button>
+                    </div>
+                    <p class="lista-vacia" style="padding-bottom: 0;">Durante la licencia, la persona no recibe emails del sistema. Las notas a casillas institucionales no cambian, salvo la licencia de quien firma las notas.</p>
+                    <div id="lista-licencias"><div class="loading"><div class="spinner"></div></div></div>
+                </section>
+                <details class="grupo-usuarios grupo-desactivados" id="grupo-licencias-pasadas">
+                    <summary><h2>Terminadas y anuladas</h2></summary>
+                    <div id="lista-licencias-pasadas"></div>
+                </details>
+            </div>
 
             <!-- Footer -->
             <footer class="footer">
@@ -343,10 +372,49 @@
         </div>
     </div>
 
+    <!-- Modal Licencia -->
+    <div class="modal-overlay" id="modal-licencia">
+        <div class="modal" style="max-width: 560px;" role="dialog" aria-modal="true" aria-labelledby="modal-licencia-titulo">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-licencia-titulo">Nueva licencia</h3>
+                <button type="button" class="modal-close" id="modal-licencia-cerrar" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="licencia-error" class="aviso aviso-error" role="alert" hidden></div>
+                <form id="form-licencia" novalidate>
+                    <div class="form-group">
+                        <label class="form-label" for="l-usuario">Persona <span class="requerido">*</span></label>
+                        <select id="l-usuario" class="form-input"></select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="l-desde">Desde <span class="requerido">*</span></label>
+                            <input type="date" id="l-desde" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="l-hasta">Hasta, inclusive <span class="requerido">*</span></label>
+                            <input type="date" id="l-hasta" class="form-input">
+                        </div>
+                    </div>
+                    <div class="form-group" id="grupo-autorizado" hidden>
+                        <label class="form-label" for="l-autorizado">Autorizo a presentar las notas en mi nombre a:</label>
+                        <select id="l-autorizado" class="form-input"></select>
+                    </div>
+                    <p id="licencia-efecto" class="aviso aviso-info" hidden></p>
+                    <div class="acciones-form">
+                        <button type="button" class="btn btn-danger" id="btn-anular-licencia" hidden>Anular</button>
+                        <button type="button" class="btn btn-secondary" id="btn-cancelar-licencia">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="btn-guardar-licencia">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261016"></script>
-    <script src="js/main.js?v=20261016"></script>
-    <script src="js/api.js?v=20261016"></script>
-    <script src="js/usuarios.js?v=20261016"></script>
+    <script src="js/auth.js?v=20261021"></script>
+    <script src="js/main.js?v=20261021"></script>
+    <script src="js/api.js?v=20261021"></script>
+    <script src="js/usuarios.js?v=20261021"></script>
 </body>
 </html>

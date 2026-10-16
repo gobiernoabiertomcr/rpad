@@ -1,0 +1,342 @@
+// Licencias de quienes reciben avisos (spec 2026-10-15-dias-habiles-licencias-auditoria, sección 5). Las rutas exigen
+// authMiddleware + adminOnly. La autorización para presentar las notas (6.3) la da solo el firmante titular.
+import pool from '../config/database.js';
+import { registrarAuditoria } from '../services/usuariosAuditoriaService.js';
+import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
+import { hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior } from '../services/notasDigitalesCalendario.js';
+import {
+  ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse
+} from '../services/licenciasReglas.js';
+
+const MENSAJE_ERROR = 'Error interno del servidor';
+const MENSAJE_SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
+
+const responderError = (res, status, error, campo) =>
+  res.status(status).json({ success: false, error, ...(campo ? { campo } : {}) });
+
+const idDe = (valor) => {
+  const id = Number(valor);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+const periodo = ({ desde, hasta }) => `del ${formatoCorto(desde)} al ${formatoCorto(hasta)}`;
+
+// autorizado_id del cuerpo: undefined si no vino, null para "nadie", un id o NaN si es inválido
+const autorizadoDelCuerpo = (cuerpo) => {
+  if (!Object.hasOwn(cuerpo, 'autorizado_id')) return undefined;
+  const valor = cuerpo.autorizado_id;
+  if (valor === null || valor === '') return null;
+  return idDe(valor) ?? Number.NaN;
+};
+
+const COLUMNAS = `
+  l.id, l.usuario_id, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta,
+  l.autorizado_id, DATE_FORMAT(l.autorizado_at, '%Y-%m-%d %H:%i') AS autorizado_at, l.anulada, l.creado_por,
+  u.nombre_completo AS usuario_nombre, u.username AS usuario_username, u.rol AS usuario_rol,
+  au.nombre_completo AS autorizado_nombre, cr.nombre_completo AS creado_por_nombre`;
+const DESDE = `
+  FROM usuarios_licencias l
+  JOIN usuarios u ON u.id = l.usuario_id
+  LEFT JOIN usuarios au ON au.id = l.autorizado_id
+  LEFT JOIN usuarios cr ON cr.id = l.creado_por`;
+
+const firmanteTitular = async (conexion = pool) => {
+  const [[config]] = await conexion.query('SELECT firmante_usuario_id FROM notas_digitales_config WHERE id = 1');
+  return config?.firmante_usuario_id ?? null;
+};
+
+const aRespuesta = (fila, hoy, titular) => ({
+  ...fila,
+  anulada: Boolean(fila.anulada),
+  estado: estadoDeLicencia(fila, hoy),
+  // Del firmante titular: el día en que saldrían los avisos anticipados si no hay autorizado (spec 7.3)
+  vispera: fila.usuario_id === titular ? diaHabilAnterior(fila.desde) : null
+});
+
+const buscarLicencia = async (conexion, id) => {
+  const [filas] = await conexion.query(`SELECT ${COLUMNAS} ${DESDE} WHERE l.id = ?`, [id]);
+  return filas[0] ?? null;
+};
+
+// Admins y editores que el titular puede autorizar (spec 6.3): activos, con contraseña y con la imagen de su firma
+const autorizables = async (conexion, titular) => {
+  const [filas] = await conexion.query(
+    `SELECT u.id, u.nombre_completo FROM usuarios u JOIN usuarios_firmas f ON f.usuario_id = u.id
+     WHERE u.rol IN ('admin', 'editor') AND u.activo = TRUE AND u.password_hash IS NOT NULL AND f.imagen IS NOT NULL
+       AND u.id <> ?
+     ORDER BY u.nombre_completo`,
+    [titular ?? 0]
+  );
+  return filas;
+};
+
+/**
+ * Reglas que necesitan la base (spec 5.2 y 6.3). autorizadoNuevo: la autorización se está dando o cambiando en este
+ * pedido (si no, solo se revisa que la persona ya autorizada no tenga licencia en las fechas nuevas).
+ * Devuelve [status, mensaje, campo] si no se puede, o null.
+ */
+const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
+  const [[usuario]] = await conexion.query('SELECT rol, activo FROM usuarios WHERE id = ?', [usuarioId]);
+  if (!usuario || !usuario.activo || !puedeTenerLicencia(usuario.rol)) {
+    return [400, 'Solo pueden tener licencia el superadmin, los admins y los editores activos.', 'usuario_id'];
+  }
+  const [[propia]] = await conexion.query(
+    `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta FROM usuarios_licencias
+     WHERE usuario_id = ? AND anulada = 0 AND id <> ? AND desde <= ? AND hasta >= ? LIMIT 1`,
+    [usuarioId, licenciaId, hasta, desde]
+  );
+  if (propia) return [409, `Se superpone con otra licencia de la misma persona (${periodo(propia)}).`, 'fechas'];
+  const [[comoAutorizada]] = await conexion.query(
+    `SELECT u.nombre_completo, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta
+     FROM usuarios_licencias l JOIN usuarios u ON u.id = l.usuario_id
+     WHERE l.autorizado_id = ? AND l.anulada = 0 AND l.id <> ? AND l.desde <= ? AND l.hasta >= ? LIMIT 1`,
+    [usuarioId, licenciaId, hasta, desde]
+  );
+  if (comoAutorizada) {
+    return [409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}): primero hay que cambiar esa autorización.`, 'fechas'];
+  }
+  if (autorizadoId && autorizadoNuevo) {
+    const titular = await firmanteTitular(conexion);
+    if (usuarioId !== titular) return [400, 'Solo la licencia del firmante titular de las notas lleva una persona autorizada.', 'autorizado_id'];
+    if (!(await autorizables(conexion, titular)).some(a => a.id === autorizadoId)) {
+      return [400, 'Solo se puede autorizar a un admin o editor activo, con su firma cargada en Mi Perfil.', 'autorizado_id'];
+    }
+  }
+  if (autorizadoId) {
+    const [[ocupada]] = await conexion.query(
+      'SELECT 1 AS si FROM usuarios_licencias WHERE usuario_id = ? AND anulada = 0 AND desde <= ? AND hasta >= ? LIMIT 1',
+      [autorizadoId, hasta, desde]
+    );
+    if (ocupada) return [409, 'La persona autorizada tiene una licencia en esas fechas.', 'autorizado_id'];
+  }
+  return null;
+};
+
+// Aviso al superadmin si la licencia es suya y el cambio lo hizo otro (spec 5.2); lo retiene si ya está de licencia
+const avisarSiEsDelSuperadmin = (req, licencia, cambio, auditoriaId, hoy) => (licencia.usuario_rol === 'superadmin'
+  ? avisarAlSuperadmin({
+    actor: { id: req.user.userId, rol: req.user.rol },
+    afectado: { nombre_completo: licencia.usuario_nombre, username: licencia.usuario_username },
+    cambio, auditoriaId, hoy
+  })
+  : Promise.resolve());
+
+// Bloquea las filas de usuarios (son pocas) hasta el fin de la transacción, como el panel: dos cargas simultáneas para
+// la misma persona se esperan y la segunda ve la primera
+const bloquearUsuarios = (conexion) => conexion.query('SELECT id FROM usuarios ORDER BY id FOR UPDATE');
+
+// GET /usuarios/licencias
+export const listarLicencias = async (req, res) => {
+  try {
+    const hoy = hoyArgentina();
+    const todas = req.query.incluir_pasadas === '1';
+    const [filas] = await pool.query(
+      `SELECT ${COLUMNAS} ${DESDE} ${todas ? '' : 'WHERE l.anulada = 0 AND l.hasta >= ?'} ORDER BY l.desde, u.nombre_completo`,
+      todas ? [] : [hoy]
+    );
+    const titular = await firmanteTitular();
+    const [conLicencia] = await pool.query(
+      'SELECT id, nombre_completo, rol FROM usuarios WHERE activo = TRUE AND rol IN (?) ORDER BY nombre_completo', [ROLES_CON_LICENCIA]
+    );
+    const soyTitular = titular !== null && titular === req.user.userId;
+    res.json({
+      success: true,
+      data: {
+        hoy,
+        firmante_titular_id: titular,
+        soy_titular: soyTitular,
+        licencias: filas.map(f => aRespuesta(f, hoy, titular)),
+        usuarios: conLicencia,
+        autorizables: soyTitular ? await autorizables(pool, titular) : []
+      }
+    });
+  } catch (error) {
+    console.error('Error listando licencias:', error);
+    responderError(res, 500, MENSAJE_ERROR);
+  }
+};
+
+// POST /usuarios/licencias
+export const crearLicencia = async (req, res) => {
+  const hoy = hoyArgentina();
+  const cuerpo = req.body ?? {};
+  const usuarioId = idDe(cuerpo.usuario_id);
+  if (!usuarioId) return responderError(res, 400, 'Elegí a quién corresponde la licencia.', 'usuario_id');
+  const errorFechas = validarFechasNuevas(cuerpo, hoy);
+  if (errorFechas) return responderError(res, 400, errorFechas, 'fechas');
+  const autorizadoId = autorizadoDelCuerpo(cuerpo) ?? null;
+  if (Number.isNaN(autorizadoId)) return responderError(res, 400, 'La persona autorizada no es válida.', 'autorizado_id');
+  if (autorizadoId && req.user.userId !== usuarioId) return responderError(res, 403, MENSAJE_SOLO_TITULAR, 'autorizado_id');
+
+  let conexion;
+  let licencia;
+  let auditoriaId;
+  try {
+    conexion = await pool.getConnection();
+    await conexion.beginTransaction();
+    await bloquearUsuarios(conexion);
+    const rechazo = await rechazoDeLaBase(conexion, {
+      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId)
+    });
+    if (rechazo) {
+      await conexion.rollback();
+      return responderError(res, ...rechazo);
+    }
+    const [resultado] = await conexion.query(
+      'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, autorizado_id, autorizado_at, creado_por) VALUES (?, ?, ?, ?, ?, ?)',
+      [usuarioId, cuerpo.desde, cuerpo.hasta, autorizadoId, autorizadoId ? ahoraArgentina() : null, req.user.userId]
+    );
+    licencia = await buscarLicencia(conexion, resultado.insertId);
+    auditoriaId = await registrarAuditoria(conexion, {
+      usuarioId, actorId: req.user.userId, accion: 'licencia_cargada',
+      detalle: { licencia_id: licencia.id, desde: licencia.desde, hasta: licencia.hasta, autorizado_id: licencia.autorizado_id }
+    });
+    await conexion.commit();
+  } catch (error) {
+    await conexion?.rollback().catch(() => {});
+    console.error('Error cargando la licencia:', error);
+    return responderError(res, 500, MENSAJE_ERROR);
+  } finally {
+    conexion?.release();
+  }
+
+  try {
+    await avisarSiEsDelSuperadmin(req, licencia, `Licencia cargada ${periodo(licencia)}`, auditoriaId, hoy);
+    res.status(201).json({ success: true, data: aRespuesta(licencia, hoy, await firmanteTitular()), message: 'Licencia cargada' });
+  } catch (error) {
+    console.error('Error respondiendo la carga de la licencia:', error);
+    responderError(res, 500, MENSAJE_ERROR);
+  }
+};
+
+// PUT /usuarios/licencias/:id: fechas según el estado (spec 5.2) y, solo el titular, la persona autorizada (6.3)
+export const editarLicencia = async (req, res) => {
+  const id = idDe(req.params.id);
+  if (!id) return responderError(res, 404, 'Licencia no encontrada');
+  const hoy = hoyArgentina();
+  const cuerpo = req.body ?? {};
+  const autorizadoPedido = autorizadoDelCuerpo(cuerpo);
+  if (Number.isNaN(autorizadoPedido)) return responderError(res, 400, 'La persona autorizada no es válida.', 'autorizado_id');
+
+  let conexion;
+  let antes;
+  let despues;
+  let auditoriaId = null;
+  let sinCambios = false;
+  try {
+    conexion = await pool.getConnection();
+    await conexion.beginTransaction();
+    await bloquearUsuarios(conexion);
+    antes = await buscarLicencia(conexion, id);
+    if (!antes) {
+      await conexion.rollback();
+      return responderError(res, 404, 'Licencia no encontrada');
+    }
+    const { error, codigo, datos } = validarEdicion(antes, { desde: cuerpo.desde, hasta: cuerpo.hasta }, hoy);
+    if (error) {
+      await conexion.rollback();
+      return responderError(res, codigo, error, 'fechas');
+    }
+    const autorizadoCambia = autorizadoPedido !== undefined && autorizadoPedido !== antes.autorizado_id;
+    if (autorizadoCambia && req.user.userId !== antes.usuario_id) {
+      await conexion.rollback();
+      return responderError(res, 403, MENSAJE_SOLO_TITULAR, 'autorizado_id');
+    }
+    const autorizadoId = autorizadoCambia ? autorizadoPedido : antes.autorizado_id;
+    const rechazo = await rechazoDeLaBase(conexion, {
+      licenciaId: id, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia
+    });
+    if (rechazo) {
+      await conexion.rollback();
+      return responderError(res, ...rechazo);
+    }
+    sinCambios = datos.desde === antes.desde && datos.hasta === antes.hasta && !autorizadoCambia;
+    if (sinCambios) {
+      await conexion.rollback();
+      despues = antes;
+    } else {
+      // Columnas fijas del código; los valores van como parámetros
+      const asignaciones = ['desde = ?', 'hasta = ?'];
+      const valores = [datos.desde, datos.hasta];
+      if (autorizadoCambia) {
+        asignaciones.push('autorizado_id = ?', 'autorizado_at = ?');
+        valores.push(autorizadoId, autorizadoId ? ahoraArgentina() : null);
+      }
+      // La nota de autorización dice a quién y entre qué fechas: si cambia algo, deja de valer y sale otra (spec 6.3)
+      asignaciones.push('nota_autorizacion_id = NULL');
+      await conexion.query(`UPDATE usuarios_licencias SET ${asignaciones.join(', ')} WHERE id = ?`, [...valores, id]);
+      despues = await buscarLicencia(conexion, id);
+      auditoriaId = await registrarAuditoria(conexion, {
+        usuarioId: antes.usuario_id, actorId: req.user.userId, accion: 'licencia_editada',
+        detalle: {
+          licencia_id: id,
+          antes: { desde: antes.desde, hasta: antes.hasta, autorizado_id: antes.autorizado_id },
+          despues: { desde: despues.desde, hasta: despues.hasta, autorizado_id: despues.autorizado_id }
+        }
+      });
+      await conexion.commit();
+    }
+  } catch (error) {
+    await conexion?.rollback().catch(() => {});
+    console.error('Error editando la licencia:', error);
+    return responderError(res, 500, MENSAJE_ERROR);
+  } finally {
+    conexion?.release();
+  }
+
+  try {
+    if (!sinCambios) {
+      await avisarSiEsDelSuperadmin(req, despues, `Licencia modificada: ${periodo(despues)} (antes: ${periodo(antes)})`, auditoriaId, hoy);
+    }
+    res.json({ success: true, data: aRespuesta(despues, hoy, await firmanteTitular()), message: sinCambios ? 'Sin cambios' : 'Licencia modificada' });
+  } catch (error) {
+    console.error('Error respondiendo la edición de la licencia:', error);
+    responderError(res, 500, MENSAJE_ERROR);
+  }
+};
+
+// POST /usuarios/licencias/:id/anular: solo si todavía no empezó o empieza hoy (spec 5.2)
+export const anularLicencia = async (req, res) => {
+  const id = idDe(req.params.id);
+  if (!id) return responderError(res, 404, 'Licencia no encontrada');
+  const hoy = hoyArgentina();
+  let conexion;
+  let licencia;
+  let auditoriaId;
+  try {
+    conexion = await pool.getConnection();
+    await conexion.beginTransaction();
+    await bloquearUsuarios(conexion);
+    licencia = await buscarLicencia(conexion, id);
+    let rechazo = null;
+    if (!licencia) rechazo = [404, 'Licencia no encontrada'];
+    else if (!puedeAnularse(licencia, hoy)) {
+      rechazo = [409, 'Solo se puede anular una licencia que todavía no empezó o que empieza hoy. Para cortar una licencia en curso, cambiá la fecha de fin.'];
+    }
+    if (rechazo) {
+      await conexion.rollback();
+      return responderError(res, ...rechazo);
+    }
+    await conexion.query('UPDATE usuarios_licencias SET anulada = 1 WHERE id = ?', [id]);
+    auditoriaId = await registrarAuditoria(conexion, {
+      usuarioId: licencia.usuario_id, actorId: req.user.userId, accion: 'licencia_anulada',
+      detalle: { licencia_id: id, desde: licencia.desde, hasta: licencia.hasta }
+    });
+    licencia = await buscarLicencia(conexion, id);
+    await conexion.commit();
+  } catch (error) {
+    await conexion?.rollback().catch(() => {});
+    console.error('Error anulando la licencia:', error);
+    return responderError(res, 500, MENSAJE_ERROR);
+  } finally {
+    conexion?.release();
+  }
+
+  try {
+    await avisarSiEsDelSuperadmin(req, licencia, `Licencia anulada (${periodo(licencia)})`, auditoriaId, hoy);
+    res.json({ success: true, data: aRespuesta(licencia, hoy, await firmanteTitular()), message: 'Licencia anulada' });
+  } catch (error) {
+    console.error('Error respondiendo la anulación de la licencia:', error);
+    responderError(res, 500, MENSAJE_ERROR);
+  }
+};
