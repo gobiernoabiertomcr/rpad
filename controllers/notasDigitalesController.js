@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 9)
 import pool from '../config/database.js';
 import * as notas from '../services/notasDigitales.js';
-import { obtenerConfig } from '../services/notasDigitalesDatos.js';
+import { obtenerConfig, configuracionCompleta } from '../services/notasDigitalesDatos.js';
 import {
   validarImagenFirma, validarImagenMembrete, ImagenInvalida, caracteresNoEscribibles, pieEntraEnUnaLinea
 } from '../services/notasDigitalesPdf.js';
@@ -323,7 +323,7 @@ export const guardarConfig = async (req, res) => {
     if (Object.keys(cambios).length === 0) return res.status(400).json({ success: false, error: 'No hay cambios para guardar' });
 
     const resultante = { ...(await obtenerConfig()), ...cambios };
-    const faltan = notas.configuracionCompleta(resultante, await firmaDeUsuario(resultante.firmante_usuario_id));
+    const faltan = configuracionCompleta(resultante, await firmaDeUsuario(resultante.firmante_usuario_id));
     if (resultante.envio_activo && faltan.length) {
       return res.status(400).json({ success: false, error: `No se puede activar el envío automático: falta ${faltan.join(', ')}` });
     }
@@ -425,7 +425,7 @@ export const elegirFirmante = async (req, res) => {
       }
     }
     const resultante = { ...(await obtenerConfig()), firmante_usuario_id: usuarioId };
-    const faltan = notas.configuracionCompleta(resultante, await firmaDeUsuario(usuarioId));
+    const faltan = configuracionCompleta(resultante, await firmaDeUsuario(usuarioId));
     if (resultante.envio_activo && faltan.length) {
       return res.status(400).json({ success: false, error: `No se puede con el envío automático activo: faltaría ${faltan.join(', ')}` });
     }

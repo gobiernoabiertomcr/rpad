@@ -1,5 +1,7 @@
-// Motor de Notas Digitales: genera, numera, envía y reintenta los avisos y reiteraciones.
-// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8)
+// Motor de Notas Digitales: genera, numera, envía y reintenta los avisos, las reiteraciones y la nota de auditoría de los
+// cambios pendientes.
+// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8) y
+// docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (9 y 10, la nota de auditoría)
 import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos } from './emailService.js';
 import {
@@ -12,8 +14,8 @@ import {
   periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta
 } from './notasDigitalesCalendario.js';
 import {
-  VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe,
-  fichasDe
+  GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
+  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe
 } from './notasDigitalesDatos.js';
 import {
   firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoVigente
@@ -26,24 +28,11 @@ import {
 import { DIAS_HABILES_PARA_REITERAR_AUDITORIA } from './auditoriaReglas.js';
 
 export const MAX_INTENTOS = 5;
-const GESTIONES = ['interna', 'externa'];
 const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
 const remitente = () => `"Dir. de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
-
-// firmaTitular: la firma del firmante titular (firmasService.firmaDeUsuario), si hay uno elegido (spec 2026-10-15, 6.2)
-export const configuracionCompleta = (config, firmaTitular = null) => {
-  const faltan = [];
-  for (const gestion of GESTIONES) {
-    if (listaDeCorreos(config[`para_${gestion}`]).length === 0) faltan.push(`Para (gestión ${gestion})`);
-  }
-  const firma = config.firmante_usuario_id ? firmaTitular : { nombre: config.firma_nombre, cargo: config.firma_cargo };
-  if (!String(firma?.nombre ?? '').trim()) faltan.push('nombre de la firma');
-  if (!String(firma?.cargo ?? '').trim()) faltan.push('cargo de la firma');
-  return faltan;
-};
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas son las de la
 // nota (las de la selección): el anexo coincide con la tabla aunque el dataset cambie mientras se genera, y nunca
@@ -336,7 +325,8 @@ const hayNotaDeAuditoria = async (fecha) => {
   return Number(fila.cantidad) > 0;
 };
 
-// Los pasos de una corrida (spec 8.1). Cada reintento, cada aviso y cada reiteración van aislados.
+// Los pasos de una corrida (spec 8.1): reintentos, avisos, reiteraciones y la nota de auditoría de los cambios pendientes
+// (spec 2026-10-15, 9.3). Cada reintento, cada aviso, cada reiteración y la nota de auditoría van aislados.
 const correrPasos = async (resumen, hoy, usuarioId) => {
   // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
   if (!esFechaIso(hoy)) {
@@ -505,14 +495,13 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // 4. Nota de auditoría de los cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.3 y 10): una sola
   // por día (Decisiones del plan 12), con la firma del día. Si hoy no hay quién firme (licencia sin autorizado) o la nota
-  // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas.
+  // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas. Los cambios que entran
+  // son los del canal nota, que ya exige el envío activo, la configuración completa y un Para de auditoría (spec 9.1):
+  // sin eso siguen por recordatorio y esta nota no se genera.
   try {
     if (!(await hayNotaDeAuditoria(hoy))) {
       const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
       if (nuevos.length || reiterados.length) {
-        if (listaDeCorreos(config.para_auditoria).length === 0) {
-          throw new Error('Falta el Para de las notas de auditoría (Correos > Configuración)');
-        }
         const id = await generarNota({
           tipo: 'auditoria', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma,
           auditoria: { nuevos, reiterados, catalogos: await catalogosParaAuditoria() }

@@ -2,8 +2,9 @@
 // están disponibles cada día, el canal de cada cambio pendiente y los cambios de la nota de auditoría. Las reglas están
 // en auditoriaReglas.js; esta es la única definición de "disponible" del sistema.
 import pool from '../config/database.js';
-import { obtenerConfig } from './notasDigitalesDatos.js';
-import { firmaParaFecha } from './notasDigitalesFirmas.js';
+import { obtenerConfig, configuracionCompleta } from './notasDigitalesDatos.js';
+import { firmaParaFecha, firmaTitularDe } from './notasDigitalesFirmas.js';
+import { listaDeCorreos } from './emailService.js';
 import { hoyArgentina } from './notasDigitalesCalendario.js';
 import { canalDelCambio, seccionDeAuditoria } from './auditoriaReglas.js';
 
@@ -39,7 +40,10 @@ export const personasDeAuditoria = async (fecha, conexion = pool) => {
 /**
  * Lo que necesita canalDelCambio en la fecha (spec 9.1): { personas, titulares, hayQuienFirme }.
  * titulares: el firmante titular o, sin titular elegido, los superadmins (Decisiones del plan 6).
- * hayQuienFirme: firmaParaFecha no está en modo 'sin_autorizado' (sin titular elegido firma la configuración de Correos).
+ * hayQuienFirme (condición 4): la nota de auditoría puede salir ese día. Se cumple si el envío automático está activo, la
+ * configuración de las notas está completa, hay un Para de auditoría y hay quién firme (firmaParaFecha no está en modo
+ * 'sin_autorizado'; sin titular elegido firma la configuración de Correos). Si no, el cambio sigue por recordatorio:
+ * el interruptor y la configuración no pueden dejar a un cambio sin recordatorio y sin nota.
  * config: la de Notas Digitales (se lee si no viene).
  */
 export const contextoDeCanal = async (fecha, config = null) => {
@@ -49,7 +53,11 @@ export const contextoDeCanal = async (fecha, config = null) => {
     ? [configuracion.firmante_usuario_id]
     : personas.filter(p => p.rol === 'superadmin').map(p => p.id);
   const { modo } = await firmaParaFecha(configuracion, fecha);
-  return { personas, titulares, hayQuienFirme: modo !== 'sin_autorizado' };
+  const hayQuienFirme = Boolean(configuracion.envio_activo)
+    && listaDeCorreos(configuracion.para_auditoria).length > 0
+    && modo !== 'sin_autorizado'
+    && configuracionCompleta(configuracion, await firmaTitularDe(configuracion)).length === 0;
+  return { personas, titulares, hayQuienFirme };
 };
 
 const jsonDe = (valor) => (typeof valor === 'string' ? JSON.parse(valor) : valor ?? null);
@@ -97,7 +105,7 @@ export const notasDeAuditoriaDe = async (ids) => {
   const [filas] = await pool.query(
     `SELECT c.cambio_id, n.numero, n.anio, DATE_FORMAT(n.fecha, '%Y-%m-%d') AS fecha
      FROM notas_digitales_cambios c JOIN notas_digitales n ON n.id = c.nota_id
-     WHERE c.cambio_id IN (?) AND n.es_prueba = 0
+     WHERE c.cambio_id IN (?) AND n.es_prueba = 0 AND n.tipo = 'auditoria'
      ORDER BY n.fecha, n.id`,
     [ids]
   );

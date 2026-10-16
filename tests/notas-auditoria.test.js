@@ -209,6 +209,20 @@ describe('una por día, numeración del libro, reintentos, autorización e inter
     assert.deepEqual((await libro()).map(n => n.tipo), ['autorizacion', 'auditoria']);
   });
 
+  it('en la víspera de la licencia, si la nota de autorización falla, la de auditoría sale igual, firmada solo por el titular (Decisiones del plan 13)', async () => {
+    const id = await proponer(titular);
+    // La licencia del titular, con autorizado, empieza el día hábil siguiente
+    await licencia(titular, '2026-10-20', '2026-10-30', auditor);
+    const resumen = await conFallaSimulada('INSERT', "NEW.tipo = 'autorizacion'", () => correr('2026-10-19'));
+    assert.deepEqual(resumen.errores.map(e => e.tipo), ['autorizacion']);
+    assert.deepEqual((await libro()).map(n => n.tipo), ['auditoria']);
+    const [nota] = await auditorias();
+    assert.deepEqual([nota.fecha, nota.estado, nota.firmante_id, nota.presentada_por_id], ['2026-10-19', 'enviada', titular.id, null]);
+    assert.deepEqual(await incluidos(nota.id), [{ cambio_id: id, seccion: 'nuevo' }]);
+    assert.ok(nota.html.includes('Firma superadmin<br>Cargo de firma superadmin'));
+    assert.ok(!nota.html.includes('Nota presentada por'));
+  });
+
   it('con el envío automático desactivado no sale nada', async () => {
     await configurarNotas({ envio_activo: 0, para_auditoria: 'auditoria@rpad.test' });
     await proponer(titular);
@@ -216,13 +230,14 @@ describe('una por día, numeración del libro, reintentos, autorización e inter
     assert.equal((await auditorias()).length, 0);
   });
 
-  it('sin Para de auditoría, el paso queda como error y las demás notas salen igual', async () => {
+  it('sin Para de auditoría el cambio no queda sin canal: sigue por recordatorio, sin error, y las demás notas salen igual', async () => {
     await query("UPDATE notas_digitales_config SET para_auditoria = ''");
     await crearDataset({ vencimiento: '2026-12-15' });
     await proponer(titular);
     const resumen = await correr('2026-10-19');
-    assert.deepEqual(resumen.errores.map(e => e.tipo), ['auditoria']);
+    assert.deepEqual(resumen.errores, []);
     assert.deepEqual((await libro()).map(n => n.tipo), ['aviso']);
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 0, proxima: null });
   });
 });
 
@@ -236,6 +251,18 @@ describe('Correos: Estado, vista previa y prueba (spec 10.4)', () => {
     assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-26' });
     // Un sábado mira la corrida del lunes
     assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-24' })).auditoria, { canal_nota: 1, proxima: '2026-10-26' });
+  });
+
+  it('el Estado no promete una nota que no va a salir: con el envío automático apagado o sin Para de auditoría, no cuenta el cambio', async () => {
+    await proponer(titular);
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-19' });
+    for (const apagado of [{ envio_activo: 0 }, { para_auditoria: '' }, { para_interna: '' }]) {
+      await configurarNotas({ para_auditoria: 'auditoria@rpad.test', ...apagado });
+      assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 0, proxima: null }, JSON.stringify(apagado));
+    }
+    // Al encenderlo de nuevo, el cambio vuelve al canal nota
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-19' })).auditoria, { canal_nota: 1, proxima: '2026-10-19' });
   });
 
   it('la vista previa usa los cambios de hoy o, si no hay, un ejemplo; no escribe nada', async () => {

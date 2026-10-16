@@ -1,7 +1,9 @@
 // Consultas de Notas Digitales: configuración, selección de datasets y fichas del anexo.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.4 y 6.7)
 import pool from '../config/database.js';
+import { listaDeCorreos } from './emailService.js';
 
+export const GESTIONES = ['interna', 'externa'];
 export const VENTANA_DIAS = { interna: 60, externa: 30 };
 export const DIAS_PARA_REITERAR = 20;
 export const TIPOS_EMAIL_REEMPLAZADOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido'];
@@ -37,6 +39,20 @@ export const obtenerConfig = async () => {
   const [filas] = await pool.query('SELECT * FROM notas_digitales_config WHERE id = 1');
   if (!filas[0]) throw new Error('Falta la configuración de Notas Digitales (notas_digitales_config)');
   return filas[0];
+};
+
+// Qué le falta a la configuración para que las notas puedan salir. Vive acá, y no en el motor, porque también la necesita
+// auditoriaService (el canal de la nota de auditoría) y el motor importa auditoriaService.
+// firmaTitular: la firma del firmante titular (firmasService.firmaDeUsuario), si hay uno elegido (spec 2026-10-15, 6.2)
+export const configuracionCompleta = (config, firmaTitular = null) => {
+  const faltan = [];
+  for (const gestion of GESTIONES) {
+    if (listaDeCorreos(config[`para_${gestion}`]).length === 0) faltan.push(`Para (gestión ${gestion})`);
+  }
+  const firma = config.firmante_usuario_id ? firmaTitular : { nombre: config.firma_nombre, cargo: config.firma_cargo };
+  if (!String(firma?.nombre ?? '').trim()) faltan.push('nombre de la firma');
+  if (!String(firma?.cargo ?? '').trim()) faltan.push('cargo de la firma');
+  return faltan;
 };
 
 // Solo datasets a vencer (spec 5.2): los que vencen dentro de la ventana y los demás de la gestión que vencen el mismo

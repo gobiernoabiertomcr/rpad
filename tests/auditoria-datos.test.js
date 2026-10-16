@@ -4,7 +4,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
-import { limpiarBase, crearNota, crearArea } from './notas-fixtures.js';
+import { limpiarBase, crearNota, crearArea, configurarNotas } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
@@ -40,6 +40,8 @@ const crearUsuario = async (rol, { activo = 1, contrasena = 'x', conFirma = fals
 
 beforeEach(async () => {
   await limpiarBase();
+  // Notas Digitales encendidas y completas, con Para de auditoría: sin eso ningún cambio llega al canal nota (spec 9.1)
+  await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
   await query('DELETE FROM usuarios_licencias');
   await query('DELETE FROM usuarios_firmas');
   await query('DELETE FROM cambios_pendientes');
@@ -119,6 +121,33 @@ describe('contextoDeCanal (spec 9.1)', () => {
   });
 });
 
+describe('contextoDeCanal: la nota de auditoría puede salir (spec 9.1, condición 4)', () => {
+  it('hay quién firme solo con el envío automático activo, la configuración completa y un Para de auditoría', async () => {
+    assert.equal((await servicio.contextoDeCanal('2026-10-19')).hayQuienFirme, true);
+    const faltas = [
+      ['el envío automático desactivado', { envio_activo: 0 }],
+      ['sin Para de auditoría', { para_auditoria: '' }],
+      ['sin Para de auditoría, solo espacios y separadores', { para_auditoria: ' , ; ' }],
+      ['la configuración incompleta (sin Para de la gestión externa)', { para_externa: '' }]
+    ];
+    for (const [descripcion, cambios] of faltas) {
+      await configurarNotas({ para_auditoria: 'auditoria@rpad.test', ...cambios });
+      assert.equal((await servicio.contextoDeCanal('2026-10-19')).hayQuienFirme, false, descripcion);
+    }
+    // La firma del titular elegido también es parte de la configuración: sin su nombre y cargo no hay quién firme
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    await query('UPDATE usuarios_firmas SET cargo = ? WHERE usuario_id = ?', ['', titular.id]);
+    assert.equal((await servicio.contextoDeCanal('2026-10-19')).hayQuienFirme, false, 'sin cargo en la firma del titular');
+  });
+
+  it('sin el envío activo el cambio queda en el canal recordatorio, aunque se cumplan las otras condiciones', async () => {
+    await proponer(titular, { primer: '2026-10-16 14:00:00' });
+    assert.equal((await servicio.cambiosConCanal('2026-10-19'))[0].canal, 'nota');
+    await configurarNotas({ envio_activo: 0, para_auditoria: 'auditoria@rpad.test' });
+    assert.equal((await servicio.cambiosConCanal('2026-10-19'))[0].canal, 'recordatorio');
+  });
+});
+
 describe('cambiosConCanal (spec 9.1 y Decisiones del plan 3)', () => {
   it('la fecha de la propuesta es la de Argentina aunque la base esté en UTC (el 16/10 a las 22:30 ya es 17/10 en UTC)', async () => {
     await proponer(editor, { creado: '2026-10-16 22:30:00' });
@@ -172,6 +201,14 @@ describe('seleccionarParaAuditoria (spec 9.3 y Decisiones del plan 5)', () => {
     seleccion = await servicio.seleccionarParaAuditoria('2026-11-02');
     assert.deepEqual(seleccion.reiterados[0].solicitado, { numero: 3, anio: 2026, fecha: '2026-10-19', reiteraciones: 1 });
     assert.deepEqual((await servicio.notasDeAuditoriaDe([id])).get(id).map(n => n.fecha), ['2026-10-19', '2026-10-26']);
+  });
+
+  it('notasDeAuditoriaDe cuenta solo las notas de auditoría, aunque otra clase de nota hubiera registrado el cambio', async () => {
+    const id = await proponer(titular, { primer: '2026-10-16 14:00:00' });
+    await incluir(await crearNota({ tipo: 'auditoria', gestion: null, fecha: '2026-10-19', numero: 3 }), id, 'nuevo');
+    await incluir(await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-10-20', numero: 4 }), id, 'nuevo');
+    await incluir(await crearNota({ tipo: 'autorizacion', gestion: null, fecha: '2026-10-21', numero: 5 }), id, 'nuevo');
+    assert.deepEqual((await servicio.notasDeAuditoriaDe([id])).get(id), [{ numero: 3, anio: 2026, fecha: '2026-10-19' }]);
   });
 
   it('catalogosParaAuditoria: los nombres por id', async () => {

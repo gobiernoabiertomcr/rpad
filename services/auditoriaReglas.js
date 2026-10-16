@@ -50,7 +50,9 @@ export const permisoParaAuditar = (usuario, proponenteId, personas) => {
  * 1. ya tuvo su primer recordatorio en un día hábil anterior (primer_recordatorio_fecha < hoy);
  * 2. ninguno de los titulares puede auditarlo hoy (lo propuso o no está disponible);
  * 3. hay auditores disponibles para el cambio (no es de respaldo);
- * 4. hay quién firme.
+ * 4. la nota de auditoría puede salir (hayQuienFirme): envío automático activo, configuración completa, Para de auditoría
+ *    y quién firme. Con el envío apagado o la configuración incompleta no hay nota posible, y el cambio sigue con
+ *    recordatorios en lugar de quedar sin canal.
  * 'recordatorio' en cualquier otro caso. La misma función decide para el recordatorio de las 14:00 y la nota de las 8:15.
  * cambio: { usuario_id, primer_recordatorio_fecha ('AAAA-MM-DD' en hora de Argentina, o null) }
  * personas, titulares (ids) y hayQuienFirme: los de auditoriaService.contextoDeCanal
