@@ -240,6 +240,13 @@ async registrarActualizacion(id, datos = {}) {
     return this.pedirJson('POST', `/usuarios/licencias/${id}/anular`);
   },
 
+  // Períodos sin ningún auditor disponible. params: { desde, hasta, usuario_id?, excluir? } (simula esa licencia, sin
+  // guardarla); sin params, de hoy a hoy + 60 días. Devuelve [{ desde, hasta, vuelve, respaldo: [nombres] }]
+  async getSinAuditor(params = {}) {
+    const query = new URLSearchParams(Object.entries(params).filter(([, valor]) => valor !== '' && valor != null)).toString();
+    return (await this.pedirJson('GET', `/usuarios/licencias/sin-auditor${query ? `?${query}` : ''}`)).data.periodos;
+  },
+
   // === MI FIRMA (spec 6.1) ===
   async getMiFirma() {
     return (await this.pedirJson('GET', '/auth/profile/firma')).data;
