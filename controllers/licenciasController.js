@@ -165,13 +165,17 @@ export const listarLicencias = async (req, res) => {
  * GET /usuarios/licencias/sin-auditor: los períodos sin auditor (días hábiles sin ningún superadmin ni admin disponible)
  * entre desde y hasta ('AAAA-MM-DD'; sin ninguna de las dos, de hoy a hoy + 60 días). Para que el formulario de licencias
  * advierta los que dejaría la licencia que se carga: usuario_id simula una licencia de esa persona con las mismas fechas,
- * y excluir es la licencia guardada que se está editando (no cuenta, para no contarla dos veces).
+ * y excluir es la licencia guardada que se está editando (no cuenta, para no contarla dos veces). Los dos piden desde y hasta.
  * { periodos: [{ desde, hasta, vuelve, respaldo }] }
  */
 export const listarDiasSinAuditor = async (req, res) => {
   const hoy = hoyArgentina();
   const { usuario_id: usuarioPedido, excluir: excluirPedido } = req.query;
   const sinFechas = req.query.desde === undefined && req.query.hasta === undefined;
+  // Simular o excluir una licencia necesita sus fechas: hoy a hoy + 60 es solo la consulta general
+  if (sinFechas && (usuarioPedido !== undefined || excluirPedido !== undefined)) {
+    return responderError(res, 400, 'Para simular o excluir una licencia hacen falta las dos fechas.', 'fechas');
+  }
   const desde = sinFechas ? hoy : req.query.desde;
   const hasta = sinFechas ? sumarDias(hoy, DIAS_PERIODOS_SIN_AUDITOR) : req.query.hasta;
   if (!esFechaIso(desde) || !esFechaIso(hasta)) {

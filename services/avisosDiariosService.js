@@ -248,23 +248,35 @@ const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) =
       resultados.errores.push({ admin: persona.username, error: 'No tiene un email válido' });
       continue;
     }
-    const hasta = await proximoDiaConQuienAudite(proponenteId, sumarDias(hoy, 1));
-    const { subject, html } = templates.sinAuditorTemplate(suyos, { hasta });
-    const envio = await sendEmail({ subject, html, to: [persona.email] });
-    if (!envio.success) {
-      resultados.errores.push({ admin: persona.username, error: envio.error });
-      continue;
-    }
-    resultados.sin_auditor.push({ usuario: persona.username, cambios: suyos.length, hasta });
-    // El email ya salió: si guardar la fecha falla, se anota el error (mañana se volvería a avisar)
+    // Los recordatorios ya salieron: si algo falla con el aviso de esta persona, se anota el error y siguen las demás.
+    // Sin la fecha guardada, el aviso se reintenta el próximo día hábil
     try {
-      await pool.query(
-        'UPDATE cambios_pendientes SET aviso_sin_auditores_at = ? WHERE id IN (?) AND aviso_sin_auditores_at IS NULL',
-        [ahora, suyos.map(c => c.id)]
-      );
+      await enviarAvisoSinAuditor({ persona, suyos, hoy, ahora, resultados });
     } catch (error) {
-      console.error(`Error guardando el aviso sin auditor (${persona.username}):`, error);
-      resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del aviso sin auditor: ${error.message}` });
+      console.error(`Error enviando el aviso sin auditor (${persona.username}):`, error);
+      resultados.errores.push({ admin: persona.username, error: `No se pudo enviar el aviso sin auditor: ${error.message}` });
     }
+  }
+};
+
+// El aviso de una persona (avisarSinAuditor): calcula hasta cuándo, envía el email y guarda la fecha
+const enviarAvisoSinAuditor = async ({ persona, suyos, hoy, ahora, resultados }) => {
+  const hasta = await proximoDiaConQuienAudite(persona.id, sumarDias(hoy, 1));
+  const { subject, html } = templates.sinAuditorTemplate(suyos, { hasta });
+  const envio = await sendEmail({ subject, html, to: [persona.email] });
+  if (!envio.success) {
+    resultados.errores.push({ admin: persona.username, error: envio.error });
+    return;
+  }
+  resultados.sin_auditor.push({ usuario: persona.username, cambios: suyos.length, hasta });
+  // El email ya salió: si guardar la fecha falla, se anota el error (mañana se volvería a avisar)
+  try {
+    await pool.query(
+      'UPDATE cambios_pendientes SET aviso_sin_auditores_at = ? WHERE id IN (?) AND aviso_sin_auditores_at IS NULL',
+      [ahora, suyos.map(c => c.id)]
+    );
+  } catch (error) {
+    console.error(`Error guardando el aviso sin auditor (${persona.username}):`, error);
+    resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del aviso sin auditor: ${error.message}` });
   }
 };

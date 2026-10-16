@@ -79,6 +79,19 @@ describe('personasDeAuditoria (spec 3: disponible)', () => {
     assert.equal((await servicio.personasDeAuditoria('2026-10-26')).find(p => p.id === editor.id).disponible, true);
   });
 
+  it('cada persona trae exactamente estos datos (guarda de regresión de la forma)', async () => {
+    await licencia(editor, '2026-10-19', '2026-10-23');
+    const personas = await servicio.personasDeAuditoria('2026-10-19');
+    assert.deepEqual(personas.find(p => p.id === editor.id), {
+      id: editor.id, username: editor.username, nombre_completo: 'Persona editor', email: `${editor.username}@rpad.test`,
+      rol: 'editor', activo: true, tiene_contrasena: true, de_licencia: true, ausente_por_licencia: true, disponible: false
+    });
+    assert.deepEqual(personas.find(p => p.id === titular.id), {
+      id: titular.id, username: titular.username, nombre_completo: 'Persona superadmin', email: `${titular.username}@rpad.test`,
+      rol: 'superadmin', activo: true, tiene_contrasena: true, de_licencia: false, ausente_por_licencia: false, disponible: true
+    });
+  });
+
   it('una licencia anulada no cuenta', async () => {
     await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta, anulada) VALUES (?, ?, ?, 1)', [auditor.id, '2026-10-19', '2026-10-23']);
     assert.equal((await servicio.personasDeAuditoria('2026-10-19')).find(p => p.id === auditor.id).disponible, true);

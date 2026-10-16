@@ -1,6 +1,6 @@
 // Avisos diarios que no son Notas Digitales (spec 2026-10-15-dias-habiles-licencias-auditoria, sección 4):
 // aviso a las áreas y email de cambios pendientes, con fechas fijas sobre una base de prueba + Mailpit
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, paraCasilla } from './helpers.js';
@@ -463,6 +463,44 @@ describe('aviso a quien propone cuando ningún auditor está disponible (recorda
     assert.match(resultado.errores[0].error, /aviso.*Falla simulada/);
     assert.equal(para(await mailpit.esperar(paraCasilla(editora.email)), editora.email).length, 1);
     assert.equal(await avisoSinAuditores(deEditora), null);
+  });
+
+  it('si falla el cálculo del aviso, queda el error, los recordatorios ya salieron y el aviso se reintenta al día siguiente', async () => {
+    await auditoresDeLicencia();
+    const editora = await crearUsuario('editor');
+    // Un cambio de alguien que ya no está activo: lo recibe la editora como respaldo, en el recordatorio
+    const inactivo = await crearUsuario('admin');
+    await proponerCambio(inactivo.id, 'Alta para el respaldo');
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [inactivo.id]);
+    const id = await proponerCambio(editora.id, 'Alta cuyo aviso falla');
+    // Falla la lectura de licencias desde mañana (el 29/12): la que hace proximoDiaConQuienAudite para el "hasta" del aviso
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    const falla = mock.method(pool, 'query', function (sql, params) {
+      if (String(sql).includes('usuarios_licencias') && params?.[1] === '2026-12-29') {
+        return Promise.reject(new Error('Falla simulada'));
+      }
+      return consultaOriginal.call(this, sql, params);
+    });
+    let resultado;
+    try {
+      resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28', ahora: '2026-12-28 14:00:00' });
+    } finally {
+      falla.mock.restore();
+    }
+
+    assert.deepEqual(resultado.enviados.map(e => [e.email, e.respaldo]), [[editora.email, true]]);
+    assert.deepEqual(resultado.sin_auditor, []);
+    assert.deepEqual(resultado.errores.map(e => e.admin), [editora.username]);
+    assert.match(resultado.errores[0].error, /aviso sin auditor.*Falla simulada/);
+    const recibidos = para(await mailpit.esperar(paraCasilla(editora.email)), editora.email);
+    assert.deepEqual(recibidos.map(m => m.Subject), ['[RPAD] 1 cambio espera tu auditoría']);
+    assert.equal(await avisoSinAuditores(id), null);
+
+    // Al día siguiente, sin la falla, el aviso sale
+    const siguiente = await servicio.enviarCambiosPendientes({ hoy: '2026-12-29', ahora: '2026-12-29 14:00:00' });
+    assert.deepEqual(siguiente.sin_auditor, [{ usuario: editora.username, cambios: 1, hasta: '2027-01-11' }]);
+    assert.equal(await avisoSinAuditores(id), '2026-12-29 14:00:00');
   });
 
   it('la plantilla: sin fecha de vuelta dice "por ahora", y todo dato va escapado', () => {

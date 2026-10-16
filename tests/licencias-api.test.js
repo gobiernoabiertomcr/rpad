@@ -242,7 +242,11 @@ describe('días sin auditor (GET /usuarios/licencias/sin-auditor)', () => {
       [`?desde=${dia(5)}&hasta=${dia(1)}`, 'fechas'],
       [`?desde=${dia(0)}&hasta=${dia(366)}`, 'fechas'],
       [`?desde=${dia(0)}&hasta=${dia(1)}&usuario_id=abc`, 'usuario_id'],
-      [`?desde=${dia(0)}&hasta=${dia(1)}&excluir=0`, 'excluir']
+      [`?desde=${dia(0)}&hasta=${dia(1)}&excluir=0`, 'excluir'],
+      // Simular o excluir una licencia necesita sus dos fechas: sin ellas no se toma hoy a hoy + 60
+      [`?usuario_id=${usuarios.superadmin.id}`, 'fechas'],
+      ['?excluir=1', 'fechas'],
+      [`?usuario_id=${usuarios.superadmin.id}&excluir=1`, 'fechas']
     ];
     for (const [consulta, campo] of casos) {
       const res = await api.get(ruta(consulta), comoA());
