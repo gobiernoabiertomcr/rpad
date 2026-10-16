@@ -209,7 +209,7 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 
 ⚠️ Requisito: la migración de licencias y firmas aplicada. No hay dependencias nuevas de npm.
 
-1. **Backup de la base** (phpMyAdmin → Exportar → Personalizado, con "Agregar sentencia DROP TABLE / VIEW / PROCEDURE / FUNCTION / EVENT / TRIGGER") y **de los archivos** (comprimir `controllers`, `routes`, `services`, `scripts` y `public` dentro de la carpeta de la app).
+1. **Backup de la base** (phpMyAdmin → Exportar → Personalizado, con "Agregar sentencia DROP TABLE / VIEW / PROCEDURE / FUNCTION / EVENT / TRIGGER") y **de los archivos** (comprimir `controllers`, `middleware`, `routes`, `services`, `scripts` y `public` dentro de la carpeta de la app).
 2. **Migración de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-editor-auditoria.sql` → **Continuar**. Agrega el rol `editor`, dos columnas a los cambios pendientes, el tipo de nota `auditoria`, la tabla de los cambios de cada nota de auditoría y los destinatarios de auditoría (Para: `mit@comodoro.gov.ar`); no cambia datos y el código actual sigue funcionando con la estructura nueva. Si se corta a mitad, se puede volver a correr.
 3. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app) y, enseguida, **Setup Node.js App → Restart**. No hace falta "Run NPM Install".
 4. **Editores:** el superadmin entra a Usuarios y pasa a **Editor** a quien corresponda (Ver → Rol → Guardar cambios). No hace falta SQL privado. El panel no deja bajar de 2 auditores ni pasar a editor a quien firma las notas.
