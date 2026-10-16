@@ -1,12 +1,12 @@
 // Avisos diarios que no son Notas Digitales (spec 2026-10-15-dias-habiles-licencias-auditoria, sección 4):
 // aviso a las áreas y email de cambios pendientes, con fechas fijas sobre una base de prueba + Mailpit
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, paraCasilla } from './helpers.js';
 import { crearArea, crearDataset, asegurarBaseDePrueba, configurarNotas, conFallaSimulada } from './notas-fixtures.js';
 
-let base, servicio, dbReal;
+let base, servicio, templates, dbReal;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -14,6 +14,7 @@ before(async () => {
   process.env.DB_NAME = base.nombre;
   process.env.EMAIL_SOLO_A = '';
   servicio = await import('../services/avisosDiariosService.js');
+  templates = await import('../services/emailTemplates.js');
 });
 
 after(async () => {
@@ -303,5 +304,217 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     await servicio.enviarCambiosPendientes({ hoy: '2026-10-16' });
     const [mensaje] = await mailpit.esperar(m => m.To.some(t => t.Address === b.email));
     assert.equal(mensaje.Subject, asunto(2));
+  });
+});
+
+describe('aviso a quien propone cuando ningún auditor está disponible (recordatorio de las 14:00)', () => {
+  const licencia = (usuario, desde, hasta) =>
+    query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuario.id, desde, hasta]);
+  const avisoSinAuditores = async (id) => (await query(
+    "SELECT DATE_FORMAT(aviso_sin_auditores_at, '%Y-%m-%d %H:%i:%s') AS f FROM cambios_pendientes WHERE id = ?", [id]
+  ))[0].f;
+  // El caso de la simulación, con fechas inventadas: el superadmin de licencia del 09/12 al 08/01 y el admin del 28/12 al
+  // 13/01. Del lunes 28/12 al viernes 08/01 no hay ningún auditor disponible; el lunes 11/01 vuelve el superadmin
+  const auditoresDeLicencia = async () => {
+    const superadmin = await crearUsuario('superadmin');
+    const admin = await crearUsuario('admin');
+    await licencia(superadmin, '2026-12-09', '2027-01-08');
+    await licencia(admin, '2026-12-28', '2027-01-13');
+    return { superadmin, admin };
+  };
+  const CIERRE = 'Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio.';
+
+  it('a la editora le llega un email y queda la fecha del aviso; al día siguiente no se repite', async () => {
+    const { superadmin, admin } = await auditoresDeLicencia();
+    const editora = await crearUsuario('editor');
+    const id = await proponerCambio(editora.id, 'Alta sin auditor');
+
+    const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28', ahora: '2026-12-28 14:00:00' });
+
+    assert.deepEqual(resultado.sin_auditor, [{ usuario: editora.username, cambios: 1, hasta: '2027-01-11' }]);
+    assert.deepEqual([resultado.enviados, resultado.errores], [[], []]);
+    const mensajes = para(await mailpit.esperar(paraCasilla(editora.email)), editora.email);
+    assert.equal(mensajes.length, 1);
+    assert.equal(mensajes[0].Subject, '[RPAD] Tu cambio en Alta sin auditor queda sin auditor disponible hasta el 11/01/2027');
+    const html = await mailpit.html(mensajes[0].ID);
+    assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar este cambio.'), html);
+    assert.ok(html.includes(CIERRE), html);
+    assert.match(html, /Alta sin auditor/);
+    assert.equal(await avisoSinAuditores(id), '2026-12-28 14:00:00');
+    for (const auditor of [superadmin, admin]) assert.equal(para(await mailpit.mensajes(), auditor.email).length, 0);
+
+    await mailpit.vaciar();
+    const siguiente = await servicio.enviarCambiosPendientes({ hoy: '2026-12-29', ahora: '2026-12-29 14:00:00' });
+    assert.deepEqual([siguiente.sin_auditor, siguiente.errores], [[], []]);
+    assert.equal(para(await mailpit.mensajes(), editora.email).length, 0);
+    assert.equal(await avisoSinAuditores(id), '2026-12-28 14:00:00');
+  });
+
+  it('con varios cambios, un solo email con todos: el tipo, el conjunto de datos y la fecha de la propuesta', async () => {
+    await auditoresDeLicencia();
+    const editora = await crearUsuario('editor');
+    const alta = await proponerCambio(editora.id, 'Primer alta sin auditor');
+    const otra = await proponerCambio(editora.id, 'Segunda alta sin auditor');
+    // Propuesta el 01/10/2026 a las 10:00 de Argentina
+    await query('UPDATE cambios_pendientes SET created_at = FROM_UNIXTIME(?) WHERE id = ?', [Date.parse('2026-10-01T10:00:00-03:00') / 1000, alta]);
+    // Un cambio reciente (menos de una hora) todavía no entra, como en el recordatorio
+    await proponerCambio(editora.id, 'Alta recién propuesta', { haceMinutos: 10 });
+
+    const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28', ahora: '2026-12-28 14:00:00' });
+
+    assert.deepEqual(resultado.sin_auditor, [{ usuario: editora.username, cambios: 2, hasta: '2027-01-11' }]);
+    const mensajes = para(await mailpit.esperar(paraCasilla(editora.email)), editora.email);
+    assert.equal(mensajes.length, 1);
+    assert.equal(mensajes[0].Subject, '[RPAD] 2 cambios tuyos quedan sin auditor disponible hasta el 11/01/2027');
+    const html = await mailpit.html(mensajes[0].ID);
+    assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar estos cambios.'), html);
+    assert.match(html, /Primer alta sin auditor[\s\S]*Segunda alta sin auditor/);
+    assert.match(html, /CREAR/);
+    assert.match(html, /Fecha de la propuesta: 01\/10\/2026/);
+    assert.doesNotMatch(html, /Alta recién propuesta/);
+    for (const id of [alta, otra]) assert.equal(await avisoSinAuditores(id), '2026-12-28 14:00:00');
+  });
+
+  it('si hay otro editor disponible, no hay aviso: el recordatorio le llega a ese editor, de respaldo', async () => {
+    await auditoresDeLicencia();
+    const editora = await crearUsuario('editor');
+    const otro = await crearUsuario('editor');
+    const id = await proponerCambio(editora.id, 'Alta con respaldo');
+
+    const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28' });
+
+    assert.deepEqual(resultado.enviados.map(e => [e.email, e.respaldo]), [[otro.email, true]]);
+    assert.deepEqual(resultado.sin_auditor, []);
+    assert.equal(para(await mailpit.esperar(paraCasilla(otro.email)), otro.email).length, 1);
+    assert.equal(para(await mailpit.mensajes(), editora.email).length, 0);
+    assert.equal(await avisoSinAuditores(id), null);
+  });
+
+  it('si quien propone está de licencia no se manda y queda sin fecha; le llega a su vuelta si sigue sin auditor', async () => {
+    await auditoresDeLicencia();
+    const editora = await crearUsuario('editor');
+    await licencia(editora, '2026-12-28', '2026-12-30');
+    const id = await proponerCambio(editora.id, 'Alta de quien está de licencia');
+
+    let resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28', ahora: '2026-12-28 14:00:00' });
+    assert.deepEqual([resultado.sin_auditor, resultado.errores], [[], []]);
+    assert.equal(para(await mailpit.mensajes(), editora.email).length, 0);
+    assert.equal(await avisoSinAuditores(id), null);
+
+    resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-31', ahora: '2026-12-31 14:00:00' });
+    assert.deepEqual(resultado.sin_auditor, [{ usuario: editora.username, cambios: 1, hasta: '2027-01-11' }]);
+    assert.equal(para(await mailpit.esperar(paraCasilla(editora.email)), editora.email).length, 1);
+    assert.equal(await avisoSinAuditores(id), '2026-12-31 14:00:00');
+  });
+
+  it('si quien propone está inactivo o ya no tiene rol de auditoría o edición, no se manda', async () => {
+    await auditoresDeLicencia();
+    const inactiva = await crearUsuario('editor');
+    const lectora = await crearUsuario('editor');
+    const deInactiva = await proponerCambio(inactiva.id, 'Alta de una inactiva');
+    const deLectora = await proponerCambio(lectora.id, 'Alta de una lectora');
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [inactiva.id]);
+    await query("UPDATE usuarios SET rol = 'lector' WHERE id = ?", [lectora.id]);
+
+    const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28' });
+
+    assert.deepEqual([resultado.sin_auditor, resultado.errores], [[], []]);
+    assert.equal(para(await mailpit.mensajes(), inactiva.email).length + para(await mailpit.mensajes(), lectora.email).length, 0);
+    for (const id of [deInactiva, deLectora]) assert.equal(await avisoSinAuditores(id), null);
+  });
+
+  it('con un auditor disponible nada cambia: el recordatorio le llega a él y no hay aviso', async () => {
+    const superadmin = await crearUsuario('superadmin');
+    const admin = await crearUsuario('admin');
+    await licencia(superadmin, '2026-12-09', '2027-01-08');
+    const editora = await crearUsuario('editor');
+    const id = await proponerCambio(editora.id, 'Alta con auditor');
+
+    const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28' });
+
+    assert.deepEqual(resultado.enviados.map(e => [e.email, e.respaldo]), [[admin.email, false]]);
+    assert.deepEqual(resultado.sin_auditor, []);
+    assert.equal(para(await mailpit.esperar(paraCasilla(admin.email)), admin.email).length, 1);
+    assert.equal(para(await mailpit.mensajes(), editora.email).length, 0);
+    assert.equal(await avisoSinAuditores(id), null);
+  });
+
+  it('errores: sin un email válido no se manda; si no se puede guardar la fecha, el email ya salió y queda el error', async () => {
+    await auditoresDeLicencia();
+    const sinEmail = await crearUsuario('editor');
+    const editora = await crearUsuario('editor');
+    await query("UPDATE usuarios SET email = 'no-es-un-email' WHERE id = ?", [sinEmail.id]);
+    // Las dos editoras se respaldan entre sí: para que ninguna tenga quién audite, la otra está de licencia ese día
+    const deSinEmail = await proponerCambio(sinEmail.id, 'Alta de quien no tiene email');
+    await licencia(editora, '2026-12-28', '2026-12-28');
+    let resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28', ahora: '2026-12-28 14:00:00' });
+    assert.deepEqual(resultado.errores, [{ admin: sinEmail.username, error: 'No tiene un email válido' }]);
+    assert.deepEqual(resultado.sin_auditor, []);
+    assert.equal(await avisoSinAuditores(deSinEmail), null);
+
+    await query('DELETE FROM cambios_pendientes');
+    await query('DELETE FROM usuarios_licencias WHERE usuario_id = ?', [editora.id]);
+    await licencia(sinEmail, '2026-12-29', '2026-12-29');
+    const deEditora = await proponerCambio(editora.id, 'Alta cuya fecha no se guarda');
+    resultado = await conFallaSimulada('UPDATE', `NEW.id = ${deEditora}`, () =>
+      servicio.enviarCambiosPendientes({ hoy: '2026-12-29', ahora: '2026-12-29 14:00:00' }), 'cambios_pendientes');
+    assert.deepEqual(resultado.sin_auditor, [{ usuario: editora.username, cambios: 1, hasta: '2026-12-30' }]);
+    assert.deepEqual(resultado.errores.map(e => e.admin), [editora.username]);
+    assert.match(resultado.errores[0].error, /aviso.*Falla simulada/);
+    assert.equal(para(await mailpit.esperar(paraCasilla(editora.email)), editora.email).length, 1);
+    assert.equal(await avisoSinAuditores(deEditora), null);
+  });
+
+  it('si falla el cálculo del aviso, queda el error, los recordatorios ya salieron y el aviso se reintenta al día siguiente', async () => {
+    await auditoresDeLicencia();
+    const editora = await crearUsuario('editor');
+    // Un cambio de alguien que ya no está activo: lo recibe la editora como respaldo, en el recordatorio
+    const inactivo = await crearUsuario('admin');
+    await proponerCambio(inactivo.id, 'Alta para el respaldo');
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [inactivo.id]);
+    const id = await proponerCambio(editora.id, 'Alta cuyo aviso falla');
+    // Falla la lectura de licencias desde mañana (el 29/12): la que hace proximoDiaConQuienAudite para el "hasta" del aviso
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    const falla = mock.method(pool, 'query', function (sql, params) {
+      if (String(sql).includes('usuarios_licencias') && params?.[1] === '2026-12-29') {
+        return Promise.reject(new Error('Falla simulada'));
+      }
+      return consultaOriginal.call(this, sql, params);
+    });
+    let resultado;
+    try {
+      resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-12-28', ahora: '2026-12-28 14:00:00' });
+    } finally {
+      falla.mock.restore();
+    }
+
+    assert.deepEqual(resultado.enviados.map(e => [e.email, e.respaldo]), [[editora.email, true]]);
+    assert.deepEqual(resultado.sin_auditor, []);
+    assert.deepEqual(resultado.errores.map(e => e.admin), [editora.username]);
+    assert.match(resultado.errores[0].error, /aviso sin auditor.*Falla simulada/);
+    const recibidos = para(await mailpit.esperar(paraCasilla(editora.email)), editora.email);
+    assert.deepEqual(recibidos.map(m => m.Subject), ['[RPAD] 1 cambio espera tu auditoría']);
+    assert.equal(await avisoSinAuditores(id), null);
+
+    // Al día siguiente, sin la falla, el aviso sale
+    const siguiente = await servicio.enviarCambiosPendientes({ hoy: '2026-12-29', ahora: '2026-12-29 14:00:00' });
+    assert.deepEqual(siguiente.sin_auditor, [{ usuario: editora.username, cambios: 1, hasta: '2027-01-11' }]);
+    assert.equal(await avisoSinAuditores(id), '2026-12-29 14:00:00');
+  });
+
+  it('la plantilla: sin fecha de vuelta dice "por ahora", y todo dato va escapado', () => {
+    const edicion = { tipo_cambio: 'editar', dataset_titulo: 'Padrón <b>raro</b>', datos_nuevos: { titulo: 'Otro título' }, fecha_propuesta: '2026-10-01' };
+    const uno = templates.sinAuditorTemplate([edicion], { hasta: null });
+    assert.equal(uno.subject, '[RPAD] Tu cambio en Padrón <b>raro</b> queda sin auditor disponible por ahora');
+    assert.ok(uno.html.includes('Por ahora no hay ningún auditor disponible para revisar este cambio.'));
+    assert.ok(uno.html.includes('Padrón &lt;b&gt;raro&lt;/b&gt;'));
+    assert.ok(!uno.html.includes('<b>raro'));
+    assert.ok(!uno.html.includes('Otro título'));
+    const alta = { tipo_cambio: 'crear', dataset_titulo: null, datos_nuevos: { titulo: 'Alta nueva' }, fecha_propuesta: '2026-10-02' };
+    const dos = templates.sinAuditorTemplate([edicion, alta], { hasta: null });
+    assert.equal(dos.subject, '[RPAD] 2 cambios tuyos quedan sin auditor disponible por ahora');
+    assert.ok(dos.html.includes('Por ahora no hay ningún auditor disponible para revisar estos cambios.'));
+    assert.match(dos.html, /EDITAR[\s\S]*Fecha de la propuesta: 01\/10\/2026[\s\S]*CREAR[\s\S]*Alta nueva[\s\S]*Fecha de la propuesta: 02\/10\/2026/);
   });
 });

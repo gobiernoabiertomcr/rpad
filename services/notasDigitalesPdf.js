@@ -465,6 +465,14 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     parrafo(nota.destinatario, { fuente: NEGRITA, underline: true, align: 'left', espacio: 1 });
     parrafo(nota.parrafoInicial);
 
+    // Párrafo de autorización de los avisos de la víspera de la licencia del firmante (spec 2026-10-15, 7.2): inmediatamente
+    // después del primer párrafo. Va entero o pasa entero a la hoja siguiente (nunca un renglón suelto); como el primer
+    // párrafo está arriba de la primera hoja, los dos quedan en la misma hoja.
+    if (nota.autorizacion) {
+      asegurarEspacio(altoTexto(nota.autorizacion) + altoEspacio(ESPACIO_PARRAFO, 12));
+      parrafo(nota.autorizacion);
+    }
+
     // El título, la introducción (si tiene), el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
     // (fuenteTitulo: la letra con la que se mide el título; las secciones de siempre lo miden en NORMAL, como hasta ahora, y las
     // del detalle de la nota de auditoría, que traen el título del dataset y pueden pasar a dos renglones, en NEGRITA, que
@@ -501,12 +509,6 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
         parrafo(contacto.nombre, { fuente: NEGRITA, tamano: 10, align: 'left', espacio: 0.1 });
         parrafo(contacto.lineas.join('\n'), { tamano: 10, align: 'left', espacio: 0.5 });
       }
-    }
-
-    // Párrafo de autorización de los avisos de la víspera de la licencia del firmante (spec 2026-10-15, 7.2)
-    if (nota.autorizacion) {
-      asegurarEspacio(altoTexto(nota.autorizacion) + altoEspacio(ESPACIO_PARRAFO, 12));
-      parrafo(nota.autorizacion);
     }
 
     // Apartados de la nota de auditoría (spec 10.3): título, párrafos, ítems con viñeta y párrafos de cierre. Lo que se reserva

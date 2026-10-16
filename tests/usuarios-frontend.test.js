@@ -12,7 +12,8 @@ const USUARIO = {
 };
 
 // usuarios.js es un script de navegador: se ejecuta en un contexto aislado. El formulario parte igual al usuario abierto.
-const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin') => {
+// respuestas: { nombreDelMetodo: (...args) => respuesta } para los métodos de API que el test quiere contestar
+const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin', respuestas = {}) => {
   const elementos = new Map();
   const elemento = (id) => {
     if (!elementos.has(id)) {
@@ -38,9 +39,12 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin') => {
       alPedir(nombre);
       llamadas.push(nombre);
       pedidos.push({ nombre, args: JSON.parse(JSON.stringify(args)) });
+      if (respuestas[nombre]) return respuestas[nombre](...args);
       return { message: '', data: { usuarios: [], resumen: {} } };
     }
   });
+  // Los temporizadores no corren solos: el test decide cuándo vence cada uno
+  const programados = [];
   const contexto = vm.createContext({
     document,
     window: { location: {} },
@@ -49,6 +53,8 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin') => {
     API,
     showToast() {},
     confirm: () => { llamadas.push('confirm'); return true; },
+    setTimeout: (fn, ms) => { programados.push({ fn, ms, activo: true }); return programados.length; },
+    clearTimeout: (id) => { if (programados[id - 1]) programados[id - 1].activo = false; },
     console
   });
   vm.runInContext(fs.readFileSync(new URL('../public/js/usuarios.js', import.meta.url), 'utf8'), contexto);
@@ -64,8 +70,10 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin') => {
   contexto.__abierto = abierto;
   vm.runInContext('abierto = __abierto', contexto);
   if (abierto) formulario(abierto);
+  // vencen los temporizadores que siguen activos y espera lo que ellos disparan
+  const vencerProgramados = () => Promise.all(programados.filter(p => p.activo).map(p => { p.activo = false; return p.fn(); }));
   // alCargar: corre lo que la página hace al cargar (registra los oyentes)
-  return { contexto, elemento, formulario, llamadas, pedidos, alCargar: () => alCargar() };
+  return { contexto, elemento, formulario, llamadas, pedidos, programados, vencerProgramados, alCargar: () => alCargar() };
 };
 
 describe('hayCambiosSinGuardar', () => {
@@ -327,5 +335,285 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
     assert.match(texto(otro, 'lector'), /va a pasar a Lector/);
     assert.match(texto({ id: 1 }, 'editor'), /^Vas a pasar a Editor: dejás de auditar cambios/);
     assert.match(texto({ id: 1 }, 'lector'), /^Vas a perder el acceso de administrador/);
+  });
+});
+
+describe('días sin auditor (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.5)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+  const texto = (contexto, periodo) => evaluar(contexto, `textoSinAuditor(${JSON.stringify(periodo)})`);
+  const PERIODO = { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: [] };
+
+  describe('textoSinAuditor', () => {
+    it('varios días: el período, el aviso y hasta cuándo quedan pendientes', () => {
+      const { contexto } = cargarPanel();
+      assert.equal(texto(contexto, PERIODO),
+        'Del 28/12/2026 al 08/01/2027 no va a haber ningún auditor disponible: los cambios que se propongan en esos días van a quedar pendientes hasta el 11/01/2027.');
+    });
+
+    it('un solo día: "El … no va a haber" y "ese día"', () => {
+      const { contexto } = cargarPanel();
+      assert.equal(texto(contexto, { desde: '2026-12-28', hasta: '2026-12-28', vuelve: '2026-12-29', respaldo: [] }),
+        'El 28/12/2026 no va a haber ningún auditor disponible: los cambios que se propongan ese día van a quedar pendientes hasta el 29/12/2026.');
+    });
+
+    it('sin fecha de vuelta (vuelve null): hasta que haya un auditor disponible', () => {
+      const { contexto } = cargarPanel();
+      assert.equal(texto(contexto, { ...PERIODO, vuelve: null }),
+        'Del 28/12/2026 al 08/01/2027 no va a haber ningún auditor disponible: los cambios que se propongan en esos días van a quedar pendientes hasta que haya un auditor disponible.');
+      assert.equal(texto(contexto, { desde: '2026-12-28', hasta: '2026-12-28', vuelve: null, respaldo: [] }),
+        'El 28/12/2026 no va a haber ningún auditor disponible: los cambios que se propongan ese día van a quedar pendientes hasta que haya un auditor disponible.');
+    });
+
+    it('con respaldo: nombres separados por coma y "y", con "esos días" o "ese día"', () => {
+      const { contexto } = cargarPanel();
+      const base = 'Del 28/12/2026 al 08/01/2027 no va a haber ningún auditor disponible: los cambios que se propongan en esos días van a quedar pendientes hasta el 11/01/2027.';
+      assert.equal(texto(contexto, { ...PERIODO, respaldo: ['Persona Editora'] }),
+        `${base} En esos días solo pueden auditar de respaldo: Persona Editora (nunca un cambio propio).`);
+      assert.equal(texto(contexto, { ...PERIODO, respaldo: ['Persona Editora', 'Persona Editor'] }),
+        `${base} En esos días solo pueden auditar de respaldo: Persona Editora y Persona Editor (nunca un cambio propio).`);
+      assert.equal(texto(contexto, { ...PERIODO, respaldo: ['Persona A', 'Persona B', 'Persona C'] }),
+        `${base} En esos días solo pueden auditar de respaldo: Persona A, Persona B y Persona C (nunca un cambio propio).`);
+      assert.equal(texto(contexto, { desde: '2026-12-28', hasta: '2026-12-28', vuelve: '2026-12-29', respaldo: ['Persona Editora'] }),
+        'El 28/12/2026 no va a haber ningún auditor disponible: los cambios que se propongan ese día van a quedar pendientes hasta el 29/12/2026. En ese día solo pueden auditar de respaldo: Persona Editora (nunca un cambio propio).');
+      assert.match(texto(contexto, { ...PERIODO, vuelve: null, respaldo: ['Persona Editora'] }),
+        /hasta que haya un auditor disponible\. En esos días solo pueden auditar de respaldo: Persona Editora \(nunca un cambio propio\)\.$/);
+    });
+
+    it('sin la lista de respaldo (la API no la mandó), el texto no la menciona', () => {
+      const { contexto } = cargarPanel();
+      assert.doesNotMatch(texto(contexto, { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11' }), /respaldo/);
+    });
+  });
+
+  describe('parametrosSinAuditor: lo que se le pide a la API', () => {
+    // El objeto sale de otro contexto (vm): para compararlo con deepEqual se pasa por JSON
+    const parametros = (pedido) => JSON.parse(JSON.stringify(evaluar(cargarPanel().contexto, `parametrosSinAuditor(${JSON.stringify(pedido)})`)));
+    const COMPLETO = { usuarioId: 7, desde: '2026-12-09', hasta: '2027-01-08' };
+
+    it('una licencia nueva: las fechas y la persona, sin excluir', () => {
+      assert.deepEqual(parametros(COMPLETO), { desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7 });
+    });
+
+    it('al editar, suma excluir con el id de la licencia abierta', () => {
+      assert.deepEqual(parametros({ ...COMPLETO, excluir: 9 }), { desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7, excluir: 9 });
+    });
+
+    it('fechas incompletas o inválidas, o sin persona: no se pide nada', () => {
+      for (const cambio of [
+        { desde: '' }, { hasta: '' }, { desde: undefined }, { desde: '2026-02-30' }, { hasta: '2027-13-01' }, { desde: '26-12-09' },
+        { desde: '0026-12-09' }, { desde: '2027-01-09' }, { usuarioId: 0 }, { usuarioId: NaN }
+      ]) {
+        assert.equal(parametros({ ...COMPLETO, ...cambio }), null, JSON.stringify(cambio));
+      }
+    });
+
+    it('un rango de más de 366 días no se pide (la API lo rechazaría); 366 sí', () => {
+      assert.equal(parametros({ ...COMPLETO, desde: '2026-01-01', hasta: '2027-01-02' }), null);
+      assert.deepEqual(parametros({ ...COMPLETO, desde: '2026-01-01', hasta: '2027-01-01' }).hasta, '2027-01-01');
+    });
+
+    it('los días que ya pasaron no se consultan: el rango empieza hoy', () => {
+      assert.deepEqual(parametros({ ...COMPLETO, desde: '2026-12-01', hoy: '2026-12-09' }), { desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7 });
+      assert.equal(parametros({ ...COMPLETO, desde: '2026-12-01', hasta: '2026-12-08', hoy: '2026-12-09' }), null);
+      assert.equal(parametros({ ...COMPLETO, hoy: '2026-12-01' }).desde, '2026-12-09');
+    });
+  });
+
+  describe('aviso del formulario de licencias', () => {
+    const HOY = '2026-11-10';
+    const PERIODOS = [
+      PERIODO,
+      { desde: '2027-02-01', hasta: '2027-02-01', vuelve: null, respaldo: ['Persona Editora'] }
+    ];
+    // El formulario con una persona y fechas; licencia: la del modal (null = alta)
+    const abrir = (panel, licencia, valores = {}) => {
+      panel.contexto.__datos = { hoy: HOY, firmante_titular_id: 1, soy_titular: false, licencias: [], usuarios: [], autorizables: [] };
+      panel.contexto.__licencia = licencia;
+      evaluar(panel.contexto, 'datosLicencias = __datos; licenciaAbierta = __licencia');
+      panel.elemento('l-usuario').value = String(valores.usuario ?? 7);
+      panel.elemento('l-desde').value = valores.desde ?? '2026-12-09';
+      panel.elemento('l-hasta').value = valores.hasta ?? '2027-01-08';
+    };
+    const sinAuditor = (panel) => panel.pedidos.filter(p => p.nombre === 'getSinAuditor');
+    const caja = (panel) => panel.elemento('l-sin-auditor');
+
+    it('muestra un párrafo por período, con el texto de textoSinAuditor', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      abrir(panel, null);
+      await panel.contexto.actualizarSinAuditor();
+      assert.deepEqual(sinAuditor(panel).map(p => p.args), [[{ desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7 }]]);
+      assert.equal(caja(panel).hidden, false);
+      assert.equal(caja(panel).innerHTML, PERIODOS.map(p => `<p>${texto(panel.contexto, p)}</p>`).join(''));
+    });
+
+    it('todo dato pasa por escapeHtml', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => [{ ...PERIODO, respaldo: ['<b>Persona</b>'] }] });
+      panel.contexto.Utils.escapeHtml = (t) => String(t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      abrir(panel, null);
+      await panel.contexto.actualizarSinAuditor();
+      assert.ok(caja(panel).innerHTML.includes('&lt;b&gt;Persona&lt;/b&gt;'));
+      assert.ok(!caja(panel).innerHTML.includes('<b>'));
+    });
+
+    it('sin períodos, el aviso se oculta', async () => {
+      let periodos = PERIODOS;
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => periodos });
+      abrir(panel, null);
+      await panel.contexto.actualizarSinAuditor();
+      assert.equal(caja(panel).hidden, false);
+      periodos = [];
+      await panel.contexto.actualizarSinAuditor();
+      assert.equal(caja(panel).hidden, true);
+    });
+
+    it('al editar manda excluir con el id de la licencia abierta', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => [] });
+      abrir(panel, { id: 9, usuario_id: 7, desde: '2026-12-09', hasta: '2027-01-08', estado: 'futura' });
+      await panel.contexto.actualizarSinAuditor();
+      assert.deepEqual(sinAuditor(panel).map(p => p.args), [[{ desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7, excluir: 9 }]]);
+    });
+
+    it('con las fechas incompletas o inválidas no llama y oculta el aviso que hubiera', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      abrir(panel, null);
+      await panel.contexto.actualizarSinAuditor();
+      assert.equal(caja(panel).hidden, false);
+      panel.pedidos.length = 0;
+      for (const hasta of ['', '2026-12-01']) {
+        panel.elemento('l-hasta').value = hasta;
+        await panel.contexto.actualizarSinAuditor();
+        assert.equal(caja(panel).hidden, true, `hasta ${hasta || 'vacío'}`);
+      }
+      assert.deepEqual(sinAuditor(panel), []);
+    });
+
+    it('si la API falla, el aviso se oculta y no se interrumpe nada', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => { throw new Error('sin conexión'); } });
+      abrir(panel, null);
+      caja(panel).hidden = false;
+      await panel.contexto.actualizarSinAuditor();
+      assert.equal(caja(panel).hidden, true);
+    });
+
+    it('ignora la respuesta vieja que llega después de la nueva', async () => {
+      const resolver = [];
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => new Promise(resolve => resolver.push(resolve)) });
+      abrir(panel, null);
+      const primera = panel.contexto.actualizarSinAuditor();
+      panel.elemento('l-hasta').value = '2027-01-20';
+      const segunda = panel.contexto.actualizarSinAuditor();
+      resolver[1]([{ ...PERIODO, hasta: '2027-01-20' }]);
+      await segunda;
+      resolver[0](PERIODOS);
+      await primera;
+      assert.equal(caja(panel).innerHTML, `<p>${texto(panel.contexto, { ...PERIODO, hasta: '2027-01-20' })}</p>`);
+    });
+
+    it('una respuesta que llega con el formulario ya cerrado no lo vuelve a mostrar', async () => {
+      const resolver = [];
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => new Promise(resolve => resolver.push(resolve)) });
+      abrir(panel, null);
+      const pedido = panel.contexto.actualizarSinAuditor();
+      panel.contexto.cerrarModalLicencia();
+      resolver[0](PERIODOS);
+      await pedido;
+      assert.equal(caja(panel).hidden, true);
+    });
+
+    it('al abrir el formulario de una licencia consulta enseguida, sin esperar el debounce', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      const licencia = { id: 9, usuario_id: 7, usuario_nombre: 'Persona de Prueba', desde: '2026-12-09', hasta: '2027-01-08', estado: 'futura' };
+      abrir(panel, null);
+      panel.contexto.__datos.usuarios = [{ id: 7, nombre_completo: 'Persona de Prueba' }];
+      panel.contexto.abrirModalLicencia(licencia);
+      assert.deepEqual(sinAuditor(panel).map(p => p.args), [[{ desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7, excluir: 9 }]]);
+      assert.equal(panel.programados.filter(p => p.activo).length, 0, 'no queda ningún temporizador');
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(caja(panel).hidden, false);
+    });
+
+    it('cambiar la persona o las fechas lo actualiza con un debounce: varios cambios seguidos, un solo pedido', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      panel.alCargar();
+      await panel.vencerProgramados();
+      abrir(panel, null);
+      panel.pedidos.length = 0;
+      const disparar = (id, tipo) => {
+        assert.ok(panel.elemento(id).oyentes[tipo]?.length, `${id} tiene un oyente de ${tipo}`);
+        for (const oyente of panel.elemento(id).oyentes[tipo]) oyente({ target: panel.elemento(id) });
+      };
+      disparar('l-usuario', 'change');
+      panel.elemento('l-desde').value = '2026-12-10';
+      disparar('l-desde', 'input');
+      panel.elemento('l-hasta').value = '2027-01-15';
+      disparar('l-hasta', 'input');
+      assert.deepEqual(sinAuditor(panel), [], 'todavía no pidió nada');
+      assert.equal(panel.programados.filter(p => p.activo).length, 1, 'un solo temporizador activo');
+      assert.ok(panel.programados.at(-1).ms > 0 && panel.programados.at(-1).ms <= 500, 'debounce corto');
+      await panel.vencerProgramados();
+      assert.deepEqual(sinAuditor(panel).map(p => p.args), [[{ desde: '2026-12-10', hasta: '2027-01-15', usuario_id: 7 }]]);
+    });
+
+    it('no bloquea el guardado: guarda aunque la consulta falle o siga pendiente', async () => {
+      // La consulta del formulario no termina nunca; la de la pestaña (sin parámetros) sí
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: (params) => (params ? new Promise(() => {}) : []) });
+      abrir(panel, null);
+      panel.contexto.actualizarSinAuditor();
+      await panel.contexto.guardarLicencia({ preventDefault() {} });
+      assert.deepEqual(panel.pedidos.find(p => p.nombre === 'crearLicencia').args, [{ desde: '2026-12-09', hasta: '2027-01-08', usuario_id: 7 }]);
+      assert.equal(panel.elemento('btn-guardar-licencia').disabled, false);
+    });
+  });
+
+  describe('aviso de la pestaña Licencias', () => {
+    const PERIODOS = [PERIODO, { desde: '2027-02-01', hasta: '2027-02-01', vuelve: null, respaldo: ['Persona Editora'] }];
+    const caja = (panel) => panel.elemento('licencias-sin-auditor');
+
+    it('pide los próximos períodos sin parámetros (la API usa hoy + 60 días) y los lista bajo el encabezado', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      await panel.contexto.cargarLicencias();
+      assert.deepEqual(panel.pedidos.filter(p => p.nombre === 'getSinAuditor').map(p => p.args), [[]]);
+      assert.equal(caja(panel).hidden, false);
+      assert.equal(caja(panel).innerHTML,
+        '<strong>Próximos días sin auditores disponibles:</strong><ul>'
+        + PERIODOS.map(p => `<li>${texto(panel.contexto, p)}</li>`).join('') + '</ul>');
+    });
+
+    it('sin períodos, o si la API falla, no se muestra', async () => {
+      const vacio = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => [] });
+      vacio.elemento('licencias-sin-auditor').hidden = false;
+      await vacio.contexto.cargarLicencias();
+      assert.equal(caja(vacio).hidden, true);
+
+      const roto = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => { throw new Error('sin conexión'); } });
+      roto.elemento('licencias-sin-auditor').hidden = false;
+      await roto.contexto.cargarLicencias();
+      assert.equal(caja(roto).hidden, true);
+    });
+
+    it('se recarga al guardar y al anular una licencia', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      const licencia = { id: 9, usuario_id: 7, usuario_nombre: 'Persona de Prueba', desde: '2026-12-09', hasta: '2027-01-08', estado: 'futura' };
+      panel.contexto.__licencia = licencia;
+      evaluar(panel.contexto, "datosLicencias = { hoy: '2026-11-10', licencias: [], usuarios: [], autorizables: [] }; licenciaAbierta = __licencia");
+      panel.elemento('l-usuario').value = '7';
+      panel.elemento('l-desde').value = licencia.desde;
+      panel.elemento('l-hasta').value = licencia.hasta;
+      await panel.contexto.guardarLicencia({ preventDefault() {} });
+      const recargas = () => panel.pedidos.filter(p => p.nombre === 'getSinAuditor' && p.args.length === 0).length;
+      assert.equal(recargas(), 1, 'al guardar');
+      evaluar(panel.contexto, 'licenciaAbierta = __licencia');
+      await panel.contexto.anularLicencia();
+      assert.ok(panel.pedidos.some(p => p.nombre === 'anularLicencia'));
+      assert.equal(recargas(), 2, 'al anular');
+    });
+
+    it('al mostrar la pestaña Licencias lo carga', async () => {
+      const panel = cargarPanel(USUARIO, () => {}, 'admin', { getSinAuditor: () => PERIODOS });
+      panel.contexto.mostrarVista('licencias');
+      await new Promise(resolve => setImmediate(resolve));
+      assert.ok(panel.pedidos.some(p => p.nombre === 'getSinAuditor'));
+      assert.equal(caja(panel).hidden, false);
+    });
   });
 });

@@ -26,6 +26,12 @@ const CAMPO_A_INPUT = { nombre_completo: 'u-nombre', username: 'u-username', ema
 // Licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)
 let datosLicencias = { hoy: '', firmante_titular_id: null, soy_titular: false, licencias: [], usuarios: [], autorizables: [] };
 let licenciaAbierta = null;   // licencia del modal; null = alta
+// Días sin auditor (spec 9.5): cada pedido lleva un número y solo el último pinta su respuesta (las demás llegaron tarde)
+let pedidoSinAuditor = 0;          // aviso del formulario
+let pedidoProximosSinAuditor = 0;  // aviso de la pestaña
+let temporizadorSinAuditor = null; // espera del formulario después del último cambio
+const ESPERA_SIN_AUDITOR_MS = 300;
+const MAXIMO_DIAS_SIN_AUDITOR = 366; // el rango más largo que acepta la API
 const TEXTO_ESTADO_LICENCIA = { futura: 'Próxima', en_curso: 'En curso', pasada: 'Terminada', anulada: 'Anulada' };
 
 // 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date (evita corrimientos de zona horaria)
@@ -51,6 +57,40 @@ const efectoEnNotas = (licencia, autorizadoNombre, hoy = datosLicencias.hoy) => 
     ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota.`
     : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15) y las reiteraciones se postergan a la vuelta. Cargá la licencia antes de ese día.`;
 };
+
+// Días sin auditor (spec 9.5). "A", "A y B", "A, B y C"
+const listaConY = (nombres) => (nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres.at(-1)}` : nombres.join(''));
+// Un período de la API: { desde, hasta, vuelve, respaldo: [nombres] }; vuelve es null si no hay auditor en el próximo año
+const textoSinAuditor = ({ desde, hasta, vuelve, respaldo }) => {
+  const unDia = desde === hasta;
+  const cuando = unDia ? `El ${fechaCorta(desde)}` : `Del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
+  const hastaCuando = vuelve ? `el ${fechaCorta(vuelve)}` : 'que haya un auditor disponible';
+  const texto = `${cuando} no va a haber ningún auditor disponible: los cambios que se propongan ${unDia ? 'ese día' : 'en esos días'} van a quedar pendientes hasta ${hastaCuando}.`;
+  return respaldo?.length
+    ? `${texto} En ${unDia ? 'ese día' : 'esos días'} solo pueden auditar de respaldo: ${listaConY(respaldo)} (nunca un cambio propio).`
+    : texto;
+};
+const diaUtc = (iso) => {
+  const [a, m, d] = iso.split('-').map(Number);
+  return Date.UTC(a, m - 1, d);
+};
+// 'AAAA-MM-DD' de un día que existe (no 2026-02-30)
+const esFechaValida = (iso) => /^\d{4}-\d{2}-\d{2}$/.test(iso ?? '') && new Date(diaUtc(iso)).toISOString().slice(0, 10) === iso;
+const diasDelRango = (desde, hasta) => (diaUtc(hasta) - diaUtc(desde)) / 86400000 + 1;
+// Lo que se le pide a la API para avisar los días sin auditor de una licencia que todavía no está guardada; null si las
+// fechas o la persona no sirven (no se pide nada). excluir: la licencia que se edita, para que no cuente dos veces. hoy: los
+// días que ya pasaron no se consultan (una licencia en curso empezó antes).
+const parametrosSinAuditor = ({ usuarioId, desde, hasta, excluir = null, hoy = '' }) => {
+  if (!usuarioId || !esFechaValida(desde) || !esFechaValida(hasta)) return null;
+  const inicio = hoy && desde < hoy ? hoy : desde;
+  if (inicio > hasta || diasDelRango(inicio, hasta) > MAXIMO_DIAS_SIN_AUDITOR) return null;
+  return { desde: inicio, hasta, usuario_id: usuarioId, ...(excluir ? { excluir } : {}) };
+};
+// La API siempre devuelve una lista; si no, no hay nada que avisar
+const periodosDe = (respuesta) => (Array.isArray(respuesta) ? respuesta : []);
+// Aviso de la pestaña Licencias: un renglón por período
+const htmlProximosSinAuditor = (periodos) => `<strong>Próximos días sin auditores disponibles:</strong><ul>${
+  periodos.map(p => `<li>${esc(textoSinAuditor(p))}</li>`).join('')}</ul>`;
 
 const esc = (texto) => Utils.escapeHtml(texto == null ? '' : String(texto));
 const avisar = (mensaje, tipo = 'info') => showToast(esc(mensaje), tipo);
@@ -147,6 +187,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('l-usuario').addEventListener('change', prepararAutorizado);
   document.getElementById('l-desde').addEventListener('input', actualizarEfecto);
   document.getElementById('l-autorizado').addEventListener('change', actualizarEfecto);
+  document.getElementById('l-usuario').addEventListener('change', programarSinAuditor);
+  document.getElementById('l-desde').addEventListener('input', programarSinAuditor);
+  document.getElementById('l-hasta').addEventListener('input', programarSinAuditor);
   document.getElementById('btn-anular-licencia').addEventListener('click', anularLicencia);
   document.getElementById('btn-cancelar-licencia').addEventListener('click', cerrarModalLicencia);
   document.getElementById('modal-licencia-cerrar').addEventListener('click', cerrarModalLicencia);
@@ -557,6 +600,7 @@ function mostrarVista(nombre) {
 }
 
 async function cargarLicencias() {
+  const proximosSinAuditor = cargarProximosSinAuditor();
   try {
     datosLicencias = await API.getLicencias();
     const vigentes = datosLicencias.licencias.filter(l => l.estado === 'futura' || l.estado === 'en_curso');
@@ -566,6 +610,20 @@ async function cargarLicencias() {
   } catch (error) {
     document.getElementById('lista-licencias').innerHTML = `<p class="lista-vacia">No se pudieron cargar las licencias: ${esc(error.message)}</p>`;
   }
+  await proximosSinAuditor;
+}
+
+// Arriba de la lista: los próximos días (hoy + 60) sin ningún auditor disponible. Si no hay o no se pudo pedir, no se muestra.
+async function cargarProximosSinAuditor() {
+  const pedido = ++pedidoProximosSinAuditor;
+  let periodos = [];
+  try {
+    periodos = periodosDe(await API.getSinAuditor());
+  } catch { /* sin el dato no hay aviso: la lista de licencias no depende de él */ }
+  if (pedido !== pedidoProximosSinAuditor) return;
+  const caja = document.getElementById('licencias-sin-auditor');
+  caja.innerHTML = periodos.length ? htmlProximosSinAuditor(periodos) : '';
+  caja.hidden = periodos.length === 0;
 }
 
 async function cargarLicenciasPasadas() {
@@ -612,11 +670,45 @@ function abrirModalLicencia(l) {
   document.getElementById('btn-anular-licencia').hidden = !l || l.desde < datosLicencias.hoy;
   prepararAutorizado();
   document.getElementById('modal-licencia').classList.add('active');
+  actualizarSinAuditor();
 }
 
 function cerrarModalLicencia() {
   document.getElementById('modal-licencia').classList.remove('active');
   licenciaAbierta = null;
+  // Lo que llegue después ya no corresponde a este formulario
+  clearTimeout(temporizadorSinAuditor);
+  pedidoSinAuditor++;
+  document.getElementById('l-sin-auditor').hidden = true;
+}
+
+// Después del último cambio de persona o fechas, espera un poco antes de preguntar
+function programarSinAuditor() {
+  clearTimeout(temporizadorSinAuditor);
+  temporizadorSinAuditor = setTimeout(actualizarSinAuditor, ESPERA_SIN_AUDITOR_MS);
+}
+
+// Avisa los días sin auditor de la licencia tal como está en el formulario (todavía sin guardar). Solo avisa: no bloquea el guardado.
+async function actualizarSinAuditor() {
+  clearTimeout(temporizadorSinAuditor);
+  const pedido = ++pedidoSinAuditor;
+  const parametros = parametrosSinAuditor({
+    usuarioId: Number(document.getElementById('l-usuario').value),
+    desde: document.getElementById('l-desde').value,
+    hasta: document.getElementById('l-hasta').value,
+    excluir: licenciaAbierta?.id ?? null,
+    hoy: datosLicencias.hoy
+  });
+  let periodos = [];
+  if (parametros) {
+    try {
+      periodos = periodosDe(await API.getSinAuditor(parametros));
+    } catch { /* sin el dato no hay aviso */ }
+  }
+  if (pedido !== pedidoSinAuditor) return;
+  const caja = document.getElementById('l-sin-auditor');
+  caja.innerHTML = periodos.map(p => `<p>${esc(textoSinAuditor(p))}</p>`).join('');
+  caja.hidden = periodos.length === 0;
 }
 
 // La persona autorizada: solo en la licencia del firmante titular, y solo la elige el titular (spec 6.3)

@@ -6,7 +6,8 @@ import vm from 'vm';
 
 // correos.js es un script de navegador: se ejecuta en un contexto aislado con los elementos y la API que usa la vista
 // previa. El pedido del anexo queda pendiente hasta que el test lo resuelve.
-const cargarCorreos = () => {
+// api: métodos de API que el test quiere sumar o reemplazar
+const cargarCorreos = (api = {}) => {
   const elementos = {};
   const elemento = (id) => {
     elementos[id] ??= { id, value: '', disabled: false, title: '', hidden: false, textContent: '', addEventListener() {} };
@@ -17,7 +18,7 @@ const cargarCorreos = () => {
   const pendientes = [];
   const contexto = vm.createContext({
     document: { getElementById: elemento, addEventListener() {}, createElement: () => ({ click() {} }) },
-    API: { previewNotaAnexo: () => new Promise(resolve => pendientes.push(resolve)) },
+    API: { previewNotaAnexo: () => new Promise(resolve => pendientes.push(resolve)), ...api },
     URL: { createObjectURL: () => 'blob:anexo', revokeObjectURL() {} },
     Utils: { escapeHtml: (texto) => texto },
     showToast() {},
@@ -30,7 +31,7 @@ const cargarCorreos = () => {
     elemento('preview-tipo').value = tipo;
     contexto.actualizarBotonAnexo();
   };
-  return { contexto, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
+  return { contexto, elemento, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
 };
 
 describe('correos.js: botón "Ver anexo" de la vista previa', () => {
@@ -143,5 +144,99 @@ describe('correos.js: nota de auditoría (spec 2026-10-15-dias-habiles-licencias
     evaluar(contexto, "document.getElementById('preview-tipo').value = 'aviso'");
     contexto.actualizarSelectorGestion();
     assert.equal(evaluar(contexto, "document.getElementById('preview-gestion').disabled"), false);
+  });
+});
+
+describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.5)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+  const sinQuien = (contexto, auditoria) => evaluar(contexto, `textoSinQuienAudite(${JSON.stringify(auditoria)})`);
+  const periodos = (contexto, auditoria) => evaluar(contexto, `textoPeriodosSinAuditor(${JSON.stringify(auditoria)})`);
+
+  it('cambios que hoy no tienen a nadie que pueda auditarlos: singular, plural y ninguno', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 1 }), 'Hoy 1 cambio no tiene ningún auditor ni editor de respaldo disponible.');
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 2 }), 'Hoy 2 cambios no tienen ningún auditor ni editor de respaldo disponible.');
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 14 }), 'Hoy 14 cambios no tienen ningún auditor ni editor de respaldo disponible.');
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 0 }), '');
+    assert.equal(sinQuien(contexto, { canal_nota: 0, proxima: null }), '', 'una respuesta sin el campo');
+    assert.equal(sinQuien(contexto, undefined), '');
+  });
+
+  it('próximos períodos sin auditores: uno por período, separados por "; " y terminados en punto', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(periodos(contexto, { periodos_sin_auditor: [{ desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: [] }] }),
+      'Próximos días sin auditores disponibles: del 28/12/2026 al 08/01/2027 (vuelve a haber auditor el 11/01/2027).');
+    assert.equal(periodos(contexto, {
+      periodos_sin_auditor: [
+        { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: ['Persona Editora'] },
+        { desde: '2027-02-01', hasta: '2027-02-03', vuelve: '2027-02-04', respaldo: [] }
+      ]
+    }), 'Próximos días sin auditores disponibles: del 28/12/2026 al 08/01/2027 (vuelve a haber auditor el 11/01/2027); '
+      + 'del 01/02/2027 al 03/02/2027 (vuelve a haber auditor el 04/02/2027).');
+  });
+
+  it('un período sin fecha de vuelta dice "(sin fecha de vuelta)"', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(periodos(contexto, { periodos_sin_auditor: [{ desde: '2026-12-28', hasta: '2027-01-08', vuelve: null, respaldo: [] }] }),
+      'Próximos días sin auditores disponibles: del 28/12/2026 al 08/01/2027 (sin fecha de vuelta).');
+    assert.equal(periodos(contexto, {
+      periodos_sin_auditor: [
+        { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: [] },
+        { desde: '2027-02-01', hasta: '2027-02-03', vuelve: null, respaldo: [] }
+      ]
+    }), 'Próximos días sin auditores disponibles: del 28/12/2026 al 08/01/2027 (vuelve a haber auditor el 11/01/2027); '
+      + 'del 01/02/2027 al 03/02/2027 (sin fecha de vuelta).');
+  });
+
+  it('sin períodos (o sin el campo), no hay línea', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(periodos(contexto, { periodos_sin_auditor: [] }), '');
+    assert.equal(periodos(contexto, { canal_nota: 0, proxima: null }), '');
+    assert.equal(periodos(contexto, undefined), '');
+  });
+
+  describe('cargarEstado: las dos líneas debajo de la de auditoría', () => {
+    const ESTADO = {
+      envio_activo: true, configuracion_faltante: [], fallidas: 0, alertas: [], ultima_corrida: null, licencia_firmante: null,
+      proximas: {}, auditoria: { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] }
+    };
+    const cargar = async (auditoria) => {
+      const panel = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, auditoria }) });
+      await panel.contexto.cargarEstado();
+      return panel;
+    };
+
+    it('con cambios sin quién los audite y períodos, muestra las dos', async () => {
+      const { elemento } = await cargar({
+        canal_nota: 0, proxima: null, sin_quien_audite: 2,
+        periodos_sin_auditor: [{ desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: [] }]
+      });
+      assert.equal(elemento('nd-sin-quien-audite').hidden, false);
+      assert.equal(elemento('nd-sin-quien-audite').textContent, 'Hoy 2 cambios no tienen ningún auditor ni editor de respaldo disponible.');
+      assert.equal(elemento('nd-periodos-sin-auditor').hidden, false);
+      assert.equal(elemento('nd-periodos-sin-auditor').textContent,
+        'Próximos días sin auditores disponibles: del 28/12/2026 al 08/01/2027 (vuelve a haber auditor el 11/01/2027).');
+      assert.equal(elemento('nd-auditoria').textContent, 'Auditoría de cambios: no hay cambios para pedir por nota.');
+    });
+
+    it('sin nada de eso, las dos líneas quedan ocultas y vacías', async () => {
+      const { elemento } = await cargar({ canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] });
+      for (const id of ['nd-sin-quien-audite', 'nd-periodos-sin-auditor']) {
+        assert.equal(elemento(id).hidden, true, id);
+        assert.equal(elemento(id).textContent, '', id);
+      }
+    });
+
+    it('al volver a cargar el Estado, lo que ya no corresponde se oculta', async () => {
+      let auditoria = { canal_nota: 0, proxima: null, sin_quien_audite: 1, periodos_sin_auditor: [{ desde: '2026-12-28', hasta: '2026-12-28', vuelve: null, respaldo: [] }] };
+      const { contexto, elemento } = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, auditoria }) });
+      await contexto.cargarEstado();
+      assert.equal(elemento('nd-sin-quien-audite').hidden, false);
+      assert.equal(elemento('nd-periodos-sin-auditor').textContent, 'Próximos días sin auditores disponibles: del 28/12/2026 al 28/12/2026 (sin fecha de vuelta).');
+      auditoria = { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] };
+      await contexto.cargarEstado();
+      assert.equal(elemento('nd-sin-quien-audite').hidden, true);
+      assert.equal(elemento('nd-periodos-sin-auditor').hidden, true);
+    });
   });
 });

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit, paraCasilla
 } from './helpers.js';
-import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, sumarDias, proximoDiaHabil, ultimoDiaHabilHasta } from '../services/notasDigitalesCalendario.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
@@ -199,5 +199,62 @@ describe('marca en la lista de usuarios (spec 5.5)', () => {
     assert.deepEqual(de(usuarios.adminA), { desde: dia(10), hasta: dia(12), en_curso: false });
     assert.equal(de(usuarios.superadmin), null);
     assert.deepEqual((await api.get(`/usuarios/${usuarios.adminB.id}`, comoA())).body.data.licencia, { desde: dia(-1), hasta: dia(3), en_curso: true });
+  });
+});
+
+describe('días sin auditor (GET /usuarios/licencias/sin-auditor)', () => {
+  const ruta = (consulta = '') => `/usuarios/licencias/sin-auditor${consulta}`;
+  const guardar = (usuario, desde, hasta) =>
+    query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuario.id, desde, hasta]);
+  // Sin auditor de un día a otro: del primer día hábil al último, y vuelve el primer día hábil después de fin
+  const periodo = (inicio, fin, vuelveDesde = sumarDias(fin, 1)) =>
+    ({ desde: proximoDiaHabil(inicio), hasta: ultimoDiaHabilHasta(fin), vuelve: proximoDiaHabil(vuelveDesde), respaldo: [] });
+
+  it('los períodos del rango; sin fechas, de hoy a hoy + 60 días', async () => {
+    // Los tres auditores (superadmin, adminA y adminB) de licencia del día 10 al 20
+    for (const u of [usuarios.superadmin, usuarios.adminA, usuarios.adminB]) await guardar(u, dia(10), dia(20));
+    const res = await api.get(ruta(`?desde=${dia(1)}&hasta=${dia(30)}`), comoA());
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: true, data: { periodos: [periodo(dia(10), dia(20))] } });
+    assert.deepEqual((await api.get(ruta(), comoA())).body.data.periodos, [periodo(dia(10), dia(20))]);
+    assert.deepEqual((await api.get(ruta(`?desde=${dia(21)}&hasta=${dia(30)}`), comoA())).body.data.periodos, []);
+  });
+
+  it('simula la licencia que se carga (usuario_id) y, al editar, no cuenta la guardada (excluir)', async () => {
+    for (const u of [usuarios.adminA, usuarios.adminB]) await guardar(u, dia(10), dia(20));
+    const consulta = `?desde=${dia(10)}&hasta=${dia(20)}`;
+    assert.deepEqual((await api.get(ruta(consulta), comoA())).body.data.periodos, []);
+    const simulada = await api.get(ruta(`${consulta}&usuario_id=${usuarios.superadmin.id}`), comoA());
+    assert.deepEqual(simulada.body.data.periodos, [periodo(dia(10), dia(20))]);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias'))[0].n, 2);
+
+    // La licencia del superadmin, guardada del 10 al 20, se acorta al 15: sin excluirla, vuelve recién después del 20
+    const { insertId } = await guardar(usuarios.superadmin, dia(10), dia(20));
+    const acortada = `?desde=${dia(10)}&hasta=${dia(15)}&usuario_id=${usuarios.superadmin.id}`;
+    assert.deepEqual((await api.get(ruta(acortada), comoA())).body.data.periodos, [periodo(dia(10), dia(15), dia(21))]);
+    assert.deepEqual((await api.get(ruta(`${acortada}&excluir=${insertId}`), comoA())).body.data.periodos, [periodo(dia(10), dia(15))]);
+  });
+
+  it('400 con campo si las fechas no sirven, el rango supera los 366 días o un id no es válido', async () => {
+    const casos = [
+      ['?desde=2027-02-30&hasta=2027-03-10', 'fechas'],
+      [`?desde=${dia(1)}`, 'fechas'],
+      [`?desde=${dia(5)}&hasta=${dia(1)}`, 'fechas'],
+      [`?desde=${dia(0)}&hasta=${dia(366)}`, 'fechas'],
+      [`?desde=${dia(0)}&hasta=${dia(1)}&usuario_id=abc`, 'usuario_id'],
+      [`?desde=${dia(0)}&hasta=${dia(1)}&excluir=0`, 'excluir'],
+      // Simular o excluir una licencia necesita sus dos fechas: sin ellas no se toma hoy a hoy + 60
+      [`?usuario_id=${usuarios.superadmin.id}`, 'fechas'],
+      ['?excluir=1', 'fechas'],
+      [`?usuario_id=${usuarios.superadmin.id}&excluir=1`, 'fechas']
+    ];
+    for (const [consulta, campo] of casos) {
+      const res = await api.get(ruta(consulta), comoA());
+      assert.equal(res.status, 400, consulta);
+      assert.deepEqual([res.body.success, res.body.campo], [false, campo], consulta);
+      assert.ok(res.body.error, consulta);
+    }
+    // 366 días justos, sí
+    assert.equal((await api.get(ruta(`?desde=${dia(0)}&hasta=${dia(365)}`), comoA())).status, 200);
   });
 });

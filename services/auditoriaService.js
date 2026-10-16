@@ -1,40 +1,98 @@
 // Lecturas de la auditoría de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 3, 8, 9 y 10): quiénes
 // están disponibles cada día, el canal de cada cambio pendiente y los cambios de la nota de auditoría. Las reglas están
-// en auditoriaReglas.js; esta es la única definición de "disponible" del sistema.
+// en auditoriaReglas.js; "disponible" se calcula solo acá, con la única definición (auditoriaReglas.disponibilidad).
 import pool from '../config/database.js';
 import { obtenerConfig, configuracionCompleta } from './notasDigitalesDatos.js';
 import { firmaParaFecha, firmaTitularDe } from './notasDigitalesFirmas.js';
 import { listaDeCorreos } from './emailService.js';
-import { hoyArgentina } from './notasDigitalesCalendario.js';
-import { canalDelCambio, seccionDeAuditoria } from './auditoriaReglas.js';
+import { hoyArgentina, esDiaHabil, sumarDias } from './notasDigitalesCalendario.js';
+import { canalDelCambio, seccionDeAuditoria, disponibilidad, agruparDiasSinAuditor, quienesAuditan } from './auditoriaReglas.js';
+
+// Hasta cuántos días hacia adelante se busca el día en que vuelve a haber un auditor (o alguien que audite un cambio)
+export const DIAS_BUSQUEDA_AUDITOR = 366;
+// Los períodos sin auditor que muestran Correos → Estado y, sin fechas, la API: de hoy a hoy + 60 días
+export const DIAS_PERIODOS_SIN_AUDITOR = 60;
+
+/**
+ * Superadmins, admins y editores (del nombre a la Z) y sus licencias no anuladas que se cruzan con [desde, hasta]: dos
+ * consultas para todo el rango. licenciaSimulada ({ usuario_id, desde, hasta }): cuenta como una licencia más (una que
+ * todavía no se guardó). excluirLicenciaId: esa licencia guardada no cuenta (la que se está editando).
+ * { usuarios: [{ id, username, nombre_completo, email, rol, activo, tiene_contrasena }], licencias: Map usuario_id → [{ desde, hasta }] }
+ */
+const leerPersonasYLicencias = async (desde, hasta, { licenciaSimulada = null, excluirLicenciaId = null, conexion = pool } = {}) => {
+  const [filas] = await conexion.query(
+    `SELECT u.id, u.username, u.nombre_completo, u.email, u.rol, u.activo, (u.password_hash IS NOT NULL) AS tiene_contrasena
+     FROM usuarios u
+     WHERE u.rol IN ('superadmin', 'admin', 'editor')
+     ORDER BY u.nombre_completo, u.id`
+  );
+  const [guardadas] = await conexion.query(
+    `SELECT usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+     FROM usuarios_licencias
+     WHERE anulada = 0 AND desde <= ? AND hasta >= ? AND id <> ?`,
+    [hasta, desde, excluirLicenciaId ?? 0]
+  );
+  const licencias = new Map();
+  for (const l of licenciaSimulada ? [...guardadas, licenciaSimulada] : guardadas) {
+    if (!licencias.has(l.usuario_id)) licencias.set(l.usuario_id, []);
+    licencias.get(l.usuario_id).push({ desde: l.desde, hasta: l.hasta });
+  }
+  const usuarios = filas.map(f => ({
+    id: f.id, username: f.username, nombre_completo: f.nombre_completo, email: f.email, rol: f.rol,
+    activo: Boolean(Number(f.activo)), tiene_contrasena: Boolean(Number(f.tiene_contrasena))
+  }));
+  return { usuarios, licencias };
+};
+
+// Las personas con su disponibilidad en la fecha (auditoriaReglas.disponibilidad, la única definición)
+const personasEn = (fecha, { usuarios, licencias }) =>
+  usuarios.map(u => ({ ...u, ...disponibilidad(u, licencias.get(u.id) ?? [], fecha) }));
 
 /**
  * Superadmins, admins y editores, del nombre a la Z, con si están disponibles en la fecha (spec 3): activos, con la
- * contraseña definida y sin licencia ese día (la misma condición que licenciasService.licenciaEnFecha: no anulada,
- * desde <= fecha <= hasta). conexion: el pool o una conexión con transacción.
+ * contraseña definida y sin licencia ese día (no anulada, desde <= fecha <= hasta; ver auditoriaReglas.disponibilidad).
+ * conexion: el pool o una conexión con transacción.
  * ausente_por_licencia: estaría disponible si no fuera por la licencia.
  * [{ id, username, nombre_completo, email, rol, activo, tiene_contrasena, de_licencia, ausente_por_licencia, disponible }]
  */
-export const personasDeAuditoria = async (fecha, conexion = pool) => {
-  const [filas] = await conexion.query(
-    `SELECT u.id, u.username, u.nombre_completo, u.email, u.rol, u.activo, (u.password_hash IS NOT NULL) AS tiene_contrasena,
-       EXISTS (SELECT 1 FROM usuarios_licencias l
-               WHERE l.usuario_id = u.id AND l.anulada = 0 AND l.desde <= ? AND l.hasta >= ?) AS de_licencia
-     FROM usuarios u
-     WHERE u.rol IN ('superadmin', 'admin', 'editor')
-     ORDER BY u.nombre_completo, u.id`,
-    [fecha, fecha]
-  );
-  return filas.map((f) => {
-    const activo = Boolean(Number(f.activo));
-    const tieneContrasena = Boolean(Number(f.tiene_contrasena));
-    const deLicencia = Boolean(Number(f.de_licencia));
-    return {
-      id: f.id, username: f.username, nombre_completo: f.nombre_completo, email: f.email, rol: f.rol,
-      activo, tiene_contrasena: tieneContrasena, de_licencia: deLicencia,
-      ausente_por_licencia: activo && tieneContrasena && deLicencia, disponible: activo && tieneContrasena && !deLicencia
-    };
-  });
+export const personasDeAuditoria = async (fecha, conexion = pool) =>
+  personasEn(fecha, await leerPersonasYLicencias(fecha, fecha, { conexion }));
+
+/**
+ * Lo mismo que personasDeAuditoria para cada día hábil de [desde, hasta], sin una consulta por día: Map fecha → personas,
+ * en orden. licenciaSimulada y excluirLicenciaId: los de leerPersonasYLicencias (para simular una licencia en el formulario).
+ */
+export const personasPorDia = async (desde, hasta, opciones = {}) => {
+  const datos = await leerPersonasYLicencias(desde, hasta, opciones);
+  const porDia = new Map();
+  for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) {
+    if (esDiaHabil(fecha)) porDia.set(fecha, personasEn(fecha, datos));
+  }
+  return porDia;
+};
+
+/**
+ * Períodos sin auditor de [desde, hasta]: días hábiles seguidos en que ningún auditor (superadmin o admin) está disponible
+ * (auditoriaReglas.agruparDiasSinAuditor). Un período que sigue después de hasta se corta en hasta; vuelve se busca hasta
+ * DIAS_BUSQUEDA_AUDITOR días después. licenciaSimulada y excluirLicenciaId: los de leerPersonasYLicencias.
+ * [{ desde, hasta, vuelve: 'AAAA-MM-DD' | null, respaldo: [nombre_completo] }]
+ */
+export const periodosSinAuditor = async (desde, hasta, { licenciaSimulada = null, excluirLicenciaId = null } = {}) => {
+  const porDia = await personasPorDia(desde, sumarDias(hasta, DIAS_BUSQUEDA_AUDITOR), { licenciaSimulada, excluirLicenciaId });
+  return agruparDiasSinAuditor([...porDia].map(([fecha, personas]) => ({ fecha, personas })), hasta);
+};
+
+/**
+ * El primer día hábil desde `desde` (incluido) en que alguien que no propuso el cambio puede auditarlo (un auditor
+ * disponible o, de respaldo, un editor disponible: auditoriaReglas.quienesAuditan). null si no hay ninguno en
+ * DIAS_BUSQUEDA_AUDITOR días.
+ */
+export const proximoDiaConQuienAudite = async (proponenteId, desde) => {
+  const porDia = await personasPorDia(desde, sumarDias(desde, DIAS_BUSQUEDA_AUDITOR));
+  for (const [fecha, personas] of porDia) {
+    if (quienesAuditan(personas, proponenteId).personas.length > 0) return fecha;
+  }
+  return null;
 };
 
 /**
@@ -64,8 +122,9 @@ const jsonDe = (valor) => (typeof valor === 'string' ? JSON.parse(valor) : valor
 
 /**
  * Cambios pendientes, del más viejo al más nuevo, con su canal en la fecha (spec 9.1). Cada uno suma:
- * fecha_propuesta ('AAAA-MM-DD' en hora de Argentina), antiguedad_segundos, primer_recordatorio_fecha ('AAAA-MM-DD' o null)
- * y canal ('nota' o 'recordatorio').
+ * fecha_propuesta ('AAAA-MM-DD' en hora de Argentina), antiguedad_segundos, primer_recordatorio_fecha ('AAAA-MM-DD' o null),
+ * aviso_sin_auditores_at (cuándo se avisó a quien lo propuso que no tenía auditor disponible, o null) y canal ('nota' o
+ * 'recordatorio').
  * created_at es TIMESTAMP (un instante) y la base puede estar en UTC: su texto no es la hora argentina. Por eso la fecha
  * sale de UNIX_TIMESTAMP (hoyArgentina del instante) y la antigüedad, del reloj de la base en los dos extremos
  * (TIMESTAMPDIFF con NOW(), los dos en la zona de la sesión): ninguna depende de la zona de la base ni de la de Node.
@@ -78,6 +137,7 @@ export const cambiosConCanal = async (fecha, contexto = null) => {
             UNIX_TIMESTAMP(cp.created_at) AS creado_ts,
             TIMESTAMPDIFF(SECOND, cp.created_at, NOW()) AS antiguedad_segundos,
             DATE_FORMAT(cp.primer_recordatorio_at, '%Y-%m-%d') AS primer_recordatorio_fecha,
+            DATE_FORMAT(cp.aviso_sin_auditores_at, '%Y-%m-%d %H:%i:%s') AS aviso_sin_auditores_at,
             d.titulo AS dataset_titulo, u.username AS usuario_username, u.nombre_completo AS usuario_nombre,
             u.cargo AS usuario_cargo
      FROM cambios_pendientes cp

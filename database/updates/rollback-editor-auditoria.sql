@@ -4,8 +4,9 @@
 -- Usar solo si hay que volver a la versión anterior del código.
 -- ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto en phpMyAdmin (pestaña SQL).
 -- Los editores pasan a admin: la versión anterior no conoce el rol editor (vuelven a aprobar cambios como cualquier admin).
--- Se pierden la fecha del primer recordatorio de cada cambio, la marca de aprobación "de respaldo", qué cambios incluyó
--- cada nota de auditoría y los destinatarios de auditoría de Correos.
+-- Se pierden la fecha del primer recordatorio de cada cambio, la fecha del aviso a quien lo propuso cuando no había
+-- auditor disponible, la marca de aprobación "de respaldo", qué cambios incluyó cada nota de auditoría y los
+-- destinatarios de auditoría de Correos.
 -- notas_digitales.tipo (con 'auditoria') queda ampliado a propósito: las notas de auditoría son notas numeradas del libro
 -- y no se borran. El código anterior no falla con ellas, pero su libro las muestra con el tipo vacío ("undefined").
 -- =====================================================
@@ -24,5 +25,6 @@ ALTER TABLE `notas_digitales_config`
   DROP COLUMN IF EXISTS `para_auditoria`;
 
 ALTER TABLE `cambios_pendientes`
+  DROP COLUMN IF EXISTS `aviso_sin_auditores_at`,
   DROP COLUMN IF EXISTS `revisado_como_respaldo`,
   DROP COLUMN IF EXISTS `primer_recordatorio_at`;

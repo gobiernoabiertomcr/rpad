@@ -74,6 +74,12 @@
         .aviso { padding: 12px 14px; border-radius: var(--border-radius); font-size: 0.875rem; margin-bottom: 16px; }
         .aviso-error { background: var(--danger-light); color: #b91c1c; }
         .aviso-info { background: var(--info-light); color: var(--primary); }
+        /* main.css no tiene .alert-warning: el aviso de los días sin auditor define su propio estilo */
+        .aviso-advertencia { background: var(--warning-light); color: #92400e; }
+        .aviso-advertencia p { margin: 0 0 8px; }
+        .aviso-advertencia p:last-child { margin-bottom: 0; }
+        .aviso-advertencia ul { margin: 6px 0 0; padding-left: 20px; list-style: disc; }
+        .aviso-advertencia li + li { margin-top: 4px; }
         .acciones-form { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
         .bloque-acceso { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color); }
         .bloque-acceso h4 { font-size: 0.9rem; color: var(--gray-700); margin: 0 0 6px; }
@@ -256,6 +262,7 @@
             </div>
 
             <div id="vista-licencias" hidden>
+                <div id="licencias-sin-auditor" class="aviso aviso-advertencia" role="status" hidden></div>
                 <section class="grupo-usuarios" aria-labelledby="titulo-licencias">
                     <div class="grupo-encabezado">
                         <h2 id="titulo-licencias">En curso y próximas</h2>
@@ -412,6 +419,7 @@
                         <select id="l-autorizado" class="form-input"></select>
                     </div>
                     <p id="licencia-efecto" class="aviso aviso-info" hidden></p>
+                    <div id="l-sin-auditor" class="aviso aviso-advertencia" role="status" hidden></div>
                     <div class="acciones-form">
                         <button type="button" class="btn btn-danger" id="btn-anular-licencia" hidden>Anular</button>
                         <button type="button" class="btn btn-secondary" id="btn-cancelar-licencia">Cancelar</button>
@@ -423,9 +431,9 @@
     </div>
 
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261022"></script>
-    <script src="js/main.js?v=20261022"></script>
-    <script src="js/api.js?v=20261022"></script>
-    <script src="js/usuarios.js?v=20261022"></script>
+    <script src="js/auth.js?v=20261023"></script>
+    <script src="js/main.js?v=20261023"></script>
+    <script src="js/api.js?v=20261023"></script>
+    <script src="js/usuarios.js?v=20261023"></script>
 </body>
 </html>

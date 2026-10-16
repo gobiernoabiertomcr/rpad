@@ -33,6 +33,19 @@ const textoCambioDeNota = (c) => `${TIPO_DE_CAMBIO[c.tipo_cambio] ?? c.tipo_camb
 const textoAuditoria = (a) => (!a || a.canal_nota === 0
   ? 'Auditoría de cambios: no hay cambios para pedir por nota.'
   : `Auditoría de cambios: ${a.canal_nota} cambio(s) para pedir por nota; próxima nota de auditoría: ${fecha(a.proxima)}.`);
+// Días sin auditor en el Estado (spec 9.5): cambios que hoy no tienen a nadie que pueda auditarlos, o '' si no hay
+const textoSinQuienAudite = (a) => {
+  const n = a?.sin_quien_audite ?? 0;
+  if (!(n > 0)) return '';
+  return n === 1 ? 'Hoy 1 cambio no tiene ningún auditor ni editor de respaldo disponible.' : `Hoy ${n} cambios no tienen ningún auditor ni editor de respaldo disponible.`;
+};
+// Próximos períodos sin ningún auditor disponible (a.periodos_sin_auditor: [{ desde, hasta, vuelve }]), o '' si no hay
+const textoPeriodosSinAuditor = (a) => {
+  const periodos = a?.periodos_sin_auditor ?? [];
+  if (!periodos.length) return '';
+  const detalle = periodos.map(p => `del ${fecha(p.desde)} al ${fecha(p.hasta)} (${p.vuelve ? `vuelve a haber auditor el ${fecha(p.vuelve)}` : 'sin fecha de vuelta'})`);
+  return `Próximos días sin auditores disponibles: ${detalle.join('; ')}.`;
+};
 // Nombre del PDF de la vista previa: la nota de auditoría no tiene gestión
 const nombreVistaPrevia = (tipo, gestion) => `Nota-Digital-vista-previa-${tipo}${tipo === 'auditoria' ? '' : `-${gestion}`}.pdf`;
 // Máximo de notas que devuelve la API del libro (las más recientes)
@@ -145,6 +158,11 @@ async function cargarEstado() {
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
     licencia.hidden = !estado.licencia_firmante;
     document.getElementById('nd-auditoria').textContent = textoAuditoria(estado.auditoria);
+    for (const [id, texto] of [['nd-sin-quien-audite', textoSinQuienAudite(estado.auditoria)], ['nd-periodos-sin-auditor', textoPeriodosSinAuditor(estado.auditoria)]]) {
+      const linea = document.getElementById(id);
+      linea.textContent = texto;
+      linea.hidden = !texto;
+    }
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
     document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
