@@ -3,7 +3,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb,
-  catalogos, mailpit, PREFIJO_TEST
+  catalogos, mailpit, query, PREFIJO_TEST
 } from './helpers.js';
 
 let servidor, api, usuarios, cat;
@@ -93,5 +93,28 @@ describe('email de cambios pendientes', () => {
     assert.equal(paraSuperadmin.length, 1, 'el superadmin también recibe el resumen');
     assert.match(await mailpit.html(paraSuperadmin[0].ID), /aviso de cambio pendiente/);
     assert.equal(para(usuarios.lector.email).length, 0, 'el lector no recibe avisos');
+  });
+
+  it('no le llega a un admin con la invitación pendiente: todavía no puede ingresar ni aprobar', async () => {
+    const { pendiente } = await crearUsuariosPrueba(api, { pendiente: 'admin' });
+    try {
+      await query('UPDATE usuarios SET password_hash = NULL WHERE id = ?', [pendiente.id]);
+      const alta = await api.post('/datasets', {
+        titulo: `${PREFIJO_TEST} aviso para invitación pendiente`, area_id: cat.areaId, frecuencia_id: cat.frecuenciaId,
+        tema_principal_id: cat.temaId, tipo_gestion: 'interna', formatos: [cat.formatoId]
+      }, { token: usuarios.adminA.token });
+      assert.equal(alta.status, 201);
+
+      await mailpit.vaciar();
+      const res = await api.get('/cron/cambios-pendientes', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+      assert.equal(res.status, 200);
+
+      const mensajes = await mailpit.mensajes();
+      const para = (email) => mensajes.filter(m => m.To.some(t => t.Address === email));
+      assert.equal(para(pendiente.email).length, 0, 'el admin con la invitación pendiente no recibe el email');
+      assert.equal(para(usuarios.adminB.email).length, 1, 'el admin que sí puede aprobar lo recibe');
+    } finally {
+      await limpiarDatosPrueba({ pendiente });
+    }
   });
 });

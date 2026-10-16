@@ -138,13 +138,13 @@ const getCambiosPendientesParaAdmin = async (adminId) => {
 };
 
 /**
- * Obtiene todos los admins con sus emails (para notificaciones)
+ * Obtiene los admins activos con email que ya pueden ingresar y aprobar (con contraseña definida), para notificaciones
  */
 const getAdminsConEmail = async () => {
   const [rows] = await pool.execute(
     `SELECT id, username, nombre_completo, email 
      FROM usuarios 
-     WHERE rol IN ('admin', 'superadmin') AND activo = TRUE AND email IS NOT NULL`
+     WHERE rol IN ('admin', 'superadmin') AND activo = TRUE AND email IS NOT NULL AND password_hash IS NOT NULL`
   );
   return rows;
 };
