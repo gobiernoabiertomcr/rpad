@@ -145,7 +145,7 @@ Un día es de licencia del firmante si el firmante titular tiene ese día una li
 
 ### 7.2 Con autorizado
 
-**Víspera: avisos anticipados y autorización.** Los avisos se anticipan igual que sin autorizado (7.3), y cada aviso de la víspera suma, antes de la justificación, el párrafo:
+**Víspera: avisos anticipados y autorización.** Los avisos se anticipan igual que sin autorizado (7.3), y cada aviso de la víspera suma, inmediatamente después del primer párrafo, el párrafo:
 
 > Asimismo, por medio de la presente autorizo expresamente a {nombre del autorizado}, {cargo del autorizado}, a presentar en mi nombre las Notas Digitales durante mi licencia, del {dd/mm/aaaa} al {dd/mm/aaaa}, con el objetivo de mantener el correcto flujo de trabajo.
 
