@@ -97,7 +97,38 @@ describe('database/schema.sql', () => {
     assert.ok(lista.some(c => c.startsWith('usuarios_auditoria.detalle longtext null=YES')), lista.join('\n'));
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria']) {
+  it('licencias y firmas por usuario (spec 2026-10-15-dias-habiles-licencias-auditoria, 11.1)', async () => {
+    const lista = await columnas(root, BASE_TEMPORAL);
+    for (const esperada of [
+      'usuarios_licencias.usuario_id int(11) null=NO default=null key=MUL',
+      'usuarios_licencias.desde date null=NO default=null key=',
+      'usuarios_licencias.hasta date null=NO default=null key=',
+      'usuarios_licencias.autorizado_id int(11) null=YES default=NULL key=MUL',
+      'usuarios_licencias.autorizado_at datetime null=YES default=NULL key=',
+      'usuarios_licencias.nota_autorizacion_id int(11) null=YES default=NULL key=',
+      'usuarios_licencias.anulada tinyint(1) null=NO default=0 key=',
+      'usuarios_firmas.usuario_id int(11) null=NO default=null key=PRI',
+      'usuarios_firmas.nombre varchar(150) null=NO default=null key=',
+      'usuarios_firmas.cargo varchar(200) null=NO default=null key=',
+      'usuarios_firmas.imagen mediumblob null=YES default=NULL key=',
+      'notas_digitales_config.firmante_usuario_id int(11) null=YES default=NULL key=',
+      'notas_digitales.firmante_id int(11) null=YES default=NULL key=',
+      'notas_digitales.presentada_por_id int(11) null=YES default=NULL key=',
+      'notas_digitales_datasets.cuenta_desde date null=YES default=NULL key=',
+      'usuarios_auditoria.aviso_retenido varchar(300) null=YES default=NULL key='
+    ]) {
+      assert.ok(lista.includes(esperada), `falta: ${esperada}\n${lista.filter(c => c.startsWith(esperada.split('.')[0])).join('\n')}`);
+    }
+    assert.ok(lista.some(c => c.startsWith("usuarios_auditoria.accion enum(") && c.includes("'licencia_cargada','licencia_editada','licencia_anulada'")),
+      lista.filter(c => c.startsWith('usuarios_auditoria.accion')).join('\n'));
+    // La nota de autorización (spec 7.2) es un tipo nuevo, sin gestión
+    assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion') null=NO")),
+      lista.filter(c => c.startsWith('notas_digitales.tipo')).join('\n'));
+    assert.ok(lista.some(c => c.startsWith("notas_digitales.gestion enum('interna','externa') null=YES default=NULL")),
+      lista.filter(c => c.startsWith('notas_digitales.gestion')).join('\n'));
+  });
+
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -132,8 +163,9 @@ describe('database/schema.sql', () => {
   it('la configuración de Notas Digitales tiene las columnas del membrete del PDF, después de la firma', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('notas_digitales_config.'));
     const posicion = (columna) => lista.findIndex(c => c.startsWith(`notas_digitales_config.${columna} `));
-    assert.deepEqual(['firma_mime', 'membrete_imagen', 'membrete_mime', 'membrete_pie', 'casillas_prueba'].map(posicion),
-      [12, 13, 14, 15, 16], lista.join('\n'));
+    // firmante_usuario_id (licencias y firmas por usuario) va justo después de firma_mime
+    assert.deepEqual(['firma_mime', 'firmante_usuario_id', 'membrete_imagen', 'membrete_mime', 'membrete_pie', 'casillas_prueba'].map(posicion),
+      [12, 13, 14, 15, 16, 17], lista.join('\n'));
     assert.ok(lista.includes('notas_digitales_config.membrete_imagen mediumblob null=YES default=NULL key='), lista.join('\n'));
     assert.ok(lista.includes('notas_digitales_config.membrete_mime varchar(20) null=YES default=NULL key='), lista.join('\n'));
     assert.ok(lista.includes('notas_digitales_config.membrete_pie varchar(300) null=YES default=NULL key='), lista.join('\n'));

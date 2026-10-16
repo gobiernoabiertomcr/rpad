@@ -431,8 +431,8 @@ CREATE TABLE `notas_digitales` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `numero` int(11) DEFAULT NULL,
   `anio` smallint(6) DEFAULT NULL,
-  `tipo` enum('aviso','reiteracion') NOT NULL,
-  `gestion` enum('interna','externa') NOT NULL,
+  `tipo` enum('aviso','reiteracion','autorizacion') NOT NULL,
+  `gestion` enum('interna','externa') DEFAULT NULL,
   `periodo` char(7) DEFAULT NULL,
   `fecha` date NOT NULL,
   `es_prueba` tinyint(1) NOT NULL DEFAULT 0,
@@ -451,6 +451,8 @@ CREATE TABLE `notas_digitales` (
   `respuesta_smtp` varchar(500) DEFAULT NULL,
   `enviada_at` datetime DEFAULT NULL,
   `creado_por` int(11) DEFAULT NULL,
+  `firmante_id` int(11) DEFAULT NULL,
+  `presentada_por_id` int(11) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_notas_numero` (`anio`,`numero`),
@@ -465,6 +467,7 @@ CREATE TABLE `notas_digitales_datasets` (
   `dataset_id` int(11) NOT NULL,
   `seccion` enum('proximo','vencido') NOT NULL,
   `vencimiento` date NOT NULL,
+  `cuenta_desde` date DEFAULT NULL,
   PRIMARY KEY (`nota_id`,`dataset_id`),
   KEY `idx_ndd_dataset_vencimiento` (`dataset_id`,`vencimiento`),
   CONSTRAINT `fk_ndd_nota` FOREIGN KEY (`nota_id`) REFERENCES `notas_digitales` (`id`) ON DELETE CASCADE,
@@ -485,6 +488,7 @@ CREATE TABLE `notas_digitales_config` (
   `firma_cargo` varchar(200) NOT NULL DEFAULT '',
   `firma_imagen` mediumblob DEFAULT NULL,
   `firma_mime` varchar(50) DEFAULT NULL,
+  `firmante_usuario_id` int(11) DEFAULT NULL,
   `membrete_imagen` mediumblob DEFAULT NULL,
   `membrete_mime` varchar(20) DEFAULT NULL,
   `membrete_pie` varchar(300) DEFAULT NULL,
@@ -535,12 +539,48 @@ CREATE TABLE `usuarios_auditoria` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL,
   `actor_id` int(11) DEFAULT NULL,
-  `accion` enum('alta','edicion','cambio_rol','desactivacion','reactivacion','invitacion_enviada','recuperacion_enviada','contrasena_establecida','contrasena_cambiada','perfil_editado') NOT NULL,
+  `accion` enum('alta','edicion','cambio_rol','desactivacion','reactivacion','invitacion_enviada','recuperacion_enviada','contrasena_establecida','contrasena_cambiada','perfil_editado','licencia_cargada','licencia_editada','licencia_anulada') NOT NULL,
   `detalle` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`detalle`)),
+  `aviso_retenido` varchar(300) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_usuarios_auditoria_usuario` (`usuario_id`,`created_at`),
   KEY `fk_usuarios_auditoria_actor` (`actor_id`),
   CONSTRAINT `fk_usuarios_auditoria_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`),
   CONSTRAINT `fk_usuarios_auditoria_actor` FOREIGN KEY (`actor_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- Licencias y firmas por usuario (database/updates/migracion-licencias-firmas.sql)
+-- =====================================================
+CREATE TABLE `usuarios_licencias` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL,
+  `desde` date NOT NULL,
+  `hasta` date NOT NULL,
+  `autorizado_id` int(11) DEFAULT NULL,
+  `autorizado_at` datetime DEFAULT NULL,
+  `nota_autorizacion_id` int(11) DEFAULT NULL,
+  `anulada` tinyint(1) NOT NULL DEFAULT 0,
+  `creado_por` int(11) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_licencias_usuario_fechas` (`usuario_id`,`desde`,`hasta`),
+  KEY `fk_licencias_autorizado` (`autorizado_id`),
+  KEY `fk_licencias_creado_por` (`creado_por`),
+  CONSTRAINT `fk_licencias_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_licencias_autorizado` FOREIGN KEY (`autorizado_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_licencias_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `usuarios_firmas` (
+  `usuario_id` int(11) NOT NULL,
+  `nombre` varchar(150) NOT NULL,
+  `cargo` varchar(200) NOT NULL,
+  `imagen` mediumblob DEFAULT NULL,
+  `mime` varchar(20) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`usuario_id`),
+  CONSTRAINT `fk_firmas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
