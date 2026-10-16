@@ -33,7 +33,7 @@ Casos que la spec no resuelve del todo, decididos acá (los implementadores no l
 14. **Correos → Estado:** la próxima nota de auditoría se calcula con los cambios que hoy están en el canal nota (para un sábado, con los de la corrida del lunes); no anticipa licencias futuras del firmante (el canal ya refleja la licencia en curso).
 15. **Historial de cambios (Mi Perfil):** "Revisado por {nombre}" pasa a `Aprobado por {nombre}` o `Rechazado por {nombre}`, con ` (respaldo)` si lo auditó un editor de respaldo.
 16. **Panel de usuarios:** los editores van en un grupo propio, "Editores", entre "Pueden aprobar cambios" (auditores) y "Solo lectura".
-17. **Tests existentes que cambian a propósito** (la spec cambia lo que fijaban): en `tests/schema.test.js`, el ENUM de `usuarios.rol` y el de `notas_digitales.tipo`; en `tests/usuarios-reglas.test.js`, `TEXTO_ROL`; en `tests/avisos-diarios.test.js` y `tests/notificaciones.test.js`, los cambios de prueba pasan a proponerse dos horas antes (la regla de una hora, 9.2); en `tests/paginas.test.js`, `VERSION`. `tests/notificaciones.test.js` ya corre el cron contra la copia local de producción: desde esta entrega, además de los emails a Mailpit, deja `primer_recordatorio_at` en los cambios pendientes reales de esa copia local (nunca en producción).
+17. **Tests existentes que cambian a propósito** (la spec cambia lo que fijaban): en `tests/schema.test.js`, el ENUM de `usuarios.rol` y el de `notas_digitales.tipo`; en `tests/usuarios-reglas.test.js`, `TEXTO_ROL`; en `tests/avisos-diarios.test.js` y `tests/notificaciones.test.js`, los cambios de prueba pasan a proponerse dos horas antes (la regla de una hora, 9.2); en `tests/paginas.test.js`, `VERSION`. `tests/notificaciones.test.js` y el describe `cron` de `tests/permisos.test.js` ya corren el cron contra la copia local de producción: desde esta entrega, además de los emails a Mailpit, deja `primer_recordatorio_at` en los cambios pendientes reales de esa copia local (nunca en producción).
 
 ## Global Constraints
 
@@ -43,8 +43,9 @@ Casos que la spec no resuelve del todo, decididos acá (los implementadores no l
 - Node 22 en producción: no usar APIs que no existan en Node 22. ES Modules, `async/await`, arrow functions, español en nombres, comentarios y textos.
 - SQL siempre parametrizado con `?`. Los nombres de columna y de tabla solo pueden salir de listas fijas del código. Las fechas `DATE` se leen siempre con `DATE_FORMAT(..., '%Y-%m-%d')`.
 - Respuestas de la API: `{ success, data?, error?, message? }`; los errores de validación suman `campo`. **Compatibilidad:** las respuestas existentes solo suman campos.
-- **Hoy** es siempre `hoyArgentina()`; los servicios reciben `hoy` como parámetro para poder probarlos con fechas fijas. Una fecha y hora para guardar se escribe con `ahoraArgentina()`, nunca con `NOW()` (Decisiones 4). **`cambios_pendientes.created_at` es `TIMESTAMP`: nunca se compara su texto con `ahoraArgentina()`** (Decisiones 3).
+- **Hoy** es siempre `hoyArgentina()`; los servicios reciben `hoy` como parámetro para poder probarlos con fechas fijas. Una fecha y hora para guardar en una columna `DATETIME` (como `primer_recordatorio_at`) se escribe con `ahoraArgentina()`, nunca con `NOW()` (Decisiones 4); las columnas `TIMESTAMP` que ya se escriben con `NOW()` (`revisado_at`) siguen así, porque guardan el instante. **`cambios_pendientes.created_at` es `TIMESTAMP`: nunca se compara su texto con `ahoraArgentina()`** (Decisiones 3).
 - **Disponible** (spec 3: activo, con contraseña definida y sin licencia ese día) se calcula solo en `auditoriaService.personasDeAuditoria`. El canal de un cambio se calcula solo con `auditoriaReglas.canalDelCambio`. Ningún otro archivo repite esas condiciones.
+- **Quién puede aprobar o rechazar** (desvío deliberado de la letra de la spec 8.2, Decisiones 1 y 2): un auditor (superadmin o admin) siempre puede auditar cambios de otros, aunque ese día esté de licencia; un editor puede de respaldo cuando ningún auditor disponible que no lo propuso puede hacerlo, aunque él mismo esté de licencia. La disponibilidad decide a quién se le pide el cambio (recordatorio, nota), no quién puede auditarlo. Los revisores no lo marcan como defecto.
 - **Sin cambios pendientes en el canal nota, las Notas Digitales salen exactamente como hoy**: la batería actual de Notas Digitales sigue en verde sin tocarla.
 - **El repositorio es público:** ningún nombre de persona, email personal ni dato de `database/privado/`. Los tests usan datos inventados con dominio `@rpad.test`.
 - **Antes de correr cualquier test:** `grep -E '^(SMTP_HOST|SMTP_PORT|RPAD_TESTS_DB_LOCAL|DB_HOST)=' .env` tiene que mostrar `SMTP_HOST=127.0.0.1`, `SMTP_PORT=1025`, `RPAD_TESTS_DB_LOCAL=1` y `DB_HOST=127.0.0.1`. Si no, no se corre nada. En local todo email va a Mailpit: ningún envío real.
@@ -804,7 +805,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `canalDelCambio`, `seccionDeAuditoria` (Task 2); `obtenerConfig` (`notasDigitalesDatos.js`); `firmaParaFecha` (`notasDigitalesFirmas.js`); `hoyArgentina`.
 - Produces:
-  - `personasDeAuditoria(fecha, conexion?) → [{ id, username, nombre_completo, email, rol, activo, tiene_contrasena, de_licencia, disponible }]`: superadmins, admins y editores, ordenados por nombre. `disponible = activo && tiene_contrasena && !de_licencia` (spec 3). **Es el único lugar que calcula la disponibilidad.**
+  - `personasDeAuditoria(fecha, conexion?) → [{ id, username, nombre_completo, email, rol, activo, tiene_contrasena, de_licencia, ausente_por_licencia, disponible }]`: superadmins, admins y editores, ordenados por nombre. `disponible = activo && tiene_contrasena && !de_licencia` (spec 3); `ausente_por_licencia = activo && tiene_contrasena && de_licencia` (estaría disponible si no fuera por la licencia). **Es el único lugar que calcula la disponibilidad.**
   - `contextoDeCanal(fecha, config?) → { personas, titulares, hayQuienFirme }`.
   - `cambiosConCanal(fecha, contexto?) → [cambio]`, cada cambio pendiente con `{ id, tipo_cambio, dataset_id, datos_nuevos, datos_anteriores (objetos), usuario_id, usuario_username, usuario_nombre, usuario_cargo, dataset_titulo, fecha_propuesta, antiguedad_segundos, primer_recordatorio_fecha, canal }`, del más viejo al más nuevo.
   - `notasDeAuditoriaDe(ids) → Map<cambio_id, [{ numero, anio, fecha }]>` (notas de auditoría no de prueba que lo incluyeron, de la primera a la última).
@@ -889,7 +890,7 @@ describe('personasDeAuditoria (spec 3: disponible)', () => {
     const de = (u) => personas.find(p => p.id === u.id);
     assert.equal(personas.length, 5);
     assert.deepEqual([titular, auditor, inactivo, sinContrasena, editor].map(u => de(u).disponible), [true, true, false, false, false]);
-    assert.deepEqual([de(editor).de_licencia, de(inactivo).activo, de(sinContrasena).tiene_contrasena], [true, false, false]);
+    assert.deepEqual([de(editor).de_licencia, de(editor).ausente_por_licencia, de(inactivo).ausente_por_licencia, de(inactivo).activo, de(sinContrasena).tiene_contrasena], [true, true, false, false, false]);
     assert.equal((await servicio.personasDeAuditoria('2026-10-26')).find(p => p.id === editor.id).disponible, true);
   });
 
@@ -1030,7 +1031,8 @@ export const personasDeAuditoria = async (fecha, conexion = pool) => {
     const deLicencia = Boolean(Number(f.de_licencia));
     return {
       id: f.id, username: f.username, nombre_completo: f.nombre_completo, email: f.email, rol: f.rol,
-      activo, tiene_contrasena: tieneContrasena, de_licencia: deLicencia, disponible: activo && tieneContrasena && !deLicencia
+      activo, tiene_contrasena: tieneContrasena, de_licencia: deLicencia,
+      ausente_por_licencia: activo && tieneContrasena && deLicencia, disponible: activo && tieneContrasena && !deLicencia
     };
   });
 };
@@ -1793,7 +1795,7 @@ Expected: FAIL (el editor aprueba con 200 donde se espera 403; `auditoria` undef
 (a) Después de `import pool from '../config/database.js';`, agregar:
 
 ```js
-import { personasDeAuditoria } from '../services/auditoriaService.js';
+import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditoriaService.js';
 import { permisoParaAuditar } from '../services/auditoriaReglas.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 
@@ -1804,6 +1806,8 @@ const permisoParaAuditarHoy = async (conexion, usuario, proponenteId) => permiso
   { id: usuario.userId, rol: usuario.rol }, proponenteId, await personasDeAuditoria(hoyArgentina(), conexion)
 );
 ```
+
+(a2) Borrar `cargarCatalogos` (el comentario `Funcion auxiliar: Cargar catalogos para enriquecer datos` y la función): hace las mismas consultas que `catalogosParaAuditoria`. En `getCambioPendienteById`, reemplazar `const catalogos = await cargarCatalogos();` por `const catalogos = await catalogosParaAuditoria();`.
 
 (b) En `getCambioPendienteById`, reemplazar
 
@@ -2137,7 +2141,7 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
 
   for (const persona of contexto.personas) {
     // Durante la licencia no recibe emails del sistema (spec 5.3)
-    if (persona.de_licencia && persona.activo && persona.tiene_contrasena) {
+    if (persona.ausente_por_licencia) {
       resultados.deLicencia.push(persona.username);
       continue;
     }
@@ -2170,7 +2174,7 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
 };
 ```
 
-(`cambiosPendientesParaAdmin`, que usa la vista previa del email, queda como está.)
+(`cambiosPendientesParaAdmin`, que usa la vista previa del email, queda como está: la vista previa muestra el formato del email con los pendientes ajenos, sin aplicar la hora ni el canal.)
 
 - [ ] **Step 5: Correr los tests de la tarea**
 
@@ -2204,7 +2208,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     - `detalles: { titulo: 'Detalle de cada cambio', secciones: [seccion] }`;
     - `apartados: [{ titulo, parrafos: [texto], items: [texto], cierre: [texto] }]`.
   - Cada cambio de `nuevos`/`reiterados` es uno de `auditoriaService.cambiosConCanal` (`id, tipo_cambio, dataset_titulo, datos_nuevos, datos_anteriores, usuario_nombre, usuario_cargo, fecha_propuesta`; los reiterados, además, `solicitado: { numero, anio, fecha, reiteraciones }`); `catalogos` es el de `catalogosParaAuditoria`.
-  - Una sección (de las de siempre, de los detalles o de la auditoría) puede traer `proporciones` (porcentajes del ancho de cada columna en el PDF) y una `introduccion` vacía, que no se escribe.
+  - Una sección (de las de siempre, de los detalles o de la auditoría) puede traer `proporciones` (porcentajes del ancho de cada columna en el PDF) y una `introduccion` vacía, que no se escribe. Las del detalle traen `partirPalabras: true`: en el PDF, el mínimo de una columna que no es la primera no pasa de su ancho proporcional, así una URL larga se parte dentro de su celda en lugar de achicar la columna de las etiquetas.
   - `renderHtml`, `renderTexto` y `renderPdf` dibujan `detalles` y `apartados` cuando existen; las notas de siempre no los tienen y salen igual que hoy.
 
 - [ ] **Step 1: Tests de contenido que fallan.** En `tests/notas-contenido.test.js`, sumar `construirNotaDeAuditoria` a la línea del `import` de `notasDigitalesContenido.js`, agregar debajo `import { RPAD_URL } from '../services/emailTemplates.js';` y, al final del archivo:
@@ -2502,7 +2506,7 @@ const detalleDelCambio = (cambio, numero, catalogos) => {
       .map(c => filaSimple([c.etiqueta, valorDelCampo(c, anteriores[c.campo], catalogos), valorDelCampo(c, nuevos[c.campo], catalogos)]));
     return {
       titulo, introduccion: `${propuesta} Campos que cambian, con el valor anterior y el nuevo:`,
-      columnas: ['Campo', 'Valor anterior', 'Valor nuevo'], proporciones: [24, 38, 38],
+      columnas: ['Campo', 'Valor anterior', 'Valor nuevo'], proporciones: [24, 38, 38], partirPalabras: true,
       filas: filas.length ? filas : [filaSimple(['—', 'Sin diferencias registradas', '—'])]
     };
   }
@@ -2515,7 +2519,7 @@ const detalleDelCambio = (cambio, numero, catalogos) => {
     introduccion: cambio.tipo_cambio === 'crear'
       ? `${propuesta} Datos principales del conjunto de datos propuesto:`
       : `${propuesta} Conjunto de datos que se daría de baja:`,
-    columnas: ['Campo', 'Valor'], proporciones: [28, 72],
+    columnas: ['Campo', 'Valor'], proporciones: [28, 72], partirPalabras: true,
     filas: filas.length ? filas : [filaSimple(['Título', tituloDelCambio(cambio)])]
   };
 };
@@ -2728,6 +2732,19 @@ por
   // Una sección puede traer sus proporciones (las tablas de la nota de auditoría y de su detalle)
   const proporciones = seccion.proporciones
     ?? (seccion.filas.some(f => f.informadoAnterior) ? PROPORCIONES_CON_SEGUNDA : PROPORCIONES)[seccion.columnas.length];
+```
+
+y, en la misma función, reemplazar
+
+```js
+    return Math.min(largo, i === 0 ? MINIMO_TITULO : Infinity) + 2 * RELLENO + 1;
+```
+
+por
+
+```js
+    // (en el detalle de la nota de auditoría una URL larga se parte dentro de su celda en lugar de achicar la de las etiquetas)
+    return Math.min(largo, i === 0 ? MINIMO_TITULO : (seccion.partirPalabras ? base[i] - 2 * RELLENO - 1 : Infinity)) + 2 * RELLENO + 1;
 ```
 
 (c) En `renderPdf`, reemplazar el bucle de las secciones
@@ -3071,6 +3088,18 @@ Expected: FAIL (la corrida no genera notas de auditoría).
 import { contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria } from './auditoriaService.js';
 ```
 
+(a2) Agregar, antes de `const correrPasos = async (resumen, hoy, usuarioId) => {`:
+
+```js
+// ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
+const hayNotaDeAuditoria = async (fecha) => {
+  const [[fila]] = await pool.query(
+    "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'auditoria' AND es_prueba = 0 AND fecha = ?", [fecha]
+  );
+  return Number(fila.cantidad) > 0;
+};
+```
+
 (b) Reemplazar `destinatarios`, con sus dos líneas de comentario de arriba (`// ccAutorizado: …`), por:
 
 ```js
@@ -3186,10 +3215,7 @@ export const generarNota = async ({
   // por día (Decisiones del plan 12), con la firma del día. Si hoy no hay quién firme (licencia sin autorizado) o la nota
   // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas.
   try {
-    const [[deHoy]] = await pool.query(
-      "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'auditoria' AND es_prueba = 0 AND fecha = ?", [hoy]
-    );
-    if (Number(deHoy.cantidad) === 0) {
+    if (!(await hayNotaDeAuditoria(hoy))) {
       const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
       if (nuevos.length || reiterados.length) {
         if (listaDeCorreos(config.para_auditoria).length === 0) {
@@ -3444,10 +3470,7 @@ const estadoAuditoria = async (config, hoy) => {
   const delCanal = (await cambiosConCanal(corrida, await contextoDeCanal(corrida, config))).filter(c => c.canal === 'nota');
   if (delCanal.length === 0) return { canal_nota: 0, proxima: null };
   const previas = await notasDeAuditoriaDe(delCanal.map(c => c.id));
-  const [[yaSalio]] = await pool.query(
-    "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'auditoria' AND es_prueba = 0 AND fecha = ?", [corrida]
-  );
-  const primeraLibre = Number(yaSalio.cantidad) ? proximoDiaHabil(sumarDias(corrida, 1)) : corrida;
+  const primeraLibre = (await hayNotaDeAuditoria(corrida)) ? proximoDiaHabil(sumarDias(corrida, 1)) : corrida;
   const fechas = delCanal.map((cambio) => {
     const ultima = previas.get(cambio.id)?.at(-1)?.fecha;
     const fecha = ultima ? sumarDiasHabiles(ultima, DIAS_HABILES_PARA_REITERAR_AUDITORIA) : primeraLibre;
