@@ -6,13 +6,18 @@ import fs from 'fs';
 import vm from 'vm';
 
 const escaparHtml = (texto) => String(texto ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// dd/mm/aaaa en UTC, para que los tests no dependan de la zona horaria de la máquina
+const fechaUtc = (valor) => {
+  const fecha = new Date(valor);
+  return `${String(fecha.getUTCDate()).padStart(2, '0')}/${String(fecha.getUTCMonth() + 1).padStart(2, '0')}/${fecha.getUTCFullYear()}`;
+};
 // elementos: los del DOM que mira el test (los demás son objetos vacíos); API: la de la página; globales: lo que el test agrega
 // al contexto (el archivo, al cargarse, no usa window, location, history ni localStorage: son del navegador)
 const cargarPerfil = ({ elementos = {}, API = {}, globales = {} } = {}) => {
   const contexto = vm.createContext({
     document: { addEventListener() {}, getElementById: (id) => elementos[id] ?? { style: {} } },
     Utils: { escapeHtml: escaparHtml, textoCargo: (cargo) => cargo ?? '', textoVinculo: (vinculo) => vinculo ?? '', showError: (m) => { throw new Error(m); },
-      safeUrl: (u) => /^https?:\/\//.test(u ?? '') ? u : null },
+      safeUrl: (u) => /^https?:\/\//.test(u ?? '') ? u : null, formatDate: fechaUtc },
     Auth: {}, API, CONFIG: {}, console, ...globales
   });
   vm.runInContext(fs.readFileSync(new URL('../public/js/perfil.js', import.meta.url), 'utf8'), contexto);
@@ -412,8 +417,12 @@ describe('perfil.html: pestañas', () => {
   it('cada panel tiene lo suyo: las listas de cambios y los formularios de siempre', () => {
     const [revisar, cambios, datos, firma] = NOMBRES.map(n => posicion(`id="vista-${n}"`));
     const dentro = (id, desde, hasta) => posicion(`id="${id}"`) > desde && posicion(`id="${id}"`) < hasta;
-    assert.ok(dentro('filtro-revisar-tipo', revisar, cambios) && dentro('lista-para-revisar', revisar, cambios));
-    assert.ok(dentro('filtro-mis-estado', cambios, datos) && dentro('lista-mis-cambios', cambios, datos));
+    for (const id of ['segmento-revisar', 'filtro-revisar-tipo', 'lista-para-revisar', 'mas-para-revisar']) {
+      assert.ok(dentro(id, revisar, cambios), `${id} va en Para revisar`);
+    }
+    for (const id of ['grupo-mios-pendientes', 'lista-mios-pendientes', 'grupo-mios-resueltos', 'segmento-mios', 'lista-mios-resueltos', 'mas-mios']) {
+      assert.ok(dentro(id, cambios, datos), `${id} va en Mis cambios`);
+    }
     for (const id of ['form-perfil', 'perfil-username', 'perfil-nombre', 'perfil-email', 'btn-guardar-perfil', 'form-password', 'password-actual',
       'password-nueva', 'password-confirmar', 'btn-cambiar-password']) {
       assert.ok(dentro(id, datos, firma), `${id} va en Mis datos`);
@@ -534,13 +543,194 @@ describe('perfil.js: cambiar de pestaña', () => {
     assert.equal(cuenta.hidden, true);
   });
 
-  it('actualizarBadges escribe en las cuentas de las pestañas (Para revisar y Mis cambios pendientes)', async () => {
+  it('las cuentas: Para revisar con el contador y Mis cambios con los pendientes propios de la lista ya cargada, sin pedirla otra vez', async () => {
     const elementos = { 'cuenta-para-revisar': { textContent: '', hidden: true }, 'cuenta-mis-cambios': { textContent: '', hidden: true } };
-    const API = { getContadorPendientes: async () => ({ cantidad: 4 }), getMisCambios: async () => [{}, {}] };
-    await cargarPerfil({ elementos, API }).actualizarBadges();
+    const pedidos = [];
+    const propio = (id, estado) => ({ id, tipo_cambio: 'eliminar', usuario_id: 1, estado, created_at: '2026-10-16T13:32:00Z', revisado_at: '2026-10-16T14:00:00Z' });
+    const API = {
+      getContadorPendientes: async () => ({ cantidad: 4 }),
+      getMisCambios: async (filtros) => { pedidos.push(plano(filtros)); return [propio(1, 'pendiente'), propio(2, 'pendiente'), propio(3, 'aprobado')]; }
+    };
+    const contexto = cargarPerfil({ elementos, API, globales: { Auth: { getUser: () => ({ id: 1, rol: 'admin' }) } } });
+    await contexto.cargarMisCambios();
+    await contexto.actualizarCuentas();
     assert.equal(elementos['cuenta-para-revisar'].textContent, '4');
     assert.equal(elementos['cuenta-para-revisar'].hidden, false);
     assert.equal(elementos['cuenta-mis-cambios'].textContent, '2');
     assert.equal(elementos['cuenta-mis-cambios'].hidden, false);
+    assert.deepEqual(pedidos, [{ estado: 'todos' }], 'Mis cambios se pide una sola vez, con todos los estados');
+  });
+});
+
+// Gestión de cambios rediseñada (spec 2026-10-16-perfil-pestanas-gestion-cambios, 5 y 6): cada cambio es una fila que se
+// despliega en el lugar, con la comparación "control de cambios" y los botones de aprobar y rechazar en la fila
+describe('perfil.js: filas de la gestión de cambios', () => {
+  const EDITAR = {
+    id: 7, tipo_cambio: 'editar', usuario_id: 2, usuario_nombre: 'Ana <b>Gómez</b>', dataset_titulo: 'Comercios <script>', estado: 'pendiente',
+    created_at: '2026-10-16T13:32:00Z',
+    campos_modificados: [{ campo: 'Frecuencia', antes: 'Anualmente', despues: 'Cada medio año' }],
+    auditoria: { puede: true, respaldo: false, mensaje: null, auditan: ['Laura'] }
+  };
+  const MENSAJE_EDITOR = 'Este cambio lo auditan Laura. Podés auditarlo solo si ninguno está disponible.';
+  const AUDITOR = { abierto: true, esEditor: false, idUsuario: 1 };
+
+  it('pendiente con permiso: los botones de aprobar y rechazar, la comparación y los datos escapados', () => {
+    const html = cargarPerfil().htmlDeFila(EDITAR, 'revisar', AUDITOR);
+    assert.ok(html.includes('onclick="aprobarCambio(7)"'));
+    assert.ok(html.includes('abrirModalRechazo(7)'));
+    assert.ok(html.includes('<del>Anualmente</del>'));
+    assert.ok(html.includes('<ins>Cada medio año</ins>'));
+    assert.ok(html.includes('Comercios &lt;script&gt;'));
+    assert.ok(!html.includes('<script>'));
+    assert.ok(html.includes('Ana &lt;b&gt;Gómez&lt;/b&gt;'));
+    assert.ok(html.includes('aria-expanded="true"'));
+    assert.match(html, /^\s*<li class="pf-cambio[^"]*" data-id="7"/);
+    assert.ok(html.includes('id="acciones-7"'));
+  });
+
+  it('un editor sin permiso: los botones deshabilitados, quiénes lo auditan y el motivo', () => {
+    const contexto = cargarPerfil();
+    const cambio = { ...EDITAR, auditoria: { puede: false, respaldo: false, mensaje: MENSAJE_EDITOR, auditan: ['Laura'] } };
+    const html = contexto.htmlDeFila(cambio, 'revisar', { ...AUDITOR, esEditor: true });
+    assert.equal(html.match(/disabled/g).length, 2);
+    assert.ok(html.includes('Lo auditan Laura'));
+    assert.ok(html.includes(contexto.avisoNoCorresponde(MENSAJE_EDITOR)));
+    assert.doesNotMatch(html, /aprobarCambio/);
+  });
+
+  it('un cambio propio no tiene botones', () => {
+    const html = cargarPerfil().htmlDeFila({ ...EDITAR, usuario_id: 1 }, 'mio', AUDITOR);
+    assert.doesNotMatch(html, /aprobarCambio|abrirModalRechazo|disabled/);
+  });
+
+  it('sin saber quién mira, no hay botones (falla cerrado)', () => {
+    const html = cargarPerfil().htmlDeFila(EDITAR, 'revisar', { abierto: true, esEditor: false, idUsuario: NaN });
+    assert.doesNotMatch(html, /aprobarCambio|abrirModalRechazo/);
+  });
+
+  it('revisado y rechazado: el motivo, quién lo rechazó y la fecha, sin botones', () => {
+    const cambio = {
+      ...EDITAR, estado: 'rechazado', comentario_rechazo: 'Falta <i>x</i>', revisor_nombre: 'Pablo', revisado_como_respaldo: 1, revisado_at: '2026-10-15T12:00:00Z'
+    };
+    const html = cargarPerfil().htmlDeFila(cambio, 'revisado', AUDITOR);
+    assert.ok(html.includes('Motivo del rechazo'));
+    assert.ok(html.includes('Falta &lt;i&gt;x&lt;/i&gt;'));
+    assert.ok(html.includes('Rechazado por Pablo (respaldo)'));
+    assert.ok(html.includes('15/10/2026'));
+    assert.ok(html.includes('Propuesto por Ana &lt;b&gt;Gómez&lt;/b&gt;'));
+    assert.doesNotMatch(html, /aprobarCambio|abrirModalRechazo/);
+  });
+
+  it('cerrada: el cuerpo oculto y la cabecera con aria-expanded="false" que lo controla', () => {
+    const html = cargarPerfil().htmlDeFila(EDITAR, 'revisar', { ...AUDITOR, abierto: false });
+    assert.match(html, /<div [^>]*id="cuerpo-7"[^>]*\bhidden\b/);
+    assert.match(html, /<button [^>]*aria-expanded="false"[^>]*aria-controls="cuerpo-7"/);
+  });
+
+  it('el link al portal solo si la URL es segura', () => {
+    const contexto = cargarPerfil();
+    const conUrl = contexto.htmlDeFila({ ...EDITAR, dataset_url: 'https://datos.comodoro.gov.ar/dataset/x' }, 'revisar', AUDITOR);
+    assert.ok(conUrl.includes('href="https://datos.comodoro.gov.ar/dataset/x"'));
+    assert.ok(conUrl.includes('Ver en el portal'));
+    const peligrosa = contexto.htmlDeFila({ ...EDITAR, dataset_url: 'javascript:alert(1)' }, 'revisar', AUDITOR);
+    assert.ok(!peligrosa.includes('javascript:') && !peligrosa.includes('Ver en el portal'));
+  });
+
+  it('htmlDeComparacion: la baja, el alta y la edición palabra por palabra', () => {
+    const contexto = cargarPerfil();
+    const baja = contexto.htmlDeComparacion({ tipo_cambio: 'eliminar', datos_anteriores: { titulo: 'X', area_nombre: 'Deportes' } });
+    assert.ok(baja.includes('deja de figurar en el registro'));
+    assert.ok(baja.includes('Deportes'));
+    assert.ok(baja.includes('Área responsable'));
+    const alta = contexto.htmlDeComparacion({ tipo_cambio: 'crear', datos_nuevos: { titulo: 'Arbolado', descripcion: 'Censo' } });
+    assert.ok(alta.includes('Censo'));
+    assert.ok(!alta.includes('<del>'));
+    const edicion = contexto.htmlDeComparacion({
+      tipo_cambio: 'editar', campos_modificados: [{ campo: 'Descripcion', antes: 'corte semestral.', despues: 'corte trimestral.' }]
+    });
+    assert.ok(edicion.includes('<del>semestral</del>'));
+    assert.ok(edicion.includes('<ins>trimestral</ins>'));
+    assert.ok(edicion.includes('Descripción'));
+  });
+
+  it('htmlDeComparacion: el valor vacío en cursiva, los valores escapados y una edición sin campos', () => {
+    const contexto = cargarPerfil();
+    const html = contexto.htmlDeComparacion({ tipo_cambio: 'editar', campos_modificados: [{ campo: 'Tema Secundario', antes: '-', despues: '<b>Salud</b>' }] });
+    assert.ok(html.includes('<span class="pf-vacio">vacío</span>'));
+    assert.ok(html.includes('<ins>&lt;b&gt;Salud&lt;/b&gt;</ins>'));
+    assert.ok(contexto.htmlDeComparacion({ tipo_cambio: 'editar', campos_modificados: [] }).includes('No se detectaron cambios en los campos principales.'));
+  });
+
+  it('aprobar pide la confirmación en la fila: el primer clic no llama al servidor, ni uno inmediato en "Sí, aprobar"', async () => {
+    const elementos = { 'acciones-7': { innerHTML: '' }, 'cancelar-7': { focus() {} } };
+    let aprobados = 0;
+    const contexto = cargarPerfil({ elementos, API: { aprobarCambio: async () => { aprobados++; } } });
+    contexto.aprobarCambio(7);
+    const confirmacion = elementos['acciones-7'].innerHTML;
+    assert.ok(confirmacion.includes('¿Aprobar? El cambio se aplica al dataset ahora.'));
+    assert.ok(confirmacion.includes('onclick="cancelarAccion(7)"'));
+    assert.ok(confirmacion.includes('onclick="confirmarAprobacion(7)"'));
+    assert.ok(confirmacion.includes('Sí, aprobar'));
+    // Un doble clic en Aprobar cae en "Sí, aprobar" enseguida: no aprueba
+    await contexto.confirmarAprobacion(7);
+    assert.equal(aprobados, 0);
+  });
+
+  it('confirmar una aprobación que no se pidió no hace nada', async () => {
+    let aprobados = 0;
+    await cargarPerfil({ API: { aprobarCambio: async () => { aprobados++; } } }).confirmarAprobacion(7);
+    assert.equal(aprobados, 0);
+  });
+
+  it('rechazar sin motivo: el error de siempre y no se envía', async () => {
+    const elementos = { 'motivo-7': { value: '   ', focus() {} } };
+    let enviados = 0;
+    const errores = [];
+    const contexto = cargarPerfil({ elementos, API: { rechazarCambio: async () => { enviados++; } } });
+    contexto.Utils.showError = (mensaje) => errores.push(mensaje);
+    await contexto.confirmarRechazo(7);
+    assert.deepEqual(errores, ['Debe proporcionar un motivo de rechazo']);
+    assert.equal(enviados, 0);
+  });
+
+  it('las listas vacías dicen qué pasa (y qué filtro está puesto)', () => {
+    const contexto = cargarPerfil();
+    const pendientes = contexto.htmlDeVacioParaRevisar('pendientes', '');
+    assert.ok(pendientes.includes('No hay cambios esperando revisión.') && pendientes.includes('Cuando alguien proponga uno, aparece acá.'));
+    assert.ok(contexto.htmlDeVacioParaRevisar('revisados', '').includes('Todavía no hay cambios revisados.'));
+    assert.ok(contexto.htmlDeVacioParaRevisar('pendientes', 'crear').includes('No hay cambios de tipo Crear.'));
+    assert.ok(contexto.htmlDeVacioParaRevisar('revisados', 'eliminar').includes('No hay cambios de tipo Eliminar.'));
+    assert.ok(contexto.htmlDeVacioMisCambios('todos', false).includes('Todavía no propusiste cambios.'));
+    assert.ok(contexto.htmlDeVacioMisCambios('aprobado', false).includes('Todavía no propusiste cambios.'));
+    assert.ok(contexto.htmlDeVacioMisCambios('aprobado', true).includes('No hay cambios aprobados.'));
+    assert.ok(contexto.htmlDeVacioMisCambios('rechazado', true).includes('No hay cambios rechazados.'));
+    assert.ok(contexto.htmlDeVacioMisCambios('todos', true).includes('Todavía no hay cambios resueltos.'));
+  });
+
+  it('la página y el código viejo: sin los modales, el filtro de estado ni la opción "actualizar"; sin el confirm nativo ni el detalle viejo', () => {
+    const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
+    const CODIGO = fs.readFileSync(new URL('../public/js/perfil.js', import.meta.url), 'utf8');
+    for (const texto of ['modal-detalle', 'modal-rechazo', 'filtro-mis-estado', 'value="actualizar"']) assert.ok(!PAGINA.includes(texto), texto);
+    for (const texto of ['confirm(', 'verDetalle', 'renderComparador', 'nav-badge-admin']) assert.ok(!CODIGO.includes(texto), texto);
+  });
+
+  it('la página: el selector Pendientes / Revisados, el filtro de tipo y los grupos de Mis cambios', () => {
+    const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
+    assert.match(PAGINA, /<button type="button" data-segmento="pendientes" aria-pressed="true">Pendientes<\/button>/);
+    assert.match(PAGINA, /<button type="button" data-segmento="revisados" aria-pressed="false">Revisados<\/button>/);
+    for (const [valor, texto] of [['', 'Todos los tipos'], ['crear', 'Crear'], ['editar', 'Editar'], ['eliminar', 'Eliminar']]) {
+      assert.ok(PAGINA.includes(`<option value="${valor}">${texto}</option>`), texto);
+    }
+    assert.match(PAGINA, /<ul class="pf-lista" id="lista-para-revisar"/);
+    assert.match(PAGINA, /<button type="button" [^>]*id="mas-para-revisar" hidden>Ver 20 más<\/button>/);
+    assert.match(PAGINA, /<button type="button" [^>]*id="mas-mios" hidden>Ver 20 más<\/button>/);
+    assert.match(PAGINA, /id="grupo-mios-pendientes" hidden>\s*<h2[^>]*>Esperando auditoría<\/h2>/);
+    assert.match(PAGINA, /<h2[^>]*>Resueltos<\/h2>/);
+    for (const filtro of ['todos', 'aprobado', 'rechazado']) assert.ok(PAGINA.includes(`data-filtro="${filtro}"`), filtro);
+    // La comparación: dos columnas que pasan a una en 760 px, el tachado y el resaltador
+    assert.match(PAGINA, /\.pf-diff\s*\{[^}]*grid-template-columns/);
+    assert.match(PAGINA, /@media \(max-width: 760px\)\s*\{[^@]*\.pf-diff\s*\{\s*grid-template-columns:\s*1fr;/);
+    assert.match(PAGINA, /--pf-tachado:\s*#B5524C/);
+    assert.match(PAGINA, /\.pf-diff ins\s*\{[^}]*var\(--pf-resaltador\)/);
   });
 });

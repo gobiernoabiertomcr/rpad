@@ -121,7 +121,7 @@ rpad/
     ├── reportes.html              # Generador de reportes
     ├── calendario.html            # Calendario interactivo de vencimientos
     ├── notas.html                 # Generador de notas administrativas DOCX
-    ├── perfil.html                # Perfil de usuario y cambio de contraseña
+    ├── perfil.html                # Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma
     ├── contacto.html              # Formulario de contacto público
     ├── css/
     │   └── styles.css
@@ -139,7 +139,7 @@ rpad/
     │   ├── reportes.js            # Generación de reportes PDF
     │   ├── calendario.js          # Calendario interactivo de vencimientos
     │   ├── notas.js               # Generador de notas administrativas
-    │   ├── perfil.js              # Perfil de usuario
+    │   ├── perfil.js              # Mi Perfil: gestión de cambios (aprobar y rechazar en la fila), datos y firma
     │   └── contacto.js            # Formulario de contacto
     └── img/
         ├── icon.png
@@ -561,6 +561,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Mi Perfil en pestañas (2026-10)
+- Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma; el email de las 14:00 abre Para revisar
+- Gestión de cambios rediseñada: cada cambio es una fila que se despliega con lo viejo tachado y lo nuevo resaltado, y se aprueba (con confirmación) o se rechaza (con motivo) en la misma fila
+- Para revisar con Pendientes y Revisados; Mis cambios separa los que esperan auditoría de los resueltos; de a 20 con "Ver 20 más"
+- El editor ve en cada cambio si le toca auditarlo; las fechas que no cambiaron de día ya no figuran como cambiadas
 
 ### Editor y auditoría de cambios pendientes (2026-10)
 - Rol `editor`: todo lo de un admin, pero audita cambios solo de respaldo (si ningún auditor está disponible) y en el panel solo crea y modifica lectores
