@@ -13,97 +13,46 @@
     <link rel="stylesheet" href="css/main.css">
     <style>
         /* Estilos específicos de perfil */
-        .profile-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-            margin-bottom: 24px;
+
+        /* Colores de Mi Perfil (spec 2026-10-16-perfil-pestanas-gestion-cambios, 7) */
+        :root {
+            --pf-tinta: #1F3A5F;
+            --pf-texto: #2B3A4A;
+            --pf-suave: #6B7A8C;
+            --pf-linea: #E4E9EF;
+            --pf-sutil: #F7F9FB;
+            --pf-acento: #3E6B96;
+            --pf-crear-fondo: #DDF1E6;  --pf-crear: #2E6B4C;
+            --pf-editar-fondo: #DCEAF7; --pf-editar: #24507A;
+            --pf-eliminar-fondo: #F8E1E1; --pf-eliminar: #8A3434;
+            --pf-tachado: #B5524C;
+            --pf-resaltador: #CBEBD7;
+            --pf-nuevo: #1E4D36;
+            --pf-aviso-fondo: #FBF1DC; --pf-aviso-borde: #F0DDB0; --pf-aviso: #7A5A14;
         }
 
-        .profile-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow);
-            overflow: hidden;
-        }
+        .main-content { max-width: 1120px; min-width: 0; }
 
-        .profile-card-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
+        /* Mensajes de la página (Utils.showSuccess / showError) */
+        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--pf-linea); }
+        .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: #2E6B4C; }
+        .alert-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
 
-        .profile-card-header svg {
-            width: 22px;
-            height: 22px;
-            color: var(--primary);
-        }
+        /* Pestañas de la página */
+        .pf-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--pf-linea); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+        .pf-pestanas::-webkit-scrollbar { display: none; }
+        .pf-pestana { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; font-weight: 500; color: var(--gray-500); cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color 0.15s ease, border-color 0.15s ease; }
+        .pf-pestana:hover { color: var(--pf-tinta); }
+        .pf-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
+        .pf-pestana:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+        .pf-cuenta { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #E3EEF8; color: var(--pf-tinta); font-size: 0.75rem; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+        .pf-pestana.activa .pf-cuenta { background: var(--primary); color: #fff; }
 
-        .profile-card-header h2 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-        }
-
-        .profile-card-body {
-            padding: 24px;
-        }
-
-        .profile-card-full {
-            grid-column: 1 / -1;
-        }
-
-        /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 4px;
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 20px;
-        }
-
-        .tab-btn {
-            padding: 12px 20px;
-            background: transparent;
-            border: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--gray-500);
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .tab-btn:hover {
-            color: var(--gray-700);
-        }
-
-        .tab-btn.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
-
-        .tab-btn .tab-badge {
-            background: var(--warning);
-            color: white;
-            font-size: 0.7rem;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: 600;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
+        /* Mis datos y Mi firma */
+        .pf-tarjetas { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+        .pf-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 22px 24px; }
+        .pf-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
+        .pf-tarjeta .pf-ayuda { margin: 0 0 18px; font-size: 0.85rem; color: var(--pf-suave); }
 
         /* Filtros */
         .filtros-bar {
@@ -286,13 +235,17 @@
         #modal-detalle-contenido .alert-warning { padding: 12px 14px; border-radius: var(--border-radius); font-size: 0.875rem; background: var(--warning-light); color: #92400e; border: 1px solid #fde68a; }
 
         @media (max-width: 968px) {
-            .profile-grid {
-                grid-template-columns: 1fr;
-            }
-
             .comparador {
                 grid-template-columns: 1fr;
             }
+        }
+
+        @media (max-width: 760px) {
+            .pf-tarjetas { grid-template-columns: 1fr; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .pf-pestana { transition: none; }
         }
     </style>
 </head>
@@ -405,157 +358,129 @@
 
             <div id="message-container"></div>
 
-            <!-- Grid de perfil -->
-            <div class="profile-grid">
-                
-                <!-- Datos Personales -->
-                <div class="profile-card">
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <h2>Datos Personales</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <form id="form-perfil">
-                            <div class="form-group">
-                                <label class="form-label">Usuario</label>
-                                <input type="text" id="perfil-username" class="form-input" disabled style="background: var(--gray-50);">
-                            </div>
-                            <div class="form-group" id="perfil-cargo-grupo" style="display: none;">
-                                <label class="form-label">Cargo</label>
-                                <input type="text" id="perfil-cargo" class="form-input" disabled style="background: var(--gray-50);">
-                            </div>
-                            <div class="form-group" id="perfil-vinculo-grupo" style="display: none;">
-                                <label class="form-label">Vínculo</label>
-                                <input type="text" id="perfil-vinculo" class="form-input" disabled style="background: var(--gray-50);">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Nombre Completo <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="perfil-nombre" class="form-input" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Email <span style="color: var(--danger);">*</span></label>
-                                <input type="email" id="perfil-email" class="form-input" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary" id="btn-guardar-perfil" style="width: 100%;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                                Guardar Cambios
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Cambiar Contraseña -->
-                <div class="profile-card">
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <h2>Cambiar Contraseña</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <form id="form-password">
-                            <div class="form-group">
-                                <label class="form-label">Contraseña Actual <span style="color: var(--danger);">*</span></label>
-                                <input type="password" id="password-actual" class="form-input" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Nueva Contraseña <span style="color: var(--danger);">*</span></label>
-                                <input type="password" id="password-nueva" class="form-input" required minlength="8">
-                                <span class="form-hint">Mínimo 8 caracteres</span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Confirmar Nueva Contraseña <span style="color: var(--danger);">*</span></label>
-                                <input type="password" id="password-confirmar" class="form-input" required minlength="8">
-                            </div>
-                            <button type="submit" class="btn btn-primary" id="btn-cambiar-password" style="width: 100%;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                Cambiar Contraseña
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Mi firma (admin y superadmin): la usan las Notas Digitales cuando firmás o presentás una nota -->
-                <div class="profile-card" id="seccion-firma" hidden>
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                        <h2>Mi firma</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <p class="form-hint" id="firma-estado"></p>
-                        <form id="form-firma">
-                            <div class="form-group">
-                                <label class="form-label" for="firma-nombre">Nombre para la firma <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Nombre Apellido">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="firma-cargo">Cargo para la firma <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="firma-cargo" class="form-input" maxlength="200">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
-                                <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
-                                <img id="firma-vista" class="firma-vista" alt="Tu firma cargada" hidden>
-                            </div>
-                            <div id="firma-muestra" class="firma-muestra" hidden></div>
-                            <button type="submit" class="btn btn-primary" id="btn-guardar-firma" style="width: 100%;">Guardar firma</button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Gestión de Cambios (solo admin) -->
-                <div class="profile-card profile-card-full" id="seccion-cambios" style="display: none;">
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                        <h2>Gestión de Cambios</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <!-- Tabs -->
-                        <div class="tabs">
-                            <button class="tab-btn active" data-tab="mis-cambios">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                Mis Cambios
-                                <span id="badge-mis-cambios" class="tab-badge" style="display: none;"></span>
-                            </button>
-                            <button class="tab-btn" data-tab="para-revisar">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                                Para Revisar
-                                <span id="badge-para-revisar" class="tab-badge" style="display: none;"></span>
-                            </button>
-                        </div>
-
-                        <!-- Tab: Mis Cambios -->
-                        <div id="tab-mis-cambios" class="tab-content active">
-                            <div class="filtros-bar">
-                                <select id="filtro-mis-estado">
-                                    <option value="todos">Todos los estados</option>
-                                    <option value="pendiente">Pendientes</option>
-                                    <option value="aprobado">Aprobados</option>
-                                    <option value="rechazado">Rechazados</option>
-                                </select>
-                            </div>
-                            <div id="lista-mis-cambios">
-                                <div class="loading"><div class="spinner"></div></div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Para Revisar -->
-                        <div id="tab-para-revisar" class="tab-content">
-                            <div class="filtros-bar">
-                                <select id="filtro-revisar-tipo">
-                                    <option value="">Todos los tipos</option>
-                                    <option value="crear">Creación</option>
-                                    <option value="editar">Edición</option>
-                                    <option value="eliminar">Eliminación</option>
-                                    <option value="actualizar">Actualización</option>
-                                </select>
-                            </div>
-                            <div id="lista-para-revisar">
-                                <div class="loading"><div class="spinner"></div></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+            <!-- Pestañas: quien administra ve las cuatro; un lector solo ve sus datos, sin barra (perfil.js la muestra) -->
+            <div class="pf-pestanas" id="pestanas-perfil" role="tablist" aria-label="Secciones de Mi Perfil" hidden>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-para-revisar" aria-selected="false" aria-controls="vista-para-revisar" data-vista="para-revisar" tabindex="-1">Para revisar <span class="pf-cuenta" id="cuenta-para-revisar" hidden></span></button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-mis-cambios" aria-selected="false" aria-controls="vista-mis-cambios" data-vista="mis-cambios" tabindex="-1">Mis cambios <span class="pf-cuenta" id="cuenta-mis-cambios" hidden></span></button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-mis-datos" aria-selected="false" aria-controls="vista-mis-datos" data-vista="mis-datos" tabindex="-1">Mis datos</button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-mi-firma" aria-selected="false" aria-controls="vista-mi-firma" data-vista="mi-firma" tabindex="-1">Mi firma</button>
             </div>
+
+            <!-- Para revisar (solo quien administra) -->
+            <section id="vista-para-revisar" role="tabpanel" aria-labelledby="pestana-para-revisar" hidden>
+                <div class="filtros-bar">
+                    <select id="filtro-revisar-tipo" aria-label="Tipo de cambio">
+                        <option value="">Todos los tipos</option>
+                        <option value="crear">Creación</option>
+                        <option value="editar">Edición</option>
+                        <option value="eliminar">Eliminación</option>
+                        <option value="actualizar">Actualización</option>
+                    </select>
+                </div>
+                <div id="lista-para-revisar">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </section>
+
+            <!-- Mis cambios (solo quien administra) -->
+            <section id="vista-mis-cambios" role="tabpanel" aria-labelledby="pestana-mis-cambios" hidden>
+                <div class="filtros-bar">
+                    <select id="filtro-mis-estado" aria-label="Estado del cambio">
+                        <option value="todos">Todos los estados</option>
+                        <option value="pendiente">Pendientes</option>
+                        <option value="aprobado">Aprobados</option>
+                        <option value="rechazado">Rechazados</option>
+                    </select>
+                </div>
+                <div id="lista-mis-cambios">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </section>
+
+            <!-- Mis datos (todos los usuarios) -->
+            <section id="vista-mis-datos" role="tabpanel" aria-labelledby="pestana-mis-datos" hidden>
+                <div class="pf-tarjetas">
+
+                    <!-- Datos personales -->
+                    <form id="form-perfil" class="pf-tarjeta">
+                        <h2>Datos personales</h2>
+                        <p class="pf-ayuda">Tu nombre y email aparecen en los avisos y en el historial de cambios.</p>
+                        <div class="form-group">
+                            <label class="form-label">Usuario</label>
+                            <input type="text" id="perfil-username" class="form-input" disabled style="background: var(--gray-50);">
+                        </div>
+                        <div class="form-group" id="perfil-cargo-grupo" style="display: none;">
+                            <label class="form-label">Cargo</label>
+                            <input type="text" id="perfil-cargo" class="form-input" disabled style="background: var(--gray-50);">
+                        </div>
+                        <div class="form-group" id="perfil-vinculo-grupo" style="display: none;">
+                            <label class="form-label">Vínculo</label>
+                            <input type="text" id="perfil-vinculo" class="form-input" disabled style="background: var(--gray-50);">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nombre Completo <span style="color: var(--danger);">*</span></label>
+                            <input type="text" id="perfil-nombre" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Email <span style="color: var(--danger);">*</span></label>
+                            <input type="email" id="perfil-email" class="form-input" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btn-guardar-perfil" style="width: 100%;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Guardar Cambios
+                        </button>
+                    </form>
+
+                    <!-- Contraseña -->
+                    <form id="form-password" class="pf-tarjeta">
+                        <h2>Contraseña</h2>
+                        <p class="pf-ayuda">Al cambiarla se cierran tus otras sesiones abiertas.</p>
+                        <div class="form-group">
+                            <label class="form-label">Contraseña Actual <span style="color: var(--danger);">*</span></label>
+                            <input type="password" id="password-actual" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nueva Contraseña <span style="color: var(--danger);">*</span></label>
+                            <input type="password" id="password-nueva" class="form-input" required minlength="8">
+                            <span class="form-hint">Mínimo 8 caracteres</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Confirmar Nueva Contraseña <span style="color: var(--danger);">*</span></label>
+                            <input type="password" id="password-confirmar" class="form-input" required minlength="8">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btn-cambiar-password" style="width: 100%;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            Cambiar Contraseña
+                        </button>
+                    </form>
+
+                </div>
+            </section>
+
+            <!-- Mi firma (solo quien administra): la usan las Notas Digitales cuando firmás o presentás una nota -->
+            <section id="vista-mi-firma" role="tabpanel" aria-labelledby="pestana-mi-firma" hidden>
+                <div class="pf-tarjetas">
+                    <form id="form-firma" class="pf-tarjeta">
+                        <h2>Mi firma</h2>
+                        <p class="pf-ayuda" id="firma-estado"></p>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-nombre">Nombre para la firma <span style="color: var(--danger);">*</span></label>
+                            <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Nombre Apellido">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-cargo">Cargo para la firma <span style="color: var(--danger);">*</span></label>
+                            <input type="text" id="firma-cargo" class="form-input" maxlength="200">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
+                            <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
+                            <img id="firma-vista" class="firma-vista" alt="Tu firma cargada" hidden>
+                        </div>
+                        <div id="firma-muestra" class="firma-muestra" hidden></div>
+                        <button type="submit" class="btn btn-primary" id="btn-guardar-firma" style="width: 100%;">Guardar firma</button>
+                    </form>
+                </div>
+            </section>
 
             <!-- Footer -->
             <footer class="footer">
@@ -635,6 +560,6 @@
     <script src="js/auth.js?v=20261023"></script>
     <script src="js/main.js?v=20261023"></script>
     <script src="js/api.js?v=20261023"></script>
-    <script src="js/perfil.js?v=20261024"></script>
+    <script src="js/perfil.js?v=20261031"></script>
 </body>
 </html>

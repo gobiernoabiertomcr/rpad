@@ -18,20 +18,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Cargar datos del perfil
   await cargarPerfil();
 
-  // Mostrar sección de cambios solo para admins
+  // Los formularios quedan conectados antes de cualquier carga larga
+  setupEventos();
+
+  // Cambiar de pestaña con el hash de la dirección (el botón atrás, un enlace a #mis-cambios)
+  window.addEventListener('hashchange', () => mostrarPestana(pestanaInicial(location.hash, Auth.isAdmin())));
+
   if (Auth.isAdmin()) {
-    document.getElementById('seccion-firma').hidden = false;
+    // Quien administra ve las cuatro pestañas: revisar, sus cambios, sus datos y su firma
+    document.getElementById('pestanas-perfil').hidden = false;
+    conectarPestanas();
+    mostrarPestana(pestanaInicial(location.hash, true));
     document.getElementById('form-firma').addEventListener('submit', guardarMiFirma);
     for (const id of ['firma-nombre', 'firma-cargo']) document.getElementById(id).addEventListener('input', actualizarMuestraFirma);
+    document.getElementById('filtro-mis-estado').addEventListener('change', cargarMisCambios);
+    document.getElementById('filtro-revisar-tipo').addEventListener('change', cargarCambiosParaRevisar);
     cargarMiFirma();
-    document.getElementById('seccion-cambios').style.display = 'block';
     await cargarMisCambios();
     await cargarCambiosParaRevisar();
     await actualizarBadges();
+  } else {
+    // Un lector solo tiene sus datos personales: sin barra de pestañas ni nada de la gestión de cambios
+    mostrarPestana('mis-datos');
   }
-
-  // Setup eventos
-  setupEventos();
 });
 
 /**
@@ -73,25 +82,46 @@ function setupEventos() {
     e.preventDefault();
     await cambiarPassword();
   });
+}
 
-  // Tabs
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
-      
-      // Activar tab
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      
-      // Mostrar contenido
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      document.getElementById(`tab-${tab}`).classList.add('active');
-    });
-  });
+// =====================================================
+// PESTAÑAS
+// =====================================================
+// Muestra una pestaña y su panel, oculta las demás y deja el nombre en el hash (sin sumar una entrada al historial)
+function mostrarPestana(nombre) {
+  for (const otra of PESTANAS_DEL_PERFIL) {
+    const activa = otra === nombre;
+    const pestana = document.getElementById(`pestana-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    pestana.classList.toggle('activa', activa);
+    document.getElementById(`vista-${otra}`).hidden = !activa;
+  }
+  history.replaceState(null, '', `#${nombre}`);
+}
 
-  // Filtros
-  document.getElementById('filtro-mis-estado').addEventListener('change', cargarMisCambios);
-  document.getElementById('filtro-revisar-tipo').addEventListener('change', cargarCambiosParaRevisar);
+// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña.
+function teclaEnPestanas(evento) {
+  const actual = PESTANAS_DEL_PERFIL.indexOf(evento.target.dataset?.vista);
+  if (actual === -1) return;
+  const ultima = PESTANAS_DEL_PERFIL.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault();
+  mostrarPestana(PESTANAS_DEL_PERFIL[destino]);
+  document.getElementById(`pestana-${PESTANAS_DEL_PERFIL[destino]}`).focus();
+}
+
+// El clic en cada pestaña y el teclado en la barra
+function conectarPestanas() {
+  for (const nombre of PESTANAS_DEL_PERFIL) {
+    document.getElementById(`pestana-${nombre}`).addEventListener('click', () => mostrarPestana(nombre));
+  }
+  document.getElementById('pestanas-perfil').addEventListener('keydown', teclaEnPestanas);
 }
 
 /**
@@ -235,31 +265,25 @@ async function cargarCambiosParaRevisar() {
 }
 
 /**
- * Actualizar badges de contadores
+ * La cuenta de una pestaña: el número, o nada si no hay cambios
+ */
+function mostrarCuenta(id, cantidad) {
+  const cuenta = document.getElementById(id);
+  cuenta.textContent = cantidad > 0 ? String(cantidad) : '';
+  cuenta.hidden = !(cantidad > 0);
+}
+
+/**
+ * Actualizar las cuentas de las pestañas Para revisar y Mis cambios
  */
 async function actualizarBadges() {
   try {
-    // Badge de "Para Revisar"
     const { cantidad } = await API.getContadorPendientes();
-    const badgeRevisar = document.getElementById('badge-para-revisar');
-    const badgeNav = document.getElementById('nav-badge-admin');
-    
-    if (cantidad > 0) {
-      badgeRevisar.textContent = cantidad;
-      badgeRevisar.style.display = 'inline';
-    } else {
-      badgeRevisar.style.display = 'none';
-    }
+    mostrarCuenta('cuenta-para-revisar', cantidad);
 
-    // Badge de "Mis Cambios" (pendientes)
+    // Mis cambios: los pendientes
     const misCambios = await API.getMisCambios({ estado: 'pendiente' });
-    const badgeMis = document.getElementById('badge-mis-cambios');
-    if (misCambios.length > 0) {
-      badgeMis.textContent = misCambios.length;
-      badgeMis.style.display = 'inline';
-    } else {
-      badgeMis.style.display = 'none';
-    }
+    mostrarCuenta('cuenta-mis-cambios', misCambios.length);
   } catch (error) {
     console.error('Error actualizando badges:', error);
   }

@@ -6,13 +6,14 @@ import fs from 'fs';
 import vm from 'vm';
 
 const escaparHtml = (texto) => String(texto ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-// elementos: los del DOM que mira el test (los demás son objetos vacíos); API: la de la página
-const cargarPerfil = ({ elementos = {}, API = {} } = {}) => {
+// elementos: los del DOM que mira el test (los demás son objetos vacíos); API: la de la página; globales: lo que el test agrega
+// al contexto (el archivo, al cargarse, no usa window, location, history ni localStorage: son del navegador)
+const cargarPerfil = ({ elementos = {}, API = {}, globales = {} } = {}) => {
   const contexto = vm.createContext({
     document: { addEventListener() {}, getElementById: (id) => elementos[id] ?? { style: {} } },
     Utils: { escapeHtml: escaparHtml, textoCargo: (cargo) => cargo ?? '', textoVinculo: (vinculo) => vinculo ?? '', showError: (m) => { throw new Error(m); },
       safeUrl: (u) => /^https?:\/\//.test(u ?? '') ? u : null },
-    Auth: {}, API, CONFIG: {}, console
+    Auth: {}, API, CONFIG: {}, console, ...globales
   });
   vm.runInContext(fs.readFileSync(new URL('../public/js/perfil.js', import.meta.url), 'utf8'), contexto);
   return contexto;
@@ -348,5 +349,198 @@ describe('perfil.js: pestaña inicial y demora', () => {
     assert.equal(estaDemorado('no es una fecha', ahora), false);
     assert.equal(estaDemorado(undefined, ahora), false);
     assert.equal(estaDemorado('2020-01-01'), true, 'sin "ahora" usa la hora actual');
+  });
+});
+
+// Mi Perfil en pestañas (spec 2026-10-16-perfil-pestanas-gestion-cambios): la estructura de la página
+describe('perfil.html: pestañas', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
+  const NOMBRES = ['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'];
+  // La etiqueta de apertura del elemento con ese id
+  const etiqueta = (id) => PAGINA.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  const posicion = (texto) => PAGINA.indexOf(texto);
+
+  it('hay una barra de pestañas (tablist) debajo de los mensajes', () => {
+    assert.ok(PAGINA.includes('role="tablist"'));
+    assert.ok(posicion('role="tablist"') > posicion('id="message-container"'), 'la barra va después de #message-container');
+    const barra = etiqueta('pestanas-perfil');
+    assert.match(barra, /class="pf-pestanas"/);
+    assert.match(barra, /role="tablist"/);
+    assert.match(barra, /aria-label="Secciones de Mi Perfil"/);
+    assert.match(barra, /\bhidden\b/, 'arranca oculta: solo la muestra quien administra');
+  });
+
+  for (const n of NOMBRES) {
+    it(`${n}: una pestaña (botón) y su panel enlazados`, () => {
+      const pestana = etiqueta(`pestana-${n}`);
+      assert.match(pestana, /^<button\b/);
+      assert.match(pestana, /type="button"/);
+      assert.match(pestana, /role="tab"/);
+      assert.match(pestana, new RegExp(`aria-controls="vista-${n}"`));
+      assert.match(pestana, new RegExp(`data-vista="${n}"`));
+      assert.match(pestana, /aria-selected="false"/);
+      assert.match(pestana, /tabindex="-1"/);
+      const panel = etiqueta(`vista-${n}`);
+      assert.match(panel, /role="tabpanel"/);
+      assert.match(panel, new RegExp(`aria-labelledby="pestana-${n}"`));
+      assert.match(panel, /\bhidden\b/);
+    });
+  }
+
+  it('las pestañas van en este orden: Para revisar, Mis cambios, Mis datos y Mi firma', () => {
+    const lugares = NOMBRES.map(n => posicion(`id="pestana-${n}"`));
+    assert.ok(lugares.every(lugar => lugar > 0));
+    assert.deepEqual([...lugares].sort((a, b) => a - b), lugares);
+  });
+
+  it('Para revisar y Mis cambios traen su cuenta, oculta mientras no hay cambios', () => {
+    for (const n of ['para-revisar', 'mis-cambios']) {
+      const cuenta = etiqueta(`cuenta-${n}`);
+      assert.match(cuenta, /class="pf-cuenta"/, n);
+      assert.match(cuenta, /\bhidden\b/, n);
+      assert.ok(posicion(`id="cuenta-${n}"`) > posicion(`id="pestana-${n}"`), n);
+    }
+  });
+
+  it('ya no están las pestañas internas ni la tarjeta de Gestión de Cambios', () => {
+    assert.ok(!PAGINA.includes('class="tab-btn'));
+    assert.ok(!PAGINA.includes('id="seccion-cambios"'));
+    assert.ok(!PAGINA.includes('badge-para-revisar') && !PAGINA.includes('badge-mis-cambios'));
+    assert.ok(!PAGINA.includes('class="tab-content'));
+  });
+
+  it('cada panel tiene lo suyo: las listas de cambios y los formularios de siempre', () => {
+    const [revisar, cambios, datos, firma] = NOMBRES.map(n => posicion(`id="vista-${n}"`));
+    const dentro = (id, desde, hasta) => posicion(`id="${id}"`) > desde && posicion(`id="${id}"`) < hasta;
+    assert.ok(dentro('filtro-revisar-tipo', revisar, cambios) && dentro('lista-para-revisar', revisar, cambios));
+    assert.ok(dentro('filtro-mis-estado', cambios, datos) && dentro('lista-mis-cambios', cambios, datos));
+    for (const id of ['form-perfil', 'perfil-username', 'perfil-nombre', 'perfil-email', 'btn-guardar-perfil', 'form-password', 'password-actual',
+      'password-nueva', 'password-confirmar', 'btn-cambiar-password']) {
+      assert.ok(dentro(id, datos, firma), `${id} va en Mis datos`);
+    }
+    for (const id of ['form-firma', 'firma-nombre', 'firma-cargo', 'firma-archivo', 'firma-vista', 'firma-muestra', 'firma-estado', 'btn-guardar-firma']) {
+      assert.ok(posicion(`id="${id}"`) > firma, `${id} va en Mi firma`);
+    }
+  });
+
+  it('Mis datos: las ayudas de las tarjetas, y las tarjetas en dos columnas que pasan a una en 760 px', () => {
+    assert.ok(PAGINA.includes('Tu nombre y email aparecen en los avisos y en el historial de cambios.'));
+    assert.ok(PAGINA.includes('Al cambiarla se cierran tus otras sesiones abiertas.'));
+    assert.match(PAGINA, /\.pf-tarjetas\s*\{[^}]*grid-template-columns:\s*1fr 1fr/);
+    assert.match(PAGINA, /@media \(max-width: 760px\)\s*\{[^@]*\.pf-tarjetas\s*\{[^}]*grid-template-columns:\s*1fr/);
+  });
+
+  it('los estilos nuevos: contenido más angosto, barra que se desplaza, mensajes y movimiento reducido', () => {
+    assert.match(PAGINA, /\.main-content\s*\{\s*max-width:\s*1120px;\s*min-width:\s*0;\s*\}/);
+    assert.match(PAGINA, /\.pf-pestanas\s*\{[^}]*overflow-x:\s*auto/);
+    assert.match(PAGINA, /\.pf-pestana\.activa\s*\{[^}]*border-bottom-color:\s*var\(--primary\)/);
+    assert.match(PAGINA, /\.pf-pestana:focus-visible/);
+    assert.match(PAGINA, /\.alert-success\s*\{[^}]*#EAF6EF[^}]*#C7E6D3[^}]*#2E6B4C/i);
+    assert.match(PAGINA, /\.alert-error\s*\{[^}]*#FBEEEE[^}]*#EFCACA[^}]*#8A3434/i);
+    assert.match(PAGINA, /@media \(prefers-reduced-motion: reduce\)/);
+  });
+});
+
+// Las pestañas por dentro: elementos falsos que guardan lo que el script les hace
+describe('perfil.js: cambiar de pestaña', () => {
+  const NOMBRES = ['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'];
+  const armar = () => {
+    const elementos = {};
+    const estado = { enfocada: null, historial: [] };
+    for (const n of NOMBRES) {
+      const clases = new Set();
+      elementos[`pestana-${n}`] = {
+        dataset: { vista: n }, attrs: {}, tabIndex: 0, clases,
+        setAttribute(nombre, valor) { this.attrs[nombre] = valor; },
+        classList: { toggle: (clase, activa) => (activa ? clases.add(clase) : clases.delete(clase)) },
+        focus() { estado.enfocada = n; }
+      };
+      elementos[`vista-${n}`] = { hidden: true };
+    }
+    const globales = { history: { replaceState: (...argumentos) => estado.historial.push(argumentos) } };
+    return { elementos, estado, contexto: cargarPerfil({ elementos, globales }) };
+  };
+  const activas = (elementos) => NOMBRES.filter(n => elementos[`pestana-${n}`].attrs['aria-selected'] === 'true');
+
+  it('mostrarPestana: activa la pestaña, muestra su panel, oculta los demás y deja el hash', () => {
+    const { elementos, estado, contexto } = armar();
+    contexto.mostrarPestana('mis-datos');
+    assert.deepEqual(activas(elementos), ['mis-datos']);
+    for (const n of NOMBRES) {
+      const activa = n === 'mis-datos';
+      const pestana = elementos[`pestana-${n}`];
+      assert.equal(pestana.attrs['aria-selected'], String(activa), n);
+      assert.equal(pestana.tabIndex, activa ? 0 : -1, n);
+      assert.equal(pestana.clases.has('activa'), activa, n);
+      assert.equal(elementos[`vista-${n}`].hidden, !activa, n);
+    }
+    assert.deepEqual(plano(estado.historial), [[null, '', '#mis-datos']]);
+    // Cambiar a otra deja una sola activa
+    contexto.mostrarPestana('para-revisar');
+    assert.deepEqual(activas(elementos), ['para-revisar']);
+    assert.deepEqual(NOMBRES.filter(n => !elementos[`vista-${n}`].hidden), ['para-revisar']);
+    assert.deepEqual(plano(estado.historial.at(-1)), [null, '', '#para-revisar']);
+  });
+
+  describe('teclado en la barra', () => {
+    const teclear = (desde, key) => {
+      const { elementos, estado, contexto } = armar();
+      contexto.mostrarPestana(desde);
+      let frenada = false;
+      contexto.teclaEnPestanas({ key, target: elementos[`pestana-${desde}`], preventDefault() { frenada = true; } });
+      return { elementos, estado, frenada };
+    };
+
+    it('flecha derecha e izquierda mueven el foco y activan, y dan la vuelta', () => {
+      for (const [desde, key, hacia] of [
+        ['para-revisar', 'ArrowRight', 'mis-cambios'], ['mis-cambios', 'ArrowRight', 'mis-datos'], ['mi-firma', 'ArrowRight', 'para-revisar'],
+        ['mis-datos', 'ArrowLeft', 'mis-cambios'], ['para-revisar', 'ArrowLeft', 'mi-firma']
+      ]) {
+        const { elementos, estado, frenada } = teclear(desde, key);
+        assert.deepEqual(activas(elementos), [hacia], `${desde} ${key}`);
+        assert.equal(estado.enfocada, hacia, `${desde} ${key}`);
+        assert.equal(elementos[`pestana-${hacia}`].tabIndex, 0);
+        assert.equal(frenada, true, 'no desplaza la página');
+      }
+    });
+
+    it('inicio va a la primera y fin a la última', () => {
+      for (const [desde, key, hacia] of [['mis-datos', 'Home', 'para-revisar'], ['mis-datos', 'End', 'mi-firma']]) {
+        const { elementos, estado, frenada } = teclear(desde, key);
+        assert.deepEqual(activas(elementos), [hacia], key);
+        assert.equal(estado.enfocada, hacia, key);
+        assert.equal(frenada, true, key);
+      }
+    });
+
+    it('cualquier otra tecla no hace nada', () => {
+      for (const key of ['Enter', 'Tab', 'a', 'ArrowDown']) {
+        const { elementos, estado, frenada } = teclear('mis-datos', key);
+        assert.deepEqual(activas(elementos), ['mis-datos'], key);
+        assert.equal(estado.enfocada, null, key);
+        assert.equal(frenada, false, key);
+      }
+    });
+  });
+
+  it('la cuenta de una pestaña: con cambios muestra el número; sin cambios queda oculta y vacía', () => {
+    const cuenta = { textContent: '', hidden: true };
+    const contexto = cargarPerfil({ elementos: { 'cuenta-para-revisar': cuenta } });
+    contexto.mostrarCuenta('cuenta-para-revisar', 3);
+    assert.equal(cuenta.textContent, '3');
+    assert.equal(cuenta.hidden, false);
+    contexto.mostrarCuenta('cuenta-para-revisar', 0);
+    assert.equal(cuenta.textContent, '');
+    assert.equal(cuenta.hidden, true);
+  });
+
+  it('actualizarBadges escribe en las cuentas de las pestañas (Para revisar y Mis cambios pendientes)', async () => {
+    const elementos = { 'cuenta-para-revisar': { textContent: '', hidden: true }, 'cuenta-mis-cambios': { textContent: '', hidden: true } };
+    const API = { getContadorPendientes: async () => ({ cantidad: 4 }), getMisCambios: async () => [{}, {}] };
+    await cargarPerfil({ elementos, API }).actualizarBadges();
+    assert.equal(elementos['cuenta-para-revisar'].textContent, '4');
+    assert.equal(elementos['cuenta-para-revisar'].hidden, false);
+    assert.equal(elementos['cuenta-mis-cambios'].textContent, '2');
+    assert.equal(elementos['cuenta-mis-cambios'].hidden, false);
   });
 });
