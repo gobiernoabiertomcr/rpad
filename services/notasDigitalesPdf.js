@@ -35,8 +35,11 @@ const MINIMO_TITULO = 55;
 // anteriores, spec 6.4), debajo del texto de la nota
 const TAMANO_SECUNDARIO = 7;
 const SEPARACION_SECUNDARIO = 1.5;
-// Alto que necesitan el remitente, la firma y la línea CC: van juntos, sin que la firma quede sola en una hoja
+// Alto que necesitan el remitente, la firma y la línea CC: van juntos, sin que la firma quede sola en una hoja.
+// Cuenta una línea por el nombre y una por el cargo de la firma; si no entran en ANCHO_FIRMA, renderPdf suma lo que ocupan de más.
 const ALTO_CIERRE = 200;
+// Ancho en que se centran el nombre y el cargo de cada firma (puntos)
+const ANCHO_FIRMA = 200;
 // Aire entre las firmas y la leyenda de una nota presentada por autorización (spec 2026-10-15, 7.2), en líneas de 11 pt
 const ESPACIO_LEYENDA = 0.8;
 // Espacio debajo de cada párrafo (en líneas de su letra) y alto que se reserva para el título "Justificación:"
@@ -421,19 +424,24 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       // (si ya está arriba de una hoja, un bloque más alto que la hoja no justifica dejarla en blanco)
       if (doc.y + alto > doc.page.height - doc.page.margins.bottom && doc.y > doc.page.margins.top + 1) doc.addPage();
     };
-    const altoTexto = (texto, tamano = 12, fuente = NORMAL) => {
+    const altoTexto = (texto, tamano = 12, fuente = NORMAL, anchoTexto = ancho) => {
       doc.font(fuente).fontSize(tamano);
-      return doc.heightOfString(texto, { width: ancho });
+      return doc.heightOfString(texto, { width: anchoTexto });
     };
     // Lo que avanza doc.moveDown(espacio) con esa fuente
     const altoEspacio = (espacio, tamano, fuente = NORMAL) => {
       doc.font(fuente).fontSize(tamano);
       return doc.currentLineHeight(true) * espacio;
     };
-    // Con presentante, el cierre suma la leyenda (medida, no estimada)
-    const altoCierre = ALTO_CIERRE + (nota.firma.presentante
-      ? altoEspacio(ESPACIO_LEYENDA, 11) + altoTexto(nota.firma.leyenda, 9, CURSIVA)
-      : 0);
+    // Lo que el nombre y el cargo de una firma ocupan de más que una línea cada uno (11 pt, en ANCHO_FIRMA): con textos
+    // largos se parten en varias, y dos firmas lado a lado ocupan lo que la más alta. Una línea cada uno ya está en ALTO_CIERRE.
+    const unaLineaDeFirma = altoTexto('X', 11, NORMAL, ANCHO_FIRMA);
+    const altoDeMas = (texto) => Math.max(0, altoTexto(texto, 11, NORMAL, ANCHO_FIRMA) - unaLineaDeFirma);
+    const altoFirmaDeMas = ({ nombre, cargo }) => altoDeMas(nombre) + altoDeMas(cargo);
+    // El cierre mide el nombre y el cargo de más y, con presentante, la leyenda (todo medido, no estimado)
+    const altoCierre = ALTO_CIERRE
+      + Math.max(altoFirmaDeMas(nota.firma), nota.firma.presentante ? altoFirmaDeMas(nota.firma.presentante) : 0)
+      + (nota.firma.presentante ? altoEspacio(ESPACIO_LEYENDA, 11) + altoTexto(nota.firma.leyenda, 9, CURSIVA) : 0);
     // Alto real de un contacto como lo dibuja el bucle de abajo: nombre en negrita 10, espacio y líneas en 10
     const altoContacto = (contacto) => altoTexto(contacto.nombre, 10, NEGRITA) + altoEspacio(0.1, 10, NEGRITA)
       + altoTexto(contacto.lineas.join('\n'), 10);
@@ -511,33 +519,31 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     doc.font(NEGRITA).fontSize(12).text(nota.remitente, MARGENES.left, doc.y, { underline: true, continued: true })
       .font(NORMAL).text(`, ${nota.fechaLarga.replace(/ /g, ' ')}.`, { underline: false });
 
-    // Firma: imagen (si está cargada), nombre y cargo, centrados en un ancho de 200 pt. Devuelve dónde termina.
-    const anchoFirma = 200;
-    const dibujarFirma = (x, y, imagen, { nombre, cargo }) => {
-      let abajo = y;
-      if (imagen) {
-        doc.image(imagen, x + (anchoFirma - 140) / 2, abajo, { fit: [140, 60], align: 'center', valign: 'bottom' });
-        abajo += 64;
-      } else {
-        abajo += 30;
-      }
-      doc.font(NORMAL).fontSize(11).text(nombre, x, abajo, { width: anchoFirma, align: 'center' });
-      doc.text(cargo, x, doc.y, { width: anchoFirma, align: 'center' });
+    // Firma: imagen (si está cargada), nombre y cargo, centrados en un ancho de 200 pt. El nombre baja 'bajada' puntos
+    // desde y (el alto de la imagen y un aire). Devuelve dónde termina.
+    const BAJADA_CON_IMAGEN = 64;
+    const BAJADA_SIN_IMAGEN = 30;
+    const dibujarFirma = (x, y, imagen, { nombre, cargo }, bajada) => {
+      if (imagen) doc.image(imagen, x + (ANCHO_FIRMA - 140) / 2, y, { fit: [140, 60], align: 'center', valign: 'bottom' });
+      doc.font(NORMAL).fontSize(11).text(nombre, x, y + bajada, { width: ANCHO_FIRMA, align: 'center' });
+      doc.text(cargo, x, doc.y, { width: ANCHO_FIRMA, align: 'center' });
       return doc.y;
     };
-    const xDerecha = MARGENES.left + ancho - anchoFirma;
+    const xDerecha = MARGENES.left + ancho - ANCHO_FIRMA;
     doc.moveDown(1.5);
     const yFirmas = doc.y;
     if (nota.firma.presentante) {
-      // Dos firmas lado a lado: quien presenta a la izquierda, el titular a la derecha; debajo, la leyenda
-      const finIzquierda = dibujarFirma(MARGENES.left, yFirmas, presentanteImagen, nota.firma.presentante);
-      const finDerecha = dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma);
+      // Dos firmas lado a lado: quien presenta a la izquierda, el titular a la derecha; debajo, la leyenda.
+      // Los dos nombres bajan lo mismo aunque solo una de las firmas tenga imagen: así quedan a la misma altura
+      const bajada = firmaImagen || presentanteImagen ? BAJADA_CON_IMAGEN : BAJADA_SIN_IMAGEN;
+      const finIzquierda = dibujarFirma(MARGENES.left, yFirmas, presentanteImagen, nota.firma.presentante, bajada);
+      const finDerecha = dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma, bajada);
       doc.y = Math.max(finIzquierda, finDerecha);
       doc.moveDown(ESPACIO_LEYENDA);
       doc.font(CURSIVA).fontSize(9).text(nota.firma.leyenda, MARGENES.left, doc.y, { width: ancho, align: 'justify' });
       doc.font(NORMAL).fontSize(11);
     } else {
-      dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma);
+      dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma, firmaImagen ? BAJADA_CON_IMAGEN : BAJADA_SIN_IMAGEN);
     }
 
     doc.moveDown(1.5);
