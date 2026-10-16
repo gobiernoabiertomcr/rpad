@@ -192,6 +192,8 @@ describe('autorización del firmante titular (spec 6.3)', () => {
     assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias WHERE usuario_id = ?', [usuarios.superadmin.id]))[0].n, 0);
     // Con un día hábil libre (el miércoles), sí
     assert.equal((await autorizar(q(3), q(9))).status, 201);
+    // Una licencia de solo un fin de semana no tiene días hábiles que cubrir: no la rechaza
+    assert.equal((await autorizar(q(12), q(13))).status, 201);
   });
 
   it('al cambiar las fechas de la licencia del titular, la misma regla con las fechas nuevas', async () => {
@@ -215,6 +217,25 @@ describe('autorización del firmante titular (spec 6.3)', () => {
     const cortada = await api.put(`/usuarios/licencias/${id}`, { hasta: dia(-1) }, comoSuper());
     assert.equal(cortada.status, 200, JSON.stringify(cortada.body));
     assert.equal(cortada.body.data.estado, 'pasada');
+  });
+
+  it('con la persona autorizada de licencia hasta el final de una licencia en curso del titular, las dos se pueden acortar (cuentan todos sus días)', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    // Titular de licencia del día -10 al 10; adminA, del -2 al 12: le quedaron libres los días hábiles del -10 al -3
+    const { insertId: delTitular } = await query(
+      'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, autorizado_id, autorizado_at) VALUES (?, ?, ?, ?, ?)',
+      [usuarios.superadmin.id, dia(-10), dia(10), usuarios.adminA.id, `${dia(-11)} 10:00:00`]
+    );
+    const { insertId: suya } = await query(
+      'INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminA.id, dia(-2), dia(12)]
+    );
+    const suyaAcortada = await api.put(`/usuarios/licencias/${suya}`, { hasta: dia(11) }, comoA());
+    assert.equal(suyaAcortada.status, 200, JSON.stringify(suyaAcortada.body));
+    const delTitularAcortada = await api.put(`/usuarios/licencias/${delTitular}`, { hasta: dia(6) }, comoSuper());
+    assert.equal(delTitularAcortada.status, 200, JSON.stringify(delTitularAcortada.body));
+    assert.equal(delTitularAcortada.body.data.autorizado_id, usuarios.adminA.id);
+    assert.equal((await api.put(`/usuarios/licencias/${delTitular}`, {}, comoSuper())).status, 200, 'un pedido sin cambios');
   });
 
   it('la persona autorizada puede tomarse una licencia superpuesta en parte, pero no una que la deje sin días hábiles (409)', async () => {

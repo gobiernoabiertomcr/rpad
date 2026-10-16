@@ -21,6 +21,7 @@ import {
   firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
+import { unirAusencias } from './licenciasReglas.js';
 import { emailValido } from './usuariosReglas.js';
 import {
   contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe, periodosSinAuditor,
@@ -665,13 +666,13 @@ const licenciaDelFirmante = async (config, hoy) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
   if (!licencia) return null;
-  // La persona autorizada se evalúa desde el primer día de la licencia (hoy, si ya empezó): que hoy tenga su propia
-  // licencia no afecta a una licencia futura del firmante. Sirve si le queda algún día hábil sin licencia propia; si ese
-  // primer día está de licencia, hasta cuándo (esos días no se generan notas)
+  // La persona autorizada sirve si le queda algún día hábil de toda la licencia sin licencia propia: puede faltar algunos
+  // días a la vez que el titular, también hasta el final. Si el día que se mira (el primero de la licencia, u hoy si ya
+  // empezó) está de licencia, hasta cuándo, con sus licencias seguidas unidas: esos días no se generan notas
   const evaluado = licencia.desde > hoy ? licencia.desde : hoy;
-  const autorizado = await autorizadoParaLicencia(licencia, { desde: evaluado });
+  const autorizado = await autorizadoParaLicencia(licencia);
   const ausente = autorizado?.primer_dia_disponible
-    ? autorizado.ausencias.find(a => a.desde <= evaluado && evaluado <= a.hasta)
+    ? unirAusencias(autorizado.ausencias).find(a => a.desde <= evaluado && evaluado <= a.hasta)
     : null;
   const [[nota]] = licencia.nota_autorizacion_id
     ? await pool.query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [licencia.nota_autorizacion_id])
@@ -786,7 +787,7 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       }] : []),
       ...(licencia?.autorizado_no_vigente ? [{
         tipo: 'autorizado-no-vigente', nivel: 'error',
-        mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia: esos días no se generan notas.`
+        mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.`
       }] : []),
       ...(config.membrete_imagen ? [] : [{
         tipo: 'sin-membrete', nivel: 'advertencia', mensaje: 'No hay imagen del membrete: las notas saldrían sin el encabezado institucional.'

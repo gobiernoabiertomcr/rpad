@@ -94,10 +94,11 @@ const conSusLicencias = async (personas, hoy) => {
  * Reglas que necesitan la base (spec 5.2 y 6.3). autorizadoNuevo: la autorización se está dando o cambiando en este
  * pedido (si no, solo se revisa que a la persona ya autorizada le quede algún día hábil con las fechas nuevas).
  * La persona autorizada y el titular pueden faltar algunos días a la vez: se rechaza solo si a ella no le queda ningún día
- * hábil de la licencia del titular, desde hoy (notasDigitalesFirmas.disponibilidadDelAutorizado).
+ * hábil en toda la licencia del titular (notasDigitalesFirmas.disponibilidadDelAutorizado). Cuentan todos sus días, no
+ * solo desde hoy: si no, con ella de licencia hasta el final no se podría ni acortar una licencia en curso.
  * Devuelve [status, mensaje, campo] si no se puede, o null.
  */
-const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo, hoy }) => {
+const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
   const [[usuario]] = await conexion.query('SELECT rol, activo FROM usuarios WHERE id = ?', [usuarioId]);
   if (!usuario || !usuario.activo || !puedeTenerLicencia(usuario.rol)) {
     return [400, 'Solo pueden tener licencia el superadmin, los admins y los editores activos.', 'usuario_id'];
@@ -118,7 +119,7 @@ const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, has
   );
   for (const comoAutorizada of autorizaciones) {
     const disponible = await disponibilidadDelAutorizado(comoAutorizada, {
-      desde: hoy, licenciaExtra: { desde, hasta }, excluirLicenciaId: licenciaId, conexion
+      licenciaExtra: { desde, hasta }, excluirLicenciaId: licenciaId, conexion
     });
     if (!disponible) {
       return [409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`, 'fechas'];
@@ -132,7 +133,7 @@ const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, has
     }
   }
   if (autorizadoId) {
-    const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { desde: hoy, conexion });
+    const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { conexion });
     if (!disponible) {
       return [409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id'];
     }
@@ -245,7 +246,7 @@ export const crearLicencia = async (req, res) => {
     await conexion.beginTransaction();
     await bloquearUsuarios(conexion);
     const rechazo = await rechazoDeLaBase(conexion, {
-      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId), hoy
+      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId)
     });
     if (rechazo) {
       await conexion.rollback();
@@ -313,7 +314,7 @@ export const editarLicencia = async (req, res) => {
     }
     const autorizadoId = autorizadoCambia ? autorizadoPedido : antes.autorizado_id;
     const rechazo = await rechazoDeLaBase(conexion, {
-      licenciaId: id, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia, hoy
+      licenciaId: id, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia
     });
     if (rechazo) {
       await conexion.rollback();

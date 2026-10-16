@@ -1,6 +1,6 @@
 // Reglas de las licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.1, 5.2 y 6.3): funciones puras, sin base de datos.
 // Las fechas son textos 'AAAA-MM-DD' en hora de Argentina.
-import { esFechaIso, diasEntre, sumarDias, esDiaHabil } from './notasDigitalesCalendario.js';
+import { esFechaIso, diasEntre, sumarDias, esDiaHabil, proximoDiaHabil } from './notasDigitalesCalendario.js';
 
 export const ROLES_CON_LICENCIA = ['superadmin', 'admin', 'editor'];
 export const MAXIMO_DIAS_LICENCIA = 365;
@@ -69,3 +69,19 @@ export const diasHabilesLibres = (desde, hasta, licencias) => {
   }
   return { primerDia: null, cubiertos: hayHabiles };
 };
+
+/**
+ * Une, en orden, los tramos de licencia ({ desde, hasta }) seguidos o separados solo por días no hábiles (sin ningún
+ * día hábil libre entre uno y otro): para saber hasta cuándo falta la persona sin volver.
+ */
+export const unirAusencias = (ausencias) => [...ausencias]
+  .sort((a, b) => a.desde.localeCompare(b.desde))
+  .reduce((unidas, { desde, hasta }) => {
+    const ultima = unidas.at(-1);
+    if (ultima && proximoDiaHabil(sumarDias(ultima.hasta, 1)) >= desde) {
+      if (hasta > ultima.hasta) ultima.hasta = hasta;
+    } else {
+      unidas.push({ desde, hasta });
+    }
+    return unidas;
+  }, []);

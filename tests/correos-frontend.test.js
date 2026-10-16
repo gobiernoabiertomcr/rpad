@@ -251,7 +251,7 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
 
     it('la alerta de la persona autorizada de licencia se dibuja como advertencia, y el error de siempre como error', async () => {
       const ADVERTENCIA = 'La persona autorizada está de licencia hasta el 03/03/2027: hasta entonces no se generan notas.';
-      const ERROR = 'La persona autorizada para la licencia del firmante (del 01/03/2027 al 31/03/2027) ya no está activa, no tiene su firma cargada o está de licencia: esos días no se generan notas.';
+      const ERROR = 'La persona autorizada para la licencia del firmante (del 01/03/2027 al 31/03/2027) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.';
       const dibujar = async (alerta) => {
         const panel = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, alertas: [alerta] }) });
         await panel.contexto.cargarEstado();
