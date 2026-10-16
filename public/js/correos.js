@@ -142,7 +142,7 @@ function textoUltimaCorrida(corrida) {
 
 async function cambiarEnvioAutomatico(evento) {
   const activar = evento.target.checked;
-  if (activar && !confirm('¿Activar el envío automático? Desde la próxima corrida diaria (08:00) se enviarán Notas Digitales reales a los destinatarios configurados.')) {
+  if (activar && !confirm('¿Activar el envío automático? Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.')) {
     evento.target.checked = false;
     return;
   }
