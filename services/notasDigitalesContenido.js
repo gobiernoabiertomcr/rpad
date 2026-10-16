@@ -1,6 +1,9 @@
 // Contenido de las Notas Digitales: textos fijos, estructura de la nota y versiones HTML y texto plano.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6)
-import { formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses } from './notasDigitalesCalendario.js';
+import {
+  formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses, diasHabilesTranscurridos
+} from './notasDigitalesCalendario.js';
+import { RPAD_URL } from './emailTemplates.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -213,6 +216,178 @@ export const construirNotaDeAutorizacion = ({ numero = null, anio = null, esPrue
   };
 };
 
+// =====================================================
+// Nota de auditoría de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 10)
+// =====================================================
+const REF_AUDITORIA = 'Solicitud de auditoría de cambios en el Registro Permanente de Actualización de Datasets';
+const PARRAFO_AUDITORIA = 'Me dirijo a Ud. a fin de solicitarle la auditoría de los cambios propuestos en el Registro Permanente de Actualización de Datasets (RPAD) que se detallan a continuación, que se encuentran pendientes de verificación. Conforme al procedimiento de doble verificación, cada modificación del registro debe ser revisada y aprobada por una persona distinta de quien la propuso antes de aplicarse.';
+const SECCIONES_AUDITORIA = { nuevo: 'Cambios pendientes de auditoría', reiterado: 'Cambios ya solicitados que continúan pendientes' };
+const COLUMNAS_AUDITORIA = ['Conjunto de datos', 'Tipo de cambio', 'Propuesto por', 'Fecha de la propuesta', 'Días hábiles pendiente'];
+// Proporción del ancho de cada columna en el PDF: 5 columnas los nuevos y 6 los reiterados (con "Solicitado en")
+const PROPORCIONES_AUDITORIA = { nuevo: [32, 14, 26, 14, 14], reiterado: [22, 12, 18, 14, 12, 22] };
+const TIPO_DE_CAMBIO = { crear: 'Alta', editar: 'Modificación', eliminar: 'Baja' };
+// Puntos 5 y 6 de la spec 10.3: apartados con título, como "Justificación:" (Decisiones del plan 8)
+const QUE_IMPLICA = {
+  titulo: 'Qué implica la auditoría:',
+  parrafos: ['La auditoría consiste en verificar que:'],
+  items: [
+    'los datos coincidan con la información remitida por el área responsable;',
+    'el enlace al Portal de Datos Abiertos funcione y muestre la versión informada;',
+    'las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos;',
+    'el título, la descripción, el área, los temas, los formatos y "qué se solicita" sean correctos.'
+  ],
+  cierre: [`Cada cambio se aprueba o se rechaza, con un comentario, desde el RPAD: ${RPAD_URL}/perfil.html (sección "Para revisar").`]
+};
+const IMPORTANCIA = {
+  titulo: 'Importancia:',
+  parrafos: ['Mientras un cambio no se audita, el conjunto de datos permanece bloqueado para nuevas modificaciones y el registro no refleja su estado real, lo que afecta los avisos y reiteraciones que emite esta Dirección y el cumplimiento de la Ordenanza N° 17.662/23. Por ello, solicito tenga a bien realizar la auditoría a la brevedad.'],
+  items: [],
+  cierre: []
+};
+
+// Campos del dataset con las etiquetas del formulario (public/admin.html), en su orden. catalogo: de qué catálogo sale el
+// nombre de un id
+const CAMPOS_DEL_DATASET = [
+  { campo: 'titulo', etiqueta: 'Título' },
+  { campo: 'area_id', etiqueta: 'Área Responsable', catalogo: 'areas' },
+  { campo: 'descripcion', etiqueta: 'Descripción' },
+  { campo: 'tema_principal_id', etiqueta: 'Tema Principal', catalogo: 'temas' },
+  { campo: 'tema_secundario_id', etiqueta: 'Tema Secundario', catalogo: 'temas' },
+  { campo: 'frecuencia_id', etiqueta: 'Frecuencia', catalogo: 'frecuencias' },
+  { campo: 'tipo_gestion', etiqueta: 'Tipo de Gestión' },
+  { campo: 'formatos', etiqueta: 'Formatos del Dataset', catalogo: 'formatos' },
+  { campo: 'ultima_actualizacion', etiqueta: 'Última Actualización' },
+  { campo: 'proxima_actualizacion', etiqueta: 'Próxima Actualización' },
+  { campo: 'url_dataset', etiqueta: 'URL en Portal' },
+  { campo: 'que_se_solicita', etiqueta: 'Qué se solicita' },
+  { campo: 'observaciones', etiqueta: 'Observaciones' }
+];
+const CAMPOS_DE_FECHA = ['ultima_actualizacion', 'proxima_actualizacion'];
+const SIN_DATO = 'Sin dato';
+const GESTION_DEL_DATASET = { interna: 'Interna', externa: 'Externa' };
+
+const vacio = (valor) => valor === null || valor === undefined || String(valor).trim() === '' || (Array.isArray(valor) && valor.length === 0);
+
+// Para comparar el valor anterior con el nuevo: las fechas por el día (al proponer un cambio, las fechas guardadas llegan
+// con hora, "2026-03-15T03:00:00.000Z": el día es el de los primeros 10 caracteres con Node en hora argentina o en UTC) y
+// los formatos sin importar el orden
+const valorComparable = (campo, valor) => {
+  if (vacio(valor)) return '';
+  if (campo === 'formatos') return (Array.isArray(valor) ? valor : [valor]).map(Number).sort((a, b) => a - b).join(',');
+  if (CAMPOS_DE_FECHA.includes(campo)) return String(valor).slice(0, 10);
+  return String(valor);
+};
+
+// Un valor del dataset como se lee en la nota: el nombre de un id de catálogo, la fecha dd/mm/aaaa, la gestión con
+// mayúscula; "Sin dato" si está vacío
+const valorDelCampo = ({ campo, catalogo }, valor, catalogos) => {
+  if (vacio(valor)) return SIN_DATO;
+  if (campo === 'formatos') return (Array.isArray(valor) ? valor : [valor]).map(id => catalogos.formatos?.[id] ?? String(id)).join(', ');
+  if (catalogo) return catalogos[catalogo]?.[valor] ?? String(valor);
+  if (campo === 'tipo_gestion') return GESTION_DEL_DATASET[valor] ?? String(valor);
+  if (CAMPOS_DE_FECHA.includes(campo) && esFechaIso(String(valor).slice(0, 10))) return formatoCorto(String(valor).slice(0, 10));
+  return String(valor);
+};
+
+const tituloDelCambio = (cambio) =>
+  cambio.dataset_titulo ?? cambio.datos_nuevos?.titulo ?? cambio.datos_anteriores?.titulo ?? 'Conjunto de datos sin título';
+const filaSimple = (valores) => ({ valores, url: null, antecedente: null, informadoAnterior: null });
+
+// "Nota Digital N° 12/26 (09/10/2026)" y, si ya se reiteró, " – reiterado N veces" (Decisiones del plan 5)
+const textoSolicitado = (s) => `Nota Digital N° ${textoNumero(s)} (${formatoCorto(s.fecha)})`
+  + `${s.reiteraciones > 0 ? ` – reiterado ${cantidad(s.reiteraciones, 'vez', 'veces')}` : ''}`;
+
+// Fila de las tablas de nuevos y reiterados (spec 10.3, punto 3)
+const filaDeCambio = (cambio, fecha, conSolicitud) => {
+  const proponente = cambio.usuario_cargo ? `${cambio.usuario_nombre}, ${cambio.usuario_cargo}` : cambio.usuario_nombre;
+  const valores = [
+    tituloDelCambio(cambio), TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio, proponente,
+    formatoCorto(cambio.fecha_propuesta), String(diasHabilesTranscurridos(cambio.fecha_propuesta, fecha))
+  ];
+  if (conSolicitud) valores.push(textoSolicitado(cambio.solicitado));
+  return filaSimple(valores);
+};
+
+// Detalle de un cambio (spec 10.3, punto 4): de una modificación, los campos que cambian con el valor anterior y el nuevo;
+// de un alta, los datos del dataset propuesto; de una baja, el dataset que se daría de baja
+const detalleDelCambio = (cambio, numero, catalogos) => {
+  const titulo = `${numero}. ${tituloDelCambio(cambio)} – ${TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio}`;
+  const propuesta = `Propuesta por ${cambio.usuario_nombre} el ${formatoCorto(cambio.fecha_propuesta)}.`;
+  if (cambio.tipo_cambio === 'editar') {
+    const nuevos = cambio.datos_nuevos ?? {};
+    const anteriores = cambio.datos_anteriores ?? {};
+    const filas = CAMPOS_DEL_DATASET
+      .filter(c => Object.hasOwn(nuevos, c.campo) && valorComparable(c.campo, anteriores[c.campo]) !== valorComparable(c.campo, nuevos[c.campo]))
+      .map(c => filaSimple([c.etiqueta, valorDelCampo(c, anteriores[c.campo], catalogos), valorDelCampo(c, nuevos[c.campo], catalogos)]));
+    return {
+      titulo, introduccion: `${propuesta} Campos que cambian, con el valor anterior y el nuevo:`,
+      columnas: ['Campo', 'Valor anterior', 'Valor nuevo'], proporciones: [24, 38, 38], partirPalabras: true,
+      filas: filas.length ? filas : [filaSimple(['—', 'Sin diferencias registradas', '—'])]
+    };
+  }
+  const datos = (cambio.tipo_cambio === 'crear' ? cambio.datos_nuevos : cambio.datos_anteriores) ?? {};
+  const filas = CAMPOS_DEL_DATASET
+    .filter(c => !vacio(datos[c.campo]))
+    .map(c => filaSimple([c.etiqueta, valorDelCampo(c, datos[c.campo], catalogos)]));
+  return {
+    titulo,
+    introduccion: cambio.tipo_cambio === 'crear'
+      ? `${propuesta} Datos principales del conjunto de datos propuesto:`
+      : `${propuesta} Conjunto de datos que se daría de baja:`,
+    columnas: ['Campo', 'Valor'], proporciones: [28, 72], partirPalabras: true,
+    filas: filas.length ? filas : [filaSimple(['Título', tituloDelCambio(cambio)])]
+  };
+};
+
+/**
+ * Nota de auditoría (spec 10): pide a la Dirección General que audite los cambios pendientes. nuevos y reiterados: cambios
+ * de auditoriaService (los reiterados con solicitado). catalogos: { areas, frecuencias, temas, formatos } (id → nombre).
+ * firma: la de firmaParaFecha (titular, o las dos firmas con la leyenda); sin ella, la de la configuración.
+ * Tiene la misma forma que las demás notas, más detalles y apartados.
+ */
+export const construirNotaDeAuditoria = ({
+  numero = null, anio = null, esPrueba = false, fecha, nuevos = [], reiterados = [], catalogos = {}, firma = null, config = null
+}) => {
+  const numeroTexto = textoNumero({ numero, anio, esPrueba });
+  const ref = nuevos.length ? REF_AUDITORIA : `Reiteración – ${REF_AUDITORIA}`;
+  const secciones = [['nuevo', nuevos], ['reiterado', reiterados]]
+    .filter(([, lista]) => lista.length > 0)
+    .map(([clave, lista]) => ({
+      clave,
+      titulo: SECCIONES_AUDITORIA[clave],
+      introduccion: '',
+      columnas: clave === 'reiterado' ? [...COLUMNAS_AUDITORIA, 'Solicitado en'] : COLUMNAS_AUDITORIA,
+      proporciones: PROPORCIONES_AUDITORIA[clave],
+      filas: lista.map(cambio => filaDeCambio(cambio, fecha, clave === 'reiterado'))
+    }));
+  return {
+    tipo: 'auditoria',
+    gestion: null,
+    esPrueba,
+    fecha,
+    numeroTexto,
+    asunto: `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${ref}`,
+    ref,
+    destinatario: DESTINATARIO,
+    avisoAdjunto: AVISO_ADJUNTO.reiteracion,
+    parrafoInicial: PARRAFO_AUDITORIA,
+    secciones,
+    detalles: {
+      titulo: 'Detalle de cada cambio',
+      secciones: [...nuevos, ...reiterados].map((cambio, i) => detalleDelCambio(cambio, i + 1, catalogos))
+    },
+    contactos: [],
+    anexo: null,
+    autorizacion: null,
+    apartados: [QUE_IMPLICA, IMPORTANCIA],
+    justificacion: [],
+    remitente: REMITENTE,
+    fechaLarga: formatoLargo(fecha),
+    firma: firmaDeLaNota(firma, config),
+    lineaCc: ''
+  };
+};
+
 const ETIQUETA_GESTION = { interna: 'GESTIÓN INTERNA', externa: 'GESTIÓN EXTERNA' };
 
 // Indicador de estado del anexo. Los avisos solo llevan datasets a vencer; un vencimiento pasado (posible con los
@@ -297,9 +472,18 @@ export const renderHtml = (nota) => {
     return `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;"><tr>${encabezado}</tr>${filas}</table>`;
   };
 
+  // (una sección sin introducción, como las de la nota de auditoría, no la escribe)
   const secciones = nota.secciones
-    .map(s => `<p style="margin:16px 0 6px;"><b>${escapeHtml(s.titulo)}</b></p>${parrafo(s.introduccion)}${tabla(s)}`)
+    .map(s => `<p style="margin:16px 0 6px;"><b>${escapeHtml(s.titulo)}</b></p>${s.introduccion ? parrafo(s.introduccion) : ''}${tabla(s)}`)
     .join('\n');
+  // Nota de auditoría (spec 2026-10-15, 10.3): el detalle de cada cambio y los apartados con viñetas
+  const detalles = nota.detalles?.secciones.length
+    ? `<p style="margin:16px 0 6px;"><b>${escapeHtml(nota.detalles.titulo)}</b></p>\n${nota.detalles.secciones
+      .map(s => `<p style="margin:12px 0 6px;"><b>${escapeHtml(s.titulo)}</b></p>${s.introduccion ? parrafo(s.introduccion) : ''}${tabla(s)}`)
+      .join('\n')}`
+    : '';
+  const apartados = (nota.apartados ?? []).map(a => `<p style="margin:16px 0 6px;"><b>${escapeHtml(a.titulo)}</b></p>
+${a.parrafos.map(parrafo).join('\n')}${a.items.length ? `<ul style="margin:0 0 12px;padding-left:24px;">${a.items.map(i => `<li style="margin:0 0 4px;text-align:justify;">${escapeHtml(i)}</li>`).join('')}</ul>` : ''}${(a.cierre ?? []).map(parrafo).join('\n')}`).join('\n');
 
   const contactos = nota.contactos.length
     ? `<p style="margin:16px 0 6px;"><b>Datos de contacto de las áreas responsables</b></p>${nota.contactos
@@ -318,7 +502,7 @@ export const renderHtml = (nota) => {
 <p style="margin:0 0 16px;"><b><u>${escapeHtml(nota.destinatario)}</u></b></p>
 ${parrafo(nota.parrafoInicial)}
 ${secciones}
-${contactos}${autorizacion}
+${detalles}${contactos}${autorizacion}${apartados}
 ${nota.anexo ? `<p style="margin:16px 0 0;">${escapeHtml(nota.anexo)}</p>` : ''}
 ${nota.justificacion.length ? `<p style="margin:16px 0 6px;"><b>Justificación:</b></p>
 ${nota.justificacion.map(parrafo).join('\n')}` : ''}
@@ -332,20 +516,29 @@ const lineasFirma = (firma) => (firma.presentante
   ? [firma.presentante.nombre, firma.presentante.cargo, '', firma.nombre, firma.cargo, '', firma.leyenda]
   : [firma.nombre, firma.cargo]);
 
+// Una sección con tabla en texto plano: el título, la introducción (si tiene) y cada fila con sus columnas
+const lineasDeSeccion = (seccion) => {
+  const lineas = [seccion.titulo, ...(seccion.introduccion ? [seccion.introduccion] : []), ''];
+  for (const fila of seccion.filas) {
+    lineas.push(`- ${fila.valores[0]}${fila.url ? ` (${fila.url})` : ''}`);
+    // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea
+    seccion.columnas.slice(1).forEach((columna, i) => {
+      const segunda = i + 1 === seccion.columnas.length - 1 && fila.informadoAnterior ? ` ${fila.informadoAnterior}` : '';
+      lineas.push(`    ${columna}: ${fila.valores[i + 1]}${segunda}`);
+    });
+    if (fila.antecedente) lineas.push(`    ${fila.antecedente}`);
+  }
+  lineas.push('');
+  return lineas;
+};
+
 export const renderTexto = (nota) => {
   const lineas = [nota.avisoAdjunto, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
-  for (const seccion of nota.secciones) {
-    lineas.push(seccion.titulo, seccion.introduccion, '');
-    for (const fila of seccion.filas) {
-      lineas.push(`- ${fila.valores[0]}${fila.url ? ` (${fila.url})` : ''}`);
-      // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea
-      seccion.columnas.slice(1).forEach((columna, i) => {
-        const segunda = i + 1 === seccion.columnas.length - 1 && fila.informadoAnterior ? ` ${fila.informadoAnterior}` : '';
-        lineas.push(`    ${columna}: ${fila.valores[i + 1]}${segunda}`);
-      });
-      if (fila.antecedente) lineas.push(`    ${fila.antecedente}`);
-    }
-    lineas.push('');
+  for (const seccion of nota.secciones) lineas.push(...lineasDeSeccion(seccion));
+  // Nota de auditoría (spec 2026-10-15, 10.3): el detalle de cada cambio
+  if (nota.detalles?.secciones.length) {
+    lineas.push(nota.detalles.titulo, '');
+    for (const seccion of nota.detalles.secciones) lineas.push(...lineasDeSeccion(seccion));
   }
   if (nota.contactos.length) {
     lineas.push('Datos de contacto de las áreas responsables');
@@ -353,6 +546,9 @@ export const renderTexto = (nota) => {
     lineas.push('');
   }
   if (nota.autorizacion) lineas.push(nota.autorizacion, '');
+  for (const apartado of nota.apartados ?? []) {
+    lineas.push(apartado.titulo, ...apartado.parrafos, ...apartado.items.map(i => `- ${i}`), ...(apartado.cierre ?? []), '');
+  }
   lineas.push(...(nota.anexo ? [nota.anexo, ''] : []), ...(nota.justificacion.length ? ['Justificación:', ...nota.justificacion, ''] : []),
     `${nota.remitente}, ${nota.fechaLarga}.`, '', ...lineasFirma(nota.firma), '', nota.lineaCc);
   return lineas.join('\n');

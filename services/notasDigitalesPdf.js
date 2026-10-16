@@ -48,6 +48,10 @@ const ALTO_TITULO_JUSTIFICACION = 25;
 // Aire de más arriba de la línea del anexo (puntos): con él queda más separada del último contacto (o de la tabla)
 // que los contactos entre sí, y un poco más que de "Justificación:"
 const AIRE_ANEXO = 6;
+// Ítems con viñeta de los apartados de la nota de auditoría: la viñeta, a SANGRIA_ITEM del margen; el texto, SANGRIA_VINETA
+// más adentro, con sus renglones alineados (sangría francesa). En puntos.
+const SANGRIA_ITEM = 14;
+const SANGRIA_VINETA = 10;
 
 // =====================================================
 // Texto que Helvetica puede escribir (WinAnsi / CP1252)
@@ -253,7 +257,9 @@ const palabraMasAncha = (doc, texto, fuente, tamano) => {
 // el título se parta (fechas, frecuencias, áreas, encabezados), y recortada de las columnas que tienen holgura.
 // Si los mínimos no entran, cede primero el título (que puede partir palabras larguísimas).
 const calcularAnchos = (doc, seccion, ancho) => {
-  const proporciones = (seccion.filas.some(f => f.informadoAnterior) ? PROPORCIONES_CON_SEGUNDA : PROPORCIONES)[seccion.columnas.length];
+  // Una sección puede traer sus proporciones (las tablas de la nota de auditoría y de su detalle)
+  const proporciones = seccion.proporciones
+    ?? (seccion.filas.some(f => f.informadoAnterior) ? PROPORCIONES_CON_SEGUNDA : PROPORCIONES)[seccion.columnas.length];
   const base = proporciones.map(p => (p / 100) * ancho);
   const ultima = seccion.columnas.length - 1;
   const minimos = seccion.columnas.map((titulo, i) => {
@@ -263,7 +269,8 @@ const calcularAnchos = (doc, seccion, ancho) => {
       // La segunda parte, en letra más chica, de la última celda ("Informado en" de las reiteraciones)
       ...(i === ultima ? seccion.filas.map(f => palabraMasAncha(doc, f.informadoAnterior, NORMAL, TAMANO_SECUNDARIO)) : [])
     );
-    return Math.min(largo, i === 0 ? MINIMO_TITULO : Infinity) + 2 * RELLENO + 1;
+    // (en el detalle de la nota de auditoría una URL larga se parte dentro de su celda en lugar de achicar la de las etiquetas)
+    return Math.min(largo, i === 0 ? MINIMO_TITULO : (seccion.partirPalabras ? base[i] - 2 * RELLENO - 1 : Infinity)) + 2 * RELLENO + 1;
   });
   const otras = minimos.slice(1).reduce((a, b) => a + b, 0);
   if (otras + minimos[0] > ancho) {
@@ -458,14 +465,27 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     parrafo(nota.destinatario, { fuente: NEGRITA, underline: true, align: 'left', espacio: 1 });
     parrafo(nota.parrafoInicial);
 
-    for (const seccion of nota.secciones) {
-      // El título, la introducción, el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
+    // El título, la introducción (si tiene), el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
+    const altoInicioDe = (seccion, tabla) => altoTexto(seccion.titulo)
+      + (seccion.introduccion ? altoTexto(seccion.introduccion) : 0) + 10 + tabla.altoInicio;
+    const dibujarSeccion = (seccion) => {
       const tabla = prepararTabla(doc, seccion, ancho);
-      asegurarEspacio(altoTexto(seccion.titulo) + altoTexto(seccion.introduccion) + 10 + tabla.altoInicio);
+      asegurarEspacio(altoInicioDe(seccion, tabla));
       parrafo(seccion.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.3 });
-      parrafo(seccion.introduccion, { espacio: 0.4 });
+      if (seccion.introduccion) parrafo(seccion.introduccion, { espacio: 0.4 });
       tabla.dibujar();
       doc.moveDown(0.8);
+    };
+    nota.secciones.forEach(dibujarSeccion);
+
+    // Nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.3): el detalle de cada cambio; el título
+    // viaja con el primero
+    if (nota.detalles?.secciones.length) {
+      const primera = nota.detalles.secciones[0];
+      asegurarEspacio(altoTexto(nota.detalles.titulo, 12, NEGRITA) + altoEspacio(0.4, 12, NEGRITA)
+        + altoInicioDe(primera, prepararTabla(doc, primera, ancho)));
+      parrafo(nota.detalles.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.4 });
+      nota.detalles.secciones.forEach(dibujarSeccion);
     }
 
     if (nota.contactos.length) {
@@ -484,6 +504,24 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     if (nota.autorizacion) {
       asegurarEspacio(altoTexto(nota.autorizacion) + altoEspacio(ESPACIO_PARRAFO, 12));
       parrafo(nota.autorizacion);
+    }
+
+    // Apartados de la nota de auditoría (spec 10.3): título, párrafos, ítems con viñeta y párrafos de cierre. El título
+    // viaja con su primer renglón
+    for (const apartado of nota.apartados ?? []) {
+      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(apartado.parrafos[0] ?? apartado.items[0] ?? ''));
+      parrafo(apartado.titulo, { fuente: NEGRITA, align: 'left', espacio: 0.3 });
+      apartado.parrafos.forEach(texto => parrafo(texto));
+      apartado.items.forEach((texto) => {
+        const anchoItem = ancho - SANGRIA_ITEM - SANGRIA_VINETA;
+        asegurarEspacio(altoTexto(texto, 12, NORMAL, anchoItem));
+        const y = doc.y;
+        doc.font(NORMAL).fontSize(12).text('•', MARGENES.left + SANGRIA_ITEM, y, { lineBreak: false });
+        doc.text(texto, MARGENES.left + SANGRIA_ITEM + SANGRIA_VINETA, y, { width: anchoItem, align: 'left' });
+        doc.moveDown(0.2);
+      });
+      if (apartado.items.length) doc.moveDown(0.4);
+      (apartado.cierre ?? []).forEach(texto => parrafo(texto));
     }
 
     // La línea del anexo (solo avisos) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del

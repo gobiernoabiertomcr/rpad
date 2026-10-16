@@ -2,7 +2,7 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
-import { construirNota, construirNotaDeAutorizacion } from '../services/notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria } from '../services/notasDigitalesContenido.js';
 import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
 import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
@@ -856,5 +856,54 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
         }
       }
     }
+  });
+});
+
+describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.3)', () => {
+  const LARGA = `Descripción ${'muy '.repeat(150)}larga del conjunto de datos, que se transcribe completa.`;
+  const cambio = (i) => ({
+    id: i, tipo_cambio: 'editar', dataset_titulo: `Dataset ${i} auditado`, usuario_nombre: 'Persona Editora',
+    usuario_cargo: 'Cargo de Prueba', fecha_propuesta: '2026-10-16',
+    datos_anteriores: { descripcion: 'Antes' }, datos_nuevos: { descripcion: LARGA }
+  });
+  const auditoria = (cantidad, cambios = {}) => construirNotaDeAuditoria({
+    numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: Array.from({ length: cantidad }, (_, i) => cambio(i + 1)), reiterados: [],
+    catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }, config, ...cambios
+  });
+  // El texto de todas las hojas, en el orden en que se dibujó (cada celda es una sola escritura: su texto queda junto)
+  const todo = (pdf) => lineasPorHoja(pdf).flat().join(' ').replace(/\s+/g, ' ');
+  const incluye = (pdf, esperado) => todo(pdf).includes(esperado.replace(/\s+/g, ' '));
+
+  it('lleva las tablas, el detalle con los textos largos completos y los apartados con viñetas', async () => {
+    const pdf = await renderPdf(auditoria(2), { firmaImagen: PNG });
+    for (const esperado of ['Cambios pendientes de auditoría', 'Detalle de cada cambio', '1. Dataset 1 auditado – Modificación',
+      '2. Dataset 2 auditado – Modificación', LARGA, 'Qué implica la auditoría:',
+      '• los datos coincidan con la información remitida por el área responsable;', 'Importancia:',
+      '/perfil.html (sección "Para revisar").', 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN']) {
+      assert.ok(incluye(pdf, esperado), esperado.slice(0, 60));
+    }
+    assert.ok(!incluye(pdf, 'Justificación:'));
+  });
+
+  it('con muchos cambios ocupa varias hojas y el cierre (remitente y firma) queda entero en la última', async () => {
+    const pdf = await renderPdf(auditoria(12));
+    const hojas = lineasPorHoja(pdf);
+    assert.ok(hojas.length > 1);
+    const ultima = hojas.at(-1).join(' ');
+    assert.ok(ultima.includes('DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN'));
+    assert.ok(ultima.includes('Nombre') && ultima.includes('Cargo'));
+  });
+
+  it('presentada por la persona autorizada: las dos imágenes y la leyenda', async () => {
+    const firma = {
+      titular: { nombre: 'Firma Titular', cargo: 'Director', imagen: PNG },
+      presentante: { nombre: 'Firma Autorizada', cargo: 'Coordinadora', imagen: PNG },
+      leyenda: 'Nota presentada por Firma Autorizada, Coordinadora, en nombre de Firma Titular, Director, conforme a la autorización conferida mediante Nota Digital N° 3/26 (licencia del 19/10/2026 al 30/10/2026).'
+    };
+    const pdf = await renderPdf(auditoria(1, { firma }), { firmaImagen: PNG, presentanteImagen: PNG });
+    const ultima = lineasPorHoja(pdf).at(-1).join(' ');
+    assert.ok(ultima.includes('Firma Autorizada') && ultima.includes('Firma Titular'));
+    assert.ok(incluye(pdf, firma.leyenda));
+    assert.equal(imagenesPorHoja(pdf).at(-1).length, 2);
   });
 });
