@@ -12,7 +12,7 @@ Sistema de gestión de datos abiertos para la Municipalidad de Comodoro Rivadavi
 
 ## Comandos
 - `npm start` — Inicia el servidor (puerto 3001)
-- `npm run setup-admin` — Crea usuario administrador
+- `npm run setup-admin` — Crea un usuario (superadmin, admin o lector; por defecto lector)
 - `npm test` — Tests de integración: requieren `docker compose up -d` (MariaDB + Mailpit) y `RPAD_TESTS_DB_LOCAL=1` en el `.env` local
 - Migraciones: ejecutar manualmente con `mysql -u root -p < database/updates/migracion-vX-vY.sql`
 
@@ -73,7 +73,7 @@ Todo cambio a datasets pasa por doble verificación:
 - Si un dataset tiene cambio pendiente, queda bloqueado para nuevas ediciones
 
 ### Roles
-- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol o desactiva a alguien. Se asigna por SQL, nunca desde la aplicación.
+- **superadmin:** todo lo de admin. Su cuenta solo la modifica su titular y recibe un aviso cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien. Se asigna por SQL, nunca desde la aplicación.
 - **admin:** CRUD datasets (con doble verificación), áreas, panel de usuarios, aprobación de cambios, reportes, notificaciones
 - **lector:** solo lectura de datos públicos + perfil
 - El rol y el estado activo se leen de la base en cada pedido (`authMiddleware`): desactivar o cambiar un rol tiene efecto inmediato. `esAdmin(rol)` (services/usuariosReglas.js) y `Auth.isAdmin()` incluyen al superadmin: no comparar con `'admin'` a mano.

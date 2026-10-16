@@ -431,10 +431,10 @@ Son de integración con `node:test` contra el entorno Docker local (MariaDB y Ma
 
 ## 15. Despliegue
 
-1. Correr `database/updates/migracion-usuarios-superadmin.sql` en producción, como las migraciones anteriores.
-2. Correr una sola vez el SQL de datos de `database/privado/` (rol superadmin, cargos y vínculos).
-3. Agregar `APP_URL=https://rpad.mcrmodernizacion.gob.ar` al `.env` de cPanel (si falta, se usa ese mismo valor por defecto).
-4. Reiniciar la aplicación Node.
+1. Correr `database/updates/migracion-usuarios-superadmin.sql` en producción, como las migraciones anteriores (antes de subir el código nuevo).
+2. Subir los archivos nuevos de la aplicación.
+3. Agregar `APP_URL=https://rpad.mcrmodernizacion.gob.ar` a las variables de entorno de cPanel (si falta, se usa ese mismo valor por defecto) y reiniciar la aplicación Node. Los pasos 2 y 3 van seguidos.
+4. Correr una sola vez el SQL de datos de `database/privado/` (rol superadmin, cargos y vínculos). Va después del reinicio: el código anterior no conoce el rol superadmin.
 5. Verificar:
    - el superadmin ve "Superadmin" en el header;
    - el panel lista a los usuarios con sus cargos;

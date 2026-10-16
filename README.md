@@ -33,7 +33,7 @@ El sistema cuenta con tres roles de usuario:
 
 | Rol | Descripción | Permisos |
 |-----|-------------|----------|
-| `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro admin crea un admin, cambia un rol o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
+| `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otro admin. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
 | `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, reportes, notas) sin poder modificar datos. |
 
@@ -46,10 +46,12 @@ En **Administración → Usuarios**, admin y superadmin pueden:
 - **Crear usuarios.** El usuario nuevo recibe un email con un link para elegir su contraseña (vence en 72 h). Nadie ve ni envía contraseñas.
 - **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin o lector).
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
-- **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación.
+- **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
 
 Siempre tiene que haber al menos **2 usuarios que puedan aprobar cambios**: el panel no deja desactivar ni pasar a lector a un admin si quedarían menos. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
+
+El superadmin recibe un aviso por email cuando otro admin crea un administrador, cambia un rol, cambia el email de un administrador, reactiva a un administrador o desactiva a alguien.
 
 ## Campo "Qué se solicita" de los datasets
 
@@ -180,17 +182,22 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 
 1. **Backup de la base:** phpMyAdmin → base del RPAD → **Exportar** (método rápido, formato SQL). Guardar el archivo.
 2. **Backup de los archivos:** Administrador de archivos → carpeta de la app → seleccionar `controllers`, `middleware`, `routes`, `services`, `scripts` y `public` → **Comprimir** → descargar el zip.
-3. **Migración de estructura:** phpMyAdmin → base del RPAD → pestaña **SQL** → pegar el contenido de `database/updates/migracion-usuarios-superadmin.sql` → **Continuar**. Solo agrega columnas y tablas, y el código actual sigue funcionando con la estructura nueva: si los pasos siguientes se demoran, no pasa nada.
-4. **Subir los archivos** con el Administrador de archivos, reemplazando los existentes. La lista exacta está en el pedido de despliegue (`git diff --name-only` contra la versión anterior, sin `tests/`, `docs/` ni `database/`).
-5. **Setup Node.js App** → la app del RPAD → **Environment variables** → agregar `APP_URL` = `https://rpad.mcrmodernizacion.gob.ar` → **Save**. Después, **Restart**.
+3. **Migración de estructura:** phpMyAdmin → base del RPAD → pestaña **SQL** → pegar el contenido de `database/updates/migracion-usuarios-superadmin.sql` → **Continuar**. Agrega columnas y tablas y amplía dos columnas existentes (`password_hash` admite vacío y `rol` admite `superadmin`); no borra ni cambia datos, y el código actual sigue funcionando con la estructura nueva: si los pasos siguientes se demoran, no pasa nada. Si se corta a mitad, se puede volver a correr: lo que ya existe se saltea.
+4. **Subir los archivos** con el Administrador de archivos: subir **completas** las carpetas `controllers`, `middleware`, `routes`, `services`, `scripts` y `public` (las mismas del backup del paso 2), reemplazando lo existente. `app.js`, `config/` y `package.json` no cambian. Si falta cualquier archivo nuevo de `services/`, la app no arranca. Hacer los pasos 4 y 5 **seguidos**, sin dejar pasar tiempo entre subir los archivos y el Restart: las pantallas nuevas se sirven apenas se suben, y hasta el Restart la app sigue corriendo con el código anterior.
+5. **Setup Node.js App** → la app del RPAD → **Environment variables** → agregar `APP_URL` = `https://rpad.mcrmodernizacion.gob.ar` → **Save**. Después, **Restart** (sin demorarse después del paso 4).
 6. **Datos de usuarios:** phpMyAdmin → pestaña **SQL** → pegar el contenido de `database/privado/usuarios-superadmin-datos.sql`. Ese archivo no está en el repositorio: lo tiene el Director de Datos Públicos y Comunicación. Tiene que ir **después** del Restart: el código anterior no conoce el rol superadmin. El `SELECT` final muestra los usuarios con su rol, cargo y vínculo para revisar.
 7. **Verificar:**
    - el superadmin ve "Superadmin" en el header;
    - Administración → Usuarios muestra a todos con su cargo;
-   - "Nuevo usuario" con una casilla propia de prueba: la invitación llega y el link funciona;
-   - desactivar ese usuario de prueba.
+   - "Nuevo usuario" con rol **Lector** y una casilla de prueba propia: la invitación llega y el link funciona;
+   - desactivar ese usuario de prueba;
+   - lo existente sigue igual: ingresar con un admin y con un lector, abrir el Tablero y Gestión de Datasets, ver que los cambios pendientes cargan (Mi Perfil → Para Revisar) y que Correos → Estado no muestra alertas nuevas.
 
-**Si algo sale mal:** subir de nuevo los archivos del backup del paso 2 → Restart → phpMyAdmin → pestaña SQL → pegar `database/updates/rollback-usuarios-superadmin.sql`. El rollback deja la estructura exactamente como estaba; se pierden los cargos, vínculos e historial de usuarios.
+**Si algo sale mal:** subir de nuevo los archivos del backup del paso 2 → Restart → phpMyAdmin → pestaña SQL → pegar `database/updates/rollback-usuarios-superadmin.sql`.
+
+- El rollback deja la estructura exactamente como estaba; se pierden los cargos, vínculos e historial de usuarios. El superadmin queda como admin, y los usuarios con la invitación pendiente (todavía sin contraseña) quedan desactivados.
+- Los archivos nuevos (`usuarios.html`, `establecer-contrasena.html`, `js/usuarios.js`, `js/establecer-contrasena.js`, `services/accesoService.js`, `services/usuariosReglas.js`, `services/usuariosAuditoriaService.js`, `controllers/usuariosController.js`) se pueden borrar después con el Administrador de archivos; si quedan, no molestan.
+- Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
 
 ### Migración: Notas Digitales
 
