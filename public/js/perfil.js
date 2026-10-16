@@ -317,7 +317,7 @@ function renderCambioCard(cambio, mostrarAcciones) {
   if (cambio.estado !== 'pendiente' && cambio.revisor_nombre) {
     infoAdicional += `
       <div class="text-small text-muted" style="margin-top: 0.25rem;">
-        Revisado por: ${Utils.escapeHtml(cambio.revisor_nombre)}
+        ${Utils.escapeHtml(textoRevisor(cambio))}
       </div>
     `;
   }
@@ -387,11 +387,11 @@ async function verDetalle(id) {
     // Comparar como números para evitar problemas de tipo (string vs number)
     const esPropioCambio = Number(cambio.usuario_id) === Number(Auth.getUser()?.id);
     if (cambio.estado === 'pendiente' && !esPropioCambio) {
-      footer.innerHTML = `
-        <button class="btn btn-secondary" onclick="cerrarModalDetalle()">Cerrar</button>
-        <button class="btn btn-danger" onclick="cerrarModalDetalle(); abrirModalRechazo(${cambio.id})">✗ Rechazar</button>
-        <button class="btn btn-success" onclick="aprobarCambio(${cambio.id})">✓ Aprobar</button>
-      `;
+      // Si no le corresponde auditarlo (un editor con auditores disponibles, spec 2026-10-15, 8.2), los botones aparecen
+      // deshabilitados y el motivo, debajo del detalle
+      const permiso = cambio.auditoria ?? { puede: true, mensaje: null };
+      if (!permiso.puede && permiso.mensaje) contenido.insertAdjacentHTML('beforeend', avisoNoCorresponde(permiso.mensaje));
+      footer.innerHTML = botonesDeAuditoria(cambio.id, permiso);
     } else {
       footer.innerHTML = `<button class="btn btn-secondary" onclick="cerrarModalDetalle()">Cerrar</button>`;
     }
@@ -722,4 +722,37 @@ async function guardarMiFirma(evento) {
   } finally {
     boton.disabled = false;
   }
+}
+
+// =====================================================
+// AUDITAR UN CAMBIO (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2)
+// =====================================================
+// Botones del detalle de un cambio. permiso: { puede, mensaje } que manda el servidor; sin permiso, deshabilitados con
+// el motivo
+function botonesDeAuditoria(id, permiso) {
+  const cerrar = '<button class="btn btn-secondary" onclick="cerrarModalDetalle()">Cerrar</button>';
+  if (permiso.puede) {
+    return `
+        ${cerrar}
+        <button class="btn btn-danger" onclick="cerrarModalDetalle(); abrirModalRechazo(${Number(id)})">✗ Rechazar</button>
+        <button class="btn btn-success" onclick="aprobarCambio(${Number(id)})">✓ Aprobar</button>
+      `;
+  }
+  const motivo = Utils.escapeHtml(permiso.mensaje ?? '');
+  return `
+        ${cerrar}
+        <button class="btn btn-danger" disabled title="${motivo}">✗ Rechazar</button>
+        <button class="btn btn-success" disabled title="${motivo}">✓ Aprobar</button>
+      `;
+}
+
+function avisoNoCorresponde(mensaje) {
+  return `<div class="alert alert-warning" style="margin-top: 1rem;">${Utils.escapeHtml(mensaje)}</div>`;
+}
+
+// Quién auditó un cambio: "Aprobado por …" o "Rechazado por …", con "(respaldo)" si lo auditó un editor porque no había
+// auditores disponibles
+function textoRevisor(cambio) {
+  const accion = cambio.estado === 'aprobado' ? 'Aprobado' : 'Rechazado';
+  return `${accion} por ${cambio.revisor_nombre}${Number(cambio.revisado_como_respaldo) ? ' (respaldo)' : ''}`;
 }

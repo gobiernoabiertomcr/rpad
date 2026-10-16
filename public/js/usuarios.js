@@ -5,7 +5,7 @@ let resumen = { aprobadores_activos: 0, minimo: 2 };
 let abierto = null;          // usuario del modal; null = alta
 let usernameTocado = false;  // si se escribió el usuario a mano, la sugerencia no lo pisa
 
-const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Admin', lector: 'Lector' };
+const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Admin', editor: 'Editor', lector: 'Lector' };
 const ACCION_LICENCIA = { licencia_cargada: 'Licencia cargada', licencia_editada: 'Licencia modificada', licencia_anulada: 'Licencia anulada' };
 const TEXTO_ACCION = {
   alta: 'Alta del usuario',
@@ -56,6 +56,29 @@ const esc = (texto) => Utils.escapeHtml(texto == null ? '' : String(texto));
 const avisar = (mensaje, tipo = 'info') => showToast(esc(mensaje), tipo);
 const esAprobador = (u) => u.rol === 'admin' || u.rol === 'superadmin';
 const soyYo = (u) => Boolean(u) && u.id === Auth.getUser()?.id;
+// El editor solo crea y modifica lectores y no cambia roles (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)
+const soyEditor = () => Auth.getRole() === 'editor';
+// Aviso de un usuario que quien está conectado no puede modificar (la cuenta del superadmin, o para un editor cualquiera
+// que no sea lector), o null
+const avisoSoloLectura = (u) => {
+  if (!u) return null;
+  if (u.rol === 'superadmin' && !soyYo(u)) return 'Esta cuenta solo la modifica su titular.';
+  if (soyEditor() && u.rol !== 'lector') return 'Como editor, solo podés modificar usuarios lectores.';
+  return null;
+};
+// Confirmación al cambiar un rol, y en especial el propio (spec 8.5; el editor, spec 2026-10-15, 8.1)
+const textoCambioDeRol = (u, rol) => {
+  if (soyYo(u)) {
+    return rol === 'editor'
+      ? 'Vas a pasar a Editor: dejás de auditar cambios, salvo de respaldo cuando no haya auditores disponibles. ¿Continuar?'
+      : 'Vas a perder el acceso de administrador en este momento. ¿Continuar?';
+  }
+  if (rol === 'admin') return `${u.nombre_completo} va a pasar a Admin: podrá proponer y aprobar cambios. ¿Continuar?`;
+  if (rol === 'editor') {
+    return `${u.nombre_completo} va a pasar a Editor: podrá proponer cambios y auditarlos solo de respaldo, cuando no haya auditores disponibles. ¿Continuar?`;
+  }
+  return `${u.nombre_completo} va a pasar a Lector: deja de poder proponer y aprobar cambios. ¿Continuar?`;
+};
 const sinTildes = (texto) => String(texto ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const plural = (n, singular, varios) => `${n} ${n === 1 ? singular : varios}`;
 const leer = (id) => document.getElementById(id).value.trim();
@@ -190,11 +213,13 @@ function renderLista() {
 
   pintar('lista-aprobadores', vigentes.filter(esAprobador).sort(ordenAprobadores),
     texto ? 'Ningún aprobador coincide con la búsqueda.' : 'Todavía no hay aprobadores.');
-  pintar('lista-lectores', vigentes.filter(u => !esAprobador(u)),
+  pintar('lista-editores', vigentes.filter(u => u.rol === 'editor'),
+    texto ? 'Ningún editor coincide con la búsqueda.' : 'No hay editores.');
+  pintar('lista-lectores', vigentes.filter(u => u.rol === 'lector'),
     texto ? 'Ningún usuario de solo lectura coincide con la búsqueda.' : 'No hay usuarios de solo lectura.');
   pintar('lista-desactivados', visibles.filter(u => u.estado === 'desactivado'), 'No hay usuarios desactivados.');
 
-  const lectores = usuarios.filter(u => u.estado !== 'desactivado' && !esAprobador(u)).length;
+  const lectores = usuarios.filter(u => u.estado !== 'desactivado' && u.rol === 'lector').length;
   document.getElementById('contador-lectores').textContent = plural(lectores, 'activo', 'activos');
   document.getElementById('contador-desactivados').textContent = String(usuarios.filter(u => u.estado === 'desactivado').length);
   renderResumenAprobadores();
@@ -230,13 +255,16 @@ function abrirModal(u) {
   abierto = u;
   usernameTocado = Boolean(u);
   limpiarErrores();
-  const protegida = Boolean(u) && u.rol === 'superadmin' && !soyYo(u);
+  // Solo lectura: la cuenta protegida del superadmin o, para un editor, cualquiera que no sea lector (spec 2026-10-15, 8.1)
+  const aviso = avisoSoloLectura(u);
+  const protegida = Boolean(aviso);
   const superadminPropio = Boolean(u) && u.rol === 'superadmin' && soyYo(u);
 
   document.getElementById('modal-usuario-titulo').textContent = u ? u.nombre_completo : 'Nuevo usuario';
   document.getElementById('modal-usuario-etiquetas').innerHTML = u ? etiquetasDe(u) : '';
   document.getElementById('usuario-pestanas').hidden = !u;
   document.getElementById('aviso-protegida').hidden = !protegida;
+  document.getElementById('aviso-protegida').textContent = aviso ?? '';
 
   escribir('u-nombre', u?.nombre_completo);
   escribir('u-username', u?.username);
@@ -248,7 +276,7 @@ function abrirModal(u) {
   selectRol.value = u?.rol || 'lector';
 
   for (const id of Object.values(CAMPO_A_INPUT)) document.getElementById(id).disabled = protegida;
-  selectRol.disabled = protegida || superadminPropio;
+  selectRol.disabled = protegida || superadminPropio || soyEditor();
   document.getElementById('acciones-form').hidden = protegida;
   document.getElementById('btn-guardar-usuario').textContent = u ? 'Guardar cambios' : 'Crear usuario';
 
@@ -320,17 +348,11 @@ async function guardarUsuario(evento) {
     vinculo: document.getElementById('u-vinculo').value || null
   };
   const selectRol = document.getElementById('u-rol');
-  if (!selectRol.disabled) datos.rol = selectRol.value;
+  // En el alta el rol va siempre (al editor el selector le queda fijo en Lector)
+  if (!abierto || !selectRol.disabled) datos.rol = selectRol.value;
 
   // Confirmación al cambiar un rol, y en especial el propio (spec 8.5)
-  if (abierto && datos.rol && datos.rol !== abierto.rol) {
-    const texto = soyYo(abierto)
-      ? 'Vas a perder el acceso de administrador en este momento. ¿Continuar?'
-      : datos.rol === 'admin'
-        ? `${abierto.nombre_completo} va a pasar a Admin: podrá proponer y aprobar cambios. ¿Continuar?`
-        : `${abierto.nombre_completo} va a pasar a Lector: deja de poder proponer y aprobar cambios. ¿Continuar?`;
-    if (!confirm(texto)) return;
-  }
+  if (abierto && datos.rol && datos.rol !== abierto.rol && !confirm(textoCambioDeRol(abierto, datos.rol))) return;
 
   const boton = document.getElementById('btn-guardar-usuario');
   boton.disabled = true;

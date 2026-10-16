@@ -57,3 +57,20 @@ describe('refrescarSesion', () => {
     assert.equal(await cargarAuth({ rol: 'admin' }, async () => { throw new Error('sin red'); }).Auth.refrescarSesion(), 'sin-conexion');
   });
 });
+
+describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () => {
+  it('el editor entra a la administración pero no es auditor; el header dice Editor', () => {
+    const { Auth } = cargarAuth({ rol: 'editor' });
+    assert.equal(Auth.isAdmin(), true);
+    assert.equal(Auth.isAuditor(), false);
+    assert.equal(Auth.isSuperadmin(), false);
+    assert.equal(Auth.getRoleText(), 'Editor');
+  });
+
+  it('auditores: superadmin y admin', () => {
+    assert.equal(cargarAuth({ rol: 'superadmin' }).Auth.isAuditor(), true);
+    assert.equal(cargarAuth({ rol: 'admin' }).Auth.isAuditor(), true);
+    assert.equal(cargarAuth({ rol: 'lector' }).Auth.isAuditor(), false);
+    assert.equal(cargarAuth(null).Auth.isAuditor(), false);
+  });
+});

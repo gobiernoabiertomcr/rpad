@@ -12,7 +12,7 @@ const USUARIO = {
 };
 
 // usuarios.js es un script de navegador: se ejecuta en un contexto aislado. El formulario parte igual al usuario abierto.
-const cargarPanel = (abierto = USUARIO, alPedir = () => {}) => {
+const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin') => {
   const elementos = new Map();
   const elemento = (id) => {
     if (!elementos.has(id)) {
@@ -45,7 +45,7 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}) => {
     document,
     window: { location: {} },
     Utils: { escapeHtml: (texto) => texto },
-    Auth: { getUser: () => ({ id: 1 }), isAuthenticated: () => true, isAdmin: () => true },
+    Auth: { getUser: () => ({ id: 1 }), getRole: () => rol, isAuthenticated: () => true, isAdmin: () => true },
     API,
     showToast() {},
     confirm: () => { llamadas.push('confirm'); return true; },
@@ -285,5 +285,47 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
       'Del 26/11/2026 al 14/01/2027 → Del 26/11/2026 al 20/01/2027; Persona autorizada: Persona Vieja → otro usuario'
     );
     assert.equal(detalle({ ...fechas, autorizado_id: 5 }, { ...fechas, autorizado_id: null }), 'Persona autorizada: Persona Nueva → nadie');
+  });
+});
+
+describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+  const aviso = (contexto, u) => evaluar(contexto, `avisoSoloLectura(${JSON.stringify(u)})`);
+
+  it('un editor solo modifica lectores: los demás se ven con el aviso y sin acciones', () => {
+    const { contexto } = cargarPanel(USUARIO, () => {}, 'editor');
+    assert.equal(aviso(contexto, { id: 7, rol: 'lector' }), null);
+    assert.equal(aviso(contexto, { id: 8, rol: 'admin' }), 'Como editor, solo podés modificar usuarios lectores.');
+    assert.equal(aviso(contexto, { id: 9, rol: 'editor' }), 'Como editor, solo podés modificar usuarios lectores.');
+    assert.equal(aviso(contexto, { id: 10, rol: 'superadmin' }), 'Esta cuenta solo la modifica su titular.');
+    assert.equal(aviso(contexto, null), null);
+  });
+
+  it('un admin modifica a todos, salvo la cuenta del superadmin', () => {
+    const { contexto } = cargarPanel();
+    assert.equal(aviso(contexto, { id: 8, rol: 'admin' }), null);
+    assert.equal(aviso(contexto, { id: 9, rol: 'editor' }), null);
+    assert.equal(aviso(contexto, { id: 10, rol: 'superadmin' }), 'Esta cuenta solo la modifica su titular.');
+  });
+
+  it('en el alta, el rol va siempre, aunque el selector esté fijo en Lector para el editor', async () => {
+    const panel = cargarPanel(null, () => {}, 'editor');
+    panel.formulario({ nombre_completo: 'Persona Nueva', username: 'PNUEVA', email: 'pnueva@rpad.test' });
+    panel.elemento('u-rol').value = 'lector';
+    panel.elemento('u-rol').disabled = true;
+    await panel.contexto.guardarUsuario({ preventDefault() {} });
+    const pedido = panel.pedidos.find(p => p.nombre === 'crearUsuario');
+    assert.equal(pedido.args[0].rol, 'lector');
+  });
+
+  it('textos de la confirmación al cambiar el rol', () => {
+    const { contexto } = cargarPanel();
+    const texto = (u, rol) => evaluar(contexto, `textoCambioDeRol(${JSON.stringify(u)}, '${rol}')`);
+    const otro = { id: 7, nombre_completo: 'Persona de Prueba' };
+    assert.match(texto(otro, 'editor'), /^Persona de Prueba va a pasar a Editor: podrá proponer cambios y auditarlos solo de respaldo/);
+    assert.match(texto(otro, 'admin'), /va a pasar a Admin: podrá proponer y aprobar cambios/);
+    assert.match(texto(otro, 'lector'), /va a pasar a Lector/);
+    assert.match(texto({ id: 1 }, 'editor'), /^Vas a pasar a Editor: dejás de auditar cambios/);
+    assert.match(texto({ id: 1 }, 'lector'), /^Vas a perder el acceso de administrador/);
   });
 });

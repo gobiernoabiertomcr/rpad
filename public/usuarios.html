@@ -35,6 +35,7 @@
         .usuario-avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 600; font-size: 0.875rem; background: var(--gray-200); color: var(--gray-700); }
         .usuario-avatar.rol-superadmin { background: var(--primary); color: #fff; }
         .usuario-avatar.rol-admin { background: var(--info-light); color: var(--primary); }
+        .usuario-avatar.rol-editor { background: #e6f4f1; color: #0f766e; }
         .usuario-avatar.mini { width: 28px; height: 28px; font-size: 0.7rem; }
         .usuario-datos { flex: 1; min-width: 0; }
         .usuario-nombre { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--gray-800); }
@@ -47,6 +48,7 @@
         .etiqueta { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; line-height: 1.5; }
         .etiqueta.rol-superadmin { background: var(--primary); color: #fff; }
         .etiqueta.rol-admin { background: var(--info-light); color: var(--primary); }
+        .etiqueta.rol-editor { background: #e6f4f1; color: #0f766e; }
         .etiqueta.rol-lector { background: var(--gray-100); color: var(--gray-600); }
         .etiqueta-contrato { background: var(--purple-light); color: var(--purple); }
         .etiqueta-pendiente { background: var(--warning-light); color: #92400e; }
@@ -230,6 +232,14 @@
                 <div id="lista-aprobadores"><div class="loading"><div class="spinner"></div></div></div>
             </section>
 
+            <section class="grupo-usuarios" aria-labelledby="titulo-editores">
+                <div class="grupo-encabezado">
+                    <h2 id="titulo-editores">Editores</h2>
+                    <span class="grupo-contador">Proponen cambios y los auditan solo de respaldo</span>
+                </div>
+                <div id="lista-editores"></div>
+            </section>
+
             <section class="grupo-usuarios" aria-labelledby="titulo-lectores">
                 <div class="grupo-encabezado">
                     <h2 id="titulo-lectores">Solo lectura</h2>
@@ -330,6 +340,7 @@
                                 <label class="form-label" for="u-rol">Rol</label>
                                 <select id="u-rol" class="form-input">
                                     <option value="lector">Lector</option>
+                                    <option value="editor">Editor</option>
                                     <option value="admin">Admin</option>
                                     <option value="superadmin" hidden>Superadmin</option>
                                 </select>
@@ -412,9 +423,9 @@
     </div>
 
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261021"></script>
-    <script src="js/main.js?v=20261021"></script>
-    <script src="js/api.js?v=20261021"></script>
-    <script src="js/usuarios.js?v=20261021"></script>
+    <script src="js/auth.js?v=20261022"></script>
+    <script src="js/main.js?v=20261022"></script>
+    <script src="js/api.js?v=20261022"></script>
+    <script src="js/usuarios.js?v=20261022"></script>
 </body>
 </html>
