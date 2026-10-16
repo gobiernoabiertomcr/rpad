@@ -103,3 +103,41 @@ describe('formatos', () => {
     assert.equal(cal.mesYAnio('2026-11-02'), 'noviembre 2026');
   });
 });
+
+describe('rangoDeAviso (spec 2026-10-15-dias-habiles-licencias-auditoria, 4.2)', () => {
+  it('un día hábil seguido de otro hábil avisa solo su día + 40', () => {
+    // miércoles 14/10/2026
+    assert.deepEqual(cal.rangoDeAviso('2026-10-14', 40), { desde: '2026-11-23', hasta: '2026-11-23' });
+  });
+
+  it('un viernes avisa también lo del sábado y el domingo', () => {
+    assert.deepEqual(cal.rangoDeAviso('2026-10-16', 40), { desde: '2026-11-25', hasta: '2026-11-27' });
+  });
+
+  it('el día antes de un feriado avisa también el del feriado', () => {
+    // lunes 07/12/2026; el martes 08/12 es feriado
+    assert.deepEqual(cal.rangoDeAviso('2026-12-07', 40), { desde: '2027-01-16', hasta: '2027-01-17' });
+  });
+
+  it('antes de un feriado pegado a un fin de semana avisa los cuatro días', () => {
+    // jueves 24/12/2026; viernes 25 feriado, sábado y domingo
+    assert.deepEqual(cal.rangoDeAviso('2026-12-24', 40), { desde: '2027-02-02', hasta: '2027-02-05' });
+  });
+
+  it('un día no hábil no avisa nada', () => {
+    for (const fecha of ['2026-10-17', '2026-10-18', '2026-12-08', '2026-12-25', '2027-01-01']) {
+      assert.equal(cal.rangoDeAviso(fecha, 40), null, fecha);
+    }
+  });
+
+  it('los días hábiles seguidos cubren todos los vencimientos, sin huecos ni repetidos', () => {
+    let anterior = null;
+    for (let fecha = '2026-10-01'; fecha <= '2027-12-31'; fecha = cal.sumarDias(fecha, 1)) {
+      const rango = cal.rangoDeAviso(fecha, 40);
+      if (!rango) continue;
+      assert.ok(rango.desde <= rango.hasta, fecha);
+      if (anterior) assert.equal(rango.desde, cal.sumarDias(anterior.hasta, 1), `${fecha} sigue a ${anterior.hasta}`);
+      anterior = rango;
+    }
+  });
+});

@@ -82,3 +82,13 @@ export const mesYAnio = (iso) => {
   const [anio, mes] = iso.split('-').map(Number);
   return `${MESES[mes - 1]} ${anio}`;
 };
+
+// Vencimientos que avisa hoy un aviso que sale `dias` días antes y solo en días hábiles (spec
+// 2026-10-15-dias-habiles-licencias-auditoria, 4.2): desde hoy + dias hasta el día anterior a (siguiente día hábil + dias).
+// Así cada día hábil avisa también lo que habría caído en los días no hábiles que siguen: se anticipa, nunca se atrasa.
+// null si hoy no es día hábil.
+export const rangoDeAviso = (hoy, dias) => {
+  if (!esDiaHabil(hoy)) return null;
+  const siguiente = proximoDiaHabil(sumarDias(hoy, 1));
+  return { desde: sumarDias(hoy, dias), hasta: sumarDias(siguiente, dias - 1) };
+};
