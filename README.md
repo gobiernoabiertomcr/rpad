@@ -48,6 +48,7 @@ En **Administración → Usuarios**, admin y superadmin pueden:
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
 - **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
+- **Licencias** (pestaña Licencias): fechas de licencia de admins y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número. Si no autoriza a nadie, las reiteraciones salen a la vuelta.
 
 Siempre tiene que haber al menos **2 usuarios que puedan aprobar cambios**: el panel no deja desactivar ni pasar a lector a un admin si quedarían menos. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
@@ -202,6 +203,18 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 - El rollback deja la estructura exactamente como estaba; se pierden los cargos, vínculos e historial de usuarios. El superadmin queda como admin, y los usuarios con la invitación pendiente (todavía sin contraseña) quedan desactivados.
 - Los archivos nuevos (`usuarios.html`, `establecer-contrasena.html`, `js/usuarios.js`, `js/establecer-contrasena.js`, `services/accesoService.js`, `services/usuariosReglas.js`, `services/usuariosAuditoriaService.js`, `controllers/usuariosController.js`) se pueden borrar después con el Administrador de archivos; si quedan, no molestan.
 - Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
+
+### Migración: Licencias y firmas
+
+⚠️ Requisito: la migración de usuarios y la entrega de días hábiles aplicadas. No hay dependencias nuevas de npm.
+
+1. **Backup de la base** (phpMyAdmin → Exportar → Personalizado, con "Agregar sentencia DROP TABLE / VIEW / PROCEDURE / FUNCTION / EVENT / TRIGGER") y **de los archivos** (comprimir `controllers`, `routes`, `services` y `public` dentro de la carpeta de la app).
+2. **Migración de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-licencias-firmas.sql` → **Continuar**. Solo agrega tablas y columnas; el código actual sigue funcionando con la estructura nueva. Si se corta a mitad, se puede volver a correr.
+3. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app) y, enseguida, **Setup Node.js App → Restart**. No hace falta "Run NPM Install".
+4. **Firmante titular:** phpMyAdmin → pestaña SQL → pegar `database/privado/licencias-firmas-datos.sql` (no está en el repositorio). Va **después** del Restart. El `SELECT` final muestra al firmante con su firma.
+5. **Verificar:** el firmante entra a Mi Perfil → Mi firma y revisa el nombre y el cargo con que firma; Correos → Configuración muestra al firmante titular y "Ver PDF" sale con su firma; Usuarios → Licencias carga y lista; Correos → Estado sin alertas nuevas.
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-licencias-firmas.sql`. Las notas vuelven a salir con la firma cargada en Correos (la migración no la toca).
 
 ### Migración: Notas Digitales
 
@@ -523,6 +536,12 @@ El de las **14:00** envía a cada administrador el email con los cambios pendien
 ---
 
 ## Changelog
+
+### Días hábiles, licencias y firmas (2026-10)
+- Todos los recordatorios automáticos salen solo en días hábiles (sin fines de semana ni los feriados nacionales fijos)
+- Licencias de los administradores: durante la licencia no reciben emails; resumen al superadmin a la vuelta
+- Firma propia en Mi Perfil y firmante titular de las Notas Digitales
+- Durante la licencia del firmante: avisos anticipados a la víspera, y notas presentadas por una persona autorizada (autorización por Nota Digital, dos firmas y cita de esa nota) o reiteraciones a la vuelta
 
 ### Usuarios y superadmin (2026-10)
 - Rol `superadmin`, con la cuenta protegida y avisos por email de cambios hechos por otros admins
