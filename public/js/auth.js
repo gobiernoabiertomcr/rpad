@@ -17,8 +17,14 @@ const Auth = {
     return user?.rol || null;
   },
 
-  // Verificar si es administrador: admin y superadmin pasan todo lo de administración
+  // Verificar si es administrador: superadmin, admin y editor pasan todo lo de administración
+  // (el editor, spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)
   isAdmin() {
+    return ['admin', 'superadmin', 'editor'].includes(this.getRole());
+  },
+
+  // Auditor: aprueba y rechaza cambios de otros (superadmin o admin); el editor, solo de respaldo
+  isAuditor() {
     return ['admin', 'superadmin'].includes(this.getRole());
   },
 
@@ -29,7 +35,7 @@ const Auth = {
 
   // Rol para mostrar en el header
   getRoleText() {
-    return { superadmin: 'Superadmin', admin: 'Administrador' }[this.getRole()] || 'Lector';
+    return { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor' }[this.getRole()] || 'Lector';
   },
 
   // Confirma la sesión con el servidor y actualiza el usuario guardado (rol, nombre, cargo).

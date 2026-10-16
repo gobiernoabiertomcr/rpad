@@ -1,8 +1,9 @@
-// Panel de usuarios (spec 8 a 11). Las rutas exigen authMiddleware + adminOnly: admin y superadmin.
+// Panel de usuarios (spec 8 a 11). Las rutas exigen authMiddleware + adminOnly: superadmin, admin y editor. El editor solo
+// crea y modifica lectores y no cambia roles (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1).
 import pool from '../config/database.js';
 import {
-  validarDatosUsuario, violaMinimoAprobadores, estadoDeUsuario, esAprobadorActivo, esAdmin, emailValido, camposCambiados,
-  MINIMO_APROBADORES, TEXTO_ROL
+  validarDatosUsuario, violaMinimoAprobadores, estadoDeUsuario, esAprobadorActivo, esAdmin, esAuditor, emailValido, camposCambiados,
+  rechazoParaEditor, MENSAJE_EDITOR_SOLO_LECTORES, MINIMO_APROBADORES, TEXTO_ROL
 } from '../services/usuariosReglas.js';
 import { registrarAuditoria, historialDe } from '../services/usuariosAuditoriaService.js';
 import { enviarLinkDeAcceso } from '../services/accesoService.js';
@@ -13,6 +14,7 @@ const MENSAJE_PROTEGIDA = 'Esta cuenta solo la modifica su titular.';
 const MENSAJE_MINIMO = 'No se puede: quedarían menos de 2 usuarios que puedan aprobar cambios.';
 const MENSAJE_SIN_ENVIO = 'El usuario se guardó, pero no se pudo enviar el email. Podés reenviarlo desde Enviar link de acceso.';
 const MENSAJE_ERROR = 'Error interno del servidor';
+const MENSAJE_FIRMANTE = 'Es el firmante titular de las Notas Digitales: primero hay que elegir a otra persona en Correos.';
 const CAMPOS_EDITABLES = ['nombre_completo', 'username', 'email', 'cargo', 'vinculo'];
 
 // Columnas del panel: nunca password_hash, solo si existe
@@ -52,6 +54,12 @@ const idDeRuta = (req) => {
 const buscarUsuario = async (conexion, id) => {
   const [filas] = await conexion.execute(`SELECT ${COLUMNAS} FROM usuarios u WHERE u.id = ?`, [id]);
   return filas[0] || null;
+};
+
+// ¿Es quien firma las Notas Digitales? Tiene que seguir siendo superadmin o admin (spec 2026-10-15, 6.2)
+const esFirmanteTitular = async (conexion, id) => {
+  const [[config]] = await conexion.execute('SELECT firmante_usuario_id FROM notas_digitales_config WHERE id = 1');
+  return config?.firmante_usuario_id === id;
 };
 
 // Licencia en curso o que empieza en los próximos 30 días de cada usuario (spec 2026-10-15, 5.5): Map id → licencia
@@ -133,6 +141,9 @@ export const crearUsuario = async (req, res) => {
   if (entrada.rol === 'superadmin') return responderError(res, 400, 'El rol superadmin no se asigna desde el panel', 'rol');
   const { errores, datos } = validarDatosUsuario(entrada);
   if (errores.length > 0) return responderError(res, 400, errores[0].error, errores[0].campo);
+  // El editor solo crea lectores (spec 2026-10-15, 8.1)
+  const rechazoEditor = req.user.rol === 'editor' ? rechazoParaEditor({ objetivo: datos.rol }) : null;
+  if (rechazoEditor) return responderError(res, 403, rechazoEditor, 'rol');
 
   let conexion;
   let id;
@@ -173,7 +184,8 @@ export const crearUsuario = async (req, res) => {
   try {
     const usuario = await buscarUsuario(pool, id);
     const envio = await enviarLinkDeAcceso({ usuario, tipo: 'invitacion', actorId: req.user.userId, origen: 'panel' });
-    if (datos.rol === 'admin') await avisar(req, usuario, `Alta como ${TEXTO_ROL.admin}`, auditoriaId);
+    // El alta de alguien con acceso a la administración (admin o editor) se avisa al superadmin (spec 10.3; 2026-10-15, 8.1)
+    if (esAdmin(datos.rol)) await avisar(req, usuario, `Alta como ${TEXTO_ROL[datos.rol]}`, auditoriaId);
     res.status(201).json({
       success: true,
       data: { usuario: aRespuesta(await buscarUsuario(pool, id)), email_enviado: envio.email_enviado },
@@ -222,6 +234,18 @@ export const actualizarUsuario = async (req, res) => {
     }
 
     rolNuevo = datos.rol !== undefined && datos.rol !== antes.rol ? datos.rol : null;
+    // El editor solo modifica lectores y no cambia roles, tampoco el suyo (spec 2026-10-15, 8.1)
+    const rechazoEditor = req.user.rol === 'editor' ? rechazoParaEditor({ objetivo: antes.rol, cambiaRol: Boolean(rolNuevo) }) : null;
+    if (rechazoEditor) {
+      await conexion.rollback();
+      return responderError(res, 403, rechazoEditor);
+    }
+    // Quien firma las Notas Digitales tiene que seguir siendo superadmin o admin (spec 2026-10-15, 6.2)
+    if (rolNuevo && !esAuditor(rolNuevo) && await esFirmanteTitular(conexion, id)) {
+      await conexion.rollback();
+      return responderError(res, 409, MENSAJE_FIRMANTE, 'rol');
+    }
+    // Pasar a un admin a editor o a lector saca un auditor (spec 2026-10-15, 8.3)
     if (rolNuevo && violaMinimoAprobadores(todos, id, { rol: rolNuevo })) {
       await conexion.rollback();
       return responderError(res, 409, MENSAJE_MINIMO);
@@ -274,7 +298,7 @@ export const actualizarUsuario = async (req, res) => {
 
   try {
     const despues = await buscarUsuario(pool, id);
-    // Un solo aviso por edición, con todo lo que importa: el rol y el email de quien aprueba cambios (spec 10.3)
+    // Un solo aviso por edición: el rol y el email de quien tiene acceso a la administración, editores incluidos (spec 10.3; 2026-10-15, 8.1)
     const avisos = [];
     if (rolNuevo) avisos.push(`${TEXTO_ROL[antes.rol]} → ${TEXTO_ROL[rolNuevo]}`);
     if (campos.email && esAdmin(despues.rol)) avisos.push(`Email: ${campos.email.antes ?? '(vacío)'} → ${campos.email.despues}`);
@@ -302,7 +326,8 @@ export const desactivarUsuario = async (req, res) => {
     if (!usuario) rechazo = [404, 'Usuario no encontrado'];
     else if (usuario.rol === 'superadmin') {
       rechazo = [403, req.user.userId === id ? 'La cuenta del superadmin no se puede desactivar.' : MENSAJE_PROTEGIDA];
-    } else if (!usuario.activo) rechazo = [409, 'El usuario ya está desactivado'];
+    } else if (req.user.rol === 'editor' && usuario.rol !== 'lector') rechazo = [403, MENSAJE_EDITOR_SOLO_LECTORES];
+    else if (!usuario.activo) rechazo = [409, 'El usuario ya está desactivado'];
     else if (violaMinimoAprobadores(todos, id, { activo: 0 })) rechazo = [409, MENSAJE_MINIMO];
     if (rechazo) {
       await conexion.rollback();
@@ -351,6 +376,7 @@ export const reactivarUsuario = async (req, res) => {
     let rechazo = null;
     if (!usuario) rechazo = [404, 'Usuario no encontrado'];
     else if (usuario.rol === 'superadmin' && req.user.userId !== id) rechazo = [403, MENSAJE_PROTEGIDA];
+    else if (req.user.rol === 'editor' && usuario.rol !== 'lector') rechazo = [403, MENSAJE_EDITOR_SOLO_LECTORES];
     else if (usuario.activo) rechazo = [409, 'El usuario ya está activo'];
     if (rechazo) {
       await conexion.rollback();
@@ -386,6 +412,8 @@ export const enviarAcceso = async (req, res) => {
     const usuario = await buscarUsuario(pool, id);
     if (!usuario) return responderError(res, 404, 'Usuario no encontrado');
     if (usuario.rol === 'superadmin' && req.user.userId !== id) return responderError(res, 403, MENSAJE_PROTEGIDA);
+    // El editor solo envía links a lectores (spec 2026-10-15, 8.1)
+    if (req.user.rol === 'editor' && usuario.rol !== 'lector') return responderError(res, 403, MENSAJE_EDITOR_SOLO_LECTORES);
     if (!usuario.activo) return responderError(res, 409, 'El usuario está desactivado: reactivalo antes de enviarle un link');
     if (!emailValido(usuario.email)) {
       return responderError(res, 409, 'El usuario no tiene un email válido. Cargale uno y guardá antes de enviarle el link.', 'email');

@@ -79,7 +79,7 @@ describe('database/schema.sql', () => {
   it('usuarios admite el rol superadmin, contraseña nula, cargo, vínculo, último ingreso y versión de sesión', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('usuarios.'));
     for (const esperada of [
-      "usuarios.rol enum('superadmin','admin','lector') null=NO default='lector' key=",
+      "usuarios.rol enum('superadmin','admin','editor','lector') null=NO default='lector' key=",
       'usuarios.password_hash varchar(255) null=YES default=NULL key=',
       'usuarios.cargo varchar(200) null=YES default=NULL key=',
       "usuarios.vinculo enum('planta_permanente','planta_politica','contrato') null=YES default=NULL key=",
@@ -122,13 +122,32 @@ describe('database/schema.sql', () => {
     assert.ok(lista.some(c => c.startsWith("usuarios_auditoria.accion enum(") && c.includes("'licencia_cargada','licencia_editada','licencia_anulada'")),
       lista.filter(c => c.startsWith('usuarios_auditoria.accion')).join('\n'));
     // La nota de autorización (spec 7.2) es un tipo nuevo, sin gestión
-    assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion') null=NO")),
+    // (la entrega 3 suma 'auditoria' al final del ENUM; lo que fija este test, que existe 'autorizacion', sigue igual)
+    assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion'")),
       lista.filter(c => c.startsWith('notas_digitales.tipo')).join('\n'));
     assert.ok(lista.some(c => c.startsWith("notas_digitales.gestion enum('interna','externa') null=YES default=NULL")),
       lista.filter(c => c.startsWith('notas_digitales.gestion')).join('\n'));
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas']) {
+  it('editor y auditoría de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 11.2)', async () => {
+    const lista = await columnas(root, BASE_TEMPORAL);
+    for (const esperada of [
+      "usuarios.rol enum('superadmin','admin','editor','lector') null=NO default='lector' key=",
+      'cambios_pendientes.primer_recordatorio_at datetime null=YES default=NULL key=',
+      'cambios_pendientes.revisado_como_respaldo tinyint(1) null=NO default=0 key=',
+      'notas_digitales_cambios.nota_id int(11) null=NO default=null key=PRI',
+      'notas_digitales_cambios.cambio_id int(11) null=NO default=null key=PRI',
+      "notas_digitales_cambios.seccion enum('nuevo','reiterado') null=NO default=null key=",
+      "notas_digitales_config.para_auditoria varchar(500) null=NO default='mit@comodoro.gov.ar' key=",
+      'notas_digitales_config.cc_auditoria varchar(500) null=YES default=NULL key='
+    ]) {
+      assert.ok(lista.includes(esperada), `falta: ${esperada}\n${lista.filter(c => c.startsWith(esperada.split('.')[0])).join('\n')}`);
+    }
+    assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion','auditoria') null=NO")),
+      lista.filter(c => c.startsWith('notas_digitales.tipo')).join('\n'));
+  });
+
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -178,4 +197,54 @@ describe('database/schema.sql', () => {
       assert.equal(await contar(tabla), total);
     });
   }
+});
+
+// Rollback de la entrega 3 (spec 2026-10-15-dias-habiles-licencias-auditoria, 11.2 y 14), sobre una base descartable creada
+// con schema.sql: con editores, sin editores, repetido, y la migración vuelve a dejar la estructura de schema.sql
+describe('rollback y migración de la entrega 3 (editor y auditoría)', () => {
+  const BASE_ROLLBACK = 'rpad_schema_rollback_test';
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  const crearDesdeSchema = async () => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_ROLLBACK}\``);
+    await root.query(`CREATE DATABASE \`${BASE_ROLLBACK}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_ROLLBACK}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+  };
+  const crearUsuario = (username, rol) => root.query(
+    `INSERT INTO \`${BASE_ROLLBACK}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES (?, 'x', ?, ?, ?)`,
+    [username, username, `${username}@rpad.test`, rol]
+  );
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_ROLLBACK}\``);
+  });
+
+  it('con editores: los pasa a admin, el rol vuelve a tres valores y notas_digitales.tipo queda ampliado', async () => {
+    await crearDesdeSchema();
+    await crearUsuario('t_editor', 'editor');
+    await crearUsuario('t_admin', 'admin');
+    await crearUsuario('t_lector', 'lector');
+    await root.query(sql('rollback-editor-auditoria.sql'));
+    const lista = await columnas(root, BASE_ROLLBACK);
+    assert.ok(lista.includes("usuarios.rol enum('superadmin','admin','lector') null=NO default='lector' key="),
+      lista.filter(c => c.startsWith('usuarios.rol')).join('\n'));
+    const [filas] = await root.query(`SELECT username, rol FROM \`${BASE_ROLLBACK}\`.usuarios ORDER BY username`);
+    assert.deepEqual(filas.map(f => [f.username, f.rol]), [['t_admin', 'admin'], ['t_editor', 'admin'], ['t_lector', 'lector']]);
+    for (const quitada of ['cambios_pendientes.primer_recordatorio_at ', 'cambios_pendientes.revisado_como_respaldo ',
+      'notas_digitales_config.para_auditoria ', 'notas_digitales_config.cc_auditoria ', 'notas_digitales_cambios.']) {
+      assert.ok(!lista.some(c => c.startsWith(quitada)), `quedó: ${quitada}`);
+    }
+    assert.ok(lista.some(c => c.startsWith("notas_digitales.tipo enum('aviso','reiteracion','autorizacion','auditoria') null=NO")),
+      lista.filter(c => c.startsWith('notas_digitales.tipo')).join('\n'));
+  });
+
+  it('sin editores: se puede repetir, y la migración (dos veces) vuelve a dejar exactamente la estructura de schema.sql', async () => {
+    await crearDesdeSchema();
+    const original = await columnas(root, BASE_ROLLBACK);
+    await root.query(sql('rollback-editor-auditoria.sql'));
+    await root.query(sql('rollback-editor-auditoria.sql'));
+    await root.query(sql('migracion-editor-auditoria.sql'));
+    await root.query(sql('migracion-editor-auditoria.sql'));
+    assert.deepEqual(await columnas(root, BASE_ROLLBACK), original);
+  });
 });

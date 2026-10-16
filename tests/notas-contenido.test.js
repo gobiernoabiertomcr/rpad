@@ -1,7 +1,8 @@
 // Contenido de las Notas Digitales (funciones puras)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { construirNota, construirNotaDeAutorizacion, textoLeyendaAutorizacion, renderHtml, renderTexto } from '../services/notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, textoLeyendaAutorizacion, renderHtml, renderTexto } from '../services/notasDigitalesContenido.js';
+import { RPAD_URL } from '../services/emailTemplates.js';
 
 const config = {
   linea_cc_interna: 'CC. Dir. de Investigación Territorial',
@@ -387,5 +388,172 @@ describe('asunto de un aviso anticipado (spec 7.3)', () => {
       `Nota Digital N° 12/26 – Ref.: ${REF} (gestión interna – vencimientos de diciembre 2026 a febrero 2027)`);
     assert.equal(nota({ rangoVencimientos: { desde: '2027-01-20', hasta: '2027-01-31' } }).asunto,
       `Nota Digital N° 12/26 – Ref.: ${REF} (gestión interna – vencimientos de enero 2027)`);
+  });
+});
+
+describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10)', () => {
+  const REF_AUDITORIA = 'Solicitud de auditoría de cambios en el Registro Permanente de Actualización de Datasets';
+  const CATALOGOS = {
+    areas: { 10: 'Área Uno', 11: 'Área Dos' }, frecuencias: { 6: 'Anualmente' }, temas: { 1: 'Economía y Finanzas' },
+    formatos: { 1: 'CSV', 2: 'XLSX' }
+  };
+  // Una modificación como la guarda el RPAD: datos_anteriores con las fechas con hora (un Date de mysql2 pasado a JSON)
+  const modificacion = (cambios = {}) => ({
+    id: 7, tipo_cambio: 'editar', dataset_titulo: 'Presupuesto Municipal', usuario_nombre: 'Persona Editora',
+    usuario_cargo: 'Cargo de Prueba', fecha_propuesta: '2026-10-16',
+    datos_anteriores: {
+      titulo: 'Presupuesto Municipal', area_id: 10, frecuencia_id: 6, formatos: [1, 2], descripcion: 'Igual',
+      proxima_actualizacion: '2026-03-15T03:00:00.000Z'
+    },
+    datos_nuevos: {
+      titulo: 'Presupuesto Municipal', area_id: 11, frecuencia_id: 6, formatos: [2, 1], descripcion: 'Igual',
+      proxima_actualizacion: '2027-03-15'
+    },
+    ...cambios
+  });
+  const ALTA = {
+    id: 8, tipo_cambio: 'crear', dataset_titulo: null, usuario_nombre: 'Persona Auditora', usuario_cargo: null,
+    fecha_propuesta: '2026-10-07', datos_anteriores: null,
+    datos_nuevos: {
+      titulo: 'Dataset Nuevo', area_id: 10, tema_principal_id: 1, frecuencia_id: 6, tipo_gestion: 'externa', formatos: [1],
+      descripcion: '', url_dataset: 'https://datos.comodoro.gov.ar/dataset/nuevo'
+    }
+  };
+  const BAJA = {
+    id: 9, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset Viejo', usuario_nombre: 'Persona Titular', usuario_cargo: 'Director',
+    fecha_propuesta: '2026-10-01', datos_nuevos: { eliminado: true },
+    datos_anteriores: { titulo: 'Dataset Viejo', area_id: 11, frecuencia_id: 6, tipo_gestion: 'interna', descripcion: null },
+    solicitado: { numero: 12, anio: 2026, fecha: '2026-10-09', reiteraciones: 0 }
+  };
+  const auditoria = (cambios = {}) => construirNotaDeAuditoria({
+    numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: [modificacion()], reiterados: [], catalogos: CATALOGOS, config, ...cambios
+  });
+
+  it('asunto y encabezado: con cambios nuevos, solo con reiterados y de prueba', () => {
+    assert.equal(auditoria().asunto, `Nota Digital N° 15/26 – Ref.: ${REF_AUDITORIA}`);
+    assert.equal(auditoria({ nuevos: [], reiterados: [BAJA] }).asunto, `Nota Digital N° 15/26 – Ref.: Reiteración – ${REF_AUDITORIA}`);
+    assert.equal(auditoria({ numero: null, anio: null, esPrueba: true }).asunto, `[PRUEBA] Nota Digital N° PRUEBA – Ref.: ${REF_AUDITORIA}`);
+    const nota = auditoria();
+    assert.deepEqual([nota.tipo, nota.gestion, nota.ref, nota.anexo, nota.lineaCc], ['auditoria', null, REF_AUDITORIA, null, '']);
+    assert.equal(nota.destinatario, 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL');
+    assert.equal(nota.remitente, 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN');
+    assert.equal(nota.fechaLarga, '19 de octubre de 2026');
+    assert.deepEqual(nota.justificacion, []);
+  });
+
+  it('párrafo inicial, "Qué implica la auditoría" e "Importancia", con los textos de la spec', () => {
+    const nota = auditoria();
+    assert.equal(nota.parrafoInicial, 'Me dirijo a Ud. a fin de solicitarle la auditoría de los cambios propuestos en el Registro Permanente de Actualización de Datasets (RPAD) que se detallan a continuación, que se encuentran pendientes de verificación. Conforme al procedimiento de doble verificación, cada modificación del registro debe ser revisada y aprobada por una persona distinta de quien la propuso antes de aplicarse.');
+    assert.deepEqual(nota.apartados, [
+      {
+        titulo: 'Qué implica la auditoría:',
+        parrafos: ['La auditoría consiste en verificar que:'],
+        items: [
+          'los datos coincidan con la información remitida por el área responsable;',
+          'el enlace al Portal de Datos Abiertos funcione y muestre la versión informada;',
+          'las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos;',
+          'el título, la descripción, el área, los temas, los formatos y "qué se solicita" sean correctos.'
+        ],
+        cierre: [`Cada cambio se aprueba o se rechaza, con un comentario, desde el RPAD: ${RPAD_URL}/perfil.html (sección "Para revisar").`]
+      },
+      {
+        titulo: 'Importancia:',
+        parrafos: ['Mientras un cambio no se audita, el conjunto de datos permanece bloqueado para nuevas modificaciones y el registro no refleja su estado real, lo que afecta los avisos y reiteraciones que emite esta Dirección y el cumplimiento de la Ordenanza N° 17.662/23. Por ello, solicito tenga a bien realizar la auditoría a la brevedad.'],
+        items: [],
+        cierre: []
+      }
+    ]);
+  });
+
+  it('tablas de nuevos y reiterados: tipo, quién propuso, fecha y días hábiles pendiente', () => {
+    const nota = auditoria({ nuevos: [modificacion(), ALTA], reiterados: [BAJA] });
+    assert.deepEqual(nota.secciones.map(s => [s.clave, s.titulo, s.introduccion]), [
+      ['nuevo', 'Cambios pendientes de auditoría', ''],
+      ['reiterado', 'Cambios ya solicitados que continúan pendientes', '']
+    ]);
+    assert.deepEqual(nota.secciones[0].columnas,
+      ['Conjunto de datos', 'Tipo de cambio', 'Propuesto por', 'Fecha de la propuesta', 'Días hábiles pendiente']);
+    // 16/10 → 19/10: 1 día hábil; 07/10 → 19/10: 8 (el 12/10 es trasladable y cuenta); 01/10 → 19/10: 12
+    assert.deepEqual(nota.secciones[0].filas.map(f => f.valores), [
+      ['Presupuesto Municipal', 'Modificación', 'Persona Editora, Cargo de Prueba', '16/10/2026', '1'],
+      ['Dataset Nuevo', 'Alta', 'Persona Auditora', '07/10/2026', '8']
+    ]);
+    assert.equal(nota.secciones[1].columnas.at(-1), 'Solicitado en');
+    assert.deepEqual(nota.secciones[1].filas[0].valores,
+      ['Dataset Viejo', 'Baja', 'Persona Titular, Director', '01/10/2026', '12', 'Nota Digital N° 12/26 (09/10/2026)']);
+    assert.deepEqual(auditoria({ nuevos: [], reiterados: [BAJA] }).secciones.map(s => s.clave), ['reiterado']);
+  });
+
+  it('"Solicitado en" cuenta las reiteraciones: 1 vez, 2 veces', () => {
+    const solicitado = (reiteraciones) => auditoria({ nuevos: [], reiterados: [{ ...BAJA, solicitado: { ...BAJA.solicitado, reiteraciones } }] })
+      .secciones[0].filas[0].valores[5];
+    assert.equal(solicitado(1), 'Nota Digital N° 12/26 (09/10/2026) – reiterado 1 vez');
+    assert.equal(solicitado(2), 'Nota Digital N° 12/26 (09/10/2026) – reiterado 2 veces');
+  });
+
+  it('detalle de una modificación: solo los campos que cambian, con las etiquetas del formulario y los nombres de los catálogos', () => {
+    const { detalles } = auditoria();
+    assert.equal(detalles.titulo, 'Detalle de cada cambio');
+    const [detalle] = detalles.secciones;
+    assert.equal(detalle.titulo, '1. Presupuesto Municipal – Modificación');
+    assert.equal(detalle.introduccion, 'Propuesta por Persona Editora el 16/10/2026. Campos que cambian, con el valor anterior y el nuevo:');
+    assert.deepEqual(detalle.columnas, ['Campo', 'Valor anterior', 'Valor nuevo']);
+    // Los formatos [1, 2] y [2, 1] son los mismos; la descripción no cambió; la fecha con hora es el 15/03/2026
+    assert.deepEqual(detalle.filas.map(f => f.valores), [
+      ['Área Responsable', 'Área Uno', 'Área Dos'],
+      ['Próxima Actualización', '15/03/2026', '15/03/2027']
+    ]);
+  });
+
+  it('detalle de un alta (los datos cargados) y de una baja (el dataset que se daría de baja)', () => {
+    const [, alta, baja] = auditoria({ nuevos: [modificacion(), ALTA], reiterados: [BAJA] }).detalles.secciones;
+    assert.equal(alta.titulo, '2. Dataset Nuevo – Alta');
+    assert.equal(alta.introduccion, 'Propuesta por Persona Auditora el 07/10/2026. Datos principales del conjunto de datos propuesto:');
+    assert.deepEqual(alta.columnas, ['Campo', 'Valor']);
+    assert.deepEqual(alta.filas.map(f => f.valores), [
+      ['Título', 'Dataset Nuevo'], ['Área Responsable', 'Área Uno'], ['Tema Principal', 'Economía y Finanzas'],
+      ['Frecuencia', 'Anualmente'], ['Tipo de Gestión', 'Externa'], ['Formatos del Dataset', 'CSV'],
+      ['URL en Portal', 'https://datos.comodoro.gov.ar/dataset/nuevo']
+    ]);
+    assert.equal(baja.titulo, '3. Dataset Viejo – Baja');
+    assert.equal(baja.introduccion, 'Propuesta por Persona Titular el 01/10/2026. Conjunto de datos que se daría de baja:');
+    assert.deepEqual(baja.filas.map(f => f.valores), [
+      ['Título', 'Dataset Viejo'], ['Área Responsable', 'Área Dos'], ['Frecuencia', 'Anualmente'], ['Tipo de Gestión', 'Interna']
+    ]);
+  });
+
+  it('HTML y texto: escapan los datos, listan los ítems con viñeta y llevan el detalle', () => {
+    const nota = auditoria({ nuevos: [modificacion({ dataset_titulo: '<b>Presupuesto</b>' })] });
+    const html = renderHtml(nota);
+    assert.ok(html.includes('&lt;b&gt;Presupuesto&lt;/b&gt;'));
+    assert.ok(!html.includes('<b>Presupuesto</b>'));
+    assert.ok(html.includes('<li style="margin:0 0 4px;text-align:justify;">los datos coincidan con la información remitida por el área responsable;</li>'));
+    assert.ok(html.includes('<b>Detalle de cada cambio</b>'));
+    assert.ok(html.includes('<b>Qué implica la auditoría:</b>'));
+    assert.ok(html.includes('Nombre de Firma<br>Cargo de Firma'));
+    assert.ok(!html.includes('Justificación'));
+    const texto = renderTexto(nota);
+    assert.ok(texto.includes('- los datos coincidan con la información remitida por el área responsable;'));
+    assert.ok(texto.includes('Detalle de cada cambio'));
+    assert.ok(texto.includes('    Valor anterior: Área Uno'));
+    assert.ok(texto.includes('Importancia:'));
+  });
+
+  it('presentada por la persona autorizada: las dos firmas y la leyenda (spec 7.2)', () => {
+    const firma = {
+      titular: { nombre: 'Firma Titular', cargo: 'Director' }, presentante: { nombre: 'Firma Autorizada', cargo: 'Coordinadora' },
+      leyenda: 'Nota presentada por Firma Autorizada, Coordinadora, en nombre de Firma Titular, Director, conforme a la autorización conferida mediante Nota Digital N° 3/26 (licencia del 19/10/2026 al 30/10/2026).'
+    };
+    const html = renderHtml(auditoria({ firma }));
+    assert.ok(html.includes(firma.leyenda));
+    assert.ok(html.includes('Firma Autorizada<br>Coordinadora'));
+    assert.ok(html.includes('Firma Titular<br>Director'));
+  });
+
+  it('las notas de siempre no cambian: sin detalle ni apartados', () => {
+    const aviso = nota();
+    assert.equal(aviso.detalles, undefined);
+    assert.equal(aviso.apartados, undefined);
+    assert.ok(!renderHtml(aviso).includes('Detalle de cada cambio'));
   });
 });

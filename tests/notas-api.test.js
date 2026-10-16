@@ -693,3 +693,47 @@ describe('aviso a las áreas', () => {
     assert.doesNotMatch(res.body, /Dataset de Ejemplo 1/);
   });
 });
+
+describe('nota de auditoría en Correos (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.1 y 10.4)', () => {
+  it('la vista previa, su PDF y la prueba aceptan tipo=auditoria sin gestión', async () => {
+    const vista = await api.get('/notificaciones/notas-digitales/preview?tipo=auditoria', comoAdmin());
+    assert.equal(vista.status, 200, JSON.stringify(vista.body));
+    assert.equal(vista.body.data.ejemplo, true);
+    assert.match(vista.body.data.asunto, /Solicitud de auditoría de cambios/);
+    const pdf = await api.get('/notificaciones/notas-digitales/preview/pdf?tipo=auditoria', comoAdmin());
+    assert.equal(pdf.status, 200);
+    assert.match(pdf.headers.get('content-disposition'), /Nota-Digital-vista-previa-auditoria\.pdf/);
+    const prueba = await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'auditoria' }, comoAdmin());
+    assert.equal(prueba.status, 200, JSON.stringify(prueba.body));
+    const [nota] = await query('SELECT tipo, es_prueba FROM notas_digitales WHERE id = ?', [prueba.body.data.id]);
+    assert.deepEqual([nota.tipo, nota.es_prueba], ['auditoria', 1]);
+  });
+
+  it('el libro filtra por Auditoría (sin gestión, con la cantidad de cambios) y el detalle lista los cambios incluidos', async () => {
+    const auditoria = await crearNota({ tipo: 'auditoria', gestion: null, fecha: '2026-10-19', numero: 4 });
+    await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-10-19', numero: 3 });
+    const { insertId: cambioId } = await query(
+      `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, usuario_id)
+       VALUES ('crear', NULL, '{"titulo":"Alta auditada"}', ?)`,
+      [usuarios.adminA.id]
+    );
+    try {
+      await query("INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, 'nuevo')", [auditoria, cambioId]);
+      const libro = (await api.get('/notificaciones/notas-digitales?tipo=auditoria', comoAdmin())).body.data;
+      assert.deepEqual(libro.map(n => [n.id, n.gestion, n.cantidad_cambios]), [[auditoria, null, 1]]);
+      const detalle = (await api.get(`/notificaciones/notas-digitales/${auditoria}`, comoAdmin())).body.data;
+      assert.deepEqual(detalle.cambios, [{ cambio_id: cambioId, seccion: 'nuevo', tipo_cambio: 'crear', estado: 'pendiente', titulo: 'Alta auditada' }]);
+    } finally {
+      await query('DELETE FROM cambios_pendientes WHERE id = ?', [cambioId]);
+    }
+  });
+
+  it('configuración: el Para de auditoría es obligatorio y el CC, opcional', async () => {
+    const ruta = '/notificaciones/notas-digitales/config';
+    assert.equal((await api.get(ruta, comoAdmin())).body.data.para_auditoria, 'mit@comodoro.gov.ar');
+    assert.equal((await api.put(ruta, { para_auditoria: '' }, comoAdmin())).status, 400);
+    const res = await api.put(ruta, { para_auditoria: 'auditoria@rpad.test', cc_auditoria: '' }, comoAdmin());
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual([res.body.data.para_auditoria, res.body.data.cc_auditoria], ['auditoria@rpad.test', '']);
+  });
+});

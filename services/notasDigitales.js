@@ -1,43 +1,38 @@
-// Motor de Notas Digitales: genera, numera, envía y reintenta los avisos y reiteraciones.
-// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8)
+// Motor de Notas Digitales: genera, numera, envía y reintenta los avisos, las reiteraciones y la nota de auditoría de los
+// cambios pendientes.
+// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8) y
+// docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (9 y 10, la nota de auditoría)
 import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos } from './emailService.js';
-import { construirNota, construirNotaDeAutorizacion, construirAnexo, renderHtml, renderTexto } from './notasDigitalesContenido.js';
+import {
+  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto
+} from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
-  periodoSiguiente, sumarDias, formatoCorto, ultimoDiaHabilHasta
+  periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta
 } from './notasDigitalesCalendario.js';
 import {
-  VENTANA_DIAS, obtenerConfig, seleccionarParaAviso, seleccionarParaReiteracion, aperturaDelProximoAviso, antecedentesDe, areasDe,
-  fichasDe
+  GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
+  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe
 } from './notasDigitalesDatos.js';
 import {
   firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoVigente
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { emailValido } from './usuariosReglas.js';
+import {
+  contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe
+} from './auditoriaService.js';
+import { DIAS_HABILES_PARA_REITERAR_AUDITORIA } from './auditoriaReglas.js';
 
 export const MAX_INTENTOS = 5;
-const GESTIONES = ['interna', 'externa'];
 const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
 const remitente = () => `"Dir. de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
-
-// firmaTitular: la firma del firmante titular (firmasService.firmaDeUsuario), si hay uno elegido (spec 2026-10-15, 6.2)
-export const configuracionCompleta = (config, firmaTitular = null) => {
-  const faltan = [];
-  for (const gestion of GESTIONES) {
-    if (listaDeCorreos(config[`para_${gestion}`]).length === 0) faltan.push(`Para (gestión ${gestion})`);
-  }
-  const firma = config.firmante_usuario_id ? firmaTitular : { nombre: config.firma_nombre, cargo: config.firma_cargo };
-  if (!String(firma?.nombre ?? '').trim()) faltan.push('nombre de la firma');
-  if (!String(firma?.cargo ?? '').trim()) faltan.push('cargo de la firma');
-  return faltan;
-};
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas son las de la
 // nota (las de la selección): el anexo coincide con la tabla aunque el dataset cambie mientras se genera, y nunca
@@ -72,8 +67,12 @@ const validarFichas = ({ datasets, fichas = [] }) => {
 
 // ccAutorizado: el email de la persona autorizada, en las notas que comunican su autorización (spec 2026-10-15, 7.2).
 // Va solo si es un email válido: uno mal cargado no puede hacer fallar el envío de la nota.
-const destinatarios = (config, gestion, esPrueba, ccAutorizado = null) => {
+// La nota de auditoría va a sus propios destinatarios, con el CCO general (spec 2026-10-15, 10.1).
+const destinatarios = (config, gestion, esPrueba, ccAutorizado = null, tipo = null) => {
   if (esPrueba) return { para: listaDeCorreos(config.casillas_prueba), cc: [], cco: [] };
+  if (tipo === 'auditoria') {
+    return { para: listaDeCorreos(config.para_auditoria), cc: listaDeCorreos(config.cc_auditoria), cco: listaDeCorreos(config.cco) };
+  }
   // La nota de autorización no tiene gestión: va a los "Para" de las dos, sin repetir
   const para = gestion
     ? listaDeCorreos(config[`para_${gestion}`])
@@ -98,19 +97,23 @@ const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: nu
  * autorizacion: { nombre, cargo, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo de autorización;
  * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular. En los dos
  * casos va en CC.
+ * auditoria: { nuevos, reiterados, catalogos } de la nota de auditoría (tipo 'auditoria', sin gestión ni datasets; spec
+ * 2026-10-15, 10). Salvo en las pruebas, cada cambio queda en notas_digitales_cambios con su sección: cuenta como incluido
+ * desde que la nota se genera (spec 9.3).
  */
 export const generarNota = async ({
   tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null,
-  firma = null, rangoVencimientos = null, autorizacion = null
+  firma = null, rangoVencimientos = null, autorizacion = null, auditoria = null
 }) => {
   const esAutorizacion = tipo === 'autorizacion';
+  const esAuditoria = tipo === 'auditoria';
   const firmaDelDia = firma ?? (await firmaParaFecha(config, fecha)).firma;
   const firmaNota = esAutorizacion ? soloTitular(firmaDelDia) : firmaDelDia;
-  const contenido = esAutorizacion
+  const contenido = esAutorizacion || esAuditoria
     ? { datasets: [], areas: [], fichas: [] }
     : preparado ?? await prepararContenido({ tipo, gestion, datasets });
   const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
-  const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null);
+  const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null, tipo);
   const conexion = await pool.getConnection();
   try {
     await conexion.beginTransaction();
@@ -122,12 +125,17 @@ export const generarNota = async ({
       );
       numero = Number(fila.siguiente);
     }
-    const nota = esAutorizacion
-      ? construirNotaDeAutorizacion({ numero, anio, esPrueba, fecha, firma: firmaNota, autorizacion })
-      : construirNota({
+    let nota;
+    if (esAutorizacion) {
+      nota = construirNotaDeAutorizacion({ numero, anio, esPrueba, fecha, firma: firmaNota, autorizacion });
+    } else if (esAuditoria) {
+      nota = construirNotaDeAuditoria({ numero, anio, esPrueba, fecha, ...auditoria, firma: firmaNota, config });
+    } else {
+      nota = construirNota({
         tipo, gestion, numero, anio, esPrueba, fecha, datasets: contenido.datasets, areas: contenido.areas, config,
         firma: firmaNota, rangoVencimientos, autorizacion
       });
+    }
     const pdf = await renderPdf(nota, opcionesPdf(config, firmaNota));
     // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo
     const anexoPdf = fichas ? await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas })) : null;
@@ -146,6 +154,13 @@ export const generarNota = async ({
           'INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento, cuenta_desde) VALUES (?, ?, ?, ?, ?)',
           [resultado.insertId, d.id, d.vencimiento < fecha ? 'vencido' : 'proximo', d.vencimiento, d.cuenta_desde ?? null]
         );
+      }
+      for (const [seccion, cambios] of [['nuevo', auditoria?.nuevos ?? []], ['reiterado', auditoria?.reiterados ?? []]]) {
+        for (const cambio of cambios) {
+          await conexion.query(
+            'INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, ?)', [resultado.insertId, cambio.id, seccion]
+          );
+        }
       }
     }
     await conexion.commit();
@@ -302,7 +317,16 @@ const prepararAviso = async (gestion, hoy, anticipo) => {
     : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
 };
 
-// Los pasos de una corrida (spec 8.1). Cada reintento, cada aviso y cada reiteración van aislados.
+// ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
+const hayNotaDeAuditoria = async (fecha) => {
+  const [[fila]] = await pool.query(
+    "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'auditoria' AND es_prueba = 0 AND fecha = ?", [fecha]
+  );
+  return Number(fila.cantidad) > 0;
+};
+
+// Los pasos de una corrida (spec 8.1): reintentos, avisos, reiteraciones y la nota de auditoría de los cambios pendientes
+// (spec 2026-10-15, 9.3). Cada reintento, cada aviso, cada reiteración y la nota de auditoría van aislados.
 const correrPasos = async (resumen, hoy, usuarioId) => {
   // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
   if (!esFechaIso(hoy)) {
@@ -468,6 +492,27 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       anotarError(resumen, { tipo: 'reiteracion', gestion }, error);
     }
   }
+
+  // 4. Nota de auditoría de los cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.3 y 10): una sola
+  // por día (Decisiones del plan 12), con la firma del día. Si hoy no hay quién firme (licencia sin autorizado) o la nota
+  // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas. Los cambios que entran
+  // son los del canal nota, que ya exige el envío activo, la configuración completa y un Para de auditoría (spec 9.1):
+  // sin eso siguen por recordatorio y esta nota no se genera.
+  try {
+    if (!(await hayNotaDeAuditoria(hoy))) {
+      const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+      if (nuevos.length || reiterados.length) {
+        const id = await generarNota({
+          tipo: 'auditoria', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma,
+          auditoria: { nuevos, reiterados, catalogos: await catalogosParaAuditoria() }
+        });
+        resumen.generadas.push({ id, tipo: 'auditoria', gestion: null, datasets: 0, cambios: nuevos.length + reiterados.length });
+        await enviar(id, { tipo: 'auditoria' });
+      }
+    }
+  } catch (error) {
+    anotarError(resumen, { tipo: 'auditoria' }, error);
+  }
 };
 
 export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
@@ -522,6 +567,41 @@ const ejemplo = (tipo, gestion, hoy) => {
   };
 };
 
+// Ejemplo de la nota de auditoría para la vista previa y la prueba cuando hoy no hay cambios para pedir (spec 10.4):
+// una modificación y un alta nuevas, y una baja ya solicitada
+const ejemploAuditoria = (hoy) => {
+  const comun = { usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo', fecha_propuesta: diaHabilAnterior(diaHabilAnterior(hoy)) };
+  return {
+    nuevos: [
+      {
+        ...comun, id: 0, tipo_cambio: 'editar', dataset_titulo: 'Dataset de ejemplo',
+        datos_anteriores: { proxima_actualizacion: sumarDias(hoy, -10), url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo' },
+        datos_nuevos: { proxima_actualizacion: sumarDias(hoy, 355), url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-actualizado' }
+      },
+      {
+        ...comun, id: -1, tipo_cambio: 'crear', dataset_titulo: null, datos_anteriores: null,
+        datos_nuevos: {
+          titulo: 'Dataset nuevo de ejemplo', descripcion: 'Descripción de ejemplo del conjunto de datos propuesto.',
+          tipo_gestion: 'interna', url_dataset: 'https://datos.comodoro.gov.ar/dataset/nuevo'
+        }
+      }
+    ],
+    reiterados: [{
+      ...comun, id: -2, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset de ejemplo a dar de baja', fecha_propuesta: sumarDias(hoy, -14),
+      datos_nuevos: { eliminado: true }, datos_anteriores: { titulo: 'Dataset de ejemplo a dar de baja', tipo_gestion: 'externa' },
+      solicitado: { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: diaHabilAnterior(sumarDias(hoy, -6)), reiteraciones: 0 }
+    }],
+    catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
+  };
+};
+
+// Lo que llevaría hoy la nota de auditoría (spec 9.3) o, si no lleva nada, el ejemplo
+const contenidoDeAuditoriaParaMostrar = async (config, hoy) => {
+  const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+  if (nuevos.length || reiterados.length) return { nuevos, reiterados, catalogos: await catalogosParaAuditoria(), ejemplo: false };
+  return { ...ejemploAuditoria(hoy), ejemplo: true };
+};
+
 const contenidoParaMostrar = async (tipo, gestion, hoy) => {
   const reales = tipo === 'aviso' ? await seleccionarParaAviso(gestion, hoy) : await seleccionarParaReiteracion(gestion, hoy);
   if (reales.length) return { ...(await prepararContenido({ tipo, gestion, datasets: reales })), ejemplo: false };
@@ -529,10 +609,15 @@ const contenidoParaMostrar = async (tipo, gestion, hoy) => {
 };
 
 // La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX, firmada como saldría (en una licencia sin
-// autorizado, como saldría a la vuelta: con la firma del titular)
+// autorizado, como saldría a la vuelta: con la firma del titular). La de auditoría no tiene gestión (spec 2026-10-15, 10.4).
 const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
   const config = await obtenerConfig();
   const { firma } = await firmaParaFecha(config, hoy);
+  if (tipo === 'auditoria') {
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, hoy);
+    const nota = construirNotaDeAuditoria({ numero: null, anio: null, esPrueba: false, fecha: hoy, ...auditoria, firma, config });
+    return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
+  }
   const { datasets, areas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const nota = construirNota({ tipo, gestion, numero: null, anio: null, esPrueba: false, fecha: hoy, datasets, areas, config, firma });
   return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
@@ -560,6 +645,12 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
   const { firma } = await firmaParaFecha(config, hoy);
+  // La prueba de la nota de auditoría: los cambios de hoy o el ejemplo, sin registrar cambios incluidos (spec 2026-10-15, 11.2)
+  if (tipo === 'auditoria') {
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, hoy);
+    const id = await generarNota({ tipo, gestion: null, fecha: hoy, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
+    return { id, ejemplo: esEjemplo, destinatarios: casillas, ...(await enviarNota(id)) };
+  }
   const { datasets, areas, fichas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
   const id = await generarNota({
     tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }, firma
@@ -592,6 +683,26 @@ const licenciaDelFirmante = async (config, hoy) => {
     ultimo_habil: ultimoHabil,
     vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
   };
+};
+
+/**
+ * Nota de auditoría en el Estado (spec 2026-10-15, 10.4): cuántos cambios están en el canal nota en la próxima corrida
+ * posible (hoy si es hábil) y la fecha de la próxima nota: la de esa corrida si alguno todavía no estuvo en una nota (o el
+ * día hábil siguiente si la de esa fecha ya salió), y si no, 5 días hábiles después de la última nota de cada uno.
+ * { canal_nota, proxima: 'AAAA-MM-DD' | null }
+ */
+const estadoAuditoria = async (config, hoy) => {
+  const corrida = proximoDiaHabil(hoy);
+  const delCanal = (await cambiosConCanal(corrida, await contextoDeCanal(corrida, config))).filter(c => c.canal === 'nota');
+  if (delCanal.length === 0) return { canal_nota: 0, proxima: null };
+  const previas = await notasDeAuditoriaDe(delCanal.map(c => c.id));
+  const primeraLibre = (await hayNotaDeAuditoria(corrida)) ? proximoDiaHabil(sumarDias(corrida, 1)) : corrida;
+  const fechas = delCanal.map((cambio) => {
+    const ultima = previas.get(cambio.id)?.at(-1)?.fecha;
+    const fecha = ultima ? sumarDiasHabiles(ultima, DIAS_HABILES_PARA_REITERAR_AUDITORIA) : primeraLibre;
+    return fecha < primeraLibre ? primeraLibre : fecha;
+  });
+  return { canal_nota: delCanal.length, proxima: fechas.sort()[0] };
 };
 
 export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
@@ -644,6 +755,7 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
     fallidas: Number(fallidas),
     proximas,
     licencia_firmante: licencia,
+    auditoria: await estadoAuditoria(config, hoy),
     ultima_corrida: ultimaCorrida,
     alertas: [
       ...alertasDeCorrida(config, ultimaCorrida, hoy),

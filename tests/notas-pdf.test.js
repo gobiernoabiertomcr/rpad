@@ -2,7 +2,7 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
-import { construirNota, construirNotaDeAutorizacion } from '../services/notasDigitalesContenido.js';
+import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria } from '../services/notasDigitalesContenido.js';
 import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
 import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
@@ -856,5 +856,193 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
         }
       }
     }
+  });
+});
+
+describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.3)', () => {
+  const LARGA = `Descripción ${'muy '.repeat(150)}larga del conjunto de datos, que se transcribe completa.`;
+  const cambio = (i) => ({
+    id: i, tipo_cambio: 'editar', dataset_titulo: `Dataset ${i} auditado`, usuario_nombre: 'Persona Editora',
+    usuario_cargo: 'Cargo de Prueba', fecha_propuesta: '2026-10-16',
+    datos_anteriores: { descripcion: 'Antes' }, datos_nuevos: { descripcion: LARGA }
+  });
+  const auditoria = (cantidad, cambios = {}) => construirNotaDeAuditoria({
+    numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: Array.from({ length: cantidad }, (_, i) => cambio(i + 1)), reiterados: [],
+    catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }, config, ...cambios
+  });
+  // El texto de todas las hojas, en el orden en que se dibujó (cada celda es una sola escritura: su texto queda junto)
+  const todo = (pdf) => lineasPorHoja(pdf).flat().join(' ').replace(/\s+/g, ' ');
+  const incluye = (pdf, esperado) => todo(pdf).includes(esperado.replace(/\s+/g, ' '));
+
+  it('lleva las tablas, el detalle con los textos largos completos y los apartados con viñetas', async () => {
+    const pdf = await renderPdf(auditoria(2), { firmaImagen: PNG });
+    for (const esperado of ['Cambios pendientes de auditoría', 'Detalle de cada cambio', '1. Dataset 1 auditado – Modificación',
+      '2. Dataset 2 auditado – Modificación', LARGA, 'Qué implica la auditoría:',
+      '• los datos coincidan con la información remitida por el área responsable;', 'Importancia:',
+      '/perfil.html (sección "Para revisar").', 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN']) {
+      assert.ok(incluye(pdf, esperado), esperado.slice(0, 60));
+    }
+    assert.ok(!incluye(pdf, 'Justificación:'));
+  });
+
+  it('con muchos cambios ocupa varias hojas y el cierre (remitente y firma) queda entero en la última', async () => {
+    const pdf = await renderPdf(auditoria(12));
+    const hojas = lineasPorHoja(pdf);
+    assert.ok(hojas.length > 1);
+    const ultima = hojas.at(-1).join(' ');
+    assert.ok(ultima.includes('DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN'));
+    assert.ok(ultima.includes('Nombre') && ultima.includes('Cargo'));
+  });
+
+  // La firma nunca queda sola: arriba del remitente va el último apartado ("Importancia:"). El espacio que queda en la hoja
+  // anterior cae en cualquier punto, así que se barre la cantidad de cambios y el largo de lo que cambia
+  it('el remitente y la firma no quedan solos en una hoja: "Importancia" viaja con ellos (1 a 12 cambios, una y dos firmas)', async () => {
+    const dos = {
+      titular: { nombre: 'Firma Titular', cargo: 'Director' }, presentante: { nombre: 'Firma Autorizada', cargo: 'Coordinadora' },
+      leyenda: 'Nota presentada por Firma Autorizada, Coordinadora, en nombre de Firma Titular, Director, conforme a la autorización conferida mediante Nota Digital N° 3/26 (licencia del 19/10/2026 al 30/10/2026).'
+    };
+    const importancia = auditoria(1).apartados.at(-1).parrafos[0].slice(0, 30);
+    let conVariasHojas = 0;
+    for (const [caso, firma, opciones] of [
+      ['una firma', undefined, { firmaImagen: PNG }],
+      ['dos firmas', dos, { firmaImagen: PNG, presentanteImagen: PNG }]
+    ]) {
+      for (let cantidad = 1; cantidad <= 12; cantidad++) {
+        for (const palabras of [1, 12, 30]) {
+          const nuevos = Array.from({ length: cantidad }, (_, i) => ({ ...cambio(i + 1), datos_nuevos: { descripcion: 'palabra '.repeat(palabras).trim() } }));
+          const n = auditoria(cantidad, { nuevos, firma });
+          const hojas = lineasPorHoja(await renderPdf(n, opciones));
+          const donde = `${caso}, ${cantidad} cambios, ${palabras} palabras`;
+          const ultima = hojas.at(-1).join(' ');
+          for (const parte of ['Importancia:', importancia, n.remitente, n.firma.nombre, n.firma.cargo]) {
+            assert.ok(ultima.includes(parte), `${donde}: falta "${parte}" en la última hoja`);
+          }
+          for (const anterior of hojas.slice(0, -1)) {
+            assert.ok(!anterior.join(' ').includes(n.remitente), `${donde}: el remitente quedó en una hoja anterior`);
+          }
+          if (hojas.length > 1) conVariasHojas++;
+        }
+      }
+    }
+    assert.ok(conVariasHojas > 0, 'el barrido tiene que incluir notas de varias hojas');
+  });
+
+  // Lo que se reserva para el último apartado tiene que ser exactamente lo que ocupa (el alto de cada renglón y el aire que
+  // deja debajo): con una reserva corta, "Importancia:" entraba justo y el remitente y la firma saltaban solos a otra hoja
+  const textoDe = (n) => 'palabra '.repeat(n).trim();
+  const DATASET_URL = 'https://datos.comodoro.gov.ar/dataset/';
+  const TITULO_LARGO = 'Dataset con un título bastante más largo que ocupa dos renglones en el detalle del cambio propuesto por la persona editora';
+  const CATALOGOS_AREAS = { areas: { 1: 'Área Uno', 2: 'Área Dos' }, frecuencias: {}, temas: {}, formatos: {} };
+  // Esta nota (3 cambios, 3 hojas) dejaba el remitente y la firma solos en la última hoja: "Importancia:" empezaba en la hoja 2
+  // y la reserva se quedaba corta por un par de puntos (no contaba el aire que deja debajo el párrafo)
+  const REPRODUCTOR = [
+    {
+      id: 1, tipo_cambio: 'editar', dataset_titulo: 'Dataset auditado 1', usuario_nombre: 'Persona Editora', usuario_cargo: null,
+      fecha_propuesta: '2026-10-16', datos_anteriores: { titulo: 'Dataset auditado 1', descripcion: 'Antes', area_id: 1 },
+      datos_nuevos: { titulo: 'Dataset auditado 1', descripcion: textoDe(3), area_id: 1, url_dataset: `${DATASET_URL}${'x'.repeat(32)}` }
+    },
+    {
+      id: 2, tipo_cambio: 'editar', dataset_titulo: `${TITULO_LARGO} 2`, usuario_nombre: 'Persona Editora', usuario_cargo: 'Cargo de Prueba',
+      fecha_propuesta: '2026-10-16', datos_anteriores: { titulo: `${TITULO_LARGO} 2`, descripcion: 'Antes', area_id: 1 },
+      datos_nuevos: { titulo: `${TITULO_LARGO} 2`, descripcion: textoDe(108), area_id: 2, url_dataset: `${DATASET_URL}${'x'.repeat(14)}` }
+    },
+    {
+      id: 3, tipo_cambio: 'crear', dataset_titulo: null, usuario_nombre: 'Persona Editora', usuario_cargo: null, fecha_propuesta: '2026-10-16',
+      datos_anteriores: null,
+      datos_nuevos: { titulo: 'Dataset auditado 3', descripcion: textoDe(148), area_id: 1, url_dataset: `${DATASET_URL}${'x'.repeat(82)}` }
+    }
+  ];
+  // Lo que tiene que cumplir cada nota de auditoría: la última hoja trae "Importancia:" arriba del remitente y la firma, el
+  // remitente no está en ninguna hoja anterior y ninguna hoja termina en un título o en el primer párrafo de un apartado
+  const TITULOS_SUELTOS = ['Detalle de cada cambio', 'Qué implica la auditoría:', 'La auditoría consiste en verificar que:', 'Importancia:'];
+  const cierreConElTexto = (n, hojas, donde) => {
+    const ultima = hojas.at(-1).join(' ');
+    for (const parte of ['Importancia:', n.apartados.at(-1).parrafos[0].slice(0, 30), n.remitente, n.firma.nombre, n.firma.cargo]) {
+      assert.ok(ultima.includes(parte), `${donde}: falta "${parte}" en la última hoja (${hojas.length} hojas)`);
+    }
+    for (const anterior of hojas.slice(0, -1)) {
+      assert.ok(!anterior.join(' ').includes(n.remitente), `${donde}: el remitente quedó en una hoja anterior`);
+    }
+    for (const hoja of hojas) {
+      const ultimaLinea = hoja.filter(linea => !esPaginacion(linea)).at(-1);
+      assert.ok(!TITULOS_SUELTOS.includes(ultimaLinea), `${donde}: la hoja termina en "${ultimaLinea}"`);
+    }
+  };
+
+  it('el caso que dejaba el remitente y la firma solos en la última hoja: "Importancia" viaja con ellos', async () => {
+    const n = auditoria(3, { nuevos: REPRODUCTOR, catalogos: CATALOGOS_AREAS });
+    const hojas = lineasPorHoja(await renderPdf(n));
+    assert.equal(hojas.length, 3, 'el caso tiene que ocupar tres hojas');
+    cierreConElTexto(n, hojas, 'reproductor');
+  });
+
+  // El espacio que queda al llegar a "Importancia:" cae en cualquier punto de la hoja: se barren la cantidad de cambios, cuáles
+  // tienen el título de dos renglones (alto de 12 pt) y el largo de lo que cambia (renglones de 8,5 pt). Con la reserva corta
+  // fallaban 8 de estas 480 notas, y 22 hojas terminaban en un título o en "La auditoría consiste en verificar que:".
+  it('barrido denso (480 notas): "Importancia" siempre va con el remitente y la firma, y ningún título queda solo al pie', async () => {
+    const cantidadesDeHojas = [];
+    for (let cantidad = 1; cantidad <= 4; cantidad++) {
+      for (let titulosLargos = 0; titulosLargos < 2 ** cantidad; titulosLargos++) {
+        for (let caracteres = 30; caracteres <= 480; caracteres += 30) {
+          const nuevos = Array.from({ length: cantidad }, (_, i) => ({
+            ...cambio(i + 1), dataset_titulo: `${(titulosLargos >> i) & 1 ? TITULO_LARGO : 'Dataset auditado'} ${i + 1}`,
+            datos_nuevos: { descripcion: textoDe(Math.ceil(caracteres / 8)).slice(0, caracteres).trim() }
+          }));
+          const n = auditoria(cantidad, { nuevos });
+          const hojas = lineasPorHoja(await renderPdf(n));
+          cierreConElTexto(n, hojas, `${cantidad} cambios, títulos largos ${titulosLargos.toString(2)}, ${caracteres} caracteres`);
+          cantidadesDeHojas.push(hojas.length);
+        }
+      }
+    }
+    assert.ok([2, 3].every(hojas => cantidadesDeHojas.includes(hojas)), 'el barrido tiene que recorrer notas de dos y de tres hojas');
+  });
+
+  // partirPalabras (tablas del detalle): una URL larga se parte dentro de su celda; no agranda su columna a costa de la de las
+  // etiquetas ("Campo" conserva su 24% en las modificaciones y su 28% en las altas y las bajas)
+  it('en el detalle, una URL larga se parte dentro de su celda y la columna "Campo" conserva su ancho', async () => {
+    const ancho = ANCHO_HOJA - 60 * MM;
+    const RELLENO_CELDA = 3;
+    for (const [caso, parte] of [['sin cortes', (letra) => letra.repeat(160)], ['con guiones', (letra) => Array.from({ length: 30 }, (_, i) => `${letra}${i}`).join('-')]]) {
+      const anterior = `${DATASET_URL}viejo-${parte('a')}`;
+      const nueva = `${DATASET_URL}${parte('b')}`;
+      for (const [tipo, columnas] of [['editar', ['Valor anterior', 'Valor nuevo']], ['crear', ['Valor']]]) {
+        const alta = tipo === 'crear';
+        const c = {
+          id: 1, tipo_cambio: tipo, dataset_titulo: alta ? null : 'Dataset', usuario_nombre: 'Persona Editora', usuario_cargo: null,
+          fecha_propuesta: '2026-10-16', datos_anteriores: alta ? null : { url_dataset: anterior },
+          datos_nuevos: alta ? { titulo: 'Dataset', url_dataset: nueva } : { url_dataset: nueva }
+        };
+        const textos = textosPorHoja(await renderPdf(auditoria(1, { nuevos: [c] }))).flat();
+        const donde = `${caso}, ${tipo}`;
+        const columna = (encabezado) => textos.find(t => t.texto === encabezado).x;
+        const x0 = columna('Campo');
+        const anchos = alta ? [0.28 * ancho, 0.72 * ancho] : [0.24 * ancho, 0.38 * ancho, 0.38 * ancho];
+        columnas.forEach((encabezado, i) => {
+          assert.ok(cerca(columna(encabezado) - x0, anchos[0] + anchos.slice(1, i + 1).reduce((a, b) => a + b, 0), 0.5), `${donde}: la columna "${encabezado}" no empieza donde le toca`);
+          // Los renglones de la URL de esa columna: más de uno, completos al juntarlos y cada uno dentro de su celda
+          const url = alta || i === 1 ? nueva : anterior;
+          const renglones = textos.filter(t => cerca(t.x, columna(encabezado), 0.01) && t.texto !== encabezado && url.includes(t.texto));
+          assert.ok(renglones.length > 1, `${donde}: la URL de "${encabezado}" no se partió`);
+          assert.equal(renglones.map(t => t.texto).join(''), url, `${donde}: la URL de "${encabezado}" está incompleta`);
+          for (const { texto } of renglones) {
+            assert.ok(anchoDe(texto, 8.5) <= anchos[i + 1] - 2 * RELLENO_CELDA + 1, `${donde}: un renglón de la URL de "${encabezado}" se sale de su celda`);
+          }
+        });
+      }
+    }
+  });
+
+  it('presentada por la persona autorizada: las dos imágenes y la leyenda', async () => {
+    const firma = {
+      titular: { nombre: 'Firma Titular', cargo: 'Director', imagen: PNG },
+      presentante: { nombre: 'Firma Autorizada', cargo: 'Coordinadora', imagen: PNG },
+      leyenda: 'Nota presentada por Firma Autorizada, Coordinadora, en nombre de Firma Titular, Director, conforme a la autorización conferida mediante Nota Digital N° 3/26 (licencia del 19/10/2026 al 30/10/2026).'
+    };
+    const pdf = await renderPdf(auditoria(1, { firma }), { firmaImagen: PNG, presentanteImagen: PNG });
+    const ultima = lineasPorHoja(pdf).at(-1).join(' ');
+    assert.ok(ultima.includes('Firma Autorizada') && ultima.includes('Firma Titular'));
+    assert.ok(incluye(pdf, firma.leyenda));
+    assert.equal(imagenesPorHoja(pdf).at(-1).length, 2);
   });
 });

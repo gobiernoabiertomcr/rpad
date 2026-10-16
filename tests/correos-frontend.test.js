@@ -101,3 +101,47 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     assert.equal(vm.runInContext("textoGestion('interna')", contexto), 'Interna');
   });
 });
+
+describe('correos.js: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 10.4)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+
+  it('el libro muestra el tipo Auditoría, sin gestión y con la cantidad de cambios', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(evaluar(contexto, 'ETIQUETAS.auditoria'), 'Auditoría');
+    assert.equal(evaluar(contexto, 'textoGestion(null)'), '—');
+    assert.equal(evaluar(contexto, "celdaCantidad({ tipo: 'auditoria', cantidad_cambios: 3, es_prueba: 0 })"), '3 cambio(s)');
+    assert.equal(evaluar(contexto, "celdaCantidad({ tipo: 'aviso', cantidad_datasets: 2, es_prueba: 0 })"), '2');
+    assert.equal(evaluar(contexto, "celdaCantidad({ tipo: 'reiteracion', cantidad_datasets: 1, seccion_dataset: 'vencido', es_prueba: 0 })"), '1 (vencido)');
+    assert.equal(evaluar(contexto, "celdaCantidad({ tipo: 'autorizacion', es_prueba: 0 })"), '—');
+    assert.equal(evaluar(contexto, "celdaCantidad({ tipo: 'auditoria', cantidad_cambios: 0, es_prueba: 1 })"), '—');
+  });
+
+  it('el detalle de la nota lista los cambios incluidos', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(evaluar(contexto, "textoCambioDeNota({ tipo_cambio: 'editar', titulo: 'Presupuesto', seccion: 'nuevo', estado: 'pendiente' })"),
+      'Modificación: Presupuesto (nuevo)');
+    assert.equal(evaluar(contexto, "textoCambioDeNota({ tipo_cambio: 'crear', titulo: 'Nuevo', seccion: 'reiterado', estado: 'aprobado' })"),
+      'Alta: Nuevo (reiterado, aprobado)');
+  });
+
+  it('el Estado dice cuántos cambios van por nota y cuándo sale la próxima', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(evaluar(contexto, "textoAuditoria({ canal_nota: 2, proxima: '2026-10-26' })"),
+      'Auditoría de cambios: 2 cambio(s) para pedir por nota; próxima nota de auditoría: 26/10/2026.');
+    assert.equal(evaluar(contexto, 'textoAuditoria({ canal_nota: 0, proxima: null })'),
+      'Auditoría de cambios: no hay cambios para pedir por nota.');
+    assert.equal(evaluar(contexto, 'textoAuditoria(undefined)'), 'Auditoría de cambios: no hay cambios para pedir por nota.');
+  });
+
+  it('la vista previa de auditoría no usa la gestión', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(evaluar(contexto, "nombreVistaPrevia('auditoria', 'interna')"), 'Nota-Digital-vista-previa-auditoria.pdf');
+    assert.equal(evaluar(contexto, "nombreVistaPrevia('aviso', 'externa')"), 'Nota-Digital-vista-previa-aviso-externa.pdf');
+    evaluar(contexto, "document.getElementById('preview-tipo').value = 'auditoria'");
+    contexto.actualizarSelectorGestion();
+    assert.equal(evaluar(contexto, "document.getElementById('preview-gestion').disabled"), true);
+    evaluar(contexto, "document.getElementById('preview-tipo').value = 'aviso'");
+    contexto.actualizarSelectorGestion();
+    assert.equal(evaluar(contexto, "document.getElementById('preview-gestion').disabled"), false);
+  });
+});

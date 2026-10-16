@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 9)
 import pool from '../config/database.js';
 import * as notas from '../services/notasDigitales.js';
-import { obtenerConfig } from '../services/notasDigitalesDatos.js';
+import { obtenerConfig, configuracionCompleta } from '../services/notasDigitalesDatos.js';
 import {
   validarImagenFirma, validarImagenMembrete, ImagenInvalida, caracteresNoEscribibles, pieEntraEnUnaLinea
 } from '../services/notasDigitalesPdf.js';
@@ -11,8 +11,8 @@ import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/image
 import { firmaDeUsuario } from '../services/firmasService.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
-// El libro también filtra las notas de autorización; la vista previa y la prueba solo usan TIPOS
-const TIPOS_LIBRO = [...TIPOS, 'autorizacion'];
+// El libro también filtra las notas de autorización y las de auditoría (spec 2026-10-15, 7.2 y 10.4)
+const TIPOS_LIBRO = [...TIPOS, 'autorizacion', 'auditoria'];
 const GESTIONES = ['interna', 'externa'];
 const ESTADOS = ['pendiente', 'enviada', 'fallida'];
 const EMAIL_VALIDO = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
@@ -30,7 +30,10 @@ const IMAGENES = {
   }
 };
 // Listas de direcciones: true = obligatoria
-const LISTAS = { para_interna: true, para_externa: true, cc_interna: false, cc_externa: false, cco: false, casillas_prueba: false };
+const LISTAS = {
+  para_interna: true, para_externa: true, cc_interna: false, cc_externa: false, cco: false, casillas_prueba: false,
+  para_auditoria: true, cc_auditoria: false
+};
 // Textos que van al PDF: largo máximo. Se guardan en NFC y sin caracteres que Helvetica no puede escribir.
 // membrete_pie vacío = PDF sin pie del membrete; si no, tiene que entrar en una línea con letra de 7 puntos.
 const TEXTOS = { linea_cc_interna: 200, linea_cc_externa: 200, firma_nombre: 150, firma_cargo: 200, membrete_pie: 300 };
@@ -43,6 +46,13 @@ const errorInterno = (res, mensaje, error) => {
 const idDe = (valor) => {
   const id = Number(valor);
   return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+// Tipo y gestión de la vista previa y la prueba: un aviso o una reiteración con su gestión, o la nota de auditoría, que no
+// tiene gestión (spec 2026-10-15, 10.4). null si no son válidos.
+const notaPedida = ({ tipo, gestion } = {}) => {
+  if (tipo === 'auditoria') return { tipo, gestion: null };
+  return TIPOS.includes(tipo) && GESTIONES.includes(gestion) ? { tipo, gestion } : null;
 };
 
 // Firmante titular para la pantalla (spec 2026-10-15, 6.2), o null
@@ -97,6 +107,7 @@ export const listarNotas = async (req, res) => {
               n.asunto, n.para, n.cc, n.cco, n.estado, n.intentos, n.ultimo_error, n.respuesta_smtp,
               DATE_FORMAT(n.enviada_at, '%Y-%m-%d %H:%i') AS enviada_at,
               (SELECT COUNT(*) FROM notas_digitales_datasets c WHERE c.nota_id = n.id) AS cantidad_datasets,
+              (SELECT COUNT(*) FROM notas_digitales_cambios k WHERE k.nota_id = n.id) AS cantidad_cambios,
               (n.anexo_pdf IS NOT NULL) AS tiene_anexo
               ${datasetId ? ', (SELECT s.seccion FROM notas_digitales_datasets s WHERE s.nota_id = n.id AND s.dataset_id = ?) AS seccion_dataset' : ''}
        FROM notas_digitales n ${where}
@@ -125,7 +136,20 @@ export const obtenerNota = async (req, res) => {
        FROM notas_digitales_datasets x JOIN datasets d ON d.id = x.dataset_id
        WHERE x.nota_id = ? ORDER BY x.vencimiento, d.titulo`, [id]
     );
-    res.json({ success: true, data: { ...nota, tiene_anexo: Boolean(nota.tiene_anexo), datasets } });
+    // Los cambios que incluye una nota de auditoría (spec 2026-10-15, 10.4). El título es el del dataset o, en un alta, el
+    // propuesto (se arma acá y no con COALESCE en SQL: datos_nuevos tiene otra intercalación que datasets.titulo)
+    const [filasCambios] = await pool.query(
+      `SELECT k.cambio_id, k.seccion, cp.tipo_cambio, cp.estado, d.titulo AS dataset_titulo, cp.datos_nuevos
+       FROM notas_digitales_cambios k
+       JOIN cambios_pendientes cp ON cp.id = k.cambio_id
+       LEFT JOIN datasets d ON d.id = cp.dataset_id
+       WHERE k.nota_id = ? ORDER BY k.seccion, cp.created_at, cp.id`, [id]
+    );
+    const cambios = filasCambios.map(({ dataset_titulo: tituloDataset, datos_nuevos: datosNuevos, ...cambio }) => ({
+      ...cambio,
+      titulo: tituloDataset ?? (typeof datosNuevos === 'string' ? JSON.parse(datosNuevos) : datosNuevos)?.titulo ?? null
+    }));
+    res.json({ success: true, data: { ...nota, tiene_anexo: Boolean(nota.tiene_anexo), datasets, cambios } });
   } catch (error) {
     errorInterno(res, 'Error al obtener la nota', error);
   }
@@ -185,11 +209,9 @@ export const verEstado = async (req, res) => {
 
 export const verPreview = async (req, res) => {
   try {
-    const { tipo, gestion } = req.query;
-    if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
-      return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
-    }
-    res.json({ success: true, data: await notas.previewNota({ tipo, gestion }) });
+    const pedida = notaPedida(req.query);
+    if (!pedida) return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
+    res.json({ success: true, data: await notas.previewNota(pedida) });
   } catch (error) {
     errorInterno(res, 'Error al generar la vista previa', error);
   }
@@ -198,13 +220,12 @@ export const verPreview = async (req, res) => {
 // El PDF de la vista previa (N° XX, con el membrete y la firma cargados): no se guarda ni se envía
 export const verPreviewPdf = async (req, res) => {
   try {
-    const { tipo, gestion } = req.query;
-    if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
-      return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
-    }
-    const pdf = await notas.previewPdf({ tipo, gestion });
+    const pedida = notaPedida(req.query);
+    if (!pedida) return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
+    const pdf = await notas.previewPdf(pedida);
+    const nombre = `Nota-Digital-vista-previa-${pedida.tipo}${pedida.gestion ? `-${pedida.gestion}` : ''}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Nota-Digital-vista-previa-${tipo}-${gestion}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${nombre}"`);
     res.send(pdf);
   } catch (error) {
     // Una firma o un banner guardados que no se pueden leer: el admin los reemplaza en Configuración
@@ -231,11 +252,9 @@ export const verPreviewAnexo = async (req, res) => {
 
 export const enviarPrueba = async (req, res) => {
   try {
-    const { tipo, gestion } = req.body ?? {};
-    if (!TIPOS.includes(tipo) || !GESTIONES.includes(gestion)) {
-      return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
-    }
-    const resultado = await notas.enviarPrueba({ tipo, gestion, usuarioId: req.user?.userId ?? null });
+    const pedida = notaPedida(req.body ?? {});
+    if (!pedida) return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
+    const resultado = await notas.enviarPrueba({ ...pedida, usuarioId: req.user?.userId ?? null });
     if (!resultado.success) return res.status(502).json({ success: false, error: `No se pudo enviar la prueba: ${resultado.error}` });
     res.json({
       success: true,
@@ -304,7 +323,7 @@ export const guardarConfig = async (req, res) => {
     if (Object.keys(cambios).length === 0) return res.status(400).json({ success: false, error: 'No hay cambios para guardar' });
 
     const resultante = { ...(await obtenerConfig()), ...cambios };
-    const faltan = notas.configuracionCompleta(resultante, await firmaDeUsuario(resultante.firmante_usuario_id));
+    const faltan = configuracionCompleta(resultante, await firmaDeUsuario(resultante.firmante_usuario_id));
     if (resultante.envio_activo && faltan.length) {
       return res.status(400).json({ success: false, error: `No se puede activar el envío automático: falta ${faltan.join(', ')}` });
     }
@@ -406,7 +425,7 @@ export const elegirFirmante = async (req, res) => {
       }
     }
     const resultante = { ...(await obtenerConfig()), firmante_usuario_id: usuarioId };
-    const faltan = notas.configuracionCompleta(resultante, await firmaDeUsuario(usuarioId));
+    const faltan = configuracionCompleta(resultante, await firmaDeUsuario(usuarioId));
     if (resultante.envio_activo && faltan.length) {
       return res.status(400).json({ success: false, error: `No se puede con el envío automático activo: faltaría ${faltan.join(', ')}` });
     }

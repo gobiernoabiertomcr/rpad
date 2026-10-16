@@ -270,8 +270,10 @@ export const contactoTemplate = (datos) => ({
 // PLANTILLA PARA CAMBIOS PENDIENTES DE APROBACIÓN
 // =====================================================
 
-export const cambiosPendientesTemplate = (cambios) => ({
-  subject: `[RPAD] Hay ${cambios.length} cambio${cambios.length > 1 ? 's' : ''} pendiente${cambios.length > 1 ? 's' : ''} de aprobacion`,
+// Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2). respaldo: la persona lo recibe
+// porque no hay auditores disponibles
+export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) => ({
+  subject: cambios.length === 1 ? '[RPAD] 1 cambio espera tu auditoría' : `[RPAD] ${cambios.length} cambios esperan tu auditoría`,
   html: `
 <!DOCTYPE html>
 <html lang="es">
@@ -303,7 +305,7 @@ export const cambiosPendientesTemplate = (cambios) => ({
           <tr>
             <td style="padding: 24px 24px 16px 24px;">
               <h2 style="color: ${COLORS.dark}; margin: 0; font-size: 20px; font-weight: 600;">Cambios pendientes de revision</h2>
-              <p style="color: ${COLORS.muted}; margin: 8px 0 0 0; font-size: 14px;">Hay ${cambios.length} cambio${cambios.length > 1 ? 's' : ''} esperando tu aprobacion</p>
+              <p style="color: ${COLORS.muted}; margin: 8px 0 0 0; font-size: 14px;">Hay ${cambios.length} cambio${cambios.length > 1 ? 's' : ''} esperando tu auditoría</p>
             </td>
           </tr>
 
@@ -314,7 +316,8 @@ export const cambiosPendientesTemplate = (cambios) => ({
                 <tr>
                   <td style="padding: 16px;">
                     <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px;"><strong>Accion requerida:</strong></p>
-                    <p style="margin: 8px 0 0 0; color: ${COLORS.muted}; font-size: 14px;">Por favor, revisa y aprueba o rechaza los siguientes cambios propuestos por otros administradores.</p>
+                    <p style="margin: 8px 0 0 0; color: ${COLORS.muted}; font-size: 14px;">Por favor, revisa y aprueba o rechaza los siguientes cambios propuestos por otras personas.</p>
+                    ${respaldo ? `<p style="margin: 8px 0 0 0; color: ${COLORS.dark}; font-size: 14px;"><strong>Te llega como respaldo: no hay auditores disponibles.</strong></p>` : ''}
                   </td>
                 </tr>
               </table>
@@ -352,7 +355,7 @@ export const cambiosPendientesTemplate = (cambios) => ({
                       </p>
                       <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">${escapeHtml(titulo)}</p>
                       <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 12px;">Propuesto por: ${escapeHtml(c.usuario_nombre || c.usuario_username)}</p>
-                      <p style="margin: 2px 0 0 0; color: ${COLORS.muted}; font-size: 11px;">Hace ${c.tiempo_pendiente}</p>
+                      <p style="margin: 2px 0 0 0; color: ${COLORS.muted}; font-size: 11px;">${escapeHtml(c.tiempo_pendiente)}</p>
                     </td>
                   </tr>
                 </table>

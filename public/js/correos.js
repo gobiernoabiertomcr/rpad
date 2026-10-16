@@ -2,7 +2,7 @@
 let configActual = null;
 
 const CAMPOS_CONFIG = ['para_interna', 'cc_interna', 'linea_cc_interna', 'para_externa', 'cc_externa', 'linea_cc_externa',
-  'cco', 'casillas_prueba', 'firma_nombre', 'firma_cargo', 'membrete_pie'];
+  'para_auditoria', 'cc_auditoria', 'cco', 'casillas_prueba', 'firma_nombre', 'firma_cargo', 'membrete_pie'];
 // Imágenes de la configuración: la firma y el banner del membrete se suben y se muestran igual.
 // url: el blob URL de la vista previa que se está mostrando (se libera al reemplazarla u ocultarla).
 const IMAGENES_CONFIG = {
@@ -16,9 +16,25 @@ const IMAGENES_CONFIG = {
     obtener: () => API.getMembreteNotas(), url: null
   }
 };
-const ETIQUETAS = { aviso: 'Aviso', reiteracion: 'Reiteración', autorizacion: 'Autorización', interna: 'Interna', externa: 'Externa', enviada: 'Enviada', fallida: 'Fallida', pendiente: 'Pendiente' };
+const ETIQUETAS = { aviso: 'Aviso', reiteracion: 'Reiteración', autorizacion: 'Autorización', auditoria: 'Auditoría', interna: 'Interna', externa: 'Externa', enviada: 'Enviada', fallida: 'Fallida', pendiente: 'Pendiente' };
 // La nota de autorización no tiene gestión
 const textoGestion = (gestion) => (gestion ? ETIQUETAS[gestion] : '—');
+// Columna "Datasets" del libro: la nota de autorización no tiene; la de auditoría cuenta cambios (spec 2026-10-15, 10.4)
+const celdaCantidad = (n) => {
+  if (n.es_prueba || n.tipo === 'autorizacion') return '—';
+  if (n.tipo === 'auditoria') return `${n.cantidad_cambios} cambio(s)`;
+  return `${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}`;
+};
+const TIPO_DE_CAMBIO = { crear: 'Alta', editar: 'Modificación', eliminar: 'Baja' };
+// Un cambio incluido en una nota de auditoría, para el detalle de la nota
+const textoCambioDeNota = (c) => `${TIPO_DE_CAMBIO[c.tipo_cambio] ?? c.tipo_cambio}: ${c.titulo ?? 'Sin título'} `
+  + `(${c.seccion === 'nuevo' ? 'nuevo' : 'reiterado'}${c.estado === 'pendiente' ? '' : `, ${c.estado}`})`;
+// La nota de auditoría en el Estado (spec 10.4)
+const textoAuditoria = (a) => (!a || a.canal_nota === 0
+  ? 'Auditoría de cambios: no hay cambios para pedir por nota.'
+  : `Auditoría de cambios: ${a.canal_nota} cambio(s) para pedir por nota; próxima nota de auditoría: ${fecha(a.proxima)}.`);
+// Nombre del PDF de la vista previa: la nota de auditoría no tiene gestión
+const nombreVistaPrevia = (tipo, gestion) => `Nota-Digital-vista-previa-${tipo}${tipo === 'auditoria' ? '' : `-${gestion}`}.pdf`;
 // Máximo de notas que devuelve la API del libro (las más recientes)
 const LIMITE_LIBRO = 500;
 const CLASE_ESTADO = { enviada: 'badge-success', fallida: 'badge-danger', pendiente: 'badge-warning' };
@@ -68,6 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-preview-pdf').addEventListener('click', verPdfDeVistaPrevia);
   document.getElementById('btn-preview-anexo').addEventListener('click', verAnexoDeVistaPrevia);
   document.getElementById('preview-tipo').addEventListener('change', actualizarBotonAnexo);
+  document.getElementById('preview-tipo').addEventListener('change', actualizarSelectorGestion);
   document.getElementById('btn-prueba').addEventListener('click', enviarmePrueba);
   document.getElementById('form-config').addEventListener('submit', guardarConfiguracion);
   document.getElementById('firmante').addEventListener('change', elegirFirmante);
@@ -79,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('modal-nota-cerrar').addEventListener('click', cerrarModalNota);
 
   actualizarBotonAnexo();
+  actualizarSelectorGestion();
   inicializarFiltros();
   cargarEstado();
   cargarConfiguracion();
@@ -126,6 +144,7 @@ async function cargarEstado() {
     const licencia = document.getElementById('nd-licencia');
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
     licencia.hidden = !estado.licencia_firmante;
+    document.getElementById('nd-auditoria').textContent = textoAuditoria(estado.auditoria);
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
     document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
@@ -213,7 +232,7 @@ async function cargarLibro() {
         <td>${fecha(n.fecha)}</td>
         <td>${ETIQUETAS[n.tipo]}</td>
         <td>${textoGestion(n.gestion)}</td>
-        <td>${n.es_prueba || n.tipo === 'autorizacion' ? '—' : `${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}`}</td>
+        <td>${celdaCantidad(n)}</td>
         <td>${Utils.escapeHtml(n.para)}${n.cc ? `<br><small>CC: ${Utils.escapeHtml(n.cc)}</small>` : ''}</td>
         <td>
           <span class="badge ${CLASE_ESTADO[n.estado]}" title="${Utils.escapeHtml(detalleEstado)}">${ETIQUETAS[n.estado]}</span>
@@ -253,6 +272,10 @@ async function accionDelLibro(evento) {
       const errorNota = document.getElementById('modal-nota-error');
       errorNota.textContent = nota.ultimo_error ? `Último error: ${nota.ultimo_error}` : '';
       errorNota.hidden = !nota.ultimo_error;
+      // Nota de auditoría: los cambios que incluye (spec 2026-10-15, 10.4)
+      const cambios = document.getElementById('modal-nota-cambios');
+      cambios.innerHTML = (nota.cambios ?? []).map(c => `<li>${Utils.escapeHtml(textoCambioDeNota(c))}</li>`).join('');
+      cambios.hidden = !nota.cambios?.length;
       document.getElementById('modal-nota-marco').srcdoc = nota.html;
       document.getElementById('modal-nota').classList.add('active');
     } else if (boton.dataset.accion === 'pdf') {
@@ -305,7 +328,7 @@ function verVistaPrevia() {
       aviso.hidden = false;
       aviso.textContent = vista.ejemplo
         ? 'Hoy no saldría ninguna nota de este tipo: se muestran datos de ejemplo.'
-        : `Con los datos de hoy esta nota incluiría ${vista.cantidad} dataset(s). Asunto: ${vista.asunto}`;
+        : `Con los datos de hoy esta nota incluiría ${vista.cantidad} ${tipo === 'auditoria' ? 'cambio(s)' : 'dataset(s)'}. Asunto: ${vista.asunto}`;
       const marco = document.getElementById('preview-marco');
       marco.srcdoc = vista.html;
       marco.hidden = false;
@@ -320,7 +343,7 @@ function verPdfDeVistaPrevia() {
   return conBotonBloqueado(document.getElementById('btn-preview-pdf'), async () => {
     const { tipo, gestion } = tipoYGestion();
     try {
-      descargarBlob(await API.previewNotaPdf(tipo, gestion), `Nota-Digital-vista-previa-${tipo}-${gestion}.pdf`);
+      descargarBlob(await API.previewNotaPdf(tipo, gestion), nombreVistaPrevia(tipo, gestion));
     } catch (error) {
       avisar(error.message, 'error');
     }
@@ -336,6 +359,11 @@ function actualizarBotonAnexo() {
   const boton = document.getElementById('btn-preview-anexo');
   boton.disabled = !esAviso || anexoEnCurso;
   boton.title = esAviso ? '' : 'Solo los avisos llevan anexo';
+}
+
+// La nota de auditoría no tiene gestión: el selector de gestión se deshabilita mientras está elegida
+function actualizarSelectorGestion() {
+  document.getElementById('preview-gestion').disabled = document.getElementById('preview-tipo').value === 'auditoria';
 }
 
 // El anexo del aviso de la vista previa (N° XX) para la gestión elegida

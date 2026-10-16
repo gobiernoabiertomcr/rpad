@@ -1,15 +1,19 @@
 // Reglas de usuarios y roles (spec 2026-10-15-usuarios-superadmin): funciones puras, sin base de datos
 
-export const ROLES_ASIGNABLES = ['admin', 'lector'];
+export const ROLES_ASIGNABLES = ['admin', 'editor', 'lector'];
 export const VINCULOS = ['planta_permanente', 'planta_politica', 'contrato'];
 export const MINIMO_APROBADORES = 2;
-export const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Administrador', lector: 'Lector' };
+export const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', lector: 'Lector' };
 
 const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PATRON_USERNAME = /^[A-Z0-9._-]{3,50}$/;
 
-// superadmin y admin pasan todo lo de administración (spec 5.3)
-export const esAdmin = (rol) => rol === 'admin' || rol === 'superadmin';
+// superadmin, admin y editor pasan todo lo de administración (spec 5.3; el editor, spec 2026-10-15, 8.1)
+export const esAdmin = (rol) => rol === 'admin' || rol === 'superadmin' || rol === 'editor';
+
+// Auditor: aprueba y rechaza cambios de otros y cuenta para el mínimo de aprobadores
+// (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1). El editor no lo es: audita solo de respaldo.
+export const esAuditor = (rol) => rol === 'admin' || rol === 'superadmin';
 
 // Estado derivado (spec 3): no se guarda, sale de activo y de si tiene contraseña
 export const estadoDeUsuario = ({ activo, tiene_contrasena }) => {
@@ -17,9 +21,10 @@ export const estadoDeUsuario = ({ activo, tiene_contrasena }) => {
   return tiene_contrasena ? 'activo' : 'invitacion_pendiente';
 };
 
-// Puede aprobar cambios hoy: aprobador, activo y con contraseña definida (spec 3)
+// Cuenta para el mínimo de aprobadores: auditor (superadmin o admin), activo y con contraseña definida (spec 3; el editor
+// no cuenta, spec 2026-10-15, 8.3)
 export const esAprobadorActivo = (usuario) =>
-  esAdmin(usuario.rol) && Boolean(usuario.activo) && Boolean(usuario.tiene_contrasena);
+  esAuditor(usuario.rol) && Boolean(usuario.activo) && Boolean(usuario.tiene_contrasena);
 
 /**
  * ¿La operación deja menos de MINIMO_APROBADORES? (spec 8.1). Solo bloquea si la operación saca a un
@@ -82,7 +87,7 @@ export const validarDatosUsuario = (entrada, { parcial = false } = {}) => {
     else datos.vinculo = vinculo;
   }
   if (!parcial || viene('rol')) {
-    if (!ROLES_ASIGNABLES.includes(entrada.rol)) error('rol', 'El rol debe ser admin o lector');
+    if (!ROLES_ASIGNABLES.includes(entrada.rol)) error('rol', 'El rol debe ser admin, editor o lector');
     else datos.rol = entrada.rol;
   }
   return { errores, datos };
@@ -92,3 +97,19 @@ export const validarDatosUsuario = (entrada, { parcial = false } = {}) => {
 export const camposCambiados = (antes, nuevos, campos) => Object.fromEntries(campos
   .filter(campo => nuevos[campo] !== undefined && (antes[campo] ?? null) !== (nuevos[campo] ?? null))
   .map(campo => [campo, { antes: antes[campo] ?? null, despues: nuevos[campo] ?? null }]));
+
+// Lo que el editor no puede hacer en el panel (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)
+export const MENSAJE_EDITOR_SOLO_LECTORES = 'Un editor solo puede crear y modificar usuarios lectores.';
+export const MENSAJE_EDITOR_SIN_ROLES = 'Un editor no puede cambiar roles.';
+
+/**
+ * Motivo del 403 si un editor no puede hacer la operación, o null. objetivo: el rol del usuario afectado (en el alta, el
+ * rol pedido); cambiaRol: si el pedido le cambia el rol. El editor solo crea, edita, activa, desactiva y envía links a
+ * lectores, y no cambia roles (tampoco el suyo): cambiándole el email y enviándole un link a otro editor podría quedarse
+ * con su cuenta.
+ */
+export const rechazoParaEditor = ({ objetivo, cambiaRol = false }) => {
+  if (objetivo !== 'lector') return MENSAJE_EDITOR_SOLO_LECTORES;
+  if (cambiaRol) return MENSAJE_EDITOR_SIN_ROLES;
+  return null;
+};

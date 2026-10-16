@@ -66,6 +66,8 @@ CREATE TABLE `cambios_pendientes` (
   `comentario_rechazo` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `revisado_at` timestamp NULL DEFAULT NULL,
+  `primer_recordatorio_at` datetime DEFAULT NULL,
+  `revisado_como_respaldo` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `revisor_id` (`revisor_id`),
   KEY `idx_estado` (`estado`),
@@ -308,7 +310,7 @@ CREATE TABLE `usuarios` (
   `password_hash` varchar(255) DEFAULT NULL,
   `nombre_completo` varchar(100) NOT NULL,
   `email` varchar(100) NOT NULL,
-  `rol` enum('superadmin','admin','lector') NOT NULL DEFAULT 'lector',
+  `rol` enum('superadmin','admin','editor','lector') NOT NULL DEFAULT 'lector',
   `cargo` varchar(200) DEFAULT NULL,
   `vinculo` enum('planta_permanente','planta_politica','contrato') DEFAULT NULL,
   `activo` tinyint(1) DEFAULT 1,
@@ -431,7 +433,7 @@ CREATE TABLE `notas_digitales` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `numero` int(11) DEFAULT NULL,
   `anio` smallint(6) DEFAULT NULL,
-  `tipo` enum('aviso','reiteracion','autorizacion') NOT NULL,
+  `tipo` enum('aviso','reiteracion','autorizacion','auditoria') NOT NULL,
   `gestion` enum('interna','externa') DEFAULT NULL,
   `periodo` char(7) DEFAULT NULL,
   `fecha` date NOT NULL,
@@ -493,6 +495,8 @@ CREATE TABLE `notas_digitales_config` (
   `membrete_mime` varchar(20) DEFAULT NULL,
   `membrete_pie` varchar(300) DEFAULT NULL,
   `casillas_prueba` varchar(500) NOT NULL DEFAULT '',
+  `para_auditoria` varchar(500) NOT NULL DEFAULT 'mit@comodoro.gov.ar',
+  `cc_auditoria` varchar(500) DEFAULT NULL,
   `reiteracion_evaluada_interna` char(7) DEFAULT NULL,
   `reiteracion_evaluada_externa` char(7) DEFAULT NULL,
   `ultima_corrida_fecha` date DEFAULT NULL,
@@ -583,4 +587,17 @@ CREATE TABLE `usuarios_firmas` (
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`usuario_id`),
   CONSTRAINT `fk_firmas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- Auditoría de cambios pendientes (database/updates/migracion-editor-auditoria.sql)
+-- =====================================================
+CREATE TABLE `notas_digitales_cambios` (
+  `nota_id` int(11) NOT NULL,
+  `cambio_id` int(11) NOT NULL,
+  `seccion` enum('nuevo','reiterado') NOT NULL,
+  PRIMARY KEY (`nota_id`,`cambio_id`),
+  KEY `idx_ndc_cambio` (`cambio_id`),
+  CONSTRAINT `fk_ndc_nota` FOREIGN KEY (`nota_id`) REFERENCES `notas_digitales` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ndc_cambio` FOREIGN KEY (`cambio_id`) REFERENCES `cambios_pendientes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

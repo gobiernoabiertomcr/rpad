@@ -29,37 +29,38 @@ RPAD permite registrar datasets, asignarles frecuencias de actualización y moni
 
 ## Roles de Usuario
 
-El sistema cuenta con tres roles de usuario:
+El sistema cuenta con cuatro roles de usuario:
 
 | Rol | Descripción | Permisos |
 |-----|-------------|----------|
-| `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro admin crea un admin, cambia un rol, cambia el email de un admin, reactiva a un admin o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
-| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otro admin. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
+| `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
+| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
+| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros solo **de respaldo** (si ese día no hay ningún auditor disponible), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
 | `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, reportes, notas) sin poder modificar datos. |
 
-Los cambios sobre datasets requieren doble verificación: un admin (o el superadmin) propone y otro distinto aprueba o rechaza. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
+Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
 ### Panel de usuarios
 
-En **Administración → Usuarios**, admin y superadmin pueden:
+En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y sin cambiar roles):
 
 - **Crear usuarios.** El usuario nuevo recibe un email con un link para elegir su contraseña (vence en 72 h). Nadie ve ni envía contraseñas.
-- **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin o lector).
+- **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin, editor o lector).
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
 - **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
-- **Licencias** (pestaña Licencias): fechas de licencia de admins y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número. Si no autoriza a nadie, las reiteraciones salen a la vuelta.
+- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número. Si no autoriza a nadie, las reiteraciones salen a la vuelta.
 
-Siempre tiene que haber al menos **2 usuarios que puedan aprobar cambios**: el panel no deja desactivar ni pasar a lector a un admin si quedarían menos. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
+Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor o a lector a un admin si quedarían menos, ni pasar a editor o a lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
-El superadmin recibe un aviso por email cuando otro admin crea un administrador, cambia un rol, cambia el email de un administrador, reactiva a un administrador o desactiva a alguien. Durante su licencia esos avisos se retienen: a la vuelta le llega un solo email de resumen con todos.
+El superadmin recibe un aviso por email cuando otro usuario crea un administrador o un editor, cambia un rol, cambia el email de un administrador o un editor, reactiva a uno de ellos o desactiva a alguien. Durante su licencia esos avisos se retienen: a la vuelta le llega un solo email de resumen con todos.
 
 ## Campo "Qué se solicita" de los datasets
 
 Cada dataset tiene un campo opcional **"Qué se solicita"**: qué información concreta tiene que enviar el área responsable para actualizarlo (registros, campos, cobertura y formato). Es un texto que vale para cualquier ciclo de actualización, sin fechas puntuales.
 
 - **Dónde se edita:** en el formulario del dataset del panel de administración (`admin.html`).
-- **Doble verificación:** es un dato del dataset como los demás. Quien lo edita lo propone y otro admin lo aprueba o rechaza; al revisar el cambio se ve el texto anterior y el nuevo. Un campo vacío queda sin texto (`NULL`).
+- **Doble verificación:** es un dato del dataset como los demás. Quien lo edita lo propone y otra persona lo aprueba o rechaza; al revisar el cambio se ve el texto anterior y el nuevo. Un campo vacío queda sin texto (`NULL`).
 - **Dónde se muestra:** en la página pública del dataset (`dataset.html`), en el recuadro "Qué se solicita" (si el dataset no tiene texto, no se muestra), y en el **anexo** que acompaña a los avisos de las Notas Digitales. Si un dataset no lo tiene cargado, el anexo usa un texto genérico.
 - **Carga inicial:** la migración `database/updates/migracion-que-se-solicita-datos.sql` carga el texto de los 80 datasets activos (ver [Segunda entrega de Notas Digitales](#segunda-entrega-de-notas-digitales)). Se corre una sola vez, en ese despliegue: después, cada texto se cambia solo con doble verificación.
 
@@ -88,7 +89,7 @@ rpad/
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
 │   ├── emailService.js            # Configuración SMTP y envío
-│   ├── avisosDiariosService.js    # Aviso a las áreas y email de cambios pendientes (solo días hábiles)
+│   ├── avisosDiariosService.js    # Aviso a las áreas y recordatorio de cambios pendientes a quienes pueden auditar (solo días hábiles)
 │   ├── emailTemplates.js          # Plantillas HTML para emails
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
@@ -202,6 +203,22 @@ Secuencia de despliegue, **en este orden** (todo desde cPanel):
 
 - El rollback deja la estructura exactamente como estaba; se pierden los cargos, vínculos e historial de usuarios. El superadmin queda como admin, y los usuarios con la invitación pendiente (todavía sin contraseña) quedan desactivados.
 - Los archivos nuevos (`usuarios.html`, `establecer-contrasena.html`, `js/usuarios.js`, `js/establecer-contrasena.js`, `services/accesoService.js`, `services/usuariosReglas.js`, `services/usuariosAuditoriaService.js`, `controllers/usuariosController.js`) se pueden borrar después con el Administrador de archivos; si quedan, no molestan.
+- Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
+
+### Migración: Editor y auditoría
+
+⚠️ Requisito: la migración de licencias y firmas aplicada. No hay dependencias nuevas de npm.
+
+1. **Backup de la base** (phpMyAdmin → Exportar → Personalizado, con "Agregar sentencia DROP TABLE / VIEW / PROCEDURE / FUNCTION / EVENT / TRIGGER") y **de los archivos** (comprimir `controllers`, `routes`, `services`, `scripts` y `public` dentro de la carpeta de la app).
+2. **Migración de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-editor-auditoria.sql` → **Continuar**. Agrega el rol `editor`, dos columnas a los cambios pendientes, el tipo de nota `auditoria`, la tabla de los cambios de cada nota de auditoría y los destinatarios de auditoría (Para: `mit@comodoro.gov.ar`); no cambia datos y el código actual sigue funcionando con la estructura nueva. Si se corta a mitad, se puede volver a correr.
+3. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app) y, enseguida, **Setup Node.js App → Restart**. No hace falta "Run NPM Install".
+4. **Editores:** el superadmin entra a Usuarios y pasa a **Editor** a quien corresponda (Ver → Rol → Guardar cambios). No hace falta SQL privado. El panel no deja bajar de 2 auditores ni pasar a editor a quien firma las notas.
+5. **Destinatarios de auditoría:** Correos → Configuración → "Notas de auditoría": revisar el Para y el CC, y guardar.
+6. **Verificar:** Correos → Vista previa → tipo **Auditoría** → "Vista previa" y "Ver PDF"; Correos → Estado muestra la línea de auditoría; un editor ve su rol en el encabezado y, en Mi Perfil → Para revisar, los botones deshabilitados mientras haya auditores disponibles.
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-editor-auditoria.sql`.
+
+- El rollback pasa a admin a los editores (vuelven a aprobar cambios como cualquier admin) y deja la estructura como estaba, salvo `notas_digitales.tipo`, que queda ampliado con `auditoria` (las notas de auditoría son notas numeradas del libro y no se borran); se pierden la fecha del primer recordatorio de cada cambio, la marca de aprobación de respaldo, qué cambios incluyó cada nota de auditoría y los destinatarios de auditoría. Las notas de auditoría quedan en el libro, que en la versión anterior las muestra con el tipo vacío ("undefined").
 - Si el rollback SQL falla, la alternativa es restaurar el backup del paso 1: phpMyAdmin → **Importar**. Se pierde lo cargado en el sistema desde que se hizo ese backup.
 
 ### Migración: Licencias y firmas
@@ -438,11 +455,12 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 - **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento. Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
 - **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 30 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
 - **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Lleva solo el PDF de la nota, sin anexo.
+- **Nota de auditoría**: pide a la Dirección General la auditoría de los cambios pendientes que el firmante no puede auditar (los propuso él o está de licencia) y que ya tuvieron su recordatorio un día hábil anterior. Sale una sola por día, después de avisos y reiteraciones, y se reitera cada 5 días hábiles mientras sigan pendientes. Comparte el interruptor de **envío automático** con las demás notas y necesita la configuración completa y un Para de auditoría (Correos → Configuración → Notas de auditoría): con el envío automático apagado, la configuración incompleta o sin Para de auditoría no sale ninguna nota, y esos cambios siguen con los recordatorios de las 14:00 en lugar de quedar sin aviso.
 - Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
-- El envío automático arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
+- El envío automático (también el de la nota de auditoría) arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 
-El de las **14:00** envía a cada administrador el email con los cambios pendientes de aprobación que puede revisar (nunca los propios).
+El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
 
 ---
 
@@ -496,7 +514,7 @@ El de las **14:00** envía a cada administrador el email con los cambios pendien
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/cron/notificaciones?secret=...` | Ejecutar notificaciones (para cron) |
-| GET | `/api/cron/cambios-pendientes?secret=...` | Email de cambios pendientes a los admins (para cron) |
+| GET | `/api/cron/cambios-pendientes?secret=...` | Recordatorio de cambios pendientes (para cron) |
 
 ### Filtros disponibles en `/api/datasets`
 
@@ -539,6 +557,12 @@ El de las **14:00** envía a cada administrador el email con los cambios pendien
 ---
 
 ## Changelog
+
+### Editor y auditoría de cambios pendientes (2026-10)
+- Rol `editor`: todo lo de un admin, pero audita cambios solo de respaldo (si ningún auditor está disponible) y en el panel solo crea y modifica lectores
+- Mínimo de 2 auditores (superadmin o admins); el firmante titular sigue siendo superadmin o admin
+- Recordatorio de las 14:00 (solo días hábiles) a quienes pueden auditar cada cambio, desde una hora después de propuesto
+- Nota Digital de auditoría a la Dirección General para los cambios que el firmante no puede auditar, reiterada cada 5 días hábiles
 
 ### Días hábiles, licencias y firmas (2026-10)
 - Todos los recordatorios automáticos salen solo en días hábiles (sin fines de semana ni los feriados nacionales fijos)

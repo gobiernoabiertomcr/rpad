@@ -65,7 +65,7 @@ export const authMiddleware = async (req, res, next) => {
   next();
 };
 
-// Middleware para rutas de administración: admin y superadmin
+// Middleware para rutas de administración: superadmin, admin y editor (esAdmin)
 export const adminOnly = (req, res, next) => {
   if (!esAdmin(req.user?.rol)) {
     return res.status(403).json({

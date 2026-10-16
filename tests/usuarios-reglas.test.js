@@ -2,8 +2,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  esAdmin, estadoDeUsuario, esAprobadorActivo, violaMinimoAprobadores, emailValido,
-  validarContrasena, validarDatosUsuario, camposCambiados, TEXTO_ROL
+  esAdmin, esAuditor, estadoDeUsuario, esAprobadorActivo, violaMinimoAprobadores, emailValido,
+  validarContrasena, validarDatosUsuario, camposCambiados, TEXTO_ROL,
+  ROLES_ASIGNABLES, rechazoParaEditor, MENSAJE_EDITOR_SOLO_LECTORES, MENSAJE_EDITOR_SIN_ROLES
 } from '../services/usuariosReglas.js';
 
 const u = (id, rol, activo = 1, tieneContrasena = 1) => ({ id, rol, activo, tiene_contrasena: tieneContrasena });
@@ -17,7 +18,15 @@ describe('roles', () => {
   });
 
   it('textos de los roles', () => {
-    assert.deepEqual(TEXTO_ROL, { superadmin: 'Superadmin', admin: 'Administrador', lector: 'Lector' });
+    assert.deepEqual(TEXTO_ROL, { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', lector: 'Lector' });
+  });
+
+  it('auditores: superadmin y admin (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () => {
+    assert.equal(esAuditor('superadmin'), true);
+    assert.equal(esAuditor('admin'), true);
+    assert.equal(esAuditor('editor'), false);
+    assert.equal(esAuditor('lector'), false);
+    assert.equal(esAuditor(undefined), false);
   });
 });
 
@@ -128,5 +137,35 @@ describe('campos cambiados', () => {
     assert.deepEqual(camposCambiados(antes, { nombre_completo: 'A', cargo: 'Cargo', vinculo: null }, ['nombre_completo', 'email', 'cargo', 'vinculo']), {
       cargo: { antes: null, despues: 'Cargo' }
     });
+  });
+});
+
+describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1 y 8.3)', () => {
+  it('entra al área de administración, pero no es auditor ni cuenta como aprobador', () => {
+    assert.equal(esAdmin('editor'), true);
+    assert.equal(esAuditor('editor'), false);
+    assert.equal(esAprobadorActivo(u(1, 'editor')), false);
+    assert.deepEqual(ROLES_ASIGNABLES, ['admin', 'editor', 'lector']);
+  });
+
+  it('pasar a un admin a editor cuenta como quitar un aprobador', () => {
+    const dos = [u(1, 'superadmin'), u(2, 'admin'), u(3, 'editor')];
+    assert.equal(violaMinimoAprobadores(dos, 2, { rol: 'editor' }), true);
+    assert.equal(violaMinimoAprobadores([...dos, u(4, 'admin')], 2, { rol: 'editor' }), false);
+  });
+
+  it('el formulario acepta el rol editor', () => {
+    assert.equal(validarDatosUsuario({ rol: 'editor' }, { parcial: true }).datos.rol, 'editor');
+    assert.equal(validarDatosUsuario({ rol: 'jefe' }, { parcial: true }).errores[0].error, 'El rol debe ser admin, editor o lector');
+  });
+
+  it('lo que el editor no puede en el panel: tocar a quien no es lector, o cambiar un rol', () => {
+    assert.equal(rechazoParaEditor({ objetivo: 'lector' }), null);
+    for (const objetivo of ['admin', 'editor', 'superadmin']) {
+      assert.equal(rechazoParaEditor({ objetivo }), MENSAJE_EDITOR_SOLO_LECTORES, objetivo);
+    }
+    assert.equal(rechazoParaEditor({ objetivo: 'lector', cambiaRol: true }), MENSAJE_EDITOR_SIN_ROLES);
+    assert.equal(MENSAJE_EDITOR_SOLO_LECTORES, 'Un editor solo puede crear y modificar usuarios lectores.');
+    assert.equal(MENSAJE_EDITOR_SIN_ROLES, 'Un editor no puede cambiar roles.');
   });
 });

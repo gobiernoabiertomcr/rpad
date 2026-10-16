@@ -80,10 +80,15 @@ describe('email de cambios pendientes', () => {
       tipo_gestion: 'interna', formatos: [cat.formatoId]
     }, { token: usuarios.adminA.token });
     assert.equal(alta.status, 201);
+    // El recordatorio solo incluye lo propuesto hace una hora o más (spec 2026-10-15, 9.2)
+    await query('UPDATE cambios_pendientes SET created_at = NOW() - INTERVAL 2 HOUR WHERE id = ?', [alta.body.data.cambio_pendiente_id]);
 
     await mailpit.vaciar();
     const res = await api.get('/cron/cambios-pendientes', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
     assert.equal(res.status, 200);
+    // El mensaje habla de recordatorios y de personas (también los reciben los editores de respaldo)
+    const enviados = res.body.data.enviados.length;
+    assert.equal(res.body.message, `Recordatorios enviados a ${enviados} ${enviados === 1 ? 'persona' : 'personas'}.`);
 
     const mensajes = await mailpit.mensajes();
     const para = (email) => mensajes.filter(m => m.To.some(t => t.Address === email));
@@ -111,6 +116,8 @@ describe('email de cambios pendientes', () => {
         tema_principal_id: cat.temaId, tipo_gestion: 'interna', formatos: [cat.formatoId]
       }, { token: usuarios.adminA.token });
       assert.equal(alta.status, 201);
+      // El recordatorio solo incluye lo propuesto hace una hora o más (spec 2026-10-15, 9.2)
+      await query('UPDATE cambios_pendientes SET created_at = NOW() - INTERVAL 2 HOUR WHERE id = ?', [alta.body.data.cambio_pendiente_id]);
 
       await mailpit.vaciar();
       const res = await api.get('/cron/cambios-pendientes', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
