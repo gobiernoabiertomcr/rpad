@@ -1,11 +1,14 @@
-// Avisos diarios por email que no son Notas Digitales: el aviso directo a las áreas (40 días antes) y el email de
-// cambios pendientes a los administradores. Salen solo en días hábiles y la fecha se recibe como parámetro, para
+// Avisos diarios por email que no son Notas Digitales: el aviso directo a las áreas (40 días antes) y el recordatorio de
+// cambios pendientes a quienes pueden auditarlos. Salen solo en días hábiles y la fecha se recibe como parámetro, para
 // poder probarlos con cualquier día.
-// Spec: docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (sección 4)
+// Spec: docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (secciones 4 y 9.2)
 import pool from '../config/database.js';
 import { sendEmail, sendEmailToArea } from './emailService.js';
 import * as templates from './emailTemplates.js';
-import { esDiaHabil, rangoDeAviso } from './notasDigitalesCalendario.js';
+import { ahoraArgentina, esDiaHabil, rangoDeAviso } from './notasDigitalesCalendario.js';
+import { contextoDeCanal, cambiosConCanal } from './auditoriaService.js';
+import { quienesAuditan, entraEnRecordatorio } from './auditoriaReglas.js';
+import { emailValido } from './usuariosReglas.js';
 
 export const DIAS_AVISO_AREAS = 40;
 
@@ -139,49 +142,75 @@ export const cambiosPendientesParaAdmin = async (adminId) => {
   }));
 };
 
-// Admins activos con email que ya pueden ingresar y aprobar (con contraseña definida), y si están de licencia en la fecha
-const adminsConEmail = async (hoy) => {
-  const [rows] = await pool.execute(
-    `SELECT u.id, u.username, u.nombre_completo, u.email,
-       EXISTS (SELECT 1 FROM usuarios_licencias l
-               WHERE l.usuario_id = u.id AND l.anulada = 0 AND l.desde <= ? AND l.hasta >= ?) AS de_licencia
-     FROM usuarios u
-     WHERE u.rol IN ('admin', 'superadmin') AND u.activo = TRUE AND u.email IS NOT NULL AND u.password_hash IS NOT NULL`,
-    [hoy, hoy]
-  );
-  return rows.map(r => ({ ...r, de_licencia: Boolean(Number(r.de_licencia)) }));
+// "Hace 45 minutos", "Hace 3 horas" o "Hace 2 dias", como en el email anterior
+const tiempoPendiente = (segundos) => {
+  const minutos = Math.floor(segundos / 60);
+  if (minutos < 60) return `Hace ${minutos} minutos`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `Hace ${horas} horas`;
+  return `Hace ${Math.floor(horas / 24)} dias`;
 };
 
 /**
- * Email de cambios pendientes (spec 4.1): a cada admin, los cambios que puede revisar. Solo en días hábiles.
- * Quien está de licencia ese día no recibe el email (spec 5.3).
- * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes }], sinPendientes: [username], deLicencia: [username],
- *   errores: [{ admin, error }] }
+ * Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2), solo en días hábiles.
+ * Incluye los cambios del canal recordatorio (9.1) propuestos hace una hora o más. Cada persona que puede auditarlos
+ * (8.2) y está disponible recibe un email con los suyos; si los recibe de respaldo (no hay auditores disponibles), el
+ * email lo dice. Quien está de licencia no lo recibe (5.3). La primera vez que un cambio va en un email enviado se
+ * guarda primer_recordatorio_at = ahora ('AAAA-MM-DD HH:MM:SS' en hora de Argentina, ahoraArgentina() salvo en los tests
+ * con fecha fija: Decisiones del plan 4).
+ * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes, respaldo }], sinPendientes: [username],
+ *   deLicencia: [username], canal_nota, errores: [{ admin, error }] }
  */
-export const enviarCambiosPendientes = async ({ hoy }) => {
+export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() }) => {
   const resultados = {
-    fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], deLicencia: [], errores: []
+    fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], deLicencia: [],
+    canal_nota: 0, errores: []
   };
   if (!resultados.dia_habil) return resultados;
 
-  for (const admin of await adminsConEmail(hoy)) {
-    // Durante la licencia no recibe emails del sistema (spec 2026-10-15, 5.3)
-    if (admin.de_licencia) {
-      resultados.deLicencia.push(admin.username);
+  const contexto = await contextoDeCanal(hoy);
+  const cambios = await cambiosConCanal(hoy, contexto);
+  resultados.canal_nota = cambios.filter(c => c.canal === 'nota').length;
+  // Los cambios de cada persona que los audita hoy (spec 8.2): un auditor los recibe como tal; un editor, de respaldo
+  const porPersona = new Map();
+  for (const cambio of cambios.filter(c => entraEnRecordatorio(c))) {
+    const { personas, respaldo } = quienesAuditan(contexto.personas, cambio.usuario_id);
+    for (const persona of personas) {
+      if (!porPersona.has(persona.id)) porPersona.set(persona.id, { respaldo, cambios: [] });
+      porPersona.get(persona.id).cambios.push({ ...cambio, tiempo_pendiente: tiempoPendiente(cambio.antiguedad_segundos) });
+    }
+  }
+
+  for (const persona of contexto.personas) {
+    // Durante la licencia no recibe emails del sistema (spec 5.3)
+    if (persona.ausente_por_licencia) {
+      resultados.deLicencia.push(persona.username);
       continue;
     }
-    const cambiosPendientes = await cambiosPendientesParaAdmin(admin.id);
-    if (cambiosPendientes.length === 0) {
-      resultados.sinPendientes.push(admin.username);
+    if (!persona.disponible) continue;
+    const destino = porPersona.get(persona.id);
+    if (!destino) {
+      resultados.sinPendientes.push(persona.username);
       continue;
     }
-    const { subject, html } = templates.cambiosPendientesTemplate(cambiosPendientes);
-    const envio = await sendEmail({ subject, html, to: [admin.email] });
-    if (envio.success) {
-      resultados.enviados.push({ admin: admin.username, email: admin.email, cantidadPendientes: cambiosPendientes.length });
-    } else {
-      resultados.errores.push({ admin: admin.username, error: envio.error });
+    if (!emailValido(persona.email)) {
+      resultados.errores.push({ admin: persona.username, error: 'No tiene un email válido' });
+      continue;
     }
+    const { subject, html } = templates.cambiosPendientesTemplate(destino.cambios, { respaldo: destino.respaldo });
+    const envio = await sendEmail({ subject, html, to: [persona.email] });
+    if (!envio.success) {
+      resultados.errores.push({ admin: persona.username, error: envio.error });
+      continue;
+    }
+    resultados.enviados.push({
+      admin: persona.username, email: persona.email, cantidadPendientes: destino.cambios.length, respaldo: destino.respaldo
+    });
+    // Solo la primera vez: después se repite cada día hábil sin pisar la fecha (spec 9.2)
+    await pool.query(
+      'UPDATE cambios_pendientes SET primer_recordatorio_at = ? WHERE id IN (?) AND primer_recordatorio_at IS NULL',
+      [ahora, destino.cambios.map(c => c.id)]
+    );
   }
   return resultados;
 };
