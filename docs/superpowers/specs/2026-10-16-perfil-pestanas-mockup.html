@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Perfil - RPAD (mockup, datos inventados)</title>
+<link rel="icon" type="image/png" href="../../../public/img/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../../public/css/main.css">
+<style>
+  [hidden] { display: none !important; }
+
+  :root {
+    --pf-tinta: #1F3A5F;
+    --pf-texto: #2B3A4A;
+    --pf-suave: #6B7A8C;
+    --pf-linea: #E4E9EF;
+    --pf-sutil: #F7F9FB;
+    --pf-acento: #3E6B96;
+    --pf-crear-fondo: #DDF1E6;  --pf-crear: #2E6B4C;
+    --pf-editar-fondo: #DCEAF7; --pf-editar: #24507A;
+    --pf-eliminar-fondo: #F8E1E1; --pf-eliminar: #8A3434;
+    --pf-tachado: #B5524C;
+    --pf-resaltador: #CBEBD7;
+    --pf-nuevo: #1E4D36;
+    --pf-aviso-fondo: #FBF1DC; --pf-aviso-borde: #F0DDB0; --pf-aviso: #7A5A14;
+  }
+
+  .main-content { max-width: 1120px; min-width: 0; }
+
+  /* Mensajes de la página (Utils.showSuccess / showError) */
+  .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid; }
+  .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: var(--pf-crear); }
+  .alert-error { background: #FBEEEE; border-color: #EFCACA; color: var(--pf-eliminar); }
+
+  /* Pestañas de la página */
+  .pf-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--pf-linea); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+  .pf-pestana { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; font-weight: 500; color: var(--gray-500); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+  .pf-pestana:hover { color: var(--pf-tinta); }
+  .pf-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
+  .pf-pestana:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+  .pf-cuenta { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #E3EEF8; color: var(--pf-tinta); font-size: 0.75rem; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+  .pf-pestana.activa .pf-cuenta { background: var(--primary); color: #fff; }
+
+  /* Barra de cada vista */
+  .pf-barra { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .pf-segmento { display: inline-flex; background: #E9EEF4; border-radius: 9px; padding: 3px; }
+  .pf-segmento button { border: 0; background: none; font: inherit; font-size: 0.875rem; font-weight: 500; color: var(--pf-suave); padding: 6px 14px; border-radius: 7px; cursor: pointer; }
+  .pf-segmento button[aria-pressed="true"] { background: #fff; color: var(--pf-tinta); box-shadow: 0 1px 2px rgba(31,58,95,.12); }
+  .pf-segmento button:focus-visible { outline: 2px solid var(--pf-acento); }
+  .pf-barra select { font: inherit; font-size: 0.875rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 7px 30px 7px 10px; background: #fff; }
+
+  /* Lista de cambios */
+  .pf-lista { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: hidden; }
+  .pf-cambio + .pf-cambio { border-top: 1px solid var(--pf-linea); }
+  .pf-cambio-cabeza { width: 100%; display: grid; grid-template-columns: 76px 1fr auto 20px; gap: 16px; align-items: center; padding: 16px 20px; background: none; border: 0; font: inherit; text-align: left; cursor: pointer; color: var(--pf-texto); }
+  .pf-cambio-cabeza:hover { background: var(--pf-sutil); }
+  .pf-cambio-cabeza:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; }
+  .pf-cambio.abierto > .pf-cambio-cabeza { background: var(--pf-sutil); }
+  .pf-tipo { justify-self: start; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+  .pf-tipo-crear { background: var(--pf-crear-fondo); color: var(--pf-crear); }
+  .pf-tipo-editar { background: var(--pf-editar-fondo); color: var(--pf-editar); }
+  .pf-tipo-eliminar { background: var(--pf-eliminar-fondo); color: var(--pf-eliminar); }
+  .pf-cambio-texto { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .pf-cambio-titulo { font-size: 0.975rem; font-weight: 600; color: var(--pf-tinta); }
+  .pf-cambio-resumen { font-size: 0.85rem; color: var(--pf-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pf-cambio-resumen b { font-weight: 500; color: var(--pf-texto); }
+  .pf-cambio-quien { text-align: right; display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; }
+  .pf-nombre { font-weight: 500; color: var(--pf-texto); white-space: nowrap; }
+  .pf-cuando { color: var(--pf-suave); font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pf-cuando.demora { color: var(--pf-aviso); font-weight: 500; }
+  .pf-chevron { color: var(--pf-suave); transition: transform .18s ease; }
+  .pf-cambio.abierto .pf-chevron { transform: rotate(180deg); }
+
+  .pf-marca { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--pf-suave); margin-top: 2px; }
+  .pf-marca svg { flex: none; }
+  .pf-marca.respaldo { align-self: flex-start; background: var(--pf-aviso-fondo); color: var(--pf-aviso); border: 1px solid var(--pf-aviso-borde); padding: 1px 8px; border-radius: 999px; font-weight: 500; }
+
+  /* Resueltos: más livianos */
+  .pf-cambio.resuelto .pf-cambio-titulo { font-weight: 500; color: var(--pf-texto); }
+  .pf-cambio.resuelto .pf-tipo { background: #EEF2F6; color: var(--pf-suave); }
+  .pf-resultado { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+  .pf-resultado.aprobado { color: var(--pf-crear); }
+  .pf-resultado.rechazado { color: var(--pf-eliminar); }
+
+  /* Cuerpo desplegado */
+  .pf-cambio-cuerpo { padding: 4px 20px 20px 112px; background: var(--pf-sutil); }
+  .pf-diff { margin: 0; display: grid; grid-template-columns: minmax(150px, 200px) 1fr; border-top: 1px solid var(--pf-linea); }
+  .pf-diff dt, .pf-diff dd { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--pf-linea); }
+  .pf-diff dt { font-size: 0.85rem; color: var(--pf-suave); font-weight: 500; padding-right: 16px; }
+  .pf-diff dd { font-size: 0.925rem; color: var(--pf-texto); line-height: 1.55; overflow-wrap: anywhere; }
+  .pf-diff del { color: var(--pf-suave); text-decoration: line-through; text-decoration-color: var(--pf-tachado); text-decoration-thickness: 1.5px; }
+  .pf-diff ins { text-decoration: none; color: var(--pf-nuevo); font-weight: 500; background: linear-gradient(transparent 38%, var(--pf-resaltador) 38%, var(--pf-resaltador) 92%, transparent 92%); padding: 0 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .pf-par { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 14px; row-gap: 4px; }
+  .pf-vacio { color: var(--pf-suave); font-style: italic; }
+
+  /* Variante dos columnas */
+  .estilo-columnas .pf-par { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .estilo-columnas .pf-par > * { display: block; padding: 8px 10px; border-radius: 8px; }
+  .estilo-columnas .pf-par > del { background: #FBF3F3; text-decoration: none; color: var(--pf-texto); }
+  .estilo-columnas .pf-par > ins { background: #EFF8F2; font-weight: 400; color: var(--pf-texto); }
+  .estilo-columnas .pf-par > *::before { display: block; font-size: 0.75rem; color: var(--pf-suave); font-weight: 500; margin-bottom: 2px; }
+  .estilo-columnas .pf-par > del::before { content: "Antes"; }
+  .estilo-columnas .pf-par > ins::before { content: "Ahora"; }
+  .estilo-columnas .pf-texto-largo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .estilo-columnas .pf-texto-largo > div { padding: 8px 10px; border-radius: 8px; }
+  .pf-texto-largo > .pf-solo-columnas { display: none; }
+  .estilo-columnas .pf-texto-largo > .pf-solo-columnas { display: block; }
+  .estilo-columnas .pf-texto-largo > .pf-solo-redline { display: none; }
+
+  .pf-nota { display: flex; gap: 10px; align-items: flex-start; font-size: 0.875rem; border-radius: 10px; padding: 10px 14px; margin: 14px 0 0; }
+  .pf-nota.baja { background: #FBEEEE; color: var(--pf-eliminar); }
+  .pf-nota.no-corresponde { background: var(--pf-aviso-fondo); border: 1px solid var(--pf-aviso-borde); color: var(--pf-aviso); }
+  .pf-nota.motivo { background: #fff; border: 1px solid var(--pf-linea); color: var(--pf-texto); }
+  .pf-nota.motivo b { color: var(--pf-eliminar); font-weight: 600; }
+
+  .pf-acciones { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+  .pf-acciones-info { font-size: 0.825rem; color: var(--pf-suave); display: flex; gap: 16px; flex-wrap: wrap; }
+  .pf-acciones-info a { color: var(--pf-acento); text-decoration: none; display: inline-flex; gap: 5px; align-items: center; }
+  .pf-acciones-info a:hover { text-decoration: underline; }
+  .pf-botones { display: flex; gap: 8px; align-items: center; }
+  .pf-btn { font: inherit; font-size: 0.9rem; font-weight: 600; border-radius: 8px; padding: 9px 18px; cursor: pointer; border: 1px solid transparent; display: inline-flex; gap: 6px; align-items: center; }
+  .pf-btn:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+  .pf-btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .pf-btn-aprobar { background: var(--pf-crear); color: #fff; }
+  .pf-btn-aprobar:not([disabled]):hover { background: #255A3F; }
+  .pf-btn-rechazar { background: #fff; color: var(--pf-eliminar); border-color: #E8C4C4; }
+  .pf-btn-rechazar:not([disabled]):hover { background: #FBEEEE; }
+  .pf-btn-quieto { background: #fff; color: var(--pf-texto); border-color: var(--pf-linea); }
+  .pf-confirmar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 0.9rem; color: var(--pf-texto); }
+  .pf-rechazo { width: 100%; margin-top: 14px; }
+  .pf-rechazo label { display: block; font-size: 0.85rem; font-weight: 500; color: var(--pf-texto); margin-bottom: 6px; }
+  .pf-rechazo textarea { width: 100%; min-height: 80px; font: inherit; font-size: 0.9rem; border: 1px solid var(--pf-linea); border-radius: 8px; padding: 10px 12px; resize: vertical; }
+  .pf-rechazo textarea:focus { outline: 2px solid var(--pf-acento); border-color: transparent; }
+  .pf-rechazo .pf-botones { justify-content: flex-end; margin-top: 10px; }
+
+  .pf-hecho { padding: 14px 20px 14px 112px; font-size: 0.9rem; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+  .pf-hecho.aprobado { color: var(--pf-crear); background: #EAF6EF; }
+  .pf-hecho.rechazado { color: var(--pf-eliminar); background: #FBEEEE; }
+  .pf-cambio.saliendo { transition: opacity .5s ease .9s; opacity: 0; }
+
+  .pf-grupo-titulo { font-size: 0.95rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 10px; display: flex; gap: 8px; align-items: center; }
+  .pf-grupo + .pf-grupo { margin-top: 28px; }
+  .pf-mas { display: block; margin: 12px auto 0; }
+  .pf-vacia { padding: 40px 20px; text-align: center; color: var(--pf-suave); background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; }
+  .pf-vacia strong { display: block; color: var(--pf-tinta); font-weight: 600; margin-bottom: 4px; }
+
+  /* Mis datos y Mi firma */
+  .pf-tarjetas { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  .pf-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 22px 24px; }
+  .pf-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
+  .pf-tarjeta > p { margin: 0 0 18px; font-size: 0.85rem; color: var(--pf-suave); }
+  .pf-tarjeta .form-input[disabled] { background: var(--gray-50); }
+  .pf-firma-muestra { border: 1px dashed #C9D6E3; border-radius: 10px; padding: 26px 20px; text-align: center; background: var(--pf-sutil); }
+  .pf-firma-muestra .trazo { font-family: "Segoe Script", "Brush Script MT", cursive; font-size: 1.9rem; color: #2B4B78; margin-bottom: 4px; }
+  .pf-firma-muestra .linea { border-top: 1px solid #9AAABB; width: 220px; margin: 0 auto 8px; }
+  .pf-firma-muestra .nombre { font-weight: 600; color: var(--pf-texto); }
+  .pf-firma-muestra .cargo { font-size: 0.85rem; color: var(--pf-suave); }
+
+  /* Control solo del mockup */
+  .mk { position: fixed; right: 16px; bottom: 16px; z-index: 50; background: #1F2937; color: #E5E7EB; border-radius: 12px; padding: 12px 14px; font-size: 0.8rem; display: grid; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .mk b { color: #fff; font-weight: 600; }
+  .mk .fila { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .mk button { font: inherit; font-size: 0.78rem; border: 1px solid #4B5563; background: transparent; color: #E5E7EB; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  .mk button[aria-pressed="true"] { background: #E5E7EB; color: #111827; }
+
+  @media (max-width: 760px) {
+    .pf-cambio-cabeza { grid-template-columns: 1fr 20px; gap: 6px 10px; padding: 14px 16px; }
+    .pf-tipo { grid-column: 1; }
+    .pf-chevron { grid-column: 2; grid-row: 1; }
+    .pf-cambio-texto, .pf-cambio-quien { grid-column: 1 / -1; }
+    .pf-cambio-quien { flex-direction: row; gap: 8px; text-align: left; }
+    .pf-cambio-resumen { white-space: normal; }
+    .pf-cambio-cuerpo, .pf-hecho { padding-left: 16px; padding-right: 16px; }
+    .pf-diff { grid-template-columns: 1fr; }
+    .pf-diff dt { border-bottom: 0; padding-bottom: 2px; }
+    .pf-diff dd { padding-top: 0; }
+    .estilo-columnas .pf-par, .estilo-columnas .pf-texto-largo { grid-template-columns: 1fr; }
+    .pf-tarjetas { grid-template-columns: 1fr; }
+    .pf-acciones .pf-botones { width: 100%; }
+    .pf-acciones .pf-botones .pf-btn { flex: 1; justify-content: center; }
+    .mk { left: 8px; right: 8px; bottom: 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pf-chevron, .pf-cambio.saliendo { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header class="header">
+    <div class="header-left">
+      <button class="sidebar-toggle" title="Menú"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg></button>
+      <img src="../../../public/img/logo.png" alt="Logo" class="header-logo">
+      <div><div class="header-title">RPAD</div><div class="header-subtitle">Registro Permanente de Actualización de Datasets</div></div>
+    </div>
+    <div class="header-right">
+      <a href="#para-revisar" class="header-notification has-notifications" title="Cambios pendientes">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="header-notification-badge" id="campana" style="display:flex">4</span>
+      </a>
+      <a class="header-user" title="Mi Perfil"><div class="header-user-info"><div class="header-user-name" id="mk-nombre">Laura Díaz</div><div class="header-user-role" id="mk-rol">Administrador</div></div><div class="header-user-avatar" id="mk-iniciales">LD</div></a>
+      <button class="btn btn-secondary btn-sm">Salir</button>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1 class="page-title"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Mi Perfil</h1>
+    </div>
+
+    <div id="message-container"></div>
+
+    <div class="pf-pestanas" role="tablist" aria-label="Secciones de Mi Perfil">
+      <button class="pf-pestana activa" role="tab" id="pestana-para-revisar" aria-selected="true" aria-controls="vista-para-revisar" data-vista="para-revisar">Para revisar <span class="pf-cuenta" id="cuenta-revisar">4</span></button>
+      <button class="pf-pestana" role="tab" id="pestana-mis-cambios" aria-selected="false" aria-controls="vista-mis-cambios" data-vista="mis-cambios" tabindex="-1">Mis cambios <span class="pf-cuenta">1</span></button>
+      <button class="pf-pestana" role="tab" id="pestana-mis-datos" aria-selected="false" aria-controls="vista-mis-datos" data-vista="mis-datos" tabindex="-1">Mis datos</button>
+      <button class="pf-pestana" role="tab" id="pestana-mi-firma" aria-selected="false" aria-controls="vista-mi-firma" data-vista="mi-firma" tabindex="-1">Mi firma</button>
+    </div>
+
+    <!-- Para revisar -->
+    <section id="vista-para-revisar" role="tabpanel" aria-labelledby="pestana-para-revisar">
+      <div class="pf-barra">
+        <div class="pf-segmento" role="group" aria-label="Qué cambios ver">
+          <button aria-pressed="true" data-segmento="pendientes">Pendientes</button>
+          <button aria-pressed="false" data-segmento="revisados">Revisados</button>
+        </div>
+        <select aria-label="Tipo de cambio" id="filtro-tipo">
+          <option value="">Todos los tipos</option><option value="crear">Crear</option><option value="editar">Editar</option><option value="eliminar">Eliminar</option>
+        </select>
+      </div>
+      <ul class="pf-lista" id="lista-revisar"></ul>
+    </section>
+
+    <!-- Mis cambios -->
+    <section id="vista-mis-cambios" role="tabpanel" aria-labelledby="pestana-mis-cambios" hidden>
+      <div class="pf-grupo">
+        <h2 class="pf-grupo-titulo">Esperando auditoría</h2>
+        <ul class="pf-lista" id="lista-mios-pendientes"></ul>
+      </div>
+      <div class="pf-grupo">
+        <div class="pf-barra">
+          <h2 class="pf-grupo-titulo" style="margin:0">Resueltos</h2>
+          <div class="pf-segmento" role="group" aria-label="Filtrar resueltos">
+            <button aria-pressed="true">Todos</button><button aria-pressed="false">Aprobados</button><button aria-pressed="false">Rechazados</button>
+          </div>
+        </div>
+        <ul class="pf-lista" id="lista-mios-resueltos"></ul>
+        <button class="pf-btn pf-btn-quieto pf-mas">Ver 20 más</button>
+      </div>
+    </section>
+
+    <!-- Mis datos -->
+    <section id="vista-mis-datos" role="tabpanel" aria-labelledby="pestana-mis-datos" hidden>
+      <div class="pf-tarjetas">
+        <form class="pf-tarjeta">
+          <h2>Datos personales</h2>
+          <p>Tu nombre y email aparecen en los avisos y en el historial de cambios.</p>
+          <div class="form-group"><label class="form-label">Usuario</label><input class="form-input" value="prueba_laura" disabled></div>
+          <div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" value="Laura Díaz"></div>
+          <div class="form-group"><label class="form-label">Email</label><input class="form-input" value="laura@rpad.test"></div>
+          <button type="button" class="btn btn-primary">Guardar cambios</button>
+        </form>
+        <form class="pf-tarjeta">
+          <h2>Contraseña</h2>
+          <p>Al cambiarla se cierran tus otras sesiones abiertas.</p>
+          <div class="form-group"><label class="form-label">Contraseña actual</label><input type="password" class="form-input"></div>
+          <div class="form-group"><label class="form-label">Nueva contraseña</label><input type="password" class="form-input"><span class="form-hint">Mínimo 8 caracteres</span></div>
+          <div class="form-group"><label class="form-label">Repetir la nueva contraseña</label><input type="password" class="form-input"></div>
+          <button type="button" class="btn btn-primary">Cambiar contraseña</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Mi firma -->
+    <section id="vista-mi-firma" role="tabpanel" aria-labelledby="pestana-mi-firma" hidden>
+      <div class="pf-tarjetas">
+        <form class="pf-tarjeta">
+          <h2>Mi firma</h2>
+          <p>La usan las Notas Digitales cuando firmás o cuando sos la persona autorizada.</p>
+          <div class="form-group"><label class="form-label">Nombre para la firma</label><input class="form-input" value="Laura Díaz" placeholder="Ej.: Nombre Apellido"></div>
+          <div class="form-group"><label class="form-label">Cargo para la firma</label><input class="form-input" value="Directora de Datos Abiertos"></div>
+          <div class="form-group"><label class="form-label">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label><input type="file" class="form-input"></div>
+          <button type="button" class="btn btn-primary">Guardar firma</button>
+        </form>
+        <div class="pf-tarjeta">
+          <h2>Así sale en las notas</h2>
+          <p>Vista previa con los datos del formulario.</p>
+          <div class="pf-firma-muestra">
+            <div class="trazo">Laura Díaz</div>
+            <div class="linea"></div>
+            <div class="nombre">Laura Díaz</div>
+            <div class="cargo">Directora de Datos Abiertos</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="mk" aria-label="Controles del mockup">
+  <div><b>Solo mockup</b> (no es parte del diseño)</div>
+  <div class="fila">Ver como: <button aria-pressed="true" data-mk-rol="admin">Admin</button><button aria-pressed="false" data-mk-rol="editor">Editor</button></div>
+  <div class="fila">Comparación: <button aria-pressed="true" data-mk-estilo="redline">Tachado y resaltado</button><button aria-pressed="false" data-mk-estilo="columnas">Dos columnas</button></div>
+</div>
+
+<script>
+const IC = {
+  chevron: '<svg class="pf-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+  escudo: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>',
+  check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  x: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  alerta: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>'
+};
+const TIPO = { crear: 'Crear', editar: 'Editar', eliminar: 'Eliminar' };
+
+// Comparación palabra por palabra (LCS) para textos largos
+function diffPalabras(a, b) {
+  const partir = t => t.split(/(\s+|[,.;:()])/).filter(x => x);
+  const A = partir(a), B = partir(b);
+  const n = A.length, m = B.length, L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  const push = (t, s) => { if (out.length && out[out.length - 1].t === t) out[out.length - 1].s += s; else out.push({ t, s }); };
+  while (i < n && j < m) { if (A[i] === B[j]) { push('=', A[i]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) { push('-', A[i]); i++; } else { push('+', B[j]); j++; } }
+  while (i < n) push('-', A[i++]); while (j < m) push('+', B[j++]);
+  return out;
+}
+function campoHtml(c) {
+  if (c.largo && c.antes && c.antes !== '—') {
+    const d = diffPalabras(c.antes, c.despues);
+    const redline = d.map(p => p.t === '=' ? p.s : p.t === '-' ? `<del>${p.s}</del>` : `<ins>${p.s}</ins>`).join('');
+    const antes = d.filter(p => p.t !== '+').map(p => p.t === '-' ? `<del>${p.s}</del>` : p.s).join('');
+    const ahora = d.filter(p => p.t !== '-').map(p => p.t === '+' ? `<ins>${p.s}</ins>` : p.s).join('');
+    return `<div class="pf-texto-largo"><div class="pf-solo-redline">${redline}</div><div class="pf-solo-columnas" style="background:#FBF3F3"><small style="display:block;color:var(--pf-suave);font-weight:500">Antes</small>${antes}</div><div class="pf-solo-columnas" style="background:#EFF8F2"><small style="display:block;color:var(--pf-suave);font-weight:500">Ahora</small>${ahora}</div></div>`;
+  }
+  if (c.antes === undefined) return c.despues;
+  const antes = c.antes === '—' ? '<span class="pf-vacio">vacío</span>' : c.antes;
+  return `<div class="pf-par"><del>${antes}</del><ins>${c.despues}</ins></div>`;
+}
+
+const PENDIENTES = [
+  { id: 1, tipo: 'editar', titulo: 'Comercios habilitados por rubro', quien: 'Ana Gómez', cuando: 'hace 2 h', fecha: '16/10/2026, 10:32', url: true,
+    resumen: '<b>Frecuencia</b> de Anualmente a Cada medio año, y 1 campo más',
+    campos: [{ campo: 'Frecuencia', antes: 'Anualmente', despues: 'Cada medio año' }, { campo: 'Próxima actualización', antes: '31/07/2026', despues: '31/01/2027' }],
+    editor: { puede: false, texto: 'Lo auditan Laura Díaz y Pablo Ruiz' } },
+  { id: 2, tipo: 'editar', titulo: 'Ejecución presupuestaria', quien: 'Juan Paredes', cuando: 'hace 40 min', fecha: '16/10/2026, 11:54', url: true, soloAdmin: true,
+    resumen: 'Cambia <b>Descripción</b> y <b>Observaciones</b>',
+    campos: [
+      { campo: 'Descripción', largo: true, antes: 'Ejecución del presupuesto municipal por jurisdicción y objeto del gasto, con corte semestral.', despues: 'Ejecución del presupuesto municipal por jurisdicción, objeto del gasto y fuente de financiamiento, con corte trimestral.' },
+      { campo: 'Observaciones', antes: '—', despues: 'El área envía el archivo dentro de los 15 días del cierre de cada trimestre.' }] },
+  { id: 3, tipo: 'crear', titulo: 'Arbolado urbano', quien: 'Ana Gómez', cuando: 'ayer', fecha: '15/10/2026, 17:05', url: true,
+    resumen: 'Dataset nuevo del área de Ambiente, anual',
+    campos: [
+      { campo: 'Descripción', despues: 'Censo del arbolado en veredas y espacios verdes: especie, altura, estado sanitario y ubicación.' },
+      { campo: 'Área', despues: 'Ambiente y Espacios Verdes' }, { campo: 'Frecuencia', despues: 'Anualmente' },
+      { campo: 'Tema principal', despues: 'Geografía y Territorio' }, { campo: 'Tipo de gestión', despues: 'Externa' },
+      { campo: 'Formatos', despues: 'CSV, JSON' }, { campo: 'Próxima actualización', despues: '30/04/2027' }],
+    editor: { puede: true, respaldo: true } },
+  { id: 4, tipo: 'eliminar', titulo: 'Infraestructura deportiva al aire libre', quien: 'Juan Paredes', cuando: 'hace 3 días', demora: true, fecha: '13/10/2026, 09:12', url: true, soloAdmin: true,
+    resumen: 'Se quita del registro',
+    campos: [{ campo: 'Área', despues: 'Deportes' }, { campo: 'Frecuencia', despues: 'Cada dos años' }, { campo: 'Última actualización', despues: '31/03/2023' }] },
+  { id: 5, tipo: 'editar', titulo: 'Obra Pública', quien: 'Laura Díaz', cuando: 'hace 5 min', fecha: '16/10/2026, 12:30', soloEditor: true,
+    resumen: '<b>Próxima actualización</b> de 31/01/2026 a 31/12/2026',
+    campos: [{ campo: 'Próxima actualización', antes: '31/01/2026', despues: '31/12/2026' }],
+    editor: { puede: false, texto: 'Lo auditan Ana Gómez y Pablo Ruiz' } },
+];
+const REVISADOS = [
+  { id: 11, tipo: 'editar', titulo: 'Paradas de transporte público', quien: 'Ana Gómez', resultado: 'aprobado', por: 'Laura Díaz', el: '15/10/2026',
+    resumen: 'Cambia <b>Observaciones</b>', campos: [{ campo: 'Observaciones', antes: '—', despues: 'Se incorporan las paradas del nuevo recorrido de la línea 8.' }] },
+  { id: 12, tipo: 'editar', titulo: 'Líneas de transporte público', quien: 'Ana Gómez', resultado: 'rechazado', por: 'Laura Díaz', el: '15/10/2026',
+    motivo: 'La frecuencia la define el área; queda cada dos años hasta que confirmen.',
+    resumen: '<b>Frecuencia</b> de Cada dos años a Anualmente, y 1 campo más',
+    campos: [{ campo: 'Frecuencia', antes: 'Cada dos años', despues: 'Anualmente' }, { campo: 'Próxima actualización', antes: '30/09/2025', despues: '31/03/2027' }] },
+  { id: 13, tipo: 'crear', titulo: 'Puntos limpios', quien: 'Ana Gómez', resultado: 'aprobado', por: 'Juan Paredes', respaldo: true, el: '09/10/2026',
+    resumen: 'Dataset nuevo del área de Ambiente', campos: [{ campo: 'Área', despues: 'Ambiente y Espacios Verdes' }, { campo: 'Frecuencia', despues: 'Cada medio año' }] },
+];
+const MIOS = [
+  { id: 21, tipo: 'editar', titulo: 'Presupuesto Municipal', resultado: 'aprobado', por: 'Ana Gómez', el: '10/10/2026', resumen: '<b>Próxima actualización</b> de 31/01/2026 a 31/01/2027',
+    campos: [{ campo: 'Próxima actualización', antes: '31/01/2026', despues: '31/01/2027' }] },
+  { id: 22, tipo: 'editar', titulo: 'Siniestros viales por categoría', resultado: 'rechazado', por: 'Pablo Ruiz', el: '02/10/2026',
+    motivo: 'Falta el archivo de 2025 en el portal; volvé a proponerlo cuando esté publicado.',
+    resumen: '<b>Última actualización</b> de 31/12/2023 a 31/12/2025', campos: [{ campo: 'Última actualización', antes: '31/12/2023', despues: '31/12/2025' }] },
+  { id: 23, tipo: 'crear', titulo: 'Gimnasios municipales', resultado: 'aprobado', por: 'Ana Gómez', el: '28/09/2026', resumen: 'Dataset nuevo del área de Deportes',
+    campos: [{ campo: 'Área', despues: 'Deportes' }, { campo: 'Frecuencia', despues: 'Anualmente' }] },
+];
+
+let rol = 'admin';
+
+function marcaEditor(c) {
+  if (rol !== 'editor' || !c.editor) return '';
+  if (c.editor.puede) return `<span class="pf-marca respaldo">${IC.escudo} Podés auditarlo de respaldo</span>`;
+  return `<span class="pf-marca">${IC.escudo} ${c.editor.texto}</span>`;
+}
+function cuerpo(c, modo) {
+  let html = `<dl class="pf-diff">${c.campos.map(f => `<dt>${f.campo}</dt><dd>${campoHtml(f)}</dd>`).join('')}</dl>`;
+  if (c.tipo === 'eliminar') html += `<div class="pf-nota baja">${IC.alerta}<span>Al aprobarlo, el dataset deja de figurar en el registro. No se borra: queda inactivo.</span></div>`;
+  if (c.motivo) html += `<div class="pf-nota motivo"><span><b>Motivo del rechazo:</b> ${c.motivo}</span></div>`;
+  const info = modo === 'mio-pendiente' ? `<span>Propuesto el ${c.fecha}</span><a href="#">${IC.ext} Ver en el portal</a>` : modo === 'pendiente'
+    ? `<span>Propuesto por ${c.quien} el ${c.fecha}</span>${c.url ? `<a href="#">${IC.ext} Ver en el portal</a>` : ''}`
+    : `<span>${c.resultado === 'aprobado' ? 'Aprobado' : 'Rechazado'} por ${c.por}${c.respaldo ? ' (respaldo)' : ''} el ${c.el}</span>`;
+  let botones = '';
+  if (modo === 'pendiente' && c.quien !== 'Laura Díaz') {
+    const bloqueado = rol === 'editor' && c.editor && !c.editor.puede;
+    if (bloqueado) html += `<div class="pf-nota no-corresponde">${IC.escudo}<span>Este cambio lo auditan ${c.editor.texto.replace('Lo auditan ', '')}. Podés auditarlo solo si ninguno está disponible.</span></div>`;
+    botones = `<div class="pf-botones"><button class="pf-btn pf-btn-rechazar" data-accion="rechazar" ${bloqueado ? 'disabled' : ''}>Rechazar</button><button class="pf-btn pf-btn-aprobar" data-accion="aprobar" ${bloqueado ? 'disabled' : ''}>${IC.check} Aprobar</button></div>`;
+  }
+  return html + `<div class="pf-acciones"><div class="pf-acciones-info">${info}</div>${botones}</div>`;
+}
+function fila(c, modo, abierto) {
+  const lado = modo === 'pendiente'
+    ? `<span class="pf-cambio-quien"><span class="pf-nombre">${c.quien}</span><span class="pf-cuando ${c.demora ? 'demora' : ''}">${c.cuando}</span></span>`
+    : modo === 'mio-pendiente' ? `<span class="pf-cambio-quien"><span class="pf-cuando">Propuesto ${c.cuando}</span></span>`
+    : `<span class="pf-cambio-quien"><span class="pf-resultado ${c.resultado}">${c.resultado === 'aprobado' ? IC.check + ' Aprobado' : IC.x + ' Rechazado'}</span><span class="pf-cuando">${c.el}</span></span>`;
+  const quienPropuso = modo === 'revisado' ? `<span class="pf-marca">Propuesto por ${c.quien}</span>` : '';
+  return `<li class="pf-cambio ${modo === 'revisado' || modo === 'mio' ? 'resuelto' : ''} ${abierto ? 'abierto' : ''}" data-id="${c.id}" data-tipo="${c.tipo}">
+    <button class="pf-cambio-cabeza" aria-expanded="${abierto}" aria-controls="det-${c.id}">
+      <span class="pf-tipo pf-tipo-${c.tipo}">${TIPO[c.tipo]}</span>
+      <span class="pf-cambio-texto"><span class="pf-cambio-titulo">${c.titulo}</span><span class="pf-cambio-resumen">${c.resumen}</span>${marcaEditor(c)}${quienPropuso}</span>
+      ${lado}${IC.chevron}
+    </button>
+    <div class="pf-cambio-cuerpo" id="det-${c.id}" ${abierto ? '' : 'hidden'}>${cuerpo(c, modo)}</div>
+  </li>`;
+}
+
+let segmento = 'pendientes';
+function pintar() {
+  const tipo = document.getElementById('filtro-tipo').value;
+  const lista = document.getElementById('lista-revisar');
+  let datos = segmento === 'pendientes'
+    ? PENDIENTES.filter(c => rol === 'admin' ? !c.soloEditor : !c.soloAdmin)
+    : REVISADOS;
+  if (tipo) datos = datos.filter(c => c.tipo === tipo);
+  lista.innerHTML = datos.length
+    ? datos.map((c, i) => fila(c, segmento === 'pendientes' ? 'pendiente' : 'revisado', segmento === 'pendientes' && i === 0)).join('')
+    : `<li class="pf-vacia"><strong>No hay cambios esperando revisión.</strong>Cuando alguien proponga uno, aparece acá y te llega el aviso de las 14:00.</li>`;
+  document.getElementById('lista-mios-pendientes').innerHTML = fila(PENDIENTES[4], 'mio-pendiente', false);
+  document.getElementById('lista-mios-resueltos').innerHTML = MIOS.map(c => fila(c, 'mio', false)).join('');
+}
+
+document.addEventListener('click', e => {
+  const cabeza = e.target.closest('.pf-cambio-cabeza');
+  if (cabeza) {
+    const li = cabeza.parentElement, abierto = !li.classList.contains('abierto');
+    li.classList.toggle('abierto', abierto);
+    cabeza.setAttribute('aria-expanded', abierto);
+    li.querySelector('.pf-cambio-cuerpo').hidden = !abierto;
+    return;
+  }
+  const accion = e.target.closest('[data-accion]');
+  if (accion) {
+    const li = accion.closest('.pf-cambio'), botones = accion.closest('.pf-botones');
+    const tipo = accion.dataset.accion;
+    if (tipo === 'aprobar') {
+      botones.outerHTML = `<div class="pf-confirmar"><span>¿Aprobar? El cambio se aplica al dataset ahora.</span><div class="pf-botones"><button class="pf-btn pf-btn-quieto" data-accion="cancelar">Cancelar</button><button class="pf-btn pf-btn-aprobar" data-accion="si-aprobar">${IC.check} Sí, aprobar</button></div></div>`;
+    } else if (tipo === 'rechazar') {
+      const acciones = li.querySelector('.pf-acciones');
+      acciones.insertAdjacentHTML('afterend', `<div class="pf-rechazo"><label for="motivo-${li.dataset.id}">Motivo del rechazo</label><textarea id="motivo-${li.dataset.id}" placeholder="Quien lo propuso lo va a ver en Mis cambios."></textarea><div class="pf-botones"><button class="pf-btn pf-btn-quieto" data-accion="cancelar-rechazo">Cancelar</button><button class="pf-btn pf-btn-rechazar" data-accion="si-rechazar">${IC.x} Rechazar cambio</button></div></div>`);
+      acciones.querySelector('.pf-botones').hidden = true;
+      li.querySelector('textarea').focus();
+    } else if (tipo === 'cancelar' || tipo === 'cancelar-rechazo') {
+      pintar();
+    } else if (tipo === 'si-aprobar' || tipo === 'si-rechazar') {
+      const aprobado = tipo === 'si-aprobar';
+      li.innerHTML = `<div class="pf-hecho ${aprobado ? 'aprobado' : 'rechazado'}">${aprobado ? IC.check + ' Aprobado. El cambio ya está aplicado en el dataset.' : IC.x + ' Rechazado. Quien lo propuso ve el motivo en Mis cambios.'}</div>`;
+      li.classList.add('saliendo');
+      const n = Math.max(0, Number(document.getElementById('cuenta-revisar').textContent) - 1);
+      document.getElementById('cuenta-revisar').textContent = n;
+      document.getElementById('campana').textContent = n;
+      document.getElementById('message-container').innerHTML = `<div class="alert ${aprobado ? 'alert-success' : 'alert-error'}">${aprobado ? IC.check + ' Cambio aprobado correctamente' : IC.x + ' Cambio rechazado correctamente'}</div>`;
+      setTimeout(() => { li.remove(); }, 1500);
+      setTimeout(() => { document.getElementById('message-container').innerHTML = ''; }, 5000);
+    }
+    return;
+  }
+  const pestana = e.target.closest('[data-vista]');
+  if (pestana) mostrarVista(pestana.dataset.vista);
+  const seg = e.target.closest('.pf-segmento button');
+  if (seg) {
+    seg.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b === seg));
+    if (seg.dataset.segmento) { segmento = seg.dataset.segmento; pintar(); }
+  }
+  const mkRol = e.target.closest('[data-mk-rol]');
+  if (mkRol) {
+    rol = mkRol.dataset.mkRol;
+    mkRol.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b === mkRol));
+    document.getElementById('mk-nombre').textContent = rol === 'admin' ? 'Laura Díaz' : 'Juan Paredes';
+    document.getElementById('mk-rol').textContent = rol === 'admin' ? 'Administrador' : 'Editor';
+    document.getElementById('mk-iniciales').textContent = rol === 'admin' ? 'LD' : 'JP';
+    pintar();
+  }
+  const mkEstilo = e.target.closest('[data-mk-estilo]');
+  if (mkEstilo) {
+    mkEstilo.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b === mkEstilo));
+    document.body.classList.toggle('estilo-columnas', mkEstilo.dataset.mkEstilo === 'columnas');
+  }
+});
+
+function mostrarVista(nombre) {
+  document.querySelectorAll('.pf-pestana').forEach(b => {
+    const activa = b.dataset.vista === nombre;
+    b.classList.toggle('activa', activa); b.setAttribute('aria-selected', activa); b.tabIndex = activa ? 0 : -1;
+  });
+  document.querySelectorAll('[role="tabpanel"]').forEach(p => { p.hidden = p.id !== 'vista-' + nombre; });
+}
+document.querySelector('.pf-pestanas').addEventListener('keydown', e => {
+  const tabs = [...document.querySelectorAll('.pf-pestana')], i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  let j = null;
+  if (e.key === 'ArrowRight') j = (i + 1) % tabs.length; else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+  else if (e.key === 'Home') j = 0; else if (e.key === 'End') j = tabs.length - 1;
+  if (j !== null) { e.preventDefault(); tabs[j].focus(); mostrarVista(tabs[j].dataset.vista); }
+});
+document.getElementById('filtro-tipo').addEventListener('change', pintar);
+// Parámetros solo del mockup, para capturar estados
+const q = new URLSearchParams(location.search);
+if (q.get('rol') === 'editor') document.querySelector('[data-mk-rol=editor]').click();
+if (q.get('estilo') === 'columnas') document.querySelector('[data-mk-estilo=columnas]').click();
+if (q.get('seg') === 'revisados') document.querySelector('[data-segmento=revisados]').click();
+const inicial = location.hash.slice(1);
+if (['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'].includes(inicial)) mostrarVista(inicial);
+pintar();
+if (q.get('abrir')) q.get('abrir').split(',').forEach(id => { const li = document.querySelector('.pf-cambio[data-id="' + id + '"]:not(.abierto) .pf-cambio-cabeza'); if (li) li.click(); });
+if (q.get('cerrar')) q.get('cerrar').split(',').forEach(id => { const li = document.querySelector('.pf-cambio.abierto[data-id="' + id + '"] .pf-cambio-cabeza'); if (li) li.click(); });
+if (q.get('sinmk')) document.querySelector('.mk').hidden = true;
+</script>
+</body>
+</html>
