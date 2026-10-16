@@ -2,7 +2,9 @@
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8)
 import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos } from './emailService.js';
-import { construirNota, construirNotaDeAutorizacion, construirAnexo, renderHtml, renderTexto } from './notasDigitalesContenido.js';
+import {
+  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto
+} from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
@@ -18,6 +20,7 @@ import {
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { emailValido } from './usuariosReglas.js';
+import { contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria } from './auditoriaService.js';
 
 export const MAX_INTENTOS = 5;
 const GESTIONES = ['interna', 'externa'];
@@ -72,8 +75,12 @@ const validarFichas = ({ datasets, fichas = [] }) => {
 
 // ccAutorizado: el email de la persona autorizada, en las notas que comunican su autorización (spec 2026-10-15, 7.2).
 // Va solo si es un email válido: uno mal cargado no puede hacer fallar el envío de la nota.
-const destinatarios = (config, gestion, esPrueba, ccAutorizado = null) => {
+// La nota de auditoría va a sus propios destinatarios, con el CCO general (spec 2026-10-15, 10.1).
+const destinatarios = (config, gestion, esPrueba, ccAutorizado = null, tipo = null) => {
   if (esPrueba) return { para: listaDeCorreos(config.casillas_prueba), cc: [], cco: [] };
+  if (tipo === 'auditoria') {
+    return { para: listaDeCorreos(config.para_auditoria), cc: listaDeCorreos(config.cc_auditoria), cco: listaDeCorreos(config.cco) };
+  }
   // La nota de autorización no tiene gestión: va a los "Para" de las dos, sin repetir
   const para = gestion
     ? listaDeCorreos(config[`para_${gestion}`])
@@ -98,19 +105,23 @@ const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: nu
  * autorizacion: { nombre, cargo, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo de autorización;
  * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular. En los dos
  * casos va en CC.
+ * auditoria: { nuevos, reiterados, catalogos } de la nota de auditoría (tipo 'auditoria', sin gestión ni datasets; spec
+ * 2026-10-15, 10). Salvo en las pruebas, cada cambio queda en notas_digitales_cambios con su sección: cuenta como incluido
+ * desde que la nota se genera (spec 9.3).
  */
 export const generarNota = async ({
   tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null,
-  firma = null, rangoVencimientos = null, autorizacion = null
+  firma = null, rangoVencimientos = null, autorizacion = null, auditoria = null
 }) => {
   const esAutorizacion = tipo === 'autorizacion';
+  const esAuditoria = tipo === 'auditoria';
   const firmaDelDia = firma ?? (await firmaParaFecha(config, fecha)).firma;
   const firmaNota = esAutorizacion ? soloTitular(firmaDelDia) : firmaDelDia;
-  const contenido = esAutorizacion
+  const contenido = esAutorizacion || esAuditoria
     ? { datasets: [], areas: [], fichas: [] }
     : preparado ?? await prepararContenido({ tipo, gestion, datasets });
   const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
-  const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null);
+  const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null, tipo);
   const conexion = await pool.getConnection();
   try {
     await conexion.beginTransaction();
@@ -122,12 +133,17 @@ export const generarNota = async ({
       );
       numero = Number(fila.siguiente);
     }
-    const nota = esAutorizacion
-      ? construirNotaDeAutorizacion({ numero, anio, esPrueba, fecha, firma: firmaNota, autorizacion })
-      : construirNota({
+    let nota;
+    if (esAutorizacion) {
+      nota = construirNotaDeAutorizacion({ numero, anio, esPrueba, fecha, firma: firmaNota, autorizacion });
+    } else if (esAuditoria) {
+      nota = construirNotaDeAuditoria({ numero, anio, esPrueba, fecha, ...auditoria, firma: firmaNota, config });
+    } else {
+      nota = construirNota({
         tipo, gestion, numero, anio, esPrueba, fecha, datasets: contenido.datasets, areas: contenido.areas, config,
         firma: firmaNota, rangoVencimientos, autorizacion
       });
+    }
     const pdf = await renderPdf(nota, opcionesPdf(config, firmaNota));
     // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo
     const anexoPdf = fichas ? await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas })) : null;
@@ -146,6 +162,13 @@ export const generarNota = async ({
           'INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento, cuenta_desde) VALUES (?, ?, ?, ?, ?)',
           [resultado.insertId, d.id, d.vencimiento < fecha ? 'vencido' : 'proximo', d.vencimiento, d.cuenta_desde ?? null]
         );
+      }
+      for (const [seccion, cambios] of [['nuevo', auditoria?.nuevos ?? []], ['reiterado', auditoria?.reiterados ?? []]]) {
+        for (const cambio of cambios) {
+          await conexion.query(
+            'INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, ?)', [resultado.insertId, cambio.id, seccion]
+          );
+        }
       }
     }
     await conexion.commit();
@@ -300,6 +323,14 @@ const prepararAviso = async (gestion, hoy, anticipo) => {
   return (await seleccionarParaAviso(gestion, hoy, anticipo.hasta)).map(d => (normales.has(d.id)
     ? d
     : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
+};
+
+// ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
+const hayNotaDeAuditoria = async (fecha) => {
+  const [[fila]] = await pool.query(
+    "SELECT COUNT(*) AS cantidad FROM notas_digitales WHERE tipo = 'auditoria' AND es_prueba = 0 AND fecha = ?", [fecha]
+  );
+  return Number(fila.cantidad) > 0;
 };
 
 // Los pasos de una corrida (spec 8.1). Cada reintento, cada aviso y cada reiteración van aislados.
@@ -467,6 +498,28 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     } catch (error) {
       anotarError(resumen, { tipo: 'reiteracion', gestion }, error);
     }
+  }
+
+  // 4. Nota de auditoría de los cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.3 y 10): una sola
+  // por día (Decisiones del plan 12), con la firma del día. Si hoy no hay quién firme (licencia sin autorizado) o la nota
+  // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas.
+  try {
+    if (!(await hayNotaDeAuditoria(hoy))) {
+      const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+      if (nuevos.length || reiterados.length) {
+        if (listaDeCorreos(config.para_auditoria).length === 0) {
+          throw new Error('Falta el Para de las notas de auditoría (Correos > Configuración)');
+        }
+        const id = await generarNota({
+          tipo: 'auditoria', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma,
+          auditoria: { nuevos, reiterados, catalogos: await catalogosParaAuditoria() }
+        });
+        resumen.generadas.push({ id, tipo: 'auditoria', gestion: null, datasets: 0, cambios: nuevos.length + reiterados.length });
+        await enviar(id, { tipo: 'auditoria' });
+      }
+    }
+  } catch (error) {
+    anotarError(resumen, { tipo: 'auditoria' }, error);
   }
 };
 
