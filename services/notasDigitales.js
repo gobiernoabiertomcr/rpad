@@ -17,6 +17,7 @@ import {
   firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoVigente
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
+import { emailValido } from './usuariosReglas.js';
 
 export const MAX_INTENTOS = 5;
 const GESTIONES = ['interna', 'externa'];
@@ -69,7 +70,8 @@ const validarFichas = ({ datasets, fichas = [] }) => {
   return fichas;
 };
 
-// ccAutorizado: el email de la persona autorizada, en las notas que comunican su autorización (spec 2026-10-15, 7.2)
+// ccAutorizado: el email de la persona autorizada, en las notas que comunican su autorización (spec 2026-10-15, 7.2).
+// Va solo si es un email válido: uno mal cargado no puede hacer fallar el envío de la nota.
 const destinatarios = (config, gestion, esPrueba, ccAutorizado = null) => {
   if (esPrueba) return { para: listaDeCorreos(config.casillas_prueba), cc: [], cco: [] };
   // La nota de autorización no tiene gestión: va a los "Para" de las dos, sin repetir
@@ -77,7 +79,7 @@ const destinatarios = (config, gestion, esPrueba, ccAutorizado = null) => {
     ? listaDeCorreos(config[`para_${gestion}`])
     : [...new Set(GESTIONES.flatMap(g => listaDeCorreos(config[`para_${g}`])))];
   const cc = gestion ? listaDeCorreos(config[`cc_${gestion}`]) : [];
-  if (ccAutorizado && !cc.includes(ccAutorizado)) cc.push(ccAutorizado);
+  if (ccAutorizado && emailValido(ccAutorizado) && !cc.includes(ccAutorizado)) cc.push(ccAutorizado);
   return { para, cc, cco: listaDeCorreos(config.cco) };
 };
 
@@ -87,18 +89,23 @@ const opcionesPdf = (config, firma) => ({
   membreteImagen: config.membrete_imagen, membretePie: config.membrete_pie
 });
 
+// La firma del titular solo (la nota de autorización la firma él, aunque ya esté de licencia)
+const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: null, leyenda: null });
+
 /**
  * Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente.
  * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
  * autorizacion: { nombre, cargo, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo de autorización;
- * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets). En los dos casos va en CC.
+ * con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular. En los dos
+ * casos va en CC.
  */
 export const generarNota = async ({
   tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null,
   firma = null, rangoVencimientos = null, autorizacion = null
 }) => {
-  const firmaNota = firma ?? (await firmaParaFecha(config, fecha)).firma;
   const esAutorizacion = tipo === 'autorizacion';
+  const firmaDelDia = firma ?? (await firmaParaFecha(config, fecha)).firma;
+  const firmaNota = esAutorizacion ? soloTitular(firmaDelDia) : firmaDelDia;
   const contenido = esAutorizacion
     ? { datasets: [], areas: [], fichas: [] }
     : preparado ?? await prepararContenido({ tipo, gestion, datasets });
@@ -280,8 +287,9 @@ const datosDeAutorizacion = ({ licencia, autorizado }) => ({
   nombre: autorizado.nombre, cargo: autorizado.cargo, email: autorizado.email, desde: licencia.desde, hasta: licencia.hasta
 });
 
-// La firma del titular solo (la nota de autorización la firma él, aunque ya esté de licencia)
-const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: null, leyenda: null });
+// Lo que dice el resumen de una corrida en un día de licencia del firmante sin autorizado (spec 2026-10-15, 7.3)
+const textoSinAutorizado = (licencia) =>
+  `Licencia del firmante del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)} sin autorizado: no se generan notas`;
 
 // Datasets del aviso de hoy. En la víspera de una licencia del firmante (anticipo), la selección mira hasta el último día
 // hábil de la licencia y cada dataset que hoy no habría entrado guarda su fecha normal de aviso (cuenta_desde): el primer
@@ -345,7 +353,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
   // arriba siguen: su contenido ya está congelado.
   if (modo === 'sin_autorizado') {
-    resumen.licencia = `Licencia del firmante del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)} sin autorizado: no se generan notas`;
+    resumen.licencia = textoSinAutorizado(licencia);
     return;
   }
 
@@ -354,16 +362,35 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   const pendiente = await autorizacionPendiente(config, hoy);
   const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
   let autorizacionComunicada = false;
-  const generarAutorizacion = async () => {
+  let autorizacionDesactualizada = false;
+  // Registra en la licencia la nota que comunicó la autorización. Si la licencia cambió mientras se generaba (otra
+  // persona, otras fechas o anulada), la nota dice otra cosa: no se registra, se informa y la corrida siguiente trabaja
+  // con los datos nuevos. Un error al registrar se informa y no frena el envío de la nota, que ya está generada.
+  const registrarAutorizacion = async (id) => {
     try {
-      const id = await generarNota({ tipo: 'autorizacion', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma: soloTitular(firma), autorizacion });
-      await registrarNotaDeAutorizacion(pendiente.licencia.id, id);
-      autorizacionComunicada = true;
+      if (await registrarNotaDeAutorizacion(pendiente.licencia, id)) {
+        autorizacionComunicada = true;
+      } else if (!autorizacionComunicada && !autorizacionDesactualizada) {
+        autorizacionDesactualizada = true;
+        anotarError(resumen, { tipo: 'autorizacion', id }, new Error(
+          'La licencia del firmante cambió mientras se generaba la nota: no queda como nota de autorización y la corrida siguiente usa los datos nuevos'
+        ));
+      }
+    } catch (error) {
+      anotarError(resumen, { tipo: 'autorizacion', id }, error);
+    }
+  };
+  const generarAutorizacion = async () => {
+    let id;
+    try {
+      id = await generarNota({ tipo: 'autorizacion', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma, autorizacion });
       resumen.generadas.push({ id, tipo: 'autorizacion', gestion: null, datasets: 0 });
-      await enviar(id, { tipo: 'autorizacion' });
     } catch (error) {
       anotarError(resumen, { tipo: 'autorizacion' }, error);
+      return;
     }
+    await registrarAutorizacion(id);
+    await enviar(id, { tipo: 'autorizacion' });
   };
 
   // En la víspera de una licencia del firmante, el aviso suma lo que se habría avisado durante la licencia
@@ -375,6 +402,11 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     await generarAutorizacion();
     if (!autorizacionComunicada) return;
     ({ modo, firma, licencia } = await firmaParaFecha(config, hoy));
+    // Si justo ahora la persona autorizada dejó de cumplir las condiciones, el día es sin autorizado (spec 6.3 y 7.3)
+    if (modo === 'sin_autorizado') {
+      resumen.licencia = textoSinAutorizado(licencia);
+      return;
+    }
   }
   if (modo === 'autorizado' && !firma.leyenda) {
     anotarError(resumen, { tipo: 'autorizacion' }, new Error('Falta la nota de autorización de la licencia del firmante'));
@@ -382,8 +414,11 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
 
   // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
+  let avisoConAutorizacion = false;
   for (const gestion of GESTIONES) {
     let id;
+    // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida)
+    const conAutorizacion = anticipo && autorizacion && !autorizacionDesactualizada ? autorizacion : null;
     try {
       const datasets = await prepararAviso(gestion, hoy, anticipo);
       if (!datasets.length) continue;
@@ -391,23 +426,22 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       const rangoVencimientos = datasets.some(d => d.cuenta_desde)
         ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
         : null;
-      // En la víspera, el aviso comunica la autorización todavía pendiente
-      const conAutorizacion = anticipo && autorizacion ? autorizacion : null;
       id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
-      if (conAutorizacion) {
-        await registrarNotaDeAutorizacion(pendiente.licencia.id, id);
-        autorizacionComunicada = true;
-      }
       resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
     } catch (error) {
       anotarError(resumen, { tipo: 'aviso', gestion }, error);
       continue;
     }
+    if (conAutorizacion) {
+      avisoConAutorizacion = true;
+      await registrarAutorizacion(id);
+    }
     await enviar(id, { tipo: 'aviso', gestion });
   }
 
-  // Víspera sin avisos generados: la autorización sale igual, en su nota (spec 7.2)
-  if (anticipo && autorizacion && !autorizacionComunicada) await generarAutorizacion();
+  // Víspera sin avisos que lleven la autorización: sale igual, en su nota (spec 7.2). Si un aviso la llevó pero no quedó
+  // registrada en la licencia, la corrida siguiente genera la nota de autorización (autorización tardía).
+  if (anticipo && autorizacion && !avisoConAutorizacion) await generarAutorizacion();
 
   // 3. Reiteraciones: una evaluación por mes y gestión
   const periodo = periodoDe(hoy);
@@ -539,7 +573,9 @@ const licenciaDelFirmante = async (config, hoy) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
   if (!licencia) return null;
-  const autorizado = await autorizadoVigente(licencia, hoy);
+  // La persona autorizada se evalúa en el primer día de la licencia (hoy, si ya empezó): que hoy tenga su propia
+  // licencia no afecta a una licencia futura del firmante
+  const autorizado = await autorizadoVigente(licencia, licencia.desde > hoy ? licencia.desde : hoy);
   const [[nota]] = licencia.nota_autorizacion_id
     ? await pool.query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [licencia.nota_autorizacion_id])
     : [[null]];

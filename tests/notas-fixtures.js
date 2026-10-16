@@ -78,12 +78,15 @@ export const limpiarBase = async () => {
 };
 
 // Simula una falla de la base en un paso de la corrida: mientras corre fn, un trigger de la base de prueba
-// rechaza el INSERT o UPDATE de notas_digitales que cumpla la condición (texto fijo escrito en el test)
-export const conFallaSimulada = async (evento, condicion, fn) => {
+// rechaza el INSERT o UPDATE de la tabla (notas_digitales, o usuarios_licencias para el registro de la nota de
+// autorización) que cumpla la condición (texto fijo escrito en el test)
+const TABLAS_CON_FALLA = ['notas_digitales', 'usuarios_licencias'];
+export const conFallaSimulada = async (evento, condicion, fn, tabla = 'notas_digitales') => {
   await asegurarBaseDePrueba();
   if (!['INSERT', 'UPDATE'].includes(evento)) throw new Error(`Evento inválido: ${evento}`);
+  if (!TABLAS_CON_FALLA.includes(tabla)) throw new Error(`Tabla inválida: ${tabla}`);
   await query('DROP TRIGGER IF EXISTS falla_simulada');
-  await query(`CREATE TRIGGER falla_simulada BEFORE ${evento} ON notas_digitales FOR EACH ROW
+  await query(`CREATE TRIGGER falla_simulada BEFORE ${evento} ON ${tabla} FOR EACH ROW
     BEGIN
       IF ${condicion} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Falla simulada'; END IF;
     END`);
@@ -91,6 +94,22 @@ export const conFallaSimulada = async (evento, condicion, fn) => {
     return await fn();
   } finally {
     await query('DROP TRIGGER IF EXISTS falla_simulada');
+  }
+};
+
+// Simula un cambio que otra persona hace mientras corre fn: después de cada INSERT de notas_digitales que cumpla la
+// condición, un trigger de la base de prueba ejecuta la sentencia (texto fijo escrito en el test, sobre otra tabla)
+export const conCambioSimulado = async (condicion, sentencia, fn) => {
+  await asegurarBaseDePrueba();
+  await query('DROP TRIGGER IF EXISTS cambio_simulado');
+  await query(`CREATE TRIGGER cambio_simulado AFTER INSERT ON notas_digitales FOR EACH ROW
+    BEGIN
+      IF ${condicion} THEN ${sentencia}; END IF;
+    END`);
+  try {
+    return await fn();
+  } finally {
+    await query('DROP TRIGGER IF EXISTS cambio_simulado');
   }
 };
 

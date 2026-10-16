@@ -4,7 +4,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
-import { crearDataset, crearNota, limpiarBase, configurarNotas } from './notas-fixtures.js';
+import { crearDataset, crearNota, limpiarBase, configurarNotas, conFallaSimulada, conCambioSimulado } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
 import { lineasPorHoja } from './pdf-lector.js';
 
@@ -234,6 +234,105 @@ describe('licencia con autorizado (spec 7.2)', () => {
   });
 });
 
+describe('cambios y fallas mientras se comunica la autorización (spec 7.2)', () => {
+  const tipos = async () => (await notas()).map(n => n.tipo);
+  const cambiarAutorizado = (licenciaId, usuario) =>
+    `UPDATE usuarios_licencias SET autorizado_id = ${Number(usuario.id)} WHERE id = ${Number(licenciaId)}`;
+
+  it('si la licencia cambia mientras se genera la nota de autorización tardía, no la registra y ese día no salen otras notas', async () => {
+    const otro = await crearUsuario('admin');
+    const licenciaId = await licencia(titular, '2026-10-26', '2026-11-13', autorizado);
+    await crearDataset({ vencimiento: '2026-12-31' });
+    const resumen = await conCambioSimulado("NEW.tipo = 'autorizacion'", cambiarAutorizado(licenciaId, otro), () => correr('2026-11-02'));
+    assert.deepEqual(await tipos(), ['autorizacion']);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), null);
+    assert.ok(resumen.errores.some(e => e.tipo === 'autorizacion' && /cambió/.test(e.mensaje)));
+    // La corrida siguiente comunica la autorización con los datos nuevos y después genera lo demás, que la cita
+    await correr('2026-11-03');
+    const [, nueva, aviso, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.equal(nueva.tipo, 'autorizacion');
+    assert.equal(nueva.cc, otro.email);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), nueva.id);
+    assert.equal(aviso.tipo, 'aviso');
+    assert.equal(aviso.presentada_por_id, otro.id);
+  });
+
+  it('víspera: si la licencia cambia mientras se genera el aviso con la autorización, no lo registra ni saca otra nota con los datos viejos', async () => {
+    const otro = await crearUsuario('admin');
+    const licenciaId = await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await crearDataset({ vencimiento: '2027-01-25' });
+    const resumen = await conCambioSimulado("NEW.tipo = 'aviso'", cambiarAutorizado(licenciaId, otro), () => correr('2026-11-25'));
+    assert.deepEqual(await tipos(), ['aviso']);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), null);
+    assert.ok(resumen.errores.some(e => e.tipo === 'autorizacion'));
+  });
+
+  it('si la persona autorizada deja de cumplir las condiciones justo después de la nota de autorización tardía, ese día no salen otras notas', async () => {
+    await licencia(titular, '2026-10-26', '2026-11-13', autorizado);
+    await crearDataset({ vencimiento: '2026-12-31' });
+    const resumen = await conCambioSimulado(
+      "NEW.tipo = 'autorizacion'", `UPDATE usuarios SET activo = 0 WHERE id = ${Number(autorizado.id)}`, () => correr('2026-11-02')
+    );
+    assert.deepEqual(await tipos(), ['autorizacion']);
+    assert.match(resumen.licencia, /sin autorizado/);
+  });
+
+  it('si la nota de autorización no se pudo generar, ese día no se genera ninguna otra nota y sale en la corrida siguiente', async () => {
+    const licenciaId = await licencia(titular, '2026-10-26', '2026-11-13', autorizado);
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await crearDataset({ vencimiento: '2026-10-20' });
+    const resumen = await conFallaSimulada('INSERT', "NEW.tipo = 'autorizacion'", () => correr('2026-11-02'));
+    assert.deepEqual(resumen.errores.map(e => e.tipo), ['autorizacion']);
+    assert.deepEqual(await tipos(), []);
+    assert.equal((await config()).reiteracion_evaluada_interna, null);
+    await correr('2026-11-03');
+    assert.deepEqual(await tipos(), ['autorizacion', 'aviso', 'reiteracion']);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), (await notas())[0].id);
+  });
+
+  it('si falla el registro de la nota en la licencia, el aviso de la víspera sale igual y la autorización se comunica al día siguiente', async () => {
+    const licenciaId = await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await crearDataset({ vencimiento: '2027-01-25' });
+    const resumen = await conFallaSimulada(
+      'UPDATE', 'NEW.nota_autorizacion_id IS NOT NULL', () => correr('2026-11-25'), 'usuarios_licencias'
+    );
+    assert.deepEqual(resumen.errores.map(e => e.tipo), ['autorizacion']);
+    const [aviso, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.equal(aviso.tipo, 'aviso');
+    assert.equal((await query('SELECT estado FROM notas_digitales WHERE id = ?', [aviso.id]))[0].estado, 'enviada');
+    assert.equal((await mailpit.esperar(m => m.Subject === aviso.asunto)).length, 1);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), null);
+    await correr('2026-11-26');
+    const nueva = (await notas()).find(n => n.tipo === 'autorizacion');
+    assert.equal(await notaDeAutorizacionDe(licenciaId), nueva.id);
+  });
+
+  it('la nota de autorización la firma solo el titular aunque se le pase la firma con la persona autorizada', async () => {
+    const firma = {
+      titular: { nombre: 'Firma superadmin', cargo: 'Cargo superadmin', imagen: null },
+      presentante: { nombre: 'Firma admin', cargo: 'Cargo admin', imagen: null },
+      leyenda: 'Nota presentada por Firma admin', firmanteId: titular.id, presentanteId: autorizado.id
+    };
+    const autorizacion = { nombre: 'Firma admin', cargo: 'Cargo admin', email: autorizado.email, desde: '2026-11-26', hasta: '2027-01-14' };
+    const id = await motor.generarNota({ tipo: 'autorizacion', gestion: null, fecha: '2026-11-25', datasets: [], config: await config(), firma, autorizacion });
+    const [nota] = (await notas()).filter(n => n.id === id);
+    assert.equal(nota.firmante_id, titular.id);
+    assert.equal(nota.presentada_por_id, null);
+    assert.ok(!nota.html.includes('Nota presentada por'));
+  });
+
+  it('el email de la persona autorizada va en CC solo si es válido', async () => {
+    await query("UPDATE usuarios SET email = 'sin-arroba' WHERE id = ?", [autorizado.id]);
+    await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await correr('2026-11-25');
+    const [nota] = await notas();
+    assert.equal(nota.tipo, 'autorizacion');
+    assert.equal(nota.cc, '');
+  });
+});
+
 describe('otros casos', () => {
   it('ejemplo del 25/01 al 05/03/2027: la víspera es el viernes 22/01 y la reiteración sale el lunes 08/03', async () => {
     await licencia(titular, '2027-01-25', '2027-03-05');
@@ -311,6 +410,15 @@ describe('Estado de Correos (spec 7.5)', () => {
     const estado = await motor.estadoNotas({ hoy: '2026-11-10' });
     assert.equal(estado.licencia_firmante.autorizado_no_vigente, true);
     assert.ok(estado.alertas.some(a => a.tipo === 'autorizado-no-vigente' && a.nivel === 'error'));
+  });
+
+  it('licencia futura con la persona autorizada de licencia hoy (sin superposición): se la evalúa desde el inicio, sin alerta', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await licencia(autorizado, '2026-11-09', '2026-11-13');
+    const estado = await motor.estadoNotas({ hoy: '2026-11-10' });
+    assert.equal(estado.licencia_firmante.autorizado, 'Firma admin');
+    assert.equal(estado.licencia_firmante.autorizado_no_vigente, false);
+    assert.ok(!estado.alertas.some(a => a.tipo === 'autorizado-no-vigente'));
   });
 
   it('titular sin imagen de firma: la advertencia sin-firma mira la suya', async () => {

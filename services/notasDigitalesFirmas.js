@@ -103,7 +103,16 @@ export const anticipoPorLicencia = async (config, hoy) => {
   return hasta < licencia.desde ? null : { hasta, licencia };
 };
 
-// La primera nota que comunicó la autorización vigente queda en la licencia (las siguientes del mismo día no la pisan)
-export const registrarNotaDeAutorizacion = (licenciaId, notaId) => pool.query(
-  'UPDATE usuarios_licencias SET nota_autorizacion_id = ? WHERE id = ? AND nota_autorizacion_id IS NULL', [notaId, licenciaId]
-);
+/**
+ * La primera nota que comunicó la autorización vigente queda en la licencia (las siguientes del mismo día no la pisan).
+ * licencia: la de autorizacionPendiente, con la que se armó la nota. Si mientras se generaba la licencia cambió (otra
+ * persona autorizada, otras fechas o anulada), la nota dice otra cosa y no se registra. Devuelve si la registró.
+ */
+export const registrarNotaDeAutorizacion = async (licencia, notaId) => {
+  const [resultado] = await pool.query(
+    `UPDATE usuarios_licencias SET nota_autorizacion_id = ?
+     WHERE id = ? AND nota_autorizacion_id IS NULL AND anulada = 0 AND autorizado_id = ? AND desde = ? AND hasta = ?`,
+    [notaId, licencia.id, licencia.autorizado_id, licencia.desde, licencia.hasta]
+  );
+  return resultado.affectedRows === 1;
+};
