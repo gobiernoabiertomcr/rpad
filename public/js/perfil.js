@@ -824,24 +824,22 @@ function textoDeValor(valor) {
   return formatearValor(valor);
 }
 
-// Si los tokens de los dos textos se multiplican más que esto, no se compara: sale todo quitado y todo agregado
+// Si los tokens del tramo que cambia (sin lo común del principio y del final) se multiplican más que esto, no se compara:
+// sale todo quitado y todo agregado
 const LIMITE_DE_COMPARACION = 250000;
 
 // Palabras, espacios y signos de puntuación como tokens separados, para que "semestral." no se pegue al punto
 const palabrasDeTexto = (texto) => texto.split(/(\s+|[,.;:()¿?¡!"])/).filter(token => token);
 
-// Comparación palabra por palabra (subsecuencia común más larga sobre los tokens). Devuelve segmentos { tipo, texto }:
-// '=' sin cambios, '-' quitado, '+' agregado. Ante una diferencia, primero va lo quitado.
-function diffPalabras(antes, despues) {
-  const textoAntes = String(antes ?? '');
-  const textoDespues = String(despues ?? '');
-  if (!textoAntes && !textoDespues) return [];
-  if (!textoAntes) return [{ tipo: '+', texto: textoDespues }];
-  if (!textoDespues) return [{ tipo: '-', texto: textoAntes }];
-
-  const a = palabrasDeTexto(textoAntes);
-  const d = palabrasDeTexto(textoDespues);
-  if (a.length * d.length > LIMITE_DE_COMPARACION) return [{ tipo: '-', texto: textoAntes }, { tipo: '+', texto: textoDespues }];
+// Compara dos tramos de tokens con la subsecuencia común más larga y va sumando los segmentos con `agregar`. Ante una
+// diferencia, primero va lo quitado. Si un lado está vacío o los tramos son demasiado grandes, no compara: todo lo de
+// antes quitado y todo lo de después agregado.
+function compararTramos(a, d, agregar) {
+  if (a.length === 0 || d.length === 0 || a.length * d.length > LIMITE_DE_COMPARACION) {
+    agregar('-', a.join(''));
+    agregar('+', d.join(''));
+    return;
+  }
 
   // largo[i][j]: tokens en común, en orden, entre a[i..] y d[j..]
   const largo = Array.from({ length: a.length + 1 }, () => new Array(d.length + 1).fill(0));
@@ -851,12 +849,6 @@ function diffPalabras(antes, despues) {
     }
   }
 
-  const segmentos = [];
-  const agregar = (tipo, texto) => {
-    const ultimo = segmentos[segmentos.length - 1];
-    if (ultimo && ultimo.tipo === tipo) ultimo.texto += texto;
-    else segmentos.push({ tipo, texto });
-  };
   let i = 0;
   let j = 0;
   while (i < a.length && j < d.length) {
@@ -872,6 +864,30 @@ function diffPalabras(antes, despues) {
   }
   while (i < a.length) agregar('-', a[i++]);
   while (j < d.length) agregar('+', d[j++]);
+}
+
+// Comparación palabra por palabra. Devuelve segmentos { tipo, texto }: '=' sin cambios, '-' quitado, '+' agregado.
+// Antes de comparar recorta los tokens iguales del principio y del final: la comparación (y su tope) es solo del tramo
+// del medio, así un texto largo con un cambio chico marca solo ese cambio.
+function diffPalabras(antes, despues) {
+  const a = palabrasDeTexto(String(antes ?? ''));
+  const d = palabrasDeTexto(String(despues ?? ''));
+
+  let prefijo = 0;
+  while (prefijo < a.length && prefijo < d.length && a[prefijo] === d[prefijo]) prefijo++;
+  let sufijo = 0;
+  while (sufijo < a.length - prefijo && sufijo < d.length - prefijo && a[a.length - 1 - sufijo] === d[d.length - 1 - sufijo]) sufijo++;
+
+  const segmentos = [];
+  const agregar = (tipo, texto) => {
+    if (!texto) return;
+    const ultimo = segmentos[segmentos.length - 1];
+    if (ultimo && ultimo.tipo === tipo) ultimo.texto += texto;
+    else segmentos.push({ tipo, texto });
+  };
+  agregar('=', a.slice(0, prefijo).join(''));
+  compararTramos(a.slice(prefijo, a.length - sufijo), d.slice(prefijo, d.length - sufijo), agregar);
+  agregar('=', a.slice(a.length - sufijo).join(''));
   return segmentos;
 }
 

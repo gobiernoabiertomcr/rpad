@@ -175,6 +175,32 @@ describe('perfil.js: comparación palabra por palabra', () => {
     assert.deepEqual(segmentos, [{ tipo: '-', texto: antes }, { tipo: '+', texto: despues }]);
   });
 
+  it('un texto largo con una sola palabra cambiada: recorta lo común del principio y del final y marca solo esa palabra', () => {
+    const palabras = (cambiada) => Array.from({ length: 600 }, (_, i) => (i + 1 === 300 && cambiada ? 'cambiada' : `palabra${i + 1}`)).join(' ');
+    const antes = palabras(false);
+    const despues = palabras(true);
+    const desde = Date.now();
+    const segmentos = diff(antes, despues);
+    assert.ok(Date.now() - desde < 500);
+    assert.deepEqual(segmentos.filter(s => s.tipo === '-'), [{ tipo: '-', texto: 'palabra300' }]);
+    assert.deepEqual(segmentos.filter(s => s.tipo === '+'), [{ tipo: '+', texto: 'cambiada' }]);
+    assert.deepEqual(segmentos.map(s => s.tipo), ['=', '-', '+', '=']);
+    assert.ok(segmentos[0].texto.startsWith('palabra1 palabra2 ') && segmentos[0].texto.endsWith(' palabra299 '));
+    assert.ok(segmentos[3].texto.startsWith(' palabra301 ') && segmentos[3].texto.endsWith(' palabra600'));
+    // Quitado + igual reconstruye el texto de antes; agregado + igual, el de después
+    assert.equal(segmentos.filter(s => s.tipo !== '+').map(s => s.texto).join(''), antes);
+    assert.equal(segmentos.filter(s => s.tipo !== '-').map(s => s.texto).join(''), despues);
+  });
+
+  it('lo común del principio y del final se recorta aunque el medio sea enorme: el tope se aplica solo al medio', () => {
+    const medio = (prefijo) => Array.from({ length: 3000 }, (_, i) => `${prefijo}${i}`).join(' ');
+    const antes = `Inicio igual ${medio('viejo')} final igual.`;
+    const despues = `Inicio igual ${medio('nuevo')} final igual.`;
+    assert.deepEqual(diff(antes, despues), [
+      { tipo: '=', texto: 'Inicio igual ' }, { tipo: '-', texto: medio('viejo') }, { tipo: '+', texto: medio('nuevo') }, { tipo: '=', texto: ' final igual.' }
+    ]);
+  });
+
   it('htmlDeDiff: lo igual tal cual, lo quitado en <del>, lo agregado en <ins>, todo escapado', () => {
     assert.equal(
       contexto.htmlDeDiff([{ tipo: '=', texto: 'a <b> ' }, { tipo: '-', texto: 'x' }, { tipo: '+', texto: 'y' }]),
