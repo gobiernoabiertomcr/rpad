@@ -3,7 +3,7 @@
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.7, 7.4 y 8) y
 // docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (9 y 10, la nota de auditoría)
 import pool from '../config/database.js';
-import { sendEmail, listaDeCorreos } from './emailService.js';
+import { sendEmail, listaDeCorreos, remitente } from './emailService.js';
 import {
   construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto
 } from './notasDigitalesContenido.js';
@@ -33,8 +33,6 @@ export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
-
-const remitente = () => `"Dir. de Datos Públicos y Comunicación" <${process.env.SMTP_USER}>`;
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas son las de la
 // nota (las de la selección): el anexo coincide con la tabla aunque el dataset cambie mientras se genera, y nunca

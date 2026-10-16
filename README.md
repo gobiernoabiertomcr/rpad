@@ -90,9 +90,9 @@ rpad/
 │   ├── notasController.js         # Generador de notas DOCX
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
-│   ├── emailService.js            # Configuración SMTP y envío
+│   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
 │   ├── avisosDiariosService.js    # Aviso a las áreas y recordatorio de cambios pendientes a quienes pueden auditar (solo días hábiles)
-│   ├── emailTemplates.js          # Plantillas HTML para emails
+│   ├── emailTemplates.js          # Plantillas HTML de los emails, todas con el mismo marco (marcoEmail)
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD

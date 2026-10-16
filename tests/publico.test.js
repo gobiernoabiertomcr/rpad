@@ -65,6 +65,7 @@ describe('formulario de contacto', () => {
     const mensajes = await mailpit.mensajes();
     assert.equal(mensajes.length, 1);
     assert.deepEqual(mensajes[0].To.map(t => t.Address), ['datospublicos@comodoro.gov.ar']);
+    assert.equal(mensajes[0].From.Name, 'Dir. de Datos Públicos y Comunicación');
   });
 
   it('rechaza un mensaje demasiado corto', async () => {

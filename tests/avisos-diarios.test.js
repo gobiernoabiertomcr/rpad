@@ -81,6 +81,7 @@ describe('aviso a las áreas (spec 4.2)', () => {
     assert.equal(resultado.enviados[0].cantidad, 3);
     const mensajes = para(await mailpit.esperar(m => m.To.some(t => t.Address === email)), email);
     assert.equal(mensajes.length, 1);
+    assert.equal(mensajes[0].From.Name, 'Dir. de Datos Públicos y Comunicación');
     const [log] = await query("SELECT datasets_ids, success FROM notificaciones_log WHERE tipo = 'area-aviso-40'");
     assert.equal(log.datasets_ids.split(',').length, 3);
     assert.equal(Number(log.success), 1);
@@ -184,6 +185,7 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     assert.deepEqual(resultado.enviados.map(e => [e.email, e.cantidadPendientes, e.respaldo]), [[b.email, 1, false]]);
     const [mensaje] = para(await mailpit.esperar(m => m.To.some(t => t.Address === b.email)), b.email);
     assert.equal(mensaje.Subject, asunto(1));
+    assert.equal(mensaje.From.Name, 'Dir. de Datos Públicos y Comunicación');
     const html = await mailpit.html(mensaje.ID);
     assert.match(html, /Propuesto hace 61 minutos/);
     assert.doesNotMatch(html, /Propuesto hace 59 minutos/);
@@ -369,7 +371,7 @@ describe('aviso a quien propone cuando ningún auditor está disponible (recorda
     const html = await mailpit.html(mensajes[0].ID);
     assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar estos cambios.'), html);
     assert.match(html, /Primer alta sin auditor[\s\S]*Segunda alta sin auditor/);
-    assert.match(html, /CREAR/);
+    assert.match(html, />Crear</);
     assert.match(html, /Fecha de la propuesta: 01\/10\/2026/);
     assert.doesNotMatch(html, /Alta recién propuesta/);
     for (const id of [alta, otra]) assert.equal(await avisoSinAuditores(id), '2026-12-28 14:00:00');
@@ -515,6 +517,6 @@ describe('aviso a quien propone cuando ningún auditor está disponible (recorda
     const dos = templates.sinAuditorTemplate([edicion, alta], { hasta: null });
     assert.equal(dos.subject, '[RPAD] 2 cambios tuyos quedan sin auditor disponible por ahora');
     assert.ok(dos.html.includes('Por ahora no hay ningún auditor disponible para revisar estos cambios.'));
-    assert.match(dos.html, /EDITAR[\s\S]*Fecha de la propuesta: 01\/10\/2026[\s\S]*CREAR[\s\S]*Alta nueva[\s\S]*Fecha de la propuesta: 02\/10\/2026/);
+    assert.match(dos.html, />Editar<[\s\S]*Fecha de la propuesta: 01\/10\/2026[\s\S]*>Crear<[\s\S]*Alta nueva[\s\S]*Fecha de la propuesta: 02\/10\/2026/);
   });
 });

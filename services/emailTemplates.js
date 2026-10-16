@@ -1,22 +1,40 @@
 /**
- * Plantillas de email para notificaciones RPAD
- * Colores institucionales basados en styles.css
+ * Plantillas de los emails del sistema RPAD. Las Notas Digitales no están acá: su HTML, su texto y su PDF salen de
+ * notasDigitalesContenido.js y notasDigitalesPdf.js.
+ * Todas usan el mismo marco (marcoEmail), con el diseño "celeste institucional": HTML de email (tablas con
+ * role="presentation" y estilos en línea), colores pastel, sin degradés, sombras ni emojis.
  */
 
 import { TEXTO_ROL } from './usuariosReglas.js';
 import { formatoCorto } from './notasDigitalesCalendario.js';
 
-const COLORS = {
-  primary: '#0066cc',
-  success: '#28a745',
-  warning: '#ffc107',
-  danger: '#dc3545',
-  orange: '#fd7e14',
-  dark: '#1a1a2e',
-  muted: '#6c757d',
-  light: '#f8f9fa',
-  border: '#e9ecef'
+// Paleta de los emails
+const COLORES = {
+  pagina: '#F7F9FB',
+  tarjeta: '#FFFFFF',
+  borde: '#E4E9EF',
+  encabezado: '#E3EEF8',
+  bordeEncabezado: '#CFE0F0',
+  titulo: '#1F3A5F', // título del encabezado y títulos dentro del cuerpo
+  subtitulo: '#5A7391',
+  texto: '#2B3A4A',
+  secundario: '#6B7A8C',
+  recuadro: '#F4F8FC',
+  bordeRecuadro: '#E1EAF3',
+  acento: '#3E6B96', // botón y links
+  firma: '#A9C7E4',
+  pie: '#8A97A6',
+  respaldo: { fondo: '#FBF1DC', borde: '#F0DDB0', texto: '#7A5A14' }
 };
+
+// Etiqueta de cada tipo de cambio; un tipo desconocido va con los colores neutros
+const ETIQUETAS = {
+  crear: { fondo: '#DDF1E6', color: '#2E6B4C', texto: 'Crear' },
+  editar: { fondo: '#DCEAF7', color: '#24507A', texto: 'Editar' },
+  eliminar: { fondo: '#F8E1E1', color: '#8A3434', texto: 'Eliminar' }
+};
+
+const FUENTE = "'Segoe UI', Arial, sans-serif";
 
 // URL pública del RPAD para los links de los emails. En local se configura APP_URL (spec 7.1)
 export const RPAD_URL = (process.env.APP_URL || 'https://rpad.mcrmodernizacion.gob.ar').replace(/\/+$/, '');
@@ -41,117 +59,176 @@ const escapeHtml = (text) => {
     .replace(/"/g, '&quot;');
 };
 
-/**
- * Template para aviso a áreas externas (-40 días)
- * Se envía directamente al email del área
- */
-const areaAviso40diasTemplate = (areaData) => {
-  const datasetsHtml = areaData.datasets.map((d, i) => `
-    <tr>
-      <td style="padding: 12px; border-bottom: 1px solid ${COLORS.border};">
-        <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 500;">${i + 1}. ${escapeHtml(d.titulo)}</p>
-        <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 12px;">🔄 Frecuencia de actualización: ${escapeHtml(d.frecuencia_nombre || 'Sin definir')}</p>
-        ${d.url_dataset ? `<p style="margin: 6px 0 0 0;"><a href="${d.url_dataset}" style="color: ${COLORS.primary}; font-size: 13px; text-decoration: none;">🔗 Ver dataset en el portal</a></p>` : ''}
-      </td>
-    </tr>
-  `).join('');
+// =====================================================
+// MARCO COMÚN Y PIEZAS DEL CUERPO
+// =====================================================
 
-  return `
-<!DOCTYPE html>
+// Encabezado y pie de todos los emails, salvo el aviso a las áreas (que lleva los institucionales)
+const ENCABEZADO_RPAD = 'RPAD';
+const SUBTITULO_RPAD = 'Registro Permanente de Actualización de Datasets';
+const PIE_DIRECCION = ['Dirección de Datos Públicos y Comunicación', 'Municipalidad de Comodoro Rivadavia'];
+
+/**
+ * Marco de todos los emails: página gris muy clara, tarjeta blanca de hasta 600px, encabezado celeste pálido y pie.
+ * Outlook de escritorio ignora max-width: la tarjeta va dentro de una tabla de 600 que solo ve Outlook (comentario mso).
+ * titulo: el <title>. encabezado y subtitulo: texto plano. cuerpo: bloques de HTML ya escapado, uno por fila
+ * (los null o vacíos se saltean). pie: líneas de HTML ya escapado.
+ */
+const marcoEmail = ({ titulo, encabezado = ENCABEZADO_RPAD, subtitulo = SUBTITULO_RPAD, cuerpo, pie = PIE_DIRECCION }) => {
+  const bloques = cuerpo.filter(Boolean);
+  const filas = bloques.map((bloque, i) => `
+          <tr>
+            <td style="padding: ${i === 0 ? '24px' : '0'} 24px ${i === bloques.length - 1 ? '24px' : '16px'} 24px;">
+              ${bloque}
+            </td>
+          </tr>`).join('');
+  return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aviso de Solicitud de Actualización de Datos</title>
+  <title>${escapeHtml(titulo)}</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+<body style="margin: 0; padding: 0; background-color: ${COLORES.pagina}; font-family: ${FUENTE};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; background-color: ${COLORES.pagina}; font-family: ${FUENTE};">
     <tr>
-      <td style="padding: 20px;">
-        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          
-          <!-- Header institucional -->
+      <td style="padding: 24px 12px;">
+        <!--[if mso]><table role="presentation" width="600" align="center" cellspacing="0" cellpadding="0"><tr><td><![endif]-->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: ${COLORES.tarjeta}; border: 1px solid ${COLORES.borde}; border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; font-family: ${FUENTE};">
           <tr>
-            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600;">Municipalidad de Comodoro Rivadavia</h1>
-              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Dirección General de Modernización e Investigación Territorial</p>
+            <td style="background-color: ${COLORES.encabezado}; border-bottom: 1px solid ${COLORES.bordeEncabezado}; padding: 20px 24px; text-align: center;">
+              <h1 style="margin: 0; color: ${COLORES.titulo}; font-size: 18px; font-weight: 600;">${escapeHtml(encabezado)}</h1>
+              <p style="margin: 4px 0 0 0; color: ${COLORES.subtitulo}; font-size: 13px;">${escapeHtml(subtitulo)}</p>
+            </td>
+          </tr>${filas}
+          <tr>
+            <td style="background-color: ${COLORES.pagina}; border-top: 1px solid ${COLORES.borde}; padding: 16px 24px; text-align: center;">
+              <p style="margin: 0; color: ${COLORES.pie}; font-size: 12px; line-height: 1.5;">${pie.join('<br>')}</p>
             </td>
           </tr>
-
-          <!-- Accent Bar -->
-          <tr>
-            <td style="background-color: ${COLORS.primary}; height: 4px;"></td>
-          </tr>
-
-          <!-- Saludo -->
-          <tr>
-            <td style="padding: 28px 24px 20px 24px;">
-              <p style="margin: 0; color: ${COLORS.dark}; font-size: 15px; line-height: 1.6;">
-                Estimados/as:
-              </p>
-              <p style="margin: 16px 0 0 0; color: ${COLORS.dark}; font-size: 15px; line-height: 1.6;">
-                Nos comunicamos desde la <strong>Dirección General de Modernización e Investigación Territorial</strong> de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos:
-              </p>
-            </td>
-          </tr>
-
-          <!-- Lista de datasets -->
-          <tr>
-            <td style="padding: 0 24px;">
-              <table role="presentation" style="width: 100%; background-color: ${COLORS.light}; border-radius: 6px; border: 1px solid ${COLORS.border};">
-                ${datasetsHtml}
-              </table>
-            </td>
-          </tr>
-
-          <!-- Cierre -->
-          <tr>
-            <td style="padding: 24px;">
-              <p style="margin: 0; color: ${COLORS.dark}; font-size: 15px; line-height: 1.6;">
-                Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias!
-              </p>
-            </td>
-          </tr>
-
-          <!-- Firma -->
-          <tr>
-            <td style="padding: 0 24px 24px 24px;">
-              <table role="presentation" style="width: 100%; background-color: ${COLORS.light}; border-radius: 6px; padding: 16px; border-left: 4px solid ${COLORS.primary};">
-                <tr>
-                  <td style="padding: 16px;">
-                    <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">Dirección de Datos Públicos y Comunicación</p>
-                    <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 13px;">Dirección General de Modernización e Investigación Territorial</p>
-                    <p style="margin: 12px 0 0 0; color: ${COLORS.muted}; font-size: 13px;">
-                      📧 E-mail: <a href="mailto:datospublicos@comodoro.gov.ar" style="color: ${COLORS.primary}; text-decoration: none;">datospublicos@comodoro.gov.ar</a>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: ${COLORS.light}; padding: 16px 24px; text-align: center; border-top: 1px solid ${COLORS.border};">
-              <p style="margin: 0; color: ${COLORS.muted}; font-size: 11px;">
-                Este es un mensaje automático del sistema RPAD.<br>
-                Portal de Datos Abiertos: <a href="https://datos.comodoro.gov.ar" style="color: ${COLORS.primary}; text-decoration: none;">datos.comodoro.gov.ar</a>
-              </p>
-            </td>
-          </tr>
-
         </table>
+        <!--[if mso]></td></tr></table><![endif]-->
       </td>
     </tr>
   </table>
 </body>
-</html>
-`;
+</html>`;
 };
+
+// Título del cuerpo y, si hay, una bajada en texto secundario. Texto plano
+const tituloCuerpo = (titulo, bajada = null) =>
+  `<h2 style="margin: 0; color: ${COLORES.titulo}; font-size: 18px; font-weight: 600;">${escapeHtml(titulo)}</h2>${
+    bajada ? `<p style="margin: 6px 0 0 0; color: ${COLORES.secundario}; font-size: 14px;">${escapeHtml(bajada)}</p>` : ''}`;
+
+// Título de una sección del cuerpo ("Cambios pendientes:", "Mensaje"). Texto plano
+const tituloSeccion = (texto) =>
+  `<h3 style="margin: 0 0 10px 0; color: ${COLORES.titulo}; font-size: 14px; font-weight: 600;">${escapeHtml(texto)}</h3>`;
+
+// Párrafo con el texto principal. html: ya escapado
+const parrafo = (html, margen = '0') =>
+  `<p style="margin: ${margen}; color: ${COLORES.texto}; font-size: 14px; line-height: 1.6;">${html}</p>`;
+
+// Caja de una sola celda (recuadro, tarjeta o aviso). html: ya escapado
+const caja = (estilo, html) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; ${estilo}; border-collapse: separate; border-spacing: 0;">
+                <tr>
+                  <td style="padding: 14px 16px;">
+                    ${html}
+                  </td>
+                </tr>
+              </table>`;
+
+// Recuadro informativo celeste muy claro
+const recuadro = (html) => caja(`background-color: ${COLORES.recuadro}; border: 1px solid ${COLORES.bordeRecuadro}; border-radius: 6px`, html);
+
+// Tarjeta blanca de un ítem (un cambio, un dataset, los datos de quien escribe)
+const tarjeta = (html) => caja(`background-color: ${COLORES.tarjeta}; border: 1px solid ${COLORES.borde}; border-radius: 6px`, html);
+
+// Lista de tarjetas, una por fila y separadas por filas de 10px de alto (Outlook de escritorio no respeta el margin
+// entre tablas)
+const SEPARADOR_DE_TARJETAS = `
+                <tr>
+                  <td height="10" style="height: 10px; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>`;
+const tarjetas = (contenidos) => (contenidos.length === 0 ? '' : `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${
+  contenidos.map(html => `
+                <tr>
+                  <td>
+                    ${tarjeta(html)}
+                  </td>
+                </tr>`).join(SEPARADOR_DE_TARJETAS)}
+              </table>`);
+
+// Aviso ámbar pálido ("te llega como respaldo"). html: ya escapado
+const avisoDestacado = (html) => caja(
+  `background-color: ${COLORES.respaldo.fondo}; border: 1px solid ${COLORES.respaldo.borde}; border-radius: 6px`,
+  `<p style="margin: 0; color: ${COLORES.respaldo.texto}; font-size: 14px; line-height: 1.6;">${html}</p>`
+);
+
+// Botón centrado "a prueba de balas": el color y el padding van en la celda, con el link adentro (Outlook de escritorio
+// no pinta el fondo ni el padding de un <a>). texto y url: sin escapar
+const boton = ({ texto, url }) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td align="center" style="padding: 8px 0 0 0;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse: separate; border-spacing: 0;">
+                      <tr>
+                        <td align="center" bgcolor="${COLORES.acento}" style="background-color: ${COLORES.acento}; border-radius: 6px; padding: 10px 20px; font-size: 14px;">
+                          <a href="${escapeHtml(url)}" style="display: inline-block; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none;">${escapeHtml(texto)}</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>`;
+
+// Link del cuerpo o del pie. href y html: ya escapados
+const enlace = (href, html) => `<a href="${href}" style="color: ${COLORES.acento}; text-decoration: none;">${html}</a>`;
+
+// Etiqueta pastel del tipo de cambio en la lista de cambios de los emails
+const etiquetaDeTipo = (tipo) => {
+  const { fondo, color, texto } = ETIQUETAS[tipo]
+    || { fondo: COLORES.borde, color: COLORES.secundario, texto: tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase() };
+  return `<span style="display: inline-block; background-color: ${fondo}; color: ${color}; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 10px;">${escapeHtml(texto)}</span>`;
+};
+
+// Contenido de la tarjeta de un cambio: etiqueta, título y líneas en texto secundario (texto plano)
+const contenidoDeCambio = (c, lineas) => `<p style="margin: 0 0 8px 0;">${etiquetaDeTipo(c.tipo_cambio)}</p>
+                    <p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${escapeHtml(tituloDelCambio(c))}</p>
+                    ${lineas.map((l, i) => `<p style="margin: ${i === 0 ? '4px' : '2px'} 0 0 0; color: ${COLORES.secundario}; font-size: ${i === 0 ? 13 : 12}px;">${escapeHtml(l)}</p>`).join('')}`;
 
 // =====================================================
 // PLANTILLA PARA AVISO A ÁREAS (-40 días)
 // =====================================================
+
+/**
+ * Template para aviso a áreas externas (-40 días)
+ * Se envía directamente al email del área
+ */
+const areaAviso40diasTemplate = (areaData) => marcoEmail({
+  titulo: 'Aviso de Solicitud de Actualización de Datos',
+  encabezado: 'Municipalidad de Comodoro Rivadavia',
+  subtitulo: 'Dirección General de Modernización e Investigación Territorial',
+  cuerpo: [
+    parrafo('Estimados/as:')
+      + parrafo('Nos comunicamos desde la <strong>Dirección General de Modernización e Investigación Territorial</strong> de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos:', '16px 0 0 0'),
+    tarjetas(areaData.datasets.map((d, i) => `<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${i + 1}. ${escapeHtml(d.titulo)}</p>
+                    <p style="margin: 4px 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">Frecuencia de actualización: ${escapeHtml(d.frecuencia_nombre || 'Sin definir')}</p>
+                    ${d.url_dataset ? `<p style="margin: 6px 0 0 0; font-size: 13px;">${enlace(escapeHtml(d.url_dataset), 'Ver dataset en el portal')}</p>` : ''}`)),
+    parrafo('Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias!'),
+    `<table role="presentation" width="100%" style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="border-left: 3px solid ${COLORES.firma}; padding-left: 12px;">
+                    <p style="margin: 0; color: ${COLORES.titulo}; font-size: 14px; font-weight: 600;">Dirección de Datos Públicos y Comunicación</p>
+                    <p style="margin: 2px 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">Dirección General de Modernización e Investigación Territorial</p>
+                    <p style="margin: 8px 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">E-mail: ${enlace('mailto:datospublicos@comodoro.gov.ar', 'datospublicos@comodoro.gov.ar')}</p>
+                  </td>
+                </tr>
+              </table>`
+  ],
+  pie: [
+    'Este es un mensaje automático del sistema RPAD.',
+    `Portal de Datos Abiertos: ${enlace('https://datos.comodoro.gov.ar', 'datos.comodoro.gov.ar')}`
+  ]
+});
 
 export const areaAviso40dias = (areaData) => ({
   subject: `Aviso: Solicitud próxima de actualización de datos - ${areaData.area_nombre}`,
@@ -167,116 +244,28 @@ export const areaAviso40dias = (areaData) => ({
  */
 export const contactoTemplate = (datos) => ({
   subject: `[RPAD Contacto] ${datos.tipo} - ${datos.nombre}`,
-  html: `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nueva consulta desde RPAD</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px;">
-        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">📬 Nueva Consulta</h1>
-              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Formulario de Contacto RPAD</p>
-            </td>
-          </tr>
-
-          <!-- Accent Bar -->
-          <tr>
-            <td style="background-color: ${COLORS.primary}; height: 4px;"></td>
-          </tr>
-
-          <!-- Tipo de consulta -->
-          <tr>
-            <td style="padding: 24px 24px 16px 24px;">
-              <table role="presentation" style="width: 100%; background-color: ${COLORS.light}; border-radius: 6px; border-left: 4px solid ${COLORS.primary};">
-                <tr>
-                  <td style="padding: 16px;">
-                    <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Tipo de consulta</p>
-                    <p style="margin: 4px 0 0 0; color: ${COLORS.dark}; font-size: 16px; font-weight: 600;">${escapeHtml(datos.tipo)}</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Datos del remitente -->
-          <tr>
-            <td style="padding: 0 24px;">
-              <h3 style="color: ${COLORS.dark}; font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Datos del remitente</h3>
-              <table role="presentation" style="width: 100%; border: 1px solid ${COLORS.border}; border-radius: 6px;">
-                <tr>
-                  <td style="padding: 12px; border-bottom: 1px solid ${COLORS.border};">
-                    <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">Nombre</p>
-                    <p style="margin: 4px 0 0 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 500;">${escapeHtml(datos.nombre)}</p>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 12px;">
-                    <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">Email</p>
-                    <p style="margin: 4px 0 0 0; color: ${COLORS.dark}; font-size: 14px;">
-                      <a href="mailto:${escapeHtml(datos.email)}" style="color: ${COLORS.primary}; text-decoration: none;">${escapeHtml(datos.email)}</a>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Mensaje -->
-          <tr>
-            <td style="padding: 24px;">
-              <h3 style="color: ${COLORS.dark}; font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Mensaje</h3>
-              <div style="background-color: ${COLORS.light}; border-radius: 6px; padding: 16px; border: 1px solid ${COLORS.border};">
-                <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(datos.mensaje)}</p>
-              </div>
-            </td>
-          </tr>
-
-          <!-- Botón responder -->
-          <tr>
-            <td style="padding: 0 24px 24px 24px; text-align: center;">
-              <a href="mailto:${escapeHtml(datos.email)}?subject=Re: ${encodeURIComponent(datos.tipo)}" style="display: inline-block; background-color: ${COLORS.primary}; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">Responder a ${escapeHtml(datos.nombre)}</a>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: ${COLORS.light}; padding: 16px 24px; border-top: 1px solid ${COLORS.border};">
-              <p style="margin: 0; color: ${COLORS.muted}; font-size: 11px; text-align: center;">
-                Recibido el ${escapeHtml(datos.fecha)}<br>
-                <span style="color: ${COLORS.muted};">IP: ${escapeHtml(datos.ip)}</span>
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`
+  html: marcoEmail({
+    titulo: 'Nueva consulta desde RPAD',
+    cuerpo: [
+      tituloCuerpo('Nueva Consulta', 'Formulario de Contacto RPAD'),
+      recuadro(`<p style="margin: 0; color: ${COLORES.secundario}; font-size: 12px;">Tipo de consulta</p>
+                    <p style="margin: 4px 0 0 0; color: ${COLORES.titulo}; font-size: 16px; font-weight: 600;">${escapeHtml(datos.tipo)}</p>`),
+      tituloSeccion('Datos del remitente')
+        + tarjeta(`<p style="margin: 0; color: ${COLORES.secundario}; font-size: 12px;">Nombre</p>
+                    <p style="margin: 4px 0 0 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${escapeHtml(datos.nombre)}</p>
+                    <p style="margin: 12px 0 0 0; color: ${COLORES.secundario}; font-size: 12px;">Email</p>
+                    <p style="margin: 4px 0 0 0; font-size: 14px;">${enlace(`mailto:${escapeHtml(datos.email)}`, escapeHtml(datos.email))}</p>`),
+      tituloSeccion('Mensaje')
+        + recuadro(`<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(datos.mensaje)}</p>`),
+      boton({ texto: `Responder a ${datos.nombre}`, url: `mailto:${datos.email}?subject=Re: ${encodeURIComponent(datos.tipo)}` }),
+      `<p style="margin: 0; color: ${COLORES.secundario}; font-size: 12px; text-align: center;">Recibido el ${escapeHtml(datos.fecha)}<br>IP: ${escapeHtml(datos.ip)}</p>`
+    ]
+  })
 });
 
 // =====================================================
 // PLANTILLA PARA CAMBIOS PENDIENTES DE APROBACIÓN
 // =====================================================
-
-// Etiqueta y color del tipo de cambio en la lista de cambios de los emails
-const badgeDeTipo = (tipo) => ({
-  'crear': { color: COLORS.success, texto: 'CREAR' },
-  'editar': { color: COLORS.warning, texto: 'EDITAR' },
-  'eliminar': { color: COLORS.danger, texto: 'ELIMINAR' }
-}[tipo] || { color: COLORS.muted, texto: tipo.toUpperCase() });
 
 // Título del conjunto de datos de un cambio: el propuesto en un alta, el del dataset en los demás
 const tituloDelCambio = (c) => (c.tipo_cambio === 'crear'
@@ -287,113 +276,18 @@ const tituloDelCambio = (c) => (c.tipo_cambio === 'crear'
 // porque no hay auditores disponibles
 export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) => ({
   subject: cambios.length === 1 ? '[RPAD] 1 cambio espera tu auditoría' : `[RPAD] ${cambios.length} cambios esperan tu auditoría`,
-  html: `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cambios Pendientes de Aprobacion</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px;">
-        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">RPAD</h1>
-              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Sistema de Aprobaciones</p>
-            </td>
-          </tr>
-
-          <!-- Accent Bar -->
-          <tr>
-            <td style="background-color: ${COLORS.warning}; height: 4px;"></td>
-          </tr>
-
-          <!-- Title -->
-          <tr>
-            <td style="padding: 24px 24px 16px 24px;">
-              <h2 style="color: ${COLORS.dark}; margin: 0; font-size: 20px; font-weight: 600;">Cambios pendientes de revision</h2>
-              <p style="color: ${COLORS.muted}; margin: 8px 0 0 0; font-size: 14px;">Hay ${cambios.length} cambio${cambios.length > 1 ? 's' : ''} esperando tu auditoría</p>
-            </td>
-          </tr>
-
-          <!-- Action Box -->
-          <tr>
-            <td style="padding: 0 24px;">
-              <table role="presentation" style="width: 100%; background-color: ${COLORS.light}; border-radius: 6px; border-left: 4px solid ${COLORS.warning};">
-                <tr>
-                  <td style="padding: 16px;">
-                    <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px;"><strong>Accion requerida:</strong></p>
-                    <p style="margin: 8px 0 0 0; color: ${COLORS.muted}; font-size: 14px;">Por favor, revisa y aprueba o rechaza los siguientes cambios propuestos por otras personas.</p>
-                    ${respaldo ? `<p style="margin: 8px 0 0 0; color: ${COLORS.dark}; font-size: 14px;"><strong>Te llega como respaldo: no hay auditores disponibles.</strong></p>` : ''}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Divider -->
-          <tr>
-            <td style="padding: 24px;">
-              <hr style="border: none; border-top: 1px solid ${COLORS.border}; margin: 0;">
-            </td>
-          </tr>
-
-          <!-- Cambios List -->
-          <tr>
-            <td style="padding: 0 24px;">
-              <p style="margin: 0 0 16px 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">Cambios pendientes:</p>
-              ${cambios.map((c, i) => {
-                const tipoBadge = badgeDeTipo(c.tipo_cambio);
-                const titulo = tituloDelCambio(c);
-
-                return `
-                <table role="presentation" style="width: 100%; margin-bottom: 12px; background-color: #ffffff; border: 1px solid ${COLORS.border}; border-radius: 6px;">
-                  <tr>
-                    <td style="padding: 12px;">
-                      <p style="margin: 0 0 8px 0;">
-                        <span style="display: inline-block; background-color: ${tipoBadge.color}; color: #ffffff; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">${tipoBadge.texto}</span>
-                      </p>
-                      <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">${escapeHtml(titulo)}</p>
-                      <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 12px;">Propuesto por: ${escapeHtml(c.usuario_nombre || c.usuario_username)}</p>
-                      <p style="margin: 2px 0 0 0; color: ${COLORS.muted}; font-size: 11px;">${escapeHtml(c.tiempo_pendiente)}</p>
-                    </td>
-                  </tr>
-                </table>
-              `}).join('')}
-            </td>
-          </tr>
-
-          <!-- RPAD Link -->
-          <tr>
-            <td style="padding: 24px; text-align: center;">
-              <a href="${RPAD_URL}/perfil.html" style="display: inline-block; background-color: ${COLORS.primary}; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">Revisar cambios en RPAD</a>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: ${COLORS.light}; padding: 16px 24px; text-align: center; border-top: 1px solid ${COLORS.border};">
-              <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">
-                Sistema de Notificaciones RPAD v1.5.0<br>
-                Direccion de Datos Publicos y Comunicacion<br>
-                Municipalidad de Comodoro Rivadavia
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`
+  html: marcoEmail({
+    titulo: 'Cambios Pendientes de Aprobación',
+    cuerpo: [
+      tituloCuerpo('Cambios pendientes de revisión', `Hay ${cambios.length} cambio${cambios.length > 1 ? 's' : ''} esperando tu auditoría`),
+      recuadro(`<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px;"><strong>Acción requerida:</strong></p>
+                    <p style="margin: 6px 0 0 0; color: ${COLORES.secundario}; font-size: 14px;">Por favor, revisa y aprueba o rechaza los siguientes cambios propuestos por otras personas.</p>`),
+      respaldo ? avisoDestacado('<strong>Te llega como respaldo: no hay auditores disponibles.</strong>') : null,
+      tituloSeccion('Cambios pendientes:')
+        + tarjetas(cambios.map(c => contenidoDeCambio(c, [`Propuesto por: ${c.usuario_nombre || c.usuario_username || ''}`, c.tiempo_pendiente]))),
+      boton({ texto: 'Revisar cambios en RPAD', url: `${RPAD_URL}/perfil.html` })
+    ]
+  })
 });
 
 /**
@@ -410,108 +304,16 @@ export const sinAuditorTemplate = (cambios, { hasta = null } = {}) => {
     subject: uno
       ? `[RPAD] Tu cambio en ${tituloDelCambio(cambios[0])} queda sin auditor disponible ${plazo}`
       : `[RPAD] ${cambios.length} cambios tuyos quedan sin auditor disponible ${plazo}`,
-    html: `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sin auditor disponible</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px;">
-        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">RPAD</h1>
-              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Sistema de Aprobaciones</p>
-            </td>
-          </tr>
-
-          <!-- Accent Bar -->
-          <tr>
-            <td style="background-color: ${COLORS.warning}; height: 4px;"></td>
-          </tr>
-
-          <!-- Title -->
-          <tr>
-            <td style="padding: 24px 24px 16px 24px;">
-              <h2 style="color: ${COLORS.dark}; margin: 0; font-size: 20px; font-weight: 600;">Sin auditor disponible</h2>
-            </td>
-          </tr>
-
-          <!-- Situación -->
-          <tr>
-            <td style="padding: 0 24px;">
-              <table role="presentation" style="width: 100%; background-color: ${COLORS.light}; border-radius: 6px; border-left: 4px solid ${COLORS.warning};">
-                <tr>
-                  <td style="padding: 16px;">
-                    <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px;">${escapeHtml(situacion)}</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Divider -->
-          <tr>
-            <td style="padding: 24px;">
-              <hr style="border: none; border-top: 1px solid ${COLORS.border}; margin: 0;">
-            </td>
-          </tr>
-
-          <!-- Cambios List -->
-          <tr>
-            <td style="padding: 0 24px;">
-              <p style="margin: 0 0 16px 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">Cambios pendientes:</p>
-              ${cambios.map((c) => {
-                const tipoBadge = badgeDeTipo(c.tipo_cambio);
-                return `
-                <table role="presentation" style="width: 100%; margin-bottom: 12px; background-color: #ffffff; border: 1px solid ${COLORS.border}; border-radius: 6px;">
-                  <tr>
-                    <td style="padding: 12px;">
-                      <p style="margin: 0 0 8px 0;">
-                        <span style="display: inline-block; background-color: ${tipoBadge.color}; color: #ffffff; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">${escapeHtml(tipoBadge.texto)}</span>
-                      </p>
-                      <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; font-weight: 600;">${escapeHtml(tituloDelCambio(c))}</p>
-                      <p style="margin: 4px 0 0 0; color: ${COLORS.muted}; font-size: 12px;">Fecha de la propuesta: ${escapeHtml(formatoCorto(c.fecha_propuesta))}</p>
-                    </td>
-                  </tr>
-                </table>
-              `;
-              }).join('')}
-            </td>
-          </tr>
-
-          <!-- Cierre -->
-          <tr>
-            <td style="padding: 12px 24px 24px 24px;">
-              <p style="margin: 0; color: ${COLORS.dark}; font-size: 14px; line-height: 1.6;">${escapeHtml(cierre)}</p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: ${COLORS.light}; padding: 16px 24px; text-align: center; border-top: 1px solid ${COLORS.border};">
-              <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">
-                Sistema de Notificaciones RPAD v1.5.0<br>
-                Direccion de Datos Publicos y Comunicacion<br>
-                Municipalidad de Comodoro Rivadavia
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`
+    html: marcoEmail({
+      titulo: 'Sin auditor disponible',
+      cuerpo: [
+        tituloCuerpo('Sin auditor disponible'),
+        recuadro(`<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px;">${escapeHtml(situacion)}</p>`),
+        tituloSeccion('Cambios pendientes:')
+          + tarjetas(cambios.map(c => contenidoDeCambio(c, [`Fecha de la propuesta: ${formatoCorto(c.fecha_propuesta)}`]))),
+        parrafo(escapeHtml(cierre))
+      ]
+    })
   };
 };
 
@@ -520,60 +322,17 @@ export const sinAuditorTemplate = (cambios, { hasta = null } = {}) => {
 // =====================================================
 
 /**
- * Email simple con el formato de los demás: encabezado, título, párrafos, botón y notas al pie.
+ * Email simple con el marco de los demás: título, párrafos, botón y notas al pie.
  * parrafos y notas: HTML ya escapado (pueden traer <strong>). boton: { texto, url } o null.
  */
-export const plantillaSimple = ({ titulo, parrafos, boton = null, notas = [] }) => `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(titulo)}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: ${COLORS.light};">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px;">
-        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          <tr>
-            <td style="background: linear-gradient(135deg, ${COLORS.dark} 0%, ${COLORS.primary} 100%); padding: 24px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">RPAD</h1>
-              <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 14px;">Registro Permanente de Actualización de Datasets</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 24px 24px 8px 24px;">
-              <h2 style="color: ${COLORS.dark}; margin: 0 0 16px 0; font-size: 20px; font-weight: 600;">${escapeHtml(titulo)}</h2>
-              ${parrafos.map(p => `<p style="margin: 0 0 12px 0; color: ${COLORS.dark}; font-size: 14px; line-height: 1.6;">${p}</p>`).join('')}
-            </td>
-          </tr>
-          ${boton ? `
-          <tr>
-            <td style="padding: 8px 24px 24px 24px; text-align: center;">
-              <a href="${escapeHtml(boton.url)}" style="display: inline-block; background-color: ${COLORS.primary}; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">${escapeHtml(boton.texto)}</a>
-            </td>
-          </tr>` : ''}
-          ${notas.length > 0 ? `
-          <tr>
-            <td style="padding: 0 24px 24px 24px;">
-              ${notas.map(n => `<p style="margin: 0 0 8px 0; color: ${COLORS.muted}; font-size: 12px; line-height: 1.5;">${n}</p>`).join('')}
-            </td>
-          </tr>` : ''}
-          <tr>
-            <td style="background-color: ${COLORS.light}; padding: 16px 24px; text-align: center; border-top: 1px solid ${COLORS.border};">
-              <p style="margin: 0; color: ${COLORS.muted}; font-size: 12px;">
-                Dirección de Datos Públicos y Comunicación<br>
-                Municipalidad de Comodoro Rivadavia
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+export const plantillaSimple = ({ titulo, parrafos, boton: botonDelEmail = null, notas = [] }) => marcoEmail({
+  titulo,
+  cuerpo: [
+    tituloCuerpo(titulo) + parrafos.map((p, i) => parrafo(p, `${i === 0 ? '16px' : '12px'} 0 0 0`)).join(''),
+    botonDelEmail ? boton(botonDelEmail) : null,
+    notas.map((n, i) => `<p style="margin: ${i === 0 ? '0' : '8px'} 0 0 0; color: ${COLORES.secundario}; font-size: 12px; line-height: 1.5;">${n}</p>`).join('')
+  ]
+});
 
 // Invitación: el usuario elige su contraseña por primera vez (spec 10.1). vence: texto de fecha y hora
 export const invitacionTemplate = ({ nombre_completo, username, rol, link, vence }) => {

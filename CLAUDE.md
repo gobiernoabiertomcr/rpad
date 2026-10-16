@@ -8,6 +8,7 @@ Sistema de gestión de datos abiertos para la Municipalidad de Comodoro Rivadavi
 - **Auth:** JWT (7h expiración), bcryptjs
 - **Frontend:** HTML5, CSS3, vanilla JS (sin frameworks)
 - **PDF:** PDFKit | **DOCX:** docx | **Email:** Nodemailer
+- **Emails:** un solo remitente, `remitente()` de `services/emailService.js` ("Dir. de Datos Públicos y Comunicación"), y un solo marco, `marcoEmail` de `services/emailTemplates.js` (diseño pastel "celeste institucional", tablas y estilos en línea, sin emojis), para todas las plantillas. Las Notas Digitales tienen su propio armado.
 - **CDN:** Lucide Icons, Chart.js, FullCalendar
 
 ## Comandos
