@@ -92,3 +92,14 @@ export const rangoDeAviso = (hoy, dias) => {
   const siguiente = proximoDiaHabil(sumarDias(hoy, 1));
   return { desde: sumarDias(hoy, dias), hasta: sumarDias(siguiente, dias - 1) };
 };
+
+// Último día hábil que no pasa de iso (iso mismo si es hábil)
+export const ultimoDiaHabilHasta = (iso) => (esDiaHabil(iso) ? iso : diaHabilAnterior(iso));
+
+// Rango de meses en minúsculas, como en el asunto de los avisos anticipados (spec 2026-10-15, 7.3):
+// 'enero 2027', 'enero a marzo 2027' o 'diciembre 2026 a febrero 2027'
+export const textoRangoMeses = (desde, hasta) => {
+  if (periodoDe(desde) === periodoDe(hasta)) return mesYAnio(desde);
+  if (desde.slice(0, 4) === hasta.slice(0, 4)) return `${MESES[Number(desde.slice(5, 7)) - 1]} a ${mesYAnio(hasta)}`;
+  return `${mesYAnio(desde)} a ${mesYAnio(hasta)}`;
+};

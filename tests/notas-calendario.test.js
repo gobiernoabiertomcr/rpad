@@ -141,3 +141,19 @@ describe('rangoDeAviso (spec 2026-10-15-dias-habiles-licencias-auditoria, 4.2)',
     }
   });
 });
+
+describe('ultimoDiaHabilHasta', () => {
+  it('un día hábil es su propio último día hábil; un fin de semana o feriado va al anterior', () => {
+    assert.equal(cal.ultimoDiaHabilHasta('2027-01-14'), '2027-01-14');
+    assert.equal(cal.ultimoDiaHabilHasta('2027-01-24'), '2027-01-22');
+    assert.equal(cal.ultimoDiaHabilHasta('2027-01-01'), '2026-12-31');
+  });
+});
+
+describe('textoRangoMeses', () => {
+  it('un mes, meses del mismo año y meses de dos años', () => {
+    assert.equal(cal.textoRangoMeses('2027-01-20', '2027-01-31'), 'enero 2027');
+    assert.equal(cal.textoRangoMeses('2027-01-20', '2027-03-31'), 'enero a marzo 2027');
+    assert.equal(cal.textoRangoMeses('2026-12-15', '2027-02-10'), 'diciembre 2026 a febrero 2027');
+  });
+});
