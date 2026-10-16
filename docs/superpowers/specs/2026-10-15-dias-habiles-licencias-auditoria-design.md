@@ -312,12 +312,12 @@ En la pestaña Licencias, arriba de "En curso y próximas", el encabezado `Próx
 
 Se agrupa por quien propuso y se le manda **un email** con todos sus cambios en esa situación, solo si esa persona está disponible. Si está de licencia, no se manda: queda sin marcar y sale a su vuelta, si el cambio sigue sin auditor. Si está inactiva o ya no tiene rol de auditoría ni de edición, no se manda. Si el email se envió, se guarda `aviso_sin_auditores_at` (hora de Argentina): el aviso sale **una sola vez por cambio**. Un email inválido, una falla de envío o de guardado quedan en los errores de la corrida con el usuario.
 - Asunto, con un cambio: `[RPAD] Tu cambio en {dataset} queda sin auditor disponible hasta el {dd/mm/aaaa}`; con varios: `[RPAD] {n} cambios tuyos quedan sin auditor disponible hasta el {dd/mm/aaaa}`. Si no hay fecha, en lugar de "hasta el …": `por ahora`.
-- Cuerpo: `Hasta el {dd/mm/aaaa} no hay ningún auditor disponible para revisar {este cambio | estos cambios} (los auditores están de licencia).` (sin fecha: `Por ahora no hay …`); la lista de cambios (tipo, conjunto de datos y fecha de la propuesta, como en el recordatorio); y el cierre: `Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio.`
+- Cuerpo: `Hasta el {dd/mm/aaaa} no hay ningún auditor disponible para revisar {este cambio | estos cambios}.` (sin fecha: `Por ahora no hay …`); la lista de cambios (tipo, conjunto de datos y fecha de la propuesta, como en el recordatorio); y el cierre: `Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio.`
 - La fecha es el primer día hábil, desde el siguiente, en que alguien puede auditar el cambio (un auditor o, de respaldo, un editor que no sea quien lo propuso), o ninguna si no hay uno a la vista.
 - El resultado de la corrida suma `sin_auditor: [{ usuario, cambios, hasta }]`.
 
 **Correos → Estado (10.4).** Debajo de la línea de auditoría:
-- si hay cambios pendientes sin nadie que pueda auditarlos en la próxima corrida (`sin_quien_audite`), una alerta: `Hoy {n} cambios no tienen a nadie que pueda auditarlos.` (o `Hoy 1 cambio no tiene a nadie que pueda auditarlo.`);
+- si hay cambios pendientes sin nadie que pueda auditarlos en la próxima corrida (`sin_quien_audite`), una alerta: `Hoy {n} cambios no tienen ningún auditor ni editor de respaldo disponible.` (o `Hoy 1 cambio no tiene ningún auditor ni editor de respaldo disponible.`);
 - si hay períodos (`periodos_sin_auditor`, de la próxima corrida a hoy + 60 días): `Próximos días sin auditores disponibles: del {dd/mm/aaaa} al {dd/mm/aaaa} (vuelve a haber auditor el {dd/mm/aaaa})`, uno por período, separados por `; ` y terminado en punto; sin `vuelve`: `(sin fecha de vuelta)`.
 
 ## 10. Nota de auditoría: contenido (entrega 3)

@@ -337,7 +337,7 @@ describe('aviso a quien propone cuando ningún auditor está disponible (recorda
     assert.equal(mensajes.length, 1);
     assert.equal(mensajes[0].Subject, '[RPAD] Tu cambio en Alta sin auditor queda sin auditor disponible hasta el 11/01/2027');
     const html = await mailpit.html(mensajes[0].ID);
-    assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar este cambio (los auditores están de licencia).'), html);
+    assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar este cambio.'), html);
     assert.ok(html.includes(CIERRE), html);
     assert.match(html, /Alta sin auditor/);
     assert.equal(await avisoSinAuditores(id), '2026-12-28 14:00:00');
@@ -367,7 +367,7 @@ describe('aviso a quien propone cuando ningún auditor está disponible (recorda
     assert.equal(mensajes.length, 1);
     assert.equal(mensajes[0].Subject, '[RPAD] 2 cambios tuyos quedan sin auditor disponible hasta el 11/01/2027');
     const html = await mailpit.html(mensajes[0].ID);
-    assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar estos cambios (los auditores están de licencia).'), html);
+    assert.ok(html.includes('Hasta el 11/01/2027 no hay ningún auditor disponible para revisar estos cambios.'), html);
     assert.match(html, /Primer alta sin auditor[\s\S]*Segunda alta sin auditor/);
     assert.match(html, /CREAR/);
     assert.match(html, /Fecha de la propuesta: 01\/10\/2026/);
@@ -507,14 +507,14 @@ describe('aviso a quien propone cuando ningún auditor está disponible (recorda
     const edicion = { tipo_cambio: 'editar', dataset_titulo: 'Padrón <b>raro</b>', datos_nuevos: { titulo: 'Otro título' }, fecha_propuesta: '2026-10-01' };
     const uno = templates.sinAuditorTemplate([edicion], { hasta: null });
     assert.equal(uno.subject, '[RPAD] Tu cambio en Padrón <b>raro</b> queda sin auditor disponible por ahora');
-    assert.ok(uno.html.includes('Por ahora no hay ningún auditor disponible para revisar este cambio (los auditores están de licencia).'));
+    assert.ok(uno.html.includes('Por ahora no hay ningún auditor disponible para revisar este cambio.'));
     assert.ok(uno.html.includes('Padrón &lt;b&gt;raro&lt;/b&gt;'));
     assert.ok(!uno.html.includes('<b>raro'));
     assert.ok(!uno.html.includes('Otro título'));
     const alta = { tipo_cambio: 'crear', dataset_titulo: null, datos_nuevos: { titulo: 'Alta nueva' }, fecha_propuesta: '2026-10-02' };
     const dos = templates.sinAuditorTemplate([edicion, alta], { hasta: null });
     assert.equal(dos.subject, '[RPAD] 2 cambios tuyos quedan sin auditor disponible por ahora');
-    assert.ok(dos.html.includes('Por ahora no hay ningún auditor disponible para revisar estos cambios (los auditores están de licencia).'));
+    assert.ok(dos.html.includes('Por ahora no hay ningún auditor disponible para revisar estos cambios.'));
     assert.match(dos.html, /EDITAR[\s\S]*Fecha de la propuesta: 01\/10\/2026[\s\S]*CREAR[\s\S]*Alta nueva[\s\S]*Fecha de la propuesta: 02\/10\/2026/);
   });
 });

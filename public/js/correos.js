@@ -37,7 +37,7 @@ const textoAuditoria = (a) => (!a || a.canal_nota === 0
 const textoSinQuienAudite = (a) => {
   const n = a?.sin_quien_audite ?? 0;
   if (!(n > 0)) return '';
-  return n === 1 ? 'Hoy 1 cambio no tiene a nadie que pueda auditarlo.' : `Hoy ${n} cambios no tienen a nadie que pueda auditarlos.`;
+  return n === 1 ? 'Hoy 1 cambio no tiene ningún auditor ni editor de respaldo disponible.' : `Hoy ${n} cambios no tienen ningún auditor ni editor de respaldo disponible.`;
 };
 // Próximos períodos sin ningún auditor disponible (a.periodos_sin_auditor: [{ desde, hasta, vuelve }]), o '' si no hay
 const textoPeriodosSinAuditor = (a) => {

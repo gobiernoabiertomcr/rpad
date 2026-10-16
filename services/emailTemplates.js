@@ -404,7 +404,7 @@ export const cambiosPendientesTemplate = (cambios, { respaldo = false } = {}) =>
 export const sinAuditorTemplate = (cambios, { hasta = null } = {}) => {
   const uno = cambios.length === 1;
   const plazo = hasta ? `hasta el ${formatoCorto(hasta)}` : 'por ahora';
-  const situacion = `${hasta ? `Hasta el ${formatoCorto(hasta)}` : 'Por ahora'} no hay ningún auditor disponible para revisar ${uno ? 'este cambio' : 'estos cambios'} (los auditores están de licencia).`;
+  const situacion = `${hasta ? `Hasta el ${formatoCorto(hasta)}` : 'Por ahora'} no hay ningún auditor disponible para revisar ${uno ? 'este cambio' : 'estos cambios'}.`;
   const cierre = 'Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio.';
   return {
     subject: uno

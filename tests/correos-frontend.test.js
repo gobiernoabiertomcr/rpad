@@ -154,9 +154,9 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
 
   it('cambios que hoy no tienen a nadie que pueda auditarlos: singular, plural y ninguno', () => {
     const { contexto } = cargarCorreos();
-    assert.equal(sinQuien(contexto, { sin_quien_audite: 1 }), 'Hoy 1 cambio no tiene a nadie que pueda auditarlo.');
-    assert.equal(sinQuien(contexto, { sin_quien_audite: 2 }), 'Hoy 2 cambios no tienen a nadie que pueda auditarlos.');
-    assert.equal(sinQuien(contexto, { sin_quien_audite: 14 }), 'Hoy 14 cambios no tienen a nadie que pueda auditarlos.');
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 1 }), 'Hoy 1 cambio no tiene ningún auditor ni editor de respaldo disponible.');
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 2 }), 'Hoy 2 cambios no tienen ningún auditor ni editor de respaldo disponible.');
+    assert.equal(sinQuien(contexto, { sin_quien_audite: 14 }), 'Hoy 14 cambios no tienen ningún auditor ni editor de respaldo disponible.');
     assert.equal(sinQuien(contexto, { sin_quien_audite: 0 }), '');
     assert.equal(sinQuien(contexto, { canal_nota: 0, proxima: null }), '', 'una respuesta sin el campo');
     assert.equal(sinQuien(contexto, undefined), '');
@@ -212,7 +212,7 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
         periodos_sin_auditor: [{ desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: [] }]
       });
       assert.equal(elemento('nd-sin-quien-audite').hidden, false);
-      assert.equal(elemento('nd-sin-quien-audite').textContent, 'Hoy 2 cambios no tienen a nadie que pueda auditarlos.');
+      assert.equal(elemento('nd-sin-quien-audite').textContent, 'Hoy 2 cambios no tienen ningún auditor ni editor de respaldo disponible.');
       assert.equal(elemento('nd-periodos-sin-auditor').hidden, false);
       assert.equal(elemento('nd-periodos-sin-auditor').textContent,
         'Próximos días sin auditores disponibles: del 28/12/2026 al 08/01/2027 (vuelve a haber auditor el 11/01/2027).');
