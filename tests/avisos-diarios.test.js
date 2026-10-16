@@ -31,6 +31,7 @@ beforeEach(async () => {
   await query('DELETE FROM notificaciones_log');
   await query('DELETE FROM datasets');
   await query('DELETE FROM areas');
+  await query('DELETE FROM usuarios_licencias');
   await query('DELETE FROM usuarios');
   await mailpit.vaciar();
 });
@@ -120,6 +121,20 @@ describe('email de cambios pendientes (spec 4.1)', () => {
     assert.deepEqual(resultado.enviados.map(e => e.email), [b.email]);
     assert.equal(para(await mailpit.esperar(m => m.To.some(t => t.Address === b.email)), b.email).length, 1);
     assert.equal(para(await mailpit.mensajes(), a.email).length, 0);
+  });
+
+  it('no le llega a quien está de licencia ese día (spec 5.3)', async () => {
+    const a = await crearUsuario('admin');
+    const b = await crearUsuario('admin');
+    const c = await crearUsuario('admin');
+    await proponerCambio(a.id, 'Cambio con un revisor de licencia');
+    await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [b.id, '2026-10-12', '2026-10-16']);
+
+    const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-10-16' });
+
+    assert.deepEqual(resultado.enviados.map(e => e.email), [c.email]);
+    assert.deepEqual(resultado.deLicencia, [b.username]);
+    assert.equal(para(await mailpit.mensajes(), b.email).length, 0);
   });
 
   for (const [fecha, descripcion] of [['2026-10-17', 'sábado'], ['2026-10-18', 'domingo'], ['2026-12-08', 'feriado fijo']]) {

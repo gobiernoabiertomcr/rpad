@@ -531,3 +531,33 @@ export const avisoSuperadminTemplate = ({ actor, afectado, cambio, fecha }) => {
     ].join('\n')
   };
 };
+
+// Resumen de los avisos al superadmin que no se enviaron durante su licencia
+// (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.4). retenidos: filas del historial con created_at, actor y afectado.
+export const resumenAvisosRetenidosTemplate = (retenidos) => {
+  const lineas = retenidos.map(r => ({
+    cuando: fechaHoraArgentina(new Date(r.created_at)),
+    quien: r.actor_nombre ? `${r.actor_nombre} (${r.actor_username})` : 'Sin registro',
+    aQuien: `${r.afectado_nombre} (${r.afectado_username})`,
+    cambio: r.cambio
+  }));
+  const cuantos = lineas.length === 1 ? 'hubo un cambio' : `hubo ${lineas.length} cambios`;
+  return {
+    subject: 'RPAD: cambios en los usuarios durante tu licencia',
+    html: plantillaSimple({
+      titulo: 'Cambios en los usuarios durante tu licencia',
+      parrafos: [
+        `Mientras estabas de licencia ${cuantos} que te habrían llegado como aviso:`,
+        ...lineas.map(l => `${escapeHtml(l.cuando)} h – <strong>${escapeHtml(l.quien)}</strong>: ${escapeHtml(l.aQuien)}: <strong>${escapeHtml(l.cambio)}</strong>`)
+      ],
+      boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/usuarios.html` },
+      notas: ['Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia.']
+    }),
+    text: [
+      `Mientras estabas de licencia ${cuantos} que te habrían llegado como aviso:`,
+      ...lineas.map(l => `- ${l.cuando} h – ${l.quien}: ${l.aQuien}: ${l.cambio}`),
+      '',
+      `Panel de usuarios: ${RPAD_URL}/usuarios.html`
+    ].join('\n')
+  };
+};

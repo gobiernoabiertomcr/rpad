@@ -2,14 +2,15 @@
 import pool from '../config/database.js';
 
 /**
- * Registra una acción. conexion: el pool o la conexión con la transacción del cambio abierta.
+ * Registra una acción y devuelve el id de la fila. conexion: el pool o la conexión con la transacción del cambio abierta.
  * detalle: objeto (se guarda como JSON) o null.
  */
 export const registrarAuditoria = async (conexion, { usuarioId, actorId = null, accion, detalle = null }) => {
-  await (conexion ?? pool).execute(
+  const [resultado] = await (conexion ?? pool).execute(
     'INSERT INTO usuarios_auditoria (usuario_id, actor_id, accion, detalle) VALUES (?, ?, ?, ?)',
     [usuarioId, actorId, accion, detalle === null ? null : JSON.stringify(detalle)]
   );
+  return resultado.insertId;
 };
 
 // Historial de un usuario, del más reciente al más viejo, con el nombre de quien hizo cada cambio
