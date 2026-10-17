@@ -4,7 +4,7 @@
 // Cada caso: { nombre, email: { subject, html, text? }, boton }. boton: si el email tiene un botón
 export const casosDeEmail = (t) => {
   const cambios = [
-    { id: 1, tipo_cambio: 'editar', dataset_titulo: 'Padrón de comercios <b>2026</b>', usuario_nombre: 'Persona Editora', usuario_username: 'peditora', tiempo_pendiente: 'Hace 2 dias' },
+    { id: 1, tipo_cambio: 'editar', dataset_titulo: 'Padrón de comercios <b>2026</b>', usuario_nombre: 'Persona Editora', usuario_username: 'peditora', tiempo_pendiente: 'Hace 2 días' },
     { id: 2, tipo_cambio: 'crear', datos_nuevos: { titulo: 'Alta de prueba' }, usuario_nombre: 'Persona Admin', usuario_username: 'padmin', tiempo_pendiente: 'Hace 3 horas' },
     { id: 3, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset viejo', usuario_nombre: null, usuario_username: 'pusuario', tiempo_pendiente: 'Hace 1 hora' }
   ];
