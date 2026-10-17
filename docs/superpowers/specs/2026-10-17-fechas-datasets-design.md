@@ -435,7 +435,7 @@ Es un modal con `role="dialog"`, `aria-modal` y `aria-labelledby`. Se cierra con
    - Se genera `database/updates/migracion-fechas-datasets-datos.sql` con un `UPDATE … WHERE id = ?` por dataset. Va después de la migración de estructura y antes del código, para que los datos estén completos desde el primer momento.
    - Los "Datos al" en mes y año se cargan como fin de mes, con febrero en 28. En `ejercicio` es el 31/12 del ejercicio publicado.
    - El usuario corrigió tres: Pauta 07/2026, Escala salarial 05/2025 y Presupuesto con perspectiva de género 12/2025. La Escala salarial (38) sigue como relevamiento interno.
-   - **"Próxima edición" (44, 50, 63, 77 y 78).** La planilla trae el mes de carga, pero "Datos al" tiene que ser la fecha de referencia de la edición: 05/2022 para los cuatro del Censo 2022 (50, 63, 77 y 78), y el mes de la última elección publicada para el 44. **A confirmar por el usuario.**
+   - **"Próxima edición" (44, 50, 63, 77 y 78).** La planilla trae el mes de carga, pero "Datos al" tiene que ser la fecha de referencia de la edición: 05/2022 para los cuatro del Censo 2022 (50, 63, 77 y 78), y NULL para el 44: el usuario no dio la fecha de la última elección y la carga después desde el formulario.
 2. **Los "Qué se solicita" relativos** (entrega 2). Son 26: los ids 1-11, 13, 23, 35, 36, 46, 48, 52, 57, 61 y 69-74.
    - Se les saca solo la frase del período. Por ejemplo, "en el nuevo período (el trimestre siguiente al último publicado)" se borra, y "a la fecha de corte del nuevo período" también.
    - **El usuario aprobó los 26 textos tal como están** en `Desktop/rpad-revision-textos-y-grilla.xlsx`, hoja "Qué se solicita", columna D.
