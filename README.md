@@ -135,7 +135,7 @@ rpad/
     │   ├── dataset-detail.js      # Detalle de dataset
     │   ├── admin.js               # Panel de administración
     │   ├── areas.js               # Gestión de áreas responsables
-    │   ├── correos.js             # Configuración de correos
+    │   ├── correos.js             # Correos: pestañas, Libro, Estado, vista previa y configuración
     │   ├── reportes.js            # Generación de reportes PDF
     │   ├── calendario.js          # Calendario interactivo de vencimientos
     │   ├── notas.js               # Generador de notas administrativas

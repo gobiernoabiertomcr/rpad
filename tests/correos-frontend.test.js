@@ -2045,6 +2045,21 @@ describe('correos.html: CSS sin uso (spec 2026-10-17-correos-pestanas, 9.4)', ()
   const inicio = PAGINA.indexOf('<style>');
   const fin = PAGINA.indexOf('</style>');
 
+  // La clase aparece como palabra entera en el texto: "pf-pestana" no cuenta dentro de "pf-pestanas" ni "alerta" dentro de "nd-alerta"
+  const aparece = (clase, texto) => new RegExp(`(^|[^\\w-])${clase}($|[^\\w-])`).test(texto);
+
+  it('la comparación es por palabra entera, no por pedazo (en un template literal el \\w se escribe con dos barras)', () => {
+    // Si el escape se rompe, [^\w-] pasa a ser [^w-] y estas comparaciones dejan de rechazar las palabras más largas
+    assert.equal(aparece('pf-pestana', 'class="pf-pestanas"'), false, 'pf-pestana no está en pf-pestanas');
+    assert.equal(aparece('co-proxima', 'co-proximas'), false, 'co-proxima no está en co-proximas');
+    assert.equal(aparece('nd-alerta', 'nd-alertas'), false, 'nd-alerta no está en nd-alertas');
+    assert.equal(aparece('alerta', 'nd-alerta'), false, 'alerta no está en nd-alerta');
+    assert.equal(aparece('co-btn', 'class="co-btn primario"'), true);
+    assert.equal(aparece('pf-pestana', 'pf-pestana'), true, 'al principio y al final del texto');
+    assert.equal(aparece('active', "classList.add('active')"), true, 'entre comillas y paréntesis');
+    assert.equal(aparece('primario', 'class="co-btn primario"'), true);
+  });
+
   it('cada clase del <style> de correos.html se usa en la página o en correos.js', () => {
     assert.ok(inicio !== -1 && fin > inicio, 'la página tiene su <style>');
     const estilo = PAGINA.slice(inicio + '<style>'.length, fin)
@@ -2056,7 +2071,7 @@ describe('correos.html: CSS sin uso (spec 2026-10-17-correos-pestanas, 9.4)', ()
     assert.ok(clases.length > 20, `se encontraron las clases del <style> (${clases.length})`);
     const resto = PAGINA.slice(0, inicio) + PAGINA.slice(fin) + '\n' + CODIGO;
     for (const clase of clases) {
-      assert.match(resto, new RegExp(`(^|[^\w-])${clase}($|[^\w-])`), `la clase .${clase} del <style> no se usa en correos.html ni en correos.js`);
+      assert.ok(aparece(clase, resto), `la clase .${clase} del <style> no se usa en correos.html ni en correos.js`);
     }
   });
 });
