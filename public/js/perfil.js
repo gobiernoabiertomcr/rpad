@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (esAdmin) {
     document.getElementById('form-firma').addEventListener('submit', guardarMiFirma);
     for (const id of ['firma-nombre', 'firma-cargo']) document.getElementById(id).addEventListener('input', actualizarMuestraFirma);
+    document.getElementById('firma-archivo').addEventListener('change', mostrarImagenElegida);
     // Los controles de las listas de cambios se conectan solo acá: un lector no toca nada de la gestión de cambios
     conectarListasDeCambios();
     cargarMiFirma();
@@ -662,7 +663,8 @@ async function cargarMiFirma() {
       ? 'Con esta firma salen las notas que firmás o presentás por autorización.'
       : 'Todavía no cargaste tu firma: se proponen tu nombre y tu cargo.';
     actualizarMuestraFirma();
-    await mostrarImagenFirma(firma.tiene_imagen);
+    firmaTieneImagenGuardada = Boolean(firma.tiene_imagen);
+    await mostrarImagenFirma(firmaTieneImagenGuardada);
   } catch (error) {
     Utils.showError(`No se pudo cargar tu firma: ${error.message}`);
   }
@@ -672,14 +674,12 @@ async function cargarMiFirma() {
 // usuario el 16/10/2026; es RENGLON_FIRMA_CONTRATADO de services/notasDigitalesContenido.js)
 const RENGLON_FIRMA_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
 
-// Muestra de cómo sale la firma del personal contratado en las notas: el nombre, el renglón (más chico) y el cargo. Quien no
-// es contratado no tiene muestra: su firma sale con el nombre y el cargo, como siempre.
+// Vista previa "Así sale en las notas", para todos (pedido del usuario el 16/10/2026), como la arma dibujarFirma del PDF:
+// el nombre y el cargo; el personal contratado lleva entre los dos el renglón, más chico. Sin nombre ni cargo, nada.
 function muestraDeFirma(nombre, cargo, contratado) {
-  if (!contratado) return '';
-  return `<p class="form-hint">Así sale en las notas:</p>
-    <div class="firma-muestra-renglon">${Utils.escapeHtml(nombre)}</div>
-    <div class="firma-muestra-chico">${RENGLON_FIRMA_CONTRATADO}</div>
-    <div class="firma-muestra-renglon">${Utils.escapeHtml(cargo)}</div>`;
+  if (!nombre && !cargo) return '';
+  const renglon = (texto) => `<div class="firma-muestra-renglon">${Utils.escapeHtml(texto)}</div>`;
+  return renglon(nombre) + (contratado ? `<div class="firma-muestra-chico">${RENGLON_FIRMA_CONTRATADO}</div>` : '') + renglon(cargo);
 }
 
 // La muestra con lo que está escrito en los campos de la firma (se actualiza al escribir)
@@ -688,22 +688,37 @@ function actualizarMuestraFirma() {
   muestra.innerHTML = muestraDeFirma(
     document.getElementById('firma-nombre').value.trim(), document.getElementById('firma-cargo').value.trim(), perfilContratado
   );
-  muestra.hidden = !perfilContratado;
+  muestra.hidden = !muestra.innerHTML;
+}
+
+// Si la firma guardada tiene imagen (cargarMiFirma): vuelve a la vista previa si se quita la imagen elegida
+let firmaTieneImagenGuardada = false;
+
+// La imagen de la vista previa: la URL de la imagen (guardada o elegida) o, sin imagen, el aviso de que la nota sale sin ella
+function ponerImagenFirma(url) {
+  const vista = document.getElementById('firma-vista');
+  if (urlImagenFirma && urlImagenFirma !== url) URL.revokeObjectURL(urlImagenFirma);
+  urlImagenFirma = url;
+  if (url) vista.src = url;
+  vista.hidden = !url;
+  document.getElementById('firma-sin-imagen').hidden = Boolean(url);
 }
 
 async function mostrarImagenFirma(tiene) {
-  const vista = document.getElementById('firma-vista');
-  if (urlImagenFirma) URL.revokeObjectURL(urlImagenFirma);
-  urlImagenFirma = null;
-  vista.hidden = true;
+  ponerImagenFirma(null);
   if (!tiene) return;
   try {
-    urlImagenFirma = URL.createObjectURL(await API.getImagenMiFirma());
-    vista.src = urlImagenFirma;
-    vista.hidden = false;
+    ponerImagenFirma(URL.createObjectURL(await API.getImagenMiFirma()));
   } catch {
-    // sin vista previa
+    // sin vista previa de la imagen
   }
+}
+
+// La imagen elegida se ve en la vista previa antes de guardarla; si se quita (o no es PNG ni JPEG), vuelve la guardada
+function mostrarImagenElegida() {
+  const archivo = document.getElementById('firma-archivo').files[0];
+  if (!archivo || !['image/png', 'image/jpeg'].includes(archivo.type)) return mostrarImagenFirma(firmaTieneImagenGuardada);
+  ponerImagenFirma(URL.createObjectURL(archivo));
 }
 
 const leerComoDataUrl = (archivo) => new Promise((resolve, reject) => {

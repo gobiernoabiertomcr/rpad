@@ -87,7 +87,7 @@ Anti-objetivos (aunque "ande", sería un fracaso):
 - **Para revisar**: sección 5.
 - **Mis cambios**: sección 6.
 - **Mis datos**: Datos personales y Contraseña, en dos tarjetas lado a lado que pasan a una columna en pantallas angostas. Los formularios, los IDs y el comportamiento siguen como hoy.
-- **Mi firma**: el formulario de firma actual (IDs y comportamiento iguales), con la vista previa de la imagen y la muestra "Así sale en las notas" donde corresponda hoy. Puede ir en dos columnas en escritorio.
+- **Mi firma**: el formulario de firma actual (IDs y comportamiento iguales) a la izquierda y, a la derecha, la vista previa "Así sale en las notas" para todos (cambio pedido por el usuario el 16/10/2026, después del primer deploy): la imagen guardada o la recién elegida, y debajo el nombre, el renglón del personal contratado si corresponde y el cargo, centrados como en el PDF.
 
 **Cuentas en las pestañas:**
 - Para revisar: la cantidad de pendientes ajenos (el mismo `GET /cambios-pendientes/contador` que la campana).
@@ -228,7 +228,7 @@ Tokens (en el `<style>` de `perfil.html`, con prefijo propio). Son los colores d
   - Aprobar: `#2E6B4C` (hover `#255A3F`), texto blanco.
   - Rechazar: blanco, texto `#8A3434`, borde `#E8C4C4`.
   - Neutro (Cancelar, Ver más): blanco con borde de línea.
-- **Ancho:** `.main-content` de esta página con `max-width: 1120px`.
+- **Ancho:** todo el ancho, como las demás páginas (cambio pedido por el usuario el 16/10/2026, después del primer deploy; antes era `max-width: 1120px`). El texto de la comparación se corta en unos 88 caracteres para que se lea cómodo.
 - **Movimiento:** solo el giro de la flecha al abrir y cerrar, con `prefers-reduced-motion` respetado.
 - **Formularios** de Mis datos y Mi firma: tarjetas blancas con borde, título y una línea de ayuda.
 - Ayudas de Mis datos y Mi firma:
@@ -336,10 +336,10 @@ Archivos que se suben: `public/perfil.html`, `public/js/perfil.js`, `controllers
 - La fila abierta usa los datos de la lista, sin pedir el detalle.
 - Mis cambios y Revisados muestran de a 20, paginando del lado del cliente.
 - La demora en ámbar arranca a los 2 días corridos desde que se propuso.
-- `max-width: 1120px` y la letra Inter.
+- La letra Inter. (El tope de `max-width: 1120px` se sacó a pedido del usuario: ver sección 7.)
 - Botón Aprobar en verde oscuro y confirmación en la fila.
 - Los estilos de mensajes se agregan solo en `perfil.html`, como hacen las demás páginas con los suyos.
-- El mockup muestra la muestra de firma para cualquiera; en la implementación la muestra "Así sale en las notas" sigue saliendo cuando sale hoy.
+- La vista previa de la firma: primero quedó solo para el personal contratado; el usuario pidió que salga para todos, como en el mockup (sección 4).
 
 ## 15. Lo que queda a criterio de quien implementa
 

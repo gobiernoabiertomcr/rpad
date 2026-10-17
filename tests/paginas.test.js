@@ -8,7 +8,7 @@ const VERSION = '20261023';
 // usuarios.js y correos.js cambiaron después (persona autorizada con licencia superpuesta en parte): su versión es propia
 const VERSION_PANTALLAS = '20261024';
 // perfil.js cambió después (Mi Perfil en pestañas): su versión es propia
-const VERSION_PERFIL = '20261031';
+const VERSION_PERFIL = '20261101';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
