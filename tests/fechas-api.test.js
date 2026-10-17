@@ -61,6 +61,10 @@ before(async () => {
   await cargarDataset({ clave: 'cero', frecuencia: 'Mensualmente', proxima: '0000-00-00', datosAl: '0000-00-00' });
   await cargarDataset({ clave: 'sin-proxima', frecuencia: 'Mensualmente' });
   await cargarDataset({ clave: 'eventual', frecuencia: 'Eventual' });
+  // Un presupuesto: Datos al es el 31/12 del ejercicio publicado
+  await cargarDataset({
+    clave: 'ejercicio', frecuencia: 'Anualmente', proxima: enMeses(3), datosAl: `${anioDe(HOY) - 1}-12-31`, tipoPedido: 'ejercicio'
+  });
 });
 
 after(async () => {
@@ -252,6 +256,17 @@ describe('GET /datasets/:id/opciones-proxima', () => {
       assert.equal(res.status, 400, datosAl);
       assert.equal(res.body.error, `Todavía no puede haber datos al ${formatoCorto(datosAl)}`);
     }
+  });
+
+  it('en un presupuesto (ejercicio), un Datos al que no es 31/12 da 400 y el 31/12 del año siguiente es el tope', async () => {
+    const anio = anioDe(HOY);
+    const res = await opciones(ids.ejercicio, `${anio}-06-30`);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'En un presupuesto, Datos al tiene que ser el 31/12 del ejercicio publicado');
+    assert.equal((await opciones(ids.ejercicio, `${anio + 1}-12-31`)).status, 200);
+    const futuro = await opciones(ids.ejercicio, `${anio + 2}-12-31`);
+    assert.equal(futuro.status, 400);
+    assert.equal(futuro.body.error, `Todavía no puede haber datos al 31/12/${anio + 2}`);
   });
 
   it('un eventual y un dataset sin próxima no tienen opciones', async () => {

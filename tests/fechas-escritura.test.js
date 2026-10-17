@@ -125,7 +125,7 @@ describe('POST /datasets/:id/actualizar: lo que valida', () => {
 
   it('Datos al posterior al fin del mes actual da 400; el fin del mes actual se acepta', async () => {
     const id = await cargarDataset({ proxima: enMeses(1) });
-    for (const datosAl of [enMeses(1), '2099-12-31']) {
+    for (const datosAl of [enMeses(1), enMeses(600)]) {
       await esperar400(await registrar(id, registroValido({ datos_al: datosAl })), `Todavía no puede haber datos al ${formatoCorto(datosAl)}`, id);
     }
     assert.equal((await registrar(id, registroValido({ datos_al: FIN_DE_MES }))).status, 200);
@@ -217,14 +217,22 @@ describe('POST /datasets/:id/actualizar: el cambio que propone', () => {
       registro_actualizacion: true
     });
     assert.deepEqual(Object.keys(cambio.datos_anteriores).sort(), ['datos_al', 'proxima_actualizacion', 'ultima_actualizacion']);
-    // Datos al viaja como 'AAAA-MM-DD'; las otras dos, como siempre (calcularCambios las compara por día)
-    assert.equal(cambio.datos_anteriores.datos_al, '2025-12-31');
-    assert.equal(cambio.datos_anteriores.ultima_actualizacion.slice(0, 10), '2026-01-10');
-    assert.equal(cambio.datos_anteriores.proxima_actualizacion.slice(0, 10), enMeses(1));
+    // Las tres fechas viajan como 'AAAA-MM-DD', sin hora ni zona: la próxima anterior es el vencimiento del historial
+    assert.deepEqual(cambio.datos_anteriores, { ultima_actualizacion: '2026-01-10', datos_al: '2025-12-31', proxima_actualizacion: enMeses(1) });
     // Hasta que se apruebe, el dataset no cambia
     assert.deepEqual(await fechasEnDb(id), {
       titulo: `${PREFIJO_TEST} escritura ${numero}`, ultima: '2026-01-10', datos_al: '2025-12-31', proxima: enMeses(1), tipo_pedido: null
     });
+  });
+
+  it('con fechas guardadas en cero, los datos anteriores quedan en null y el historial, sin vencimiento', async () => {
+    const id = await cargarDataset({ ultima: '0000-00-00', proxima: '0000-00-00', datosAl: '0000-00-00' });
+    const res = await registrar(id, registroValido());
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const cambioId = res.body.data.cambio_pendiente_id;
+    assert.deepEqual((await cambioEnDb(cambioId)).datos_anteriores, { ultima_actualizacion: null, datos_al: null, proxima_actualizacion: null });
+    assert.equal((await aprobar(cambioId)).status, 200);
+    assert.equal((await historialDe(id))[0].vencimiento, null);
   });
 
   it('sin la fecha de carga usa hoy, y acepta fecha_actualizacion como sinónimo', async () => {

@@ -436,15 +436,13 @@ export const getOpcionesProxima = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Dataset no encontrado' });
     }
 
+    // Datos al, con las mismas reglas que al registrar la actualización (fin de mes, el 31/12 en un presupuesto y el
+    // tope). El tope importa también acá: con datos de un futuro lejano la lista recorrería años de ciclos
     const datosNuevo = req.query.datos_al;
-    const errorDeFormato = errorDeFecha('datos_al', datosNuevo);
-    if (errorDeFormato) return responderInvalido(res, errorDeFormato);
-    if (!esFinDeMes(datosNuevo)) return responderInvalido(res, ERROR_DATOS_AL_FIN_DE_MES);
-
     const hoy = hoyArgentina();
     const dataset = enriquecer(filas[0], hoy);
-    // Con datos de un futuro lejano la lista de opciones recorrería años de ciclos: el tope es el de la carga del dato
-    if (datosNuevo > topeDatosAl(dataset.tipo_pedido, hoy)) return responderInvalido(res, errorDatosAlFuturo(datosNuevo));
+    const errorDeDatos = errorDeDatosAl(datosNuevo, dataset.tipo_pedido, hoy);
+    if (errorDeDatos) return responderInvalido(res, errorDeDatos);
 
     res.json({
       success: true,
@@ -923,13 +921,15 @@ export const registrarActualizacion = async (req, res) => {
     const error = errorDelRegistro({ datosAl, cargado, recibido, proxima, tipo, eventual, hoy });
     if (error) return responderInvalido(res, error);
 
-    // Datos anteriores: las fechas de siempre como vienen de la base (calcularCambios las compara por día) y Datos al
-    // como 'AAAA-MM-DD'. Una fecha en cero (0000-00-00) no es una fecha: queda null
-    const fechaGuardada = (campo, iso) => (esFechaIso(iso) ? dataset[campo] : null);
+    // Datos anteriores, como 'AAAA-MM-DD' (DATE_FORMAT): la próxima anterior es el vencimiento del historial, la clave
+    // del ciclo, y no puede depender de la zona horaria del servidor (un Date de mysql2 se guarda en UTC). calcularCambios
+    // compara por los primeros 10 caracteres, así que lee igual estas fechas que las de una edición. Una fecha en cero
+    // (0000-00-00) no es una fecha: queda null
+    const fechaGuardada = (iso) => (esFechaIso(iso) ? iso : null);
     const datosAnteriores = {
-      ultima_actualizacion: fechaGuardada('ultima_actualizacion', dataset.ultima_iso),
-      datos_al: esFechaIso(dataset.datos_al_iso) ? dataset.datos_al_iso : null,
-      proxima_actualizacion: fechaGuardada('proxima_actualizacion', dataset.proxima_iso)
+      ultima_actualizacion: fechaGuardada(dataset.ultima_iso),
+      datos_al: fechaGuardada(dataset.datos_al_iso),
+      proxima_actualizacion: fechaGuardada(dataset.proxima_iso)
     };
 
     // Datos nuevos: la marca registro_actualizacion hace que la aprobación escriba el historial
