@@ -8,6 +8,13 @@ import { query, cerrarDb } from './helpers.js';
 const BASE_TEMPORAL = 'rpad_schema_test';
 let root;
 
+// Meses entre actualizaciones de cada frecuencia del catálogo (Eventual no tiene período)
+const MESES_POR_FRECUENCIA = {
+  'Mensualmente': 1, 'Bimestralmente': 2, 'Trimestralmente': 3, 'Cuatrimestralmente': 4, 'Cada medio año': 6,
+  'Anualmente': 12, 'Cada dos años': 24, 'Cada tres años': 36, 'Cada cuatro años': 48, 'Cada diez años': 120,
+  'Eventual': null
+};
+
 const columnas = async (conexion, base) => {
   const [filas] = await conexion.query(
     `SELECT TABLE_NAME AS tabla, COLUMN_NAME AS columna, COLUMN_TYPE AS tipo,
@@ -152,6 +159,46 @@ describe('database/schema.sql', () => {
     assert.equal(posicion('aviso_sin_auditores_at'), posicion('revisado_como_respaldo') + 1, deCambios.join('\n'));
   });
 
+  it('fechas de los datasets: "Datos al", tipo de pedido, frecuencia en meses, historial y pedido congelado (spec 2026-10-17-fechas-datasets, 6)', async () => {
+    const lista = await columnas(root, BASE_TEMPORAL);
+    for (const esperada of [
+      'frecuencias.meses smallint(6) null=YES default=NULL key=',
+      'datasets.datos_al date null=YES default=NULL key=',
+      "datasets.tipo_pedido enum('acumulado','foto','anio_anterior','ejercicio','edicion','relevamiento','eventual') null=YES default=NULL key=",
+      'historial_actualizaciones.cambio_id int(11) null=YES default=NULL key=MUL',
+      'historial_actualizaciones.vencimiento date null=YES default=NULL key=',
+      'historial_actualizaciones.datos_al date null=YES default=NULL key=',
+      'historial_actualizaciones.recibido_el date null=YES default=NULL key=',
+      'historial_actualizaciones.proxima_nueva date null=YES default=NULL key=',
+      'notas_digitales_datasets.datos_desde date null=YES default=NULL key=',
+      'notas_digitales_datasets.datos_hasta date null=YES default=NULL key=',
+      'notas_digitales_datasets.datos_solicitados varchar(255) null=YES default=NULL key='
+    ]) {
+      assert.ok(lista.includes(esperada), `falta: ${esperada}\n${lista.filter(c => c.startsWith(esperada.split('.')[0] + '.')).join('\n')}`);
+    }
+    // Cada columna nueva va justo después de la que corresponde
+    const despuesDe = (tabla, columna, anterior) => {
+      const deTabla = lista.filter(c => c.startsWith(`${tabla}.`));
+      const posicion = (nombre) => deTabla.findIndex(c => c.startsWith(`${tabla}.${nombre} `));
+      assert.equal(posicion(columna), posicion(anterior) + 1, deTabla.join('\n'));
+    };
+    despuesDe('frecuencias', 'meses', 'dias');
+    despuesDe('datasets', 'datos_al', 'ultima_actualizacion');
+    despuesDe('datasets', 'tipo_pedido', 'que_se_solicita');
+  });
+
+  it('el historial borra el vínculo al cambio (SET NULL) cuando se borra el cambio pendiente', async () => {
+    const [[fk]] = await root.query(
+      `SELECT k.REFERENCED_TABLE_NAME AS tabla, k.REFERENCED_COLUMN_NAME AS columna, rc.DELETE_RULE AS borrado
+       FROM information_schema.REFERENTIAL_CONSTRAINTS rc
+       JOIN information_schema.KEY_COLUMN_USAGE k USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_NAME)
+       WHERE rc.CONSTRAINT_SCHEMA = ? AND rc.CONSTRAINT_NAME = 'fk_historial_cambio'
+         AND rc.TABLE_NAME = 'historial_actualizaciones' AND k.COLUMN_NAME = 'cambio_id'`,
+      [BASE_TEMPORAL]
+    );
+    assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
+  });
+
   for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
@@ -202,6 +249,84 @@ describe('database/schema.sql', () => {
       assert.equal(await contar(tabla), total);
     });
   }
+
+  // La aritmética de fechas usa meses, no días (spec 2026-10-17-fechas-datasets, 6): `dias` sigue para los filtros
+  const mesesDelCatalogo = async (consulta) => {
+    const filas = await consulta('SELECT nombre, meses FROM frecuencias ORDER BY orden');
+    return Object.fromEntries(filas.map(f => [f.nombre, f.meses]));
+  };
+  const enSchema = async (sqlTexto) => (await root.query(sqlTexto.replace('FROM frecuencias', `FROM \`${BASE_TEMPORAL}\`.frecuencias`)))[0];
+  for (const [origen, consulta] of [['schema.sql', enSchema], ['la base actual', query]]) {
+    it(`el catálogo de frecuencias de ${origen} trae meses (Eventual queda sin meses)`, async () => {
+      assert.deepEqual(await mesesDelCatalogo(consulta), MESES_POR_FRECUENCIA);
+    });
+
+    it(`toda frecuencia de ${origen} de 12 meses o menos divide a 12 (los períodos caen siempre en los mismos meses)`, async () => {
+      const catalogo = await mesesDelCatalogo(consulta);
+      const cortas = Object.entries(catalogo).filter(([, meses]) => meses !== null && meses <= 12);
+      assert.ok(cortas.length >= 6, 'el catálogo trae al menos las seis frecuencias de hasta 12 meses');
+      for (const [nombre, meses] of cortas) {
+        assert.equal(12 % meses, 0, `${nombre} (${meses} meses) no divide a 12`);
+      }
+    });
+  }
+});
+
+// Migración de las fechas de los datasets (spec 2026-10-17-fechas-datasets, 6): sobre una base descartable con la
+// estructura anterior, deja exactamente la estructura de schema.sql, se puede repetir y se pega tal cual en phpMyAdmin
+describe('migración de las fechas de los datasets', () => {
+  const BASE_FECHAS = 'rpad_schema_fechas_test';
+  const ARCHIVO = 'migracion-fechas-datasets.sql';
+  const sql = () => fs.readFileSync(new URL(`../database/updates/${ARCHIVO}`, import.meta.url), 'utf8');
+
+  // Deja la base con la estructura de antes de esta entrega
+  const crearConEstructuraAnterior = async () => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_FECHAS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_FECHAS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_FECHAS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    await root.query(`
+      ALTER TABLE historial_actualizaciones DROP FOREIGN KEY fk_historial_cambio;
+      ALTER TABLE historial_actualizaciones DROP COLUMN cambio_id, DROP COLUMN vencimiento, DROP COLUMN datos_al,
+        DROP COLUMN recibido_el, DROP COLUMN proxima_nueva;
+      ALTER TABLE notas_digitales_datasets DROP COLUMN datos_desde, DROP COLUMN datos_hasta, DROP COLUMN datos_solicitados;
+      ALTER TABLE datasets DROP COLUMN datos_al, DROP COLUMN tipo_pedido;
+      ALTER TABLE frecuencias DROP COLUMN meses;`);
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_FECHAS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y solo agrega (nada de DROP ni RENAME)', () => {
+    const codigo = sql().split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
+    assert.doesNotMatch(codigo, /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+  });
+
+  it('desde la estructura anterior deja la de schema.sql, con los meses de cada frecuencia, y se puede repetir', async () => {
+    await crearConEstructuraAnterior();
+    const anterior = await columnas(root, BASE_FECHAS);
+    assert.ok(!anterior.some(c => c.startsWith('frecuencias.meses ') || c.startsWith('datasets.datos_al ')), 'la base de partida ya tiene columnas nuevas');
+    await root.query(sql());
+    await root.query(sql());
+    assert.deepEqual(await columnas(root, BASE_FECHAS), await columnas(root, BASE_TEMPORAL));
+    const [catalogo] = await root.query(`SELECT nombre, meses FROM \`${BASE_FECHAS}\`.frecuencias ORDER BY orden`);
+    assert.deepEqual(Object.fromEntries(catalogo.map(f => [f.nombre, f.meses])), MESES_POR_FRECUENCIA);
+  });
+
+  it('no toca los datos: los datasets y su historial quedan con las columnas nuevas en NULL', async () => {
+    await crearConEstructuraAnterior();
+    await root.query(`
+      INSERT INTO \`${BASE_FECHAS}\`.areas (id, nombre) VALUES (1, 'Área de prueba');
+      INSERT INTO \`${BASE_FECHAS}\`.datasets (id, titulo, area_id, frecuencia_id, tema_principal_id, ultima_actualizacion, proxima_actualizacion)
+        VALUES (1, 'Dataset de prueba', 1, 6, 1, '2026-03-15', '2027-03-15');
+      INSERT INTO \`${BASE_FECHAS}\`.historial_actualizaciones (dataset_id, fecha_actualizacion) VALUES (1, '2026-03-15');`);
+    await root.query(sql());
+    const [[dataset]] = await root.query(`SELECT datos_al, tipo_pedido, DATE_FORMAT(ultima_actualizacion, '%Y-%m-%d') AS ultima FROM \`${BASE_FECHAS}\`.datasets WHERE id = 1`);
+    assert.deepEqual({ ...dataset }, { datos_al: null, tipo_pedido: null, ultima: '2026-03-15' });
+    const [[historial]] = await root.query(`SELECT cambio_id, vencimiento, datos_al, recibido_el, proxima_nueva FROM \`${BASE_FECHAS}\`.historial_actualizaciones`);
+    assert.deepEqual({ ...historial }, { cambio_id: null, vencimiento: null, datos_al: null, recibido_el: null, proxima_nueva: null });
+  });
 });
 
 // Rollback de la entrega 3 (spec 2026-10-15-dias-habiles-licencias-auditoria, 11.2 y 14), sobre una base descartable creada
