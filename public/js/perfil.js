@@ -805,7 +805,13 @@ const ETIQUETAS_DE_CAMPO = {
   'Tipo de Gestion': 'Tipo de gestión',
   'Ultima Actualizacion': 'Última actualización',
   'Proxima Actualizacion': 'Próxima actualización',
-  'URL en Portal': 'URL en el portal'
+  'URL en Portal': 'URL en el portal',
+  // Los rótulos de las fechas de los datasets (spec 2026-10-17-fechas-datasets, 10.1): el servidor ya los manda como se leen.
+  // "Cargado en el portal" es la antigua "Ultima Actualizacion"; la clave registro_actualizacion es una marca, no un campo
+  'Cargado en el portal': 'Cargado en el portal',
+  'Datos al': 'Datos al',
+  'Recibido el': 'Recibido el',
+  'Tipo de pedido': 'Tipo de pedido'
 };
 
 // Etiquetas del servidor de los campos de texto largo: se comparan palabra por palabra
@@ -977,10 +983,15 @@ function resumenDeCreacion(datos) {
   return `Dataset nuevo${area}${frecuencia}`;
 }
 
+// Un registro de actualización (POST /datasets/:id/actualizar) es una edición que lleva la marca registro_actualizacion en
+// los datos nuevos. La marca no es un campo del dataset: no se compara ni se muestra, solo da el título del cambio.
+const esRegistroDeActualizacion = (cambio) => cambio.tipo_cambio === 'editar' && cambio.datos_nuevos?.registro_actualizacion === true;
+
 // Lo que dice la fila cerrada de un cambio, como HTML escapado
 function resumenDelCambio(cambio) {
   if (cambio.tipo_cambio === 'crear') return resumenDeCreacion(cambio.datos_nuevos);
   if (cambio.tipo_cambio === 'eliminar') return 'Se quita del registro';
+  if (esRegistroDeActualizacion(cambio)) return 'Actualización registrada';
   if (cambio.tipo_cambio === 'editar') return resumenDeEdicion(cambio.campos_modificados);
   return '';
 }
@@ -1044,7 +1055,9 @@ const CAMPOS_DE_ALTA_Y_BAJA = [
   { clave: 'tema_principal_nombre', campo: 'Tema Principal' },
   { clave: 'tema_secundario_nombre', campo: 'Tema Secundario' },
   { clave: 'tipo_gestion', campo: 'Tipo de Gestion' },
-  { clave: 'ultima_actualizacion', campo: 'Ultima Actualizacion' },
+  { clave: 'tipo_pedido_nombre', campo: 'Tipo de pedido' },
+  { clave: 'datos_al', campo: 'Datos al' },
+  { clave: 'ultima_actualizacion', campo: 'Cargado en el portal' },
   { clave: 'proxima_actualizacion', campo: 'Proxima Actualizacion' },
   { clave: 'url_dataset', campo: 'URL en Portal' },
   { clave: 'observaciones', campo: 'Observaciones' },
@@ -1054,15 +1067,41 @@ const CAMPOS_DE_ALTA_Y_BAJA = [
 
 const VALOR_VACIO = '<span class="pf-vacio">vacío</span>';
 
+// La etiqueta que manda el servidor para la próxima actualización
+const CAMPO_PROXIMA = 'Proxima Actualizacion';
+
+// Febrero va siempre en 28, también en los años bisiestos (spec 2026-10-17-fechas-datasets, R1)
+const DIAS_DE_CADA_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+// 'AAAA-MM-DD', con o sin la hora que trae una fecha leída de la base ('2026-05-31T03:00:00.000Z'): cuenta el día
+const FECHA_CON_DIA = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/;
+
+// ¿Es el texto 'AAAA-MM-DD' el último día de un mes? Pura. Es la única regla de fechas que se copia al navegador y solo sirve
+// para marcar (marcaDeFinDeMes): el servidor es el que no deja aprobar una fecha que no es fin de mes. Lo que no es una
+// fecha da false.
+function esFinDeMesTexto(iso) {
+  const partes = typeof iso === 'string' ? FECHA_CON_DIA.exec(iso) : null;
+  if (!partes) return false;
+  const [anio, mes, dia] = partes.slice(1).map(Number);
+  return anio >= 1 && mes >= 1 && mes <= 12 && dia === DIAS_DE_CADA_MES[mes - 1];
+}
+
+// La señal para quien audita (ya como HTML): una fecha nueva que no es el último día de un mes. Vacía si lo es o si no es una
+// fecha (por ejemplo, '-' cuando se vació la próxima).
+function marcaDeFinDeMes(valor) {
+  if (typeof valor !== 'string' || !FECHA_CON_DIA.test(valor) || esFinDeMesTexto(valor)) return '';
+  return `<span class="pf-fecha-aviso">${ICONO_ALERTA}No es el último día del mes</span>`;
+}
+
 // Un campo editado: en los textos largos, palabra por palabra en un solo párrafo; en el resto, el valor viejo tachado y el
-// nuevo resaltado, uno al lado del otro
+// nuevo resaltado, uno al lado del otro. La próxima nueva que no es fin de mes lleva la marca.
 function htmlDeCampoEditado({ campo, antes, despues }) {
   const textoAntes = textoDeValor(antes);
   const textoDespues = textoDeValor(despues);
   if (CAMPOS_LARGOS.includes(campo)) return `<div class="pf-texto-largo">${htmlDeDiff(diffPalabras(textoAntes, textoDespues))}</div>`;
   const viejo = textoAntes ? Utils.escapeHtml(textoAntes) : VALOR_VACIO;
   const nuevo = textoDespues ? Utils.escapeHtml(textoDespues) : VALOR_VACIO;
-  return `<div class="pf-par"><del>${viejo}</del><ins>${nuevo}</ins></div>`;
+  const marca = campo === CAMPO_PROXIMA ? marcaDeFinDeMes(despues) : '';
+  return `<div class="pf-par"><del>${viejo}</del><ins>${nuevo}</ins>${marca}</div>`;
 }
 
 // La comparación "control de cambios" de la fila abierta. Editar: los campos que cambian. Crear: los campos no vacíos del
@@ -1070,10 +1109,13 @@ function htmlDeCampoEditado({ campo, antes, despues }) {
 function htmlDeComparacion(cambio) {
   if (cambio.tipo_cambio === 'crear' || cambio.tipo_cambio === 'eliminar') {
     const datos = (cambio.tipo_cambio === 'crear' ? cambio.datos_nuevos : cambio.datos_anteriores) ?? {};
+    // En un alta, la próxima que no es fin de mes lleva la marca (en una baja no: no es un valor nuevo)
     const filas = CAMPOS_DE_ALTA_Y_BAJA
-      .map(({ clave, campo }) => ({ campo, valor: textoDeValor(datos[clave]) }))
+      .map(({ clave, campo }) => ({
+        campo, valor: textoDeValor(datos[clave]), marca: cambio.tipo_cambio === 'crear' && campo === CAMPO_PROXIMA ? marcaDeFinDeMes(datos[clave]) : ''
+      }))
       .filter(({ valor }) => valor)
-      .map(({ campo, valor }) => `<dt>${Utils.escapeHtml(etiquetaDeCampo(campo))}</dt><dd>${Utils.escapeHtml(valor)}</dd>`)
+      .map(({ campo, valor, marca }) => `<dt>${Utils.escapeHtml(etiquetaDeCampo(campo))}</dt><dd>${Utils.escapeHtml(valor)}${marca ? ` ${marca}` : ''}</dd>`)
       .join('');
     const lista = filas ? `<dl class="pf-diff">${filas}</dl>` : '<p class="pf-sin-campos">Sin datos.</p>';
     if (cambio.tipo_cambio === 'crear') return lista;

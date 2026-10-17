@@ -9,8 +9,8 @@ const VERSION = '20261103';
 const VERSION_PANTALLAS = '20261024';
 // correos.js cambió después (Correos en pestañas): su versión es propia
 const VERSION_CORREOS = '20261102';
-// perfil.js cambió después (Mi Perfil en pestañas): su versión es propia
-const VERSION_PERFIL = '20261101';
+// perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas): su versión es propia
+const VERSION_PERFIL = '20261103';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

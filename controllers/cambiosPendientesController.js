@@ -7,7 +7,7 @@ import pool from '../config/database.js';
 import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditoriaService.js';
 import { permisoParaAuditar, quienesAuditan } from '../services/auditoriaReglas.js';
 import { esFechaIso, hoyArgentina } from '../services/notasDigitalesCalendario.js';
-import { esFinDeMes } from '../services/fechasDatasetReglas.js';
+import { esFinDeMes, NOMBRES_TIPO_PEDIDO } from '../services/fechasDatasetReglas.js';
 
 // ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2): un
 // auditor siempre; un editor, solo de respaldo. conexion: la de la transacción o el pool.
@@ -38,6 +38,11 @@ const enriquecerDatos = (datos, catalogos) => {
     enriquecido.tema_secundario_nombre = catalogos.temas[datos.tema_secundario_id];
   }
   
+  // El tipo de pedido, con su nombre en pantalla (lo guardado es la clave del enum: 'foto', 'anio_anterior', …)
+  if (typeof datos.tipo_pedido === 'string' && Object.hasOwn(NOMBRES_TIPO_PEDIDO, datos.tipo_pedido)) {
+    enriquecido.tipo_pedido_nombre = NOMBRES_TIPO_PEDIDO[datos.tipo_pedido];
+  }
+
   // Convertir array de formato IDs a nombres
   if (datos.formatos && Array.isArray(datos.formatos)) {
     enriquecido.formatos_nombres = datos.formatos
@@ -52,7 +57,7 @@ const enriquecerDatos = (datos, catalogos) => {
 // Las fechas se comparan por el día. Al proponer un cambio, las guardadas llegan con hora ("2026-03-15T03:00:00.000Z") y las
 // editadas sin ella ("2026-03-15"): el día es el de los primeros 10 caracteres (igual que valorComparable de
 // services/notasDigitalesContenido.js, que arma la comparación de las notas de auditoría)
-const CAMPOS_DE_FECHA = ['ultima_actualizacion', 'proxima_actualizacion'];
+const CAMPOS_DE_FECHA = ['ultima_actualizacion', 'datos_al', 'proxima_actualizacion', 'recibido_el'];
 const comparable = (key, texto) => (CAMPOS_DE_FECHA.includes(key) ? texto.slice(0, 10) : texto);
 
 /**
@@ -69,7 +74,10 @@ const calcularCambios = (antes, despues) => {
     { key: 'tema_principal_nombre', label: 'Tema Principal', keyAntes: 'tema_principal_id', keyDespues: 'tema_principal_id' },
     { key: 'tema_secundario_nombre', label: 'Tema Secundario', keyAntes: 'tema_secundario_id', keyDespues: 'tema_secundario_id' },
     { key: 'tipo_gestion', label: 'Tipo de Gestion' },
-    { key: 'ultima_actualizacion', label: 'Ultima Actualizacion' },
+    { key: 'tipo_pedido_nombre', label: 'Tipo de pedido', keyAntes: 'tipo_pedido', keyDespues: 'tipo_pedido' },
+    { key: 'datos_al', label: 'Datos al' },
+    { key: 'ultima_actualizacion', label: 'Cargado en el portal' },
+    { key: 'recibido_el', label: 'Recibido el' },
     { key: 'proxima_actualizacion', label: 'Proxima Actualizacion' },
     { key: 'url_dataset', label: 'URL en Portal' },
     { key: 'observaciones', label: 'Observaciones' },

@@ -1105,3 +1105,192 @@ describe('perfil.js: filas de la gestión de cambios', () => {
     assert.match(PAGINA, /\.pf-diff ins\s*\{[^}]*var\(--pf-resaltador\)/);
   });
 });
+
+// "Datos al", "Cargado en el portal" y las actualizaciones registradas (spec 2026-10-17-fechas-datasets, 10.1): los rótulos
+// nuevos, el título de un registro de actualización y la marca de la próxima que no es fin de mes
+describe('perfil.js: las fechas de los datasets', () => {
+  const MARCA = 'No es el último día del mes';
+  const PROXIMA = (despues, antes = '2026-03-31') => ({ campo: 'Proxima Actualizacion', antes, despues });
+  const editar = (campos, datosNuevos = {}) => ({
+    id: 9, tipo_cambio: 'editar', usuario_id: 2, usuario_nombre: 'Ana', dataset_titulo: 'Arbolado urbano', estado: 'pendiente',
+    created_at: '2026-10-16T13:32:00Z', campos_modificados: campos, datos_nuevos: datosNuevos
+  });
+  const AUDITOR = { abierto: true, esEditor: false, idUsuario: 1 };
+
+  it('los rótulos nuevos se muestran tal cual y los de siempre no cambian', () => {
+    const contexto = cargarPerfil();
+    for (const rotulo of ['Cargado en el portal', 'Datos al', 'Tipo de pedido', 'Recibido el']) assert.equal(contexto.etiquetaDeCampo(rotulo), rotulo);
+    assert.equal(contexto.etiquetaDeCampo('Proxima Actualizacion'), 'Próxima actualización');
+    assert.equal(contexto.etiquetaDeCampo('registro_actualizacion'), 'registro_actualizacion');
+  });
+
+  describe('esFinDeMesTexto', () => {
+    const fin = (texto) => cargarPerfil().esFinDeMesTexto(texto);
+
+    it('el último día de cada mes sí; cualquier otro día no', () => {
+      for (const dia of ['2026-01-31', '2026-04-30', '2026-05-31', '2026-12-31']) assert.equal(fin(dia), true, dia);
+      for (const dia of ['2026-05-29', '2026-05-30', '2026-04-31', '2026-01-01', '2026-06-15']) assert.equal(fin(dia), false, dia);
+    });
+
+    it('febrero va siempre en 28, también en los años bisiestos', () => {
+      assert.equal(fin('2026-02-28'), true);
+      assert.equal(fin('2028-02-28'), true);
+      assert.equal(fin('2028-02-29'), false);
+      assert.equal(fin('2026-02-29'), false);
+    });
+
+    it('una fecha con hora cuenta por su día; lo que no es una fecha no es fin de mes (y no tira error)', () => {
+      assert.equal(fin('2026-05-31T03:00:00.000Z'), true);
+      assert.equal(fin('2026-05-29T03:00:00.000Z'), false);
+      for (const nada of [null, undefined, '', '-', 'abc', '2026-5-31', '31/05/2026', '0000-00-00', '2026-13-31', 20260531]) assert.equal(fin(nada), false, String(nada));
+    });
+  });
+
+  describe('la marca "No es el último día del mes"', () => {
+    const comparacion = (campos) => cargarPerfil().htmlDeComparacion(editar(campos));
+
+    it('aparece con una próxima nueva que no es fin de mes, y no con 2026-05-31 ni con 2028-02-28', () => {
+      assert.ok(comparacion([PROXIMA('2026-05-29')]).includes(MARCA));
+      assert.ok(!comparacion([PROXIMA('2026-05-31')]).includes(MARCA));
+      assert.ok(!comparacion([PROXIMA('2028-02-28')]).includes(MARCA));
+      // Febrero va en 28: el 29 de un año bisiesto tampoco es fin de mes
+      assert.ok(comparacion([PROXIMA('2028-02-29')]).includes(MARCA));
+    });
+
+    it('va dentro de la comparación de la próxima, junto al valor nuevo', () => {
+      const html = comparacion([PROXIMA('2026-05-29')]);
+      assert.match(html, /<del>31\/03\/2026<\/del><ins>29\/05\/2026<\/ins><span class="pf-fecha-aviso">[^]*No es el último día del mes<\/span><\/div>/);
+    });
+
+    it('una próxima con hora cuenta por su día; sin próxima nueva (se vació) no hay marca', () => {
+      assert.ok(!comparacion([PROXIMA('2027-01-31T03:00:00.000Z', '2026-07-31T03:00:00.000Z')]).includes(MARCA));
+      assert.ok(comparacion([PROXIMA('2027-01-30T03:00:00.000Z', '2026-07-31T03:00:00.000Z')]).includes(MARCA));
+      assert.ok(!comparacion([PROXIMA('-')]).includes(MARCA));
+    });
+
+    it('solo marca la próxima: ningún otro campo lleva la marca', () => {
+      const html = comparacion([
+        { campo: 'Datos al', antes: '2026-02-28', despues: '2026-03-29' },
+        { campo: 'Cargado en el portal', antes: '2026-02-28', despues: '2026-03-29' },
+        { campo: 'Recibido el', antes: '-', despues: '2026-03-29' }
+      ]);
+      assert.ok(!html.includes(MARCA));
+      assert.ok(!html.includes('pf-fecha-aviso'));
+    });
+
+    it('en un dataset nuevo, la próxima que no es fin de mes también lleva la marca; en una baja no', () => {
+      const contexto = cargarPerfil();
+      const alta = (proxima) => contexto.htmlDeComparacion({ tipo_cambio: 'crear', datos_nuevos: { titulo: 'Nuevo', proxima_actualizacion: proxima } });
+      assert.ok(alta('2026-05-29').includes(MARCA));
+      assert.ok(!alta('2026-05-31').includes(MARCA));
+      assert.ok(!alta(null).includes(MARCA));
+      assert.ok(!contexto.htmlDeComparacion({ tipo_cambio: 'eliminar', datos_anteriores: { titulo: 'X', proxima_actualizacion: '2026-05-29' } }).includes(MARCA));
+    });
+
+    it('la página tiene el estilo de la marca', () => {
+      const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
+      assert.match(PAGINA, /\.pf-fecha-aviso\s*\{[^}]*var\(--pf-aviso-fondo\)/);
+    });
+  });
+
+  describe('una actualización registrada', () => {
+    const REGISTRO = editar([
+      { campo: 'Datos al', antes: '2026-02-28', despues: '2026-03-31' },
+      { campo: 'Cargado en el portal', antes: '2026-03-13', despues: '2026-04-03' },
+      { campo: 'Recibido el', antes: '-', despues: '2026-04-02' },
+      PROXIMA('2026-06-30')
+    ], { ultima_actualizacion: '2026-04-03', datos_al: '2026-03-31', proxima_actualizacion: '2026-06-30', recibido_el: '2026-04-02', notas: 'Llegó por mail', registro_actualizacion: true });
+
+    it('se titula "Actualización registrada" en vez de resumir un campo', () => {
+      assert.equal(cargarPerfil().resumenDelCambio(REGISTRO), 'Actualización registrada');
+      const html = cargarPerfil().htmlDeFila(REGISTRO, 'revisar', AUDITOR);
+      assert.match(html, /<span class="pf-cambio-resumen">Actualización registrada<\/span>/);
+      // La fila sigue diciendo de qué dataset se trata
+      assert.match(html, /<span class="pf-cambio-titulo">Arbolado urbano<\/span>/);
+    });
+
+    it('también en Mis cambios', () => {
+      assert.match(cargarPerfil().htmlDeFila(REGISTRO, 'mio', AUDITOR), /<span class="pf-cambio-resumen">Actualización registrada<\/span>/);
+    });
+
+    it('la comparación muestra las fechas con sus rótulos, y la marca registro_actualizacion no se muestra como un campo', () => {
+      const html = cargarPerfil().htmlDeFila(REGISTRO, 'revisar', AUDITOR);
+      assert.ok(html.includes('<dt>Datos al</dt>'));
+      assert.ok(html.includes('<del>28/02/2026</del><ins>31/03/2026</ins>'));
+      assert.ok(html.includes('<dt>Cargado en el portal</dt>'));
+      assert.ok(html.includes('<del>13/03/2026</del><ins>03/04/2026</ins>'));
+      assert.ok(html.includes('<dt>Recibido el</dt>'));
+      assert.ok(html.includes('<del><span class="pf-vacio">vacío</span></del><ins>02/04/2026</ins>'));
+      assert.ok(html.includes('<dt>Próxima actualización</dt>'));
+      assert.ok(html.includes('<del>31/03/2026</del><ins>30/06/2026</ins>'));
+      assert.ok(!/registro[_ ]actualizaci/i.test(html));
+      assert.ok(!html.includes(MARCA));
+    });
+
+    it('si la próxima elegida no es fin de mes, la comparación lo marca', () => {
+      const cambio = { ...REGISTRO, campos_modificados: [...REGISTRO.campos_modificados.slice(0, 3), PROXIMA('2026-06-29')] };
+      assert.ok(cargarPerfil().htmlDeFila(cambio, 'revisar', AUDITOR).includes(MARCA));
+    });
+
+    it('solo la marca verdadera (true) la titula: sin la marca o en false, el resumen es el de siempre', () => {
+      const contexto = cargarPerfil();
+      const DE_SIEMPRE = '<b>Datos al</b> de 28/02/2026 a 31/03/2026, y 3 campos más';
+      for (const marca of [undefined, false, null, 'true', 1]) {
+        assert.equal(contexto.resumenDelCambio(editar(REGISTRO.campos_modificados, { registro_actualizacion: marca })), DE_SIEMPRE, String(marca));
+      }
+      assert.equal(contexto.resumenDelCambio({ ...REGISTRO, datos_nuevos: undefined }), DE_SIEMPRE);
+      assert.equal(contexto.resumenDelCambio({ ...REGISTRO, datos_nuevos: null }), DE_SIEMPRE);
+    });
+
+    it('un registro sin ninguna fecha que cambie sigue titulándose "Actualización registrada"', () => {
+      assert.equal(cargarPerfil().resumenDelCambio({ ...REGISTRO, campos_modificados: [] }), 'Actualización registrada');
+    });
+  });
+
+  describe('un cambio con la forma vieja (sin las claves nuevas)', () => {
+    // Como lo arma el servidor para un cambio propuesto antes del despliegue: fechas con hora, sin Datos al ni registro
+    const VIEJO = editar([
+      { campo: 'Cargado en el portal', antes: '2026-03-13T03:00:00.000Z', despues: '2026-03-20' },
+      PROXIMA('2026-07-31', '2026-05-31T03:00:00.000Z')
+    ], { ultima_actualizacion: '2026-03-20', proxima_actualizacion: '2026-07-31', notas: 'x' });
+
+    it('se muestra como antes: su resumen de campos, las fechas dd/mm/aaaa, sin título de registro ni marca', () => {
+      const contexto = cargarPerfil();
+      assert.equal(contexto.resumenDelCambio(VIEJO), '<b>Cargado en el portal</b> de 13/03/2026 a 20/03/2026, y 1 campo más');
+      const html = contexto.htmlDeFila(VIEJO, 'revisar', AUDITOR);
+      assert.ok(html.includes('<del>13/03/2026</del><ins>20/03/2026</ins>'));
+      assert.ok(html.includes('<del>31/05/2026</del><ins>31/07/2026</ins>'));
+      assert.ok(!html.includes('Actualización registrada'));
+      assert.ok(!html.includes(MARCA));
+      assert.ok(!html.includes('Datos al') && !html.includes('Recibido el') && !html.includes('Tipo de pedido'));
+    });
+
+    it('un cambio sin datos_nuevos ni campos no se rompe', () => {
+      const contexto = cargarPerfil();
+      assert.equal(contexto.resumenDelCambio({ tipo_cambio: 'editar' }), 'Sin cambios en los campos principales');
+      assert.doesNotThrow(() => contexto.htmlDeFila({ id: 1, tipo_cambio: 'editar', estado: 'pendiente' }, 'revisar', AUDITOR));
+    });
+  });
+
+  describe('un dataset nuevo con las fechas nuevas', () => {
+    it('lista Tipo de pedido (con su nombre), Datos al, Cargado en el portal y la próxima', () => {
+      const html = cargarPerfil().htmlDeComparacion({
+        tipo_cambio: 'crear',
+        datos_nuevos: {
+          titulo: 'Nuevo', tipo_pedido: 'foto', tipo_pedido_nombre: 'Foto al corte', datos_al: '2026-03-31',
+          ultima_actualizacion: '2026-04-03', proxima_actualizacion: '2026-06-30'
+        }
+      });
+      assert.ok(html.includes('<dt>Tipo de pedido</dt><dd>Foto al corte</dd>'));
+      assert.ok(html.includes('<dt>Datos al</dt><dd>31/03/2026</dd>'));
+      assert.ok(html.includes('<dt>Cargado en el portal</dt><dd>03/04/2026</dd>'));
+      assert.ok(html.includes('<dt>Próxima actualización</dt><dd>30/06/2026</dd>'));
+    });
+
+    it('sin las claves nuevas, no las inventa', () => {
+      const html = cargarPerfil().htmlDeComparacion({ tipo_cambio: 'crear', datos_nuevos: { titulo: 'Viejo', proxima_actualizacion: '2026-07-31T03:00:00.000Z' } });
+      assert.ok(!html.includes('Tipo de pedido') && !html.includes('Datos al'));
+      assert.ok(html.includes('<dd>31/07/2026</dd>'));
+    });
+  });
+});
