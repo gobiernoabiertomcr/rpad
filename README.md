@@ -117,7 +117,7 @@ rpad/
     ├── login.html                 # Formulario de login
     ├── admin.html                 # Panel de administración de datasets
     ├── areas.html                 # Panel de administración de áreas
-    ├── correos.html               # Configuración de correos y notificaciones
+    ├── correos.html               # Correos: Libro de Notas Digitales, Estado, Vista previa y pruebas, Configuración (pestañas)
     ├── reportes.html              # Generador de reportes
     ├── calendario.html            # Calendario interactivo de vencimientos
     ├── notas.html                 # Generador de notas administrativas DOCX
@@ -135,7 +135,7 @@ rpad/
     │   ├── dataset-detail.js      # Detalle de dataset
     │   ├── admin.js               # Panel de administración
     │   ├── areas.js               # Gestión de áreas responsables
-    │   ├── correos.js             # Configuración de correos
+    │   ├── correos.js             # Correos: pestañas, Libro, Estado, vista previa y configuración
     │   ├── reportes.js            # Generación de reportes PDF
     │   ├── calendario.js          # Calendario interactivo de vencimientos
     │   ├── notas.js               # Generador de notas administrativas

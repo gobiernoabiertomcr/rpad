@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Correos - RPAD (mockup, datos de ejemplo)</title>
+<link rel="icon" type="image/png" href="../../../public/img/icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../../public/css/main.css">
+<style>
+  [hidden] { display: none !important; }
+  :root {
+    --pf-tinta: #1F3A5F; --pf-texto: #2B3A4A; --pf-suave: #6B7A8C; --pf-linea: #E4E9EF; --pf-sutil: #F7F9FB; --pf-acento: #3E6B96;
+    --pf-verde-fondo: #DDF1E6; --pf-verde: #2E6B4C; --pf-azul-fondo: #DCEAF7; --pf-azul: #24507A;
+    --pf-rojo-fondo: #F8E1E1; --pf-rojo: #8A3434; --pf-ambar-fondo: #FBF1DC; --pf-ambar-borde: #F0DDB0; --pf-ambar: #7A5A14;
+    --pf-violeta-fondo: #ECE6F6; --pf-violeta: #4B3A78; --pf-turquesa-fondo: #DDF1EE; --pf-turquesa: #1F5F58;
+  }
+  .main-content { min-width: 0; }
+
+  /* Alertas arriba de las pestañas */
+  .co-alertas { display: grid; gap: 8px; margin-bottom: 16px; }
+  .co-alerta { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px; font-size: 0.9rem; border: 1px solid; }
+  .co-alerta svg { flex: none; margin-top: 1px; }
+  .co-alerta.error { background: #FBEEEE; border-color: #EFCACA; color: var(--pf-rojo); }
+  .co-alerta.advertencia { background: var(--pf-ambar-fondo); border-color: var(--pf-ambar-borde); color: var(--pf-ambar); }
+  .co-alerta a { color: inherit; font-weight: 600; }
+
+  /* Pestañas (las de Mi Perfil) */
+  .pf-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--pf-linea); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+  .pf-pestana { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; font-weight: 500; color: var(--gray-500); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+  .pf-pestana:hover { color: var(--pf-tinta); }
+  .pf-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
+  .pf-pestana:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; }
+  .co-punto { width: 8px; height: 8px; border-radius: 50%; background: #C0504D; }
+
+  .co-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 20px 22px; }
+  .co-tarjeta + .co-tarjeta { margin-top: 16px; }
+  .co-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
+  .co-ayuda { margin: 0 0 16px; font-size: 0.85rem; color: var(--pf-suave); }
+
+  /* Libro */
+  .co-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .co-filtros select { font: inherit; font-size: 0.85rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 7px 28px 7px 10px; background: #fff; }
+  .co-filtros select.ancho { min-width: 240px; flex: 1; }
+  .co-filtros label { font-size: 0.85rem; color: var(--pf-suave); display: inline-flex; gap: 6px; align-items: center; }
+  .co-tabla-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
+  table.co-libro { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  .co-libro th { text-align: left; font-weight: 500; color: var(--pf-suave); font-size: 0.8rem; padding: 11px 14px; border-bottom: 1px solid var(--pf-linea); background: var(--pf-sutil); white-space: nowrap; }
+  .co-libro td { padding: 12px 14px; border-bottom: 1px solid var(--pf-linea); vertical-align: middle; color: var(--pf-texto); }
+  .co-libro tr:last-child td { border-bottom: 0; }
+  .co-libro tr:hover td { background: #FBFCFD; }
+  .co-numero { font-weight: 700; color: var(--pf-tinta); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  .co-fecha { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .co-chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .co-chip.aviso { background: var(--pf-azul-fondo); color: var(--pf-azul); }
+  .co-chip.reiteracion { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+  .co-chip.auditoria { background: var(--pf-violeta-fondo); color: var(--pf-violeta); }
+  .co-chip.autorizacion { background: var(--pf-turquesa-fondo); color: var(--pf-turquesa); }
+  .co-gestion { font-size: 0.8rem; color: var(--pf-suave); border: 1px solid var(--pf-linea); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .co-cant { font-variant-numeric: tabular-nums; }
+  .co-para { font-size: 0.82rem; line-height: 1.35; }
+  .co-para small { display: block; color: var(--pf-suave); }
+  .co-estado { display: inline-flex; flex-direction: column; gap: 2px; }
+  .co-pastilla { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; width: max-content; }
+  .co-pastilla.enviada { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+  .co-pastilla.fallida { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+  .co-pastilla.pendiente { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+  .co-estado small { color: var(--pf-suave); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+  .co-acciones { display: flex; gap: 6px; justify-content: flex-end; }
+  .co-btn { font: inherit; font-size: 0.8rem; font-weight: 600; border-radius: 8px; padding: 6px 11px; cursor: pointer; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+  .co-btn:hover { background: var(--pf-sutil); }
+  .co-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .co-btn.reintentar { color: var(--pf-rojo); border-color: #E8C4C4; }
+  .co-btn:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+  .co-simulada { color: var(--pf-suave); font-size: 0.72rem; display: block; }
+
+  /* Estado */
+  .co-envio { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .co-envio strong { color: var(--pf-tinta); font-size: 1rem; }
+  .co-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; color: var(--pf-verde); }
+  .co-switch .pista { width: 42px; height: 24px; border-radius: 999px; background: var(--pf-verde); position: relative; }
+  .co-switch .pista::after { content: ""; position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+  .co-proximas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+  .co-proxima { border: 1px solid var(--pf-linea); border-radius: 10px; padding: 14px 16px; background: var(--pf-sutil); }
+  .co-proxima h3 { margin: 0 0 8px; font-size: 0.9rem; color: var(--pf-tinta); }
+  .co-proxima dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.875rem; }
+  .co-proxima dt { color: var(--pf-suave); }
+  .co-proxima dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--pf-texto); font-weight: 500; }
+  .co-lineas { display: grid; gap: 6px; font-size: 0.875rem; color: var(--pf-texto); margin-top: 14px; }
+  .co-lineas span { color: var(--pf-suave); }
+  .co-smtp { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .co-smtp .ok { color: var(--pf-verde); font-weight: 600; font-size: 0.875rem; }
+  .co-reglas { font-size: 0.83rem; color: var(--pf-suave); line-height: 1.55; }
+  .co-reglas p { margin: 0 0 8px; }
+
+  /* Vista previa */
+  .co-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .co-controles { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .co-controles select { font: inherit; font-size: 0.875rem; border: 1px solid var(--pf-linea); border-radius: 8px; padding: 8px 28px 8px 10px; background: #fff; }
+  .co-vacio { border: 1px dashed #C9D6E3; border-radius: 10px; padding: 36px 16px; text-align: center; color: var(--pf-suave); font-size: 0.875rem; background: var(--pf-sutil); }
+
+  /* Configuración */
+  .co-config { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .co-grupo { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 18px 20px; }
+  .co-grupo h3 { margin: 0 0 12px; font-size: 0.95rem; color: var(--pf-tinta); }
+  .co-grupo .form-group { margin-bottom: 12px; }
+  .co-grupo .form-input, .co-grupo select { width: 100%; }
+  .co-guardar { position: sticky; bottom: 0; margin-top: 16px; background: rgba(255,255,255,.96); border: 1px solid var(--pf-linea); border-radius: 12px; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(31,58,95,.06); }
+  .co-guardar span { font-size: 0.85rem; color: var(--pf-suave); }
+  .co-firma-img { display: block; max-height: 70px; margin-top: 8px; }
+  .co-membrete-img { display: block; width: 100%; max-width: 420px; margin-top: 8px; border: 1px solid var(--pf-linea); border-radius: 6px; }
+
+  /* Ventanas: ver nota y confirmación */
+  .co-velo { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; }
+  .co-ventana { background: #fff; border-radius: 14px; width: min(760px, 100%); max-height: 90vh; overflow: auto; box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+  .co-ventana header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--pf-linea); }
+  .co-ventana header h2 { margin: 0; font-size: 1.05rem; color: var(--pf-tinta); }
+  .co-ventana .cuerpo { padding: 16px 22px 22px; }
+  .co-datos { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.85rem; margin-bottom: 14px; }
+  .co-datos dt { color: var(--pf-suave); }
+  .co-datos dd { margin: 0; }
+  .co-confirmar { width: min(440px, 100%); }
+  .co-confirmar .cuerpo p { margin: 0 0 18px; color: var(--pf-texto); font-size: 0.92rem; }
+  .co-confirmar .botones { display: flex; justify-content: flex-end; gap: 8px; }
+
+  .mk { position: fixed; right: 16px; bottom: 16px; z-index: 50; background: #1F2937; color: #E5E7EB; border-radius: 12px; padding: 10px 14px; font-size: 0.8rem; }
+
+  @media (max-width: 860px) {
+    .co-proximas, .co-dos, .co-config { grid-template-columns: 1fr; }
+    .co-libro .ocultable { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header class="header">
+    <div class="header-left">
+      <button class="sidebar-toggle" title="Menú"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg></button>
+      <img src="../../../public/img/logo.png" alt="Logo" class="header-logo">
+      <div><div class="header-title">RPAD</div><div class="header-subtitle">Registro Permanente de Actualización de Datasets</div></div>
+    </div>
+    <div class="header-right">
+      <a class="header-user"><div class="header-user-info"><div class="header-user-name">Persona Superadmin</div><div class="header-user-role">Superadmin</div></div><div class="header-user-avatar">PS</div></a>
+      <button class="btn btn-secondary btn-sm">Salir</button>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1 class="page-title"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> Correos</h1>
+    </div>
+
+    <div class="co-alertas" id="alertas">
+      <div class="co-alerta error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg><span>1 nota fallida: la Nota Digital 7/26 no se pudo enviar. Podés reintentarla desde el Libro.</span></div>
+    </div>
+
+    <div class="pf-pestanas" role="tablist" aria-label="Secciones de Correos">
+      <button class="pf-pestana activa" role="tab" aria-selected="true" data-vista="libro">Libro de Notas Digitales</button>
+      <button class="pf-pestana" role="tab" aria-selected="false" data-vista="estado" tabindex="-1">Estado <span class="co-punto" title="Hay alertas"></span></button>
+      <button class="pf-pestana" role="tab" aria-selected="false" data-vista="pruebas" tabindex="-1">Vista previa y pruebas</button>
+      <button class="pf-pestana" role="tab" aria-selected="false" data-vista="configuracion" tabindex="-1">Configuración</button>
+    </div>
+
+    <!-- LIBRO -->
+    <section id="vista-libro" role="tabpanel">
+      <div class="co-filtros">
+        <select><option>Todos los años</option><option>2027</option><option>2026</option></select>
+        <select><option>Todos los tipos</option><option>Aviso</option><option>Reiteración</option><option>Auditoría</option><option>Autorización</option></select>
+        <select><option>Interna y externa</option><option>Interna</option><option>Externa</option></select>
+        <select><option>Todos los estados</option><option>Enviada</option><option>Fallida</option><option>Pendiente</option></select>
+        <select class="ancho"><option>Todos los datasets</option></select>
+        <label><input type="checkbox"> Incluir pruebas</label>
+      </div>
+      <div class="co-tabla-marco">
+        <table class="co-libro">
+          <thead><tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Gestión</th><th>Datasets</th><th class="ocultable">Para / CC</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="libro"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ESTADO -->
+    <section id="vista-estado" role="tabpanel" hidden>
+      <div class="co-tarjeta">
+        <div class="co-envio">
+          <div><strong>Envío automático de Notas Digitales</strong><p class="co-ayuda" style="margin:2px 0 0">Las notas salen solas a las 8:15 de cada día hábil.</p></div>
+          <label class="co-switch" id="switch"><span class="pista"></span> Activado</label>
+        </div>
+        <div class="co-lineas">
+          <div><span>Última corrida diaria:</span> 16/10/2026 08:00, 0 enviada(s), 0 fallida(s)</div>
+          <div><span>Auditoría de cambios:</span> no hay cambios para pedir por nota.</div>
+        </div>
+      </div>
+      <div class="co-tarjeta">
+        <h2>Próximas notas</h2>
+        <p class="co-ayuda">Lo que saldría con los datasets de hoy, si nadie los actualiza antes.</p>
+        <div class="co-proximas">
+          <div class="co-proxima"><h3>Gestión interna</h3><dl><dt>Próximo aviso</dt><dd>02/11/2026 · 1 dataset</dd><dt>Próxima reiteración</dt><dd>02/11/2026 · 3 datasets</dd></dl></div>
+          <div class="co-proxima"><h3>Gestión externa</h3><dl><dt>Próximo aviso</dt><dd>21/10/2026 · 1 dataset</dd><dt>Próxima reiteración</dt><dd>02/11/2026 · 10 datasets</dd></dl></div>
+        </div>
+      </div>
+      <div class="co-tarjeta">
+        <h2>Conexión del correo</h2>
+        <div class="co-smtp"><button class="co-btn">Verificar conexión SMTP</button><span class="ok">Conexión OK</span></div>
+      </div>
+      <div class="co-tarjeta co-reglas">
+        <h2>Cómo funcionan</h2>
+        <p>Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.</p>
+        <p>Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email. Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.</p>
+      </div>
+    </section>
+
+    <!-- VISTA PREVIA Y PRUEBAS -->
+    <section id="vista-pruebas" role="tabpanel" hidden>
+      <div class="co-dos">
+        <div class="co-tarjeta">
+          <h2>Nota Digital</h2>
+          <p class="co-ayuda">Cómo saldría hoy, con los datos reales (o de ejemplo si hoy no sale ninguna). La prueba va solo a las casillas de prueba.</p>
+          <div class="co-controles">
+            <select><option>Aviso</option><option>Reiteración</option><option>Auditoría</option></select>
+            <select><option>Gestión interna</option><option>Gestión externa</option></select>
+          </div>
+          <div class="co-controles">
+            <button class="co-btn primario">Vista previa</button><button class="co-btn">Ver PDF</button><button class="co-btn">Ver anexo</button><button class="co-btn" data-confirmar="prueba">Enviarme una prueba</button>
+          </div>
+          <div class="co-vacio">La vista previa aparece acá.</div>
+        </div>
+        <div class="co-tarjeta">
+          <h2>Aviso a las áreas (40 días)</h2>
+          <p class="co-ayuda">Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba va solo a las casillas de prueba.</p>
+          <div class="co-controles"><button class="co-btn primario">Vista previa</button><button class="co-btn" data-confirmar="area">Enviarme una prueba</button></div>
+          <div class="co-vacio">La vista previa aparece acá.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONFIGURACIÓN -->
+    <section id="vista-configuracion" role="tabpanel" hidden>
+      <div class="co-config">
+        <div>
+          <div class="co-grupo"><h3>Gestión interna</h3>
+            <div class="form-group"><label class="form-label">Para</label><input class="form-input" value="mit@comodoro.gov.ar"></div>
+            <div class="form-group"><label class="form-label">CC</label><input class="form-input" value="geoestadisticas@comodoro.gov.ar"></div>
+            <div class="form-group"><label class="form-label">Línea de CC al pie de la nota</label><input class="form-input" value="CC. Dir. de Investigación Territorial"></div></div>
+          <div class="co-grupo" style="margin-top:16px"><h3>Gestión externa</h3>
+            <div class="form-group"><label class="form-label">Para</label><input class="form-input" value="mit@comodoro.gov.ar"></div>
+            <div class="form-group"><label class="form-label">CC</label><input class="form-input" value="investigacionterritorial@comodoro.gov.ar"></div>
+            <div class="form-group"><label class="form-label">Línea de CC al pie de la nota</label><input class="form-input" value="CC. Dir. Administrativa"></div></div>
+          <div class="co-grupo" style="margin-top:16px"><h3>Notas de auditoría</h3>
+            <div class="form-group"><label class="form-label">Para</label><input class="form-input" value="mit@comodoro.gov.ar"></div>
+            <div class="form-group"><label class="form-label">CC</label><input class="form-input" value=""></div>
+            <p class="co-ayuda" style="margin:0">La copia oculta (CCO) es la de respaldo, la misma de las demás notas.</p></div>
+          <div class="co-grupo" style="margin-top:16px"><h3>Respaldo y pruebas</h3>
+            <div class="form-group"><label class="form-label">Copia oculta (CCO) de respaldo</label><input class="form-input" value="datospublicos@comodoro.gov.ar"></div>
+            <div class="form-group"><label class="form-label">Casillas de prueba</label><input class="form-input" value="casilla-de-prueba@rpad.test"></div></div>
+        </div>
+        <div>
+          <div class="co-grupo"><h3>Firmante titular</h3>
+            <div class="form-group"><label class="form-label">Firma las notas</label><select class="form-select"><option>Nombre Apellido (Dir. de Datos Públicos y Comunicación)</option></select></div>
+            <p class="co-ayuda" style="margin:0">Aparecen el superadmin y los admins activos con su firma cargada en Mi Perfil.</p></div>
+          <div class="co-grupo" style="margin-top:16px"><h3>Firma</h3>
+            <div class="form-group"><label class="form-label">Nombre</label><input class="form-input" value="Nombre Apellido" disabled></div>
+            <div class="form-group"><label class="form-label">Cargo</label><input class="form-input" value="Dir. de Datos Públicos y Comunicación" disabled></div>
+            <p class="co-ayuda" style="margin:0">Firma del firmante titular: el nombre, el cargo y la imagen se cambian en su Mi Perfil.</p></div>
+          <div class="co-grupo" style="margin-top:16px"><h3>Membrete del PDF</h3>
+            <div class="form-group"><label class="form-label">Banner del encabezado (PNG o JPEG, máximo 500 KB)</label><input type="file" class="form-input"></div>
+            <div class="form-group"><label class="form-label">Texto del pie</label><input class="form-input" value="www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut."></div>
+            <p class="co-ayuda" style="margin:0">El banner va arriba de cada hoja del PDF y el texto del pie, centrado abajo.</p></div>
+        </div>
+      </div>
+      <div class="co-guardar"><span>Separá varias direcciones con coma.</span><button class="co-btn primario">Guardar configuración</button></div>
+    </section>
+  </main>
+</div>
+
+<!-- Ver nota -->
+<div class="co-velo" id="ver" hidden>
+  <div class="co-ventana" role="dialog" aria-modal="true" aria-labelledby="ver-titulo">
+    <header><h2 id="ver-titulo">Nota Digital N° 10/26 – Solicitud de gestión de datos (gestión externa)</h2><button class="co-btn" data-cerrar>Cerrar</button></header>
+    <div class="cuerpo">
+      <dl class="co-datos"><dt>Para</dt><dd>mit@comodoro.gov.ar</dd><dt>CC</dt><dd>investigacionterritorial@comodoro.gov.ar</dd><dt>CCO</dt><dd>datospublicos@comodoro.gov.ar</dd><dt>Estado</dt><dd><span class="co-pastilla enviada">Enviada</span> 22/12/2026 08:15</dd></dl>
+      <div class="co-vacio">Acá va el contenido de la nota (el mismo que hoy).</div>
+    </div>
+  </div>
+</div>
+<!-- Confirmación -->
+<div class="co-velo" id="confirmar" hidden>
+  <div class="co-ventana co-confirmar" role="alertdialog" aria-modal="true" aria-labelledby="confirmar-titulo">
+    <header><h2 id="confirmar-titulo">¿Desactivar el envío automático?</h2></header>
+    <div class="cuerpo"><p id="confirmar-texto">Mientras esté desactivado no sale ninguna Nota Digital: ni avisos, ni reiteraciones, ni notas de auditoría.</p>
+      <div class="botones"><button class="co-btn" data-cerrar>Cancelar</button><button class="co-btn primario" data-cerrar>Desactivar</button></div></div>
+  </div>
+</div>
+<div class="mk"><b>Mockup</b> · notas reales 1/26 y 2/26; las demás, simuladas hasta enero. La fallida es un ejemplo.</div>
+
+<script>
+const NOTAS = [
+  ['2/27', '04/01/2027', 'reiteracion', 'Externa', 12, 'externa', 'enviada', '04/01/2027 08:15', false, true],
+  ['1/27', '04/01/2027', 'reiteracion', 'Interna', 4, 'interna', 'enviada', '04/01/2027 08:15', false, true],
+  ['11/26', '30/12/2026', 'aviso', 'Interna', 2, 'interna', 'enviada', '30/12/2026 08:15', true, true],
+  ['10/26', '22/12/2026', 'aviso', 'Externa', 15, 'externa', 'enviada', '22/12/2026 08:15', true, true],
+  ['9/26', '01/12/2026', 'reiteracion', 'Externa', 11, 'externa', 'enviada', '01/12/2026 08:15', false, true],
+  ['8/26', '01/12/2026', 'reiteracion', 'Interna', 4, 'interna', 'enviada', '01/12/2026 08:15', false, true],
+  ['7/26', '23/11/2026', 'aviso', 'Externa', 1, 'externa', 'fallida', 'Error SMTP 421', true, true],
+  ['6/26', '02/11/2026', 'reiteracion', 'Externa', 10, 'externa', 'enviada', '02/11/2026 08:15', false, true],
+  ['5/26', '02/11/2026', 'reiteracion', 'Interna', 3, 'interna', 'enviada', '02/11/2026 08:15', false, true],
+  ['4/26', '02/11/2026', 'aviso', 'Interna', 1, 'interna', 'enviada', '02/11/2026 08:15', true, true],
+  ['3/26', '21/10/2026', 'aviso', 'Externa', 1, 'externa', 'enviada', '21/10/2026 08:15', true, true],
+  ['2/26', '13/10/2026', 'aviso', 'Externa', 12, 'externa', 'enviada', '13/10/2026 14:50', true, false],
+  ['1/26', '13/10/2026', 'aviso', 'Interna', 3, 'interna', 'enviada', '13/10/2026 14:50', true, false],
+];
+const TIPOS = { aviso: 'Aviso', reiteracion: 'Reiteración', auditoria: 'Auditoría', autorizacion: 'Autorización' };
+const CC = { interna: 'geoestadisticas@comodoro.gov.ar', externa: 'investigacionterritorial@comodoro.gov.ar' };
+document.getElementById('libro').innerHTML = NOTAS.map(([n, f, t, g, cant, gk, e, cuando, anexo, sim]) => `<tr>
+  <td><span class="co-numero">${n}</span>${sim ? '<span class="co-simulada">simulada</span>' : ''}</td>
+  <td class="co-fecha">${f}</td>
+  <td><span class="co-chip ${t}">${TIPOS[t]}</span></td>
+  <td><span class="co-gestion">${g}</span></td>
+  <td class="co-cant">${cant}</td>
+  <td class="co-para ocultable">mit@comodoro.gov.ar<small>CC: ${CC[gk]}</small></td>
+  <td><span class="co-estado"><span class="co-pastilla ${e}">${e === 'enviada' ? 'Enviada' : e === 'fallida' ? 'Fallida' : 'Pendiente'}</span><small>${cuando}</small></span></td>
+  <td><div class="co-acciones"><button class="co-btn" data-ver>Ver</button><button class="co-btn">PDF</button>${anexo ? '<button class="co-btn">Anexo</button>' : ''}${e === 'fallida' ? '<button class="co-btn reintentar">Reintentar</button>' : ''}</div></td>
+</tr>`).join('');
+
+const mostrar = (nombre) => {
+  document.querySelectorAll('.pf-pestana').forEach(b => { const a = b.dataset.vista === nombre; b.classList.toggle('activa', a); b.setAttribute('aria-selected', a); b.tabIndex = a ? 0 : -1; });
+  document.querySelectorAll('[role=tabpanel]').forEach(p => { p.hidden = p.id !== 'vista-' + nombre; });
+};
+document.addEventListener('click', (e) => {
+  const p = e.target.closest('[data-vista]'); if (p) mostrar(p.dataset.vista);
+  if (e.target.closest('[data-ver]')) document.getElementById('ver').hidden = false;
+  if (e.target.closest('#switch')) document.getElementById('confirmar').hidden = false;
+  const c = e.target.closest('[data-confirmar]');
+  if (c) { document.getElementById('confirmar-titulo').textContent = '¿Enviarte una prueba?'; document.getElementById('confirmar-texto').textContent = 'Va solo a las casillas de prueba: casilla-de-prueba@rpad.test.'; document.querySelector('#confirmar .primario').textContent = 'Enviar prueba'; document.getElementById('confirmar').hidden = false; }
+  if (e.target.closest('[data-cerrar]') || e.target.classList.contains('co-velo')) document.querySelectorAll('.co-velo').forEach(v => v.hidden = true);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.co-velo').forEach(v => v.hidden = true); });
+const q = new URLSearchParams(location.search);
+if (q.get('vista')) mostrar(q.get('vista'));
+if (q.get('ver')) document.getElementById('ver').hidden = false;
+if (q.get('confirmar')) document.getElementById('confirmar').hidden = false;
+if (q.get('sinmk')) document.querySelector('.mk').hidden = true;
+</script>
+</body>
+</html>

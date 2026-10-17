@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Correos - RPAD</title>
+    <title>Correos - RPAD</title>
     <meta name="description" content="Sistema de notificaciones por email">
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,49 +13,28 @@
     <link rel="stylesheet" href="css/main.css">
     <style>
         /* Estilos específicos de correos */
-        .smtp-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            padding: 24px;
-            box-shadow: var(--shadow);
-            margin-bottom: 24px;
+
+        /* Colores de Correos: los de Mi Perfil (spec 2026-10-17-correos-pestanas, 3) */
+        :root {
+            --pf-tinta: #1F3A5F;
+            --pf-texto: #2B3A4A;
+            --pf-suave: #6B7A8C;
+            --pf-linea: #E4E9EF;
+            --pf-sutil: #F7F9FB;
+            --pf-acento: #3E6B96;
+            --pf-verde-fondo: #DDF1E6;    --pf-verde: #2E6B4C;
+            --pf-azul-fondo: #DCEAF7;     --pf-azul: #24507A;
+            --pf-rojo-fondo: #F8E1E1;     --pf-rojo: #8A3434;
+            --pf-ambar-fondo: #FBF1DC;    --pf-ambar-borde: #F0DDB0; --pf-ambar: #7A5A14;
+            --pf-violeta-fondo: #ECE6F6;  --pf-violeta: #4B3A78;
+            --pf-turquesa-fondo: #DDF1EE; --pf-turquesa: #1F5F58;
         }
 
-        .smtp-card-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
-        }
+        [hidden] { display: none !important; }
 
-        .smtp-card-header h3 {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-            margin: 0;
-        }
-
-        .smtp-card-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: var(--border-radius);
-            background: rgba(26, 54, 93, 0.1);
-            color: var(--primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        .main-content { min-width: 0; }
 
         /* Estado SMTP */
-        .smtp-status-row {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
         .smtp-status {
             display: inline-flex;
             align-items: center;
@@ -86,135 +65,174 @@
             flex-shrink: 0;
         }
 
-        /* Spinner inline */
-        .spinner-inline {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid currentColor;
-            border-right-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        /* Sección de pruebas */
-        .test-section {
-            margin-top: 24px;
-            padding-top: 24px;
-            border-top: 1px solid var(--border-color);
-        }
-
-        .test-section-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--gray-700);
-            margin-bottom: 12px;
-        }
-
-        .test-controls {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .test-controls .form-select {
-            min-width: 280px;
-        }
-
+        /* Texto de ayuda chico: el límite del Libro y los datos de la ventana de la nota */
         .test-hint {
             font-size: 0.8rem;
             color: var(--gray-500);
             margin-top: 12px;
         }
 
-        /* Info cards grid */
-        .info-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-top: 24px;
-        }
+        /* Alertas: van arriba de las pestañas (#nd-alertas), pero el estilo también es el de #nd-sin-quien-audite y #modal-nota-error */
+        .nd-alerta { position: relative; background: #FBEEEE; border: 1px solid #EFCACA; color: #8A3434; border-radius: 10px; padding: 11px 14px 11px 38px; margin-top: 12px; font-size: 0.9rem; }
+        .nd-alerta::before { content: ''; position: absolute; left: 14px; top: 14px; width: 16px; height: 16px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A3434' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E") no-repeat center / contain; }
+        .nd-alerta.nd-advertencia { background: #FBF1DC; border-color: #F0DDB0; color: #7A5A14; }
+        .nd-alerta.nd-advertencia::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237A5A14' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E"); }
+        .co-alertas { display: grid; gap: 8px; margin-bottom: 16px; }
+        .co-alertas:empty { margin-bottom: 0; }
+        .co-alertas .nd-alerta { margin-top: 0; }
+        .co-punto { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+        .co-punto.error { background: #C0504D; }
+        .co-punto.advertencia { background: #D9A33A; }
 
-        .info-card {
-            background: var(--gray-50);
-            border-radius: var(--border-radius);
-            padding: 20px;
-            border-left: 4px solid var(--primary);
-        }
+        /* Libro de Notas Digitales (spec 2026-10-17-correos-pestanas, 6) */
+        .co-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+        .co-filtros select { font: inherit; font-size: 0.85rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 7px 28px 7px 10px; background: #fff; }
+        .co-filtros select.ancho { min-width: 240px; flex: 1; }
+        .co-filtros label { font-size: 0.85rem; color: var(--pf-suave); display: inline-flex; gap: 6px; align-items: center; }
+        .co-filtros select:focus-visible, .co-filtros input:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .co-tabla-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
+        table.co-libro { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        .co-libro th { text-align: left; font-weight: 500; color: var(--pf-suave); font-size: 0.8rem; padding: 11px 14px; border-bottom: 1px solid var(--pf-linea); background: var(--pf-sutil); white-space: nowrap; }
+        .co-libro td { padding: 12px 14px; border-bottom: 1px solid var(--pf-linea); vertical-align: middle; color: var(--pf-texto); }
+        .co-libro tr:last-child td { border-bottom: 0; }
+        .co-libro tr:hover td { background: #FBFCFD; }
+        .co-libro td.co-sin-filas { text-align: center; color: var(--pf-suave); padding: 28px 14px; }
+        .co-libro tr:hover td.co-sin-filas { background: transparent; }
+        .co-numero { font-weight: 700; color: var(--pf-tinta); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+        .co-fecha { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .co-chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+        .co-chip.aviso { background: var(--pf-azul-fondo); color: var(--pf-azul); }
+        .co-chip.reiteracion { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+        .co-chip.auditoria { background: var(--pf-violeta-fondo); color: var(--pf-violeta); }
+        .co-chip.autorizacion { background: var(--pf-turquesa-fondo); color: var(--pf-turquesa); }
+        .co-gestion { font-size: 0.8rem; color: var(--pf-suave); border: 1px solid var(--pf-linea); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+        .co-cant { font-variant-numeric: tabular-nums; }
+        .co-para { font-size: 0.82rem; line-height: 1.35; }
+        .co-para small { display: block; color: var(--pf-suave); }
+        .co-estado { display: inline-flex; flex-direction: column; gap: 2px; }
+        .co-pastilla { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; width: max-content; }
+        .co-pastilla.enviada { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+        .co-pastilla.fallida { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+        .co-pastilla.pendiente { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+        .co-estado small { color: var(--pf-suave); font-size: 0.75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .co-acciones { display: flex; gap: 6px; justify-content: flex-end; }
+        .co-btn { font: inherit; font-size: 0.8rem; font-weight: 600; border-radius: 8px; padding: 6px 11px; cursor: pointer; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+        .co-btn:hover { background: var(--pf-sutil); }
+        .co-btn:disabled { opacity: .55; cursor: not-allowed; }
+        .co-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .co-btn.reintentar { color: var(--pf-rojo); border-color: #E8C4C4; }
+        .co-btn:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
 
-        .info-card.interna {
-            border-left-color: var(--info);
-        }
+        /* Tarjetas de las pestañas (spec 2026-10-17-correos-pestanas, 3) */
+        .co-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 20px 22px; }
+        .co-tarjeta + .co-tarjeta { margin-top: 16px; }
+        .co-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
+        .co-ayuda { margin: 0 0 16px; font-size: 0.85rem; color: var(--pf-suave); }
 
-        .info-card.externa {
-            border-left-color: var(--warning);
-        }
+        /* Estado (spec 2026-10-17-correos-pestanas, 7) */
+        .co-envio { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .co-envio .co-ayuda { margin: 0; }
+        .co-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; }
+        /* La casilla de siempre (#envio-activo) dibujada como interruptor: el color y la perilla salen de si está marcada */
+        .co-switch input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 42px; height: 24px; margin: 0; border-radius: 999px; background: var(--pf-suave); cursor: pointer; transition: background 0.15s ease; }
+        .co-switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; }
+        .co-switch input:checked { background: var(--pf-verde); }
+        .co-switch input:checked::after { transform: translateX(18px); }
+        .co-switch input:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .co-proximas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+        .co-proxima { border: 1px solid var(--pf-linea); border-radius: 10px; padding: 14px 16px; background: var(--pf-sutil); }
+        .co-proxima h3 { margin: 0 0 8px; font-size: 0.9rem; color: var(--pf-tinta); }
+        .co-proxima dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.875rem; }
+        .co-proxima dt { color: var(--pf-suave); }
+        .co-proxima dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--pf-texto); font-weight: 500; }
+        .co-lineas { display: grid; gap: 6px; font-size: 0.875rem; color: var(--pf-texto); margin-top: 14px; font-variant-numeric: tabular-nums; }
+        .co-lineas p { margin: 0; }
+        .co-lineas .nd-alerta { margin-top: 0; }
+        .co-smtp { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .co-reglas { font-size: 0.83rem; color: var(--pf-suave); line-height: 1.55; }
+        .co-reglas p { margin: 0 0 8px; }
+        .co-reglas p:last-child { margin-bottom: 0; }
+        /* Vista previa y pruebas (spec 2026-10-17-correos-pestanas, 8) */
+        .co-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .co-dos > .co-tarjeta { min-width: 0; }
+        .co-dos > .co-tarjeta + .co-tarjeta { margin-top: 0; }
+        .co-controles { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .co-controles select { font: inherit; font-size: 0.875rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 8px 28px 8px 10px; background: #fff; }
+        .co-controles select:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .co-controles select:disabled { opacity: .55; cursor: not-allowed; }
+        .co-vacio { border: 1px dashed #C9D6E3; border-radius: 10px; padding: 36px 16px; text-align: center; color: var(--pf-suave); font-size: 0.875rem; background: var(--pf-sutil); }
+        .nd-marco { display: block; width: 100%; height: 560px; border: 1px solid var(--pf-linea); border-radius: 10px; margin-top: 12px; background: #ffffff; }
+        /* El marcador solo se ve mientras no hay vista previa: el iframe y su marcador son hermanos, en ese orden */
+        .nd-marco:not([hidden]) ~ .co-vacio { display: none; }
 
-        .info-card h4 {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--gray-700);
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .info-card ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .info-card li {
-            font-size: 0.8rem;
-            color: var(--gray-600);
-            padding: 4px 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .info-card li svg {
-            width: 14px;
-            height: 14px;
-            color: var(--gray-400);
-            flex-shrink: 0;
-        }
-
-        @media (max-width: 768px) {
-            .test-controls {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .test-controls .form-select {
-                min-width: 100%;
-            }
-
-            .smtp-status-row {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-        }
-        .nd-switch-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-        .nd-switch { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
-        .nd-proximas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
-        .nd-proxima { border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; font-size: 0.875rem; }
-        .nd-alerta { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 0.875rem; }
-        .nd-alerta.nd-advertencia { background: #fffbeb; border-color: #fde68a; color: #92400e; }
-        .nd-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
-        .nd-filtros .form-select { width: auto; min-width: 150px; }
-        .nd-check { display: flex; align-items: center; gap: 6px; font-size: 0.875rem; }
-        .nd-marco { width: 100%; height: 560px; border: 1px solid var(--gray-200); border-radius: 8px; margin-top: 12px; background: #ffffff; }
-        .nd-config fieldset { border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px 16px; margin: 0 0 12px; }
-        .nd-config legend { font-weight: 600; padding: 0 6px; }
-        .nd-firma[hidden] { display: none; }
-        .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
+        /* Configuración (spec 2026-10-17-correos-pestanas, 8) */
+        .co-config { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .co-columna { min-width: 0; }
+        /* Cada grupo sigue siendo un fieldset con su legend; el legend flotante se ve como título dentro de la tarjeta */
+        .co-grupo { min-width: 0; margin: 0; background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 18px 20px; }
+        .co-grupo + .co-grupo { margin-top: 16px; }
+        .co-grupo legend { float: left; width: 100%; padding: 0; margin: 0 0 12px; font-size: 0.95rem; font-weight: 600; color: var(--pf-tinta); }
+        .co-grupo legend + * { clear: both; }
+        .co-grupo .form-group { margin-bottom: 12px; }
+        .co-grupo .form-hint { margin: 0; }
+        .co-grupo > :last-child { margin-bottom: 0; }
+        .co-grupo .form-input, .co-grupo select { width: 100%; }
+        .co-grupo .form-input:focus-visible, .co-grupo select:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 1px; }
+        .co-guardar { position: sticky; bottom: 0; margin-top: 16px; background: rgba(255, 255, 255, 0.96); border: 1px solid var(--pf-linea); border-radius: 12px; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(31, 58, 95, 0.06); }
+        .co-guardar span { font-size: 0.85rem; color: var(--pf-suave); }
+        .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px solid var(--pf-linea); border-radius: 6px; padding: 4px; background: #ffffff; }
         .nd-firma.nd-membrete { max-width: 100%; max-height: 120px; }
-        .nd-modal { max-width: 900px; width: 95%; }
-        .nd-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+        /* Ventanas: ver la nota y confirmar (spec 2026-10-17-correos-pestanas, 9). Usan .modal-overlay y .active de main.css */
+        /* Al abrir, la ventana (el velo y la caja, que hereda la visibilidad) es visible desde el primer cuadro: con la transición de
+           main.css la visibilidad pasa de hidden a visible gradualmente y el navegador no deja enfocar el botón de la confirmación.
+           Al cerrar sigue el fundido de siempre. */
+        .modal-overlay.active { transition: opacity 0.3s ease, visibility 0s; }
+        .modal-overlay.active .modal { transition: transform 0.3s ease, visibility 0s; }
+        .nd-modal { max-width: 900px; width: 95%; border-radius: 14px; }
+        .nd-modal .modal-header { border-bottom: 1px solid var(--pf-linea); }
+        .nd-modal .modal-title { color: var(--pf-tinta); }
+        .co-confirmar { max-width: 440px; border-radius: 14px; }
+        .co-confirmar .modal-header { border-bottom: 1px solid var(--pf-linea); }
+        .co-confirmar .modal-title { color: var(--pf-tinta); }
+        .co-confirmar p { margin: 0 0 18px; color: var(--pf-texto); font-size: 0.92rem; line-height: 1.5; }
+        .co-confirmar-botones { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+        .modal-close:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+
+        /* Pestañas de la página */
+        .pf-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--pf-linea); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+        .pf-pestanas::-webkit-scrollbar { display: none; }
+        .pf-pestana { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; font-weight: 500; color: var(--gray-500); cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color 0.15s ease, border-color 0.15s ease; }
+        .pf-pestana:hover { color: var(--pf-tinta); }
+        .pf-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
+        .pf-pestana:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+
+        @media (max-width: 860px) {
+            .co-libro .ocultable { display: none; }
+            .co-proximas { grid-template-columns: 1fr; }
+            .co-dos, .co-config { grid-template-columns: 1fr; }
+        }
+
+        /* En el celular el nombre y el valor de cada próxima nota van uno encima del otro, así la fecha y la cantidad no se cortan */
+        @media (max-width: 480px) {
+            .co-proxima dl { grid-template-columns: 1fr; gap: 0; }
+            .co-proxima dd { margin-bottom: 8px; }
+            .co-proxima dd:last-child { margin-bottom: 0; }
+            .co-controles select { flex: 1 1 100%; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .pf-pestana { transition: none; }
+            .co-switch input, .co-switch input::after { transition: none; }
+            .modal-overlay, .modal-overlay.active, .modal, .modal-overlay.active .modal { transition: none; }
+        }
+
+        /* Con los colores del sistema forzados (contraste alto) el interruptor sigue viéndose */
+        @media (forced-colors: active) {
+            .co-switch input { border: 2px solid ButtonText; }
+            .co-switch input::after { background: ButtonText; top: 1px; left: 1px; }
+            .co-switch input:checked { background: Highlight; }
+            .co-switch input:checked::after { background: HighlightText; }
+        }
     </style>
 </head>
 <body>
@@ -320,192 +338,211 @@
             <div class="page-header">
                 <h1 class="page-title">
                     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                    Sistema de Correos
+                    Correos
                 </h1>
             </div>
 
             <div id="message-container"></div>
 
-            <!-- Estado -->
-            <div class="smtp-card">
-                <div class="smtp-card-header">
-                    <div class="smtp-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
-                    </div>
-                    <h3>Estado</h3>
-                </div>
-                <div class="smtp-status-row">
-                    <button type="button" id="btn-verificar-smtp" class="btn btn-secondary">Verificar conexión SMTP</button>
-                    <span id="smtp-status" class="smtp-status">Sin verificar</span>
-                </div>
-                <div class="nd-switch-row">
-                    <label class="nd-switch" for="envio-activo">
-                        <input type="checkbox" id="envio-activo">
-                        <span>Envío automático de Notas Digitales</span>
-                    </label>
-                    <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
-                </div>
-                <div id="nd-alertas"></div>
-                <div id="nd-proximas" class="nd-proximas"></div>
-                <p id="nd-ultima-corrida" class="test-hint"></p>
-                <p id="nd-licencia" class="test-hint" hidden></p>
-                <p id="nd-auditoria" class="test-hint"></p>
-                <div id="nd-sin-quien-audite" class="nd-alerta nd-advertencia" hidden></div>
-                <p id="nd-periodos-sin-auditor" class="test-hint" hidden></p>
-                <p class="test-hint">Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.</p>
-                <p class="test-hint">Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más). Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.</p>
+            <!-- Alertas de Estado: arriba de las pestañas para que no se escondan en otra -->
+            <div id="nd-alertas" class="co-alertas" aria-live="polite"></div>
+
+            <!-- Pestañas -->
+            <div class="pf-pestanas" id="pestanas-correos" role="tablist" aria-label="Secciones de Correos">
+                <button type="button" class="pf-pestana" role="tab" id="pestana-libro" aria-selected="false" aria-controls="vista-libro" data-vista="libro" tabindex="-1">Libro de Notas Digitales</button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-estado" aria-selected="false" aria-controls="vista-estado" data-vista="estado" tabindex="-1">Estado<span class="co-punto error" id="marca-estado-error" role="img" aria-label="Hay alertas" title="Hay alertas" hidden></span><span class="co-punto advertencia" id="marca-estado-advertencia" role="img" aria-label="Hay advertencias" title="Hay advertencias" hidden></span></button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-pruebas" aria-selected="false" aria-controls="vista-pruebas" data-vista="pruebas" tabindex="-1">Vista previa y pruebas</button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-configuracion" aria-selected="false" aria-controls="vista-configuracion" data-vista="configuracion" tabindex="-1">Configuración</button>
             </div>
 
-            <!-- Libro de Notas Digitales -->
-            <div class="smtp-card">
-                <div class="smtp-card-header">
-                    <div class="smtp-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-                    </div>
-                    <h3>Libro de Notas Digitales</h3>
-                </div>
-                <div class="nd-filtros">
-                    <select id="filtro-anio" class="form-select" aria-label="Año"><option value="">Todos los años</option></select>
-                    <select id="filtro-tipo" class="form-select" aria-label="Tipo">
+            <section id="vista-libro" role="tabpanel" aria-labelledby="pestana-libro" hidden>
+                <!-- Libro de Notas Digitales -->
+                <div class="co-filtros">
+                    <select id="filtro-anio" aria-label="Año"><option value="">Todos los años</option></select>
+                    <select id="filtro-tipo" aria-label="Tipo">
                         <option value="">Todos los tipos</option>
                         <option value="aviso">Aviso</option>
                         <option value="reiteracion">Reiteración</option>
                         <option value="autorizacion">Autorización</option>
                         <option value="auditoria">Auditoría</option>
                     </select>
-                    <select id="filtro-gestion" class="form-select" aria-label="Gestión">
+                    <select id="filtro-gestion" aria-label="Gestión">
                         <option value="">Interna y externa</option>
                         <option value="interna">Interna</option>
                         <option value="externa">Externa</option>
                     </select>
-                    <select id="filtro-estado" class="form-select" aria-label="Estado">
+                    <select id="filtro-estado" aria-label="Estado">
                         <option value="">Todos los estados</option>
                         <option value="enviada">Enviada</option>
                         <option value="fallida">Fallida</option>
                         <option value="pendiente">Pendiente</option>
                     </select>
-                    <select id="filtro-dataset" class="form-select" aria-label="Dataset"><option value="">Todos los datasets</option></select>
-                    <label class="nd-check"><input type="checkbox" id="filtro-pruebas"> Incluir pruebas</label>
+                    <select id="filtro-dataset" class="ancho" aria-label="Dataset"><option value="">Todos los datasets</option></select>
+                    <label><input type="checkbox" id="filtro-pruebas"> Incluir pruebas</label>
                 </div>
-                <div class="table-container">
-                    <table class="table">
+                <div class="co-tabla-marco">
+                    <table class="co-libro">
                         <thead>
-                            <tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Gestión</th><th>Datasets</th><th>Para / CC</th><th>Estado</th><th></th></tr>
+                            <tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Gestión</th><th>Datasets</th><th class="ocultable">Para / CC</th><th>Estado</th><th></th></tr>
                         </thead>
-                        <tbody id="libro-cuerpo"><tr><td colspan="8">Cargando…</td></tr></tbody>
+                        <tbody id="libro-cuerpo"><tr><td colspan="8" class="co-sin-filas">Cargando…</td></tr></tbody>
                     </table>
                 </div>
                 <p id="libro-limite" class="test-hint" hidden>Se muestran las 500 notas más recientes; usá los filtros para ver otras.</p>
-            </div>
+            </section>
 
-            <!-- Vista previa y prueba -->
-            <div class="smtp-card">
-                <div class="smtp-card-header">
-                    <div class="smtp-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <section id="vista-estado" role="tabpanel" aria-labelledby="pestana-estado" hidden>
+                <!-- Estado -->
+                <div class="co-tarjeta">
+                    <div class="co-envio">
+                        <div>
+                            <h2>Envío automático de Notas Digitales</h2>
+                            <p class="co-ayuda">Las notas salen solas a las 8:15 de cada día hábil.</p>
+                        </div>
+                        <label class="co-switch" for="envio-activo">
+                            <input type="checkbox" id="envio-activo" role="switch" aria-label="Envío automático de Notas Digitales">
+                            <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
+                        </label>
                     </div>
-                    <h3>Vista previa y prueba</h3>
+                    <div class="co-lineas">
+                        <p id="nd-ultima-corrida"></p>
+                        <p id="nd-licencia" hidden></p>
+                        <p id="nd-auditoria"></p>
+                        <div id="nd-sin-quien-audite" class="nd-alerta nd-advertencia" hidden></div>
+                        <p id="nd-periodos-sin-auditor" hidden></p>
+                    </div>
                 </div>
-                <div class="test-controls">
-                    <select id="preview-tipo" class="form-select" aria-label="Tipo de nota">
-                        <option value="aviso">Aviso</option>
-                        <option value="reiteracion">Reiteración</option>
-                        <option value="auditoria">Auditoría</option>
-                    </select>
-                    <select id="preview-gestion" class="form-select" aria-label="Gestión">
-                        <option value="interna">Gestión interna</option>
-                        <option value="externa">Gestión externa</option>
-                    </select>
-                    <button type="button" id="btn-preview" class="btn btn-primary">Vista previa</button>
-                    <button type="button" id="btn-preview-pdf" class="btn btn-secondary">Ver PDF</button>
-                    <button type="button" id="btn-preview-anexo" class="btn btn-outline">Ver anexo</button>
-                    <button type="button" id="btn-prueba" class="btn btn-outline">Enviarme una prueba</button>
-                </div>
-                <p id="preview-aviso" class="test-hint" hidden></p>
-                <iframe id="preview-marco" class="nd-marco" sandbox="" title="Vista previa de la nota" hidden></iframe>
-            </div>
 
-            <!-- Configuración -->
-            <div class="smtp-card">
-                <div class="smtp-card-header">
-                    <div class="smtp-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                    </div>
-                    <h3>Configuración</h3>
+                <div class="co-tarjeta">
+                    <h2>Próximas notas</h2>
+                    <p class="co-ayuda">Lo que saldría con los datasets de hoy, si nadie los actualiza antes.</p>
+                    <div id="nd-proximas" class="co-proximas"></div>
                 </div>
-                <form id="form-config" class="nd-config">
-                    <fieldset>
-                        <legend>Gestión interna</legend>
-                        <div class="form-group"><label class="form-label" for="para_interna">Para</label><input id="para_interna" class="form-input" autocomplete="off"></div>
-                        <div class="form-group"><label class="form-label" for="cc_interna">CC</label><input id="cc_interna" class="form-input" autocomplete="off"></div>
-                        <div class="form-group"><label class="form-label" for="linea_cc_interna">Línea de CC al pie de la nota</label><input id="linea_cc_interna" class="form-input" maxlength="200"></div>
-                    </fieldset>
-                    <fieldset>
-                        <legend>Gestión externa</legend>
-                        <div class="form-group"><label class="form-label" for="para_externa">Para</label><input id="para_externa" class="form-input" autocomplete="off"></div>
-                        <div class="form-group"><label class="form-label" for="cc_externa">CC</label><input id="cc_externa" class="form-input" autocomplete="off"></div>
-                        <div class="form-group"><label class="form-label" for="linea_cc_externa">Línea de CC al pie de la nota</label><input id="linea_cc_externa" class="form-input" maxlength="200"></div>
-                    </fieldset>
-                    <fieldset>
-                        <legend>Notas de auditoría</legend>
-                        <div class="form-group"><label class="form-label" for="para_auditoria">Para</label><input id="para_auditoria" class="form-input" autocomplete="off"></div>
-                        <div class="form-group"><label class="form-label" for="cc_auditoria">CC</label><input id="cc_auditoria" class="form-input" autocomplete="off"></div>
-                        <p class="form-hint">La copia oculta (CCO) es la de respaldo, la misma de las demás notas.</p>
-                    </fieldset>
-                    <fieldset>
-                        <legend>Respaldo y pruebas</legend>
-                        <div class="form-group"><label class="form-label" for="cco">Copia oculta (CCO) de respaldo</label><input id="cco" class="form-input" autocomplete="off"></div>
-                        <div class="form-group"><label class="form-label" for="casillas_prueba">Casillas de prueba</label><input id="casillas_prueba" class="form-input" autocomplete="off"></div>
-                    </fieldset>
-                    <fieldset>
-                        <legend>Firmante titular</legend>
-                        <div class="form-group">
-                            <label class="form-label" for="firmante">Firma las notas</label>
-                            <select id="firmante" class="form-input"></select>
+
+                <div class="co-tarjeta">
+                    <h2>Conexión del correo</h2>
+                    <div class="co-smtp">
+                        <button type="button" id="btn-verificar-smtp" class="co-btn">Verificar conexión SMTP</button>
+                        <span id="smtp-status" class="smtp-status">Sin verificar</span>
+                    </div>
+                </div>
+
+                <div class="co-tarjeta co-reglas">
+                    <h2>Cómo funcionan</h2>
+                    <p>Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.</p>
+                    <p>Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más). Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.</p>
+                </div>
+            </section>
+
+            <section id="vista-pruebas" role="tabpanel" aria-labelledby="pestana-pruebas" hidden>
+                <!-- Vista previa y pruebas -->
+                <div class="co-dos">
+                    <div class="co-tarjeta">
+                        <h2>Nota Digital</h2>
+                        <p class="co-ayuda">Cómo saldría hoy, con los datos reales (o de ejemplo si hoy no sale ninguna). La prueba va solo a las casillas de prueba.</p>
+                        <div class="co-controles">
+                            <select id="preview-tipo" aria-label="Tipo de nota">
+                                <option value="aviso">Aviso</option>
+                                <option value="reiteracion">Reiteración</option>
+                                <option value="auditoria">Auditoría</option>
+                            </select>
+                            <select id="preview-gestion" aria-label="Gestión">
+                                <option value="interna">Gestión interna</option>
+                                <option value="externa">Gestión externa</option>
+                            </select>
                         </div>
-                        <p class="form-hint" id="firmante-ayuda"></p>
-                    </fieldset>
-                    <fieldset>
-                        <legend>Firma</legend>
-                        <div class="form-group"><label class="form-label" for="firma_nombre">Nombre</label><input id="firma_nombre" class="form-input" maxlength="150"></div>
-                        <div class="form-group"><label class="form-label" for="firma_cargo">Cargo</label><input id="firma_cargo" class="form-input" maxlength="200"></div>
-                        <div class="form-group">
-                            <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
-                            <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
-                            <img id="firma-vista" class="nd-firma" alt="Firma cargada" hidden>
+                        <div class="co-controles">
+                            <button type="button" id="btn-preview" class="co-btn primario">Vista previa</button>
+                            <button type="button" id="btn-preview-pdf" class="co-btn">Ver PDF</button>
+                            <button type="button" id="btn-preview-anexo" class="co-btn">Ver anexo</button>
+                            <button type="button" id="btn-prueba" class="co-btn">Enviarme una prueba</button>
                         </div>
-                        <p class="form-hint" id="firma-ayuda"></p>
-                    </fieldset>
-                    <fieldset>
-                        <legend>Membrete del PDF</legend>
-                        <div class="form-group">
-                            <label class="form-label" for="membrete-archivo">Banner del encabezado (PNG o JPEG, máximo 500 KB)</label>
-                            <input type="file" id="membrete-archivo" class="form-input" accept="image/png,image/jpeg">
-                            <img id="membrete-vista" class="nd-firma nd-membrete" alt="Banner del membrete cargado" hidden>
+                        <p id="preview-aviso" class="co-ayuda" hidden></p>
+                        <iframe id="preview-marco" class="nd-marco" sandbox="" title="Vista previa de la nota" hidden></iframe>
+                        <div class="co-vacio">La vista previa aparece acá.</div>
+                    </div>
+
+                    <!-- Aviso a las áreas -->
+                    <div class="co-tarjeta">
+                        <h2>Aviso a las áreas (40 días)</h2>
+                        <p class="co-ayuda">Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba se envía solo a las casillas de prueba.</p>
+                        <div class="co-controles">
+                            <button type="button" id="btn-preview-area" class="co-btn primario">Vista previa</button>
+                            <button type="button" id="btn-prueba-area" class="co-btn">Enviarme una prueba</button>
                         </div>
-                        <div class="form-group"><label class="form-label" for="membrete_pie">Texto del pie</label><input id="membrete_pie" class="form-input" maxlength="300"></div>
-                        <p class="form-hint">El banner va arriba de cada hoja del PDF, a lo ancho de la hoja, y el texto del pie va centrado al pie de cada hoja (vacío: sin pie). El cuerpo del email no cambia.</p>
-                    </fieldset>
-                    <p class="form-hint">Separá varias direcciones con coma.</p>
-                    <button type="submit" class="btn btn-primary">Guardar configuración</button>
+                        <iframe id="preview-area-marco" class="nd-marco" sandbox="" title="Vista previa del aviso a áreas" hidden></iframe>
+                        <div class="co-vacio">La vista previa aparece acá.</div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="vista-configuracion" role="tabpanel" aria-labelledby="pestana-configuracion" hidden>
+                <!-- Configuración -->
+                <form id="form-config">
+                    <div class="co-config">
+                        <div class="co-columna">
+                            <fieldset class="co-grupo">
+                                <legend>Gestión interna</legend>
+                                <div class="form-group"><label class="form-label" for="para_interna">Para</label><input id="para_interna" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="cc_interna">CC</label><input id="cc_interna" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="linea_cc_interna">Línea de CC al pie de la nota</label><input id="linea_cc_interna" class="form-input" maxlength="200"></div>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Gestión externa</legend>
+                                <div class="form-group"><label class="form-label" for="para_externa">Para</label><input id="para_externa" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="cc_externa">CC</label><input id="cc_externa" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="linea_cc_externa">Línea de CC al pie de la nota</label><input id="linea_cc_externa" class="form-input" maxlength="200"></div>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Notas de auditoría</legend>
+                                <div class="form-group"><label class="form-label" for="para_auditoria">Para</label><input id="para_auditoria" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="cc_auditoria">CC</label><input id="cc_auditoria" class="form-input" autocomplete="off"></div>
+                                <p class="form-hint">La copia oculta (CCO) es la de respaldo, la misma de las demás notas.</p>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Respaldo y pruebas</legend>
+                                <div class="form-group"><label class="form-label" for="cco">Copia oculta (CCO) de respaldo</label><input id="cco" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="casillas_prueba">Casillas de prueba</label><input id="casillas_prueba" class="form-input" autocomplete="off"></div>
+                            </fieldset>
+                        </div>
+                        <div class="co-columna">
+                            <fieldset class="co-grupo">
+                                <legend>Firmante titular</legend>
+                                <div class="form-group">
+                                    <label class="form-label" for="firmante">Firma las notas</label>
+                                    <select id="firmante" class="form-input"></select>
+                                </div>
+                                <p class="form-hint" id="firmante-ayuda"></p>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Firma</legend>
+                                <div class="form-group"><label class="form-label" for="firma_nombre">Nombre</label><input id="firma_nombre" class="form-input" maxlength="150"></div>
+                                <div class="form-group"><label class="form-label" for="firma_cargo">Cargo</label><input id="firma_cargo" class="form-input" maxlength="200"></div>
+                                <div class="form-group">
+                                    <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
+                                    <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
+                                    <img id="firma-vista" class="nd-firma" alt="Firma cargada" hidden>
+                                </div>
+                                <p class="form-hint" id="firma-ayuda"></p>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Membrete del PDF</legend>
+                                <div class="form-group">
+                                    <label class="form-label" for="membrete-archivo">Banner del encabezado (PNG o JPEG, máximo 500 KB)</label>
+                                    <input type="file" id="membrete-archivo" class="form-input" accept="image/png,image/jpeg">
+                                    <img id="membrete-vista" class="nd-firma nd-membrete" alt="Banner del membrete cargado" hidden>
+                                </div>
+                                <div class="form-group"><label class="form-label" for="membrete_pie">Texto del pie</label><input id="membrete_pie" class="form-input" maxlength="300"></div>
+                                <p class="form-hint">El banner va arriba de cada hoja del PDF, a lo ancho de la hoja, y el texto del pie va centrado al pie de cada hoja (vacío: sin pie). El cuerpo del email no cambia.</p>
+                            </fieldset>
+                        </div>
+                    </div>
+                    <div class="co-guardar">
+                        <span>Separá varias direcciones con coma.</span>
+                        <button type="submit" class="co-btn primario">Guardar configuración</button>
+                    </div>
                 </form>
-            </div>
-
-            <!-- Aviso a las áreas -->
-            <div class="smtp-card">
-                <div class="smtp-card-header">
-                    <div class="smtp-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                    </div>
-                    <h3>Aviso a las áreas (40 días)</h3>
-                </div>
-                <p class="test-hint">Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba se envía solo a las casillas de prueba.</p>
-                <div class="test-controls">
-                    <button type="button" id="btn-preview-area" class="btn btn-primary">Vista previa</button>
-                    <button type="button" id="btn-prueba-area" class="btn btn-outline">Enviarme una prueba</button>
-                </div>
-                <iframe id="preview-area-marco" class="nd-marco" sandbox="" title="Vista previa del aviso a áreas" hidden></iframe>
-            </div>
+            </section>
 
             <!-- Modal: nota enviada -->
             <div class="modal-overlay" id="modal-nota">
@@ -519,6 +556,22 @@
                         <p id="modal-nota-error" class="nd-alerta" hidden></p>
                         <ul id="modal-nota-cambios" class="test-hint" hidden></ul>
                         <iframe id="modal-nota-marco" class="nd-marco" sandbox="" title="Nota enviada"></iframe>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal: confirmación (en lugar del cuadro del navegador) -->
+            <div class="modal-overlay" id="modal-confirmar">
+                <div class="modal co-confirmar" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">
+                    <div class="modal-header">
+                        <h3 class="modal-title" id="modal-confirmar-titulo">¿Confirmar?</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p id="modal-confirmar-texto"></p>
+                        <div class="co-confirmar-botones">
+                            <button type="button" class="co-btn" id="modal-confirmar-cancelar">Cancelar</button>
+                            <button type="button" class="co-btn primario" id="modal-confirmar-aceptar">Aceptar</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -550,7 +603,7 @@
                 </div>
                 <div class="footer-bottom">
                     <span>© 2025 Secretaría de Gobierno, Modernización y Transparencia - Municipalidad de Comodoro Rivadavia</span>
-                    <span>RPAD v1.4.0</span>
+                    <span>RPAD v1.5.0</span>
                 </div>
             </footer>
         </main>
@@ -561,6 +614,6 @@
     <script src="js/auth.js?v=20261023"></script>
     <script src="js/main.js?v=20261023"></script>
     <script src="js/api.js?v=20261023"></script>
-    <script src="js/correos.js?v=20261024"></script>
+    <script src="js/correos.js?v=20261102"></script>
 </body>
 </html>

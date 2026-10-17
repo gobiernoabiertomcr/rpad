@@ -50,7 +50,6 @@ const textoPeriodosSinAuditor = (a) => {
 const nombreVistaPrevia = (tipo, gestion) => `Nota-Digital-vista-previa-${tipo}${tipo === 'auditoria' ? '' : `-${gestion}`}.pdf`;
 // Máximo de notas que devuelve la API del libro (las más recientes)
 const LIMITE_LIBRO = 500;
-const CLASE_ESTADO = { enviada: 'badge-success', fallida: 'badge-danger', pendiente: 'badge-warning' };
 
 // Los mensajes del servidor se escapan: showToast inserta HTML
 const avisar = (mensaje, tipo = 'info') => showToast(Utils.escapeHtml(mensaje), tipo);
@@ -87,6 +86,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  // La barra y la pestaña inicial se ven enseguida; el hash de la dirección (el botón atrás, un enlace a #estado) cambia de pestaña
+  conectarPestanas();
+  mostrarPestana(pestanaInicial(location.hash));
+  window.addEventListener('hashchange', () => mostrarPestana(pestanaInicial(location.hash)));
+
   document.getElementById('btn-verificar-smtp').addEventListener('click', verificarConexionSMTP);
   document.getElementById('envio-activo').addEventListener('change', cambiarEnvioAutomatico);
   ['filtro-anio', 'filtro-tipo', 'filtro-gestion', 'filtro-estado', 'filtro-dataset', 'filtro-pruebas']
@@ -107,6 +111,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-preview-area').addEventListener('click', verVistaPreviaArea);
   document.getElementById('btn-prueba-area').addEventListener('click', enviarmePruebaArea);
   document.getElementById('modal-nota-cerrar').addEventListener('click', cerrarModalNota);
+  document.getElementById('modal-nota').addEventListener('mousedown', presionEnVelo);
+  document.getElementById('modal-nota').addEventListener('click', clicAfueraDeLaNota);
+  document.getElementById('modal-confirmar-aceptar').addEventListener('click', () => cerrarConfirmacion(true));
+  document.getElementById('modal-confirmar-cancelar').addEventListener('click', () => cerrarConfirmacion(false));
+  document.getElementById('modal-confirmar').addEventListener('mousedown', presionEnVelo);
+  document.getElementById('modal-confirmar').addEventListener('click', clicAfueraDeLaConfirmacion);
+  document.addEventListener('keydown', teclaEnPagina);
 
   actualizarBotonAnexo();
   actualizarSelectorGestion();
@@ -115,6 +126,56 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarConfiguracion();
   cargarLibro();
 });
+
+// =====================================================
+// PESTAÑAS (spec 2026-10-17-correos-pestanas, 4)
+// =====================================================
+const PESTANAS_DE_CORREOS = ['libro', 'estado', 'pruebas', 'configuracion'];
+
+// La pestaña con la que abre Correos: la del hash si existe (con o sin el #), y si no, el Libro de Notas Digitales
+function pestanaInicial(hash) {
+  const pedida = String(hash ?? '').replace(/^#/, '');
+  return PESTANAS_DE_CORREOS.includes(pedida) ? pedida : 'libro';
+}
+
+// Muestra una pestaña y su panel, oculta las demás y deja el nombre en el hash (sin sumar una entrada al historial)
+function mostrarPestana(nombre) {
+  for (const otra of PESTANAS_DE_CORREOS) {
+    const activa = otra === nombre;
+    const pestana = document.getElementById(`pestana-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    pestana.classList.toggle('activa', activa);
+    document.getElementById(`vista-${otra}`).hidden = !activa;
+  }
+  history.replaceState(null, '', `#${nombre}`);
+}
+
+// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son
+// atajos del navegador (Alt+flecha izquierda vuelve atrás): no se tocan.
+function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const actual = PESTANAS_DE_CORREOS.indexOf(evento.target.dataset?.vista);
+  if (actual === -1) return;
+  const ultima = PESTANAS_DE_CORREOS.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault();
+  mostrarPestana(PESTANAS_DE_CORREOS[destino]);
+  document.getElementById(`pestana-${PESTANAS_DE_CORREOS[destino]}`).focus();
+}
+
+// El clic en cada pestaña y el teclado en la barra
+function conectarPestanas() {
+  for (const nombre of PESTANAS_DE_CORREOS) {
+    document.getElementById(`pestana-${nombre}`).addEventListener('click', () => mostrarPestana(nombre));
+  }
+  document.getElementById('pestanas-correos').addEventListener('keydown', teclaEnPestanas);
+}
 
 // =====================================================
 // ESTADO
@@ -133,6 +194,17 @@ async function verificarConexionSMTP() {
   }
 }
 
+// El punto de la pestaña Estado: 'error' si alguna alerta no es una advertencia; si no, 'advertencia' si hay alguna advertencia o
+// cambios que hoy no tienen a nadie que los audite (#nd-sin-quien-audite); si no, '' (sin punto)
+function marcaDelEstado(alertas, auditoria) {
+  if (alertas.some(a => a.nivel !== 'advertencia')) return 'error';
+  if (alertas.some(a => a.nivel === 'advertencia') || textoSinQuienAudite(auditoria) !== '') return 'advertencia';
+  return '';
+}
+
+// El HTML de las alertas que está pintado en #nd-alertas, o null si todavía no se pintó ninguna
+let alertasPintadas = null;
+
 async function cargarEstado() {
   try {
     const estado = await API.getEstadoNotas();
@@ -150,9 +222,16 @@ async function cargarEstado() {
     }
     // Las del servidor: corrida con errores o interrumpida, cron que no llama
     alertas.push(...(estado.alertas ?? []));
-    document.getElementById('nd-alertas').innerHTML = alertas
+    // #nd-alertas es una región en vivo (aria-live): si se reescribe con lo mismo, el lector de pantalla repite todas las alertas.
+    // Solo se escribe si cambió; se compara con lo último que se pintó y no con el innerHTML del elemento, porque el navegador lo
+    // devuelve normalizado (las comillas de &quot; y &#39; vuelven a ser " y ') y nunca daría igual.
+    const htmlDeAlertas = alertas
       .map(a => `<div class="nd-alerta${a.nivel === 'advertencia' ? ' nd-advertencia' : ''}">${Utils.escapeHtml(a.mensaje)}</div>`)
       .join('');
+    if (htmlDeAlertas !== alertasPintadas) {
+      document.getElementById('nd-alertas').innerHTML = htmlDeAlertas;
+      alertasPintadas = htmlDeAlertas;
+    }
     document.getElementById('nd-ultima-corrida').textContent = textoUltimaCorrida(estado.ultima_corrida);
     const licencia = document.getElementById('nd-licencia');
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
@@ -163,17 +242,25 @@ async function cargarEstado() {
       linea.textContent = texto;
       linea.hidden = !texto;
     }
+    // El punto de la pestaña Estado, con lo mismo que acaba de dibujar: así ninguna alerta queda escondida detrás de otra pestaña
+    const marca = marcaDelEstado(alertas, estado.auditoria);
+    document.getElementById('marca-estado-error').hidden = marca !== 'error';
+    document.getElementById('marca-estado-advertencia').hidden = marca !== 'advertencia';
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
-    document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
-      <div class="nd-proxima">
-        <strong>${nombres[gestion]}</strong><br>
-        Próximo aviso: ${p.aviso ? `${fecha(p.aviso.fecha)} (${p.aviso.cantidad} dataset/s)` : 'sin datasets pendientes'}<br>
-        Próxima reiteración: ${p.reiteracion.cantidad > 0 ? `${fecha(p.reiteracion.fecha)} (${p.reiteracion.cantidad} dataset/s)` : 'sin datasets pendientes'}
-      </div>`).join('');
+    document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) =>
+      `<div class="co-proxima"><h3>${nombres[gestion]}</h3><dl>`
+      + `<dt>Próximo aviso</dt><dd>${p.aviso ? `${Utils.escapeHtml(fecha(p.aviso.fecha))} · ${cantidadDeDatasets(p.aviso.cantidad)}` : 'sin datasets pendientes'}</dd>`
+      + `<dt>Próxima reiteración</dt><dd>${p.reiteracion.cantidad > 0 ? `${Utils.escapeHtml(fecha(p.reiteracion.fecha))} · ${cantidadDeDatasets(p.reiteracion.cantidad)}` : 'sin datasets pendientes'}</dd>`
+      + '</dl></div>').join('');
   } catch (error) {
     avisar(`No se pudo cargar el estado: ${error.message}`, 'error');
   }
+}
+
+// "1 dataset" o "N datasets": la cantidad de las próximas notas del Estado
+function cantidadDeDatasets(n) {
+  return n === 1 ? '1 dataset' : `${n} datasets`;
 }
 
 function textoUltimaCorrida(corrida) {
@@ -185,7 +272,12 @@ function textoUltimaCorrida(corrida) {
 
 async function cambiarEnvioAutomatico(evento) {
   const activar = evento.target.checked;
-  if (activar && !confirm('¿Activar el envío automático? Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.')) {
+  // Al activar se pregunta; si no se confirma (Cancelar, Escape o clic afuera), el interruptor vuelve a apagado y no se guarda nada
+  if (activar && !(await confirmar({
+    titulo: '¿Activar el envío automático?',
+    texto: 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.',
+    accion: 'Activar'
+  }))) {
     evento.target.checked = false;
     return;
   }
@@ -235,40 +327,39 @@ async function cargarLibro() {
   try {
     const notas = await API.getLibroNotas(filtros);
     if (!notas.length) {
-      cuerpo.innerHTML = '<tr><td colspan="8">No hay notas con estos filtros.</td></tr>';
+      cuerpo.innerHTML = '<tr><td colspan="8" class="co-sin-filas">No hay notas con estos filtros.</td></tr>';
       return;
     }
     // La API corta en las 500 más recientes: se avisa que puede haber más
     limite.hidden = notas.length < LIMITE_LIBRO;
-    cuerpo.innerHTML = notas.map((n) => {
-      const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
-      const archivoAnexo = `Anexo-${archivo}`;
-      const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
-      return `
-      <tr>
-        <td>${numeroDe(n)}</td>
-        <td>${fecha(n.fecha)}</td>
-        <td>${ETIQUETAS[n.tipo]}</td>
-        <td>${textoGestion(n.gestion)}</td>
-        <td>${celdaCantidad(n)}</td>
-        <td>${Utils.escapeHtml(n.para)}${n.cc ? `<br><small>CC: ${Utils.escapeHtml(n.cc)}</small>` : ''}</td>
-        <td>
-          <span class="badge ${CLASE_ESTADO[n.estado]}" title="${Utils.escapeHtml(detalleEstado)}">${ETIQUETAS[n.estado]}</span>
-          ${n.enviada_at ? `<br><small>${Utils.escapeHtml(n.enviada_at)}</small>` : ''}
-        </td>
-        <td>
-          <div class="nd-acciones">
-            <button type="button" class="btn btn-secondary btn-sm" data-accion="ver" data-id="${n.id}">Ver</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-accion="pdf" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivo)}">PDF</button>
-            ${n.tiene_anexo ? `<button type="button" class="btn btn-secondary btn-sm" data-accion="anexo" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivoAnexo)}">Anexo</button>` : ''}
-            ${n.estado !== 'enviada' ? `<button type="button" class="btn btn-outline btn-sm" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
+    cuerpo.innerHTML = notas.map(filaDelLibro).join('');
   } catch (error) {
-    cuerpo.innerHTML = `<tr><td colspan="8">${Utils.escapeHtml(error.message)}</td></tr>`;
+    cuerpo.innerHTML = `<tr><td colspan="8" class="co-sin-filas">${Utils.escapeHtml(error.message)}</td></tr>`;
   }
+}
+
+// Una fila del libro (spec 2026-10-17-correos-pestanas, 6). Los botones llevan data-accion, data-id y data-archivo: los lee accionDelLibro.
+// Lo que va en un atributo (clases, title, nombres de archivo) también se escapa.
+function filaDelLibro(n) {
+  const esc = (texto) => Utils.escapeHtml(texto);
+  const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
+  const archivoAnexo = `Anexo-${archivo}`;
+  const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
+  return `<tr>
+    <td><span class="co-numero">${numeroDe(n)}</span></td>
+    <td class="co-fecha">${fecha(n.fecha)}</td>
+    <td><span class="co-chip ${esc(n.tipo)}">${ETIQUETAS[n.tipo]}</span></td>
+    <td>${n.gestion ? `<span class="co-gestion">${textoGestion(n.gestion)}</span>` : textoGestion(n.gestion)}</td>
+    <td class="co-cant">${celdaCantidad(n)}</td>
+    <td class="co-para ocultable">${esc(n.para)}${n.cc ? `<small>CC: ${esc(n.cc)}</small>` : ''}</td>
+    <td><span class="co-estado"><span class="co-pastilla ${esc(n.estado)}" title="${esc(detalleEstado)}">${ETIQUETAS[n.estado]}</span>${n.enviada_at ? `<small>${esc(fechaHora(n.enviada_at))}</small>` : ''}</span></td>
+    <td><div class="co-acciones">
+      <button type="button" class="co-btn" data-accion="ver" data-id="${n.id}">Ver</button>
+      <button type="button" class="co-btn" data-accion="pdf" data-id="${n.id}" data-archivo="${esc(archivo)}">PDF</button>
+      ${n.tiene_anexo ? `<button type="button" class="co-btn" data-accion="anexo" data-id="${n.id}" data-archivo="${esc(archivoAnexo)}">Anexo</button>` : ''}
+      ${n.estado !== 'enviada' ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
+    </div></td>
+  </tr>`;
 }
 
 async function accionDelLibro(evento) {
@@ -406,7 +497,11 @@ async function verAnexoDeVistaPrevia() {
 
 async function enviarmePrueba() {
   const { tipo, gestion } = tipoYGestion();
-  if (!confirm('Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas. ¿Continuar?')) return;
+  if (!(await confirmar({
+    titulo: '¿Enviarte una prueba?',
+    texto: 'Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas.',
+    accion: 'Enviar prueba'
+  }))) return;
   await conBotonBloqueado(document.getElementById('btn-prueba'), async () => {
     try {
       const resultado = await API.enviarPruebaNota(tipo, gestion);
@@ -589,7 +684,11 @@ async function verVistaPreviaArea() {
 }
 
 async function enviarmePruebaArea() {
-  if (!confirm('Se enviará el aviso a áreas marcado como PRUEBA solo a las casillas de prueba. ¿Continuar?')) return;
+  if (!(await confirmar({
+    titulo: '¿Enviarte una prueba?',
+    texto: 'Se enviará el aviso a áreas marcado como PRUEBA solo a las casillas de prueba.',
+    accion: 'Enviar prueba'
+  }))) return;
   await conBotonBloqueado(document.getElementById('btn-prueba-area'), async () => {
     try {
       const resultado = await API.enviarPruebaAvisoArea();
@@ -598,4 +697,90 @@ async function enviarmePruebaArea() {
       avisar(error.message, 'error');
     }
   });
+}
+
+// =====================================================
+// CONFIRMACIÓN Y VENTANAS (spec 2026-10-17-correos-pestanas, 9)
+// =====================================================
+// La confirmación abierta, o null. resolver contesta la promesa de confirmar; origen es quien tenía el foco al abrirla.
+let confirmacionPendiente = null;
+
+// Pregunta con la ventana propia (#modal-confirmar) en lugar del cuadro del navegador. Resuelve true si se acepta y false si se
+// cancela (botón, Escape o clic afuera). Si ya había una abierta, esa se cancela antes de abrir la nueva.
+function confirmar({ titulo, texto, accion }) {
+  cerrarConfirmacion(false);
+  return new Promise((resolver) => {
+    document.getElementById('modal-confirmar-titulo').textContent = titulo;
+    document.getElementById('modal-confirmar-texto').textContent = texto;
+    document.getElementById('modal-confirmar-aceptar').textContent = accion;
+    confirmacionPendiente = { resolver, origen: document.activeElement };
+    document.getElementById('modal-confirmar').classList.add('active');
+    document.getElementById('modal-confirmar-aceptar').focus();
+  });
+}
+
+// Cierra la confirmación abierta, devuelve el foco a quien la abrió y contesta el pedido. Sin confirmación abierta no hace nada.
+function cerrarConfirmacion(aceptada) {
+  if (!confirmacionPendiente) return;
+  const { resolver, origen } = confirmacionPendiente;
+  confirmacionPendiente = null;
+  document.getElementById('modal-confirmar').classList.remove('active');
+  origen?.focus?.();
+  resolver(aceptada === true);
+}
+
+// El teclado de la página. Con la confirmación abierta:
+// - Enter o espacio sostenidos (evento.repeat) se frenan: el que se repite caería sobre el botón enfocado de la ventana y la aceptaría
+//   sin que nadie la haya leído (por ejemplo, un Enter mantenido sobre "Enviarme una prueba").
+// - Tab no sale de la ventana: el foco se queda entre Cancelar y el botón de la acción.
+// Escape cierra lo de más arriba: la confirmación si está abierta y, si no, la ventana de "Ver". Con el foco dentro del iframe de la
+// nota, Escape no llega a la página (se cierra con la X o con un clic afuera).
+function teclaEnPagina(evento) {
+  if (confirmacionPendiente) {
+    if (evento.repeat && (evento.key === 'Enter' || evento.key === ' ')) evento.preventDefault();
+    else if (evento.key === 'Tab') retenerFocoEnConfirmacion(evento);
+  }
+  if (evento.key !== 'Escape') return;
+  if (confirmacionPendiente) cerrarConfirmacion(false);
+  else if (document.getElementById('modal-nota').classList.contains('active')) cerrarModalNota();
+}
+
+// Mantiene el foco entre los dos botones de la confirmación. Entre ellos Tab se deja: el navegador sabe moverse de uno a otro. Solo se
+// interviene en los bordes (Shift+Tab en Cancelar, Tab en la acción) y si el foco está en cualquier otro lado, que va a la acción.
+function retenerFocoEnConfirmacion(evento) {
+  const cancelar = document.getElementById('modal-confirmar-cancelar');
+  const aceptar = document.getElementById('modal-confirmar-aceptar');
+  const enfocado = document.activeElement;
+  if (enfocado === cancelar && evento.shiftKey) aceptar.focus();
+  else if (enfocado === aceptar && !evento.shiftKey) cancelar.focus();
+  else if (enfocado !== cancelar && enfocado !== aceptar) aceptar.focus();
+  else return;
+  evento.preventDefault();
+}
+
+// El velo (el fondo) de la ventana donde empezó la última presión del mouse, o null si empezó en otro lado (adentro de la ventana o en
+// la página). Cuando se suelta el botón sobre un lugar distinto del que se apretó, el navegador manda el clic al ancestro común: apretar
+// adentro de la ventana y soltar sobre el velo (por ejemplo, al seleccionar texto de la nota) llega como un clic sobre el velo.
+let veloPresionado = null;
+
+// mousedown de cada velo: anota si la presión empezó en el propio velo
+function presionEnVelo(evento) {
+  veloPresionado = evento.target === evento.currentTarget ? evento.currentTarget : null;
+}
+
+// ¿Es un clic afuera de verdad? Solo si la presión empezó en este mismo velo, el clic cae en el propio velo (y no en algo de adentro) y
+// no es el segundo clic o posterior de un doble clic (evento.detail > 1: el doble clic en "Ver" no cierra la nota que acaba de abrir).
+// Consume la presión anotada: cada presión vale para un solo clic.
+function esClicAfuera(evento) {
+  const empezoEnElVelo = veloPresionado !== null && veloPresionado === evento.currentTarget;
+  veloPresionado = null;
+  return empezoEnElVelo && evento.target === evento.currentTarget && !(evento.detail > 1);
+}
+
+function clicAfueraDeLaNota(evento) {
+  if (esClicAfuera(evento)) cerrarModalNota();
+}
+
+function clicAfueraDeLaConfirmacion(evento) {
+  if (esClicAfuera(evento)) cerrarConfirmacion(false);
 }

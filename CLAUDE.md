@@ -59,6 +59,7 @@ public/                   # Frontend SPA
 - Iconos: Lucide SVG embebidos en main.js (objeto `Icons`)
 - Toast notifications: `showToast(message, type)`
 - `perfil.js`: lo que arma HTML (`htmlDeFila`, `htmlDeComparacion`, …) es puro y recibe quién mira por parámetro; lo que toca el DOM, `Auth` o la API va aparte. Los tests lo cargan en un `vm` sin `window` ni DOM: al cargarse, el archivo solo declara.
+- `correos.js`: pestañas Libro de Notas Digitales (la inicial), Estado, Vista previa y pruebas y Configuración (`#libro`, `#estado`, `#pruebas`, `#configuracion`); las alertas del Estado van arriba de las pestañas, con una marca en Estado. Como `perfil.js`, al cargarse solo declara (los tests lo cargan en un `vm`).
 
 ### CSS
 - Variables CSS: `--primary: #1a365d`, `--success: #10b981`, `--warning: #f59e0b`, `--danger: #ef4444`
