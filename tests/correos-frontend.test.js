@@ -42,8 +42,14 @@ const cargarCorreos = (api = {}, globales = {}) => {
   elemento('preview-tipo').value = 'aviso';
   elemento('preview-gestion').value = 'interna';
   const pendientes = [];
+  // Los oyentes que la página le puso al documento (DOMContentLoaded, keydown), por tipo de evento
+  const escuchasDeDocumento = {};
   const contexto = vm.createContext({
-    document: { getElementById: elemento, addEventListener() {}, createElement: () => ({ click() {} }) },
+    document: {
+      getElementById: elemento,
+      addEventListener(tipo, funcion) { (escuchasDeDocumento[tipo] ??= []).push(funcion); },
+      createElement: () => ({ click() {} })
+    },
     API: { previewNotaAnexo: () => new Promise(resolve => pendientes.push(resolve)), ...api },
     URL: { createObjectURL: () => 'blob:anexo', revokeObjectURL() {} },
     Utils: { escapeHtml: (texto) => texto },
@@ -58,7 +64,7 @@ const cargarCorreos = (api = {}, globales = {}) => {
     elemento('preview-tipo').value = tipo;
     contexto.actualizarBotonAnexo();
   };
-  return { contexto, elemento, enfocados, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
+  return { contexto, elemento, enfocados, escuchasDeDocumento, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
 };
 
 describe('correos.js: botón "Ver anexo" de la vista previa', () => {
@@ -1420,5 +1426,465 @@ describe('correos: arreglos chicos de la revisión de la tarea 4', () => {
     const html = elemento('nd-proximas').innerHTML;
     assert.ok(html.includes('&lt;b>') && html.includes('&lt;i>'), html);
     assert.ok(!html.includes('<b>') && !html.includes('<i>'), html);
+  });
+});
+
+describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-correos-pestanas, 9)', () => {
+  const CODIGO = fs.readFileSync(new URL('../public/js/correos.js', import.meta.url), 'utf8');
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const TEXTO_ACTIVAR = 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.';
+  // Un panel cuya API cuenta lo que se guarda y las dos pruebas que salen
+  const armar = (globales = {}) => {
+    const llamadas = { guardar: [], prueba: [], pruebaArea: [] };
+    const panel = cargarCorreos({
+      // Una copia: lo que se arma dentro del contexto aislado tiene otro Object.prototype y deepEqual estricto no lo da por igual
+      guardarConfigNotas: async (datos) => { llamadas.guardar.push({ ...datos }); },
+      enviarPruebaNota: async (tipo, gestion) => { llamadas.prueba.push([tipo, gestion]); return { message: 'Prueba enviada' }; },
+      enviarPruebaAvisoArea: async () => { llamadas.pruebaArea.push(true); return { message: 'Prueba enviada' }; },
+      getDatasets: async () => []
+    }, globales);
+    const abierta = () => panel.elemento('modal-confirmar').classList.contains('active');
+    const textos = () => ({
+      titulo: panel.elemento('modal-confirmar-titulo').textContent,
+      texto: panel.elemento('modal-confirmar-texto').textContent,
+      accion: panel.elemento('modal-confirmar-aceptar').textContent
+    });
+    return { ...panel, llamadas, abierta, textos };
+  };
+  const nota = (panel) => panel.elemento('modal-nota');
+  const notaAbierta = (panel) => {
+    nota(panel).classList.add('active');
+    panel.elemento('modal-nota-marco').srcdoc = '<p>Nota</p>';
+  };
+
+  it('correos.js ya no usa el cuadro del navegador', () => {
+    assert.doesNotMatch(CODIGO, /\bconfirm\(/);
+  });
+
+  describe('activar el envío automático', () => {
+    it('pide confirmación con el título, el texto y el botón "Activar", y enfoca el botón; todavía no guarda nada', () => {
+      const panel = armar();
+      panel.contexto.cambiarEnvioAutomatico({ target: { checked: true } });
+      assert.equal(panel.abierta(), true);
+      assert.deepEqual(panel.textos(), { titulo: '¿Activar el envío automático?', texto: TEXTO_ACTIVAR, accion: 'Activar' });
+      assert.equal(panel.enfocados.at(-1), 'modal-confirmar-aceptar');
+      assert.equal(panel.llamadas.guardar.length, 0);
+    });
+
+    it('cancelar deja el interruptor apagado, cierra la ventana y no llama a la API', async () => {
+      const panel = armar();
+      const evento = { target: { checked: true } };
+      const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+      assert.equal(evento.target.checked, false);
+      assert.equal(panel.llamadas.guardar.length, 0);
+      assert.equal(panel.abierta(), false);
+    });
+
+    it('aceptar guarda envio_activo: true una sola vez y deja el interruptor encendido', async () => {
+      const panel = armar();
+      const evento = { target: { checked: true } };
+      const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      panel.contexto.cerrarConfirmacion(true);
+      await pedido;
+      assert.deepEqual(panel.llamadas.guardar, [{ envio_activo: true }]);
+      assert.equal(evento.target.checked, true);
+      assert.equal(panel.abierta(), false);
+    });
+
+    it('si el guardado falla, el interruptor vuelve a apagado (como siempre)', async () => {
+      const panel = cargarCorreos({ guardarConfigNotas: async () => { throw new Error('sin conexión'); } });
+      const evento = { target: { checked: true } };
+      const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      panel.contexto.cerrarConfirmacion(true);
+      await pedido;
+      assert.equal(evento.target.checked, false);
+    });
+
+    it('desactivar no pide confirmación: guarda envio_activo: false enseguida', async () => {
+      const panel = armar();
+      const evento = { target: { checked: false } };
+      const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      assert.equal(panel.abierta(), false, 'la ventana no se abrió');
+      await pedido;
+      assert.deepEqual(panel.llamadas.guardar, [{ envio_activo: false }]);
+      assert.equal(evento.target.checked, false);
+      assert.equal(panel.abierta(), false);
+    });
+
+    it('después de cancelar se puede volver a activar y aceptar', async () => {
+      const panel = armar();
+      const primero = panel.contexto.cambiarEnvioAutomatico({ target: { checked: true } });
+      panel.contexto.cerrarConfirmacion(false);
+      await primero;
+      const evento = { target: { checked: true } };
+      const segundo = panel.contexto.cambiarEnvioAutomatico(evento);
+      assert.equal(panel.abierta(), true);
+      panel.contexto.cerrarConfirmacion(true);
+      await segundo;
+      assert.deepEqual(panel.llamadas.guardar, [{ envio_activo: true }]);
+    });
+  });
+
+  describe('"Enviarme una prueba" (la nota y el aviso a las áreas)', () => {
+    it('la nota: pide confirmación con su texto; cancelar no envía nada ni deja el botón bloqueado', async () => {
+      const panel = armar();
+      const pedido = panel.contexto.enviarmePrueba();
+      assert.equal(panel.abierta(), true);
+      assert.deepEqual(panel.textos(), {
+        titulo: '¿Enviarte una prueba?',
+        texto: 'Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas.',
+        accion: 'Enviar prueba'
+      });
+      assert.equal(panel.enfocados.at(-1), 'modal-confirmar-aceptar');
+      assert.equal(panel.elemento('btn-prueba').disabled, false, 'el botón se bloquea recién al confirmar');
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+      assert.equal(panel.llamadas.prueba.length, 0);
+      assert.equal(panel.elemento('btn-prueba').disabled, false);
+    });
+
+    it('la nota: aceptar envía una sola prueba con el tipo y la gestión que había elegidos al pedirla', async () => {
+      const panel = armar();
+      panel.elemento('preview-tipo').value = 'reiteracion';
+      panel.elemento('preview-gestion').value = 'externa';
+      const pedido = panel.contexto.enviarmePrueba();
+      // Aunque mientras se mira la ventana cambie la selección, se envía lo que se pidió
+      panel.elemento('preview-tipo').value = 'aviso';
+      panel.contexto.cerrarConfirmacion(true);
+      await pedido;
+      assert.deepEqual(panel.llamadas.prueba, [['reiteracion', 'externa']]);
+      assert.equal(panel.elemento('btn-prueba').disabled, false);
+    });
+
+    it('el aviso a las áreas: pide confirmación con su texto; cancelar no envía nada', async () => {
+      const panel = armar();
+      const pedido = panel.contexto.enviarmePruebaArea();
+      assert.equal(panel.abierta(), true);
+      assert.deepEqual(panel.textos(), {
+        titulo: '¿Enviarte una prueba?',
+        texto: 'Se enviará el aviso a áreas marcado como PRUEBA solo a las casillas de prueba.',
+        accion: 'Enviar prueba'
+      });
+      assert.equal(panel.enfocados.at(-1), 'modal-confirmar-aceptar');
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+      assert.equal(panel.llamadas.pruebaArea.length, 0);
+      assert.equal(panel.elemento('btn-prueba-area').disabled, false);
+    });
+
+    it('el aviso a las áreas: aceptar envía una sola prueba', async () => {
+      const panel = armar();
+      const pedido = panel.contexto.enviarmePruebaArea();
+      panel.contexto.cerrarConfirmacion(true);
+      await pedido;
+      assert.equal(panel.llamadas.pruebaArea.length, 1);
+      assert.equal(panel.elemento('btn-prueba-area').disabled, false);
+    });
+  });
+
+  describe('confirmar y cerrarConfirmacion', () => {
+    it('confirmar devuelve una promesa que resuelve true al aceptar y false al cancelar, y cierra la ventana', async () => {
+      const panel = armar();
+      const pedido = { titulo: 'T', texto: 'X', accion: 'Sí' };
+      const aceptada = panel.contexto.confirmar(pedido);
+      assert.equal(panel.abierta(), true);
+      panel.contexto.cerrarConfirmacion(true);
+      assert.equal(await aceptada, true);
+      assert.equal(panel.abierta(), false);
+      const cancelada = panel.contexto.confirmar(pedido);
+      panel.contexto.cerrarConfirmacion(false);
+      assert.equal(await cancelada, false);
+      assert.equal(panel.abierta(), false);
+      assert.equal(vm.runInContext('confirmacionPendiente', panel.contexto), null);
+    });
+
+    it('cada pedido pone sus tres textos (el anterior no queda)', () => {
+      const panel = armar();
+      panel.contexto.confirmar({ titulo: 'Uno', texto: 'Primero', accion: 'A' });
+      panel.contexto.cerrarConfirmacion(false);
+      panel.contexto.confirmar({ titulo: 'Dos', texto: 'Segundo', accion: 'B' });
+      assert.deepEqual(panel.textos(), { titulo: 'Dos', texto: 'Segundo', accion: 'B' });
+    });
+
+    it('si ya había una confirmación abierta, esa se cancela y queda la nueva', async () => {
+      const panel = armar();
+      const primera = panel.contexto.confirmar({ titulo: 'Uno', texto: 'Primero', accion: 'A' });
+      const segunda = panel.contexto.confirmar({ titulo: 'Dos', texto: 'Segundo', accion: 'B' });
+      assert.equal(await primera, false);
+      assert.equal(panel.abierta(), true, 'la nueva sigue abierta');
+      assert.deepEqual(panel.textos(), { titulo: 'Dos', texto: 'Segundo', accion: 'B' });
+      panel.contexto.cerrarConfirmacion(true);
+      assert.equal(await segunda, true);
+    });
+
+    it('al cerrar, el foco vuelve a quien estaba enfocado al abrir', async () => {
+      const panel = armar();
+      panel.contexto.document.activeElement = panel.elemento('btn-prueba');
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      assert.equal(panel.enfocados.at(-1), 'modal-confirmar-aceptar');
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+      assert.equal(panel.enfocados.at(-1), 'btn-prueba');
+    });
+
+    it('con el foco en el interruptor, cancelar la activación lo devuelve ahí', async () => {
+      const panel = armar();
+      panel.contexto.document.activeElement = panel.elemento('envio-activo');
+      const pedido = panel.contexto.cambiarEnvioAutomatico({ target: { checked: true } });
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+      assert.equal(panel.enfocados.at(-1), 'envio-activo');
+    });
+
+    it('si se pide otra confirmación con una abierta, el foco vuelve al que abrió la primera', async () => {
+      const panel = armar();
+      // Como en el navegador: enfocar un elemento lo vuelve el elemento activo del documento
+      for (const id of ['btn-prueba', 'modal-confirmar-aceptar']) {
+        const elemento = panel.elemento(id);
+        const enfocar = elemento.focus;
+        elemento.focus = () => { enfocar(); panel.contexto.document.activeElement = elemento; };
+      }
+      panel.contexto.document.activeElement = panel.elemento('btn-prueba');
+      panel.contexto.confirmar({ titulo: 'Uno', texto: 'Primero', accion: 'A' });
+      assert.equal(panel.contexto.document.activeElement.id, 'modal-confirmar-aceptar');
+      const segunda = panel.contexto.confirmar({ titulo: 'Dos', texto: 'Segundo', accion: 'B' });
+      panel.contexto.cerrarConfirmacion(true);
+      assert.equal(await segunda, true);
+      assert.equal(panel.enfocados.at(-1), 'btn-prueba', 'no a la ventana que se cerró');
+    });
+
+    it('sin nada enfocado al abrir (el documento no tiene elemento activo), cerrar no falla', async () => {
+      const panel = armar();
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      assert.doesNotThrow(() => panel.contexto.cerrarConfirmacion(true));
+      assert.equal(await pedido, true);
+    });
+
+    it('cerrarConfirmacion sin confirmación abierta no hace nada', () => {
+      const panel = armar();
+      assert.doesNotThrow(() => panel.contexto.cerrarConfirmacion(true));
+      assert.doesNotThrow(() => panel.contexto.cerrarConfirmacion(false));
+      assert.equal(panel.abierta(), false);
+      assert.deepEqual(panel.enfocados, []);
+    });
+
+    it('cerrarla dos veces seguidas resuelve una sola vez y no vuelve a mover el foco', async () => {
+      const panel = armar();
+      panel.contexto.document.activeElement = panel.elemento('btn-prueba-area');
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      panel.contexto.cerrarConfirmacion(true);
+      const enfocadosAlCerrar = panel.enfocados.length;
+      panel.contexto.cerrarConfirmacion(false);
+      assert.equal(await pedido, true, 'el segundo cierre no cambia el resultado');
+      assert.equal(panel.enfocados.length, enfocadosAlCerrar);
+    });
+  });
+
+  describe('Escape y clic afuera', () => {
+    it('Escape con la confirmación abierta la cancela y no toca la ventana de la nota', async () => {
+      const panel = armar();
+      notaAbierta(panel);
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      panel.contexto.teclaEnPagina({ key: 'Escape' });
+      assert.equal(await pedido, false);
+      assert.equal(panel.abierta(), false);
+      assert.equal(nota(panel).classList.contains('active'), true, 'la nota sigue abierta');
+      assert.equal(panel.elemento('modal-nota-marco').srcdoc, '<p>Nota</p>');
+    });
+
+    it('Escape en la activación del envío automático deja el interruptor apagado y no llama a la API', async () => {
+      const panel = armar();
+      const evento = { target: { checked: true } };
+      const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      panel.contexto.teclaEnPagina({ key: 'Escape' });
+      await pedido;
+      assert.equal(evento.target.checked, false);
+      assert.equal(panel.llamadas.guardar.length, 0);
+    });
+
+    it('Escape con la nota abierta y sin confirmación la cierra y vacía el marco', () => {
+      const panel = armar();
+      notaAbierta(panel);
+      panel.contexto.teclaEnPagina({ key: 'Escape' });
+      assert.equal(nota(panel).classList.contains('active'), false);
+      assert.equal(panel.elemento('modal-nota-marco').srcdoc, '');
+    });
+
+    it('Escape sin nada abierto no hace nada ni falla', () => {
+      const panel = armar();
+      assert.doesNotThrow(() => panel.contexto.teclaEnPagina({ key: 'Escape' }));
+      assert.equal(panel.abierta(), false);
+      assert.equal(nota(panel).classList.contains('active'), false);
+      assert.deepEqual(panel.enfocados, []);
+    });
+
+    it('otras teclas no cierran nada', async () => {
+      const panel = armar();
+      notaAbierta(panel);
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      for (const key of ['Enter', ' ', 'Tab', 'Esc', 'escape', 'ArrowDown']) panel.contexto.teclaEnPagina({ key });
+      assert.equal(panel.abierta(), true);
+      assert.equal(nota(panel).classList.contains('active'), true);
+      panel.contexto.cerrarConfirmacion(true);
+      assert.equal(await pedido, true, 'la confirmación sigue pendiente hasta que se la cierra');
+    });
+
+    it('clic afuera de la nota: solo si el clic cae en el velo (el destino es el propio velo)', () => {
+      const panel = armar();
+      const velo = { id: 'velo' };
+      notaAbierta(panel);
+      panel.contexto.clicAfueraDeLaNota({ target: { id: 'dentro' }, currentTarget: velo });
+      assert.equal(nota(panel).classList.contains('active'), true, 'un clic adentro no cierra');
+      panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo });
+      assert.equal(nota(panel).classList.contains('active'), false);
+      assert.equal(panel.elemento('modal-nota-marco').srcdoc, '');
+    });
+
+    it('clic afuera de la confirmación: cancela solo si el clic cae en el velo', async () => {
+      const panel = armar();
+      const velo = { id: 'velo' };
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      panel.contexto.clicAfueraDeLaConfirmacion({ target: { id: 'dentro' }, currentTarget: velo });
+      assert.equal(panel.abierta(), true, 'un clic adentro no cierra');
+      panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo });
+      assert.equal(await pedido, false);
+      assert.equal(panel.abierta(), false);
+    });
+
+    it('clic afuera de la activación del envío automático: interruptor apagado y sin llamada a la API', async () => {
+      const panel = armar();
+      const velo = {};
+      const evento = { target: { checked: true } };
+      const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo });
+      await pedido;
+      assert.equal(evento.target.checked, false);
+      assert.equal(panel.llamadas.guardar.length, 0);
+    });
+  });
+
+  describe('cableado al cargar la página', () => {
+    const iniciar = () => {
+      const panel = armar({
+        Auth: { isAuthenticated: () => true, isAdmin: () => true, isSuperadmin: () => false },
+        window: { addEventListener() {}, location: {} },
+        location: { hash: '' },
+        history: { replaceState() {} }
+      });
+      for (const id of ['filtro-anio', 'filtro-dataset']) panel.elemento(id).insertAdjacentHTML = () => {};
+      panel.escuchasDeDocumento.DOMContentLoaded[0]();
+      return panel;
+    };
+    const clic = (panel, id, evento = {}) => panel.elemento(id).escuchas.click.forEach(escucha => escucha(evento));
+
+    it('cada control tiene un solo oyente y el documento escucha el teclado', () => {
+      const panel = iniciar();
+      for (const id of ['modal-confirmar-aceptar', 'modal-confirmar-cancelar', 'modal-confirmar', 'modal-nota', 'modal-nota-cerrar']) {
+        assert.equal(panel.elemento(id).escuchas.click?.length, 1, `un solo oyente de clic en ${id}`);
+      }
+      assert.equal(panel.escuchasDeDocumento.keydown?.length, 1);
+    });
+
+    it('los botones de la ventana de confirmación aceptan y cancelan', async () => {
+      const panel = iniciar();
+      const aceptada = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      clic(panel, 'modal-confirmar-aceptar');
+      assert.equal(await aceptada, true);
+      const cancelada = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      clic(panel, 'modal-confirmar-cancelar');
+      assert.equal(await cancelada, false);
+    });
+
+    it('el clic afuera cierra cada ventana, pero no el clic adentro', async () => {
+      const panel = iniciar();
+      const velo = {};
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      clic(panel, 'modal-confirmar', { target: {}, currentTarget: velo });
+      assert.equal(panel.abierta(), true);
+      clic(panel, 'modal-confirmar', { target: velo, currentTarget: velo });
+      assert.equal(await pedido, false);
+      notaAbierta(panel);
+      clic(panel, 'modal-nota', { target: {}, currentTarget: velo });
+      assert.equal(nota(panel).classList.contains('active'), true);
+      clic(panel, 'modal-nota', { target: velo, currentTarget: velo });
+      assert.equal(nota(panel).classList.contains('active'), false);
+    });
+
+    it('la X de la nota la cierra y Escape en el documento cierra la confirmación primero y la nota después', async () => {
+      const panel = iniciar();
+      notaAbierta(panel);
+      clic(panel, 'modal-nota-cerrar');
+      assert.equal(nota(panel).classList.contains('active'), false);
+      notaAbierta(panel);
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      panel.escuchasDeDocumento.keydown[0]({ key: 'Escape' });
+      assert.equal(await pedido, false);
+      assert.equal(nota(panel).classList.contains('active'), true);
+      panel.escuchasDeDocumento.keydown[0]({ key: 'Escape' });
+      assert.equal(nota(panel).classList.contains('active'), false);
+    });
+  });
+
+  describe('correos.html', () => {
+    const posicion = (texto) => PAGINA.indexOf(texto);
+    const etiqueta = (id) => PAGINA.match(new RegExp(`<[a-z0-9]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+    const regla = (selector) => {
+      const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+      return PAGINA.match(new RegExp(`(?:^|[}\\s])${escapado}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+    };
+    const VENTANA = PAGINA.slice(posicion('id="modal-confirmar"'), posicion('<!-- Footer -->'));
+
+    it('#modal-confirmar es un .modal-overlay que va después de todos los paneles y de #modal-nota', () => {
+      assert.match(etiqueta('modal-confirmar'), /^<div\b[^>]*class="modal-overlay"/);
+      assert.ok(posicion('id="modal-confirmar"') > PAGINA.lastIndexOf('</section>'), 'fuera de los paneles');
+      assert.ok(posicion('id="modal-confirmar"') > posicion('id="modal-nota"'), 'después de la ventana de la nota');
+      assert.equal(PAGINA.match(/<section\b/g).length, 4);
+      assert.ok(!/\bhidden\b/.test(etiqueta('modal-confirmar')), 'se muestra con .active, no con hidden');
+    });
+
+    it('es un diálogo de alerta modal que se anuncia con su título y su texto', () => {
+      assert.match(VENTANA, /<div class="modal co-confirmar" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">/);
+      assert.match(etiqueta('modal-confirmar-titulo'), /^<h3 class="modal-title"/);
+      assert.match(etiqueta('modal-confirmar-texto'), /^<p\b/);
+    });
+
+    it('los dos botones: Cancelar y el de la acción (primario), ambos type="button"', () => {
+      assert.match(VENTANA, /<button type="button" class="co-btn" id="modal-confirmar-cancelar">Cancelar<\/button>/);
+      assert.match(etiqueta('modal-confirmar-aceptar'), /^<button type="button" class="co-btn primario"/);
+      assert.ok(VENTANA.indexOf('id="modal-confirmar-cancelar"') < VENTANA.indexOf('id="modal-confirmar-aceptar"'), 'Cancelar a la izquierda de la acción');
+    });
+
+    it('los ids de la ventana de la nota no cambian', () => {
+      for (const id of ['modal-nota', 'modal-nota-titulo', 'modal-nota-cerrar', 'modal-nota-datos', 'modal-nota-error', 'modal-nota-cambios', 'modal-nota-marco']) {
+        assert.ok(etiqueta(id), id);
+      }
+      assert.match(etiqueta('modal-nota'), /class="modal-overlay"/);
+    });
+
+    it('estilo de la ventana de la nota: radio de 14px, bordes con la línea y título con la tinta', () => {
+      assert.match(regla('.nd-modal'), /border-radius:\s*14px/);
+      assert.match(regla('.nd-modal .modal-header'), /border-bottom:\s*1px solid var\(--pf-linea\)/);
+      assert.match(regla('.nd-modal .modal-title'), /color:\s*var\(--pf-tinta\)/);
+    });
+
+    it('estilo de la confirmación: hasta 440px, texto de 0.92rem y los botones a la derecha', () => {
+      assert.match(regla('.co-confirmar'), /max-width:\s*440px/);
+      assert.match(regla('.co-confirmar .modal-title'), /color:\s*var\(--pf-tinta\)/);
+      assert.match(regla('.co-confirmar p'), /font-size:\s*0\.92rem/);
+      assert.match(regla('.co-confirmar-botones'), /display:\s*flex[^}]*justify-content:\s*flex-end/);
+    });
+
+    it('con movimiento reducido las ventanas aparecen sin transición', () => {
+      const inicio = PAGINA.indexOf('@media (prefers-reduced-motion: reduce)');
+      const bloque = PAGINA.slice(inicio, PAGINA.indexOf('</style>', inicio));
+      assert.match(bloque, /\.modal-overlay,\s*\.modal-overlay\.active,\s*\.modal,\s*\.modal-overlay\.active \.modal\s*\{\s*transition:\s*none;?\s*\}/);
+    });
+
+    it('al abrir, la visibilidad del velo y de la caja cambia sin transición (si no, el navegador no deja enfocar el botón)', () => {
+      assert.match(regla('.modal-overlay.active'), /transition:\s*opacity[^;]*,\s*visibility 0s/);
+      assert.match(regla('.modal-overlay.active .modal'), /transition:\s*transform[^;]*,\s*visibility 0s/);
+    });
   });
 });

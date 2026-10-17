@@ -262,7 +262,21 @@
         .nd-firma[hidden] { display: none; }
         .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px solid var(--pf-linea); border-radius: 6px; padding: 4px; background: #ffffff; }
         .nd-firma.nd-membrete { max-width: 100%; max-height: 120px; }
-        .nd-modal { max-width: 900px; width: 95%; }
+        /* Ventanas: ver la nota y confirmar (spec 2026-10-17-correos-pestanas, 9). Usan .modal-overlay y .active de main.css */
+        /* Al abrir, la ventana (el velo y la caja, que hereda la visibilidad) es visible desde el primer cuadro: con la transición de
+           main.css la visibilidad pasa de hidden a visible gradualmente y el navegador no deja enfocar el botón de la confirmación.
+           Al cerrar sigue el fundido de siempre. */
+        .modal-overlay.active { transition: opacity 0.3s ease, visibility 0s; }
+        .modal-overlay.active .modal { transition: transform 0.3s ease, visibility 0s; }
+        .nd-modal { max-width: 900px; width: 95%; border-radius: 14px; }
+        .nd-modal .modal-header { border-bottom: 1px solid var(--pf-linea); }
+        .nd-modal .modal-title { color: var(--pf-tinta); }
+        .co-confirmar { max-width: 440px; border-radius: 14px; }
+        .co-confirmar .modal-header { border-bottom: 1px solid var(--pf-linea); }
+        .co-confirmar .modal-title { color: var(--pf-tinta); }
+        .co-confirmar p { margin: 0 0 18px; color: var(--pf-texto); font-size: 0.92rem; line-height: 1.5; }
+        .co-confirmar-botones { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+        .modal-close:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
 
         /* Pestañas de la página */
         .pf-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--pf-linea); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
@@ -289,6 +303,7 @@
         @media (prefers-reduced-motion: reduce) {
             .pf-pestana { transition: none; }
             .co-switch input, .co-switch input::after { transition: none; }
+            .modal-overlay, .modal-overlay.active, .modal, .modal-overlay.active .modal { transition: none; }
         }
 
         /* Con los colores del sistema forzados (contraste alto) el interruptor sigue viéndose */
@@ -621,6 +636,22 @@
                         <p id="modal-nota-error" class="nd-alerta" hidden></p>
                         <ul id="modal-nota-cambios" class="test-hint" hidden></ul>
                         <iframe id="modal-nota-marco" class="nd-marco" sandbox="" title="Nota enviada"></iframe>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal: confirmación (en lugar del cuadro del navegador) -->
+            <div class="modal-overlay" id="modal-confirmar">
+                <div class="modal co-confirmar" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">
+                    <div class="modal-header">
+                        <h3 class="modal-title" id="modal-confirmar-titulo">¿Confirmar?</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p id="modal-confirmar-texto"></p>
+                        <div class="co-confirmar-botones">
+                            <button type="button" class="co-btn" id="modal-confirmar-cancelar">Cancelar</button>
+                            <button type="button" class="co-btn primario" id="modal-confirmar-aceptar">Aceptar</button>
+                        </div>
                     </div>
                 </div>
             </div>

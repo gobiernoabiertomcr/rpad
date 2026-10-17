@@ -111,6 +111,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-preview-area').addEventListener('click', verVistaPreviaArea);
   document.getElementById('btn-prueba-area').addEventListener('click', enviarmePruebaArea);
   document.getElementById('modal-nota-cerrar').addEventListener('click', cerrarModalNota);
+  document.getElementById('modal-nota').addEventListener('click', clicAfueraDeLaNota);
+  document.getElementById('modal-confirmar-aceptar').addEventListener('click', () => cerrarConfirmacion(true));
+  document.getElementById('modal-confirmar-cancelar').addEventListener('click', () => cerrarConfirmacion(false));
+  document.getElementById('modal-confirmar').addEventListener('click', clicAfueraDeLaConfirmacion);
+  document.addEventListener('keydown', teclaEnPagina);
 
   actualizarBotonAnexo();
   actualizarSelectorGestion();
@@ -255,7 +260,12 @@ function textoUltimaCorrida(corrida) {
 
 async function cambiarEnvioAutomatico(evento) {
   const activar = evento.target.checked;
-  if (activar && !confirm('¿Activar el envío automático? Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.')) {
+  // Al activar se pregunta; si no se confirma (Cancelar, Escape o clic afuera), el interruptor vuelve a apagado y no se guarda nada
+  if (activar && !(await confirmar({
+    titulo: '¿Activar el envío automático?',
+    texto: 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.',
+    accion: 'Activar'
+  }))) {
     evento.target.checked = false;
     return;
   }
@@ -475,7 +485,11 @@ async function verAnexoDeVistaPrevia() {
 
 async function enviarmePrueba() {
   const { tipo, gestion } = tipoYGestion();
-  if (!confirm('Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas. ¿Continuar?')) return;
+  if (!(await confirmar({
+    titulo: '¿Enviarte una prueba?',
+    texto: 'Se enviará esta nota marcada como PRUEBA solo a las casillas de prueba configuradas.',
+    accion: 'Enviar prueba'
+  }))) return;
   await conBotonBloqueado(document.getElementById('btn-prueba'), async () => {
     try {
       const resultado = await API.enviarPruebaNota(tipo, gestion);
@@ -658,7 +672,11 @@ async function verVistaPreviaArea() {
 }
 
 async function enviarmePruebaArea() {
-  if (!confirm('Se enviará el aviso a áreas marcado como PRUEBA solo a las casillas de prueba. ¿Continuar?')) return;
+  if (!(await confirmar({
+    titulo: '¿Enviarte una prueba?',
+    texto: 'Se enviará el aviso a áreas marcado como PRUEBA solo a las casillas de prueba.',
+    accion: 'Enviar prueba'
+  }))) return;
   await conBotonBloqueado(document.getElementById('btn-prueba-area'), async () => {
     try {
       const resultado = await API.enviarPruebaAvisoArea();
@@ -667,4 +685,51 @@ async function enviarmePruebaArea() {
       avisar(error.message, 'error');
     }
   });
+}
+
+// =====================================================
+// CONFIRMACIÓN Y VENTANAS (spec 2026-10-17-correos-pestanas, 9)
+// =====================================================
+// La confirmación abierta, o null. resolver contesta la promesa de confirmar; origen es quien tenía el foco al abrirla.
+let confirmacionPendiente = null;
+
+// Pregunta con la ventana propia (#modal-confirmar) en lugar del cuadro del navegador. Resuelve true si se acepta y false si se
+// cancela (botón, Escape o clic afuera). Si ya había una abierta, esa se cancela antes de abrir la nueva.
+function confirmar({ titulo, texto, accion }) {
+  cerrarConfirmacion(false);
+  return new Promise((resolver) => {
+    document.getElementById('modal-confirmar-titulo').textContent = titulo;
+    document.getElementById('modal-confirmar-texto').textContent = texto;
+    document.getElementById('modal-confirmar-aceptar').textContent = accion;
+    confirmacionPendiente = { resolver, origen: document.activeElement };
+    document.getElementById('modal-confirmar').classList.add('active');
+    document.getElementById('modal-confirmar-aceptar').focus();
+  });
+}
+
+// Cierra la confirmación abierta, devuelve el foco a quien la abrió y contesta el pedido. Sin confirmación abierta no hace nada.
+function cerrarConfirmacion(aceptada) {
+  if (!confirmacionPendiente) return;
+  const { resolver, origen } = confirmacionPendiente;
+  confirmacionPendiente = null;
+  document.getElementById('modal-confirmar').classList.remove('active');
+  origen?.focus?.();
+  resolver(aceptada === true);
+}
+
+// Escape cierra lo de más arriba: la confirmación si está abierta y, si no, la ventana de "Ver". Con el foco dentro del iframe de la
+// nota, Escape no llega a la página (se cierra con la X o con un clic afuera).
+function teclaEnPagina(evento) {
+  if (evento.key !== 'Escape') return;
+  if (confirmacionPendiente) cerrarConfirmacion(false);
+  else if (document.getElementById('modal-nota').classList.contains('active')) cerrarModalNota();
+}
+
+// El clic cae en el velo de la ventana (y no en algo de adentro) cuando su destino es el propio velo
+function clicAfueraDeLaNota(evento) {
+  if (evento.target === evento.currentTarget) cerrarModalNota();
+}
+
+function clicAfueraDeLaConfirmacion(evento) {
+  if (evento.target === evento.currentTarget) cerrarConfirmacion(false);
 }
