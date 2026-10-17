@@ -741,13 +741,63 @@ describe('pruebas, vista previa y estado', () => {
         assert.deepEqual(ficha, delAviso);
       }
     }
+    // El 02/11/2026 el fin del mes de los 30 días (31/12) queda a 59 días, fuera de la ventana externa de 40: el externo
+    // vence a fin de este mes (spec 2026-10-17-fechas-datasets, 9; revisión de la Task 11)
     const externa = motor.ejemplo('reiteracion', 'externa', '2026-11-02').datasets;
     assert.deepEqual(externa.map(d => [d.vencimiento, d.meses, d.datos_al, d.pedido]), [
-      ['2026-12-31', 12, '2025-11-30', { desde: '2025-12-01', hasta: '2026-11-30', texto: 'Del 01/12/2025 al 30/11/2026' }],
+      ['2026-11-30', 12, '2025-10-31', { desde: '2025-11-01', hasta: '2026-10-31', texto: 'Del 01/11/2025 al 31/10/2026' }],
       ['2026-10-31', 12, '2025-09-30', { desde: '2025-10-01', hasta: '2026-09-30', texto: 'Del 01/10/2025 al 30/09/2026' }]
     ]);
     assert.deepEqual(motor.ejemplo('aviso', 'interna', '2026-11-02').fichas[0].pedido,
       { desde: null, hasta: null, texto: 'Relevamiento actualizado' });
+    // El interno sigue con el fin del mes de los 30 días: está dentro de su ventana de 60
+    assert.equal(motor.ejemplo('aviso', 'interna', '2026-11-02').datasets[0].vencimiento, '2026-12-31');
+    assert.equal(motor.ejemplo('aviso', 'externa', '2026-11-21').datasets[0].vencimiento, '2026-12-31');
+    assert.equal(motor.ejemplo('aviso', 'externa', '2026-11-20').datasets[0].vencimiento, '2026-11-30');
+  });
+
+  it('el ejemplo a vencer cae en la ventana del aviso de su gestión (40 días la externa, 60 la interna), a fin de mes', () => {
+    const VENTANA = { externa: 40, interna: 60 };
+    const diasHasta = (hoy, fecha) => (Date.parse(fecha) - Date.parse(hoy)) / 86400000;
+    const casos = { regla: { interna: 0, externa: 0 }, anterior: { interna: 0, externa: 0 } };
+    for (let hoy = '2026-01-01'; hoy <= '2028-12-31'; hoy = sumarDias(hoy, 1)) {
+      for (const gestion of ['interna', 'externa']) {
+        const { datasets: [proximo] } = motor.ejemplo('aviso', gestion, hoy);
+        const dias = diasHasta(hoy, proximo.vencimiento);
+        assert.ok(esFinDeMes(proximo.vencimiento), `${hoy} ${gestion}: ${proximo.vencimiento}`);
+        assert.ok(dias > 0 && dias <= VENTANA[gestion], `${hoy} ${gestion}: vence ${proximo.vencimiento}, a ${dias} días`);
+        // El fin del mes en que caen los 30 días, si entra en la ventana; si no, el fin del mes anterior a ese (casi siempre,
+        // el de este mes; el 31/01, el 28/02: los 30 días caen en marzo)
+        const regla = vencimientoDelMes(sumarDias(hoy, 30));
+        const caso = diasHasta(hoy, regla) <= VENTANA[gestion] ? 'regla' : 'anterior';
+        assert.equal(proximo.vencimiento, caso === 'regla' ? regla : sumarMeses(regla, -1), `${hoy} ${gestion}`);
+        casos[caso][gestion]++;
+        // El mismo dataset en el ejemplo de la reiteración
+        assert.equal(motor.ejemplo('reiteracion', gestion, hoy).datasets[0].vencimiento, proximo.vencimiento);
+      }
+    }
+    // La interna siempre entra con la regla; la externa usa las dos
+    assert.equal(casos.anterior.interna, 0);
+    assert.ok(casos.regla.externa > 100 && casos.anterior.externa > 100, JSON.stringify(casos));
+    assert.equal(motor.ejemplo('aviso', 'externa', '2027-01-31').datasets[0].vencimiento, '2027-02-28');
+  });
+
+  // Spec 2026-10-17-fechas-datasets, 9: la vista previa muestra la columna nueva con el pedido de los ejemplos
+  it('la vista previa muestra "Datos solicitados" y "Fecha sugerida de envío"; la frase nueva, solo en el aviso externo', async () => {
+    const FRASE = 'con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío';
+    const externo = await motor.previewNota({ tipo: 'aviso', gestion: 'externa', hoy: '2026-11-02' });
+    for (const texto of ['>Datos solicitados</th>', '>Fecha sugerida de envío</th>', '>Del 01/11/2025 al 31/10/2026</td>', '>30/11/2026</td>', FRASE]) {
+      assert.ok(externo.html.includes(texto), texto);
+    }
+    assert.ok(!externo.html.includes('Última actualización') && !externo.html.includes('>Situación</th>'));
+    const interno = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' });
+    assert.ok(interno.html.includes('>Relevamiento actualizado</td>') && interno.html.includes('>31/12/2026</td>'), interno.html);
+    assert.ok(!interno.html.includes(FRASE));
+    const reiteracion = await motor.previewNota({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    for (const texto of ['>Datos solicitados</th>', '>Situación</th>', '>Informado en</th>', '>Del 01/10/2025 al 30/09/2026</td>']) {
+      assert.ok(reiteracion.html.includes(texto), texto);
+    }
+    assert.ok(!reiteracion.html.includes(FRASE) && !reiteracion.html.includes('Fecha sugerida de envío'));
   });
 
   it('la prueba de un aviso sin datos reales tampoco manda vencidos de ejemplo', async () => {
@@ -1009,6 +1059,21 @@ describe('datos solicitados guardados con cada nota (spec 2026-10-17-fechas-data
       // Recalculado con el hoy de la reiteración: Datos al no cambió, así que el inicio es el mismo y el final avanzó dos ciclos
       { tipo: 'reiteracion', ...periodo(desde, sumarMeses(HOY, -2)) }
     ]);
+  });
+
+  // Revisión de la Task 11: el pedido de un dataset que no lo trae se calcula una sola vez, al preparar el contenido; la
+  // tabla de la nota, el anexo y lo guardado salen de ese mismo cálculo
+  it('un dataset armado a mano, sin su pedido, lo calcula una vez: la nota muestra lo mismo que se guarda', async () => {
+    const id = await trimestral('Armado a mano', VENCE);
+    const [seleccionado] = await datos.seleccionarParaAviso('externa', HOY);
+    const { pedido, ...aMano } = seleccionado;
+    assert.ok(pedido && !('pedido' in aMano));
+    const notaId = await motor.generarNota({ tipo: 'aviso', gestion: 'externa', fecha: HOY, datasets: [aMano], config: await datos.obtenerConfig() });
+    const esperado = periodo(primeroDelMes(sumarMeses(VENCE, -15)), sumarMeses(VENCE, -1));
+    assert.deepEqual(await guardado(id), [{ tipo: 'aviso', ...esperado }]);
+    const [{ html, texto }] = await query('SELECT html, texto FROM notas_digitales WHERE id = ?', [notaId]);
+    assert.ok(html.includes(`>${esperado.texto}</td>`), html);
+    assert.ok(texto.includes(`    Datos solicitados: ${esperado.texto}\n`), texto);
   });
 
   it('una nota vieja, guardada sin los datos solicitados, sigue contando como aviso y no se completa', async () => {

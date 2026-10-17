@@ -324,6 +324,13 @@ describe('Correos: Estado, vista previa y prueba (spec 10.4)', () => {
     assert.equal(ejemplo.ejemplo, true);
     assert.equal(ejemplo.asunto, `Nota Digital N° XX – Ref.: ${REF}`);
     assert.match(ejemplo.html, /Dataset de ejemplo/);
+    // El ejemplo muestra un registro de actualización (spec 2026-10-17-fechas-datasets, 9): un anual que venció el 30/09
+    // y pasa al 30/09/2027, con los datos al corte del 31/08/2026 y las cuatro fechas
+    assert.ok(ejemplo.html.includes('<b>1. Dataset de ejemplo – Actualización</b>'), ejemplo.html);
+    for (const fila of [['Datos al', '31/08/2025', '31/08/2026'], ['Cargado en el portal', '04/10/2025', '15/10/2026'],
+      ['Recibido el', '—', '14/10/2026'], ['Próxima actualización', '30/09/2026', '30/09/2027']]) {
+      assert.ok(ejemplo.html.includes(fila.map(v => `>${v}</td>`).join('<td style="border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;"')), fila.join(' | '));
+    }
     await proponer(titular);
     const real = await motor.previewNota({ tipo: 'auditoria', gestion: null, hoy: '2026-10-19' });
     assert.deepEqual([real.ejemplo, real.cantidad], [false, 1]);

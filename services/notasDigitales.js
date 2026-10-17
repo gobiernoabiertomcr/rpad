@@ -11,7 +11,7 @@ import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
-  periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta
+  periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta, diasEntre
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
@@ -37,29 +37,33 @@ export class ErrorDeUso extends Error {}
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
 // los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
-// dataset cambie mientras se genera, y nunca pasa al anexo una ficha sin vencimiento. Un dataset que no trae su pedido
-// lo calcula con las fechas de la nota y su día (fecha).
+// dataset cambie mientras se genera, y nunca pasa al anexo una ficha sin vencimiento. datasets: los de prepararContenido,
+// que ya traen su pedido.
 const fichasDelAviso = async (datasets, fecha) => {
   const fichasPorId = await fichasDe(datasets.map(d => d.id), fecha);
   return datasets
     .filter(d => fichasPorId.has(d.id))
-    .map((d) => {
-      const ficha = { ...fichasPorId.get(d.id), ultima_actualizacion: d.ultima_actualizacion ?? null, vencimiento: d.vencimiento ?? null };
-      if (d.pedido === undefined) return conPedido(ficha, fecha);
-      return { ...ficha, meses: d.meses, datos_al: d.datos_al, tipo_pedido: d.tipo_pedido, pedido: d.pedido };
-    })
+    .map(d => ({
+      ...fichasPorId.get(d.id), ultima_actualizacion: d.ultima_actualizacion ?? null, vencimiento: d.vencimiento ?? null,
+      meses: d.meses, datos_al: d.datos_al, tipo_pedido: d.tipo_pedido, pedido: d.pedido
+    }))
     .filter(f => f.vencimiento);
 };
 
 // Agrega a cada dataset lo que la nota muestra: antecedentes y contactos (externa); en los avisos, las fichas del anexo.
-// fecha: el día de la nota, con el que se calcula el pedido de las fichas
+// fecha: el día de la nota. Un dataset que no trae su pedido (uno armado a mano: los de la selección lo traen) lo calcula
+// acá, una sola vez, con las fechas de la nota y su día: la tabla de la nota, el anexo y lo que se guarda en
+// notas_digitales_datasets salen del mismo cálculo.
 const prepararContenido = async ({ tipo, gestion, datasets, fecha }) => {
   // Antecedente de los emails anteriores, de todos los datasets: en los avisos va en una fila a todo el ancho y en
   // las reiteraciones, en la celda "Informado en" (spec 6.4)
   const antecedentes = await antecedentesDe(datasets.map(d => d.id));
-  const conDatos = datasets.map(d => ({ informado: null, reiteraciones: 0, ...d, antecedente: antecedentes.get(d.id) ?? null }));
+  const conDatos = datasets.map(d => ({
+    informado: null, reiteraciones: 0, ...(d.pedido === undefined ? conPedido({ tipo_gestion: gestion, ...d }, fecha) : d),
+    antecedente: antecedentes.get(d.id) ?? null
+  }));
   const areas = gestion === 'externa' ? await areasDe([...new Set(datasets.map(d => d.area_id))]) : [];
-  const fichas = tipo === 'aviso' ? await fichasDelAviso(datasets, fecha) : [];
+  const fichas = tipo === 'aviso' ? await fichasDelAviso(conDatos, fecha) : [];
   return { datasets: conDatos, areas, fichas };
 };
 
@@ -551,7 +555,8 @@ export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId =
 // emails anteriores: en el aviso sale en su fila a todo el ancho y en la reiteración, en "Informado en".
 // Los datasets de ejemplo traen también los campos de la ficha del anexo (spec 6.7), con el área de ejemplo.
 // Vencen a fin de mes (R1) y traen Datos al, el tipo de pedido sugerido para su gestión y el pedido del día, como los
-// reales (spec 2026-10-17-fechas-datasets, 9): el a vencer, el fin del mes en que caen los 30 días; el vencido, el fin del
+// reales (spec 2026-10-17-fechas-datasets, 9): el a vencer, el fin del mes en que caen los 30 días o, si así queda fuera
+// de la ventana del aviso de su gestión (los 40 días de la externa), el fin del mes anterior a ese; el vencido, el fin del
 // mes pasado. Sus datos llegan al corte del ciclo anterior, como los de un dataset que se actualizó a tiempo.
 export const ejemplo = (tipo, gestion, hoy) => {
   const area = {
@@ -570,9 +575,12 @@ export const ejemplo = (tipo, gestion, hoy) => {
     tema_principal: 'Tema de ejemplo', tema_secundario: null, formatos: 'CSV', ...contactoDelArea
   };
   const fechas = (vencimiento) => ({ vencimiento, datos_al: sumarMeses(vencimiento, -1 - meses) });
+  // (el fin del mes anterior está a más de 9 días: nunca pasa de hoy; y a lo sumo a 32, adentro de las dos ventanas)
+  let aVencer = vencimientoDelMes(sumarDias(hoy, 30));
+  while (diasEntre(hoy, aVencer) > VENTANA_DIAS[gestion]) aVencer = sumarMeses(aVencer, -1);
   const proximo = conPedido({
     ...comun, id: 0, titulo: 'Dataset de ejemplo próximo a vencer', ultima_actualizacion: sumarDias(hoy, -335),
-    ...fechas(vencimientoDelMes(sumarDias(hoy, 30))), reiteraciones: 0,
+    ...fechas(aVencer), reiteraciones: 0,
     antecedente: { cantidad: 3, primera: sumarDias(hoy, -90), ultima: sumarDias(hoy, -30) }
   }, hoy);
   const vencido = conPedido({
@@ -588,15 +596,21 @@ export const ejemplo = (tipo, gestion, hoy) => {
 };
 
 // Ejemplo de la nota de auditoría para la vista previa y la prueba cuando hoy no hay cambios para pedir (spec 10.4):
-// una modificación y un alta nuevas, y una baja ya solicitada
+// una actualización y un alta nuevas, y una baja ya solicitada. La actualización es un registro de actualización de un
+// anual (spec 2026-10-17-fechas-datasets, 9): venció a fin del mes pasado, llegaron los datos al corte y la próxima es
+// dentro de un año, a fin de mes
 const ejemploAuditoria = (hoy) => {
   const comun = { usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo', fecha_propuesta: diaHabilAnterior(diaHabilAnterior(hoy)) };
+  const vencio = sumarMeses(hoy, -1);
   return {
     nuevos: [
       {
         ...comun, id: 0, tipo_cambio: 'editar', dataset_titulo: 'Dataset de ejemplo',
-        datos_anteriores: { proxima_actualizacion: sumarDias(hoy, -10), url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo' },
-        datos_nuevos: { proxima_actualizacion: sumarDias(hoy, 355), url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-actualizado' }
+        datos_anteriores: { ultima_actualizacion: sumarDias(hoy, -380), datos_al: sumarMeses(vencio, -13), proxima_actualizacion: vencio },
+        datos_nuevos: {
+          ultima_actualizacion: comun.fecha_propuesta, datos_al: sumarMeses(vencio, -1), recibido_el: diaHabilAnterior(comun.fecha_propuesta),
+          proxima_actualizacion: sumarMeses(vencio, 12), notas: null, registro_actualizacion: true
+        }
       },
       {
         ...comun, id: -1, tipo_cambio: 'crear', dataset_titulo: null, datos_anteriores: null,

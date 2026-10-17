@@ -4,6 +4,7 @@ import {
   formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses, diasHabilesTranscurridos
 } from './notasDigitalesCalendario.js';
 import { RPAD_URL } from './emailTemplates.js';
+import { NOMBRES_TIPO_PEDIDO } from './fechasDatasetReglas.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -12,7 +13,9 @@ const REMITENTE = 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN';
 const PARRAFO_INICIAL = {
   aviso: {
     interna: 'Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
-    externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.).'
+    // El externo pide el período de cada dataset y la fecha sugerida de envío (spec 2026-10-17-fechas-datasets, 9). El interno
+    // no: casi todos sus pedidos son relevamientos, sin fechas
+    externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío.'
   },
   reiteracion: {
     interna: 'Informo a Ud. el estado, al día de la fecha, de los conjuntos de datos de gestión interna informados oportunamente que continúan pendientes de actualización en el Portal de Datos Abiertos Municipal. Solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
@@ -145,6 +148,21 @@ const textoAnteriormente = (antecedente) => {
   return `Anteriormente notificado DGMIT por e-mail en ${antecedente.cantidad} oportunidades, entre el ${formatoCorto(antecedente.primera)} y el ${formatoCorto(antecedente.ultima)}`;
 };
 
+// Una celda sin valor: "Datos solicitados" de un dataset sin pedido (eventual, o sin datos para calcularlo) y una fecha
+// vacía del detalle de un registro de actualización (nota de auditoría)
+const RAYA = '—';
+
+// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9). Los próximos a vencer de un aviso: 5, con el pedido y la
+// fecha sugerida de envío (el vencimiento). Las demás (la reiteración y la sección de vencidos que pudiera traer un aviso):
+// las 7 de la reiteración, con "Informado en" al final, porque la segunda parte de esa celda (informadoAnterior) va en la
+// última columna en el HTML, el texto y el PDF.
+const conColumnasDeAviso = (tipo, clave) => tipo === 'aviso' && clave === 'proximo';
+const columnasDe = (tipo, gestion, clave) => {
+  const comunes = ['Conjunto de datos', gestion === 'externa' ? 'Área responsable' : 'Área', 'Frecuencia', 'Datos solicitados'];
+  if (conColumnasDeAviso(tipo, clave)) return [...comunes, 'Fecha sugerida de envío'];
+  return [...comunes, clave === 'vencido' ? 'Venció' : 'Vence', 'Situación', 'Informado en'];
+};
+
 export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config, firma = null, rangoVencimientos = null, autorizacion = null }) => {
   const numeroTexto = textoNumero({ numero, anio, esPrueba });
   const ref = `${tipo === 'reiteracion' ? 'Reiteración – ' : ''}${REF}`;
@@ -156,16 +174,17 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
 
   const secciones = ['proximo', 'vencido'].map((clave) => {
     const incluidos = datasets.filter(d => (d.vencimiento < fecha ? 'vencido' : 'proximo') === clave);
-    const columnas = ['Conjunto de datos', gestion === 'externa' ? 'Área responsable' : 'Área', 'Frecuencia',
-      'Última actualización', clave === 'vencido' ? 'Venció' : 'Vence', 'Situación'];
-    if (tipo === 'reiteracion') columnas.push('Informado en');
+    const columnas = columnasDe(tipo, gestion, clave);
     const filas = incluidos.map((d) => {
-      const valores = [d.titulo, d.area_nombre, d.frecuencia_nombre, formatoCorto(d.ultima_actualizacion),
-        formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha)];
+      // "Datos solicitados": el pedido calculado el día de la nota (d.pedido, de la selección). El vencimiento es la fecha
+      // sugerida de envío del aviso
+      const valores = [d.titulo, d.area_nombre, d.frecuencia_nombre, d.pedido?.texto || RAYA, formatoCorto(d.vencimiento)];
       // Reiteraciones: el antecedente de los emails anteriores es la segunda parte de la celda "Informado en", en
       // todas las filas (con aviso o "Sin aviso previo"); cada formato la escribe en letra más chica
       const informadoAnterior = tipo === 'reiteracion' ? textoAnteriormente(d.antecedente) : null;
-      if (tipo === 'reiteracion') valores.push(`${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
+      if (!conColumnasDeAviso(tipo, clave)) {
+        valores.push(situacion(d.vencimiento, fecha), `${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
+      }
       return {
         valores,
         url: urlSegura(d.url_dataset),
@@ -247,6 +266,12 @@ const COLUMNAS_AUDITORIA = ['Conjunto de datos', 'Tipo de cambio', 'Propuesto po
 // Proporción del ancho de cada columna en el PDF: 5 columnas los nuevos y 6 los reiterados (con "Solicitado en")
 const PROPORCIONES_AUDITORIA = { nuevo: [32, 14, 26, 14, 14], reiterado: [22, 12, 18, 14, 12, 22] };
 const TIPO_DE_CAMBIO = { crear: 'Alta', editar: 'Modificación', eliminar: 'Baja' };
+// Un registro de actualización (POST /datasets/:id/actualizar) es una edición con la marca registro_actualizacion: en la nota
+// es una "Actualización" (spec 2026-10-17-fechas-datasets, 9), como en Mi Perfil ("Actualización registrada")
+const esRegistroDeActualizacion = (cambio) => cambio.tipo_cambio === 'editar' && cambio.datos_nuevos?.registro_actualizacion === true;
+const tipoDelCambio = (cambio) => (esRegistroDeActualizacion(cambio)
+  ? 'Actualización'
+  : TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio);
 // Puntos 5 y 6 de la spec 10.3: apartados con título, como "Justificación:" (Decisiones del plan 8)
 const QUE_IMPLICA = {
   titulo: 'Qué implica la auditoría:',
@@ -254,7 +279,7 @@ const QUE_IMPLICA = {
   items: [
     'los datos coincidan con la información remitida por el área responsable;',
     'el enlace al Portal de Datos Abiertos funcione y muestre la versión informada;',
-    'las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos;',
+    'las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos y que la próxima actualización sea el último día de un mes;',
     'el título, la descripción, el área, los temas, los formatos y "qué se solicita" sean correctos.'
   ],
   cierre: [`Cada cambio se aprueba o se rechaza, con un comentario, desde el RPAD: ${RPAD_URL}/perfil.html (sección "Para revisar").`]
@@ -267,7 +292,8 @@ const IMPORTANCIA = {
 };
 
 // Campos del dataset con las etiquetas del formulario (public/admin.html), en su orden. catalogo: de qué catálogo sale el
-// nombre de un id
+// nombre de un id. Las fechas y el tipo de pedido llevan los rótulos de la spec 2026-10-17-fechas-datasets (10.1), los
+// mismos de Mi Perfil: la fecha de carga es "Cargado en el portal", y "Recibido el" llega con un registro de actualización
 const CAMPOS_DEL_DATASET = [
   { campo: 'titulo', etiqueta: 'Título' },
   { campo: 'area_id', etiqueta: 'Área Responsable', catalogo: 'areas' },
@@ -277,13 +303,19 @@ const CAMPOS_DEL_DATASET = [
   { campo: 'frecuencia_id', etiqueta: 'Frecuencia', catalogo: 'frecuencias' },
   { campo: 'tipo_gestion', etiqueta: 'Tipo de Gestión' },
   { campo: 'formatos', etiqueta: 'Formatos del Dataset', catalogo: 'formatos' },
-  { campo: 'ultima_actualizacion', etiqueta: 'Última Actualización' },
-  { campo: 'proxima_actualizacion', etiqueta: 'Próxima Actualización' },
+  { campo: 'tipo_pedido', etiqueta: 'Tipo de pedido' },
+  { campo: 'datos_al', etiqueta: 'Datos al' },
+  { campo: 'ultima_actualizacion', etiqueta: 'Cargado en el portal' },
+  { campo: 'recibido_el', etiqueta: 'Recibido el' },
+  { campo: 'proxima_actualizacion', etiqueta: 'Próxima actualización' },
   { campo: 'url_dataset', etiqueta: 'URL en Portal' },
   { campo: 'que_se_solicita', etiqueta: 'Qué se solicita' },
   { campo: 'observaciones', etiqueta: 'Observaciones' }
 ];
-const CAMPOS_DE_FECHA = ['ultima_actualizacion', 'proxima_actualizacion'];
+const CAMPOS_DE_FECHA = ['datos_al', 'ultima_actualizacion', 'recibido_el', 'proxima_actualizacion'];
+// Las filas del detalle de un registro de actualización: siempre las cuatro fechas, en este orden (spec 2026-10-17, 9)
+const CAMPOS_DEL_REGISTRO = ['datos_al', 'ultima_actualizacion', 'recibido_el', 'proxima_actualizacion']
+  .map(campo => CAMPOS_DEL_DATASET.find(c => c.campo === campo));
 const SIN_DATO = 'Sin dato';
 const GESTION_DEL_DATASET = { interna: 'Interna', externa: 'Externa' };
 
@@ -299,13 +331,14 @@ const valorComparable = (campo, valor) => {
   return String(valor);
 };
 
-// Un valor del dataset como se lee en la nota: el nombre de un id de catálogo, la fecha dd/mm/aaaa, la gestión con
-// mayúscula; "Sin dato" si está vacío
-const valorDelCampo = ({ campo, catalogo }, valor, catalogos) => {
-  if (vacio(valor)) return SIN_DATO;
+// Un valor del dataset como se lee en la nota: el nombre de un id de catálogo o de un tipo de pedido, la fecha dd/mm/aaaa,
+// la gestión con mayúscula; si está vacío, siVacio ("Sin dato")
+const valorDelCampo = ({ campo, catalogo }, valor, catalogos, siVacio = SIN_DATO) => {
+  if (vacio(valor)) return siVacio;
   if (campo === 'formatos') return (Array.isArray(valor) ? valor : [valor]).map(id => catalogos.formatos?.[id] ?? String(id)).join(', ');
   if (catalogo) return catalogos[catalogo]?.[valor] ?? String(valor);
   if (campo === 'tipo_gestion') return GESTION_DEL_DATASET[valor] ?? String(valor);
+  if (campo === 'tipo_pedido') return NOMBRES_TIPO_PEDIDO[valor] ?? String(valor);
   if (CAMPOS_DE_FECHA.includes(campo) && esFechaIso(String(valor).slice(0, 10))) return formatoCorto(String(valor).slice(0, 10));
   return String(valor);
 };
@@ -321,7 +354,7 @@ const filaDeCambio = (cambio, fecha, conSolicitud) => {
     ? `${cambio.usuario_nombre}, ${cargoEnTexto({ cargo: cambio.usuario_cargo, contratado: cambio.usuario_contratado })}`
     : cambio.usuario_nombre;
   const valores = [
-    tituloDelCambio(cambio), TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio, proponente,
+    tituloDelCambio(cambio), tipoDelCambio(cambio), proponente,
     formatoCorto(cambio.fecha_propuesta), String(diasHabilesTranscurridos(cambio.fecha_propuesta, fecha))
   ];
   // "Solicitado en": "Nota Digital N° 12/26 (09/10/2026)" y, si ya se reiteró, " – reiterado N veces" (Decisiones del plan 5): el
@@ -331,10 +364,21 @@ const filaDeCambio = (cambio, fecha, conSolicitud) => {
 };
 
 // Detalle de un cambio (spec 10.3, punto 4): de una modificación, los campos que cambian con el valor anterior y el nuevo;
-// de un alta, los datos del dataset propuesto; de una baja, el dataset que se daría de baja
+// de un alta, los datos del dataset propuesto; de una baja, el dataset que se daría de baja. De un registro de
+// actualización, sus cuatro fechas con el valor anterior y el nuevo aunque alguna no cambie (spec 2026-10-17, 9); lo vacío
+// es "—" (Recibido el no tiene valor anterior)
 const detalleDelCambio = (cambio, numero, catalogos) => {
-  const titulo = `${numero}. ${tituloDelCambio(cambio)} – ${TIPO_DE_CAMBIO[cambio.tipo_cambio] ?? cambio.tipo_cambio}`;
+  const titulo = `${numero}. ${tituloDelCambio(cambio)} – ${tipoDelCambio(cambio)}`;
   const propuesta = `Propuesta por ${cambio.usuario_nombre} el ${formatoCorto(cambio.fecha_propuesta)}.`;
+  if (esRegistroDeActualizacion(cambio)) {
+    const anteriores = cambio.datos_anteriores ?? {};
+    const valor = (c, datos) => valorDelCampo(c, datos[c.campo], catalogos, RAYA);
+    return {
+      titulo, introduccion: `${propuesta} Fechas de la actualización registrada, con el valor anterior y el nuevo:`,
+      columnas: ['Campo', 'Valor anterior', 'Valor nuevo'], proporciones: [24, 38, 38], partirPalabras: true,
+      filas: CAMPOS_DEL_REGISTRO.map(c => filaSimple([c.etiqueta, valor(c, anteriores), valor(c, cambio.datos_nuevos)]))
+    };
+  }
   if (cambio.tipo_cambio === 'editar') {
     const nuevos = cambio.datos_nuevos ?? {};
     const anteriores = cambio.datos_anteriores ?? {};
