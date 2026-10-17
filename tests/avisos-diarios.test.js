@@ -308,13 +308,24 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     assert.equal(await primerRecordatorio(deB), null);
   });
 
-  it('cuánto hace que está pendiente: singular con 1, plural con el resto, sin tilde en "dias" como el email anterior', () => {
+  it('cuánto hace que está pendiente: singular con 1, plural con el resto, "día" y "días" con tilde', () => {
     const casos = [
       [0, 'Hace 0 minutos'], [60, 'Hace 1 minuto'], [119, 'Hace 1 minuto'], [120, 'Hace 2 minutos'], [59 * 60, 'Hace 59 minutos'],
       [3600, 'Hace 1 hora'], [7199, 'Hace 1 hora'], [7200, 'Hace 2 horas'], [23 * 3600, 'Hace 23 horas'],
-      [86400, 'Hace 1 dia'], [47 * 3600, 'Hace 1 dia'], [48 * 3600, 'Hace 2 dias'], [10 * 86400, 'Hace 10 dias']
+      [86400, 'Hace 1 día'], [47 * 3600, 'Hace 1 día'], [48 * 3600, 'Hace 2 días'], [10 * 86400, 'Hace 10 días']
     ];
     for (const [segundos, esperado] of casos) assert.equal(servicio.tiempoPendiente(segundos), esperado, `${segundos} segundos`);
+  });
+
+  // La vista previa del recordatorio en Correos arma el mismo texto en SQL: con tilde y en singular con 1
+  it('la vista previa (cambiosPendientesParaAdmin) dice el tiempo igual que el recordatorio', async () => {
+    const revisor = await crearUsuario('admin');
+    const propone = await crearUsuario('admin');
+    const casos = [[30, 'Hace 30 minutos'], [61, 'Hace 1 hora'], [180, 'Hace 3 horas'], [25 * 60, 'Hace 1 día'], [50 * 60, 'Hace 2 días']];
+    const ids = [];
+    for (const [minutos] of casos) ids.push(await proponerCambio(propone.id, `Vista previa ${minutos}`, { haceMinutos: minutos }));
+    const vista = await servicio.cambiosPendientesParaAdmin(revisor.id);
+    casos.forEach(([minutos, esperado], i) => assert.equal(vista.find(c => c.id === ids[i]).tiempo_pendiente, esperado, `${minutos} minutos`));
   });
 
   it('el asunto cuenta los cambios de cada persona', async () => {

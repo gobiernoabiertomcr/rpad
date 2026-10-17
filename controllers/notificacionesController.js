@@ -208,7 +208,7 @@ export const previewCambiosPendientes = async (req, res) => {
           datos_nuevos: { titulo: 'Presupuesto Municipal 2025 (Actualizado)' },
           usuario_username: 'otro_usuario',
           usuario_nombre: 'Otro Usuario',
-          tiempo_pendiente: 'Hace 1 dia'
+          tiempo_pendiente: 'Hace 1 día'
         },
         {
           id: 3,
@@ -218,7 +218,7 @@ export const previewCambiosPendientes = async (req, res) => {
           datos_nuevos: null,
           usuario_username: 'tercer_usuario',
           usuario_nombre: 'Tercer Usuario',
-          tiempo_pendiente: 'Hace 3 dias'
+          tiempo_pendiente: 'Hace 3 días'
         }
       ];
     }

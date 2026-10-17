@@ -121,10 +121,13 @@ export const cambiosPendientesParaAdmin = async (adminId) => {
        d.titulo AS dataset_titulo,
        u.username AS usuario_username,
        u.nombre_completo AS usuario_nombre,
+       -- El mismo texto que tiempoPendiente: singular con 1 y "días" con tilde
        CASE
-         WHEN TIMESTAMPDIFF(MINUTE, cp.created_at, NOW()) < 60 THEN CONCAT('Hace ', TIMESTAMPDIFF(MINUTE, cp.created_at, NOW()), ' minutos')
-         WHEN TIMESTAMPDIFF(HOUR, cp.created_at, NOW()) < 24 THEN CONCAT('Hace ', TIMESTAMPDIFF(HOUR, cp.created_at, NOW()), ' horas')
-         ELSE CONCAT('Hace ', TIMESTAMPDIFF(DAY, cp.created_at, NOW()), ' dias')
+         WHEN TIMESTAMPDIFF(MINUTE, cp.created_at, NOW()) < 60 THEN CONCAT('Hace ', TIMESTAMPDIFF(MINUTE, cp.created_at, NOW()),
+           IF(TIMESTAMPDIFF(MINUTE, cp.created_at, NOW()) = 1, ' minuto', ' minutos'))
+         WHEN TIMESTAMPDIFF(HOUR, cp.created_at, NOW()) < 24 THEN CONCAT('Hace ', TIMESTAMPDIFF(HOUR, cp.created_at, NOW()),
+           IF(TIMESTAMPDIFF(HOUR, cp.created_at, NOW()) = 1, ' hora', ' horas'))
+         ELSE CONCAT('Hace ', TIMESTAMPDIFF(DAY, cp.created_at, NOW()), IF(TIMESTAMPDIFF(DAY, cp.created_at, NOW()) = 1, ' día', ' días'))
        END AS tiempo_pendiente
      FROM cambios_pendientes cp
      JOIN usuarios u ON cp.usuario_id = u.id
@@ -142,14 +145,14 @@ export const cambiosPendientesParaAdmin = async (adminId) => {
   }));
 };
 
-// "Hace 45 minutos", "Hace 3 horas" o "Hace 2 dias" (sin tilde, como en el email anterior); con 1, en singular: "Hace 1 hora"
+// "Hace 45 minutos", "Hace 3 horas" o "Hace 2 días"; con 1, en singular: "Hace 1 hora"
 const unidad = (cantidad, singular, plural) => `${cantidad} ${cantidad === 1 ? singular : plural}`;
 export const tiempoPendiente = (segundos) => {
   const minutos = Math.floor(segundos / 60);
   if (minutos < 60) return `Hace ${unidad(minutos, 'minuto', 'minutos')}`;
   const horas = Math.floor(minutos / 60);
   if (horas < 24) return `Hace ${unidad(horas, 'hora', 'horas')}`;
-  return `Hace ${unidad(Math.floor(horas / 24), 'dia', 'dias')}`;
+  return `Hace ${unidad(Math.floor(horas / 24), 'día', 'días')}`;
 };
 
 /**
