@@ -223,8 +223,17 @@
         .nd-switch { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
         .nd-proximas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
         .nd-proxima { border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; font-size: 0.875rem; }
-        .nd-alerta { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 0.875rem; }
-        .nd-alerta.nd-advertencia { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+        /* Alertas: van arriba de las pestañas (#nd-alertas), pero el estilo también es el de #nd-sin-quien-audite y #modal-nota-error */
+        .nd-alerta { position: relative; background: #FBEEEE; border: 1px solid #EFCACA; color: #8A3434; border-radius: 10px; padding: 11px 14px 11px 38px; margin-top: 12px; font-size: 0.9rem; }
+        .nd-alerta::before { content: ''; position: absolute; left: 14px; top: 14px; width: 16px; height: 16px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A3434' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E") no-repeat center / contain; }
+        .nd-alerta.nd-advertencia { background: #FBF1DC; border-color: #F0DDB0; color: #7A5A14; }
+        .nd-alerta.nd-advertencia::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237A5A14' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E"); }
+        .co-alertas { display: grid; gap: 8px; margin-bottom: 16px; }
+        .co-alertas:empty { display: none; }
+        .co-alertas .nd-alerta { margin-top: 0; }
+        .co-punto { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+        .co-punto.error { background: #C0504D; }
+        .co-punto.advertencia { background: #D9A33A; }
         .nd-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
         .nd-filtros .form-select { width: auto; min-width: 150px; }
         .nd-check { display: flex; align-items: center; gap: 6px; font-size: 0.875rem; }
@@ -359,10 +368,13 @@
 
             <div id="message-container"></div>
 
+            <!-- Alertas de Estado: arriba de las pestañas para que no se escondan en otra -->
+            <div id="nd-alertas" class="co-alertas" aria-live="polite"></div>
+
             <!-- Pestañas -->
             <div class="pf-pestanas" id="pestanas-correos" role="tablist" aria-label="Secciones de Correos">
                 <button type="button" class="pf-pestana" role="tab" id="pestana-libro" aria-selected="false" aria-controls="vista-libro" data-vista="libro" tabindex="-1">Libro de Notas Digitales</button>
-                <button type="button" class="pf-pestana" role="tab" id="pestana-estado" aria-selected="false" aria-controls="vista-estado" data-vista="estado" tabindex="-1">Estado</button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-estado" aria-selected="false" aria-controls="vista-estado" data-vista="estado" tabindex="-1">Estado<span class="co-punto error" id="marca-estado-error" role="img" aria-label="Hay alertas" title="Hay alertas" hidden></span><span class="co-punto advertencia" id="marca-estado-advertencia" role="img" aria-label="Hay advertencias" title="Hay advertencias" hidden></span></button>
                 <button type="button" class="pf-pestana" role="tab" id="pestana-pruebas" aria-selected="false" aria-controls="vista-pruebas" data-vista="pruebas" tabindex="-1">Vista previa y pruebas</button>
                 <button type="button" class="pf-pestana" role="tab" id="pestana-configuracion" aria-selected="false" aria-controls="vista-configuracion" data-vista="configuracion" tabindex="-1">Configuración</button>
             </div>
@@ -431,7 +443,6 @@
                         </label>
                         <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
                     </div>
-                    <div id="nd-alertas"></div>
                     <div id="nd-proximas" class="nd-proximas"></div>
                     <p id="nd-ultima-corrida" class="test-hint"></p>
                     <p id="nd-licencia" class="test-hint" hidden></p>

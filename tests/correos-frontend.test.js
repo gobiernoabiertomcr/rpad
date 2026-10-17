@@ -16,7 +16,10 @@ const cargarCorreos = (api = {}, globales = {}) => {
     if (!elementos[id]) {
       const clases = new Set();
       elementos[id] = {
-        id, value: '', disabled: false, title: '', hidden: false, textContent: '', addEventListener() {},
+        id, value: '', disabled: false, title: '', hidden: false, textContent: '',
+        // Los oyentes que la página les puso, por tipo de evento: el test los dispara a mano
+        escuchas: {},
+        addEventListener(tipo, funcion) { (this.escuchas[tipo] ??= []).push(funcion); },
         // Lo que las pestañas les hacen: atributos, clases y foco
         attrs: {},
         setAttribute(nombre, valor) { this.attrs[nombre] = String(valor); },
@@ -342,7 +345,8 @@ describe('correos.html: pestañas (spec 2026-10-17-correos-pestanas, 4)', () => 
       assert.ok(lugares.every(lugar => lugar > 0), prefijo);
       assert.deepEqual([...lugares].sort((a, b) => a - b), lugares, prefijo);
     }
-    const textos = NOMBRES.map(n => PAGINA.match(new RegExp(`id="pestana-${n}"[^>]*>([^<]*)</button>`))?.[1]);
+    // El texto de cada pestaña, sin las marcas (los puntos de Estado) que lleva dentro
+    const textos = NOMBRES.map(n => PAGINA.match(new RegExp(`id="pestana-${n}"[^>]*>([\\s\\S]*?)</button>`))?.[1].replace(/<[^>]+>/g, '').trim());
     assert.deepEqual(textos, ['Libro de Notas Digitales', 'Estado', 'Vista previa y pruebas', 'Configuración']);
   });
 
@@ -402,6 +406,23 @@ describe('correos.js: pestañas', () => {
     assert.equal(historial.length, 2);
   });
 
+  it('conectarPestanas: el clic en una pestaña la activa y la tecla Inicio en la barra vuelve al Libro', () => {
+    const { elemento, contexto } = armar();
+    contexto.conectarPestanas();
+    for (const n of NOMBRES) assert.equal(elemento(`pestana-${n}`).escuchas.click?.length, 1, `un solo oyente de clic en ${n}`);
+    assert.equal(elemento('pestanas-correos').escuchas.keydown?.length, 1, 'un solo oyente de teclado en la barra');
+    // El clic, disparado a mano: lo que el navegador hace al tocar la pestaña
+    elemento('pestana-configuracion').escuchas.click[0]();
+    assert.deepEqual(activas(elemento), ['configuracion']);
+    // El teclado: Inicio con el foco en la última pestaña
+    let frenada = false;
+    elemento('pestanas-correos').escuchas.keydown[0]({
+      key: 'Home', target: elemento('pestana-configuracion'), preventDefault() { frenada = true; }
+    });
+    assert.deepEqual(activas(elemento), ['libro']);
+    assert.equal(frenada, true);
+  });
+
   describe('teclado en la barra', () => {
     const teclear = (desde, key, modificadores = {}) => {
       const panel = armar();
@@ -442,6 +463,169 @@ describe('correos.js: pestañas', () => {
           assert.equal(frenada, false, `${modificador} ${key}`);
         }
       }
+    });
+  });
+});
+
+// Correos en pestañas (spec 2026-10-17-correos-pestanas, 5): las alertas arriba de la barra
+describe('correos.html: alertas arriba de las pestañas (spec 2026-10-17-correos-pestanas, 5)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const etiqueta = (id) => PAGINA.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  const posicion = (texto) => PAGINA.indexOf(texto);
+
+  it('#nd-alertas va debajo de los mensajes, antes de la barra y de todos los paneles, y es .co-alertas', () => {
+    const alertas = posicion('id="nd-alertas"');
+    assert.ok(alertas > 0, 'sigue existiendo');
+    assert.equal(PAGINA.split('id="nd-alertas"').length, 2, 'una sola vez');
+    assert.ok(alertas > posicion('id="message-container"'), 'debajo de los mensajes');
+    assert.ok(alertas < posicion('role="tablist"'), 'antes de la barra');
+    assert.ok(alertas < posicion('id="vista-libro"'), 'antes del primer panel');
+    assert.match(etiqueta('nd-alertas'), /class="co-alertas"/);
+    assert.match(etiqueta('nd-alertas'), /aria-live="polite"/);
+  });
+
+  it('#nd-alertas no queda dentro de ningún panel', () => {
+    const paneles = [...PAGINA.matchAll(/<section\b[\s\S]*?<\/section>/g)].map(m => [m.index, m.index + m[0].length]);
+    assert.equal(paneles.length, 4);
+    const alertas = posicion('id="nd-alertas"');
+    assert.ok(paneles.every(([desde, hasta]) => alertas < desde || alertas > hasta));
+  });
+
+  it('las dos marcas de Estado están dentro del botón de la pestaña Estado, después del texto, y arrancan ocultas', () => {
+    const inicio = posicion('id="pestana-estado"');
+    const boton = PAGINA.slice(inicio, PAGINA.indexOf('</button>', inicio));
+    for (const [id, clase, texto] of [
+      ['marca-estado-error', 'error', 'Hay alertas'], ['marca-estado-advertencia', 'advertencia', 'Hay advertencias']
+    ]) {
+      assert.ok(boton.includes(`id="${id}"`), `${id} dentro del botón`);
+      const marca = etiqueta(id);
+      assert.match(marca, new RegExp(`class="co-punto ${clase}"`), id);
+      assert.match(marca, /role="img"/, id);
+      assert.match(marca, new RegExp(`aria-label="${texto}"`), id);
+      assert.match(marca, new RegExp(`title="${texto}"`), id);
+      assert.match(marca, /\bhidden\b/, `${id} arranca oculta`);
+    }
+    assert.ok(boton.includes('>Estado<span'), 'las marcas van después del texto');
+    assert.ok(boton.indexOf('marca-estado-error') < boton.indexOf('marca-estado-advertencia'));
+    // Las demás pestañas no llevan marca
+    for (const n of ['libro', 'pruebas', 'configuracion']) {
+      const desde = posicion(`id="pestana-${n}"`);
+      assert.doesNotMatch(PAGINA.slice(desde, PAGINA.indexOf('</button>', desde)), /co-punto/, n);
+    }
+  });
+
+  it('el estilo trae .co-alertas (vacío no ocupa lugar) y los dos puntos', () => {
+    assert.match(PAGINA, /\.co-alertas\s*\{[^}]*display:\s*grid[^}]*gap:\s*8px/);
+    assert.match(PAGINA, /\.co-alertas:empty\s*\{\s*display:\s*none/);
+    assert.match(PAGINA, /\.co-punto\s*\{[^}]*width:\s*8px[^}]*height:\s*8px[^}]*border-radius:\s*50%/);
+    assert.match(PAGINA, /\.co-punto\.error\s*\{[^}]*#C0504D/i);
+    assert.match(PAGINA, /\.co-punto\.advertencia\s*\{[^}]*#D9A33A/i);
+  });
+
+  it('.nd-alerta: error rojo pastel y advertencia ámbar, con el ícono por CSS', () => {
+    const base = (PAGINA.match(/^\s*\.nd-alerta\s*\{([^}]*)\}/m)?.[1] ?? '').toLowerCase();
+    for (const valor of ['#FBEEEE', '#EFCACA', '#8A3434', 'border-radius: 10px', 'padding: 11px 14px 11px 38px']) {
+      assert.ok(base.includes(valor.toLowerCase()), `.nd-alerta lleva ${valor}`);
+    }
+    const advertencia = (PAGINA.match(/^\s*\.nd-alerta\.nd-advertencia\s*\{([^}]*)\}/m)?.[1] ?? '').toLowerCase();
+    for (const valor of ['#FBF1DC', '#F0DDB0', '#7A5A14']) {
+      assert.ok(advertencia.includes(valor.toLowerCase()), `.nd-alerta.nd-advertencia lleva ${valor}`);
+    }
+    // El ícono es solo CSS (data:), uno por variante, del color del texto
+    assert.match(PAGINA, /\.nd-alerta::before\s*\{[^}]*content:\s*''[^}]*url\("data:image\/svg\+xml[^}]*stroke='%238A3434'/i);
+    assert.match(PAGINA, /\.nd-alerta\.nd-advertencia::before\s*\{[^}]*url\("data:image\/svg\+xml[^}]*stroke='%237A5A14'/i);
+    // Ya no quedan los colores de antes
+    assert.doesNotMatch(PAGINA, /#fef2f2|#fecaca|#991b1b|#fffbeb|#fde68a|#92400e/i);
+  });
+});
+
+// Correos en pestañas (spec 2026-10-17-correos-pestanas, 5): la marca de la pestaña Estado
+describe('correos.js: marca de la pestaña Estado', () => {
+  const marca = (contexto, alertas, auditoria) =>
+    vm.runInContext(`marcaDelEstado(${JSON.stringify(alertas)}, ${JSON.stringify(auditoria)})`, contexto);
+
+  it('marcaDelEstado: error si alguna alerta no es advertencia; si no, advertencia si hay advertencias o cambios sin auditor; si no, nada', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(marca(contexto, [{ nivel: 'error' }, { nivel: 'advertencia' }], undefined), 'error');
+    assert.equal(marca(contexto, [{ nivel: 'advertencia' }, { nivel: 'error' }], { sin_quien_audite: 3 }), 'error', 'el error gana a todo');
+    assert.equal(marca(contexto, [{ nivel: 'advertencia' }], undefined), 'advertencia');
+    assert.equal(marca(contexto, [], { sin_quien_audite: 2 }), 'advertencia');
+    assert.equal(marca(contexto, [], { sin_quien_audite: 0 }), '');
+    assert.equal(marca(contexto, [], undefined), '');
+    assert.equal(marca(contexto, [], { canal_nota: 0, proxima: null }), '', 'una respuesta sin el campo');
+  });
+
+  describe('cargarEstado: prende y apaga las marcas', () => {
+    const ESTADO = {
+      envio_activo: true, configuracion_faltante: [], fallidas: 0, alertas: [], ultima_corrida: null, licencia_firmante: null,
+      proximas: {}, auditoria: { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] }
+    };
+    const cargarCon = (cambios) => cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, ...cambios }) });
+    // Lo que se ve: { error, advertencia } según el hidden de cada punto
+    const visibles = (elemento) => ({
+      error: elemento('marca-estado-error').hidden === false,
+      advertencia: elemento('marca-estado-advertencia').hidden === false
+    });
+
+    it('con una nota fallida, el punto rojo se ve y el ámbar no', async () => {
+      const { contexto, elemento } = cargarCon({ fallidas: 1 });
+      await contexto.cargarEstado();
+      assert.equal(elemento('marca-estado-error').hidden, false);
+      assert.equal(elemento('marca-estado-advertencia').hidden, true);
+    });
+
+    it('con la configuración incompleta, también es error', async () => {
+      const { contexto, elemento } = cargarCon({ configuracion_faltante: ['el remitente'] });
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: true, advertencia: false });
+    });
+
+    it('con una alerta del servidor de nivel advertencia, se ve el ámbar y no el rojo', async () => {
+      const { contexto, elemento } = cargarCon({ alertas: [{ nivel: 'advertencia', mensaje: 'x' }] });
+      await contexto.cargarEstado();
+      assert.equal(elemento('marca-estado-error').hidden, true);
+      assert.equal(elemento('marca-estado-advertencia').hidden, false);
+    });
+
+    it('una alerta del servidor de nivel error se ve como error', async () => {
+      const { contexto, elemento } = cargarCon({ alertas: [{ nivel: 'error', mensaje: 'x' }] });
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: true, advertencia: false });
+    });
+
+    it('sin alertas pero con cambios sin ningún auditor, se ve el ámbar', async () => {
+      const { contexto, elemento } = cargarCon({ auditoria: { ...ESTADO.auditoria, sin_quien_audite: 1 } });
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: false, advertencia: true });
+    });
+
+    it('con error y advertencia a la vez, solo el rojo', async () => {
+      const { contexto, elemento } = cargarCon({ fallidas: 2, auditoria: { ...ESTADO.auditoria, sin_quien_audite: 1 } });
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: true, advertencia: false });
+    });
+
+    it('al volver a cargar con todo en cero, las dos marcas se apagan (también la ámbar de sin auditor)', async () => {
+      let cambios = { fallidas: 1 };
+      const { contexto, elemento } = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, ...cambios }) });
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: true, advertencia: false });
+      cambios = { alertas: [{ nivel: 'advertencia', mensaje: 'x' }] };
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: false, advertencia: true });
+      cambios = { auditoria: { ...ESTADO.auditoria, sin_quien_audite: 4 } };
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: false, advertencia: true });
+      cambios = {};
+      await contexto.cargarEstado();
+      assert.deepEqual(visibles(elemento), { error: false, advertencia: false });
+    });
+
+    it('las alertas se dibujan igual que siempre (mismo HTML, sin separador)', async () => {
+      const { contexto, elemento } = cargarCon({ fallidas: 1, alertas: [{ nivel: 'advertencia', mensaje: 'x' }] });
+      await contexto.cargarEstado();
+      assert.equal(elemento('nd-alertas').innerHTML,
+        '<div class="nd-alerta">Hay 1 nota(s) que no se pudieron enviar. Revisalas en el libro con el filtro "Fallida".</div><div class="nd-alerta nd-advertencia">x</div>');
     });
   });
 });

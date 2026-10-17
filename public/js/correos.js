@@ -188,6 +188,14 @@ async function verificarConexionSMTP() {
   }
 }
 
+// El punto de la pestaña Estado: 'error' si alguna alerta no es una advertencia; si no, 'advertencia' si hay alguna advertencia o
+// cambios que hoy no tienen a nadie que los audite (#nd-sin-quien-audite); si no, '' (sin punto)
+function marcaDelEstado(alertas, auditoria) {
+  if (alertas.some(a => a.nivel !== 'advertencia')) return 'error';
+  if (alertas.some(a => a.nivel === 'advertencia') || textoSinQuienAudite(auditoria) !== '') return 'advertencia';
+  return '';
+}
+
 async function cargarEstado() {
   try {
     const estado = await API.getEstadoNotas();
@@ -218,6 +226,10 @@ async function cargarEstado() {
       linea.textContent = texto;
       linea.hidden = !texto;
     }
+    // El punto de la pestaña Estado, con lo mismo que acaba de dibujar: así ninguna alerta queda escondida detrás de otra pestaña
+    const marca = marcaDelEstado(alertas, estado.auditoria);
+    document.getElementById('marca-estado-error').hidden = marca !== 'error';
+    document.getElementById('marca-estado-advertencia').hidden = marca !== 'advertencia';
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
     document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
