@@ -83,6 +83,7 @@ describe('GET /datasets/:id: las fechas de un dataset', () => {
     const d = res.body.data;
     assert.equal(d.datos_al, PAUTA.datosAl);
     assert.equal(d.tipo_pedido, 'acumulado');
+    assert.equal(d.tipo_pedido_nombre, 'Acumulado');
     assert.equal(d.tipo_pedido_guardado, null);
     assert.equal(d.frecuencia_meses, 3);
     assert.equal(d.pedido.texto, PAUTA.texto);
@@ -113,6 +114,7 @@ describe('GET /datasets/:id: las fechas de un dataset', () => {
   it('con un tipo guardado, el efectivo es ese y el guardado también', async () => {
     const d = (await api.get(`/datasets/${ids.foto}`)).body.data;
     assert.equal(d.tipo_pedido, 'foto');
+    assert.equal(d.tipo_pedido_nombre, 'Foto al corte');
     assert.equal(d.tipo_pedido_guardado, 'foto');
     assert.equal(d.frecuencia_meses, 6);
     // La foto es al corte: el fin del mes anterior al vencimiento
@@ -123,6 +125,7 @@ describe('GET /datasets/:id: las fechas de un dataset', () => {
     const d = (await api.get(`/datasets/${ids.eventual}`)).body.data;
     assert.equal(d.estado, 'eventual');
     assert.equal(d.tipo_pedido, 'eventual');
+    assert.equal(d.tipo_pedido_nombre, 'Eventual');
     assert.equal(d.tipo_pedido_guardado, null);
     assert.equal(d.frecuencia_meses, null);
     assert.equal(d.pedido, null);
@@ -155,6 +158,7 @@ describe('GET /datasets: datos viejos o raros no lo rompen', () => {
     const d = dataset('trimestral');
     assert.equal(d.datos_al, PAUTA.datosAl);
     assert.equal(d.tipo_pedido, 'acumulado');
+    assert.equal(d.tipo_pedido_nombre, 'Acumulado');
     assert.equal(d.frecuencia_meses, 3);
     assert.equal(d.pedido.texto, PAUTA.texto);
     assert.equal(d.estado, 'actualizado');
@@ -189,6 +193,7 @@ describe('GET /datasets: datos viejos o raros no lo rompen', () => {
     const d = dataset('eventual');
     assert.equal(d.estado, 'eventual');
     assert.equal(d.tipo_pedido, 'eventual');
+    assert.equal(d.tipo_pedido_nombre, 'Eventual');
     assert.equal(d.pedido, null);
   });
 

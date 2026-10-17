@@ -2,7 +2,7 @@ import pool from '../config/database.js';
 import { crearCambioPendiente, datasetTieneCambiosPendientes } from './cambiosPendientesController.js';
 import { esFechaIso, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import {
-  TIPOS_PEDIDO, esFinDeMes, estadoDelDataset, opcionesDeProxima, pedido as pedidoDe, tipoEfectivo, topeDatosAl
+  NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, esFinDeMes, estadoDelDataset, opcionesDeProxima, pedido as pedidoDe, tipoEfectivo, topeDatosAl
 } from '../services/fechasDatasetReglas.js';
 
 // Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
@@ -265,7 +265,7 @@ function calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion = 'ext
 
 /**
  * Suma a la fila de un dataset lo que calculan las reglas de las fechas (spec 2026-10-17-fechas-datasets, 10.1): Datos al,
- * el tipo de pedido (efectivo y guardado), la frecuencia en meses, el pedido y el estado. Las fechas nuevas viajan como
+ * el tipo de pedido (efectivo, su nombre en pantalla y guardado), la frecuencia en meses, el pedido y el estado. Las fechas nuevas viajan como
  * 'AAAA-MM-DD' (DATE_FORMAT en el SELECT) y las reglas leen la próxima de esa misma columna; proxima_actualizacion y
  * ultima_actualizacion siguen como vienen de d.*. Un dataset con una fecha mala o sin fecha da pedido null, nunca falla;
  * un Datos al que no es una fecha (por ejemplo '0000-00-00') sale null. hoy es la fecha de Argentina ('AAAA-MM-DD').
@@ -280,6 +280,7 @@ const enriquecer = (fila, hoy) => {
     ...resto,
     datos_al: datosAl,
     tipo_pedido: tipo,
+    tipo_pedido_nombre: NOMBRES_TIPO_PEDIDO[tipo],
     tipo_pedido_guardado: fila.tipo_pedido,
     frecuencia_meses: meses,
     pedido: pedidoDe({ vencimiento: proxima, tipo, datosAl, meses, hoy }),
