@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const VERSION = '20261023';
-// usuarios.js y correos.js cambiaron después (persona autorizada con licencia superpuesta en parte): su versión es propia
+// usuarios.js cambió después (persona autorizada con licencia superpuesta en parte): su versión es propia
 const VERSION_PANTALLAS = '20261024';
+// correos.js cambió después (Correos en pestañas): su versión es propia
+const VERSION_CORREOS = '20261102';
 // perfil.js cambió después (Mi Perfil en pestañas): su versión es propia
 const VERSION_PERFIL = '20261101';
 const DIRECTORIO = new URL('../public/', import.meta.url);
@@ -25,12 +27,17 @@ describe('páginas', () => {
     });
   }
 
-  // Los scripts propios de estas pantallas cambiaron con los días sin auditor y, después, con la superposición parcial
-  for (const [pagina, script] of [['usuarios.html', 'usuarios'], ['correos.html', 'correos']]) {
+  // El script propio de esta pantalla cambió con los días sin auditor y, después, con la superposición parcial
+  for (const [pagina, script] of [['usuarios.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
     });
   }
+
+  // Correos pasó a pestañas (spec 2026-10-17-correos-pestanas)
+  it(`correos.html: correos.js con la versión ${VERSION_CORREOS}`, () => {
+    assert.ok(leer('correos.html').includes(`js/correos.js?v=${VERSION_CORREOS}"`));
+  });
 
   // Mi Perfil pasó a pestañas (spec 2026-10-16-perfil-pestanas-gestion-cambios)
   it(`perfil.html: perfil.js con la versión ${VERSION_PERFIL}`, () => {

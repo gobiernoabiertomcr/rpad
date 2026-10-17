@@ -7,10 +7,33 @@ import vm from 'vm';
 // correos.js es un script de navegador: se ejecuta en un contexto aislado con los elementos y la API que usa la vista
 // previa. El pedido del anexo queda pendiente hasta que el test lo resuelve.
 // api: métodos de API que el test quiere sumar o reemplazar
-const cargarCorreos = (api = {}) => {
+// globales: lo demás que el test quiere en el contexto (por ejemplo history para las pestañas)
+const cargarCorreos = (api = {}, globales = {}) => {
   const elementos = {};
+  // Los ids de los elementos que recibieron el foco, en orden
+  const enfocados = [];
   const elemento = (id) => {
-    elementos[id] ??= { id, value: '', disabled: false, title: '', hidden: false, textContent: '', addEventListener() {} };
+    if (!elementos[id]) {
+      const clases = new Set();
+      elementos[id] = {
+        id, value: '', disabled: false, title: '', hidden: false, textContent: '', addEventListener() {},
+        // Lo que las pestañas les hacen: atributos, clases y foco
+        attrs: {},
+        setAttribute(nombre, valor) { this.attrs[nombre] = String(valor); },
+        clases,
+        classList: {
+          add: (clase) => clases.add(clase),
+          remove: (clase) => clases.delete(clase),
+          toggle: (clase, activa) => {
+            const poner = activa ?? !clases.has(clase);
+            if (poner) clases.add(clase); else clases.delete(clase);
+            return poner;
+          },
+          contains: (clase) => clases.has(clase)
+        },
+        focus() { enfocados.push(id); }
+      };
+    }
     return elementos[id];
   };
   elemento('preview-tipo').value = 'aviso';
@@ -23,7 +46,8 @@ const cargarCorreos = (api = {}) => {
     Utils: { escapeHtml: (texto) => texto },
     showToast() {},
     setTimeout: () => 0,
-    console
+    console,
+    ...globales
   });
   vm.runInContext(fs.readFileSync(new URL('../public/js/correos.js', import.meta.url), 'utf8'), contexto);
   // Lo que hace el navegador cuando cambia el tipo de nota de la vista previa
@@ -31,7 +55,7 @@ const cargarCorreos = (api = {}) => {
     elemento('preview-tipo').value = tipo;
     contexto.actualizarBotonAnexo();
   };
-  return { contexto, elemento, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
+  return { contexto, elemento, enfocados, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
 };
 
 describe('correos.js: botón "Ver anexo" de la vista previa', () => {
@@ -273,6 +297,151 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
       await contexto.cargarEstado();
       assert.equal(elemento('nd-sin-quien-audite').hidden, true);
       assert.equal(elemento('nd-periodos-sin-auditor').hidden, true);
+    });
+  });
+});
+
+// Correos en pestañas (spec 2026-10-17-correos-pestanas, 4): la estructura de la página
+describe('correos.html: pestañas (spec 2026-10-17-correos-pestanas, 4)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const NOMBRES = ['libro', 'estado', 'pruebas', 'configuracion'];
+  // La etiqueta de apertura del elemento con ese id
+  const etiqueta = (id) => PAGINA.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  const posicion = (texto) => PAGINA.indexOf(texto);
+
+  it('hay una barra de pestañas (tablist) debajo de los mensajes, visible desde el arranque', () => {
+    assert.ok(posicion('role="tablist"') > posicion('id="message-container"'), 'la barra va después de #message-container');
+    const barra = etiqueta('pestanas-correos');
+    assert.match(barra, /class="pf-pestanas"/);
+    assert.match(barra, /role="tablist"/);
+    assert.match(barra, /aria-label="Secciones de Correos"/);
+    assert.doesNotMatch(barra, /\bhidden\b/, 'a Correos entra solo quien administra: la barra no arranca oculta');
+  });
+
+  for (const n of NOMBRES) {
+    it(`${n}: una pestaña (botón) y su panel enlazados`, () => {
+      const pestana = etiqueta(`pestana-${n}`);
+      assert.match(pestana, /^<button\b/);
+      assert.match(pestana, /type="button"/);
+      assert.match(pestana, /role="tab"/);
+      assert.match(pestana, new RegExp(`aria-controls="vista-${n}"`));
+      assert.match(pestana, new RegExp(`data-vista="${n}"`));
+      assert.match(pestana, /aria-selected="false"/);
+      assert.match(pestana, /tabindex="-1"/);
+      const panel = etiqueta(`vista-${n}`);
+      assert.match(panel, /^<section\b/);
+      assert.match(panel, /role="tabpanel"/);
+      assert.match(panel, new RegExp(`aria-labelledby="pestana-${n}"`));
+      assert.match(panel, /\bhidden\b/);
+    });
+  }
+
+  it('las pestañas y los paneles van en este orden: Libro, Estado, Vista previa y pruebas, Configuración', () => {
+    for (const prefijo of ['pestana', 'vista']) {
+      const lugares = NOMBRES.map(n => posicion(`id="${prefijo}-${n}"`));
+      assert.ok(lugares.every(lugar => lugar > 0), prefijo);
+      assert.deepEqual([...lugares].sort((a, b) => a - b), lugares, prefijo);
+    }
+    const textos = NOMBRES.map(n => PAGINA.match(new RegExp(`id="pestana-${n}"[^>]*>([^<]*)</button>`))?.[1]);
+    assert.deepEqual(textos, ['Libro de Notas Digitales', 'Estado', 'Vista previa y pruebas', 'Configuración']);
+  });
+
+  it('solo hay cuatro <section (los paneles) y el modal de la nota va después del último', () => {
+    assert.equal(PAGINA.match(/<section\b/g).length, 4);
+    assert.ok(posicion('id="modal-nota"') > PAGINA.lastIndexOf('</section>'), '#modal-nota queda fuera de los paneles');
+  });
+
+  it('el título, el encabezado y el pie dicen Correos y RPAD v1.5.0', () => {
+    assert.ok(PAGINA.includes('<title>Correos - RPAD</title>'));
+    const encabezado = PAGINA.match(/<h1 class="page-title">([\s\S]*?)<\/h1>/)?.[1] ?? '';
+    assert.equal(encabezado.replace(/<[^>]+>/g, '').trim(), 'Correos');
+    assert.ok(PAGINA.includes('<span>RPAD v1.5.0</span>'));
+    assert.ok(!PAGINA.includes('RPAD v1.4.0'));
+  });
+});
+
+describe('correos.js: pestañas', () => {
+  const NOMBRES = ['libro', 'estado', 'pruebas', 'configuracion'];
+  const armar = () => {
+    const historial = [];
+    const panel = cargarCorreos({}, { history: { replaceState: (...argumentos) => historial.push(argumentos[2]) } });
+    // Cada pestaña es un botón con su dataset, como en la página
+    for (const n of NOMBRES) panel.elemento(`pestana-${n}`).dataset = { vista: n };
+    return { ...panel, historial };
+  };
+  const activas = (elemento) => NOMBRES.filter(n => elemento(`pestana-${n}`).attrs['aria-selected'] === 'true');
+
+  it('pestanaInicial: el nombre de una pestaña, con o sin #; lo demás abre el Libro', () => {
+    const { contexto } = armar();
+    for (const [hash, esperada] of [
+      ['', 'libro'], ['#estado', 'estado'], ['estado', 'estado'], ['#configuracion', 'configuracion'], ['#pruebas', 'pruebas'],
+      ['#libro', 'libro'], ['#', 'libro'], ['#ESTADO', 'libro'], ['#estado/x', 'libro'], ['#cualquiera', 'libro'], [undefined, 'libro'], [null, 'libro']
+    ]) {
+      assert.equal(contexto.pestanaInicial(hash), esperada, String(hash));
+    }
+  });
+
+  it('mostrarPestana: activa la pestaña, muestra su panel, oculta los demás y deja el hash', () => {
+    const { contexto, elemento, historial } = armar();
+    contexto.mostrarPestana('estado');
+    assert.deepEqual(activas(elemento), ['estado']);
+    for (const n of NOMBRES) {
+      const activa = n === 'estado';
+      const pestana = elemento(`pestana-${n}`);
+      assert.equal(pestana.attrs['aria-selected'], String(activa), n);
+      assert.equal(pestana.tabIndex, activa ? 0 : -1, n);
+      assert.equal(pestana.clases.has('activa'), activa, n);
+      assert.equal(elemento(`vista-${n}`).hidden, !activa, n);
+    }
+    assert.equal(historial.at(-1), '#estado');
+    // Cambiar a otra deja una sola activa
+    contexto.mostrarPestana('configuracion');
+    assert.deepEqual(activas(elemento), ['configuracion']);
+    assert.deepEqual(NOMBRES.filter(n => !elemento(`vista-${n}`).hidden), ['configuracion']);
+    assert.equal(historial.at(-1), '#configuracion');
+    assert.equal(historial.length, 2);
+  });
+
+  describe('teclado en la barra', () => {
+    const teclear = (desde, key, modificadores = {}) => {
+      const panel = armar();
+      panel.contexto.mostrarPestana(desde);
+      let frenada = false;
+      panel.contexto.teclaEnPestanas({ key, ...modificadores, target: panel.elemento(`pestana-${desde}`), preventDefault() { frenada = true; } });
+      return { ...panel, frenada };
+    };
+
+    it('flechas, inicio y fin mueven el foco y activan la pestaña de destino (con vuelta en las flechas)', () => {
+      for (const [desde, key, hacia] of [
+        ['libro', 'ArrowRight', 'estado'], ['configuracion', 'ArrowRight', 'libro'], ['libro', 'ArrowLeft', 'configuracion'],
+        ['pruebas', 'Home', 'libro'], ['estado', 'End', 'configuracion']
+      ]) {
+        const { elemento, enfocados, frenada } = teclear(desde, key);
+        assert.deepEqual(activas(elemento), [hacia], `${desde} ${key}`);
+        assert.deepEqual(enfocados, [`pestana-${hacia}`], `${desde} ${key}`);
+        assert.equal(elemento(`pestana-${hacia}`).tabIndex, 0, `${desde} ${key}`);
+        assert.equal(frenada, true, `${desde} ${key}: no desplaza la página`);
+      }
+    });
+
+    it('cualquier otra tecla no hace nada', () => {
+      for (const key of ['Enter', 'Tab', 'ArrowDown']) {
+        const { elemento, enfocados, frenada } = teclear('estado', key);
+        assert.deepEqual(activas(elemento), ['estado'], key);
+        assert.deepEqual(enfocados, [], key);
+        assert.equal(frenada, false, key);
+      }
+    });
+
+    it('con Alt, Ctrl o Cmd no hace nada ni frena la tecla: son atajos del navegador (Alt+flecha izquierda vuelve atrás)', () => {
+      for (const modificador of ['altKey', 'ctrlKey', 'metaKey']) {
+        for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+          const { elemento, enfocados, frenada } = teclear('estado', key, { [modificador]: true });
+          assert.deepEqual(activas(elemento), ['estado'], `${modificador} ${key}`);
+          assert.deepEqual(enfocados, [], `${modificador} ${key}`);
+          assert.equal(frenada, false, `${modificador} ${key}`);
+        }
+      }
     });
   });
 });

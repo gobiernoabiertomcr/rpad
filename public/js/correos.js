@@ -87,6 +87,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  // La barra y la pestaña inicial se ven enseguida; el hash de la dirección (el botón atrás, un enlace a #estado) cambia de pestaña
+  conectarPestanas();
+  mostrarPestana(pestanaInicial(location.hash));
+  window.addEventListener('hashchange', () => mostrarPestana(pestanaInicial(location.hash)));
+
   document.getElementById('btn-verificar-smtp').addEventListener('click', verificarConexionSMTP);
   document.getElementById('envio-activo').addEventListener('change', cambiarEnvioAutomatico);
   ['filtro-anio', 'filtro-tipo', 'filtro-gestion', 'filtro-estado', 'filtro-dataset', 'filtro-pruebas']
@@ -115,6 +120,56 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarConfiguracion();
   cargarLibro();
 });
+
+// =====================================================
+// PESTAÑAS (spec 2026-10-17-correos-pestanas, 4)
+// =====================================================
+const PESTANAS_DE_CORREOS = ['libro', 'estado', 'pruebas', 'configuracion'];
+
+// La pestaña con la que abre Correos: la del hash si existe (con o sin el #), y si no, el Libro de Notas Digitales
+function pestanaInicial(hash) {
+  const pedida = String(hash ?? '').replace(/^#/, '');
+  return PESTANAS_DE_CORREOS.includes(pedida) ? pedida : 'libro';
+}
+
+// Muestra una pestaña y su panel, oculta las demás y deja el nombre en el hash (sin sumar una entrada al historial)
+function mostrarPestana(nombre) {
+  for (const otra of PESTANAS_DE_CORREOS) {
+    const activa = otra === nombre;
+    const pestana = document.getElementById(`pestana-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    pestana.classList.toggle('activa', activa);
+    document.getElementById(`vista-${otra}`).hidden = !activa;
+  }
+  history.replaceState(null, '', `#${nombre}`);
+}
+
+// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son
+// atajos del navegador (Alt+flecha izquierda vuelve atrás): no se tocan.
+function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const actual = PESTANAS_DE_CORREOS.indexOf(evento.target.dataset?.vista);
+  if (actual === -1) return;
+  const ultima = PESTANAS_DE_CORREOS.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault();
+  mostrarPestana(PESTANAS_DE_CORREOS[destino]);
+  document.getElementById(`pestana-${PESTANAS_DE_CORREOS[destino]}`).focus();
+}
+
+// El clic en cada pestaña y el teclado en la barra
+function conectarPestanas() {
+  for (const nombre of PESTANAS_DE_CORREOS) {
+    document.getElementById(`pestana-${nombre}`).addEventListener('click', () => mostrarPestana(nombre));
+  }
+  document.getElementById('pestanas-correos').addEventListener('keydown', teclaEnPestanas);
+}
 
 // =====================================================
 // ESTADO
