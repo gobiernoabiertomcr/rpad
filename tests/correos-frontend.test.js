@@ -1435,8 +1435,10 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
   const TEXTO_ACTIVAR = 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.';
   // Un panel cuya API cuenta lo que se guarda y las dos pruebas que salen
   const armar = (globales = {}) => {
-    const llamadas = { guardar: [], prueba: [], pruebaArea: [] };
+    const llamadas = { guardar: [], prueba: [], pruebaArea: [], estado: 0 };
     const panel = cargarCorreos({
+      // Se cuenta cuántas veces se pide el Estado: después de guardar se vuelve a cargar, y al cancelar no
+      getEstadoNotas: async () => { llamadas.estado += 1; throw new Error('sin estado en la prueba'); },
       // Una copia: lo que se arma dentro del contexto aislado tiene otro Object.prototype y deepEqual estricto no lo da por igual
       guardarConfigNotas: async (datos) => { llamadas.guardar.push({ ...datos }); },
       enviarPruebaNota: async (tipo, gestion) => { llamadas.prueba.push([tipo, gestion]); return { message: 'Prueba enviada' }; },
@@ -1479,6 +1481,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       await pedido;
       assert.equal(evento.target.checked, false);
       assert.equal(panel.llamadas.guardar.length, 0);
+      assert.equal(panel.llamadas.estado, 0, 'cancelar no recarga el Estado');
       assert.equal(panel.abierta(), false);
     });
 
@@ -1488,6 +1491,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
       panel.contexto.cerrarConfirmacion(true);
       await pedido;
+      assert.equal(panel.llamadas.estado, 1, 'aceptar sí recarga el Estado (el contador cuenta)');
       assert.deepEqual(panel.llamadas.guardar, [{ envio_activo: true }]);
       assert.equal(evento.target.checked, true);
       assert.equal(panel.abierta(), false);
@@ -1702,6 +1706,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       await pedido;
       assert.equal(evento.target.checked, false);
       assert.equal(panel.llamadas.guardar.length, 0);
+      assert.equal(panel.llamadas.estado, 0, 'cancelar no recarga el Estado');
     });
 
     it('Escape con la nota abierta y sin confirmación la cierra y vacía el marco', () => {
@@ -1724,7 +1729,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       const panel = armar();
       notaAbierta(panel);
       const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
-      for (const key of ['Enter', ' ', 'Tab', 'Esc', 'escape', 'ArrowDown']) panel.contexto.teclaEnPagina({ key });
+      for (const key of ['Enter', ' ', 'Tab', 'Esc', 'escape', 'ArrowDown']) panel.contexto.teclaEnPagina({ key, preventDefault() {} });
       assert.equal(panel.abierta(), true);
       assert.equal(nota(panel).classList.contains('active'), true);
       panel.contexto.cerrarConfirmacion(true);
@@ -1762,6 +1767,151 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       await pedido;
       assert.equal(evento.target.checked, false);
       assert.equal(panel.llamadas.guardar.length, 0);
+      assert.equal(panel.llamadas.estado, 0, 'cancelar no recarga el Estado');
+    });
+  });
+
+  describe('teclado con la confirmación abierta: tecla sostenida y foco retenido', () => {
+    // Un evento de teclado que anota cuántas veces se le llamó a preventDefault
+    const tecla = (panel, key, extra = {}) => {
+      const evento = { key, repeat: false, shiftKey: false, prevenido: 0, preventDefault() { this.prevenido += 1; }, ...extra };
+      panel.contexto.teclaEnPagina(evento);
+      return evento;
+    };
+    // Abre una confirmación con el foco donde diga la prueba, y deja vacía la lista de enfocados para mirar solo lo que hace la tecla
+    const abrir = (panel, enfocado) => {
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      panel.contexto.document.activeElement = enfocado === undefined ? undefined : panel.elemento(enfocado);
+      panel.enfocados.length = 0;
+      return pedido;
+    };
+    const sigueAbierta = async (panel, pedido) => {
+      let resuelta = false;
+      pedido.then(() => { resuelta = true; });
+      await new Promise(resolver => setImmediate(resolver));
+      assert.equal(resuelta, false, 'la promesa sigue pendiente');
+      assert.equal(panel.abierta(), true);
+    };
+
+    for (const [nombre, key] of [['Enter', 'Enter'], ['espacio', ' ']]) {
+      it(`${nombre} sostenido (repeat) se frena y no acepta: la confirmación sigue pendiente`, async () => {
+        const panel = armar();
+        const pedido = abrir(panel, 'modal-confirmar-aceptar');
+        const evento = tecla(panel, key, { repeat: true });
+        assert.equal(evento.prevenido, 1);
+        await sigueAbierta(panel, pedido);
+        assert.equal(panel.llamadas.guardar.length, 0);
+        panel.contexto.cerrarConfirmacion(false);
+        assert.equal(await pedido, false);
+      });
+
+      it(`${nombre} una sola vez (sin repeat) no se frena: el botón enfocado hace su trabajo`, async () => {
+        const panel = armar();
+        const pedido = abrir(panel, 'modal-confirmar-aceptar');
+        assert.equal(tecla(panel, key).prevenido, 0);
+        await sigueAbierta(panel, pedido);
+        panel.contexto.cerrarConfirmacion(false);
+        await pedido;
+      });
+    }
+
+    it('una tecla sostenida que no es Enter ni espacio no se frena', async () => {
+      const panel = armar();
+      const pedido = abrir(panel, 'modal-confirmar-aceptar');
+      for (const key of ['ArrowDown', 'a', 'Shift']) assert.equal(tecla(panel, key, { repeat: true }).prevenido, 0, key);
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+    });
+
+    it('Escape sostenido sigue cancelando la confirmación (se cierra una sola vez)', async () => {
+      const panel = armar();
+      const pedido = abrir(panel, 'modal-confirmar-aceptar');
+      tecla(panel, 'Escape', { repeat: true });
+      assert.equal(await pedido, false);
+      assert.equal(panel.abierta(), false);
+      assert.doesNotThrow(() => tecla(panel, 'Escape', { repeat: true }));
+    });
+
+    it('Shift+Tab en Cancelar vuelve el foco a la acción (no sale de la ventana)', async () => {
+      const panel = armar();
+      const pedido = abrir(panel, 'modal-confirmar-cancelar');
+      const evento = tecla(panel, 'Tab', { shiftKey: true });
+      assert.equal(evento.prevenido, 1);
+      assert.deepEqual(panel.enfocados, ['modal-confirmar-aceptar']);
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+    });
+
+    it('Tab en la acción lleva el foco a Cancelar (no sale de la ventana)', async () => {
+      const panel = armar();
+      const pedido = abrir(panel, 'modal-confirmar-aceptar');
+      const evento = tecla(panel, 'Tab');
+      assert.equal(evento.prevenido, 1);
+      assert.deepEqual(panel.enfocados, ['modal-confirmar-cancelar']);
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+    });
+
+    it('con el foco fuera de los dos botones, Tab (con o sin Shift) lo trae a la acción', async () => {
+      for (const shiftKey of [false, true]) {
+        for (const enfocado of ['btn-prueba', undefined]) {
+          const panel = armar();
+          const pedido = abrir(panel, enfocado);
+          const evento = tecla(panel, 'Tab', { shiftKey });
+          assert.equal(evento.prevenido, 1, `shift ${shiftKey}, foco en ${enfocado}`);
+          assert.deepEqual(panel.enfocados, ['modal-confirmar-aceptar'], `shift ${shiftKey}, foco en ${enfocado}`);
+          panel.contexto.cerrarConfirmacion(false);
+          await pedido;
+        }
+      }
+    });
+
+    it('Tab en Cancelar y Shift+Tab en la acción se dejan: el navegador mueve el foco entre los dos botones', async () => {
+      const panel = armar();
+      const pedido = abrir(panel, 'modal-confirmar-cancelar');
+      assert.equal(tecla(panel, 'Tab').prevenido, 0);
+      panel.contexto.document.activeElement = panel.elemento('modal-confirmar-aceptar');
+      assert.equal(tecla(panel, 'Tab', { shiftKey: true }).prevenido, 0);
+      assert.deepEqual(panel.enfocados, [], 'no se enfocó nada a mano');
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
+    });
+
+    it('sin confirmación abierta nada se intercepta: ni Tab ni Enter sostenido', () => {
+      const panel = armar();
+      panel.contexto.document.activeElement = panel.elemento('btn-prueba');
+      for (const extra of [{}, { shiftKey: true }]) assert.equal(tecla(panel, 'Tab', extra).prevenido, 0);
+      for (const key of ['Enter', ' ']) assert.equal(tecla(panel, key, { repeat: true }).prevenido, 0, key);
+      assert.deepEqual(panel.enfocados, []);
+    });
+
+    it('después de cerrar la confirmación, las teclas vuelven a ser de la página', async () => {
+      const panel = armar();
+      const pedido = abrir(panel, 'modal-confirmar-aceptar');
+      panel.contexto.cerrarConfirmacion(true);
+      await pedido;
+      panel.enfocados.length = 0;
+      assert.equal(tecla(panel, 'Tab').prevenido, 0);
+      assert.equal(tecla(panel, 'Enter', { repeat: true }).prevenido, 0);
+      assert.deepEqual(panel.enfocados, []);
+    });
+
+    it('conectado al documento: el oyente de keydown aplica lo mismo', async () => {
+      const panel = armar({
+        Auth: { isAuthenticated: () => true, isAdmin: () => true, isSuperadmin: () => false },
+        window: { addEventListener() {}, location: {} },
+        location: { hash: '' },
+        history: { replaceState() {} }
+      });
+      for (const id of ['filtro-anio', 'filtro-dataset']) panel.elemento(id).insertAdjacentHTML = () => {};
+      panel.escuchasDeDocumento.DOMContentLoaded[0]();
+      const pedido = abrir(panel, 'modal-confirmar-aceptar');
+      const evento = { key: 'Enter', repeat: true, prevenido: 0, preventDefault() { this.prevenido += 1; } };
+      panel.escuchasDeDocumento.keydown[0](evento);
+      assert.equal(evento.prevenido, 1);
+      await sigueAbierta(panel, pedido);
+      panel.contexto.cerrarConfirmacion(false);
+      await pedido;
     });
   });
 

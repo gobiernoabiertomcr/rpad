@@ -717,12 +717,33 @@ function cerrarConfirmacion(aceptada) {
   resolver(aceptada === true);
 }
 
+// El teclado de la página. Con la confirmación abierta:
+// - Enter o espacio sostenidos (evento.repeat) se frenan: el que se repite caería sobre el botón enfocado de la ventana y la aceptaría
+//   sin que nadie la haya leído (por ejemplo, un Enter mantenido sobre "Enviarme una prueba").
+// - Tab no sale de la ventana: el foco se queda entre Cancelar y el botón de la acción.
 // Escape cierra lo de más arriba: la confirmación si está abierta y, si no, la ventana de "Ver". Con el foco dentro del iframe de la
 // nota, Escape no llega a la página (se cierra con la X o con un clic afuera).
 function teclaEnPagina(evento) {
+  if (confirmacionPendiente) {
+    if (evento.repeat && (evento.key === 'Enter' || evento.key === ' ')) evento.preventDefault();
+    else if (evento.key === 'Tab') retenerFocoEnConfirmacion(evento);
+  }
   if (evento.key !== 'Escape') return;
   if (confirmacionPendiente) cerrarConfirmacion(false);
   else if (document.getElementById('modal-nota').classList.contains('active')) cerrarModalNota();
+}
+
+// Mantiene el foco entre los dos botones de la confirmación. Entre ellos Tab se deja: el navegador sabe moverse de uno a otro. Solo se
+// interviene en los bordes (Shift+Tab en Cancelar, Tab en la acción) y si el foco está en cualquier otro lado, que va a la acción.
+function retenerFocoEnConfirmacion(evento) {
+  const cancelar = document.getElementById('modal-confirmar-cancelar');
+  const aceptar = document.getElementById('modal-confirmar-aceptar');
+  const enfocado = document.activeElement;
+  if (enfocado === cancelar && evento.shiftKey) aceptar.focus();
+  else if (enfocado === aceptar && !evento.shiftKey) cancelar.focus();
+  else if (enfocado !== cancelar && enfocado !== aceptar) aceptar.focus();
+  else return;
+  evento.preventDefault();
 }
 
 // El clic cae en el velo de la ventana (y no en algo de adentro) cuando su destino es el propio velo
