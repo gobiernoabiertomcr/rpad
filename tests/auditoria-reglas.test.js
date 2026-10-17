@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   quienesAuditan, permisoParaAuditar, mensajeNoCorresponde, canalDelCambio, entraEnRecordatorio, seccionDeAuditoria,
-  ANTIGUEDAD_MINIMA_RECORDATORIO, disponibilidad, agruparDiasSinAuditor
+  ANTIGUEDAD_MINIMA_RECORDATORIO, RECORDATORIOS_ANTES_DE_LA_NOTA, disponibilidad, agruparDiasSinAuditor
 } from '../services/auditoriaReglas.js';
 
 // El firmante titular (1), otro auditor (2) y dos editores (3 y 4), todos disponibles salvo que se diga otra cosa
@@ -72,10 +72,20 @@ describe('canal de cada cambio (spec 9.1, ejemplos 9.4)', () => {
   const canal = (proponente, primer, hoy, ctx = contexto()) =>
     canalDelCambio({ cambio: { usuario_id: proponente, primer_recordatorio_fecha: primer }, hoy, ...ctx });
 
-  it('propone el titular el viernes y hay otro auditor: el viernes, recordatorio; desde el lunes, nota', () => {
+  // Dos recordatorios por email (el día del primero y el día hábil siguiente) y la nota recién al segundo día hábil después
+  // del primero (pedido del usuario el 16/10/2026: antes la nota salía al día hábil siguiente)
+  it('propone el titular el viernes y hay otro auditor: viernes y lunes, recordatorio; desde el martes, nota', () => {
+    assert.equal(RECORDATORIOS_ANTES_DE_LA_NOTA, 2);
     assert.equal(canal(1, null, '2026-10-16'), 'recordatorio');
     assert.equal(canal(1, '2026-10-16', '2026-10-16'), 'recordatorio');
-    assert.equal(canal(1, '2026-10-16', '2026-10-19'), 'nota');
+    assert.equal(canal(1, '2026-10-16', '2026-10-19'), 'recordatorio');
+    assert.equal(canal(1, '2026-10-16', '2026-10-20'), 'nota');
+    assert.equal(canal(1, '2026-10-16', '2026-10-21'), 'nota');
+  });
+
+  it('los días no hábiles no cuentan: con el feriado del martes 08/12, el primer recordatorio del lunes 07/12 llega a nota el jueves 10/12', () => {
+    assert.equal(canal(1, '2026-12-07', '2026-12-09'), 'recordatorio');
+    assert.equal(canal(1, '2026-12-07', '2026-12-10'), 'nota');
   });
 
   it('propone un editor y el titular está disponible: siempre recordatorio', () => {
@@ -83,24 +93,25 @@ describe('canal de cada cambio (spec 9.1, ejemplos 9.4)', () => {
     assert.equal(canal(3, '2026-10-16', '2026-11-30'), 'recordatorio');
   });
 
-  it('el titular de licencia con autorizado, propone un editor: nota desde el día hábil siguiente al primer recordatorio', () => {
+  it('el titular de licencia con autorizado, propone un editor: nota desde el segundo día hábil después del primer recordatorio', () => {
     const deLicencia = contexto({ 1: { disponible: false } });
     assert.equal(canal(3, null, '2026-10-19', deLicencia), 'recordatorio');
-    assert.equal(canal(3, '2026-10-19', '2026-10-20', deLicencia), 'nota');
+    assert.equal(canal(3, '2026-10-19', '2026-10-20', deLicencia), 'recordatorio');
+    assert.equal(canal(3, '2026-10-19', '2026-10-21', deLicencia), 'nota');
   });
 
   it('propone el titular y el único otro auditor está de licencia: respaldo, recordatorio', () => {
-    assert.equal(canal(1, '2026-10-16', '2026-10-19', contexto({ 2: { disponible: false } })), 'recordatorio');
+    assert.equal(canal(1, '2026-10-16', '2026-10-20', contexto({ 2: { disponible: false } })), 'recordatorio');
   });
 
   it('el titular de licencia sin autorizado: recordatorio; a la vuelta, lo que cumple las condiciones va a nota', () => {
-    assert.equal(canal(1, '2026-10-16', '2026-10-19', contexto({ 1: { disponible: false } }, { hayQuienFirme: false })), 'recordatorio');
+    assert.equal(canal(1, '2026-10-16', '2026-10-20', contexto({ 1: { disponible: false } }, { hayQuienFirme: false })), 'recordatorio');
     assert.equal(canal(1, '2026-10-16', '2026-10-26'), 'nota');
   });
 
   it('sin firmante titular, la condición 2 mira a los superadmins; sin ninguno, se cumple siempre', () => {
-    assert.equal(canal(3, '2026-10-16', '2026-10-19', contexto({}, { titulares: [1] })), 'recordatorio');
-    assert.equal(canal(3, '2026-10-16', '2026-10-19', contexto({}, { titulares: [] })), 'nota');
+    assert.equal(canal(3, '2026-10-16', '2026-10-20', contexto({}, { titulares: [1] })), 'recordatorio');
+    assert.equal(canal(3, '2026-10-16', '2026-10-20', contexto({}, { titulares: [] })), 'nota');
   });
 });
 

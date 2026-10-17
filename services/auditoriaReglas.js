@@ -94,9 +94,14 @@ export const permisoParaAuditar = (usuario, proponenteId, personas) => {
   return respaldo ? { puede: true, respaldo: true } : { puede: false, mensaje: mensajeNoCorresponde(auditores) };
 };
 
+// Recordatorios por email antes de pedir la auditoría por nota (pedido del usuario el 16/10/2026; antes era 1): el del día
+// del primer recordatorio y el del día hábil siguiente. La nota sale recién al segundo día hábil después del primero.
+export const RECORDATORIOS_ANTES_DE_LA_NOTA = 2;
+
 /**
  * Canal de un cambio pendiente en la corrida de un día hábil (spec 9.1). 'nota' si se cumplen las cuatro condiciones:
- * 1. ya tuvo su primer recordatorio en un día hábil anterior (primer_recordatorio_fecha < hoy);
+ * 1. ya tuvo sus recordatorios: el primero fue hace RECORDATORIOS_ANTES_DE_LA_NOTA días hábiles o más
+ *    (diasHabilesTranscurridos(primer_recordatorio_fecha, hoy) >= 2: recordatorio el día 1 y el día 2, nota el día 3);
  * 2. ninguno de los titulares puede auditarlo hoy (lo propuso o no está disponible);
  * 3. hay auditores disponibles para el cambio (no es de respaldo);
  * 4. la nota de auditoría puede salir (hayQuienFirme): envío automático activo, configuración completa, Para de auditoría
@@ -107,7 +112,8 @@ export const permisoParaAuditar = (usuario, proponenteId, personas) => {
  * personas, titulares (ids) y hayQuienFirme: los de auditoriaService.contextoDeCanal
  */
 export const canalDelCambio = ({ cambio, hoy, personas, titulares, hayQuienFirme }) => {
-  const yaTuvoRecordatorio = Boolean(cambio.primer_recordatorio_fecha) && cambio.primer_recordatorio_fecha < hoy;
+  const yaTuvoRecordatorio = Boolean(cambio.primer_recordatorio_fecha)
+    && diasHabilesTranscurridos(cambio.primer_recordatorio_fecha, hoy) >= RECORDATORIOS_ANTES_DE_LA_NOTA;
   const disponibles = new Set(personas.filter(p => p.disponible).map(p => p.id));
   const algunTitularPuede = titulares.some(id => id !== cambio.usuario_id && disponibles.has(id));
   const hayAuditores = !quienesAuditan(personas, cambio.usuario_id).respaldo;

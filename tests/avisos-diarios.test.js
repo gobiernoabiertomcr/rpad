@@ -232,13 +232,14 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     assert.equal(para(await mailpit.mensajes(), b.email).length, 0);
   });
 
-  // El cambio que propuso el titular (sin firmante elegido, el superadmin) y que ya tuvo su primer recordatorio el viernes:
-  // el lunes lo puede auditar otro admin, pero no el titular (9.1). Devuelve al otro admin, que es quien lo recibiría.
-  const cambioDelTitularYaRecordado = async () => {
+  // El cambio que propuso el titular (sin firmante elegido, el superadmin) y que ya tuvo su primer recordatorio el jueves
+  // 15/10 (por defecto): el lunes 19/10, dos días hábiles después, lo puede auditar otro admin, pero no el titular (9.1).
+  // Devuelve al otro admin, que es quien lo recibiría.
+  const cambioDelTitularYaRecordado = async ({ primer = '2026-10-15 14:00:00' } = {}) => {
     const titular = await crearUsuario('superadmin');
     const otro = await crearUsuario('admin');
     const id = await proponerCambio(titular.id, 'Cambio del titular');
-    await query("UPDATE cambios_pendientes SET primer_recordatorio_at = '2026-10-16 14:00:00' WHERE id = ?", [id]);
+    await query('UPDATE cambios_pendientes SET primer_recordatorio_at = ? WHERE id = ?', [primer, id]);
     return otro;
   };
 
@@ -246,6 +247,24 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
     const otro = await cambioDelTitularYaRecordado();
     const resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-10-19' });
+    assert.equal(resultado.canal_nota, 1);
+    assert.deepEqual(resultado.enviados, []);
+    assert.equal(para(await mailpit.mensajes(), otro.email).length, 0);
+  });
+
+  // Dos recordatorios antes de la nota (cambio del 16/10/2026): con el primero el viernes 16/10, el lunes 19/10 todavía le
+  // llega el recordatorio (el segundo) y el martes 20/10 ya pasa al canal nota, sin recordatorio
+  it('con el envío automático activo, el cambio del titular recibe dos recordatorios y pasa a la nota al tercer día hábil', async () => {
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test', envio_activo: 1 });
+    const otro = await cambioDelTitularYaRecordado({ primer: '2026-10-16 14:00:00' });
+
+    let resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-10-19' });
+    assert.equal(resultado.canal_nota, 0);
+    assert.deepEqual(resultado.enviados.map(e => e.email), [otro.email]);
+    assert.equal(para(await mailpit.esperar(m => m.To.some(t => t.Address === otro.email)), otro.email).length, 1);
+
+    await mailpit.vaciar();
+    resultado = await servicio.enviarCambiosPendientes({ hoy: '2026-10-20' });
     assert.equal(resultado.canal_nota, 1);
     assert.deepEqual(resultado.enviados, []);
     assert.equal(para(await mailpit.mensajes(), otro.email).length, 0);
