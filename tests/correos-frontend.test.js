@@ -2038,3 +2038,25 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
     });
   });
 });
+
+describe('correos.html: CSS sin uso (spec 2026-10-17-correos-pestanas, 9.4)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const CODIGO = fs.readFileSync(new URL('../public/js/correos.js', import.meta.url), 'utf8');
+  const inicio = PAGINA.indexOf('<style>');
+  const fin = PAGINA.indexOf('</style>');
+
+  it('cada clase del <style> de correos.html se usa en la página o en correos.js', () => {
+    assert.ok(inicio !== -1 && fin > inicio, 'la página tiene su <style>');
+    const estilo = PAGINA.slice(inicio + '<style>'.length, fin)
+      // Los url(...) (las imágenes embebidas traen puntos y letras que no son clases) y los comentarios no cuentan
+      .replace(/url\((?:"[^"]*"|'[^']*'|[^)]*)\)/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    // Una clase empieza con letra: ".85rem" no es una clase
+    const clases = [...new Set([...estilo.matchAll(/\.([a-zA-Z][\w-]*)/g)].map(coincidencia => coincidencia[1]))];
+    assert.ok(clases.length > 20, `se encontraron las clases del <style> (${clases.length})`);
+    const resto = PAGINA.slice(0, inicio) + PAGINA.slice(fin) + '\n' + CODIGO;
+    for (const clase of clases) {
+      assert.match(resto, new RegExp(`(^|[^\w-])${clase}($|[^\w-])`), `la clase .${clase} del <style> no se usa en correos.html ni en correos.js`);
+    }
+  });
+});

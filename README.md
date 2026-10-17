@@ -117,7 +117,7 @@ rpad/
     ├── login.html                 # Formulario de login
     ├── admin.html                 # Panel de administración de datasets
     ├── areas.html                 # Panel de administración de áreas
-    ├── correos.html               # Configuración de correos y notificaciones
+    ├── correos.html               # Correos: Libro de Notas Digitales, Estado, Vista previa y pruebas, Configuración (pestañas)
     ├── reportes.html              # Generador de reportes
     ├── calendario.html            # Calendario interactivo de vencimientos
     ├── notas.html                 # Generador de notas administrativas DOCX
