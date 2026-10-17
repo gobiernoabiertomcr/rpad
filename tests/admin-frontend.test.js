@@ -551,6 +551,33 @@ describe('admin-fechas.js: htmlDeTarjeta', () => {
     assert.doesNotMatch(tarjeta(eventual()), /Fecha sugerida/);
     assert.match(tarjeta(ejercicio()), /Ejercicio 2025/);
   });
+
+  // Ruling 15: la tarjeta (<article>) tiene nombre accesible, el título del dataset
+  it('la tarjeta se nombra con su título: aria-labelledby apunta al id del título', () => {
+    const html = tarjeta(dataset({ id: 10 }));
+    const id = html.match(/^<article class="ad-tarjeta" aria-labelledby="([^"]+)">/)?.[1];
+    assert.ok(id, 'la tarjeta lleva aria-labelledby');
+    assert.match(html, new RegExp(`<span class="ad-titulo" id="${id}">Pauta Publicitaria</span>`));
+    assert.equal(cantidad(html, `id="${id}"`), 1);
+  });
+
+  it('el id del título es distinto para cada dataset, también si la tarjeta está bloqueada', () => {
+    const id = (html) => html.match(/aria-labelledby="([^"]+)"/)[1];
+    assert.notEqual(id(tarjeta(dataset({ id: 10 }))), id(tarjeta(dataset({ id: 11 }))));
+    assert.match(tarjeta(vencido(), { pendiente: true }), /^<article class="ad-tarjeta bloqueada" aria-labelledby="[^"]+">/);
+  });
+
+  it('con un id hostil, el id del título solo lleva letras, números, guiones y guiones bajos', () => {
+    const html = tarjeta(dataset({ id: '7" onmouseover="alert(1) x' }));
+    const id = html.match(/aria-labelledby="([^"]*)"/)[1];
+    assert.match(id, /^[\w-]+$/);
+    assert.doesNotMatch(html, /" onmouseover="/);
+    assert.match(html, new RegExp(`<span class="ad-titulo" id="${id}">`));
+  });
+
+  it('la fila de la tabla no lleva ese id: en la página están la fila y la tarjeta del mismo dataset', () => {
+    assert.doesNotMatch(admin.htmlDeFila(dataset(), { esAdmin: true, hoy: HOY }), /\sid="/);
+  });
 });
 
 describe('admin-fechas.js: htmlDeOpciones', () => {
@@ -1229,6 +1256,13 @@ describe('admin.html: CSS sin uso (como correos.html)', () => {
     for (const clase of ['ad-tarjetas', 'ad-tarjeta', 'ad-tarjeta-titulo', 'ad-tarjeta-estado', 'ad-tarjeta-datos']) {
       assert.match(estilo, new RegExp(`\\.${clase}[\\s{.,:]`), clase);
     }
+  });
+
+  it('el foco se ve en los botones de la paginación: el de main.css (sombra al 15 %) no alcanza sobre el pie', () => {
+    const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
+    const regla = estilo.match(/([^{}]*\.ad-pie-tabla \.pag-btn:focus-visible[^{}]*)\{([^}]*)\}/);
+    assert.ok(regla, 'hay una regla de foco para .ad-pie-tabla .pag-btn');
+    assert.match(regla[2], /outline: 2px solid var\(--pf-acento\); outline-offset: 2px;/);
   });
 
   it('en el celular (hasta 760 px) la tabla pasa a tarjetas', () => {

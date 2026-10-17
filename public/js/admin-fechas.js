@@ -236,8 +236,16 @@ function htmlDeProximoPedido(d, hoy) {
     + (detalle.length ? `<span class="ad-sub">${detalle.map(textoSeguro).join('. ')}</span>` : '');
 }
 
-function htmlDeTitulo(d) {
-  return `<span class="ad-titulo">${textoSeguro(d.titulo)}</span><span class="ad-sub">${textoSeguro(d.area_nombre)}</span>`;
+// El título y el área. `idTitulo` (opcional): el id del título, para que la tarjeta se nombre con él (aria-labelledby)
+function htmlDeTitulo(d, idTitulo) {
+  return `<span class="ad-titulo"${idTitulo ? ` id="${idTitulo}"` : ''}>${textoSeguro(d.titulo)}</span>`
+    + `<span class="ad-sub">${textoSeguro(d.area_nombre)}</span>`;
+}
+
+// El id del título de la tarjeta de un dataset: solo letras, números, guiones y guiones bajos (un id con espacios o comillas
+// no serviría en aria-labelledby). La fila de la tabla no lo lleva: en la página están las dos y el id no se puede repetir
+function idDelTituloDeTarjeta(d) {
+  return `ad-tarjeta-${String(d.id ?? '').replace(/[^\w-]/g, '_')}-titulo`;
 }
 
 function htmlDePastilla(estado) {
@@ -290,8 +298,10 @@ function htmlDeTarjeta(dataset, opciones) {
   const d = dataset ?? {};
   const fecha = soloFecha(hoy) ?? hoyEnArgentina();
   const estado = textoEstado(d.estado, d.dias_para_vencer, d.proxima_actualizacion, d.tipo_gestion, pendiente);
-  return `<article class="ad-tarjeta${pendiente ? ' bloqueada' : ''}">`
-    + `<div class="ad-tarjeta-titulo">${htmlDeTitulo(d)}</div>`
+  // La tarjeta se nombra con el título del dataset (Ruling 15)
+  const idTitulo = idDelTituloDeTarjeta(d);
+  return `<article class="ad-tarjeta${pendiente ? ' bloqueada' : ''}" aria-labelledby="${idTitulo}">`
+    + `<div class="ad-tarjeta-titulo">${htmlDeTitulo(d, idTitulo)}</div>`
     + `<div class="ad-tarjeta-estado">${htmlDePastilla(estado)}</div>`
     + '<dl class="ad-tarjeta-datos">'
     + `<div><dt>Datos publicados</dt><dd>${htmlDeDatosPublicados(d)}</dd></div>`
