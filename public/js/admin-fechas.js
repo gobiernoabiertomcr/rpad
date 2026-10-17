@@ -528,21 +528,30 @@ function datosAlDelPaso1({ tipo, mes, anio } = {}) {
 }
 
 /**
- * El error del paso 2, o null, con las palabras del servidor: la carga en el portal es obligatoria y no puede ser posterior
- * a hoy; la recepción es opcional, pero no puede ser posterior a hoy ni a la carga.
+ * El problema del paso 2, { campo, mensaje }, o null. `mensaje` lleva las palabras del servidor: la carga en el portal es
+ * obligatoria y no puede ser posterior a hoy; la recepción es opcional, pero no puede ser posterior a hoy ni a la carga.
+ * `campo` ('cargado' o 'recibido') es el campo al que se refiere, para marcarlo (aria-invalid).
  */
-function errorDeFechasDelRegistro({ recibido, cargado, hoy } = {}) {
+function problemaDeFechasDelRegistro({ recibido, cargado, hoy } = {}) {
   const fecha = hoyDe(hoy);
   const carga = soloFecha(cargado);
-  if (!carga) return ERROR_FALTA_CARGA;
-  if (carga > fecha) return `La fecha de carga en el portal no puede ser posterior a hoy (${fechaCorta(fecha)})`;
+  if (!carga) return { campo: 'cargado', mensaje: ERROR_FALTA_CARGA };
+  if (carga > fecha) return { campo: 'cargado', mensaje: `La fecha de carga en el portal no puede ser posterior a hoy (${fechaCorta(fecha)})` };
   const recepcion = soloFecha(recibido);
   if (!recepcion) return null;
-  if (recepcion > fecha) return `La fecha de recepción no puede ser posterior a hoy (${fechaCorta(fecha)})`;
+  if (recepcion > fecha) return { campo: 'recibido', mensaje: `La fecha de recepción no puede ser posterior a hoy (${fechaCorta(fecha)})` };
   if (recepcion > carga) {
-    return `La fecha de recepción (${fechaCorta(recepcion)}) no puede ser posterior a la de carga en el portal (${fechaCorta(carga)})`;
+    return {
+      campo: 'recibido',
+      mensaje: `La fecha de recepción (${fechaCorta(recepcion)}) no puede ser posterior a la de carga en el portal (${fechaCorta(carga)})`
+    };
   }
   return null;
+}
+
+// El error del paso 2 (el mensaje de problemaDeFechasDelRegistro), o null
+function errorDeFechasDelRegistro(fechas) {
+  return problemaDeFechasDelRegistro(fechas)?.mensaje ?? null;
 }
 
 /**
@@ -581,16 +590,19 @@ function cuerpoDelRegistro(formulario) {
 }
 
 /**
- * Cómo queda la ventana con lo que dicen sus campos: { errorFechas, puedeProponer }. errorFechas es el error del paso 2
- * (o null) para mostrar debajo de sus campos. "Proponer actualización" se habilita solo con una próxima elegida (completa,
- * si es "Otra fecha"; un eventual no elige), sin error en "Datos al" ni en las fechas, sin opciones por llegar (`cargando`:
- * la elección se acaba de borrar y el servidor todavía no revisó "Datos al") y sin un envío en curso.
+ * Cómo queda la ventana con lo que dicen sus campos: { errorFechas, campoFechas, puedeProponer }. errorFechas es el error
+ * del paso 2 (o null) para mostrar debajo de sus campos, y campoFechas el campo al que se refiere ('cargado' o 'recibido').
+ * "Proponer actualización" se habilita solo con una próxima elegida (completa, si es "Otra fecha"; un eventual no elige),
+ * sin error en "Datos al" ni en las fechas, sin opciones por llegar (`cargando`: la elección se acaba de borrar y el
+ * servidor todavía no revisó "Datos al") y sin un envío en curso.
  */
 function revisionDelRegistro({ formulario, errorDatosAl = null, cargando = false, enviando = false, hoy } = {}) {
   const f = formulario ?? {};
-  const errorFechas = errorDeFechasDelRegistro({ recibido: f.recibido, cargado: f.cargado, hoy });
+  const problema = problemaDeFechasDelRegistro({ recibido: f.recibido, cargado: f.cargado, hoy });
+  const errorFechas = problema?.mensaje ?? null;
   return {
     errorFechas,
+    campoFechas: problema?.campo ?? null,
     puedeProponer: puedeProponer({
       opcionElegida: proximaDelRegistro(f),
       errores: { datosAl: errorDatosAl, fechas: errorFechas },

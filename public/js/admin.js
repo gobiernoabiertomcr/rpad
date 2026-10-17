@@ -981,9 +981,9 @@ function prepararRegistro() {
     if (esClicAfuera(evento) || evento.target.closest('[data-cerrar-registro]')) cerrarRegistro();
   });
   for (const id of ['registrar-mes', 'registrar-anio']) document.getElementById(id).addEventListener('change', alCambiarDatosAl);
-  for (const id of ['registrar-recibido', 'registrar-cargado']) document.getElementById(id).addEventListener('input', revisarRegistro);
+  for (const id of ['registrar-recibido', 'registrar-cargado']) document.getElementById(id).addEventListener('input', alCambiarElFormulario);
   document.getElementById('registrar-opciones').addEventListener('change', alElegirOpcion);
-  for (const id of ['registrar-otra-mes', 'registrar-otra-anio']) document.getElementById(id).addEventListener('change', revisarRegistro);
+  for (const id of ['registrar-otra-mes', 'registrar-otra-anio']) document.getElementById(id).addEventListener('change', alCambiarElFormulario);
   document.getElementById('registrar-proponer').addEventListener('click', proponerActualizacion);
   document.addEventListener('keydown', teclaEnPagina);
 }
@@ -1057,16 +1057,58 @@ function cerrarRegistro() {
   if (!registroAbierto()) return;
   document.getElementById('modal-registrar-actualizacion').hidden = true;
   registro.secuencia++;
-  const { origen } = registro;
+  const { origen, dataset } = registro;
   Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null });
-  if (origen?.isConnected) origen.focus();
+  enfocarDespuesDeCerrar(origen, dataset?.id);
 }
 
-// Un error en su lugar de la ventana (texto, nunca HTML), o ninguno con null
-function mostrarError(id, texto) {
+/**
+ * El foco al cerrar: el botón que abrió la ventana. Si la lista se rearmó mientras tanto (por ejemplo, porque se recargó
+ * después de otra propuesta), ese botón ya no está: va al "Registrar actualización" de ese dataset, si se ve y está
+ * habilitado, o a la lista.
+ */
+function enfocarDespuesDeCerrar(origen, id) {
+  if (!origen) return;
+  if (origen.isConnected) {
+    origen.focus();
+    return;
+  }
+  const reemplazo = [...document.querySelectorAll('#lista-datasets [data-registrar]')]
+    .find((boton) => boton.dataset.registrar === String(id) && !boton.disabled && boton.getClientRects().length > 0);
+  (reemplazo ?? document.getElementById('lista-datasets')).focus();
+}
+
+// Los campos de cada paso, que se marcan con su error (aria-invalid y aria-describedby)
+const CAMPOS_DEL_PASO1 = ['registrar-mes', 'registrar-anio'];
+const CAMPOS_DEL_PASO2 = ['registrar-recibido', 'registrar-cargado'];
+
+/**
+ * Un error en su lugar de la ventana (texto, nunca HTML), o ninguno con null. El mismo texto no se vuelve a escribir: el
+ * lugar es role="alert" y el lector de pantalla lo anunciaría otra vez. `campos`: los campos que puede marcar el error;
+ * `invalidos`: a cuáles se refiere (por defecto, a todos). Esos llevan aria-invalid y aria-describedby con el id del error;
+ * los demás, y todos cuando no hay error, quedan sin marca.
+ */
+function mostrarError(id, texto, { campos = [], invalidos = campos } = {}) {
   const lugar = document.getElementById(id);
-  lugar.textContent = texto ?? '';
-  lugar.hidden = !texto;
+  const nuevo = texto ?? '';
+  if (lugar.textContent !== nuevo) lugar.textContent = nuevo;
+  lugar.hidden = !nuevo;
+  for (const idDelCampo of campos) {
+    const campo = document.getElementById(idDelCampo);
+    const conError = Boolean(nuevo) && invalidos.includes(idDelCampo);
+    const descripcion = describedbyCon(campo.getAttribute('aria-describedby'), id, conError);
+    if (descripcion) campo.setAttribute('aria-describedby', descripcion);
+    else campo.removeAttribute('aria-describedby');
+    if (conError) campo.setAttribute('aria-invalid', 'true');
+    else campo.removeAttribute('aria-invalid');
+  }
+}
+
+// El valor de aria-describedby con el id de un error sumado (conError) o sacado, sin tocar los demás ids. null si no queda ninguno
+function describedbyCon(actual, idDelError, conError) {
+  const ids = String(actual ?? '').split(/\s+/).filter((id) => id && id !== idDelError);
+  if (conError) ids.push(idDelError);
+  return ids.length ? ids.join(' ') : null;
 }
 
 // Lo que dicen los campos de la ventana, como lo recibe cuerpoDelRegistro. Un radio deshabilitado (mientras llegan las
@@ -1102,7 +1144,9 @@ function alCambiarDatosAl() {
   const datosAl = datosAlDelPaso1({ tipo: dataset.tipo_pedido, mes: valorDe('registrar-mes'), anio: valorDe('registrar-anio') });
   registro.opciones = [];
   registro.errorDatosAl = errorDeDatosAl(datosAl, dataset.tipo_pedido, hoy);
-  mostrarError('registrar-error-datos', registro.errorDatosAl);
+  mostrarError('registrar-error-datos', registro.errorDatosAl, { campos: CAMPOS_DEL_PASO1 });
+  // El error de un envío anterior ya no corresponde a lo que dice la ventana
+  mostrarError('registrar-error', null);
   borrarEleccion();
   pintarCicloDelRegistro(registro.errorDatosAl ? null : datosAl);
   if (registro.errorDatosAl) {
@@ -1153,7 +1197,7 @@ async function pedirOpciones(datosAl) {
   registro.cargando = false;
   registro.opciones = error ? [] : opciones;
   registro.errorDatosAl = error;
-  mostrarError('registrar-error-datos', error);
+  mostrarError('registrar-error-datos', error, { campos: CAMPOS_DEL_PASO1 });
   if (error) pintarCicloDelRegistro(null);
   pintarOpciones();
   revisarRegistro();
@@ -1174,6 +1218,13 @@ function alElegirOpcion(evento) {
     tarjeta.classList.toggle('elegida', tarjeta.contains(radio) && radio.checked);
   }
   document.getElementById('registrar-otra').hidden = radio.value !== 'otra';
+  mostrarError('registrar-error', null);
+  revisarRegistro();
+}
+
+// La persona cambió las fechas del paso 2 o la "Otra fecha": el error de un envío anterior ya no corresponde
+function alCambiarElFormulario() {
+  mostrarError('registrar-error', null);
   revisarRegistro();
 }
 
@@ -1183,11 +1234,13 @@ function alElegirOpcion(evento) {
  */
 function revisarRegistro() {
   if (!registro.dataset) return;
-  const { errorFechas, puedeProponer: sePuede } = revisionDelRegistro({
+  const { errorFechas, campoFechas, puedeProponer: sePuede } = revisionDelRegistro({
     formulario: formularioDelRegistro(), errorDatosAl: registro.errorDatosAl, cargando: registro.cargando,
     enviando: registro.enviando, hoy: registro.hoy
   });
-  mostrarError('registrar-error-fechas', errorFechas);
+  mostrarError('registrar-error-fechas', errorFechas, {
+    campos: CAMPOS_DEL_PASO2, invalidos: campoFechas ? [`registrar-${campoFechas}`] : []
+  });
   document.getElementById('registrar-proponer').disabled = !sePuede;
 }
 
@@ -1243,15 +1296,10 @@ async function proponerActualizacion() {
   boton.textContent = 'Proponiendo…';
   mostrarError('registrar-error', null);
   revisarRegistro();
+  let propuesta = false;
   try {
     await API.registrarActualizacion(dataset.id, cuerpoDelRegistro(formularioDelRegistro()));
-    avisarExito('Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.');
-    const { origen } = registro;
-    cerrarRegistro();
-    await recargarLista();
-    // La lista se rearmó: el botón que abrió la ventana ya no está, y el de la fila nueva está deshabilitado porque el
-    // dataset quedó bloqueado. El foco va a la lista, para no perderse al principio de la página
-    if (origen && !origen.isConnected) document.getElementById('lista-datasets').focus();
+    propuesta = true;
   } catch (error) {
     const mensaje = textoDeError(error, 'No se pudo proponer la actualización. Probá de nuevo.');
     // Si la ventana ya se cerró (o es otra apertura), el error va en un aviso
@@ -1264,6 +1312,35 @@ async function proponerActualizacion() {
       revisarRegistro();
     }
   }
+  if (propuesta) await despuesDeProponer(apertura);
+}
+
+/**
+ * La propuesta se hizo: siempre avisa y vuelve a pedir la lista (la fila pasa a "Cambio pendiente"). La ventana se cierra y
+ * el foco se mueve solo si sigue abierta la misma apertura: si mientras se enviaba la persona la cerró y abrió otra, esa
+ * otra no se toca. Si falla la recarga, se avisa aparte: la propuesta ya está hecha.
+ */
+async function despuesDeProponer(apertura) {
+  avisarExito('Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.');
+  const mismaVentana = registro.apertura === apertura && registroAbierto();
+  const origen = mismaVentana ? registro.origen : null;
+  if (mismaVentana) cerrarRegistro();
+  try {
+    await recargarLista();
+  } catch (error) {
+    console.error('Error recargando la lista después de proponer:', error);
+    avisarError('La actualización quedó propuesta, pero no se pudo recargar la lista. Recargá la página.');
+  }
+  // La lista se rearmó: el botón que abrió la ventana ya no está, y el de la fila nueva está deshabilitado porque el
+  // dataset quedó bloqueado. El foco va a la lista, salvo que mientras tanto se haya abierto otra ventana
+  if (mismaVentana && origen && !origen.isConnected && !hayUnaVentanaAbierta()) {
+    document.getElementById('lista-datasets').focus();
+  }
+}
+
+// ¿Hay alguna ventana abierta? "Registrar actualización" o cualquiera de las otras de la página (.modal-overlay.active)
+function hayUnaVentanaAbierta() {
+  return registroAbierto() || Boolean(document.querySelector('.modal-overlay.active'));
 }
 
 // El teclado con la ventana abierta: Escape la cierra y Tab no sale de ella

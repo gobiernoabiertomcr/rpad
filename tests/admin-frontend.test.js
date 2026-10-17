@@ -1507,7 +1507,7 @@ describe('admin-fechas.js: revisionDelRegistro (el error del paso 2 y si se pued
   }));
 
   it('con una opción elegida y sin errores se puede proponer (los errores vacíos no cuentan)', () => {
-    assert.deepEqual(revision(), { errorFechas: null, puedeProponer: true });
+    assert.deepEqual(revision(), { errorFechas: null, campoFechas: null, puedeProponer: true });
   });
 
   it('sin opción elegida, o con "Otra fecha" incompleta, no', () => {
@@ -1519,8 +1519,16 @@ describe('admin-fechas.js: revisionDelRegistro (el error del paso 2 y si se pued
   it('un error en "Datos al" o en las fechas lo frena, y el de las fechas se devuelve para mostrarlo', () => {
     assert.equal(revision({ errorDatosAl: 'Todavía no puede haber datos al 30/11/2026' }).puedeProponer, false);
     assert.deepEqual(revision({}, { cargado: '2026-10-18' }), {
-      errorFechas: 'La fecha de carga en el portal no puede ser posterior a hoy (17/10/2026)', puedeProponer: false
+      errorFechas: 'La fecha de carga en el portal no puede ser posterior a hoy (17/10/2026)', campoFechas: 'cargado', puedeProponer: false
     });
+  });
+
+  it('campoFechas dice a qué campo del paso 2 se refiere el error (para aria-invalid)', () => {
+    assert.equal(revision({}, { cargado: '' }).campoFechas, 'cargado');
+    assert.equal(revision({}, { cargado: '2026-10-18' }).campoFechas, 'cargado');
+    assert.equal(revision({}, { recibido: '2026-10-18' }).campoFechas, 'recibido');
+    assert.equal(revision({}, { recibido: '2026-10-16', cargado: '2026-10-15' }).campoFechas, 'recibido');
+    assert.equal(revision({}, { recibido: '2026-10-15', cargado: '2026-10-16' }).campoFechas, null);
   });
 
   it('mientras llegan las opciones o mientras se envía, no', () => {
@@ -1709,7 +1717,8 @@ describe('admin.html: la ventana de Registrar actualización', () => {
   });
 
   it('la lista puede recibir el foco al volver de proponer (el botón que abrió la ventana queda deshabilitado)', () => {
-    assert.match(PAGINA_ADMIN, /<div class="ad-marco" id="lista-datasets" tabindex="-1">/);
+    // Con nombre: al recibir el foco, el lector de pantalla dice qué es (role="region", porque un div sin rol no lleva aria-label)
+    assert.match(PAGINA_ADMIN, /<div class="ad-marco" id="lista-datasets" tabindex="-1" role="region" aria-label="Lista de datasets">/);
   });
 });
 
@@ -1733,5 +1742,264 @@ describe('admin.html: estilos de la ventana y del ciclo', () => {
     for (const selector of ['.ad-cerrar:focus-visible', '.ad-mes select:focus-visible', '.ad-campos input:focus-visible', '.ad-opcion:focus-within']) {
       assert.ok(estilo.includes(selector), selector);
     }
+  });
+});
+
+// =====================================================
+// Registrar actualización: lo que toca el DOM, con una página de mentira (revisión de la Task 9, Ruling 17)
+// =====================================================
+
+// Una página mínima: getElementById arma el elemento la primera vez que se lo pide. Cada elemento cuenta cuántas veces se
+// le escribió el texto, guarda sus atributos y anota si recibió el foco. querySelector da null y querySelectorAll, una lista
+// vacía (la ventana sin tarjetas de opciones), salvo lo que se le indique en `consultas`
+const paginaDeMentira = ({ valores = {}, consultas = {} } = {}) => {
+  const elementos = new Map();
+  const enfocados = [];
+  const crear = (id) => {
+    let texto = '';
+    const atributos = new Map();
+    const elemento = {
+      id, hidden: false, disabled: false, value: valores[id] ?? '', innerHTML: '', isConnected: true, escrituras: 0, style: {},
+      get textContent() { return texto; },
+      set textContent(nuevo) { texto = String(nuevo); elemento.escrituras++; },
+      getAttribute: (nombre) => (atributos.has(nombre) ? atributos.get(nombre) : null),
+      setAttribute: (nombre, valor) => { atributos.set(nombre, String(valor)); },
+      removeAttribute: (nombre) => { atributos.delete(nombre); },
+      hasAttribute: (nombre) => atributos.has(nombre),
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener() {},
+      getBoundingClientRect: () => ({ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 }),
+      getClientRects: () => [],
+      focus: () => { enfocados.push(id); }
+    };
+    return elemento;
+  };
+  const documento = {
+    activeElement: null,
+    getElementById: (id) => { if (!elementos.has(id)) elementos.set(id, crear(id)); return elementos.get(id); },
+    querySelector: (selector) => consultas[selector] ?? null,
+    querySelectorAll: () => [],
+    addEventListener() {}
+  };
+  return { documento, elemento: documento.getElementById, enfocados };
+};
+
+describe('admin.js: Registrar actualización, la ventana (con una página de mentira)', () => {
+  // admin.js cargado en el vm; después de cargarse se le cambia el document por la página de mentira, y las funciones que
+  // tocan la red o los avisos por registros de llamadas
+  const armar = ({ valores = {}, consultas = {}, api = {} } = {}) => {
+    const { contexto } = cargarAdminJs();
+    const pagina = paginaDeMentira({
+      valores: { 'registrar-mes': '9', 'registrar-anio': '2026', 'registrar-cargado': HOY, 'registrar-recibido': '', ...valores },
+      consultas
+    });
+    contexto.document = pagina.documento;
+    const llamadas = { exito: [], error: [], recargas: 0, cierres: 0 };
+    contexto.avisarExito = (texto) => { llamadas.exito.push(texto); };
+    contexto.avisarError = (texto) => { llamadas.error.push(texto); };
+    contexto.API = { opcionesDeProxima: async () => ({ opciones: [] }), ...api };
+    contexto.recargarLista = async () => { llamadas.recargas++; };
+    const registro = vm.runInContext('registro', contexto);
+    return { contexto, pagina, llamadas, registro };
+  };
+  const PAUTA = { id: 10, titulo: 'Pauta Publicitaria', tipo_pedido: 'acumulado', frecuencia_meses: 3, pedido: null };
+  // Un radio elegido (la primera opción) para formularioDelRegistro
+  const ELEGIDA = { '#registrar-opciones input[name="proxima"]:checked:not(:disabled)': { value: '0' } };
+  // La ventana abierta para Pauta, como la deja abrirRegistro
+  const abierta = (armado, extra = {}) => {
+    Object.assign(armado.registro, {
+      dataset: PAUTA, hoy: HOY, opciones: [{ fecha: '2027-04-30' }], errorDatosAl: null, cargando: false, enviando: false,
+      origen: armado.pagina.elemento('boton-de-la-fila'), apertura: 1, ...extra
+    });
+    armado.pagina.elemento('modal-registrar-actualizacion').hidden = false;
+  };
+  // Una promesa que el test resuelve cuando quiere (el POST en vuelo)
+  const enVuelo = () => { let resolver; const promesa = new Promise((r) => { resolver = r; }); return { promesa, resolver }; };
+
+  describe('mostrarError', () => {
+    it('no vuelve a escribir el mismo texto: el lugar es role="alert" y el lector de pantalla lo anunciaría otra vez', () => {
+      const { contexto, pagina } = armar();
+      const lugar = pagina.elemento('registrar-error-fechas');
+      contexto.mostrarError('registrar-error-fechas', 'Falta la fecha de carga en el portal');
+      contexto.mostrarError('registrar-error-fechas', 'Falta la fecha de carga en el portal');
+      assert.equal(lugar.escrituras, 1);
+      assert.equal(lugar.hidden, false);
+      contexto.mostrarError('registrar-error-fechas', null);
+      contexto.mostrarError('registrar-error-fechas', null);
+      assert.equal(lugar.escrituras, 2);
+      assert.equal(lugar.hidden, true);
+      assert.equal(lugar.textContent, '');
+    });
+
+    it('marca los campos del error con aria-invalid y aria-describedby, y los desmarca cuando el error se va', () => {
+      const { contexto, pagina } = armar();
+      const mes = pagina.elemento('registrar-mes');
+      const anio = pagina.elemento('registrar-anio');
+      const campos = ['registrar-mes', 'registrar-anio'];
+      contexto.mostrarError('registrar-error-datos', 'Todavía no puede haber datos al 30/11/2026', { campos });
+      for (const campo of [mes, anio]) {
+        assert.equal(campo.getAttribute('aria-invalid'), 'true', campo.id);
+        assert.equal(campo.getAttribute('aria-describedby'), 'registrar-error-datos', campo.id);
+      }
+      contexto.mostrarError('registrar-error-datos', null, { campos });
+      for (const campo of [mes, anio]) {
+        assert.equal(campo.hasAttribute('aria-invalid'), false, campo.id);
+        assert.equal(campo.hasAttribute('aria-describedby'), false, campo.id);
+      }
+    });
+
+    it('en el paso 2 marca solo el campo del error, y la marca pasa de uno a otro', () => {
+      const { contexto, pagina } = armar();
+      const campos = ['registrar-recibido', 'registrar-cargado'];
+      const recibido = pagina.elemento('registrar-recibido');
+      const cargado = pagina.elemento('registrar-cargado');
+      contexto.mostrarError('registrar-error-fechas', 'Falta la fecha de carga en el portal', { campos, invalidos: ['registrar-cargado'] });
+      assert.equal(cargado.getAttribute('aria-invalid'), 'true');
+      assert.equal(recibido.hasAttribute('aria-invalid'), false);
+      contexto.mostrarError('registrar-error-fechas', 'La fecha de recepción no puede ser posterior a hoy (17/10/2026)', { campos, invalidos: ['registrar-recibido'] });
+      assert.equal(recibido.getAttribute('aria-invalid'), 'true');
+      assert.equal(recibido.getAttribute('aria-describedby'), 'registrar-error-fechas');
+      assert.equal(cargado.hasAttribute('aria-invalid'), false);
+      assert.equal(cargado.hasAttribute('aria-describedby'), false);
+    });
+
+    it('describedbyCon suma o saca el id del error sin tocar los demás', () => {
+      const { contexto } = armar();
+      assert.equal(contexto.describedbyCon(null, 'e', true), 'e');
+      assert.equal(contexto.describedbyCon('ayuda', 'e', true), 'ayuda e');
+      assert.equal(contexto.describedbyCon('ayuda e', 'e', true), 'ayuda e');
+      assert.equal(contexto.describedbyCon('ayuda e', 'e', false), 'ayuda');
+      assert.equal(contexto.describedbyCon('e', 'e', false), null);
+      assert.equal(contexto.describedbyCon('', 'e', false), null);
+    });
+  });
+
+  describe('revisarRegistro', () => {
+    it('marca el campo del paso 2 que tiene el error', () => {
+      const armado = armar({ valores: { 'registrar-recibido': '2026-10-18' }, consultas: ELEGIDA });
+      abierta(armado);
+      armado.contexto.revisarRegistro();
+      assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, 'La fecha de recepción no puede ser posterior a hoy (17/10/2026)');
+      assert.equal(armado.pagina.elemento('registrar-recibido').getAttribute('aria-invalid'), 'true');
+      assert.equal(armado.pagina.elemento('registrar-cargado').hasAttribute('aria-invalid'), false);
+      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, true);
+    });
+  });
+
+  describe('el error del envío se borra al cambiar el formulario', () => {
+    const conErrorDeEnvio = (armado) => {
+      armado.contexto.mostrarError('registrar-error', 'La próxima actualización tiene que ser el último día de un mes (febrero, el 28)');
+      assert.equal(armado.pagina.elemento('registrar-error').hidden, false);
+    };
+
+    it('al cambiar "Datos al"', async () => {
+      const armado = armar();
+      abierta(armado);
+      conErrorDeEnvio(armado);
+      armado.contexto.alCambiarDatosAl();
+      assert.equal(armado.pagina.elemento('registrar-error').hidden, true);
+    });
+
+    it('al elegir una opción', () => {
+      const armado = armar({ consultas: ELEGIDA });
+      abierta(armado);
+      conErrorDeEnvio(armado);
+      const radio = { value: '0', checked: true };
+      armado.contexto.alElegirOpcion({ target: { closest: () => radio } });
+      assert.equal(armado.pagina.elemento('registrar-error').hidden, true);
+    });
+
+    it('al cambiar las fechas o la otra fecha', () => {
+      const armado = armar({ consultas: ELEGIDA });
+      abierta(armado);
+      conErrorDeEnvio(armado);
+      armado.contexto.alCambiarElFormulario();
+      assert.equal(armado.pagina.elemento('registrar-error').hidden, true);
+    });
+
+    it('pero no cuando revisarRegistro se llama solo (por ejemplo, después de mostrar el error del envío)', () => {
+      const armado = armar({ consultas: ELEGIDA });
+      abierta(armado);
+      conErrorDeEnvio(armado);
+      armado.contexto.revisarRegistro();
+      assert.equal(armado.pagina.elemento('registrar-error').hidden, false);
+    });
+  });
+
+  describe('proponerActualizacion', () => {
+    it('sale bien con la misma ventana abierta: avisa, la cierra, recarga la lista y, si el botón ya no está, enfoca la lista', async () => {
+      const post = enVuelo();
+      const armado = armar({ consultas: ELEGIDA, api: { registrarActualizacion: () => post.promesa } });
+      abierta(armado);
+      const origen = armado.registro.origen;
+      armado.contexto.recargarLista = async () => { armado.llamadas.recargas++; origen.isConnected = false; };
+      const pedido = armado.contexto.proponerActualizacion();
+      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, true, 'deshabilitado mientras envía');
+      post.resolver({ cambio_pendiente_id: 1 });
+      await pedido;
+      assert.deepEqual(armado.llamadas.exito, ['Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.']);
+      assert.equal(armado.llamadas.recargas, 1);
+      assert.equal(armado.pagina.elemento('modal-registrar-actualizacion').hidden, true);
+      assert.equal(armado.pagina.enfocados.at(-1), 'lista-datasets');
+      assert.deepEqual(armado.llamadas.error, []);
+    });
+
+    it('si mientras se enviaba se cerró y se abrió otra ventana, esa no se toca: igual avisa y recarga la lista', async () => {
+      const post = enVuelo();
+      const armado = armar({ consultas: ELEGIDA, api: { registrarActualizacion: () => post.promesa } });
+      abierta(armado);
+      const pedido = armado.contexto.proponerActualizacion();
+      // Escape, y "Registrar actualización" de otro dataset (B)
+      armado.contexto.cerrarRegistro();
+      const botonB = armado.pagina.elemento('boton-de-B');
+      abierta(armado, { dataset: { ...PAUTA, id: 11 }, apertura: 2, origen: botonB });
+      armado.pagina.enfocados.length = 0;
+      post.resolver({ cambio_pendiente_id: 1 });
+      await pedido;
+      assert.deepEqual(armado.llamadas.exito, ['Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.']);
+      assert.equal(armado.llamadas.recargas, 1);
+      assert.equal(armado.pagina.elemento('modal-registrar-actualizacion').hidden, false, 'la ventana de B sigue abierta');
+      assert.equal(armado.registro.dataset.id, 11);
+      assert.equal(armado.registro.origen, botonB);
+      assert.deepEqual(armado.pagina.enfocados, [], 'nadie le saca el foco a la ventana de B');
+    });
+
+    it('si se cerró mientras se enviaba (sin abrir otra), avisa y recarga, sin mover el foco', async () => {
+      const post = enVuelo();
+      const armado = armar({ consultas: ELEGIDA, api: { registrarActualizacion: () => post.promesa } });
+      abierta(armado);
+      const pedido = armado.contexto.proponerActualizacion();
+      armado.contexto.cerrarRegistro();
+      armado.pagina.enfocados.length = 0;
+      post.resolver({});
+      await pedido;
+      assert.equal(armado.llamadas.exito.length, 1);
+      assert.equal(armado.llamadas.recargas, 1);
+      assert.deepEqual(armado.pagina.enfocados, []);
+    });
+
+    it('si falla la recarga de la lista no dice "No se pudo proponer": la propuesta se hizo', async () => {
+      const armado = armar({ consultas: ELEGIDA, api: { registrarActualizacion: async () => ({}) } });
+      abierta(armado);
+      armado.contexto.recargarLista = async () => { throw new Error('sin conexión'); };
+      await armado.contexto.proponerActualizacion();
+      assert.equal(armado.llamadas.exito.length, 1);
+      assert.deepEqual(armado.llamadas.error, ['La actualización quedó propuesta, pero no se pudo recargar la lista. Recargá la página.']);
+      assert.equal(armado.pagina.elemento('registrar-error').hidden, true);
+    });
+
+    it('si el servidor la rechaza, el error queda en la ventana y el botón se vuelve a habilitar', async () => {
+      const armado = armar({ consultas: ELEGIDA, api: { registrarActualizacion: async () => { throw new Error('Falta la próxima actualización: es obligatoria salvo con la frecuencia Eventual'); } } });
+      abierta(armado);
+      await armado.contexto.proponerActualizacion();
+      const error = armado.pagina.elemento('registrar-error');
+      assert.equal(error.hidden, false);
+      assert.equal(error.textContent, 'Falta la próxima actualización: es obligatoria salvo con la frecuencia Eventual');
+      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, false);
+      assert.equal(armado.llamadas.recargas, 0);
+      assert.deepEqual(armado.llamadas.exito, []);
+    });
   });
 });
