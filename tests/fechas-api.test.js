@@ -1,6 +1,9 @@
 // API de las fechas de un dataset (spec 2026-10-17-fechas-datasets, secciones 7 y 10): lo que suman GET /datasets y
 // GET /datasets/:id (Datos al, tipo de pedido, pedido, estado) y los dos cálculos para la pantalla de admin
 // (opciones-proxima y calculo-pedido). Los datasets de prueba se cargan por SQL, con el prefijo [TEST].
+// El servidor usa siempre el hoy real (hoyArgentina), y R7 mueve el pedido cuando pasa el vencimiento: por eso las
+// fechas de los fixtures salen de hoy (en meses a partir del fin del mes actual) y los textos esperados se arman con
+// la forma de cada pedido. Los valores fijos de la spec están en fechas-reglas.test.js, que pasa hoy como parámetro.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -8,11 +11,27 @@ import vm from 'vm';
 import {
   iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, catalogos, query, PREFIJO_TEST
 } from './helpers.js';
-import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
-import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
+import { diasEntre, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 
 let servidor, api, usuarios, cat;
 const ids = {};
+
+const HOY = hoyArgentina();
+const FIN_DE_MES = vencimientoDelMes(HOY);
+// El fin de mes que está n meses después del actual (n = 0 es el actual)
+const enMeses = (n) => sumarMeses(FIN_DE_MES, n);
+const anioDe = (iso) => Number(iso.slice(0, 4));
+
+// Pauta trimestral (acumulado): vence dentro de 3 meses, así que todavía no pasó ningún vencimiento del ciclo (R7 no
+// mueve nada). Se piden los datos del año del corte, hasta el corte; los últimos publicados son del 31/12 anterior.
+const PAUTA = {
+  proxima: enMeses(3),
+  corte: enMeses(2),
+  anio: anioDe(enMeses(2)),
+  datosAl: `${anioDe(enMeses(2)) - 1}-12-31`,
+  texto: `Del 01/01/${anioDe(enMeses(2))} al ${formatoCorto(enMeses(2))}`
+};
 
 // Carga un dataset por SQL: la API no deja crear los datos "raros" (próxima que no es fin de mes, sin próxima, etc.)
 const cargarDataset = async ({ clave, frecuencia, gestion = 'externa', proxima = null, datosAl = null, tipoPedido = null }) => {
@@ -32,12 +51,14 @@ before(async () => {
   usuarios = await crearUsuariosPrueba(api, { admin: 'admin', lector: 'lector' });
   cat = await catalogos();
 
-  await cargarDataset({ clave: 'trimestral', frecuencia: 'Trimestralmente', proxima: '2027-01-31', datosAl: '2026-07-31' });
+  await cargarDataset({ clave: 'trimestral', frecuencia: 'Trimestralmente', proxima: PAUTA.proxima, datosAl: PAUTA.datosAl });
   await cargarDataset({
-    clave: 'foto', frecuencia: 'Cada medio año', gestion: 'interna', proxima: '2027-06-30', datosAl: '2026-12-31', tipoPedido: 'foto'
+    clave: 'foto', frecuencia: 'Cada medio año', gestion: 'interna', proxima: enMeses(2), datosAl: enMeses(-6), tipoPedido: 'foto'
   });
+  // Un vencimiento viejo que no es fin de mes: siempre en el pasado
   await cargarDataset({ clave: 'no-fin-de-mes', frecuencia: 'Mensualmente', proxima: '2026-03-29' });
-  await cargarDataset({ clave: 'cero', frecuencia: 'Mensualmente', proxima: '0000-00-00' });
+  // Fechas en cero (la base local no es estricta): ni la próxima ni Datos al son fechas
+  await cargarDataset({ clave: 'cero', frecuencia: 'Mensualmente', proxima: '0000-00-00', datosAl: '0000-00-00' });
   await cargarDataset({ clave: 'sin-proxima', frecuencia: 'Mensualmente' });
   await cargarDataset({ clave: 'eventual', frecuencia: 'Eventual' });
 });
@@ -56,16 +77,17 @@ describe('GET /datasets/:id: las fechas de un dataset', () => {
     const res = await api.get(`/datasets/${ids.trimestral}`);
     assert.equal(res.status, 200);
     const d = res.body.data;
-    assert.equal(d.datos_al, '2026-07-31');
+    assert.equal(d.datos_al, PAUTA.datosAl);
     assert.equal(d.tipo_pedido, 'acumulado');
     assert.equal(d.tipo_pedido_guardado, null);
     assert.equal(d.frecuencia_meses, 3);
-    assert.equal(d.pedido.texto, 'Del 01/01/2026 al 31/12/2026');
-    assert.equal(d.pedido.desde, '2026-01-01');
-    assert.equal(d.pedido.hasta, '2026-12-31');
-    const esperado = estadoDelDataset({ proxima: '2027-01-31', meses: 3, tipoGestion: 'externa', hoy: hoyArgentina() });
-    assert.equal(d.estado, esperado.estado);
-    assert.equal(d.dias_para_vencer, esperado.dias);
+    assert.equal(d.pedido.texto, PAUTA.texto);
+    assert.equal(d.pedido.desde, `${PAUTA.anio}-01-01`);
+    assert.equal(d.pedido.hasta, PAUTA.corte);
+    // Vence dentro de 3 meses: faltan entre 89 y 92 días, más de los 60 del "próximo a vencer"
+    assert.equal(d.dias_para_vencer, diasEntre(HOY, PAUTA.proxima));
+    assert.ok(d.dias_para_vencer > 60);
+    assert.equal(d.estado, 'actualizado');
   });
 
   it('no cambia los campos de siempre: las fechas de la próxima y de la última siguen viajando como hasta ahora', async () => {
@@ -89,7 +111,8 @@ describe('GET /datasets/:id: las fechas de un dataset', () => {
     assert.equal(d.tipo_pedido, 'foto');
     assert.equal(d.tipo_pedido_guardado, 'foto');
     assert.equal(d.frecuencia_meses, 6);
-    assert.equal(d.pedido.texto, 'Vigente al 31/05/2027');
+    // La foto es al corte: el fin del mes anterior al vencimiento
+    assert.equal(d.pedido.texto, `Vigente al ${formatoCorto(enMeses(1))}`);
   });
 
   it('un dataset eventual da estado eventual y ningún pedido', async () => {
@@ -101,6 +124,13 @@ describe('GET /datasets/:id: las fechas de un dataset', () => {
     assert.equal(d.pedido, null);
     assert.equal(d.dias_para_vencer, null);
     assert.equal(d.datos_al, null);
+  });
+
+  it('un Datos al en cero sale como null, no como el texto 0000-00-00', async () => {
+    const d = (await api.get(`/datasets/${ids.cero}`)).body.data;
+    assert.equal(d.datos_al, null);
+    assert.equal(d.pedido, null);
+    assert.equal(d.estado, 'sin-fecha');
   });
 
   it('un dataset que no existe da 404', async () => {
@@ -119,11 +149,12 @@ describe('GET /datasets: datos viejos o raros no lo rompen', () => {
 
   it('trae las fechas nuevas de cada dataset', () => {
     const d = dataset('trimestral');
-    assert.equal(d.datos_al, '2026-07-31');
+    assert.equal(d.datos_al, PAUTA.datosAl);
     assert.equal(d.tipo_pedido, 'acumulado');
     assert.equal(d.frecuencia_meses, 3);
-    assert.equal(d.pedido.texto, 'Del 01/01/2026 al 31/12/2026');
-    assert.ok(typeof d.estado === 'string');
+    assert.equal(d.pedido.texto, PAUTA.texto);
+    assert.equal(d.estado, 'actualizado');
+    assert.equal(d.dias_para_vencer, diasEntre(HOY, PAUTA.proxima));
   });
 
   it('una próxima que no es fin de mes cuenta como el fin de su mes y el dataset figura vencido', () => {
@@ -135,11 +166,12 @@ describe('GET /datasets: datos viejos o raros no lo rompen', () => {
     assert.equal(d.tipo_pedido, 'acumulado');
   });
 
-  it('una próxima 0000-00-00 da pedido nulo y sin fecha', () => {
+  it('una próxima y un Datos al 0000-00-00 dan pedido nulo, sin fecha y Datos al null', () => {
     const d = dataset('cero');
     assert.equal(d.pedido, null);
     assert.equal(d.estado, 'sin-fecha');
     assert.equal(d.dias_para_vencer, null);
+    assert.equal(d.datos_al, null);
   });
 
   it('sin próxima da pedido nulo y sin fecha', () => {
@@ -167,30 +199,41 @@ describe('GET /datasets/:id/opciones-proxima', () => {
   const opciones = (id, datosAl, quien = admin()) =>
     api.get(`/datasets/${id}/opciones-proxima${datosAl === undefined ? '' : `?datos_al=${datosAl}`}`, quien);
 
-  it('con datos al 30/09/2026 sugiere el 30/04/2027 y ofrece mantener el 31/01/2027', async () => {
-    const res = await opciones(ids.trimestral, '2026-09-30');
+  // Llegaron datos hasta el fin del mes pasado: no cubren el corte de la Pauta (dos meses adelante)
+  const DATOS_NUEVOS = enMeses(-1);
+
+  it('con datos que no alcanzan, sugiere el siguiente período y ofrece mantener el vencimiento actual', async () => {
+    const res = await opciones(ids.trimestral, DATOS_NUEVOS);
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
     const { pedido, opciones: lista } = res.body.data;
-    assert.equal(lista[0].fecha, '2027-04-30');
+
+    const siguiente = enMeses(6);
+    assert.equal(lista[0].fecha, siguiente);
     assert.equal(lista[0].sugerida, true);
     assert.equal(lista[0].motivo, 'Siguiente período');
-    assert.equal(lista[0].pideDespues, 'Del 01/10/2026 al 31/03/2027');
-    const mantener = lista.find(o => o.fecha === '2027-01-31');
+    // La nota siguiente pide desde el 1° del mes siguiente a lo que llegó (o desde enero, si eso es anterior) hasta su corte
+    const corteSiguiente = enMeses(5);
+    const desde = [`${FIN_DE_MES.slice(0, 8)}01`, `${anioDe(corteSiguiente)}-01-01`].sort()[0];
+    assert.equal(lista[0].pideDespues, `Del ${formatoCorto(desde)} al ${formatoCorto(corteSiguiente)}`);
+
+    const mantener = lista.find(o => o.fecha === PAUTA.proxima);
     assert.ok(mantener, 'tiene que ofrecer mantener el vencimiento actual');
     assert.equal(mantener.sugerida, false);
     assert.match(mantener.motivo, /^Mantener/);
+    assert.equal(mantener.advertencia, null);
+    assert.equal(lista.length, 2);
     // El pedido es el del vencimiento actual, con los datos que ya tiene publicados el dataset
-    assert.equal(pedido.texto, 'Del 01/01/2026 al 31/12/2026');
+    assert.equal(pedido.texto, PAUTA.texto);
   });
 
   it('sin token da 401 y con un lector, 403', async () => {
-    assert.equal((await opciones(ids.trimestral, '2026-09-30', {})).status, 401);
-    assert.equal((await opciones(ids.trimestral, '2026-09-30', lector())).status, 403);
+    assert.equal((await opciones(ids.trimestral, DATOS_NUEVOS, {})).status, 401);
+    assert.equal((await opciones(ids.trimestral, DATOS_NUEVOS, lector())).status, 403);
   });
 
   it('un dataset que no existe da 404', async () => {
-    assert.equal((await opciones(999999999, '2026-09-30')).status, 404);
+    assert.equal((await opciones(999999999, DATOS_NUEVOS)).status, 404);
   });
 
   it('sin datos_al, con uno inválido o que no es fin de mes da 400', async () => {
@@ -202,15 +245,18 @@ describe('GET /datasets/:id/opciones-proxima', () => {
     }
   });
 
-  it('con un datos_al posterior al tope (el fin del mes actual) da 400', async () => {
-    const res = await opciones(ids.trimestral, '2099-12-31');
-    assert.equal(res.status, 400);
-    assert.match(res.body.error, /Todavía no puede haber datos al 31\/12\/2099/);
+  it('el tope de Datos al es el fin del mes actual: ese día se acepta y el mes siguiente da 400', async () => {
+    assert.equal((await opciones(ids.trimestral, FIN_DE_MES)).status, 200);
+    for (const datosAl of [enMeses(1), '2099-12-31']) {
+      const res = await opciones(ids.trimestral, datosAl);
+      assert.equal(res.status, 400, datosAl);
+      assert.equal(res.body.error, `Todavía no puede haber datos al ${formatoCorto(datosAl)}`);
+    }
   });
 
   it('un eventual y un dataset sin próxima no tienen opciones', async () => {
     for (const clave of ['eventual', 'sin-proxima']) {
-      const res = await opciones(ids[clave], '2026-09-30');
+      const res = await opciones(ids[clave], DATOS_NUEVOS);
       assert.equal(res.status, 200, clave);
       assert.deepEqual(res.body.data.opciones, [], clave);
       assert.equal(res.body.data.pedido, null, clave);
@@ -221,21 +267,29 @@ describe('GET /datasets/:id/opciones-proxima', () => {
 describe('GET /datasets/calculo-pedido', () => {
   const calculo = (consulta, quien = admin()) => api.get(`/datasets/calculo-pedido${consulta}`, quien);
 
-  it('una foto cada 24 meses con próxima 31/03/2027 pide "Vigente al 28/02/2027"', async () => {
-    const res = await calculo('?tipo=foto&meses=24&proxima=2027-03-31');
+  it('una foto cada 24 meses con próxima el 31/03 pide "Vigente al 28/02", también en un año bisiesto', async () => {
+    // El próximo 31 de marzo que no pasó (o el de hoy)
+    const anio = HOY <= `${anioDe(HOY)}-03-31` ? anioDe(HOY) : anioDe(HOY) + 1;
+    const res = await calculo(`?tipo=foto&meses=24&proxima=${anio}-03-31`);
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.equal(res.body.data.pedido.texto, 'Vigente al 28/02/2027');
+    assert.equal(res.body.data.pedido.texto, `Vigente al 28/02/${anio}`);
+    assert.equal(res.body.data.pedido.hasta, `${anio}-02-28`);
+    // Y en el año bisiesto 2028 también
+    const bisiesto = await calculo('?tipo=foto&proxima=2028-03-31');
+    assert.equal(bisiesto.body.data.pedido.texto, 'Vigente al 28/02/2028');
   });
 
   it('con Datos al, pide todo lo que falta', async () => {
-    const res = await calculo('?tipo=acumulado&meses=12&proxima=2027-01-31&datos_al=2024-12-31');
+    const proxima = enMeses(3);
+    const anio = anioDe(enMeses(2));
+    const res = await calculo(`?tipo=acumulado&meses=12&proxima=${proxima}&datos_al=${anio - 2}-12-31`);
     assert.equal(res.status, 200);
-    assert.equal(res.body.data.pedido.texto, 'Del 01/01/2025 al 31/12/2026');
+    assert.equal(res.body.data.pedido.texto, `Del 01/01/${anio - 1} al ${formatoCorto(enMeses(2))}`);
   });
 
   it('un tipo sin meses (edición, relevamiento) no necesita la frecuencia', async () => {
-    const res = await calculo('?tipo=edicion&meses=&proxima=2027-03-31');
+    const res = await calculo(`?tipo=edicion&meses=&proxima=${enMeses(3)}`);
     assert.equal(res.status, 200);
     assert.equal(res.body.data.pedido.texto, 'Próxima edición disponible');
   });
@@ -243,18 +297,19 @@ describe('GET /datasets/calculo-pedido', () => {
   it('sin próxima o con un eventual, el pedido es null', async () => {
     assert.equal((await calculo('?tipo=acumulado&meses=3')).body.data.pedido, null);
     assert.equal((await calculo('?tipo=acumulado&meses=3&proxima=')).body.data.pedido, null);
-    const eventual = await calculo('?tipo=eventual&proxima=2027-03-31');
+    const eventual = await calculo(`?tipo=eventual&proxima=${enMeses(3)}`);
     assert.equal(eventual.status, 200);
     assert.equal(eventual.body.data.pedido, null);
   });
 
   it('sin token da 401 y con un lector, 403 (la ruta no la toma /datasets/:id)', async () => {
-    assert.equal((await calculo('?tipo=foto&meses=24&proxima=2027-03-31', {})).status, 401);
-    assert.equal((await calculo('?tipo=foto&meses=24&proxima=2027-03-31', lector())).status, 403);
+    const consulta = `?tipo=foto&meses=24&proxima=${enMeses(3)}`;
+    assert.equal((await calculo(consulta, {})).status, 401);
+    assert.equal((await calculo(consulta, lector())).status, 403);
   });
 
   it('un tipo que falta o que no existe da 400', async () => {
-    for (const consulta of ['', '?tipo=', '?tipo=inventado&meses=3&proxima=2027-03-31', '?tipo=foto&tipo=acumulado']) {
+    for (const consulta of ['', '?tipo=', `?tipo=inventado&meses=3&proxima=${enMeses(3)}`, '?tipo=foto&tipo=acumulado']) {
       const res = await calculo(consulta);
       assert.equal(res.status, 400, consulta);
       assert.equal(res.body.success, false);
@@ -265,7 +320,7 @@ describe('GET /datasets/calculo-pedido', () => {
     for (const consulta of [
       '?tipo=foto&meses=abc', '?tipo=foto&meses=2.5', '?tipo=foto&meses=0', '?tipo=foto&meses=-3', '?tipo=foto&meses=3&meses=6',
       '?tipo=foto&meses=3&proxima=2027-02-30', '?tipo=foto&meses=3&proxima=mañana',
-      '?tipo=foto&meses=3&proxima=2027-03-31&datos_al=2026-13-01'
+      `?tipo=foto&meses=3&proxima=${enMeses(3)}&datos_al=2026-13-01`
     ]) {
       const res = await calculo(consulta);
       assert.equal(res.status, 400, consulta);

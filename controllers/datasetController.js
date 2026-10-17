@@ -161,11 +161,12 @@ function calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion = 'ext
  * Suma a la fila de un dataset lo que calculan las reglas de las fechas (spec 2026-10-17-fechas-datasets, 10.1): Datos al,
  * el tipo de pedido (efectivo y guardado), la frecuencia en meses, el pedido y el estado. Las fechas nuevas viajan como
  * 'AAAA-MM-DD' (DATE_FORMAT en el SELECT) y las reglas leen la próxima de esa misma columna; proxima_actualizacion y
- * ultima_actualizacion siguen como vienen de d.*. Un dataset con una fecha mala o sin fecha da pedido null, nunca falla.
- * hoy es la fecha de Argentina ('AAAA-MM-DD').
+ * ultima_actualizacion siguen como vienen de d.*. Un dataset con una fecha mala o sin fecha da pedido null, nunca falla;
+ * un Datos al que no es una fecha (por ejemplo '0000-00-00') sale null. hoy es la fecha de Argentina ('AAAA-MM-DD').
  */
 const enriquecer = (fila, hoy) => {
-  const { proxima_iso: proxima, datos_al_iso: datosAl, ...resto } = fila;
+  const { proxima_iso: proxima, datos_al_iso: datosAlGuardado, ...resto } = fila;
+  const datosAl = esFechaIso(datosAlGuardado) ? datosAlGuardado : null;
   const meses = fila.frecuencia_meses ?? null;
   const tipo = tipoEfectivo({ tipo_pedido: fila.tipo_pedido, tipo_gestion: fila.tipo_gestion, meses });
   const { estado, dias } = estadoDelDataset({ proxima, meses, tipoGestion: fila.tipo_gestion, hoy });
