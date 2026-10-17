@@ -69,7 +69,8 @@ const hayCambiosReales = (antes, despues) => {
   const camposComparar = [
     'titulo', 'descripcion', 'area_id', 'frecuencia_id',
     'tema_principal_id', 'tema_secundario_id', 'tipo_gestion',
-    'ultima_actualizacion', 'proxima_actualizacion', 'url_dataset', 'observaciones', 'que_se_solicita'
+    'ultima_actualizacion', 'datos_al', 'proxima_actualizacion', 'url_dataset', 'observaciones', 'que_se_solicita',
+    'tipo_pedido'
   ];
 
   // Comparar campos simples
@@ -96,6 +97,111 @@ const hayCambiosReales = (antes, despues) => {
   }
 
   return false;
+};
+
+// =====================================================
+// Fechas y tipo de pedido al escribir (spec 2026-10-17-fechas-datasets, secciones 2 y 10.1)
+// =====================================================
+const ETIQUETAS_DE_FECHA = {
+  ultima_actualizacion: 'La fecha de carga en el portal',
+  datos_al: 'Datos al',
+  recibido_el: 'La fecha de recepción',
+  proxima_actualizacion: 'La próxima actualización'
+};
+const ERROR_TIPO_PEDIDO = 'El tipo de pedido no es válido';
+const ERROR_PROXIMA_FIN_DE_MES = 'La próxima actualización tiene que ser el último día de un mes (febrero, el 28)';
+const ERROR_DATOS_AL_FIN_DE_MES = 'Datos al tiene que ser el último día de un mes (febrero, el 28)';
+const ERROR_DATOS_AL_EJERCICIO = 'En un presupuesto, Datos al tiene que ser el 31/12 del ejercicio publicado';
+const ERROR_EVENTUAL_SIN_TIPO = 'Con la frecuencia Eventual, el tipo de pedido tiene que ser Eventual';
+const ERROR_TIPO_EVENTUAL = 'El tipo de pedido Eventual va solo con la frecuencia Eventual';
+const ERROR_EVENTUAL_CON_PROXIMA = 'Con la frecuencia Eventual, la próxima actualización tiene que ir vacía';
+const ERROR_FALTA_PROXIMA = 'Falta la próxima actualización: es obligatoria salvo con la frecuencia Eventual';
+const ERROR_FALTA_DATOS_AL = 'Falta Datos al: la fecha a la que son los datos que llegaron';
+const errorDatosAlFuturo = (datosAl) => `Todavía no puede haber datos al ${formatoCorto(datosAl)}`;
+
+const vacio = (valor) => valor === undefined || valor === null || valor === '';
+// La frecuencia Eventual es la que no tiene meses (frecuencias.meses NULL)
+const esFrecuenciaEventual = (meses) => !(Number.isInteger(meses) && meses > 0);
+
+// null si es una fecha 'AAAA-MM-DD' válida; si no, el error con el nombre del campo
+const errorDeFecha = (campo, valor) =>
+  (esFechaIso(valor) ? null : `${ETIQUETAS_DE_FECHA[campo]} tiene que ser una fecha válida (AAAA-MM-DD)`);
+// Una fecha que no puede ser posterior a hoy: la carga en el portal y la recepción
+const errorDeFechaPasada = (campo, valor, hoy) => errorDeFecha(campo, valor)
+  ?? (valor > hoy ? `${ETIQUETAS_DE_FECHA[campo]} no puede ser posterior a hoy (${formatoCorto(hoy)})` : null);
+// R1: la próxima es siempre el último día de un mes, con febrero en 28
+const errorDeProxima = (proxima) => errorDeFecha('proxima_actualizacion', proxima)
+  ?? (esFinDeMes(proxima) ? null : ERROR_PROXIMA_FIN_DE_MES);
+// R5: Datos al es fin de mes y no pasa del tope (topeDatosAl). En un presupuesto es el 31/12 del ejercicio publicado: si
+// no, el pedido y lo que cubre no coincidirían
+const errorDeDatosAl = (datosAl, tipo, hoy) => errorDeFecha('datos_al', datosAl)
+  ?? (esFinDeMes(datosAl) ? null : ERROR_DATOS_AL_FIN_DE_MES)
+  ?? (tipo === 'ejercicio' && !datosAl.endsWith('-12-31') ? ERROR_DATOS_AL_EJERCICIO : null)
+  ?? (datosAl > topeDatosAl(tipo, hoy) ? errorDatosAlFuturo(datosAl) : null);
+
+/**
+ * Lo que validan POST y PUT /datasets de las fechas y el tipo de pedido (spec 10.1), solo sobre lo que cambia (sección 4):
+ * un dataset viejo con una fecha mala se edita sin tocarla. La próxima no es obligatoria acá (la exige el formulario).
+ * - cambia(campo): si el campo llega en el pedido y es distinto del guardado (en un alta, si llega).
+ * - final: el dataset como quedaría, { frecuencia_meses, tipo_pedido, tipo_gestion, ultima_actualizacion, datos_al,
+ *   proxima_actualizacion }: lo que llega o, si no llega, lo guardado.
+ * La coherencia de Eventual (frecuencia Eventual ⇔ tipo eventual) se mira sobre el tipo efectivo del estado final, si
+ * cambia la frecuencia o el tipo. Devuelve el primer error, o null.
+ */
+const errorDeFechasDelDataset = ({ cambia, final, hoy }) => {
+  if (cambia('tipo_pedido') && !vacio(final.tipo_pedido) && !TIPOS_PEDIDO.includes(final.tipo_pedido)) return ERROR_TIPO_PEDIDO;
+  for (const campo of ['ultima_actualizacion', 'datos_al', 'proxima_actualizacion']) {
+    if (cambia(campo) && !vacio(final[campo]) && errorDeFecha(campo, final[campo])) return errorDeFecha(campo, final[campo]);
+  }
+
+  const eventual = esFrecuenciaEventual(final.frecuencia_meses);
+  const tipo = tipoEfectivo({ tipo_pedido: final.tipo_pedido || null, tipo_gestion: final.tipo_gestion, meses: final.frecuencia_meses });
+  if (cambia('frecuencia_id') || cambia('tipo_pedido')) {
+    if (eventual && tipo !== 'eventual') return ERROR_EVENTUAL_SIN_TIPO;
+    if (!eventual && tipo === 'eventual') return ERROR_TIPO_EVENTUAL;
+  }
+  if (eventual && (cambia('frecuencia_id') || cambia('proxima_actualizacion')) && !vacio(final.proxima_actualizacion)) {
+    return ERROR_EVENTUAL_CON_PROXIMA;
+  }
+
+  if (cambia('proxima_actualizacion') && !vacio(final.proxima_actualizacion)) {
+    const error = errorDeProxima(final.proxima_actualizacion);
+    if (error) return error;
+  }
+  if (cambia('datos_al') && !vacio(final.datos_al)) {
+    const error = errorDeDatosAl(final.datos_al, tipo, hoy);
+    if (error) return error;
+  }
+  if (cambia('ultima_actualizacion') && !vacio(final.ultima_actualizacion)) {
+    return errorDeFechaPasada('ultima_actualizacion', final.ultima_actualizacion, hoy);
+  }
+  return null;
+};
+
+/**
+ * Lo que valida POST /datasets/:id/actualizar (spec 10.1): lo mismo que una edición, más la próxima obligatoria salvo en
+ * Eventual (donde va vacía), Datos al obligatorio y la recepción no posterior a la carga. cargado ya trae hoy si no vino.
+ * Devuelve el primer error, o null.
+ */
+const errorDelRegistro = ({ datosAl, cargado, recibido, proxima, tipo, eventual, hoy }) => {
+  if (vacio(datosAl)) return ERROR_FALTA_DATOS_AL;
+  const error = errorDeDatosAl(datosAl, tipo, hoy) ?? errorDeFechaPasada('ultima_actualizacion', cargado, hoy);
+  if (error) return error;
+  if (!vacio(recibido)) {
+    const errorDeRecibido = errorDeFechaPasada('recibido_el', recibido, hoy);
+    if (errorDeRecibido) return errorDeRecibido;
+    if (recibido > cargado) {
+      return `La fecha de recepción (${formatoCorto(recibido)}) no puede ser posterior a la de carga en el portal (${formatoCorto(cargado)})`;
+    }
+  }
+  if (eventual) return vacio(proxima) ? null : ERROR_EVENTUAL_CON_PROXIMA;
+  return vacio(proxima) ? ERROR_FALTA_PROXIMA : errorDeProxima(proxima);
+};
+
+// La frecuencia en meses (null si es Eventual), o undefined si la frecuencia no existe
+const mesesDeLaFrecuencia = async (frecuenciaId) => {
+  const [filas] = await pool.execute('SELECT meses FROM frecuencias WHERE id = ?', [frecuenciaId]);
+  return filas.length === 0 ? undefined : filas[0].meses;
 };
 
 // Query base para obtener datasets con datos relacionados
@@ -331,17 +437,14 @@ export const getOpcionesProxima = async (req, res) => {
     }
 
     const datosNuevo = req.query.datos_al;
-    if (!esFechaIso(datosNuevo)) return responderInvalido(res, 'Datos al tiene que ser una fecha válida (AAAA-MM-DD)');
-    if (!esFinDeMes(datosNuevo)) {
-      return responderInvalido(res, 'Datos al tiene que ser el último día de un mes (febrero, el 28)');
-    }
+    const errorDeFormato = errorDeFecha('datos_al', datosNuevo);
+    if (errorDeFormato) return responderInvalido(res, errorDeFormato);
+    if (!esFinDeMes(datosNuevo)) return responderInvalido(res, ERROR_DATOS_AL_FIN_DE_MES);
 
     const hoy = hoyArgentina();
     const dataset = enriquecer(filas[0], hoy);
     // Con datos de un futuro lejano la lista de opciones recorrería años de ciclos: el tope es el de la carga del dato
-    if (datosNuevo > topeDatosAl(dataset.tipo_pedido, hoy)) {
-      return responderInvalido(res, `Todavía no puede haber datos al ${formatoCorto(datosNuevo)}`);
-    }
+    if (datosNuevo > topeDatosAl(dataset.tipo_pedido, hoy)) return responderInvalido(res, errorDatosAlFuturo(datosNuevo));
 
     res.json({
       success: true,
@@ -397,6 +500,17 @@ export const createDataset = async (req, res) => {
       return res.status(400).json({ success: false, error: largoAlta });
     }
 
+    // Fechas y tipo de pedido (spec 2026-10-17-fechas-datasets, 10.1): en un alta cambia todo lo que llega, y la
+    // coherencia de Eventual se mira siempre
+    const frecuenciaMeses = await mesesDeLaFrecuencia(data.frecuencia_id);
+    if (frecuenciaMeses === undefined) return responderInvalido(res, 'La frecuencia no es válida');
+    const errorDeFechas = errorDeFechasDelDataset({
+      cambia: (campo) => ['frecuencia_id', 'tipo_pedido'].includes(campo) || data[campo] !== undefined,
+      final: { ...data, frecuencia_meses: frecuenciaMeses },
+      hoy: hoyArgentina()
+    });
+    if (errorDeFechas) return responderInvalido(res, errorDeFechas);
+
     // Extraer IDs de formatos (pueden venir como objetos o números)
     const formatoIds = data.formatos.map(f => typeof f === 'object' ? f.id : f);
     
@@ -420,12 +534,14 @@ export const createDataset = async (req, res) => {
       area_id: data.area_id,
       frecuencia_id: data.frecuencia_id,
       ultima_actualizacion: data.ultima_actualizacion || null,
+      datos_al: data.datos_al || null,
       proxima_actualizacion: data.proxima_actualizacion || null,
       tema_principal_id: data.tema_principal_id,
       tema_secundario_id: data.tema_secundario_id || null,
       url_dataset: data.url_dataset || null,
       observaciones: data.observaciones || null,
       que_se_solicita: normalizarTextoOpcional(data.que_se_solicita),
+      tipo_pedido: data.tipo_pedido || null,
       tipo_gestion: data.tipo_gestion,
       formatos: formatoIds
     };
@@ -454,9 +570,11 @@ export const updateDataset = async (req, res) => {
     const data = req.body;
     const usuarioId = req.user?.userId;
 
-    // Verificar que el dataset existe
+    // Verificar que el dataset existe. Datos al se lee como 'AAAA-MM-DD' (como en GET /datasets)
     const [existing] = await pool.execute(
-      'SELECT * FROM datasets WHERE id = ? AND activo = TRUE',
+      `SELECT d.*, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al_iso, f.meses AS frecuencia_meses
+       FROM datasets d LEFT JOIN frecuencias f ON f.id = d.frecuencia_id
+       WHERE d.id = ? AND d.activo = TRUE`,
       [id]
     );
 
@@ -521,7 +639,32 @@ export const updateDataset = async (req, res) => {
 
     // Obtener datos actuales del dataset para guardar como "datos_anteriores"
     const datasetActual = existing[0];
-    
+    // Un Datos al que no es una fecha (por ejemplo, 0000-00-00) cuenta como sin dato, como en GET /datasets
+    const datosAlGuardado = esFechaIso(datasetActual.datos_al_iso) ? datasetActual.datos_al_iso : null;
+
+    // Fechas y tipo de pedido (spec 2026-10-17-fechas-datasets, 10.1): solo lo que llega y cambia; el estado final es lo
+    // que llega o, si no llega, lo guardado
+    const guardado = { ...datasetActual, datos_al: datosAlGuardado };
+    const cambia = (campo) => data[campo] !== undefined && normalizarValor(data[campo]) !== normalizarValor(guardado[campo]);
+    const final = (campo) => (data[campo] !== undefined ? data[campo] : guardado[campo]);
+    if (['frecuencia_id', 'tipo_pedido', 'datos_al', 'proxima_actualizacion', 'ultima_actualizacion'].some(cambia)) {
+      const frecuenciaMeses = cambia('frecuencia_id') ? await mesesDeLaFrecuencia(data.frecuencia_id) : datasetActual.frecuencia_meses;
+      if (frecuenciaMeses === undefined) return responderInvalido(res, 'La frecuencia no es válida');
+      const errorDeFechas = errorDeFechasDelDataset({
+        cambia,
+        final: {
+          frecuencia_meses: frecuenciaMeses,
+          tipo_pedido: final('tipo_pedido'),
+          tipo_gestion: final('tipo_gestion'),
+          ultima_actualizacion: final('ultima_actualizacion'),
+          datos_al: final('datos_al'),
+          proxima_actualizacion: final('proxima_actualizacion')
+        },
+        hoy: hoyArgentina()
+      });
+      if (errorDeFechas) return responderInvalido(res, errorDeFechas);
+    }
+
     // Obtener formatos actuales
     const [formatosActuales] = await pool.execute(
       'SELECT formato_id FROM dataset_formatos WHERE dataset_id = ?',
@@ -534,12 +677,14 @@ export const updateDataset = async (req, res) => {
       area_id: datasetActual.area_id,
       frecuencia_id: datasetActual.frecuencia_id,
       ultima_actualizacion: datasetActual.ultima_actualizacion,
+      datos_al: datosAlGuardado,
       proxima_actualizacion: datasetActual.proxima_actualizacion,
       tema_principal_id: datasetActual.tema_principal_id,
       tema_secundario_id: datasetActual.tema_secundario_id,
       url_dataset: datasetActual.url_dataset,
       observaciones: datasetActual.observaciones,
       que_se_solicita: datasetActual.que_se_solicita,
+      tipo_pedido: datasetActual.tipo_pedido,
       tipo_gestion: datasetActual.tipo_gestion,
       formatos: formatosActuales.map(f => f.formato_id)
     };
@@ -551,12 +696,14 @@ export const updateDataset = async (req, res) => {
       area_id: data.area_id !== undefined ? data.area_id : datasetActual.area_id,
       frecuencia_id: data.frecuencia_id !== undefined ? data.frecuencia_id : datasetActual.frecuencia_id,
       ultima_actualizacion: data.ultima_actualizacion !== undefined ? (data.ultima_actualizacion || null) : datasetActual.ultima_actualizacion,
+      datos_al: data.datos_al !== undefined ? (data.datos_al || null) : datosAlGuardado,
       proxima_actualizacion: data.proxima_actualizacion !== undefined ? (data.proxima_actualizacion || null) : datasetActual.proxima_actualizacion,
       tema_principal_id: data.tema_principal_id !== undefined ? data.tema_principal_id : datasetActual.tema_principal_id,
       tema_secundario_id: data.tema_secundario_id !== undefined ? (data.tema_secundario_id || null) : datasetActual.tema_secundario_id,
       url_dataset: data.url_dataset !== undefined ? (data.url_dataset || null) : datasetActual.url_dataset,
       observaciones: data.observaciones !== undefined ? (data.observaciones || null) : datasetActual.observaciones,
       que_se_solicita: data.que_se_solicita !== undefined ? normalizarTextoOpcional(data.que_se_solicita) : datasetActual.que_se_solicita,
+      tipo_pedido: data.tipo_pedido !== undefined ? (data.tipo_pedido || null) : datasetActual.tipo_pedido,
       tipo_gestion: data.tipo_gestion !== undefined ? data.tipo_gestion : datasetActual.tipo_gestion,
       formatos: formatoIds !== null ? formatoIds : formatosActuales.map(f => f.formato_id)
     };
@@ -728,18 +875,26 @@ export const getEstadisticas = async (req, res) => {
   }
 };
 
-// Registrar actualización de dataset (crea cambio pendiente para aprobación)
+/**
+ * Registrar actualización de dataset (crea cambio pendiente para aprobación). Spec 2026-10-17-fechas-datasets, 10.1:
+ * recibe { datos_al, cargado_el (o fecha_actualizacion, por compatibilidad; si falta, hoy), recibido_el?,
+ * proxima_actualizacion, notas? } y respeta la próxima que eligió la persona: ya no la calcula con la frecuencia. Los
+ * controles van en este orden: 404, 409 (bloqueado) y 400 (lo que llega). Al aprobarse, el cambio escribe el historial
+ * (registro_actualizacion).
+ */
 export const registrarActualizacion = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fecha_actualizacion, notas } = req.body;
+    const body = req.body ?? {};
     const usuarioId = req.user?.userId;
 
-    // Obtener el dataset y su frecuencia
+    // Obtener el dataset y su frecuencia. Las fechas se leen también como 'AAAA-MM-DD' para validarlas
     const [datasetRows] = await pool.execute(
-      `SELECT d.*, f.dias AS frecuencia_dias 
-       FROM datasets d 
-       JOIN frecuencias f ON d.frecuencia_id = f.id 
+      `SELECT d.*, f.meses AS frecuencia_meses, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al_iso,
+              DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') AS ultima_iso,
+              DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima_iso
+       FROM datasets d
+       JOIN frecuencias f ON d.frecuencia_id = f.id
        WHERE d.id = ? AND d.activo = TRUE`,
       [id]
     );
@@ -758,27 +913,33 @@ export const registrarActualizacion = async (req, res) => {
     }
 
     const dataset = datasetRows[0];
-    const fechaActualizacion = fecha_actualizacion || new Date().toISOString().split('T')[0];
+    const hoy = hoyArgentina();
+    const cargado = vacio(body.cargado_el) ? (vacio(body.fecha_actualizacion) ? hoy : body.fecha_actualizacion) : body.cargado_el;
+    const { datos_al: datosAl, recibido_el: recibido, proxima_actualizacion: proxima, notas } = body;
+    if (!esTextoOpcionalValido(notas)) return responderInvalido(res, 'Las notas tienen que ser un texto');
 
-    // Calcular próxima actualización si la frecuencia tiene días definidos
-    let proximaActualizacion = null;
-    if (dataset.frecuencia_dias) {
-      const fecha = new Date(fechaActualizacion);
-      fecha.setDate(fecha.getDate() + dataset.frecuencia_dias);
-      proximaActualizacion = fecha.toISOString().split('T')[0];
-    }
+    const eventual = esFrecuenciaEventual(dataset.frecuencia_meses);
+    const tipo = tipoEfectivo({ tipo_pedido: dataset.tipo_pedido, tipo_gestion: dataset.tipo_gestion, meses: dataset.frecuencia_meses });
+    const error = errorDelRegistro({ datosAl, cargado, recibido, proxima, tipo, eventual, hoy });
+    if (error) return responderInvalido(res, error);
 
-    // Datos anteriores
+    // Datos anteriores: las fechas de siempre como vienen de la base (calcularCambios las compara por día) y Datos al
+    // como 'AAAA-MM-DD'. Una fecha en cero (0000-00-00) no es una fecha: queda null
+    const fechaGuardada = (campo, iso) => (esFechaIso(iso) ? dataset[campo] : null);
     const datosAnteriores = {
-      ultima_actualizacion: dataset.ultima_actualizacion,
-      proxima_actualizacion: dataset.proxima_actualizacion
+      ultima_actualizacion: fechaGuardada('ultima_actualizacion', dataset.ultima_iso),
+      datos_al: esFechaIso(dataset.datos_al_iso) ? dataset.datos_al_iso : null,
+      proxima_actualizacion: fechaGuardada('proxima_actualizacion', dataset.proxima_iso)
     };
 
-    // Datos nuevos
+    // Datos nuevos: la marca registro_actualizacion hace que la aprobación escriba el historial
     const datosNuevos = {
-      ultima_actualizacion: fechaActualizacion,
-      proxima_actualizacion: proximaActualizacion,
-      notas: notas || null
+      ultima_actualizacion: cargado,
+      datos_al: datosAl,
+      proxima_actualizacion: vacio(proxima) ? null : proxima,
+      recibido_el: vacio(recibido) ? null : recibido,
+      notas: notas || null,
+      registro_actualizacion: true
     };
 
     // Crear cambio pendiente

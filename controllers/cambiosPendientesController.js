@@ -6,7 +6,8 @@
 import pool from '../config/database.js';
 import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditoriaService.js';
 import { permisoParaAuditar, quienesAuditan } from '../services/auditoriaReglas.js';
-import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { esFechaIso, hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { esFinDeMes } from '../services/fechasDatasetReglas.js';
 
 // ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2): un
 // auditor siempre; un editor, solo de respaldo. conexion: la de la transacción o el pool.
@@ -124,6 +125,34 @@ const calcularCambios = (antes, despues) => {
 
 // El JSON de datos llega como texto o ya parseado, según el driver
 const parsearDatos = (datos) => (typeof datos === 'string' ? JSON.parse(datos) : datos);
+
+// Una fecha del JSON de un cambio sin la hora: las leídas de la base quedan como '2026-03-15T03:00:00.000Z' y las que
+// llegan del formulario, como '2026-03-15' (igual que comparable, más arriba)
+const fechaSinHora = (valor) => (typeof valor === 'string' ? valor.slice(0, 10) : valor);
+// El día 'AAAA-MM-DD' de una fecha del JSON, o null si no hay una fecha válida
+const diaDe = (valor) => (esFechaIso(fechaSinHora(valor)) ? fechaSinHora(valor) : null);
+
+// Las fechas de un cambio que tienen que ser fin de mes para aprobarlo (spec 2026-10-17-fechas-datasets, R1, R5 y 10.1)
+const FECHAS_FIN_DE_MES = [
+  ['proxima_actualizacion', 'La próxima actualización del cambio no es el último día de un mes. Rechazalo y proponé la fecha correcta.'],
+  ['datos_al', 'Datos al del cambio no es el último día de un mes. Rechazalo y proponé la fecha correcta.']
+];
+
+/**
+ * El motivo por el que no se puede aprobar un cambio con una próxima o un Datos al que no son fin de mes: cubre los
+ * cambios propuestos antes del despliegue (la próxima calculada sumando días) y los cargados por SQL. Como al proponer,
+ * se mira solo lo que cambia (spec, sección 4): una edición que conserva una fecha vieja mala, igual en los datos
+ * anteriores, se aprueba. null si se puede aprobar.
+ */
+const fechaQueNoEsFinDeMes = (nuevos, anteriores) => {
+  for (const [campo, mensaje] of FECHAS_FIN_DE_MES) {
+    const valor = nuevos[campo];
+    if (valor === undefined || valor === null || valor === '') continue;
+    if (anteriores && fechaSinHora(valor) === fechaSinHora(anteriores[campo])) continue;
+    if (!esFinDeMes(fechaSinHora(valor))) return mensaje;
+  }
+  return null;
+};
 
 /**
  * Una fila de cambios_pendientes con sus datos parseados y enriquecidos con los nombres de catálogo, y los campos que
@@ -419,6 +448,14 @@ export const aprobarCambio = async (req, res) => {
     const datosNuevos = typeof cambio.datos_nuevos === 'string'
       ? JSON.parse(cambio.datos_nuevos)
       : cambio.datos_nuevos;
+    const datosAnteriores = cambio.datos_anteriores ? parsearDatos(cambio.datos_anteriores) : null;
+
+    // Antes de aplicar nada: una próxima o un Datos al que no son fin de mes no se aprueban (el cambio sigue pendiente)
+    const fechaMala = fechaQueNoEsFinDeMes(datosNuevos, datosAnteriores);
+    if (fechaMala) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, error: fechaMala });
+    }
 
     let datasetId = cambio.dataset_id;
 
@@ -427,23 +464,25 @@ export const aprobarCambio = async (req, res) => {
       // Insertar nuevo dataset
       const [result] = await connection.execute(
         `INSERT INTO datasets (
-          titulo, descripcion, area_id, frecuencia_id, 
-          ultima_actualizacion, proxima_actualizacion, 
-          tema_principal_id, tema_secundario_id, 
-          url_dataset, observaciones, que_se_solicita, tipo_gestion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          titulo, descripcion, area_id, frecuencia_id,
+          ultima_actualizacion, datos_al, proxima_actualizacion,
+          tema_principal_id, tema_secundario_id,
+          url_dataset, observaciones, que_se_solicita, tipo_pedido, tipo_gestion
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           datosNuevos.titulo,
           datosNuevos.descripcion || null,
           datosNuevos.area_id,
           datosNuevos.frecuencia_id,
           datosNuevos.ultima_actualizacion || null,
+          datosNuevos.datos_al || null,
           datosNuevos.proxima_actualizacion || null,
           datosNuevos.tema_principal_id,
           datosNuevos.tema_secundario_id || null,
           datosNuevos.url_dataset || null,
           datosNuevos.observaciones || null,
           datosNuevos.que_se_solicita || null,
+          datosNuevos.tipo_pedido || null,
           datosNuevos.tipo_gestion
         ]
       );
@@ -467,9 +506,9 @@ export const aprobarCambio = async (req, res) => {
 
       const campos = [
         'titulo', 'descripcion', 'area_id', 'frecuencia_id',
-        'ultima_actualizacion', 'proxima_actualizacion',
+        'ultima_actualizacion', 'datos_al', 'proxima_actualizacion',
         'tema_principal_id', 'tema_secundario_id',
-        'url_dataset', 'observaciones', 'que_se_solicita', 'tipo_gestion'
+        'url_dataset', 'observaciones', 'que_se_solicita', 'tipo_pedido', 'tipo_gestion'
       ];
 
       campos.forEach(campo => {
@@ -500,6 +539,29 @@ export const aprobarCambio = async (req, res) => {
             [cambio.dataset_id, formatoId]
           );
         }
+      }
+
+      // Un registro de actualización queda en el historial, con sus fechas (spec 2026-10-17-fechas-datasets, 10.1). La
+      // marca solo la pone POST /datasets/:id/actualizar: los registros de la forma vieja se aprueban sin historial.
+      // vencimiento es la próxima que se cumplió (la anterior del cambio) y usuario_id, quien lo propuso. La carga
+      // siempre viene en un registro; si un cambio cargado por SQL no la trae, cuenta el día de la aprobación
+      if (datosNuevos.registro_actualizacion === true) {
+        await connection.execute(
+          `INSERT INTO historial_actualizaciones
+             (dataset_id, fecha_actualizacion, usuario_id, notas, cambio_id, vencimiento, datos_al, recibido_el, proxima_nueva)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            cambio.dataset_id,
+            diaDe(datosNuevos.ultima_actualizacion) ?? hoyArgentina(),
+            cambio.usuario_id,
+            datosNuevos.notas || null,
+            cambio.id,
+            diaDe(datosAnteriores?.proxima_actualizacion),
+            diaDe(datosNuevos.datos_al),
+            diaDe(datosNuevos.recibido_el),
+            diaDe(datosNuevos.proxima_actualizacion)
+          ]
+        );
       }
 
     } else if (cambio.tipo_cambio === 'eliminar') {

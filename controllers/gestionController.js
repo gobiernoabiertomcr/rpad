@@ -71,11 +71,13 @@ export const getMetricasAutomaticas = async (req, res) => {
       [desde]
     );
 
-    // Operador más activo
+    // Operador más activo: los cambios que propuso y las filas del historial que no vienen de un cambio (las de antes de
+    // la doble verificación). Un registro de actualización aprobado está en las dos tablas (historial con cambio_id) y
+    // se cuenta una sola vez, por su cambio (spec 2026-10-17-fechas-datasets, 10.1)
     const [operadorActivo] = await pool.execute(
       `SELECT u.nombre_completo, COUNT(*) as acciones
        FROM (
-         SELECT usuario_id FROM historial_actualizaciones WHERE created_at >= ?
+         SELECT usuario_id FROM historial_actualizaciones WHERE created_at >= ? AND cambio_id IS NULL
          UNION ALL
          SELECT usuario_id FROM cambios_pendientes WHERE created_at >= ?
        ) t
