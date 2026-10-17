@@ -5,6 +5,8 @@ import { crearBaseDePrueba, cerrarDb, query, mailpit, db, MAILPIT_URL } from './
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, lineasPorHoja } from './pdf-lector.js';
+import { formatoCorto, hoyArgentina, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { esFinDeMes, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 
 // Banner del membrete generado para los tests (la imagen institucional no se versiona)
 const BANNER = pngRgb({ ancho: 1241, alto: 178 });
@@ -718,6 +720,34 @@ describe('pruebas, vista previa y estado', () => {
     assert.ok(!vista.html.includes('Sin aviso previo'));
     // El a vencer muestra cómo sale el antecedente de los emails anteriores en una reiteración
     assert.ok(vista.html.includes('<br><span style="font-size:11px">Anteriormente notificado DGMIT por e-mail en 3 oportunidades, entre el 04/08/2026 y el 03/10/2026</span>'), vista.html);
+    // Los dos vencen a fin de mes (spec 2026-10-17-fechas-datasets, 9): el a vencer el 31/12 y el vencido el fin del mes pasado
+    assert.ok(vista.html.includes('31/12/2026'), vista.html);
+    assert.ok(vista.html.includes('31/10/2026'), vista.html);
+  });
+
+  it('los ejemplos vencen a fin de mes y traen Datos al, el tipo de pedido y el pedido del día (spec 2026-10-17-fechas-datasets, 9)', () => {
+    for (const hoy of ['2026-11-01', '2026-11-02', '2026-11-30', '2027-01-29', '2027-12-31', '2028-02-28', '2028-02-29']) {
+      for (const gestion of ['interna', 'externa']) {
+        const { datasets: [proximo, vencido] } = motor.ejemplo('reiteracion', gestion, hoy);
+        const { datasets: [delAviso], fichas: [ficha] } = motor.ejemplo('aviso', gestion, hoy);
+        for (const d of [proximo, vencido, delAviso, ficha]) {
+          assert.ok(esFinDeMes(d.vencimiento) && esFinDeMes(d.datos_al), `${hoy} ${gestion}: ${d.vencimiento} ${d.datos_al}`);
+          // Se cargó en el portal después de la fecha de sus datos
+          assert.ok(d.datos_al <= d.ultima_actualizacion, `${hoy} ${gestion}: ${d.datos_al} ${d.ultima_actualizacion}`);
+          assert.equal(d.tipo_pedido, gestion === 'externa' ? 'acumulado' : 'relevamiento');
+          assert.ok(d.pedido?.texto, `${hoy} ${gestion}`);
+        }
+        assert.ok(proximo.vencimiento > hoy && vencido.vencimiento < hoy, `${hoy}: ${proximo.vencimiento} ${vencido.vencimiento}`);
+        assert.deepEqual(ficha, delAviso);
+      }
+    }
+    const externa = motor.ejemplo('reiteracion', 'externa', '2026-11-02').datasets;
+    assert.deepEqual(externa.map(d => [d.vencimiento, d.meses, d.datos_al, d.pedido]), [
+      ['2026-12-31', 12, '2025-11-30', { desde: '2025-12-01', hasta: '2026-11-30', texto: 'Del 01/12/2025 al 30/11/2026' }],
+      ['2026-10-31', 12, '2025-09-30', { desde: '2025-10-01', hasta: '2026-09-30', texto: 'Del 01/10/2025 al 30/09/2026' }]
+    ]);
+    assert.deepEqual(motor.ejemplo('aviso', 'interna', '2026-11-02').fichas[0].pedido,
+      { desde: null, hasta: null, texto: 'Relevamiento actualizado' });
   });
 
   it('la prueba de un aviso sin datos reales tampoco manda vencidos de ejemplo', async () => {
@@ -871,7 +901,8 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.equal(hojas.length, 1);
     const texto = hojas[0].join(' ');
     assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), texto);
-    assert.ok(texto.includes('Vence el 02/12/2026'), texto);
+    // El ejemplo vence a fin de mes (spec 2026-10-17-fechas-datasets, R1 y 9): el del mes en que caen los 30 días
+    assert.ok(texto.includes('Vence el 31/12/2026'), texto);
     assert.ok(hojas[0].includes('Interna'), texto);
     assert.ok(texto.includes(SOLICITA_POR_DEFECTO), texto);
     assert.ok(texto.includes('Área de ejemplo'), texto);
@@ -923,5 +954,75 @@ describe('anexo de los avisos (spec 6.7)', () => {
       /El anexo del aviso necesita una ficha con vencimiento por cada dataset/
     );
     assert.equal((await notas()).length, 0);
+  });
+});
+
+// Lo que pidió cada nota, congelado en notas_digitales_datasets (spec 2026-10-17-fechas-datasets, 6 y 9). El pedido depende
+// del día (R7): las fechas se arman desde el hoy real y los textos esperados, con formatoCorto (Ruling 7)
+describe('datos solicitados guardados con cada nota (spec 2026-10-17-fechas-datasets, 6 y 9)', () => {
+  const HOY = proximoDiaHabil(hoyArgentina());
+  // Vence a fin del mes del día siguiente a la corrida, entre ese día y 31 días después: entra en el aviso de las dos
+  // gestiones. Con el mes de la corrida, un 29/02 vencería el 28/02 (febrero va siempre en 28) y ya estaría vencido
+  const VENCE = vencimientoDelMes(sumarDias(HOY, 1));
+  // Trimestral vencido hace dos ciclos: el último vencimiento que ya pasó es el fin del mes pasado (R7)
+  const VENCIDO = sumarMeses(HOY, -7);
+  const primeroDelMes = (iso) => `${iso.slice(0, 8)}01`;
+  const periodo = (desde, hasta) => ({ desde, hasta, texto: `Del ${formatoCorto(desde)} al ${formatoCorto(hasta)}` });
+  // Un trimestral acumulado con los datos publicados muy atrás: se pide desde el mes siguiente a Datos al
+  const trimestral = (titulo, vencimiento) => crearDataset({
+    titulo, gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento, tipoPedido: 'acumulado', datosAl: sumarMeses(vencimiento, -16)
+  });
+  // Lo guardado de un dataset en cada nota, en orden
+  const guardado = (datasetId) => query(
+    `SELECT n.tipo, DATE_FORMAT(x.datos_desde, '%Y-%m-%d') AS desde, DATE_FORMAT(x.datos_hasta, '%Y-%m-%d') AS hasta,
+            x.datos_solicitados AS texto
+     FROM notas_digitales_datasets x JOIN notas_digitales n ON n.id = x.nota_id
+     WHERE x.dataset_id = ? ORDER BY n.id`, [datasetId]
+  );
+
+  it('un aviso guarda en cada dataset desde, hasta y el texto de su pedido; sin pedido, los tres en NULL', async () => {
+    const acumulado = await trimestral('Acumulado', VENCE);
+    const foto = await crearDataset({ titulo: 'Foto sugerida', gestion: 'externa', frecuencia: 'Cada dos años', vencimiento: VENCE });
+    const sinPedido = await crearDataset({ titulo: 'Eventual', gestion: 'externa', vencimiento: VENCE, tipoPedido: 'eventual' });
+    const relevamiento = await crearDataset({ titulo: 'Relevamiento sugerido', vencimiento: VENCE });
+    const resumen = await ejecutar(HOY);
+    assert.deepEqual(resumen.generadas.map(g => [g.tipo, g.gestion, g.datasets]), [['aviso', 'interna', 1], ['aviso', 'externa', 3]]);
+
+    const corte = sumarMeses(VENCE, -1);
+    assert.deepEqual(await guardado(acumulado), [{ tipo: 'aviso', ...periodo(primeroDelMes(sumarMeses(VENCE, -15)), corte) }]);
+    assert.deepEqual(await guardado(foto), [{ tipo: 'aviso', desde: corte, hasta: corte, texto: `Vigente al ${formatoCorto(corte)}` }]);
+    // Sin período, igual queda lo que se pidió
+    assert.deepEqual(await guardado(relevamiento), [{ tipo: 'aviso', desde: null, hasta: null, texto: 'Relevamiento actualizado' }]);
+    assert.deepEqual(await guardado(sinPedido), [{ tipo: 'aviso', desde: null, hasta: null, texto: null }]);
+  });
+
+  it('la reiteración de un vencido hace dos ciclos pide hasta el último corte cerrado (R7) y lo guarda; el aviso conserva lo que pidió', async () => {
+    const id = await trimestral('Vencido hace dos ciclos', VENCIDO);
+    // El aviso salió unos 30 días antes del vencimiento y pidió hasta el corte de ese vencimiento
+    const fechaAviso = proximoDiaHabil(sumarDias(VENCIDO, -30));
+    await ejecutar(fechaAviso);
+    await ejecutar(HOY);
+
+    const desde = primeroDelMes(sumarMeses(VENCIDO, -15));
+    assert.deepEqual(await guardado(id), [
+      { tipo: 'aviso', ...periodo(desde, sumarMeses(VENCIDO, -1)) },
+      // Recalculado con el hoy de la reiteración: Datos al no cambió, así que el inicio es el mismo y el final avanzó dos ciclos
+      { tipo: 'reiteracion', ...periodo(desde, sumarMeses(HOY, -2)) }
+    ]);
+  });
+
+  it('una nota vieja, guardada sin los datos solicitados, sigue contando como aviso y no se completa', async () => {
+    const id = await trimestral('Avisado antes de esta etapa', VENCIDO);
+    const fechaAviso = sumarDias(VENCIDO, -30);
+    await crearNota({ gestion: 'externa', fecha: fechaAviso, numero: 1, datasets: [{ id, vencimiento: VENCIDO }] });
+    const resumen = await ejecutar(HOY);
+    assert.deepEqual(resumen.generadas.map(g => [g.tipo, g.gestion]), [['reiteracion', 'externa']]);
+
+    const reiteracion = (await notas()).find(n => n.tipo === 'reiteracion');
+    assert.ok(reiteracion.html.includes(`Nota Digital N° 1/${fechaAviso.slice(2, 4)} (${formatoCorto(fechaAviso)})`), reiteracion.html);
+    assert.deepEqual(await guardado(id), [
+      { tipo: 'aviso', desde: null, hasta: null, texto: null },
+      { tipo: 'reiteracion', ...periodo(primeroDelMes(sumarMeses(VENCIDO, -15)), sumarMeses(HOY, -2)) }
+    ]);
   });
 });

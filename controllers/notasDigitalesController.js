@@ -131,8 +131,11 @@ export const obtenerNota = async (req, res) => {
        FROM notas_digitales WHERE id = ?`, [id]
     );
     if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
+    // Con lo que pidió la nota de cada dataset (spec 2026-10-17-fechas-datasets, 9); en las notas de antes de esa etapa, null
     const [datasets] = await pool.query(
-      `SELECT x.dataset_id, d.titulo, x.seccion, DATE_FORMAT(x.vencimiento, '%Y-%m-%d') AS vencimiento
+      `SELECT x.dataset_id, d.titulo, x.seccion, DATE_FORMAT(x.vencimiento, '%Y-%m-%d') AS vencimiento,
+              DATE_FORMAT(x.datos_desde, '%Y-%m-%d') AS datos_desde, DATE_FORMAT(x.datos_hasta, '%Y-%m-%d') AS datos_hasta,
+              x.datos_solicitados
        FROM notas_digitales_datasets x JOIN datasets d ON d.id = x.dataset_id
        WHERE x.nota_id = ? ORDER BY x.vencimiento, d.titulo`, [id]
     );

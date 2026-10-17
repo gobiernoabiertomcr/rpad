@@ -459,6 +459,24 @@ describe('libro', () => {
     assert.equal((await api.get(`/notificaciones/notas-digitales?dataset_id=${otro}`, comoAdmin())).body.data.length, 0);
   });
 
+  it('el detalle devuelve los datos solicitados de cada dataset; los de una nota vieja, en null (spec 2026-10-17-fechas-datasets, 9)', async () => {
+    const conPedido = await crearDataset({ titulo: 'A con el pedido guardado', vencimiento: '2026-12-31' });
+    const viejo = await crearDataset({ titulo: 'B de una nota vieja', vencimiento: '2026-12-31' });
+    // crearNota guarda las filas como las de antes de esta etapa, sin los datos solicitados
+    const nota = await crearNota({ fecha: '2026-11-02', numero: 1, datasets: [{ id: conPedido, vencimiento: '2026-12-31' }, { id: viejo, vencimiento: '2026-12-31' }] });
+    await query(
+      `UPDATE notas_digitales_datasets SET datos_desde = '2026-01-01', datos_hasta = '2026-11-30', datos_solicitados = 'Del 01/01/2026 al 30/11/2026'
+       WHERE nota_id = ? AND dataset_id = ?`, [nota, conPedido]
+    );
+
+    const detalle = await api.get(`/notificaciones/notas-digitales/${nota}`, comoAdmin());
+    assert.equal(detalle.status, 200);
+    assert.deepEqual(detalle.body.data.datasets.map(({ dataset_id: id, datos_desde: desde, datos_hasta: hasta, datos_solicitados: texto }) => ({ id, desde, hasta, texto })), [
+      { id: conPedido, desde: '2026-01-01', hasta: '2026-11-30', texto: 'Del 01/01/2026 al 30/11/2026' },
+      { id: viejo, desde: null, hasta: null, texto: null }
+    ]);
+  });
+
   it('el libro filtra por tipo, incluida la nota de autorización (sin gestión); la vista previa y la prueba no la aceptan', async () => {
     const aviso = await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-11-02', numero: 1 });
     const autorizacion = await crearNota({ tipo: 'autorizacion', gestion: null, fecha: '2026-11-25', numero: 2 });
