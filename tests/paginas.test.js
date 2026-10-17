@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const VERSION = '20261023';
-// usuarios.js y correos.js cambiaron después (persona autorizada con licencia superpuesta en parte), y perfil.js con la muestra
-// de la firma del personal contratado: su versión es propia
+// usuarios.js y correos.js cambiaron después (persona autorizada con licencia superpuesta en parte): su versión es propia
 const VERSION_PANTALLAS = '20261024';
+// perfil.js cambió después (Mi Perfil en pestañas): su versión es propia
+const VERSION_PERFIL = '20261031';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -24,13 +25,17 @@ describe('páginas', () => {
     });
   }
 
-  // Los scripts propios de estas pantallas cambiaron con los días sin auditor y, después, con la superposición parcial (y el
-  // de Mi Perfil, con la muestra de la firma del personal contratado)
-  for (const [pagina, script] of [['usuarios.html', 'usuarios'], ['correos.html', 'correos'], ['perfil.html', 'perfil']]) {
+  // Los scripts propios de estas pantallas cambiaron con los días sin auditor y, después, con la superposición parcial
+  for (const [pagina, script] of [['usuarios.html', 'usuarios'], ['correos.html', 'correos']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
     });
   }
+
+  // Mi Perfil pasó a pestañas (spec 2026-10-16-perfil-pestanas-gestion-cambios)
+  it(`perfil.html: perfil.js con la versión ${VERSION_PERFIL}`, () => {
+    assert.ok(leer('perfil.html').includes(`js/perfil.js?v=${VERSION_PERFIL}"`));
+  });
 
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {
     it(`${pagina}: el menú de Administración tiene un único enlace a Usuarios`, () => {

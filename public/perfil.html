@@ -13,265 +13,153 @@
     <link rel="stylesheet" href="css/main.css">
     <style>
         /* Estilos específicos de perfil */
-        .profile-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-            margin-bottom: 24px;
+
+        /* Colores de Mi Perfil (spec 2026-10-16-perfil-pestanas-gestion-cambios, 7) */
+        :root {
+            --pf-tinta: #1F3A5F;
+            --pf-texto: #2B3A4A;
+            --pf-suave: #6B7A8C;
+            --pf-linea: #E4E9EF;
+            --pf-sutil: #F7F9FB;
+            --pf-acento: #3E6B96;
+            --pf-crear-fondo: #DDF1E6;  --pf-crear: #2E6B4C;
+            --pf-editar-fondo: #DCEAF7; --pf-editar: #24507A;
+            --pf-eliminar-fondo: #F8E1E1; --pf-eliminar: #8A3434;
+            --pf-tachado: #B5524C;
+            --pf-resaltador: #CBEBD7;
+            --pf-nuevo: #1E4D36;
+            --pf-aviso-fondo: #FBF1DC; --pf-aviso-borde: #F0DDB0; --pf-aviso: #7A5A14;
         }
 
-        .profile-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow);
-            overflow: hidden;
-        }
+        .main-content { max-width: 1120px; min-width: 0; }
 
-        .profile-card-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
+        /* Mensajes de la página (Utils.showSuccess / showError) */
+        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--pf-linea); }
+        .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: #2E6B4C; }
+        .alert-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
 
-        .profile-card-header svg {
-            width: 22px;
-            height: 22px;
-            color: var(--primary);
-        }
+        /* Pestañas de la página */
+        .pf-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--pf-linea); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+        .pf-pestanas::-webkit-scrollbar { display: none; }
+        .pf-pestana { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; font-weight: 500; color: var(--gray-500); cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color 0.15s ease, border-color 0.15s ease; }
+        .pf-pestana:hover { color: var(--pf-tinta); }
+        .pf-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
+        .pf-pestana:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+        .pf-cuenta { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #E3EEF8; color: var(--pf-tinta); font-size: 0.75rem; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+        .pf-pestana.activa .pf-cuenta { background: var(--primary); color: #fff; }
 
-        .profile-card-header h2 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-        }
+        /* Mis datos y Mi firma */
+        .pf-tarjetas { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+        .pf-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 22px 24px; }
+        .pf-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
+        .pf-tarjeta .pf-ayuda { margin: 0 0 18px; font-size: 0.85rem; color: var(--pf-suave); }
 
-        .profile-card-body {
-            padding: 24px;
-        }
+        /* Gestión de cambios: la barra de cada lista (selector segmentado y filtro de tipo) */
+        .pf-barra { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .pf-segmento { display: inline-flex; background: #E9EEF4; border-radius: 9px; padding: 3px; }
+        .pf-segmento button { border: 0; background: none; font: inherit; font-size: 0.875rem; font-weight: 500; color: var(--pf-suave); padding: 6px 14px; border-radius: 7px; cursor: pointer; }
+        .pf-segmento button[aria-pressed="true"] { background: #fff; color: var(--pf-tinta); box-shadow: 0 1px 2px rgba(31, 58, 95, 0.12); }
+        .pf-segmento button:focus-visible { outline: 2px solid var(--pf-acento); }
+        .pf-barra select { font: inherit; font-size: 0.875rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 7px 10px; background: #fff; }
+        .pf-barra select:focus-visible { outline: 2px solid var(--pf-acento); }
 
-        .profile-card-full {
-            grid-column: 1 / -1;
-        }
+        /* La lista: un solo panel blanco, con las filas separadas por líneas */
+        .pf-lista { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: hidden; }
+        .pf-lista:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .pf-cambio + .pf-cambio { border-top: 1px solid var(--pf-linea); }
+        .pf-cambio-cabeza { width: 100%; display: grid; grid-template-columns: 76px minmax(0, 1fr) auto 20px; gap: 16px; align-items: center; padding: 16px 20px; background: none; border: 0; font: inherit; text-align: left; cursor: pointer; color: var(--pf-texto); }
+        .pf-cambio-cabeza:hover { background: var(--pf-sutil); }
+        .pf-cambio-cabeza:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: -2px; }
+        .pf-cambio.abierto > .pf-cambio-cabeza { background: var(--pf-sutil); }
+        .pf-tipo { justify-self: start; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: #EEF2F6; color: var(--pf-suave); }
+        .pf-tipo-crear { background: var(--pf-crear-fondo); color: var(--pf-crear); }
+        .pf-tipo-editar { background: var(--pf-editar-fondo); color: var(--pf-editar); }
+        .pf-tipo-eliminar { background: var(--pf-eliminar-fondo); color: var(--pf-eliminar); }
+        .pf-cambio-texto { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .pf-cambio-titulo { font-size: 0.975rem; font-weight: 600; color: var(--pf-tinta); overflow-wrap: anywhere; }
+        .pf-cambio-resumen { font-size: 0.85rem; color: var(--pf-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pf-cambio-resumen b { font-weight: 500; color: var(--pf-texto); }
+        .pf-cambio-propuesto { font-size: 0.8rem; color: var(--pf-suave); }
+        .pf-cambio-quien { text-align: right; display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; }
+        .pf-nombre { font-weight: 500; color: var(--pf-texto); white-space: nowrap; }
+        .pf-cuando { color: var(--pf-suave); font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .pf-cuando.demora { color: var(--pf-aviso); font-weight: 500; }
+        .pf-chevron { color: var(--pf-suave); transition: transform 0.18s ease; }
+        .pf-cambio.abierto .pf-chevron { transform: rotate(180deg); }
 
-        /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 4px;
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 20px;
-        }
+        /* Marca del editor: quiénes lo auditan (texto suave) o la pastilla ámbar de respaldo */
+        .pf-marca { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--pf-suave); margin-top: 2px; }
+        .pf-marca svg { flex: none; }
+        .pf-marca-respaldo { align-self: flex-start; background: var(--pf-aviso-fondo); color: var(--pf-aviso); border: 1px solid var(--pf-aviso-borde); padding: 1px 8px; border-radius: 999px; font-weight: 500; }
 
-        .tab-btn {
-            padding: 12px 20px;
-            background: transparent;
-            border: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--gray-500);
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        /* Resueltos: más apagados, con el resultado a la derecha */
+        .pf-cambio.resuelto .pf-cambio-titulo { font-weight: 500; color: var(--pf-texto); }
+        .pf-cambio.resuelto .pf-tipo { background: #EEF2F6; color: var(--pf-suave); }
+        .pf-resultado { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+        .pf-resultado.aprobado { color: var(--pf-crear); }
+        .pf-resultado.rechazado { color: var(--pf-eliminar); }
 
-        .tab-btn:hover {
-            color: var(--gray-700);
-        }
+        /* Fila abierta: la comparación "control de cambios" (lo viejo tachado y lo nuevo resaltado) */
+        .pf-cambio-cuerpo { padding: 4px 20px 20px 112px; background: var(--pf-sutil); }
+        .pf-diff { margin: 0; display: grid; grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); border-top: 1px solid var(--pf-linea); }
+        .pf-diff dt, .pf-diff dd { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--pf-linea); }
+        .pf-diff dt { font-size: 0.85rem; color: var(--pf-suave); font-weight: 500; padding-right: 16px; }
+        .pf-diff dd { font-size: 0.925rem; color: var(--pf-texto); line-height: 1.55; overflow-wrap: anywhere; }
+        .pf-diff del { color: var(--pf-suave); text-decoration: line-through; text-decoration-color: var(--pf-tachado); text-decoration-thickness: 1.5px; }
+        .pf-diff ins { text-decoration: none; color: var(--pf-nuevo); font-weight: 500; background: linear-gradient(transparent 38%, var(--pf-resaltador) 38%, var(--pf-resaltador) 92%, transparent 92%); padding: 0 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+        .pf-par { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 14px; row-gap: 4px; }
+        .pf-vacio { color: var(--pf-suave); font-style: italic; }
+        .pf-sin-campos { margin: 12px 0 0; font-size: 0.9rem; color: var(--pf-suave); }
 
-        .tab-btn.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
+        /* Notas de la fila abierta: la baja, el motivo del rechazo y el cambio que no le corresponde auditar */
+        .pf-nota { display: flex; gap: 10px; align-items: flex-start; font-size: 0.875rem; border-radius: 10px; padding: 10px 14px; margin: 14px 0 0; }
+        .pf-nota svg { flex: none; margin-top: 2px; }
+        .pf-nota.baja { background: #FBEEEE; color: var(--pf-eliminar); }
+        .pf-nota.no-corresponde { background: var(--pf-aviso-fondo); border: 1px solid var(--pf-aviso-borde); color: var(--pf-aviso); }
+        .pf-nota.motivo { background: #fff; border: 1px solid var(--pf-linea); color: var(--pf-texto); overflow-wrap: anywhere; }
+        .pf-nota.motivo b { color: var(--pf-eliminar); font-weight: 600; }
 
-        .tab-btn .tab-badge {
-            background: var(--warning);
-            color: white;
-            font-size: 0.7rem;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: 600;
-        }
+        /* Pie: quién lo propuso y lo revisó, el link al portal y los botones */
+        .pf-acciones { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+        .pf-acciones-info { font-size: 0.825rem; color: var(--pf-suave); display: flex; gap: 6px 16px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+        .pf-acciones-info a { color: var(--pf-acento); text-decoration: none; display: inline-flex; gap: 5px; align-items: center; }
+        .pf-acciones-info a:hover { text-decoration: underline; }
+        .pf-acciones-info a:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .pf-botones { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+        .pf-pregunta { font-size: 0.9rem; color: var(--pf-texto); margin-right: 4px; }
+        .pf-btn { font: inherit; font-size: 0.9rem; font-weight: 600; border-radius: 8px; padding: 9px 18px; cursor: pointer; border: 1px solid transparent; display: inline-flex; gap: 6px; align-items: center; }
+        .pf-btn:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .pf-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+        .pf-btn-aprobar { background: var(--pf-crear); color: #fff; }
+        .pf-btn-aprobar:not([disabled]):hover { background: #255A3F; }
+        .pf-btn-rechazar { background: #fff; color: var(--pf-eliminar); border-color: #E8C4C4; }
+        .pf-btn-rechazar:not([disabled]):hover { background: #FBEEEE; }
+        .pf-btn-quieto { background: #fff; color: var(--pf-texto); border-color: var(--pf-linea); }
+        .pf-btn-quieto:not([disabled]):hover { background: var(--pf-sutil); }
 
-        .tab-content {
-            display: none;
-        }
+        /* Motivo del rechazo, debajo del pie */
+        .pf-rechazo { margin-top: 14px; }
+        .pf-rechazo label { display: block; font-size: 0.85rem; font-weight: 500; color: var(--pf-texto); margin-bottom: 6px; }
+        .pf-rechazo textarea { display: block; width: 100%; box-sizing: border-box; min-height: 80px; font: inherit; font-size: 0.9rem; color: var(--pf-texto); background: #fff; border: 1px solid var(--pf-linea); border-radius: 8px; padding: 10px 12px; resize: vertical; }
+        .pf-rechazo textarea:focus { outline: 2px solid var(--pf-acento); border-color: transparent; }
+        .pf-rechazo .pf-botones { margin-top: 10px; }
 
-        .tab-content.active {
-            display: block;
-        }
+        /* El resultado en la fila, hasta que se recargan las listas */
+        .pf-hecho { padding: 14px 20px 14px 112px; font-size: 0.9rem; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+        .pf-hecho.aprobado { color: var(--pf-crear); background: #EAF6EF; }
+        .pf-hecho.rechazado { color: var(--pf-eliminar); background: #FBEEEE; }
 
-        /* Filtros */
-        .filtros-bar {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
+        /* Grupos de Mis cambios, "Ver 20 más", listas vacías y la espera */
+        .pf-grupo-titulo { font-size: 0.95rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 10px; }
+        .pf-barra .pf-grupo-titulo { margin: 0; }
+        .pf-grupo:not([hidden]) + .pf-grupo { margin-top: 28px; }
+        .pf-mas { display: block; margin: 12px auto 0; }
+        .pf-vacia { padding: 40px 20px; text-align: center; color: var(--pf-suave); }
+        .pf-vacia strong { display: block; color: var(--pf-tinta); font-weight: 600; margin-bottom: 4px; }
+        .pf-cargando .loading { padding: 32px; }
 
-        .filtros-bar select {
-            padding: 8px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            font-size: 0.875rem;
-            background: white;
-            color: var(--gray-700);
-        }
-
-        /* Cambio cards */
-        .cambio-card {
-            background: var(--gray-50);
-            border-radius: var(--border-radius);
-            padding: 16px;
-            margin-bottom: 12px;
-            border-left: 4px solid var(--gray-300);
-            transition: var(--transition);
-        }
-
-        .cambio-card:hover {
-            box-shadow: var(--shadow);
-        }
-
-        .cambio-card.crear { border-left-color: var(--success); }
-        .cambio-card.editar { border-left-color: var(--warning); }
-        .cambio-card.eliminar { border-left-color: var(--danger); }
-        .cambio-card.actualizar { border-left-color: var(--info); }
-
-        .cambio-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 8px;
-        }
-
-        .cambio-card-title {
-            font-weight: 600;
-            color: var(--gray-800);
-            font-size: 0.9375rem;
-        }
-
-        .cambio-card-meta {
-            font-size: 0.8125rem;
-            color: var(--gray-500);
-            margin-bottom: 8px;
-        }
-
-        .cambio-card-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-        }
-
-        /* Badges de tipo */
-        .badge-tipo {
-            font-size: 0.6875rem;
-            padding: 2px 8px;
-            border-radius: 20px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .badge-tipo.crear { background: var(--success-light); color: #15803d; }
-        .badge-tipo.editar { background: var(--warning-light); color: #b45309; }
-        .badge-tipo.eliminar { background: var(--danger-light); color: #dc2626; }
-        .badge-tipo.actualizar { background: var(--info-light); color: #0369a1; }
-
-        /* Badges de estado */
-        .badge-estado {
-            font-size: 0.6875rem;
-            padding: 2px 8px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .badge-estado.pendiente { background: #fef3c7; color: #b45309; }
-        .badge-estado.aprobado { background: #dcfce7; color: #15803d; }
-        .badge-estado.rechazado { background: #fee2e2; color: #dc2626; }
-
-        /* Comparador antes/después */
-        .comparador {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-top: 16px;
-        }
-
-        .comparador-col {
-            background: white;
-            border-radius: var(--border-radius);
-            padding: 16px;
-            border: 1px solid var(--border-color);
-        }
-
-        .comparador-col.antes {
-            border-color: #fecaca;
-        }
-
-        .comparador-col.despues {
-            border-color: #bbf7d0;
-        }
-
-        .comparador-title {
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .comparador-col.antes .comparador-title { color: var(--danger); }
-        .comparador-col.despues .comparador-title { color: var(--success); }
-
-        .comparador-field {
-            margin-bottom: 8px;
-        }
-
-        .comparador-field-label {
-            font-size: 0.6875rem;
-            color: var(--gray-500);
-            text-transform: uppercase;
-        }
-
-        .comparador-field-value {
-            font-size: 0.875rem;
-            color: var(--gray-800);
-        }
-
-        .comparador-field-value.changed {
-            background: #fef9c3;
-            padding: 2px 4px;
-            border-radius: 2px;
-        }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 48px 24px;
-            color: var(--gray-500);
-        }
-
-        .empty-state svg {
-            width: 48px;
-            height: 48px;
-            color: var(--gray-300);
-            margin-bottom: 16px;
-        }
-
-        /* Modal rechazo */
-        .modal-rechazo textarea {
-            width: 100%;
-            min-height: 100px;
-            padding: 12px;
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            font-family: inherit;
-            font-size: 0.9375rem;
-            resize: vertical;
-        }
+        /* Solo para lectores de pantalla: el anuncio de lo que pasó al aprobar o rechazar */
+        .pf-solo-lector { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
         [hidden] { display: none !important; }
         .firma-vista { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
@@ -281,18 +169,25 @@
         .firma-muestra-renglon { font-size: 0.9375rem; }
         .firma-muestra-chico { font-size: 0.75rem; }
 
-        /* Un cambio que no le corresponde auditar a quien mira (el editor): botones deshabilitados y el motivo debajo del detalle */
-        #modal-detalle-footer .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        #modal-detalle-contenido .alert-warning { padding: 12px 14px; border-radius: var(--border-radius); font-size: 0.875rem; background: var(--warning-light); color: #92400e; border: 1px solid #fde68a; }
+        @media (max-width: 760px) {
+            .pf-tarjetas { grid-template-columns: 1fr; }
+            .pf-cambio-cabeza { grid-template-columns: minmax(0, 1fr) 20px; gap: 6px 10px; padding: 14px 16px; }
+            .pf-tipo { grid-column: 1; }
+            .pf-chevron { grid-column: 2; grid-row: 1; }
+            .pf-cambio-texto, .pf-cambio-quien { grid-column: 1 / -1; }
+            .pf-cambio-quien { flex-direction: row; flex-wrap: wrap; gap: 8px; text-align: left; }
+            .pf-cambio-resumen { white-space: normal; }
+            .pf-cambio-cuerpo, .pf-hecho { padding-left: 16px; padding-right: 16px; }
+            .pf-diff { grid-template-columns: 1fr; }
+            .pf-diff dt { border-bottom: 0; padding-bottom: 2px; }
+            .pf-diff dd { padding-top: 0; }
+            .pf-acciones .pf-botones, .pf-rechazo .pf-botones { width: 100%; }
+            .pf-botones .pf-btn { flex: 1; justify-content: center; }
+            .pf-pregunta { flex-basis: 100%; margin: 0 0 4px; }
+        }
 
-        @media (max-width: 968px) {
-            .profile-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .comparador {
-                grid-template-columns: 1fr;
-            }
+        @media (prefers-reduced-motion: reduce) {
+            .pf-pestana, .pf-chevron { transition: none; }
         }
     </style>
 </head>
@@ -404,158 +299,143 @@
             </div>
 
             <div id="message-container"></div>
+            <!-- Lo que pasó al aprobar o rechazar un cambio, para los lectores de pantalla (perfil.js lo escribe) -->
+            <div id="anuncio-cambios" class="pf-solo-lector" aria-live="polite"></div>
 
-            <!-- Grid de perfil -->
-            <div class="profile-grid">
-                
-                <!-- Datos Personales -->
-                <div class="profile-card">
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <h2>Datos Personales</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <form id="form-perfil">
-                            <div class="form-group">
-                                <label class="form-label">Usuario</label>
-                                <input type="text" id="perfil-username" class="form-input" disabled style="background: var(--gray-50);">
-                            </div>
-                            <div class="form-group" id="perfil-cargo-grupo" style="display: none;">
-                                <label class="form-label">Cargo</label>
-                                <input type="text" id="perfil-cargo" class="form-input" disabled style="background: var(--gray-50);">
-                            </div>
-                            <div class="form-group" id="perfil-vinculo-grupo" style="display: none;">
-                                <label class="form-label">Vínculo</label>
-                                <input type="text" id="perfil-vinculo" class="form-input" disabled style="background: var(--gray-50);">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Nombre Completo <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="perfil-nombre" class="form-input" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Email <span style="color: var(--danger);">*</span></label>
-                                <input type="email" id="perfil-email" class="form-input" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary" id="btn-guardar-perfil" style="width: 100%;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                                Guardar Cambios
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Cambiar Contraseña -->
-                <div class="profile-card">
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <h2>Cambiar Contraseña</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <form id="form-password">
-                            <div class="form-group">
-                                <label class="form-label">Contraseña Actual <span style="color: var(--danger);">*</span></label>
-                                <input type="password" id="password-actual" class="form-input" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Nueva Contraseña <span style="color: var(--danger);">*</span></label>
-                                <input type="password" id="password-nueva" class="form-input" required minlength="8">
-                                <span class="form-hint">Mínimo 8 caracteres</span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Confirmar Nueva Contraseña <span style="color: var(--danger);">*</span></label>
-                                <input type="password" id="password-confirmar" class="form-input" required minlength="8">
-                            </div>
-                            <button type="submit" class="btn btn-primary" id="btn-cambiar-password" style="width: 100%;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                Cambiar Contraseña
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Mi firma (admin y superadmin): la usan las Notas Digitales cuando firmás o presentás una nota -->
-                <div class="profile-card" id="seccion-firma" hidden>
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                        <h2>Mi firma</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <p class="form-hint" id="firma-estado"></p>
-                        <form id="form-firma">
-                            <div class="form-group">
-                                <label class="form-label" for="firma-nombre">Nombre para la firma <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Nombre Apellido">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="firma-cargo">Cargo para la firma <span style="color: var(--danger);">*</span></label>
-                                <input type="text" id="firma-cargo" class="form-input" maxlength="200">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
-                                <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
-                                <img id="firma-vista" class="firma-vista" alt="Tu firma cargada" hidden>
-                            </div>
-                            <div id="firma-muestra" class="firma-muestra" hidden></div>
-                            <button type="submit" class="btn btn-primary" id="btn-guardar-firma" style="width: 100%;">Guardar firma</button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Gestión de Cambios (solo admin) -->
-                <div class="profile-card profile-card-full" id="seccion-cambios" style="display: none;">
-                    <div class="profile-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                        <h2>Gestión de Cambios</h2>
-                    </div>
-                    <div class="profile-card-body">
-                        <!-- Tabs -->
-                        <div class="tabs">
-                            <button class="tab-btn active" data-tab="mis-cambios">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                Mis Cambios
-                                <span id="badge-mis-cambios" class="tab-badge" style="display: none;"></span>
-                            </button>
-                            <button class="tab-btn" data-tab="para-revisar">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                                Para Revisar
-                                <span id="badge-para-revisar" class="tab-badge" style="display: none;"></span>
-                            </button>
-                        </div>
-
-                        <!-- Tab: Mis Cambios -->
-                        <div id="tab-mis-cambios" class="tab-content active">
-                            <div class="filtros-bar">
-                                <select id="filtro-mis-estado">
-                                    <option value="todos">Todos los estados</option>
-                                    <option value="pendiente">Pendientes</option>
-                                    <option value="aprobado">Aprobados</option>
-                                    <option value="rechazado">Rechazados</option>
-                                </select>
-                            </div>
-                            <div id="lista-mis-cambios">
-                                <div class="loading"><div class="spinner"></div></div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Para Revisar -->
-                        <div id="tab-para-revisar" class="tab-content">
-                            <div class="filtros-bar">
-                                <select id="filtro-revisar-tipo">
-                                    <option value="">Todos los tipos</option>
-                                    <option value="crear">Creación</option>
-                                    <option value="editar">Edición</option>
-                                    <option value="eliminar">Eliminación</option>
-                                    <option value="actualizar">Actualización</option>
-                                </select>
-                            </div>
-                            <div id="lista-para-revisar">
-                                <div class="loading"><div class="spinner"></div></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+            <!-- Pestañas: quien administra ve las cuatro; un lector solo ve sus datos, sin barra (perfil.js la muestra) -->
+            <div class="pf-pestanas" id="pestanas-perfil" role="tablist" aria-label="Secciones de Mi Perfil" hidden>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-para-revisar" aria-selected="false" aria-controls="vista-para-revisar" data-vista="para-revisar" tabindex="-1">Para revisar <span class="pf-cuenta" id="cuenta-para-revisar" hidden></span></button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-mis-cambios" aria-selected="false" aria-controls="vista-mis-cambios" data-vista="mis-cambios" tabindex="-1">Mis cambios <span class="pf-cuenta" id="cuenta-mis-cambios" hidden></span></button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-mis-datos" aria-selected="false" aria-controls="vista-mis-datos" data-vista="mis-datos" tabindex="-1">Mis datos</button>
+                <button type="button" class="pf-pestana" role="tab" id="pestana-mi-firma" aria-selected="false" aria-controls="vista-mi-firma" data-vista="mi-firma" tabindex="-1">Mi firma</button>
             </div>
+
+            <!-- Para revisar (solo quien administra) -->
+            <section id="vista-para-revisar" role="tabpanel" aria-labelledby="pestana-para-revisar" hidden>
+                <div class="pf-barra">
+                    <div class="pf-segmento" id="segmento-revisar" role="group" aria-label="Qué cambios ver">
+                        <button type="button" data-segmento="pendientes" aria-pressed="true">Pendientes</button>
+                        <button type="button" data-segmento="revisados" aria-pressed="false">Revisados</button>
+                    </div>
+                    <select id="filtro-revisar-tipo" aria-label="Tipo de cambio">
+                        <option value="">Todos los tipos</option>
+                        <option value="crear">Crear</option>
+                        <option value="editar">Editar</option>
+                        <option value="eliminar">Eliminar</option>
+                    </select>
+                </div>
+                <ul class="pf-lista" id="lista-para-revisar" aria-label="Cambios para revisar" tabindex="-1">
+                    <li class="pf-cargando"><div class="loading"><div class="spinner"></div></div></li>
+                </ul>
+                <button type="button" class="pf-btn pf-btn-quieto pf-mas" id="mas-para-revisar" hidden>Ver 20 más</button>
+            </section>
+
+            <!-- Mis cambios (solo quien administra): los propios esperando auditoría y los ya resueltos -->
+            <section id="vista-mis-cambios" role="tabpanel" aria-labelledby="pestana-mis-cambios" hidden>
+                <div class="pf-grupo" id="grupo-mios-pendientes" hidden>
+                    <h2 class="pf-grupo-titulo">Esperando auditoría</h2>
+                    <ul class="pf-lista" id="lista-mios-pendientes" aria-label="Cambios propios esperando auditoría"></ul>
+                </div>
+                <div class="pf-grupo" id="grupo-mios-resueltos">
+                    <div class="pf-barra">
+                        <h2 class="pf-grupo-titulo">Resueltos</h2>
+                        <div class="pf-segmento" id="segmento-mios" role="group" aria-label="Filtrar resueltos">
+                            <button type="button" data-filtro="todos" aria-pressed="true">Todos</button>
+                            <button type="button" data-filtro="aprobado" aria-pressed="false">Aprobados</button>
+                            <button type="button" data-filtro="rechazado" aria-pressed="false">Rechazados</button>
+                        </div>
+                    </div>
+                    <ul class="pf-lista" id="lista-mios-resueltos" aria-label="Cambios propios resueltos">
+                        <li class="pf-cargando"><div class="loading"><div class="spinner"></div></div></li>
+                    </ul>
+                    <button type="button" class="pf-btn pf-btn-quieto pf-mas" id="mas-mios" hidden>Ver 20 más</button>
+                </div>
+            </section>
+
+            <!-- Mis datos (todos los usuarios) -->
+            <section id="vista-mis-datos" role="tabpanel" aria-labelledby="pestana-mis-datos" hidden>
+                <div class="pf-tarjetas">
+
+                    <!-- Datos personales -->
+                    <form id="form-perfil" class="pf-tarjeta">
+                        <h2>Datos personales</h2>
+                        <p class="pf-ayuda">Tu nombre y email aparecen en los avisos y en el historial de cambios.</p>
+                        <div class="form-group">
+                            <label class="form-label">Usuario</label>
+                            <input type="text" id="perfil-username" class="form-input" disabled style="background: var(--gray-50);">
+                        </div>
+                        <div class="form-group" id="perfil-cargo-grupo" style="display: none;">
+                            <label class="form-label">Cargo</label>
+                            <input type="text" id="perfil-cargo" class="form-input" disabled style="background: var(--gray-50);">
+                        </div>
+                        <div class="form-group" id="perfil-vinculo-grupo" style="display: none;">
+                            <label class="form-label">Vínculo</label>
+                            <input type="text" id="perfil-vinculo" class="form-input" disabled style="background: var(--gray-50);">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nombre Completo <span style="color: var(--danger);">*</span></label>
+                            <input type="text" id="perfil-nombre" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Email <span style="color: var(--danger);">*</span></label>
+                            <input type="email" id="perfil-email" class="form-input" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btn-guardar-perfil" style="width: 100%;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Guardar Cambios
+                        </button>
+                    </form>
+
+                    <!-- Contraseña -->
+                    <form id="form-password" class="pf-tarjeta">
+                        <h2>Contraseña</h2>
+                        <p class="pf-ayuda">Al cambiarla se cierran tus otras sesiones abiertas.</p>
+                        <div class="form-group">
+                            <label class="form-label">Contraseña Actual <span style="color: var(--danger);">*</span></label>
+                            <input type="password" id="password-actual" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nueva Contraseña <span style="color: var(--danger);">*</span></label>
+                            <input type="password" id="password-nueva" class="form-input" required minlength="8">
+                            <span class="form-hint">Mínimo 8 caracteres</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Confirmar Nueva Contraseña <span style="color: var(--danger);">*</span></label>
+                            <input type="password" id="password-confirmar" class="form-input" required minlength="8">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btn-cambiar-password" style="width: 100%;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            Cambiar Contraseña
+                        </button>
+                    </form>
+
+                </div>
+            </section>
+
+            <!-- Mi firma (solo quien administra): la usan las Notas Digitales cuando firmás o presentás una nota -->
+            <section id="vista-mi-firma" role="tabpanel" aria-labelledby="pestana-mi-firma" hidden>
+                <div class="pf-tarjetas">
+                    <form id="form-firma" class="pf-tarjeta">
+                        <h2>Mi firma</h2>
+                        <p class="pf-ayuda" id="firma-estado"></p>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-nombre">Nombre para la firma <span style="color: var(--danger);">*</span></label>
+                            <input type="text" id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Nombre Apellido">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-cargo">Cargo para la firma <span style="color: var(--danger);">*</span></label>
+                            <input type="text" id="firma-cargo" class="form-input" maxlength="200">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
+                            <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
+                            <img id="firma-vista" class="firma-vista" alt="Tu firma cargada" hidden>
+                        </div>
+                        <div id="firma-muestra" class="firma-muestra" hidden></div>
+                        <button type="submit" class="btn btn-primary" id="btn-guardar-firma" style="width: 100%;">Guardar firma</button>
+                    </form>
+                </div>
+            </section>
 
             <!-- Footer -->
             <footer class="footer">
@@ -590,51 +470,11 @@
         </main>
     </div>
 
-    <!-- Modal Ver Detalle -->
-    <div class="modal-overlay" id="modal-detalle">
-        <div class="modal" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3 class="modal-title" id="modal-detalle-titulo">Detalle del Cambio</h3>
-                <button class="modal-close" onclick="cerrarModalDetalle()">&times;</button>
-            </div>
-            <div class="modal-body" id="modal-detalle-contenido">
-                <!-- Contenido dinámico -->
-            </div>
-            <div class="modal-footer" id="modal-detalle-footer">
-                <!-- Botones dinámicos -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Rechazar -->
-    <div class="modal-overlay" id="modal-rechazo">
-        <div class="modal modal-rechazo" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3 class="modal-title">Rechazar Cambio</h3>
-                <button class="modal-close" onclick="cerrarModalRechazo()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted mb-4">Por favor, indique el motivo del rechazo. Este comentario será visible para el usuario que propuso el cambio.</p>
-                <div class="form-group">
-                    <label class="form-label">Motivo del rechazo <span style="color: var(--danger);">*</span></label>
-                    <textarea id="rechazo-comentario" class="form-textarea" placeholder="Explique por qué se rechaza este cambio..."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="cerrarModalRechazo()">Cancelar</button>
-                <button class="btn btn-danger" id="btn-confirmar-rechazo" onclick="confirmarRechazo()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                    Rechazar
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/auth.js?v=20261023"></script>
     <script src="js/main.js?v=20261023"></script>
     <script src="js/api.js?v=20261023"></script>
-    <script src="js/perfil.js?v=20261024"></script>
+    <script src="js/perfil.js?v=20261031"></script>
 </body>
 </html>

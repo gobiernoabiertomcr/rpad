@@ -1,9 +1,8 @@
 /**
  * Perfil - RPAD
- * Lógica para gestión de perfil y cambios pendientes
+ * Mi Perfil en pestañas: Para revisar y Mis cambios (la gestión de cambios, solo quien administra), Mis datos y Mi firma
  */
 
-let cambioSeleccionado = null;
 // Si quien mira es personal contratado (usuarios.vinculo = 'contrato'): su firma lleva una muestra (cargarPerfil lo lee)
 let perfilContratado = false;
 
@@ -15,23 +14,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  // La barra y la pestaña inicial se ven enseguida, sin esperar los datos del perfil: alcanza con el rol guardado
+  // (el servidor igual decide qué puede ver y hacer cada uno)
+  const esAdmin = Auth.isAdmin();
+  if (esAdmin) {
+    // Quien administra ve las cuatro pestañas: revisar, sus cambios, sus datos y su firma
+    document.getElementById('pestanas-perfil').hidden = false;
+    conectarPestanas();
+  }
+  // Un lector solo tiene sus datos personales: sin barra de pestañas ni nada de la gestión de cambios
+  mostrarPestana(pestanaInicial(location.hash, esAdmin));
+
   // Cargar datos del perfil
   await cargarPerfil();
 
-  // Mostrar sección de cambios solo para admins
-  if (Auth.isAdmin()) {
-    document.getElementById('seccion-firma').hidden = false;
+  // Los formularios quedan conectados antes de cualquier carga larga
+  setupEventos();
+
+  // Cambiar de pestaña con el hash de la dirección (el botón atrás, un enlace a #mis-cambios)
+  window.addEventListener('hashchange', () => mostrarPestana(pestanaInicial(location.hash, Auth.isAdmin())));
+
+  if (esAdmin) {
     document.getElementById('form-firma').addEventListener('submit', guardarMiFirma);
     for (const id of ['firma-nombre', 'firma-cargo']) document.getElementById(id).addEventListener('input', actualizarMuestraFirma);
+    // Los controles de las listas de cambios se conectan solo acá: un lector no toca nada de la gestión de cambios
+    conectarListasDeCambios();
     cargarMiFirma();
-    document.getElementById('seccion-cambios').style.display = 'block';
-    await cargarMisCambios();
-    await cargarCambiosParaRevisar();
-    await actualizarBadges();
+    await Promise.all([cargarCambiosParaRevisar(), cargarMisCambios()]);
+    await actualizarCuentas();
   }
-
-  // Setup eventos
-  setupEventos();
 });
 
 /**
@@ -73,25 +84,48 @@ function setupEventos() {
     e.preventDefault();
     await cambiarPassword();
   });
+}
 
-  // Tabs
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
-      
-      // Activar tab
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      
-      // Mostrar contenido
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      document.getElementById(`tab-${tab}`).classList.add('active');
-    });
-  });
+// =====================================================
+// PESTAÑAS
+// =====================================================
+// Muestra una pestaña y su panel, oculta las demás y deja el nombre en el hash (sin sumar una entrada al historial)
+function mostrarPestana(nombre) {
+  for (const otra of PESTANAS_DEL_PERFIL) {
+    const activa = otra === nombre;
+    const pestana = document.getElementById(`pestana-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    pestana.classList.toggle('activa', activa);
+    document.getElementById(`vista-${otra}`).hidden = !activa;
+  }
+  history.replaceState(null, '', `#${nombre}`);
+}
 
-  // Filtros
-  document.getElementById('filtro-mis-estado').addEventListener('change', cargarMisCambios);
-  document.getElementById('filtro-revisar-tipo').addEventListener('change', cargarCambiosParaRevisar);
+// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son
+// atajos del navegador (Alt+flecha izquierda vuelve atrás): no se tocan.
+function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const actual = PESTANAS_DEL_PERFIL.indexOf(evento.target.dataset?.vista);
+  if (actual === -1) return;
+  const ultima = PESTANAS_DEL_PERFIL.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault();
+  mostrarPestana(PESTANAS_DEL_PERFIL[destino]);
+  document.getElementById(`pestana-${PESTANAS_DEL_PERFIL[destino]}`).focus();
+}
+
+// El clic en cada pestaña y el teclado en la barra
+function conectarPestanas() {
+  for (const nombre of PESTANAS_DEL_PERFIL) {
+    document.getElementById(`pestana-${nombre}`).addEventListener('click', () => mostrarPestana(nombre));
+  }
+  document.getElementById('pestanas-perfil').addEventListener('keydown', teclaEnPestanas);
 }
 
 /**
@@ -173,176 +207,204 @@ async function cambiarPassword() {
   }
 }
 
+// =====================================================
+// GESTIÓN DE CAMBIOS: LISTAS (spec 2026-10-16-perfil-pestanas-gestion-cambios, 5 y 6)
+// =====================================================
+// Solo quien administra las carga y las toca (DOMContentLoaded). Cada lista guarda lo cargado y muestra de a 20 filas
+// ("Ver 20 más" pagina del lado del cliente). `pedido` numera las cargas: si llega la respuesta de una carga vieja después
+// de la de una más nueva (un cambio rápido de filtro), se descarta.
+const FILAS_POR_TANDA = 20;
+const vistaParaRevisar = { segmento: 'pendientes', cambios: [], visibles: FILAS_POR_TANDA, pedido: 0 };
+const vistaMisCambios = { filtro: 'todos', pendientes: [], resueltos: [], visibles: FILAS_POR_TANDA, pedido: 0 };
+const FILA_CARGANDO = '<li class="pf-cargando"><div class="loading"><div class="spinner"></div></div></li>';
+const ERROR_DE_CARGA = 'No se pudieron cargar los cambios. Probá recargar la página.';
+
+// Quién mira: si es editor (ve la marca de auditoría) y su id (lo propio no tiene botones)
+function quienMira() {
+  const usuario = Auth.getUser();
+  return { esEditor: usuario?.rol === 'editor', idUsuario: Number(usuario?.id) };
+}
+
+// Las filas de una lista, de `desde` a `hasta`. En los pendientes de Para revisar, la primera va abierta.
+function htmlDeFilas(cambios, modo, desde, hasta) {
+  const quien = quienMira();
+  return cambios.slice(desde, hasta)
+    .map((cambio, i) => htmlDeFila(cambio, modo, { ...quien, abierto: modo === 'revisar' && desde + i === 0 }))
+    .join('');
+}
+
+const modoDeParaRevisar = () => (vistaParaRevisar.segmento === 'pendientes' ? 'revisar' : 'revisado');
+
+// Los cambios resueltos, los revisados más recientes primero (el servidor los manda por fecha de propuesta). Sin fecha de
+// revisión van al final; a igual fecha quedan como vinieron.
+function porRevisionReciente(cambios) {
+  const momento = (cambio) => new Date(cambio.revisado_at).getTime() || 0;
+  return [...cambios].sort((uno, otro) => momento(otro) - momento(uno));
+}
+
 /**
- * Cargar mis cambios propuestos
+ * Para revisar: los cambios ajenos pendientes o, en Revisados, los ya aprobados o rechazados (por cualquiera).
+ * conEspera: false al recargar después de aprobar o rechazar, así la lista no parpadea con la ruedita.
+ */
+async function cargarCambiosParaRevisar({ conEspera = true } = {}) {
+  const lista = document.getElementById('lista-para-revisar');
+  const mas = document.getElementById('mas-para-revisar');
+  const tipo = document.getElementById('filtro-revisar-tipo').value;
+  const pendientes = vistaParaRevisar.segmento === 'pendientes';
+  const pedido = ++vistaParaRevisar.pedido;
+  if (conEspera) {
+    lista.innerHTML = FILA_CARGANDO;
+    mas.hidden = true;
+  }
+
+  try {
+    const cambios = await API.getCambiosPendientesParaRevisar({ tipo: tipo || null, estado: pendientes ? 'pendiente' : 'todos' });
+    if (pedido !== vistaParaRevisar.pedido) return;
+    vistaParaRevisar.cambios = pendientes ? cambios : porRevisionReciente(cambios.filter(cambio => cambio.estado !== 'pendiente'));
+    const { cambios: aMostrar, visibles, segmento } = vistaParaRevisar;
+    lista.innerHTML = aMostrar.length ? htmlDeFilas(aMostrar, modoDeParaRevisar(), 0, visibles) : htmlDeVacioParaRevisar(segmento, tipo);
+    mas.hidden = aMostrar.length <= visibles;
+  } catch (error) {
+    if (pedido !== vistaParaRevisar.pedido) return;
+    console.error('Error cargando cambios para revisar:', error);
+    lista.innerHTML = htmlDeVacio(ERROR_DE_CARGA);
+    mas.hidden = true;
+  }
+}
+
+/**
+ * Mis cambios: todos los propios en un solo pedido, separados en Esperando auditoría y Resueltos. La cuenta de la pestaña
+ * sale de esta misma lista (actualizarCuentas).
  */
 async function cargarMisCambios() {
-  const container = document.getElementById('lista-mis-cambios');
-  const estado = document.getElementById('filtro-mis-estado').value;
-
-  container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-
+  const pedido = ++vistaMisCambios.pedido;
   try {
-    const cambios = await API.getMisCambios({ estado: estado !== 'todos' ? estado : null });
-    
-    if (cambios.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--gray-300);"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="M2 8v8"/><path d="M22 8v8"/></svg>
-          <p class="text-muted">No tienes cambios ${estado !== 'todos' ? estado + 's' : ''}</p>
-        </div>
-      `;
-      return;
-    }
-
-    container.innerHTML = cambios.map(c => renderCambioCard(c, false)).join('');
+    const cambios = await API.getMisCambios({ estado: 'todos' });
+    if (pedido !== vistaMisCambios.pedido) return;
+    vistaMisCambios.pendientes = cambios.filter(cambio => cambio.estado === 'pendiente');
+    vistaMisCambios.resueltos = porRevisionReciente(cambios.filter(cambio => cambio.estado !== 'pendiente'));
+    pintarMisCambios();
   } catch (error) {
+    if (pedido !== vistaMisCambios.pedido) return;
     console.error('Error cargando mis cambios:', error);
-    container.innerHTML = '<p class="text-danger">Error al cargar cambios</p>';
+    document.getElementById('grupo-mios-pendientes').hidden = true;
+    document.getElementById('lista-mios-resueltos').innerHTML = htmlDeVacio(ERROR_DE_CARGA);
+    document.getElementById('mas-mios').hidden = true;
+  }
+}
+
+// Los resueltos propios con el filtro del selector (Todos, Aprobados o Rechazados)
+function resueltosFiltrados() {
+  const { resueltos, filtro } = vistaMisCambios;
+  return filtro === 'todos' ? resueltos : resueltos.filter(cambio => cambio.estado === filtro);
+}
+
+function pintarMisCambios() {
+  const { pendientes, resueltos, filtro, visibles } = vistaMisCambios;
+  document.getElementById('grupo-mios-pendientes').hidden = pendientes.length === 0;
+  document.getElementById('lista-mios-pendientes').innerHTML = htmlDeFilas(pendientes, 'mio', 0, pendientes.length);
+  const filtrados = resueltosFiltrados();
+  document.getElementById('lista-mios-resueltos').innerHTML = filtrados.length
+    ? htmlDeFilas(filtrados, 'mio', 0, visibles)
+    : htmlDeVacioMisCambios(filtro, pendientes.length + resueltos.length > 0);
+  document.getElementById('mas-mios').hidden = filtrados.length <= visibles;
+}
+
+// "Ver 20 más": suma la próxima tanda al final de la lista (las filas que ya están quedan como estaban, abiertas o
+// cerradas) y lleva el foco a la primera nueva
+function agregarTanda(vista, cambios, modo, idLista, idBoton) {
+  const desde = vista.visibles;
+  vista.visibles += FILAS_POR_TANDA;
+  const lista = document.getElementById(idLista);
+  lista.insertAdjacentHTML('beforeend', htmlDeFilas(cambios, modo, desde, vista.visibles));
+  document.getElementById(idBoton).hidden = cambios.length <= vista.visibles;
+  lista.querySelectorAll('.pf-cambio-cabeza')[desde]?.focus();
+}
+
+// Abre o cierra la fila de esa cabecera
+function desplegarFila(cabeza, abrir) {
+  cabeza.setAttribute('aria-expanded', String(abrir));
+  cabeza.closest('.pf-cambio').classList.toggle('abierto', abrir);
+  document.getElementById(cabeza.getAttribute('aria-controls')).hidden = !abrir;
+}
+
+// Abre o cierra la fila cuya cabecera se tocó (clic delegado en cada lista)
+function alternarFila(evento) {
+  const cabeza = evento.target.closest('.pf-cambio-cabeza');
+  if (!cabeza) return;
+  desplegarFila(cabeza, cabeza.getAttribute('aria-expanded') !== 'true');
+}
+
+// Marca el botón elegido de un selector segmentado
+function marcarSegmento(idSegmento, elegido) {
+  for (const boton of document.getElementById(idSegmento).querySelectorAll('button')) {
+    boton.setAttribute('aria-pressed', String(boton === elegido));
+  }
+}
+
+// Los selectores, el filtro de tipo, "Ver 20 más" y el clic en las filas
+function conectarListasDeCambios() {
+  document.getElementById('segmento-revisar').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('button[data-segmento]');
+    if (!boton || boton.dataset.segmento === vistaParaRevisar.segmento) return;
+    vistaParaRevisar.segmento = boton.dataset.segmento === 'revisados' ? 'revisados' : 'pendientes';
+    vistaParaRevisar.visibles = FILAS_POR_TANDA;
+    marcarSegmento('segmento-revisar', boton);
+    cargarCambiosParaRevisar();
+  });
+  document.getElementById('filtro-revisar-tipo').addEventListener('change', () => {
+    vistaParaRevisar.visibles = FILAS_POR_TANDA;
+    cargarCambiosParaRevisar();
+  });
+  document.getElementById('mas-para-revisar').addEventListener('click', () => {
+    agregarTanda(vistaParaRevisar, vistaParaRevisar.cambios, modoDeParaRevisar(), 'lista-para-revisar', 'mas-para-revisar');
+  });
+
+  document.getElementById('segmento-mios').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('button[data-filtro]');
+    if (!boton || !['todos', 'aprobado', 'rechazado'].includes(boton.dataset.filtro)) return;
+    vistaMisCambios.filtro = boton.dataset.filtro;
+    vistaMisCambios.visibles = FILAS_POR_TANDA;
+    marcarSegmento('segmento-mios', boton);
+    pintarMisCambios();
+  });
+  document.getElementById('mas-mios').addEventListener('click', () => {
+    agregarTanda(vistaMisCambios, resueltosFiltrados(), 'mio', 'lista-mios-resueltos', 'mas-mios');
+  });
+
+  for (const id of ['lista-para-revisar', 'lista-mios-pendientes', 'lista-mios-resueltos']) {
+    document.getElementById(id).addEventListener('click', alternarFila);
   }
 }
 
 /**
- * Cargar cambios para revisar (de otros usuarios)
+ * La cuenta de una pestaña: el número, o nada si no hay cambios
  */
-async function cargarCambiosParaRevisar() {
-  const container = document.getElementById('lista-para-revisar');
-  const tipo = document.getElementById('filtro-revisar-tipo').value;
-
-  container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-
-  try {
-    const cambios = await API.getCambiosPendientesParaRevisar({ 
-      tipo: tipo || null,
-      estado: 'pendiente'
-    });
-    
-    if (cambios.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--success);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-            <p class="text-muted">No hay cambios pendientes de revisión</p>
-            </div>
-            `;
-      return;
-    }
-
-    container.innerHTML = cambios.map(c => renderCambioCard(c, true)).join('');
-  } catch (error) {
-    console.error('Error cargando cambios para revisar:', error);
-    container.innerHTML = '<p class="text-danger">Error al cargar cambios</p>';
-  }
+function mostrarCuenta(id, cantidad) {
+  const cuenta = document.getElementById(id);
+  cuenta.textContent = cantidad > 0 ? String(cantidad) : '';
+  cuenta.hidden = !(cantidad > 0);
 }
 
 /**
- * Actualizar badges de contadores
+ * Las cuentas de las pestañas: Para revisar con el contador de la campana (los pendientes ajenos, sin el filtro de la
+ * lista) y Mis cambios con los pendientes propios de la lista ya cargada (sin pedirla otra vez)
  */
-async function actualizarBadges() {
+async function actualizarCuentas() {
+  mostrarCuenta('cuenta-mis-cambios', vistaMisCambios.pendientes.length);
   try {
-    // Badge de "Para Revisar"
     const { cantidad } = await API.getContadorPendientes();
-    const badgeRevisar = document.getElementById('badge-para-revisar');
-    const badgeNav = document.getElementById('nav-badge-admin');
-    
-    if (cantidad > 0) {
-      badgeRevisar.textContent = cantidad;
-      badgeRevisar.style.display = 'inline';
-    } else {
-      badgeRevisar.style.display = 'none';
-    }
-
-    // Badge de "Mis Cambios" (pendientes)
-    const misCambios = await API.getMisCambios({ estado: 'pendiente' });
-    const badgeMis = document.getElementById('badge-mis-cambios');
-    if (misCambios.length > 0) {
-      badgeMis.textContent = misCambios.length;
-      badgeMis.style.display = 'inline';
-    } else {
-      badgeMis.style.display = 'none';
-    }
+    mostrarCuenta('cuenta-para-revisar', cantidad);
   } catch (error) {
-    console.error('Error actualizando badges:', error);
+    console.error('Error actualizando las cuentas:', error);
   }
 }
 
-/**
- * Renderizar tarjeta de cambio
- */
-function renderCambioCard(cambio, mostrarAcciones) {
-  const tipoTexto = {
-    'crear': 'Creación',
-    'editar': 'Edición',
-    'eliminar': 'Eliminación'
-  };
-
-  const titulo = cambio.tipo_cambio === 'crear' 
-    ? cambio.datos_nuevos?.titulo || 'Nuevo dataset'
-    : cambio.dataset_titulo || 'Dataset';
-
-  const tiempoRelativo = calcularTiempoRelativo(cambio.created_at);
-
-  let estadoHtml = '';
-  if (cambio.estado === 'aprobado') {
-    estadoHtml = `<span class="badge-estado aprobado">✓ Aprobado</span>`;
-  } else if (cambio.estado === 'rechazado') {
-    estadoHtml = `<span class="badge-estado rechazado">✗ Rechazado</span>`;
-  } else {
-    estadoHtml = `<span class="badge-estado pendiente">⏳ Pendiente</span>`;
-  }
-
-  // Acciones: si requiere revisión mostrar "Revisar", sino "Ver detalle"
-  let accionesHtml = '';
-  if (mostrarAcciones && cambio.estado === 'pendiente') {
-    accionesHtml = `
-      <div class="cambio-card-actions">
-        <button class="btn btn-sm btn-primary" onclick="verDetalle(${cambio.id})">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-          Revisar
-        </button>
-      </div>
-    `;
-  } else {
-    accionesHtml = `
-      <div class="cambio-card-actions">
-        <button class="btn btn-sm btn-secondary" onclick="verDetalle(${cambio.id})">Ver detalle</button>
-      </div>
-    `;
-  }
-
-  let infoAdicional = '';
-  if (cambio.estado === 'rechazado' && cambio.comentario_rechazo) {
-    infoAdicional = `
-      <div class="alert alert-error" style="margin-top: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.8125rem;">
-        <strong>Motivo:</strong> ${Utils.escapeHtml(cambio.comentario_rechazo)}
-      </div>
-    `;
-  }
-  
-  if (cambio.estado !== 'pendiente' && cambio.revisor_nombre) {
-    infoAdicional += `
-      <div class="text-small text-muted" style="margin-top: 0.25rem;">
-        ${Utils.escapeHtml(textoRevisor(cambio))}
-      </div>
-    `;
-  }
-
-  return `
-    <div class="cambio-card ${cambio.tipo_cambio}">
-      <div class="cambio-card-header">
-        <div>
-          <span class="badge-tipo ${cambio.tipo_cambio}">${tipoTexto[cambio.tipo_cambio]}</span>
-          ${estadoHtml}
-        </div>
-        <span class="tiempo-relativo">${tiempoRelativo}</span>
-      </div>
-      <div class="cambio-card-title">${Utils.escapeHtml(titulo)}</div>
-      <div class="cambio-card-meta">
-        ${mostrarAcciones ? `Propuesto por: ${Utils.escapeHtml(cambio.usuario_nombre || cambio.usuario_username)}` : ''}
-      </div>
-      ${infoAdicional}
-      ${accionesHtml}
-    </div>
-  `;
+// Después de aprobar o rechazar: las dos listas, las cuentas y la campana del encabezado (main.js)
+async function recargarCambios() {
+  await Promise.all([cargarCambiosParaRevisar({ conEspera: false }), cargarMisCambios()]);
+  await actualizarCuentas();
+  if (typeof cargarContadorNotificaciones === 'function') cargarContadorNotificaciones();
 }
 
 /**
@@ -364,189 +426,6 @@ function calcularTiempoRelativo(fecha) {
 }
 
 /**
- * Ver detalle de un cambio
- */
-async function verDetalle(id) {
-  try {
-    const cambio = await API.getCambioPendiente(id);
-    cambioSeleccionado = cambio;
-
-    const modal = document.getElementById('modal-detalle');
-    const titulo = document.getElementById('modal-detalle-titulo');
-    const contenido = document.getElementById('modal-detalle-contenido');
-    const footer = document.getElementById('modal-detalle-footer');
-
-    const tipoTexto = {
-      'crear': 'Creación de Dataset',
-      'editar': 'Edición de Dataset',
-      'eliminar': 'Eliminación de Dataset'
-    };
-
-    titulo.textContent = tipoTexto[cambio.tipo_cambio];
-
-    // Renderizar comparador
-    contenido.innerHTML = renderComparador(cambio);
-
-// Botones del footer
-    // Comparar como números para evitar problemas de tipo (string vs number)
-    const esPropioCambio = Number(cambio.usuario_id) === Number(Auth.getUser()?.id);
-    if (cambio.estado === 'pendiente' && !esPropioCambio) {
-      // Si no le corresponde auditarlo (un editor con auditores disponibles, spec 2026-10-15, 8.2), los botones aparecen
-      // deshabilitados y el motivo, debajo del detalle
-      const permiso = permisoDeAuditoria(cambio);
-      if (!permiso.puede && permiso.mensaje) contenido.insertAdjacentHTML('beforeend', avisoNoCorresponde(permiso.mensaje));
-      footer.innerHTML = botonesDeAuditoria(cambio.id, permiso);
-    } else {
-      footer.innerHTML = `<button class="btn btn-secondary" onclick="cerrarModalDetalle()">Cerrar</button>`;
-    }
-
-    modal.classList.add('active');
-  } catch (error) {
-    Utils.showError('Error al cargar detalle del cambio');
-  }
-}
-
-/**
- * Renderizar comparador antes/despues
- */
-function renderComparador(cambio) {
-  // Obtener URL del portal según el tipo de cambio
-  let urlPortal = null;
-  if (cambio.tipo_cambio === 'crear') {
-    urlPortal = cambio.datos_nuevos?.url_dataset;
-  } else if (cambio.tipo_cambio === 'editar') {
-    // Preferir URL del dataset original, o la nueva si se modificó
-    urlPortal = cambio.dataset_url || cambio.datos_nuevos?.url_dataset;
-  } else if (cambio.tipo_cambio === 'eliminar') {
-    urlPortal = cambio.datos_anteriores?.url_dataset || cambio.dataset_url;
-  }
-
-  // Generar link al portal si existe URL (solo http/https)
-  const urlPortalSegura = Utils.safeUrl(urlPortal);
-  const linkPortalHtml = urlPortalSegura ? `
-    <a href="${urlPortalSegura}" target="_blank" rel="noopener noreferrer" class="link-portal-revision">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-      Ver en Portal de Datos Abiertos
-    </a>
-  ` : '';
-
-  // Campos a mostrar para crear/eliminar (con nombres enriquecidos)
-  const camposCrearEliminar = [
-    { key: 'titulo', label: 'Titulo' },
-    { key: 'descripcion', label: 'Descripcion' },
-    { key: 'area_nombre', label: 'Area Responsable' },
-    { key: 'frecuencia_nombre', label: 'Frecuencia' },
-    { key: 'tema_principal_nombre', label: 'Tema Principal' },
-    { key: 'tema_secundario_nombre', label: 'Tema Secundario' },
-    { key: 'tipo_gestion', label: 'Tipo de Gestion' },
-    { key: 'ultima_actualizacion', label: 'Ultima Actualizacion' },
-    { key: 'proxima_actualizacion', label: 'Proxima Actualizacion' },
-    { key: 'url_dataset', label: 'URL en Portal' },
-    { key: 'observaciones', label: 'Observaciones' },
-    { key: 'que_se_solicita', label: 'Qué se solicita' },
-    { key: 'formatos_nombres', label: 'Formatos' }
-  ];
-
-  const datos = cambio.datos_nuevos || cambio.datos_anteriores || {};
-
-  // CASO: CREAR - mostrar todos los campos del nuevo dataset
-  if (cambio.tipo_cambio === 'crear') {
-    let html = '';
-    camposCrearEliminar.forEach(campo => {
-      const valor = formatearValor(datos[campo.key]);
-      if (valor && valor !== '-') {
-        html += `
-          <div class="comparador-field">
-            <div class="comparador-field-label">${campo.label}</div>
-            <div class="comparador-field-value">${Utils.escapeHtml(valor)}</div>
-          </div>
-        `;
-      }
-    });
-
-    return `
-      ${linkPortalHtml}
-      <div class="comparador-col despues" style="max-width: 100%;">
-        <div class="comparador-title">Datos del nuevo dataset</div>
-        ${html || '<p class="text-muted">Sin datos</p>'}
-      </div>
-    `;
-  }
-
-  // CASO: ELIMINAR - mostrar datos del dataset a eliminar
-  if (cambio.tipo_cambio === 'eliminar') {
-    const datosEliminar = cambio.datos_anteriores || {};
-    let html = '';
-    camposCrearEliminar.forEach(campo => {
-      const valor = formatearValor(datosEliminar[campo.key]);
-      if (valor && valor !== '-') {
-        html += `
-          <div class="comparador-field">
-            <div class="comparador-field-label">${campo.label}</div>
-            <div class="comparador-field-value">${Utils.escapeHtml(valor)}</div>
-          </div>
-        `;
-      }
-    });
-
-   return `
-      ${linkPortalHtml}
-      <div class="comparador-col antes" style="max-width: 100%;">
-        <div class="comparador-title">Dataset a eliminar</div>
-        ${html || '<p class="text-muted">Sin datos</p>'}
-      </div>
-    `;
-  }
-
-  // CASO: EDITAR - mostrar SOLO los campos que cambiaron
-  if (cambio.tipo_cambio === 'editar' && cambio.campos_modificados) {
-    if (cambio.campos_modificados.length === 0) {
-      return `
-        <div class="alert alert-info">
-          No se detectaron cambios en los campos principales.
-        </div>
-      `;
-    }
-
-    let htmlCambios = '';
-    cambio.campos_modificados.forEach(mod => {
-      htmlCambios += `
-        <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--gray-50); border-radius: var(--radius);">
-          <div style="font-weight: 600; font-size: 0.8125rem; color: var(--gray-600); margin-bottom: 0.5rem;">${Utils.escapeHtml(mod.campo)}</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div>
-                <div style="font-size: 0.6875rem; color: var(--danger); text-transform: uppercase; margin-bottom: 0.25rem;">Antes</div>
-                <div style="font-size: 0.875rem; color: var(--gray-700); background: #fee2e2; padding: 0.375rem 0.5rem; border-radius: 4px;">${Utils.escapeHtml(formatearFechaComparador(mod.antes))}</div>
-            </div>
-            <div>
-                <div style="font-size: 0.6875rem; color: var(--success); text-transform: uppercase; margin-bottom: 0.25rem;">Despues</div>
-            <div style="font-size: 0.875rem; color: var(--gray-700); background: #dcfce7; padding: 0.375rem 0.5rem; border-radius: 4px;">${Utils.escapeHtml(formatearFechaComparador(mod.despues))}</div>
-            </div>
-          </div>
-        </div>
-      `;
-    });
-
-    return `
-      ${linkPortalHtml}
-      <div>
-        <p style="font-size: 0.875rem; color: var(--gray-600); margin-bottom: 1rem;">
-          Se modificaron <strong>${cambio.campos_modificados.length}</strong> campo${cambio.campos_modificados.length > 1 ? 's' : ''}:
-        </p>
-        ${htmlCambios}
-      </div>
-    `;
-  }
-
-  // Fallback si no hay campos_modificados (no deberia pasar)
-  return `
-    <div class="alert alert-warning">
-      No se pudo determinar los cambios realizados.
-    </div>
-  `;
-}
-
-/**
  * Formatear valor para mostrar
  */
 function formatearValor(valor) {
@@ -561,7 +440,7 @@ function formatearValor(valor) {
  */
 function formatearFechaComparador(valor) {
   if (!valor || valor === '-') return valor;
-  
+
   // Detectar si parece fecha ISO (2025-09-25T03:00:00.000Z o 2025-09-25)
   const isoPattern = /^\d{4}-\d{2}-\d{2}(T.*)?$/;
   if (isoPattern.test(valor)) {
@@ -574,90 +453,199 @@ function formatearFechaComparador(valor) {
       return `${dia}/${mes}/${anio}`;
     }
   }
-  
+
   return valor;
 }
 
-/**
- * Cerrar modal detalle
- */
-function cerrarModalDetalle() {
-  document.getElementById('modal-detalle').classList.remove('active');
-  cambioSeleccionado = null;
+// =====================================================
+// GESTIÓN DE CAMBIOS: APROBAR Y RECHAZAR EN LA FILA (spec 2026-10-16-perfil-pestanas-gestion-cambios, 5)
+// =====================================================
+// Los nombres aprobarCambio y abrirModalRechazo vienen de cuando abrían un modal (los fijan los tests): ahora abren la
+// confirmación y el motivo dentro de la fila. El servidor vuelve a validar todo al aprobar o rechazar.
+
+// Las aprobaciones que esperan confirmación, por id. "Sí, aprobar" aparece donde estaba Aprobar, deshabilitado, y se
+// habilita pasado un momento (su `lista` pasa a true): así un doble clic en Aprobar no aprueba sin confirmar.
+const confirmacionesDeAprobacion = new Map();
+const ESPERA_PARA_CONFIRMAR_MS = 500;
+// Cuánto se ve el resultado en la fila antes de recargar las listas
+const ESPERA_DEL_RESULTADO_MS = 1500;
+const esperar = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Lo escrito en los rechazos que el servidor no aceptó, por id: si el cambio sigue pendiente, vuelve al campo del motivo
+const motivosSinEnviar = new Map();
+
+// Lo que pasó al aprobar o rechazar, para los lectores de pantalla (la región fija #anuncio-cambios de la página)
+function anunciar(texto) {
+  const region = document.getElementById('anuncio-cambios');
+  if (region) region.textContent = texto;
 }
 
-/**
- * Abrir modal de rechazo
- */
-function abrirModalRechazo(id) {
-  cambioSeleccionado = { id };
-  document.getElementById('rechazo-comentario').value = '';
-  document.getElementById('modal-rechazo').classList.add('active');
+// Desplaza la página lo justo para que se vea el elemento; con movimiento reducido, sin animación
+function llevarALaVista(elemento) {
+  const reducido = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  elemento?.scrollIntoView({ block: 'nearest', behavior: reducido ? 'auto' : 'smooth' });
 }
 
-/**
- * Cerrar modal de rechazo
- */
-function cerrarModalRechazo() {
-  document.getElementById('modal-rechazo').classList.remove('active');
+// Un error al aprobar o rechazar: el mensaje de la página, que puede haber quedado arriba, fuera de la vista, se trae a la vista
+function mostrarErrorDeAccion(mensaje) {
+  Utils.showError(mensaje);
+  llevarALaVista(document.getElementById('message-container'));
 }
 
-/**
- * Confirmar rechazo
- */
-async function confirmarRechazo() {
-  const comentario = document.getElementById('rechazo-comentario').value.trim();
-  
-  if (!comentario) {
-    Utils.showError('Debe proporcionar un motivo de rechazo');
+// Después de aprobar o rechazar y recargar: el foco va a la primera fila de Para revisar o, si quedó vacía, a la lista.
+// Después de un error, con { preventScroll: true }: el mensaje queda a la vista.
+function enfocarParaRevisar(opciones) {
+  const lista = document.getElementById('lista-para-revisar');
+  (lista.querySelector('.pf-cambio-cabeza') ?? lista).focus(opciones);
+}
+
+// Primer paso de aprobar: en lugar de los botones, la pregunta con [Cancelar] [Sí, aprobar], un grupo que la pregunta describe
+function aprobarCambio(id) {
+  const n = Number(id);
+  const acciones = document.getElementById(`acciones-${n}`);
+  if (!acciones) return;
+  const pedido = { lista: false };
+  confirmacionesDeAprobacion.set(n, pedido);
+  acciones.setAttribute('role', 'group');
+  acciones.setAttribute('aria-label', 'Confirmar la aprobación');
+  acciones.innerHTML = `<span class="pf-pregunta" id="pregunta-${n}">¿Aprobar? El cambio se aplica al dataset ahora.</span>`
+    + `<button type="button" class="pf-btn pf-btn-quieto" id="cancelar-${n}" aria-describedby="pregunta-${n}" onclick="cancelarAccion(${n})">Cancelar</button>`
+    + `<button type="button" class="pf-btn pf-btn-aprobar" id="confirmar-${n}" aria-describedby="pregunta-${n}" disabled onclick="confirmarAprobacion(${n})">${ICONO_APROBADO}Sí, aprobar</button>`;
+  document.getElementById(`cancelar-${n}`).focus();
+  setTimeout(() => {
+    // Si mientras tanto se canceló o se volvió a pedir, esta espera ya no cuenta
+    if (confirmacionesDeAprobacion.get(n) !== pedido) return;
+    pedido.lista = true;
+    const confirmar = document.getElementById(`confirmar-${n}`);
+    if (confirmar) confirmar.disabled = false;
+  }, ESPERA_PARA_CONFIRMAR_MS);
+}
+
+// Deshabilita los controles de una parte de la fila mientras se espera al servidor
+function deshabilitarControles(idContenedor) {
+  for (const control of document.getElementById(idContenedor)?.querySelectorAll('button, textarea') ?? []) control.disabled = true;
+}
+
+// El resultado en lugar de la fila, hasta que se recargan las listas
+function mostrarResultado(id, resultado, texto) {
+  const fila = document.getElementById(`cuerpo-${id}`)?.closest('.pf-cambio');
+  if (!fila) return;
+  const icono = resultado === 'aprobado' ? ICONO_APROBADO : ICONO_RECHAZADO;
+  fila.innerHTML = `<div class="pf-hecho ${resultado}" role="status">${icono}<span>${texto}</span></div>`;
+}
+
+// Segundo paso de aprobar: "Sí, aprobar"
+async function confirmarAprobacion(id) {
+  const n = Number(id);
+  if (!confirmacionesDeAprobacion.get(n)?.lista) return;
+  confirmacionesDeAprobacion.delete(n);
+  deshabilitarControles(`acciones-${n}`);
+  anunciar('');
+
+  try {
+    await API.aprobarCambio(n);
+  } catch (error) {
+    // Ya lo resolvió otra persona (404), es propio o no le corresponde (403), o no se pudo (400): el mensaje del servidor
+    mostrarErrorDeAccion(error.message);
+    await recargarCambios();
+    enfocarParaRevisar({ preventScroll: true });
+    anunciar(error.message);
     return;
   }
-
-  const btn = document.getElementById('btn-confirmar-rechazo');
-  btn.disabled = true;
-  btn.textContent = 'Rechazando...';
-
-  try {
-    await API.rechazarCambio(cambioSeleccionado.id, comentario);
-    cerrarModalRechazo();
-    cerrarModalDetalle();
-    
-    // Forzar recarga de las listas con pequeño delay para asegurar que la BD se actualizó
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await cargarCambiosParaRevisar();
-    await cargarMisCambios();
-    await actualizarBadges();
-    
-    Utils.showSuccess('Cambio rechazado correctamente');
-  } catch (error) {
-    console.error('Error al rechazar cambio:', error);
-    Utils.showError(error.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Rechazar';
-  }
+  mostrarResultado(n, 'aprobado', 'Aprobado. El cambio ya está aplicado en el dataset.');
+  Utils.showSuccess('Cambio aprobado correctamente');
+  await esperar(ESPERA_DEL_RESULTADO_MS);
+  await recargarCambios();
+  enfocarParaRevisar();
+  anunciar('Cambio aprobado correctamente');
 }
-/**
- * Aprobar un cambio
- */
-async function aprobarCambio(id) {
-  if (!confirm('¿Está seguro de aprobar este cambio?')) return;
+
+// Rechazar: abre debajo del pie el motivo (obligatorio) con [Cancelar] [Rechazar cambio]
+function abrirModalRechazo(id) {
+  const n = Number(id);
+  const acciones = document.getElementById(`acciones-${n}`);
+  const cuerpo = document.getElementById(`cuerpo-${n}`);
+  if (!acciones || !cuerpo) return;
+  if (!document.getElementById(`rechazo-${n}`)) {
+    cuerpo.insertAdjacentHTML('beforeend', `<div class="pf-rechazo" id="rechazo-${n}">`
+      + `<label for="motivo-${n}">Motivo del rechazo</label>`
+      + `<textarea id="motivo-${n}" placeholder="Quien lo propuso lo va a ver en Mis cambios."></textarea>`
+      + '<div class="pf-botones">'
+      + `<button type="button" class="pf-btn pf-btn-quieto" onclick="cancelarAccion(${n})">Cancelar</button>`
+      + `<button type="button" class="pf-btn pf-btn-rechazar" onclick="confirmarRechazo(${n})">${ICONO_RECHAZADO}Rechazar cambio</button>`
+      + '</div></div>');
+    // Lo escrito en un rechazo que no se pudo enviar vuelve al campo
+    document.getElementById(`motivo-${n}`).value = motivosSinEnviar.get(n) ?? '';
+  }
+  acciones.hidden = true;
+  document.getElementById(`motivo-${n}`).focus();
+}
+
+// Después de un rechazo que el servidor no aceptó y de recargar las listas: si el cambio sigue pendiente en Para revisar y
+// quien mira lo puede auditar, vuelve a abrir su fila y el motivo, con lo que se había escrito. Si ya no está (lo resolvió
+// otra persona) o ya no le corresponde, lo escrito se descarta. Devuelve si lo volvió a abrir.
+function reabrirRechazo(n) {
+  const cambio = vistaParaRevisar.cambios.find(otro => Number(otro.id) === n && otro.estado === 'pendiente');
+  if (!cambio || !permisoDeAuditoria(cambio).puede) {
+    motivosSinEnviar.delete(n);
+    return false;
+  }
+  // Sin la fila a la vista (la lista no se pudo cargar), lo escrito queda guardado para la próxima vez que se abra el motivo
+  const cabeza = document.getElementById(`cabeza-${n}`);
+  if (!cabeza) return false;
+  desplegarFila(cabeza, true);
+  abrirModalRechazo(n);
+  return true;
+}
+
+// "Rechazar cambio": sin motivo no se envía
+async function confirmarRechazo(id) {
+  const n = Number(id);
+  const campo = document.getElementById(`motivo-${n}`);
+  const escrito = String(campo?.value ?? '');
+  const comentario = escrito.trim();
+  if (!comentario) {
+    mostrarErrorDeAccion('Debe proporcionar un motivo de rechazo');
+    // El foco vuelve al motivo sin desplazar la página: el mensaje queda a la vista
+    campo?.focus({ preventScroll: true });
+    anunciar('Debe proporcionar un motivo de rechazo');
+    return;
+  }
+  deshabilitarControles(`rechazo-${n}`);
+  anunciar('');
 
   try {
-    await API.aprobarCambio(id);
-    cerrarModalDetalle();
-    
-    // Forzar recarga de las listas con pequeño delay para asegurar que la BD se actualizó
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await cargarCambiosParaRevisar();
-    await cargarMisCambios();
-    await actualizarBadges();
-    
-    Utils.showSuccess('Cambio aprobado correctamente');
+    await API.rechazarCambio(n, comentario);
   } catch (error) {
-    console.error('Error al aprobar cambio:', error);
-    Utils.showError(error.message);
+    motivosSinEnviar.set(n, escrito);
+    mostrarErrorDeAccion(error.message);
+    await recargarCambios();
+    if (!reabrirRechazo(n)) enfocarParaRevisar({ preventScroll: true });
+    anunciar(error.message);
+    return;
   }
+  motivosSinEnviar.delete(n);
+  mostrarResultado(n, 'rechazado', 'Rechazado. Quien lo propuso ve el motivo en Mis cambios.');
+  Utils.showSuccess('Cambio rechazado correctamente');
+  await esperar(ESPERA_DEL_RESULTADO_MS);
+  await recargarCambios();
+  enfocarParaRevisar();
+  anunciar('Cambio rechazado correctamente');
+}
+
+// Cancelar la confirmación de aprobar o el motivo del rechazo: vuelven los botones de la fila (y lo escrito se descarta)
+function cancelarAccion(id) {
+  const n = Number(id);
+  confirmacionesDeAprobacion.delete(n);
+  motivosSinEnviar.delete(n);
+  document.getElementById(`rechazo-${n}`)?.remove();
+  const acciones = document.getElementById(`acciones-${n}`);
+  const cambio = vistaParaRevisar.cambios.find(otro => Number(otro.id) === n);
+  if (!acciones || !cambio) return;
+  acciones.removeAttribute('role');
+  acciones.removeAttribute('aria-label');
+  acciones.innerHTML = botonesDeAuditoria(n, permisoDeAuditoria(cambio));
+  acciones.hidden = false;
+  acciones.querySelector('button:not([disabled])')?.focus();
 }
 
 // =====================================================
@@ -761,27 +749,22 @@ function permisoDeAuditoria(cambio) {
   return cambio.auditoria ?? { puede: false, respaldo: false, mensaje: null };
 }
 
-// Botones del detalle de un cambio. permiso: { puede, mensaje } que manda el servidor; sin permiso, deshabilitados con
-// el motivo
+// Botones de un cambio pendiente ajeno, en el pie de su fila. permiso: { puede, mensaje } que manda el servidor; sin
+// permiso, deshabilitados con el motivo
 function botonesDeAuditoria(id, permiso) {
-  const cerrar = '<button class="btn btn-secondary" onclick="cerrarModalDetalle()">Cerrar</button>';
+  const n = Number(id);
   if (permiso.puede) {
-    return `
-        ${cerrar}
-        <button class="btn btn-danger" onclick="cerrarModalDetalle(); abrirModalRechazo(${Number(id)})">✗ Rechazar</button>
-        <button class="btn btn-success" onclick="aprobarCambio(${Number(id)})">✓ Aprobar</button>
-      `;
+    return `<button type="button" class="pf-btn pf-btn-rechazar" onclick="abrirModalRechazo(${n})">${ICONO_RECHAZADO}Rechazar</button>`
+      + `<button type="button" class="pf-btn pf-btn-aprobar" onclick="aprobarCambio(${n})">${ICONO_APROBADO}Aprobar</button>`;
   }
   const motivo = Utils.escapeHtml(permiso.mensaje ?? '');
-  return `
-        ${cerrar}
-        <button class="btn btn-danger" disabled title="${motivo}">✗ Rechazar</button>
-        <button class="btn btn-success" disabled title="${motivo}">✓ Aprobar</button>
-      `;
+  return `<button type="button" class="pf-btn pf-btn-rechazar" disabled title="${motivo}">${ICONO_RECHAZADO}Rechazar</button>`
+    + `<button type="button" class="pf-btn pf-btn-aprobar" disabled title="${motivo}">${ICONO_APROBADO}Aprobar</button>`;
 }
 
+// La nota ámbar de un cambio que quien mira no puede auditar, con el motivo del servidor, arriba del pie de la fila
 function avisoNoCorresponde(mensaje) {
-  return `<div class="alert alert-warning" style="margin-top: 1rem;">${Utils.escapeHtml(mensaje)}</div>`;
+  return `<div class="pf-nota no-corresponde">${ICONO_ESCUDO}<span>${Utils.escapeHtml(mensaje)}</span></div>`;
 }
 
 // Quién auditó un cambio: "Aprobado por …" o "Rechazado por …", con "(respaldo)" si lo auditó un editor porque no había
@@ -789,4 +772,428 @@ function avisoNoCorresponde(mensaje) {
 function textoRevisor(cambio) {
   const accion = cambio.estado === 'aprobado' ? 'Aprobado' : 'Rechazado';
   return `${accion} por ${cambio.revisor_nombre}${Number(cambio.revisado_como_respaldo) ? ' (respaldo)' : ''}`;
+}
+
+// =====================================================
+// GESTIÓN DE CAMBIOS: PRESENTACIÓN
+// =====================================================
+// Funciones puras (no tocan el DOM) que arman lo que se ve de un cambio propuesto: el resumen de la fila cerrada, la
+// comparación palabra por palabra de la fila abierta y la marca del editor. Todo dato que devuelven como HTML va escapado.
+
+// Las etiquetas de campo que manda el servidor (campos_modificados, sin tildes) y cómo se muestran
+const ETIQUETAS_DE_CAMPO = {
+  'Titulo': 'Título',
+  'Descripcion': 'Descripción',
+  'Area Responsable': 'Área responsable',
+  'Tema Principal': 'Tema principal',
+  'Tema Secundario': 'Tema secundario',
+  'Tipo de Gestion': 'Tipo de gestión',
+  'Ultima Actualizacion': 'Última actualización',
+  'Proxima Actualizacion': 'Próxima actualización',
+  'URL en Portal': 'URL en el portal'
+};
+
+// Etiquetas del servidor de los campos de texto largo: se comparan palabra por palabra
+const CAMPOS_LARGOS = ['Descripcion', 'Observaciones', 'Qué se solicita'];
+
+function etiquetaDeCampo(campo) {
+  return Object.hasOwn(ETIQUETAS_DE_CAMPO, campo) ? ETIQUETAS_DE_CAMPO[campo] : campo;
+}
+
+// Un valor para mostrar: vacío si no hay (el servidor manda '-'), las fechas como dd/mm/aaaa
+function textoDeValor(valor) {
+  if (valor === null || valor === undefined || valor === '' || valor === '-') return '';
+  if (typeof valor === 'string') return formatearValor(formatearFechaComparador(valor));
+  return formatearValor(valor);
+}
+
+// Si los tokens del tramo que cambia (sin lo común del principio y del final) se multiplican más que esto, no se compara:
+// sale todo quitado y todo agregado
+const LIMITE_DE_COMPARACION = 250000;
+
+// Palabras, espacios y signos de puntuación como tokens separados, para que "semestral." no se pegue al punto
+const palabrasDeTexto = (texto) => texto.split(/(\s+|[,.;:()¿?¡!"])/).filter(token => token);
+
+// Compara dos tramos de tokens con la subsecuencia común más larga y va sumando los segmentos con `agregar`. Ante una
+// diferencia, primero va lo quitado. Si un lado está vacío o los tramos son demasiado grandes, no compara: todo lo de
+// antes quitado y todo lo de después agregado.
+function compararTramos(a, d, agregar) {
+  if (a.length === 0 || d.length === 0 || a.length * d.length > LIMITE_DE_COMPARACION) {
+    agregar('-', a.join(''));
+    agregar('+', d.join(''));
+    return;
+  }
+
+  // largo[i][j]: tokens en común, en orden, entre a[i..] y d[j..]
+  const largo = Array.from({ length: a.length + 1 }, () => new Array(d.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = d.length - 1; j >= 0; j--) {
+      largo[i][j] = a[i] === d[j] ? largo[i + 1][j + 1] + 1 : Math.max(largo[i + 1][j], largo[i][j + 1]);
+    }
+  }
+
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < d.length) {
+    if (a[i] === d[j]) {
+      agregar('=', a[i]);
+      i++;
+      j++;
+    } else if (largo[i + 1][j] >= largo[i][j + 1]) {
+      agregar('-', a[i++]);
+    } else {
+      agregar('+', d[j++]);
+    }
+  }
+  while (i < a.length) agregar('-', a[i++]);
+  while (j < d.length) agregar('+', d[j++]);
+}
+
+// Limpieza para que se lea mejor: un igual hecho solo de espacios entre dos cambios se suma al cambio (a lo quitado y a lo
+// agregado), así cada bloque de cambio queda como un solo quitado seguido de un solo agregado (o solo uno de los dos), en
+// lugar de alternar palabra por palabra. Lo quitado + lo igual sigue dando el texto de antes; lo agregado + lo igual, el de
+// después.
+function unirCambiosSeparadosPorEspacios(segmentos) {
+  const limpios = [];
+  let bloque = null;
+  const cerrarBloque = () => {
+    if (bloque?.quitado) limpios.push({ tipo: '-', texto: bloque.quitado });
+    if (bloque?.agregado) limpios.push({ tipo: '+', texto: bloque.agregado });
+    bloque = null;
+  };
+  segmentos.forEach((segmento, i) => {
+    if (segmento.tipo === '-' || segmento.tipo === '+') {
+      bloque ??= { quitado: '', agregado: '' };
+      bloque[segmento.tipo === '-' ? 'quitado' : 'agregado'] += segmento.texto;
+      return;
+    }
+    const siguiente = segmentos[i + 1];
+    if (bloque && siguiente && siguiente.tipo !== '=' && /^\s+$/.test(segmento.texto)) {
+      bloque.quitado += segmento.texto;
+      bloque.agregado += segmento.texto;
+      return;
+    }
+    cerrarBloque();
+    limpios.push(segmento);
+  });
+  cerrarBloque();
+  return limpios;
+}
+
+// Comparación palabra por palabra. Devuelve segmentos { tipo, texto }: '=' sin cambios, '-' quitado, '+' agregado.
+// Antes de comparar recorta los tokens iguales del principio y del final: la comparación (y su tope) es solo del tramo
+// del medio, así un texto largo con un cambio chico marca solo ese cambio. Al final, los espacios entre cambios se suman al
+// cambio (unirCambiosSeparadosPorEspacios).
+function diffPalabras(antes, despues) {
+  const a = palabrasDeTexto(String(antes ?? ''));
+  const d = palabrasDeTexto(String(despues ?? ''));
+
+  let prefijo = 0;
+  while (prefijo < a.length && prefijo < d.length && a[prefijo] === d[prefijo]) prefijo++;
+  let sufijo = 0;
+  while (sufijo < a.length - prefijo && sufijo < d.length - prefijo && a[a.length - 1 - sufijo] === d[d.length - 1 - sufijo]) sufijo++;
+
+  const segmentos = [];
+  const agregar = (tipo, texto) => {
+    if (!texto) return;
+    const ultimo = segmentos[segmentos.length - 1];
+    if (ultimo && ultimo.tipo === tipo) ultimo.texto += texto;
+    else segmentos.push({ tipo, texto });
+  };
+  agregar('=', a.slice(0, prefijo).join(''));
+  compararTramos(a.slice(prefijo, a.length - sufijo), d.slice(prefijo, d.length - sufijo), agregar);
+  agregar('=', a.slice(a.length - sufijo).join(''));
+  return unirCambiosSeparadosPorEspacios(segmentos);
+}
+
+// Los segmentos de diffPalabras como HTML: lo quitado en <del>, lo agregado en <ins>, todo escapado
+function htmlDeDiff(segmentos) {
+  return segmentos.map(({ tipo, texto }) => {
+    const html = Utils.escapeHtml(texto);
+    if (tipo === '-') return `<del>${html}</del>`;
+    if (tipo === '+') return `<ins>${html}</ins>`;
+    return html;
+  }).join('');
+}
+
+// "A", "A y B", "A, B y C"
+function listaDeNombres(nombres) {
+  if (nombres.length <= 1) return nombres.join('');
+  return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+}
+
+// Título del dataset al que se refiere el cambio (texto plano; quien lo muestre lo escapa)
+function tituloDelCambio(cambio) {
+  const nuevo = cambio.datos_nuevos?.titulo;
+  if (cambio.tipo_cambio === 'crear' && nuevo) return nuevo;
+  return cambio.dataset_titulo || cambio.datos_anteriores?.titulo || nuevo || 'Dataset';
+}
+
+// Hasta cuántos caracteres puede tener cada valor para que el resumen diga "de A a B"
+const LARGO_MAXIMO_EN_RESUMEN = 40;
+
+const negritaDeCampo = (campo) => `<b>${Utils.escapeHtml(etiquetaDeCampo(campo))}</b>`;
+const valorEnResumen = (valor) => Utils.escapeHtml(textoDeValor(valor) || 'vacío');
+
+// El resumen de una edición. Un solo campo corto: "Frecuencia de A a B" (con ", y N campos más" si hay más); si no, solo
+// los nombres de los campos que cambian
+function resumenDeEdicion(lista) {
+  // Un elemento nulo en la lista del servidor no rompe el resumen
+  const campos = Array.isArray(lista) ? lista.filter(Boolean) : [];
+  if (campos.length === 0) return 'Sin cambios en los campos principales';
+  const [primero] = campos;
+  const antes = textoDeValor(primero.antes);
+  const despues = textoDeValor(primero.despues);
+  const cabe = !CAMPOS_LARGOS.includes(primero.campo) && antes.length <= LARGO_MAXIMO_EN_RESUMEN && despues.length <= LARGO_MAXIMO_EN_RESUMEN;
+  if (cabe) {
+    const otros = campos.length - 1;
+    const resto = otros > 0 ? `, y ${otros} campo${otros > 1 ? 's' : ''} más` : '';
+    return `${negritaDeCampo(primero.campo)} de ${valorEnResumen(primero.antes)} a ${valorEnResumen(primero.despues)}${resto}`;
+  }
+  if (campos.length === 1) return `Cambia ${negritaDeCampo(primero.campo)}`;
+  if (campos.length === 2) return `Cambia ${negritaDeCampo(primero.campo)} y ${negritaDeCampo(campos[1].campo)}`;
+  return `Cambia ${negritaDeCampo(primero.campo)}, ${negritaDeCampo(campos[1].campo)} y ${campos.length - 2} más`;
+}
+
+// El resumen de un dataset nuevo: "Dataset nuevo de Ambiente, anualmente", con lo que haya del área y la frecuencia
+function resumenDeCreacion(datos) {
+  const area = datos?.area_nombre ? ` de ${Utils.escapeHtml(datos.area_nombre)}` : '';
+  const frecuencia = datos?.frecuencia_nombre ? `, ${Utils.escapeHtml(String(datos.frecuencia_nombre).toLowerCase())}` : '';
+  return `Dataset nuevo${area}${frecuencia}`;
+}
+
+// Lo que dice la fila cerrada de un cambio, como HTML escapado
+function resumenDelCambio(cambio) {
+  if (cambio.tipo_cambio === 'crear') return resumenDeCreacion(cambio.datos_nuevos);
+  if (cambio.tipo_cambio === 'eliminar') return 'Se quita del registro';
+  if (cambio.tipo_cambio === 'editar') return resumenDeEdicion(cambio.campos_modificados);
+  return '';
+}
+
+// Escudo de Lucide, para la marca del editor (quiénes lo auditan o la pastilla de respaldo)
+const ICONO_ESCUDO = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>';
+
+// Lo que ve un editor en un cambio pendiente: si lo puede auditar de respaldo o quiénes lo auditan. Sin marca (cadena vacía)
+// para quien no es editor, para un cambio ya resuelto, si el servidor no mandó la auditoría o si no hay a quién nombrar.
+function marcaDeAuditoria(cambio, esEditor) {
+  const auditoria = cambio.auditoria;
+  if (!esEditor || cambio.estado !== 'pendiente' || !auditoria) return '';
+  if (auditoria.puede) {
+    return auditoria.respaldo ? `<span class="pf-marca pf-marca-respaldo">${ICONO_ESCUDO}Podés auditarlo de respaldo</span>` : '';
+  }
+  const nombres = (auditoria.auditan ?? []).map(nombre => Utils.escapeHtml(nombre));
+  return nombres.length ? `<span class="pf-marca">${ICONO_ESCUDO}Lo auditan ${listaDeNombres(nombres)}</span>` : '';
+}
+
+const PESTANAS_DEL_PERFIL = ['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'];
+
+// La pestaña con la que abre Mi Perfil: la del hash si existe, y si no, la de revisar para quien administra. Quien no
+// administra solo tiene sus datos personales.
+function pestanaInicial(hash, esAdmin) {
+  if (!esAdmin) return 'mis-datos';
+  const pedida = String(hash ?? '').replace(/^#/, '');
+  return PESTANAS_DEL_PERFIL.includes(pedida) ? pedida : 'para-revisar';
+}
+
+// Un cambio pendiente está demorado si hace más de 2 días que se propuso
+const DEMORA_EN_MS = 2 * 24 * 60 * 60 * 1000;
+function estaDemorado(fecha, ahora = Date.now()) {
+  return ahora - new Date(fecha).getTime() > DEMORA_EN_MS;
+}
+
+// =====================================================
+// GESTIÓN DE CAMBIOS: LA FILA Y LA COMPARACIÓN (spec 2026-10-16-perfil-pestanas-gestion-cambios, 5 y 6)
+// =====================================================
+// Funciones puras: arman el HTML de un cambio con los datos de la lista (no piden el detalle) y con lo que reciben de
+// quien mira (esEditor, idUsuario); no leen Auth ni tocan el DOM. Todo dato pasa por Utils.escapeHtml y todo link por
+// Utils.safeUrl.
+
+// Iconos de Lucide (sin emojis)
+const ICONO_FLECHA = '<svg class="pf-chevron" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const ICONO_APROBADO = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+const ICONO_RECHAZADO = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+const ICONO_PORTAL = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+const ICONO_ALERTA = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+
+// La etiqueta de cada tipo: las mismas palabras que los emails
+const ETIQUETAS_DE_TIPO = { crear: 'Crear', editar: 'Editar', eliminar: 'Eliminar' };
+const RESULTADOS = { aprobado: 'Aprobado', rechazado: 'Rechazado' };
+
+// Los campos de un alta o de una baja, en el orden de siempre, con la etiqueta del servidor (se muestran con
+// etiquetaDeCampo). Los valores con nombre (área, frecuencia, temas, formatos) vienen enriquecidos de la lista.
+const CAMPOS_DE_ALTA_Y_BAJA = [
+  { clave: 'titulo', campo: 'Titulo' },
+  { clave: 'descripcion', campo: 'Descripcion' },
+  { clave: 'area_nombre', campo: 'Area Responsable' },
+  { clave: 'frecuencia_nombre', campo: 'Frecuencia' },
+  { clave: 'tema_principal_nombre', campo: 'Tema Principal' },
+  { clave: 'tema_secundario_nombre', campo: 'Tema Secundario' },
+  { clave: 'tipo_gestion', campo: 'Tipo de Gestion' },
+  { clave: 'ultima_actualizacion', campo: 'Ultima Actualizacion' },
+  { clave: 'proxima_actualizacion', campo: 'Proxima Actualizacion' },
+  { clave: 'url_dataset', campo: 'URL en Portal' },
+  { clave: 'observaciones', campo: 'Observaciones' },
+  { clave: 'que_se_solicita', campo: 'Qué se solicita' },
+  { clave: 'formatos_nombres', campo: 'Formatos' }
+];
+
+const VALOR_VACIO = '<span class="pf-vacio">vacío</span>';
+
+// Un campo editado: en los textos largos, palabra por palabra en un solo párrafo; en el resto, el valor viejo tachado y el
+// nuevo resaltado, uno al lado del otro
+function htmlDeCampoEditado({ campo, antes, despues }) {
+  const textoAntes = textoDeValor(antes);
+  const textoDespues = textoDeValor(despues);
+  if (CAMPOS_LARGOS.includes(campo)) return `<div class="pf-texto-largo">${htmlDeDiff(diffPalabras(textoAntes, textoDespues))}</div>`;
+  const viejo = textoAntes ? Utils.escapeHtml(textoAntes) : VALOR_VACIO;
+  const nuevo = textoDespues ? Utils.escapeHtml(textoDespues) : VALOR_VACIO;
+  return `<div class="pf-par"><del>${viejo}</del><ins>${nuevo}</ins></div>`;
+}
+
+// La comparación "control de cambios" de la fila abierta. Editar: los campos que cambian. Crear: los campos no vacíos del
+// dataset nuevo. Eliminar: los del dataset que se quita, con la nota de que queda inactivo.
+function htmlDeComparacion(cambio) {
+  if (cambio.tipo_cambio === 'crear' || cambio.tipo_cambio === 'eliminar') {
+    const datos = (cambio.tipo_cambio === 'crear' ? cambio.datos_nuevos : cambio.datos_anteriores) ?? {};
+    const filas = CAMPOS_DE_ALTA_Y_BAJA
+      .map(({ clave, campo }) => ({ campo, valor: textoDeValor(datos[clave]) }))
+      .filter(({ valor }) => valor)
+      .map(({ campo, valor }) => `<dt>${Utils.escapeHtml(etiquetaDeCampo(campo))}</dt><dd>${Utils.escapeHtml(valor)}</dd>`)
+      .join('');
+    const lista = filas ? `<dl class="pf-diff">${filas}</dl>` : '<p class="pf-sin-campos">Sin datos.</p>';
+    if (cambio.tipo_cambio === 'crear') return lista;
+    return `${lista}<div class="pf-nota baja">${ICONO_ALERTA}<span>Al aprobarlo, el dataset deja de figurar en el registro. No se borra: queda inactivo.</span></div>`;
+  }
+
+  // Como en el resumen, un elemento nulo de la lista no rompe la comparación
+  const campos = Array.isArray(cambio.campos_modificados) ? cambio.campos_modificados.filter(Boolean) : [];
+  if (campos.length === 0) return '<p class="pf-sin-campos">No se detectaron cambios en los campos principales.</p>';
+  const filas = campos.map(campo => `<dt>${Utils.escapeHtml(etiquetaDeCampo(campo.campo))}</dt><dd>${htmlDeCampoEditado(campo)}</dd>`).join('');
+  return `<dl class="pf-diff">${filas}</dl>`;
+}
+
+// "dd/mm/aaaa, hh:mm" de una fecha del servidor, en la hora de quien mira
+function fechaYHora(valor) {
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return '';
+  const hora = `${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}`;
+  return `${Utils.formatDate(valor)}, ${hora}`;
+}
+
+// "Propuesto hace 2 horas" (pasados 30 días, "Propuesto el dd/mm/aaaa")
+function propuestoHace(fecha) {
+  const tiempo = calcularTiempoRelativo(fecha);
+  return tiempo.startsWith('Hace') ? `Propuesto ${tiempo.toLowerCase()}` : `Propuesto el ${tiempo}`;
+}
+
+// El link al portal: en un alta, el del dataset nuevo; en una baja, el del dataset que se quita; en una edición, el nuevo
+// o, si no, el del dataset. Ya escapado, o null si no es http/https.
+function urlDelPortal(cambio) {
+  let url;
+  if (cambio.tipo_cambio === 'crear') url = cambio.datos_nuevos?.url_dataset;
+  else if (cambio.tipo_cambio === 'eliminar') url = cambio.datos_anteriores?.url_dataset || cambio.dataset_url;
+  else url = cambio.datos_nuevos?.url_dataset || cambio.dataset_url;
+  return Utils.safeUrl(url);
+}
+
+// "Aprobado" o "Rechazado", con su ícono (sin emojis)
+function htmlDeResultado(estado) {
+  if (!Object.hasOwn(RESULTADOS, estado)) return `<span class="pf-resultado">${Utils.escapeHtml(estado)}</span>`;
+  const icono = estado === 'aprobado' ? ICONO_APROBADO : ICONO_RECHAZADO;
+  return `<span class="pf-resultado ${estado}">${icono}${RESULTADOS[estado]}</span>`;
+}
+
+// A la derecha de la cabecera: en Para revisar, quién lo propuso y cuándo (en ámbar pasados 2 días); en un pendiente propio,
+// "Propuesto hace …"; resuelto, el resultado y la fecha de la revisión
+function htmlDelLado(cambio, modo, quienPropuso) {
+  if (cambio.estado === 'pendiente') {
+    if (modo === 'mio') return `<span class="pf-cambio-quien"><span class="pf-cuando">${Utils.escapeHtml(propuestoHace(cambio.created_at))}</span></span>`;
+    const demora = estaDemorado(cambio.created_at) ? ' demora' : '';
+    return `<span class="pf-cambio-quien"><span class="pf-nombre">${quienPropuso}</span>`
+      + `<span class="pf-cuando${demora}">${Utils.escapeHtml(calcularTiempoRelativo(cambio.created_at))}</span></span>`;
+  }
+  const fecha = cambio.revisado_at ? `<span class="pf-cuando">${Utils.escapeHtml(Utils.formatDate(cambio.revisado_at))}</span>` : '';
+  return `<span class="pf-cambio-quien">${htmlDeResultado(cambio.estado)}${fecha}</span>`;
+}
+
+// El pie de la fila abierta: quién lo propuso y cuándo, quién lo revisó (si ya se resolvió) y el link al portal
+function htmlDelPie(cambio, modo, quienPropuso) {
+  const cuando = fechaYHora(cambio.created_at);
+  const por = modo !== 'mio' && quienPropuso ? ` por ${quienPropuso}` : '';
+  let html = `<span>Propuesto${por}${cuando ? ` el ${Utils.escapeHtml(cuando)}` : ''}</span>`;
+  if (cambio.estado !== 'pendiente') {
+    const resultado = Object.hasOwn(RESULTADOS, cambio.estado) ? RESULTADOS[cambio.estado] : cambio.estado;
+    const revisor = cambio.revisor_nombre ? textoRevisor(cambio) : resultado;
+    const fecha = cambio.revisado_at ? ` el ${Utils.formatDate(cambio.revisado_at)}` : '';
+    html += `<span>${Utils.escapeHtml(`${revisor}${fecha}`)}</span>`;
+  }
+  const url = urlDelPortal(cambio);
+  if (url) html += `<a href="${url}" target="_blank" rel="noopener noreferrer">${ICONO_PORTAL}Ver en el portal</a>`;
+  return html;
+}
+
+/**
+ * La fila de un cambio: la cabecera (un botón que la abre y la cierra) y el cuerpo, con la comparación, las notas y el pie.
+ * modo: 'revisar' (pendiente ajeno, en Para revisar), 'revisado' (ajeno resuelto) o 'mio' (en Mis cambios).
+ * Los botones de aprobar y rechazar van solo en Para revisar, en un cambio pendiente que no es de quien mira, y salen del
+ * permiso que manda el servidor (sin el dato, deshabilitados). En Mis cambios nunca hay botones. Sin saber quién mira
+ * (idUsuario inválido), tampoco.
+ */
+function htmlDeFila(cambio, modo, { abierto = false, esEditor = false, idUsuario = NaN } = {}) {
+  const id = Number(cambio.id);
+  const tipo = Object.hasOwn(ETIQUETAS_DE_TIPO, cambio.tipo_cambio) ? cambio.tipo_cambio : null;
+  const pendiente = cambio.estado === 'pendiente';
+  const quienPropuso = Utils.escapeHtml(cambio.usuario_nombre || cambio.usuario_username || '');
+  const yo = Number(idUsuario);
+  const propio = !(yo > 0) || Number(cambio.usuario_id) === yo;
+  const conBotones = modo === 'revisar' && pendiente && !propio;
+  const permiso = permisoDeAuditoria(cambio);
+
+  const etiqueta = tipo
+    ? `<span class="pf-tipo pf-tipo-${tipo}">${ETIQUETAS_DE_TIPO[tipo]}</span>`
+    : `<span class="pf-tipo">${Utils.escapeHtml(cambio.tipo_cambio)}</span>`;
+  const propuesto = modo === 'revisado' && quienPropuso ? `<span class="pf-cambio-propuesto">Propuesto por ${quienPropuso}</span>` : '';
+  const motivo = cambio.estado === 'rechazado' && cambio.comentario_rechazo
+    ? `<div class="pf-nota motivo"><span><b>Motivo del rechazo:</b> ${Utils.escapeHtml(cambio.comentario_rechazo)}</span></div>`
+    : '';
+  const aviso = conBotones && !permiso.puede && permiso.mensaje ? avisoNoCorresponde(permiso.mensaje) : '';
+  const botones = conBotones ? `<div class="pf-botones" id="acciones-${id}">${botonesDeAuditoria(id, permiso)}</div>` : '';
+
+  return `<li class="pf-cambio${pendiente ? '' : ' resuelto'}${abierto ? ' abierto' : ''}" data-id="${id}">
+    <button type="button" class="pf-cambio-cabeza" id="cabeza-${id}" aria-expanded="${Boolean(abierto)}" aria-controls="cuerpo-${id}">
+      ${etiqueta}
+      <span class="pf-cambio-texto">
+        <span class="pf-cambio-titulo">${Utils.escapeHtml(tituloDelCambio(cambio))}</span>
+        <span class="pf-cambio-resumen">${resumenDelCambio(cambio)}</span>
+        ${marcaDeAuditoria(cambio, esEditor)}${propuesto}
+      </span>
+      ${htmlDelLado(cambio, modo, quienPropuso)}
+      ${ICONO_FLECHA}
+    </button>
+    <div class="pf-cambio-cuerpo" id="cuerpo-${id}"${abierto ? '' : ' hidden'}>
+      ${htmlDeComparacion(cambio)}${motivo}${aviso}
+      <div class="pf-acciones">
+        <div class="pf-acciones-info">${htmlDelPie(cambio, modo, quienPropuso)}</div>
+        ${botones}
+      </div>
+    </div>
+  </li>`;
+}
+
+// Una lista vacía (o que no se pudo cargar): qué pasa y, si hace falta, una línea más
+const htmlDeVacio = (titulo, detalle = '') => `<li class="pf-vacia"><strong>${titulo}</strong>${detalle}</li>`;
+
+// Para revisar vacía: con un filtro de tipo, dice cuál está puesto
+function htmlDeVacioParaRevisar(segmento, tipo) {
+  if (Object.hasOwn(ETIQUETAS_DE_TIPO, tipo ?? '')) return htmlDeVacio(`No hay cambios de tipo ${ETIQUETAS_DE_TIPO[tipo]}.`);
+  if (segmento === 'revisados') return htmlDeVacio('Todavía no hay cambios revisados.');
+  return htmlDeVacio('No hay cambios esperando revisión.', 'Cuando alguien proponga uno, aparece acá.');
+}
+
+// Resueltos propios vacíos: si no hay ningún cambio propio, o el texto del filtro
+function htmlDeVacioMisCambios(filtro, hayPropios) {
+  if (!hayPropios) return htmlDeVacio('Todavía no propusiste cambios.');
+  if (filtro === 'aprobado') return htmlDeVacio('No hay cambios aprobados.');
+  if (filtro === 'rechazado') return htmlDeVacio('No hay cambios rechazados.');
+  return htmlDeVacio('Todavía no hay cambios resueltos.');
 }
