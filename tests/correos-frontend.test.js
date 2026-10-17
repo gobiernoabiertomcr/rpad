@@ -934,3 +934,217 @@ describe('correos.js: filas del Libro (spec 2026-10-17-correos-pestanas, 6)', ()
     ]);
   });
 });
+
+// Correos en pestañas (spec 2026-10-17-correos-pestanas, 7): la pestaña Estado en tarjetas
+describe('correos.html: la pestaña Estado (spec 2026-10-17-correos-pestanas, 7)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const ESTADO = PAGINA.slice(PAGINA.indexOf('id="vista-estado"'), PAGINA.indexOf('id="vista-pruebas"'));
+  const etiqueta = (id) => ESTADO.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  const posicion = (texto) => ESTADO.indexOf(texto);
+  // El cuerpo de la regla CSS cuyo selector es exactamente este (los espacios del selector valen por uno o más)
+  const regla = (selector) => {
+    const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+    return PAGINA.match(new RegExp(`(?:^|[}\\s])${escapado}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+  };
+  // Los bloques @media con esta condición, con todo lo que llevan dentro
+  const bloquesDeMedia = (condicion) => {
+    const bloques = [];
+    for (let desde = PAGINA.indexOf(condicion); desde !== -1; desde = PAGINA.indexOf(condicion, desde + 1)) {
+      let profundidad = 0;
+      let hasta = PAGINA.indexOf('{', desde);
+      for (; hasta < PAGINA.length; hasta++) {
+        if (PAGINA[hasta] === '{') profundidad++;
+        if (PAGINA[hasta] === '}' && --profundidad === 0) break;
+      }
+      bloques.push(PAGINA.slice(desde, hasta));
+    }
+    return bloques;
+  };
+  const REGLA_DE_AVISOS = 'Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.';
+  const REGLA_DE_AUDITORIA = 'Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más). Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.';
+
+  it('cuatro tarjetas, en este orden: Envío automático, Próximas notas, Conexión del correo y Cómo funcionan', () => {
+    assert.equal(ESTADO.match(/<div class="co-tarjeta\b[^"]*">/g).length, 4);
+    assert.deepEqual([...ESTADO.matchAll(/<h2>([^<]*)<\/h2>/g)].map(m => m[1]),
+      ['Envío automático de Notas Digitales', 'Próximas notas', 'Conexión del correo', 'Cómo funcionan']);
+    assert.doesNotMatch(ESTADO, /smtp-card|smtp-status-row|nd-switch|nd-proxima\b|test-hint/);
+  });
+
+  it('el orden de la pantalla: interruptor, próximas notas, conexión y reglas', () => {
+    const orden = ['id="envio-activo"', 'id="nd-proximas"', 'id="btn-verificar-smtp"', 'Aviso de gestión interna 60 días antes'].map(posicion);
+    assert.ok(orden.every(lugar => lugar > 0), 'están todos');
+    assert.deepEqual([...orden].sort((a, b) => a - b), orden);
+  });
+
+  it('Envío automático: título, ayuda y, a la derecha, el interruptor con su texto', () => {
+    assert.ok(ESTADO.includes('<div class="co-envio">'));
+    assert.ok(ESTADO.includes('<h2>Envío automático de Notas Digitales</h2>'));
+    assert.ok(ESTADO.includes('<p class="co-ayuda">Las notas salen solas a las 8:15 de cada día hábil.</p>'));
+    assert.match(ESTADO, /<label class="co-switch" for="envio-activo">\s*<input [^>]*id="envio-activo"[^>]*>\s*<span id="envio-activo-texto" class="badge badge-secondary">Desactivado<\/span>\s*<\/label>/);
+    const interruptor = etiqueta('envio-activo');
+    assert.match(interruptor, /^<input\b[^>]*type="checkbox"/, 'sigue siendo una casilla de verdad');
+    assert.match(interruptor, /role="switch"/);
+    assert.match(interruptor, /aria-label="Envío automático de Notas Digitales"/, 'el nombre es el título, no el texto Activado/Desactivado');
+    assert.ok(posicion('class="co-envio"') < posicion('class="co-switch"'), 'el interruptor va a la derecha del título');
+  });
+
+  it('las líneas debajo del interruptor siguen con sus ids, tipos y ocultos de siempre', () => {
+    const lineas = ESTADO.match(/<div class="co-lineas">([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
+    assert.ok(lineas, 'hay un .co-lineas dentro de la primera tarjeta');
+    assert.deepEqual([...lineas.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]),
+      ['nd-ultima-corrida', 'nd-licencia', 'nd-auditoria', 'nd-sin-quien-audite', 'nd-periodos-sin-auditor']);
+    assert.match(etiqueta('nd-ultima-corrida'), /^<p\b/);
+    assert.doesNotMatch(etiqueta('nd-ultima-corrida'), /\bhidden\b/);
+    assert.match(etiqueta('nd-licencia'), /^<p\b[^>]*\bhidden\b/);
+    assert.match(etiqueta('nd-auditoria'), /^<p\b/);
+    assert.doesNotMatch(etiqueta('nd-auditoria'), /\bhidden\b/);
+    assert.match(etiqueta('nd-sin-quien-audite'), /^<div id="nd-sin-quien-audite" class="nd-alerta nd-advertencia" hidden>$/);
+    assert.match(etiqueta('nd-periodos-sin-auditor'), /^<p\b[^>]*\bhidden\b/);
+  });
+
+  it('Próximas notas: título, ayuda y la lista .co-proximas que arma cargarEstado', () => {
+    assert.ok(ESTADO.includes('<h2>Próximas notas</h2>'));
+    assert.ok(ESTADO.includes('<p class="co-ayuda">Lo que saldría con los datasets de hoy, si nadie los actualiza antes.</p>'));
+    assert.match(etiqueta('nd-proximas'), /^<div id="nd-proximas" class="co-proximas">$/);
+  });
+
+  it('Conexión del correo: el botón de verificar (.co-btn) y el estado, igual que siempre', () => {
+    assert.ok(ESTADO.includes('<h2>Conexión del correo</h2>'));
+    assert.match(ESTADO, /<div class="co-smtp">\s*<button type="button" id="btn-verificar-smtp" class="co-btn">Verificar conexión SMTP<\/button>\s*<span id="smtp-status" class="smtp-status">Sin verificar<\/span>\s*<\/div>/);
+  });
+
+  it('Cómo funcionan: las dos reglas de hoy, letra por letra', () => {
+    const reglas = ESTADO.match(/<div class="co-tarjeta co-reglas">([\s\S]*?)<\/div>/)?.[1] ?? '';
+    assert.ok(reglas.includes('<h2>Cómo funcionan</h2>'));
+    assert.deepEqual([...reglas.matchAll(/<p>([^<]*)<\/p>/g)].map(m => m[1]), [REGLA_DE_AVISOS, REGLA_DE_AUDITORIA]);
+  });
+
+  it('estilo de las tarjetas: blancas, borde de 1px, radio 12px, separadas, con título y ayuda', () => {
+    const tarjeta = regla('.co-tarjeta');
+    assert.match(tarjeta, /background:\s*#fff/);
+    assert.match(tarjeta, /border:\s*1px solid var\(--pf-linea\)/);
+    assert.match(tarjeta, /border-radius:\s*12px/);
+    assert.match(regla('.co-tarjeta + .co-tarjeta'), /margin-top:\s*16px/);
+    assert.match(regla('.co-tarjeta h2'), /color:\s*var\(--pf-tinta\)/);
+    assert.match(regla('.co-ayuda'), /color:\s*var\(--pf-suave\)/);
+  });
+
+  it('el interruptor: una casilla sin apariencia propia, pista de 42×24, perilla blanca, verde al marcarse y con foco visible', () => {
+    assert.match(regla('.co-envio'), /display:\s*flex[^}]*justify-content:\s*space-between/);
+    assert.match(regla('.co-switch'), /cursor:\s*pointer/);
+    const pista = regla('.co-switch input');
+    assert.match(pista, /appearance:\s*none/);
+    assert.match(pista, /width:\s*42px/);
+    assert.match(pista, /height:\s*24px/);
+    assert.match(pista, /border-radius:\s*999px/);
+    assert.match(regla('.co-switch input::after'), /background:\s*#fff/);
+    assert.match(regla('.co-switch input:checked'), /background:\s*var\(--pf-verde\)/);
+    assert.match(regla('.co-switch input:checked::after'), /transform:\s*translateX\(/);
+    assert.match(regla('.co-switch input:focus-visible'), /outline:\s*2px solid var\(--pf-acento\)/);
+  });
+
+  it('estilo de las próximas notas, las líneas, la conexión y las reglas', () => {
+    assert.match(regla('.co-proximas'), /display:\s*grid[^}]*grid-template-columns:\s*1fr 1fr/);
+    assert.match(regla('.co-proxima'), /border:\s*1px solid var\(--pf-linea\)[^}]*border-radius:\s*10px[^}]*background:\s*var\(--pf-sutil\)/);
+    assert.match(regla('.co-proxima dd'), /tabular-nums/);
+    assert.match(regla('.co-lineas'), /display:\s*grid/);
+    assert.match(regla('.co-smtp'), /display:\s*flex[^}]*flex-wrap:\s*wrap/);
+    assert.match(regla('.co-reglas'), /color:\s*var\(--pf-suave\)/);
+  });
+
+  it('hasta 860px las próximas notas pasan a una sola columna', () => {
+    assert.ok(bloquesDeMedia('@media (max-width: 860px)').some(bloque => /\.co-proximas\s*\{\s*grid-template-columns:\s*1fr;?\s*\}/.test(bloque)));
+  });
+
+  it('en el celular (hasta 480px) cada próxima nota apila el nombre sobre el valor', () => {
+    const bloque = bloquesDeMedia('@media (max-width: 480px)').find(b => b.includes('.co-proxima'));
+    assert.ok(bloque, 'hay un bloque de 480px para las próximas notas');
+    assert.match(bloque, /\.co-proxima dl\s*\{[^}]*grid-template-columns:\s*1fr/);
+  });
+
+  it('con movimiento reducido el interruptor no se anima', () => {
+    assert.ok(bloquesDeMedia('@media (prefers-reduced-motion: reduce)').some(bloque => /\.co-switch input[^{]*\{[^}]*transition:\s*none/.test(bloque)));
+  });
+
+  it('con los colores del sistema forzados (contraste alto) el interruptor sigue viéndose', () => {
+    const bloque = bloquesDeMedia('@media (forced-colors: active)').find(b => b.includes('.co-switch input'));
+    assert.ok(bloque, 'hay un bloque para forced-colors');
+    assert.match(bloque, /\.co-switch input\s*\{[^}]*border:\s*2px solid ButtonText/);
+    assert.match(bloque, /\.co-switch input:checked\s*\{[^}]*background:\s*Highlight/);
+  });
+
+  it('el aspecto de las dos clases que reescribe el código se queda: badge y smtp-status', () => {
+    assert.match(regla('.smtp-status'), /display:\s*inline-flex/);
+    for (const estado of ['success', 'error', 'checking']) assert.ok(regla(`.smtp-status.${estado}`), estado);
+  });
+
+  it('ya no quedan estilos de lo que se reemplazó', () => {
+    assert.doesNotMatch(PAGINA, /\.nd-switch|\.nd-proxima|\.smtp-status-row/);
+  });
+});
+
+describe('correos.js: próximas notas del Estado (spec 2026-10-17-correos-pestanas, 7)', () => {
+  const ESTADO = {
+    envio_activo: true, configuracion_faltante: [], fallidas: 0, alertas: [], ultima_corrida: null, licencia_firmante: null,
+    proximas: {}, auditoria: { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] }
+  };
+  const PROXIMAS = {
+    interna: { aviso: { fecha: '2026-11-02', cantidad: 1 }, reiteracion: { fecha: '2026-11-02', cantidad: 3 } },
+    externa: { aviso: null, reiteracion: { fecha: null, cantidad: 0 } }
+  };
+  const cargar = async (cambios = {}) => {
+    const panel = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, proximas: PROXIMAS, ...cambios }) });
+    await panel.contexto.cargarEstado();
+    return panel;
+  };
+
+  it('cantidadDeDatasets: "1 dataset" en singular y "N datasets" en cualquier otro caso', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(contexto.cantidadDeDatasets(1), '1 dataset');
+    assert.equal(contexto.cantidadDeDatasets(3), '3 datasets');
+    assert.equal(contexto.cantidadDeDatasets(0), '0 datasets');
+    assert.equal(contexto.cantidadDeDatasets(10), '10 datasets');
+  });
+
+  it('una tarjeta por gestión, con su próximo aviso y su próxima reiteración', async () => {
+    const { elemento } = await cargar();
+    const html = elemento('nd-proximas').innerHTML;
+    assert.ok(html.includes('<h3>Gestión interna</h3>'));
+    assert.ok(html.includes('<dt>Próximo aviso</dt><dd>02/11/2026 · 1 dataset</dd>'));
+    assert.ok(html.includes('<dt>Próxima reiteración</dt><dd>02/11/2026 · 3 datasets</dd>'));
+    assert.ok(html.includes('<h3>Gestión externa</h3>'));
+    assert.equal(html.match(/<dd>sin datasets pendientes<\/dd>/g).length, 2, 'la externa no tiene aviso ni reiteración');
+    assert.equal(html.match(/<div class="co-proxima">/g).length, 2);
+    assert.ok(!html.includes('dataset/s'));
+    assert.ok(!html.includes('nd-proxima"'));
+  });
+
+  it('el armado exacto de una tarjeta', async () => {
+    const { elemento } = await cargar({ proximas: { interna: PROXIMAS.interna } });
+    assert.equal(elemento('nd-proximas').innerHTML,
+      '<div class="co-proxima"><h3>Gestión interna</h3><dl><dt>Próximo aviso</dt><dd>02/11/2026 · 1 dataset</dd>'
+      + '<dt>Próxima reiteración</dt><dd>02/11/2026 · 3 datasets</dd></dl></div>');
+  });
+
+  it('sin próximas, la lista queda vacía; al volver a cargar se reemplaza (no se acumula)', async () => {
+    let proximas = PROXIMAS;
+    const { contexto, elemento } = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, proximas }) });
+    await contexto.cargarEstado();
+    await contexto.cargarEstado();
+    assert.equal(elemento('nd-proximas').innerHTML.match(/<div class="co-proxima">/g).length, 2);
+    proximas = {};
+    await contexto.cargarEstado();
+    assert.equal(elemento('nd-proximas').innerHTML, '');
+  });
+
+  it('el interruptor y su texto siguen el estado real: marcado y Activado, o sin marcar y Desactivado', async () => {
+    const activo = await cargar({ envio_activo: true });
+    assert.equal(activo.elemento('envio-activo').checked, true);
+    assert.equal(activo.elemento('envio-activo-texto').textContent, 'Activado');
+    assert.equal(activo.elemento('envio-activo-texto').className, 'badge badge-success');
+    const inactivo = await cargar({ envio_activo: false });
+    assert.equal(inactivo.elemento('envio-activo').checked, false);
+    assert.equal(inactivo.elemento('envio-activo-texto').textContent, 'Desactivado');
+    assert.equal(inactivo.elemento('envio-activo-texto').className, 'badge badge-secondary');
+  });
+});

@@ -70,13 +70,6 @@
         }
 
         /* Estado SMTP */
-        .smtp-status-row {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
         .smtp-status {
             display: inline-flex;
             align-items: center;
@@ -213,16 +206,7 @@
             .test-controls .form-select {
                 min-width: 100%;
             }
-
-            .smtp-status-row {
-                flex-direction: column;
-                align-items: flex-start;
-            }
         }
-        .nd-switch-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-        .nd-switch { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
-        .nd-proximas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
-        .nd-proxima { border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; font-size: 0.875rem; }
         /* Alertas: van arriba de las pestañas (#nd-alertas), pero el estilo también es el de #nd-sin-quien-audite y #modal-nota-error */
         .nd-alerta { position: relative; background: #FBEEEE; border: 1px solid #EFCACA; color: #8A3434; border-radius: 10px; padding: 11px 14px 11px 38px; margin-top: 12px; font-size: 0.9rem; }
         .nd-alerta::before { content: ''; position: absolute; left: 14px; top: 14px; width: 16px; height: 16px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A3434' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E") no-repeat center / contain; }
@@ -273,6 +257,36 @@
         .co-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
         .co-btn.reintentar { color: var(--pf-rojo); border-color: #E8C4C4; }
         .co-btn:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+
+        /* Tarjetas de las pestañas (spec 2026-10-17-correos-pestanas, 3) */
+        .co-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 20px 22px; }
+        .co-tarjeta + .co-tarjeta { margin-top: 16px; }
+        .co-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
+        .co-ayuda { margin: 0 0 16px; font-size: 0.85rem; color: var(--pf-suave); }
+
+        /* Estado (spec 2026-10-17-correos-pestanas, 7) */
+        .co-envio { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .co-envio .co-ayuda { margin: 0; }
+        .co-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; }
+        /* La casilla de siempre (#envio-activo) dibujada como interruptor: el color y la perilla salen de si está marcada */
+        .co-switch input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 42px; height: 24px; margin: 0; border-radius: 999px; background: var(--pf-suave); cursor: pointer; transition: background 0.15s ease; }
+        .co-switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; }
+        .co-switch input:checked { background: var(--pf-verde); }
+        .co-switch input:checked::after { transform: translateX(18px); }
+        .co-switch input:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .co-proximas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+        .co-proxima { border: 1px solid var(--pf-linea); border-radius: 10px; padding: 14px 16px; background: var(--pf-sutil); }
+        .co-proxima h3 { margin: 0 0 8px; font-size: 0.9rem; color: var(--pf-tinta); }
+        .co-proxima dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.875rem; }
+        .co-proxima dt { color: var(--pf-suave); }
+        .co-proxima dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--pf-texto); font-weight: 500; }
+        .co-lineas { display: grid; gap: 6px; font-size: 0.875rem; color: var(--pf-texto); margin-top: 14px; }
+        .co-lineas p { margin: 0; }
+        .co-lineas .nd-alerta { margin-top: 0; }
+        .co-smtp { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .co-reglas { font-size: 0.83rem; color: var(--pf-suave); line-height: 1.55; }
+        .co-reglas p { margin: 0 0 8px; }
+        .co-reglas p:last-child { margin-bottom: 0; }
         .nd-marco { width: 100%; height: 560px; border: 1px solid var(--gray-200); border-radius: 8px; margin-top: 12px; background: #ffffff; }
         .nd-config fieldset { border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px 16px; margin: 0 0 12px; }
         .nd-config legend { font-weight: 600; padding: 0 6px; }
@@ -291,10 +305,27 @@
 
         @media (max-width: 860px) {
             .co-libro .ocultable { display: none; }
+            .co-proximas { grid-template-columns: 1fr; }
+        }
+
+        /* En el celular el nombre y el valor de cada próxima nota van uno encima del otro, así la fecha y la cantidad no se cortan */
+        @media (max-width: 480px) {
+            .co-proxima dl { grid-template-columns: 1fr; gap: 0; }
+            .co-proxima dd { margin-bottom: 8px; }
+            .co-proxima dd:last-child { margin-bottom: 0; }
         }
 
         @media (prefers-reduced-motion: reduce) {
             .pf-pestana { transition: none; }
+            .co-switch input, .co-switch input::after { transition: none; }
+        }
+
+        /* Con los colores del sistema forzados (contraste alto) el interruptor sigue viéndose */
+        @media (forced-colors: active) {
+            .co-switch input { border: 2px solid ButtonText; }
+            .co-switch input::after { background: ButtonText; }
+            .co-switch input:checked { background: Highlight; }
+            .co-switch input:checked::after { background: HighlightText; }
         }
     </style>
 </head>
@@ -456,32 +487,44 @@
 
             <section id="vista-estado" role="tabpanel" aria-labelledby="pestana-estado" hidden>
                 <!-- Estado -->
-                <div class="smtp-card">
-                    <div class="smtp-card-header">
-                        <div class="smtp-card-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                <div class="co-tarjeta">
+                    <div class="co-envio">
+                        <div>
+                            <h2>Envío automático de Notas Digitales</h2>
+                            <p class="co-ayuda">Las notas salen solas a las 8:15 de cada día hábil.</p>
                         </div>
-                        <h3>Estado</h3>
+                        <label class="co-switch" for="envio-activo">
+                            <input type="checkbox" id="envio-activo" role="switch" aria-label="Envío automático de Notas Digitales">
+                            <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
+                        </label>
                     </div>
-                    <div class="smtp-status-row">
-                        <button type="button" id="btn-verificar-smtp" class="btn btn-secondary">Verificar conexión SMTP</button>
+                    <div class="co-lineas">
+                        <p id="nd-ultima-corrida"></p>
+                        <p id="nd-licencia" hidden></p>
+                        <p id="nd-auditoria"></p>
+                        <div id="nd-sin-quien-audite" class="nd-alerta nd-advertencia" hidden></div>
+                        <p id="nd-periodos-sin-auditor" hidden></p>
+                    </div>
+                </div>
+
+                <div class="co-tarjeta">
+                    <h2>Próximas notas</h2>
+                    <p class="co-ayuda">Lo que saldría con los datasets de hoy, si nadie los actualiza antes.</p>
+                    <div id="nd-proximas" class="co-proximas"></div>
+                </div>
+
+                <div class="co-tarjeta">
+                    <h2>Conexión del correo</h2>
+                    <div class="co-smtp">
+                        <button type="button" id="btn-verificar-smtp" class="co-btn">Verificar conexión SMTP</button>
                         <span id="smtp-status" class="smtp-status">Sin verificar</span>
                     </div>
-                    <div class="nd-switch-row">
-                        <label class="nd-switch" for="envio-activo">
-                            <input type="checkbox" id="envio-activo">
-                            <span>Envío automático de Notas Digitales</span>
-                        </label>
-                        <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
-                    </div>
-                    <div id="nd-proximas" class="nd-proximas"></div>
-                    <p id="nd-ultima-corrida" class="test-hint"></p>
-                    <p id="nd-licencia" class="test-hint" hidden></p>
-                    <p id="nd-auditoria" class="test-hint"></p>
-                    <div id="nd-sin-quien-audite" class="nd-alerta nd-advertencia" hidden></div>
-                    <p id="nd-periodos-sin-auditor" class="test-hint" hidden></p>
-                    <p class="test-hint">Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.</p>
-                    <p class="test-hint">Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más). Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.</p>
+                </div>
+
+                <div class="co-tarjeta co-reglas">
+                    <h2>Cómo funcionan</h2>
+                    <p>Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.</p>
+                    <p>Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más). Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.</p>
                 </div>
             </section>
 

@@ -231,15 +231,19 @@ async function cargarEstado() {
     document.getElementById('marca-estado-advertencia').hidden = marca !== 'advertencia';
 
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
-    document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) => `
-      <div class="nd-proxima">
-        <strong>${nombres[gestion]}</strong><br>
-        Próximo aviso: ${p.aviso ? `${fecha(p.aviso.fecha)} (${p.aviso.cantidad} dataset/s)` : 'sin datasets pendientes'}<br>
-        Próxima reiteración: ${p.reiteracion.cantidad > 0 ? `${fecha(p.reiteracion.fecha)} (${p.reiteracion.cantidad} dataset/s)` : 'sin datasets pendientes'}
-      </div>`).join('');
+    document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) =>
+      `<div class="co-proxima"><h3>${nombres[gestion]}</h3><dl>`
+      + `<dt>Próximo aviso</dt><dd>${p.aviso ? `${fecha(p.aviso.fecha)} · ${cantidadDeDatasets(p.aviso.cantidad)}` : 'sin datasets pendientes'}</dd>`
+      + `<dt>Próxima reiteración</dt><dd>${p.reiteracion.cantidad > 0 ? `${fecha(p.reiteracion.fecha)} · ${cantidadDeDatasets(p.reiteracion.cantidad)}` : 'sin datasets pendientes'}</dd>`
+      + '</dl></div>').join('');
   } catch (error) {
     avisar(`No se pudo cargar el estado: ${error.message}`, 'error');
   }
+}
+
+// "1 dataset" o "N datasets": la cantidad de las próximas notas del Estado
+function cantidadDeDatasets(n) {
+  return n === 1 ? '1 dataset' : `${n} datasets`;
 }
 
 function textoUltimaCorrida(corrida) {
