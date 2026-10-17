@@ -16,7 +16,8 @@
  * en un navegador argentino. Febrero va siempre en 28.
  *
  * Estilos: las clases (ad-chip, ad-sub, ad-fecha, ad-acciones, ad-btn, ad-icono, ad-opcion, pista, banda, marca,
- * etiqueta...) son las del mockup aprobado, docs/superpowers/specs/2026-10-17-fechas-datasets-mockup.html.
+ * etiqueta...) son las del mockup aprobado, docs/superpowers/specs/2026-10-17-fechas-datasets-mockup.html. Las que no están
+ * en el mockup (el texto del pedido y la tarjeta del celular) tienen su estilo en el <style> de admin.html.
  */
 
 const ZONA_HORARIA_ARGENTINA = 'America/Argentina/Buenos_Aires';
@@ -52,17 +53,26 @@ function hoyEnArgentina(ahora = new Date()) {
   return `${String(partes.year).padStart(4, '0')}-${dosCifras(partes.month)}-${dosCifras(partes.day)}`;
 }
 
+// Los días que tiene de verdad un mes del calendario, con el 29 de febrero de los años bisiestos (para reconocer una fecha
+// que existe; las fechas que arma el sistema, en cambio, llevan febrero en 28)
+function diasDelMesEnElCalendario(anio, mes) {
+  const bisiesto = (anio % 4 === 0 && anio % 100 !== 0) || anio % 400 === 0;
+  return mes === 2 && bisiesto ? 29 : DIAS_DE_CADA_MES[mes - 1];
+}
+
 /**
  * Los primeros 10 caracteres ('AAAA-MM-DD') de una fecha que viaja como texto, con o sin hora, o null si no es una fecha:
- * no es un texto, no empieza con AAAA-MM-DD o tiene un mes o un día imposibles ('0000-00-00').
+ * no es un texto, no empieza con AAAA-MM-DD o es un día que no existe ('0000-00-00', '2026-02-31', '2026-04-31').
  */
 function soloFecha(valor) {
   if (typeof valor !== 'string') return null;
   const partes = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/.exec(valor);
   if (!partes) return null;
+  const anio = Number(partes[1]);
   const mes = Number(partes[2]);
   const dia = Number(partes[3]);
-  return mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31 ? valor.slice(0, 10) : null;
+  if (mes < 1 || mes > 12 || dia < 1 || dia > diasDelMesEnElCalendario(anio, mes)) return null;
+  return valor.slice(0, 10);
 }
 
 // Un número entero que viene de un select (texto) o de un cálculo; null si no lo es
@@ -109,14 +119,19 @@ function opcionesDeMes(seleccionado) {
 }
 
 /**
- * <option> de los años de `desde` a `hasta`, del más alto al más bajo. Si `seleccionado` queda fuera del rango no se marca
- * ninguno y el select muestra el primero: quien lo llama tiene que armar un rango que incluya el valor que quiere mostrar.
+ * <option> de los años de `desde` a `hasta`, del más alto al más bajo. Si `seleccionado` (un año de cuatro cifras) queda
+ * fuera del rango, el rango se amplía hasta incluirlo: si no, el select mostraría otro año y, al guardar, una fecha vieja
+ * cambiaría sin que nadie la toque. Un rango al revés (desde > hasta) da ''.
  */
 function opcionesDeAnio(desde, hasta, seleccionado) {
-  const primero = enteroDe(desde);
-  const ultimo = enteroDe(hasta);
+  let primero = enteroDe(desde);
+  let ultimo = enteroDe(hasta);
   const elegido = enteroDe(seleccionado);
-  if (primero === null || ultimo === null) return '';
+  if (primero === null || ultimo === null || primero > ultimo) return '';
+  if (elegido !== null && elegido >= 1000 && elegido <= 9999) {
+    primero = Math.min(primero, elegido);
+    ultimo = Math.max(ultimo, elegido);
+  }
   let html = '';
   for (let anio = ultimo; anio >= primero; anio--) {
     html += `<option value="${anio}"${anio === elegido ? ' selected' : ''}>${anio}</option>`;
@@ -207,14 +222,17 @@ function htmlDeDatosPublicados(d) {
     + (cargado ? `<span class="ad-sub">Cargado el ${fechaCorta(cargado)}</span>` : '');
 }
 
-// El texto del pedido; debajo, el tipo y la fecha sugerida de envío si la próxima es de hoy en adelante
+/**
+ * El texto del pedido; debajo, el tipo y la fecha sugerida de envío si la próxima es de hoy en adelante. El texto no lleva la
+ * clase de las fechas (que no se parten): "Presupuestos de los ejercicios 2026 y 2027" puede ocupar dos renglones.
+ */
 function htmlDeProximoPedido(d, hoy) {
   const texto = d.pedido && d.pedido.texto ? d.pedido.texto : SIN_DATO;
   const proxima = soloFecha(d.proxima_actualizacion);
   const detalle = [];
   if (d.tipo_pedido_nombre) detalle.push(d.tipo_pedido_nombre);
   if (proxima && proxima >= hoy) detalle.push(`Fecha sugerida de envío: ${fechaCorta(proxima)}`);
-  return `<span class="ad-fecha">${textoSeguro(texto)}</span>`
+  return `<span class="ad-pedido-texto">${textoSeguro(texto)}</span>`
     + (detalle.length ? `<span class="ad-sub">${detalle.map(textoSeguro).join('. ')}</span>` : '');
 }
 
@@ -247,9 +265,11 @@ function htmlDeAcciones(d, pendiente, esAdmin) {
 /**
  * La fila (<tr>) de un dataset de la lista, con las columnas Dataset, Estado, Datos publicados, Próximo pedido y Acciones.
  * `dataset` es el de GET /datasets. `pendiente`: tiene un cambio pendiente. `esAdmin`: ve los botones; sin ellos la última
- * celda queda vacía. `hoy`: 'AAAA-MM-DD' (por defecto, hoy en Argentina).
+ * celda queda vacía (la página oculta esa columna al lector). `hoy`: 'AAAA-MM-DD' (por defecto, hoy en Argentina; quien
+ * arma la lista entera la calcula una vez y la pasa). Sin opciones, o con null: sin botones.
  */
-function htmlDeFila(dataset, { pendiente = false, esAdmin = false, hoy } = {}) {
+function htmlDeFila(dataset, opciones) {
+  const { pendiente = false, esAdmin = false, hoy } = opciones ?? {};
   const d = dataset ?? {};
   const fecha = soloFecha(hoy) ?? hoyEnArgentina();
   const estado = textoEstado(d.estado, d.dias_para_vencer, d.proxima_actualizacion, d.tipo_gestion, pendiente);
@@ -265,7 +285,8 @@ function htmlDeFila(dataset, { pendiente = false, esAdmin = false, hoy } = {}) {
 /**
  * La versión de la fila para el celular (<article>): los mismos datos y los mismos botones. Mismos parámetros que htmlDeFila.
  */
-function htmlDeTarjeta(dataset, { pendiente = false, esAdmin = false, hoy } = {}) {
+function htmlDeTarjeta(dataset, opciones) {
+  const { pendiente = false, esAdmin = false, hoy } = opciones ?? {};
   const d = dataset ?? {};
   const fecha = soloFecha(hoy) ?? hoyEnArgentina();
   const estado = textoEstado(d.estado, d.dias_para_vencer, d.proxima_actualizacion, d.tipo_gestion, pendiente);

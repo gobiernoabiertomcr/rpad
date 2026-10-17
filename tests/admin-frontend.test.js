@@ -1,7 +1,9 @@
-// Admin (public/js/admin-fechas.js), ejecutado en Node: lo puro que arma la lista, el registro de una actualización y la
-// línea del ciclo (spec 2026-10-17-fechas-datasets, sección 8). El script, al cargarse, solo declara.
+// Admin (public/js/admin-fechas.js y public/js/admin.js), ejecutado en Node: lo puro que arma la lista, el registro de una
+// actualización y la línea del ciclo (spec 2026-10-17-fechas-datasets, sección 8). Los dos scripts, al cargarse, solo declaran.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import fs from 'fs';
 import vm from 'vm';
 
@@ -93,6 +95,44 @@ describe('admin-fechas.js: hoyEnArgentina', () => {
   it('sin argumento da la fecha de hoy con el formato AAAA-MM-DD', () => {
     assert.match(admin.hoyEnArgentina(), /^\d{4}-\d{2}-\d{2}$/);
   });
+
+  // La zona de la máquina que corre los tests no tiene que importar. Cada caso corre en un proceso aparte con TZ fija, y con
+  // instantes en que la fecha local de esa zona es otra que la de Argentina: una cuenta con la hora local daría mal
+  it('da la fecha de Argentina con cualquier zona horaria en la máquina (TZ fija en un proceso aparte)', () => {
+    const CASOS = [
+      // [zona, minutos de diferencia con UTC en ese instante (getTimezoneOffset), instante, fecha local en esa zona (lo que
+      // daría una cuenta con la hora local), fecha de Argentina]
+      ['Asia/Tokyo', -540, '2026-10-17T16:00:00Z', '2026-10-18', '2026-10-17'],
+      ['Pacific/Kiritimati', -840, '2026-12-31T12:00:00Z', '2027-01-01', '2026-12-31'],
+      ['America/Los_Angeles', 420, '2026-10-17T05:00:00Z', '2026-10-16', '2026-10-17'],
+      ['UTC', 0, '2026-10-18T01:30:00Z', '2026-10-18', '2026-10-17'],
+      ['America/Argentina/Buenos_Aires', 180, '2026-10-18T02:59:59Z', '2026-10-17', '2026-10-17']
+    ];
+    const archivo = fileURLToPath(new URL('../public/js/admin-fechas.js', import.meta.url));
+    const programa = `
+      const fs = require('fs'); const vm = require('vm');
+      const contexto = vm.createContext({ console });
+      vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), contexto);
+      const instante = new Date(process.argv[2]);
+      const dos = (n) => String(n).padStart(2, '0');
+      process.stdout.write(JSON.stringify({
+        diferencia: instante.getTimezoneOffset(),
+        local: instante.getFullYear() + '-' + dos(instante.getMonth() + 1) + '-' + dos(instante.getDate()),
+        argentina: contexto.hoyEnArgentina(instante)
+      }));`;
+    for (const [zona, diferencia, instante, local, argentina] of CASOS) {
+      // Con -e, process.argv[1] es el primer argumento que sigue al programa
+      const corrida = spawnSync(process.execPath, ['-e', programa, archivo, instante], {
+        env: { ...process.env, TZ: zona }, encoding: 'utf8'
+      });
+      assert.equal(corrida.status, 0, corrida.stderr);
+      const resultado = JSON.parse(corrida.stdout);
+      // La zona se aplicó de verdad, y en ese instante la fecha local es otra (salvo en Argentina): el caso prueba algo
+      assert.equal(resultado.diferencia, diferencia, `la zona ${zona} no se aplicó`);
+      assert.equal(resultado.local, local, `${zona}: fecha local`);
+      assert.equal(resultado.argentina, argentina, `${zona}, ${instante}`);
+    }
+  });
 });
 
 describe('admin-fechas.js: fechaCorta y mesAnio', () => {
@@ -110,6 +150,22 @@ describe('admin-fechas.js: fechaCorta y mesAnio', () => {
   it('fechaCorta da una raya cuando no hay fecha o no es una fecha', () => {
     for (const valor of [null, undefined, '', 'basura', '0000-00-00', '2026-13-01', 20260131, {}]) {
       assert.equal(admin.fechaCorta(valor), '—', String(valor));
+    }
+  });
+
+  it('un día que no existe no es una fecha: 31/02, 29/02 de un año que no es bisiesto, 31/04', () => {
+    for (const valor of ['2026-02-31', '2026-02-30', '2026-02-29', '2100-02-29', '2026-04-31', '2026-06-31', '2026-09-31', '2026-11-31',
+      '2026-04-31T03:00:00.000Z', '2026-01-32', '2026-01-00']) {
+      assert.equal(admin.soloFecha(valor), null, valor);
+      assert.equal(admin.fechaCorta(valor), '—', valor);
+      assert.equal(admin.mesAnio(valor), '—', valor);
+    }
+  });
+
+  it('los días que existen siguen siendo fechas, también el 29/02 de un año bisiesto', () => {
+    for (const [valor, corta] of [['2028-02-29', '29/02/2028'], ['2000-02-29', '29/02/2000'], ['2026-02-28', '28/02/2026'], ['2026-04-30', '30/04/2026'],
+      ['2026-01-31', '31/01/2026'], ['2026-12-31T03:00:00.000Z', '31/12/2026'], ['2026-03-01', '01/03/2026']]) {
+      assert.equal(admin.fechaCorta(valor), corta, valor);
     }
   });
 
@@ -180,6 +236,28 @@ describe('admin-fechas.js: opciones de los selectores de mes y año', () => {
   it('opcionesDeAnio con un solo año, o con el rango al revés, no se rompe', () => {
     assert.equal(cantidad(admin.opcionesDeAnio(2026, 2026, 2026), '<option'), 1);
     assert.equal(admin.opcionesDeAnio(2027, 2024, 2026), '');
+  });
+
+  // Si el año elegido quedara afuera, el select mostraría otro y, al guardar, la fecha vieja cambiaría sin que nadie la toque
+  const anios = (html) => [...html.matchAll(/<option value="(\d+)"/g)].map(m => Number(m[1]));
+  it('opcionesDeAnio amplía el rango hacia atrás para incluir un año elegido anterior a "desde"', () => {
+    const html = admin.opcionesDeAnio(2015, 2027, 2012);
+    assert.deepEqual(anios(html), Array.from({ length: 16 }, (_, i) => 2027 - i));
+    assert.equal(cantidad(html, 'selected'), 1);
+    assert.match(html, /<option value="2012" selected>2012<\/option>$/);
+  });
+
+  it('opcionesDeAnio amplía el rango hacia adelante para incluir un año elegido posterior a "hasta"', () => {
+    const html = admin.opcionesDeAnio(2024, 2027, '2031');
+    assert.deepEqual(anios(html), [2031, 2030, 2029, 2028, 2027, 2026, 2025, 2024]);
+    assert.match(html, /^<option value="2031" selected>2031<\/option>/);
+    assert.equal(cantidad(html, 'selected'), 1);
+  });
+
+  it('opcionesDeAnio no amplía el rango sin un año elegido, o con uno que no es un año', () => {
+    for (const elegido of [null, undefined, '', 'basura', 0, 99999]) {
+      assert.deepEqual(anios(admin.opcionesDeAnio(2024, 2027, elegido)), [2027, 2026, 2025, 2024], String(elegido));
+    }
   });
 });
 
@@ -261,8 +339,29 @@ describe('admin-fechas.js: htmlDeFila', () => {
   it('el título escapado también queda a salvo dentro del aria-label de los botones', () => {
     const html = fila(dataset({ titulo: 'Nómina "oficial" <x>' }));
     assert.doesNotMatch(html, /<x>/);
+    assert.match(html, /aria-label="Registrar actualización de Nómina &quot;oficial&quot; &lt;x&gt;"/);
     assert.match(html, /aria-label="Editar Nómina &quot;oficial&quot; &lt;x&gt;"/);
     assert.match(html, /aria-label="Eliminar Nómina &quot;oficial&quot; &lt;x&gt;"/);
+  });
+
+  it('un id hostil queda escapado dentro de los data-atributos: no abre otro atributo', () => {
+    for (const armar of [fila, (d) => admin.htmlDeTarjeta(d, { pendiente: false, esAdmin: true, hoy: HOY })]) {
+      const html = armar(dataset({ id: '7" onmouseover="alert(1)' }));
+      assert.doesNotMatch(html, /" onmouseover="/);
+      for (const atributo of ['data-registrar', 'data-editar', 'data-eliminar']) {
+        assert.match(html, new RegExp(`${atributo}="7&quot; onmouseover=&quot;alert\\(1\\)"`), atributo);
+      }
+    }
+  });
+
+  it('sin opciones, o con null, no tira error: sin botones y con hoy de Argentina', () => {
+    for (const opciones of [null, undefined]) {
+      const html = admin.htmlDeFila(dataset(), opciones);
+      assert.equal(cantidad(html, '<td'), 5);
+      assert.doesNotMatch(html, /<button/);
+      assert.doesNotMatch(html, /bloqueada/);
+      assert.doesNotMatch(admin.htmlDeTarjeta(dataset(), opciones), /<button/);
+    }
   });
 
   it('un cambio pendiente lleva "Cambio pendiente" y los tres botones deshabilitados, con el motivo', () => {
@@ -327,7 +426,13 @@ describe('admin-fechas.js: htmlDeFila', () => {
     assert.match(html, /Sin vencimiento/);
     assert.doesNotMatch(html, /Fecha sugerida/);
     // El pedido es una raya y debajo va el tipo
-    assert.match(html, /<span class="ad-fecha">—<\/span><span class="ad-sub">Eventual<\/span>/);
+    assert.match(html, /<span class="ad-pedido-texto">—<\/span><span class="ad-sub">Eventual<\/span>/);
+  });
+
+  it('el texto del pedido no va con la clase de las fechas (que no se parten): un pedido largo puede ocupar dos renglones', () => {
+    const html = fila(ejercicio());
+    assert.match(html, /<span class="ad-pedido-texto">Presupuestos de los ejercicios 2026 y 2027<\/span>/);
+    assert.doesNotMatch(html, /<span class="ad-fecha">Presupuestos/);
   });
 
   it('un ejercicio muestra "Ejercicio 2025" y no la fecha', () => {
@@ -722,5 +827,425 @@ describe('admin-fechas.js: claseDeEstado y contarPorEstado', () => {
     assert.deepEqual(conteoPlano([], []), ceros);
     assert.deepEqual(conteoPlano(), ceros);
     assert.deepEqual(conteoPlano(undefined, undefined), ceros);
+  });
+});
+
+// =====================================================
+// admin.js: la lista (spec 2026-10-17-fechas-datasets, 8.2 y 8.6)
+// =====================================================
+
+// admin.js se carga después de admin-fechas.js, en el mismo contexto, como en la página. El document solo deja registrar
+// oyentes: si admin.js buscara un elemento al cargarse (como hacía con el submit del formulario), el test lo delataría. Auth,
+// API y window no están: tocarlos al cargarse también tiraría error
+const cargarAdminJs = () => {
+  const oyentes = {};
+  const prohibido = (que) => () => { throw new Error(`admin.js usó document.${que} al cargarse`); };
+  const contexto = vm.createContext({
+    Utils: cargarUtils(),
+    console,
+    document: {
+      addEventListener: (tipo, funcion) => { (oyentes[tipo] ??= []).push(funcion); },
+      getElementById: prohibido('getElementById'),
+      querySelector: prohibido('querySelector'),
+      querySelectorAll: prohibido('querySelectorAll')
+    }
+  });
+  for (const archivo of ['admin-fechas.js', 'admin.js']) {
+    vm.runInContext(fs.readFileSync(new URL(`../public/js/${archivo}`, import.meta.url), 'utf8'), contexto, { filename: archivo });
+  }
+  return { contexto, oyentes };
+};
+
+const CODIGO_ADMIN = fs.readFileSync(new URL('../public/js/admin.js', import.meta.url), 'utf8');
+const PAGINA_ADMIN = fs.readFileSync(new URL('../public/admin.html', import.meta.url), 'utf8');
+
+describe('admin.js: al cargarse solo declara', () => {
+  it('se carga después de admin-fechas.js sin tocar el DOM y sin redeclarar sus nombres', () => {
+    const { oyentes } = cargarAdminJs();
+    // Lo único que hace al cargarse es esperar a la página
+    assert.deepEqual(Object.keys(oyentes), ['DOMContentLoaded']);
+    assert.equal(oyentes.DOMContentLoaded.length, 1);
+  });
+
+  it('el estado de la lista arranca sin filtros, sin búsqueda y en la primera página', () => {
+    const { contexto } = cargarAdminJs();
+    assert.deepEqual(plano(vm.runInContext('estadoDeLista', contexto)), { filtro: '', busqueda: '', gestion: '', tipo: '', pagina: 1 });
+  });
+
+  it('el submit del formulario se registra en DOMContentLoaded, no al cargarse', () => {
+    assert.match(CODIGO_ADMIN, /getElementById\('dataset-form'\)\.addEventListener\('submit'/);
+    // Fuera de cualquier función no queda ninguna búsqueda de elementos (cada renglón que empieza en la columna 0)
+    for (const renglon of CODIGO_ADMIN.split(/\r?\n/).filter((r) => /^document\./.test(r))) {
+      assert.match(renglon, /^document\.addEventListener\('DOMContentLoaded'/, renglon);
+    }
+  });
+
+  it('ya no están calcularProximaPropuesta ni la fecha en UTC', () => {
+    const { contexto } = cargarAdminJs();
+    assert.equal(typeof contexto.calcularProximaPropuesta, 'undefined');
+    assert.doesNotMatch(CODIGO_ADMIN, /calcularProximaPropuesta|toISOString/);
+  });
+
+  it('los avisos van con showToast: nada de Utils.showSuccess (sin estilo) ni Utils.showError (detrás del velo)', () => {
+    assert.doesNotMatch(CODIGO_ADMIN, /Utils\.showSuccess|Utils\.showError/);
+    assert.match(CODIGO_ADMIN, /showToast\(/);
+  });
+
+  it('el bloqueo no depende de pointer-events: los botones van disabled y se verifica antes de abrir', () => {
+    assert.doesNotMatch(CODIGO_ADMIN, /pointer-events/);
+    const registrar = CODIGO_ADMIN.match(/async function marcarActualizado\(id\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    assert.match(registrar, /datasetEstaBloqueado\(id\)/, 'marcarActualizado verifica el bloqueo');
+  });
+});
+
+describe('admin.js: filtros de la barra', () => {
+  const { contexto: a } = cargarAdminJs();
+  const LISTA = [
+    dataset({ id: 1 }),
+    vencido({ id: 2, area_nombre: 'Dirección de Información Tributaria' }),
+    vencido({ id: 3, titulo: 'Espacios Verdes', area_nombre: 'Dirección General de Parques y Paseos', tipo_gestion: 'interna', estado: 'atrasado',
+      tipo_pedido: 'relevamiento', tipo_pedido_nombre: 'Relevamiento interno' }),
+    eventual({ id: 4 }),
+    ejercicio({ id: 5, area_nombre: 'Secretaría de la Mujer, Género y Diversidad', estado: 'proximo', dias_para_vencer: 44 }),
+    dataset({ id: 6, titulo: 'Sin próxima', estado: 'sin-fecha', proxima_actualizacion: null, pedido: null, dias_para_vencer: null })
+  ];
+  const ids = (lista) => Array.from(lista, (d) => d.id);
+  const porBarra = (filtros) => ids(a.filtrarPorBarra(LISTA, filtros));
+
+  it('busca en el título y en el área, sin distinguir mayúsculas ni tildes', () => {
+    assert.deepEqual(porBarra({ busqueda: 'pauta' }), [1]);
+    assert.deepEqual(porBarra({ busqueda: 'PAUTA' }), [1]);
+    // El 1, el 4 y el 6 son de la Subsecretaría de Comunicación (el área de los datos de ejemplo)
+    assert.deepEqual(porBarra({ busqueda: 'subsecretaria de comunicacion' }), [1, 4, 6]);
+    assert.deepEqual(porBarra({ busqueda: 'genero' }), [5]);
+    assert.deepEqual(porBarra({ busqueda: 'Tributaria' }), [2]);
+  });
+
+  it('sin búsqueda, o con espacios, da todos', () => {
+    assert.deepEqual(porBarra({}), [1, 2, 3, 4, 5, 6]);
+    assert.deepEqual(porBarra({ busqueda: '   ' }), [1, 2, 3, 4, 5, 6]);
+    assert.deepEqual(ids(a.filtrarPorBarra(LISTA)), [1, 2, 3, 4, 5, 6]);
+  });
+
+  it('filtra por gestión y por tipo de pedido, y combina los tres', () => {
+    assert.deepEqual(porBarra({ gestion: 'interna' }), [3, 4]);
+    assert.deepEqual(porBarra({ gestion: 'externa' }), [1, 2, 5, 6]);
+    assert.deepEqual(porBarra({ tipo: 'eventual' }), [4]);
+    assert.deepEqual(porBarra({ tipo: 'ejercicio' }), [5]);
+    assert.deepEqual(porBarra({ busqueda: 'dirección', gestion: 'interna' }), [3]);
+    assert.deepEqual(porBarra({ busqueda: 'dirección', gestion: 'externa', tipo: 'acumulado' }), [2]);
+  });
+
+  it('sin lista da una lista vacía y no tira error', () => {
+    assert.deepEqual(ids(a.filtrarPorBarra(null, { busqueda: 'x' })), []);
+    assert.deepEqual(ids(a.filtrarPorBarra([{ id: 9 }], { busqueda: 'x' })), []);
+    assert.deepEqual(ids(a.filtrarPorBarra([{ id: 9 }], {})), [9]);
+  });
+});
+
+describe('admin.js: vista de la lista (contadores, filtro de estado y páginas)', () => {
+  const { contexto: a } = cargarAdminJs();
+  const LISTA = [
+    dataset({ id: 1 }),
+    vencido({ id: 2 }),
+    vencido({ id: 3, tipo_gestion: 'interna', estado: 'atrasado' }),
+    eventual({ id: 4 }),
+    dataset({ id: 5, estado: 'proximo', dias_para_vencer: 44 }),
+    dataset({ id: 6, estado: 'sin-fecha', proxima_actualizacion: null, pedido: null, dias_para_vencer: null })
+  ];
+  const SIN_FILTROS = { filtro: '', busqueda: '', gestion: '', tipo: '', pagina: 1 };
+  const vista = (estado, pendientes = []) => a.vistaDeLista(LISTA, { ...SIN_FILTROS, ...estado }, pendientes);
+  const ids = (v) => Array.from(v.items, (d) => d.id);
+
+  it('cuenta cada estado y "Todos" es el total', () => {
+    assert.deepEqual(plano(vista({}).cuentas), { todos: 6, vencido: 2, proximo: 1, 'al-dia': 1, eventual: 1, pendiente: 0, 'sin-fecha': 1 });
+    assert.deepEqual(ids(vista({})), [1, 2, 3, 4, 5, 6]);
+  });
+
+  it('el filtro de estado deja los de ese estado', () => {
+    assert.deepEqual(ids(vista({ filtro: 'vencido' })), [2, 3]);
+    assert.deepEqual(ids(vista({ filtro: 'al-dia' })), [1]);
+    assert.deepEqual(ids(vista({ filtro: 'eventual' })), [4]);
+    assert.deepEqual(ids(vista({ filtro: 'sin-fecha' })), [6]);
+  });
+
+  it('un dataset con cambio pendiente cuenta y se filtra solo como pendiente (Ruling 14)', () => {
+    const v = vista({ filtro: 'vencido' }, [2]);
+    assert.deepEqual(ids(v), [3]);
+    assert.equal(v.cuentas.pendiente, 1);
+    assert.equal(v.cuentas.vencido, 1);
+    assert.deepEqual(ids(vista({ filtro: 'pendiente' }, ['2', 4])), [2, 4]);
+    const c = vista({}, new Set([2, 4])).cuentas;
+    assert.equal(c.vencido + c.proximo + c['al-dia'] + c.eventual + c.pendiente + c['sin-fecha'], c.todos);
+  });
+
+  it('los contadores cuentan lo que dejan la búsqueda, la gestión y el tipo, sin el filtro de estado', () => {
+    const v = vista({ gestion: 'interna', filtro: 'eventual' });
+    assert.deepEqual(plano(v.cuentas), { todos: 2, vencido: 1, proximo: 0, 'al-dia': 0, eventual: 1, pendiente: 0, 'sin-fecha': 0 });
+    assert.deepEqual(ids(v), [4]);
+  });
+
+  it('25 por página; una página que ya no existe pasa a la última', () => {
+    const muchos = Array.from({ length: 60 }, (_, i) => dataset({ id: i + 1 }));
+    const de = (pagina) => a.vistaDeLista(muchos, { ...SIN_FILTROS, pagina }, []);
+    assert.equal(de(1).items.length, 25);
+    assert.deepEqual([de(1).desde, de(1).hasta, de(1).total, de(1).totalPaginas], [1, 25, 60, 3]);
+    assert.deepEqual([de(2).desde, de(2).hasta], [26, 50]);
+    assert.equal(de(3).items.length, 10);
+    assert.equal(de(3).items[0].id, 51);
+    assert.equal(de(9).pagina, 3);
+    assert.equal(de(0).pagina, 1);
+  });
+
+  it('paginar una lista vacía da una sola página, sin filas', () => {
+    assert.deepEqual(plano(a.paginar([], 4)), { total: 0, pagina: 1, totalPaginas: 1, desde: 0, hasta: 0, items: [] });
+  });
+});
+
+describe('admin.js: pie de la lista (resumen y páginas)', () => {
+  const { contexto: a } = cargarAdminJs();
+
+  it('el resumen dice cuántos datasets hay y, con varias páginas, cuáles se muestran', () => {
+    assert.equal(a.textoDelResumen({ total: 0, desde: 0, hasta: 0, totalPaginas: 1 }), '0 datasets');
+    assert.equal(a.textoDelResumen({ total: 1, desde: 1, hasta: 1, totalPaginas: 1 }), '1 dataset');
+    assert.equal(a.textoDelResumen({ total: 13, desde: 1, hasta: 13, totalPaginas: 1 }), '13 datasets');
+    assert.equal(a.textoDelResumen({ total: 60, desde: 26, hasta: 50, totalPaginas: 3 }), 'Mostrando 26–50 de 60 datasets');
+  });
+
+  it('con una sola página no hay botones', () => {
+    assert.equal(a.htmlDeControlesDePagina({ pagina: 1, totalPaginas: 1 }), '');
+  });
+
+  it('"Pág." con tilde, Anterior y Siguiente con data-pagina, deshabilitados en las puntas y sin onclick', () => {
+    const primera = a.htmlDeControlesDePagina({ pagina: 1, totalPaginas: 3 });
+    assert.match(primera, /<span class="pag-pagina">Pág\. 1 de 3<\/span>/);
+    assert.doesNotMatch(primera, /Pag\./);
+    assert.match(primera, /<button type="button" class="pag-btn" data-pagina="0" data-direccion="anterior" disabled>/);
+    assert.match(primera, /<button type="button" class="pag-btn" data-pagina="2" data-direccion="siguiente">/);
+    assert.doesNotMatch(primera, /onclick/i);
+    const ultima = a.htmlDeControlesDePagina({ pagina: 3, totalPaginas: 3 });
+    assert.match(ultima, /data-pagina="2" data-direccion="anterior">/);
+    assert.match(ultima, /data-pagina="4" data-direccion="siguiente" disabled>/);
+    // Las flechas son decorativas
+    assert.equal(cantidad(ultima, 'aria-hidden="true"'), 2);
+  });
+});
+
+describe('admin.js: botones de los filtros de estado', () => {
+  const { contexto: a } = cargarAdminJs();
+  const CUENTAS = { todos: 6, vencido: 2, proximo: 1, 'al-dia': 1, eventual: 1, pendiente: 0, 'sin-fecha': 1 };
+
+  it('cada filtro lleva su contador y solo el elegido está presionado', () => {
+    const filtros = plano(a.estadoDeFiltros(CUENTAS, 'vencido', true));
+    assert.deepEqual(Object.keys(filtros), ['', 'vencido', 'proximo', 'al-dia', 'eventual', 'sin-fecha', 'pendiente']);
+    assert.deepEqual(filtros[''], { cuenta: 6, presionado: false, visible: true });
+    assert.deepEqual(filtros.vencido, { cuenta: 2, presionado: true, visible: true });
+    assert.deepEqual(filtros.pendiente, { cuenta: 0, presionado: false, visible: true });
+    assert.equal(Object.values(filtros).filter((f) => f.presionado).length, 1);
+    assert.equal(a.estadoDeFiltros(CUENTAS, '', true)[''].presionado, true);
+  });
+
+  it('"Sin fecha" aparece solo si hay alguno, o si es el filtro elegido', () => {
+    assert.equal(a.estadoDeFiltros(CUENTAS, '', true)['sin-fecha'].visible, true);
+    assert.equal(a.estadoDeFiltros({ ...CUENTAS, 'sin-fecha': 0 }, '', true)['sin-fecha'].visible, false);
+    assert.equal(a.estadoDeFiltros({ ...CUENTAS, 'sin-fecha': 0 }, 'sin-fecha', true)['sin-fecha'].visible, true);
+  });
+
+  it('"Con un cambio pendiente" solo lo ve quien administra (el lector no conoce los pendientes)', () => {
+    assert.equal(a.estadoDeFiltros(CUENTAS, '', false).pendiente.visible, false);
+    assert.equal(a.estadoDeFiltros(CUENTAS, '', true).pendiente.visible, true);
+  });
+
+  it('sin contadores no tira error: todo en cero', () => {
+    const filtros = plano(a.estadoDeFiltros(undefined, undefined, true));
+    assert.equal(filtros[''].cuenta, 0);
+    assert.equal(filtros[''].presionado, true);
+  });
+});
+
+describe('admin.js: selector de tipo de pedido', () => {
+  const { contexto: a } = cargarAdminJs();
+  const LISTA = [dataset({ id: 1 }), vencido({ id: 2 }), eventual({ id: 3 }), ejercicio({ id: 4 }),
+    dataset({ id: 5, tipo_pedido: 'relevamiento', tipo_pedido_nombre: 'Relevamiento interno' }), { id: 6, titulo: 'Sin tipo' }];
+
+  it('ofrece los tipos que tienen los datasets, una vez cada uno, ordenados por nombre, después de "Todos"', () => {
+    const html = a.opcionesDeTipoPedido(LISTA, '');
+    const opciones = [...html.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(opciones, [['', 'Todos los tipos de pedido'], ['acumulado', 'Acumulado'], ['ejercicio', 'Ejercicio que empieza'],
+      ['eventual', 'Eventual'], ['relevamiento', 'Relevamiento interno']]);
+    assert.doesNotMatch(html, /selected/);
+  });
+
+  it('marca el elegido', () => {
+    const html = a.opcionesDeTipoPedido(LISTA, 'ejercicio');
+    assert.equal(cantidad(html, 'selected'), 1);
+    assert.match(html, /<option value="ejercicio" selected>Ejercicio que empieza<\/option>/);
+  });
+
+  it('escapa el nombre y el valor', () => {
+    const html = a.opcionesDeTipoPedido([dataset({ tipo_pedido: 'x"y', tipo_pedido_nombre: '<b>Raro</b>' })], '');
+    assert.doesNotMatch(html, /<b>|value="x"y"/);
+    assert.match(html, /value="x&quot;y">&lt;b&gt;Raro&lt;\/b&gt;</);
+  });
+
+  it('sin lista ofrece solo "Todos"', () => {
+    assert.equal(a.opcionesDeTipoPedido(null, ''), '<option value="">Todos los tipos de pedido</option>');
+  });
+});
+
+describe('admin.js: filas y tarjetas de una página', () => {
+  const LISTA = [dataset({ id: 1 }), vencido({ id: 2 }), eventual({ id: 3 })];
+
+  it('arma una fila y una tarjeta por dataset, con el bloqueo de los que tienen un cambio pendiente', () => {
+    const { contexto: a } = cargarAdminJs();
+    const { filas, tarjetas } = a.htmlDeLaLista(LISTA, { pendientes: new Set(['2']), esAdmin: true, hoy: HOY });
+    assert.equal(cantidad(filas, '<tr'), 3);
+    assert.equal(cantidad(tarjetas, '<article'), 3);
+    assert.equal(cantidad(filas, 'class="bloqueada"'), 1);
+    assert.equal(cantidad(filas, ' disabled'), 3);
+    assert.equal(cantidad(tarjetas, ' disabled'), 3);
+    assert.match(filas, /<tr class="bloqueada">(?:(?!<\/tr>)[\s\S])*data-registrar="2"/);
+  });
+
+  it('los pendientes pueden venir como lista de números', () => {
+    const { contexto: a } = cargarAdminJs();
+    assert.equal(cantidad(a.htmlDeLaLista(LISTA, { pendientes: [2, 3], esAdmin: true, hoy: HOY }).filas, 'class="bloqueada"'), 2);
+  });
+
+  it('usa el hoy que recibe para todas las filas y no vuelve a pedir la fecha', () => {
+    const { contexto: a } = cargarAdminJs();
+    a.hoyEnArgentina = () => { throw new Error('pidió la fecha otra vez'); };
+    assert.match(a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: true, hoy: HOY }).filas, /Fecha sugerida de envío: 31\/01\/2027/);
+    assert.doesNotMatch(a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: true, hoy: '2999-01-01' }).filas, /Fecha sugerida/);
+  });
+
+  it('el lector ve las filas sin botones', () => {
+    const { contexto: a } = cargarAdminJs();
+    const { filas, tarjetas } = a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: false, hoy: HOY });
+    assert.doesNotMatch(filas + tarjetas, /<button/);
+    assert.equal(cantidad(filas, '<tr'), 3);
+  });
+
+  it('sin datasets muestra el mensaje, escapado, en la tabla y en las tarjetas', () => {
+    const { contexto: a } = cargarAdminJs();
+    const { filas, tarjetas } = a.htmlDeLaLista([], { pendientes: [], esAdmin: true, hoy: HOY, mensajeVacio: 'Ningún <dataset>' });
+    assert.equal(filas, '<tr><td colspan="5" class="ad-vacio">Ningún &lt;dataset&gt;</td></tr>');
+    assert.equal(tarjetas, '<p class="ad-vacio">Ningún &lt;dataset&gt;</p>');
+  });
+});
+
+describe('admin.js: catálogos', () => {
+  const { contexto: a } = cargarAdminJs();
+
+  it('faltan catálogos si alguno de temas, frecuencias o formatos viene vacío o no vino', () => {
+    const uno = [{ id: 1 }];
+    assert.equal(a.faltanCatalogos({ temas: uno, frecuencias: uno, formatos: uno }), false);
+    assert.equal(a.faltanCatalogos({ temas: [], frecuencias: uno, formatos: uno }), true);
+    assert.equal(a.faltanCatalogos({ temas: uno, frecuencias: undefined, formatos: uno }), true);
+    assert.equal(a.faltanCatalogos({ temas: uno, frecuencias: uno, formatos: null }), true);
+    assert.equal(a.faltanCatalogos(), true);
+  });
+});
+
+describe('admin.html: la lista', () => {
+  it('la barra: el buscador con su etiqueta, la gestión y el tipo de pedido', () => {
+    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="buscar">[^<]+<\/label>\s*<input type="search" id="buscar"/);
+    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="filtro-gestion">Gestión<\/label>\s*<select id="filtro-gestion">/);
+    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="filtro-tipo">Tipo de pedido<\/label>\s*<select id="filtro-tipo">/);
+    const gestion = PAGINA_ADMIN.match(/<select id="filtro-gestion">([\s\S]*?)<\/select>/)[1];
+    assert.deepEqual([...gestion.matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
+      [['', 'Interna y externa'], ['interna', 'Interna'], ['externa', 'Externa']]);
+  });
+
+  it('los filtros de estado: un grupo con un botón por estado, con aria-pressed', () => {
+    const grupo = PAGINA_ADMIN.match(/<div class="ad-estados" id="filtros-estado" role="group" aria-label="Filtrar por estado">([\s\S]*?)<\/div>/)?.[1] ?? '';
+    const botones = [...grupo.matchAll(/<button type="button" class="ad-estado-filtro" data-filtro="([^"]*)" aria-pressed="(true|false)"[^>]*>([^<]+)<b><\/b><\/button>/g)]
+      .map((m) => [m[1], m[2], m[3].trim()]);
+    assert.deepEqual(botones, [
+      ['', 'true', 'Todos'], ['vencido', 'false', 'Vencidos'], ['proximo', 'false', 'Vencen en menos de 60 días'], ['al-dia', 'false', 'Al día'],
+      ['eventual', 'false', 'Eventuales'], ['sin-fecha', 'false', 'Sin fecha'], ['pendiente', 'false', 'Con un cambio pendiente']]);
+  });
+
+  it('la tabla: las cinco columnas (la de acciones, con el título oculto a la vista) y #filas-datasets', () => {
+    const cabecera = PAGINA_ADMIN.match(/<table class="ad-tabla" id="tabla-datasets">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)?.[1] ?? '';
+    assert.deepEqual([...cabecera.matchAll(/<th scope="col"[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1]),
+      ['Dataset', 'Estado', 'Datos publicados', 'Próximo pedido', '<span class="ad-vh">Acciones</span>']);
+    assert.match(cabecera, /<th scope="col" class="ocultable">Datos publicados<\/th>/);
+    assert.match(PAGINA_ADMIN, /<tbody id="filas-datasets">/);
+    assert.match(PAGINA_ADMIN, /<div class="ad-tarjetas" id="tarjetas-datasets">/);
+    assert.match(PAGINA_ADMIN, /<span class="pag-info" id="resumen-lista" aria-live="polite"><\/span>/);
+  });
+
+  it('"Nuevo dataset" arranca oculto: lo muestra admin.js solo a quien administra', () => {
+    assert.match(PAGINA_ADMIN, /<button[^>]*id="btn-nuevo-dataset"[^>]*hidden>/);
+    assert.match(CODIGO_ADMIN, /getElementById\('btn-nuevo-dataset'\)\.hidden = false/);
+  });
+
+  it('el pie dice "RPAD v1.6.0"', () => {
+    assert.match(PAGINA_ADMIN, /<span>RPAD v1\.6\.0<\/span>/);
+    assert.doesNotMatch(PAGINA_ADMIN, /RPAD v1\.4\.0/);
+  });
+
+  it('no usa .text-small ni .mt-2, que no existen', () => {
+    for (const texto of [PAGINA_ADMIN, CODIGO_ADMIN]) {
+      assert.doesNotMatch(texto, /(^|[^\w-])(text-small|mt-2)($|[^\w-])/);
+    }
+  });
+});
+
+describe('admin.html: CSS sin uso (como correos.html)', () => {
+  const ADMIN_FECHAS = fs.readFileSync(new URL('../public/js/admin-fechas.js', import.meta.url), 'utf8');
+  const inicio = PAGINA_ADMIN.indexOf('<style>');
+  const fin = PAGINA_ADMIN.indexOf('</style>');
+  // La clase aparece como palabra entera: "ad-tarjeta" no cuenta dentro de "ad-tarjetas" ni "chip" dentro de "ad-chip"
+  const aparece = (clase, texto) => new RegExp(`(^|[^\\w-])${clase}($|[^\\w-])`).test(texto);
+
+  it('la comparación es por palabra entera, no por pedazo', () => {
+    assert.equal(aparece('ad-tarjeta', 'class="ad-tarjetas"'), false);
+    assert.equal(aparece('chip', 'class="ad-chip"'), false);
+    assert.equal(aparece('ad-chip', 'class="ad-chip vencido"'), true);
+    assert.equal(aparece('al-dia', "clase: 'al-dia'"), true);
+    assert.equal(aparece('selected', "classList.add('selected')"), true);
+  });
+
+  it('cada clase del <style> de admin.html se usa en la página, en admin.js o en admin-fechas.js', () => {
+    assert.ok(inicio !== -1 && fin > inicio, 'la página tiene su <style>');
+    const estilo = PAGINA_ADMIN.slice(inicio + '<style>'.length, fin)
+      .replace(/url\((?:"[^"]*"|'[^']*'|[^)]*)\)/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const clases = [...new Set([...estilo.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]))];
+    assert.ok(clases.length > 20, `se encontraron las clases del <style> (${clases.length})`);
+    const resto = PAGINA_ADMIN.slice(0, inicio) + PAGINA_ADMIN.slice(fin) + '\n' + CODIGO_ADMIN + '\n' + ADMIN_FECHAS;
+    for (const clase of clases) {
+      assert.ok(aparece(clase, resto), `la clase .${clase} del <style> no se usa en admin.html, admin.js ni admin-fechas.js`);
+    }
+  });
+
+  it('las pastillas tienen todos los estados, también "sin fecha", y las tarjetas del celular tienen estilo', () => {
+    const estilo = PAGINA_ADMIN.slice(inicio, fin);
+    for (const estado of ['vencido', 'proximo', 'al-dia', 'eventual', 'pendiente', 'sin-fecha']) {
+      assert.match(estilo, new RegExp(`\\.ad-chip\\.${estado} \\{[^}]*background:[^}]*color:`), estado);
+    }
+    for (const clase of ['ad-tarjetas', 'ad-tarjeta', 'ad-tarjeta-titulo', 'ad-tarjeta-estado', 'ad-tarjeta-datos']) {
+      assert.match(estilo, new RegExp(`\\.${clase}[\\s{.,:]`), clase);
+    }
+  });
+
+  it('en el celular (hasta 760 px) la tabla pasa a tarjetas', () => {
+    const estilo = PAGINA_ADMIN.slice(inicio, fin);
+    assert.ok(estilo.includes('@media (max-width: 760px)'));
+    const celular = estilo.slice(estilo.indexOf('@media (max-width: 760px)'));
+    assert.match(celular, /table\.ad-tabla \{ display: none; \}/);
+    assert.match(celular, /\.ad-tarjetas \{ display: grid;/);
+  });
+});
+
+describe('main.css: las variables que usa están definidas', () => {
+  // La paginación usaba --mcr-* y --radius-* sin definir (spec 8.6, arreglo 7): los colores y los bordes no se veían
+  it('cada var(--x) de main.css tiene su definición en main.css', () => {
+    const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8');
+    const usadas = new Set([...css.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
+    const definidas = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+    assert.deepEqual([...usadas].filter((variable) => !definidas.has(variable)), []);
   });
 });

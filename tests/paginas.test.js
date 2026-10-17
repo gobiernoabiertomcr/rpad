@@ -11,6 +11,8 @@ const VERSION_PANTALLAS = '20261024';
 const VERSION_CORREOS = '20261102';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas): su versión es propia
 const VERSION_PERFIL = '20261103';
+// admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia
+const VERSION_ADMIN = '20261103';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -42,6 +44,19 @@ describe('páginas', () => {
   // Mi Perfil pasó a pestañas (spec 2026-10-16-perfil-pestanas-gestion-cambios)
   it(`perfil.html: perfil.js con la versión ${VERSION_PERFIL}`, () => {
     assert.ok(leer('perfil.html').includes(`js/perfil.js?v=${VERSION_PERFIL}"`));
+  });
+
+  // Admin renovado (spec 2026-10-17-fechas-datasets, 8.1): admin-fechas.js declara lo puro que usa admin.js, así que va
+  // antes, y los dos después de api.js (Utils)
+  it(`admin.html: admin-fechas.js y admin.js con la versión ${VERSION_ADMIN}, en ese orden y después de api.js`, () => {
+    const html = leer('admin.html');
+    const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+    const posicion = (nombre) => scripts.findIndex(src => src.startsWith(`js/${nombre}.js`));
+    assert.ok(scripts.includes(`js/admin-fechas.js?v=${VERSION_ADMIN}`), `admin-fechas.js?v=${VERSION_ADMIN}`);
+    assert.ok(scripts.includes(`js/admin.js?v=${VERSION_ADMIN}`), `admin.js?v=${VERSION_ADMIN}`);
+    assert.ok(posicion('api') !== -1 && posicion('api') < posicion('admin-fechas'), 'admin-fechas.js después de api.js');
+    assert.ok(posicion('admin-fechas') < posicion('admin'), 'admin.js después de admin-fechas.js');
+    assert.equal(scripts.filter(src => /^js\/admin(-fechas)?\.js/.test(src)).length, 2, 'cada uno una sola vez');
   });
 
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {

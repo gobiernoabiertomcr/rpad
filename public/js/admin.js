@@ -1,4 +1,16 @@
-// Admin - Lógica de administración con integración Andino
+/**
+ * Admin - Gestión de Datasets - RPAD
+ *
+ * La lista (spec 2026-10-17-fechas-datasets, 8.2): filtros por estado con su contador, búsqueda por título o área,
+ * gestión y tipo de pedido, 25 por página, y en el celular una tarjeta por dataset. Además, el alta en dos pasos con la
+ * importación desde el Portal de Datos Abiertos, la edición, la eliminación y el registro de una actualización: todo cambio
+ * queda pendiente de aprobación (doble verificación) y el dataset queda bloqueado hasta que se resuelva.
+ *
+ * Al cargarse solo declara (tests/admin-frontend.test.js lo carga en un vm): lo que toca el DOM, Auth o la API arranca en
+ * DOMContentLoaded. Lo puro que arma la fila, la tarjeta y la pastilla de estado está en admin-fechas.js, que se carga antes;
+ * lo puro de la lista (filtros, contadores, páginas) está acá, arriba de lo que toca el DOM.
+ */
+
 let datasets = [];
 let temas = [];
 let frecuencias = [];
@@ -6,12 +18,21 @@ let areas = [];
 let deleteId = null;
 let currentEditDataset = null;
 let andinoAreaReferencia = null; // Área de referencia importada de Andino
-let datasetsConPendientes = []; // IDs de datasets con cambios pendientes
+// Ids (como texto) de los datasets con un cambio pendiente de aprobación: quedan bloqueados
+let datasetsConPendientes = new Set();
+// Quien mira puede administrar (superadmin, admin o editor): ve las acciones y "Nuevo dataset". Se lee en DOMContentLoaded
+let puedeAdministrar = false;
+// Si la primera carga de la lista falló, el mensaje que la reemplaza
+let errorDeCarga = null;
 
-// Paginación
-let paginaActual = 1;
 const ITEMS_POR_PAGINA = 25;
-let ultimosDatosFiltrados = [];
+
+// La lista: el filtro de estado ('' = todos), la búsqueda, la gestión, el tipo de pedido y la página. Se conserva al volver a
+// pedir los datos (después de crear, editar, eliminar o registrar una actualización)
+const estadoDeLista = { filtro: '', busqueda: '', gestion: '', tipo: '', pagina: 1 };
+
+// Los filtros de estado, en el orden de los botones de admin.html ('' = Todos)
+const VALORES_DE_FILTRO = ['', 'vencido', 'proximo', 'al-dia', 'eventual', 'sin-fecha', 'pendiente'];
 
 // Sistema de formatos (chips)
 let formatosSeleccionados = new Set();
@@ -21,6 +42,143 @@ let formatosCatalogo = [];
 let registrarActualizacionId = null;
 let registrarActualizacionDataset = null;
 
+// =====================================================
+// LISTA: lo puro (filtros, contadores, páginas)
+// =====================================================
+
+// Texto para buscar: minúsculas y sin tildes ("area" encuentra "Área")
+function textoParaBuscar(texto) {
+  return String(texto ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/**
+ * Los datasets que dejan los filtros de la barra: la búsqueda (en el título o en el área), la gestión y el tipo de pedido.
+ * Sin el filtro de estado: sobre esta lista se cuentan los estados, así cada contador dice cuántos va a mostrar su botón.
+ */
+function filtrarPorBarra(lista, filtros) {
+  const { busqueda = '', gestion = '', tipo = '' } = filtros ?? {};
+  const termino = textoParaBuscar(busqueda).trim();
+  return (Array.isArray(lista) ? lista : []).filter((d) =>
+    (!termino || textoParaBuscar(d.titulo).includes(termino) || textoParaBuscar(d.area_nombre).includes(termino))
+    && (!gestion || d.tipo_gestion === gestion)
+    && (!tipo || d.tipo_pedido === tipo));
+}
+
+/**
+ * Una página de una lista: { total, pagina, totalPaginas, desde, hasta, items }. Una página que ya no existe (porque la
+ * lista se achicó) pasa a la última; una que no es un número, a la primera.
+ */
+function paginar(lista, pagina, porPagina = ITEMS_POR_PAGINA) {
+  const todos = Array.isArray(lista) ? lista : [];
+  const total = todos.length;
+  const totalPaginas = Math.max(1, Math.ceil(total / porPagina));
+  const pedida = Number.isInteger(Number(pagina)) ? Number(pagina) : 1;
+  const actual = Math.min(Math.max(1, pedida), totalPaginas);
+  const inicio = (actual - 1) * porPagina;
+  return {
+    total,
+    pagina: actual,
+    totalPaginas,
+    desde: total ? inicio + 1 : 0,
+    hasta: Math.min(inicio + porPagina, total),
+    items: todos.slice(inicio, inicio + porPagina)
+  };
+}
+
+/**
+ * Lo que muestra la lista con su estado (estadoDeLista): los contadores de cada filtro de estado, con la barra aplicada, y la
+ * página de los datasets que además caen en el filtro de estado. `pendientes`: los ids con un cambio pendiente (lista o
+ * Set; número o texto). Un dataset con cambio pendiente cuenta y se filtra solo como pendiente (Ruling 14).
+ */
+function vistaDeLista(lista, estado, pendientes, porPagina = ITEMS_POR_PAGINA) {
+  const e = estado ?? {};
+  const conPendiente = new Set(Array.from(pendientes ?? [], (id) => String(id)));
+  const porBarra = filtrarPorBarra(lista, e);
+  const visibles = e.filtro
+    ? porBarra.filter((d) => claseDeEstado(d, conPendiente.has(String(d.id))) === e.filtro)
+    : porBarra;
+  return { cuentas: contarPorEstado(porBarra, conPendiente), ...paginar(visibles, e.pagina, porPagina) };
+}
+
+// "13 datasets", o "Mostrando 26–50 de 60 datasets" si hay más de una página
+function textoDelResumen({ total = 0, desde = 0, hasta = 0, totalPaginas = 1 } = {}) {
+  if (totalPaginas > 1) return `Mostrando ${desde}–${hasta} de ${total} datasets`;
+  return `${total} ${total === 1 ? 'dataset' : 'datasets'}`;
+}
+
+// Anterior, "Pág. 2 de 3" y Siguiente; con una sola página, nada. Los botones llevan data-pagina (sin onclick)
+function htmlDeControlesDePagina({ pagina = 1, totalPaginas = 1 } = {}) {
+  if (totalPaginas <= 1) return '';
+  const boton = (destino, direccion, deshabilitado, contenido) =>
+    `<button type="button" class="pag-btn" data-pagina="${destino}" data-direccion="${direccion}"${deshabilitado ? ' disabled' : ''}>${contenido}</button>`;
+  return boton(pagina - 1, 'anterior', pagina <= 1, '<span aria-hidden="true">&#8249;</span> Anterior')
+    + `<span class="pag-pagina">Pág. ${pagina} de ${totalPaginas}</span>`
+    + boton(pagina + 1, 'siguiente', pagina >= totalPaginas, 'Siguiente <span aria-hidden="true">&#8250;</span>');
+}
+
+/**
+ * Cómo va cada botón de filtro de estado: { [valor]: { cuenta, presionado, visible } }. "Sin fecha" aparece solo si hay
+ * alguno (o si es el filtro elegido, para poder salir de él). "Con un cambio pendiente" solo para quien administra: el
+ * lector no conoce los pendientes.
+ */
+function estadoDeFiltros(cuentas, filtro, conPendientes) {
+  const elegido = filtro ?? '';
+  const resultado = {};
+  for (const valor of VALORES_DE_FILTRO) {
+    const cuenta = Number(cuentas?.[valor || 'todos']) || 0;
+    let visible = true;
+    if (valor === 'sin-fecha') visible = cuenta > 0 || elegido === valor;
+    if (valor === 'pendiente') visible = Boolean(conPendientes);
+    resultado[valor] = { cuenta, presionado: elegido === valor, visible };
+  }
+  return resultado;
+}
+
+/**
+ * Las <option> del selector de tipo de pedido: "Todos los tipos de pedido" y los tipos que tienen los datasets, una vez cada
+ * uno y ordenados por nombre. El nombre lo manda el servidor (tipo_pedido_nombre): acá no hay otra lista de tipos.
+ */
+function opcionesDeTipoPedido(lista, seleccionado) {
+  const nombres = new Map();
+  for (const d of Array.isArray(lista) ? lista : []) {
+    if (d && typeof d.tipo_pedido === 'string' && d.tipo_pedido && !nombres.has(d.tipo_pedido)) {
+      nombres.set(d.tipo_pedido, d.tipo_pedido_nombre || d.tipo_pedido);
+    }
+  }
+  const tipos = [...nombres].sort(([, a], [, b]) => String(a).localeCompare(String(b), 'es'));
+  return '<option value="">Todos los tipos de pedido</option>'
+    + tipos.map(([valor, nombre]) =>
+      `<option value="${textoSeguro(valor)}"${valor === seleccionado ? ' selected' : ''}>${textoSeguro(nombre)}</option>`).join('');
+}
+
+/**
+ * Las filas de la tabla y las tarjetas del celular de una página: { filas, tarjetas }. `hoy` se calcula una vez por página
+ * y se pasa a cada fila. Sin datasets, el mensaje (escapado) en los dos lugares.
+ */
+function htmlDeLaLista(items, { pendientes, esAdmin = false, hoy, mensajeVacio = 'No hay datasets.' } = {}) {
+  const lista = Array.isArray(items) ? items : [];
+  if (lista.length === 0) {
+    const mensaje = textoSeguro(mensajeVacio);
+    return { filas: `<tr><td colspan="5" class="ad-vacio">${mensaje}</td></tr>`, tarjetas: `<p class="ad-vacio">${mensaje}</p>` };
+  }
+  const conPendiente = new Set(Array.from(pendientes ?? [], (id) => String(id)));
+  const fecha = soloFecha(hoy) ?? hoyEnArgentina();
+  const opcionesDe = (d) => ({ pendiente: conPendiente.has(String(d.id)), esAdmin, hoy: fecha });
+  return {
+    filas: lista.map((d) => htmlDeFila(d, opcionesDe(d))).join(''),
+    tarjetas: lista.map((d) => htmlDeTarjeta(d, opcionesDe(d))).join('')
+  };
+}
+
+// ¿Faltan catálogos? Sin temas, frecuencias o formatos no se puede completar el formulario (las API dan [] si fallan)
+function faltanCatalogos({ temas: deTemas, frecuencias: deFrecuencias, formatos: deFormatos } = {}) {
+  return [deTemas, deFrecuencias, deFormatos].some((lista) => !Array.isArray(lista) || lista.length === 0);
+}
+
+// =====================================================
+// INICIO
+// =====================================================
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Verificar autenticación
   if (!Auth.isAuthenticated()) {
@@ -28,21 +186,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Ocultar elementos de administración si es lector
-  if (!Auth.isAdmin()) {
-    const btnNuevo = document.getElementById('btn-nuevo-dataset');
-    if (btnNuevo) btnNuevo.style.display = 'none';
-  }
+  puedeAdministrar = Auth.isAdmin();
+  document.getElementById('dataset-form').addEventListener('submit', enviarFormulario);
+  prepararLista();
+  // El lector ve la lista sin acciones y sin "Nuevo dataset"
+  if (puedeAdministrar) document.getElementById('btn-nuevo-dataset').hidden = false;
 
-  await loadCatalogos();
-  await loadDatasets();
-  setupSearch();
-  
-  // Cargar indicadores de cambios pendientes (solo admin)
-  if (Auth.isAdmin()) {
-    await cargarIndicadoresPendientes();
-  }
+  // Los catálogos solo los usa el formulario: el lector no los necesita
+  await Promise.all([puedeAdministrar ? loadCatalogos() : null, recargarLista()]);
 });
+
+// Avisos flotantes (showToast, de main.js): se ven por encima de cualquier ventana abierta. showToast arma HTML: el texto va escapado
+function avisarExito(texto) {
+  showToast(Utils.escapeHtml(texto), 'success');
+}
+
+function avisarError(texto) {
+  showToast(Utils.escapeHtml(texto || 'No se pudo completar la operación.'), 'error');
+}
 
 async function loadCatalogos() {
   try {
@@ -59,19 +220,163 @@ async function loadCatalogos() {
     document.getElementById('tema_secundario_id').innerHTML = '<option value="">Ninguno</option>' + temaOptions;
 
     // Llenar select de frecuencias
-    document.getElementById('frecuencia_id').innerHTML = '<option value="">Seleccionar...</option>' + 
+    document.getElementById('frecuencia_id').innerHTML = '<option value="">Seleccionar...</option>' +
       frecuencias.map(f => `<option value="${f.id}">${Utils.escapeHtml(f.nombre)}</option>`).join('');
 
     // Llenar select de áreas
     actualizarSelectAreas();
+
+    if (faltanCatalogos({ temas, frecuencias, formatos: formatosCatalogo })) avisarFallaDeCatalogos();
   } catch (error) {
     console.error('Error cargando catálogos:', error);
+    avisarFallaDeCatalogos();
   }
+}
+
+// Si fallan los catálogos el formulario no sirve: se avisa arriba de la lista, y el aviso queda (spec 8.6, arreglo 8)
+function avisarFallaDeCatalogos() {
+  document.getElementById('message-container').innerHTML = '<div class="alert alert-error ad-aviso" role="alert">'
+    + 'No se pudieron cargar los catálogos (temas, frecuencias o formatos): hasta que recargues la página no vas a poder crear ni editar datasets.'
+    + '</div>';
 }
 
 function actualizarSelectAreas() {
   const areaOptions = areas.map(a => `<option value="${a.id}">${Utils.escapeHtml(a.nombre)}</option>`).join('');
   document.getElementById('area_id').innerHTML = '<option value="">Seleccionar...</option>' + areaOptions;
+}
+
+// =====================================================
+// LISTA: lo que toca el DOM
+// =====================================================
+
+// Los oyentes de la barra, de los filtros de estado y de los botones de la lista (por delegación: las filas no llevan onclick)
+function prepararLista() {
+  // Para el lector, la columna de acciones no existe (ni a la vista ni para el lector de pantalla)
+  document.getElementById('tabla-datasets').classList.toggle('ad-solo-lectura', !puedeAdministrar);
+
+  document.getElementById('filtros-estado').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('[data-filtro]');
+    if (!boton) return;
+    estadoDeLista.filtro = boton.dataset.filtro;
+    estadoDeLista.pagina = 1;
+    pintarLista();
+  });
+
+  // Los controles arrancan como dice el estado (el navegador puede haber restaurado lo que tenían antes de recargar)
+  const buscar = document.getElementById('buscar');
+  buscar.value = estadoDeLista.busqueda;
+  let demora = null;
+  buscar.addEventListener('input', () => {
+    clearTimeout(demora);
+    demora = setTimeout(() => {
+      estadoDeLista.busqueda = buscar.value;
+      estadoDeLista.pagina = 1;
+      pintarLista();
+    }, 300);
+  });
+
+  for (const [id, campo] of [['filtro-gestion', 'gestion'], ['filtro-tipo', 'tipo']]) {
+    const selector = document.getElementById(id);
+    selector.value = estadoDeLista[campo];
+    selector.addEventListener('change', () => {
+      estadoDeLista[campo] = selector.value;
+      estadoDeLista.pagina = 1;
+      pintarLista();
+    });
+  }
+
+  document.getElementById('lista-datasets').addEventListener('click', alHacerClicEnLaLista);
+}
+
+// Registrar, editar, eliminar y cambiar de página. Un botón deshabilitado (dataset bloqueado) no hace nada
+function alHacerClicEnLaLista(evento) {
+  const boton = evento.target.closest('button');
+  if (!boton || boton.disabled) return;
+  const { registrar, editar, eliminar, pagina, direccion } = boton.dataset;
+  if (pagina !== undefined) irAPagina(Number(pagina), direccion);
+  else if (registrar !== undefined) marcarActualizado(Number(registrar));
+  else if (editar !== undefined) editDataset(Number(editar));
+  else if (eliminar !== undefined) openDeleteModal(Number(eliminar), tituloDelDataset(eliminar));
+}
+
+function tituloDelDataset(id) {
+  return datasets.find((d) => String(d.id) === String(id))?.titulo ?? '';
+}
+
+/**
+ * Vuelve a pedir los datasets y los pendientes, y pinta la lista con el mismo filtro, la misma búsqueda y la misma página.
+ * Se usa al abrir la página y después de cada cambio propuesto (spec 8.6, arreglo 2).
+ */
+async function recargarLista() {
+  try {
+    const [lista, pendientes] = await Promise.all([
+      API.getDatasets(),
+      puedeAdministrar
+        ? API.getDatasetsConPendientes().catch((error) => {
+          console.error('Error cargando los datasets con cambios pendientes:', error);
+          return [];
+        })
+        : []
+    ]);
+    datasets = [...lista].sort((a, b) => String(a.titulo ?? '').localeCompare(String(b.titulo ?? '')));
+    datasetsConPendientes = new Set(Array.from(Array.isArray(pendientes) ? pendientes : [], (id) => String(id)));
+    errorDeCarga = null;
+  } catch (error) {
+    console.error('Error cargando datasets:', error);
+    const mensaje = 'No se pudieron cargar los datasets. Recargá la página para intentar de nuevo.';
+    // Si ya había una lista, queda la que estaba
+    if (datasets.length) avisarError(mensaje);
+    else errorDeCarga = mensaje;
+  }
+  pintarTiposDePedido();
+  pintarLista();
+}
+
+function pintarTiposDePedido() {
+  const selector = document.getElementById('filtro-tipo');
+  selector.innerHTML = opcionesDeTipoPedido(datasets, estadoDeLista.tipo);
+  // Si ningún dataset tiene ya el tipo elegido, el selector vuelve a "Todos" y el filtro también
+  estadoDeLista.tipo = selector.value;
+}
+
+function pintarLista() {
+  const vista = vistaDeLista(datasets, estadoDeLista, datasetsConPendientes);
+  estadoDeLista.pagina = vista.pagina;
+  pintarFiltros(vista.cuentas);
+
+  let mensajeVacio = 'Ningún dataset coincide con la búsqueda y los filtros.';
+  if (errorDeCarga) mensajeVacio = errorDeCarga;
+  else if (datasets.length === 0) mensajeVacio = 'Todavía no hay datasets.';
+  const { filas, tarjetas } = htmlDeLaLista(errorDeCarga ? [] : vista.items, {
+    pendientes: datasetsConPendientes, esAdmin: puedeAdministrar, hoy: hoyEnArgentina(), mensajeVacio
+  });
+  document.getElementById('filas-datasets').innerHTML = filas;
+  document.getElementById('tarjetas-datasets').innerHTML = tarjetas;
+  document.getElementById('resumen-lista').textContent = errorDeCarga ? '' : textoDelResumen(vista);
+  document.getElementById('controles-pagina').innerHTML = errorDeCarga ? '' : htmlDeControlesDePagina(vista);
+}
+
+// Los botones se actualizan en su lugar (no se rearman): el que tiene el foco lo conserva
+function pintarFiltros(cuentas) {
+  const estados = estadoDeFiltros(cuentas, estadoDeLista.filtro, puedeAdministrar);
+  for (const boton of document.querySelectorAll('#filtros-estado [data-filtro]')) {
+    const estado = estados[boton.dataset.filtro];
+    if (!estado) continue;
+    boton.setAttribute('aria-pressed', String(estado.presionado));
+    boton.hidden = !estado.visible;
+    boton.querySelector('b').textContent = estado.cuenta;
+  }
+}
+
+function irAPagina(pagina, direccion) {
+  estadoDeLista.pagina = pagina;
+  pintarLista();
+  const sinMovimiento = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.getElementById('lista-datasets').scrollIntoView({ behavior: sinMovimiento ? 'auto' : 'smooth', block: 'start' });
+  // Los botones se rearmaron: el foco vuelve al mismo (o al otro, si este quedó deshabilitado en la punta)
+  const controles = document.getElementById('controles-pagina');
+  const destino = controles.querySelector(`[data-direccion="${direccion}"]:not(:disabled)`) ?? controles.querySelector('button:not(:disabled)');
+  if (destino) destino.focus({ preventScroll: true });
 }
 
 // =====================================================
@@ -84,19 +389,19 @@ function actualizarSelectAreas() {
 function renderizarChipsFormatos() {
   const container = document.getElementById('chips-container');
   const dropdown = document.getElementById('formato-dropdown');
-  
+
   if (!container || !dropdown) return;
-  
+
   // Separar habituales y no habituales
   const habituales = formatosCatalogo.filter(f => f.habitual === 1);
   const noHabituales = formatosCatalogo.filter(f => f.habitual === 0);
-  
+
   // Renderizar chips habituales
   container.innerHTML = habituales.map(f => {
     const selected = formatosSeleccionados.has(f.id);
     return `
-      <span class="chip ${selected ? 'selected' : ''}" 
-            data-id="${f.id}" 
+      <span class="chip ${selected ? 'selected' : ''}"
+            data-id="${f.id}"
             data-habitual="1"
             onclick="toggleChip(${f.id})">
         <span class="check-icon">✓</span>
@@ -104,13 +409,13 @@ function renderizarChipsFormatos() {
       </span>
     `;
   }).join('');
-  
+
   // Agregar chips de formatos no habituales seleccionados
   noHabituales.forEach(f => {
     if (formatosSeleccionados.has(f.id)) {
       container.innerHTML += `
-        <span class="chip selected" 
-              data-id="${f.id}" 
+        <span class="chip selected"
+              data-id="${f.id}"
               data-habitual="0">
           <span class="check-icon">✓</span>
           ${Utils.escapeHtml(f.nombre)}
@@ -119,7 +424,7 @@ function renderizarChipsFormatos() {
       `;
     }
   });
-  
+
   // Llenar dropdown con formatos no habituales no seleccionados
   dropdown.innerHTML = '<option value="">+ Agregar otro formato...</option>';
   noHabituales.forEach(f => {
@@ -127,7 +432,7 @@ function renderizarChipsFormatos() {
       dropdown.innerHTML += `<option value="${f.id}">${Utils.escapeHtml(f.nombre)}</option>`;
     }
   });
-  
+
   // Event listener para dropdown (solo agregar una vez)
   dropdown.onchange = function() {
     if (this.value) {
@@ -136,7 +441,7 @@ function renderizarChipsFormatos() {
       this.value = '';
     }
   };
-  
+
   // Actualizar estado visual del contenedor
   actualizarEstadoContenedorFormatos();
 }
@@ -179,137 +484,15 @@ function actualizarEstadoContenedorFormatos() {
  */
 function preseleccionarFormatosPorNombre(nombresFormatos) {
   if (!nombresFormatos || !Array.isArray(nombresFormatos)) return;
-  
+
   nombresFormatos.forEach(nombre => {
-    const formato = formatosCatalogo.find(f => 
+    const formato = formatosCatalogo.find(f =>
       f.nombre.toUpperCase() === nombre.toUpperCase()
     );
     if (formato) {
       formatosSeleccionados.add(formato.id);
     }
   });
-}
-
-async function loadDatasets() {
-  try {
-    datasets = await API.getDatasets();
-    // Ordenana alfabéticamente por título
-    datasets.sort((a, b) => a.titulo.localeCompare(b.titulo));
-    paginaActual = 1;
-    renderTable(datasets);
-  } catch (error) {
-    console.error('Error cargando datasets:', error);
-    Utils.showError('Error al cargar los datasets');
-  }
-}
-
-function setupSearch() {
-  const searchInput = document.getElementById('search');
-  let debounceTimer;
-  searchInput.addEventListener('input', () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const term = searchInput.value.toLowerCase();
-      const filtered = datasets.filter(d =>
-        d.titulo.toLowerCase().includes(term) ||
-        (d.area_nombre && d.area_nombre.toLowerCase().includes(term))
-      );
-      paginaActual = 1;
-      renderTable(filtered);
-    }, 300);
-  });
-}
-
-function renderTable(data) {
-  const tbody = document.getElementById('datasets-tbody');
-  ultimosDatosFiltrados = data;
-
-  if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding: 2rem;">No hay datasets</td></tr>';
-    renderPaginacion(0);
-    return;
-  }
-
-  // Paginación
-  const totalPaginas = Math.ceil(data.length / ITEMS_POR_PAGINA);
-  if (paginaActual > totalPaginas) paginaActual = totalPaginas || 1;
-  const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA;
-  const pagina = data.slice(inicio, inicio + ITEMS_POR_PAGINA);
-
-  renderPaginacion(data.length);
-
-  tbody.innerHTML = pagina.map(d => {
-    const estado = Utils.calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-    const estadoTexto = Utils.getEstadoTexto(estado);
-    const estadoClase = Utils.getEstadoClase(estado);
-    
-    let proximaTexto = '-';
-    if (d.frecuencia_dias === null) {
-      proximaTexto = 'Eventual';
-    } else if (d.proxima_actualizacion) {
-      proximaTexto = Utils.formatDate(d.proxima_actualizacion);
-    }
-
-    // Mostrar tipo de gestión con icono Lucide
-    const tipoGestionIcon = d.tipo_gestion === 'interna' 
-    ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #6366f1;"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m16 8-8 8"/><path d="M16 14v-6h-6"/></svg>'
-    : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #f59e0b;"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 16 16 8"/><path d="M8 10V8h6"/></svg>';
-    const tipoGestionTexto = d.tipo_gestion === 'interna' ? 'Interna' : 'Externa';
-
-    // Verificar si tiene cambios pendientes
-    const tienePendientes = datasetEstaBloqueado(d.id);
-    const indicadorPendiente = tienePendientes ? '<span class="indicador-pendiente">🟡 Pendiente</span>' : '';
-    const claseFila = tienePendientes ? 'fila-bloqueada' : '';
-
-    return `
-      <tr class="${claseFila}">
-        <td>
-          <div style="font-weight: 500;">${Utils.escapeHtml(d.titulo)}${indicadorPendiente}</div>
-          <div class="text-small text-muted">${Utils.escapeHtml(d.area_nombre || '-')}</div>
-        </td>
-        <td><span class="badge ${estadoClase}">${estadoTexto}</span></td>
-        <td><span title="${tipoGestionTexto}">${tipoGestionIcon} ${tipoGestionTexto}</span></td>
-        <td>${proximaTexto}</td>
-        <td>
-            <div class="table-actions" style="display: flex; gap: 6px;">
-            ${Auth.isAdmin() ? `
-            <button onclick="marcarActualizado(${d.id})" class="btn btn-success btn-sm" style="${tienePendientes ? 'filter: grayscale(100%); opacity: 0.5; pointer-events: none;' : ''}" title="Marcar actualizado${tienePendientes ? ' (Bloqueado)' : ''}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
-            <button onclick="editDataset(${d.id})" class="btn btn-secondary btn-sm" style="${tienePendientes ? 'filter: grayscale(100%); opacity: 0.5; pointer-events: none;' : ''}" title="Editar${tienePendientes ? ' (Bloqueado)' : ''}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></button>
-            <button onclick="openDeleteModal(${d.id}, ${Utils.jsArg(d.titulo)})" class="btn btn-danger btn-sm" style="${tienePendientes ? 'filter: grayscale(100%); opacity: 0.5; pointer-events: none;' : ''}" title="Eliminar${tienePendientes ? ' (Bloqueado)' : ''}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg></button>
-            ` : '<span class="text-muted text-small">Solo lectura</span>'}
-            </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-// =====================================================
-// PAGINACIÓN
-// =====================================================
-
-function renderPaginacion(totalItems) {
-  const el = document.getElementById('datasets-paginacion');
-  if (!el) return;
-  if (totalItems <= ITEMS_POR_PAGINA) { el.style.display = 'none'; return; }
-  el.style.display = 'flex';
-  const totalPaginas = Math.ceil(totalItems / ITEMS_POR_PAGINA);
-  const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA + 1;
-  const fin = Math.min(paginaActual * ITEMS_POR_PAGINA, totalItems);
-  el.innerHTML = `
-    <span class="pag-info">Mostrando ${inicio}–${fin} de ${totalItems}</span>
-    <div class="pag-controls">
-      <button class="pag-btn" ${paginaActual <= 1 ? 'disabled' : ''} onclick="cambiarPagina(-1)">&#8249; Anterior</button>
-      <span class="pag-pagina">Pag. ${paginaActual} de ${totalPaginas}</span>
-      <button class="pag-btn" ${paginaActual >= totalPaginas ? 'disabled' : ''} onclick="cambiarPagina(1)">Siguiente &#8250;</button>
-    </div>
-  `;
-}
-
-function cambiarPagina(dir) {
-  paginaActual += dir;
-  renderTable(ultimosDatosFiltrados);
-  document.querySelector('.table-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // =====================================================
@@ -324,7 +507,7 @@ function openStep1Modal() {
   document.getElementById('step1-loading').classList.add('hidden');
   document.getElementById('btn-siguiente').disabled = false;
   document.getElementById('modal-step1').classList.add('active');
-  
+
   // Focus en el campo URL
   setTimeout(() => document.getElementById('andino-url').focus(), 100);
 }
@@ -371,7 +554,7 @@ async function fetchAndContinue() {
       errorDiv.innerHTML = `
         <strong>⚠️ Error de importación</strong><br>
         ${Utils.escapeHtml(result.error || 'No se pudo obtener información del portal')}<br>
-        <span class="text-small">Puede continuar con la carga manual haciendo clic en "Carga manual".</span>
+        <span class="ad-chico">Puede continuar con la carga manual haciendo clic en "Carga manual".</span>
       `;
       errorDiv.classList.remove('hidden');
       return;
@@ -415,7 +598,11 @@ function openModal(dataset = null, andinoData = null) {
   form.reset();
   document.getElementById('dataset-id').value = '';
   currentEditDataset = null;
-  
+
+  // El aviso de "no realizaste ningún cambio" es del intento anterior: se limpia al abrir (spec 8.6, arreglo 6)
+  const avisoSinCambios = document.getElementById('modal-form-error');
+  if (avisoSinCambios) avisoSinCambios.style.display = 'none';
+
   // Resetear formatos seleccionados
   formatosSeleccionados.clear();
 
@@ -439,12 +626,12 @@ function openModal(dataset = null, andinoData = null) {
     document.getElementById('observaciones').value = dataset.observaciones || '';
     document.getElementById('que_se_solicita').value = dataset.que_se_solicita || '';
     document.getElementById('tipo_gestion').value = dataset.tipo_gestion || '';
-    
+
     // Cargar formatos existentes
     if (dataset.formatos_array && Array.isArray(dataset.formatos_array)) {
       dataset.formatos_array.forEach(f => formatosSeleccionados.add(f.id));
     }
-    
+
     // Mostrar botón de actualizar desde portal si tiene URL
     if (dataset.url_dataset && dataset.url_dataset.includes('datos.comodoro.gov.ar')) {
       andinoUpdateSection.classList.remove('hidden');
@@ -455,18 +642,18 @@ function openModal(dataset = null, andinoData = null) {
     // MODO NUEVO
     title.textContent = 'Nuevo Dataset - Paso 2';
     andinoUpdateSection.classList.add('hidden');
-    
+
     // Si hay datos de Andino, pre-llenar
     if (andinoData) {
       document.getElementById('titulo').value = andinoData.titulo || '';
       document.getElementById('descripcion').value = andinoData.descripcion || '';
       document.getElementById('url_dataset').value = andinoData.url_dataset || '';
-      
+
       // Pre-seleccionar formatos importados de Andino
       if (andinoData.formatos && Array.isArray(andinoData.formatos)) {
         preseleccionarFormatosPorNombre(andinoData.formatos);
       }
-      
+
       // Mostrar área de referencia de Andino
       if (andinoAreaReferencia) {
         document.getElementById('andino-area-texto').textContent = andinoAreaReferencia;
@@ -477,7 +664,7 @@ function openModal(dataset = null, andinoData = null) {
 
   // Renderizar chips de formatos
   renderizarChipsFormatos();
-  
+
   modal.classList.add('active');
 }
 
@@ -501,7 +688,7 @@ async function editDataset(id) {
     }
   } catch (error) {
     console.error('Error cargando dataset:', error);
-    Utils.showError('Error al cargar el dataset');
+    avisarError('Error al cargar el dataset');
   }
 }
 
@@ -513,7 +700,7 @@ function updateFromAndino() {
   // Verificar que hay URL del dataset
   const url = document.getElementById('url_dataset').value.trim();
   if (!url || !url.includes('datos.comodoro.gov.ar')) {
-    Utils.showError('No hay una URL válida del portal para actualizar');
+    avisarError('No hay una URL válida del portal para actualizar');
     return;
   }
 
@@ -564,8 +751,8 @@ async function confirmUpdateFromAndino() {
 
     // Cerrar modal de confirmación
     closeConfirmUpdateModal();
-    
-    Utils.showSuccess('Datos actualizados desde el portal. Recuerde guardar los cambios.');
+
+    avisarExito('Datos actualizados desde el portal. Recordá guardar los cambios.');
 
   } catch (error) {
     console.error('Error actualizando desde Andino:', error);
@@ -608,17 +795,17 @@ async function saveQuickArea() {
 
   try {
     const nuevaArea = await API.createArea({ nombre });
-    
+
     // Agregar al array local y actualizar select
     areas.push(nuevaArea);
     areas.sort((a, b) => a.nombre.localeCompare(b.nombre));
     actualizarSelectAreas();
-    
+
     // Seleccionar la nueva área
     document.getElementById('area_id').value = nuevaArea.id;
-    
+
     closeQuickAreaModal();
-    Utils.showSuccess('Área creada correctamente');
+    avisarExito('Área creada correctamente');
   } catch (error) {
     errorDiv.textContent = error.message;
     errorDiv.classList.remove('hidden');
@@ -629,19 +816,19 @@ async function saveQuickArea() {
 }
 
 // =====================================================
-// SUBMIT FORMULARIO
+// SUBMIT FORMULARIO (se registra en DOMContentLoaded)
 // =====================================================
 
-document.getElementById('dataset-form').addEventListener('submit', async (e) => {
+async function enviarFormulario(e) {
   e.preventDefault();
-  
+
   // Validar que hay al menos un formato seleccionado
   if (formatosSeleccionados.size === 0) {
-    Utils.showError('Debe seleccionar al menos un formato');
+    avisarError('Debe seleccionar al menos un formato');
     actualizarEstadoContenedorFormatos();
     return;
   }
-  
+
   const submitBtn = document.getElementById('submit-btn');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Guardando...';
@@ -666,14 +853,14 @@ document.getElementById('dataset-form').addEventListener('submit', async (e) => 
   try {
     if (id) {
       await API.updateDataset(id, data);
-      Utils.showSuccess('Cambios enviados para aprobación');
+      avisarExito('Cambios enviados para aprobación');
     } else {
       await API.createDataset(data);
-      Utils.showSuccess('Dataset enviado para aprobación');
+      avisarExito('Dataset enviado para aprobación');
     }
     closeModal();
-    await loadDatasets();
-    await cargarIndicadoresPendientes();
+    // La lista y los pendientes se vuelven a pedir, con el mismo filtro, búsqueda y página
+    await recargarLista();
   } catch (error) {
     // Mensaje especial si no hubo cambios reales - mostrar dentro del modal
     if (error.message && error.message.includes('No se detectaron cambios')) {
@@ -690,22 +877,26 @@ document.getElementById('dataset-form').addEventListener('submit', async (e) => 
       errorDiv.innerHTML = '⚠️ No realizaste ningún cambio. Modificá al menos un campo para guardar.';
       errorDiv.style.display = 'flex';
       // Scroll al inicio del modal para ver el error
-      document.querySelector('.modal-body').scrollTop = 0;
+      document.querySelector('#modal-dataset .modal-body').scrollTop = 0;
     } else {
-      Utils.showError(error.message);
+      avisarError(error.message);
     }
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Guardar';
   }
-});
+}
 
 // =====================================================
 // MARCAR ACTUALIZADO
 // =====================================================
 
 async function marcarActualizado(id) {
-  // Abrir modal en lugar de registrar directamente
+  // El bloqueo se verifica antes de abrir, no solo con el botón deshabilitado (spec 8.6, arreglo 4)
+  if (datasetEstaBloqueado(id)) {
+    mostrarMensajeBloqueo();
+    return;
+  }
   await abrirRegistrarActualizacion(id);
 }
 
@@ -735,12 +926,11 @@ async function confirmDelete() {
 
   try {
     await API.deleteDataset(deleteId);
-    Utils.showSuccess('Solicitud de eliminación enviada para aprobación');
+    avisarExito('Solicitud de eliminación enviada para aprobación');
     closeDeleteModal();
-    await loadDatasets();
-    await cargarIndicadoresPendientes();
+    await recargarLista();
   } catch (error) {
-    Utils.showError(error.message);
+    avisarError(error.message);
   }
 }
 
@@ -749,50 +939,17 @@ async function confirmDelete() {
 // =====================================================
 
 /**
- * Carga indicadores de cambios pendientes
- */
-async function cargarIndicadoresPendientes() {
-  try {
-    // Obtener contador para badge
-    const { cantidad } = await API.getContadorPendientes();
-    const badge = document.getElementById('nav-badge-pendientes');
-    if (badge) {
-      if (cantidad > 0) {
-        badge.textContent = cantidad;
-        badge.style.display = 'inline';
-      } else {
-        badge.style.display = 'none';
-      }
-    }
-
-    // Obtener datasets bloqueados
-    datasetsConPendientes = await API.getDatasetsConPendientes();
-    
-    // Re-renderizar tabla si ya hay datos
-    if (datasets.length > 0) {
-      const searchTerm = document.getElementById('search').value.toLowerCase();
-      const filtered = searchTerm 
-        ? datasets.filter(d => d.titulo.toLowerCase().includes(searchTerm) || (d.area_nombre && d.area_nombre.toLowerCase().includes(searchTerm)))
-        : datasets;
-      renderTable(filtered);
-    }
-  } catch (error) {
-    console.error('Error cargando indicadores de pendientes:', error);
-  }
-}
-
-/**
  * Verifica si un dataset está bloqueado por cambios pendientes
  */
 function datasetEstaBloqueado(id) {
-  return datasetsConPendientes.includes(id);
+  return datasetsConPendientes.has(String(id));
 }
 
 /**
  * Muestra mensaje de bloqueo
  */
 function mostrarMensajeBloqueo() {
-  Utils.showError('Este dataset tiene cambios pendientes de aprobación. No se puede modificar hasta que se resuelvan.');
+  avisarError('Este dataset tiene cambios pendientes de aprobación. No se puede modificar hasta que se resuelvan.');
 }
 
 // =====================================================
@@ -807,7 +964,7 @@ async function abrirRegistrarActualizacion(id) {
     // Obtener datos completos del dataset
     const dataset = await API.getDataset(id);
     if (!dataset) {
-      Utils.showError('No se pudo cargar el dataset');
+      avisarError('No se pudo cargar el dataset');
       return;
     }
 
@@ -821,50 +978,23 @@ async function abrirRegistrarActualizacion(id) {
     // Llenar datos informativos
     document.getElementById('registrar-dataset-titulo').textContent = dataset.titulo;
     document.getElementById('registrar-frecuencia').textContent = frecuencia ? frecuencia.nombre : '-';
-    document.getElementById('registrar-proxima-actual').textContent = 
-      dataset.proxima_actualizacion ? Utils.formatDate(dataset.proxima_actualizacion) : '-';
+    document.getElementById('registrar-proxima-actual').textContent = fechaCorta(dataset.proxima_actualizacion);
 
-    // Proponer fecha de actualización = hoy
-    const hoy = new Date().toISOString().split('T')[0];
-    document.getElementById('registrar-ultima').value = hoy;
+    // Proponer fecha de actualización = hoy (en Argentina)
+    document.getElementById('registrar-ultima').value = hoyEnArgentina();
 
-    // Calcular próxima propuesta
+    // La próxima la elige quien registra (sin frecuencia eventual)
     const proximaGroup = document.getElementById('registrar-proxima-group');
-    if (esEventual) {
-      // Frecuencia eventual: ocultar campo de próxima
-      proximaGroup.style.display = 'none';
-      document.getElementById('registrar-proxima').value = '';
-    } else {
-      proximaGroup.style.display = 'block';
-      const proximaPropuesta = calcularProximaPropuesta(dataset.proxima_actualizacion, frecuencia.dias);
-      document.getElementById('registrar-proxima').value = proximaPropuesta;
-    }
+    proximaGroup.style.display = esEventual ? 'none' : 'block';
+    document.getElementById('registrar-proxima').value = '';
 
     // Mostrar modal
     document.getElementById('modal-registrar-actualizacion').classList.add('active');
 
   } catch (error) {
     console.error('Error abriendo modal:', error);
-    Utils.showError('Error al cargar datos del dataset');
+    avisarError('Error al cargar datos del dataset');
   }
-}
-
-/**
- * Calcula la próxima fecha propuesta sumando días de frecuencia a la próxima actual
- */
-function calcularProximaPropuesta(proximaActual, diasFrecuencia) {
-  if (!proximaActual || !diasFrecuencia) return '';
-  
-  // Parsear fecha evitando problemas de timezone
-  const partes = proximaActual.split('T')[0].split('-');
-  const proxima = new Date(partes[0], partes[1] - 1, partes[2]);
-  proxima.setDate(proxima.getDate() + diasFrecuencia);
-  
-  // Formatear como YYYY-MM-DD
-  const anio = proxima.getFullYear();
-  const mes = String(proxima.getMonth() + 1).padStart(2, '0');
-  const dia = String(proxima.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
 }
 
 function closeRegistrarActualizacionModal() {
@@ -888,12 +1018,13 @@ async function confirmarRegistrarActualizacion() {
       fecha_actualizacion: fechaActualizacion,
       proxima_actualizacion: proximaActualizacion
     });
-    
-    Utils.showSuccess('Actualización registrada correctamente');
+
+    avisarExito('Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.');
     closeRegistrarActualizacionModal();
-    await loadDatasets();
+    // La fila pasa a "Cambio pendiente": se vuelven a pedir la lista y los pendientes (spec 8.6, arreglo 2)
+    await recargarLista();
   } catch (error) {
-    Utils.showError(error.message);
+    avisarError(error.message);
   } finally {
     btnConfirmar.disabled = false;
     btnConfirmar.innerHTML = '<span>✔</span> Registrar';
