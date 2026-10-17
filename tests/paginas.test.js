@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const VERSION = '20261023';
+const VERSION = '20261103';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte): su versión es propia
 const VERSION_PANTALLAS = '20261024';
 // correos.js cambió después (Correos en pestañas): su versión es propia

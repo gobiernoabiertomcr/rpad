@@ -69,6 +69,35 @@ async registrarActualizacion(id, datos = {}) {
     return data.data;
   },
 
+  // Qué datos pide la nota para un tipo, una frecuencia en meses y una próxima (vista previa del formulario).
+  // Devuelve { pedido }; los parámetros vacíos no se mandan
+  async calculoPedido({ tipo, meses, proxima, datos_al } = {}) {
+    const params = new URLSearchParams();
+    if (tipo) params.append('tipo', tipo);
+    if (meses !== undefined && meses !== null && meses !== '') params.append('meses', meses);
+    if (proxima) params.append('proxima', proxima);
+    if (datos_al) params.append('datos_al', datos_al);
+
+    const response = await fetch(`${CONFIG.API_URL}/datasets/calculo-pedido?${params.toString()}`, {
+      headers: Auth.getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Error al calcular el pedido');
+    return data.data;
+  },
+
+  // Las próximas que se pueden elegir al registrar una actualización con datos al datosAl ('AAAA-MM-DD').
+  // Devuelve { pedido, opciones }
+  async opcionesDeProxima(id, datosAl) {
+    const params = new URLSearchParams({ datos_al: datosAl ?? '' });
+    const response = await fetch(`${CONFIG.API_URL}/datasets/${id}/opciones-proxima?${params.toString()}`, {
+      headers: Auth.getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Error al calcular las opciones de la próxima actualización');
+    return data.data;
+  },
+
   // === CATÁLOGOS ===
   async getTemas() {
     const response = await fetch(`${CONFIG.API_URL}/catalogos/temas`);

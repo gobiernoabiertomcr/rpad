@@ -1,5 +1,9 @@
 import pool from '../config/database.js';
 import { crearCambioPendiente, datasetTieneCambiosPendientes } from './cambiosPendientesController.js';
+import { esFechaIso, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import {
+  TIPOS_PEDIDO, esFinDeMes, estadoDelDataset, opcionesDeProxima, pedido as pedidoDe, tipoEfectivo, topeDatosAl
+} from '../services/fechasDatasetReglas.js';
 
 // Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
 const responderBloqueado = (res, accion) => res.status(409).json({
@@ -100,6 +104,9 @@ const DATASET_SELECT_QUERY = `
     d.*,
     f.nombre AS frecuencia_nombre,
     f.dias AS frecuencia_dias,
+    f.meses AS frecuencia_meses,
+    DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima_iso,
+    DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al_iso,
     tp.nombre AS tema_principal_nombre,
     ts.nombre AS tema_secundario_nombre,
     a.nombre AS area_nombre,
@@ -150,6 +157,30 @@ function calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion = 'ext
   return 'actualizado';
 }
 
+/**
+ * Suma a la fila de un dataset lo que calculan las reglas de las fechas (spec 2026-10-17-fechas-datasets, 10.1): Datos al,
+ * el tipo de pedido (efectivo y guardado), la frecuencia en meses, el pedido y el estado. Las fechas nuevas viajan como
+ * 'AAAA-MM-DD' (DATE_FORMAT en el SELECT) y las reglas leen la próxima de esa misma columna; proxima_actualizacion y
+ * ultima_actualizacion siguen como vienen de d.*. Un dataset con una fecha mala o sin fecha da pedido null, nunca falla.
+ * hoy es la fecha de Argentina ('AAAA-MM-DD').
+ */
+const enriquecer = (fila, hoy) => {
+  const { proxima_iso: proxima, datos_al_iso: datosAl, ...resto } = fila;
+  const meses = fila.frecuencia_meses ?? null;
+  const tipo = tipoEfectivo({ tipo_pedido: fila.tipo_pedido, tipo_gestion: fila.tipo_gestion, meses });
+  const { estado, dias } = estadoDelDataset({ proxima, meses, tipoGestion: fila.tipo_gestion, hoy });
+  return {
+    ...resto,
+    datos_al: datosAl,
+    tipo_pedido: tipo,
+    tipo_pedido_guardado: fila.tipo_pedido,
+    frecuencia_meses: meses,
+    pedido: pedidoDe({ vencimiento: proxima, tipo, datosAl, meses, hoy }),
+    estado,
+    dias_para_vencer: dias
+  };
+};
+
 // Obtener todos los datasets
 export const getDatasets = async (req, res) => {
   try {
@@ -190,9 +221,10 @@ export const getDatasets = async (req, res) => {
       });
     }
 
+    const hoy = hoyArgentina();
     res.json({
       success: true,
-      data: datasets
+      data: datasets.map(d => enriquecer(d, hoy))
     });
   } catch (error) {
     console.error('Error obteniendo datasets:', error);
@@ -220,8 +252,8 @@ export const getDatasetById = async (req, res) => {
       });
     }
 
-    const dataset = rows[0];
-    
+    const dataset = enriquecer(rows[0], hoyArgentina());
+
     // Obtener formatos como array de objetos (para edición)
     const [formatosRows] = await pool.execute(
       `SELECT f.id, f.nombre 
@@ -243,6 +275,87 @@ export const getDatasetById = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error al obtener el dataset'
+    });
+  }
+};
+
+// Parámetro opcional de la URL: ausente o vacío es null; cualquier otra cosa se devuelve tal cual para validarla
+const parametroOpcional = (valor) => (valor === undefined || valor === '' ? null : valor);
+
+// La frecuencia en meses de la URL: null si falta o viene vacía, NaN si no es un número entero positivo
+const mesesDeLaUrl = (valor) => {
+  const texto = parametroOpcional(valor);
+  if (texto === null) return null;
+  return typeof texto === 'string' && /^\d{1,4}$/.test(texto) && Number(texto) > 0 ? Number(texto) : NaN;
+};
+
+const responderInvalido = (res, error) => res.status(400).json({ success: false, error });
+
+/**
+ * Qué datos pide la nota para un tipo de pedido, una frecuencia en meses y una próxima (spec 10.2). No guarda nada: es
+ * la vista previa del formulario y sirve también para un alta, que todavía no tiene id. Meses, próxima y datos_al
+ * pueden faltar (vacío es null); sin próxima, o con un tipo que no pide período, el pedido da null.
+ */
+export const getCalculoPedido = (req, res) => {
+  const { tipo } = req.query;
+  if (!TIPOS_PEDIDO.includes(tipo)) return responderInvalido(res, 'El tipo de pedido no es válido');
+
+  const meses = mesesDeLaUrl(req.query.meses);
+  if (Number.isNaN(meses)) return responderInvalido(res, 'La frecuencia en meses tiene que ser un número entero positivo');
+
+  const vencimiento = parametroOpcional(req.query.proxima);
+  if (vencimiento !== null && !esFechaIso(vencimiento)) {
+    return responderInvalido(res, 'La próxima actualización tiene que ser una fecha válida (AAAA-MM-DD)');
+  }
+  const datosAl = parametroOpcional(req.query.datos_al);
+  if (datosAl !== null && !esFechaIso(datosAl)) {
+    return responderInvalido(res, 'Datos al tiene que ser una fecha válida (AAAA-MM-DD)');
+  }
+
+  res.json({
+    success: true,
+    data: { pedido: pedidoDe({ vencimiento, tipo, datosAl, meses, hoy: hoyArgentina() }) }
+  });
+};
+
+/**
+ * Las próximas que se pueden elegir al registrar una actualización de este dataset con datos al datos_al (spec 10.2):
+ * { pedido, opciones }. El pedido es el del vencimiento actual, con los datos que el dataset ya tiene publicados.
+ */
+export const getOpcionesProxima = async (req, res) => {
+  try {
+    const [filas] = await pool.execute(DATASET_SELECT_QUERY + ' AND d.id = ? GROUP BY d.id', [req.params.id]);
+    if (filas.length === 0) {
+      return res.status(404).json({ success: false, error: 'Dataset no encontrado' });
+    }
+
+    const datosNuevo = req.query.datos_al;
+    if (!esFechaIso(datosNuevo)) return responderInvalido(res, 'Datos al tiene que ser una fecha válida (AAAA-MM-DD)');
+    if (!esFinDeMes(datosNuevo)) {
+      return responderInvalido(res, 'Datos al tiene que ser el último día de un mes (febrero, el 28)');
+    }
+
+    const hoy = hoyArgentina();
+    const dataset = enriquecer(filas[0], hoy);
+    // Con datos de un futuro lejano la lista de opciones recorrería años de ciclos: el tope es el de la carga del dato
+    if (datosNuevo > topeDatosAl(dataset.tipo_pedido, hoy)) {
+      return responderInvalido(res, `Todavía no puede haber datos al ${formatoCorto(datosNuevo)}`);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        pedido: dataset.pedido,
+        opciones: opcionesDeProxima({
+          vencimiento: filas[0].proxima_iso, tipo: dataset.tipo_pedido, meses: dataset.frecuencia_meses, datosNuevo, hoy
+        })
+      }
+    });
+  } catch (error) {
+    console.error('Error calculando las opciones de la próxima actualización:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al calcular las opciones de la próxima actualización'
     });
   }
 };

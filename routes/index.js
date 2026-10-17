@@ -14,7 +14,9 @@ import {
   updateDataset,
   deleteDataset,
   getEstadisticas,
-  registrarActualizacion
+  registrarActualizacion,
+  getCalculoPedido,
+  getOpcionesProxima
 } from '../controllers/datasetController.js';
 import { getTemas, getFrecuencias, getFormatos } from '../controllers/catalogController.js';
 import { fetchFromAndino } from '../controllers/andinoController.js';
@@ -126,6 +128,8 @@ router.post('/auth/establecer-contrasena', limiteLinkDeAcceso, establecerContras
 // Datasets (lectura)
 router.get('/datasets', getDatasets);
 router.get('/datasets/estadisticas', getEstadisticas);
+// Cálculo para la pantalla de admin (esta ruta no es pública). Va antes de /datasets/:id, que si no la tomaría por un id
+router.get('/datasets/calculo-pedido', authMiddleware, adminOnly, getCalculoPedido);
 router.get('/datasets/:id', getDatasetById);
 
 // Catálogos
@@ -165,6 +169,7 @@ router.post('/datasets', authMiddleware, adminOnly, createDataset);
 router.put('/datasets/:id', authMiddleware, adminOnly, updateDataset);
 router.delete('/datasets/:id', authMiddleware, adminOnly, deleteDataset);
 router.post('/datasets/:id/actualizar', authMiddleware, adminOnly, registrarActualizacion);
+router.get('/datasets/:id/opciones-proxima', authMiddleware, adminOnly, getOpcionesProxima);
 
 // Áreas (escritura - solo admin)
 router.post('/areas', authMiddleware, adminOnly, createArea);
