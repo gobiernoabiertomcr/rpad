@@ -207,6 +207,42 @@ describe('perfil.js: comparación palabra por palabra', () => {
     ]);
   });
 
+  // Cada bloque de cambio es un solo quitado seguido de un solo agregado: nunca dos cambios separados solo por espacios, ni
+  // un agregado antes de un quitado. Y lo quitado + lo igual reconstruye el texto de antes; lo agregado + lo igual, el de después.
+  const comprobarBloques = (segmentos, antes, despues) => {
+    segmentos.forEach((segmento, i) => {
+      const [anterior, siguiente] = [segmentos[i - 1], segmentos[i + 1]];
+      if (segmento.tipo === '=' && /^\s+$/.test(segmento.texto)) {
+        assert.ok(!(anterior && anterior.tipo !== '=' && siguiente && siguiente.tipo !== '='), `espacios entre dos cambios: ${JSON.stringify(segmentos)}`);
+      }
+      if (segmento.tipo === '+') assert.notEqual(siguiente?.tipo, '-', `un agregado antes de un quitado: ${JSON.stringify(segmentos)}`);
+      if (segmento.tipo !== '=') assert.notEqual(siguiente?.tipo, segmento.tipo, `dos segmentos seguidos del mismo tipo: ${JSON.stringify(segmentos)}`);
+    });
+    assert.equal(segmentos.filter(s => s.tipo !== '+').map(s => s.texto).join(''), antes);
+    assert.equal(segmentos.filter(s => s.tipo !== '-').map(s => s.texto).join(''), despues);
+  };
+
+  it('varias palabras cambiadas no alternan palabra por palabra: los espacios entre cambios se suman al cambio', () => {
+    const segmentos = diff('Datos de los locales', 'Listado actualizado de locales');
+    assert.deepEqual(segmentos, [{ tipo: '-', texto: 'Datos de los' }, { tipo: '+', texto: 'Listado actualizado de' }, { tipo: '=', texto: ' locales' }]);
+    comprobarBloques(segmentos, 'Datos de los locales', 'Listado actualizado de locales');
+  });
+
+  it('la limpieza de los espacios vale para cualquier par de textos y no toca lo que ya era legible', () => {
+    for (const [antes, despues] of [
+      ['Datos de los locales', 'Listado actualizado de locales'],
+      ['El censo de árboles del año 2024 en la zona norte.', 'El relevamiento de arbolado del año 2025 en la zona sur.'],
+      ['uno dos tres cuatro', 'cinco seis siete ocho'],
+      ['Se publica cada mes, con corte semestral.', 'Se publica cada tres meses; corte trimestral y anual.'],
+      ['a b c', 'a x c'], ['', 'texto nuevo'], ['viejo', ''], ['mismo texto', 'mismo texto']
+    ]) {
+      comprobarBloques(diff(antes, despues), antes, despues);
+    }
+    // Un igual de espacios con un cambio de un solo lado (al principio o al final) queda como igual
+    assert.deepEqual(diff(' x', ' y'), [{ tipo: '=', texto: ' ' }, { tipo: '-', texto: 'x' }, { tipo: '+', texto: 'y' }]);
+    assert.deepEqual(diff('x ', 'y '), [{ tipo: '-', texto: 'x' }, { tipo: '+', texto: 'y' }, { tipo: '=', texto: ' ' }]);
+  });
+
   it('htmlDeDiff: lo igual tal cual, lo quitado en <del>, lo agregado en <ins>, todo escapado', () => {
     assert.equal(
       contexto.htmlDeDiff([{ tipo: '=', texto: 'a <b> ' }, { tipo: '-', texto: 'x' }, { tipo: '+', texto: 'y' }]),
@@ -289,6 +325,13 @@ describe('perfil.js: resumen de la fila cerrada', () => {
     assert.equal(resumen({ tipo_cambio: 'editar' }), 'Sin cambios en los campos principales');
   });
 
+  it('ignora los elementos nulos de la lista de campos', () => {
+    assert.equal(resumen(editar([null, { campo: 'Frecuencia', antes: 'A', despues: 'B' }])), '<b>Frecuencia</b> de A a B');
+    assert.equal(resumen(editar([null, FRECUENCIA, undefined, { campo: 'Tipo de Gestion', antes: 'interna', despues: 'externa' }])),
+      '<b>Frecuencia</b> de Anualmente a Cada medio año, y 1 campo más');
+    assert.equal(resumen(editar([null])), 'Sin cambios en los campos principales');
+  });
+
   it('crear: "Dataset nuevo de {área}, {frecuencia en minúscula}", con lo que haya, escapado', () => {
     assert.equal(resumen({ tipo_cambio: 'crear', datos_nuevos: { area_nombre: 'Ambiente', frecuencia_nombre: 'Anualmente' } }), 'Dataset nuevo de Ambiente, anualmente');
     assert.equal(resumen({ tipo_cambio: 'crear', datos_nuevos: { area_nombre: 'Ambiente' } }), 'Dataset nuevo de Ambiente');
@@ -319,6 +362,12 @@ describe('perfil.js: marca del editor', () => {
     assert.ok(html.includes('class="pf-marca"'));
     assert.ok(!html.includes('pf-marca-respaldo'));
     assert.ok(marca({ puede: false, respaldo: false, auditan: ['<b>Ana</b>'] }).includes('Lo auditan &lt;b&gt;Ana&lt;/b&gt;'));
+  });
+
+  it('quiénes lo auditan también lleva el escudo (spec 5)', () => {
+    const html = marca({ puede: false, respaldo: false, auditan: ['Ana'] });
+    assert.ok(html.startsWith('<span class="pf-marca"><svg'));
+    assert.ok(html.endsWith('Lo auditan Ana</span>'));
   });
 
   it('sin ser editor, sin auditoría, ya resuelto o sin nadie que nombrar, no hay marca', () => {
@@ -448,6 +497,16 @@ describe('perfil.html: pestañas', () => {
     assert.match(PAGINA, /\.alert-error\s*\{[^}]*#FBEEEE[^}]*#EFCACA[^}]*#8A3434/i);
     assert.match(PAGINA, /@media \(prefers-reduced-motion: reduce\)/);
   });
+
+  it('una región fija anuncia lo que pasó al aprobar o rechazar, y la lista de Para revisar puede recibir el foco', () => {
+    assert.ok(PAGINA.includes('<div id="anuncio-cambios" class="pf-solo-lector" aria-live="polite"></div>'));
+    // Fuera de los paneles, que se ocultan: siempre está en la página
+    assert.ok(posicion('id="anuncio-cambios"') > posicion('id="message-container"'));
+    assert.ok(posicion('id="anuncio-cambios"') < posicion('id="pestanas-perfil"'));
+    // Visualmente oculta, pero la leen los lectores de pantalla
+    assert.match(PAGINA, /\.pf-solo-lector\s*\{[^}]*position:\s*absolute;[^}]*width:\s*1px;[^}]*height:\s*1px;[^}]*overflow:\s*hidden;[^}]*clip:/);
+    assert.match(etiqueta('lista-para-revisar'), /tabindex="-1"/);
+  });
 });
 
 // Las pestañas por dentro: elementos falsos que guardan lo que el script les hace
@@ -492,11 +551,11 @@ describe('perfil.js: cambiar de pestaña', () => {
   });
 
   describe('teclado en la barra', () => {
-    const teclear = (desde, key) => {
+    const teclear = (desde, key, modificadores = {}) => {
       const { elementos, estado, contexto } = armar();
       contexto.mostrarPestana(desde);
       let frenada = false;
-      contexto.teclaEnPestanas({ key, target: elementos[`pestana-${desde}`], preventDefault() { frenada = true; } });
+      contexto.teclaEnPestanas({ key, ...modificadores, target: elementos[`pestana-${desde}`], preventDefault() { frenada = true; } });
       return { elementos, estado, frenada };
     };
 
@@ -530,6 +589,17 @@ describe('perfil.js: cambiar de pestaña', () => {
         assert.equal(frenada, false, key);
       }
     });
+
+    it('con Alt, Ctrl o Cmd no hace nada ni frena la tecla: son atajos del navegador (Alt+flecha izquierda vuelve atrás)', () => {
+      for (const modificador of ['altKey', 'ctrlKey', 'metaKey']) {
+        for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+          const { elementos, estado, frenada } = teclear('mis-datos', key, { [modificador]: true });
+          assert.deepEqual(activas(elementos), ['mis-datos'], `${modificador} ${key}`);
+          assert.equal(estado.enfocada, null, `${modificador} ${key}`);
+          assert.equal(frenada, false, `${modificador} ${key}`);
+        }
+      }
+    });
   });
 
   it('la cuenta de una pestaña: con cambios muestra el número; sin cambios queda oculta y vacía', () => {
@@ -559,6 +629,46 @@ describe('perfil.js: cambiar de pestaña', () => {
     assert.equal(elementos['cuenta-mis-cambios'].textContent, '2');
     assert.equal(elementos['cuenta-mis-cambios'].hidden, false);
     assert.deepEqual(pedidos, [{ estado: 'todos' }], 'Mis cambios se pide una sola vez, con todos los estados');
+  });
+});
+
+// El arranque de la página (DOMContentLoaded), con los datos del perfil todavía en camino: la página no queda en blanco
+describe('perfil.js: al abrir la página', () => {
+  const NOMBRES = ['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'];
+  const abrir = (esAdmin) => {
+    const elementos = { 'pestanas-perfil': { hidden: true, addEventListener() {} } };
+    for (const n of NOMBRES) {
+      elementos[`pestana-${n}`] = { attrs: {}, setAttribute(nombre, valor) { this.attrs[nombre] = valor; }, classList: { toggle() {} }, addEventListener() {} };
+      elementos[`vista-${n}`] = { hidden: true };
+    }
+    let arranque = null;
+    const historial = [];
+    cargarPerfil({
+      elementos,
+      // El perfil no termina de llegar
+      API: { getProfile: () => new Promise(() => {}) },
+      globales: {
+        document: { addEventListener: (tipo, funcion) => { if (tipo === 'DOMContentLoaded') arranque = funcion; }, getElementById: (id) => elementos[id] ?? { style: {} } },
+        Auth: { isAuthenticated: () => true, isAdmin: () => esAdmin },
+        location: { hash: '' }, history: { replaceState: (...argumentos) => historial.push(argumentos[2]) }
+      }
+    });
+    arranque();
+    return { elementos, historial, visibles: NOMBRES.filter(n => !elementos[`vista-${n}`].hidden) };
+  };
+
+  it('quien administra ya ve la barra y Para revisar (con el rol guardado) mientras se cargan sus datos', () => {
+    const { elementos, historial, visibles } = abrir(true);
+    assert.equal(elementos['pestanas-perfil'].hidden, false);
+    assert.deepEqual(visibles, ['para-revisar']);
+    assert.equal(elementos['pestana-para-revisar'].attrs['aria-selected'], 'true');
+    assert.deepEqual(historial, ['#para-revisar']);
+  });
+
+  it('un lector ya ve sus datos, sin la barra', () => {
+    const { elementos, visibles } = abrir(false);
+    assert.equal(elementos['pestanas-perfil'].hidden, true);
+    assert.deepEqual(visibles, ['mis-datos']);
   });
 });
 
@@ -601,6 +711,14 @@ describe('perfil.js: filas de la gestión de cambios', () => {
   it('un cambio propio no tiene botones', () => {
     const html = cargarPerfil().htmlDeFila({ ...EDITAR, usuario_id: 1 }, 'mio', AUDITOR);
     assert.doesNotMatch(html, /aprobarCambio|abrirModalRechazo|disabled/);
+  });
+
+  it('en Mis cambios nunca hay botones ni nota, aunque el cambio figure como de otra persona', () => {
+    const contexto = cargarPerfil();
+    for (const auditoria of [EDITAR.auditoria, { puede: false, respaldo: false, mensaje: MENSAJE_EDITOR, auditan: ['Laura'] }]) {
+      const html = contexto.htmlDeFila({ ...EDITAR, usuario_id: 2, auditoria }, 'mio', AUDITOR);
+      assert.doesNotMatch(html, /aprobarCambio|abrirModalRechazo|disabled|acciones-7|no-corresponde/);
+    }
   });
 
   it('sin saber quién mira, no hay botones (falla cerrado)', () => {
@@ -659,21 +777,136 @@ describe('perfil.js: filas de la gestión de cambios', () => {
     assert.ok(html.includes('<span class="pf-vacio">vacío</span>'));
     assert.ok(html.includes('<ins>&lt;b&gt;Salud&lt;/b&gt;</ins>'));
     assert.ok(contexto.htmlDeComparacion({ tipo_cambio: 'editar', campos_modificados: [] }).includes('No se detectaron cambios en los campos principales.'));
+    // Un elemento nulo en la lista del servidor no rompe la comparación
+    const conNulo = contexto.htmlDeComparacion({ tipo_cambio: 'editar', campos_modificados: [null, { campo: 'Frecuencia', antes: 'A', despues: 'B' }] });
+    assert.ok(conNulo.includes('<del>A</del><ins>B</ins>'));
+    assert.ok(contexto.htmlDeComparacion({ tipo_cambio: 'editar', campos_modificados: [null] }).includes('No se detectaron cambios en los campos principales.'));
   });
 
-  it('aprobar pide la confirmación en la fila: el primer clic no llama al servidor, ni uno inmediato en "Sí, aprobar"', async () => {
-    const elementos = { 'acciones-7': { innerHTML: '' }, 'cancelar-7': { focus() {} } };
+  // Aprobar y rechazar con un DOM falso: cada etiqueta con id del HTML que la página escribe pasa a ser un elemento, con sus
+  // atributos (hidden y disabled incluidos). Repintar la lista de Para revisar borra lo que había en las filas (como un motivo
+  // a medio escribir). Registra el foco, los desplazamientos, los mensajes y lo que dice la región de anuncios.
+  const pendiente = (id, auditoria = { puede: true, respaldo: false, mensaje: null, auditan: [] }) => ({
+    id, tipo_cambio: 'eliminar', usuario_id: 2, usuario_nombre: 'Ana', dataset_titulo: `Dataset ${id}`, estado: 'pendiente',
+    created_at: '2026-10-16T13:32:00Z', auditoria
+  });
+  const armarAcciones = ({ API = {}, globales = {}, paraRevisar = [pendiente(7), pendiente(8)] } = {}) => {
+    const registro = { foco: null, desplazamientos: [], errores: [], exitos: [], paraRevisar };
+    const elementos = {};
+    const filas = {};
+    const crear = (id, attrs = {}) => {
+      let html = '';
+      const elemento = {
+        id, attrs, value: '', textContent: '', hidden: 'hidden' in attrs, disabled: 'disabled' in attrs,
+        setAttribute(nombre, valor) { this.attrs[nombre] = String(valor); },
+        removeAttribute(nombre) { delete this.attrs[nombre]; },
+        getAttribute(nombre) { return this.attrs[nombre] ?? null; },
+        focus(opciones) { registro.foco = { id, opciones: plano(opciones ?? null) }; },
+        scrollIntoView(opciones) { registro.desplazamientos.push({ id, opciones: plano(opciones) }); },
+        querySelectorAll: () => [],
+        querySelector: () => null,
+        remove() { delete elementos[id]; },
+        // La fila (li) de una cabecera o de un cuerpo
+        closest: () => {
+          const numero = id.replace(/^\D+/, '');
+          if (!filas[numero]) {
+            const fila = { innerHTML: '', clases: new Set() };
+            fila.classList = { toggle: (clase, activa) => fila.clases[activa ? 'add' : 'delete'](clase) };
+            filas[numero] = fila;
+          }
+          return filas[numero];
+        },
+        insertAdjacentHTML(_, agregado) { crearDesde(agregado); }
+      };
+      Object.defineProperty(elemento, 'innerHTML', { configurable: true, get: () => html, set(valor) { html = valor; crearDesde(valor); } });
+      return (elementos[id] = elemento);
+    };
+    const crearDesde = (html) => {
+      for (const [, antes, id, despues] of html.matchAll(/<[a-z]+\b([^>]*?)\sid="([^"]+)"([^>]*)>/g)) {
+        crear(id, Object.fromEntries([...`${antes} ${despues}`.matchAll(/([a-z-]+)(?:="([^"]*)")?/g)].map(([, nombre, valor]) => [nombre, valor ?? ''])));
+      }
+    };
+    for (const id of [
+      'message-container', 'anuncio-cambios', 'filtro-revisar-tipo', 'mas-para-revisar', 'grupo-mios-pendientes', 'lista-mios-pendientes',
+      'lista-mios-resueltos', 'mas-mios', 'cuenta-para-revisar', 'cuenta-mis-cambios'
+    ]) crear(id);
+    // La lista de Para revisar: al repintarla se van las filas que había; su primera cabecera es la de la primera fila
+    const lista = crear('lista-para-revisar', { tabindex: '-1' });
+    let htmlLista = '';
+    Object.defineProperty(lista, 'innerHTML', {
+      get: () => htmlLista,
+      set(valor) {
+        htmlLista = valor;
+        for (const id of Object.keys(elementos)) if (/-\d+$/.test(id)) delete elementos[id];
+        crearDesde(valor);
+      }
+    });
+    lista.querySelector = (selector) => {
+      assert.equal(selector, '.pf-cambio-cabeza');
+      const primera = htmlLista.match(/id="(cabeza-\d+)"/)?.[1];
+      return primera ? elementos[primera] : null;
+    };
+    const contexto = cargarPerfil({
+      elementos,
+      API: {
+        getCambiosPendientesParaRevisar: async () => registro.paraRevisar, getMisCambios: async () => [], getContadorPendientes: async () => ({ cantidad: 0 }),
+        ...API
+      },
+      globales: {
+        // Como en el navegador: un id que no está da null
+        document: { addEventListener() {}, getElementById: (id) => elementos[id] ?? null },
+        Auth: { getUser: () => ({ id: 1, rol: 'admin' }) }, setTimeout: (funcion) => funcion(), ...globales
+      }
+    });
+    contexto.Utils.showError = (mensaje) => registro.errores.push(mensaje);
+    contexto.Utils.showSuccess = (mensaje) => registro.exitos.push(mensaje);
+    return { contexto, elementos, registro, filas };
+  };
+  const AL_MENSAJE = { id: 'message-container', opciones: { block: 'nearest', behavior: 'smooth' } };
+
+  it('aprobar pide la confirmación en la fila, anunciada: la pregunta describe los botones y "Sí, aprobar" se ve deshabilitado medio segundo', async () => {
+    const temporizadores = [];
     let aprobados = 0;
-    const contexto = cargarPerfil({ elementos, API: { aprobarCambio: async () => { aprobados++; } } });
+    const { contexto, elementos, registro } = armarAcciones({
+      API: { aprobarCambio: async () => { aprobados++; } }, globales: { setTimeout: (funcion, ms) => temporizadores.push({ funcion, ms }) }
+    });
+    await contexto.cargarCambiosParaRevisar();
     contexto.aprobarCambio(7);
-    const confirmacion = elementos['acciones-7'].innerHTML;
+    const acciones = elementos['acciones-7'];
+    const confirmacion = acciones.innerHTML;
     assert.ok(confirmacion.includes('¿Aprobar? El cambio se aplica al dataset ahora.'));
     assert.ok(confirmacion.includes('onclick="cancelarAccion(7)"'));
     assert.ok(confirmacion.includes('onclick="confirmarAprobacion(7)"'));
     assert.ok(confirmacion.includes('Sí, aprobar'));
-    // Un doble clic en Aprobar cae en "Sí, aprobar" enseguida: no aprueba
+    assert.equal(registro.foco.id, 'cancelar-7');
+    // El grupo y la pregunta, que describe los dos botones
+    assert.equal(acciones.attrs.role, 'group');
+    assert.match(confirmacion, /<span class="pf-pregunta" id="pregunta-7">¿Aprobar\? El cambio se aplica al dataset ahora\.<\/span>/);
+    assert.equal(elementos['cancelar-7'].attrs['aria-describedby'], 'pregunta-7');
+    assert.equal(elementos['confirmar-7'].attrs['aria-describedby'], 'pregunta-7');
+    // "Sí, aprobar" aparece donde estaba Aprobar, deshabilitado: un doble clic en Aprobar no aprueba
+    assert.equal(elementos['confirmar-7'].disabled, true);
     await contexto.confirmarAprobacion(7);
     assert.equal(aprobados, 0);
+    // A los 500 ms se habilita
+    assert.deepEqual(temporizadores.map(t => t.ms), [500]);
+    temporizadores[0].funcion();
+    assert.equal(elementos['confirmar-7'].disabled, false);
+  });
+
+  it('cancelar y volver a pedir la confirmación: la espera vuelve a empezar (la anterior no habilita la nueva)', async () => {
+    const temporizadores = [];
+    const { contexto, elementos } = armarAcciones({ globales: { setTimeout: (funcion, ms) => temporizadores.push({ funcion, ms }) } });
+    await contexto.cargarCambiosParaRevisar();
+    contexto.aprobarCambio(7);
+    contexto.cancelarAccion(7);
+    assert.equal(elementos['acciones-7'].attrs.role, undefined, 'sin la confirmación, ya no es un grupo');
+    assert.ok(elementos['acciones-7'].innerHTML.includes('onclick="aprobarCambio(7)"'));
+    contexto.aprobarCambio(7);
+    temporizadores[0].funcion();
+    assert.equal(elementos['confirmar-7'].disabled, true);
+    temporizadores[1].funcion();
+    assert.equal(elementos['confirmar-7'].disabled, false);
   });
 
   it('confirmar una aprobación que no se pidió no hace nada', async () => {
@@ -682,15 +915,126 @@ describe('perfil.js: filas de la gestión de cambios', () => {
     assert.equal(aprobados, 0);
   });
 
-  it('rechazar sin motivo: el error de siempre y no se envía', async () => {
-    const elementos = { 'motivo-7': { value: '   ', focus() {} } };
+  it('rechazar sin motivo: el error de siempre, a la vista y anunciado, el foco en el motivo, y no se envía', async () => {
     let enviados = 0;
-    const errores = [];
-    const contexto = cargarPerfil({ elementos, API: { rechazarCambio: async () => { enviados++; } } });
-    contexto.Utils.showError = (mensaje) => errores.push(mensaje);
+    const { contexto, elementos, registro } = armarAcciones({ API: { rechazarCambio: async () => { enviados++; } } });
+    await contexto.cargarCambiosParaRevisar();
+    contexto.abrirModalRechazo(7);
+    elementos['motivo-7'].value = '   ';
     await contexto.confirmarRechazo(7);
-    assert.deepEqual(errores, ['Debe proporcionar un motivo de rechazo']);
+    assert.deepEqual(registro.errores, ['Debe proporcionar un motivo de rechazo']);
     assert.equal(enviados, 0);
+    assert.deepEqual(registro.desplazamientos, [AL_MENSAJE]);
+    // El foco vuelve al motivo sin desplazar la página (el mensaje queda a la vista)
+    assert.deepEqual(registro.foco, { id: 'motivo-7', opciones: { preventScroll: true } });
+    assert.equal(elementos['anuncio-cambios'].textContent, 'Debe proporcionar un motivo de rechazo');
+  });
+
+  for (const [accion, anuncio] of [['aprobar', 'Cambio aprobado correctamente'], ['rechazar', 'Cambio rechazado correctamente']]) {
+    it(`${accion} bien: se anuncia y, después de recargar, el foco va a la primera fila de Para revisar (o a la lista, si quedó vacía)`, async () => {
+      for (const despues of [[pendiente(8)], []]) {
+        const { contexto, elementos, registro } = armarAcciones({
+          API: { aprobarCambio: async () => { registro.paraRevisar = despues; }, rechazarCambio: async () => { registro.paraRevisar = despues; } }
+        });
+        await contexto.cargarCambiosParaRevisar();
+        if (accion === 'aprobar') {
+          contexto.aprobarCambio(7);
+          await contexto.confirmarAprobacion(7);
+        } else {
+          contexto.abrirModalRechazo(7);
+          elementos['motivo-7'].value = 'Falta la fuente';
+          await contexto.confirmarRechazo(7);
+        }
+        assert.deepEqual(registro.exitos, [anuncio]);
+        assert.equal(elementos['anuncio-cambios'].textContent, anuncio);
+        assert.deepEqual(registro.foco, { id: despues.length ? 'cabeza-8' : 'lista-para-revisar', opciones: null });
+      }
+    });
+
+    it(`${accion} con un error del servidor: el mensaje a la vista y anunciado, y el foco en Para revisar sin desplazar la página`, async () => {
+      const fallar = async () => { registro.paraRevisar = [pendiente(8)]; throw new Error('El cambio ya fue procesado'); };
+      const { contexto, elementos, registro } = armarAcciones({ API: { aprobarCambio: fallar, rechazarCambio: fallar } });
+      await contexto.cargarCambiosParaRevisar();
+      if (accion === 'aprobar') {
+        contexto.aprobarCambio(7);
+        await contexto.confirmarAprobacion(7);
+      } else {
+        contexto.abrirModalRechazo(7);
+        elementos['motivo-7'].value = 'Falta la fuente';
+        await contexto.confirmarRechazo(7);
+      }
+      assert.deepEqual(registro.errores, ['El cambio ya fue procesado']);
+      assert.deepEqual(registro.desplazamientos, [AL_MENSAJE]);
+      assert.deepEqual(registro.foco, { id: 'cabeza-8', opciones: { preventScroll: true } });
+      assert.equal(elementos['anuncio-cambios'].textContent, 'El cambio ya fue procesado');
+    });
+  }
+
+  it('con movimiento reducido, el mensaje se trae a la vista sin animación', async () => {
+    const { contexto, registro } = armarAcciones({
+      API: { aprobarCambio: async () => { throw new Error('No se pudo aprobar'); } },
+      globales: { matchMedia: (consulta) => ({ matches: consulta === '(prefers-reduced-motion: reduce)' }) }
+    });
+    await contexto.cargarCambiosParaRevisar();
+    contexto.aprobarCambio(7);
+    await contexto.confirmarAprobacion(7);
+    assert.deepEqual(registro.desplazamientos, [{ id: 'message-container', opciones: { block: 'nearest', behavior: 'auto' } }]);
+  });
+
+  it('un rechazo que falla y el cambio sigue pendiente: vuelve a abrir su fila y el motivo, con lo que se había escrito', async () => {
+    const { contexto, elementos, registro } = armarAcciones({ API: { rechazarCambio: async () => { throw new Error('No se pudo conectar con el servidor'); } } });
+    await contexto.cargarCambiosParaRevisar();
+    // La segunda fila (cerrada al cargar): se abre, se escribe el motivo y el envío falla
+    contexto.abrirModalRechazo(8);
+    const campoAnterior = elementos['motivo-8'];
+    campoAnterior.value = '  Falta la fuente de los datos.  ';
+    await contexto.confirmarRechazo(8);
+    assert.deepEqual(registro.errores, ['No se pudo conectar con el servidor']);
+    assert.deepEqual(registro.desplazamientos, [AL_MENSAJE]);
+    // La lista se repintó (el campo es otro) y el motivo volvió tal cual, con la fila abierta y el foco en el campo
+    assert.notEqual(elementos['motivo-8'], campoAnterior);
+    assert.equal(elementos['motivo-8'].value, '  Falta la fuente de los datos.  ');
+    assert.equal(elementos['cabeza-8'].attrs['aria-expanded'], 'true');
+    assert.equal(elementos['cuerpo-8'].hidden, false);
+    assert.equal(elementos['acciones-8'].hidden, true);
+    assert.equal(registro.foco.id, 'motivo-8');
+    assert.equal(elementos['anuncio-cambios'].textContent, 'No se pudo conectar con el servidor');
+  });
+
+  it('un rechazo que falla porque ya no está pendiente (o ya no le corresponde): no se restaura nada', async () => {
+    const sinPermiso = { puede: false, respaldo: false, mensaje: MENSAJE_EDITOR, auditan: ['Laura'] };
+    for (const [error, despues] of [['El cambio ya fue procesado', [pendiente(7)]], ['No le corresponde auditar este cambio', [pendiente(7), pendiente(8, sinPermiso)]]]) {
+      const { contexto, elementos, registro } = armarAcciones({
+        API: { rechazarCambio: async () => { registro.paraRevisar = despues; throw new Error(error); } }
+      });
+      await contexto.cargarCambiosParaRevisar();
+      contexto.abrirModalRechazo(8);
+      elementos['motivo-8'].value = 'Falta la fuente';
+      await contexto.confirmarRechazo(8);
+      assert.equal(elementos['motivo-8'], undefined, error);
+      assert.deepEqual(registro.foco, { id: 'cabeza-7', opciones: { preventScroll: true } }, error);
+      // Y lo escrito se descartó: si el cambio vuelve a aparecer, el motivo empieza vacío
+      registro.paraRevisar = [pendiente(7), pendiente(8)];
+      await contexto.cargarCambiosParaRevisar();
+      contexto.abrirModalRechazo(8);
+      assert.equal(elementos['motivo-8'].value, '', error);
+    }
+  });
+
+  it('Revisados y Resueltos: los revisados más recientes primero (el servidor los manda por fecha de propuesta); los pendientes, como vienen', async () => {
+    const cambio = (id, estado, revisado_at) => ({ ...pendiente(id), usuario_id: 1, estado, revisado_at });
+    const delServidor = [
+      cambio(1, 'pendiente', null), cambio(2, 'aprobado', '2026-10-10T10:00:00Z'), cambio(3, 'pendiente', null),
+      cambio(4, 'rechazado', '2026-10-15T10:00:00Z'), cambio(5, 'aprobado', null), cambio(6, 'aprobado', '2026-10-12T10:00:00Z')
+    ];
+    const { contexto, elementos } = armarAcciones({ API: { getMisCambios: async () => delServidor }, paraRevisar: delServidor });
+    const orden = (id) => [...elementos[id].innerHTML.matchAll(/data-id="(\d+)"/g)].map(m => Number(m[1]));
+    await contexto.cargarMisCambios();
+    assert.deepEqual(orden('lista-mios-pendientes'), [1, 3]);
+    assert.deepEqual(orden('lista-mios-resueltos'), [4, 6, 2, 5], 'sin fecha de revisión, al final');
+    vm.runInContext("vistaParaRevisar.segmento = 'revisados'", contexto);
+    await contexto.cargarCambiosParaRevisar();
+    assert.deepEqual(orden('lista-para-revisar'), [4, 6, 2, 5]);
   });
 
   it('las listas vacías dicen qué pasa (y qué filtro está puesto)', () => {

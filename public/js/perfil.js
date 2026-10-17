@@ -14,6 +14,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  // La barra y la pestaña inicial se ven enseguida, sin esperar los datos del perfil: alcanza con el rol guardado
+  // (el servidor igual decide qué puede ver y hacer cada uno)
+  const esAdmin = Auth.isAdmin();
+  if (esAdmin) {
+    // Quien administra ve las cuatro pestañas: revisar, sus cambios, sus datos y su firma
+    document.getElementById('pestanas-perfil').hidden = false;
+    conectarPestanas();
+  }
+  // Un lector solo tiene sus datos personales: sin barra de pestañas ni nada de la gestión de cambios
+  mostrarPestana(pestanaInicial(location.hash, esAdmin));
+
   // Cargar datos del perfil
   await cargarPerfil();
 
@@ -23,11 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Cambiar de pestaña con el hash de la dirección (el botón atrás, un enlace a #mis-cambios)
   window.addEventListener('hashchange', () => mostrarPestana(pestanaInicial(location.hash, Auth.isAdmin())));
 
-  if (Auth.isAdmin()) {
-    // Quien administra ve las cuatro pestañas: revisar, sus cambios, sus datos y su firma
-    document.getElementById('pestanas-perfil').hidden = false;
-    conectarPestanas();
-    mostrarPestana(pestanaInicial(location.hash, true));
+  if (esAdmin) {
     document.getElementById('form-firma').addEventListener('submit', guardarMiFirma);
     for (const id of ['firma-nombre', 'firma-cargo']) document.getElementById(id).addEventListener('input', actualizarMuestraFirma);
     // Los controles de las listas de cambios se conectan solo acá: un lector no toca nada de la gestión de cambios
@@ -35,9 +42,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     cargarMiFirma();
     await Promise.all([cargarCambiosParaRevisar(), cargarMisCambios()]);
     await actualizarCuentas();
-  } else {
-    // Un lector solo tiene sus datos personales: sin barra de pestañas ni nada de la gestión de cambios
-    mostrarPestana('mis-datos');
   }
 });
 
@@ -98,8 +102,10 @@ function mostrarPestana(nombre) {
   history.replaceState(null, '', `#${nombre}`);
 }
 
-// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña.
+// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son
+// atajos del navegador (Alt+flecha izquierda vuelve atrás): no se tocan.
 function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
   const actual = PESTANAS_DEL_PERFIL.indexOf(evento.target.dataset?.vista);
   if (actual === -1) return;
   const ultima = PESTANAS_DEL_PERFIL.length - 1;
@@ -229,6 +235,13 @@ function htmlDeFilas(cambios, modo, desde, hasta) {
 
 const modoDeParaRevisar = () => (vistaParaRevisar.segmento === 'pendientes' ? 'revisar' : 'revisado');
 
+// Los cambios resueltos, los revisados más recientes primero (el servidor los manda por fecha de propuesta). Sin fecha de
+// revisión van al final; a igual fecha quedan como vinieron.
+function porRevisionReciente(cambios) {
+  const momento = (cambio) => new Date(cambio.revisado_at).getTime() || 0;
+  return [...cambios].sort((uno, otro) => momento(otro) - momento(uno));
+}
+
 /**
  * Para revisar: los cambios ajenos pendientes o, en Revisados, los ya aprobados o rechazados (por cualquiera).
  * conEspera: false al recargar después de aprobar o rechazar, así la lista no parpadea con la ruedita.
@@ -247,7 +260,7 @@ async function cargarCambiosParaRevisar({ conEspera = true } = {}) {
   try {
     const cambios = await API.getCambiosPendientesParaRevisar({ tipo: tipo || null, estado: pendientes ? 'pendiente' : 'todos' });
     if (pedido !== vistaParaRevisar.pedido) return;
-    vistaParaRevisar.cambios = pendientes ? cambios : cambios.filter(cambio => cambio.estado !== 'pendiente');
+    vistaParaRevisar.cambios = pendientes ? cambios : porRevisionReciente(cambios.filter(cambio => cambio.estado !== 'pendiente'));
     const { cambios: aMostrar, visibles, segmento } = vistaParaRevisar;
     lista.innerHTML = aMostrar.length ? htmlDeFilas(aMostrar, modoDeParaRevisar(), 0, visibles) : htmlDeVacioParaRevisar(segmento, tipo);
     mas.hidden = aMostrar.length <= visibles;
@@ -269,7 +282,7 @@ async function cargarMisCambios() {
     const cambios = await API.getMisCambios({ estado: 'todos' });
     if (pedido !== vistaMisCambios.pedido) return;
     vistaMisCambios.pendientes = cambios.filter(cambio => cambio.estado === 'pendiente');
-    vistaMisCambios.resueltos = cambios.filter(cambio => cambio.estado !== 'pendiente');
+    vistaMisCambios.resueltos = porRevisionReciente(cambios.filter(cambio => cambio.estado !== 'pendiente'));
     pintarMisCambios();
   } catch (error) {
     if (pedido !== vistaMisCambios.pedido) return;
@@ -308,14 +321,18 @@ function agregarTanda(vista, cambios, modo, idLista, idBoton) {
   lista.querySelectorAll('.pf-cambio-cabeza')[desde]?.focus();
 }
 
+// Abre o cierra la fila de esa cabecera
+function desplegarFila(cabeza, abrir) {
+  cabeza.setAttribute('aria-expanded', String(abrir));
+  cabeza.closest('.pf-cambio').classList.toggle('abierto', abrir);
+  document.getElementById(cabeza.getAttribute('aria-controls')).hidden = !abrir;
+}
+
 // Abre o cierra la fila cuya cabecera se tocó (clic delegado en cada lista)
 function alternarFila(evento) {
   const cabeza = evento.target.closest('.pf-cambio-cabeza');
   if (!cabeza) return;
-  const abrir = cabeza.getAttribute('aria-expanded') !== 'true';
-  cabeza.setAttribute('aria-expanded', String(abrir));
-  cabeza.closest('.pf-cambio').classList.toggle('abierto', abrir);
-  document.getElementById(cabeza.getAttribute('aria-controls')).hidden = !abrir;
+  desplegarFila(cabeza, cabeza.getAttribute('aria-expanded') !== 'true');
 }
 
 // Marca el botón elegido de un selector segmentado
@@ -446,24 +463,61 @@ function formatearFechaComparador(valor) {
 // Los nombres aprobarCambio y abrirModalRechazo vienen de cuando abrían un modal (los fijan los tests): ahora abren la
 // confirmación y el motivo dentro de la fila. El servidor vuelve a validar todo al aprobar o rechazar.
 
-// Cuándo se pidió confirmar cada aprobación. "Sí, aprobar" aparece donde estaba Aprobar: no vale hasta que pasa un momento,
-// así un doble clic en Aprobar no aprueba sin confirmar.
+// Las aprobaciones que esperan confirmación, por id. "Sí, aprobar" aparece donde estaba Aprobar, deshabilitado, y se
+// habilita pasado un momento (su `lista` pasa a true): así un doble clic en Aprobar no aprueba sin confirmar.
 const confirmacionesDeAprobacion = new Map();
 const ESPERA_PARA_CONFIRMAR_MS = 500;
 // Cuánto se ve el resultado en la fila antes de recargar las listas
 const ESPERA_DEL_RESULTADO_MS = 1500;
 const esperar = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Lo escrito en los rechazos que el servidor no aceptó, por id: si el cambio sigue pendiente, vuelve al campo del motivo
+const motivosSinEnviar = new Map();
 
-// Primer paso de aprobar: en lugar de los botones, la pregunta con [Cancelar] [Sí, aprobar]
+// Lo que pasó al aprobar o rechazar, para los lectores de pantalla (la región fija #anuncio-cambios de la página)
+function anunciar(texto) {
+  const region = document.getElementById('anuncio-cambios');
+  if (region) region.textContent = texto;
+}
+
+// Desplaza la página lo justo para que se vea el elemento; con movimiento reducido, sin animación
+function llevarALaVista(elemento) {
+  const reducido = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  elemento?.scrollIntoView({ block: 'nearest', behavior: reducido ? 'auto' : 'smooth' });
+}
+
+// Un error al aprobar o rechazar: el mensaje de la página, que puede haber quedado arriba, fuera de la vista, se trae a la vista
+function mostrarErrorDeAccion(mensaje) {
+  Utils.showError(mensaje);
+  llevarALaVista(document.getElementById('message-container'));
+}
+
+// Después de aprobar o rechazar y recargar: el foco va a la primera fila de Para revisar o, si quedó vacía, a la lista.
+// Después de un error, con { preventScroll: true }: el mensaje queda a la vista.
+function enfocarParaRevisar(opciones) {
+  const lista = document.getElementById('lista-para-revisar');
+  (lista.querySelector('.pf-cambio-cabeza') ?? lista).focus(opciones);
+}
+
+// Primer paso de aprobar: en lugar de los botones, la pregunta con [Cancelar] [Sí, aprobar], un grupo que la pregunta describe
 function aprobarCambio(id) {
   const n = Number(id);
   const acciones = document.getElementById(`acciones-${n}`);
   if (!acciones) return;
-  confirmacionesDeAprobacion.set(n, Date.now());
-  acciones.innerHTML = '<span class="pf-pregunta">¿Aprobar? El cambio se aplica al dataset ahora.</span>'
-    + `<button type="button" class="pf-btn pf-btn-quieto" id="cancelar-${n}" onclick="cancelarAccion(${n})">Cancelar</button>`
-    + `<button type="button" class="pf-btn pf-btn-aprobar" onclick="confirmarAprobacion(${n})">${ICONO_APROBADO}Sí, aprobar</button>`;
+  const pedido = { lista: false };
+  confirmacionesDeAprobacion.set(n, pedido);
+  acciones.setAttribute('role', 'group');
+  acciones.setAttribute('aria-label', 'Confirmar la aprobación');
+  acciones.innerHTML = `<span class="pf-pregunta" id="pregunta-${n}">¿Aprobar? El cambio se aplica al dataset ahora.</span>`
+    + `<button type="button" class="pf-btn pf-btn-quieto" id="cancelar-${n}" aria-describedby="pregunta-${n}" onclick="cancelarAccion(${n})">Cancelar</button>`
+    + `<button type="button" class="pf-btn pf-btn-aprobar" id="confirmar-${n}" aria-describedby="pregunta-${n}" disabled onclick="confirmarAprobacion(${n})">${ICONO_APROBADO}Sí, aprobar</button>`;
   document.getElementById(`cancelar-${n}`).focus();
+  setTimeout(() => {
+    // Si mientras tanto se canceló o se volvió a pedir, esta espera ya no cuenta
+    if (confirmacionesDeAprobacion.get(n) !== pedido) return;
+    pedido.lista = true;
+    const confirmar = document.getElementById(`confirmar-${n}`);
+    if (confirmar) confirmar.disabled = false;
+  }, ESPERA_PARA_CONFIRMAR_MS);
 }
 
 // Deshabilita los controles de una parte de la fila mientras se espera al servidor
@@ -482,23 +536,27 @@ function mostrarResultado(id, resultado, texto) {
 // Segundo paso de aprobar: "Sí, aprobar"
 async function confirmarAprobacion(id) {
   const n = Number(id);
-  const pedida = confirmacionesDeAprobacion.get(n);
-  if (pedida === undefined || Date.now() - pedida < ESPERA_PARA_CONFIRMAR_MS) return;
+  if (!confirmacionesDeAprobacion.get(n)?.lista) return;
   confirmacionesDeAprobacion.delete(n);
   deshabilitarControles(`acciones-${n}`);
+  anunciar('');
 
   try {
     await API.aprobarCambio(n);
   } catch (error) {
     // Ya lo resolvió otra persona (404), es propio o no le corresponde (403), o no se pudo (400): el mensaje del servidor
-    Utils.showError(error.message);
+    mostrarErrorDeAccion(error.message);
     await recargarCambios();
+    enfocarParaRevisar({ preventScroll: true });
+    anunciar(error.message);
     return;
   }
   mostrarResultado(n, 'aprobado', 'Aprobado. El cambio ya está aplicado en el dataset.');
   Utils.showSuccess('Cambio aprobado correctamente');
   await esperar(ESPERA_DEL_RESULTADO_MS);
   await recargarCambios();
+  enfocarParaRevisar();
+  anunciar('Cambio aprobado correctamente');
 }
 
 // Rechazar: abre debajo del pie el motivo (obligatorio) con [Cancelar] [Rechazar cambio]
@@ -515,44 +573,76 @@ function abrirModalRechazo(id) {
       + `<button type="button" class="pf-btn pf-btn-quieto" onclick="cancelarAccion(${n})">Cancelar</button>`
       + `<button type="button" class="pf-btn pf-btn-rechazar" onclick="confirmarRechazo(${n})">${ICONO_RECHAZADO}Rechazar cambio</button>`
       + '</div></div>');
+    // Lo escrito en un rechazo que no se pudo enviar vuelve al campo
+    document.getElementById(`motivo-${n}`).value = motivosSinEnviar.get(n) ?? '';
   }
   acciones.hidden = true;
   document.getElementById(`motivo-${n}`).focus();
+}
+
+// Después de un rechazo que el servidor no aceptó y de recargar las listas: si el cambio sigue pendiente en Para revisar y
+// quien mira lo puede auditar, vuelve a abrir su fila y el motivo, con lo que se había escrito. Si ya no está (lo resolvió
+// otra persona) o ya no le corresponde, lo escrito se descarta. Devuelve si lo volvió a abrir.
+function reabrirRechazo(n) {
+  const cambio = vistaParaRevisar.cambios.find(otro => Number(otro.id) === n && otro.estado === 'pendiente');
+  if (!cambio || !permisoDeAuditoria(cambio).puede) {
+    motivosSinEnviar.delete(n);
+    return false;
+  }
+  // Sin la fila a la vista (la lista no se pudo cargar), lo escrito queda guardado para la próxima vez que se abra el motivo
+  const cabeza = document.getElementById(`cabeza-${n}`);
+  if (!cabeza) return false;
+  desplegarFila(cabeza, true);
+  abrirModalRechazo(n);
+  return true;
 }
 
 // "Rechazar cambio": sin motivo no se envía
 async function confirmarRechazo(id) {
   const n = Number(id);
   const campo = document.getElementById(`motivo-${n}`);
-  const comentario = String(campo?.value ?? '').trim();
+  const escrito = String(campo?.value ?? '');
+  const comentario = escrito.trim();
   if (!comentario) {
-    Utils.showError('Debe proporcionar un motivo de rechazo');
-    campo?.focus();
+    mostrarErrorDeAccion('Debe proporcionar un motivo de rechazo');
+    // El foco vuelve al motivo sin desplazar la página: el mensaje queda a la vista
+    campo?.focus({ preventScroll: true });
+    anunciar('Debe proporcionar un motivo de rechazo');
     return;
   }
   deshabilitarControles(`rechazo-${n}`);
+  anunciar('');
 
   try {
     await API.rechazarCambio(n, comentario);
   } catch (error) {
-    Utils.showError(error.message);
+    motivosSinEnviar.set(n, escrito);
+    mostrarErrorDeAccion(error.message);
     await recargarCambios();
+    if (!reabrirRechazo(n)) enfocarParaRevisar({ preventScroll: true });
+    anunciar(error.message);
     return;
   }
+  motivosSinEnviar.delete(n);
   mostrarResultado(n, 'rechazado', 'Rechazado. Quien lo propuso ve el motivo en Mis cambios.');
   Utils.showSuccess('Cambio rechazado correctamente');
   await esperar(ESPERA_DEL_RESULTADO_MS);
   await recargarCambios();
+  enfocarParaRevisar();
+  anunciar('Cambio rechazado correctamente');
 }
 
-// Cancelar la confirmación de aprobar o el motivo del rechazo: vuelven los botones de la fila
+// Cancelar la confirmación de aprobar o el motivo del rechazo: vuelven los botones de la fila (y lo escrito se descarta)
 function cancelarAccion(id) {
   const n = Number(id);
   confirmacionesDeAprobacion.delete(n);
+  motivosSinEnviar.delete(n);
   document.getElementById(`rechazo-${n}`)?.remove();
   const acciones = document.getElementById(`acciones-${n}`);
   const cambio = vistaParaRevisar.cambios.find(otro => Number(otro.id) === n);
   if (!acciones || !cambio) return;
+  acciones.removeAttribute('role');
+  acciones.removeAttribute('aria-label');
   acciones.innerHTML = botonesDeAuditoria(n, permisoDeAuditoria(cambio));
   acciones.hidden = false;
   acciones.querySelector('button:not([disabled])')?.focus();
@@ -759,9 +849,41 @@ function compararTramos(a, d, agregar) {
   while (j < d.length) agregar('+', d[j++]);
 }
 
+// Limpieza para que se lea mejor: un igual hecho solo de espacios entre dos cambios se suma al cambio (a lo quitado y a lo
+// agregado), así cada bloque de cambio queda como un solo quitado seguido de un solo agregado (o solo uno de los dos), en
+// lugar de alternar palabra por palabra. Lo quitado + lo igual sigue dando el texto de antes; lo agregado + lo igual, el de
+// después.
+function unirCambiosSeparadosPorEspacios(segmentos) {
+  const limpios = [];
+  let bloque = null;
+  const cerrarBloque = () => {
+    if (bloque?.quitado) limpios.push({ tipo: '-', texto: bloque.quitado });
+    if (bloque?.agregado) limpios.push({ tipo: '+', texto: bloque.agregado });
+    bloque = null;
+  };
+  segmentos.forEach((segmento, i) => {
+    if (segmento.tipo === '-' || segmento.tipo === '+') {
+      bloque ??= { quitado: '', agregado: '' };
+      bloque[segmento.tipo === '-' ? 'quitado' : 'agregado'] += segmento.texto;
+      return;
+    }
+    const siguiente = segmentos[i + 1];
+    if (bloque && siguiente && siguiente.tipo !== '=' && /^\s+$/.test(segmento.texto)) {
+      bloque.quitado += segmento.texto;
+      bloque.agregado += segmento.texto;
+      return;
+    }
+    cerrarBloque();
+    limpios.push(segmento);
+  });
+  cerrarBloque();
+  return limpios;
+}
+
 // Comparación palabra por palabra. Devuelve segmentos { tipo, texto }: '=' sin cambios, '-' quitado, '+' agregado.
 // Antes de comparar recorta los tokens iguales del principio y del final: la comparación (y su tope) es solo del tramo
-// del medio, así un texto largo con un cambio chico marca solo ese cambio.
+// del medio, así un texto largo con un cambio chico marca solo ese cambio. Al final, los espacios entre cambios se suman al
+// cambio (unirCambiosSeparadosPorEspacios).
 function diffPalabras(antes, despues) {
   const a = palabrasDeTexto(String(antes ?? ''));
   const d = palabrasDeTexto(String(despues ?? ''));
@@ -781,7 +903,7 @@ function diffPalabras(antes, despues) {
   agregar('=', a.slice(0, prefijo).join(''));
   compararTramos(a.slice(prefijo, a.length - sufijo), d.slice(prefijo, d.length - sufijo), agregar);
   agregar('=', a.slice(a.length - sufijo).join(''));
-  return segmentos;
+  return unirCambiosSeparadosPorEspacios(segmentos);
 }
 
 // Los segmentos de diffPalabras como HTML: lo quitado en <del>, lo agregado en <ins>, todo escapado
@@ -815,8 +937,10 @@ const valorEnResumen = (valor) => Utils.escapeHtml(textoDeValor(valor) || 'vací
 
 // El resumen de una edición. Un solo campo corto: "Frecuencia de A a B" (con ", y N campos más" si hay más); si no, solo
 // los nombres de los campos que cambian
-function resumenDeEdicion(campos) {
-  if (!Array.isArray(campos) || campos.length === 0) return 'Sin cambios en los campos principales';
+function resumenDeEdicion(lista) {
+  // Un elemento nulo en la lista del servidor no rompe el resumen
+  const campos = Array.isArray(lista) ? lista.filter(Boolean) : [];
+  if (campos.length === 0) return 'Sin cambios en los campos principales';
   const [primero] = campos;
   const antes = textoDeValor(primero.antes);
   const despues = textoDeValor(primero.despues);
@@ -846,7 +970,7 @@ function resumenDelCambio(cambio) {
   return '';
 }
 
-// Escudo de Lucide, para la marca de respaldo
+// Escudo de Lucide, para la marca del editor (quiénes lo auditan o la pastilla de respaldo)
 const ICONO_ESCUDO = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>';
 
 // Lo que ve un editor en un cambio pendiente: si lo puede auditar de respaldo o quiénes lo auditan. Sin marca (cadena vacía)
@@ -858,7 +982,7 @@ function marcaDeAuditoria(cambio, esEditor) {
     return auditoria.respaldo ? `<span class="pf-marca pf-marca-respaldo">${ICONO_ESCUDO}Podés auditarlo de respaldo</span>` : '';
   }
   const nombres = (auditoria.auditan ?? []).map(nombre => Utils.escapeHtml(nombre));
-  return nombres.length ? `<span class="pf-marca">Lo auditan ${listaDeNombres(nombres)}</span>` : '';
+  return nombres.length ? `<span class="pf-marca">${ICONO_ESCUDO}Lo auditan ${listaDeNombres(nombres)}</span>` : '';
 }
 
 const PESTANAS_DEL_PERFIL = ['para-revisar', 'mis-cambios', 'mis-datos', 'mi-firma'];
@@ -941,7 +1065,8 @@ function htmlDeComparacion(cambio) {
     return `${lista}<div class="pf-nota baja">${ICONO_ALERTA}<span>Al aprobarlo, el dataset deja de figurar en el registro. No se borra: queda inactivo.</span></div>`;
   }
 
-  const campos = Array.isArray(cambio.campos_modificados) ? cambio.campos_modificados : [];
+  // Como en el resumen, un elemento nulo de la lista no rompe la comparación
+  const campos = Array.isArray(cambio.campos_modificados) ? cambio.campos_modificados.filter(Boolean) : [];
   if (campos.length === 0) return '<p class="pf-sin-campos">No se detectaron cambios en los campos principales.</p>';
   const filas = campos.map(campo => `<dt>${Utils.escapeHtml(etiquetaDeCampo(campo.campo))}</dt><dd>${htmlDeCampoEditado(campo)}</dd>`).join('');
   return `<dl class="pf-diff">${filas}</dl>`;
@@ -1010,8 +1135,9 @@ function htmlDelPie(cambio, modo, quienPropuso) {
 /**
  * La fila de un cambio: la cabecera (un botón que la abre y la cierra) y el cuerpo, con la comparación, las notas y el pie.
  * modo: 'revisar' (pendiente ajeno, en Para revisar), 'revisado' (ajeno resuelto) o 'mio' (en Mis cambios).
- * Los botones de aprobar y rechazar van solo en un cambio pendiente que no es de quien mira, y salen del permiso que manda
- * el servidor (sin el dato, deshabilitados). Sin saber quién mira (idUsuario inválido), no hay botones.
+ * Los botones de aprobar y rechazar van solo en Para revisar, en un cambio pendiente que no es de quien mira, y salen del
+ * permiso que manda el servidor (sin el dato, deshabilitados). En Mis cambios nunca hay botones. Sin saber quién mira
+ * (idUsuario inválido), tampoco.
  */
 function htmlDeFila(cambio, modo, { abierto = false, esEditor = false, idUsuario = NaN } = {}) {
   const id = Number(cambio.id);
@@ -1020,7 +1146,7 @@ function htmlDeFila(cambio, modo, { abierto = false, esEditor = false, idUsuario
   const quienPropuso = Utils.escapeHtml(cambio.usuario_nombre || cambio.usuario_username || '');
   const yo = Number(idUsuario);
   const propio = !(yo > 0) || Number(cambio.usuario_id) === yo;
-  const conBotones = pendiente && !propio;
+  const conBotones = modo === 'revisar' && pendiente && !propio;
   const permiso = permisoDeAuditoria(cambio);
 
   const etiqueta = tipo
@@ -1034,7 +1160,7 @@ function htmlDeFila(cambio, modo, { abierto = false, esEditor = false, idUsuario
   const botones = conBotones ? `<div class="pf-botones" id="acciones-${id}">${botonesDeAuditoria(id, permiso)}</div>` : '';
 
   return `<li class="pf-cambio${pendiente ? '' : ' resuelto'}${abierto ? ' abierto' : ''}" data-id="${id}">
-    <button type="button" class="pf-cambio-cabeza" aria-expanded="${Boolean(abierto)}" aria-controls="cuerpo-${id}">
+    <button type="button" class="pf-cambio-cabeza" id="cabeza-${id}" aria-expanded="${Boolean(abierto)}" aria-controls="cuerpo-${id}">
       ${etiqueta}
       <span class="pf-cambio-texto">
         <span class="pf-cambio-titulo">${Utils.escapeHtml(tituloDelCambio(cambio))}</span>
