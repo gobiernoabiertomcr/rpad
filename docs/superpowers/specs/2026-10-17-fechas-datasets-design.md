@@ -38,7 +38,7 @@ Es la base del **seguimiento de la "vida" de cada dataset**, que viene después 
 - Pedidos de Acceso cuatrimestral, próxima 31/05/2026 → del 01/01/2026 al 30/04/2026.
 - Con la próxima en enero, el período es el año anterior completo.
 
-**Se pide siempre todo lo que falta.** Si los datos publicados terminan antes del 1/1 del año del corte, el período arranca el día siguiente a los últimos datos publicados, aunque cruce el año. Ejemplos:
+**Se pide siempre todo lo que falta.** Si los datos publicados terminan antes del 1/1 del año del corte, el período arranca el 1° del mes siguiente a los últimos datos publicados ("Datos al" siempre es fin de mes, así que nunca dice 29/02), aunque cruce el año. Ejemplos:
 - Parque Automotor tiene datos al 31/12/2022 → se pide del 01/01/2023 al 31/12/2025.
 - Pauta tiene datos al 30/09/2026 y avanzó a 30/04/2027 → se pide del 01/10/2026 al 31/03/2027.
 
@@ -149,7 +149,7 @@ Es un módulo nuevo, puro, sin pool ni `Date` local, al estilo de `auditoriaRegl
   - `anio_anterior`: el 31/12 del año pedido;
   - `ejercicio`: el 31/12 del año del vencimiento;
   - `edicion`, `relevamiento` y `eventual`: `null`.
-- Aplica R7 si `vencimiento < hoy`, y "lo que falta" si `datosAl + 1 día < desde`.
+- Aplica R7 si `vencimiento < hoy`, y "lo que falta" si el 1° del mes siguiente a `datosAl` es anterior a `desde` (en `ejercicio`, el primer ejercicio que falta es el año siguiente al de `datosAl`).
 - Los textos exactos están en la sección 5, con fechas `dd/mm/aaaa`.
 
 **`cubre(datosAl, vencimiento, tipo, meses)`**: es verdadero si `pedido(...).hasta` no es nulo y `datosAl >= hasta`.
