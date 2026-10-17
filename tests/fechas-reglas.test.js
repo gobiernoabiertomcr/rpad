@@ -90,13 +90,15 @@ const CASOS = [
 describe('la tabla de casos de la spec (sección 7), con hoy = 17/10/2026', () => {
   for (const c of CASOS) {
     describe(c.caso, () => {
-      const opciones = opcionesDeProxima({ vencimiento: c.vence, tipo: c.tipo, meses: c.meses, datosNuevo: c.datosNuevo, hoy: HOY });
+      // Se calcula dentro de cada it: si tirara error, falla ese test y no la carga de toda la tabla
+      const opcionesDelCaso = () => opcionesDeProxima({ vencimiento: c.vence, tipo: c.tipo, meses: c.meses, datosNuevo: c.datosNuevo, hoy: HOY });
 
       it('lo que pide hoy', () => {
         assert.equal(pedido({ vencimiento: c.vence, tipo: c.tipo, datosAl: c.datosAl, meses: c.meses, hoy: HOY }).texto, c.pideHoy);
       });
 
       it('la sugerida', () => {
+        const opciones = opcionesDelCaso();
         if (c.sugerida === null) {
           assert.deepEqual(opciones, []);
           return;
@@ -110,7 +112,7 @@ describe('la tabla de casos de la spec (sección 7), con hoy = 17/10/2026', () =
       });
 
       it('las otras opciones', () => {
-        const otras = opciones.slice(1);
+        const otras = opcionesDelCaso().slice(1);
         assert.ok(otras.every(o => o.sugerida === false), 'solo la primera es la sugerida');
         assert.deepEqual(otras.map(({ fecha, motivo, advertencia }) => ({ fecha, motivo, advertencia })), c.otras);
       });
@@ -145,6 +147,22 @@ describe('pedido (secciones 2, 5 y 7)', () => {
     assert.equal(pedido({ vencimiento: '2024-01-31', tipo: 'acumulado', meses: null, hoy: HOY }).hasta, '2023-12-31');
   });
 
+  it('R7 también en ejercicio y en foto', () => {
+    // Pasó el 31/01/2027: también se debe el presupuesto de 2027
+    assert.equal(pedido({ vencimiento: '2026-01-31', tipo: 'ejercicio', datosAl: '2025-12-31', meses: 12, hoy: '2027-02-15' }).texto,
+      'Presupuestos de los ejercicios 2026 y 2027');
+    // Pasó el 31/01/2027: la foto se pide a su corte
+    assert.equal(pedido({ vencimiento: '2026-07-31', tipo: 'foto', meses: 6, hoy: '2027-02-01' }).texto, 'Vigente al 31/12/2026');
+  });
+
+  it('lo que falta arranca el 1° del mes siguiente al de "Datos al": nunca el 29/02', () => {
+    // R5: "Datos al" 28/02/2028 es el fin de febrero de 2028, aunque 2028 sea bisiesto
+    assert.equal(pedido({ vencimiento: '2029-03-31', tipo: 'acumulado', datosAl: '2028-02-28', meses: 1, hoy: '2029-03-01' }).texto,
+      'Del 01/03/2028 al 28/02/2029');
+    assert.equal(pedido({ vencimiento: '2030-06-30', tipo: 'anio_anterior', datosAl: '2028-02-28', meses: 12, hoy: '2029-03-01' }).texto,
+      'Del 01/03/2028 al 31/12/2029');
+  });
+
   it('anio_anterior: el último año calendario cerrado al corte', () => {
     assert.equal(pedido({ vencimiento: '2027-01-31', tipo: 'anio_anterior', meses: 12, hoy: HOY }).texto, 'Del 01/01/2026 al 31/12/2026');
     assert.equal(pedido({ vencimiento: '2026-12-31', tipo: 'anio_anterior', meses: 12, hoy: HOY }).texto, 'Del 01/01/2025 al 31/12/2025');
@@ -160,6 +178,9 @@ describe('pedido (secciones 2, 5 y 7)', () => {
     assert.equal(ejercicio('2025-12-31'), 'Presupuestos de los ejercicios 2026 y 2027');
     assert.equal(ejercicio('2024-12-31'), 'Presupuestos de los ejercicios 2025 a 2027');
     assert.equal(ejercicio('2023-12-31'), 'Presupuestos de los ejercicios 2024 a 2027');
+    // El primer ejercicio que falta es el del año siguiente al de "Datos al"
+    assert.equal(ejercicio('2026-06-30'), 'Presupuesto del ejercicio 2027');
+    assert.equal(ejercicio('2025-06-30'), 'Presupuestos de los ejercicios 2026 y 2027');
   });
 
   it('un vencimiento viejo que no es fin de mes cuenta como el fin de su mes', () => {

@@ -3,7 +3,7 @@
 // sin base de datos ni Date local: las fechas son strings 'AAAA-MM-DD' y los meses se suman sobre el índice
 // año × 12 + mes − 1. Febrero va siempre en 28, también en los años bisiestos (R1). Ninguna función tira error: con una
 // entrada inválida devuelven null, false o una lista vacía.
-import { diasEntre, esFechaIso, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
+import { diasEntre, esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 
 export const TIPOS_PEDIDO = Object.freeze(['acumulado', 'foto', 'anio_anterior', 'ejercicio', 'edicion', 'relevamiento', 'eventual']);
 
@@ -89,19 +89,29 @@ export const tipoEfectivo = (dataset) => {
   return TIPOS_PEDIDO.includes(tipoPedido) ? tipoPedido : tipoSugerido(tipoGestion, meses);
 };
 
-// R3, "se pide siempre todo lo que falta": si los datos publicados terminan antes de inicio, el pedido arranca el día
-// siguiente a los últimos datos (datosAl + 1 día < inicio). Sin datos publicados, desde inicio
-const inicioConLoQueFalta = (inicio, datosAl) =>
-  (esFechaIso(datosAl) && datosAl < sumarDias(inicio, -1) ? sumarDias(datosAl, 1) : inicio);
+// El 1° del mes siguiente al de iso. null si iso no es válida o si pasaría del año 9999
+const primeroDelMesSiguiente = (iso) => {
+  const finDelMesSiguiente = sumarMeses(iso, 1);
+  return finDelMesSiguiente === null ? null : `${finDelMesSiguiente.slice(0, 8)}01`;
+};
+
+// R3, "se pide siempre todo lo que falta": si el mes siguiente al de "Datos al" empieza antes de inicio, el pedido
+// arranca ahí. Es el 1° de ese mes, no datosAl + 1 día: por R5, '2028-02-28' es el fin de febrero de 2028 y lo que
+// falta empieza el 01/03, nunca el 29/02. Sin datos publicados, desde inicio
+const inicioConLoQueFalta = (inicio, datosAl) => {
+  const siguiente = primeroDelMesSiguiente(datosAl);
+  return siguiente !== null && siguiente < inicio ? siguiente : inicio;
+};
 
 const periodo = (inicio, hasta, datosAl) => {
   const desde = inicioConLoQueFalta(inicio, datosAl);
   return { desde, hasta, texto: `Del ${formatoCorto(desde)} al ${formatoCorto(hasta)}` };
 };
 
-// El presupuesto del ejercicio del vencimiento y, si faltan, los de los ejercicios anteriores que no se publicaron
+// El presupuesto del ejercicio del vencimiento y, si faltan, los anteriores: el primer ejercicio que falta es el del año
+// siguiente al de "Datos al" (en los presupuestos, "Datos al" es el 31/12 del ejercicio publicado)
 const ejercicios = (anio, datosAl) => {
-  const primero = anioDe(inicioConLoQueFalta(primeroDeEnero(anio), datosAl));
+  const primero = esFechaIso(datosAl) ? Math.min(anio, anioDe(datosAl) + 1) : anio;
   let texto = `Presupuesto del ejercicio ${anio}`;
   if (primero < anio) texto = `Presupuestos de los ejercicios ${primero} ${anio - primero === 1 ? 'y' : 'a'} ${anio}`;
   return { desde: primeroDeEnero(primero), hasta: finDeAnio(anio), texto };
