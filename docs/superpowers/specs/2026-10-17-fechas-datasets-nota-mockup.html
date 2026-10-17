@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nota con datos solicitados - RPAD (mockup)</title>
+<style>
+  body { margin: 0; background: #EEF1F4; font-family: Inter, -apple-system, 'Segoe UI', sans-serif; color: #2B3A4A; }
+  .guia { max-width: 820px; margin: 24px auto 8px; padding: 0 16px; }
+  .guia h1 { font-size: 1.15rem; color: #1F3A5F; margin: 0 0 4px; }
+  .guia p { margin: 0 0 6px; font-size: 0.9rem; color: #5F6E80; line-height: 1.45; }
+  .guia h2 { font-size: 0.95rem; color: #1F3A5F; margin: 26px 0 8px; }
+  .hoja { max-width: 760px; margin: 0 auto 8px; background: #fff; border: 1px solid #D5DEE7; border-radius: 6px; padding: 28px 30px; box-shadow: 0 2px 8px rgba(31,58,95,.06); }
+  .nuevo { background: #E6F4EC; outline: 2px solid #8CC7A6; outline-offset: -2px; }
+  .cambia { background: #FFF6DB; }
+  .marca-cambio { display: inline-block; font-family: Inter, sans-serif; font-size: 11px; font-weight: 600; color: #2E6B4C; background: #DDF1E6; border-radius: 999px; padding: 1px 8px; margin-left: 6px; vertical-align: 2px; }
+  /* Anexo (aproximación del PDF) */
+  .anexo { font-family: Arial, Helvetica, sans-serif; color: #1F2D3D; }
+  .anexo .etq { font-size: 11px; letter-spacing: .08em; color: #5F6E80; margin: 0 0 6px; }
+  .anexo h3 { font-size: 20px; margin: 0 0 10px; color: #1F3A5F; }
+  .anexo .estado { font-size: 13px; color: #24507A; margin: 0 0 14px; }
+  .anexo .pedido { border-left: 4px solid #1F3A5F; background: #F3F7FB; padding: 10px 14px; margin: 0 0 16px; }
+  .anexo .pedido small { display: block; font-size: 11px; letter-spacing: .08em; color: #5F6E80; margin-bottom: 2px; }
+  .anexo .pedido b { font-size: 16px; color: #1F3A5F; }
+  .anexo .linea { position: relative; height: 54px; margin: 6px 6px 12px; }
+  .anexo .linea .pista { position: absolute; left: 0; right: 0; top: 18px; height: 6px; background: #D5DEE7; border-radius: 3px; }
+  .anexo .linea .punto { position: absolute; top: 13px; width: 16px; height: 16px; border-radius: 50%; background: #1F3A5F; transform: translateX(-50%); }
+  .anexo .linea .hoy { position: absolute; top: 8px; width: 2px; height: 26px; background: #C0504D; }
+  .anexo .linea span { position: absolute; top: 34px; font-size: 11px; color: #5F6E80; white-space: nowrap; }
+  .anexo .resto { font-size: 12px; color: #5F6E80; border-top: 1px dashed #D5DEE7; padding-top: 10px; }
+  /* Email al área (aproximación del marco celeste) */
+  .email { font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #2B3A4A; }
+  .tarjeta { border: 1px solid #DCE6F0; border-radius: 8px; padding: 12px 14px; margin: 0 0 10px; background: #F7FAFD; }
+  .tarjeta b { color: #1F3A5F; }
+  .tarjeta div { margin-top: 3px; }
+</style>
+</head>
+<body>
+<div class="guia">
+  <h1>Cómo quedarían la nota, el anexo y el aviso a las áreas</h1>
+  <p>Mockup con datos reales: el aviso externo de los datasets que vencen el 31/01/2027, que saldría el 22/12/2026. Lo resaltado en verde es nuevo y lo amarillo cambia de nombre. El resto queda como hoy.</p>
+
+  <h2>1. Nota Digital de aviso (gestión externa)</h2>
+</div>
+<div class="hoja">
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:#000000;">
+<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTAN NOTA Y ANEXO EN PDF</p>
+<p style="margin:0 0 4px;"><b><u>REF.:</u></b> "Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal"</p>
+<p style="margin:0 0 24px;text-align:right;"><b>Nota Digital N°</b> 9/26</p>
+<p style="margin:0 0 16px;"><b><u>DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL</u></b></p>
+<p style="margin:0 0 12px;text-align:justify;">Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.)<span class="nuevo">, con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío</span>.</p>
+<p style="margin:16px 0 6px;"><b>Próximos a vencer</b></p>
+<p style="margin:0 0 12px;text-align:justify;">Los siguientes conjuntos de datos se encuentran próximos a cumplir su plazo de actualización:</p>
+<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;">
+<tr>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Conjunto de datos</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Área responsable</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Frecuencia</th>
+  <th class="nuevo" style="border:1px solid #000;padding:5px 6px;text-align:left;">Datos solicitados</th>
+  <th class="cambia" style="border:1px solid #000;padding:5px 6px;text-align:left;">Fecha sugerida de envío</th>
+</tr>
+<tr><td style="border:1px solid #000;padding:5px 6px;"><u>Pauta Publicitaria</u></td><td style="border:1px solid #000;padding:5px 6px;">Subsecretaría de Comunicación</td><td style="border:1px solid #000;padding:5px 6px;">Trimestralmente</td><td class="nuevo" style="border:1px solid #000;padding:5px 6px;">Del 01/01/2026 al 31/12/2026</td><td style="border:1px solid #000;padding:5px 6px;">31/01/2027</td></tr>
+<tr><td style="border:1px solid #000;padding:5px 6px;"><u>Pedidos de Acceso a la Información Pública</u></td><td style="border:1px solid #000;padding:5px 6px;">Agencia de Acceso a la Información Pública</td><td style="border:1px solid #000;padding:5px 6px;">Cuatrimestralmente</td><td class="nuevo" style="border:1px solid #000;padding:5px 6px;">Del 01/01/2026 al 31/12/2026</td><td style="border:1px solid #000;padding:5px 6px;">31/01/2027</td></tr>
+<tr><td style="border:1px solid #000;padding:5px 6px;"><u>Presupuesto con perspectiva de género</u></td><td style="border:1px solid #000;padding:5px 6px;">Secretaría de la Mujer, Género y Diversidad</td><td style="border:1px solid #000;padding:5px 6px;">Anualmente</td><td class="nuevo" style="border:1px solid #000;padding:5px 6px;">Presupuestos de los ejercicios 2026 y 2027</td><td style="border:1px solid #000;padding:5px 6px;">31/01/2027</td></tr>
+<tr><td style="border:1px solid #000;padding:5px 6px;"><u>Castraciones de Animales</u></td><td style="border:1px solid #000;padding:5px 6px;">Dirección General de Veterinaria, Control de Fauna Urbana y Plagas</td><td style="border:1px solid #000;padding:5px 6px;">Anualmente</td><td class="nuevo" style="border:1px solid #000;padding:5px 6px;">Del 01/01/2026 al 31/12/2026</td><td style="border:1px solid #000;padding:5px 6px;">31/01/2027</td></tr>
+</table>
+<p style="margin:0 0 12px;font-size:13px;color:#555;">(Se van las columnas "Última actualización", que era la fecha de carga en el portal, y "Situación", que decía "Faltan N días". En la reiteración, "Situación" sigue: ver el punto 2.)</p>
+<p style="margin:16px 0 6px;"><b>Datos de contacto de las áreas responsables</b></p>
+<p style="margin:0 0 10px;color:#555;">(como hoy)</p>
+<p style="margin:16px 0 0;">Anexo: reporte de los conjuntos de datos (4 hojas).</p>
+<p style="margin:16px 0 6px;"><b>Justificación:</b></p>
+<p style="margin:0 0 12px;text-align:justify;color:#555;">(como hoy)</p>
+<p style="margin:24px 0 0;"><b><u>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</u></b>, 22 de diciembre de 2026.</p>
+<p style="margin:32px 0 0;text-align:right;">Nombre de quien firma<br>Cargo</p>
+</div>
+</div>
+
+<div class="guia"><h2>2. Reiteración (vencidos)</h2><p>Mismas columnas que hoy, con "Datos solicitados" en lugar de "Última actualización". En los vencidos de hace mucho se pide todo lo que falta. Si el dataset tuvo aviso, se repite el período que se pidió en ese aviso.</p></div>
+<div class="hoja">
+<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:12.5px;font-family:Arial,Helvetica,sans-serif;">
+<tr>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Conjunto de datos</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Área responsable</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Frecuencia</th>
+  <th class="nuevo" style="border:1px solid #000;padding:5px 6px;text-align:left;">Datos solicitados</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Venció</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Situación</th>
+  <th style="border:1px solid #000;padding:5px 6px;text-align:left;">Informado en</th>
+</tr>
+<tr><td style="border:1px solid #000;padding:5px 6px;">Parque Automotor (Patentamiento)</td><td style="border:1px solid #000;padding:5px 6px;">Dirección de Información Tributaria</td><td style="border:1px solid #000;padding:5px 6px;">Anualmente</td><td class="nuevo" style="border:1px solid #000;padding:5px 6px;">Del 01/01/2023 al 31/12/2025</td><td style="border:1px solid #000;padding:5px 6px;">31/01/2024</td><td style="border:1px solid #000;padding:5px 6px;">Vencido hace 1056 días</td><td style="border:1px solid #000;padding:5px 6px;">Sin aviso previo</td></tr>
+<tr><td style="border:1px solid #000;padding:5px 6px;">Gasto Público</td><td style="border:1px solid #000;padding:5px 6px;">Secretaría de Economía, Finanzas y Control de Gestión</td><td style="border:1px solid #000;padding:5px 6px;">Cada medio año</td><td class="nuevo" style="border:1px solid #000;padding:5px 6px;">Del 01/01/2026 al 30/06/2026</td><td style="border:1px solid #000;padding:5px 6px;">31/07/2026</td><td style="border:1px solid #000;padding:5px 6px;">Vencido hace 144 días</td><td style="border:1px solid #000;padding:5px 6px;">Sin aviso previo</td></tr>
+</table>
+</div>
+
+<div class="guia"><h2>3. Anexo (una hoja por dataset)</h2><p>Debajo del título se agrega el recuadro "Datos solicitados". La línea de tiempo arranca en los datos publicados, no en la fecha de carga.</p></div>
+<div class="hoja anexo">
+  <p class="etq">CONJUNTO DE DATOS · GESTIÓN EXTERNA</p>
+  <h3>Pauta Publicitaria</h3>
+  <p class="estado"><span class="cambia">Fecha sugerida de envío: 31/01/2027</span> · faltan 40 días</p>
+  <div class="pedido nuevo"><small>DATOS SOLICITADOS</small><b>Del 01/01/2026 al 31/12/2026</b></div>
+  <div class="linea">
+    <div class="pista"></div>
+    <div class="punto" style="left:4%"></div><span style="left:0" class="cambia">Datos publicados al 31/07/2026</span>
+    <div class="hoy" style="left:87%"></div>
+    <div class="punto" style="left:96%"></div><span style="right:0">Fecha sugerida de envío 31/01/2027</span>
+  </div>
+  <div class="resto">Descripción, ficha (área, gestión, frecuencia, temas, formatos), enlace y QR, "Qué se solicita" (sin la frase del período), observaciones y contacto: como hoy.</div>
+</div>
+
+<div class="guia"><h2>4. Aviso por email a las áreas (gestión externa, 40 días antes)</h2><p>A cada tarjeta se le suman dos renglones.</p></div>
+<div class="hoja email">
+  <p>Estimados/as:</p>
+  <p>…próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets:</p>
+  <div class="tarjeta">
+    <b>1. Pauta Publicitaria</b>
+    <div>Frecuencia de actualización: Trimestralmente</div>
+    <div class="nuevo">Datos que se solicitarán: del 01/01/2026 al 31/12/2026</div>
+    <div class="nuevo">Fecha sugerida de envío: 31/01/2027</div>
+    <div style="color:#24507A">Ver dataset en el portal</div>
+  </div>
+</div>
+<div style="height:40px"></div>
+</body>
+</html>

@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestión de Datasets - RPAD (mockup, datos reales de ejemplo)</title>
+<link rel="icon" type="image/png" href="../../../public/img/icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../../public/css/main.css">
+<style>
+  [hidden] { display: none !important; }
+  :root {
+    --pf-tinta: #1F3A5F; --pf-texto: #2B3A4A; --pf-suave: #5F6E80; --pf-linea: #E4E9EF; --pf-sutil: #F7F9FB; --pf-acento: #3E6B96;
+    --pf-verde-fondo: #DDF1E6; --pf-verde: #2E6B4C; --pf-azul-fondo: #DCEAF7; --pf-azul: #24507A;
+    --pf-rojo-fondo: #F8E1E1; --pf-rojo: #8A3434; --pf-ambar-fondo: #FBF1DC; --pf-ambar-borde: #F0DDB0; --pf-ambar: #7A5A14;
+    --pf-violeta-fondo: #ECE6F6; --pf-violeta: #4B3A78; --pf-gris-fondo: #EEF1F4;
+  }
+  .main-content { min-width: 0; }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- Lista ---------- */
+  .ad-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .ad-barra input[type=search] { flex: 1; min-width: 220px; font: inherit; font-size: 0.9rem; border: 1px solid var(--pf-linea); border-radius: 8px; padding: 9px 12px; background: #fff; color: var(--pf-texto); }
+  .ad-barra select { font: inherit; font-size: 0.85rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 8px 28px 8px 10px; background: #fff; }
+  .ad-estados { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .ad-estado-filtro { font: inherit; font-size: 0.82rem; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); border-radius: 999px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
+  .ad-estado-filtro b { font-variant-numeric: tabular-nums; color: var(--pf-tinta); }
+  .ad-estado-filtro[aria-pressed=true] { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
+  .ad-estado-filtro[aria-pressed=true] b { color: #fff; }
+  .ad-estado-filtro:focus-visible, .ad-btn:focus-visible, .ad-icono:focus-visible, .ad-opcion:focus-within { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+
+  .ad-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
+  table.ad-tabla { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  .ad-tabla th { text-align: left; font-weight: 500; color: var(--pf-suave); font-size: 0.8rem; padding: 11px 14px; border-bottom: 1px solid var(--pf-linea); background: var(--pf-sutil); white-space: nowrap; }
+  .ad-tabla td { padding: 12px 14px; border-bottom: 1px solid var(--pf-linea); vertical-align: top; color: var(--pf-texto); }
+  .ad-tabla tr:last-child td { border-bottom: 0; }
+  .ad-tabla tr.bloqueada td { background: #FBFAF6; }
+  .ad-titulo { font-weight: 600; color: var(--pf-tinta); line-height: 1.3; }
+  .ad-sub { display: block; color: var(--pf-suave); font-size: 0.78rem; margin-top: 2px; line-height: 1.35; }
+  .ad-fecha { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ad-chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .ad-chip.vencido { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+  .ad-chip.proximo { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+  .ad-chip.al-dia { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+  .ad-chip.eventual { background: var(--pf-gris-fondo); color: var(--pf-suave); }
+  .ad-chip.pendiente { background: var(--pf-violeta-fondo); color: var(--pf-violeta); }
+  .ad-acciones { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+  .ad-btn { font: inherit; font-size: 0.8rem; font-weight: 600; border-radius: 8px; padding: 7px 11px; cursor: pointer; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .ad-btn:hover:not(:disabled) { background: var(--pf-sutil); }
+  .ad-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .ad-btn.primario:hover:not(:disabled) { background: var(--primary-dark); }
+  .ad-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .ad-btn.registrar { color: var(--pf-tinta); border-color: #C9D6E3; }
+  .ad-btn.registrar svg { color: var(--pf-verde); }
+  .ad-tabla .ocultable .ad-sub { white-space: nowrap; }
+  .ad-icono { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-suave); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .ad-icono:hover:not(:disabled) { color: var(--pf-tinta); background: var(--pf-sutil); }
+  .ad-icono.borrar:hover:not(:disabled) { color: var(--pf-rojo); }
+  .ad-icono:disabled { opacity: .45; cursor: not-allowed; }
+  .ad-pie-tabla { padding: 10px 14px; font-size: 0.8rem; color: var(--pf-suave); border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); }
+
+  /* ---------- Ventanas ---------- */
+  .ad-velo { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; z-index: 1100; overflow: auto; }
+  .ad-ventana { background: #fff; border-radius: 14px; width: min(720px, 100%); box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+  .ad-ventana > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--pf-linea); }
+  .ad-ventana > header h2 { margin: 0; font-size: 1.05rem; color: var(--pf-tinta); }
+  .ad-ventana > header p { margin: 3px 0 0; font-size: 0.88rem; color: var(--pf-texto); }
+  .ad-cerrar { background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--pf-suave); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+  .ad-cerrar:hover { background: var(--pf-sutil); }
+  .ad-cuerpo { padding: 18px 22px 8px; }
+  .ad-ventana > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 22px; border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); border-radius: 0 0 14px 14px; }
+  .ad-ventana > footer p { margin: 0; font-size: 0.8rem; color: var(--pf-suave); max-width: 380px; line-height: 1.4; }
+  .ad-ventana > footer .botones { display: flex; gap: 8px; }
+
+  /* Lo que se pidió + línea del ciclo (lo distintivo de la pantalla) */
+  .ad-pedido { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 12px; background: var(--pf-sutil); margin-bottom: 20px; }
+  .ad-pedido .rotulo { font-size: 0.8rem; color: var(--pf-suave); margin: 0; }
+  .ad-pedido .periodo { font-size: 1.15rem; font-weight: 600; color: var(--pf-tinta); margin: 2px 0 10px; font-variant-numeric: tabular-nums; }
+  .ad-pedido dl { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0 0 14px; font-size: 0.83rem; }
+  .ad-pedido dl div { display: flex; gap: 6px; }
+  .ad-pedido dt { color: var(--pf-suave); }
+  .ad-pedido dd { margin: 0; color: var(--pf-texto); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .ad-ciclo { position: relative; height: 58px; margin: 6px 4px 2px; }
+  .ad-ciclo .pista { position: absolute; left: 0; right: 0; top: 16px; height: 10px; border-radius: 999px; background: #E6EBF1; }
+  .ad-ciclo .banda { position: absolute; top: 16px; height: 10px; }
+  .ad-ciclo .publicado { background: #9DB3C9; border-radius: 999px 0 0 999px; }
+  .ad-ciclo .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 6px, #FBF1DC 6px 12px); border: 1px solid #E6C77F; }
+  .ad-ciclo .llega { background: #5FA982; transition: width .35s ease; }
+  .ad-ciclo .marca { position: absolute; top: 8px; width: 2px; height: 26px; background: var(--pf-tinta); }
+  .ad-ciclo .marca.hoy { background: #C0504D; }
+  .ad-ciclo .etiqueta { position: absolute; top: 38px; font-size: 0.72rem; color: var(--pf-suave); white-space: nowrap; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .ad-ciclo .etiqueta.arriba, .ad-ciclo .etiqueta.hoy { top: -8px; }
+  .ad-ciclo .etiqueta.hoy { color: #A13F3C; }
+  .ad-leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.75rem; color: var(--pf-suave); margin-top: 6px; }
+  .ad-leyenda span { display: inline-flex; gap: 6px; align-items: center; }
+  .ad-leyenda i { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+
+  .ad-paso { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; margin-bottom: 18px; }
+  .ad-num { width: 24px; height: 24px; border-radius: 50%; background: var(--pf-tinta); color: #fff; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .ad-paso h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--pf-tinta); }
+  .ad-ayuda { font-size: 0.8rem; color: var(--pf-suave); margin: 6px 0 0; }
+  .ad-error { font-size: 0.8rem; color: var(--pf-rojo); margin: 6px 0 0; }
+  .ad-mes { display: flex; gap: 8px; }
+  .ad-mes select, .ad-campos input[type=date], .ad-form select, .ad-form input, .ad-form textarea { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid #D5DEE7; border-radius: 8px; padding: 8px 10px; background: #fff; }
+  .ad-mes select:first-child { min-width: 150px; }
+  .ad-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ad-campos label, .ad-form label { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
+  .ad-campos input { width: 100%; }
+
+  .ad-opciones { display: grid; gap: 8px; }
+  .ad-opcion { display: grid; grid-template-columns: 20px 1fr; gap: 10px; border: 1px solid #D5DEE7; border-radius: 10px; padding: 12px 14px; cursor: pointer; background: #fff; }
+  .ad-opcion:hover { border-color: #A9BBCD; }
+  .ad-opcion input { margin-top: 3px; accent-color: var(--pf-tinta); }
+  .ad-opcion.elegida { border-color: var(--pf-tinta); box-shadow: 0 0 0 1px var(--pf-tinta) inset; background: #FAFCFE; }
+  .ad-opcion .fecha { font-weight: 700; color: var(--pf-tinta); font-variant-numeric: tabular-nums; font-size: 1rem; }
+  .ad-opcion .que { font-weight: 500; color: var(--pf-texto); margin-left: 8px; }
+  .ad-sugerida { font-size: 0.7rem; font-weight: 700; color: var(--pf-verde); background: var(--pf-verde-fondo); border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: 2px; }
+  .ad-opcion .porque { display: block; font-size: 0.8rem; color: var(--pf-suave); margin-top: 3px; }
+  .ad-opcion .despues { display: block; font-size: 0.8rem; color: var(--pf-texto); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--pf-linea); }
+  .ad-opcion .aviso { color: var(--pf-ambar); }
+  .ad-otra { margin-top: 8px; }
+
+  /* Formulario: sección Actualización y pedido */
+  .ad-form fieldset { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 6px; margin: 0 0 16px; }
+  .ad-form legend { padding: 0 6px; font-weight: 600; color: var(--pf-tinta); font-size: 0.95rem; }
+  .ad-form .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .ad-form .fila.tres { grid-template-columns: 1fr 1fr 1fr; }
+  .ad-form select, .ad-form input, .ad-form textarea { width: 100%; }
+  .ad-form textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
+  .ad-form .resumen { font-size: 0.85rem; color: var(--pf-texto); display: flex; justify-content: space-between; gap: 12px; }
+  .ad-form .resumen span { color: var(--pf-suave); }
+  .ad-sugerencia { font-size: 0.78rem; color: var(--pf-suave); margin-top: 4px; }
+  .ad-sugerencia button { font: inherit; color: var(--pf-acento); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  .ad-alerta { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; font-size: 0.82rem; background: var(--pf-ambar-fondo); border: 1px solid var(--pf-ambar-borde); color: var(--pf-ambar); margin-top: 8px; }
+  .ad-nota { border: 1px solid #CFD8E3; border-radius: 10px; overflow: hidden; margin: 4px 0 14px; }
+  .ad-nota .cab { background: var(--pf-sutil); padding: 8px 12px; font-size: 0.8rem; color: var(--pf-suave); border-bottom: 1px solid var(--pf-linea); }
+  .ad-nota table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .ad-nota th { text-align: left; font-weight: 600; color: var(--pf-tinta); padding: 8px 10px; border-bottom: 1px solid var(--pf-linea); background: #fff; }
+  .ad-nota td { padding: 8px 10px; color: var(--pf-texto); vertical-align: top; }
+  .ad-nota .solicita { padding: 8px 12px 10px; font-size: 0.8rem; color: var(--pf-texto); border-top: 1px solid var(--pf-linea); line-height: 1.45; }
+  .ad-nota .solicita b { color: var(--pf-tinta); }
+
+  .ad-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--pf-tinta); color: #fff; padding: 11px 16px; border-radius: 10px; font-size: 0.88rem; z-index: 1200; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+
+  .mk { position: fixed; right: 16px; bottom: 16px; z-index: 1150; background: #1F2937; color: #E5E7EB; border-radius: 12px; padding: 10px 14px; font-size: 0.8rem; max-width: 320px; line-height: 1.4; }
+
+  @media (max-width: 860px) {
+    .ad-tabla .ocultable { display: none; }
+    .ad-campos, .ad-form .fila, .ad-form .fila.tres { grid-template-columns: 1fr; }
+    .ad-btn .largo { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header class="header">
+    <div class="header-left">
+      <button class="sidebar-toggle" title="Menú"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg></button>
+      <img src="../../../public/img/logo.png" alt="Logo" class="header-logo">
+      <div><div class="header-title">RPAD</div><div class="header-subtitle">Registro Permanente de Actualización de Datasets</div></div>
+    </div>
+    <div class="header-right">
+      <a class="header-user"><div class="header-user-info"><div class="header-user-name">Persona Superadmin</div><div class="header-user-role">Superadmin</div></div><div class="header-user-avatar">PS</div></a>
+      <button class="btn btn-secondary btn-sm">Salir</button>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1 class="page-title"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg> Gestión de Datasets</h1>
+      <button class="btn btn-primary" data-nuevo>+ Nuevo dataset</button>
+    </div>
+
+    <div class="ad-barra">
+      <label class="vh" for="buscar">Buscar</label>
+      <input type="search" id="buscar" placeholder="Buscar por título o área">
+      <select aria-label="Gestión"><option>Interna y externa</option><option>Interna</option><option>Externa</option></select>
+      <select aria-label="Tipo de pedido"><option>Todos los tipos de pedido</option><option>Acumulado</option><option>Foto al corte</option><option>Año anterior completo</option><option>Ejercicio que empieza</option><option>Próxima edición</option><option>Relevamiento interno</option><option>Eventual</option></select>
+    </div>
+    <div class="ad-estados" role="group" aria-label="Filtrar por estado">
+      <button class="ad-estado-filtro" aria-pressed="true" data-filtro="">Todos <b>80</b></button>
+      <button class="ad-estado-filtro" aria-pressed="false" data-filtro="vencido">Vencidos <b>13</b></button>
+      <button class="ad-estado-filtro" aria-pressed="false" data-filtro="proximo">Vencen en menos de 60 días <b>1</b></button>
+      <button class="ad-estado-filtro" aria-pressed="false" data-filtro="al-dia">Al día <b>52</b></button>
+      <button class="ad-estado-filtro" aria-pressed="false" data-filtro="eventual">Eventuales <b>14</b></button>
+      <button class="ad-estado-filtro" aria-pressed="false" data-filtro="pendiente">Con un cambio pendiente <b>1</b></button>
+    </div>
+
+    <div class="ad-marco">
+      <table class="ad-tabla">
+        <thead><tr><th>Dataset</th><th>Estado</th><th class="ocultable">Datos publicados</th><th>Próximo pedido</th><th><span class="vh">Acciones</span></th></tr></thead>
+        <tbody id="filas"></tbody>
+      </table>
+      <div class="ad-pie-tabla">Mostrando 15 de 80 datasets (mockup)</div>
+    </div>
+  </main>
+</div>
+
+<!-- REGISTRAR ACTUALIZACIÓN -->
+<div class="ad-velo" id="v-registrar" hidden>
+  <div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="r-titulo">
+    <header>
+      <div><h2 id="r-titulo">Registrar actualización</h2><p id="r-dataset"></p></div>
+      <button class="ad-cerrar" data-cerrar aria-label="Cerrar">×</button>
+    </header>
+    <div class="ad-cuerpo">
+      <section class="ad-pedido" aria-labelledby="r-rotulo">
+        <p class="rotulo" id="r-rotulo">Datos solicitados</p>
+        <p class="periodo" id="r-periodo"></p>
+        <dl id="r-datos"></dl>
+        <div class="ad-ciclo" id="r-ciclo" aria-hidden="true"></div>
+        <div class="ad-leyenda" aria-hidden="true">
+          <span><i style="background:#9DB3C9"></i>Ya publicado</span>
+          <span><i style="background:repeating-linear-gradient(135deg,#F3D9A0 0 4px,#FBF1DC 4px 8px);border:1px solid #E6C77F"></i>Pedido, todavía no llegó</span>
+          <span><i style="background:#5FA982"></i>Llega con esta actualización</span>
+        </div>
+      </section>
+
+      <div class="ad-paso">
+        <div class="ad-num">1</div>
+        <div>
+          <h3 id="r-p1">¿A qué fecha son los datos que llegaron?</h3>
+          <div class="ad-mes" role="group" aria-labelledby="r-p1">
+            <select id="r-mes" aria-label="Mes"></select>
+            <select id="r-anio" aria-label="Año"></select>
+          </div>
+          <p class="ad-ayuda" id="r-ayuda1">Siempre es fin de mes. Por defecto, lo que se pidió.</p>
+          <p class="ad-error" id="r-error1" hidden></p>
+        </div>
+      </div>
+
+      <div class="ad-paso">
+        <div class="ad-num">2</div>
+        <div>
+          <h3>¿Cuándo llegó y cuándo se cargó?</h3>
+          <div class="ad-campos">
+            <div><label for="r-recibido">Recibido el (opcional)</label><input type="date" id="r-recibido"></div>
+            <div><label for="r-cargado">Cargado en el portal el</label><input type="date" id="r-cargado" value="2026-10-17"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ad-paso" id="r-paso3">
+        <div class="ad-num">3</div>
+        <div>
+          <h3 id="r-p3">Próxima actualización</h3>
+          <div class="ad-opciones" role="radiogroup" aria-labelledby="r-p3" id="r-opciones"></div>
+          <div class="ad-otra" id="r-otra" hidden>
+            <div class="ad-mes"><select id="r-otra-mes" aria-label="Mes de la otra fecha"></select><select id="r-otra-anio" aria-label="Año de la otra fecha"></select></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <p>Queda como propuesta: otra persona la aprueba en Mi Perfil. Hasta entonces, el dataset no se puede editar.</p>
+      <div class="botones"><button class="ad-btn" data-cerrar>Cancelar</button><button class="ad-btn primario" id="r-proponer" disabled>Proponer actualización</button></div>
+    </footer>
+  </div>
+</div>
+
+<!-- NUEVO DATASET - PASO 1 (importar desde el portal: se mantiene) -->
+<div class="ad-velo" id="v-paso1" hidden>
+  <div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="p1-titulo" style="width:min(520px,100%)">
+    <header>
+      <div><h2 id="p1-titulo">Nuevo dataset - Paso 1</h2></div>
+      <button class="ad-cerrar" data-cerrar aria-label="Cerrar">×</button>
+    </header>
+    <div class="ad-cuerpo ad-form">
+      <div style="display:flex;gap:10px;padding:12px 14px;border-radius:10px;background:var(--pf-azul-fondo);color:var(--pf-azul);font-size:0.88rem;margin-bottom:16px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:1px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        <div><b>Importar desde el Portal de Datos Abiertos</b><br>Pegá la URL del dataset para traer el título, la descripción y los formatos.</div>
+      </div>
+      <label for="p1-url">URL del dataset en el portal</label>
+      <input type="url" id="p1-url" placeholder="https://datos.comodoro.gov.ar/dataset/nombre-del-dataset">
+      <p class="ad-ayuda">Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal</p>
+    </div>
+    <footer>
+      <p>Como hoy: importa del portal y abre el formulario.</p>
+      <div class="botones"><button class="ad-btn" data-manual>Carga manual</button><button class="ad-btn primario" data-importar>Siguiente</button></div>
+    </footer>
+  </div>
+</div>
+
+<!-- FORMULARIO (solo la sección nueva) -->
+<div class="ad-velo" id="v-form" hidden>
+  <div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="f-titulo" style="width:min(780px,100%)">
+    <header>
+      <div><h2 id="f-titulo">Editar dataset</h2><p id="f-dataset"></p></div>
+      <button class="ad-cerrar" data-cerrar aria-label="Cerrar">×</button>
+    </header>
+    <div class="ad-cuerpo ad-form">
+      <fieldset>
+        <legend>Datos del dataset</legend>
+        <div class="resumen" style="margin-bottom:10px"><span>Título, área, descripción, temas, formatos y URL, con "Actualizar desde portal": como hoy.</span><button class="ad-btn" type="button">Mostrar</button></div>
+      </fieldset>
+      <fieldset>
+        <legend>Actualización y pedido</legend>
+        <div class="fila">
+          <div><label for="f-frecuencia">Frecuencia</label><select id="f-frecuencia"></select></div>
+          <div><label for="f-gestion">Tipo de gestión</label><select id="f-gestion"><option value="externa">Externa (la provee otra área)</option><option value="interna">Interna (relevamiento propio)</option></select></div>
+        </div>
+        <div class="fila">
+          <div>
+            <label for="f-tipo">Tipo de pedido</label>
+            <select id="f-tipo"></select>
+            <p class="ad-sugerencia" id="f-sugerencia"></p>
+          </div>
+          <div><label for="f-cargado">Cargado en el portal el</label><input type="date" id="f-cargado"></div>
+        </div>
+        <div class="fila">
+          <div><label id="f-l-datos">Datos al</label><div class="ad-mes" role="group" aria-labelledby="f-l-datos"><select id="f-datos-mes" aria-label="Mes"></select><select id="f-datos-anio" aria-label="Año"></select></div></div>
+          <div><label id="f-l-prox">Próxima actualización</label><div class="ad-mes" role="group" aria-labelledby="f-l-prox"><select id="f-prox-mes" aria-label="Mes"></select><select id="f-prox-anio" aria-label="Año"></select></div></div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label for="f-solicita">Qué se solicita</label>
+          <textarea id="f-solicita"></textarea>
+          <p class="ad-ayuda">Describí qué tiene que mandar el área, sin fechas ni períodos: los agrega el sistema.</p>
+          <div class="ad-alerta" id="f-alerta" hidden></div>
+        </div>
+        <p class="rotulo" style="font-size:0.82rem;color:var(--pf-texto);font-weight:500;margin:0 0 4px">Así va a salir en la próxima nota</p>
+        <div class="ad-nota" aria-live="polite">
+          <div class="cab" id="f-nota-cab"></div>
+          <table><thead><tr><th>Conjunto de datos</th><th>Datos solicitados</th><th>Fecha sugerida de envío</th></tr></thead><tbody><tr><td id="f-nota-titulo"></td><td id="f-nota-periodo"></td><td id="f-nota-fecha" class="ad-fecha"></td></tr></tbody></table>
+          <div class="solicita"><b>Qué se solicita:</b> <span id="f-nota-solicita"></span></div>
+        </div>
+      </fieldset>
+    </div>
+    <footer>
+      <p>Al guardar, el cambio queda pendiente de aprobación, como hoy.</p>
+      <div class="botones"><button class="ad-btn" data-cerrar>Cancelar</button><button class="ad-btn primario" data-cerrar>Proponer cambios</button></div>
+    </footer>
+  </div>
+</div>
+
+<div class="ad-toast" id="toast" role="status" hidden></div>
+<div class="mk" id="mk"><b>Mockup</b> con 15 datasets reales (hoy = 17/10/2026). "Registrar actualización" y "Editar" funcionan con el cálculo nuevo.</div>
+
+<script>
+// ===== Reglas (las mismas de la simulación) =====
+const HOY = '2026-10-17';
+const MESES_NOMBRE = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const FRECUENCIAS = [['Mensualmente',1],['Bimestralmente',2],['Trimestralmente',3],['Cuatrimestralmente',4],['Cada medio año',6],['Anualmente',12],['Cada dos años',24],['Cada tres años',36],['Cada cuatro años',48],['Cada diez años',120],['Eventual',null]];
+const TIPOS = { acumulado: 'Acumulado', foto: 'Foto al corte', anio_anterior: 'Año anterior completo', ejercicio: 'Ejercicio que empieza', edicion: 'Próxima edición', relevamiento: 'Relevamiento interno', eventual: 'Eventual (sin pedido automático)' };
+const dos = (n) => String(n).padStart(2, '0');
+const indice = (iso) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
+const finDeMes = (i) => { const a = Math.floor(i / 12), m = i - a * 12 + 1; const d = m === 2 ? 28 : new Date(Date.UTC(a, m, 0)).getUTCDate(); return `${a}-${dos(m)}-${dos(d)}`; };
+const sumarMeses = (iso, n) => finDeMes(indice(iso) + n);
+const corteDe = (v) => sumarMeses(v, -1);
+const diaSiguiente = (iso) => { const f = new Date(`${iso}T12:00:00Z`); f.setUTCDate(f.getUTCDate() + 1); return f.toISOString().slice(0, 10); };
+const fmt = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
+const mesAnio = (iso) => (iso ? `${MESES_NOMBRE[Number(iso.slice(5, 7)) - 1].slice(0, 3)} ${iso.slice(0, 4)}` : '—');
+const anio = (iso) => Number(iso.slice(0, 4));
+const ultimoPasado = (v, meses) => { let x = v; while (meses && sumarMeses(x, meses) <= HOY) x = sumarMeses(x, meses); return x; };
+const tipoSugerido = (gestion, meses) => (meses == null ? 'eventual' : gestion === 'interna' ? 'relevamiento' : meses <= 12 ? 'acumulado' : 'foto');
+
+function pedido(v, tipo, datosAl, meses) {
+  if (!v || tipo === 'eventual') return { texto: 'Sin pedido automático', hasta: null, desde: null };
+  const corte = corteDe(meses && v < HOY ? ultimoPasado(v, meses) : v);
+  if (tipo === 'acumulado' || tipo === 'anio_anterior') {
+    let desde, hasta;
+    if (tipo === 'acumulado') { hasta = corte; desde = `${anio(corte)}-01-01`; }
+    else { const a = corte.slice(5, 7) === '12' ? anio(corte) : anio(corte) - 1; hasta = `${a}-12-31`; desde = `${a}-01-01`; }
+    if (datosAl && datosAl < desde && diaSiguiente(datosAl) < desde) desde = diaSiguiente(datosAl);
+    return { texto: `Del ${fmt(desde)} al ${fmt(hasta)}`, hasta, desde };
+  }
+  if (tipo === 'foto') return { texto: `Vigente al ${fmt(corte)}`, hasta: corte, desde: corte };
+  if (tipo === 'ejercicio') {
+    const hasta = `${anio(v)}-12-31`; const primero = datosAl ? anio(datosAl) + 1 : anio(v);
+    const texto = primero < anio(v) ? `Presupuestos de los ejercicios ${primero}${anio(v) - primero > 1 ? ' a ' : ' y '}${anio(v)}` : `Presupuesto del ejercicio ${anio(v)}`;
+    return { texto, hasta, desde: `${primero}-01-01` };
+  }
+  if (tipo === 'edicion') return { texto: 'Próxima edición disponible', hasta: null, desde: null };
+  return { texto: 'Relevamiento actualizado', hasta: null, desde: null };
+}
+const cubre = (datosAl, v, tipo) => { const { hasta } = pedido(v, tipo, null, null); return hasta != null && datosAl >= hasta; };
+
+function opciones(ds, datosNuevo) {
+  const v = ds.proxima, m = ds.meses, t = ds.tipo, res = [];
+  if (t === 'eventual' || !v) return res;
+  if (t === 'relevamiento') { res.push({ fecha: sumarMeses(datosNuevo, m), que: 'Relevamiento + frecuencia', sugerida: true, porque: `El relevamiento de ${mesAnio(datosNuevo)} más ${frecuenciaTexto(m)}.` }); }
+  else if (t === 'edicion') { res.push({ fecha: sumarMeses(v, m), que: 'Siguiente período', sugerida: true, porque: `${fmt(v)} más ${frecuenciaTexto(m)}.` }); }
+  else {
+    const siguiente = sumarMeses(v, m);
+    let primero = v; while (cubre(datosNuevo, primero, t)) primero = sumarMeses(primero, m);
+    const sugerida = siguiente > primero ? siguiente : primero;
+    if (sugerida === siguiente) res.push({ fecha: siguiente, que: 'Siguiente período', sugerida: true, porque: `${fmt(v)} más ${frecuenciaTexto(m)}.` });
+    else res.push({ fecha: sugerida, que: 'Primer pedido que todavía no llegó', sugerida: true, porque: 'Saltea los períodos que esta entrega ya cubre.' });
+    if (!cubre(datosNuevo, v, t)) res.push({ fecha: v, que: 'Mantener', porque: 'Se siguen debiendo datos de lo que se pidió.' });
+    if (siguiente !== sugerida) {
+      const motivos = []; if (siguiente < HOY) motivos.push('ya pasó'); if (cubre(datosNuevo, siguiente, t)) motivos.push('pediría datos que ya llegaron');
+      res.push({ fecha: siguiente, que: 'Siguiente período', porque: `Atención: ${motivos.join(' y ')}.`, aviso: true });
+    }
+  }
+  res.forEach((o) => { o.despues = pedido(o.fecha, t, datosNuevo, m).texto; });
+  return res;
+}
+const frecuenciaTexto = (m) => (m % 12 === 0 ? (m === 12 ? '1 año' : `${m / 12} años`) : `${m} ${m === 1 ? 'mes' : 'meses'}`);
+
+function estadoDe(ds) {
+  if (ds.pendiente) return ['pendiente', 'Cambio pendiente', 'Esperando aprobación'];
+  if (ds.tipo === 'eventual' || !ds.proxima) return ['eventual', 'Eventual', 'Sin vencimiento'];
+  const dias = Math.round((Date.parse(ds.proxima) - Date.parse(HOY)) / 864e5);
+  if (dias < 0) return ['vencido', ds.gestion === 'externa' ? 'Sin respuesta' : 'Atrasado', `Venció en ${mesAnio(ds.proxima)}`];
+  if (dias <= 60) return ['proximo', 'Próximo a vencer', `Vence en ${dias} días`];
+  return ['al-dia', 'Actualizado', `Vence en ${mesAnio(ds.proxima)}`];
+}
+
+// ===== Datos reales (15 de 80; "Datos al" de la planilla corregida) =====
+const DATASETS = [
+  { id: 11, titulo: 'Parque Automotor (Patentamiento)', area: 'Dirección de Información Tributaria', gestion: 'externa', meses: 12, tipo: 'acumulado', proxima: '2024-01-31', datosAl: '2022-12-31', cargado: '2022-12-31', solicita: 'Cantidad de vehículos habilitados en la ciudad, una fila por año y tipo de vehículo (automóvil, pick up, moto, camión, ómnibus, acoplado, etc.), con la cantidad de unidades, para completar la serie histórica.' },
+  { id: 13, titulo: 'Siniestros viales por categoría', area: 'Agencia Provincial de Seguridad Vial', gestion: 'externa', meses: 12, tipo: 'acumulado', proxima: '2025-01-31', datosAl: '2023-12-31', cargado: '2023-12-31', solicita: 'Cantidad de siniestros viales ocurridos en la ciudad, una fila por año y gravedad.' },
+  { id: 5, titulo: 'Obra Pública', area: 'Secretaría de Infraestructura, Obras y Servicios Públicos', gestion: 'externa', meses: 6, tipo: 'acumulado', proxima: '2026-01-31', datosAl: '2025-06-30', cargado: '2025-07-31', solicita: 'Listado de obras públicas contratadas o iniciadas, una fila por obra, con nombre, tipo y número de contratación, lugar, fecha del acta de inicio, empresa adjudicataria, presupuesto oficial y monto del contrato.' },
+  { id: 1, titulo: 'Presupuesto Municipal', area: 'Secretaría de Economía, Finanzas y Control de Gestión', gestion: 'externa', meses: 12, tipo: 'ejercicio', proxima: '2026-01-31', datosAl: '2025-12-31', cargado: '2025-01-31', solicita: 'Presupuesto de gastos aprobado, una fila por jurisdicción y tipo de gasto según partida principal, con el monto asignado en pesos.' },
+  { id: 2, titulo: 'Gasto Público', area: 'Secretaría de Economía, Finanzas y Control de Gestión', gestion: 'externa', meses: 6, tipo: 'acumulado', proxima: '2026-07-31', datosAl: '2025-12-31', cargado: '2026-03-26', solicita: 'Ejecución del gasto municipal, una fila por secretaría y subpartida, con partida principal, partida y subpartida presupuestaria, monto presupuestado y monto devengado en pesos.' },
+  { id: 3, titulo: 'Funcionarios Públicos', area: 'Dirección General de Recursos Humanos', gestion: 'externa', meses: 6, tipo: 'foto', proxima: '2026-07-31', datosAl: '2025-12-31', cargado: '2026-02-11', pendiente: true, solicita: 'Nómina actualizada de funcionarios de planta política, una fila por persona, con apellido y nombre, sector, secretaría, tipo de planta y cargo.' },
+  { id: 33, titulo: 'Listado de Proveedores', area: 'Dirección General de Servicios Administrativos', gestion: 'externa', meses: 12, tipo: 'foto', proxima: '2026-07-31', datosAl: '2025-06-30', cargado: '2025-09-29', solicita: 'Padrón completo y actualizado de proveedores inscriptos de la Municipalidad, una fila por proveedor, con CUIT, razón social, nombre de fantasía y localidad.' },
+  { id: 58, titulo: 'Áreas específicas de género', area: 'Secretaría de la Mujer, Género y Diversidad', gestion: 'externa', meses: 12, tipo: 'foto', proxima: '2026-11-30', datosAl: '2025-10-31', cargado: '2025-12-16', solicita: 'Listado completo y actualizado de las áreas e instituciones municipales y provinciales especializadas en género y diversidad, una fila por sede.' },
+  { id: 10, titulo: 'Pauta Publicitaria', area: 'Subsecretaría de Comunicación', gestion: 'externa', meses: 3, tipo: 'acumulado', proxima: '2027-01-31', datosAl: '2026-07-31', cargado: '2026-10-13', solicita: 'Contratos de pauta publicitaria oficial difundidos en el Boletín Oficial en el nuevo período (el trimestre siguiente al último publicado), una fila por contrato, con fecha de emisión, razón social, características de la publicación, período o motivo facturado, monto y número de Boletín.' },
+  { id: 9, titulo: 'Pedidos de Acceso a la Información Pública', area: 'Agencia de Acceso a la Información Pública', gestion: 'externa', meses: 4, tipo: 'acumulado', proxima: '2027-01-31', datosAl: '2026-08-31', cargado: '2026-10-09', solicita: 'Registro de pedidos de acceso a la información pública presentados, una fila por pedido, más el estado actualizado de los pedidos anteriores aún abiertos.' },
+  { id: 57, titulo: 'Presupuesto con perspectiva de género', area: 'Secretaría de la Mujer, Género y Diversidad', gestion: 'externa', meses: 12, tipo: 'ejercicio', proxima: '2027-01-31', datosAl: '2025-12-31', cargado: '2026-03-26', solicita: 'Presupuesto asignado a la Secretaría de la Mujer, Género y Diversidad, una fila por tipo de gasto, con el monto en pesos.' },
+  { id: 43, titulo: 'Espacios Verdes de Comodoro Rivadavia', area: 'Dirección General de Parques y Paseos', gestion: 'interna', meses: 24, tipo: 'relevamiento', proxima: '2027-03-31', datosAl: '2026-06-30', cargado: '2026-06-03', solicita: 'Relevamiento actualizado de espacios verdes.' },
+  { id: 74, titulo: 'Tránsito Medio Diario Anual (TMDA) en Comodoro Rivadavia', area: 'Dirección Nacional de Vialidad', gestion: 'externa', meses: 12, tipo: 'anio_anterior', proxima: '2027-06-30', datosAl: '2025-12-31', cargado: '2026-07-14', solicita: 'Tránsito Medio Diario Anual (TMDA) en los dos tramos publicados de la Ruta Nacional 3, con ruta, tramo, kilómetros de inicio y fin, año y valor.' },
+  { id: 77, titulo: 'Población y Viviendas por Barrio Censo 2022', area: 'Instituto Nacional de Estadística y Censos', gestion: 'externa', meses: 120, tipo: 'edicion', proxima: '2031-12-31', datosAl: '2022-05-31', cargado: '2026-01-23', solicita: 'Resultados del próximo censo por barrio.' },
+  { id: 66, titulo: 'Barrios de Comodoro Rivadavia', area: 'Dirección General de Modernización e Investigación Territorial', gestion: 'interna', meses: null, tipo: 'eventual', proxima: null, datosAl: '2026-06-30', cargado: '2026-06-03', solicita: '' },
+];
+
+// ===== Lista =====
+const ICONO_EDITAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICONO_BORRAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+const ICONO_REGISTRAR = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+let filtro = '';
+function pintarLista() {
+  const filas = DATASETS.filter((d) => !filtro || estadoDe(d)[0] === filtro).map((d) => {
+    const [clase, texto, detalle] = estadoDe(d);
+    const p = pedido(d.proxima, d.tipo, d.datosAl, d.meses);
+    const bloqueo = d.pendiente ? ' disabled title="Tiene un cambio pendiente de aprobación"' : '';
+    const publicado = d.tipo === 'ejercicio' ? `Ejercicio ${anio(d.datosAl)}` : `Al ${fmt(d.datosAl)}`;
+    return `<tr class="${d.pendiente ? 'bloqueada' : ''}">
+      <td><span class="ad-titulo">${d.titulo}</span><span class="ad-sub">${d.area}</span></td>
+      <td><span class="ad-chip ${clase}">${texto}</span><span class="ad-sub">${detalle}</span></td>
+      <td class="ocultable"><span class="ad-fecha">${publicado}</span><span class="ad-sub">Cargado el ${fmt(d.cargado)}</span></td>
+      <td><span class="ad-fecha">${p.texto}</span><span class="ad-sub">${d.proxima && d.proxima >= HOY ? `${TIPOS[d.tipo]}. Fecha sugerida de envío: ${fmt(d.proxima)}` : TIPOS[d.tipo]}</span></td>
+      <td><div class="ad-acciones">
+        <button class="ad-btn registrar" data-registrar="${d.id}"${bloqueo}>${ICONO_REGISTRAR}<span class="largo">Registrar actualización</span></button>
+        <button class="ad-icono" data-editar="${d.id}" aria-label="Editar ${d.titulo}"${bloqueo}>${ICONO_EDITAR}</button>
+        <button class="ad-icono borrar" aria-label="Eliminar ${d.titulo}"${bloqueo}>${ICONO_BORRAR}</button>
+      </div></td></tr>`;
+  });
+  document.getElementById('filas').innerHTML = filas.join('');
+}
+
+// ===== Registrar actualización =====
+let actual = null, elegida = null;
+const opcionesMes = (sel, valor) => { sel.innerHTML = MESES_NOMBRE.map((m, i) => `<option value="${i + 1}"${i + 1 === valor ? ' selected' : ''}>${m[0].toUpperCase() + m.slice(1)}</option>`).join(''); };
+const opcionesAnio = (sel, desde, hasta, valor) => { let h = ''; for (let a = hasta; a >= desde; a--) h += `<option${a === valor ? ' selected' : ''}>${a}</option>`; sel.innerHTML = h; };
+const leerMes = (mes, an) => finDeMes(Number(an.value) * 12 + Number(mes.value) - 1);
+const TOPE = finDeMes(indice(HOY)); // no puede haber datos de después de este mes
+
+function abrirRegistrar(id) {
+  actual = DATASETS.find((d) => d.id === id); elegida = null;
+  const p = pedido(actual.proxima, actual.tipo, actual.datosAl, actual.meses);
+  document.getElementById('r-dataset').textContent = actual.titulo;
+  document.getElementById('r-periodo').textContent = p.texto;
+  const datos = [['Frecuencia', actual.meses ? FRECUENCIAS.find((f) => f[1] === actual.meses)[0] : 'Eventual'], ['Tipo de pedido', TIPOS[actual.tipo]]];
+  if (actual.proxima) datos.push(actual.proxima < HOY ? ['Vencido desde', fmt(actual.proxima)] : ['Fecha sugerida de envío', fmt(actual.proxima)]);
+  datos.push(['Publicado hoy', actual.tipo === 'ejercicio' ? `ejercicio ${anio(actual.datosAl)}` : `datos al ${fmt(actual.datosAl)}`]);
+  document.getElementById('r-datos').innerHTML = datos.map(([a, b]) => `<div><dt>${a}:</dt><dd>${b}</dd></div>`).join('');
+  const relev = actual.tipo === 'relevamiento';
+  document.getElementById('r-p1').textContent = relev ? '¿De qué mes es el relevamiento?' : actual.tipo === 'ejercicio' ? '¿De qué ejercicio es el presupuesto que llegó?' : '¿A qué fecha son los datos que llegaron?';
+  document.getElementById('r-ayuda1').textContent = relev ? 'El mes en que se hizo el relevamiento.' : 'Siempre es fin de mes. Por defecto, lo que se pidió.';
+  // Por defecto: lo pedido, sin pasar el mes anterior al actual
+  const tope = sumarMeses(HOY, -1);
+  let defecto = relev ? TOPE : (p.hasta && p.hasta < tope ? p.hasta : tope);
+  if (actual.tipo === 'ejercicio') defecto = p.hasta;
+  opcionesMes(document.getElementById('r-mes'), Number(defecto.slice(5, 7)));
+  opcionesAnio(document.getElementById('r-anio'), 2015, anio(HOY) + 1, anio(defecto));
+  document.getElementById('r-mes').parentElement.firstElementChild.hidden = actual.tipo === 'ejercicio';
+  document.getElementById('r-paso3').hidden = actual.tipo === 'eventual';
+  document.getElementById('r-cargado').value = HOY;
+  document.getElementById('r-recibido').value = '';
+  recalcular();
+  document.getElementById('v-registrar').hidden = false;
+  document.getElementById('r-mes').focus();
+}
+
+function datosElegidos() {
+  if (actual.tipo === 'ejercicio') return `${document.getElementById('r-anio').value}-12-31`;
+  return leerMes(document.getElementById('r-mes'), document.getElementById('r-anio'));
+}
+
+function recalcular() {
+  const nuevo = datosElegidos();
+  const error = document.getElementById('r-error1');
+  const futuro = actual.tipo !== 'ejercicio' && nuevo > TOPE;
+  error.hidden = !futuro;
+  error.textContent = futuro ? `Todavía no puede haber datos al ${fmt(nuevo)}.` : '';
+  pintarCiclo(futuro ? null : nuevo);
+  const caja = document.getElementById('r-opciones');
+  elegida = null; document.getElementById('r-proponer').disabled = actual.tipo !== 'eventual' || futuro;
+  document.getElementById('r-otra').hidden = true;
+  if (futuro || actual.tipo === 'eventual') { caja.innerHTML = ''; return; }
+  const ops = opciones(actual, nuevo);
+  ops.push({ fecha: null, que: 'Otra fecha', porque: 'Elegís el mes y el año.' });
+  caja.innerHTML = ops.map((o, i) => `<label class="ad-opcion"><input type="radio" name="proxima" value="${i}">
+    <span><span class="fecha">${o.fecha ? fmt(o.fecha) : ''}</span><span class="que"${o.fecha ? '' : ' style="margin-left:0"'}>${o.que}</span>${o.sugerida ? '<span class="ad-sugerida">Sugerida</span>' : ''}
+    <span class="porque${o.aviso ? ' aviso' : ''}">${o.porque}</span>
+    ${o.despues ? `<span class="despues">La nota siguiente va a pedir: <b>${o.despues}</b></span>` : ''}</span></label>`).join('');
+  caja.querySelectorAll('input').forEach((r) => r.addEventListener('change', () => {
+    caja.querySelectorAll('.ad-opcion').forEach((l) => l.classList.toggle('elegida', l.contains(r) && r.checked));
+    elegida = ops[Number(r.value)];
+    document.getElementById('r-otra').hidden = elegida.fecha !== null;
+    document.getElementById('r-proponer').disabled = false;
+  }));
+}
+
+function pintarCiclo(nuevo) {
+  const caja = document.getElementById('r-ciclo');
+  const p = pedido(actual.proxima, actual.tipo, actual.datosAl, actual.meses);
+  if (!p.hasta || !p.desde) { caja.innerHTML = '<div class="pista"></div>'; caja.style.height = '30px'; return; }
+  caja.style.height = '';
+  const ini = Math.min(indice(p.desde), indice(actual.datosAl)) - 1;
+  const fin = Math.max(indice(actual.proxima < HOY ? HOY : actual.proxima), indice(HOY)) + 1;
+  const x = (iso, alFinal = true) => (((indice(iso) + (alFinal ? 1 : 0)) - ini) / (fin - ini + 1)) * 100;
+  const desde = indice(p.desde) <= indice(actual.datosAl) ? actual.datosAl : sumarMeses(p.desde, -1);
+  const partes = [`<div class="pista"></div>`];
+  partes.push(`<div class="banda publicado" style="left:0;width:${x(actual.datosAl)}%"></div>`);
+  partes.push(`<div class="banda falta" style="left:${x(desde)}%;width:${x(p.hasta) - x(desde)}%"></div>`);
+  if (nuevo && nuevo > desde) partes.push(`<div class="banda llega" style="left:${x(desde)}%;width:${Math.min(x(nuevo), x(p.hasta) + 100) - x(desde)}%"></div>`);
+  // Rótulos cortos (las fechas están arriba): publicado y corte abajo; envío arriba, como "Hoy"
+  const marcas = [[actual.datosAl, 'Publicado', 'abajo', 'transform:none'], [p.hasta, 'Corte pedido', 'abajo', 'transform:translateX(-100%)']];
+  if (actual.proxima >= HOY) marcas.push([actual.proxima, 'Envío sugerido', 'arriba', 'transform:translateX(-100%)']);
+  marcas.forEach(([iso, t, fila, ajuste]) => { partes.push(`<div class="marca" style="left:${x(iso)}%"></div><div class="etiqueta ${fila}" style="left:${x(iso)}%;${ajuste}">${t}</div>`); });
+  const xh = ((indice(HOY) + (Number(HOY.slice(8)) / 31) - ini) / (fin - ini + 1)) * 100;
+  partes.push(`<div class="marca hoy" style="left:${xh}%"></div><div class="etiqueta hoy" style="left:${xh}%">Hoy</div>`);
+  caja.innerHTML = partes.join('');
+}
+
+function proponer() {
+  actual.pendiente = true;
+  cerrar(); pintarLista();
+  aviso('Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.');
+}
+
+// ===== Formulario =====
+let enForm = null;
+const PALABRAS_DE_PERIODO = /(siguiente al último|nuevo período|nuevo ejercicio|fecha de corte|posterior al último|desde la última actualización)/i;
+function abrirForm(id, importado = false) {
+  enForm = DATASETS.find((d) => d.id === id) || { id: 0, titulo: importado ? 'Presupuesto Municipal (importado del portal)' : 'Nuevo dataset', area: '', gestion: 'externa', meses: 3, tipo: 'acumulado', proxima: '2027-01-31', datosAl: '2026-09-30', cargado: HOY, solicita: '' };
+  document.getElementById('f-titulo').textContent = enForm.id ? 'Editar dataset' : importado ? 'Nuevo dataset - Paso 2' : 'Nuevo dataset';
+  document.getElementById('f-dataset').textContent = enForm.id ? enForm.titulo : importado ? 'Título, descripción y formatos importados del portal' : 'Carga manual';
+  document.getElementById('f-frecuencia').innerHTML = FRECUENCIAS.map(([n, m]) => `<option value="${m ?? ''}"${m === enForm.meses ? ' selected' : ''}>${n}</option>`).join('');
+  document.getElementById('f-gestion').value = enForm.gestion;
+  document.getElementById('f-tipo').innerHTML = Object.entries(TIPOS).map(([k, n]) => `<option value="${k}"${k === enForm.tipo ? ' selected' : ''}>${n}</option>`).join('');
+  document.getElementById('f-cargado').value = enForm.cargado;
+  opcionesMes(document.getElementById('f-datos-mes'), Number(enForm.datosAl.slice(5, 7)));
+  opcionesAnio(document.getElementById('f-datos-anio'), 2015, anio(HOY), anio(enForm.datosAl));
+  const prox = enForm.proxima || '2027-01-31';
+  opcionesMes(document.getElementById('f-prox-mes'), Number(prox.slice(5, 7)));
+  opcionesAnio(document.getElementById('f-prox-anio'), 2024, 2035, anio(prox));
+  document.getElementById('f-solicita').value = enForm.solicita;
+  actualizarForm();
+  document.getElementById('v-form').hidden = false;
+}
+function actualizarForm() {
+  const meses = document.getElementById('f-frecuencia').value ? Number(document.getElementById('f-frecuencia').value) : null;
+  const gestion = document.getElementById('f-gestion').value;
+  const tipo = document.getElementById('f-tipo').value;
+  const sug = tipoSugerido(gestion, meses);
+  const s = document.getElementById('f-sugerencia');
+  s.innerHTML = sug === tipo ? 'Es el sugerido para esta gestión y frecuencia.' : `Para esta gestión y frecuencia se sugiere "${TIPOS[sug]}". <button type="button" id="f-usar">Usar el sugerido</button>`;
+  const usar = document.getElementById('f-usar'); if (usar) usar.onclick = () => { document.getElementById('f-tipo').value = sug; actualizarForm(); };
+  const datosAl = leerMes(document.getElementById('f-datos-mes'), document.getElementById('f-datos-anio'));
+  const prox = meses ? leerMes(document.getElementById('f-prox-mes'), document.getElementById('f-prox-anio')) : null;
+  document.getElementById('f-prox-mes').disabled = document.getElementById('f-prox-anio').disabled = !meses;
+  const texto = document.getElementById('f-solicita').value.trim();
+  const hallado = texto.match(PALABRAS_DE_PERIODO);
+  const alerta = document.getElementById('f-alerta');
+  alerta.hidden = !hallado;
+  if (hallado) alerta.textContent = `"${hallado[0]}" habla del período, y eso lo agrega el sistema en "Datos solicitados". Conviene sacarlo para que la nota no se contradiga.`;
+  document.getElementById('f-nota-cab').textContent = `Nota Digital de gestión ${gestion} (vista previa)`;
+  document.getElementById('f-nota-titulo').textContent = enForm.titulo === 'Nuevo dataset' ? 'Título del dataset' : enForm.titulo;
+  document.getElementById('f-nota-periodo').textContent = pedido(prox, tipo, datosAl, meses).texto;
+  document.getElementById('f-nota-fecha').textContent = prox ? fmt(prox) : '—';
+  document.getElementById('f-nota-solicita').textContent = texto || 'La versión actualizada del conjunto de datos publicado, con la misma estructura.';
+}
+['f-frecuencia', 'f-gestion', 'f-tipo', 'f-datos-mes', 'f-datos-anio', 'f-prox-mes', 'f-prox-anio'].forEach((id) => document.getElementById(id).addEventListener('change', actualizarForm));
+document.getElementById('f-solicita').addEventListener('input', actualizarForm);
+
+// ===== Comunes =====
+function cerrar() { document.querySelectorAll('.ad-velo').forEach((v) => { v.hidden = true; }); }
+function aviso(t) { const el = document.getElementById('toast'); el.textContent = t; el.hidden = false; clearTimeout(aviso.t); aviso.t = setTimeout(() => { el.hidden = true; }, 4000); }
+document.addEventListener('click', (e) => {
+  const r = e.target.closest('[data-registrar]'); if (r && !r.disabled) abrirRegistrar(Number(r.dataset.registrar));
+  const ed = e.target.closest('[data-editar]'); if (ed && !ed.disabled) abrirForm(Number(ed.dataset.editar));
+  if (e.target.closest('[data-nuevo]')) { document.getElementById('v-paso1').hidden = false; document.getElementById('p1-url').focus(); }
+  if (e.target.closest('[data-manual]')) { cerrar(); abrirForm(-1); }
+  if (e.target.closest('[data-importar]')) { cerrar(); abrirForm(-1, true); }
+  const f = e.target.closest('[data-filtro]');
+  if (f) { filtro = f.dataset.filtro; document.querySelectorAll('[data-filtro]').forEach((b) => b.setAttribute('aria-pressed', String(b === f))); pintarLista(); }
+  if (e.target.closest('[data-cerrar]')) cerrar();
+});
+document.querySelectorAll('.ad-velo').forEach((v) => v.addEventListener('mousedown', (e) => { if (e.target === v) cerrar(); }));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrar(); });
+['r-mes', 'r-anio'].forEach((id) => document.getElementById(id).addEventListener('change', recalcular));
+document.getElementById('r-proponer').addEventListener('click', proponer);
+
+pintarLista();
+const q = new URLSearchParams(location.search);
+if (q.get('registrar')) abrirRegistrar(Number(q.get('registrar')));
+if (q.get('editar')) abrirForm(Number(q.get('editar')));
+if (q.get('sinmk')) document.getElementById('mk').hidden = true;
+</script>
+</body>
+</html>
