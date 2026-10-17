@@ -34,41 +34,6 @@
 
         .main-content { min-width: 0; }
 
-        .smtp-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            padding: 24px;
-            box-shadow: var(--shadow);
-            margin-bottom: 24px;
-        }
-
-        .smtp-card-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .smtp-card-header h3 {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-            margin: 0;
-        }
-
-        .smtp-card-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: var(--border-radius);
-            background: rgba(26, 54, 93, 0.1);
-            color: var(--primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
         /* Estado SMTP */
         .smtp-status {
             display: inline-flex;
@@ -123,17 +88,6 @@
             font-weight: 600;
             color: var(--gray-700);
             margin-bottom: 12px;
-        }
-
-        .test-controls {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .test-controls .form-select {
-            min-width: 280px;
         }
 
         .test-hint {
@@ -197,16 +151,6 @@
             flex-shrink: 0;
         }
 
-        @media (max-width: 768px) {
-            .test-controls {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .test-controls .form-select {
-                min-width: 100%;
-            }
-        }
         /* Alertas: van arriba de las pestañas (#nd-alertas), pero el estilo también es el de #nd-sin-quien-audite y #modal-nota-error */
         .nd-alerta { position: relative; background: #FBEEEE; border: 1px solid #EFCACA; color: #8A3434; border-radius: 10px; padding: 11px 14px 11px 38px; margin-top: 12px; font-size: 0.9rem; }
         .nd-alerta::before { content: ''; position: absolute; left: 14px; top: 14px; width: 16px; height: 16px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A3434' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E") no-repeat center / contain; }
@@ -280,18 +224,43 @@
         .co-proxima dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.875rem; }
         .co-proxima dt { color: var(--pf-suave); }
         .co-proxima dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--pf-texto); font-weight: 500; }
-        .co-lineas { display: grid; gap: 6px; font-size: 0.875rem; color: var(--pf-texto); margin-top: 14px; }
+        .co-lineas { display: grid; gap: 6px; font-size: 0.875rem; color: var(--pf-texto); margin-top: 14px; font-variant-numeric: tabular-nums; }
         .co-lineas p { margin: 0; }
         .co-lineas .nd-alerta { margin-top: 0; }
         .co-smtp { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
         .co-reglas { font-size: 0.83rem; color: var(--pf-suave); line-height: 1.55; }
         .co-reglas p { margin: 0 0 8px; }
         .co-reglas p:last-child { margin-bottom: 0; }
-        .nd-marco { width: 100%; height: 560px; border: 1px solid var(--gray-200); border-radius: 8px; margin-top: 12px; background: #ffffff; }
-        .nd-config fieldset { border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px 16px; margin: 0 0 12px; }
-        .nd-config legend { font-weight: 600; padding: 0 6px; }
+        /* Vista previa y pruebas (spec 2026-10-17-correos-pestanas, 8) */
+        .co-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .co-dos > .co-tarjeta { min-width: 0; }
+        .co-dos > .co-tarjeta + .co-tarjeta { margin-top: 0; }
+        .co-controles { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .co-controles select { font: inherit; font-size: 0.875rem; color: var(--pf-texto); border: 1px solid var(--pf-linea); border-radius: 8px; padding: 8px 28px 8px 10px; background: #fff; }
+        .co-controles select:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .co-controles select:disabled { opacity: .55; cursor: not-allowed; }
+        .co-vacio { border: 1px dashed #C9D6E3; border-radius: 10px; padding: 36px 16px; text-align: center; color: var(--pf-suave); font-size: 0.875rem; background: var(--pf-sutil); }
+        .nd-marco { display: block; width: 100%; height: 560px; border: 1px solid var(--pf-linea); border-radius: 10px; margin-top: 12px; background: #ffffff; }
+        /* El marcador solo se ve mientras no hay vista previa: el iframe y su marcador son hermanos, en ese orden */
+        .nd-marco:not([hidden]) ~ .co-vacio { display: none; }
+
+        /* Configuración (spec 2026-10-17-correos-pestanas, 8) */
+        .co-config { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .co-columna { min-width: 0; }
+        /* Cada grupo sigue siendo un fieldset con su legend; el legend flotante se ve como título dentro de la tarjeta */
+        .co-grupo { min-width: 0; margin: 0; background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 18px 20px; }
+        .co-grupo + .co-grupo { margin-top: 16px; }
+        .co-grupo legend { float: left; width: 100%; padding: 0; margin: 0 0 12px; font-size: 0.95rem; font-weight: 600; color: var(--pf-tinta); }
+        .co-grupo legend + * { clear: both; }
+        .co-grupo .form-group { margin-bottom: 12px; }
+        .co-grupo .form-hint { margin: 0; }
+        .co-grupo > :last-child { margin-bottom: 0; }
+        .co-grupo .form-input, .co-grupo select { width: 100%; }
+        .co-grupo .form-input:focus-visible, .co-grupo select:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 1px; }
+        .co-guardar { position: sticky; bottom: 0; margin-top: 16px; background: rgba(255, 255, 255, 0.96); border: 1px solid var(--pf-linea); border-radius: 12px; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(31, 58, 95, 0.06); }
+        .co-guardar span { font-size: 0.85rem; color: var(--pf-suave); }
         .nd-firma[hidden] { display: none; }
-        .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px dashed var(--gray-300); padding: 4px; background: #ffffff; }
+        .nd-firma { display: block; max-width: 220px; max-height: 90px; margin-top: 8px; border: 1px solid var(--pf-linea); border-radius: 6px; padding: 4px; background: #ffffff; }
         .nd-firma.nd-membrete { max-width: 100%; max-height: 120px; }
         .nd-modal { max-width: 900px; width: 95%; }
 
@@ -306,6 +275,7 @@
         @media (max-width: 860px) {
             .co-libro .ocultable { display: none; }
             .co-proximas { grid-template-columns: 1fr; }
+            .co-dos, .co-config { grid-template-columns: 1fr; }
         }
 
         /* En el celular el nombre y el valor de cada próxima nota van uno encima del otro, así la fecha y la cantidad no se cortan */
@@ -313,6 +283,7 @@
             .co-proxima dl { grid-template-columns: 1fr; gap: 0; }
             .co-proxima dd { margin-bottom: 8px; }
             .co-proxima dd:last-child { margin-bottom: 0; }
+            .co-controles select { flex: 1 1 100%; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -323,7 +294,7 @@
         /* Con los colores del sistema forzados (contraste alto) el interruptor sigue viéndose */
         @media (forced-colors: active) {
             .co-switch input { border: 2px solid ButtonText; }
-            .co-switch input::after { background: ButtonText; }
+            .co-switch input::after { background: ButtonText; top: 1px; left: 1px; }
             .co-switch input:checked { background: Highlight; }
             .co-switch input:checked::after { background: HighlightText; }
         }
@@ -529,116 +500,113 @@
             </section>
 
             <section id="vista-pruebas" role="tabpanel" aria-labelledby="pestana-pruebas" hidden>
-                <!-- Vista previa y prueba -->
-                <div class="smtp-card">
-                    <div class="smtp-card-header">
-                        <div class="smtp-card-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <!-- Vista previa y pruebas -->
+                <div class="co-dos">
+                    <div class="co-tarjeta">
+                        <h2>Nota Digital</h2>
+                        <p class="co-ayuda">Cómo saldría hoy, con los datos reales (o de ejemplo si hoy no sale ninguna). La prueba va solo a las casillas de prueba.</p>
+                        <div class="co-controles">
+                            <select id="preview-tipo" aria-label="Tipo de nota">
+                                <option value="aviso">Aviso</option>
+                                <option value="reiteracion">Reiteración</option>
+                                <option value="auditoria">Auditoría</option>
+                            </select>
+                            <select id="preview-gestion" aria-label="Gestión">
+                                <option value="interna">Gestión interna</option>
+                                <option value="externa">Gestión externa</option>
+                            </select>
                         </div>
-                        <h3>Vista previa y prueba</h3>
+                        <div class="co-controles">
+                            <button type="button" id="btn-preview" class="co-btn primario">Vista previa</button>
+                            <button type="button" id="btn-preview-pdf" class="co-btn">Ver PDF</button>
+                            <button type="button" id="btn-preview-anexo" class="co-btn">Ver anexo</button>
+                            <button type="button" id="btn-prueba" class="co-btn">Enviarme una prueba</button>
+                        </div>
+                        <p id="preview-aviso" class="co-ayuda" hidden></p>
+                        <iframe id="preview-marco" class="nd-marco" sandbox="" title="Vista previa de la nota" hidden></iframe>
+                        <div class="co-vacio">La vista previa aparece acá.</div>
                     </div>
-                    <div class="test-controls">
-                        <select id="preview-tipo" class="form-select" aria-label="Tipo de nota">
-                            <option value="aviso">Aviso</option>
-                            <option value="reiteracion">Reiteración</option>
-                            <option value="auditoria">Auditoría</option>
-                        </select>
-                        <select id="preview-gestion" class="form-select" aria-label="Gestión">
-                            <option value="interna">Gestión interna</option>
-                            <option value="externa">Gestión externa</option>
-                        </select>
-                        <button type="button" id="btn-preview" class="btn btn-primary">Vista previa</button>
-                        <button type="button" id="btn-preview-pdf" class="btn btn-secondary">Ver PDF</button>
-                        <button type="button" id="btn-preview-anexo" class="btn btn-outline">Ver anexo</button>
-                        <button type="button" id="btn-prueba" class="btn btn-outline">Enviarme una prueba</button>
-                    </div>
-                    <p id="preview-aviso" class="test-hint" hidden></p>
-                    <iframe id="preview-marco" class="nd-marco" sandbox="" title="Vista previa de la nota" hidden></iframe>
-                </div>
 
-                <!-- Aviso a las áreas -->
-                <div class="smtp-card">
-                    <div class="smtp-card-header">
-                        <div class="smtp-card-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                    <!-- Aviso a las áreas -->
+                    <div class="co-tarjeta">
+                        <h2>Aviso a las áreas (40 días)</h2>
+                        <p class="co-ayuda">Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba se envía solo a las casillas de prueba.</p>
+                        <div class="co-controles">
+                            <button type="button" id="btn-preview-area" class="co-btn primario">Vista previa</button>
+                            <button type="button" id="btn-prueba-area" class="co-btn">Enviarme una prueba</button>
                         </div>
-                        <h3>Aviso a las áreas (40 días)</h3>
+                        <iframe id="preview-area-marco" class="nd-marco" sandbox="" title="Vista previa del aviso a áreas" hidden></iframe>
+                        <div class="co-vacio">La vista previa aparece acá.</div>
                     </div>
-                    <p class="test-hint">Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba se envía solo a las casillas de prueba.</p>
-                    <div class="test-controls">
-                        <button type="button" id="btn-preview-area" class="btn btn-primary">Vista previa</button>
-                        <button type="button" id="btn-prueba-area" class="btn btn-outline">Enviarme una prueba</button>
-                    </div>
-                    <iframe id="preview-area-marco" class="nd-marco" sandbox="" title="Vista previa del aviso a áreas" hidden></iframe>
                 </div>
             </section>
 
             <section id="vista-configuracion" role="tabpanel" aria-labelledby="pestana-configuracion" hidden>
                 <!-- Configuración -->
-                <div class="smtp-card">
-                    <div class="smtp-card-header">
-                        <div class="smtp-card-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <form id="form-config">
+                    <div class="co-config">
+                        <div class="co-columna">
+                            <fieldset class="co-grupo">
+                                <legend>Gestión interna</legend>
+                                <div class="form-group"><label class="form-label" for="para_interna">Para</label><input id="para_interna" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="cc_interna">CC</label><input id="cc_interna" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="linea_cc_interna">Línea de CC al pie de la nota</label><input id="linea_cc_interna" class="form-input" maxlength="200"></div>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Gestión externa</legend>
+                                <div class="form-group"><label class="form-label" for="para_externa">Para</label><input id="para_externa" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="cc_externa">CC</label><input id="cc_externa" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="linea_cc_externa">Línea de CC al pie de la nota</label><input id="linea_cc_externa" class="form-input" maxlength="200"></div>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Notas de auditoría</legend>
+                                <div class="form-group"><label class="form-label" for="para_auditoria">Para</label><input id="para_auditoria" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="cc_auditoria">CC</label><input id="cc_auditoria" class="form-input" autocomplete="off"></div>
+                                <p class="form-hint">La copia oculta (CCO) es la de respaldo, la misma de las demás notas.</p>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Respaldo y pruebas</legend>
+                                <div class="form-group"><label class="form-label" for="cco">Copia oculta (CCO) de respaldo</label><input id="cco" class="form-input" autocomplete="off"></div>
+                                <div class="form-group"><label class="form-label" for="casillas_prueba">Casillas de prueba</label><input id="casillas_prueba" class="form-input" autocomplete="off"></div>
+                            </fieldset>
                         </div>
-                        <h3>Configuración</h3>
+                        <div class="co-columna">
+                            <fieldset class="co-grupo">
+                                <legend>Firmante titular</legend>
+                                <div class="form-group">
+                                    <label class="form-label" for="firmante">Firma las notas</label>
+                                    <select id="firmante" class="form-input"></select>
+                                </div>
+                                <p class="form-hint" id="firmante-ayuda"></p>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Firma</legend>
+                                <div class="form-group"><label class="form-label" for="firma_nombre">Nombre</label><input id="firma_nombre" class="form-input" maxlength="150"></div>
+                                <div class="form-group"><label class="form-label" for="firma_cargo">Cargo</label><input id="firma_cargo" class="form-input" maxlength="200"></div>
+                                <div class="form-group">
+                                    <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
+                                    <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
+                                    <img id="firma-vista" class="nd-firma" alt="Firma cargada" hidden>
+                                </div>
+                                <p class="form-hint" id="firma-ayuda"></p>
+                            </fieldset>
+                            <fieldset class="co-grupo">
+                                <legend>Membrete del PDF</legend>
+                                <div class="form-group">
+                                    <label class="form-label" for="membrete-archivo">Banner del encabezado (PNG o JPEG, máximo 500 KB)</label>
+                                    <input type="file" id="membrete-archivo" class="form-input" accept="image/png,image/jpeg">
+                                    <img id="membrete-vista" class="nd-firma nd-membrete" alt="Banner del membrete cargado" hidden>
+                                </div>
+                                <div class="form-group"><label class="form-label" for="membrete_pie">Texto del pie</label><input id="membrete_pie" class="form-input" maxlength="300"></div>
+                                <p class="form-hint">El banner va arriba de cada hoja del PDF, a lo ancho de la hoja, y el texto del pie va centrado al pie de cada hoja (vacío: sin pie). El cuerpo del email no cambia.</p>
+                            </fieldset>
+                        </div>
                     </div>
-                    <form id="form-config" class="nd-config">
-                        <fieldset>
-                            <legend>Gestión interna</legend>
-                            <div class="form-group"><label class="form-label" for="para_interna">Para</label><input id="para_interna" class="form-input" autocomplete="off"></div>
-                            <div class="form-group"><label class="form-label" for="cc_interna">CC</label><input id="cc_interna" class="form-input" autocomplete="off"></div>
-                            <div class="form-group"><label class="form-label" for="linea_cc_interna">Línea de CC al pie de la nota</label><input id="linea_cc_interna" class="form-input" maxlength="200"></div>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Gestión externa</legend>
-                            <div class="form-group"><label class="form-label" for="para_externa">Para</label><input id="para_externa" class="form-input" autocomplete="off"></div>
-                            <div class="form-group"><label class="form-label" for="cc_externa">CC</label><input id="cc_externa" class="form-input" autocomplete="off"></div>
-                            <div class="form-group"><label class="form-label" for="linea_cc_externa">Línea de CC al pie de la nota</label><input id="linea_cc_externa" class="form-input" maxlength="200"></div>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Notas de auditoría</legend>
-                            <div class="form-group"><label class="form-label" for="para_auditoria">Para</label><input id="para_auditoria" class="form-input" autocomplete="off"></div>
-                            <div class="form-group"><label class="form-label" for="cc_auditoria">CC</label><input id="cc_auditoria" class="form-input" autocomplete="off"></div>
-                            <p class="form-hint">La copia oculta (CCO) es la de respaldo, la misma de las demás notas.</p>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Respaldo y pruebas</legend>
-                            <div class="form-group"><label class="form-label" for="cco">Copia oculta (CCO) de respaldo</label><input id="cco" class="form-input" autocomplete="off"></div>
-                            <div class="form-group"><label class="form-label" for="casillas_prueba">Casillas de prueba</label><input id="casillas_prueba" class="form-input" autocomplete="off"></div>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Firmante titular</legend>
-                            <div class="form-group">
-                                <label class="form-label" for="firmante">Firma las notas</label>
-                                <select id="firmante" class="form-input"></select>
-                            </div>
-                            <p class="form-hint" id="firmante-ayuda"></p>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Firma</legend>
-                            <div class="form-group"><label class="form-label" for="firma_nombre">Nombre</label><input id="firma_nombre" class="form-input" maxlength="150"></div>
-                            <div class="form-group"><label class="form-label" for="firma_cargo">Cargo</label><input id="firma_cargo" class="form-input" maxlength="200"></div>
-                            <div class="form-group">
-                                <label class="form-label" for="firma-archivo">Imagen de la firma (PNG o JPEG, máximo 500 KB)</label>
-                                <input type="file" id="firma-archivo" class="form-input" accept="image/png,image/jpeg">
-                                <img id="firma-vista" class="nd-firma" alt="Firma cargada" hidden>
-                            </div>
-                            <p class="form-hint" id="firma-ayuda"></p>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Membrete del PDF</legend>
-                            <div class="form-group">
-                                <label class="form-label" for="membrete-archivo">Banner del encabezado (PNG o JPEG, máximo 500 KB)</label>
-                                <input type="file" id="membrete-archivo" class="form-input" accept="image/png,image/jpeg">
-                                <img id="membrete-vista" class="nd-firma nd-membrete" alt="Banner del membrete cargado" hidden>
-                            </div>
-                            <div class="form-group"><label class="form-label" for="membrete_pie">Texto del pie</label><input id="membrete_pie" class="form-input" maxlength="300"></div>
-                            <p class="form-hint">El banner va arriba de cada hoja del PDF, a lo ancho de la hoja, y el texto del pie va centrado al pie de cada hoja (vacío: sin pie). El cuerpo del email no cambia.</p>
-                        </fieldset>
-                        <p class="form-hint">Separá varias direcciones con coma.</p>
-                        <button type="submit" class="btn btn-primary">Guardar configuración</button>
-                    </form>
-                </div>
+                    <div class="co-guardar">
+                        <span>Separá varias direcciones con coma.</span>
+                        <button type="submit" class="co-btn primario">Guardar configuración</button>
+                    </div>
+                </form>
             </section>
 
             <!-- Modal: nota enviada -->

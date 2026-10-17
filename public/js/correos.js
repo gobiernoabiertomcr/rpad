@@ -233,8 +233,8 @@ async function cargarEstado() {
     const nombres = { interna: 'Gestión interna', externa: 'Gestión externa' };
     document.getElementById('nd-proximas').innerHTML = Object.entries(estado.proximas).map(([gestion, p]) =>
       `<div class="co-proxima"><h3>${nombres[gestion]}</h3><dl>`
-      + `<dt>Próximo aviso</dt><dd>${p.aviso ? `${fecha(p.aviso.fecha)} · ${cantidadDeDatasets(p.aviso.cantidad)}` : 'sin datasets pendientes'}</dd>`
-      + `<dt>Próxima reiteración</dt><dd>${p.reiteracion.cantidad > 0 ? `${fecha(p.reiteracion.fecha)} · ${cantidadDeDatasets(p.reiteracion.cantidad)}` : 'sin datasets pendientes'}</dd>`
+      + `<dt>Próximo aviso</dt><dd>${p.aviso ? `${Utils.escapeHtml(fecha(p.aviso.fecha))} · ${cantidadDeDatasets(p.aviso.cantidad)}` : 'sin datasets pendientes'}</dd>`
+      + `<dt>Próxima reiteración</dt><dd>${p.reiteracion.cantidad > 0 ? `${Utils.escapeHtml(fecha(p.reiteracion.fecha))} · ${cantidadDeDatasets(p.reiteracion.cantidad)}` : 'sin datasets pendientes'}</dd>`
       + '</dl></div>').join('');
   } catch (error) {
     avisar(`No se pudo cargar el estado: ${error.message}`, 'error');

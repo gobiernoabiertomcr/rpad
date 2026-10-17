@@ -1148,3 +1148,277 @@ describe('correos.js: próximas notas del Estado (spec 2026-10-17-correos-pestan
     assert.equal(inactivo.elemento('envio-activo-texto').className, 'badge badge-secondary');
   });
 });
+
+// Correos en pestañas (spec 2026-10-17-correos-pestanas, 8): Vista previa y pruebas, y Configuración
+describe('correos.html: Vista previa y pruebas (spec 2026-10-17-correos-pestanas, 8)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const PRUEBAS = PAGINA.slice(PAGINA.indexOf('id="vista-pruebas"'), PAGINA.indexOf('id="vista-configuracion"'));
+  const etiqueta = (id) => PRUEBAS.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  const posicion = (texto) => PRUEBAS.indexOf(texto);
+  const regla = (selector) => {
+    const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+    return PAGINA.match(new RegExp(`(?:^|[}\\s])${escapado}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+  };
+  const bloquesDeMedia = (condicion) => {
+    const bloques = [];
+    for (let desde = PAGINA.indexOf(condicion); desde !== -1; desde = PAGINA.indexOf(condicion, desde + 1)) {
+      let profundidad = 0;
+      let hasta = PAGINA.indexOf('{', desde);
+      for (; hasta < PAGINA.length; hasta++) {
+        if (PAGINA[hasta] === '{') profundidad++;
+        if (PAGINA[hasta] === '}' && --profundidad === 0) break;
+      }
+      bloques.push(PAGINA.slice(desde, hasta));
+    }
+    return bloques;
+  };
+  const AYUDA_DE_AREAS = 'Email directo a las áreas de gestión externa 40 días antes del vencimiento. La prueba se envía solo a las casillas de prueba.';
+
+  it('los ids de siempre, en este orden: los dos selectores, los cuatro botones, el aviso, la vista previa y después el aviso a las áreas', () => {
+    const orden = ['preview-tipo', 'preview-gestion', 'btn-preview', 'btn-preview-pdf', 'btn-preview-anexo', 'btn-prueba', 'preview-aviso',
+      'preview-marco', 'btn-preview-area', 'btn-prueba-area', 'preview-area-marco'].map(id => posicion(`id="${id}"`));
+    assert.ok(orden.every(lugar => lugar > 0), 'están todos');
+    assert.deepEqual([...orden].sort((a, b) => a - b), orden);
+  });
+
+  it('dos tarjetas lado a lado dentro de .co-dos, y ya no hay tarjetas .smtp-card ni .test-controls', () => {
+    assert.match(PRUEBAS, /<div class="co-dos">/);
+    assert.equal(PRUEBAS.match(/<div class="co-tarjeta">/g).length, 2);
+    assert.deepEqual([...PRUEBAS.matchAll(/<h2>([^<]*)<\/h2>/g)].map(m => m[1]), ['Nota Digital', 'Aviso a las áreas (40 días)']);
+    assert.doesNotMatch(PRUEBAS, /smtp-card|test-controls|test-hint|btn-outline|btn-secondary|class="btn\b|form-select/);
+  });
+
+  it('Nota Digital: la ayuda del mockup, los dos selectores en una fila y los cuatro botones en otra', () => {
+    assert.ok(PRUEBAS.includes('<p class="co-ayuda">Cómo saldría hoy, con los datos reales (o de ejemplo si hoy no sale ninguna). La prueba va solo a las casillas de prueba.</p>'));
+    const filas = [...PRUEBAS.matchAll(/<div class="co-controles">([\s\S]*?)<\/div>/g)].map(m => m[1]);
+    assert.equal(filas.length, 3, 'dos filas en Nota Digital y una en el aviso a las áreas');
+    assert.deepEqual([...filas[0].matchAll(/\bid="([^"]+)"/g)].map(m => m[1]), ['preview-tipo', 'preview-gestion']);
+    assert.deepEqual([...filas[1].matchAll(/\bid="([^"]+)"/g)].map(m => m[1]), ['btn-preview', 'btn-preview-pdf', 'btn-preview-anexo', 'btn-prueba']);
+    assert.deepEqual([...filas[2].matchAll(/\bid="([^"]+)"/g)].map(m => m[1]), ['btn-preview-area', 'btn-prueba-area']);
+  });
+
+  it('los selectores conservan sus opciones, valores y nombres', () => {
+    assert.match(etiqueta('preview-tipo'), /^<select\b[^>]*aria-label="Tipo de nota"/);
+    assert.match(etiqueta('preview-gestion'), /^<select\b[^>]*aria-label="Gestión"/);
+    const opciones = (id) => [...PRUEBAS.match(new RegExp(`<select[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)</select>`))[1]
+      .matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(m => [m[1], m[2]]);
+    assert.deepEqual(opciones('preview-tipo'), [['aviso', 'Aviso'], ['reiteracion', 'Reiteración'], ['auditoria', 'Auditoría']]);
+    assert.deepEqual(opciones('preview-gestion'), [['interna', 'Gestión interna'], ['externa', 'Gestión externa']]);
+  });
+
+  it('los botones: Vista previa es el principal; todos son type="button", con su texto de siempre', () => {
+    const botones = {
+      'btn-preview': ['co-btn primario', 'Vista previa'], 'btn-preview-pdf': ['co-btn', 'Ver PDF'], 'btn-preview-anexo': ['co-btn', 'Ver anexo'],
+      'btn-prueba': ['co-btn', 'Enviarme una prueba'], 'btn-preview-area': ['co-btn primario', 'Vista previa'], 'btn-prueba-area': ['co-btn', 'Enviarme una prueba']
+    };
+    for (const [id, [clase, texto]] of Object.entries(botones)) {
+      assert.ok(PRUEBAS.includes(`<button type="button" id="${id}" class="${clase}">${texto}</button>`), id);
+    }
+  });
+
+  it('el aviso de la vista previa sigue oculto y vacío hasta que el código lo llena', () => {
+    assert.match(etiqueta('preview-aviso'), /^<p\b[^>]*\bhidden\b/);
+    assert.match(PRUEBAS, /<p id="preview-aviso"[^>]*><\/p>/);
+  });
+
+  it('las dos vistas previas siguen siendo iframes aislados (sandbox vacío) y ocultos, cada uno con su marcador justo después', () => {
+    for (const [id, titulo] of [['preview-marco', 'Vista previa de la nota'], ['preview-area-marco', 'Vista previa del aviso a áreas']]) {
+      const marco = etiqueta(id);
+      assert.match(marco, /^<iframe\b/);
+      assert.match(marco, /class="nd-marco"/);
+      assert.match(marco, /\bsandbox=""/);
+      assert.match(marco, /\bhidden\b/);
+      assert.match(marco, new RegExp(`title="${titulo}"`));
+      assert.match(PRUEBAS, new RegExp(`<iframe id="${id}"[^>]*></iframe>\\s*<div class="co-vacio">La vista previa aparece acá\\.</div>`), `${id} va seguido de su marcador`);
+    }
+    assert.equal(PRUEBAS.match(/class="co-vacio"/g).length, 2);
+  });
+
+  it('Aviso a las áreas: su texto de hoy como ayuda, antes de los botones', () => {
+    assert.ok(PRUEBAS.includes(`<p class="co-ayuda">${AYUDA_DE_AREAS}</p>`));
+    assert.ok(posicion(AYUDA_DE_AREAS) < posicion('id="btn-preview-area"'));
+  });
+
+  it('estilo: dos columnas arriba, filas de controles que se acomodan, marcador punteado y vista previa con el borde nuevo', () => {
+    assert.match(regla('.co-dos'), /display:\s*grid[^}]*grid-template-columns:\s*1fr 1fr[^}]*align-items:\s*start/);
+    assert.match(regla('.co-controles'), /display:\s*flex[^}]*flex-wrap:\s*wrap/);
+    assert.match(regla('.co-controles select'), /border:\s*1px solid var\(--pf-linea\)[^}]*border-radius:\s*8px/);
+    assert.match(regla('.co-controles select:focus-visible'), /outline:\s*2px solid var\(--pf-acento\)/);
+    assert.match(regla('.co-vacio'), /border:\s*1px dashed/);
+    assert.match(regla('.co-vacio'), /text-align:\s*center/);
+    const marco = regla('.nd-marco');
+    assert.match(marco, /border:\s*1px solid var\(--pf-linea\)/);
+    assert.match(marco, /border-radius:\s*10px/);
+  });
+
+  it('el marcador se esconde solo, por CSS, cuando la vista previa se muestra', () => {
+    assert.match(regla('.nd-marco:not([hidden]) ~ .co-vacio'), /display:\s*none/);
+  });
+
+  it('hasta 860px las dos tarjetas pasan a una sola columna', () => {
+    assert.ok(bloquesDeMedia('@media (max-width: 860px)').some(b => /\.co-dos,\s*\.co-config\s*\{\s*grid-template-columns:\s*1fr;?\s*\}/.test(b)));
+  });
+
+  it('en el celular (hasta 480px) los selectores ocupan todo el ancho', () => {
+    const bloque = bloquesDeMedia('@media (max-width: 480px)').find(b => b.includes('.co-controles select'));
+    assert.ok(bloque, 'hay un bloque de 480px para los selectores');
+    assert.match(bloque, /\.co-controles select\s*\{[^}]*flex:\s*1 1 100%/);
+  });
+
+  it('ya no quedan estilos de lo que se reemplazó', () => {
+    assert.doesNotMatch(PAGINA, /\.smtp-card|\.test-controls|\.nd-config/);
+  });
+});
+
+describe('correos.html: Configuración (spec 2026-10-17-correos-pestanas, 8)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const CONFIGURACION = PAGINA.slice(PAGINA.indexOf('id="vista-configuracion"'), PAGINA.indexOf('<!-- Modal: nota enviada -->'));
+  const FORMULARIO = CONFIGURACION.slice(CONFIGURACION.indexOf('<form id="form-config"'), CONFIGURACION.indexOf('</form>'));
+  const etiqueta = (id) => FORMULARIO.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  const regla = (selector) => {
+    const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+    return PAGINA.match(new RegExp(`(?:^|[}\\s])${escapado}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+  };
+  const bloquesDeMedia = (condicion) => {
+    const bloques = [];
+    for (let desde = PAGINA.indexOf(condicion); desde !== -1; desde = PAGINA.indexOf(condicion, desde + 1)) {
+      let profundidad = 0;
+      let hasta = PAGINA.indexOf('{', desde);
+      for (; hasta < PAGINA.length; hasta++) {
+        if (PAGINA[hasta] === '{') profundidad++;
+        if (PAGINA[hasta] === '}' && --profundidad === 0) break;
+      }
+      bloques.push(PAGINA.slice(desde, hasta));
+    }
+    return bloques;
+  };
+  const GRUPOS = ['Gestión interna', 'Gestión externa', 'Notas de auditoría', 'Respaldo y pruebas', 'Firmante titular', 'Firma', 'Membrete del PDF'];
+  const titulos = (html) => [...html.matchAll(/<legend>([^<]*)<\/legend>/g)].map(m => m[1]);
+
+  it('el formulario de siempre (form#form-config, sin la clase vieja) ya no está dentro de una tarjeta .smtp-card', () => {
+    assert.match(CONFIGURACION, /<form id="form-config">/);
+    assert.equal(CONFIGURACION.match(/<form\b/g).length, 1);
+    assert.doesNotMatch(CONFIGURACION, /smtp-card|nd-config/);
+  });
+
+  it('dentro del formulario están los trece campos de CAMPOS_CONFIG, el firmante y las dos imágenes con sus ayudas', () => {
+    const campos = vm.runInContext('CAMPOS_CONFIG', cargarCorreos().contexto);
+    assert.equal(campos.length, 13);
+    for (const id of [...campos, 'firmante', 'firmante-ayuda', 'firma-archivo', 'firma-vista', 'firma-ayuda', 'membrete-archivo', 'membrete-vista']) {
+      assert.ok(etiqueta(id), `${id} está dentro del formulario`);
+    }
+  });
+
+  it('los campos conservan su tipo, maxlength, accept y autocomplete', () => {
+    for (const id of ['para_interna', 'cc_interna', 'para_externa', 'cc_externa', 'para_auditoria', 'cc_auditoria', 'cco', 'casillas_prueba']) {
+      assert.match(etiqueta(id), /^<input\b[^>]*autocomplete="off"/, id);
+    }
+    const largos = { linea_cc_interna: 200, linea_cc_externa: 200, firma_nombre: 150, firma_cargo: 200, membrete_pie: 300 };
+    for (const [id, largo] of Object.entries(largos)) assert.match(etiqueta(id), new RegExp(`maxlength="${largo}"`), id);
+    for (const id of ['firma-archivo', 'membrete-archivo']) {
+      assert.match(etiqueta(id), /type="file"/, id);
+      assert.match(etiqueta(id), /accept="image\/png,image\/jpeg"/, id);
+    }
+    assert.match(etiqueta('firmante'), /^<select\b/);
+  });
+
+  it('cada campo sigue con su etiqueta (label for)', () => {
+    for (const id of ['para_interna', 'cc_interna', 'linea_cc_interna', 'para_externa', 'cc_externa', 'linea_cc_externa', 'para_auditoria', 'cc_auditoria',
+      'cco', 'casillas_prueba', 'firmante', 'firma_nombre', 'firma_cargo', 'firma-archivo', 'membrete-archivo', 'membrete_pie']) {
+      assert.match(FORMULARIO, new RegExp(`<label class="form-label" for="${id}">`), id);
+    }
+  });
+
+  it('las imágenes de la firma y del membrete siguen ocultas y con las clases que usa el código', () => {
+    assert.match(etiqueta('firma-vista'), /^<img\b[^>]*class="nd-firma"[^>]*\bhidden\b/);
+    assert.match(etiqueta('membrete-vista'), /^<img\b[^>]*class="nd-firma nd-membrete"[^>]*\bhidden\b/);
+  });
+
+  it('las ayudas de siempre, letra por letra', () => {
+    for (const ayuda of ['La copia oculta (CCO) es la de respaldo, la misma de las demás notas.',
+      'El banner va arriba de cada hoja del PDF, a lo ancho de la hoja, y el texto del pie va centrado al pie de cada hoja (vacío: sin pie). El cuerpo del email no cambia.']) {
+      assert.ok(FORMULARIO.includes(ayuda), ayuda.slice(0, 30));
+    }
+    assert.match(etiqueta('firmante-ayuda'), /^<p\b/);
+    assert.match(etiqueta('firma-ayuda'), /^<p\b/);
+  });
+
+  it('los siete grupos, en este orden, cada uno un fieldset .co-grupo con su legend', () => {
+    assert.deepEqual(titulos(FORMULARIO), GRUPOS);
+    assert.equal(FORMULARIO.match(/<fieldset class="co-grupo">/g).length, 7);
+    assert.equal(FORMULARIO.match(/<fieldset\b/g).length, 7);
+  });
+
+  it('dos columnas: a la izquierda los cuatro grupos de los correos y a la derecha el firmante, la firma y el membrete', () => {
+    assert.match(FORMULARIO, /<div class="co-config">/);
+    const columnas = FORMULARIO.split('<div class="co-columna">').slice(1);
+    assert.equal(columnas.length, 2);
+    assert.deepEqual(titulos(columnas[0]), GRUPOS.slice(0, 4));
+    assert.deepEqual(titulos(columnas[1]), GRUPOS.slice(4));
+  });
+
+  it('el único botón de enviar está en la barra de guardado, dentro del formulario, junto a la ayuda de las direcciones', () => {
+    assert.equal(FORMULARIO.match(/type="submit"/g).length, 1);
+    assert.match(FORMULARIO, /<div class="co-guardar">\s*<span>Separá varias direcciones con coma\.<\/span>\s*<button type="submit" class="co-btn primario">Guardar configuración<\/button>\s*<\/div>\s*$/);
+    assert.ok(FORMULARIO.indexOf('class="co-guardar"') > FORMULARIO.lastIndexOf('</fieldset>'), 'la barra va al pie, después de los siete grupos');
+  });
+
+  it('estilo de las dos columnas y de los grupos: tarjeta blanca, borde de 1px, radio 12px, título dentro', () => {
+    assert.match(regla('.co-config'), /display:\s*grid[^}]*grid-template-columns:\s*1fr 1fr[^}]*align-items:\s*start/);
+    const grupo = regla('.co-grupo');
+    assert.match(grupo, /background:\s*#fff/);
+    assert.match(grupo, /border:\s*1px solid var\(--pf-linea\)/);
+    assert.match(grupo, /border-radius:\s*12px/);
+    assert.match(grupo, /min-width:\s*0/, 'un fieldset no se achica solo: sin esto empuja el ancho de la página');
+    assert.match(regla('.co-grupo + .co-grupo'), /margin-top:\s*16px/);
+    const titulo = regla('.co-grupo legend');
+    assert.match(titulo, /float:\s*left/);
+    assert.match(titulo, /width:\s*100%/);
+    assert.match(titulo, /color:\s*var\(--pf-tinta\)/);
+    assert.match(regla('.co-grupo legend + *'), /clear:\s*both/);
+  });
+
+  it('la barra de guardado se queda abajo mientras se baja por el formulario', () => {
+    const barra = regla('.co-guardar');
+    assert.match(barra, /position:\s*sticky/);
+    assert.match(barra, /bottom:\s*0/);
+    assert.match(barra, /display:\s*flex[^}]*justify-content:\s*space-between/);
+    assert.match(barra, /border:\s*1px solid var\(--pf-linea\)[^}]*border-radius:\s*12px/);
+  });
+
+  it('en una sola columna hasta 860px, y los campos ocupan el ancho de su grupo', () => {
+    assert.ok(bloquesDeMedia('@media (max-width: 860px)').some(b => /\.co-dos,\s*\.co-config\s*\{\s*grid-template-columns:\s*1fr;?\s*\}/.test(b)));
+    assert.match(regla('.co-grupo .form-input, .co-grupo select'), /width:\s*100%/);
+  });
+
+  it('el foco de los campos se ve con el acento', () => {
+    assert.match(regla('.co-grupo .form-input:focus-visible, .co-grupo select:focus-visible'), /outline:\s*2px solid var\(--pf-acento\)/);
+  });
+});
+
+describe('correos: arreglos chicos de la revisión de la tarea 4', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+
+  it('con los colores forzados la perilla cabe dentro del borde de 2px del interruptor', () => {
+    const inicio = PAGINA.indexOf('@media (forced-colors: active)');
+    const bloque = PAGINA.slice(inicio, PAGINA.indexOf('</style>', inicio));
+    assert.match(bloque, /\.co-switch input::after\s*\{[^}]*top:\s*1px[^}]*left:\s*1px/);
+  });
+
+  it('las líneas de debajo del interruptor alinean las cifras de las fechas', () => {
+    assert.match(PAGINA.match(/\.co-lineas\s*\{([^}]*)\}/)[1], /font-variant-numeric:\s*tabular-nums/);
+  });
+
+  it('las fechas de las próximas notas pasan por Utils.escapeHtml', async () => {
+    const escapar = (texto) => String(texto).replace(/</g, '&lt;');
+    const estado = {
+      envio_activo: true, configuracion_faltante: [], fallidas: 0, alertas: [], ultima_corrida: null, licencia_firmante: null, auditoria: { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] },
+      proximas: { interna: { aviso: { fecha: '2026-<b>-01', cantidad: 1 }, reiteracion: { fecha: '2026-<i>-01', cantidad: 2 } } }
+    };
+    const { contexto, elemento } = cargarCorreos({ getEstadoNotas: async () => estado }, { Utils: { escapeHtml: escapar } });
+    await contexto.cargarEstado();
+    const html = elemento('nd-proximas').innerHTML;
+    assert.ok(html.includes('&lt;b>') && html.includes('&lt;i>'), html);
+    assert.ok(!html.includes('<b>') && !html.includes('<i>'), html);
+  });
+});
