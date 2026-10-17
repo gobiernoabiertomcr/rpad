@@ -514,9 +514,12 @@ describe('correos.html: alertas arriba de las pestañas (spec 2026-10-17-correos
     }
   });
 
-  it('el estilo trae .co-alertas (vacío no ocupa lugar) y los dos puntos', () => {
+  it('el estilo trae .co-alertas (vacío no ocupa lugar, pero sigue en el árbol de accesibilidad) y los dos puntos', () => {
     assert.match(PAGINA, /\.co-alertas\s*\{[^}]*display:\s*grid[^}]*gap:\s*8px/);
-    assert.match(PAGINA, /\.co-alertas:empty\s*\{\s*display:\s*none/);
+    // Una grilla vacía mide cero de alto; solo se le quita el margen. Sin display:none, para que la región aria-live siga ahí
+    const vacio = PAGINA.match(/\.co-alertas:empty\s*\{([^}]*)\}/)?.[1] ?? '';
+    assert.match(vacio, /margin-bottom:\s*0/);
+    assert.doesNotMatch(vacio, /display\s*:/);
     assert.match(PAGINA, /\.co-punto\s*\{[^}]*width:\s*8px[^}]*height:\s*8px[^}]*border-radius:\s*50%/);
     assert.match(PAGINA, /\.co-punto\.error\s*\{[^}]*#C0504D/i);
     assert.match(PAGINA, /\.co-punto\.advertencia\s*\{[^}]*#D9A33A/i);
@@ -534,8 +537,10 @@ describe('correos.html: alertas arriba de las pestañas (spec 2026-10-17-correos
     // El ícono es solo CSS (data:), uno por variante, del color del texto
     assert.match(PAGINA, /\.nd-alerta::before\s*\{[^}]*content:\s*''[^}]*url\("data:image\/svg\+xml[^}]*stroke='%238A3434'/i);
     assert.match(PAGINA, /\.nd-alerta\.nd-advertencia::before\s*\{[^}]*url\("data:image\/svg\+xml[^}]*stroke='%237A5A14'/i);
-    // Ya no quedan los colores de antes
-    assert.doesNotMatch(PAGINA, /#fef2f2|#fecaca|#991b1b|#fffbeb|#fde68a|#92400e/i);
+    // Ya no quedan los colores de antes en las reglas de .nd-alerta (el resto de la página puede usarlos)
+    const reglas = [...PAGINA.matchAll(/^\s*\.nd-alerta[^{]*\{[^}]*\}/gm)].map(m => m[0]).join('\n');
+    assert.ok(reglas.includes('.nd-alerta.nd-advertencia::before'), 'se leyeron las cuatro reglas de .nd-alerta');
+    assert.doesNotMatch(reglas, /#fef2f2|#fecaca|#991b1b|#fffbeb|#fde68a|#92400e/i);
   });
 });
 
@@ -553,6 +558,7 @@ describe('correos.js: marca de la pestaña Estado', () => {
     assert.equal(marca(contexto, [], { sin_quien_audite: 0 }), '');
     assert.equal(marca(contexto, [], undefined), '');
     assert.equal(marca(contexto, [], { canal_nota: 0, proxima: null }), '', 'una respuesta sin el campo');
+    assert.equal(marca(contexto, [{ mensaje: 'x' }], undefined), 'error', 'una alerta sin nivel cuenta como error');
   });
 
   describe('cargarEstado: prende y apaga las marcas', () => {
@@ -627,5 +633,304 @@ describe('correos.js: marca de la pestaña Estado', () => {
       assert.equal(elemento('nd-alertas').innerHTML,
         '<div class="nd-alerta">Hay 1 nota(s) que no se pudieron enviar. Revisalas en el libro con el filtro "Fallida".</div><div class="nd-alerta nd-advertencia">x</div>');
     });
+  });
+});
+
+// Correos en pestañas (spec 2026-10-17-correos-pestanas, 6): el Libro de Notas Digitales como tabla renovada
+describe('correos.html: el Libro (spec 2026-10-17-correos-pestanas, 6)', () => {
+  const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+  const LIBRO = PAGINA.slice(PAGINA.indexOf('id="vista-libro"'), PAGINA.indexOf('id="vista-estado"'));
+  const etiqueta = (id) => LIBRO.match(new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`))?.[0] ?? '';
+  // El cuerpo de la regla CSS cuyo selector es exactamente este (los espacios del selector valen por uno o más)
+  const regla = (selector) => {
+    const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+    return PAGINA.match(new RegExp(`(?:^|[}\\s])${escapado}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+  };
+
+  it('el panel ya no es una tarjeta .smtp-card con .table-container: filtros, marco de la tabla y tabla del Libro', () => {
+    assert.doesNotMatch(LIBRO, /smtp-card|table-container|nd-filtros|nd-check|nd-acciones/);
+    assert.match(LIBRO, /<div class="co-filtros">/);
+    assert.match(LIBRO, /<div class="co-tabla-marco">\s*<table class="co-libro">/);
+    assert.ok(LIBRO.indexOf('co-filtros') < LIBRO.indexOf('co-tabla-marco'), 'primero los filtros');
+  });
+
+  it('siguen los ids de los seis filtros: cinco select (sin form-select) y la casilla de pruebas', () => {
+    for (const id of ['filtro-anio', 'filtro-tipo', 'filtro-gestion', 'filtro-estado', 'filtro-dataset']) {
+      const select = etiqueta(id);
+      assert.match(select, /^<select\b/, id);
+      assert.doesNotMatch(select, /form-select/, `${id} sin form-select`);
+      assert.match(select, /aria-label="/, id);
+    }
+    assert.match(etiqueta('filtro-dataset'), /class="ancho"/);
+    for (const id of ['filtro-anio', 'filtro-tipo', 'filtro-gestion', 'filtro-estado']) {
+      assert.doesNotMatch(etiqueta(id), /class="ancho"/, id);
+    }
+    assert.match(etiqueta('filtro-pruebas'), /^<input\b[^>]*type="checkbox"/);
+    // Las mismas opciones de siempre
+    assert.match(LIBRO, /<option value="">Todos los años<\/option>/);
+    assert.match(LIBRO, /<option value="">Interna y externa<\/option>/);
+    assert.match(LIBRO, /<option value="autorizacion">Autorización<\/option>/);
+    assert.match(LIBRO, /<option value="pendiente">Pendiente<\/option>/);
+    assert.match(LIBRO, /<label>\s*<input[^>]*id="filtro-pruebas"[^>]*> Incluir pruebas<\/label>/);
+  });
+
+  it('el encabezado: ocho columnas, y Para / CC es la única ocultable', () => {
+    const encabezado = LIBRO.match(/<thead>([\s\S]*?)<\/thead>/)?.[1] ?? '';
+    assert.ok(encabezado.includes('<th class="ocultable">Para / CC</th>'));
+    const columnas = [...encabezado.matchAll(/<th\b[^>]*>([^<]*)<\/th>/g)].map(m => m[1]);
+    assert.deepEqual(columnas, ['N°', 'Fecha', 'Tipo', 'Gestión', 'Datasets', 'Para / CC', 'Estado', '']);
+    assert.equal(encabezado.match(/ocultable/g).length, 1, 'solo Para / CC');
+  });
+
+  it('el cuerpo arranca con Cargando… en una fila de ocho columnas, y el aviso de las 500 sigue oculto', () => {
+    assert.ok(LIBRO.includes('<tbody id="libro-cuerpo"><tr><td colspan="8" class="co-sin-filas">Cargando…</td></tr></tbody>'));
+    const aviso = etiqueta('libro-limite');
+    assert.match(aviso, /class="test-hint"/);
+    assert.match(aviso, /\bhidden\b/);
+    assert.ok(LIBRO.includes('Se muestran las 500 notas más recientes; usá los filtros para ver otras.</p>'));
+    assert.ok(LIBRO.indexOf('libro-limite') > LIBRO.indexOf('</table>'), 'debajo de la tabla');
+  });
+
+  it('estilo de los filtros y del marco: la tabla se desplaza dentro del marco', () => {
+    assert.match(regla('.co-filtros'), /display:\s*flex[^}]*flex-wrap:\s*wrap/);
+    assert.match(regla('.co-filtros select'), /border:\s*1px solid var\(--pf-linea\)[^}]*border-radius:\s*8px/);
+    assert.match(regla('.co-filtros select.ancho'), /min-width:\s*240px/);
+    const marco = regla('.co-tabla-marco');
+    assert.match(marco, /border:\s*1px solid var\(--pf-linea\)/);
+    assert.match(marco, /border-radius:\s*12px/);
+    assert.match(marco, /overflow:\s*auto/);
+    assert.match(regla('table.co-libro'), /width:\s*100%[^}]*border-collapse:\s*collapse/);
+    assert.match(regla('.co-libro th'), /background:\s*var\(--pf-sutil\)[^}]*white-space:\s*nowrap/);
+  });
+
+  it('estilo de las celdas: número, fecha con cifras tabulares, chips por tipo, pastillas por estado', () => {
+    assert.match(regla('.co-numero'), /font-weight:\s*700[^}]*tabular-nums/);
+    assert.match(regla('.co-fecha'), /tabular-nums/);
+    assert.match(regla('.co-cant'), /tabular-nums/);
+    assert.match(regla('.co-gestion'), /border:\s*1px solid var\(--pf-linea\)[^}]*border-radius:\s*999px/);
+    assert.match(regla('.co-para small'), /display:\s*block/);
+    assert.match(regla('.co-estado'), /flex-direction:\s*column/);
+    assert.match(regla('.co-estado small'), /tabular-nums[^}]*white-space:\s*nowrap/, 'el día y la hora no se parten en dos renglones');
+    for (const [tipo, color] of [['aviso', 'azul'], ['reiteracion', 'ambar'], ['auditoria', 'violeta'], ['autorizacion', 'turquesa']]) {
+      assert.match(regla(`.co-chip.${tipo}`), new RegExp(`background:\\s*var\\(--pf-${color}-fondo\\)[^}]*color:\\s*var\\(--pf-${color}\\)`), tipo);
+    }
+    for (const [estado, color] of [['enviada', 'verde'], ['fallida', 'rojo'], ['pendiente', 'ambar']]) {
+      assert.match(regla(`.co-pastilla.${estado}`), new RegExp(`background:\\s*var\\(--pf-${color}-fondo\\)[^}]*color:\\s*var\\(--pf-${color}\\)`), estado);
+    }
+  });
+
+  it('estilo de las acciones: botón, deshabilitado, primario, reintentar y foco visible', () => {
+    assert.match(regla('.co-acciones'), /display:\s*flex[^}]*justify-content:\s*flex-end/);
+    const boton = regla('.co-btn');
+    assert.match(boton, /border:\s*1px solid var\(--pf-linea\)/);
+    assert.match(boton, /border-radius:\s*8px/);
+    assert.match(regla('.co-btn:hover'), /background:\s*var\(--pf-sutil\)/);
+    assert.match(regla('.co-btn:disabled'), /opacity:\s*\.55[^}]*cursor:\s*not-allowed/);
+    assert.match(regla('.co-btn.primario'), /background:\s*var\(--primary\)/);
+    assert.match(regla('.co-btn.reintentar'), /color:\s*var\(--pf-rojo\)[^}]*border-color:\s*#E8C4C4/i);
+    assert.match(regla('.co-btn:focus-visible'), /outline:\s*2px solid var\(--pf-acento\)/);
+  });
+
+  it('una fila sin datos: .co-sin-filas centrado y de color suave', () => {
+    assert.match(regla('.co-libro td.co-sin-filas'), /text-align:\s*center[^}]*color:\s*var\(--pf-suave\)/);
+  });
+
+  it('hasta 860px se esconde Para / CC (encabezado y celdas)', () => {
+    const desde = PAGINA.indexOf('@media (max-width: 860px)');
+    assert.ok(desde > 0, 'hay una consulta de 860px');
+    // El bloque de la consulta, hasta su llave de cierre
+    let profundidad = 0;
+    let hasta = PAGINA.indexOf('{', desde);
+    for (; hasta < PAGINA.length; hasta++) {
+      if (PAGINA[hasta] === '{') profundidad++;
+      if (PAGINA[hasta] === '}' && --profundidad === 0) break;
+    }
+    assert.match(PAGINA.slice(desde, hasta), /\.co-libro \.ocultable\s*\{\s*display:\s*none;?\s*\}/);
+  });
+
+  it('ya no quedan estilos de lo que se reemplazó, ni el mapa CLASE_ESTADO', () => {
+    assert.doesNotMatch(PAGINA, /\.nd-filtros|\.nd-check|\.nd-acciones/);
+    const codigo = fs.readFileSync(new URL('../public/js/correos.js', import.meta.url), 'utf8');
+    assert.doesNotMatch(codigo, /CLASE_ESTADO|nd-acciones|btn-sm|badge-danger|badge-warning/);
+  });
+});
+
+describe('correos.js: filas del Libro (spec 2026-10-17-correos-pestanas, 6)', () => {
+  // El escape de verdad (api.js), para ver qué pasa con los < y las comillas
+  const utilsReal = () => {
+    const contexto = vm.createContext({ CONFIG: { API_URL: '/api' }, console });
+    vm.runInContext(`${fs.readFileSync(new URL('../public/js/api.js', import.meta.url), 'utf8')}\n;globalThis.Utils = Utils;`, contexto);
+    return contexto.Utils;
+  };
+  const AVISO = {
+    id: 7, numero: 3, anio: 2026, fecha: '2026-10-21', tipo: 'aviso', gestion: 'externa', cantidad_datasets: 1,
+    para: 'para@rpad.test', cc: 'cc@rpad.test', estado: 'enviada', enviada_at: '2026-10-21 08:15', tiene_anexo: 1, es_prueba: 0
+  };
+  const AUTORIZACION_FALLIDA = {
+    id: 9, numero: 4, anio: 2026, fecha: '2026-10-22', tipo: 'autorizacion', gestion: null, cantidad_datasets: 0,
+    para: 'para@rpad.test', cc: null, estado: 'fallida', enviada_at: null, ultimo_error: 'Error <421> "x"', tiene_anexo: 0, es_prueba: 0
+  };
+  const PRUEBA = {
+    id: 11, numero: null, anio: 2026, fecha: '2026-10-23', tipo: 'aviso', gestion: 'interna', cantidad_datasets: 2,
+    para: 'prueba@rpad.test', cc: null, estado: 'enviada', enviada_at: '2026-10-23 09:01', tiene_anexo: 0, es_prueba: 1
+  };
+  // Las filas del libro (el innerHTML del cuerpo) para esas notas
+  const filas = async (notas, globales) => {
+    const { contexto, elemento } = cargarCorreos({ getLibroNotas: async () => notas }, globales);
+    await contexto.cargarLibro();
+    return elemento('libro-cuerpo').innerHTML;
+  };
+
+  it('aviso enviado: número, fecha, chip, gestión, cantidad, Para con CC, pastilla con la hora y las tres acciones', async () => {
+    const html = await filas([AVISO]);
+    assert.ok(html.includes('<td><span class="co-numero">3/26</span></td>'));
+    assert.ok(html.includes('<td class="co-fecha">21/10/2026</td>'));
+    assert.ok(html.includes('<td><span class="co-chip aviso">Aviso</span></td>'));
+    assert.ok(html.includes('<td><span class="co-gestion">Externa</span></td>'));
+    assert.ok(html.includes('<td class="co-cant">1</td>'));
+    assert.ok(html.includes('<td class="co-para ocultable">para@rpad.test<small>CC: cc@rpad.test</small></td>'));
+    assert.ok(html.includes('<span class="co-estado"><span class="co-pastilla enviada" title="">Enviada</span><small>21/10/2026 08:15</small></span>'));
+    assert.ok(html.includes('data-accion="ver" data-id="7"'));
+    assert.ok(html.includes('data-accion="pdf" data-id="7" data-archivo="Nota-Digital-3-26.pdf"'));
+    assert.ok(html.includes('data-accion="anexo" data-id="7" data-archivo="Anexo-Nota-Digital-3-26.pdf"'));
+    assert.ok(!html.includes('data-accion="reintentar"'), 'enviada: sin Reintentar');
+    assert.ok(!html.includes('badge'), 'ya no usa .badge');
+  });
+
+  it('cada fila tiene sus ocho celdas y los botones son .co-btn de tipo button', async () => {
+    const html = await filas([AVISO, AUTORIZACION_FALLIDA, PRUEBA]);
+    const lista = html.split('</tr>').filter(f => f.includes('<tr>'));
+    assert.deepEqual(lista.map(fila => fila.match(/<td\b/g).length), [8, 8, 8]);
+    const botones = html.match(/<button\b[^>]*>/g);
+    assert.equal(botones.length, 3 + 3 + 2, 'aviso: ver, pdf y anexo; autorización: ver, pdf y reintentar; prueba: ver y pdf');
+    for (const b of botones) assert.match(b, /^<button type="button" class="co-btn( reintentar)?" data-accion="(ver|pdf|anexo|reintentar)" data-id="\d+"/, b);
+    assert.ok(html.includes('<div class="co-acciones">'));
+  });
+
+  it('el aviso sin CC no lleva la línea CC', async () => {
+    const html = await filas([{ ...AVISO, cc: null }]);
+    assert.ok(html.includes('<td class="co-para ocultable">para@rpad.test</td>'));
+    assert.ok(!html.includes('CC:'));
+  });
+
+  it('autorización fallida sin gestión ni hora de envío: gestión "—" sin etiqueta, Reintentar, sin fecha debajo de la pastilla', async () => {
+    const html = await filas([AUTORIZACION_FALLIDA]);
+    assert.ok(html.includes('<td>—</td>'), 'la celda de gestión es solo —');
+    assert.ok(!html.includes('co-gestion'));
+    assert.ok(html.includes('<td><span class="co-chip autorizacion">Autorización</span></td>'));
+    assert.ok(html.includes('<td class="co-cant">—</td>'));
+    // El escape falso del helper devuelve el texto igual: el title es el ultimo_error
+    assert.ok(html.includes('<span class="co-pastilla fallida" title="Error <421> "x"">Fallida</span></span>'));
+    assert.ok(html.includes('<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="9">Reintentar</button>'));
+    assert.ok(!html.includes('<small>'), 'sin cc ni enviada_at no hay nada chico');
+    assert.ok(!html.includes('data-accion="anexo"'));
+  });
+
+  it('con el escape de verdad, el error del título sale escapado (< > y comillas)', async () => {
+    const html = await filas([AUTORIZACION_FALLIDA], { Utils: utilsReal() });
+    assert.ok(html.includes('<span class="co-pastilla fallida" title="Error &lt;421&gt; &quot;x&quot;">Fallida</span>'));
+  });
+
+  it('el detalle del estado sale de ultimo_error, o de respuesta_smtp si no hay, o queda vacío', async () => {
+    const titulo = async (nota) => (await filas([nota])).match(/class="co-pastilla \w+" title="([^"]*)"/)[1];
+    assert.equal(await titulo({ ...AVISO, ultimo_error: 'falló', respuesta_smtp: '250 ok' }), 'falló');
+    assert.equal(await titulo({ ...AVISO, respuesta_smtp: '250 ok' }), '250 ok');
+    assert.equal(await titulo(AVISO), '');
+  });
+
+  it('nota pendiente: pastilla pendiente y Reintentar', async () => {
+    const html = await filas([{ ...AVISO, estado: 'pendiente', enviada_at: null }]);
+    assert.ok(html.includes('<span class="co-pastilla pendiente" title="">Pendiente</span>'));
+    assert.ok(html.includes('data-accion="reintentar"'));
+  });
+
+  it('nota de prueba: PRUEBA en lugar del número, datasets "—" y el PDF de prueba', async () => {
+    const html = await filas([PRUEBA]);
+    assert.ok(html.includes('<span class="co-numero">PRUEBA</span>'));
+    assert.ok(html.includes('<td class="co-cant">—</td>'));
+    assert.ok(html.includes('<span class="co-gestion">Interna</span>'));
+    assert.ok(html.includes('data-archivo="Nota-Digital-PRUEBA-11.pdf"'));
+    assert.ok(!html.includes('null'));
+  });
+
+  it('nota de auditoría: sin gestión y con la cantidad de cambios; reiteración con la sección del dataset', async () => {
+    const auditoria = { ...AVISO, id: 21, tipo: 'auditoria', gestion: null, cantidad_cambios: 4, tiene_anexo: 0 };
+    const reiteracion = { ...AVISO, id: 22, tipo: 'reiteracion', cantidad_datasets: 5, seccion_dataset: 'vencido', tiene_anexo: 0 };
+    const html = await filas([auditoria, reiteracion]);
+    assert.ok(html.includes('<span class="co-chip auditoria">Auditoría</span>'));
+    assert.ok(html.includes('<td>—</td>'));
+    assert.ok(html.includes('<td class="co-cant">4 cambio(s)</td>'));
+    assert.ok(html.includes('<span class="co-chip reiteracion">Reiteración</span>'));
+    assert.ok(html.includes('<td class="co-cant">5 (vencido)</td>'));
+  });
+
+  it('los datos de la nota salen escapados (Para, CC)', async () => {
+    const html = await filas([{ ...AVISO, para: 'a<b>@x"y', cc: '<i>cc</i>' }], { Utils: utilsReal() });
+    assert.ok(html.includes('<td class="co-para ocultable">a&lt;b&gt;@x&quot;y<small>CC: &lt;i&gt;cc&lt;/i&gt;</small></td>'));
+    assert.ok(!html.includes('<b>') && !html.includes('<i>'));
+  });
+
+  it('la hora del envío sale en formato de día y hora, escapada', async () => {
+    const html = await filas([{ ...AVISO, enviada_at: '2026-10-21 08:15' }], { Utils: utilsReal() });
+    assert.ok(html.includes('<small>21/10/2026 08:15</small>'));
+  });
+
+  it('sin notas: una fila de ocho columnas con el texto de siempre', async () => {
+    assert.equal(await filas([]), '<tr><td colspan="8" class="co-sin-filas">No hay notas con estos filtros.</td></tr>');
+  });
+
+  it('si el pedido falla: una fila de ocho columnas con el mensaje (escapado con el escape de verdad)', async () => {
+    const { contexto, elemento } = cargarCorreos({ getLibroNotas: async () => { throw new Error('falló'); } });
+    await contexto.cargarLibro();
+    assert.equal(elemento('libro-cuerpo').innerHTML, '<tr><td colspan="8" class="co-sin-filas">falló</td></tr>');
+    const real = cargarCorreos({ getLibroNotas: async () => { throw new Error('<mal>'); } }, { Utils: utilsReal() });
+    await real.contexto.cargarLibro();
+    assert.equal(real.elemento('libro-cuerpo').innerHTML, '<tr><td colspan="8" class="co-sin-filas">&lt;mal&gt;</td></tr>');
+  });
+
+  it('los seis filtros viajan a la API tal cual, y la casilla de pruebas manda "1" solo tildada', async () => {
+    let recibido;
+    const { contexto, elemento } = cargarCorreos({ getLibroNotas: async (filtros) => { recibido = filtros; return []; } });
+    await contexto.cargarLibro();
+    assert.deepEqual({ ...recibido }, { anio: '', tipo: '', gestion: '', estado: '', dataset_id: '', incluir_pruebas: '' });
+    elemento('filtro-anio').value = '2026';
+    elemento('filtro-tipo').value = 'aviso';
+    elemento('filtro-gestion').value = 'externa';
+    elemento('filtro-estado').value = 'enviada';
+    elemento('filtro-dataset').value = '12';
+    elemento('filtro-pruebas').checked = true;
+    await contexto.cargarLibro();
+    assert.deepEqual({ ...recibido }, { anio: '2026', tipo: 'aviso', gestion: 'externa', estado: 'enviada', dataset_id: '12', incluir_pruebas: '1' });
+  });
+
+  it('el aviso de las 500: se ve con 500 notas, se oculta con menos, con ninguna y si falla', async () => {
+    const notas = (n) => Array.from({ length: n }, (_, i) => ({ ...AVISO, id: i + 1 }));
+    let lista = notas(500);
+    const { contexto, elemento } = cargarCorreos({ getLibroNotas: async () => lista });
+    await contexto.cargarLibro();
+    assert.equal(elemento('libro-limite').hidden, false);
+    lista = notas(499);
+    await contexto.cargarLibro();
+    assert.equal(elemento('libro-limite').hidden, true);
+    lista = notas(500);
+    await contexto.cargarLibro();
+    lista = [];
+    await contexto.cargarLibro();
+    assert.equal(elemento('libro-limite').hidden, true, 'sin notas');
+    const fallo = cargarCorreos({ getLibroNotas: async () => { throw new Error('x'); } });
+    fallo.elemento('libro-limite').hidden = false;
+    await fallo.contexto.cargarLibro();
+    assert.equal(fallo.elemento('libro-limite').hidden, true, 'si falla');
+  });
+
+  it('los botones traen lo que accionDelLibro lee: data-accion, data-id y, en PDF y Anexo, data-archivo', async () => {
+    const html = await filas([AVISO]);
+    const botones = [...html.matchAll(/<button\b([^>]*)>/g)]
+      .map(m => Object.fromEntries([...m[1].matchAll(/data-(\w+)="([^"]*)"/g)].map(a => [a[1], a[2]])));
+    assert.deepEqual(botones, [
+      { accion: 'ver', id: '7' },
+      { accion: 'pdf', id: '7', archivo: 'Nota-Digital-3-26.pdf' },
+      { accion: 'anexo', id: '7', archivo: 'Anexo-Nota-Digital-3-26.pdf' }
+    ]);
   });
 });

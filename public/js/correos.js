@@ -50,7 +50,6 @@ const textoPeriodosSinAuditor = (a) => {
 const nombreVistaPrevia = (tipo, gestion) => `Nota-Digital-vista-previa-${tipo}${tipo === 'auditoria' ? '' : `-${gestion}`}.pdf`;
 // Máximo de notas que devuelve la API del libro (las más recientes)
 const LIMITE_LIBRO = 500;
-const CLASE_ESTADO = { enviada: 'badge-success', fallida: 'badge-danger', pendiente: 'badge-warning' };
 
 // Los mensajes del servidor se escapan: showToast inserta HTML
 const avisar = (mensaje, tipo = 'info') => showToast(Utils.escapeHtml(mensaje), tipo);
@@ -302,40 +301,39 @@ async function cargarLibro() {
   try {
     const notas = await API.getLibroNotas(filtros);
     if (!notas.length) {
-      cuerpo.innerHTML = '<tr><td colspan="8">No hay notas con estos filtros.</td></tr>';
+      cuerpo.innerHTML = '<tr><td colspan="8" class="co-sin-filas">No hay notas con estos filtros.</td></tr>';
       return;
     }
     // La API corta en las 500 más recientes: se avisa que puede haber más
     limite.hidden = notas.length < LIMITE_LIBRO;
-    cuerpo.innerHTML = notas.map((n) => {
-      const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
-      const archivoAnexo = `Anexo-${archivo}`;
-      const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
-      return `
-      <tr>
-        <td>${numeroDe(n)}</td>
-        <td>${fecha(n.fecha)}</td>
-        <td>${ETIQUETAS[n.tipo]}</td>
-        <td>${textoGestion(n.gestion)}</td>
-        <td>${celdaCantidad(n)}</td>
-        <td>${Utils.escapeHtml(n.para)}${n.cc ? `<br><small>CC: ${Utils.escapeHtml(n.cc)}</small>` : ''}</td>
-        <td>
-          <span class="badge ${CLASE_ESTADO[n.estado]}" title="${Utils.escapeHtml(detalleEstado)}">${ETIQUETAS[n.estado]}</span>
-          ${n.enviada_at ? `<br><small>${Utils.escapeHtml(n.enviada_at)}</small>` : ''}
-        </td>
-        <td>
-          <div class="nd-acciones">
-            <button type="button" class="btn btn-secondary btn-sm" data-accion="ver" data-id="${n.id}">Ver</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-accion="pdf" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivo)}">PDF</button>
-            ${n.tiene_anexo ? `<button type="button" class="btn btn-secondary btn-sm" data-accion="anexo" data-id="${n.id}" data-archivo="${Utils.escapeHtml(archivoAnexo)}">Anexo</button>` : ''}
-            ${n.estado !== 'enviada' ? `<button type="button" class="btn btn-outline btn-sm" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
+    cuerpo.innerHTML = notas.map(filaDelLibro).join('');
   } catch (error) {
-    cuerpo.innerHTML = `<tr><td colspan="8">${Utils.escapeHtml(error.message)}</td></tr>`;
+    cuerpo.innerHTML = `<tr><td colspan="8" class="co-sin-filas">${Utils.escapeHtml(error.message)}</td></tr>`;
   }
+}
+
+// Una fila del libro (spec 2026-10-17-correos-pestanas, 6). Los botones llevan data-accion, data-id y data-archivo: los lee accionDelLibro.
+// Lo que va en un atributo (clases, title, nombres de archivo) también se escapa.
+function filaDelLibro(n) {
+  const esc = (texto) => Utils.escapeHtml(texto);
+  const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
+  const archivoAnexo = `Anexo-${archivo}`;
+  const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
+  return `<tr>
+    <td><span class="co-numero">${numeroDe(n)}</span></td>
+    <td class="co-fecha">${fecha(n.fecha)}</td>
+    <td><span class="co-chip ${esc(n.tipo)}">${ETIQUETAS[n.tipo]}</span></td>
+    <td>${n.gestion ? `<span class="co-gestion">${textoGestion(n.gestion)}</span>` : textoGestion(n.gestion)}</td>
+    <td class="co-cant">${celdaCantidad(n)}</td>
+    <td class="co-para ocultable">${esc(n.para)}${n.cc ? `<small>CC: ${esc(n.cc)}</small>` : ''}</td>
+    <td><span class="co-estado"><span class="co-pastilla ${esc(n.estado)}" title="${esc(detalleEstado)}">${ETIQUETAS[n.estado]}</span>${n.enviada_at ? `<small>${esc(fechaHora(n.enviada_at))}</small>` : ''}</span></td>
+    <td><div class="co-acciones">
+      <button type="button" class="co-btn" data-accion="ver" data-id="${n.id}">Ver</button>
+      <button type="button" class="co-btn" data-accion="pdf" data-id="${n.id}" data-archivo="${esc(archivo)}">PDF</button>
+      ${n.tiene_anexo ? `<button type="button" class="co-btn" data-accion="anexo" data-id="${n.id}" data-archivo="${esc(archivoAnexo)}">Anexo</button>` : ''}
+      ${n.estado !== 'enviada' ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
+    </div></td>
+  </tr>`;
 }
 
 async function accionDelLibro(evento) {
