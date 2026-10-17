@@ -67,25 +67,32 @@ describe('perfil.js: auditar un cambio (spec 8.2)', () => {
   });
 });
 
-// Mi firma del personal contratado (usuarios.vinculo = 'contrato', pedido del usuario el 16/10/2026): una muestra de cómo sale
-// en las notas, con el renglón "Personal contratado, cumpliendo funciones de" más chico entre el nombre y el cargo
-describe('perfil.js: muestra de la firma del personal contratado', () => {
+// Mi firma: la vista previa "Así sale en las notas", para todos (pedido del usuario el 16/10/2026), armada como la firma del
+// PDF: la imagen, el nombre y el cargo; el personal contratado (usuarios.vinculo = 'contrato') lleva entre los dos el renglón
+// "Personal contratado, cumpliendo funciones de", más chico
+describe('perfil.js: vista previa de la firma', () => {
   const RENGLON = 'Personal contratado, cumpliendo funciones de';
   const renglones = (html) => [...html.matchAll(/<div class="(firma-muestra-[a-z]+)">([^<]*)<\/div>/g)].map(m => [m[1], m[2]]);
   const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
   const tamanoCss = (clase) => Number(PAGINA.match(new RegExp(`\\.${clase}\\s*\\{[^}]*font-size:\\s*([\\d.]+)rem`))?.[1]);
 
-  it('contratado: "Así sale en las notas:" y los tres renglones, el del medio más chico, con los datos escapados', () => {
+  it('contratado: los tres renglones, el del medio más chico, con los datos escapados', () => {
     const html = cargarPerfil().muestraDeFirma('Nombre <b>Apellido</b>', 'Cargo de Prueba', true);
-    assert.ok(html.includes('Así sale en las notas:'));
     assert.deepEqual(renglones(html), [
       ['firma-muestra-renglon', 'Nombre &lt;b&gt;Apellido&lt;/b&gt;'], ['firma-muestra-chico', RENGLON], ['firma-muestra-renglon', 'Cargo de Prueba']
     ]);
     assert.ok(tamanoCss('firma-muestra-chico') < tamanoCss('firma-muestra-renglon'), 'el renglón del medio tiene que ser más chico');
   });
 
-  it('sin contrato no hay muestra: la firma sale con el nombre y el cargo, como siempre', () => {
-    assert.equal(cargarPerfil().muestraDeFirma('Nombre Apellido', 'Cargo de Prueba', false), '');
+  it('sin contrato: el nombre y el cargo, como sale en las notas', () => {
+    assert.deepEqual(renglones(cargarPerfil().muestraDeFirma('Nombre Apellido', 'Cargo <i>x</i>', false)), [
+      ['firma-muestra-renglon', 'Nombre Apellido'], ['firma-muestra-renglon', 'Cargo &lt;i&gt;x&lt;/i&gt;']
+    ]);
+  });
+
+  it('sin nombre ni cargo no hay nada que mostrar', () => {
+    assert.equal(cargarPerfil().muestraDeFirma('', '', false), '');
+    assert.equal(cargarPerfil().muestraDeFirma('', '', true), '');
   });
 
   it('el renglón de la muestra es el de las notas', async () => {
@@ -94,26 +101,37 @@ describe('perfil.js: muestra de la firma del personal contratado', () => {
     assert.equal(vm.runInContext('RENGLON_FIRMA_CONTRATADO', cargarPerfil()), RENGLON_FIRMA_CONTRATADO);
   });
 
-  it('la muestra sale según el vínculo del perfil, con lo escrito en los campos de la firma', async () => {
-    for (const [vinculo, visible] of [['contrato', true], ['planta_permanente', false], ['planta_politica', false], [null, false]]) {
-      // (la muestra empieza al revés de como tiene que quedar)
+  it('la vista previa sale para todos, según el vínculo del perfil y con lo escrito en los campos de la firma', async () => {
+    for (const vinculo of ['contrato', 'planta_permanente', 'planta_politica', null]) {
       const elementos = {
-        'firma-nombre': { value: ' Nombre Apellido ' }, 'firma-cargo': { value: 'Cargo de Prueba' }, 'firma-muestra': { innerHTML: 'anterior', hidden: visible }
+        'firma-nombre': { value: ' Nombre Apellido ' }, 'firma-cargo': { value: 'Cargo de Prueba' }, 'firma-muestra': { innerHTML: 'anterior', hidden: true }
       };
       const contexto = cargarPerfil({
         elementos, API: { getProfile: async () => ({ username: 'u', nombre_completo: 'Nombre', email: 'u@rpad.test', cargo: 'Cargo', vinculo }) }
       });
       await contexto.cargarPerfil();
       contexto.actualizarMuestraFirma();
-      assert.equal(elementos['firma-muestra'].hidden, !visible, String(vinculo));
-      assert.equal(elementos['firma-muestra'].innerHTML, visible ? contexto.muestraDeFirma('Nombre Apellido', 'Cargo de Prueba', true) : '', String(vinculo));
+      assert.equal(elementos['firma-muestra'].hidden, false, String(vinculo));
+      assert.equal(elementos['firma-muestra'].innerHTML, contexto.muestraDeFirma('Nombre Apellido', 'Cargo de Prueba', vinculo === 'contrato'), String(vinculo));
     }
+    // Con los dos campos vacíos, la muestra se oculta
+    const vacios = { 'firma-nombre': { value: ' ' }, 'firma-cargo': { value: '' }, 'firma-muestra': { innerHTML: 'anterior', hidden: false } };
+    const contexto = cargarPerfil({ elementos: vacios });
+    contexto.actualizarMuestraFirma();
+    assert.equal(vacios['firma-muestra'].hidden, true);
+    assert.equal(vacios['firma-muestra'].innerHTML, '');
   });
 
-  it('el ejemplo del nombre para la firma ya no propone un título', () => {
+  it('la página: el formulario a la izquierda y la vista previa con la imagen a la derecha', () => {
     assert.ok(PAGINA.includes('id="firma-nombre" class="form-input" maxlength="150" placeholder="Ej.: Nombre Apellido"'));
     assert.ok(!PAGINA.includes('Téc.'));
     assert.ok(PAGINA.includes('<div id="firma-muestra" class="firma-muestra" hidden></div>'));
+    const panel = PAGINA.slice(PAGINA.indexOf('id="vista-mi-firma"'), PAGINA.indexOf('</section>', PAGINA.indexOf('id="vista-mi-firma"')));
+    const previa = panel.indexOf('Así sale en las notas');
+    assert.ok(previa > panel.indexOf('id="btn-guardar-firma"'), 'la vista previa va después del formulario');
+    assert.ok(panel.indexOf('id="firma-vista"') > previa && panel.indexOf('id="firma-muestra"') > panel.indexOf('id="firma-vista"'),
+      'en la vista previa, la imagen va arriba del nombre y el cargo');
+    assert.ok(panel.indexOf('id="firma-sin-imagen"') > previa);
   });
 });
 
@@ -488,8 +506,13 @@ describe('perfil.html: pestañas', () => {
     assert.match(PAGINA, /@media \(max-width: 760px\)\s*\{[^@]*\.pf-tarjetas\s*\{[^}]*grid-template-columns:\s*1fr/);
   });
 
-  it('los estilos nuevos: contenido más angosto, barra que se desplaza, mensajes y movimiento reducido', () => {
-    assert.match(PAGINA, /\.main-content\s*\{\s*max-width:\s*1120px;\s*min-width:\s*0;\s*\}/);
+  it('los estilos nuevos: todo el ancho como las demás páginas, barra que se desplaza, mensajes y movimiento reducido', () => {
+    // Todo el ancho (pedido del usuario el 16/10/2026): sin tope en .main-content; min-width: 0 para que la barra de
+    // pestañas no ensanche la página en el celular
+    assert.match(PAGINA, /\.main-content\s*\{\s*min-width:\s*0;\s*\}/);
+    assert.doesNotMatch(PAGINA, /\.main-content\s*\{[^}]*max-width/);
+    // El texto de la comparación se corta en un ancho cómodo de leer aunque la fila ocupe todo el ancho
+    assert.match(PAGINA, /\.pf-diff dd\s*\{[^}]*padding-right:\s*max\(0px,\s*calc\(100% - 88ch\)\)/);
     assert.match(PAGINA, /\.pf-pestanas\s*\{[^}]*overflow-x:\s*auto/);
     assert.match(PAGINA, /\.pf-pestana\.activa\s*\{[^}]*border-bottom-color:\s*var\(--primary\)/);
     assert.match(PAGINA, /\.pf-pestana:focus-visible/);
