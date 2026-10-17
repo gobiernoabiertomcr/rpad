@@ -133,6 +133,10 @@ describe('perfil.js: vista previa de la firma', () => {
       'en la vista previa, la imagen va arriba del nombre y el cargo');
     assert.ok(panel.indexOf('id="firma-sin-imagen"') > previa);
   });
+
+  it('el nombre y el cargo se centran en el ancho de la firma del PDF (200 pt ≈ 267 px): un cargo largo se parte igual', () => {
+    assert.match(PAGINA, /\.firma-muestra\s*\{[^}]*max-width:\s*267px;[^}]*margin:\s*0 auto/);
+  });
 });
 
 // Gestión de cambios (spec 2026-10-16-perfil-pestanas-gestion-cambios): funciones puras que arman lo que se ve de un cambio
