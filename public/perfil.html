@@ -168,7 +168,9 @@
         .pf-firma-hoja { border: 1px solid var(--pf-linea); border-radius: 10px; background: #ffffff; padding: 28px 20px; text-align: center; color: #1f2933; }
         .firma-vista { display: block; max-width: 187px; max-height: 80px; margin: 0 auto 8px; }
         .pf-firma-sin-imagen { margin: 0 0 12px; font-size: 0.8125rem; color: var(--pf-suave); font-style: italic; }
-        .firma-muestra { line-height: 1.4; }
+        /* El nombre y el cargo se centran en el ancho de la firma del PDF (ANCHO_FIRMA, 200 pt ≈ 267 px): un cargo largo se
+           parte en los mismos renglones que en la nota */
+        .firma-muestra { line-height: 1.4; max-width: 267px; margin: 0 auto; }
         .firma-muestra-renglon { font-size: 0.9375rem; }
         .firma-muestra-chico { font-size: 0.75rem; }
 
