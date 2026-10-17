@@ -642,6 +642,84 @@ describe('correos.js: marca de la pestaña Estado', () => {
   });
 });
 
+// #nd-alertas es una región en vivo (aria-live="polite"): reescribirla con lo mismo hace que el lector de pantalla repita las alertas
+describe('correos.js: cargarEstado no reescribe las alertas si no cambiaron', () => {
+  const ESTADO = {
+    envio_activo: true, configuracion_faltante: [], fallidas: 0, alertas: [], ultima_corrida: null, licencia_firmante: null,
+    proximas: {}, auditoria: { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] }
+  };
+  const escaparHtml = (texto) => String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  // Un panel cuyo #nd-alertas cuenta las veces que se le asigna innerHTML. Como el navegador, al leerlo devuelve el HTML normalizado
+  // (las comillas de &quot; y &#39; vuelven a ser " y '), así que no siempre da igual a lo que se asignó. cambiar() fija lo que responde el servidor.
+  const armar = () => {
+    const respuesta = { ...ESTADO };
+    const panel = cargarCorreos({ getEstadoNotas: async () => ({ ...respuesta }) }, { Utils: { escapeHtml: escaparHtml } });
+    const contador = { asignaciones: 0, html: '' };
+    Object.defineProperty(panel.elemento('nd-alertas'), 'innerHTML', {
+      configurable: true,
+      get: () => contador.html.replaceAll('&quot;', '"').replaceAll('&#39;', "'"),
+      set: (html) => { contador.asignaciones += 1; contador.html = html; }
+    });
+    return { ...panel, contador, cambiar: (cambios) => Object.assign(respuesta, cambios) };
+  };
+  const ALERTA = { nivel: 'error', mensaje: 'La corrida de las 08:15 terminó con errores.' };
+  const OTRA = { nivel: 'advertencia', mensaje: 'Otra cosa.' };
+
+  it('dos cargas seguidas con las mismas alertas asignan innerHTML una sola vez', async () => {
+    const { contexto, contador, cambiar } = armar();
+    cambiar({ alertas: [ALERTA] });
+    await contexto.cargarEstado();
+    await contexto.cargarEstado();
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 1);
+    assert.equal(contador.html, `<div class="nd-alerta">${ALERTA.mensaje}</div>`);
+  });
+
+  it('si las alertas cambian se vuelve a asignar, también al volver a una anterior y al quedar sin ninguna', async () => {
+    const { contexto, contador, cambiar } = armar();
+    cambiar({ alertas: [ALERTA] });
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 1);
+    cambiar({ alertas: [ALERTA, OTRA] });
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 2);
+    assert.equal(contador.html, `<div class="nd-alerta">${ALERTA.mensaje}</div><div class="nd-alerta nd-advertencia">${OTRA.mensaje}</div>`);
+    cambiar({ alertas: [ALERTA] });
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 3);
+    assert.equal(contador.html, `<div class="nd-alerta">${ALERTA.mensaje}</div>`);
+    cambiar({ alertas: [] });
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 4);
+    assert.equal(contador.html, '', 'las alertas que ya no corresponden se borran');
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 4, 'y sin alertas tampoco se reescribe');
+  });
+
+  it('una alerta con comillas (la de las notas fallidas) tampoco se reescribe: se compara con lo pintado, no con el innerHTML normalizado', async () => {
+    const { contexto, contador, cambiar } = armar();
+    cambiar({ fallidas: 2 });
+    await contexto.cargarEstado();
+    await contexto.cargarEstado();
+    assert.equal(contador.asignaciones, 1);
+    assert.equal(contador.html,
+      '<div class="nd-alerta">Hay 2 nota(s) que no se pudieron enviar. Revisalas en el libro con el filtro &quot;Fallida&quot;.</div>');
+  });
+
+  it('una carga que falla no toca las alertas que ya estaban', async () => {
+    const respuestas = [{ ...ESTADO, alertas: [ALERTA] }, null, { ...ESTADO, alertas: [ALERTA] }];
+    const panel = cargarCorreos({
+      getEstadoNotas: async () => { const r = respuestas.shift(); if (!r) throw new Error('sin conexión'); return r; }
+    });
+    let asignaciones = 0;
+    Object.defineProperty(panel.elemento('nd-alertas'), 'innerHTML', { configurable: true, get: () => '', set: () => { asignaciones += 1; } });
+    await panel.contexto.cargarEstado();
+    await panel.contexto.cargarEstado();
+    await panel.contexto.cargarEstado();
+    assert.equal(asignaciones, 1);
+  });
+});
+
 // Correos en pestañas (spec 2026-10-17-correos-pestanas, 6): el Libro de Notas Digitales como tabla renovada
 describe('correos.html: el Libro (spec 2026-10-17-correos-pestanas, 6)', () => {
   const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
@@ -1458,6 +1536,8 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
     nota(panel).classList.add('active');
     panel.elemento('modal-nota-marco').srcdoc = '<p>Nota</p>';
   };
+  // La presión del mouse (mousedown) que el navegador manda al velo antes del clic; destino es donde cayó la presión (por defecto, el propio velo)
+  const presionar = (panel, velo, destino = velo) => panel.contexto.presionEnVelo({ target: destino, currentTarget: velo });
 
   it('correos.js ya no usa el cuadro del navegador', () => {
     assert.doesNotMatch(CODIGO, /\bconfirm\(/);
@@ -1742,6 +1822,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       notaAbierta(panel);
       panel.contexto.clicAfueraDeLaNota({ target: { id: 'dentro' }, currentTarget: velo });
       assert.equal(nota(panel).classList.contains('active'), true, 'un clic adentro no cierra');
+      presionar(panel, velo);
       panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo });
       assert.equal(nota(panel).classList.contains('active'), false);
       assert.equal(panel.elemento('modal-nota-marco').srcdoc, '');
@@ -1753,6 +1834,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
       panel.contexto.clicAfueraDeLaConfirmacion({ target: { id: 'dentro' }, currentTarget: velo });
       assert.equal(panel.abierta(), true, 'un clic adentro no cierra');
+      presionar(panel, velo);
       panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo });
       assert.equal(await pedido, false);
       assert.equal(panel.abierta(), false);
@@ -1763,11 +1845,119 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       const velo = {};
       const evento = { target: { checked: true } };
       const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+      presionar(panel, velo);
       panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo });
       await pedido;
       assert.equal(evento.target.checked, false);
       assert.equal(panel.llamadas.guardar.length, 0);
       assert.equal(panel.llamadas.estado, 0, 'cancelar no recarga el Estado');
+    });
+
+    // El doble clic y el arrastre no son un "clic afuera" (los dos casos hacen llegar un clic al velo sin que nadie lo haya querido)
+    describe('el doble clic y el arrastre no cierran las ventanas por accidente', () => {
+      it('nota: el 2º clic de un doble clic sobre el velo (detail 2) no la cierra, y la presión no sobrevive para el clic siguiente', () => {
+        const panel = armar();
+        const velo = { id: 'velo' };
+        notaAbierta(panel);
+        presionar(panel, velo);
+        panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo, detail: 2 });
+        assert.equal(nota(panel).classList.contains('active'), true, 'detail 2 no cierra');
+        assert.equal(panel.elemento('modal-nota-marco').srcdoc, '<p>Nota</p>', 'y no vacía el marco');
+        panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo, detail: 1 });
+        assert.equal(nota(panel).classList.contains('active'), true, 'la presión se consumió: un clic suelto no cierra');
+        presionar(panel, velo);
+        panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo, detail: 1 });
+        assert.equal(nota(panel).classList.contains('active'), false, 'un clic simple, con su presión, sí cierra');
+        assert.equal(panel.elemento('modal-nota-marco').srcdoc, '');
+      });
+
+      it('confirmación: el 2º clic de un doble clic sobre el velo no la cancela; el clic simple la cancela sin llamar a la API', async () => {
+        const panel = armar();
+        const velo = { id: 'velo' };
+        const evento = { target: { checked: true } };
+        const pedido = panel.contexto.cambiarEnvioAutomatico(evento);
+        presionar(panel, velo);
+        panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo, detail: 2 });
+        assert.equal(panel.abierta(), true, 'detail 2 no cierra');
+        panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo, detail: 1 });
+        assert.equal(panel.abierta(), true, 'la presión se consumió: un clic suelto no cierra');
+        presionar(panel, velo);
+        panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo, detail: 1 });
+        await pedido;
+        assert.equal(panel.abierta(), false);
+        assert.equal(evento.target.checked, false);
+        assert.equal(panel.llamadas.guardar.length, 0);
+        assert.equal(panel.llamadas.estado, 0);
+      });
+
+      it('nota: apretar adentro y soltar sobre el velo (seleccionar texto, arrastrar) no la cierra', () => {
+        const panel = armar();
+        const velo = { id: 'velo' };
+        notaAbierta(panel);
+        presionar(panel, velo, { id: 'dentro' });
+        panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo, detail: 1 });
+        assert.equal(nota(panel).classList.contains('active'), true);
+        assert.equal(panel.elemento('modal-nota-marco').srcdoc, '<p>Nota</p>');
+        // Una presión adentro anula también a una anterior sobre el velo
+        presionar(panel, velo);
+        presionar(panel, velo, { id: 'dentro' });
+        panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo, detail: 1 });
+        assert.equal(nota(panel).classList.contains('active'), true);
+      });
+
+      it('confirmación: apretar adentro y soltar sobre el velo no la cancela', async () => {
+        const panel = armar();
+        const velo = { id: 'velo' };
+        const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+        presionar(panel, velo, { id: 'dentro' });
+        panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo, detail: 1 });
+        assert.equal(panel.abierta(), true);
+        panel.contexto.cerrarConfirmacion(true);
+        assert.equal(await pedido, true, 'la confirmación sigue pendiente hasta que se la cierra');
+      });
+
+      it('un clic sin presión anotada (por ejemplo, uno sintético) no cierra ninguna de las dos', async () => {
+        const panel = armar();
+        const velo = { id: 'velo' };
+        notaAbierta(panel);
+        const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+        panel.contexto.clicAfueraDeLaNota({ target: velo, currentTarget: velo, detail: 1 });
+        panel.contexto.clicAfueraDeLaConfirmacion({ target: velo, currentTarget: velo });
+        assert.equal(nota(panel).classList.contains('active'), true);
+        assert.equal(panel.abierta(), true);
+        panel.contexto.cerrarConfirmacion(false);
+        assert.equal(await pedido, false);
+      });
+
+      it('la presión sobre el velo de una ventana no vale para el clic sobre el velo de la otra', async () => {
+        const panel = armar();
+        const veloNota = { id: 'velo-nota' };
+        const veloConfirmacion = { id: 'velo-confirmacion' };
+        notaAbierta(panel);
+        const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+        presionar(panel, veloNota);
+        panel.contexto.clicAfueraDeLaConfirmacion({ target: veloConfirmacion, currentTarget: veloConfirmacion, detail: 1 });
+        assert.equal(panel.abierta(), true);
+        assert.equal(nota(panel).classList.contains('active'), true);
+        panel.contexto.cerrarConfirmacion(false);
+        assert.equal(await pedido, false);
+      });
+
+      it('Escape, la X y los botones siguen cerrando sin ninguna presión anotada', async () => {
+        const panel = armar();
+        notaAbierta(panel);
+        panel.contexto.teclaEnPagina({ key: 'Escape' });
+        assert.equal(nota(panel).classList.contains('active'), false, 'Escape cierra la nota');
+        notaAbierta(panel);
+        panel.contexto.cerrarModalNota();
+        assert.equal(nota(panel).classList.contains('active'), false, 'la X (cerrarModalNota) cierra la nota');
+        const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+        panel.contexto.teclaEnPagina({ key: 'Escape' });
+        assert.equal(await pedido, false, 'Escape cancela la confirmación');
+        const aceptada = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+        panel.contexto.cerrarConfirmacion(true);
+        assert.equal(await aceptada, true, 'Aceptar acepta');
+      });
     });
   });
 
@@ -1928,6 +2118,7 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       return panel;
     };
     const clic = (panel, id, evento = {}) => panel.elemento(id).escuchas.click.forEach(escucha => escucha(evento));
+    const presion = (panel, id, evento = {}) => panel.elemento(id).escuchas.mousedown.forEach(escucha => escucha(evento));
 
     it('cada control tiene un solo oyente y el documento escucha el teclado', () => {
       const panel = iniciar();
@@ -1935,6 +2126,13 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
         assert.equal(panel.elemento(id).escuchas.click?.length, 1, `un solo oyente de clic en ${id}`);
       }
       assert.equal(panel.escuchasDeDocumento.keydown?.length, 1);
+    });
+
+    it('cada velo tiene un solo oyente de mousedown, para saber dónde empezó la presión', () => {
+      const panel = iniciar();
+      for (const id of ['modal-confirmar', 'modal-nota']) {
+        assert.equal(panel.elemento(id).escuchas.mousedown?.length, 1, `un solo oyente de mousedown en ${id}`);
+      }
     });
 
     it('los botones de la ventana de confirmación aceptan y cancelan', async () => {
@@ -1953,12 +2151,35 @@ describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-cor
       const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
       clic(panel, 'modal-confirmar', { target: {}, currentTarget: velo });
       assert.equal(panel.abierta(), true);
+      presion(panel, 'modal-confirmar', { target: velo, currentTarget: velo });
       clic(panel, 'modal-confirmar', { target: velo, currentTarget: velo });
       assert.equal(await pedido, false);
       notaAbierta(panel);
       clic(panel, 'modal-nota', { target: {}, currentTarget: velo });
       assert.equal(nota(panel).classList.contains('active'), true);
+      presion(panel, 'modal-nota', { target: velo, currentTarget: velo });
       clic(panel, 'modal-nota', { target: velo, currentTarget: velo });
+      assert.equal(nota(panel).classList.contains('active'), false);
+    });
+
+    it('con los oyentes puestos, el doble clic y el arrastre sobre el velo no cierran, y el clic simple con su presión sí', async () => {
+      const panel = iniciar();
+      const velo = {};
+      notaAbierta(panel);
+      const pedido = panel.contexto.confirmar({ titulo: 'T', texto: 'X', accion: 'Sí' });
+      for (const id of ['modal-confirmar', 'modal-nota']) {
+        presion(panel, id, { target: velo, currentTarget: velo });
+        clic(panel, id, { target: velo, currentTarget: velo, detail: 2 });
+        presion(panel, id, { target: {}, currentTarget: velo });
+        clic(panel, id, { target: velo, currentTarget: velo, detail: 1 });
+      }
+      assert.equal(panel.abierta(), true, 'ni el doble clic ni el arrastre cancelan la confirmación');
+      assert.equal(nota(panel).classList.contains('active'), true, 'ni cierran la nota');
+      presion(panel, 'modal-confirmar', { target: velo, currentTarget: velo });
+      clic(panel, 'modal-confirmar', { target: velo, currentTarget: velo, detail: 1 });
+      assert.equal(await pedido, false);
+      presion(panel, 'modal-nota', { target: velo, currentTarget: velo });
+      clic(panel, 'modal-nota', { target: velo, currentTarget: velo, detail: 1 });
       assert.equal(nota(panel).classList.contains('active'), false);
     });
 

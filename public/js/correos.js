@@ -111,9 +111,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-preview-area').addEventListener('click', verVistaPreviaArea);
   document.getElementById('btn-prueba-area').addEventListener('click', enviarmePruebaArea);
   document.getElementById('modal-nota-cerrar').addEventListener('click', cerrarModalNota);
+  document.getElementById('modal-nota').addEventListener('mousedown', presionEnVelo);
   document.getElementById('modal-nota').addEventListener('click', clicAfueraDeLaNota);
   document.getElementById('modal-confirmar-aceptar').addEventListener('click', () => cerrarConfirmacion(true));
   document.getElementById('modal-confirmar-cancelar').addEventListener('click', () => cerrarConfirmacion(false));
+  document.getElementById('modal-confirmar').addEventListener('mousedown', presionEnVelo);
   document.getElementById('modal-confirmar').addEventListener('click', clicAfueraDeLaConfirmacion);
   document.addEventListener('keydown', teclaEnPagina);
 
@@ -200,6 +202,9 @@ function marcaDelEstado(alertas, auditoria) {
   return '';
 }
 
+// El HTML de las alertas que está pintado en #nd-alertas, o null si todavía no se pintó ninguna
+let alertasPintadas = null;
+
 async function cargarEstado() {
   try {
     const estado = await API.getEstadoNotas();
@@ -217,9 +222,16 @@ async function cargarEstado() {
     }
     // Las del servidor: corrida con errores o interrumpida, cron que no llama
     alertas.push(...(estado.alertas ?? []));
-    document.getElementById('nd-alertas').innerHTML = alertas
+    // #nd-alertas es una región en vivo (aria-live): si se reescribe con lo mismo, el lector de pantalla repite todas las alertas.
+    // Solo se escribe si cambió; se compara con lo último que se pintó y no con el innerHTML del elemento, porque el navegador lo
+    // devuelve normalizado (las comillas de &quot; y &#39; vuelven a ser " y ') y nunca daría igual.
+    const htmlDeAlertas = alertas
       .map(a => `<div class="nd-alerta${a.nivel === 'advertencia' ? ' nd-advertencia' : ''}">${Utils.escapeHtml(a.mensaje)}</div>`)
       .join('');
+    if (htmlDeAlertas !== alertasPintadas) {
+      document.getElementById('nd-alertas').innerHTML = htmlDeAlertas;
+      alertasPintadas = htmlDeAlertas;
+    }
     document.getElementById('nd-ultima-corrida').textContent = textoUltimaCorrida(estado.ultima_corrida);
     const licencia = document.getElementById('nd-licencia');
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
@@ -746,11 +758,29 @@ function retenerFocoEnConfirmacion(evento) {
   evento.preventDefault();
 }
 
-// El clic cae en el velo de la ventana (y no en algo de adentro) cuando su destino es el propio velo
+// El velo (el fondo) de la ventana donde empezó la última presión del mouse, o null si empezó en otro lado (adentro de la ventana o en
+// la página). Cuando se suelta el botón sobre un lugar distinto del que se apretó, el navegador manda el clic al ancestro común: apretar
+// adentro de la ventana y soltar sobre el velo (por ejemplo, al seleccionar texto de la nota) llega como un clic sobre el velo.
+let veloPresionado = null;
+
+// mousedown de cada velo: anota si la presión empezó en el propio velo
+function presionEnVelo(evento) {
+  veloPresionado = evento.target === evento.currentTarget ? evento.currentTarget : null;
+}
+
+// ¿Es un clic afuera de verdad? Solo si la presión empezó en este mismo velo, el clic cae en el propio velo (y no en algo de adentro) y
+// no es el segundo clic o posterior de un doble clic (evento.detail > 1: el doble clic en "Ver" no cierra la nota que acaba de abrir).
+// Consume la presión anotada: cada presión vale para un solo clic.
+function esClicAfuera(evento) {
+  const empezoEnElVelo = veloPresionado !== null && veloPresionado === evento.currentTarget;
+  veloPresionado = null;
+  return empezoEnElVelo && evento.target === evento.currentTarget && !(evento.detail > 1);
+}
+
 function clicAfueraDeLaNota(evento) {
-  if (evento.target === evento.currentTarget) cerrarModalNota();
+  if (esClicAfuera(evento)) cerrarModalNota();
 }
 
 function clicAfueraDeLaConfirmacion(evento) {
-  if (evento.target === evento.currentTarget) cerrarConfirmacion(false);
+  if (esClicAfuera(evento)) cerrarConfirmacion(false);
 }
