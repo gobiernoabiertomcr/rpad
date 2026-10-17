@@ -4,7 +4,9 @@ import pool from '../config/database.js';
 import { listaDeCorreos } from './emailService.js';
 
 export const GESTIONES = ['interna', 'externa'];
-export const VENTANA_DIAS = { interna: 60, externa: 30 };
+// Días de anticipación del aviso, por gestión. La externa pasó de 30 a 40 (pedido del usuario el 16/10/2026): el pedido
+// formal a las áreas externas lleva unos 5 días hábiles más el circuito administrativo.
+export const VENTANA_DIAS = { interna: 60, externa: 40 };
 export const DIAS_PARA_REITERAR = 20;
 export const TIPOS_EMAIL_REEMPLAZADOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido'];
 

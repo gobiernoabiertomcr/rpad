@@ -37,11 +37,13 @@ describe('seleccionarParaAviso', () => {
     assert.equal(resultado[0].vencimiento, '2026-12-31');
   });
 
-  it('respeta la ventana de 30 días de la gestión externa y separa por gestión', async () => {
+  // 40 días (pedido del usuario el 16/10/2026; antes 30): el circuito administrativo de la gestión externa es largo
+  it('respeta la ventana de 40 días de la gestión externa y separa por gestión', async () => {
     const externa = await crearDataset({ gestion: 'externa', vencimiento: '2026-11-30' });
     await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31' });
     await crearDataset({ gestion: 'interna', vencimiento: '2026-11-30' });
-    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-11-02')), [externa]);
+    assert.deepEqual(await datos.seleccionarParaAviso('externa', '2026-10-20'), []);
+    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-10-21')), [externa]);
   });
 
   it('excluye eventuales, inactivos y sin fecha', async () => {
@@ -100,11 +102,11 @@ describe('avisos solo a vencer (14/10/2026)', () => {
 });
 
 describe('seleccionarParaAviso: agrupamiento por mes de vencimiento', () => {
-  it('externa, 30/01 y 31/01: el 30/12 no sale nada y el 31/12 salen los dos juntos', async () => {
+  it('externa, 30/01 y 31/01: el 20/12 no sale nada y el 21/12 salen los dos juntos', async () => {
     const del30 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
     const del31 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
-    assert.deepEqual(await datos.seleccionarParaAviso('externa', '2026-12-30'), []);
-    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-12-31')), [del30, del31]);
+    assert.deepEqual(await datos.seleccionarParaAviso('externa', '2026-12-20'), []);
+    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-12-21')), [del30, del31]);
   });
 
   it('interna, 29/03 y 31/03: salen los dos juntos el 28/01', async () => {
@@ -125,8 +127,8 @@ describe('seleccionarParaAviso: agrupamiento por mes de vencimiento', () => {
     const del30 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
     const del31 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
     const febrero = await crearDataset({ gestion: 'externa', vencimiento: '2027-02-28' });
-    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-12-31')), [del30, del31]);
-    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2027-01-29')), [del30, del31, febrero]);
+    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2026-12-21')), [del30, del31]);
+    assert.deepEqual(ids(await datos.seleccionarParaAviso('externa', '2027-01-19')), [del30, del31, febrero]);
   });
 
   it('no mezcla gestiones: un mes abierto para la interna no abre ese mes para la externa', async () => {
@@ -134,7 +136,7 @@ describe('seleccionarParaAviso: agrupamiento por mes de vencimiento', () => {
     const interna31 = await crearDataset({ vencimiento: '2027-01-31' });
     await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
     assert.deepEqual(ids(await datos.seleccionarParaAviso('interna', '2026-11-16')), [interna15, interna31]);
-    // El 16/12 la ventana externa llega al 15/01, donde solo vence un dataset de la interna
+    // El 16/12 la ventana externa llega al 25/01, donde solo vence un dataset de la interna
     assert.deepEqual(await datos.seleccionarParaAviso('externa', '2026-12-16'), []);
   });
 

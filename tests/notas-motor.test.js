@@ -186,10 +186,10 @@ describe('avisos', () => {
   it('el aviso sale cuando se abre el mes y lleva todos los datasets de la gestión que vencen ese mes', async () => {
     const del30 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
     const del31 = await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
-    await ejecutar('2026-12-30');
+    await ejecutar('2026-12-18');
     assert.equal((await notas()).length, 0);
 
-    await ejecutar('2026-12-31');
+    await ejecutar('2026-12-21');
     const [nota, ...otras] = await notas();
     assert.deepEqual([nota.tipo, nota.gestion, otras.length], ['aviso', 'externa', 0]);
     const filas = await query('SELECT dataset_id FROM notas_digitales_datasets WHERE nota_id = ? ORDER BY dataset_id', [nota.id]);
@@ -225,7 +225,8 @@ describe('reiteraciones', () => {
 
   it('los avisos del 13/10/2026 se reiteran el 02/11/2026 (20 días); los del 14/10/2026, no', async () => {
     await crearDataset({ titulo: 'Avisado el 13', vencimiento: '2026-12-12' });
-    await crearDataset({ titulo: 'Avisado el 14', gestion: 'externa', vencimiento: '2026-11-13' });
+    // Externa a 40 días: el 23/11 se avisa el 14/10
+    await crearDataset({ titulo: 'Avisado el 14', gestion: 'externa', vencimiento: '2026-11-23' });
     await ejecutar('2026-10-13');
     await ejecutar('2026-10-14');
     assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion]), [['aviso', 'interna'], ['aviso', 'externa']]);
@@ -361,7 +362,8 @@ describe('vencidos sin aviso (14/10/2026)', () => {
     // Con uno a vencer, el aviso cuenta solo ese
     await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31' });
     const despues = await motor.estadoNotas({ hoy: '2026-10-14' });
-    assert.deepEqual(despues.proximas.externa.aviso, { fecha: '2026-12-01', cantidad: 1 });
+    // 31/12 - 40 días = sábado 21/11: el aviso sale el lunes 23/11
+    assert.deepEqual(despues.proximas.externa.aviso, { fecha: '2026-11-23', cantidad: 1 });
     assert.deepEqual(despues.proximas.externa.reiteracion, { fecha: '2026-11-02', cantidad: 1 });
   });
 });
@@ -744,14 +746,14 @@ describe('pruebas, vista previa y estado', () => {
     await crearDataset({ gestion: 'externa', vencimiento: '2026-10-31' });
     assert.equal((await motor.estadoNotas({ hoy: '2026-10-31' })).proximas.externa.aviso, null);
     await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31' });
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-31' })).proximas.externa.aviso, { fecha: '2026-12-01', cantidad: 1 });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-10-31' })).proximas.externa.aviso, { fecha: '2026-11-23', cantidad: 1 });
   });
 
   it('el próximo aviso del estado agrupa los datasets que vencen el mismo mes', async () => {
     await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
     await crearDataset({ gestion: 'externa', vencimiento: '2027-01-31' });
     await crearDataset({ gestion: 'externa', vencimiento: '2027-02-28' });
-    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-11-02' })).proximas.externa.aviso, { fecha: '2026-12-31', cantidad: 2 });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-11-02' })).proximas.externa.aviso, { fecha: '2026-12-21', cantidad: 2 });
 
     // Marzo ya se abrió con el 29/03 (avisado el 28/01): el 31/03 sale en la corrida siguiente
     const avisado = await crearDataset({ vencimiento: '2027-03-29' });

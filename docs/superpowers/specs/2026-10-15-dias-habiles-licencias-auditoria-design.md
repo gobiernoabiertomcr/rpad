@@ -191,7 +191,7 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 
 | Licencia | Víspera | Durante la licencia | Primer día hábil posterior |
 |---|---|---|---|
-| 26/11/2026 – 14/01/2027 | mié 25/11/2026: avisos de lo que vence hasta el 14/01/2027 + ventana (interna hasta mediados de marzo, externa hasta mediados de febrero, con los meses completos) | No salen la reiteración de diciembre (01/12) ni la de enero (04/01; el 01/01 es feriado) | vie 15/01/2027: sale la reiteración de enero |
+| 26/11/2026 – 14/01/2027 | mié 25/11/2026: avisos de lo que vence hasta el 14/01/2027 + ventana (interna hasta mediados de marzo, externa hasta fines de febrero, con los meses completos) | No salen la reiteración de diciembre (01/12) ni la de enero (04/01; el 01/01 es feriado) | vie 15/01/2027: sale la reiteración de enero |
 | 25/01/2027 – 05/03/2027 | vie 22/01/2027 (el 24/01 es domingo) | No salen las reiteraciones del 01/02 ni del 01/03 | lun 08/03/2027: sale la reiteración de marzo |
 
 Sin autorizado, como en la tabla. Con autorizado, la víspera sale lo mismo y además cada aviso lleva el párrafo de autorización (o sale la nota de autorización si no hay avisos); durante la licencia, las reiteraciones de cada mes (01/12 y 04/01 en el primer ejemplo; 01/02 y 01/03 en el segundo) salen en su fecha, presentadas por la persona autorizada con las dos firmas y la cita de la nota de autorización.

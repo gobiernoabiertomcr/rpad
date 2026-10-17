@@ -27,7 +27,7 @@ El objetivo es que cada pedido de actualización quede **formalmente documentado
 | **Reiteración** | Nota mensual que vuelve a informar los datasets ya avisados que siguen pendientes. |
 | **Gestión** | `interna` (datasets producidos por áreas de la DGMIT) o `externa` (provistos por otras áreas u organismos). Es el campo `datasets.tipo_gestion`. |
 | **Ciclo** | El par (dataset, vencimiento). El vencimiento es `datasets.proxima_actualizacion`. Cuando se aprueba una actualización, el vencimiento cambia y empieza un ciclo nuevo. |
-| **Ventana** | Anticipación del aviso: **60 días** para gestión interna y **30 días** para externa. |
+| **Ventana** | Anticipación del aviso: **60 días** para gestión interna y **40 días** para externa (antes 30; cambio pedido por el usuario el 16/10/2026: el pedido formal a las áreas externas lleva unos 5 días hábiles más el circuito administrativo). |
 
 Hay **cuatro variantes** de nota: aviso interna, aviso externa, reiteración interna y reiteración externa.
 
@@ -64,7 +64,7 @@ En cada corrida de un día hábil, para cada gestión se arma **como máximo una
 
 Desde el 14/10/2026 el aviso informa **solo datasets a vencer**. La primera corrida en producción (13/10/2026, N° 1/26 y N° 2/26) avisó también todos los vencidos de ese momento como antecedente formal; a partir de ahí, un vencido sin aviso es un caso raro (una fecha cargada en el pasado, un dataset reactivado) y va a la reiteración (5.3).
 
-En otras palabras, un mes "se abre" para una gestión cuando el **primer** vencimiento de ese mes queda a la distancia de la ventana, y ese día se avisan juntos todos los datasets de la gestión que vencen ese mes. Así un mismo mes no se parte en dos notas casi seguidas cuando algunos datasets vencen el 29 o el 30 y la mayoría el último día. Por ejemplo, en la gestión externa, si unos vencen el 30/01 y otros el 31/01, salen todos en el aviso del 31/12; en la interna, si unos vencen el 29/03 y otros el 31/03, salen todos el 28/01. Si el primero del mes ya se avisó (por ejemplo, ayer) y aparece otro dataset sin aviso que vence ese mismo mes, entra en la corrida siguiente aunque todavía no esté en la ventana. No se mezclan meses distintos ni gestiones distintas.
+En otras palabras, un mes "se abre" para una gestión cuando el **primer** vencimiento de ese mes queda a la distancia de la ventana, y ese día se avisan juntos todos los datasets de la gestión que vencen ese mes. Así un mismo mes no se parte en dos notas casi seguidas cuando algunos datasets vencen el 29 o el 30 y la mayoría el último día. Por ejemplo, en la gestión externa, si unos vencen el 30/01 y otros el 31/01, salen todos en el aviso del 21/12; en la interna, si unos vencen el 29/03 y otros el 31/03, salen todos el 28/01. Si el primero del mes ya se avisó (por ejemplo, ayer) y aparece otro dataset sin aviso que vence ese mismo mes, entra en la corrida siguiente aunque todavía no esté en la ventana. No se mezclan meses distintos ni gestiones distintas.
 
 Como solo entran datasets a vencer, el aviso tiene una sola sección: **próximos a vencer**. Cada aviso va acompañado de un **anexo** con una hoja por dataset (6.7).
 
@@ -402,7 +402,7 @@ Se eliminan el selector de los siete tipos reemplazados y las tarjetas que expli
 Se aplica TDD con la batería existente (`npm test`, contra Docker y Mailpit). Tests nuevos:
 
 - **Calendario:**
-  - aviso a los 60 días (interna) y a los 30 (externa);
+  - aviso a los 60 días (interna) y a los 40 (externa);
   - el aviso agrupa los datasets de la gestión que vencen el mismo mes, sin mezclar meses ni gestiones;
   - un solo aviso por ciclo, y aviso nuevo cuando cambia el vencimiento;
   - reiteración el primer día hábil y regla de 20 días;
