@@ -58,8 +58,9 @@ beforeEach(async () => {
 
 // Instante de una fecha y hora de Argentina (UTC-3), en segundos
 const instante = (texto) => Date.parse(`${texto.replace(' ', 'T')}-03:00`) / 1000;
-// Un alta propuesta el viernes 16/10/2026 a las 10:00, con su primer recordatorio ese día a las 14:00
-const proponer = async (usuario, { titulo = 'Dataset nuevo auditado', creado = '2026-10-16 10:00:00', primer = '2026-10-16 14:00:00' } = {}) => (await query(
+// Un alta propuesta el jueves 15/10/2026 a las 10:00, con su primer recordatorio ese día a las 14:00 (el segundo, el viernes 16/10):
+// la nota de auditoría sale el lunes 19/10, cuando ese primer recordatorio es de hace dos días hábiles
+const proponer = async (usuario, { titulo = 'Dataset nuevo auditado', creado = '2026-10-15 10:00:00', primer = '2026-10-15 14:00:00' } = {}) => (await query(
   `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, usuario_id, created_at, primer_recordatorio_at)
    VALUES ('crear', NULL, ?, ?, FROM_UNIXTIME(?), ?)`,
   [JSON.stringify({ titulo, tipo_gestion: 'interna' }), usuario.id, instante(creado), primer]
@@ -82,8 +83,8 @@ const notaDelEstado = async (hoy) => {
   return { canal_nota: canalNota, proxima };
 };
 
-describe('ejemplo 9.4: propone el titular el viernes y hay otro auditor disponible', () => {
-  it('el lunes sale la nota con el cambio nuevo, a los destinatarios de auditoría, firmada por el titular', async () => {
+describe('ejemplo 9.4: propone el titular y hay otro auditor disponible (dos recordatorios y, el tercer día hábil, la nota)', () => {
+  it('propuesto el jueves, con recordatorios el jueves y el viernes, el lunes sale la nota con el cambio nuevo, a los destinatarios de auditoría, firmada por el titular', async () => {
     const id = await proponer(titular);
     await correr('2026-10-19');
     const [nota, ...otras] = await auditorias();
@@ -137,11 +138,23 @@ describe('canal de cada cambio en la corrida (spec 9.1 y 9.4)', () => {
     assert.equal((await auditorias()).length, 0);
   });
 
-  it('sin el primer recordatorio en un día hábil anterior no va: ni sin recordatorio ni con el de hoy', async () => {
+  it('sin el primer recordatorio de hace dos días hábiles no va: ni sin recordatorio ni con el de hoy', async () => {
     await proponer(titular, { primer: null });
     await proponer(titular, { titulo: 'Recordado hoy', primer: '2026-10-19 14:00:00' });
     await correr('2026-10-19');
     assert.equal((await auditorias()).length, 0);
+  });
+
+  // Cambio del 16/10/2026: antes la nota salía al día hábil siguiente del primer recordatorio; ahora, al segundo
+  it('propone el titular el viernes: el viernes y el lunes son recordatorios (no sale nota) y el martes sale la nota', async () => {
+    const id = await proponer(titular, { creado: '2026-10-16 10:00:00', primer: '2026-10-16 14:00:00' });
+    await correr('2026-10-19');
+    assert.equal((await auditorias()).length, 0);
+    await correr('2026-10-20');
+    const [nota, ...otras] = await auditorias();
+    assert.equal(otras.length, 0);
+    assert.equal(nota.fecha, '2026-10-20');
+    assert.deepEqual(await incluidos(nota.id), [{ cambio_id: id, seccion: 'nuevo' }]);
   });
 
   it('propone el titular y el único otro auditor está de licencia: respaldo, no sale nota', async () => {

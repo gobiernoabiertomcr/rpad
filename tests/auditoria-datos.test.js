@@ -155,9 +155,9 @@ describe('contextoDeCanal: la nota de auditoría puede salir (spec 9.1, condici�
 
   it('sin el envío activo el cambio queda en el canal recordatorio, aunque se cumplan las otras condiciones', async () => {
     await proponer(titular, { primer: '2026-10-16 14:00:00' });
-    assert.equal((await servicio.cambiosConCanal('2026-10-19'))[0].canal, 'nota');
+    assert.equal((await servicio.cambiosConCanal('2026-10-20'))[0].canal, 'nota');
     await configurarNotas({ envio_activo: 0, para_auditoria: 'auditoria@rpad.test' });
-    assert.equal((await servicio.cambiosConCanal('2026-10-19'))[0].canal, 'recordatorio');
+    assert.equal((await servicio.cambiosConCanal('2026-10-20'))[0].canal, 'recordatorio');
   });
 });
 
@@ -194,8 +194,10 @@ describe('cambiosConCanal (spec 9.1 y Decisiones del plan 3)', () => {
     await proponer(titular, { primer: '2026-10-16 14:00:00', titulo: 'Del titular' });
     await proponer(editor, { primer: '2026-10-16 14:00:00', titulo: 'Del editor' });
     const canales = async (fecha) => Object.fromEntries((await servicio.cambiosConCanal(fecha)).map(c => [c.datos_nuevos.titulo, c.canal]));
+    // Dos recordatorios (viernes y lunes) antes de la nota: el primero fue el viernes, la nota sale desde el martes
     assert.deepEqual(await canales('2026-10-16'), { 'Del titular': 'recordatorio', 'Del editor': 'recordatorio' });
-    assert.deepEqual(await canales('2026-10-19'), { 'Del titular': 'nota', 'Del editor': 'recordatorio' });
+    assert.deepEqual(await canales('2026-10-19'), { 'Del titular': 'recordatorio', 'Del editor': 'recordatorio' });
+    assert.deepEqual(await canales('2026-10-20'), { 'Del titular': 'nota', 'Del editor': 'recordatorio' });
     const [fila] = await query("SELECT DATE_FORMAT(primer_recordatorio_at, '%Y-%m-%d') AS f FROM cambios_pendientes LIMIT 1");
     assert.equal(fila.f, '2026-10-16');
     await query("UPDATE cambios_pendientes SET estado = 'aprobado'");
@@ -208,8 +210,9 @@ describe('seleccionarParaAuditoria (spec 9.3 y Decisiones del plan 5)', () => {
     query('INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, ?)', [notaId, cambioId, seccion]);
 
   it('nuevos; nada en los 5 días hábiles siguientes; después, reiterados con la primera nota y las reiteraciones', async () => {
-    const id = await proponer(titular, { primer: '2026-10-16 14:00:00' });
-    await proponer(editor, { primer: '2026-10-16 14:00:00', titulo: 'Del editor' });
+    // Primer recordatorio el jueves 15/10: la nota (la primera) sale el lunes 19/10, a los dos días hábiles
+    const id = await proponer(titular, { creado: '2026-10-15 10:00:00', primer: '2026-10-15 14:00:00' });
+    await proponer(editor, { creado: '2026-10-15 10:00:00', primer: '2026-10-15 14:00:00', titulo: 'Del editor' });
     let seleccion = await servicio.seleccionarParaAuditoria('2026-10-19');
     assert.deepEqual([seleccion.nuevos.map(c => c.id), seleccion.reiterados], [[id], []]);
 

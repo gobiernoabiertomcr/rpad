@@ -253,7 +253,7 @@ Después del despliegue, el superadmin pasa a editor, desde el panel, a los admi
 En cada corrida de un día hábil, cada cambio pendiente está en **uno** de dos canales:
 
 - **Nota**, si se cumplen las cuatro condiciones:
-  1. ya tuvo su primer recordatorio en un día hábil anterior (sección 9.2);
+  1. ya tuvo sus dos recordatorios: el primero (sección 9.2), hace dos días hábiles o más (cambio del 16/10/2026: antes, un día hábil anterior);
   2. el **firmante titular no puede auditarlo** hoy: lo propuso él, o no está disponible (por ejemplo, está de licencia);
   3. hay **auditores** disponibles para el cambio (no es de respaldo);
   4. hay quién firme: el firmante titular si no está de licencia, o su autorizado si el titular está de licencia y la persona autorizada no (sección 7).
@@ -286,9 +286,9 @@ Un cambio cuenta como incluido en una nota desde que la nota se genera, en cualq
 
 ### 9.4 Ejemplos
 
-- **Propone el firmante titular el viernes a las 10:00; hay otro auditor disponible.** Viernes 14:00: recordatorio al otro auditor. Lunes 8:15: nota de auditoría. Si sigue pendiente, la nota se reitera el lunes siguiente a las 8:15.
+- **Propone el firmante titular el viernes a las 10:00; hay otro auditor disponible.** Viernes y lunes 14:00: recordatorio al otro auditor. Martes 8:15: nota de auditoría. Si sigue pendiente, la nota se reitera el martes siguiente a las 8:15.
 - **Propone un editor; el firmante titular está disponible.** Recordatorio diario al firmante titular y a los demás auditores disponibles. Nunca sale nota.
-- **El firmante titular está de licencia con autorizado; propone un editor.** Recordatorio a los auditores disponibles. Al día hábil siguiente, nota de auditoría con las dos firmas (7.2).
+- **El firmante titular está de licencia con autorizado; propone un editor.** Recordatorio a los auditores disponibles el día del primero y el día hábil siguiente; la nota de auditoría con las dos firmas (7.2) sale el segundo día hábil después del primero.
 - **Propone el firmante titular; el único otro auditor está de licencia.** Respaldo: recordatorio diario a los editores disponibles. No sale nota.
 - **El firmante titular está de licencia sin autorizado.** Recordatorios a quienes puedan auditar. No sale nota. Al primer día hábil posterior, los cambios que cumplen las condiciones se escalan.
 
