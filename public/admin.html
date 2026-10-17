@@ -56,7 +56,9 @@
         .ad-estado-filtro[aria-pressed=true] b { color: #fff; }
         .ad-estado-filtro:focus-visible, .ad-btn:focus-visible, .ad-icono:focus-visible,
         .ad-barra input:focus-visible, .ad-barra select:focus-visible,
-        .ad-pie-tabla .pag-btn:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .ad-pie-tabla .pag-btn:focus-visible, .ad-marco:focus-visible,
+        .ad-cerrar:focus-visible, .ad-mes select:focus-visible, .ad-campos input:focus-visible,
+        .ad-opcion:focus-within { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
 
         .ad-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
         table.ad-tabla { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
@@ -105,6 +107,81 @@
         .ad-tarjeta-datos dt { font-size: 0.75rem; color: var(--pf-suave); margin-bottom: 2px; }
         .ad-tarjeta-datos dd { margin: 0; font-size: 0.85rem; color: var(--pf-texto); min-width: 0; overflow-wrap: anywhere; }
         .ad-tarjeta .ad-acciones { justify-content: flex-start; flex-wrap: wrap; }
+
+        /* ---------- Registrar actualización (spec 2026-10-17-fechas-datasets, 8.3, como el mockup aprobado) ---------- */
+        /* El velo lleva el z-index de los avisos: showToast se agrega después al final de la página y queda por encima */
+        .ad-velo { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; z-index: 1000; overflow: auto; }
+        .ad-ventana { background: #fff; border-radius: 14px; width: min(720px, 100%); box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+        .ad-ventana > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--pf-linea); }
+        .ad-ventana > header h2 { margin: 0; font-size: 1.05rem; color: var(--pf-tinta); }
+        .ad-ventana > header p { margin: 3px 0 0; font-size: 0.88rem; color: var(--pf-texto); }
+        .ad-cerrar { background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--pf-suave); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+        .ad-cerrar:hover { background: var(--pf-sutil); }
+        .ad-cuerpo { padding: 18px 22px 8px; }
+        .ad-ventana > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 22px; border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); border-radius: 0 0 14px 14px; }
+        .ad-ventana > footer p { margin: 0; font-size: 0.8rem; color: var(--pf-suave); max-width: 380px; line-height: 1.4; }
+        .ad-ventana > footer .botones { display: flex; gap: 8px; }
+        .ad-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .ad-btn.primario:hover:not(:disabled) { background: var(--primary-dark); }
+
+        /* Lo que se pidió y la línea del ciclo. Los rótulos de las marcas no se salen del recuadro (no hay desplazamiento lateral) */
+        .ad-pedido { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 12px; background: var(--pf-sutil); margin-bottom: 20px; overflow: hidden; }
+        .ad-pedido .rotulo { font-size: 0.8rem; color: var(--pf-suave); margin: 0; }
+        .ad-pedido .periodo { font-size: 1.15rem; font-weight: 600; color: var(--pf-tinta); margin: 2px 0 10px; font-variant-numeric: tabular-nums; }
+        .ad-pedido dl { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0 0 14px; font-size: 0.83rem; }
+        .ad-pedido dl div { display: flex; gap: 6px; }
+        .ad-pedido dt { color: var(--pf-suave); }
+        .ad-pedido dd { margin: 0; color: var(--pf-texto); font-weight: 500; font-variant-numeric: tabular-nums; }
+        .ad-ciclo { position: relative; height: 58px; margin: 6px 4px 2px; }
+        .ad-ciclo .pista { position: absolute; left: 0; right: 0; top: 16px; height: 10px; border-radius: 999px; background: #E6EBF1; }
+        .ad-ciclo .banda { position: absolute; top: 16px; height: 10px; }
+        .ad-ciclo .publicado { background: #9DB3C9; border-radius: 999px 0 0 999px; }
+        .ad-ciclo .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 6px, #FBF1DC 6px 12px); border: 1px solid #E6C77F; }
+        /* La banda verde se mueve al cambiar "Datos al" (spec 8.5: el único movimiento de la pantalla) */
+        .ad-ciclo .llega { background: #5FA982; transition: width .35s ease; }
+        .ad-ciclo .marca { position: absolute; top: 8px; width: 2px; height: 26px; background: var(--pf-tinta); }
+        .ad-ciclo .marca.hoy { background: #C0504D; }
+        .ad-ciclo .etiqueta { position: absolute; top: 38px; font-size: 0.72rem; line-height: 1.25; color: var(--pf-suave); white-space: nowrap; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+        .ad-ciclo .etiqueta.arriba, .ad-ciclo .etiqueta.hoy { top: -8px; }
+        .ad-ciclo .etiqueta.hoy { color: #A13F3C; }
+        /* Si "Hoy" pisaría a "Envío sugerido", sube un renglón (admin.js); la línea baja lo mismo, para no tapar el texto de arriba */
+        .ad-ciclo.con-alto { margin-top: 32px; }
+        .ad-ciclo .etiqueta.hoy.alto { top: -26px; }
+        .ad-leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.75rem; color: var(--pf-suave); margin-top: 6px; }
+        .ad-leyenda span { display: inline-flex; gap: 6px; align-items: center; }
+        .ad-leyenda i { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+        .ad-leyenda .publicado { background: #9DB3C9; }
+        .ad-leyenda .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 4px, #FBF1DC 4px 8px); border: 1px solid #E6C77F; }
+        .ad-leyenda .llega { background: #5FA982; }
+
+        /* Los tres pasos */
+        .ad-paso { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; margin-bottom: 18px; }
+        .ad-paso > div { min-width: 0; }
+        .ad-num { width: 24px; height: 24px; border-radius: 50%; background: var(--pf-tinta); color: #fff; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+        .ad-paso h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--pf-tinta); }
+        .ad-error { font-size: 0.8rem; color: var(--pf-rojo); margin: 6px 0 0; }
+        .ad-error-envio { background: var(--pf-rojo-fondo); border: 1px solid #EFCACA; border-radius: 8px; padding: 9px 12px; margin: 0 0 14px; font-size: 0.85rem; }
+        .ad-mes { display: flex; flex-wrap: wrap; gap: 8px; }
+        .ad-mes select, .ad-campos input { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; }
+        .ad-mes select:first-child { min-width: 150px; }
+        .ad-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ad-campos label { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
+        .ad-campos input { width: 100%; }
+
+        /* Las opciones de la próxima: tarjetas de radio. Mientras llegan las nuevas, las de antes quedan apagadas (el paso no salta) */
+        .ad-opciones { display: grid; gap: 8px; }
+        .ad-opciones[aria-busy=true] { opacity: .6; }
+        .ad-opcion { display: grid; grid-template-columns: 20px 1fr; gap: 10px; border: 1px solid var(--pf-borde-campo); border-radius: 10px; padding: 12px 14px; cursor: pointer; background: #fff; }
+        .ad-opcion:hover { border-color: #A9BBCD; }
+        .ad-opcion input { margin-top: 3px; accent-color: var(--pf-tinta); }
+        .ad-opcion.elegida { border-color: var(--pf-tinta); box-shadow: 0 0 0 1px var(--pf-tinta) inset; background: #FAFCFE; }
+        .ad-opcion .fecha { font-weight: 700; color: var(--pf-tinta); font-variant-numeric: tabular-nums; font-size: 1rem; }
+        .ad-opcion .que { font-weight: 500; color: var(--pf-texto); margin-left: 8px; }
+        .ad-sugerida { font-size: 0.7rem; font-weight: 700; color: var(--pf-verde); background: var(--pf-verde-fondo); border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: 2px; }
+        .ad-opcion .porque { display: block; font-size: 0.8rem; color: var(--pf-suave); margin-top: 3px; }
+        .ad-opcion .despues { display: block; font-size: 0.8rem; color: var(--pf-texto); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--pf-linea); }
+        .ad-opcion .aviso { color: var(--pf-ambar); }
+        .ad-otra { margin-top: 8px; }
 
         /* Form row */
         .form-row {
@@ -212,6 +289,7 @@
         @media (max-width: 860px) {
             .ad-tabla .ocultable { display: none; }
             .ad-btn .largo { display: none; }
+            .ad-campos { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 768px) {
@@ -228,6 +306,17 @@
             .ad-pie-tabla { margin-top: 10px; border: 1px solid var(--pf-linea); border-radius: 12px; justify-content: center; text-align: center; }
             .ad-barra input[type=search] { flex: 1 1 100%; min-width: 0; }
             .ad-barra select { flex: 1 1 140px; min-width: 0; }
+            .ad-velo { padding: 12px 8px; }
+            .ad-ventana > header, .ad-cuerpo, .ad-ventana > footer { padding-left: 16px; padding-right: 16px; }
+        }
+
+        /* En una pantalla angosta los rótulos de la línea del ciclo se pisarían: queda el texto de la cabecera (spec 15) */
+        @media (max-width: 560px) {
+            .ad-ciclo, .ad-leyenda { display: none; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ad-ciclo .llega { transition: none; }
         }
     </style>
 </head>
@@ -372,7 +461,7 @@
             </div>
 
             <!-- Lista: la tabla en la computadora, una tarjeta por dataset en el celular, y el pie con las páginas -->
-            <div class="ad-marco" id="lista-datasets">
+            <div class="ad-marco" id="lista-datasets" tabindex="-1">
                 <table class="ad-tabla" id="tabla-datasets">
                     <thead>
                         <tr><th scope="col">Dataset</th><th scope="col">Estado</th><th scope="col" class="ocultable">Datos publicados</th><th scope="col">Próximo pedido</th><th scope="col"><span class="ad-vh">Acciones</span></th></tr>
@@ -629,47 +718,84 @@
         </div>
     </div>
 
-    <!-- Modal Registrar Actualización -->
-    <div class="modal-overlay" id="modal-registrar-actualizacion">
-        <div class="modal" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3 class="modal-title">Registrar Actualización</h3>
-                <button class="modal-close" onclick="closeRegistrarActualizacionModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p style="font-weight: 500; margin-bottom: 1rem;" id="registrar-dataset-titulo"></p>
-                
-                <!-- Info actual (no editable) -->
-                <div id="registrar-info-actual" style="padding: 0.75rem; background: var(--gray-50); border-radius: 6px; margin-bottom: 1rem; border-left: 3px solid var(--gray-400);">
-                    <div class="ad-chico text-muted" style="display: flex; justify-content: space-between;">
-                        <span>Frecuencia: <strong id="registrar-frecuencia"></strong></span>
-                        <span>Próx. actual: <strong id="registrar-proxima-actual"></strong></span>
+    <!-- Registrar actualización (spec 2026-10-17-fechas-datasets, 8.3): admin.js la abre, la llena, la cierra y maneja el
+         teclado (Escape, Tab dentro de la ventana). Un clic afuera cierra solo si la presión empezó en el velo -->
+    <div class="ad-velo" id="modal-registrar-actualizacion" hidden>
+        <div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="registrar-titulo" aria-describedby="registrar-dataset">
+            <header>
+                <div><h2 id="registrar-titulo">Registrar actualización</h2><p id="registrar-dataset"></p></div>
+                <button type="button" class="ad-cerrar" data-cerrar-registro aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo">
+                <section class="ad-pedido" aria-labelledby="registrar-rotulo">
+                    <p class="rotulo" id="registrar-rotulo">Datos solicitados</p>
+                    <p class="periodo" id="registrar-periodo"></p>
+                    <dl id="registrar-datos"></dl>
+                    <div class="ad-ciclo" id="registrar-ciclo" aria-hidden="true"></div>
+                    <div class="ad-leyenda" id="registrar-leyenda" aria-hidden="true">
+                        <span><i class="publicado"></i>Ya publicado</span>
+                        <span><i class="falta"></i>Pedido, todavía no llegó</span>
+                        <span><i class="llega"></i>Llega con esta actualización</span>
+                    </div>
+                </section>
+
+                <div class="ad-paso">
+                    <div class="ad-num" aria-hidden="true">1</div>
+                    <div>
+                        <h3 id="registrar-p1">¿A qué fecha son los datos que llegaron?</h3>
+                        <div class="ad-mes" role="group" aria-labelledby="registrar-p1">
+                            <select id="registrar-mes" aria-label="Mes"></select>
+                            <select id="registrar-anio" aria-label="Año"></select>
+                        </div>
+                        <p class="ad-ayuda" id="registrar-ayuda1">Siempre es fin de mes. Por defecto, lo que se pidió.</p>
+                        <p class="ad-error" id="registrar-error-datos" role="alert" hidden></p>
                     </div>
                 </div>
 
-                <!-- Campos editables -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Fecha de actualización</label>
-                        <input type="date" id="registrar-ultima" class="form-input">
-                        <span class="form-hint">Fecha en que se actualizó el dataset</span>
-                    </div>
-                    <div class="form-group" id="registrar-proxima-group">
-                        <label class="form-label">Próxima actualización</label>
-                        <input type="date" id="registrar-proxima" class="form-input">
-                        <span class="form-hint">Nueva fecha de vencimiento</span>
+                <div class="ad-paso">
+                    <div class="ad-num" aria-hidden="true">2</div>
+                    <div>
+                        <h3>¿Cuándo llegó y cuándo se cargó?</h3>
+                        <div class="ad-campos">
+                            <div>
+                                <label for="registrar-recibido">Recibido el (opcional)</label>
+                                <input type="date" id="registrar-recibido">
+                            </div>
+                            <div>
+                                <label for="registrar-cargado">Cargado en el portal el</label>
+                                <input type="date" id="registrar-cargado" required>
+                            </div>
+                        </div>
+                        <p class="ad-error" id="registrar-error-fechas" role="alert" hidden></p>
                     </div>
                 </div>
+
+                <div class="ad-paso" id="registrar-paso3">
+                    <div class="ad-num" aria-hidden="true">3</div>
+                    <div>
+                        <h3 id="registrar-p3">Próxima actualización</h3>
+                        <div class="ad-opciones" role="radiogroup" aria-labelledby="registrar-p3" id="registrar-opciones"></div>
+                        <div class="ad-otra" id="registrar-otra" hidden>
+                            <div class="ad-mes">
+                                <select id="registrar-otra-mes" aria-label="Mes de la otra fecha"></select>
+                                <select id="registrar-otra-anio" aria-label="Año de la otra fecha"></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="ad-error ad-error-envio" id="registrar-error" role="alert" hidden></p>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeRegistrarActualizacionModal()">Cancelar</button>
-                <button class="btn btn-success" onclick="confirmarRegistrarActualizacion()" id="btn-confirmar-actualizacion">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Registrar
-                </button>
-            </div>
+            <footer>
+                <p>Queda como propuesta: otra persona la aprueba en Mi Perfil. Hasta entonces, el dataset no se puede editar.</p>
+                <div class="botones">
+                    <button type="button" class="ad-btn" data-cerrar-registro>Cancelar</button>
+                    <button type="button" class="ad-btn primario" id="registrar-proponer" disabled>Proponer actualización</button>
+                </div>
+            </footer>
         </div>
     </div>
+    <!-- Fin de Registrar actualización -->
 
     <!-- Modal Crear Área Rápida -->
     <div class="modal-overlay" id="modal-quick-area">

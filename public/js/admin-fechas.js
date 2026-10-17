@@ -1,15 +1,17 @@
 /**
  * Admin, fechas de los datasets - RPAD
  *
- * Lo puro que arma la lista de datasets, las opciones de "Próxima actualización" y la línea del ciclo de "Registrar
- * actualización" (spec 2026-10-17-fechas-datasets, sección 8). Se carga antes de admin.js.
+ * Lo puro que arma la lista de datasets y la ventana "Registrar actualización": la cabecera, las opciones de "Próxima
+ * actualización", la línea del ciclo, los valores por defecto, los errores y el cuerpo del POST (spec
+ * 2026-10-17-fechas-datasets, sección 8). Se carga antes de admin.js.
  *
  * Al cargarse solo declara: no toca el DOM, `window` ni `Auth`, y `Utils` (api.js) solo se usa al armar HTML. Así
  * tests/admin-frontend.test.js lo carga en un `vm`, como perfil.js y correos.js.
  *
  * La aritmética de las reglas (pedido, opciones de próxima, estado) NO está acá: la hace el servidor
  * (services/fechasDatasetReglas.js) y este archivo solo muestra lo que devuelve. Lo único que se calcula acá son
- * posiciones de pantalla (la línea del ciclo) y nombres de meses.
+ * posiciones de pantalla (la línea del ciclo), nombres de meses, fines de mes de los selectores y los topes de las fechas
+ * del registro, para avisar en el momento lo mismo que después valida el servidor, con sus mismas palabras.
  *
  * Fechas: siempre 'AAAA-MM-DD'. Las que mysql2 serializa como ISO con hora ('2026-01-31T03:00:00.000Z') se leen por su
  * texto, los primeros 10 caracteres: nunca se pasan por `new Date()` ni por Utils.formatDate, que las correrían un día
@@ -436,4 +438,199 @@ function puedeProponer({ opcionElegida, errores, enviando, requiereOpcion = true
   if (enviando || hayErrores(errores)) return false;
   if (!requiereOpcion) return true;
   return opcionElegida !== null && opcionElegida !== undefined && opcionElegida !== '';
+}
+
+// =====================================================
+// Registrar actualización: la ventana (spec 8.3)
+// =====================================================
+// Lo que muestra la ventana y lo que se manda al servidor. Lo que toca el DOM (abrir, leer los campos, pedir las opciones,
+// el foco y el teclado) está en admin.js. Las opciones de la próxima las calcula el servidor; acá solo hay topes y fines de
+// mes, para avisar en el momento lo mismo que después diría el servidor, con sus mismas palabras.
+
+const PASO1_GENERAL = Object.freeze({
+  pregunta: '¿A qué fecha son los datos que llegaron?', ayuda: 'Siempre es fin de mes. Por defecto, lo que se pidió.', soloAnio: false
+});
+const TEXTOS_DEL_PASO1 = Object.freeze({
+  relevamiento: { pregunta: '¿De qué mes es el relevamiento?', ayuda: 'El mes en que se hizo el relevamiento.', soloAnio: false },
+  ejercicio: { pregunta: '¿De qué ejercicio es el presupuesto que llegó?', ayuda: 'Se guarda el 31/12 de ese año. Por defecto, lo que se pidió.', soloAnio: true }
+});
+// Los textos del servidor (controllers/datasetController.js), sin punto final como todos sus mensajes
+const ERROR_FALTA_DATOS_AL = 'Falta Datos al: la fecha a la que son los datos que llegaron';
+const ERROR_FALTA_CARGA = 'Falta la fecha de carga en el portal';
+
+// Es eventual el dataset sin frecuencia en meses: lo mismo que mira el servidor (esFrecuenciaEventual). No tiene paso 3
+function esEventual(dataset) {
+  const meses = dataset?.frecuencia_meses;
+  return !(Number.isInteger(meses) && meses > 0);
+}
+
+// Hoy 'AAAA-MM-DD': el que se recibe o, si no es una fecha, el de Argentina
+function hoyDe(hoy) {
+  return soloFecha(hoy) ?? hoyEnArgentina();
+}
+
+// El último día del mes anterior al de una fecha 'AAAA-MM-DD' (de enero pasa a diciembre del año anterior; febrero en 28)
+function finDelMesAnterior(iso) {
+  const anio = Number(iso.slice(0, 4));
+  const mes = Number(iso.slice(5, 7));
+  return mes === 1 ? finDeMesDe(anio - 1, 12) : finDeMesDe(anio, mes - 1);
+}
+
+// El "Datos al" más adelantado que se puede registrar (topeDatosAl del servidor): el fin del mes actual o, en un ejercicio,
+// el 31/12 del año siguiente, porque el presupuesto de un año se aprueba antes de que empiece
+function topeDeDatosAl(tipo, hoy) {
+  const fecha = hoyDe(hoy);
+  const anio = Number(fecha.slice(0, 4));
+  return tipo === 'ejercicio' ? finDeMesDe(anio + 1, 12) : finDeMesDe(anio, fecha.slice(5, 7));
+}
+
+/**
+ * El "Datos al" con que arranca el paso 1 (spec 8.3), 'AAAA-MM-DD':
+ * - lo que se pidió (pedido.hasta), pero nunca después del fin del mes anterior al actual (sin pedido, ese fin de mes);
+ * - en un relevamiento, el mes actual;
+ * - en un ejercicio, el 31/12 de lo que se pidió (sin pedido, el del año actual), sin pasar del tope del ejercicio.
+ * `dataset` es el de GET /datasets; `hoy`, el de Argentina.
+ */
+function defectoDeDatosAl(dataset, hoy) {
+  const d = dataset ?? {};
+  const fecha = hoyDe(hoy);
+  const hasta = soloFecha(d.pedido?.hasta);
+  if (d.tipo_pedido === 'relevamiento') return finDeMesDe(fecha.slice(0, 4), fecha.slice(5, 7));
+  if (d.tipo_pedido === 'ejercicio') {
+    const ejercicio = finDeMesDe((hasta ?? fecha).slice(0, 4), 12);
+    const tope = topeDeDatosAl('ejercicio', fecha);
+    return ejercicio > tope ? tope : ejercicio;
+  }
+  const tope = finDelMesAnterior(fecha);
+  const pedido = hasta ? finDeMesDe(hasta.slice(0, 4), hasta.slice(5, 7)) : null;
+  return pedido && pedido < tope ? pedido : tope;
+}
+
+/**
+ * El error del paso 1, o null: "Todavía no puede haber datos al dd/mm/aaaa" si pasa del tope (el fin del mes actual; en
+ * un ejercicio, el 31/12 del año siguiente). Son las palabras del servidor, que lo vuelve a validar.
+ */
+function errorDeDatosAl(datosAl, tipo, hoy) {
+  const fecha = soloFecha(datosAl);
+  if (!fecha) return ERROR_FALTA_DATOS_AL;
+  return fecha > topeDeDatosAl(tipo, hoy) ? `Todavía no puede haber datos al ${fechaCorta(fecha)}` : null;
+}
+
+// La pregunta y la ayuda del paso 1 de cada tipo de pedido. soloAnio: el ejercicio se elige solo con el año
+function textosDelPaso1(tipo) {
+  const textos = Object.prototype.hasOwnProperty.call(TEXTOS_DEL_PASO1, tipo) ? TEXTOS_DEL_PASO1[tipo] : PASO1_GENERAL;
+  return { ...textos };
+}
+
+// "Datos al" según los selectores del paso 1: el fin del mes elegido o, en un ejercicio, el 31/12 del año. null si no sirven
+function datosAlDelPaso1({ tipo, mes, anio } = {}) {
+  return tipo === 'ejercicio' ? finDeMesDe(anio, 12) : finDeMesDe(anio, mes);
+}
+
+/**
+ * El error del paso 2, o null, con las palabras del servidor: la carga en el portal es obligatoria y no puede ser posterior
+ * a hoy; la recepción es opcional, pero no puede ser posterior a hoy ni a la carga.
+ */
+function errorDeFechasDelRegistro({ recibido, cargado, hoy } = {}) {
+  const fecha = hoyDe(hoy);
+  const carga = soloFecha(cargado);
+  if (!carga) return ERROR_FALTA_CARGA;
+  if (carga > fecha) return `La fecha de carga en el portal no puede ser posterior a hoy (${fechaCorta(fecha)})`;
+  const recepcion = soloFecha(recibido);
+  if (!recepcion) return null;
+  if (recepcion > fecha) return `La fecha de recepción no puede ser posterior a hoy (${fechaCorta(fecha)})`;
+  if (recepcion > carga) {
+    return `La fecha de recepción (${fechaCorta(recepcion)}) no puede ser posterior a la de carga en el portal (${fechaCorta(carga)})`;
+  }
+  return null;
+}
+
+/**
+ * La próxima elegida en el paso 3, 'AAAA-MM-DD', o null si todavía no hay una: la fecha de la opción elegida (`opcion` es
+ * su índice en `opciones`) o, con "Otra fecha", el fin del mes elegido (si faltan el mes o el año, null). Un eventual no
+ * tiene próxima. `formulario` es el de cuerpoDelRegistro.
+ */
+function proximaDelRegistro(formulario) {
+  const f = formulario ?? {};
+  if (f.eventual) return null;
+  if (f.opcion === 'otra') return finDeMesDe(f.otraAnio, f.otraMes);
+  const indice = enteroDe(f.opcion);
+  const opciones = Array.isArray(f.opciones) ? f.opciones : [];
+  if (indice === null || indice >= opciones.length) return null;
+  return soloFecha(opciones[indice]?.fecha);
+}
+
+/**
+ * El cuerpo de POST /datasets/:id/actualizar: { datos_al, cargado_el, recibido_el, proxima_actualizacion }. `formulario`
+ * es lo que dicen los campos de la ventana:
+ *   tipo, eventual       el tipo de pedido del dataset y si es eventual (esEventual)
+ *   mes, anio            paso 1 (en un ejercicio el mes no cuenta: va el 31/12)
+ *   recibido, cargado    paso 2 ('' si están vacíos)
+ *   opcion, opciones     paso 3: el valor del radio elegido ('0', '1'... u 'otra'; null sin elegir) y las opciones del servidor
+ *   otraMes, otraAnio    los selectores de "Otra fecha"
+ * "Recibido el" vacío va null; lo que no se puede armar, también (el servidor lo rechaza con su mensaje).
+ */
+function cuerpoDelRegistro(formulario) {
+  const f = formulario ?? {};
+  return {
+    datos_al: datosAlDelPaso1(f),
+    cargado_el: soloFecha(f.cargado),
+    recibido_el: soloFecha(f.recibido),
+    proxima_actualizacion: proximaDelRegistro(f)
+  };
+}
+
+/**
+ * Cómo queda la ventana con lo que dicen sus campos: { errorFechas, puedeProponer }. errorFechas es el error del paso 2
+ * (o null) para mostrar debajo de sus campos. "Proponer actualización" se habilita solo con una próxima elegida (completa,
+ * si es "Otra fecha"; un eventual no elige), sin error en "Datos al" ni en las fechas, sin opciones por llegar (`cargando`:
+ * la elección se acaba de borrar y el servidor todavía no revisó "Datos al") y sin un envío en curso.
+ */
+function revisionDelRegistro({ formulario, errorDatosAl = null, cargando = false, enviando = false, hoy } = {}) {
+  const f = formulario ?? {};
+  const errorFechas = errorDeFechasDelRegistro({ recibido: f.recibido, cargado: f.cargado, hoy });
+  return {
+    errorFechas,
+    puedeProponer: puedeProponer({
+      opcionElegida: proximaDelRegistro(f),
+      errores: { datosAl: errorDatosAl, fechas: errorFechas },
+      enviando: Boolean(enviando || cargando),
+      requiereOpcion: !f.eventual
+    })
+  };
+}
+
+// El texto del pedido actual, arriba de todo en "Datos solicitados" (texto plano: va con textContent)
+function textoDelPedidoActual(dataset) {
+  const texto = dataset?.pedido?.texto;
+  if (typeof texto === 'string' && texto) return texto;
+  if (dataset && esEventual(dataset)) return 'Sin pedido automático';
+  return 'Sin pedido: no tiene próxima actualización';
+}
+
+/**
+ * Los datos de la cabecera "Datos solicitados" (los <div><dt><dd> de su <dl>): frecuencia, tipo de pedido, "Fecha sugerida
+ * de envío" (o "Vencido desde", si la próxima ya pasó; un eventual no tiene) y "Publicado hoy": "datos al dd/mm/aaaa" o
+ * "ejercicio aaaa". Es la misma información que dibuja la línea del ciclo, en texto.
+ */
+function htmlDeDatosDelPedido(dataset, hoy) {
+  const d = dataset ?? {};
+  const fecha = hoyDe(hoy);
+  const filas = [['Frecuencia', d.frecuencia_nombre || SIN_DATO], ['Tipo de pedido', d.tipo_pedido_nombre || SIN_DATO]];
+  const proxima = soloFecha(d.proxima_actualizacion);
+  if (proxima) filas.push([proxima < fecha ? 'Vencido desde' : 'Fecha sugerida de envío', fechaCorta(proxima)]);
+  const datosAl = soloFecha(d.datos_al);
+  let publicado = SIN_DATO;
+  if (datosAl) publicado = d.tipo_pedido === 'ejercicio' ? `ejercicio ${datosAl.slice(0, 4)}` : `datos al ${fechaCorta(datosAl)}`;
+  filas.push(['Publicado hoy', publicado]);
+  return filas.map(([rotulo, valor]) => `<div><dt>${textoSeguro(rotulo)}:</dt><dd>${textoSeguro(valor)}</dd></div>`).join('');
+}
+
+/**
+ * El texto de un error para mostrar en la ventana: el mensaje del servidor tal cual (API lo pasa como Error con el `error`
+ * de la respuesta) o, si es una falla de la red (TypeError) o una respuesta que no es JSON (SyntaxError), `porDefecto`.
+ */
+function textoDeError(error, porDefecto) {
+  const mensaje = error && error.name === 'Error' && typeof error.message === 'string' ? error.message.trim() : '';
+  return mensaje || porDefecto;
 }

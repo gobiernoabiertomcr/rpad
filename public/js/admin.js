@@ -38,9 +38,20 @@ const VALORES_DE_FILTRO = ['', 'vencido', 'proximo', 'al-dia', 'eventual', 'sin-
 let formatosSeleccionados = new Set();
 let formatosCatalogo = [];
 
-// Variables para modal de registrar actualización
-let registrarActualizacionId = null;
-let registrarActualizacionDataset = null;
+// "Registrar actualización" abierta (spec 8.3):
+// - dataset: el de la lista (GET /datasets), con su pedido, sus fechas y su tipo; null con la ventana cerrada;
+// - hoy: la fecha de Argentina, una vez por apertura;
+// - opciones: las que mandó el servidor para el "Datos al" elegido;
+// - errorDatosAl: el error del paso 1 (de acá o del servidor), o null;
+// - cargando, enviando: se están pidiendo las opciones o se está mandando la propuesta (el botón no se puede apretar);
+// - origen: el botón que la abrió (el foco vuelve a él al cerrar);
+// - secuencia: cuenta los pedidos de opciones, así una respuesta que llega tarde no pisa a la última;
+// - apertura: cuenta las aperturas, así el error de un envío no cae en otra ventana.
+const registro = {
+  dataset: null, hoy: null, opciones: [], errorDatosAl: null, cargando: false, enviando: false, origen: null, secuencia: 0, apertura: 0
+};
+// Los años del paso 1 empiezan acá (el selector se amplía si "Datos al" es anterior)
+const PRIMER_ANIO_DE_DATOS = 2015;
 
 // =====================================================
 // LISTA: lo puro (filtros, contadores, páginas)
@@ -189,6 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   puedeAdministrar = Auth.isAdmin();
   document.getElementById('dataset-form').addEventListener('submit', enviarFormulario);
   prepararLista();
+  prepararRegistro();
   // El lector ve la lista sin acciones y sin "Nuevo dataset"
   if (puedeAdministrar) document.getElementById('btn-nuevo-dataset').hidden = false;
 
@@ -294,7 +306,7 @@ function alHacerClicEnLaLista(evento) {
   if (!boton || boton.disabled) return;
   const { registrar, editar, eliminar, pagina, direccion } = boton.dataset;
   if (pagina !== undefined) irAPagina(Number(pagina), direccion);
-  else if (registrar !== undefined) marcarActualizado(Number(registrar));
+  else if (registrar !== undefined) marcarActualizado(Number(registrar), boton);
   else if (editar !== undefined) editDataset(Number(editar));
   else if (eliminar !== undefined) openDeleteModal(Number(eliminar), tituloDelDataset(eliminar));
 }
@@ -891,13 +903,14 @@ async function enviarFormulario(e) {
 // MARCAR ACTUALIZADO
 // =====================================================
 
-async function marcarActualizado(id) {
+// "Registrar actualización" de un dataset. `origen`: el botón que la abre (al cerrar, el foco vuelve a él)
+function marcarActualizado(id, origen = null) {
   // El bloqueo se verifica antes de abrir, no solo con el botón deshabilitado (spec 8.6, arreglo 4)
   if (datasetEstaBloqueado(id)) {
     mostrarMensajeBloqueo();
     return;
   }
-  await abrirRegistrarActualizacion(id);
+  abrirRegistro(id, origen);
 }
 
 // =====================================================
@@ -953,80 +966,347 @@ function mostrarMensajeBloqueo() {
 }
 
 // =====================================================
-// REGISTRAR ACTUALIZACIÓN (Modal)
+// REGISTRAR ACTUALIZACIÓN (spec 2026-10-17-fechas-datasets, 8.3 y los arreglos 3 y 5 de 8.6)
 // =====================================================
+// La ventana pregunta a qué fecha son los datos que llegaron (paso 1), cuándo llegaron y cuándo se cargaron (paso 2) y
+// cuál es la próxima (paso 3, salvo en un eventual). Las opciones de la próxima las calcula el servidor con cada cambio
+// de "Datos al"; ninguna viene elegida. Lo puro (el cuerpo del POST, los textos, los errores) está en admin-fechas.js.
+
+// Los oyentes de la ventana. Se registran una vez, en DOMContentLoaded
+function prepararRegistro() {
+  const velo = document.getElementById('modal-registrar-actualizacion');
+  velo.addEventListener('mousedown', presionEnVelo);
+  velo.addEventListener('click', (evento) => {
+    // esClicAfuera va primero: consume la presión anotada aunque el clic haya sido en un botón
+    if (esClicAfuera(evento) || evento.target.closest('[data-cerrar-registro]')) cerrarRegistro();
+  });
+  for (const id of ['registrar-mes', 'registrar-anio']) document.getElementById(id).addEventListener('change', alCambiarDatosAl);
+  for (const id of ['registrar-recibido', 'registrar-cargado']) document.getElementById(id).addEventListener('input', revisarRegistro);
+  document.getElementById('registrar-opciones').addEventListener('change', alElegirOpcion);
+  for (const id of ['registrar-otra-mes', 'registrar-otra-anio']) document.getElementById(id).addEventListener('change', revisarRegistro);
+  document.getElementById('registrar-proponer').addEventListener('click', proponerActualizacion);
+  document.addEventListener('keydown', teclaEnPagina);
+}
+
+function registroAbierto() {
+  return !document.getElementById('modal-registrar-actualizacion').hidden;
+}
 
 /**
- * Abre el modal de registrar actualización
+ * Abre la ventana para el dataset `id` (el de la lista, que ya trae el pedido, las fechas y el tipo). Arranca con "Datos
+ * al" en lo que se pidió (defectoDeDatosAl), "Cargado en el portal el" en hoy, "Recibido el" vacío y ninguna próxima
+ * elegida, y le pide las opciones al servidor. El foco va al mes del paso 1 (en un ejercicio, al año).
  */
-async function abrirRegistrarActualizacion(id) {
+function abrirRegistro(id, origen) {
+  const dataset = datasets.find((d) => String(d.id) === String(id));
+  if (!dataset) {
+    avisarError('No se encontró el dataset. Recargá la página para intentar de nuevo.');
+    return;
+  }
+  const hoy = hoyEnArgentina();
+  const anioDeHoy = Number(hoy.slice(0, 4));
+  Object.assign(registro, {
+    dataset, hoy, opciones: [], errorDatosAl: null, cargando: false, enviando: false,
+    origen: origen ?? document.activeElement, apertura: registro.apertura + 1
+  });
+
+  // Cabecera "Datos solicitados" y línea del ciclo (sin un período con desde y hasta no hay línea: queda el texto)
+  document.getElementById('registrar-dataset').textContent = dataset.titulo ?? '';
+  document.getElementById('registrar-periodo').textContent = textoDelPedidoActual(dataset);
+  document.getElementById('registrar-datos').innerHTML = htmlDeDatosDelPedido(dataset, hoy);
+  const conCiclo = Boolean(soloFecha(dataset.pedido?.desde) && soloFecha(dataset.pedido?.hasta));
+  const ciclo = document.getElementById('registrar-ciclo');
+  ciclo.innerHTML = '';
+  ciclo.hidden = !conCiclo;
+  document.getElementById('registrar-leyenda').hidden = !conCiclo;
+
+  // Paso 1: "Datos al", con mes y año (en un ejercicio, solo el año)
+  const { pregunta, ayuda, soloAnio } = textosDelPaso1(dataset.tipo_pedido);
+  document.getElementById('registrar-p1').textContent = pregunta;
+  document.getElementById('registrar-ayuda1').textContent = ayuda;
+  const defecto = defectoDeDatosAl(dataset, hoy);
+  const mes = document.getElementById('registrar-mes');
+  const anio = document.getElementById('registrar-anio');
+  mes.innerHTML = opcionesDeMes(Number(defecto.slice(5, 7)));
+  mes.hidden = soloAnio;
+  anio.innerHTML = opcionesDeAnio(PRIMER_ANIO_DE_DATOS, anioDeHoy + 1, Number(defecto.slice(0, 4)));
+
+  // Paso 2: ninguna de las dos fechas puede ser posterior a hoy
+  const recibido = document.getElementById('registrar-recibido');
+  const cargado = document.getElementById('registrar-cargado');
+  recibido.value = '';
+  cargado.value = hoy;
+  recibido.max = hoy;
+  cargado.max = hoy;
+
+  // Paso 3: un eventual no elige próxima. "Otra fecha" arranca sin mes ni año: hay que elegirlos
+  document.getElementById('registrar-paso3').hidden = esEventual(dataset);
+  document.getElementById('registrar-opciones').innerHTML = '';
+  document.getElementById('registrar-otra-mes').innerHTML = '<option value="">Mes</option>' + opcionesDeMes(null);
+  document.getElementById('registrar-otra-anio').innerHTML = '<option value="">Año</option>' + opcionesDeAnio(anioDeHoy - 1, anioDeHoy + 10, null);
+
+  mostrarError('registrar-error', null);
+  document.getElementById('registrar-proponer').textContent = 'Proponer actualización';
+  document.getElementById('modal-registrar-actualizacion').hidden = false;
+  (soloAnio ? anio : mes).focus();
+  alCambiarDatosAl();
+}
+
+// Cierra la ventana y devuelve el foco al botón que la abrió. Una respuesta de opciones que llegue después se descarta
+function cerrarRegistro() {
+  if (!registroAbierto()) return;
+  document.getElementById('modal-registrar-actualizacion').hidden = true;
+  registro.secuencia++;
+  const { origen } = registro;
+  Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null });
+  if (origen?.isConnected) origen.focus();
+}
+
+// Un error en su lugar de la ventana (texto, nunca HTML), o ninguno con null
+function mostrarError(id, texto) {
+  const lugar = document.getElementById(id);
+  lugar.textContent = texto ?? '';
+  lugar.hidden = !texto;
+}
+
+// Lo que dicen los campos de la ventana, como lo recibe cuerpoDelRegistro. Un radio deshabilitado (mientras llegan las
+// opciones nuevas) no cuenta como elegido
+function formularioDelRegistro() {
+  const elegido = document.querySelector('#registrar-opciones input[name="proxima"]:checked:not(:disabled)');
+  return {
+    tipo: registro.dataset?.tipo_pedido,
+    eventual: esEventual(registro.dataset),
+    mes: valorDe('registrar-mes'),
+    anio: valorDe('registrar-anio'),
+    recibido: valorDe('registrar-recibido'),
+    cargado: valorDe('registrar-cargado'),
+    opcion: elegido ? elegido.value : null,
+    opciones: registro.opciones,
+    otraMes: valorDe('registrar-otra-mes'),
+    otraAnio: valorDe('registrar-otra-anio')
+  };
+}
+
+function valorDe(id) {
+  return document.getElementById(id).value;
+}
+
+/**
+ * Cambió "Datos al" (y al abrir): la elección del paso 3 se borra, el error del paso 1 se revisa acá con las palabras del
+ * servidor (si pasa del tope no se le pide nada) y, si no hay error, se le piden las opciones al servidor. Con error, la
+ * línea del ciclo no muestra lo que llega, así la escala no salta.
+ */
+function alCambiarDatosAl() {
+  const { dataset, hoy } = registro;
+  if (!dataset) return;
+  const datosAl = datosAlDelPaso1({ tipo: dataset.tipo_pedido, mes: valorDe('registrar-mes'), anio: valorDe('registrar-anio') });
+  registro.opciones = [];
+  registro.errorDatosAl = errorDeDatosAl(datosAl, dataset.tipo_pedido, hoy);
+  mostrarError('registrar-error-datos', registro.errorDatosAl);
+  borrarEleccion();
+  pintarCicloDelRegistro(registro.errorDatosAl ? null : datosAl);
+  if (registro.errorDatosAl) {
+    registro.secuencia++; // la respuesta de un pedido anterior ya no sirve
+    registro.cargando = false;
+    pintarOpciones();
+    revisarRegistro();
+    return;
+  }
+  pedirOpciones(datosAl);
+}
+
+// Ninguna próxima elegida: los radios sin marcar y "Otra fecha" cerrada y vacía
+function borrarEleccion() {
+  for (const radio of document.querySelectorAll('#registrar-opciones input[name="proxima"]')) radio.checked = false;
+  for (const tarjeta of document.querySelectorAll('#registrar-opciones .ad-opcion')) tarjeta.classList.remove('elegida');
+  document.getElementById('registrar-otra').hidden = true;
+  document.getElementById('registrar-otra-mes').value = '';
+  document.getElementById('registrar-otra-anio').value = '';
+}
+
+/**
+ * Le pide al servidor las opciones de la próxima para este "Datos al". Mientras tanto, el paso 3 no salta: quedan las
+ * tarjetas de antes, apagadas y sin elegir (o un aviso, si no había). Si el servidor contesta con un error (un 400 de
+ * "Datos al"), el mensaje va tal cual debajo del paso 1 y no hay opciones. Si ya se pidió otra cosa, la respuesta se descarta.
+ */
+async function pedirOpciones(datosAl) {
+  const secuencia = ++registro.secuencia;
+  const { dataset } = registro;
+  registro.cargando = true;
+  const caja = document.getElementById('registrar-opciones');
+  caja.setAttribute('aria-busy', 'true');
+  const radios = caja.querySelectorAll('input[name="proxima"]');
+  if (radios.length) radios.forEach((radio) => { radio.disabled = true; });
+  else if (!esEventual(dataset)) caja.innerHTML = '<p class="ad-ayuda">Calculando las opciones…</p>';
+  revisarRegistro();
+
+  let opciones = [];
+  let error = null;
   try {
-    // Obtener datos completos del dataset
-    const dataset = await API.getDataset(id);
-    if (!dataset) {
-      avisarError('No se pudo cargar el dataset');
-      return;
-    }
+    const respuesta = await API.opcionesDeProxima(dataset.id, datosAl);
+    opciones = Array.isArray(respuesta?.opciones) ? respuesta.opciones : [];
+  } catch (falla) {
+    error = textoDeError(falla, 'No se pudieron calcular las opciones de la próxima actualización. Probá de nuevo.');
+  }
+  if (secuencia !== registro.secuencia) return;
 
-    registrarActualizacionId = id;
-    registrarActualizacionDataset = dataset;
+  registro.cargando = false;
+  registro.opciones = error ? [] : opciones;
+  registro.errorDatosAl = error;
+  mostrarError('registrar-error-datos', error);
+  if (error) pintarCicloDelRegistro(null);
+  pintarOpciones();
+  revisarRegistro();
+}
 
-    // Obtener frecuencia del catálogo
-    const frecuencia = frecuencias.find(f => f.id === dataset.frecuencia_id);
-    const esEventual = frecuencia && frecuencia.dias === null;
+// Las tarjetas del paso 3 (ninguna elegida) más "Otra fecha". Sin opciones si hay un error en "Datos al" o es eventual
+function pintarOpciones() {
+  const caja = document.getElementById('registrar-opciones');
+  caja.removeAttribute('aria-busy');
+  caja.innerHTML = registro.errorDatosAl || esEventual(registro.dataset) ? '' : htmlDeOpciones(registro.opciones);
+}
 
-    // Llenar datos informativos
-    document.getElementById('registrar-dataset-titulo').textContent = dataset.titulo;
-    document.getElementById('registrar-frecuencia').textContent = frecuencia ? frecuencia.nombre : '-';
-    document.getElementById('registrar-proxima-actual').textContent = fechaCorta(dataset.proxima_actualizacion);
+// Se eligió una próxima: se marca su tarjeta y, si es "Otra fecha", se abren el mes y el año
+function alElegirOpcion(evento) {
+  const radio = evento.target.closest('input[name="proxima"]');
+  if (!radio) return;
+  for (const tarjeta of document.querySelectorAll('#registrar-opciones .ad-opcion')) {
+    tarjeta.classList.toggle('elegida', tarjeta.contains(radio) && radio.checked);
+  }
+  document.getElementById('registrar-otra').hidden = radio.value !== 'otra';
+  revisarRegistro();
+}
 
-    // Proponer fecha de actualización = hoy (en Argentina)
-    document.getElementById('registrar-ultima').value = hoyEnArgentina();
+/**
+ * Muestra el error del paso 2 (con las palabras del servidor) y habilita "Proponer actualización" solo con una próxima
+ * elegida, sin errores, sin opciones por llegar y sin un envío en curso (revisionDelRegistro, en admin-fechas.js).
+ */
+function revisarRegistro() {
+  if (!registro.dataset) return;
+  const { errorFechas, puedeProponer: sePuede } = revisionDelRegistro({
+    formulario: formularioDelRegistro(), errorDatosAl: registro.errorDatosAl, cargando: registro.cargando,
+    enviando: registro.enviando, hoy: registro.hoy
+  });
+  mostrarError('registrar-error-fechas', errorFechas);
+  document.getElementById('registrar-proponer').disabled = !sePuede;
+}
 
-    // La próxima la elige quien registra (sin frecuencia eventual)
-    const proximaGroup = document.getElementById('registrar-proxima-group');
-    proximaGroup.style.display = esEventual ? 'none' : 'block';
-    document.getElementById('registrar-proxima').value = '';
+/**
+ * La línea del ciclo con lo que llega (`datosNuevo`, o null). La banda verde se mueve desde donde estaba: el HTML nuevo la
+ * crea con su ancho final, así que arranca con el anterior y pasa al nuevo en el cuadro siguiente (la transición está en el
+ * CSS, que la apaga si se pide menos movimiento).
+ */
+function pintarCicloDelRegistro(datosNuevo) {
+  const { dataset, hoy } = registro;
+  const caja = document.getElementById('registrar-ciclo');
+  if (!dataset || caja.hidden) return;
+  const anterior = caja.querySelector('.banda.llega')?.style.width || '0%';
+  caja.innerHTML = htmlDeCiclo({
+    datosAl: dataset.datos_al, desde: dataset.pedido?.desde, hasta: dataset.pedido?.hasta,
+    proxima: dataset.proxima_actualizacion, hoy, datosNuevo
+  });
+  separarRotulosDeArriba(caja);
+  const llega = caja.querySelector('.banda.llega');
+  if (!llega) return;
+  const destino = llega.style.width;
+  llega.style.width = anterior;
+  void llega.offsetWidth; // el navegador toma el ancho anterior antes del cambio
+  llega.style.width = destino;
+}
 
-    // Mostrar modal
-    document.getElementById('modal-registrar-actualizacion').classList.add('active');
-
-  } catch (error) {
-    console.error('Error abriendo modal:', error);
-    avisarError('Error al cargar datos del dataset');
+// "Envío sugerido" y "Hoy" van arriba de la línea: si quedan tan cerca que se pisan (pasa cuando la próxima está a uno o dos
+// meses, o en una ventana angosta), "Hoy" sube un renglón
+function separarRotulosDeArriba(caja) {
+  caja.classList.remove('con-alto');
+  const hoy = caja.querySelector('.etiqueta.hoy');
+  const envio = caja.querySelector('.etiqueta.arriba');
+  if (!hoy || !envio) return;
+  const a = hoy.getBoundingClientRect();
+  const b = envio.getBoundingClientRect();
+  if (a.width === 0 || b.width === 0) return; // la línea no se ve (pantalla angosta)
+  if (a.left < b.right + 4 && b.left < a.right + 4) {
+    hoy.classList.add('alto');
+    caja.classList.add('con-alto');
   }
 }
 
-function closeRegistrarActualizacionModal() {
-  document.getElementById('modal-registrar-actualizacion').classList.remove('active');
-  registrarActualizacionId = null;
-  registrarActualizacionDataset = null;
-}
-
-async function confirmarRegistrarActualizacion() {
-  if (!registrarActualizacionId) return;
-
-  const btnConfirmar = document.getElementById('btn-confirmar-actualizacion');
-  btnConfirmar.disabled = true;
-  btnConfirmar.innerHTML = '<span>⏳</span> Guardando...';
-
-  const fechaActualizacion = document.getElementById('registrar-ultima').value;
-  const proximaActualizacion = document.getElementById('registrar-proxima').value || null;
-
+/**
+ * Manda la propuesta (POST /datasets/:id/actualizar). El botón queda deshabilitado mientras tanto: un doble clic no manda
+ * dos. Si sale bien, avisa, cierra y vuelve a pedir la lista y los pendientes (la fila pasa a "Cambio pendiente"); si no,
+ * el error del servidor queda en la ventana y el botón se vuelve a habilitar.
+ */
+async function proponerActualizacion() {
+  const boton = document.getElementById('registrar-proponer');
+  const { dataset, apertura } = registro;
+  if (!dataset || registro.enviando || boton.disabled) return;
+  registro.enviando = true;
+  boton.textContent = 'Proponiendo…';
+  mostrarError('registrar-error', null);
+  revisarRegistro();
   try {
-    await API.registrarActualizacion(registrarActualizacionId, {
-      fecha_actualizacion: fechaActualizacion,
-      proxima_actualizacion: proximaActualizacion
-    });
-
+    await API.registrarActualizacion(dataset.id, cuerpoDelRegistro(formularioDelRegistro()));
     avisarExito('Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.');
-    closeRegistrarActualizacionModal();
-    // La fila pasa a "Cambio pendiente": se vuelven a pedir la lista y los pendientes (spec 8.6, arreglo 2)
+    const { origen } = registro;
+    cerrarRegistro();
     await recargarLista();
+    // La lista se rearmó: el botón que abrió la ventana ya no está, y el de la fila nueva está deshabilitado porque el
+    // dataset quedó bloqueado. El foco va a la lista, para no perderse al principio de la página
+    if (origen && !origen.isConnected) document.getElementById('lista-datasets').focus();
   } catch (error) {
-    avisarError(error.message);
+    const mensaje = textoDeError(error, 'No se pudo proponer la actualización. Probá de nuevo.');
+    // Si la ventana ya se cerró (o es otra apertura), el error va en un aviso
+    if (registro.apertura === apertura && registro.dataset) mostrarError('registrar-error', mensaje);
+    else avisarError(mensaje);
   } finally {
-    btnConfirmar.disabled = false;
-    btnConfirmar.innerHTML = '<span>✔</span> Registrar';
+    if (registro.apertura === apertura) {
+      registro.enviando = false;
+      boton.textContent = 'Proponer actualización';
+      revisarRegistro();
+    }
   }
+}
+
+// El teclado con la ventana abierta: Escape la cierra y Tab no sale de ella
+function teclaEnPagina(evento) {
+  if (!registroAbierto()) return;
+  if (evento.key === 'Escape') {
+    evento.preventDefault();
+    cerrarRegistro();
+  } else if (evento.key === 'Tab') {
+    retenerFocoEnRegistro(evento);
+  }
+}
+
+// Mantiene el foco dentro de la ventana. Entre sus controles Tab se deja (el navegador sabe moverse, también entre los
+// radios); solo se interviene en los bordes (Shift+Tab en el primero, Tab en el último) y si el foco quedó afuera
+function retenerFocoEnRegistro(evento) {
+  const ventana = document.querySelector('#modal-registrar-actualizacion .ad-ventana');
+  const enfocables = [...ventana.querySelectorAll('button, select, input, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+    .filter((elemento) => !elemento.disabled && elemento.getClientRects().length > 0);
+  if (enfocables.length === 0) return;
+  const primero = enfocables[0];
+  const ultimo = enfocables[enfocables.length - 1];
+  const enfocado = document.activeElement;
+  if (!ventana.contains(enfocado)) (evento.shiftKey ? ultimo : primero).focus();
+  else if (evento.shiftKey && enfocado === primero) ultimo.focus();
+  else if (!evento.shiftKey && enfocado === ultimo) primero.focus();
+  else return;
+  evento.preventDefault();
+}
+
+// El velo donde empezó la última presión del mouse, o null si empezó en otro lado (como en correos.js). Si se aprieta adentro
+// de la ventana y se suelta sobre el velo (por ejemplo, al elegir texto), el navegador manda el clic al velo: no es un clic afuera
+let veloPresionado = null;
+
+// mousedown del velo: anota si la presión empezó en el propio velo
+function presionEnVelo(evento) {
+  veloPresionado = evento.target === evento.currentTarget ? evento.currentTarget : null;
+}
+
+// ¿Es un clic afuera de verdad? Solo si la presión empezó en este velo, el clic cae en el propio velo y no es el segundo clic
+// de un doble clic. Consume la presión anotada: cada presión vale para un solo clic
+function esClicAfuera(evento) {
+  const empezoEnElVelo = veloPresionado !== null && veloPresionado === evento.currentTarget;
+  veloPresionado = null;
+  return empezoEnElVelo && evento.target === evento.currentTarget && !(evento.detail > 1);
 }

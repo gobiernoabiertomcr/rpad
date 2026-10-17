@@ -920,7 +920,8 @@ describe('admin.js: al cargarse solo declara', () => {
 
   it('el bloqueo no depende de pointer-events: los botones van disabled y se verifica antes de abrir', () => {
     assert.doesNotMatch(CODIGO_ADMIN, /pointer-events/);
-    const registrar = CODIGO_ADMIN.match(/async function marcarActualizado\(id\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    // marcarActualizado(id, origen): origen es el botón que abrió la ventana (al cerrarla, el foco vuelve a él)
+    const registrar = CODIGO_ADMIN.match(/function marcarActualizado\(id[^)]*\) \{[\s\S]*?\n\}/)?.[0] ?? '';
     assert.match(registrar, /datasetEstaBloqueado\(id\)/, 'marcarActualizado verifica el bloqueo');
   });
 });
@@ -1281,5 +1282,456 @@ describe('main.css: las variables que usa están definidas', () => {
     const usadas = new Set([...css.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
     const definidas = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
     assert.deepEqual([...usadas].filter((variable) => !definidas.has(variable)), []);
+  });
+});
+
+// =====================================================
+// Registrar actualización (spec 2026-10-17-fechas-datasets, 8.3 y los arreglos 3 y 5 de 8.6)
+// =====================================================
+
+describe('admin-fechas.js: defectoDeDatosAl', () => {
+  it('por defecto, lo que se pidió (Parque Automotor pide hasta el 31/12/2025)', () => {
+    assert.equal(admin.defectoDeDatosAl(vencido(), HOY), '2025-12-31');
+  });
+
+  it('nunca después del fin del mes anterior al actual (Pauta pide hasta el 31/12/2026)', () => {
+    assert.equal(admin.defectoDeDatosAl(dataset(), HOY), '2026-09-30');
+  });
+
+  it('el fin del mes anterior cruza el año y lleva febrero en 28, también en un año bisiesto', () => {
+    // Pide hasta el 31/12/2028: el tope es el que manda
+    const pideMucho = dataset({ pedido: { desde: '2028-01-01', hasta: '2028-12-31', texto: 'Del 01/01/2028 al 31/12/2028' } });
+    assert.equal(admin.defectoDeDatosAl(pideMucho, '2027-01-15'), '2026-12-31');
+    assert.equal(admin.defectoDeDatosAl(pideMucho, '2028-03-10'), '2028-02-28');
+    assert.equal(admin.defectoDeDatosAl(pideMucho, '2026-03-01'), '2026-02-28');
+  });
+
+  it('un relevamiento arranca en el mes actual', () => {
+    const relevamiento = dataset({ tipo_gestion: 'interna', tipo_pedido: 'relevamiento', pedido: { desde: null, hasta: null, texto: 'Relevamiento actualizado' } });
+    assert.equal(admin.defectoDeDatosAl(relevamiento, HOY), '2026-10-31');
+    assert.equal(admin.defectoDeDatosAl(relevamiento, '2028-02-29'), '2028-02-28');
+  });
+
+  it('un ejercicio arranca en el 31/12 de lo que se pidió, sin pasar del ejercicio del año siguiente', () => {
+    assert.equal(admin.defectoDeDatosAl(ejercicio(), HOY), '2027-12-31');
+    assert.equal(admin.defectoDeDatosAl(ejercicio({ pedido: { desde: '2026-01-01', hasta: '2026-12-31', texto: 'Presupuesto del ejercicio 2026' } }), HOY), '2026-12-31');
+    assert.equal(admin.defectoDeDatosAl(ejercicio({ pedido: { desde: '2028-01-01', hasta: '2028-12-31', texto: 'x' } }), HOY), '2027-12-31');
+  });
+
+  it('un ejercicio sin pedido arranca en el 31/12 del año actual', () => {
+    assert.equal(admin.defectoDeDatosAl(ejercicio({ pedido: null }), HOY), '2026-12-31');
+  });
+
+  it('sin hasta (próxima edición, eventual o sin próxima): el fin del mes anterior', () => {
+    const edicion = dataset({ tipo_pedido: 'edicion', pedido: { desde: null, hasta: null, texto: 'Próxima edición disponible' } });
+    assert.equal(admin.defectoDeDatosAl(edicion, HOY), '2026-09-30');
+    assert.equal(admin.defectoDeDatosAl(eventual(), HOY), '2026-09-30');
+    assert.equal(admin.defectoDeDatosAl(dataset({ pedido: null, proxima_actualizacion: null }), HOY), '2026-09-30');
+  });
+
+  it('una foto vencida arranca en el corte que se pide', () => {
+    const foto = dataset({ tipo_pedido: 'foto', pedido: { desde: '2026-06-30', hasta: '2026-06-30', texto: 'Vigente al 30/06/2026' } });
+    assert.equal(admin.defectoDeDatosAl(foto, HOY), '2026-06-30');
+  });
+
+  it('sin dataset, o con un hoy que no es una fecha, no tira error y da una fecha', () => {
+    assert.equal(admin.defectoDeDatosAl(null, HOY), '2026-09-30');
+    assert.equal(admin.defectoDeDatosAl(undefined, HOY), '2026-09-30');
+    assert.match(admin.defectoDeDatosAl(dataset(), 'basura'), /^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('admin-fechas.js: errorDeDatosAl', () => {
+  it('el mes actual se puede; el siguiente todavía no, con el texto del servidor y sin punto final', () => {
+    assert.equal(admin.errorDeDatosAl('2026-10-31', 'acumulado', HOY), null);
+    assert.equal(admin.errorDeDatosAl('2026-09-30', 'acumulado', HOY), null);
+    assert.equal(admin.errorDeDatosAl('2026-11-30', 'acumulado', HOY), 'Todavía no puede haber datos al 30/11/2026');
+    assert.equal(admin.errorDeDatosAl('2027-12-31', 'relevamiento', HOY), 'Todavía no puede haber datos al 31/12/2027');
+  });
+
+  it('en un ejercicio el tope es el 31/12 del año siguiente', () => {
+    assert.equal(admin.errorDeDatosAl('2027-12-31', 'ejercicio', HOY), null);
+    assert.equal(admin.errorDeDatosAl('2028-12-31', 'ejercicio', HOY), 'Todavía no puede haber datos al 31/12/2028');
+  });
+
+  it('el tope sale del hoy de Argentina que recibe: a fin de mes, el mes siguiente sigue sin poder', () => {
+    assert.equal(admin.errorDeDatosAl('2026-11-30', 'acumulado', '2026-10-31'), 'Todavía no puede haber datos al 30/11/2026');
+    assert.equal(admin.errorDeDatosAl('2026-11-30', 'acumulado', '2026-11-01'), null);
+  });
+
+  it('sin Datos al, el mismo texto que el servidor', () => {
+    assert.equal(admin.errorDeDatosAl(null, 'acumulado', HOY), 'Falta Datos al: la fecha a la que son los datos que llegaron');
+    assert.equal(admin.errorDeDatosAl('basura', 'acumulado', HOY), 'Falta Datos al: la fecha a la que son los datos que llegaron');
+  });
+});
+
+describe('admin-fechas.js: textosDelPaso1 y datosAlDelPaso1', () => {
+  it('la pregunta y la ayuda de cada tipo; el ejercicio se elige solo con el año', () => {
+    assert.deepEqual(plano(admin.textosDelPaso1('acumulado')), {
+      pregunta: '¿A qué fecha son los datos que llegaron?', ayuda: 'Siempre es fin de mes. Por defecto, lo que se pidió.', soloAnio: false
+    });
+    assert.deepEqual(plano(admin.textosDelPaso1('relevamiento')), {
+      pregunta: '¿De qué mes es el relevamiento?', ayuda: 'El mes en que se hizo el relevamiento.', soloAnio: false
+    });
+    assert.deepEqual(plano(admin.textosDelPaso1('ejercicio')), {
+      pregunta: '¿De qué ejercicio es el presupuesto que llegó?', ayuda: 'Se guarda el 31/12 de ese año. Por defecto, lo que se pidió.', soloAnio: true
+    });
+  });
+
+  it('un tipo que no conoce, o ninguno, lleva la pregunta general', () => {
+    for (const tipo of ['foto', 'edicion', 'eventual', undefined, null, 'otro']) {
+      assert.equal(admin.textosDelPaso1(tipo).pregunta, '¿A qué fecha son los datos que llegaron?', String(tipo));
+    }
+  });
+
+  it('Datos al es el fin del mes elegido, con febrero en 28', () => {
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'acumulado', mes: '9', anio: '2026' }), '2026-09-30');
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'foto', mes: 2, anio: 2028 }), '2028-02-28');
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'relevamiento', mes: '10', anio: '2026' }), '2026-10-31');
+  });
+
+  it('en un ejercicio es el 31/12 del año elegido, diga lo que diga el mes', () => {
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'ejercicio', mes: '3', anio: '2027' }), '2027-12-31');
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'ejercicio', mes: '', anio: '2026' }), '2026-12-31');
+  });
+
+  it('con un mes o un año que no sirven da null y no tira error', () => {
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'acumulado', mes: '', anio: '2026' }), null);
+    assert.equal(admin.datosAlDelPaso1({ tipo: 'ejercicio', mes: '1', anio: '' }), null);
+    assert.equal(admin.datosAlDelPaso1(), null);
+  });
+});
+
+describe('admin-fechas.js: errorDeFechasDelRegistro', () => {
+  it('sin recepción y con la carga de hoy no hay error', () => {
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '', cargado: HOY, hoy: HOY }), null);
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '2026-10-10', cargado: '2026-10-10', hoy: HOY }), null);
+  });
+
+  it('la carga es obligatoria y no puede ser posterior a hoy (el texto del servidor)', () => {
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '', cargado: '', hoy: HOY }), 'Falta la fecha de carga en el portal');
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '', cargado: '2026-10-18', hoy: HOY }),
+      'La fecha de carga en el portal no puede ser posterior a hoy (17/10/2026)');
+  });
+
+  it('la recepción no puede ser posterior a hoy ni a la carga (los textos del servidor)', () => {
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '2026-10-18', cargado: HOY, hoy: HOY }),
+      'La fecha de recepción no puede ser posterior a hoy (17/10/2026)');
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '2026-10-16', cargado: '2026-10-15', hoy: HOY }),
+      'La fecha de recepción (16/10/2026) no puede ser posterior a la de carga en el portal (15/10/2026)');
+  });
+
+  it('sin argumentos no tira error', () => {
+    assert.equal(admin.errorDeFechasDelRegistro(), 'Falta la fecha de carga en el portal');
+  });
+});
+
+describe('admin-fechas.js: cuerpoDelRegistro (el JSON del POST /datasets/:id/actualizar)', () => {
+  const OPCIONES = [
+    { fecha: '2027-04-30', motivo: 'Siguiente período', sugerida: true, advertencia: null, pideDespues: 'Del 01/10/2026 al 31/03/2027' },
+    { fecha: '2027-01-31', motivo: 'Mantener', sugerida: false, advertencia: null, pideDespues: 'Del 01/01/2026 al 31/12/2026' }
+  ];
+  const formulario = (extra = {}) => ({
+    tipo: 'acumulado', eventual: false, mes: '9', anio: '2026', recibido: '', cargado: HOY,
+    opcion: '0', opciones: OPCIONES, otraMes: '', otraAnio: '', ...extra
+  });
+  const cuerpo = (extra) => plano(admin.cuerpoDelRegistro(formulario(extra)));
+
+  it('arma datos_al, cargado_el, recibido_el y proxima_actualizacion, y nada más (sin notas)', () => {
+    assert.deepEqual(cuerpo(), { datos_al: '2026-09-30', cargado_el: HOY, recibido_el: null, proxima_actualizacion: '2027-04-30' });
+  });
+
+  it('"Recibido el" vacío da null; con fecha, la fecha', () => {
+    assert.equal(cuerpo({ recibido: '' }).recibido_el, null);
+    assert.equal(cuerpo({ recibido: undefined }).recibido_el, null);
+    assert.equal(cuerpo({ recibido: '2026-10-15' }).recibido_el, '2026-10-15');
+  });
+
+  it('la próxima es la fecha de la opción elegida, leída por su texto', () => {
+    assert.equal(cuerpo({ opcion: '1' }).proxima_actualizacion, '2027-01-31');
+    assert.equal(cuerpo({ opcion: 1 }).proxima_actualizacion, '2027-01-31');
+    assert.equal(cuerpo({ opciones: [{ fecha: '2027-04-30T03:00:00.000Z' }] }).proxima_actualizacion, '2027-04-30');
+  });
+
+  it('"Otra fecha" da el fin del mes elegido, con febrero en 28', () => {
+    assert.equal(cuerpo({ opcion: 'otra', otraMes: '4', otraAnio: '2027' }).proxima_actualizacion, '2027-04-30');
+    assert.equal(cuerpo({ opcion: 'otra', otraMes: '2', otraAnio: '2028' }).proxima_actualizacion, '2028-02-28');
+  });
+
+  it('"Otra fecha" sin el mes o sin el año no da próxima', () => {
+    assert.equal(cuerpo({ opcion: 'otra', otraMes: '', otraAnio: '2027' }).proxima_actualizacion, null);
+    assert.equal(cuerpo({ opcion: 'otra', otraMes: '4', otraAnio: '' }).proxima_actualizacion, null);
+  });
+
+  it('sin opción elegida, o con una que no está, no da próxima', () => {
+    for (const opcion of [null, undefined, '', '7', '-1', 'x']) {
+      assert.equal(cuerpo({ opcion }).proxima_actualizacion, null, String(opcion));
+    }
+    assert.equal(cuerpo({ opciones: null }).proxima_actualizacion, null);
+  });
+
+  it('en un ejercicio, datos_al es el 31/12 del año elegido', () => {
+    assert.equal(cuerpo({ tipo: 'ejercicio', mes: '1', anio: '2027' }).datos_al, '2027-12-31');
+  });
+
+  it('en un eventual la próxima va vacía, aunque haya una opción', () => {
+    assert.equal(cuerpo({ tipo: 'eventual', eventual: true }).proxima_actualizacion, null);
+    assert.equal(cuerpo({ tipo: 'eventual', eventual: true, opcion: 'otra', otraMes: '4', otraAnio: '2027' }).proxima_actualizacion, null);
+  });
+
+  it('una carga vacía da null (el formulario no deja proponer sin ella)', () => {
+    assert.equal(cuerpo({ cargado: '' }).cargado_el, null);
+  });
+
+  it('sin formulario no tira error', () => {
+    assert.deepEqual(plano(admin.cuerpoDelRegistro()), { datos_al: null, cargado_el: null, recibido_el: null, proxima_actualizacion: null });
+  });
+
+  it('proximaDelRegistro es la próxima que lleva el cuerpo: lo que habilita "Proponer actualización"', () => {
+    assert.equal(admin.proximaDelRegistro(formulario()), '2027-04-30');
+    assert.equal(admin.proximaDelRegistro(formulario({ opcion: null })), null);
+    assert.equal(admin.proximaDelRegistro(formulario({ opcion: 'otra' })), null);
+    assert.equal(admin.puedeProponer({ opcionElegida: admin.proximaDelRegistro(formulario({ opcion: 'otra' })), errores: [], enviando: false }), false);
+    assert.equal(admin.puedeProponer({ opcionElegida: admin.proximaDelRegistro(formulario({ opcion: 'otra', otraMes: '5', otraAnio: '2027' })), errores: [], enviando: false }), true);
+  });
+});
+
+describe('admin-fechas.js: revisionDelRegistro (el error del paso 2 y si se puede proponer)', () => {
+  const OPCIONES = [{ fecha: '2027-04-30', motivo: 'Siguiente período', sugerida: true }];
+  const formulario = (extra = {}) => ({
+    tipo: 'acumulado', eventual: false, mes: '9', anio: '2026', recibido: '', cargado: HOY,
+    opcion: '0', opciones: OPCIONES, otraMes: '', otraAnio: '', ...extra
+  });
+  const revision = (extra = {}, formularioExtra = {}) => plano(admin.revisionDelRegistro({
+    formulario: formulario(formularioExtra), errorDatosAl: null, cargando: false, enviando: false, hoy: HOY, ...extra
+  }));
+
+  it('con una opción elegida y sin errores se puede proponer (los errores vacíos no cuentan)', () => {
+    assert.deepEqual(revision(), { errorFechas: null, puedeProponer: true });
+  });
+
+  it('sin opción elegida, o con "Otra fecha" incompleta, no', () => {
+    assert.equal(revision({}, { opcion: null }).puedeProponer, false);
+    assert.equal(revision({}, { opcion: 'otra' }).puedeProponer, false);
+    assert.equal(revision({}, { opcion: 'otra', otraMes: '6', otraAnio: '2027' }).puedeProponer, true);
+  });
+
+  it('un error en "Datos al" o en las fechas lo frena, y el de las fechas se devuelve para mostrarlo', () => {
+    assert.equal(revision({ errorDatosAl: 'Todavía no puede haber datos al 30/11/2026' }).puedeProponer, false);
+    assert.deepEqual(revision({}, { cargado: '2026-10-18' }), {
+      errorFechas: 'La fecha de carga en el portal no puede ser posterior a hoy (17/10/2026)', puedeProponer: false
+    });
+  });
+
+  it('mientras llegan las opciones o mientras se envía, no', () => {
+    assert.equal(revision({ cargando: true }).puedeProponer, false);
+    assert.equal(revision({ enviando: true }).puedeProponer, false);
+  });
+
+  it('un eventual se propone sin próxima, pero los errores y el envío lo frenan igual', () => {
+    assert.equal(revision({}, { eventual: true, opcion: null }).puedeProponer, true);
+    assert.equal(revision({ enviando: true }, { eventual: true, opcion: null }).puedeProponer, false);
+    assert.equal(revision({}, { eventual: true, opcion: null, recibido: '2026-10-18' }).puedeProponer, false);
+  });
+
+  it('sin argumentos no tira error y no deja proponer', () => {
+    assert.equal(admin.revisionDelRegistro().puedeProponer, false);
+  });
+});
+
+describe('admin-fechas.js: la cabecera "Datos solicitados" del registro', () => {
+  it('el texto del pedido actual; un eventual no tiene pedido automático', () => {
+    assert.equal(admin.textoDelPedidoActual(dataset()), 'Del 01/01/2026 al 31/12/2026');
+    assert.equal(admin.textoDelPedidoActual(eventual()), 'Sin pedido automático');
+    assert.equal(admin.textoDelPedidoActual(dataset({ pedido: null, proxima_actualizacion: null })), 'Sin pedido: no tiene próxima actualización');
+    assert.equal(admin.textoDelPedidoActual(null), 'Sin pedido: no tiene próxima actualización');
+  });
+
+  it('frecuencia, tipo de pedido, fecha sugerida de envío y lo publicado hoy', () => {
+    const html = admin.htmlDeDatosDelPedido(dataset(), HOY);
+    assert.equal(html, '<div><dt>Frecuencia:</dt><dd>Trimestralmente</dd></div>'
+      + '<div><dt>Tipo de pedido:</dt><dd>Acumulado</dd></div>'
+      + '<div><dt>Fecha sugerida de envío:</dt><dd>31/01/2027</dd></div>'
+      + '<div><dt>Publicado hoy:</dt><dd>datos al 31/07/2026</dd></div>');
+  });
+
+  it('si ya venció dice "Vencido desde" y no da una fecha sugerida', () => {
+    const html = admin.htmlDeDatosDelPedido(vencido(), HOY);
+    assert.match(html, /<dt>Vencido desde:<\/dt><dd>31\/01\/2024<\/dd>/);
+    assert.doesNotMatch(html, /Fecha sugerida/);
+  });
+
+  it('un ejercicio publicado dice "ejercicio aaaa"; sin Datos al, una raya', () => {
+    assert.match(admin.htmlDeDatosDelPedido(ejercicio(), HOY), /<dt>Publicado hoy:<\/dt><dd>ejercicio 2025<\/dd>/);
+    assert.match(admin.htmlDeDatosDelPedido(dataset({ datos_al: null }), HOY), /<dt>Publicado hoy:<\/dt><dd>—<\/dd>/);
+  });
+
+  it('un eventual no tiene fecha de envío', () => {
+    const html = admin.htmlDeDatosDelPedido(eventual(), HOY);
+    assert.match(html, /<dt>Frecuencia:<\/dt><dd>Eventual<\/dd>/);
+    assert.doesNotMatch(html, /Vencido desde|Fecha sugerida/);
+  });
+
+  it('escapa la frecuencia y el tipo de pedido, y sin datos no escribe "undefined"', () => {
+    const html = admin.htmlDeDatosDelPedido(dataset({ frecuencia_nombre: '<b>f</b>', tipo_pedido_nombre: '<i>t</i>' }), HOY);
+    assert.doesNotMatch(html, /<b>f|<i>t/);
+    assert.match(html, /&lt;b&gt;f&lt;\/b&gt;/);
+    assert.doesNotMatch(admin.htmlDeDatosDelPedido(null, HOY), /undefined|null/);
+  });
+});
+
+describe('admin-fechas.js: esEventual y textoDeError', () => {
+  it('es eventual el dataset sin frecuencia en meses (como el servidor)', () => {
+    assert.equal(admin.esEventual(eventual()), true);
+    assert.equal(admin.esEventual(dataset()), false);
+    assert.equal(admin.esEventual(dataset({ frecuencia_meses: 0 })), true);
+    assert.equal(admin.esEventual(null), true);
+  });
+
+  it('el error del servidor se muestra tal cual, sin agregarle un punto', () => {
+    assert.equal(admin.textoDeError(new Error('Todavía no puede haber datos al 30/11/2026'), 'x'), 'Todavía no puede haber datos al 30/11/2026');
+  });
+
+  it('una falla de la red o una respuesta que no es JSON da el texto por defecto', () => {
+    assert.equal(admin.textoDeError(new TypeError('Failed to fetch'), 'No se pudo.'), 'No se pudo.');
+    assert.equal(admin.textoDeError(new SyntaxError('Unexpected token <'), 'No se pudo.'), 'No se pudo.');
+    assert.equal(admin.textoDeError(new Error(''), 'No se pudo.'), 'No se pudo.');
+    assert.equal(admin.textoDeError(null, 'No se pudo.'), 'No se pudo.');
+    assert.equal(admin.textoDeError(undefined, 'No se pudo.'), 'No se pudo.');
+  });
+});
+
+describe('admin.js: Registrar actualización', () => {
+  const { contexto: a } = cargarAdminJs();
+  const velo = { id: 'velo' };
+  const adentro = { id: 'ventana' };
+
+  it('ya no están el modal viejo ni sus funciones', () => {
+    for (const nombre of ['abrirRegistrarActualizacion', 'confirmarRegistrarActualizacion', 'closeRegistrarActualizacionModal']) {
+      assert.equal(typeof a[nombre], 'undefined', nombre);
+    }
+    assert.doesNotMatch(CODIGO_ADMIN, /registrar-ultima|registrar-proxima-group|btn-confirmar-actualizacion|registrarActualizacionId/);
+    assert.doesNotMatch(PAGINA_ADMIN, /registrar-ultima|closeRegistrarActualizacionModal|confirmarRegistrarActualizacion/);
+  });
+
+  it('un clic afuera cierra solo si la presión empezó en el velo (como en Correos)', () => {
+    a.presionEnVelo({ target: velo, currentTarget: velo });
+    assert.equal(a.esClicAfuera({ target: velo, currentTarget: velo, detail: 1 }), true);
+  });
+
+  it('apretar adentro de la ventana y soltar sobre el velo no cierra (por ejemplo, al elegir texto)', () => {
+    a.presionEnVelo({ target: adentro, currentTarget: velo });
+    assert.equal(a.esClicAfuera({ target: velo, currentTarget: velo, detail: 1 }), false);
+  });
+
+  it('sin presión anotada, un clic sobre algo de adentro o el segundo clic de un doble clic no cierran', () => {
+    assert.equal(a.esClicAfuera({ target: velo, currentTarget: velo, detail: 1 }), false);
+    a.presionEnVelo({ target: velo, currentTarget: velo });
+    assert.equal(a.esClicAfuera({ target: adentro, currentTarget: velo, detail: 1 }), false);
+    a.presionEnVelo({ target: velo, currentTarget: velo });
+    assert.equal(a.esClicAfuera({ target: velo, currentTarget: velo, detail: 2 }), false);
+  });
+
+  it('cada presión vale para un solo clic', () => {
+    a.presionEnVelo({ target: velo, currentTarget: velo });
+    assert.equal(a.esClicAfuera({ target: velo, currentTarget: velo, detail: 1 }), true);
+    assert.equal(a.esClicAfuera({ target: velo, currentTarget: velo, detail: 1 }), false);
+  });
+
+  it('pide las opciones al servidor y propone con el cuerpo armado por cuerpoDelRegistro, si revisionDelRegistro lo deja', () => {
+    assert.match(CODIGO_ADMIN, /API\.opcionesDeProxima\(/);
+    assert.match(CODIGO_ADMIN, /API\.registrarActualizacion\([^)]*cuerpoDelRegistro\(/);
+    assert.match(CODIGO_ADMIN, /revisionDelRegistro\(/);
+  });
+
+  it('el éxito avisa con showToast el texto de la spec', () => {
+    assert.ok(CODIGO_ADMIN.includes("'Actualización propuesta. Queda pendiente de aprobación en Mi Perfil.'"));
+  });
+
+  it('hoy se calcula con hoyEnArgentina, nunca con toISOString', () => {
+    assert.doesNotMatch(CODIGO_ADMIN, /toISOString/);
+    assert.match(CODIGO_ADMIN, /hoyEnArgentina\(\)/);
+  });
+});
+
+describe('admin.html: la ventana de Registrar actualización', () => {
+  const ventana = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-registrar-actualizacion" hidden>([\s\S]*?)<!-- Fin de Registrar actualización -->/)?.[1] ?? '';
+
+  it('conserva el id, es un velo oculto y la ventana es un diálogo modal con su título', () => {
+    assert.equal(cantidad(PAGINA_ADMIN, 'id="modal-registrar-actualizacion"'), 1);
+    assert.ok(ventana, 'la ventana está y termina con su comentario');
+    assert.match(ventana, /<div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="registrar-titulo" aria-describedby="registrar-dataset">/);
+    assert.match(ventana, /<h2 id="registrar-titulo">Registrar actualización<\/h2>/);
+    assert.match(ventana, /<p id="registrar-dataset"><\/p>/);
+    assert.match(ventana, /<button type="button" class="ad-cerrar" data-cerrar-registro aria-label="Cerrar">/);
+  });
+
+  it('no usa onclick: los oyentes los pone admin.js', () => {
+    assert.doesNotMatch(ventana, /onclick|onchange/);
+  });
+
+  it('la cabecera "Datos solicitados" y la línea del ciclo, que es decorativa', () => {
+    assert.match(ventana, /<p class="rotulo" id="registrar-rotulo">Datos solicitados<\/p>/);
+    assert.match(ventana, /<p class="periodo" id="registrar-periodo"><\/p>/);
+    assert.match(ventana, /<dl id="registrar-datos"><\/dl>/);
+    assert.match(ventana, /<div class="ad-ciclo" id="registrar-ciclo" aria-hidden="true"><\/div>/);
+    assert.match(ventana, /<div class="ad-leyenda" id="registrar-leyenda" aria-hidden="true">/);
+    for (const texto of ['Ya publicado', 'Pedido, todavía no llegó', 'Llega con esta actualización']) assert.ok(ventana.includes(texto), texto);
+  });
+
+  it('paso 1: mes y año en un grupo con la pregunta, la ayuda y el error', () => {
+    assert.match(ventana, /<h3 id="registrar-p1">¿A qué fecha son los datos que llegaron\?<\/h3>/);
+    assert.match(ventana, /<div class="ad-mes" role="group" aria-labelledby="registrar-p1">\s*<select id="registrar-mes" aria-label="Mes"><\/select>\s*<select id="registrar-anio" aria-label="Año"><\/select>/);
+    assert.match(ventana, /<p class="ad-ayuda" id="registrar-ayuda1">/);
+    assert.match(ventana, /<p class="ad-error" id="registrar-error-datos" role="alert" hidden><\/p>/);
+  });
+
+  it('paso 2: "Recibido el (opcional)" y "Cargado en el portal el", con etiquetas con for', () => {
+    assert.match(ventana, /<label for="registrar-recibido">Recibido el \(opcional\)<\/label>\s*<input type="date" id="registrar-recibido">/);
+    assert.match(ventana, /<label for="registrar-cargado">Cargado en el portal el<\/label>\s*<input type="date" id="registrar-cargado" required>/);
+    assert.match(ventana, /<p class="ad-error" id="registrar-error-fechas" role="alert" hidden><\/p>/);
+  });
+
+  it('paso 3: las opciones en un radiogroup y "Otra fecha" con mes y año', () => {
+    assert.match(ventana, /<div class="ad-paso" id="registrar-paso3">/);
+    assert.match(ventana, /<h3 id="registrar-p3">Próxima actualización<\/h3>/);
+    assert.match(ventana, /<div class="ad-opciones" role="radiogroup" aria-labelledby="registrar-p3" id="registrar-opciones"><\/div>/);
+    assert.match(ventana, /<div class="ad-otra" id="registrar-otra" hidden>/);
+    assert.match(ventana, /<select id="registrar-otra-mes" aria-label="Mes de la otra fecha"><\/select>/);
+    assert.match(ventana, /<select id="registrar-otra-anio" aria-label="Año de la otra fecha"><\/select>/);
+  });
+
+  it('el pie: el texto de la spec, "Cancelar" y "Proponer actualización" deshabilitado, y el error del envío', () => {
+    assert.ok(ventana.includes('<p>Queda como propuesta: otra persona la aprueba en Mi Perfil. Hasta entonces, el dataset no se puede editar.</p>'));
+    assert.match(ventana, /<button type="button" class="ad-btn" data-cerrar-registro>Cancelar<\/button>/);
+    assert.match(ventana, /<button type="button" class="ad-btn primario" id="registrar-proponer" disabled>Proponer actualización<\/button>/);
+    assert.match(ventana, /<p class="ad-error ad-error-envio" id="registrar-error" role="alert" hidden><\/p>/);
+  });
+
+  it('la lista puede recibir el foco al volver de proponer (el botón que abrió la ventana queda deshabilitado)', () => {
+    assert.match(PAGINA_ADMIN, /<div class="ad-marco" id="lista-datasets" tabindex="-1">/);
+  });
+});
+
+describe('admin.html: estilos de la ventana y del ciclo', () => {
+  const inicio = PAGINA_ADMIN.indexOf('<style>');
+  const fin = PAGINA_ADMIN.indexOf('</style>');
+  const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('la banda verde se mueve, y no se mueve si se pide menos movimiento', () => {
+    assert.match(estilo, /\.ad-ciclo \.llega \{[^}]*transition: width/);
+    assert.ok(estilo.includes('@media (prefers-reduced-motion: reduce)'));
+    const reducido = estilo.slice(estilo.indexOf('@media (prefers-reduced-motion: reduce)'));
+    assert.match(reducido, /\.ad-ciclo \.llega \{ transition: none; \}/);
+  });
+
+  it('el velo va por debajo de los avisos (showToast usa z-index 1000 y se agrega después)', () => {
+    assert.match(estilo, /\.ad-velo \{[^}]*z-index: 1000;/);
+  });
+
+  it('el foco se ve en los controles de la ventana', () => {
+    for (const selector of ['.ad-cerrar:focus-visible', '.ad-mes select:focus-visible', '.ad-campos input:focus-visible', '.ad-opcion:focus-within']) {
+      assert.ok(estilo.includes(selector), selector);
+    }
   });
 });
