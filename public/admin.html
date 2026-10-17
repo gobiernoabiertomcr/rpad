@@ -38,10 +38,8 @@
         /* Solo para el lector de pantalla */
         .ad-vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
-        /* Textos chicos y separaciones de los avisos de las ventanas (main.css no tiene clases para esto) */
-        .ad-chico { font-size: 0.8rem; }
+        /* La ayuda debajo de un campo y la separación del aviso de arriba de la lista (main.css no tiene clases para esto) */
         .ad-ayuda { font-size: 0.8rem; color: var(--pf-suave); margin: 6px 0 0; }
-        .ad-separado { margin-top: 8px; }
         .ad-aviso { margin-bottom: 12px; }
 
         /* ---------- Lista (spec 2026-10-17-fechas-datasets, 8.2) ---------- */
@@ -183,94 +181,67 @@
         .ad-opcion .aviso { color: var(--pf-ambar); }
         .ad-otra { margin-top: 8px; }
 
-        /* Form row */
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-        }
+        /* ---------- Formulario del dataset y las otras ventanas (spec 2026-10-17-fechas-datasets, 8.4, como el mockup aprobado) ---------- */
+        .ad-ventana.chica { width: min(520px, 100%); }
+        .ad-ventana.ancha { width: min(780px, 100%); }
+        .ad-ventana > footer .botones { margin-left: auto; }
+        .ad-btn.peligro { background: var(--pf-rojo); border-color: var(--pf-rojo); color: #fff; }
+        .ad-btn.peligro:hover:not(:disabled) { background: #6F2929; }
+        .ad-ayuda.ad-arriba { margin: 0 0 12px; }
+        .ad-form fieldset { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 6px; margin: 0 0 16px; min-width: 0; }
+        .ad-form legend { padding: 0 6px; font-weight: 600; color: var(--pf-tinta); font-size: 0.95rem; }
+        .ad-form .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .ad-form .fila > div { min-width: 0; }
+        .ad-form .campo { margin-bottom: 12px; }
+        .ad-form label, .ad-form .ad-rotulo { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
+        .ad-form select, .ad-form input, .ad-form textarea { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; width: 100%; }
+        .ad-form select:disabled, .ad-form input:disabled { background: var(--pf-gris-fondo); color: var(--pf-suave); cursor: not-allowed; }
+        .ad-form textarea { min-height: 72px; resize: vertical; line-height: 1.45; }
+        .ad-form [aria-invalid=true] { border-color: var(--pf-rojo); }
+        .ad-form .ad-mes { flex-wrap: nowrap; }
+        .ad-form .ad-mes select { width: auto; flex: 1 1 0; min-width: 0; }
+        .ad-form input:focus-visible, .ad-form select:focus-visible, .ad-form textarea:focus-visible,
+        .ad-formato:focus-visible, .ad-sugerencia button:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .ad-obligatorio { color: var(--pf-rojo); }
+        .ad-con-boton { display: flex; gap: 8px; align-items: center; }
+        .ad-con-boton select { flex: 1; min-width: 0; }
+        .ad-info { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--pf-azul-fondo); color: var(--pf-azul); font-size: 0.88rem; margin-bottom: 16px; }
+        .ad-info svg { flex: none; margin-top: 2px; }
+        .ad-portal { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 12px; }
+        .ad-portal .ad-ayuda { margin: 0; }
 
-        /* Chips de formatos */
-        .chips-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            padding: 12px;
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            background: var(--gray-50);
-            min-height: 50px;
-            margin-bottom: 8px;
-        }
+        /* Los formatos: botones que se aprietan (aria-pressed), con el check a la vista solo en los elegidos */
+        .ad-formatos { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--pf-linea); border-radius: 10px; background: var(--pf-sutil); margin-bottom: 8px; min-height: 48px; }
+        .ad-formatos.con-error { border-color: var(--pf-rojo); }
+        .ad-formato { font: inherit; font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border: 1px solid var(--pf-borde-campo); border-radius: 999px; background: #fff; color: var(--pf-texto); cursor: pointer; }
+        .ad-formato:hover { border-color: var(--pf-acento); }
+        .ad-formato[aria-pressed=true] { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
+        .ad-formato svg { display: none; }
+        .ad-formato[aria-pressed=true] svg { display: inline; }
+        .ad-formato .ad-quitar { font-size: 1rem; line-height: 1; }
+        .ad-form .ad-agregar-formato { width: auto; max-width: 100%; font-size: 0.85rem; border-style: dashed; color: var(--pf-suave); }
 
-        .chips-container.error {
-            border-color: var(--danger);
-        }
+        /* El tipo de pedido sugerido, el aviso por las frases de período (ámbar, no bloquea) y la vista previa de la nota */
+        .ad-sugerencia { font-size: 0.78rem; color: var(--pf-suave); margin: 4px 0 0; }
+        .ad-sugerencia button { font: inherit; color: var(--pf-acento); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; border-radius: 4px; }
+        .ad-alerta { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; font-size: 0.82rem; background: var(--pf-ambar-fondo); border: 1px solid var(--pf-ambar-borde); color: var(--pf-ambar); margin-top: 8px; }
+        .ad-alerta svg { flex: none; margin-top: 1px; }
+        .ad-nota-rotulo { font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin: 0 0 4px; }
+        .ad-nota { border: 1px solid #CFD8E3; border-radius: 10px; overflow: hidden; margin: 4px 0 14px; }
+        .ad-nota .cab { background: var(--pf-sutil); padding: 8px 12px; font-size: 0.8rem; color: var(--pf-suave); border-bottom: 1px solid var(--pf-linea); }
+        .ad-nota table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .ad-nota th { text-align: left; font-weight: 600; color: var(--pf-tinta); padding: 8px 10px; border-bottom: 1px solid var(--pf-linea); background: #fff; }
+        .ad-nota td { padding: 8px 10px; color: var(--pf-texto); vertical-align: top; font-variant-numeric: tabular-nums; }
+        .ad-nota td[aria-busy=true] { opacity: .6; }
+        .ad-nota .ad-error { margin: 0; padding: 0 12px 8px; }
+        .ad-nota .solicita { padding: 8px 12px 10px; font-size: 0.8rem; color: var(--pf-texto); border-top: 1px solid var(--pf-linea); line-height: 1.45; }
+        .ad-nota .solicita b { color: var(--pf-tinta); }
 
-        .chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            background: white;
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: var(--transition);
-            user-select: none;
-        }
-
-        .chip:hover {
-            border-color: var(--primary);
-        }
-
-        .chip.selected {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-        }
-
-        .chip .check-icon {
-            display: none;
-        }
-
-        .chip.selected .check-icon {
-            display: inline;
-        }
-
-        .chip-remove {
-            margin-left: 4px;
-            font-size: 1rem;
-            line-height: 1;
-            opacity: 0.7;
-        }
-
-        .chip-remove:hover {
-            opacity: 1;
-        }
-
-        .add-format-select {
-            padding: 8px 12px;
-            border: 1px dashed var(--border-color);
-            border-radius: var(--border-radius);
-            background: transparent;
-            color: var(--gray-600);
-            font-size: 0.85rem;
-            cursor: pointer;
-        }
-
-        /* Alerts */
+        /* Avisos arriba de la lista */
         .alert {
             padding: 12px 16px;
             border-radius: var(--border-radius);
             font-size: 0.875rem;
-        }
-
-        .alert-info {
-            background: var(--info-light);
-            color: var(--info);
-            border: 1px solid rgba(59, 130, 246, 0.2);
         }
 
         /* Con los colores de Correos: el rojo de main.css sobre su fondo no llega al contraste de 4.5:1 */
@@ -280,22 +251,10 @@
             border: 1px solid #EFCACA;
         }
 
-        /* Modal body scroll */
-        .modal-body {
-            max-height: 60vh;
-            overflow-y: auto;
-        }
-
         @media (max-width: 860px) {
             .ad-tabla .ocultable { display: none; }
             .ad-btn .largo { display: none; }
-            .ad-campos { grid-template-columns: 1fr; }
-        }
-
-        @media (max-width: 768px) {
-            .form-row {
-                grid-template-columns: 1fr;
-            }
+            .ad-campos, .ad-form .fila { grid-template-columns: 1fr; }
         }
 
         /* Celular: tarjetas en vez de la tabla, sin desplazamiento horizontal de la página */
@@ -425,7 +384,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                     Gestión de Datasets
                 </h1>
-                <button type="button" onclick="openStep1Modal()" class="btn btn-primary" id="btn-nuevo-dataset" hidden>
+                <button type="button" class="btn btn-primary" id="btn-nuevo-dataset" hidden>
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     Nuevo dataset
                 </button>
@@ -512,209 +471,265 @@
         </main>
     </div>
 
-    <!-- Modal Paso 1: URL del Portal -->
-    <div class="modal-overlay" id="modal-step1">
-        <div class="modal" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3 class="modal-title">Nuevo Dataset - Paso 1</h3>
-                <button class="modal-close" onclick="closeStep1Modal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-info" style="margin-bottom: 1rem;">
-                    <strong>💡 Importar desde el Portal de Datos Abiertos</strong><br>
-                    <span class="ad-chico">Pegue la URL del dataset para importar automáticamente el título y descripción.</span>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">URL del Dataset en el Portal</label>
-                    <input type="url" id="andino-url" class="form-input" 
-                           placeholder="https://datos.comodoro.gov.ar/dataset/nombre-del-dataset"
-                           autocomplete="off">
-                    <span class="form-hint">Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal</span>
-                </div>
+    <!-- Las ventanas (spec 2026-10-17-fechas-datasets, 8.4 y 8.6): velos con un diálogo adentro. admin.js las abre, las
+         cierra y maneja el teclado (Escape, Tab dentro de la ventana de más arriba). Un clic afuera cierra solo si la
+         presión empezó en el velo. Las que se abren desde el formulario van después de él, así quedan encima -->
 
-                <div id="step1-error" class="alert alert-error hidden"></div>
-                <div id="step1-loading" class="loading hidden"><div class="spinner"></div></div>
+    <!-- Nuevo dataset, paso 1: importar desde el Portal de Datos Abiertos (GET /andino/fetch), como siempre -->
+    <div class="ad-velo" id="modal-step1" hidden>
+        <form class="ad-ventana chica" id="form-paso1" role="dialog" aria-modal="true" aria-labelledby="paso1-titulo" novalidate>
+            <header>
+                <div><h2 id="paso1-titulo">Nuevo dataset - Paso 1</h2></div>
+                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo ad-form">
+                <div class="ad-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    <div><b>Importar desde el Portal de Datos Abiertos</b><br>Pegá la URL del dataset para traer el título, la descripción y los formatos.</div>
+                </div>
+                <div class="campo">
+                    <label for="andino-url">URL del dataset en el portal</label>
+                    <input type="url" id="andino-url" placeholder="https://datos.comodoro.gov.ar/dataset/nombre-del-dataset" autocomplete="off" aria-describedby="andino-url-ayuda">
+                    <p class="ad-ayuda" id="andino-url-ayuda">Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal</p>
+                </div>
+                <p class="ad-error ad-error-envio" id="step1-error" role="alert" hidden></p>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="skipToManualEntry()">
-                    Carga manual
-                </button>
-                <button type="button" class="btn btn-primary" onclick="fetchAndContinue()" id="btn-siguiente">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                    Siguiente
-                </button>
-            </div>
-        </div>
+            <footer>
+                <p>Si el dataset no está en el portal, elegí la carga manual.</p>
+                <div class="botones">
+                    <button type="button" class="ad-btn" id="btn-carga-manual">Carga manual</button>
+                    <button type="submit" class="ad-btn primario" id="btn-siguiente">Siguiente</button>
+                </div>
+            </footer>
+        </form>
     </div>
+    <!-- Fin del paso 1 -->
 
-    <!-- Modal Paso 2: Formulario completo -->
-    <div class="modal-overlay" id="modal-dataset">
-        <div class="modal" style="max-width: 700px;">
-            <div class="modal-header">
-                <h3 class="modal-title" id="modal-title">Nuevo Dataset - Paso 2</h3>
-                <button class="modal-close" onclick="closeModal()">&times;</button>
-            </div>
-            <form id="dataset-form">
-                <div class="modal-body">
-                    <input type="hidden" id="dataset-id">
-                    
-                    <!-- Botón actualizar desde portal (solo visible en edición) -->
-                    <div id="andino-update-section" class="hidden" style="margin-bottom: 1rem;">
-                        <button type="button" class="btn btn-outline btn-sm" onclick="updateFromAndino()">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                            Actualizar desde portal
-                        </button>
-                        <span class="ad-chico text-muted" style="margin-left: 0.5rem;">
-                            Sincronizar título y descripción
-                        </span>
+    <!-- Nuevo dataset (paso 2 o carga manual) y Editar dataset -->
+    <div class="ad-velo" id="modal-dataset" hidden>
+        <form class="ad-ventana ancha ad-form-dataset" id="dataset-form" role="dialog" aria-modal="true" aria-labelledby="form-titulo" aria-describedby="form-subtitulo">
+            <header>
+                <div><h2 id="form-titulo"></h2><p id="form-subtitulo"></p></div>
+                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo ad-form">
+                <fieldset>
+                    <legend>Datos del dataset</legend>
+
+                    <!-- Solo al editar un dataset del portal -->
+                    <div class="ad-portal" id="andino-update-section" hidden>
+                        <button type="button" class="ad-btn" id="btn-actualizar-portal">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                            Actualizar desde portal</button>
+                        <span class="ad-ayuda">Trae del portal el título, la descripción y los formatos.</span>
+                    </div>
+                    <p class="ad-error" id="portal-error" role="alert" hidden></p>
+
+                    <div class="campo">
+                        <label for="titulo">Título <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                        <input type="text" id="titulo" required>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Título <span style="color: var(--danger);">*</span></label>
-                        <input type="text" id="titulo" class="form-input" required>
+                    <!-- El área que dice el portal: solo una referencia, en un alta importada -->
+                    <div class="ad-info" id="andino-area-referencia" hidden>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <div>Área según el portal: <i id="andino-area-texto"></i></div>
                     </div>
 
-                    <!-- Área de referencia de Andino (solo informativo) -->
-                    <div id="andino-area-referencia" class="hidden" style="margin-bottom: 1rem;">
-                        <div style="padding: 0.75rem; background: var(--gray-50); border-radius: 6px; border-left: 3px solid var(--gray-400);">
-                            <span class="ad-chico text-muted">📍 Área según portal:</span>
-                            <span id="andino-area-texto" class="ad-chico" style="font-style: italic;"></span>
-                        </div>
-                    </div>
-
-                    <!-- Área Responsable (select + botón +) -->
-                    <div class="form-group">
-                        <label class="form-label">Área Responsable <span style="color: var(--danger);">*</span></label>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <select id="area_id" class="form-select" required style="flex: 1;"></select>
-                            <button type="button" class="btn btn-secondary" onclick="openQuickAreaModal()" title="Agregar nueva área">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    <div class="campo">
+                        <label for="area_id">Área responsable <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                        <div class="ad-con-boton">
+                            <select id="area_id" required></select>
+                            <button type="button" class="ad-icono" id="btn-nueva-area" aria-label="Agregar un área nueva" title="Agregar un área nueva">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                             </button>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Descripción</label>
-                        <textarea id="descripcion" class="form-textarea" rows="3"></textarea>
+                    <div class="campo">
+                        <label for="descripcion">Descripción</label>
+                        <textarea id="descripcion" rows="3"></textarea>
                     </div>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Tema Principal <span style="color: var(--danger);">*</span></label>
-                            <select id="tema_principal_id" class="form-select" required></select>
+                    <div class="fila">
+                        <div>
+                            <label for="tema_principal_id">Tema principal <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <select id="tema_principal_id" required></select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Tema Secundario</label>
-                            <select id="tema_secundario_id" class="form-select">
-                                <option value="">Ninguno</option>
-                            </select>
+                        <div>
+                            <label for="tema_secundario_id">Tema secundario</label>
+                            <select id="tema_secundario_id"><option value="">Ninguno</option></select>
                         </div>
                     </div>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Frecuencia <span style="color: var(--danger);">*</span></label>
-                            <select id="frecuencia_id" class="form-select" required></select>
+                    <div class="campo">
+                        <span class="ad-rotulo" id="form-l-formatos">Formatos del dataset <span class="ad-obligatorio" aria-hidden="true">*</span></span>
+                        <div class="ad-formatos" id="chips-container" role="group" aria-labelledby="form-l-formatos"></div>
+                        <select id="formato-dropdown" class="ad-agregar-formato" aria-label="Agregar otro formato"></select>
+                        <p class="ad-ayuda">Tocá un formato para elegirlo o sacarlo. Tiene que haber al menos uno.</p>
+                        <p class="ad-error" id="form-error-formatos" role="alert" hidden></p>
+                    </div>
+
+                    <div class="campo">
+                        <label for="url_dataset">URL en el portal</label>
+                        <input type="url" id="url_dataset" placeholder="https://datos.comodoro.gov.ar/...">
+                    </div>
+
+                    <div class="campo">
+                        <label for="observaciones">Observaciones</label>
+                        <textarea id="observaciones" rows="2"></textarea>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Actualización y pedido</legend>
+                    <div class="fila">
+                        <div>
+                            <label for="frecuencia_id">Frecuencia <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <select id="frecuencia_id" required></select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Tipo de Gestión <span style="color: var(--danger);">*</span></label>
-                            <select id="tipo_gestion" class="form-select" required>
+                        <div>
+                            <label for="tipo_gestion">Tipo de gestión <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <select id="tipo_gestion" required>
                                 <option value="">Seleccionar...</option>
-                                <option value="interna">Interna (DGMIT gestiona la actualización)</option>
-                                <option value="externa">Externa (Depende de respuesta de otra área)</option>
+                                <option value="externa">Externa (la provee otra área)</option>
+                                <option value="interna">Interna (relevamiento propio)</option>
                             </select>
-                            <span class="form-hint">Define quién es responsable de actualizar este dataset</span>
+                        </div>
+                    </div>
+                    <div class="fila">
+                        <div>
+                            <label for="tipo_pedido">Tipo de pedido</label>
+                            <select id="tipo_pedido"></select>
+                            <p class="ad-sugerencia" id="form-sugerencia"></p>
+                        </div>
+                        <div>
+                            <label for="ultima_actualizacion">Cargado en el portal el</label>
+                            <input type="date" id="ultima_actualizacion">
+                        </div>
+                    </div>
+                    <div class="fila">
+                        <div>
+                            <label for="form-datos-mes" id="form-l-datos">Datos al</label>
+                            <div class="ad-mes" role="group" aria-labelledby="form-l-datos">
+                                <select id="form-datos-mes" aria-label="Mes"></select>
+                                <select id="form-datos-anio" aria-label="Año"></select>
+                            </div>
+                            <p class="ad-ayuda" id="form-ayuda-datos" hidden>En un presupuesto, el ejercicio publicado: se guarda el 31/12.</p>
+                            <p class="ad-error" id="form-error-datos" role="alert" hidden></p>
+                        </div>
+                        <div>
+                            <label for="form-prox-mes" id="form-l-prox">Próxima actualización</label>
+                            <div class="ad-mes" role="group" aria-labelledby="form-l-prox">
+                                <select id="form-prox-mes" aria-label="Mes"></select>
+                                <select id="form-prox-anio" aria-label="Año"></select>
+                            </div>
+                            <p class="ad-ayuda" id="form-aviso-eventual" hidden></p>
+                            <p class="ad-error" id="form-error-proxima" role="alert" hidden></p>
+                        </div>
+                    </div>
+                    <div class="campo">
+                        <label for="que_se_solicita">Qué se solicita</label>
+                        <textarea id="que_se_solicita" rows="3" aria-describedby="form-ayuda-solicita"></textarea>
+                        <p class="ad-ayuda" id="form-ayuda-solicita">Describí qué tiene que mandar el área, sin fechas ni períodos: los agrega el sistema.</p>
+                        <div class="ad-alerta" id="form-alerta-frases" hidden>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                            <span id="form-alerta-texto" aria-live="polite"></span>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Formatos del Dataset <span style="color: var(--danger);">*</span></label>
-                        <div id="chips-container" class="chips-container"></div>
-                        <select id="formato-dropdown" class="add-format-select">
-                            <option value="">+ Agregar otro formato...</option>
-                        </select>
-                        <span class="form-hint">Seleccione al menos un formato. Click en los chips para seleccionar/deseleccionar.</span>
+                    <p class="ad-nota-rotulo" id="form-l-nota">Así va a salir en la próxima nota</p>
+                    <div class="ad-nota" role="group" aria-labelledby="form-l-nota">
+                        <div class="cab" id="form-nota-cab"></div>
+                        <table>
+                            <thead><tr><th scope="col">Conjunto de datos</th><th scope="col">Datos solicitados</th><th scope="col">Fecha sugerida de envío</th></tr></thead>
+                            <tbody><tr><td id="form-nota-titulo"></td><td id="form-nota-periodo" aria-live="polite"></td><td id="form-nota-fecha" class="ad-fecha"></td></tr></tbody>
+                        </table>
+                        <p class="ad-error" id="form-nota-error" hidden></p>
+                        <div class="solicita"><b>Qué se solicita:</b> <span id="form-nota-solicita"></span></div>
+                        <!-- Fin de la vista previa -->
                     </div>
+                </fieldset>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Última Actualización</label>
-                            <input type="date" id="ultima_actualizacion" class="form-input">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Próxima Actualización</label>
-                            <input type="date" id="proxima_actualizacion" class="form-input">
-                            <span class="form-hint">Dejar vacío para frecuencia "Eventual"</span>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">URL en Portal</label>
-                        <input type="url" id="url_dataset" class="form-input" placeholder="https://datos.comodoro.gov.ar/...">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" for="que_se_solicita">Qué se solicita</label>
-                        <textarea id="que_se_solicita" class="form-textarea" rows="3"></textarea>
-                        <span class="form-hint">Qué información concreta tiene que enviar el área para actualizar este dataset (se usa en las Notas Digitales).</span>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Observaciones</label>
-                        <textarea id="observaciones" class="form-textarea" rows="2"></textarea>
-                    </div>
+                <p class="ad-error ad-error-envio" id="form-error" role="alert" hidden></p>
+            </div>
+            <footer>
+                <p>Queda como propuesta: otra persona la aprueba en Mi Perfil.</p>
+                <div class="botones">
+                    <button type="button" class="ad-btn" data-cerrar>Cancelar</button>
+                    <button type="submit" class="ad-btn primario" id="submit-btn">Proponer cambios</button>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-                    <button type="submit" class="btn btn-primary" id="submit-btn">Guardar</button>
+            </footer>
+        </form>
+    </div>
+    <!-- Fin del formulario -->
+
+    <!-- Confirmar "Actualizar desde portal" (desde el formulario: queda encima) -->
+    <div class="ad-velo" id="modal-confirm-update" hidden>
+        <div class="ad-ventana chica" role="dialog" aria-modal="true" aria-labelledby="confirmar-portal-titulo" aria-describedby="confirmar-portal-texto">
+            <header>
+                <div><h2 id="confirmar-portal-titulo">Actualizar desde el portal</h2></div>
+                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo">
+                <div id="confirmar-portal-texto">
+                    <p>¿Querés traer los datos del portal?</p>
+                    <p class="ad-ayuda"><strong>Se reemplazan</strong> el título y la descripción por los del portal.<br><strong>Se suman</strong> los formatos que tenga publicados (los que ya están elegidos quedan).</p>
                 </div>
-            </form>
+                <p class="ad-error ad-error-envio" id="confirm-update-error" role="alert" hidden></p>
+            </div>
+            <footer>
+                <p>Después tenés que proponer los cambios.</p>
+                <div class="botones">
+                    <button type="button" class="ad-btn" data-cerrar>Cancelar</button>
+                    <button type="button" class="ad-btn primario" id="btn-confirm-update">Actualizar</button>
+                </div>
+            </footer>
         </div>
     </div>
+    <!-- Fin de la confirmación -->
 
-    <!-- Modal Confirmar Eliminación -->
-    <div class="modal-overlay" id="modal-delete">
-        <div class="modal" style="max-width: 400px;">
-            <div class="modal-header">
-                <h3 class="modal-title">Confirmar Eliminación</h3>
-                <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+    <!-- Nueva área (desde el formulario: queda encima) -->
+    <div class="ad-velo" id="modal-quick-area" hidden>
+        <form class="ad-ventana chica" id="form-area-rapida" role="dialog" aria-modal="true" aria-labelledby="area-rapida-titulo" novalidate>
+            <header>
+                <div><h2 id="area-rapida-titulo">Nueva área</h2></div>
+                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo ad-form">
+                <p class="ad-ayuda ad-arriba">Los datos de contacto se completan después, en Áreas.</p>
+                <div class="campo">
+                    <label for="quick-area-nombre">Nombre del área <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                    <input type="text" id="quick-area-nombre" placeholder="Ej.: Dirección General de..." autocomplete="off">
+                </div>
+                <p class="ad-error ad-error-envio" id="quick-area-error" role="alert" hidden></p>
             </div>
-            <div class="modal-body">
+            <footer>
+                <div class="botones">
+                    <button type="button" class="ad-btn" data-cerrar>Cancelar</button>
+                    <button type="submit" class="ad-btn primario" id="btn-quick-area-save">Guardar</button>
+                </div>
+            </footer>
+        </form>
+    </div>
+
+    <!-- Confirmar la eliminación -->
+    <div class="ad-velo" id="modal-delete" hidden>
+        <div class="ad-ventana chica" role="dialog" aria-modal="true" aria-labelledby="eliminar-titulo" aria-describedby="eliminar-texto">
+            <header>
+                <div><h2 id="eliminar-titulo">Confirmar eliminación</h2></div>
+                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo" id="eliminar-texto">
                 <p>¿Está seguro de eliminar el dataset <strong id="delete-dataset-name"></strong>?</p>
                 <p class="ad-ayuda">Esta acción no se puede deshacer.</p>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
-                <button class="btn btn-danger" onclick="confirmDelete()">Eliminar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Confirmar Actualización desde Portal -->
-    <div class="modal-overlay" id="modal-confirm-update">
-        <div class="modal" style="max-width: 450px;">
-            <div class="modal-header">
-                <h3 class="modal-title">Confirmar Actualización</h3>
-                <button class="modal-close" onclick="closeConfirmUpdateModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p>¿Está seguro de actualizar los datos desde el portal?</p>
-                <p class="ad-ayuda">
-                    <strong>Se reemplazarán los siguientes campos:</strong><br>
-                    • Título<br>
-                    • Descripción
-                </p>
-                <div id="confirm-update-loading" class="loading hidden"><div class="spinner"></div></div>
-                <div id="confirm-update-error" class="alert alert-error hidden ad-separado"></div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeConfirmUpdateModal()">Cancelar</button>
-                <button class="btn btn-primary" onclick="confirmUpdateFromAndino()" id="btn-confirm-update">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                    Actualizar
-                </button>
-            </div>
+            <footer>
+                <div class="botones">
+                    <button type="button" class="ad-btn" id="btn-cancelar-eliminar" data-cerrar>Cancelar</button>
+                    <button type="button" class="ad-btn peligro" id="btn-confirmar-eliminar">Eliminar</button>
+                </div>
+            </footer>
         </div>
     </div>
 
@@ -796,28 +811,6 @@
         </div>
     </div>
     <!-- Fin de Registrar actualización -->
-
-    <!-- Modal Crear Área Rápida -->
-    <div class="modal-overlay" id="modal-quick-area">
-        <div class="modal" style="max-width: 400px;">
-            <div class="modal-header">
-                <h3 class="modal-title">Nueva Área</h3>
-                <button class="modal-close" onclick="closeQuickAreaModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p class="ad-chico text-muted mb-4">Crear área rápidamente. Puede completar los datos de contacto más tarde en la sección "Áreas".</p>
-                <div class="form-group">
-                    <label class="form-label">Nombre del Área <span style="color: var(--danger);">*</span></label>
-                    <input type="text" id="quick-area-nombre" class="form-input" placeholder="Ej: Dirección General de...">
-                </div>
-                <div id="quick-area-error" class="alert alert-error hidden"></div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeQuickAreaModal()">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveQuickArea()" id="btn-quick-area-save">Guardar</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Scripts del RPAD -->
     <script src="js/config.js"></script>

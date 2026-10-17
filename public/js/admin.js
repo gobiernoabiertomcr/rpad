@@ -3,12 +3,15 @@
  *
  * La lista (spec 2026-10-17-fechas-datasets, 8.2): filtros por estado con su contador, búsqueda por título o área,
  * gestión y tipo de pedido, 25 por página, y en el celular una tarjeta por dataset. Además, el alta en dos pasos con la
- * importación desde el Portal de Datos Abiertos, la edición, la eliminación y el registro de una actualización: todo cambio
- * queda pendiente de aprobación (doble verificación) y el dataset queda bloqueado hasta que se resuelva.
+ * importación desde el Portal de Datos Abiertos, el formulario con "Actualización y pedido" y la vista previa de la nota
+ * (8.4), la eliminación y el registro de una actualización (8.3): todo cambio queda pendiente de aprobación (doble
+ * verificación) y el dataset queda bloqueado hasta que se resuelva. Todas las ventanas son diálogos con Escape, el foco
+ * retenido y clic afuera (8.6, arreglo 5).
  *
  * Al cargarse solo declara (tests/admin-frontend.test.js lo carga en un vm): lo que toca el DOM, Auth o la API arranca en
- * DOMContentLoaded. Lo puro que arma la fila, la tarjeta y la pastilla de estado está en admin-fechas.js, que se carga antes;
- * lo puro de la lista (filtros, contadores, páginas) está acá, arriba de lo que toca el DOM.
+ * DOMContentLoaded. Lo puro que arma la fila, la tarjeta, la pastilla de estado y el cuerpo del formulario está en
+ * admin-fechas.js, que se carga antes; lo puro de la lista (filtros, contadores, páginas) y de los formatos está acá,
+ * arriba de lo que toca el DOM.
  */
 
 let datasets = [];
@@ -16,7 +19,6 @@ let temas = [];
 let frecuencias = [];
 let areas = [];
 let deleteId = null;
-let currentEditDataset = null;
 let andinoAreaReferencia = null; // Área de referencia importada de Andino
 // Ids (como texto) de los datasets con un cambio pendiente de aprobación: quedan bloqueados
 let datasetsConPendientes = new Set();
@@ -50,8 +52,6 @@ let formatosCatalogo = [];
 const registro = {
   dataset: null, hoy: null, opciones: [], errorDatosAl: null, cargando: false, enviando: false, origen: null, secuencia: 0, apertura: 0
 };
-// Los años del paso 1 empiezan acá (el selector se amplía si "Datos al" es anterior)
-const PRIMER_ANIO_DE_DATOS = 2015;
 
 // =====================================================
 // LISTA: lo puro (filtros, contadores, páginas)
@@ -187,6 +187,67 @@ function faltanCatalogos({ temas: deTemas, frecuencias: deFrecuencias, formatos:
 }
 
 // =====================================================
+// FORMULARIO: lo puro (formatos, título, frecuencia, mensajes)
+// =====================================================
+
+// Ícono Lucide (check) del formato elegido: decorativo, el botón dice su estado con aria-pressed
+const ICONO_ELEGIDO = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>';
+
+/**
+ * Los formatos del formulario: { chips, opciones }. `chips`: un botón con aria-pressed por formato habitual, más los no
+ * habituales elegidos (con una cruz: al apretarlo se saca); llevan data-formato con el id y el que los usa escucha los
+ * clics por delegación, sin onclick. `opciones`: las <option> de "+ Agregar otro formato…", con los no habituales que no
+ * están elegidos. `catalogo`: GET /catalogos/formatos; `seleccionados`: ids (lista o Set; número o texto).
+ */
+function htmlDeFormatos(catalogo, seleccionados) {
+  const lista = Array.isArray(catalogo) ? catalogo : [];
+  const elegidos = new Set(Array.from(seleccionados ?? [], (id) => Number(id)));
+  const habitual = (f) => Number(f.habitual) === 1;
+  const elegido = (f) => elegidos.has(Number(f.id));
+  const boton = (f) => `<button type="button" class="ad-formato" data-formato="${textoSeguro(f.id)}" aria-pressed="${elegido(f)}">`
+    + `${ICONO_ELEGIDO}${textoSeguro(f.nombre)}${habitual(f) ? '' : '<span class="ad-quitar" aria-hidden="true">&times;</span>'}</button>`;
+  const chips = [...lista.filter(habitual), ...lista.filter((f) => !habitual(f) && elegido(f))].map(boton).join('');
+  const opciones = '<option value="">+ Agregar otro formato…</option>'
+    + lista.filter((f) => !habitual(f) && !elegido(f)).map((f) => `<option value="${textoSeguro(f.id)}">${textoSeguro(f.nombre)}</option>`).join('');
+  return { chips, opciones };
+}
+
+/**
+ * El título y el subtítulo del formulario (spec 8.4): "Editar dataset" con el título del dataset; en un alta, "Nuevo
+ * dataset - Paso 2" si se vino del paso 1 con datos del portal y "Nuevo dataset" con la carga manual.
+ */
+function tituloDelFormulario({ dataset = null, importado = false } = {}) {
+  if (dataset) return { titulo: 'Editar dataset', subtitulo: String(dataset.titulo ?? '') };
+  if (importado) return { titulo: 'Nuevo dataset - Paso 2', subtitulo: 'Título, descripción y formatos importados del portal' };
+  return { titulo: 'Nuevo dataset', subtitulo: 'Carga manual' };
+}
+
+/**
+ * Los meses de la frecuencia `id` del catálogo (GET /catalogos/frecuencias): un número; null si es la Eventual (sin meses);
+ * undefined si no hay una elegida o no está en el catálogo.
+ */
+function mesesDeLaFrecuencia(catalogo, id) {
+  if (id === '' || id === null || id === undefined) return undefined;
+  const frecuencia = (Array.isArray(catalogo) ? catalogo : []).find((f) => String(f.id) === String(id));
+  if (!frecuencia) return undefined;
+  return Number.isInteger(frecuencia.meses) && frecuencia.meses > 0 ? frecuencia.meses : null;
+}
+
+// El error del portal en el paso 1, con la salida: seguir con la carga manual
+function textoDeErrorDelPortal(mensaje) {
+  const texto = String(mensaje ?? '').trim() || 'No se pudo obtener información del portal';
+  return `${texto}${/[.!?]$/.test(texto) ? '' : '.'} Podés seguir con la carga manual.`;
+}
+
+// El error de un envío del formulario: el del servidor tal cual, salvo el de "sin cambios", que dice qué hacer
+function mensajeDelEnvio(error) {
+  const mensaje = textoDeError(error, 'No se pudo proponer. Probá de nuevo.');
+  return mensaje.includes('No se detectaron cambios')
+    ? 'No realizaste ningún cambio. Modificá al menos un campo para proponer.'
+    : mensaje;
+}
+
+// =====================================================
 // INICIO
 // =====================================================
 
@@ -198,9 +259,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   puedeAdministrar = Auth.isAdmin();
-  document.getElementById('dataset-form').addEventListener('submit', enviarFormulario);
   prepararLista();
+  prepararVentanas();
   prepararRegistro();
+  prepararFormulario();
   // El lector ve la lista sin acciones y sin "Nuevo dataset"
   if (puedeAdministrar) document.getElementById('btn-nuevo-dataset').hidden = false;
 
@@ -307,8 +369,8 @@ function alHacerClicEnLaLista(evento) {
   const { registrar, editar, eliminar, pagina, direccion } = boton.dataset;
   if (pagina !== undefined) irAPagina(Number(pagina), direccion);
   else if (registrar !== undefined) marcarActualizado(Number(registrar), boton);
-  else if (editar !== undefined) editDataset(Number(editar));
-  else if (eliminar !== undefined) openDeleteModal(Number(eliminar), tituloDelDataset(eliminar));
+  else if (editar !== undefined) editDataset(Number(editar), boton);
+  else if (eliminar !== undefined) openDeleteModal(Number(eliminar), tituloDelDataset(eliminar), boton);
 }
 
 function tituloDelDataset(id) {
@@ -392,103 +454,135 @@ function irAPagina(pagina, direccion) {
 }
 
 // =====================================================
-// SISTEMA DE CHIPS PARA FORMATOS
+// VENTANAS: abrir, cerrar, Escape, Tab y clic afuera (spec 8.6, arreglo 5)
+// =====================================================
+// Cada ventana de la página es un velo (.ad-velo, con `hidden`) con un diálogo adentro (.ad-ventana, role="dialog"). Se
+// apilan: el formulario abre encima la confirmación de "Actualizar desde portal" o "Nueva área". La de arriba recibe el
+// teclado (Escape la cierra y Tab no sale de ella) y, al cerrarse, el foco vuelve a lo que lo tenía al abrirla. Un clic
+// afuera cierra solo si la presión empezó en el velo (presionEnVelo y esClicAfuera, más abajo).
+
+const ID_REGISTRO = 'modal-registrar-actualizacion';
+
+// Las ventanas abiertas, de abajo hacia arriba: { id, origen }. "Registrar actualización" está en la pila solo para el
+// teclado: el foco al cerrarla lo maneja ella (cerrarRegistro)
+const pilaDeVentanas = [];
+
+// Cómo se cierra cada ventana: con Escape, la cruz, "Cancelar" (data-cerrar) o un clic afuera
+const CIERRE_DE_VENTANA = {
+  'modal-step1': () => closeStep1Modal(),
+  'modal-dataset': () => closeModal(),
+  'modal-confirm-update': () => closeConfirmUpdateModal(),
+  'modal-quick-area': () => closeQuickAreaModal(),
+  'modal-delete': () => closeDeleteModal(),
+  [ID_REGISTRO]: () => cerrarRegistro()
+};
+
+// Los oyentes de las ventanas (los de "Registrar actualización" los pone prepararRegistro) y del teclado. En DOMContentLoaded
+function prepararVentanas() {
+  for (const id of Object.keys(CIERRE_DE_VENTANA)) {
+    if (id === ID_REGISTRO) continue;
+    const velo = document.getElementById(id);
+    velo.addEventListener('mousedown', presionEnVelo);
+    velo.addEventListener('click', (evento) => {
+      // esClicAfuera va primero: consume la presión anotada aunque el clic haya sido en un botón
+      if (esClicAfuera(evento) || evento.target.closest('[data-cerrar]')) CIERRE_DE_VENTANA[id]();
+    });
+  }
+  document.addEventListener('keydown', teclaEnPagina);
+}
+
+function apilarVentana(id, origen) {
+  desapilarVentana(id);
+  pilaDeVentanas.push({ id, origen: origen ?? null });
+}
+
+function desapilarVentana(id) {
+  const indice = pilaDeVentanas.findIndex((ventana) => ventana.id === id);
+  return indice === -1 ? null : pilaDeVentanas.splice(indice, 1)[0];
+}
+
+// Lo que tenía el foco al abrir la ventana `id`, o null
+function origenDe(id) {
+  return pilaDeVentanas.find((ventana) => ventana.id === id)?.origen ?? null;
+}
+
+/**
+ * Abre la ventana `id` y pone el foco en `foco`. `origen`: lo que recibe el foco al cerrarla (por defecto, lo que lo tiene
+ * ahora; el botón de la lista se pasa aparte porque no todos los navegadores lo enfocan al hacerle clic).
+ */
+function abrirVentana(id, foco, origen = document.activeElement) {
+  const velo = document.getElementById(id);
+  apilarVentana(id, origen);
+  velo.hidden = false;
+  velo.scrollTop = 0;
+  if (foco) foco.focus();
+}
+
+// Cierra la ventana `id` y devuelve el foco a lo que lo tenía al abrirla, si sigue en la página. false si ya estaba cerrada
+function cerrarVentana(id) {
+  const velo = document.getElementById(id);
+  if (velo.hidden) return false;
+  velo.hidden = true;
+  const origen = desapilarVentana(id)?.origen;
+  if (origen && origen.isConnected && typeof origen.focus === 'function') origen.focus();
+  return true;
+}
+
+// La ventana abierta de más arriba, o null si no hay ninguna
+function ventanaDeArriba() {
+  for (let i = pilaDeVentanas.length - 1; i >= 0; i--) {
+    if (!document.getElementById(pilaDeVentanas[i].id).hidden) return pilaDeVentanas[i].id;
+  }
+  return registroAbierto() ? ID_REGISTRO : null;
+}
+
+// ¿Hay alguna ventana abierta?
+function hayUnaVentanaAbierta() {
+  return ventanaDeArriba() !== null;
+}
+
+/**
+ * Después de recargar la lista: si el botón que abrió una ventana ya no está (la lista se rearmó; el de la fila nueva puede
+ * estar deshabilitado porque el dataset quedó bloqueado) y no hay otra ventana abierta, el foco va a la lista.
+ */
+function enfocarLaListaSiSeRearmo(origen) {
+  if (origen && !origen.isConnected && !hayUnaVentanaAbierta()) document.getElementById('lista-datasets').focus();
+}
+
+// =====================================================
+// FORMATOS DEL DATASET (botones con aria-pressed)
 // =====================================================
 
-/**
- * Renderiza los chips de formatos habituales y el dropdown de no habituales
- */
 function renderizarChipsFormatos() {
-  const container = document.getElementById('chips-container');
-  const dropdown = document.getElementById('formato-dropdown');
-
-  if (!container || !dropdown) return;
-
-  // Separar habituales y no habituales
-  const habituales = formatosCatalogo.filter(f => f.habitual === 1);
-  const noHabituales = formatosCatalogo.filter(f => f.habitual === 0);
-
-  // Renderizar chips habituales
-  container.innerHTML = habituales.map(f => {
-    const selected = formatosSeleccionados.has(f.id);
-    return `
-      <span class="chip ${selected ? 'selected' : ''}"
-            data-id="${f.id}"
-            data-habitual="1"
-            onclick="toggleChip(${f.id})">
-        <span class="check-icon">✓</span>
-        ${Utils.escapeHtml(f.nombre)}
-      </span>
-    `;
-  }).join('');
-
-  // Agregar chips de formatos no habituales seleccionados
-  noHabituales.forEach(f => {
-    if (formatosSeleccionados.has(f.id)) {
-      container.innerHTML += `
-        <span class="chip selected"
-              data-id="${f.id}"
-              data-habitual="0">
-          <span class="check-icon">✓</span>
-          ${Utils.escapeHtml(f.nombre)}
-          <span class="chip-remove" onclick="removeNoHabitual(${f.id}, event)">×</span>
-        </span>
-      `;
-    }
-  });
-
-  // Llenar dropdown con formatos no habituales no seleccionados
-  dropdown.innerHTML = '<option value="">+ Agregar otro formato...</option>';
-  noHabituales.forEach(f => {
-    if (!formatosSeleccionados.has(f.id)) {
-      dropdown.innerHTML += `<option value="${f.id}">${Utils.escapeHtml(f.nombre)}</option>`;
-    }
-  });
-
-  // Event listener para dropdown (solo agregar una vez)
-  dropdown.onchange = function() {
-    if (this.value) {
-      formatosSeleccionados.add(parseInt(this.value));
-      renderizarChipsFormatos();
-      this.value = '';
-    }
-  };
-
-  // Actualizar estado visual del contenedor
-  actualizarEstadoContenedorFormatos();
+  const { chips, opciones } = htmlDeFormatos(formatosCatalogo, formatosSeleccionados);
+  document.getElementById('chips-container').innerHTML = chips;
+  document.getElementById('formato-dropdown').innerHTML = opciones;
 }
 
-/**
- * Toggle para chips habituales
- */
-function toggleChip(id) {
-  if (formatosSeleccionados.has(id)) {
-    formatosSeleccionados.delete(id);
-  } else {
-    formatosSeleccionados.add(id);
-  }
+// Un clic en un formato lo elige o lo saca. El botón se rearma: el foco vuelve al mismo formato o, si desapareció (uno no
+// habitual que se sacó), al desplegable
+function alHacerClicEnFormatos(boton) {
+  const id = Number(boton.dataset.formato);
+  if (formatosSeleccionados.has(id)) formatosSeleccionados.delete(id);
+  else formatosSeleccionados.add(id);
   renderizarChipsFormatos();
+  alCambiarLosFormatos();
+  const mismo = [...document.querySelectorAll('#chips-container [data-formato]')].find((chip) => Number(chip.dataset.formato) === id);
+  (mismo ?? document.getElementById('formato-dropdown')).focus();
 }
 
-/**
- * Remover chip no habitual
- */
-function removeNoHabitual(id, event) {
-  event.stopPropagation();
-  formatosSeleccionados.delete(id);
+// Se eligió un formato no habitual en el desplegable
+function alAgregarFormato(desplegable) {
+  if (!desplegable.value) return;
+  formatosSeleccionados.add(Number(desplegable.value));
   renderizarChipsFormatos();
+  alCambiarLosFormatos();
 }
 
-/**
- * Actualiza el borde del contenedor según si hay formatos seleccionados
- */
-function actualizarEstadoContenedorFormatos() {
-  const container = document.getElementById('chips-container');
-  if (formatosSeleccionados.size === 0) {
-    container.classList.add('error');
-  } else {
-    container.classList.remove('error');
-  }
+// Con un formato elegido, el error de "Elegí al menos un formato" ya no corresponde
+function alCambiarLosFormatos() {
+  if (formatosSeleccionados.size > 0) mostrarErrorDeFormatos(null);
+  alCambiarElFormularioDelDataset();
 }
 
 /**
@@ -502,191 +596,212 @@ function preseleccionarFormatosPorNombre(nombresFormatos) {
       f.nombre.toUpperCase() === nombre.toUpperCase()
     );
     if (formato) {
-      formatosSeleccionados.add(formato.id);
+      formatosSeleccionados.add(Number(formato.id));
     }
   });
 }
 
 // =====================================================
-// PASO 1: Modal URL del Portal
+// PASO 1: importar desde el Portal de Datos Abiertos (spec 8.4: el flujo y el endpoint no cambian)
 // =====================================================
 
-function openStep1Modal() {
-  currentEditDataset = null;
-  andinoAreaReferencia = null;
-  document.getElementById('andino-url').value = '';
-  document.getElementById('step1-error').classList.add('hidden');
-  document.getElementById('step1-loading').classList.add('hidden');
-  document.getElementById('btn-siguiente').disabled = false;
-  document.getElementById('modal-step1').classList.add('active');
+// Cuenta las aperturas del paso 1: la respuesta del portal que llega después de cerrarlo (o de volver a abrirlo) se descarta
+const paso1 = { apertura: 0 };
 
-  // Focus en el campo URL
-  setTimeout(() => document.getElementById('andino-url').focus(), 100);
+function openStep1Modal(origen) {
+  paso1.apertura++;
+  andinoAreaReferencia = null;
+  const campo = document.getElementById('andino-url');
+  campo.value = '';
+  mostrarError('step1-error', null, { campos: ['andino-url'] });
+  const siguiente = document.getElementById('btn-siguiente');
+  siguiente.disabled = false;
+  siguiente.textContent = 'Siguiente';
+  abrirVentana('modal-step1', campo, origen);
 }
 
 function closeStep1Modal() {
-  document.getElementById('modal-step1').classList.remove('active');
+  cerrarVentana('modal-step1');
 }
 
-// Saltar al paso 2 sin importar (carga manual)
+// Saltar al formulario sin importar (carga manual). Una importación en curso se descarta
 function skipToManualEntry() {
+  paso1.apertura++;
   andinoAreaReferencia = null;
   closeStep1Modal();
   openModal(null);
 }
 
-// Consultar API y continuar al paso 2
-async function fetchAndContinue() {
-  const url = document.getElementById('andino-url').value.trim();
-  const errorDiv = document.getElementById('step1-error');
-  const loadingDiv = document.getElementById('step1-loading');
-  const btnSiguiente = document.getElementById('btn-siguiente');
-
-  // Validar que hay URL
+// "Siguiente": consulta el portal (GET /andino/fetch) y abre el formulario con el título, la descripción, la URL y los
+// formatos. Si falla, el error queda en el paso 1 y se puede seguir con la carga manual
+async function fetchAndContinue(evento) {
+  evento?.preventDefault();
+  const apertura = paso1.apertura;
+  const campo = document.getElementById('andino-url');
+  const siguiente = document.getElementById('btn-siguiente');
+  if (siguiente.disabled) return;
+  const url = campo.value.trim();
   if (!url) {
-    errorDiv.textContent = 'Por favor, ingrese la URL del dataset';
-    errorDiv.classList.remove('hidden');
+    mostrarError('step1-error', 'Falta la URL del dataset. Si no está en el portal, elegí "Carga manual".', { campos: ['andino-url'] });
+    campo.focus();
     return;
   }
 
-  // Mostrar loading
-  errorDiv.classList.add('hidden');
-  loadingDiv.classList.remove('hidden');
-  btnSiguiente.disabled = true;
-
+  mostrarError('step1-error', null, { campos: ['andino-url'] });
+  siguiente.disabled = true;
+  siguiente.textContent = 'Buscando en el portal…';
+  let importado = null;
+  let error = null;
   try {
     const response = await fetch(`${CONFIG.API_URL}/andino/fetch?url=${encodeURIComponent(url)}`);
     const result = await response.json();
-
-    loadingDiv.classList.add('hidden');
-    btnSiguiente.disabled = false;
-
-    if (!response.ok || !result.success) {
-      // Mostrar error y permitir continuar manualmente
-      errorDiv.innerHTML = `
-        <strong>⚠️ Error de importación</strong><br>
-        ${Utils.escapeHtml(result.error || 'No se pudo obtener información del portal')}<br>
-        <span class="ad-chico">Puede continuar con la carga manual haciendo clic en "Carga manual".</span>
-      `;
-      errorDiv.classList.remove('hidden');
-      return;
-    }
-
-    // Guardar área de referencia de Andino
-    andinoAreaReferencia = result.data.area_responsable_texto || null;
-
-    // Éxito: cerrar paso 1 y abrir paso 2 con datos pre-llenados
-    closeStep1Modal();
-    openModal(null, result.data);
-
-  } catch (error) {
-    console.error('Error consultando Andino:', error);
-    loadingDiv.classList.add('hidden');
-    btnSiguiente.disabled = false;
-    errorDiv.innerHTML = `
-      <strong>⚠️ Error de conexión</strong><br>
-      No se pudo conectar con el servidor. Puede continuar con la carga manual.
-    `;
-    errorDiv.classList.remove('hidden');
+    if (!response.ok || !result.success) error = textoDeErrorDelPortal(result.error);
+    else importado = result.data;
+  } catch (falla) {
+    console.error('Error consultando Andino:', falla);
+    error = 'No se pudo conectar con el servidor. Podés seguir con la carga manual.';
   }
+  if (apertura !== paso1.apertura || document.getElementById('modal-step1').hidden) return;
+
+  siguiente.disabled = false;
+  siguiente.textContent = 'Siguiente';
+  if (error) {
+    mostrarError('step1-error', error, { campos: ['andino-url'] });
+    return;
+  }
+  // El área del portal es solo una referencia: se muestra arriba del selector de área
+  andinoAreaReferencia = importado.area_responsable_texto || null;
+  closeStep1Modal();
+  openModal(null, importado);
 }
 
 // =====================================================
-// PASO 2: Modal Formulario Completo
+// FORMULARIO DEL DATASET: alta y edición (spec 8.4)
 // =====================================================
+// "Datos del dataset" como antes y "Actualización y pedido": frecuencia, gestión, tipo de pedido con su sugerencia, "Cargado
+// en el portal el", "Datos al" y la próxima con mes y año, "Qué se solicita" con el aviso por las frases de período y la
+// vista previa de la nota. Lo puro (el cuerpo del PUT/POST, los selectores, las sugerencias) está en admin-fechas.js.
+
+// El formulario abierto:
+// - original: el dataset de GET /datasets/:id al editar; null en un alta;
+// - tipoAMano: en un alta, la persona eligió el tipo de pedido (si no, el tipo sigue al sugerido);
+// - soloAnio: "Datos al" se elige solo con el año (el tipo es ejercicio);
+// - hoy: la fecha de Argentina, una vez por apertura;
+// - apertura: cuenta las aperturas, así la respuesta de un envío no cae en otra;
+// - enviando: se está mandando la propuesta (el botón no se puede apretar);
+// - secuencia, demora, clave: la vista previa (cada pedido cuenta, se espera un instante antes de pedir y uno igual al
+//   último no se repite);
+// - sugerencia, alerta: lo último que se escribió en la sugerencia y en el aviso (no se reescriben si no cambian).
+const edicion = {
+  original: null, tipoAMano: false, soloAnio: false, hoy: null, apertura: 0, enviando: false,
+  secuencia: 0, demora: null, clave: null, sugerencia: null, alerta: null
+};
+// La vista previa espera este tiempo (ms) después del último cambio antes de pedirle el pedido al servidor
+const DEMORA_DE_VISTA_PREVIA = 250;
+const CAMPOS_DE_DATOS_AL = ['form-datos-mes', 'form-datos-anio'];
+const CAMPOS_DE_PROXIMA = ['form-prox-mes', 'form-prox-anio'];
+
+// Los oyentes del paso 1, del formulario y de sus ventanas. En DOMContentLoaded
+function prepararFormulario() {
+  document.getElementById('btn-nuevo-dataset').addEventListener('click', (evento) => openStep1Modal(evento.currentTarget));
+  document.getElementById('form-paso1').addEventListener('submit', fetchAndContinue);
+  document.getElementById('btn-carga-manual').addEventListener('click', skipToManualEntry);
+  document.getElementById('dataset-form').addEventListener('submit', enviarFormulario);
+  const formulario = document.getElementById('dataset-form');
+  formulario.addEventListener('change', alCambiarCampoDelFormulario);
+  formulario.addEventListener('input', alEscribirEnElFormulario);
+  formulario.addEventListener('click', alHacerClicEnElFormulario);
+  document.getElementById('btn-confirm-update').addEventListener('click', confirmUpdateFromAndino);
+  document.getElementById('form-area-rapida').addEventListener('submit', saveQuickArea);
+  document.getElementById('btn-confirmar-eliminar').addEventListener('click', confirmDelete);
+}
+
+function formularioAbierto() {
+  return !document.getElementById('modal-dataset').hidden;
+}
 
 /**
- * Abre el modal del formulario
- * @param {Object|null} dataset - Dataset existente para editar, o null para nuevo
- * @param {Object|null} andinoData - Datos importados de Andino para pre-llenar
+ * Abre el formulario.
+ * @param {Object|null} dataset - el de GET /datasets/:id para editarlo, o null para un alta
+ * @param {Object|null} andinoData - lo importado del portal en el paso 1 (título, descripción, URL y formatos)
+ * @param {Element} [origen] - lo que recibe el foco al cerrarlo
  */
-function openModal(dataset = null, andinoData = null) {
-  const modal = document.getElementById('modal-dataset');
-  const form = document.getElementById('dataset-form');
-  const title = document.getElementById('modal-title');
-  const andinoUpdateSection = document.getElementById('andino-update-section');
-  const andinoRefSection = document.getElementById('andino-area-referencia');
+function openModal(dataset = null, andinoData = null, origen = undefined) {
+  document.getElementById('dataset-form').reset();
+  const hoy = hoyEnArgentina();
+  Object.assign(edicion, {
+    original: dataset, tipoAMano: false, hoy, apertura: edicion.apertura + 1, enviando: false, clave: null, sugerencia: null, alerta: null
+  });
 
-  form.reset();
-  document.getElementById('dataset-id').value = '';
-  currentEditDataset = null;
+  const { titulo, subtitulo } = tituloDelFormulario({ dataset, importado: Boolean(andinoData) });
+  document.getElementById('form-titulo').textContent = titulo;
+  document.getElementById('form-subtitulo').textContent = subtitulo;
+  const boton = document.getElementById('submit-btn');
+  boton.textContent = textoDelBotonDeProponer();
+  boton.disabled = false;
 
-  // El aviso de "no realizaste ningún cambio" es del intento anterior: se limpia al abrir (spec 8.6, arreglo 6)
-  const avisoSinCambios = document.getElementById('modal-form-error');
-  if (avisoSinCambios) avisoSinCambios.style.display = 'none';
+  // Los errores, también el aviso de "sin cambios", son del intento anterior (spec 8.6, arreglo 6)
+  limpiarErroresDelFormulario();
 
-  // Resetear formatos seleccionados
+  // Datos del dataset: los guardados o, en un alta, lo importado del portal. "Cargado en el portal el" arranca en hoy
+  const campos = dataset
+    ? {
+      titulo: dataset.titulo, area_id: dataset.area_id, descripcion: dataset.descripcion,
+      tema_principal_id: dataset.tema_principal_id, tema_secundario_id: dataset.tema_secundario_id,
+      frecuencia_id: dataset.frecuencia_id, tipo_gestion: dataset.tipo_gestion, url_dataset: dataset.url_dataset,
+      observaciones: dataset.observaciones, que_se_solicita: dataset.que_se_solicita,
+      ultima_actualizacion: soloFecha(dataset.ultima_actualizacion)
+    }
+    : { titulo: andinoData?.titulo, descripcion: andinoData?.descripcion, url_dataset: andinoData?.url_dataset, ultima_actualizacion: hoy };
+  for (const [id, valor] of Object.entries(campos)) document.getElementById(id).value = valor ?? '';
+  // La carga no puede ser posterior a hoy; una guardada que ya lo es (un dato viejo) no frena el envío si no se toca: el
+  // servidor solo la revisa si cambia
+  const cargado = soloFecha(campos.ultima_actualizacion);
+  document.getElementById('ultima_actualizacion').max = cargado && cargado > hoy ? cargado : hoy;
+
   formatosSeleccionados.clear();
-
-  // Ocultar sección de referencia de Andino por defecto
-  andinoRefSection.classList.add('hidden');
-
-  if (dataset) {
-    // MODO EDICIÓN
-    title.textContent = 'Editar Dataset';
-    currentEditDataset = dataset;
-    document.getElementById('dataset-id').value = dataset.id;
-    document.getElementById('titulo').value = dataset.titulo || '';
-    document.getElementById('area_id').value = dataset.area_id || '';
-    document.getElementById('descripcion').value = dataset.descripcion || '';
-    document.getElementById('tema_principal_id').value = dataset.tema_principal_id || '';
-    document.getElementById('tema_secundario_id').value = dataset.tema_secundario_id || '';
-    document.getElementById('frecuencia_id').value = dataset.frecuencia_id || '';
-    document.getElementById('ultima_actualizacion').value = dataset.ultima_actualizacion ? dataset.ultima_actualizacion.split('T')[0] : '';
-    document.getElementById('proxima_actualizacion').value = dataset.proxima_actualizacion ? dataset.proxima_actualizacion.split('T')[0] : '';
-    document.getElementById('url_dataset').value = dataset.url_dataset || '';
-    document.getElementById('observaciones').value = dataset.observaciones || '';
-    document.getElementById('que_se_solicita').value = dataset.que_se_solicita || '';
-    document.getElementById('tipo_gestion').value = dataset.tipo_gestion || '';
-
-    // Cargar formatos existentes
-    if (dataset.formatos_array && Array.isArray(dataset.formatos_array)) {
-      dataset.formatos_array.forEach(f => formatosSeleccionados.add(f.id));
-    }
-
-    // Mostrar botón de actualizar desde portal si tiene URL
-    if (dataset.url_dataset && dataset.url_dataset.includes('datos.comodoro.gov.ar')) {
-      andinoUpdateSection.classList.remove('hidden');
-    } else {
-      andinoUpdateSection.classList.add('hidden');
-    }
-  } else {
-    // MODO NUEVO
-    title.textContent = 'Nuevo Dataset - Paso 2';
-    andinoUpdateSection.classList.add('hidden');
-
-    // Si hay datos de Andino, pre-llenar
-    if (andinoData) {
-      document.getElementById('titulo').value = andinoData.titulo || '';
-      document.getElementById('descripcion').value = andinoData.descripcion || '';
-      document.getElementById('url_dataset').value = andinoData.url_dataset || '';
-
-      // Pre-seleccionar formatos importados de Andino
-      if (andinoData.formatos && Array.isArray(andinoData.formatos)) {
-        preseleccionarFormatosPorNombre(andinoData.formatos);
-      }
-
-      // Mostrar área de referencia de Andino
-      if (andinoAreaReferencia) {
-        document.getElementById('andino-area-texto').textContent = andinoAreaReferencia;
-        andinoRefSection.classList.remove('hidden');
-      }
-    }
-  }
-
-  // Renderizar chips de formatos
+  if (dataset && Array.isArray(dataset.formatos_array)) dataset.formatos_array.forEach((f) => formatosSeleccionados.add(Number(f.id)));
+  if (!dataset && andinoData) preseleccionarFormatosPorNombre(andinoData.formatos);
   renderizarChipsFormatos();
 
-  modal.classList.add('active');
+  // "Actualizar desde portal" solo al editar un dataset del portal; el área del portal, solo en un alta importada
+  document.getElementById('andino-update-section').hidden = !(dataset && String(dataset.url_dataset ?? '').includes('datos.comodoro.gov.ar'));
+  const referencia = !dataset && andinoData ? andinoAreaReferencia : null;
+  document.getElementById('andino-area-texto').textContent = referencia ?? '';
+  document.getElementById('andino-area-referencia').hidden = !referencia;
+
+  // Actualización y pedido: el tipo guardado (o, en un alta, el sugerido), siempre coherente con la frecuencia
+  const meses = mesesDeLaFrecuencia(frecuencias, valorDe('frecuencia_id'));
+  const gestion = valorDe('tipo_gestion');
+  const tipo = tipoCoherente(dataset ? dataset.tipo_pedido : tipoSugeridoDe(gestion, meses), meses, gestion);
+  document.getElementById('tipo_pedido').innerHTML = htmlDeTiposDePedido(meses, tipo);
+  const datosAl = soloFecha(dataset?.datos_al);
+  pintarDatosAl({
+    mes: datosAl ? Number(datosAl.slice(5, 7)) : '', anio: datosAl ? Number(datosAl.slice(0, 4)) : '',
+    sinDato: !datosAl, soloAnio: tipo === 'ejercicio'
+  });
+  const proxima = selectoresDeProxima(dataset?.proxima_actualizacion, hoy);
+  document.getElementById('form-prox-mes').innerHTML = proxima.mes;
+  document.getElementById('form-prox-anio').innerHTML = proxima.anio;
+
+  actualizarFormulario();
+  abrirVentana('modal-dataset', document.getElementById('titulo'), origen);
 }
 
+function textoDelBotonDeProponer() {
+  return edicion.original ? 'Proponer cambios' : 'Proponer alta';
+}
+
+// Cierra el formulario. Una vista previa en camino se descarta
 function closeModal() {
-  document.getElementById('modal-dataset').classList.remove('active');
-  currentEditDataset = null;
+  clearTimeout(edicion.demora);
+  edicion.secuencia++;
+  edicion.clave = null;
   andinoAreaReferencia = null;
+  cerrarVentana('modal-dataset');
 }
 
-async function editDataset(id) {
+async function editDataset(id, origen) {
   // Verificar bloqueo por cambios pendientes
   if (datasetEstaBloqueado(id)) {
     mostrarMensajeBloqueo();
@@ -696,7 +811,7 @@ async function editDataset(id) {
   try {
     const dataset = await API.getDataset(id);
     if (dataset) {
-      openModal(dataset);
+      openModal(dataset, null, origen);
     }
   } catch (error) {
     console.error('Error cargando dataset:', error);
@@ -704,106 +819,405 @@ async function editDataset(id) {
   }
 }
 
-// =====================================================
-// ACTUALIZAR DESDE PORTAL (en modo edición)
-// =====================================================
+// Lo que dicen los campos del formulario, como lo reciben cuerpoDelDataset y problemasDelFormulario (admin-fechas.js)
+function formularioDelDataset() {
+  return {
+    titulo: valorDe('titulo'), area_id: valorDe('area_id'), descripcion: valorDe('descripcion'),
+    tema_principal_id: valorDe('tema_principal_id'), tema_secundario_id: valorDe('tema_secundario_id'),
+    frecuencia_id: valorDe('frecuencia_id'), formatos: Array.from(formatosSeleccionados),
+    url_dataset: valorDe('url_dataset'), observaciones: valorDe('observaciones'), que_se_solicita: valorDe('que_se_solicita'),
+    tipo_gestion: valorDe('tipo_gestion'), tipo_pedido: valorDe('tipo_pedido'),
+    meses: mesesDeLaFrecuencia(frecuencias, valorDe('frecuencia_id')),
+    cargado: valorDe('ultima_actualizacion'),
+    datosMes: valorDe('form-datos-mes'), datosAnio: valorDe('form-datos-anio'),
+    proxMes: valorDe('form-prox-mes'), proxAnio: valorDe('form-prox-anio'),
+    original: edicion.original
+  };
+}
 
-function updateFromAndino() {
-  // Verificar que hay URL del dataset
-  const url = document.getElementById('url_dataset').value.trim();
-  if (!url || !url.includes('datos.comodoro.gov.ar')) {
-    avisarError('No hay una URL válida del portal para actualizar');
+// Los cambios de los selectores y de los campos (por delegación: el formulario escucha change, input y click)
+function alCambiarCampoDelFormulario(evento) {
+  const { id } = evento.target;
+  if (id === 'frecuencia_id' || id === 'tipo_gestion') alCambiarFrecuenciaOGestion();
+  else if (id === 'tipo_pedido') alCambiarTipo();
+  else if (CAMPOS_DE_DATOS_AL.includes(id)) alCambiarDatosAlDelFormulario();
+  else if (CAMPOS_DE_PROXIMA.includes(id)) {
+    mostrarError('form-error-proxima', null, { campos: CAMPOS_DE_PROXIMA });
+    alCambiarElFormularioDelDataset();
+  } else if (id === 'formato-dropdown') alAgregarFormato(evento.target);
+  else alCambiarElFormularioDelDataset();
+}
+
+// Lo que se escribe (los selectores ya pasan por change)
+function alEscribirEnElFormulario(evento) {
+  if (evento.target.tagName !== 'SELECT') alCambiarElFormularioDelDataset();
+}
+
+function alHacerClicEnElFormulario(evento) {
+  const formato = evento.target.closest('[data-formato]');
+  if (formato) alHacerClicEnFormatos(formato);
+  else if (evento.target.closest('[data-usar-sugerido]')) usarSugerido();
+  else if (evento.target.closest('#btn-actualizar-portal')) updateFromAndino();
+  else if (evento.target.closest('#btn-nueva-area')) openQuickAreaModal();
+}
+
+/**
+ * Cambió la frecuencia o la gestión. El tipo queda coherente con la frecuencia (Eventual ⇔ eventual, spec 8.4); en un alta,
+ * mientras la persona no elija otro, sigue al sugerido. La próxima puede haber pasado a obligatoria o a vacía.
+ */
+function alCambiarFrecuenciaOGestion() {
+  const meses = mesesDeLaFrecuencia(frecuencias, valorDe('frecuencia_id'));
+  const gestion = valorDe('tipo_gestion');
+  const sigueAlSugerido = !edicion.original && !edicion.tipoAMano;
+  pintarTipo(tipoCoherente(sigueAlSugerido ? tipoSugeridoDe(gestion, meses) : valorDe('tipo_pedido'), meses, gestion), meses);
+  mostrarError('form-error-proxima', null, { campos: CAMPOS_DE_PROXIMA });
+  alCambiarElFormularioDelDataset();
+}
+
+// La persona eligió un tipo de pedido: desde ahora el tipo no sigue al sugerido
+function alCambiarTipo() {
+  edicion.tipoAMano = true;
+  cambiarModoDeDatosAl(valorDe('tipo_pedido'));
+  alCambiarElFormularioDelDataset();
+}
+
+// "Usar el sugerido": el tipo pasa al sugerido (y en un alta lo vuelve a seguir). El botón desaparece: el foco va al tipo
+function usarSugerido() {
+  const meses = mesesDeLaFrecuencia(frecuencias, valorDe('frecuencia_id'));
+  const gestion = valorDe('tipo_gestion');
+  pintarTipo(tipoCoherente(tipoSugeridoDe(gestion, meses), meses, gestion), meses);
+  edicion.tipoAMano = false;
+  alCambiarElFormularioDelDataset();
+  document.getElementById('tipo_pedido').focus();
+}
+
+// El selector de tipo con los tipos de esa frecuencia y `tipo` elegido; "Datos al" cambia de forma si entra o sale del ejercicio
+function pintarTipo(tipo, meses) {
+  document.getElementById('tipo_pedido').innerHTML = htmlDeTiposDePedido(meses, tipo);
+  cambiarModoDeDatosAl(tipo);
+}
+
+// En un ejercicio "Datos al" se elige solo con el año; si el tipo entra o sale del ejercicio, los selectores se rearman sin
+// perder lo elegido (ni "Sin dato")
+function cambiarModoDeDatosAl(tipo) {
+  const soloAnio = tipo === 'ejercicio';
+  if (soloAnio === edicion.soloAnio) return;
+  const mes = valorDe('form-datos-mes');
+  const anio = valorDe('form-datos-anio');
+  pintarDatosAl({ mes, anio, sinDato: edicion.soloAnio ? anio === '' : mes === '', soloAnio });
+  mostrarError('form-error-datos', null, { campos: CAMPOS_DE_DATOS_AL });
+}
+
+// Los selectores de "Datos al" (selectoresDeDatosAl, en admin-fechas.js). En un ejercicio, la etiqueta apunta al año
+function pintarDatosAl({ mes, anio, sinDato, soloAnio }) {
+  const selectores = selectoresDeDatosAl({ mes, anio, sinDato, soloAnio, hoy: edicion.hoy });
+  const selectorMes = document.getElementById('form-datos-mes');
+  const selectorAnio = document.getElementById('form-datos-anio');
+  selectorMes.innerHTML = selectores.mes;
+  selectorAnio.innerHTML = selectores.anio;
+  selectorMes.hidden = selectores.mesOculto;
+  selectorAnio.disabled = selectores.anioDeshabilitado;
+  selectorAnio.setAttribute('aria-label', soloAnio ? 'Ejercicio' : 'Año');
+  document.getElementById('form-l-datos').htmlFor = soloAnio ? 'form-datos-anio' : 'form-datos-mes';
+  document.getElementById('form-ayuda-datos').hidden = !soloAnio;
+  edicion.soloAnio = soloAnio;
+}
+
+// Cambió "Datos al": con "Sin dato" en el mes, el año no cuenta y queda deshabilitado
+function alCambiarDatosAlDelFormulario() {
+  if (!edicion.soloAnio) document.getElementById('form-datos-anio').disabled = valorDe('form-datos-mes') === '';
+  mostrarError('form-error-datos', null, { campos: CAMPOS_DE_DATOS_AL });
+  alCambiarElFormularioDelDataset();
+}
+
+// Cualquier cambio: el error de un envío anterior ya no corresponde a lo que dice el formulario
+function alCambiarElFormularioDelDataset() {
+  mostrarError('form-error', null);
+  actualizarFormulario();
+}
+
+/**
+ * Pinta lo que depende de los campos: la sugerencia del tipo, Eventual (tipo fijo y próxima deshabilitada, con el aviso),
+ * el aviso en ámbar por las frases de período (no bloquea) y la vista previa.
+ */
+function actualizarFormulario() {
+  const f = formularioDelDataset();
+  const eventual = f.meses === null;
+
+  const sugerencia = htmlDeSugerencia(f.tipo_pedido, f.meses === undefined ? null : tipoSugeridoDe(f.tipo_gestion, f.meses));
+  if (sugerencia !== edicion.sugerencia) {
+    document.getElementById('form-sugerencia').innerHTML = sugerencia;
+    edicion.sugerencia = sugerencia;
+  }
+
+  document.getElementById('tipo_pedido').disabled = eventual;
+  for (const id of CAMPOS_DE_PROXIMA) document.getElementById(id).disabled = eventual;
+  const avisoEventual = document.getElementById('form-aviso-eventual');
+  avisoEventual.textContent = eventual ? textoDeProximaEventual(edicion.original?.proxima_actualizacion) : '';
+  avisoEventual.hidden = !eventual;
+
+  const alerta = avisarFrases(f.tipo_pedido) ? textoDeAvisoDeFrases(frasesDePeriodo(f.que_se_solicita)) : null;
+  if (alerta !== edicion.alerta) {
+    document.getElementById('form-alerta-texto').textContent = alerta ?? '';
+    document.getElementById('form-alerta-frases').hidden = !alerta;
+    edicion.alerta = alerta;
+  }
+
+  pintarVistaPrevia(f);
+}
+
+/**
+ * La vista previa "Así va a salir en la próxima nota". El título, la fecha y "Qué se solicita" salen del formulario; los
+ * datos solicitados los calcula el servidor (API.calculoPedido), un instante después del último cambio y solo si cambió
+ * algo de lo que los define. Sin frecuencia con meses o sin próxima no hay pedido: "—".
+ */
+function pintarVistaPrevia(f) {
+  const cuerpo = cuerpoDelDataset(f);
+  const textos = textosDeVistaPrevia({
+    titulo: f.titulo, gestion: f.tipo_gestion, proxima: cuerpo.proxima_actualizacion, solicita: f.que_se_solicita
+  });
+  document.getElementById('form-nota-cab').textContent = textos.cabecera;
+  document.getElementById('form-nota-titulo').textContent = textos.titulo;
+  document.getElementById('form-nota-fecha').textContent = textos.fecha;
+  document.getElementById('form-nota-solicita').textContent = textos.solicita;
+
+  const parametros = { tipo: f.tipo_pedido, meses: f.meses, proxima: cuerpo.proxima_actualizacion, datos_al: cuerpo.datos_al };
+  const clave = JSON.stringify(parametros);
+  if (clave === edicion.clave) return;
+  edicion.clave = clave;
+  clearTimeout(edicion.demora);
+  const secuencia = ++edicion.secuencia;
+  if (!f.tipo_pedido || !Number.isInteger(f.meses) || !cuerpo.proxima_actualizacion) {
+    mostrarPedidoDeVistaPrevia(null, null);
+    return;
+  }
+  document.getElementById('form-nota-periodo').setAttribute('aria-busy', 'true');
+  edicion.demora = setTimeout(() => pedirVistaPrevia(parametros, secuencia), DEMORA_DE_VISTA_PREVIA);
+}
+
+// Le pide al servidor el pedido de la vista previa. Si mientras tanto se pidió otro (o se cerró el formulario), la respuesta
+// se descarta. Un error (un 400) se muestra en la vista previa, sin bloquear el envío
+async function pedirVistaPrevia(parametros, secuencia) {
+  let pedido = null;
+  let error = null;
+  try {
+    const respuesta = await API.calculoPedido(parametros);
+    pedido = respuesta?.pedido ?? null;
+  } catch (falla) {
+    error = textoDeError(falla, 'No se pudo calcular la vista previa. Probá de nuevo.');
+  }
+  if (secuencia !== edicion.secuencia) return;
+  mostrarPedidoDeVistaPrevia(pedido, error);
+}
+
+function mostrarPedidoDeVistaPrevia(pedido, error) {
+  const periodo = document.getElementById('form-nota-periodo');
+  periodo.removeAttribute('aria-busy');
+  const texto = pedido && typeof pedido.texto === 'string' && pedido.texto ? pedido.texto : SIN_DATO;
+  if (periodo.textContent !== texto) periodo.textContent = texto;
+  const lugar = document.getElementById('form-nota-error');
+  lugar.textContent = error ?? '';
+  lugar.hidden = !error;
+}
+
+function mostrarErrorDeFormatos(texto) {
+  mostrarError('form-error-formatos', texto);
+  document.getElementById('chips-container').classList.toggle('con-error', Boolean(texto));
+}
+
+// Los errores de cada campo (problemasDelFormulario), en su lugar y marcando sus campos
+function mostrarProblemas({ formatos = null, datosAl = null, proxima = null } = {}) {
+  mostrarErrorDeFormatos(formatos);
+  mostrarError('form-error-datos', datosAl, { campos: CAMPOS_DE_DATOS_AL });
+  mostrarError('form-error-proxima', proxima, { campos: CAMPOS_DE_PROXIMA });
+}
+
+function limpiarErroresDelFormulario() {
+  mostrarProblemas();
+  mostrarError('form-error', null);
+  mostrarError('portal-error', null);
+}
+
+// El foco va al primer campo con error (en el orden del formulario)
+function enfocarElPrimerProblema({ formatos, datosAl, proxima }) {
+  let campo = null;
+  if (formatos) campo = document.querySelector('#chips-container [data-formato]') ?? document.getElementById('formato-dropdown');
+  else if (datosAl) campo = document.getElementById(edicion.soloAnio ? 'form-datos-anio' : 'form-datos-mes');
+  else if (proxima) campo = document.getElementById(valorDe('form-prox-mes') ? 'form-prox-anio' : 'form-prox-mes');
+  if (campo) campo.focus();
+}
+
+/**
+ * "Proponer cambios" o "Proponer alta": revisa lo que el formulario exige (formatos, "Datos al", la próxima) y manda el
+ * cuerpo armado por cuerpoDelDataset. El botón queda deshabilitado mientras tanto. Los errores, también el de "sin
+ * cambios", quedan en la ventana (spec 8.6, arreglos 1 y 6). Si sale bien, avisa, cierra y vuelve a pedir la lista y los
+ * pendientes: el dataset pasa a "Cambio pendiente".
+ */
+async function enviarFormulario(evento) {
+  evento.preventDefault();
+  if (edicion.enviando) return;
+  const f = formularioDelDataset();
+  const problemas = problemasDelFormulario(f, edicion.hoy);
+  mostrarProblemas(problemas);
+  mostrarError('form-error', null);
+  if (problemas.formatos || problemas.datosAl || problemas.proxima) {
+    enfocarElPrimerProblema(problemas);
     return;
   }
 
-  // Abrir modal de confirmación
-  document.getElementById('confirm-update-error').classList.add('hidden');
-  document.getElementById('confirm-update-loading').classList.add('hidden');
-  document.getElementById('btn-confirm-update').disabled = false;
-  document.getElementById('modal-confirm-update').classList.add('active');
+  const { apertura, original } = edicion;
+  const boton = document.getElementById('submit-btn');
+  edicion.enviando = true;
+  boton.disabled = true;
+  boton.textContent = 'Proponiendo…';
+  let propuesto = false;
+  try {
+    const cuerpo = cuerpoDelDataset(f);
+    if (original) await API.updateDataset(original.id, cuerpo);
+    else await API.createDataset(cuerpo);
+    propuesto = true;
+  } catch (error) {
+    const mensaje = mensajeDelEnvio(error);
+    // Si el formulario ya se cerró (o es otra apertura), el error va en un aviso
+    if (edicion.apertura === apertura && formularioAbierto()) mostrarErrorDelEnvio(mensaje);
+    else avisarError(mensaje);
+  } finally {
+    if (edicion.apertura === apertura) {
+      edicion.enviando = false;
+      boton.disabled = false;
+      boton.textContent = textoDelBotonDeProponer();
+    }
+  }
+  if (propuesto) await despuesDeProponerElDataset(apertura, Boolean(original));
+}
+
+// El error del envío, al final del formulario, a la vista
+function mostrarErrorDelEnvio(mensaje) {
+  mostrarError('form-error', mensaje);
+  const lugar = document.getElementById('form-error');
+  if (typeof lugar.scrollIntoView === 'function') lugar.scrollIntoView({ block: 'nearest' });
+}
+
+/**
+ * La propuesta se hizo: avisa y vuelve a pedir la lista (el dataset pasa a "Cambio pendiente"). El formulario se cierra solo
+ * si sigue abierta la misma apertura. Si el botón que lo abrió ya no está (la lista se rearmó), el foco va a la lista.
+ */
+async function despuesDeProponerElDataset(apertura, eraUnaEdicion) {
+  avisarExito(eraUnaEdicion
+    ? 'Cambios propuestos. Quedan pendientes de aprobación en Mi Perfil.'
+    : 'Alta propuesta. Queda pendiente de aprobación en Mi Perfil.');
+  const mismaVentana = edicion.apertura === apertura && formularioAbierto();
+  const origen = mismaVentana ? origenDe('modal-dataset') : null;
+  if (mismaVentana) closeModal();
+  try {
+    await recargarLista();
+  } catch (error) {
+    console.error('Error recargando la lista después de proponer:', error);
+    avisarError('La propuesta quedó hecha, pero no se pudo recargar la lista. Recargá la página.');
+  }
+  enfocarLaListaSiSeRearmo(origen);
+}
+
+// =====================================================
+// ACTUALIZAR DESDE PORTAL (al editar; spec 8.4: el flujo no cambia)
+// =====================================================
+
+// Cuenta las aperturas de la confirmación: la respuesta del portal que llega después de cancelarla se descarta
+const portal = { apertura: 0 };
+
+function updateFromAndino() {
+  const url = valorDe('url_dataset').trim();
+  if (!url || !url.includes('datos.comodoro.gov.ar')) {
+    mostrarError('portal-error', 'No hay una URL del portal (datos.comodoro.gov.ar) para actualizar');
+    return;
+  }
+  mostrarError('portal-error', null);
+  portal.apertura++;
+  mostrarError('confirm-update-error', null);
+  const boton = document.getElementById('btn-confirm-update');
+  boton.disabled = false;
+  boton.textContent = 'Actualizar';
+  abrirVentana('modal-confirm-update', boton);
 }
 
 function closeConfirmUpdateModal() {
-  document.getElementById('modal-confirm-update').classList.remove('active');
+  cerrarVentana('modal-confirm-update');
 }
 
+// Trae del portal el título y la descripción (los reemplaza) y los formatos (los suma a los elegidos)
 async function confirmUpdateFromAndino() {
-  const url = document.getElementById('url_dataset').value.trim();
-  const errorDiv = document.getElementById('confirm-update-error');
-  const loadingDiv = document.getElementById('confirm-update-loading');
-  const btnConfirm = document.getElementById('btn-confirm-update');
+  const apertura = portal.apertura;
+  const boton = document.getElementById('btn-confirm-update');
+  if (boton.disabled) return;
+  const url = valorDe('url_dataset').trim();
+  boton.disabled = true;
+  boton.textContent = 'Actualizando…';
+  mostrarError('confirm-update-error', null);
 
-  loadingDiv.classList.remove('hidden');
-  errorDiv.classList.add('hidden');
-  btnConfirm.disabled = true;
-
+  let importado = null;
+  let error = null;
   try {
     const response = await fetch(`${CONFIG.API_URL}/andino/fetch?url=${encodeURIComponent(url)}`);
     const result = await response.json();
-
-    loadingDiv.classList.add('hidden');
-
-    if (!response.ok || !result.success) {
-      errorDiv.textContent = result.error || 'No se pudo obtener información del portal';
-      errorDiv.classList.remove('hidden');
-      btnConfirm.disabled = false;
-      return;
-    }
-
-    // Actualizar título y descripción
-    document.getElementById('titulo').value = result.data.titulo || '';
-    document.getElementById('descripcion').value = result.data.descripcion || '';
-
-    // Actualizar formatos si vienen del portal
-    if (result.data.formatos && Array.isArray(result.data.formatos) && result.data.formatos.length > 0) {
-      // Agregar los formatos importados (sin eliminar los existentes)
-      preseleccionarFormatosPorNombre(result.data.formatos);
-      renderizarChipsFormatos();
-    }
-
-    // Cerrar modal de confirmación
-    closeConfirmUpdateModal();
-
-    avisarExito('Datos actualizados desde el portal. Recordá guardar los cambios.');
-
-  } catch (error) {
-    console.error('Error actualizando desde Andino:', error);
-    loadingDiv.classList.add('hidden');
-    btnConfirm.disabled = false;
-    errorDiv.textContent = 'Error de conexión. Intente nuevamente.';
-    errorDiv.classList.remove('hidden');
+    if (!response.ok || !result.success) error = result.error || 'No se pudo obtener información del portal';
+    else importado = result.data;
+  } catch (falla) {
+    console.error('Error actualizando desde Andino:', falla);
+    error = 'Error de conexión. Probá de nuevo.';
   }
+  if (apertura !== portal.apertura || document.getElementById('modal-confirm-update').hidden) return;
+
+  boton.disabled = false;
+  boton.textContent = 'Actualizar';
+  if (error) {
+    mostrarError('confirm-update-error', error);
+    return;
+  }
+
+  document.getElementById('titulo').value = importado.titulo || '';
+  document.getElementById('descripcion').value = importado.descripcion || '';
+  // Los formatos del portal se suman a los elegidos (no se saca ninguno)
+  if (Array.isArray(importado.formatos) && importado.formatos.length > 0) {
+    preseleccionarFormatosPorNombre(importado.formatos);
+    renderizarChipsFormatos();
+    if (formatosSeleccionados.size > 0) mostrarErrorDeFormatos(null);
+  }
+  closeConfirmUpdateModal();
+  alCambiarElFormularioDelDataset();
+  avisarExito('Datos actualizados desde el portal. Recordá proponer los cambios.');
 }
 
 // =====================================================
-// MODAL CREAR ÁREA RÁPIDA
+// NUEVA ÁREA (desde el formulario)
 // =====================================================
 
 function openQuickAreaModal() {
-  document.getElementById('quick-area-nombre').value = '';
-  document.getElementById('quick-area-error').classList.add('hidden');
-  document.getElementById('modal-quick-area').classList.add('active');
-  setTimeout(() => document.getElementById('quick-area-nombre').focus(), 100);
+  const campo = document.getElementById('quick-area-nombre');
+  campo.value = '';
+  mostrarError('quick-area-error', null, { campos: ['quick-area-nombre'] });
+  abrirVentana('modal-quick-area', campo);
 }
 
 function closeQuickAreaModal() {
-  document.getElementById('modal-quick-area').classList.remove('active');
+  cerrarVentana('modal-quick-area');
 }
 
-async function saveQuickArea() {
-  const nombre = document.getElementById('quick-area-nombre').value.trim();
-  const errorDiv = document.getElementById('quick-area-error');
+async function saveQuickArea(evento) {
+  evento?.preventDefault();
+  const campo = document.getElementById('quick-area-nombre');
   const btnGuardar = document.getElementById('btn-quick-area-save');
+  if (btnGuardar.disabled) return;
+  const nombre = campo.value.trim();
 
   if (!nombre) {
-    errorDiv.textContent = 'El nombre del área es obligatorio';
-    errorDiv.classList.remove('hidden');
+    mostrarError('quick-area-error', 'El nombre del área es obligatorio', { campos: ['quick-area-nombre'] });
+    campo.focus();
     return;
   }
 
   btnGuardar.disabled = true;
-  btnGuardar.textContent = 'Guardando...';
-  errorDiv.classList.add('hidden');
+  btnGuardar.textContent = 'Guardando…';
+  mostrarError('quick-area-error', null, { campos: ['quick-area-nombre'] });
 
   try {
     const nuevaArea = await API.createArea({ nombre });
@@ -819,83 +1233,10 @@ async function saveQuickArea() {
     closeQuickAreaModal();
     avisarExito('Área creada correctamente');
   } catch (error) {
-    errorDiv.textContent = error.message;
-    errorDiv.classList.remove('hidden');
+    mostrarError('quick-area-error', textoDeError(error, 'No se pudo crear el área. Probá de nuevo.'), { campos: ['quick-area-nombre'] });
   } finally {
     btnGuardar.disabled = false;
     btnGuardar.textContent = 'Guardar';
-  }
-}
-
-// =====================================================
-// SUBMIT FORMULARIO (se registra en DOMContentLoaded)
-// =====================================================
-
-async function enviarFormulario(e) {
-  e.preventDefault();
-
-  // Validar que hay al menos un formato seleccionado
-  if (formatosSeleccionados.size === 0) {
-    avisarError('Debe seleccionar al menos un formato');
-    actualizarEstadoContenedorFormatos();
-    return;
-  }
-
-  const submitBtn = document.getElementById('submit-btn');
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Guardando...';
-
-  const id = document.getElementById('dataset-id').value;
-  const data = {
-    titulo: document.getElementById('titulo').value,
-    area_id: parseInt(document.getElementById('area_id').value),
-    descripcion: document.getElementById('descripcion').value,
-    tema_principal_id: parseInt(document.getElementById('tema_principal_id').value),
-    tema_secundario_id: document.getElementById('tema_secundario_id').value ? parseInt(document.getElementById('tema_secundario_id').value) : null,
-    frecuencia_id: parseInt(document.getElementById('frecuencia_id').value),
-    formatos: Array.from(formatosSeleccionados),
-    ultima_actualizacion: document.getElementById('ultima_actualizacion').value || null,
-    proxima_actualizacion: document.getElementById('proxima_actualizacion').value || null,
-    url_dataset: document.getElementById('url_dataset').value || null,
-    observaciones: document.getElementById('observaciones').value || null,
-    que_se_solicita: document.getElementById('que_se_solicita').value.trim() || null,
-    tipo_gestion: document.getElementById('tipo_gestion').value
-  };
-
-  try {
-    if (id) {
-      await API.updateDataset(id, data);
-      avisarExito('Cambios enviados para aprobación');
-    } else {
-      await API.createDataset(data);
-      avisarExito('Dataset enviado para aprobación');
-    }
-    closeModal();
-    // La lista y los pendientes se vuelven a pedir, con el mismo filtro, búsqueda y página
-    await recargarLista();
-  } catch (error) {
-    // Mensaje especial si no hubo cambios reales - mostrar dentro del modal
-    if (error.message && error.message.includes('No se detectaron cambios')) {
-      // Mostrar error dentro del modal
-      let errorDiv = document.getElementById('modal-form-error');
-      if (!errorDiv) {
-        // Crear div de error si no existe
-        errorDiv = document.createElement('div');
-        errorDiv.id = 'modal-form-error';
-        errorDiv.style.cssText = 'background: #fee2e2; color: #dc2626; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem;';
-        const form = document.getElementById('dataset-form');
-        form.insertBefore(errorDiv, form.firstChild);
-      }
-      errorDiv.innerHTML = '⚠️ No realizaste ningún cambio. Modificá al menos un campo para guardar.';
-      errorDiv.style.display = 'flex';
-      // Scroll al inicio del modal para ver el error
-      document.querySelector('#modal-dataset .modal-body').scrollTop = 0;
-    } else {
-      avisarError(error.message);
-    }
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Guardar';
   }
 }
 
@@ -917,7 +1258,7 @@ function marcarActualizado(id, origen = null) {
 // MODAL ELIMINAR
 // =====================================================
 
-function openDeleteModal(id, nombre) {
+function openDeleteModal(id, nombre, origen) {
   // Verificar bloqueo por cambios pendientes
   if (datasetEstaBloqueado(id)) {
     mostrarMensajeBloqueo();
@@ -926,24 +1267,31 @@ function openDeleteModal(id, nombre) {
 
   deleteId = id;
   document.getElementById('delete-dataset-name').textContent = nombre;
-  document.getElementById('modal-delete').classList.add('active');
+  document.getElementById('btn-confirmar-eliminar').disabled = false;
+  abrirVentana('modal-delete', document.getElementById('btn-cancelar-eliminar'), origen);
 }
 
 function closeDeleteModal() {
   deleteId = null;
-  document.getElementById('modal-delete').classList.remove('active');
+  cerrarVentana('modal-delete');
 }
 
 async function confirmDelete() {
-  if (!deleteId) return;
+  const boton = document.getElementById('btn-confirmar-eliminar');
+  if (!deleteId || boton.disabled) return;
+  const origen = origenDe('modal-delete');
+  boton.disabled = true;
 
   try {
     await API.deleteDataset(deleteId);
     avisarExito('Solicitud de eliminación enviada para aprobación');
     closeDeleteModal();
     await recargarLista();
+    enfocarLaListaSiSeRearmo(origen);
   } catch (error) {
-    avisarError(error.message);
+    avisarError(textoDeError(error, 'No se pudo proponer la eliminación. Probá de nuevo.'));
+  } finally {
+    boton.disabled = false;
   }
 }
 
@@ -985,7 +1333,6 @@ function prepararRegistro() {
   document.getElementById('registrar-opciones').addEventListener('change', alElegirOpcion);
   for (const id of ['registrar-otra-mes', 'registrar-otra-anio']) document.getElementById(id).addEventListener('change', alCambiarElFormulario);
   document.getElementById('registrar-proponer').addEventListener('click', proponerActualizacion);
-  document.addEventListener('keydown', teclaEnPagina);
 }
 
 function registroAbierto() {
@@ -1029,7 +1376,7 @@ function abrirRegistro(id, origen) {
   const anio = document.getElementById('registrar-anio');
   mes.innerHTML = opcionesDeMes(Number(defecto.slice(5, 7)));
   mes.hidden = soloAnio;
-  anio.innerHTML = opcionesDeAnio(PRIMER_ANIO_DE_DATOS, anioDeHoy + 1, Number(defecto.slice(0, 4)));
+  anio.innerHTML = opcionesDeAnio(PRIMER_ANIO_DE_DATOS_AL, anioDeHoy + 1, Number(defecto.slice(0, 4)));
 
   // Paso 2: ninguna de las dos fechas puede ser posterior a hoy
   const recibido = document.getElementById('registrar-recibido');
@@ -1047,6 +1394,8 @@ function abrirRegistro(id, origen) {
 
   mostrarError('registrar-error', null);
   document.getElementById('registrar-proponer').textContent = 'Proponer actualización';
+  // En la pila de ventanas solo para el teclado: el foco al cerrar lo maneja cerrarRegistro
+  apilarVentana(ID_REGISTRO, null);
   document.getElementById('modal-registrar-actualizacion').hidden = false;
   (soloAnio ? anio : mes).focus();
   alCambiarDatosAl();
@@ -1056,6 +1405,7 @@ function abrirRegistro(id, origen) {
 function cerrarRegistro() {
   if (!registroAbierto()) return;
   document.getElementById('modal-registrar-actualizacion').hidden = true;
+  desapilarVentana(ID_REGISTRO);
   registro.secuencia++;
   const { origen, dataset } = registro;
   Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null });
@@ -1338,26 +1688,22 @@ async function despuesDeProponer(apertura) {
   }
 }
 
-// ¿Hay alguna ventana abierta? "Registrar actualización" o cualquiera de las otras de la página (.modal-overlay.active)
-function hayUnaVentanaAbierta() {
-  return registroAbierto() || Boolean(document.querySelector('.modal-overlay.active'));
-}
-
-// El teclado con la ventana abierta: Escape la cierra y Tab no sale de ella
+// El teclado con una ventana abierta (la de más arriba): Escape la cierra y Tab no sale de ella
 function teclaEnPagina(evento) {
-  if (!registroAbierto()) return;
+  const id = ventanaDeArriba();
+  if (!id) return;
   if (evento.key === 'Escape') {
     evento.preventDefault();
-    cerrarRegistro();
+    CIERRE_DE_VENTANA[id]();
   } else if (evento.key === 'Tab') {
-    retenerFocoEnRegistro(evento);
+    retenerFoco(evento, document.querySelector(`#${id} .ad-ventana`));
   }
 }
 
 // Mantiene el foco dentro de la ventana. Entre sus controles Tab se deja (el navegador sabe moverse, también entre los
 // radios); solo se interviene en los bordes (Shift+Tab en el primero, Tab en el último) y si el foco quedó afuera
-function retenerFocoEnRegistro(evento) {
-  const ventana = document.querySelector('#modal-registrar-actualizacion .ad-ventana');
+function retenerFoco(evento, ventana) {
+  if (!ventana) return;
   const enfocables = [...ventana.querySelectorAll('button, select, input, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
     .filter((elemento) => !elemento.disabled && elemento.getClientRects().length > 0);
   if (enfocables.length === 0) return;

@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs';
 import vm from 'vm';
+import { NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, tipoSugerido } from '../services/fechasDatasetReglas.js';
 
 // api.js es un script de navegador: se ejecuta en un contexto aislado y se expone el Utils de verdad, para que el escape
 // que prueban estos tests sea el que usa la página
@@ -2001,5 +2002,689 @@ describe('admin.js: Registrar actualización, la ventana (con una página de men
       assert.equal(armado.llamadas.recargas, 0);
       assert.deepEqual(armado.llamadas.exito, []);
     });
+  });
+});
+
+// =====================================================
+// Formulario del dataset (spec 2026-10-17-fechas-datasets, 8.4): alta y edición, "Actualización y pedido" y la vista previa
+// =====================================================
+
+describe('admin-fechas.js: tipos de pedido del formulario', () => {
+  it('los tipos y sus nombres son los del servidor (NOMBRES_TIPO_PEDIDO), en el mismo orden', () => {
+    assert.deepEqual(plano(vm.runInContext('TIPOS_DE_PEDIDO', admin)), TIPOS_PEDIDO.map((tipo) => [tipo, NOMBRES_TIPO_PEDIDO[tipo]]));
+  });
+
+  it('tipoSugeridoDe: Eventual → eventual, interna → relevamiento, 12 meses o menos → acumulado, más → foto', () => {
+    assert.equal(admin.tipoSugeridoDe('externa', null), 'eventual');
+    assert.equal(admin.tipoSugeridoDe('interna', null), 'eventual');
+    assert.equal(admin.tipoSugeridoDe('interna', 3), 'relevamiento');
+    assert.equal(admin.tipoSugeridoDe('externa', 1), 'acumulado');
+    assert.equal(admin.tipoSugeridoDe('externa', 12), 'acumulado');
+    assert.equal(admin.tipoSugeridoDe('externa', 24), 'foto');
+  });
+
+  it('tipoSugeridoDe es una copia de tipoSugerido del servidor: dan lo mismo', () => {
+    for (const gestion of ['externa', 'interna', '', undefined]) {
+      for (const meses of [null, undefined, 0, -3, 1, 2, 3, 4, 6, 12, 13, 24, 36, 48, 120, 2.5, '3']) {
+        assert.equal(admin.tipoSugeridoDe(gestion, meses), tipoSugerido(gestion, meses), `${gestion} ${meses}`);
+      }
+    }
+  });
+
+  it('tiposPermitidos: con meses, todos menos eventual', () => {
+    const conMeses = TIPOS_PEDIDO.filter((tipo) => tipo !== 'eventual');
+    for (const meses of [1, 3, 12, 24, 120]) assert.deepEqual(plano(admin.tiposPermitidos(meses)), conMeses, String(meses));
+  });
+
+  it('tiposPermitidos: sin meses (la frecuencia Eventual) solo eventual', () => {
+    assert.deepEqual(plano(admin.tiposPermitidos(null)), ['eventual']);
+    assert.deepEqual(plano(admin.tiposPermitidos(0)), ['eventual']);
+  });
+
+  it('tiposPermitidos: sin frecuencia elegida (undefined) no ofrece eventual, que va solo con su frecuencia', () => {
+    assert.equal(admin.tiposPermitidos(undefined).includes('eventual'), false);
+    assert.equal(admin.tiposPermitidos(undefined).length, 6);
+  });
+
+  it('htmlDeTiposDePedido: una opción por tipo permitido, con su nombre, y marca el elegido', () => {
+    const html = admin.htmlDeTiposDePedido(3, 'foto');
+    assert.deepEqual([...html.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]), TIPOS_PEDIDO.filter((t) => t !== 'eventual'));
+    assert.ok(html.includes('<option value="foto" selected>Foto al corte</option>'));
+    assert.equal(cantidad(html, 'selected'), 1);
+    assert.equal(admin.htmlDeTiposDePedido(null, 'eventual'), '<option value="eventual" selected>Eventual</option>');
+  });
+
+  it('tipoCoherente: con Eventual queda eventual; al dejar Eventual pasa al sugerido; un tipo permitido no cambia', () => {
+    assert.equal(admin.tipoCoherente('acumulado', null, 'externa'), 'eventual');
+    assert.equal(admin.tipoCoherente('eventual', 3, 'externa'), 'acumulado');
+    assert.equal(admin.tipoCoherente('eventual', 24, 'externa'), 'foto');
+    assert.equal(admin.tipoCoherente('eventual', 6, 'interna'), 'relevamiento');
+    assert.equal(admin.tipoCoherente('ejercicio', 12, 'externa'), 'ejercicio');
+    assert.equal(admin.tipoCoherente('edicion', 48, 'interna'), 'edicion');
+  });
+
+  it('tipoCoherente: sin tipo, o con uno que no existe, da el sugerido; sin frecuencia elegida, acumulado', () => {
+    assert.equal(admin.tipoCoherente(null, 24, 'externa'), 'foto');
+    assert.equal(admin.tipoCoherente('cualquiera', 3, 'interna'), 'relevamiento');
+    assert.equal(admin.tipoCoherente(null, undefined, 'externa'), 'acumulado');
+    assert.equal(admin.tipoCoherente('foto', undefined, 'externa'), 'foto');
+  });
+
+  it('htmlDeSugerencia: "Es el sugerido…" si coincide; si no, cuál se sugiere y el botón "Usar el sugerido"', () => {
+    assert.equal(admin.htmlDeSugerencia('acumulado', 'acumulado'), 'Es el sugerido para esta gestión y frecuencia.');
+    const otro = admin.htmlDeSugerencia('acumulado', 'foto');
+    assert.ok(otro.startsWith('Para esta gestión y frecuencia se sugiere "Foto al corte". '));
+    assert.match(otro, /<button type="button" data-usar-sugerido>Usar el sugerido<\/button>$/);
+  });
+
+  it('htmlDeSugerencia: con Eventual lo dice; sin sugerido (sin frecuencia) no dice nada', () => {
+    assert.equal(admin.htmlDeSugerencia('eventual', 'eventual'), 'Con la frecuencia Eventual, el tipo de pedido es siempre Eventual.');
+    assert.equal(admin.htmlDeSugerencia('acumulado', null), '');
+  });
+});
+
+describe('admin-fechas.js: frases de período en "Qué se solicita"', () => {
+  const FRASES = ['siguiente al último', 'nuevo período', 'nuevo ejercicio', 'fecha de corte', 'posterior al último', 'desde la última actualización'];
+
+  it('frasesDePeriodo encuentra cada una de las 6 frases de la spec', () => {
+    for (const frase of FRASES) {
+      assert.deepEqual(plano(admin.frasesDePeriodo(`Los datos ${frase} publicado.`)), [frase], frase);
+    }
+  });
+
+  it('frasesDePeriodo no distingue mayúsculas', () => {
+    for (const frase of FRASES) {
+      assert.deepEqual(plano(admin.frasesDePeriodo(frase.toUpperCase())), [frase], frase.toUpperCase());
+    }
+    assert.deepEqual(plano(admin.frasesDePeriodo('A la Fecha de Corte del Nuevo Período')), ['nuevo período', 'fecha de corte']);
+  });
+
+  it('frasesDePeriodo tampoco distingue tildes: "nuevo periodo" cuenta', () => {
+    assert.deepEqual(plano(admin.frasesDePeriodo('en el nuevo periodo, siguiente al ultimo publicado')), ['siguiente al último', 'nuevo período']);
+  });
+
+  it('frasesDePeriodo da una lista vacía sin frases o sin texto', () => {
+    assert.deepEqual(plano(admin.frasesDePeriodo('La planilla de pauta publicitaria, con el monto de cada orden.')), []);
+    for (const valor of ['', null, undefined, 42]) assert.deepEqual(plano(admin.frasesDePeriodo(valor)), [], String(valor));
+  });
+
+  it('avisarFrases: solo en los tipos que ponen fechas en la nota', () => {
+    for (const tipo of ['acumulado', 'foto', 'anio_anterior', 'ejercicio']) assert.equal(admin.avisarFrases(tipo), true, tipo);
+    for (const tipo of ['relevamiento', 'edicion', 'eventual', '', null, undefined]) assert.equal(admin.avisarFrases(tipo), false, String(tipo));
+  });
+
+  it('textoDeAvisoDeFrases: una frase, varias, ninguna', () => {
+    assert.equal(admin.textoDeAvisoDeFrases([]), null);
+    assert.equal(admin.textoDeAvisoDeFrases(['nuevo período']),
+      '"nuevo período" habla del período, y eso lo agrega el sistema en "Datos solicitados". Conviene sacarlo para que la nota no se contradiga.');
+    assert.equal(admin.textoDeAvisoDeFrases(['nuevo período', 'fecha de corte']),
+      '"nuevo período" y "fecha de corte" hablan del período, y eso lo agrega el sistema en "Datos solicitados". Conviene sacarlas para que la nota no se contradiga.');
+    assert.equal(admin.textoDeAvisoDeFrases(['a', 'b', 'c']).slice(0, 18), '"a", "b" y "c" hab');
+  });
+});
+
+describe('admin-fechas.js: fechaDeSelectores (Ruling 18: lo que no se toca va como está guardado)', () => {
+  it('sin tocar el mes ni el año, va la fecha guardada tal cual, aunque no sea fin de mes', () => {
+    assert.equal(admin.fechaDeSelectores({ mes: '1', anio: '2027', original: '2027-01-30T03:00:00.000Z' }), '2027-01-30');
+    assert.equal(admin.fechaDeSelectores({ mes: '1', anio: '2027', original: '2027-01-31' }), '2027-01-31');
+  });
+
+  it('con el mes o el año cambiados, el fin de ese mes', () => {
+    assert.equal(admin.fechaDeSelectores({ mes: '2', anio: '2027', original: '2027-01-30' }), '2027-02-28');
+    assert.equal(admin.fechaDeSelectores({ mes: '1', anio: '2028', original: '2027-01-30' }), '2028-01-31');
+    assert.equal(admin.fechaDeSelectores({ mes: '4', anio: '2027', original: null }), '2027-04-30');
+  });
+
+  it('febrero va en 28 también en un año bisiesto', () => {
+    assert.equal(admin.fechaDeSelectores({ mes: '2', anio: '2028', original: null }), '2028-02-28');
+  });
+
+  it('sin mes o sin año (Sin dato) da null, y una fecha guardada nula sin tocar sigue nula', () => {
+    assert.equal(admin.fechaDeSelectores({ mes: '', anio: '2026', original: '2026-07-31' }), null);
+    assert.equal(admin.fechaDeSelectores({ mes: '', anio: '2026', original: null }), null);
+    assert.equal(admin.fechaDeSelectores({ mes: '', anio: '', original: null }), null);
+    assert.equal(admin.fechaDeSelectores({ mes: '7', anio: '', original: null }), null);
+  });
+
+  it('solo el año (ejercicio): sin tocar el año va la guardada; con otro año, el 31/12', () => {
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '7', anio: '2026', original: '2026-07-31' }), '2026-07-31');
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '7', anio: '2025', original: '2026-07-31' }), '2025-12-31');
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '', anio: '2025', original: null }), '2025-12-31');
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '', anio: '', original: '2025-12-31' }), null);
+  });
+
+  it('una guardada que no es una fecha cuenta como nula', () => {
+    assert.equal(admin.fechaDeSelectores({ mes: '', anio: '2026', original: '0000-00-00' }), null);
+    assert.equal(admin.fechaDeSelectores({ mes: '3', anio: '2026', original: '0000-00-00' }), '2026-03-31');
+  });
+});
+
+describe('admin-fechas.js: selectores de "Datos al" y de la próxima del formulario', () => {
+  const opcion = (html) => html.match(/<option value="([^"]*)" selected>/)?.[1] ?? null;
+  const valores = (html) => [...html.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+
+  it('"Datos al" con mes y año: la primera opción del mes es "Sin dato" y los años llegan hasta el actual', () => {
+    const s = admin.selectoresDeDatosAl({ mes: 7, anio: 2026, sinDato: false, soloAnio: false, hoy: HOY });
+    assert.ok(s.mes.startsWith('<option value="">Sin dato</option>'));
+    assert.equal(opcion(s.mes), '7');
+    assert.equal(opcion(s.anio), '2026');
+    assert.equal(valores(s.anio)[0], '2026');
+    assert.equal(s.mesOculto, false);
+    assert.equal(s.anioDeshabilitado, false);
+  });
+
+  it('"Datos al" en "Sin dato": el mes queda en "Sin dato" y el año, deshabilitado', () => {
+    const s = admin.selectoresDeDatosAl({ mes: '', anio: '', sinDato: true, soloAnio: false, hoy: HOY });
+    assert.equal(opcion(s.mes), null, 'ningún mes marcado: queda la primera opción, "Sin dato"');
+    assert.equal(s.anioDeshabilitado, true);
+    assert.equal(opcion(s.anio), '2026', 'el año muestra el actual');
+  });
+
+  it('"Datos al" de un ejercicio: solo el año, con "Sin dato" primero y hasta el año siguiente', () => {
+    const s = admin.selectoresDeDatosAl({ mes: '', anio: 2025, sinDato: false, soloAnio: true, hoy: HOY });
+    assert.equal(s.mesOculto, true);
+    assert.equal(s.anioDeshabilitado, false);
+    assert.deepEqual(valores(s.anio).slice(0, 3), ['', '2027', '2026']);
+    assert.ok(s.anio.startsWith('<option value="">Sin dato</option>'));
+    assert.equal(opcion(s.anio), '2025');
+    const sinDato = admin.selectoresDeDatosAl({ mes: '', anio: 2025, sinDato: true, soloAnio: true, hoy: HOY });
+    assert.equal(opcion(sinDato.anio), '');
+  });
+
+  it('al dejar de ser ejercicio, un año elegido sin mes pasa a diciembre', () => {
+    const s = admin.selectoresDeDatosAl({ mes: '', anio: 2025, sinDato: false, soloAnio: false, hoy: HOY });
+    assert.equal(opcion(s.mes), '12');
+    assert.equal(opcion(s.anio), '2025');
+  });
+
+  it('un "Datos al" viejo amplía los años', () => {
+    const s = admin.selectoresDeDatosAl({ mes: 12, anio: 2010, sinDato: false, soloAnio: false, hoy: HOY });
+    assert.equal(valores(s.anio).at(-1), '2010');
+  });
+
+  it('la próxima: "Mes" y "Año" primero; con una fecha guardada (ISO con hora), su mes y su año', () => {
+    const s = admin.selectoresDeProxima('2027-01-31T03:00:00.000Z', HOY);
+    assert.ok(s.mes.startsWith('<option value="">Mes</option>'));
+    assert.ok(s.anio.startsWith('<option value="">Año</option>'));
+    assert.equal(opcion(s.mes), '1');
+    assert.equal(opcion(s.anio), '2027');
+    const vacia = admin.selectoresDeProxima(null, HOY);
+    assert.equal(opcion(vacia.mes), null);
+    assert.equal(opcion(vacia.anio), null);
+    assert.ok(valores(vacia.anio).includes('2036'));
+    assert.equal(valores(admin.selectoresDeProxima('2024-01-31', HOY).anio).at(-1), '2024', 'una próxima vencida amplía los años');
+  });
+});
+
+describe('admin-fechas.js: cuerpoDelDataset (el JSON de POST y PUT /datasets)', () => {
+  // La Pauta, como la devuelve GET /datasets/:id
+  const PAUTA_GET = {
+    id: 10, titulo: 'Pauta Publicitaria', frecuencia_id: 3, tipo_gestion: 'externa',
+    ultima_actualizacion: '2026-10-13T03:00:00.000Z', proxima_actualizacion: '2027-01-31T03:00:00.000Z', datos_al: '2026-07-31',
+    tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado', tipo_pedido_nombre: 'Acumulado', frecuencia_meses: 3
+  };
+  // Lo que dice el formulario recién abierto para la Pauta, sin tocar nada
+  const formulario = (extra = {}) => ({
+    titulo: 'Pauta Publicitaria', area_id: '4', descripcion: 'Órdenes de publicidad', tema_principal_id: '2', tema_secundario_id: '',
+    frecuencia_id: '3', formatos: [1, 3], url_dataset: 'https://datos.comodoro.gov.ar/dataset/pauta', observaciones: '',
+    que_se_solicita: '  La planilla de órdenes.  ', tipo_gestion: 'externa', tipo_pedido: 'acumulado', meses: 3,
+    cargado: '2026-10-13', datosMes: '7', datosAnio: '2026', proxMes: '1', proxAnio: '2027', original: PAUTA_GET, ...extra
+  });
+
+  it('arma todo el cuerpo: números, nulos y textos como hoy, y las fechas', () => {
+    assert.deepEqual(plano(admin.cuerpoDelDataset(formulario())), {
+      titulo: 'Pauta Publicitaria', area_id: 4, descripcion: 'Órdenes de publicidad', tema_principal_id: 2, tema_secundario_id: null,
+      frecuencia_id: 3, formatos: [1, 3], tipo_gestion: 'externa', tipo_pedido: 'acumulado', ultima_actualizacion: '2026-10-13',
+      datos_al: '2026-07-31', proxima_actualizacion: '2027-01-31', url_dataset: 'https://datos.comodoro.gov.ar/dataset/pauta',
+      observaciones: null, que_se_solicita: 'La planilla de órdenes.'
+    });
+  });
+
+  it('las fechas cambiadas van como fin de mes, con febrero en 28', () => {
+    const cuerpo = admin.cuerpoDelDataset(formulario({ datosMes: '9', proxMes: '2', proxAnio: '2028' }));
+    assert.equal(cuerpo.datos_al, '2026-09-30');
+    assert.equal(cuerpo.proxima_actualizacion, '2028-02-28');
+  });
+
+  it('Ruling 18: una próxima vieja que no es fin de mes, sin tocar, va como está guardada', () => {
+    const original = { ...PAUTA_GET, proxima_actualizacion: '2027-01-30T03:00:00.000Z', datos_al: '2026-07-30' };
+    const cuerpo = admin.cuerpoDelDataset(formulario({ original }));
+    assert.equal(cuerpo.proxima_actualizacion, '2027-01-30');
+    assert.equal(cuerpo.datos_al, '2026-07-30');
+  });
+
+  it('"Datos al" en "Sin dato" va null; un dataset sin "Datos al" sin tocar sigue null', () => {
+    assert.equal(admin.cuerpoDelDataset(formulario({ datosMes: '' })).datos_al, null);
+    assert.equal(admin.cuerpoDelDataset(formulario({ original: { ...PAUTA_GET, datos_al: null }, datosMes: '', datosAnio: '2026' })).datos_al, null);
+  });
+
+  it('en un ejercicio, "Datos al" se elige por año y va el 31/12', () => {
+    const presupuesto = { ...PAUTA_GET, tipo_pedido: 'ejercicio', tipo_pedido_guardado: 'ejercicio', datos_al: '2025-12-31', frecuencia_meses: 12 };
+    const base = { tipo_pedido: 'ejercicio', meses: 12, original: presupuesto, datosMes: '12', datosAnio: '2025' };
+    assert.equal(admin.cuerpoDelDataset(formulario(base)).datos_al, '2025-12-31');
+    assert.equal(admin.cuerpoDelDataset(formulario({ ...base, datosAnio: '2026' })).datos_al, '2026-12-31');
+  });
+
+  it('con la frecuencia Eventual la próxima va vacía, aunque los selectores tengan una fecha', () => {
+    const cuerpo = admin.cuerpoDelDataset(formulario({ frecuencia_id: '11', meses: null, tipo_pedido: 'eventual' }));
+    assert.equal(cuerpo.proxima_actualizacion, null);
+    assert.equal(cuerpo.tipo_pedido, 'eventual');
+  });
+
+  it('el tipo sin tocar va como está guardado; cambiado, el elegido', () => {
+    assert.equal(admin.cuerpoDelDataset(formulario()).tipo_pedido, 'acumulado');
+    assert.equal(admin.cuerpoDelDataset(formulario({ tipo_pedido: 'foto' })).tipo_pedido, 'foto');
+  });
+
+  it('sin tipo guardado: si no se toca y el sugerido es el que se ve, sigue sin tipo (null)', () => {
+    const original = { ...PAUTA_GET, tipo_pedido_guardado: null };
+    assert.equal(admin.cuerpoDelDataset(formulario({ original })).tipo_pedido, null);
+  });
+
+  it('sin tipo guardado: si cambió la gestión y el sugerido ya no es el que se ve, va el que se ve', () => {
+    const original = { ...PAUTA_GET, tipo_pedido_guardado: null };
+    assert.equal(admin.cuerpoDelDataset(formulario({ original, tipo_gestion: 'interna' })).tipo_pedido, 'acumulado');
+  });
+
+  it('un alta: sin original, las fechas elegidas como fin de mes y el tipo elegido', () => {
+    const cuerpo = admin.cuerpoDelDataset(formulario({
+      original: null, datosMes: '', datosAnio: '2026', proxMes: '3', proxAnio: '2027', cargado: '', tipo_pedido: 'acumulado'
+    }));
+    assert.equal(cuerpo.datos_al, null);
+    assert.equal(cuerpo.proxima_actualizacion, '2027-03-31');
+    assert.equal(cuerpo.ultima_actualizacion, null);
+    assert.equal(cuerpo.tipo_pedido, 'acumulado');
+  });
+
+  it('"Cargado en el portal el" va como ultima_actualizacion', () => {
+    assert.equal(admin.cuerpoDelDataset(formulario({ cargado: '2026-10-17' })).ultima_actualizacion, '2026-10-17');
+  });
+
+  it('"Qué se solicita" vacío va null; sin formulario no tira error', () => {
+    assert.equal(admin.cuerpoDelDataset(formulario({ que_se_solicita: '   ' })).que_se_solicita, null);
+    assert.doesNotThrow(() => admin.cuerpoDelDataset());
+    assert.doesNotThrow(() => admin.cuerpoDelDataset(null));
+  });
+});
+
+describe('admin-fechas.js: problemasDelFormulario (lo que se revisa antes de proponer)', () => {
+  const base = (extra = {}) => ({ formatos: [1], meses: 3, tipo_pedido: 'acumulado', datosMes: '7', datosAnio: '2026', proxMes: '1', proxAnio: '2027', original: null, ...extra });
+  const problemas = (extra) => plano(admin.problemasDelFormulario(base(extra), HOY));
+
+  it('sin problemas da todo en null', () => {
+    assert.deepEqual(problemas(), { formatos: null, datosAl: null, proxima: null });
+  });
+
+  it('sin formatos', () => {
+    assert.equal(problemas({ formatos: [] }).formatos, 'Elegí al menos un formato');
+  });
+
+  it('fuera de Eventual la próxima es obligatoria, con las palabras del servidor', () => {
+    assert.equal(problemas({ proxMes: '', proxAnio: '' }).proxima, 'Falta la próxima actualización: es obligatoria salvo con la frecuencia Eventual');
+    assert.equal(problemas({ proxMes: '3', proxAnio: '' }).proxima, 'Elegí el mes y el año de la próxima actualización');
+    assert.equal(problemas({ proxMes: '', proxAnio: '2027' }).proxima, 'Elegí el mes y el año de la próxima actualización');
+  });
+
+  it('con la frecuencia Eventual la próxima no hace falta', () => {
+    assert.equal(problemas({ meses: null, tipo_pedido: 'eventual', proxMes: '', proxAnio: '' }).proxima, null);
+  });
+
+  it('un "Datos al" nuevo no puede pasar del fin del mes actual (en un ejercicio, del año siguiente)', () => {
+    assert.equal(problemas({ datosMes: '11', datosAnio: '2026' }).datosAl, 'Todavía no puede haber datos al 30/11/2026');
+    assert.equal(problemas({ datosMes: '10', datosAnio: '2026' }).datosAl, null);
+    assert.equal(problemas({ tipo_pedido: 'ejercicio', datosMes: '', datosAnio: '2027' }).datosAl, null);
+  });
+
+  it('un "Datos al" guardado que no se tocó no se revisa', () => {
+    assert.equal(problemas({ datosMes: '11', datosAnio: '2026', original: { datos_al: '2026-11-30' } }).datosAl, null);
+  });
+});
+
+describe('admin-fechas.js: la vista previa "Así va a salir en la próxima nota"', () => {
+  it('con todo cargado', () => {
+    assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: 'Pauta', gestion: 'externa', proxima: '2027-01-31', solicita: 'La planilla.' })), {
+      cabecera: 'Nota Digital de gestión externa (vista previa)', titulo: 'Pauta', fecha: '31/01/2027', solicita: 'La planilla.'
+    });
+  });
+
+  it('sin título, sin próxima, sin gestión y sin "Qué se solicita": lo que diría la nota', () => {
+    assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: '  ', gestion: '', proxima: null, solicita: '' })), {
+      cabecera: 'Nota Digital (vista previa)', titulo: 'Título del dataset', fecha: '—',
+      solicita: 'La versión actualizada del conjunto de datos publicado, con la misma estructura.'
+    });
+    assert.doesNotThrow(() => admin.textosDeVistaPrevia());
+  });
+
+  it('el aviso de la próxima con la frecuencia Eventual', () => {
+    assert.equal(admin.textoDeProximaEventual('2027-01-31T03:00:00.000Z'), 'Con la frecuencia Eventual, la próxima actualización queda vacía.');
+    assert.equal(admin.textoDeProximaEventual(null), 'Con la frecuencia Eventual no hay próxima actualización.');
+  });
+});
+
+describe('admin.js: lo puro del formulario', () => {
+  const { contexto: a } = cargarAdminJs();
+  const CATALOGO = [
+    { id: 1, nombre: 'CSV', habitual: 1 }, { id: 2, nombre: 'XLSX', habitual: 1 },
+    { id: 7, nombre: 'ODS', habitual: 0 }, { id: 8, nombre: '<b>SHP</b>', habitual: 0 }
+  ];
+
+  it('el título de la ventana: "Nuevo dataset - Paso 2" después del paso 1, "Nuevo dataset" con carga manual, "Editar dataset"', () => {
+    assert.deepEqual(plano(a.tituloDelFormulario({ dataset: null, importado: true })),
+      { titulo: 'Nuevo dataset - Paso 2', subtitulo: 'Título, descripción y formatos importados del portal' });
+    assert.deepEqual(plano(a.tituloDelFormulario({ dataset: null, importado: false })), { titulo: 'Nuevo dataset', subtitulo: 'Carga manual' });
+    assert.deepEqual(plano(a.tituloDelFormulario({ dataset: { titulo: 'Pauta' } })), { titulo: 'Editar dataset', subtitulo: 'Pauta' });
+    assert.deepEqual(plano(a.tituloDelFormulario()), { titulo: 'Nuevo dataset', subtitulo: 'Carga manual' });
+  });
+
+  it('los formatos son botones con aria-pressed: los habituales siempre, los otros solo si están elegidos', () => {
+    const { chips } = a.htmlDeFormatos(CATALOGO, new Set([2, 7]));
+    const botones = [...chips.matchAll(/<button type="button" class="ad-formato" data-formato="(\d+)" aria-pressed="(true|false)">/g)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(botones, [['1', 'false'], ['2', 'true'], ['7', 'true']]);
+    assert.doesNotMatch(chips, /onclick|<span class="chip/);
+  });
+
+  it('el desplegable ofrece los no habituales que no están elegidos, escapados', () => {
+    const { opciones } = a.htmlDeFormatos(CATALOGO, [7]);
+    assert.deepEqual([...opciones.matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]),
+      [['', '+ Agregar otro formato…'], ['8', '&lt;b&gt;SHP&lt;/b&gt;']]);
+  });
+
+  it('los nombres van escapados y el ícono es decorativo', () => {
+    const { chips } = a.htmlDeFormatos(CATALOGO, [8]);
+    assert.ok(chips.includes('&lt;b&gt;SHP&lt;/b&gt;'));
+    assert.doesNotMatch(chips, /<b>SHP/);
+    assert.match(chips, /<svg[^>]*aria-hidden="true"/);
+  });
+
+  it('sin catálogo no tira error', () => {
+    assert.deepEqual(plano(a.htmlDeFormatos(undefined, undefined)), { chips: '', opciones: '<option value="">+ Agregar otro formato…</option>' });
+  });
+
+  it('mesesDeLaFrecuencia: los meses de la frecuencia elegida, null si es Eventual, undefined sin elegir', () => {
+    const frecuencias = [{ id: 3, meses: 3 }, { id: 11, meses: null }];
+    assert.equal(a.mesesDeLaFrecuencia(frecuencias, '3'), 3);
+    assert.equal(a.mesesDeLaFrecuencia(frecuencias, 11), null);
+    assert.equal(a.mesesDeLaFrecuencia(frecuencias, ''), undefined);
+    assert.equal(a.mesesDeLaFrecuencia(frecuencias, '99'), undefined);
+    assert.equal(a.mesesDeLaFrecuencia(undefined, '3'), undefined);
+  });
+
+  it('el error del portal dice que se puede seguir con la carga manual', () => {
+    assert.equal(a.textoDeErrorDelPortal('Dataset no encontrado en el portal de datos abiertos'),
+      'Dataset no encontrado en el portal de datos abiertos. Podés seguir con la carga manual.');
+    assert.equal(a.textoDeErrorDelPortal('No se pudo conectar. Intente más tarde.'), 'No se pudo conectar. Intente más tarde. Podés seguir con la carga manual.');
+    assert.equal(a.textoDeErrorDelPortal(''), 'No se pudo obtener información del portal. Podés seguir con la carga manual.');
+  });
+});
+
+describe('admin.js: el mensaje de un envío del formulario', () => {
+  const { contexto: a } = cargarAdminJs();
+
+  it('"sin cambios" dice qué hacer; los demás errores del servidor van tal cual; una falla de red, el mensaje por defecto', () => {
+    assert.equal(a.mensajeDelEnvio(new Error('No se detectaron cambios. El dataset no fue modificado.')),
+      'No realizaste ningún cambio. Modificá al menos un campo para proponer.');
+    assert.equal(a.mensajeDelEnvio(new Error('La próxima actualización tiene que ser el último día de un mes (febrero, el 28)')),
+      'La próxima actualización tiene que ser el último día de un mes (febrero, el 28)');
+    assert.equal(a.mensajeDelEnvio(new TypeError('Failed to fetch')), 'No se pudo proponer. Probá de nuevo.');
+  });
+});
+
+describe('admin.html: las ventanas son diálogos (spec 8.6, arreglo 5)', () => {
+  const velos = [...PAGINA_ADMIN.matchAll(/<div class="ad-velo" id="([^"]+)" hidden>\s*<(div|form) class="ad-ventana[^"]*"([^>]*)>/g)]
+    .map((m) => ({ id: m[1], atributos: m[3] }));
+
+  it('ya no quedan modales viejos (.modal-overlay): todas las ventanas son velos con un diálogo modal con título', () => {
+    assert.doesNotMatch(PAGINA_ADMIN, /modal-overlay/);
+    assert.deepEqual(velos.map((v) => v.id).sort(),
+      ['modal-confirm-update', 'modal-dataset', 'modal-delete', 'modal-quick-area', 'modal-registrar-actualizacion', 'modal-step1']);
+    for (const { id, atributos } of velos) {
+      assert.match(atributos, /role="dialog" aria-modal="true" aria-labelledby="([^"]+)"/, id);
+      const titulo = atributos.match(/aria-labelledby="([^"]+)"/)[1];
+      assert.match(PAGINA_ADMIN, new RegExp(`<h2 id="${titulo}">`), `${id}: su título`);
+    }
+  });
+
+  it('cada ventana cierra con su cruz (data-cerrar) y admin.js sabe cerrarla', () => {
+    for (const { id } of velos.filter((v) => v.id !== 'modal-registrar-actualizacion')) {
+      assert.match(CODIGO_ADMIN, new RegExp(`'${id}': \\(\\) => `), id);
+    }
+    assert.ok(cantidad(PAGINA_ADMIN, 'class="ad-cerrar" data-cerrar aria-label="Cerrar"') >= 5);
+  });
+
+  it('sin onclick: los oyentes los pone admin.js', () => {
+    assert.doesNotMatch(PAGINA_ADMIN, /\son(click|change|submit)=/);
+  });
+
+  it('sin emojis (íconos Lucide): ni el foco del paso 1, ni el pin del área, ni las advertencias', () => {
+    const emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+    assert.doesNotMatch(PAGINA_ADMIN, emoji);
+    assert.doesNotMatch(CODIGO_ADMIN, emoji);
+  });
+
+  it('todas las etiquetas llevan for, y apuntan a un campo de la página', () => {
+    const etiquetas = [...PAGINA_ADMIN.matchAll(/<label\b([^>]*)>/g)].map((m) => m[1]);
+    assert.ok(etiquetas.length > 15, `etiquetas: ${etiquetas.length}`);
+    for (const atributos of etiquetas) {
+      const para = atributos.match(/\bfor="([^"]+)"/)?.[1];
+      assert.ok(para, `<label${atributos}> sin for`);
+      assert.match(PAGINA_ADMIN, new RegExp(`<(input|select|textarea)\\b[^>]*\\bid="${para}"`), `for="${para}"`);
+    }
+  });
+
+  it('cada id que admin.js busca con getElementById existe en la página', () => {
+    const ids = new Set([...CODIGO_ADMIN.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]));
+    for (const id of ids) assert.equal(cantidad(PAGINA_ADMIN, `id="${id}"`), 1, id);
+  });
+});
+
+describe('admin.html: el paso 1 (importar desde el portal: el flujo no cambia)', () => {
+  const paso1 = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-step1" hidden>([\s\S]*?)<!-- Fin del paso 1 -->/)?.[1] ?? '';
+
+  it('es un formulario de diálogo: Enter en la URL hace lo mismo que "Siguiente"', () => {
+    assert.match(paso1, /<form class="ad-ventana chica" id="form-paso1" role="dialog" aria-modal="true" aria-labelledby="paso1-titulo" novalidate>/);
+    assert.match(paso1, /<h2 id="paso1-titulo">Nuevo dataset - Paso 1<\/h2>/);
+  });
+
+  it('la URL con su etiqueta, el ejemplo, y el error en la ventana', () => {
+    assert.match(paso1, /<label for="andino-url">URL del dataset en el portal<\/label>\s*<input type="url" id="andino-url"/);
+    assert.ok(paso1.includes('Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal'));
+    assert.match(paso1, /<p class="ad-error ad-error-envio" id="step1-error" role="alert" hidden><\/p>/);
+  });
+
+  it('"Importar desde el Portal de Datos Abiertos" con un ícono Lucide decorativo', () => {
+    assert.match(paso1, /<div class="ad-info">\s*<svg[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg>\s*<div><b>Importar desde el Portal de Datos Abiertos<\/b>/);
+  });
+
+  it('"Carga manual" y "Siguiente"', () => {
+    assert.match(paso1, /<button type="button" class="ad-btn" id="btn-carga-manual">Carga manual<\/button>/);
+    assert.match(paso1, /<button type="submit" class="ad-btn primario" id="btn-siguiente">Siguiente<\/button>/);
+  });
+
+  it('admin.js sigue usando GET /andino/fetch, en el paso 1 y en "Actualizar desde portal"', () => {
+    assert.equal(cantidad(CODIGO_ADMIN, '/andino/fetch?url=${encodeURIComponent(url)}'), 2);
+  });
+});
+
+describe('admin.html: el formulario del dataset (spec 8.4)', () => {
+  const formulario = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-dataset" hidden>([\s\S]*?)<!-- Fin del formulario -->/)?.[1] ?? '';
+  const seccion = (leyenda) => formulario.match(new RegExp(`<fieldset>\\s*<legend>${leyenda}</legend>([\\s\\S]*?)</fieldset>`))?.[1] ?? '';
+
+  it('es un formulario de diálogo con título y subtítulo', () => {
+    assert.match(formulario, /<form class="ad-ventana ancha ad-form-dataset" id="dataset-form" role="dialog" aria-modal="true" aria-labelledby="form-titulo" aria-describedby="form-subtitulo">/);
+    assert.match(formulario, /<h2 id="form-titulo"><\/h2><p id="form-subtitulo"><\/p>/);
+  });
+
+  it('dos fieldset: "Datos del dataset" y "Actualización y pedido"', () => {
+    assert.deepEqual([...formulario.matchAll(/<legend>([^<]+)<\/legend>/g)].map((m) => m[1]), ['Datos del dataset', 'Actualización y pedido']);
+  });
+
+  it('"Datos del dataset": título, área, descripción, temas, formatos, URL y observaciones, con "Actualizar desde portal"', () => {
+    const datos = seccion('Datos del dataset');
+    for (const id of ['titulo', 'area_id', 'descripcion', 'tema_principal_id', 'tema_secundario_id', 'url_dataset', 'observaciones']) {
+      assert.match(datos, new RegExp(`<label for="${id}">`), id);
+    }
+    assert.match(datos, /<button type="button" class="ad-btn" id="btn-actualizar-portal">[\s\S]*?Actualizar desde portal<\/button>/);
+    assert.match(datos, /<div class="ad-formatos" id="chips-container" role="group" aria-labelledby="form-l-formatos"><\/div>/);
+    assert.match(datos, /<select id="formato-dropdown" class="ad-agregar-formato" aria-label="Agregar otro formato"><\/select>/);
+  });
+
+  it('"Actualización y pedido": frecuencia, gestión, tipo de pedido, "Cargado en el portal el", "Datos al", la próxima y "Qué se solicita"', () => {
+    const pedido = seccion('Actualización y pedido');
+    assert.match(pedido, /<label for="frecuencia_id">Frecuencia/);
+    assert.match(pedido, /<label for="tipo_gestion">Tipo de gestión/);
+    assert.match(pedido, /<label for="tipo_pedido">Tipo de pedido<\/label>\s*<select id="tipo_pedido"><\/select>\s*<p class="ad-sugerencia" id="form-sugerencia"><\/p>/);
+    assert.match(pedido, /<label for="ultima_actualizacion">Cargado en el portal el<\/label>\s*<input type="date" id="ultima_actualizacion">/);
+    assert.match(pedido, /<label for="form-datos-mes" id="form-l-datos">Datos al<\/label>\s*<div class="ad-mes" role="group" aria-labelledby="form-l-datos">\s*<select id="form-datos-mes" aria-label="Mes"><\/select>\s*<select id="form-datos-anio" aria-label="Año"><\/select>/);
+    assert.match(pedido, /<label for="form-prox-mes" id="form-l-prox">Próxima actualización/);
+    assert.match(pedido, /<select id="form-prox-mes" aria-label="Mes"><\/select>\s*<select id="form-prox-anio" aria-label="Año"><\/select>/);
+    assert.match(pedido, /<label for="que_se_solicita">Qué se solicita<\/label>/);
+    assert.ok(pedido.includes('Describí qué tiene que mandar el área, sin fechas ni períodos: los agrega el sistema.'));
+  });
+
+  it('la gestión interna dice "Interna (relevamiento propio)", sin DGMIT', () => {
+    assert.match(formulario, /<option value="externa">Externa \(la provee otra área\)<\/option>\s*<option value="interna">Interna \(relevamiento propio\)<\/option>/);
+    assert.doesNotMatch(PAGINA_ADMIN, /DGMIT/);
+  });
+
+  it('el aviso por las frases de período es ámbar y está oculto hasta que hace falta', () => {
+    assert.match(formulario, /<div class="ad-alerta" id="form-alerta-frases" hidden>/);
+    assert.match(formulario, /<span id="form-alerta-texto" aria-live="polite"><\/span>/);
+  });
+
+  it('la vista previa "Así va a salir en la próxima nota", con las tres columnas y "Qué se solicita"', () => {
+    assert.ok(formulario.includes('Así va a salir en la próxima nota'));
+    const nota = formulario.match(/<div class="ad-nota"[^>]*>([\s\S]*?)<!-- Fin de la vista previa -->/)?.[1] ?? '';
+    assert.deepEqual([...nota.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((m) => m[1]), ['Conjunto de datos', 'Datos solicitados', 'Fecha sugerida de envío']);
+    assert.match(nota, /<td id="form-nota-periodo" aria-live="polite"><\/td>/);
+    assert.match(nota, /<b>Qué se solicita:<\/b> <span id="form-nota-solicita"><\/span>/);
+    assert.match(nota, /<p class="ad-error" id="form-nota-error" hidden><\/p>/);
+  });
+
+  it('los errores del envío van en la ventana, y el botón de proponer es el submit', () => {
+    assert.match(formulario, /<p class="ad-error ad-error-envio" id="form-error" role="alert" hidden><\/p>/);
+    assert.match(formulario, /<button type="submit" class="ad-btn primario" id="submit-btn">/);
+  });
+});
+
+describe('admin.html: "Actualizar desde portal" y las demás ventanas', () => {
+  it('la confirmación dice que también se traen los formatos', () => {
+    const confirmacion = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-confirm-update" hidden>([\s\S]*?)<!-- Fin de la confirmación -->/)?.[1] ?? '';
+    assert.match(confirmacion, /formatos/);
+    assert.match(confirmacion, /título/);
+    assert.match(confirmacion, /descripción/);
+  });
+
+  it('"Nueva área" es un formulario con su etiqueta', () => {
+    assert.match(PAGINA_ADMIN, /<form class="ad-ventana chica" id="form-area-rapida" role="dialog" aria-modal="true" aria-labelledby="area-rapida-titulo" novalidate>/);
+    assert.match(PAGINA_ADMIN, /<label for="quick-area-nombre">/);
+  });
+});
+
+describe('admin.html: estilos del formulario', () => {
+  const inicio = PAGINA_ADMIN.indexOf('<style>');
+  const fin = PAGINA_ADMIN.indexOf('</style>');
+  const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('los formatos elegidos se distinguen por aria-pressed, y el foco se ve en los campos y los formatos', () => {
+    assert.match(estilo, /\.ad-formato\[aria-pressed=true\] \{[^}]*background:/);
+    for (const selector of ['.ad-form input:focus-visible', '.ad-form select:focus-visible', '.ad-form textarea:focus-visible', '.ad-formato:focus-visible', '.ad-sugerencia button:focus-visible']) {
+      assert.ok(estilo.includes(selector), selector);
+    }
+  });
+
+  it('el aviso por las frases es ámbar', () => {
+    assert.match(estilo, /\.ad-alerta \{[^}]*background: var\(--pf-ambar-fondo\);[^}]*color: var\(--pf-ambar\);/);
+  });
+});
+
+// =====================================================
+// El formulario, lo que toca el DOM, con una página de mentira
+// =====================================================
+
+describe('admin.js: el formulario del dataset (con una página de mentira)', () => {
+  const armar = ({ api = {} } = {}) => {
+    const { contexto } = cargarAdminJs();
+    const pagina = paginaDeMentira();
+    pagina.elemento('dataset-form').reset = () => {};
+    contexto.document = pagina.documento;
+    // La vista previa espera un instante antes de pedir el pedido: el vm no trae los temporizadores
+    Object.assign(contexto, { setTimeout, clearTimeout });
+    const llamadas = { exito: [], error: [], recargas: 0, enviados: [] };
+    contexto.avisarExito = (texto) => { llamadas.exito.push(texto); };
+    contexto.avisarError = (texto) => { llamadas.error.push(texto); };
+    contexto.API = {
+      updateDataset: async (id, cuerpo) => { llamadas.enviados.push(['PUT', id, cuerpo]); },
+      createDataset: async (cuerpo) => { llamadas.enviados.push(['POST', cuerpo]); },
+      calculoPedido: async () => ({ pedido: null }),
+      ...api
+    };
+    contexto.recargarLista = async () => { llamadas.recargas++; };
+    return { contexto, pagina, llamadas };
+  };
+  const PAUTA = { id: 10, titulo: 'Pauta Publicitaria', tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado', formatos_array: [{ id: 1 }] };
+  const evento = { preventDefault() {} };
+
+  it('al abrir, el aviso de "sin cambios" del intento anterior se borra', () => {
+    const { contexto, pagina } = armar();
+    contexto.mostrarError('form-error', 'No realizaste ningún cambio. Modificá al menos un campo para proponer.');
+    contexto.openModal(PAUTA);
+    assert.equal(pagina.elemento('form-error').hidden, true);
+    assert.equal(pagina.elemento('form-error').textContent, '');
+    assert.equal(pagina.elemento('modal-dataset').hidden, false);
+    assert.equal(pagina.elemento('form-titulo').textContent, 'Editar dataset');
+  });
+
+  it('el alta importada dice "Nuevo dataset - Paso 2"; la carga manual, "Nuevo dataset"', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(null, { titulo: 'Presupuesto Municipal', formatos: [] });
+    assert.equal(pagina.elemento('form-titulo').textContent, 'Nuevo dataset - Paso 2');
+    assert.equal(pagina.elemento('titulo').value, 'Presupuesto Municipal');
+    contexto.closeModal();
+    contexto.openModal(null);
+    assert.equal(pagina.elemento('form-titulo').textContent, 'Nuevo dataset');
+  });
+
+  it('"sin cambios" queda en la ventana, no en un aviso, y el botón se vuelve a habilitar', async () => {
+    const { contexto, pagina, llamadas } = armar({
+      api: { updateDataset: async () => { throw new Error('No se detectaron cambios. El dataset no fue modificado.'); } }
+    });
+    contexto.openModal(PAUTA);
+    await contexto.enviarFormulario(evento);
+    assert.equal(pagina.elemento('form-error').hidden, false);
+    assert.equal(pagina.elemento('form-error').textContent, 'No realizaste ningún cambio. Modificá al menos un campo para proponer.');
+    assert.deepEqual(llamadas.error, []);
+    assert.equal(pagina.elemento('submit-btn').disabled, false);
+    assert.equal(pagina.elemento('modal-dataset').hidden, false);
+  });
+
+  it('sin formatos no se manda: el error queda junto a los formatos', async () => {
+    const { contexto, pagina, llamadas } = armar();
+    contexto.openModal({ ...PAUTA, formatos_array: [] });
+    await contexto.enviarFormulario(evento);
+    assert.equal(llamadas.enviados.length, 0);
+    assert.equal(pagina.elemento('form-error-formatos').textContent, 'Elegí al menos un formato');
+  });
+
+  it('si sale bien: manda el PUT, avisa, cierra y recarga la lista', async () => {
+    const { contexto, pagina, llamadas } = armar();
+    contexto.openModal(PAUTA);
+    await contexto.enviarFormulario(evento);
+    assert.equal(llamadas.enviados.length, 1);
+    assert.equal(llamadas.enviados[0][0], 'PUT');
+    assert.equal(llamadas.enviados[0][1], 10);
+    assert.deepEqual(llamadas.exito, ['Cambios propuestos. Quedan pendientes de aprobación en Mi Perfil.']);
+    assert.equal(llamadas.recargas, 1);
+    assert.equal(pagina.elemento('modal-dataset').hidden, true);
+  });
+
+  it('si el formulario se cerró mientras se enviaba, el error va en un aviso', async () => {
+    let rechazar;
+    const { contexto, llamadas } = armar({ api: { updateDataset: () => new Promise((_, r) => { rechazar = r; }) } });
+    contexto.openModal(PAUTA);
+    const envio = contexto.enviarFormulario(evento);
+    contexto.closeModal();
+    rechazar(new Error('Este dataset tiene cambios pendientes de aprobación. No se puede editar hasta que sean revisados.'));
+    await envio;
+    assert.deepEqual(llamadas.error, ['Este dataset tiene cambios pendientes de aprobación. No se puede editar hasta que sean revisados.']);
   });
 });

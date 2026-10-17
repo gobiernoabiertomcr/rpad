@@ -646,3 +646,283 @@ function textoDeError(error, porDefecto) {
   const mensaje = error && error.name === 'Error' && typeof error.message === 'string' ? error.message.trim() : '';
   return mensaje || porDefecto;
 }
+
+// =====================================================
+// Formulario del dataset: alta y edición (spec 8.4)
+// =====================================================
+// Lo que muestra la sección "Actualización y pedido" (el tipo de pedido y su sugerencia, el aviso por las frases de
+// período, los selectores de "Datos al" y de la próxima, la vista previa) y el cuerpo de POST y PUT /datasets. Lo que toca
+// el DOM está en admin.js. El pedido de la vista previa lo calcula el servidor (GET /datasets/calculo-pedido).
+
+/**
+ * Los tipos de pedido, en el orden del servidor, con su nombre en pantalla: [[valor, nombre], ...]. Es una copia de
+ * TIPOS_PEDIDO y NOMBRES_TIPO_PEDIDO (services/fechasDatasetReglas.js), porque el formulario ofrece todos y GET /datasets
+ * trae solo el nombre de los que se usan. tests/admin-frontend.test.js compara las dos listas.
+ */
+const TIPOS_DE_PEDIDO = Object.freeze([
+  Object.freeze(['acumulado', 'Acumulado']),
+  Object.freeze(['foto', 'Foto al corte']),
+  Object.freeze(['anio_anterior', 'Año anterior completo']),
+  Object.freeze(['ejercicio', 'Ejercicio que empieza']),
+  Object.freeze(['edicion', 'Próxima edición']),
+  Object.freeze(['relevamiento', 'Relevamiento interno']),
+  Object.freeze(['eventual', 'Eventual'])
+]);
+const ERROR_FALTA_PROXIMA = 'Falta la próxima actualización: es obligatoria salvo con la frecuencia Eventual';
+const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura.';
+// Los años de "Datos al" empiezan acá (el selector se amplía si la fecha guardada es anterior)
+const PRIMER_ANIO_DE_DATOS_AL = 2015;
+
+// Una frecuencia con meses (un entero positivo); la Eventual no tiene (null)
+function tieneMeses(meses) {
+  return Number.isInteger(meses) && meses > 0;
+}
+
+/**
+ * El tipo de pedido sugerido para una gestión y una frecuencia en meses (spec 5). Copia deliberada de tipoSugerido de
+ * services/fechasDatasetReglas.js, que es la que vale (el servidor la usa para un dataset sin tipo): acá solo sirve para
+ * el texto de la sugerencia del formulario. Un test verifica que las dos den lo mismo.
+ */
+function tipoSugeridoDe(gestion, meses) {
+  if (!tieneMeses(meses)) return 'eventual';
+  if (gestion === 'interna') return 'relevamiento';
+  return meses <= 12 ? 'acumulado' : 'foto';
+}
+
+/**
+ * Los tipos que se pueden elegir con una frecuencia (spec 8.4: Eventual va siempre junto con su frecuencia):
+ * - con meses, todos menos eventual;
+ * - sin meses (null, la frecuencia Eventual), solo eventual;
+ * - sin frecuencia elegida todavía (undefined), los mismos que con meses: eventual aparece solo con su frecuencia.
+ */
+function tiposPermitidos(meses) {
+  const todos = TIPOS_DE_PEDIDO.map(([tipo]) => tipo);
+  if (meses === undefined || tieneMeses(meses)) return todos.filter((tipo) => tipo !== 'eventual');
+  return ['eventual'];
+}
+
+function nombreDeTipo(tipo) {
+  return TIPOS_DE_PEDIDO.find(([valor]) => valor === tipo)?.[1] ?? '';
+}
+
+// Las <option> del selector de tipo de pedido: los permitidos con esa frecuencia, con el elegido marcado
+function htmlDeTiposDePedido(meses, seleccionado) {
+  return tiposPermitidos(meses)
+    .map((tipo) => `<option value="${tipo}"${tipo === seleccionado ? ' selected' : ''}>${textoSeguro(nombreDeTipo(tipo))}</option>`)
+    .join('');
+}
+
+/**
+ * El tipo que queda con una frecuencia: el mismo, si se puede elegir con ella; si no (pasar a Eventual, dejar de serlo, o
+ * un tipo que no existe), el sugerido; y si tampoco el sugerido se puede (sin frecuencia elegida), el primero.
+ */
+function tipoCoherente(tipo, meses, gestion) {
+  const permitidos = tiposPermitidos(meses);
+  if (permitidos.includes(tipo)) return tipo;
+  const sugerido = tipoSugeridoDe(gestion, meses);
+  return permitidos.includes(sugerido) ? sugerido : permitidos[0];
+}
+
+/**
+ * La sugerencia debajo del tipo de pedido (HTML): "Es el sugerido…" o cuál se sugiere, con el botón "Usar el sugerido"
+ * (data-usar-sugerido; quien lo usa escucha el clic). `sugerido` null (sin frecuencia elegida): nada.
+ */
+function htmlDeSugerencia(tipo, sugerido) {
+  if (!sugerido) return '';
+  if (sugerido === 'eventual') return 'Con la frecuencia Eventual, el tipo de pedido es siempre Eventual.';
+  if (tipo === sugerido) return 'Es el sugerido para esta gestión y frecuencia.';
+  return `Para esta gestión y frecuencia se sugiere "${textoSeguro(nombreDeTipo(sugerido))}". `
+    + '<button type="button" data-usar-sugerido>Usar el sugerido</button>';
+}
+
+// Las frases que hablan del período (spec 8.4): en "Qué se solicita" contradirían los "Datos solicitados" de la nota
+const FRASES_DE_PERIODO = Object.freeze([
+  'siguiente al último', 'nuevo período', 'nuevo ejercicio', 'fecha de corte', 'posterior al último', 'desde la última actualización'
+]);
+
+// Minúsculas y sin tildes: "Nuevo Periodo" y "nuevo período" se comparan igual
+function sinTildes(texto) {
+  return String(texto).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Las frases de período que tiene un texto, sin distinguir mayúsculas ni tildes, en el orden de la lista y como se escriben ahí
+function frasesDePeriodo(texto) {
+  if (typeof texto !== 'string' || !texto) return [];
+  const comparable = sinTildes(texto);
+  return FRASES_DE_PERIODO.filter((frase) => comparable.includes(sinTildes(frase)));
+}
+
+// ¿Se avisa por las frases de período? Solo si el tipo pone fechas en la nota; en relevamiento, edición y eventual no contradicen nada
+function avisarFrases(tipo) {
+  return ['acumulado', 'foto', 'anio_anterior', 'ejercicio'].includes(tipo);
+}
+
+// "a", "a y b", "a, b y c"
+function unirConY(partes) {
+  return partes.length > 1 ? `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}` : partes.join('');
+}
+
+// El aviso en ámbar (no bloquea) por las frases de período encontradas, o null si no hay ninguna
+function textoDeAvisoDeFrases(frases) {
+  const lista = Array.isArray(frases) ? frases : [];
+  if (lista.length === 0) return null;
+  const varias = lista.length > 1;
+  return `${unirConY(lista.map((frase) => `"${frase}"`))} ${varias ? 'hablan' : 'habla'} del período, y eso lo agrega el sistema en `
+    + `"Datos solicitados". Conviene ${varias ? 'sacarlas' : 'sacarlo'} para que la nota no se contradiga.`;
+}
+
+/**
+ * La fecha de un par de selectores de mes y año (o solo de año, en un ejercicio), 'AAAA-MM-DD' o null. Ruling 18: si el mes
+ * y el año siguen siendo los de la fecha guardada (`original`, 'AAAA-MM-DD' o ISO con hora), va la guardada tal cual,
+ * aunque no sea fin de mes: el formulario no corrige en silencio una fecha que nadie tocó (y el servidor la rechazaría como
+ * un cambio). Si cambiaron, el fin del mes elegido, con febrero en 28 (solo el año: el 31/12). Sin mes o sin año
+ * ("Sin dato"), null.
+ */
+function fechaDeSelectores({ mes, anio, soloAnio = false, original } = {}) {
+  const guardada = soloFecha(original);
+  const elegidoAnio = enteroDe(anio);
+  const elegidoMes = soloAnio ? null : enteroDe(mes);
+  const mismoAnio = elegidoAnio === (guardada ? Number(guardada.slice(0, 4)) : null);
+  const mismoMes = soloAnio || elegidoMes === (guardada ? Number(guardada.slice(5, 7)) : null);
+  if (mismoAnio && mismoMes) return guardada;
+  if (elegidoAnio === null || (!soloAnio && elegidoMes === null)) return null;
+  return finDeMesDe(elegidoAnio, soloAnio ? 12 : elegidoMes);
+}
+
+/**
+ * Los selectores de "Datos al" del formulario: { mes, anio } (sus <option>), mesOculto y anioDeshabilitado.
+ * - Con mes y año: el mes empieza con "Sin dato" (sin dato, el año queda deshabilitado mostrando el suyo o el actual).
+ *   Los años van hasta el actual. Un año elegido sin mes (al dejar de ser ejercicio) pasa a diciembre.
+ * - En un ejercicio (soloAnio): solo el año, que empieza con "Sin dato" y llega hasta el año siguiente. El mes queda oculto
+ *   con su valor, así volver a otro tipo no lo pierde.
+ * `mes` y `anio` son los valores actuales (números o el texto de un select); `sinDato`, si "Datos al" está vacío.
+ */
+function selectoresDeDatosAl({ mes, anio, sinDato = false, soloAnio = false, hoy } = {}) {
+  const anioDeHoy = Number(hoyDe(hoy).slice(0, 4));
+  const elegidoAnio = enteroDe(anio);
+  if (soloAnio) {
+    return {
+      mes: `<option value="">Sin dato</option>${opcionesDeMes(enteroDe(mes))}`,
+      anio: `<option value=""${sinDato ? ' selected' : ''}>Sin dato</option>`
+        + opcionesDeAnio(PRIMER_ANIO_DE_DATOS_AL, anioDeHoy + 1, sinDato ? null : elegidoAnio),
+      mesOculto: true,
+      anioDeshabilitado: false
+    };
+  }
+  return {
+    mes: `<option value="">Sin dato</option>${opcionesDeMes(sinDato ? null : (enteroDe(mes) ?? 12))}`,
+    anio: opcionesDeAnio(PRIMER_ANIO_DE_DATOS_AL, anioDeHoy, elegidoAnio ?? anioDeHoy),
+    mesOculto: false,
+    anioDeshabilitado: sinDato
+  };
+}
+
+// Los selectores de la próxima: { mes, anio }, con "Mes" y "Año" primero y la fecha guardada elegida. Los años, del anterior
+// al actual hasta diez años adelante (se amplían si la guardada queda afuera)
+function selectoresDeProxima(proxima, hoy) {
+  const fecha = soloFecha(proxima);
+  const anioDeHoy = Number(hoyDe(hoy).slice(0, 4));
+  return {
+    mes: `<option value="">Mes</option>${opcionesDeMes(fecha ? Number(fecha.slice(5, 7)) : null)}`,
+    anio: `<option value="">Año</option>${opcionesDeAnio(anioDeHoy - 1, anioDeHoy + 10, fecha ? Number(fecha.slice(0, 4)) : null)}`
+  };
+}
+
+/**
+ * El tipo de pedido que se manda. Ruling 18: si el selector sigue en el tipo con que abrió el formulario (el efectivo,
+ * tipo_pedido de GET /datasets/:id), va el guardado (tipo_pedido_guardado), aunque sea null: un dataset sin tipo guardado
+ * usa el sugerido. Pero si con la gestión y la frecuencia de ahora el sugerido ya no es el que se ve, va el que se ve: si
+ * no, se guardaría otro tipo que el de la vista previa. Si se cambió, o en un alta, va el elegido.
+ */
+function tipoAEnviar({ tipo, gestion, meses, original } = {}) {
+  const elegido = typeof tipo === 'string' && tipo ? tipo : null;
+  if (!original || elegido !== original.tipo_pedido) return elegido;
+  const guardado = original.tipo_pedido_guardado ?? null;
+  if (TIPOS_DE_PEDIDO.some(([valor]) => valor === guardado)) return guardado;
+  return tipoSugeridoDe(gestion, meses) === elegido ? guardado : elegido;
+}
+
+/**
+ * El cuerpo de POST /datasets (alta) y PUT /datasets/:id (edición). `formulario` es lo que dicen los campos:
+ *   titulo, area_id, descripcion, tema_principal_id, tema_secundario_id, frecuencia_id, formatos, url_dataset,
+ *   observaciones, que_se_solicita, tipo_gestion, tipo_pedido   como en los campos (los ids, como texto)
+ *   meses                         los de la frecuencia elegida: un número, null si es Eventual, undefined sin elegir
+ *   cargado                       "Cargado en el portal el" ('AAAA-MM-DD' o ''): va como ultima_actualizacion
+ *   datosMes, datosAnio           "Datos al" (en un ejercicio cuenta solo el año)
+ *   proxMes, proxAnio             la próxima actualización
+ *   original                      el dataset de GET /datasets/:id al editar; null en un alta
+ * Las fechas que nadie tocó van como están guardadas (Ruling 18) y las cambiadas, como fin de mes. Con la frecuencia
+ * Eventual la próxima va vacía.
+ */
+function cuerpoDelDataset(formulario) {
+  const f = formulario ?? {};
+  const original = f.original ?? null;
+  const texto = (valor) => (typeof valor === 'string' ? valor : '');
+  return {
+    titulo: texto(f.titulo),
+    area_id: enteroDe(f.area_id),
+    descripcion: texto(f.descripcion),
+    tema_principal_id: enteroDe(f.tema_principal_id),
+    tema_secundario_id: enteroDe(f.tema_secundario_id),
+    frecuencia_id: enteroDe(f.frecuencia_id),
+    formatos: Array.isArray(f.formatos) ? [...f.formatos] : [],
+    tipo_gestion: texto(f.tipo_gestion),
+    tipo_pedido: tipoAEnviar({ tipo: f.tipo_pedido, gestion: f.tipo_gestion, meses: f.meses, original }),
+    ultima_actualizacion: soloFecha(f.cargado),
+    datos_al: fechaDeSelectores({
+      mes: f.datosMes, anio: f.datosAnio, soloAnio: f.tipo_pedido === 'ejercicio', original: original?.datos_al
+    }),
+    proxima_actualizacion: f.meses === null
+      ? null
+      : fechaDeSelectores({ mes: f.proxMes, anio: f.proxAnio, original: original?.proxima_actualizacion }),
+    url_dataset: texto(f.url_dataset) || null,
+    observaciones: texto(f.observaciones) || null,
+    que_se_solicita: texto(f.que_se_solicita).trim() || null
+  };
+}
+
+/**
+ * Lo que se revisa antes de proponer, con el error de cada campo o null: { formatos, datosAl, proxima }.
+ * - formatos: al menos uno;
+ * - datosAl: uno nuevo (distinto del guardado) no pasa del tope, con las palabras del servidor (topeDeDatosAl);
+ * - proxima: fuera de la frecuencia Eventual es obligatoria (la exige el formulario; el servidor no, spec 10.1).
+ * Lo demás lo revisan el navegador (los campos obligatorios) y el servidor. `formulario`: el de cuerpoDelDataset.
+ */
+function problemasDelFormulario(formulario, hoy) {
+  const f = formulario ?? {};
+  const cuerpo = cuerpoDelDataset(f);
+  let proxima = null;
+  if (tieneMeses(f.meses) && !cuerpo.proxima_actualizacion) {
+    const elegidos = [f.proxMes, f.proxAnio].filter((valor) => enteroDe(valor) !== null).length;
+    proxima = elegidos === 1 ? 'Elegí el mes y el año de la próxima actualización' : ERROR_FALTA_PROXIMA;
+  }
+  const datosAl = cuerpo.datos_al;
+  const nuevo = Boolean(datosAl) && datosAl !== soloFecha(f.original?.datos_al);
+  return {
+    formatos: Array.isArray(f.formatos) && f.formatos.length > 0 ? null : 'Elegí al menos un formato',
+    datosAl: nuevo && datosAl > topeDeDatosAl(f.tipo_pedido, hoy) ? `Todavía no puede haber datos al ${fechaCorta(datosAl)}` : null,
+    proxima
+  };
+}
+
+/**
+ * Los textos de la vista previa "Así va a salir en la próxima nota", menos los datos solicitados (los calcula el servidor):
+ * { cabecera, titulo, fecha, solicita }. Sin "Qué se solicita", el texto por defecto.
+ */
+function textosDeVistaPrevia({ titulo, gestion, proxima, solicita } = {}) {
+  const limpio = (valor) => (typeof valor === 'string' ? valor.trim() : '');
+  const fecha = soloFecha(proxima);
+  return {
+    cabecera: gestion ? `Nota Digital de gestión ${gestion} (vista previa)` : 'Nota Digital (vista previa)',
+    titulo: limpio(titulo) || 'Título del dataset',
+    fecha: fecha ? fechaCorta(fecha) : SIN_DATO,
+    solicita: limpio(solicita) || QUE_SE_SOLICITA_POR_DEFECTO
+  };
+}
+
+// El aviso debajo de la próxima con la frecuencia Eventual: si había una próxima guardada, que va a quedar vacía
+function textoDeProximaEventual(proximaGuardada) {
+  return soloFecha(proximaGuardada)
+    ? 'Con la frecuencia Eventual, la próxima actualización queda vacía.'
+    : 'Con la frecuencia Eventual no hay próxima actualización.';
+}
