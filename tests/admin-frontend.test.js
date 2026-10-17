@@ -2146,11 +2146,18 @@ describe('admin-fechas.js: fechaDeSelectores (Ruling 18: lo que no se toca va co
     assert.equal(admin.fechaDeSelectores({ mes: '7', anio: '', original: null }), null);
   });
 
-  it('solo el año (ejercicio): sin tocar el año va la guardada; con otro año, el 31/12', () => {
-    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '7', anio: '2026', original: '2026-07-31' }), '2026-07-31');
+  it('solo el año (ejercicio): sin tocar el año va la guardada si ya es un 31/12; con otro año, el 31/12', () => {
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '12', anio: '2025', original: '2025-12-31' }), '2025-12-31');
     assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '7', anio: '2025', original: '2026-07-31' }), '2025-12-31');
     assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '', anio: '2025', original: null }), '2025-12-31');
     assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '', anio: '', original: '2025-12-31' }), null);
+  });
+
+  it('solo el año (ejercicio): una guardada que no es 31/12 (un dataset que pasa a ejercicio) va como el 31/12 de su año', () => {
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '7', anio: '2026', original: '2026-07-31' }), '2026-12-31');
+    assert.equal(admin.fechaDeSelectores({ soloAnio: true, mes: '7', anio: '2026', original: '2026-07-31T03:00:00.000Z' }), '2026-12-31');
+    // Con mes y año (otro tipo) sigue valiendo la guardada tal cual
+    assert.equal(admin.fechaDeSelectores({ mes: '7', anio: '2026', original: '2026-07-31' }), '2026-07-31');
   });
 
   it('una guardada que no es una fecha cuenta como nula', () => {
@@ -2350,9 +2357,16 @@ describe('admin-fechas.js: la vista previa "Así va a salir en la próxima nota"
   it('sin título, sin próxima, sin gestión y sin "Qué se solicita": lo que diría la nota', () => {
     assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: '  ', gestion: '', proxima: null, solicita: '' })), {
       cabecera: 'Nota Digital (vista previa)', titulo: 'Título del dataset', fecha: '—',
-      solicita: 'La versión actualizada del conjunto de datos publicado, con la misma estructura.'
+      solicita: 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.'
     });
     assert.doesNotThrow(() => admin.textosDeVistaPrevia());
+  });
+
+  it('sin "Qué se solicita", el texto es el mismo que pone la nota (QUE_SE_SOLICITA_POR_DEFECTO del servicio)', () => {
+    const servicio = fs.readFileSync(new URL('../services/notasDigitalesContenido.js', import.meta.url), 'utf8');
+    const deLaNota = servicio.match(/const QUE_SE_SOLICITA_POR_DEFECTO = '([^']+)';/)?.[1];
+    assert.ok(deLaNota, 'el servicio declara QUE_SE_SOLICITA_POR_DEFECTO');
+    assert.equal(vm.runInContext('QUE_SE_SOLICITA_POR_DEFECTO', admin), deLaNota);
   });
 
   it('el aviso de la próxima con la frecuencia Eventual', () => {
@@ -2376,11 +2390,19 @@ describe('admin.js: lo puro del formulario', () => {
     assert.deepEqual(plano(a.tituloDelFormulario()), { titulo: 'Nuevo dataset', subtitulo: 'Carga manual' });
   });
 
-  it('los formatos son botones con aria-pressed: los habituales siempre, los otros solo si están elegidos', () => {
+  it('los habituales son botones con aria-pressed; los otros aparecen solo elegidos, y su botón dice que los saca', () => {
     const { chips } = a.htmlDeFormatos(CATALOGO, new Set([2, 7]));
-    const botones = [...chips.matchAll(/<button type="button" class="ad-formato" data-formato="(\d+)" aria-pressed="(true|false)">/g)].map((m) => [m[1], m[2]]);
-    assert.deepEqual(botones, [['1', 'false'], ['2', 'true'], ['7', 'true']]);
+    const habituales = [...chips.matchAll(/<button type="button" class="ad-formato" data-formato="(\d+)" aria-pressed="(true|false)">/g)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(habituales, [['1', 'false'], ['2', 'true']]);
+    // Al apretarlo desaparece: no es un botón que queda presionado, es "Sacar ODS"
+    assert.match(chips, /<button type="button" class="ad-formato sacar" data-formato="7" aria-label="Sacar ODS">/);
+    assert.equal(cantidad(chips, 'aria-pressed'), 2);
     assert.doesNotMatch(chips, /onclick|<span class="chip/);
+  });
+
+  it('el nombre del botón que saca un formato va escapado', () => {
+    const { chips } = a.htmlDeFormatos(CATALOGO, [8]);
+    assert.ok(chips.includes('aria-label="Sacar &lt;b&gt;SHP&lt;/b&gt;"'));
   });
 
   it('el desplegable ofrece los no habituales que no están elegidos, escapados', () => {
@@ -2436,9 +2458,10 @@ describe('admin.html: las ventanas son diálogos (spec 8.6, arreglo 5)', () => {
   it('ya no quedan modales viejos (.modal-overlay): todas las ventanas son velos con un diálogo modal con título', () => {
     assert.doesNotMatch(PAGINA_ADMIN, /modal-overlay/);
     assert.deepEqual(velos.map((v) => v.id).sort(),
-      ['modal-confirm-update', 'modal-dataset', 'modal-delete', 'modal-quick-area', 'modal-registrar-actualizacion', 'modal-step1']);
+      ['modal-confirm-update', 'modal-dataset', 'modal-delete', 'modal-descartar', 'modal-quick-area', 'modal-registrar-actualizacion', 'modal-step1']);
     for (const { id, atributos } of velos) {
-      assert.match(atributos, /role="dialog" aria-modal="true" aria-labelledby="([^"]+)"/, id);
+      // "¿Descartar los cambios?" es un alertdialog: pide una respuesta antes de seguir
+      assert.match(atributos, /role="(alert)?dialog" aria-modal="true" aria-labelledby="([^"]+)"/, id);
       const titulo = atributos.match(/aria-labelledby="([^"]+)"/)[1];
       assert.match(PAGINA_ADMIN, new RegExp(`<h2 id="${titulo}">`), `${id}: su título`);
     }
@@ -2586,7 +2609,7 @@ describe('admin.html: estilos del formulario', () => {
   const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
 
   it('los formatos elegidos se distinguen por aria-pressed, y el foco se ve en los campos y los formatos', () => {
-    assert.match(estilo, /\.ad-formato\[aria-pressed=true\] \{[^}]*background:/);
+    assert.match(estilo, /\.ad-formato\[aria-pressed=true\], \.ad-formato\.sacar \{[^}]*background:/);
     for (const selector of ['.ad-form input:focus-visible', '.ad-form select:focus-visible', '.ad-form textarea:focus-visible', '.ad-formato:focus-visible', '.ad-sugerencia button:focus-visible']) {
       assert.ok(estilo.includes(selector), selector);
     }
@@ -2686,5 +2709,194 @@ describe('admin.js: el formulario del dataset (con una página de mentira)', () 
     rechazar(new Error('Este dataset tiene cambios pendientes de aprobación. No se puede editar hasta que sean revisados.'));
     await envio;
     assert.deepEqual(llamadas.error, ['Este dataset tiene cambios pendientes de aprobación. No se puede editar hasta que sean revisados.']);
+  });
+});
+
+// =====================================================
+// Revisión de la Task 10 (Rulings 19 y 20)
+// =====================================================
+
+describe('admin-fechas.js: cambios sin guardar en el formulario (Ruling 19)', () => {
+  const base = (extra = {}) => ({
+    titulo: 'Pauta', area_id: '4', descripcion: '', tema_principal_id: '2', tema_secundario_id: '', frecuencia_id: '3',
+    formatos: [1, 3], url_dataset: '', observaciones: '', que_se_solicita: 'La planilla.', tipo_gestion: 'externa',
+    tipo_pedido: 'acumulado', meses: 3, cargado: '2026-10-13', datosMes: '7', datosAnio: '2026', proxMes: '1', proxAnio: '2027',
+    original: { id: 10, datos_al: '2026-07-31', proxima_actualizacion: '2027-01-31', tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado' },
+    ...extra
+  });
+
+  it('el formulario como se abrió no tiene cambios', () => {
+    const huella = admin.huellaDelFormulario(base());
+    assert.equal(typeof huella, 'string');
+    assert.equal(admin.hayCambiosSinGuardar(huella, base()), false);
+  });
+
+  it('cualquier campo que cambia lo que se mandaría cuenta como cambio', () => {
+    const huella = admin.huellaDelFormulario(base());
+    for (const extra of [{ titulo: 'Otra' }, { formatos: [1] }, { proxMes: '2' }, { datosMes: '' }, { tipo_pedido: 'foto' },
+      { cargado: '2026-10-14' }, { que_se_solicita: 'Otra planilla.' }, { tipo_gestion: 'interna' }]) {
+      assert.equal(admin.hayCambiosSinGuardar(huella, base(extra)), true, JSON.stringify(extra));
+    }
+  });
+
+  it('lo que no cambia lo que se manda no cuenta: los mismos formatos en otro orden, espacios en los extremos de "Qué se solicita"', () => {
+    const huella = admin.huellaDelFormulario(base());
+    assert.equal(admin.hayCambiosSinGuardar(huella, base({ formatos: [3, 1] })), false);
+    assert.equal(admin.hayCambiosSinGuardar(huella, base({ que_se_solicita: '  La planilla.  ' })), false);
+  });
+
+  it('volver a dejar un campo como estaba ya no es un cambio', () => {
+    const huella = admin.huellaDelFormulario(base());
+    assert.equal(admin.hayCambiosSinGuardar(huella, base({ proxMes: '2' })), true);
+    assert.equal(admin.hayCambiosSinGuardar(huella, base({ proxMes: '1' })), false);
+  });
+
+  it('sin huella (el formulario no está abierto) no hay cambios; sin formulario no tira error', () => {
+    assert.equal(admin.hayCambiosSinGuardar(null, base()), false);
+    assert.doesNotThrow(() => admin.huellaDelFormulario());
+  });
+});
+
+describe('admin.html: "¿Descartar los cambios?" y la baja (Rulings 19 y 20)', () => {
+  const descartar = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-descartar" hidden>([\s\S]*?)<!-- Fin de descartar -->/)?.[1] ?? '';
+  const eliminar = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-delete" hidden>([\s\S]*?)<!-- Fin de eliminar -->/)?.[1] ?? '';
+
+  it('la confirmación propia, después del formulario (queda encima): "Seguir editando" y "Descartar"', () => {
+    assert.match(descartar, /<div class="ad-ventana chica" role="alertdialog" aria-modal="true" aria-labelledby="descartar-titulo" aria-describedby="descartar-texto">/);
+    assert.match(descartar, /<h2 id="descartar-titulo">¿Descartar los cambios\?<\/h2>/);
+    assert.match(descartar, /<button type="button" class="ad-btn" id="btn-seguir-editando" data-cerrar>Seguir editando<\/button>/);
+    assert.match(descartar, /<button type="button" class="ad-btn peligro" id="btn-descartar">Descartar<\/button>/);
+    assert.ok(PAGINA_ADMIN.indexOf('id="modal-descartar"') > PAGINA_ADMIN.indexOf('id="modal-dataset"'));
+  });
+
+  it('admin.js no usa confirm() del navegador', () => {
+    assert.doesNotMatch(CODIGO_ADMIN, /(^|[^\w.])confirm\(/m);
+  });
+
+  it('la baja dice lo que hace, con voseo: es una propuesta que otra persona aprueba', () => {
+    assert.match(eliminar, /<p>¿Querés proponer la baja de «<strong id="delete-dataset-name"><\/strong>»\?<\/p>/);
+    assert.ok(eliminar.includes('Otra persona la tiene que aprobar en Mi Perfil.'));
+    assert.match(eliminar, /<button type="button" class="ad-btn peligro" id="btn-confirmar-eliminar">Proponer baja<\/button>/);
+    assert.doesNotMatch(eliminar, /Está seguro|no se puede deshacer/);
+  });
+});
+
+describe('admin.js: salir del formulario con cambios, ventanas apiladas y el error de los formatos (con una página de mentira)', () => {
+  const VELOS = ['modal-step1', 'modal-dataset', 'modal-confirm-update', 'modal-quick-area', 'modal-delete', 'modal-descartar', 'modal-registrar-actualizacion'];
+  const armar = () => {
+    const { contexto } = cargarAdminJs();
+    const pagina = paginaDeMentira();
+    pagina.elemento('dataset-form').reset = () => {};
+    for (const id of VELOS) pagina.elemento(id).hidden = true;
+    contexto.document = pagina.documento;
+    Object.assign(contexto, { setTimeout, clearTimeout });
+    contexto.avisarExito = () => {};
+    contexto.avisarError = () => {};
+    contexto.API = { calculoPedido: async () => ({ pedido: null }), updateDataset: async () => ({}) };
+    contexto.recargarLista = async () => {};
+    return { contexto, pagina };
+  };
+  const PAUTA = { id: 10, titulo: 'Pauta Publicitaria', tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado', formatos_array: [{ id: 1 }] };
+  const escape = (contexto) => contexto.teclaEnPagina({ key: 'Escape', preventDefault() {} });
+  const abierta = (pagina, id) => !pagina.elemento(id).hidden;
+  // Un clic que empieza y termina en el velo del formulario (afuera de la ventana)
+  const clicAfuera = (contexto, pagina) => {
+    const velo = pagina.elemento('modal-dataset');
+    velo.closest = () => null;
+    contexto.presionEnVelo({ target: velo, currentTarget: velo });
+    contexto.alHacerClicEnVelo({ target: velo, currentTarget: velo, detail: 1 });
+  };
+
+  it('sin cambios, Escape y el clic afuera lo cierran como siempre', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    escape(contexto);
+    assert.equal(abierta(pagina, 'modal-dataset'), false);
+    contexto.openModal(PAUTA);
+    clicAfuera(contexto, pagina);
+    assert.equal(abierta(pagina, 'modal-dataset'), false);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+  });
+
+  it('con cambios, el clic afuera no hace nada', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    pagina.elemento('titulo').value = 'Otro título';
+    clicAfuera(contexto, pagina);
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+  });
+
+  it('con cambios, Escape pregunta "¿Descartar los cambios?" encima del formulario, que queda inerte', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    pagina.elemento('titulo').value = 'Otro título';
+    escape(contexto);
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+    assert.equal(abierta(pagina, 'modal-descartar'), true);
+    assert.equal(pagina.elemento('modal-dataset').inert, true);
+    assert.equal(pagina.elemento('modal-descartar').inert, false);
+    assert.equal(pagina.enfocados.at(-1), 'btn-seguir-editando');
+  });
+
+  it('"Seguir editando" (o Escape otra vez) vuelve al formulario con los cambios', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    pagina.elemento('titulo').value = 'Otro título';
+    escape(contexto);
+    escape(contexto);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+    assert.equal(pagina.elemento('modal-dataset').inert, false);
+    assert.equal(pagina.elemento('titulo').value, 'Otro título');
+  });
+
+  it('"Descartar" cierra la pregunta y el formulario', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    pagina.elemento('titulo').value = 'Otro título';
+    escape(contexto);
+    contexto.descartarCambios();
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+    assert.equal(abierta(pagina, 'modal-dataset'), false);
+  });
+
+  it('la cruz y "Cancelar" (data-cerrar) cierran directamente, aunque haya cambios', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    pagina.elemento('titulo').value = 'Otro título';
+    const velo = pagina.elemento('modal-dataset');
+    contexto.alHacerClicEnVelo({ target: { closest: (selector) => (selector === '[data-cerrar]' ? {} : null) }, currentTarget: velo, detail: 1 });
+    assert.equal(abierta(pagina, 'modal-dataset'), false);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+  });
+
+  it('las otras ventanas siguen cerrando con Escape sin preguntar', () => {
+    const { contexto, pagina } = armar();
+    contexto.openStep1Modal();
+    pagina.elemento('andino-url').value = 'https://datos.comodoro.gov.ar/dataset/algo';
+    escape(contexto);
+    assert.equal(abierta(pagina, 'modal-step1'), false);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+  });
+
+  it('una ventana encima del formulario lo deja inerte, y al cerrarse vuelve', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    assert.equal(pagina.elemento('modal-dataset').inert, false);
+    contexto.openQuickAreaModal();
+    assert.equal(pagina.elemento('modal-dataset').inert, true);
+    assert.equal(pagina.elemento('modal-quick-area').inert, false);
+    contexto.closeQuickAreaModal();
+    assert.equal(pagina.elemento('modal-dataset').inert, false);
+  });
+
+  it('el error de los formatos queda unido a su grupo, como el de "Datos al"', async () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal({ ...PAUTA, formatos_array: [] });
+    await contexto.enviarFormulario({ preventDefault() {} });
+    const grupo = pagina.elemento('chips-container');
+    assert.equal(grupo.getAttribute('aria-invalid'), 'true');
+    assert.match(grupo.getAttribute('aria-describedby') ?? '', /form-error-formatos/);
   });
 });

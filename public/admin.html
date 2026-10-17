@@ -212,12 +212,12 @@
 
         /* Los formatos: botones que se aprietan (aria-pressed), con el check a la vista solo en los elegidos */
         .ad-formatos { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--pf-linea); border-radius: 10px; background: var(--pf-sutil); margin-bottom: 8px; min-height: 48px; }
-        .ad-formatos.con-error { border-color: var(--pf-rojo); }
         .ad-formato { font: inherit; font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border: 1px solid var(--pf-borde-campo); border-radius: 999px; background: #fff; color: var(--pf-texto); cursor: pointer; }
         .ad-formato:hover { border-color: var(--pf-acento); }
-        .ad-formato[aria-pressed=true] { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
+        /* Los no habituales elegidos (.sacar) se ven elegidos: al apretarlos se sacan */
+        .ad-formato[aria-pressed=true], .ad-formato.sacar { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
         .ad-formato svg { display: none; }
-        .ad-formato[aria-pressed=true] svg { display: inline; }
+        .ad-formato[aria-pressed=true] svg, .ad-formato.sacar svg { display: inline; }
         .ad-formato .ad-quitar { font-size: 1rem; line-height: 1; }
         .ad-form .ad-agregar-formato { width: auto; max-width: 100%; font-size: 0.85rem; border-style: dashed; color: var(--pf-suave); }
 
@@ -717,21 +717,42 @@
     <div class="ad-velo" id="modal-delete" hidden>
         <div class="ad-ventana chica" role="dialog" aria-modal="true" aria-labelledby="eliminar-titulo" aria-describedby="eliminar-texto">
             <header>
-                <div><h2 id="eliminar-titulo">Confirmar eliminación</h2></div>
+                <div><h2 id="eliminar-titulo">Eliminar dataset</h2></div>
                 <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
             <div class="ad-cuerpo" id="eliminar-texto">
-                <p>¿Está seguro de eliminar el dataset <strong id="delete-dataset-name"></strong>?</p>
-                <p class="ad-ayuda">Esta acción no se puede deshacer.</p>
+                <p>¿Querés proponer la baja de «<strong id="delete-dataset-name"></strong>»?</p>
+                <p class="ad-ayuda">Otra persona la tiene que aprobar en Mi Perfil.</p>
             </div>
             <footer>
                 <div class="botones">
                     <button type="button" class="ad-btn" id="btn-cancelar-eliminar" data-cerrar>Cancelar</button>
-                    <button type="button" class="ad-btn peligro" id="btn-confirmar-eliminar">Eliminar</button>
+                    <button type="button" class="ad-btn peligro" id="btn-confirmar-eliminar">Proponer baja</button>
                 </div>
             </footer>
         </div>
     </div>
+    <!-- Fin de eliminar -->
+
+    <!-- ¿Descartar los cambios? (Escape en el formulario con cambios sin guardar: queda encima del formulario) -->
+    <div class="ad-velo" id="modal-descartar" hidden>
+        <div class="ad-ventana chica" role="alertdialog" aria-modal="true" aria-labelledby="descartar-titulo" aria-describedby="descartar-texto">
+            <header>
+                <div><h2 id="descartar-titulo">¿Descartar los cambios?</h2></div>
+                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+            </header>
+            <div class="ad-cuerpo">
+                <p id="descartar-texto">Lo que cambiaste en el formulario no se va a proponer.</p>
+            </div>
+            <footer>
+                <div class="botones">
+                    <button type="button" class="ad-btn" id="btn-seguir-editando" data-cerrar>Seguir editando</button>
+                    <button type="button" class="ad-btn peligro" id="btn-descartar">Descartar</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+    <!-- Fin de descartar -->
 
     <!-- Registrar actualización (spec 2026-10-17-fechas-datasets, 8.3): admin.js la abre, la llena, la cierra y maneja el
          teclado (Escape, Tab dentro de la ventana). Un clic afuera cierra solo si la presión empezó en el velo -->

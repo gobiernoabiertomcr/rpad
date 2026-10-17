@@ -195,8 +195,9 @@ const ICONO_ELEGIDO = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height
 
 /**
  * Los formatos del formulario: { chips, opciones }. `chips`: un botón con aria-pressed por formato habitual, más los no
- * habituales elegidos (con una cruz: al apretarlo se saca); llevan data-formato con el id y el que los usa escucha los
- * clics por delegación, sin onclick. `opciones`: las <option> de "+ Agregar otro formato…", con los no habituales que no
+ * habituales elegidos, que al apretarlos desaparecen: no quedan "sin presionar", así que no llevan aria-pressed sino su
+ * nombre ("Sacar ODS") y una cruz. Llevan data-formato con el id y el que los usa escucha los clics por delegación, sin
+ * onclick. `opciones`: las <option> de "+ Agregar otro formato…", con los no habituales que no
  * están elegidos. `catalogo`: GET /catalogos/formatos; `seleccionados`: ids (lista o Set; número o texto).
  */
 function htmlDeFormatos(catalogo, seleccionados) {
@@ -204,8 +205,10 @@ function htmlDeFormatos(catalogo, seleccionados) {
   const elegidos = new Set(Array.from(seleccionados ?? [], (id) => Number(id)));
   const habitual = (f) => Number(f.habitual) === 1;
   const elegido = (f) => elegidos.has(Number(f.id));
-  const boton = (f) => `<button type="button" class="ad-formato" data-formato="${textoSeguro(f.id)}" aria-pressed="${elegido(f)}">`
-    + `${ICONO_ELEGIDO}${textoSeguro(f.nombre)}${habitual(f) ? '' : '<span class="ad-quitar" aria-hidden="true">&times;</span>'}</button>`;
+  const boton = (f) => (habitual(f)
+    ? `<button type="button" class="ad-formato" data-formato="${textoSeguro(f.id)}" aria-pressed="${elegido(f)}">${ICONO_ELEGIDO}${textoSeguro(f.nombre)}</button>`
+    : `<button type="button" class="ad-formato sacar" data-formato="${textoSeguro(f.id)}" aria-label="Sacar ${textoSeguro(f.nombre)}">`
+      + `${ICONO_ELEGIDO}${textoSeguro(f.nombre)}<span class="ad-quitar" aria-hidden="true">&times;</span></button>`);
   const chips = [...lista.filter(habitual), ...lista.filter((f) => !habitual(f) && elegido(f))].map(boton).join('');
   const opciones = '<option value="">+ Agregar otro formato…</option>'
     + lista.filter((f) => !habitual(f) && !elegido(f)).map((f) => `<option value="${textoSeguro(f.id)}">${textoSeguro(f.nombre)}</option>`).join('');
@@ -467,13 +470,15 @@ const ID_REGISTRO = 'modal-registrar-actualizacion';
 // teclado: el foco al cerrarla lo maneja ella (cerrarRegistro)
 const pilaDeVentanas = [];
 
-// Cómo se cierra cada ventana: con Escape, la cruz, "Cancelar" (data-cerrar) o un clic afuera
+// Cómo se cierra cada ventana: la cruz y "Cancelar" (data-cerrar) la cierran siempre; Escape y el clic afuera pasan antes
+// por salirDeVentana, que no deja perder los cambios del formulario (Ruling 19)
 const CIERRE_DE_VENTANA = {
   'modal-step1': () => closeStep1Modal(),
   'modal-dataset': () => closeModal(),
   'modal-confirm-update': () => closeConfirmUpdateModal(),
   'modal-quick-area': () => closeQuickAreaModal(),
   'modal-delete': () => closeDeleteModal(),
+  'modal-descartar': () => cerrarVentana('modal-descartar'),
   [ID_REGISTRO]: () => cerrarRegistro()
 };
 
@@ -483,22 +488,58 @@ function prepararVentanas() {
     if (id === ID_REGISTRO) continue;
     const velo = document.getElementById(id);
     velo.addEventListener('mousedown', presionEnVelo);
-    velo.addEventListener('click', (evento) => {
-      // esClicAfuera va primero: consume la presión anotada aunque el clic haya sido en un botón
-      if (esClicAfuera(evento) || evento.target.closest('[data-cerrar]')) CIERRE_DE_VENTANA[id]();
-    });
+    velo.addEventListener('click', alHacerClicEnVelo);
   }
   document.addEventListener('keydown', teclaEnPagina);
+}
+
+// Un clic en una ventana: la cruz y "Cancelar" la cierran; un clic afuera, solo si no se pierden cambios (salirDeVentana)
+function alHacerClicEnVelo(evento) {
+  const { id } = evento.currentTarget;
+  // esClicAfuera va primero: consume la presión anotada aunque el clic haya sido en un botón
+  const afuera = esClicAfuera(evento);
+  if (evento.target.closest('[data-cerrar]')) CIERRE_DE_VENTANA[id]();
+  else if (afuera) salirDeVentana(id, 'afuera');
+}
+
+/**
+ * Escape o un clic afuera (Ruling 19). El formulario con cambios sin guardar no se cierra así: con Escape pregunta
+ * "¿Descartar los cambios?" y con un clic afuera no hace nada (un clic de más no borra lo escrito). Sin cambios, y en las
+ * demás ventanas, cierra como siempre.
+ */
+function salirDeVentana(id, como) {
+  if (id === 'modal-dataset' && formularioConCambios()) {
+    if (como === 'escape') abrirVentana('modal-descartar', document.getElementById('btn-seguir-editando'));
+    return;
+  }
+  CIERRE_DE_VENTANA[id]();
+}
+
+// "Descartar": se cierran la pregunta y el formulario, sin guardar
+function descartarCambios() {
+  cerrarVentana('modal-descartar');
+  closeModal();
 }
 
 function apilarVentana(id, origen) {
   desapilarVentana(id);
   pilaDeVentanas.push({ id, origen: origen ?? null });
+  actualizarInert();
 }
 
 function desapilarVentana(id) {
   const indice = pilaDeVentanas.findIndex((ventana) => ventana.id === id);
-  return indice === -1 ? null : pilaDeVentanas.splice(indice, 1)[0];
+  if (indice === -1) return null;
+  const [ventana] = pilaDeVentanas.splice(indice, 1);
+  document.getElementById(id).inert = false;
+  actualizarInert();
+  return ventana;
+}
+
+// Solo la ventana de arriba se puede usar: las de abajo quedan inertes (ni el foco ni el lector de pantalla llegan a ellas)
+function actualizarInert() {
+  const arriba = pilaDeVentanas.length - 1;
+  pilaDeVentanas.forEach((ventana, i) => { document.getElementById(ventana.id).inert = i !== arriba; });
 }
 
 // Lo que tenía el foco al abrir la ventana `id`, o null
@@ -691,10 +732,12 @@ async function fetchAndContinue(evento) {
 // - enviando: se está mandando la propuesta (el botón no se puede apretar);
 // - secuencia, demora, clave: la vista previa (cada pedido cuenta, se espera un instante antes de pedir y uno igual al
 //   último no se repite);
-// - sugerencia, alerta: lo último que se escribió en la sugerencia y en el aviso (no se reescriben si no cambian).
+// - sugerencia, alerta: lo último que se escribió en la sugerencia y en el aviso (no se reescriben si no cambian);
+// - huella: lo que se mandaría, tomado al abrir con lo importado ya puesto (huellaDelFormulario); null con el formulario
+//   cerrado. Con ella se sabe si hay cambios sin guardar (Ruling 19).
 const edicion = {
   original: null, tipoAMano: false, soloAnio: false, hoy: null, apertura: 0, enviando: false,
-  secuencia: 0, demora: null, clave: null, sugerencia: null, alerta: null
+  secuencia: 0, demora: null, clave: null, sugerencia: null, alerta: null, huella: null
 };
 // La vista previa espera este tiempo (ms) después del último cambio antes de pedirle el pedido al servidor
 const DEMORA_DE_VISTA_PREVIA = 250;
@@ -714,10 +757,16 @@ function prepararFormulario() {
   document.getElementById('btn-confirm-update').addEventListener('click', confirmUpdateFromAndino);
   document.getElementById('form-area-rapida').addEventListener('submit', saveQuickArea);
   document.getElementById('btn-confirmar-eliminar').addEventListener('click', confirmDelete);
+  document.getElementById('btn-descartar').addEventListener('click', descartarCambios);
 }
 
 function formularioAbierto() {
   return !document.getElementById('modal-dataset').hidden;
+}
+
+// ¿El formulario abierto tiene cambios sin guardar? (Ruling 19)
+function formularioConCambios() {
+  return formularioAbierto() && hayCambiosSinGuardar(edicion.huella, formularioDelDataset());
 }
 
 /**
@@ -785,6 +834,7 @@ function openModal(dataset = null, andinoData = null, origen = undefined) {
   document.getElementById('form-prox-anio').innerHTML = proxima.anio;
 
   actualizarFormulario();
+  edicion.huella = huellaDelFormulario(formularioDelDataset());
   abrirVentana('modal-dataset', document.getElementById('titulo'), origen);
 }
 
@@ -797,6 +847,7 @@ function closeModal() {
   clearTimeout(edicion.demora);
   edicion.secuencia++;
   edicion.clave = null;
+  edicion.huella = null;
   andinoAreaReferencia = null;
   cerrarVentana('modal-dataset');
 }
@@ -1020,9 +1071,9 @@ function mostrarPedidoDeVistaPrevia(pedido, error) {
   lugar.hidden = !error;
 }
 
+// El error de los formatos, unido a su grupo (aria-invalid y aria-describedby), como el de "Datos al"
 function mostrarErrorDeFormatos(texto) {
-  mostrarError('form-error-formatos', texto);
-  document.getElementById('chips-container').classList.toggle('con-error', Boolean(texto));
+  mostrarError('form-error-formatos', texto, { campos: ['chips-container'] });
 }
 
 // Los errores de cada campo (problemasDelFormulario), en su lugar y marcando sus campos
@@ -1284,7 +1335,7 @@ async function confirmDelete() {
 
   try {
     await API.deleteDataset(deleteId);
-    avisarExito('Solicitud de eliminación enviada para aprobación');
+    avisarExito('Baja propuesta. Queda pendiente de aprobación en Mi Perfil.');
     closeDeleteModal();
     await recargarLista();
     enfocarLaListaSiSeRearmo(origen);
@@ -1694,7 +1745,7 @@ function teclaEnPagina(evento) {
   if (!id) return;
   if (evento.key === 'Escape') {
     evento.preventDefault();
-    CIERRE_DE_VENTANA[id]();
+    salirDeVentana(id, 'escape');
   } else if (evento.key === 'Tab') {
     retenerFoco(evento, document.querySelector(`#${id} .ad-ventana`));
   }

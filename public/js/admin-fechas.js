@@ -669,7 +669,9 @@ const TIPOS_DE_PEDIDO = Object.freeze([
   Object.freeze(['eventual', 'Eventual'])
 ]);
 const ERROR_FALTA_PROXIMA = 'Falta la próxima actualización: es obligatoria salvo con la frecuencia Eventual';
-const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura.';
+// El "Qué se solicita" que pone la nota cuando el dataset no lo tiene: copia de QUE_SE_SOLICITA_POR_DEFECTO de
+// services/notasDigitalesContenido.js, para que la vista previa diga lo mismo. Un test verifica que sean iguales
+const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
 // Los años de "Datos al" empiezan acá (el selector se amplía si la fecha guardada es anterior)
 const PRIMER_ANIO_DE_DATOS_AL = 2015;
 
@@ -777,6 +779,8 @@ function textoDeAvisoDeFrases(frases) {
  * aunque no sea fin de mes: el formulario no corrige en silencio una fecha que nadie tocó (y el servidor la rechazaría como
  * un cambio). Si cambiaron, el fin del mes elegido, con febrero en 28 (solo el año: el 31/12). Sin mes o sin año
  * ("Sin dato"), null.
+ * Solo el año (Ruling 20): en un ejercicio "Datos al" es el 31/12 del ejercicio publicado, así que una guardada de otro día
+ * (un dataset que pasa a ejercicio) va como el 31/12 de su año: el selector muestra solo el año y es lo que se ve.
  */
 function fechaDeSelectores({ mes, anio, soloAnio = false, original } = {}) {
   const guardada = soloFecha(original);
@@ -784,7 +788,7 @@ function fechaDeSelectores({ mes, anio, soloAnio = false, original } = {}) {
   const elegidoMes = soloAnio ? null : enteroDe(mes);
   const mismoAnio = elegidoAnio === (guardada ? Number(guardada.slice(0, 4)) : null);
   const mismoMes = soloAnio || elegidoMes === (guardada ? Number(guardada.slice(5, 7)) : null);
-  if (mismoAnio && mismoMes) return guardada;
+  if (mismoAnio && mismoMes) return soloAnio && guardada && !guardada.endsWith('-12-31') ? finDeMesDe(elegidoAnio, 12) : guardada;
   if (elegidoAnio === null || (!soloAnio && elegidoMes === null)) return null;
   return finDeMesDe(elegidoAnio, soloAnio ? 12 : elegidoMes);
 }
@@ -879,6 +883,21 @@ function cuerpoDelDataset(formulario) {
     observaciones: texto(f.observaciones) || null,
     que_se_solicita: texto(f.que_se_solicita).trim() || null
   };
+}
+
+/**
+ * La huella del formulario: lo que se mandaría (cuerpoDelDataset), como texto, con los formatos ordenados (el orden en que
+ * se eligieron no cambia nada). Se toma al abrir el formulario, con lo importado ya puesto, y sirve para saber si hay
+ * cambios sin guardar (Ruling 19).
+ */
+function huellaDelFormulario(formulario) {
+  const cuerpo = cuerpoDelDataset(formulario);
+  return JSON.stringify({ ...cuerpo, formatos: [...cuerpo.formatos].map(String).sort() });
+}
+
+// ¿El formulario cambia lo que se mandaría respecto de la huella tomada al abrirlo? Sin huella (cerrado), no
+function hayCambiosSinGuardar(huella, formulario) {
+  return typeof huella === 'string' && huellaDelFormulario(formulario) !== huella;
 }
 
 /**
