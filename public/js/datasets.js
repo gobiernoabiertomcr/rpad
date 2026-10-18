@@ -335,7 +335,7 @@ function filaCsv(d) {
 
 // El CSV completo, con el BOM (para que Excel lea los acentos) y cada celda entre comillas
 function armarCsv(datasets) {
-  return '﻿' + [ENCABEZADOS_CSV, ...datasets.map(filaCsv)]
+  return '\uFEFF' + [ENCABEZADOS_CSV, ...datasets.map(filaCsv)]
     .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
     .join('\n');
 }

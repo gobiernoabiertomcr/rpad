@@ -97,12 +97,13 @@ function renderDataset(d) {
 // FECHAS (puras)
 // ====================
 
-// "Datos al": dd/mm/aaaa; "Ejercicio aaaa" en un presupuesto; "Relevamiento de {mes} {año}" en un relevamiento; "—" sin dato
+// "Datos al": dd/mm/aaaa; "Ejercicio aaaa" en un presupuesto; "Relevamiento de {mes} de {año}" en un relevamiento (como
+// "julio de 2026" en la próxima; Ruling 24); "—" sin dato
 function textoDatosAl(d) {
   const fecha = Utils.soloFecha(d?.datos_al);
   if (!fecha) return Utils.SIN_DATO;
   if (d.tipo_pedido === 'ejercicio') return `Ejercicio ${fecha.slice(0, 4)}`;
-  if (d.tipo_pedido === 'relevamiento') return `Relevamiento de ${Utils.nombreDeMes(Number(fecha.slice(5, 7)))} ${fecha.slice(0, 4)}`;
+  if (d.tipo_pedido === 'relevamiento') return `Relevamiento de ${Utils.mesDeAnio(fecha)}`;
   return Utils.fechaCorta(fecha);
 }
 

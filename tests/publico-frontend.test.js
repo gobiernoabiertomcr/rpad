@@ -102,10 +102,11 @@ describe('dataset-detail.js: las tres fechas del detalle', () => {
     assert.equal(detalle.textoProximaPrevista(dataset({ proxima_actualizacion: '0000-00-00', estado: 'sin-fecha' })), '—');
   });
 
-  it('Datos al: dd/mm/aaaa, "Ejercicio aaaa" en un presupuesto, "Relevamiento de {mes} {año}" en un relevamiento, o una raya', () => {
+  it('Datos al: dd/mm/aaaa, "Ejercicio aaaa" en un presupuesto, "Relevamiento de {mes} de {año}" en un relevamiento, o una raya', () => {
     assert.equal(detalle.textoDatosAl(dataset()), '31/12/2025');
     assert.equal(detalle.textoDatosAl(dataset({ tipo_pedido: 'ejercicio' })), 'Ejercicio 2025');
-    assert.equal(detalle.textoDatosAl(dataset({ tipo_pedido: 'relevamiento', datos_al: '2026-06-30' })), 'Relevamiento de junio 2026');
+    // Con "de" antes del año, como "julio de 2026" en la próxima (Ruling 24)
+    assert.equal(detalle.textoDatosAl(dataset({ tipo_pedido: 'relevamiento', datos_al: '2026-06-30' })), 'Relevamiento de junio de 2026');
     assert.equal(detalle.textoDatosAl(dataset({ datos_al: null })), '—');
     assert.equal(detalle.textoDatosAl(dataset({ datos_al: '0000-00-00' })), '—');
     assert.equal(detalle.textoDatosAl(dataset({ tipo_pedido: 'ejercicio', datos_al: null })), '—');
@@ -160,6 +161,7 @@ describe('datasets.js: la tarjeta del listado', () => {
 
   it('"Datos al" en un presupuesto y en un relevamiento, y sin dato', () => {
     assert.equal(listado.textoDatosAlCorto(dataset({ tipo_pedido: 'ejercicio' })), 'Ejercicio 2025');
+    // En el listado va abreviado, como "Datos al dic 2025" (Ruling 25)
     assert.equal(listado.textoDatosAlCorto(dataset({ tipo_pedido: 'relevamiento', datos_al: '2026-06-30' })), 'Relevamiento de jun 2026');
     assert.equal(listado.textoDatosAlCorto(dataset({ datos_al: null })), 'Datos al —');
     assert.equal(listado.textoProximaCorta(eventual()), 'Eventual');
@@ -272,6 +274,16 @@ describe('datasets.js: el CSV', () => {
     const [, fila] = csv.slice(1).split('\n');
     assert.ok(fila.startsWith('"Con ""comillas"", y coma","Secretaría de Hacienda"'));
     assert.equal(csv.slice(1).split('\n').length, 2);
+  });
+
+  it('el BOM es U+FEFF y en el código va escrito como escape, no como carácter invisible', () => {
+    const BOM = 0xFEFF;
+    assert.equal(listado.armarCsv([]).charCodeAt(0), BOM);
+    assert.equal(listado.armarCsv([dataset()]).charCodeAt(0), BOM);
+    // Un carácter invisible lo puede borrar un editor o una herramienta que saca BOM, sin que nadie lo note
+    const fuente = leer('js/datasets.js');
+    assert.ok(!fuente.includes(String.fromCharCode(BOM)), 'datasets.js no tiene un U+FEFF literal');
+    assert.ok(fuente.includes(`'${String.fromCharCode(92)}uFEFF'`), 'datasets.js escribe el BOM como escape');
   });
 });
 

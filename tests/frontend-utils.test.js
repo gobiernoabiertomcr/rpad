@@ -208,8 +208,28 @@ describe('Utils.calcularEstado: el respaldo da lo mismo que el servidor', () => 
   it('estadoDe usa el estado que manda el servidor y solo calcula si no viene', () => {
     assert.equal(Utils.estadoDe({ estado: 'eventual', proxima_actualizacion: '2020-01-31', frecuencia_dias: 30 }), 'eventual');
     assert.equal(Utils.estadoDe({ estado: 'actualizado', proxima_actualizacion: '2020-01-31', frecuencia_dias: 30 }), 'actualizado');
-    assert.equal(Utils.estadoDe({ proxima_actualizacion: '2020-01-31', frecuencia_dias: 30, tipo_gestion: 'interna' }), 'atrasado');
-    assert.equal(Utils.estadoDe({ proxima_actualizacion: null, frecuencia_dias: null }), 'eventual');
+    assert.equal(Utils.estadoDe({ proxima_actualizacion: '2020-01-31', frecuencia_meses: 1, frecuencia_dias: 30, tipo_gestion: 'interna' }), 'atrasado');
+    assert.equal(Utils.estadoDe({ proxima_actualizacion: null, frecuencia_meses: null, frecuencia_dias: null }), 'eventual');
+  });
+
+  it('estadoDe decide Eventual con frecuencia_meses, como el servidor, y usa frecuencia_dias solo si faltan los meses', () => {
+    const proxima = '2020-01-31T03:00:00.000Z';
+    // Manda frecuencia_meses: sin meses es eventual aunque tenga días, y con meses no lo es aunque no tenga días
+    assert.equal(Utils.estadoDe({ proxima_actualizacion: proxima, frecuencia_meses: null, frecuencia_dias: 30 }), 'eventual');
+    assert.equal(Utils.estadoDe({ proxima_actualizacion: proxima, frecuencia_meses: 3, frecuencia_dias: null }), 'sin-respuesta');
+    // Una respuesta sin frecuencia_meses (vieja) usa los días
+    assert.equal(Utils.estadoDe({ proxima_actualizacion: proxima, frecuencia_dias: 30 }), 'sin-respuesta');
+    assert.equal(Utils.estadoDe({ proxima_actualizacion: proxima, frecuencia_dias: null }), 'eventual');
+    // Y da lo mismo que estadoDelDataset con los meses
+    for (const meses of [null, 1, 3, 12]) {
+      for (const proximaIso of [null, '2020-01-31', sumarDias(Utils.hoyEnArgentina(), 30), '2099-12-31']) {
+        assert.equal(
+          Utils.estadoDe({ proxima_actualizacion: proximaIso, frecuencia_meses: meses, frecuencia_dias: 999, tipo_gestion: 'externa' }),
+          estadoDelDataset({ proxima: proximaIso, meses, tipoGestion: 'externa', hoy: Utils.hoyEnArgentina() }).estado,
+          `${meses} ${proximaIso}`
+        );
+      }
+    }
   });
 });
 

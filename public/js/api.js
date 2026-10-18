@@ -610,20 +610,23 @@ const Utils = {
   },
 
   // Estado del dataset. Las páginas usan el que manda el servidor (d.estado, de estadoDelDataset): esto queda solo de
-  // respaldo (Utils.estadoDe) y da lo mismo. Un Eventual (sin frecuencia en días) da 'eventual'; sin próxima, 'sin-fecha';
-  // vencido, 'atrasado' (gestión interna) o 'sin-respuesta' (externa); hasta 60 días, 'proximo' (el día del vencimiento
-  // incluido); si no, 'actualizado'
-  calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion = 'externa', hoy = Utils.hoyEnArgentina()) {
-    if (frecuenciaDias === null || frecuenciaDias === undefined) return 'eventual';
+  // respaldo (Utils.estadoDe) y da lo mismo. Un Eventual (frecuencia null: sin meses ni días) da 'eventual'; sin próxima,
+  // 'sin-fecha'; vencido, 'atrasado' (gestión interna) o 'sin-respuesta' (externa); hasta 60 días, 'proximo' (el día del
+  // vencimiento incluido); si no, 'actualizado'
+  calcularEstado(proximaActualizacion, frecuencia, tipoGestion = 'externa', hoy = Utils.hoyEnArgentina()) {
+    if (frecuencia === null || frecuencia === undefined) return 'eventual';
     const dias = Utils.getDiasRestantes(proximaActualizacion, hoy);
     if (dias === null) return 'sin-fecha';
     if (dias < 0) return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
     return dias <= 60 ? 'proximo' : 'actualizado';
   },
 
-  // El estado de un dataset de la API: el del servidor, o el calculado si no vino
+  // El estado de un dataset de la API: el del servidor, o el calculado si no vino. Eventual se decide con frecuencia_meses,
+  // como el servidor (estadoDelDataset); frecuencia_dias solo si la respuesta no trae los meses
   estadoDe(d) {
-    return d?.estado || Utils.calcularEstado(d?.proxima_actualizacion, d?.frecuencia_dias, d?.tipo_gestion);
+    if (d?.estado) return d.estado;
+    const frecuencia = d?.frecuencia_meses !== undefined ? d.frecuencia_meses : d?.frecuencia_dias;
+    return Utils.calcularEstado(d?.proxima_actualizacion, frecuencia, d?.tipo_gestion);
   },
 
   // 'AAAA-MM' del vencimiento de un dataset, o null si es eventual o no tiene próxima. Lo usan el gráfico de 12 meses del
