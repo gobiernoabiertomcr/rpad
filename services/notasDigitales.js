@@ -36,11 +36,13 @@ const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
-// A un dataset adelantado ya le toca la reiteración ese día: pasaron DIAS_PARA_REITERAR días corridos desde su cuenta_desde
-// (inclusive), la misma condición que seleccionarParaReiteracion. No entra en el aviso en su fecha y lo informa la
-// reiteración, citando la nota anticipada (spec 2026-10-15, 7.6). Es permanente: una vez verdadera, sigue verdadera, así
-// un dataset nunca sale el mismo día en un aviso y en una reiteración ni vuelve como aviso después de reiterado.
-const yaTocaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
+// A un dataset adelantado ya le toca la reiteración ese día: su aviso anticipado se envió y pasaron DIAS_PARA_REITERAR días
+// corridos desde su cuenta_desde (inclusive), las mismas condiciones que seleccionarParaReiteracion, que solo toma avisos
+// enviados. No entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada (spec 2026-10-15, 7.6).
+// Es permanente mientras el aviso siga enviado: así un dataset nunca sale el mismo día en un aviso y en una reiteración ni
+// vuelve como aviso después de reiterado. Si el anticipado no salió (pendiente o fallido), la reiteración no lo tomaría y
+// el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-18, 7.7).
+const yaTocaReiterar = (dataset, dia) => dataset.aviso_estado === 'enviada' && dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
 // los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
@@ -482,8 +484,11 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       if (modo === 'autorizado') {
         try {
           ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
+          // El que entra con los 20 días ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar) se guarda sin
+          // cuenta_desde: con la del anticipado, la reiteración de esta misma corrida lo tomaría también
           const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
-            .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy));
+            .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy))
+            .map(d => (d.cuenta_desde <= sumarDias(hoy, -DIAS_PARA_REITERAR) ? { ...d, cuenta_desde: null } : d));
           if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
         } catch (error) {
           anotarError(resumen, { tipo: 'aviso', gestion }, error);

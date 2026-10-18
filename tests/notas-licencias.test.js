@@ -573,6 +573,63 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
       assert.equal(del12.filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 0, 'el 12/01 sigue sin aviso externo');
       assert.equal((await notas()).filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 1, 'el externo tiene un solo aviso, el de la víspera');
     });
+
+    // La reiteración solo toma avisos enviados (seleccionarParaReiteracion), y un dataset con un aviso en cualquier estado no
+    // entra por "vencido sin aviso". Si el aviso adelantado no llegó a salir, excluir al dataset del aviso en su fecha lo dejaría
+    // sin nada: solo se lo excluye cuando el adelantado se envió.
+    const anticipadoExterno = async () => {
+      await correr('2026-12-09');
+      const anticipado = (await notas()).find(n => n.tipo === 'aviso' && n.gestion === 'externa');
+      assert.deepEqual(await datasetsDe(anticipado.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+      return anticipado;
+    };
+    const cargarAutorizada = () => query(
+      "UPDATE usuarios_licencias SET autorizado_id = ?, autorizado_at = '2027-01-08 10:00:00' WHERE id = ?", [autorizado.id, licenciaId]
+    );
+    const estadoDe = async (id) => (await query('SELECT estado, intentos FROM notas_digitales WHERE id = ?', [id]))[0];
+
+    it('el aviso adelantado quedó fallido sin reintentos: el 11/01 el externo sale en su fecha y no se reitera ese día', async () => {
+      const anticipado = await anticipadoExterno();
+      await query("UPDATE notas_digitales SET estado = 'fallida', intentos = ?, ultimo_error = 'SMTP caído', enviada_at = NULL WHERE id = ?",
+        [motor.MAX_INTENTOS, anticipado.id]);
+      await cargarAutorizada();
+
+      // El Estado coincide con lo que sale: el externo tiene su aviso en su fecha el 11/01
+      assert.deepEqual((await motor.estadoNotas({ hoy: '2027-01-11' })).proximas.externa.aviso, { fecha: '2027-01-11', cantidad: 1 });
+
+      const resumen = await correr('2027-01-11');
+      assert.deepEqual(resumen.errores, []);
+      const del11 = await delDia('2027-01-11');
+      const avisos = del11.filter(n => n.tipo === 'aviso' && n.gestion === 'externa');
+      assert.equal(avisos.length, 1, 'hay un aviso externo en su fecha');
+      assert.equal(avisos[0].presentada_por_id, autorizado.id);
+      // Sale sin cuenta_desde: si la guardara, los 20 días de la reiteración se contarían desde el 22/12 y se reiteraría el mismo día
+      assert.deepEqual(await datasetsDe(avisos[0].id), [{ dataset_id: externo, cuenta_desde: null }]);
+      assert.ok(avisos[0].html.includes(`Este pedido ya se había adelantado por Nota Digital N° ${anticipado.numero}/26 del 09/12/2026.`));
+      assert.equal(del11.filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa').length, 0, 'ese día no hay reiteración externa');
+      assert.deepEqual(await estadoDe(anticipado.id), { estado: 'fallida', intentos: motor.MAX_INTENTOS });
+
+      // El día siguiente no vuelve: el externo sigue con sus dos avisos
+      await correr('2027-01-12');
+      assert.equal((await notas()).filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 2, 'el 12/01 los avisos externos siguen siendo 2');
+    });
+
+    it('el aviso adelantado quedó pendiente: se reintenta primero y el externo va a la reiteración', async () => {
+      const anticipado = await anticipadoExterno();
+      await query("UPDATE notas_digitales SET estado = 'pendiente', intentos = 0, enviada_at = NULL WHERE id = ?", [anticipado.id]);
+      await cargarAutorizada();
+
+      const resumen = await correr('2027-01-11');
+      assert.deepEqual(resumen.errores, []);
+      // El reintento del paso 1 lo envía antes de elegir los avisos: ya está enviado y le toca la reiteración
+      assert.equal((await estadoDe(anticipado.id)).estado, 'enviada');
+      const del11 = await delDia('2027-01-11');
+      assert.equal(del11.filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 0, 'no hay aviso externo con fecha 11/01');
+      const reiteraciones = del11.filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa');
+      assert.equal(reiteraciones.length, 1);
+      assert.deepEqual((await datasetsDe(reiteraciones[0].id)).map(d => d.dataset_id), [externo]);
+      assert.ok(reiteraciones[0].html.includes(`>Nota Digital N° ${anticipado.numero}/26 (09/12/2026)`));
+    });
   });
 });
 

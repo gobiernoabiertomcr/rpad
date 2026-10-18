@@ -151,10 +151,13 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
 // cuenta_desde cae dentro de la licencia; si se actualizó, o ya tuvo otro aviso, no. Cada uno trae cuenta_desde, adelantado
 // (la nota que lo adelantó) y dia_en_su_fecha. Solo salen los que tienen ese día. No filtra por dia_en_su_fecha <= hoy:
 // lo hacen la corrida (sale hoy lo que tocaba hoy o antes) y el Estado (el próximo aviso). Con el pedido calculado con hoy.
+// aviso_estado es el estado del aviso anticipado ('pendiente', 'enviada' o 'fallida'), arriba de todo y no dentro de
+// adelantado: la corrida y el Estado lo usan para saber si a ese dataset ya le toca la reiteración (que solo toma avisos enviados).
 export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []) => {
   const [filas] = await pool.query(
     `SELECT ${COLUMNAS_DATASET}, DATE_FORMAT(avd.cuenta_desde, '%Y-%m-%d') AS cuenta_desde,
-            av.numero AS aviso_numero, av.anio AS aviso_anio, DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha
+            av.numero AS aviso_numero, av.anio AS aviso_anio, DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha,
+            av.estado AS aviso_estado
      ${DESDE_DATASETS}
      JOIN notas_digitales_datasets avd ON avd.dataset_id = d.id AND avd.vencimiento = d.proxima_actualizacion
      JOIN notas_digitales av ON av.id = avd.nota_id AND av.tipo = 'aviso' AND av.es_prueba = 0
@@ -168,9 +171,10 @@ export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []
     [gestion, hoy, licencia.desde, licencia.hasta]
   );
   return filas
-    .map(({ aviso_numero, aviso_anio, aviso_fecha, ...dataset }) => ({
+    .map(({ aviso_numero, aviso_anio, aviso_fecha, aviso_estado, ...dataset }) => ({
       ...conPedido(dataset, hoy),
       adelantado: { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha },
+      aviso_estado,
       dia_en_su_fecha: diaDelAvisoEnSuFecha({ cuentaDesde: dataset.cuenta_desde, licencia, ausencias })
     }))
     .filter(dataset => dataset.dia_en_su_fecha !== null);

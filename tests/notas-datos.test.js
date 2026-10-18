@@ -318,7 +318,10 @@ describe('pendientesEnSuFecha', () => {
     await adelantar(enviado);
     await adelantar(pendiente, { estado: 'pendiente' });
     await adelantar(fallido, { estado: 'fallida' });
-    assert.deepEqual(ids(await pendientes()), [enviado, pendiente, fallido]);
+    const filas = await pendientes();
+    assert.deepEqual(ids(filas), [enviado, pendiente, fallido]);
+    // Cada uno trae el estado de su aviso anticipado, arriba de todo (no dentro de adelantado)
+    assert.deepEqual(filas.map(f => [f.id, f.aviso_estado]), [[enviado, 'enviada'], [pendiente, 'pendiente'], [fallido, 'fallida']]);
   });
 
   it('no devuelve el que se actualizó (cambió su vencimiento)', async () => {
