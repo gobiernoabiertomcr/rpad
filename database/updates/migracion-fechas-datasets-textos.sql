@@ -1,0 +1,75 @@
+-- =====================================================
+-- RPAD - Fechas de los datasets: "Qué se solicita" sin la frase del período (26 datasets)
+-- =====================================================
+-- Spec: docs/superpowers/specs/2026-10-17-fechas-datasets-design.md (sección 12.2)
+-- Desde la entrega 2 la nota dice sola los "Datos solicitados" (el período) y la fecha sugerida de envío, así que el
+-- "Qué se solicita" ya no tiene que repetirlos. A los 26 textos relativos (ids 1-11, 13, 23, 35, 36, 46, 48, 52, 57, 61
+-- y 69-74) se les saca solo la frase del período ("el nuevo período (el trimestre siguiente al último publicado)",
+-- "a la fecha de corte del nuevo período" y parecidas); el resto de cada texto queda igual.
+-- Salen de la planilla rpad-revision-textos-y-grilla.xlsx, hoja "Qué se solicita", columna D: el usuario revisó los
+-- textos el 17/10/2026 y aprobó los 26 sin cambios.
+-- No toca la Escala salarial (38), que es relevamiento interno y cuya nota no le pone período, ni las guías (14, 15 y 16)
+-- ni Gimnasios (54) y Barrios (66), que son eventuales y cuyo "desde la última versión publicada" describe el contenido.
+-- ORDEN: se corre CON la entrega 2 (el cambio de las Notas Digitales que agrega "Datos solicitados"), no antes: con el
+-- código anterior, una nota saldría con el texto sin período y sin nada que lo reemplace. No necesita ninguna migración
+-- de estructura nueva: usa la columna que_se_solicita, que ya está en producción (phpMyAdmin > base del RPAD >
+-- pestaña SQL, pegar y Continuar).
+-- SE CORRE UNA SOLA VEZ. Después, el "Qué se solicita" cambia desde la aplicación, con doble verificación: volver a
+-- correr este archivo pisaría esos cambios. A diferencia de migracion-que-se-solicita-datos.sql no pregunta si el texto
+-- está vacío (IS NULL): justamente reemplaza los textos ya cargados.
+-- =====================================================
+
+SET NAMES utf8mb4;
+
+-- 1. Presupuesto Municipal
+UPDATE datasets SET que_se_solicita = 'Presupuesto de gastos aprobado, una fila por jurisdicción (Poder Ejecutivo, Concejo Deliberante y Tribunal de Cuentas) y tipo de gasto según partida principal, con el monto asignado en pesos. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 1;
+-- 2. Gasto Público
+UPDATE datasets SET que_se_solicita = 'Ejecución del gasto municipal, una fila por secretaría y subpartida, con partida principal, partida y subpartida presupuestaria, monto presupuestado y monto devengado en pesos. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 2;
+-- 3. Funcionarios Públicos
+UPDATE datasets SET que_se_solicita = 'Nómina actualizada de funcionarios de planta política (intendente, secretarios, subsecretarios, coordinadores, asesores y demás cargos), una fila por persona, con apellido y nombre, sector, secretaría, tipo de planta y cargo. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 3;
+-- 4. Castraciones de Animales
+UPDATE datasets SET que_se_solicita = 'Datos mensuales de castraciones quirúrgicas realizadas por el servicio veterinario municipal, una fila por mes, especie (canino o felino) y sexo (macho o hembra), con la cantidad de castraciones. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 4;
+-- 5. Obra Pública
+UPDATE datasets SET que_se_solicita = 'Listado de obras públicas contratadas o iniciadas, una fila por obra, con nombre, tipo y número de contratación (licitación pública, concurso privado de precios, etc.), lugar, fecha del acta de inicio, empresa adjudicataria, presupuesto oficial y monto del contrato. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 5;
+-- 6. Manejo de residuos sólidos urbanos en Comodoro Rivadavia
+UPDATE datasets SET que_se_solicita = 'Datos mensuales de residuos sólidos urbanos, en toneladas, una fila por mes y categoría: ingresados a la planta de tratamiento (PTRSU), domiciliarios, grandes generadores, procesados y recuperados (vidrio y secos). Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 6;
+-- 7. Infracciones de Tránsito
+UPDATE datasets SET que_se_solicita = 'Datos mensuales de actas de infracción de tránsito labradas, una fila por mes y tipo de falta (alcoholemia, velocidad, semáforo, maniobra peligrosa, celular, falta de seguro o registro, etc.), con la cantidad de actas. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 7;
+-- 8. Ejecución presupuestaria
+UPDATE datasets SET que_se_solicita = 'Ejecución presupuestaria: ingresos por recurso (corrientes, extraordinarios y de otras jurisdicciones), con cálculo de recursos, total recaudado y porcentaje de ejecución; y egresos por jurisdicción y tipo de gasto, con presupuesto, monto comprometido y porcentaje de ejecución. Remitir en planillas editables (Excel o CSV) con las mismas columnas de los archivos publicados.' WHERE id = 8;
+-- 9. Pedidos de Acceso a la Información Pública
+UPDATE datasets SET que_se_solicita = 'Registro de pedidos de acceso a la información pública presentados, una fila por pedido, con número de orden, solicitante, detalle de lo solicitado, área de competencia, fecha de presentación y estado del trámite, más el estado actualizado de los pedidos anteriores aún abiertos. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 9;
+-- 10. Pauta Publicitaria
+UPDATE datasets SET que_se_solicita = 'Contratos de pauta publicitaria oficial difundidos en el Boletín Oficial, una fila por contrato, con fecha de emisión, razón social, características de la publicación, período o motivo facturado, monto y número de Boletín. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 10;
+-- 11. Parque Automotor (Patentamiento)
+UPDATE datasets SET que_se_solicita = 'Cantidad de vehículos habilitados en la ciudad, una fila por año y tipo de vehículo (automóvil, pick up, moto, camión, ómnibus, acoplado, etc.), con la cantidad de unidades, para completar la serie histórica. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 11;
+-- 13. Siniestros viales por categoría
+UPDATE datasets SET que_se_solicita = 'Cantidad de siniestros viales ocurridos en la ciudad, una fila por año y gravedad: con víctimas fatales, con heridos leves y graves, y sin víctimas, para completar la serie histórica. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 13;
+-- 23. Ocupación hotelera y cantidad de turistas
+UPDATE datasets SET que_se_solicita = 'Datos mensuales de alojamiento turístico: porcentaje de ocupación de plazas y cantidad de turistas alojados en establecimientos habilitados, una fila por mes, para completar las dos series publicadas. Remitir en planillas editables (Excel o CSV) con las mismas columnas de los archivos publicados.' WHERE id = 23;
+-- 35. Movimientos aéreos del Aeropuerto Internacional General Mosconi
+UPDATE datasets SET que_se_solicita = 'Cantidad total de movimientos aéreos (despegues y aterrizajes) del Aeropuerto Internacional General Mosconi, una fila por año, para completar la serie histórica. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 35;
+-- 36. Tráfico de pasajeros aéreos en Comodoro Rivadavia
+UPDATE datasets SET que_se_solicita = 'Cantidad total de pasajeros embarcados y desembarcados en el Aeropuerto Internacional General Mosconi, una fila por año, para completar la serie histórica. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 36;
+-- 46. Consumo de agua potable en Comodoro Rivadavia (mensual)
+UPDATE datasets SET que_se_solicita = 'Consumo mensual de agua potable en la ciudad, en metros cúbicos, una fila por año y mes. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 46;
+-- 48. Consumo de agua potable en Comodoro Rivadavia (anual)
+UPDATE datasets SET que_se_solicita = 'Consumo total de agua potable en la ciudad, en metros cúbicos, una fila por año, para completar la serie histórica anual. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 48;
+-- 52. Directores Generales de Planta Permanente
+UPDATE datasets SET que_se_solicita = 'Nómina actualizada de Directores Generales de planta permanente del Poder Ejecutivo Municipal, una fila por Dirección General, con el área de la que depende, titular y subrogante (si lo hay), resolución de designación de cada uno y observaciones. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 52;
+-- 57. Presupuesto con perspectiva de género
+UPDATE datasets SET que_se_solicita = 'Presupuesto asignado a la Secretaría de la Mujer, Género y Diversidad, una fila por tipo de gasto (personal, funcionamiento y transferencias corrientes), con el monto en pesos. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 57;
+-- 61. Comercios habilitados por rubro
+UPDATE datasets SET que_se_solicita = 'Listado de habilitaciones comerciales otorgadas, una fila por comercio y rubro, con número de expediente, CUIT y titular, nombre de fantasía, domicilio (calle, altura y barrio), rubro habilitado y número de disposición. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 61;
+-- 69. Cantidad de usuarios del servicio de saneamiento (serie histórica)
+UPDATE datasets SET que_se_solicita = 'Cantidad de usuarios del servicio de saneamiento (cloacas), una fila por año, para completar la serie histórica. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 69;
+-- 70. Cantidad de usuarios de energía eléctrica (serie histórica - por categoría)
+UPDATE datasets SET que_se_solicita = 'Cantidad de usuarios del servicio de energía eléctrica, una fila por año y categoría de usuario: residencial, comercial, industrial, estatal (municipio, provincia y nación) y entidades sin fines de lucro. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 70;
+-- 71. Cantidad de usuarios de energía eléctrica (serie histórica - total)
+UPDATE datasets SET que_se_solicita = 'Cantidad total de usuarios del servicio de energía eléctrica en la ciudad, una fila por año, para completar la serie histórica. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 71;
+-- 72. Cantidad de usuarios del servicio de agua potable (serie histórica)
+UPDATE datasets SET que_se_solicita = 'Cantidad de usuarios del servicio de agua potable, separada en usuarios con consumo estimado (sin medidor) y con consumo medido (con medidor), para completar las dos series históricas publicadas. Remitir en planillas editables (Excel o CSV) con las mismas columnas de los archivos publicados.' WHERE id = 72;
+-- 73. Cantidad de usuarios del servicio de agua potable (anual)
+UPDATE datasets SET que_se_solicita = 'Cantidad de usuarios del servicio de agua potable, una fila por tipo de servicio: con consumo estimado (sin medidor) y con consumo medido (con medidor). Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.' WHERE id = 73;
+-- 74. Tránsito Medio Diario Anual (TMDA) en Comodoro Rivadavia
+UPDATE datasets SET que_se_solicita = 'Tránsito Medio Diario Anual (TMDA) en los dos tramos publicados de la Ruta Nacional 3 (barrio General Mosconi e intersección con la Ruta Nacional 26), con ruta, tramo, kilómetros de inicio y fin, año y valor. Remitir en planillas editables (Excel o CSV) con las mismas columnas de los archivos publicados.' WHERE id = 74;
