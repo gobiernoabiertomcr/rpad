@@ -235,33 +235,14 @@ const DATASET_SELECT_QUERY = `
   WHERE d.activo = TRUE
 `;
 
-// Función auxiliar para calcular estado
-// Ahora considera tipo_gestion para diferenciar 'atrasado' de 'sin-respuesta'
-function calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion = 'externa') {
-  // Si es frecuencia eventual (sin días definidos), siempre está actualizado
-  if (frecuenciaDias === null) {
-    return 'actualizado';
-  }
-
-  if (!proximaActualizacion) {
-    return 'sin-fecha';
-  }
-
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  
-  const proxima = new Date(proximaActualizacion);
-  proxima.setHours(0, 0, 0, 0);
-  
-  const diffDias = Math.floor((proxima.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-
-  if (diffDias < 0) {
-    // Dataset vencido: diferenciar según tipo de gestión
-    return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
-  }
-  if (diffDias <= 60) return 'proximo';
-  return 'actualizado';
-}
+/**
+ * Estado de una fila del SELECT (spec 2026-10-17-fechas-datasets, 11): el único cálculo, estadoDelDataset, con la próxima como
+ * 'AAAA-MM-DD' (proxima_iso) y la frecuencia en meses (null es eventual). Lo usan enriquecer (el estado de cada dataset), el filtro
+ * ?estado= y las estadísticas, así que los tres dan siempre el mismo estado. hoy es la fecha de Argentina ('AAAA-MM-DD').
+ */
+const estadoDeLaFila = (fila, hoy) => estadoDelDataset({
+  proxima: fila.proxima_iso, meses: fila.frecuencia_meses ?? null, tipoGestion: fila.tipo_gestion, hoy
+});
 
 /**
  * Suma a la fila de un dataset lo que calculan las reglas de las fechas (spec 2026-10-17-fechas-datasets, 10.1): Datos al,
@@ -275,7 +256,7 @@ const enriquecer = (fila, hoy) => {
   const datosAl = esFechaIso(datosAlGuardado) ? datosAlGuardado : null;
   const meses = fila.frecuencia_meses ?? null;
   const tipo = tipoEfectivo({ tipo_pedido: fila.tipo_pedido, tipo_gestion: fila.tipo_gestion, meses });
-  const { estado, dias } = estadoDelDataset({ proxima, meses, tipoGestion: fila.tipo_gestion, hoy });
+  const { estado, dias } = estadoDeLaFila(fila, hoy);
   return {
     ...resto,
     datos_al: datosAl,
@@ -319,20 +300,18 @@ export const getDatasets = async (req, res) => {
     query += ' GROUP BY d.id ORDER BY d.proxima_actualizacion ASC, d.titulo ASC';
 
     const [rows] = await pool.execute(query, params);
-    let datasets = rows;
+    const hoy = hoyArgentina();
+    let datasets = rows.map(d => enriquecer(d, hoy));
 
-    // Filtro por estado (se hace en memoria porque depende de la fecha actual)
+    // Filtro por estado (se hace en memoria porque depende de la fecha actual). Es el mismo estado que trae cada dataset:
+    // actualizado, proximo, atrasado, sin-respuesta, sin-fecha o eventual
     if (estado && estado !== 'todos') {
-      datasets = datasets.filter(d => {
-        const estadoDataset = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-        return estadoDataset === estado;
-      });
+      datasets = datasets.filter(d => d.estado === estado);
     }
 
-    const hoy = hoyArgentina();
     res.json({
       success: true,
-      data: datasets.map(d => enriquecer(d, hoy))
+      data: datasets
     });
   } catch (error) {
     console.error('Error obteniendo datasets:', error);
@@ -791,38 +770,36 @@ export const deleteDataset = async (req, res) => {
   }
 };
 
-// Obtener estadísticas para el dashboard
+/**
+ * Estadísticas para el tablero. El estado de cada dataset sale de estadoDelDataset, el mismo que el listado (spec
+ * 2026-10-17-fechas-datasets, 11). Los eventuales (sin frecuencia en meses) se cuentan aparte: no son actualizados ni entran en
+ * la tasa, que es (actualizados + próximos) sobre el total sin los eventuales. Los sin fecha figuran en sinFecha y cuentan en el total.
+ */
 export const getEstadisticas = async (req, res) => {
   try {
-    const [datasets] = await pool.execute(DATASET_SELECT_QUERY + ' GROUP BY d.id');
-    const data = datasets;
+    const [data] = await pool.execute(DATASET_SELECT_QUERY + ' GROUP BY d.id');
 
-    const hoy = new Date();
+    const hoy = hoyArgentina();
     let actualizados = 0;
     let proximos = 0;
     let atrasados = 0;      // Gestión interna
     let sinRespuesta = 0;   // Gestión externa
+    let sinFecha = 0;
+    let eventuales = 0;
     let totalDiasAtraso = 0;
 
     data.forEach(d => {
-      const estado = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
+      const { estado, dias } = estadoDeLaFila(d, hoy);
       if (estado === 'actualizado') actualizados++;
       else if (estado === 'proximo') proximos++;
       else if (estado === 'atrasado') {
         atrasados++;
-        if (d.proxima_actualizacion) {
-          const proxima = new Date(d.proxima_actualizacion);
-          const diasAtraso = Math.floor((hoy.getTime() - proxima.getTime()) / (1000 * 60 * 60 * 24));
-          totalDiasAtraso += diasAtraso;
-        }
+        totalDiasAtraso += -dias;
       } else if (estado === 'sin-respuesta') {
         sinRespuesta++;
-        if (d.proxima_actualizacion) {
-          const proxima = new Date(d.proxima_actualizacion);
-          const diasAtraso = Math.floor((hoy.getTime() - proxima.getTime()) / (1000 * 60 * 60 * 24));
-          totalDiasAtraso += diasAtraso;
-        }
-      }
+        totalDiasAtraso += -dias;
+      } else if (estado === 'sin-fecha') sinFecha++;
+      else if (estado === 'eventual') eventuales++;
     });
 
     // Total de vencidos (atrasados + sin respuesta)
@@ -855,7 +832,9 @@ export const getEstadisticas = async (req, res) => {
       atrasados,         // Solo gestión interna
       sinRespuesta,      // Solo gestión externa
       totalVencidos,     // Suma de ambos
-      tasaActualizacion: data.length > 0 ? Math.round(((actualizados + proximos) / data.length) * 100) : 0,
+      sinFecha,          // Con frecuencia pero sin próxima actualización
+      eventuales,        // Sin frecuencia en meses: no entran en la tasa
+      tasaActualizacion: data.length > eventuales ? Math.round(((actualizados + proximos) / (data.length - eventuales)) * 100) : 0,
       promedioAtraso: totalVencidos > 0 ? Math.round(totalDiasAtraso / totalVencidos) : 0,
       porTema,
       porFrecuencia

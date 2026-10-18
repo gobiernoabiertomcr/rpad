@@ -202,6 +202,39 @@ describe('GET /datasets: datos viejos o raros no lo rompen', () => {
     assert.equal(res.status, 200);
     assert.ok(res.body.data.some(d => d.id === ids['no-fin-de-mes']));
   });
+
+  it('el filtro por estado acepta eventual, y los eventuales ya no son actualizados', async () => {
+    const eventuales = (await api.get('/datasets?estado=eventual')).body.data;
+    assert.ok(eventuales.some(d => d.id === ids.eventual));
+    assert.ok(eventuales.every(d => d.estado === 'eventual'));
+    const actualizados = (await api.get('/datasets?estado=actualizado')).body.data;
+    assert.ok(actualizados.some(d => d.id === ids.trimestral));
+    assert.ok(!actualizados.some(d => d.id === ids.eventual));
+    assert.ok(actualizados.every(d => d.estado === 'actualizado'));
+  });
+
+  it('sin-fecha filtra a los que no tienen próxima', async () => {
+    const sinFecha = (await api.get('/datasets?estado=sin-fecha')).body.data;
+    assert.ok(sinFecha.some(d => d.id === ids['sin-proxima']));
+    assert.ok(sinFecha.some(d => d.id === ids.cero));
+    assert.ok(sinFecha.every(d => d.estado === 'sin-fecha'));
+  });
+
+  it('las estadísticas cuentan con el mismo estado que el listado, y la tasa deja afuera a los eventuales', async () => {
+    const porEstado = {};
+    for (const d of lista) porEstado[d.estado] = (porEstado[d.estado] ?? 0) + 1;
+    const cuenta = (estado) => porEstado[estado] ?? 0;
+    const e = (await api.get('/datasets/estadisticas')).body.data;
+    assert.equal(e.total, lista.length);
+    assert.equal(e.actualizados, cuenta('actualizado'));
+    assert.equal(e.proximos, cuenta('proximo'));
+    assert.equal(e.atrasados, cuenta('atrasado'));
+    assert.equal(e.sinRespuesta, cuenta('sin-respuesta'));
+    assert.equal(e.sinFecha, cuenta('sin-fecha'));
+    assert.equal(e.eventuales, cuenta('eventual'));
+    assert.ok(e.eventuales >= 1);
+    assert.equal(e.tasaActualizacion, Math.round(((e.actualizados + e.proximos) / (e.total - e.eventuales)) * 100));
+  });
 });
 
 describe('GET /datasets/:id/opciones-proxima', () => {
