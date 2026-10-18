@@ -178,6 +178,7 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     const conAutorizado = evaluar(contexto, "efectoEnNotas({ vispera: '2026-11-25' }, 'Persona Autorizada')");
     assert.match(conAutorizado, /comunica la autorización a Persona Autorizada/);
     assert.match(conAutorizado, /Persona Autorizada presenta las demás notas/);
+    assert.match(conAutorizado, /vuelve a presentar cada aviso en su fecha/);
     assert.match(evaluar(contexto, "efectoEnNotas({ vispera: '2026-11-25' }, null)"), /por adelantado el 25\/11\/2026/);
     assert.match(evaluar(contexto, 'efectoEnNotas(null, null)'), /último día hábil anterior/);
   });
@@ -187,6 +188,7 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     const licencia = "{ desde: '2026-11-26', vispera: '2026-11-25' }";
     const conAutorizado = evaluar(contexto, `efectoEnNotas(${licencia}, 'Persona Autorizada', '2026-12-02')`);
     assert.match(conAutorizado, /Licencia en curso: Persona Autorizada presenta las notas con las dos firmas/);
+    assert.match(conAutorizado, /vuelve a presentar en su fecha cada aviso que se adelantó/);
     const sinAutorizado = evaluar(contexto, `efectoEnNotas(${licencia}, null, '2026-12-02')`);
     assert.match(sinAutorizado, /no se generan notas hasta la vuelta/);
     assert.match(sinAutorizado, /las reiteraciones salen el primer día hábil después de la licencia/);

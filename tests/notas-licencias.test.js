@@ -395,6 +395,76 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
     assert.deepEqual(del11.filter(n => n.tipo === 'aviso'), [], 'el 11/01 no sale ningún aviso');
     assert.ok(del11.length > 0 && del11.every(n => n.tipo === 'reiteracion'), 'el 11/01 solo salen reiteraciones');
   });
+
+  // Correos → Estado (spec 7.5): el próximo aviso de la gestión durante la licencia
+  it('Estado: durante la licencia, el próximo aviso externo es el en su fecha', async () => {
+    // Antes de la víspera no hay nada adelantado: el próximo aviso es la víspera
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-02' })).proximas.externa.aviso, { fecha: '2026-12-09', cantidad: 1 });
+    await vispera();
+    // Ya adelantado, el dataset no es una novedad: el próximo aviso es el suyo, el 22/12, también con la licencia en curso
+    const estado = await motor.estadoNotas({ hoy: '2026-12-14' });
+    assert.deepEqual(estado.proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+    assert.equal(estado.licencia_firmante.en_curso, true);
+    // El objeto público de la licencia no cambia de forma
+    assert.deepEqual(Object.keys(estado.licencia_firmante), [
+      'desde', 'hasta', 'en_curso', 'autorizado', 'nota_autorizacion', 'autorizado_no_vigente', 'autorizado_de_licencia_hasta',
+      'sin_dias_habiles', 'vispera', 'ultimo_habil', 'vuelta'
+    ]);
+    // El mismo día de la víspera, ya corrida, también
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-09' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+    // La gestión interna no tiene nada adelantado
+    assert.equal(estado.proximas.interna.aviso, null);
+    // El día en que sale, el próximo aviso es ese mismo día; después de la corrida, ya no queda ninguno
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-22' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+    await correr('2026-12-22');
+    assert.equal((await motor.estadoNotas({ hoy: '2026-12-23' })).proximas.externa.aviso, null);
+  });
+
+  it('Estado: con la persona autorizada de licencia del 21/12 al 23/12, el próximo aviso externo es el viernes 18/12', async () => {
+    await licencia(autorizado, '2026-12-21', '2026-12-23');
+    await vispera();
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-14' })).proximas.externa.aviso, { fecha: '2026-12-18', cantidad: 1 });
+    // El 18/12 es el día de la corrida; después de la corrida ya no queda ninguno
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-18' })).proximas.externa.aviso, { fecha: '2026-12-18', cantidad: 1 });
+    await correr('2026-12-18');
+    assert.equal((await motor.estadoNotas({ hoy: '2026-12-19' })).proximas.externa.aviso, null);
+  });
+
+  it('Estado: si el día de su fecha ya pasó sin salir, el próximo aviso es el primer día hábil en que ella no falta', async () => {
+    // No falta el 22/12 (su día): corrida salteada, sale en la corrida siguiente
+    await vispera();
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-23' })).proximas.externa.aviso, { fecha: '2026-12-23', cantidad: 1 });
+    // Falta del 22/12 al 23/12: su día era el lunes 21/12; el 23/12, que sigue de licencia, el próximo es el 24/12
+    await licencia(autorizado, '2026-12-22', '2026-12-23');
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-23' })).proximas.externa.aviso, { fecha: '2026-12-24', cantidad: 1 });
+    // La corrida lo confirma: el 23/12 no sale nada y el 24/12 sí
+    const del23 = await correr('2026-12-23');
+    assert.match(del23.licencia, /sin autorizado/);
+    assert.equal((await notas()).length, 1);
+    await correr('2026-12-24');
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-24']);
+  });
+
+  it('Estado: el aviso en su fecha suma lo que sale el mismo día, y otro aviso más temprano sigue siendo el próximo', async () => {
+    await vispera();
+    // Un dataset nuevo cuyo mes se abre también el 22/12: salen juntos, 2
+    await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2027-01-31' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-14' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 2 });
+    // Uno que ya está en la ventana sale antes, en la próxima corrida: ese es el próximo aviso, con su cantidad
+    await crearDataset({ titulo: 'Externo de diciembre', gestion: 'externa', vencimiento: '2026-12-31' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-14' })).proximas.externa.aviso, { fecha: '2026-12-14', cantidad: 1 });
+  });
+
+  it('Estado: sin persona autorizada no hay aviso en su fecha, tampoco con la licencia en curso', async () => {
+    await query('UPDATE usuarios_licencias SET autorizado_id = NULL, autorizado_at = NULL WHERE id = ?', [licenciaId]);
+    await correr('2026-12-09');
+    assert.equal((await notas()).length, 1);
+    const estado = await motor.estadoNotas({ hoy: '2026-12-14' });
+    assert.equal(estado.licencia_firmante.autorizado, null);
+    assert.equal(estado.proximas.externa.aviso, null);
+  });
 });
 
 // Personal contratado (usuarios.vinculo = 'contrato', pedido del usuario el 16/10/2026): las notas lo leen de la base

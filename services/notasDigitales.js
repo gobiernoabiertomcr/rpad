@@ -23,7 +23,7 @@ import {
   disponibilidadDelAutorizado
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
-import { unirAusencias } from './licenciasReglas.js';
+import { unirAusencias, diasHabilesLibres } from './licenciasReglas.js';
 import { emailValido } from './usuariosReglas.js';
 import {
   contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe, periodosSinAuditor,
@@ -709,7 +709,10 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
   return { id, ejemplo: esEjemplo, destinatarios: casillas, ...resultado };
 };
 
-// Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5)
+// Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5).
+// { publica, titular, ausencias } o null. publica: el objeto de estado.licencia_firmante (su forma no cambia); titular: la
+// licencia tal como la guarda la base (para el aviso en su fecha, 7.6); ausencias: las licencias de la persona autorizada
+// durante la del titular ([{ desde, hasta }], vacías sin autorizado).
 const licenciaDelFirmante = async (config, hoy) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
@@ -730,18 +733,43 @@ const licenciaDelFirmante = async (config, hoy) => {
     : [[null]];
   const ultimoHabil = ultimoDiaHabilHasta(licencia.hasta);
   return {
-    desde: licencia.desde,
-    hasta: licencia.hasta,
-    en_curso: licencia.desde <= hoy,
-    autorizado: autorizado ? autorizado.nombre : null,
-    nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
-    autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
-    autorizado_de_licencia_hasta: ausente?.hasta ?? null,
-    sin_dias_habiles: ultimoHabil < licencia.desde,
-    vispera: diaHabilAnterior(licencia.desde),
-    ultimo_habil: ultimoHabil,
-    vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
+    publica: {
+      desde: licencia.desde,
+      hasta: licencia.hasta,
+      en_curso: licencia.desde <= hoy,
+      autorizado: autorizado ? autorizado.nombre : null,
+      nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
+      autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
+      autorizado_de_licencia_hasta: ausente?.hasta ?? null,
+      sin_dias_habiles: ultimoHabil < licencia.desde,
+      vispera: diaHabilAnterior(licencia.desde),
+      ultimo_habil: ultimoHabil,
+      vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
+    },
+    titular: licencia,
+    ausencias: autorizado?.ausencias ?? []
   };
+};
+
+/**
+ * El próximo aviso en su fecha de la gestión (spec 2026-10-15, 7.6), con persona autorizada: de los datasets que la víspera
+ * adelantó, el día en que la persona autorizada los vuelve a presentar. Un día que ya pasó (la corrida no se hizo, o ella
+ * faltaba) pasa al primer día hábil, desde la próxima corrida, en que no falta. { fecha, cantidad } o null: la cantidad
+ * es lo que sale ese día, sumando a los que vuelven a presentarse lo que seleccionarParaAviso elige para esa fecha.
+ * corrida: el día de la próxima corrida posible. delFirmante: lo que devuelve licenciaDelFirmante.
+ */
+const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }) => {
+  const pendientes = await pendientesEnSuFecha(gestion, corrida, titular, ausencias);
+  if (pendientes.length === 0) return null;
+  // El primer día hábil desde la próxima corrida en que la persona autorizada no falta: el mismo para todos los atrasados
+  const primerDiaLibre = diasHabilesLibres(corrida, titular.hasta, ausencias).primerDia;
+  const fechas = pendientes
+    .map(({ dia_en_su_fecha: dia }) => (dia >= corrida ? dia : primerDiaLibre))
+    .filter(Boolean)
+    .sort();
+  if (fechas.length === 0) return null;
+  const [fecha] = fechas;
+  return { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length + fechas.filter(f => f === fecha).length };
 };
 
 /**
@@ -775,7 +803,8 @@ const estadoAuditoria = async (config, hoy) => {
 export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
   const config = await obtenerConfig();
   const firmaTitular = await firmaTitularDe(config);
-  const licencia = await licenciaDelFirmante(config, hoy);
+  const delFirmante = await licenciaDelFirmante(config, hoy);
+  const licencia = delFirmante?.publica ?? null;
   const dentro = (fecha) => Boolean(licencia) && !licencia.sin_dias_habiles && fecha >= licencia.desde && fecha <= licencia.hasta;
   const [[{ fallidas }]] = await pool.query(
     "SELECT COUNT(*) AS fallidas FROM notas_digitales WHERE estado = 'fallida' AND es_prueba = 0"
@@ -802,6 +831,12 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       } else if (!licencia.autorizado) {
         aviso = { fecha: licencia.vuelta, cantidad: (await seleccionarParaAviso(gestion, licencia.vuelta)).length };
       }
+    }
+    // Con persona autorizada, lo que adelantó la víspera sale otra vez en su fecha, también con la licencia ya en curso
+    // (spec 7.6): si es antes que el aviso de arriba, o el mismo día (su cantidad ya suma los dos), ese es el próximo
+    if (licencia?.autorizado && !licencia.sin_dias_habiles) {
+      const enSuFecha = await proximoAvisoEnSuFecha(gestion, corrida, delFirmante);
+      if (enSuFecha && (!aviso || enSuFecha.fecha <= aviso.fecha)) aviso = enSuFecha;
     }
 
     const evaluado = config[`reiteracion_evaluada_${gestion}`] === periodoActual;

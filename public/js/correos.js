@@ -590,7 +590,7 @@ function textoLicenciaFirmante(l) {
     const autorizado = l.autorizado_de_licencia_hasta ? `${l.autorizado} (de licencia hasta el ${fecha(l.autorizado_de_licencia_hasta)})` : l.autorizado;
     return l.en_curso
       ? `Licencia del firmante ${periodo}: ${autorizado} presenta las notas por autorización, con las dos firmas${nota}.`
-      : `Licencia del firmante ${periodo}: los avisos se anticipan el ${fecha(l.vispera)} con la autorización a ${autorizado}, que presenta las demás notas durante la licencia.`;
+      : `Licencia del firmante ${periodo}: los avisos se anticipan el ${fecha(l.vispera)} con la autorización a ${autorizado}, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.`;
   }
   const avisos = l.en_curso ? 'no se generan notas hasta la vuelta' : `los avisos se anticipan el ${fecha(l.vispera)}`;
   return `Licencia del firmante ${periodo}, sin autorizado: ${avisos} y las reiteraciones se postergan al ${fecha(l.vuelta)}.`;
