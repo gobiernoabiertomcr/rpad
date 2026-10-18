@@ -36,7 +36,8 @@ describe('páginas', () => {
     });
   }
 
-  // El script propio de esta pantalla cambió con los días sin auditor y, después, con la superposición parcial
+  // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial y, por último, con el
+  // aviso en su fecha (el texto del efecto de la licencia en las notas, con persona autorizada)
   for (const [pagina, script] of [['usuarios.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
