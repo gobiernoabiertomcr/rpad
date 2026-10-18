@@ -63,8 +63,24 @@
     
     /* Layout */
     --sidebar-width: 260px;
-    --header-height: 64px;
+    --header-height: 72px;
     --transition: all 0.3s ease;
+
+    /* Rediseño 2026 (spec 2026-10-18-rediseno-publico, 4.1 y 4.2): la carcasa de todas las páginas y, en publico.css, las
+       páginas públicas. Las variables de arriba no cambian: administración conserva sus colores */
+    --tinta: #1A365D;
+    --tinta-honda: #142B4A;
+    --texto: #22324A;
+    --suave: #56677F;
+    --bruma: #F4F7FA;
+    --papel: #FFFFFF;
+    --linea: #DAE3ED;
+    --cielo: #DCEEF5;
+    --cielo-medio: #9FD3E6;
+    --sol: #FCE8A8;
+    --sol-fuerte: #F2B705;
+    --f-titulo: 'Bricolage Grotesque', system-ui, sans-serif;
+    --f-texto: 'Figtree', system-ui, sans-serif;
 
     /* Paginación: los colores y los bordes que usa (.paginacion, .pag-*) no estaban definidos y no se veían.
        Son los de styles.css, salvo el celeste: #0091e1 no llega a 4.5:1 sobre blanco, #0075bd sí */
@@ -93,11 +109,17 @@ html {
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--f-texto);
     background-color: var(--bg-body);
     color: var(--gray-800);
     line-height: 1.6;
     min-height: 100vh;
+}
+
+/* Títulos en Bricolage Grotesque en todo el sitio; en administración solo cambia la letra (tamaños y colores siguen) */
+h1, h2, h3, h4, .page-title {
+    font-family: var(--f-titulo);
+    letter-spacing: -0.02em;
 }
 
 a {
@@ -128,7 +150,7 @@ button {
 }
 
 /* =====================================================
-   HEADER
+   HEADER (spec 2026-10-18-rediseno-publico, 5.1)
    ===================================================== */
 .header {
     position: fixed;
@@ -136,44 +158,114 @@ button {
     left: 0;
     right: 0;
     height: var(--header-height);
-    background: var(--bg-header);
-    border-bottom: 1px solid var(--border-color);
+    background: var(--papel);
+    border-bottom: 1px solid var(--linea);
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 24px;
     padding: 0 24px;
     z-index: 100;
-    box-shadow: var(--shadow-sm);
 }
 
+/* El margen empuja el nav y las acciones a la derecha, juntos (y solo las acciones, cuando el nav pasa al menú) */
 .header-left {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
+    margin-right: auto;
+    min-width: 0;
+}
+
+/* Logo, separador y "RPAD" con el subtítulo: un solo link a la portada */
+.header-marca {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    color: inherit;
+    border-radius: 8px;
 }
 
 .header-logo {
+    display: block;
     height: 40px;
     width: auto;
 }
 
-.header-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--gray-800);
+.header-marca-texto {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding-left: 15px;
+    line-height: 1.15;
 }
 
+/* El separador de 1 px entre el logo y el texto */
+.header-marca-texto::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 1px;
+    height: 34px;
+    background: var(--linea);
+    transform: translateY(-50%);
+}
+
+.header-title {
+    font-family: var(--f-titulo);
+    font-size: 1.25rem;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    color: var(--tinta);
+}
+
+/* Sin mayúsculas, en dos líneas */
 .header-subtitle {
+    max-width: 190px;
+    margin-top: 2px;
     font-size: 0.75rem;
-    color: var(--gray-500);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    line-height: 1.25;
+    color: var(--suave);
+}
+
+/* Inicio, Datasets, Calendario y Contacto, a la vista; la página actual lleva aria-current en su HTML */
+.header-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.header-nav a {
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--texto);
+    white-space: nowrap;
+    transition: background 0.15s ease;
+}
+
+.header-nav a:hover {
+    background: var(--bruma);
+}
+
+.header-nav a[aria-current="page"] {
+    background: var(--cielo);
+    color: var(--tinta);
 }
 
 .header-right {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.header-right .btn {
+    border-radius: 999px;
+    white-space: nowrap;
 }
 
 /* User info en header (cuando está logueado) */
@@ -181,20 +273,21 @@ button {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 12px;
-    border-radius: var(--border-radius);
+    padding: 6px 8px 6px 14px;
+    border-radius: 999px;
     transition: var(--transition);
 }
 
 .header-user:hover {
-    background: var(--gray-100);
+    background: var(--bruma);
 }
 
 .header-user-avatar {
     width: 36px;
     height: 36px;
+    flex-shrink: 0;
     border-radius: 50%;
-    background: var(--primary);
+    background: var(--tinta);
     color: white;
     display: flex;
     align-items: center;
@@ -205,17 +298,27 @@ button {
 
 .header-user-info {
     text-align: right;
+    min-width: 0;
+}
+
+/* Un nombre largo no empuja el encabezado: se corta con "…" (el completo está en Mi Perfil) */
+.header-user-name,
+.header-user-role {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .header-user-name {
-    font-weight: 500;
+    font-weight: 600;
     font-size: 0.875rem;
-    color: var(--gray-800);
+    color: var(--texto);
 }
 
 .header-user-role {
     font-size: 0.75rem;
-    color: var(--gray-500);
+    color: var(--suave);
 }
 
 /* Notification bell en header */
@@ -226,18 +329,19 @@ button {
     justify-content: center;
     width: 40px;
     height: 40px;
-    border-radius: var(--border-radius);
-    color: var(--gray-500);
+    flex-shrink: 0;
+    border-radius: 50%;
+    color: var(--suave);
     transition: var(--transition);
 }
 
 .header-notification:hover {
-    background: var(--gray-100);
-    color: var(--gray-700);
+    background: var(--bruma);
+    color: var(--tinta);
 }
 
 .header-notification.has-notifications {
-    color: var(--primary);
+    color: var(--tinta);
 }
 
 .header-notification-badge {
@@ -257,27 +361,40 @@ button {
     justify-content: center;
 }
 
-/* Sidebar Toggle Button */
+/* Botón del menú lateral: con sesión, siempre (la clase la pone main.js); sin sesión, solo cuando el nav no entra */
 .sidebar-toggle {
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     width: 40px;
     height: 40px;
+    flex-shrink: 0;
     border: none;
     background: transparent;
-    border-radius: var(--border-radius);
-    color: var(--gray-600);
+    border-radius: 50%;
+    color: var(--tinta);
     transition: var(--transition);
 }
 
+.header--con-sesion .sidebar-toggle {
+    display: inline-flex;
+}
+
 .sidebar-toggle:hover {
-    background: var(--gray-100);
-    color: var(--gray-800);
+    background: var(--bruma);
+}
+
+/* Foco visible en los links y botones de la carcasa */
+.header a:focus-visible,
+.header button:focus-visible,
+.sidebar a:focus-visible,
+.footer a:focus-visible {
+    outline: 3px solid var(--sol-fuerte);
+    outline-offset: 2px;
 }
 
 /* =====================================================
-   SIDEBAR
+   SIDEBAR (spec 2026-10-18-rediseno-publico, 5.2)
    ===================================================== */
 .sidebar {
     position: fixed;
@@ -285,9 +402,11 @@ button {
     left: 0;
     bottom: 0;
     width: var(--sidebar-width);
-    background: var(--bg-sidebar);
+    background: var(--tinta);
     transform: translateX(-100%);
-    transition: var(--transition);
+    /* Cerrado no se puede tabular. La transición de visibility lo deja visible hasta que termina de salir */
+    visibility: hidden;
+    transition: transform 0.3s ease, visibility 0.3s;
     z-index: 90;
     overflow-y: auto;
     overflow-x: hidden;
@@ -295,6 +414,7 @@ button {
 
 .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
 }
 
 .sidebar-overlay {
@@ -303,7 +423,7 @@ button {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(20, 43, 74, 0.45);
     opacity: 0;
     visibility: hidden;
     transition: var(--transition);
@@ -317,11 +437,12 @@ button {
 
 .sidebar-header {
     padding: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .sidebar-logo {
-    height: 45px;
+    display: block;
+    height: 44px;
     width: auto;
 }
 
@@ -331,27 +452,31 @@ button {
 
 .sidebar-section {
     padding: 0 12px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
+}
+
+/* "Principal" ya está en el encabezado: el menú lo muestra solo cuando el nav del encabezado no entra (responsive) */
+#sidebarPrincipal {
+    display: none;
 }
 
 .sidebar-section-title {
-    font-size: 0.7rem;
+    font-size: 0.82rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--gray-400);
-    padding: 8px 12px;
-    margin-bottom: 4px;
+    color: var(--sol);
+    opacity: 0.85;
+    padding: 8px 14px 4px;
 }
 
 .sidebar-link {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px;
-    color: var(--gray-300);
-    border-radius: var(--border-radius);
-    transition: var(--transition);
+    padding: 11px 14px;
+    color: rgba(255, 255, 255, 0.85);
+    border-radius: 10px;
+    transition: background 0.15s ease, color 0.15s ease;
     margin-bottom: 2px;
 }
 
@@ -361,8 +486,20 @@ button {
 }
 
 .sidebar-link.active {
-    background: var(--primary);
+    background: rgba(255, 255, 255, 0.14);
     color: white;
+}
+
+/* La barra del link activo */
+.sidebar-link.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--sol);
 }
 
 .sidebar-link svg {
@@ -372,17 +509,26 @@ button {
 }
 
 .sidebar-link span {
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .sidebar-overlay {
+        transition: none;
+    }
 }
 
 /* =====================================================
    MAIN CONTENT
    ===================================================== */
+/* --relleno-main: el relleno de la página, que el footer anula para llegar a los bordes (publico.css lo pone en 0) */
 .main-content {
+    --relleno-main: 24px;
     flex: 1;
     margin-top: var(--header-height);
-    padding: 24px;
+    padding: var(--relleno-main);
     min-height: calc(100vh - var(--header-height));
     display: flex;
     flex-direction: column;
@@ -411,60 +557,6 @@ button {
 
 .page-title svg {
     color: var(--primary);
-}
-
-/* =====================================================
-   HERO BANNER
-   ===================================================== */
-.hero-banner {
-    background: var(--primary-gradient);
-    border-radius: var(--border-radius-lg);
-    padding: 32px;
-    margin-bottom: 32px;
-    color: white;
-}
-
-.hero-content {
-    margin-bottom: 24px;
-}
-
-.hero-content h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 8px;
-}
-
-.hero-content p {
-    font-size: 1rem;
-    opacity: 0.9;
-}
-
-.hero-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
-}
-
-.hero-stat-card {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border-radius: var(--border-radius);
-    padding: 16px 20px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.hero-stat-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    opacity: 0.8;
-    margin-bottom: 8px;
-}
-
-.hero-stat-value {
-    font-size: 1.25rem;
-    font-weight: 600;
 }
 
 /* =====================================================
@@ -498,95 +590,6 @@ button {
 }
 
 /* =====================================================
-   STATS GRID
-   ===================================================== */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 32px;
-}
-
-.stat-card {
-    background: var(--bg-card);
-    border-radius: var(--border-radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow);
-    border-top: 4px solid var(--primary);
-    transition: var(--transition);
-}
-
-.stat-card.primary { border-top-color: var(--primary); }
-.stat-card.success { border-top-color: var(--success); }
-.stat-card.warning { border-top-color: var(--warning); }
-.stat-card.danger { border-top-color: var(--danger); }
-.stat-card.info { border-top-color: var(--info); }
-
-.stat-card.clickable {
-    cursor: pointer;
-}
-
-.stat-card.clickable:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-}
-
-.stat-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.stat-card-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: var(--border-radius);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.stat-card-icon.primary { background: rgba(26, 54, 93, 0.1); color: var(--primary); }
-.stat-card-icon.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.stat-card-icon.warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.stat-card-icon.danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
-.stat-card-icon.info { background: rgba(59, 130, 246, 0.1); color: var(--info); }
-
-.stat-card-value {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--gray-800);
-}
-
-.stat-card-label {
-    font-size: 0.875rem;
-    color: var(--gray-500);
-}
-
-/* Skeleton loading */
-.stat-card-skeleton {
-    background: var(--bg-card);
-    border-radius: var(--border-radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow);
-    height: 120px;
-    position: relative;
-    overflow: hidden;
-}
-
-.stat-card-skeleton::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-    animation: skeleton-loading 1.5s infinite;
-}
-
-/* =====================================================
    SECTION TITLE
    ===================================================== */
 .section-title {
@@ -601,147 +604,6 @@ button {
 
 .section-title svg {
     color: var(--primary);
-}
-
-/* =====================================================
-   DASHBOARD SECTIONS
-   ===================================================== */
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    gap: 24px;
-    margin-bottom: 32px;
-}
-
-.dashboard-section {
-    background: var(--bg-card);
-    border-radius: var(--border-radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow);
-}
-
-.dashboard-section-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--gray-800);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Calendar Section */
-.calendar-section {
-    background: var(--bg-card);
-    border-radius: var(--border-radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow);
-    margin-bottom: 32px;
-}
-
-.calendar-chart-container {
-    height: 300px;
-    position: relative;
-}
-
-/* Chart Container */
-.chart-container {
-    position: relative;
-    height: 200px;
-    margin-bottom: 16px;
-}
-
-.chart-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: center;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.8rem;
-    color: var(--gray-600);
-}
-
-.legend-color {
-    width: 12px;
-    height: 12px;
-    border-radius: 3px;
-    flex-shrink: 0;
-}
-
-.legend-label {
-    color: var(--gray-600);
-}
-
-.legend-value {
-    color: var(--gray-800);
-    font-weight: 600;
-}
-
-/* =====================================================
-   ALERT LIST
-   ===================================================== */
-.alert-list {
-    max-height: 350px;
-    overflow-y: auto;
-}
-
-.alert-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    border-radius: var(--border-radius);
-    margin-bottom: 8px;
-    background: var(--gray-50);
-    border-left: 4px solid var(--warning);
-    transition: var(--transition);
-    text-decoration: none;
-    color: inherit;
-}
-
-.alert-item:hover {
-    background: var(--gray-100);
-    transform: translateX(4px);
-}
-
-.alert-item.danger,
-.alert-item.atrasado {
-    border-left-color: var(--danger);
-}
-
-.alert-item.warning,
-.alert-item.proximo {
-    border-left-color: var(--warning);
-}
-
-.alert-item.sin-respuesta {
-    border-left-color: var(--purple);
-}
-
-.alert-item > div {
-    flex: 1;
-    min-width: 0;
-}
-
-.alert-item-title {
-    font-weight: 500;
-    font-size: 0.9rem;
-    color: var(--gray-800);
-    margin-bottom: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.alert-item-meta {
-    font-size: 0.8rem;
-    color: var(--gray-500);
 }
 
 /* =====================================================
@@ -842,27 +704,6 @@ button {
 .btn-lg {
     padding: 12px 24px;
     font-size: 1rem;
-}
-
-.btn-ver-mas {
-    display: block;
-    width: 100%;
-    padding: 12px;
-    margin-top: 8px;
-    background: var(--gray-100);
-    border: 1px dashed var(--gray-300);
-    border-radius: var(--border-radius);
-    color: var(--gray-600);
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    cursor: pointer;
-    transition: var(--transition);
-}
-
-.btn-ver-mas:hover {
-    background: var(--gray-200);
-    color: var(--gray-800);
 }
 
 /* =====================================================
@@ -1167,78 +1008,83 @@ button {
 }
 
 /* =====================================================
-   FOOTER - Compacto con Cards
+   FOOTER (spec 2026-10-18-rediseno-publico, 5.3)
    ===================================================== */
+/* Último hijo de .main-content. Llega a los bordes: los márgenes negativos anulan el relleno de .main-content. Va abajo de
+   todo aunque la página sea corta (margin-top: auto en la columna) y a 56 px del contenido como mínimo: el borde de
+   arriba es transparente y el fondo no lo pinta (padding-box) */
 .footer {
-    background: var(--sir-primary);
-    color: white;
-    margin-top: 20px;
-    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+    margin: auto calc(-1 * var(--relleno-main)) calc(-1 * var(--relleno-main));
+    border-top: 56px solid transparent;
+    background: var(--tinta) padding-box;
+    color: #E6EEF6;
 }
 
-.footer-cards {
+.footer-cuerpo {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    grid-template-columns: 1.7fr 1fr 1fr 1fr;
+    gap: 32px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 48px 24px 40px;
 }
 
-.footer-card {
-    padding: 32px;
-    border-right: 1px solid rgba(255,255,255,0.1);
-    transition: background 0.3s;
+.footer-logo {
+    display: block;
+    height: 46px;
+    width: auto;
+    margin-bottom: 18px;
 }
 
-.footer-card:last-child {
-    border-right: none;
-}
-
-.footer-card:hover {
-    background: rgba(255,255,255,0.03);
-}
-
-.footer-card-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: rgba(249, 180, 79, 0.15);
-    color: var(--sir-accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 16px;
-}
-
-.footer-card h4 {
+.footer-marca p {
+    margin-top: 6px;
     font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 8px;
+    color: #B9CBE0;
 }
 
-.footer-card p {
-    font-size: 0.85rem;
-    opacity: 0.7;
-    line-height: 1.6;
+.footer-marca .footer-direccion {
+    margin-top: 0;
+    font-family: var(--f-titulo);
+    font-size: 1.05rem;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    color: white;
 }
 
-.footer-card a {
-    color: var(--sir-accent);
-    text-decoration: none;
-    font-weight: 500;
-    transition: opacity 0.2s;
+.footer-titulo {
+    margin-bottom: 10px;
+    font-size: 0.98rem;
+    font-weight: 750;
+    color: var(--sol);
 }
 
-.footer-card a:hover {
-    opacity: 0.8;
+.footer-columna li {
+    padding: 3px 0;
+    font-size: 0.92rem;
+    color: #C9D7E6;
+}
+
+.footer-columna a {
+    color: white;
     text-decoration: underline;
+    text-decoration-color: rgba(252, 232, 168, 0.45);
+    text-underline-offset: 3px;
 }
 
+.footer-columna a:hover {
+    text-decoration-color: var(--sol);
+}
+
+/* El borde va de lado a lado; el texto, alineado con el cuerpo (1180 px centrados) */
 .footer-bottom {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
-    align-items: center;
-    padding: 20px 32px;
-    font-size: 0.8rem;
-    opacity: 0.5;
+    gap: 8px 16px;
+    padding: 16px max(24px, calc((100% - 1180px) / 2 + 24px)) 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 0.82rem;
+    color: #A9BDD3;
 }
 
 /* =====================================================
@@ -1335,11 +1181,6 @@ button {
     to { transform: rotate(360deg); }
 }
 
-@keyframes skeleton-loading {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-}
-
 /* =====================================================
    UTILITIES
    ===================================================== */
@@ -1374,111 +1215,192 @@ button {
 /* =====================================================
    RESPONSIVE
    ===================================================== */
-@media (max-width: 1024px) {
-    .main-content {
-        padding: 16px;
+/* El encabezado no se superpone en ningún ancho (spec 2026-10-18-rediseno-publico, 5.1). Con sesión la derecha es más ancha
+   (campana, usuario y "Salir"): primero se va el subtítulo, después el nombre y el rol, y por último el nav pasa al menú
+   lateral, antes que sin sesión. Los cortes salen de medir el encabezado con las fuentes cargadas (18/10/2026), con lugar
+   para la barra de desplazamiento: sin sesión necesita 886 px (748 sin el subtítulo); con sesión, 1233 px con un nombre de
+   180 px (el tope), 1094 sin el subtítulo y 902 sin el nombre ni el rol */
+@media (max-width: 1260px) {
+    .header--con-sesion .header-subtitle {
+        display: none;
+    }
+}
+
+@media (max-width: 1120px) {
+    .header--con-sesion .header-user-info {
+        display: none;
     }
 
-    .dashboard-grid {
-        grid-template-columns: 1fr;
+    .header--con-sesion .header-user {
+        padding: 2px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .main-content {
+        --relleno-main: 16px;
+    }
+}
+
+@media (max-width: 980px) {
+    .footer-cuerpo {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 940px) {
+    .header--con-sesion .header-nav {
+        display: none;
+    }
+
+    .header--con-sesion ~ .sidebar #sidebarPrincipal {
+        display: block;
+    }
+}
+
+@media (max-width: 920px) {
+    .header-subtitle {
+        display: none;
+    }
+}
+
+/* Sin sesión, el nav sigue a la vista hasta 761 px: un poco más junto */
+@media (max-width: 900px) {
+    .header {
+        gap: 16px;
+    }
+
+    .header-nav a {
+        padding: 8px 12px;
     }
 }
 
 @media (max-width: 768px) {
-    .header {
-        padding: 0 16px;
-    }
-
-    .header-subtitle {
-        display: none;
-    }
-
-    .header-user-info {
-        display: none;
-    }
-
-    .hero-banner {
-        padding: 24px;
-    }
-
-    .hero-content h1 {
-        font-size: 1.5rem;
-    }
-
-    .hero-stats {
-        grid-template-columns: 1fr;
-    }
-
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .dashboard-grid {
-        grid-template-columns: 1fr;
-    }
-    
     .page-header {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .filters-bar {
         flex-direction: column;
     }
-    
+
     .filter-group {
         width: 100%;
     }
-    
-    /* Footer responsive */
-    .footer-cards {
-        grid-template-columns: 1fr;
-    }
-    
-    .footer-card {
-        border-right: none;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .footer-card:last-child {
-        border-bottom: none;
-    }
-    
-    .footer-bottom {
-        flex-direction: column;
-        gap: 8px;
-        text-align: center;
-    }
-    
+
     /* Modal responsive */
     .modal {
         max-height: 85vh;
     }
-    
+
     .modal-footer {
         flex-direction: column;
     }
-    
+
     .modal-footer .btn {
         width: 100%;
     }
 }
 
-@media (max-width: 480px) {
-    .stats-grid {
+/* Celular: el nav pasa al menú lateral y quedan el logo, "RPAD" y las acciones (con sesión, el avatar) */
+@media (max-width: 760px) {
+    .header {
+        gap: 12px;
+        padding: 0 16px;
+    }
+
+    .header-left {
+        gap: 8px;
+    }
+
+    .header-nav,
+    .header-subtitle,
+    .header-user-info {
+        display: none;
+    }
+
+    .header-marca-texto {
+        padding-left: 0;
+    }
+
+    .header-marca-texto::before {
+        display: none;
+    }
+
+    .sidebar-toggle {
+        display: inline-flex;
+    }
+
+    #sidebarPrincipal {
+        display: block;
+    }
+
+    .header-right {
+        gap: 8px;
+    }
+
+    .header-user {
+        padding: 2px;
+    }
+
+    .footer-cuerpo {
         grid-template-columns: 1fr;
+        gap: 24px;
+        padding: 40px 16px 32px;
     }
 
-    .hero-content h1 {
-        font-size: 1.25rem;
+    .footer-bottom {
+        padding-left: 16px;
+        padding-right: 16px;
     }
+}
 
-    .hero-stat-value {
-        font-size: 1.1rem;
-    }
-    
+@media (max-width: 480px) {
     .page-title {
         font-size: 1.25rem;
+    }
+
+    /* Celular angosto (375 px): todo un poco más chico y, con sesión, "Salir" queda solo con su ícono (el texto sigue ahí
+       para los lectores de pantalla) */
+    .header {
+        gap: 8px;
+        padding: 0 12px;
+    }
+
+    .header-left {
+        gap: 6px;
+    }
+
+    .header-marca {
+        gap: 10px;
+    }
+
+    .header-logo {
+        height: 32px;
+    }
+
+    .header-right {
+        gap: 6px;
+    }
+
+    .header--con-sesion #header-actions > .btn {
+        gap: 0;
+        padding: 8px 10px;
+        font-size: 0;
+    }
+}
+
+/* 360 px con sesión y 320 px sin ella: queda el logo, que sigue siendo el link a la portada */
+@media (max-width: 370px) {
+    .header--con-sesion .header-marca-texto {
+        display: none;
+    }
+}
+
+@media (max-width: 340px) {
+    .header-marca-texto {
+        display: none;
     }
 }
 
@@ -1486,7 +1408,7 @@ button {
    FULLCALENDAR OVERRIDES
    ===================================================== */
 .fc {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--f-texto);
 }
 
 .fc .fc-toolbar-title {

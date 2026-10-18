@@ -177,6 +177,10 @@ function formatDate(dateString) {
  * Inicializar el header según estado de autenticación
  */
 function initHeader() {
+    // Con sesión, el botón del menú lateral se ve siempre (lo decide el CSS con esta clase: sin :has(), que Firefox ESR 115
+    // no soporta)
+    document.querySelector('.header')?.classList.toggle('header--con-sesion', Auth.isAuthenticated());
+
     const headerActions = document.getElementById('header-actions');
     if (!headerActions) return;
 
@@ -236,20 +240,23 @@ function initSidebar() {
 
     if (!sidebar || !overlay || !toggleBtn) return;
 
-    toggleBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('open');
-        overlay.classList.toggle('visible');
-    });
+    // aria-expanded acompaña siempre al menú, se abra o se cierre como sea
+    const ponerAbierto = (abierto) => {
+        sidebar.classList.toggle('open', abierto);
+        overlay.classList.toggle('visible', abierto);
+        toggleBtn.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+    };
 
-    overlay.addEventListener('click', () => {
-        sidebar.classList.remove('open');
-        overlay.classList.remove('visible');
-    });
+    toggleBtn.addEventListener('click', () => ponerAbierto(!sidebar.classList.contains('open')));
+
+    overlay.addEventListener('click', () => ponerAbierto(false));
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && sidebar.classList.contains('open')) {
-            sidebar.classList.remove('open');
-            overlay.classList.remove('visible');
+            // Si el foco estaba en el menú, vuelve al botón: cerrado, el menú no se puede tabular
+            const focoEnElMenu = sidebar.contains(document.activeElement);
+            ponerAbierto(false);
+            if (focoEnElMenu) toggleBtn.focus();
         }
     });
 }
@@ -302,6 +309,27 @@ function setActiveSidebarLink() {
             link.classList.remove('active');
         }
     });
+}
+
+// =====================================================
+// FOOTER
+// =====================================================
+
+/**
+ * Año ('AAAA') de una fecha en Argentina: el 31/12 a las 23:30 de Argentina ya es 2027 en UTC, pero el © sigue en 2026
+ */
+function anioEnArgentina(fecha) {
+    return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric' })
+        .formatToParts(fecha)
+        .find(parte => parte.type === 'year').value;
+}
+
+/**
+ * El año del © del footer: el HTML trae uno escrito y acá se pone el del día
+ */
+function ponerAnioDelFooter() {
+    const anio = document.getElementById('footer-anio');
+    if (anio) anio.textContent = anioEnArgentina(new Date());
 }
 
 // =====================================================
@@ -451,6 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSidebar();
     updateSidebarAuth();
     setActiveSidebarLink();
+    ponerAnioDelFooter();
     refrescarSesionGuardada();
 });
 

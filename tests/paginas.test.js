@@ -4,7 +4,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const VERSION = '20261105';
+// main.js cambió con la carcasa nueva (spec 2026-10-18-rediseno-publico: el año del footer, la clase header--con-sesion y
+// aria-expanded en el botón del menú); auth.js y api.js suben con él
+const VERSION = '20261109';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte; con persona autorizada, cada aviso adelantado
 // sale también en su fecha): su versión es propia
 const VERSION_PANTALLAS = '20261106';
@@ -16,8 +18,10 @@ const VERSION_PERFIL = '20261103';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia
 const VERSION_ADMIN = '20261108';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
-// ahora se cargaban sin ?v=: su versión es propia
-const VERSION_PUBLICAS = '20261105';
+// ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
+const VERSION_PUBLICAS = '20261109';
+// main.css (la carcasa nueva y las fuentes Bricolage Grotesque y Figtree): hasta el rediseño se cargaba sin ?v=
+const VERSION_CSS = '20261109';
 // gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
 const VERSION_GESTION = '20261105';
 const DIRECTORIO = new URL('../public/', import.meta.url);
@@ -91,5 +95,60 @@ describe('páginas', () => {
   it('usuarios.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
     const grupo = leer('usuarios.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
     assert.match(grupo, /<select id="l-autorizado"[^>]*><\/select>\s*<p class="form-hint" id="l-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
+  });
+
+  // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
+  // copiados a mano en cada página. index.html entra cuando se reescribe la portada (son 13 con ella)
+  const CON_CARCASA = paginas.filter(p => p !== 'index.html' && leer(p).includes('id="sidebar"'));
+
+  it('hay 12 páginas con carcasa (sin contar index.html)', () => {
+    assert.equal(CON_CARCASA.length, 12);
+  });
+
+  for (const pagina of CON_CARCASA) {
+    it(`${pagina}: carga main.css con ?v=${VERSION_CSS} y las fuentes nuevas`, () => {
+      const html = leer(pagina);
+      assert.deepEqual(html.match(/css\/main\.css[^"]*"/g), [`css/main.css?v=${VERSION_CSS}"`]);
+      assert.ok(html.includes('family=Bricolage+Grotesque'), 'Bricolage Grotesque');
+      assert.ok(html.includes('family=Figtree'), 'Figtree');
+      assert.doesNotMatch(html, /family=Inter/);
+    });
+
+    it(`${pagina}: encabezado con el nav principal y los ids que usa main.js`, () => {
+      const html = leer(pagina);
+      for (const id of ['header-actions', 'sidebarToggle', 'sidebar', 'sidebarOverlay', 'sidebarPrincipal', 'sidebarAdmin', 'sidebarTools', 'sidebarAccount', 'footer-anio']) {
+        assert.match(html, new RegExp(`id="${id}"`), id);
+      }
+      assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'areas.html', 'correos.html', 'reportes.html', 'notas.html', 'gestion.html', 'perfil.html']) {
+        assert.ok(html.includes(`href="${destino}"`), destino);
+      }
+      assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');
+      assert.ok(!html.includes('logo-blanco.png'), 'sin el logo que no está en el repo');
+    });
+
+    it(`${pagina}: footer nuevo, RPAD v2.0.0`, () => {
+      const html = leer(pagina);
+      assert.ok(html.includes('<span>RPAD v2.0.0</span>'));
+      assert.doesNotMatch(html, /RPAD v1\.\d\.0/);
+      assert.ok(html.includes('D. G. de Modernización e Investigación Territorial'));
+    });
+  }
+
+  for (const [pagina, actual] of [['datasets.html', 'datasets.html'], ['dataset.html', 'datasets.html'], ['calendario.html', 'calendario.html'], ['contacto.html', 'contacto.html']]) {
+    it(`${pagina}: el nav marca la página actual`, () => {
+      assert.match(leer(pagina), new RegExp(`<a href="${actual.replace('.', '\\.')}" aria-current="page">`));
+      assert.equal(leer(pagina).match(/aria-current=/g).length, 1, 'una sola página actual');
+    });
+  }
+
+  for (const pagina of CON_CARCASA.filter(p => !['datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'].includes(p))) {
+    it(`${pagina}: las de administración no marcan ninguna página del nav`, () => {
+      assert.doesNotMatch(leer(pagina), /aria-current=/);
+    });
+  }
+
+  it('login.html: el logo es logo-2025-blanco.png', () => {
+    assert.ok(leer('login.html').includes('src="img/logo-2025-blanco.png"'));
   });
 });

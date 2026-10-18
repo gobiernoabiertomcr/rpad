@@ -60,3 +60,106 @@ describe('header: datos del usuario', () => {
     assert.ok(!html.includes('<script>'));
   });
 });
+
+describe('footer: el año del ©', () => {
+  const cargar = () => {
+    const contexto = vm.createContext({ document: { head: { appendChild() {} }, body: { appendChild() {} }, createElement: () => ({ textContent: '', remove() {} }), addEventListener() {}, querySelector: () => null, querySelectorAll: () => [], getElementById: () => null }, window: { location: { pathname: '/index.html' } }, console, Intl, Date });
+    vm.runInContext(`${fs.readFileSync(new URL('../public/js/main.js', import.meta.url), 'utf8')}\n;globalThis.anioEnArgentina = anioEnArgentina;`, contexto);
+    return contexto;
+  };
+
+  it('es el año en Argentina, aunque en UTC ya sea el año siguiente', () => {
+    const { anioEnArgentina } = cargar();
+    assert.equal(anioEnArgentina(new Date('2026-10-18T12:00:00Z')), '2026');
+    assert.equal(anioEnArgentina(new Date('2027-01-01T02:30:00Z')), '2026');
+    assert.equal(anioEnArgentina(new Date('2027-01-01T03:00:00Z')), '2027');
+  });
+});
+
+// Un elemento mínimo con clases, atributos y oyentes, para el encabezado y el menú lateral
+const elemento = () => {
+  const clases = new Set();
+  const atributos = {};
+  const oyentes = {};
+  return {
+    clases,
+    atributos,
+    classList: {
+      add: (c) => clases.add(c),
+      remove: (c) => clases.delete(c),
+      contains: (c) => clases.has(c),
+      toggle: (c, forzar) => {
+        const poner = forzar === undefined ? !clases.has(c) : Boolean(forzar);
+        if (poner) clases.add(c); else clases.delete(c);
+        return poner;
+      }
+    },
+    setAttribute: (nombre, valor) => { atributos[nombre] = String(valor); },
+    getAttribute: (nombre) => atributos[nombre] ?? null,
+    addEventListener: (tipo, fn) => { oyentes[tipo] = fn; },
+    contains: () => false,
+    focus() {},
+    disparar: (tipo, evento = {}) => oyentes[tipo]?.(evento),
+    innerHTML: ''
+  };
+};
+
+const cargarCarcasa = ({ conSesion }) => {
+  const piezas = { header: elemento(), headerActions: elemento(), sidebar: elemento(), sidebarOverlay: elemento(), sidebarToggle: elemento() };
+  const oyentesDocumento = {};
+  const document = {
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+    createElement: () => ({ textContent: '', remove() {} }),
+    addEventListener: (tipo, fn) => { oyentesDocumento[tipo] = fn; },
+    querySelector: (selector) => (selector === '.header' ? piezas.header : null),
+    querySelectorAll: () => [],
+    getElementById: (id) => ({ 'header-actions': piezas.headerActions, sidebar: piezas.sidebar, sidebarOverlay: piezas.sidebarOverlay, sidebarToggle: piezas.sidebarToggle })[id] ?? null
+  };
+  const Auth = {
+    isAuthenticated: () => conSesion,
+    getUser: () => ({ nombre_completo: 'Ana Pérez', rol: 'lector' }),
+    getRoleText: () => 'Lector',
+    isAdmin: () => false
+  };
+  const contexto = vm.createContext({ document, window: { location: { pathname: '/admin.html' } }, Auth, API: {}, console });
+  vm.runInContext(`${fs.readFileSync(new URL('../public/js/main.js', import.meta.url), 'utf8')}\n;globalThis.initHeader = initHeader; globalThis.initSidebar = initSidebar;`, contexto);
+  return { contexto, piezas, teclado: (evento) => oyentesDocumento.keydown?.(evento) };
+};
+
+describe('header: la clase header--con-sesion (el CSS muestra el botón del menú)', () => {
+  it('con sesión la pone y sin sesión la saca', () => {
+    const { contexto, piezas } = cargarCarcasa({ conSesion: true });
+    contexto.initHeader();
+    assert.ok(piezas.header.clases.has('header--con-sesion'));
+
+    const sinSesion = cargarCarcasa({ conSesion: false });
+    sinSesion.piezas.header.clases.add('header--con-sesion');
+    sinSesion.contexto.initHeader();
+    assert.ok(!sinSesion.piezas.header.clases.has('header--con-sesion'));
+  });
+});
+
+describe('menú lateral: aria-expanded', () => {
+  it('el botón dice si el menú está abierto: al abrir y al cerrar con el botón, con el velo y con Escape', () => {
+    const { contexto, piezas, teclado } = cargarCarcasa({ conSesion: true });
+    contexto.initSidebar();
+    const boton = piezas.sidebarToggle;
+    const estado = () => [boton.getAttribute('aria-expanded'), piezas.sidebar.clases.has('open'), piezas.sidebarOverlay.clases.has('visible')];
+
+    boton.disparar('click');
+    assert.deepEqual(estado(), ['true', true, true]);
+    boton.disparar('click');
+    assert.deepEqual(estado(), ['false', false, false]);
+
+    boton.disparar('click');
+    piezas.sidebarOverlay.disparar('click');
+    assert.deepEqual(estado(), ['false', false, false]);
+
+    boton.disparar('click');
+    teclado({ key: 'Enter' });
+    assert.deepEqual(estado(), ['true', true, true]);
+    teclado({ key: 'Escape' });
+    assert.deepEqual(estado(), ['false', false, false]);
+  });
+});
