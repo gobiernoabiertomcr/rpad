@@ -72,7 +72,7 @@ Cada dataset tiene tres fechas distintas, y el sistema no las confunde:
 
 - **Datos al:** el día al que llegan los datos publicados. Siempre es el último día de un mes (febrero, el 28).
 - **Cargado en el portal** (`ultima_actualizacion`): el día en que se cargó en el Portal de Datos Abiertos, no la fecha de los datos.
-- **Próxima actualización** (fecha sugerida de envío): siempre el último día de un mes. Los datos se piden al último día del mes anterior, para que el área tenga un mes de margen. La API no guarda una fecha nueva que no la cumpla.
+- **Próxima actualización** (el vencimiento del dataset): siempre el último día de un mes. Los datos se piden al último día del mes anterior, para que el área tenga un mes de margen. La API no guarda una fecha nueva que no la cumpla.
 
 Cada dataset tiene además un **tipo de pedido** (acumulado, foto al corte, año anterior completo, ejercicio, próxima edición, relevamiento interno o eventual), que define qué dice la columna **"Datos solicitados"** de las Notas Digitales y del anexo. Se pide siempre todo lo que falta desde los últimos datos publicados.
 
@@ -616,6 +616,11 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ## Changelog
 
+### Aviso sin fecha sugerida y frecuencia acumulada (2026-10)
+- El aviso de las Notas Digitales (interno y externo) ya no lleva la columna "Fecha sugerida de envío", que repetía en cada fila el mismo vencimiento: "Próximos a vencer" queda con Conjunto de datos, Área, Frecuencia y Datos solicitados, y el párrafo del aviso externo pide los datos "del período que se indica en cada caso"
+- La frecuencia dice "(Acumulado)" cuando el pedido acumula desde el 1/1 del año con una frecuencia menor al año (por ejemplo, "Trimestralmente (Acumulado)"): en las tablas del aviso y de la reiteración, en el anexo, en el email a las áreas de los 40 días y en la vista previa del admin
+- El anexo dice "Vence el dd/mm/aaaa · faltan N días" (o "Venció el … · hace N días") y el email de los 40 días va sin fecha; el admin dice "Vence" en la lista, en "Registrar actualización" y en el ciclo. Las notas ya generadas no cambian
+
 ### Vista previa como sale y aviso adelantado que no salió (2026-10)
 - La vista previa de Correos (HTML, PDF y anexo) y "Enviarme una prueba" muestran la nota como saldría en la próxima corrida con notas, con la misma selección que la corrida: si hoy es un día no hábil o no se generan notas (licencia del firmante sin persona autorizada, o esa persona de licencia), la vista previa lo dice y todas muestran el día en que saldría
 - Un aviso adelantado que no salió ya no deja al dataset sin aviso en su fecha, y ese aviso no cita la nota anticipada que no salió
@@ -626,7 +631,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ### Fechas de los datasets (2026-10)
 - "Datos al", "Cargado en el portal" y la próxima actualización son tres datos distintos; la próxima y "Datos al" son siempre fin de mes (febrero, el 28)
-- Tipo de pedido por dataset: las Notas Digitales, el anexo y el aviso a las áreas dicen qué datos se solicitan y la fecha sugerida de envío; cada nota guarda lo que pidió
+- Tipo de pedido por dataset: las Notas Digitales, el anexo y el aviso a las áreas dicen qué datos se solicitan; cada nota guarda lo que pidió
 - "Registrar actualización" propone la próxima con opciones, la persona elige, y al aprobarse queda en el historial de actualizaciones
 - Admin renovado: lista con filtros por estado y tipo de pedido, "Datos publicados" y "Próximo pedido", y formulario con la sección "Actualización y pedido"
 - Un solo cálculo de estado, en el servidor, con el estado Eventual; la tasa de actualización deja afuera a los eventuales (tablero, Estado General y reporte de Cumplimiento coinciden)
