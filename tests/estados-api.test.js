@@ -301,3 +301,41 @@ describe('la tasa es la misma en el tablero, el Estado General y el Cumplimiento
     assert.equal(cumplimiento, `${tablero}%`);
   });
 });
+
+describe('Gestión, métricas (Ruling 23): la tasa de cumplimiento y el ranking de áreas dejan afuera a los eventuales', () => {
+  let metricas;
+  before(async () => {
+    const res = await api.get('/gestion/metricas', admin());
+    assert.equal(res.status, 200);
+    metricas = res.body.data;
+  });
+  const area = (nombre) => metricas.ranking_areas.find(a => a.area === nombre);
+
+  it('la tasa de cumplimiento es la misma que la del tablero: 57 %', async () => {
+    // Con CURDATE() y los eventuales y el sin fecha como cumplidos daba (4 + 4) / 10 = 80 %
+    assert.equal(metricas.tasa_cumplimiento, 57);
+    assert.equal(metricas.tasa_cumplimiento, (await estadisticas()).tasaActualizacion);
+  });
+
+  it('cada área: los al día sobre lo que tiene vencimiento, como en el Cumplimiento', () => {
+    // Área A: 3 al día de 7, con 2 eventuales: 3 / 5. Antes daba 5 / 7 = 71,4. Área B: 1 de 2 (el sin fecha no está al día)
+    assert.deepEqual(area('Área A'), { area: 'Área A', total_datasets: 7, al_dia: 3, porcentaje: 60 });
+    assert.deepEqual(area('Área B'), { area: 'Área B', total_datasets: 2, al_dia: 1, porcentaje: 50 });
+  });
+
+  it('un área con solo eventuales no figura al 100 %: no tiene nada que medir y su porcentaje es null', () => {
+    assert.deepEqual(area('Área C'), { area: 'Área C', total_datasets: 1, al_dia: 0, porcentaje: null });
+    assert.ok(metricas.ranking_areas.every(a => a.porcentaje !== 100));
+  });
+
+  it('el ranking va de mayor a menor porcentaje, con las áreas sin vencimientos al final', () => {
+    assert.deepEqual(metricas.ranking_areas.map(a => a.area), ['Área A', 'Área B', 'Área C']);
+  });
+
+  it('la respuesta mantiene sus claves', () => {
+    for (const clave of ['actualizados_por_mes', 'creados_por_mes', 'notificaciones_por_mes', 'cambios_por_mes', 'tiempo_promedio_aprobacion',
+      'operador_mas_activo', 'distribucion_por_tema', 'distribucion_por_frecuencia', 'tasa_cumplimiento', 'ranking_areas']) {
+      assert.ok(clave in metricas, clave);
+    }
+  });
+});

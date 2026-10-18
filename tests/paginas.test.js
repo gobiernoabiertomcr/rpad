@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const VERSION = '20261103';
+const VERSION = '20261105';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte): su versión es propia
 const VERSION_PANTALLAS = '20261024';
 // correos.js cambió después (Correos en pestañas): su versión es propia
@@ -13,6 +13,11 @@ const VERSION_CORREOS = '20261102';
 const VERSION_PERFIL = '20261103';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia
 const VERSION_ADMIN = '20261103';
+// Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
+// ahora se cargaban sin ?v=: su versión es propia
+const VERSION_PUBLICAS = '20261105';
+// gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
+const VERSION_GESTION = '20261105';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -57,6 +62,20 @@ describe('páginas', () => {
     assert.ok(posicion('api') !== -1 && posicion('api') < posicion('admin-fechas'), 'admin-fechas.js después de api.js');
     assert.ok(posicion('admin-fechas') < posicion('admin'), 'admin.js después de admin-fechas.js');
     assert.equal(scripts.filter(src => /^js\/admin(-fechas)?\.js/.test(src)).length, 2, 'cada uno una sola vez');
+  });
+
+  // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
+  for (const [pagina, script] of [['datasets.html', 'datasets'], ['dataset.html', 'dataset-detail'], ['calendario.html', 'calendario'], ['index.html', 'dashboard']]) {
+    it(`${pagina}: ${script}.js con la versión ${VERSION_PUBLICAS}, después de api.js`, () => {
+      const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+      assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${VERSION_PUBLICAS}`]);
+      const posicion = (nombre) => scripts.findIndex(src => src.startsWith(`js/${nombre}.js`));
+      assert.ok(posicion('api') !== -1 && posicion('api') < posicion(script), `${script}.js después de api.js`);
+    });
+  }
+
+  it(`gestion.html: gestion.js con la versión ${VERSION_GESTION}`, () => {
+    assert.ok(leer('gestion.html').includes(`js/gestion.js?v=${VERSION_GESTION}"`));
   });
 
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {

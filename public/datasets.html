@@ -150,6 +150,52 @@
             font-size: 0.75rem;
         }
 
+        /* "Datos al dic 2025" y "Próxima: ene 2027", uno debajo del otro (spec 2026-10-17-fechas-datasets, 11) */
+        .dataset-card-fechas {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+            white-space: nowrap;
+        }
+
+        /* Aviso del filtro por mes (?mes=), con el botón para quitarlo */
+        .filtro-mes {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 12px;
+            padding: 4px 4px 4px 12px;
+            border-radius: 999px;
+            background: var(--info-light);
+            color: var(--primary);
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .filtro-mes-quitar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .filtro-mes-quitar:hover {
+            background: rgba(26, 54, 93, 0.1);
+        }
+
+        .filtro-mes-quitar:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 1px;
+        }
+
         /* Empty state específico */
         .empty-state-icon {
             font-size: 4rem;
@@ -315,6 +361,8 @@
                             <option value="vencidos">Vencidos (todos)</option>
                             <option value="atrasado">Atrasado (gestión interna)</option>
                             <option value="sin-respuesta">Sin respuesta (gestión externa)</option>
+                            <option value="eventual">Eventual</option>
+                            <option value="sin-fecha">Sin fecha</option>
                         </select>
                     </div>
                     <div class="filter-group" style="align-self: flex-end;">
@@ -323,6 +371,13 @@
                             Limpiar
                         </button>
                     </div>
+                </div>
+                <!-- ?mes=AAAA-MM: viene del gráfico de 12 meses del tablero -->
+                <div id="filtro-mes" class="filtro-mes hidden" role="status">
+                    <span id="filtro-mes-texto"></span>
+                    <button type="button" class="filtro-mes-quitar" onclick="quitarFiltroMes()" aria-label="Quitar el filtro por mes" title="Quitar el filtro por mes">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
                 </div>
             </div>
 
@@ -376,9 +431,9 @@
 
     <!-- Scripts del RPAD -->
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261103"></script>
-    <script src="js/main.js?v=20261103"></script>
-    <script src="js/api.js?v=20261103"></script>
-    <script src="js/datasets.js"></script>
+    <script src="js/auth.js?v=20261105"></script>
+    <script src="js/main.js?v=20261105"></script>
+    <script src="js/api.js?v=20261105"></script>
+    <script src="js/datasets.js?v=20261105"></script>
 </body>
 </html>

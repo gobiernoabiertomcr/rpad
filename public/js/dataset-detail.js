@@ -1,4 +1,7 @@
 // Dataset Detail - Lógica
+// Al cargarse solo declara y registra su DOMContentLoaded: lo que arma los textos y el HTML es puro (filasDeFechas,
+// htmlDeFechas...) y tests/publico-frontend.test.js lo carga en un vm. El estado es el que manda el servidor (d.estado) y
+// las fechas se leen por su texto, con Utils (api.js): nunca con new Date (spec 2026-10-17-fechas-datasets, 11)
 document.addEventListener('DOMContentLoaded', async () => {
   await loadDataset();
 });
@@ -14,7 +17,7 @@ async function loadDataset() {
 
   try {
     const dataset = await API.getDataset(id);
-    
+
     if (!dataset) {
       showNotFound();
       return;
@@ -43,8 +46,8 @@ function renderDataset(d) {
   document.getElementById('dataset-titulo').textContent = d.titulo;
   document.getElementById('dataset-area').textContent = d.area_nombre || 'Sin área asignada';
 
-  // Estado - usar etiqueta larga en el detalle
-  const estado = Utils.calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
+  // Estado (el del servidor) - usar etiqueta larga en el detalle
+  const estado = Utils.estadoDe(d);
   const estadoEl = document.getElementById('dataset-estado');
   estadoEl.textContent = Utils.getEstadoTextoLargo(estado);
   estadoEl.className = `badge ${Utils.getEstadoClase(estado)}`;
@@ -77,98 +80,55 @@ function renderDataset(d) {
     document.getElementById('dataset-url').href = d.url_dataset.trim();
   }
 
-  // Fechas
-  document.getElementById('fecha-ultima').textContent = Utils.formatDate(d.ultima_actualizacion);
-  
-  const proximaEl = document.getElementById('fecha-proxima');
-  if (d.frecuencia_dias === null) {
-    proximaEl.textContent = 'Eventual';
-  } else {
-    proximaEl.textContent = Utils.formatDate(d.proxima_actualizacion);
-  }
+  // Fechas: "Datos al", "Cargado en el portal" y "Próxima actualización prevista"
+  document.getElementById('dataset-fechas').innerHTML = htmlDeFechas(d);
 
   // Info técnica
   document.getElementById('info-frecuencia').textContent = d.frecuencia_nombre || '-';
-  
+
   // Formatos vienen como string concatenado desde el backend
   document.getElementById('info-formatos').textContent = d.formatos || '-';
-  
+
   // Tipo de gestión
   document.getElementById('info-tipo-gestion').textContent = Utils.getTipoGestionTexto(d.tipo_gestion);
 }
 
 // ====================
-// FUNCIONES AUXILIARES
+// FECHAS (puras)
 // ====================
 
-function getUrlParams() {
-  const params = new URLSearchParams(window.location.search);
-  return { id: params.get('id') };
+// "Datos al": dd/mm/aaaa; "Ejercicio aaaa" en un presupuesto; "Relevamiento de {mes} {año}" en un relevamiento; "—" sin dato
+function textoDatosAl(d) {
+  const fecha = Utils.soloFecha(d?.datos_al);
+  if (!fecha) return Utils.SIN_DATO;
+  if (d.tipo_pedido === 'ejercicio') return `Ejercicio ${fecha.slice(0, 4)}`;
+  if (d.tipo_pedido === 'relevamiento') return `Relevamiento de ${Utils.nombreDeMes(Number(fecha.slice(5, 7)))} ${fecha.slice(0, 4)}`;
+  return Utils.fechaCorta(fecha);
 }
 
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+// "Cargado en el portal": dd/mm/aaaa (ultima_actualizacion es el día de la carga, no la fecha de los datos), o "—"
+function textoCargadoEnElPortal(d) {
+  return Utils.fechaCorta(d?.ultima_actualizacion);
 }
 
-function formatDate(dateString) {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
+// "Próxima actualización prevista": "{mes} de {año}", "Eventual", o "—" si no tiene fecha
+function textoProximaPrevista(d) {
+  if (Utils.estadoDe(d) === 'eventual') return 'Eventual';
+  return Utils.mesDeAnio(d?.proxima_actualizacion);
 }
 
-function calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion) {
-  if (!proximaActualizacion) return 'eventual';
-  if (frecuenciaDias === null) return 'eventual';
-
-  const hoy = new Date();
-  const fechaStr = proximaActualizacion.split('T')[0];
-  const [year, month, day] = fechaStr.split('-').map(Number);
-
-  const hoyUTC = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-  const proximaUTC = Date.UTC(year, month - 1, day);
-  const diffDias = Math.round((proximaUTC - hoyUTC) / (1000 * 60 * 60 * 24));
-
-  if (diffDias < 0) {
-    return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
-  } else if (diffDias <= 60) {
-    return 'proximo';
-  }
-  return 'actualizado';
+function filasDeFechas(d) {
+  return [
+    { rotulo: 'Datos al', valor: textoDatosAl(d) },
+    { rotulo: 'Cargado en el portal', valor: textoCargadoEnElPortal(d) },
+    { rotulo: 'Próxima actualización prevista', valor: textoProximaPrevista(d) }
+  ];
 }
 
-function getEstadoTextoLargo(estado) {
-  const textos = {
-    'actualizado': 'Actualizado',
-    'proximo': 'Próximo a vencer',
-    'atrasado': 'Atrasado',
-    'sin-respuesta': 'Sin respuesta',
-    'eventual': 'Actualización eventual'
-  };
-  return textos[estado] || estado;
-}
-
-function getEstadoClase(estado) {
-  const clases = {
-    'actualizado': 'badge-success',
-    'proximo': 'badge-warning',
-    'atrasado': 'badge-danger',
-    'sin-respuesta': 'badge-sin-respuesta',
-    'eventual': 'badge-secondary'
-  };
-  return clases[estado] || 'badge-secondary';
-}
-
-function getTipoGestionTexto(tipo) {
-  const tipos = {
-    'interna': 'Gestión Interna',
-    'externa': 'Gestión Externa'
-  };
-  return tipos[tipo] || tipo;
+function htmlDeFechas(d) {
+  return filasDeFechas(d).map(({ rotulo, valor }) => `
+    <div class="info-row">
+      <span class="info-label">${Utils.escapeHtml(rotulo)}</span>
+      <span class="info-value">${Utils.escapeHtml(valor)}</span>
+    </div>`).join('');
 }

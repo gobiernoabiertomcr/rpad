@@ -1,4 +1,7 @@
 // Calendario - Lógica del calendario de vencimientos
+// Al cargarse solo declara y registra sus eventos: el color de cada día y el HTML del detalle son puros y
+// tests/publico-frontend.test.js los carga en un vm. El estado es el que manda el servidor (d.estado, spec
+// 2026-10-17-fechas-datasets, 11)
 let calendar = null;
 let datasets = [];
 let areas = [];
@@ -177,8 +180,8 @@ function determinarColorEvento(datasetsDelDia) {
   let tieneProximo = false;
   
   datasetsDelDia.forEach(d => {
-    const estado = calcularEstadoDataset(d);
-    if (estado === 'vencido' || estado === 'sin-respuesta' || estado === 'atrasado') {
+    const estado = Utils.estadoDe(d);
+    if (estado === 'sin-respuesta' || estado === 'atrasado') {
       tieneVencido = true;
     } else if (estado === 'proximo') {
       tieneProximo = true;
@@ -188,34 +191,6 @@ function determinarColorEvento(datasetsDelDia) {
   if (tieneVencido) return '#ef4444'; // Rojo
   if (tieneProximo) return '#f59e0b'; // Amarillo
   return '#22c55e'; // Verde
-}
-
-function calcularEstadoDataset(d) {
-  if (!d.proxima_actualizacion) return 'eventual';
-  
-  // Obtener fecha de hoy (solo año, mes, día)
-  const hoy = new Date();
-  const hoyYear = hoy.getFullYear();
-  const hoyMonth = hoy.getMonth();
-  const hoyDay = hoy.getDate();
-  
-  // Extraer solo YYYY-MM-DD de proxima_actualizacion
-  const fechaStr = d.proxima_actualizacion.split('T')[0];
-  const [year, month, day] = fechaStr.split('-').map(Number);
-  
-  // Crear fechas usando UTC para evitar problemas de timezone
-  const hoyUTC = Date.UTC(hoyYear, hoyMonth, hoyDay);
-  const proximaUTC = Date.UTC(year, month - 1, day);
-  
-  // Calcular diferencia en días
-  const diffDias = Math.round((proximaUTC - hoyUTC) / (1000 * 60 * 60 * 24));
-  
-  if (diffDias < 0) {
-    return d.tipo_gestion === 'interna' ? 'atrasado' : 'sin-respuesta';
-  } else if (diffDias <= 60) {
-    return 'proximo';
-  }
-  return 'actualizado';
 }
 
 function obtenerEventosDelDia(fechaStr) {
@@ -245,36 +220,36 @@ function mostrarModalDia(fecha, datasetsDelDia) {
   
   const contenido = document.getElementById('modal-dia-contenido');
   
+  contenido.innerHTML = htmlDelDia(datasetsDelDia);
+  document.getElementById('modal-dia').classList.add('active');
+}
+
+// El detalle de un día: cada dataset con su estado, su área y su frecuencia
+function htmlDelDia(datasetsDelDia) {
   if (!datasetsDelDia || datasetsDelDia.length === 0) {
-    contenido.innerHTML = '<p class="text-muted text-center">No hay datasets para este día.</p>';
-  } else {
-    contenido.innerHTML = datasetsDelDia.map(d => {
-      const estado = calcularEstadoDataset(d);
-      const badgeClass = getBadgeClass(estado);
-      const estadoTexto = getEstadoTexto(estado);
-      
-      return `
+    return '<p class="text-muted text-center">No hay datasets para este día.</p>';
+  }
+  return datasetsDelDia.map(d => {
+    const estado = Utils.estadoDe(d);
+    return `
         <div class="modal-dia-item">
           <div class="modal-dia-item-header">
-            <a href="dataset.html?id=${d.id}" class="modal-dia-item-titulo">${escapeHtml(d.titulo)}</a>
-            <span class="badge ${badgeClass}">${estadoTexto}</span>
+            <a href="dataset.html?id=${encodeURIComponent(d.id)}" class="modal-dia-item-titulo">${Utils.escapeHtml(d.titulo)}</a>
+            <span class="badge ${getBadgeClass(estado)}">${Utils.escapeHtml(getEstadoTexto(estado))}</span>
           </div>
           <div class="modal-dia-item-meta">
             <span>
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; vertical-align: middle;"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>
-              ${escapeHtml(d.area_nombre || '-')}
+              ${Utils.escapeHtml(d.area_nombre || '-')}
             </span>
             <span>
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; vertical-align: middle;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-              ${d.frecuencia_nombre || '-'}
+              ${Utils.escapeHtml(d.frecuencia_nombre || '-')}
             </span>
           </div>
         </div>
       `;
-    }).join('');
-  }
-  
-  document.getElementById('modal-dia').classList.add('active');
+  }).join('');
 }
 
 function cerrarModalDia() {
@@ -298,17 +273,10 @@ function getEstadoTexto(estado) {
     'proximo': 'Próximo',
     'atrasado': 'Atrasado',
     'sin-respuesta': 'Sin respuesta',
+    'sin-fecha': 'Sin fecha',
     'eventual': 'Eventual'
   };
   return textos[estado] || estado;
-}
-
-// Función auxiliar para escapar HTML
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 // =====================================================
@@ -360,7 +328,7 @@ function exportarIcal() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `rpad-vencimientos-${new Date().toISOString().split('T')[0]}.ics`;
+  link.download = `rpad-vencimientos-${Utils.hoyEnArgentina()}.ics`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
