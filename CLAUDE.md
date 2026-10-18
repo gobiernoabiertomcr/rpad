@@ -22,7 +22,7 @@ Sistema de gestión de datos abiertos para la Municipalidad de Comodoro Rivadavi
 app.js                    # Entry point Express
 config/database.js        # Pool MySQL
 controllers/              # 10 controladores (lógica de negocio)
-services/                 # emailService, emailTemplates
+services/                 # emailService, emailTemplates, fechasDatasetReglas (reglas de fechas, puras)
 middleware/auth.js         # JWT middleware
 routes/index.js           # Todas las rutas (~190 líneas)
 database/schema.sql       # Schema completo
@@ -53,13 +53,15 @@ public/                   # Frontend SPA
 
 ### Frontend
 - Vanilla JS, sin frameworks
-- Cada página carga: config.js → auth.js → api.js → página.js
+- Cada página carga: config.js → auth.js → api.js → página.js (admin, además, `admin-fechas.js` entre `api.js` y `admin.js`)
 - API calls centralizadas en `api.js` (objeto `API`)
 - Utilidades en `api.js` (objeto `Utils`: formatDate, calcularEstado, escapeHtml, etc.)
 - Iconos: Lucide SVG embebidos en main.js (objeto `Icons`)
 - Toast notifications: `showToast(message, type)`
 - `perfil.js`: lo que arma HTML (`htmlDeFila`, `htmlDeComparacion`, …) es puro y recibe quién mira por parámetro; lo que toca el DOM, `Auth` o la API va aparte. Los tests lo cargan en un `vm` sin `window` ni DOM: al cargarse, el archivo solo declara.
 - `correos.js`: pestañas Libro de Notas Digitales (la inicial), Estado, Vista previa y pruebas y Configuración (`#libro`, `#estado`, `#pruebas`, `#configuracion`); las alertas del Estado van arriba de las pestañas, con una marca en Estado. Como `perfil.js`, al cargarse solo declara (los tests lo cargan en un `vm`).
+- `admin-fechas.js`: lo puro de la lista de admin y de "Registrar actualización" (`htmlDeFila`, `htmlDeOpciones`, `htmlDeCiclo`, `textoEstado`, selectores de mes y año, `hoyEnArgentina`); lo que toca el DOM o la API va en `admin.js`. Como `perfil.js` y `correos.js`, al cargarse solo declara (`tests/admin-frontend.test.js` lo carga en un `vm`).
+- Fechas en el navegador: texto `'AAAA-MM-DD'`, cortado como texto; nunca `Utils.formatDate` para los campos nuevos (en el navegador argentino muestra el día anterior) ni `toISOString()` para "hoy" (después de las 21 da mañana: `hoyEnArgentina`).
 
 ### CSS
 - Variables CSS: `--primary: #1a365d`, `--success: #10b981`, `--warning: #f59e0b`, `--danger: #ef4444`
@@ -86,15 +88,42 @@ Todo cambio a datasets pasa por doble verificación:
 
 ### Base de datos
 - 24 tablas (ver `database/schema.sql`). Usuarios: `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas). Notas de auditoría: `notas_digitales_cambios` (qué cambios incluyó cada una, `nuevo` o `reiterado`)
+- Fechas de los datasets (sin tablas nuevas): `datasets.datos_al` y `datasets.tipo_pedido`, `frecuencias.meses`, las columnas `cambio_id`, `vencimiento`, `datos_al`, `recibido_el` y `proxima_nueva` de `historial_actualizaciones`, y `datos_desde`, `datos_hasta` y `datos_solicitados` de `notas_digitales_datasets`. Migraciones aditivas, en este orden: `migracion-fechas-datasets.sql` (estructura), `migracion-fechas-datasets-datos.sql` (carga de "Datos al" y tipo de pedido de los datasets) y `migracion-fechas-datasets-textos.sql` (saca el período de los "Qué se solicita"; va con el código de las Notas Digitales, no antes). Sin `CHECK` en la base: valida la API.
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
+### Fechas de los datasets
+- `proxima_actualizacion` es siempre el último día de un mes, con febrero en 28 también en los años bisiestos (`esFinDeMes`, `finDeMes`; `sumarMeses` suma sobre el índice año × 12 + mes, nunca con `setMonth`). `datos_al` ("Datos al": el día al que llegan los datos publicados) también es siempre fin de mes. El servidor lo valida solo si el campo cambia: un dataset viejo con una fecha mala se edita sin tocarla.
+- Corte = fin del mes anterior a la próxima (`corteDe`): el área tiene un mes para preparar los datos sin figurar vencida.
+- `ultima_actualizacion` es "Cargado en el portal": el día de la carga, no la fecha de los datos (esa es `datos_al`). Las fechas viejas no se corrigen.
+- Tipo de pedido (`datasets.tipo_pedido`; si es NULL rige `tipoSugerido(gestion, meses)`, vía `tipoEfectivo`) y qué pide cada uno: `acumulado`, del 1/1 del año del corte al corte; `foto`, "Vigente al" el corte; `anio_anterior`, el último año calendario cerrado; `ejercicio`, "Presupuesto del ejercicio aaaa" (si falta más de uno, los dice todos); `edicion`, "Próxima edición disponible"; `relevamiento`, "Relevamiento actualizado"; `eventual`, sin pedido. Eventual va siempre junto con la frecuencia Eventual (sin próxima): el servidor lo exige.
+- "Todo lo que falta": si lo publicado termina antes del 1/1 del año del corte, el pedido arranca el 1° del mes siguiente a "Datos al" (nunca el 29/02), aunque cruce el año.
+- R7, vencidos: si el vencimiento ya pasó, el pedido llega hasta el corte del último vencimiento del ciclo que ya pasó (`ultimoVencimientoPasado`: suma la frecuencia mientras siga en el pasado).
+- Una sola fuente: `services/fechasDatasetReglas.js`, puro (sin pool ni `Date` local; las fechas son texto `'AAAA-MM-DD'`, hoy = `hoyArgentina()`): `pedido`, `cubre`, `opcionesDeProxima`, `estadoDelDataset`, `tasaDeActualizacion`, `topeDatosAl`, `tipoSugerido`, `tipoEfectivo`. Ninguna tira error: con una entrada inválida devuelven null, false o una lista vacía.
+- La API (`GET /datasets` y `/:id`) devuelve `datos_al`, `tipo_pedido` (el efectivo), `tipo_pedido_nombre`, `frecuencia_meses`, `pedido` (`{ desde, hasta, texto }`), `estado` y `dias_para_vencer`. Para la pantalla de admin: `GET /datasets/:id/opciones-proxima?datos_al=` y `GET /datasets/calculo-pedido` (`API.opcionesDeProxima`, `API.calculoPedido`).
+- El navegador no recalcula las reglas: las pide al servidor. Las copias mínimas conocidas son `tipoSugeridoDe` (`admin-fechas.js`) y `esFinDeMesTexto` (`perfil.js`, para la marca "No es el último día del mes"), y el respaldo `Utils.calcularEstado`; cada una tiene su test.
+- Admin: la lista filtra por estado, gestión y tipo de pedido; el formulario tiene la sección "Actualización y pedido", con la vista previa "Así va a salir en la próxima nota". "Registrar actualización" propone las opciones de próxima y no elige ninguna de antemano. Un dataset con cambio pendiente queda bloqueado también ahí, antes de abrir el modal.
+- Sitio público: el detalle y el listado distinguen "Datos al", "Cargado en el portal" y la próxima prevista (mes y año).
+
+### Registrar una actualización
+- `POST /datasets/:id/actualizar` recibe `datos_al`, `cargado_el` (o `fecha_actualizacion`, por compatibilidad; por defecto hoy), `recibido_el` (opcional), `proxima_actualizacion` y `notas`. Respeta la próxima que eligió la persona y valida fin de mes, que ninguna fecha sea futura (`datos_al`, hasta `topeDatosAl`) y que `recibido_el` no sea posterior a la carga. Crea un cambio `editar` con `registro_actualizacion: true`: pasa por la doble verificación.
+- `aprobarCambio` no aprueba un cambio con una `proxima_actualizacion` o un `datos_al` que no son fin de mes (400: se rechaza y se vuelve a proponer). Si el cambio lleva `registro_actualizacion`, en la misma transacción escribe `historial_actualizaciones`: `cambio_id`, `vencimiento` (la próxima que se cumplió), `datos_al`, `recibido_el`, `proxima_nueva`; `fecha_actualizacion` es la carga.
+- `historial_actualizaciones.vencimiento` es la clave del ciclo, la misma que `notas_digitales_datasets.vencimiento`: sirve a la futura "vida del dataset". El historial anterior no se reconstruyó. `gestionController` ("Operador más activo") no cuenta dos veces un registro que ahora está en las dos tablas.
+
+### Datos solicitados en las Notas Digitales
+- La tabla de próximos a vencer del aviso (5 columnas) y la de la reiteración (7) llevan la columna "Datos solicitados" (el `pedido` de cada ficha, calculado el día de la nota); en el aviso, "Fecha sugerida de envío" reemplaza a "Vence". El anexo (recuadro "DATOS SOLICITADOS") y el email a las áreas de los 40 días también lo dicen.
+- Cada nota guarda lo que pidió en `notas_digitales_datasets` (`datos_desde`, `datos_hasta`, `datos_solicitados`): lo ya enviado no cambia. Las notas 1/26 y 2/26 quedan en NULL.
+- La reiteración recalcula el pedido cada vez (todo lo que falta, R7), no repite el del aviso.
+- Los "Qué se solicita" no llevan fechas ni períodos: los pone el sistema (el formulario avisa, sin bloquear, si el texto los trae y el tipo pone fechas).
+
 ### Estados de dataset
-Calculados dinámicamente según `proxima_actualizacion`:
+Se calculan una sola vez, en el servidor (`estadoDelDataset`), según `proxima_actualizacion` y la frecuencia en meses; las páginas usan `d.estado` (`Utils.estadoDe`) y `dias_para_vencer`. `Utils.calcularEstado` queda solo de respaldo y da lo mismo.
 - `actualizado` — al día
-- `proximo` — próximo a vencer
+- `proximo` — próximo a vencer (hasta 60 días corridos; el día del vencimiento todavía cuenta)
 - `atrasado` / `sin-respuesta` — vencido (según tipo_gestion interna/externa)
 - `sin-fecha` — sin fecha de próxima actualización
+- `eventual` — frecuencia Eventual: no tiene vencimiento, ni al día ni atrasado
+- La tasa de actualización (`tasaDeActualizacion`) es (actualizados + próximos) sobre el total sin los eventuales: la misma en el tablero, el Estado General de Gestión y el reporte de Cumplimiento.
 
 ### Recordatorios automáticos
 - Salen solo en días hábiles: lunes a viernes sin los 9 feriados nacionales fijos (`esDiaHabil` en `services/notasDigitalesCalendario.js`). Hoy = `hoyArgentina()`, nunca `CURDATE()`.
@@ -113,7 +142,7 @@ Calculados dinámicamente según `proxima_actualizacion`:
 - Nota de auditoría (tipo `auditoria`, sin gestión, numeración del libro): una por día, después de avisos y reiteraciones; nuevos y reiterados a los 5 días hábiles de la última nota; destinatarios `para_auditoria` y `cc_auditoria` de `notas_digitales_config`, con el `cco` general.
 - Días sin auditor (spec 9.5): un día hábil en que ningún superadmin ni admin está disponible (los editores no cuentan: son el respaldo). `periodosSinAuditor` (`services/auditoriaService.js`) agrupa los días hábiles seguidos en períodos `{ desde, hasta, vuelve, respaldo }` (la regla pura es `agruparDiasSinAuditor`, en `auditoriaReglas.js`; `vuelve` es el primer día hábil con algún auditor, hasta 366 días, o `null`). La disponibilidad sigue en un solo lugar (`disponibilidad`, usada por `personasDeAuditoria` y `personasPorDia`). Se muestra en tres lugares: el formulario de licencias (`GET /api/usuarios/licencias/sin-auditor` simula la licencia sin guardarla, con `usuario_id` y `excluir`; la pestaña Licencias lo pide sin parámetros, de hoy a hoy + 60 días), el aviso a quien propone y Correos → Estado (`sin_quien_audite` y `periodos_sin_auditor`).
 - Aviso a quien propone (dentro del recordatorio de las 14:00, `sinAuditorTemplate`): si un cambio que entra en el recordatorio no tiene a nadie que lo audite (`quienesAuditan` vacío), quien lo propuso recibe un solo email con todos sus cambios en esa situación, una vez por cambio (`cambios_pendientes.aviso_sin_auditores_at`, escrito con `ahoraArgentina()`). De licencia no se manda: queda NULL y sale a su vuelta si sigue sin auditor.
-- Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma (el email de las 14:00 abre `perfil.html#para-revisar`; el lector solo ve Mis datos). Cada cambio es una fila que se despliega con la comparación (lo viejo tachado, lo nuevo resaltado; palabra por palabra en los textos largos) y se aprueba (con confirmación en la fila) o se rechaza (con motivo) ahí mismo. Las listas `GET /cambios-pendientes/para-revisar` y `/mis-cambios` traen la comparación (`campos_modificados`), los datos enriquecidos y `dataset_url`; `para-revisar`, además, `auditoria` con `auditan` (quiénes lo auditan hoy, para la marca del editor). `GET /:id` sigue devolviendo `auditoria` como `{ puede, respaldo, mensaje }`. `calcularCambios` compara `ultima_actualizacion` y `proxima_actualizacion` por día. La UI solo refleja el permiso del servidor (`permisoDeAuditoria` falla cerrado), que vuelve a validar al aprobar o rechazar.
+- Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma (el email de las 14:00 abre `perfil.html#para-revisar`; el lector solo ve Mis datos). Cada cambio es una fila que se despliega con la comparación (lo viejo tachado, lo nuevo resaltado; palabra por palabra en los textos largos) y se aprueba (con confirmación en la fila) o se rechaza (con motivo) ahí mismo. Las listas `GET /cambios-pendientes/para-revisar` y `/mis-cambios` traen la comparación (`campos_modificados`), los datos enriquecidos y `dataset_url`; `para-revisar`, además, `auditoria` con `auditan` (quiénes lo auditan hoy, para la marca del editor). `GET /:id` sigue devolviendo `auditoria` como `{ puede, respaldo, mensaje }`. `calcularCambios` compara por día `ultima_actualizacion` (rótulo "Cargado en el portal"), `datos_al`, `proxima_actualizacion` y `recibido_el`; un registro de actualización se titula "Actualización registrada". La UI solo refleja el permiso del servidor (`permisoDeAuditoria` falla cerrado), que vuelve a validar al aprobar o rechazar.
 
 ## Seguridad
 - JWT_SECRET obligatorio al iniciar (process.exit(1) si falta)

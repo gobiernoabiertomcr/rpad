@@ -66,6 +66,20 @@ Cada dataset tiene un campo opcional **"Qué se solicita"**: qué información c
 - **Dónde se muestra:** en la página pública del dataset (`dataset.html`), en el recuadro "Qué se solicita" (si el dataset no tiene texto, no se muestra), y en el **anexo** que acompaña a los avisos de las Notas Digitales. Si un dataset no lo tiene cargado, el anexo usa un texto genérico.
 - **Carga inicial:** la migración `database/updates/migracion-que-se-solicita-datos.sql` carga el texto de los 80 datasets activos (ver [Segunda entrega de Notas Digitales](#segunda-entrega-de-notas-digitales)). Se corre una sola vez, en ese despliegue: después, cada texto se cambia solo con doble verificación.
 
+## Fechas de los datasets
+
+Cada dataset tiene tres fechas distintas, y el sistema no las confunde:
+
+- **Datos al:** el día al que llegan los datos publicados. Siempre es el último día de un mes (febrero, el 28).
+- **Cargado en el portal** (`ultima_actualizacion`): el día en que se cargó en el Portal de Datos Abiertos, no la fecha de los datos.
+- **Próxima actualización** (fecha sugerida de envío): siempre el último día de un mes. Los datos se piden al último día del mes anterior, para que el área tenga un mes de margen. La API no guarda una fecha nueva que no la cumpla.
+
+Cada dataset tiene además un **tipo de pedido** (acumulado, foto al corte, año anterior completo, ejercicio, próxima edición, relevamiento interno o eventual), que define qué dice la columna **"Datos solicitados"** de las Notas Digitales y del anexo. Se pide siempre todo lo que falta desde los últimos datos publicados.
+
+- **Registrar actualización** (admin) pregunta a qué fecha son los datos, cuándo llegaron y cuándo se cargaron, y propone opciones para la próxima sin elegir ninguna: la persona elige y todo pasa por la doble verificación. Al aprobarse queda un renglón en el historial de actualizaciones del dataset.
+- **Dónde está la regla:** `services/fechasDatasetReglas.js`. La pantalla no recalcula nada: le pide el pedido y las opciones al servidor.
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-17-fechas-datasets-design.md`.
+
 ## Estructura del proyecto
 
 ```
@@ -93,6 +107,7 @@ rpad/
 │   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
 │   ├── avisosDiariosService.js    # Aviso a las áreas y recordatorio de cambios pendientes a quienes pueden auditar (solo días hábiles)
 │   ├── emailTemplates.js          # Plantillas HTML de los emails, todas con el mismo marco (marcoEmail)
+│   ├── fechasDatasetReglas.js     # Reglas puras de las fechas de un dataset: pedido, opciones de próxima, estado y tasa
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD
@@ -103,7 +118,10 @@ rpad/
 │       ├── migracion-notas-digitales.sql
 │       ├── migracion-notas-digitales-anexo.sql   # Segunda entrega: columna anexo_pdf
 │       ├── migracion-que-se-solicita.sql         # Segunda entrega: columna que_se_solicita
-│       └── migracion-que-se-solicita-datos.sql   # Segunda entrega: carga inicial de los textos
+│       ├── migracion-que-se-solicita-datos.sql   # Segunda entrega: carga inicial de los textos
+│       ├── migracion-fechas-datasets.sql         # Fechas de los datasets, entrega 1: estructura (va antes del código)
+│       ├── migracion-fechas-datasets-datos.sql   # Fechas de los datasets, entrega 1: "Datos al" y tipo de pedido de los datasets (después de la estructura y antes del código)
+│       └── migracion-fechas-datasets-textos.sql  # Fechas de los datasets, entrega 2: "Qué se solicita" sin el período (con el código de las Notas Digitales)
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -133,6 +151,7 @@ rpad/
     │   ├── dashboard.js           # Lógica del tablero
     │   ├── datasets.js            # Listado de datasets
     │   ├── dataset-detail.js      # Detalle de dataset
+    │   ├── admin-fechas.js        # Admin: lo puro de la lista y de "Registrar actualización" (se carga antes de admin.js)
     │   ├── admin.js               # Panel de administración
     │   ├── areas.js               # Gestión de áreas responsables
     │   ├── correos.js             # Correos: pestañas, Libro, Estado, vista previa y configuración
@@ -173,10 +192,10 @@ Desde **phpMyAdmin** en cPanel:
 | `frecuencias` | Catálogo de frecuencias de actualización |
 | `formatos` | Catálogo de formatos de archivo (CSV, XLSX, etc.) con distinción de habituales |
 | `areas` | Áreas responsables con contactos, emails y artículos gramaticales (el/la) |
-| `datasets` | Registro principal de datasets (sin columnas de formato fijas), con el texto opcional "Qué se solicita" (`que_se_solicita`) |
+| `datasets` | Registro principal de datasets (sin columnas de formato fijas), con el texto opcional "Qué se solicita" (`que_se_solicita`), "Datos al" (`datos_al`) y el tipo de pedido (`tipo_pedido`) |
 | `dataset_formatos` | Tabla intermedia para la relación muchos-a-muchos entre datasets y formatos |
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
-| `historial_actualizaciones` | Log de actualizaciones realizadas |
+| `historial_actualizaciones` | Log de actualizaciones realizadas: carga en el portal, "Datos al", fecha de recepción, próxima nueva, el cambio que la registró y el vencimiento que cumplió |
 | `notificaciones_log` | Registro de notificaciones enviadas |
 
 ### Migración: Usuarios (superadmin y panel de usuarios)
@@ -310,6 +329,22 @@ Por qué importa el orden: **las tres migraciones se corren antes de reiniciar c
 - Si la carga inicial (paso 4) se corre después de que alguien aprobó una edición de "Qué se solicita", no la pisa. Es lo esperado.
 
 En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin → Importar**, con la base seleccionada y el archivo en UTF-8, en el mismo orden. Los pasos 2 y 3 agregan una columna: si se corren dos veces, la segunda falla con "Duplicate column name" y no cambia nada. El paso 4 se puede repetir sin problema dentro de este mismo despliegue (por ejemplo, si se cortó a mitad); después ya no se vuelve a correr.
+
+### Migración: Fechas de los datasets
+
+⚠️ Requisito: las migraciones anteriores aplicadas. No hay dependencias nuevas de npm. Se despliega en tres entregas, cada una con backup de la base y de los archivos antes de empezar. Los scripts se corren en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada) y **siempre antes de subir el código** de esa entrega.
+
+| Entrega | Qué incluye | SQL (en este orden) | Después |
+|---------|-------------|---------------------|---------|
+| 1. Reglas, registro y admin | Reglas de fechas, API, admin renovado, historial de actualizaciones, Mi Perfil | `migracion-fechas-datasets.sql` (estructura) y `migracion-fechas-datasets-datos.sql` (carga de "Datos al" y tipo de pedido de los datasets) | Subir los archivos y **Restart** |
+| 2. Notas y avisos | "Datos solicitados" en las Notas Digitales, el anexo y el aviso a las áreas | `migracion-fechas-datasets-textos.sql` (saca el período de los "Qué se solicita") | Subir los archivos y **Restart** |
+| 3. Sitio público y estados | "Datos al", "Cargado en el portal" y la próxima prevista en el sitio público; un solo cálculo de estado; tasa sin eventuales | Ninguno | Subir los archivos y **Restart** |
+
+- **Estructura:** solo agrega columnas (todas en `NULL`) y la frecuencia en meses; el código anterior sigue funcionando con ella. Si se corta a mitad, se puede volver a correr.
+- **Carga de datos:** va después de la estructura y antes del código, para que los datasets tengan su "Datos al" y su tipo desde el primer momento. **Se corre una sola vez**: después esos datos cambian desde la aplicación, con doble verificación, y volver a correrla los pisaría.
+- **Textos:** van con el código de la entrega 2, no antes: con el código anterior, una nota saldría con el texto sin período y sin nada que lo reemplace. También se corren una sola vez.
+- **Antes de la entrega 1**, correr las consultas de solo lectura de la sección 13 de la spec (próximas que no son fin de mes, eventuales con próxima y cambios pendientes con fechas): si devuelven filas, se corrigen desde la aplicación antes de desplegar.
+- **Subir los archivos** en este orden: primero los del servidor, después `api.js` y los scripts, y al final los HTML.
 
 ### Migración desde v1.4.0 a v1.5.0
 
@@ -561,6 +596,14 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Fechas de los datasets (2026-10)
+- "Datos al", "Cargado en el portal" y la próxima actualización son tres datos distintos; la próxima y "Datos al" son siempre fin de mes (febrero, el 28)
+- Tipo de pedido por dataset: las Notas Digitales, el anexo y el aviso a las áreas dicen qué datos se solicitan y la fecha sugerida de envío; cada nota guarda lo que pidió
+- "Registrar actualización" propone la próxima con opciones, la persona elige, y al aprobarse queda en el historial de actualizaciones
+- Admin renovado: lista con filtros por estado y tipo de pedido, "Datos publicados" y "Próximo pedido", y formulario con la sección "Actualización y pedido"
+- Un solo cálculo de estado, en el servidor, con el estado Eventual; la tasa de actualización deja afuera a los eventuales (tablero, Estado General y reporte de Cumplimiento coinciden)
+- El sitio público distingue "Datos al", "Cargado en el portal" y la próxima prevista
 
 ### Mi Perfil en pestañas (2026-10)
 - Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma; el email de las 14:00 abre Para revisar
