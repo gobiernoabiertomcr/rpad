@@ -384,9 +384,16 @@ button {
     background: var(--bruma);
 }
 
-/* Foco visible en los links y botones de la carcasa */
+/* Foco visible en los links y botones de la carcasa (spec 4.1 y 11, al menos 3:1 contra el fondo). Sobre el encabezado
+   blanco, anillo --tinta con un halo --sol-fuerte (el amarillo solo da 1,8:1 sobre blanco); sobre el azul del menú
+   lateral y del footer, anillo --sol-fuerte */
 .header a:focus-visible,
-.header button:focus-visible,
+.header button:focus-visible {
+    outline: 3px solid var(--tinta);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--sol-fuerte);
+}
+
 .sidebar a:focus-visible,
 .footer a:focus-visible {
     outline: 3px solid var(--sol-fuerte);

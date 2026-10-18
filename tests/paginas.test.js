@@ -100,6 +100,7 @@ describe('páginas', () => {
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
   // copiados a mano en cada página. index.html entra cuando se reescribe la portada (son 13 con ella)
   const CON_CARCASA = paginas.filter(p => p !== 'index.html' && leer(p).includes('id="sidebar"'));
+  const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
   it('hay 12 páginas con carcasa (sin contar index.html)', () => {
     assert.equal(CON_CARCASA.length, 12);
@@ -109,8 +110,8 @@ describe('páginas', () => {
     it(`${pagina}: carga main.css con ?v=${VERSION_CSS} y las fuentes nuevas`, () => {
       const html = leer(pagina);
       assert.deepEqual(html.match(/css\/main\.css[^"]*"/g), [`css/main.css?v=${VERSION_CSS}"`]);
-      assert.ok(html.includes('family=Bricolage+Grotesque'), 'Bricolage Grotesque');
-      assert.ok(html.includes('family=Figtree'), 'Figtree');
+      // La misma hoja de Google Fonts en todas las páginas (el navegador la baja una sola vez)
+      assert.deepEqual(html.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"]*/g), [FUENTES]);
       assert.doesNotMatch(html, /family=Inter/);
     });
 
