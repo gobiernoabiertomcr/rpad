@@ -15,11 +15,12 @@ import {
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
-  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe, conPedido
+  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe, conPedido, pendientesEnSuFecha
 } from './notasDigitalesDatos.js';
 import { sumarMeses, tipoSugerido, vencimientoDelMes } from './fechasDatasetReglas.js';
 import {
-  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia
+  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia,
+  disponibilidadDelAutorizado
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { unirAusencias } from './licenciasReglas.js';
@@ -335,6 +336,10 @@ const prepararAviso = async (gestion, hoy, anticipo) => {
     : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
 };
 
+// El orden de los datasets en un aviso: por vencimiento y por título, como la selección; el id desempata
+const porVencimientoYTitulo = (a, b) =>
+  a.vencimiento.localeCompare(b.vencimiento) || a.titulo.localeCompare(b.titulo, 'es') || a.id - b.id;
+
 // ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
 const hayNotaDeAuditoria = async (fecha) => {
   const [[fila]] = await pool.query(
@@ -457,15 +462,26 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
   let avisoConAutorizacion = false;
+  // Las licencias de la persona autorizada durante la del titular: se leen una sola vez, la primera gestión que las necesita
+  let ausenciasDelAutorizado;
   for (const gestion of GESTIONES) {
     let id;
     // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida)
     const conAutorizacion = anticipo && autorizacion && !autorizacionDesactualizada ? autorizacion : null;
     try {
-      const datasets = await prepararAviso(gestion, hoy, anticipo);
+      let datasets = await prepararAviso(gestion, hoy, anticipo);
+      // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella: se suma a
+      // la selección de hoy lo que hoy toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6). La licencia es la del titular.
+      if (modo === 'autorizado') {
+        ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
+        const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
+          .filter(d => d.dia_en_su_fecha <= hoy);
+        if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
+      }
       if (!datasets.length) continue;
-      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3)
-      const rangoVencimientos = datasets.some(d => d.cuenta_desde)
+      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3). Solo el de
+      // la víspera: los datasets que salen en su fecha también traen cuenta_desde, pero el asunto lleva el mes de la nota.
+      const rangoVencimientos = anticipo && datasets.some(d => d.cuenta_desde)
         ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
         : null;
       id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
