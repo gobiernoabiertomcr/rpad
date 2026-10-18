@@ -556,7 +556,7 @@ Con `recibido_el` contra la fecha sugerida se puede medir si cada área entregó
 El usuario lo pidió al revisar una nota de la simulación: la 11/26, el aviso externo del 22/12/2026. Eligió las opciones de abajo. Lo que decidí yo está marcado.
 
 **Por qué**
-- **La fecha sugerida de envío no aportaba.** Es el vencimiento del dataset (`proxima_actualizacion`, R1); no se calcula. En un aviso todos los datasets vencen el mismo día, así que la columna repetía la misma fecha en cada fila: en la 11/26, 31/01/2027 dieciséis veces.
+- **La fecha sugerida de envío no aportaba.** Es el vencimiento del dataset (`proxima_actualizacion`, R1); no se calcula. En el aviso de todos los días, los datasets vencen el mismo día (los vencimientos son fin de mes), así que la columna repetía la misma fecha en cada fila: en la 11/26, 31/01/2027 dieciséis veces. Un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, o un aviso que se recupera tarde): ahí las filas van agrupadas por vencimiento (ver "Varios vencimientos en un aviso").
 - **Un acumulado pide desde el 1/1 del año del corte (R3).** Con una frecuencia menor al año, la frecuencia y el período no coinciden: en el último ciclo del año, "Trimestralmente" va al lado de "Del 01/01/2026 al 31/12/2026". "(Acumulado)" explica por qué.
 
 **El aviso, interno y externo** (`construirNota`, `PARRAFO_INICIAL`)
@@ -564,6 +564,13 @@ El usuario lo pidió al revisar una nota de la simulación: la 11/26, el aviso e
 - En el PDF, `PROPORCIONES` cambia la clave `5` por la `4`: `[30, 26, 16, 28]`, con Datos solicitados como la columna más ancha después del título (mi decisión). Ninguna tabla nueva tiene 5 columnas.
 - El párrafo inicial del aviso externo termina en "…con los datos del período que se indica en cada caso." Se va "y, de ser posible, antes de la fecha sugerida de envío". El interno no cambia.
 - El renglón del antecedente sigue a todo el ancho: `colspan` 4.
+
+**Varios vencimientos en un aviso.** Lo pidió el usuario en la revisión final del cambio. Aplica solo a "Próximos a vencer" de un aviso: la reiteración y los vencidos tienen su columna "Vence"/"Venció".
+- Si la sección junta un solo vencimiento (el caso de todos los días), la tabla queda como arriba, sin nada más.
+- Si junta más de uno, las filas se ordenan por vencimiento, de la fecha más cercana a la más lejana. Dentro de cada vencimiento conservan el orden que traen.
+- Antes del primer dataset de cada vencimiento va una fila a todo el ancho (`colspan` 4) que dice "Vencen el dd/mm/aaaa", o "Vence el dd/mm/aaaa" si ese vencimiento tiene un solo dataset.
+- Va en el HTML, en el texto (un renglón propio antes de las filas de ese vencimiento) y en el PDF. En el PDF, esa fila nunca queda sola al pie de una hoja: va con la primera fila de su grupo, como el encabezado de la tabla.
+- Sale del `vencimiento` de cada dataset; no se guarda nada nuevo. El anexo mantiene el orden de las hojas que tenga hoy respecto de la tabla (mi decisión: si hoy sigue el orden de la tabla, sigue el nuevo orden).
 - La sección de vencidos de un aviso y la reiteración siguen con sus 7 columnas, con "Vence" o "Venció".
 
 **La frecuencia con "(Acumulado)"**
@@ -590,6 +597,7 @@ El usuario lo pidió al revisar una nota de la simulación: la 11/26, el aviso e
 **Email de 40 días** (`areaAviso40diasTemplate`, `datasetsExternosPorArea`)
 - Se va el renglón "Fecha sugerida de envío". Quedan "Frecuencia de actualización" y "Datos que se solicitarán".
 - `datasetsExternosPorArea` suma a cada dataset su tipo efectivo y sus meses, de `conPedido`.
+- El ejemplo de Correos (vista previa y prueba del email) cambia su primer dataset por uno trimestral acumulado, para que se vea "(Acumulado)". Lo pidió el usuario en la revisión final.
 
 **Admin**
 - **Vista previa "Así va a salir en la próxima nota":** Conjunto de datos · Frecuencia · Datos solicitados.
