@@ -7,6 +7,7 @@
 
 import { TEXTO_ROL } from './usuariosReglas.js';
 import { formatoCorto } from './notasDigitalesCalendario.js';
+import { frecuenciaEnNota } from './fechasDatasetReglas.js';
 
 // Paleta de los emails
 const COLORES = {
@@ -210,12 +211,14 @@ const contenidoDeCambio = (c, lineas) => `<p style="margin: 0 0 8px 0;">${etique
 // "Del 01/01/2026 al 31/10/2026" → "del 01/01/2026 al 31/10/2026": el texto del pedido sigue a "Datos que se solicitarán: "
 const conMinusculaInicial = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
 
-// Renglones de una tarjeta del aviso a las áreas, en texto secundario. Cada dataset trae su vencimiento ('AAAA-MM-DD') y su
-// pedido ({ texto, ... } o null) de datasetsExternosPorArea; sin pedido o sin vencimiento, el renglón no aparece.
+// Renglones de una tarjeta del aviso a las áreas, en texto secundario: la frecuencia y los datos que se solicitarán (sin
+// fecha: desde el 18/10/2026 no lleva la fecha sugerida de envío, spec 2026-10-17-fechas-datasets, 18). Cada dataset trae su
+// pedido ({ texto, ... } o null), su tipo de pedido efectivo y sus meses de datasetsExternosPorArea; sin pedido, el renglón
+// de los datos no aparece. La frecuencia lleva "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año.
 const renglonesDeDataset = (d) => {
-  const renglones = [`Frecuencia de actualización: ${d.frecuencia_nombre || 'Sin definir'}`];
+  const frecuencia = frecuenciaEnNota({ frecuencia: d.frecuencia_nombre, tipo: d.tipo_pedido, meses: d.meses });
+  const renglones = [`Frecuencia de actualización: ${frecuencia || 'Sin definir'}`];
   if (d.pedido?.texto) renglones.push(`Datos que se solicitarán: ${conMinusculaInicial(d.pedido.texto)}`);
-  if (d.vencimiento) renglones.push(`Fecha sugerida de envío: ${formatoCorto(d.vencimiento)}`);
   return renglones.map((renglon, i) =>
     `<p style="margin: ${i === 0 ? '4px' : '2px'} 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">${escapeHtml(renglon)}</p>`).join('\n                    ');
 };

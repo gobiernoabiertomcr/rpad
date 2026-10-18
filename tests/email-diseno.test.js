@@ -193,8 +193,9 @@ describe('Diseño de los emails: un marco común', () => {
     assert.match(html, /<td style="border-left: 3px solid #A9C7E4; padding-left: 12px;">\s*<p [^>]*>Dirección de Datos Públicos y Comunicación<\/p>/);
   });
 
-  // Datos solicitados y fecha sugerida de envío (spec 2026-10-17-fechas-datasets, 9): dos renglones más en cada tarjeta
-  describe('aviso a las áreas: datos solicitados y fecha sugerida de envío', () => {
+  // Datos solicitados (spec 2026-10-17-fechas-datasets, 9) y, desde el 18/10/2026, sin la fecha sugerida de envío y con la
+  // frecuencia "(Acumulado)" (spec 18): los renglones de cada tarjeta son la frecuencia y los datos que se solicitarán
+  describe('aviso a las áreas: frecuencia y datos solicitados, sin fecha sugerida de envío', () => {
     const DATOS = 'Datos que se solicitarán:';
     const FECHA = 'Fecha sugerida de envío:';
     const aviso = (dataset) => textoVisible(plantillas.areaAviso40dias({
@@ -202,12 +203,13 @@ describe('Diseño de los emails: un marco común', () => {
     }).html);
     const pedido = (texto) => ({ desde: null, hasta: null, texto });
 
-    it('los dos renglones van entre la frecuencia y el link, con el texto del pedido en minúscula inicial y la fecha en dd/mm/aaaa', () => {
+    it('los renglones son la frecuencia y los datos que se solicitarán, con el texto del pedido en minúscula inicial; ninguno es una fecha sugerida de envío', () => {
       const texto = aviso({ vencimiento: '2026-11-30', pedido: pedido('Del 01/11/2025 al 31/10/2026') });
-      assert.ok(texto.includes('1. D Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/11/2025 al 31/10/2026 Fecha sugerida de envío: 30/11/2026 Gracias'), texto);
+      assert.ok(texto.includes('1. D Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/11/2025 al 31/10/2026 Gracias'), texto);
+      assert.ok(!texto.includes('Fecha sugerida') && !texto.includes('30/11/2026'), texto);
     });
 
-    it('cada renglón es un párrafo de texto secundario de 13px, pegado al anterior', () => {
+    it('cada renglón es un párrafo de texto secundario de 13px, pegado al anterior, y no hay un tercero con la fecha', () => {
       const { html } = plantillas.areaAviso40dias({
         area_nombre: 'Área',
         datasets: [{ titulo: 'D', frecuencia_nombre: 'Anualmente', url_dataset: null, vencimiento: '2026-11-30', pedido: pedido('Vigente al 31/10/2026') }]
@@ -215,7 +217,8 @@ describe('Diseño de los emails: un marco común', () => {
       const renglon = (margen, texto) => `<p style="margin: ${margen} 0 0 0; color: #6B7A8C; font-size: 13px;">${texto}</p>`;
       assert.ok(html.includes(renglon('4px', 'Frecuencia de actualización: Anualmente')));
       assert.ok(html.includes(renglon('2px', 'Datos que se solicitarán: vigente al 31/10/2026')));
-      assert.ok(html.includes(renglon('2px', 'Fecha sugerida de envío: 30/11/2026')));
+      assert.ok(!html.includes('Fecha sugerida'), 'sobra la fecha sugerida de envío');
+      assert.ok(!html.includes('30/11/2026'), 'sobra la fecha del vencimiento');
     });
 
     it('la primera letra pasa a minúscula en cada texto de pedido, con tilde o sin ella', () => {
@@ -227,23 +230,49 @@ describe('Diseño de los emails: un marco común', () => {
         ['Próxima edición disponible', 'próxima edición disponible'],
         ['Relevamiento actualizado', 'relevamiento actualizado']
       ]) {
-        assert.ok(aviso({ vencimiento: '2026-11-30', pedido: pedido(original) }).includes(`${DATOS} ${esperado} ${FECHA}`), original);
+        assert.ok(aviso({ vencimiento: '2026-11-30', pedido: pedido(original) }).includes(`${DATOS} ${esperado} Gracias`), original);
       }
     });
 
-    it('un dataset sin pedido no lleva "Datos que se solicitarán" y conserva la fecha', () => {
+    it('un dataset sin pedido no lleva "Datos que se solicitarán": queda solo la frecuencia, con o sin vencimiento', () => {
       for (const sinPedido of [{ pedido: null }, {}, { pedido: pedido('') }]) {
-        const texto = aviso({ vencimiento: '2026-11-30', ...sinPedido });
-        assert.ok(!texto.includes(DATOS), texto);
-        assert.ok(texto.includes('Frecuencia de actualización: Anualmente Fecha sugerida de envío: 30/11/2026 Gracias'), texto);
+        for (const vencimiento of ['2026-11-30', null, undefined]) {
+          const texto = aviso({ vencimiento, ...sinPedido });
+          assert.ok(!texto.includes(DATOS) && !texto.includes(FECHA), texto);
+          assert.ok(texto.includes('1. D Frecuencia de actualización: Anualmente Gracias'), texto);
+        }
       }
     });
 
-    it('un dataset sin vencimiento no lleva "Fecha sugerida de envío" y conserva el pedido', () => {
-      for (const sinFecha of [{ vencimiento: null }, {}]) {
-        const texto = aviso({ pedido: pedido('Del 01/01/2026 al 31/10/2026'), ...sinFecha });
-        assert.ok(!texto.includes(FECHA), texto);
-        assert.ok(texto.includes('Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/01/2026 al 31/10/2026 Gracias'), texto);
+    it('el vencimiento del dataset no se muestra: con o sin él, el email es el mismo', () => {
+      const conPedido = { pedido: pedido('Del 01/01/2026 al 31/10/2026') };
+      assert.equal(aviso({ ...conPedido, vencimiento: '2026-11-30' }), aviso({ ...conPedido, vencimiento: null }));
+      assert.equal(aviso({ ...conPedido, vencimiento: '2026-11-30' }), aviso(conPedido));
+    });
+
+    it('la frecuencia de un acumulado menor al año lleva "(Acumulado)"; los anuales y los demás tipos, no', () => {
+      assert.ok(aviso({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: 3 })
+        .includes('Frecuencia de actualización: Trimestralmente (Acumulado) Gracias'));
+      assert.ok(aviso({ frecuencia_nombre: 'Cada medio año', tipo_pedido: 'acumulado', meses: 6, pedido: pedido('Del 01/01/2026 al 30/06/2026') })
+        .includes('Frecuencia de actualización: Cada medio año (Acumulado) Datos que se solicitarán: del 01/01/2026 al 30/06/2026 Gracias'));
+      for (const sinMarca of [
+        { frecuencia_nombre: 'Anualmente', tipo_pedido: 'acumulado', meses: 12 },
+        { frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'foto', meses: 3 },
+        { frecuencia_nombre: 'Trimestralmente', tipo_pedido: null, meses: 3 },
+        { frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: null },
+        { frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: '3' },
+        { frecuencia_nombre: 'Cada dos años', tipo_pedido: 'acumulado', meses: 24 },
+        { frecuencia_nombre: 'Trimestralmente' }
+      ]) {
+        assert.ok(!aviso(sinMarca).includes('Acumulado'), JSON.stringify(sinMarca));
+      }
+    });
+
+    it('sin nombre de frecuencia sigue "Sin definir", también con un acumulado', () => {
+      for (const frecuencia_nombre of [null, undefined, '']) {
+        const texto = aviso({ frecuencia_nombre, tipo_pedido: 'acumulado', meses: 3 });
+        assert.ok(texto.includes('1. D Frecuencia de actualización: Sin definir Gracias'), texto);
+        assert.ok(!texto.includes('Acumulado'), texto);
       }
     });
 
@@ -305,7 +334,7 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'cambios pendientes de respaldo': `${RPAD} Cambios pendientes de revisión Hay 1 cambio esperando tu auditoría Acción requerida: Por favor, revisa y aprueba o rechaza los siguientes cambios propuestos por otras personas. Te llega como respaldo: no hay auditores disponibles. Cambios pendientes: Editar Padrón de comercios <b>2026</b> Propuesto por: Persona Editora Hace 2 días Revisar cambios en RPAD ${PIE}`,
     'sin auditor (uno)': `${RPAD} Sin auditor disponible Por ahora no hay ningún auditor disponible para revisar este cambio. Cambios pendientes: Editar Arbolado urbano Fecha de la propuesta: 01/10/2026 Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio. ${PIE}`,
     'sin auditor (varios)': `${RPAD} Sin auditor disponible Hasta el 11/01/2027 no hay ningún auditor disponible para revisar estos cambios. Cambios pendientes: Editar Arbolado urbano Fecha de la propuesta: 01/10/2026 Crear Alta nueva Fecha de la propuesta: 02/10/2026 Mientras tanto, el conjunto de datos sigue bloqueado para nuevas modificaciones. Apenas vuelva a haber un auditor disponible, le llega el recordatorio. ${PIE}`,
-    'aviso a las áreas': 'Municipalidad de Comodoro Rivadavia Dirección General de Modernización e Investigación Territorial Estimados/as: Nos comunicamos desde la Dirección General de Modernización e Investigación Territorial de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos: 1. Dataset A Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/01/2026 al 30/11/2026 Fecha sugerida de envío: 31/12/2026 Ver dataset en el portal 2. Dataset B & C Frecuencia de actualización: Sin definir Fecha sugerida de envío: 31/01/2027 Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias! Dirección de Datos Públicos y Comunicación Dirección General de Modernización e Investigación Territorial E-mail: datospublicos@comodoro.gov.ar Este es un mensaje automático del sistema RPAD. Portal de Datos Abiertos: datos.comodoro.gov.ar',
+    'aviso a las áreas': 'Municipalidad de Comodoro Rivadavia Dirección General de Modernización e Investigación Territorial Estimados/as: Nos comunicamos desde la Dirección General de Modernización e Investigación Territorial de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos: 1. Dataset A Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/01/2026 al 30/11/2026 Ver dataset en el portal 2. Dataset B & C Frecuencia de actualización: Sin definir Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias! Dirección de Datos Públicos y Comunicación Dirección General de Modernización e Investigación Territorial E-mail: datospublicos@comodoro.gov.ar Este es un mensaje automático del sistema RPAD. Portal de Datos Abiertos: datos.comodoro.gov.ar',
     'contacto': `${RPAD} Nueva Consulta Formulario de Contacto RPAD Tipo de consulta Consulta general Datos del remitente Nombre Persona Consultante Email consulta@rpad.test Mensaje Hola. Quería saber cuándo se actualiza el padrón. Responder a Persona Consultante Recibido el viernes, 16 de octubre de 2026, 10:30 IP: 127.0.0.1 ${PIE}`,
     'invitación': `${RPAD} Tu acceso al RPAD Hola, Persona Nueva. Te dieron acceso al Registro Permanente de Actualización de Datasets (RPAD) con el usuario pnueva y el rol Administrador. Para empezar, elegí tu contraseña con el botón de abajo. Elegir mi contraseña El link sirve una sola vez y vence el 19 de octubre de 2026 a las 10:30 h. Si vence, pedí uno nuevo desde "¿Olvidaste tu contraseña?" en la pantalla de ingreso, o pedíselo a un administrador. ${PIE}`,
     'recuperación': `${RPAD} Restablecé tu contraseña Hola, Persona Nueva. Recibimos un pedido para restablecer la contraseña del usuario pnueva en el RPAD. Elegir una contraseña nueva El link sirve una sola vez y vence el 19 de octubre de 2026 a las 10:30 h. Si no lo pediste, ignorá este email: tu contraseña actual sigue funcionando. ${PIE}`,

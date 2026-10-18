@@ -48,7 +48,7 @@ describe('construirAnexo', () => {
     const a = anexo([ficha(), ficha({ id: 2, titulo: 'Otro', vencimiento: '2026-11-02' })]);
     assert.equal(a.numeroTexto, '3/26');
     assert.equal(a.hojas.length, 2);
-    assert.equal(a.hojas[0].estado, 'Fecha sugerida de envío: 30/11/2026 · faltan 28 días');
+    assert.equal(a.hojas[0].estado, 'Vence el 30/11/2026 · faltan 28 días');
     assert.equal(a.hojas[1].estado, 'Vence hoy');
     assert.equal(a.hojas[0].etiqueta, 'CONJUNTO DE DATOS · GESTIÓN EXTERNA');
     // Sin Datos al, la línea de tiempo arranca en la carga en el portal
@@ -69,10 +69,17 @@ describe('construirAnexo', () => {
     assert.equal(anexo([ficha()], { numero: null, anio: null }).numeroTexto, 'XX');
   });
 
+  it('el estado dice "Vence el …", "Venció el …" o "Vence hoy", y nunca "sugerida" (spec 18)', () => {
+    for (const vencimiento of ['2026-12-31', '2026-11-03', '2026-11-02', '2026-10-30']) {
+      assert.doesNotMatch(anexo([ficha({ vencimiento })]).hojas[0].estado, /sugerida/i);
+    }
+    assert.equal(anexo([ficha({ vencimiento: '2026-12-02' })]).hojas[0].estado, 'Vence el 02/12/2026 · faltan 30 días');
+  });
+
   it('un día de plazo va en singular; un vencimiento pasado (datos de ejemplo) no dice "faltan" días negativos', () => {
-    assert.equal(anexo([ficha({ vencimiento: '2026-11-03' })]).hojas[0].estado, 'Fecha sugerida de envío: 03/11/2026 · falta 1 día');
-    assert.equal(anexo([ficha({ vencimiento: '2026-10-30' })]).hojas[0].estado, 'Fecha sugerida de envío: 30/10/2026 · hace 3 días');
-    assert.equal(anexo([ficha({ vencimiento: '2026-11-01' })]).hojas[0].estado, 'Fecha sugerida de envío: 01/11/2026 · hace 1 día');
+    assert.equal(anexo([ficha({ vencimiento: '2026-11-03' })]).hojas[0].estado, 'Vence el 03/11/2026 · falta 1 día');
+    assert.equal(anexo([ficha({ vencimiento: '2026-10-30' })]).hojas[0].estado, 'Venció el 30/10/2026 · hace 3 días');
+    assert.equal(anexo([ficha({ vencimiento: '2026-11-01' })]).hojas[0].estado, 'Venció el 01/11/2026 · hace 1 día');
   });
 
   it('la línea de tiempo arranca en Datos al ("Datos publicados al") o, sin él, en la carga en el portal ("Cargado en el portal")', () => {
@@ -112,6 +119,23 @@ describe('construirAnexo', () => {
     assert.ok(!hoja.campos.some(([, valor]) => /\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}/.test(String(valor))), JSON.stringify(hoja.campos));
     assert.deepEqual(hoja.campos.map(([etiqueta]) => etiqueta),
       ['Área responsable', 'Depende de', 'Gestión', 'Frecuencia', 'Tema principal', 'Tema secundario', 'Formatos']);
+  });
+
+  it('la ficha de un acumulado con una frecuencia menor al año dice "Frecuencia: … (Acumulado)"; los demás quedan como están (spec 18)', () => {
+    const frecuencia = (cambios) => anexo([ficha(cambios)]).hojas[0].campos.find(([etiqueta]) => etiqueta === 'Frecuencia');
+    assert.deepEqual(frecuencia({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: 3 }), ['Frecuencia', 'Trimestralmente (Acumulado)']);
+    // Anual, otro tipo de pedido o meses que no son de 1 a 11: sin "(Acumulado)"
+    assert.deepEqual(frecuencia({ frecuencia_nombre: 'Anualmente', tipo_pedido: 'acumulado', meses: 12 }), ['Frecuencia', 'Anualmente']);
+    assert.deepEqual(frecuencia({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'foto', meses: 3 }), ['Frecuencia', 'Trimestralmente']);
+    assert.deepEqual(frecuencia({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: null }), ['Frecuencia', 'Trimestralmente']);
+    // Sin nombre de frecuencia, la ficha no la muestra (como hasta ahora)
+    assert.equal(frecuencia({ frecuencia_nombre: null, tipo_pedido: 'acumulado', meses: 3 }), undefined);
+    assert.equal(frecuencia({ frecuencia_nombre: '', tipo_pedido: 'acumulado', meses: 3 }), undefined);
+  });
+
+  it('la ficha dice "(Acumulado)" también en el PDF del anexo', async () => {
+    const hojas = lineasPorHoja(await renderAnexo(anexo([ficha({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: 3 })])));
+    assert.ok(hojas[0].includes('Trimestralmente (Acumulado)'), hojas[0].join(' | '));
   });
 });
 
@@ -266,9 +290,9 @@ describe('renderAnexo', () => {
     assert.ok(rectangulos(con) > rectangulos(sin) + 50);
   });
 
-  it('la línea de tiempo va de "Datos publicados al" (Datos al) a "Fecha sugerida de envío"; sin Datos al, desde "Cargado en el portal"', async () => {
+  it('la línea de tiempo va de "Datos publicados al" (Datos al) a "Vence"; sin Datos al, desde "Cargado en el portal"', async () => {
     const con = lineasPorHoja(await renderAnexo(anexo([fichaReal()])))[0];
-    for (const t of ['DATOS PUBLICADOS AL', '31/10/2025', 'FECHA SUGERIDA DE ENVÍO', '30/11/2026', 'Hoy 02/11/2026']) {
+    for (const t of ['DATOS PUBLICADOS AL', '31/10/2025', 'VENCE', '30/11/2026', 'Hoy 02/11/2026']) {
       assert.ok(con.includes(t), `falta "${t}" en ${con.join(' | ')}`);
     }
     // La fecha de carga no se repite: la línea de tiempo arranca en los datos publicados. Los rótulos viejos ya no están
@@ -276,7 +300,7 @@ describe('renderAnexo', () => {
       assert.ok(!con.some(l => l.includes(t)), `sobra "${t}" en ${con.join(' | ')}`);
     }
     const sin = lineasPorHoja(await renderAnexo(anexo([fichaReal({ datos_al: null })])))[0];
-    for (const t of ['CARGADO EN EL PORTAL', '16/12/2025', 'FECHA SUGERIDA DE ENVÍO']) assert.ok(sin.includes(t), `falta "${t}" en ${sin.join(' | ')}`);
+    for (const t of ['CARGADO EN EL PORTAL', '16/12/2025', 'VENCE']) assert.ok(sin.includes(t), `falta "${t}" en ${sin.join(' | ')}`);
     assert.ok(!sin.some(l => l.includes('DATOS PUBLICADOS AL')), sin.join(' | '));
   });
 
@@ -299,7 +323,7 @@ describe('renderAnexo', () => {
     assert.ok(recuadro && contiene(recuadro, pedido), 'el rótulo y el pedido no están en el mismo recuadro');
     assert.ok(acentos.some(a => Math.abs(a.y0 - recuadro.y0) < 0.1 && Math.abs(a.y1 - recuadro.y1) < 0.1), 'el recuadro no tiene el filete del acento');
     // Debajo del estado (la píldora) y arriba de la línea de tiempo (el "Hoy" va sobre la barra)
-    const estado = textos.find(t => t.texto.startsWith('Fecha sugerida de envío:'));
+    const estado = textos.find(t => t.texto.startsWith('Vence el '));
     const pildora = bloques.find(b => contiene(b, estado));
     assert.ok(pildora && pildora.y1 < recuadro.y0, 'el recuadro no está debajo del estado');
     assert.ok(recuadro.y1 < texto('Hoy 02/11/2026').y0, 'el recuadro no está arriba de la línea de tiempo');
@@ -366,7 +390,7 @@ describe('renderAnexo', () => {
       return encontrado;
     };
     // base: altura de la línea de base desde el borde inferior; cuanto más abajo en la hoja, menor
-    const orden = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Áreas específicas de género', 'Fecha sugerida de envío: 30/11/2026',
+    const orden = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Áreas específicas de género', 'Vence el 30/11/2026',
       'DATOS SOLICITADOS', 'Del 01/11/2025 al 31/10/2026', 'DATOS PUBLICADOS AL', 'DESCRIPCIÓN', 'Listado de las áreas municipales', 'ÁREA RESPONSABLE', 'QUÉ SE SOLICITA',
       'Listado actualizado de las áreas', 'OBSERVACIONES', 'Las coordenadas corresponden', 'CONTACTO DEL ÁREA RESPONSABLE',
       'area@ejemplo.gov.ar', 'Hoja 1 de 1'].map(t => buscar(t).base);

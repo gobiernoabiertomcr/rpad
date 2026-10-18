@@ -1,7 +1,7 @@
 // Anexo de los avisos de Notas Digitales: una hoja A4 por dataset, con un diseño de ficha monocromático.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6.7) y
 // docs/superpowers/specs/2026-10-17-fechas-datasets-design.md (sección 9: el recuadro "Datos solicitados" y la línea de
-// tiempo desde los datos publicados hasta la fecha sugerida de envío)
+// tiempo desde los datos publicados hasta el vencimiento; sección 18: el final de la línea dice "Vence")
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
 
@@ -273,7 +273,7 @@ const prepararCabecera = (doc, hoja, p, nivel) => {
 };
 
 // Línea de tiempo (spec 2026-10-17-fechas-datasets, 9): barra desde los datos publicados (Datos al) o, sin ellos, desde la
-// carga en el portal (rotuloInicio dice cuál) hasta la fecha sugerida de envío, con lo transcurrido en el acento y la
+// carga en el portal (rotuloInicio dice cuál) hasta el vencimiento ("Vence"), con lo transcurrido en el acento y la
 // marca de hoy (con su fecha arriba). Sin fecha de inicio, la barra es punteada y arranca en "Sin registro".
 const altoLineaDeTiempo = (p) => 15 + 11 + altoRotulo(p.rotulo) + (ASCENDENTE + DESCENDENTE) * p.fecha;
 
@@ -318,7 +318,7 @@ const dibujarLineaDeTiempo = (doc, { inicio, rotuloInicio, fin, hoy }, y, p) => 
   const mitad = CONTENIDO / 2;
   const yFecha = yBarra + 11 + altoRotulo(p.rotulo);
   rotulo(doc, rotuloInicio, IZQUIERDA, yBarra + 11, { ancho: mitad, tamano: p.rotulo });
-  rotulo(doc, 'Fecha sugerida de envío', IZQUIERDA + mitad, yBarra + 11, { ancho: mitad, tamano: p.rotulo, align: 'right' });
+  rotulo(doc, 'Vence', IZQUIERDA + mitad, yBarra + 11, { ancho: mitad, tamano: p.rotulo, align: 'right' });
   renglon(doc, inicio ? formatoCorto(inicio) : 'Sin registro', IZQUIERDA, yFecha,
     { ancho: mitad, tamano: p.fecha, fuente: NEGRITA, color: inicio ? COLOR.tinta : COLOR.gris });
   renglon(doc, formatoCorto(fin), IZQUIERDA + mitad, yFecha, { ancho: mitad, tamano: p.fecha, fuente: NEGRITA, align: 'right' });

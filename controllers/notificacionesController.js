@@ -12,10 +12,14 @@ import { enviarResumenAvisosRetenidos } from '../services/avisosSuperadminServic
 // Área de ejemplo para la vista previa y la prueba del aviso a áreas cuando ese día no hay datos. fecha: el día del aviso.
 // Los dos datasets vencen el fin de mes que corresponde a los 40 días, como los de un aviso real, y llevan sus datos
 // solicitados: el 1 es un acumulado anual con Datos al del corte anterior (pide desde lo que falta) y el 2, una foto al corte.
-// El pedido se calcula con las mismas reglas que el aviso (conPedido), así que el ejemplo no se desactualiza.
+// El pedido, el tipo y los meses salen de las mismas reglas que el aviso (conPedido), así que el ejemplo no se desactualiza ni
+// se aparta de la forma de un dataset real (el email dice la frecuencia con "(Acumulado)" a partir de ellos).
 const areaDeEjemplo = (fecha) => {
   const vencimiento = vencimientoDelMes(sumarDias(fecha, DIAS_AVISO_AREAS));
-  const pedidoDe = (datos) => conPedido({ vencimiento, tipo_gestion: 'externa', ...datos }, fecha).pedido;
+  const pedidoYTipoDe = (datos) => {
+    const { pedido, tipo_pedido: tipoPedido, meses } = conPedido({ vencimiento, tipo_gestion: 'externa', ...datos }, fecha);
+    return { pedido, tipo_pedido: tipoPedido, meses };
+  };
   return {
     area_id: 0,
     area_nombre: 'Dirección de Ejemplo',
@@ -30,11 +34,11 @@ const areaDeEjemplo = (fecha) => {
     datasets: [
       {
         id: 1, titulo: 'Dataset de Ejemplo 1', frecuencia_nombre: 'Anualmente', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo', vencimiento,
-        pedido: pedidoDe({ meses: 12, tipo_pedido: 'acumulado', datos_al: sumarMeses(vencimiento, -13) })
+        ...pedidoYTipoDe({ meses: 12, tipo_pedido: 'acumulado', datos_al: sumarMeses(vencimiento, -13) })
       },
       {
         id: 2, titulo: 'Dataset de Ejemplo 2', frecuencia_nombre: 'Cada dos años', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-2', vencimiento,
-        pedido: pedidoDe({ meses: 24, tipo_pedido: 'foto', datos_al: null })
+        ...pedidoYTipoDe({ meses: 24, tipo_pedido: 'foto', datos_al: null })
       }
     ]
   };

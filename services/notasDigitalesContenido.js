@@ -497,19 +497,18 @@ export const construirNotaDeAuditoria = ({
 
 const ETIQUETA_GESTION = { interna: 'GESTIÓN INTERNA', externa: 'GESTIÓN EXTERNA' };
 
-// Indicador de estado del anexo: la fecha sugerida de envío (el vencimiento) y los días que faltan (spec
-// 2026-10-17-fechas-datasets, 9). Los avisos solo llevan datasets a vencer; un vencimiento pasado (posible con datos
-// armados a mano) dice hace cuántos días fue, en lugar de "faltan" días negativos.
+// Indicador de estado del anexo: cuándo vence el dataset y los días que faltan (spec 2026-10-17-fechas-datasets, 9; desde el
+// 18/10/2026 dice "Vence", no "fecha sugerida de envío": spec 18). Los avisos solo llevan datasets a vencer; un vencimiento
+// pasado (posible con datos armados a mano) dice "Venció" y hace cuántos días fue, en lugar de "faltan" días negativos.
 const estadoDelAnexo = (vencimiento, fecha) => {
   const dias = diasEntre(fecha, vencimiento);
   if (dias === 0) return 'Vence hoy';
-  const envio = `Fecha sugerida de envío: ${formatoCorto(vencimiento)}`;
-  if (dias < 0) return `${envio} · hace ${cantidad(-dias, 'día', 'días')}`;
-  return `${envio} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
+  if (dias < 0) return `Venció el ${formatoCorto(vencimiento)} · hace ${cantidad(-dias, 'día', 'días')}`;
+  return `Vence el ${formatoCorto(vencimiento)} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
 };
 
 // Línea de tiempo del anexo (spec 2026-10-17-fechas-datasets, 9): arranca en los datos publicados (Datos al) o, sin ellos,
-// en la carga en el portal, y termina en la fecha sugerida de envío. Una fecha que no es una fecha (la fecha cero de
+// en la carga en el portal, y termina en el vencimiento. Una fecha que no es una fecha (la fecha cero de
 // MariaDB, '0000-00-00', con sql_mode no estricto) se toma como sin registro: con ella la línea no se puede dibujar. Sin
 // ninguna de las dos, renderAnexo dice "Sin registro".
 const lineaDelAnexo = (f, fecha) => {
@@ -543,7 +542,9 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
         ['Área responsable', f.area_nombre],
         ['Depende de', f.area_superior],
         ['Gestión', f.tipo_gestion === 'externa' ? 'Externa' : 'Interna'],
-        ['Frecuencia', f.frecuencia_nombre],
+        // Con "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año (spec 18); f.tipo_pedido es el
+        // efectivo, el de la selección de la nota (fichasDelAviso), no el guardado
+        ['Frecuencia', frecuenciaEnNota({ frecuencia: f.frecuencia_nombre, tipo: f.tipo_pedido, meses: f.meses })],
         ['Tema principal', f.tema_principal],
         ['Tema secundario', f.tema_secundario],
         ['Formatos', f.formatos]

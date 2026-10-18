@@ -954,10 +954,10 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.equal(hojas.length, 1);
     const texto = hojas[0].join(' ');
     assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), texto);
-    // El ejemplo vence a fin de mes (spec 2026-10-17-fechas-datasets, R1 y 9): el del mes en que caen los 30 días. Es la
-    // fecha sugerida de envío; el pedido (un relevamiento, el sugerido de la interna) va en "Datos solicitados" y la línea
+    // El ejemplo vence a fin de mes (spec 2026-10-17-fechas-datasets, R1 y 9): el del mes en que caen los 30 días. Es el
+    // vencimiento del estado; el pedido (un relevamiento, el sugerido de la interna) va en "Datos solicitados" y la línea
     // de tiempo arranca en sus datos publicados (Datos al: el corte del ciclo anterior, el 30/11/2025)
-    assert.ok(texto.includes('Fecha sugerida de envío: 31/12/2026 · faltan 59 días'), texto);
+    assert.ok(texto.includes('Vence el 31/12/2026 · faltan 59 días'), texto);
     assert.ok(hojas[0].includes('DATOS SOLICITADOS') && hojas[0].includes('Relevamiento actualizado'), texto);
     assert.ok(hojas[0].includes('DATOS PUBLICADOS AL') && hojas[0].includes('30/11/2025'), texto);
     assert.ok(hojas[0].includes('Interna'), texto);
@@ -977,10 +977,25 @@ describe('anexo de los avisos (spec 6.7)', () => {
     const [{ anexo_pdf: anexo }] = await query('SELECT anexo_pdf FROM notas_digitales WHERE id = ?', [notaId]);
     const [hoja] = lineasPorHoja(anexo);
     const texto = hoja.join(' ');
-    assert.ok(texto.includes('Fecha sugerida de envío: 31/12/2026'), texto);
+    assert.ok(texto.includes('Vence el 31/12/2026'), texto);
     // Sin Datos al, la línea de tiempo arranca en la carga en el portal: la de la nota
     assert.ok(hoja.includes('CARGADO EN EL PORTAL') && hoja.includes('31/12/2025'), texto);
     assert.ok(!texto.includes('Sin registro'), texto);
+  });
+
+  it('el anexo de un dataset externo trimestral sin tipo guardado (el sugerido es acumulado) dice "(Acumulado)"; el anual, no (spec 18)', async () => {
+    await crearDataset({ titulo: 'Trimestral sin tipo', gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento: '2026-12-02', ultima: '2025-12-31' });
+    await crearDataset({ titulo: 'Anual sin tipo', gestion: 'externa', frecuencia: 'Anualmente', vencimiento: '2026-12-02', ultima: '2025-12-31' });
+    const seleccion = await datos.seleccionarParaAviso('externa', '2026-11-02');
+    assert.equal(seleccion.length, 2);
+    const notaId = await motor.generarNota({
+      tipo: 'aviso', gestion: 'externa', fecha: '2026-11-02', datasets: seleccion, config: await datos.obtenerConfig()
+    });
+    const [{ anexo_pdf: anexo }] = await query('SELECT anexo_pdf FROM notas_digitales WHERE id = ?', [notaId]);
+    const hojas = Object.fromEntries(lineasPorHoja(anexo).map(hoja => [hoja.find(l => l.startsWith('Trimestral sin') || l.startsWith('Anual sin')), hoja]));
+    assert.ok(hojas['Trimestral sin tipo'].includes('Trimestralmente (Acumulado)'), hojas['Trimestral sin tipo'].join(' | '));
+    assert.ok(hojas['Anual sin tipo'].includes('Anualmente'), hojas['Anual sin tipo'].join(' | '));
+    assert.ok(!hojas['Anual sin tipo'].some(l => l.includes('Acumulado')), hojas['Anual sin tipo'].join(' | '));
   });
 
   it('un anexo que falla al dibujarse (dentro de la transacción) no deja la nota ni sus datasets y no consume el número', async () => {
