@@ -2,7 +2,8 @@ import pool from '../config/database.js';
 import { crearCambioPendiente, datasetTieneCambiosPendientes } from './cambiosPendientesController.js';
 import { esFechaIso, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import {
-  NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, esFinDeMes, estadoDelDataset, opcionesDeProxima, pedido as pedidoDe, tipoEfectivo, topeDatosAl
+  NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, esFinDeMes, estadoDelDataset, opcionesDeProxima, pedido as pedidoDe, tasaDeActualizacion, tipoEfectivo,
+  topeDatosAl
 } from '../services/fechasDatasetReglas.js';
 
 // Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
@@ -834,7 +835,7 @@ export const getEstadisticas = async (req, res) => {
       totalVencidos,     // Suma de ambos
       sinFecha,          // Con frecuencia pero sin próxima actualización
       eventuales,        // Sin frecuencia en meses: no entran en la tasa
-      tasaActualizacion: data.length > eventuales ? Math.round(((actualizados + proximos) / (data.length - eventuales)) * 100) : 0,
+      tasaActualizacion: tasaDeActualizacion({ alDia: actualizados + proximos, total: data.length, eventuales }) ?? 0,
       promedioAtraso: totalVencidos > 0 ? Math.round(totalDiasAtraso / totalVencidos) : 0,
       porTema,
       porFrecuencia

@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TIPOS_PEDIDO, NOMBRES_TIPO_PEDIDO, finDeMes, esFinDeMes, vencimientoDelMes, sumarMeses, corteDe, ultimoVencimientoPasado,
-  tipoSugerido, tipoEfectivo, pedido, cubre, opcionesDeProxima, estadoDelDataset, topeDatosAl
+  tipoSugerido, tipoEfectivo, pedido, cubre, opcionesDeProxima, estadoDelDataset, tasaDeActualizacion, topeDatosAl
 } from '../services/fechasDatasetReglas.js';
 
 const HOY = '2026-10-17';
@@ -338,6 +338,26 @@ describe('estadoDelDataset', () => {
     assert.deepEqual(estado('2026-12-31', { meses: null }), { estado: 'eventual', dias: null });
     assert.deepEqual(estado(null), { estado: 'sin-fecha', dias: null });
     assert.deepEqual(estado('0000-00-00'), { estado: 'sin-fecha', dias: null });
+  });
+});
+
+describe('tasaDeActualizacion (Ruling 22)', () => {
+  it('es al día sobre el total sin los eventuales, redondeada', () => {
+    assert.equal(tasaDeActualizacion({ alDia: 55, total: 80, eventuales: 14 }), 83);
+    assert.equal(tasaDeActualizacion({ alDia: 4, total: 10, eventuales: 3 }), 57);
+    assert.equal(tasaDeActualizacion({ alDia: 1, total: 3, eventuales: 0 }), 33);
+    assert.equal(tasaDeActualizacion({ alDia: 2, total: 3, eventuales: 0 }), 67);
+  });
+
+  it('los eventuales no la mueven: sumarlos al total y a los eventuales da lo mismo', () => {
+    assert.equal(tasaDeActualizacion({ alDia: 4, total: 7, eventuales: 0 }), tasaDeActualizacion({ alDia: 4, total: 17, eventuales: 10 }));
+  });
+
+  it('0 % y 100 % son números; sin ningún dataset con vencimiento no hay nada que medir (null)', () => {
+    assert.equal(tasaDeActualizacion({ alDia: 0, total: 5, eventuales: 1 }), 0);
+    assert.equal(tasaDeActualizacion({ alDia: 4, total: 5, eventuales: 1 }), 100);
+    assert.equal(tasaDeActualizacion({ alDia: 0, total: 3, eventuales: 3 }), null);
+    assert.equal(tasaDeActualizacion({ alDia: 0, total: 0, eventuales: 0 }), null);
   });
 });
 

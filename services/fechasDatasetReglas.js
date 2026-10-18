@@ -215,6 +215,17 @@ export const estadoDelDataset = (datos) => {
   return { estado: dias <= DIAS_PROXIMO_A_VENCER ? 'proximo' : 'actualizado', dias };
 };
 
+/**
+ * Tasa de actualización (%), la misma en el tablero, el Estado General y el Cumplimiento (spec 2026-10-17-fechas-datasets, 11 y
+ * Ruling 22): los datasets al día (actualizados + próximos) sobre el total sin los eventuales, redondeada. Los eventuales no
+ * tienen vencimiento, así que no hay forma de que estén atrasados: no entran ni en el numerador ni en el denominador.
+ * null si no queda ningún dataset con vencimiento (no hay nada que medir), para que cada pantalla decida cómo decirlo.
+ */
+export const tasaDeActualizacion = ({ alDia, total, eventuales }) => {
+  const conVencimiento = total - eventuales;
+  return conVencimiento > 0 ? Math.round((alDia / conVencimiento) * 100) : null;
+};
+
 // La fecha más adelantada que puede tener "Datos al": el fin del mes actual. En ejercicio, el 31/12 del año siguiente,
 // porque el presupuesto de un año se aprueba antes de que empiece. null si hoy no es una fecha válida
 export const topeDatosAl = (tipo, hoy) => {

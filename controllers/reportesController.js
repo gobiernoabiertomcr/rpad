@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import pool from '../config/database.js';
 import { esFechaIso, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
-import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
+import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
 
 // Colores institucionales
 const COLORS = {
@@ -256,9 +256,10 @@ export const reporteEstadoGeneral = async (req, res) => {
       else if (estado === 'eventual') stats.eventuales++;
     });
     
-    // (actualizados + próximos) sobre el total sin los eventuales, igual que en el tablero
-    const conFecha = stats.total - stats.eventuales;
-    const tasaActualizacion = conFecha > 0 ? Math.round(((stats.actualizados + stats.proximos) / conFecha) * 100) : 0;
+    // (actualizados + próximos) sobre el total sin los eventuales: la misma tasa que el tablero y el Cumplimiento
+    const tasaActualizacion = tasaDeActualizacion({
+      alDia: stats.actualizados + stats.proximos, total: stats.total, eventuales: stats.eventuales
+    }) ?? 0;
     
     // Crear PDF
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
@@ -838,28 +839,33 @@ export const reporteCumplimiento = async (req, res) => {
       WHERE d.activo = TRUE
     `);
     
-    // Al día: actualizado o próximo. Este reporte sigue contando a los eventuales como al día, como siempre
-    // (la tasa del estado general es la que los deja afuera)
+    // Al día: actualizado o próximo. Los eventuales no tienen vencimiento: van aparte y no entran en el porcentaje (Ruling 22),
+    // igual que en la tasa del tablero y del Estado General (tasaDeActualizacion)
     const hoyArg = hoyArgentina();
-    const estaAlDia = (d) => ['actualizado', 'proximo', 'eventual'].includes(estadoDeLaFila(d, hoyArg));
+    const estados = datasets.map(d => ({ d, estado: estadoDeLaFila(d, hoyArg) }));
+    const estaAlDia = ({ estado }) => estado === 'actualizado' || estado === 'proximo';
+    const esEventual = ({ estado }) => estado === 'eventual';
     
     // Agrupar por área
     const porArea = {};
-    datasets.forEach(d => {
-      if (!porArea[d.area_nombre]) {
-        porArea[d.area_nombre] = { total: 0, alDia: 0 };
+    estados.forEach(e => {
+      const nombre = e.d.area_nombre;
+      if (!porArea[nombre]) {
+        porArea[nombre] = { total: 0, alDia: 0, eventuales: 0 };
       }
-      porArea[d.area_nombre].total++;
-      if (estaAlDia(d)) porArea[d.area_nombre].alDia++;
+      porArea[nombre].total++;
+      if (estaAlDia(e)) porArea[nombre].alDia++;
+      if (esEventual(e)) porArea[nombre].eventuales++;
     });
     
-    // Calcular porcentaje por área
+    // Calcular porcentaje por área. Un área con solo eventuales no tiene nada que medir: porcentaje null
     const areasConPorcentaje = Object.entries(porArea).map(([nombre, stats]) => ({
       nombre,
       total: stats.total,
       alDia: stats.alDia,
-      porcentaje: stats.total > 0 ? Math.round((stats.alDia / stats.total) * 100) : 0
-    })).sort((a, b) => b.porcentaje - a.porcentaje);
+      eventuales: stats.eventuales,
+      porcentaje: tasaDeActualizacion(stats)
+    })).sort((a, b) => (b.porcentaje ?? -1) - (a.porcentaje ?? -1));
     
     // Crear PDF
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
@@ -874,8 +880,9 @@ export const reporteCumplimiento = async (req, res) => {
     
     // Resumen general
     const totalDatasets = datasets.length;
-    const totalAlDia = datasets.filter(estaAlDia).length;
-    const porcentajeGeneral = totalDatasets > 0 ? Math.round((totalAlDia / totalDatasets) * 100) : 0;
+    const totalAlDia = estados.filter(estaAlDia).length;
+    const totalEventuales = estados.filter(esEventual).length;
+    const porcentajeGeneral = tasaDeActualizacion({ alDia: totalAlDia, total: totalDatasets, eventuales: totalEventuales }) ?? 0;
     
     doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.grayDark).text('Cumplimiento General', 40, doc.y + 10);
     doc.y += 25;
@@ -884,20 +891,29 @@ export const reporteCumplimiento = async (req, res) => {
     drawStatCard(doc, 170, doc.y, 'Al día', totalAlDia, COLORS.success);
     drawStatCard(doc, 300, doc.y, '% Cumplimiento', porcentajeGeneral + '%', porcentajeGeneral >= 70 ? COLORS.success : (porcentajeGeneral >= 40 ? COLORS.warning : COLORS.danger));
     
-    doc.y += 90;
+    doc.y += 12;
+    
+    // Los eventuales van aparte: no tienen vencimiento y no entran en el porcentaje
+    if (totalEventuales > 0) {
+      doc.fontSize(9).font('Helvetica').fillColor(COLORS.gray)
+         .text(`Eventuales (${totalEventuales}): no entran en el porcentaje porque no tienen fecha de vencimiento.`, 40, doc.y);
+    }
+    
+    doc.y += 30;
     
     // Tabla por área
     doc.fontSize(12).font('Helvetica-Bold').text('Cumplimiento por Área', 40, doc.y);
     doc.y += 15;
     
-    const headers = ['Área', 'Total', 'Al día', 'Cumplimiento'];
-    const colWidths = [280, 70, 80, 85];
+    const headers = ['Área', 'Total', 'Al día', 'Eventuales', 'Cumplimiento'];
+    const colWidths = [255, 45, 50, 75, 90];
     
     const rows = areasConPorcentaje.map(a => [
       a.nombre,
       a.total.toString(),
       a.alDia.toString(),
-      a.porcentaje + '%'
+      a.eventuales.toString(),
+      a.porcentaje === null ? 'Sin vencimientos' : a.porcentaje + '%'
     ]);
     
     drawTable(doc, headers, rows, doc.y, colWidths);
