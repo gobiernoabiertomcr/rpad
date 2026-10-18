@@ -1297,15 +1297,16 @@ describe('vista previa y prueba de Correos: la nota como saldría (spec 7.7)', (
     assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-11-02'), { fecha: '2026-11-02', motivo: null });
   });
 
+  // El primer día hábil desde hoy en que alguien presenta las notas, probando todos los días (hasta 366)
+  const porDia = async (conf, hoy) => {
+    for (let dia = hoy, i = 0; i <= 366; dia = sumarDiasIso(dia, 1), i++) {
+      if (esDiaHabilIso(dia) && (await firmas.firmaParaFecha(conf, dia)).modo !== 'sin_autorizado') return dia;
+    }
+    return hoy;
+  };
+
   it('fechaDeVistaPrevia da lo mismo que probar día por día, con la persona autorizada ausente algunos días o todos, o sin ella', async () => {
     const conf = await config();
-    // El primer día hábil desde hoy en que alguien presenta las notas, probando todos los días (hasta 366)
-    const porDia = async (hoy) => {
-      for (let dia = hoy, i = 0; i <= 366; dia = sumarDiasIso(dia, 1), i++) {
-        if (esDiaHabilIso(dia) && (await firmas.firmaParaFecha(conf, dia)).modo !== 'sin_autorizado') return dia;
-      }
-      return hoy;
-    };
     const escenarios = {
       'ausente algunos días': async () => {
         await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
@@ -1331,10 +1332,38 @@ describe('vista previa y prueba de Correos: la nota como saldría (spec 7.7)', (
       // De a 3 días: recorre todos los días de la semana sin probar cada fecha
       for (let hoy = '2026-12-01'; hoy <= '2027-01-15'; hoy = sumarDiasIso(hoy, 3)) {
         const { fecha, motivo } = await motor.fechaDeVistaPrevia(conf, hoy);
-        assert.equal(fecha, await porDia(hoy), `${nombre}, hoy ${hoy}`);
+        assert.equal(fecha, await porDia(conf, hoy), `${nombre}, hoy ${hoy}`);
         assert.equal(motivo === null, fecha === hoy, `${nombre}, hoy ${hoy}: el motivo solo falta si la fecha es hoy`);
       }
     }
+  });
+
+  // El caso medido: la persona autorizada solo está libre la primera semana de una licencia de un año. Con hoy después de esa
+  // semana, buscar si le queda algún día libre desde el comienzo de la licencia da que sí y la búsqueda caminaba la licencia
+  // día por día (1979 consultas y 2,6 s por llamada, tres veces por vista previa: HTML, PDF y anexo). Desde hoy no le queda
+  // ninguno: salta hasta la vuelta del titular. El resultado es el mismo que probar día por día.
+  it('fechaDeVistaPrevia no camina la licencia día por día cuando a la persona autorizada ya no le queda ningún día libre', async () => {
+    await licencia(titular, '2026-12-10', '2027-12-10', autorizado);
+    await licencia(autorizado, '2026-12-18', '2028-01-31');
+    const conf = await config();
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    for (const hoy of ['2026-12-09', '2026-12-14', '2026-12-17', '2026-12-18', '2026-12-21', '2027-03-01', '2027-12-10']) {
+      const consultas = mock.method(pool, 'query', function (sql, params) { return consultaOriginal.call(this, sql, params); });
+      let vista, cantidad;
+      try {
+        vista = await motor.fechaDeVistaPrevia(conf, hoy);
+        cantidad = consultas.mock.callCount();
+      } finally {
+        consultas.mock.restore();
+      }
+      assert.equal(vista.fecha, await porDia(conf, hoy), `hoy ${hoy}`);
+      // Unas pocas consultas: la vuelta de hoy y un salto hasta la vuelta del titular (caminándola eran más de mil)
+      assert.ok(cantidad < 30, `hoy ${hoy}: ${cantidad} consultas`);
+    }
+    // Hoy 21/12 el titular vuelve el lunes 13/12/2027, después de la licencia (hasta el viernes 10/12/2027)
+    assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-12-21'), { fecha: '2027-12-13', motivo: 'la persona autorizada está de licencia' });
+    assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-12-14'), { fecha: '2026-12-14', motivo: null });
   });
 
   it('autorización tardía: la leyenda cita la Nota Digital N° XX y no se genera nada', async () => {

@@ -717,8 +717,9 @@ const MOTIVO_AUTORIZADO_DE_LICENCIA = 'la persona autorizada está de licencia';
  * ese día): firmaParaFecha da 'sin_autorizado'. Se busca hasta 366 días después de hoy; sin ninguno, hoy.
  * Devuelve { fecha, motivo }. motivo: null si la fecha es hoy; si no, por qué hoy no se generan notas ('día no hábil', 'la
  * persona autorizada está de licencia' o 'licencia del firmante sin persona autorizada').
- * Solo lee. Salta los días no hábiles sin mirarlos y, si una licencia no tiene a nadie que presente las notas en ningún día
- * (autorizadoParaLicencia es null), salta hasta su fin: es lo mismo que probar día por día.
+ * Solo lee. Salta los días no hábiles sin mirarlos y, en una licencia sin autorizado vigente, salta hasta el primer día hábil
+ * en que la persona autorizada no falta o, si no le queda ninguno desde mañana (o ya no sirve), hasta el fin de la licencia
+ * (primer_dia_disponible de autorizadoParaLicencia desde mañana): es lo mismo que probar día por día, sin recorrer la licencia.
  */
 export const fechaDeVistaPrevia = async (config, hoy) => {
   const limite = sumarDias(hoy, DIAS_PARA_BUSCAR_VISTA_PREVIA);
@@ -737,7 +738,10 @@ export const fechaDeVistaPrevia = async (config, hoy) => {
         ? MOTIVO_AUTORIZADO_DE_LICENCIA
         : MOTIVO_SIN_AUTORIZADO;
     }
-    dia = (await autorizadoParaLicencia(licencia)) ? sumarDias(dia, 1) : sumarDias(licencia.hasta, 1);
+    // Hoy ese día es sin autorizado: el próximo candidato es el primer día hábil, desde mañana, en que la persona autorizada no
+    // falta; si no le queda ninguno (o ya no sirve), la vuelta del titular. Desde mañana, no desde el comienzo de la licencia:
+    // así los días libres que quedaron atrás no obligan a recorrerla día por día
+    dia = (await autorizadoParaLicencia(licencia, { desde: sumarDias(dia, 1) }))?.primer_dia_disponible ?? sumarDias(licencia.hasta, 1);
   }
   return { fecha: hoy, motivo: null };
 };
