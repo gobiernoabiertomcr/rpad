@@ -340,6 +340,47 @@ describe('dashboard.js: el gráfico de los 12 meses', () => {
   });
 });
 
+describe('publico.css', () => {
+  const css = leer('css/publico.css');
+  // Las reglas sin anidar ({ selector, cuerpo }): las de adentro de un @media también aparecen, con su selector
+  const reglas = [...css.replace(/\/\*[^]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => ({ selector: m[1].trim(), cuerpo: m[2] }));
+  const contraste = (a, b) => {
+    const luz = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      .reduce((suma, v, i) => suma + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const [claro, oscuro] = [luz(a), luz(b)].sort((x, y) => y - x);
+    return (claro + 0.05) / (oscuro + 0.05);
+  };
+
+  it('el contenedor solo pone los costados: no pisa el relleno de arriba y de abajo de la banda', () => {
+    const delContenedor = reglas.filter(r => r.selector === '.publico-contenedor');
+    assert.ok(delContenedor.length >= 2, 'la regla base y la del celular');
+    for (const { cuerpo } of delContenedor) {
+      assert.doesNotMatch(cuerpo, /(^|[\s;])padding\s*:/, cuerpo);
+      assert.match(cuerpo, /padding-inline:/);
+    }
+  });
+
+  it('el borde de los campos llega a 3:1 contra el blanco y la bruma (WCAG 1.4.11)', () => {
+    const borde = css.match(/--borde-control:\s*(#[0-9A-Fa-f]{6});/)?.[1];
+    assert.ok(borde, '--borde-control definido');
+    assert.ok(contraste(borde, '#FFFFFF') >= 3, `${borde} sobre blanco`);
+    assert.ok(contraste(borde, '#F4F7FA') >= 3, `${borde} sobre la bruma`);
+    const campos = reglas.find(r => r.selector.includes('.campo input') && /border:/.test(r.cuerpo));
+    assert.match(campos.cuerpo, /border:\s*1px solid var\(--borde-control\)/);
+  });
+
+  it('el cuadrito de cada insignia es el del mosaico, del color de su estado y sin transparencia', () => {
+    for (const [insignia, estado] of [['success', 'actualizado'], ['warning', 'proximo'], ['danger', 'atrasado'], ['sin-respuesta', 'sin-respuesta'], ['secondary', 'eventual']]) {
+      const regla = reglas.find(r => r.selector === `.badge-${insignia}`);
+      assert.match(regla.cuerpo, new RegExp(`--cuadrito-insignia:\\s*var\\(--cuadro-${estado}\\)`), insignia);
+    }
+    const cuadrito = reglas.find(r => r.selector === '.badge::before').cuerpo;
+    assert.match(cuadrito, /background:\s*var\(--cuadrito-insignia/);
+    assert.doesNotMatch(cuadrito, /opacity/);
+  });
+});
+
 describe('dashboard.js: el índice y el mosaico', () => {
   const tablero = cargar('dashboard.js');
   const STATS = { total: 80, actualizados: 52, proximos: 1, atrasados: 3, sinRespuesta: 10, eventuales: 14, sinFecha: 0, tasaActualizacion: 80 };

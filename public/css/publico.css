@@ -29,6 +29,10 @@
     --fondo-eventual: #E4E9F0;
     --texto-eventual: #45556B;
 
+    /* Borde de los controles de formulario (Ruling 7): 3,66:1 sobre blanco, 3,40:1 sobre --bruma y 3,07:1 sobre --cielo
+       (WCAG 1.4.11 pide 3:1 para el contorno de un control). --linea queda para separadores y bordes decorativos */
+    --borde-control: #76879F;
+
     /* Radios por jerarquía (spec 4.3) */
     --radio-panel: 22px;
     --radio-tarjeta: 16px;
@@ -49,12 +53,13 @@
     line-height: 1.55;
 }
 
-/* El ancho de las páginas públicas (no en .main-content: perfil.html lo necesita sin max-width) */
+/* El ancho de las páginas públicas (no en .main-content: perfil.html lo necesita sin max-width). Solo los costados
+   (padding-inline): el relleno de arriba y de abajo es de quien lo combina, como .banda-cuerpo */
 .publico-contenedor {
     width: 100%;
     max-width: 1180px;
     margin: 0 auto;
-    padding: 0 24px;
+    padding-inline: 24px;
 }
 
 .publico-contenedor > * {
@@ -235,7 +240,7 @@
     width: 100%;
     min-height: 44px;
     padding: 10px 12px;
-    border: 1px solid var(--linea);
+    border: 1px solid var(--borde-control);
     border-radius: var(--radio-campo);
     background: var(--papel);
     font: inherit;
@@ -243,10 +248,11 @@
     color: var(--texto);
 }
 
+/* Al pasar el mouse, el borde se oscurece (nunca baja de 3:1) */
 .campo input:hover,
 .campo select:hover,
 .campo textarea:hover {
-    border-color: var(--cielo-medio);
+    border-color: var(--tinta);
 }
 
 /* =====================================================
@@ -269,7 +275,8 @@
 
 /* =====================================================
    INSIGNIAS PASTEL (solo en las públicas; administración sigue con las de main.css)
-   El markup no cambia (<span class="badge badge-…">Texto</span>): el cuadrito lo dibuja ::before
+   El markup no cambia (<span class="badge badge-…">Texto</span>): el cuadrito lo dibuja ::before, con el mismo color que
+   el cuadrito del mosaico de su estado (spec 4.3, Ruling 8)
    ===================================================== */
 .badge {
     display: inline-flex;
@@ -291,31 +298,35 @@
     width: 8px;
     height: 8px;
     border-radius: 2px;
-    background: currentColor;
-    opacity: 0.55;
+    background: var(--cuadrito-insignia, currentColor);
 }
 
 .badge-success {
+    --cuadrito-insignia: var(--cuadro-actualizado);
     background: var(--fondo-actualizado);
     color: var(--texto-actualizado);
 }
 
 .badge-warning {
+    --cuadrito-insignia: var(--cuadro-proximo);
     background: var(--fondo-proximo);
     color: var(--texto-proximo);
 }
 
 .badge-danger {
+    --cuadrito-insignia: var(--cuadro-atrasado);
     background: var(--fondo-atrasado);
     color: var(--texto-atrasado);
 }
 
 .badge-sin-respuesta {
+    --cuadrito-insignia: var(--cuadro-sin-respuesta);
     background: var(--fondo-sin-respuesta);
     color: var(--texto-sin-respuesta);
 }
 
 .badge-secondary {
+    --cuadrito-insignia: var(--cuadro-eventual);
     background: var(--fondo-eventual);
     color: var(--texto-eventual);
 }
@@ -718,7 +729,7 @@
 
 @media (max-width: 760px) {
     .publico-contenedor {
-        padding: 0 16px;
+        padding-inline: 16px;
     }
 
     .mosaico {
