@@ -93,6 +93,52 @@ describe('correos.js: botón "Ver anexo" de la vista previa', () => {
   });
 });
 
+describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
+  const TEXTO_EJEMPLO = 'Hoy no saldría ninguna nota de este tipo: se muestran datos de ejemplo.';
+  const texto = (contexto, datos) => vm.runInContext(`textoDeVistaPrevia(${JSON.stringify(datos)})`, contexto);
+
+  it('sin motivo (hoy es la fecha), el texto es el de siempre: el de ejemplo y el de los datos reales', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(texto(contexto, { ejemplo: true, tipo: 'aviso', cantidad: 0, asunto: 'x', fecha: '2026-10-19', motivo: null }), TEXTO_EJEMPLO);
+    assert.equal(texto(contexto, { ejemplo: false, tipo: 'aviso', cantidad: 3, asunto: 'Aviso de octubre', fecha: '2026-10-19', motivo: null }),
+      'Con los datos de hoy esta nota incluiría 3 dataset(s). Asunto: Aviso de octubre');
+    assert.equal(texto(contexto, { ejemplo: false, tipo: 'auditoria', cantidad: 2, asunto: 'Cambios pendientes', fecha: '2026-10-19' }),
+      'Con los datos de hoy esta nota incluiría 2 cambio(s). Asunto: Cambios pendientes');
+  });
+
+  it('con motivo, antepone en su propia línea que hoy no se generan notas y qué día saldría', () => {
+    const { contexto } = cargarCorreos();
+    const aviso = 'Hoy no se generan notas (día no hábil): así saldría el 21/12/2026.';
+    const conEjemplo = texto(contexto, { ejemplo: true, tipo: 'aviso', cantidad: 0, asunto: 'x', fecha: '2026-12-21', motivo: 'día no hábil' });
+    assert.equal(conEjemplo, `${aviso}\n${TEXTO_EJEMPLO}`);
+    const real = texto(contexto, { ejemplo: false, tipo: 'reiteracion', cantidad: 4, asunto: 'Reiteración', fecha: '2026-12-21', motivo: 'día no hábil' });
+    assert.equal(real, `${aviso}\nCon los datos de hoy esta nota incluiría 4 dataset(s). Asunto: Reiteración`);
+    for (const motivo of ['licencia del firmante sin persona autorizada', 'la persona autorizada está de licencia']) {
+      assert.ok(texto(contexto, { ejemplo: true, tipo: 'aviso', fecha: '2027-01-15', motivo })
+        .startsWith(`Hoy no se generan notas (${motivo}): así saldría el 15/01/2027.\n`), motivo);
+    }
+  });
+
+  it('verVistaPrevia muestra ese texto arriba del marco', async () => {
+    const vistas = [
+      { html: '<p>nota</p>', asunto: 'Aviso', ejemplo: true, cantidad: 0, fecha: '2026-12-21', motivo: 'día no hábil' },
+      { html: '<p>nota</p>', asunto: 'Aviso', ejemplo: false, cantidad: 1, fecha: '2026-10-19', motivo: null }
+    ];
+    const { contexto, elemento } = cargarCorreos({ previewNota: async () => vistas.shift() });
+    await contexto.verVistaPrevia();
+    assert.equal(elemento('preview-aviso').hidden, false);
+    assert.equal(elemento('preview-aviso').textContent, `Hoy no se generan notas (día no hábil): así saldría el 21/12/2026.\n${TEXTO_EJEMPLO}`);
+    assert.equal(elemento('preview-marco').srcdoc, '<p>nota</p>');
+    await contexto.verVistaPrevia();
+    assert.equal(elemento('preview-aviso').textContent, 'Con los datos de hoy esta nota incluiría 1 dataset(s). Asunto: Aviso');
+  });
+
+  it('el aviso respeta el salto de línea (white-space: pre-line)', () => {
+    const html = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
+    assert.match(html, /#preview-aviso\s*\{[^}]*white-space:\s*pre-line/);
+  });
+});
+
 describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-auditoria, 6.2)', () => {
   it('con firmante, los campos de firma muestran los suyos, no se editan y no se envían al guardar', () => {
     const { contexto } = cargarCorreos();
@@ -1288,7 +1334,7 @@ describe('correos.html: Vista previa y pruebas (spec 2026-10-17-correos-pestanas
   });
 
   it('Nota Digital: la ayuda del mockup, los dos selectores en una fila y los cuatro botones en otra', () => {
-    assert.ok(PRUEBAS.includes('<p class="co-ayuda">Cómo saldría hoy, con los datos reales (o de ejemplo si hoy no sale ninguna). La prueba va solo a las casillas de prueba.</p>'));
+    assert.ok(PRUEBAS.includes('<p class="co-ayuda">Cómo saldría en la próxima corrida con notas, con los datos reales (o de ejemplo si no saldría ninguna). La prueba va solo a las casillas de prueba.</p>'));
     const filas = [...PRUEBAS.matchAll(/<div class="co-controles">([\s\S]*?)<\/div>/g)].map(m => m[1]);
     assert.equal(filas.length, 3, 'dos filas en Nota Digital y una en el aviso a las áreas');
     assert.deepEqual([...filas[0].matchAll(/\bid="([^"]+)"/g)].map(m => m[1]), ['preview-tipo', 'preview-gestion']);

@@ -616,6 +616,10 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ## Changelog
 
+### Vista previa como sale (2026-10)
+- La vista previa de Correos (HTML, PDF y anexo) y "Enviarme una prueba" muestran la nota como saldría en la próxima corrida con notas, con la misma selección que la corrida: si hoy es un día no hábil o no se generan notas (licencia del firmante sin persona autorizada, o esa persona de licencia), lo dicen y muestran el día en que saldría
+- Un aviso adelantado que no salió ya no deja al dataset sin aviso en su fecha
+
 ### Aviso en su fecha con persona autorizada (2026-10)
 - Durante la licencia del firmante titular con persona autorizada, la víspera sigue anticipando los avisos y, además, cada dataset adelantado vuelve a salir en un aviso en su fecha, presentado por la persona autorizada con las dos firmas y el párrafo que cita la nota anticipada
 - La reiteración muestra cada dataset una sola vez y "Informado en" nombra todos sus avisos; Correos → Estado muestra esas fechas en "Próximas notas"
