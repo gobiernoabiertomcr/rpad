@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup Datasets - RPAD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<script src="datos.js"></script>
+<script src="comun.js"></script>
+<style>
+.estados { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+.estado-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 600; font-size: 0.92rem; color: var(--texto); background: var(--papel); border: 1px solid var(--linea); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+.estado-btn .n { font-family: var(--f-titulo); font-weight: var(--peso-titulo); color: var(--suave); }
+.estado-btn:hover { border-color: var(--tinta); }
+.estado-btn[aria-pressed="true"] { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+.estado-btn[aria-pressed="true"] .n { color: var(--sol); }
+.sub-estados { display: flex; gap: 8px; margin-top: 10px; padding-left: 4px; font-size: 0.88rem; }
+.sub-estados .estado-btn { padding: 5px 12px; font-size: 0.85rem; }
+
+.herramientas { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 14px; align-items: end; margin-top: 20px; }
+.buscar { position: relative; }
+.buscar svg { position: absolute; left: 12px; bottom: 13px; width: 18px; height: 18px; color: var(--suave); }
+.buscar input { padding-left: 38px; width: 100%; }
+.vista { display: inline-flex; border: 1px solid var(--linea); border-radius: 12px; overflow: hidden; background: var(--papel); height: 44px; }
+.vista button { font: inherit; font-weight: 600; font-size: 0.88rem; border: 0; background: none; padding: 0 14px; cursor: pointer; color: var(--suave); display: inline-flex; align-items: center; gap: 6px; }
+.vista button svg { width: 16px; height: 16px; }
+.vista button[aria-pressed="true"] { background: var(--cielo); color: var(--tinta); }
+
+.resultado { display: flex; justify-content: space-between; align-items: center; margin: 26px 0 14px; color: var(--suave); font-size: 0.92rem; gap: 12px; flex-wrap: wrap; }
+.resultado strong { color: var(--tinta); font-family: var(--f-titulo); font-weight: var(--peso-titulo); font-size: 1.05rem; }
+.aviso-mes { display: inline-flex; align-items: center; gap: 10px; background: var(--sol); color: var(--tinta); border-radius: 999px; padding: 6px 8px 6px 14px; font-weight: 600; font-size: 0.9rem; }
+.aviso-mes button { border: 0; background: rgba(26,54,93,.1); color: var(--tinta); border-radius: 999px; font: inherit; font-size: 0.82rem; padding: 3px 10px; cursor: pointer; }
+
+.grilla { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.tarjeta { position: relative; background: var(--papel); border: 1px solid var(--linea); border-radius: var(--radio-tarjeta); padding: 20px 20px 16px; display: flex; flex-direction: column; gap: 10px; }
+.tarjeta:hover { border-color: var(--tinta); }
+.tarjeta-cabeza { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.tarjeta-titulo { font-size: 1.12rem; line-height: 1.25; }
+.tarjeta-titulo a { text-decoration: none; }
+.tarjeta-titulo a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.tarjeta-desc { color: var(--suave); font-size: 0.92rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tarjeta-meta { display: flex; flex-direction: column; gap: 4px; font-size: 0.86rem; color: var(--texto); }
+.tarjeta-meta span { display: inline-flex; gap: 7px; align-items: start; }
+.tarjeta-meta svg { width: 15px; height: 15px; color: var(--suave); flex-shrink: 0; margin-top: 2px; }
+.tema { display: inline-block; font-size: 0.78rem; font-weight: 700; color: #2A6F86; background: #E7F4F9; border-radius: 6px; padding: 2px 8px; }
+.tarjeta-pie { margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--linea); display: flex; justify-content: space-between; align-items: end; gap: 10px; }
+.formatos { display: flex; gap: 4px; flex-wrap: wrap; }
+.formato { font-size: 0.72rem; font-weight: 700; letter-spacing: .02em; color: var(--suave); border: 1px solid var(--linea); border-radius: 6px; padding: 1px 6px; }
+.fechas { text-align: right; font-size: 0.82rem; color: var(--suave); line-height: 1.4; }
+.fechas b { font-weight: 700; color: var(--texto); }
+
+.tabla-marco { background: var(--papel); border: 1px solid var(--linea); border-radius: var(--radio-tarjeta); overflow: hidden; }
+.tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.tabla th { text-align: left; font-size: 0.82rem; color: var(--suave); font-weight: 700; padding: 12px 14px; border-bottom: 2px solid var(--tinta); background: var(--papel); }
+.tabla td { padding: 12px 14px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+.tabla tr:last-child td { border-bottom: 0; }
+.tabla tbody tr:hover { background: var(--bruma); }
+.tabla .t-titulo a { font-weight: 700; color: var(--tinta); text-decoration: none; }
+.tabla .t-titulo a:hover { text-decoration: underline; }
+.tabla .t-area { display: block; font-size: 0.82rem; color: var(--suave); margin-top: 2px; }
+.tabla .t-fecha { white-space: nowrap; color: var(--texto); }
+
+.paginacion { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; color: var(--suave); font-size: 0.9rem; }
+.paginas { display: flex; gap: 4px; }
+.paginas button { font: inherit; min-width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--linea); background: var(--papel); cursor: pointer; font-weight: 600; color: var(--texto); }
+.paginas button[aria-current="page"] { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+
+@media (max-width: 1080px) { .grilla { grid-template-columns: repeat(2, minmax(0, 1fr)); } .herramientas { grid-template-columns: 1fr 1fr; } .buscar { grid-column: 1 / -1; } }
+@media (max-width: 760px) {
+  .grilla { grid-template-columns: 1fr; }
+  .herramientas { grid-template-columns: 1fr; }
+  .tabla thead { display: none; }
+  .tabla tr { display: grid; grid-template-columns: 1fr auto; padding: 10px 4px; border-bottom: 1px solid var(--linea); }
+  .tabla td { border: 0; padding: 2px 10px; }
+  .tabla .t-col-tema, .tabla .t-col-frec { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="enc"></div>
+<div class="banda">
+  <div class="contenedor banda-cuerpo">
+    <div>
+      <h1>Datasets</h1>
+      <p class="bajada">Los 80 conjuntos de datos que sigue el registro, con su estado y cuándo se actualizan.</p>
+    </div>
+    <a class="btn btn-borde" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>Exportar CSV</a>
+  </div>
+  <svg class="ola" viewBox="0 0 1200 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 16 C 100 6, 200 6, 300 14 S 500 24, 600 14 S 800 4, 900 12 S 1100 22, 1200 12 V24 H0 Z" fill="currentColor"/></svg>
+</div>
+
+<main class="contenedor">
+  <div class="estados" role="group" aria-label="Filtrar por estado" id="estados"></div>
+  <div class="sub-estados" id="sub-estados" hidden></div>
+
+  <div class="herramientas">
+    <div class="campo buscar"><label for="buscar">Buscar</label><input id="buscar" type="search" placeholder="Título, área o descripción"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg></div>
+    <div class="campo"><label for="tema">Tema</label><select id="tema"><option value="">Todos</option></select></div>
+    <div class="campo"><label for="frec">Frecuencia</label><select id="frec"><option value="">Todas</option></select></div>
+    <div class="campo"><label for="orden">Ordenar por</label><select id="orden"><option value="nombre">Nombre</option><option value="proxima">Próximo vencimiento</option><option value="area">Área</option></select></div>
+    <div class="vista" role="group" aria-label="Vista">
+      <button aria-pressed="true" data-vista="tarjetas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Tarjetas</button>
+      <button aria-pressed="false" data-vista="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>Lista</button>
+    </div>
+  </div>
+
+  <div class="resultado"><span id="cuenta"></span><span class="aviso-mes" id="aviso-mes" hidden>Vencen en enero de 2027 <button>Quitar</button></span></div>
+  <div id="resultados"></div>
+  <div class="paginacion"><span>Página 1 de 2</span><div class="paginas"><button aria-current="page">1</button><button>2</button></div></div>
+</main>
+<div id="pie"></div>
+
+<script>
+document.getElementById('enc').outerHTML = encabezado('Datasets');
+document.getElementById('pie').outerHTML = footer();
+const ds = DATOS.datasets.slice();
+const I_AREA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>';
+const I_FREC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>';
+const datosAl = x => { const m = mesCorto(x.datos_al); if (!m) return 'Datos al —'; if (x.tipo_pedido === 'ejercicio') return `Ejercicio ${String(x.datos_al).slice(0, 4)}`; if (x.tipo_pedido === 'relevamiento') return `Relevamiento de ${m}`; return `Datos al ${m}`; };
+const proxima = x => x.estado === 'eventual' ? 'Eventual' : (mesCorto(x.proxima_actualizacion) ? `Próxima: ${mesCorto(x.proxima_actualizacion)}` : 'Próxima: sin fecha');
+const badge = x => `<span class="badge ${ESTADO[x.estado][1]}">${ESTADO[x.estado][0]}</span>`;
+
+let estado = '', vista = 'tarjetas';
+const cuenta = e => ds.filter(x => e === 'vencidos' ? (x.estado === 'atrasado' || x.estado === 'sin-respuesta') : x.estado === e).length;
+const BOTONES = [['', 'Todos', null], ['actualizado', 'Actualizados', 'actualizado'], ['proximo', 'Próximos a vencer', 'proximo'], ['vencidos', 'Vencidos', 'atrasado'], ['eventual', 'Eventuales', 'eventual']];
+function pintarEstados() {
+  document.getElementById('estados').innerHTML = BOTONES.map(([v, t, c]) => `<button class="estado-btn" data-estado="${v}" aria-pressed="${estado === v || (v === 'vencidos' && (estado === 'atrasado' || estado === 'sin-respuesta'))}">${c ? `<i class="tile c-${c}"></i>` : ''}${t} <span class="n">${v ? cuenta(v) : ds.length}</span></button>`).join('');
+  const sub = document.getElementById('sub-estados');
+  const enVencidos = ['vencidos', 'atrasado', 'sin-respuesta'].includes(estado);
+  sub.hidden = !enVencidos;
+  sub.innerHTML = enVencidos ? [['vencidos', 'Todos los vencidos'], ['atrasado', 'Atrasados'], ['sin-respuesta', 'Sin respuesta del área']].map(([v, t]) => `<button class="estado-btn" data-estado="${v}" aria-pressed="${estado === v}">${t} <span class="n">${cuenta(v)}</span></button>`).join('') : '';
+}
+function filtrados() {
+  const q = document.getElementById('buscar').value.trim().toLowerCase();
+  const tema = document.getElementById('tema').value, frec = document.getElementById('frec').value, orden = document.getElementById('orden').value;
+  let r = ds.filter(x => !estado || (estado === 'vencidos' ? (x.estado === 'atrasado' || x.estado === 'sin-respuesta') : x.estado === estado));
+  if (q) r = r.filter(x => [x.titulo, x.area_nombre, x.descripcion].join(' ').toLowerCase().includes(q));
+  if (tema) r = r.filter(x => String(x.tema_principal_id) === tema || String(x.tema_secundario_id) === tema);
+  if (frec) r = r.filter(x => String(x.frecuencia_id) === frec);
+  const porNombre = (a, b) => a.titulo.localeCompare(b.titulo, 'es');
+  if (orden === 'proxima') r.sort((a, b) => String(a.proxima_actualizacion || '9999').localeCompare(String(b.proxima_actualizacion || '9999')) || porNombre(a, b));
+  else if (orden === 'area') r.sort((a, b) => String(a.area_nombre).localeCompare(String(b.area_nombre), 'es') || porNombre(a, b));
+  else r.sort(porNombre);
+  return r;
+}
+function tarjeta(x) {
+  return `<article class="tarjeta">
+    <div class="tarjeta-cabeza"><h2 class="tarjeta-titulo"><a href="#">${esc(x.titulo)}</a></h2>${badge(x)}</div>
+    <p class="tarjeta-desc">${esc(x.descripcion)}</p>
+    <div class="tarjeta-meta"><span>${I_AREA} ${esc(x.area_nombre || '-')}</span><span>${I_FREC} ${esc(x.frecuencia_nombre || '')}</span></div>
+    <div>${x.tema_principal_nombre ? `<span class="tema">${esc(x.tema_principal_nombre)}</span>` : ''}</div>
+    <div class="tarjeta-pie"><div class="formatos">${String(x.formatos || '').split(',').filter(Boolean).map(f => `<span class="formato">${esc(f.trim())}</span>`).join('')}</div><div class="fechas"><b>${datosAl(x)}</b><br>${proxima(x)}</div></div>
+  </article>`;
+}
+function fila(x) {
+  return `<tr><td class="t-titulo"><a href="#">${esc(x.titulo)}</a><span class="t-area">${esc(x.area_nombre || '-')}</span></td><td class="t-col-tema">${esc(x.tema_principal_nombre || '')}</td><td class="t-col-frec">${esc(x.frecuencia_nombre || '')}</td><td class="t-fecha">${datosAl(x)}</td><td class="t-fecha">${proxima(x).replace('Próxima: ', '')}</td><td>${badge(x)}</td></tr>`;
+}
+function pintar() {
+  pintarEstados();
+  const r = filtrados();
+  document.getElementById('cuenta').innerHTML = `<strong>${r.length}</strong> ${r.length === 1 ? 'conjunto' : 'conjuntos'}`;
+  const pagina = r.slice(0, vista === 'lista' ? 30 : 12);
+  document.getElementById('resultados').innerHTML = vista === 'lista'
+    ? `<div class="tabla-marco"><table class="tabla"><thead><tr><th>Conjunto de datos</th><th class="t-col-tema">Tema</th><th class="t-col-frec">Frecuencia</th><th>Datos</th><th>Próxima</th><th>Estado</th></tr></thead><tbody>${pagina.map(fila).join('')}</tbody></table></div>`
+    : `<div class="grilla">${pagina.map(tarjeta).join('')}</div>`;
+}
+document.getElementById('tema').innerHTML += DATOS.temas.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
+const frecs = [...new Map(ds.map(x => [x.frecuencia_id, x.frecuencia_nombre])).entries()];
+document.getElementById('frec').innerHTML += frecs.map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('');
+document.addEventListener('click', e => {
+  const b = e.target.closest('.estado-btn'); if (b) { estado = b.dataset.estado; pintar(); }
+  const v = e.target.closest('[data-vista]'); if (v) { vista = v.dataset.vista; document.querySelectorAll('[data-vista]').forEach(o => o.setAttribute('aria-pressed', String(o === v))); pintar(); }
+});
+['buscar', 'tema', 'frec', 'orden'].forEach(id => document.getElementById(id).addEventListener('input', pintar));
+const q = new URLSearchParams(location.search);
+if (q.get('estado')) estado = q.get('estado');
+if (q.get('vista')) { vista = q.get('vista'); document.querySelectorAll('[data-vista]').forEach(o => o.setAttribute('aria-pressed', String(o.dataset.vista === vista))); }
+pintar();
+</script>
+</body>
+</html>

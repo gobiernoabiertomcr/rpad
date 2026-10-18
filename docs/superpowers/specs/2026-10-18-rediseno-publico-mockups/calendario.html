@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup Calendario - RPAD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<script src="datos.js"></script>
+<script src="comun.js"></script>
+<style>
+.filtros { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; margin-top: 28px; }
+.filtros .campo { min-width: 240px; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-left: auto; font-size: 0.85rem; color: var(--suave); padding-bottom: 10px; }
+.leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+
+.almanaque { margin-top: 28px; border-top: 2px solid var(--tinta); }
+.fila-mes { display: grid; grid-template-columns: 200px 1fr; gap: 24px; padding: 18px 10px; border-bottom: 1px solid var(--linea); }
+.fila-mes.actual { background: var(--cielo); border-radius: 0 0 14px 14px; }
+.fila-mes.vencidos { background: #FDF0EE; }
+.mes-rotulo h2 { font-size: 1.35rem; }
+.mes-rotulo h2 a { text-decoration: none; }
+.mes-rotulo h2 a:hover { text-decoration: underline; text-decoration-color: var(--cielo-medio); text-underline-offset: 4px; }
+.mes-rotulo .anio { font-family: var(--f-titulo); font-weight: 600; color: var(--suave); margin-left: 6px; font-size: 1rem; }
+.mes-rotulo .cuenta { display: block; font-size: 0.86rem; color: var(--suave); margin-top: 2px; }
+.mes-rotulo .este-mes { display: inline-block; margin-top: 6px; font-size: 0.78rem; font-weight: 700; color: var(--tinta); background: var(--papel); border-radius: 999px; padding: 2px 10px; }
+.mes-lista { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
+.ds-chip { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; background: var(--papel); border: 1px solid var(--linea); border-radius: 10px; padding: 7px 12px; font-size: 0.9rem; font-weight: 600; color: var(--tinta); max-width: 100%; }
+.ds-chip:hover { border-color: var(--tinta); }
+.ds-chip small { font-weight: 400; color: var(--suave); }
+.vacio { color: #8796AA; font-size: 0.92rem; align-self: center; }
+.fila-mes.sin-nada { padding-top: 12px; padding-bottom: 12px; }
+.fila-mes.sin-nada .mes-rotulo h2 { font-size: 1.1rem; color: #6B7C93; }
+.fila-mes.sin-nada .cuenta { display: none; }
+@media (max-width: 760px) {
+  .fila-mes { grid-template-columns: 1fr; gap: 10px; }
+  .leyenda { margin-left: 0; }
+  .filtros .campo { min-width: 0; flex: 1 1 100%; }
+}
+</style>
+</head>
+<body>
+<div id="enc"></div>
+<div class="banda">
+  <div class="contenedor banda-cuerpo">
+    <div>
+      <h1>Calendario de vencimientos</h1>
+      <p class="bajada">Mes por mes, qué conjuntos de datos tienen que actualizarse. Casi todos vencen el último día del mes.</p>
+    </div>
+    <a class="btn btn-borde" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>Exportar a mi calendario (iCal)</a>
+  </div>
+  <svg class="ola" viewBox="0 0 1200 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 16 C 100 6, 200 6, 300 14 S 500 24, 600 14 S 800 4, 900 12 S 1100 22, 1200 12 V24 H0 Z" fill="currentColor"/></svg>
+</div>
+<main class="contenedor">
+  <div class="filtros">
+    <div class="campo"><label for="area">Área</label><select id="area"><option value="">Todas las áreas</option></select></div>
+    <div class="campo"><label for="tema">Tema</label><select id="tema"><option value="">Todos los temas</option></select></div>
+    <button class="btn btn-chico btn-borde" id="limpiar">Limpiar</button>
+    <div class="leyenda"><span><i class="tile c-actualizado"></i>Actualizado</span><span><i class="tile c-proximo"></i>Próximo a vencer</span><span><i class="tile c-atrasado"></i>Atrasado</span><span><i class="tile c-sin-respuesta"></i>Sin respuesta del área</span></div>
+  </div>
+  <section class="almanaque" id="almanaque" aria-label="Vencimientos por mes"></section>
+</main>
+<div id="pie"></div>
+<script>
+document.getElementById('enc').outerHTML = encabezado('Calendario');
+document.getElementById('pie').outerHTML = footer();
+const ds = DATOS.datasets.filter(x => x.estado !== 'eventual' && x.proxima_actualizacion).sort((a, b) => String(a.proxima_actualizacion).localeCompare(String(b.proxima_actualizacion)) || a.titulo.localeCompare(b.titulo, 'es'));
+const areas = [...new Set(DATOS.datasets.map(x => x.area_nombre).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+document.getElementById('area').innerHTML += areas.map(a => `<option>${esc(a)}</option>`).join('');
+document.getElementById('tema').innerHTML += DATOS.temas.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
+const [A, M] = HOY.split('-').map(Number);
+const ini = A * 12 + M - 1;
+const meses = Array.from({ length: 12 }, (_, i) => { const k = ini + i; const an = Math.floor(k / 12), me = k % 12 + 1; return { clave: `${an}-${String(me).padStart(2, '0')}`, nombre: MESES[me - 1], anio: an }; });
+const chip = (x, conMes) => `<li><a class="ds-chip" href="#" title="${esc(x.area_nombre || '')}"><i class="tile c-${x.estado}"></i>${esc(x.titulo)}${conMes ? ` <small>${mesCorto(x.proxima_actualizacion)}</small>` : ''}</a></li>`;
+const plural = n => n === 1 ? '1 conjunto' : `${n} conjuntos`;
+function pintar() {
+  const area = document.getElementById('area').value, tema = document.getElementById('tema').value;
+  const r = ds.filter(x => (!area || x.area_nombre === area) && (!tema || String(x.tema_principal_id) === tema || String(x.tema_secundario_id) === tema));
+  const venc = r.filter(x => x.estado === 'atrasado' || x.estado === 'sin-respuesta');
+  const ultimo = meses[11].clave;
+  const despues = r.filter(x => String(x.proxima_actualizacion).slice(0, 7) > ultimo);
+  let html = '';
+  if (venc.length) html += `<div class="fila-mes vencidos"><div class="mes-rotulo"><h2>Vencidos</h2><span class="cuenta">${plural(venc.length)}, con la fecha en que vencieron</span></div><ul class="mes-lista">${venc.map(x => chip(x, true)).join('')}</ul></div>`;
+  html += meses.map((me, i) => {
+    const del = r.filter(x => String(x.proxima_actualizacion).slice(0, 7) === me.clave && x.estado !== 'atrasado' && x.estado !== 'sin-respuesta');
+    const anio = (i === 0 || me.nombre === 'enero') ? `<span class="anio">${me.anio}</span>` : '';
+    return `<div class="fila-mes${i === 0 ? ' actual' : ''}${del.length ? '' : ' sin-nada'}"><div class="mes-rotulo"><h2><a href="#">${me.nombre}</a>${anio}</h2><span class="cuenta">${plural(del.length)}</span>${i === 0 ? '<span class="este-mes">Este mes</span>' : ''}</div>${del.length ? `<ul class="mes-lista">${del.map(x => chip(x)).join('')}</ul>` : '<p class="vacio">Nada vence este mes.</p>'}</div>`;
+  }).join('');
+  if (despues.length) html += `<div class="fila-mes"><div class="mes-rotulo"><h2>Más adelante</h2><span class="cuenta">${plural(despues.length)}, después de ${meses[11].nombre} de ${meses[11].anio}</span></div><ul class="mes-lista">${despues.map(x => chip(x, true)).join('')}</ul></div>`;
+  document.getElementById('almanaque').innerHTML = html;
+}
+['area', 'tema'].forEach(id => document.getElementById(id).addEventListener('input', pintar));
+document.getElementById('limpiar').addEventListener('click', () => { document.getElementById('area').value = ''; document.getElementById('tema').value = ''; pintar(); });
+pintar();
+</script>
+</body>
+</html>

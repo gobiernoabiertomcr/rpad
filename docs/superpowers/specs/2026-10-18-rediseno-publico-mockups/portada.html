@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup portada - RPAD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&family=Nunito:wght@700;800;900&family=Nunito+Sans:opsz,wght@6..12,400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="datos.js"></script>
+<style>
+:root {
+  --tinta: #1A365D;
+  --tinta-honda: #142B4A;
+  --texto: #22324A;
+  --suave: #56677F;
+  --bruma: #F4F7FA;
+  --papel: #FFFFFF;
+  --linea: #DAE3ED;
+  --cielo: #DCEEF5;
+  --cielo-medio: #9FD3E6;
+  --sol: #FCE8A8;
+  --sol-fuerte: #F2B705;
+
+  --ok: #7FCBA9;      --ok-fondo: #D5F0E3;   --ok-tinta: #1D6648;
+  --prox: #F3C55C;    --prox-fondo: #FCEBC0; --prox-tinta: #7A4D00;
+  --atr: #EE8E86;     --atr-fondo: #FADAD6;  --atr-tinta: #9A2B26;
+  --sinr: #B39DE6;    --sinr-fondo: #E7DEFA; --sinr-tinta: #55339A;
+  --ev: #C2CCD9;      --ev-fondo: #E4E9F0;   --ev-tinta: #45556B;
+
+  --radio-panel: 22px;
+  --radio-cuadro: 5px;
+  --ancho: 1180px;
+}
+.tipo-a { --f-titulo: 'Bricolage Grotesque', system-ui, sans-serif; --f-texto: 'Figtree', system-ui, sans-serif; --peso-titulo: 750; --espaciado-titulo: -0.02em; }
+.tipo-b { --f-titulo: 'Nunito', system-ui, sans-serif; --f-texto: 'Nunito Sans', system-ui, sans-serif; --peso-titulo: 850; --espaciado-titulo: -0.01em; }
+.tipo-c { --f-titulo: 'Inter', system-ui, sans-serif; --f-texto: 'Inter', system-ui, sans-serif; --peso-titulo: 700; --espaciado-titulo: -0.025em; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body { font-family: var(--f-texto); color: var(--texto); background: var(--bruma); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--f-titulo); font-weight: var(--peso-titulo); letter-spacing: var(--espaciado-titulo); color: var(--tinta); line-height: 1.12; }
+.contenedor { max-width: var(--ancho); margin: 0 auto; padding: 0 24px; }
+.contenedor > *, .portada > *, .columnas > * { min-width: 0; }
+:focus-visible { outline: 3px solid var(--sol-fuerte); outline-offset: 2px; border-radius: 6px; }
+
+/* Encabezado */
+.encabezado { background: var(--papel); border-bottom: 1px solid var(--linea); position: sticky; top: 0; z-index: 10; }
+.encabezado .contenedor { display: flex; align-items: center; gap: 28px; height: 72px; }
+.marca { display: flex; align-items: center; gap: 14px; text-decoration: none; flex-shrink: 0; }
+.marca img { height: 40px; width: auto; display: block; }
+.marca-sep { width: 1px; height: 34px; background: var(--linea); }
+.marca-texto { display: flex; flex-direction: column; line-height: 1.15; }
+.marca-texto strong { font-family: var(--f-titulo); font-weight: var(--peso-titulo); font-size: 1.25rem; color: var(--tinta); letter-spacing: var(--espaciado-titulo); }
+.marca-texto span { font-size: 0.75rem; color: var(--suave); max-width: 190px; }
+.nav-principal { display: flex; gap: 4px; margin-left: auto; }
+.nav-principal a { text-decoration: none; font-weight: 600; font-size: 0.95rem; color: var(--texto); padding: 8px 14px; border-radius: 999px; }
+.nav-principal a:hover { background: var(--bruma); }
+.nav-principal a[aria-current="page"] { background: var(--cielo); color: var(--tinta); }
+.btn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--f-texto); font-weight: 600; font-size: 0.95rem; text-decoration: none; border-radius: 999px; padding: 11px 20px; border: 1px solid transparent; cursor: pointer; }
+.btn svg { width: 18px; height: 18px; }
+.btn-tinta { background: var(--tinta); color: #fff; }
+.btn-tinta:hover { background: var(--tinta-honda); }
+.btn-borde { background: transparent; color: var(--tinta); border-color: var(--tinta); }
+.btn-borde:hover { background: rgba(255,255,255,.6); }
+.btn-menu { display: none; background: none; border: 0; padding: 8px; border-radius: 10px; color: var(--tinta); margin-left: auto; }
+
+/* Banda de portada */
+.banda { background: var(--cielo); position: relative; }
+.portada { padding: 56px 24px 72px; display: grid; grid-template-columns: 5fr 7fr; gap: 56px; align-items: center; }
+.portada h1 { font-size: clamp(2rem, 3.6vw, 2.75rem); max-width: 16ch; }
+.respuesta { font-size: 1.3rem; line-height: 1.45; margin-top: 22px; color: var(--texto); max-width: 30ch; }
+.respuesta .cifra { font-family: var(--f-titulo); font-weight: var(--peso-titulo); color: var(--tinta); }
+.aclaracion { margin-top: 14px; color: #3D5170; max-width: 44ch; }
+.acciones { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+.fecha-corte { margin-top: 24px; font-size: 0.875rem; color: #3D5170; }
+.ola { display: block; width: 100%; height: 28px; color: var(--bruma); position: absolute; bottom: -1px; left: 0; }
+
+.mosaico { background: var(--papel); border-radius: var(--radio-panel); padding: 28px 30px 22px; box-shadow: 0 1px 0 rgba(26,54,93,.06), 0 18px 40px -24px rgba(26,54,93,.35); }
+.mosaico-grupo + .mosaico-grupo { margin-top: 18px; }
+.mosaico-grupo-cabeza { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.mosaico-grupo-cabeza h3 { font-size: 1.05rem; }
+.mosaico-grupo-cabeza .cuenta { font-family: var(--f-titulo); font-weight: var(--peso-titulo); color: var(--suave); font-size: 1.05rem; }
+.cuadros { display: flex; flex-wrap: wrap; gap: 5px; }
+.cuadro { width: 20px; height: 20px; border-radius: var(--radio-cuadro); display: block; transition: transform .12s ease; }
+.cuadro:hover, .cuadro:focus-visible { transform: scale(1.3); outline-offset: 1px; }
+.c-actualizado { background: var(--ok); }
+.c-proximo { background: var(--prox); }
+.c-atrasado { background: var(--atr); }
+.c-sin-respuesta { background: var(--sinr); }
+.c-eventual { background: var(--ev); }
+.mosaico-pie { margin-top: 20px; padding-top: 14px; border-top: 1px dashed var(--linea); font-size: 0.9rem; color: var(--suave); min-height: 3.1em; }
+.mosaico-pie strong { color: var(--tinta); }
+.leyenda-vencidos { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.82rem; color: var(--suave); margin-top: 6px; }
+.leyenda-vencidos span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda-vencidos i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* Secciones */
+.seccion { padding: 44px 0 8px; }
+.seccion-cabeza { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.seccion-cabeza h2 { font-size: 1.6rem; }
+.seccion-cabeza p { color: var(--suave); font-size: 0.95rem; }
+.enlace { color: var(--tinta); font-weight: 600; text-decoration: underline; text-decoration-color: var(--cielo-medio); text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.enlace:hover { text-decoration-color: var(--tinta); }
+
+.meses-marco { overflow-x: auto; }
+.meses { display: grid; grid-template-columns: repeat(12, minmax(52px, 1fr)); gap: 6px; border-bottom: 2px solid var(--tinta); }
+.mes { display: flex; flex-direction: column; align-items: center; text-decoration: none; padding: 8px 4px 10px; border-radius: 12px 12px 0 0; }
+.mes:hover { background: var(--papel); }
+.mes.actual { background: var(--cielo); }
+.mes-cuenta { font-family: var(--f-titulo); font-weight: var(--peso-titulo); color: var(--tinta); font-size: 1.05rem; margin-bottom: 8px; }
+.mes-cuenta.cero { color: #A5B2C3; }
+.mes-pila { height: 190px; display: flex; flex-direction: column-reverse; align-items: center; gap: 3px; }
+.mes-pila i { width: 18px; height: 8px; border-radius: 3px; background: var(--cielo-medio); display: block; }
+.mes:hover .mes-pila i { background: #6FBCD8; }
+.meses-nombres { display: grid; grid-template-columns: repeat(12, minmax(52px, 1fr)); gap: 6px; }
+.meses-nombres span { text-align: center; padding-top: 8px; font-size: 0.85rem; color: var(--suave); font-weight: 600; }
+.meses-nombres span.actual { color: var(--tinta); }
+
+.columnas { display: grid; grid-template-columns: 7fr 5fr; gap: 56px; align-items: start; padding-top: 48px; }
+.bloque + .bloque { margin-top: 40px; }
+.bloque h2 { font-size: 1.4rem; }
+.bloque .bajada { color: var(--suave); font-size: 0.92rem; margin-top: 4px; }
+.lista { list-style: none; margin-top: 12px; border-top: 2px solid var(--tinta); }
+.lista li { border-bottom: 1px solid var(--linea); }
+.fila { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 13px 8px; text-decoration: none; align-items: center; }
+.fila:hover { background: var(--papel); }
+.fila-titulo { font-weight: 700; color: var(--tinta); }
+.fila-meta { font-size: 0.85rem; color: var(--suave); grid-column: 1; }
+.fila-dato { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-size: 0.85rem; color: var(--suave); }
+.fila-dato strong { display: block; font-family: var(--f-titulo); font-weight: var(--peso-titulo); color: var(--texto); font-size: 1rem; }
+.estado { display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; margin-top: 4px; }
+.e-atrasado { background: var(--atr-fondo); color: var(--atr-tinta); }
+.e-sin-respuesta { background: var(--sinr-fondo); color: var(--sinr-tinta); }
+.e-proximo { background: var(--prox-fondo); color: var(--prox-tinta); }
+.bloque-pie { margin-top: 14px; }
+
+/* Footer */
+.pie { margin-top: 72px; background: var(--tinta); color: #E6EEF6; }
+.pie-cuerpo { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr; gap: 32px; padding-top: 48px; padding-bottom: 40px; }
+.pie-marca img { height: 46px; width: auto; display: block; margin-bottom: 18px; }
+.pie-marca strong { display: block; font-family: var(--f-titulo); font-weight: var(--peso-titulo); font-size: 1.05rem; color: #fff; }
+.pie-marca p { font-size: 0.9rem; margin-top: 6px; color: #B9CBE0; }
+.pie h3 { font-size: 0.98rem; margin-bottom: 10px; color: var(--sol); }
+.pie ul { list-style: none; }
+.pie li { font-size: 0.92rem; padding: 3px 0; color: #C9D7E6; }
+.pie li a { color: #fff; text-decoration: underline; text-decoration-color: rgba(252,232,168,.45); text-underline-offset: 3px; }
+.pie li a:hover { text-decoration-color: var(--sol); }
+.pie-base { border-top: 1px solid rgba(255,255,255,.14); }
+.pie-base .contenedor { display: flex; justify-content: space-between; gap: 16px; padding-top: 16px; padding-bottom: 18px; font-size: 0.82rem; color: #A9BDD3; flex-wrap: wrap; }
+
+/* Selector del mockup (no va al sitio) */
+.selector { position: fixed; right: 16px; bottom: 16px; z-index: 50; background: #fff; border: 1px solid var(--linea); border-radius: 14px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(26,54,93,.14); font: 13px/1.3 system-ui, sans-serif; color: #22324A; }
+.selector p { margin: 4px 0; font-weight: 600; }
+.selector button { font: inherit; border: 1px solid var(--linea); background: #fff; border-radius: 8px; padding: 5px 9px; cursor: pointer; margin: 2px 4px 2px 0; }
+.selector button[aria-pressed="true"] { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+
+@media (max-width: 980px) {
+  .portada { grid-template-columns: 1fr; gap: 32px; padding-top: 36px; }
+  .columnas { grid-template-columns: 1fr; gap: 40px; }
+  .pie-cuerpo { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+  .nav-principal, .encabezado .btn-ingresar, .marca-sep, .marca-texto span { display: none; }
+  .btn-menu { display: inline-flex; }
+  .contenedor, .portada { padding-left: 16px; padding-right: 16px; }
+  .mosaico { padding: 20px 18px; }
+  .cuadro { width: 18px; height: 18px; }
+  .pie-cuerpo { grid-template-columns: 1fr; }
+  .selector { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .cuadro { transition: none; } }
+</style>
+</head>
+<body class="tipo-a">
+
+<header class="encabezado">
+  <div class="contenedor">
+    <a class="marca" href="#">
+      <img id="logo-encabezado" src="../../../../public/img/logo.png" alt="Municipalidad de Comodoro Rivadavia">
+      <span class="marca-sep" aria-hidden="true"></span>
+      <span class="marca-texto"><strong>RPAD</strong><span>Registro Permanente de Actualización de Datasets</span></span>
+    </a>
+    <nav class="nav-principal" aria-label="Principal">
+      <a href="#" aria-current="page">Inicio</a>
+      <a href="#">Datasets</a>
+      <a href="#">Calendario</a>
+      <a href="#">Contacto</a>
+    </nav>
+    <a class="btn btn-tinta btn-ingresar" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>Ingresar</a>
+    <button class="btn-menu" aria-label="Abrir el menú"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/></svg></button>
+  </div>
+</header>
+
+<div class="banda">
+  <section class="portada contenedor">
+    <div>
+      <h1>Índice de actualización</h1>
+      <p class="respuesta" id="respuesta"></p>
+      <p class="aclaracion" id="aclaracion"></p>
+      <div class="acciones">
+        <a class="btn btn-tinta" href="#">Ver los datasets</a>
+        <a class="btn btn-borde" href="#">Ver el calendario</a>
+      </div>
+      <p class="fecha-corte" id="fecha-corte"></p>
+    </div>
+    <div class="mosaico" id="mosaico" aria-label="Todos los conjuntos de datos del registro, por estado"></div>
+  </section>
+  <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
+</div>
+
+<main class="contenedor">
+  <section class="seccion">
+    <div class="seccion-cabeza">
+      <h2>Qué vence en los próximos 12 meses</h2>
+      <p>Cada marca es un conjunto de datos. Elegí un mes para ver cuáles son.</p>
+    </div>
+    <div class="meses-marco">
+      <div class="meses" id="meses"></div>
+      <div class="meses-nombres" id="meses-nombres"></div>
+    </div>
+  </section>
+
+  <section class="columnas">
+    <div class="bloque">
+      <h2>Vencidos</h2>
+      <p class="bajada">Pasó su fecha de actualización y todavía no se cargaron los datos nuevos. Primero, los que llevan más tiempo.</p>
+      <ul class="lista" id="vencidos"></ul>
+      <p class="bloque-pie"><a class="enlace" href="#" id="ver-vencidos"></a></p>
+    </div>
+    <div>
+      <div class="bloque">
+        <h2>Próximos a vencer</h2>
+        <p class="bajada">Vencen en los próximos 60 días.</p>
+        <ul class="lista" id="proximos"></ul>
+      </div>
+      <div class="bloque">
+        <h2>Últimas cargas en el portal</h2>
+        <p class="bajada">Los conjuntos que se actualizaron más recientemente.</p>
+        <ul class="lista" id="ultimas"></ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="pie">
+  <div class="contenedor pie-cuerpo">
+    <div class="pie-marca">
+      <img src="../../../../public/img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia">
+      <strong>Dirección de Datos Públicos y Comunicación</strong>
+      <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+    </div>
+    <div>
+      <h3>El registro</h3>
+      <ul><li><a href="#">Inicio</a></li><li><a href="#">Datasets</a></li><li><a href="#">Calendario</a></li><li><a href="#">Contacto</a></li></ul>
+    </div>
+    <div>
+      <h3>Datos abiertos</h3>
+      <ul><li><a href="#">datos.comodoro.gov.ar</a></li><li>Licencia CC BY-SA 4.0</li></ul>
+    </div>
+    <div>
+      <h3>Marco legal</h3>
+      <ul><li>Ordenanza N° 17.662/23, artículo 8°</li></ul>
+    </div>
+  </div>
+  <div class="pie-base">
+    <div class="contenedor">
+      <span>© 2026 Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+      <span>RPAD v2.0.0</span>
+    </div>
+  </div>
+</footer>
+
+<div class="selector" role="group" aria-label="Opciones del mockup">
+  <p>Tipografía</p>
+  <button data-tipo="a" aria-pressed="true">A Bricolage + Figtree</button><br>
+  <button data-tipo="b" aria-pressed="false">B Nunito</button>
+  <button data-tipo="c" aria-pressed="false">C Inter (la de hoy)</button>
+  <p>Logo del encabezado</p>
+  <button data-logo="../../../../public/img/logo.png" aria-pressed="true">El de hoy</button>
+  <button data-logo="../../../../public/img/logo-2025.png" aria-pressed="false">2025</button>
+</div>
+
+<script>
+const D = window.DATOS;
+const HOY = '2026-10-18';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fecha = v => { const t = String(v || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return '—'; const [a, m, d] = t.split('-'); return `${d}/${m}/${a}`; };
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const ds = D.datasets.slice().sort((a, b) => a.titulo.localeCompare(b.titulo, 'es'));
+const est = D.estadisticas;
+
+const conFecha = est.total - est.eventuales - est.sinFecha;
+const alDia = est.actualizados + est.proximos;
+document.getElementById('respuesta').innerHTML = `El <span class="cifra">${est.tasaActualizacion}%</span> de los conjuntos de datos con fecha de actualización están al día: ${alDia} de ${conFecha}.`;
+document.getElementById('aclaracion').textContent = `El registro sigue ${est.total} conjuntos. Los otros ${est.eventuales} son eventuales: se publican cuando hay novedades y no tienen vencimiento.`;
+const [a, m, d] = HOY.split('-');
+document.getElementById('fecha-corte').textContent = `Situación al domingo ${Number(d)} de ${MESES[m - 1]} de ${a}.`;
+
+const ESTADO_TEXTO = { actualizado: 'Actualizado', proximo: 'Próximo a vencer', atrasado: 'Atrasado', 'sin-respuesta': 'Sin respuesta del área', eventual: 'Eventual', 'sin-fecha': 'Sin fecha' };
+const grupos = [
+  { titulo: 'Actualizados', estados: ['actualizado'] },
+  { titulo: 'Próximos a vencer', estados: ['proximo'] },
+  { titulo: 'Vencidos', estados: ['atrasado', 'sin-respuesta'], leyenda: true },
+  { titulo: 'Eventuales', estados: ['eventual'] },
+];
+const mos = document.getElementById('mosaico');
+mos.innerHTML = grupos.map(g => {
+  const items = g.estados.flatMap(e => ds.filter(x => x.estado === e));
+  const cuadros = items.map(x => `<a class="cuadro c-${x.estado}" href="#" data-id="${x.id}" aria-label="${esc(x.titulo)}, ${ESTADO_TEXTO[x.estado]}"></a>`).join('');
+  const ley = g.leyenda ? `<div class="leyenda-vencidos"><span><i class="c-atrasado"></i>Atrasado (gestión interna)</span><span><i class="c-sin-respuesta"></i>Sin respuesta del área</span></div>` : '';
+  return `<div class="mosaico-grupo"><div class="mosaico-grupo-cabeza"><h3>${g.titulo}</h3><span class="cuenta">${items.length}</span></div><div class="cuadros">${cuadros}</div>${ley}</div>`;
+}).join('') + `<p class="mosaico-pie" id="mosaico-pie" aria-live="polite">Cada cuadrado es un conjunto de datos. Pasá el mouse o tocá uno para ver cuál es.</p>`;
+const pie = document.getElementById('mosaico-pie');
+const porId = Object.fromEntries(ds.map(x => [x.id, x]));
+const mostrar = el => { const x = porId[el.dataset.id]; if (!x) return; pie.innerHTML = `<strong>${esc(x.titulo)}</strong><br>${esc(x.area_nombre || '')}. ${ESTADO_TEXTO[x.estado]}.`; };
+mos.addEventListener('mouseover', e => e.target.classList.contains('cuadro') && mostrar(e.target));
+mos.addEventListener('focusin', e => e.target.classList.contains('cuadro') && mostrar(e.target));
+
+const ini = Number(a) * 12 + Number(m) - 1;
+const meses = Array.from({ length: 12 }, (_, i) => { const k = ini + i; const an = Math.floor(k / 12), me = k % 12 + 1; return { clave: `${an}-${String(me).padStart(2, '0')}`, etiqueta: `${MESES[me - 1].slice(0, 3)} ${String(an).slice(2)}`, titulo: `${MESES[me - 1]} de ${an}` }; });
+document.getElementById('meses').innerHTML = meses.map((me, i) => {
+  const c = ds.filter(x => x.estado !== 'eventual' && String(x.proxima_actualizacion || '').slice(0, 7) === me.clave).length;
+  return `<a class="mes${i === 0 ? ' actual' : ''}" href="#" aria-label="${me.titulo}: ${c === 1 ? 'vence 1 conjunto' : `vencen ${c} conjuntos`}"><span class="mes-cuenta${c ? '' : ' cero'}">${c}</span><span class="mes-pila" aria-hidden="true">${'<i></i>'.repeat(c)}</span></a>`;
+}).join('');
+document.getElementById('meses-nombres').innerHTML = meses.map((me, i) => `<span${i === 0 ? ' class="actual"' : ''}>${me.etiqueta}</span>`).join('');
+
+const dias = k => `${k} ${k === 1 ? 'día' : 'días'}`;
+const venc = ds.filter(x => x.estado === 'atrasado' || x.estado === 'sin-respuesta').sort((x, y) => x.dias_para_vencer - y.dias_para_vencer);
+document.getElementById('vencidos').innerHTML = venc.slice(0, 6).map(x => `<li><a class="fila" href="#"><span class="fila-titulo">${esc(x.titulo)}</span><span class="fila-meta">${esc(x.area_nombre || '')}</span><span class="fila-dato"><strong>${dias(-x.dias_para_vencer)}</strong>de atraso<br><span class="estado e-${x.estado}">${x.estado === 'atrasado' ? 'Atrasado' : 'Sin respuesta'}</span></span></a></li>`).join('');
+document.getElementById('ver-vencidos').textContent = `Ver los ${venc.length} vencidos`;
+const prox = ds.filter(x => x.estado === 'proximo').sort((x, y) => x.dias_para_vencer - y.dias_para_vencer);
+document.getElementById('proximos').innerHTML = prox.map(x => `<li><a class="fila" href="#"><span class="fila-titulo">${esc(x.titulo)}</span><span class="fila-meta">${esc(x.area_nombre || '')}</span><span class="fila-dato"><strong>${dias(x.dias_para_vencer)}</strong>para vencer</span></a></li>`).join('') || '<li class="fila">Ninguno vence en los próximos 60 días.</li>';
+const ult = ds.filter(x => x.ultima_actualizacion).sort((x, y) => String(y.ultima_actualizacion).localeCompare(String(x.ultima_actualizacion))).slice(0, 5);
+document.getElementById('ultimas').innerHTML = ult.map(x => `<li><a class="fila" href="#"><span class="fila-titulo">${esc(x.titulo)}</span><span class="fila-meta">${esc(x.area_nombre || '')}</span><span class="fila-dato"><strong>${fecha(x.ultima_actualizacion)}</strong>cargado</span></a></li>`).join('');
+
+const elegir = (sel, b) => document.querySelectorAll(sel).forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+document.querySelectorAll('[data-tipo]').forEach(b => b.addEventListener('click', () => { document.body.className = 'tipo-' + b.dataset.tipo; elegir('[data-tipo]', b); }));
+document.querySelectorAll('[data-logo]').forEach(b => b.addEventListener('click', () => { document.getElementById('logo-encabezado').src = b.dataset.logo; elegir('[data-logo]', b); }));
+const q = new URLSearchParams(location.search);
+if (q.get('tipo')) document.querySelector(`[data-tipo="${q.get('tipo')}"]`)?.click();
+if (q.get('logo')) document.querySelector(`[data-logo="${q.get('logo')}"]`)?.click();
+</script>
+</body>
+</html>
