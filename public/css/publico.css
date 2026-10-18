@@ -1,7 +1,7 @@
 /**
  * =====================================================
  * RPAD - Páginas públicas
- * Spec 2026-10-18-rediseno-publico, secciones 4, 6 y 11
+ * Spec 2026-10-18-rediseno-publico, secciones 4, 6, 7 y 11
  * =====================================================
  * Lo cargan solo las cinco páginas públicas (index, datasets, dataset, calendario y contacto), después de main.css: por
  * eso las insignias pastel no llegan a administración. Usa los tokens de main.css (--tinta, --cielo, --f-titulo, ...).
@@ -751,5 +751,611 @@
     .cuadro:hover,
     .cuadro:focus-visible {
         transform: none;
+    }
+}
+
+/* =====================================================
+   DATASETS (spec 7): estados con cantidades, herramientas, tarjetas o lista y paginación
+   Los bordes de los controles (botones de estado sin elegir, la vista, los campos) usan --borde-control (≥ 3:1, Ruling 7);
+   --linea queda para las tarjetas, la tabla y los separadores
+   ===================================================== */
+.datasets-aviso {
+    margin-top: 32px;
+}
+
+/* Estados como botones, cada uno con su cuadrito y su cantidad. El alto mínimo guarda el lugar mientras carga */
+.estados {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 42px;
+    margin-top: 28px;
+}
+
+.estado-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 8px 14px;
+    border: 1px solid var(--borde-control);
+    border-radius: 999px;
+    background: var(--papel);
+    font: inherit;
+    font-size: 0.92rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--texto);
+    cursor: pointer;
+}
+
+.estado-btn:hover {
+    border-color: var(--tinta);
+}
+
+.estado-n {
+    font-family: var(--f-titulo);
+    font-weight: 750;
+    color: var(--suave);
+}
+
+/* El elegido, en tinta: se distingue de los otros por más que el tono */
+.estado-btn[aria-pressed="true"] {
+    border-color: var(--tinta);
+    background: var(--tinta);
+    color: white;
+}
+
+.estado-btn[aria-pressed="true"] .estado-n {
+    color: var(--sol);
+}
+
+/* La segunda fila de Vencidos: ocupa su propio renglón dentro de #estados */
+.sub-estados {
+    display: flex;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    gap: 8px;
+    padding-left: 4px;
+}
+
+.sub-estados .estado-btn {
+    min-height: 36px;
+    padding: 5px 12px;
+    font-size: 0.85rem;
+}
+
+/* El cuadrito de Vencidos: los dos colores, atrasado y sin respuesta */
+.c-vencidos {
+    background: linear-gradient(135deg, var(--cuadro-atrasado) 50%, var(--cuadro-sin-respuesta) 50%);
+}
+
+/* Herramientas: buscar, tema, frecuencia, ordenar por y vista */
+.herramientas {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr) auto;
+    align-items: end;
+    gap: 14px;
+    margin-top: 20px;
+}
+
+/* El rótulo de un grupo que no es un campo (la vista): como .campo label */
+.campo-rotulo {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--tinta);
+}
+
+.buscar {
+    position: relative;
+}
+
+/* line-height 1.2: con el 1.55 de la página, el campo de búsqueda quedaba 1,5 px más alto que los selectores */
+.campo.buscar input {
+    padding-left: 40px;
+    line-height: 1.2;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.buscar svg {
+    position: absolute;
+    left: 13px;
+    bottom: 13px;
+    width: 18px;
+    height: 18px;
+    color: var(--suave);
+    pointer-events: none;
+}
+
+/* Tarjetas o lista: dos botones dentro de un marco, el elegido en tinta. Sin overflow: hidden, así no se recorta el foco */
+.vista {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 2px;
+    min-height: 44px;
+    padding: 3px;
+    border: 1px solid var(--borde-control);
+    border-radius: var(--radio-campo);
+    background: var(--papel);
+}
+
+.vista button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 9px;
+    background: none;
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--suave);
+    cursor: pointer;
+}
+
+.vista button:hover {
+    background: var(--bruma);
+    color: var(--tinta);
+}
+
+.vista button[aria-pressed="true"] {
+    background: var(--tinta);
+    color: white;
+}
+
+.vista svg {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+}
+
+/* Cuántos quedan, la pastilla del mes y Limpiar filtros. Al cambiar de página queda debajo del encabezado fijo */
+.resultado {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin: 26px 0 14px;
+    scroll-margin-top: calc(var(--header-height) + 16px);
+    font-size: 0.92rem;
+    color: var(--suave);
+}
+
+/* Recibe el foco por programa (tabindex="-1", fuera del orden del Tab): sin anillo */
+.publico-contenedor .resultado:focus,
+.publico-contenedor .resultado:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+.resultado-cuenta strong {
+    font-family: var(--f-titulo);
+    font-size: 1.05rem;
+    font-weight: 750;
+    color: var(--tinta);
+}
+
+/* La pastilla amarilla del filtro por mes (?mes=) */
+.filtro-mes {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 4px 4px 14px;
+    border-radius: 999px;
+    background: var(--sol);
+    font-weight: 600;
+    color: var(--tinta);
+}
+
+.filtro-mes button {
+    min-height: 30px;
+    padding: 3px 12px;
+    border: 1px solid var(--tinta);
+    border-radius: 999px;
+    background: transparent;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--tinta);
+    cursor: pointer;
+}
+
+.filtro-mes button:hover {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+/* Limpiar filtros: un botón con aspecto de link, a la derecha */
+.btn-limpiar {
+    min-height: 36px;
+    margin-left: auto;
+    padding: 4px 2px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--tinta);
+    text-decoration: underline;
+    text-decoration-color: var(--cielo-medio);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    cursor: pointer;
+}
+
+.btn-limpiar:hover {
+    text-decoration-color: var(--tinta);
+}
+
+/* Tarjetas: tres columnas, dos en tableta y una en el celular */
+.grilla {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.tarjeta {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 20px 20px 16px;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-tarjeta);
+    background: var(--papel);
+    transition: border-color 0.15s ease;
+}
+
+.tarjeta:hover {
+    border-color: var(--tinta);
+}
+
+.tarjeta-cabeza {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.tarjeta-cabeza .badge {
+    flex-shrink: 0;
+}
+
+.publico-contenedor .tarjeta-titulo {
+    min-width: 0;
+    font-size: 1.12rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.tarjeta-titulo a {
+    color: var(--tinta);
+    text-decoration: none;
+}
+
+/* El link del título cubre toda la tarjeta */
+.tarjeta-titulo a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radio-tarjeta);
+}
+
+.tarjeta:hover .tarjeta-titulo a {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+/* El foco del título se ve en toda la tarjeta: el anillo de siempre, en el ::after */
+.publico-contenedor .tarjeta-titulo a:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+.publico-contenedor .tarjeta-titulo a:focus-visible::after {
+    outline: 3px solid var(--tinta);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--sol-fuerte);
+}
+
+/* La descripción, en dos renglones */
+.tarjeta-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.92rem;
+    color: var(--suave);
+}
+
+.tarjeta-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.86rem;
+    color: var(--texto);
+}
+
+.tarjeta-meta span {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 7px;
+}
+
+.tarjeta-meta svg {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    margin-top: 3px;
+    color: var(--suave);
+}
+
+/* El tema principal: una etiqueta celeste */
+.tema {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--cielo);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--tinta);
+}
+
+/* El pie: los formatos a la izquierda y las dos fechas a la derecha */
+.tarjeta-pie {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px dashed var(--linea);
+}
+
+.formatos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    list-style: none;
+}
+
+.formato {
+    padding: 1px 6px;
+    border: 1px solid var(--linea);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--suave);
+}
+
+.tarjeta-fechas {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: auto;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--suave);
+}
+
+.tarjeta-datos-al {
+    font-weight: 700;
+    color: var(--texto);
+}
+
+/* Lista: la tabla en un panel blanco, con una línea --tinta debajo del encabezado */
+.tabla-marco {
+    overflow-x: auto;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-tarjeta);
+    background: var(--papel);
+}
+
+.tabla {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+}
+
+.tabla th {
+    padding: 12px 14px;
+    border-bottom: 2px solid var(--tinta);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: left;
+    color: var(--suave);
+}
+
+.tabla td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--linea);
+    vertical-align: top;
+}
+
+.tabla tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.tabla tbody tr:hover {
+    background: var(--bruma);
+}
+
+.t-titulo a {
+    font-weight: 700;
+    color: var(--tinta);
+    overflow-wrap: anywhere;
+}
+
+.t-titulo a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.t-area {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.82rem;
+    color: var(--suave);
+}
+
+/* El conjunto de datos se lleva el ancho (si no, "Cuatrimestralmente" y "Relevamiento de mar 2023" lo apretaban a ~1000 px);
+   los datos pueden partirse en dos renglones, la próxima no */
+.tabla th:first-child,
+.tabla .t-titulo {
+    width: 40%;
+}
+
+.t-fecha {
+    white-space: nowrap;
+}
+
+.tabla .t-datos {
+    min-width: 7.5rem;
+    white-space: normal;
+}
+
+/* Vacío */
+.vacio {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 8px 8px;
+    color: var(--suave);
+}
+
+/* Paginación: "Mostrando 1–24 de 80" y Anterior, "Página 1 de 4", Siguiente */
+.paginado {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 22px;
+    font-size: 0.9rem;
+    color: var(--suave);
+}
+
+.paginado-controles {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.paginado-pagina {
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--texto);
+}
+
+.paginado .btn-borde svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Responsive del listado: 1080 px (dos columnas) y 760 px (una; la lista se apila sin Tema ni Frecuencia) */
+@media (max-width: 1080px) {
+    .grilla {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .herramientas {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .buscar {
+        grid-column: 1 / -1;
+    }
+
+    /* La tabla entra entera hasta los 768 px; más angosta, se desplaza dentro de su panel (la página no) */
+    .tabla {
+        font-size: 0.88rem;
+    }
+
+    .tabla th,
+    .tabla td {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+}
+
+@media (max-width: 760px) {
+    .grilla,
+    .herramientas {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .tabla thead,
+    .tabla .t-col-tema,
+    .tabla .t-col-frec {
+        display: none;
+    }
+
+    .tabla,
+    .tabla tbody {
+        display: block;
+    }
+
+    /* Cada fila apilada: el título y el área con la insignia a la derecha; debajo, los datos y la próxima */
+    .tabla tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--linea);
+    }
+
+    .tabla tbody tr:last-child {
+        border-bottom: 0;
+    }
+
+    .tabla td {
+        padding: 0;
+        border: 0;
+    }
+
+    .tabla .t-titulo {
+        grid-column: 1;
+        grid-row: 1;
+        width: auto;
+    }
+
+    .tabla .t-estado {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .tabla .t-datos {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .tabla .t-datos + td {
+        grid-column: 2;
+        grid-row: 2;
+        text-align: right;
+    }
+
+    .tabla .t-fecha {
+        font-size: 0.85rem;
+        color: var(--suave);
+    }
+
+    /* Sin el encabezado, la próxima dice qué es ("Próxima: ene 2027"); un eventual dice "Eventual" */
+    .tabla .t-proxima::before {
+        content: 'Pr\0000F3xima: ';
+    }
+
+    .paginado {
+        justify-content: center;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tarjeta {
+        transition: none;
     }
 }

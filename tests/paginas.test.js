@@ -153,7 +153,7 @@ describe('páginas', () => {
   // publico.css (spec 2026-10-18-rediseno-publico, 5.4): solo en las 5 públicas, con la misma versión que main.css, así las
   // insignias pastel no llegan a administración
   const PUBLICAS = ['index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
-  const PENDIENTES = ['datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
+  const PENDIENTES = ['dataset.html', 'calendario.html', 'contacto.html'];
   for (const pagina of paginas) {
     it(`${pagina}: publico.css ${PUBLICAS.includes(pagina) ? 'con' : 'sin'} ?v=${VERSION_CSS}`, () => {
       const usos = leer(pagina).match(/css\/publico\.css[^"]*"/g) || [];
@@ -174,6 +174,15 @@ describe('páginas', () => {
     const html = leer('index.html');
     assert.ok(html.indexOf('css/main.css?v=') !== -1 && html.indexOf('css/main.css?v=') < html.indexOf('css/publico.css?v='));
   });
+
+  // Las otras públicas ya rediseñadas: su <style> se fue a publico.css, que va después de main.css
+  for (const pagina of PUBLICAS.filter(p => p !== 'index.html' && !PENDIENTES.includes(p))) {
+    it(`${pagina}: sin <style> propio, main.css y después publico.css`, () => {
+      const html = leer(pagina);
+      assert.doesNotMatch(html, /<style/);
+      assert.ok(html.indexOf('css/main.css?v=') !== -1 && html.indexOf('css/main.css?v=') < html.indexOf('css/publico.css?v='));
+    });
+  }
 
   it('login.html: el logo es logo-2025-blanco.png', () => {
     assert.ok(leer('login.html').includes('src="img/logo-2025-blanco.png"'));

@@ -15,7 +15,9 @@ const cargar = (script) => {
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
     console,
-    document: { addEventListener() {}, getElementById: () => null }
+    document: { addEventListener() {}, getElementById: () => null },
+    // No es de ECMAScript (es del navegador y de Node): el vm no lo trae. datasets.js lo usa para leer y escribir la URL
+    URLSearchParams
   });
   vm.runInContext(`${leer('js/api.js')}\n;globalThis.Utils = Utils;`, contexto);
   vm.runInContext(leer(`js/${script}`), contexto);
@@ -241,11 +243,166 @@ describe('datasets.js: filtros y ?mes=', () => {
     assert.equal(listado.textoFiltroMes('2026-09'), 'Vencen en septiembre de 2026');
   });
 
-  it('datasets.html tiene el aviso del filtro por mes y las opciones Eventual y Sin fecha', () => {
+  it('datasets.html tiene el aviso del filtro por mes y los botones de estado, sin el select viejo', () => {
     const html = leer('datasets.html');
     assert.match(html, /id="filtro-mes"/);
-    assert.match(html, /<option value="eventual">Eventual<\/option>/);
-    assert.match(html, /<option value="sin-fecha">Sin fecha<\/option>/);
+    assert.match(html, /id="estados"/);
+    assert.doesNotMatch(html, /id="filter-estado"/);
+    for (const id of ['search', 'filter-tema', 'filter-frecuencia', 'filter-orden']) assert.match(html, new RegExp(`<label for="${id}"`), id);
+  });
+});
+
+describe('datasets.js: estados, orden, vista y URL', () => {
+  const listado = cargar('datasets.js');
+  const LISTA = [
+    dataset({ id: 1, titulo: 'Beta', area_nombre: 'Zona', proxima_actualizacion: '2027-03-31T03:00:00.000Z' }),
+    dataset({ id: 2, titulo: 'alfa', area_nombre: null, proxima_actualizacion: '2026-11-30T03:00:00.000Z', estado: 'proximo', dias_para_vencer: 43 }),
+    dataset({ id: 3, titulo: 'Gamma', area_nombre: 'Archivo', proxima_actualizacion: '2025-01-31T03:00:00.000Z', estado: 'atrasado', dias_para_vencer: -625 }),
+    eventual({ id: 4, titulo: 'Delta', proxima_actualizacion: '2026-01-31T03:00:00.000Z' }),
+    dataset({ id: 5, titulo: 'Épsilon', proxima_actualizacion: null, estado: 'sin-fecha', dias_para_vencer: null })
+  ];
+
+  it('ordena por nombre, por próximo vencimiento (sin fecha al final) y por área (sin área al final)', () => {
+    assert.deepEqual(plano(listado.ordenarDatasets(LISTA, 'nombre')).map(d => d.id), [2, 1, 4, 5, 3]);
+    assert.deepEqual(plano(listado.ordenarDatasets(LISTA, 'proxima')).map(d => d.id), [3, 2, 1, 4, 5]);
+    assert.deepEqual(plano(listado.ordenarDatasets(LISTA, 'area')).map(d => d.id), [3, 4, 5, 1, 2]);
+  });
+
+  it('cuenta por estado del servidor, con vencidos = atrasados + sin respuesta', () => {
+    const c = plano(listado.cantidadesPorEstado(LISTA));
+    assert.equal(c.todos, 5); assert.equal(c.actualizado, 1); assert.equal(c.proximo, 1);
+    assert.equal(c.vencidos, 1); assert.equal(c.atrasado, 1); assert.equal(c['sin-respuesta'], 0);
+    assert.equal(c.eventual, 1); assert.equal(c['sin-fecha'], 1);
+  });
+
+  it('los botones: Vencidos presionado con atrasado y la segunda fila; Sin fecha solo si hay o si está elegido', () => {
+    const c = listado.cantidadesPorEstado(LISTA);
+    const html = listado.htmlDeEstados(c, 'atrasado');
+    assert.match(html, /data-estado="vencidos" aria-pressed="true"/);
+    assert.match(html, /class="sub-estados"/);
+    assert.match(html, /data-estado="atrasado" aria-pressed="true"/);
+    assert.match(html, /data-estado="sin-fecha"/);
+    const sinNinguno = listado.htmlDeEstados({ ...plano(c), 'sin-fecha': 0 }, '');
+    assert.doesNotMatch(sinNinguno, /data-estado="sin-fecha"/);
+    assert.match(listado.htmlDeEstados({ ...plano(c), 'sin-fecha': 0 }, 'sin-fecha'), /data-estado="sin-fecha" aria-pressed="true"/);
+    assert.match(sinNinguno, /data-estado="" aria-pressed="true"/);
+  });
+
+  it('la fila de la lista escapa, lleva al detalle y usa la insignia de siempre', () => {
+    const html = listado.htmlDeFila(dataset({ id: 7, titulo: '<i>x</i>', area_nombre: 'A & B' }));
+    assert.ok(html.includes('href="dataset.html?id=7"'));
+    assert.ok(html.includes('A &amp; B'));
+    assert.doesNotMatch(html, /<i>x<\/i>/);
+    assert.match(html, /<span class="badge badge-success">Actualizado<\/span>/);
+    assert.ok(html.includes('ene 2027'));
+  });
+
+  it('lee y escribe la URL: los parámetros de siempre siguen igual y orden/vista solo si no son los por defecto', () => {
+    const p = plano(listado.leerParametros('?estado=vencidos&mes=2027-01&tema=8&frecuencia=9&busqueda=pauta&orden=area&vista=lista'));
+    assert.deepEqual(p, { temaId: '8', frecId: '9', estado: 'vencidos', busqueda: 'pauta', mes: '2027-01', orden: 'area', vista: 'lista' });
+    assert.deepEqual(plano(listado.leerParametros('?orden=x&vista=y&mes=2027-13')), { temaId: '', frecId: '', estado: '', busqueda: '', mes: null, orden: 'nombre', vista: 'tarjetas' });
+    assert.equal(listado.armarParametros({ temaId: '8', frecId: '', estado: 'vencidos', busqueda: '', mes: '2027-01', orden: 'nombre', vista: 'tarjetas' }), 'tema=8&estado=vencidos&mes=2027-01');
+    assert.equal(listado.armarParametros({ temaId: '', frecId: '', estado: '', busqueda: '', mes: null, orden: 'proxima', vista: 'lista' }), 'orden=proxima&vista=lista');
+  });
+
+  // Los links que ya circulan (la portada, el tablero viejo, los guardados): cada ?estado= de hoy elige su botón
+  it('los valores de ?estado= de siempre, Eventual y Sin fecha incluidos, y un estado que no existe no filtra', () => {
+    for (const estado of ['actualizado', 'proximo', 'vencidos', 'atrasado', 'sin-respuesta', 'eventual', 'sin-fecha']) {
+      assert.equal(plano(listado.leerParametros(`?estado=${estado}`)).estado, estado, estado);
+    }
+    assert.equal(plano(listado.leerParametros('?estado=otro')).estado, '');
+    const html = listado.htmlDeEstados(listado.cantidadesPorEstado(LISTA), 'eventual');
+    assert.match(html, /data-estado="eventual" aria-pressed="true"/);
+    assert.doesNotMatch(html, /class="sub-estados"/);
+    // Cada botón con su cantidad; los de los otros estados, sin presionar
+    assert.match(html, /data-estado="actualizado" aria-pressed="false"><span class="tile c-actualizado" aria-hidden="true"><\/span>Actualizados <span class="estado-n">1<\/span><\/button>/);
+    assert.match(html, /data-estado="" aria-pressed="false">Todos <span class="estado-n">5<\/span>/);
+  });
+
+  it('la búsqueda con espacios y acentos va y vuelve por la URL', () => {
+    const texto = armar => listado.armarParametros({ ...plano(listado.leerParametros('')), busqueda: armar });
+    assert.equal(plano(listado.leerParametros(`?${texto('parque automotor')}`)).busqueda, 'parque automotor');
+    assert.equal(plano(listado.leerParametros(`?${texto('Educación & Salud')}`)).busqueda, 'Educación & Salud');
+  });
+
+  it('las cantidades cuentan lo que dejan los otros filtros (búsqueda, tema, frecuencia y mes), no el estado elegido', () => {
+    const conTema = LISTA.map(d => ({ ...d, tema_principal_id: d.id <= 2 ? 8 : 3 }));
+    const c = plano(listado.cantidadesConFiltros(conTema, { temaId: '8', estado: 'atrasado', busqueda: '' }));
+    assert.equal(c.todos, 2); assert.equal(c.actualizado, 1); assert.equal(c.proximo, 1); assert.equal(c.vencidos, 0);
+    const delMes = plano(listado.cantidadesConFiltros(LISTA, { mes: '2026-11', estado: 'actualizado' }));
+    assert.equal(delMes.todos, 1); assert.equal(delMes.proximo, 1); assert.equal(delMes.actualizado, 0);
+    assert.equal(plano(listado.cantidadesConFiltros(LISTA, { busqueda: 'gamma' })).atrasado, 1);
+  });
+
+  it('el orden no cambia la lista que recibe', () => {
+    const copia = [...LISTA];
+    listado.ordenarDatasets(copia, 'area');
+    assert.deepEqual(copia.map(d => d.id), [1, 2, 3, 4, 5]);
+  });
+
+  it('la tarjeta nueva: el título es el link al detalle y en el pie van los formatos y las dos fechas, sin <b>', () => {
+    const html = listado.htmlDeTarjeta(dataset({ id: 9 }));
+    assert.match(html, /<article class="tarjeta">/);
+    assert.match(html, /<h2 class="tarjeta-titulo"><a href="dataset\.html\?id=9">Gasto Público<\/a><\/h2>/);
+    assert.match(html, /<span class="badge badge-success">Actualizado<\/span>/);
+    assert.match(html, /<li class="formato">CSV<\/li><li class="formato">XLSX<\/li>/);
+    assert.match(html, /<span class="tema">Economía<\/span>/);
+    assert.doesNotMatch(html, /<b>|<i>|<img/);
+  });
+
+  it('la vista de lista: la tabla con sus seis columnas, Tema y Frecuencia marcadas para ocultarse en el celular', () => {
+    const html = listado.htmlDeLista([dataset(), eventual()]);
+    assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map(m => m[1]), ['Conjunto de datos', 'Tema', 'Frecuencia', 'Datos', 'Próxima', 'Estado']);
+    assert.match(html, /<th scope="col" class="t-col-tema">Tema<\/th><th scope="col" class="t-col-frec">Frecuencia<\/th>/);
+    assert.equal(html.split('<tr>').length - 1, 3);
+    // La próxima, sin el prefijo; el eventual dice Eventual
+    const fila = listado.htmlDeFila(eventual({ area_nombre: null, tema_principal_nombre: null }));
+    assert.match(fila, />Eventual<\/td>/);
+    assert.ok(fila.includes('Sin área asignada'));
+    assert.match(listado.htmlDeFila(dataset({ proxima_actualizacion: null, estado: 'sin-fecha' })), />sin fecha<\/td>/);
+    assert.doesNotMatch(listado.htmlDeFila(dataset()), /Próxima: /);
+  });
+
+  it('la paginación dice "Página N de M" con tilde, con Anterior y Siguiente; con una sola página, nada', () => {
+    const html = listado.htmlDePaginacion(80, 1, 24);
+    assert.match(html, /Página 1 de 4/);
+    assert.match(html, /Mostrando 1–24 de 80/);
+    assert.match(html, /data-pagina="-1" disabled>/);
+    assert.match(html, /data-pagina="1">Siguiente/);
+    assert.match(listado.htmlDePaginacion(80, 4, 24), /Mostrando 73–80 de 80[^]*data-pagina="1" disabled>/);
+    assert.equal(listado.htmlDePaginacion(50, 1, 50), '');
+    assert.equal(listado.htmlDePaginacion(0, 1, 24), '');
+    assert.doesNotMatch(listado.htmlDePaginacion(80, 2, 24), /Pag\.|disabled/);
+    assert.deepEqual(plano(vm.runInContext('ITEMS_POR_PAGINA', listado)), { tarjetas: 24, lista: 50 });
+  });
+
+  it('la bajada y la cuenta de resultados, en singular y en plural', () => {
+    assert.equal(listado.textoBajada(80), 'Los 80 conjuntos de datos que sigue el registro, con su estado y cuándo se actualizan.');
+    assert.equal(listado.htmlDeCuenta(80), '<strong>80</strong> conjuntos');
+    assert.equal(listado.htmlDeCuenta(1), '<strong>1</strong> conjunto');
+    assert.equal(listado.htmlDeCuenta(0), '<strong>0</strong> conjuntos');
+  });
+
+  it('datasets.html: la banda, las herramientas, la vista, el resultado, el vacío y el error', () => {
+    const html = leer('datasets.html');
+    assert.match(html, /<title>Datasets - RPAD<\/title>/);
+    assert.doesNotMatch(html, /<style/);
+    assert.doesNotMatch(html, /onclick=|onchange=/);
+    assert.match(html, /<main class="main-content main-publico">/);
+    assert.match(html, /<h1>Datasets<\/h1>/);
+    assert.match(html, /<div class="estados" id="estados" role="group" aria-label="Filtrar por estado">/);
+    assert.match(html, /<option value="nombre">Nombre<\/option>\s*<option value="proxima">Próximo vencimiento<\/option>\s*<option value="area">Área<\/option>/);
+    assert.equal((html.match(/<button type="button" data-vista="(tarjetas|lista)" aria-pressed="(true|false)">/g) || []).length, 2);
+    assert.match(html, /id="vista" role="group"/);
+    assert.match(html, /id="resultado-cuenta" aria-live="polite"/);
+    assert.match(html, /id="filtro-mes-texto"/);
+    assert.match(html, />Quitar<\/button>/);
+    assert.match(html, />Exportar CSV<\/button>/);
+    assert.match(html, />Limpiar filtros<\/button>/);
+    for (const id of ['datasets-grid', 'datasets-paginacion', 'empty-state']) assert.match(html, new RegExp(`id="${id}"`), id);
+    assert.match(html, /No hay conjuntos con esos filtros\./);
+    assert.match(html, /id="datasets-error" role="alert">No se pudo cargar el listado\. Probá de nuevo en unos minutos\.</);
+    assert.doesNotMatch(html, /class="spinner"/);
   });
 });
 
