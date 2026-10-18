@@ -153,7 +153,7 @@ describe('páginas', () => {
   // publico.css (spec 2026-10-18-rediseno-publico, 5.4): solo en las 5 públicas, con la misma versión que main.css, así las
   // insignias pastel no llegan a administración
   const PUBLICAS = ['index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
-  const PENDIENTES = ['calendario.html', 'contacto.html'];
+  const PENDIENTES = ['contacto.html'];
   for (const pagina of paginas) {
     it(`${pagina}: publico.css ${PUBLICAS.includes(pagina) ? 'con' : 'sin'} ?v=${VERSION_CSS}`, () => {
       const usos = leer(pagina).match(/css\/publico\.css[^"]*"/g) || [];

@@ -981,39 +981,6 @@ button {
     background: var(--gray-50);
 }
 
-/* Modal items para calendario */
-.modal-dia-item {
-    padding: 12px;
-    border-radius: var(--border-radius);
-    background: var(--gray-50);
-    margin-bottom: 8px;
-}
-
-.modal-dia-item-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-}
-
-.modal-dia-item-titulo {
-    font-weight: 500;
-    color: var(--primary);
-    text-decoration: none;
-}
-
-.modal-dia-item-titulo:hover {
-    text-decoration: underline;
-}
-
-.modal-dia-item-meta {
-    display: flex;
-    gap: 16px;
-    font-size: 0.8rem;
-    color: var(--gray-500);
-}
-
 /* =====================================================
    FOOTER (spec 2026-10-18-rediseno-publico, 5.3)
    ===================================================== */
@@ -1390,86 +1357,6 @@ button {
     .header-marca-texto {
         display: none;
     }
-}
-
-/* =====================================================
-   FULLCALENDAR OVERRIDES
-   ===================================================== */
-.fc {
-    font-family: var(--f-texto);
-}
-
-.fc .fc-toolbar-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--gray-800);
-}
-
-.fc .fc-button {
-    background: var(--gray-100);
-    border: 1px solid var(--border-color);
-    color: var(--gray-700);
-    font-weight: 500;
-    text-transform: capitalize;
-    padding: 8px 16px;
-    border-radius: var(--border-radius);
-    transition: var(--transition);
-}
-
-.fc .fc-button:hover {
-    background: var(--gray-200);
-}
-
-.fc .fc-button-primary:not(:disabled).fc-button-active,
-.fc .fc-button-primary:not(:disabled):active {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: white;
-}
-
-.fc .fc-daygrid-day-number {
-    color: var(--gray-700);
-    font-weight: 500;
-    padding: 8px;
-}
-
-.fc .fc-daygrid-day.fc-day-today {
-    background: var(--primary-gradient);
-}
-
-.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
-    color: white;
-    font-weight: 700;
-}
-
-.fc .fc-col-header-cell-cushion {
-    color: var(--gray-600);
-    font-weight: 600;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 0.5px;
-}
-
-.fc .fc-event {
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 0.8rem;
-    font-weight: 500;
-    border: none;
-    cursor: pointer;
-}
-
-.fc .fc-daygrid-event-dot {
-    display: none;
-}
-
-.fc .fc-daygrid-day-events {
-    padding: 2px 4px;
-}
-
-/* Hover effect on days with events */
-.fc .fc-daygrid-day:hover {
-    background: var(--gray-50);
 }
 
 .table-actions {
