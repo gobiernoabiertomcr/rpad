@@ -322,6 +322,9 @@ describe('pendientesEnSuFecha', () => {
     assert.deepEqual(ids(filas), [enviado, pendiente, fallido]);
     // Cada uno trae el estado de su aviso anticipado, arriba de todo (no dentro de adelantado)
     assert.deepEqual(filas.map(f => [f.id, f.aviso_estado]), [[enviado, 'enviada'], [pendiente, 'pendiente'], [fallido, 'fallida']]);
+    // Solo se cita la nota anticipada que se envió: los otros entran igual, pero sin nota (una nota que no salió no se nombra)
+    assert.equal(filas[0].adelantado.fecha, '2026-12-09');
+    assert.deepEqual(filas.slice(1).map(f => f.adelantado), [null, null]);
   });
 
   it('no devuelve el que se actualizó (cambió su vencimiento)', async () => {

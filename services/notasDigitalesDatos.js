@@ -149,10 +149,13 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
 // licencia: { desde, hasta } del titular; ausencias: [{ desde, hasta }] de la persona autorizada (diaDelAvisoEnSuFecha).
 // Un dataset entra si tiene exactamente una fila de aviso (de cualquier estado, sin pruebas) en su vencimiento actual y su
 // cuenta_desde cae dentro de la licencia; si se actualizó, o ya tuvo otro aviso, no. Cada uno trae cuenta_desde, adelantado
-// (la nota que lo adelantó) y dia_en_su_fecha. Solo salen los que tienen ese día. No filtra por dia_en_su_fecha <= hoy:
-// lo hacen la corrida (sale hoy lo que tocaba hoy o antes) y el Estado (el próximo aviso). Con el pedido calculado con hoy.
+// (la nota que lo adelantó, solo si se envió) y dia_en_su_fecha. Solo salen los que tienen ese día. No filtra por
+// dia_en_su_fecha <= hoy: lo hacen la corrida (sale hoy lo que tocaba hoy o antes) y el Estado (el próximo aviso). Con el
+// pedido calculado con hoy.
 // aviso_estado es el estado del aviso anticipado ('pendiente', 'enviada' o 'fallida'), arriba de todo y no dentro de
 // adelantado: la corrida y el Estado lo usan para saber si a ese dataset ya le toca la reiteración (que solo toma avisos enviados).
+// adelantado es null si el aviso anticipado no se envió: el dataset entra igual, pero el aviso en su fecha no cita una nota
+// que el área nunca recibió (spec 2026-10-15, 7.6).
 export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []) => {
   const [filas] = await pool.query(
     `SELECT ${COLUMNAS_DATASET}, DATE_FORMAT(avd.cuenta_desde, '%Y-%m-%d') AS cuenta_desde,
@@ -173,7 +176,7 @@ export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []
   return filas
     .map(({ aviso_numero, aviso_anio, aviso_fecha, aviso_estado, ...dataset }) => ({
       ...conPedido(dataset, hoy),
-      adelantado: { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha },
+      adelantado: aviso_estado === 'enviada' ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null,
       aviso_estado,
       dia_en_su_fecha: diaDelAvisoEnSuFecha({ cuentaDesde: dataset.cuenta_desde, licencia, ausencias })
     }))

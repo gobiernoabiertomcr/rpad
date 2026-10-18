@@ -633,7 +633,9 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
       assert.equal(avisos[0].presentada_por_id, autorizado.id);
       // Sale sin cuenta_desde: si la guardara, los 20 días de la reiteración se contarían desde el 22/12 y se reiteraría el mismo día
       assert.deepEqual(await datasetsDe(avisos[0].id), [{ dataset_id: externo, cuenta_desde: null }]);
-      assert.ok(avisos[0].html.includes(`Este pedido ya se había adelantado por Nota Digital N° ${anticipado.numero}/26 del 09/12/2026.`));
+      // La nota anticipada nunca salió: el aviso en su fecha no la cita (el área no la recibió)
+      assert.ok(!avisos[0].html.includes('ya se había adelantado'));
+      assert.ok(!(await textoDe(avisos[0].id)).includes('ya se había adelantado'));
       assert.equal(del11.filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa').length, 0, 'ese día no hay reiteración externa');
       assert.deepEqual(await estadoDe(anticipado.id), { estado: 'fallida', intentos: motor.MAX_INTENTOS });
 
@@ -662,7 +664,7 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
 });
 
 // El aviso del día de una gestión (avisoDelDia): lo que la corrida arma por gestión, sin escribir nada. Lo comparten la corrida
-// y las vistas previas de Correos (spec 2026-10-18, 7.6 y 7.7). Acá se lo llama con el contexto que arma la corrida: el modo, la
+// y las vistas previas de Correos (spec 2026-10-15, 7.6 y 7.7). Acá se lo llama con el contexto que arma la corrida: el modo, la
 // licencia y, en la víspera, el anticipo y la autorización.
 describe('avisoDelDia: la selección del aviso de una gestión, sin escrituras', () => {
   const DATOS_DE_AUTORIZACION = { nombre: 'Firma admin', cargo: 'Cargo admin', contratado: false, email: 'admin@rpad.test', desde: '2026-11-26', hasta: '2027-01-14' };
@@ -708,6 +710,33 @@ describe('avisoDelDia: la selección del aviso de una gestión, sin escrituras',
     // La otra gestión no tiene nada adelantado
     assert.deepEqual((await motor.avisoDelDia({ gestion: 'interna', fecha: '2026-12-22', modo, licencia: delTitular })).datasets, []);
     assert.equal((await notas()).length, 1, 'no genera ninguna nota');
+  });
+
+  // Solo se cita la nota anticipada que se envió (spec 7.6): el dataset de una que quedó fallida entra igual, pero el párrafo no
+  // la nombra. La corrida y la vista previa comparten la selección y el párrafo.
+  it('en su fecha, un adelantado cuyo aviso no salió entra igual pero no se cita; el párrafo nombra solo al que se envió', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    const enviado = await crearDataset({ titulo: 'Externo enviado', gestion: 'externa', vencimiento: '2027-01-31' });
+    await correr('2026-12-09');
+    const [anticipada, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    const fallido = await crearDataset({ titulo: 'Externo fallido', gestion: 'externa', vencimiento: '2027-01-31' });
+    await crearNota({
+      gestion: 'externa', fecha: '2026-12-09', numero: 90, estado: 'fallida',
+      datasets: [{ id: fallido, vencimiento: '2027-01-31', cuentaDesde: '2026-12-22' }]
+    });
+    const { modo, licencia: delTitular } = await firmas.firmaParaFecha(await config(), '2026-12-22');
+
+    const aviso = await motor.avisoDelDia({ gestion: 'externa', fecha: '2026-12-22', modo, licencia: delTitular });
+    assert.deepEqual(ids(aviso.datasets), [enviado, fallido], 'los dos entran, como siempre');
+    assert.deepEqual(aviso.datasets.map(d => d.adelantado), [{ numero: anticipada.numero, anio: anticipada.anio, fecha: '2026-12-09' }, null]);
+    assert.deepEqual(aviso.datasets.map(d => d.cuenta_desde), ['2026-12-22', '2026-12-22'], 'la selección no cambia');
+
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'externa', hoy: '2026-12-22' });
+    assert.equal(vista.cantidad, 2);
+    assert.ok(vista.html.includes(`El conjunto de datos &quot;Externo enviado&quot; ya se había adelantado por Nota Digital N° ${anticipada.numero}/26 del 09/12/2026.`));
+    assert.ok(!vista.html.includes('N° 90/26'), 'la nota fallida no se nombra');
+    assert.equal((vista.html.match(/ya se había adelantado/g) ?? []).length, 1, 'un solo adelantado citado');
   });
 
   it('un día normal sin licencia: la selección de siempre', async () => {

@@ -42,7 +42,7 @@ export class ErrorDeUso extends Error {}
 // enviados. No entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada (spec 2026-10-15, 7.6).
 // Es permanente mientras el aviso siga enviado: así un dataset nunca sale el mismo día en un aviso y en una reiteración ni
 // vuelve como aviso después de reiterado. Si el anticipado no salió (pendiente o fallido), la reiteración no lo tomaría y
-// el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-18, 7.7).
+// el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-15, 7.6).
 // cumplioDiasParaReiterar es la prueba de fechas sola (la misma de seleccionarParaReiteracion): la comparten yaTocaReiterar y
 // el aviso en su fecha, que guarda sin cuenta_desde al dataset que pasó la prueba sin haber tenido su anticipado enviado.
 const cumplioDiasParaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
@@ -371,7 +371,7 @@ const contextoDelDia = async (config, fecha) => {
  * - datasets: la selección del día (prepararAviso: en la víspera de una licencia del firmante, con lo anticipado y su
  *   cuenta_desde) y, con persona autorizada (modo 'autorizado', licencia del titular), lo adelantado en la víspera que hoy
  *   toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6), ordenado por vencimiento y título. El que entra con los 20 días
- *   ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar, 7.7) se guarda sin cuenta_desde: con la del
+ *   ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar, 7.6) se guarda sin cuenta_desde: con la del
  *   anticipado, la reiteración de esta misma corrida lo tomaría también;
  * - rangoVencimientos: { desde, hasta } de los vencimientos, para el asunto de un aviso con datasets anticipados (spec 7.3).
  *   Solo el de la víspera (con anticipo): el aviso en su fecha no lo lleva aunque sus datasets traen cuenta_desde (salvo el

@@ -141,7 +141,8 @@ const textoInformado = (dataset) => {
 // Párrafo del aviso en su fecha con persona autorizada (spec 2026-10-15, 7.6): los datasets que la nota anticipada de la víspera
 // ya había pedido (adelantado: { numero, anio, fecha }) se citan con esa nota. Si lo adelantó la misma nota a todos, "Este
 // pedido …"; si no, una oración por cada nota que adelantó alguno, en el orden de su primera aparición, con los títulos
-// entre comillas. Sin ningún adelantado, null.
+// entre comillas. Sin ningún adelantado, null. Solo se cita una nota que se envió: un dataset cuyo aviso anticipado quedó
+// pendiente o fallido trae adelantado null (pendientesEnSuFecha) y se trata como no adelantado.
 export const textoAdelanto = (datasets) => {
   const porNota = new Map();
   for (const dataset of datasets) {
