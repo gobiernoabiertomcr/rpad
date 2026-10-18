@@ -478,11 +478,16 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       let datasets = await prepararAviso(gestion, hoy, anticipo);
       // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella: se suma a
       // la selección de hoy lo que hoy toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6). La licencia es la del titular.
+      // Si buscarlo falla, se informa y el aviso del día sale con la selección normal: lo adelantado sale en la corrida siguiente.
       if (modo === 'autorizado') {
-        ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
-        const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
-          .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy));
-        if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
+        try {
+          ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
+          const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
+            .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy));
+          if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
+        } catch (error) {
+          anotarError(resumen, { tipo: 'aviso', gestion }, error);
+        }
       }
       if (!datasets.length) continue;
       // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3). Solo el de

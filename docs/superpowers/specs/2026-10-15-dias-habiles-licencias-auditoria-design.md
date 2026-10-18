@@ -218,6 +218,8 @@ Pedido del usuario el 18/10/2026. Con persona autorizada, el aviso anticipado de
 
 **Día del aviso en su fecha.** Es `cuenta_desde`, su fecha normal de aviso (7.3), si ese día la persona autorizada está disponible. Si ese día está de licencia, es el último día hábil anterior en que está disponible, dentro de la licencia del titular. Si no hay ninguno (falta desde el primer día de la licencia del titular hasta esa fecha), no hay aviso en su fecha: ese dataset ya salió en el aviso anticipado de la víspera.
 
+**Si falla la búsqueda.** Si no se pueden buscar los datasets que salen en su fecha (un error de la base, por ejemplo), el error queda en el resumen de la corrida y el aviso normal de la gestión sale igual, solo con la selección de ese día: lo adelantado sale en la corrida siguiente.
+
 **La nota.** Es un aviso como cualquier otro de su gestión:
 - asunto de siempre, con el mes de la nota (no el rango de vencimientos de 7.3);
 - tablas, anexo y datos solicitados calculados ese día;

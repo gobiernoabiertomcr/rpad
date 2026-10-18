@@ -1,6 +1,6 @@
 // Notas Digitales durante la licencia del firmante titular (spec 2026-10-15-dias-habiles-licencias-auditoria, 7),
 // con los ejemplos de la sección 7.4 como fechas fijas, sobre una base de prueba + Mailpit
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
@@ -464,6 +464,44 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
     const estado = await motor.estadoNotas({ hoy: '2026-12-14' });
     assert.equal(estado.licencia_firmante.autorizado, null);
     assert.equal(estado.proximas.externa.aviso, null);
+  });
+
+  // Una falla al buscar lo que sale en su fecha (la licencia de la persona autorizada o los datasets adelantados) no tira también el
+  // aviso normal de esa gestión: queda el error y el aviso sale con la selección de siempre. Se simula con una falla en la consulta
+  // de pendientesEnSuFecha, la única que cuenta los avisos de cada dataset con "otro.dataset_id"
+  it('si falla la búsqueda del aviso en su fecha, el aviso normal del día sale igual y el adelantado sale en la corrida siguiente', async () => {
+    await vispera();
+    const nuevo = await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2027-01-31' });
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    const falla = mock.method(pool, 'query', function (sql, params) {
+      if (String(sql).includes('otro.dataset_id')) return Promise.reject(new Error('Falla simulada'));
+      return consultaOriginal.call(this, sql, params);
+    });
+    let resumen;
+    try {
+      resumen = await correr('2026-12-22');
+    } finally {
+      falla.mock.restore();
+    }
+    // Cada gestión busca lo que sale en su fecha (primero la interna): las dos anotan el error y siguen con su selección normal
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion, e.mensaje]), [
+      ['aviso', 'interna', 'Falla simulada'], ['aviso', 'externa', 'Falla simulada']
+    ]);
+    const [, normal, ...otras] = await notas();
+    assert.equal(otras.length, 0, 'la gestión interna, sin pendientes, no genera nada');
+    assert.deepEqual([normal.tipo, normal.gestion, normal.fecha], ['aviso', 'externa', '2026-12-22']);
+    assert.deepEqual(await datasetsDe(normal.id), [{ dataset_id: nuevo, cuenta_desde: null }], 'solo el dataset nuevo: el adelantado no se pudo buscar');
+    assert.equal(normal.presentada_por_id, autorizado.id);
+    assert.ok(!normal.html.includes('Este pedido ya se había adelantado'));
+
+    // Sin la falla, la corrida siguiente lo presenta en su fecha
+    const siguiente = await correr('2026-12-23');
+    assert.deepEqual(siguiente.errores, []);
+    const [, , enSuFecha, ...demas] = await notas();
+    assert.equal(demas.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-23']);
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
   });
 
   it('Estado: un sábado, después de la víspera, el próximo aviso externo es el lunes 22/12', async () => {
