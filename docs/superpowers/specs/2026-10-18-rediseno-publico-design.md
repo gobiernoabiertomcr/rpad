@@ -81,7 +81,7 @@ Sale de los colores de siempre: el azul institucional `#1A365D` (`--primary`) y 
 | `--cielo` | `#DCEEF5` | Banda pastel de arriba, nav activo, mes en curso (celeste del escudo, en pastel) |
 | `--cielo-medio` | `#9FD3E6` | Marcas de los 12 meses, subrayados |
 | `--sol` | `#FCE8A8` | Títulos del footer, aviso del filtro por mes (sol del escudo, en pastel) |
-| `--sol-fuerte` | `#F2B705` | Anillo de foco (`:focus-visible`) |
+| `--sol-fuerte` | `#F2B705` | Anillo de foco (`:focus-visible`) sobre fondos oscuros (menú lateral, footer); sobre fondos claros, halo alrededor de un anillo `--tinta` (el amarillo solo no llega a 3:1 sobre blanco) |
 
 Estados (cuadrito del mosaico / fondo de la insignia / texto de la insignia):
 
@@ -298,7 +298,7 @@ Ver `calendario.html` del mockup.
 - **Contraste y teclado**:
   - insignias y textos ≥ 4,5:1;
   - cuadritos, meses y filas son links reales (`<a>`);
-  - foco visible con anillo `--sol-fuerte` en links, botones y campos de las páginas públicas y de la carcasa;
+  - foco visible en links, botones y campos de las páginas públicas y de la carcasa. Sobre fondos claros: anillo `--tinta` de 3 px con un halo `--sol-fuerte`. Sobre fondos oscuros: anillo `--sol-fuerte`. El indicador llega al menos a 3:1 contra su fondo (WCAG 1.4.11);
   - `<label for>` en todos los filtros;
   - menú cerrado fuera del orden de tabulación;
   - botón del menú con `aria-label`, `aria-controls` y `aria-expanded`.
