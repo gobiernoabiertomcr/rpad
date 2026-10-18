@@ -7,6 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import crypto from 'crypto';
 import { esFinDeMes, TIPOS_PEDIDO } from '../services/fechasDatasetReglas.js';
 
 const SQL = fs.readFileSync(new URL('../database/updates/migracion-fechas-datasets-datos.sql', import.meta.url), 'utf8');
@@ -114,21 +115,31 @@ const FRASES_DE_PERIODO = [
 ];
 const CIERRE_DEL_PEDIDO = /Remitir en planillas? editables? \(Excel o CSV\) con las mismas columnas de(l| los) archivos? publicados?\.$/;
 
-// UPDATE datasets SET que_se_solicita = '…' WHERE id = N; el literal admite solo '' (comilla) y \\ (barra) como escapes
-const FORMA_TEXTO = /^UPDATE datasets SET que_se_solicita = '((?:[^'\\]|''|\\\\)*)' WHERE id = (\d+);$/;
+// UPDATE datasets SET que_se_solicita = '<nuevo>' WHERE id = N AND que_se_solicita = '<original>'; el literal admite solo
+// '' (comilla) y \\ (barra) como escapes. La guarda (AND que_se_solicita = '<original>') es opcional en la expresión para
+// que su falta la marque un test propio y no rompa la lectura del archivo.
+const LITERAL = "'((?:[^'\\\\]|''|\\\\\\\\)*)'";
+const FORMA_TEXTO = new RegExp(`^UPDATE datasets SET que_se_solicita = ${LITERAL} WHERE id = (\\d+)(?: AND que_se_solicita = ${LITERAL})?;$`);
 const desescapar = literal => literal.replace(/''/g, "'").replace(/\\\\/g, '\\');
+const md5 = texto => crypto.createHash('md5').update(texto, 'utf8').digest('hex');
 
 describe('migracion-fechas-datasets-textos.sql', () => {
   const SQL_TEXTOS = fs.readFileSync(new URL('../database/updates/migracion-fechas-datasets-textos.sql', import.meta.url), 'utf8');
   const LINEAS_TEXTOS = SQL_TEXTOS.split(/\r?\n/);
   const FILAS = LINEAS_TEXTOS.map((linea, i) => ({ linea, i })).filter(({ linea }) => /^\s*UPDATE\b/i.test(linea));
-  // Una entrada por UPDATE, en el orden del archivo: { id, texto, comentario (la línea de arriba) }
+  // Una entrada por UPDATE, en el orden del archivo: { id, texto, original (la guarda, o undefined), comentario (la línea
+  // de arriba) }
   const TEXTOS = FILAS.map(({ linea, i }) => {
     const m = FORMA_TEXTO.exec(linea);
     assert.ok(m, `UPDATE con una forma distinta de la acordada: ${linea.slice(0, 120)}`);
-    return { id: Number(m[2]), texto: desescapar(m[1]), comentario: LINEAS_TEXTOS[i - 1] };
+    return {
+      id: Number(m[2]), texto: desescapar(m[1]), original: m[3] === undefined ? undefined : desescapar(m[3]),
+      comentario: LINEAS_TEXTOS[i - 1]
+    };
   });
   const textoDe = id => TEXTOS.find(t => t.id === id)?.texto;
+  const originalDe = id => TEXTOS.find(t => t.id === id)?.original;
+  const CABECERA = LINEAS_TEXTOS.filter(l => l.startsWith('--')).join('\n');
 
   describe('forma del archivo', () => {
     it('no tiene DELIMITER ni USE, para poder pegarlo tal cual en phpMyAdmin', () => {
@@ -142,14 +153,41 @@ describe('migracion-fechas-datasets-textos.sql', () => {
       for (const l of sentencias.slice(1)) assert.match(l, /^UPDATE datasets SET que_se_solicita = '/, `sentencia inesperada: ${l.slice(0, 80)}`);
     });
 
-    it('la cabecera dice que va con la entrega 2 y no antes, de dónde sale y que se corre una sola vez', () => {
-      const cabecera = LINEAS_TEXTOS.filter(l => l.startsWith('--')).join('\n');
-      assert.match(cabecera, /entrega 2/i);
-      assert.match(cabecera, /no antes/i);
-      assert.match(cabecera, /Datos solicitados/);
-      assert.match(cabecera, /planilla/i);
-      assert.match(cabecera, /17\/10\/2026/);
-      assert.match(cabecera, /UNA SOLA VEZ/);
+    it('la cabecera dice el orden del kit único (después de subir los archivos y antes del Restart), de dónde sale y que se corre una sola vez', () => {
+      assert.match(CABECERA, /kit único/i);
+      assert.match(CABECERA, /SQL de estructura → SQL de datos → subir todos los archivos → ESTE SQL → Restart/);
+      assert.match(CABECERA, /no antes/i);
+      assert.match(CABECERA, /Datos solicitados/);
+      assert.match(CABECERA, /planilla/i);
+      assert.match(CABECERA, /columna C/);
+      assert.match(CABECERA, /columna D/);
+      assert.match(CABECERA, /UNA SOLA VEZ/);
+      assert.doesNotMatch(CABECERA, /entrega 2/i, 'ya no hay entregas separadas: es un solo kit');
+    });
+
+    it('la cabecera dice que se saltea el dataset cuyo texto cambió después del 17/10/2026', () => {
+      assert.match(CABECERA, /SOLO SI EL TEXTO SIGUE SIENDO EL ORIGINAL/);
+      assert.match(CABECERA, /cambió después del 17\/10\/2026/);
+      assert.match(CABECERA, /se saltea/);
+    });
+
+    it('la cabecera dice cómo verificar: 26 filas afectadas, y cómo encontrar los salteados', () => {
+      assert.match(CABECERA, /26 filas afectadas/);
+      assert.match(CABECERA, /0 filas afectadas/);
+      assert.match(CABECERA, /tiene que dar 0 filas/);
+    });
+
+    it('la consulta de verificación de la cabecera lista los 26 ids y el MD5 del texto nuevo de cada uno', () => {
+      const consulta = LINEAS_TEXTOS.filter(l => l.startsWith('--   ')).map(l => l.slice(5)).join('\n');
+      assert.match(consulta, /^SELECT id, titulo FROM datasets\n/);
+      assert.match(consulta, /CONCAT\(id, ':', COALESCE\(MD5\(que_se_solicita\), ''\)\) NOT IN \(/);
+      assert.match(consulta, /\);$/);
+      const ids = /WHERE id IN \(([\d, ]+)\)/.exec(consulta);
+      assert.ok(ids, 'sin WHERE id IN (…)');
+      assert.deepEqual(ids[1].split(', ').map(Number), IDS_DE_TEXTOS);
+      const pares = [...consulta.matchAll(/'(\d+):([0-9a-f]{32})'/g)].map(m => [Number(m[1]), m[2]]);
+      assert.deepEqual(pares.map(([id]) => id), IDS_DE_TEXTOS);
+      for (const [id, hash] of pares) assert.equal(hash, md5(textoDe(id)), `id ${id}: el MD5 no es el del texto nuevo`);
     });
 
     it('cada UPDATE lleva arriba el comentario con su id y el título del dataset', () => {
@@ -179,6 +217,24 @@ describe('migracion-fechas-datasets-textos.sql', () => {
       }
     });
 
+    it('cada UPDATE lleva la guarda del texto original (AND que_se_solicita = …), así no pisa uno que cambió después', () => {
+      for (const { id, original } of TEXTOS) {
+        assert.equal(typeof original, 'string', `id ${id}: sin la guarda AND que_se_solicita = '<texto original>'`);
+        assert.ok(original.length > 0, `id ${id}: la guarda está vacía`);
+      }
+      const guardas = SQL_TEXTOS.match(/ WHERE id = \d+ AND que_se_solicita = '/g) ?? [];
+      assert.equal(guardas.length, 26);
+    });
+
+    it('cada guarda es el texto con la frase del período: distinta del nuevo y con alguna de las seis frases', () => {
+      for (const { id, texto, original } of TEXTOS) {
+        assert.notEqual(original, texto, `id ${id}: la guarda es igual al texto nuevo`);
+        assert.ok(FRASES_DE_PERIODO.some(f => original?.toLowerCase().includes(f)), `id ${id}: la guarda no tiene frase de período`);
+        assert.equal(original, original?.trim(), `id ${id}: la guarda tiene espacios al borde`);
+        assert.doesNotMatch(original ?? '', /[\r\n\t]/, `id ${id}: la guarda tiene saltos o tabulaciones`);
+      }
+    });
+
     it('cada texto es una sola línea, sin espacios de más y termina con el pedido de la planilla editable', () => {
       for (const { id, texto } of TEXTOS) {
         assert.ok(texto.length > 0, `id ${id}: vacío`);
@@ -199,6 +255,18 @@ describe('migracion-fechas-datasets-textos.sql', () => {
     for (const [id, esperado] of conocidos) {
       it(`id ${id}`, () => {
         assert.equal(textoDe(id), esperado);
+      });
+    }
+  });
+
+  describe('guardas conocidas (idénticas a la columna C de la planilla, el texto de producción del 17/10/2026)', () => {
+    const conocidas = [
+      [10, 'Contratos de pauta publicitaria oficial difundidos en el Boletín Oficial en el nuevo período (el trimestre siguiente al último publicado), una fila por contrato, con fecha de emisión, razón social, características de la publicación, período o motivo facturado, monto y número de Boletín. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.'],
+      [61, 'Listado de habilitaciones comerciales otorgadas desde la última actualización publicada, una fila por comercio y rubro, con número de expediente, CUIT y titular, nombre de fantasía, domicilio (calle, altura y barrio), rubro habilitado y número de disposición. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.']
+    ];
+    for (const [id, esperado] of conocidas) {
+      it(`id ${id}`, () => {
+        assert.equal(originalDe(id), esperado);
       });
     }
   });
