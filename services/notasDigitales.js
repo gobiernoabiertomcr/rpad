@@ -42,7 +42,10 @@ export class ErrorDeUso extends Error {}
 // Es permanente mientras el aviso siga enviado: así un dataset nunca sale el mismo día en un aviso y en una reiteración ni
 // vuelve como aviso después de reiterado. Si el anticipado no salió (pendiente o fallido), la reiteración no lo tomaría y
 // el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-18, 7.7).
-const yaTocaReiterar = (dataset, dia) => dataset.aviso_estado === 'enviada' && dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
+// cumplioDiasParaReiterar es la prueba de fechas sola (la misma de seleccionarParaReiteracion): la comparten yaTocaReiterar y
+// el aviso en su fecha, que guarda sin cuenta_desde al dataset que pasó la prueba sin haber tenido su anticipado enviado.
+const cumplioDiasParaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
+const yaTocaReiterar = (dataset, dia) => dataset.aviso_estado === 'enviada' && cumplioDiasParaReiterar(dataset, dia);
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
 // los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
@@ -348,6 +351,55 @@ const prepararAviso = async (gestion, hoy, anticipo) => {
 const porVencimientoYTitulo = (a, b) =>
   a.vencimiento.localeCompare(b.vencimiento) || a.titulo.localeCompare(b.titulo, 'es') || a.id - b.id;
 
+// Lo que decide cómo sale el día, solo lectura, en el orden de la corrida: la firma de la fecha (modo, firma y licencia del
+// firmante) y, salvo en un día sin autorizado (en que no se genera ninguna nota), la autorización todavía no comunicada
+// (pendiente, y sus datos en autorizacion) y el anticipo de la víspera de una licencia (solo con el titular firmando).
+const contextoDelDia = async (config, fecha) => {
+  const { modo, firma, licencia } = await firmaParaFecha(config, fecha);
+  if (modo === 'sin_autorizado') return { modo, firma, licencia };
+  const pendiente = await autorizacionPendiente(config, fecha);
+  const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
+  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, fecha) : null;
+  return { modo, firma, licencia, pendiente, autorizacion, anticipo };
+};
+
+/**
+ * El aviso de una gestión en una fecha, solo lectura (sin notas, sin escrituras, sin resumen): lo arma la corrida y también
+ * las vistas previas. modo, licencia y anticipo son los de contextoDelDia; autorizacion, los datos de la autorización a
+ * comunicar (la corrida pasa null si la licencia cambió mientras se generaba). Devuelve:
+ * - datasets: la selección del día (prepararAviso: en la víspera de una licencia del firmante, con lo anticipado y su
+ *   cuenta_desde) y, con persona autorizada (modo 'autorizado', licencia del titular), lo adelantado en la víspera que hoy
+ *   toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6), ordenado por vencimiento y título. El que entra con los 20 días
+ *   ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar, 7.7) se guarda sin cuenta_desde: con la del
+ *   anticipado, la reiteración de esta misma corrida lo tomaría también;
+ * - rangoVencimientos: { desde, hasta } de los vencimientos, para el asunto de un aviso con datasets anticipados (spec 7.3).
+ *   Solo el de la víspera (con anticipo): los que salen en su fecha traen cuenta_desde, salvo el recuperado (con los 20 días
+ *   cumplidos), que va con null, pero el asunto lleva el mes de la nota;
+ * - autorizacion: la que comunica este aviso (solo la víspera, o sea con anticipo), si no null;
+ * - errorEnSuFecha: el error de buscar lo que sale en su fecha, o null. Si falla, datasets es la selección normal del día:
+ *   lo adelantado sale en la corrida siguiente.
+ */
+export const avisoDelDia = async ({ gestion, fecha, modo, licencia = null, anticipo = null, autorizacion = null }) => {
+  let datasets = await prepararAviso(gestion, fecha, anticipo);
+  let errorEnSuFecha = null;
+  if (modo === 'autorizado') {
+    try {
+      // Las licencias de la persona autorizada durante la del titular
+      const ausencias = (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
+      const enSuFecha = (await pendientesEnSuFecha(gestion, fecha, licencia, ausencias))
+        .filter(d => d.dia_en_su_fecha <= fecha && !yaTocaReiterar(d, fecha))
+        .map(d => (cumplioDiasParaReiterar(d, fecha) ? { ...d, cuenta_desde: null } : d));
+      if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
+    } catch (error) {
+      errorEnSuFecha = error;
+    }
+  }
+  const rangoVencimientos = anticipo && datasets.some(d => d.cuenta_desde)
+    ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
+    : null;
+  return { datasets, rangoVencimientos, autorizacion: anticipo ? autorizacion : null, errorEnSuFecha };
+};
+
 // ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
 const hayNotaDeAuditoria = async (fecha) => {
   const [[fila]] = await pool.query(
@@ -404,7 +456,8 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
   for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
-  let { modo, firma, licencia } = await firmaParaFecha(config, hoy);
+  const contexto = await contextoDelDia(config, hoy);
+  let { modo, firma, licencia } = contexto;
   // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
   // arriba siguen: su contenido ya está congelado.
   if (modo === 'sin_autorizado') {
@@ -414,8 +467,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // La autorización todavía no comunicada (spec 7.2) va en los avisos de la víspera, aunque ese día la persona autorizada
   // esté de licencia; si no hay avisos, o se dio más tarde, sale una nota de autorización firmada por el titular
-  const pendiente = await autorizacionPendiente(config, hoy);
-  const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
+  const { pendiente, autorizacion, anticipo } = contexto;
   let autorizacionComunicada = false;
   let autorizacionDesactualizada = false;
   // Registra en la licencia la nota que comunicó la autorización. Si la licencia cambió mientras se generaba (otra
@@ -449,7 +501,6 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   };
 
   // En la víspera de una licencia del firmante, el aviso suma lo que se habría avisado durante la licencia
-  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, hoy) : null;
   if (anticipo) {
     resumen.licencia = `Víspera de la licencia del firmante: avisos anticipados hasta el ${formatoCorto(anticipo.hasta)} más la ventana${autorizacion ? `, con la autorización a ${autorizacion.nombre}` : ''}`;
   } else if (pendiente) {
@@ -470,36 +521,20 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
   let avisoConAutorizacion = false;
-  // Las licencias de la persona autorizada durante la del titular: se leen una sola vez, la primera gestión que las necesita
-  let ausenciasDelAutorizado;
   for (const gestion of GESTIONES) {
     let id;
-    // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida)
-    const conAutorizacion = anticipo && autorizacion && !autorizacionDesactualizada ? autorizacion : null;
+    let conAutorizacion = null;
     try {
-      let datasets = await prepararAviso(gestion, hoy, anticipo);
-      // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella: se suma a
-      // la selección de hoy lo que hoy toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6). La licencia es la del titular.
-      // Si buscarlo falla, se informa y el aviso del día sale con la selección normal: lo adelantado sale en la corrida siguiente.
-      if (modo === 'autorizado') {
-        try {
-          ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
-          // El que entra con los 20 días ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar) se guarda sin
-          // cuenta_desde: con la del anticipado, la reiteración de esta misma corrida lo tomaría también
-          const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
-            .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy))
-            .map(d => (d.cuenta_desde <= sumarDias(hoy, -DIAS_PARA_REITERAR) ? { ...d, cuenta_desde: null } : d));
-          if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
-        } catch (error) {
-          anotarError(resumen, { tipo: 'aviso', gestion }, error);
-        }
-      }
+      // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida).
+      // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella; si buscarlo
+      // falla, se informa y el aviso del día sale con la selección normal (avisoDelDia).
+      const aviso = await avisoDelDia({
+        gestion, fecha: hoy, modo, licencia, anticipo, autorizacion: autorizacionDesactualizada ? null : autorizacion
+      });
+      if (aviso.errorEnSuFecha) anotarError(resumen, { tipo: 'aviso', gestion }, aviso.errorEnSuFecha);
+      const { datasets, rangoVencimientos } = aviso;
+      conAutorizacion = aviso.autorizacion;
       if (!datasets.length) continue;
-      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3). Solo el de
-      // la víspera: los datasets que salen en su fecha también traen cuenta_desde, pero el asunto lleva el mes de la nota.
-      const rangoVencimientos = anticipo && datasets.some(d => d.cuenta_desde)
-        ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
-        : null;
       id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
       resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
     } catch (error) {

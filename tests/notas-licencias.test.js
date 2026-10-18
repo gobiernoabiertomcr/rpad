@@ -10,7 +10,7 @@ import { lineasPorHoja, textosPorHoja } from './pdf-lector.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
 const PARRAFO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 26/11/2026 al 14/01/2027, con el objetivo de mantener el correcto flujo de trabajo.';
-let base, motor, firmas, dbReal, titular, autorizado;
+let base, motor, firmas, datos, dbReal, titular, autorizado;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -19,6 +19,7 @@ before(async () => {
   process.env.EMAIL_SOLO_A = '';
   motor = await import('../services/notasDigitales.js');
   firmas = await import('../services/notasDigitalesFirmas.js');
+  datos = await import('../services/notasDigitalesDatos.js');
 });
 
 after(async () => {
@@ -630,6 +631,91 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
       assert.deepEqual((await datasetsDe(reiteraciones[0].id)).map(d => d.dataset_id), [externo]);
       assert.ok(reiteraciones[0].html.includes(`>Nota Digital N° ${anticipado.numero}/26 (09/12/2026)`));
     });
+  });
+});
+
+// El aviso del día de una gestión (avisoDelDia): lo que la corrida arma por gestión, sin escribir nada. Lo comparten la corrida
+// y las vistas previas de Correos (spec 2026-10-18, 7.6 y 7.7). Acá se lo llama con el contexto que arma la corrida: el modo, la
+// licencia y, en la víspera, el anticipo y la autorización.
+describe('avisoDelDia: la selección del aviso de una gestión, sin escrituras', () => {
+  const DATOS_DE_AUTORIZACION = { nombre: 'Firma admin', cargo: 'Cargo admin', contratado: false, email: 'admin@rpad.test', desde: '2026-11-26', hasta: '2027-01-14' };
+  const ids = (lista) => lista.map(d => d.id);
+
+  it('la víspera con persona autorizada: los dos datasets con su cuenta_desde, el rango de vencimientos y la autorización', async () => {
+    await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    const enero = await crearDataset({ titulo: 'Vence el 25 de enero', vencimiento: '2027-01-25' });
+    const febrero = await crearDataset({ titulo: 'Vence el 15 de febrero', vencimiento: '2027-02-15' });
+    const anticipo = await firmas.anticipoPorLicencia(await config(), '2026-11-25');
+    assert.ok(anticipo, 'el 25/11 es la víspera');
+
+    const aviso = await motor.avisoDelDia({
+      gestion: 'interna', fecha: '2026-11-25', modo: 'titular', licencia: null, anticipo, autorizacion: DATOS_DE_AUTORIZACION
+    });
+    assert.deepEqual(ids(aviso.datasets), [enero, febrero]);
+    // Los dos entran por el anticipo: guardan su fecha normal de aviso (la ventana de 60 días abre el 26/11 y el 17/12)
+    assert.deepEqual(aviso.datasets.map(d => d.cuenta_desde), ['2026-11-26', '2026-12-17']);
+    assert.deepEqual(aviso.rangoVencimientos, { desde: '2027-01-25', hasta: '2027-02-15' });
+    assert.deepEqual(aviso.autorizacion, DATOS_DE_AUTORIZACION);
+    assert.equal(aviso.errorEnSuFecha, null);
+    assert.equal((await notas()).length, 0, 'no genera ninguna nota');
+  });
+
+  it('en su fecha, con persona autorizada: el adelantado sale con su nota, sin rango de vencimientos ni autorización', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    const externo = await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+    await correr('2026-12-09');
+    const [anticipada, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    const { modo, licencia: delTitular } = await firmas.firmaParaFecha(await config(), '2026-12-22');
+    assert.equal(modo, 'autorizado');
+
+    const aviso = await motor.avisoDelDia({
+      gestion: 'externa', fecha: '2026-12-22', modo, licencia: delTitular, anticipo: null, autorizacion: DATOS_DE_AUTORIZACION
+    });
+    assert.deepEqual(ids(aviso.datasets), [externo]);
+    assert.deepEqual(aviso.datasets[0].adelantado, { numero: anticipada.numero, anio: anticipada.anio, fecha: '2026-12-09' });
+    assert.equal(aviso.datasets[0].cuenta_desde, '2026-12-22');
+    assert.equal(aviso.rangoVencimientos, null);
+    assert.equal(aviso.autorizacion, null, 'fuera de la víspera la autorización no se comunica');
+    assert.equal(aviso.errorEnSuFecha, null);
+    // La otra gestión no tiene nada adelantado
+    assert.deepEqual((await motor.avisoDelDia({ gestion: 'interna', fecha: '2026-12-22', modo, licencia: delTitular })).datasets, []);
+    assert.equal((await notas()).length, 1, 'no genera ninguna nota');
+  });
+
+  it('un día normal sin licencia: la selección de siempre', async () => {
+    const proximo = await crearDataset({ titulo: 'Vence en diciembre', vencimiento: '2026-12-31' });
+    await crearDataset({ titulo: 'Vence en abril', vencimiento: '2027-04-30' });
+    const esperados = await datos.seleccionarParaAviso('interna', '2026-11-02');
+    assert.deepEqual(ids(esperados), [proximo]);
+
+    const aviso = await motor.avisoDelDia({ gestion: 'interna', fecha: '2026-11-02', modo: 'titular' });
+    assert.deepEqual(ids(aviso.datasets), ids(esperados));
+    assert.equal(aviso.rangoVencimientos, null);
+    assert.equal(aviso.autorizacion, null);
+    assert.equal(aviso.errorEnSuFecha, null);
+  });
+
+  it('si falla la búsqueda de lo que sale en su fecha, devuelve la selección normal y el error', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+    await correr('2026-12-09');
+    const nuevo = await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2027-01-31' });
+    const { modo, licencia: delTitular } = await firmas.firmaParaFecha(await config(), '2026-12-22');
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    const falla = mock.method(pool, 'query', function (sql, params) {
+      if (String(sql).includes('otro.dataset_id')) return Promise.reject(new Error('Falla simulada'));
+      return consultaOriginal.call(this, sql, params);
+    });
+    let aviso;
+    try {
+      aviso = await motor.avisoDelDia({ gestion: 'externa', fecha: '2026-12-22', modo, licencia: delTitular });
+    } finally {
+      falla.mock.restore();
+    }
+    assert.deepEqual(ids(aviso.datasets), [nuevo], 'solo el dataset nuevo: el adelantado no se pudo buscar');
+    assert.equal(aviso.errorEnSuFecha?.message, 'Falla simulada');
   });
 });
 
