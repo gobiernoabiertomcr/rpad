@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-15
 **Estado:** diseño aprobado, pendiente de revisión de esta especificación
-**Actualizada el 2026-10-18:** con persona autorizada, cada aviso adelantado se vuelve a presentar en su fecha (sección 7.6)
+**Actualizada el 2026-10-18:** con persona autorizada, cada aviso adelantado se vuelve a presentar en su fecha (sección 7.6); la vista previa y la prueba de Correos muestran la nota como saldría (sección 7.7)
 
 ## 1. Objetivo
 
@@ -214,7 +214,7 @@ Pedido del usuario el 18/10/2026. Con persona autorizada, el aviso anticipado de
 - sigue activo, de esa gestión y con frecuencia periódica (la misma condición base de la selección);
 - todavía no tiene su aviso en su fecha (no hay otra fila de aviso de ese vencimiento);
 - su **día del aviso en su fecha** es hoy o ya pasó: si una corrida no se hizo, sale en la siguiente, siempre dentro de la licencia y con la persona autorizada presentando.
-- no le toca todavía la reiteración: si ese día ya pasaron 20 días desde su `cuenta_desde` (la regla de la reiteración), no entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada. Pasa solo cuando el aviso en su fecha se recupera 20 días tarde o más (por ejemplo, con una autorización cargada con la licencia avanzada): así un dataset nunca sale el mismo día en un aviso y en una reiteración.
+- no le toca todavía la reiteración: si ese día ya pasaron 20 días desde su `cuenta_desde` (la regla de la reiteración), no entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada. Pasa solo cuando el aviso en su fecha se recupera 20 días tarde o más (por ejemplo, con una autorización cargada con la licencia avanzada): así un dataset nunca sale el mismo día en un aviso y en una reiteración. Esta exclusión vale solo si el aviso anticipado se envió: si quedó pendiente o fallido, la reiteración no lo tomaría (pide un aviso enviado), así que entra en el aviso en su fecha aunque hayan pasado los 20 días (cambio del 18/10/2026, 7.7).
 
 **Día del aviso en su fecha.** Es `cuenta_desde`, su fecha normal de aviso (7.3), si ese día la persona autorizada está disponible. Si ese día está de licencia, es el último día hábil anterior en que está disponible, dentro de la licencia del titular. Si no hay ninguno (falta desde el primer día de la licencia del titular hasta esa fecha), no hay aviso en su fecha: ese dataset ya salió en el aviso anticipado de la víspera.
 
@@ -232,7 +232,7 @@ Inmediatamente después del primer párrafo lleva:
 
 Si la nota tiene también datasets que no se habían adelantado (por ejemplo, uno nuevo), o si los adelantaron notas distintas, va una oración por cada nota que adelantó alguno, con los títulos entre comillas: *"El conjunto de datos "{título}" ya se había adelantado por Nota Digital N° {n}/{aa} del {dd/mm/aaaa}."* o *"Los conjuntos de datos "{título}", "{título}" y "{título}" ya se habían adelantado por …"*.
 
-**Lo que guarda.** Cada dataset del aviso en su fecha queda en `notas_digitales_datasets` con la `cuenta_desde` de su aviso anticipado: los 20 días de la reiteración se siguen contando desde su fecha normal.
+**Lo que guarda.** Cada dataset del aviso en su fecha queda en `notas_digitales_datasets` con la `cuenta_desde` de su aviso anticipado: los 20 días de la reiteración se siguen contando desde su fecha normal. La excepción es el que entra con los 20 días ya cumplidos porque su aviso anticipado no salió: se guarda sin `cuenta_desde`, así los 20 días cuentan desde el aviso en su fecha y esa misma corrida no lo reitera.
 
 **Reiteraciones.** Un dataset con aviso anticipado y aviso en su fecha aparece una sola vez en la reiteración. "Informado en" nombra los avisos enviados de ese vencimiento, en orden: `Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)`, seguido de "– reiterado N veces" como siempre.
 
@@ -249,6 +249,31 @@ Si la nota tiene también datasets que no se habían adelantado (por ejemplo, un
 | lun 01/02/2027 | Reiteración externa: "Informado en: Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)" |
 
 Si la persona autorizada estuviera de licencia del 21/12 al 23/12, el aviso externo en su fecha saldría el viernes 18/12, el último día hábil anterior en que está disponible.
+
+### 7.7 Vista previa y prueba de Correos (cambio del 18/10/2026)
+
+Pedido del usuario el 18/10/2026. La vista previa (HTML, PDF y anexo) y "Enviarme una prueba" muestran la nota **tal como saldría**, con la misma selección que la corrida.
+
+**Qué fecha.** La de la próxima corrida que genera notas:
+- hoy, si es día hábil y ese día se generan notas;
+- si no, el primer día hábil siguiente en que sí. Hoy no se generan notas un día no hábil, durante una licencia del firmante sin persona autorizada y los días en que la persona autorizada también está de licencia.
+
+Cuando la fecha no es hoy, arriba de la vista previa dice *"Hoy no se generan notas ({motivo}): así saldría el {dd/mm/aaaa}."*, con uno de estos motivos:
+- `día no hábil`;
+- `licencia del firmante sin persona autorizada`;
+- `la persona autorizada está de licencia`.
+
+La prueba usa esa misma fecha, y el PDF de prueba la lleva. El envío automático desactivado no cambia la fecha: la vista previa sirve igual. Si en el próximo año no hubiera ningún día con notas, se muestra hoy, como antes.
+
+**Qué contenido.** El mismo que la corrida ese día:
+- en la víspera de una licencia del firmante, los avisos anticipados con el asunto "vencimientos de …" y, con persona autorizada, el párrafo de autorización;
+- durante la licencia con persona autorizada, los avisos en su fecha (7.6), con el párrafo que cita la nota anticipada, las dos firmas y la leyenda;
+- si la autorización todavía no se comunicó (autorización tardía o cambiada, 7.2), la leyenda cita la "Nota Digital N° XX": en la corrida, la nota de autorización sale primero;
+- sin datasets, el ejemplo de siempre, con la firma de esa fecha.
+
+La vista previa no cambia nada: no genera la nota de autorización ni registra nada.
+
+**Una sola selección.** La corrida y la vista previa arman el aviso de cada gestión con la misma función, así no pueden diferir. La reiteración y la nota de auditoría de la vista previa usan la misma fecha (y su firma), y su contenido sigue sus reglas de siempre.
 
 ## 8. Roles: editor y auditores (entrega 3)
 
