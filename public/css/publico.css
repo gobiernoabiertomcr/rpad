@@ -1,0 +1,744 @@
+/**
+ * =====================================================
+ * RPAD - Páginas públicas
+ * Spec 2026-10-18-rediseno-publico, secciones 4, 6 y 11
+ * =====================================================
+ * Lo cargan solo las cinco páginas públicas (index, datasets, dataset, calendario y contacto), después de main.css: por
+ * eso las insignias pastel no llegan a administración. Usa los tokens de main.css (--tinta, --cielo, --f-titulo, ...).
+ * Todo va dentro de .publico-contenedor (o de la banda), así no toca la carcasa: el encabezado, el menú lateral y el
+ * footer siguen con las reglas de main.css.
+ */
+
+/* =====================================================
+   COLORES DE ESTADO (spec 4.1): cuadrito, fondo de la insignia y texto de la insignia (texto sobre fondo ≥ 4,5:1)
+   ===================================================== */
+:root {
+    --cuadro-actualizado: #7FCBA9;
+    --fondo-actualizado: #D5F0E3;
+    --texto-actualizado: #1D6648;
+    --cuadro-proximo: #F3C55C;
+    --fondo-proximo: #FCEBC0;
+    --texto-proximo: #7A4D00;
+    --cuadro-atrasado: #EE8E86;
+    --fondo-atrasado: #FADAD6;
+    --texto-atrasado: #9A2B26;
+    --cuadro-sin-respuesta: #B39DE6;
+    --fondo-sin-respuesta: #E7DEFA;
+    --texto-sin-respuesta: #55339A;
+    --cuadro-eventual: #C2CCD9;
+    --fondo-eventual: #E4E9F0;
+    --texto-eventual: #45556B;
+
+    /* Radios por jerarquía (spec 4.3) */
+    --radio-panel: 22px;
+    --radio-tarjeta: 16px;
+    --radio-campo: 12px;
+    --radio-cuadro: 5px;
+}
+
+/* =====================================================
+   BASE
+   ===================================================== */
+/* <main class="main-content main-publico">: sin relleno (la banda va de borde a borde y el ancho lo pone
+   .publico-contenedor) y sin un mínimo de ancho que empuje la página en el celular */
+.main-content.main-publico {
+    --relleno-main: 0;
+    min-width: 0;
+    background: var(--bruma);
+    color: var(--texto);
+    line-height: 1.55;
+}
+
+/* El ancho de las páginas públicas (no en .main-content: perfil.html lo necesita sin max-width) */
+.publico-contenedor {
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+.publico-contenedor > * {
+    min-width: 0;
+}
+
+.publico-contenedor h1,
+.publico-contenedor h2,
+.publico-contenedor h3 {
+    font-weight: 750;
+    line-height: 1.12;
+    color: var(--tinta);
+}
+
+/* Foco sobre fondos claros (spec 4.1 y 11): anillo --tinta de 3 px con un halo --sol-fuerte, al menos 3:1 contra el fondo.
+   El footer (azul) sigue con el anillo --sol-fuerte de main.css: no está dentro de .publico-contenedor */
+.publico-contenedor a:focus-visible,
+.publico-contenedor button:focus-visible,
+.publico-contenedor input:focus-visible,
+.publico-contenedor select:focus-visible,
+.publico-contenedor textarea:focus-visible,
+.publico-contenedor summary:focus-visible,
+.publico-contenedor [tabindex]:focus-visible {
+    outline: 3px solid var(--tinta);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--sol-fuerte);
+}
+
+/* Solo para lectores de pantalla */
+.solo-lectores {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* =====================================================
+   BANDA CELESTE Y OLA (spec 4.3: la ola es el único adorno)
+   ===================================================== */
+.banda {
+    position: relative;
+    background: var(--cielo);
+}
+
+/* .publico-contenedor pone los costados; el espacio de abajo deja lugar a la ola */
+.banda-cuerpo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding-top: 40px;
+    padding-bottom: 56px;
+}
+
+.banda h1 {
+    font-size: clamp(1.9rem, 3.2vw, 2.5rem);
+}
+
+.banda .bajada {
+    max-width: 60ch;
+    margin-top: 10px;
+    font-size: 1.05rem;
+    color: var(--texto);
+}
+
+/* El SVG va en cada página: <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true"> */
+.ola {
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    display: block;
+    width: 100%;
+    height: 28px;
+    color: var(--bruma);
+    pointer-events: none;
+}
+
+/* =====================================================
+   BOTONES (en píldora) Y LINKS
+   ===================================================== */
+.btn-tinta,
+.btn-borde {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 20px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-family: var(--f-texto);
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-tinta svg,
+.btn-borde svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.btn-tinta {
+    background: var(--tinta);
+    color: white;
+}
+
+.btn-tinta:hover {
+    background: var(--tinta-honda);
+}
+
+.btn-borde {
+    background: transparent;
+    border-color: var(--tinta);
+    color: var(--tinta);
+}
+
+.btn-borde:hover {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.btn-chico {
+    min-height: 36px;
+    padding: 6px 14px;
+    font-size: 0.88rem;
+}
+
+.btn-tinta:disabled,
+.btn-borde:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Link de texto, subrayado celeste (sin flechas) */
+.enlace {
+    font-weight: 600;
+    color: var(--tinta);
+    text-decoration: underline;
+    text-decoration-color: var(--cielo-medio);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
+.enlace:hover {
+    text-decoration-color: var(--tinta);
+}
+
+/* =====================================================
+   CAMPOS (label + input/select)
+   ===================================================== */
+.campo {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.campo label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--tinta);
+}
+
+.campo input,
+.campo select,
+.campo textarea {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-campo);
+    background: var(--papel);
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--texto);
+}
+
+.campo input:hover,
+.campo select:hover,
+.campo textarea:hover {
+    border-color: var(--cielo-medio);
+}
+
+/* =====================================================
+   CUADRITO DE ESTADO (spec 4.3: cuadrito = conjunto de datos)
+   ===================================================== */
+.tile {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+}
+
+.c-actualizado { background: var(--cuadro-actualizado); }
+.c-proximo { background: var(--cuadro-proximo); }
+.c-atrasado { background: var(--cuadro-atrasado); }
+.c-sin-respuesta { background: var(--cuadro-sin-respuesta); }
+.c-eventual,
+.c-sin-fecha { background: var(--cuadro-eventual); }
+
+/* =====================================================
+   INSIGNIAS PASTEL (solo en las públicas; administración sigue con las de main.css)
+   El markup no cambia (<span class="badge badge-…">Texto</span>): el cuadrito lo dibuja ::before
+   ===================================================== */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.badge::before {
+    content: '';
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: currentColor;
+    opacity: 0.55;
+}
+
+.badge-success {
+    background: var(--fondo-actualizado);
+    color: var(--texto-actualizado);
+}
+
+.badge-warning {
+    background: var(--fondo-proximo);
+    color: var(--texto-proximo);
+}
+
+.badge-danger {
+    background: var(--fondo-atrasado);
+    color: var(--texto-atrasado);
+}
+
+.badge-sin-respuesta {
+    background: var(--fondo-sin-respuesta);
+    color: var(--texto-sin-respuesta);
+}
+
+.badge-secondary {
+    background: var(--fondo-eventual);
+    color: var(--texto-eventual);
+}
+
+/* =====================================================
+   LISTAS DE FILAS (sin cajas: líneas, con una línea --tinta arriba)
+   ===================================================== */
+.lista {
+    margin-top: 12px;
+    list-style: none;
+    border-top: 2px solid var(--tinta);
+}
+
+.lista > li {
+    border-bottom: 1px solid var(--linea);
+}
+
+/* Toda la fila es el link: título y meta a la izquierda, el dato a la derecha */
+.fila {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 16px;
+    align-items: center;
+    padding: 13px 8px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.fila:hover {
+    background: var(--papel);
+}
+
+/* El título y la meta, juntos en el medio aunque el dato de la derecha sea más alto */
+.fila-titulo {
+    align-self: end;
+    font-weight: 700;
+    color: var(--tinta);
+    overflow-wrap: anywhere;
+}
+
+.fila:hover .fila-titulo {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.fila-meta {
+    grid-column: 1;
+    align-self: start;
+    font-size: 0.85rem;
+    color: var(--suave);
+}
+
+.fila-dato {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    font-size: 0.85rem;
+    text-align: right;
+    color: var(--suave);
+}
+
+.fila-dato strong {
+    font-family: var(--f-titulo);
+    font-size: 1rem;
+    font-weight: 750;
+    color: var(--texto);
+}
+
+.fila-dato .badge {
+    margin-top: 4px;
+}
+
+/* =====================================================
+   MENSAJES: vacío, error y cargando
+   ===================================================== */
+.aviso {
+    padding: 16px 8px;
+    color: var(--suave);
+}
+
+.aviso-error {
+    padding: 14px 16px;
+    border: 1px solid var(--cuadro-atrasado);
+    border-radius: var(--radio-campo);
+    background: var(--fondo-atrasado);
+    font-weight: 600;
+    color: var(--texto-atrasado);
+}
+
+.cargando {
+    padding: 16px 8px;
+    color: var(--suave);
+}
+
+/* =====================================================
+   PORTADA (spec 6)
+   ===================================================== */
+/* La banda en dos columnas: el índice a la izquierda y el mosaico a la derecha */
+.portada-banda {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    align-items: center;
+    gap: 56px;
+    padding-top: 56px;
+    padding-bottom: 72px;
+}
+
+/* Si no se pudieron cargar los datos, queda solo la columna del índice con el aviso */
+.portada-banda.portada-sin-datos {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.indice h1 {
+    max-width: 16ch;
+    font-size: clamp(2rem, 3.6vw, 2.75rem);
+}
+
+.indice-frase {
+    max-width: 30ch;
+    margin-top: 22px;
+    font-size: 1.3rem;
+    line-height: 1.45;
+    color: var(--texto);
+}
+
+.indice-cifra {
+    font-family: var(--f-titulo);
+    font-weight: 750;
+    color: var(--tinta);
+}
+
+.indice-aclaracion {
+    max-width: 44ch;
+    margin-top: 14px;
+    color: var(--texto);
+}
+
+.indice-frase:empty,
+.indice-aclaracion:empty,
+.indice-situacion:empty {
+    display: none;
+}
+
+.acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+}
+
+.indice-situacion {
+    margin-top: 24px;
+    font-size: 0.875rem;
+    color: var(--suave);
+}
+
+.indice .aviso-error {
+    max-width: 44ch;
+    margin-top: 24px;
+}
+
+/* El mosaico: un cuadrito por conjunto de datos, agrupado por estado. La única sombra marcada (spec 4.3) */
+.mosaico {
+    padding: 28px 30px 22px;
+    border-radius: var(--radio-panel);
+    background: var(--papel);
+    box-shadow: 0 1px 0 rgba(26, 54, 93, 0.06), 0 18px 40px -24px rgba(26, 54, 93, 0.35);
+}
+
+.mosaico-grupo + .mosaico-grupo {
+    margin-top: 18px;
+}
+
+.mosaico-cabeza {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.publico-contenedor .mosaico-cabeza h3 {
+    font-size: 1.05rem;
+}
+
+.mosaico-cuenta {
+    font-family: var(--f-titulo);
+    font-size: 1.05rem;
+    font-weight: 750;
+    color: var(--suave);
+}
+
+.cuadros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.cuadro {
+    display: block;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radio-cuadro);
+    transition: transform 0.12s ease;
+}
+
+/* La única respuesta al mouse y al foco: la escala (spec 4.3); arriba de los vecinos, así se ve el anillo */
+.cuadro:hover,
+.cuadro:focus-visible {
+    position: relative;
+    z-index: 1;
+    transform: scale(1.3);
+}
+
+.leyenda-vencidos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 6px;
+    font-size: 0.82rem;
+    color: var(--suave);
+}
+
+.leyenda-vencidos > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Lugar para tres renglones (borde, relleno y 3 × 1,55em): con un título y un área largos, el panel no crece al pasar el
+   mouse y la columna del índice no salta */
+.mosaico-pie {
+    min-height: calc(15px + 4.65em);
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--linea);
+    font-size: 0.9rem;
+    color: var(--suave);
+}
+
+.mosaico-pie strong {
+    color: var(--tinta);
+}
+
+/* Secciones debajo de la banda */
+.seccion {
+    padding-top: 44px;
+}
+
+.seccion-cabeza {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 22px;
+}
+
+.publico-contenedor .seccion-cabeza h2 {
+    font-size: 1.6rem;
+}
+
+.seccion-cabeza p {
+    font-size: 0.95rem;
+    color: var(--suave);
+}
+
+/* Qué vence en los próximos 12 meses: una columna por mes, que en el celular se desplaza dentro de su caja (la página no).
+   El margen negativo y el relleno dejan lugar al anillo del foco, que la caja recortaría */
+.meses-marco {
+    margin: -6px;
+    padding: 6px;
+    overflow-x: auto;
+}
+
+.meses,
+.meses-nombres {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(52px, 1fr));
+    gap: 6px;
+}
+
+.meses {
+    border-bottom: 2px solid var(--tinta);
+}
+
+.meses > .cargando {
+    grid-column: 1 / -1;
+}
+
+.mes {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px 10px;
+    border-radius: 12px 12px 0 0;
+    color: inherit;
+    text-decoration: none;
+}
+
+.mes:hover {
+    background: var(--papel);
+}
+
+.mes.actual {
+    background: var(--cielo);
+}
+
+.mes-cuenta {
+    margin-bottom: 8px;
+    font-family: var(--f-titulo);
+    font-size: 1.05rem;
+    font-weight: 750;
+    color: var(--tinta);
+}
+
+/* Los meses sin vencimientos, más livianos pero legibles (≥ 4,5:1 también sobre --cielo) */
+.mes-cuenta.cero {
+    font-weight: 600;
+    color: var(--suave);
+}
+
+/* Una marca por conjunto, apiladas desde abajo; la columna crece si un mes tiene muchas */
+.mes-pila {
+    flex: 1;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 3px;
+    min-height: 190px;
+}
+
+.mes-pila i {
+    display: block;
+    width: 18px;
+    height: 8px;
+    border-radius: 3px;
+    background: var(--cielo-medio);
+}
+
+.meses-nombres span {
+    padding-top: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--suave);
+}
+
+.meses-nombres .actual {
+    color: var(--tinta);
+}
+
+/* Vencidos a la izquierda; Próximos a vencer y Últimas cargas a la derecha */
+.columnas {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    align-items: start;
+    gap: 56px;
+    padding-top: 48px;
+}
+
+.columnas > * {
+    min-width: 0;
+}
+
+.bloque + .bloque {
+    margin-top: 40px;
+}
+
+.publico-contenedor .bloque h2 {
+    font-size: 1.4rem;
+}
+
+.bloque .bajada {
+    margin-top: 4px;
+    font-size: 0.92rem;
+    color: var(--suave);
+}
+
+.bloque-pie {
+    margin-top: 14px;
+}
+
+/* =====================================================
+   RESPONSIVE: 980 px (una columna) y 760 px (celular)
+   ===================================================== */
+@media (max-width: 980px) {
+    .portada-banda {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 32px;
+        padding-top: 36px;
+    }
+
+    .columnas {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 40px;
+    }
+}
+
+@media (max-width: 760px) {
+    .publico-contenedor {
+        padding: 0 16px;
+    }
+
+    .mosaico {
+        padding: 20px 18px;
+    }
+
+    .cuadro {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* Sin movimiento: los cuadritos no se agrandan */
+@media (prefers-reduced-motion: reduce) {
+    .cuadro {
+        transition: none;
+    }
+
+    .cuadro:hover,
+    .cuadro:focus-visible {
+        transform: none;
+    }
+}

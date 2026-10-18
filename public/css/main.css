@@ -1160,28 +1160,9 @@ button {
     animation: fadeIn 0.5s ease;
 }
 
-.animate-slide-up {
-    animation: slideUp 0.5s ease;
-}
-
-.animate-fade-in-item {
-    animation: fadeIn 0.3s ease forwards;
-}
-
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
-}
-
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 @keyframes spin {

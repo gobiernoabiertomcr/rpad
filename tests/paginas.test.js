@@ -98,12 +98,12 @@ describe('páginas', () => {
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página. index.html entra cuando se reescribe la portada (son 13 con ella)
-  const CON_CARCASA = paginas.filter(p => p !== 'index.html' && leer(p).includes('id="sidebar"'));
+  // copiados a mano en cada página (las 13, con la portada)
+  const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 12 páginas con carcasa (sin contar index.html)', () => {
-    assert.equal(CON_CARCASA.length, 12);
+  it('hay 13 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 13);
   });
 
   for (const pagina of CON_CARCASA) {
@@ -136,18 +136,44 @@ describe('páginas', () => {
     });
   }
 
-  for (const [pagina, actual] of [['datasets.html', 'datasets.html'], ['dataset.html', 'datasets.html'], ['calendario.html', 'calendario.html'], ['contacto.html', 'contacto.html']]) {
+  const MARCAS_DEL_NAV = [['index.html', 'index.html'], ['datasets.html', 'datasets.html'], ['dataset.html', 'datasets.html'], ['calendario.html', 'calendario.html'], ['contacto.html', 'contacto.html']];
+  for (const [pagina, actual] of MARCAS_DEL_NAV) {
     it(`${pagina}: el nav marca la página actual`, () => {
       assert.match(leer(pagina), new RegExp(`<a href="${actual.replace('.', '\\.')}" aria-current="page">`));
       assert.equal(leer(pagina).match(/aria-current=/g).length, 1, 'una sola página actual');
     });
   }
 
-  for (const pagina of CON_CARCASA.filter(p => !['datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'].includes(p))) {
+  for (const pagina of CON_CARCASA.filter(p => !MARCAS_DEL_NAV.some(([publica]) => publica === p))) {
     it(`${pagina}: las de administración no marcan ninguna página del nav`, () => {
       assert.doesNotMatch(leer(pagina), /aria-current=/);
     });
   }
+
+  // publico.css (spec 2026-10-18-rediseno-publico, 5.4): solo en las 5 públicas, con la misma versión que main.css, así las
+  // insignias pastel no llegan a administración
+  const PUBLICAS = ['index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
+  const PENDIENTES = ['datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
+  for (const pagina of paginas) {
+    it(`${pagina}: publico.css ${PUBLICAS.includes(pagina) ? 'con' : 'sin'} ?v=${VERSION_CSS}`, () => {
+      const usos = leer(pagina).match(/css\/publico\.css[^"]*"/g) || [];
+      // index.html entra acá; las otras cuatro públicas se suman en sus tareas: hasta entonces se listan en PENDIENTES
+      if (PUBLICAS.includes(pagina) && !PENDIENTES.includes(pagina)) assert.deepEqual(usos, [`css/publico.css?v=${VERSION_CSS}"`]);
+      else if (!PUBLICAS.includes(pagina)) assert.deepEqual(usos, []);
+    });
+  }
+
+  it('index.html: sin <style> propio ni Chart.js', () => {
+    const html = leer('index.html');
+    assert.doesNotMatch(html, /<style/);
+    assert.doesNotMatch(html, /chart\.js|chart\.umd/i);
+  });
+
+  // publico.css va después de main.css: pisa lo que haga falta solo en las públicas
+  it('index.html: main.css y después publico.css', () => {
+    const html = leer('index.html');
+    assert.ok(html.indexOf('css/main.css?v=') !== -1 && html.indexOf('css/main.css?v=') < html.indexOf('css/publico.css?v='));
+  });
 
   it('login.html: el logo es logo-2025-blanco.png', () => {
     assert.ok(leer('login.html').includes('src="img/logo-2025-blanco.png"'));
