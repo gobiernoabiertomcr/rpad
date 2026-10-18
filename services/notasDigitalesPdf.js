@@ -499,6 +499,13 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       parrafo(nota.autorizacion);
     }
 
+    // Párrafo del adelanto (aviso en su fecha de un pedido que la nota de la víspera ya había adelantado, spec 7.6): enseguida
+    // del de autorización, si lo hay, con el mismo cuidado: entero en la hoja o entero en la siguiente
+    if (nota.adelanto) {
+      asegurarEspacio(altoTexto(nota.adelanto) + altoEspacio(ESPACIO_PARRAFO, 12));
+      parrafo(nota.adelanto);
+    }
+
     // El título, la introducción (si tiene), el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
     // (fuenteTitulo: la letra con la que se mide el título; las secciones de siempre lo miden en NORMAL, como hasta ahora, y las
     // del detalle de la nota de auditoría, que traen el título del dataset y pueden pasar a dos renglones, en NEGRITA, que

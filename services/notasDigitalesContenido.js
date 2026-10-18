@@ -123,12 +123,44 @@ const situacion = (vencimiento, fecha) => {
   return `Vencido hace ${cantidad(-dias, 'día', 'días')}`;
 };
 
-// Un vencido que nunca tuvo aviso (spec 5.3, condición 2) dice "Sin aviso previo"
+// "A", "B" y "C": los elementos separados por coma y un "y" antes del último
+const enumeracion = (elementos) => (elementos.length > 1
+  ? `${elementos.slice(0, -1).join(', ')} y ${elementos.at(-1)}`
+  : elementos.join(''));
+
+// Un vencido que nunca tuvo aviso (spec 5.3, condición 2) dice "Sin aviso previo". Un dataset con más de un aviso (aviso
+// anticipado y aviso en su fecha, spec 2026-10-15, 7.6) los nombra todos: informado es el primero y informado.tambien, los demás
 const textoInformado = (dataset) => {
-  const base = dataset.informado
-    ? `Nota Digital N° ${textoNumero(dataset.informado)} (${formatoCorto(dataset.informado.fecha)})`
+  const avisos = dataset.informado ? [dataset.informado, ...(dataset.informado.tambien ?? [])] : [];
+  const base = avisos.length
+    ? `Nota Digital ${enumeracion(avisos.map(aviso => `N° ${textoNumero(aviso)} (${formatoCorto(aviso.fecha)})`))}`
     : 'Sin aviso previo';
   return dataset.reiteraciones > 0 ? `${base} – reiterado ${cantidad(dataset.reiteraciones, 'vez', 'veces')}` : base;
+};
+
+// Párrafo del aviso en su fecha con persona autorizada (spec 2026-10-15, 7.6): los datasets que la nota anticipada de la víspera
+// ya había pedido (adelantado: { numero, anio, fecha }) se citan con esa nota. Si lo adelantó la misma nota a todos, "Este
+// pedido …"; si no, una oración por cada nota que adelantó alguno, en el orden de su primera aparición, con los títulos
+// entre comillas. Sin ningún adelantado, null.
+export const textoAdelanto = (datasets) => {
+  const porNota = new Map();
+  for (const dataset of datasets) {
+    if (!dataset.adelantado) continue;
+    const { numero, anio } = dataset.adelantado;
+    const clave = `${numero}/${anio}`;
+    if (!porNota.has(clave)) porNota.set(clave, { nota: dataset.adelantado, titulos: [] });
+    porNota.get(clave).titulos.push(dataset.titulo);
+  }
+  if (porNota.size === 0) return null;
+  const cita = ({ nota }) => `Nota Digital N° ${textoNumero(nota)} del ${formatoCorto(nota.fecha)}`;
+  const [unica] = porNota.values();
+  if (porNota.size === 1 && unica.titulos.length === datasets.length) return `Este pedido ya se había adelantado por ${cita(unica)}.`;
+  return [...porNota.values()].map((grupo) => {
+    const titulos = enumeracion(grupo.titulos.map(titulo => `"${titulo}"`));
+    return grupo.titulos.length === 1
+      ? `El conjunto de datos ${titulos} ya se había adelantado por ${cita(grupo)}.`
+      : `Los conjuntos de datos ${titulos} ya se habían adelantado por ${cita(grupo)}.`;
+  }).join(' ');
 };
 
 // Antecedente de los emails anteriores (spec 6.4). En los avisos, una fila a todo el ancho debajo de la del dataset:
@@ -221,6 +253,8 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     // Una hoja del anexo por dataset (spec 6.7); solo los avisos llevan anexo
     anexo: tipo === 'aviso' ? `Anexo: reporte de los conjuntos de datos (${cantidad(datasets.length, 'hoja', 'hojas')}).` : null,
     autorizacion: autorizacion ? PARRAFO_AUTORIZACION(autorizacion) : null,
+    // Solo el aviso en su fecha cita la nota que adelantó el pedido; la reiteración no (7.6)
+    adelanto: tipo === 'aviso' ? textoAdelanto(datasets) : null,
     justificacion: JUSTIFICACION[tipo],
     remitente: REMITENTE,
     fechaLarga: formatoLargo(fecha),
@@ -248,6 +282,7 @@ export const construirNotaDeAutorizacion = ({ numero = null, anio = null, esPrue
     contactos: [],
     anexo: null,
     autorizacion: null,
+    adelanto: null,
     justificacion: [],
     remitente: REMITENTE,
     fechaLarga: formatoLargo(fecha),
@@ -445,6 +480,7 @@ export const construirNotaDeAuditoria = ({
     contactos: [],
     anexo: null,
     autorizacion: null,
+    adelanto: null,
     apartados: [QUE_IMPLICA, IMPORTANCIA],
     justificacion: [],
     remitente: REMITENTE,
@@ -576,6 +612,8 @@ ${a.parrafos.map(parrafo).join('\n')}${a.items.length ? `<ul style="margin:0 0 1
     : '';
   // Párrafo de autorización (avisos de la víspera de la licencia del firmante): inmediatamente después del primer párrafo
   const autorizacion = nota.autorizacion ? `\n${parrafo(nota.autorizacion)}` : '';
+  // Párrafo del adelanto (aviso en su fecha de un pedido ya anticipado): enseguida del de autorización, si lo hay
+  const adelanto = nota.adelanto ? `\n${parrafo(nota.adelanto)}` : '';
 
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(nota.asunto)}</title></head>
@@ -585,7 +623,7 @@ ${a.parrafos.map(parrafo).join('\n')}${a.items.length ? `<ul style="margin:0 0 1
 <p style="margin:0 0 4px;"><b><u>REF.:</u></b> "${escapeHtml(nota.ref)}"</p>
 <p style="margin:0 0 24px;text-align:right;"><b>Nota Digital N°</b> ${escapeHtml(nota.numeroTexto)}</p>
 <p style="margin:0 0 16px;"><b><u>${escapeHtml(nota.destinatario)}</u></b></p>
-${parrafo(nota.parrafoInicial)}${autorizacion}
+${parrafo(nota.parrafoInicial)}${autorizacion}${adelanto}
 ${secciones}
 ${detalles}${contactos}${apartados}
 ${nota.anexo ? `<p style="margin:16px 0 0;">${escapeHtml(nota.anexo)}</p>` : ''}
@@ -622,6 +660,8 @@ export const renderTexto = (nota) => {
   const lineas = [nota.avisoAdjunto, '', `REF.: "${nota.ref}"`, `Nota Digital N° ${nota.numeroTexto}`, '', nota.destinatario, '', nota.parrafoInicial, ''];
   // Párrafo de autorización (avisos de la víspera de la licencia del firmante): inmediatamente después del primer párrafo
   if (nota.autorizacion) lineas.push(nota.autorizacion, '');
+  // Párrafo del adelanto (aviso en su fecha de un pedido ya anticipado): enseguida del de autorización, si lo hay
+  if (nota.adelanto) lineas.push(nota.adelanto, '');
   for (const seccion of nota.secciones) lineas.push(...lineasDeSeccion(seccion));
   // Nota de auditoría (spec 2026-10-15, 10.3): el detalle de cada cambio
   if (nota.detalles?.secciones.length) {
