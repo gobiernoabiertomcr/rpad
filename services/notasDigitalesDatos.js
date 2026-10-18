@@ -5,6 +5,7 @@ import pool from '../config/database.js';
 import { listaDeCorreos } from './emailService.js';
 import { esFechaIso } from './notasDigitalesCalendario.js';
 import { pedido, tipoEfectivo } from './fechasDatasetReglas.js';
+import { diaDelAvisoEnSuFecha } from './licenciasReglas.js';
 
 export const GESTIONES = ['interna', 'externa'];
 // Días de anticipación del aviso, por gestión. La externa pasó de 30 a 40 (pedido del usuario el 16/10/2026): el pedido
@@ -111,28 +112,68 @@ const REITERACIONES_PREVIAS = `(SELECT COUNT(*) FROM notas_digitales_datasets r
 // Un aviso anticipado por la licencia del firmante cuenta los 20 días desde su fecha normal (cuenta_desde, spec 2026-10-15, 7.3).
 // El pedido de cada dataset se recalcula con hoy (conPedido), con aviso previo o sin él: R7 lo lleva hasta el último corte
 // cerrado si pasó otro ciclo sin respuesta (spec 2026-10-17-fechas-datasets, 9).
+// Una fila por dataset: con persona autorizada, un dataset puede tener dos avisos enviados del mismo vencimiento (el
+// adelantado y el de su fecha, spec 2026-10-15, 7.6). Informado es el primero, por fecha y por id de nota; con más de uno,
+// informado.tambien trae los demás, en orden. Con uno solo, informado no lleva esa clave.
 export const seleccionarParaReiteracion = async (gestion, hoy) => {
   const [filas] = await pool.query(
     `SELECT * FROM (
        SELECT ${COLUMNAS_DATASET}, av.numero AS aviso_numero, av.anio AS aviso_anio,
-              DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha, ${REITERACIONES_PREVIAS} AS reiteraciones
+              DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha, av.id AS aviso_id, ${REITERACIONES_PREVIAS} AS reiteraciones
        ${DESDE_DATASETS}
        JOIN notas_digitales_datasets avd ON avd.dataset_id = d.id AND avd.vencimiento = d.proxima_actualizacion
        JOIN notas_digitales av ON av.id = avd.nota_id AND av.tipo = 'aviso' AND av.es_prueba = 0 AND av.estado = 'enviada'
        WHERE ${CONDICION_BASE} AND COALESCE(avd.cuenta_desde, av.fecha) <= DATE_SUB(?, INTERVAL ? DAY)
        UNION ALL
-       SELECT ${COLUMNAS_DATASET}, NULL, NULL, NULL, ${REITERACIONES_PREVIAS}
+       SELECT ${COLUMNAS_DATASET}, NULL, NULL, NULL, NULL, ${REITERACIONES_PREVIAS}
        ${DESDE_DATASETS}
        WHERE ${CONDICION_BASE} AND d.proxima_actualizacion < ? AND ${SIN_AVISO}
      ) AS x
-     ORDER BY x.vencimiento, x.titulo`,
+     ORDER BY x.vencimiento, x.titulo, x.id, x.aviso_fecha, x.aviso_id`,
     [gestion, hoy, DIAS_PARA_REITERAR, gestion, hoy]
   );
-  return filas.map(({ aviso_numero, aviso_anio, aviso_fecha, reiteraciones, ...dataset }) => conPedido({
-    ...dataset,
-    informado: aviso_fecha ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null,
-    reiteraciones: Number(reiteraciones)
-  }, hoy));
+  const porDataset = new Map();
+  for (const { aviso_numero, aviso_anio, aviso_fecha, aviso_id, reiteraciones, ...dataset } of filas) {
+    const aviso = aviso_fecha ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null;
+    const anterior = porDataset.get(dataset.id);
+    if (!anterior) porDataset.set(dataset.id, { ...dataset, informado: aviso, reiteraciones: Number(reiteraciones) });
+    // Los demás avisos del mismo dataset: la guarda evita que un dato inesperado (informado null) tire la reiteración de la gestión
+    // entera, todos los días
+    else if (anterior.informado && aviso) (anterior.informado.tambien ??= []).push(aviso);
+  }
+  return [...porDataset.values()].map(dataset => conPedido(dataset, hoy));
+};
+
+// Aviso en su fecha con persona autorizada (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.6): los datasets de la
+// gestión que se avisaron por adelantado en la víspera de la licencia del titular y todavía no tuvieron su aviso en su fecha.
+// licencia: { desde, hasta } del titular; ausencias: [{ desde, hasta }] de la persona autorizada (diaDelAvisoEnSuFecha).
+// Un dataset entra si tiene exactamente una fila de aviso (de cualquier estado, sin pruebas) en su vencimiento actual y su
+// cuenta_desde cae dentro de la licencia; si se actualizó, o ya tuvo otro aviso, no. Cada uno trae cuenta_desde, adelantado
+// (la nota que lo adelantó) y dia_en_su_fecha. Solo salen los que tienen ese día. No filtra por dia_en_su_fecha <= hoy:
+// lo hacen la corrida (sale hoy lo que tocaba hoy o antes) y el Estado (el próximo aviso). Con el pedido calculado con hoy.
+export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []) => {
+  const [filas] = await pool.query(
+    `SELECT ${COLUMNAS_DATASET}, DATE_FORMAT(avd.cuenta_desde, '%Y-%m-%d') AS cuenta_desde,
+            av.numero AS aviso_numero, av.anio AS aviso_anio, DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha
+     ${DESDE_DATASETS}
+     JOIN notas_digitales_datasets avd ON avd.dataset_id = d.id AND avd.vencimiento = d.proxima_actualizacion
+     JOIN notas_digitales av ON av.id = avd.nota_id AND av.tipo = 'aviso' AND av.es_prueba = 0
+     WHERE ${CONDICION_BASE} AND d.proxima_actualizacion >= ?
+       AND avd.cuenta_desde BETWEEN ? AND ?
+       AND (SELECT COUNT(*) FROM notas_digitales_datasets otro
+              JOIN notas_digitales otra ON otra.id = otro.nota_id
+             WHERE otro.dataset_id = d.id AND otro.vencimiento = d.proxima_actualizacion
+               AND otra.tipo = 'aviso' AND otra.es_prueba = 0) = 1
+     ORDER BY d.proxima_actualizacion, d.titulo, d.id`,
+    [gestion, hoy, licencia.desde, licencia.hasta]
+  );
+  return filas
+    .map(({ aviso_numero, aviso_anio, aviso_fecha, ...dataset }) => ({
+      ...conPedido(dataset, hoy),
+      adelantado: { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha },
+      dia_en_su_fecha: diaDelAvisoEnSuFecha({ cuentaDesde: dataset.cuenta_desde, licencia, ausencias })
+    }))
+    .filter(dataset => dataset.dia_en_su_fecha !== null);
 };
 
 // Vencimiento que abre el próximo aviso de la gestión: el primer vencimiento del mes más próximo que tiene datasets a

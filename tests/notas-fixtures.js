@@ -55,8 +55,8 @@ export const crearNota = async ({
       tipo === 'reiteracion' ? fecha.slice(0, 7) : null, fecha, esPrueba, estado, intentos]
   );
   for (const d of datasets) {
-    await query('INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento) VALUES (?, ?, ?, ?)',
-      [resultado.insertId, d.id, d.seccion ?? 'proximo', d.vencimiento]);
+    await query('INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento, cuenta_desde) VALUES (?, ?, ?, ?, ?)',
+      [resultado.insertId, d.id, d.seccion ?? 'proximo', d.vencimiento, d.cuentaDesde ?? null]);
   }
   return resultado.insertId;
 };

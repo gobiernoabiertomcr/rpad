@@ -138,7 +138,7 @@ describe('renderPdf', () => {
 // Reiteración externa con los valores reales del 02/11/2026 (títulos, áreas y frecuencias del portal, públicos):
 // la tabla de 7 columnas es la más angosta, y las áreas y frecuencias traen palabras largas. "Datos solicitados" lleva el
 // pedido de cada uno (spec 2026-10-17-fechas-datasets, 9): todo lo que falta, un presupuesto de dos ejercicios, una foto
-const REITERACION_REAL = [
+const REITERACION_DEL_PORTAL = [
   ['Parque Automotor (Patentamiento)', 'Dirección de Información Tributaria. Dirección General de Análisis y Administración Tributaria', 'Anualmente', '2022-12-31', '2024-01-31', 'Del 01/01/2023 al 31/12/2025'],
   ['Siniestros viales por categoría', 'Agencia Provincial de Seguridad Vial', 'Anualmente', '2023-12-31', '2025-01-31', 'Del 01/01/2024 al 31/12/2025'],
   ['Ejecución presupuestaria', 'Subsecretaria de Coordinación Económica y Control de Gestión', 'Cada medio año', '2025-06-30', '2025-07-31', 'Del 01/07/2025 al 30/06/2026'],
@@ -152,6 +152,17 @@ const REITERACION_REAL = [
   frecuencia_nombre: frecuencia, ultima_actualizacion: ultima, vencimiento, pedido: { desde: null, hasta: null, texto: pedido },
   informado: { numero: 2, anio: 2026, fecha: '2026-10-13' }, reiteraciones: 0, antecedente: null
 }));
+// Dos vencidos que ya tuvieron más de un aviso (el anticipado y el de su fecha, spec 2026-10-15, 7.6): "Informado en" nombra
+// todos, el texto más largo de la tabla. (Los dos son de prueba: no están en el portal.) Van al final de los vencidos.
+const CON_VARIOS_AVISOS = [
+  { informado: { numero: 8, anio: 2026, fecha: '2026-09-15', tambien: [{ numero: 9, anio: 2026, fecha: '2026-09-29' }] }, titulo: 'Licencias de conducir otorgadas' },
+  { informado: { numero: 8, anio: 2026, fecha: '2026-09-15', tambien: [{ numero: 9, anio: 2026, fecha: '2026-09-29' }, { numero: 10, anio: 2026, fecha: '2026-10-13' }] }, titulo: 'Reclamos de alumbrado público' }
+].map(({ informado, titulo }, i) => ({
+  ...REITERACION_DEL_PORTAL[0], id: REITERACION_DEL_PORTAL.length + i + 1, titulo,
+  url_dataset: `https://datos.comodoro.gov.ar/dataset/${REITERACION_DEL_PORTAL.length + i + 1}`,
+  vencimiento: '2026-10-31', pedido: { desde: null, hasta: null, texto: 'Del 01/01/2026 al 30/09/2026' }, informado, reiteraciones: 1
+}));
+const REITERACION_REAL = [...REITERACION_DEL_PORTAL, ...CON_VARIOS_AVISOS];
 const reiteracionReal = (cambios = {}) => nota(0, { tipo: 'reiteracion', datasets: REITERACION_REAL, areas: [], ...cambios });
 // Palabras de un texto como las separa PDFKit para partir líneas (en los espacios)
 const palabras = (texto) => String(texto).split(/\s+/).filter(Boolean);
@@ -175,6 +186,9 @@ const xDeLasColumnas = (textos, encabezados) => encabezados.map((encabezado) => 
 });
 // Un renglón que termina en "Del" o en "al", o que es solo uno de ellos: la preposición quedó separada de su fecha
 const preposicionSuelta = (renglon) => /(^|\s)(Del|al)$/.test(renglon);
+// Un renglón de una tabla que termina en "N°": el signo quedó separado de su número ("Nota Digital N°" / "10/26"). Son notas formales
+const numeralSuelto = (renglon) => /N°\s*$/.test(renglon);
+const renglonesDeTabla = (textos) => textos.filter(t => t.tamano === TAMANO_TABLA || t.tamano === TAMANO_SECUNDARIO).map(t => t.texto);
 // Los renglones de una celda: los consecutivos de la tabla que empiezan en la x de su columna y juntos dan su texto
 const renglonesDeLaCelda = (textos, texto, x) => {
   const enLaColumna = textos.filter(t => t.tamano === TAMANO_TABLA && cerca(t.x, x, 0.5));
@@ -265,6 +279,20 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
     // Y la tabla sigue dentro de los márgenes
     for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
   });
+
+  // "Informado en" con dos y tres avisos (spec 2026-10-15, 7.6) pasa a varios renglones: nunca un "N°" solo al final de uno
+  // ("Nota Digital N°" / "10/26" o "(09/12/2026) y N°" / "11/26 (22/12/2026)"), son notas formales
+  for (const [caso, conAntecedente] of [['sin antecedente', false], ['con antecedente', true]]) {
+    it(`"N°" va junto a su número en "Informado en" con dos y tres avisos (${caso})`, async () => {
+      const ANTECEDENTE = { cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' };
+      const n = reiteracionReal({ datasets: REITERACION_REAL.map(d => ({ ...d, antecedente: conAntecedente ? ANTECEDENTE : null })) });
+      const textos = textosPorHoja(await renderPdf(n)).flat();
+      assert.deepEqual(renglonesDeTabla(textos).filter(numeralSuelto), [], textos.map(t => t.texto).join(' | '));
+      // Los tres avisos de "Reclamos de alumbrado público" siguen en el PDF, con cada "N°" junto a su número
+      const unido = textos.map(t => t.texto).join(' ').replace(/\u00a0/g, ' ');
+      for (const numero of ['8/26', '9/26', '10/26']) assert.ok(unido.includes(`N° ${numero}`), `falta "N° ${numero}": ${unido}`);
+    });
+  }
 
   // Con y sin la segunda parte de "Informado en" (las proporciones de la tabla cambian)
   for (const [caso, conAntecedente] of [['sin antecedente', false], ['con antecedente', true]]) {
@@ -655,12 +683,19 @@ for (const variante of VARIANTES) {
       { tipo: 'reiteracion', gestion: 'interna', titulo: 'variado' }
     ];
     const informado = { numero: 9, anio: 2026, fecha: '2026-10-01' };
+    // En las reiteraciones, los múltiplos de 4 ya tuvieron dos avisos y los de 6, tres (spec 2026-10-15, 7.6): "Informado en"
+    // los nombra a todos y la fila es más alta
+    const informadoDe = (i) => {
+      if (i % 6 === 0) return { ...informado, tambien: [{ numero: 10, anio: 2026, fecha: '2026-10-13' }, { numero: 11, anio: 2026, fecha: '2026-10-27' }] };
+      if (i % 4 === 0) return { ...informado, tambien: [{ numero: 10, anio: 2026, fecha: '2026-10-13' }] };
+      return informado;
+    };
     const notaDe = ({ tipo, gestion, titulo, vencimiento }, cantidad) => nota(cantidad, {
       tipo, gestion,
       datasets: Array.from({ length: cantidad }, (_, i) => ({
         ...dataset(i + 1, vencimiento), titulo: titulos[titulo](i + 1),
         // En las reiteraciones, los múltiplos de 3 llevan su antecedente en "Informado en" (filas más altas)
-        ...(tipo === 'aviso' ? {} : { informado, reiteraciones: 1 })
+        ...(tipo === 'aviso' ? {} : { informado: informadoDe(i + 1), reiteraciones: 1 })
       }))
     });
 
@@ -889,6 +924,7 @@ for (const variante of VARIANTES) {
       for (const { etiqueta, nota: n, textos } of renderizadas) {
         if (n.secciones.some(s => s.columnas.length === 5)) conCinco++;
         assert.deepEqual(fragmentos(n, textos.flat()), [], etiqueta);
+        assert.deepEqual(renglonesDeTabla(textos.flat()).filter(numeralSuelto), [], `${etiqueta}: un N° quedó separado de su número`);
       }
       assert.ok(conCinco >= 30 * 5, `${conCinco} notas con la tabla de 5 columnas`);
     });
@@ -975,6 +1011,63 @@ describe('renderPdf: autorización (spec 2026-10-15-dias-habiles-licencias-audit
     assert.ok(texto.includes('autorizo expresamente a Persona Autorizada'));
     assert.ok(texto.includes('Persona Titular'));
     assert.ok(!texto.includes('Justificación'));
+  });
+});
+
+// Párrafo del aviso en su fecha de un pedido que la nota de la víspera ya había adelantado (spec 7.6): se dibuja como el de
+// autorización, enseguida del primer párrafo
+describe('renderPdf: párrafo del adelanto (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.6)', () => {
+  const NOTA_10 = { numero: 10, anio: 2026, fecha: '2026-12-09' };
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  const AUTORIZADA = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' };
+  // Adelantados el primero y el tercero: el párrafo nombra sus títulos (largos), y ocupa varios renglones
+  const adelantados = (cantidad) => Array.from({ length: cantidad }, (_, i) => ({ ...dataset(i + 1), ...(i === 1 ? {} : { adelantado: NOTA_10 }) }));
+
+  it('va en el PDF justo después del primer párrafo, antes de la primera sección y del anexo', async () => {
+    const n = nota(3, { datasets: adelantados(3) });
+    assert.ok(n.adelanto.startsWith('Los conjuntos de datos "Dataset 1 con un título'), n.adelanto);
+    const pdf = await renderPdf(n, { firmaImagen: FIRMA_A });
+    const lineas = lineasPorHoja(pdf).flat();
+    const desde = lineas.findIndex(l => l.startsWith('Los conjuntos de datos "Dataset 1'));
+    const hasta = lineas.findIndex(l => l === 'Próximos a vencer');
+    assert.ok(desde > 0 && hasta > desde, lineas.join(' | '));
+    // Sin nada en el medio: la línea anterior cierra el primer párrafo, las del medio son el párrafo entero y la siguiente es
+    // el título de la primera sección (el aviso externo termina pidiendo el período y la fecha sugerida de envío)
+    assert.ok(lineas[desde - 1].endsWith('envío.'), lineas[desde - 1]);
+    assert.ok(hasta - desde >= 3, 'el párrafo ocupa varios renglones');
+    assert.equal(lineas.slice(desde, hasta).join(' '), n.adelanto);
+    const completo = lineas.join(' ');
+    assert.ok(completo.indexOf(n.adelanto) < completo.indexOf('Datos de contacto de las áreas responsables'));
+    assert.ok(completo.indexOf(n.adelanto) < completo.indexOf('Anexo: reporte'));
+    // Nada del párrafo se repite después: ni entre las filas de las tablas ni más abajo
+    assert.ok(!lineas.slice(hasta).some(l => l.includes('adelantado')));
+  });
+
+  it('con el párrafo de autorización: ese primero y enseguida el del adelanto', async () => {
+    const n = nota(3, { datasets: adelantados(3), autorizacion: AUTORIZADA });
+    const lineas = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A })).flat();
+    const autorizacion = lineas.findIndex(l => l.startsWith('Asimismo, por medio de la presente'));
+    const adelanto = lineas.findIndex(l => l.startsWith('Los conjuntos de datos "Dataset 1'));
+    const seccion = lineas.findIndex(l => l === 'Próximos a vencer');
+    assert.ok(autorizacion > 0 && adelanto > autorizacion && seccion > adelanto, lineas.join(' | '));
+    assert.ok(lineas[adelanto - 1].endsWith('flujo de trabajo.'), lineas[adelanto - 1]);
+    assert.equal(lineas.slice(adelanto, seccion).join(' '), n.adelanto);
+  });
+
+  it('el primer párrafo y el del adelanto quedan juntos en la primera hoja, también con el banner más alto', async () => {
+    const datasets = Array.from({ length: 60 }, (_, i) => ({ ...dataset(i + 1), adelantado: NOTA_10 }));
+    for (const [caso, opciones] of [['sin membrete', {}], ['con el banner más alto', { membreteImagen: BANNER_TOPE, membretePie: PIE }]]) {
+      const n = nota(60, { datasets });
+      assert.equal(n.adelanto, 'Este pedido ya se había adelantado por Nota Digital N° 10/26 del 09/12/2026.');
+      const primera = lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A, ...opciones }))[0].join(' ');
+      assert.ok(primera.includes('Informo a Ud.') && primera.includes(n.adelanto), `${caso}: el primer párrafo y el del adelanto no están en la misma hoja`);
+    }
+  });
+
+  it('una reiteración no lo dibuja, aunque sus datasets hayan tenido adelantado', async () => {
+    const n = nota(3, { tipo: 'reiteracion', datasets: adelantados(3) });
+    assert.equal(n.adelanto, null);
+    assert.ok(!lineasPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A })).flat().join(' ').includes('adelantado'));
   });
 });
 

@@ -1,6 +1,6 @@
 // Notas Digitales durante la licencia del firmante titular (spec 2026-10-15-dias-habiles-licencias-auditoria, 7),
 // con los ejemplos de la sección 7.4 como fechas fijas, sobre una base de prueba + Mailpit
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
@@ -231,6 +231,348 @@ describe('licencia con autorizado (spec 7.2)', () => {
     const resumen = await correr('2026-11-02');
     assert.equal((await notas()).length, 0);
     assert.match(resumen.licencia, /sin autorizado/);
+  });
+});
+
+// Con persona autorizada, cada aviso adelantado en la víspera sale también en su fecha (spec 7.6, pedido del usuario el
+// 18/10/2026). El dataset vence el 31/01/2027: su gestión externa lo avisa con 40 días de ventana, o sea el 22/12/2026.
+describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/12/2026 al 08/01/2027', () => {
+  const AUTORIZACION = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 10/12/2026 al 08/01/2027, con el objetivo de mantener el correcto flujo de trabajo.';
+  const asuntoExterno = (numero) => `Nota Digital N° ${numero}/26 – Ref.: Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal (gestión externa – diciembre 2026)`;
+  const textoDe = async (notaId) => (await query('SELECT texto FROM notas_digitales WHERE id = ?', [notaId]))[0].texto;
+  const delDia = async (fecha) => (await notas()).filter(n => n.fecha === fecha);
+  let licenciaId, externo;
+  beforeEach(async () => {
+    licenciaId = await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    externo = await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+  });
+
+  // La víspera (09/12): un solo aviso externo, firmado por el titular, que anticipa el dataset (con su fecha normal, el
+  // 22/12) y comunica la autorización
+  const vispera = async () => {
+    await correr('2026-12-09');
+    const [aviso, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([aviso.tipo, aviso.gestion, aviso.fecha], ['aviso', 'externa', '2026-12-09']);
+    assert.equal(aviso.firmante_id, titular.id);
+    assert.equal(aviso.presentada_por_id, null);
+    assert.ok(aviso.html.includes(AUTORIZACION));
+    assert.deepEqual(await datasetsDe(aviso.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+    return aviso;
+  };
+
+  it('el 22/12 la persona autorizada vuelve a presentar el aviso, con las dos firmas y el párrafo que cita la nota de la víspera', async () => {
+    const anticipado = await vispera();
+    const del21 = await correr('2026-12-21');
+    assert.deepEqual(del21.generadas, []);
+    assert.equal((await notas()).length, 1, 'el 21/12 no sale nada');
+
+    const resumen = await correr('2026-12-22');
+    assert.deepEqual(resumen.errores, []);
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-22']);
+    assert.equal(enSuFecha.firmante_id, titular.id);
+    assert.equal(enSuFecha.presentada_por_id, autorizado.id);
+    assert.equal(enSuFecha.asunto, asuntoExterno(enSuFecha.numero), 'el asunto lleva el mes de la nota, no el rango de vencimientos');
+    assert.ok(enSuFecha.html.includes(`Nota presentada por Firma admin, Cargo admin, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${anticipado.numero}/26 (licencia del 10/12/2026 al 08/01/2027).`));
+    const adelanto = `Este pedido ya se había adelantado por Nota Digital N° ${anticipado.numero}/26 del 09/12/2026.`;
+    assert.ok(enSuFecha.html.includes(adelanto));
+    assert.ok(enSuFecha.html.indexOf(adelanto) < enSuFecha.html.indexOf('<table'), 'el párrafo va antes de las tablas');
+    assert.ok((await textoDe(enSuFecha.id)).includes(adelanto));
+    assert.ok(!enSuFecha.html.includes('Asimismo'), 'no repite el párrafo de autorización');
+    assert.ok(!enSuFecha.cc.split(', ').includes(autorizado.email), 'la persona autorizada no va en CC');
+    const ultima = lineasPorHoja(enSuFecha.pdf).at(-1).join(' ');
+    assert.ok(ultima.includes('Firma admin') && ultima.includes('Firma superadmin'));
+    // Guarda la fecha normal del aviso anticipado: los 20 días de la reiteración se siguen contando desde ahí
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+    assert.equal((await mailpit.esperar(m => m.Subject === enSuFecha.asunto)).length, 1);
+
+    await correr('2026-12-23');
+    assert.equal((await notas()).length, 2, 'el 23/12 no se repite');
+  });
+
+  it('la reiteración del 01/02/2027 muestra el dataset una sola vez, con las dos notas en "Informado en"', async () => {
+    const anticipado = await vispera();
+    await correr('2026-12-22');
+    const enSuFecha = (await notas())[1];
+    const del04 = await correr('2027-01-04');
+    assert.deepEqual(del04.generadas, []);
+    assert.equal((await notas()).filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa').length, 0, 'el 04/01 no hay reiteración externa');
+
+    const resumen = await correr('2027-02-01');
+    assert.deepEqual(resumen.errores, []);
+    const reiteraciones = (await notas()).filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa');
+    assert.equal(reiteraciones.length, 1);
+    assert.deepEqual((await datasetsDe(reiteraciones[0].id)).map(d => d.dataset_id), [externo]);
+    const informado = `Nota Digital N° ${anticipado.numero}/26 (09/12/2026) y N° ${enSuFecha.numero}/26 (22/12/2026)`;
+    assert.ok(reiteraciones[0].html.includes(`>${informado}`));
+    assert.ok((await textoDe(reiteraciones[0].id)).includes(informado));
+  });
+
+  it('con la persona autorizada de licencia del 21/12 al 23/12, sale el viernes 18/12', async () => {
+    await licencia(autorizado, '2026-12-21', '2026-12-23');
+    await vispera();
+    const del17 = await correr('2026-12-17');
+    assert.deepEqual(del17.generadas, []);
+    assert.equal((await notas()).length, 1, 'el 17/12 no sale nada');
+
+    await correr('2026-12-18');
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-18']);
+    assert.equal(enSuFecha.firmante_id, titular.id);
+    assert.equal(enSuFecha.presentada_por_id, autorizado.id);
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+
+    // Los días en que ella falta no se genera ninguna nota
+    const del22 = await correr('2026-12-22');
+    assert.match(del22.licencia, /sin autorizado/);
+    assert.equal((await notas()).length, 2);
+  });
+
+  it('no repite un dataset que ya se actualizó', async () => {
+    await vispera();
+    await query("UPDATE datasets SET proxima_actualizacion = '2028-01-31' WHERE id = ?", [externo]);
+    const resumen = await correr('2026-12-22');
+    assert.deepEqual(resumen.generadas, []);
+    assert.equal((await notas()).length, 1);
+  });
+
+  it('si la corrida del 22/12 no se hizo, sale en la siguiente', async () => {
+    await vispera();
+    await correr('2026-12-23');
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-23']);
+    assert.equal(enSuFecha.presentada_por_id, autorizado.id);
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+  });
+
+  it('una segunda corrida el mismo día no lo repite', async () => {
+    await vispera();
+    await correr('2026-12-22');
+    const segunda = await correr('2026-12-22');
+    assert.deepEqual(segunda.generadas, []);
+    assert.equal((await notas()).filter(n => n.fecha === '2026-12-22').length, 1);
+  });
+
+  it('junto con un dataset nuevo del día, el párrafo nombra solo el adelantado', async () => {
+    const anticipado = await vispera();
+    const nuevo = await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2027-01-31' });
+    await correr('2026-12-22');
+    const [enSuFecha, ...otras] = await delDia('2026-12-22');
+    assert.equal(otras.length, 0, 'un solo aviso con los dos');
+    assert.equal(enSuFecha.asunto, asuntoExterno(enSuFecha.numero));
+    // El adelantado guarda su fecha normal de aviso; el nuevo, que entra por la selección de siempre, no tiene
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [
+      { dataset_id: externo, cuenta_desde: '2026-12-22' }, { dataset_id: nuevo, cuenta_desde: null }
+    ]);
+    const adelanto = `El conjunto de datos "Externo de enero" ya se había adelantado por Nota Digital N° ${anticipado.numero}/26 del 09/12/2026.`;
+    assert.ok((await textoDe(enSuFecha.id)).includes(adelanto));
+    assert.ok(enSuFecha.html.includes(adelanto.replaceAll('"', '&quot;')));
+    assert.ok(!enSuFecha.html.includes('Este pedido ya se había adelantado'));
+    // Vencen el mismo día: en la tabla salen por título
+    const tabla = enSuFecha.html.slice(enSuFecha.html.indexOf('<table'));
+    assert.ok(tabla.indexOf('Externo de enero') >= 0 && tabla.indexOf('Externo de enero') < tabla.indexOf('Externo nuevo'));
+  });
+
+  it('sin persona autorizada no hay aviso en su fecha, tampoco a la vuelta', async () => {
+    await query('UPDATE usuarios_licencias SET autorizado_id = NULL, autorizado_at = NULL WHERE id = ?', [licenciaId]);
+    await correr('2026-12-09');
+    const [anticipado, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.equal(anticipado.tipo, 'aviso');
+    assert.ok(!anticipado.html.includes('Asimismo'));
+    assert.deepEqual(await datasetsDe(anticipado.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+
+    const del22 = await correr('2026-12-22');
+    assert.match(del22.licencia, /sin autorizado/);
+    assert.equal((await notas()).length, 1, 'el 22/12 no hay notas nuevas');
+
+    await correr('2027-01-11');
+    const del11 = await delDia('2027-01-11');
+    assert.deepEqual(del11.filter(n => n.tipo === 'aviso'), [], 'el 11/01 no sale ningún aviso');
+    assert.ok(del11.length > 0 && del11.every(n => n.tipo === 'reiteracion'), 'el 11/01 solo salen reiteraciones');
+  });
+
+  // Correos → Estado (spec 7.5): el próximo aviso de la gestión durante la licencia
+  it('Estado: durante la licencia, el próximo aviso externo es el en su fecha', async () => {
+    // Antes de la víspera no hay nada adelantado: el próximo aviso es la víspera
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-02' })).proximas.externa.aviso, { fecha: '2026-12-09', cantidad: 1 });
+    await vispera();
+    // Ya adelantado, el dataset no es una novedad: el próximo aviso es el suyo, el 22/12, también con la licencia en curso
+    const estado = await motor.estadoNotas({ hoy: '2026-12-14' });
+    assert.deepEqual(estado.proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+    assert.equal(estado.licencia_firmante.en_curso, true);
+    // El objeto público de la licencia no cambia de forma
+    assert.deepEqual(Object.keys(estado.licencia_firmante), [
+      'desde', 'hasta', 'en_curso', 'autorizado', 'nota_autorizacion', 'autorizado_no_vigente', 'autorizado_de_licencia_hasta',
+      'sin_dias_habiles', 'vispera', 'ultimo_habil', 'vuelta'
+    ]);
+    // El mismo día de la víspera, ya corrida, también
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-09' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+    // La gestión interna no tiene nada adelantado
+    assert.equal(estado.proximas.interna.aviso, null);
+    // El día en que sale, el próximo aviso es ese mismo día; después de la corrida, ya no queda ninguno
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-22' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+    await correr('2026-12-22');
+    assert.equal((await motor.estadoNotas({ hoy: '2026-12-23' })).proximas.externa.aviso, null);
+  });
+
+  it('Estado: con la persona autorizada de licencia del 21/12 al 23/12, el próximo aviso externo es el viernes 18/12', async () => {
+    await licencia(autorizado, '2026-12-21', '2026-12-23');
+    await vispera();
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-14' })).proximas.externa.aviso, { fecha: '2026-12-18', cantidad: 1 });
+    // El 18/12 es el día de la corrida; después de la corrida ya no queda ninguno
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-18' })).proximas.externa.aviso, { fecha: '2026-12-18', cantidad: 1 });
+    await correr('2026-12-18');
+    assert.equal((await motor.estadoNotas({ hoy: '2026-12-19' })).proximas.externa.aviso, null);
+  });
+
+  it('Estado: si el día de su fecha ya pasó sin salir, el próximo aviso es el primer día hábil en que ella no falta', async () => {
+    // No falta el 22/12 (su día): corrida salteada, sale en la corrida siguiente
+    await vispera();
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-23' })).proximas.externa.aviso, { fecha: '2026-12-23', cantidad: 1 });
+    // Falta del 22/12 al 23/12: su día era el lunes 21/12; el 23/12, que sigue de licencia, el próximo es el 24/12
+    await licencia(autorizado, '2026-12-22', '2026-12-23');
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-23' })).proximas.externa.aviso, { fecha: '2026-12-24', cantidad: 1 });
+    // La corrida lo confirma: el 23/12 no sale nada y el 24/12 sí
+    const del23 = await correr('2026-12-23');
+    assert.match(del23.licencia, /sin autorizado/);
+    assert.equal((await notas()).length, 1);
+    await correr('2026-12-24');
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-24']);
+  });
+
+  it('Estado: el aviso en su fecha suma lo que sale el mismo día, y otro aviso más temprano sigue siendo el próximo', async () => {
+    await vispera();
+    // Un dataset nuevo cuyo mes se abre también el 22/12: salen juntos, 2
+    await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2027-01-31' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-14' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 2 });
+    // Uno que ya está en la ventana sale antes, en la próxima corrida: ese es el próximo aviso, con su cantidad
+    await crearDataset({ titulo: 'Externo de diciembre', gestion: 'externa', vencimiento: '2026-12-31' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-14' })).proximas.externa.aviso, { fecha: '2026-12-14', cantidad: 1 });
+  });
+
+  it('Estado: sin persona autorizada no hay aviso en su fecha, tampoco con la licencia en curso', async () => {
+    await query('UPDATE usuarios_licencias SET autorizado_id = NULL, autorizado_at = NULL WHERE id = ?', [licenciaId]);
+    await correr('2026-12-09');
+    assert.equal((await notas()).length, 1);
+    const estado = await motor.estadoNotas({ hoy: '2026-12-14' });
+    assert.equal(estado.licencia_firmante.autorizado, null);
+    assert.equal(estado.proximas.externa.aviso, null);
+  });
+
+  // Una falla al buscar lo que sale en su fecha (la licencia de la persona autorizada o los datasets adelantados) no tira también el
+  // aviso normal de esa gestión: queda el error y el aviso sale con la selección de siempre. Se simula con una falla en la consulta
+  // de pendientesEnSuFecha, la única que cuenta los avisos de cada dataset con "otro.dataset_id"
+  it('si falla la búsqueda del aviso en su fecha, el aviso normal del día sale igual y el adelantado sale en la corrida siguiente', async () => {
+    await vispera();
+    const nuevo = await crearDataset({ titulo: 'Externo nuevo', gestion: 'externa', vencimiento: '2027-01-31' });
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    const falla = mock.method(pool, 'query', function (sql, params) {
+      if (String(sql).includes('otro.dataset_id')) return Promise.reject(new Error('Falla simulada'));
+      return consultaOriginal.call(this, sql, params);
+    });
+    let resumen;
+    try {
+      resumen = await correr('2026-12-22');
+    } finally {
+      falla.mock.restore();
+    }
+    // Cada gestión busca lo que sale en su fecha (primero la interna): las dos anotan el error y siguen con su selección normal
+    assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion, e.mensaje]), [
+      ['aviso', 'interna', 'Falla simulada'], ['aviso', 'externa', 'Falla simulada']
+    ]);
+    const [, normal, ...otras] = await notas();
+    assert.equal(otras.length, 0, 'la gestión interna, sin pendientes, no genera nada');
+    assert.deepEqual([normal.tipo, normal.gestion, normal.fecha], ['aviso', 'externa', '2026-12-22']);
+    assert.deepEqual(await datasetsDe(normal.id), [{ dataset_id: nuevo, cuenta_desde: null }], 'solo el dataset nuevo: el adelantado no se pudo buscar');
+    assert.equal(normal.presentada_por_id, autorizado.id);
+    assert.ok(!normal.html.includes('Este pedido ya se había adelantado'));
+
+    // Sin la falla, la corrida siguiente lo presenta en su fecha
+    const siguiente = await correr('2026-12-23');
+    assert.deepEqual(siguiente.errores, []);
+    const [, , enSuFecha, ...demas] = await notas();
+    assert.equal(demas.length, 0);
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-23']);
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+  });
+
+  it('Estado: un sábado, después de la víspera, el próximo aviso externo es el lunes 22/12', async () => {
+    await vispera();
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-19' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
+  });
+
+  // Ruling 5 (ola de arreglos final): un dataset al que ese día ya le toca la reiteración (20 días corridos desde su
+  // cuenta_desde, inclusive) no entra en el aviso en su fecha: lo informa la reiteración, citando la nota anticipada. Así nunca
+  // sale el mismo día en un aviso y en una reiteración. La condición es permanente: no depende de que hoy corra la reiteración.
+  describe('recuperación 20 días tarde o más (autorización cargada con la licencia avanzada, del 10/12/2026 al 29/01/2027)', () => {
+    let interno;
+    beforeEach(async () => {
+      await query("UPDATE usuarios_licencias SET hasta = '2027-01-29', autorizado_id = NULL, autorizado_at = NULL WHERE id = ?", [licenciaId]);
+      interno = await crearDataset({ titulo: 'Interno de febrero', gestion: 'interna', vencimiento: '2027-02-28' });
+    });
+
+    it('el 11/01 el externo (22/12 + 20) sale en la reiteración y el interno (30/12) en su fecha; el 12/01 el externo sigue afuera', async () => {
+      // Víspera sin persona autorizada: dos avisos, el interno y el externo, cada uno con su dataset y sin autorización
+      await correr('2026-12-09');
+      const vispera = await notas();
+      assert.equal(vispera.length, 2);
+      const anticipadoInterno = vispera.find(n => n.gestion === 'interna');
+      const anticipadoExterno = vispera.find(n => n.gestion === 'externa');
+      assert.deepEqual(await datasetsDe(anticipadoInterno.id), [{ dataset_id: interno, cuenta_desde: '2026-12-30' }]);
+      assert.deepEqual(await datasetsDe(anticipadoExterno.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+      assert.ok(vispera.every(n => !n.html.includes('Asimismo')));
+
+      // Sin persona autorizada no se genera nada
+      const del04 = await correr('2027-01-04');
+      assert.match(del04.licencia, /sin autorizado/);
+      assert.deepEqual(del04.generadas, []);
+      assert.equal((await notas()).length, 2);
+
+      // La autorización se carga el 08/01, con la licencia avanzada
+      await query("UPDATE usuarios_licencias SET autorizado_id = ?, autorizado_at = '2027-01-08 10:00:00' WHERE id = ?", [autorizado.id, licenciaId]);
+
+      // El Estado coincide con lo que sale: el externo ya no tiene aviso (le toca la reiteración); el interno sí, el 11/01
+      const estado = await motor.estadoNotas({ hoy: '2027-01-11' });
+      assert.equal(estado.proximas.externa.aviso, null);
+      assert.deepEqual(estado.proximas.interna.aviso, { fecha: '2027-01-11', cantidad: 1 });
+
+      // El 11/01 (22/12 + 20, el borde exacto): autorización, aviso interno en su fecha y reiteración externa
+      const resumen = await correr('2027-01-11');
+      assert.deepEqual(resumen.errores, []);
+      const del11 = await delDia('2027-01-11');
+      assert.ok(del11.some(n => n.tipo === 'autorizacion'), 'sale la nota de autorización');
+
+      const avisoInterno = del11.find(n => n.tipo === 'aviso' && n.gestion === 'interna');
+      assert.ok(avisoInterno, 'hay aviso interno en su fecha');
+      assert.deepEqual(await datasetsDe(avisoInterno.id), [{ dataset_id: interno, cuenta_desde: '2026-12-30' }]);
+      assert.ok(avisoInterno.html.includes(`Este pedido ya se había adelantado por Nota Digital N° ${anticipadoInterno.numero}/26 del 09/12/2026.`));
+      assert.equal(avisoInterno.presentada_por_id, autorizado.id);
+
+      assert.equal(del11.filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 0, 'no hay aviso externo: ya le toca la reiteración');
+
+      const reiteraciones = del11.filter(n => n.tipo === 'reiteracion');
+      assert.deepEqual(reiteraciones.map(n => n.gestion), ['externa'], 'solo hay reiteración externa');
+      assert.deepEqual((await datasetsDe(reiteraciones[0].id)).map(d => d.dataset_id), [externo]);
+      const informado = `Nota Digital N° ${anticipadoExterno.numero}/26 (09/12/2026)`;
+      assert.ok(reiteraciones[0].html.includes(`>${informado}`));
+      assert.ok(!reiteraciones[0].html.includes(`${informado} y N°`), 'cita una sola nota');
+      assert.ok((await textoDe(reiteraciones[0].id)).includes(informado));
+      assert.ok(!(await textoDe(reiteraciones[0].id)).includes(`${informado} y N°`));
+
+      // El día siguiente tampoco vuelve como aviso: la condición es permanente, no depende de que hoy corra la reiteración
+      await correr('2027-01-12');
+      const del12 = await delDia('2027-01-12');
+      assert.equal(del12.filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 0, 'el 12/01 sigue sin aviso externo');
+      assert.equal((await notas()).filter(n => n.tipo === 'aviso' && n.gestion === 'externa').length, 1, 'el externo tiene un solo aviso, el de la víspera');
+    });
   });
 });
 

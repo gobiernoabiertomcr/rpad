@@ -1,6 +1,8 @@
 // Reglas de las licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.1, 5.2 y 6.3): funciones puras, sin base de datos.
 // Las fechas son textos 'AAAA-MM-DD' en hora de Argentina.
-import { esFechaIso, diasEntre, sumarDias, esDiaHabil, proximoDiaHabil } from './notasDigitalesCalendario.js';
+import {
+  esFechaIso, diasEntre, sumarDias, esDiaHabil, proximoDiaHabil, diaHabilAnterior, ultimoDiaHabilHasta
+} from './notasDigitalesCalendario.js';
 
 export const ROLES_CON_LICENCIA = ['superadmin', 'admin', 'editor'];
 export const MAXIMO_DIAS_LICENCIA = 365;
@@ -85,3 +87,20 @@ export const unirAusencias = (ausencias) => [...ausencias]
     }
     return unidas;
   }, []);
+
+/**
+ * El día del aviso en su fecha de un dataset que se avisó por adelantado (spec 2026-10-15, 7.6): cuentaDesde, su fecha
+ * normal de aviso, si ese día la persona autorizada no falta; si falta, el último día hábil anterior en que no falta, sin
+ * bajar del primer día de la licencia del titular (licencia: { desde, hasta }). ausencias: [{ desde, hasta }], las de la
+ * persona autorizada tal cual (sin unir). null si cuentaDesde no es una fecha o está fuera de la licencia, o si no queda
+ * ningún día en que la persona autorizada pueda presentarlo: ese dataset ya salió en el aviso anticipado de la víspera.
+ */
+export const diaDelAvisoEnSuFecha = ({ cuentaDesde, licencia, ausencias = [] }) => {
+  if (!esFechaIso(cuentaDesde) || cuentaDesde < licencia.desde || cuentaDesde > licencia.hasta) return null;
+  const falta = (dia) => ausencias.some(a => a.desde <= dia && dia <= a.hasta);
+  if (!falta(cuentaDesde)) return cuentaDesde;
+  for (let dia = ultimoDiaHabilHasta(cuentaDesde); dia >= licencia.desde; dia = diaHabilAnterior(dia)) {
+    if (!falta(dia)) return dia;
+  }
+  return null;
+};

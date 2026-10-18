@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ROLES_CON_LICENCIA, MAXIMO_DIAS_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion,
-  puedeAnularse, diasHabilesLibres, unirAusencias
+  puedeAnularse, diasHabilesLibres, unirAusencias, diaDelAvisoEnSuFecha
 } from '../services/licenciasReglas.js';
 
 const HOY = '2026-11-10';
@@ -116,6 +116,36 @@ describe('unirAusencias (tramos seguidos de licencia)', () => {
     assert.deepEqual(unirAusencias([tramo('2027-03-01', '2027-03-03'), tramo('2027-03-05', '2027-03-05')]),
       [tramo('2027-03-01', '2027-03-03'), tramo('2027-03-05', '2027-03-05')]);
     assert.deepEqual(unirAusencias([]), []);
+  });
+});
+
+describe('diaDelAvisoEnSuFecha (spec 7.6)', () => {
+  // Diciembre de 2026: el 08 es feriado (martes), el 10 es jueves, el 18 viernes, el 19 y el 20 sábado y domingo, el 21
+  // lunes, el 22 martes y el 25 (viernes) feriado
+  const lic = { desde: '2026-12-10', hasta: '2027-01-08' };
+
+  it('es la fecha normal de aviso (cuenta_desde) si la persona autorizada está disponible ese día', () => {
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-22', licencia: lic }), '2026-12-22');
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-22', licencia: lic, ausencias: [{ desde: '2026-12-28', hasta: '2026-12-30' }] }), '2026-12-22');
+  });
+
+  it('si ese día falta, es el último día hábil anterior en que no falta (salteando el fin de semana)', () => {
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-22', licencia: lic, ausencias: [{ desde: '2026-12-21', hasta: '2026-12-23' }] }), '2026-12-18');
+    assert.equal(diaDelAvisoEnSuFecha({
+      cuentaDesde: '2026-12-22', licencia: lic, ausencias: [{ desde: '2026-12-18', hasta: '2026-12-18' }, { desde: '2026-12-21', hasta: '2026-12-23' }]
+    }), '2026-12-17');
+  });
+
+  it('no baja de la primera fecha de la licencia: sin ningún día disponible desde ahí, no hay aviso en su fecha', () => {
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-22', licencia: lic, ausencias: [{ desde: '2026-12-10', hasta: '2026-12-23' }] }), null); // falta desde el primer día
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-22', licencia: lic, ausencias: [{ desde: '2026-12-14', hasta: '2026-12-23' }] }), '2026-12-11');
+  });
+
+  it('null si cuenta_desde no es una fecha o cae fuera de la licencia', () => {
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2027-01-11', licencia: lic }), null); // fuera de la licencia
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-09', licencia: lic }), null);
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: null, licencia: lic }), null);
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-02-30', licencia: lic }), null);
   });
 });
 

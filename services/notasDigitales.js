@@ -15,14 +15,15 @@ import {
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
-  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe, conPedido
+  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe, conPedido, pendientesEnSuFecha, DIAS_PARA_REITERAR
 } from './notasDigitalesDatos.js';
 import { sumarMeses, tipoSugerido, vencimientoDelMes } from './fechasDatasetReglas.js';
 import {
-  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia
+  firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia,
+  disponibilidadDelAutorizado
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
-import { unirAusencias } from './licenciasReglas.js';
+import { unirAusencias, diasHabilesLibres } from './licenciasReglas.js';
 import { emailValido } from './usuariosReglas.js';
 import {
   contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe, periodosSinAuditor,
@@ -34,6 +35,12 @@ export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
+
+// A un dataset adelantado ya le toca la reiteración ese día: pasaron DIAS_PARA_REITERAR días corridos desde su cuenta_desde
+// (inclusive), la misma condición que seleccionarParaReiteracion. No entra en el aviso en su fecha y lo informa la
+// reiteración, citando la nota anticipada (spec 2026-10-15, 7.6). Es permanente: una vez verdadera, sigue verdadera, así
+// un dataset nunca sale el mismo día en un aviso y en una reiteración ni vuelve como aviso después de reiterado.
+const yaTocaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
 // los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
@@ -335,6 +342,10 @@ const prepararAviso = async (gestion, hoy, anticipo) => {
     : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
 };
 
+// El orden de los datasets en un aviso: por vencimiento y por título, como la selección; el id desempata
+const porVencimientoYTitulo = (a, b) =>
+  a.vencimiento.localeCompare(b.vencimiento) || a.titulo.localeCompare(b.titulo, 'es') || a.id - b.id;
+
 // ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
 const hayNotaDeAuditoria = async (fecha) => {
   const [[fila]] = await pool.query(
@@ -457,15 +468,31 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
   let avisoConAutorizacion = false;
+  // Las licencias de la persona autorizada durante la del titular: se leen una sola vez, la primera gestión que las necesita
+  let ausenciasDelAutorizado;
   for (const gestion of GESTIONES) {
     let id;
     // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida)
     const conAutorizacion = anticipo && autorizacion && !autorizacionDesactualizada ? autorizacion : null;
     try {
-      const datasets = await prepararAviso(gestion, hoy, anticipo);
+      let datasets = await prepararAviso(gestion, hoy, anticipo);
+      // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella: se suma a
+      // la selección de hoy lo que hoy toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6). La licencia es la del titular.
+      // Si buscarlo falla, se informa y el aviso del día sale con la selección normal: lo adelantado sale en la corrida siguiente.
+      if (modo === 'autorizado') {
+        try {
+          ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
+          const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
+            .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy));
+          if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
+        } catch (error) {
+          anotarError(resumen, { tipo: 'aviso', gestion }, error);
+        }
+      }
       if (!datasets.length) continue;
-      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3)
-      const rangoVencimientos = datasets.some(d => d.cuenta_desde)
+      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3). Solo el de
+      // la víspera: los datasets que salen en su fecha también traen cuenta_desde, pero el asunto lleva el mes de la nota.
+      const rangoVencimientos = anticipo && datasets.some(d => d.cuenta_desde)
         ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
         : null;
       id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
@@ -693,7 +720,10 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
   return { id, ejemplo: esEjemplo, destinatarios: casillas, ...resultado };
 };
 
-// Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5)
+// Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5).
+// { publica, titular, ausencias } o null. publica: el objeto de estado.licencia_firmante (su forma no cambia); titular: la
+// licencia tal como la guarda la base (para el aviso en su fecha, 7.6); ausencias: las licencias de la persona autorizada
+// durante la del titular ([{ desde, hasta }], vacías sin autorizado).
 const licenciaDelFirmante = async (config, hoy) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
@@ -714,18 +744,46 @@ const licenciaDelFirmante = async (config, hoy) => {
     : [[null]];
   const ultimoHabil = ultimoDiaHabilHasta(licencia.hasta);
   return {
-    desde: licencia.desde,
-    hasta: licencia.hasta,
-    en_curso: licencia.desde <= hoy,
-    autorizado: autorizado ? autorizado.nombre : null,
-    nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
-    autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
-    autorizado_de_licencia_hasta: ausente?.hasta ?? null,
-    sin_dias_habiles: ultimoHabil < licencia.desde,
-    vispera: diaHabilAnterior(licencia.desde),
-    ultimo_habil: ultimoHabil,
-    vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
+    publica: {
+      desde: licencia.desde,
+      hasta: licencia.hasta,
+      en_curso: licencia.desde <= hoy,
+      autorizado: autorizado ? autorizado.nombre : null,
+      nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
+      autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
+      autorizado_de_licencia_hasta: ausente?.hasta ?? null,
+      sin_dias_habiles: ultimoHabil < licencia.desde,
+      vispera: diaHabilAnterior(licencia.desde),
+      ultimo_habil: ultimoHabil,
+      vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
+    },
+    titular: licencia,
+    ausencias: autorizado?.ausencias ?? []
   };
+};
+
+/**
+ * El próximo aviso en su fecha de la gestión (spec 2026-10-15, 7.6), con persona autorizada: de los datasets que la víspera
+ * adelantó, el día en que la persona autorizada los vuelve a presentar. Un día que ya pasó (la corrida no se hizo, o ella
+ * faltaba) pasa al primer día hábil, desde la próxima corrida, en que no falta. Un dataset al que ese día ya le toca la
+ * reiteración (yaTocaReiterar) no cuenta: lo informa la reiteración, como en la corrida. { fecha, cantidad } o null: la
+ * cantidad es lo que sale ese día, sumando a los que vuelven a presentarse lo que seleccionarParaAviso elige para esa fecha.
+ * corrida: el día de la próxima corrida posible. { titular, ausencias }: lo que devuelve licenciaDelFirmante (la licencia del
+ * titular y las ausencias de la persona autorizada).
+ */
+const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }) => {
+  const pendientes = await pendientesEnSuFecha(gestion, corrida, titular, ausencias);
+  if (pendientes.length === 0) return null;
+  // El primer día hábil desde la próxima corrida en que la persona autorizada no falta: el mismo para todos los atrasados
+  const primerDiaLibre = diasHabilesLibres(corrida, titular.hasta, ausencias).primerDia;
+  const fechas = pendientes
+    .map(dataset => ({ dataset, efectiva: dataset.dia_en_su_fecha >= corrida ? dataset.dia_en_su_fecha : primerDiaLibre }))
+    .filter(({ dataset, efectiva }) => efectiva && !yaTocaReiterar(dataset, efectiva))
+    .map(({ efectiva }) => efectiva)
+    .sort();
+  if (fechas.length === 0) return null;
+  const [fecha] = fechas;
+  return { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length + fechas.filter(f => f === fecha).length };
 };
 
 /**
@@ -759,7 +817,8 @@ const estadoAuditoria = async (config, hoy) => {
 export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
   const config = await obtenerConfig();
   const firmaTitular = await firmaTitularDe(config);
-  const licencia = await licenciaDelFirmante(config, hoy);
+  const delFirmante = await licenciaDelFirmante(config, hoy);
+  const licencia = delFirmante?.publica ?? null;
   const dentro = (fecha) => Boolean(licencia) && !licencia.sin_dias_habiles && fecha >= licencia.desde && fecha <= licencia.hasta;
   const [[{ fallidas }]] = await pool.query(
     "SELECT COUNT(*) AS fallidas FROM notas_digitales WHERE estado = 'fallida' AND es_prueba = 0"
@@ -786,6 +845,12 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
       } else if (!licencia.autorizado) {
         aviso = { fecha: licencia.vuelta, cantidad: (await seleccionarParaAviso(gestion, licencia.vuelta)).length };
       }
+    }
+    // Con persona autorizada, lo que adelantó la víspera sale otra vez en su fecha, también con la licencia ya en curso
+    // (spec 7.6): si es antes que el aviso de arriba, o el mismo día (su cantidad ya suma los dos), ese es el próximo
+    if (licencia?.autorizado && !licencia.sin_dias_habiles) {
+      const enSuFecha = await proximoAvisoEnSuFecha(gestion, corrida, delFirmante);
+      if (enSuFecha && (!aviso || enSuFecha.fecha <= aviso.fecha)) aviso = enSuFecha;
     }
 
     const evaluado = config[`reiteracion_evaluada_${gestion}`] === periodoActual;

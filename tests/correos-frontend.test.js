@@ -134,7 +134,7 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     const base = { desde: '2027-03-01', hasta: '2027-03-31', autorizado: 'Persona Autorizada', autorizado_de_licencia_hasta: '2027-03-03' };
     assert.equal(texto({ ...base, en_curso: false, vispera: '2027-02-26' }),
       'Licencia del firmante del 01/03/2027 al 31/03/2027: los avisos se anticipan el 26/02/2027 con la autorización a '
-      + 'Persona Autorizada (de licencia hasta el 03/03/2027), que presenta las demás notas durante la licencia.');
+      + 'Persona Autorizada (de licencia hasta el 03/03/2027), que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.');
     assert.equal(texto({ ...base, en_curso: true, nota_autorizacion: { numero: 15, anio: 2027 } }),
       'Licencia del firmante del 01/03/2027 al 31/03/2027: Persona Autorizada (de licencia hasta el 03/03/2027) presenta las notas '
       + 'por autorización, con las dos firmas (autorización comunicada en la Nota Digital N° 15/27).');
@@ -145,7 +145,7 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     const texto = (l) => vm.runInContext(`textoLicenciaFirmante(${JSON.stringify(l)})`, contexto);
     const base = { desde: '2027-03-01', hasta: '2027-03-31', autorizado: 'Persona Autorizada', vispera: '2027-02-26', en_curso: false };
     const esperado = 'Licencia del firmante del 01/03/2027 al 31/03/2027: los avisos se anticipan el 26/02/2027 con la autorización a '
-      + 'Persona Autorizada, que presenta las demás notas durante la licencia.';
+      + 'Persona Autorizada, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.';
     assert.equal(texto(base), esperado);
     assert.equal(texto({ ...base, autorizado_de_licencia_hasta: null }), esperado);
   });

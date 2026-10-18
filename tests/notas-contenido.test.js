@@ -2,7 +2,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, textoLeyendaAutorizacion, renderHtml, renderTexto, cargoEnTexto
+  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, textoLeyendaAutorizacion, textoAdelanto, renderHtml, renderTexto, cargoEnTexto
 } from '../services/notasDigitalesContenido.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
 
@@ -508,6 +508,154 @@ describe('párrafo de autorización en los avisos de la víspera (spec 7.2)', ()
   it('sin autorización, la nota no lo lleva', () => {
     assert.equal(nota().autorizacion, null);
     assert.ok(!renderHtml(nota()).includes('Asimismo'));
+  });
+});
+
+// Aviso en su fecha con persona autorizada (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.6): los datasets que la nota
+// anticipada de la víspera ya había pedido traen adelantado { numero, anio, fecha }; el aviso de su fecha cita esa nota
+describe('textoAdelanto: la nota que adelantó el pedido (spec 7.6)', () => {
+  const NOTA_10 = { numero: 10, anio: 2026, fecha: '2026-12-09' };
+  const NOTA_11 = { numero: 11, anio: 2026, fecha: '2026-12-22' };
+  const adelantado = (titulo, nota) => dataset({ titulo, adelantado: nota });
+  const CITA_10 = 'Nota Digital N° 10/26 del 09/12/2026';
+  const CITA_11 = 'Nota Digital N° 11/26 del 22/12/2026';
+
+  it('ningún dataset con adelantado (o ninguno): null', () => {
+    assert.equal(textoAdelanto([dataset(), dataset({ id: 2, titulo: 'Dataset B' })]), null);
+    assert.equal(textoAdelanto([dataset({ adelantado: null })]), null);
+    assert.equal(textoAdelanto([]), null);
+  });
+
+  it('todos adelantados por la misma nota: "Este pedido …", sea uno o varios', () => {
+    const esperado = `Este pedido ya se había adelantado por ${CITA_10}.`;
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10)]), esperado);
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10), adelantado('Título B', NOTA_10), adelantado('Título C', NOTA_10)]), esperado);
+  });
+
+  it('mezcla con uno sin adelantado: nombra el título si es uno', () => {
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10), dataset({ titulo: 'Título B' })]),
+      `El conjunto de datos "Título A" ya se había adelantado por ${CITA_10}.`);
+  });
+
+  it('mezcla con uno sin adelantado: nombra los títulos si son varios ("A" y "B"; "A", "B" y "C")', () => {
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10), dataset({ titulo: 'Título X' }), adelantado('Título B', NOTA_10)]),
+      `Los conjuntos de datos "Título A" y "Título B" ya se habían adelantado por ${CITA_10}.`);
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10), adelantado('Título B', NOTA_10), dataset({ titulo: 'Título X' }), adelantado('Título C', NOTA_10)]),
+      `Los conjuntos de datos "Título A", "Título B" y "Título C" ya se habían adelantado por ${CITA_10}.`);
+  });
+
+  it('dos notas distintas: una oración por nota, en el orden de su primera aparición, separadas por un espacio', () => {
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10), adelantado('Título B', NOTA_11)]),
+      `El conjunto de datos "Título A" ya se había adelantado por ${CITA_10}. El conjunto de datos "Título B" ya se había adelantado por ${CITA_11}.`);
+    // El orden es el de los datasets, no el del número de la nota; los de una misma nota se agrupan aunque no sean contiguos
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_11), adelantado('Título B', NOTA_10), adelantado('Título C', NOTA_11), dataset({ titulo: 'Título X' })]),
+      `Los conjuntos de datos "Título A" y "Título C" ya se habían adelantado por ${CITA_11}. El conjunto de datos "Título B" ya se había adelantado por ${CITA_10}.`);
+  });
+
+  it('la nota es la misma si coinciden número y año: el mismo número de otro año es otra nota', () => {
+    assert.equal(textoAdelanto([adelantado('Título A', NOTA_10), adelantado('Título B', { ...NOTA_10, anio: 2027, fecha: '2027-01-05' })]),
+      `El conjunto de datos "Título A" ya se había adelantado por ${CITA_10}. El conjunto de datos "Título B" ya se había adelantado por Nota Digital N° 10/27 del 05/01/2027.`);
+  });
+});
+
+describe('párrafo del adelanto en los avisos en su fecha (spec 7.6)', () => {
+  const NOTA_10 = { numero: 10, anio: 2026, fecha: '2026-12-09' };
+  const TEXTO = 'Este pedido ya se había adelantado por Nota Digital N° 10/26 del 09/12/2026.';
+  // En el HTML las comillas del texto salen escapadas, como todo lo que se escribe ahí
+  const conAdelanto = (cambios = {}) => nota({ gestion: 'externa', datasets: [dataset({ adelantado: NOTA_10 })], ...cambios });
+
+  it('el aviso lo lleva en nota.adelanto, con la misma forma que las demás notas', () => {
+    assert.equal(conAdelanto().adelanto, TEXTO);
+    assert.equal(nota().adelanto, null);
+  });
+
+  it('va después del primer párrafo y antes de las secciones, en una línea propia en el texto', () => {
+    const n = conAdelanto({ areas: [{ id: 10, nombre: 'Área Uno', email_principal: 'area@rpad.test' }] });
+    const html = renderHtml(n);
+    assert.ok(html.includes(`${n.parrafoInicial}</p>\n<p style="margin:0 0 12px;text-align:justify;">${TEXTO}</p>\n<p style="margin:16px 0 6px;"><b>Próximos a vencer</b></p>`), html);
+    assert.ok(html.indexOf(TEXTO) < html.indexOf('<table'));
+    const texto = renderTexto(n);
+    assert.ok(texto.includes(`${n.parrafoInicial}\n\n${TEXTO}\n\nPróximos a vencer\n`), texto);
+  });
+
+  it('con comillas en el título: el HTML las escapa una sola vez y el texto plano las deja como están', () => {
+    const n = conAdelanto({ datasets: [dataset({ titulo: 'Parques & <jardines>', adelantado: NOTA_10 }), dataset({ id: 2 })] });
+    assert.equal(n.adelanto, 'El conjunto de datos "Parques & <jardines>" ya se había adelantado por Nota Digital N° 10/26 del 09/12/2026.');
+    assert.ok(renderHtml(n).includes('El conjunto de datos &quot;Parques &amp; &lt;jardines&gt;&quot; ya se había adelantado por Nota Digital N° 10/26 del 09/12/2026.</p>'));
+    assert.ok(renderTexto(n).includes('\nEl conjunto de datos "Parques & <jardines>" ya se había adelantado por Nota Digital N° 10/26 del 09/12/2026.\n'));
+  });
+
+  it('con el párrafo de autorización: primero ese y enseguida el del adelanto', () => {
+    const n = conAdelanto({ autorizacion: AUTORIZADA });
+    const html = renderHtml(n);
+    assert.ok(html.includes(`${n.parrafoInicial}</p>\n<p style="margin:0 0 12px;text-align:justify;">${PARRAFO_AUTORIZACION}</p>\n<p style="margin:0 0 12px;text-align:justify;">${TEXTO}</p>\n<p style="margin:16px 0 6px;"><b>Próximos a vencer</b></p>`), html);
+    assert.ok(renderTexto(n).includes(`${n.parrafoInicial}\n\n${PARRAFO_AUTORIZACION}\n\n${TEXTO}\n\nPróximos a vencer\n`));
+  });
+
+  it('sin datasets adelantados: adelanto null y el HTML y el texto quedan como siempre', () => {
+    const n = nota({ gestion: 'externa' });
+    assert.equal(n.adelanto, null);
+    const html = renderHtml(n);
+    assert.ok(html.includes(`${n.parrafoInicial}</p>\n<p style="margin:16px 0 6px;"><b>Próximos a vencer</b></p>`));
+    assert.ok(!html.includes('adelantado'));
+    assert.ok(renderTexto(n).includes(`${n.parrafoInicial}\n\nPróximos a vencer\n`));
+    assert.ok(!renderTexto(n).includes('adelantado'));
+  });
+
+  it('la reiteración no lo lleva, aunque un dataset haya tenido adelantado', () => {
+    const n = nota({ tipo: 'reiteracion', datasets: [dataset({ adelantado: NOTA_10 })] });
+    assert.equal(n.adelanto, null);
+    assert.ok(!renderHtml(n).includes('adelantado'));
+    assert.ok(!renderTexto(n).includes('adelantado'));
+  });
+
+  it('las notas de autorización y de auditoría tampoco', () => {
+    const firmaTitular = { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' }, presentante: null, leyenda: null };
+    assert.equal(construirNotaDeAutorizacion({ numero: 15, anio: 2026, fecha: '2026-11-25', firma: firmaTitular, autorizacion: AUTORIZADA }).adelanto, null);
+    assert.equal(construirNotaDeAuditoria({ numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: [], reiterados: [], config }).adelanto, null);
+  });
+});
+
+describe('reiteración: "Informado en" con más de un aviso (spec 7.6)', () => {
+  const PRIMERO = { numero: 10, anio: 2026, fecha: '2026-12-09' };
+  const SEGUNDO = { numero: 11, anio: 2026, fecha: '2026-12-22' };
+  const TERCERO = { numero: 1, anio: 2027, fecha: '2027-01-04' };
+  const ANTECEDENTE = { cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' };
+  const reiteracion = (cambios) => nota({ tipo: 'reiteracion', gestion: 'externa', fecha: '2027-01-20', datasets: [dataset({ vencimiento: '2027-01-31', ...cambios })] });
+  const celda = (n) => n.secciones[0].filas[0].valores.at(-1);
+
+  it('dos avisos: "Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)"', () => {
+    const n = reiteracion({ informado: { ...PRIMERO, tambien: [SEGUNDO] } });
+    assert.equal(celda(n), 'Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)');
+    assert.ok(renderHtml(n).includes('>Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)</td>'));
+    assert.ok(renderTexto(n).includes('    Informado en: Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)\n'));
+  });
+
+  it('tres avisos: separados por comas y "y" antes del último', () => {
+    const n = reiteracion({ informado: { ...PRIMERO, tambien: [SEGUNDO, TERCERO] } });
+    assert.equal(celda(n), 'Nota Digital N° 10/26 (09/12/2026), N° 11/26 (22/12/2026) y N° 1/27 (04/01/2027)');
+  });
+
+  it('con "reiterado" y con la segunda oración del antecedente: igual que con un solo aviso', () => {
+    const f = reiteracion({ informado: { ...PRIMERO, tambien: [SEGUNDO] }, reiteraciones: 2, antecedente: ANTECEDENTE }).secciones[0].filas[0];
+    assert.equal(f.valores.at(-1), 'Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026) – reiterado 2 veces.');
+    assert.equal(f.informadoAnterior, 'Anteriormente notificado DGMIT por e-mail el 01/10/2026');
+  });
+
+  it('un aviso con tambien vacío o sin la clave: como siempre', () => {
+    assert.equal(celda(reiteracion({ informado: { ...PRIMERO, tambien: [] } })), 'Nota Digital N° 10/26 (09/12/2026)');
+    assert.equal(celda(reiteracion({ informado: PRIMERO })), 'Nota Digital N° 10/26 (09/12/2026)');
+    assert.equal(celda(reiteracion({ informado: null })), 'Sin aviso previo');
+  });
+
+  it('la columna "Solicitado en" de la nota de auditoría no cambia', () => {
+    const baja = {
+      id: 9, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset Viejo', usuario_nombre: 'Persona Titular', usuario_cargo: null,
+      fecha_propuesta: '2026-10-01', datos_nuevos: { eliminado: true }, datos_anteriores: { titulo: 'Dataset Viejo' },
+      solicitado: { numero: 12, anio: 2026, fecha: '2026-10-09', reiteraciones: 1 }
+    };
+    const n = construirNotaDeAuditoria({ numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: [], reiterados: [baja], config });
+    assert.equal(n.secciones[0].filas[0].valores.at(-1), 'Nota Digital N° 12/26 (09/10/2026) – reiterado 1 vez');
   });
 });
 

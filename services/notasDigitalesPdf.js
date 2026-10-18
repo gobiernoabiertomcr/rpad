@@ -267,12 +267,18 @@ const palabraMasAncha = (doc, texto, fuente, tamano) => {
 
 // En las celdas, salvo la del título, "Del" y "al" no se separan de la fecha que los sigue: un pedido como "Del 01/01/2026
 // al 31/12/2026" pasa a dos renglones como "Del 01/01/2026" y "al 31/12/2026", nunca con un "Del" solo arriba (spec
-// 2026-10-17-fechas-datasets, 9: "Datos solicitados"). Se unen con un espacio duro, que se escribe y se mide como un espacio.
+// 2026-10-17-fechas-datasets, 9: "Datos solicitados"). Tampoco el "N\u00b0" de una nota se separa de su n\u00famero: "Informado en"
+// de la reiteraci\u00f3n, con dos o tres avisos (spec 2026-10-15, 7.6), no deja "Nota Digital N\u00b0" arriba y "10/26" abajo, son notas
+// formales. Se unen con un espacio duro, que se escribe y se mide como un espacio.
 const PREPOSICION_Y_FECHA = /\b(del|al) (?=\d{2}\/\d{2}\/\d{4})/gi;
+const NUMERAL_Y_NUMERO = /N\u00b0 (?=\d)/g;
 const conFechasJuntas = (seccion) => ({
   ...seccion,
   filas: seccion.filas.map(f => ({
-    ...f, valores: f.valores.map((valor, i) => (i === 0 ? valor : String(valor).replace(PREPOSICION_Y_FECHA, '$1\u00a0')))
+    ...f,
+    valores: f.valores.map((valor, i) => (i === 0
+      ? valor
+      : String(valor).replace(PREPOSICION_Y_FECHA, '$1\u00a0').replace(NUMERAL_Y_NUMERO, 'N\u00b0\u00a0')))
   }))
 });
 
@@ -497,6 +503,13 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
     if (nota.autorizacion) {
       asegurarEspacio(altoTexto(nota.autorizacion) + altoEspacio(ESPACIO_PARRAFO, 12));
       parrafo(nota.autorizacion);
+    }
+
+    // Párrafo del adelanto (aviso en su fecha de un pedido que la nota de la víspera ya había adelantado, spec 7.6): enseguida
+    // del de autorización, si lo hay, con el mismo cuidado: entero en la hoja o entero en la siguiente
+    if (nota.adelanto) {
+      asegurarEspacio(altoTexto(nota.adelanto) + altoEspacio(ESPACIO_PARRAFO, 12));
+      parrafo(nota.adelanto);
     }
 
     // El título, la introducción (si tiene), el encabezado de la tabla y su primera fila viajan juntos (10 pt: separaciones)
