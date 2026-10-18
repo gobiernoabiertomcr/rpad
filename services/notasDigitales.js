@@ -818,6 +818,13 @@ export const previewAnexo = async ({ gestion, hoy = hoyArgentina() }) => {
   return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas }));
 };
 
+// "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día
+// (spec 2026-10-15, 7.7)
+export const mensajeDePrueba = ({ destinatarios, ejemplo, motivo, fecha }) => {
+  const aclaraciones = [ejemplo && 'con datos de ejemplo', motivo && `como saldría el ${formatoCorto(fecha)}`].filter(Boolean);
+  return `Prueba enviada a ${destinatarios.join(', ')}${aclaraciones.length > 0 ? ` (${aclaraciones.join(', ')})` : ''}`;
+};
+
 // La prueba se genera como una nota de prueba (sin número, sin registrar datasets ni cambios incluidos ni la autorización) y va
 // solo a las casillas de prueba. Muestra el mismo día y el mismo contenido que la vista previa: fecha y motivo dicen cuál.
 export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null }) => {

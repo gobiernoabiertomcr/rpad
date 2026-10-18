@@ -9,7 +9,6 @@ import {
 import { listaDeCorreos } from '../services/emailService.js';
 import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
 import { firmaDeUsuario } from '../services/firmasService.js';
-import { formatoCorto } from '../services/notasDigitalesCalendario.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 // El libro también filtra las notas de autorización y las de auditoría (spec 2026-10-15, 7.2 y 10.4)
@@ -269,7 +268,7 @@ export const enviarPrueba = async (req, res) => {
     // Si hoy no se generan notas, la prueba muestra la de la próxima corrida con notas (spec 2026-10-15, 7.7): lo dice
     res.json({
       success: true,
-      message: `Prueba enviada a ${resultado.destinatarios.join(', ')}${resultado.ejemplo ? ' (con datos de ejemplo)' : ''}${resultado.motivo ? ` (como saldría el ${formatoCorto(resultado.fecha)})` : ''}`,
+      message: notas.mensajeDePrueba(resultado),
       data: {
         id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios, fecha: resultado.fecha, motivo: resultado.motivo
       }

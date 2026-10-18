@@ -350,12 +350,21 @@ describe('vista previa y prueba', () => {
       assert.deepEqual([conLicencia.vista.fecha, conLicencia.vista.motivo], [esperada, motivo]);
       assert.equal(conLicencia.prueba.success, true);
       assert.deepEqual([conLicencia.prueba.data.fecha, conLicencia.prueba.data.motivo], [esperada, motivo]);
-      assert.ok(conLicencia.prueba.message.endsWith(` (con datos de ejemplo) (como saldría el ${formatoCorto(esperada)})`), conLicencia.prueba.message);
+      assert.ok(conLicencia.prueba.message.endsWith(` (con datos de ejemplo, como saldría el ${formatoCorto(esperada)})`), conLicencia.prueba.message);
     } finally {
       await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
       await query('DELETE FROM usuarios_licencias WHERE usuario_id = ?', [titular]);
       await query('DELETE FROM usuarios_firmas WHERE usuario_id = ?', [titular]);
     }
+  });
+
+  it('el mensaje de la prueba junta lo que aclara en un solo paréntesis (spec 2026-10-15, 7.7)', () => {
+    const base = { destinatarios: ['uno@rpad.test', 'dos@rpad.test'], fecha: '2026-12-21' };
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: false, motivo: null }), 'Prueba enviada a uno@rpad.test, dos@rpad.test');
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: true, motivo: null }), 'Prueba enviada a uno@rpad.test, dos@rpad.test (con datos de ejemplo)');
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: false, motivo: 'día no hábil' }), 'Prueba enviada a uno@rpad.test, dos@rpad.test (como saldría el 21/12/2026)');
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: true, motivo: 'día no hábil' }),
+      'Prueba enviada a uno@rpad.test, dos@rpad.test (con datos de ejemplo, como saldría el 21/12/2026)');
   });
 
   it('rechaza tipo o gestión inválidos', async () => {
