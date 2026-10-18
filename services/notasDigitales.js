@@ -373,8 +373,8 @@ const contextoDelDia = async (config, fecha) => {
  *   ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar, 7.7) se guarda sin cuenta_desde: con la del
  *   anticipado, la reiteración de esta misma corrida lo tomaría también;
  * - rangoVencimientos: { desde, hasta } de los vencimientos, para el asunto de un aviso con datasets anticipados (spec 7.3).
- *   Solo el de la víspera (con anticipo): los que salen en su fecha traen cuenta_desde, salvo el recuperado (con los 20 días
- *   cumplidos), que va con null, pero el asunto lleva el mes de la nota;
+ *   Solo el de la víspera (con anticipo): el aviso en su fecha no lo lleva aunque sus datasets traen cuenta_desde (salvo el
+ *   recuperado, con los 20 días cumplidos, que va con null): su asunto lleva el mes de la nota;
  * - autorizacion: la que comunica este aviso (solo la víspera, o sea con anticipo), si no null;
  * - errorEnSuFecha: el error de buscar lo que sale en su fecha, o null. Si falla, datasets es la selección normal del día:
  *   lo adelantado sale en la corrida siguiente.
@@ -456,8 +456,8 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
   for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
-  const contexto = await contextoDelDia(config, hoy);
-  let { modo, firma, licencia } = contexto;
+  const delDia = await contextoDelDia(config, hoy);
+  let { modo, firma, licencia } = delDia;
   // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
   // arriba siguen: su contenido ya está congelado.
   if (modo === 'sin_autorizado') {
@@ -467,7 +467,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // La autorización todavía no comunicada (spec 7.2) va en los avisos de la víspera, aunque ese día la persona autorizada
   // esté de licencia; si no hay avisos, o se dio más tarde, sale una nota de autorización firmada por el titular
-  const { pendiente, autorizacion, anticipo } = contexto;
+  const { pendiente, autorizacion, anticipo } = delDia;
   let autorizacionComunicada = false;
   let autorizacionDesactualizada = false;
   // Registra en la licencia la nota que comunicó la autorización. Si la licencia cambió mientras se generaba (otra
