@@ -187,6 +187,207 @@ describe('seleccionarParaReiteracion', () => {
     const [dataset] = await datos.seleccionarParaReiteracion('interna', '2026-12-01');
     assert.equal(dataset.reiteraciones, 1);
   });
+
+  // Aviso en su fecha con autorizado (spec 2026-10-15, 7.6): el dataset tiene dos filas de aviso en el mismo vencimiento, y
+  // sin agrupar la consulta lo devolvería dos veces (y la reiteración no podría guardarlo: clave (nota_id, dataset_id))
+  describe('un dataset con dos avisos (el adelantado y el de su fecha)', () => {
+    const VENCE = '2027-01-31';
+    const avisar = (id, fecha, numero, opciones = {}) => crearNota({
+      gestion: 'externa', fecha, numero, datasets: [{ id, vencimiento: VENCE, cuentaDesde: '2026-12-22' }], ...opciones
+    });
+
+    it('da una fila por dataset, con los dos avisos en informado', async () => {
+      const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+      // El de su fecha se carga primero: el orden sale de la fecha del aviso, no del orden en que se guardaron
+      await avisar(id, '2026-12-22', 11);
+      await avisar(id, '2026-12-09', 10);
+      const filas = await datos.seleccionarParaReiteracion('externa', '2027-02-01');
+      assert.equal(filas.length, 1);
+      assert.equal(filas[0].id, id);
+      assert.deepEqual(filas[0].informado, {
+        numero: 10, anio: 2026, fecha: '2026-12-09', tambien: [{ numero: 11, anio: 2026, fecha: '2026-12-22' }]
+      });
+      assert.equal(filas[0].reiteraciones, 0);
+      assert.ok(filas[0].pedido.texto);
+    });
+
+    it('con la misma fecha, el orden es el de la nota; solo cuentan los avisos enviados', async () => {
+      const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+      await avisar(id, '2026-12-09', 10);
+      await avisar(id, '2026-12-22', 11);
+      await avisar(id, '2026-12-22', 12);
+      await avisar(id, '2026-12-23', 13, { estado: 'fallida' });
+      const [fila] = await datos.seleccionarParaReiteracion('externa', '2027-02-01');
+      assert.deepEqual(fila.informado, {
+        numero: 10, anio: 2026, fecha: '2026-12-09',
+        tambien: [{ numero: 11, anio: 2026, fecha: '2026-12-22' }, { numero: 12, anio: 2026, fecha: '2026-12-22' }]
+      });
+    });
+
+    it('mantiene el orden por vencimiento y título entre datasets, y el de un solo aviso queda sin "tambien"', async () => {
+      const doble = await crearDataset({ titulo: 'A doble', gestion: 'externa', vencimiento: VENCE });
+      const simple = await crearDataset({ titulo: 'B simple', gestion: 'externa', vencimiento: VENCE });
+      const anterior = await crearDataset({ titulo: 'C doble anterior', gestion: 'externa', vencimiento: '2027-01-30' });
+      await avisar(doble, '2026-12-09', 10);
+      await avisar(simple, '2026-12-09', 14);
+      await avisar(doble, '2026-12-22', 11);
+      await crearNota({ gestion: 'externa', fecha: '2026-12-09', numero: 12, datasets: [{ id: anterior, vencimiento: '2027-01-30' }] });
+      await crearNota({ gestion: 'externa', fecha: '2026-12-22', numero: 13, datasets: [{ id: anterior, vencimiento: '2027-01-30' }] });
+
+      const filas = await datos.seleccionarParaReiteracion('externa', '2027-02-01');
+      assert.deepEqual(ids(filas), [anterior, doble, simple]);
+      assert.deepEqual(filas[2].informado, { numero: 14, anio: 2026, fecha: '2026-12-09' });
+      assert.equal('tambien' in filas[2].informado, false);
+      assert.deepEqual(filas[1].informado.tambien, [{ numero: 11, anio: 2026, fecha: '2026-12-22' }]);
+      assert.deepEqual(filas[0].informado.tambien, [{ numero: 13, anio: 2026, fecha: '2026-12-22' }]);
+    });
+
+    it('un aviso de otro vencimiento (el ciclo anterior) no se suma', async () => {
+      const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+      await crearNota({ gestion: 'externa', fecha: '2026-01-05', numero: 1, datasets: [{ id, vencimiento: '2026-01-31' }] });
+      await avisar(id, '2026-12-09', 10);
+      const [fila] = await datos.seleccionarParaReiteracion('externa', '2027-02-01');
+      assert.deepEqual(fila.informado, { numero: 10, anio: 2026, fecha: '2026-12-09' });
+    });
+  });
+});
+
+// Aviso en su fecha con autorizado (spec 2026-10-15, 7.6): los datasets que se avisaron por adelantado en la víspera de la
+// licencia del titular y todavía no tuvieron su aviso en su fecha. Lo que decide si sale hoy (día <= hoy) lo hacen la
+// corrida y el Estado: esta selección no filtra por hoy.
+describe('pendientesEnSuFecha', () => {
+  const LICENCIA = { desde: '2026-12-10', hasta: '2027-01-08' };
+  const HOY = '2026-12-22';
+  const VENCE = '2027-01-31';
+  // Un aviso por dataset: cada nota lleva un número propio (único por año), salvo que el test pida uno
+  let numeroSiguiente = 100;
+  const adelantar = (id, { fecha = '2026-12-09', numero = numeroSiguiente++, cuentaDesde = '2026-12-22', vencimiento = VENCE, ...opciones } = {}) => crearNota({
+    gestion: 'externa', fecha, numero: opciones.esPrueba ? null : numero, datasets: [{ id, vencimiento, cuentaDesde }], ...opciones
+  });
+  const pendientes = (ausencias = [], gestion = 'externa') => datos.pendientesEnSuFecha(gestion, HOY, LICENCIA, ausencias);
+
+  it('devuelve el dataset adelantado con su nota, su cuenta_desde y su día', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(id, { numero: 10 });
+    const filas = await pendientes();
+    assert.equal(filas.length, 1);
+    assert.equal(filas[0].id, id);
+    assert.equal(filas[0].vencimiento, VENCE);
+    assert.equal(filas[0].cuenta_desde, '2026-12-22');
+    assert.equal(filas[0].dia_en_su_fecha, '2026-12-22');
+    assert.deepEqual(filas[0].adelantado, { numero: 10, anio: 2026, fecha: '2026-12-09' });
+    assert.ok(filas[0].pedido.texto);
+  });
+
+  it('no devuelve el que ya tuvo su aviso en su fecha (otra fila de aviso del mismo vencimiento, de cualquier estado)', async () => {
+    const enviado = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    const fallido = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    const enPrueba = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(enviado);
+    await adelantar(enviado, { fecha: '2026-12-22' });
+    await adelantar(fallido);
+    await adelantar(fallido, { fecha: '2026-12-22', estado: 'fallida' });
+    await adelantar(enPrueba);
+    await adelantar(enPrueba, { fecha: '2026-12-22', esPrueba: 1 }); // una prueba no cuenta
+    assert.deepEqual(ids(await pendientes()), [enPrueba]);
+  });
+
+  it('el aviso adelantado cuenta en cualquier estado (enviado, pendiente o fallido)', async () => {
+    const enviado = await crearDataset({ titulo: 'A enviado', gestion: 'externa', vencimiento: VENCE });
+    const pendiente = await crearDataset({ titulo: 'B pendiente', gestion: 'externa', vencimiento: VENCE });
+    const fallido = await crearDataset({ titulo: 'C fallido', gestion: 'externa', vencimiento: VENCE });
+    await adelantar(enviado);
+    await adelantar(pendiente, { estado: 'pendiente' });
+    await adelantar(fallido, { estado: 'fallida' });
+    assert.deepEqual(ids(await pendientes()), [enviado, pendiente, fallido]);
+  });
+
+  it('no devuelve el que se actualizó (cambió su vencimiento)', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(id);
+    await query("UPDATE datasets SET proxima_actualizacion = '2028-01-31' WHERE id = ?", [id]);
+    assert.deepEqual(await pendientes(), []);
+  });
+
+  it('no devuelve una cuenta_desde fuera de la licencia, ni un aviso sin cuenta_desde', async () => {
+    const despues = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    const antes = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    const normal = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(despues, { cuentaDesde: '2027-01-11' });
+    await adelantar(antes, { cuentaDesde: '2026-12-09' });
+    await adelantar(normal, { cuentaDesde: null });
+    assert.deepEqual(await pendientes(), []);
+    // Los dos extremos de la licencia entran
+    const primero = await crearDataset({ titulo: 'A primero', gestion: 'externa', vencimiento: VENCE });
+    const ultimo = await crearDataset({ titulo: 'B último', gestion: 'externa', vencimiento: VENCE });
+    await adelantar(primero, { cuentaDesde: LICENCIA.desde });
+    await adelantar(ultimo, { cuentaDesde: LICENCIA.hasta });
+    assert.deepEqual(ids(await pendientes()), [primero, ultimo]);
+  });
+
+  it('ignora los avisos de prueba', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(id, { esPrueba: 1 });
+    assert.deepEqual(await pendientes(), []);
+  });
+
+  it('con la persona autorizada de licencia el 22/12, el día es el 18/12', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(id);
+    const [fila] = await pendientes([{ desde: '2026-12-21', hasta: '2026-12-23' }]);
+    assert.equal(fila.id, id);
+    assert.equal(fila.cuenta_desde, '2026-12-22');
+    assert.equal(fila.dia_en_su_fecha, '2026-12-18');
+  });
+
+  it('descarta el que la persona autorizada no puede presentar en ningún día de la licencia', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    await adelantar(id);
+    assert.deepEqual(await pendientes([{ desde: '2026-12-10', hasta: '2026-12-23' }]), []);
+  });
+
+  it('no filtra por hoy: devuelve también el que le toca más adelante, y lo que pasó', async () => {
+    const mas = await crearDataset({ titulo: 'A más adelante', gestion: 'externa', vencimiento: VENCE });
+    const ya = await crearDataset({ titulo: 'B ya pasó', gestion: 'externa', vencimiento: VENCE });
+    await adelantar(mas, { cuentaDesde: '2026-12-30' });
+    await adelantar(ya, { cuentaDesde: '2026-12-14' });
+    const filas = await pendientes();
+    assert.deepEqual(filas.map(f => [f.id, f.dia_en_su_fecha]), [[mas, '2026-12-30'], [ya, '2026-12-14']]);
+  });
+
+  it('separa por gestión y deja afuera los inactivos, los eventuales y los vencidos', async () => {
+    const externo = await crearDataset({ gestion: 'externa', vencimiento: VENCE });
+    const interno = await crearDataset({ gestion: 'interna', vencimiento: VENCE });
+    const inactivo = await crearDataset({ gestion: 'externa', vencimiento: VENCE, activo: 0 });
+    const eventual = await crearDataset({ gestion: 'externa', vencimiento: VENCE, frecuencia: 'Eventual' });
+    const vencido = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-21' });
+    for (const id of [externo, interno, inactivo, eventual]) await adelantar(id);
+    await adelantar(vencido, { vencimiento: '2026-12-21' });
+    assert.deepEqual(ids(await pendientes()), [externo]);
+    assert.deepEqual(ids(await pendientes([], 'interna')), [interno]);
+  });
+
+  it('un dataset que vence hoy todavía entra', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: HOY });
+    await adelantar(id, { vencimiento: HOY });
+    assert.deepEqual(ids(await pendientes()), [id]);
+  });
+
+  it('ordena por vencimiento y título, y trae el pedido calculado con hoy', async () => {
+    const tardio = await crearDataset({ titulo: 'A tardío', gestion: 'externa', vencimiento: '2027-02-28' });
+    const segundo = await crearDataset({ titulo: 'C mismo mes', gestion: 'externa', vencimiento: VENCE });
+    const primero = await crearDataset({ titulo: 'B mismo mes', gestion: 'externa', vencimiento: VENCE });
+    await adelantar(tardio, { vencimiento: '2027-02-28' });
+    await adelantar(segundo);
+    await adelantar(primero);
+    const filas = await pendientes();
+    assert.deepEqual(ids(filas), [primero, segundo, tardio]);
+    // Externa anual sin Datos al: el acumulado del año del corte (el fin del mes anterior al vencimiento)
+    assert.deepEqual(filas.map(f => [f.tipo_pedido, f.meses, f.pedido.texto]), [
+      ['acumulado', 12, 'Del 01/01/2026 al 31/12/2026'], ['acumulado', 12, 'Del 01/01/2026 al 31/12/2026'],
+      ['acumulado', 12, 'Del 01/01/2027 al 31/01/2027']
+    ]);
+  });
 });
 
 describe('reiteración: vencidos sin aviso', () => {
