@@ -9,216 +9,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- CSS Global -->
+    <!-- CSS Global y de las páginas públicas -->
     <link rel="stylesheet" href="css/main.css?v=20261109">
-    <style>
-        /* Estilos específicos de dataset detail */
-        .breadcrumb {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.875rem;
-            color: var(--gray-500);
-            margin-bottom: 24px;
-        }
-
-        .breadcrumb a {
-            color: var(--primary);
-            transition: var(--transition);
-        }
-
-        .breadcrumb a:hover {
-            text-decoration: underline;
-        }
-
-        .breadcrumb-separator {
-            color: var(--gray-400);
-        }
-
-        .detail-header {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            padding: 24px;
-            margin-bottom: 24px;
-            box-shadow: var(--shadow);
-        }
-
-        .detail-title {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-
-        .detail-title h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--gray-800);
-            margin: 0 0 8px 0;
-        }
-
-        .detail-title .text-muted {
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .temas-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .tema-tag {
-            font-size: 0.75rem;
-            padding: 4px 12px;
-            background: var(--info-light);
-            color: var(--info);
-            border-radius: 16px;
-            font-weight: 500;
-        }
-
-        .detail-grid {
-            display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 24px;
-        }
-
-        .detail-main {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .detail-sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow);
-            overflow: hidden;
-        }
-
-        .card-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .card-header h3 {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .card-body {
-            padding: 20px;
-        }
-
-        .card-body p {
-            color: var(--gray-600);
-            line-height: 1.7;
-            margin: 0;
-        }
-
-        .sidebar-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            padding: 20px;
-            box-shadow: var(--shadow);
-        }
-
-        .sidebar-card-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--gray-800);
-            margin: 0 0 16px 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--gray-100);
-        }
-
-        .info-row:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-        }
-
-        .info-row:first-of-type {
-            padding-top: 0;
-        }
-
-        .info-label {
-            font-size: 0.85rem;
-            color: var(--gray-500);
-        }
-
-        .info-value {
-            font-size: 0.85rem;
-            font-weight: 500;
-            color: var(--gray-800);
-            text-align: right;
-        }
-
-        .text-small {
-            font-size: 0.875rem;
-            color: var(--gray-600);
-            margin: 0;
-        }
-
-        .text-xs {
-            font-size: 0.75rem;
-        }
-
-        .mt-2 {
-            margin-top: 8px;
-        }
-
-        .mt-4 {
-            margin-top: 16px;
-        }
-
-        /* Empty state específico */
-        .empty-state-icon {
-            font-size: 4rem;
-            margin-bottom: 16px;
-        }
-
-        .empty-state-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--gray-700);
-            margin-bottom: 8px;
-        }
-
-        @media (max-width: 968px) {
-            .detail-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .detail-title {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="css/publico.css?v=20261109">
 </head>
 <body>
     <div class="app-container">
@@ -284,101 +77,73 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="main-content">
-            <!-- Breadcrumb -->
-            <div class="breadcrumb">
-                <a href="index.html">Inicio</a>
-                <span class="breadcrumb-separator">/</span>
-                <a href="datasets.html">Datasets</a>
-                <span class="breadcrumb-separator">/</span>
-                <span id="breadcrumb-title">Cargando...</span>
+        <main class="main-content main-publico">
+            <!-- Banda: las migas; el título con su estado, el área y los temas, y el link al portal. Mientras carga dice
+                 "Cargando…"; si el conjunto no está, o no se pudo cargar, lo dice acá mismo -->
+            <div class="banda">
+                <div class="publico-contenedor">
+                    <nav class="migas" aria-label="Ruta de navegación">
+                        <ol>
+                            <li><a href="index.html">Inicio</a></li>
+                            <li><a href="datasets.html">Datasets</a></li>
+                            <li><span id="breadcrumb-title">Conjunto de datos</span></li>
+                        </ol>
+                    </nav>
+                </div>
+                <div class="publico-contenedor banda-cuerpo detalle-banda">
+                    <p class="cargando" id="loading">Cargando…</p>
+                    <noscript><p class="aviso-error detalle-aviso">Para ver el conjunto de datos hace falta JavaScript.</p></noscript>
+
+                    <div class="detalle-cabeza hidden" id="dataset-cabeza">
+                        <h1 id="dataset-titulo"></h1>
+                        <div class="detalle-datos">
+                            <span id="dataset-estado" class="badge"></span>
+                            <p class="detalle-area" id="dataset-area"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg><span id="dataset-area-text">Sin área asignada</span></p>
+                        </div>
+                        <div class="detalle-temas" id="dataset-temas"></div>
+                    </div>
+                    <!-- Solo con una url_dataset http/https (Utils.esUrlSegura) -->
+                    <div class="detalle-portal hidden" id="url-card">
+                        <a id="dataset-url" class="btn-tinta" href="#" target="_blank" rel="noopener"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>Ver en el Portal de Datos Abiertos<span class="solo-lectores"> (se abre en otra pestaña)</span></a>
+                    </div>
+
+                    <!-- Sin id, o con un id que no es de ningún conjunto -->
+                    <div class="detalle-cabeza hidden" id="not-found">
+                        <h1>Conjunto de datos no encontrado</h1>
+                        <p class="bajada">El conjunto de datos que buscás no existe o se dio de baja.</p>
+                        <div class="acciones">
+                            <a class="btn-tinta" href="datasets.html">Ver todos los datasets</a>
+                        </div>
+                    </div>
+
+                    <!-- Cualquier otro error al pedirlo (el servidor, la conexión) -->
+                    <p class="aviso-error detalle-aviso hidden" id="dataset-error" role="alert">No se pudo cargar el conjunto de datos. Probá de nuevo en unos minutos.</p>
+                </div>
+                <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
             </div>
 
-            <div id="message-container"></div>
-
-            <!-- Loading -->
-            <div id="loading" class="loading"><div class="spinner"></div></div>
-
-            <!-- Dataset Content -->
-            <div id="dataset-content" class="hidden">
-                <!-- Header -->
-                <div class="detail-header">
-                    <div class="detail-title">
-                        <div>
-                            <h1 id="dataset-titulo"></h1>
-                            <p class="text-muted" id="dataset-area">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>
-                                <span id="dataset-area-text">Sin área asignada</span>
-                            </p>
-                        </div>
-                        <span id="dataset-estado" class="badge"></span>
-                    </div>
-                    <div id="dataset-temas" class="temas-tags"></div>
-                </div>
-
-                <!-- Grid -->
-                <div class="detail-grid">
-                    <!-- Main Content -->
-                    <div class="detail-main">
-                        <div class="card">
-                            <div class="card-header">
-                                <h3>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-                                    Descripción
-                                </h3>
-                            </div>
-                            <div class="card-body">
-                                <p id="dataset-descripcion"></p>
-                            </div>
-                        </div>
-
-                        <div id="que-se-solicita-card" class="card hidden">
-                            <div class="card-header">
-                                <h3>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
-                                    Qué se solicita
-                                </h3>
-                            </div>
-                            <div class="card-body">
-                                <p id="dataset-que-se-solicita" style="white-space: pre-line;"></p>
-                            </div>
-                        </div>
-
-                        <div id="observaciones-card" class="card hidden">
-                            <div class="card-header">
-                                <h3>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                                    Observaciones
-                                </h3>
-                            </div>
-                            <div class="card-body">
-                                <p id="dataset-observaciones"></p>
-                            </div>
-                        </div>
-
-                        <div id="url-card" class="card hidden">
-                            <div class="card-header">
-                                <h3>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-                                    Acceso al Dataset
-                                </h3>
-                            </div>
-                            <div class="card-body">
-                                <a id="dataset-url" href="#" target="_blank" class="btn btn-primary">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-                                    Ver en Portal de Datos Abiertos
-                                </a>
-                            </div>
-                        </div>
+            <!-- Debajo, dos columnas: los textos largos y, al costado, el panel con las fechas, lo técnico y la licencia. En una
+                 sola columna (≤ 980 px), el panel va primero -->
+            <div class="publico-contenedor">
+                <div class="detalle-grilla hidden" id="dataset-content">
+                    <div class="detalle-principal">
+                        <section class="detalle-bloque">
+                            <h2>Descripción</h2>
+                            <p class="detalle-texto" id="dataset-descripcion"></p>
+                        </section>
+                        <section class="detalle-bloque hidden" id="que-se-solicita-card">
+                            <h2>Qué se solicita</h2>
+                            <p class="detalle-texto" id="dataset-que-se-solicita"></p>
+                        </section>
+                        <section class="detalle-bloque hidden" id="observaciones-card">
+                            <h2>Observaciones</h2>
+                            <p class="detalle-texto" id="dataset-observaciones"></p>
+                        </section>
                     </div>
 
-                    <!-- Sidebar -->
-                    <div class="detail-sidebar">
-                        <div class="sidebar-card">
-                            <h4 class="sidebar-card-title">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
-                                Fechas
-                            </h4>
+                    <div class="detalle-lateral detalle-panel">
+                        <section class="detalle-panel-seccion">
+                            <h2>Fechas</h2>
                             <!-- "Datos al" es la fecha de los datos; "Cargado en el portal", el día de la carga (spec 2026-10-17-fechas-datasets, 11) -->
                             <div id="dataset-fechas">
                                 <div class="info-row">
@@ -394,13 +159,9 @@
                                     <span class="info-value">-</span>
                                 </div>
                             </div>
-                        </div>
-
-                        <div class="sidebar-card">
-                            <h4 class="sidebar-card-title">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
-                                Información técnica
-                            </h4>
+                        </section>
+                        <section class="detalle-panel-seccion">
+                            <h2>Información técnica</h2>
                             <div class="info-row">
                                 <span class="info-label">Frecuencia</span>
                                 <span class="info-value" id="info-frecuencia">-</span>
@@ -413,26 +174,14 @@
                                 <span class="info-label">Tipo de gestión</span>
                                 <span class="info-value" id="info-tipo-gestion">-</span>
                             </div>
-                        </div>
-
-                        <div class="sidebar-card">
-                            <h4 class="sidebar-card-title">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
-                                Licencia
-                            </h4>
-                            <p class="text-small">Creative Commons BY-SA 4.0</p>
-                            <p class="text-xs text-muted mt-2">Puede compartir y adaptar el material, dando crédito apropiado.</p>
-                        </div>
+                        </section>
+                        <section class="detalle-panel-seccion">
+                            <h2>Licencia</h2>
+                            <p class="detalle-licencia">Creative Commons BY-SA 4.0</p>
+                            <p class="detalle-nota">Podés compartir y adaptar el material, dando el crédito correspondiente.</p>
+                        </section>
                     </div>
                 </div>
-            </div>
-
-            <!-- Not Found -->
-            <div id="not-found" class="empty-state hidden">
-                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--gray-400);"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
-                <h3 class="empty-state-title">Dataset no encontrado</h3>
-                <p>El dataset solicitado no existe o fue eliminado</p>
-                <a href="datasets.html" class="btn btn-primary mt-4">Ver todos los datasets</a>
             </div>
 
             <!-- Footer -->

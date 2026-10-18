@@ -134,6 +134,135 @@ describe('dataset-detail.js: las tres fechas del detalle', () => {
     assert.match(html, /id="dataset-fechas"/);
     for (const rotulo of ['Datos al', 'Cargado en el portal', 'Próxima actualización prevista']) assert.ok(html.includes(rotulo), rotulo);
   });
+
+  it('los temas escapados, y nada si no hay', () => {
+    assert.equal(detalle.htmlDeTemas(dataset({ tema_secundario_nombre: '<b>S</b>' })), '<span class="tema">Economía</span><span class="tema">&lt;b&gt;S&lt;/b&gt;</span>');
+    assert.equal(detalle.htmlDeTemas(dataset({ tema_principal_nombre: null })), '');
+  });
+
+  it('la información técnica: frecuencia, formatos y tipo de gestión, con raya si falta', () => {
+    assert.deepEqual(plano(detalle.filasTecnicas(dataset())), [
+      { rotulo: 'Frecuencia', valor: 'Cada medio año' }, { rotulo: 'Formatos', valor: 'CSV, XLSX' }, { rotulo: 'Tipo de gestión', valor: 'Externa (otra área)' }
+    ]);
+    assert.equal(plano(detalle.filasTecnicas(dataset({ frecuencia_nombre: null, formatos: '' })))[1].valor, '-');
+  });
+
+  it('dataset.html: el área tiene su ícono y su texto aparte, y hay dónde avisar un error', () => {
+    const html = leer('dataset.html');
+    assert.match(html, /id="dataset-area-text"/);
+    assert.match(html, /id="dataset-error"/);
+    assert.doesNotMatch(leer('js/dataset-detail.js'), /getElementById\('dataset-area'\)\.textContent/);
+  });
+
+  it('dataset.html: los ids de siempre una sola vez, el aviso de error, "Ver todos los datasets" y el link al portal en otra pestaña', () => {
+    const html = leer('dataset.html');
+    for (const id of ['loading', 'dataset-content', 'not-found', 'breadcrumb-title', 'dataset-titulo', 'dataset-area', 'dataset-area-text',
+      'dataset-estado', 'dataset-temas', 'dataset-descripcion', 'que-se-solicita-card', 'dataset-que-se-solicita', 'observaciones-card',
+      'dataset-observaciones', 'url-card', 'dataset-url', 'dataset-fechas', 'info-frecuencia', 'info-formatos', 'info-tipo-gestion', 'dataset-error']) {
+      assert.equal(html.match(new RegExp(`id="${id}"`, 'g'))?.length, 1, id);
+    }
+    assert.doesNotMatch(html, /<style|class="spinner"/);
+    assert.match(html, /No se pudo cargar el conjunto de datos\. Probá de nuevo en unos minutos\./);
+    assert.match(html, /<a [^>]*href="datasets\.html"[^>]*>Ver todos los datasets<\/a>/);
+    const portal = html.match(/<a [^>]*id="dataset-url"[^>]*>/)?.[0] ?? '';
+    assert.match(portal, /target="_blank"/);
+    assert.match(portal, /rel="noopener"/);
+    assert.match(html, /Ver en el Portal de Datos Abiertos/);
+  });
+});
+
+// La carga del detalle (spec 2026-10-18-rediseno-publico, 8): con un DOM mínimo (cada id es un elemento que arranca oculto, salvo
+// #loading, como en dataset.html), un API.pedirJson falso y el id de la URL
+describe('dataset-detail.js: la carga del detalle', () => {
+  const preparar = ({ id = '20', respuesta, error } = {}) => {
+    const detalle = cargar('dataset-detail.js');
+    const elementos = {};
+    const pedidos = [];
+    detalle.document.getElementById = (clave) => {
+      if (!elementos[clave]) {
+        const clases = new Set(clave === 'loading' ? [] : ['hidden']);
+        elementos[clave] = {
+          textContent: '', innerHTML: '', className: '', href: '',
+          classList: {
+            add: (c) => clases.add(c),
+            remove: (c) => clases.delete(c),
+            contains: (c) => clases.has(c),
+            toggle: (c, poner = !clases.has(c)) => (poner ? clases.add(c) : clases.delete(c))
+          }
+        };
+      }
+      return elementos[clave];
+    };
+    detalle.console = { error() {} };
+    detalle.Utils.getUrlParams = () => (id === null ? {} : { id });
+    vm.runInContext('API', detalle).pedirJson = async (metodo, ruta) => {
+      pedidos.push(`${metodo} ${ruta}`);
+      if (error) throw error;
+      return respuesta;
+    };
+    const el = (clave) => detalle.document.getElementById(clave);
+    const visible = (clave) => !el(clave).classList.contains('hidden');
+    return { detalle, el, visible, pedidos };
+  };
+  const conEstado = (status) => Object.assign(new Error(`Error ${status}`), { status });
+
+  it('pide el dataset por su id y lo dibuja: el área va en su texto (el ícono queda), la insignia larga, los temas y lo técnico', async () => {
+    const { detalle, el, visible, pedidos } = preparar({
+      respuesta: { success: true, data: dataset({ estado: 'sin-respuesta', observaciones: 'Uno\nDos', url_dataset: ' https://datos.comodoro.gov.ar/dataset/gasto ' }) }
+    });
+    await detalle.loadDataset();
+    assert.deepEqual(pedidos, ['GET /datasets/20']);
+    assert.ok(!visible('loading') && visible('dataset-content') && !visible('not-found') && !visible('dataset-error'));
+    assert.equal(el('dataset-area-text').textContent, 'Secretaría de Hacienda');
+    assert.equal(el('dataset-area').textContent, '');
+    assert.equal(el('dataset-titulo').textContent, 'Gasto Público');
+    assert.equal(el('breadcrumb-title').textContent, 'Gasto Público');
+    assert.equal(el('dataset-estado').textContent, 'Sin respuesta del área responsable');
+    assert.equal(el('dataset-estado').className, 'badge badge-sin-respuesta');
+    assert.equal(el('dataset-temas').innerHTML, '<span class="tema">Economía</span>');
+    assert.equal(el('info-frecuencia').textContent, 'Cada medio año');
+    assert.equal(el('info-formatos').textContent, 'CSV, XLSX');
+    assert.equal(el('info-tipo-gestion').textContent, 'Externa (otra área)');
+    assert.equal(el('dataset-observaciones').textContent, 'Uno\nDos');
+    assert.ok(visible('observaciones-card') && !visible('que-se-solicita-card'));
+    assert.ok(visible('url-card'));
+    assert.equal(el('dataset-url').href, 'https://datos.comodoro.gov.ar/dataset/gasto');
+    assert.match(el('dataset-fechas').innerHTML, /Cargado en el portal/);
+  });
+
+  it('una URL que no es http/https no aparece', async () => {
+    const { detalle, el, visible } = preparar({ respuesta: { success: true, data: dataset({ url_dataset: 'javascript:alert(1)' }) } });
+    await detalle.loadDataset();
+    assert.ok(!visible('url-card'));
+    assert.equal(el('dataset-url').href, '');
+  });
+
+  it('sin id, o con un 404, dice que no se encontró (no el error)', async () => {
+    for (const caso of [{ id: null }, { id: '' }, { error: conEstado(404) }]) {
+      const { detalle, visible, pedidos } = preparar(caso);
+      await detalle.loadDataset();
+      assert.ok(visible('not-found') && !visible('loading') && !visible('dataset-content') && !visible('dataset-error'), JSON.stringify(caso));
+      if (!caso.error) assert.deepEqual(pedidos, []);
+    }
+  });
+
+  it('?id=estadisticas: el id va codificado y, como la respuesta no es un dataset, no se encontró', async () => {
+    const { detalle, visible, pedidos } = preparar({ id: 'estadisticas', respuesta: { success: true, data: { total: 80, actualizados: 52 } } });
+    await detalle.loadDataset();
+    assert.deepEqual(pedidos, ['GET /datasets/estadisticas']);
+    assert.ok(visible('not-found') && !visible('dataset-content'));
+    const otro = preparar({ id: '1/../usuarios', error: conEstado(404) });
+    await otro.detalle.loadDataset();
+    assert.deepEqual(otro.pedidos, ['GET /datasets/1%2F..%2Fusuarios']);
+  });
+
+  it('otro error (500, sin conexión): el aviso de error, no "no encontrado"', async () => {
+    for (const error of [conEstado(500), new TypeError('Failed to fetch')]) {
+      const { detalle, visible } = preparar({ error });
+      await detalle.loadDataset();
+      assert.ok(visible('dataset-error') && !visible('not-found') && !visible('loading') && !visible('dataset-content'), error.message);
+    }
+  });
 });
 
 describe('datasets.js: la tarjeta del listado', () => {
@@ -535,6 +664,12 @@ describe('publico.css', () => {
     const cuadrito = reglas.find(r => r.selector === '.badge::before').cuerpo;
     assert.match(cuadrito, /background:\s*var\(--cuadrito-insignia/);
     assert.doesNotMatch(cuadrito, /opacity/);
+  });
+
+  it('detalle: dos columnas, una a 980 px con las fechas antes que los textos largos, que respetan los saltos de línea', () => {
+    assert.ok(reglas.some(r => r.selector === '.detalle-grilla' && /grid-template-columns:\s*minmax\(0, 1fr\) 340px/.test(r.cuerpo)));
+    assert.match(css.replace(/\/\*[^]*?\*\//g, ''), /@media \(max-width: 980px\)\s*\{[^@]*\.detalle-lateral\s*\{[^}]*order:\s*-1/);
+    assert.ok(reglas.some(r => r.selector === '.detalle-texto' && /white-space:\s*pre-line/.test(r.cuerpo)));
   });
 });
 

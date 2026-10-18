@@ -1,7 +1,7 @@
 /**
  * =====================================================
  * RPAD - Páginas públicas
- * Spec 2026-10-18-rediseno-publico, secciones 4, 6, 7 y 11
+ * Spec 2026-10-18-rediseno-publico, secciones 4, 6, 7, 8 y 11
  * =====================================================
  * Lo cargan solo las cinco páginas públicas (index, datasets, dataset, calendario y contacto), después de main.css: por
  * eso las insignias pastel no llegan a administración. Usa los tokens de main.css (--tinta, --cielo, --f-titulo, ...).
@@ -1357,5 +1357,263 @@
 @media (prefers-reduced-motion: reduce) {
     .tarjeta {
         transition: none;
+    }
+}
+
+/* =====================================================
+   DETALLE (spec 8): migas, banda con el título, el estado, el área y los temas, y debajo dos columnas: los textos largos sin
+   cajas (un título y una línea --tinta arriba) y un panel blanco con las fechas, la información técnica y la licencia
+   ===================================================== */
+/* Las migas, arriba del cuerpo de la banda: en --suave, el conjunto actual en --texto (los dos ≥ 4,5:1 sobre --cielo) */
+.migas {
+    padding-top: 22px;
+    font-size: 0.88rem;
+    color: var(--suave);
+}
+
+.migas ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    list-style: none;
+}
+
+.migas li {
+    display: inline-flex;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* La barra no se lee en voz alta (el segundo content, con texto alternativo vacío); un navegador que no lo entiende se queda
+   con el primero (Firefox ESR 115) */
+.migas li + li::before {
+    content: '/';
+    content: '/' / '';
+    color: var(--suave);
+}
+
+.migas a {
+    padding: 2px 0;
+    color: var(--suave);
+    text-decoration: underline;
+    text-decoration-color: var(--cielo-medio);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
+.migas a:hover {
+    color: var(--tinta);
+    text-decoration-color: var(--tinta);
+}
+
+#breadcrumb-title {
+    font-weight: 600;
+    color: var(--texto);
+    overflow-wrap: anywhere;
+}
+
+/* Las migas ocupan el arriba de la banda */
+.banda-cuerpo.detalle-banda {
+    padding-top: 18px;
+}
+
+.detalle-banda > .cargando,
+.detalle-aviso {
+    flex: 1 1 100%;
+}
+
+.detalle-aviso {
+    max-width: 44rem;
+}
+
+/* El título y lo que va debajo (o el "no encontrado"); a la derecha, abajo, el botón del portal */
+.detalle-cabeza {
+    flex: 1 1 32rem;
+    min-width: 0;
+    max-width: 52rem;
+}
+
+.detalle-cabeza h1 {
+    overflow-wrap: anywhere;
+}
+
+.detalle-datos {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+    margin-top: 16px;
+}
+
+/* La insignia larga ("Sin respuesta del área responsable"), un poco más grande que en las listas; se parte si no entra. El
+   filete blanco la separa de la banda (el fondo de un eventual es casi el --cielo) */
+.detalle-datos .badge {
+    padding: 4px 12px 4px 10px;
+    font-size: 0.85rem;
+    white-space: normal;
+    box-shadow: 0 0 0 1px var(--papel);
+}
+
+/* El ícono, a la altura del primer renglón (hay áreas con nombres de dos renglones) */
+.detalle-area {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-weight: 600;
+    color: var(--texto);
+}
+
+.detalle-area svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 0.2em;
+    color: var(--suave);
+}
+
+.detalle-temas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.detalle-temas:empty {
+    display: none;
+}
+
+/* Sobre la banda, la etiqueta del tema va en blanco (en --cielo no se vería) */
+.detalle-temas .tema {
+    background: var(--papel);
+}
+
+.detalle-portal {
+    flex-shrink: 0;
+}
+
+/* Las dos columnas */
+.detalle-grilla {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    align-items: start;
+    gap: 56px;
+    padding-top: 44px;
+}
+
+.detalle-grilla > * {
+    min-width: 0;
+}
+
+.detalle-bloque {
+    padding-top: 14px;
+    border-top: 2px solid var(--tinta);
+}
+
+.detalle-bloque + .detalle-bloque {
+    margin-top: 36px;
+}
+
+.publico-contenedor .detalle-bloque h2 {
+    font-size: 1.25rem;
+}
+
+/* Descripción, Qué se solicita y Observaciones respetan los saltos de línea */
+.detalle-texto {
+    max-width: 72ch;
+    margin-top: 10px;
+    line-height: 1.65;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    color: var(--texto);
+}
+
+/* El panel lateral */
+.detalle-panel {
+    padding: 24px 24px 22px;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-panel);
+    background: var(--papel);
+}
+
+.publico-contenedor .detalle-panel h2 {
+    margin-bottom: 4px;
+    font-size: 1.05rem;
+}
+
+.detalle-panel-seccion + .detalle-panel-seccion {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--linea);
+}
+
+.detalle-panel .info-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--linea);
+}
+
+.detalle-panel .info-row:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+/* El rótulo se parte antes que el valor: "enero de 2024" entra en un renglón al lado de "Próxima actualización prevista" */
+.detalle-panel .info-label {
+    flex: 1 1 8rem;
+    min-width: 0;
+    font-size: 0.9rem;
+    color: var(--suave);
+}
+
+.detalle-panel .info-value {
+    flex: 0 1 auto;
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-align: right;
+    overflow-wrap: anywhere;
+    color: var(--texto);
+}
+
+.detalle-licencia {
+    font-weight: 600;
+    color: var(--texto);
+}
+
+.detalle-nota {
+    margin-top: 4px;
+    font-size: 0.88rem;
+    color: var(--suave);
+}
+
+/* Una sola columna: el panel (las fechas) antes que los textos largos */
+@media (max-width: 980px) {
+    .detalle-grilla {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 36px;
+        padding-top: 32px;
+    }
+
+    .detalle-lateral {
+        order: -1;
+    }
+}
+
+/* Celular: el botón del portal a todo el ancho, y se parte en dos renglones si no entra */
+@media (max-width: 760px) {
+    .detalle-portal {
+        flex-basis: 100%;
+    }
+
+    .detalle-portal .btn-tinta {
+        width: 100%;
+        white-space: normal;
+        text-align: center;
+    }
+
+    .detalle-panel {
+        padding: 20px 18px 18px;
     }
 }
