@@ -11,12 +11,13 @@ import { enviarResumenAvisosRetenidos } from '../services/avisosSuperadminServic
 
 // Área de ejemplo para la vista previa y la prueba del aviso a áreas cuando ese día no hay datos. fecha: el día del aviso.
 // Los dos datasets vencen el fin de mes que corresponde a los 40 días, como los de un aviso real, y llevan sus datos
-// solicitados: el 1 es un acumulado anual con Datos al del corte anterior (pide desde lo que falta) y el 2, una foto al corte.
+// solicitados: el 1 es un trimestral acumulado con Datos al del corte anterior (pide desde lo que falta; el email dice
+// "Trimestralmente (Acumulado)", spec 18) y el 2, una foto al corte.
 // El pedido, el tipo y los meses salen de las mismas reglas que el aviso (conPedido), así que el ejemplo no se desactualiza ni
 // se aparta de la forma de un dataset real (el email dice la frecuencia con "(Acumulado)" a partir de ellos).
 const areaDeEjemplo = (fecha) => {
   const vencimiento = vencimientoDelMes(sumarDias(fecha, DIAS_AVISO_AREAS));
-  const pedidoYTipoDe = (datos) => {
+  const pedidoTipoYMesesDe = (datos) => {
     const { pedido, tipo_pedido: tipoPedido, meses } = conPedido({ vencimiento, tipo_gestion: 'externa', ...datos }, fecha);
     return { pedido, tipo_pedido: tipoPedido, meses };
   };
@@ -33,12 +34,13 @@ const areaDeEjemplo = (fecha) => {
     email_contacto: null,
     datasets: [
       {
-        id: 1, titulo: 'Dataset de Ejemplo 1', frecuencia_nombre: 'Anualmente', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo', vencimiento,
-        ...pedidoYTipoDe({ meses: 12, tipo_pedido: 'acumulado', datos_al: sumarMeses(vencimiento, -13) })
+        id: 1, titulo: 'Dataset de Ejemplo 1', frecuencia_nombre: 'Trimestralmente', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo', vencimiento,
+        // (sus datos llegan al corte del ciclo anterior: el mes antes del vencimiento, menos los 3 meses del ciclo)
+        ...pedidoTipoYMesesDe({ meses: 3, tipo_pedido: 'acumulado', datos_al: sumarMeses(vencimiento, -4) })
       },
       {
         id: 2, titulo: 'Dataset de Ejemplo 2', frecuencia_nombre: 'Cada dos años', url_dataset: 'https://datos.comodoro.gov.ar/dataset/ejemplo-2', vencimiento,
-        ...pedidoYTipoDe({ meses: 24, tipo_pedido: 'foto', datos_al: null })
+        ...pedidoTipoYMesesDe({ meses: 24, tipo_pedido: 'foto', datos_al: null })
       }
     ]
   };
