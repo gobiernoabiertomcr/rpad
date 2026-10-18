@@ -51,7 +51,7 @@ En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo 
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
 - **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
-- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número. Si no autoriza a nadie, las reiteraciones salen a la vuelta. Si la persona autorizada también va a faltar algunos días, el formulario lo advierte (esos días no se generan notas). El formulario avisa, debajo de las fechas, los días en que no habría ningún auditor disponible (cuenta las demás licencias y la que se está cargando), y arriba de la lista se muestran los próximos 60 días sin auditores.
+- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número, y vuelve a presentar cada aviso adelantado en su fecha. Si no autoriza a nadie, las reiteraciones salen a la vuelta. Si la persona autorizada también va a faltar algunos días, el formulario lo advierte (esos días no se generan notas). El formulario avisa, debajo de las fechas, los días en que no habría ningún auditor disponible (cuenta las demás licencias y la que se está cargando), y arriba de la lista se muestran los próximos 60 días sin auditores.
 
 Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor o a lector a un admin si quedarían menos, ni pasar a editor o a lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
@@ -615,6 +615,10 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Aviso en su fecha con persona autorizada (2026-10)
+- Durante la licencia del firmante titular con persona autorizada, la víspera sigue anticipando los avisos y, además, cada dataset adelantado vuelve a salir en un aviso en su fecha, presentado por la persona autorizada con las dos firmas y el párrafo que cita la nota anticipada
+- La reiteración muestra cada dataset una sola vez y "Informado en" nombra todos sus avisos; Correos → Estado muestra esas fechas en "Próximas notas"
 
 ### Fechas de los datasets (2026-10)
 - "Datos al", "Cargado en el portal" y la próxima actualización son tres datos distintos; la próxima y "Datos al" son siempre fin de mes (febrero, el 28)
