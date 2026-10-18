@@ -531,7 +531,9 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | POST | `/api/datasets` | Crear dataset (vía cambio pendiente) |
 | PUT | `/api/datasets/:id` | Actualizar dataset (vía cambio pendiente) |
 | DELETE | `/api/datasets/:id` | Eliminar dataset (vía cambio pendiente) |
-| POST | `/api/datasets/:id/actualizar` | Registrar actualización |
+| POST | `/api/datasets/:id/actualizar` | Registrar actualización (vía cambio pendiente): "Datos al", carga, recepción y próxima elegida |
+| GET | `/api/datasets/:id/opciones-proxima` | Pedido actual y opciones de próxima actualización para un "Datos al" (`?datos_al=AAAA-MM-DD`) |
+| GET | `/api/datasets/calculo-pedido` | Datos solicitados para un tipo, frecuencia y fechas (`?tipo=&meses=&proxima=&datos_al=`), para la vista previa del formulario |
 | GET | `/api/cambios-pendientes` | Listar cambios pendientes de aprobación |
 | GET | `/api/cambios-pendientes/:id` | Detalle de un cambio pendiente |
 | POST | `/api/cambios-pendientes/:id/aprobar` | Aprobar un cambio pendiente |
@@ -603,7 +605,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 - "Registrar actualización" propone la próxima con opciones, la persona elige, y al aprobarse queda en el historial de actualizaciones
 - Admin renovado: lista con filtros por estado y tipo de pedido, "Datos publicados" y "Próximo pedido", y formulario con la sección "Actualización y pedido"
 - Un solo cálculo de estado, en el servidor, con el estado Eventual; la tasa de actualización deja afuera a los eventuales (tablero, Estado General y reporte de Cumplimiento coinciden)
-- El sitio público distingue "Datos al", "Cargado en el portal" y la próxima prevista
+- El sitio público distingue "Datos al", "Cargado en el portal" y la próxima prevista en el detalle del dataset; el listado muestra "Datos al" y la próxima, y el CSV suma "Cargado en el portal"
 
 ### Mi Perfil en pestañas (2026-10)
 - Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma; el email de las 14:00 abre Para revisar

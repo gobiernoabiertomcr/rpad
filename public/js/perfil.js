@@ -1075,9 +1075,9 @@ const DIAS_DE_CADA_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 // 'AAAA-MM-DD', con o sin la hora que trae una fecha leída de la base ('2026-05-31T03:00:00.000Z'): cuenta el día
 const FECHA_CON_DIA = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/;
 
-// ¿Es el texto 'AAAA-MM-DD' el último día de un mes? Pura. Es la única regla de fechas que se copia al navegador y solo sirve
-// para marcar (marcaDeFinDeMes): el servidor es el que no deja aprobar una fecha que no es fin de mes. Lo que no es una
-// fecha da false.
+// ¿Es el texto 'AAAA-MM-DD' el último día de un mes? Pura. Es una copia mínima de esFinDeMes (services/fechasDatasetReglas.js)
+// y, con las de admin-fechas.js, una de las pocas reglas de fechas que se copian al navegador. Solo sirve para marcar
+// (marcaDeFinDeMes): el servidor es el que no deja aprobar una fecha que no es fin de mes. Lo que no es una fecha da false.
 function esFinDeMesTexto(iso) {
   const partes = typeof iso === 'string' ? FECHA_CON_DIA.exec(iso) : null;
   if (!partes) return false;
