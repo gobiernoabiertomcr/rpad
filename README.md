@@ -119,9 +119,9 @@ rpad/
 │       ├── migracion-notas-digitales-anexo.sql   # Segunda entrega: columna anexo_pdf
 │       ├── migracion-que-se-solicita.sql         # Segunda entrega: columna que_se_solicita
 │       ├── migracion-que-se-solicita-datos.sql   # Segunda entrega: carga inicial de los textos
-│       ├── migracion-fechas-datasets.sql         # Fechas de los datasets, entrega 1: estructura (va antes del código)
-│       ├── migracion-fechas-datasets-datos.sql   # Fechas de los datasets, entrega 1: "Datos al" y tipo de pedido de los datasets (después de la estructura y antes del código)
-│       └── migracion-fechas-datasets-textos.sql  # Fechas de los datasets, entrega 2: "Qué se solicita" sin el período (con el código de las Notas Digitales)
+│       ├── migracion-fechas-datasets.sql         # Fechas de los datasets: estructura (va antes del código)
+│       ├── migracion-fechas-datasets-datos.sql   # Fechas de los datasets: "Datos al" y tipo de pedido de los datasets (después de la estructura y antes del código)
+│       └── migracion-fechas-datasets-textos.sql  # Fechas de los datasets: "Qué se solicita" sin el período (después de subir el código, antes del Restart)
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -332,19 +332,36 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 ### Migración: Fechas de los datasets
 
-⚠️ Requisito: las migraciones anteriores aplicadas. No hay dependencias nuevas de npm. Se despliega en tres entregas, cada una con backup de la base y de los archivos antes de empezar. Los scripts se corren en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada) y **siempre antes de subir el código** de esa entrega.
+⚠️ Requisito: las migraciones anteriores aplicadas. No hay dependencias nuevas de npm. Se despliega en **un solo kit** (reglas, registro y admin; Notas Digitales y avisos; sitio público y estados), con backup de la base y de los archivos antes de empezar y fuera del horario de los crons (8:15 y 14:00). Los SQL se corren en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada). El orden es: **SQL de estructura → SQL de datos → subir todos los archivos → SQL de textos → Restart**.
 
-| Entrega | Qué incluye | SQL (en este orden) | Después |
-|---------|-------------|---------------------|---------|
-| 1. Reglas, registro y admin | Reglas de fechas, API, admin renovado, historial de actualizaciones, Mi Perfil | `migracion-fechas-datasets.sql` (estructura) y `migracion-fechas-datasets-datos.sql` (carga de "Datos al" y tipo de pedido de los datasets) | Subir los archivos y **Restart** |
-| 2. Notas y avisos | "Datos solicitados" en las Notas Digitales, el anexo y el aviso a las áreas | `migracion-fechas-datasets-textos.sql` (saca el período de los "Qué se solicita") | Subir los archivos y **Restart** |
-| 3. Sitio público y estados | "Datos al", "Cargado en el portal" y la próxima prevista en el sitio público; un solo cálculo de estado; tasa sin eventuales | Ninguno | Subir los archivos y **Restart** |
-
-- **Estructura:** solo agrega columnas (todas en `NULL`) y la frecuencia en meses; el código anterior sigue funcionando con ella. Si se corta a mitad, se puede volver a correr.
-- **Carga de datos:** va después de la estructura y antes del código, para que los datasets tengan su "Datos al" y su tipo desde el primer momento. **Se corre una sola vez**: después esos datos cambian desde la aplicación, con doble verificación, y volver a correrla los pisaría.
-- **Textos:** van con el código de la entrega 2, no antes: con el código anterior, una nota saldría con el texto sin período y sin nada que lo reemplace. También se corren una sola vez.
-- **Antes de la entrega 1**, correr las consultas de solo lectura de la sección 13 de la spec (próximas que no son fin de mes, eventuales con próxima y cambios pendientes con fechas): si devuelven filas, se corrigen desde la aplicación antes de desplegar.
-- **Subir los archivos** en este orden: primero los del servidor, después `api.js` y los scripts, y al final los HTML.
+1. **Consultas previas, de solo lectura.** Si alguna devuelve filas, se corrige desde la aplicación antes de seguir.
+   ```sql
+   -- Próximas que no son fin de mes (28/2 vale, 29/2 no)
+   SELECT d.id, d.titulo, d.proxima_actualizacion FROM datasets d
+   WHERE d.activo = 1 AND d.proxima_actualizacion IS NOT NULL
+     AND NOT ((MONTH(d.proxima_actualizacion) = 2 AND DAY(d.proxima_actualizacion) = 28)
+           OR (MONTH(d.proxima_actualizacion) <> 2 AND d.proxima_actualizacion = LAST_DAY(d.proxima_actualizacion)));
+   -- Eventuales con próxima, y no eventuales sin próxima
+   SELECT d.id, d.titulo, f.nombre, d.proxima_actualizacion FROM datasets d JOIN frecuencias f ON f.id = d.frecuencia_id
+   WHERE d.activo = 1 AND ((f.dias IS NULL AND d.proxima_actualizacion IS NOT NULL) OR (f.dias IS NOT NULL AND d.proxima_actualizacion IS NULL));
+   -- Cambios pendientes con fechas: el código nuevo no aprueba una próxima que no sea fin de mes
+   SELECT id, dataset_id, datos_nuevos FROM cambios_pendientes
+   WHERE estado = 'pendiente' AND JSON_CONTAINS_PATH(datos_nuevos, 'one', '$.proxima_actualizacion');
+   -- Próximas en '0000-00-00' (la primera consulta no las ve)
+   SELECT id, titulo FROM datasets WHERE CAST(proxima_actualizacion AS CHAR) = '0000-00-00';
+   ```
+2. **SQL de estructura:** `migracion-fechas-datasets.sql`. Solo agrega columnas (todas en `NULL`) y la frecuencia en meses; el código anterior sigue funcionando con ella, y si se corta a mitad se puede volver a correr. Después, esta consulta tiene que dar **0 filas** (si no, el código nuevo trata a esa frecuencia como Eventual en todos lados):
+   ```sql
+   SELECT id, nombre FROM frecuencias WHERE dias IS NOT NULL AND meses IS NULL;
+   ```
+3. **SQL de datos:** `migracion-fechas-datasets-datos.sql` ("Datos al" y tipo de pedido de los 80 datasets). **Se corre una sola vez**: después esos datos cambian desde la aplicación, con doble verificación, y volver a correrla los pisaría. Después, las dos consultas tienen que dar **0**:
+   ```sql
+   SELECT COUNT(*) FROM datasets WHERE activo = 1 AND tipo_pedido IS NULL;
+   SELECT COUNT(*) FROM datasets WHERE CAST(datos_al AS CHAR) = '0000-00-00';
+   ```
+4. **Subir todos los archivos**, en este orden: primero los del servidor, después `api.js` y los scripts, y al final los HTML.
+5. **SQL de textos:** `migracion-fechas-datasets-textos.sql` (saca el período de los 26 "Qué se solicita", porque la nota nueva ya dice los "Datos solicitados"). Va después de subir los archivos y justo antes del Restart. Cada `UPDATE` cambia el texto solo si sigue siendo el original del 17/10/2026, así que tienen que ser **26 filas afectadas**. Un `UPDATE` con 0 filas es un texto que cambió después: no se pisa, se revisa a mano. La cabecera del archivo trae la consulta que lista esos casos.
+6. **Restart** de la app.
 
 ### Migración desde v1.4.0 a v1.5.0
 
