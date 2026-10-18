@@ -452,6 +452,8 @@ Es un modal con `role="dialog"`, `aria-modal` y `aria-labelledby`. Se cierra con
 
 ## 13. Entregas y despliegue
 
+> **Cambio durante la ejecución (Ruling 26):** las tres entregas se despliegan juntas, en un solo kit, con este orden: SQL de estructura → SQL de datos → subir archivos → SQL de textos → Restart. Así el aviso del formulario y "Datos solicitados" llegan juntos. Los pasos y las consultas previas están en el README ("Fechas de los datasets"). La tabla de abajo queda como referencia de qué cubre cada parte.
+
 Cada entrega es un kit en el Escritorio con su `PASOS.txt`. Siempre se respalda primero y se verifica después. La migración va antes que el código.
 
 | Entrega | Qué incluye | Producción |

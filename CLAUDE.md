@@ -164,5 +164,5 @@ EMAIL_SOLO_A, RPAD_TESTS_DB_LOCAL, DB_ROOT_PASSWORD (solo desarrollo local)
 
 ## Despliegue (producción)
 - cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), los archivos se suben con el Administrador de archivos, y las variables de entorno, "Run NPM Install" y Restart se manejan en Setup Node.js App. El cron se configura en Tareas Cron.
-- Las migraciones van antes que el código. Las cargas de datos de personas (roles, cargos) van en `database/privado/` (no versionado) y se corren después del código.
+- Las migraciones van antes que el código (excepción: `migracion-fechas-datasets-textos.sql` va después de subir los archivos, ver el README). Las cargas de datos de personas (roles, cargos) van en `database/privado/` (no versionado) y se corren después del código.
 - Regla del proyecto: no romper nada de lo implementado. Correr `npm test` completo antes y después de cada cambio.
