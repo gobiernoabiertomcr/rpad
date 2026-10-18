@@ -618,6 +618,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ### Aviso sin fecha sugerida y frecuencia acumulada (2026-10)
 - El aviso de las Notas Digitales (interno y externo) ya no lleva la columna "Fecha sugerida de envío", que repetía en cada fila el mismo vencimiento: "Próximos a vencer" queda con Conjunto de datos, Área, Frecuencia y Datos solicitados, y el párrafo del aviso externo pide los datos "del período que se indica en cada caso"
+- Si un aviso junta más de un vencimiento (la víspera de una licencia larga, o un aviso que se recupera tarde), las filas de "Próximos a vencer" van ordenadas por vencimiento, con una fila a todo el ancho "Vencen el dd/mm/aaaa" (o "Vence el …") antes de cada grupo, en el HTML, el texto y el PDF; el aviso de todos los días no cambia
 - La frecuencia dice "(Acumulado)" cuando el pedido acumula desde el 1/1 del año con una frecuencia menor al año (por ejemplo, "Trimestralmente (Acumulado)"): en las tablas del aviso y de la reiteración, en el anexo, en el email a las áreas de los 40 días y en la vista previa del admin
 - El anexo dice "Vence el dd/mm/aaaa · faltan N días" (o "Venció el … · hace N días") y el email de los 40 días va sin fecha; el admin dice "Vence" en la lista, en "Registrar actualización" y en el ciclo. Las notas ya generadas no cambian
 
