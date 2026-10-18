@@ -134,6 +134,33 @@ describe('Diseño de los emails: un marco común', () => {
     assert.match(raro.html, />Restaurar<\/span>/);
   });
 
+  // Como la nota de auditoría, el Libro y Mi Perfil (spec 2026-10-17-fechas-datasets, 9): un registro de actualización es una
+  // edición con la marca registro_actualizacion en datos_nuevos
+  it('un registro de actualización lleva la etiqueta "Actualización" (en el recordatorio y en el aviso sin auditor); las demás ediciones, "Editar"', () => {
+    const etiqueta = (texto) => new RegExp(`<span style="[^"]*background-color: #DCEAF7; color: #24507A;[^"]*border-radius: 10px;[^"]*">${texto}</span>`);
+    const registro = { tipo_cambio: 'editar', dataset_titulo: 'Pauta', datos_nuevos: { datos_al: '2026-09-30', registro_actualizacion: true } };
+    const edicion = { tipo_cambio: 'editar', dataset_titulo: 'Arbolado', datos_nuevos: { titulo: 'Arbolado urbano' } };
+    const recordatorio = plantillas.cambiosPendientesTemplate([
+      { ...registro, usuario_nombre: 'Persona', tiempo_pendiente: 'Hace 2 horas' },
+      { ...edicion, usuario_nombre: 'Persona', tiempo_pendiente: 'Hace 3 horas' }
+    ]).html;
+    assert.match(recordatorio, etiqueta('Actualización'));
+    assert.match(recordatorio, etiqueta('Editar'));
+    assert.match(textoVisible(recordatorio), /Actualización Pauta Propuesto por: Persona Hace 2 horas Editar Arbolado Propuesto por/);
+    const sinAuditor = plantillas.sinAuditorTemplate([{ ...registro, fecha_propuesta: '2026-10-01' }]).html;
+    assert.match(sinAuditor, etiqueta('Actualización'));
+    assert.doesNotMatch(sinAuditor, />Editar</);
+    // Solo una edición puede ser un registro, la marca tiene que ser true y un cambio sin datos_nuevos sigue como antes
+    const otros = plantillas.cambiosPendientesTemplate([
+      { tipo_cambio: 'crear', datos_nuevos: { titulo: 'Alta', registro_actualizacion: true }, tiempo_pendiente: 'Hace 1 hora' },
+      { tipo_cambio: 'editar', dataset_titulo: 'X', datos_nuevos: { registro_actualizacion: 'true' }, tiempo_pendiente: 'Hace 1 hora' },
+      { tipo_cambio: 'editar', dataset_titulo: 'Y', tiempo_pendiente: 'Hace 1 hora' }
+    ]).html;
+    assert.doesNotMatch(otros, />Actualización<\/span>/);
+    assert.equal(otros.split('>Editar</span>').length - 1, 2);
+    assert.match(otros, />Crear<\/span>/);
+  });
+
   it('un cambio sin nombre ni usuario de quien lo propuso muestra "Propuesto por:" vacío, como antes', () => {
     const { html } = plantillas.cambiosPendientesTemplate([{ tipo_cambio: 'editar', dataset_titulo: 'X', usuario_nombre: null, usuario_username: null }]);
     assert.ok(textoVisible(html).includes('Propuesto por: Revisar cambios en RPAD'));

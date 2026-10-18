@@ -765,9 +765,36 @@ describe('nota de auditoría en Correos (spec 2026-10-15-dias-habiles-licencias-
       const libro = (await api.get('/notificaciones/notas-digitales?tipo=auditoria', comoAdmin())).body.data;
       assert.deepEqual(libro.map(n => [n.id, n.gestion, n.cantidad_cambios]), [[auditoria, null, 1]]);
       const detalle = (await api.get(`/notificaciones/notas-digitales/${auditoria}`, comoAdmin())).body.data;
-      assert.deepEqual(detalle.cambios, [{ cambio_id: cambioId, seccion: 'nuevo', tipo_cambio: 'crear', estado: 'pendiente', titulo: 'Alta auditada' }]);
+      assert.deepEqual(detalle.cambios, [{
+        cambio_id: cambioId, seccion: 'nuevo', tipo_cambio: 'crear', estado: 'pendiente', titulo: 'Alta auditada', registro_actualizacion: false
+      }]);
     } finally {
       await query('DELETE FROM cambios_pendientes WHERE id = ?', [cambioId]);
+    }
+  });
+
+  // Para que el Libro diga "Actualización" como la nota (spec 2026-10-17-fechas-datasets, 9): cada cambio trae la marca
+  it('el detalle de una nota de auditoría marca los registros de actualización (registro_actualizacion)', async () => {
+    const auditoria = await crearNota({ tipo: 'auditoria', gestion: null, fecha: '2026-10-20', numero: 5 });
+    const datasetId = await crearDataset({ titulo: 'Dataset con registro en la nota' });
+    const ids = [];
+    try {
+      for (const datos of [{ datos_al: '2026-09-30', registro_actualizacion: true }, { titulo: 'Otro título' }]) {
+        const { insertId } = await query(
+          `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, usuario_id, created_at)
+           VALUES ('editar', ?, ?, ?, NOW() - INTERVAL ? MINUTE)`,
+          [datasetId, JSON.stringify(datos), usuarios.adminA.id, 10 - ids.length]
+        );
+        ids.push(insertId);
+        await query("INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, 'nuevo')", [auditoria, insertId]);
+      }
+      const detalle = (await api.get(`/notificaciones/notas-digitales/${auditoria}`, comoAdmin())).body.data;
+      assert.deepEqual(detalle.cambios.map(c => [c.cambio_id, c.tipo_cambio, c.registro_actualizacion, c.titulo]), [
+        [ids[0], 'editar', true, 'Dataset con registro en la nota'],
+        [ids[1], 'editar', false, 'Dataset con registro en la nota']
+      ]);
+    } finally {
+      await query('DELETE FROM cambios_pendientes WHERE id IN (?)', [ids.length ? ids : [0]]);
     }
   });
 

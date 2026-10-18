@@ -7,8 +7,8 @@ import fs from 'fs';
 const VERSION = '20261105';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte): su versión es propia
 const VERSION_PANTALLAS = '20261024';
-// correos.js cambió después (Correos en pestañas): su versión es propia
-const VERSION_CORREOS = '20261102';
+// correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro): su versión es propia
+const VERSION_CORREOS = '20261105';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas): su versión es propia
 const VERSION_PERFIL = '20261103';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia

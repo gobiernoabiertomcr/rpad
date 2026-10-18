@@ -26,8 +26,14 @@ const celdaCantidad = (n) => {
   return `${n.cantidad_datasets}${n.seccion_dataset ? ` (${n.seccion_dataset === 'vencido' ? 'vencido' : 'próximo'})` : ''}`;
 };
 const TIPO_DE_CAMBIO = { crear: 'Alta', editar: 'Modificación', eliminar: 'Baja' };
+// Un registro de actualización (POST /datasets/:id/actualizar) es una edición con la marca registro_actualizacion, que el
+// detalle de la nota trae en cada cambio: es una "Actualización", como en la nota y en Mi Perfil (spec
+// 2026-10-17-fechas-datasets, 9)
+const tipoDeCambioDeNota = (c) => (c.tipo_cambio === 'editar' && c.registro_actualizacion === true
+  ? 'Actualización'
+  : TIPO_DE_CAMBIO[c.tipo_cambio] ?? c.tipo_cambio);
 // Un cambio incluido en una nota de auditoría, para el detalle de la nota
-const textoCambioDeNota = (c) => `${TIPO_DE_CAMBIO[c.tipo_cambio] ?? c.tipo_cambio}: ${c.titulo ?? 'Sin título'} `
+const textoCambioDeNota = (c) => `${tipoDeCambioDeNota(c)}: ${c.titulo ?? 'Sin título'} `
   + `(${c.seccion === 'nuevo' ? 'nuevo' : 'reiterado'}${c.estado === 'pendiente' ? '' : `, ${c.estado}`})`;
 // La nota de auditoría en el Estado (spec 10.4)
 const textoAuditoria = (a) => (!a || a.canal_nota === 0

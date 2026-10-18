@@ -140,7 +140,9 @@ export const obtenerNota = async (req, res) => {
        WHERE x.nota_id = ? ORDER BY x.vencimiento, d.titulo`, [id]
     );
     // Los cambios que incluye una nota de auditoría (spec 2026-10-15, 10.4). El título es el del dataset o, en un alta, el
-    // propuesto (se arma acá y no con COALESCE en SQL: datos_nuevos tiene otra intercalación que datasets.titulo)
+    // propuesto (se arma acá y no con COALESCE en SQL: datos_nuevos tiene otra intercalación que datasets.titulo).
+    // registro_actualizacion: la marca de un registro de actualización (spec 2026-10-17-fechas-datasets, 9), para que el
+    // Libro diga "Actualización" como la nota
     const [filasCambios] = await pool.query(
       `SELECT k.cambio_id, k.seccion, cp.tipo_cambio, cp.estado, d.titulo AS dataset_titulo, cp.datos_nuevos
        FROM notas_digitales_cambios k
@@ -148,10 +150,14 @@ export const obtenerNota = async (req, res) => {
        LEFT JOIN datasets d ON d.id = cp.dataset_id
        WHERE k.nota_id = ? ORDER BY k.seccion, cp.created_at, cp.id`, [id]
     );
-    const cambios = filasCambios.map(({ dataset_titulo: tituloDataset, datos_nuevos: datosNuevos, ...cambio }) => ({
-      ...cambio,
-      titulo: tituloDataset ?? (typeof datosNuevos === 'string' ? JSON.parse(datosNuevos) : datosNuevos)?.titulo ?? null
-    }));
+    const cambios = filasCambios.map(({ dataset_titulo: tituloDataset, datos_nuevos: datosNuevos, ...cambio }) => {
+      const datos = typeof datosNuevos === 'string' ? JSON.parse(datosNuevos) : datosNuevos;
+      return {
+        ...cambio,
+        titulo: tituloDataset ?? datos?.titulo ?? null,
+        registro_actualizacion: cambio.tipo_cambio === 'editar' && datos?.registro_actualizacion === true
+      };
+    });
     res.json({ success: true, data: { ...nota, tiene_anexo: Boolean(nota.tiene_anexo), datasets, cambios } });
   } catch (error) {
     errorInterno(res, 'Error al obtener la nota', error);

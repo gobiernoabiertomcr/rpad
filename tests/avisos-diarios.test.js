@@ -252,6 +252,32 @@ describe('recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licen
     assert.equal(await primerRecordatorio(reciente), null);
   });
 
+  // Los cambios del recordatorio traen datos_nuevos (cambiosConCanal): un registro de actualización (spec
+  // 2026-10-17-fechas-datasets, 9) es una "Actualización", como en la nota de auditoría, el Libro y Mi Perfil
+  it('un registro de actualización va con la etiqueta "Actualización" y una edición común con "Editar"', async () => {
+    const a = await crearUsuario('admin');
+    const b = await crearUsuario('admin');
+    const registroId = await crearDataset({ titulo: 'Dataset con registro de actualización' });
+    const edicionId = await crearDataset({ titulo: 'Dataset con edición común' });
+    for (const [datasetId, datos, minutos] of [
+      [registroId, { datos_al: '2026-09-30', registro_actualizacion: true }, 180],
+      [edicionId, { titulo: 'Título nuevo' }, 120]
+    ]) {
+      await query(
+        `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, usuario_id, created_at)
+         VALUES ('editar', ?, ?, ?, NOW() - INTERVAL ? MINUTE)`,
+        [datasetId, JSON.stringify(datos), a.id, minutos]
+      );
+    }
+
+    await servicio.enviarCambiosPendientes({ hoy: '2026-10-16', ahora: '2026-10-16 14:00:00' });
+
+    const [mensaje] = para(await mailpit.esperar(m => m.To.some(t => t.Address === b.email)), b.email);
+    const texto = textoVisible(await mailpit.html(mensaje.ID));
+    assert.match(texto, /Actualización Dataset con registro de actualización Propuesto por/);
+    assert.match(texto, /Editar Dataset con edición común Propuesto por/);
+  });
+
   it('se repite cada día hábil mientras sigue en el canal recordatorio, sin pisar la fecha del primero', async () => {
     const a = await crearUsuario('admin');
     const b = await crearUsuario('admin');
