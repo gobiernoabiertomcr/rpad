@@ -542,6 +542,14 @@ function actualizarInert() {
   pilaDeVentanas.forEach((ventana, i) => { document.getElementById(ventana.id).inert = i !== arriba; });
 }
 
+// Las ventanas que están encima de `id` en la pila `pila` ({ id, origen }, de abajo hacia arriba), de arriba hacia abajo:
+// [] si `id` es la de arriba o no está. No toca la pila
+function ventanasEncimaDe(pila, id) {
+  const lista = Array.isArray(pila) ? pila : [];
+  const indice = lista.findIndex((ventana) => ventana.id === id);
+  return indice === -1 ? [] : lista.slice(indice + 1).map((ventana) => ventana.id).reverse();
+}
+
 // Lo que tenía el foco al abrir la ventana `id`, o null
 function origenDe(id) {
   return pilaDeVentanas.find((ventana) => ventana.id === id)?.origen ?? null;
@@ -559,10 +567,18 @@ function abrirVentana(id, foco, origen = document.activeElement) {
   if (foco) foco.focus();
 }
 
-// Cierra la ventana `id` y devuelve el foco a lo que lo tenía al abrirla, si sigue en la página. false si ya estaba cerrada
+/**
+ * Cierra la ventana `id` y devuelve el foco a lo que lo tenía al abrirla, si sigue en la página. false si ya estaba cerrada.
+ * Antes cierra las que tiene encima, de arriba hacia abajo y cada una con su cierre: si el envío del formulario termina con
+ * "¿Descartar los cambios?", "Nueva área" o la confirmación de "Actualizar desde portal" abierta, no queda sobre la lista.
+ */
 function cerrarVentana(id) {
   const velo = document.getElementById(id);
   if (velo.hidden) return false;
+  for (const encima of ventanasEncimaDe(pilaDeVentanas, id)) {
+    if (Object.prototype.hasOwnProperty.call(CIERRE_DE_VENTANA, encima)) CIERRE_DE_VENTANA[encima]();
+    else cerrarVentana(encima);
+  }
   velo.hidden = true;
   const origen = desapilarVentana(id)?.origen;
   if (origen && origen.isConnected && typeof origen.focus === 'function') origen.focus();
@@ -1739,13 +1755,15 @@ async function despuesDeProponer(apertura) {
   }
 }
 
-// El teclado con una ventana abierta (la de más arriba): Escape la cierra y Tab no sale de ella
+// El teclado con una ventana abierta (la de más arriba): Escape la cierra y Tab no sale de ella. Con Escape sostenido el
+// navegador repite la tecla (evento.repeat): solo cuenta la primera pulsación, si no la pregunta de descartar se abriría y
+// se cerraría sin parar, y cada repetición cerraría la ventana siguiente
 function teclaEnPagina(evento) {
   const id = ventanaDeArriba();
   if (!id) return;
   if (evento.key === 'Escape') {
     evento.preventDefault();
-    salirDeVentana(id, 'escape');
+    if (!evento.repeat) salirDeVentana(id, 'escape');
   } else if (evento.key === 'Tab') {
     retenerFoco(evento, document.querySelector(`#${id} .ad-ventana`));
   }

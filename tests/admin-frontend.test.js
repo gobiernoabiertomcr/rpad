@@ -2891,6 +2891,100 @@ describe('admin.js: salir del formulario con cambios, ventanas apiladas y el err
     assert.equal(pagina.elemento('modal-dataset').inert, false);
   });
 
+  // Final review M-8: al cerrarse una ventana se cierran también las que tiene encima, así ninguna queda abierta sobre la lista
+  it('ventanasEncimaDe: las de arriba de una ventana, de arriba hacia abajo (ninguna si no está o es la de arriba)', () => {
+    const { contexto } = cargarAdminJs();
+    const pila = [{ id: 'modal-dataset', origen: null }, { id: 'modal-quick-area', origen: null }, { id: 'modal-descartar', origen: null }];
+    assert.deepEqual(plano(contexto.ventanasEncimaDe(pila, 'modal-dataset')), ['modal-descartar', 'modal-quick-area']);
+    assert.deepEqual(plano(contexto.ventanasEncimaDe(pila, 'modal-quick-area')), ['modal-descartar']);
+    assert.deepEqual(plano(contexto.ventanasEncimaDe(pila, 'modal-descartar')), []);
+    assert.deepEqual(plano(contexto.ventanasEncimaDe(pila, 'modal-delete')), []);
+    assert.deepEqual(plano(contexto.ventanasEncimaDe([], 'modal-dataset')), []);
+    assert.deepEqual(plano(contexto.ventanasEncimaDe(undefined, 'modal-dataset')), []);
+    assert.equal(pila.length, 3, 'no toca la pila');
+  });
+
+  for (const [nombre, id, abrirEncima] of [
+    ['"¿Descartar los cambios?"', 'modal-descartar', (contexto) => escape(contexto)],
+    ['"Nueva área"', 'modal-quick-area', (contexto) => contexto.openQuickAreaModal()],
+    ['la confirmación de "Actualizar desde portal"', 'modal-confirm-update', (contexto) => contexto.updateFromAndino()]
+  ]) {
+    it(`un envío que termina con ${nombre} abierta encima cierra las dos ventanas y el foco vuelve a la lista`, async () => {
+      const { contexto, pagina } = armar();
+      let terminar;
+      contexto.API.updateDataset = () => new Promise((resolver) => { terminar = resolver; });
+      contexto.openModal({ ...PAUTA, url_dataset: 'https://datos.comodoro.gov.ar/dataset/pauta' }, null, pagina.elemento('btn-editar-10'));
+      pagina.elemento('titulo').value = 'Otro título';
+      const envio = contexto.enviarFormulario({ preventDefault() {} });
+      abrirEncima(contexto);
+      assert.equal(abierta(pagina, id), true);
+      assert.equal(pagina.elemento('modal-dataset').inert, true);
+      terminar({});
+      await envio;
+      assert.equal(abierta(pagina, 'modal-dataset'), false);
+      assert.equal(abierta(pagina, id), false, `${id} quedó abierta sobre la lista`);
+      assert.equal(pagina.elemento('modal-dataset').inert, false);
+      assert.equal(pagina.elemento(id).inert, false);
+      assert.equal(contexto.ventanaDeArriba(), null);
+      assert.equal(pagina.enfocados.at(-1), 'btn-editar-10');
+    });
+  }
+
+  it('cerrar el formulario con dos ventanas encima las cierra a las dos (Escape después no hace nada)', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    contexto.openQuickAreaModal();
+    pagina.elemento('titulo').value = 'Otro título';
+    contexto.abrirVentana('modal-descartar', pagina.elemento('btn-seguir-editando'));
+    contexto.closeModal();
+    for (const id of ['modal-dataset', 'modal-quick-area', 'modal-descartar']) {
+      assert.equal(abierta(pagina, id), false, id);
+      assert.equal(pagina.elemento(id).inert, false, id);
+    }
+    assert.equal(contexto.ventanaDeArriba(), null);
+    escape(contexto);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+  });
+
+  it('cerrar una ventana de arriba no cierra la de abajo', () => {
+    const { contexto, pagina } = armar();
+    contexto.openModal(PAUTA);
+    contexto.openQuickAreaModal();
+    contexto.closeQuickAreaModal();
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+    assert.equal(contexto.ventanaDeArriba(), 'modal-dataset');
+  });
+
+  // Final review M-8: con la tecla sostenida, el navegador repite el keydown (repeat: true)
+  it('Escape sostenido no abre y cierra "¿Descartar los cambios?": solo cuenta la primera pulsación', () => {
+    const { contexto, pagina } = armar();
+    let prevenidos = 0;
+    const tecla = (repeat) => contexto.teclaEnPagina({ key: 'Escape', repeat, preventDefault() { prevenidos++; } });
+    contexto.openModal(PAUTA);
+    pagina.elemento('titulo').value = 'Otro título';
+    tecla(false);
+    assert.equal(abierta(pagina, 'modal-descartar'), true);
+    for (let i = 0; i < 5; i++) tecla(true);
+    assert.equal(abierta(pagina, 'modal-descartar'), true);
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+    // Soltar y volver a apretar sí cuenta: vuelve al formulario
+    tecla(false);
+    assert.equal(abierta(pagina, 'modal-descartar'), false);
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+    assert.equal(prevenidos, 7, 'con una ventana abierta, Escape no hace lo del navegador, tampoco al repetirse');
+  });
+
+  it('Escape sostenido sobre "Nueva área" la cierra a ella sola, no también al formulario', () => {
+    const { contexto, pagina } = armar();
+    const tecla = (repeat) => contexto.teclaEnPagina({ key: 'Escape', repeat, preventDefault() {} });
+    contexto.openModal(PAUTA);
+    contexto.openQuickAreaModal();
+    tecla(false);
+    for (let i = 0; i < 3; i++) tecla(true);
+    assert.equal(abierta(pagina, 'modal-quick-area'), false);
+    assert.equal(abierta(pagina, 'modal-dataset'), true);
+  });
+
   it('el error de los formatos queda unido a su grupo, como el de "Datos al"', async () => {
     const { contexto, pagina } = armar();
     contexto.openModal({ ...PAUTA, formatos_array: [] });
