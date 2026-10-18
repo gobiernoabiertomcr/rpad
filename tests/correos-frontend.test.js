@@ -95,6 +95,8 @@ describe('correos.js: botón "Ver anexo" de la vista previa', () => {
 
 describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
   const TEXTO_EJEMPLO = 'Hoy no saldría ninguna nota de este tipo: se muestran datos de ejemplo.';
+  // Con motivo, la segunda línea habla de ese día (el de la próxima corrida con notas), no de hoy
+  const TEXTO_EJEMPLO_ESE_DIA = 'Ese día no saldría ninguna nota de este tipo: se muestran datos de ejemplo.';
   const texto = (contexto, datos) => vm.runInContext(`textoDeVistaPrevia(${JSON.stringify(datos)})`, contexto);
 
   it('sin motivo (hoy es la fecha), el texto es el de siempre: el de ejemplo y el de los datos reales', () => {
@@ -110,9 +112,11 @@ describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
     const { contexto } = cargarCorreos();
     const aviso = 'Hoy no se generan notas (día no hábil): así saldría el 21/12/2026.';
     const conEjemplo = texto(contexto, { ejemplo: true, tipo: 'aviso', cantidad: 0, asunto: 'x', fecha: '2026-12-21', motivo: 'día no hábil' });
-    assert.equal(conEjemplo, `${aviso}\n${TEXTO_EJEMPLO}`);
+    assert.equal(conEjemplo, `${aviso}\n${TEXTO_EJEMPLO_ESE_DIA}`);
     const real = texto(contexto, { ejemplo: false, tipo: 'reiteracion', cantidad: 4, asunto: 'Reiteración', fecha: '2026-12-21', motivo: 'día no hábil' });
-    assert.equal(real, `${aviso}\nCon los datos de hoy esta nota incluiría 4 dataset(s). Asunto: Reiteración`);
+    assert.equal(real, `${aviso}\nCon los datos de hoy, ese día esta nota incluiría 4 dataset(s). Asunto: Reiteración`);
+    const deAuditoria = texto(contexto, { ejemplo: false, tipo: 'auditoria', cantidad: 2, asunto: 'Cambios pendientes', fecha: '2026-12-21', motivo: 'día no hábil' });
+    assert.equal(deAuditoria, `${aviso}\nCon los datos de hoy, ese día esta nota incluiría 2 cambio(s). Asunto: Cambios pendientes`);
     for (const motivo of ['licencia del firmante sin persona autorizada', 'la persona autorizada está de licencia']) {
       assert.ok(texto(contexto, { ejemplo: true, tipo: 'aviso', fecha: '2027-01-15', motivo })
         .startsWith(`Hoy no se generan notas (${motivo}): así saldría el 15/01/2027.\n`), motivo);
@@ -127,7 +131,7 @@ describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
     const { contexto, elemento } = cargarCorreos({ previewNota: async () => vistas.shift() });
     await contexto.verVistaPrevia();
     assert.equal(elemento('preview-aviso').hidden, false);
-    assert.equal(elemento('preview-aviso').textContent, `Hoy no se generan notas (día no hábil): así saldría el 21/12/2026.\n${TEXTO_EJEMPLO}`);
+    assert.equal(elemento('preview-aviso').textContent, `Hoy no se generan notas (día no hábil): así saldría el 21/12/2026.\n${TEXTO_EJEMPLO_ESE_DIA}`);
     assert.equal(elemento('preview-marco').srcdoc, '<p>nota</p>');
     await contexto.verVistaPrevia();
     assert.equal(elemento('preview-aviso').textContent, 'Con los datos de hoy esta nota incluiría 1 dataset(s). Asunto: Aviso');

@@ -265,6 +265,8 @@ Cuando la fecha no es hoy, arriba de la vista previa dice *"Hoy no se generan no
 - `licencia del firmante sin persona autorizada`;
 - `la persona autorizada está de licencia`.
 
+La segunda línea también habla de ese día: *"Con los datos de hoy, ese día esta nota incluiría {n} dataset(s) (o cambio(s)). Asunto: …"* o, sin datos, *"Ese día no saldría ninguna nota de este tipo: se muestran datos de ejemplo."* Cuando la fecha es hoy, siguen los textos de siempre ("Con los datos de hoy esta nota incluiría …" y "Hoy no saldría ninguna nota …").
+
 La prueba usa esa misma fecha, y el PDF de prueba la lleva. El envío automático desactivado no cambia la fecha: la vista previa sirve igual. Si en el próximo año no hubiera ningún día con notas, se muestra hoy, como antes.
 
 **Qué contenido.** El mismo que la corrida ese día:

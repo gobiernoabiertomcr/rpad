@@ -432,11 +432,12 @@ function ocultarVistaPrevia() {
 }
 
 // Lo que dice arriba de la vista previa. Con `motivo`, hoy no se generan notas y lo que se muestra es la nota de la próxima
-// corrida con notas (spec 2026-10-15, 7.7): lo avisa en su propia línea, antes del texto de siempre
+// corrida con notas (spec 2026-10-15, 7.7): lo avisa en su propia línea y la segunda línea habla de ese día, no de hoy
 function textoDeVistaPrevia({ ejemplo, tipo, cantidad, asunto, fecha: f, motivo }) {
+  const unidad = tipo === 'auditoria' ? 'cambio(s)' : 'dataset(s)';
   const texto = ejemplo
-    ? 'Hoy no saldría ninguna nota de este tipo: se muestran datos de ejemplo.'
-    : `Con los datos de hoy esta nota incluiría ${cantidad} ${tipo === 'auditoria' ? 'cambio(s)' : 'dataset(s)'}. Asunto: ${asunto}`;
+    ? `${motivo ? 'Ese día no saldría' : 'Hoy no saldría'} ninguna nota de este tipo: se muestran datos de ejemplo.`
+    : `Con los datos de hoy${motivo ? ', ese día' : ''} esta nota incluiría ${cantidad} ${unidad}. Asunto: ${asunto}`;
   return motivo ? `Hoy no se generan notas (${motivo}): así saldría el ${fecha(f)}.
 ${texto}` : texto;
 }
