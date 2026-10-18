@@ -137,7 +137,9 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
     const aviso = aviso_fecha ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null;
     const anterior = porDataset.get(dataset.id);
     if (!anterior) porDataset.set(dataset.id, { ...dataset, informado: aviso, reiteraciones: Number(reiteraciones) });
-    else (anterior.informado.tambien ??= []).push(aviso);
+    // Los demás avisos del mismo dataset: la guarda evita que un dato inesperado (informado null) tire la reiteración de la gestión
+    // entera, todos los días
+    else if (anterior.informado && aviso) (anterior.informado.tambien ??= []).push(aviso);
   }
   return [...porDataset.values()].map(dataset => conPedido(dataset, hoy));
 };
