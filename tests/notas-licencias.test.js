@@ -7,6 +7,7 @@ import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
 import { crearDataset, crearNota, limpiarBase, configurarNotas, conFallaSimulada, conCambioSimulado } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
 import { lineasPorHoja, textosPorHoja } from './pdf-lector.js';
+import { esDiaHabil as esDiaHabilIso, sumarDias as sumarDiasIso } from '../services/notasDigitalesCalendario.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
 const PARRAFO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 26/11/2026 al 14/01/2027, con el objetivo de mantener el correcto flujo de trabajo.';
@@ -291,6 +292,32 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
 
     await correr('2026-12-23');
     assert.equal((await notas()).length, 2, 'el 23/12 no se repite');
+  });
+
+  it('la vista previa del aviso en su fecha coincide con la corrida (spec 7.7)', async () => {
+    const anticipado = await vispera();
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'externa', hoy: '2026-12-22' });
+    // Lo que elige avisoDelDia ese día, antes de que la corrida genere nada
+    const { modo, licencia: delTitular } = await firmas.firmaParaFecha(await config(), '2026-12-22');
+    const esperados = (await motor.avisoDelDia({ gestion: 'externa', fecha: '2026-12-22', modo, licencia: delTitular })).datasets.map(d => d.id);
+    assert.deepEqual(esperados, [externo]);
+
+    assert.deepEqual([vista.fecha, vista.motivo, vista.cantidad, vista.ejemplo], ['2026-12-22', null, 1, false]);
+    assert.ok(vista.html.includes(`Este pedido ya se había adelantado por Nota Digital N° ${anticipado.numero}/26 del 09/12/2026.`));
+    assert.ok(vista.html.includes(`Nota presentada por Firma admin, Cargo admin, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${anticipado.numero}/26 (licencia del 10/12/2026 al 08/01/2027).`));
+    assert.equal(vista.asunto, asuntoExterno(0).replace('N° 0/26', 'N° XX'), 'el asunto lleva el mes de la nota, no el rango de vencimientos');
+    assert.ok(!vista.html.includes('Asimismo'), 'no repite el párrafo de autorización');
+    assert.equal((await notas()).length, 1, 'la vista previa no genera nada');
+    assert.deepEqual(await datasetsDe(anticipado.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+
+    await correr('2026-12-22');
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.equal(enSuFecha.asunto.replace(/N° \S+/, 'N° XX'), vista.asunto);
+    assert.deepEqual((await datasetsDe(enSuFecha.id)).map(d => d.dataset_id), esperados);
+    // El HTML de la vista previa es el de la nota generada, salvo su número (el de la nota anticipada que cita no cambia)
+    assert.equal(vista.html, enSuFecha.html.replace(/(Nota Digital N°(?:<\/b>)?) (\d+)\/26/g,
+      (texto, prefijo, numero) => (Number(numero) === enSuFecha.numero ? `${prefijo} XX` : texto)));
   });
 
   it('la reiteración del 01/02/2027 muestra el dataset una sola vez, con las dos notas en "Informado en"', async () => {
@@ -1121,10 +1148,240 @@ describe('otros casos', () => {
     assert.doesNotMatch(aviso.asunto, /vencimientos de/);
   });
 
-  it('las vistas previas durante una licencia sin autorizado muestran la firma del titular', async () => {
+  it('las vistas previas durante una licencia sin autorizado muestran la vuelta, con la firma del titular (spec 7.7)', async () => {
     await licencia(titular, '2026-10-26', '2026-11-13');
     const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' });
+    // El 13/11 es viernes: la licencia termina y el primer día hábil siguiente es el lunes 16/11
+    assert.equal(vista.fecha, '2026-11-16');
+    assert.equal(vista.motivo, 'licencia del firmante sin persona autorizada');
     assert.match(vista.html, /Firma superadmin<br>Cargo superadmin/);
+    assert.doesNotMatch(vista.html, /Nota presentada por/);
+    assert.ok(vista.html.includes('16 de noviembre de 2026'));
+  });
+});
+
+// La vista previa y la prueba de Correos muestran la nota como saldría en la próxima corrida que genera notas, con la misma
+// selección que la corrida (spec 2026-10-15, 7.7, pedido del usuario el 18/10/2026)
+describe('vista previa y prueba de Correos: la nota como saldría (spec 7.7)', () => {
+  const PARRAFO_DE_LA_VISPERA = PARRAFO;
+  const todasLasNotas = () => query('SELECT id, es_prueba FROM notas_digitales');
+  const filasDeDatasets = async () => (await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets'))[0].n;
+  // Dos datasets internos que se anticipan en la víspera (25/11) de la licencia del 26/11 al 14/01
+  const conLaVispera = async () => {
+    const licenciaId = await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
+    await crearDataset({ titulo: 'Vence el 25 de enero', vencimiento: '2027-01-25' });
+    await crearDataset({ titulo: 'Vence el 15 de febrero', vencimiento: '2027-02-15' });
+    return licenciaId;
+  };
+
+  it('la víspera de una licencia con persona autorizada: los avisos anticipados con el párrafo de autorización, sin escribir nada', async () => {
+    const licenciaId = await conLaVispera();
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-25' });
+    assert.match(vista.asunto, /^Nota Digital N° XX – .*vencimientos de enero a febrero 2027/);
+    assert.ok(vista.html.includes(PARRAFO_DE_LA_VISPERA));
+    assert.deepEqual([vista.cantidad, vista.motivo, vista.fecha, vista.ejemplo], [2, null, '2026-11-25', false]);
+    assert.ok(vista.html.includes('Vence el 25 de enero') && vista.html.includes('Vence el 15 de febrero'));
+    assert.deepEqual(await todasLasNotas(), []);
+    assert.equal(await filasDeDatasets(), 0);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), null);
+  });
+
+  it('el PDF y el anexo de la víspera son los del aviso anticipado: dos hojas, firma del titular', async () => {
+    await conLaVispera();
+    const pdf = await motor.previewPdf({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-25' });
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const texto = lineasPorHoja(pdf).flat().join(' ');
+    assert.ok(texto.includes('Vence el 25 de enero') && texto.includes('Vence el 15 de febrero'), texto);
+    assert.ok(texto.includes('Asimismo, por medio de la presente autorizo expresamente a Firma admin'), texto);
+    assert.ok(texto.includes('25 de noviembre de 2026') && !texto.includes('Nota presentada por'), texto);
+    const anexo = lineasPorHoja(await motor.previewAnexo({ gestion: 'interna', hoy: '2026-11-25' }));
+    assert.equal(anexo.length, 2);
+    assert.ok(anexo[0].includes('Anexo – Nota Digital N° XX · Hoja 1 de 2'), anexo[0].join(' | '));
+    assert.deepEqual(await todasLasNotas(), []);
+  });
+
+  it('un sábado muestra el lunes: la fecha de la próxima corrida y el motivo "día no hábil"', async () => {
+    await crearDataset({ titulo: 'Vence en enero', vencimiento: '2027-01-31' });
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-19' });
+    assert.deepEqual([vista.fecha, vista.motivo, vista.cantidad, vista.ejemplo], ['2026-12-21', 'día no hábil', 1, false]);
+    assert.ok(vista.html.includes('21 de diciembre de 2026'));
+    assert.match(vista.asunto, /gestión interna – diciembre 2026\)$/);
+    // La reiteración y la nota de auditoría usan la misma fecha
+    for (const tipo of ['reiteracion', 'auditoria']) {
+      const otra = await motor.previewNota({ tipo, gestion: 'interna', hoy: '2026-12-19' });
+      assert.deepEqual([otra.fecha, otra.motivo], ['2026-12-21', 'día no hábil'], tipo);
+      assert.ok(otra.html.includes('21 de diciembre de 2026'), tipo);
+    }
+    // Un día hábil sin licencia: hoy, sin motivo
+    const habil = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-21' });
+    assert.deepEqual([habil.fecha, habil.motivo], ['2026-12-21', null]);
+  });
+
+  it('un feriado muestra el día hábil siguiente', async () => {
+    // El 08/12/2026 (martes) es feriado; el miércoles 09/12 se generan notas
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-08' });
+    assert.deepEqual([vista.fecha, vista.motivo], ['2026-12-09', 'día no hábil']);
+  });
+
+  it('con la persona autorizada de licencia muestra el día en que vuelve', async () => {
+    // Licencia del titular del 10/12/2026 al 08/01/2027; la persona autorizada falta del 14/12 al 31/12
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    await licencia(autorizado, '2026-12-14', '2026-12-31');
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-14' });
+    // El 01/01 es feriado y el 02 y 03 son fin de semana: vuelve el lunes 04/01
+    assert.deepEqual([vista.fecha, vista.motivo], ['2027-01-04', 'la persona autorizada está de licencia']);
+    // Sale presentada por ella
+    assert.ok(vista.html.includes('Nota presentada por Firma admin, Cargo admin, en nombre de Firma superadmin, Cargo superadmin'));
+  });
+
+  it('con la persona autorizada de licencia todos los días de la del titular muestra la vuelta del titular', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    await licencia(autorizado, '2026-12-08', '2027-01-10');
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-14' });
+    // El 08/01 es viernes: el titular vuelve el lunes 11/01 y firma él
+    assert.deepEqual([vista.fecha, vista.motivo], ['2027-01-11', 'la persona autorizada está de licencia']);
+    assert.match(vista.html, /Firma superadmin<br>Cargo superadmin/);
+    assert.doesNotMatch(vista.html, /Nota presentada por/);
+  });
+
+  it('con una persona autorizada que ya no sirve (inactiva) el motivo es la licencia sin persona autorizada', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [autorizado.id]);
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-14' });
+    assert.deepEqual([vista.fecha, vista.motivo], ['2027-01-11', 'licencia del firmante sin persona autorizada']);
+  });
+
+  it('un día no hábil dentro de una licencia sin autorizado dice "día no hábil"', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08');
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-12' });
+    assert.deepEqual([vista.fecha, vista.motivo], ['2027-01-11', 'día no hábil']);
+  });
+
+  it('fechaDeVistaPrevia: se busca hasta 366 días; sin ningún día con notas, hoy y sin motivo', async () => {
+    await licencia(titular, '2026-11-01', '2028-12-31');
+    const conf = await config();
+    assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-11-02'), { fecha: '2026-11-02', motivo: null });
+    // A 366 días todavía se encuentra; a 367 no
+    await query('UPDATE usuarios_licencias SET hasta = ?', ['2027-11-02']);
+    assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-11-02'), { fecha: '2027-11-03', motivo: 'licencia del firmante sin persona autorizada' });
+    await query('UPDATE usuarios_licencias SET hasta = ?', ['2027-11-03']);
+    assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-11-02'), { fecha: '2026-11-02', motivo: null });
+  });
+
+  it('fechaDeVistaPrevia da lo mismo que probar día por día, con la persona autorizada ausente algunos días o todos, o sin ella', async () => {
+    const conf = await config();
+    // El primer día hábil desde hoy en que alguien presenta las notas, probando todos los días (hasta 366)
+    const porDia = async (hoy) => {
+      for (let dia = hoy, i = 0; i <= 366; dia = sumarDiasIso(dia, 1), i++) {
+        if (esDiaHabilIso(dia) && (await firmas.firmaParaFecha(conf, dia)).modo !== 'sin_autorizado') return dia;
+      }
+      return hoy;
+    };
+    const escenarios = {
+      'ausente algunos días': async () => {
+        await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+        await licencia(autorizado, '2026-12-14', '2026-12-16');
+        await licencia(autorizado, '2026-12-21', '2026-12-31');
+      },
+      'ausente todos los días': async () => {
+        await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+        await licencia(autorizado, '2026-12-01', '2027-01-20');
+      },
+      'sin persona autorizada': async () => {
+        await licencia(titular, '2026-12-10', '2027-01-08');
+      },
+      'dos licencias seguidas del titular, la segunda con persona autorizada': async () => {
+        await licencia(titular, '2026-12-10', '2026-12-18');
+        await licencia(titular, '2026-12-19', '2027-01-08', autorizado);
+        await licencia(autorizado, '2026-12-21', '2026-12-23');
+      }
+    };
+    for (const [nombre, preparar] of Object.entries(escenarios)) {
+      await query('DELETE FROM usuarios_licencias');
+      await preparar();
+      // De a 3 días: recorre todos los días de la semana sin probar cada fecha
+      for (let hoy = '2026-12-01'; hoy <= '2027-01-15'; hoy = sumarDiasIso(hoy, 3)) {
+        const { fecha, motivo } = await motor.fechaDeVistaPrevia(conf, hoy);
+        assert.equal(fecha, await porDia(hoy), `${nombre}, hoy ${hoy}`);
+        assert.equal(motivo === null, fecha === hoy, `${nombre}, hoy ${hoy}: el motivo solo falta si la fecha es hoy`);
+      }
+    }
+  });
+
+  it('autorización tardía: la leyenda cita la Nota Digital N° XX y no se genera nada', async () => {
+    // La licencia ya está en curso y la víspera pasó sin persona autorizada: no salió ninguna nota
+    const licenciaId = await licencia(titular, '2026-10-26', '2026-11-13');
+    await correr('2026-10-23');
+    assert.deepEqual(await todasLasNotas(), []);
+    await crearDataset({ titulo: 'Vence en diciembre', vencimiento: '2026-12-31' });
+    // La persona autorizada se carga con la licencia en curso
+    await query("UPDATE usuarios_licencias SET autorizado_id = ?, autorizado_at = '2026-11-01 10:00:00' WHERE id = ?", [autorizado.id, licenciaId]);
+
+    const leyenda = 'Nota presentada por Firma admin, Cargo admin, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° XX (licencia del 26/10/2026 al 13/11/2026).';
+    const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' });
+    assert.deepEqual([vista.fecha, vista.motivo, vista.cantidad], ['2026-11-02', null, 1]);
+    assert.ok(vista.html.includes(leyenda), 'la leyenda cita la nota de autorización que todavía no salió');
+    // Las otras notas del día también salen con la leyenda
+    for (const tipo of ['reiteracion', 'auditoria']) {
+      assert.ok((await motor.previewNota({ tipo, gestion: 'interna', hoy: '2026-11-02' })).html.includes(leyenda), tipo);
+    }
+    assert.ok(lineasPorHoja(await motor.previewPdf({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' })).flat().join(' ').includes('Nota Digital N° XX (licencia'));
+
+    // No genera la nota de autorización ni toca la licencia
+    assert.deepEqual(await todasLasNotas(), []);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), null);
+    // y la corrida de ese día confirma lo que mostraba: primero la nota de autorización y después el aviso, con la misma selección
+    await correr('2026-11-02');
+    const [autorizacion, aviso] = await notas();
+    assert.equal(autorizacion.tipo, 'autorizacion');
+    assert.equal(aviso.tipo, 'aviso');
+    assert.equal(aviso.asunto.replace(/N° \S+/, 'N° XX'), vista.asunto);
+    assert.ok(aviso.html.includes(`mediante Nota Digital N° ${autorizacion.numero}/26 (licencia del 26/10/2026 al 13/11/2026)`));
+  });
+
+  it('si falla la búsqueda de lo que sale en su fecha, la vista previa falla (500) en vez de mostrar otra nota', async () => {
+    await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+    await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+    await correr('2026-12-09');
+    const pool = (await import('../config/database.js')).default;
+    const consultaOriginal = pool.query;
+    const falla = mock.method(pool, 'query', function (sql, params) {
+      if (String(sql).includes('otro.dataset_id')) return Promise.reject(new Error('Falla simulada'));
+      return consultaOriginal.call(this, sql, params);
+    });
+    try {
+      await assert.rejects(motor.previewNota({ tipo: 'aviso', gestion: 'externa', hoy: '2026-12-22' }), /Falla simulada/);
+      await assert.rejects(motor.previewAnexo({ gestion: 'externa', hoy: '2026-12-22' }), /Falla simulada/);
+      await assert.rejects(motor.enviarPrueba({ tipo: 'aviso', gestion: 'externa', hoy: '2026-12-22' }), /Falla simulada/);
+    } finally {
+      falla.mock.restore();
+    }
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales WHERE es_prueba = 1'))[0].n, 0);
+  });
+
+  it('la prueba de la víspera: una nota de prueba con los avisos anticipados, sin registrar datasets ni la autorización', async () => {
+    const licenciaId = await conLaVispera();
+    const prueba = await motor.enviarPrueba({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-25' });
+    assert.equal(prueba.success, true);
+    assert.deepEqual([prueba.fecha, prueba.motivo, prueba.ejemplo], ['2026-11-25', null, false]);
+    const [nota] = await query('SELECT es_prueba, asunto, para, cc, html FROM notas_digitales WHERE id = ?', [prueba.id]);
+    assert.equal(nota.es_prueba, 1);
+    assert.match(nota.asunto, /^\[PRUEBA\] Nota Digital N° PRUEBA – .*vencimientos de enero a febrero 2027/);
+    assert.ok(nota.html.includes(PARRAFO_DE_LA_VISPERA));
+    // Solo a las casillas de prueba: ni los destinatarios de la gestión ni la persona autorizada en CC
+    assert.equal(nota.para, 'prueba@rpad.test');
+    assert.equal(nota.cc, '');
+    assert.equal(await filasDeDatasets(), 0);
+    assert.equal((await todasLasNotas()).length, 1);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), null);
+    assert.equal((await mailpit.esperar(m => m.Subject === nota.asunto)).length, 1);
+  });
+
+  it('la prueba de un día sin notas dice qué día muestra', async () => {
+    const prueba = await motor.enviarPrueba({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-19' });
+    assert.deepEqual([prueba.fecha, prueba.motivo, prueba.ejemplo], ['2026-12-21', 'día no hábil', true]);
+    const [nota] = await query('SELECT html FROM notas_digitales WHERE id = ?', [prueba.id]);
+    assert.ok(nota.html.includes('21 de diciembre de 2026'));
   });
 });
 

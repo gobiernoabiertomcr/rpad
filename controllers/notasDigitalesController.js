@@ -9,6 +9,7 @@ import {
 import { listaDeCorreos } from '../services/emailService.js';
 import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
 import { firmaDeUsuario } from '../services/firmasService.js';
+import { formatoCorto } from '../services/notasDigitalesCalendario.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 // El libro también filtra las notas de autorización y las de auditoría (spec 2026-10-15, 7.2 y 10.4)
@@ -265,10 +266,13 @@ export const enviarPrueba = async (req, res) => {
     if (!pedida) return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
     const resultado = await notas.enviarPrueba({ ...pedida, usuarioId: req.user?.userId ?? null });
     if (!resultado.success) return res.status(502).json({ success: false, error: `No se pudo enviar la prueba: ${resultado.error}` });
+    // Si hoy no se generan notas, la prueba muestra la de la próxima corrida con notas (spec 2026-10-15, 7.7): lo dice
     res.json({
       success: true,
-      message: `Prueba enviada a ${resultado.destinatarios.join(', ')}${resultado.ejemplo ? ' (con datos de ejemplo)' : ''}`,
-      data: { id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios }
+      message: `Prueba enviada a ${resultado.destinatarios.join(', ')}${resultado.ejemplo ? ' (con datos de ejemplo)' : ''}${resultado.motivo ? ` (como saldría el ${formatoCorto(resultado.fecha)})` : ''}`,
+      data: {
+        id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios, fecha: resultado.fecha, motivo: resultado.motivo
+      }
     });
   } catch (error) {
     // Sin casillas de prueba o con una firma o un banner guardados que no se pueden leer: el admin lo corrige en Configuración
