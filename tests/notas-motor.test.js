@@ -998,6 +998,24 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.ok(!hojas['Anual sin tipo'].some(l => l.includes('Acumulado')), hojas['Anual sin tipo'].join(' | '));
   });
 
+  // La tabla y el anexo salen de la misma selección: la frecuencia, el tipo y los meses son los de la selección, no los de una
+  // segunda lectura. Si el dataset cambia de frecuencia mientras se genera, los dos dicen lo mismo
+  it('el anexo toma la frecuencia de la selección, como la tabla: si el dataset cambia de frecuencia mientras se genera, no discrepan', async () => {
+    const id = await crearDataset({ titulo: 'Cambia de frecuencia', gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento: '2026-12-02', ultima: '2025-12-31' });
+    const seleccion = await datos.seleccionarParaAviso('externa', '2026-11-02');
+    assert.equal(seleccion.length, 1);
+    // Entre la selección y la ficha del anexo, el dataset pasa a anual
+    await query('UPDATE datasets SET frecuencia_id = (SELECT id FROM frecuencias WHERE nombre = ?) WHERE id = ?', ['Anualmente', id]);
+    const notaId = await motor.generarNota({
+      tipo: 'aviso', gestion: 'externa', fecha: '2026-11-02', datasets: seleccion, config: await datos.obtenerConfig()
+    });
+    const [{ html, anexo_pdf: anexo }] = await query('SELECT html, anexo_pdf FROM notas_digitales WHERE id = ?', [notaId]);
+    assert.ok(html.includes('>Trimestralmente (Acumulado)</td>'), 'la tabla dice la frecuencia de la selección');
+    const [hoja] = lineasPorHoja(anexo);
+    assert.ok(hoja.includes('Trimestralmente (Acumulado)'), hoja.join(' | '));
+    assert.ok(!hoja.some(l => l.includes('Anualmente')), hoja.join(' | '));
+  });
+
   it('un anexo que falla al dibujarse (dentro de la transacción) no deja la nota ni sus datasets y no consume el número', async () => {
     const id = await crearDataset({ titulo: 'Anexo que falla', vencimiento: '2026-12-31', ultima: '2025-12-31' });
     const [dataset] = await datos.seleccionarParaAviso('interna', '2026-11-02');
