@@ -27,9 +27,10 @@ export const crearArea = async (datos = {}) => {
   return resultado.insertId;
 };
 
+// datosAl y tipoPedido (spec 2026-10-17-fechas-datasets, 6): sin ellos quedan en NULL, como un dataset sin cargar
 export const crearDataset = async ({
   titulo = `Dataset de prueba ${sufijo()}`, gestion = 'interna', vencimiento, ultima = null, areaId,
-  frecuencia = 'Anualmente', activo = 1, url = 'https://datos.comodoro.gov.ar/dataset/prueba'
+  frecuencia = 'Anualmente', activo = 1, url = 'https://datos.comodoro.gov.ar/dataset/prueba', datosAl = null, tipoPedido = null
 }) => {
   const [f] = await query('SELECT id FROM frecuencias WHERE nombre = ?', [frecuencia]);
   if (!f) throw new Error(`No existe la frecuencia ${frecuencia}`);
@@ -37,9 +38,9 @@ export const crearDataset = async ({
   const area = areaId ?? await crearArea();
   const resultado = await query(
     `INSERT INTO datasets (titulo, area_id, frecuencia_id, ultima_actualizacion, proxima_actualizacion,
-       tema_principal_id, url_dataset, tipo_gestion, activo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [titulo, area, f.id, ultima, vencimiento ?? null, tema.id, url, gestion, activo]
+       tema_principal_id, url_dataset, tipo_gestion, activo, datos_al, tipo_pedido)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [titulo, area, f.id, ultima, vencimiento ?? null, tema.id, url, gestion, activo, datosAl, tipoPedido]
   );
   return resultado.insertId;
 };

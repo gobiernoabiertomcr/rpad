@@ -1,5 +1,7 @@
 import PDFDocument from 'pdfkit';
 import pool from '../config/database.js';
+import { esFechaIso, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
 
 // Colores institucionales
 const COLORS = {
@@ -42,25 +44,22 @@ const formatDateTime = (date) => {
 };
 
 /**
- * Calcula el estado del dataset
+ * Estado de una fila de los reportes (spec 2026-10-17-fechas-datasets, 11): el mismo cálculo que el listado y el tablero,
+ * estadoDelDataset, con la próxima como 'AAAA-MM-DD' (proxima_iso) y la frecuencia en meses (null es eventual).
+ * hoy es la fecha de Argentina ('AAAA-MM-DD').
  */
-const calcularEstado = (proximaActualizacion, frecuenciaDias, tipoGestion) => {
-  if (frecuenciaDias === null) return 'actualizado';
-  if (!proximaActualizacion) return 'sin-fecha';
+const estadoDeLaFila = (d, hoy) => estadoDelDataset({
+  proxima: d.proxima_iso, meses: d.frecuencia_meses ?? null, tipoGestion: d.tipo_gestion, hoy
+}).estado;
 
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const proxima = new Date(proximaActualizacion);
-  proxima.setHours(0, 0, 0, 0);
+// Columnas que suman las reglas de las fechas a un SELECT de datasets (alias d) con su frecuencia (alias f):
+// los meses de la frecuencia y la próxima y "Datos al" como 'AAAA-MM-DD'
+const COLUMNAS_FECHAS = `f.meses AS frecuencia_meses,
+             DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima_iso,
+             DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al_iso`;
 
-  const diffDias = Math.floor((proxima - hoy) / (1000 * 60 * 60 * 24));
-
-  if (diffDias < 0) {
-    return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
-  }
-  if (diffDias <= 60) return 'proximo';
-  return 'actualizado';
-};
+// Una fecha 'AAAA-MM-DD' como dd/mm/aaaa, cortada del texto (sin zona horaria); "—" si falta o no es una fecha
+const fechaCorta = (iso) => (esFechaIso(iso) ? formatoCorto(iso) : '—');
 
 /**
  * Obtiene texto del estado
@@ -71,7 +70,8 @@ const getEstadoTexto = (estado) => {
     'proximo': 'Próximo a vencer',
     'atrasado': 'Atrasado',
     'sin-respuesta': 'Sin respuesta',
-    'sin-fecha': 'Sin fecha'
+    'sin-fecha': 'Sin fecha',
+    'eventual': 'Eventual'
   };
   return textos[estado] || estado;
 };
@@ -85,7 +85,8 @@ const getEstadoColor = (estado) => {
     'proximo': COLORS.warning,
     'atrasado': COLORS.danger,
     'sin-respuesta': COLORS.sinRespuesta,
-    'sin-fecha': COLORS.gray
+    'sin-fecha': COLORS.gray,
+    'eventual': COLORS.gray
   };
   return colores[estado] || COLORS.gray;
 };
@@ -232,6 +233,7 @@ export const reporteEstadoGeneral = async (req, res) => {
     // Obtener datos
     const [datasets] = await pool.execute(`
       SELECT d.*, f.nombre AS frecuencia_nombre, f.dias AS frecuencia_dias,
+             ${COLUMNAS_FECHAS},
              a.nombre AS area_nombre, t.nombre AS tema_nombre
       FROM datasets d
       JOIN frecuencias f ON d.frecuencia_id = f.id
@@ -241,18 +243,23 @@ export const reporteEstadoGeneral = async (req, res) => {
       ORDER BY d.proxima_actualizacion ASC
     `);
     
-    // Calcular estadísticas
-    const stats = { total: datasets.length, actualizados: 0, proximos: 0, atrasados: 0, sinRespuesta: 0 };
+    // Calcular estadísticas. Los eventuales van aparte: no son actualizados ni entran en la tasa
+    const hoy = hoyArgentina();
+    const stats = { total: datasets.length, actualizados: 0, proximos: 0, atrasados: 0, sinRespuesta: 0, eventuales: 0 };
     datasets.forEach(d => {
-      const estado = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
+      const estado = estadoDeLaFila(d, hoy);
       d.estado = estado;
       if (estado === 'actualizado') stats.actualizados++;
       else if (estado === 'proximo') stats.proximos++;
       else if (estado === 'atrasado') stats.atrasados++;
       else if (estado === 'sin-respuesta') stats.sinRespuesta++;
+      else if (estado === 'eventual') stats.eventuales++;
     });
     
-    const tasaActualizacion = stats.total > 0 ? Math.round(((stats.actualizados + stats.proximos) / stats.total) * 100) : 0;
+    // (actualizados + próximos) sobre el total sin los eventuales: la misma tasa que el tablero y el Cumplimiento
+    const tasaActualizacion = tasaDeActualizacion({
+      alDia: stats.actualizados + stats.proximos, total: stats.total, eventuales: stats.eventuales
+    }) ?? 0;
     
     // Crear PDF
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
@@ -281,20 +288,28 @@ export const reporteEstadoGeneral = async (req, res) => {
     doc.fontSize(11).font('Helvetica')
        .text(`Tasa de actualización: ${tasaActualizacion}%`, 40, doc.y);
     
+    if (stats.eventuales > 0) {
+      doc.fontSize(9).fillColor(COLORS.gray)
+         .text(stats.eventuales === 1
+           ? 'El dataset eventual no entra en la tasa: no tiene fecha de vencimiento.'
+           : `Los ${stats.eventuales} datasets eventuales no entran en la tasa: no tienen fecha de vencimiento.`, 40, doc.y + 2);
+    }
+    
     doc.y += 30;
     
     // Tabla de datasets
     doc.fontSize(12).font('Helvetica-Bold').text('Detalle de Datasets', 40, doc.y);
     doc.y += 15;
     
-    const headers = ['Título', 'Área', 'Frecuencia', 'Próx. Act.', 'Estado'];
-    const colWidths = [180, 130, 70, 70, 65];
+    const headers = ['Título', 'Área', 'Frecuencia', 'Datos al', 'Próx. Act.', 'Estado'];
+    const colWidths = [155, 105, 70, 55, 55, 75];
     
     const rows = datasets.map(d => [
       d.titulo,
       d.area_nombre,
       d.frecuencia_nombre,
-      formatDate(d.proxima_actualizacion),
+      fechaCorta(d.datos_al_iso),
+      fechaCorta(d.proxima_iso),
       getEstadoTexto(d.estado)
     ]);
     
@@ -652,15 +667,16 @@ const drawDatasetCard = (doc, dataset, startY) => {
   }
   
   // Línea 5: Fecha y frecuencia
-  const fechaTexto = dataset.proxima_actualizacion ? 
-    `Proxima actualizacion: ${formatDate(dataset.proxima_actualizacion)}` : 
+  const datosAlTexto = `Datos al: ${fechaCorta(dataset.datos_al_iso)}`;
+  const fechaTexto = esFechaIso(dataset.proxima_iso) ? 
+    `Proxima actualizacion: ${fechaCorta(dataset.proxima_iso)}` : 
     'Sin fecha programada';
   const frecuenciaTexto = `Frecuencia de actualizacion: ${dataset.frecuencia_nombre}`;
   
   doc.fillColor(COLORS.grayDark)
      .fontSize(8)
      .font('Helvetica')
-     .text(`${fechaTexto}     ${frecuenciaTexto}`, cardX + padding, currentY, { 
+     .text(`${datosAlTexto}     ${fechaTexto}     ${frecuenciaTexto}`, cardX + padding, currentY, { 
        width: cardWidth - (padding * 2),
        lineBreak: false 
      });
@@ -711,6 +727,7 @@ export const reportePorArea = async (req, res) => {
     // Obtener datasets del área con tema secundario
     const [datasets] = await pool.execute(`
       SELECT d.*, f.nombre AS frecuencia_nombre, f.dias AS frecuencia_dias,
+             ${COLUMNAS_FECHAS},
              t1.nombre AS tema_nombre, t2.nombre AS tema_secundario_nombre
       FROM datasets d
       JOIN frecuencias f ON d.frecuencia_id = f.id
@@ -720,12 +737,13 @@ export const reportePorArea = async (req, res) => {
       ORDER BY d.proxima_actualizacion ASC
     `, [areaId]);
     
-    // Calcular estadísticas y agrupar por estado
+    // Calcular estadísticas y agrupar por estado. Los eventuales van en su grupo, aparte de los actualizados
+    const hoy = hoyArgentina();
     const stats = { total: datasets.length, actualizados: 0, proximos: 0, vencidos: 0 };
-    const grupos = { actualizados: [], proximos: [], vencidos: [] };
+    const grupos = { actualizados: [], proximos: [], vencidos: [], eventuales: [] };
     
     datasets.forEach(d => {
-      const estado = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
+      const estado = estadoDeLaFila(d, hoy);
       d.estado = estado;
       
       if (estado === 'actualizado') {
@@ -734,6 +752,8 @@ export const reportePorArea = async (req, res) => {
       } else if (estado === 'proximo') {
         stats.proximos++;
         grupos.proximos.push(d);
+      } else if (estado === 'eventual') {
+        grupos.eventuales.push(d);
       } else {
         stats.vencidos++;
         grupos.vencidos.push(d);
@@ -774,6 +794,7 @@ export const reportePorArea = async (req, res) => {
     currentY = drawDatasetGroup(doc, 'Vencidos', grupos.vencidos, COLORS.danger, currentY);
     currentY = drawDatasetGroup(doc, 'Próximos a vencer', grupos.proximos, COLORS.warning, currentY);
     currentY = drawDatasetGroup(doc, 'Actualizados', grupos.actualizados, COLORS.success, currentY);
+    currentY = drawDatasetGroup(doc, 'Eventuales', grupos.eventuales, COLORS.gray, currentY);
     
     // Footer
     drawAllFooters(doc);
@@ -810,6 +831,7 @@ export const reporteCumplimiento = async (req, res) => {
     // Obtener datasets y calcular cumplimiento
     const [datasets] = await pool.execute(`
       SELECT d.*, f.nombre AS frecuencia_nombre, f.dias AS frecuencia_dias,
+             ${COLUMNAS_FECHAS},
              a.nombre AS area_nombre
       FROM datasets d
       JOIN frecuencias f ON d.frecuencia_id = f.id
@@ -817,24 +839,33 @@ export const reporteCumplimiento = async (req, res) => {
       WHERE d.activo = TRUE
     `);
     
+    // Al día: actualizado o próximo. Los eventuales no tienen vencimiento: van aparte y no entran en el porcentaje (Ruling 22),
+    // igual que en la tasa del tablero y del Estado General (tasaDeActualizacion)
+    const hoyArg = hoyArgentina();
+    const estados = datasets.map(d => ({ d, estado: estadoDeLaFila(d, hoyArg) }));
+    const estaAlDia = ({ estado }) => estado === 'actualizado' || estado === 'proximo';
+    const esEventual = ({ estado }) => estado === 'eventual';
+    
     // Agrupar por área
     const porArea = {};
-    datasets.forEach(d => {
-      if (!porArea[d.area_nombre]) {
-        porArea[d.area_nombre] = { total: 0, alDia: 0 };
+    estados.forEach(e => {
+      const nombre = e.d.area_nombre;
+      if (!porArea[nombre]) {
+        porArea[nombre] = { total: 0, alDia: 0, eventuales: 0 };
       }
-      porArea[d.area_nombre].total++;
-      const estado = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-      if (estado === 'actualizado' || estado === 'proximo') porArea[d.area_nombre].alDia++;
+      porArea[nombre].total++;
+      if (estaAlDia(e)) porArea[nombre].alDia++;
+      if (esEventual(e)) porArea[nombre].eventuales++;
     });
     
-    // Calcular porcentaje por área
+    // Calcular porcentaje por área. Un área con solo eventuales no tiene nada que medir: porcentaje null
     const areasConPorcentaje = Object.entries(porArea).map(([nombre, stats]) => ({
       nombre,
       total: stats.total,
       alDia: stats.alDia,
-      porcentaje: stats.total > 0 ? Math.round((stats.alDia / stats.total) * 100) : 0
-    })).sort((a, b) => b.porcentaje - a.porcentaje);
+      eventuales: stats.eventuales,
+      porcentaje: tasaDeActualizacion(stats)
+    })).sort((a, b) => (b.porcentaje ?? -1) - (a.porcentaje ?? -1));
     
     // Crear PDF
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
@@ -849,11 +880,9 @@ export const reporteCumplimiento = async (req, res) => {
     
     // Resumen general
     const totalDatasets = datasets.length;
-    const totalAlDia = datasets.filter(d => {
-      const estado = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-      return estado === 'actualizado' || estado === 'proximo';
-    }).length;
-    const porcentajeGeneral = totalDatasets > 0 ? Math.round((totalAlDia / totalDatasets) * 100) : 0;
+    const totalAlDia = estados.filter(estaAlDia).length;
+    const totalEventuales = estados.filter(esEventual).length;
+    const porcentajeGeneral = tasaDeActualizacion({ alDia: totalAlDia, total: totalDatasets, eventuales: totalEventuales }) ?? 0;
     
     doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.grayDark).text('Cumplimiento General', 40, doc.y + 10);
     doc.y += 25;
@@ -862,20 +891,29 @@ export const reporteCumplimiento = async (req, res) => {
     drawStatCard(doc, 170, doc.y, 'Al día', totalAlDia, COLORS.success);
     drawStatCard(doc, 300, doc.y, '% Cumplimiento', porcentajeGeneral + '%', porcentajeGeneral >= 70 ? COLORS.success : (porcentajeGeneral >= 40 ? COLORS.warning : COLORS.danger));
     
-    doc.y += 90;
+    doc.y += 12;
+    
+    // Los eventuales van aparte: no tienen vencimiento y no entran en el porcentaje
+    if (totalEventuales > 0) {
+      doc.fontSize(9).font('Helvetica').fillColor(COLORS.gray)
+         .text(`Eventuales (${totalEventuales}): no entran en el porcentaje porque no tienen fecha de vencimiento.`, 40, doc.y);
+    }
+    
+    doc.y += 30;
     
     // Tabla por área
     doc.fontSize(12).font('Helvetica-Bold').text('Cumplimiento por Área', 40, doc.y);
     doc.y += 15;
     
-    const headers = ['Área', 'Total', 'Al día', 'Cumplimiento'];
-    const colWidths = [280, 70, 80, 85];
+    const headers = ['Área', 'Total', 'Al día', 'Eventuales', 'Cumplimiento'];
+    const colWidths = [255, 45, 50, 75, 90];
     
     const rows = areasConPorcentaje.map(a => [
       a.nombre,
       a.total.toString(),
       a.alDia.toString(),
-      a.porcentaje + '%'
+      a.eventuales.toString(),
+      a.porcentaje === null ? 'Sin vencimientos' : a.porcentaje + '%'
     ]);
     
     drawTable(doc, headers, rows, doc.y, colWidths);

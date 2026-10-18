@@ -3,6 +3,8 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, crearArea } from './notas-fixtures.js';
+import { formatoCorto, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 
 let base, datos, dbReal;
 
@@ -310,10 +312,11 @@ describe('fichasDe', () => {
       url: 'https://datos.comodoro.gov.ar/dataset/ficha'
     });
     await query(
-      `UPDATE datasets SET descripcion = ?, observaciones = ?, que_se_solicita = ?, tema_principal_id = ?, tema_secundario_id = ?
+      `UPDATE datasets SET descripcion = ?, observaciones = ?, que_se_solicita = ?, tema_principal_id = ?, tema_secundario_id = ?,
+         datos_al = ?, tipo_pedido = ?
        WHERE id = ?`,
       ['Descripción de la ficha.', 'Observación de la ficha.', 'Planilla con los registros del año.',
-        await idDe('temas', 'Medio Ambiente'), await idDe('temas', 'Servicios Públicos'), id]
+        await idDe('temas', 'Medio Ambiente'), await idDe('temas', 'Servicios Públicos'), '2025-10-31', 'acumulado', id]
     );
     // Cargados fuera de orden: la ficha los lista ordenados por nombre
     for (const formato of ['XLSX', 'CSV']) {
@@ -330,7 +333,10 @@ describe('fichasDe', () => {
       que_se_solicita: 'Planilla con los registros del año.',
       area_nombre: 'Área de la ficha', area_superior: 'Secretaría de la ficha', email_principal: 'ficha@rpad.test',
       email_secundario: 'ficha2@rpad.test', telefono_area: '297 400-1111', celular_area: '297 15 400-2222',
-      nombre_contacto: 'Persona de contacto', telefono_contacto: '297 400-3333', email_contacto: 'contacto@rpad.test'
+      nombre_contacto: 'Persona de contacto', telefono_contacto: '297 400-3333', email_contacto: 'contacto@rpad.test',
+      // Sin el hoy de la nota, el pedido de ese vencimiento tal cual (sin R7), desde lo que falta después de Datos al
+      meses: 12, datos_al: '2025-10-31', tipo_pedido: 'acumulado',
+      pedido: { desde: '2025-11-01', hasta: '2026-10-31', texto: 'Del 01/11/2025 al 31/10/2026' }
     });
   });
 
@@ -339,7 +345,7 @@ describe('fichasDe', () => {
     const ficha = (await datos.fichasDe([id])).get(id);
     assert.equal(ficha.tipo_gestion, 'interna');
     assert.equal(ficha.vencimiento, '2026-12-31');
-    for (const campo of ['tema_secundario', 'formatos', 'que_se_solicita', 'ultima_actualizacion', 'descripcion', 'observaciones']) {
+    for (const campo of ['tema_secundario', 'formatos', 'que_se_solicita', 'ultima_actualizacion', 'descripcion', 'observaciones', 'datos_al']) {
       assert.equal(ficha[campo], null, campo);
     }
     assert.ok(ficha.tema_principal);
@@ -357,6 +363,74 @@ describe('fichasDe', () => {
     const fichas = await datos.fichasDe([]);
     assert.ok(fichas instanceof Map);
     assert.equal(fichas.size, 0);
+  });
+});
+
+// El pedido depende del día (R7): las fechas se arman desde el hoy real y los textos esperados, con formatoCorto (Ruling 7)
+describe('datos solicitados de cada dataset (spec 2026-10-17-fechas-datasets, 9)', () => {
+  const HOY = hoyArgentina();
+  // Vence a fin del mes de mañana, entre hoy y hoy + 31 días: entra en la ventana del aviso de las dos gestiones. Con el
+  // mes de hoy, un 29/02 vencería el 28/02 (febrero va siempre en 28) y ya estaría vencido
+  const VENCE = vencimientoDelMes(sumarDias(HOY, 1));
+  // Trimestral vencido hace dos ciclos: el último vencimiento que ya pasó es el fin del mes pasado (R7)
+  const VENCIDO = sumarMeses(HOY, -7);
+  const primeroDelMes = (iso) => `${iso.slice(0, 8)}01`;
+  const periodo = (desde, hasta) => ({ desde, hasta, texto: `Del ${formatoCorto(desde)} al ${formatoCorto(hasta)}` });
+  const delPedido = ({ meses, datos_al: datosAl, tipo_pedido: tipo, pedido }) => ({ meses, datos_al: datosAl, tipo_pedido: tipo, pedido });
+  // Un trimestral acumulado con los datos publicados muy atrás: se pide desde el mes siguiente a Datos al
+  const trimestral = (titulo, vencimiento) => crearDataset({
+    titulo, gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento, tipoPedido: 'acumulado', datosAl: sumarMeses(vencimiento, -16)
+  });
+
+  it('el aviso trae de cada dataset la frecuencia en meses, Datos al, el tipo de pedido efectivo y el pedido de hoy', async () => {
+    const acumulado = await trimestral('A acumulado', VENCE);
+    const foto = await crearDataset({ titulo: 'B foto sugerida', gestion: 'externa', frecuencia: 'Cada dos años', vencimiento: VENCE });
+    const sinPedido = await crearDataset({ titulo: 'C eventual', gestion: 'externa', vencimiento: VENCE, tipoPedido: 'eventual' });
+    const fechaCero = await crearDataset({ titulo: 'D Datos al cero', gestion: 'externa', vencimiento: VENCE, tipoPedido: 'acumulado' });
+    await query("UPDATE datasets SET datos_al = '0000-00-00' WHERE id = ?", [fechaCero]);
+    const relevamiento = await crearDataset({ titulo: 'E relevamiento sugerido', vencimiento: VENCE });
+
+    const corte = sumarMeses(VENCE, -1);
+    const externos = new Map((await datos.seleccionarParaAviso('externa', HOY)).map(d => [d.id, d]));
+    assert.deepEqual(delPedido(externos.get(acumulado)), {
+      meses: 3, datos_al: sumarMeses(VENCE, -16), tipo_pedido: 'acumulado', pedido: periodo(primeroDelMes(sumarMeses(VENCE, -15)), corte)
+    });
+    // Sin tipo guardado, el sugerido: externa de más de 12 meses → foto
+    assert.deepEqual(delPedido(externos.get(foto)), {
+      meses: 24, datos_al: null, tipo_pedido: 'foto', pedido: { desde: corte, hasta: corte, texto: `Vigente al ${formatoCorto(corte)}` }
+    });
+    assert.deepEqual(delPedido(externos.get(sinPedido)), { meses: 12, datos_al: null, tipo_pedido: 'eventual', pedido: null });
+    // '0000-00-00' no es una fecha: sin Datos al, el acumulado del año del corte
+    assert.deepEqual(delPedido(externos.get(fechaCero)), {
+      meses: 12, datos_al: null, tipo_pedido: 'acumulado', pedido: periodo(`${corte.slice(0, 4)}-01-01`, corte)
+    });
+    const [interno] = await datos.seleccionarParaAviso('interna', HOY);
+    assert.equal(interno.id, relevamiento);
+    assert.deepEqual(delPedido(interno), {
+      meses: 12, datos_al: null, tipo_pedido: 'relevamiento', pedido: { desde: null, hasta: null, texto: 'Relevamiento actualizado' }
+    });
+  });
+
+  it('la reiteración recalcula el pedido con R7, con aviso previo o sin él: pide hasta el último corte cerrado, no lo del aviso', async () => {
+    const sinAviso = await trimestral('A sin aviso', VENCIDO);
+    const avisado = await trimestral('B avisado', VENCIDO);
+    // Un aviso de antes de esta etapa, guardado sin los datos solicitados
+    await crearNota({ gestion: 'externa', fecha: sumarDias(VENCIDO, -30), numero: 1, datasets: [{ id: avisado, vencimiento: VENCIDO }] });
+
+    const filas = await datos.seleccionarParaReiteracion('externa', HOY);
+    assert.deepEqual(ids(filas), [sinAviso, avisado]);
+    assert.deepEqual(filas.map(f => f.informado?.numero ?? null), [null, 1]);
+    // El aviso pedía hasta el corte de su vencimiento; hoy ya pasaron dos ciclos y se pide hasta el fin del mes anterior al pasado
+    const esperado = periodo(primeroDelMes(sumarMeses(VENCIDO, -15)), sumarMeses(HOY, -2));
+    assert.notEqual(esperado.hasta, sumarMeses(VENCIDO, -1));
+    for (const fila of filas) assert.deepEqual(delPedido(fila), { meses: 3, datos_al: sumarMeses(VENCIDO, -16), tipo_pedido: 'acumulado', pedido: esperado });
+  });
+
+  it('la ficha calcula el pedido con el hoy de la nota (R7); sin hoy, el de ese vencimiento tal cual', async () => {
+    const id = await trimestral('Ficha vencida', VENCIDO);
+    const desde = primeroDelMes(sumarMeses(VENCIDO, -15));
+    assert.deepEqual((await datos.fichasDe([id], HOY)).get(id).pedido, periodo(desde, sumarMeses(HOY, -2)));
+    assert.deepEqual((await datos.fichasDe([id])).get(id).pedido, periodo(desde, sumarMeses(VENCIDO, -1)));
   });
 });
 

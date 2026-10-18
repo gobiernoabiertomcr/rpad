@@ -13,10 +13,14 @@ const config = {
   firma_cargo: 'Cargo de Firma'
 };
 
+// El pedido es el de la selección (Task 11): un anual acumulado que vence el 31/12/2026 pide hasta el corte del 30/11
+const PEDIDO = { desde: '2026-01-01', hasta: '2026-11-30', texto: 'Del 01/01/2026 al 30/11/2026' };
+// El de uno que venció el 31/10/2026: hasta el corte del 30/09
+const PEDIDO_OCTUBRE = { desde: '2026-01-01', hasta: '2026-09-30', texto: 'Del 01/01/2026 al 30/09/2026' };
 const dataset = (cambios = {}) => ({
   id: 1, titulo: 'Dataset A', url_dataset: 'https://datos.comodoro.gov.ar/dataset/a', area_id: 10,
   area_nombre: 'Área Uno', frecuencia_nombre: 'Anualmente', ultima_actualizacion: '2025-12-31',
-  vencimiento: '2026-12-31', informado: null, reiteraciones: 0, antecedente: null, ...cambios
+  vencimiento: '2026-12-31', pedido: PEDIDO, informado: null, reiteraciones: 0, antecedente: null, ...cambios
 });
 
 const nota = (cambios = {}) => construirNota({
@@ -53,9 +57,10 @@ describe('secciones', () => {
     assert.equal(ambas.secciones[1].introduccion, 'Los siguientes conjuntos de datos se encuentran con su plazo de actualización vencido:');
   });
 
+  // (spec 2026-10-17-fechas-datasets, 9: el aviso no tiene "Situación"; la reiteración sí, en la sexta columna)
   it('calcula la situación al día de la nota', () => {
     const situacion = (vencimiento) => {
-      const s = nota({ datasets: [dataset({ vencimiento })] }).secciones[0];
+      const s = nota({ tipo: 'reiteracion', datasets: [dataset({ vencimiento })] }).secciones[0];
       return s.filas[0].valores[5];
     };
     assert.equal(situacion('2026-12-31'), 'Faltan 59 días');
@@ -68,12 +73,70 @@ describe('secciones', () => {
     assert.equal(nota({ datasets: [dataset({ vencimiento: '2026-11-02' })] }).secciones[0].clave, 'proximo');
   });
 
-  it('columnas de aviso interno y de reiteración externa vencida', () => {
+  // Spec 2026-10-17-fechas-datasets, 9: el aviso tiene 5 columnas (se van "Última actualización" y "Situación") y la
+  // reiteración, las 7 de siempre con "Datos solicitados" en lugar de "Última actualización" e "Informado en" al final
+  it('columnas exactas del aviso: 5, con "Datos solicitados" y "Fecha sugerida de envío"', () => {
     assert.deepEqual(nota().secciones[0].columnas,
-      ['Conjunto de datos', 'Área', 'Frecuencia', 'Última actualización', 'Vence', 'Situación']);
-    const reiteracion = nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento: '2026-10-31' })] });
-    assert.deepEqual(reiteracion.secciones[0].columnas,
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Última actualización', 'Venció', 'Situación', 'Informado en']);
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío']);
+    assert.deepEqual(nota({ gestion: 'externa' }).secciones[0].columnas,
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío']);
+  });
+
+  it('columnas exactas de la reiteración: 7, con "Datos solicitados" y con "Informado en" al final', () => {
+    const reiteracion = (gestion) => nota({
+      tipo: 'reiteracion', gestion, datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31' })]
+    });
+    assert.deepEqual(reiteracion('externa').secciones.map(s => s.columnas), [
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Vence', 'Situación', 'Informado en'],
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
+    ]);
+    assert.deepEqual(reiteracion('interna').secciones[1].columnas,
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']);
+  });
+
+  it('la sección de vencidos de un aviso usa las columnas de la reiteración', () => {
+    const aviso = nota({ gestion: 'externa', datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE })] });
+    assert.deepEqual(aviso.secciones.map(s => s.columnas), [
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío'],
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
+    ]);
+    assert.deepEqual(aviso.secciones[1].filas[0].valores,
+      ['Dataset B', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/09/2026', '31/10/2026', 'Vencido hace 2 días', 'Sin aviso previo']);
+  });
+
+  it('celdas del aviso: el texto del pedido y la fecha sugerida de envío (el vencimiento)', () => {
+    assert.deepEqual(nota().secciones[0].filas[0].valores,
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/11/2026', '31/12/2026']);
+    const otro = { desde: null, hasta: null, texto: 'Relevamiento actualizado' };
+    assert.deepEqual(nota({ datasets: [dataset({ pedido: otro, vencimiento: '2027-01-31' })] }).secciones[0].filas[0].valores,
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Relevamiento actualizado', '31/01/2027']);
+  });
+
+  it('celdas de la reiteración: el pedido en la cuarta, y "Venció", "Situación" e "Informado en" detrás', () => {
+    const fila = nota({
+      tipo: 'reiteracion', gestion: 'externa',
+      datasets: [dataset({ vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, informado: { numero: 9, anio: 2026, fecha: '2026-10-01' } })]
+    }).secciones[0].filas[0];
+    assert.deepEqual(fila.valores, ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/09/2026', '31/10/2026',
+      'Vencido hace 2 días', 'Nota Digital N° 9/26 (01/10/2026)']);
+  });
+
+  it('sin pedido (eventual o sin datos para calcularlo), "Datos solicitados" dice "—"', () => {
+    for (const pedido of [null, undefined]) {
+      assert.equal(nota({ datasets: [dataset({ pedido })] }).secciones[0].filas[0].valores[3], '—', String(pedido));
+      assert.equal(nota({ tipo: 'reiteracion', datasets: [dataset({ pedido })] }).secciones[0].filas[0].valores[3], '—', String(pedido));
+    }
+    assert.ok(renderHtml(nota({ datasets: [dataset({ pedido: null })] })).includes('>—</td>'));
+  });
+
+  it('ninguna nota nueva muestra la columna "Última actualización"', () => {
+    for (const tipo of ['aviso', 'reiteracion']) {
+      for (const gestion of ['interna', 'externa']) {
+        const n = nota({ tipo, gestion, datasets: [dataset(), dataset({ id: 2, vencimiento: '2026-10-31' })] });
+        assert.ok(n.secciones.every(s => !s.columnas.includes('Última actualización')), `${tipo} ${gestion}`);
+        assert.ok(!renderHtml(n).includes('Última actualización') && !renderTexto(n).includes('Última actualización'), `${tipo} ${gestion}`);
+      }
+    }
   });
 
   it('informado en, con la cantidad de reiteraciones', () => {
@@ -162,8 +225,20 @@ describe('reiteración: antecedente en "Informado en"', () => {
 
   it('el aviso no la usa: sigue con la fila a todo el ancho', () => {
     const html = renderHtml(nota({ datasets: [dataset({ antecedente: DIEZ })] }));
-    assert.ok(html.includes('colspan="6"'));
+    assert.ok(html.includes('colspan="5"'));
     assert.ok(!html.includes('Anteriormente notificado'));
+  });
+
+  it('la fila del antecedente ocupa todas las columnas de su tabla: 5 en los próximos y 7 en los vencidos de un aviso', () => {
+    const n = nota({ datasets: [dataset({ antecedente: DIEZ }), dataset({ id: 2, vencimiento: '2026-10-31', antecedente: UNA })] });
+    assert.deepEqual(n.secciones.map(s => s.columnas.length), [5, 7]);
+    const html = renderHtml(n);
+    const colspans = [...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1]));
+    assert.deepEqual(colspans, n.secciones.map(s => s.columnas.length));
+    // Cada fila del antecedente va inmediatamente debajo de la de su dataset
+    for (const seccion of n.secciones) {
+      assert.ok(html.includes(`</td></tr><tr><td colspan="${seccion.columnas.length}" style=`), seccion.clave);
+    }
   });
 });
 
@@ -232,9 +307,42 @@ describe('texto plano', () => {
     assert.ok(texto.startsWith(`SE ADJUNTAN NOTA Y ANEXO EN PDF\n\nREF.: "${REF}"`));
     assert.ok(texto.includes('Nota Digital N° 12/26'));
     assert.ok(texto.includes('- Dataset A (https://datos.comodoro.gov.ar/dataset/a)'));
-    assert.ok(texto.includes('    Situación: Faltan 59 días'));
     assert.ok(texto.includes('    Email: uno@ejemplo.gov.ar'));
     assert.ok(texto.trimEnd().endsWith('CC. Dir. Administrativa'));
+  });
+
+  // Spec 2026-10-17-fechas-datasets, 9: cada columna nueva sale como una línea más de la fila, en el orden de la tabla
+  it('el aviso: "Datos solicitados" y "Fecha sugerida de envío", sin "Situación" ni "Última actualización"', () => {
+    const texto = renderTexto(nota({ gestion: 'externa' }));
+    assert.ok(texto.includes([
+      '- Dataset A (https://datos.comodoro.gov.ar/dataset/a)',
+      '    Área responsable: Área Uno',
+      '    Frecuencia: Anualmente',
+      '    Datos solicitados: Del 01/01/2026 al 30/11/2026',
+      '    Fecha sugerida de envío: 31/12/2026',
+      ''
+    ].join('\n')), texto);
+    assert.ok(!texto.includes('Situación:') && !texto.includes('Última actualización:'), texto);
+  });
+
+  it('la reiteración: "Datos solicitados" en lugar de "Última actualización", e "Informado en" al final', () => {
+    const texto = renderTexto(nota({
+      tipo: 'reiteracion', datasets: [dataset({ vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, informado: { numero: 9, anio: 2026, fecha: '2026-10-01' } })]
+    }));
+    assert.ok(texto.includes([
+      '- Dataset A (https://datos.comodoro.gov.ar/dataset/a)',
+      '    Área: Área Uno',
+      '    Frecuencia: Anualmente',
+      '    Datos solicitados: Del 01/01/2026 al 30/09/2026',
+      '    Venció: 31/10/2026',
+      '    Situación: Vencido hace 2 días',
+      '    Informado en: Nota Digital N° 9/26 (01/10/2026)',
+      ''
+    ].join('\n')), texto);
+  });
+
+  it('sin pedido: "    Datos solicitados: —"', () => {
+    assert.ok(renderTexto(nota({ datasets: [dataset({ pedido: null })] })).includes('    Datos solicitados: —\n'));
   });
 });
 
@@ -275,6 +383,34 @@ describe('textos del 14/10/2026', () => {
     assert.ok(renderHtml(nota()).includes('>SE ADJUNTAN NOTA Y ANEXO EN PDF</p>'));
     assert.ok(renderTexto(nota()).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\n'));
     assert.ok(renderHtml(nota({ tipo: 'reiteracion' })).includes('>SE ADJUNTA NOTA EN PDF</p>'));
+  });
+});
+
+// Spec 2026-10-17-fechas-datasets, 9: solo el aviso externo pide el período y la fecha sugerida de envío; el párrafo del
+// interno no cambia (casi todos sus pedidos son relevamientos, sin fechas)
+describe('párrafo inicial con los datos solicitados', () => {
+  const FRASE = ', con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío';
+
+  it('el aviso externo, con la frase antes del punto final', () => {
+    assert.equal(nota({ gestion: 'externa' }).parrafoInicial,
+      'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío.');
+  });
+
+  it('el aviso interno y las reiteraciones no la llevan, y quedan como estaban', () => {
+    assert.equal(nota().parrafoInicial,
+      'Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.');
+    assert.equal(nota({ tipo: 'reiteracion', gestion: 'externa' }).parrafoInicial,
+      'Informo a Ud. el estado, al día de la fecha, de los conjuntos de datos informados oportunamente que continúan pendientes de actualización en el Portal de Datos Abiertos Municipal. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.).');
+    for (const [tipo, gestion] of [['aviso', 'interna'], ['reiteracion', 'interna'], ['reiteracion', 'externa']]) {
+      const n = nota({ tipo, gestion });
+      assert.ok(![n.parrafoInicial, renderHtml(n), renderTexto(n)].some(t => t.includes(FRASE)), `${tipo} ${gestion}`);
+    }
+  });
+
+  it('el HTML y el texto del aviso externo la llevan una sola vez', () => {
+    const n = nota({ gestion: 'externa' });
+    assert.equal(renderHtml(n).split(FRASE).length - 1, 1);
+    assert.equal(renderTexto(n).split(FRASE).length - 1, 1);
   });
 });
 
@@ -472,7 +608,7 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
         items: [
           'los datos coincidan con la información remitida por el área responsable;',
           'el enlace al Portal de Datos Abiertos funcione y muestre la versión informada;',
-          'las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos;',
+          'las fechas de última y próxima actualización sean coherentes con la frecuencia del conjunto de datos y que la próxima actualización sea el último día de un mes;',
           'el título, la descripción, el área, los temas, los formatos y "qué se solicita" sean correctos.'
         ],
         cierre: [`Cada cambio se aprueba o se rechaza, con un comentario, desde el RPAD: ${RPAD_URL}/perfil.html (sección "Para revisar").`]
@@ -536,7 +672,110 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
     // Los formatos [1, 2] y [2, 1] son los mismos; la descripción no cambió; la fecha con hora es el 15/03/2026
     assert.deepEqual(detalle.filas.map(f => f.valores), [
       ['Área Responsable', 'Área Uno', 'Área Dos'],
-      ['Próxima Actualización', '15/03/2026', '15/03/2027']
+      ['Próxima actualización', '15/03/2026', '15/03/2027']
+    ]);
+  });
+
+  // Spec 2026-10-17-fechas-datasets, 9: un registro de actualización (POST /datasets/:id/actualizar, Task 4) es una edición
+  // con la marca registro_actualizacion. Se llama "Actualización" y su detalle son siempre sus cuatro fechas.
+  describe('registro de actualización', () => {
+    // Como lo guarda el RPAD: datos_anteriores con las fechas del dataset ('AAAA-MM-DD' o null; las de un cambio viejo
+    // pueden traer hora) y datos_nuevos con lo registrado
+    const registro = (cambios = {}) => ({
+      id: 10, tipo_cambio: 'editar', dataset_titulo: 'Pauta Publicitaria', usuario_nombre: 'Persona Editora',
+      usuario_cargo: 'Cargo de Prueba', fecha_propuesta: '2026-10-16',
+      datos_anteriores: { ultima_actualizacion: '2026-07-10', datos_al: '2026-06-30', proxima_actualizacion: '2026-10-31' },
+      datos_nuevos: {
+        ultima_actualizacion: '2026-10-14', datos_al: '2026-09-30', proxima_actualizacion: '2027-01-31', recibido_el: '2026-10-13',
+        notas: 'Recibido por email', registro_actualizacion: true
+      },
+      ...cambios
+    });
+    const conRegistro = (cambio = registro()) => auditoria({ nuevos: [cambio] });
+    const FILAS = [
+      ['Datos al', '30/06/2026', '30/09/2026'],
+      ['Cargado en el portal', '10/07/2026', '14/10/2026'],
+      ['Recibido el', '—', '13/10/2026'],
+      ['Próxima actualización', '31/10/2026', '31/01/2027']
+    ];
+
+    it('se llama "Actualización" en la tabla y en el título del detalle', () => {
+      const n = conRegistro();
+      assert.deepEqual(n.secciones[0].filas[0].valores, ['Pauta Publicitaria', 'Actualización', 'Persona Editora, Cargo de Prueba', '16/10/2026', '1']);
+      assert.equal(n.detalles.secciones[0].titulo, '1. Pauta Publicitaria – Actualización');
+    });
+
+    it('el detalle: Datos al, Cargado en el portal, Recibido el y Próxima actualización, en ese orden, con el anterior y el nuevo', () => {
+      const [detalle] = conRegistro().detalles.secciones;
+      assert.equal(detalle.introduccion, 'Propuesta por Persona Editora el 16/10/2026. Fechas de la actualización registrada, con el valor anterior y el nuevo:');
+      assert.deepEqual(detalle.columnas, ['Campo', 'Valor anterior', 'Valor nuevo']);
+      assert.deepEqual(detalle.filas.map(f => f.valores), FILAS);
+    });
+
+    it('las cuatro filas van siempre, aunque una fecha no cambie; lo vacío es "—" y las fechas con hora dan su día', () => {
+      const cambio = registro({
+        datos_anteriores: { ultima_actualizacion: '2026-07-10T03:00:00.000Z', datos_al: null, proxima_actualizacion: '2026-10-31T03:00:00.000Z' },
+        datos_nuevos: { ultima_actualizacion: '2026-10-14', datos_al: '2026-09-30', proxima_actualizacion: '2026-10-31', recibido_el: null, notas: null, registro_actualizacion: true }
+      });
+      assert.deepEqual(conRegistro(cambio).detalles.secciones[0].filas.map(f => f.valores), [
+        ['Datos al', '—', '30/09/2026'],
+        ['Cargado en el portal', '10/07/2026', '14/10/2026'],
+        ['Recibido el', '—', '—'],
+        ['Próxima actualización', '31/10/2026', '31/10/2026']
+      ]);
+      // Sin datos anteriores (un cambio a medio cargar) no falla
+      assert.deepEqual(conRegistro(registro({ datos_anteriores: null })).detalles.secciones[0].filas.map(f => f.valores[1]), ['—', '—', '—', '—']);
+    });
+
+    it('una edición sin la marca (también la forma vieja, {ultima, proxima, notas}) sigue siendo una "Modificación"', () => {
+      for (const marca of [undefined, false, 'true']) {
+        const vieja = registro({
+          datos_nuevos: { ultima_actualizacion: '2026-10-14', proxima_actualizacion: '2027-01-31', notas: 'Forma vieja', registro_actualizacion: marca }
+        });
+        const n = conRegistro(vieja);
+        assert.equal(n.secciones[0].filas[0].valores[1], 'Modificación', String(marca));
+        assert.equal(n.detalles.secciones[0].titulo, '1. Pauta Publicitaria – Modificación');
+        assert.deepEqual(n.detalles.secciones[0].filas.map(f => f.valores), [
+          ['Cargado en el portal', '10/07/2026', '14/10/2026'],
+          ['Próxima actualización', '31/10/2026', '31/01/2027']
+        ]);
+      }
+    });
+
+    it('HTML y texto del detalle', () => {
+      const n = conRegistro();
+      const html = renderHtml(n);
+      assert.ok(html.includes('<b>1. Pauta Publicitaria – Actualización</b>'));
+      assert.ok(html.includes('>Recibido el</td><td style="border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;">—</td>'), html);
+      const texto = renderTexto(n);
+      assert.ok(texto.includes(['- Datos al', '    Valor anterior: 30/06/2026', '    Valor nuevo: 30/09/2026'].join('\n')), texto);
+      assert.ok(texto.includes('    Tipo de cambio: Actualización\n'));
+    });
+  });
+
+  // Los campos nuevos del dataset también se ven en una modificación común (spec 2026-10-17-fechas-datasets, 6)
+  it('una modificación que toca Datos al, la fecha de carga o el tipo de pedido los muestra, con las fechas por el día', () => {
+    const cambio = modificacion({
+      datos_anteriores: {
+        titulo: 'Presupuesto Municipal', datos_al: '2025-12-31T03:00:00.000Z', ultima_actualizacion: '2026-01-10T03:00:00.000Z',
+        tipo_pedido: null, proxima_actualizacion: '2026-03-31T03:00:00.000Z'
+      },
+      datos_nuevos: {
+        titulo: 'Presupuesto Municipal', datos_al: '2025-12-31', ultima_actualizacion: '2026-01-12', tipo_pedido: 'ejercicio',
+        proxima_actualizacion: '2026-03-31'
+      }
+    });
+    // Datos al y la próxima no cambian (el mismo día con y sin hora)
+    assert.deepEqual(auditoria({ nuevos: [cambio] }).detalles.secciones[0].filas.map(f => f.valores), [
+      ['Tipo de pedido', 'Sin dato', 'Ejercicio que empieza'],
+      ['Cargado en el portal', '10/01/2026', '12/01/2026']
+    ]);
+    const conDatosAl = modificacion({
+      datos_anteriores: { datos_al: '2025-11-30', recibido_el: null }, datos_nuevos: { datos_al: '2025-12-31', recibido_el: '2026-01-05' }
+    });
+    assert.deepEqual(auditoria({ nuevos: [conDatosAl] }).detalles.secciones[0].filas.map(f => f.valores), [
+      ['Datos al', '30/11/2025', '31/12/2025'],
+      ['Recibido el', 'Sin dato', '05/01/2026']
     ]);
   });
 

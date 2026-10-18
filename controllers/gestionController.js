@@ -2,6 +2,41 @@ import pool from '../config/database.js';
 import path from 'path';
 import fs from 'fs/promises';
 import { UPLOADS_BASE } from '../config/upload.js';
+import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
+import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
+
+/**
+ * La tasa de cumplimiento y el ranking de áreas (Ruling 23): la misma cuenta que el tablero, el Estado General y el
+ * Cumplimiento (spec 2026-10-17-fechas-datasets, 11 y Ruling 22). Cada dataset activo tiene el estado de estadoDelDataset con
+ * hoyArgentina(); al día son los actualizados y los próximos, y los eventuales no tienen vencimiento: no entran en el
+ * porcentaje (tasaDeActualizacion). Un área con solo eventuales no tiene nada que medir: porcentaje null, al final del
+ * ranking. El ranking va de mayor a menor porcentaje y, en un empate, por nombre. filas: { area (null si no tiene),
+ * proxima_iso, frecuencia_meses, tipo_gestion }
+ */
+const cumplimientoDeGestion = (filas, hoy) => {
+  const cuenta = () => ({ total: 0, alDia: 0, eventuales: 0 });
+  const general = cuenta();
+  const porArea = new Map();
+  for (const fila of filas) {
+    const { estado } = estadoDelDataset({
+      proxima: fila.proxima_iso, meses: fila.frecuencia_meses ?? null, tipoGestion: fila.tipo_gestion, hoy
+    });
+    const cuentas = [general];
+    if (fila.area !== null && fila.area !== undefined) {
+      if (!porArea.has(fila.area)) porArea.set(fila.area, cuenta());
+      cuentas.push(porArea.get(fila.area));
+    }
+    for (const c of cuentas) {
+      c.total++;
+      if (estado === 'actualizado' || estado === 'proximo') c.alDia++;
+      if (estado === 'eventual') c.eventuales++;
+    }
+  }
+  const ranking = [...porArea.entries()]
+    .map(([area, c]) => ({ area, total_datasets: c.total, al_dia: c.alDia, porcentaje: tasaDeActualizacion(c) }))
+    .sort((a, b) => (b.porcentaje ?? -1) - (a.porcentaje ?? -1) || a.area.localeCompare(b.area, 'es'));
+  return { tasa: tasaDeActualizacion(general), ranking };
+};
 
 // =====================================================
 // MÉTRICAS AUTOMÁTICAS
@@ -71,11 +106,13 @@ export const getMetricasAutomaticas = async (req, res) => {
       [desde]
     );
 
-    // Operador más activo
+    // Operador más activo: los cambios que propuso y las filas del historial que no vienen de un cambio (las de antes de
+    // la doble verificación). Un registro de actualización aprobado está en las dos tablas (historial con cambio_id) y
+    // se cuenta una sola vez, por su cambio (spec 2026-10-17-fechas-datasets, 10.1)
     const [operadorActivo] = await pool.execute(
       `SELECT u.nombre_completo, COUNT(*) as acciones
        FROM (
-         SELECT usuario_id FROM historial_actualizaciones WHERE created_at >= ?
+         SELECT usuario_id FROM historial_actualizaciones WHERE created_at >= ? AND cambio_id IS NULL
          UNION ALL
          SELECT usuario_id FROM cambios_pendientes WHERE created_at >= ?
        ) t
@@ -106,46 +143,16 @@ export const getMetricasAutomaticas = async (req, res) => {
        ORDER BY cantidad DESC`
     );
 
-    // Tasa de cumplimiento actual
-    const [cumplimiento] = await pool.execute(
-      `SELECT
-         COUNT(*) as total,
-         SUM(CASE
-           WHEN proxima_actualizacion IS NULL THEN 1
-           WHEN proxima_actualizacion >= CURDATE() THEN 1
-           ELSE 0
-         END) as al_dia
-       FROM datasets
-       WHERE activo = TRUE`
-    );
-
-    // Ranking de áreas por cumplimiento
-    const [rankingAreas] = await pool.execute(
-      `SELECT a.nombre as area,
-              COUNT(*) as total_datasets,
-              SUM(CASE
-                WHEN d.proxima_actualizacion IS NULL THEN 1
-                WHEN d.proxima_actualizacion >= CURDATE() THEN 1
-                ELSE 0
-              END) as al_dia,
-              ROUND(
-                SUM(CASE
-                  WHEN d.proxima_actualizacion IS NULL THEN 1
-                  WHEN d.proxima_actualizacion >= CURDATE() THEN 1
-                  ELSE 0
-                END) * 100.0 / COUNT(*), 1
-              ) as porcentaje
+    // Tasa de cumplimiento actual y ranking de áreas: el estado de cada dataset activo (Ruling 23, cumplimientoDeGestion)
+    const [filasDeCumplimiento] = await pool.execute(
+      `SELECT a.nombre AS area, d.tipo_gestion, f.meses AS frecuencia_meses,
+              DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima_iso
        FROM datasets d
-       JOIN areas a ON a.id = d.area_id
-       WHERE d.activo = TRUE
-       GROUP BY a.id, a.nombre
-       HAVING total_datasets > 0
-       ORDER BY porcentaje DESC`
+       LEFT JOIN frecuencias f ON f.id = d.frecuencia_id
+       LEFT JOIN areas a ON a.id = d.area_id
+       WHERE d.activo = TRUE`
     );
-
-    const totalDatasets = cumplimiento[0]?.total || 0;
-    const alDia = cumplimiento[0]?.al_dia || 0;
-    const tasaCumplimiento = totalDatasets > 0 ? Math.round((alDia / totalDatasets) * 100) : 0;
+    const { tasa: tasaCumplimiento, ranking: rankingAreas } = cumplimientoDeGestion(filasDeCumplimiento, hoyArgentina());
 
     res.json({
       success: true,

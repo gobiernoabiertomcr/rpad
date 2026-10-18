@@ -69,6 +69,35 @@ async registrarActualizacion(id, datos = {}) {
     return data.data;
   },
 
+  // Qué datos pide la nota para un tipo, una frecuencia en meses y una próxima (vista previa del formulario).
+  // Devuelve { pedido }; los parámetros vacíos no se mandan
+  async calculoPedido({ tipo, meses, proxima, datos_al } = {}) {
+    const params = new URLSearchParams();
+    if (tipo) params.append('tipo', tipo);
+    if (meses !== undefined && meses !== null && meses !== '') params.append('meses', meses);
+    if (proxima) params.append('proxima', proxima);
+    if (datos_al) params.append('datos_al', datos_al);
+
+    const response = await fetch(`${CONFIG.API_URL}/datasets/calculo-pedido?${params.toString()}`, {
+      headers: Auth.getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Error al calcular el pedido');
+    return data.data;
+  },
+
+  // Las próximas que se pueden elegir al registrar una actualización con datos al datosAl ('AAAA-MM-DD').
+  // Devuelve { pedido, opciones }
+  async opcionesDeProxima(id, datosAl) {
+    const params = new URLSearchParams({ datos_al: datosAl ?? '' });
+    const response = await fetch(`${CONFIG.API_URL}/datasets/${id}/opciones-proxima?${params.toString()}`, {
+      headers: Auth.getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Error al calcular las opciones de la próxima actualización');
+    return data.data;
+  },
+
   // === CATÁLOGOS ===
   async getTemas() {
     const response = await fetch(`${CONFIG.API_URL}/catalogos/temas`);
@@ -512,35 +541,100 @@ const Utils = {
     });
   },
 
-  // Calcular estado del dataset
-  // Ahora considera tipo_gestion para diferenciar 'atrasado' de 'sin-respuesta'
-  calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion = 'externa') {
-    if (frecuenciaDias === null) return 'actualizado'; // Eventual
-    if (!proximaActualizacion) return 'sin-fecha';
+  // === Fechas 'AAAA-MM-DD' (spec 2026-10-17-fechas-datasets) ===
+  // Se leen por su texto, los primeros 10 caracteres: las de mysql2 viajan como ISO con hora ('2027-01-31T03:00:00.000Z') y
+  // las nuevas como 'AAAA-MM-DD'. Nunca con new Date ni con formatDate, que en un navegador argentino las corren un día.
+  // Las constantes van dentro de Utils: una constante suelta de api.js chocaría con las de cada página (gestion.js tiene MESES)
+  NOMBRES_DE_MES: ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'],
+  SIN_DATO: '—',
 
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const proxima = new Date(proximaActualizacion);
-    proxima.setHours(0, 0, 0, 0);
-
-    const diffDias = Math.floor((proxima - hoy) / (1000 * 60 * 60 * 24));
-
-    if (diffDias < 0) {
-      // Dataset vencido: diferenciar según tipo de gestión
-      return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
+  // 'AAAA-MM-DD' de hoy en Argentina, con formatToParts (como hoyArgentina del servidor). Nunca toISOString(): entre las
+  // 21 y las 24 de Argentina en UTC ya es el día siguiente
+  hoyEnArgentina(ahora = new Date()) {
+    const formato = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Argentina/Buenos_Aires', numberingSystem: 'latn', year: 'numeric', month: 'numeric', day: 'numeric'
+    });
+    const partes = {};
+    for (const { type, value } of formato.formatToParts(ahora)) {
+      if (type !== 'literal') partes[type] = Number(value);
     }
-    if (diffDias <= 60) return 'proximo';
-    return 'actualizado';
+    const dosCifras = (numero) => String(numero).padStart(2, '0');
+    return `${String(partes.year).padStart(4, '0')}-${dosCifras(partes.month)}-${dosCifras(partes.day)}`;
   },
 
-  // Días restantes o de atraso
-  getDiasRestantes(proximaActualizacion) {
-    if (!proximaActualizacion) return null;
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const proxima = new Date(proximaActualizacion);
-    proxima.setHours(0, 0, 0, 0);
-    return Math.floor((proxima - hoy) / (1000 * 60 * 60 * 24));
+  // Los primeros 10 caracteres de una fecha que viaja como texto, con o sin hora, o null si no es un día que existe
+  // ('0000-00-00', '2026-02-30', un número, null)
+  soloFecha(valor) {
+    if (typeof valor !== 'string') return null;
+    const partes = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/.exec(valor);
+    if (!partes) return null;
+    const anio = Number(partes[1]);
+    const mes = Number(partes[2]);
+    const dia = Number(partes[3]);
+    const bisiesto = (anio % 4 === 0 && anio % 100 !== 0) || anio % 400 === 0;
+    const diasDelMes = [31, bisiesto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mes - 1];
+    if (!diasDelMes || dia < 1 || dia > diasDelMes) return null;
+    return valor.slice(0, 10);
+  },
+
+  // 'enero' ... 'diciembre' (1 a 12), o ''
+  nombreDeMes(mes) {
+    return Utils.NOMBRES_DE_MES[mes - 1] || '';
+  },
+
+  // dd/mm/aaaa, o '—' si no es una fecha
+  fechaCorta(valor) {
+    const fecha = Utils.soloFecha(valor);
+    return fecha ? `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}/${fecha.slice(0, 4)}` : Utils.SIN_DATO;
+  },
+
+  // 'dic 2025', o '—'
+  mesAnio(valor) {
+    const fecha = Utils.soloFecha(valor);
+    return fecha ? `${Utils.nombreDeMes(Number(fecha.slice(5, 7))).slice(0, 3)} ${fecha.slice(0, 4)}` : Utils.SIN_DATO;
+  },
+
+  // 'enero de 2027', o '—'
+  mesDeAnio(valor) {
+    const fecha = Utils.soloFecha(valor);
+    return fecha ? `${Utils.nombreDeMes(Number(fecha.slice(5, 7)))} de ${fecha.slice(0, 4)}` : Utils.SIN_DATO;
+  },
+
+  // Días de hoy a una fecha (negativos si ya pasó), contados sobre el texto, o null si no es una fecha
+  getDiasRestantes(proximaActualizacion, hoy = Utils.hoyEnArgentina()) {
+    const proxima = Utils.soloFecha(proximaActualizacion);
+    const desde = Utils.soloFecha(hoy);
+    if (!proxima || !desde) return null;
+    const enUtc = (iso) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+    return Math.round((enUtc(proxima) - enUtc(desde)) / (1000 * 60 * 60 * 24));
+  },
+
+  // Estado del dataset. Las páginas usan el que manda el servidor (d.estado, de estadoDelDataset): esto queda solo de
+  // respaldo (Utils.estadoDe) y da lo mismo. Un Eventual (frecuencia null: sin meses ni días) da 'eventual'; sin próxima,
+  // 'sin-fecha'; vencido, 'atrasado' (gestión interna) o 'sin-respuesta' (externa); hasta 60 días, 'proximo' (el día del
+  // vencimiento incluido); si no, 'actualizado'
+  calcularEstado(proximaActualizacion, frecuencia, tipoGestion = 'externa', hoy = Utils.hoyEnArgentina()) {
+    if (frecuencia === null || frecuencia === undefined) return 'eventual';
+    const dias = Utils.getDiasRestantes(proximaActualizacion, hoy);
+    if (dias === null) return 'sin-fecha';
+    if (dias < 0) return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
+    return dias <= 60 ? 'proximo' : 'actualizado';
+  },
+
+  // El estado de un dataset de la API: el del servidor, o el calculado si no vino. Eventual se decide con frecuencia_meses,
+  // como el servidor (estadoDelDataset); frecuencia_dias solo si la respuesta no trae los meses
+  estadoDe(d) {
+    if (d?.estado) return d.estado;
+    const frecuencia = d?.frecuencia_meses !== undefined ? d.frecuencia_meses : d?.frecuencia_dias;
+    return Utils.calcularEstado(d?.proxima_actualizacion, frecuencia, d?.tipo_gestion);
+  },
+
+  // 'AAAA-MM' del vencimiento de un dataset, o null si es eventual o no tiene próxima. Lo usan el gráfico de 12 meses del
+  // tablero y el filtro ?mes= del listado, así que cada barra cuenta lo mismo que muestra el listado
+  mesDeVencimiento(d) {
+    if (Utils.estadoDe(d) === 'eventual') return null;
+    const fecha = Utils.soloFecha(d?.proxima_actualizacion);
+    return fecha ? fecha.slice(0, 7) : null;
   },
 
   // Texto del estado (versión corta para badges)
@@ -550,7 +644,8 @@ const Utils = {
       'proximo': 'Próximo a vencer',
       'atrasado': 'Atrasado',
       'sin-respuesta': 'Sin respuesta',
-      'sin-fecha': 'Sin fecha'
+      'sin-fecha': 'Sin fecha',
+      'eventual': 'Eventual'
     };
     return textos[estado] || estado;
   },
@@ -562,7 +657,8 @@ const Utils = {
       'proximo': 'Próximo a vencer',
       'atrasado': 'Atrasado',
       'sin-respuesta': 'Sin respuesta del área responsable',
-      'sin-fecha': 'Sin fecha programada'
+      'sin-fecha': 'Sin fecha programada',
+      'eventual': 'Actualización eventual'
     };
     return textos[estado] || estado;
   },
@@ -574,7 +670,8 @@ const Utils = {
       'proximo': 'badge-warning',
       'atrasado': 'badge-danger',
       'sin-respuesta': 'badge-sin-respuesta',
-      'sin-fecha': 'badge-secondary'
+      'sin-fecha': 'badge-secondary',
+      'eventual': 'badge-secondary'
     };
     return clases[estado] || 'badge-secondary';
   },

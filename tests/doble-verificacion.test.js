@@ -39,8 +39,8 @@ const rechazar = (cambioId, usuario, comentario = 'Rechazado por los tests') =>
   api.post(`/cambios-pendientes/${cambioId}/rechazar`, { comentario }, { token: usuario.token });
 
 // Crea un dataset de prueba pasando por el circuito completo (A propone, B aprueba)
-const crearDatasetAprobado = async (titulo) => {
-  const alta = await api.post('/datasets', datosAlta(titulo), { token: usuarios.adminA.token });
+const crearDatasetAprobado = async (titulo, extra = {}) => {
+  const alta = await api.post('/datasets', { ...datosAlta(titulo), ...extra }, { token: usuarios.adminA.token });
   assert.equal(alta.status, 201);
   const aprobacion = await aprobar(alta.body.data.cambio_pendiente_id, usuarios.adminB);
   assert.equal(aprobacion.status, 200);
@@ -152,20 +152,33 @@ describe('baja y registro de actualización', () => {
     assert.equal((await api.get(`/datasets/${id}`)).status, 404);
   });
 
-  it('registrar una actualización y aprobarla mueve las fechas', async () => {
-    const id = await crearDatasetAprobado('actualización');
-    const res = await api.post(`/datasets/${id}/actualizar`, { fecha_actualizacion: '2026-03-15' }, { token: usuarios.adminA.token });
-    assert.equal(res.status, 200);
-    assert.equal((await aprobar(res.body.data.cambio_pendiente_id, usuarios.adminB)).status, 200);
+  // La próxima es la que eligió la persona (spec 2026-10-17-fechas-datasets, 10.1): ya no se calcula sumando días. Las
+  // fechas son pasadas, así que no dependen del reloj: Datos al no pasa del tope y la carga no es futura.
+  it('registrar una actualización y aprobarla mueve las fechas y escribe el historial', async () => {
+    const id = await crearDatasetAprobado('actualización', { proxima_actualizacion: '2026-03-31' });
+    const res = await api.post(`/datasets/${id}/actualizar`,
+      { datos_al: '2026-02-28', cargado_el: '2026-03-15', proxima_actualizacion: '2026-05-31' }, { token: usuarios.adminA.token });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const cambioId = res.body.data.cambio_pendiente_id;
+    assert.equal((await aprobar(cambioId, usuarios.adminB)).status, 200);
+
     const [fechas] = await query(
-      `SELECT DATE_FORMAT(ultima_actualizacion, '%Y-%m-%d') AS ultima,
-              DATEDIFF(proxima_actualizacion, ultima_actualizacion) AS dias,
-              (SELECT dias FROM frecuencias WHERE id = ?) AS dias_frecuencia
+      `SELECT DATE_FORMAT(ultima_actualizacion, '%Y-%m-%d') AS ultima, DATE_FORMAT(datos_al, '%Y-%m-%d') AS datos_al,
+              DATE_FORMAT(proxima_actualizacion, '%Y-%m-%d') AS proxima
        FROM datasets WHERE id = ?`,
-      [cat.frecuenciaId, id]
+      [id]
     );
-    assert.equal(fechas.ultima, '2026-03-15');
-    assert.equal(fechas.dias, fechas.dias_frecuencia);
+    assert.deepEqual({ ...fechas }, { ultima: '2026-03-15', datos_al: '2026-02-28', proxima: '2026-05-31' });
+
+    const historial = await query(
+      `SELECT DATE_FORMAT(vencimiento, '%Y-%m-%d') AS vencimiento, DATE_FORMAT(datos_al, '%Y-%m-%d') AS datos_al,
+              DATE_FORMAT(proxima_nueva, '%Y-%m-%d') AS proxima_nueva, cambio_id
+       FROM historial_actualizaciones WHERE dataset_id = ?`,
+      [id]
+    );
+    assert.deepEqual(historial.map(h => ({ ...h })), [
+      { vencimiento: '2026-03-31', datos_al: '2026-02-28', proxima_nueva: '2026-05-31', cambio_id: cambioId }
+    ]);
   });
 });
 

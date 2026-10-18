@@ -157,7 +157,7 @@ function renderKPIs(data) {
       <div class="kpi-label">Notificaciones enviadas</div>
     </div>
     <div class="kpi-card success">
-      <div class="kpi-value">${data.tasa_cumplimiento}%</div>
+      <div class="kpi-value">${textoPorcentaje(data.tasa_cumplimiento)}</div>
       <div class="kpi-label">Tasa de cumplimiento</div>
     </div>
     <div class="kpi-card warning">
@@ -250,29 +250,38 @@ function renderDoughnutChart(canvasId, labels, data, existingChart, setter) {
 }
 
 function renderRanking(areas) {
-  const container = document.getElementById('ranking-container');
+  document.getElementById('ranking-container').innerHTML = htmlDelRanking(areas);
+}
+
+// "83%", o una raya si no hay nada que medir (null: solo eventuales, que no tienen vencimiento; Ruling 23)
+function textoPorcentaje(valor) {
+  return valor === null || valor === undefined ? '—' : `${valor}%`;
+}
+
+// La tabla del ranking de áreas. Puro: al cargarse, gestion.js solo declara (tests/publico-frontend.test.js)
+function htmlDelRanking(areas) {
   if (!areas || areas.length === 0) {
-    container.innerHTML = '<p style="color:var(--gray-500);font-size:0.9rem;">Sin datos de áreas</p>';
-    return;
+    return '<p style="color:var(--gray-500);font-size:0.9rem;">Sin datos de áreas</p>';
   }
 
   let html = `<table class="ranking-table">
     <thead><tr><th>#</th><th>Área</th><th>Datasets</th><th>Al día</th><th>Cumplimiento</th><th></th></tr></thead><tbody>`;
 
   areas.forEach((area, i) => {
-    const color = area.porcentaje >= 80 ? '#10b981' : area.porcentaje >= 50 ? '#f59e0b' : '#ef4444';
+    const porcentaje = Number.isFinite(area.porcentaje) ? area.porcentaje : null;
+    const color = porcentaje === null ? 'var(--gray-300)' : porcentaje >= 80 ? '#10b981' : porcentaje >= 50 ? '#f59e0b' : '#ef4444';
     html += `<tr>
       <td>${i + 1}</td>
       <td>${Utils.escapeHtml(area.area)}</td>
-      <td>${area.total_datasets}</td>
-      <td>${area.al_dia}</td>
-      <td>${area.porcentaje}%</td>
-      <td style="width:120px"><div class="progress-bar-container"><div class="progress-bar" style="width:${area.porcentaje}%;background:${color}"></div></div></td>
+      <td>${Number(area.total_datasets) || 0}</td>
+      <td>${Number(area.al_dia) || 0}</td>
+      <td>${textoPorcentaje(porcentaje)}</td>
+      <td style="width:120px"><div class="progress-bar-container"><div class="progress-bar" style="width:${porcentaje ?? 0}%;background:${color}"></div></div></td>
     </tr>`;
   });
 
   html += '</tbody></table>';
-  container.innerHTML = html;
+  return html;
 }
 
 // =====================================================

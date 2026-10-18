@@ -31,7 +31,9 @@ const COLORES = {
 const ETIQUETAS = {
   crear: { fondo: '#DDF1E6', color: '#2E6B4C', texto: 'Crear' },
   editar: { fondo: '#DCEAF7', color: '#24507A', texto: 'Editar' },
-  eliminar: { fondo: '#F8E1E1', color: '#8A3434', texto: 'Eliminar' }
+  eliminar: { fondo: '#F8E1E1', color: '#8A3434', texto: 'Eliminar' },
+  // Un registro de actualización: una edición con la marca registro_actualizacion (esRegistroDeActualizacion)
+  actualizacion: { fondo: '#DCEAF7', color: '#24507A', texto: 'Actualización' }
 };
 
 const FUENTE = "'Segoe UI', Arial, sans-serif";
@@ -183,21 +185,40 @@ const boton = ({ texto, url }) => `<table role="presentation" width="100%" cells
 // Link del cuerpo o del pie. href y html: ya escapados
 const enlace = (href, html) => `<a href="${href}" style="color: ${COLORES.acento}; text-decoration: none;">${html}</a>`;
 
-// Etiqueta pastel del tipo de cambio en la lista de cambios de los emails
-const etiquetaDeTipo = (tipo) => {
+// Un registro de actualización (POST /datasets/:id/actualizar) es una edición con la marca registro_actualizacion en
+// datos_nuevos: en los emails es una "Actualización", como en la nota de auditoría, el Libro y Mi Perfil (spec
+// 2026-10-17-fechas-datasets, 9)
+const esRegistroDeActualizacion = (c) => c.tipo_cambio === 'editar' && c.datos_nuevos?.registro_actualizacion === true;
+
+// Etiqueta pastel del tipo de cambio en la lista de cambios de los emails (c: el cambio)
+const etiquetaDeTipo = (c) => {
+  const tipo = esRegistroDeActualizacion(c) ? 'actualizacion' : c.tipo_cambio;
   const { fondo, color, texto } = ETIQUETAS[tipo]
     || { fondo: COLORES.borde, color: COLORES.secundario, texto: tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase() };
   return `<span style="display: inline-block; background-color: ${fondo}; color: ${color}; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 10px;">${escapeHtml(texto)}</span>`;
 };
 
 // Contenido de la tarjeta de un cambio: etiqueta, título y líneas en texto secundario (texto plano)
-const contenidoDeCambio = (c, lineas) => `<p style="margin: 0 0 8px 0;">${etiquetaDeTipo(c.tipo_cambio)}</p>
+const contenidoDeCambio = (c, lineas) => `<p style="margin: 0 0 8px 0;">${etiquetaDeTipo(c)}</p>
                     <p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${escapeHtml(tituloDelCambio(c))}</p>
                     ${lineas.map((l, i) => `<p style="margin: ${i === 0 ? '4px' : '2px'} 0 0 0; color: ${COLORES.secundario}; font-size: ${i === 0 ? 13 : 12}px;">${escapeHtml(l)}</p>`).join('')}`;
 
 // =====================================================
 // PLANTILLA PARA AVISO A ÁREAS (-40 días)
 // =====================================================
+
+// "Del 01/01/2026 al 31/10/2026" → "del 01/01/2026 al 31/10/2026": el texto del pedido sigue a "Datos que se solicitarán: "
+const conMinusculaInicial = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
+
+// Renglones de una tarjeta del aviso a las áreas, en texto secundario. Cada dataset trae su vencimiento ('AAAA-MM-DD') y su
+// pedido ({ texto, ... } o null) de datasetsExternosPorArea; sin pedido o sin vencimiento, el renglón no aparece.
+const renglonesDeDataset = (d) => {
+  const renglones = [`Frecuencia de actualización: ${d.frecuencia_nombre || 'Sin definir'}`];
+  if (d.pedido?.texto) renglones.push(`Datos que se solicitarán: ${conMinusculaInicial(d.pedido.texto)}`);
+  if (d.vencimiento) renglones.push(`Fecha sugerida de envío: ${formatoCorto(d.vencimiento)}`);
+  return renglones.map((renglon, i) =>
+    `<p style="margin: ${i === 0 ? '4px' : '2px'} 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">${escapeHtml(renglon)}</p>`).join('\n                    ');
+};
 
 /**
  * Template para aviso a áreas externas (-40 días)
@@ -211,7 +232,7 @@ const areaAviso40diasTemplate = (areaData) => marcoEmail({
     parrafo('Estimados/as:')
       + parrafo('Nos comunicamos desde la <strong>Dirección General de Modernización e Investigación Territorial</strong> de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos:', '16px 0 0 0'),
     tarjetas(areaData.datasets.map((d, i) => `<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${i + 1}. ${escapeHtml(d.titulo)}</p>
-                    <p style="margin: 4px 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">Frecuencia de actualización: ${escapeHtml(d.frecuencia_nombre || 'Sin definir')}</p>
+                    ${renglonesDeDataset(d)}
                     ${d.url_dataset ? `<p style="margin: 6px 0 0 0; font-size: 13px;">${enlace(escapeHtml(d.url_dataset), 'Ver dataset en el portal')}</p>` : ''}`)),
     parrafo('Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias!'),
     `<table role="presentation" width="100%" style="width: 100%; border-collapse: collapse;">

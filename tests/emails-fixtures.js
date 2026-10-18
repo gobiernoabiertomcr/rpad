@@ -12,12 +12,17 @@ export const casosDeEmail = (t) => {
     { id: 4, tipo_cambio: 'editar', dataset_titulo: 'Arbolado urbano', fecha_propuesta: '2026-10-01' },
     { id: 5, tipo_cambio: 'crear', datos_nuevos: { titulo: 'Alta nueva' }, fecha_propuesta: '2026-10-02' }
   ];
+  // Cada dataset del aviso trae su vencimiento ('AAAA-MM-DD') y su pedido ({ desde, hasta, texto } o null), como los arma
+  // datasetsExternosPorArea. El B no tiene pedido (eventual): no lleva "Datos que se solicitarán", pero sí la fecha
   const area = {
     area_id: 1,
     area_nombre: 'Dirección de Prueba',
     datasets: [
-      { id: 1, titulo: 'Dataset A', frecuencia_nombre: 'Anualmente', url_dataset: 'https://datos.rpad.test/dataset/a' },
-      { id: 2, titulo: 'Dataset B & C', frecuencia_nombre: null, url_dataset: null }
+      {
+        id: 1, titulo: 'Dataset A', frecuencia_nombre: 'Anualmente', url_dataset: 'https://datos.rpad.test/dataset/a',
+        vencimiento: '2026-12-31', pedido: { desde: '2026-01-01', hasta: '2026-11-30', texto: 'Del 01/01/2026 al 30/11/2026' }
+      },
+      { id: 2, titulo: 'Dataset B & C', frecuencia_nombre: null, url_dataset: null, vencimiento: '2027-01-31', pedido: null }
     ]
   };
   const contacto = {

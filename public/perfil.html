@@ -110,6 +110,9 @@
         .pf-diff ins { text-decoration: none; color: var(--pf-nuevo); font-weight: 500; background: linear-gradient(transparent 38%, var(--pf-resaltador) 38%, var(--pf-resaltador) 92%, transparent 92%); padding: 0 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
         .pf-par { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 14px; row-gap: 4px; }
         .pf-vacio { color: var(--pf-suave); font-style: italic; }
+        /* La señal de una próxima actualización nueva que no es el último día de un mes (el servidor no deja aprobarla) */
+        .pf-fecha-aviso { display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px; border-radius: 999px; background: var(--pf-aviso-fondo); border: 1px solid var(--pf-aviso-borde); color: var(--pf-aviso); font-size: 0.8rem; font-weight: 500; line-height: 1.5; }
+        .pf-fecha-aviso svg { flex: none; width: 14px; height: 14px; }
         .pf-sin-campos { margin: 12px 0 0; font-size: 0.9rem; color: var(--pf-suave); }
 
         /* Notas de la fila abierta: la baja, el motivo del rechazo y el cambio que no le corresponde auditar */
@@ -485,9 +488,9 @@
 
     <!-- Scripts -->
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261023"></script>
-    <script src="js/main.js?v=20261023"></script>
-    <script src="js/api.js?v=20261023"></script>
-    <script src="js/perfil.js?v=20261101"></script>
+    <script src="js/auth.js?v=20261105"></script>
+    <script src="js/main.js?v=20261105"></script>
+    <script src="js/api.js?v=20261105"></script>
+    <script src="js/perfil.js?v=20261103"></script>
 </body>
 </html>

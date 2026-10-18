@@ -147,8 +147,72 @@ describe('fechas comparadas por día', () => {
       anteriores: { titulo: 'X', ultima_actualizacion: '2026-03-13T03:00:00.000Z', proxima_actualizacion: '2026-05-31T03:00:00.000Z' },
       nuevos: { titulo: 'X', ultima_actualizacion: '2026-03-20', proxima_actualizacion: '2026-05-31' }
     });
-    const esperado = [{ campo: 'Ultima Actualizacion', antes: '2026-03-13T03:00:00.000Z', despues: '2026-03-20' }];
+    // "Ultima Actualizacion" pasa a llamarse "Cargado en el portal" (spec 2026-10-17-fechas-datasets, 10.1)
+    const esperado = [{ campo: 'Cargado en el portal', antes: '2026-03-13T03:00:00.000Z', despues: '2026-03-20' }];
     assert.deepEqual((await detalle(id, 'adminB')).campos_modificados, esperado);
     assert.deepEqual((await lista('para-revisar', 'adminB')).find(c => c.id === id).campos_modificados, esperado);
+  });
+
+  it('"Datos al" y "Recibido el" también se comparan por día: con hora o sin hora no es un cambio, otro día sí', async () => {
+    const datasetId = await crearDataset({ titulo: 'X', vencimiento: '2027-06-30' });
+    const id = await insertarCambio({
+      tipo: 'editar', datasetId, clave: 'adminA',
+      anteriores: { titulo: 'X', datos_al: '2026-02-28T03:00:00.000Z', recibido_el: '2026-03-02T03:00:00.000Z' },
+      nuevos: { titulo: 'X', datos_al: '2026-02-28', recibido_el: '2026-03-03' }
+    });
+    const esperado = [{ campo: 'Recibido el', antes: '2026-03-02T03:00:00.000Z', despues: '2026-03-03' }];
+    assert.deepEqual((await detalle(id, 'adminB')).campos_modificados, esperado);
+    assert.deepEqual((await lista('para-revisar', 'adminB')).find(c => c.id === id).campos_modificados, esperado);
+  });
+});
+
+// Una actualización registrada (POST /datasets/:id/actualizar) y los demás cambios de las fechas nuevas: los rótulos
+// "Datos al", "Cargado en el portal", "Recibido el" y "Tipo de pedido" (spec 2026-10-17-fechas-datasets, 10.1)
+describe('comparación de las fechas nuevas', () => {
+  it('un registro de actualización: Datos al, Cargado en el portal, Recibido el y la próxima, sin la marca ni las notas', async () => {
+    const datasetId = await crearDataset({ titulo: 'X', vencimiento: '2027-06-30' });
+    const id = await insertarCambio({
+      tipo: 'editar', datasetId, clave: 'adminA',
+      anteriores: { ultima_actualizacion: '2026-03-13', datos_al: '2026-02-28', proxima_actualizacion: '2026-03-31' },
+      nuevos: {
+        ultima_actualizacion: '2026-04-03', datos_al: '2026-03-31', proxima_actualizacion: '2026-06-30', recibido_el: '2026-04-02',
+        notas: 'Llegó por mail', registro_actualizacion: true
+      }
+    });
+    const esperado = [
+      { campo: 'Datos al', antes: '2026-02-28', despues: '2026-03-31' },
+      { campo: 'Cargado en el portal', antes: '2026-03-13', despues: '2026-04-03' },
+      { campo: 'Recibido el', antes: '-', despues: '2026-04-02' },
+      { campo: 'Proxima Actualizacion', antes: '2026-03-31', despues: '2026-06-30' }
+    ];
+    assert.deepEqual((await detalle(id, 'adminB')).campos_modificados, esperado);
+    assert.deepEqual((await lista('para-revisar', 'adminB')).find(c => c.id === id).campos_modificados, esperado);
+    // La marca viaja en los datos nuevos, no como un campo comparado
+    assert.equal((await detalle(id, 'adminB')).datos_nuevos.registro_actualizacion, true);
+  });
+
+  it('el tipo de pedido se compara con su nombre en pantalla', async () => {
+    const datasetId = await crearDataset({ titulo: 'X', vencimiento: '2027-06-30' });
+    const id = await insertarCambio({
+      tipo: 'editar', datasetId, clave: 'adminA',
+      anteriores: { titulo: 'X', tipo_pedido: 'acumulado' },
+      nuevos: { titulo: 'X', tipo_pedido: 'foto' }
+    });
+    const esperado = [{ campo: 'Tipo de pedido', antes: 'Acumulado', despues: 'Foto al corte' }];
+    assert.deepEqual((await detalle(id, 'adminB')).campos_modificados, esperado);
+    assert.deepEqual((await lista('para-revisar', 'adminB')).find(c => c.id === id).campos_modificados, esperado);
+  });
+
+  it('un cambio con la forma vieja (sin las claves nuevas) no menciona Datos al, Recibido el ni el tipo de pedido', async () => {
+    const datasetId = await crearDataset({ titulo: 'X', vencimiento: '2027-06-30' });
+    const id = await insertarCambio({
+      tipo: 'editar', datasetId, clave: 'adminA',
+      anteriores: { ultima_actualizacion: '2026-03-13T03:00:00.000Z', proxima_actualizacion: '2026-03-31T03:00:00.000Z' },
+      nuevos: { ultima_actualizacion: '2026-03-20', proxima_actualizacion: '2026-06-30', notas: 'x' }
+    });
+    assert.deepEqual((await detalle(id, 'adminB')).campos_modificados, [
+      { campo: 'Cargado en el portal', antes: '2026-03-13T03:00:00.000Z', despues: '2026-03-20' },
+      { campo: 'Proxima Actualizacion', antes: '2026-03-31T03:00:00.000Z', despues: '2026-06-30' }
+    ]);
   });
 });

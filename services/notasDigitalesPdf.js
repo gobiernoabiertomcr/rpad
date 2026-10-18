@@ -23,11 +23,16 @@ const BASE_PAGINACION = 17.5 * MM;
 const NORMAL = 'Helvetica';
 const NEGRITA = 'Helvetica-Bold';
 const CURSIVA = 'Helvetica-Oblique';
-// Proporción del ancho de cada columna: 6 columnas en avisos, 7 en reiteraciones
-const PROPORCIONES = { 6: [32, 17, 12, 13, 11, 15], 7: [26, 14, 10, 11, 10, 13, 16] };
+// Proporción del ancho de cada columna (spec 2026-10-17-fechas-datasets, 9): 5 columnas en los próximos a vencer de los
+// avisos, con "Datos solicitados" como la más ancha después del título; 7 en las reiteraciones (y en los vencidos que pudiera
+// traer un aviso), con "Datos solicitados" en la cuarta, en lugar de "Última actualización" (le ceden el título, "Situación" e
+// "Informado en"). Un pedido "Del … al …" ocupa uno o dos renglones (conFechasJuntas). Con los avisos reales de 2026, un
+// área más ancha da tablas más bajas que un pedido en un solo renglón. (6: la tabla de los avisos anteriores a esa spec;
+// ninguna nota nueva la usa)
+const PROPORCIONES = { 5: [28, 22, 14, 24, 12], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
 // Si alguna fila lleva el antecedente de los emails anteriores en "Informado en" (reiteraciones, en letra más chica),
 // esa columna necesita más ancho para que la fila no crezca de más: lo cede sobre todo el título
-const PROPORCIONES_CON_SEGUNDA = { 7: [18, 16, 10, 11, 10, 10, 25] };
+const PROPORCIONES_CON_SEGUNDA = { 7: [18, 14, 10, 13, 10, 10, 25] };
 const TAMANO_TABLA = 8.5;
 const RELLENO = 3;
 // La primera columna (título del dataset) puede partir palabras larguísimas; las demás no
@@ -252,12 +257,24 @@ export const pieEntraEnUnaLinea = (pie) => {
 };
 
 // Palabra más ancha de un texto como la mide PDFKit al partir líneas: cada palabra con el espacio que la sigue (la
-// última, sin él). Si una palabra así no entra en el ancho de la celda, PDFKit la parte entre letras.
+// última, sin él). Si una palabra así no entra en el ancho de la celda, PDFKit la parte entre letras. PDFKit no corta en
+// el espacio duro (U+00A0): lo que une es una sola palabra.
 const palabraMasAncha = (doc, texto, fuente, tamano) => {
   doc.font(fuente).fontSize(tamano);
-  const palabras = String(texto ?? '').split(/\s+/).filter(Boolean);
+  const palabras = String(texto ?? '').split(/[^\S\u00a0]+/).filter(Boolean);
   return Math.max(0, ...palabras.map((palabra, i) => doc.widthOfString(i < palabras.length - 1 ? `${palabra} ` : palabra)));
 };
+
+// En las celdas, salvo la del título, "Del" y "al" no se separan de la fecha que los sigue: un pedido como "Del 01/01/2026
+// al 31/12/2026" pasa a dos renglones como "Del 01/01/2026" y "al 31/12/2026", nunca con un "Del" solo arriba (spec
+// 2026-10-17-fechas-datasets, 9: "Datos solicitados"). Se unen con un espacio duro, que se escribe y se mide como un espacio.
+const PREPOSICION_Y_FECHA = /\b(del|al) (?=\d{2}\/\d{2}\/\d{4})/gi;
+const conFechasJuntas = (seccion) => ({
+  ...seccion,
+  filas: seccion.filas.map(f => ({
+    ...f, valores: f.valores.map((valor, i) => (i === 0 ? valor : String(valor).replace(PREPOSICION_Y_FECHA, '$1\u00a0')))
+  }))
+});
 
 // Ancho de cada columna: la proporción base, ampliada lo justo para que ninguna palabra de las columnas que no son
 // el título se parta (fechas, frecuencias, áreas, encabezados), y recortada de las columnas que tienen holgura.
@@ -298,7 +315,8 @@ const calcularAnchos = (doc, seccion, ancho) => {
 // Una fila es { valores, url, antecedente, informadoAnterior }: el antecedente de los avisos va en una fila a todo el
 // ancho debajo; informadoAnterior (reiteraciones) es la segunda parte de la última celda, debajo del texto de la nota
 // y en letra más chica.
-const prepararTabla = (doc, seccion, ancho) => {
+const prepararTabla = (doc, seccionDeLaNota, ancho) => {
+  const seccion = conFechasJuntas(seccionDeLaNota);
   const anchos = calcularAnchos(doc, seccion, ancho);
   const limite = () => doc.page.height - doc.page.margins.bottom;
   const izquierda = MARGENES.left;

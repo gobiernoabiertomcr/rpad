@@ -1,4 +1,8 @@
 // Dashboard - Lógica principal con animaciones y gráficos
+// Al cargarse solo declara y registra su DOMContentLoaded: lo que cuenta y arma los gráficos y las alertas es puro
+// (mesesDelGrafico, vencimientosPorMes, porcionesDelEstado, alertasDe...) y tests/publico-frontend.test.js lo carga en un vm.
+// Los estados, los días y la tasa son los que manda el servidor (d.estado, d.dias_para_vencer, tasaActualizacion), y las
+// fechas se leen por su texto (spec 2026-10-17-fechas-datasets, 11)
 let donutChart = null;
 let calendarChart = null;
 
@@ -49,8 +53,7 @@ async function loadDashboard() {
     renderCalendarChart(datasets);
     renderAlertas(datasets);
     
-    const tasa = estadisticas.tasaActualizacion || 0;
-    document.getElementById('hero-rate').textContent = `${tasa}%`;
+    document.getElementById('hero-rate').textContent = textoTasa(estadisticas);
     
   } catch (error) {
     console.error('Error cargando dashboard:', error);
@@ -141,13 +144,13 @@ function goToDatasets(estado) {
 
 function renderDonutChart(stats) {
   const ctx = document.getElementById('donut-chart').getContext('2d');
-  const totalVencidos = (stats.atrasados || 0) + (stats.sinRespuesta || 0);
-  
+  const porciones = porcionesDelEstado(stats);
+
   const data = {
-    labels: ['Actualizados', 'Próximos a vencer', 'Vencidos'],
+    labels: porciones.map(p => p.etiqueta),
     datasets: [{
-      data: [stats.actualizados || 0, stats.proximos || 0, totalVencidos],
-      backgroundColor: ['#81b3a3', '#f8cf61', '#fc7c7e'],
+      data: porciones.map(p => p.valor),
+      backgroundColor: porciones.map(p => p.color),
       borderColor: '#ffffff',
       borderWidth: 3,
       hoverBorderWidth: 4,
@@ -169,10 +172,8 @@ function renderDonutChart(stats) {
         cornerRadius: 8,
         callbacks: {
           label: function(context) {
-            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-            const value = context.raw;
-            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-            return ` ${value} datasets (${percentage}%)`;
+            const porcion = porciones[context.dataIndex];
+            return ` ${porcion.valor} datasets (${porcion.porcentaje}%)`;
           }
         }
       }
@@ -193,42 +194,11 @@ function renderDonutChart(stats) {
     options: options
   });
   
-  renderChartLegend(stats, totalVencidos);
-}
-
-function renderChartLegend(stats, totalVencidos) {
-  const total = stats.total || 1;
-  const container = document.getElementById('chart-legend');
-  
-  const items = [
-    { label: 'Actualizados', value: stats.actualizados || 0, color: '#81b3a3' },
-    { label: 'Próximos a vencer', value: stats.proximos || 0, color: '#f8cf61' },
-    { label: 'Vencidos', value: totalVencidos, color: '#fc7c7e' }
-  ];
-  
-  container.innerHTML = items.map(item => {
-    const pct = Math.round((item.value / total) * 100);
-    return `
-      <div class="legend-item">
-        <span class="legend-color" style="background: ${item.color};"></span>
-        <span class="legend-label">${item.label}</span>
-        <span class="legend-value">${item.value} (${pct}%)</span>
-      </div>
-    `;
-  }).join('');
+  document.getElementById('chart-legend').innerHTML = htmlDeLeyenda(porciones);
 }
 
 function renderAlertas(datasets) {
-  const vencidos = datasets
-    .filter(d => {
-      const estado = Utils.calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-      return estado === 'atrasado' || estado === 'sin-respuesta';
-    })
-    .sort((a, b) => new Date(a.proxima_actualizacion) - new Date(b.proxima_actualizacion));
-
-  const proximos = datasets
-    .filter(d => Utils.calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion) === 'proximo')
-    .sort((a, b) => new Date(a.proxima_actualizacion) - new Date(b.proxima_actualizacion));
+  const { vencidos, proximos } = alertasDe(datasets);
 
   const mostrarInicial = 3;
 
@@ -238,8 +208,8 @@ function renderAlertas(datasets) {
     const hayMas = vencidos.length > mostrarInicial;
     
     let html = vencidos.map((d, index) => {
-      const dias = Math.abs(Utils.getDiasRestantes(d.proxima_actualizacion));
-      const estado = Utils.calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
+      const dias = Math.abs(d.dias_para_vencer ?? 0);
+      const estado = Utils.estadoDe(d);
       const estadoTexto = Utils.getEstadoTexto(estado);
       const estadoClase = Utils.getEstadoClase(estado);
       const oculto = index >= mostrarInicial ? 'style="display: none;"' : '';
@@ -281,7 +251,7 @@ function renderAlertas(datasets) {
     const hayMasProximos = proximos.length > mostrarInicial;
     
     let htmlProximos = proximos.map((d, index) => {
-      const dias = Utils.getDiasRestantes(d.proxima_actualizacion);
+      const dias = d.dias_para_vencer ?? 0;
       const oculto = index >= mostrarInicial ? 'style="display: none;"' : '';
       const delay = Math.min(index, 2) * 0.1;
       
@@ -354,34 +324,12 @@ function renderCalendarChart(datasets) {
   
   const ctx = canvas.getContext('2d');
   
-  // Generar los próximos 12 meses (desde el mes siguiente)
-  const meses = [];
-  const hoy = new Date();
-  const mesActual = hoy.getMonth();
-  const anioActual = hoy.getFullYear();
-  
-  for (let i = 1; i <= 12; i++) {
-    const fecha = new Date(anioActual, mesActual + i, 1);
-    meses.push({
-      mes: fecha.getMonth(),
-      anio: fecha.getFullYear(),
-      label: fecha.toLocaleDateString('es-AR', { month: 'short' }).replace('.', '') + ' ' + fecha.getFullYear().toString().slice(-2),
-      inicio: new Date(fecha.getFullYear(), fecha.getMonth(), 1),
-      fin: new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0, 23, 59, 59)
-    });
-  }
-  
-  // Contar vencimientos por mes (solo datasets con frecuencia definida)
-  const vencimientosPorMes = meses.map(m => {
-    return datasets.filter(d => {
-      if (!d.proxima_actualizacion || d.frecuencia_dias === null) return false;
-      const fechaVenc = new Date(d.proxima_actualizacion);
-      return fechaVenc >= m.inicio && fechaVenc <= m.fin;
-    }).length;
-  });
-  
+  // Los 12 meses, desde el mes en curso (el de hoy en Argentina), y los vencimientos de cada uno (sin los eventuales)
+  const meses = mesesDelGrafico(Utils.hoyEnArgentina());
+  const cantidades = vencimientosPorMes(datasets, meses);
+
   // Colores según cantidad de vencimientos (valores fijos)
-  const colores = vencimientosPorMes.map(v => {
+  const colores = cantidades.map(v => {
     if (v === 0) return '#faffff';       // (sin vencimientos)
     if (v === 1) return '#b9e4df';       // (1)
     if (v <= 3) return '#72c8c1';        // (2-3)
@@ -390,10 +338,10 @@ function renderCalendarChart(datasets) {
   });
   
   const data = {
-    labels: meses.map(m => m.label),
+    labels: meses.map(m => m.etiqueta),
     datasets: [{
       label: 'Datasets a vencer',
-      data: vencimientosPorMes,
+      data: cantidades,
       backgroundColor: colores,
       borderColor: colores.map(c => c),
       borderWidth: 1,
@@ -415,9 +363,7 @@ function renderCalendarChart(datasets) {
         cornerRadius: 8,
         callbacks: {
           title: function(context) {
-            const idx = context[0].dataIndex;
-            const m = meses[idx];
-            return new Date(m.anio, m.mes, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+            return meses[context[0].dataIndex].titulo;
           },
           label: function(context) {
             const value = context.raw;
@@ -454,10 +400,7 @@ function renderCalendarChart(datasets) {
     },
     onClick: (event, elements) => {
       if (elements.length > 0) {
-        const idx = elements[0].index;
-        const m = meses[idx];
-        const mesParam = `${m.anio}-${String(m.mes + 1).padStart(2, '0')}`;
-        window.location.href = `datasets.html?mes=${mesParam}`;
+        window.location.href = urlDelMes(meses[elements[0].index]);
       }
     },
     onHover: (event, elements) => {
@@ -472,4 +415,94 @@ function renderCalendarChart(datasets) {
     data: data,
     options: options
   });
+}
+
+// =====================================================
+// LO PURO: gráfico de 12 meses, dona y alertas
+// =====================================================
+
+// "83%": la tasa del servidor (actualizados + próximos sobre el total sin los eventuales; tasaDeActualizacion)
+function textoTasa(stats) {
+  return `${stats?.tasaActualizacion ?? 0}%`;
+}
+
+/**
+ * Los 12 meses del gráfico, desde el mes de `hoy` ('AAAA-MM-DD', la fecha de Argentina): { clave: 'AAAA-MM', etiqueta:
+ * 'oct 26', titulo: 'octubre de 2026' }. Se cuentan sobre el índice año × 12 + mes, sin new Date.
+ */
+function mesesDelGrafico(hoy) {
+  const primero = Number(hoy.slice(0, 4)) * 12 + Number(hoy.slice(5, 7)) - 1;
+  return Array.from({ length: 12 }, (_, i) => {
+    const anio = Math.floor((primero + i) / 12);
+    const mes = ((primero + i) % 12) + 1;
+    const clave = `${anio}-${String(mes).padStart(2, '0')}`;
+    return { clave, etiqueta: `${Utils.nombreDeMes(mes).slice(0, 3)} ${String(anio).slice(-2)}`, titulo: Utils.mesDeAnio(`${clave}-01`) };
+  });
+}
+
+// Cuántos datasets vencen en cada mes: el mismo Utils.mesDeVencimiento que usa el filtro ?mes= del listado
+function vencimientosPorMes(datasets, meses) {
+  return meses.map(m => datasets.filter(d => Utils.mesDeVencimiento(d) === m.clave).length);
+}
+
+function urlDelMes(mes) {
+  return `datasets.html?mes=${mes.clave}`;
+}
+
+/**
+ * Porcentajes enteros que suman exactamente 100 (si el total no es 0): cada uno se redondea para abajo y los puntos que
+ * faltan van a los de mayor resto (método del resto mayor; en un empate, al primero). Con el redondeo común, 54, 1, 11 y
+ * 14 de 80 darían 68 + 1 + 14 + 18 = 101.
+ */
+function porcentajesEnteros(valores) {
+  const total = valores.reduce((suma, valor) => suma + valor, 0);
+  if (total <= 0) return valores.map(() => 0);
+  const exactos = valores.map(valor => (valor * 100) / total);
+  const enteros = exactos.map(Math.floor);
+  let faltan = 100 - enteros.reduce((suma, valor) => suma + valor, 0);
+  const porResto = exactos.map((exacto, i) => ({ i, resto: exacto - Math.floor(exacto) }))
+    .sort((a, b) => b.resto - a.resto || a.i - b.i);
+  for (const { i } of porResto) {
+    if (faltan <= 0) break;
+    enteros[i]++;
+    faltan--;
+  }
+  return enteros;
+}
+
+/**
+ * Las porciones de la dona del estado, con los números del servidor (/datasets/estadisticas): los eventuales son una
+ * porción propia (no tienen vencimiento: no son actualizados) y los sin fecha aparecen solo si hay, así los porcentajes
+ * suman 100. { clave, etiqueta, valor, color, porcentaje }
+ */
+function porcionesDelEstado(stats = {}) {
+  const porciones = [
+    { clave: 'actualizados', etiqueta: 'Actualizados', valor: stats.actualizados || 0, color: '#81b3a3' },
+    { clave: 'proximos', etiqueta: 'Próximos a vencer', valor: stats.proximos || 0, color: '#f8cf61' },
+    { clave: 'vencidos', etiqueta: 'Vencidos', valor: (stats.atrasados || 0) + (stats.sinRespuesta || 0), color: '#fc7c7e' },
+    { clave: 'eventuales', etiqueta: 'Eventuales', valor: stats.eventuales || 0, color: '#c3ccd8' }
+  ];
+  if (stats.sinFecha > 0) porciones.push({ clave: 'sin-fecha', etiqueta: 'Sin fecha', valor: stats.sinFecha, color: '#8a96a8' });
+  const porcentajes = porcentajesEnteros(porciones.map(p => p.valor));
+  return porciones.map((p, i) => ({ ...p, porcentaje: porcentajes[i] }));
+}
+
+function htmlDeLeyenda(porciones) {
+  return porciones.map(p => `
+      <div class="legend-item">
+        <span class="legend-color" style="background: ${p.color};"></span>
+        <span class="legend-label">${Utils.escapeHtml(p.etiqueta)}</span>
+        <span class="legend-value">${p.valor} (${p.porcentaje}%)</span>
+      </div>
+    `).join('');
+}
+
+// Los vencidos (atrasados y sin respuesta) y los próximos a vencer, con el estado y los días del servidor: primero los que
+// vencieron hace más y los que vencen antes
+function alertasDe(datasets) {
+  const porDias = (a, b) => (a.dias_para_vencer ?? 0) - (b.dias_para_vencer ?? 0);
+  return {
+    vencidos: datasets.filter(d => ['atrasado', 'sin-respuesta'].includes(Utils.estadoDe(d))).sort(porDias),
+    proximos: datasets.filter(d => Utils.estadoDe(d) === 'proximo').sort(porDias)
+  };
 }

@@ -1,7 +1,12 @@
 // Datasets - Lógica de listado
+// Al cargarse solo declara y registra su DOMContentLoaded: lo que filtra y arma la tarjeta y el CSV es puro (filtrarDatasets,
+// htmlDeTarjeta, filaCsv, armarCsv...) y tests/publico-frontend.test.js lo carga en un vm. El estado es el que manda el
+// servidor (d.estado) y las fechas se leen por su texto, con Utils (api.js): nunca con new Date (spec 2026-10-17-fechas-datasets, 11)
 let allDatasets = [];
 let temas = [];
 let frecuencias = [];
+// ?mes=AAAA-MM: el clic en una barra del tablero lleva acá con los que vencen ese mes. No tiene selector: se ve en un aviso
+let filtroMes = null;
 
 // Paginación
 let paginaActual = 1;
@@ -26,13 +31,13 @@ async function loadCatalogos() {
     // Llenar select de temas
     const selectTema = document.getElementById('filter-tema');
     temas.forEach(t => {
-      selectTema.innerHTML += `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`;
+      selectTema.innerHTML += `<option value="${t.id}">${Utils.escapeHtml(t.nombre)}</option>`;
     });
 
     // Llenar select de frecuencias
     const selectFrec = document.getElementById('filter-frecuencia');
     frecuencias.forEach(f => {
-      selectFrec.innerHTML += `<option value="${f.id}">${escapeHtml(f.nombre)}</option>`;
+      selectFrec.innerHTML += `<option value="${f.id}">${Utils.escapeHtml(f.nombre)}</option>`;
     });
   } catch (error) {
     console.error('Error cargando catálogos:', error);
@@ -76,6 +81,8 @@ function applyUrlParams() {
   if (params.frecuencia) document.getElementById('filter-frecuencia').value = params.frecuencia;
   if (params.estado) document.getElementById('filter-estado').value = params.estado;
   if (params.busqueda) document.getElementById('search').value = params.busqueda;
+  filtroMes = mesDelParametro(params.mes);
+  mostrarFiltroMes();
   applyFilters();
 }
 
@@ -90,57 +97,33 @@ function getUrlParams() {
   };
 }
 
+// Los filtros de la pantalla (los selectores, la búsqueda y el mes de ?mes=)
+function leerFiltros() {
+  return {
+    busqueda: document.getElementById('search').value,
+    temaId: document.getElementById('filter-tema').value,
+    frecId: document.getElementById('filter-frecuencia').value,
+    estado: document.getElementById('filter-estado').value,
+    mes: filtroMes
+  };
+}
+
 function applyFilters() {
-  const busqueda = document.getElementById('search').value.toLowerCase();
-  const temaId = document.getElementById('filter-tema').value;
-  const frecId = document.getElementById('filter-frecuencia').value;
-  const estado = document.getElementById('filter-estado').value;
-
-  let filtered = allDatasets;
-
-  if (busqueda) {
-    filtered = filtered.filter(d =>
-      d.titulo.toLowerCase().includes(busqueda) ||
-      (d.area_responsable && d.area_responsable.toLowerCase().includes(busqueda)) ||
-      (d.descripcion && d.descripcion.toLowerCase().includes(busqueda))
-    );
-  }
-
-  if (temaId) {
-    filtered = filtered.filter(d => 
-      d.tema_principal_id == temaId || d.tema_secundario_id == temaId
-    );
-  }
-
-  if (frecId) {
-    filtered = filtered.filter(d => d.frecuencia_id == frecId);
-  }
-
-  if (estado) {
-    filtered = filtered.filter(d => {
-      const estadoDataset = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-      
-      // Filtro especial "vencidos" incluye tanto atrasados como sin-respuesta
-      if (estado === 'vencidos') {
-        return estadoDataset === 'atrasado' || estadoDataset === 'sin-respuesta';
-      }
-      
-      return estadoDataset === estado;
-    });
-  }
+  const filtros = leerFiltros();
 
   // Actualizar URL
   const params = new URLSearchParams();
-  if (temaId) params.set('tema', temaId);
-  if (frecId) params.set('frecuencia', frecId);
-  if (estado) params.set('estado', estado);
-  if (busqueda) params.set('busqueda', busqueda);
-  
+  if (filtros.temaId) params.set('tema', filtros.temaId);
+  if (filtros.frecId) params.set('frecuencia', filtros.frecId);
+  if (filtros.estado) params.set('estado', filtros.estado);
+  if (filtros.busqueda) params.set('busqueda', filtros.busqueda.toLowerCase());
+  if (filtros.mes) params.set('mes', filtros.mes);
+
   const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
   history.replaceState(null, '', newUrl);
 
   paginaActual = 1;
-  renderDatasets(filtered);
+  renderDatasets(filtrarDatasets(allDatasets, filtros));
 }
 
 function limpiarFiltros() {
@@ -148,9 +131,25 @@ function limpiarFiltros() {
   document.getElementById('filter-tema').value = '';
   document.getElementById('filter-frecuencia').value = '';
   document.getElementById('filter-estado').value = '';
+  filtroMes = null;
+  mostrarFiltroMes();
   history.replaceState(null, '', window.location.pathname);
   paginaActual = 1;
   renderDatasets(allDatasets);
+}
+
+// Saca solo el filtro por mes y deja los demás
+function quitarFiltroMes() {
+  filtroMes = null;
+  mostrarFiltroMes();
+  applyFilters();
+}
+
+function mostrarFiltroMes() {
+  const aviso = document.getElementById('filtro-mes');
+  if (!aviso) return;
+  aviso.classList.toggle('hidden', !filtroMes);
+  document.getElementById('filtro-mes-texto').textContent = filtroMes ? textoFiltroMes(filtroMes) : '';
 }
 
 function renderDatasets(datasets) {
@@ -176,49 +175,7 @@ function renderDatasets(datasets) {
 
   renderPaginacion(datasets.length);
 
-  // Iconos Lucide
-  const iconArea = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>';
-  const iconFrecuencia = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>';
-
-  container.innerHTML = paginaItems.map(d => {
-    const estado = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-    const estadoTexto = getEstadoTexto(estado);
-    const estadoClase = getEstadoClase(estado);
-    
-    // Formatos vienen como string concatenado "CSV, XLSX, KML" desde el backend
-    const formatos = d.formatos ? d.formatos.split(', ') : [];
-
-    return `
-      <div class="dataset-card">
-        <div class="dataset-card-header">
-          <div class="dataset-card-title">
-            <h3><a href="dataset.html?id=${d.id}">${escapeHtml(d.titulo)}</a></h3>
-            <span class="badge ${estadoClase}">${estadoTexto}</span>
-          </div>
-          ${d.tema_principal_nombre ? `
-            <div class="temas-tags">
-              <span class="tema-tag">${escapeHtml(d.tema_principal_nombre)}</span>
-            </div>
-          ` : ''}
-        </div>
-        <div class="dataset-card-body">
-          <p class="dataset-card-description">${escapeHtml(d.descripcion || 'Sin descripción')}</p>
-          <div class="dataset-card-meta">
-            <span>${iconArea} ${escapeHtml(d.area_responsable || '-')}</span>
-            <span>${iconFrecuencia} ${escapeHtml(d.frecuencia_nombre || '-')}</span>
-          </div>
-        </div>
-        <div class="dataset-card-footer">
-          <div class="dataset-formats">
-            ${formatos.map(f => `<span class="format-tag">${f}</span>`).join('')}
-          </div>
-          <span class="text-xs text-muted">
-            ${d.proxima_actualizacion ? `Próx: ${formatDate(d.proxima_actualizacion)}` : 'Sin fecha'}
-          </span>
-        </div>
-      </div>
-    `;
-  }).join('');
+  container.innerHTML = paginaItems.map(htmlDeTarjeta).join('');
 }
 
 function renderPaginacion(totalItems) {
@@ -246,46 +203,15 @@ function cambiarPagina(dir) {
   document.getElementById('datasets-grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// El CSV trae lo mismo que muestra el listado, con todos sus filtros
 function exportarCSV() {
-  const busqueda = document.getElementById('search').value.toLowerCase();
-  const temaId = document.getElementById('filter-tema').value;
-  const frecId = document.getElementById('filter-frecuencia').value;
-  const estado = document.getElementById('filter-estado').value;
-
-  let filtered = allDatasets;
-  if (busqueda) filtered = filtered.filter(d => d.titulo.toLowerCase().includes(busqueda));
-  if (temaId) filtered = filtered.filter(d => d.tema_principal_id == temaId);
-  if (frecId) filtered = filtered.filter(d => d.frecuencia_id == frecId);
-  if (estado) {
-    filtered = filtered.filter(d => {
-      const estadoDataset = calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion);
-      if (estado === 'vencidos') {
-        return estadoDataset === 'atrasado' || estadoDataset === 'sin-respuesta';
-      }
-      return estadoDataset === estado;
-    });
-  }
-
-  const headers = ['Título', 'Área', 'Tema', 'Frecuencia', 'Tipo Gestión', 'Estado', 'Última Actualización', 'Próxima Actualización'];
-  const rows = filtered.map(d => [
-    d.titulo,
-    d.area_responsable || '',
-    d.tema_principal_nombre || '',
-    d.frecuencia_nombre || '',
-    getTipoGestionTexto(d.tipo_gestion),
-    getEstadoTexto(calcularEstado(d.proxima_actualizacion, d.frecuencia_dias, d.tipo_gestion)),
-    formatDate(d.ultima_actualizacion),
-    formatDate(d.proxima_actualizacion)
-  ]);
-
-  const csvContent = '\uFEFF' + [headers, ...rows]
-    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
+  const filtered = filtrarDatasets(allDatasets, leerFiltros());
+  const csvContent = armarCsv(filtered);
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `datasets-rpad-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `datasets-rpad-${Utils.hoyEnArgentina()}.csv`;
   link.click();
 
   if (typeof showToast === 'function') {
@@ -294,50 +220,129 @@ function exportarCSV() {
 }
 
 // =====================================================
-// FUNCIONES AUXILIARES
+// LO PURO: filtro, tarjeta y CSV
 // =====================================================
 
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+// Iconos Lucide (building-2 y refresh-cw)
+const ICONO_AREA = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>';
+const ICONO_FRECUENCIA = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>';
+
+// 'AAAA-MM' de ?mes=, o null si no es un mes
+function mesDelParametro(valor) {
+  return typeof valor === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(valor) ? valor : null;
 }
 
-function formatDate(dateString) {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
+// "Vencen en enero de 2027"
+function textoFiltroMes(mes) {
+  return `Vencen en ${Utils.mesDeAnio(`${mes}-01`)}`;
+}
+
+/**
+ * Los datasets que pasan los filtros { busqueda, temaId, frecId, estado, mes }. El estado es el del servidor (Actualizado
+ * no incluye a los eventuales, como la tarjeta del tablero); "vencidos" junta atrasados y sin respuesta. El mes es el de la
+ * próxima (Utils.mesDeVencimiento, el mismo que cuenta el gráfico del tablero).
+ */
+function filtrarDatasets(datasets, filtros = {}) {
+  const busqueda = (filtros.busqueda || '').toLowerCase();
+  const { temaId, frecId, estado, mes } = filtros;
+  return datasets.filter(d => {
+    if (busqueda && !(
+      d.titulo.toLowerCase().includes(busqueda) ||
+      (d.area_nombre && d.area_nombre.toLowerCase().includes(busqueda)) ||
+      (d.descripcion && d.descripcion.toLowerCase().includes(busqueda))
+    )) return false;
+    if (temaId && d.tema_principal_id != temaId && d.tema_secundario_id != temaId) return false;
+    if (frecId && d.frecuencia_id != frecId) return false;
+    if (estado) {
+      const estadoDataset = Utils.estadoDe(d);
+      if (estado === 'vencidos' ? !['atrasado', 'sin-respuesta'].includes(estadoDataset) : estadoDataset !== estado) return false;
+    }
+    if (mes && Utils.mesDeVencimiento(d) !== mes) return false;
+    return true;
   });
 }
 
-function calcularEstado(proximaActualizacion, frecuenciaDias, tipoGestion) {
-  if (!proximaActualizacion) return 'eventual';
-  if (frecuenciaDias === null) return 'eventual';
-
-  const hoy = new Date();
-  const hoyYear = hoy.getFullYear();
-  const hoyMonth = hoy.getMonth();
-  const hoyDay = hoy.getDate();
-
-  const fechaStr = proximaActualizacion.split('T')[0];
-  const [year, month, day] = fechaStr.split('-').map(Number);
-
-  const hoyUTC = Date.UTC(hoyYear, hoyMonth, hoyDay);
-  const proximaUTC = Date.UTC(year, month - 1, day);
-
-  const diffDias = Math.round((proximaUTC - hoyUTC) / (1000 * 60 * 60 * 24));
-
-  if (diffDias < 0) {
-    return tipoGestion === 'interna' ? 'atrasado' : 'sin-respuesta';
-  } else if (diffDias <= 60) {
-    return 'proximo';
-  }
-  return 'actualizado';
+// "Datos al dic 2025"; en un presupuesto "Ejercicio 2025"; en un relevamiento "Relevamiento de jun 2026"; sin dato "Datos al —"
+function textoDatosAlCorto(d) {
+  const fecha = Utils.soloFecha(d?.datos_al);
+  if (fecha && d.tipo_pedido === 'ejercicio') return `Ejercicio ${fecha.slice(0, 4)}`;
+  if (fecha && d.tipo_pedido === 'relevamiento') return `Relevamiento de ${Utils.mesAnio(fecha)}`;
+  return `Datos al ${Utils.mesAnio(fecha)}`;
 }
+
+// "Próxima: ene 2027", "Eventual" o "Próxima: sin fecha"
+function textoProximaCorta(d) {
+  if (Utils.estadoDe(d) === 'eventual') return 'Eventual';
+  const fecha = Utils.soloFecha(d?.proxima_actualizacion);
+  return fecha ? `Próxima: ${Utils.mesAnio(fecha)}` : 'Próxima: sin fecha';
+}
+
+function htmlDeTarjeta(d) {
+  const estado = Utils.estadoDe(d);
+  // Formatos vienen como string concatenado "CSV, XLSX, KML" desde el backend
+  const formatos = d.formatos ? d.formatos.split(', ') : [];
+
+  return `
+      <div class="dataset-card">
+        <div class="dataset-card-header">
+          <div class="dataset-card-title">
+            <h3><a href="dataset.html?id=${encodeURIComponent(d.id)}">${Utils.escapeHtml(d.titulo)}</a></h3>
+            <span class="badge ${getEstadoClase(estado)}">${Utils.escapeHtml(getEstadoTexto(estado))}</span>
+          </div>
+          ${d.tema_principal_nombre ? `
+            <div class="temas-tags">
+              <span class="tema-tag">${Utils.escapeHtml(d.tema_principal_nombre)}</span>
+            </div>
+          ` : ''}
+        </div>
+        <div class="dataset-card-body">
+          <p class="dataset-card-description">${Utils.escapeHtml(d.descripcion || 'Sin descripción')}</p>
+          <div class="dataset-card-meta">
+            <span>${ICONO_AREA} ${Utils.escapeHtml(d.area_nombre || '-')}</span>
+            <span>${ICONO_FRECUENCIA} ${Utils.escapeHtml(d.frecuencia_nombre || '-')}</span>
+          </div>
+        </div>
+        <div class="dataset-card-footer">
+          <div class="dataset-formats">
+            ${formatos.map(f => `<span class="format-tag">${Utils.escapeHtml(f)}</span>`).join('')}
+          </div>
+          <span class="dataset-card-fechas text-xs text-muted">
+            <span>${Utils.escapeHtml(textoDatosAlCorto(d))}</span>
+            <span>${Utils.escapeHtml(textoProximaCorta(d))}</span>
+          </span>
+        </div>
+      </div>
+    `;
+}
+
+const ENCABEZADOS_CSV = ['Título', 'Área', 'Tema', 'Frecuencia', 'Tipo Gestión', 'Estado', 'Datos al', 'Cargado en el portal', 'Próxima Actualización'];
+
+// Una fila del CSV: las fechas como dd/mm/aaaa, cortadas del texto, o '-' si no hay
+function filaCsv(d) {
+  const fecha = (valor) => (Utils.soloFecha(valor) ? Utils.fechaCorta(valor) : '-');
+  return [
+    d.titulo,
+    d.area_nombre || '',
+    d.tema_principal_nombre || '',
+    d.frecuencia_nombre || '',
+    getTipoGestionTexto(d.tipo_gestion),
+    getEstadoTexto(Utils.estadoDe(d)),
+    fecha(d.datos_al),
+    fecha(d.ultima_actualizacion),
+    fecha(d.proxima_actualizacion)
+  ];
+}
+
+// El CSV completo, con el BOM (para que Excel lea los acentos) y cada celda entre comillas
+function armarCsv(datasets) {
+  return '\uFEFF' + [ENCABEZADOS_CSV, ...datasets.map(filaCsv)]
+    .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+}
+
+// =====================================================
+// FUNCIONES AUXILIARES
+// =====================================================
 
 function getEstadoTexto(estado) {
   const textos = {
@@ -345,6 +350,7 @@ function getEstadoTexto(estado) {
     'proximo': 'Próximo',
     'atrasado': 'Atrasado',
     'sin-respuesta': 'Sin respuesta',
+    'sin-fecha': 'Sin fecha',
     'eventual': 'Eventual'
   };
   return textos[estado] || estado;

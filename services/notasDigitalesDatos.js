@@ -1,7 +1,10 @@
 // Consultas de Notas Digitales: configuración, selección de datasets y fichas del anexo.
-// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.4 y 6.7)
+// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (secciones 5, 6.4 y 6.7) y
+// docs/superpowers/specs/2026-10-17-fechas-datasets-design.md (sección 9, los datos solicitados)
 import pool from '../config/database.js';
 import { listaDeCorreos } from './emailService.js';
+import { esFechaIso } from './notasDigitalesCalendario.js';
+import { pedido, tipoEfectivo } from './fechasDatasetReglas.js';
 
 export const GESTIONES = ['interna', 'externa'];
 // Días de anticipación del aviso, por gestión. La externa pasó de 30 a 40 (pedido del usuario el 16/10/2026): el pedido
@@ -10,10 +13,12 @@ export const VENTANA_DIAS = { interna: 60, externa: 40 };
 export const DIAS_PARA_REITERAR = 20;
 export const TIPOS_EMAIL_REEMPLAZADOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido'];
 
+// Con lo que hace falta para el pedido (conPedido): la gestión (para el tipo sugerido), los meses, Datos al y el tipo
 const COLUMNAS_DATASET = `
   d.id, d.titulo, d.url_dataset, d.area_id, a.nombre AS area_nombre, f.nombre AS frecuencia_nombre,
   DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') AS ultima_actualizacion,
-  DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento`;
+  DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento,
+  d.tipo_gestion, f.meses, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al, d.tipo_pedido`;
 const DESDE_DATASETS = `
   FROM datasets d
   JOIN frecuencias f ON f.id = d.frecuencia_id
@@ -57,12 +62,30 @@ export const configuracionCompleta = (config, firmaTitular = null) => {
   return faltan;
 };
 
+/**
+ * Suma a un dataset de una nota lo que se le pide (spec 2026-10-17-fechas-datasets, 9): meses (la frecuencia), datos_al
+ * ('AAAA-MM-DD' o null: '0000-00-00' no es una fecha), tipo_pedido (el efectivo: el guardado o, si no tiene, el sugerido
+ * por la gestión y los meses) y pedido, { desde, hasta, texto } o null (eventual o sin un vencimiento válido). El pedido se
+ * calcula con hoy, el día de la nota: con R7 si el vencimiento ya pasó y con todo lo que falta desde Datos al. Por eso la
+ * reiteración lo recalcula cada vez y no copia el del aviso. Sin hoy, es el pedido de ese vencimiento tal cual.
+ */
+export const conPedido = (fila, hoy = null) => {
+  const meses = fila.meses ?? null;
+  const datosAl = esFechaIso(fila.datos_al) ? fila.datos_al : null;
+  const tipo = tipoEfectivo({ tipo_pedido: fila.tipo_pedido, tipo_gestion: fila.tipo_gestion, meses });
+  return {
+    ...fila, meses, datos_al: datosAl, tipo_pedido: tipo,
+    pedido: pedido({ vencimiento: fila.vencimiento, tipo, datosAl, meses, hoy })
+  };
+};
+
 // Solo datasets a vencer (spec 5.2): los que vencen dentro de la ventana y los demás de la gestión que vencen el mismo
 // mes que alguno que ya entró en ella. Como d es parte de su mes, "el primer vencimiento del mes está en la ventana"
 // cubre las dos condiciones. Los vencidos sin aviso van a la reiteración (5.3).
 // horizonte: hasta qué día se mira la ventana. Es hoy, salvo en la víspera de una licencia del firmante, en que es el
 // último día hábil de la licencia (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.3).
 // apertura_mes: el primer vencimiento del mes de cada dataset (con él se calcula su fecha normal de aviso).
+// Cada dataset trae su pedido calculado con hoy, el día del aviso (conPedido), también en la víspera de una licencia.
 export const seleccionarParaAviso = async (gestion, hoy, horizonte = hoy) => {
   const [filas] = await pool.query(
     `SELECT ${COLUMNAS_DATASET}, DATE_FORMAT(${PRIMER_VENCIMIENTO_DEL_MES}, '%Y-%m-%d') AS apertura_mes ${DESDE_DATASETS}
@@ -73,7 +96,7 @@ export const seleccionarParaAviso = async (gestion, hoy, horizonte = hoy) => {
      ORDER BY d.proxima_actualizacion, d.titulo`,
     [gestion, hoy, horizonte, VENTANA_DIAS[gestion]]
   );
-  return filas;
+  return filas.map(fila => conPedido(fila, hoy));
 };
 
 // Reiteraciones previas enviadas del mismo vencimiento (el mismo ciclo)
@@ -86,6 +109,8 @@ const REITERACIONES_PREVIAS = `(SELECT COUNT(*) FROM notas_digitales_datasets r
 // 1. avisados (aviso enviado) hace DIAS_PARA_REITERAR días o más y que siguen con el mismo vencimiento;
 // 2. vencidos que nunca tuvieron aviso, que entran sin esperar (informado: null).
 // Un aviso anticipado por la licencia del firmante cuenta los 20 días desde su fecha normal (cuenta_desde, spec 2026-10-15, 7.3).
+// El pedido de cada dataset se recalcula con hoy (conPedido), con aviso previo o sin él: R7 lo lleva hasta el último corte
+// cerrado si pasó otro ciclo sin respuesta (spec 2026-10-17-fechas-datasets, 9).
 export const seleccionarParaReiteracion = async (gestion, hoy) => {
   const [filas] = await pool.query(
     `SELECT * FROM (
@@ -103,11 +128,11 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
      ORDER BY x.vencimiento, x.titulo`,
     [gestion, hoy, DIAS_PARA_REITERAR, gestion, hoy]
   );
-  return filas.map(({ aviso_numero, aviso_anio, aviso_fecha, reiteraciones, ...dataset }) => ({
+  return filas.map(({ aviso_numero, aviso_anio, aviso_fecha, reiteraciones, ...dataset }) => conPedido({
     ...dataset,
     informado: aviso_fecha ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null,
     reiteraciones: Number(reiteraciones)
-  }));
+  }, hoy));
 };
 
 // Vencimiento que abre el próximo aviso de la gestión: el primer vencimiento del mes más próximo que tiene datasets a
@@ -140,12 +165,14 @@ export const antecedentesDe = async (ids) => {
 };
 
 // Ficha completa de cada dataset para el anexo de los avisos (spec 6.7). Las fechas salen como 'AAAA-MM-DD'.
-export const fichasDe = async (ids) => {
+// Cada ficha trae su pedido (conPedido) calculado con hoy, el día de la nota; sin hoy, el de su vencimiento tal cual.
+export const fichasDe = async (ids, hoy = null) => {
   if (ids.length === 0) return new Map();
   const [filas] = await pool.query(
     `SELECT d.id, d.titulo, d.descripcion, d.observaciones, d.url_dataset, d.tipo_gestion, f.nombre AS frecuencia_nombre,
             DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') AS ultima_actualizacion,
             DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento,
+            f.meses, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al, d.tipo_pedido,
             tp.nombre AS tema_principal, ts.nombre AS tema_secundario,
             (SELECT GROUP_CONCAT(fo.nombre ORDER BY fo.nombre SEPARATOR ', ')
                FROM dataset_formatos df JOIN formatos fo ON fo.id = df.formato_id WHERE df.dataset_id = d.id) AS formatos,
@@ -160,7 +187,7 @@ export const fichasDe = async (ids) => {
      WHERE d.id IN (?)`,
     [ids]
   );
-  return new Map(filas.map(f => [f.id, f]));
+  return new Map(filas.map(f => [f.id, conPedido(f, hoy)]));
 };
 
 export const areasDe = async (ids) => {

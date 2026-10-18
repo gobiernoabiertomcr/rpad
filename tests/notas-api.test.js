@@ -7,7 +7,9 @@ import {
 import { crearArea, crearDataset, crearNota, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
-import { esDiaHabil, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { esDiaHabil, formatoCorto, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import { textoVisible } from './emails-fixtures.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 // Banner del membrete generado para los tests (la imagen institucional no se versiona)
@@ -459,6 +461,24 @@ describe('libro', () => {
     assert.equal((await api.get(`/notificaciones/notas-digitales?dataset_id=${otro}`, comoAdmin())).body.data.length, 0);
   });
 
+  it('el detalle devuelve los datos solicitados de cada dataset; los de una nota vieja, en null (spec 2026-10-17-fechas-datasets, 9)', async () => {
+    const conPedido = await crearDataset({ titulo: 'A con el pedido guardado', vencimiento: '2026-12-31' });
+    const viejo = await crearDataset({ titulo: 'B de una nota vieja', vencimiento: '2026-12-31' });
+    // crearNota guarda las filas como las de antes de esta etapa, sin los datos solicitados
+    const nota = await crearNota({ fecha: '2026-11-02', numero: 1, datasets: [{ id: conPedido, vencimiento: '2026-12-31' }, { id: viejo, vencimiento: '2026-12-31' }] });
+    await query(
+      `UPDATE notas_digitales_datasets SET datos_desde = '2026-01-01', datos_hasta = '2026-11-30', datos_solicitados = 'Del 01/01/2026 al 30/11/2026'
+       WHERE nota_id = ? AND dataset_id = ?`, [nota, conPedido]
+    );
+
+    const detalle = await api.get(`/notificaciones/notas-digitales/${nota}`, comoAdmin());
+    assert.equal(detalle.status, 200);
+    assert.deepEqual(detalle.body.data.datasets.map(({ dataset_id: id, datos_desde: desde, datos_hasta: hasta, datos_solicitados: texto }) => ({ id, desde, hasta, texto })), [
+      { id: conPedido, desde: '2026-01-01', hasta: '2026-11-30', texto: 'Del 01/01/2026 al 30/11/2026' },
+      { id: viejo, desde: null, hasta: null, texto: null }
+    ]);
+  });
+
   it('el libro filtra por tipo, incluida la nota de autorización (sin gestión); la vista previa y la prueba no la aceptan', async () => {
     const aviso = await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-11-02', numero: 1 });
     const autorizacion = await crearNota({ tipo: 'autorizacion', gestion: null, fecha: '2026-11-25', numero: 2 });
@@ -680,6 +700,29 @@ describe('aviso a las áreas', () => {
     assert.match(res.body, /Dataset de Ejemplo 1/);
   });
 
+  // El ejemplo muestra los dos renglones nuevos (spec 2026-10-17-fechas-datasets, 9): el fin de mes que corresponde a los
+  // 40 días del próximo día hábil, con el pedido de un acumulado (Dataset 1) y el de una foto al corte (Dataset 2)
+  it('el ejemplo de la vista previa muestra los datos solicitados y la fecha sugerida de envío de cada dataset', async () => {
+    const fecha = proximoDiaHabil(hoyArgentina());
+    const vencimiento = formatoCorto(vencimientoDelMes(sumarDias(fecha, 40)));
+    const res = await api.get('/notificaciones/preview/area-aviso-40', comoAdmin());
+    assert.equal(res.status, 200);
+    const texto = textoVisible(res.body);
+    assert.match(texto, /Dataset de Ejemplo 1 Frecuencia de actualización: Anualmente Datos que se solicitarán: del \d{2}\/\d{2}\/\d{4} al \d{2}\/\d{2}\/\d{4} Fecha sugerida de envío: \d{2}\/\d{2}\/\d{4} Ver dataset/);
+    assert.match(texto, /Dataset de Ejemplo 2 Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al \d{2}\/\d{2}\/\d{4} Fecha sugerida de envío: \d{2}\/\d{2}\/\d{4} Ver dataset/);
+    assert.equal(texto.split(`Fecha sugerida de envío: ${vencimiento}`).length - 1, 2, `los dos vencen el ${vencimiento}`);
+  });
+
+  it('la prueba con el ejemplo también lleva los dos renglones', async () => {
+    const res = await api.post('/notificaciones/prueba-area', {}, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.ejemplo, true);
+    const [mensaje] = await mailpit.esperar(m => m.Subject.startsWith('[PRUEBA] '));
+    const texto = textoVisible(await mailpit.html(mensaje.ID));
+    assert.equal(texto.split('Datos que se solicitarán:').length - 1, 2);
+    assert.equal(texto.split('Fecha sugerida de envío:').length - 1, 2);
+  });
+
   // Un sábado, hoyArgentina() no tiene rango y mostraría el ejemplo: la selección tiene que salir del próximo día hábil
   it('la vista previa muestra los datasets que vencen en la ventana del próximo día hábil, no el ejemplo', async () => {
     const proximo = proximoDiaHabil(hoyArgentina());
@@ -722,9 +765,36 @@ describe('nota de auditoría en Correos (spec 2026-10-15-dias-habiles-licencias-
       const libro = (await api.get('/notificaciones/notas-digitales?tipo=auditoria', comoAdmin())).body.data;
       assert.deepEqual(libro.map(n => [n.id, n.gestion, n.cantidad_cambios]), [[auditoria, null, 1]]);
       const detalle = (await api.get(`/notificaciones/notas-digitales/${auditoria}`, comoAdmin())).body.data;
-      assert.deepEqual(detalle.cambios, [{ cambio_id: cambioId, seccion: 'nuevo', tipo_cambio: 'crear', estado: 'pendiente', titulo: 'Alta auditada' }]);
+      assert.deepEqual(detalle.cambios, [{
+        cambio_id: cambioId, seccion: 'nuevo', tipo_cambio: 'crear', estado: 'pendiente', titulo: 'Alta auditada', registro_actualizacion: false
+      }]);
     } finally {
       await query('DELETE FROM cambios_pendientes WHERE id = ?', [cambioId]);
+    }
+  });
+
+  // Para que el Libro diga "Actualización" como la nota (spec 2026-10-17-fechas-datasets, 9): cada cambio trae la marca
+  it('el detalle de una nota de auditoría marca los registros de actualización (registro_actualizacion)', async () => {
+    const auditoria = await crearNota({ tipo: 'auditoria', gestion: null, fecha: '2026-10-20', numero: 5 });
+    const datasetId = await crearDataset({ titulo: 'Dataset con registro en la nota' });
+    const ids = [];
+    try {
+      for (const datos of [{ datos_al: '2026-09-30', registro_actualizacion: true }, { titulo: 'Otro título' }]) {
+        const { insertId } = await query(
+          `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, usuario_id, created_at)
+           VALUES ('editar', ?, ?, ?, NOW() - INTERVAL ? MINUTE)`,
+          [datasetId, JSON.stringify(datos), usuarios.adminA.id, 10 - ids.length]
+        );
+        ids.push(insertId);
+        await query("INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, 'nuevo')", [auditoria, insertId]);
+      }
+      const detalle = (await api.get(`/notificaciones/notas-digitales/${auditoria}`, comoAdmin())).body.data;
+      assert.deepEqual(detalle.cambios.map(c => [c.cambio_id, c.tipo_cambio, c.registro_actualizacion, c.titulo]), [
+        [ids[0], 'editar', true, 'Dataset con registro en la nota'],
+        [ids[1], 'editar', false, 'Dataset con registro en la nota']
+      ]);
+    } finally {
+      await query('DELETE FROM cambios_pendientes WHERE id IN (?)', [ids.length ? ids : [0]]);
     }
   });
 

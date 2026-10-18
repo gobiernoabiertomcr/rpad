@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 // jszip llega con docx (lo usa para armar el .docx): acá abre la nota para leer su texto
 import JSZip from 'jszip';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
+import { lineasPorHoja } from './pdf-lector.js';
 
 let servidor, api, usuarios;
 
@@ -41,6 +42,27 @@ describe('reportes PDF', () => {
 
   it('cumplimiento', async () => {
     esPdf(await api.get('/reportes/cumplimiento?periodo=mensual', { token: usuarios.adminA.token }));
+  });
+});
+
+// Spec 2026-10-17-fechas-datasets, sección 11: donde un PDF lista la próxima, suma "Datos al" (con datos de los 80 datasets
+// reales; el set controlado con los valores exactos está en estados-api.test.js)
+describe('reportes PDF: "Datos al"', () => {
+  it('el estado general tiene la columna Datos al y fechas dd/mm/aaaa debajo', async () => {
+    const res = await api.get('/reportes/estado-general', { token: usuarios.lector.token });
+    esPdf(res);
+    const lineas = lineasPorHoja(res.body).flat();
+    const i = lineas.indexOf('Título');
+    assert.deepEqual(lineas.slice(i, i + 6), ['Título', 'Área', 'Frecuencia', 'Datos al', 'Próx. Act.', 'Estado']);
+    assert.ok(lineas.some(l => /^Tasa de actualización: \d+%$/.test(l)));
+    assert.ok(lineas.some(l => /^\d{2}\/\d{2}\/\d{4}$/.test(l)));
+  });
+
+  it('el reporte por área trae "Datos al" en cada tarjeta', async () => {
+    const [{ id }] = await query('SELECT area_id AS id FROM datasets WHERE activo = 1 AND datos_al IS NOT NULL LIMIT 1');
+    const res = await api.get(`/reportes/por-area/${id}`, { token: usuarios.adminA.token });
+    esPdf(res);
+    assert.ok(lineasPorHoja(res.body).flat().some(l => /^Datos al: \d{2}\/\d{2}\/\d{4} /.test(l)));
   });
 });
 

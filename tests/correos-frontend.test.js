@@ -180,6 +180,21 @@ describe('correos.js: nota de auditoría (spec 2026-10-15-dias-habiles-licencias
       'Alta: Nuevo (reiterado, aprobado)');
   });
 
+  // Como la nota de auditoría y Mi Perfil (spec 2026-10-17-fechas-datasets, 9): un registro de actualización es una edición
+  // con la marca registro_actualizacion, que el detalle de la nota trae en cada cambio
+  it('el detalle de la nota dice "Actualización" en un registro de actualización y "Modificación" en las demás ediciones', () => {
+    const { contexto } = cargarCorreos();
+    assert.equal(evaluar(contexto, "textoCambioDeNota({ tipo_cambio: 'editar', registro_actualizacion: true, titulo: 'Pauta', seccion: 'nuevo', estado: 'pendiente' })"),
+      'Actualización: Pauta (nuevo)');
+    assert.equal(evaluar(contexto, "textoCambioDeNota({ tipo_cambio: 'editar', registro_actualizacion: false, titulo: 'Pauta', seccion: 'reiterado', estado: 'rechazado' })"),
+      'Modificación: Pauta (reiterado, rechazado)');
+    // Solo una edición puede ser un registro, y la marca tiene que ser true
+    assert.equal(evaluar(contexto, "textoCambioDeNota({ tipo_cambio: 'crear', registro_actualizacion: true, titulo: 'Nuevo', seccion: 'nuevo', estado: 'pendiente' })"),
+      'Alta: Nuevo (nuevo)');
+    assert.equal(evaluar(contexto, "textoCambioDeNota({ tipo_cambio: 'editar', registro_actualizacion: 'true', titulo: 'Pauta', seccion: 'nuevo', estado: 'pendiente' })"),
+      'Modificación: Pauta (nuevo)');
+  });
+
   it('el Estado dice cuántos cambios van por nota y cuándo sale la próxima', () => {
     const { contexto } = cargarCorreos();
     assert.equal(evaluar(contexto, "textoAuditoria({ canal_nota: 2, proxima: '2026-10-26' })"),

@@ -100,12 +100,14 @@ CREATE TABLE `datasets` (
   `area_id` int(11) NOT NULL,
   `frecuencia_id` int(11) NOT NULL,
   `ultima_actualizacion` date DEFAULT NULL,
+  `datos_al` date DEFAULT NULL,
   `proxima_actualizacion` date DEFAULT NULL,
   `tema_principal_id` int(11) NOT NULL,
   `tema_secundario_id` int(11) DEFAULT NULL,
   `url_dataset` varchar(500) DEFAULT NULL,
   `observaciones` text DEFAULT NULL,
   `que_se_solicita` text DEFAULT NULL,
+  `tipo_pedido` enum('acumulado','foto','anio_anterior','ejercicio','edicion','relevamiento','eventual') DEFAULT NULL,
   `tipo_gestion` enum('interna','externa') NOT NULL DEFAULT 'externa',
   `activo` tinyint(1) DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
@@ -143,6 +145,7 @@ CREATE TABLE `frecuencias` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nombre` varchar(50) NOT NULL,
   `dias` int(11) DEFAULT NULL COMMENT 'Días entre actualizaciones. NULL para Eventual',
+  `meses` smallint(6) DEFAULT NULL COMMENT 'Meses entre actualizaciones. NULL para Eventual',
   `orden` int(11) DEFAULT 0,
   `activo` tinyint(1) DEFAULT 1,
   PRIMARY KEY (`id`),
@@ -158,11 +161,18 @@ CREATE TABLE `historial_actualizaciones` (
   `usuario_id` int(11) DEFAULT NULL,
   `notas` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `cambio_id` int(11) DEFAULT NULL,
+  `vencimiento` date DEFAULT NULL,
+  `datos_al` date DEFAULT NULL,
+  `recibido_el` date DEFAULT NULL,
+  `proxima_nueva` date DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `usuario_id` (`usuario_id`),
   KEY `idx_historial_dataset` (`dataset_id`),
+  KEY `idx_historial_cambio` (`cambio_id`),
   CONSTRAINT `historial_actualizaciones_ibfk_1` FOREIGN KEY (`dataset_id`) REFERENCES `datasets` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `historial_actualizaciones_ibfk_2` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+  CONSTRAINT `historial_actualizaciones_ibfk_2` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_historial_cambio` FOREIGN KEY (`cambio_id`) REFERENCES `cambios_pendientes` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -370,17 +380,17 @@ UNLOCK TABLES;
 
 LOCK TABLES `frecuencias` WRITE;
 /*!40000 ALTER TABLE `frecuencias` DISABLE KEYS */;
-INSERT INTO `frecuencias` (`id`, `nombre`, `dias`, `orden`, `activo`) VALUES (1,'Mensualmente',30,1,1),
-(2,'Bimestralmente',60,2,1),
-(3,'Trimestralmente',90,3,1),
-(4,'Cuatrimestralmente',120,4,1),
-(5,'Cada medio año',180,5,1),
-(6,'Anualmente',365,6,1),
-(7,'Cada dos años',730,7,1),
-(8,'Cada tres años',1095,8,1),
-(9,'Cada cuatro años',1460,9,1),
-(10,'Cada diez años',3650,10,1),
-(11,'Eventual',NULL,11,1);
+INSERT INTO `frecuencias` (`id`, `nombre`, `dias`, `meses`, `orden`, `activo`) VALUES (1,'Mensualmente',30,1,1,1),
+(2,'Bimestralmente',60,2,2,1),
+(3,'Trimestralmente',90,3,3,1),
+(4,'Cuatrimestralmente',120,4,4,1),
+(5,'Cada medio año',180,6,5,1),
+(6,'Anualmente',365,12,6,1),
+(7,'Cada dos años',730,24,7,1),
+(8,'Cada tres años',1095,36,8,1),
+(9,'Cada cuatro años',1460,48,9,1),
+(10,'Cada diez años',3650,120,10,1),
+(11,'Eventual',NULL,NULL,11,1);
 /*!40000 ALTER TABLE `frecuencias` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -471,6 +481,9 @@ CREATE TABLE `notas_digitales_datasets` (
   `seccion` enum('proximo','vencido') NOT NULL,
   `vencimiento` date NOT NULL,
   `cuenta_desde` date DEFAULT NULL,
+  `datos_desde` date DEFAULT NULL,
+  `datos_hasta` date DEFAULT NULL,
+  `datos_solicitados` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`nota_id`,`dataset_id`),
   KEY `idx_ndd_dataset_vencimiento` (`dataset_id`,`vencimiento`),
   CONSTRAINT `fk_ndd_nota` FOREIGN KEY (`nota_id`) REFERENCES `notas_digitales` (`id`) ON DELETE CASCADE,

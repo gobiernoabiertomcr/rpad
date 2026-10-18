@@ -1,5 +1,7 @@
 // Anexo de los avisos de Notas Digitales: una hoja A4 por dataset, con un diseño de ficha monocromático.
-// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6.7)
+// Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6.7) y
+// docs/superpowers/specs/2026-10-17-fechas-datasets-design.md (sección 9: el recuadro "Datos solicitados" y la línea de
+// tiempo desde los datos publicados hasta la fecha sugerida de envío)
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
 
@@ -49,13 +51,15 @@ const DESCENDENTE = 0.207;
 // tamaño (sin achicar ni cortar nada); el último es también la base de los niveles de compactación (dibujarHoja).
 // "aire" multiplica las separaciones entre las partes de la hoja. "destacado" es la letra de la descripción (el
 // recuadro destacado, la más grande después del título) y "texto", la de qué se solicita y las observaciones.
+// "pedido" es la del texto del recuadro "Datos solicitados", en negrita: lo que se le pide al área, a la vista.
 const PERFILES = [
-  { titulo: 24, etiqueta: 7.5, estado: 9.5, fecha: 10.5, rotulo: 7, destacado: 12.5, texto: 11, valor: 10.5, link: 9, contacto: 10, nombre: 11.5, aire: 1.25 },
-  { titulo: 22, etiqueta: 7.5, estado: 9, fecha: 10, rotulo: 7, destacado: 12, texto: 10.5, valor: 10, link: 9, contacto: 9.5, nombre: 11, aire: 1.1 },
-  { titulo: 20, etiqueta: 7, estado: 8.5, fecha: 9.5, rotulo: 6.5, destacado: 11, texto: 10, valor: 9.5, link: 8.5, contacto: 9, nombre: 10, aire: 1 }
+  { titulo: 24, etiqueta: 7.5, estado: 9.5, pedido: 13, fecha: 10.5, rotulo: 7, destacado: 12.5, texto: 11, valor: 10.5, link: 9, contacto: 10, nombre: 11.5, aire: 1.25 },
+  { titulo: 22, etiqueta: 7.5, estado: 9, pedido: 12.5, fecha: 10, rotulo: 7, destacado: 12, texto: 10.5, valor: 10, link: 9, contacto: 9.5, nombre: 11, aire: 1.1 },
+  { titulo: 20, etiqueta: 7, estado: 8.5, pedido: 12, fecha: 9.5, rotulo: 6.5, destacado: 11, texto: 10, valor: 9.5, link: 8.5, contacto: 9, nombre: 10, aire: 1 }
 ];
 // Separaciones entre las partes, de arriba abajo (multiplicadas por el "aire" del perfil): encabezado → etiqueta,
-// estado → línea de tiempo, línea de tiempo → descripción, descripción → ficha, ficha → qué se solicita
+// estado (o el recuadro "Datos solicitados", si lo hay) → línea de tiempo, línea de tiempo → descripción, descripción →
+// ficha, ficha → qué se solicita
 const SEPARACIONES = [18, 18, 16, 16, 14];
 // Lo que puede crecer cada separación para que la hoja quede llena; lo que sobre aún va arriba del contacto
 const EXTRA_MAXIMO = 16;
@@ -212,8 +216,40 @@ const dibujarEstado = (doc, estado, x, y, tamano, alto) => {
   renglon(doc, estado, x + 1.75 * relleno, y + (alto - ASCENDENTE * tamano) / 2, { ancho: anchoTexto, tamano, fuente: NEGRITA, color: COLOR.acento });
 };
 
-// Etiqueta, título e indicador de estado. El título va en hasta 2 líneas achicándose hasta 4 puntos; si no entra,
-// en 3 (2 en el nivel 2) y hasta 14 puntos.
+// Etiqueta de la cabecera: mayúsculas chicas en negrita, en el acento y con interletrado amplio ("CONJUNTO DE DATOS ·
+// GESTIÓN EXTERNA" y el rótulo del recuadro "Datos solicitados")
+const etiquetaDeCabecera = (doc, texto, x, y, { ancho, tamano }) =>
+  renglon(doc, texto, x, y, { ancho, tamano, fuente: NEGRITA, color: COLOR.acento, espaciado: 1.2 });
+
+// Recuadro "Datos solicitados" (spec 2026-10-17-fechas-datasets, 9): fondo gris claro y filete del acento a la izquierda,
+// con el rótulo como la etiqueta de la cabecera y, debajo, el pedido en negrita. El pedido va en hasta 2 líneas,
+// achicándose hasta 2 puntos; si aun así no entra, se corta con "…" (los que arma pedido() entran en una línea).
+// Compacto, porque la hoja de un dataset real ya va justa: "arriba" es el aire sobre las mayúsculas del rótulo, "entre"
+// va de la base del rótulo a las mayúsculas del pedido y "abajo" se suma al interlineado de la última línea del pedido
+// (así quedan unos 7 puntos debajo de su línea de base, como arriba).
+const RECUADRO_PEDIDO = { izquierda: 14, derecha: 12, arriba: 7, entre: 5, abajo: 2 };
+const prepararPedido = (doc, texto, p) => {
+  const { izquierda, derecha, arriba, entre, abajo } = RECUADRO_PEDIDO;
+  const ancho = CONTENIDO - izquierda - derecha;
+  const pedido = ajustar(doc, texto, { ancho, lineas: 2, max: p.pedido, min: p.pedido - 2, fuente: NEGRITA });
+  const yPedido = arriba + ASCENDENTE * p.etiqueta + entre;
+  const alto = yPedido + pedido.alto + abajo;
+  return {
+    alto,
+    dibujar: (y) => {
+      doc.save();
+      doc.roundedRect(IZQUIERDA, y, CONTENIDO, alto, 6).clip();
+      doc.rect(IZQUIERDA, y, CONTENIDO, alto).fill(COLOR.fondo);
+      doc.rect(IZQUIERDA, y, 4, alto).fill(COLOR.acento);
+      doc.restore();
+      etiquetaDeCabecera(doc, 'DATOS SOLICITADOS', IZQUIERDA + izquierda, y + arriba, { ancho, tamano: p.etiqueta });
+      escribir(doc, pedido, IZQUIERDA + izquierda, y + yPedido, COLOR.tinta);
+    }
+  };
+};
+
+// Etiqueta, título, indicador de estado y, si la hoja tiene pedido, el recuadro "Datos solicitados" debajo del estado.
+// El título va en hasta 2 líneas achicándose hasta 4 puntos; si no entra, en 3 (2 en el nivel 2) y hasta 14 puntos.
 const prepararCabecera = (doc, hoja, p, nivel) => {
   const opciones = (tamano) => ({ lineGap: -0.075 * tamano });
   const ajustarTitulo = (lineas, max, min) => ajustar(doc, hoja.titulo, { ancho: CONTENIDO, lineas, max, min, fuente: NEGRITA, opciones, corte: CORTE });
@@ -223,21 +259,25 @@ const prepararCabecera = (doc, hoja, p, nivel) => {
   const altoEstado = Math.round(p.estado * 2.35);
   const yTitulo = p.etiqueta * 2;
   const yEstado = yTitulo + titulo.alto + 8 * p.aire;
+  const pedido = hoja.pedido ? prepararPedido(doc, hoja.pedido, p) : null;
+  const yPedido = yEstado + altoEstado + 6 * p.aire;
   return {
-    alto: yEstado + altoEstado,
+    alto: pedido ? yPedido + pedido.alto : yEstado + altoEstado,
     dibujar: (y) => {
-      renglon(doc, hoja.etiqueta, IZQUIERDA, y, { ancho: CONTENIDO, tamano: p.etiqueta, fuente: NEGRITA, color: COLOR.acento, espaciado: 1.2 });
+      etiquetaDeCabecera(doc, hoja.etiqueta, IZQUIERDA, y, { ancho: CONTENIDO, tamano: p.etiqueta });
       escribir(doc, titulo, IZQUIERDA, y + yTitulo, COLOR.tinta);
       dibujarEstado(doc, hoja.estado, IZQUIERDA, y + yEstado, p.estado, altoEstado);
+      pedido?.dibujar(y + yPedido);
     }
   };
 };
 
-// Línea de tiempo: barra desde la última actualización hasta el vencimiento, con lo transcurrido en el acento y la
-// marca de hoy (con su fecha arriba). Sin última actualización, la barra es punteada y arranca en "Sin registro".
+// Línea de tiempo (spec 2026-10-17-fechas-datasets, 9): barra desde los datos publicados (Datos al) o, sin ellos, desde la
+// carga en el portal (rotuloInicio dice cuál) hasta la fecha sugerida de envío, con lo transcurrido en el acento y la
+// marca de hoy (con su fecha arriba). Sin fecha de inicio, la barra es punteada y arranca en "Sin registro".
 const altoLineaDeTiempo = (p) => 15 + 11 + altoRotulo(p.rotulo) + (ASCENDENTE + DESCENDENTE) * p.fecha;
 
-const dibujarLineaDeTiempo = (doc, { inicio, fin, hoy }, y, p) => {
+const dibujarLineaDeTiempo = (doc, { inicio, rotuloInicio, fin, hoy }, y, p) => {
   const yBarra = y + 15;
   const x0 = IZQUIERDA + 7;
   const x1 = DERECHA - 7;
@@ -277,8 +317,8 @@ const dibujarLineaDeTiempo = (doc, { inicio, fin, hoy }, y, p) => {
   doc.restore();
   const mitad = CONTENIDO / 2;
   const yFecha = yBarra + 11 + altoRotulo(p.rotulo);
-  rotulo(doc, 'Última actualización', IZQUIERDA, yBarra + 11, { ancho: mitad, tamano: p.rotulo });
-  rotulo(doc, 'Vencimiento', IZQUIERDA + mitad, yBarra + 11, { ancho: mitad, tamano: p.rotulo, align: 'right' });
+  rotulo(doc, rotuloInicio, IZQUIERDA, yBarra + 11, { ancho: mitad, tamano: p.rotulo });
+  rotulo(doc, 'Fecha sugerida de envío', IZQUIERDA + mitad, yBarra + 11, { ancho: mitad, tamano: p.rotulo, align: 'right' });
   renglon(doc, inicio ? formatoCorto(inicio) : 'Sin registro', IZQUIERDA, yFecha,
     { ancho: mitad, tamano: p.fecha, fuente: NEGRITA, color: inicio ? COLOR.tinta : COLOR.gris });
   renglon(doc, formatoCorto(fin), IZQUIERDA + mitad, yFecha, { ancho: mitad, tamano: p.fecha, fuente: NEGRITA, align: 'right' });
@@ -537,6 +577,16 @@ const planificar = (doc, hoja, alto) => {
         ancho: bloques[k].ancho, alto: asignados[k], max, min: MINIMO, opciones: bloques[k].opciones, corte: CORTE
       });
       const ajustes = bloques.map((b, k) => ajustarBloque(k, b.tamano));
+      // Los textos que entraron sin cortarse pueden ocupar menos que lo asignado (achicados, o sin llegar al nivel común):
+      // ese lugar es para los que se cortaron, que con él pueden entrar enteros o cortarse más adelante
+      const cortados = ajustes.flatMap((a, k) => (a.cortado ? [k] : []));
+      const extra = libre - suma(ajustes.map((a, k) => (a.cortado ? asignados[k] : a.alto)));
+      if (cortados.length && extra > 0.5) {
+        for (const k of cortados) {
+          asignados[k] += extra / cortados.length;
+          ajustes[k] = ajustarBloque(k, bloques[k].tamano);
+        }
+      }
       // La descripción (destacada) no queda más chica que los otros textos: si se achicó, ellos van medio punto
       // debajo (más chicos ocupan menos, así que siguen entrando en lo asignado)
       const tope = Math.max(MINIMO, ajustes[0].tamano - 0.5);
