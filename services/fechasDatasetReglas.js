@@ -89,6 +89,21 @@ export const tipoEfectivo = (dataset) => {
   return TIPOS_PEDIDO.includes(tipoPedido) ? tipoPedido : tipoSugerido(tipoGestion, meses);
 };
 
+/**
+ * La frecuencia como se lee en las notas (spec 2026-10-17-fechas-datasets, 18): un acumulado con una frecuencia menor al año
+ * pide los datos desde el 1/1 del año del corte (R3), así que la frecuencia y el período no coinciden y "(Acumulado)" lo
+ * explica. tipo es el efectivo (tipoEfectivo); meses, los de la frecuencia. Con cualquier otro tipo, con una frecuencia de un
+ * año o más o sin meses válidos, y sin nombre de frecuencia, devuelve la frecuencia tal cual (también null, undefined o ''):
+ * cada lugar pone su "sin dato".
+ */
+export const frecuenciaEnNota = (datos) => {
+  const { frecuencia, tipo, meses } = datos ?? {};
+  const esAcumuladoMenorAlAnio = tipo === 'acumulado' && Number.isInteger(meses) && meses >= 1 && meses <= 11;
+  return esAcumuladoMenorAlAnio && typeof frecuencia === 'string' && frecuencia.trim() !== ''
+    ? `${frecuencia} (${NOMBRES_TIPO_PEDIDO.acumulado})`
+    : frecuencia;
+};
+
 // El 1° del mes siguiente al de iso. null si iso no es válida o si pasaría del año 9999
 const primeroDelMesSiguiente = (iso) => {
   const finDelMesSiguiente = sumarMeses(iso, 1);

@@ -743,27 +743,29 @@ describe('aviso a las áreas', () => {
     assert.match(res.body, /Dataset de Ejemplo 1/);
   });
 
-  // El ejemplo muestra los dos renglones nuevos (spec 2026-10-17-fechas-datasets, 9): el fin de mes que corresponde a los
-  // 40 días del próximo día hábil, con el pedido de un acumulado (Dataset 1) y el de una foto al corte (Dataset 2)
-  it('el ejemplo de la vista previa muestra los datos solicitados y la fecha sugerida de envío de cada dataset', async () => {
+  // El ejemplo muestra la frecuencia y los datos solicitados (spec 2026-10-17-fechas-datasets, 9; desde el 18/10/2026, sin la
+  // fecha sugerida de envío): el pedido de un trimestral acumulado (Dataset 1, "Trimestralmente (Acumulado)": spec 18, pedido del
+  // usuario en la revisión final) y el de una foto al corte (Dataset 2)
+  it('el ejemplo de la vista previa muestra la frecuencia y los datos solicitados de cada dataset, sin fecha sugerida de envío', async () => {
     const fecha = proximoDiaHabil(hoyArgentina());
     const vencimiento = formatoCorto(vencimientoDelMes(sumarDias(fecha, 40)));
     const res = await api.get('/notificaciones/preview/area-aviso-40', comoAdmin());
     assert.equal(res.status, 200);
     const texto = textoVisible(res.body);
-    assert.match(texto, /Dataset de Ejemplo 1 Frecuencia de actualización: Anualmente Datos que se solicitarán: del \d{2}\/\d{2}\/\d{4} al \d{2}\/\d{2}\/\d{4} Fecha sugerida de envío: \d{2}\/\d{2}\/\d{4} Ver dataset/);
-    assert.match(texto, /Dataset de Ejemplo 2 Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al \d{2}\/\d{2}\/\d{4} Fecha sugerida de envío: \d{2}\/\d{2}\/\d{4} Ver dataset/);
-    assert.equal(texto.split(`Fecha sugerida de envío: ${vencimiento}`).length - 1, 2, `los dos vencen el ${vencimiento}`);
+    assert.match(texto, /Dataset de Ejemplo 1 Frecuencia de actualización: Trimestralmente \(Acumulado\) Datos que se solicitarán: del \d{2}\/\d{2}\/\d{4} al \d{2}\/\d{2}\/\d{4} Ver dataset/);
+    assert.match(texto, /Dataset de Ejemplo 2 Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al \d{2}\/\d{2}\/\d{4} Ver dataset/);
+    assert.ok(!texto.includes('Fecha sugerida') && !texto.includes(vencimiento), texto);
   });
 
-  it('la prueba con el ejemplo también lleva los dos renglones', async () => {
+  it('la prueba con el ejemplo también lleva la frecuencia y los datos solicitados, sin fecha', async () => {
     const res = await api.post('/notificaciones/prueba-area', {}, comoAdmin());
     assert.equal(res.status, 200);
     assert.equal(res.body.data.ejemplo, true);
     const [mensaje] = await mailpit.esperar(m => m.Subject.startsWith('[PRUEBA] '));
     const texto = textoVisible(await mailpit.html(mensaje.ID));
     assert.equal(texto.split('Datos que se solicitarán:').length - 1, 2);
-    assert.equal(texto.split('Fecha sugerida de envío:').length - 1, 2);
+    assert.ok(texto.includes('Frecuencia de actualización: Trimestralmente (Acumulado)'), texto);
+    assert.ok(!texto.includes('Fecha sugerida'), texto);
   });
 
   // Un sábado, hoyArgentina() no tiene rango y mostraría el ejemplo: la selección tiene que salir del próximo día hábil

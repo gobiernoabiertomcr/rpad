@@ -225,7 +225,7 @@ function htmlDeDatosPublicados(d) {
 }
 
 /**
- * El texto del pedido; debajo, el tipo y la fecha sugerida de envío si la próxima es de hoy en adelante. El texto no lleva la
+ * El texto del pedido; debajo, el tipo y "Vence el dd/mm/aaaa" si la próxima es de hoy en adelante. El texto no lleva la
  * clase de las fechas (que no se parten): "Presupuestos de los ejercicios 2026 y 2027" puede ocupar dos renglones.
  */
 function htmlDeProximoPedido(d, hoy) {
@@ -233,7 +233,7 @@ function htmlDeProximoPedido(d, hoy) {
   const proxima = soloFecha(d.proxima_actualizacion);
   const detalle = [];
   if (d.tipo_pedido_nombre) detalle.push(d.tipo_pedido_nombre);
-  if (proxima && proxima >= hoy) detalle.push(`Fecha sugerida de envío: ${fechaCorta(proxima)}`);
+  if (proxima && proxima >= hoy) detalle.push(`Vence el ${fechaCorta(proxima)}`);
   return `<span class="ad-pedido-texto">${textoSeguro(texto)}</span>`
     + (detalle.length ? `<span class="ad-sub">${detalle.map(textoSeguro).join('. ')}</span>` : '');
 }
@@ -363,13 +363,13 @@ function porcentaje(fraccion) {
  * Entrada, todas 'AAAA-MM-DD' (o ISO con hora):
  *   datosAl    lo que ya está publicado (opcional)
  *   desde/hasta   lo que pide el pedido (pedido.desde y pedido.hasta)
- *   proxima    el vencimiento (la fecha sugerida de envío)
+ *   proxima    el vencimiento
  *   hoy        hoy en Argentina
  *   datosNuevo lo que llega con esta actualización (opcional): mueve la banda verde
  * Sin desde o sin hasta (un eventual, una edición, un relevamiento) da solo la pista vacía.
  *
- * Bandas: publicado, falta (rayada: lo pedido que todavía no llegó) y llega (verde). Marcas: Publicado, Corte pedido, Envío
- * sugerido (solo si la próxima es de hoy en adelante) y Hoy. Las posiciones son porcentajes de la pista: cada mes es un
+ * Bandas: publicado, falta (rayada: lo pedido que todavía no llegó) y llega (verde). Marcas: Publicado, Corte pedido, Vence
+ * (solo si la próxima es de hoy en adelante) y Hoy. Las posiciones son porcentajes de la pista: cada mes es un
  * casillero de igual ancho, con un mes de margen en cada punta, y las fechas de fin de mes caen al final de su casillero.
  */
 function htmlDeCiclo({ datosAl, desde, hasta, proxima, hoy, datosNuevo } = {}) {
@@ -382,11 +382,11 @@ function htmlDeCiclo({ datosAl, desde, hasta, proxima, hoy, datosNuevo } = {}) {
   const fechaPublicado = soloFecha(datosAl);
   const fechaNuevo = soloFecha(datosNuevo);
   const fechaProxima = soloFecha(proxima);
-  const conEnvio = fechaProxima !== null && fechaProxima >= fechaHoy;
+  const conVencimiento = fechaProxima !== null && fechaProxima >= fechaHoy;
 
   // El índice de un mes es año × 12 + mes - 1. La pista cubre desde un mes antes del primero hasta un mes después del último
   const indice = (iso) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
-  const todos = [fechaDesde, fechaHasta, fechaHoy, fechaPublicado, fechaNuevo, conEnvio ? fechaProxima : null].filter(Boolean).map(indice);
+  const todos = [fechaDesde, fechaHasta, fechaHoy, fechaPublicado, fechaNuevo, conVencimiento ? fechaProxima : null].filter(Boolean).map(indice);
   const inicio = Math.min(...todos) - 1;
   const casilleros = Math.max(...todos) + 1 - inicio + 1;
   // Fin del casillero del mes de índice i, como fracción de la pista
@@ -409,7 +409,7 @@ function htmlDeCiclo({ datosAl, desde, hasta, proxima, hoy, datosNuevo } = {}) {
   const marcas = [];
   if (finPublicado !== null) marcas.push([finPublicado, 'Publicado', 'abajo', 'transform:none']);
   marcas.push([finHasta, 'Corte pedido', 'abajo', 'transform:translateX(-100%)']);
-  if (conEnvio) marcas.push([finDe(indice(fechaProxima)), 'Envío sugerido', 'arriba', 'transform:translateX(-100%)']);
+  if (conVencimiento) marcas.push([finDe(indice(fechaProxima)), 'Vence', 'arriba', 'transform:translateX(-100%)']);
   for (const [posicion, rotulo, fila, alineacion] of marcas) {
     partes.push(`<div class="marca" style="left:${porcentaje(posicion)}"></div><div class="etiqueta ${fila}" style="left:${porcentaje(posicion)};${alineacion}">${rotulo}</div>`);
   }
@@ -621,8 +621,8 @@ function textoDelPedidoActual(dataset) {
 }
 
 /**
- * Los datos de la cabecera "Datos solicitados" (los <div><dt><dd> de su <dl>): frecuencia, tipo de pedido, "Fecha sugerida
- * de envío" (o "Vencido desde", si la próxima ya pasó; un eventual no tiene) y "Publicado hoy": "datos al dd/mm/aaaa" o
+ * Los datos de la cabecera "Datos solicitados" (los <div><dt><dd> de su <dl>): frecuencia, tipo de pedido, "Vence" (o
+ * "Vencido desde", si la próxima ya pasó; un eventual no tiene) y "Publicado hoy": "datos al dd/mm/aaaa" o
  * "ejercicio aaaa". Es la misma información que dibuja la línea del ciclo, en texto.
  */
 function htmlDeDatosDelPedido(dataset, hoy) {
@@ -630,7 +630,7 @@ function htmlDeDatosDelPedido(dataset, hoy) {
   const fecha = hoyDe(hoy);
   const filas = [['Frecuencia', d.frecuencia_nombre || SIN_DATO], ['Tipo de pedido', d.tipo_pedido_nombre || SIN_DATO]];
   const proxima = soloFecha(d.proxima_actualizacion);
-  if (proxima) filas.push([proxima < fecha ? 'Vencido desde' : 'Fecha sugerida de envío', fechaCorta(proxima)]);
+  if (proxima) filas.push([proxima < fecha ? 'Vencido desde' : 'Vence', fechaCorta(proxima)]);
   const datosAl = soloFecha(d.datos_al);
   let publicado = SIN_DATO;
   if (datosAl) publicado = d.tipo_pedido === 'ejercicio' ? `ejercicio ${datosAl.slice(0, 4)}` : `datos al ${fechaCorta(datosAl)}`;
@@ -689,6 +689,21 @@ function tipoSugeridoDe(gestion, meses) {
   if (!tieneMeses(meses)) return 'eventual';
   if (gestion === 'interna') return 'relevamiento';
   return meses <= 12 ? 'acumulado' : 'foto';
+}
+
+/**
+ * La frecuencia como sale en la nota (spec 18): un acumulado con una frecuencia de menos de un año (de 1 a 11 meses) lleva
+ * "(Acumulado)", porque pide desde el 1/1 del año del corte y la frecuencia sola no lo explica. Copia deliberada de
+ * frecuenciaEnNota de services/fechasDatasetReglas.js, que es la que vale: acá solo sirve para la vista previa del
+ * formulario. Un test verifica que las dos den lo mismo con cualquier entrada, también null y sin argumento. Sin nombre de
+ * frecuencia (null, undefined o '') devuelve lo que recibió: la vista previa pone su "sin dato".
+ */
+function frecuenciaEnNotaDe(datos) {
+  const { frecuencia, tipo, meses } = datos ?? {};
+  const esAcumuladoMenorAlAnio = tipo === 'acumulado' && Number.isInteger(meses) && meses >= 1 && meses <= 11;
+  return esAcumuladoMenorAlAnio && typeof frecuencia === 'string' && frecuencia.trim() !== ''
+    ? `${frecuencia} (${nombreDeTipo('acumulado')})`
+    : frecuencia;
 }
 
 /**
@@ -926,15 +941,17 @@ function problemasDelFormulario(formulario, hoy) {
 
 /**
  * Los textos de la vista previa "Así va a salir en la próxima nota", menos los datos solicitados (los calcula el servidor):
- * { cabecera, titulo, fecha, solicita }. Sin "Qué se solicita", el texto por defecto.
+ * { cabecera, titulo, frecuencia, solicita }. `frecuencia` es el nombre de la elegida, con "(Acumulado)" si corresponde
+ * (frecuenciaEnNotaDe con el tipo y los meses de la frecuencia), o una raya si no hay una elegida. Sin "Qué se solicita", el
+ * texto por defecto.
  */
-function textosDeVistaPrevia({ titulo, gestion, proxima, solicita } = {}) {
+function textosDeVistaPrevia({ titulo, gestion, solicita, frecuencia, tipo, meses } = {}) {
   const limpio = (valor) => (typeof valor === 'string' ? valor.trim() : '');
-  const fecha = soloFecha(proxima);
+  const nombre = limpio(frecuencia);
   return {
     cabecera: gestion ? `Nota Digital de gestión ${gestion} (vista previa)` : 'Nota Digital (vista previa)',
     titulo: limpio(titulo) || 'Título del dataset',
-    fecha: fecha ? fechaCorta(fecha) : SIN_DATO,
+    frecuencia: nombre ? frecuenciaEnNotaDe({ frecuencia: nombre, tipo, meses }) : SIN_DATO,
     solicita: limpio(solicita) || QUE_SE_SOLICITA_POR_DEFECTO
   };
 }

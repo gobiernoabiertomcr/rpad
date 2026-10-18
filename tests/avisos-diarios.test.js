@@ -115,9 +115,9 @@ describe('aviso a las áreas (spec 4.2)', () => {
     assert.deepEqual(await servicio.datasetsExternosPorArea('2026-10-16'), []);
   });
 
-  // Datos solicitados y fecha sugerida de envío (spec 2026-10-17-fechas-datasets, 9). Miércoles 21/10/2026: avisa el
-  // vencimiento del 30/11/2026, el fin de mes que corresponde a los 40 días
-  describe('datos solicitados y fecha sugerida de envío', () => {
+  // Datos solicitados (spec 2026-10-17-fechas-datasets, 9), sin fecha sugerida de envío y con la frecuencia "(Acumulado)"
+  // (spec 18). Miércoles 21/10/2026: avisa el vencimiento del 30/11/2026, el fin de mes que corresponde a los 40 días
+  describe('datos solicitados y frecuencia', () => {
     const HOY = '2026-10-21';
     const VENCIMIENTO = '2026-11-30';
 
@@ -141,14 +141,33 @@ describe('aviso a las áreas (spec 4.2)', () => {
       assert.equal(typeof area.datasets[0].vencimiento, 'string');
     });
 
-    it('un vencimiento que no es fin de mes pide los datos de su mes, y la fecha sugerida es la real', async () => {
+    it('un vencimiento que no es fin de mes pide los datos de su mes, y el vencimiento sigue siendo el real', async () => {
       const { areaId } = await prepararArea();
       await crearDataset({ gestion: 'externa', vencimiento: '2026-11-26', areaId, titulo: 'Vence a mitad de mes' });
       const [area] = await servicio.datasetsExternosPorArea('2026-10-16');
       assert.deepEqual(area.datasets.map(d => [d.vencimiento, d.pedido.texto]), [['2026-11-26', 'Del 01/01/2026 al 31/10/2026']]);
     });
 
-    it('el email dice qué datos se solicitarán y la fecha sugerida de envío de cada dataset; sin pedido, solo la fecha', async () => {
+    it('cada dataset trae su tipo de pedido efectivo y sus meses, de conPedido: sin tipo guardado, el sugerido', async () => {
+      const { areaId } = await prepararArea();
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'A trimestral sin tipo guardado', frecuencia: 'Trimestralmente' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'B anual con tipo', tipoPedido: 'foto' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'C bienal sin tipo guardado', frecuencia: 'Cada dos años' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'D eventual', tipoPedido: 'eventual' });
+
+      const [area] = await servicio.datasetsExternosPorArea(HOY);
+
+      assert.deepEqual(area.datasets.map(d => [d.titulo, d.tipo_pedido, d.meses]), [
+        // Externa trimestral, sin tipo guardado: el sugerido es acumulado
+        ['A trimestral sin tipo guardado', 'acumulado', 3],
+        ['B anual con tipo', 'foto', 12],
+        // Externa de más de un año, sin tipo guardado: el sugerido es la foto
+        ['C bienal sin tipo guardado', 'foto', 24],
+        ['D eventual', 'eventual', 12]
+      ]);
+    });
+
+    it('el email dice la frecuencia y qué datos se solicitarán de cada dataset, sin fecha; sin pedido, solo la frecuencia', async () => {
       const { areaId, email } = await prepararArea();
       await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'A con Datos al', tipoPedido: 'acumulado', datosAl: '2025-10-31' });
       await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'B foto al corte', frecuencia: 'Cada dos años', tipoPedido: 'foto' });
@@ -159,10 +178,27 @@ describe('aviso a las áreas (spec 4.2)', () => {
       assert.equal(resultado.enviados[0].cantidad, 3);
       const [mensaje] = para(await mailpit.esperar(m => m.To.some(t => t.Address === email)), email);
       const texto = textoVisible(await mailpit.html(mensaje.ID));
-      assert.ok(texto.includes('1. A con Datos al Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/11/2025 al 31/10/2026 Fecha sugerida de envío: 30/11/2026 Ver dataset en el portal'), texto);
-      assert.ok(texto.includes('2. B foto al corte Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al 31/10/2026 Fecha sugerida de envío: 30/11/2026 Ver dataset en el portal'), texto);
-      assert.ok(texto.includes('3. C eventual Frecuencia de actualización: Anualmente Fecha sugerida de envío: 30/11/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('1. A con Datos al Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/11/2025 al 31/10/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('2. B foto al corte Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al 31/10/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('3. C eventual Frecuencia de actualización: Anualmente Ver dataset en el portal'), texto);
       assert.equal(texto.split('Datos que se solicitarán:').length - 1, 2);
+      assert.ok(!texto.includes('Fecha sugerida') && !texto.includes('30/11/2026'), texto);
+    });
+
+    it('un dataset externo trimestral sin tipo guardado (el sugerido es acumulado) sale con "(Acumulado)" en el email; el anual y la foto, no', async () => {
+      const { areaId, email } = await prepararArea();
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'A trimestral', frecuencia: 'Trimestralmente' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'B anual', frecuencia: 'Anualmente' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'C trimestral con foto', frecuencia: 'Trimestralmente', tipoPedido: 'foto' });
+
+      await servicio.enviarAvisoAreas({ hoy: HOY });
+
+      const [mensaje] = para(await mailpit.esperar(m => m.To.some(t => t.Address === email)), email);
+      const texto = textoVisible(await mailpit.html(mensaje.ID));
+      assert.ok(texto.includes('1. A trimestral Frecuencia de actualización: Trimestralmente (Acumulado) Datos que se solicitarán: del 01/01/2026 al 31/10/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('2. B anual Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/01/2026 al 31/10/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('3. C trimestral con foto Frecuencia de actualización: Trimestralmente Datos que se solicitarán: vigente al 31/10/2026 Ver dataset en el portal'), texto);
+      assert.equal(texto.split('(Acumulado)').length - 1, 1);
     });
   });
 });

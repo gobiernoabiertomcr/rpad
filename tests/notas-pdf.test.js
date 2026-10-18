@@ -149,7 +149,11 @@ const REITERACION_DEL_PORTAL = [
   ['Pedidos de Acceso a la Información Pública', 'Agencia de Acceso a la Información Pública', 'Cuatrimestralmente', '2026-06-30', '2026-11-30', 'Del 01/01/2026 al 31/10/2026']
 ].map(([titulo, area, frecuencia, ultima, vencimiento, pedido], i) => ({
   id: i + 1, titulo, url_dataset: `https://datos.comodoro.gov.ar/dataset/${i + 1}`, area_id: i + 1, area_nombre: area,
-  frecuencia_nombre: frecuencia, ultima_actualizacion: ultima, vencimiento, pedido: { desde: null, hasta: null, texto: pedido },
+  // El tipo de pedido efectivo y los meses de la frecuencia, como los deja conPedido (spec 18): "Cada medio año" y
+  // "Cuatrimestralmente" con un pedido "Del … al …" dicen "(Acumulado)"
+  frecuencia_nombre: frecuencia, meses: { Anualmente: 12, 'Cada medio año': 6, Cuatrimestralmente: 4 }[frecuencia],
+  tipo_pedido: pedido.startsWith('Vigente') ? 'foto' : pedido.startsWith('Presupuesto') ? 'ejercicio' : 'acumulado',
+  ultima_actualizacion: ultima, vencimiento, pedido: { desde: null, hasta: null, texto: pedido },
   informado: { numero: 2, anio: 2026, fecha: '2026-10-13' }, reiteraciones: 0, antecedente: null
 }));
 // Dos vencidos que ya tuvieron más de un aviso (el anticipado y el de su fecha, spec 2026-10-15, 7.6): "Informado en" nombra
@@ -168,9 +172,10 @@ const reiteracionReal = (cambios = {}) => nota(0, { tipo: 'reiteracion', dataset
 const palabras = (texto) => String(texto).split(/\s+/).filter(Boolean);
 const TAMANO_TABLA = 8.5;
 const TAMANO_SECUNDARIO = 7;
-// Las palabras de las tablas de una nota: encabezados, celdas, antecedentes y la segunda parte de "Informado en"
+// Las palabras de las tablas de una nota: encabezados, celdas, antecedentes, la segunda parte de "Informado en" y las filas de
+// vencimiento de un aviso con varios (spec 18)
 const palabrasDeLasTablas = (n) => new Set(n.secciones
-  .flatMap(s => [...s.columnas, ...s.filas.flatMap(f => [...f.valores, f.antecedente, f.informadoAnterior])])
+  .flatMap(s => [...s.columnas, ...s.filas.flatMap(f => [...f.valores, f.antecedente, f.informadoAnterior, f.grupo])])
   .filter(Boolean).flatMap(palabras));
 // Lo escrito en las tablas (en 8,5 y 7 puntos) que no es una palabra entera de ellas: el pedazo de una palabra o de una
 // fecha partida entre dos renglones. (Las palabras repetidas en otras celdas no lo esconden: se mira cada renglón.)
@@ -215,6 +220,17 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
       }
     }
     assert.deepEqual(partidas, [], lineas.join(' | '));
+  });
+
+  // Spec 18: la reiteración también dice "(Acumulado)"; la tabla de 7 columnas no parte "Cuatrimestralmente" ni "(Acumulado)"
+  it('la frecuencia dice "(Acumulado)" en los acumulados de menos de un año, con las palabras enteras', async () => {
+    const n = reiteracionReal();
+    const frecuencias = n.secciones.flatMap(s => s.filas.map(f => f.valores[2]));
+    assert.deepEqual([...new Set(frecuencias)].sort(), ['Anualmente', 'Cada medio año', 'Cada medio año (Acumulado)', 'Cuatrimestralmente (Acumulado)']);
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    assert.deepEqual(fragmentos(n, textos), [], textos.map(t => t.texto).join(' | '));
+    const enPdf = textos.map(t => t.texto);
+    for (const palabra of ['Cuatrimestralmente', '(Acumulado)']) assert.ok(enPdf.includes(palabra), `no se encontró "${palabra}" entera`);
   });
 
   it('el antecedente va en la celda "Informado en", en letra más chica, y no hay fila a todo el ancho', async () => {
@@ -318,25 +334,26 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
 });
 
 // Aviso externo con los valores reales del de vencimientos del 31/01/2027, el del mockup de la spec (títulos, áreas,
-// frecuencias y pedidos del portal, públicos): la tabla de 5 columnas (spec 2026-10-17-fechas-datasets, 9)
+// frecuencias y pedidos del portal, públicos): la tabla de 4 columnas (spec 2026-10-17-fechas-datasets, 9 y 18). Cada
+// dataset trae el tipo de pedido efectivo y los meses de su frecuencia, como los deja conPedido en las notas reales
 const AVISO_REAL = [
-  ['Castraciones de Animales', 'Dirección General de Veterinaria, Control de Fauna Urbana y Plagas', 'Anualmente', 'Del 01/01/2026 al 31/12/2026'],
-  ['Comercios habilitados por rubro', 'Dirección General de Habilitaciones Comerciales', 'Anualmente', 'Del 01/07/2025 al 31/12/2026'],
-  ['Listado de Proveedores', 'Dirección General de Servicios Administrativos', 'Anualmente', 'Vigente al 31/12/2026'],
-  ['Manejo de residuos sólidos urbanos en Comodoro Rivadavia', 'Dirección General de Higiene Urbana y Estrategias Urbano Ambientales', 'Anualmente', 'Del 01/01/2026 al 31/12/2026'],
-  ['Movimientos aéreos del Aeropuerto Internacional General Mosconi', 'Empresa Argentina de Navegación Aérea', 'Anualmente', 'Del 01/01/2026 al 31/12/2026'],
-  ['Pauta Publicitaria', 'Subsecretaría de Comunicación', 'Trimestralmente', 'Del 01/01/2026 al 31/12/2026'],
-  ['Pedidos de Acceso a la Información Pública', 'Agencia de Acceso a la Información Pública', 'Cuatrimestralmente', 'Del 01/01/2026 al 31/12/2026'],
-  ['Presupuesto con perspectiva de género', 'Secretaría de la Mujer, Género y Diversidad', 'Anualmente', 'Presupuestos de los ejercicios 2026 y 2027']
-].map(([titulo, area, frecuencia, pedido], i) => ({
+  ['Castraciones de Animales', 'Dirección General de Veterinaria, Control de Fauna Urbana y Plagas', 'Anualmente', 12, 'acumulado', 'Del 01/01/2026 al 31/12/2026'],
+  ['Comercios habilitados por rubro', 'Dirección General de Habilitaciones Comerciales', 'Anualmente', 12, 'acumulado', 'Del 01/07/2025 al 31/12/2026'],
+  ['Listado de Proveedores', 'Dirección General de Servicios Administrativos', 'Anualmente', 12, 'foto', 'Vigente al 31/12/2026'],
+  ['Manejo de residuos sólidos urbanos en Comodoro Rivadavia', 'Dirección General de Higiene Urbana y Estrategias Urbano Ambientales', 'Anualmente', 12, 'acumulado', 'Del 01/01/2026 al 31/12/2026'],
+  ['Movimientos aéreos del Aeropuerto Internacional General Mosconi', 'Empresa Argentina de Navegación Aérea', 'Anualmente', 12, 'acumulado', 'Del 01/01/2026 al 31/12/2026'],
+  ['Pauta Publicitaria', 'Subsecretaría de Comunicación', 'Trimestralmente', 3, 'acumulado', 'Del 01/01/2026 al 31/12/2026'],
+  ['Pedidos de Acceso a la Información Pública', 'Agencia de Acceso a la Información Pública', 'Cuatrimestralmente', 4, 'acumulado', 'Del 01/01/2026 al 31/12/2026'],
+  ['Presupuesto con perspectiva de género', 'Secretaría de la Mujer, Género y Diversidad', 'Anualmente', 12, 'ejercicio', 'Presupuestos de los ejercicios 2026 y 2027']
+].map(([titulo, area, frecuencia, meses, tipo, pedido], i) => ({
   id: i + 1, titulo, url_dataset: `https://datos.comodoro.gov.ar/dataset/${i + 1}`, area_id: i + 1, area_nombre: area,
-  frecuencia_nombre: frecuencia, ultima_actualizacion: '2026-02-10', vencimiento: '2027-01-31',
+  frecuencia_nombre: frecuencia, meses, tipo_pedido: tipo, ultima_actualizacion: '2026-02-10', vencimiento: '2027-01-31',
   pedido: { desde: null, hasta: null, texto: pedido }, informado: null, reiteraciones: 0, antecedente: null
 }));
 const avisoReal = (cambios = {}) => nota(0, { fecha: '2026-12-22', datasets: AVISO_REAL, areas: [], ...cambios });
 
-describe('renderPdf: tabla de 5 columnas del aviso con valores reales', () => {
-  const COLUMNAS = ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío'];
+describe('renderPdf: tabla de 4 columnas del aviso con valores reales', () => {
+  const COLUMNAS = ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados'];
 
   it('las columnas del mockup, en orden y dentro de los márgenes', async () => {
     const n = avisoReal();
@@ -346,7 +363,7 @@ describe('renderPdf: tabla de 5 columnas del aviso con valores reales', () => {
     assert.ok(orden.every(Number.isFinite), JSON.stringify(orden));
     assert.deepEqual(orden, [...orden].sort((a, b) => a - b));
     for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
-    assert.ok(!textos.some(t => /Situación|Última actualización|Faltan/.test(t.texto)), textos.map(t => t.texto).join(' | '));
+    assert.ok(!textos.some(t => /Situación|Última actualización|Faltan|sugerida/.test(t.texto)), textos.map(t => t.texto).join(' | '));
   });
 
   it('no parte ninguna palabra ni fecha, y "Datos solicitados" es la columna más ancha después del título', async () => {
@@ -355,8 +372,25 @@ describe('renderPdf: tabla de 5 columnas del aviso con valores reales', () => {
     assert.deepEqual(fragmentos(n, textos), [], textos.map(t => t.texto).join(' | '));
     const bordes = [...xDeLasColumnas(textos, COLUMNAS), ANCHO_HOJA - 30 * MM + 3];
     const anchos = bordes.slice(1).map((b, i) => b - bordes[i]);
-    assert.ok(anchos[3] > anchos[1] && anchos[3] > anchos[2] && anchos[3] > anchos[4], `anchos: ${anchos.map(a => a.toFixed(1))}`);
+    assert.ok(anchos[3] > anchos[1] && anchos[3] > anchos[2], `anchos: ${anchos.map(a => a.toFixed(1))}`);
     assert.ok(anchos[0] > anchos[3], `anchos: ${anchos.map(a => a.toFixed(1))}`);
+  });
+
+  // Spec 18: "Cuatrimestralmente (Acumulado)" es la frecuencia más larga de los avisos reales: va en dos renglones, con la palabra
+  // más larga ("Cuatrimestralmente") entera y sin salir del margen derecho
+  it('la frecuencia dice "(Acumulado)" en los acumulados de menos de un año y en ningún otro, sin partir palabras ni salir del margen', async () => {
+    const n = avisoReal();
+    assert.deepEqual(n.secciones[0].filas.map(f => f.valores[2]), [
+      'Anualmente', 'Anualmente', 'Anualmente', 'Anualmente', 'Anualmente', 'Trimestralmente (Acumulado)', 'Cuatrimestralmente (Acumulado)', 'Anualmente'
+    ]);
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    assert.deepEqual(fragmentos(n, textos), [], textos.map(t => t.texto).join(' | '));
+    const [columna] = xDeLasColumnas(textos, ['Frecuencia']);
+    for (const [frecuencia, esperado] of [['Trimestralmente (Acumulado)', ['Trimestralmente', '(Acumulado)']], ['Cuatrimestralmente (Acumulado)', ['Cuatrimestralmente', '(Acumulado)']]]) {
+      const renglones = renglonesDeLaCelda(textos, frecuencia, columna);
+      assert.deepEqual(renglones, esperado, `"${frecuencia}" en ${JSON.stringify(renglones)}`);
+    }
+    for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
   });
 
   // Un pedido "Del … al …" que no entra en un renglón pasa a dos como "Del 01/01/2026" y "al 31/12/2026": nunca con un
@@ -382,13 +416,101 @@ describe('renderPdf: tabla de 5 columnas del aviso con valores reales', () => {
     for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
   });
 
-  it('el antecedente va en una fila a todo el ancho de las 5 columnas', async () => {
+  it('el antecedente va en una fila a todo el ancho de las 4 columnas', async () => {
     const datasets = AVISO_REAL.map((d, i) => (i === 0 ? { ...d, antecedente: { cantidad: 2, primera: '2026-11-03', ultima: '2026-12-01' } } : d));
     const textos = textosPorHoja(await renderPdf(avisoReal({ datasets }))).flat();
     const antecedente = textos.find(t => t.texto.startsWith('Antecedente:'));
     assert.ok(antecedente, textos.map(t => t.texto).join(' | '));
     assert.ok(cerca(antecedente.x, 30 * MM + 3, 0.5), `x = ${antecedente.x}`);
     assert.equal(antecedente.texto, 'Antecedente: notificado a la DGMIT por correo electrónico en 2 oportunidades, entre el 03/11/2026 y el 01/12/2026.');
+  });
+});
+
+// Spec 18, "Varios vencimientos en un aviso": en "Próximos a vencer" de un aviso con más de un vencimiento, una fila a todo el
+// ancho ("Vencen el …" o "Vence el …") antes del primer dataset de cada uno. En el PDF, esa fila nunca queda sola al pie de una
+// hoja: viaja con la primera fila de su grupo, como el encabezado de la tabla
+describe('renderPdf: aviso con varios vencimientos', () => {
+  const GRUPO = /^(Vence|Vencen) el \d{2}\/\d{2}\/\d{4}$/;
+  const ENCABEZADO = ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Datos', 'solicitados'];
+  // Los 8 reales repartidos en tres vencimientos: tres el 31/01, uno el 28/02 y cuatro el 31/03
+  const VENCIMIENTOS = ['2027-01-31', '2027-01-31', '2027-01-31', '2027-02-28', '2027-03-31', '2027-03-31', '2027-03-31', '2027-03-31'];
+  const variosReal = (cambios = {}) => avisoReal({ datasets: AVISO_REAL.map((d, i) => ({ ...d, vencimiento: VENCIMIENTOS[i] })), ...cambios });
+  const esPie = (linea) => esPaginacion(linea);
+
+  it('las filas de vencimiento van a todo el ancho de la tabla, con el texto de cada grupo y dentro de los márgenes', async () => {
+    const n = variosReal();
+    assert.deepEqual(n.secciones[0].filas.map(f => f.grupo).filter(Boolean), ['Vencen el 31/01/2027', 'Vence el 28/02/2027', 'Vencen el 31/03/2027']);
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    const grupos = textos.filter(t => GRUPO.test(t.texto));
+    assert.deepEqual(grupos.map(t => t.texto), ['Vencen el 31/01/2027', 'Vence el 28/02/2027', 'Vencen el 31/03/2027']);
+    // Como el antecedente: empiezan en el borde izquierdo de la tabla (más el relleno de la celda), no en una columna
+    for (const t of grupos) assert.ok(cerca(t.x, 30 * MM + 3, 0.5), `"${t.texto}" en x = ${t.x}`);
+    for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
+    assert.deepEqual(fragmentos(n, textos), [], textos.map(t => t.texto).join(' | '));
+  });
+
+  it('cada fila de vencimiento va justo antes del primer dataset de su grupo, y las filas salen por vencimiento', async () => {
+    const n = variosReal();
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    const filas = n.secciones[0].filas;
+    for (const fila of filas.filter(f => f.grupo)) {
+      const i = textos.findIndex(t => t.texto === fila.grupo);
+      assert.ok(i >= 0 && fila.valores[0].startsWith(textos[i + 1].texto), `${fila.grupo}: sigue "${textos[i + 1]?.texto}"`);
+    }
+    // El orden de los datasets en el PDF es el de la tabla
+    const primeros = filas.map(f => f.valores[0].split(' ')[0]);
+    const enElPdf = primeros.map(p => textos.findIndex(t => t.texto.startsWith(p)));
+    assert.deepEqual(enElPdf, [...enElPdf].sort((a, b) => a - b), primeros.join(' | '));
+  });
+
+  it('con un solo vencimiento (el aviso de todos los días) no hay filas de vencimiento', async () => {
+    const textos = textosPorHoja(await renderPdf(avisoReal())).flat();
+    assert.ok(!textos.some(t => GRUPO.test(t.texto)), textos.map(t => t.texto).join(' | '));
+  });
+
+  it('la sección de vencidos de un aviso no lleva filas de vencimiento', async () => {
+    const vencidos = [
+      { ...AVISO_REAL[0], id: 20, titulo: 'Vencido B', vencimiento: '2026-11-30' },
+      { ...AVISO_REAL[1], id: 21, titulo: 'Vencido A', vencimiento: '2026-10-31' }
+    ];
+    const n = avisoReal({ datasets: [...AVISO_REAL.map((d, i) => ({ ...d, vencimiento: VENCIMIENTOS[i] })), ...vencidos] });
+    assert.deepEqual(n.secciones.map(s => s.clave), ['proximo', 'vencido']);
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    assert.equal(textos.filter(t => GRUPO.test(t.texto)).length, 3, textos.map(t => t.texto).join(' | '));
+    assert.deepEqual(fragmentos(n, textos), []);
+  });
+
+  // La fila de vencimiento nunca queda sola al pie de una hoja (ni arriba de una hoja sin su primera fila): se barren tamaños y
+  // alturas de fila para que el corte de hoja caiga en todos los lugares posibles
+  it('barrido: la fila de vencimiento va siempre en la misma hoja que la primera fila de su grupo, y pasa con ella a la hoja siguiente', async () => {
+    const titulos = {
+      largo: (i) => `Dataset ${i} con un título bastante largo para que ocupe más de una línea en la tabla del PDF`,
+      corto: (i) => `Dataset ${i}`,
+      variado: (i) => `Dataset ${i} ${'palabra '.repeat((i * 7) % 23)}`.trim()
+    };
+    const ciclo = ['2026-12-31', '2027-01-31', '2027-02-28'];
+    let grupos = 0;
+    let enHojaSiguiente = 0;
+    for (const estilo of Object.keys(titulos)) {
+      for (let cantidad = 2; cantidad <= 36; cantidad++) {
+        const n = nota(cantidad, {
+          datasets: Array.from({ length: cantidad }, (_, k) => ({ ...dataset(k + 1, ciclo[(k * 5 + 1) % 3]), titulo: titulos[estilo](k + 1) }))
+        });
+        const etiqueta = `${estilo} con ${cantidad} datasets`;
+        const hojas = lineasPorHoja(await renderPdf(n)).map(lineas => lineas.filter(l => !esPie(l)));
+        const esperados = n.secciones[0].filas.map(f => f.grupo).filter(Boolean);
+        assert.deepEqual(hojas.flat().filter(l => GRUPO.test(l)), esperados, `${etiqueta}: faltan o sobran filas de vencimiento`);
+        hojas.forEach((lineas, h) => lineas.forEach((linea, i) => {
+          if (!GRUPO.test(linea)) return;
+          grupos++;
+          assert.ok(/^Dataset \d+\b/.test(lineas[i + 1] ?? ''), `${etiqueta}, hoja ${h + 1}: "${linea}" quedó sin su primera fila (sigue "${lineas[i + 1]}")`);
+          // La primera de la hoja siguiente, justo debajo del encabezado de la tabla
+          if (h > 0 && lineas.slice(0, i).every(l => ENCABEZADO.includes(l))) enHojaSiguiente++;
+        }));
+      }
+    }
+    assert.ok(grupos > 200, `el barrido apenas dibujó filas de vencimiento (${grupos})`);
+    assert.ok(enHojaSiguiente > 5, `el barrido apenas pasó filas de vencimiento a la hoja siguiente (${enHojaSiguiente})`);
   });
 });
 
@@ -578,7 +700,7 @@ describe('renderPdf: texto que Helvetica puede escribir', () => {
     assert.ok(lineas.join(' ').includes('Dataset 1 ? Teléfono ? Sí ? fin?'), lineas.join(' | '));
     assert.ok(lineas.every(limpia), lineas.filter(l => !limpia(l)).join(' | '));
     // Las demás celdas de la fila siguen enteras
-    for (const celda of ['Área de prueba', 'Anualmente', '31/12/2026']) assert.ok(lineas.includes(celda), celda);
+    for (const celda of ['Área de prueba', 'Anualmente']) assert.ok(lineas.includes(celda), celda);
     assert.ok(lineas.join(' ').includes('Del 01/01/2026 al 30/11/2026'), lineas.join(' | '));
   });
 
@@ -646,8 +768,8 @@ describe('validarImagenMembrete', () => {
   });
 });
 
-// Maquetación: se renderizan notas de 1 a 30 datasets (avisos y reiteraciones, 5 y 7 columnas; los avisos solo con
-// próximos a vencer tienen una sola tabla, la de 5)
+// Maquetación: se renderizan notas de 1 a 30 datasets (avisos y reiteraciones, 4 y 7 columnas; los avisos solo con
+// próximos a vencer tienen una sola tabla, la de 4)
 // y se revisan las reglas de la hoja oficio en cada una, sin membrete y con el banner y el pie del membrete
 // (el banner corre hacia abajo el margen superior de todas las hojas): con un banner RGBA de las proporciones del
 // real (margen de unos 40 mm) y con uno en el tope de 45 mm (margen de 54 mm).
@@ -908,25 +1030,25 @@ for (const variante of VARIANTES) {
       }
     });
 
-    // Spec 2026-10-17-fechas-datasets, 9: el aviso con solo próximos a vencer tiene una tabla de 5 columnas
-    it('las notas de aviso (5 columnas) no cortan fechas ni palabras de la tabla', () => {
+    // Spec 2026-10-17-fechas-datasets, 9 y 18: el aviso con solo próximos a vencer tiene una tabla de 4 columnas
+    it('las notas de aviso (4 columnas) no cortan fechas ni palabras de la tabla', () => {
       const { nota: n, hojas } = renderizadas.find(r => r.etiqueta === 'aviso/externa/largo/próximos con 5 datasets');
-      assert.deepEqual(n.secciones.map(s => s.columnas.length), [5]);
+      assert.deepEqual(n.secciones.map(s => s.columnas.length), [4]);
       const lineas = hojas.flat();
-      for (const palabra of ['Anualmente', '31/12/2026', 'Frecuencia', 'solicitados', 'sugerida', '30/11/2026', 'Presupuestos']) {
+      for (const palabra of ['Anualmente', 'Frecuencia', 'solicitados', '30/11/2026', 'Presupuestos']) {
         assert.ok(lineas.some(l => l.includes(palabra)), `no se encontró "${palabra}" entera`);
       }
-      assert.ok(!lineas.some(l => l.includes('Situación')), lineas.join(' | '));
+      assert.ok(!lineas.some(l => l.includes('Situación') || l.includes('sugerida')), lineas.join(' | '));
     });
 
-    it('ninguna tabla parte una palabra ni una fecha: 5 y 7 columnas, de 1 a 30 datasets', () => {
-      let conCinco = 0;
+    it('ninguna tabla parte una palabra ni una fecha: 4 y 7 columnas, de 1 a 30 datasets', () => {
+      let conCuatro = 0;
       for (const { etiqueta, nota: n, textos } of renderizadas) {
-        if (n.secciones.some(s => s.columnas.length === 5)) conCinco++;
+        if (n.secciones.some(s => s.columnas.length === 4)) conCuatro++;
         assert.deepEqual(fragmentos(n, textos.flat()), [], etiqueta);
         assert.deepEqual(renglonesDeTabla(textos.flat()).filter(numeralSuelto), [], `${etiqueta}: un N° quedó separado de su número`);
       }
-      assert.ok(conCinco >= 30 * 5, `${conCinco} notas con la tabla de 5 columnas`);
+      assert.ok(conCuatro >= 30 * 5, `${conCuatro} notas con la tabla de 4 columnas`);
     });
   });
 }
@@ -987,8 +1109,8 @@ describe('renderPdf: autorización (spec 2026-10-15-dias-habiles-licencias-audit
     const desde = lineas.findIndex(l => l.startsWith('Asimismo, por medio de la presente'));
     const hasta = lineas.findIndex(l => l === 'Próximos a vencer');
     assert.ok(desde > 0 && hasta > desde, lineas.join(' | '));
-    // (el aviso externo termina pidiendo el período y la fecha sugerida de envío: spec 2026-10-17-fechas-datasets, 9)
-    assert.ok(lineas[desde - 1].endsWith('envío.'), lineas[desde - 1]);
+    // (el aviso externo termina pidiendo el período de cada caso: spec 2026-10-17-fechas-datasets, 9 y 18)
+    assert.ok(lineas[desde - 1].endsWith('en cada caso.'), lineas[desde - 1]);
     assert.ok(lineas[hasta - 1].endsWith('flujo de trabajo.'), lineas[hasta - 1]);
   });
 
@@ -1032,8 +1154,8 @@ describe('renderPdf: párrafo del adelanto (spec 2026-10-15-dias-habiles-licenci
     const hasta = lineas.findIndex(l => l === 'Próximos a vencer');
     assert.ok(desde > 0 && hasta > desde, lineas.join(' | '));
     // Sin nada en el medio: la línea anterior cierra el primer párrafo, las del medio son el párrafo entero y la siguiente es
-    // el título de la primera sección (el aviso externo termina pidiendo el período y la fecha sugerida de envío)
-    assert.ok(lineas[desde - 1].endsWith('envío.'), lineas[desde - 1]);
+    // el título de la primera sección (el aviso externo termina pidiendo el período de cada caso)
+    assert.ok(lineas[desde - 1].endsWith('en cada caso.'), lineas[desde - 1]);
     assert.ok(hasta - desde >= 3, 'el párrafo ocupa varios renglones');
     assert.equal(lineas.slice(desde, hasta).join(' '), n.adelanto);
     const completo = lineas.join(' ');

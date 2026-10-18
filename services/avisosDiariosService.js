@@ -18,8 +18,10 @@ export const DIAS_AVISO_AREAS = 40;
  * Un día hábil avisa los vencimientos de fecha + 40 y los de los días no hábiles que siguen (spec 4.2).
  * Fuera de un día hábil no hay nada que avisar.
  * Cada dataset trae su vencimiento ('AAAA-MM-DD') y su pedido, { desde, hasta, texto } o null (eventual): los datos que se
- * le van a solicitar, calculados con fecha, el día del aviso, igual que en las Notas Digitales (conPedido). Con ellos el
- * email dice "Datos que se solicitarán" y "Fecha sugerida de envío" (spec 2026-10-17-fechas-datasets, 9).
+ * le van a solicitar, calculados con fecha, el día del aviso, igual que en las Notas Digitales (conPedido). Trae también su
+ * tipo de pedido efectivo (el guardado o, si no tiene, el sugerido) y sus meses, del mismo conPedido. Con ellos el email dice
+ * "Datos que se solicitarán" (spec 2026-10-17-fechas-datasets, 9) y la frecuencia con "(Acumulado)" cuando corresponde; desde
+ * el 18/10/2026 no lleva la fecha sugerida de envío (spec 18).
  */
 export const datasetsExternosPorArea = async (fecha) => {
   const rango = rangoDeAviso(fecha, DIAS_AVISO_AREAS);
@@ -61,13 +63,16 @@ export const datasetsExternosPorArea = async (fecha) => {
         datasets: []
       };
     }
+    const { pedido, tipo_pedido: tipoPedido, meses } = conPedido(d, fecha);
     porArea[d.area_id].datasets.push({
       id: d.id,
       titulo: d.titulo,
       url_dataset: d.url_dataset,
       vencimiento: d.vencimiento,
       frecuencia_nombre: d.frecuencia_nombre,
-      pedido: conPedido(d, fecha).pedido
+      pedido,
+      tipo_pedido: tipoPedido,
+      meses
     });
   });
 

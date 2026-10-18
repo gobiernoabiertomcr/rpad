@@ -27,7 +27,7 @@ Es la base del **seguimiento de la "vida" de cada dataset**, que viene después 
 
 ## 2. Reglas del negocio (las dio el usuario)
 
-**R1. Próxima actualización.** `datasets.proxima_actualizacion` es **siempre el último día de un mes**: 31/1, 28/2, 31/3, 30/4, etc. **Febrero va siempre en 28**, también en los años bisiestos. Funciona como "fecha sugerida de envío" de los datos.
+**R1. Próxima actualización.** `datasets.proxima_actualizacion` es **siempre el último día de un mes**: 31/1, 28/2, 31/3, 30/4, etc. **Febrero va siempre en 28**, también en los años bisiestos. Funciona como "fecha sugerida de envío" de los datos. Desde el 18/10/2026 las notas, el anexo, el email a las áreas y el admin no la llaman así: el aviso no la muestra y los demás dicen "Vence" (sección 18).
 
 **R2. Corte.** Si la próxima es el último día del mes M, los datos se piden **al último día del mes M−1**. El área tiene un mes para prepararlos y hacer el circuito administrativo sin figurar vencida. Ejemplos:
 - 31/01/2027 → datos al 31/12/2026.
@@ -50,7 +50,7 @@ Es la base del **seguimiento de la "vida" de cada dataset**, que viene después 
 
 **R7. Vencidos.** Si el vencimiento ya pasó, el pedido llega hasta el corte del **último vencimiento del ciclo que ya pasó**, que se obtiene sumando la frecuencia al vencimiento original mientras siga en el pasado. Por eso Parque Automotor, que vencía el 31/01/2024, hoy pide hasta el 31/12/2025.
 
-**R8. Avisos.** Siguen saliendo como hoy: 60 días antes si la gestión es interna y 40 si es externa. El usuario lo confirmó: el aviso externo llega más o menos al cierre del período. La nota tiene que separar **qué datos** se piden de **la fecha sugerida de envío**, con un tono que no apure. No se usa "plazo de entrega" (sección 9).
+**R8. Avisos.** Siguen saliendo como hoy: 60 días antes si la gestión es interna y 40 si es externa. El usuario lo confirmó: el aviso externo llega más o menos al cierre del período. La nota tiene que separar **qué datos** se piden de **la fecha sugerida de envío**, con un tono que no apure. No se usa "plazo de entrega" (sección 9). Cambio del 18/10/2026: el aviso ya no lleva la fecha, porque repetía el mismo vencimiento en cada fila (sección 18).
 
 ## 3. Objetivos, no objetivos y anti-objetivos
 
@@ -223,7 +223,7 @@ Lo que se ve está en el mockup de admin. Lo que se describe acá es el comporta
 | Dataset | Título y área |
 | Estado | Pastilla y renglón chico: "Venció en ene 2024", "Vence en 44 días", "Vence en ene 2027" o "Esperando aprobación" |
 | Datos publicados | "Al 31/07/2026", o "Ejercicio 2025" si el tipo es ejercicio; debajo, "Cargado el 13/10/2026". Se oculta en el celular. |
-| Próximo pedido | El texto del pedido; debajo, el tipo y "Fecha sugerida de envío: dd/mm/aaaa" (solo si no venció) |
+| Próximo pedido | El texto del pedido; debajo, el tipo y "Vence el dd/mm/aaaa" (solo si no venció; hasta el 18/10/2026 decía "Fecha sugerida de envío: dd/mm/aaaa", sección 18) |
 | Acciones | Ver abajo |
 
 - **Acciones:**
@@ -242,13 +242,13 @@ Es un modal con `role="dialog"`, `aria-modal` y `aria-labelledby`. Se cierra con
 **Cabecera "Datos solicitados"**
 - El texto del pedido actual.
 - Frecuencia y tipo de pedido.
-- "Fecha sugerida de envío" o "Vencido desde".
+- "Vence" o "Vencido desde" (hasta el 18/10/2026, "Fecha sugerida de envío" en lugar de "Vence": sección 18).
 - "Publicado hoy": "datos al dd/mm/aaaa", o "ejercicio aaaa".
 
 **Línea del ciclo**
 - Va debajo de la cabecera y es decorativa (`aria-hidden`).
 - Bandas: "Ya publicado", "Pedido, todavía no llegó" (rayado) y "Llega con esta actualización" (verde, que se mueve al cambiar "Datos al").
-- Marcas: "Publicado", "Corte pedido", "Envío sugerido" y "Hoy".
+- Marcas: "Publicado", "Corte pedido", "Vence" y "Hoy" (hasta el 18/10/2026, "Envío sugerido" en lugar de "Vence": sección 18).
 - La misma información está en texto en la cabecera.
 
 **Paso 1: ¿A qué fecha son los datos que llegaron?**
@@ -288,7 +288,7 @@ Es un modal con `role="dialog"`, `aria-modal` y `aria-labelledby`. Se cierra con
 - **"Qué se solicita"** lleva la ayuda "Describí qué tiene que mandar el área, sin fechas ni períodos: los agrega el sistema."
   - Aviso en ámbar, que no bloquea, si el texto contiene `siguiente al último`, `nuevo período`, `nuevo ejercicio`, `fecha de corte`, `posterior al último` o `desde la última actualización`, sin distinguir mayúsculas.
   - El aviso solo aparece si el tipo de pedido pone fechas en la nota: `acumulado`, `foto`, `anio_anterior` o `ejercicio`. En `relevamiento`, `edicion` y `eventual` esas frases no contradicen nada.
-- **Vista previa "Así va a salir en la próxima nota":** una fila con conjunto de datos, datos solicitados y fecha sugerida de envío, más "Qué se solicita". Se recalcula con cada cambio usando el endpoint de la sección 10.2.
+- **Vista previa "Así va a salir en la próxima nota":** una fila con conjunto de datos, frecuencia y datos solicitados, más "Qué se solicita". Hasta el 18/10/2026 eran conjunto de datos, datos solicitados y fecha sugerida de envío; la frecuencia lleva "(Acumulado)" como en la nota (sección 18). Los datos solicitados se recalculan con cada cambio usando el endpoint de la sección 10.2.
 - **Importación desde el portal: se mantiene tal cual.** "Nuevo dataset" sigue abriendo el **paso 1**: "Importar desde el Portal de Datos Abiertos", con la URL del dataset, "Carga manual" y "Siguiente". Trae título, descripción, URL, formatos y el área sugerida (`GET /andino/fetch`) y después abre el formulario. Al editar sigue el botón **"Actualizar desde portal"**, con su confirmación. Se renuevan el estilo y la accesibilidad (diálogo, etiqueta con `for`, Escape) y se cambia el 💡 por un ícono Lucide. El flujo, los campos que se importan y el endpoint no cambian.
 - **Alta nueva:** el título es "Nuevo dataset - Paso 2" si se vino del paso 1 y "Nuevo dataset" con carga manual (hoy dice "Paso 2" aunque no haya habido paso 1). El tipo de pedido toma el sugerido y "Datos al" y "Próxima" quedan para completar. El texto de la confirmación de "Actualizar desde portal" dice también "formatos", que hoy se importan sin avisarlo (`admin.html:589-594` contra `admin.js:558-563`).
 - Las etiquetas llevan `for`. Los chips de formatos pasan a ser botones con `aria-pressed`.
@@ -320,10 +320,10 @@ Es un modal con `role="dialog"`, `aria-modal` y `aria-labelledby`. Se cierra con
 **Fichas.** `fichasDe` y `COLUMNAS_DATASET` (`notasDigitalesDatos.js`) suman `f.meses`, `d.datos_al` y `d.tipo_pedido`. Cada ficha trae `pedido`, calculado con `pedido(...)` el día de la nota.
 
 **Aviso** (`construirNota`, `PARRAFO_INICIAL` en `notasDigitalesContenido.js`):
-- El párrafo inicial **del aviso externo** suma, antes del punto final: ", con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío". Se ajusta el test que fija esa frase (`notas-contenido.test.js:243`).
+- El párrafo inicial **del aviso externo** suma, antes del punto final: ", con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío". Se ajusta el test que fija esa frase (`notas-contenido.test.js:243`). Cambio del 18/10/2026: se va "y, de ser posible, antes de la fecha sugerida de envío", y el párrafo termina en "…con los datos del período que se indica en cada caso." (sección 18).
 - El párrafo del aviso interno no cambia: casi todos los internos son relevamientos y su pedido no tiene fechas. La columna "Datos solicitados" va en los dos.
-- Columnas de "Próximos a vencer": **Conjunto de datos · Área (o Área responsable) · Frecuencia · Datos solicitados · Fecha sugerida de envío**. Son 5 columnas: se van "Última actualización" y "Situación".
-- Se agrega la clave `5` a `PROPORCIONES` (`notasDigitalesPdf.js:26-30`), con Datos solicitados como la columna más ancha después del título.
+- Columnas de "Próximos a vencer": **Conjunto de datos · Área (o Área responsable) · Frecuencia · Datos solicitados · Fecha sugerida de envío**. Son 5 columnas: se van "Última actualización" y "Situación". Desde el 18/10/2026 son 4: se va "Fecha sugerida de envío" (sección 18).
+- Se agrega la clave `5` a `PROPORCIONES` (`notasDigitalesPdf.js:26-30`), con Datos solicitados como la columna más ancha después del título. Desde el 18/10/2026 es la clave `4` (sección 18).
 - Si un aviso trae una sección de vencidos, esa sección usa las columnas de la reiteración.
 - El renglón del antecedente sigue, con `colspan` igual a la cantidad de columnas.
 
@@ -335,13 +335,13 @@ Es un modal con `role="dialog"`, `aria-modal` y `aria-labelledby`. Se cierra con
 **Lo que se guarda.** `generarNota` escribe `datos_desde`, `datos_hasta` y `datos_solicitados` en el mismo `INSERT` de `notas_digitales_datasets` (`notasDigitales.js:153-156`), en el aviso y en cada reiteración: queda el registro de qué pidió cada nota. `obtenerNota` los devuelve, y el Libro de Correos puede mostrarlos más adelante (no es parte de esta etapa).
 
 **Anexo** (`construirAnexo` y `estadoDelAnexo`, en `notasDigitalesContenido.js:417-460`; el dibujo, `prepararCabecera` y la línea de tiempo, en `notasDigitalesAnexo.js`):
-- La línea de estado pasa a "Fecha sugerida de envío: dd/mm/aaaa · faltan N días" (antes decía "Vence el…").
+- La línea de estado pasa a "Fecha sugerida de envío: dd/mm/aaaa · faltan N días" (antes decía "Vence el…"). Desde el 18/10/2026 vuelve a decir "Vence el dd/mm/aaaa · faltan N días" (sección 18).
 - Debajo va el recuadro **"DATOS SOLICITADOS"**, con el texto en negrita. Se suma al cálculo de altura de `prepararCabecera` y entra en el orden que fija `notas-anexo.test.js:240-258`.
-- La línea de tiempo va de **"Datos publicados al dd/mm/aaaa"** (`datos_al`; si es NULL, la fecha de carga con el rótulo "Cargado en el portal") a "Fecha sugerida de envío".
+- La línea de tiempo va de **"Datos publicados al dd/mm/aaaa"** (`datos_al`; si es NULL, la fecha de carga con el rótulo "Cargado en el portal") a "Fecha sugerida de envío" ("Vence" desde el 18/10/2026, sección 18).
 - La ficha sigue sin repetir fechas.
 
 **Email a las áreas a los 40 días** (`areaAviso40diasTemplate`, `datasetsExternosPorArea`):
-- Cada tarjeta suma "Datos que se solicitarán: del … al …" (el texto del pedido) y "Fecha sugerida de envío: dd/mm/aaaa".
+- Cada tarjeta suma "Datos que se solicitarán: del … al …" (el texto del pedido) y "Fecha sugerida de envío: dd/mm/aaaa". Desde el 18/10/2026 no lleva la fecha (sección 18).
 - La consulta trae `meses`, `datos_al`, `tipo_pedido` y la fecha con `DATE_FORMAT`.
 - `AREA_DE_EJEMPLO` (`notificacionesController.js:12-27`) suma esos datos.
 - Se ajusta el texto exacto que fija `email-diseno.test.js:206`.
@@ -533,8 +533,8 @@ Con `recibido_el` contra la fecha sugerida se puede medir si cada área entregó
 ## 17. Decisiones que tomé yo (para revisar)
 
 1. Febrero en 28 también para "Datos al" y para el corte. En un bisiesto, "datos al 28/02/2028" deja afuera un día.
-2. El aviso pierde la columna "Situación" ("Faltan N días") y "Vence" pasa a "Fecha sugerida de envío", para no apurar. La reiteración conserva "Situación".
-3. La frase suave va en el párrafo inicial de la nota: "…con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío."
+2. El aviso pierde la columna "Situación" ("Faltan N días") y "Vence" pasa a "Fecha sugerida de envío", para no apurar. La reiteración conserva "Situación". (Reemplazada el 18/10/2026: el aviso no lleva la fecha, sección 18.)
+3. La frase suave va en el párrafo inicial de la nota: "…con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío." (Reemplazada el 18/10/2026: termina en "…en cada caso.", sección 18.)
 4. El umbral de "Próximo a vencer" sigue en 60 días.
 5. Con datos parciales, "Mantener" se ofrece siempre como alternativa, aunque la sugerida avance.
 6. Los presupuestos piden todos los ejercicios que faltan (los de perspectiva de género, 2026 y 2027).
@@ -550,3 +550,66 @@ Con `recibido_el` contra la fecha sugerida se puede medir si cada área entregó
 16. El servidor no aprueba un cambio con una próxima o un "Datos al" que no son fin de mes.
 17. La frase nueva va solo en el aviso externo.
 18. La tasa de actualización (tablero y reporte) deja a los eventuales fuera del total: da 80 %.
+
+## 18. Cambio del 18/10/2026: el aviso sin fecha sugerida y la frecuencia con "(Acumulado)"
+
+El usuario lo pidió al revisar una nota de la simulación: la 11/26, el aviso externo del 22/12/2026. Eligió las opciones de abajo. Lo que decidí yo está marcado.
+
+**Por qué**
+- **La fecha sugerida de envío no aportaba.** Es el vencimiento del dataset (`proxima_actualizacion`, R1); no se calcula. En el aviso de todos los días, los datasets vencen el mismo día (los vencimientos son fin de mes), así que la columna repetía la misma fecha en cada fila: en la 11/26, 31/01/2027 dieciséis veces. Un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, o un aviso que se recupera tarde): ahí las filas van agrupadas por vencimiento (ver "Varios vencimientos en un aviso").
+- **Un acumulado pide desde el 1/1 del año del corte (R3).** Con una frecuencia menor al año, la frecuencia y el período no coinciden: en el último ciclo del año, "Trimestralmente" va al lado de "Del 01/01/2026 al 31/12/2026". "(Acumulado)" explica por qué.
+
+**El aviso, interno y externo** (`construirNota`, `PARRAFO_INICIAL`)
+- "Próximos a vencer" queda con 4 columnas: **Conjunto de datos · Área (o Área responsable) · Frecuencia · Datos solicitados**.
+- En el PDF, `PROPORCIONES` cambia la clave `5` por la `4`: `[30, 26, 16, 28]`, con Datos solicitados como la columna más ancha después del título (mi decisión). Ninguna tabla nueva tiene 5 columnas.
+- El párrafo inicial del aviso externo termina en "…con los datos del período que se indica en cada caso." Se va "y, de ser posible, antes de la fecha sugerida de envío". El interno no cambia.
+- El renglón del antecedente sigue a todo el ancho: `colspan` 4.
+
+**Varios vencimientos en un aviso.** Lo pidió el usuario en la revisión final del cambio. Aplica solo a "Próximos a vencer" de un aviso: la reiteración y los vencidos tienen su columna "Vence"/"Venció".
+- Si la sección junta un solo vencimiento (el caso de todos los días), la tabla queda como arriba, sin nada más.
+- Si junta más de uno, las filas se ordenan por vencimiento, de la fecha más cercana a la más lejana. Dentro de cada vencimiento conservan el orden que traen.
+- Antes del primer dataset de cada vencimiento va una fila a todo el ancho (`colspan` 4) que dice "Vencen el dd/mm/aaaa", o "Vence el dd/mm/aaaa" si ese vencimiento tiene un solo dataset.
+- Va en el HTML, en el texto (un renglón propio antes de las filas de ese vencimiento) y en el PDF. En el PDF, esa fila nunca queda sola al pie de una hoja: va con la primera fila de su grupo, como el encabezado de la tabla.
+- Sale del `vencimiento` de cada dataset; no se guarda nada nuevo. El anexo mantiene el orden de las hojas que tenga hoy respecto de la tabla (mi decisión: si hoy sigue el orden de la tabla, sigue el nuevo orden).
+- La sección de vencidos de un aviso y la reiteración siguen con sus 7 columnas, con "Vence" o "Venció".
+
+**La frecuencia con "(Acumulado)"**
+- Una función pura nueva, en `services/fechasDatasetReglas.js`: `frecuenciaEnNota({ frecuencia, tipo, meses })`.
+  - Si `tipo` es `'acumulado'` y `meses` es un entero de 1 a 11, devuelve `` `${frecuencia} (Acumulado)` ``. "Acumulado" es `NOMBRES_TIPO_PEDIDO.acumulado`.
+  - Si no, devuelve `frecuencia` tal cual: los anuales, los demás tipos y la Eventual no cambian.
+  - Sin frecuencia (null, undefined o texto vacío), devuelve lo que recibió, y cada lugar pone su "sin dato" como hoy.
+- El tipo es el efectivo (`tipoEfectivo`: el guardado o, si no tiene, el sugerido), el mismo con el que se calcula el pedido.
+- Con los datos del 18/10/2026 son 5 datasets: 1 trimestral, 1 cuatrimestral y 3 "Cada medio año". Los 16 acumulados anuales no cambian.
+- **Dónde va:**
+  - las tablas del aviso y de la reiteración, en HTML, texto y PDF;
+  - el renglón "Frecuencia" de la ficha del anexo;
+  - el email de 40 días: "Frecuencia de actualización: Trimestralmente (Acumulado)";
+  - la vista previa del admin.
+- No se guarda. Se arma al generar la nota, con los datos del dataset ese día, como la frecuencia de hoy.
+- **Lo que no explica:** con "todo lo que falta" (R3) el período puede arrancar antes del 1/1, con cualquier frecuencia. Queda como está.
+
+**Anexo**
+- La línea de estado dice "Vence el dd/mm/aaaa · faltan N días" ("falta 1 día" si queda uno).
+- Si la fecha ya pasó, "Venció el dd/mm/aaaa · hace N días" (mi decisión).
+- El día del vencimiento sigue diciendo "Vence hoy".
+- La línea de tiempo termina en "Vence".
+
+**Email de 40 días** (`areaAviso40diasTemplate`, `datasetsExternosPorArea`)
+- Se va el renglón "Fecha sugerida de envío". Quedan "Frecuencia de actualización" y "Datos que se solicitarán".
+- `datasetsExternosPorArea` suma a cada dataset su tipo efectivo y sus meses, de `conPedido`.
+- El ejemplo de Correos (vista previa y prueba del email) cambia su primer dataset por uno trimestral acumulado, para que se vea "(Acumulado)". Lo pidió el usuario en la revisión final.
+
+**Admin**
+- **Vista previa "Así va a salir en la próxima nota":** Conjunto de datos · Frecuencia · Datos solicitados.
+  - La frecuencia es el nombre de la elegida, pasado por `frecuenciaEnNotaDe`. Es una copia en `admin-fechas.js` de `frecuenciaEnNota`, comparada con ella en un test, como `tipoSugeridoDe`.
+  - Cambia en el momento, sin pedirle nada al servidor (mi decisión: la regla es una línea y la vista previa ya usa la copia del tipo sugerido).
+  - Sin frecuencia elegida, "—".
+- **Lista, "Próximo pedido":** "Acumulado. Vence el 31/01/2027" (mi decisión), solo si no venció.
+- **Registrar actualización, cabecera:** "Vence" o "Vencido desde".
+- **Línea del ciclo:** la marca "Envío sugerido" pasa a "Vence".
+
+**Lo que no cambia**
+- Las notas ya generadas. Cada una guarda su HTML, texto, PDF y anexo, y el Libro y el reintento usan lo guardado. Una nota pendiente o fallida de antes del cambio se reintenta con la columna.
+- La base: el cambio no lleva SQL. `notas_digitales_datasets.vencimiento` sigue igual.
+- Qué datasets entran en cada nota.
+- Los asuntos, la numeración, la firma y la reiteración, salvo "(Acumulado)".

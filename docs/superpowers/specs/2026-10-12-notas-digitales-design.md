@@ -143,7 +143,7 @@ Introducción de cada sección:
 |---|---|---|---|
 | Conjunto de datos | ✓ | ✓ | Título, con link a `url_dataset` si es http/https |
 | Área (interna) / Área responsable (externa) | ✓ | ✓ | `areas.nombre` |
-| Frecuencia | ✓ | ✓ | `frecuencias.nombre` |
+| Frecuencia | ✓ | ✓ | `frecuencias.nombre`; desde el 18/10/2026, con "(Acumulado)" si el pedido es acumulado y la frecuencia es menor al año (`frecuenciaEnNota`, spec 2026-10-17-fechas-datasets, sección 18) |
 | Última actualización | ✓ | ✓ | `dd/mm/aaaa`, o "—" |
 | Vence / Venció | ✓ | ✓ | `dd/mm/aaaa` |
 | Situación | ✓ | ✓ | "Faltan N días", "Vence hoy" o "Vencido hace N días", calculado a la fecha de la nota |

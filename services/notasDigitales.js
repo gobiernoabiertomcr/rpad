@@ -48,17 +48,17 @@ export class ErrorDeUso extends Error {}
 const cumplioDiasParaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
 const yaTocaReiterar = (dataset, dia) => dataset.aviso_estado === 'enviada' && cumplioDiasParaReiterar(dataset, dia);
 
-// Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
-// los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
-// dataset cambie mientras se genera, y nunca pasa al anexo una ficha sin vencimiento. datasets: los de prepararContenido,
-// que ya traen su pedido.
+// Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas, la frecuencia, el
+// tipo de pedido, los meses y el pedido son los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9 y 18): el
+// anexo coincide con la tabla aunque el dataset cambie mientras se genera (la frecuencia con "(Acumulado)" sale de esos
+// tres juntos), y nunca pasa al anexo una ficha sin vencimiento. datasets: los de prepararContenido, que ya traen su pedido.
 const fichasDelAviso = async (datasets, fecha) => {
   const fichasPorId = await fichasDe(datasets.map(d => d.id), fecha);
   return datasets
     .filter(d => fichasPorId.has(d.id))
     .map(d => ({
       ...fichasPorId.get(d.id), ultima_actualizacion: d.ultima_actualizacion ?? null, vencimiento: d.vencimiento ?? null,
-      meses: d.meses, datos_al: d.datos_al, tipo_pedido: d.tipo_pedido, pedido: d.pedido
+      frecuencia_nombre: d.frecuencia_nombre, meses: d.meses, datos_al: d.datos_al, tipo_pedido: d.tipo_pedido, pedido: d.pedido
     }))
     .filter(f => f.vencimiento);
 };

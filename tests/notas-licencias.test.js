@@ -127,6 +127,36 @@ describe('licencia sin autorizado (spec 7.3), ejemplo del 26/11/2026 al 14/01/20
     assert.equal(cuenta[ids.marzo31], '2027-01-11');
   });
 
+  // Spec 18, "Varios vencimientos en un aviso": el aviso de la víspera junta los vencimientos de varios meses. La nota guardada
+  // (HTML, texto y PDF) los agrupa por vencimiento, con "Vence el …" o "Vencen el …", y el anexo sigue el orden de la tabla
+  it('el aviso de la víspera agrupa las filas por vencimiento, en el HTML, el texto, el PDF y el orden del anexo', async () => {
+    ids.marzo31bis = await crearDataset({ titulo: 'Otro de fin de marzo', vencimiento: '2027-03-31' });
+    await correr('2026-11-25');
+    const [aviso, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    const GRUPOS = ['Vence el 20/01/2027', 'Vence el 15/02/2027', 'Vence el 10/03/2027', 'Vencen el 31/03/2027'];
+    const TITULOS = ['Vence en enero', 'Vence en febrero', 'Vence el 10 de marzo', 'Otro de fin de marzo', 'Vence el 31 de marzo'];
+
+    // HTML: las filas de grupo a todo el ancho (4 columnas) y los datasets debajo, por vencimiento
+    assert.deepEqual([...aviso.html.matchAll(/<td colspan="(\d+)" style="[^"]*">((?:Vence|Vencen) el [\d/]+)<\/td>/g)].map(m => [Number(m[1]), m[2]]),
+      GRUPOS.map(g => [4, g]));
+    const enHtml = [GRUPOS[0], TITULOS[0], GRUPOS[1], TITULOS[1], GRUPOS[2], TITULOS[2], GRUPOS[3], TITULOS[3], TITULOS[4]]
+      .map(texto => aviso.html.indexOf(`>${texto}<`));
+    assert.ok(enHtml.every(p => p > 0), JSON.stringify(enHtml));
+    assert.deepEqual(enHtml, [...enHtml].sort((a, b) => a - b));
+
+    // Texto plano (el guardado) y PDF
+    const [{ texto }] = await query('SELECT texto FROM notas_digitales WHERE id = ?', [aviso.id]);
+    assert.deepEqual(texto.split('\n').filter(l => /^(Vence|Vencen) el /.test(l)), GRUPOS);
+    const lineas = lineasPorHoja(aviso.pdf).flat();
+    assert.deepEqual(lineas.filter(l => /^(Vence|Vencen) el \d{2}\/\d{2}\/\d{4}$/.test(l)), GRUPOS);
+
+    // El anexo: una hoja por dataset, en el orden de la tabla
+    const [{ anexo_pdf: anexo }] = await query('SELECT anexo_pdf FROM notas_digitales WHERE id = ?', [aviso.id]);
+    const hojas = lineasPorHoja(anexo).map(hoja => TITULOS.find(titulo => hoja.includes(titulo)));
+    assert.deepEqual(hojas, TITULOS);
+  });
+
   it('durante la licencia no se generan notas; los reintentos sí siguen', async () => {
     await correr('2026-11-25');
     await crearNota({ fecha: '2026-11-20', numero: 99, anio: 2026, estado: 'fallida', intentos: 1 });

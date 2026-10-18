@@ -14,7 +14,7 @@ const VERSION_CORREOS = '20261107';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas): su versión es propia
 const VERSION_PERFIL = '20261103';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia
-const VERSION_ADMIN = '20261103';
+const VERSION_ADMIN = '20261108';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=: su versión es propia
 const VERSION_PUBLICAS = '20261105';

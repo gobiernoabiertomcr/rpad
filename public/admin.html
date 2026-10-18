@@ -142,7 +142,7 @@
         .ad-ciclo .etiqueta { position: absolute; top: 38px; font-size: 0.72rem; line-height: 1.25; color: var(--pf-suave); white-space: nowrap; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
         .ad-ciclo .etiqueta.arriba, .ad-ciclo .etiqueta.hoy { top: -8px; }
         .ad-ciclo .etiqueta.hoy { color: #A13F3C; }
-        /* Si "Hoy" pisaría a "Envío sugerido", sube un renglón (admin.js); la línea baja lo mismo, para no tapar el texto de arriba */
+        /* Si "Hoy" pisaría a "Vence", sube un renglón (admin.js); la línea baja lo mismo, para no tapar el texto de arriba */
         .ad-ciclo.con-alto { margin-top: 32px; }
         .ad-ciclo .etiqueta.hoy.alto { top: -26px; }
         .ad-leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.75rem; color: var(--pf-suave); margin-top: 6px; }
@@ -642,8 +642,8 @@
                     <div class="ad-nota" role="group" aria-labelledby="form-l-nota">
                         <div class="cab" id="form-nota-cab"></div>
                         <table>
-                            <thead><tr><th scope="col">Conjunto de datos</th><th scope="col">Datos solicitados</th><th scope="col">Fecha sugerida de envío</th></tr></thead>
-                            <tbody><tr><td id="form-nota-titulo"></td><td id="form-nota-periodo" aria-live="polite"></td><td id="form-nota-fecha" class="ad-fecha"></td></tr></tbody>
+                            <thead><tr><th scope="col">Conjunto de datos</th><th scope="col">Frecuencia</th><th scope="col">Datos solicitados</th></tr></thead>
+                            <tbody><tr><td id="form-nota-titulo"></td><td id="form-nota-frecuencia"></td><td id="form-nota-periodo" aria-live="polite"></td></tr></tbody>
                         </table>
                         <p class="ad-error" id="form-nota-error" hidden></p>
                         <div class="solicita"><b>Qué se solicita:</b> <span id="form-nota-solicita"></span></div>
@@ -838,7 +838,7 @@
     <script src="js/auth.js?v=20261105"></script>
     <script src="js/main.js?v=20261105"></script>
     <script src="js/api.js?v=20261105"></script>
-    <script src="js/admin-fechas.js?v=20261103"></script>
-    <script src="js/admin.js?v=20261103"></script>
+    <script src="js/admin-fechas.js?v=20261108"></script>
+    <script src="js/admin.js?v=20261108"></script>
 </body>
 </html>

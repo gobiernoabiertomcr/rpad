@@ -73,13 +73,14 @@ describe('secciones', () => {
     assert.equal(nota({ datasets: [dataset({ vencimiento: '2026-11-02' })] }).secciones[0].clave, 'proximo');
   });
 
-  // Spec 2026-10-17-fechas-datasets, 9: el aviso tiene 5 columnas (se van "Última actualización" y "Situación") y la
-  // reiteración, las 7 de siempre con "Datos solicitados" en lugar de "Última actualización" e "Informado en" al final
-  it('columnas exactas del aviso: 5, con "Datos solicitados" y "Fecha sugerida de envío"', () => {
+  // Spec 2026-10-17-fechas-datasets, 9 y 18: el aviso tiene 4 columnas (se van "Última actualización", "Situación" y, desde el
+  // 18/10/2026, la fecha sugerida de envío) y la reiteración, las 7 de siempre con "Datos solicitados" en lugar de "Última
+  // actualización" e "Informado en" al final
+  it('columnas exactas del aviso: 4, con "Datos solicitados" y sin fecha', () => {
     assert.deepEqual(nota().secciones[0].columnas,
-      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío']);
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados']);
     assert.deepEqual(nota({ gestion: 'externa' }).secciones[0].columnas,
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío']);
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados']);
   });
 
   it('columnas exactas de la reiteración: 7, con "Datos solicitados" y con "Informado en" al final', () => {
@@ -94,22 +95,62 @@ describe('secciones', () => {
       ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']);
   });
 
-  it('la sección de vencidos de un aviso usa las columnas de la reiteración', () => {
+  it('la sección de vencidos de un aviso usa las columnas de la reiteración, y los próximos las 4 del aviso', () => {
     const aviso = nota({ gestion: 'externa', datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE })] });
     assert.deepEqual(aviso.secciones.map(s => s.columnas), [
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío'],
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados'],
       ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
     ]);
     assert.deepEqual(aviso.secciones[1].filas[0].valores,
       ['Dataset B', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/09/2026', '31/10/2026', 'Vencido hace 2 días', 'Sin aviso previo']);
   });
 
-  it('celdas del aviso: el texto del pedido y la fecha sugerida de envío (el vencimiento)', () => {
+  it('celdas del aviso: el texto del pedido, sin fecha', () => {
     assert.deepEqual(nota().secciones[0].filas[0].valores,
-      ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/11/2026', '31/12/2026']);
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/11/2026']);
     const otro = { desde: null, hasta: null, texto: 'Relevamiento actualizado' };
     assert.deepEqual(nota({ datasets: [dataset({ pedido: otro, vencimiento: '2027-01-31' })] }).secciones[0].filas[0].valores,
-      ['Dataset A', 'Área Uno', 'Anualmente', 'Relevamiento actualizado', '31/01/2027']);
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Relevamiento actualizado']);
+  });
+
+  // Spec 18: un acumulado con una frecuencia menor al año dice "(Acumulado)". El tipo es el que trae el dataset: en las notas
+  // reales, el efectivo de conPedido (el guardado o, sin él, el sugerido)
+  describe('frecuencia con "(Acumulado)"', () => {
+    const trimestral = (cambios = {}) => dataset({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: 3, ...cambios });
+    const frecuenciaDe = (tipo, cambios) => nota({ tipo, gestion: 'externa', datasets: [trimestral(cambios)] }).secciones[0].filas[0].valores[2];
+
+    it('el aviso y la reiteración dicen "Trimestralmente (Acumulado)"', () => {
+      assert.equal(frecuenciaDe('aviso'), 'Trimestralmente (Acumulado)');
+      assert.equal(frecuenciaDe('reiteracion'), 'Trimestralmente (Acumulado)');
+    });
+
+    it('también en la sección de vencidos de un aviso', () => {
+      const n = nota({ gestion: 'externa', datasets: [trimestral(), trimestral({ id: 2, vencimiento: '2026-10-31' })] });
+      assert.deepEqual(n.secciones.map(s => s.filas[0].valores[2]), ['Trimestralmente (Acumulado)', 'Trimestralmente (Acumulado)']);
+    });
+
+    it('con otro tipo de pedido, o con una frecuencia de un año o más, la frecuencia queda como está', () => {
+      assert.equal(frecuenciaDe('aviso', { tipo_pedido: 'foto' }), 'Trimestralmente');
+      assert.equal(frecuenciaDe('reiteracion', { tipo_pedido: 'foto' }), 'Trimestralmente');
+      assert.equal(frecuenciaDe('aviso', { frecuencia_nombre: 'Anualmente', meses: 12 }), 'Anualmente');
+      assert.equal(frecuenciaDe('aviso', { meses: null }), 'Trimestralmente');
+      // (sin tipo ni meses, como los datasets armados a mano de otros tests)
+      assert.equal(nota().secciones[0].filas[0].valores[2], 'Anualmente');
+    });
+
+    it('sin nombre de frecuencia no se rompe: la celda sigue como estaba, sin "(Acumulado)"', () => {
+      for (const frecuencia_nombre of [null, undefined, '']) {
+        const n = nota({ datasets: [trimestral({ frecuencia_nombre })] });
+        assert.equal(n.secciones[0].filas[0].valores[2], frecuencia_nombre, String(frecuencia_nombre));
+        assert.ok(!renderHtml(n).includes('(Acumulado)') && !renderTexto(n).includes('(Acumulado)'), String(frecuencia_nombre));
+      }
+    });
+
+    it('el HTML y el texto plano la llevan; el texto, como línea "Frecuencia"', () => {
+      const n = nota({ gestion: 'externa', datasets: [trimestral()] });
+      assert.ok(renderHtml(n).includes('>Trimestralmente (Acumulado)</td>'));
+      assert.ok(renderTexto(n).includes('    Frecuencia: Trimestralmente (Acumulado)\n'));
+    });
   });
 
   it('celdas de la reiteración: el pedido en la cuarta, y "Venció", "Situación" e "Informado en" detrás', () => {
@@ -225,13 +266,13 @@ describe('reiteración: antecedente en "Informado en"', () => {
 
   it('el aviso no la usa: sigue con la fila a todo el ancho', () => {
     const html = renderHtml(nota({ datasets: [dataset({ antecedente: DIEZ })] }));
-    assert.ok(html.includes('colspan="5"'));
+    assert.ok(html.includes('colspan="4"'));
     assert.ok(!html.includes('Anteriormente notificado'));
   });
 
-  it('la fila del antecedente ocupa todas las columnas de su tabla: 5 en los próximos y 7 en los vencidos de un aviso', () => {
+  it('la fila del antecedente ocupa todas las columnas de su tabla: 4 en los próximos y 7 en los vencidos de un aviso', () => {
     const n = nota({ datasets: [dataset({ antecedente: DIEZ }), dataset({ id: 2, vencimiento: '2026-10-31', antecedente: UNA })] });
-    assert.deepEqual(n.secciones.map(s => s.columnas.length), [5, 7]);
+    assert.deepEqual(n.secciones.map(s => s.columnas.length), [4, 7]);
     const html = renderHtml(n);
     const colspans = [...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1]));
     assert.deepEqual(colspans, n.secciones.map(s => s.columnas.length));
@@ -239,6 +280,135 @@ describe('reiteración: antecedente en "Informado en"', () => {
     for (const seccion of n.secciones) {
       assert.ok(html.includes(`</td></tr><tr><td colspan="${seccion.columnas.length}" style=`), seccion.clave);
     }
+  });
+});
+
+// Spec 18, "Varios vencimientos en un aviso": en "Próximos a vencer" de un aviso con más de un vencimiento las filas van ordenadas
+// por vencimiento y, antes del primer dataset de cada uno, una fila a todo el ancho dice "Vencen el …" (o "Vence el …" si es uno solo)
+describe('varios vencimientos en un aviso (spec 18)', () => {
+  const FIN_DE_ANIO = '2026-12-31';
+  const ENERO = '2027-01-31';
+  const FEBRERO = '2027-02-28';
+  // Entran desordenados: tres vencen a fin de año, uno en enero y dos en febrero
+  const desordenados = () => [
+    dataset({ id: 1, titulo: 'Febrero A', vencimiento: FEBRERO }),
+    dataset({ id: 2, titulo: 'Fin de año A', vencimiento: FIN_DE_ANIO }),
+    dataset({ id: 3, titulo: 'Enero', vencimiento: ENERO }),
+    dataset({ id: 4, titulo: 'Fin de año B', vencimiento: FIN_DE_ANIO }),
+    dataset({ id: 5, titulo: 'Febrero B', vencimiento: FEBRERO }),
+    dataset({ id: 6, titulo: 'Fin de año C', vencimiento: FIN_DE_ANIO })
+  ];
+  const TITULOS = ['Fin de año A', 'Fin de año B', 'Fin de año C', 'Enero', 'Febrero A', 'Febrero B'];
+  const GRUPOS = ['Vencen el 31/12/2026', 'Vence el 31/01/2027', 'Vencen el 28/02/2027'];
+  const aviso = (datasets, cambios = {}) => nota({ gestion: 'externa', datasets, ...cambios });
+  // Las filas de grupo del HTML: una celda a todo el ancho (colspan 4) con "Vence el …" o "Vencen el …"
+  const gruposDelHtml = (html) => [...html.matchAll(/<td colspan="(\d+)" style="[^"]*">((?:Vence|Vencen) el \d{2}\/\d{2}\/\d{4})<\/td>/g)]
+    .map(m => [Number(m[1]), m[2]]);
+
+  it('ordena las filas por vencimiento (estable: dentro de cada uno, el orden que traen) y marca la primera de cada grupo', () => {
+    const [proximos] = aviso(desordenados()).secciones;
+    assert.deepEqual(proximos.filas.map(f => f.valores[0]), TITULOS);
+    assert.deepEqual(proximos.filas.map(f => f.grupo), [GRUPOS[0], null, null, GRUPOS[1], GRUPOS[2], null]);
+    // Siguen siendo las 4 columnas de siempre: la fila de grupo no cambia las celdas de ningún dataset
+    assert.deepEqual(proximos.columnas, ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados']);
+    assert.ok(proximos.filas.every(f => f.valores.length === 4));
+  });
+
+  it('singular con un solo dataset en ese vencimiento, plural con más de uno', () => {
+    const grupos = aviso(desordenados()).secciones[0].filas.map(f => f.grupo).filter(Boolean);
+    assert.deepEqual(grupos, GRUPOS);
+    const dos = aviso([dataset({ id: 1, vencimiento: ENERO }), dataset({ id: 2, titulo: 'Dataset B', vencimiento: FIN_DE_ANIO })]);
+    assert.deepEqual(dos.secciones[0].filas.map(f => f.grupo), ['Vence el 31/12/2026', 'Vence el 31/01/2027']);
+  });
+
+  it('HTML: una fila a todo el ancho (colspan 4) justo antes de la fila de su primer dataset', () => {
+    const html = renderHtml(aviso(desordenados()));
+    assert.deepEqual(gruposDelHtml(html), GRUPOS.map(g => [4, g]));
+    // Cada fila de grupo va seguida de la fila de su primer dataset, y las filas salen en el orden de la tabla
+    for (const [grupo, primero] of [[GRUPOS[0], 'Fin de año A'], [GRUPOS[1], 'Enero'], [GRUPOS[2], 'Febrero A']]) {
+      assert.match(html, new RegExp(`${grupo}</td></tr><tr><td style="[^"]*"><a href="[^"]*" style="[^"]*">${primero}</a></td>`), grupo);
+    }
+    const posiciones = [GRUPOS[0], 'Fin de año A', 'Fin de año B', 'Fin de año C', GRUPOS[1], 'Enero', GRUPOS[2], 'Febrero A', 'Febrero B']
+      .map(texto => html.indexOf(`>${texto}<`));
+    assert.ok(posiciones.every(p => p > 0), JSON.stringify(posiciones));
+    assert.deepEqual(posiciones, [...posiciones].sort((a, b) => a - b));
+  });
+
+  it('texto plano: un renglón propio antes de las filas de cada vencimiento', () => {
+    const lineas = renderTexto(aviso(desordenados())).split('\n');
+    const orden = lineas.filter(l => /^(Vence|Vencen) el /.test(l) || l.startsWith('- '));
+    assert.deepEqual(orden.map(l => l.replace(/ \(https?:\/\/[^)]*\)$/, '')), [
+      GRUPOS[0], '- Fin de año A', '- Fin de año B', '- Fin de año C', GRUPOS[1], '- Enero', GRUPOS[2], '- Febrero A', '- Febrero B'
+    ]);
+    // Es un renglón propio, sin sangría ni guion, y se lee antes de las líneas del dataset que abre
+    const i = lineas.indexOf(GRUPOS[1]);
+    assert.ok(lineas[i + 1].startsWith('- Enero'), lineas.slice(i, i + 3).join(' | '));
+  });
+
+  it('con un solo vencimiento no cambia nada: ni el orden ni filas de grupo', () => {
+    const mismoDia = [
+      dataset({ id: 1, titulo: 'Zeta', vencimiento: ENERO }),
+      dataset({ id: 2, titulo: 'Alfa', vencimiento: ENERO }),
+      dataset({ id: 3, titulo: 'Medio', vencimiento: ENERO })
+    ];
+    const n = aviso(mismoDia);
+    assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), ['Zeta', 'Alfa', 'Medio']);
+    assert.ok(n.secciones[0].filas.every(f => !f.grupo));
+    const html = renderHtml(n);
+    assert.ok(!html.includes('colspan'), 'sin antecedente ni grupos no hay filas a todo el ancho');
+    assert.ok(!/(Vence|Vencen) el /.test(html) && !/^(Vence|Vencen) el /m.test(renderTexto(n)));
+    // Un solo dataset tampoco
+    assert.ok(aviso([dataset()]).secciones[0].filas.every(f => !f.grupo));
+  });
+
+  it('el antecedente sigue debajo de la fila de su dataset: grupo, dataset, antecedente', () => {
+    const ANTECEDENTE = { cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' };
+    const datasets = desordenados().map(d => (d.id === 2 ? { ...d, antecedente: ANTECEDENTE } : d));
+    const html = renderHtml(aviso(datasets));
+    assert.match(html, new RegExp(`${GRUPOS[0]}</td></tr><tr><td style="[^"]*"><a [^>]*>Fin de año A</a></td>.*?</tr><tr><td colspan="4" style="[^"]*">Antecedente: `));
+    assert.deepEqual([...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1])), [4, 4, 4, 4]);
+  });
+
+  it('la sección de vencidos de un aviso no se agrupa: sigue con su orden, sus 7 columnas y sin filas de grupo', () => {
+    const n = aviso([
+      ...desordenados(),
+      dataset({ id: 7, titulo: 'Vencido B', vencimiento: '2026-10-31' }),
+      dataset({ id: 8, titulo: 'Vencido A', vencimiento: '2026-09-30' })
+    ]);
+    assert.deepEqual(n.secciones.map(s => s.clave), ['proximo', 'vencido']);
+    const vencidos = n.secciones[1];
+    assert.equal(vencidos.columnas.length, 7);
+    assert.deepEqual(vencidos.filas.map(f => f.valores[0]), ['Vencido B', 'Vencido A']);
+    assert.ok(vencidos.filas.every(f => !f.grupo));
+    assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), TITULOS);
+    assert.deepEqual(gruposDelHtml(renderHtml(n)), GRUPOS.map(g => [4, g]));
+  });
+
+  it('un aviso con vencidos con más de un vencimiento, y próximos de uno solo, no lleva ninguna fila de grupo', () => {
+    const n = aviso([
+      dataset({ id: 1 }),
+      dataset({ id: 2, titulo: 'Vencido B', vencimiento: '2026-10-31' }),
+      dataset({ id: 3, titulo: 'Vencido A', vencimiento: '2026-09-30' })
+    ]);
+    assert.ok(n.secciones.every(s => s.filas.every(f => !f.grupo)));
+    assert.ok(!renderHtml(n).includes('colspan'));
+    assert.deepEqual(n.secciones[1].filas.map(f => f.valores[0]), ['Vencido B', 'Vencido A']);
+  });
+
+  it('la reiteración no se agrupa ni se reordena: tiene su columna "Vence"', () => {
+    for (const gestion of ['interna', 'externa']) {
+      const n = nota({ tipo: 'reiteracion', gestion, datasets: desordenados() });
+      assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), ['Febrero A', 'Fin de año A', 'Enero', 'Fin de año B', 'Febrero B', 'Fin de año C']);
+      assert.ok(n.secciones[0].filas.every(f => !f.grupo));
+      assert.equal(n.secciones[0].columnas.length, 7);
+      assert.ok(!renderHtml(n).includes('colspan') && !/^(Vence|Vencen) el /m.test(renderTexto(n)), gestion);
+    }
+  });
+
+  it('también en el aviso interno', () => {
+    const n = nota({ gestion: 'interna', datasets: desordenados() });
+    assert.deepEqual(n.secciones[0].filas.map(f => f.grupo), [GRUPOS[0], null, null, GRUPOS[1], GRUPOS[2], null]);
+    assert.deepEqual(gruposDelHtml(renderHtml(n)), GRUPOS.map(g => [4, g]));
   });
 });
 
@@ -311,18 +481,17 @@ describe('texto plano', () => {
     assert.ok(texto.trimEnd().endsWith('CC. Dir. Administrativa'));
   });
 
-  // Spec 2026-10-17-fechas-datasets, 9: cada columna nueva sale como una línea más de la fila, en el orden de la tabla
-  it('el aviso: "Datos solicitados" y "Fecha sugerida de envío", sin "Situación" ni "Última actualización"', () => {
+  // Spec 2026-10-17-fechas-datasets, 9 y 18: cada columna sale como una línea más de la fila, en el orden de la tabla
+  it('el aviso: "Datos solicitados" al final, sin fecha, "Situación" ni "Última actualización"', () => {
     const texto = renderTexto(nota({ gestion: 'externa' }));
     assert.ok(texto.includes([
       '- Dataset A (https://datos.comodoro.gov.ar/dataset/a)',
       '    Área responsable: Área Uno',
       '    Frecuencia: Anualmente',
       '    Datos solicitados: Del 01/01/2026 al 30/11/2026',
-      '    Fecha sugerida de envío: 31/12/2026',
       ''
     ].join('\n')), texto);
-    assert.ok(!texto.includes('Situación:') && !texto.includes('Última actualización:'), texto);
+    assert.ok(!texto.includes('Situación:') && !texto.includes('Última actualización:') && !texto.includes('Fecha sugerida de envío:'), texto);
   });
 
   it('la reiteración: "Datos solicitados" en lugar de "Última actualización", e "Informado en" al final', () => {
@@ -386,14 +555,23 @@ describe('textos del 14/10/2026', () => {
   });
 });
 
-// Spec 2026-10-17-fechas-datasets, 9: solo el aviso externo pide el período y la fecha sugerida de envío; el párrafo del
-// interno no cambia (casi todos sus pedidos son relevamientos, sin fechas)
+// Spec 2026-10-17-fechas-datasets, 9 y 18: solo el aviso externo pide el período de cada caso (sin fecha sugerida de envío,
+// desde el 18/10/2026); el párrafo del interno no cambia (casi todos sus pedidos son relevamientos, sin fechas)
 describe('párrafo inicial con los datos solicitados', () => {
-  const FRASE = ', con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío';
+  const FRASE = ', con los datos del período que se indica en cada caso';
 
-  it('el aviso externo, con la frase antes del punto final', () => {
+  it('el aviso externo, con la frase antes del punto final y sin la fecha sugerida', () => {
     assert.equal(nota({ gestion: 'externa' }).parrafoInicial,
-      'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío.');
+      'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso.');
+  });
+
+  it('ningún párrafo inicial, ni el HTML ni el texto de la nota, habla de una fecha sugerida', () => {
+    for (const tipo of ['aviso', 'reiteracion']) {
+      for (const gestion of ['interna', 'externa']) {
+        const n = nota({ tipo, gestion });
+        assert.ok(![n.parrafoInicial, renderHtml(n), renderTexto(n)].some(t => t.includes('sugerida')), `${tipo} ${gestion}`);
+      }
+    }
   });
 
   it('el aviso interno y las reiteraciones no la llevan, y quedan como estaban', () => {

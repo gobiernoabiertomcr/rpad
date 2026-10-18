@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs';
 import vm from 'vm';
-import { NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, tipoSugerido } from '../services/fechasDatasetReglas.js';
+import { NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, frecuenciaEnNota, tipoSugerido } from '../services/fechasDatasetReglas.js';
 
 // api.js es un script de navegador: se ejecuta en un contexto aislado y se expone el Utils de verdad, para que el escape
 // que prueban estos tests sea el que usa la página
@@ -420,12 +420,12 @@ describe('admin-fechas.js: htmlDeFila', () => {
     assert.equal(cantidad(html, 'aria-hidden="true"'), 3);
   });
 
-  it('un eventual lleva "Eventual", no tiene pedido y no ofrece una fecha de envío', () => {
+  it('un eventual lleva "Eventual", no tiene pedido y no dice cuándo vence', () => {
     const html = fila(eventual());
     assert.match(html, /ad-chip eventual/);
     assert.match(html, />Eventual</);
     assert.match(html, /Sin vencimiento/);
-    assert.doesNotMatch(html, /Fecha sugerida/);
+    assert.doesNotMatch(html, /Vence el|Fecha sugerida/);
     // El pedido es una raya y debajo va el tipo
     assert.match(html, /<span class="ad-pedido-texto">—<\/span><span class="ad-sub">Eventual<\/span>/);
   });
@@ -467,24 +467,25 @@ describe('admin-fechas.js: htmlDeFila', () => {
     assert.match(fila(dataset({ ultima_actualizacion: '2026-10-13T23:59:59.000Z' })), /Cargado el 13\/10\/2026/);
   });
 
-  it('próximo pedido: debajo va el tipo y la fecha sugerida de envío cuando la próxima es de hoy en adelante', () => {
-    assert.match(fila(), /<span class="ad-sub">Acumulado\. Fecha sugerida de envío: 31\/01\/2027<\/span>/);
-    assert.match(fila(dataset({ proxima_actualizacion: '2026-10-17T03:00:00.000Z' })), /Fecha sugerida de envío: 17\/10\/2026/);
+  it('próximo pedido: debajo va el tipo y "Vence el dd/mm/aaaa" cuando la próxima es de hoy en adelante', () => {
+    assert.match(fila(), /<span class="ad-sub">Acumulado\. Vence el 31\/01\/2027<\/span>/);
+    assert.match(fila(dataset({ proxima_actualizacion: '2026-10-17T03:00:00.000Z' })), /Vence el 17\/10\/2026/);
+    assert.doesNotMatch(fila(), /sugerida de envío/i);
   });
 
-  it('próximo pedido: si ya venció no hay fecha sugerida, solo el tipo', () => {
+  it('próximo pedido: si ya venció no dice cuándo vence, solo el tipo', () => {
     const html = fila(vencido());
-    assert.doesNotMatch(html, /Fecha sugerida/);
+    assert.doesNotMatch(html, /Vence el|Fecha sugerida/);
     assert.match(html, /<span class="ad-sub">Acumulado<\/span>/);
   });
 
-  it('próximo pedido: el día antes de hoy ya no es sugerida', () => {
-    assert.doesNotMatch(fila(dataset({ proxima_actualizacion: '2026-10-16T03:00:00.000Z' })), /Fecha sugerida/);
+  it('próximo pedido: el día antes de hoy ya no dice "Vence el"', () => {
+    assert.doesNotMatch(fila(dataset({ proxima_actualizacion: '2026-10-16T03:00:00.000Z' })), /Vence el/);
   });
 
   it('sin hoy explícito usa la fecha de Argentina (no rompe)', () => {
     const html = admin.htmlDeFila(dataset({ proxima_actualizacion: '2999-01-31T03:00:00.000Z' }), { pendiente: false, esAdmin: true });
-    assert.match(html, /Fecha sugerida de envío: 31\/01\/2999/);
+    assert.match(html, /Vence el 31\/01\/2999/);
   });
 
   it('el estado se pinta con la pastilla y el renglón de detalle', () => {
@@ -514,7 +515,7 @@ describe('admin-fechas.js: htmlDeTarjeta', () => {
     const html = tarjeta();
     assert.doesNotMatch(html, /<tr|<td/);
     for (const texto of ['Pauta Publicitaria', 'Subsecretaría de Comunicación', 'Actualizado', 'Vence en ene 2027', 'Al 31/07/2026',
-      'Cargado el 13/10/2026', 'Del 01/01/2026 al 31/12/2026', 'Acumulado. Fecha sugerida de envío: 31/01/2027']) {
+      'Cargado el 13/10/2026', 'Del 01/01/2026 al 31/12/2026', 'Acumulado. Vence el 31/01/2027']) {
       assert.ok(html.includes(texto), texto);
     }
   });
@@ -549,7 +550,7 @@ describe('admin-fechas.js: htmlDeTarjeta', () => {
 
   it('un eventual y un ejercicio se ven como en la fila', () => {
     assert.match(tarjeta(eventual()), /Eventual/);
-    assert.doesNotMatch(tarjeta(eventual()), /Fecha sugerida/);
+    assert.doesNotMatch(tarjeta(eventual()), /Vence el|Fecha sugerida/);
     assert.match(tarjeta(ejercicio()), /Ejercicio 2025/);
   });
 
@@ -678,8 +679,9 @@ describe('admin-fechas.js: htmlDeCiclo', () => {
     assert.equal(cantidad(html, 'class="banda publicado"'), 1);
     assert.equal(cantidad(html, 'class="banda falta"'), 1);
     assert.equal(cantidad(html, 'class="banda llega"'), 0);
-    for (const rotulo of ['Publicado', 'Corte pedido', 'Envío sugerido', 'Hoy']) assert.ok(html.includes(`>${rotulo}</div>`), rotulo);
+    for (const rotulo of ['Publicado', 'Corte pedido', 'Vence', 'Hoy']) assert.ok(html.includes(`>${rotulo}</div>`), rotulo);
     assert.equal(cantidad(html, 'class="marca'), 4);
+    assert.doesNotMatch(html, /Envío sugerido/);
   });
 
   it('las posiciones son porcentajes sobre el rango de meses (con un mes de margen a cada lado)', () => {
@@ -689,7 +691,7 @@ describe('admin-fechas.js: htmlDeCiclo', () => {
     assert.match(html, /<div class="banda falta" style="left:53\.33%;width:33\.33%"><\/div>/);
     assert.match(html, /<div class="marca" style="left:53\.33%"><\/div><div class="etiqueta abajo" style="left:53\.33%;transform:none">Publicado<\/div>/);
     assert.match(html, /<div class="marca" style="left:86\.67%"><\/div><div class="etiqueta abajo" style="left:86\.67%;transform:translateX\(-100%\)">Corte pedido<\/div>/);
-    assert.match(html, /<div class="marca" style="left:93\.33%"><\/div><div class="etiqueta arriba" style="left:93\.33%;transform:translateX\(-100%\)">Envío sugerido<\/div>/);
+    assert.match(html, /<div class="marca" style="left:93\.33%"><\/div><div class="etiqueta arriba" style="left:93\.33%;transform:translateX\(-100%\)">Vence<\/div>/);
     assert.match(html, /<div class="marca hoy" style="left:70\.32%"><\/div><div class="etiqueta hoy" style="left:70\.32%">Hoy<\/div>/);
   });
 
@@ -704,12 +706,12 @@ describe('admin-fechas.js: htmlDeCiclo', () => {
     assert.equal(cantidad(admin.htmlDeCiclo({ ...PAUTA, datosNuevo: null }), 'banda llega'), 0);
   });
 
-  it('si ya venció no hay "Envío sugerido": el día de hoy sí cuenta como de hoy en adelante', () => {
+  it('si ya venció no hay marca "Vence": el día de hoy sí cuenta como de hoy en adelante', () => {
     const vencida = admin.htmlDeCiclo({ datosAl: '2022-12-31', desde: '2023-01-01', hasta: '2025-12-31', proxima: '2024-01-31', hoy: HOY });
-    assert.doesNotMatch(vencida, /Envío sugerido/);
+    assert.doesNotMatch(vencida, />Vence<\/div>/);
     for (const rotulo of ['Publicado', 'Corte pedido', 'Hoy']) assert.ok(vencida.includes(`>${rotulo}</div>`), rotulo);
-    assert.match(admin.htmlDeCiclo({ ...PAUTA, proxima: HOY }), /Envío sugerido/);
-    assert.doesNotMatch(admin.htmlDeCiclo({ ...PAUTA, proxima: '2026-10-16' }), /Envío sugerido/);
+    assert.match(admin.htmlDeCiclo({ ...PAUTA, proxima: HOY }), />Vence<\/div>/);
+    assert.doesNotMatch(admin.htmlDeCiclo({ ...PAUTA, proxima: '2026-10-16' }), />Vence<\/div>/);
   });
 
   it('lee las fechas por su texto, también si viajan como ISO con hora', () => {
@@ -1144,8 +1146,8 @@ describe('admin.js: filas y tarjetas de una página', () => {
   it('usa el hoy que recibe para todas las filas y no vuelve a pedir la fecha', () => {
     const { contexto: a } = cargarAdminJs();
     a.hoyEnArgentina = () => { throw new Error('pidió la fecha otra vez'); };
-    assert.match(a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: true, hoy: HOY }).filas, /Fecha sugerida de envío: 31\/01\/2027/);
-    assert.doesNotMatch(a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: true, hoy: '2999-01-01' }).filas, /Fecha sugerida/);
+    assert.match(a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: true, hoy: HOY }).filas, /Vence el 31\/01\/2027/);
+    assert.doesNotMatch(a.htmlDeLaLista(LISTA, { pendientes: [], esAdmin: true, hoy: '2999-01-01' }).filas, /Vence el/);
   });
 
   it('el lector ve las filas sin botones', () => {
@@ -1556,18 +1558,23 @@ describe('admin-fechas.js: la cabecera "Datos solicitados" del registro', () => 
     assert.equal(admin.textoDelPedidoActual(null), 'Sin pedido: no tiene próxima actualización');
   });
 
-  it('frecuencia, tipo de pedido, fecha sugerida de envío y lo publicado hoy', () => {
+  it('frecuencia, tipo de pedido, cuándo vence y lo publicado hoy', () => {
     const html = admin.htmlDeDatosDelPedido(dataset(), HOY);
     assert.equal(html, '<div><dt>Frecuencia:</dt><dd>Trimestralmente</dd></div>'
       + '<div><dt>Tipo de pedido:</dt><dd>Acumulado</dd></div>'
-      + '<div><dt>Fecha sugerida de envío:</dt><dd>31/01/2027</dd></div>'
+      + '<div><dt>Vence:</dt><dd>31/01/2027</dd></div>'
       + '<div><dt>Publicado hoy:</dt><dd>datos al 31/07/2026</dd></div>');
   });
 
-  it('si ya venció dice "Vencido desde" y no da una fecha sugerida', () => {
+  it('si ya venció dice "Vencido desde", no "Vence"', () => {
     const html = admin.htmlDeDatosDelPedido(vencido(), HOY);
     assert.match(html, /<dt>Vencido desde:<\/dt><dd>31\/01\/2024<\/dd>/);
-    assert.doesNotMatch(html, /Fecha sugerida/);
+    assert.doesNotMatch(html, /<dt>Vence:|Fecha sugerida/);
+  });
+
+  it('el día del vencimiento todavía dice "Vence"; al día siguiente, "Vencido desde"', () => {
+    assert.match(admin.htmlDeDatosDelPedido(dataset({ proxima_actualizacion: '2026-10-17T03:00:00.000Z' }), HOY), /<dt>Vence:<\/dt><dd>17\/10\/2026<\/dd>/);
+    assert.match(admin.htmlDeDatosDelPedido(dataset({ proxima_actualizacion: '2026-10-16T03:00:00.000Z' }), HOY), /<dt>Vencido desde:<\/dt><dd>16\/10\/2026<\/dd>/);
   });
 
   it('un ejercicio publicado dice "ejercicio aaaa"; sin Datos al, una raya', () => {
@@ -1575,10 +1582,10 @@ describe('admin-fechas.js: la cabecera "Datos solicitados" del registro', () => 
     assert.match(admin.htmlDeDatosDelPedido(dataset({ datos_al: null }), HOY), /<dt>Publicado hoy:<\/dt><dd>—<\/dd>/);
   });
 
-  it('un eventual no tiene fecha de envío', () => {
+  it('un eventual no tiene vencimiento', () => {
     const html = admin.htmlDeDatosDelPedido(eventual(), HOY);
     assert.match(html, /<dt>Frecuencia:<\/dt><dd>Eventual<\/dd>/);
-    assert.doesNotMatch(html, /Vencido desde|Fecha sugerida/);
+    assert.doesNotMatch(html, /Vencido desde|<dt>Vence:|Fecha sugerida/);
   });
 
   it('escapa la frecuencia y el tipo de pedido, y sin datos no escribe "undefined"', () => {
@@ -2031,6 +2038,34 @@ describe('admin-fechas.js: tipos de pedido del formulario', () => {
     }
   });
 
+  it('frecuenciaEnNotaDe: un acumulado de menos de un año lleva "(Acumulado)"; lo demás, la frecuencia tal cual', () => {
+    assert.equal(admin.frecuenciaEnNotaDe({ frecuencia: 'Trimestralmente', tipo: 'acumulado', meses: 3 }), 'Trimestralmente (Acumulado)');
+    assert.equal(admin.frecuenciaEnNotaDe({ frecuencia: 'Cada medio año', tipo: 'acumulado', meses: 6 }), 'Cada medio año (Acumulado)');
+    assert.equal(admin.frecuenciaEnNotaDe({ frecuencia: 'Anualmente', tipo: 'acumulado', meses: 12 }), 'Anualmente');
+    assert.equal(admin.frecuenciaEnNotaDe({ frecuencia: 'Trimestralmente', tipo: 'foto', meses: 3 }), 'Trimestralmente');
+    assert.equal(admin.frecuenciaEnNotaDe({ frecuencia: 'Eventual', tipo: 'eventual', meses: null }), 'Eventual');
+  });
+
+  it('frecuenciaEnNotaDe: sin nombre de frecuencia devuelve lo que recibió, y sin argumento no rompe', () => {
+    for (const frecuencia of [null, undefined, '']) {
+      assert.equal(admin.frecuenciaEnNotaDe({ frecuencia, tipo: 'acumulado', meses: 3 }), frecuencia);
+    }
+    assert.equal(admin.frecuenciaEnNotaDe(), undefined);
+    assert.equal(admin.frecuenciaEnNotaDe(null), undefined);
+  });
+
+  it('frecuenciaEnNotaDe es una copia de frecuenciaEnNota del servidor: dan lo mismo', () => {
+    for (const frecuencia of ['Trimestralmente', 'Anualmente', '', null, undefined]) {
+      for (const tipo of [...TIPOS_PEDIDO, null, 'otro']) {
+        for (const meses of [null, undefined, 0, -3, 1, 3, 4, 6, 11, 12, 24, 2.5, '3']) {
+          assert.equal(admin.frecuenciaEnNotaDe({ frecuencia, tipo, meses }), frecuenciaEnNota({ frecuencia, tipo, meses }), `${frecuencia} ${tipo} ${meses}`);
+        }
+      }
+    }
+    for (const entrada of [null, undefined]) assert.equal(admin.frecuenciaEnNotaDe(entrada), frecuenciaEnNota(entrada));
+    assert.equal(admin.frecuenciaEnNotaDe(), frecuenciaEnNota());
+  });
+
   it('tiposPermitidos: con meses, todos menos eventual', () => {
     const conMeses = TIPOS_PEDIDO.filter((tipo) => tipo !== 'eventual');
     for (const meses of [1, 3, 12, 24, 120]) assert.deepEqual(plano(admin.tiposPermitidos(meses)), conMeses, String(meses));
@@ -2348,18 +2383,31 @@ describe('admin-fechas.js: problemasDelFormulario (lo que se revisa antes de pro
 });
 
 describe('admin-fechas.js: la vista previa "Así va a salir en la próxima nota"', () => {
-  it('con todo cargado', () => {
-    assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: 'Pauta', gestion: 'externa', proxima: '2027-01-31', solicita: 'La planilla.' })), {
-      cabecera: 'Nota Digital de gestión externa (vista previa)', titulo: 'Pauta', fecha: '31/01/2027', solicita: 'La planilla.'
+  it('con todo cargado, la frecuencia sale como en la nota: con "(Acumulado)"', () => {
+    assert.deepEqual(plano(admin.textosDeVistaPrevia({
+      titulo: 'Pauta', gestion: 'externa', solicita: 'La planilla.', frecuencia: 'Trimestralmente', tipo: 'acumulado', meses: 3
+    })), {
+      cabecera: 'Nota Digital de gestión externa (vista previa)', titulo: 'Pauta', frecuencia: 'Trimestralmente (Acumulado)', solicita: 'La planilla.'
     });
   });
 
-  it('sin título, sin próxima, sin gestión y sin "Qué se solicita": lo que diría la nota', () => {
-    assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: '  ', gestion: '', proxima: null, solicita: '' })), {
-      cabecera: 'Nota Digital (vista previa)', titulo: 'Título del dataset', fecha: '—',
+  it('la frecuencia de la vista previa cambia con el tipo y los meses, sin pedirle nada al servidor', () => {
+    const frecuenciaCon = (tipo, meses) => admin.textosDeVistaPrevia({ titulo: 'Pauta', frecuencia: 'Trimestralmente', tipo, meses }).frecuencia;
+    assert.equal(frecuenciaCon('acumulado', 3), 'Trimestralmente (Acumulado)');
+    assert.equal(frecuenciaCon('foto', 3), 'Trimestralmente');
+    assert.equal(frecuenciaCon('acumulado', 12), 'Trimestralmente');
+    assert.equal(frecuenciaCon('acumulado', null), 'Trimestralmente');
+  });
+
+  it('sin título, sin frecuencia, sin gestión y sin "Qué se solicita": lo que diría la nota', () => {
+    assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: '  ', gestion: '', frecuencia: '', tipo: 'acumulado', meses: 3, solicita: '' })), {
+      cabecera: 'Nota Digital (vista previa)', titulo: 'Título del dataset', frecuencia: '—',
       solicita: 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.'
     });
     assert.doesNotThrow(() => admin.textosDeVistaPrevia());
+    assert.equal(admin.textosDeVistaPrevia().frecuencia, '—');
+    assert.equal(admin.textosDeVistaPrevia({ frecuencia: null, tipo: 'acumulado', meses: 3 }).frecuencia, '—');
+    assert.equal(Object.hasOwn(plano(admin.textosDeVistaPrevia({ titulo: 'Pauta', frecuencia: 'Anualmente' })), 'fecha'), false);
   });
 
   it('sin "Qué se solicita", el texto es el mismo que pone la nota (QUE_SE_SOLICITA_POR_DEFECTO del servicio)', () => {
@@ -2429,6 +2477,17 @@ describe('admin.js: lo puro del formulario', () => {
     assert.equal(a.mesesDeLaFrecuencia(frecuencias, ''), undefined);
     assert.equal(a.mesesDeLaFrecuencia(frecuencias, '99'), undefined);
     assert.equal(a.mesesDeLaFrecuencia(undefined, '3'), undefined);
+  });
+
+  it('nombreDeLaFrecuencia: el nombre de la frecuencia elegida; vacío sin elegir o si no está en el catálogo', () => {
+    const frecuencias = [{ id: 3, nombre: 'Trimestralmente', meses: 3 }, { id: 11, nombre: 'Eventual', meses: null }, { id: 12 }];
+    assert.equal(a.nombreDeLaFrecuencia(frecuencias, '3'), 'Trimestralmente');
+    assert.equal(a.nombreDeLaFrecuencia(frecuencias, 11), 'Eventual');
+    assert.equal(a.nombreDeLaFrecuencia(frecuencias, ''), '');
+    assert.equal(a.nombreDeLaFrecuencia(frecuencias, undefined), '');
+    assert.equal(a.nombreDeLaFrecuencia(frecuencias, '99'), '');
+    assert.equal(a.nombreDeLaFrecuencia(frecuencias, 12), '');
+    assert.equal(a.nombreDeLaFrecuencia(undefined, '3'), '');
   });
 
   it('el error del portal dice que se puede seguir con la carga manual', () => {
@@ -2577,7 +2636,9 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
   it('la vista previa "Así va a salir en la próxima nota", con las tres columnas y "Qué se solicita"', () => {
     assert.ok(formulario.includes('Así va a salir en la próxima nota'));
     const nota = formulario.match(/<div class="ad-nota"[^>]*>([\s\S]*?)<!-- Fin de la vista previa -->/)?.[1] ?? '';
-    assert.deepEqual([...nota.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((m) => m[1]), ['Conjunto de datos', 'Datos solicitados', 'Fecha sugerida de envío']);
+    assert.deepEqual([...nota.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((m) => m[1]), ['Conjunto de datos', 'Frecuencia', 'Datos solicitados']);
+    assert.deepEqual([...nota.matchAll(/<td id="([^"]+)"/g)].map((m) => m[1]), ['form-nota-titulo', 'form-nota-frecuencia', 'form-nota-periodo']);
+    assert.ok(!nota.includes('form-nota-fecha'), 'form-nota-fecha ya no existe');
     assert.match(nota, /<td id="form-nota-periodo" aria-live="polite"><\/td>/);
     assert.match(nota, /<b>Qué se solicita:<\/b> <span id="form-nota-solicita"><\/span>/);
     assert.match(nota, /<p class="ad-error" id="form-nota-error" hidden><\/p>/);
@@ -2992,5 +3053,88 @@ describe('admin.js: salir del formulario con cambios, ventanas apiladas y el err
     const grupo = pagina.elemento('chips-container');
     assert.equal(grupo.getAttribute('aria-invalid'), 'true');
     assert.match(grupo.getAttribute('aria-describedby') ?? '', /form-error-formatos/);
+  });
+});
+
+describe('admin: ya no dice "fecha sugerida de envío" ni "Envío sugerido" (spec 18)', () => {
+  const VIEJO = /fecha sugerida|sugerida de envío|envío sugerido/i;
+
+  it('ningún HTML de admin-fechas.js lo dice: la lista, la tarjeta, la cabecera, el ciclo y las opciones', () => {
+    const casos = [dataset(), vencido(), eventual(), ejercicio(), dataset({ proxima_actualizacion: '2026-10-17T03:00:00.000Z' })];
+    for (const d of casos) {
+      const html = [
+        admin.htmlDeFila(d, { pendiente: false, esAdmin: true, hoy: HOY }),
+        admin.htmlDeTarjeta(d, { pendiente: false, esAdmin: true, hoy: HOY }),
+        admin.htmlDeDatosDelPedido(d, HOY),
+        admin.htmlDeCiclo({ datosAl: d.datos_al, desde: d.pedido?.desde, hasta: d.pedido?.hasta, proxima: d.proxima_actualizacion, hoy: HOY })
+      ].join('');
+      assert.doesNotMatch(html, VIEJO, d.titulo);
+    }
+  });
+
+  it('el código y la página tampoco: ni en los textos ni en los comentarios', () => {
+    const codigos = {
+      'admin-fechas.js': fs.readFileSync(new URL('../public/js/admin-fechas.js', import.meta.url), 'utf8'),
+      'admin.js': CODIGO_ADMIN,
+      'admin.html': PAGINA_ADMIN
+    };
+    for (const [nombre, texto] of Object.entries(codigos)) assert.doesNotMatch(texto, VIEJO, nombre);
+  });
+
+  it('lo que sí se sugiere (el tipo de pedido y la opción de próxima) sigue', () => {
+    assert.match(admin.htmlDeOpciones([{ fecha: '2027-04-30', motivo: 'Siguiente período', sugerida: true }]), /Sugerida/);
+    assert.match(admin.htmlDeSugerencia('foto', 'acumulado'), /se sugiere "Acumulado"/);
+  });
+});
+
+describe('admin.js: la vista previa de la nota, con una página de mentira', () => {
+  const FRECUENCIAS = [
+    { id: 3, nombre: 'Trimestralmente', meses: 3 }, { id: 4, nombre: 'Cada tres meses', meses: 3 },
+    { id: 12, nombre: 'Anualmente', meses: 12 }, { id: 99, nombre: 'Eventual', meses: null }
+  ];
+  const armar = () => {
+    const { contexto } = cargarAdminJs();
+    const pagina = paginaDeMentira();
+    // Sin próxima no hay pedido ni demora, pero pintarVistaPrevia limpia el temporizador anterior
+    Object.assign(contexto, { document: pagina.documento, setTimeout, clearTimeout });
+    vm.runInContext(`frecuencias = ${JSON.stringify(FRECUENCIAS)};`, contexto);
+    const pintar = vm.runInContext('pintarVistaPrevia', contexto);
+    return { pagina, pintar };
+  };
+  // El formulario como lo arma formularioDelDataset; sin próxima, la vista previa no le pide nada al servidor
+  const formulario = (extra = {}) => ({
+    titulo: 'Pauta', tipo_gestion: 'externa', tipo_pedido: 'acumulado', frecuencia_id: '3', meses: 3, que_se_solicita: 'La planilla.',
+    datosMes: '', datosAnio: '', proxMes: '', proxAnio: '', original: null, ...extra
+  });
+
+  it('escribe la frecuencia como saldría en la nota, con "(Acumulado)" si corresponde', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario());
+    assert.equal(pagina.elemento('form-nota-frecuencia').textContent, 'Trimestralmente (Acumulado)');
+    assert.equal(pagina.elemento('form-nota-titulo').textContent, 'Pauta');
+    assert.equal(pagina.elemento('form-nota-solicita').textContent, 'La planilla.');
+    pintar(formulario({ tipo_pedido: 'foto' }));
+    assert.equal(pagina.elemento('form-nota-frecuencia').textContent, 'Trimestralmente');
+    pintar(formulario({ frecuencia_id: '12', meses: 12 }));
+    assert.equal(pagina.elemento('form-nota-frecuencia').textContent, 'Anualmente');
+  });
+
+  it('sin frecuencia elegida, una raya', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario({ frecuencia_id: '', meses: undefined }));
+    assert.equal(pagina.elemento('form-nota-frecuencia').textContent, '—');
+  });
+
+  it('la frecuencia cambia aunque el pedido no se vuelva a calcular (misma clave: mismo tipo y mismos meses)', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario());
+    pintar(formulario({ frecuencia_id: '4' }));
+    assert.equal(pagina.elemento('form-nota-frecuencia').textContent, 'Cada tres meses (Acumulado)');
+  });
+
+  it('la vista previa ya no tiene la columna de la fecha', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario());
+    assert.equal(pagina.elemento('form-nota-fecha').escrituras, 0);
   });
 });

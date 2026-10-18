@@ -236,6 +236,13 @@ function mesesDeLaFrecuencia(catalogo, id) {
   return Number.isInteger(frecuencia.meses) && frecuencia.meses > 0 ? frecuencia.meses : null;
 }
 
+// El nombre de la frecuencia `id` del catálogo; '' si no hay una elegida o no está en el catálogo
+function nombreDeLaFrecuencia(catalogo, id) {
+  if (id === '' || id === null || id === undefined) return '';
+  const frecuencia = (Array.isArray(catalogo) ? catalogo : []).find((f) => String(f.id) === String(id));
+  return typeof frecuencia?.nombre === 'string' ? frecuencia.nombre : '';
+}
+
 // El error del portal en el paso 1, con la salida: seguir con la carga manual
 function textoDeErrorDelPortal(mensaje) {
   const texto = String(mensaje ?? '').trim() || 'No se pudo obtener información del portal';
@@ -1034,18 +1041,22 @@ function actualizarFormulario() {
 }
 
 /**
- * La vista previa "Así va a salir en la próxima nota". El título, la fecha y "Qué se solicita" salen del formulario; los
- * datos solicitados los calcula el servidor (API.calculoPedido), un instante después del último cambio y solo si cambió
- * algo de lo que los define. Sin frecuencia con meses o sin próxima no hay pedido: "—".
+ * La vista previa "Así va a salir en la próxima nota". El título, la frecuencia y "Qué se solicita" salen del formulario (la
+ * frecuencia es el nombre de la elegida, con "(Acumulado)" si corresponde, y cambia en el momento, sin pedirle nada al
+ * servidor); los datos solicitados los calcula el servidor (API.calculoPedido), un instante después del último cambio y solo
+ * si cambió algo de lo que los define. Sin frecuencia con meses o sin próxima no hay pedido: "—".
  */
 function pintarVistaPrevia(f) {
   const cuerpo = cuerpoDelDataset(f);
   const textos = textosDeVistaPrevia({
-    titulo: f.titulo, gestion: f.tipo_gestion, proxima: cuerpo.proxima_actualizacion, solicita: f.que_se_solicita
+    titulo: f.titulo, gestion: f.tipo_gestion, solicita: f.que_se_solicita,
+    frecuencia: nombreDeLaFrecuencia(frecuencias, f.frecuencia_id), tipo: f.tipo_pedido, meses: f.meses
   });
+  // Los textos se escriben antes de comparar los parámetros del pedido: si cambia solo la frecuencia (o el título), el servidor
+  // no se vuelve a consultar, pero la vista previa tiene que cambiar igual
   document.getElementById('form-nota-cab').textContent = textos.cabecera;
   document.getElementById('form-nota-titulo').textContent = textos.titulo;
-  document.getElementById('form-nota-fecha').textContent = textos.fecha;
+  document.getElementById('form-nota-frecuencia').textContent = textos.frecuencia;
   document.getElementById('form-nota-solicita').textContent = textos.solicita;
 
   const parametros = { tipo: f.tipo_pedido, meses: f.meses, proxima: cuerpo.proxima_actualizacion, datos_al: cuerpo.datos_al };
@@ -1684,15 +1695,15 @@ function pintarCicloDelRegistro(datosNuevo) {
   llega.style.width = destino;
 }
 
-// "Envío sugerido" y "Hoy" van arriba de la línea: si quedan tan cerca que se pisan (pasa cuando la próxima está a uno o dos
+// "Vence" y "Hoy" van arriba de la línea: si quedan tan cerca que se pisan (pasa cuando la próxima está a uno o dos
 // meses, o en una ventana angosta), "Hoy" sube un renglón
 function separarRotulosDeArriba(caja) {
   caja.classList.remove('con-alto');
   const hoy = caja.querySelector('.etiqueta.hoy');
-  const envio = caja.querySelector('.etiqueta.arriba');
-  if (!hoy || !envio) return;
+  const vence = caja.querySelector('.etiqueta.arriba');
+  if (!hoy || !vence) return;
   const a = hoy.getBoundingClientRect();
-  const b = envio.getBoundingClientRect();
+  const b = vence.getBoundingClientRect();
   if (a.width === 0 || b.width === 0) return; // la línea no se ve (pantalla angosta)
   if (a.left < b.right + 4 && b.left < a.right + 4) {
     hoy.classList.add('alto');

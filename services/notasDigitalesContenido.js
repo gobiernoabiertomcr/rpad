@@ -4,7 +4,7 @@ import {
   formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses, diasHabilesTranscurridos
 } from './notasDigitalesCalendario.js';
 import { RPAD_URL } from './emailTemplates.js';
-import { NOMBRES_TIPO_PEDIDO } from './fechasDatasetReglas.js';
+import { NOMBRES_TIPO_PEDIDO, frecuenciaEnNota } from './fechasDatasetReglas.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -13,9 +13,9 @@ const REMITENTE = 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN';
 const PARRAFO_INICIAL = {
   aviso: {
     interna: 'Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
-    // El externo pide el período de cada dataset y la fecha sugerida de envío (spec 2026-10-17-fechas-datasets, 9). El interno
-    // no: casi todos sus pedidos son relevamientos, sin fechas
-    externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío.'
+    // El externo pide el período de cada dataset (spec 2026-10-17-fechas-datasets, 9; desde el 18/10/2026, sin la fecha sugerida
+    // de envío: spec 18). El interno no: casi todos sus pedidos son relevamientos, sin fechas
+    externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso.'
   },
   reiteracion: {
     interna: 'Informo a Ud. el estado, al día de la fecha, de los conjuntos de datos de gestión interna informados oportunamente que continúan pendientes de actualización en el Portal de Datos Abiertos Municipal. Solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
@@ -185,15 +185,33 @@ const textoAnteriormente = (antecedente) => {
 // vacía del detalle de un registro de actualización (nota de auditoría)
 const RAYA = '—';
 
-// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9). Los próximos a vencer de un aviso: 5, con el pedido y la
-// fecha sugerida de envío (el vencimiento). Las demás (la reiteración y la sección de vencidos que pudiera traer un aviso):
-// las 7 de la reiteración, con "Informado en" al final, porque la segunda parte de esa celda (informadoAnterior) va en la
-// última columna en el HTML, el texto y el PDF.
+// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9 y 18). Los próximos a vencer de un aviso: las 4 comunes, con el
+// pedido y sin columna de fecha (desde el 18/10/2026 se fue la "Fecha sugerida de envío"): en el aviso de todos los días
+// todos vencen el mismo día; si el aviso junta más de un vencimiento, una fila a todo el ancho antes del primer dataset de
+// cada uno lo dice (ver agruparPorVencimiento). Las demás (la reiteración y la sección de vencidos que pudiera
+// traer un aviso): las 7 de la reiteración, con "Informado en" al final, porque la segunda parte de esa celda
+// (informadoAnterior) va en la última columna en el HTML, el texto y el PDF.
 const conColumnasDeAviso = (tipo, clave) => tipo === 'aviso' && clave === 'proximo';
 const columnasDe = (tipo, gestion, clave) => {
   const comunes = ['Conjunto de datos', gestion === 'externa' ? 'Área responsable' : 'Área', 'Frecuencia', 'Datos solicitados'];
-  if (conColumnasDeAviso(tipo, clave)) return [...comunes, 'Fecha sugerida de envío'];
+  if (conColumnasDeAviso(tipo, clave)) return comunes;
   return [...comunes, clave === 'vencido' ? 'Venció' : 'Vence', 'Situación', 'Informado en'];
+};
+
+// Varios vencimientos en un aviso (spec 18): un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, un
+// aviso que se recupera tarde) y sin columna de fecha la nota no diría qué vence cuándo. Solo "Próximos a vencer" de un aviso, y
+// solo si hay más de un vencimiento distinto: las filas van por vencimiento, de la fecha más cercana a la más lejana (estable:
+// dentro de cada vencimiento, el orden que traen), y cada fila marca con `grupo` el renglón a todo el ancho que va antes de ella
+// ("Vencen el dd/mm/aaaa", o "Vence el …" si ese vencimiento tiene un solo dataset); las demás filas, con grupo null. Con un
+// solo vencimiento (el aviso de todos los días) devuelve las mismas filas, sin grupos. No se guarda: sale del vencimiento de cada dataset.
+const porVencimiento = (a, b) => (a.vencimiento < b.vencimiento ? -1 : a.vencimiento > b.vencimiento ? 1 : 0);
+const agruparPorVencimiento = (incluidos) => {
+  if (new Set(incluidos.map(d => d.vencimiento)).size < 2) return incluidos.map(dataset => ({ dataset, grupo: null }));
+  return [...incluidos].sort(porVencimiento).map((dataset, i, ordenados) => {
+    if (i > 0 && ordenados[i - 1].vencimiento === dataset.vencimiento) return { dataset, grupo: null };
+    const cuantos = ordenados.filter(d => d.vencimiento === dataset.vencimiento).length;
+    return { dataset, grupo: `${cuantos === 1 ? 'Vence' : 'Vencen'} el ${formatoCorto(dataset.vencimiento)}` };
+  });
 };
 
 export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config, firma = null, rangoVencimientos = null, autorizacion = null }) => {
@@ -208,22 +226,32 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
   const secciones = ['proximo', 'vencido'].map((clave) => {
     const incluidos = datasets.filter(d => (d.vencimiento < fecha ? 'vencido' : 'proximo') === clave);
     const columnas = columnasDe(tipo, gestion, clave);
-    const filas = incluidos.map((d) => {
-      // "Datos solicitados": el pedido calculado el día de la nota (d.pedido, de la selección). El vencimiento es la fecha
-      // sugerida de envío del aviso
-      const valores = [d.titulo, d.area_nombre, d.frecuencia_nombre, d.pedido?.texto || RAYA, formatoCorto(d.vencimiento)];
+    // Los próximos de un aviso van agrupados por vencimiento si hay más de uno; las demás tablas, tal cual (sin grupos)
+    const agrupados = conColumnasDeAviso(tipo, clave)
+      ? agruparPorVencimiento(incluidos)
+      : incluidos.map(dataset => ({ dataset, grupo: null }));
+    const filas = agrupados.map(({ dataset: d, grupo }) => {
+      // "Frecuencia": con "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año (spec 18); el tipo es
+      // el del dataset (en las notas reales, el efectivo de conPedido). "Datos solicitados": el pedido calculado el día de la
+      // nota (d.pedido, de la selección)
+      const frecuencia = frecuenciaEnNota({ frecuencia: d.frecuencia_nombre, tipo: d.tipo_pedido, meses: d.meses });
+      const valores = [d.titulo, d.area_nombre, frecuencia, d.pedido?.texto || RAYA];
       // Reiteraciones: el antecedente de los emails anteriores es la segunda parte de la celda "Informado en", en
       // todas las filas (con aviso o "Sin aviso previo"); cada formato la escribe en letra más chica
       const informadoAnterior = tipo === 'reiteracion' ? textoAnteriormente(d.antecedente) : null;
+      // Los próximos de un aviso no llevan más columnas; las demás tablas suman cuándo vence (o venció), la situación y dónde
+      // se informó
       if (!conColumnasDeAviso(tipo, clave)) {
-        valores.push(situacion(d.vencimiento, fecha), `${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
+        valores.push(formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha), `${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
       }
       return {
         valores,
         url: urlSegura(d.url_dataset),
         // Avisos: el antecedente va en una fila a todo el ancho, debajo de la del dataset
         antecedente: tipo === 'aviso' ? textoAntecedente(d.antecedente) : null,
-        informadoAnterior
+        informadoAnterior,
+        // La fila a todo el ancho, arriba de la del dataset, que abre un vencimiento (solo con varios en el mismo aviso)
+        grupo
       };
     });
     return { clave, ...SECCIONES[clave], columnas, filas };
@@ -493,19 +521,18 @@ export const construirNotaDeAuditoria = ({
 
 const ETIQUETA_GESTION = { interna: 'GESTIÓN INTERNA', externa: 'GESTIÓN EXTERNA' };
 
-// Indicador de estado del anexo: la fecha sugerida de envío (el vencimiento) y los días que faltan (spec
-// 2026-10-17-fechas-datasets, 9). Los avisos solo llevan datasets a vencer; un vencimiento pasado (posible con datos
-// armados a mano) dice hace cuántos días fue, en lugar de "faltan" días negativos.
+// Indicador de estado del anexo: cuándo vence el dataset y los días que faltan (spec 2026-10-17-fechas-datasets, 9; desde el
+// 18/10/2026 dice "Vence", no "fecha sugerida de envío": spec 18). Los avisos solo llevan datasets a vencer; un vencimiento
+// pasado (posible con datos armados a mano) dice "Venció" y hace cuántos días fue, en lugar de "faltan" días negativos.
 const estadoDelAnexo = (vencimiento, fecha) => {
   const dias = diasEntre(fecha, vencimiento);
   if (dias === 0) return 'Vence hoy';
-  const envio = `Fecha sugerida de envío: ${formatoCorto(vencimiento)}`;
-  if (dias < 0) return `${envio} · hace ${cantidad(-dias, 'día', 'días')}`;
-  return `${envio} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
+  if (dias < 0) return `Venció el ${formatoCorto(vencimiento)} · hace ${cantidad(-dias, 'día', 'días')}`;
+  return `Vence el ${formatoCorto(vencimiento)} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
 };
 
 // Línea de tiempo del anexo (spec 2026-10-17-fechas-datasets, 9): arranca en los datos publicados (Datos al) o, sin ellos,
-// en la carga en el portal, y termina en la fecha sugerida de envío. Una fecha que no es una fecha (la fecha cero de
+// en la carga en el portal, y termina en el vencimiento. Una fecha que no es una fecha (la fecha cero de
 // MariaDB, '0000-00-00', con sql_mode no estricto) se toma como sin registro: con ella la línea no se puede dibujar. Sin
 // ninguna de las dos, renderAnexo dice "Sin registro".
 const lineaDelAnexo = (f, fecha) => {
@@ -539,7 +566,9 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
         ['Área responsable', f.area_nombre],
         ['Depende de', f.area_superior],
         ['Gestión', f.tipo_gestion === 'externa' ? 'Externa' : 'Interna'],
-        ['Frecuencia', f.frecuencia_nombre],
+        // Con "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año (spec 18); f.tipo_pedido es el
+        // efectivo, el de la selección de la nota (fichasDelAviso), no el guardado
+        ['Frecuencia', frecuenciaEnNota({ frecuencia: f.frecuencia_nombre, tipo: f.tipo_pedido, meses: f.meses })],
         ['Tema principal', f.tema_principal],
         ['Tema secundario', f.tema_secundario],
         ['Formatos', f.formatos]
@@ -588,7 +617,11 @@ export const renderHtml = (nota) => {
       const antecedente = fila.antecedente
         ? `<tr><td colspan="${seccion.columnas.length}" style="${ESTILO_CELDA}font-style:italic;font-size:12px;">${escapeHtml(fila.antecedente)}</td></tr>`
         : '';
-      return principal + antecedente;
+      // El vencimiento que abre esta fila (aviso con varios vencimientos), a todo el ancho y en negrita, arriba de ella
+      const grupo = fila.grupo
+        ? `<tr><td colspan="${seccion.columnas.length}" style="${ESTILO_CELDA}font-weight:bold;">${escapeHtml(fila.grupo)}</td></tr>`
+        : '';
+      return grupo + principal + antecedente;
     }).join('');
     return `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;"><tr>${encabezado}</tr>${filas}</table>`;
   };
@@ -645,6 +678,8 @@ const lineasFirma = (firma) => (firma.presentante
 const lineasDeSeccion = (seccion) => {
   const lineas = [seccion.titulo, ...(seccion.introduccion ? [seccion.introduccion] : []), ''];
   for (const fila of seccion.filas) {
+    // El vencimiento que abre esta fila (aviso con varios vencimientos): un renglón propio antes de las filas de ese vencimiento
+    if (fila.grupo) lineas.push(fila.grupo);
     lineas.push(`- ${fila.valores[0]}${fila.url ? ` (${fila.url})` : ''}`);
     // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea
     seccion.columnas.slice(1).forEach((columna, i) => {
