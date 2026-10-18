@@ -186,14 +186,32 @@ const textoAnteriormente = (antecedente) => {
 const RAYA = '—';
 
 // Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9 y 18). Los próximos a vencer de un aviso: las 4 comunes, con el
-// pedido; todos vencen el mismo día, así que no llevan fecha (desde el 18/10/2026 se fue la "Fecha sugerida de envío"). Las
-// demás (la reiteración y la sección de vencidos que pudiera traer un aviso): las 7 de la reiteración, con "Informado en" al
-// final, porque la segunda parte de esa celda (informadoAnterior) va en la última columna en el HTML, el texto y el PDF.
+// pedido y sin columna de fecha (desde el 18/10/2026 se fue la "Fecha sugerida de envío"): en el aviso de todos los días
+// todos vencen el mismo día; si el aviso junta más de un vencimiento, una fila a todo el ancho antes del primer dataset de
+// cada uno lo dice (ver agruparPorVencimiento). Las demás (la reiteración y la sección de vencidos que pudiera
+// traer un aviso): las 7 de la reiteración, con "Informado en" al final, porque la segunda parte de esa celda
+// (informadoAnterior) va en la última columna en el HTML, el texto y el PDF.
 const conColumnasDeAviso = (tipo, clave) => tipo === 'aviso' && clave === 'proximo';
 const columnasDe = (tipo, gestion, clave) => {
   const comunes = ['Conjunto de datos', gestion === 'externa' ? 'Área responsable' : 'Área', 'Frecuencia', 'Datos solicitados'];
   if (conColumnasDeAviso(tipo, clave)) return comunes;
   return [...comunes, clave === 'vencido' ? 'Venció' : 'Vence', 'Situación', 'Informado en'];
+};
+
+// Varios vencimientos en un aviso (spec 18): un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, un
+// aviso que se recupera tarde) y sin columna de fecha la nota no diría qué vence cuándo. Solo "Próximos a vencer" de un aviso, y
+// solo si hay más de un vencimiento distinto: las filas van por vencimiento, de la fecha más cercana a la más lejana (estable:
+// dentro de cada vencimiento, el orden que traen), y cada fila marca con `grupo` el renglón a todo el ancho que va antes de ella
+// ("Vencen el dd/mm/aaaa", o "Vence el …" si ese vencimiento tiene un solo dataset); las demás filas, con grupo null. Con un
+// solo vencimiento (el aviso de todos los días) devuelve las mismas filas, sin grupos. No se guarda: sale del vencimiento de cada dataset.
+const porVencimiento = (a, b) => (a.vencimiento < b.vencimiento ? -1 : a.vencimiento > b.vencimiento ? 1 : 0);
+const agruparPorVencimiento = (incluidos) => {
+  if (new Set(incluidos.map(d => d.vencimiento)).size < 2) return incluidos.map(dataset => ({ dataset, grupo: null }));
+  return [...incluidos].sort(porVencimiento).map((dataset, i, ordenados) => {
+    if (i > 0 && ordenados[i - 1].vencimiento === dataset.vencimiento) return { dataset, grupo: null };
+    const cuantos = ordenados.filter(d => d.vencimiento === dataset.vencimiento).length;
+    return { dataset, grupo: `${cuantos === 1 ? 'Vence' : 'Vencen'} el ${formatoCorto(dataset.vencimiento)}` };
+  });
 };
 
 export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPrueba = false, fecha, datasets, areas = [], config, firma = null, rangoVencimientos = null, autorizacion = null }) => {
@@ -208,7 +226,11 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
   const secciones = ['proximo', 'vencido'].map((clave) => {
     const incluidos = datasets.filter(d => (d.vencimiento < fecha ? 'vencido' : 'proximo') === clave);
     const columnas = columnasDe(tipo, gestion, clave);
-    const filas = incluidos.map((d) => {
+    // Los próximos de un aviso van agrupados por vencimiento si hay más de uno; las demás tablas, tal cual (sin grupos)
+    const agrupados = conColumnasDeAviso(tipo, clave)
+      ? agruparPorVencimiento(incluidos)
+      : incluidos.map(dataset => ({ dataset, grupo: null }));
+    const filas = agrupados.map(({ dataset: d, grupo }) => {
       // "Frecuencia": con "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año (spec 18); el tipo es
       // el del dataset (en las notas reales, el efectivo de conPedido). "Datos solicitados": el pedido calculado el día de la
       // nota (d.pedido, de la selección)
@@ -227,7 +249,9 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
         url: urlSegura(d.url_dataset),
         // Avisos: el antecedente va en una fila a todo el ancho, debajo de la del dataset
         antecedente: tipo === 'aviso' ? textoAntecedente(d.antecedente) : null,
-        informadoAnterior
+        informadoAnterior,
+        // La fila a todo el ancho, arriba de la del dataset, que abre un vencimiento (solo con varios en el mismo aviso)
+        grupo
       };
     });
     return { clave, ...SECCIONES[clave], columnas, filas };
@@ -593,7 +617,11 @@ export const renderHtml = (nota) => {
       const antecedente = fila.antecedente
         ? `<tr><td colspan="${seccion.columnas.length}" style="${ESTILO_CELDA}font-style:italic;font-size:12px;">${escapeHtml(fila.antecedente)}</td></tr>`
         : '';
-      return principal + antecedente;
+      // El vencimiento que abre esta fila (aviso con varios vencimientos), a todo el ancho y en negrita, arriba de ella
+      const grupo = fila.grupo
+        ? `<tr><td colspan="${seccion.columnas.length}" style="${ESTILO_CELDA}font-weight:bold;">${escapeHtml(fila.grupo)}</td></tr>`
+        : '';
+      return grupo + principal + antecedente;
     }).join('');
     return `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 16px;"><tr>${encabezado}</tr>${filas}</table>`;
   };
@@ -650,6 +678,8 @@ const lineasFirma = (firma) => (firma.presentante
 const lineasDeSeccion = (seccion) => {
   const lineas = [seccion.titulo, ...(seccion.introduccion ? [seccion.introduccion] : []), ''];
   for (const fila of seccion.filas) {
+    // El vencimiento que abre esta fila (aviso con varios vencimientos): un renglón propio antes de las filas de ese vencimiento
+    if (fila.grupo) lineas.push(fila.grupo);
     lineas.push(`- ${fila.valores[0]}${fila.url ? ` (${fila.url})` : ''}`);
     // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea
     seccion.columnas.slice(1).forEach((columna, i) => {

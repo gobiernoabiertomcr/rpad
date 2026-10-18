@@ -172,9 +172,10 @@ const reiteracionReal = (cambios = {}) => nota(0, { tipo: 'reiteracion', dataset
 const palabras = (texto) => String(texto).split(/\s+/).filter(Boolean);
 const TAMANO_TABLA = 8.5;
 const TAMANO_SECUNDARIO = 7;
-// Las palabras de las tablas de una nota: encabezados, celdas, antecedentes y la segunda parte de "Informado en"
+// Las palabras de las tablas de una nota: encabezados, celdas, antecedentes, la segunda parte de "Informado en" y las filas de
+// vencimiento de un aviso con varios (spec 18)
 const palabrasDeLasTablas = (n) => new Set(n.secciones
-  .flatMap(s => [...s.columnas, ...s.filas.flatMap(f => [...f.valores, f.antecedente, f.informadoAnterior])])
+  .flatMap(s => [...s.columnas, ...s.filas.flatMap(f => [...f.valores, f.antecedente, f.informadoAnterior, f.grupo])])
   .filter(Boolean).flatMap(palabras));
 // Lo escrito en las tablas (en 8,5 y 7 puntos) que no es una palabra entera de ellas: el pedazo de una palabra o de una
 // fecha partida entre dos renglones. (Las palabras repetidas en otras celdas no lo esconden: se mira cada renglón.)
@@ -422,6 +423,94 @@ describe('renderPdf: tabla de 4 columnas del aviso con valores reales', () => {
     assert.ok(antecedente, textos.map(t => t.texto).join(' | '));
     assert.ok(cerca(antecedente.x, 30 * MM + 3, 0.5), `x = ${antecedente.x}`);
     assert.equal(antecedente.texto, 'Antecedente: notificado a la DGMIT por correo electrónico en 2 oportunidades, entre el 03/11/2026 y el 01/12/2026.');
+  });
+});
+
+// Spec 18, "Varios vencimientos en un aviso": en "Próximos a vencer" de un aviso con más de un vencimiento, una fila a todo el
+// ancho ("Vencen el …" o "Vence el …") antes del primer dataset de cada uno. En el PDF, esa fila nunca queda sola al pie de una
+// hoja: viaja con la primera fila de su grupo, como el encabezado de la tabla
+describe('renderPdf: aviso con varios vencimientos', () => {
+  const GRUPO = /^(Vence|Vencen) el \d{2}\/\d{2}\/\d{4}$/;
+  const ENCABEZADO = ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Datos', 'solicitados'];
+  // Los 8 reales repartidos en tres vencimientos: tres el 31/01, uno el 28/02 y cuatro el 31/03
+  const VENCIMIENTOS = ['2027-01-31', '2027-01-31', '2027-01-31', '2027-02-28', '2027-03-31', '2027-03-31', '2027-03-31', '2027-03-31'];
+  const variosReal = (cambios = {}) => avisoReal({ datasets: AVISO_REAL.map((d, i) => ({ ...d, vencimiento: VENCIMIENTOS[i] })), ...cambios });
+  const esPie = (linea) => esPaginacion(linea);
+
+  it('las filas de vencimiento van a todo el ancho de la tabla, con el texto de cada grupo y dentro de los márgenes', async () => {
+    const n = variosReal();
+    assert.deepEqual(n.secciones[0].filas.map(f => f.grupo).filter(Boolean), ['Vencen el 31/01/2027', 'Vence el 28/02/2027', 'Vencen el 31/03/2027']);
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    const grupos = textos.filter(t => GRUPO.test(t.texto));
+    assert.deepEqual(grupos.map(t => t.texto), ['Vencen el 31/01/2027', 'Vence el 28/02/2027', 'Vencen el 31/03/2027']);
+    // Como el antecedente: empiezan en el borde izquierdo de la tabla (más el relleno de la celda), no en una columna
+    for (const t of grupos) assert.ok(cerca(t.x, 30 * MM + 3, 0.5), `"${t.texto}" en x = ${t.x}`);
+    for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
+    assert.deepEqual(fragmentos(n, textos), [], textos.map(t => t.texto).join(' | '));
+  });
+
+  it('cada fila de vencimiento va justo antes del primer dataset de su grupo, y las filas salen por vencimiento', async () => {
+    const n = variosReal();
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    const filas = n.secciones[0].filas;
+    for (const fila of filas.filter(f => f.grupo)) {
+      const i = textos.findIndex(t => t.texto === fila.grupo);
+      assert.ok(i >= 0 && fila.valores[0].startsWith(textos[i + 1].texto), `${fila.grupo}: sigue "${textos[i + 1]?.texto}"`);
+    }
+    // El orden de los datasets en el PDF es el de la tabla
+    const primeros = filas.map(f => f.valores[0].split(' ')[0]);
+    const enElPdf = primeros.map(p => textos.findIndex(t => t.texto.startsWith(p)));
+    assert.deepEqual(enElPdf, [...enElPdf].sort((a, b) => a - b), primeros.join(' | '));
+  });
+
+  it('con un solo vencimiento (el aviso de todos los días) no hay filas de vencimiento', async () => {
+    const textos = textosPorHoja(await renderPdf(avisoReal())).flat();
+    assert.ok(!textos.some(t => GRUPO.test(t.texto)), textos.map(t => t.texto).join(' | '));
+  });
+
+  it('la sección de vencidos de un aviso no lleva filas de vencimiento', async () => {
+    const vencidos = [
+      { ...AVISO_REAL[0], id: 20, titulo: 'Vencido B', vencimiento: '2026-11-30' },
+      { ...AVISO_REAL[1], id: 21, titulo: 'Vencido A', vencimiento: '2026-10-31' }
+    ];
+    const n = avisoReal({ datasets: [...AVISO_REAL.map((d, i) => ({ ...d, vencimiento: VENCIMIENTOS[i] })), ...vencidos] });
+    assert.deepEqual(n.secciones.map(s => s.clave), ['proximo', 'vencido']);
+    const textos = textosPorHoja(await renderPdf(n)).flat();
+    assert.equal(textos.filter(t => GRUPO.test(t.texto)).length, 3, textos.map(t => t.texto).join(' | '));
+    assert.deepEqual(fragmentos(n, textos), []);
+  });
+
+  // La fila de vencimiento nunca queda sola al pie de una hoja (ni arriba de una hoja sin su primera fila): se barren tamaños y
+  // alturas de fila para que el corte de hoja caiga en todos los lugares posibles
+  it('barrido: la fila de vencimiento va siempre en la misma hoja que la primera fila de su grupo, y pasa con ella a la hoja siguiente', async () => {
+    const titulos = {
+      largo: (i) => `Dataset ${i} con un título bastante largo para que ocupe más de una línea en la tabla del PDF`,
+      corto: (i) => `Dataset ${i}`,
+      variado: (i) => `Dataset ${i} ${'palabra '.repeat((i * 7) % 23)}`.trim()
+    };
+    const ciclo = ['2026-12-31', '2027-01-31', '2027-02-28'];
+    let grupos = 0;
+    let enHojaSiguiente = 0;
+    for (const estilo of Object.keys(titulos)) {
+      for (let cantidad = 2; cantidad <= 36; cantidad++) {
+        const n = nota(cantidad, {
+          datasets: Array.from({ length: cantidad }, (_, k) => ({ ...dataset(k + 1, ciclo[(k * 5 + 1) % 3]), titulo: titulos[estilo](k + 1) }))
+        });
+        const etiqueta = `${estilo} con ${cantidad} datasets`;
+        const hojas = lineasPorHoja(await renderPdf(n)).map(lineas => lineas.filter(l => !esPie(l)));
+        const esperados = n.secciones[0].filas.map(f => f.grupo).filter(Boolean);
+        assert.deepEqual(hojas.flat().filter(l => GRUPO.test(l)), esperados, `${etiqueta}: faltan o sobran filas de vencimiento`);
+        hojas.forEach((lineas, h) => lineas.forEach((linea, i) => {
+          if (!GRUPO.test(linea)) return;
+          grupos++;
+          assert.ok(/^Dataset \d+\b/.test(lineas[i + 1] ?? ''), `${etiqueta}, hoja ${h + 1}: "${linea}" quedó sin su primera fila (sigue "${lineas[i + 1]}")`);
+          // La primera de la hoja siguiente, justo debajo del encabezado de la tabla
+          if (h > 0 && lineas.slice(0, i).every(l => ENCABEZADO.includes(l))) enHojaSiguiente++;
+        }));
+      }
+    }
+    assert.ok(grupos > 200, `el barrido apenas dibujó filas de vencimiento (${grupos})`);
+    assert.ok(enHojaSiguiente > 5, `el barrido apenas pasó filas de vencimiento a la hoja siguiente (${enHojaSiguiente})`);
   });
 });
 

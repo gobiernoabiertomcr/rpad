@@ -316,11 +316,12 @@ const calcularAnchos = (doc, seccion, ancho) => {
   return anchos.map((a, i) => a - exceso * holguras[i] / totalHolgura);
 };
 
-// Prepara la tabla de una sección: devuelve cuánto alto necesitan el encabezado y la primera fila (con su
-// antecedente) para que quepan juntos, y la función que la dibuja.
-// Una fila es { valores, url, antecedente, informadoAnterior }: el antecedente de los avisos va en una fila a todo el
+// Prepara la tabla de una sección: devuelve cuánto alto necesitan el encabezado y la primera fila (con su fila de
+// vencimiento, si la tiene, y su antecedente) para que quepan juntos, y la función que la dibuja.
+// Una fila es { valores, url, antecedente, informadoAnterior, grupo }: el antecedente de los avisos va en una fila a todo el
 // ancho debajo; informadoAnterior (reiteraciones) es la segunda parte de la última celda, debajo del texto de la nota
-// y en letra más chica.
+// y en letra más chica; grupo (avisos con varios vencimientos, spec 18) es el texto de la fila a todo el ancho, en negrita,
+// que abre un vencimiento y va arriba de la fila.
 const prepararTabla = (doc, seccionDeLaNota, ancho) => {
   const seccion = conFechasJuntas(seccionDeLaNota);
   const anchos = calcularAnchos(doc, seccion, ancho);
@@ -337,8 +338,8 @@ const prepararTabla = (doc, seccionDeLaNota, ancho) => {
   const altoDe = (valores, fuente, segunda = null) =>
     Math.max(...valores.map((v, i) => altoPrincipal(v, i, fuente) + altoSegunda(i, segunda))) + 2 * RELLENO;
 
-  const altoAncha = (texto) => {
-    doc.font(CURSIVA).fontSize(TAMANO_TABLA);
+  const altoAncha = (texto, fuente = CURSIVA) => {
+    doc.font(fuente).fontSize(TAMANO_TABLA);
     return doc.heightOfString(texto, { width: ancho - 2 * RELLENO }) + 2 * RELLENO;
   };
 
@@ -371,26 +372,32 @@ const prepararTabla = (doc, seccionDeLaNota, ancho) => {
 
   const encabezado = () => fila(seccion.columnas, NEGRITA);
 
-  const filaAncha = (texto) => {
-    const alto = altoAncha(texto);
-    if (doc.y + alto > limite()) {
+  // reserva: alto que debe quedar libre a continuación (la fila de vencimiento no se separa de la primera fila de su grupo)
+  const filaAncha = (texto, fuente = CURSIVA, reserva = 0) => {
+    const alto = altoAncha(texto, fuente);
+    if (doc.y + alto + reserva > limite()) {
       doc.addPage();
       encabezado();
     }
     const y = doc.y;
     doc.lineWidth(0.5).rect(izquierda, y, ancho, alto).stroke();
-    doc.font(CURSIVA).fontSize(TAMANO_TABLA).text(texto, izquierda + RELLENO, y + RELLENO, { width: ancho - 2 * RELLENO });
+    doc.font(fuente).fontSize(TAMANO_TABLA).text(texto, izquierda + RELLENO, y + RELLENO, { width: ancho - 2 * RELLENO });
     doc.x = izquierda;
     doc.y = y + alto;
   };
 
+  // Lo que ocupa una fila con su antecedente (el que debe quedar a continuación de lo que se dibuje antes de ella)
+  const altoConAntecedente = (f) => altoDe(f.valores, NORMAL, f.informadoAnterior) + (f.antecedente ? altoAncha(f.antecedente) : 0);
+
   const primera = seccion.filas[0];
   const altoInicio = altoDe(seccion.columnas, NEGRITA)
-    + (primera ? altoDe(primera.valores, NORMAL, primera.informadoAnterior) + (primera.antecedente ? altoAncha(primera.antecedente) : 0) : 0);
+    + (primera ? (primera.grupo ? altoAncha(primera.grupo, NEGRITA) : 0) + altoConAntecedente(primera) : 0);
 
   const dibujar = () => {
     encabezado();
     for (const f of seccion.filas) {
+      // (la fila de vencimiento se dibuja con lo que ocupa la primera fila de su grupo: nunca queda sola al pie de una hoja)
+      if (f.grupo) filaAncha(f.grupo, NEGRITA, altoConAntecedente(f));
       fila(f.valores, NORMAL, { url: f.url, reserva: f.antecedente ? altoAncha(f.antecedente) : 0, segunda: f.informadoAnterior });
       if (f.antecedente) filaAncha(f.antecedente);
     }

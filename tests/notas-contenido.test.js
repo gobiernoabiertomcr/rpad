@@ -283,6 +283,135 @@ describe('reiteración: antecedente en "Informado en"', () => {
   });
 });
 
+// Spec 18, "Varios vencimientos en un aviso": en "Próximos a vencer" de un aviso con más de un vencimiento las filas van ordenadas
+// por vencimiento y, antes del primer dataset de cada uno, una fila a todo el ancho dice "Vencen el …" (o "Vence el …" si es uno solo)
+describe('varios vencimientos en un aviso (spec 18)', () => {
+  const FIN_DE_ANIO = '2026-12-31';
+  const ENERO = '2027-01-31';
+  const FEBRERO = '2027-02-28';
+  // Entran desordenados: tres vencen a fin de año, uno en enero y dos en febrero
+  const desordenados = () => [
+    dataset({ id: 1, titulo: 'Febrero A', vencimiento: FEBRERO }),
+    dataset({ id: 2, titulo: 'Fin de año A', vencimiento: FIN_DE_ANIO }),
+    dataset({ id: 3, titulo: 'Enero', vencimiento: ENERO }),
+    dataset({ id: 4, titulo: 'Fin de año B', vencimiento: FIN_DE_ANIO }),
+    dataset({ id: 5, titulo: 'Febrero B', vencimiento: FEBRERO }),
+    dataset({ id: 6, titulo: 'Fin de año C', vencimiento: FIN_DE_ANIO })
+  ];
+  const TITULOS = ['Fin de año A', 'Fin de año B', 'Fin de año C', 'Enero', 'Febrero A', 'Febrero B'];
+  const GRUPOS = ['Vencen el 31/12/2026', 'Vence el 31/01/2027', 'Vencen el 28/02/2027'];
+  const aviso = (datasets, cambios = {}) => nota({ gestion: 'externa', datasets, ...cambios });
+  // Las filas de grupo del HTML: una celda a todo el ancho (colspan 4) con "Vence el …" o "Vencen el …"
+  const gruposDelHtml = (html) => [...html.matchAll(/<td colspan="(\d+)" style="[^"]*">((?:Vence|Vencen) el \d{2}\/\d{2}\/\d{4})<\/td>/g)]
+    .map(m => [Number(m[1]), m[2]]);
+
+  it('ordena las filas por vencimiento (estable: dentro de cada uno, el orden que traen) y marca la primera de cada grupo', () => {
+    const [proximos] = aviso(desordenados()).secciones;
+    assert.deepEqual(proximos.filas.map(f => f.valores[0]), TITULOS);
+    assert.deepEqual(proximos.filas.map(f => f.grupo), [GRUPOS[0], null, null, GRUPOS[1], GRUPOS[2], null]);
+    // Siguen siendo las 4 columnas de siempre: la fila de grupo no cambia las celdas de ningún dataset
+    assert.deepEqual(proximos.columnas, ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados']);
+    assert.ok(proximos.filas.every(f => f.valores.length === 4));
+  });
+
+  it('singular con un solo dataset en ese vencimiento, plural con más de uno', () => {
+    const grupos = aviso(desordenados()).secciones[0].filas.map(f => f.grupo).filter(Boolean);
+    assert.deepEqual(grupos, GRUPOS);
+    const dos = aviso([dataset({ id: 1, vencimiento: ENERO }), dataset({ id: 2, titulo: 'Dataset B', vencimiento: FIN_DE_ANIO })]);
+    assert.deepEqual(dos.secciones[0].filas.map(f => f.grupo), ['Vence el 31/12/2026', 'Vence el 31/01/2027']);
+  });
+
+  it('HTML: una fila a todo el ancho (colspan 4) justo antes de la fila de su primer dataset', () => {
+    const html = renderHtml(aviso(desordenados()));
+    assert.deepEqual(gruposDelHtml(html), GRUPOS.map(g => [4, g]));
+    // Cada fila de grupo va seguida de la fila de su primer dataset, y las filas salen en el orden de la tabla
+    for (const [grupo, primero] of [[GRUPOS[0], 'Fin de año A'], [GRUPOS[1], 'Enero'], [GRUPOS[2], 'Febrero A']]) {
+      assert.match(html, new RegExp(`${grupo}</td></tr><tr><td style="[^"]*"><a href="[^"]*" style="[^"]*">${primero}</a></td>`), grupo);
+    }
+    const posiciones = [GRUPOS[0], 'Fin de año A', 'Fin de año B', 'Fin de año C', GRUPOS[1], 'Enero', GRUPOS[2], 'Febrero A', 'Febrero B']
+      .map(texto => html.indexOf(`>${texto}<`));
+    assert.ok(posiciones.every(p => p > 0), JSON.stringify(posiciones));
+    assert.deepEqual(posiciones, [...posiciones].sort((a, b) => a - b));
+  });
+
+  it('texto plano: un renglón propio antes de las filas de cada vencimiento', () => {
+    const lineas = renderTexto(aviso(desordenados())).split('\n');
+    const orden = lineas.filter(l => /^(Vence|Vencen) el /.test(l) || l.startsWith('- '));
+    assert.deepEqual(orden.map(l => l.replace(/ \(https?:\/\/[^)]*\)$/, '')), [
+      GRUPOS[0], '- Fin de año A', '- Fin de año B', '- Fin de año C', GRUPOS[1], '- Enero', GRUPOS[2], '- Febrero A', '- Febrero B'
+    ]);
+    // Es un renglón propio, sin sangría ni guion, y se lee antes de las líneas del dataset que abre
+    const i = lineas.indexOf(GRUPOS[1]);
+    assert.ok(lineas[i + 1].startsWith('- Enero'), lineas.slice(i, i + 3).join(' | '));
+  });
+
+  it('con un solo vencimiento no cambia nada: ni el orden ni filas de grupo', () => {
+    const mismoDia = [
+      dataset({ id: 1, titulo: 'Zeta', vencimiento: ENERO }),
+      dataset({ id: 2, titulo: 'Alfa', vencimiento: ENERO }),
+      dataset({ id: 3, titulo: 'Medio', vencimiento: ENERO })
+    ];
+    const n = aviso(mismoDia);
+    assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), ['Zeta', 'Alfa', 'Medio']);
+    assert.ok(n.secciones[0].filas.every(f => !f.grupo));
+    const html = renderHtml(n);
+    assert.ok(!html.includes('colspan'), 'sin antecedente ni grupos no hay filas a todo el ancho');
+    assert.ok(!/(Vence|Vencen) el /.test(html) && !/^(Vence|Vencen) el /m.test(renderTexto(n)));
+    // Un solo dataset tampoco
+    assert.ok(aviso([dataset()]).secciones[0].filas.every(f => !f.grupo));
+  });
+
+  it('el antecedente sigue debajo de la fila de su dataset: grupo, dataset, antecedente', () => {
+    const ANTECEDENTE = { cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' };
+    const datasets = desordenados().map(d => (d.id === 2 ? { ...d, antecedente: ANTECEDENTE } : d));
+    const html = renderHtml(aviso(datasets));
+    assert.match(html, new RegExp(`${GRUPOS[0]}</td></tr><tr><td style="[^"]*"><a [^>]*>Fin de año A</a></td>.*?</tr><tr><td colspan="4" style="[^"]*">Antecedente: `));
+    assert.deepEqual([...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1])), [4, 4, 4, 4]);
+  });
+
+  it('la sección de vencidos de un aviso no se agrupa: sigue con su orden, sus 7 columnas y sin filas de grupo', () => {
+    const n = aviso([
+      ...desordenados(),
+      dataset({ id: 7, titulo: 'Vencido B', vencimiento: '2026-10-31' }),
+      dataset({ id: 8, titulo: 'Vencido A', vencimiento: '2026-09-30' })
+    ]);
+    assert.deepEqual(n.secciones.map(s => s.clave), ['proximo', 'vencido']);
+    const vencidos = n.secciones[1];
+    assert.equal(vencidos.columnas.length, 7);
+    assert.deepEqual(vencidos.filas.map(f => f.valores[0]), ['Vencido B', 'Vencido A']);
+    assert.ok(vencidos.filas.every(f => !f.grupo));
+    assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), TITULOS);
+    assert.deepEqual(gruposDelHtml(renderHtml(n)), GRUPOS.map(g => [4, g]));
+  });
+
+  it('un aviso con vencidos con más de un vencimiento, y próximos de uno solo, no lleva ninguna fila de grupo', () => {
+    const n = aviso([
+      dataset({ id: 1 }),
+      dataset({ id: 2, titulo: 'Vencido B', vencimiento: '2026-10-31' }),
+      dataset({ id: 3, titulo: 'Vencido A', vencimiento: '2026-09-30' })
+    ]);
+    assert.ok(n.secciones.every(s => s.filas.every(f => !f.grupo)));
+    assert.ok(!renderHtml(n).includes('colspan'));
+    assert.deepEqual(n.secciones[1].filas.map(f => f.valores[0]), ['Vencido B', 'Vencido A']);
+  });
+
+  it('la reiteración no se agrupa ni se reordena: tiene su columna "Vence"', () => {
+    for (const gestion of ['interna', 'externa']) {
+      const n = nota({ tipo: 'reiteracion', gestion, datasets: desordenados() });
+      assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), ['Febrero A', 'Fin de año A', 'Enero', 'Fin de año B', 'Febrero B', 'Fin de año C']);
+      assert.ok(n.secciones[0].filas.every(f => !f.grupo));
+      assert.equal(n.secciones[0].columnas.length, 7);
+      assert.ok(!renderHtml(n).includes('colspan') && !/^(Vence|Vencen) el /m.test(renderTexto(n)), gestion);
+    }
+  });
+
+  it('también en el aviso interno', () => {
+    const n = nota({ gestion: 'interna', datasets: desordenados() });
+    assert.deepEqual(n.secciones[0].filas.map(f => f.grupo), [GRUPOS[0], null, null, GRUPOS[1], GRUPOS[2], null]);
+    assert.deepEqual(gruposDelHtml(renderHtml(n)), GRUPOS.map(g => [4, g]));
+  });
+});
+
 describe('contactos', () => {
   const area = { id: 10, nombre: 'Área Uno', area_superior: 'Secretaría X', email_principal: 'uno@ejemplo.gov.ar',
     email_secundario: null, telefono_area: '', celular_area: null, nombre_contacto: 'Persona', telefono_contacto: null, email_contacto: null };
