@@ -2,13 +2,14 @@
 
 **Fecha:** 2026-10-15
 **Estado:** diseño aprobado, pendiente de revisión de esta especificación
+**Actualizada el 2026-10-18:** con persona autorizada, cada aviso adelantado se vuelve a presentar en su fecha (sección 7.6)
 
 ## 1. Objetivo
 
 Tres mejoras al sistema de avisos del RPAD, que se diseñan juntas porque se apoyan unas en otras:
 
 1. **Días hábiles.** Ningún recordatorio automático sale en un día no hábil. Hoy las Notas Digitales ya lo respetan, pero el email de cambios pendientes y el aviso a las áreas salen todos los días.
-2. **Licencias.** Los usuarios que reciben avisos pueden tener períodos de licencia en los que el sistema no les escribe. Durante la licencia del firmante de las notas, las notas salen firmadas por una persona que él autorizó o, si no autorizó a nadie, se anticipan los avisos y se postergan las reiteraciones.
+2. **Licencias.** Los usuarios que reciben avisos pueden tener períodos de licencia en los que el sistema no les escribe. Durante la licencia del firmante de las notas, los avisos se anticipan a la víspera. Si autorizó a alguien, esa persona presenta las demás notas con las dos firmas y vuelve a presentar cada aviso adelantado en su fecha (7.6); si no autorizó a nadie, se postergan las reiteraciones.
 3. **Auditoría de cambios pendientes.** La doble verificación pasa a distinguir a quienes auditan (personal designado) de quienes proponen sin la responsabilidad formal de auditar. Si un cambio no se audita a tiempo, se le pide formalmente a la Dirección General con una Nota Digital numerada, que se reitera cada semana.
 
 ## 2. Alcance y entregas
@@ -163,7 +164,7 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 - **La autorización se comunica siempre en la víspera**, aunque la persona autorizada esté de licencia ese día: se la mira por la licencia entera del titular (le queda algún día hábil sin licencia propia, sección 6.3), no por la fecha de la corrida. Firma solo el titular, que todavía no está de licencia, y la persona autorizada va en CC igual. Las notas que presente después citan esa nota; cuando vuelve no sale una nota de autorización aparte.
 - **Autorización tardía o cambiada:** si llega un día hábil, entre la víspera y el fin de la licencia, en que la persona autorizada vigente todavía no tiene nota de autorización (se cargó después de la corrida de la víspera, o se cambió de persona), esa corrida genera primero la nota de autorización, firmada por el titular, y después las demás, que ya la citan. Si ese día la persona autorizada también está de licencia, no sale nada y la nota de autorización sale el primer día hábil en que vuelve.
 
-**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Los días en que la persona autorizada también está de licencia no se genera ninguna nota (7.3, como sin autorizado); el primer día hábil en que vuelve salen las que correspondan. Cambia el bloque de firma:
+**Durante la licencia.** Las reiteraciones, los avisos que todavía correspondan (por ejemplo, un dataset nuevo) y las notas de auditoría salen en su fecha normal, presentadas por la persona autorizada. Además, cada aviso que se adelantó en la víspera se vuelve a presentar en su fecha normal (7.6). Los días en que la persona autorizada también está de licencia no se genera ninguna nota (7.3, como sin autorizado); el primer día hábil en que vuelve salen las que correspondan. Cambia el bloque de firma:
 
 - **PDF:** dos firmas lado a lado, cada una con su imagen, nombre y cargo: el **firmante titular a la derecha** (la posición habitual) y el **autorizado a la izquierda**. Debajo, a todo el ancho y con letra más chica, la leyenda:
 
@@ -194,14 +195,57 @@ Si ese día no hay ningún aviso, sale igual una **nota de autorización** (un t
 | 26/11/2026 – 14/01/2027 | mié 25/11/2026: avisos de lo que vence hasta el 14/01/2027 + ventana (interna hasta mediados de marzo, externa hasta fines de febrero, con los meses completos) | No salen la reiteración de diciembre (01/12) ni la de enero (04/01; el 01/01 es feriado) | vie 15/01/2027: sale la reiteración de enero |
 | 25/01/2027 – 05/03/2027 | vie 22/01/2027 (el 24/01 es domingo) | No salen las reiteraciones del 01/02 ni del 01/03 | lun 08/03/2027: sale la reiteración de marzo |
 
-Sin autorizado, como en la tabla. Con autorizado, la víspera sale lo mismo y además cada aviso lleva el párrafo de autorización (o sale la nota de autorización si no hay avisos); durante la licencia, las reiteraciones de cada mes (01/12 y 04/01 en el primer ejemplo; 01/02 y 01/03 en el segundo) salen en su fecha, presentadas por la persona autorizada con las dos firmas y la cita de la nota de autorización.
+Sin autorizado, como en la tabla. Con autorizado, la víspera sale lo mismo y además cada aviso lleva el párrafo de autorización (o sale la nota de autorización si no hay avisos); durante la licencia, las reiteraciones de cada mes (01/12 y 04/01 en el primer ejemplo; 01/02 y 01/03 en el segundo) salen en su fecha, presentadas por la persona autorizada con las dos firmas y la cita de la nota de autorización, y cada aviso adelantado se vuelve a presentar en su fecha (7.6).
 
 ### 7.5 Correos → Estado
 
-- Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: los avisos se anticipan el 25/11 con la autorización a {nombre}, que presenta las demás notas durante la licencia"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
-- Las fechas de "próximo aviso" y "próxima reiteración" tienen en cuenta la licencia.
+- Una línea con la próxima licencia o la licencia en curso del firmante titular y su efecto: *"Licencia del firmante del 26/11 al 14/01: los avisos se anticipan el 25/11 con la autorización a {nombre}, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha"* o *"…: sin autorizado, los avisos se anticipan el 25/11 y las reiteraciones se postergan al 15/01"*.
+- Las fechas de "próximo aviso" y "próxima reiteración" tienen en cuenta la licencia, también los avisos en su fecha (7.6).
 - Si la persona autorizada falta algunos días de la licencia del titular (6.3), al principio, en el medio o hasta el final, el Estado lo muestra mientras la persona autorizada esté de licencia el día que se evalúa (hoy o, si la licencia del titular todavía no empezó, su primer día hábil): la línea la nombra con *"(de licencia hasta el {dd/mm/aaaa})"* y aparece una **advertencia**, no un error: *"La persona autorizada está de licencia hasta el {dd/mm/aaaa}: hasta entonces no se generan notas."* Para el "hasta el", sus licencias cuentan como una sola si las separan solo días no hábiles.
 - Alertas: autorizado que dejó de cumplir las condiciones (6.3: desactivado, sin firma cargada o de licencia todos los días hábiles de la del titular); firmante titular sin firma cargada.
+
+### 7.6 Aviso en su fecha con autorizado (cambio del 18/10/2026)
+
+Pedido del usuario el 18/10/2026. Con persona autorizada, el aviso anticipado de la víspera sigue como está (7.2 y 7.3), y además cada aviso sale **en su fecha normal**, presentado por la persona autorizada, recordando que ya se había adelantado. Sin autorizado no cambia nada.
+
+**Qué datasets.** En un día de la licencia en que la persona autorizada presenta las notas (7.2), el aviso de cada gestión suma, a la selección normal de ese día, los datasets que ya se avisaron por adelantado y que hoy tocan en su fecha. Un dataset entra si cumple todo esto:
+- tiene una fila de aviso (cualquier estado, sin contar pruebas) con `cuenta_desde` para su vencimiento actual: se avisó por adelantado y no se actualizó desde entonces;
+- su `cuenta_desde` cae dentro de la licencia en curso del titular (`desde` ≤ `cuenta_desde` ≤ `hasta`);
+- sigue activo, de esa gestión y con frecuencia periódica (la misma condición base de la selección);
+- todavía no tiene su aviso en su fecha (no hay otra fila de aviso de ese vencimiento);
+- su **día del aviso en su fecha** es hoy o ya pasó: si una corrida no se hizo, sale en la siguiente, siempre dentro de la licencia y con la persona autorizada presentando.
+
+**Día del aviso en su fecha.** Es `cuenta_desde`, su fecha normal de aviso (7.3), si ese día la persona autorizada está disponible. Si ese día está de licencia, es el último día hábil anterior en que está disponible, dentro de la licencia del titular. Si no hay ninguno (falta desde el primer día de la licencia del titular hasta esa fecha), no hay aviso en su fecha: ese dataset ya salió en el aviso anticipado de la víspera.
+
+**La nota.** Es un aviso como cualquier otro de su gestión:
+- asunto de siempre, con el mes de la nota (no el rango de vencimientos de 7.3);
+- tablas, anexo y datos solicitados calculados ese día;
+- la presenta la persona autorizada, con las dos firmas y la leyenda (7.2);
+- no lleva el párrafo de autorización ni a la persona autorizada en CC.
+
+Inmediatamente después del primer párrafo lleva:
+
+> Este pedido ya se había adelantado por Nota Digital N° {n}/{aa} del {dd/mm/aaaa}.
+
+Si la nota tiene también datasets que no se habían adelantado (por ejemplo, uno nuevo), o si los adelantaron notas distintas, va una oración por cada nota que adelantó alguno, con los títulos entre comillas: *"El conjunto de datos "{título}" ya se había adelantado por Nota Digital N° {n}/{aa} del {dd/mm/aaaa}."* o *"Los conjuntos de datos "{título}", "{título}" y "{título}" ya se habían adelantado por …"*.
+
+**Lo que guarda.** Cada dataset del aviso en su fecha queda en `notas_digitales_datasets` con la `cuenta_desde` de su aviso anticipado: los 20 días de la reiteración se siguen contando desde su fecha normal.
+
+**Reiteraciones.** Un dataset con aviso anticipado y aviso en su fecha aparece una sola vez en la reiteración. "Informado en" nombra los avisos enviados de ese vencimiento, en orden: `Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)`, seguido de "– reiterado N veces" como siempre.
+
+**Correos → Estado.** Durante una licencia con persona autorizada, el próximo aviso de cada gestión es el primero entre el de la selección normal y el próximo aviso en su fecha, con la cantidad de datasets de ese día.
+
+**Ejemplo.** Licencia del 10/12/2026 al 08/01/2027, con persona autorizada:
+
+| Fecha | Nota |
+|---|---|
+| mié 09/12/2026, víspera | Avisos anticipados 9/26 (interna, vencen 28/02/2027) y 10/26 (externa, vencen 31/01/2027), con el párrafo de autorización, firmados por el titular |
+| mar 22/12/2026 | Aviso externo en su fecha con los de 31/01 que sigan pendientes, presentado por la persona autorizada: "Este pedido ya se había adelantado por Nota Digital N° 10/26 del 09/12/2026." |
+| mié 30/12/2026 | Aviso interno en su fecha con los de 28/02, igual |
+| lun 04/01/2027 | Reiteraciones de enero, presentadas por la persona autorizada |
+| lun 01/02/2027 | Reiteración externa: "Informado en: Nota Digital N° 10/26 (09/12/2026) y N° 11/26 (22/12/2026)" |
+
+Si la persona autorizada estuviera de licencia del 21/12 al 23/12, el aviso externo en su fecha saldría el viernes 18/12, el último día hábil anterior en que está disponible.
 
 ## 8. Roles: editor y auditores (entrega 3)
 
@@ -475,6 +519,7 @@ TDD con la batería completa antes y después de cada tarea (`npm test`, contra 
 - **Notas con licencia del firmante (entrega 2), con los ejemplos de 7.4 como fechas fijas:**
   - sin autorizado: avisos anticipados en la víspera, una nota por gestión, con el asunto con rango de meses; nada durante la licencia; una sola reiteración a la vuelta; `cuenta_desde` retrasa la reiteración de un aviso anticipado; carga tardía;
   - con autorizado: la víspera anticipa los avisos con el párrafo de autorización (o sale la nota de autorización si no hay avisos), la licencia guarda esa nota y durante la licencia las reiteraciones salen en su fecha con dos firmas y la leyenda que cita su número; autorización tardía o cambiada;
+  - aviso en su fecha (7.6): sale el día de `cuenta_desde` con dos firmas, la leyenda, el párrafo que cita la nota anticipada y el asunto con el mes; no repite un dataset ya actualizado ni uno que ya tuvo su aviso en su fecha; con la persona autorizada de licencia ese día, sale el último día hábil anterior en que está disponible, y no sale si no hay ninguno dentro de la licencia; sin autorizado no sale; la reiteración muestra el dataset una sola vez, con las dos notas en "Informado en";
   - sin firmante titular elegido: todo como hoy (la batería actual de Notas Digitales sigue en verde sin cambios);
   - en el calendario normal, `cuenta_desde` queda vacío y la selección de reiteraciones no cambia.
 - **Editor y auditoría (entrega 3):**
