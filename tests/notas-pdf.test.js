@@ -186,6 +186,9 @@ const xDeLasColumnas = (textos, encabezados) => encabezados.map((encabezado) => 
 });
 // Un renglón que termina en "Del" o en "al", o que es solo uno de ellos: la preposición quedó separada de su fecha
 const preposicionSuelta = (renglon) => /(^|\s)(Del|al)$/.test(renglon);
+// Un renglón de una tabla que termina en "N°": el signo quedó separado de su número ("Nota Digital N°" / "10/26"). Son notas formales
+const numeralSuelto = (renglon) => /N°\s*$/.test(renglon);
+const renglonesDeTabla = (textos) => textos.filter(t => t.tamano === TAMANO_TABLA || t.tamano === TAMANO_SECUNDARIO).map(t => t.texto);
 // Los renglones de una celda: los consecutivos de la tabla que empiezan en la x de su columna y juntos dan su texto
 const renglonesDeLaCelda = (textos, texto, x) => {
   const enLaColumna = textos.filter(t => t.tamano === TAMANO_TABLA && cerca(t.x, x, 0.5));
@@ -276,6 +279,20 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
     // Y la tabla sigue dentro de los márgenes
     for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
   });
+
+  // "Informado en" con dos y tres avisos (spec 2026-10-15, 7.6) pasa a varios renglones: nunca un "N°" solo al final de uno
+  // ("Nota Digital N°" / "10/26" o "(09/12/2026) y N°" / "11/26 (22/12/2026)"), son notas formales
+  for (const [caso, conAntecedente] of [['sin antecedente', false], ['con antecedente', true]]) {
+    it(`"N°" va junto a su número en "Informado en" con dos y tres avisos (${caso})`, async () => {
+      const ANTECEDENTE = { cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' };
+      const n = reiteracionReal({ datasets: REITERACION_REAL.map(d => ({ ...d, antecedente: conAntecedente ? ANTECEDENTE : null })) });
+      const textos = textosPorHoja(await renderPdf(n)).flat();
+      assert.deepEqual(renglonesDeTabla(textos).filter(numeralSuelto), [], textos.map(t => t.texto).join(' | '));
+      // Los tres avisos de "Reclamos de alumbrado público" siguen en el PDF, con cada "N°" junto a su número
+      const unido = textos.map(t => t.texto).join(' ').replace(/\u00a0/g, ' ');
+      for (const numero of ['8/26', '9/26', '10/26']) assert.ok(unido.includes(`N° ${numero}`), `falta "N° ${numero}": ${unido}`);
+    });
+  }
 
   // Con y sin la segunda parte de "Informado en" (las proporciones de la tabla cambian)
   for (const [caso, conAntecedente] of [['sin antecedente', false], ['con antecedente', true]]) {
@@ -907,6 +924,7 @@ for (const variante of VARIANTES) {
       for (const { etiqueta, nota: n, textos } of renderizadas) {
         if (n.secciones.some(s => s.columnas.length === 5)) conCinco++;
         assert.deepEqual(fragmentos(n, textos.flat()), [], etiqueta);
+        assert.deepEqual(renglonesDeTabla(textos.flat()).filter(numeralSuelto), [], `${etiqueta}: un N° quedó separado de su número`);
       }
       assert.ok(conCinco >= 30 * 5, `${conCinco} notas con la tabla de 5 columnas`);
     });
