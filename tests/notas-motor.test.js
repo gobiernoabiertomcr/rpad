@@ -951,8 +951,12 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.equal(hojas.length, 1);
     const texto = hojas[0].join(' ');
     assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), texto);
-    // El ejemplo vence a fin de mes (spec 2026-10-17-fechas-datasets, R1 y 9): el del mes en que caen los 30 días
-    assert.ok(texto.includes('Vence el 31/12/2026'), texto);
+    // El ejemplo vence a fin de mes (spec 2026-10-17-fechas-datasets, R1 y 9): el del mes en que caen los 30 días. Es la
+    // fecha sugerida de envío; el pedido (un relevamiento, el sugerido de la interna) va en "Datos solicitados" y la línea
+    // de tiempo arranca en sus datos publicados (Datos al: el corte del ciclo anterior, el 30/11/2025)
+    assert.ok(texto.includes('Fecha sugerida de envío: 31/12/2026 · faltan 59 días'), texto);
+    assert.ok(hojas[0].includes('DATOS SOLICITADOS') && hojas[0].includes('Relevamiento actualizado'), texto);
+    assert.ok(hojas[0].includes('DATOS PUBLICADOS AL') && hojas[0].includes('30/11/2025'), texto);
     assert.ok(hojas[0].includes('Interna'), texto);
     assert.ok(texto.includes(SOLICITA_POR_DEFECTO), texto);
     assert.ok(texto.includes('Área de ejemplo'), texto);
@@ -970,8 +974,9 @@ describe('anexo de los avisos (spec 6.7)', () => {
     const [{ anexo_pdf: anexo }] = await query('SELECT anexo_pdf FROM notas_digitales WHERE id = ?', [notaId]);
     const [hoja] = lineasPorHoja(anexo);
     const texto = hoja.join(' ');
-    assert.ok(texto.includes('Vence el 31/12/2026'), texto);
-    assert.ok(texto.includes('31/12/2025'), texto);
+    assert.ok(texto.includes('Fecha sugerida de envío: 31/12/2026'), texto);
+    // Sin Datos al, la línea de tiempo arranca en la carga en el portal: la de la nota
+    assert.ok(hoja.includes('CARGADO EN EL PORTAL') && hoja.includes('31/12/2025'), texto);
     assert.ok(!texto.includes('Sin registro'), texto);
   });
 
@@ -1071,9 +1076,13 @@ describe('datos solicitados guardados con cada nota (spec 2026-10-17-fechas-data
     const notaId = await motor.generarNota({ tipo: 'aviso', gestion: 'externa', fecha: HOY, datasets: [aMano], config: await datos.obtenerConfig() });
     const esperado = periodo(primeroDelMes(sumarMeses(VENCE, -15)), sumarMeses(VENCE, -1));
     assert.deepEqual(await guardado(id), [{ tipo: 'aviso', ...esperado }]);
-    const [{ html, texto }] = await query('SELECT html, texto FROM notas_digitales WHERE id = ?', [notaId]);
+    const [{ html, texto, anexo_pdf: anexo }] = await query('SELECT html, texto, anexo_pdf FROM notas_digitales WHERE id = ?', [notaId]);
     assert.ok(html.includes(`>${esperado.texto}</td>`), html);
     assert.ok(texto.includes(`    Datos solicitados: ${esperado.texto}\n`), texto);
+    // El anexo, en su recuadro "Datos solicitados", con la línea de tiempo desde los datos publicados
+    const [hoja] = lineasPorHoja(anexo);
+    assert.ok(hoja.includes('DATOS SOLICITADOS') && hoja.includes(esperado.texto), hoja.join(' | '));
+    assert.ok(hoja.includes('DATOS PUBLICADOS AL') && hoja.includes(formatoCorto(sumarMeses(VENCE, -16))), hoja.join(' | '));
   });
 
   it('una nota vieja, guardada sin los datos solicitados, sigue contando como aviso y no se completa', async () => {

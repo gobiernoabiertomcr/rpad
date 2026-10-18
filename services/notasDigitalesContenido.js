@@ -456,20 +456,32 @@ export const construirNotaDeAuditoria = ({
 
 const ETIQUETA_GESTION = { interna: 'GESTIÓN INTERNA', externa: 'GESTIÓN EXTERNA' };
 
-// Indicador de estado del anexo. Los avisos solo llevan datasets a vencer; un vencimiento pasado (posible con los
-// datos de ejemplo de la vista previa) se dice como tal en lugar de "faltan" días negativos.
+// Indicador de estado del anexo: la fecha sugerida de envío (el vencimiento) y los días que faltan (spec
+// 2026-10-17-fechas-datasets, 9). Los avisos solo llevan datasets a vencer; un vencimiento pasado (posible con datos
+// armados a mano) dice hace cuántos días fue, en lugar de "faltan" días negativos.
 const estadoDelAnexo = (vencimiento, fecha) => {
   const dias = diasEntre(fecha, vencimiento);
   if (dias === 0) return 'Vence hoy';
-  if (dias < 0) return `Venció el ${formatoCorto(vencimiento)} · hace ${cantidad(-dias, 'día', 'días')}`;
-  return `Vence el ${formatoCorto(vencimiento)} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
+  const envio = `Fecha sugerida de envío: ${formatoCorto(vencimiento)}`;
+  if (dias < 0) return `${envio} · hace ${cantidad(-dias, 'día', 'días')}`;
+  return `${envio} · ${dias === 1 ? 'falta' : 'faltan'} ${cantidad(dias, 'día', 'días')}`;
+};
+
+// Línea de tiempo del anexo (spec 2026-10-17-fechas-datasets, 9): arranca en los datos publicados (Datos al) o, sin ellos,
+// en la carga en el portal, y termina en la fecha sugerida de envío. Una fecha que no es una fecha (la fecha cero de
+// MariaDB, '0000-00-00', con sql_mode no estricto) se toma como sin registro: con ella la línea no se puede dibujar. Sin
+// ninguna de las dos, renderAnexo dice "Sin registro".
+const lineaDelAnexo = (f, fecha) => {
+  const datosAl = esFechaIso(f.datos_al) ? f.datos_al : null;
+  const carga = esFechaIso(f.ultima_actualizacion) ? f.ultima_actualizacion : null;
+  return { inicio: datosAl ?? carga, rotuloInicio: datosAl ? 'Datos publicados al' : 'Cargado en el portal', fin: f.vencimiento, hoy: fecha };
 };
 
 // "Qué se solicita" de un dataset que no lo tiene cargado (spec 6.7.4)
 const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
 
 // Anexo de los avisos: una hoja por dataset con su ficha completa (spec 6.7). Las fechas no se repiten en la ficha:
-// están en la línea de tiempo.
+// están en la línea de tiempo. El pedido tampoco: va en el recuadro "Datos solicitados" de la cabecera.
 export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, fecha, fichas }) => ({
   numeroTexto: textoNumero({ numero, anio, esPrueba }),
   fechaLarga: formatoLargo(fecha),
@@ -482,9 +494,10 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
       titulo: f.titulo,
       etiqueta: `CONJUNTO DE DATOS · ${ETIQUETA_GESTION[f.tipo_gestion] ?? ''}`.trim(),
       estado: estadoDelAnexo(f.vencimiento, fecha),
-      // Una última actualización que no es una fecha (la fecha cero de MariaDB, '0000-00-00', con sql_mode no
-      // estricto) se toma como sin registro: con ella la línea de tiempo no se puede dibujar
-      linea: { inicio: esFechaIso(f.ultima_actualizacion) ? f.ultima_actualizacion : null, fin: f.vencimiento, hoy: fecha },
+      // El texto del pedido de la nota (el de la ficha, que es el de la tabla: spec 2026-10-17-fechas-datasets, 9); sin
+      // pedido, null, y la hoja va sin el recuadro
+      pedido: String(f.pedido?.texto ?? '').trim() || null,
+      linea: lineaDelAnexo(f, fecha),
       campos: [
         ['Área responsable', f.area_nombre],
         ['Depende de', f.area_superior],

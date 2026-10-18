@@ -26,13 +26,21 @@ const CORTE = '… (continúa en el portal)';
 const SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
 const SOLICITA = 'Listado actualizado de las áreas e instituciones especializadas en género, con un registro por área y estos datos: nombre, dependencia, dirección, barrio, teléfono, correo electrónico y coordenadas (latitud y longitud). Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.';
 const DEPENDE_REAL = 'Subsecretaría de Modernización y Transparencia. / Secretaría de Gobierno, Modernización y Transparencia';
+// Pedidos (spec 2026-10-17-fechas-datasets, 9): el de un anual acumulado con Datos al el 31/10/2025, dos reales y uno más
+// largo que cualquiera que arme pedido() (entra en dos líneas sin cortarse)
+const PEDIDO_REAL = { desde: '2025-11-01', hasta: '2026-10-31', texto: 'Del 01/11/2025 al 31/10/2026' };
+const PEDIDOS_REALES = ['Presupuestos de los ejercicios 2024 a 2027', 'Del 01/01/2023 al 31/12/2025'];
+const PEDIDO_LARGO = 'Presupuestos de los ejercicios 2024 a 2027, con la ejecución mensual por partida, las modificaciones presupuestarias y los saldos al cierre';
+const PEDIDO_LARGUISIMO = 'Datos solicitados larguísimos para probar el corte. '.repeat(12);
+const conPedido = (texto) => ({ pedido: { desde: null, hasta: null, texto } });
 // Ficha con textos del largo de los reales: descripción de unos 430 caracteres (van de 300 a 510), observaciones de
 // hasta 90, "qué se solicita" de 200 a 450 y un "Depende de" de 101 caracteres como el más largo de la base
 const fichaReal = (cambios = {}) => ficha({
   descripcion: 'Listado de las áreas municipales con funciones específicas en materia de género y diversidad, con su dependencia jerárquica, dirección, teléfono, correo electrónico y horario de atención. Incluye las oficinas de atención a personas en situación de violencia por motivos de género y los espacios de articulación con organizaciones de la sociedad civil, con su ubicación georreferenciada en el ejido municipal.',
   observaciones: 'Las coordenadas corresponden al relevamiento municipal de marzo de 2024.',
   que_se_solicita: SOLICITA, area_superior: DEPENDE_REAL, tema_secundario: 'Gobierno',
-  nombre_contacto: 'Persona de contacto', email_contacto: 'contacto@ejemplo.gov.ar', ...cambios
+  nombre_contacto: 'Persona de contacto', email_contacto: 'contacto@ejemplo.gov.ar', datos_al: '2025-10-31', pedido: PEDIDO_REAL,
+  ...cambios
 });
 
 describe('construirAnexo', () => {
@@ -40,10 +48,12 @@ describe('construirAnexo', () => {
     const a = anexo([ficha(), ficha({ id: 2, titulo: 'Otro', vencimiento: '2026-11-02' })]);
     assert.equal(a.numeroTexto, '3/26');
     assert.equal(a.hojas.length, 2);
-    assert.equal(a.hojas[0].estado, 'Vence el 30/11/2026 · faltan 28 días');
+    assert.equal(a.hojas[0].estado, 'Fecha sugerida de envío: 30/11/2026 · faltan 28 días');
     assert.equal(a.hojas[1].estado, 'Vence hoy');
     assert.equal(a.hojas[0].etiqueta, 'CONJUNTO DE DATOS · GESTIÓN EXTERNA');
-    assert.deepEqual(a.hojas[0].linea, { inicio: '2025-12-16', fin: '2026-11-30', hoy: '2026-11-02' });
+    // Sin Datos al, la línea de tiempo arranca en la carga en el portal
+    assert.deepEqual(a.hojas[0].linea, { inicio: '2025-12-16', rotuloInicio: 'Cargado en el portal', fin: '2026-11-30', hoy: '2026-11-02' });
+    assert.equal(a.hojas[0].pedido, null);
     assert.ok(a.hojas[0].campos.some(([e, v]) => e === 'Formatos' && v === 'CSV, XLSX'));
     assert.deepEqual(a.hojas[0].contacto.lineas, ['Email: area@ejemplo.gov.ar', 'Teléfono: 297 400-0000']);
   });
@@ -60,8 +70,28 @@ describe('construirAnexo', () => {
   });
 
   it('un día de plazo va en singular; un vencimiento pasado (datos de ejemplo) no dice "faltan" días negativos', () => {
-    assert.equal(anexo([ficha({ vencimiento: '2026-11-03' })]).hojas[0].estado, 'Vence el 03/11/2026 · falta 1 día');
-    assert.equal(anexo([ficha({ vencimiento: '2026-10-30' })]).hojas[0].estado, 'Venció el 30/10/2026 · hace 3 días');
+    assert.equal(anexo([ficha({ vencimiento: '2026-11-03' })]).hojas[0].estado, 'Fecha sugerida de envío: 03/11/2026 · falta 1 día');
+    assert.equal(anexo([ficha({ vencimiento: '2026-10-30' })]).hojas[0].estado, 'Fecha sugerida de envío: 30/10/2026 · hace 3 días');
+    assert.equal(anexo([ficha({ vencimiento: '2026-11-01' })]).hojas[0].estado, 'Fecha sugerida de envío: 01/11/2026 · hace 1 día');
+  });
+
+  it('la línea de tiempo arranca en Datos al ("Datos publicados al") o, sin él, en la carga en el portal ("Cargado en el portal")', () => {
+    const linea = (cambios) => anexo([ficha(cambios)]).hojas[0].linea;
+    assert.deepEqual(linea({ datos_al: '2025-10-31' }), { inicio: '2025-10-31', rotuloInicio: 'Datos publicados al', fin: '2026-11-30', hoy: '2026-11-02' });
+    // Un Datos al que no es una fecha (la fecha cero de MariaDB) es como no tenerlo
+    for (const valor of [null, undefined, '', '0000-00-00', '2026-02-30']) {
+      assert.deepEqual(linea({ datos_al: valor }), { inicio: '2025-12-16', rotuloInicio: 'Cargado en el portal', fin: '2026-11-30', hoy: '2026-11-02' }, String(valor));
+    }
+    // Sin ninguna de las dos, "Sin registro" (renderAnexo), con el rótulo de la carga
+    assert.deepEqual(linea({ datos_al: null, ultima_actualizacion: null }), { inicio: null, rotuloInicio: 'Cargado en el portal', fin: '2026-11-30', hoy: '2026-11-02' });
+  });
+
+  it('hoja.pedido es el texto del pedido (el de la nota); sin pedido, null', () => {
+    assert.equal(anexo([ficha({ pedido: PEDIDO_REAL })]).hojas[0].pedido, 'Del 01/11/2025 al 31/10/2026');
+    assert.equal(anexo([ficha(conPedido('  Relevamiento actualizado '))]).hojas[0].pedido, 'Relevamiento actualizado');
+    for (const pedido of [undefined, null, { desde: null, hasta: null, texto: '' }, { texto: '   ' }]) {
+      assert.equal(anexo([ficha({ pedido })]).hojas[0].pedido, null, JSON.stringify(pedido));
+    }
   });
 
   it('"Qué se solicita": el texto del dataset sin espacios de más o, si no tiene, el texto por defecto de la spec', () => {
@@ -77,18 +107,23 @@ describe('construirAnexo', () => {
     }
   });
 
-  it('la ficha no repite las fechas, que ya están en la línea de tiempo', () => {
-    assert.deepEqual(anexo([ficha({ tema_secundario: 'Gobierno' })]).hojas[0].campos.map(([etiqueta]) => etiqueta),
+  it('la ficha no repite las fechas, que ya están en la línea de tiempo, ni el pedido, que está en la cabecera', () => {
+    const hoja = anexo([ficha({ tema_secundario: 'Gobierno', datos_al: '2025-10-31', pedido: PEDIDO_REAL })]).hojas[0];
+    assert.ok(!hoja.campos.some(([, valor]) => /\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}/.test(String(valor))), JSON.stringify(hoja.campos));
+    assert.deepEqual(hoja.campos.map(([etiqueta]) => etiqueta),
       ['Área responsable', 'Depende de', 'Gestión', 'Frecuencia', 'Tema principal', 'Tema secundario', 'Formatos']);
   });
 });
 
 // Diagramación de cada hoja del anexo, tomada de las llamadas a DocumentoNota mientras se dibuja:
 // - textos: el rectángulo de cada texto, con la fuente, el tamaño y las opciones vigentes. El alto es el del ojo de
-//   la letra (de la línea de ascendentes a la de descendentes), sin el interlineado de la última línea.
-// - bloques: los rectángulos redondeados (estado, tarjeta del QR, descripción, observaciones, contacto).
+//   la letra (de la línea de ascendentes a la de descendentes), sin el interlineado de la última línea. Cada uno lleva
+//   también el nombre de su fuente y su tamaño.
+// - bloques: los rectángulos redondeados (estado, datos solicitados, tarjeta del QR, descripción, observaciones,
+//   contacto).
 // - lineas: las líneas finas (rectángulos de hasta 1 punto de alto y 50 o más de ancho: encabezado, ficha, pie).
-// - acentos: el filete vertical del acento a la izquierda del recuadro destacado.
+// - acentos: el filete vertical del acento a la izquierda del recuadro destacado (la descripción) y del de los datos
+//   solicitados.
 // Cada uno: { hoja, texto, x0, y0, x1, y1 }, con y desde el borde superior.
 const diagramacion = async (datos) => {
   const textos = [];
@@ -127,7 +162,7 @@ const diagramacion = async (datos) => {
       else if (opciones.align === 'center') x0 = x + (opciones.width - ancho) / 2;
     }
     textos.push({
-      hoja: indice(this.page), texto: String(texto), x0, y0: y, x1: x0 + ancho,
+      hoja: indice(this.page), texto: String(texto), fuente: this._font.name, tamano: this._fontSize, x0, y0: y, x1: x0 + ancho,
       y1: y + (lineas - 1) * conInterlineado + this.currentLineHeight(false)
     });
     return original.call(this, texto, x, y, opciones);
@@ -162,6 +197,24 @@ const verificarDiagramacion = ({ textos, bloques, lineas }) => {
   }
   for (const [linea, otro] of deLaMismaHoja(lineas, [...textos, ...bloques])) assert.ok(!seCruzan(linea, otro), `${nombre(linea)} cruza ${nombre(otro)}`);
 };
+
+// La hoja más cargada de la base (17/10/2026): un relevamiento interno con título en dos líneas, descripción de 466
+// caracteres, "qué se solicita" de 338, link largo, dos temas y siete datos de contacto (estos, de ejemplo con el mismo
+// largo). Ya sin el recuadro "Datos solicitados" achicaba sus textos; con él, la descripción quedaba cortada por menos de
+// un punto mientras sobraba lugar en la hoja
+const fichaDensa = (cambios = {}) => ficha({
+  titulo: 'Relevamiento de espacios reservados para estacionamiento de motos',
+  descripcion: 'Registro de espacios reservados para estacionamiento de motocicletas en Comodoro Rivadavia, producto del relevamiento oficial realizado por la Dirección de Investigación Territorial en 2026. Incluye ubicación exacta, infraestructura disponible (cartelería indicadora, vallas, señalización en pavimento) y estado de conservación de cada espacio. Información útil para motociclistas, planificación urbana y gestión del espacio público destinado a movilidad sostenible.',
+  que_se_solicita: 'Relevamiento actualizado de espacios reservados para estacionamiento de motos, uno por fila, con tipo, ubicación (calle, lado, intersección y barrio), presencia de cartel, vallas y señalización en el pavimento, estado de conservación y coordenadas. Remitir en planilla editable (Excel o CSV) con las mismas columnas del archivo publicado.',
+  url_dataset: 'https://datos.comodoro.gov.ar/dataset/relevamiento-de-espacios-reservados-para-estacionamiento-de-motos',
+  tipo_gestion: 'interna', frecuencia_nombre: 'Cada dos años', ultima_actualizacion: '2026-03-06', datos_al: '2026-03-31', vencimiento: '2028-03-31',
+  tema_principal: 'Transporte y Movilidad', tema_secundario: 'Geografía y Territorio',
+  area_nombre: 'Dirección General de Modernización e Investigación Territorial',
+  area_superior: 'Subsec. de Modernización y Transparencia. Sec. de Gobierno, Modernización y Transparencia',
+  email_principal: 'area@ejemplo.gov.ar', email_secundario: 'investigacion.territorial@ejemplo.gov.ar', telefono_area: '297 400-0000',
+  celular_area: '2974000001', nombre_contacto: 'Persona (contacto)', email_contacto: 'contacto@ejemplo.ar',
+  ...conPedido('Relevamiento actualizado'), ...cambios
+});
 
 // Ficha con todos los textos al máximo: título, qué se solicita, campos, descripción, observaciones y contactos
 const fichaLarguisima = (cambios = {}) => ficha({
@@ -213,6 +266,73 @@ describe('renderAnexo', () => {
     assert.ok(rectangulos(con) > rectangulos(sin) + 50);
   });
 
+  it('la línea de tiempo va de "Datos publicados al" (Datos al) a "Fecha sugerida de envío"; sin Datos al, desde "Cargado en el portal"', async () => {
+    const con = lineasPorHoja(await renderAnexo(anexo([fichaReal()])))[0];
+    for (const t of ['DATOS PUBLICADOS AL', '31/10/2025', 'FECHA SUGERIDA DE ENVÍO', '30/11/2026', 'Hoy 02/11/2026']) {
+      assert.ok(con.includes(t), `falta "${t}" en ${con.join(' | ')}`);
+    }
+    // La fecha de carga no se repite: la línea de tiempo arranca en los datos publicados. Los rótulos viejos ya no están
+    for (const t of ['CARGADO EN EL PORTAL', '16/12/2025', 'ÚLTIMA ACTUALIZACIÓN', 'VENCIMIENTO']) {
+      assert.ok(!con.some(l => l.includes(t)), `sobra "${t}" en ${con.join(' | ')}`);
+    }
+    const sin = lineasPorHoja(await renderAnexo(anexo([fichaReal({ datos_al: null })])))[0];
+    for (const t of ['CARGADO EN EL PORTAL', '16/12/2025', 'FECHA SUGERIDA DE ENVÍO']) assert.ok(sin.includes(t), `falta "${t}" en ${sin.join(' | ')}`);
+    assert.ok(!sin.some(l => l.includes('DATOS PUBLICADOS AL')), sin.join(' | '));
+  });
+
+  it('el recuadro "DATOS SOLICITADOS" va debajo del estado: el rótulo como la etiqueta de la cabecera, el pedido en negrita y el filete del acento', async () => {
+    const { textos, bloques, acentos } = await diagramacion(anexo([fichaReal()]));
+    const texto = (buscado) => {
+      const encontrado = textos.find(t => t.texto === buscado);
+      assert.ok(encontrado, `falta "${buscado}" en ${textos.map(t => t.texto).join(' | ')}`);
+      return encontrado;
+    };
+    const rotulo = texto('DATOS SOLICITADOS');
+    const pedido = texto(PEDIDO_REAL.texto);
+    const etiqueta = texto('CONJUNTO DE DATOS · GESTIÓN EXTERNA');
+    // El rótulo, en las mayúsculas chicas de la etiqueta de arriba del título; el pedido, en negrita y bien más grande
+    assert.deepEqual([rotulo.fuente, rotulo.tamano], [etiqueta.fuente, etiqueta.tamano]);
+    assert.equal(pedido.fuente, 'Helvetica-Bold');
+    assert.ok(pedido.tamano >= 12, `el pedido va en ${pedido.tamano} puntos`);
+    // Los dos en el mismo recuadro, con el filete del acento a la izquierda
+    const recuadro = bloques.find(b => contiene(b, rotulo));
+    assert.ok(recuadro && contiene(recuadro, pedido), 'el rótulo y el pedido no están en el mismo recuadro');
+    assert.ok(acentos.some(a => Math.abs(a.y0 - recuadro.y0) < 0.1 && Math.abs(a.y1 - recuadro.y1) < 0.1), 'el recuadro no tiene el filete del acento');
+    // Debajo del estado (la píldora) y arriba de la línea de tiempo (el "Hoy" va sobre la barra)
+    const estado = textos.find(t => t.texto.startsWith('Fecha sugerida de envío:'));
+    const pildora = bloques.find(b => contiene(b, estado));
+    assert.ok(pildora && pildora.y1 < recuadro.y0, 'el recuadro no está debajo del estado');
+    assert.ok(recuadro.y1 < texto('Hoy 02/11/2026').y0, 'el recuadro no está arriba de la línea de tiempo');
+    assert.equal(acentos.length, 2);
+  });
+
+  it('la hoja más cargada de la base lleva el recuadro sin cortar ningún texto: un texto cortado recibe el lugar que sobra', async () => {
+    const { textos } = await diagramacion(anexo([fichaDensa()]));
+    assert.ok(textos.some(t => t.texto === 'DATOS SOLICITADOS'), textos.map(t => t.texto).join(' | '));
+    // Ni "… (continúa en el portal)" en los textos largos ni "…" en los valores
+    const cortados = textos.filter(t => t.texto.includes('…'));
+    assert.deepEqual(cortados.map(t => t.texto.slice(-40)), []);
+    assert.equal(lineasPorHoja(await renderAnexo(anexo([fichaDensa()]))).length, 1);
+  });
+
+  it('sin pedido no hay recuadro "DATOS SOLICITADOS"', async () => {
+    const { textos, acentos } = await diagramacion(anexo([fichaReal({ pedido: null })]));
+    assert.ok(!textos.some(t => t.texto.includes('DATOS SOLICITADOS')), textos.map(t => t.texto).join(' | '));
+    assert.equal(acentos.length, 1);
+  });
+
+  it('un pedido más largo que los reales entra entero en dos líneas; uno larguísimo se corta con "…" y la hoja sigue siendo una', async () => {
+    for (const texto of [...PEDIDOS_REALES, PEDIDO_LARGO]) {
+      const lineas = lineasPorHoja(await renderAnexo(anexo([fichaReal(conPedido(texto))])));
+      assert.equal(lineas.length, 1);
+      assert.ok(lineas[0].join(' ').includes(texto), `no está entero "${texto}": ${lineas[0].join(' | ')}`);
+    }
+    const { textos } = await diagramacion(anexo([fichaReal(conPedido(PEDIDO_LARGUISIMO))]));
+    const cortado = textos.find(t => t.texto.startsWith('Datos solicitados larguísimos'));
+    assert.ok(cortado && cortado.texto.endsWith('…') && !cortado.texto.endsWith(CORTE), cortado?.texto);
+    assert.equal(lineasPorHoja(await renderAnexo(anexo([fichaReal(conPedido(PEDIDO_LARGUISIMO))]))).length, 1);
+  });
+
   it('sin última actualización, la línea de tiempo dice "Sin registro"', async () => {
     const hojas = lineasPorHoja(await renderAnexo(anexo([ficha({ ultima_actualizacion: null })])));
     assert.ok(hojas[0].some(l => l.includes('Sin registro')));
@@ -237,7 +357,7 @@ describe('renderAnexo', () => {
     assert.ok(!hojas[1].some(l => l.includes('https://')), hojas[1].join(' | '));
   });
 
-  it('de arriba abajo: encabezado, título, estado, línea de tiempo, descripción, ficha, qué se solicita, observaciones, contacto y pie', async () => {
+  it('de arriba abajo: encabezado, título, estado, datos solicitados, línea de tiempo, descripción, ficha, qué se solicita, observaciones, contacto y pie', async () => {
     const pdf = await renderAnexo(anexo([fichaReal()]));
     const textos = textosPorHoja(pdf)[0];
     const buscar = (buscado) => {
@@ -246,8 +366,8 @@ describe('renderAnexo', () => {
       return encontrado;
     };
     // base: altura de la línea de base desde el borde inferior; cuanto más abajo en la hoja, menor
-    const orden = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Áreas específicas de género', 'Vence el 30/11/2026',
-      'ÚLTIMA ACTUALIZACIÓN', 'DESCRIPCIÓN', 'Listado de las áreas municipales', 'ÁREA RESPONSABLE', 'QUÉ SE SOLICITA',
+    const orden = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Áreas específicas de género', 'Fecha sugerida de envío: 30/11/2026',
+      'DATOS SOLICITADOS', 'Del 01/11/2025 al 31/10/2026', 'DATOS PUBLICADOS AL', 'DESCRIPCIÓN', 'Listado de las áreas municipales', 'ÁREA RESPONSABLE', 'QUÉ SE SOLICITA',
       'Listado actualizado de las áreas', 'OBSERVACIONES', 'Las coordenadas corresponden', 'CONTACTO DEL ÁREA RESPONSABLE',
       'area@ejemplo.gov.ar', 'Hoja 1 de 1'].map(t => buscar(t).base);
     orden.slice(1).forEach((valor, i) => assert.ok(valor < orden[i], `fuera de orden en la posición ${i + 1}: ${orden.join(', ')}`));
@@ -306,7 +426,12 @@ describe('renderAnexo', () => {
   });
 
   it('aprovecha la A4: con textos reales, el contacto queda abajo, cerca del pie, y no quedan huecos grandes', async () => {
-    for (const real of [fichaReal(), fichaReal({ url_dataset: null }), fichaReal({ observaciones: null, area_superior: 'Intendencia' })]) {
+    const reales = [
+      fichaReal(), fichaReal({ url_dataset: null }), fichaReal({ observaciones: null, area_superior: 'Intendencia' }),
+      ...PEDIDOS_REALES.map(texto => fichaReal(conPedido(texto))), fichaReal({ ...conPedido(PEDIDO_LARGO), url_dataset: null }),
+      fichaReal({ pedido: null, datos_al: null })
+    ];
+    for (const real of reales) {
       const { textos, bloques, lineas } = await diagramacion(anexo([real]));
       const lineaDelPie = lineas.reduce((a, b) => (b.y0 > a.y0 ? b : a));
       const rotulo = textos.find(t => t.texto === 'CONTACTO DEL ÁREA RESPONSABLE');
@@ -342,7 +467,10 @@ describe('renderAnexo', () => {
       [fichaLarguisima()],
       [fichaLarguisima({ url_dataset: null, observaciones: null })],
       [fichaLarguisima({ descripcion: 'Breve.', observaciones: 'Breve.' })],
-      [fichaLarguisima(contactoLarguisimo), ficha()]
+      [fichaLarguisima(contactoLarguisimo), ficha()],
+      [fichaReal(conPedido(PEDIDO_LARGO)), fichaReal(conPedido(PEDIDO_LARGUISIMO))],
+      [fichaLarguisima(conPedido(PEDIDO_LARGO)), fichaLarguisima({ ...conPedido(PEDIDO_LARGUISIMO), url_dataset: null, observaciones: null })],
+      [fichaLarguisima({ ...contactoLarguisimo, ...conPedido(PEDIDO_LARGUISIMO), datos_al: '2025-10-31' })]
     ];
     for (const fichas of casos) {
       const datos = anexo(fichas);
