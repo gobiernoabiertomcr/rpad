@@ -93,8 +93,8 @@ const notaDeAutorizacion = async (licencia) => {
  * - 'autorizado': está de licencia con un autorizado vigente: las dos firmas y la leyenda, que cita la nota de
  *   autorización (null si todavía no salió: la corrida la genera primero, con autorizacionPendiente);
  * - 'sin_autorizado': está de licencia sin autorizado vigente: ese día no se generan notas (la firma que se devuelve es
- *   la del titular; la vista previa solo la usa si ningún día de los próximos 366 tiene notas y muestra hoy: si no, mueve
- *   la fecha al próximo día con notas, spec 2026-10-15, 7.7).
+ *   la del titular). La vista previa no muestra ese día: busca el próximo día con notas, hasta 366 días desde hoy (spec
+ *   2026-10-15, 7.7); solo si no hay ninguno muestra hoy, con la firma del titular.
  * firma: { titular: { nombre, cargo, contratado, imagen }, presentante: {...} | null, leyenda, firmanteId, presentanteId }
  * (la firma de Correos no es de una persona: nunca es de personal contratado)
  */
