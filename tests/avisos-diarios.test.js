@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, paraCasilla } from './helpers.js';
 import { crearArea, crearDataset, asegurarBaseDePrueba, configurarNotas, conFallaSimulada } from './notas-fixtures.js';
+import { textoVisible } from './emails-fixtures.js';
 
 let base, servicio, templates, dbReal;
 
@@ -112,6 +113,57 @@ describe('aviso a las áreas (spec 4.2)', () => {
     await crearDataset({ gestion: 'interna', vencimiento: '2026-11-25', areaId });
     await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId: sinEmail });
     assert.deepEqual(await servicio.datasetsExternosPorArea('2026-10-16'), []);
+  });
+
+  // Datos solicitados y fecha sugerida de envío (spec 2026-10-17-fechas-datasets, 9). Miércoles 21/10/2026: avisa el
+  // vencimiento del 30/11/2026, el fin de mes que corresponde a los 40 días
+  describe('datos solicitados y fecha sugerida de envío', () => {
+    const HOY = '2026-10-21';
+    const VENCIMIENTO = '2026-11-30';
+
+    it('cada dataset trae su vencimiento como texto y su pedido: el tipo guardado, el sugerido si no tiene o ninguno si es eventual', async () => {
+      const { areaId } = await prepararArea();
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'A con Datos al', tipoPedido: 'acumulado', datosAl: '2025-10-31' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'B sin tipo ni Datos al' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'C foto al corte', frecuencia: 'Cada dos años', tipoPedido: 'foto' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'D eventual', tipoPedido: 'eventual' });
+
+      const [area] = await servicio.datasetsExternosPorArea(HOY);
+
+      assert.deepEqual(area.datasets.map(d => [d.titulo, d.vencimiento, d.pedido?.texto ?? null]), [
+        // Datos al 31/10/2025: el primer pedido empieza en lo que falta (noviembre de 2025)
+        ['A con Datos al', VENCIMIENTO, 'Del 01/11/2025 al 31/10/2026'],
+        // Sin tipo guardado, la gestión externa anual pide el acumulado del año hasta el corte
+        ['B sin tipo ni Datos al', VENCIMIENTO, 'Del 01/01/2026 al 31/10/2026'],
+        ['C foto al corte', VENCIMIENTO, 'Vigente al 31/10/2026'],
+        ['D eventual', VENCIMIENTO, null]
+      ]);
+      assert.equal(typeof area.datasets[0].vencimiento, 'string');
+    });
+
+    it('un vencimiento que no es fin de mes pide los datos de su mes, y la fecha sugerida es la real', async () => {
+      const { areaId } = await prepararArea();
+      await crearDataset({ gestion: 'externa', vencimiento: '2026-11-26', areaId, titulo: 'Vence a mitad de mes' });
+      const [area] = await servicio.datasetsExternosPorArea('2026-10-16');
+      assert.deepEqual(area.datasets.map(d => [d.vencimiento, d.pedido.texto]), [['2026-11-26', 'Del 01/01/2026 al 31/10/2026']]);
+    });
+
+    it('el email dice qué datos se solicitarán y la fecha sugerida de envío de cada dataset; sin pedido, solo la fecha', async () => {
+      const { areaId, email } = await prepararArea();
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'A con Datos al', tipoPedido: 'acumulado', datosAl: '2025-10-31' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'B foto al corte', frecuencia: 'Cada dos años', tipoPedido: 'foto' });
+      await crearDataset({ gestion: 'externa', vencimiento: VENCIMIENTO, areaId, titulo: 'C eventual', tipoPedido: 'eventual' });
+
+      const resultado = await servicio.enviarAvisoAreas({ hoy: HOY });
+
+      assert.equal(resultado.enviados[0].cantidad, 3);
+      const [mensaje] = para(await mailpit.esperar(m => m.To.some(t => t.Address === email)), email);
+      const texto = textoVisible(await mailpit.html(mensaje.ID));
+      assert.ok(texto.includes('1. A con Datos al Frecuencia de actualización: Anualmente Datos que se solicitarán: del 01/11/2025 al 31/10/2026 Fecha sugerida de envío: 30/11/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('2. B foto al corte Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al 31/10/2026 Fecha sugerida de envío: 30/11/2026 Ver dataset en el portal'), texto);
+      assert.ok(texto.includes('3. C eventual Frecuencia de actualización: Anualmente Fecha sugerida de envío: 30/11/2026 Ver dataset en el portal'), texto);
+      assert.equal(texto.split('Datos que se solicitarán:').length - 1, 2);
+    });
   });
 });
 

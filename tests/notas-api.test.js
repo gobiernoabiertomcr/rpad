@@ -7,7 +7,9 @@ import {
 import { crearArea, crearDataset, crearNota, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
-import { esDiaHabil, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { esDiaHabil, formatoCorto, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import { textoVisible } from './emails-fixtures.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 // Banner del membrete generado para los tests (la imagen institucional no se versiona)
@@ -696,6 +698,29 @@ describe('aviso a las áreas', () => {
     assert.equal(res.status, 200);
     // El HTML del aviso no trae el nombre del área (solo el asunto): el área de ejemplo se reconoce por sus datasets
     assert.match(res.body, /Dataset de Ejemplo 1/);
+  });
+
+  // El ejemplo muestra los dos renglones nuevos (spec 2026-10-17-fechas-datasets, 9): el fin de mes que corresponde a los
+  // 40 días del próximo día hábil, con el pedido de un acumulado (Dataset 1) y el de una foto al corte (Dataset 2)
+  it('el ejemplo de la vista previa muestra los datos solicitados y la fecha sugerida de envío de cada dataset', async () => {
+    const fecha = proximoDiaHabil(hoyArgentina());
+    const vencimiento = formatoCorto(vencimientoDelMes(sumarDias(fecha, 40)));
+    const res = await api.get('/notificaciones/preview/area-aviso-40', comoAdmin());
+    assert.equal(res.status, 200);
+    const texto = textoVisible(res.body);
+    assert.match(texto, /Dataset de Ejemplo 1 Frecuencia de actualización: Anualmente Datos que se solicitarán: del \d{2}\/\d{2}\/\d{4} al \d{2}\/\d{2}\/\d{4} Fecha sugerida de envío: \d{2}\/\d{2}\/\d{4} Ver dataset/);
+    assert.match(texto, /Dataset de Ejemplo 2 Frecuencia de actualización: Cada dos años Datos que se solicitarán: vigente al \d{2}\/\d{2}\/\d{4} Fecha sugerida de envío: \d{2}\/\d{2}\/\d{4} Ver dataset/);
+    assert.equal(texto.split(`Fecha sugerida de envío: ${vencimiento}`).length - 1, 2, `los dos vencen el ${vencimiento}`);
+  });
+
+  it('la prueba con el ejemplo también lleva los dos renglones', async () => {
+    const res = await api.post('/notificaciones/prueba-area', {}, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.ejemplo, true);
+    const [mensaje] = await mailpit.esperar(m => m.Subject.startsWith('[PRUEBA] '));
+    const texto = textoVisible(await mailpit.html(mensaje.ID));
+    assert.equal(texto.split('Datos que se solicitarán:').length - 1, 2);
+    assert.equal(texto.split('Fecha sugerida de envío:').length - 1, 2);
   });
 
   // Un sábado, hoyArgentina() no tiene rango y mostraría el ejemplo: la selección tiene que salir del próximo día hábil

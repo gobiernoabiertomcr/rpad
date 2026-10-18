@@ -6,6 +6,7 @@ import pool from '../config/database.js';
 import { sendEmail, sendEmailToArea } from './emailService.js';
 import * as templates from './emailTemplates.js';
 import { ahoraArgentina, esDiaHabil, rangoDeAviso, sumarDias } from './notasDigitalesCalendario.js';
+import { conPedido } from './notasDigitalesDatos.js';
 import { contextoDeCanal, cambiosConCanal, proximoDiaConQuienAudite } from './auditoriaService.js';
 import { quienesAuditan, entraEnRecordatorio } from './auditoriaReglas.js';
 import { emailValido } from './usuariosReglas.js';
@@ -16,13 +17,18 @@ export const DIAS_AVISO_AREAS = 40;
  * Datasets externos que avisa en esa fecha el aviso a las áreas, agrupados por área (solo áreas con email).
  * Un día hábil avisa los vencimientos de fecha + 40 y los de los días no hábiles que siguen (spec 4.2).
  * Fuera de un día hábil no hay nada que avisar.
+ * Cada dataset trae su vencimiento ('AAAA-MM-DD') y su pedido, { desde, hasta, texto } o null (eventual): los datos que se
+ * le van a solicitar, calculados con fecha, el día del aviso, igual que en las Notas Digitales (conPedido). Con ellos el
+ * email dice "Datos que se solicitarán" y "Fecha sugerida de envío" (spec 2026-10-17-fechas-datasets, 9).
  */
 export const datasetsExternosPorArea = async (fecha) => {
   const rango = rangoDeAviso(fecha, DIAS_AVISO_AREAS);
   if (!rango) return [];
   const [rows] = await pool.execute(
-    `SELECT d.id, d.titulo, d.url_dataset, d.proxima_actualizacion, d.area_id,
-            f.nombre AS frecuencia_nombre,
+    `SELECT d.id, d.titulo, d.url_dataset, d.area_id,
+            DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento,
+            d.tipo_gestion, d.tipo_pedido, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al,
+            f.nombre AS frecuencia_nombre, f.meses,
             a.nombre AS area_nombre, a.area_superior, a.email_principal, a.email_secundario,
             a.telefono_area, a.celular_area, a.nombre_contacto, a.telefono_contacto, a.email_contacto
      FROM datasets d
@@ -59,8 +65,9 @@ export const datasetsExternosPorArea = async (fecha) => {
       id: d.id,
       titulo: d.titulo,
       url_dataset: d.url_dataset,
-      proxima_actualizacion: d.proxima_actualizacion,
-      frecuencia_nombre: d.frecuencia_nombre
+      vencimiento: d.vencimiento,
+      frecuencia_nombre: d.frecuencia_nombre,
+      pedido: conPedido(d, fecha).pedido
     });
   });
 

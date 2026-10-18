@@ -199,6 +199,19 @@ const contenidoDeCambio = (c, lineas) => `<p style="margin: 0 0 8px 0;">${etique
 // PLANTILLA PARA AVISO A ÁREAS (-40 días)
 // =====================================================
 
+// "Del 01/01/2026 al 31/10/2026" → "del 01/01/2026 al 31/10/2026": el texto del pedido sigue a "Datos que se solicitarán: "
+const conMinusculaInicial = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
+
+// Renglones de una tarjeta del aviso a las áreas, en texto secundario. Cada dataset trae su vencimiento ('AAAA-MM-DD') y su
+// pedido ({ texto, ... } o null) de datasetsExternosPorArea; sin pedido o sin vencimiento, el renglón no aparece.
+const renglonesDeDataset = (d) => {
+  const renglones = [`Frecuencia de actualización: ${d.frecuencia_nombre || 'Sin definir'}`];
+  if (d.pedido?.texto) renglones.push(`Datos que se solicitarán: ${conMinusculaInicial(d.pedido.texto)}`);
+  if (d.vencimiento) renglones.push(`Fecha sugerida de envío: ${formatoCorto(d.vencimiento)}`);
+  return renglones.map((renglon, i) =>
+    `<p style="margin: ${i === 0 ? '4px' : '2px'} 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">${escapeHtml(renglon)}</p>`).join('\n                    ');
+};
+
 /**
  * Template para aviso a áreas externas (-40 días)
  * Se envía directamente al email del área
@@ -211,7 +224,7 @@ const areaAviso40diasTemplate = (areaData) => marcoEmail({
     parrafo('Estimados/as:')
       + parrafo('Nos comunicamos desde la <strong>Dirección General de Modernización e Investigación Territorial</strong> de la Municipalidad de Comodoro Rivadavia para informarles que próximamente recibirán una nota formal solicitando la actualización de los siguientes datasets publicados en el Portal de Datos Abiertos:', '16px 0 0 0'),
     tarjetas(areaData.datasets.map((d, i) => `<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; font-weight: 600;">${i + 1}. ${escapeHtml(d.titulo)}</p>
-                    <p style="margin: 4px 0 0 0; color: ${COLORES.secundario}; font-size: 13px;">Frecuencia de actualización: ${escapeHtml(d.frecuencia_nombre || 'Sin definir')}</p>
+                    ${renglonesDeDataset(d)}
                     ${d.url_dataset ? `<p style="margin: 6px 0 0 0; font-size: 13px;">${enlace(escapeHtml(d.url_dataset), 'Ver dataset en el portal')}</p>` : ''}`)),
     parrafo('Gracias a su colaboración, mantener estos datos al día no solo permite dar cumplimiento a las obligaciones establecidas en la Ordenanza N.º 17.662/23 de Gobierno Abierto, sino que también facilita el acceso de la ciudadanía a información actualizada y agiliza los procesos administrativos tanto del Municipio como de otras organizaciones, reduciendo la necesidad de solicitar los datos por canales tradicionales. Quedamos a disposición para cualquier consulta. ¡Muchas gracias!'),
     `<table role="presentation" width="100%" style="width: 100%; border-collapse: collapse;">
