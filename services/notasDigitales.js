@@ -5,7 +5,8 @@
 import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos, remitente } from './emailService.js';
 import {
-  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto
+  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto,
+  textoLeyendaAutorizacion
 } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
@@ -36,11 +37,16 @@ const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
-// A un dataset adelantado ya le toca la reiteración ese día: pasaron DIAS_PARA_REITERAR días corridos desde su cuenta_desde
-// (inclusive), la misma condición que seleccionarParaReiteracion. No entra en el aviso en su fecha y lo informa la
-// reiteración, citando la nota anticipada (spec 2026-10-15, 7.6). Es permanente: una vez verdadera, sigue verdadera, así
-// un dataset nunca sale el mismo día en un aviso y en una reiteración ni vuelve como aviso después de reiterado.
-const yaTocaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
+// A un dataset adelantado ya le toca la reiteración ese día: su aviso anticipado se envió y pasaron DIAS_PARA_REITERAR días
+// corridos desde su cuenta_desde (inclusive), las mismas condiciones que seleccionarParaReiteracion, que solo toma avisos
+// enviados. No entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada (spec 2026-10-15, 7.6).
+// Es permanente mientras el aviso siga enviado: así un dataset nunca sale el mismo día en un aviso y en una reiteración ni
+// vuelve como aviso después de reiterado. Si el anticipado no salió (pendiente o fallido), la reiteración no lo tomaría y
+// el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-15, 7.6).
+// cumplioDiasParaReiterar es la prueba de fechas sola (la misma de seleccionarParaReiteracion): la comparten yaTocaReiterar y
+// el aviso en su fecha, que guarda sin cuenta_desde al dataset que pasó la prueba sin haber tenido su anticipado enviado.
+const cumplioDiasParaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
+const yaTocaReiterar = (dataset, dia) => dataset.aviso_estado === 'enviada' && cumplioDiasParaReiterar(dataset, dia);
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
 // los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
@@ -346,6 +352,55 @@ const prepararAviso = async (gestion, hoy, anticipo) => {
 const porVencimientoYTitulo = (a, b) =>
   a.vencimiento.localeCompare(b.vencimiento) || a.titulo.localeCompare(b.titulo, 'es') || a.id - b.id;
 
+// Lo que decide cómo sale el día, solo lectura, en el orden de la corrida: la firma de la fecha (modo, firma y licencia del
+// firmante) y, salvo en un día sin autorizado (en que no se genera ninguna nota), la autorización todavía no comunicada
+// (pendiente, y sus datos en autorizacion) y el anticipo de la víspera de una licencia (solo con el titular firmando).
+const contextoDelDia = async (config, fecha) => {
+  const { modo, firma, licencia } = await firmaParaFecha(config, fecha);
+  if (modo === 'sin_autorizado') return { modo, firma, licencia };
+  const pendiente = await autorizacionPendiente(config, fecha);
+  const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
+  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, fecha) : null;
+  return { modo, firma, licencia, pendiente, autorizacion, anticipo };
+};
+
+/**
+ * El aviso de una gestión en una fecha, solo lectura (sin notas, sin escrituras, sin resumen): lo arma la corrida y también
+ * las vistas previas. modo, licencia y anticipo son los de contextoDelDia; autorizacion, los datos de la autorización a
+ * comunicar (la corrida pasa null si la licencia cambió mientras se generaba). Devuelve:
+ * - datasets: la selección del día (prepararAviso: en la víspera de una licencia del firmante, con lo anticipado y su
+ *   cuenta_desde) y, con persona autorizada (modo 'autorizado', licencia del titular), lo adelantado en la víspera que hoy
+ *   toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6), ordenado por vencimiento y título. El que entra con los 20 días
+ *   ya cumplidos (solo puede ser uno con el aviso anticipado sin enviar, 7.6) se guarda sin cuenta_desde: con la del
+ *   anticipado, la reiteración de esta misma corrida lo tomaría también;
+ * - rangoVencimientos: { desde, hasta } de los vencimientos, para el asunto de un aviso con datasets anticipados (spec 7.3).
+ *   Solo el de la víspera (con anticipo): el aviso en su fecha no lo lleva aunque sus datasets traen cuenta_desde (salvo el
+ *   recuperado, con los 20 días cumplidos, que va con null): su asunto lleva el mes de la nota;
+ * - autorizacion: la que comunica este aviso (solo la víspera, o sea con anticipo), si no null;
+ * - errorEnSuFecha: el error de buscar lo que sale en su fecha, o null. Si falla, datasets es la selección normal del día:
+ *   lo adelantado sale en la corrida siguiente.
+ */
+export const avisoDelDia = async ({ gestion, fecha, modo, licencia = null, anticipo = null, autorizacion = null }) => {
+  let datasets = await prepararAviso(gestion, fecha, anticipo);
+  let errorEnSuFecha = null;
+  if (modo === 'autorizado') {
+    try {
+      // Las licencias de la persona autorizada durante la del titular
+      const ausencias = (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
+      const enSuFecha = (await pendientesEnSuFecha(gestion, fecha, licencia, ausencias))
+        .filter(d => d.dia_en_su_fecha <= fecha && !yaTocaReiterar(d, fecha))
+        .map(d => (cumplioDiasParaReiterar(d, fecha) ? { ...d, cuenta_desde: null } : d));
+      if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
+    } catch (error) {
+      errorEnSuFecha = error;
+    }
+  }
+  const rangoVencimientos = anticipo && datasets.some(d => d.cuenta_desde)
+    ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
+    : null;
+  return { datasets, rangoVencimientos, autorizacion: anticipo ? autorizacion : null, errorEnSuFecha };
+};
+
 // ¿Ya se generó la nota de auditoría (no de prueba) de esta fecha? Una sola por día (Decisiones del plan 12)
 const hayNotaDeAuditoria = async (fecha) => {
   const [[fila]] = await pool.query(
@@ -402,7 +457,8 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
   for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
-  let { modo, firma, licencia } = await firmaParaFecha(config, hoy);
+  const delDia = await contextoDelDia(config, hoy);
+  let { modo, firma, licencia } = delDia;
   // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
   // arriba siguen: su contenido ya está congelado.
   if (modo === 'sin_autorizado') {
@@ -412,8 +468,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // La autorización todavía no comunicada (spec 7.2) va en los avisos de la víspera, aunque ese día la persona autorizada
   // esté de licencia; si no hay avisos, o se dio más tarde, sale una nota de autorización firmada por el titular
-  const pendiente = await autorizacionPendiente(config, hoy);
-  const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
+  const { pendiente, autorizacion, anticipo } = delDia;
   let autorizacionComunicada = false;
   let autorizacionDesactualizada = false;
   // Registra en la licencia la nota que comunicó la autorización. Si la licencia cambió mientras se generaba (otra
@@ -447,7 +502,6 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   };
 
   // En la víspera de una licencia del firmante, el aviso suma lo que se habría avisado durante la licencia
-  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, hoy) : null;
   if (anticipo) {
     resumen.licencia = `Víspera de la licencia del firmante: avisos anticipados hasta el ${formatoCorto(anticipo.hasta)} más la ventana${autorizacion ? `, con la autorización a ${autorizacion.nombre}` : ''}`;
   } else if (pendiente) {
@@ -468,33 +522,20 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
 
   // 2. Avisos: si falla el de una gestión, igual se intenta el de la otra
   let avisoConAutorizacion = false;
-  // Las licencias de la persona autorizada durante la del titular: se leen una sola vez, la primera gestión que las necesita
-  let ausenciasDelAutorizado;
   for (const gestion of GESTIONES) {
     let id;
-    // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida)
-    const conAutorizacion = anticipo && autorizacion && !autorizacionDesactualizada ? autorizacion : null;
+    let conAutorizacion = null;
     try {
-      let datasets = await prepararAviso(gestion, hoy, anticipo);
-      // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella: se suma a
-      // la selección de hoy lo que hoy toca o ya tocó y todavía no salió (spec 2026-10-15, 7.6). La licencia es la del titular.
-      // Si buscarlo falla, se informa y el aviso del día sale con la selección normal: lo adelantado sale en la corrida siguiente.
-      if (modo === 'autorizado') {
-        try {
-          ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
-          const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
-            .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy));
-          if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
-        } catch (error) {
-          anotarError(resumen, { tipo: 'aviso', gestion }, error);
-        }
-      }
+      // En la víspera, el aviso comunica la autorización todavía pendiente (si la licencia no cambió en esta corrida).
+      // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella; si buscarlo
+      // falla, se informa y el aviso del día sale con la selección normal (avisoDelDia).
+      const aviso = await avisoDelDia({
+        gestion, fecha: hoy, modo, licencia, anticipo, autorizacion: autorizacionDesactualizada ? null : autorizacion
+      });
+      if (aviso.errorEnSuFecha) anotarError(resumen, { tipo: 'aviso', gestion }, aviso.errorEnSuFecha);
+      const { datasets, rangoVencimientos } = aviso;
+      conAutorizacion = aviso.autorizacion;
       if (!datasets.length) continue;
-      // Un aviso con datasets anticipados nombra en el asunto el rango de meses de los vencimientos (spec 7.3). Solo el de
-      // la víspera: los datasets que salen en su fecha también traen cuenta_desde, pero el asunto lleva el mes de la nota.
-      const rangoVencimientos = anticipo && datasets.some(d => d.cuenta_desde)
-        ? { desde: datasets[0].vencimiento, hasta: datasets.at(-1).vencimiento }
-        : null;
       id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
       resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
     } catch (error) {
@@ -656,37 +697,116 @@ const ejemploAuditoria = (hoy) => {
   };
 };
 
-// Lo que llevaría hoy la nota de auditoría (spec 9.3) o, si no lleva nada, el ejemplo
-const contenidoDeAuditoriaParaMostrar = async (config, hoy) => {
-  const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+// Lo que llevaría la nota de auditoría ese día (spec 9.3) o, si no lleva nada, el ejemplo
+const contenidoDeAuditoriaParaMostrar = async (config, fecha) => {
+  const { nuevos, reiterados } = await seleccionarParaAuditoria(fecha, await contextoDeCanal(fecha, config));
   if (nuevos.length || reiterados.length) return { nuevos, reiterados, catalogos: await catalogosParaAuditoria(), ejemplo: false };
-  return { ...ejemploAuditoria(hoy), ejemplo: true };
+  return { ...ejemploAuditoria(fecha), ejemplo: true };
 };
 
-const contenidoParaMostrar = async (tipo, gestion, hoy) => {
-  const reales = tipo === 'aviso' ? await seleccionarParaAviso(gestion, hoy) : await seleccionarParaReiteracion(gestion, hoy);
-  if (reales.length) return { ...(await prepararContenido({ tipo, gestion, datasets: reales, fecha: hoy })), ejemplo: false };
-  return { ...ejemplo(tipo, gestion, hoy), ejemplo: true };
+// Días hacia adelante en que se busca la próxima corrida que genera notas (spec 2026-10-15, 7.7)
+const DIAS_PARA_BUSCAR_VISTA_PREVIA = 366;
+const MOTIVO_DIA_NO_HABIL = 'día no hábil';
+const MOTIVO_SIN_AUTORIZADO = 'licencia del firmante sin persona autorizada';
+const MOTIVO_AUTORIZADO_DE_LICENCIA = 'la persona autorizada está de licencia';
+
+/**
+ * El día que muestran la vista previa y la prueba: el de la próxima corrida que genera notas (spec 2026-10-15, 7.7). Hoy, si
+ * es día hábil y ese día se generan notas; si no, el primer día hábil siguiente en que sí. Un día hábil no genera notas si el
+ * firmante titular está de licencia sin una persona autorizada que pueda presentarlas (sin ninguna, o con licencia propia
+ * ese día): firmaParaFecha da 'sin_autorizado'. Se busca hasta 366 días después de hoy; sin ninguno, hoy.
+ * Devuelve { fecha, motivo }. motivo: null si la fecha es hoy; si no, por qué hoy no se generan notas ('día no hábil', 'la
+ * persona autorizada está de licencia' o 'licencia del firmante sin persona autorizada').
+ * Solo lee. Salta los días no hábiles sin mirarlos y, en una licencia sin autorizado vigente, salta hasta el primer día hábil
+ * en que la persona autorizada no falta o, si no le queda ninguno desde mañana (o ya no sirve), hasta el fin de la licencia
+ * (primer_dia_disponible de autorizadoParaLicencia desde mañana): es lo mismo que probar día por día, sin recorrer la licencia.
+ */
+export const fechaDeVistaPrevia = async (config, hoy) => {
+  const limite = sumarDias(hoy, DIAS_PARA_BUSCAR_VISTA_PREVIA);
+  let motivo = null;
+  let dia = hoy;
+  while (dia <= limite) {
+    if (!esDiaHabil(dia)) {
+      if (dia === hoy) motivo = MOTIVO_DIA_NO_HABIL;
+      dia = proximoDiaHabil(dia);
+      continue;
+    }
+    const { modo, licencia } = await firmaParaFecha(config, dia);
+    if (modo !== 'sin_autorizado') return { fecha: dia, motivo };
+    if (dia === hoy) {
+      motivo = licencia.autorizado_id && await licenciaEnFecha(licencia.autorizado_id, hoy)
+        ? MOTIVO_AUTORIZADO_DE_LICENCIA
+        : MOTIVO_SIN_AUTORIZADO;
+    }
+    // Hoy ese día es sin autorizado: el próximo candidato es el primer día hábil, desde mañana, en que la persona autorizada no
+    // falta; si no le queda ninguno (o ya no sirve), la vuelta del titular. Desde mañana, no desde el comienzo de la licencia:
+    // así los días libres que quedaron atrás no obligan a recorrerla día por día
+    dia = (await autorizadoParaLicencia(licencia, { desde: sumarDias(dia, 1) }))?.primer_dia_disponible ?? sumarDias(licencia.hasta, 1);
+  }
+  return { fecha: hoy, motivo: null };
 };
 
-// La nota de la vista previa: los datos de hoy (o de ejemplo) con N° XX, firmada como saldría (en una licencia sin
-// autorizado, como saldría a la vuelta: con la firma del titular). La de auditoría no tiene gestión (spec 2026-10-15, 10.4).
+// La firma de la vista previa. Si la autorización de la persona autorizada todavía no se comunicó (autorización tardía o
+// cambiada, spec 2026-10-15, 7.2), la corrida genera primero la nota de autorización y la leyenda la cita: acá esa nota no
+// existe ni se genera, y la leyenda dice "Nota Digital N° XX".
+const firmaDeVistaPrevia = ({ modo, firma, licencia, pendiente }) => {
+  if (modo !== 'autorizado' || firma.leyenda || !pendiente) return firma;
+  return {
+    ...firma,
+    leyenda: textoLeyendaAutorizacion({ presentante: firma.presentante, titular: firma.titular, nota: { numero: null, anio: null }, licencia })
+  };
+};
+
+// El día de la vista previa o la prueba con lo que decide cómo sale ese día (el mismo contextoDelDia de la corrida) y su firma.
+// Una sola vez por pedido: el HTML, el PDF, el anexo y la prueba se arman con lo mismo.
+const diaDeVistaPrevia = async (config, hoy) => {
+  const { fecha, motivo } = await fechaDeVistaPrevia(config, hoy);
+  const contexto = await contextoDelDia(config, fecha);
+  return { fecha, motivo, contexto, firma: firmaDeVistaPrevia(contexto) };
+};
+
+// Los datasets de la vista previa o la prueba de ese día, o el ejemplo si no hay. El aviso sale de avisoDelDia con el contexto
+// del día, igual que en la corrida (víspera de una licencia, aviso en su fecha); si buscar lo que sale en su fecha falla,
+// falla también la vista previa: no muestra una nota distinta a la que saldría. La reiteración sigue su selección de siempre.
+// Devuelve { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo }.
+const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
+  let reales;
+  let aviso = { rangoVencimientos: null, autorizacion: null };
+  if (tipo === 'aviso') {
+    const { modo, licencia, anticipo, autorizacion } = contexto;
+    aviso = await avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion });
+    if (aviso.errorEnSuFecha) throw aviso.errorEnSuFecha;
+    reales = aviso.datasets;
+  } else {
+    reales = await seleccionarParaReiteracion(gestion, fecha);
+  }
+  if (reales.length) {
+    const { rangoVencimientos, autorizacion } = aviso;
+    return { ...(await prepararContenido({ tipo, gestion, datasets: reales, fecha })), rangoVencimientos, autorizacion, ejemplo: false };
+  }
+  return { ...ejemplo(tipo, gestion, fecha), rangoVencimientos: null, autorizacion: null, ejemplo: true };
+};
+
+// La nota de la vista previa: los datos de la fecha de la próxima corrida con notas (o de ejemplo) con N° XX, firmada como
+// saldría (spec 2026-10-15, 7.7). La de auditoría no tiene gestión (spec 2026-10-15, 10.4).
 const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
   const config = await obtenerConfig();
-  const { firma } = await firmaParaFecha(config, hoy);
+  const { fecha, motivo, contexto, firma } = await diaDeVistaPrevia(config, hoy);
   if (tipo === 'auditoria') {
-    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, hoy);
-    const nota = construirNotaDeAuditoria({ numero: null, anio: null, esPrueba: false, fecha: hoy, ...auditoria, firma, config });
-    return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha);
+    const nota = construirNotaDeAuditoria({ numero: null, anio: null, esPrueba: false, fecha, ...auditoria, firma, config });
+    return { nota, config, firma, fecha, motivo, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
   }
-  const { datasets, areas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
-  const nota = construirNota({ tipo, gestion, numero: null, anio: null, esPrueba: false, fecha: hoy, datasets, areas, config, firma });
-  return { nota, config, firma, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
+  const { datasets, areas, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
+  const nota = construirNota({
+    tipo, gestion, numero: null, anio: null, esPrueba: false, fecha, datasets, areas, config, firma, rangoVencimientos, autorizacion
+  });
+  return { nota, config, firma, fecha, motivo, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
 };
 
 export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
-  const { nota, ejemplo: esEjemplo, cantidad } = await notaDeVistaPrevia({ tipo, gestion, hoy });
-  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad };
+  const { nota, ejemplo: esEjemplo, cantidad, fecha, motivo } = await notaDeVistaPrevia({ tipo, gestion, hoy });
+  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad, fecha, motivo };
 };
 
 // PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía
@@ -695,29 +815,39 @@ export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
   return renderPdf(nota, opcionesPdf(config, firma));
 };
 
-// Anexo del aviso de la vista previa (N° XX): no se guarda ni se envía
+// Anexo del aviso de la vista previa (N° XX), del mismo día y la misma selección que la nota: no se guarda ni se envía
 export const previewAnexo = async ({ gestion, hoy = hoyArgentina() }) => {
-  const { fichas } = await contenidoParaMostrar('aviso', gestion, hoy);
-  return renderAnexo(construirAnexo({ numero: null, anio: null, fecha: hoy, fichas }));
+  const { fecha, contexto } = await diaDeVistaPrevia(await obtenerConfig(), hoy);
+  const { fichas } = await contenidoParaMostrar('aviso', gestion, fecha, contexto);
+  return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas }));
 };
 
+// "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día
+// (spec 2026-10-15, 7.7)
+export const mensajeDePrueba = ({ destinatarios, ejemplo, motivo, fecha }) => {
+  const aclaraciones = [ejemplo && 'con datos de ejemplo', motivo && `como saldría el ${formatoCorto(fecha)}`].filter(Boolean);
+  return `Prueba enviada a ${destinatarios.join(', ')}${aclaraciones.length > 0 ? ` (${aclaraciones.join(', ')})` : ''}`;
+};
+
+// La prueba se genera como una nota de prueba (sin número, sin registrar datasets ni cambios incluidos ni la autorización) y va
+// solo a las casillas de prueba. Muestra el mismo día y el mismo contenido que la vista previa: fecha y motivo dicen cuál.
 export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null }) => {
   const config = await obtenerConfig();
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
-  const { firma } = await firmaParaFecha(config, hoy);
-  // La prueba de la nota de auditoría: los cambios de hoy o el ejemplo, sin registrar cambios incluidos (spec 2026-10-15, 11.2)
+  const { fecha, motivo, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  // La prueba de la nota de auditoría: los cambios de ese día o el ejemplo, sin registrar cambios incluidos (spec 2026-10-15, 11.2)
   if (tipo === 'auditoria') {
-    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, hoy);
-    const id = await generarNota({ tipo, gestion: null, fecha: hoy, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
-    return { id, ejemplo: esEjemplo, destinatarios: casillas, ...(await enviarNota(id)) };
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha);
+    const id = await generarNota({ tipo, gestion: null, fecha, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
+    return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...(await enviarNota(id)) };
   }
-  const { datasets, areas, fichas, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, hoy);
+  const { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   const id = await generarNota({
-    tipo, gestion, fecha: hoy, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }, firma
+    tipo, gestion, fecha, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }, firma, rangoVencimientos, autorizacion
   });
   const resultado = await enviarNota(id);
-  return { id, ejemplo: esEjemplo, destinatarios: casillas, ...resultado };
+  return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...resultado };
 };
 
 // Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5).

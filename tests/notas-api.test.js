@@ -324,6 +324,49 @@ describe('vista previa y prueba', () => {
     assert.ok(res.body.data.html.includes('XX'));
   });
 
+  it('si hoy no se generan notas, la vista previa y la prueba dicen qué día muestran (spec 2026-10-15, 7.7)', async () => {
+    const hoy = hoyArgentina();
+    const titular = usuarios.adminA.id;
+    const rutas = { vista: '/notificaciones/notas-digitales/preview?tipo=aviso&gestion=interna', prueba: '/notificaciones/notas-digitales/prueba' };
+    const pedir = async () => ({
+      vista: (await api.get(rutas.vista, comoAdmin())).body.data,
+      prueba: (await api.post(rutas.prueba, { tipo: 'aviso', gestion: 'interna' }, comoAdmin())).body
+    });
+    try {
+      // Sin licencia: hoy si es día hábil; si no, el próximo día hábil
+      const sinLicencia = await pedir();
+      const fechaSinLicencia = proximoDiaHabil(hoy);
+      assert.deepEqual([sinLicencia.vista.fecha, sinLicencia.vista.motivo], [fechaSinLicencia, esDiaHabil(hoy) ? null : 'día no hábil']);
+      assert.equal(sinLicencia.prueba.message.includes('como saldría'), !esDiaHabil(hoy));
+
+      // El firmante titular de licencia desde ayer hasta dentro de 3 días, sin persona autorizada: ni hoy ni esos días hay notas
+      await query('INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, ?, ?, ?, ?)',
+        [titular, 'Titular de prueba', 'Cargo de prueba', pngRgba(), 'image/png']);
+      await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [titular, sumarDias(hoy, -1), sumarDias(hoy, 3)]);
+      await query('UPDATE notas_digitales_config SET firmante_usuario_id = ?', [titular]);
+      const esperada = proximoDiaHabil(sumarDias(hoy, 4));
+      const motivo = esDiaHabil(hoy) ? 'licencia del firmante sin persona autorizada' : 'día no hábil';
+      const conLicencia = await pedir();
+      assert.deepEqual([conLicencia.vista.fecha, conLicencia.vista.motivo], [esperada, motivo]);
+      assert.equal(conLicencia.prueba.success, true);
+      assert.deepEqual([conLicencia.prueba.data.fecha, conLicencia.prueba.data.motivo], [esperada, motivo]);
+      assert.ok(conLicencia.prueba.message.endsWith(` (con datos de ejemplo, como saldría el ${formatoCorto(esperada)})`), conLicencia.prueba.message);
+    } finally {
+      await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
+      await query('DELETE FROM usuarios_licencias WHERE usuario_id = ?', [titular]);
+      await query('DELETE FROM usuarios_firmas WHERE usuario_id = ?', [titular]);
+    }
+  });
+
+  it('el mensaje de la prueba junta lo que aclara en un solo paréntesis (spec 2026-10-15, 7.7)', () => {
+    const base = { destinatarios: ['uno@rpad.test', 'dos@rpad.test'], fecha: '2026-12-21' };
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: false, motivo: null }), 'Prueba enviada a uno@rpad.test, dos@rpad.test');
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: true, motivo: null }), 'Prueba enviada a uno@rpad.test, dos@rpad.test (con datos de ejemplo)');
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: false, motivo: 'día no hábil' }), 'Prueba enviada a uno@rpad.test, dos@rpad.test (como saldría el 21/12/2026)');
+    assert.equal(motor.mensajeDePrueba({ ...base, ejemplo: true, motivo: 'día no hábil' }),
+      'Prueba enviada a uno@rpad.test, dos@rpad.test (con datos de ejemplo, como saldría el 21/12/2026)');
+  });
+
   it('rechaza tipo o gestión inválidos', async () => {
     const res = await api.get('/notificaciones/notas-digitales/preview?tipo=otro&gestion=interna', comoAdmin());
     assert.equal(res.status, 400);

@@ -128,6 +128,8 @@
         .co-tarjeta + .co-tarjeta { margin-top: 16px; }
         .co-tarjeta h2 { font-size: 1rem; font-weight: 600; color: var(--pf-tinta); margin: 0 0 4px; }
         .co-ayuda { margin: 0 0 16px; font-size: 0.85rem; color: var(--pf-suave); }
+        /* El aviso de la vista previa trae, en su propia línea, el día en que saldría la nota */
+        #preview-aviso { white-space: pre-line; }
 
         /* Estado (spec 2026-10-17-correos-pestanas, 7) */
         .co-envio { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -439,7 +441,7 @@
                 <div class="co-dos">
                     <div class="co-tarjeta">
                         <h2>Nota Digital</h2>
-                        <p class="co-ayuda">Cómo saldría hoy, con los datos reales (o de ejemplo si hoy no sale ninguna). La prueba va solo a las casillas de prueba.</p>
+                        <p class="co-ayuda">Cómo saldría en la próxima corrida con notas, con los datos reales (o de ejemplo si no saldría ninguna). La prueba va solo a las casillas de prueba.</p>
                         <div class="co-controles">
                             <select id="preview-tipo" aria-label="Tipo de nota">
                                 <option value="aviso">Aviso</option>
@@ -614,6 +616,6 @@
     <script src="js/auth.js?v=20261105"></script>
     <script src="js/main.js?v=20261105"></script>
     <script src="js/api.js?v=20261105"></script>
-    <script src="js/correos.js?v=20261106"></script>
+    <script src="js/correos.js?v=20261107"></script>
 </body>
 </html>

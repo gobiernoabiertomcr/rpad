@@ -9,8 +9,8 @@ const VERSION = '20261105';
 // sale también en su fecha): su versión es propia
 const VERSION_PANTALLAS = '20261106';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
-// licencia del firmante): su versión es propia
-const VERSION_CORREOS = '20261106';
+// licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas): su versión es propia
+const VERSION_CORREOS = '20261107';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas): su versión es propia
 const VERSION_PERFIL = '20261103';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia
