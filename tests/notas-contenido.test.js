@@ -73,13 +73,14 @@ describe('secciones', () => {
     assert.equal(nota({ datasets: [dataset({ vencimiento: '2026-11-02' })] }).secciones[0].clave, 'proximo');
   });
 
-  // Spec 2026-10-17-fechas-datasets, 9: el aviso tiene 5 columnas (se van "Última actualización" y "Situación") y la
-  // reiteración, las 7 de siempre con "Datos solicitados" en lugar de "Última actualización" e "Informado en" al final
-  it('columnas exactas del aviso: 5, con "Datos solicitados" y "Fecha sugerida de envío"', () => {
+  // Spec 2026-10-17-fechas-datasets, 9 y 18: el aviso tiene 4 columnas (se van "Última actualización", "Situación" y, desde el
+  // 18/10/2026, la fecha sugerida de envío) y la reiteración, las 7 de siempre con "Datos solicitados" en lugar de "Última
+  // actualización" e "Informado en" al final
+  it('columnas exactas del aviso: 4, con "Datos solicitados" y sin fecha', () => {
     assert.deepEqual(nota().secciones[0].columnas,
-      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío']);
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados']);
     assert.deepEqual(nota({ gestion: 'externa' }).secciones[0].columnas,
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío']);
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados']);
   });
 
   it('columnas exactas de la reiteración: 7, con "Datos solicitados" y con "Informado en" al final', () => {
@@ -94,22 +95,62 @@ describe('secciones', () => {
       ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']);
   });
 
-  it('la sección de vencidos de un aviso usa las columnas de la reiteración', () => {
+  it('la sección de vencidos de un aviso usa las columnas de la reiteración, y los próximos las 4 del aviso', () => {
     const aviso = nota({ gestion: 'externa', datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE })] });
     assert.deepEqual(aviso.secciones.map(s => s.columnas), [
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Fecha sugerida de envío'],
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados'],
       ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
     ]);
     assert.deepEqual(aviso.secciones[1].filas[0].valores,
       ['Dataset B', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/09/2026', '31/10/2026', 'Vencido hace 2 días', 'Sin aviso previo']);
   });
 
-  it('celdas del aviso: el texto del pedido y la fecha sugerida de envío (el vencimiento)', () => {
+  it('celdas del aviso: el texto del pedido, sin fecha', () => {
     assert.deepEqual(nota().secciones[0].filas[0].valores,
-      ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/11/2026', '31/12/2026']);
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/11/2026']);
     const otro = { desde: null, hasta: null, texto: 'Relevamiento actualizado' };
     assert.deepEqual(nota({ datasets: [dataset({ pedido: otro, vencimiento: '2027-01-31' })] }).secciones[0].filas[0].valores,
-      ['Dataset A', 'Área Uno', 'Anualmente', 'Relevamiento actualizado', '31/01/2027']);
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Relevamiento actualizado']);
+  });
+
+  // Spec 18: un acumulado con una frecuencia menor al año dice "(Acumulado)". El tipo es el que trae el dataset: en las notas
+  // reales, el efectivo de conPedido (el guardado o, sin él, el sugerido)
+  describe('frecuencia con "(Acumulado)"', () => {
+    const trimestral = (cambios = {}) => dataset({ frecuencia_nombre: 'Trimestralmente', tipo_pedido: 'acumulado', meses: 3, ...cambios });
+    const frecuenciaDe = (tipo, cambios) => nota({ tipo, gestion: 'externa', datasets: [trimestral(cambios)] }).secciones[0].filas[0].valores[2];
+
+    it('el aviso y la reiteración dicen "Trimestralmente (Acumulado)"', () => {
+      assert.equal(frecuenciaDe('aviso'), 'Trimestralmente (Acumulado)');
+      assert.equal(frecuenciaDe('reiteracion'), 'Trimestralmente (Acumulado)');
+    });
+
+    it('también en la sección de vencidos de un aviso', () => {
+      const n = nota({ gestion: 'externa', datasets: [trimestral(), trimestral({ id: 2, vencimiento: '2026-10-31' })] });
+      assert.deepEqual(n.secciones.map(s => s.filas[0].valores[2]), ['Trimestralmente (Acumulado)', 'Trimestralmente (Acumulado)']);
+    });
+
+    it('con otro tipo de pedido, o con una frecuencia de un año o más, la frecuencia queda como está', () => {
+      assert.equal(frecuenciaDe('aviso', { tipo_pedido: 'foto' }), 'Trimestralmente');
+      assert.equal(frecuenciaDe('reiteracion', { tipo_pedido: 'foto' }), 'Trimestralmente');
+      assert.equal(frecuenciaDe('aviso', { frecuencia_nombre: 'Anualmente', meses: 12 }), 'Anualmente');
+      assert.equal(frecuenciaDe('aviso', { meses: null }), 'Trimestralmente');
+      // (sin tipo ni meses, como los datasets armados a mano de otros tests)
+      assert.equal(nota().secciones[0].filas[0].valores[2], 'Anualmente');
+    });
+
+    it('sin nombre de frecuencia no se rompe: la celda sigue como estaba, sin "(Acumulado)"', () => {
+      for (const frecuencia_nombre of [null, undefined, '']) {
+        const n = nota({ datasets: [trimestral({ frecuencia_nombre })] });
+        assert.equal(n.secciones[0].filas[0].valores[2], frecuencia_nombre, String(frecuencia_nombre));
+        assert.ok(!renderHtml(n).includes('(Acumulado)') && !renderTexto(n).includes('(Acumulado)'), String(frecuencia_nombre));
+      }
+    });
+
+    it('el HTML y el texto plano la llevan; el texto, como línea "Frecuencia"', () => {
+      const n = nota({ gestion: 'externa', datasets: [trimestral()] });
+      assert.ok(renderHtml(n).includes('>Trimestralmente (Acumulado)</td>'));
+      assert.ok(renderTexto(n).includes('    Frecuencia: Trimestralmente (Acumulado)\n'));
+    });
   });
 
   it('celdas de la reiteración: el pedido en la cuarta, y "Venció", "Situación" e "Informado en" detrás', () => {
@@ -225,13 +266,13 @@ describe('reiteración: antecedente en "Informado en"', () => {
 
   it('el aviso no la usa: sigue con la fila a todo el ancho', () => {
     const html = renderHtml(nota({ datasets: [dataset({ antecedente: DIEZ })] }));
-    assert.ok(html.includes('colspan="5"'));
+    assert.ok(html.includes('colspan="4"'));
     assert.ok(!html.includes('Anteriormente notificado'));
   });
 
-  it('la fila del antecedente ocupa todas las columnas de su tabla: 5 en los próximos y 7 en los vencidos de un aviso', () => {
+  it('la fila del antecedente ocupa todas las columnas de su tabla: 4 en los próximos y 7 en los vencidos de un aviso', () => {
     const n = nota({ datasets: [dataset({ antecedente: DIEZ }), dataset({ id: 2, vencimiento: '2026-10-31', antecedente: UNA })] });
-    assert.deepEqual(n.secciones.map(s => s.columnas.length), [5, 7]);
+    assert.deepEqual(n.secciones.map(s => s.columnas.length), [4, 7]);
     const html = renderHtml(n);
     const colspans = [...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1]));
     assert.deepEqual(colspans, n.secciones.map(s => s.columnas.length));
@@ -311,18 +352,17 @@ describe('texto plano', () => {
     assert.ok(texto.trimEnd().endsWith('CC. Dir. Administrativa'));
   });
 
-  // Spec 2026-10-17-fechas-datasets, 9: cada columna nueva sale como una línea más de la fila, en el orden de la tabla
-  it('el aviso: "Datos solicitados" y "Fecha sugerida de envío", sin "Situación" ni "Última actualización"', () => {
+  // Spec 2026-10-17-fechas-datasets, 9 y 18: cada columna sale como una línea más de la fila, en el orden de la tabla
+  it('el aviso: "Datos solicitados" al final, sin fecha, "Situación" ni "Última actualización"', () => {
     const texto = renderTexto(nota({ gestion: 'externa' }));
     assert.ok(texto.includes([
       '- Dataset A (https://datos.comodoro.gov.ar/dataset/a)',
       '    Área responsable: Área Uno',
       '    Frecuencia: Anualmente',
       '    Datos solicitados: Del 01/01/2026 al 30/11/2026',
-      '    Fecha sugerida de envío: 31/12/2026',
       ''
     ].join('\n')), texto);
-    assert.ok(!texto.includes('Situación:') && !texto.includes('Última actualización:'), texto);
+    assert.ok(!texto.includes('Situación:') && !texto.includes('Última actualización:') && !texto.includes('Fecha sugerida de envío:'), texto);
   });
 
   it('la reiteración: "Datos solicitados" en lugar de "Última actualización", e "Informado en" al final', () => {
@@ -386,14 +426,23 @@ describe('textos del 14/10/2026', () => {
   });
 });
 
-// Spec 2026-10-17-fechas-datasets, 9: solo el aviso externo pide el período y la fecha sugerida de envío; el párrafo del
-// interno no cambia (casi todos sus pedidos son relevamientos, sin fechas)
+// Spec 2026-10-17-fechas-datasets, 9 y 18: solo el aviso externo pide el período de cada caso (sin fecha sugerida de envío,
+// desde el 18/10/2026); el párrafo del interno no cambia (casi todos sus pedidos son relevamientos, sin fechas)
 describe('párrafo inicial con los datos solicitados', () => {
-  const FRASE = ', con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío';
+  const FRASE = ', con los datos del período que se indica en cada caso';
 
-  it('el aviso externo, con la frase antes del punto final', () => {
+  it('el aviso externo, con la frase antes del punto final y sin la fecha sugerida', () => {
     assert.equal(nota({ gestion: 'externa' }).parrafoInicial,
-      'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío.');
+      'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso.');
+  });
+
+  it('ningún párrafo inicial, ni el HTML ni el texto de la nota, habla de una fecha sugerida', () => {
+    for (const tipo of ['aviso', 'reiteracion']) {
+      for (const gestion of ['interna', 'externa']) {
+        const n = nota({ tipo, gestion });
+        assert.ok(![n.parrafoInicial, renderHtml(n), renderTexto(n)].some(t => t.includes('sugerida')), `${tipo} ${gestion}`);
+      }
+    }
   });
 
   it('el aviso interno y las reiteraciones no la llevan, y quedan como estaban', () => {

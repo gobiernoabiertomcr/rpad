@@ -23,13 +23,13 @@ const BASE_PAGINACION = 17.5 * MM;
 const NORMAL = 'Helvetica';
 const NEGRITA = 'Helvetica-Bold';
 const CURSIVA = 'Helvetica-Oblique';
-// Proporción del ancho de cada columna (spec 2026-10-17-fechas-datasets, 9): 5 columnas en los próximos a vencer de los
-// avisos, con "Datos solicitados" como la más ancha después del título; 7 en las reiteraciones (y en los vencidos que pudiera
-// traer un aviso), con "Datos solicitados" en la cuarta, en lugar de "Última actualización" (le ceden el título, "Situación" e
-// "Informado en"). Un pedido "Del … al …" ocupa uno o dos renglones (conFechasJuntas). Con los avisos reales de 2026, un
-// área más ancha da tablas más bajas que un pedido en un solo renglón. (6: la tabla de los avisos anteriores a esa spec;
-// ninguna nota nueva la usa)
-const PROPORCIONES = { 5: [28, 22, 14, 24, 12], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
+// Proporción del ancho de cada columna (spec 2026-10-17-fechas-datasets, 9 y 18): 4 columnas en los próximos a vencer de los
+// avisos (desde el 18/10/2026 no llevan la fecha sugerida de envío), con "Datos solicitados" como la más ancha después del
+// título; 7 en las reiteraciones (y en los vencidos que pudiera traer un aviso), con "Datos solicitados" en la cuarta, en lugar
+// de "Última actualización" (le ceden el título, "Situación" e "Informado en"). Un pedido "Del … al …" ocupa uno o dos
+// renglones (conFechasJuntas). Con los avisos reales de 2026, un área más ancha da tablas más bajas que un pedido en un solo
+// renglón. (6: la tabla de los avisos anteriores a esa spec; ninguna nota nueva la usa)
+const PROPORCIONES = { 4: [30, 26, 16, 28], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
 // Si alguna fila lleva el antecedente de los emails anteriores en "Informado en" (reiteraciones, en letra más chica),
 // esa columna necesita más ancho para que la fila no crezca de más: lo cede sobre todo el título
 const PROPORCIONES_CON_SEGUNDA = { 7: [18, 14, 10, 13, 10, 10, 25] };

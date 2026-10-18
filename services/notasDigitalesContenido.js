@@ -4,7 +4,7 @@ import {
   formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses, diasHabilesTranscurridos
 } from './notasDigitalesCalendario.js';
 import { RPAD_URL } from './emailTemplates.js';
-import { NOMBRES_TIPO_PEDIDO } from './fechasDatasetReglas.js';
+import { NOMBRES_TIPO_PEDIDO, frecuenciaEnNota } from './fechasDatasetReglas.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -13,9 +13,9 @@ const REMITENTE = 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN';
 const PARRAFO_INICIAL = {
   aviso: {
     interna: 'Informo a Ud. que los conjuntos de datos de gestión interna detallados a continuación, publicados en el Portal de Datos Abiertos Municipal, requieren ser actualizados. En tal sentido, solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
-    // El externo pide el período de cada dataset y la fecha sugerida de envío (spec 2026-10-17-fechas-datasets, 9). El interno
-    // no: casi todos sus pedidos son relevamientos, sin fechas
-    externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío.'
+    // El externo pide el período de cada dataset (spec 2026-10-17-fechas-datasets, 9; desde el 18/10/2026, sin la fecha sugerida
+    // de envío: spec 18). El interno no: casi todos sus pedidos son relevamientos, sin fechas
+    externa: 'Informo a Ud. que los conjuntos de datos detallados a continuación, publicados en el Portal de Datos Abiertos Municipal y provistos por otras áreas municipales y organismos, requieren ser actualizados. Solicito tenga a bien gestionar, por las vías administrativas correspondientes, ante las áreas responsables, la remisión de la información actualizada en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso.'
   },
   reiteracion: {
     interna: 'Informo a Ud. el estado, al día de la fecha, de los conjuntos de datos de gestión interna informados oportunamente que continúan pendientes de actualización en el Portal de Datos Abiertos Municipal. Solicito tenga a bien gestionar su actualización ante las áreas de esta Dirección General responsables de su producción.',
@@ -185,14 +185,14 @@ const textoAnteriormente = (antecedente) => {
 // vacía del detalle de un registro de actualización (nota de auditoría)
 const RAYA = '—';
 
-// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9). Los próximos a vencer de un aviso: 5, con el pedido y la
-// fecha sugerida de envío (el vencimiento). Las demás (la reiteración y la sección de vencidos que pudiera traer un aviso):
-// las 7 de la reiteración, con "Informado en" al final, porque la segunda parte de esa celda (informadoAnterior) va en la
-// última columna en el HTML, el texto y el PDF.
+// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9 y 18). Los próximos a vencer de un aviso: las 4 comunes, con el
+// pedido; todos vencen el mismo día, así que no llevan fecha (desde el 18/10/2026 se fue la "Fecha sugerida de envío"). Las
+// demás (la reiteración y la sección de vencidos que pudiera traer un aviso): las 7 de la reiteración, con "Informado en" al
+// final, porque la segunda parte de esa celda (informadoAnterior) va en la última columna en el HTML, el texto y el PDF.
 const conColumnasDeAviso = (tipo, clave) => tipo === 'aviso' && clave === 'proximo';
 const columnasDe = (tipo, gestion, clave) => {
   const comunes = ['Conjunto de datos', gestion === 'externa' ? 'Área responsable' : 'Área', 'Frecuencia', 'Datos solicitados'];
-  if (conColumnasDeAviso(tipo, clave)) return [...comunes, 'Fecha sugerida de envío'];
+  if (conColumnasDeAviso(tipo, clave)) return comunes;
   return [...comunes, clave === 'vencido' ? 'Venció' : 'Vence', 'Situación', 'Informado en'];
 };
 
@@ -209,14 +209,18 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     const incluidos = datasets.filter(d => (d.vencimiento < fecha ? 'vencido' : 'proximo') === clave);
     const columnas = columnasDe(tipo, gestion, clave);
     const filas = incluidos.map((d) => {
-      // "Datos solicitados": el pedido calculado el día de la nota (d.pedido, de la selección). El vencimiento es la fecha
-      // sugerida de envío del aviso
-      const valores = [d.titulo, d.area_nombre, d.frecuencia_nombre, d.pedido?.texto || RAYA, formatoCorto(d.vencimiento)];
+      // "Frecuencia": con "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año (spec 18); el tipo es
+      // el del dataset (en las notas reales, el efectivo de conPedido). "Datos solicitados": el pedido calculado el día de la
+      // nota (d.pedido, de la selección)
+      const frecuencia = frecuenciaEnNota({ frecuencia: d.frecuencia_nombre, tipo: d.tipo_pedido, meses: d.meses });
+      const valores = [d.titulo, d.area_nombre, frecuencia, d.pedido?.texto || RAYA];
       // Reiteraciones: el antecedente de los emails anteriores es la segunda parte de la celda "Informado en", en
       // todas las filas (con aviso o "Sin aviso previo"); cada formato la escribe en letra más chica
       const informadoAnterior = tipo === 'reiteracion' ? textoAnteriormente(d.antecedente) : null;
+      // Los próximos de un aviso no llevan más columnas; las demás tablas suman cuándo vence (o venció), la situación y dónde
+      // se informó
       if (!conColumnasDeAviso(tipo, clave)) {
-        valores.push(situacion(d.vencimiento, fecha), `${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
+        valores.push(formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha), `${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
       }
       return {
         valores,

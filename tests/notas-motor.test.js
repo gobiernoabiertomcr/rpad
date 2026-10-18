@@ -782,16 +782,19 @@ describe('pruebas, vista previa y estado', () => {
     assert.equal(motor.ejemplo('aviso', 'externa', '2027-01-31').datasets[0].vencimiento, '2027-02-28');
   });
 
-  // Spec 2026-10-17-fechas-datasets, 9: la vista previa muestra la columna nueva con el pedido de los ejemplos
-  it('la vista previa muestra "Datos solicitados" y "Fecha sugerida de envío"; la frase nueva, solo en el aviso externo', async () => {
-    const FRASE = 'con los datos del período que se indica en cada caso y, de ser posible, antes de la fecha sugerida de envío';
+  // Spec 2026-10-17-fechas-datasets, 9 y 18: la vista previa muestra la columna con el pedido de los ejemplos, y el aviso ya no
+  // lleva la fecha sugerida de envío
+  it('la vista previa muestra "Datos solicitados" y no "Fecha sugerida de envío"; la frase del período, solo en el aviso externo', async () => {
+    const FRASE = 'con los datos del período que se indica en cada caso';
     const externo = await motor.previewNota({ tipo: 'aviso', gestion: 'externa', hoy: '2026-11-02' });
-    for (const texto of ['>Datos solicitados</th>', '>Fecha sugerida de envío</th>', '>Del 01/11/2025 al 31/10/2026</td>', '>30/11/2026</td>', FRASE]) {
+    for (const texto of ['>Datos solicitados</th>', '>Del 01/11/2025 al 31/10/2026</td>', `${FRASE}.`]) {
       assert.ok(externo.html.includes(texto), texto);
     }
     assert.ok(!externo.html.includes('Última actualización') && !externo.html.includes('>Situación</th>'));
+    assert.ok(!externo.html.includes('Fecha sugerida de envío') && !externo.html.includes('>30/11/2026</td>'), externo.html);
     const interno = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' });
-    assert.ok(interno.html.includes('>Relevamiento actualizado</td>') && interno.html.includes('>31/12/2026</td>'), interno.html);
+    assert.ok(interno.html.includes('>Relevamiento actualizado</td>'), interno.html);
+    assert.ok(!interno.html.includes('Fecha sugerida de envío') && !interno.html.includes('>31/12/2026</td>'), interno.html);
     assert.ok(!interno.html.includes(FRASE));
     const reiteracion = await motor.previewNota({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
     for (const texto of ['>Datos solicitados</th>', '>Situación</th>', '>Informado en</th>', '>Del 01/10/2025 al 30/09/2026</td>']) {
@@ -1083,6 +1086,35 @@ describe('datos solicitados guardados con cada nota (spec 2026-10-17-fechas-data
     const [hoja] = lineasPorHoja(anexo);
     assert.ok(hoja.includes('DATOS SOLICITADOS') && hoja.includes(esperado.texto), hoja.join(' | '));
     assert.ok(hoja.includes('DATOS PUBLICADOS AL') && hoja.includes(formatoCorto(sumarMeses(VENCE, -16))), hoja.join(' | '));
+  });
+
+  // Spec 18: la frecuencia lleva "(Acumulado)" con el tipo efectivo (conPedido): también si el dataset no tiene tipo guardado y
+  // el sugerido para su gestión y frecuencia es acumulado. Es lo que queda guardado en el HTML y el texto de la nota
+  it('la frecuencia de un acumulado de menos de un año dice "(Acumulado)" en el aviso y la reiteración guardados, con el tipo guardado o el sugerido', async () => {
+    await trimestral('Trimestral con tipo guardado', VENCE);
+    await crearDataset({ titulo: 'Trimestral sin tipo guardado', gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento: VENCE });
+    await crearDataset({ titulo: 'Trimestral vencido sin tipo guardado', gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento: VENCIDO });
+    await crearDataset({ titulo: 'Anual sin tipo guardado', gestion: 'externa', vencimiento: VENCE });
+    await crearDataset({ titulo: 'Foto sugerida', gestion: 'externa', frecuencia: 'Cada dos años', vencimiento: VENCE });
+    await crearDataset({ titulo: 'Trimestral con tipo foto', gestion: 'externa', frecuencia: 'Trimestralmente', vencimiento: VENCE, tipoPedido: 'foto' });
+    const resumen = await ejecutar(HOY);
+    assert.deepEqual(resumen.errores, []);
+    const guardadas = await query("SELECT tipo, html, texto FROM notas_digitales WHERE gestion = 'externa' ORDER BY id");
+    assert.deepEqual(guardadas.map(n => n.tipo), ['aviso', 'reiteracion']);
+    const [aviso, reiteracion] = guardadas;
+    const cuantas = (texto, buscado) => texto.split(buscado).length - 1;
+
+    // Aviso: los dos trimestrales de tipo acumulado (el guardado y el sugerido); el anual, el de dos años y el trimestral
+    // de tipo foto, sin cambio
+    assert.equal(cuantas(aviso.html, '>Trimestralmente (Acumulado)</td>'), 2, aviso.html);
+    assert.equal(cuantas(aviso.html, '(Acumulado)'), 2);
+    assert.equal(cuantas(aviso.texto, '    Frecuencia: Trimestralmente (Acumulado)\n'), 2, aviso.texto);
+    assert.equal(cuantas(aviso.html, '>Trimestralmente</td>'), 1);
+    for (const sinCambio of ['>Anualmente</td>', '>Cada dos años</td>']) assert.equal(cuantas(aviso.html, sinCambio), 1, sinCambio);
+
+    // Reiteración: el trimestral vencido sin aviso previo, con el tipo sugerido
+    assert.equal(cuantas(reiteracion.html, '>Trimestralmente (Acumulado)</td>'), 1, reiteracion.html);
+    assert.equal(cuantas(reiteracion.texto, '    Frecuencia: Trimestralmente (Acumulado)\n'), 1, reiteracion.texto);
   });
 
   it('una nota vieja, guardada sin los datos solicitados, sigue contando como aviso y no se completa', async () => {

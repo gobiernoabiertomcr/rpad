@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TIPOS_PEDIDO, NOMBRES_TIPO_PEDIDO, finDeMes, esFinDeMes, vencimientoDelMes, sumarMeses, corteDe, ultimoVencimientoPasado,
-  tipoSugerido, tipoEfectivo, pedido, cubre, opcionesDeProxima, estadoDelDataset, tasaDeActualizacion, topeDatosAl
+  tipoSugerido, tipoEfectivo, frecuenciaEnNota, pedido, cubre, opcionesDeProxima, estadoDelDataset, tasaDeActualizacion, topeDatosAl
 } from '../services/fechasDatasetReglas.js';
 
 const HOY = '2026-10-17';
@@ -391,5 +391,45 @@ describe('topeDatosAl', () => {
     assert.equal(topeDatosAl('acumulado', HOY), '2026-10-31');
     assert.equal(topeDatosAl('relevamiento', '2028-02-29'), '2028-02-28');
     assert.equal(topeDatosAl('ejercicio', HOY), '2027-12-31');
+  });
+});
+
+// Spec 18 (18/10/2026): en las notas, un acumulado con una frecuencia menor al año dice "(Acumulado)" al lado de la frecuencia,
+// porque el período (desde el 1/1 del año del corte) y la frecuencia no coinciden
+describe('frecuenciaEnNota (spec 18)', () => {
+  it('acumulado con una frecuencia de 1 a 11 meses: la frecuencia con "(Acumulado)"', () => {
+    assert.equal(frecuenciaEnNota({ frecuencia: 'Trimestralmente', tipo: 'acumulado', meses: 3 }), 'Trimestralmente (Acumulado)');
+    assert.equal(frecuenciaEnNota({ frecuencia: 'Mensualmente', tipo: 'acumulado', meses: 1 }), 'Mensualmente (Acumulado)');
+    assert.equal(frecuenciaEnNota({ frecuencia: 'Cuatrimestralmente', tipo: 'acumulado', meses: 4 }), 'Cuatrimestralmente (Acumulado)');
+    assert.equal(frecuenciaEnNota({ frecuencia: 'Cada medio año', tipo: 'acumulado', meses: 6 }), 'Cada medio año (Acumulado)');
+    assert.equal(frecuenciaEnNota({ frecuencia: 'Cada once meses', tipo: 'acumulado', meses: 11 }), 'Cada once meses (Acumulado)');
+  });
+
+  it('"Acumulado" es el nombre del tipo de pedido', () => {
+    assert.equal(frecuenciaEnNota({ frecuencia: 'X', tipo: 'acumulado', meses: 3 }), `X (${NOMBRES_TIPO_PEDIDO.acumulado})`);
+  });
+
+  it('acumulado con una frecuencia de un año o más, o que no es un entero de 1 a 11: sin cambio', () => {
+    for (const meses of [12, 24, null, undefined, 0, -3, 2.5, '3', NaN, Infinity]) {
+      assert.equal(frecuenciaEnNota({ frecuencia: 'Anualmente', tipo: 'acumulado', meses }), 'Anualmente', String(meses));
+    }
+  });
+
+  it('los demás tipos, sin cambio, aunque la frecuencia sea menor al año', () => {
+    for (const tipo of ['foto', 'anio_anterior', 'ejercicio', 'edicion', 'relevamiento', 'eventual', null, undefined, 'otro']) {
+      assert.equal(frecuenciaEnNota({ frecuencia: 'Trimestralmente', tipo, meses: 3 }), 'Trimestralmente', String(tipo));
+    }
+  });
+
+  it('sin frecuencia (null, undefined o texto vacío) devuelve lo que recibió, para que cada lugar ponga su "sin dato"', () => {
+    for (const frecuencia of [null, undefined, '']) {
+      assert.equal(frecuenciaEnNota({ frecuencia, tipo: 'acumulado', meses: 3 }), frecuencia, String(frecuencia));
+    }
+  });
+
+  it('nunca tira error: sin argumentos o con un objeto vacío da undefined', () => {
+    assert.equal(frecuenciaEnNota(), undefined);
+    assert.equal(frecuenciaEnNota({}), undefined);
+    assert.equal(frecuenciaEnNota(null), undefined);
   });
 });
