@@ -292,6 +292,25 @@ describe('pendientesEnSuFecha', () => {
     assert.deepEqual(ids(await pendientes()), [enPrueba]);
   });
 
+  // El conteo de "una sola fila de aviso" es por vencimiento: la historia de un dataset (avisos de ciclos anteriores) no lo saca.
+  // Si el conteo perdiera ese filtro, ningún dataset con historia tendría aviso en su fecha
+  it('un aviso de un ciclo anterior no cuenta: el dataset con historia entra con el aviso adelantado del vencimiento actual', async () => {
+    const conHistoria = await crearDataset({ titulo: 'A con historia', gestion: 'externa', vencimiento: VENCE });
+    const sinHistoria = await crearDataset({ titulo: 'B sin historia', gestion: 'externa', vencimiento: VENCE });
+    // El aviso del ciclo anterior (vencía el 31/01/2026), enviado en su fecha normal, sin cuenta_desde
+    await adelantar(conHistoria, { fecha: '2025-12-22', vencimiento: '2026-01-31', cuentaDesde: null });
+    await adelantar(conHistoria);
+    await adelantar(sinHistoria);
+    const filas = await pendientes();
+    assert.deepEqual(ids(filas), [conHistoria, sinHistoria]);
+    // El adelantado es el del vencimiento actual, no el del ciclo anterior
+    assert.deepEqual(filas[0].adelantado, { numero: filas[0].adelantado.numero, anio: 2026, fecha: '2026-12-09' });
+    assert.equal(filas[0].cuenta_desde, '2026-12-22');
+    // Y si el del ciclo actual ya tuvo su aviso en su fecha, deja de entrar aunque tenga historia
+    await adelantar(conHistoria, { fecha: '2026-12-22' });
+    assert.deepEqual(ids(await pendientes()), [sinHistoria]);
+  });
+
   it('el aviso adelantado cuenta en cualquier estado (enviado, pendiente o fallido)', async () => {
     const enviado = await crearDataset({ titulo: 'A enviado', gestion: 'externa', vencimiento: VENCE });
     const pendiente = await crearDataset({ titulo: 'B pendiente', gestion: 'externa', vencimiento: VENCE });
