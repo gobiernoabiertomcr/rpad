@@ -15,7 +15,7 @@ import {
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
-  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe, conPedido, pendientesEnSuFecha
+  aperturaDelProximoAviso, antecedentesDe, areasDe, fichasDe, conPedido, pendientesEnSuFecha, DIAS_PARA_REITERAR
 } from './notasDigitalesDatos.js';
 import { sumarMeses, tipoSugerido, vencimientoDelMes } from './fechasDatasetReglas.js';
 import {
@@ -35,6 +35,12 @@ export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
+
+// A un dataset adelantado ya le toca la reiteración ese día: pasaron DIAS_PARA_REITERAR días corridos desde su cuenta_desde
+// (inclusive), la misma condición que seleccionarParaReiteracion. No entra en el aviso en su fecha y lo informa la
+// reiteración, citando la nota anticipada (spec 2026-10-15, 7.6). Es permanente: una vez verdadera, sigue verdadera, así
+// un dataset nunca sale el mismo día en un aviso y en una reiteración ni vuelve como aviso después de reiterado.
+const yaTocaReiterar = (dataset, dia) => dataset.cuenta_desde <= sumarDias(dia, -DIAS_PARA_REITERAR);
 
 // Ficha del anexo de cada dataset del aviso, en el orden de la tabla de la nota (spec 6.7). Las fechas y el pedido son
 // los de la nota (los de la selección, spec 2026-10-17-fechas-datasets, 9): el anexo coincide con la tabla aunque el
@@ -475,7 +481,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       if (modo === 'autorizado') {
         ausenciasDelAutorizado ??= (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
         const enSuFecha = (await pendientesEnSuFecha(gestion, hoy, licencia, ausenciasDelAutorizado))
-          .filter(d => d.dia_en_su_fecha <= hoy);
+          .filter(d => d.dia_en_su_fecha <= hoy && !yaTocaReiterar(d, hoy));
         if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
       }
       if (!datasets.length) continue;
@@ -754,9 +760,11 @@ const licenciaDelFirmante = async (config, hoy) => {
 /**
  * El próximo aviso en su fecha de la gestión (spec 2026-10-15, 7.6), con persona autorizada: de los datasets que la víspera
  * adelantó, el día en que la persona autorizada los vuelve a presentar. Un día que ya pasó (la corrida no se hizo, o ella
- * faltaba) pasa al primer día hábil, desde la próxima corrida, en que no falta. { fecha, cantidad } o null: la cantidad
- * es lo que sale ese día, sumando a los que vuelven a presentarse lo que seleccionarParaAviso elige para esa fecha.
- * corrida: el día de la próxima corrida posible. delFirmante: lo que devuelve licenciaDelFirmante.
+ * faltaba) pasa al primer día hábil, desde la próxima corrida, en que no falta. Un dataset al que ese día ya le toca la
+ * reiteración (yaTocaReiterar) no cuenta: lo informa la reiteración, como en la corrida. { fecha, cantidad } o null: la
+ * cantidad es lo que sale ese día, sumando a los que vuelven a presentarse lo que seleccionarParaAviso elige para esa fecha.
+ * corrida: el día de la próxima corrida posible. { titular, ausencias }: lo que devuelve licenciaDelFirmante (la licencia del
+ * titular y las ausencias de la persona autorizada).
  */
 const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }) => {
   const pendientes = await pendientesEnSuFecha(gestion, corrida, titular, ausencias);
@@ -764,8 +772,9 @@ const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }) =
   // El primer día hábil desde la próxima corrida en que la persona autorizada no falta: el mismo para todos los atrasados
   const primerDiaLibre = diasHabilesLibres(corrida, titular.hasta, ausencias).primerDia;
   const fechas = pendientes
-    .map(({ dia_en_su_fecha: dia }) => (dia >= corrida ? dia : primerDiaLibre))
-    .filter(Boolean)
+    .map(dataset => ({ dataset, efectiva: dataset.dia_en_su_fecha >= corrida ? dataset.dia_en_su_fecha : primerDiaLibre }))
+    .filter(({ dataset, efectiva }) => efectiva && !yaTocaReiterar(dataset, efectiva))
+    .map(({ efectiva }) => efectiva)
     .sort();
   if (fechas.length === 0) return null;
   const [fecha] = fechas;
