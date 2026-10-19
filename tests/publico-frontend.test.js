@@ -733,40 +733,35 @@ describe('dashboard.js: el índice y el mosaico', () => {
   it('la aclaración y la frase, con los números de producción del 19/10/2026', () => {
     const { tasa, frase, aclaracion } = plano(tablero.textoIndice({ ...STATS, total: 81, proximos: 2, tasaActualizacion: 81 }));
     assert.equal(tasa, '81%');
-    assert.equal(aclaracion, 'El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento.');
-    assert.equal(frase, 'Los otros 67 tienen fecha de vencimiento, y el 81% está al día: 54 de 67.');
+    assert.equal(aclaracion, 'El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento.');
+    assert.equal(frase, 'El 81% de los datasets que tienen fecha de vencimiento están al día: 54 de 67.');
   });
 
   it('la frase usa la tasa del servidor, no la recalcula', () => {
-    assert.equal(plano(tablero.textoIndice(STATS)).frase, 'Los otros 66 tienen fecha de vencimiento, y el 80% está al día: 53 de 66.');
+    assert.equal(plano(tablero.textoIndice(STATS)).frase, 'El 80% de los datasets que tienen fecha de vencimiento están al día: 53 de 66.');
   });
 
-  it('un solo eventual, en singular; sin eventuales, "Todos"', () => {
+  it('un solo eventual, en singular; sin eventuales, la aclaración termina en el total y la frase no cambia', () => {
     const uno = plano(tablero.textoIndice({ ...STATS, total: 67, eventuales: 1 }));
-    assert.equal(uno.aclaracion, 'El registro sigue 67 conjuntos de datos. De ellos, 1 tiene frecuencia de actualización eventual: se publica cuando hay novedades y no tiene vencimiento.');
-    assert.equal(uno.frase, 'Los otros 66 tienen fecha de vencimiento, y el 80% está al día: 53 de 66.');
+    assert.equal(uno.aclaracion, 'El registro sigue 67 conjuntos de datos. De ellos, 1 tiene frecuencia de actualización eventual: se actualiza cuando hay novedades y no tiene vencimiento.');
+    assert.equal(uno.frase, 'El 80% de los datasets que tienen fecha de vencimiento están al día: 53 de 66.');
     const ninguno = plano(tablero.textoIndice({ ...STATS, total: 66, eventuales: 0 }));
     assert.equal(ninguno.aclaracion, 'El registro sigue 66 conjuntos de datos.');
-    assert.equal(ninguno.frase, 'Todos tienen fecha de vencimiento, y el 80% está al día: 53 de 66.');
+    assert.equal(ninguno.frase, 'El 80% de los datasets que tienen fecha de vencimiento están al día: 53 de 66.');
   });
 
-  it('los sin fecha cuentan en la base sin tener fecha: la frase lo dice, y la aclaración ya no', () => {
+  it('los sin fecha cuentan en la base sin tener fecha: la frase lo dice, y la aclaración no', () => {
     const dos = plano(tablero.textoIndice({ ...STATS, total: 82, sinFecha: 2 }));
-    assert.equal(dos.frase, 'Los otros 68 deberían tener fecha de vencimiento (2 todavía no la tienen), y el 80% está al día: 53 de 68.');
+    assert.equal(dos.frase, 'El 80% de los datasets que deberían tener fecha de vencimiento (2 todavía no la tienen) están al día: 53 de 68.');
     assert.doesNotMatch(dos.aclaracion, /todavía/);
     assert.equal(plano(tablero.textoIndice({ ...STATS, total: 81, sinFecha: 1 })).frase,
-      'Los otros 67 deberían tener fecha de vencimiento (1 todavía no la tiene), y el 80% está al día: 53 de 67.');
-    assert.equal(plano(tablero.textoIndice({ ...STATS, total: 66, eventuales: 0, sinFecha: 1 })).frase,
-      'Todos deberían tener fecha de vencimiento (1 todavía no la tiene), y el 80% está al día: 53 de 66.');
+      'El 80% de los datasets que deberían tener fecha de vencimiento (1 todavía no la tiene) están al día: 53 de 67.');
   });
 
-  it('con un solo conjunto con vencimiento, en singular; sin ninguno, no hay frase', () => {
+  it('con uno solo con vencimiento, la misma frase; sin ninguno, no hay frase', () => {
     const base = { total: 15, actualizados: 1, proximos: 0, eventuales: 14, sinFecha: 0, tasaActualizacion: 100 };
-    assert.equal(plano(tablero.textoIndice(base)).frase, 'El otro tiene fecha de vencimiento, y el 100% está al día: 1 de 1.');
+    assert.equal(plano(tablero.textoIndice(base)).frase, 'El 100% de los datasets que tienen fecha de vencimiento están al día: 1 de 1.');
     assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0 })).aclaracion, 'El registro sigue 1 conjunto de datos.');
-    assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0 })).frase, 'Tiene fecha de vencimiento, y el 100% está al día: 1 de 1.');
-    assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0, actualizados: 0, sinFecha: 1, tasaActualizacion: 0 })).frase,
-      'Debería tener fecha de vencimiento (1 todavía no la tiene), y el 0% está al día: 0 de 1.');
     assert.equal(plano(tablero.textoIndice({ ...base, total: 14, actualizados: 0, tasaActualizacion: 0 })).frase, '');
   });
 

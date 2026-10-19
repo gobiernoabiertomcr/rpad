@@ -85,7 +85,7 @@ Cada dataset tiene además un **tipo de pedido** (acumulado, foto al corte, año
 
 Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada dataset, el Calendario y Contacto. Todas comparten con las pantallas de administración el encabezado (Inicio, Datasets, Calendario y Contacto a la vista), el menú lateral y el footer (`RPAD v2.0.0`). Los estados, los días y la tasa salen del servidor: las páginas no recalculan nada.
 
-- **Portada** (`index.html`): el **índice de actualización** ("El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento." y, en grande, "Los otros 67 tienen fecha de vencimiento, y el 81% está al día: 54 de 67."), el **mosaico** con un cuadrito por conjunto de datos agrupado en Al día, Vencidos y Eventuales, con la cantidad de cada categoría en la leyenda (cada cuadrito lleva a su detalle), **qué vence en los próximos 12 meses** (cada mes lleva al listado de ese mes), y las listas de **Vencidos**, **Próximos a vencer** y **Últimas cargas en el portal**.
+- **Portada** (`index.html`): el **índice de actualización** ("El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento." y, en grande, "El 81% de los datasets que tienen fecha de vencimiento están al día: 54 de 67."), el **mosaico** con un cuadrito por conjunto de datos agrupado en Al día, Vencidos y Eventuales, con la cantidad de cada categoría en la leyenda (cada cuadrito lleva a su detalle), **qué vence en los próximos 12 meses** (cada mes lleva al listado de ese mes), y las listas de **Vencidos**, **Próximos a vencer** y **Últimas cargas en el portal**.
 - **Datasets** (`datasets.html`):
   - **Estados** como botones con su cantidad: Todos, Actualizados, Próximos a vencer, Vencidos (con "Todos los vencidos", Atrasados y Sin respuesta del área), Eventuales y Sin fecha (solo si hay). Las cantidades cuentan lo que dejan los otros filtros.
   - **Filtros**: Buscar (título, área y descripción), Tema (principal o secundario) y Frecuencia, más "Limpiar filtros".
@@ -650,7 +650,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 - El cuadro del índice une Actualizados y Próximos a vencer en "Al día" (el mismo número que el texto), con una leyenda que dice cuántos hay de cada uno; la leyenda de Vencidos también dice cuántos atrasados y cuántos sin respuesta hay
 - Dentro de cada grupo, los cuadritos van por categoría (primero los actualizados y después los próximos; primero los atrasados y después los sin respuesta) y cada una por título
 - El pie del cuadro, que dice qué conjunto se señala, vuelve a su texto ("Cada cuadrado es un conjunto de datos…") al sacar el mouse de los cuadritos o salir de ellos con el teclado; ya no queda el nombre del último
-- El texto se lee en orden: primero el registro y sus eventuales, y después el índice ("Los otros 67 tienen fecha de vencimiento, y el 81% está al día: 54 de 67.")
+- El texto se lee en orden: primero el registro y sus eventuales, y después el índice ("El 81% de los datasets que tienen fecha de vencimiento están al día: 54 de 67.")
 - Solo `public/index.html` y `public/js/dashboard.js`: sin cambios en la API, la base ni las hojas de estilo
 
 ### Estados en los reportes PDF (2026-10)

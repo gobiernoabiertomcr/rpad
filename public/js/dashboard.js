@@ -156,10 +156,10 @@ function textoTasa(stats) {
 
 /**
  * Los textos del índice, con los números del servidor (/datasets/estadisticas), en el orden en que se leen (spec
- * 2026-10-19-indice-portada): la aclaración (el registro y sus eventuales) y la frase (los que tienen vencimiento y cuántos
+ * 2026-10-19-indice-portada): la aclaración (el registro y sus eventuales) y la frase (cuántos de los que tienen vencimiento
  * están al día). La base es la misma de la tasa: el total sin los eventuales. Los sin fecha cuentan en ella sin tener fecha, y
  * la frase lo dice. Sin ninguno con vencimiento no hay frase.
- * { tasa: '81%', aclaracion: 'El registro sigue 81 conjuntos de datos. De ellos, 14 …', frase: 'Los otros 67 tienen …' }
+ * { tasa: '81%', aclaracion: 'El registro sigue 81 conjuntos de datos. De ellos, 14 …', frase: 'El 81% de los datasets …' }
  */
 function textoIndice(stats) {
   const numero = (valor) => Number(valor) || 0;
@@ -171,18 +171,14 @@ function textoIndice(stats) {
   const base = total - eventuales;
 
   let aclaracion = `El registro sigue ${total} ${total === 1 ? 'conjunto' : 'conjuntos'} de datos.`;
-  if (eventuales === 1) aclaracion += ' De ellos, 1 tiene frecuencia de actualización eventual: se publica cuando hay novedades y no tiene vencimiento.';
-  else if (eventuales > 1) aclaracion += ` De ellos, ${eventuales} tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento.`;
+  if (eventuales === 1) aclaracion += ' De ellos, 1 tiene frecuencia de actualización eventual: se actualiza cuando hay novedades y no tiene vencimiento.';
+  else if (eventuales > 1) aclaracion += ` De ellos, ${eventuales} tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento.`;
 
   if (base <= 0) return { tasa, aclaracion, frase: '' };
-  const uno = base === 1;
-  // "Los otros 67" (o "El otro") después de los eventuales; sin eventuales, "Todos" (o el verbo solo, si es uno)
-  const quienes = eventuales > 0 ? (uno ? 'El otro ' : `Los otros ${base} `) : (uno ? '' : 'Todos ');
-  const tienen = sinFecha > 0
-    ? `${uno ? 'debería' : 'deberían'} tener fecha de vencimiento (${sinFecha} todavía no la ${sinFecha === 1 ? 'tiene' : 'tienen'})`
-    : `${uno ? 'tiene' : 'tienen'} fecha de vencimiento`;
-  const comienzo = quienes + tienen;
-  const frase = `${comienzo.charAt(0).toUpperCase()}${comienzo.slice(1)}, y el ${tasa} está al día: ${alDia} de ${base}.`;
+  const conVencimiento = sinFecha > 0
+    ? `deberían tener fecha de vencimiento (${sinFecha} todavía no la ${sinFecha === 1 ? 'tiene' : 'tienen'})`
+    : 'tienen fecha de vencimiento';
+  const frase = `El ${tasa} de los datasets que ${conVencimiento} están al día: ${alDia} de ${base}.`;
   return { tasa, aclaracion, frase };
 }
 

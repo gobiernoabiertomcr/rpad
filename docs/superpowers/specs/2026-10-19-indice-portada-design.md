@@ -12,8 +12,9 @@ En la portada, el texto del índice decía "están al día: 54 de 67", pero el c
 - **Leyenda con cantidades** debajo de Al día ("Actualizados 52", "Próximos a vencer 2") y de Vencidos, en plural ("Atrasados (gestión interna) 3", "Sin respuesta del área (gestión externa) 10"). Sale aunque una categoría tenga 0.
 - **Orden por categoría** dentro de cada grupo, en el orden de la leyenda (verdes y después amarillos; rojos y después violetas), y cada una por título: así las cantidades de la leyenda se ven en el cuadro. Antes, Vencidos mezclaba los dos colores por título.
 - **Texto en dos párrafos**, primero la aclaración y después la frase (en grande, con la tasa resaltada):
-  - "El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento."
-  - "Los otros 67 tienen fecha de vencimiento, y el **81%** está al día: 54 de 67."
+  - "El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento."
+  - "El **81%** de los datasets que tienen fecha de vencimiento están al día: 54 de 67."
+  - Primero se implementó "se publican" y "Los otros 67 tienen fecha de vencimiento, y el 81% está al día: 54 de 67."; el usuario lo cambió el mismo día por este texto.
 
 ## El pie del cuadro (pedido del mismo día)
 
@@ -25,9 +26,8 @@ El pie (`aria-live`) arranca con "Cada cuadrado es un conjunto de datos. Pasá e
 
 ## Casos que no se ven hoy (decisiones de implementación)
 
-- Un eventual: "De ellos, 1 tiene … se publica … no tiene vencimiento."; sin eventuales, la aclaración termina en "… conjuntos de datos." y la frase empieza "Todos tienen fecha de vencimiento, y …".
-- Uno solo con vencimiento: "El otro tiene …" (o "Tiene …" si no hay eventuales).
-- Sin fecha: cuentan en la base sin tener fecha (`tasaDeActualizacion`), así que la frase dice "Los otros 68 deberían tener fecha de vencimiento (2 todavía no la tienen), y el 78% …". La aclaración ya no los nombra. En el cuadro siguen en su grupo, "Sin fecha", al final y solo si hay.
+- Un eventual: "De ellos, 1 tiene … se actualiza … no tiene vencimiento."; sin eventuales, la aclaración termina en "… conjuntos de datos.". La frase es la misma en los dos casos, y también con uno solo con vencimiento ("… están al día: 1 de 1.").
+- Sin fecha: cuentan en la base sin tener fecha (`tasaDeActualizacion`), así que la frase dice "El 78% de los datasets que deberían tener fecha de vencimiento (2 todavía no la tienen) están al día: 53 de 68.". La aclaración no los nombra. En el cuadro siguen en su grupo, "Sin fecha", al final y solo si hay.
 - Sin ninguno con vencimiento (todo eventual): no hay frase (el párrafo vacío no se dibuja).
 
 ## Alcance
