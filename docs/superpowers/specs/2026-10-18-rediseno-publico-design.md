@@ -313,7 +313,7 @@ Ver `calendario.html` del mockup.
   - `og:locale` `es_AR`;
   - `twitter:card` `summary_large_image`;
   - `theme-color` `#1A365D`.
-- `og:url` del detalle: `…/dataset.html` (sin id: el HTML es estático).
+- `og:url` solo en las páginas sin parámetros (`index.html`, `calendario.html`, `contacto.html`). `datasets.html` y `dataset.html` no lo llevan: el HTML es estático y una URL fija sin `?id=` ni filtros haría que Facebook o LinkedIn mandaran a la página sin el dataset o sin los filtros (cambio del 18/10/2026, después de la revisión de la Task 6).
 - Imagen nueva `public/img/compartir.png`, de 1200×630: fondo `--cielo`, el logo de hoy, "RPAD", "Registro Permanente de Actualización de Datasets", una franja de cuadritos de estado y la ola. Se genera una vez a partir de un HTML con Chrome sin interfaz y se versiona; el HTML queda en el scratchpad.
 - `robots.txt` deja pasar solo a los robots que arman la vista previa:
   - `facebookexternalhit` y `Facebot` (Facebook e Instagram);
