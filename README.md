@@ -85,7 +85,7 @@ Cada dataset tiene además un **tipo de pedido** (acumulado, foto al corte, año
 
 Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada dataset, el Calendario y Contacto. Todas comparten con las pantallas de administración el encabezado (Inicio, Datasets, Calendario y Contacto a la vista), el menú lateral y el footer (`RPAD v2.0.0`). Los estados, los días y la tasa salen del servidor: las páginas no recalculan nada.
 
-- **Portada** (`index.html`): el **índice de actualización** ("El 80% de los conjuntos de datos con fecha de actualización están al día: 53 de 66."), el **mosaico** con un cuadrito por conjunto de datos agrupado por estado (cada cuadrito lleva a su detalle), **qué vence en los próximos 12 meses** (cada mes lleva al listado de ese mes), y las listas de **Vencidos**, **Próximos a vencer** y **Últimas cargas en el portal**.
+- **Portada** (`index.html`): el **índice de actualización** ("El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento." y, en grande, "El 81% de los datasets que tienen fecha de vencimiento están al día: 54 de 67."), el **mosaico** con un cuadrito por conjunto de datos agrupado en Al día, Vencidos y Eventuales, con la cantidad de cada categoría en la leyenda (cada cuadrito lleva a su detalle), **qué vence en los próximos 12 meses** (cada mes lleva al listado de ese mes), y las listas de **Vencidos**, **Próximos a vencer** y **Últimas cargas en el portal**.
 - **Datasets** (`datasets.html`):
   - **Estados** como botones con su cantidad: Todos, Actualizados, Próximos a vencer, Vencidos (con "Todos los vencidos", Atrasados y Sin respuesta del área), Eventuales y Sin fecha (solo si hay). Las cantidades cuentan lo que dejan los otros filtros.
   - **Filtros**: Buscar (título, área y descripción), Tema (principal o secundario) y Frecuencia, más "Limpiar filtros".
@@ -645,6 +645,19 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Índice de la portada: "Al día" y el texto en orden (2026-10)
+- El cuadro del índice une Actualizados y Próximos a vencer en "Al día" (el mismo número que el texto), con una leyenda que dice cuántos hay de cada uno; la leyenda de Vencidos también dice cuántos atrasados y cuántos sin respuesta hay
+- Dentro de cada grupo, los cuadritos van por categoría (primero los actualizados y después los próximos; primero los atrasados y después los sin respuesta) y cada una por título
+- El pie del cuadro, que dice qué conjunto se señala, vuelve a su texto ("Cada cuadrado es un conjunto de datos…") al sacar el mouse de los cuadritos o salir de ellos con el teclado; ya no queda el nombre del último
+- El texto se lee en orden: primero el registro y sus eventuales, y después el índice ("El 81% de los datasets que tienen fecha de vencimiento están al día: 54 de 67.")
+- Solo `public/index.html` y `public/js/dashboard.js`: sin cambios en la API, la base ni las hojas de estilo
+
+### Estados en los reportes PDF (2026-10)
+- El reporte por Área ya no cuenta como vencidos a los datasets sin fecha de próxima actualización: van en su grupo, "Sin fecha (n)", al final, y una línea debajo de las tarjetas los cuenta
+- Los reportes Estado General y por Área suman la tarjeta "Eventuales" (Total, Actualizados, Próximos, Vencidos y Eventuales): las tarjetas suman el total; los sin fecha, si hay, los aclara una línea (en el Estado General, que cuentan en la tasa como no al día)
+- En administración, el filtro de la lista que decía "Al día" ahora dice "Actualizados" (son los que vencen en más de 60 días; los próximos siguen en "Vencen en menos de 60 días"). "Al día" queda para actualizados + próximos, como en la tasa y en el Cumplimiento
+- Sin cambios en la API, la base, los crons ni los emails
 
 ### Rediseño de las páginas públicas (2026-10)
 - Versión 2.0.0. Identidad visual nueva en las cinco páginas públicas: banda celeste con la ola, colores pastel de estado que pasan el contraste AA, el cuadrito de color como marca de cada conjunto de datos, y tipografía Bricolage Grotesque (títulos) y Figtree (texto), que llega también a administración (solo la letra)

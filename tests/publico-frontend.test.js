@@ -728,16 +728,41 @@ describe('dashboard.js: el índice y el mosaico', () => {
   const tablero = cargar('dashboard.js');
   const STATS = { total: 80, actualizados: 52, proximos: 1, atrasados: 3, sinRespuesta: 10, eventuales: 14, sinFecha: 0, tasaActualizacion: 80 };
 
-  it('la frase usa la tasa del servidor y la misma base: el total sin los eventuales', () => {
-    const { tasa, frase, aclaracion } = plano(tablero.textoIndice(STATS));
-    assert.equal(tasa, '80%');
-    assert.equal(frase, 'El 80% de los conjuntos de datos con fecha de actualización están al día: 53 de 66.');
-    assert.equal(aclaracion, 'El registro sigue 80 conjuntos. Los otros 14 son eventuales: se publican cuando hay novedades y no tienen vencimiento.');
+  // Primero el registro y los eventuales (la aclaración, que va arriba) y después el índice (la frase, en grande), con la tasa del
+  // servidor y la misma base: el total sin los eventuales (spec 2026-10-19-indice-portada)
+  it('la aclaración y la frase, con los números de producción del 19/10/2026', () => {
+    const { tasa, frase, aclaracion } = plano(tablero.textoIndice({ ...STATS, total: 81, proximos: 2, tasaActualizacion: 81 }));
+    assert.equal(tasa, '81%');
+    assert.equal(aclaracion, 'El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento.');
+    assert.equal(frase, 'El 81% de los datasets que tienen fecha de vencimiento están al día: 54 de 67.');
   });
 
-  it('nombra los sin fecha solo si hay, y el singular de un eventual', () => {
-    assert.match(plano(tablero.textoIndice({ ...STATS, total: 82, sinFecha: 2 })).aclaracion, / 2 todavía no tienen fecha de próxima actualización\.$/);
-    assert.match(plano(tablero.textoIndice({ ...STATS, total: 67, eventuales: 1 })).aclaracion, /El otro es eventual: se publica cuando hay novedades y no tiene vencimiento\.$/);
+  it('la frase usa la tasa del servidor, no la recalcula', () => {
+    assert.equal(plano(tablero.textoIndice(STATS)).frase, 'El 80% de los datasets que tienen fecha de vencimiento están al día: 53 de 66.');
+  });
+
+  it('un solo eventual, en singular; sin eventuales, la aclaración termina en el total y la frase no cambia', () => {
+    const uno = plano(tablero.textoIndice({ ...STATS, total: 67, eventuales: 1 }));
+    assert.equal(uno.aclaracion, 'El registro sigue 67 conjuntos de datos. De ellos, 1 tiene frecuencia de actualización eventual: se actualiza cuando hay novedades y no tiene vencimiento.');
+    assert.equal(uno.frase, 'El 80% de los datasets que tienen fecha de vencimiento están al día: 53 de 66.');
+    const ninguno = plano(tablero.textoIndice({ ...STATS, total: 66, eventuales: 0 }));
+    assert.equal(ninguno.aclaracion, 'El registro sigue 66 conjuntos de datos.');
+    assert.equal(ninguno.frase, 'El 80% de los datasets que tienen fecha de vencimiento están al día: 53 de 66.');
+  });
+
+  it('los sin fecha cuentan en la base sin tener fecha: la frase lo dice, y la aclaración no', () => {
+    const dos = plano(tablero.textoIndice({ ...STATS, total: 82, sinFecha: 2 }));
+    assert.equal(dos.frase, 'El 80% de los datasets que deberían tener fecha de vencimiento (2 todavía no la tienen) están al día: 53 de 68.');
+    assert.doesNotMatch(dos.aclaracion, /todavía/);
+    assert.equal(plano(tablero.textoIndice({ ...STATS, total: 81, sinFecha: 1 })).frase,
+      'El 80% de los datasets que deberían tener fecha de vencimiento (1 todavía no la tiene) están al día: 53 de 67.');
+  });
+
+  it('con uno solo con vencimiento, la misma frase; sin ninguno, no hay frase', () => {
+    const base = { total: 15, actualizados: 1, proximos: 0, eventuales: 14, sinFecha: 0, tasaActualizacion: 100 };
+    assert.equal(plano(tablero.textoIndice(base)).frase, 'El 100% de los datasets que tienen fecha de vencimiento están al día: 1 de 1.');
+    assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0 })).aclaracion, 'El registro sigue 1 conjunto de datos.');
+    assert.equal(plano(tablero.textoIndice({ ...base, total: 14, actualizados: 0, tasaActualizacion: 0 })).frase, '');
   });
 
   it('la situación dice el día de la semana sin depender de la zona del navegador', () => {
@@ -745,19 +770,50 @@ describe('dashboard.js: el índice y el mosaico', () => {
     assert.equal(tablero.textoSituacion('2027-01-01'), 'Situación al viernes 1 de enero de 2027.');
   });
 
-  it('agrupa por estado del servidor: vencidos juntos, sin fecha solo si hay, cada grupo por título', () => {
-    const lista = [
-      dataset({ id: 1, titulo: 'Zeta', estado: 'actualizado' }), dataset({ id: 2, titulo: 'Alfa', estado: 'actualizado' }),
-      dataset({ id: 3, estado: 'proximo' }), dataset({ id: 4, estado: 'atrasado' }), dataset({ id: 5, estado: 'sin-respuesta' }),
-      eventual({ id: 6 }), dataset({ id: 7, area_nombre: null, descripcion: null, datos_al: null })
-    ];
-    const grupos = plano(tablero.gruposDelMosaico(lista));
-    assert.deepEqual(grupos.map(g => g.etiqueta), ['Actualizados', 'Próximos a vencer', 'Vencidos', 'Eventuales']);
-    assert.deepEqual(grupos[0].datasets.map(d => d.id), [2, 7, 1]);
-    assert.deepEqual(grupos[2].datasets.map(d => d.id).sort(), [4, 5]);
-    assert.equal(grupos.reduce((s, g) => s + g.datasets.length, 0), lista.length);
-    const conSinFecha = plano(tablero.gruposDelMosaico([...lista, dataset({ id: 8, estado: 'sin-fecha', proxima_actualizacion: null })]));
-    assert.equal(conSinFecha.at(-1).etiqueta, 'Sin fecha');
+  // Al día (actualizados y próximos) y Vencidos (atrasados y sin respuesta), como en la frase; dentro de cada grupo, por
+  // categoría (en el orden de la leyenda) y después por título
+  const LISTA = [
+    dataset({ id: 1, titulo: 'Zeta', estado: 'actualizado' }), dataset({ id: 2, titulo: 'Alfa', estado: 'actualizado' }),
+    dataset({ id: 3, titulo: 'Abedul', estado: 'proximo' }), dataset({ id: 4, titulo: 'Zona atrasada', estado: 'atrasado' }),
+    dataset({ id: 5, titulo: 'Alfa sin respuesta', estado: 'sin-respuesta' }),
+    eventual({ id: 6 }), dataset({ id: 7, area_nombre: null, descripcion: null, datos_al: null })
+  ];
+
+  it('agrupa por estado del servidor: al día y vencidos juntos, sin fecha solo si hay', () => {
+    const grupos = plano(tablero.gruposDelMosaico(LISTA));
+    assert.deepEqual(grupos.map(g => [g.etiqueta, g.estados]),
+      [['Al día', ['actualizado', 'proximo']], ['Vencidos', ['atrasado', 'sin-respuesta']], ['Eventuales', ['eventual']]]);
+    assert.equal(grupos.reduce((s, g) => s + g.datasets.length, 0), LISTA.length);
+    const conSinFecha = plano(tablero.gruposDelMosaico([...LISTA, dataset({ id: 8, estado: 'sin-fecha', proxima_actualizacion: null })]));
+    assert.deepEqual(conSinFecha.at(-1).etiqueta, 'Sin fecha');
+  });
+
+  it('dentro de cada grupo, primero una categoría y después la otra, cada una por título', () => {
+    const grupos = plano(tablero.gruposDelMosaico(LISTA));
+    // Los actualizados (Alfa, Gasto Público, Zeta) y al final el próximo, aunque su título vaya primero
+    assert.deepEqual(grupos[0].datasets.map(d => d.id), [2, 7, 1, 3]);
+    // El atrasado y después el sin respuesta, aunque su título vaya primero
+    assert.deepEqual(grupos[1].datasets.map(d => d.id), [4, 5]);
+  });
+
+  it('Al día y Vencidos llevan la leyenda de sus categorías con la cantidad de cada una', () => {
+    const html = tablero.htmlDelMosaico(tablero.gruposDelMosaico(LISTA));
+    assert.ok(html.includes('<div class="mosaico-cabeza"><h3>Al día</h3><span class="mosaico-cuenta">4</span></div>'), html);
+    assert.ok(html.includes('<div class="leyenda-vencidos">'
+      + '<span><span class="tile c-actualizado" aria-hidden="true"></span>Actualizados <strong>3</strong></span>'
+      + '<span><span class="tile c-proximo" aria-hidden="true"></span>Próximos a vencer <strong>1</strong></span></div>'), html);
+    assert.ok(html.includes('<div class="leyenda-vencidos">'
+      + '<span><span class="tile c-atrasado" aria-hidden="true"></span>Atrasados (gestión interna) <strong>1</strong></span>'
+      + '<span><span class="tile c-sin-respuesta" aria-hidden="true"></span>Sin respuesta del área (gestión externa) <strong>1</strong></span></div>'), html);
+    // Eventuales y Sin fecha tienen una sola categoría: sin leyenda
+    assert.equal(html.split('class="leyenda-vencidos"').length - 1, 2);
+  });
+
+  it('la leyenda sale aunque una categoría tenga 0', () => {
+    const html = tablero.htmlDelMosaico(tablero.gruposDelMosaico([eventual()]));
+    assert.ok(html.includes('Actualizados <strong>0</strong>'));
+    assert.ok(html.includes('Próximos a vencer <strong>0</strong>'));
+    assert.ok(html.includes('Atrasados (gestión interna) <strong>0</strong>'));
   });
 
   it('cada cuadrito es un link al detalle con su nombre y su estado, escapados', () => {
@@ -835,6 +891,97 @@ describe('dashboard.js: la carga', () => {
   });
 });
 
+// El pie del mosaico (aria-live): al pasar el mouse o el foco por un cuadrito dice cuál es, y al salir de los cuadritos (sin
+// entrar en otro) vuelve el texto de index.html. Con el mouse, después de una pausa corta: al cruzar los 5 px entre dos cuadritos
+// no parpadea. Con el teclado, enseguida. Un mosaico de mentira guarda los oyentes, y un reloj de mentira, la espera
+describe('dashboard.js: el pie del mosaico vuelve al texto de index.html al salir de los cuadritos', () => {
+  const INICIAL = 'Cada cuadrado es un conjunto de datos. Pasá el mouse por uno para ver cuál es; al tocarlo se abre su detalle.';
+  const preparar = () => {
+    const tablero = cargar('dashboard.js');
+    const oyentes = {};
+    const mosaico = { addEventListener: (tipo, fn) => { oyentes[tipo] = fn; }, contains: () => true };
+    const pie = { innerHTML: INICIAL, dataset: {} };
+    tablero.document.getElementById = (id) => ({ mosaico, 'mosaico-pie': pie })[id] ?? null;
+    const reloj = { pendiente: null };
+    tablero.setTimeout = (fn, ms) => { reloj.pendiente = { fn, ms }; return 1; };
+    tablero.clearTimeout = () => { reloj.pendiente = null; };
+    tablero.lista = [dataset({ id: 1, titulo: 'Gasto Público' }), dataset({ id: 2, titulo: 'Obra Pública', estado: 'sin-respuesta' })];
+    vm.runInContext('datasetsDelMosaico = new Map(lista.map(d => [String(d.id), d]))', tablero);
+    const cuadro = (id) => { const c = { dataset: { id: String(id) } }; c.closest = (sel) => (sel === '.cuadro' ? c : null); return c; };
+    const otro = { closest: () => null };
+    tablero.prepararPieDelMosaico();
+    return {
+      tablero, pie, reloj, otro, A: cuadro(1), B: cuadro(2),
+      sobre: (el) => oyentes.mouseover({ target: el }),
+      saleElMouse: (desde, hacia) => oyentes.mouseout({ target: desde, relatedTarget: hacia }),
+      enfoca: (el) => oyentes.focusin({ target: el }),
+      desenfoca: (desde, hacia) => oyentes.focusout({ target: desde, relatedTarget: hacia })
+    };
+  };
+
+  it('el texto inicial es el de index.html', () => {
+    assert.ok(leer('index.html').includes(`id="mosaico-pie" aria-live="polite">${INICIAL}</p>`));
+  });
+
+  it('con el mouse: dice cuál es, y al salir a una parte vacía vuelve el texto inicial después de una pausa corta', () => {
+    const { pie, reloj, otro, A, sobre, saleElMouse } = preparar();
+    sobre(A);
+    assert.match(pie.innerHTML, /^<strong>Gasto Público<\/strong>/);
+    saleElMouse(A, otro);
+    assert.match(pie.innerHTML, /Gasto Público/, 'todavía no: espera la pausa');
+    assert.ok(reloj.pendiente && reloj.pendiente.ms > 0 && reloj.pendiente.ms <= 500, `pausa corta: ${reloj.pendiente?.ms}`);
+    reloj.pendiente.fn();
+    assert.equal(pie.innerHTML, INICIAL);
+    // Al volver a pasar por el mismo cuadrito, lo dice de nuevo
+    sobre(A);
+    assert.match(pie.innerHTML, /Gasto Público/);
+  });
+
+  it('del mouse fuera de la ventana (sin destino) también vuelve', () => {
+    const { pie, reloj, A, sobre, saleElMouse } = preparar();
+    sobre(A);
+    saleElMouse(A, null);
+    reloj.pendiente.fn();
+    assert.equal(pie.innerHTML, INICIAL);
+  });
+
+  it('de un cuadrito a otro no parpadea: directo, o cruzando el espacio entre los dos', () => {
+    const { pie, reloj, otro, A, B, sobre, saleElMouse } = preparar();
+    sobre(A);
+    saleElMouse(A, B);
+    assert.equal(reloj.pendiente, null, 'directo a otro cuadrito: no hay espera');
+    sobre(B);
+    assert.match(pie.innerHTML, /Obra Pública/);
+    saleElMouse(B, otro);
+    sobre(otro);
+    saleElMouse(otro, A);
+    sobre(A);
+    assert.equal(reloj.pendiente, null, 'al entrar en otro cuadrito se cancela la espera');
+    assert.match(pie.innerHTML, /Gasto Público/);
+  });
+
+  it('con el teclado: entre cuadritos dice cada uno, y al salir de ellos vuelve enseguida', () => {
+    const { pie, reloj, otro, A, B, enfoca, desenfoca } = preparar();
+    enfoca(A);
+    desenfoca(A, B);
+    assert.match(pie.innerHTML, /Gasto Público/);
+    enfoca(B);
+    assert.match(pie.innerHTML, /Obra Pública/);
+    desenfoca(B, otro);
+    assert.equal(pie.innerHTML, INICIAL);
+    assert.equal(reloj.pendiente, null);
+  });
+
+  it('si un cuadrito tiene el foco cuando sale el mouse, dice ese en lugar del texto inicial', () => {
+    const { tablero, pie, reloj, otro, A, B, sobre, saleElMouse } = preparar();
+    tablero.document.activeElement = B;
+    sobre(A);
+    saleElMouse(A, otro);
+    reloj.pendiente.fn();
+    assert.match(pie.innerHTML, /Obra Pública/);
+  });
+});
+
 describe('dashboard.js: los 12 meses y las listas', () => {
   const tablero = cargar('dashboard.js');
 
@@ -894,6 +1041,8 @@ describe('dashboard.js: los 12 meses y las listas', () => {
       assert.match(html, new RegExp(`id="${id}"`), id);
     }
     assert.match(html, /<p class="mosaico-pie" id="mosaico-pie" aria-live="polite">/);
+    // Primero el registro y los eventuales (la aclaración) y después el índice (la frase, en grande)
+    assert.ok(html.indexOf('id="indice-aclaracion"') < html.indexOf('id="indice-frase"'), 'la aclaración va antes que la frase');
     assert.match(html, /<a class="enlace hidden" id="ver-vencidos" href="datasets\.html\?estado=vencidos">/);
     assert.match(html, /<a class="btn-tinta" href="datasets\.html">Ver los datasets<\/a>/);
     assert.match(html, /<a class="btn-borde" href="calendario\.html">Ver el calendario<\/a>/);

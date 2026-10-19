@@ -210,6 +210,14 @@ describe('reporte PDF de estado general', () => {
     assert.equal(valorDeTarjeta(lineas, 'Vencidos'), '2');
   });
 
+  it('los eventuales tienen su tarjeta: con los sin fecha, las tarjetas suman el total', async () => {
+    assert.equal(valorDeTarjeta(lineas, 'Eventuales'), '3');
+  });
+
+  it('los sin fecha se aclaran debajo: cuentan en la tasa como no al día', async () => {
+    assert.ok(lineas.includes('1 dataset todavía no tiene fecha de próxima actualización: cuenta en la tasa como no al día.'));
+  });
+
   it('la tabla trae la columna "Datos al" junto a la próxima', async () => {
     assert.deepEqual(lineas.slice(lineas.indexOf('Título'), lineas.indexOf('Título') + 6),
       ['Título', 'Área', 'Frecuencia', 'Datos al', 'Próx. Act.', 'Estado']);
@@ -257,6 +265,32 @@ describe('reporte PDF por área', () => {
 
   it('un eventual dice que no tiene fecha programada', async () => {
     assert.ok(lineas.includes('Datos al: — Sin fecha programada Frecuencia de actualizacion: Eventual'));
+  });
+
+  it('los eventuales tienen su tarjeta, y sin datasets sin fecha no hay aclaración', async () => {
+    assert.equal(valorDeTarjeta(lineas, 'Eventuales'), '2');
+    assert.ok(!lineas.some(l => /todavía no tiene/.test(l)));
+  });
+});
+
+describe('reporte PDF por área: los sin fecha van en su grupo, no entre los vencidos', () => {
+  // Área B: un actualizado (act3) y un mensual sin próxima (sinfecha1)
+  let lineas;
+  before(async () => { lineas = await lineasDe(`/reportes/por-area/${areas.B}`); });
+
+  it('no cuentan como vencidos', async () => {
+    assert.equal(valorDeTarjeta(lineas, 'Total Datasets'), '2');
+    assert.equal(valorDeTarjeta(lineas, 'Actualizados'), '1');
+    assert.equal(valorDeTarjeta(lineas, 'Vencidos'), '0');
+    assert.equal(valorDeTarjeta(lineas, 'Eventuales'), '0');
+    assert.ok(!lineas.some(l => l.startsWith('Vencidos (')));
+  });
+
+  it('van en "Sin fecha (n)", al final, y una línea lo aclara debajo de las tarjetas', async () => {
+    assert.ok(lineas.includes('Sin fecha (1)'));
+    assert.ok(lineas.indexOf('Actualizados (1)') < lineas.indexOf('Sin fecha (1)'));
+    assert.ok(lineas.includes('1 dataset todavía no tiene fecha de próxima actualización.'));
+    assert.ok(lineas.includes('Datos al: — Sin fecha programada Frecuencia de actualizacion: Mensualmente'));
   });
 });
 

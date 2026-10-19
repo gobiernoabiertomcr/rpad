@@ -85,22 +85,54 @@ function mostrarDatosDePortada(hayDatos) {
   document.querySelector('.portada-banda')?.classList.toggle('portada-sin-datos', !hayDatos);
 }
 
-// Al pasar el mouse o el foco por un cuadrito, el pie del panel (aria-live) dice cuál es. Delegación sobre #mosaico: los
-// cuadritos se vuelven a dibujar en cada carga
+// Al pasar el mouse o el foco por un cuadrito, el pie del panel (aria-live) dice cuál es. Al salir de los cuadritos sin entrar
+// en otro vuelve el texto de index.html: con el mouse, después de una pausa corta (al cruzar los 5 px entre dos cuadritos no
+// parpadea); con el teclado, enseguida. Delegación sobre #mosaico: los cuadritos se vuelven a dibujar en cada carga
 function prepararPieDelMosaico() {
+  const PAUSA = 300;
   const mosaico = document.getElementById('mosaico');
   const pie = document.getElementById('mosaico-pie');
   if (!mosaico || !pie) return;
-  const mostrar = (evento) => {
-    const cuadro = evento.target?.closest?.('.cuadro');
+  const textoInicial = pie.innerHTML;
+  let espera = null;
+  const cuadroDe = (elemento) => elemento?.closest?.('.cuadro') ?? null;
+  const cancelar = () => {
+    clearTimeout(espera);
+    espera = null;
+  };
+  // Dice cuál es el cuadrito; el mismo no se vuelve a anunciar. false si no es un cuadrito del mosaico
+  const anunciar = (cuadro) => {
     const dataset = cuadro ? datasetsDelMosaico.get(cuadro.dataset.id) : null;
-    // El mismo cuadrito no se vuelve a anunciar
-    if (!dataset || pie.dataset.id === cuadro.dataset.id) return;
-    pie.dataset.id = cuadro.dataset.id;
-    pie.innerHTML = htmlDelPie(dataset);
+    if (!dataset) return false;
+    if (pie.dataset.id !== cuadro.dataset.id) {
+      pie.dataset.id = cuadro.dataset.id;
+      pie.innerHTML = htmlDelPie(dataset);
+    }
+    return true;
+  };
+  // El texto inicial, salvo que un cuadrito tenga el foco: entonces dice ese
+  const volver = () => {
+    cancelar();
+    const enfocado = cuadroDe(document.activeElement);
+    if (enfocado && mosaico.contains(enfocado) && anunciar(enfocado)) return;
+    if (pie.dataset.id === undefined) return;
+    delete pie.dataset.id;
+    pie.innerHTML = textoInicial;
+  };
+  const mostrar = (evento) => {
+    if (anunciar(cuadroDe(evento.target))) cancelar();
+  };
+  // Sale de un cuadrito hacia algo que no es otro cuadrito (o fuera de la ventana)
+  const salir = (evento, conPausa) => {
+    if (!cuadroDe(evento.target) || cuadroDe(evento.relatedTarget)) return;
+    cancelar();
+    if (conPausa) espera = setTimeout(volver, PAUSA);
+    else volver();
   };
   mosaico.addEventListener('mouseover', mostrar);
   mosaico.addEventListener('focusin', mostrar);
+  mosaico.addEventListener('mouseout', (evento) => salir(evento, true));
+  mosaico.addEventListener('focusout', (evento) => salir(evento, false));
 }
 
 function ponerHtml(id, html) {
@@ -123,8 +155,11 @@ function textoTasa(stats) {
 }
 
 /**
- * Los textos del índice, con los números del servidor (/datasets/estadisticas). La base es la misma de la tasa: el total
- * sin los eventuales. { tasa: '80%', frase: 'El 80% de … están al día: 53 de 66.', aclaracion: 'El registro sigue …' }
+ * Los textos del índice, con los números del servidor (/datasets/estadisticas), en el orden en que se leen (spec
+ * 2026-10-19-indice-portada): la aclaración (el registro y sus eventuales) y la frase (cuántos de los que tienen vencimiento
+ * están al día). La base es la misma de la tasa: el total sin los eventuales. Los sin fecha cuentan en ella sin tener fecha, y
+ * la frase lo dice. Sin ninguno con vencimiento no hay frase.
+ * { tasa: '81%', aclaracion: 'El registro sigue 81 conjuntos de datos. De ellos, 14 …', frase: 'El 81% de los datasets …' }
  */
 function textoIndice(stats) {
   const numero = (valor) => Number(valor) || 0;
@@ -133,12 +168,18 @@ function textoIndice(stats) {
   const sinFecha = numero(stats?.sinFecha);
   const tasa = textoTasa(stats);
   const alDia = numero(stats?.actualizados) + numero(stats?.proximos);
-  const frase = `El ${tasa} de los conjuntos de datos con fecha de actualización están al día: ${alDia} de ${total - eventuales}.`;
-  let aclaracion = `El registro sigue ${total} ${total === 1 ? 'conjunto' : 'conjuntos'}.`;
-  if (eventuales === 1) aclaracion += ' El otro es eventual: se publica cuando hay novedades y no tiene vencimiento.';
-  else if (eventuales > 1) aclaracion += ` Los otros ${eventuales} son eventuales: se publican cuando hay novedades y no tienen vencimiento.`;
-  if (sinFecha > 0) aclaracion += ` ${sinFecha} todavía no ${sinFecha === 1 ? 'tiene' : 'tienen'} fecha de próxima actualización.`;
-  return { tasa, frase, aclaracion };
+  const base = total - eventuales;
+
+  let aclaracion = `El registro sigue ${total} ${total === 1 ? 'conjunto' : 'conjuntos'} de datos.`;
+  if (eventuales === 1) aclaracion += ' De ellos, 1 tiene frecuencia de actualización eventual: se actualiza cuando hay novedades y no tiene vencimiento.';
+  else if (eventuales > 1) aclaracion += ` De ellos, ${eventuales} tienen frecuencia de actualización eventual: se actualizan cuando hay novedades y no tienen vencimiento.`;
+
+  if (base <= 0) return { tasa, aclaracion, frase: '' };
+  const conVencimiento = sinFecha > 0
+    ? `deberían tener fecha de vencimiento (${sinFecha} todavía no la ${sinFecha === 1 ? 'tiene' : 'tienen'})`
+    : 'tienen fecha de vencimiento';
+  const frase = `El ${tasa} de los datasets que ${conVencimiento} están al día: ${alDia} de ${base}.`;
+  return { tasa, aclaracion, frase };
 }
 
 // La frase, escapada, con la tasa destacada
@@ -162,18 +203,22 @@ function porTitulo(a, b) {
 }
 
 /**
- * Los grupos del mosaico, con el estado del servidor: Actualizados, Próximos a vencer, Vencidos (atrasados y sin respuesta),
- * Eventuales y, solo si hay, Sin fecha. Cada grupo por título. [{ etiqueta, estados, datasets }]
+ * Los grupos del mosaico, con el estado del servidor (spec 2026-10-19-indice-portada): Al día (actualizados y próximos, como
+ * en la frase), Vencidos (atrasados y sin respuesta), Eventuales y, solo si hay, Sin fecha. Dentro de cada grupo, por
+ * categoría (en el orden de `estados`, el de la leyenda) y cada una por título. [{ etiqueta, estados, datasets }]
  */
 function gruposDelMosaico(datasets) {
   return [
-    { etiqueta: 'Actualizados', estados: ['actualizado'] },
-    { etiqueta: 'Próximos a vencer', estados: ['proximo'] },
+    { etiqueta: 'Al día', estados: ['actualizado', 'proximo'] },
     { etiqueta: 'Vencidos', estados: ['atrasado', 'sin-respuesta'] },
     { etiqueta: 'Eventuales', estados: ['eventual'] },
     { etiqueta: 'Sin fecha', estados: ['sin-fecha'] }
   ]
-    .map(grupo => ({ ...grupo, datasets: datasets.filter(d => grupo.estados.includes(Utils.estadoDe(d))).sort(porTitulo) }))
+    .map(grupo => {
+      const categoria = (d) => grupo.estados.indexOf(Utils.estadoDe(d));
+      const enElGrupo = datasets.filter(d => categoria(d) !== -1);
+      return { ...grupo, datasets: enElGrupo.sort((a, b) => categoria(a) - categoria(b) || porTitulo(a, b)) };
+    })
     .filter(grupo => grupo.etiqueta !== 'Sin fecha' || grupo.datasets.length > 0);
 }
 
@@ -188,16 +233,26 @@ function htmlDelCuadro(d) {
   return `<a class="cuadro c-${Utils.escapeHtml(estado)}" href="dataset.html?id=${id}" data-id="${id}" aria-label="${Utils.escapeHtml(d.titulo)}, ${Utils.escapeHtml(Utils.getEstadoTextoLargo(estado))}"></a>`;
 }
 
-// Cada grupo con su cantidad y un cuadrito (link al detalle) por conjunto; Vencidos, con la leyenda de sus dos colores
+// La leyenda de un grupo con más de una categoría (Al día y Vencidos): el color, el nombre y la cantidad de cada una, también
+// si es 0. La clase es la de siempre, leyenda-vencidos, aunque ahora la lleva también Al día
+function htmlDeLaLeyendaDelGrupo(grupo) {
+  const NOMBRES = {
+    actualizado: 'Actualizados', proximo: 'Próximos a vencer',
+    atrasado: 'Atrasados (gestión interna)', 'sin-respuesta': 'Sin respuesta del área (gestión externa)'
+  };
+  if (grupo.estados.length < 2) return '';
+  return '<div class="leyenda-vencidos">' + grupo.estados.map(estado => {
+    const cantidad = grupo.datasets.filter(d => Utils.estadoDe(d) === estado).length;
+    return `<span><span class="tile c-${estado}" aria-hidden="true"></span>${Utils.escapeHtml(NOMBRES[estado] ?? estado)} <strong>${cantidad}</strong></span>`;
+  }).join('') + '</div>';
+}
+
+// Cada grupo con su cantidad y un cuadrito (link al detalle) por conjunto; Al día y Vencidos, con la leyenda de sus categorías
 function htmlDelMosaico(grupos) {
-  const leyendaDeVencidos = '<div class="leyenda-vencidos">'
-    + '<span><span class="tile c-atrasado" aria-hidden="true"></span>Atrasado (gestión interna)</span>'
-    + '<span><span class="tile c-sin-respuesta" aria-hidden="true"></span>Sin respuesta del área (gestión externa)</span>'
-    + '</div>';
   return grupos.map(grupo => '<div class="mosaico-grupo">'
     + `<div class="mosaico-cabeza"><h3>${Utils.escapeHtml(grupo.etiqueta)}</h3><span class="mosaico-cuenta">${grupo.datasets.length}</span></div>`
     + `<div class="cuadros">${grupo.datasets.map(htmlDelCuadro).join('')}</div>`
-    + (grupo.estados.includes('atrasado') ? leyendaDeVencidos : '')
+    + htmlDeLaLeyendaDelGrupo(grupo)
     + '</div>').join('');
 }
 

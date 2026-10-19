@@ -151,8 +151,7 @@ const drawAllFooters = (doc) => {
 /**
  * Dibuja una tarjeta de estadística
  */
-const drawStatCard = (doc, x, y, label, value, color) => {
-  const width = 120;
+const drawStatCard = (doc, x, y, label, value, color, width = 120) => {
   const height = 60;
   
   // Fondo
@@ -173,6 +172,22 @@ const drawStatCard = (doc, x, y, label, value, color) => {
      .font('Helvetica')
      .text(label, x + 10, y + 42, { width: width - 20 });
 };
+
+/**
+ * Dibuja una fila de tarjetas que ocupa el ancho útil de la hoja (márgenes de 40), con 10 entre una y otra.
+ * tarjetas: [{ label, value, color }]
+ */
+const drawStatCards = (doc, y, tarjetas) => {
+  const separacion = 10;
+  const ancho = (doc.page.width - 80 - separacion * (tarjetas.length - 1)) / tarjetas.length;
+  tarjetas.forEach(({ label, value, color }, i) =>
+    drawStatCard(doc, 40 + i * (ancho + separacion), y, label, value, color, ancho));
+};
+
+// Los sin fecha tienen frecuencia pero no próxima: no tienen tarjeta, una línea los aclara debajo de las tarjetas
+const textoSinFecha = (n) => (n === 1
+  ? '1 dataset todavía no tiene fecha de próxima actualización'
+  : `${n} datasets todavía no tienen fecha de próxima actualización`);
 
 /**
  * Dibuja una tabla
@@ -243,9 +258,10 @@ export const reporteEstadoGeneral = async (req, res) => {
       ORDER BY d.proxima_actualizacion ASC
     `);
     
-    // Calcular estadísticas. Los eventuales van aparte: no son actualizados ni entran en la tasa
+    // Calcular estadísticas. Los eventuales van aparte: no son actualizados ni entran en la tasa. Los sin fecha entran en
+    // la tasa como no al día
     const hoy = hoyArgentina();
-    const stats = { total: datasets.length, actualizados: 0, proximos: 0, atrasados: 0, sinRespuesta: 0, eventuales: 0 };
+    const stats = { total: datasets.length, actualizados: 0, proximos: 0, atrasados: 0, sinRespuesta: 0, eventuales: 0, sinFecha: 0 };
     datasets.forEach(d => {
       const estado = estadoDeLaFila(d, hoy);
       d.estado = estado;
@@ -254,6 +270,7 @@ export const reporteEstadoGeneral = async (req, res) => {
       else if (estado === 'atrasado') stats.atrasados++;
       else if (estado === 'sin-respuesta') stats.sinRespuesta++;
       else if (estado === 'eventual') stats.eventuales++;
+      else if (estado === 'sin-fecha') stats.sinFecha++;
     });
     
     // (actualizados + próximos) sobre el total sin los eventuales: la misma tasa que el tablero y el Cumplimiento
@@ -276,11 +293,15 @@ export const reporteEstadoGeneral = async (req, res) => {
     doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.grayDark).text('Resumen', 40, doc.y + 10);
     doc.y += 25;
     
+    // Con los sin fecha (que se aclaran abajo), las tarjetas suman el total
     const statsY = doc.y;
-    drawStatCard(doc, 40, statsY, 'Total Datasets', stats.total, COLORS.primary);
-    drawStatCard(doc, 170, statsY, 'Actualizados', stats.actualizados, COLORS.success);
-    drawStatCard(doc, 300, statsY, 'Próximos', stats.proximos, COLORS.warning);
-    drawStatCard(doc, 430, statsY, 'Vencidos', stats.atrasados + stats.sinRespuesta, COLORS.danger);
+    drawStatCards(doc, statsY, [
+      { label: 'Total Datasets', value: stats.total, color: COLORS.primary },
+      { label: 'Actualizados', value: stats.actualizados, color: COLORS.success },
+      { label: 'Próximos', value: stats.proximos, color: COLORS.warning },
+      { label: 'Vencidos', value: stats.atrasados + stats.sinRespuesta, color: COLORS.danger },
+      { label: 'Eventuales', value: stats.eventuales, color: COLORS.gray }
+    ]);
     
     doc.y = statsY + 80;
     
@@ -293,6 +314,11 @@ export const reporteEstadoGeneral = async (req, res) => {
          .text(stats.eventuales === 1
            ? 'El dataset eventual no entra en la tasa: no tiene fecha de vencimiento.'
            : `Los ${stats.eventuales} datasets eventuales no entran en la tasa: no tienen fecha de vencimiento.`, 40, doc.y + 2);
+    }
+    
+    if (stats.sinFecha > 0) {
+      doc.fontSize(9).fillColor(COLORS.gray)
+         .text(`${textoSinFecha(stats.sinFecha)}: ${stats.sinFecha === 1 ? 'cuenta' : 'cuentan'} en la tasa como no al día.`, 40, doc.y + 2);
     }
     
     doc.y += 30;
@@ -737,10 +763,11 @@ export const reportePorArea = async (req, res) => {
       ORDER BY d.proxima_actualizacion ASC
     `, [areaId]);
     
-    // Calcular estadísticas y agrupar por estado. Los eventuales van en su grupo, aparte de los actualizados
+    // Calcular estadísticas y agrupar por estado. Los eventuales van en su grupo, aparte de los actualizados, y los sin
+    // fecha en el suyo, aparte de los vencidos (atrasados y sin respuesta)
     const hoy = hoyArgentina();
-    const stats = { total: datasets.length, actualizados: 0, proximos: 0, vencidos: 0 };
-    const grupos = { actualizados: [], proximos: [], vencidos: [], eventuales: [] };
+    const stats = { total: datasets.length, actualizados: 0, proximos: 0, vencidos: 0, eventuales: 0, sinFecha: 0 };
+    const grupos = { actualizados: [], proximos: [], vencidos: [], eventuales: [], sinFecha: [] };
     
     datasets.forEach(d => {
       const estado = estadoDeLaFila(d, hoy);
@@ -753,7 +780,11 @@ export const reportePorArea = async (req, res) => {
         stats.proximos++;
         grupos.proximos.push(d);
       } else if (estado === 'eventual') {
+        stats.eventuales++;
         grupos.eventuales.push(d);
+      } else if (estado === 'sin-fecha') {
+        stats.sinFecha++;
+        grupos.sinFecha.push(d);
       } else {
         stats.vencidos++;
         grupos.vencidos.push(d);
@@ -781,12 +812,20 @@ export const reportePorArea = async (req, res) => {
     
     doc.y += 15;
     
-    // Estadísticas
+    // Estadísticas. Con los sin fecha (que se aclaran debajo), las tarjetas suman el total
     const statsY = doc.y;
-    drawStatCard(doc, 40, statsY, 'Total Datasets', stats.total, COLORS.primary);
-    drawStatCard(doc, 170, statsY, 'Actualizados', stats.actualizados, COLORS.success);
-    drawStatCard(doc, 300, statsY, 'Próximos', stats.proximos, COLORS.warning);
-    drawStatCard(doc, 430, statsY, 'Vencidos', stats.vencidos, COLORS.danger);
+    drawStatCards(doc, statsY, [
+      { label: 'Total Datasets', value: stats.total, color: COLORS.primary },
+      { label: 'Actualizados', value: stats.actualizados, color: COLORS.success },
+      { label: 'Próximos', value: stats.proximos, color: COLORS.warning },
+      { label: 'Vencidos', value: stats.vencidos, color: COLORS.danger },
+      { label: 'Eventuales', value: stats.eventuales, color: COLORS.gray }
+    ]);
+    
+    if (stats.sinFecha > 0) {
+      doc.fontSize(9).font('Helvetica').fillColor(COLORS.gray)
+         .text(`${textoSinFecha(stats.sinFecha)}.`, 40, statsY + 68);
+    }
     
     let currentY = statsY + 90;
     
@@ -795,6 +834,7 @@ export const reportePorArea = async (req, res) => {
     currentY = drawDatasetGroup(doc, 'Próximos a vencer', grupos.proximos, COLORS.warning, currentY);
     currentY = drawDatasetGroup(doc, 'Actualizados', grupos.actualizados, COLORS.success, currentY);
     currentY = drawDatasetGroup(doc, 'Eventuales', grupos.eventuales, COLORS.gray, currentY);
+    currentY = drawDatasetGroup(doc, 'Sin fecha', grupos.sinFecha, COLORS.gray, currentY);
     
     // Footer
     drawAllFooters(doc);

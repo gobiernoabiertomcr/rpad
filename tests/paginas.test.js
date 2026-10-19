@@ -20,6 +20,9 @@ const VERSION_ADMIN = '20261108';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';
+// dashboard.js cambió después (el índice de la portada con "Al día" y las leyendas con cantidades; spec
+// 2026-10-19-indice-portada): su versión es propia
+const VERSION_PORTADA = '20261110';
 // main.css (la carcasa nueva y las fuentes Bricolage Grotesque y Figtree): hasta el rediseño se cargaba sin ?v=
 const VERSION_CSS = '20261109';
 // gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
@@ -72,10 +75,11 @@ describe('páginas', () => {
   });
 
   // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
-  for (const [pagina, script] of [['datasets.html', 'datasets'], ['dataset.html', 'dataset-detail'], ['calendario.html', 'calendario'], ['index.html', 'dashboard']]) {
-    it(`${pagina}: ${script}.js con la versión ${VERSION_PUBLICAS}, después de api.js`, () => {
+  for (const [pagina, script, version] of [['datasets.html', 'datasets', VERSION_PUBLICAS], ['dataset.html', 'dataset-detail', VERSION_PUBLICAS],
+    ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA]]) {
+    it(`${pagina}: ${script}.js con la versión ${version}, después de api.js`, () => {
       const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
-      assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${VERSION_PUBLICAS}`]);
+      assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${version}`]);
       const posicion = (nombre) => scripts.findIndex(src => src.startsWith(`js/${nombre}.js`));
       assert.ok(posicion('api') !== -1 && posicion('api') < posicion(script), `${script}.js después de api.js`);
     });
