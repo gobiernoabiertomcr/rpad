@@ -18,25 +18,22 @@ document.addEventListener('DOMContentLoaded', () => {
 // =====================================================
 
 // Pide las estadísticas y los datasets con API.pedirJson, que tira error ante una respuesta de error (getDatasets y
-// getEstadisticas devolverían [] o undefined y la portada mostraría ceros engañosos). Si falla cualquiera de los dos, solo
-// queda el aviso
+// getEstadisticas devolverían [] o undefined y la portada mostraría ceros engañosos). Si falla cualquiera de los dos, o el
+// dibujo (un dato raro), solo queda el aviso: nunca "Cargando…" para siempre
 async function cargarPortada() {
-  let estadisticas;
-  let datasets;
   try {
     const [respuestaEstadisticas, respuestaDatasets] = await Promise.all([
       API.pedirJson('GET', '/datasets/estadisticas'),
       API.pedirJson('GET', '/datasets')
     ]);
-    estadisticas = respuestaEstadisticas?.data;
-    datasets = respuestaDatasets?.data;
+    const estadisticas = respuestaEstadisticas?.data;
+    const datasets = respuestaDatasets?.data;
     if (!estadisticas || !Array.isArray(datasets)) throw new Error('La respuesta no trae los datos del registro');
+    dibujarPortada(estadisticas, datasets);
   } catch (error) {
     console.error('Error cargando la portada:', error);
     mostrarErrorDePortada();
-    return;
   }
-  dibujarPortada(estadisticas, datasets);
 }
 
 function dibujarPortada(estadisticas, datasets) {
@@ -188,7 +185,7 @@ function idDelDataset(d) {
 function htmlDelCuadro(d) {
   const estado = Utils.estadoDe(d);
   const id = idDelDataset(d);
-  return `<a class="cuadro c-${estado}" href="dataset.html?id=${id}" data-id="${id}" aria-label="${Utils.escapeHtml(d.titulo)}, ${Utils.escapeHtml(Utils.getEstadoTextoLargo(estado))}"></a>`;
+  return `<a class="cuadro c-${Utils.escapeHtml(estado)}" href="dataset.html?id=${id}" data-id="${id}" aria-label="${Utils.escapeHtml(d.titulo)}, ${Utils.escapeHtml(Utils.getEstadoTextoLargo(estado))}"></a>`;
 }
 
 // Cada grupo con su cantidad y un cuadrito (link al detalle) por conjunto; Vencidos, con la leyenda de sus dos colores

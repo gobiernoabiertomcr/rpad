@@ -12,7 +12,6 @@
     <meta property="og:locale" content="es_AR">
     <meta property="og:title" content="Detalle de un conjunto de datos - RPAD">
     <meta property="og:description" content="Estado, fechas y descripción de un conjunto de datos abiertos de la Municipalidad de Comodoro Rivadavia.">
-    <meta property="og:url" content="https://rpad.mcrmodernizacion.gob.ar/dataset.html">
     <meta property="og:image" content="https://rpad.mcrmodernizacion.gob.ar/img/compartir.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -99,7 +98,7 @@
                         <ol>
                             <li><a href="index.html">Inicio</a></li>
                             <li><a href="datasets.html">Datasets</a></li>
-                            <li><span id="breadcrumb-title">Conjunto de datos</span></li>
+                            <li><span id="breadcrumb-title" aria-current="page">Conjunto de datos</span></li>
                         </ol>
                     </nav>
                 </div>
@@ -129,8 +128,11 @@
                         </div>
                     </div>
 
-                    <!-- Cualquier otro error al pedirlo (el servidor, la conexión) -->
-                    <p class="aviso-error detalle-aviso hidden" id="dataset-error" role="alert">No se pudo cargar el conjunto de datos. Probá de nuevo en unos minutos.</p>
+                    <!-- Cualquier otro error al pedirlo o al dibujarlo (el servidor, la conexión, un dato raro) -->
+                    <div class="detalle-cabeza hidden" id="dataset-error" role="alert">
+                        <h1>No se pudo cargar el conjunto de datos</h1>
+                        <p class="aviso-error detalle-aviso">Probá de nuevo en unos minutos.</p>
+                    </div>
                 </div>
                 <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
             </div>

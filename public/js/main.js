@@ -259,6 +259,19 @@ function initSidebar() {
             if (focoEnElMenu) toggleBtn.focus();
         }
     });
+
+    // Las transiciones del menú, del velo y del botón (main.css, .menu-animable) se habilitan después del primer cuadro: si
+    // Firefox calculó la página antes de que llegara la hoja, al aplicarla corría la transición y el menú se asomaba al cargar
+    // (Ruling 13). Dos cuadros: en el primero se calculan los estilos con la hoja, sin transición. Sin requestAnimationFrame,
+    // enseguida
+    const habilitarAnimacion = () => {
+        for (const elemento of [sidebar, overlay, toggleBtn]) elemento.classList.add('menu-animable');
+    };
+    if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => requestAnimationFrame(habilitarAnimacion));
+    } else {
+        habilitarAnimacion();
+    }
 }
 
 /**

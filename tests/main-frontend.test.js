@@ -104,7 +104,8 @@ const elemento = () => {
   };
 };
 
-const cargarCarcasa = ({ conSesion }) => {
+// requestAnimationFrame: opcional (el vm no lo trae, como un navegador sin él)
+const cargarCarcasa = ({ conSesion, requestAnimationFrame }) => {
   const piezas = { header: elemento(), headerActions: elemento(), sidebar: elemento(), sidebarOverlay: elemento(), sidebarToggle: elemento() };
   const oyentesDocumento = {};
   const document = {
@@ -122,7 +123,7 @@ const cargarCarcasa = ({ conSesion }) => {
     getRoleText: () => 'Lector',
     isAdmin: () => false
   };
-  const contexto = vm.createContext({ document, window: { location: { pathname: '/admin.html' } }, Auth, API: {}, console });
+  const contexto = vm.createContext({ document, window: { location: { pathname: '/admin.html' } }, Auth, API: {}, console, ...(requestAnimationFrame ? { requestAnimationFrame } : {}) });
   vm.runInContext(`${fs.readFileSync(new URL('../public/js/main.js', import.meta.url), 'utf8')}\n;globalThis.initHeader = initHeader; globalThis.initSidebar = initSidebar;`, contexto);
   return { contexto, piezas, teclado: (evento) => oyentesDocumento.keydown?.(evento) };
 };
@@ -161,5 +162,81 @@ describe('menú lateral: aria-expanded', () => {
     assert.deepEqual(estado(), ['true', true, true]);
     teclado({ key: 'Escape' });
     assert.deepEqual(estado(), ['false', false, false]);
+  });
+});
+
+// Las reglas de una hoja ({ selector, cuerpo }), sin comentarios: las de adentro de un @media también aparecen, con su selector
+const reglasDe = (css) => [...css.replace(/\/\*[^]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => ({ selector: m[1].trim(), cuerpo: m[2] }));
+// El contenido de cada bloque @media con esa condición
+const bloquesDeMedia = (css, condicion) => {
+  const sinComentarios = css.replace(/\/\*[^]*?\*\//g, '');
+  const bloques = [];
+  for (let desde = sinComentarios.indexOf(condicion); desde !== -1; desde = sinComentarios.indexOf(condicion, desde + 1)) {
+    let profundidad = 0;
+    let hasta = sinComentarios.indexOf('{', desde);
+    const inicio = hasta;
+    for (; hasta < sinComentarios.length; hasta++) {
+      if (sinComentarios[hasta] === '{') profundidad++;
+      if (sinComentarios[hasta] === '}' && --profundidad === 0) break;
+    }
+    bloques.push(sinComentarios.slice(inicio + 1, hasta));
+  }
+  return bloques;
+};
+const MAIN_CSS = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8');
+
+// Ruling 13: si Firefox calcula la página antes de que llegue main.css, al aplicarla corría la transición del menú y el menú se
+// asomaba al pasar de una página a otra. Las transiciones se habilitan con una clase que main.js pone después del primer cuadro
+describe('menú lateral: las transiciones, recién después de la carga', () => {
+  const conLaClase = (piezas) => [piezas.sidebar, piezas.sidebarOverlay, piezas.sidebarToggle].map(p => p.clases.has('menu-animable'));
+
+  it('initSidebar pone menu-animable en el menú, el velo y el botón en el segundo cuadro, no antes', () => {
+    const cuadros = [];
+    const { contexto, piezas } = cargarCarcasa({ conSesion: true, requestAnimationFrame: (fn) => { cuadros.push(fn); return cuadros.length; } });
+    contexto.initSidebar();
+    assert.deepEqual(conLaClase(piezas), [false, false, false], 'al inicializar, todavía no');
+    assert.equal(cuadros.length, 1);
+    cuadros.shift()();
+    assert.deepEqual(conLaClase(piezas), [false, false, false], 'en el primer cuadro, todavía no');
+    assert.equal(cuadros.length, 1);
+    cuadros.shift()();
+    assert.deepEqual(conLaClase(piezas), [true, true, true]);
+    assert.equal(cuadros.length, 0);
+  });
+
+  it('sin requestAnimationFrame la pone enseguida, sin fallar', () => {
+    const { contexto, piezas } = cargarCarcasa({ conSesion: false });
+    contexto.initSidebar();
+    assert.deepEqual(conLaClase(piezas), [true, true, true]);
+  });
+
+  it('al cargarse, main.js no toca el menú ni pide cuadros', () => {
+    const cuadros = [];
+    const { piezas } = cargarCarcasa({ conSesion: true, requestAnimationFrame: (fn) => cuadros.push(fn) });
+    assert.equal(cuadros.length, 0);
+    assert.deepEqual(conLaClase(piezas), [false, false, false]);
+  });
+
+  it('main.css: el menú, el velo y el botón se animan solo con menu-animable, y el movimiento reducido lo saca con el mismo selector', () => {
+    const reglas = reglasDe(MAIN_CSS);
+    for (const selector of ['.sidebar', '.sidebar-overlay', '.sidebar-toggle']) {
+      const base = reglas.filter(r => r.selector === selector);
+      assert.ok(base.length > 0, selector);
+      for (const { cuerpo } of base) assert.doesNotMatch(cuerpo, /transition/, `${selector} sin transición propia`);
+    }
+    assert.match(reglas.find(r => r.selector === '.sidebar.menu-animable')?.cuerpo ?? '', /transition:\s*transform 0\.3s ease, visibility 0\.3s/);
+    assert.match(reglas.find(r => /\.sidebar-overlay\.menu-animable/.test(r.selector) && /\.sidebar-toggle\.menu-animable/.test(r.selector))?.cuerpo ?? '', /transition:\s*var\(--transition\)/);
+    const reducido = bloquesDeMedia(MAIN_CSS, '@media (prefers-reduced-motion: reduce)').join('\n');
+    assert.match(reducido, /\.sidebar\.menu-animable,\s*\.sidebar-overlay\.menu-animable\s*\{\s*transition:\s*none;?\s*\}/);
+  });
+});
+
+// Alto contraste (forced colors): el borde transparente de 56 px del footer se pintaba con el color del texto y los logos blancos
+// del footer y del menú desaparecían sobre el fondo forzado
+describe('main.css: alto contraste', () => {
+  it('el borde de arriba del footer toma el color del fondo, y el footer y el menú conservan su azul', () => {
+    const bloque = bloquesDeMedia(MAIN_CSS, '@media (forced-colors: active)').join('\n');
+    assert.match(bloque, /\.footer\s*\{\s*border-top-color:\s*Canvas;?\s*\}/);
+    assert.match(bloque, /\.footer,\s*\.sidebar\s*\{\s*forced-color-adjust:\s*none;?\s*\}/);
   });
 });

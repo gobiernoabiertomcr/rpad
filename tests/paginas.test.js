@@ -136,17 +136,55 @@ describe('páginas', () => {
     });
   }
 
+  // La marca va en el nav del encabezado (las migas del detalle llevan la suya en la última miga)
   const MARCAS_DEL_NAV = [['index.html', 'index.html'], ['datasets.html', 'datasets.html'], ['dataset.html', 'datasets.html'], ['calendario.html', 'calendario.html'], ['contacto.html', 'contacto.html']];
+  const navDelEncabezado = (html) => html.match(/<nav class="header-nav" aria-label="Principal">[\s\S]*?<\/nav>/)?.[0] ?? '';
   for (const [pagina, actual] of MARCAS_DEL_NAV) {
     it(`${pagina}: el nav marca la página actual`, () => {
-      assert.match(leer(pagina), new RegExp(`<a href="${actual.replace('.', '\\.')}" aria-current="page">`));
-      assert.equal(leer(pagina).match(/aria-current=/g).length, 1, 'una sola página actual');
+      const nav = navDelEncabezado(leer(pagina));
+      assert.match(nav, new RegExp(`<a href="${actual.replace('.', '\\.')}" aria-current="page">`));
+      assert.equal(nav.match(/aria-current=/g).length, 1, 'una sola página actual');
     });
   }
 
   for (const pagina of CON_CARCASA.filter(p => !MARCAS_DEL_NAV.some(([publica]) => publica === p))) {
     it(`${pagina}: las de administración no marcan ninguna página del nav`, () => {
       assert.doesNotMatch(leer(pagina), /aria-current=/);
+    });
+  }
+
+  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 13): el encabezado, el velo, el menú lateral y el footer de cada
+  // página son los de index.html, con sus atributos de accesibilidad. Solo cambian la marca de la página actual y la sangría
+  const PIEZAS_DE_LA_CARCASA = {
+    encabezado: /<header class="header">[\s\S]*?<\/header>/,
+    velo: /<div class="sidebar-overlay"[^>]*><\/div>/,
+    'menú lateral': /<aside class="sidebar"[\s\S]*?<\/aside>/,
+    footer: /<footer class="footer">[\s\S]*?<\/footer>/
+  };
+  const normalizarPieza = (pieza) => pieza.replace(/\r/g, '').replace(/ aria-current="page"/g, '').split('\n').map(linea => linea.trim()).filter(Boolean).join('\n');
+  const piezasDeLaCarcasa = (pagina) => Object.fromEntries(Object.entries(PIEZAS_DE_LA_CARCASA).map(([nombre, patron]) => [nombre, leer(pagina).match(patron)?.[0]]));
+  const CARCASA_DE_LA_PORTADA = piezasDeLaCarcasa('index.html');
+
+  it('index.html: la carcasa de referencia, con los atributos de accesibilidad', () => {
+    const { encabezado, velo, 'menú lateral': menu, footer } = CARCASA_DE_LA_PORTADA;
+    assert.match(encabezado ?? '', /<button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">/);
+    assert.match(encabezado, /<nav class="header-nav" aria-label="Principal">/);
+    assert.equal(velo, '<div class="sidebar-overlay" id="sidebarOverlay"></div>');
+    assert.match(menu ?? '', /^<aside class="sidebar" id="sidebar" aria-label="Menú">/);
+    assert.match(footer ?? '', /<span>RPAD v2\.0\.0<\/span>/);
+    // Los íconos son decorativos
+    for (const pieza of [encabezado, menu]) {
+      for (const svg of pieza.match(/<svg[^>]*>/g)) assert.match(svg, /aria-hidden="true"/, svg);
+    }
+  });
+
+  for (const pagina of CON_CARCASA.filter(p => p !== 'index.html')) {
+    it(`${pagina}: el encabezado, el velo, el menú lateral y el footer son los de index.html`, () => {
+      const piezas = piezasDeLaCarcasa(pagina);
+      for (const [nombre, pieza] of Object.entries(CARCASA_DE_LA_PORTADA)) {
+        assert.ok(piezas[nombre], `${nombre}: está`);
+        assert.equal(normalizarPieza(piezas[nombre]), normalizarPieza(pieza), nombre);
+      }
     });
   }
 
@@ -181,15 +219,26 @@ describe('páginas', () => {
     });
   }
 
-  // Vista previa al compartir un link (spec 2026-10-18-rediseno-publico, 12): metas Open Graph absolutas en las 5 públicas
-  for (const pagina of ['index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html']) {
-    it(`${pagina}: vista previa al compartir`, () => {
+  // Vista previa al compartir un link (spec 2026-10-18-rediseno-publico, 12): metas Open Graph absolutas en las 5 públicas.
+  // og:url, uno solo y el de su página, solo en las que no llevan parámetros: en datasets.html y dataset.html una URL fija sin
+  // ?id= ni filtros haría que Facebook o LinkedIn mandaran a la página sin el dataset o sin los filtros (Ruling 15)
+  const OG_URL = {
+    'index.html': 'https://rpad.mcrmodernizacion.gob.ar/',
+    'datasets.html': null,
+    'dataset.html': null,
+    'calendario.html': 'https://rpad.mcrmodernizacion.gob.ar/calendario.html',
+    'contacto.html': 'https://rpad.mcrmodernizacion.gob.ar/contacto.html'
+  };
+  for (const [pagina, url] of Object.entries(OG_URL)) {
+    it(`${pagina}: vista previa al compartir, ${url ? `con og:url ${url}` : 'sin og:url'}`, () => {
       const html = leer(pagina);
-      for (const meta of ['og:title', 'og:description', 'og:url', 'og:image', 'og:type', 'og:locale', 'twitter:card']) {
+      for (const meta of ['og:title', 'og:description', 'og:image', 'og:type', 'og:locale', 'twitter:card']) {
         assert.match(html, new RegExp(`<meta (property|name)="${meta}" content="[^"]+">`), meta);
       }
       assert.ok(html.includes('content="https://rpad.mcrmodernizacion.gob.ar/img/compartir.png"'));
       assert.ok(html.includes('<meta name="theme-color" content="#1A365D">'));
+      assert.equal(html.match(/og:url/g)?.length ?? 0, url ? 1 : 0, 'og:url');
+      if (url) assert.ok(html.includes(`<meta property="og:url" content="${url}">`), url);
     });
   }
 

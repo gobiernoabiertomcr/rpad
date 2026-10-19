@@ -9,7 +9,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // GET /datasets/{id} con API.pedirJson, que tira un Error con .status si el servidor responde con un error: así un 404 ("no
 // encontrado") se distingue de una caída (el aviso de error). El id va codificado: ?id=estadisticas pide
-// /datasets/estadisticas, que responde 200 con otra cosa, y por eso también se mira que lo que llega sea un dataset
+// /datasets/estadisticas, que responde 200 con otra cosa, y por eso también se mira que lo que llega sea un dataset. El dibujo
+// va dentro del mismo try: si un dato raro lo rompe, queda el aviso de error y no "Cargando…" para siempre
 async function loadDataset() {
   const id = Utils.getUrlParams().id;
   if (!id) {
@@ -17,9 +18,13 @@ async function loadDataset() {
     return;
   }
 
-  let dataset;
   try {
-    dataset = (await API.pedirJson('GET', `/datasets/${encodeURIComponent(id)}`))?.data;
+    const dataset = (await API.pedirJson('GET', `/datasets/${encodeURIComponent(id)}`))?.data;
+    if (!esDataset(dataset)) {
+      showNotFound();
+      return;
+    }
+    renderDataset(dataset);
   } catch (error) {
     if (error?.status === 404) {
       showNotFound();
@@ -27,14 +32,7 @@ async function loadDataset() {
     }
     console.error('Error cargando el dataset:', error);
     showError();
-    return;
   }
-
-  if (!esDataset(dataset)) {
-    showNotFound();
-    return;
-  }
-  renderDataset(dataset);
 }
 
 // Lo que llega es un dataset (un objeto con su id y su título), no las estadísticas ni otra respuesta
@@ -55,8 +53,11 @@ function showNotFound() {
   ponerTexto('breadcrumb-title', 'No encontrado');
 }
 
+// Si el dibujo empezó y se rompió, el título de la pestaña y la última miga ya no son los del conjunto
 function showError() {
   mostrarEstado(['dataset-error']);
+  document.title = 'No se pudo cargar el conjunto de datos - RPAD';
+  ponerTexto('breadcrumb-title', 'Conjunto de datos');
 }
 
 function ponerTexto(id, texto) {

@@ -373,7 +373,6 @@ button {
     background: transparent;
     border-radius: 50%;
     color: var(--tinta);
-    transition: var(--transition);
 }
 
 .header--con-sesion .sidebar-toggle {
@@ -411,9 +410,8 @@ button {
     width: var(--sidebar-width);
     background: var(--tinta);
     transform: translateX(-100%);
-    /* Cerrado no se puede tabular. La transición de visibility lo deja visible hasta que termina de salir */
+    /* Cerrado no se puede tabular */
     visibility: hidden;
-    transition: transform 0.3s ease, visibility 0.3s;
     z-index: 90;
     overflow-y: auto;
     overflow-x: hidden;
@@ -433,13 +431,25 @@ button {
     background: rgba(20, 43, 74, 0.45);
     opacity: 0;
     visibility: hidden;
-    transition: var(--transition);
     z-index: 80;
 }
 
 .sidebar-overlay.visible {
     opacity: 1;
     visibility: visible;
+}
+
+/* Las transiciones del menú, del velo y del botón, recién después de la carga: la clase menu-animable la pone main.js
+   (initSidebar) después del primer cuadro. Si Firefox calcula la página antes de que llegue esta hoja, al aplicarla corre la
+   transición y el menú se asoma y se vuelve a esconder al pasar de una página a otra (Ruling 13). La de visibility deja el
+   menú visible hasta que termina de salir */
+.sidebar.menu-animable {
+    transition: transform 0.3s ease, visibility 0.3s;
+}
+
+.sidebar-overlay.menu-animable,
+.sidebar-toggle.menu-animable {
+    transition: var(--transition);
 }
 
 .sidebar-header {
@@ -520,9 +530,10 @@ button {
     font-weight: 500;
 }
 
+/* Con el mismo selector que las transiciones (menu-animable): si no, no les gana */
 @media (prefers-reduced-motion: reduce) {
-    .sidebar,
-    .sidebar-overlay {
+    .sidebar.menu-animable,
+    .sidebar-overlay.menu-animable {
         transition: none;
     }
 }
@@ -1061,6 +1072,21 @@ button {
     color: #A9BDD3;
 }
 
+/* Alto contraste (forced colors: el de Windows, o "reemplazar los colores" de Firefox). El borde transparente de arriba del
+   footer se pintaba con el color del texto (una franja de 56 px) y los logos blancos del footer y del menú lateral
+   desaparecían sobre el fondo forzado: el footer y el menú conservan su azul con el texto claro (más de 4,5:1) y el borde
+   toma el color del fondo de la página */
+@media (forced-colors: active) {
+    .footer {
+        border-top-color: Canvas;
+    }
+
+    .footer,
+    .sidebar {
+        forced-color-adjust: none;
+    }
+}
+
 /* =====================================================
    LOADING / SPINNER
    ===================================================== */
@@ -1084,40 +1110,6 @@ button {
     width: 20px;
     height: 20px;
     border-width: 2px;
-}
-
-/* =====================================================
-   LEYENDA (Calendario)
-   ===================================================== */
-.calendario-leyenda {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 20px;
-}
-
-.leyenda-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-    color: var(--gray-600);
-}
-
-.leyenda-color {
-    width: 14px;
-    height: 14px;
-    border-radius: 4px;
-}
-
-/* =====================================================
-   CALENDARIO CONTAINER (FullCalendar)
-   ===================================================== */
-.calendario-container {
-    background: var(--bg-card);
-    border-radius: var(--border-radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow);
 }
 
 /* =====================================================

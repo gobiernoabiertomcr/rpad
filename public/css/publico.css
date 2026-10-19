@@ -143,6 +143,14 @@
     pointer-events: none;
 }
 
+/* Alto contraste (forced colors): la ola (fill="currentColor") saldría como una franja del color del texto. Es solo un
+   adorno */
+@media (forced-colors: active) {
+    .ola {
+        display: none;
+    }
+}
+
 /* =====================================================
    BOTONES (en píldora) Y LINKS
    ===================================================== */
@@ -246,6 +254,12 @@
     font: inherit;
     font-size: 0.95rem;
     color: var(--texto);
+}
+
+/* El texto de ejemplo en --suave, entero: Firefox lo dibuja al 54 % si no se le dice (3,2:1) */
+.campo ::placeholder {
+    color: var(--suave);
+    opacity: 1;
 }
 
 /* Al pasar el mouse, el borde se oscurece (nunca baja de 3:1) */
@@ -734,6 +748,11 @@
 
     .mosaico {
         padding: 20px 18px;
+    }
+
+    /* 18 px y 6 de separación: 24 px entre centros, el mínimo para tocar (WCAG 2.5.8) */
+    .cuadros {
+        gap: 6px;
     }
 
     .cuadro {
@@ -1239,9 +1258,12 @@
     color: var(--suave);
 }
 
+/* Se parte si no entra (≤ 315 px), centrado como "Mostrando…" (mientras entra en una línea, el centrado no cambia nada) */
 .paginado-controles {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 10px;
 }
 
@@ -1424,6 +1446,11 @@
 
 .detalle-aviso {
     max-width: 44rem;
+}
+
+/* El error lleva su h1 ("No se pudo cargar el conjunto de datos") y, debajo, el aviso */
+.detalle-cabeza .detalle-aviso {
+    margin-top: 16px;
 }
 
 /* El título y lo que va debajo (o el "no encontrado"); a la derecha, abajo, el botón del portal */

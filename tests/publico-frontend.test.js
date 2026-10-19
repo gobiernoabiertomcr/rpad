@@ -162,7 +162,11 @@ describe('dataset-detail.js: las tres fechas del detalle', () => {
       assert.equal(html.match(new RegExp(`id="${id}"`, 'g'))?.length, 1, id);
     }
     assert.doesNotMatch(html, /<style|class="spinner"/);
-    assert.match(html, /No se pudo cargar el conjunto de datos\. Probá de nuevo en unos minutos\./);
+    // El error, con su h1 (como "no encontrado") y el aviso debajo
+    assert.match(html, /<div class="detalle-cabeza hidden" id="dataset-error" role="alert">\s*<h1>No se pudo cargar el conjunto de datos<\/h1>\s*<p class="aviso-error detalle-aviso">Probá de nuevo en unos minutos\.<\/p>\s*<\/div>/);
+    assert.match(html, /<div class="detalle-cabeza hidden" id="not-found">\s*<h1>Conjunto de datos no encontrado<\/h1>/);
+    // La última miga es la página actual
+    assert.match(html, /<li><span id="breadcrumb-title" aria-current="page">Conjunto de datos<\/span><\/li>\s*<\/ol>/);
     assert.match(html, /<a [^>]*href="datasets\.html"[^>]*>Ver todos los datasets<\/a>/);
     const portal = html.match(/<a [^>]*id="dataset-url"[^>]*>/)?.[0] ?? '';
     assert.match(portal, /target="_blank"/);
@@ -262,6 +266,17 @@ describe('dataset-detail.js: la carga del detalle', () => {
       await detalle.loadDataset();
       assert.ok(visible('dataset-error') && !visible('not-found') && !visible('loading') && !visible('dataset-content'), error.message);
     }
+  });
+
+  it('si el dibujo se rompe con un dato raro: el aviso de error, no "Cargando…" para siempre ni el conjunto a medias', async () => {
+    const { detalle, el, visible } = preparar({ respuesta: { success: true, data: dataset() } });
+    // Se rompe al final del dibujo, con el título, las migas y la banda ya puestos
+    detalle.filasTecnicas = () => { throw new TypeError('dato raro'); };
+    await detalle.loadDataset();
+    assert.ok(visible('dataset-error'), 'el aviso de error');
+    for (const id of ['loading', 'dataset-cabeza', 'url-card', 'dataset-content', 'not-found']) assert.ok(!visible(id), id);
+    assert.equal(detalle.document.title, 'No se pudo cargar el conjunto de datos - RPAD');
+    assert.equal(el('breadcrumb-title').textContent, 'Conjunto de datos');
   });
 });
 
@@ -656,6 +671,30 @@ describe('publico.css', () => {
     assert.match(campos.cuerpo, /border:\s*1px solid var\(--borde-control\)/);
   });
 
+  it('el texto de ejemplo de los campos va en --suave, entero (Firefox lo dibuja al 54 % si no)', () => {
+    const regla = reglas.find(r => r.selector === '.campo ::placeholder')?.cuerpo ?? '';
+    assert.match(regla, /color:\s*var\(--suave\)/);
+    assert.match(regla, /opacity:\s*1/);
+  });
+
+  it('los cuadritos del mosaico quedan a 24 px o más entre centros, también en el celular (WCAG 2.5.8)', () => {
+    const sinComentarios = css.replace(/\/\*[^]*?\*\//g, '');
+    const px = (cuerpo, propiedad) => Number(cuerpo.match(new RegExp(`(?:^|[\\s;])${propiedad}:\\s*(\\d+)px`))?.[1]);
+    const base = { cuadro: reglas.find(r => r.selector === '.cuadro').cuerpo, cuadros: reglas.find(r => r.selector === '.cuadros').cuerpo };
+    assert.ok(px(base.cuadro, 'width') + px(base.cuadros, 'gap') >= 24, 'en la pantalla ancha');
+    const celular = sinComentarios.match(/@media \(max-width: 760px\)\s*\{[^@]*?\.cuadros\s*\{([^}]*)\}[^@]*?\.cuadro\s*\{([^}]*)\}/);
+    assert.ok(celular, 'el bloque de 760 px pone el tamaño y la separación');
+    assert.equal(px(celular[2], 'width') + px(celular[1], 'gap'), 24, 'en el celular');
+  });
+
+  it('la paginación se parte si no entra (a 305 px los controles se salían 11 px)', () => {
+    assert.match(reglas.find(r => r.selector === '.paginado-controles')?.cuerpo ?? '', /flex-wrap:\s*wrap/);
+  });
+
+  it('alto contraste (forced colors): la ola no se dibuja (saldría como una franja del color del texto)', () => {
+    assert.match(css.replace(/\/\*[^]*?\*\//g, ''), /@media \(forced-colors: active\)\s*\{\s*\.ola\s*\{\s*display:\s*none;?\s*\}\s*\}/);
+  });
+
   it('el cuadrito de cada insignia es el del mosaico, del color de su estado y sin transparencia', () => {
     for (const [insignia, estado] of [['success', 'actualizado'], ['warning', 'proximo'], ['danger', 'atrasado'], ['sin-respuesta', 'sin-respuesta'], ['secondary', 'eventual']]) {
       const regla = reglas.find(r => r.selector === `.badge-${insignia}`);
@@ -727,6 +766,12 @@ describe('dashboard.js: el índice y el mosaico', () => {
     assert.doesNotMatch(html, /<b>X<\/b>/);
   });
 
+  it('el estado va escapado también en la clase del cuadrito (es el texto que manda el servidor)', () => {
+    const html = tablero.htmlDelCuadro(dataset({ id: 9, estado: 'x" onmouseover="alert(1)' }));
+    assert.ok(html.startsWith('<a class="cuadro c-x&quot; onmouseover=&quot;alert(1)" href="dataset.html?id=9"'), html);
+    assert.doesNotMatch(html, /onmouseover="/);
+  });
+
   // Se conserva de la portada vieja: la tasa es la del servidor, nunca un cálculo del navegador
   it('la tasa que se muestra es la del servidor', () => {
     assert.equal(tablero.textoTasa(STATS), '80%');
@@ -739,6 +784,54 @@ describe('dashboard.js: el índice y el mosaico', () => {
       '<strong>A &lt;b&gt;&amp;&lt;/b&gt;</strong><br>Área &quot;X&quot;. Próximo a vencer.'
     );
     assert.equal(tablero.htmlDelPie(eventual({ area_nombre: null })), '<strong>Barrios de Comodoro Rivadavia</strong><br>Sin área asignada. Actualización eventual.');
+  });
+});
+
+// La carga de la portada, con un DOM mínimo (cada id es un elemento; el aviso de error arranca oculto, como en index.html) y un
+// API.pedirJson falso
+describe('dashboard.js: la carga', () => {
+  const STATS = { total: 2, actualizados: 2, proximos: 0, atrasados: 0, sinRespuesta: 0, eventuales: 0, sinFecha: 0, tasaActualizacion: 100 };
+  const preparar = (lista) => {
+    const tablero = cargar('dashboard.js');
+    const elementos = {};
+    const crear = (clave) => {
+      const clases = new Set(clave === 'portada-error' ? ['hidden'] : []);
+      return {
+        textContent: '', innerHTML: '',
+        classList: {
+          add: (c) => clases.add(c),
+          remove: (c) => clases.delete(c),
+          contains: (c) => clases.has(c),
+          toggle: (c, poner = !clases.has(c)) => (poner ? clases.add(c) : clases.delete(c))
+        }
+      };
+    };
+    tablero.document.getElementById = (clave) => (elementos[clave] ??= crear(clave));
+    tablero.document.querySelector = (selector) => (elementos[selector] ??= crear(selector));
+    tablero.console = { error() {} };
+    tablero.Utils.hoyEnArgentina = () => '2026-10-18';
+    vm.runInContext('API', tablero).pedirJson = async (metodo, ruta) => ({ success: true, data: ruta === '/datasets/estadisticas' ? STATS : lista });
+    const el = (clave) => tablero.document.getElementById(clave);
+    const visible = (clave) => !el(clave).classList.contains('hidden');
+    return { tablero, el, visible };
+  };
+
+  it('con los datos, dibuja el índice, el mosaico, los meses y las listas, sin el aviso', async () => {
+    const { tablero, el, visible } = preparar([dataset({ id: 1 }), dataset({ id: 2, titulo: 'Otro' })]);
+    await tablero.cargarPortada();
+    assert.ok(!visible('portada-error'));
+    for (const id of ['mosaico', 'seccion-meses', 'portada-listas']) assert.ok(visible(id), id);
+    assert.match(el('indice-frase').innerHTML, /<strong class="indice-cifra">100%<\/strong>/);
+    assert.equal(el('mosaico-grupos').innerHTML.split('class="cuadro ').length - 1, 2);
+  });
+
+  it('si el dibujo se rompe con un dato raro: el aviso de error y nada a medias, no "Cargando…" para siempre', async () => {
+    const { tablero, el, visible } = preparar([dataset({ id: 1 }), null]);
+    await tablero.cargarPortada();
+    assert.ok(visible('portada-error'), 'el aviso de error');
+    for (const id of ['mosaico', 'seccion-meses', 'portada-listas']) assert.ok(!visible(id), id);
+    for (const id of ['indice-frase', 'indice-aclaracion', 'indice-situacion']) assert.equal(el(id).textContent, '', id);
+    assert.ok(el('.portada-banda').classList.contains('portada-sin-datos'));
   });
 });
 
