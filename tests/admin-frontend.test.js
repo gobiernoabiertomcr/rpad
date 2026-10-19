@@ -1193,7 +1193,7 @@ describe('admin.html: la lista', () => {
     const botones = [...grupo.matchAll(/<button type="button" class="ad-estado-filtro" data-filtro="([^"]*)" aria-pressed="(true|false)"[^>]*>([^<]+)<b><\/b><\/button>/g)]
       .map((m) => [m[1], m[2], m[3].trim()]);
     assert.deepEqual(botones, [
-      ['', 'true', 'Todos'], ['vencido', 'false', 'Vencidos'], ['proximo', 'false', 'Vencen en menos de 60 días'], ['al-dia', 'false', 'Al día'],
+      ['', 'true', 'Todos'], ['vencido', 'false', 'Vencidos'], ['proximo', 'false', 'Vencen en menos de 60 días'], ['al-dia', 'false', 'Actualizados'],
       ['eventual', 'false', 'Eventuales'], ['sin-fecha', 'false', 'Sin fecha'], ['pendiente', 'false', 'Con un cambio pendiente']]);
   });
 

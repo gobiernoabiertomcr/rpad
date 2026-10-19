@@ -136,12 +136,13 @@ Todo cambio a datasets pasa por doble verificación:
 
 ### Estados de dataset
 Se calculan una sola vez, en el servidor (`estadoDelDataset`), según `proxima_actualizacion` y la frecuencia en meses; las páginas usan `d.estado` (`Utils.estadoDe`) y `dias_para_vencer`. `Utils.calcularEstado` queda solo de respaldo y da lo mismo.
-- `actualizado` — al día
+- `actualizado` — actualizado (vence en más de 60 días). "Al día" son los actualizados más los próximos (la tasa, el Cumplimiento y Gestión); en administración el filtro de los `actualizado` dice "Actualizados"
 - `proximo` — próximo a vencer (hasta 60 días corridos; el día del vencimiento todavía cuenta)
 - `atrasado` / `sin-respuesta` — vencido (según tipo_gestion interna/externa)
 - `sin-fecha` — sin fecha de próxima actualización
 - `eventual` — frecuencia Eventual: no tiene vencimiento, ni al día ni atrasado
-- La tasa de actualización (`tasaDeActualizacion`) es (actualizados + próximos) sobre el total sin los eventuales: la misma en la portada ("Índice de actualización"), el Estado General de Gestión y el reporte de Cumplimiento.
+- La tasa de actualización (`tasaDeActualizacion`) es (actualizados + próximos) sobre el total sin los eventuales: la misma en la portada ("Índice de actualización"), los reportes PDF Estado General y Cumplimiento y la "Tasa de cumplimiento" de Gestión. Los sin fecha cuentan en la base, como no al día.
+- Reportes PDF Estado General y por Área: cinco tarjetas (Total, Actualizados, Próximos, Vencidos y Eventuales; con los sin fecha, suman el total). Los sin fecha no tienen tarjeta: una línea debajo los cuenta, y el reporte por Área los lista en su grupo, "Sin fecha (n)", al final, nunca entre los vencidos.
 
 ### Recordatorios automáticos
 - Salen solo en días hábiles: lunes a viernes sin los 9 feriados nacionales fijos (`esDiaHabil` en `services/notasDigitalesCalendario.js`). Hoy = `hoyArgentina()`, nunca `CURDATE()`.

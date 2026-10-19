@@ -646,6 +646,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ## Changelog
 
+### Estados en los reportes PDF (2026-10)
+- El reporte por Área ya no cuenta como vencidos a los datasets sin fecha de próxima actualización: van en su grupo, "Sin fecha (n)", al final, y una línea debajo de las tarjetas los cuenta
+- Los reportes Estado General y por Área suman la tarjeta "Eventuales" (Total, Actualizados, Próximos, Vencidos y Eventuales): las tarjetas suman el total; los sin fecha, si hay, los aclara una línea (en el Estado General, que cuentan en la tasa como no al día)
+- En administración, el filtro de la lista que decía "Al día" ahora dice "Actualizados" (son los que vencen en más de 60 días; los próximos siguen en "Vencen en menos de 60 días"). "Al día" queda para actualizados + próximos, como en la tasa y en el Cumplimiento
+- Sin cambios en la API, la base, los crons ni los emails
+
 ### Rediseño de las páginas públicas (2026-10)
 - Versión 2.0.0. Identidad visual nueva en las cinco páginas públicas: banda celeste con la ola, colores pastel de estado que pasan el contraste AA, el cuadrito de color como marca de cada conjunto de datos, y tipografía Bricolage Grotesque (títulos) y Figtree (texto), que llega también a administración (solo la letra)
 - Encabezado, menú lateral y footer nuevos en las 13 páginas con carcasa: Inicio, Datasets, Calendario y Contacto a la vista en el encabezado; el menú lateral queda para Administración, Herramientas y Mi cuenta; footer azul con `RPAD v2.0.0` y el año automático. Se va el link roto "Verificar Sello" de Gestión y el menú lateral recupera su logo
