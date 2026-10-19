@@ -2,17 +2,17 @@
 
 # RPAD - Registro Permanente de Actualización de Datasets
 
-![Versión](https://img.shields.io/badge/version-1.5.0-blue.svg)
+![Versión](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![Node](https://img.shields.io/badge/node-v22.18.0-green.svg)
 ![License](https://img.shields.io/badge/License-CC%20BY--SA%204.0-blue)
 
 Sistema de seguimiento y gestión de actualización de datasets para la Municipalidad de Comodoro Rivadavia.
 
-**Versión actual:** 1.5.0
+**Versión actual:** 2.0.0
 
 ## Descripción
 
-RPAD permite registrar datasets, asignarles frecuencias de actualización y monitorear su estado. El tablero de seguimiento muestra estadísticas en tiempo real sobre datasets actualizados, próximos a vencer y vencidos, diferenciando entre gestión interna y externa. Incluye un sistema de doble verificación donde un operador propone cambios y un segundo operador los aprueba o rechaza antes de que se apliquen.
+RPAD permite registrar datasets, asignarles frecuencias de actualización y monitorear su estado. El sitio público le muestra a la ciudadanía cuánto del registro está al día (el índice de actualización), todos los conjuntos de un vistazo y qué vence en los próximos meses; el equipo y las áreas siguen ahí los vencidos y los próximos a vencer, diferenciando entre gestión interna y externa. Incluye un sistema de doble verificación donde un operador propone cambios y un segundo operador los aprueba o rechaza antes de que se apliquen.
 
 ## Tecnologías
 
@@ -20,8 +20,9 @@ RPAD permite registrar datasets, asignarles frecuencias de actualización y moni
 - **Frontend**: HTML5, CSS3, JavaScript vanilla
 - **Base de datos**: MySQL/MariaDB
 - **Autenticación**: JWT
-- **Gráficos**: Chart.js (via CDN)
-- **Calendario**: FullCalendar.js (via CDN)
+- **Gráficos**: Chart.js (vía CDN), solo en Gestión; la portada y el calendario son HTML propio
+- **Tipografía**: Bricolage Grotesque (títulos) y Figtree (texto), de Google Fonts
+- **Íconos**: Lucide, como SVG embebidos
 - **Email**: Nodemailer
 - **PDFs**: PDFKit
 - **DOCX:** docx (generación programática de documentos Word)
@@ -36,7 +37,7 @@ El sistema cuenta con cuatro roles de usuario:
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
 | `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros solo **de respaldo** (si ese día no hay ningún auditor disponible), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
-| `lector` | Solo lectura | Ver todas las secciones (tablero, calendario, datasets, reportes, notas) sin poder modificar datos. |
+| `lector` | Solo lectura | Ver todas las secciones (portada, calendario, datasets, reportes, notas) sin poder modificar datos. |
 
 Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
@@ -79,6 +80,24 @@ Cada dataset tiene además un **tipo de pedido** (acumulado, foto al corte, año
 - **Registrar actualización** (admin) pregunta a qué fecha son los datos, cuándo llegaron y cuándo se cargaron, y propone opciones para la próxima sin elegir ninguna: la persona elige y todo pasa por la doble verificación. Al aprobarse queda un renglón en el historial de actualizaciones del dataset.
 - **Dónde está la regla:** `services/fechasDatasetReglas.js`. La pantalla no recalcula nada: le pide el pedido y las opciones al servidor.
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-17-fechas-datasets-design.md`.
+
+## Sitio público
+
+Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada dataset, el Calendario y Contacto. Todas comparten con las pantallas de administración el encabezado (Inicio, Datasets, Calendario y Contacto a la vista), el menú lateral y el footer (`RPAD v2.0.0`). Los estados, los días y la tasa salen del servidor: las páginas no recalculan nada.
+
+- **Portada** (`index.html`): el **índice de actualización** ("El 80% de los conjuntos de datos con fecha de actualización están al día: 53 de 66."), el **mosaico** con un cuadrito por conjunto de datos agrupado por estado (cada cuadrito lleva a su detalle), **qué vence en los próximos 12 meses** (cada mes lleva al listado de ese mes), y las listas de **Vencidos**, **Próximos a vencer** y **Últimas cargas en el portal**.
+- **Datasets** (`datasets.html`):
+  - **Estados** como botones con su cantidad: Todos, Actualizados, Próximos a vencer, Vencidos (con "Todos los vencidos", Atrasados y Sin respuesta del área), Eventuales y Sin fecha (solo si hay). Las cantidades cuentan lo que dejan los otros filtros.
+  - **Filtros**: Buscar (título, área y descripción), Tema (principal o secundario) y Frecuencia, más "Limpiar filtros".
+  - **Ordenar por**: Nombre, Próximo vencimiento o Área.
+  - **Vista**: Tarjetas (de a 24 por página) o Lista (una tabla de a 50, que en el celular se apila).
+  - Todo queda en la URL, así un link guarda lo elegido: `?estado=actualizado|proximo|vencidos|atrasado|sin-respuesta|eventual|sin-fecha`, `?tema=ID`, `?frecuencia=ID`, `?busqueda=texto`, `?mes=AAAA-MM` (los que vencen ese mes, desde la portada o el calendario), `?orden=proxima|area` y `?vista=lista`. El orden y la vista se escriben solo si no son los por defecto.
+  - **Exportar CSV** con lo que dejan los filtros.
+- **Detalle** (`dataset.html?id=N`): estado, área, temas, link al Portal de Datos Abiertos, Descripción, Qué se solicita, Observaciones, las tres fechas ("Datos al", "Cargado en el portal" y "Próxima actualización prevista"), la información técnica y la licencia.
+- **Calendario** (`calendario.html`): vista anual con los vencidos, una fila por cada uno de los 12 meses desde el actual y "Más adelante". Filtra por área y por tema (principal o secundario), y **Exportar a mi calendario (iCal)** baja un `.ics` con lo que dejan los filtros.
+- **Contacto** (`contacto.html`): el formulario de consultas y los datos de la Dirección.
+- **Al compartir un link** de estas páginas (WhatsApp, Telegram, Facebook, X, LinkedIn, Slack) se ve una vista previa con la imagen `img/compartir.png`. `robots.txt` deja pasar solo a esos robots y sigue cerrado para los buscadores.
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-18-rediseno-publico-design.md`.
 
 ## Estructura del proyecto
 
@@ -128,42 +147,53 @@ rpad/
 │   └── index.js                   # Definición de rutas API
 ├── scripts/
 │   └── setup-admin.js             # Script para crear usuario admin
-└── public/                        # FRONTEND
-    ├── index.html                 # Tablero de seguimiento
-    ├── datasets.html              # Listado de datasets
-    ├── dataset.html               # Detalle de dataset
+└── public/                        # FRONTEND (una página HTML por pantalla)
+    ├── index.html                 # Portada: índice de actualización, mosaico, 12 meses, vencidos, próximos y últimas cargas
+    ├── datasets.html              # Listado: estados con cantidades, filtros, orden, tarjetas o lista, CSV
+    ├── dataset.html               # Detalle de un dataset (?id=N)
+    ├── calendario.html            # Calendario anual de vencimientos (vencidos, 12 meses y más adelante) e iCal
+    ├── contacto.html              # Formulario de contacto público
     ├── login.html                 # Formulario de login
+    ├── establecer-contrasena.html # Elegir la contraseña con un link de acceso
     ├── admin.html                 # Panel de administración de datasets
     ├── areas.html                 # Panel de administración de áreas
+    ├── usuarios.html              # Panel de usuarios y licencias
     ├── correos.html               # Correos: Libro de Notas Digitales, Estado, Vista previa y pruebas, Configuración (pestañas)
     ├── reportes.html              # Generador de reportes
-    ├── calendario.html            # Calendario interactivo de vencimientos
     ├── notas.html                 # Generador de notas administrativas DOCX
+    ├── gestion.html               # Gestión: métricas (Chart.js, la única librería por CDN)
     ├── perfil.html                # Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma
-    ├── contacto.html              # Formulario de contacto público
+    ├── robots.txt                 # Cerrado a todos, salvo a los robots de vista previa de un link
     ├── css/
-    │   └── styles.css
+    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 13 páginas con carcasa
+    │   ├── publico.css            # Solo las 5 páginas públicas (index, datasets, dataset, calendario y contacto)
+    │   └── styles.css, layout.css, perfil.css   # Sin uso: no los carga ninguna página
     ├── js/
     │   ├── config.js              # Configuración (API_URL)
-    │   ├── main.js                # JavaScript compartido entre páginas
     │   ├── auth.js                # Manejo de autenticación
+    │   ├── main.js                # Carcasa compartida: encabezado, menú lateral, año del footer
     │   ├── api.js                 # Llamadas a la API y utilidades
-    │   ├── dashboard.js           # Lógica del tablero
+    │   ├── dashboard.js           # Portada
     │   ├── datasets.js            # Listado de datasets
     │   ├── dataset-detail.js      # Detalle de dataset
+    │   ├── calendario.js          # Calendario anual de vencimientos e iCal
+    │   ├── contacto.js            # Formulario de contacto
     │   ├── admin-fechas.js        # Admin: lo puro de la lista y de "Registrar actualización" (se carga antes de admin.js)
     │   ├── admin.js               # Panel de administración
     │   ├── areas.js               # Gestión de áreas responsables
+    │   ├── usuarios.js            # Panel de usuarios y licencias
     │   ├── correos.js             # Correos: pestañas, Libro, Estado, vista previa y configuración
     │   ├── reportes.js            # Generación de reportes PDF
-    │   ├── calendario.js          # Calendario interactivo de vencimientos
     │   ├── notas.js               # Generador de notas administrativas
+    │   ├── gestion.js             # Gestión: métricas
     │   ├── perfil.js              # Mi Perfil: gestión de cambios (aprobar y rechazar en la fila), datos y firma
-    │   └── contacto.js            # Formulario de contacto
+    │   └── establecer-contrasena.js  # Elegir la contraseña, o pedir un link nuevo
     └── img/
         ├── icon.png
+        ├── logo.png               # Logo del encabezado
         ├── logo-2025.png
-        └── logo-2025-blanco.png
+        ├── logo-2025-blanco.png   # Menú lateral, footer y panel de login
+        └── compartir.png          # Vista previa al compartir un link (1200×630)
 ```
 
 ## Base de datos
@@ -529,7 +559,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | GET | `/api/health` | Health check |
 | POST | `/api/auth/login` | Iniciar sesión |
 | GET | `/api/datasets` | Listar datasets (con filtros) |
-| GET | `/api/datasets/estadisticas` | Estadísticas para tablero |
+| GET | `/api/datasets/estadisticas` | Estadísticas para la portada |
 | GET | `/api/datasets/:id` | Detalle de un dataset |
 | GET | `/api/catalogos/temas` | Listar temas |
 | GET | `/api/catalogos/frecuencias` | Listar frecuencias |
@@ -615,6 +645,17 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Rediseño de las páginas públicas (2026-10)
+- Versión 2.0.0. Identidad visual nueva en las cinco páginas públicas: banda celeste con la ola, colores pastel de estado que pasan el contraste AA, el cuadrito de color como marca de cada conjunto de datos, y tipografía Bricolage Grotesque (títulos) y Figtree (texto), que llega también a administración (solo la letra)
+- Encabezado, menú lateral y footer nuevos en las 13 páginas con carcasa: Inicio, Datasets, Calendario y Contacto a la vista en el encabezado; el menú lateral queda para Administración, Herramientas y Mi cuenta; footer azul con `RPAD v2.0.0` y el año automático. Se va el link roto "Verificar Sello" de Gestión y el menú lateral recupera su logo
+- Portada nueva: índice de actualización, mosaico de todo el registro, qué vence en los próximos 12 meses (sin Chart.js), Vencidos, Próximos a vencer y Últimas cargas en el portal
+- Datasets: los estados como botones con cantidades, orden (nombre, próximo vencimiento, área) y vista de lista, guardados en la URL; los links de siempre (`?estado=`, `?mes=`, `?tema=`, `?frecuencia=`, `?busqueda=`) siguen andando
+- Calendario anual (vencidos, los 12 meses desde el actual y "Más adelante") sin FullCalendar: se van las flechas sin ícono y el idioma en inglés; el filtro de tema mira también el tema secundario
+- Detalle y Contacto con la estética nueva; si falla la carga, las páginas lo dicen en lugar de quedar cargando o mostrar ceros
+- Celular sin desbordes a 375 px, foco visible y `<label>` en todos los filtros
+- Vista previa al compartir un link (metas Open Graph e `img/compartir.png`); `robots.txt` deja pasar solo a los robots de vista previa y sigue cerrado para los buscadores
+- Solo archivos estáticos de `public/` (más la documentación): sin cambios en la API, la base, los crons ni los emails
 
 ### Aviso sin fecha sugerida y frecuencia acumulada (2026-10)
 - El aviso de las Notas Digitales (interno y externo) ya no lleva la columna "Fecha sugerida de envío", que repetía en cada fila el mismo vencimiento: "Próximos a vencer" queda con Conjunto de datos, Área, Frecuencia y Datos solicitados, y el párrafo del aviso externo pide los datos "del período que se indica en cada caso"

@@ -1,2 +1,20 @@
+# Solo los robots que arman la vista previa de un link (spec 2026-10-18-rediseno-publico, 12). Ningún buscador.
+User-agent: facebookexternalhit
+User-agent: Facebot
+User-agent: Twitterbot
+User-agent: LinkedInBot
+User-agent: Slackbot-LinkExpanding
+User-agent: Slackbot
+User-agent: TelegramBot
+User-agent: WhatsApp
+Allow: /$
+Allow: /index.html
+Allow: /datasets.html
+Allow: /dataset.html
+Allow: /calendario.html
+Allow: /contacto.html
+Allow: /img/compartir.png
+Disallow: /
+
 User-agent: *
 Disallow: /

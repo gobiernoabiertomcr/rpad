@@ -1,7 +1,7 @@
 /**
  * =====================================================
  * RPAD - Páginas públicas
- * Spec 2026-10-18-rediseno-publico, secciones 4, 6, 7, 8, 9 y 11
+ * Spec 2026-10-18-rediseno-publico, secciones 4, 6, 7, 8, 9, 10 y 11
  * =====================================================
  * Lo cargan solo las cinco páginas públicas (index, datasets, dataset, calendario y contacto), después de main.css: por
  * eso las insignias pastel no llegan a administración. Usa los tokens de main.css (--tinta, --cielo, --f-titulo, ...).
@@ -1839,5 +1839,185 @@
     .almanaque-cuenta,
     .este-mes {
         margin-top: 0;
+    }
+}
+
+/* =====================================================
+   CONTACTO (spec 10): el formulario en un panel blanco de una columna (hasta 640 px) y, al lado (debajo en una sola
+   columna), la información de contacto sin cajas: una línea --tinta arriba y filas separadas por líneas, como las listas.
+   contacto.js no cambia: el contador (.char-counter, al que le suma warning o danger) y los mensajes (.alert-success y
+   .alert-error, dentro de #message-container) los arma él. Los campos son los .campo de siempre (borde --borde-control)
+   ===================================================== */
+.contacto-grilla {
+    display: grid;
+    grid-template-columns: minmax(0, 640px) minmax(260px, 1fr);
+    align-items: start;
+    gap: 56px;
+    padding-top: 44px;
+}
+
+.contacto-grilla > * {
+    min-width: 0;
+}
+
+.contacto-panel {
+    padding: 28px 28px 30px;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-panel);
+    background: var(--papel);
+}
+
+/* Los dos títulos, uno al lado del otro, del mismo tamaño */
+.publico-contenedor .contacto-panel h2,
+.publico-contenedor .contacto-info h2 {
+    font-size: 1.35rem;
+}
+
+.contacto-nota {
+    margin-top: 6px;
+    font-size: 0.9rem;
+    color: var(--suave);
+}
+
+.contacto-sin-js {
+    margin-top: 18px;
+}
+
+.contacto-formulario {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 22px;
+}
+
+/* El asterisco de los obligatorios, en el texto de la insignia Atrasado (7,6:1 sobre blanco); los lectores de pantalla ya
+   oyen "obligatorio" por el required */
+.campo .obligatorio {
+    color: var(--texto-atrasado);
+}
+
+.campo-ayuda,
+.char-counter {
+    font-size: 0.85rem;
+    color: var(--suave);
+}
+
+.contacto-formulario textarea {
+    min-height: 160px;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+/* El contador: contacto.js le suma warning (más de 1500 caracteres) o danger (más de 1800), en las tintas de las insignias */
+.char-counter {
+    text-align: right;
+}
+
+.char-counter.warning {
+    font-weight: 600;
+    color: var(--texto-proximo);
+}
+
+.char-counter.danger {
+    font-weight: 700;
+    color: var(--texto-atrasado);
+}
+
+.contacto-enviar {
+    align-self: flex-start;
+    margin-top: 4px;
+}
+
+/* Los mensajes de contacto.js (un ícono y el texto), con los colores de las insignias: el éxito en verde, el error en rosado */
+.contacto-panel .alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border: 1px solid;
+    border-radius: var(--radio-campo);
+    font-weight: 600;
+}
+
+.contacto-panel .alert svg {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+}
+
+.contacto-panel .alert-success {
+    border-color: var(--cuadro-actualizado);
+    background: var(--fondo-actualizado);
+    color: var(--texto-actualizado);
+}
+
+.contacto-panel .alert-error {
+    border-color: var(--cuadro-atrasado);
+    background: var(--fondo-atrasado);
+    color: var(--texto-atrasado);
+}
+
+/* La información de contacto: cada dato con su ícono, su título y el texto en --suave */
+.contacto-info {
+    padding-top: 14px;
+    border-top: 2px solid var(--tinta);
+}
+
+.contacto-datos {
+    margin-top: 6px;
+    list-style: none;
+}
+
+.contacto-datos li {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--linea);
+}
+
+.contacto-datos svg {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    color: var(--tinta);
+}
+
+.contacto-datos li > div {
+    min-width: 0;
+}
+
+.publico-contenedor .contacto-datos h3 {
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.contacto-datos p {
+    margin-top: 4px;
+    font-size: 0.92rem;
+    color: var(--suave);
+    overflow-wrap: anywhere;
+}
+
+/* Una sola columna: el formulario y, debajo, la información, los dos hasta 640 px */
+@media (max-width: 980px) {
+    .contacto-grilla {
+        grid-template-columns: minmax(0, 640px);
+        gap: 40px;
+        padding-top: 32px;
+    }
+}
+
+/* Celular: menos relleno en el panel y el botón a todo el ancho */
+@media (max-width: 760px) {
+    .contacto-panel {
+        padding: 22px 18px 24px;
+    }
+
+    .contacto-enviar {
+        align-self: stretch;
     }
 }

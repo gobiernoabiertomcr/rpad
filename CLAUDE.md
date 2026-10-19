@@ -9,7 +9,7 @@ Sistema de gestión de datos abiertos para la Municipalidad de Comodoro Rivadavi
 - **Frontend:** HTML5, CSS3, vanilla JS (sin frameworks)
 - **PDF:** PDFKit | **DOCX:** docx | **Email:** Nodemailer
 - **Emails:** un solo remitente, `remitente()` de `services/emailService.js` ("Dir. de Datos Públicos y Comunicación"), y un solo marco, `marcoEmail` de `services/emailTemplates.js` (diseño pastel "celeste institucional", tablas y estilos en línea, sin emojis), para todas las plantillas. Las Notas Digitales tienen su propio armado.
-- **CDN:** Lucide Icons, Chart.js, FullCalendar
+- **CDN:** solo Chart.js (jsDelivr), en Gestión (`gestion.html`). Sin Lucide por CDN (los íconos son SVG embebidos) ni FullCalendar (el calendario es HTML propio). Fuentes por Google Fonts.
 
 ## Comandos
 - `npm start` — Inicia el servidor (puerto 3001)
@@ -28,12 +28,16 @@ routes/index.js           # Todas las rutas (~190 líneas)
 database/schema.sql       # Schema completo
 database/updates/         # Migraciones SQL
 scripts/setup-admin.js    # Setup inicial
-public/                   # Frontend SPA
+public/                   # Frontend: una página HTML por pantalla
   js/config.js            # API_URL, localStorage keys
   js/auth.js              # Manejo de sesión JWT
   js/api.js               # Capa centralizada de fetch
-  js/main.js              # Layout, sidebar, header
-  css/styles.css           # Estilos principales
+  js/main.js              # Carcasa: encabezado, menú lateral, año del footer
+  css/main.css            # Carcasa, fuentes, tokens y estilos de administración (las 13 páginas con carcasa)
+  css/publico.css         # Solo las 5 páginas públicas (index, datasets, dataset, calendario, contacto)
+  css/styles.css, layout.css, perfil.css  # Sin uso: no los carga ninguna página
+  img/compartir.png       # Imagen de la vista previa al compartir un link (1200×630)
+  robots.txt              # Cerrado a todos, salvo a los robots de vista previa de un link
 ```
 
 ## Convenciones de código
@@ -53,20 +57,23 @@ public/                   # Frontend SPA
 
 ### Frontend
 - Vanilla JS, sin frameworks
-- Cada página carga: config.js → auth.js → api.js → página.js (admin, además, `admin-fechas.js` entre `api.js` y `admin.js`)
+- Cada página con carcasa carga: config.js → auth.js → main.js → api.js → página.js (admin, además, `admin-fechas.js` entre `api.js` y `admin.js`; Contacto, sin `api.js`). `login.html`: config → auth → api; `establecer-contrasena.html`: config → la suya. Siempre `<script src="js/X.js?v=…"></script>` a secas, sin `defer` (lo lee `tests/paginas.test.js`); `auth.js`, `main.js` y `api.js` con la misma versión en todas las páginas (`VERSION`).
 - API calls centralizadas en `api.js` (objeto `API`)
 - Utilidades en `api.js` (objeto `Utils`: formatDate, calcularEstado, escapeHtml, etc.)
-- Iconos: Lucide SVG embebidos en main.js (objeto `Icons`)
+- Iconos: Lucide SVG embebidos (en el HTML y en el objeto `Icons` de main.js), con `aria-hidden="true"` los decorativos
 - Toast notifications: `showToast(message, type)`
 - `perfil.js`: lo que arma HTML (`htmlDeFila`, `htmlDeComparacion`, …) es puro y recibe quién mira por parámetro; lo que toca el DOM, `Auth` o la API va aparte. Los tests lo cargan en un `vm` sin `window` ni DOM: al cargarse, el archivo solo declara.
 - `correos.js`: pestañas Libro de Notas Digitales (la inicial), Estado, Vista previa y pruebas y Configuración (`#libro`, `#estado`, `#pruebas`, `#configuracion`); las alertas del Estado van arriba de las pestañas, con una marca en Estado. La vista previa y la prueba muestran la nota como saldría en la próxima corrida con notas (`fechaDeVistaPrevia`, con la misma selección que la corrida: `avisoDelDia`); si no es hoy, lo avisan (spec 2026-10-15, 7.7). Como `perfil.js`, al cargarse solo declara (los tests lo cargan en un `vm`).
 - `admin-fechas.js`: lo puro de la lista de admin y de "Registrar actualización" (`htmlDeFila`, `htmlDeOpciones`, `htmlDeCiclo`, `textoEstado`, selectores de mes y año, `hoyEnArgentina`); lo que toca el DOM o la API va en `admin.js`. Como `perfil.js` y `correos.js`, al cargarse solo declara (`tests/admin-frontend.test.js` lo carga en un `vm`).
+- `dashboard.js`, `datasets.js`, `dataset-detail.js` y `calendario.js`: al cargarse solo declaran (`tests/publico-frontend.test.js` los carga en un `vm`; `main.js`, igual, en `tests/main-frontend.test.js`); lo que cuenta, ordena y arma el HTML es puro, y lo que toca el DOM o la API va aparte. Piden los datos con `API.pedirJson` (tira error ante una respuesta de error), no con `API.getDatasets()` ni `getEstadisticas()` (devuelven `[]` o `undefined`; los sigue usando administración): así un error no se dibuja como una lista vacía o con ceros.
 - Fechas en el navegador: texto `'AAAA-MM-DD'`, cortado como texto; nunca `Utils.formatDate` para los campos nuevos (en el navegador argentino muestra el día anterior) ni `toISOString()` para "hoy" (después de las 21 da mañana: `hoyEnArgentina`).
 
 ### CSS
-- Variables CSS: `--primary: #1a365d`, `--success: #10b981`, `--warning: #f59e0b`, `--danger: #ef4444`
-- Clases: `.btn-primary`, `.btn-secondary`, `.dataset-card`, `.badge-*`, `.alert-*`
-- Fuentes: Inter (texto), Outfit (títulos) via Google Fonts
+- Dos hojas, con `?v=` y la misma versión en todas las páginas (`VERSION_CSS` de `tests/paginas.test.js`): `css/main.css`, en las 13 páginas con carcasa, y `css/publico.css`, solo en las 5 públicas y después de main.css (así las insignias pastel no llegan a administración). `styles.css`, `layout.css` y `perfil.css` no los carga ninguna página. Las de administración tienen además su `<style>`; las públicas, no.
+- main.css: la carcasa, las fuentes y los tokens nuevos: `--tinta` (#1A365D, el `--primary` de siempre), `--tinta-honda`, `--texto`, `--suave` (secundario, ≥ 4,5:1 sobre blanco y bruma), `--bruma` (fondo público), `--papel`, `--linea`, `--cielo` (banda), `--cielo-medio`, `--sol`, `--sol-fuerte`, `--f-titulo` y `--f-texto`. Toda `var(--x)` de main.css se define en main.css (test). Las variables viejas (`--primary`, `--success`, `--warning`, `--danger`, `--gray-*`, `--shadow*`…) no cambiaron: administración conserva colores, tablas, formularios y modales (`.btn-primary`, `.badge-*`, `.form-*`, y `.alert-*` en el `<style>` de sus páginas).
+- Fuentes (un solo `<link>` de Google Fonts, igual en las 13): Figtree (texto, `body`) y Bricolage Grotesque con `-0.02em` (`h1`–`h4`, `.page-title`, la marca "RPAD"; en las públicas, peso 750). En administración solo cambió la letra.
+- publico.css: colores de estado (`--cuadro-*` del cuadrito, `--fondo-*` y `--texto-*` de la insignia, ≥ 4,5:1), `--borde-control` (#76879F, contorno de los controles ≥ 3:1; `--linea` queda para separadores y bordes decorativos) y radios (`--radio-panel` 22 px, `--radio-tarjeta` 16, `--radio-campo` 12, `--radio-cuadro` 5). Piezas: `<main class="main-content main-publico">` con el ancho en `.publico-contenedor` (no en `.main-content`: `perfil.html` lo necesita sin `max-width`), la banda celeste (`.banda` + `.banda-cuerpo` + el `svg.ola` copiado en cada página, el único adorno), `.btn-tinta`/`.btn-borde` (píldoras), `.campo` (label + control de 44 px), las insignias `.badge-*` pastel con su cuadrito (`::before`, sin tocar el markup), `.lista`/`.fila` y `.aviso`/`.aviso-error`.
+- Foco visible: sobre fondos claros, anillo `--tinta` de 3 px con halo `--sol-fuerte`; sobre el azul del menú lateral y del footer, anillo `--sol-fuerte`. En las públicas, sin "→" en los links, sin rótulos en mayúsculas y sin separadores " · ".
 
 ## Arquitectura clave
 
@@ -103,7 +110,7 @@ Todo cambio a datasets pasa por doble verificación:
 - La API (`GET /datasets` y `/:id`) devuelve `datos_al`, `tipo_pedido` (el efectivo), `tipo_pedido_nombre`, `frecuencia_meses`, `pedido` (`{ desde, hasta, texto }`), `estado` y `dias_para_vencer`. Para la pantalla de admin: `GET /datasets/:id/opciones-proxima?datos_al=` y `GET /datasets/calculo-pedido` (`API.opcionesDeProxima`, `API.calculoPedido`).
 - El navegador no recalcula las reglas: las pide al servidor. Las copias mínimas conocidas (para avisar en el momento; el servidor valida igual) son: en `admin-fechas.js`, `tipoSugeridoDe` (copia de `tipoSugerido`), `TIPOS_DE_PEDIDO` (copia de `TIPOS_PEDIDO` y `NOMBRES_TIPO_PEDIDO`), `frecuenciaEnNotaDe` (copia de `frecuenciaEnNota`, para la vista previa "Así va a salir en la próxima nota"), `tiposPermitidos` y `esEventual` (Eventual va solo con la frecuencia Eventual, la que no tiene meses: `esFrecuenciaEventual` del controlador), `finDeMesDe`, `finDelMesAnterior`, `topeDeDatosAl` (copia de `topeDatosAl`), `errorDeDatosAl` y `problemaDeFechasDelRegistro` (los pasos 1 y 2 de `POST /datasets/:id/actualizar`, con los mensajes del servidor), los mensajes copiados de `controllers/datasetController.js` (`ERROR_FALTA_DATOS_AL`, `ERROR_FALTA_PROXIMA`, "Todavía no puede haber datos al …" y los de la carga y la recepción posteriores a hoy o a la carga) y el texto por defecto del "Qué se solicita" (`QUE_SE_SOLICITA_POR_DEFECTO`); en `admin.js`, `mesesDeLaFrecuencia` (la Eventual es la frecuencia sin meses, como `esFrecuenciaEventual`); en `perfil.js`, `esFinDeMesTexto` (la marca "No es el último día del mes"); en `api.js`, el respaldo `Utils.calcularEstado`. Se comparan contra el servidor en un test: `tipoSugeridoDe` (con `tipoSugerido`), `TIPOS_DE_PEDIDO` (con `TIPOS_PEDIDO` y `NOMBRES_TIPO_PEDIDO`), `frecuenciaEnNotaDe` (con `frecuenciaEnNota`), `Utils.calcularEstado` (con `estadoDelDataset`) y el texto por defecto (con `QUE_SE_SOLICITA_POR_DEFECTO` de `notasDigitalesContenido.js`). El resto (`tiposPermitidos`, `esEventual`, `mesesDeLaFrecuencia`, `esFinDeMesTexto`, `topeDeDatosAl`, `finDeMesDe`, `problemaDeFechasDelRegistro`, …) solo tiene tests de comportamiento, y los mensajes copiados, tests con el texto escrito a mano: si cambia una regla o un mensaje del servidor, hay que cambiarlos a mano.
 - Admin: la lista filtra por estado, gestión y tipo de pedido; el formulario tiene la sección "Actualización y pedido", con la vista previa "Así va a salir en la próxima nota" (Conjunto de datos, Frecuencia y Datos solicitados, como en la tabla del aviso). La lista dice, por ejemplo, "Acumulado. Vence el 31/01/2027". "Registrar actualización" dice "Vence" o "Vencido desde" (la marca del ciclo, "Vence"), propone las opciones de próxima y no elige ninguna de antemano. Un dataset con cambio pendiente queda bloqueado también ahí, antes de abrir el modal.
-- Sitio público: el detalle muestra "Datos al", "Cargado en el portal" y "Próxima actualización prevista" (mes y año); la tarjeta del listado, "Datos al" y "Próxima"; el CSV suma "Cargado en el portal".
+- Sitio público: el detalle muestra "Datos al", "Cargado en el portal" y "Próxima actualización prevista" (mes y año); la tarjeta y la fila del listado, "Datos al" y "Próxima"; el CSV suma "Cargado en el portal".
 
 ### Registrar una actualización
 - `POST /datasets/:id/actualizar` recibe `datos_al`, `cargado_el` (o `fecha_actualizacion`, por compatibilidad; por defecto hoy), `recibido_el` (opcional), `proxima_actualizacion` y `notas`. Respeta la próxima que eligió la persona y valida fin de mes, que ninguna fecha sea futura (`datos_al`, hasta `topeDatosAl`) y que `recibido_el` no sea posterior a la carga. Crea un cambio `editar` con `registro_actualizacion: true`: pasa por la doble verificación.
@@ -117,6 +124,16 @@ Todo cambio a datasets pasa por doble verificación:
 - La reiteración recalcula el pedido cada vez (todo lo que falta, R7), no repite el del aviso.
 - Los "Qué se solicita" no llevan fechas ni períodos: los pone el sistema (el formulario avisa, sin bloquear, si el texto los trae y el tipo pone fechas).
 
+### Sitio público y carcasa (spec 2026-10-18-rediseno-publico)
+- Carcasa copiada a mano en las 13 páginas (admin, areas, calendario, contacto, correos, dataset, datasets, gestion, index, notas, perfil, reportes, usuarios; los tests leen el HTML estático, así que un cambio va en las 13): encabezado de 72 px con el logo, "RPAD" y el nav Inicio, Datasets, Calendario y Contacto (`aria-current="page"` escrito en el HTML de la página actual; `dataset.html` marca Datasets, administración ninguna); menú lateral con Principal (solo cuando el nav del encabezado no entra), Administración, Herramientas y Mi cuenta; footer azul con `<span>RPAD v2.0.0</span>` y el año en `#footer-anio`, que `main.js` pone en hora argentina. Con sesión, `initHeader` pone `.header--con-sesion` (sin `:has()`). `login.html` y `establecer-contrasena.html` no tienen carcasa.
+- Portada (`index.html` + `dashboard.js`): banda con el "Índice de actualización" (la `tasaActualizacion` del servidor; "{al día} de {base}" con al día = actualizados + próximos y base = total − eventuales) y el mosaico (un cuadrito-link por conjunto, agrupado por estado, con un pie `aria-live` que dice cuál es); "Qué vence en los próximos 12 meses" (columnas HTML, cada una link a `datasets.html?mes=AAAA-MM`; sin Chart.js); Vencidos (6, y "Ver los N vencidos" → `?estado=vencidos`), Próximos a vencer (60 días) y Últimas cargas en el portal (5, por el texto de `ultima_actualizacion`).
+- Datasets (`datasets.html` + `datasets.js`): los estados como botones con su cantidad (`aria-pressed`; cuentan lo que dejan los otros filtros; Vencidos abre "Todos los vencidos", Atrasados y Sin respuesta del área; Sin fecha, solo si hay o está elegido), Buscar, Tema (principal o secundario), Frecuencia, Ordenar por (nombre, próximo vencimiento, área) y Vista (tarjetas, de a 24, o lista, de a 50). Todo viaja en la URL: `tema`, `frecuencia`, `estado`, `busqueda` y `mes`, como siempre, más `orden=proxima|area` y `vista=lista`, que solo se escriben si no son los por defecto. El CSV no cambió.
+- Detalle (`dataset.html?id=N` + `dataset-detail.js`): migas; banda con el título, la insignia larga, el área, los temas y el botón al portal (solo con URL http/https); debajo, Descripción, Qué se solicita y Observaciones, y el panel con Fechas (`htmlDeFechas`), Información técnica y Licencia (en una columna, el panel va primero). Cargando, no encontrado (sin id, 404 o algo que no es un dataset) y error, por separado.
+- Calendario (`calendario.html` + `calendario.js`): almanaque anual, sin FullCalendar: Vencidos, los 12 meses desde el actual (los de la portada, `mesesDelGrafico`; cada mes, link a `datasets.html?mes=`) y Más adelante; filtros Área y Tema (principal o secundario); el iCal exporta lo que dejan los filtros. Eventuales y sin fecha no aparecen.
+- Contacto (`contacto.html` + `contacto.js`, sin `api.js`): el formulario en un panel blanco y, al lado, la información de contacto; `contacto.js` no cambió (ids, opciones, límites y mensajes).
+- Las páginas no recalculan nada: estado, días y tasa salen del servidor, y las fechas se leen como texto. Si falla la API, un aviso ("No se pudo cargar el listado. Probá de nuevo en unos minutos." y sus parecidos) en lugar de un spinner eterno o de ceros; sin JavaScript, un `<noscript>` lo dice.
+- Vista previa al compartir: las 5 públicas llevan metas Open Graph absolutas (`https://rpad.mcrmodernizacion.gob.ar`; `og:image` es `img/compartir.png`, 1200×630; `twitter:card` `summary_large_image`; `theme-color` #1A365D). `robots.txt` deja entrar solo a los robots de vista previa (Facebook, X, LinkedIn, Slack, Telegram y WhatsApp) a esas páginas y a la imagen; para el resto, buscadores incluidos, sigue `Disallow: /`.
+
 ### Estados de dataset
 Se calculan una sola vez, en el servidor (`estadoDelDataset`), según `proxima_actualizacion` y la frecuencia en meses; las páginas usan `d.estado` (`Utils.estadoDe`) y `dias_para_vencer`. `Utils.calcularEstado` queda solo de respaldo y da lo mismo.
 - `actualizado` — al día
@@ -124,7 +141,7 @@ Se calculan una sola vez, en el servidor (`estadoDelDataset`), según `proxima_a
 - `atrasado` / `sin-respuesta` — vencido (según tipo_gestion interna/externa)
 - `sin-fecha` — sin fecha de próxima actualización
 - `eventual` — frecuencia Eventual: no tiene vencimiento, ni al día ni atrasado
-- La tasa de actualización (`tasaDeActualizacion`) es (actualizados + próximos) sobre el total sin los eventuales: la misma en el tablero, el Estado General de Gestión y el reporte de Cumplimiento.
+- La tasa de actualización (`tasaDeActualizacion`) es (actualizados + próximos) sobre el total sin los eventuales: la misma en la portada ("Índice de actualización"), el Estado General de Gestión y el reporte de Cumplimiento.
 
 ### Recordatorios automáticos
 - Salen solo en días hábiles: lunes a viernes sin los 9 feriados nacionales fijos (`esDiaHabil` en `services/notasDigitalesCalendario.js`). Hoy = `hoyArgentina()`, nunca `CURDATE()`.

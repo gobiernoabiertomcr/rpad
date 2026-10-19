@@ -153,13 +153,10 @@ describe('páginas', () => {
   // publico.css (spec 2026-10-18-rediseno-publico, 5.4): solo en las 5 públicas, con la misma versión que main.css, así las
   // insignias pastel no llegan a administración
   const PUBLICAS = ['index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html'];
-  const PENDIENTES = ['contacto.html'];
   for (const pagina of paginas) {
     it(`${pagina}: publico.css ${PUBLICAS.includes(pagina) ? 'con' : 'sin'} ?v=${VERSION_CSS}`, () => {
       const usos = leer(pagina).match(/css\/publico\.css[^"]*"/g) || [];
-      // index.html entra acá; las otras cuatro públicas se suman en sus tareas: hasta entonces se listan en PENDIENTES
-      if (PUBLICAS.includes(pagina) && !PENDIENTES.includes(pagina)) assert.deepEqual(usos, [`css/publico.css?v=${VERSION_CSS}"`]);
-      else if (!PUBLICAS.includes(pagina)) assert.deepEqual(usos, []);
+      assert.deepEqual(usos, PUBLICAS.includes(pagina) ? [`css/publico.css?v=${VERSION_CSS}"`] : []);
     });
   }
 
@@ -175,14 +172,56 @@ describe('páginas', () => {
     assert.ok(html.indexOf('css/main.css?v=') !== -1 && html.indexOf('css/main.css?v=') < html.indexOf('css/publico.css?v='));
   });
 
-  // Las otras públicas ya rediseñadas: su <style> se fue a publico.css, que va después de main.css
-  for (const pagina of PUBLICAS.filter(p => p !== 'index.html' && !PENDIENTES.includes(p))) {
+  // Las otras cuatro públicas: su <style> se fue a publico.css, que va después de main.css
+  for (const pagina of PUBLICAS.filter(p => p !== 'index.html')) {
     it(`${pagina}: sin <style> propio, main.css y después publico.css`, () => {
       const html = leer(pagina);
       assert.doesNotMatch(html, /<style/);
       assert.ok(html.indexOf('css/main.css?v=') !== -1 && html.indexOf('css/main.css?v=') < html.indexOf('css/publico.css?v='));
     });
   }
+
+  // Vista previa al compartir un link (spec 2026-10-18-rediseno-publico, 12): metas Open Graph absolutas en las 5 públicas
+  for (const pagina of ['index.html', 'datasets.html', 'dataset.html', 'calendario.html', 'contacto.html']) {
+    it(`${pagina}: vista previa al compartir`, () => {
+      const html = leer(pagina);
+      for (const meta of ['og:title', 'og:description', 'og:url', 'og:image', 'og:type', 'og:locale', 'twitter:card']) {
+        assert.match(html, new RegExp(`<meta (property|name)="${meta}" content="[^"]+">`), meta);
+      }
+      assert.ok(html.includes('content="https://rpad.mcrmodernizacion.gob.ar/img/compartir.png"'));
+      assert.ok(html.includes('<meta name="theme-color" content="#1A365D">'));
+    });
+  }
+
+  // robots.txt: cerrado para todos (buscadores incluidos), salvo los robots que arman la vista previa, y solo en las públicas
+  it('robots.txt: los buscadores siguen afuera y los robots de vista previa entran a las públicas', () => {
+    const robots = fs.readFileSync(new URL('robots.txt', DIRECTORIO), 'utf8').replace(/\r/g, '');
+    assert.match(robots, /User-agent: \*\nDisallow: \/\s*$/);
+    for (const robot of ['facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'TelegramBot', 'WhatsApp']) assert.ok(robots.includes(`User-agent: ${robot}`), robot);
+    assert.ok(robots.includes('Allow: /img/compartir.png'));
+    assert.doesNotMatch(robots, /Allow: \/admin|Allow: \/api/);
+  });
+
+  // Contacto (spec 2026-10-18-rediseno-publico, 10): solo se restila, contacto.js no cambia
+  it('contacto.html: los campos con su label y sin api.js', () => {
+    const html = leer('contacto.html');
+    for (const id of ['nombre', 'email', 'tipo', 'mensaje']) assert.match(html, new RegExp(`<label for="${id}"`), id);
+    assert.doesNotMatch(html, /js\/api\.js/);
+    assert.ok(html.includes('Belgrano'), 'conserva la dirección postal');
+  });
+
+  it('contacto.html: los ids, las opciones y los límites que usa contacto.js', () => {
+    const html = leer('contacto.html');
+    for (const id of ['contacto-form', 'nombre', 'email', 'tipo', 'mensaje', 'char-count', 'btn-enviar', 'message-container']) {
+      assert.equal(html.match(new RegExp(`id="${id}"`, 'g'))?.length, 1, id);
+    }
+    const opciones = [...html.matchAll(/<option value="([^"]*)">/g)].map(m => m[1]);
+    assert.deepEqual(opciones, ['', 'consulta-general', 'solicitud-datos', 'reporte-error', 'sugerencia-dataset', 'otro']);
+    assert.match(html, /<input type="text" id="nombre"[^>]* maxlength="100"/);
+    assert.match(html, /<textarea id="mensaje"[^>]* maxlength="2000"/);
+    // contacto.js marca el contador (warning y danger) en el padre de #char-count
+    assert.match(html, /class="char-counter"[^>]*><span id="char-count">0<\/span>/);
+  });
 
   it('login.html: el logo es logo-2025-blanco.png', () => {
     assert.ok(leer('login.html').includes('src="img/logo-2025-blanco.png"'));
