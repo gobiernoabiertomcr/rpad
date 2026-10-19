@@ -728,16 +728,46 @@ describe('dashboard.js: el índice y el mosaico', () => {
   const tablero = cargar('dashboard.js');
   const STATS = { total: 80, actualizados: 52, proximos: 1, atrasados: 3, sinRespuesta: 10, eventuales: 14, sinFecha: 0, tasaActualizacion: 80 };
 
-  it('la frase usa la tasa del servidor y la misma base: el total sin los eventuales', () => {
-    const { tasa, frase, aclaracion } = plano(tablero.textoIndice(STATS));
-    assert.equal(tasa, '80%');
-    assert.equal(frase, 'El 80% de los conjuntos de datos con fecha de actualización están al día: 53 de 66.');
-    assert.equal(aclaracion, 'El registro sigue 80 conjuntos. Los otros 14 son eventuales: se publican cuando hay novedades y no tienen vencimiento.');
+  // Primero el registro y los eventuales (la aclaración, que va arriba) y después el índice (la frase, en grande), con la tasa del
+  // servidor y la misma base: el total sin los eventuales (spec 2026-10-19-indice-portada)
+  it('la aclaración y la frase, con los números de producción del 19/10/2026', () => {
+    const { tasa, frase, aclaracion } = plano(tablero.textoIndice({ ...STATS, total: 81, proximos: 2, tasaActualizacion: 81 }));
+    assert.equal(tasa, '81%');
+    assert.equal(aclaracion, 'El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento.');
+    assert.equal(frase, 'Los otros 67 tienen fecha de vencimiento, y el 81% está al día: 54 de 67.');
   });
 
-  it('nombra los sin fecha solo si hay, y el singular de un eventual', () => {
-    assert.match(plano(tablero.textoIndice({ ...STATS, total: 82, sinFecha: 2 })).aclaracion, / 2 todavía no tienen fecha de próxima actualización\.$/);
-    assert.match(plano(tablero.textoIndice({ ...STATS, total: 67, eventuales: 1 })).aclaracion, /El otro es eventual: se publica cuando hay novedades y no tiene vencimiento\.$/);
+  it('la frase usa la tasa del servidor, no la recalcula', () => {
+    assert.equal(plano(tablero.textoIndice(STATS)).frase, 'Los otros 66 tienen fecha de vencimiento, y el 80% está al día: 53 de 66.');
+  });
+
+  it('un solo eventual, en singular; sin eventuales, "Todos"', () => {
+    const uno = plano(tablero.textoIndice({ ...STATS, total: 67, eventuales: 1 }));
+    assert.equal(uno.aclaracion, 'El registro sigue 67 conjuntos de datos. De ellos, 1 tiene frecuencia de actualización eventual: se publica cuando hay novedades y no tiene vencimiento.');
+    assert.equal(uno.frase, 'Los otros 66 tienen fecha de vencimiento, y el 80% está al día: 53 de 66.');
+    const ninguno = plano(tablero.textoIndice({ ...STATS, total: 66, eventuales: 0 }));
+    assert.equal(ninguno.aclaracion, 'El registro sigue 66 conjuntos de datos.');
+    assert.equal(ninguno.frase, 'Todos tienen fecha de vencimiento, y el 80% está al día: 53 de 66.');
+  });
+
+  it('los sin fecha cuentan en la base sin tener fecha: la frase lo dice, y la aclaración ya no', () => {
+    const dos = plano(tablero.textoIndice({ ...STATS, total: 82, sinFecha: 2 }));
+    assert.equal(dos.frase, 'Los otros 68 deberían tener fecha de vencimiento (2 todavía no la tienen), y el 80% está al día: 53 de 68.');
+    assert.doesNotMatch(dos.aclaracion, /todavía/);
+    assert.equal(plano(tablero.textoIndice({ ...STATS, total: 81, sinFecha: 1 })).frase,
+      'Los otros 67 deberían tener fecha de vencimiento (1 todavía no la tiene), y el 80% está al día: 53 de 67.');
+    assert.equal(plano(tablero.textoIndice({ ...STATS, total: 66, eventuales: 0, sinFecha: 1 })).frase,
+      'Todos deberían tener fecha de vencimiento (1 todavía no la tiene), y el 80% está al día: 53 de 66.');
+  });
+
+  it('con un solo conjunto con vencimiento, en singular; sin ninguno, no hay frase', () => {
+    const base = { total: 15, actualizados: 1, proximos: 0, eventuales: 14, sinFecha: 0, tasaActualizacion: 100 };
+    assert.equal(plano(tablero.textoIndice(base)).frase, 'El otro tiene fecha de vencimiento, y el 100% está al día: 1 de 1.');
+    assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0 })).aclaracion, 'El registro sigue 1 conjunto de datos.');
+    assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0 })).frase, 'Tiene fecha de vencimiento, y el 100% está al día: 1 de 1.');
+    assert.equal(plano(tablero.textoIndice({ ...base, total: 1, eventuales: 0, actualizados: 0, sinFecha: 1, tasaActualizacion: 0 })).frase,
+      'Debería tener fecha de vencimiento (1 todavía no la tiene), y el 0% está al día: 0 de 1.');
+    assert.equal(plano(tablero.textoIndice({ ...base, total: 14, actualizados: 0, tasaActualizacion: 0 })).frase, '');
   });
 
   it('la situación dice el día de la semana sin depender de la zona del navegador', () => {
@@ -745,19 +775,50 @@ describe('dashboard.js: el índice y el mosaico', () => {
     assert.equal(tablero.textoSituacion('2027-01-01'), 'Situación al viernes 1 de enero de 2027.');
   });
 
-  it('agrupa por estado del servidor: vencidos juntos, sin fecha solo si hay, cada grupo por título', () => {
-    const lista = [
-      dataset({ id: 1, titulo: 'Zeta', estado: 'actualizado' }), dataset({ id: 2, titulo: 'Alfa', estado: 'actualizado' }),
-      dataset({ id: 3, estado: 'proximo' }), dataset({ id: 4, estado: 'atrasado' }), dataset({ id: 5, estado: 'sin-respuesta' }),
-      eventual({ id: 6 }), dataset({ id: 7, area_nombre: null, descripcion: null, datos_al: null })
-    ];
-    const grupos = plano(tablero.gruposDelMosaico(lista));
-    assert.deepEqual(grupos.map(g => g.etiqueta), ['Actualizados', 'Próximos a vencer', 'Vencidos', 'Eventuales']);
-    assert.deepEqual(grupos[0].datasets.map(d => d.id), [2, 7, 1]);
-    assert.deepEqual(grupos[2].datasets.map(d => d.id).sort(), [4, 5]);
-    assert.equal(grupos.reduce((s, g) => s + g.datasets.length, 0), lista.length);
-    const conSinFecha = plano(tablero.gruposDelMosaico([...lista, dataset({ id: 8, estado: 'sin-fecha', proxima_actualizacion: null })]));
-    assert.equal(conSinFecha.at(-1).etiqueta, 'Sin fecha');
+  // Al día (actualizados y próximos) y Vencidos (atrasados y sin respuesta), como en la frase; dentro de cada grupo, por
+  // categoría (en el orden de la leyenda) y después por título
+  const LISTA = [
+    dataset({ id: 1, titulo: 'Zeta', estado: 'actualizado' }), dataset({ id: 2, titulo: 'Alfa', estado: 'actualizado' }),
+    dataset({ id: 3, titulo: 'Abedul', estado: 'proximo' }), dataset({ id: 4, titulo: 'Zona atrasada', estado: 'atrasado' }),
+    dataset({ id: 5, titulo: 'Alfa sin respuesta', estado: 'sin-respuesta' }),
+    eventual({ id: 6 }), dataset({ id: 7, area_nombre: null, descripcion: null, datos_al: null })
+  ];
+
+  it('agrupa por estado del servidor: al día y vencidos juntos, sin fecha solo si hay', () => {
+    const grupos = plano(tablero.gruposDelMosaico(LISTA));
+    assert.deepEqual(grupos.map(g => [g.etiqueta, g.estados]),
+      [['Al día', ['actualizado', 'proximo']], ['Vencidos', ['atrasado', 'sin-respuesta']], ['Eventuales', ['eventual']]]);
+    assert.equal(grupos.reduce((s, g) => s + g.datasets.length, 0), LISTA.length);
+    const conSinFecha = plano(tablero.gruposDelMosaico([...LISTA, dataset({ id: 8, estado: 'sin-fecha', proxima_actualizacion: null })]));
+    assert.deepEqual(conSinFecha.at(-1).etiqueta, 'Sin fecha');
+  });
+
+  it('dentro de cada grupo, primero una categoría y después la otra, cada una por título', () => {
+    const grupos = plano(tablero.gruposDelMosaico(LISTA));
+    // Los actualizados (Alfa, Gasto Público, Zeta) y al final el próximo, aunque su título vaya primero
+    assert.deepEqual(grupos[0].datasets.map(d => d.id), [2, 7, 1, 3]);
+    // El atrasado y después el sin respuesta, aunque su título vaya primero
+    assert.deepEqual(grupos[1].datasets.map(d => d.id), [4, 5]);
+  });
+
+  it('Al día y Vencidos llevan la leyenda de sus categorías con la cantidad de cada una', () => {
+    const html = tablero.htmlDelMosaico(tablero.gruposDelMosaico(LISTA));
+    assert.ok(html.includes('<div class="mosaico-cabeza"><h3>Al día</h3><span class="mosaico-cuenta">4</span></div>'), html);
+    assert.ok(html.includes('<div class="leyenda-vencidos">'
+      + '<span><span class="tile c-actualizado" aria-hidden="true"></span>Actualizados <strong>3</strong></span>'
+      + '<span><span class="tile c-proximo" aria-hidden="true"></span>Próximos a vencer <strong>1</strong></span></div>'), html);
+    assert.ok(html.includes('<div class="leyenda-vencidos">'
+      + '<span><span class="tile c-atrasado" aria-hidden="true"></span>Atrasados (gestión interna) <strong>1</strong></span>'
+      + '<span><span class="tile c-sin-respuesta" aria-hidden="true"></span>Sin respuesta del área (gestión externa) <strong>1</strong></span></div>'), html);
+    // Eventuales y Sin fecha tienen una sola categoría: sin leyenda
+    assert.equal(html.split('class="leyenda-vencidos"').length - 1, 2);
+  });
+
+  it('la leyenda sale aunque una categoría tenga 0', () => {
+    const html = tablero.htmlDelMosaico(tablero.gruposDelMosaico([eventual()]));
+    assert.ok(html.includes('Actualizados <strong>0</strong>'));
+    assert.ok(html.includes('Próximos a vencer <strong>0</strong>'));
+    assert.ok(html.includes('Atrasados (gestión interna) <strong>0</strong>'));
   });
 
   it('cada cuadrito es un link al detalle con su nombre y su estado, escapados', () => {
@@ -894,6 +955,8 @@ describe('dashboard.js: los 12 meses y las listas', () => {
       assert.match(html, new RegExp(`id="${id}"`), id);
     }
     assert.match(html, /<p class="mosaico-pie" id="mosaico-pie" aria-live="polite">/);
+    // Primero el registro y los eventuales (la aclaración) y después el índice (la frase, en grande)
+    assert.ok(html.indexOf('id="indice-aclaracion"') < html.indexOf('id="indice-frase"'), 'la aclaración va antes que la frase');
     assert.match(html, /<a class="enlace hidden" id="ver-vencidos" href="datasets\.html\?estado=vencidos">/);
     assert.match(html, /<a class="btn-tinta" href="datasets\.html">Ver los datasets<\/a>/);
     assert.match(html, /<a class="btn-borde" href="calendario\.html">Ver el calendario<\/a>/);

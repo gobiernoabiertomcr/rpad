@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockups: Índice de actualización</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../../../public/css/main.css">
+<link rel="stylesheet" href="../../../../public/css/publico.css">
+<style>
+  /* Solo para la página de mockups */
+  .main-content.main-publico { margin-top: 0; }
+  .mk-cabeza { padding: 28px 0 8px; }
+  .mk-cabeza h1 { font-size: 1.6rem; color: var(--tinta); }
+  .mk-cabeza p { color: var(--suave); max-width: 70ch; }
+  .mk-rotulo { display: inline-block; margin: 36px 0 10px; padding: 4px 14px; border-radius: 999px;
+    background: var(--tinta); color: #fff; font-weight: 600; font-size: 0.9rem; }
+  .mk-rotulo.recomendado { background: #1f7a52; }
+  .mk-nota { color: var(--suave); font-size: 0.92rem; max-width: 80ch; margin: 0 0 12px; }
+  .mk-par { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding: 28px 0 36px; }
+  .mk-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; padding: 28px 0 36px; }
+  .mk-par h3, .mk-trio h3 { font-size: 1rem; color: var(--tinta); margin-bottom: 10px; }
+  .mk-trio .indice h2 { font-size: 1.9rem; max-width: 16ch; color: var(--tinta); margin-bottom: 12px; }
+  .indice-aclaracion.primero { margin-top: 22px; }
+  .indice-aclaracion.primero + .indice-frase { margin-top: 14px; }
+  .mk-cambio { background: #fff7d6; border-radius: 4px; padding: 0 2px; }
+  @media (max-width: 980px) { .mk-par, .mk-trio { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main class="main-content main-publico">
+
+  <div class="publico-contenedor mk-cabeza">
+    <h1>Mockups del Índice de actualización</h1>
+    <p>Con los números de producción del lunes 19/10/2026: 81 conjuntos, 52 actualizados, 2 próximos a vencer, 3 atrasados, 10 sin respuesta y 14 eventuales. Los estilos son los reales del sitio (main.css y publico.css).</p>
+  </div>
+
+  <!-- 0. Hoy -->
+  <div class="publico-contenedor"><span class="mk-rotulo">0. Así está hoy</span></div>
+  <div class="banda">
+    <div class="publico-contenedor banda-cuerpo portada-banda">
+      <div class="indice">
+        <h1>Índice de actualización</h1>
+        <p class="indice-frase">El <strong class="indice-cifra">81%</strong> de los conjuntos de datos con fecha de actualización están al día: 54 de 67.</p>
+        <p class="indice-aclaracion">El registro sigue 81 conjuntos. Los otros 14 son eventuales: se publican cuando hay novedades y no tienen vencimiento.</p>
+        <div class="acciones"><a class="btn-tinta" href="#">Ver los datasets</a><a class="btn-borde" href="#">Ver el calendario</a></div>
+        <p class="indice-situacion">Situación al lunes 19 de octubre de 2026.</p>
+      </div>
+      <section class="mosaico" data-mosaico="hoy"></section>
+    </div>
+    <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
+  </div>
+
+  <!-- 1. Propuesta completa -->
+  <div class="publico-contenedor">
+    <span class="mk-rotulo recomendado">1. Propuesta completa (mi recomendación)</span>
+    <p class="mk-nota">El grupo se llama "Al día", igual que en el texto; la leyenda dice cada categoría con su cantidad, y dentro de cada grupo los cuadritos van ordenados por categoría (primero los verdes y después los amarillos; primero los rojos y después los violetas), así se ve de un vistazo cuántos hay de cada uno. El texto sigue tu orden: primero el registro, después los eventuales y al final el índice.</p>
+  </div>
+  <div class="banda">
+    <div class="publico-contenedor banda-cuerpo portada-banda">
+      <div class="indice">
+        <h1>Índice de actualización</h1>
+        <p class="indice-aclaracion primero">El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento.</p>
+        <p class="indice-frase">Los otros 67 tienen fecha de vencimiento, y el <strong class="indice-cifra">81%</strong> está al día: 54 de 67.</p>
+        <div class="acciones"><a class="btn-tinta" href="#">Ver los datasets</a><a class="btn-borde" href="#">Ver el calendario</a></div>
+        <p class="indice-situacion">Situación al lunes 19 de octubre de 2026.</p>
+      </div>
+      <section class="mosaico" data-mosaico="al-dia"></section>
+    </div>
+    <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
+  </div>
+
+  <!-- 2. El cuadro: el nombre del grupo -->
+  <div class="publico-contenedor">
+    <span class="mk-rotulo">2. El cuadro: ¿cómo se llama el grupo de arriba?</span>
+    <p class="mk-nota">En el resto del sitio "Actualizados" son solo los 52 (el botón del listado de Datasets dice "Actualizados 52" y los reportes PDF también los cuentan así). Con "Actualizados 54" en la portada, el mismo nombre daría dos números distintos, y además se repetiría arriba y en la leyenda. "Al día" es la palabra del texto y del reporte de Cumplimiento.</p>
+  </div>
+  <div class="banda">
+    <div class="publico-contenedor mk-par">
+      <div><h3>A. "Al día 54" (recomendado)</h3><section class="mosaico" data-mosaico="al-dia"></section></div>
+      <div><h3>B. "Actualizados 54" (como lo escribiste)</h3><section class="mosaico" data-mosaico="actualizados"></section></div>
+    </div>
+    <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
+  </div>
+
+  <!-- 3. El texto -->
+  <div class="publico-contenedor">
+    <span class="mk-rotulo">3. El texto: tres redacciones</span>
+    <p class="mk-nota">Resaltado en amarillo, lo que cambia respecto de tu texto. El número grande y en negrita es siempre el porcentaje.</p>
+  </div>
+  <div class="banda">
+    <div class="publico-contenedor mk-trio">
+      <div class="indice">
+        <h3>Texto 1. El tuyo, tal cual</h3>
+        <h2>Índice de actualización</h2>
+        <p class="indice-aclaracion primero">El registro sigue a 81 conjuntos de datos. 14 tienen frecuencia de actualización eventual, se publican cuando hay novedades y no tienen vencimiento.</p>
+        <p class="indice-frase">Mientras que el <strong class="indice-cifra">81%</strong> de los datasets que poseen fecha de vencimiento están al día: 54 de 67.</p>
+      </div>
+      <div class="indice">
+        <h3>Texto 2. Tu orden, pulido (recomendado)</h3>
+        <h2>Índice de actualización</h2>
+        <p class="indice-aclaracion primero">El registro sigue 81 conjuntos de datos. <span class="mk-cambio">De ellos,</span> 14 tienen frecuencia de actualización eventual<span class="mk-cambio">:</span> se publican cuando hay novedades y no tienen vencimiento.</p>
+        <p class="indice-frase"><span class="mk-cambio">Los otros 67 tienen fecha de vencimiento, y</span> el <strong class="indice-cifra">81%</strong> <span class="mk-cambio">está</span> al día: 54 de 67.</p>
+      </div>
+      <div class="indice">
+        <h3>Texto 3. El porcentaje primero</h3>
+        <h2>Índice de actualización</h2>
+        <p class="indice-frase">El <strong class="indice-cifra">81%</strong> de los conjuntos de datos <span class="mk-cambio">con fecha de vencimiento</span> está al día: 54 de 67.</p>
+        <p class="indice-aclaracion">El registro sigue 81 conjuntos de datos: <span class="mk-cambio">esos 67 y otros 14</span> con frecuencia de actualización eventual, que se publican cuando hay novedades y no tienen vencimiento.</p>
+      </div>
+    </div>
+    <svg class="ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 18 C 100 6, 200 6, 300 16 S 500 28, 600 16 S 800 4, 900 14 S 1100 26, 1200 14 V28 H0 Z" fill="currentColor"/></svg>
+  </div>
+
+  <div style="height:60px"></div>
+</main>
+
+<script>
+  // Mockup estático: arma los cuadritos con las cantidades de producción del 19/10/2026
+  const cuadros = partes => partes.map(([clase, n]) =>
+    Array.from({ length: n }, () => `<a class="cuadro c-${clase}" href="#" aria-label="${clase}"></a>`).join('')).join('');
+  const leyenda = items => '<div class="leyenda-vencidos">' + items.map(([clase, texto, n]) =>
+    `<span><span class="tile c-${clase}" aria-hidden="true"></span>${texto}${n === undefined ? '' : ` <strong>${n}</strong>`}</span>`).join('') + '</div>';
+  const grupo = (titulo, cuenta, partes, items) =>
+    `<div class="mosaico-grupo"><div class="mosaico-cabeza"><h3>${titulo}</h3><span class="mosaico-cuenta">${cuenta}</span></div>`
+    + `<div class="cuadros">${cuadros(partes)}</div>${items ? leyenda(items) : ''}</div>`;
+  const pie = '<p class="mosaico-pie"><strong>Pauta Publicitaria</strong><br>Subsecretaría de Comunicación. Actualizado.</p>';
+
+  const vencidosAgrupados = grupo('Vencidos', 13, [['atrasado', 3], ['sin-respuesta', 10]],
+    [['atrasado', 'Atrasados (gestión interna)', 3], ['sin-respuesta', 'Sin respuesta del área (gestión externa)', 10]]);
+  const eventuales = grupo('Eventuales', 14, [['eventual', 14]]);
+  const alDia = titulo => grupo(titulo, 54, [['actualizado', 52], ['proximo', 2]],
+    [['actualizado', 'Actualizados', 52], ['proximo', 'Próximos a vencer', 2]]);
+
+  const mosaicos = {
+    hoy: grupo('Actualizados', 52, [['actualizado', 52]])
+      + grupo('Próximos a vencer', 2, [['proximo', 2]])
+      + grupo('Vencidos', 13, [['sin-respuesta', 5], ['atrasado', 2], ['sin-respuesta', 2], ['atrasado', 1], ['sin-respuesta', 3]],
+        [['atrasado', 'Atrasado (gestión interna)'], ['sin-respuesta', 'Sin respuesta del área (gestión externa)']])
+      + eventuales + pie,
+    'al-dia': alDia('Al día') + vencidosAgrupados + eventuales + pie,
+    actualizados: alDia('Actualizados') + vencidosAgrupados + eventuales + pie,
+  };
+  document.querySelectorAll('[data-mosaico]').forEach(s => { s.innerHTML = mosaicos[s.dataset.mosaico]; });
+</script>
+</body>
+</html>
