@@ -1,6 +1,6 @@
 // Sitio público (spec 2026-10-17-fechas-datasets, sección 11), ejecutado en Node: lo puro de dataset-detail.js (las tres
-// fechas del detalle), datasets.js (la tarjeta, el filtro, ?mes= y el CSV), dashboard.js (el gráfico de 12 meses, la dona y
-// las alertas), calendario.js (el color de cada día) y gestion.js (la tasa y el ranking de Gestión). Las páginas usan el
+// fechas del detalle), datasets.js (la tarjeta, el filtro, ?mes= y el CSV), dashboard.js (la portada: el índice, el mosaico, los
+// 12 meses y las listas), calendario.js (el almanaque, los filtros y el iCal) y gestion.js (la tasa y el ranking de Gestión). Las páginas usan el
 // estado que manda el servidor (d.estado) y leen las fechas por su texto, nunca con new Date.
 // Cada script, al cargarse, solo declara y registra su DOMContentLoaded: se carga en un vm con un document que no hace nada,
 // junto con el api.js de verdad (Utils), como perfil.js y correos.js.
@@ -15,7 +15,9 @@ const cargar = (script) => {
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
     console,
-    document: { addEventListener() {}, getElementById: () => null }
+    document: { addEventListener() {}, getElementById: () => null },
+    // No es de ECMAScript (es del navegador y de Node): el vm no lo trae. datasets.js lo usa para leer y escribir la URL
+    URLSearchParams
   });
   vm.runInContext(`${leer('js/api.js')}\n;globalThis.Utils = Utils;`, contexto);
   vm.runInContext(leer(`js/${script}`), contexto);
@@ -132,6 +134,150 @@ describe('dataset-detail.js: las tres fechas del detalle', () => {
     assert.match(html, /id="dataset-fechas"/);
     for (const rotulo of ['Datos al', 'Cargado en el portal', 'Próxima actualización prevista']) assert.ok(html.includes(rotulo), rotulo);
   });
+
+  it('los temas escapados, y nada si no hay', () => {
+    assert.equal(detalle.htmlDeTemas(dataset({ tema_secundario_nombre: '<b>S</b>' })), '<span class="tema">Economía</span><span class="tema">&lt;b&gt;S&lt;/b&gt;</span>');
+    assert.equal(detalle.htmlDeTemas(dataset({ tema_principal_nombre: null })), '');
+  });
+
+  it('la información técnica: frecuencia, formatos y tipo de gestión, con raya si falta', () => {
+    assert.deepEqual(plano(detalle.filasTecnicas(dataset())), [
+      { rotulo: 'Frecuencia', valor: 'Cada medio año' }, { rotulo: 'Formatos', valor: 'CSV, XLSX' }, { rotulo: 'Tipo de gestión', valor: 'Externa (otra área)' }
+    ]);
+    assert.equal(plano(detalle.filasTecnicas(dataset({ frecuencia_nombre: null, formatos: '' })))[1].valor, '-');
+  });
+
+  it('dataset.html: el área tiene su ícono y su texto aparte, y hay dónde avisar un error', () => {
+    const html = leer('dataset.html');
+    assert.match(html, /id="dataset-area-text"/);
+    assert.match(html, /id="dataset-error"/);
+    assert.doesNotMatch(leer('js/dataset-detail.js'), /getElementById\('dataset-area'\)\.textContent/);
+  });
+
+  it('dataset.html: los ids de siempre una sola vez, el aviso de error, "Ver todos los datasets" y el link al portal en otra pestaña', () => {
+    const html = leer('dataset.html');
+    for (const id of ['loading', 'dataset-content', 'not-found', 'breadcrumb-title', 'dataset-titulo', 'dataset-area', 'dataset-area-text',
+      'dataset-estado', 'dataset-temas', 'dataset-descripcion', 'que-se-solicita-card', 'dataset-que-se-solicita', 'observaciones-card',
+      'dataset-observaciones', 'url-card', 'dataset-url', 'dataset-fechas', 'info-frecuencia', 'info-formatos', 'info-tipo-gestion', 'dataset-error']) {
+      assert.equal(html.match(new RegExp(`id="${id}"`, 'g'))?.length, 1, id);
+    }
+    assert.doesNotMatch(html, /<style|class="spinner"/);
+    // El error, con su h1 (como "no encontrado") y el aviso debajo
+    assert.match(html, /<div class="detalle-cabeza hidden" id="dataset-error" role="alert">\s*<h1>No se pudo cargar el conjunto de datos<\/h1>\s*<p class="aviso-error detalle-aviso">Probá de nuevo en unos minutos\.<\/p>\s*<\/div>/);
+    assert.match(html, /<div class="detalle-cabeza hidden" id="not-found">\s*<h1>Conjunto de datos no encontrado<\/h1>/);
+    // La última miga es la página actual
+    assert.match(html, /<li><span id="breadcrumb-title" aria-current="page">Conjunto de datos<\/span><\/li>\s*<\/ol>/);
+    assert.match(html, /<a [^>]*href="datasets\.html"[^>]*>Ver todos los datasets<\/a>/);
+    const portal = html.match(/<a [^>]*id="dataset-url"[^>]*>/)?.[0] ?? '';
+    assert.match(portal, /target="_blank"/);
+    assert.match(portal, /rel="noopener"/);
+    assert.match(html, /Ver en el Portal de Datos Abiertos/);
+  });
+});
+
+// La carga del detalle (spec 2026-10-18-rediseno-publico, 8): con un DOM mínimo (cada id es un elemento que arranca oculto, salvo
+// #loading, como en dataset.html), un API.pedirJson falso y el id de la URL
+describe('dataset-detail.js: la carga del detalle', () => {
+  const preparar = ({ id = '20', respuesta, error } = {}) => {
+    const detalle = cargar('dataset-detail.js');
+    const elementos = {};
+    const pedidos = [];
+    detalle.document.getElementById = (clave) => {
+      if (!elementos[clave]) {
+        const clases = new Set(clave === 'loading' ? [] : ['hidden']);
+        elementos[clave] = {
+          textContent: '', innerHTML: '', className: '', href: '',
+          classList: {
+            add: (c) => clases.add(c),
+            remove: (c) => clases.delete(c),
+            contains: (c) => clases.has(c),
+            toggle: (c, poner = !clases.has(c)) => (poner ? clases.add(c) : clases.delete(c))
+          }
+        };
+      }
+      return elementos[clave];
+    };
+    detalle.console = { error() {} };
+    detalle.Utils.getUrlParams = () => (id === null ? {} : { id });
+    vm.runInContext('API', detalle).pedirJson = async (metodo, ruta) => {
+      pedidos.push(`${metodo} ${ruta}`);
+      if (error) throw error;
+      return respuesta;
+    };
+    const el = (clave) => detalle.document.getElementById(clave);
+    const visible = (clave) => !el(clave).classList.contains('hidden');
+    return { detalle, el, visible, pedidos };
+  };
+  const conEstado = (status) => Object.assign(new Error(`Error ${status}`), { status });
+
+  it('pide el dataset por su id y lo dibuja: el área va en su texto (el ícono queda), la insignia larga, los temas y lo técnico', async () => {
+    const { detalle, el, visible, pedidos } = preparar({
+      respuesta: { success: true, data: dataset({ estado: 'sin-respuesta', observaciones: 'Uno\nDos', url_dataset: ' https://datos.comodoro.gov.ar/dataset/gasto ' }) }
+    });
+    await detalle.loadDataset();
+    assert.deepEqual(pedidos, ['GET /datasets/20']);
+    assert.ok(!visible('loading') && visible('dataset-content') && !visible('not-found') && !visible('dataset-error'));
+    assert.equal(el('dataset-area-text').textContent, 'Secretaría de Hacienda');
+    assert.equal(el('dataset-area').textContent, '');
+    assert.equal(el('dataset-titulo').textContent, 'Gasto Público');
+    assert.equal(el('breadcrumb-title').textContent, 'Gasto Público');
+    assert.equal(el('dataset-estado').textContent, 'Sin respuesta del área responsable');
+    assert.equal(el('dataset-estado').className, 'badge badge-sin-respuesta');
+    assert.equal(el('dataset-temas').innerHTML, '<span class="tema">Economía</span>');
+    assert.equal(el('info-frecuencia').textContent, 'Cada medio año');
+    assert.equal(el('info-formatos').textContent, 'CSV, XLSX');
+    assert.equal(el('info-tipo-gestion').textContent, 'Externa (otra área)');
+    assert.equal(el('dataset-observaciones').textContent, 'Uno\nDos');
+    assert.ok(visible('observaciones-card') && !visible('que-se-solicita-card'));
+    assert.ok(visible('url-card'));
+    assert.equal(el('dataset-url').href, 'https://datos.comodoro.gov.ar/dataset/gasto');
+    assert.match(el('dataset-fechas').innerHTML, /Cargado en el portal/);
+  });
+
+  it('una URL que no es http/https no aparece', async () => {
+    const { detalle, el, visible } = preparar({ respuesta: { success: true, data: dataset({ url_dataset: 'javascript:alert(1)' }) } });
+    await detalle.loadDataset();
+    assert.ok(!visible('url-card'));
+    assert.equal(el('dataset-url').href, '');
+  });
+
+  it('sin id, o con un 404, dice que no se encontró (no el error)', async () => {
+    for (const caso of [{ id: null }, { id: '' }, { error: conEstado(404) }]) {
+      const { detalle, visible, pedidos } = preparar(caso);
+      await detalle.loadDataset();
+      assert.ok(visible('not-found') && !visible('loading') && !visible('dataset-content') && !visible('dataset-error'), JSON.stringify(caso));
+      if (!caso.error) assert.deepEqual(pedidos, []);
+    }
+  });
+
+  it('?id=estadisticas: el id va codificado y, como la respuesta no es un dataset, no se encontró', async () => {
+    const { detalle, visible, pedidos } = preparar({ id: 'estadisticas', respuesta: { success: true, data: { total: 80, actualizados: 52 } } });
+    await detalle.loadDataset();
+    assert.deepEqual(pedidos, ['GET /datasets/estadisticas']);
+    assert.ok(visible('not-found') && !visible('dataset-content'));
+    const otro = preparar({ id: '1/../usuarios', error: conEstado(404) });
+    await otro.detalle.loadDataset();
+    assert.deepEqual(otro.pedidos, ['GET /datasets/1%2F..%2Fusuarios']);
+  });
+
+  it('otro error (500, sin conexión): el aviso de error, no "no encontrado"', async () => {
+    for (const error of [conEstado(500), new TypeError('Failed to fetch')]) {
+      const { detalle, visible } = preparar({ error });
+      await detalle.loadDataset();
+      assert.ok(visible('dataset-error') && !visible('not-found') && !visible('loading') && !visible('dataset-content'), error.message);
+    }
+  });
+
+  it('si el dibujo se rompe con un dato raro: el aviso de error, no "Cargando…" para siempre ni el conjunto a medias', async () => {
+    const { detalle, el, visible } = preparar({ respuesta: { success: true, data: dataset() } });
+    // Se rompe al final del dibujo, con el título, las migas y la banda ya puestos
+    detalle.filasTecnicas = () => { throw new TypeError('dato raro'); };
+    await detalle.loadDataset();
+    assert.ok(visible('dataset-error'), 'el aviso de error');
+    for (const id of ['loading', 'dataset-cabeza', 'url-card', 'dataset-content', 'not-found']) assert.ok(!visible(id), id);
+    assert.equal(detalle.document.title, 'No se pudo cargar el conjunto de datos - RPAD');
+    assert.equal(el('breadcrumb-title').textContent, 'Conjunto de datos');
+  });
 });
 
 describe('datasets.js: la tarjeta del listado', () => {
@@ -241,11 +387,166 @@ describe('datasets.js: filtros y ?mes=', () => {
     assert.equal(listado.textoFiltroMes('2026-09'), 'Vencen en septiembre de 2026');
   });
 
-  it('datasets.html tiene el aviso del filtro por mes y las opciones Eventual y Sin fecha', () => {
+  it('datasets.html tiene el aviso del filtro por mes y los botones de estado, sin el select viejo', () => {
     const html = leer('datasets.html');
     assert.match(html, /id="filtro-mes"/);
-    assert.match(html, /<option value="eventual">Eventual<\/option>/);
-    assert.match(html, /<option value="sin-fecha">Sin fecha<\/option>/);
+    assert.match(html, /id="estados"/);
+    assert.doesNotMatch(html, /id="filter-estado"/);
+    for (const id of ['search', 'filter-tema', 'filter-frecuencia', 'filter-orden']) assert.match(html, new RegExp(`<label for="${id}"`), id);
+  });
+});
+
+describe('datasets.js: estados, orden, vista y URL', () => {
+  const listado = cargar('datasets.js');
+  const LISTA = [
+    dataset({ id: 1, titulo: 'Beta', area_nombre: 'Zona', proxima_actualizacion: '2027-03-31T03:00:00.000Z' }),
+    dataset({ id: 2, titulo: 'alfa', area_nombre: null, proxima_actualizacion: '2026-11-30T03:00:00.000Z', estado: 'proximo', dias_para_vencer: 43 }),
+    dataset({ id: 3, titulo: 'Gamma', area_nombre: 'Archivo', proxima_actualizacion: '2025-01-31T03:00:00.000Z', estado: 'atrasado', dias_para_vencer: -625 }),
+    eventual({ id: 4, titulo: 'Delta', proxima_actualizacion: '2026-01-31T03:00:00.000Z' }),
+    dataset({ id: 5, titulo: 'Épsilon', proxima_actualizacion: null, estado: 'sin-fecha', dias_para_vencer: null })
+  ];
+
+  it('ordena por nombre, por próximo vencimiento (sin fecha al final) y por área (sin área al final)', () => {
+    assert.deepEqual(plano(listado.ordenarDatasets(LISTA, 'nombre')).map(d => d.id), [2, 1, 4, 5, 3]);
+    assert.deepEqual(plano(listado.ordenarDatasets(LISTA, 'proxima')).map(d => d.id), [3, 2, 1, 4, 5]);
+    assert.deepEqual(plano(listado.ordenarDatasets(LISTA, 'area')).map(d => d.id), [3, 4, 5, 1, 2]);
+  });
+
+  it('cuenta por estado del servidor, con vencidos = atrasados + sin respuesta', () => {
+    const c = plano(listado.cantidadesPorEstado(LISTA));
+    assert.equal(c.todos, 5); assert.equal(c.actualizado, 1); assert.equal(c.proximo, 1);
+    assert.equal(c.vencidos, 1); assert.equal(c.atrasado, 1); assert.equal(c['sin-respuesta'], 0);
+    assert.equal(c.eventual, 1); assert.equal(c['sin-fecha'], 1);
+  });
+
+  it('los botones: Vencidos presionado con atrasado y la segunda fila; Sin fecha solo si hay o si está elegido', () => {
+    const c = listado.cantidadesPorEstado(LISTA);
+    const html = listado.htmlDeEstados(c, 'atrasado');
+    assert.match(html, /data-estado="vencidos" aria-pressed="true"/);
+    assert.match(html, /class="sub-estados"/);
+    assert.match(html, /data-estado="atrasado" aria-pressed="true"/);
+    assert.match(html, /data-estado="sin-fecha"/);
+    const sinNinguno = listado.htmlDeEstados({ ...plano(c), 'sin-fecha': 0 }, '');
+    assert.doesNotMatch(sinNinguno, /data-estado="sin-fecha"/);
+    assert.match(listado.htmlDeEstados({ ...plano(c), 'sin-fecha': 0 }, 'sin-fecha'), /data-estado="sin-fecha" aria-pressed="true"/);
+    assert.match(sinNinguno, /data-estado="" aria-pressed="true"/);
+  });
+
+  it('la fila de la lista escapa, lleva al detalle y usa la insignia de siempre', () => {
+    const html = listado.htmlDeFila(dataset({ id: 7, titulo: '<i>x</i>', area_nombre: 'A & B' }));
+    assert.ok(html.includes('href="dataset.html?id=7"'));
+    assert.ok(html.includes('A &amp; B'));
+    assert.doesNotMatch(html, /<i>x<\/i>/);
+    assert.match(html, /<span class="badge badge-success">Actualizado<\/span>/);
+    assert.ok(html.includes('ene 2027'));
+  });
+
+  it('lee y escribe la URL: los parámetros de siempre siguen igual y orden/vista solo si no son los por defecto', () => {
+    const p = plano(listado.leerParametros('?estado=vencidos&mes=2027-01&tema=8&frecuencia=9&busqueda=pauta&orden=area&vista=lista'));
+    assert.deepEqual(p, { temaId: '8', frecId: '9', estado: 'vencidos', busqueda: 'pauta', mes: '2027-01', orden: 'area', vista: 'lista' });
+    assert.deepEqual(plano(listado.leerParametros('?orden=x&vista=y&mes=2027-13')), { temaId: '', frecId: '', estado: '', busqueda: '', mes: null, orden: 'nombre', vista: 'tarjetas' });
+    assert.equal(listado.armarParametros({ temaId: '8', frecId: '', estado: 'vencidos', busqueda: '', mes: '2027-01', orden: 'nombre', vista: 'tarjetas' }), 'tema=8&estado=vencidos&mes=2027-01');
+    assert.equal(listado.armarParametros({ temaId: '', frecId: '', estado: '', busqueda: '', mes: null, orden: 'proxima', vista: 'lista' }), 'orden=proxima&vista=lista');
+  });
+
+  // Los links que ya circulan (la portada, el tablero viejo, los guardados): cada ?estado= de hoy elige su botón
+  it('los valores de ?estado= de siempre, Eventual y Sin fecha incluidos, y un estado que no existe no filtra', () => {
+    for (const estado of ['actualizado', 'proximo', 'vencidos', 'atrasado', 'sin-respuesta', 'eventual', 'sin-fecha']) {
+      assert.equal(plano(listado.leerParametros(`?estado=${estado}`)).estado, estado, estado);
+    }
+    assert.equal(plano(listado.leerParametros('?estado=otro')).estado, '');
+    const html = listado.htmlDeEstados(listado.cantidadesPorEstado(LISTA), 'eventual');
+    assert.match(html, /data-estado="eventual" aria-pressed="true"/);
+    assert.doesNotMatch(html, /class="sub-estados"/);
+    // Cada botón con su cantidad; los de los otros estados, sin presionar
+    assert.match(html, /data-estado="actualizado" aria-pressed="false"><span class="tile c-actualizado" aria-hidden="true"><\/span>Actualizados <span class="estado-n">1<\/span><\/button>/);
+    assert.match(html, /data-estado="" aria-pressed="false">Todos <span class="estado-n">5<\/span>/);
+  });
+
+  it('la búsqueda con espacios y acentos va y vuelve por la URL', () => {
+    const texto = armar => listado.armarParametros({ ...plano(listado.leerParametros('')), busqueda: armar });
+    assert.equal(plano(listado.leerParametros(`?${texto('parque automotor')}`)).busqueda, 'parque automotor');
+    assert.equal(plano(listado.leerParametros(`?${texto('Educación & Salud')}`)).busqueda, 'Educación & Salud');
+  });
+
+  it('las cantidades cuentan lo que dejan los otros filtros (búsqueda, tema, frecuencia y mes), no el estado elegido', () => {
+    const conTema = LISTA.map(d => ({ ...d, tema_principal_id: d.id <= 2 ? 8 : 3 }));
+    const c = plano(listado.cantidadesConFiltros(conTema, { temaId: '8', estado: 'atrasado', busqueda: '' }));
+    assert.equal(c.todos, 2); assert.equal(c.actualizado, 1); assert.equal(c.proximo, 1); assert.equal(c.vencidos, 0);
+    const delMes = plano(listado.cantidadesConFiltros(LISTA, { mes: '2026-11', estado: 'actualizado' }));
+    assert.equal(delMes.todos, 1); assert.equal(delMes.proximo, 1); assert.equal(delMes.actualizado, 0);
+    assert.equal(plano(listado.cantidadesConFiltros(LISTA, { busqueda: 'gamma' })).atrasado, 1);
+  });
+
+  it('el orden no cambia la lista que recibe', () => {
+    const copia = [...LISTA];
+    listado.ordenarDatasets(copia, 'area');
+    assert.deepEqual(copia.map(d => d.id), [1, 2, 3, 4, 5]);
+  });
+
+  it('la tarjeta nueva: el título es el link al detalle y en el pie van los formatos y las dos fechas, sin <b>', () => {
+    const html = listado.htmlDeTarjeta(dataset({ id: 9 }));
+    assert.match(html, /<article class="tarjeta">/);
+    assert.match(html, /<h2 class="tarjeta-titulo"><a href="dataset\.html\?id=9">Gasto Público<\/a><\/h2>/);
+    assert.match(html, /<span class="badge badge-success">Actualizado<\/span>/);
+    assert.match(html, /<li class="formato">CSV<\/li><li class="formato">XLSX<\/li>/);
+    assert.match(html, /<span class="tema">Economía<\/span>/);
+    assert.doesNotMatch(html, /<b>|<i>|<img/);
+  });
+
+  it('la vista de lista: la tabla con sus seis columnas, Tema y Frecuencia marcadas para ocultarse en el celular', () => {
+    const html = listado.htmlDeLista([dataset(), eventual()]);
+    assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map(m => m[1]), ['Conjunto de datos', 'Tema', 'Frecuencia', 'Datos', 'Próxima', 'Estado']);
+    assert.match(html, /<th scope="col" class="t-col-tema">Tema<\/th><th scope="col" class="t-col-frec">Frecuencia<\/th>/);
+    assert.equal(html.split('<tr>').length - 1, 3);
+    // La próxima, sin el prefijo; el eventual dice Eventual
+    const fila = listado.htmlDeFila(eventual({ area_nombre: null, tema_principal_nombre: null }));
+    assert.match(fila, />Eventual<\/td>/);
+    assert.ok(fila.includes('Sin área asignada'));
+    assert.match(listado.htmlDeFila(dataset({ proxima_actualizacion: null, estado: 'sin-fecha' })), />sin fecha<\/td>/);
+    assert.doesNotMatch(listado.htmlDeFila(dataset()), /Próxima: /);
+  });
+
+  it('la paginación dice "Página N de M" con tilde, con Anterior y Siguiente; con una sola página, nada', () => {
+    const html = listado.htmlDePaginacion(80, 1, 24);
+    assert.match(html, /Página 1 de 4/);
+    assert.match(html, /Mostrando 1–24 de 80/);
+    assert.match(html, /data-pagina="-1" disabled>/);
+    assert.match(html, /data-pagina="1">Siguiente/);
+    assert.match(listado.htmlDePaginacion(80, 4, 24), /Mostrando 73–80 de 80[^]*data-pagina="1" disabled>/);
+    assert.equal(listado.htmlDePaginacion(50, 1, 50), '');
+    assert.equal(listado.htmlDePaginacion(0, 1, 24), '');
+    assert.doesNotMatch(listado.htmlDePaginacion(80, 2, 24), /Pag\.|disabled/);
+    assert.deepEqual(plano(vm.runInContext('ITEMS_POR_PAGINA', listado)), { tarjetas: 24, lista: 50 });
+  });
+
+  it('la bajada y la cuenta de resultados, en singular y en plural', () => {
+    assert.equal(listado.textoBajada(80), 'Los 80 conjuntos de datos que sigue el registro, con su estado y cuándo se actualizan.');
+    assert.equal(listado.htmlDeCuenta(80), '<strong>80</strong> conjuntos');
+    assert.equal(listado.htmlDeCuenta(1), '<strong>1</strong> conjunto');
+    assert.equal(listado.htmlDeCuenta(0), '<strong>0</strong> conjuntos');
+  });
+
+  it('datasets.html: la banda, las herramientas, la vista, el resultado, el vacío y el error', () => {
+    const html = leer('datasets.html');
+    assert.match(html, /<title>Datasets - RPAD<\/title>/);
+    assert.doesNotMatch(html, /<style/);
+    assert.doesNotMatch(html, /onclick=|onchange=/);
+    assert.match(html, /<main class="main-content main-publico">/);
+    assert.match(html, /<h1>Datasets<\/h1>/);
+    assert.match(html, /<div class="estados" id="estados" role="group" aria-label="Filtrar por estado">/);
+    assert.match(html, /<option value="nombre">Nombre<\/option>\s*<option value="proxima">Próximo vencimiento<\/option>\s*<option value="area">Área<\/option>/);
+    assert.equal((html.match(/<button type="button" data-vista="(tarjetas|lista)" aria-pressed="(true|false)">/g) || []).length, 2);
+    assert.match(html, /id="vista" role="group"/);
+    assert.match(html, /id="resultado-cuenta" aria-live="polite"/);
+    assert.match(html, /id="filtro-mes-texto"/);
+    assert.match(html, />Quitar<\/button>/);
+    assert.match(html, />Exportar CSV<\/button>/);
+    assert.match(html, />Limpiar filtros<\/button>/);
+    for (const id of ['datasets-grid', 'datasets-paginacion', 'empty-state']) assert.match(html, new RegExp(`id="${id}"`), id);
+    assert.match(html, /No hay conjuntos con esos filtros\./);
+    assert.match(html, /id="datasets-error" role="alert">No se pudo cargar el listado\. Probá de nuevo en unos minutos\.</);
+    assert.doesNotMatch(html, /class="spinner"/);
   });
 });
 
@@ -340,45 +641,273 @@ describe('dashboard.js: el gráfico de los 12 meses', () => {
   });
 });
 
-describe('dashboard.js: la dona del estado', () => {
-  const tablero = cargar('dashboard.js');
-  // Los números de la base local del 17/10/2026
-  const STATS = { total: 80, actualizados: 54, proximos: 1, atrasados: 3, sinRespuesta: 8, eventuales: 14, sinFecha: 0, tasaActualizacion: 83 };
+describe('publico.css', () => {
+  const css = leer('css/publico.css');
+  // Las reglas sin anidar ({ selector, cuerpo }): las de adentro de un @media también aparecen, con su selector
+  const reglas = [...css.replace(/\/\*[^]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => ({ selector: m[1].trim(), cuerpo: m[2] }));
+  const contraste = (a, b) => {
+    const luz = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      .reduce((suma, v, i) => suma + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const [claro, oscuro] = [luz(a), luz(b)].sort((x, y) => y - x);
+    return (claro + 0.05) / (oscuro + 0.05);
+  };
 
-  it('porcentajesEnteros redondea y suma exactamente 100', () => {
-    assert.deepEqual(plano(tablero.porcentajesEnteros([54, 1, 11, 14])), [68, 1, 14, 17]);
-    assert.deepEqual(plano(tablero.porcentajesEnteros([1, 1, 1])), [34, 33, 33]);
-    assert.deepEqual(plano(tablero.porcentajesEnteros([0, 0, 0])), [0, 0, 0]);
-    assert.deepEqual(plano(tablero.porcentajesEnteros([3, 0])), [100, 0]);
-    for (const valores of [[54, 1, 11, 14], [2, 2, 2, 1], [10, 10, 10], [1, 2, 3, 4, 5, 6, 7]]) {
-      assert.equal(tablero.porcentajesEnteros(valores).reduce((a, b) => a + b, 0), 100, valores.join());
+  it('el contenedor solo pone los costados: no pisa el relleno de arriba y de abajo de la banda', () => {
+    const delContenedor = reglas.filter(r => r.selector === '.publico-contenedor');
+    assert.ok(delContenedor.length >= 2, 'la regla base y la del celular');
+    for (const { cuerpo } of delContenedor) {
+      assert.doesNotMatch(cuerpo, /(^|[\s;])padding\s*:/, cuerpo);
+      assert.match(cuerpo, /padding-inline:/);
     }
   });
 
-  it('los eventuales son una porción propia y los porcentajes suman 100', () => {
-    const porciones = plano(tablero.porcionesDelEstado(STATS));
-    assert.deepEqual(porciones.map(p => [p.etiqueta, p.valor]), [
-      ['Actualizados', 54], ['Próximos a vencer', 1], ['Vencidos', 11], ['Eventuales', 14]
-    ]);
-    assert.equal(porciones.reduce((suma, p) => suma + p.porcentaje, 0), 100);
-    assert.equal(porciones.reduce((suma, p) => suma + p.valor, 0), STATS.total);
+  it('el borde de los campos llega a 3:1 contra el blanco y la bruma (WCAG 1.4.11)', () => {
+    const borde = css.match(/--borde-control:\s*(#[0-9A-Fa-f]{6});/)?.[1];
+    assert.ok(borde, '--borde-control definido');
+    assert.ok(contraste(borde, '#FFFFFF') >= 3, `${borde} sobre blanco`);
+    assert.ok(contraste(borde, '#F4F7FA') >= 3, `${borde} sobre la bruma`);
+    const campos = reglas.find(r => r.selector.includes('.campo input') && /border:/.test(r.cuerpo));
+    assert.match(campos.cuerpo, /border:\s*1px solid var\(--borde-control\)/);
   });
 
-  it('los sin fecha aparecen solo si hay', () => {
-    const porciones = plano(tablero.porcionesDelEstado({ ...STATS, total: 82, sinFecha: 2 }));
-    assert.deepEqual(porciones.map(p => p.etiqueta), ['Actualizados', 'Próximos a vencer', 'Vencidos', 'Eventuales', 'Sin fecha']);
-    assert.equal(porciones.reduce((suma, p) => suma + p.porcentaje, 0), 100);
+  it('el texto de ejemplo de los campos va en --suave, entero (Firefox lo dibuja al 54 % si no)', () => {
+    const regla = reglas.find(r => r.selector === '.campo ::placeholder')?.cuerpo ?? '';
+    assert.match(regla, /color:\s*var\(--suave\)/);
+    assert.match(regla, /opacity:\s*1/);
   });
 
-  it('la leyenda dice cada porción con su porcentaje', () => {
-    const html = tablero.htmlDeLeyenda(tablero.porcionesDelEstado(STATS));
-    assert.match(html, /Eventuales<\/span>\s*<span class="legend-value">14 \(17%\)<\/span>/);
-    assert.match(html, /Actualizados<\/span>\s*<span class="legend-value">54 \(68%\)<\/span>/);
+  it('los cuadritos del mosaico quedan a 24 px o más entre centros, también en el celular (WCAG 2.5.8)', () => {
+    const sinComentarios = css.replace(/\/\*[^]*?\*\//g, '');
+    const px = (cuerpo, propiedad) => Number(cuerpo.match(new RegExp(`(?:^|[\\s;])${propiedad}:\\s*(\\d+)px`))?.[1]);
+    const base = { cuadro: reglas.find(r => r.selector === '.cuadro').cuerpo, cuadros: reglas.find(r => r.selector === '.cuadros').cuerpo };
+    assert.ok(px(base.cuadro, 'width') + px(base.cuadros, 'gap') >= 24, 'en la pantalla ancha');
+    const celular = sinComentarios.match(/@media \(max-width: 760px\)\s*\{[^@]*?\.cuadros\s*\{([^}]*)\}[^@]*?\.cuadro\s*\{([^}]*)\}/);
+    assert.ok(celular, 'el bloque de 760 px pone el tamaño y la separación');
+    assert.equal(px(celular[2], 'width') + px(celular[1], 'gap'), 24, 'en el celular');
   });
 
+  it('la paginación se parte si no entra (a 305 px los controles se salían 11 px)', () => {
+    assert.match(reglas.find(r => r.selector === '.paginado-controles')?.cuerpo ?? '', /flex-wrap:\s*wrap/);
+  });
+
+  it('alto contraste (forced colors): la ola no se dibuja (saldría como una franja del color del texto)', () => {
+    assert.match(css.replace(/\/\*[^]*?\*\//g, ''), /@media \(forced-colors: active\)\s*\{\s*\.ola\s*\{\s*display:\s*none;?\s*\}\s*\}/);
+  });
+
+  it('el cuadrito de cada insignia es el del mosaico, del color de su estado y sin transparencia', () => {
+    for (const [insignia, estado] of [['success', 'actualizado'], ['warning', 'proximo'], ['danger', 'atrasado'], ['sin-respuesta', 'sin-respuesta'], ['secondary', 'eventual']]) {
+      const regla = reglas.find(r => r.selector === `.badge-${insignia}`);
+      assert.match(regla.cuerpo, new RegExp(`--cuadrito-insignia:\\s*var\\(--cuadro-${estado}\\)`), insignia);
+    }
+    const cuadrito = reglas.find(r => r.selector === '.badge::before').cuerpo;
+    assert.match(cuadrito, /background:\s*var\(--cuadrito-insignia/);
+    assert.doesNotMatch(cuadrito, /opacity/);
+  });
+
+  it('detalle: dos columnas, una a 980 px con las fechas antes que los textos largos, que respetan los saltos de línea', () => {
+    assert.ok(reglas.some(r => r.selector === '.detalle-grilla' && /grid-template-columns:\s*minmax\(0, 1fr\) 340px/.test(r.cuerpo)));
+    assert.match(css.replace(/\/\*[^]*?\*\//g, ''), /@media \(max-width: 980px\)\s*\{[^@]*\.detalle-lateral\s*\{[^}]*order:\s*-1/);
+    assert.ok(reglas.some(r => r.selector === '.detalle-texto' && /white-space:\s*pre-line/.test(r.cuerpo)));
+  });
+
+  it('calendario: el rótulo en 200 px y las fichas al lado, una debajo de la otra a 760 px; el texto de las filas de color llega a 4,5:1', () => {
+    assert.ok(reglas.some(r => r.selector === '.almanaque-fila' && /grid-template-columns:\s*200px minmax\(0, 1fr\)/.test(r.cuerpo)));
+    assert.match(css.replace(/\/\*[^]*?\*\//g, ''), /@media \(max-width: 760px\)\s*\{[^@]*\.almanaque-fila\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+    const fondo = reglas.find(r => r.selector === '.almanaque-fila.vencidos')?.cuerpo.match(/background:\s*(#[0-9A-Fa-f]{6})/)?.[1];
+    assert.equal(fondo, '#FDF0EE');
+    // --suave, --texto y --tinta sobre el rosado de Vencidos y sobre el --cielo del mes en curso
+    for (const sobre of [fondo, '#DCEEF5']) {
+      for (const texto of ['#56677F', '#22324A', '#1A365D']) assert.ok(contraste(texto, sobre) >= 4.5, `${texto} sobre ${sobre}`);
+    }
+    assert.ok(reglas.some(r => r.selector === '.ficha' && /border:\s*1px solid var\(--linea\)/.test(r.cuerpo) && /border-radius:\s*999px/.test(r.cuerpo)));
+  });
+});
+
+describe('dashboard.js: el índice y el mosaico', () => {
+  const tablero = cargar('dashboard.js');
+  const STATS = { total: 80, actualizados: 52, proximos: 1, atrasados: 3, sinRespuesta: 10, eventuales: 14, sinFecha: 0, tasaActualizacion: 80 };
+
+  it('la frase usa la tasa del servidor y la misma base: el total sin los eventuales', () => {
+    const { tasa, frase, aclaracion } = plano(tablero.textoIndice(STATS));
+    assert.equal(tasa, '80%');
+    assert.equal(frase, 'El 80% de los conjuntos de datos con fecha de actualización están al día: 53 de 66.');
+    assert.equal(aclaracion, 'El registro sigue 80 conjuntos. Los otros 14 son eventuales: se publican cuando hay novedades y no tienen vencimiento.');
+  });
+
+  it('nombra los sin fecha solo si hay, y el singular de un eventual', () => {
+    assert.match(plano(tablero.textoIndice({ ...STATS, total: 82, sinFecha: 2 })).aclaracion, / 2 todavía no tienen fecha de próxima actualización\.$/);
+    assert.match(plano(tablero.textoIndice({ ...STATS, total: 67, eventuales: 1 })).aclaracion, /El otro es eventual: se publica cuando hay novedades y no tiene vencimiento\.$/);
+  });
+
+  it('la situación dice el día de la semana sin depender de la zona del navegador', () => {
+    assert.equal(tablero.textoSituacion('2026-10-18'), 'Situación al domingo 18 de octubre de 2026.');
+    assert.equal(tablero.textoSituacion('2027-01-01'), 'Situación al viernes 1 de enero de 2027.');
+  });
+
+  it('agrupa por estado del servidor: vencidos juntos, sin fecha solo si hay, cada grupo por título', () => {
+    const lista = [
+      dataset({ id: 1, titulo: 'Zeta', estado: 'actualizado' }), dataset({ id: 2, titulo: 'Alfa', estado: 'actualizado' }),
+      dataset({ id: 3, estado: 'proximo' }), dataset({ id: 4, estado: 'atrasado' }), dataset({ id: 5, estado: 'sin-respuesta' }),
+      eventual({ id: 6 }), dataset({ id: 7, area_nombre: null, descripcion: null, datos_al: null })
+    ];
+    const grupos = plano(tablero.gruposDelMosaico(lista));
+    assert.deepEqual(grupos.map(g => g.etiqueta), ['Actualizados', 'Próximos a vencer', 'Vencidos', 'Eventuales']);
+    assert.deepEqual(grupos[0].datasets.map(d => d.id), [2, 7, 1]);
+    assert.deepEqual(grupos[2].datasets.map(d => d.id).sort(), [4, 5]);
+    assert.equal(grupos.reduce((s, g) => s + g.datasets.length, 0), lista.length);
+    const conSinFecha = plano(tablero.gruposDelMosaico([...lista, dataset({ id: 8, estado: 'sin-fecha', proxima_actualizacion: null })]));
+    assert.equal(conSinFecha.at(-1).etiqueta, 'Sin fecha');
+  });
+
+  it('cada cuadrito es un link al detalle con su nombre y su estado, escapados', () => {
+    const html = tablero.htmlDelMosaico(tablero.gruposDelMosaico([dataset({ id: 9, titulo: '<b>X</b> & Y', estado: 'sin-respuesta' })]));
+    assert.match(html, /<a class="cuadro c-sin-respuesta" href="dataset\.html\?id=9" data-id="9" aria-label="&lt;b&gt;X&lt;\/b&gt; &amp; Y, Sin respuesta del área responsable"><\/a>/);
+    assert.doesNotMatch(html, /<b>X<\/b>/);
+  });
+
+  it('el estado va escapado también en la clase del cuadrito (es el texto que manda el servidor)', () => {
+    const html = tablero.htmlDelCuadro(dataset({ id: 9, estado: 'x" onmouseover="alert(1)' }));
+    assert.ok(html.startsWith('<a class="cuadro c-x&quot; onmouseover=&quot;alert(1)" href="dataset.html?id=9"'), html);
+    assert.doesNotMatch(html, /onmouseover="/);
+  });
+
+  // Se conserva de la portada vieja: la tasa es la del servidor, nunca un cálculo del navegador
   it('la tasa que se muestra es la del servidor', () => {
-    assert.equal(tablero.textoTasa(STATS), '83%');
+    assert.equal(tablero.textoTasa(STATS), '80%');
     assert.equal(tablero.textoTasa({}), '0%');
+  });
+
+  it('el pie del mosaico dice el título, el área y el estado largo, escapados', () => {
+    assert.equal(
+      tablero.htmlDelPie(dataset({ titulo: 'A <b>&</b>', area_nombre: 'Área "X"', estado: 'proximo' })),
+      '<strong>A &lt;b&gt;&amp;&lt;/b&gt;</strong><br>Área &quot;X&quot;. Próximo a vencer.'
+    );
+    assert.equal(tablero.htmlDelPie(eventual({ area_nombre: null })), '<strong>Barrios de Comodoro Rivadavia</strong><br>Sin área asignada. Actualización eventual.');
+  });
+});
+
+// La carga de la portada, con un DOM mínimo (cada id es un elemento; el aviso de error arranca oculto, como en index.html) y un
+// API.pedirJson falso
+describe('dashboard.js: la carga', () => {
+  const STATS = { total: 2, actualizados: 2, proximos: 0, atrasados: 0, sinRespuesta: 0, eventuales: 0, sinFecha: 0, tasaActualizacion: 100 };
+  const preparar = (lista) => {
+    const tablero = cargar('dashboard.js');
+    const elementos = {};
+    const crear = (clave) => {
+      const clases = new Set(clave === 'portada-error' ? ['hidden'] : []);
+      return {
+        textContent: '', innerHTML: '',
+        classList: {
+          add: (c) => clases.add(c),
+          remove: (c) => clases.delete(c),
+          contains: (c) => clases.has(c),
+          toggle: (c, poner = !clases.has(c)) => (poner ? clases.add(c) : clases.delete(c))
+        }
+      };
+    };
+    tablero.document.getElementById = (clave) => (elementos[clave] ??= crear(clave));
+    tablero.document.querySelector = (selector) => (elementos[selector] ??= crear(selector));
+    tablero.console = { error() {} };
+    tablero.Utils.hoyEnArgentina = () => '2026-10-18';
+    vm.runInContext('API', tablero).pedirJson = async (metodo, ruta) => ({ success: true, data: ruta === '/datasets/estadisticas' ? STATS : lista });
+    const el = (clave) => tablero.document.getElementById(clave);
+    const visible = (clave) => !el(clave).classList.contains('hidden');
+    return { tablero, el, visible };
+  };
+
+  it('con los datos, dibuja el índice, el mosaico, los meses y las listas, sin el aviso', async () => {
+    const { tablero, el, visible } = preparar([dataset({ id: 1 }), dataset({ id: 2, titulo: 'Otro' })]);
+    await tablero.cargarPortada();
+    assert.ok(!visible('portada-error'));
+    for (const id of ['mosaico', 'seccion-meses', 'portada-listas']) assert.ok(visible(id), id);
+    assert.match(el('indice-frase').innerHTML, /<strong class="indice-cifra">100%<\/strong>/);
+    assert.equal(el('mosaico-grupos').innerHTML.split('class="cuadro ').length - 1, 2);
+  });
+
+  it('si el dibujo se rompe con un dato raro: el aviso de error y nada a medias, no "Cargando…" para siempre', async () => {
+    const { tablero, el, visible } = preparar([dataset({ id: 1 }), null]);
+    await tablero.cargarPortada();
+    assert.ok(visible('portada-error'), 'el aviso de error');
+    for (const id of ['mosaico', 'seccion-meses', 'portada-listas']) assert.ok(!visible(id), id);
+    for (const id of ['indice-frase', 'indice-aclaracion', 'indice-situacion']) assert.equal(el(id).textContent, '', id);
+    assert.ok(el('.portada-banda').classList.contains('portada-sin-datos'));
+  });
+});
+
+describe('dashboard.js: los 12 meses y las listas', () => {
+  const tablero = cargar('dashboard.js');
+
+  it('cada mes es un link al listado, con la cantidad y una marca por conjunto', () => {
+    const meses = tablero.mesesDelGrafico('2026-10-18');
+    const html = tablero.htmlDeLosMeses(meses, [0, 1, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert.match(html, /<a class="mes actual" href="datasets\.html\?mes=2026-10" aria-label="octubre de 2026: vencen 0 conjuntos">/);
+    assert.match(html, /aria-label="noviembre de 2026: vence 1 conjunto"/);
+    assert.equal(html.split('<i></i>').length - 1, 17);
+  });
+
+  it('las etiquetas de los meses van en una fila aparte, la primera marcada como el mes actual', () => {
+    const html = tablero.htmlDeLosMeses(tablero.mesesDelGrafico('2026-10-18'), Array(12).fill(0));
+    assert.match(html, /<div class="meses-nombres" id="meses-nombres" aria-hidden="true"><span class="actual">oct 26<\/span><span>nov 26<\/span>/);
+    assert.equal(html.split('<a class="mes').length - 1, 12);
+  });
+
+  it('últimas cargas: por la fecha de carga (texto), sin los que no tienen, hasta 5', () => {
+    const lista = [
+      dataset({ id: 1, ultima_actualizacion: '2026-10-13T03:00:00.000Z' }), dataset({ id: 2, ultima_actualizacion: null }),
+      dataset({ id: 3, ultima_actualizacion: '2026-10-16' }), dataset({ id: 4, ultima_actualizacion: '2026-01-31T03:00:00.000Z' })
+    ];
+    assert.deepEqual(plano(tablero.ultimasCargas(lista)).map(d => d.id), [3, 1, 4]);
+    assert.equal(tablero.ultimasCargas(Array.from({ length: 9 }, (_, i) => dataset({ id: i }))).length, 5);
+  });
+
+  it('la fila escapa y lleva al detalle; sin área lo dice', () => {
+    const html = tablero.htmlDeFila(dataset({ id: 5, titulo: '<i>T</i>', area_nombre: null }), '<strong>3 días</strong>');
+    assert.ok(html.includes('href="dataset.html?id=5"'));
+    assert.ok(html.includes('&lt;i&gt;T&lt;/i&gt;'));
+    assert.ok(html.includes('Sin área asignada'));
+    assert.equal(tablero.textoDias(1), '1 día');
+    assert.equal(tablero.textoDias(625), '625 días');
+  });
+
+  it('el dato de cada lista: días de atraso con la insignia, días para vencer (o "Vence hoy") y la fecha de carga', () => {
+    const vencido = tablero.datoDeVencido(dataset({ estado: 'sin-respuesta', dias_para_vencer: -1 }));
+    assert.equal(vencido, '<strong>1 día</strong> de atraso<span class="badge badge-sin-respuesta">Sin respuesta</span>');
+    assert.match(tablero.datoDeVencido(dataset({ estado: 'atrasado', dias_para_vencer: -625 })), /625 días<\/strong> de atraso<span class="badge badge-danger">Atrasado</);
+    assert.equal(tablero.datoDeProximo(dataset({ estado: 'proximo', dias_para_vencer: 0 })), '<strong>Vence hoy</strong>');
+    assert.equal(tablero.datoDeProximo(dataset({ estado: 'proximo', dias_para_vencer: 14 })), '<strong>14 días</strong> para vencer');
+    assert.equal(tablero.datoDeCarga(dataset({ ultima_actualizacion: '2026-01-31T03:00:00.000Z' })), '<strong>31/01/2026</strong> cargado');
+    assert.equal(tablero.textoVerVencidos(13), 'Ver los 13 vencidos');
+    assert.equal(tablero.textoVerVencidos(1), 'Ver el vencido');
+  });
+
+  it('la frase destaca la tasa y escapa el resto', () => {
+    assert.equal(tablero.htmlDeLaFrase({ tasa: '80%', frase: 'El 80% de <x>: 53 de 66.' }), 'El <strong class="indice-cifra">80%</strong> de &lt;x&gt;: 53 de 66.');
+  });
+
+  it('index.html tiene dónde dibujar cada parte, el aviso de error y el de sin JavaScript', () => {
+    const html = leer('index.html');
+    assert.match(html, /<title>RPAD - Índice de actualización de los datos abiertos<\/title>/);
+    assert.match(html, /<h1>Índice de actualización<\/h1>/);
+    for (const id of ['indice-frase', 'indice-aclaracion', 'indice-situacion', 'mosaico', 'mosaico-grupos', 'meses-marco', 'meses', 'meses-nombres',
+      'seccion-meses', 'portada-listas', 'vencidos', 'proximos', 'ultimas']) {
+      assert.match(html, new RegExp(`id="${id}"`), id);
+    }
+    assert.match(html, /<p class="mosaico-pie" id="mosaico-pie" aria-live="polite">/);
+    assert.match(html, /<a class="enlace hidden" id="ver-vencidos" href="datasets\.html\?estado=vencidos">/);
+    assert.match(html, /<a class="btn-tinta" href="datasets\.html">Ver los datasets<\/a>/);
+    assert.match(html, /<a class="btn-borde" href="calendario\.html">Ver el calendario<\/a>/);
+    assert.match(html, /id="portada-error" role="alert">No se pudieron cargar los datos del registro\. Probá de nuevo en unos minutos\.</);
+    assert.match(html, /<noscript>[^]*Para ver el índice hace falta JavaScript\.[^]*<\/noscript>/);
+    assert.match(html, /<main class="main-content main-publico">/);
+  });
+
+  it('la portada vieja ya no está: ni la dona, ni los contadores, ni el reloj', () => {
+    for (const vieja of ['porcentajesEnteros', 'porcionesDelEstado', 'htmlDeLeyenda', 'renderDonutChart', 'renderCalendarChart', 'animateCounter',
+      'updateHeroDateTime', 'updateHeroGreeting', 'goToDatasets', 'toggleAtrasados', 'toggleProximos', 'renderStats', 'renderAlertas']) {
+      assert.equal(typeof tablero[vieja], 'undefined', vieja);
+    }
+    assert.doesNotMatch(leer('js/dashboard.js'), /new Chart|setInterval|onclick/);
   });
 });
 
@@ -400,23 +929,239 @@ describe('dashboard.js: las alertas', () => {
   });
 });
 
-describe('calendario.js: el color de cada día sale del estado del servidor', () => {
+describe('calendario.js: el almanaque', () => {
   const calendario = cargar('calendario.js');
+  const LISTA = [
+    dataset({ id: 1, titulo: 'Enero B', proxima_actualizacion: '2027-01-31T03:00:00.000Z' }),
+    dataset({ id: 2, titulo: 'Enero A', proxima_actualizacion: '2027-01-31' }),
+    dataset({ id: 3, titulo: 'Viejo', proxima_actualizacion: '2024-01-31T03:00:00.000Z', estado: 'sin-respuesta', dias_para_vencer: -990 }),
+    dataset({ id: 4, titulo: 'Menos viejo', proxima_actualizacion: '2025-09-30T03:00:00.000Z', estado: 'atrasado', dias_para_vencer: -383 }),
+    dataset({ id: 5, titulo: 'Lejano', proxima_actualizacion: '2027-11-30T03:00:00.000Z' }),
+    dataset({ id: 6, titulo: 'Este mes', proxima_actualizacion: '2026-10-31T03:00:00.000Z', estado: 'proximo', dias_para_vencer: 13 }),
+    eventual({ id: 7, proxima_actualizacion: '2027-01-31T03:00:00.000Z' }),
+    dataset({ id: 8, proxima_actualizacion: null, estado: 'sin-fecha', dias_para_vencer: null })
+  ];
 
-  it('rojo si hay un vencido, amarillo si hay un próximo, verde si no', () => {
-    assert.equal(calendario.determinarColorEvento([dataset({ estado: 'actualizado' }), dataset({ estado: 'sin-respuesta' })]), '#ef4444');
-    assert.equal(calendario.determinarColorEvento([dataset({ estado: 'atrasado' })]), '#ef4444');
-    assert.equal(calendario.determinarColorEvento([dataset({ estado: 'proximo' }), dataset({ estado: 'actualizado' })]), '#f59e0b');
-    assert.equal(calendario.determinarColorEvento([dataset({ estado: 'actualizado' })]), '#22c55e');
-    // Las fechas dirían vencido, pero manda d.estado
-    assert.equal(calendario.determinarColorEvento([dataset({ estado: 'actualizado', proxima_actualizacion: '2020-01-31T03:00:00.000Z' })]), '#22c55e');
+  it('vencidos primero, los 12 meses desde el actual y después "más adelante"; sin eventuales ni sin fecha', () => {
+    const filas = plano(calendario.filasDelAlmanaque(LISTA, '2026-10-18'));
+    assert.deepEqual(filas.map(f => f.tipo), ['vencidos', ...Array(12).fill('mes'), 'despues']);
+    assert.deepEqual(filas[0].datasets.map(d => d.id), [3, 4]);
+    assert.equal(filas[1].clave, '2026-10'); assert.equal(filas[1].actual, true);
+    assert.deepEqual(filas[1].datasets.map(d => d.id), [6]);
+    assert.deepEqual(filas[4].datasets.map(d => d.id), [2, 1]);
+    assert.deepEqual(filas.at(-1).datasets.map(d => d.id), [5]);
+    assert.ok(!filas.some(f => f.datasets.some(d => d.id === 7 || d.id === 8)));
   });
 
-  it('el detalle de un día escapa la frecuencia y usa el rótulo de cada estado', () => {
-    const html = calendario.htmlDelDia([dataset({ frecuencia_nombre: '<b>x</b>', estado: 'proximo' }), eventual()]);
-    assert.doesNotMatch(html, /<b>x<\/b>/);
-    assert.match(html, /badge-warning">Próximo</);
-    assert.match(html, /badge-secondary">Eventual</);
+  it('sin vencidos ni lejanos, solo los 12 meses', () => {
+    assert.equal(calendario.filasDelAlmanaque([LISTA[0]], '2026-10-18').length, 12);
+  });
+
+  it('los meses son los mismos que los del gráfico de la portada', () => {
+    const tablero = cargar('dashboard.js');
+    assert.deepEqual(plano(calendario.mesesDelAlmanaque('2026-10-18')), plano(tablero.mesesDelGrafico('2026-10-18')));
+  });
+
+  it('filtra por área y por tema principal o secundario', () => {
+    const lista = [dataset({ id: 1, area_id: 3, tema_principal_id: 5 }), dataset({ id: 2, area_id: 4, tema_secundario_id: 5 }), dataset({ id: 3, area_id: 3 })];
+    assert.deepEqual(plano(calendario.filtrarCalendario(lista, { areaId: '3', temaId: '' })).map(d => d.id), [1, 3]);
+    assert.deepEqual(plano(calendario.filtrarCalendario(lista, { areaId: '', temaId: '5' })).map(d => d.id), [1, 2]);
+  });
+
+  it('el HTML: el mes lleva al listado, cada ficha al detalle, escapado, y los meses vacíos lo dicen', () => {
+    const html = calendario.htmlDelAlmanaque(calendario.filasDelAlmanaque([...LISTA, dataset({ id: 9, titulo: '<b>x</b>', area_nombre: 'A "B"', proxima_actualizacion: '2027-03-31T03:00:00.000Z' })], '2026-10-18'));
+    assert.ok(html.includes('href="datasets.html?mes=2027-01"'));
+    assert.ok(html.includes('href="dataset.html?id=9"'));
+    assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;'));
+    assert.ok(html.includes('title="A &quot;B&quot;"'));
+    assert.ok(html.includes('Nada vence este mes.'));
+    assert.ok(html.includes('Este mes'));
+    assert.equal(calendario.textoCantidad(1), '1 conjunto');
+  });
+
+  it('calendario.html ya no carga FullCalendar ni tiene el modal del día', () => {
+    const html = leer('calendario.html');
+    assert.doesNotMatch(html, /fullcalendar/i);
+    assert.doesNotMatch(html, /modal-dia/);
+    assert.match(html, /id="almanaque"/);
+    assert.match(html, /exportarIcal\(\)/);
+  });
+});
+
+describe('calendario.js: los rótulos y las fichas del almanaque', () => {
+  const calendario = cargar('calendario.js');
+  const filas = (lista, hoy = '2026-10-18') => calendario.filasDelAlmanaque(lista, hoy);
+
+  it('el año va en el mes en curso y en cada enero; en los otros meses, solo para los lectores de pantalla', () => {
+    const html = calendario.htmlDelAlmanaque(filas([dataset()]));
+    assert.match(html, /href="datasets\.html\?mes=2026-10">octubre <span class="anio">2026<\/span><\/a>/);
+    assert.match(html, /href="datasets\.html\?mes=2027-01">enero <span class="anio">2027<\/span><\/a>/);
+    assert.match(html, /href="datasets\.html\?mes=2026-11">noviembre<span class="solo-lectores"> de 2026<\/span><\/a>/);
+    assert.equal(html.match(/class="anio"/g).length, 2);
+    assert.equal(html.match(/Este mes/g).length, 1);
+    // Los 11 meses sin vencimientos, finitos y con el aviso
+    assert.equal(html.match(/<p class="vacio">Nada vence este mes\.<\/p>/g).length, 11);
+    assert.equal(html.match(/almanaque-fila[^"]*sin-nada/g).length, 11);
+  });
+
+  it('cada ficha: el cuadrito del estado del servidor, el título, el área en title y el estado para los lectores de pantalla', () => {
+    const html = calendario.htmlDelAlmanaque(filas([dataset({ id: 20, estado: 'proximo', proxima_actualizacion: '2026-11-30T03:00:00.000Z' })]));
+    assert.ok(html.includes('<li><a class="ficha" href="dataset.html?id=20" title="Secretaría de Hacienda">'
+      + '<i class="tile c-proximo" aria-hidden="true"></i><span class="ficha-texto">Gasto Público'
+      + '<span class="solo-lectores">, Próximo a vencer</span></span></a></li>'), html);
+    assert.match(html, /<span class="almanaque-cuenta">1 conjunto<\/span>/);
+  });
+
+  it('los vencidos y los de más adelante llevan su mes; las dos filas dicen cuántos son', () => {
+    const html = calendario.htmlDelAlmanaque(filas([
+      dataset({ id: 3, estado: 'sin-respuesta', proxima_actualizacion: '2024-01-31T03:00:00.000Z', dias_para_vencer: -990 }),
+      dataset({ id: 4, estado: 'atrasado', proxima_actualizacion: '2025-09-30T03:00:00.000Z', dias_para_vencer: -383 }),
+      dataset({ id: 5, proxima_actualizacion: '2027-11-30T03:00:00.000Z' })
+    ]));
+    assert.match(html, /^<div class="almanaque-fila vencidos">/);
+    assert.match(html, /<h2>Vencidos<\/h2><span class="almanaque-cuenta">2 conjuntos, con el mes en que vencieron<\/span>/);
+    assert.match(html, /<i class="tile c-sin-respuesta" aria-hidden="true"><\/i><span class="ficha-texto">Gasto Público <small>ene 2024<\/small>/);
+    assert.match(html, /<i class="tile c-atrasado" aria-hidden="true"><\/i><span class="ficha-texto">Gasto Público <small>sep 2025<\/small>/);
+    assert.match(html, /<h2>Más adelante<\/h2><span class="almanaque-cuenta">1 conjunto, después de septiembre de 2027<\/span>/);
+    assert.match(html, /Gasto Público <small>nov 2027<\/small>/);
+    // En los meses, sin el mes: ya lo dice la fila
+    assert.doesNotMatch(calendario.htmlDelAlmanaque(filas([dataset()])), /<small>/);
+  });
+
+  it('un vencido del mes en curso va en Vencidos, no en el mes; un id raro va codificado', () => {
+    const lista = [dataset({ id: '1"><b>', estado: 'atrasado', proxima_actualizacion: '2026-10-15', dias_para_vencer: -3 })];
+    const resultado = plano(filas(lista));
+    assert.deepEqual(resultado[0].datasets.map(d => d.id), ['1"><b>']);
+    assert.equal(resultado[1].datasets.length, 0);
+    assert.ok(calendario.htmlDelAlmanaque(filas(lista)).includes('href="dataset.html?id=1%22%3E%3Cb%3E"'));
+  });
+
+  it('textoCantidad: singular y plural', () => {
+    assert.equal(calendario.textoCantidad(1), '1 conjunto');
+    assert.equal(calendario.textoCantidad(0), '0 conjuntos');
+    assert.equal(calendario.textoCantidad(16), '16 conjuntos');
+  });
+
+  it('calendario.html: filtros con <label for>, la leyenda de los cuatro estados, el vacío, el error y sin la grilla vieja', () => {
+    const html = leer('calendario.html');
+    assert.match(html, /<label for="filter-area">Área<\/label>/);
+    assert.match(html, /<label for="filter-tema">Tema<\/label>/);
+    assert.match(html, /onclick="limpiarFiltros\(\)"/);
+    for (const estado of ['actualizado', 'proximo', 'atrasado', 'sin-respuesta']) assert.match(html, new RegExp(`class="tile c-${estado}"`), estado);
+    assert.match(html, /id="almanaque" aria-label="Vencimientos por mes"/);
+    assert.match(html, /id="calendario-vacio"[^>]*>No hay conjuntos con fecha para esos filtros\.</);
+    assert.match(html, /id="calendario-error"[^>]*>No se pudo cargar el calendario\. Probá de nuevo en unos minutos\.</);
+    assert.match(html, /Exportar a mi calendario \(iCal\)/);
+    assert.match(html, /<h1>Calendario de vencimientos<\/h1>/);
+    assert.doesNotMatch(html, /id="calendar"|cdn\.jsdelivr|<style|style="/);
+    assert.match(html, /<main class="main-content main-publico">/);
+  });
+});
+
+describe('calendario.js: la carga, los filtros y el iCal', () => {
+  // Un DOM mínimo: cada id es un elemento (los selectores con su valor y sus opciones; el vacío y el error arrancan ocultos, como
+  // en calendario.html), API y Utils falsos, y lo que baja el iCal
+  const preparar = ({ lista = [], error = null, areas = [], temas = [] } = {}) => {
+    const calendario = cargar('calendario.js');
+    const elementos = {};
+    const pedidos = [];
+    const bajadas = [];
+    const crear = (clave) => {
+      const clases = new Set(['calendario-vacio', 'calendario-error'].includes(clave) ? ['hidden'] : []);
+      return {
+        textContent: '', innerHTML: '', value: '', escuchas: {},
+        addEventListener(tipo, funcion) { this.escuchas[tipo] = funcion; },
+        insertAdjacentHTML(donde, html) { this.innerHTML += html; },
+        click() {},
+        classList: {
+          add: (c) => clases.add(c),
+          remove: (c) => clases.delete(c),
+          contains: (c) => clases.has(c),
+          toggle: (c, poner = !clases.has(c)) => (poner ? clases.add(c) : clases.delete(c))
+        }
+      };
+    };
+    calendario.document.getElementById = (clave) => (elementos[clave] ??= crear(clave));
+    calendario.document.createElement = () => crear();
+    calendario.document.body = { appendChild(a) { bajadas.push(a); }, removeChild() {} };
+    calendario.console = { error() {} };
+    calendario.Blob = class { constructor(partes, opciones) { this.texto = partes.join(''); this.type = opciones.type; } };
+    calendario.URL = { createObjectURL: (blob) => { bajadas.blob = blob; return 'blob:x'; }, revokeObjectURL() {} };
+    calendario.Utils.hoyEnArgentina = () => '2026-10-18';
+    const api = vm.runInContext('API', calendario);
+    api.pedirJson = async (metodo, ruta) => {
+      pedidos.push(`${metodo} ${ruta}`);
+      if (error) throw error;
+      return { success: true, data: lista };
+    };
+    api.getAreas = async () => { pedidos.push('areas'); return areas; };
+    api.getTemas = async () => { pedidos.push('temas'); return temas; };
+    const el = (clave) => calendario.document.getElementById(clave);
+    const visible = (clave) => !el(clave).classList.contains('hidden');
+    return { calendario, el, visible, pedidos, bajadas };
+  };
+  const LISTA = [
+    dataset({ id: 1, area_id: 3, tema_principal_id: 5, titulo: 'Uno', proxima_actualizacion: '2026-11-30T03:00:00.000Z' }),
+    dataset({ id: 2, area_id: 4, tema_secundario_id: 5, titulo: 'Dos', proxima_actualizacion: '2027-01-31' }),
+    dataset({ id: 3, area_id: 3, titulo: 'Tres', estado: 'atrasado', proxima_actualizacion: '2025-09-30T03:00:00.000Z' })
+  ];
+
+  it('pide los datasets con pedirJson y, en paralelo, las áreas y los temas; llena los filtros (escapados) y dibuja', async () => {
+    const { calendario, el, visible, pedidos } = preparar({ lista: LISTA, areas: [{ id: 3, nombre: 'Hacienda & "Co"' }], temas: [{ id: 5, nombre: 'Economía' }] });
+    await calendario.cargarCalendario();
+    assert.deepEqual([...pedidos].sort(), ['GET /datasets', 'areas', 'temas']);
+    assert.ok(el('filter-area').innerHTML.includes('<option value="3">Hacienda &amp; &quot;Co&quot;</option>'));
+    assert.ok(el('filter-tema').innerHTML.includes('<option value="5">Economía</option>'));
+    assert.match(el('almanaque').innerHTML, /<h2>Vencidos<\/h2>/);
+    assert.ok(visible('almanaque') && !visible('calendario-vacio') && !visible('calendario-error'));
+  });
+
+  it('si falla el pedido de los datasets, el aviso de error y nada más', async () => {
+    const { calendario, visible } = preparar({ error: Object.assign(new Error('Error 500'), { status: 500 }) });
+    await calendario.cargarCalendario();
+    assert.ok(visible('calendario-error'));
+    for (const id of ['almanaque', 'calendario-vacio', 'calendario-controles', 'exportar-ical']) assert.ok(!visible(id), id);
+  });
+
+  it('con un tema entran también los del tema secundario; sin nada para esos filtros, el aviso del vacío; Limpiar vuelve a todo', async () => {
+    const { calendario, el, visible } = preparar({ lista: LISTA });
+    calendario.prepararFiltros();
+    await calendario.cargarCalendario();
+    el('filter-tema').value = '5';
+    el('filter-tema').escuchas.change();
+    assert.match(el('almanaque').innerHTML, /Uno/);
+    assert.match(el('almanaque').innerHTML, /Dos/);
+    assert.doesNotMatch(el('almanaque').innerHTML, /Tres/);
+    el('filter-area').value = '4';
+    el('filter-tema').value = '';
+    el('filter-area').escuchas.change();
+    assert.ok(visible('almanaque') && !visible('calendario-vacio'));
+    el('filter-tema').value = '99';
+    el('filter-tema').escuchas.change();
+    assert.ok(!visible('almanaque') && visible('calendario-vacio'));
+    calendario.limpiarFiltros();
+    assert.equal(el('filter-area').value, '');
+    assert.equal(el('filter-tema').value, '');
+    assert.ok(visible('almanaque') && !visible('calendario-vacio'));
+    assert.match(el('almanaque').innerHTML, /Tres/);
+  });
+
+  it('exportarIcal baja rpad-vencimientos-AAAA-MM-DD.ics con los filtrados (tema secundario incluido) y el formato de siempre', async () => {
+    const { calendario, el, bajadas } = preparar({ lista: LISTA });
+    await calendario.cargarCalendario();
+    el('filter-tema').value = '5';
+    calendario.exportarIcal();
+    assert.equal(bajadas.length, 1);
+    assert.equal(bajadas[0].download, 'rpad-vencimientos-2026-10-18.ics');
+    assert.equal(bajadas.blob.type, 'text/calendar;charset=utf-8');
+    const ical = bajadas.blob.texto;
+    assert.match(ical, /^BEGIN:VCALENDAR\r\nVERSION:2\.0\r\nPRODID:-\/\/RPAD\/\/Calendario de Vencimientos\/\/ES\r\n/);
+    assert.equal(ical.match(/BEGIN:VEVENT/g).length, 2);
+    assert.match(ical, /UID:dataset-1@rpad\.comodoro\.gov\.ar\r\n/);
+    assert.match(ical, /DTSTART;VALUE=DATE:20270131\r\n/);
+    assert.match(ical, /DESCRIPTION:Dataset: Dos\\nÁrea: Secretaría de Hacienda\\nFrecuencia: Cada medio año\\nURL: -\r\n/);
+    assert.match(ical, /END:VCALENDAR$/);
+    assert.doesNotMatch(ical, /dataset-3@/);
   });
 });
 

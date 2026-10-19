@@ -426,12 +426,12 @@ describe('correos.html: pestañas (spec 2026-10-17-correos-pestanas, 4)', () => 
     assert.ok(posicion('id="modal-nota"') > PAGINA.lastIndexOf('</section>'), '#modal-nota queda fuera de los paneles');
   });
 
-  it('el título, el encabezado y el pie dicen Correos y RPAD v1.5.0', () => {
+  it('el título, el encabezado y el pie dicen Correos y RPAD v2.0.0', () => {
     assert.ok(PAGINA.includes('<title>Correos - RPAD</title>'));
     const encabezado = PAGINA.match(/<h1 class="page-title">([\s\S]*?)<\/h1>/)?.[1] ?? '';
     assert.equal(encabezado.replace(/<[^>]+>/g, '').trim(), 'Correos');
-    assert.ok(PAGINA.includes('<span>RPAD v1.5.0</span>'));
-    assert.ok(!PAGINA.includes('RPAD v1.4.0'));
+    assert.ok(PAGINA.includes('<span>RPAD v2.0.0</span>'));
+    assert.ok(!PAGINA.includes('RPAD v1.'));
   });
 });
 

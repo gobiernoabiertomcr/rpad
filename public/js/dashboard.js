@@ -1,429 +1,210 @@
-// Dashboard - Lógica principal con animaciones y gráficos
-// Al cargarse solo declara y registra su DOMContentLoaded: lo que cuenta y arma los gráficos y las alertas es puro
-// (mesesDelGrafico, vencimientosPorMes, porcionesDelEstado, alertasDe...) y tests/publico-frontend.test.js lo carga en un vm.
-// Los estados, los días y la tasa son los que manda el servidor (d.estado, d.dias_para_vencer, tasaActualizacion), y las
-// fechas se leen por su texto (spec 2026-10-17-fechas-datasets, 11)
-let donutChart = null;
-let calendarChart = null;
+// Portada (spec 2026-10-18-rediseno-publico, 6): el índice de actualización, el mosaico del registro, lo que vence en los
+// próximos 12 meses, los vencidos, los próximos a vencer y las últimas cargas en el portal.
+// Al cargarse solo declara y registra su DOMContentLoaded: lo que cuenta y arma el HTML es puro (textoIndice,
+// gruposDelMosaico, htmlDelMosaico, htmlDeLosMeses, ultimasCargas, htmlDeFila...) y tests/publico-frontend.test.js lo carga
+// en un vm. Los estados, los días y la tasa son los que manda el servidor (d.estado, d.dias_para_vencer, tasaActualizacion),
+// y las fechas se leen por su texto (spec 2026-10-17-fechas-datasets, 11)
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // updateAuthUI() ya no es necesario - está en main.js como initHeader()
-  updateHeroGreeting();
-  updateHeroDateTime();
-  setInterval(updateHeroDateTime, 1000);
-  await loadDashboard();
+// Los conjuntos de datos del mosaico, por id: el pie del panel los busca al pasar el mouse o el foco (los pone dibujarPortada)
+let datasetsDelMosaico = new Map();
+
+document.addEventListener('DOMContentLoaded', () => {
+  prepararPieDelMosaico();
+  cargarPortada();
 });
 
-// Actualizar saludo en el hero (usa Auth de auth.js y getSaludo de main.js)
-function updateHeroGreeting() {
-  const heroGreeting = document.getElementById('hero-greeting');
-  if (!heroGreeting) return;
-  
-  if (Auth.isAuthenticated()) {
-    const user = Auth.getUser();
-    const nombre = user?.nombre_completo?.split(' ')[0] || user?.username || 'Usuario';
-    const saludo = getSaludo();
-    heroGreeting.textContent = `${saludo}, ${nombre}`;
-  } else {
-    heroGreeting.textContent = 'Tablero de Seguimiento';
-  }
-}
+// =====================================================
+// CARGA Y DIBUJO (tocan el DOM y la API)
+// =====================================================
 
-function updateHeroDateTime() {
-  const now = new Date();
-  
-  const opcionesFecha = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
-  let fechaStr = now.toLocaleDateString('es-AR', opcionesFecha);
-  fechaStr = fechaStr.charAt(0).toUpperCase() + fechaStr.slice(1);
-  document.getElementById('hero-date').textContent = fechaStr;
-  
-  const opcionesHora = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
-  document.getElementById('hero-time').textContent = now.toLocaleTimeString('es-AR', opcionesHora);
-}
-
-async function loadDashboard() {
+// Pide las estadísticas y los datasets con API.pedirJson, que tira error ante una respuesta de error (getDatasets y
+// getEstadisticas devolverían [] o undefined y la portada mostraría ceros engañosos). Si falla cualquiera de los dos, o el
+// dibujo (un dato raro), solo queda el aviso: nunca "Cargando…" para siempre
+async function cargarPortada() {
   try {
-    const [estadisticas, datasets] = await Promise.all([
-      API.getEstadisticas(),
-      API.getDatasets()
+    const [respuestaEstadisticas, respuestaDatasets] = await Promise.all([
+      API.pedirJson('GET', '/datasets/estadisticas'),
+      API.pedirJson('GET', '/datasets')
     ]);
-
-    renderStats(estadisticas);
-    renderDonutChart(estadisticas);
-    renderCalendarChart(datasets);
-    renderAlertas(datasets);
-    
-    document.getElementById('hero-rate').textContent = textoTasa(estadisticas);
-    
+    const estadisticas = respuestaEstadisticas?.data;
+    const datasets = respuestaDatasets?.data;
+    if (!estadisticas || !Array.isArray(datasets)) throw new Error('La respuesta no trae los datos del registro');
+    dibujarPortada(estadisticas, datasets);
   } catch (error) {
-    console.error('Error cargando dashboard:', error);
-    if (typeof showToast === 'function') {
-      showToast('Error al cargar el dashboard', 'error');
-    }
+    console.error('Error cargando la portada:', error);
+    mostrarErrorDePortada();
   }
 }
 
-function animateCounter(element, target, duration = 1000) {
-  const start = 0;
-  const startTime = performance.now();
-  
-  function update(currentTime) {
-    const elapsed = currentTime - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    const easeOut = 1 - Math.pow(1 - progress, 3);
-    const current = Math.floor(start + (target - start) * easeOut);
-    
-    element.textContent = current;
-    
-    if (progress < 1) {
-      requestAnimationFrame(update);
-    } else {
-      element.textContent = target;
-    }
-  }
-  
-  requestAnimationFrame(update);
-}
+function dibujarPortada(estadisticas, datasets) {
+  const hoy = Utils.hoyEnArgentina();
 
-function renderStats(stats) {
-  const container = document.getElementById('stats-grid');
-  const totalVencidos = (stats.atrasados || 0) + (stats.sinRespuesta || 0);
-  
-  // Iconos Lucide para las stat cards
-  const iconTotal = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>';
-  const iconActualizado = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
-  const iconProximo = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-  const iconVencido = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
-  
-  container.innerHTML = `
-    <div class="stat-card primary clickable animate-slide-up" style="animation-delay: 0.05s;" onclick="goToDatasets('')" title="Ver todos los datasets">
-      <div class="stat-card-header">
-        <span class="stat-card-label">Total Datasets</span>
-        <div class="stat-card-icon primary">${iconTotal}</div>
-      </div>
-      <div class="stat-card-value" data-target="${stats.total || 0}">0</div>
-    </div>
-    <div class="stat-card success clickable animate-slide-up" style="animation-delay: 0.1s;" onclick="goToDatasets('actualizado')" title="Ver datasets actualizados">
-      <div class="stat-card-header">
-        <span class="stat-card-label">Actualizados</span>
-        <div class="stat-card-icon success">${iconActualizado}</div>
-      </div>
-      <div class="stat-card-value" data-target="${stats.actualizados || 0}">0</div>
-    </div>
-    <div class="stat-card warning clickable animate-slide-up" style="animation-delay: 0.15s;" onclick="goToDatasets('proximo')" title="Ver próximos a vencer">
-      <div class="stat-card-header">
-        <span class="stat-card-label">Vencen en 60 días o menos</span>
-        <div class="stat-card-icon warning">${iconProximo}</div>
-      </div>
-      <div class="stat-card-value" data-target="${stats.proximos || 0}">0</div>
-    </div>
-    <div class="stat-card danger clickable animate-slide-up" style="animation-delay: 0.2s;" onclick="goToDatasets('vencidos')" title="Ver vencidos">
-      <div class="stat-card-header">
-        <span class="stat-card-label">Vencidos</span>
-        <div class="stat-card-icon danger">${iconVencido}</div>
-      </div>
-      <div class="stat-card-value" data-target="${totalVencidos}">0</div>
-    </div>
-  `;
-  
-  setTimeout(() => {
-    container.querySelectorAll('.stat-card-value').forEach(el => {
-      const target = parseInt(el.dataset.target) || 0;
-      animateCounter(el, target, 800);
-    });
-  }, 300);
-}
+  const indice = textoIndice(estadisticas);
+  ponerHtml('indice-frase', htmlDeLaFrase(indice));
+  ponerTexto('indice-aclaracion', indice.aclaracion);
+  ponerTexto('indice-situacion', textoSituacion(hoy));
 
-function goToDatasets(estado) {
-  if (estado) {
-    window.location.href = `datasets.html?estado=${estado}`;
-  } else {
-    window.location.href = 'datasets.html';
-  }
-}
+  datasetsDelMosaico = new Map(datasets.map(d => [String(d.id), d]));
+  ponerHtml('mosaico-grupos', htmlDelMosaico(gruposDelMosaico(datasets)));
 
-function renderDonutChart(stats) {
-  const ctx = document.getElementById('donut-chart').getContext('2d');
-  const porciones = porcionesDelEstado(stats);
+  const meses = mesesDelGrafico(hoy);
+  ponerHtml('meses-marco', htmlDeLosMeses(meses, vencimientosPorMes(datasets, meses)));
 
-  const data = {
-    labels: porciones.map(p => p.etiqueta),
-    datasets: [{
-      data: porciones.map(p => p.valor),
-      backgroundColor: porciones.map(p => p.color),
-      borderColor: '#ffffff',
-      borderWidth: 3,
-      hoverBorderWidth: 4,
-      hoverOffset: 8
-    }]
-  };
-  
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    cutout: '65%',
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        titleFont: { size: 14, weight: '600' },
-        bodyFont: { size: 13 },
-        padding: 12,
-        cornerRadius: 8,
-        callbacks: {
-          label: function(context) {
-            const porcion = porciones[context.dataIndex];
-            return ` ${porcion.valor} datasets (${porcion.porcentaje}%)`;
-          }
-        }
-      }
-    },
-    animation: {
-      animateRotate: true,
-      animateScale: true,
-      duration: 1000,
-      easing: 'easeOutQuart'
-    }
-  };
-  
-  if (donutChart) donutChart.destroy();
-  
-  donutChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: data,
-    options: options
-  });
-  
-  document.getElementById('chart-legend').innerHTML = htmlDeLeyenda(porciones);
-}
-
-function renderAlertas(datasets) {
   const { vencidos, proximos } = alertasDe(datasets);
-
-  const mostrarInicial = 3;
-
-  // Renderizar vencidos
-  const alertasContainer = document.getElementById('alertas-list');
-  if (vencidos.length) {
-    const hayMas = vencidos.length > mostrarInicial;
-    
-    let html = vencidos.map((d, index) => {
-      const dias = Math.abs(d.dias_para_vencer ?? 0);
-      const estado = Utils.estadoDe(d);
-      const estadoTexto = Utils.getEstadoTexto(estado);
-      const estadoClase = Utils.getEstadoClase(estado);
-      const oculto = index >= mostrarInicial ? 'style="display: none;"' : '';
-      const itemClass = estado === 'atrasado' ? 'atrasado' : 'sin-respuesta';
-      const delay = Math.min(index, 2) * 0.1;
-      
-      return `
-        <a href="dataset.html?id=${d.id}" class="alert-item ${itemClass} animate-fade-in-item" data-index="${index}" ${oculto} style="animation-delay: ${delay}s;">
-          <div>
-            <div class="alert-item-title">${Utils.escapeHtml(d.titulo)}</div>
-            <div class="alert-item-meta">${dias} días de atraso</div>
-          </div>
-          <span class="badge ${estadoClase}">${estadoTexto}</span>
-        </a>
-      `;
-    }).join('');
-    
-    if (hayMas) {
-      html += `
-        <button id="btn-ver-mas-atrasados" class="btn-ver-mas" onclick="toggleAtrasados()">
-          Ver más (${vencidos.length - mostrarInicial} restantes)
-        </button>
-      `;
-    }
-    
-    alertasContainer.innerHTML = html;
-  } else {
-    alertasContainer.innerHTML = `
-      <div class="empty-state" style="padding: 1.5rem;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #22c55e; margin-bottom: 0.5rem;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        <p class="text-muted">No hay datasets vencidos</p>
-      </div>
-    `;
+  ponerHtml('vencidos', vencidos.length
+    ? vencidos.slice(0, 6).map(d => htmlDeFila(d, datoDeVencido(d))).join('')
+    : htmlDeListaVacia('No hay conjuntos vencidos.'));
+  const verVencidos = document.getElementById('ver-vencidos');
+  if (verVencidos) {
+    verVencidos.textContent = textoVerVencidos(vencidos.length);
+    verVencidos.classList.toggle('hidden', vencidos.length === 0);
   }
+  ponerHtml('proximos', proximos.length
+    ? proximos.map(d => htmlDeFila(d, datoDeProximo(d))).join('')
+    : htmlDeListaVacia('Ninguno vence en los próximos 60 días.'));
 
-  // Renderizar próximos
-  const proximosContainer = document.getElementById('proximos-list');
-  if (proximos.length) {
-    const hayMasProximos = proximos.length > mostrarInicial;
-    
-    let htmlProximos = proximos.map((d, index) => {
-      const dias = d.dias_para_vencer ?? 0;
-      const oculto = index >= mostrarInicial ? 'style="display: none;"' : '';
-      const delay = Math.min(index, 2) * 0.1;
-      
-      return `
-        <a href="dataset.html?id=${d.id}" class="alert-item proximo animate-fade-in-item" data-index="${index}" ${oculto} style="animation-delay: ${delay}s;">
-          <div>
-            <div class="alert-item-title">${Utils.escapeHtml(d.titulo)}</div>
-            <div class="alert-item-meta">Vence en ${dias} días</div>
-          </div>
-          <span class="badge badge-warning">Próximo</span>
-        </a>
-      `;
-    }).join('');
-    
-    if (hayMasProximos) {
-      htmlProximos += `
-        <button id="btn-ver-mas-proximos" class="btn-ver-mas" onclick="toggleProximos()">
-          Ver más (${proximos.length - mostrarInicial} restantes)
-        </button>
-      `;
-    }
-    
-    proximosContainer.innerHTML = htmlProximos;
-  } else {
-    proximosContainer.innerHTML = `
-      <div class="empty-state" style="padding: 1.5rem;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #3b82f6; margin-bottom: 0.5rem;"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
-        <p class="text-muted">No hay datasets próximos a vencer</p>
-      </div>
-    `;
+  const ultimas = ultimasCargas(datasets);
+  ponerHtml('ultimas', ultimas.length
+    ? ultimas.map(d => htmlDeFila(d, datoDeCarga(d))).join('')
+    : htmlDeListaVacia('Todavía no hay cargas en el portal.'));
+
+  mostrarDatosDePortada(true);
+}
+
+// El aviso en la banda, y nada dibujado con números viejos o en cero
+function mostrarErrorDePortada() {
+  for (const id of ['indice-frase', 'indice-aclaracion', 'indice-situacion']) ponerTexto(id, '');
+  mostrarDatosDePortada(false);
+}
+
+function mostrarDatosDePortada(hayDatos) {
+  document.getElementById('portada-error')?.classList.toggle('hidden', hayDatos);
+  for (const id of ['mosaico', 'seccion-meses', 'portada-listas']) {
+    document.getElementById(id)?.classList.toggle('hidden', !hayDatos);
   }
+  document.querySelector('.portada-banda')?.classList.toggle('portada-sin-datos', !hayDatos);
 }
 
-function toggleAtrasados() {
-  const items = document.querySelectorAll('#alertas-list .alert-item');
-  const btn = document.getElementById('btn-ver-mas-atrasados');
-  const mostrarInicial = 3;
-  
-  const estanOcultos = items[mostrarInicial]?.style.display === 'none';
-  
-  items.forEach((item, index) => {
-    if (index >= mostrarInicial) {
-      item.style.display = estanOcultos ? 'flex' : 'none';
-    }
-  });
-  
-  btn.textContent = estanOcultos ? 'Ver menos' : `Ver más (${items.length - mostrarInicial} restantes)`;
-}
-
-function toggleProximos() {
-  const items = document.querySelectorAll('#proximos-list .alert-item');
-  const btn = document.getElementById('btn-ver-mas-proximos');
-  const mostrarInicial = 3;
-  
-  const estanOcultos = items[mostrarInicial]?.style.display === 'none';
-  
-  items.forEach((item, index) => {
-    if (index >= mostrarInicial) {
-      item.style.display = estanOcultos ? 'flex' : 'none';
-    }
-  });
-  
-  btn.textContent = estanOcultos ? 'Ver menos' : `Ver más (${items.length - mostrarInicial} restantes)`;
-}
-
-// === CALENDARIO DE VENCIMIENTOS ===
-function renderCalendarChart(datasets) {
-  const canvas = document.getElementById('calendar-chart');
-  if (!canvas) return;
-  
-  const ctx = canvas.getContext('2d');
-  
-  // Los 12 meses, desde el mes en curso (el de hoy en Argentina), y los vencimientos de cada uno (sin los eventuales)
-  const meses = mesesDelGrafico(Utils.hoyEnArgentina());
-  const cantidades = vencimientosPorMes(datasets, meses);
-
-  // Colores según cantidad de vencimientos (valores fijos)
-  const colores = cantidades.map(v => {
-    if (v === 0) return '#faffff';       // (sin vencimientos)
-    if (v === 1) return '#b9e4df';       // (1)
-    if (v <= 3) return '#72c8c1';        // (2-3)
-    if (v <= 7) return '#4bb0a9';        // (4-7)
-    return '#329b93';                    // (8+ vencimientos)
-  });
-  
-  const data = {
-    labels: meses.map(m => m.etiqueta),
-    datasets: [{
-      label: 'Datasets a vencer',
-      data: cantidades,
-      backgroundColor: colores,
-      borderColor: colores.map(c => c),
-      borderWidth: 1,
-      borderRadius: 6,
-      borderSkipped: false,
-    }]
+// Al pasar el mouse o el foco por un cuadrito, el pie del panel (aria-live) dice cuál es. Delegación sobre #mosaico: los
+// cuadritos se vuelven a dibujar en cada carga
+function prepararPieDelMosaico() {
+  const mosaico = document.getElementById('mosaico');
+  const pie = document.getElementById('mosaico-pie');
+  if (!mosaico || !pie) return;
+  const mostrar = (evento) => {
+    const cuadro = evento.target?.closest?.('.cuadro');
+    const dataset = cuadro ? datasetsDelMosaico.get(cuadro.dataset.id) : null;
+    // El mismo cuadrito no se vuelve a anunciar
+    if (!dataset || pie.dataset.id === cuadro.dataset.id) return;
+    pie.dataset.id = cuadro.dataset.id;
+    pie.innerHTML = htmlDelPie(dataset);
   };
-  
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        titleFont: { size: 14, weight: '600' },
-        bodyFont: { size: 13 },
-        padding: 12,
-        cornerRadius: 8,
-        callbacks: {
-          title: function(context) {
-            return meses[context[0].dataIndex].titulo;
-          },
-          label: function(context) {
-            const value = context.raw;
-            return value === 1 ? ' 1 dataset vence' : ` ${value} datasets vencen`;
-          }
-        }
-      }
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          stepSize: 1,
-          font: { size: 11 },
-          color: '#6b7280'
-        },
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)'
-        }
-      },
-      x: {
-        ticks: {
-          font: { size: 11, weight: '500' },
-          color: '#374151'
-        },
-        grid: {
-          display: false
-        }
-      }
-    },
-    animation: {
-      duration: 1000,
-      easing: 'easeOutQuart'
-    },
-    onClick: (event, elements) => {
-      if (elements.length > 0) {
-        window.location.href = urlDelMes(meses[elements[0].index]);
-      }
-    },
-    onHover: (event, elements) => {
-      event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
-    }
-  };
-  
-  if (calendarChart) calendarChart.destroy();
-  
-  calendarChart = new Chart(ctx, {
-    type: 'bar',
-    data: data,
-    options: options
-  });
+  mosaico.addEventListener('mouseover', mostrar);
+  mosaico.addEventListener('focusin', mostrar);
+}
+
+function ponerHtml(id, html) {
+  const elemento = document.getElementById(id);
+  if (elemento) elemento.innerHTML = html;
+}
+
+function ponerTexto(id, texto) {
+  const elemento = document.getElementById(id);
+  if (elemento) elemento.textContent = texto;
 }
 
 // =====================================================
-// LO PURO: gráfico de 12 meses, dona y alertas
+// LO PURO: el índice, el mosaico, los 12 meses y las listas
 // =====================================================
 
 // "83%": la tasa del servidor (actualizados + próximos sobre el total sin los eventuales; tasaDeActualizacion)
 function textoTasa(stats) {
   return `${stats?.tasaActualizacion ?? 0}%`;
+}
+
+/**
+ * Los textos del índice, con los números del servidor (/datasets/estadisticas). La base es la misma de la tasa: el total
+ * sin los eventuales. { tasa: '80%', frase: 'El 80% de … están al día: 53 de 66.', aclaracion: 'El registro sigue …' }
+ */
+function textoIndice(stats) {
+  const numero = (valor) => Number(valor) || 0;
+  const total = numero(stats?.total);
+  const eventuales = numero(stats?.eventuales);
+  const sinFecha = numero(stats?.sinFecha);
+  const tasa = textoTasa(stats);
+  const alDia = numero(stats?.actualizados) + numero(stats?.proximos);
+  const frase = `El ${tasa} de los conjuntos de datos con fecha de actualización están al día: ${alDia} de ${total - eventuales}.`;
+  let aclaracion = `El registro sigue ${total} ${total === 1 ? 'conjunto' : 'conjuntos'}.`;
+  if (eventuales === 1) aclaracion += ' El otro es eventual: se publica cuando hay novedades y no tiene vencimiento.';
+  else if (eventuales > 1) aclaracion += ` Los otros ${eventuales} son eventuales: se publican cuando hay novedades y no tienen vencimiento.`;
+  if (sinFecha > 0) aclaracion += ` ${sinFecha} todavía no ${sinFecha === 1 ? 'tiene' : 'tienen'} fecha de próxima actualización.`;
+  return { tasa, frase, aclaracion };
+}
+
+// La frase, escapada, con la tasa destacada
+function htmlDeLaFrase({ tasa, frase }) {
+  const cifra = Utils.escapeHtml(tasa);
+  return Utils.escapeHtml(frase).replace(cifra, `<strong class="indice-cifra">${cifra}</strong>`);
+}
+
+// 'Situación al domingo 18 de octubre de 2026.': el día de la semana sale del texto en UTC, no de la zona del navegador
+function textoSituacion(hoy) {
+  const fecha = Utils.soloFecha(hoy);
+  if (!fecha) return '';
+  const [anio, mes, dia] = fecha.split('-').map(Number);
+  const DIAS_DE_LA_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const diaDeLaSemana = DIAS_DE_LA_SEMANA[new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay()];
+  return `Situación al ${diaDeLaSemana} ${dia} de ${Utils.nombreDeMes(mes)} de ${anio}.`;
+}
+
+function porTitulo(a, b) {
+  return String(a?.titulo ?? '').localeCompare(String(b?.titulo ?? ''), 'es');
+}
+
+/**
+ * Los grupos del mosaico, con el estado del servidor: Actualizados, Próximos a vencer, Vencidos (atrasados y sin respuesta),
+ * Eventuales y, solo si hay, Sin fecha. Cada grupo por título. [{ etiqueta, estados, datasets }]
+ */
+function gruposDelMosaico(datasets) {
+  return [
+    { etiqueta: 'Actualizados', estados: ['actualizado'] },
+    { etiqueta: 'Próximos a vencer', estados: ['proximo'] },
+    { etiqueta: 'Vencidos', estados: ['atrasado', 'sin-respuesta'] },
+    { etiqueta: 'Eventuales', estados: ['eventual'] },
+    { etiqueta: 'Sin fecha', estados: ['sin-fecha'] }
+  ]
+    .map(grupo => ({ ...grupo, datasets: datasets.filter(d => grupo.estados.includes(Utils.estadoDe(d))).sort(porTitulo) }))
+    .filter(grupo => grupo.etiqueta !== 'Sin fecha' || grupo.datasets.length > 0);
+}
+
+// El id de un dataset, seguro dentro de un href y de un atributo entre comillas dobles
+function idDelDataset(d) {
+  return encodeURIComponent(String(d?.id ?? ''));
+}
+
+function htmlDelCuadro(d) {
+  const estado = Utils.estadoDe(d);
+  const id = idDelDataset(d);
+  return `<a class="cuadro c-${Utils.escapeHtml(estado)}" href="dataset.html?id=${id}" data-id="${id}" aria-label="${Utils.escapeHtml(d.titulo)}, ${Utils.escapeHtml(Utils.getEstadoTextoLargo(estado))}"></a>`;
+}
+
+// Cada grupo con su cantidad y un cuadrito (link al detalle) por conjunto; Vencidos, con la leyenda de sus dos colores
+function htmlDelMosaico(grupos) {
+  const leyendaDeVencidos = '<div class="leyenda-vencidos">'
+    + '<span><span class="tile c-atrasado" aria-hidden="true"></span>Atrasado (gestión interna)</span>'
+    + '<span><span class="tile c-sin-respuesta" aria-hidden="true"></span>Sin respuesta del área (gestión externa)</span>'
+    + '</div>';
+  return grupos.map(grupo => '<div class="mosaico-grupo">'
+    + `<div class="mosaico-cabeza"><h3>${Utils.escapeHtml(grupo.etiqueta)}</h3><span class="mosaico-cuenta">${grupo.datasets.length}</span></div>`
+    + `<div class="cuadros">${grupo.datasets.map(htmlDelCuadro).join('')}</div>`
+    + (grupo.estados.includes('atrasado') ? leyendaDeVencidos : '')
+    + '</div>').join('');
+}
+
+// El pie del mosaico: título, área y estado largo
+function htmlDelPie(d) {
+  const area = Utils.escapeHtml(d.area_nombre) || 'Sin área asignada';
+  return `<strong>${Utils.escapeHtml(d.titulo)}</strong><br>${area}. ${Utils.escapeHtml(Utils.getEstadoTextoLargo(Utils.estadoDe(d)))}.`;
 }
 
 /**
@@ -450,51 +231,18 @@ function urlDelMes(mes) {
 }
 
 /**
- * Porcentajes enteros que suman exactamente 100 (si el total no es 0): cada uno se redondea para abajo y los puntos que
- * faltan van a los de mayor resto (método del resto mayor; en un empate, al primero). Con el redondeo común, 54, 1, 11 y
- * 14 de 80 darían 68 + 1 + 14 + 18 = 101.
+ * Qué vence en los próximos 12 meses: una columna por mes (link al listado de ese mes) con la cantidad y una marca por
+ * conjunto, y abajo, en una fila aparte, las etiquetas ('oct 26'). El primero es el mes en curso. Va dentro de #meses-marco
  */
-function porcentajesEnteros(valores) {
-  const total = valores.reduce((suma, valor) => suma + valor, 0);
-  if (total <= 0) return valores.map(() => 0);
-  const exactos = valores.map(valor => (valor * 100) / total);
-  const enteros = exactos.map(Math.floor);
-  let faltan = 100 - enteros.reduce((suma, valor) => suma + valor, 0);
-  const porResto = exactos.map((exacto, i) => ({ i, resto: exacto - Math.floor(exacto) }))
-    .sort((a, b) => b.resto - a.resto || a.i - b.i);
-  for (const { i } of porResto) {
-    if (faltan <= 0) break;
-    enteros[i]++;
-    faltan--;
-  }
-  return enteros;
-}
-
-/**
- * Las porciones de la dona del estado, con los números del servidor (/datasets/estadisticas): los eventuales son una
- * porción propia (no tienen vencimiento: no son actualizados) y los sin fecha aparecen solo si hay, así los porcentajes
- * suman 100. { clave, etiqueta, valor, color, porcentaje }
- */
-function porcionesDelEstado(stats = {}) {
-  const porciones = [
-    { clave: 'actualizados', etiqueta: 'Actualizados', valor: stats.actualizados || 0, color: '#81b3a3' },
-    { clave: 'proximos', etiqueta: 'Próximos a vencer', valor: stats.proximos || 0, color: '#f8cf61' },
-    { clave: 'vencidos', etiqueta: 'Vencidos', valor: (stats.atrasados || 0) + (stats.sinRespuesta || 0), color: '#fc7c7e' },
-    { clave: 'eventuales', etiqueta: 'Eventuales', valor: stats.eventuales || 0, color: '#c3ccd8' }
-  ];
-  if (stats.sinFecha > 0) porciones.push({ clave: 'sin-fecha', etiqueta: 'Sin fecha', valor: stats.sinFecha, color: '#8a96a8' });
-  const porcentajes = porcentajesEnteros(porciones.map(p => p.valor));
-  return porciones.map((p, i) => ({ ...p, porcentaje: porcentajes[i] }));
-}
-
-function htmlDeLeyenda(porciones) {
-  return porciones.map(p => `
-      <div class="legend-item">
-        <span class="legend-color" style="background: ${p.color};"></span>
-        <span class="legend-label">${Utils.escapeHtml(p.etiqueta)}</span>
-        <span class="legend-value">${p.valor} (${p.porcentaje}%)</span>
-      </div>
-    `).join('');
+function htmlDeLosMeses(meses, conteos) {
+  const columnas = meses.map((m, i) => {
+    const n = conteos[i] || 0;
+    const cuantos = n === 1 ? 'vence 1 conjunto' : `vencen ${n} conjuntos`;
+    return `<a class="mes${i === 0 ? ' actual' : ''}" href="${Utils.escapeHtml(urlDelMes(m))}" aria-label="${Utils.escapeHtml(m.titulo)}: ${cuantos}">`
+      + `<span class="mes-cuenta${n ? '' : ' cero'}">${n}</span><span class="mes-pila" aria-hidden="true">${'<i></i>'.repeat(n)}</span></a>`;
+  }).join('');
+  const nombres = meses.map((m, i) => `<span${i === 0 ? ' class="actual"' : ''}>${Utils.escapeHtml(m.etiqueta)}</span>`).join('');
+  return `<div class="meses" id="meses">${columnas}</div><div class="meses-nombres" id="meses-nombres" aria-hidden="true">${nombres}</div>`;
 }
 
 // Los vencidos (atrasados y sin respuesta) y los próximos a vencer, con el estado y los días del servidor: primero los que
@@ -505,4 +253,50 @@ function alertasDe(datasets) {
     vencidos: datasets.filter(d => ['atrasado', 'sin-respuesta'].includes(Utils.estadoDe(d))).sort(porDias),
     proximos: datasets.filter(d => Utils.estadoDe(d) === 'proximo').sort(porDias)
   };
+}
+
+// Las últimas cargas en el portal: por la fecha de carga (su texto), la más reciente primero, sin las que no tienen
+function ultimasCargas(datasets, cantidad = 5) {
+  return datasets
+    .filter(d => Utils.soloFecha(d.ultima_actualizacion))
+    .sort((a, b) => Utils.soloFecha(b.ultima_actualizacion).localeCompare(Utils.soloFecha(a.ultima_actualizacion)) || porTitulo(a, b))
+    .slice(0, cantidad);
+}
+
+function textoDias(n) {
+  return n === 1 ? '1 día' : `${n} días`;
+}
+
+// Una fila de las listas: toda la fila es el link al detalle. `dato` lo arma quien llama, ya seguro
+function htmlDeFila(d, dato) {
+  return `<li><a class="fila" href="dataset.html?id=${idDelDataset(d)}">`
+    + `<span class="fila-titulo">${Utils.escapeHtml(d.titulo)}</span>`
+    + `<span class="fila-meta">${Utils.escapeHtml(d.area_nombre) || 'Sin área asignada'}</span>`
+    + `<span class="fila-dato">${dato}</span></a></li>`;
+}
+
+function htmlDeListaVacia(texto) {
+  return `<li class="aviso">${Utils.escapeHtml(texto)}</li>`;
+}
+
+// "625 días de atraso" y la insignia del estado
+function datoDeVencido(d) {
+  const estado = Utils.estadoDe(d);
+  return `<strong>${textoDias(Math.abs(d.dias_para_vencer ?? 0))}</strong> de atraso`
+    + `<span class="badge ${Utils.getEstadoClase(estado)}">${Utils.escapeHtml(Utils.getEstadoTexto(estado))}</span>`;
+}
+
+// "14 días para vencer", o "Vence hoy"
+function datoDeProximo(d) {
+  const dias = d.dias_para_vencer ?? 0;
+  return dias === 0 ? '<strong>Vence hoy</strong>' : `<strong>${textoDias(dias)}</strong> para vencer`;
+}
+
+// "16/10/2026 cargado": la fecha de carga en el portal, por su texto
+function datoDeCarga(d) {
+  return `<strong>${Utils.fechaCorta(d.ultima_actualizacion)}</strong> cargado`;
+}
+
+function textoVerVencidos(cantidad) {
+  return cantidad === 1 ? 'Ver el vencido' : `Ver los ${cantidad} vencidos`;
 }

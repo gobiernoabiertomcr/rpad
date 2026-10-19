@@ -1212,9 +1212,9 @@ describe('admin.html: la lista', () => {
     assert.match(CODIGO_ADMIN, /getElementById\('btn-nuevo-dataset'\)\.hidden = false/);
   });
 
-  it('el pie dice "RPAD v1.6.0"', () => {
-    assert.match(PAGINA_ADMIN, /<span>RPAD v1\.6\.0<\/span>/);
-    assert.doesNotMatch(PAGINA_ADMIN, /RPAD v1\.4\.0/);
+  it('el pie dice "RPAD v2.0.0"', () => {
+    assert.match(PAGINA_ADMIN, /<span>RPAD v2\.0\.0<\/span>/);
+    assert.doesNotMatch(PAGINA_ADMIN, /RPAD v1\.\d\.0/);
   });
 
   it('no usa .text-small ni .mt-2, que no existen', () => {
