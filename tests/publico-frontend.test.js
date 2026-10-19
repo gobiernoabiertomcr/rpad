@@ -896,6 +896,97 @@ describe('dashboard.js: la carga', () => {
   });
 });
 
+// El pie del mosaico (aria-live): al pasar el mouse o el foco por un cuadrito dice cuál es, y al salir de los cuadritos (sin
+// entrar en otro) vuelve el texto de index.html. Con el mouse, después de una pausa corta: al cruzar los 5 px entre dos cuadritos
+// no parpadea. Con el teclado, enseguida. Un mosaico de mentira guarda los oyentes, y un reloj de mentira, la espera
+describe('dashboard.js: el pie del mosaico vuelve al texto de index.html al salir de los cuadritos', () => {
+  const INICIAL = 'Cada cuadrado es un conjunto de datos. Pasá el mouse por uno para ver cuál es; al tocarlo se abre su detalle.';
+  const preparar = () => {
+    const tablero = cargar('dashboard.js');
+    const oyentes = {};
+    const mosaico = { addEventListener: (tipo, fn) => { oyentes[tipo] = fn; }, contains: () => true };
+    const pie = { innerHTML: INICIAL, dataset: {} };
+    tablero.document.getElementById = (id) => ({ mosaico, 'mosaico-pie': pie })[id] ?? null;
+    const reloj = { pendiente: null };
+    tablero.setTimeout = (fn, ms) => { reloj.pendiente = { fn, ms }; return 1; };
+    tablero.clearTimeout = () => { reloj.pendiente = null; };
+    tablero.lista = [dataset({ id: 1, titulo: 'Gasto Público' }), dataset({ id: 2, titulo: 'Obra Pública', estado: 'sin-respuesta' })];
+    vm.runInContext('datasetsDelMosaico = new Map(lista.map(d => [String(d.id), d]))', tablero);
+    const cuadro = (id) => { const c = { dataset: { id: String(id) } }; c.closest = (sel) => (sel === '.cuadro' ? c : null); return c; };
+    const otro = { closest: () => null };
+    tablero.prepararPieDelMosaico();
+    return {
+      tablero, pie, reloj, otro, A: cuadro(1), B: cuadro(2),
+      sobre: (el) => oyentes.mouseover({ target: el }),
+      saleElMouse: (desde, hacia) => oyentes.mouseout({ target: desde, relatedTarget: hacia }),
+      enfoca: (el) => oyentes.focusin({ target: el }),
+      desenfoca: (desde, hacia) => oyentes.focusout({ target: desde, relatedTarget: hacia })
+    };
+  };
+
+  it('el texto inicial es el de index.html', () => {
+    assert.ok(leer('index.html').includes(`id="mosaico-pie" aria-live="polite">${INICIAL}</p>`));
+  });
+
+  it('con el mouse: dice cuál es, y al salir a una parte vacía vuelve el texto inicial después de una pausa corta', () => {
+    const { pie, reloj, otro, A, sobre, saleElMouse } = preparar();
+    sobre(A);
+    assert.match(pie.innerHTML, /^<strong>Gasto Público<\/strong>/);
+    saleElMouse(A, otro);
+    assert.match(pie.innerHTML, /Gasto Público/, 'todavía no: espera la pausa');
+    assert.ok(reloj.pendiente && reloj.pendiente.ms > 0 && reloj.pendiente.ms <= 500, `pausa corta: ${reloj.pendiente?.ms}`);
+    reloj.pendiente.fn();
+    assert.equal(pie.innerHTML, INICIAL);
+    // Al volver a pasar por el mismo cuadrito, lo dice de nuevo
+    sobre(A);
+    assert.match(pie.innerHTML, /Gasto Público/);
+  });
+
+  it('del mouse fuera de la ventana (sin destino) también vuelve', () => {
+    const { pie, reloj, A, sobre, saleElMouse } = preparar();
+    sobre(A);
+    saleElMouse(A, null);
+    reloj.pendiente.fn();
+    assert.equal(pie.innerHTML, INICIAL);
+  });
+
+  it('de un cuadrito a otro no parpadea: directo, o cruzando el espacio entre los dos', () => {
+    const { pie, reloj, otro, A, B, sobre, saleElMouse } = preparar();
+    sobre(A);
+    saleElMouse(A, B);
+    assert.equal(reloj.pendiente, null, 'directo a otro cuadrito: no hay espera');
+    sobre(B);
+    assert.match(pie.innerHTML, /Obra Pública/);
+    saleElMouse(B, otro);
+    sobre(otro);
+    saleElMouse(otro, A);
+    sobre(A);
+    assert.equal(reloj.pendiente, null, 'al entrar en otro cuadrito se cancela la espera');
+    assert.match(pie.innerHTML, /Gasto Público/);
+  });
+
+  it('con el teclado: entre cuadritos dice cada uno, y al salir de ellos vuelve enseguida', () => {
+    const { pie, reloj, otro, A, B, enfoca, desenfoca } = preparar();
+    enfoca(A);
+    desenfoca(A, B);
+    assert.match(pie.innerHTML, /Gasto Público/);
+    enfoca(B);
+    assert.match(pie.innerHTML, /Obra Pública/);
+    desenfoca(B, otro);
+    assert.equal(pie.innerHTML, INICIAL);
+    assert.equal(reloj.pendiente, null);
+  });
+
+  it('si un cuadrito tiene el foco cuando sale el mouse, dice ese en lugar del texto inicial', () => {
+    const { tablero, pie, reloj, otro, A, B, sobre, saleElMouse } = preparar();
+    tablero.document.activeElement = B;
+    sobre(A);
+    saleElMouse(A, otro);
+    reloj.pendiente.fn();
+    assert.match(pie.innerHTML, /Obra Pública/);
+  });
+});
+
 describe('dashboard.js: los 12 meses y las listas', () => {
   const tablero = cargar('dashboard.js');
 

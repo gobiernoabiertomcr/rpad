@@ -649,6 +649,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ### Índice de la portada: "Al día" y el texto en orden (2026-10)
 - El cuadro del índice une Actualizados y Próximos a vencer en "Al día" (el mismo número que el texto), con una leyenda que dice cuántos hay de cada uno; la leyenda de Vencidos también dice cuántos atrasados y cuántos sin respuesta hay
 - Dentro de cada grupo, los cuadritos van por categoría (primero los actualizados y después los próximos; primero los atrasados y después los sin respuesta) y cada una por título
+- El pie del cuadro, que dice qué conjunto se señala, vuelve a su texto ("Cada cuadrado es un conjunto de datos…") al sacar el mouse de los cuadritos o salir de ellos con el teclado; ya no queda el nombre del último
 - El texto se lee en orden: primero el registro y sus eventuales, y después el índice ("Los otros 67 tienen fecha de vencimiento, y el 81% está al día: 54 de 67.")
 - Solo `public/index.html` y `public/js/dashboard.js`: sin cambios en la API, la base ni las hojas de estilo
 

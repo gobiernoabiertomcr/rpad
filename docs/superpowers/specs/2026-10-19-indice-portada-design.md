@@ -15,6 +15,14 @@ En la portada, el texto del índice decía "están al día: 54 de 67", pero el c
   - "El registro sigue 81 conjuntos de datos. De ellos, 14 tienen frecuencia de actualización eventual: se publican cuando hay novedades y no tienen vencimiento."
   - "Los otros 67 tienen fecha de vencimiento, y el **81%** está al día: 54 de 67."
 
+## El pie del cuadro (pedido del mismo día)
+
+El pie (`aria-live`) arranca con "Cada cuadrado es un conjunto de datos. Pasá el mouse por uno para ver cuál es; al tocarlo se abre su detalle." y, al pasar el mouse o el foco por un cuadrito, dice cuál es. Antes quedaba "congelado" en el último; ahora, al salir de los cuadritos sin entrar en otro, vuelve al texto de `index.html` (el usuario eligió estas dos opciones):
+
+- Con el mouse, después de una pausa corta (0,3 s): entre dos cuadritos hay 5 px, y sin la pausa el texto inicial parpadearía al cruzarlos. Si en la pausa entra en otro cuadrito, la espera se cancela.
+- Con el teclado, enseguida al salir de los cuadritos (entre cuadritos, con Tab, dice cada uno).
+- Si al salir el mouse un cuadrito tiene el foco, el pie dice ese (decisión de implementación).
+
 ## Casos que no se ven hoy (decisiones de implementación)
 
 - Un eventual: "De ellos, 1 tiene … se publica … no tiene vencimiento."; sin eventuales, la aclaración termina en "… conjuntos de datos." y la frase empieza "Todos tienen fecha de vencimiento, y …".
@@ -24,7 +32,7 @@ En la portada, el texto del índice decía "están al día: 54 de 67", pero el c
 
 ## Alcance
 
-- Solo `public/index.html` (el orden de los dos párrafos y la versión de `dashboard.js`) y `public/js/dashboard.js` (`textoIndice`, `gruposDelMosaico`, `htmlDeLaLeyendaDelGrupo`, `htmlDelMosaico`). `dashboard.js` tiene su propia versión en `tests/paginas.test.js` (`VERSION_PORTADA`), para no tocar las otras páginas públicas.
+- Solo `public/index.html` (el orden de los dos párrafos y la versión de `dashboard.js`) y `public/js/dashboard.js` (`textoIndice`, `gruposDelMosaico`, `htmlDeLaLeyendaDelGrupo`, `htmlDelMosaico`, `prepararPieDelMosaico`). `dashboard.js` tiene su propia versión en `tests/paginas.test.js` (`VERSION_PORTADA`), para no tocar las otras páginas públicas.
 - Sin cambios en la API, la base ni las hojas de estilo: los márgenes actuales sirven con el orden nuevo, y la leyenda de Al día usa la clase de siempre, `.leyenda-vencidos`.
 - El resto del sitio no cambia: el listado, el calendario y los reportes siguen diciendo "Actualizados" para los `actualizado`. El pie del mosaico y el `aria-label` de cada cuadrito siguen con el estado largo de cada uno.
 - Tests en `tests/publico-frontend.test.js` (textos, grupos, orden, leyendas, el orden de los párrafos en `index.html`) y `tests/paginas.test.js` (la versión).

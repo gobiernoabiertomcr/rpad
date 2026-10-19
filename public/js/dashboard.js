@@ -85,22 +85,54 @@ function mostrarDatosDePortada(hayDatos) {
   document.querySelector('.portada-banda')?.classList.toggle('portada-sin-datos', !hayDatos);
 }
 
-// Al pasar el mouse o el foco por un cuadrito, el pie del panel (aria-live) dice cuál es. Delegación sobre #mosaico: los
-// cuadritos se vuelven a dibujar en cada carga
+// Al pasar el mouse o el foco por un cuadrito, el pie del panel (aria-live) dice cuál es. Al salir de los cuadritos sin entrar
+// en otro vuelve el texto de index.html: con el mouse, después de una pausa corta (al cruzar los 5 px entre dos cuadritos no
+// parpadea); con el teclado, enseguida. Delegación sobre #mosaico: los cuadritos se vuelven a dibujar en cada carga
 function prepararPieDelMosaico() {
+  const PAUSA = 300;
   const mosaico = document.getElementById('mosaico');
   const pie = document.getElementById('mosaico-pie');
   if (!mosaico || !pie) return;
-  const mostrar = (evento) => {
-    const cuadro = evento.target?.closest?.('.cuadro');
+  const textoInicial = pie.innerHTML;
+  let espera = null;
+  const cuadroDe = (elemento) => elemento?.closest?.('.cuadro') ?? null;
+  const cancelar = () => {
+    clearTimeout(espera);
+    espera = null;
+  };
+  // Dice cuál es el cuadrito; el mismo no se vuelve a anunciar. false si no es un cuadrito del mosaico
+  const anunciar = (cuadro) => {
     const dataset = cuadro ? datasetsDelMosaico.get(cuadro.dataset.id) : null;
-    // El mismo cuadrito no se vuelve a anunciar
-    if (!dataset || pie.dataset.id === cuadro.dataset.id) return;
-    pie.dataset.id = cuadro.dataset.id;
-    pie.innerHTML = htmlDelPie(dataset);
+    if (!dataset) return false;
+    if (pie.dataset.id !== cuadro.dataset.id) {
+      pie.dataset.id = cuadro.dataset.id;
+      pie.innerHTML = htmlDelPie(dataset);
+    }
+    return true;
+  };
+  // El texto inicial, salvo que un cuadrito tenga el foco: entonces dice ese
+  const volver = () => {
+    cancelar();
+    const enfocado = cuadroDe(document.activeElement);
+    if (enfocado && mosaico.contains(enfocado) && anunciar(enfocado)) return;
+    if (pie.dataset.id === undefined) return;
+    delete pie.dataset.id;
+    pie.innerHTML = textoInicial;
+  };
+  const mostrar = (evento) => {
+    if (anunciar(cuadroDe(evento.target))) cancelar();
+  };
+  // Sale de un cuadrito hacia algo que no es otro cuadrito (o fuera de la ventana)
+  const salir = (evento, conPausa) => {
+    if (!cuadroDe(evento.target) || cuadroDe(evento.relatedTarget)) return;
+    cancelar();
+    if (conPausa) espera = setTimeout(volver, PAUSA);
+    else volver();
   };
   mosaico.addEventListener('mouseover', mostrar);
   mosaico.addEventListener('focusin', mostrar);
+  mosaico.addEventListener('mouseout', (evento) => salir(evento, true));
+  mosaico.addEventListener('focusout', (evento) => salir(evento, false));
 }
 
 function ponerHtml(id, html) {
