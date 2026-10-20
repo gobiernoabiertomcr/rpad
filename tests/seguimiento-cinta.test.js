@@ -129,12 +129,25 @@ describe('cintaDe: casos reales', () => {
 });
 
 describe('cintaDe: tramos', () => {
-  it('52: antes del alta, dos ciclos y lo vencido de cada uno, con las x de la fórmula', () => {
+  it('52: antes del alta, el ciclo de antes de la actualización simple, dos ciclos y lo vencido de cada uno, con las x de la fórmula', () => {
     const t = cinta(52).tramos;
-    assert.deepEqual(t.map(x => x.tipo), ['antes', 'ciclo', 'vencido', 'ciclo', 'vencido']);
-    const esperado = [[30, xDe('2025-12-01')], [xDe('2025-12-01'), xDe('2026-01-31')], [xDe('2026-01-31'), xDe('2026-02-04')],
-      [xDe('2026-02-04'), xDe('2026-07-31')], [xDe('2026-07-31'), xDe('2026-10-20')]];
+    assert.deepEqual(t.map(x => x.tipo), ['antes', 'ciclo', 'ciclo', 'vencido', 'ciclo', 'vencido']);
+    const esperado = [[30, xDe('2025-12-01')], [xDe('2025-12-01'), xDe('2025-12-17')], [xDe('2025-12-17'), xDe('2026-01-31')],
+      [xDe('2026-01-31'), xDe('2026-02-04')], [xDe('2026-02-04'), xDe('2026-07-31')], [xDe('2026-07-31'), xDe('2026-10-20')]];
     t.forEach((tramo, i) => { assert.ok(casi(tramo.x0, esperado[i][0]), `x0 de ${i}`); assert.ok(casi(tramo.x1, esperado[i][1]), `x1 de ${i}`); });
+  });
+  it('58: el ciclo de antes de la actualización simple (sin vencimiento conocido) es un tramo de ciclo, sin "vence" ni vencido', () => {
+    const c = cinta(58);
+    assert.deepEqual(c.tramos.map(x => x.tipo), ['antes', 'ciclo', 'ciclo', 'futuro']);
+    const esperado = [[30, xDe('2025-12-02')], [xDe('2025-12-02'), xDe('2025-12-16')], [xDe('2025-12-16'), xDe('2026-10-20')], [xDe('2026-10-20'), 970]];
+    c.tramos.forEach((tramo, i) => { assert.ok(casi(tramo.x0, esperado[i][0]), `x0 de ${i}`); assert.ok(casi(tramo.x1, esperado[i][1]), `x1 de ${i}`); });
+    assert.deepEqual(c.vencimientos, []);
+    assert.equal(c.textos.some(t => t.tipo === 'vencido'), false);
+  });
+  it('un ciclo sin vencimiento y sin cierre no se dibuja ni tira error', () => {
+    const fu = f(58);
+    const ciclos = [{ inicio: '2025-12-02', venc: null, cierre: null, como: null, desde: '2025-12-02 09:00:00', hasta: null, diasVencido: 0 }];
+    assert.doesNotThrow(() => cintaDe({ fuentes: fu, ciclos, movimientos: movimientosDe(fu), hoy: HOY }));
   });
   it('81: el ciclo abierto llega hasta hoy y de hoy al vencimiento va el tramo futuro', () => {
     const t = cinta(81).tramos;
@@ -256,11 +269,14 @@ describe('cintaDe: textos', () => {
     // con letras enormes no entra ningún texto de vencido, y los tramos siguen
     const grande = cinta(52, { letra: 100 });
     assert.deepEqual(grande.textos, []);
-    assert.equal(grande.tramos.length, 5);
+    assert.equal(grande.tramos.length, 6);
   });
   it('el texto se corre al hueco más grande cuando una marca de la banda cae dentro del tramo', () => {
-    // una actualización el 07/08 (x ≈ 750) deja un hueco de 7 a su izquierda y otro de unas 180 unidades a su derecha: el texto va en el mayor
-    const fu = { ...f(52), historial: [...CASOS[52].historial, { fecha: '2026-08-07', creado: '2026-08-07 10:00:00', usuario: 'Ana María Uno', cambio_id: null }] };
+    // un cambio en la ficha el 07/08 (x ≈ 750) deja un hueco de 7 a su izquierda y otro de unas 180 unidades a su derecha: el texto va
+    // en el mayor. (Un cambio que no toca la próxima ni la carga no cierra el ciclo.)
+    const ficha = { id: 98, tipo: 'editar', estado: 'aprobado', creado: '2026-08-07 09:00:00', revisado: '2026-08-07 10:00:00', propuso: 'Ana María Uno',
+      reviso: 'Bruno Pablo Dos', motivo: null, nuevos: { descripcion: 'Nueva' }, anteriores: { descripcion: 'Vieja' }, dataset_id: 52 };
+    const fu = { ...f(52), cambios: [...CASOS[52].cambios, ficha] };
     const c = cintaDeFuentes(fu);
     const t = c.textos.find(x => x.tipo === 'vencido');
     const marca = c.marcas.find(m => m.fila === 'banda' && m.detalle[0].startsWith('07/08/2026'));

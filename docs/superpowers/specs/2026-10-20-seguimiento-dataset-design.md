@@ -124,10 +124,10 @@ Todo sale de la base que ya existe: **no hay tablas, columnas ni migraciones nue
 
 ## Ciclos
 
-Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). Se reconstruye con los cambios aprobados, en el orden en que se aprobaron (`revisado_at`).
+Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). Se reconstruye con los cambios aprobados y las actualizaciones anteriores a la doble verificación, en el orden en que pasaron (`revisado_at` y `created_at`). Cada ciclo dice cómo empezó (`origen`: `alta`, `actualizacion` o `reprogramacion`).
 
 **Reglas**
-- **Vencimiento inicial.** Es la próxima anterior (`datos_anteriores.proxima_actualizacion`) del primer cambio aprobado que la trae. Si no hay cambios, es la próxima actual. El primer ciclo empieza en el alta.
+- **Vencimiento inicial.** Es la próxima anterior (`datos_anteriores.proxima_actualizacion`) del primer cambio aprobado que la trae. Si no hay cambios, es la próxima actual. Si antes de todo hubo una actualización anterior a la doble verificación, no se conoce (ver abajo). El primer ciclo empieza en el alta.
 - **Un cambio que mueve la próxima y "Cargado en el portal"** es una actualización y **cierra el ciclo**.
   - Para el atraso, la fecha de cierre es la de la carga.
   - Para saber qué avisos le corresponden, el ciclo rige en el RPAD hasta el momento de la aprobación.
@@ -136,6 +136,9 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
   - **antes** del vencimiento, el vencimiento se reprograma dentro del mismo ciclo;
   - **después** del vencimiento (aprobada después de la fecha de vencimiento), **cierra el ciclo como reprogramado**, en el momento de la aprobación. Ese ciclo estuvo vencido desde el vencimiento hasta la aprobación, y el ciclo nuevo empieza ahí.
 - **Un cambio que solo cambia "Cargado en el portal"** es una carga dentro del ciclo y no lo cierra.
+- **Una actualización anterior a la doble verificación** (una fila de `historial_actualizaciones` sin `cambio_id`: en diciembre de 2025 el botón de actualizar movía la carga y la próxima en el momento) **también cierra el ciclo**, en su fecha y en el momento en que se registró; las varias del mismo día cuentan como una. Los avisos de antes quedan en el ciclo que cierra (corrección del 20/10/2026: antes estas filas eran solo movimientos y esos avisos se contaban en el ciclo abierto; pasaba con los datasets 25, 32, 56 y 58).
+  - La próxima que esa actualización cumplía no quedó guardada. Si ningún cambio anterior la dice, el ciclo que cierra no tiene vencimiento conocido (`venc` null): no se le cuentan días de vencido, no lleva hito y la cinta lo dibuja como un tramo sin "vence" ni rayado. No se inventa una fecha.
+  - El vencimiento del ciclo que abre lo da la próxima anterior del cambio siguiente o, si no hay, la próxima actual.
 - **Cada cambio se mide contra su propia próxima anterior** (`datos_anteriores.proxima_actualizacion`, si la trae), no contra la que dejó el cambio de antes: si la próxima se corrigió por SQL entre dos cambios, el siguiente cierra o reprograma el ciclo con la fecha corregida.
 - **El ciclo abierto vence siempre en la próxima actual del dataset.** Si una corrección por fuera del sistema (por SQL) la cambió sin dejar un cambio, manda la actual. Pasa con el dataset 9: su último cambio la dejó en el 31/12/2026 y hoy es el 31/01/2027.
 
@@ -158,6 +161,7 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
 **Avisos del ciclo abierto** (la sección del circuito)
 - Son los emails a DGMIT enviados con éxito y las Notas Digitales enviadas (aviso y reiteración) que pertenecen al ciclo abierto.
 - Los emails al área se cuentan aparte, con la misma regla.
+- El encabezado de la sección dice desde cuándo se cuentan y el vencimiento (`circuito.desde` y `circuito.vencimiento`): "Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026" ("Desde la reprogramación del …" o "Desde el alta del …"; sin alta conocida, solo el vencimiento). Va igual en la pantalla, en el PDF y en las hojas del anexo de la reiteración.
 
 ## La pantalla
 

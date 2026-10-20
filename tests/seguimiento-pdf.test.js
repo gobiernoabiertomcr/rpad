@@ -143,11 +143,19 @@ describe('renderSeguimiento: una sola hoja, sin nada encimado', () => {
 describe('renderSeguimiento: los textos del 52', () => {
   it('lleva los avisos, el vencido, el vencimiento, los movimientos anteriores y el pie', async () => {
     const lineas = lineasPorHoja(await render(seguimiento(52)))[0];
-    for (const t of ['6 avisos', 'Vencido hace 81 días', 'Vencimiento del 31/07/2026',
+    for (const t of ['6 avisos', 'Vencido hace 81 días', 'Desde la actualización del 04/02/2026 · Vencimiento del 31/07/2026',
       'Hay 8 movimientos anteriores: el seguimiento completo está en el RPAD (Herramientas, Seguimiento).',
       'Seguimiento del dataset · Hoja 1 de 1']) {
       assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
     }
+  });
+
+  it('el encabezado de los avisos dice desde cuándo se cuentan, entero (58, y 42, el más largo: una reprogramación)', async () => {
+    const del58 = lineasPorHoja(await render(seguimiento(58)))[0];
+    assert.ok(del58.includes('Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026'), del58.join(' | '));
+    assert.ok(del58.includes('1 aviso'), del58.join(' | '));
+    const del42 = lineasPorHoja(await render(seguimiento(42)))[0];
+    assert.ok(del42.includes('Desde la reprogramación del 06/04/2026 · Vencimiento del 30/04/2027'), del42.join(' | '));
   });
 
   it('lenguaje neutro: ni "sin entregar", ni "sin respuesta", ni "atrasado" (en ninguno de los casos)', async () => {

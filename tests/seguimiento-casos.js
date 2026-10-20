@@ -1062,6 +1062,68 @@ export const CASOS = {
     ],
     "auditorias": []
   },
+  "25": {
+    "dataset": {
+      "id": 25,
+      "titulo": "Hotelería en Comodoro Rivadavia",
+      "area": "Ente Autárquico Comodoro Turismo",
+      "area_superior": "Intendencia",
+      "area_id": 26,
+      "tipo_gestion": "externa",
+      "requiere_nota": null,
+      "frecuencia": "Cada dos años",
+      "meses": 24,
+      "proxima": "2027-11-30",
+      "datos_al": "2025-10-31",
+      "ultima": "2025-12-16",
+      "tipo_pedido": "foto",
+      "url_dataset": "https://datos.comodoro.gov.ar/dataset/hoteleria-en-comodoro-rivadavia",
+      "activo": true,
+      "alta": "2025-12-01 11:40:23"
+    },
+    "altasSinDataset": [],
+    "cambios": [],
+    "historial": [
+      {
+        "fecha": "2025-12-16",
+        "creado": "2025-12-16 08:55:26",
+        "usuario": "Ana María Uno",
+        "cambio_id": null
+      },
+      {
+        "fecha": "2025-12-16",
+        "creado": "2025-12-16 11:49:06",
+        "usuario": "Ana María Uno",
+        "cambio_id": null
+      }
+    ],
+    "emails": [
+      {
+        "id": 1,
+        "tipo": "externo-vencido",
+        "enviado": "2025-12-06 14:21:46",
+        "success": true,
+        "cantidad": 9,
+        "area": null,
+        "area_articulo": null,
+        "destinatarios": "correo1@rpad.test,correo2@rpad.test,correo3@rpad.test",
+        "error": null
+      },
+      {
+        "id": 6,
+        "tipo": "externo-vencido",
+        "enviado": "2025-12-10 20:49:30",
+        "success": true,
+        "cantidad": 9,
+        "area": null,
+        "area_articulo": null,
+        "destinatarios": "correo1@rpad.test,correo2@rpad.test,correo3@rpad.test",
+        "error": null
+      }
+    ],
+    "notas": [],
+    "auditorias": []
+  },
   "26": {
     "dataset": {
       "id": 26,
@@ -1805,6 +1867,73 @@ export const CASOS = {
         "firmante": null
       }
     ],
+    "auditorias": []
+  },
+  "58": {
+    "dataset": {
+      "id": 58,
+      "titulo": "Áreas específicas de género",
+      "area": "Secretaría de la Mujer, Género y Diversidad",
+      "area_superior": "Intendencia",
+      "area_id": 37,
+      "tipo_gestion": "externa",
+      "requiere_nota": null,
+      "frecuencia": "Anualmente",
+      "meses": 12,
+      "proxima": "2026-11-30",
+      "datos_al": "2025-10-31",
+      "ultima": "2025-12-16",
+      "tipo_pedido": "foto",
+      "url_dataset": "https://datos.comodoro.gov.ar/dataset/areas-especificas-de-genero",
+      "activo": true,
+      "alta": "2025-12-02 09:35:43"
+    },
+    "altasSinDataset": [],
+    "cambios": [],
+    "historial": [
+      {
+        "fecha": "2025-12-16",
+        "creado": "2025-12-16 11:47:48",
+        "usuario": "Ana María Uno",
+        "cambio_id": null
+      }
+    ],
+    "emails": [
+      {
+        "id": 1,
+        "tipo": "externo-vencido",
+        "enviado": "2025-12-06 14:21:46",
+        "success": true,
+        "cantidad": 9,
+        "area": null,
+        "area_articulo": null,
+        "destinatarios": "correo1@rpad.test,correo2@rpad.test,correo3@rpad.test",
+        "error": null
+      },
+      {
+        "id": 6,
+        "tipo": "externo-vencido",
+        "enviado": "2025-12-10 20:49:30",
+        "success": true,
+        "cantidad": 9,
+        "area": null,
+        "area_articulo": null,
+        "destinatarios": "correo1@rpad.test,correo2@rpad.test,correo3@rpad.test",
+        "error": null
+      },
+      {
+        "id": 57,
+        "tipo": "externo-60",
+        "enviado": "2026-10-01 08:00:05",
+        "success": true,
+        "cantidad": 1,
+        "area": null,
+        "area_articulo": null,
+        "destinatarios": "correo1@rpad.test,correo2@rpad.test,correo3@rpad.test",
+        "error": null
+      }
+    ],
+    "notas": [],
     "auditorias": []
   },
   "61": {

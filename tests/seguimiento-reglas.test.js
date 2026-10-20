@@ -584,21 +584,27 @@ describe('movimientosDe: datos raros', () => {
 // Ciclos, avisos, hitos, estado y circuito
 // ---------------------------------------------------------------------------------------------------------------------
 
-// Los valores reales de los casos al 20/10/2026: por ciclo, [vencimiento, cierre, cómo se cerró, días que estuvo vencido]
+// Los valores reales de los casos al 20/10/2026: por ciclo, [vencimiento, cierre, cómo se cerró, días que estuvo vencido]. Las
+// actualizaciones simples de diciembre de 2025 (historial sin cambio_id) cierran un ciclo cuyo vencimiento no quedó registrado (null)
+const SIMPLE_17 = [null, '2025-12-17', 'actualizacion', 0];
+const SIMPLE_16 = [null, '2025-12-16', 'actualizacion', 0];
 const CICLOS = {
-  52: [['2026-01-31', '2026-02-04', 'actualizacion', 4], ['2026-07-31', null, null, 81]],
-  9: [['2025-01-31', '2026-03-13', 'actualizacion', 406], ['2026-04-30', '2026-10-09', 'actualizacion', 162], ['2027-01-31', null, null, 0]],
-  10: [['2026-01-31', '2026-02-18', 'actualizacion', 18], ['2026-05-31', '2026-05-22', 'actualizacion', 0], ['2026-07-31', '2026-09-25', 'actualizacion', 56],
-    ['2026-10-31', '2026-10-13', 'actualizacion', 0], ['2027-01-31', null, null, 0]],
+  52: [SIMPLE_17, ['2026-01-31', '2026-02-04', 'actualizacion', 4], ['2026-07-31', null, null, 81]],
+  9: [SIMPLE_17, ['2025-01-31', '2026-03-13', 'actualizacion', 406], ['2026-04-30', '2026-10-09', 'actualizacion', 162], ['2027-01-31', null, null, 0]],
+  10: [SIMPLE_17, ['2026-01-31', '2026-02-18', 'actualizacion', 18], ['2026-05-31', '2026-05-22', 'actualizacion', 0],
+    ['2026-07-31', '2026-09-25', 'actualizacion', 56], ['2026-10-31', '2026-10-13', 'actualizacion', 0], ['2027-01-31', null, null, 0]],
   42: [['2026-03-31', '2026-04-06', 'reprogramacion', 6], ['2027-04-30', null, null, 0]],
   38: [['2026-03-31', '2026-02-12', 'actualizacion', 0], ['2026-09-30', '2026-10-02', 'actualizacion', 2], ['2027-03-31', null, null, 0]],
-  1: [['2026-01-31', null, null, 262]], 11: [['2024-01-31', null, null, 993]], 26: [['2025-03-31', null, null, 568]],
-  33: [['2026-01-31', null, null, 262]], 81: [['2026-10-31', null, null, 0]]
+  1: [SIMPLE_17, ['2026-01-31', null, null, 262]], 11: [['2024-01-31', null, null, 993]], 26: [['2025-03-31', null, null, 568]],
+  33: [['2026-01-31', null, null, 262]], 81: [['2026-10-31', null, null, 0]], 61: [SIMPLE_17, ['2026-01-31', null, null, 262]],
+  58: [SIMPLE_16, ['2026-11-30', null, null, 0]], 25: [SIMPLE_16, ['2027-11-30', null, null, 0]]
 };
-// Los avisos del ciclo abierto de cada caso
+// Los avisos del ciclo abierto de cada caso. En 58 y 25, los emails de vencido del 06/12 y el 10/12/2025 son del ciclo de antes de
+// la actualización simple del 16/12/2025: no cuentan
 const ABIERTO = { 52: { emails: 5, notas: ['2/26'], alArea: ['2026-06-21'] }, 9: { emails: 0, notas: [], alArea: [] }, 10: { emails: 0, notas: [], alArea: [] },
   42: { emails: 0, notas: [], alArea: [] }, 1: { emails: 10, notas: ['2/26'], alArea: [] }, 11: { emails: 11, notas: ['2/26'], alArea: [] },
-  33: { emails: 5, notas: ['2/26'], alArea: [] }, 61: { emails: 6, notas: ['2/26'], alArea: ['2025-12-22', '2026-06-21'] }, 81: { emails: 0, notas: ['3/26'], alArea: [] } };
+  33: { emails: 5, notas: ['2/26'], alArea: [] }, 61: { emails: 6, notas: ['2/26'], alArea: ['2025-12-22', '2026-06-21'] }, 81: { emails: 0, notas: ['3/26'], alArea: [] },
+  58: { emails: 1, notas: [], alArea: [] }, 25: { emails: 0, notas: [], alArea: [] } };
 
 const resumen = (id) => ciclosDe(f(id), HOY).map((c) => [c.venc, c.cierre, c.como, c.diasVencido]);
 const abiertoDe = (id) => {
@@ -636,12 +642,21 @@ describe('ciclosDe', () => {
     assert.equal(ciclosDe(null, HOY), null);
   });
 
-  it('cada ciclo trae inicio, desde y hasta: el primero empieza en el alta y cada uno en la aprobación del anterior', () => {
-    const [primero, abierto] = ciclosDe(f(52), HOY);
-    assert.deepEqual(primero, { inicio: '2025-12-01', venc: '2026-01-31', cierre: '2026-02-04', como: 'actualizacion',
-      desde: '2025-12-01 21:51:48', hasta: '2026-02-04 09:58:15', diasVencido: 4 });
+  it('cada ciclo trae inicio, desde, hasta y origen: el primero empieza en el alta y cada uno en la actualización que cerró el anterior', () => {
+    const simple = CASOS[52].historial[0].creado;
+    const [viejo, primero, abierto] = ciclosDe(f(52), HOY);
+    assert.deepEqual(viejo, { inicio: '2025-12-01', venc: null, cierre: '2025-12-17', como: 'actualizacion',
+      desde: '2025-12-01 21:51:48', hasta: simple, origen: 'alta', diasVencido: 0 });
+    assert.deepEqual(primero, { inicio: '2025-12-17', venc: '2026-01-31', cierre: '2026-02-04', como: 'actualizacion',
+      desde: simple, hasta: '2026-02-04 09:58:15', origen: 'actualizacion', diasVencido: 4 });
     assert.deepEqual(abierto, { inicio: '2026-02-04', venc: '2026-07-31', cierre: null, como: null,
-      desde: '2026-02-04 09:58:15', hasta: null, diasVencido: 81 });
+      desde: '2026-02-04 09:58:15', hasta: null, origen: 'actualizacion', diasVencido: 81 });
+  });
+
+  it('el origen de cada ciclo: el alta, una actualización o una reprogramación después de vencer', () => {
+    assert.deepEqual(ciclosDe(f(11), HOY).map((c) => c.origen), ['alta']);
+    assert.deepEqual(ciclosDe(f(42), HOY).map((c) => c.origen), ['alta', 'reprogramacion']);
+    assert.deepEqual(ciclosDe(f(38), HOY).map((c) => c.origen), ['alta', 'actualizacion', 'actualizacion']);
   });
 
   it('un ciclo cerrado por reprogramación lleva la próxima nueva', () => {
@@ -765,24 +780,94 @@ describe('ciclosDe', () => {
   });
 });
 
+// Antes de la doble verificación (diciembre de 2025), el botón de actualizar movía la carga y la próxima en el momento y dejaba una
+// fila en el historial sin cambio_id; la próxima anterior no quedó guardada en ningún lado
+describe('ciclosDe: actualizaciones anteriores a la doble verificación (historial sin cambio_id)', () => {
+  const simple = (fecha, creado = `${fecha} 10:00:00`, cambio_id = null) => ({ fecha, creado, usuario: 'Ana María Uno', cambio_id });
+
+  it('58 y 25: la actualización del 16/12/2025 cierra el ciclo y los emails de vencido de antes quedan en el ciclo viejo', () => {
+    const c58 = ciclosDe(f(58), HOY);
+    assert.equal(avisosDelCiclo(f(58), c58, 0).emails, 2);
+    assert.equal(avisosDelCiclo(f(58), c58, 1).emails, 1);
+    assert.deepEqual([c58[1].inicio, c58[1].desde, c58[1].origen], ['2025-12-16', CASOS[58].historial[0].creado, 'actualizacion']);
+    const c25 = ciclosDe(f(25), HOY);
+    assert.equal(avisosDelCiclo(f(25), c25, 0).emails, 2);
+    assert.equal(avisosDelCiclo(f(25), c25, 1).total, 0);
+  });
+
+  it('varias el mismo día cuentan como una: 25 tiene dos el 16/12/2025 y un solo corte', () => {
+    assert.equal(CASOS[25].historial.length, 2);
+    assert.equal(ciclosDe(f(25), HOY).length, 2);
+  });
+
+  it('en días distintos cada una cierra un ciclo, y un aviso de entre las dos queda en el del medio', () => {
+    const fuentes = solo({ proxima: '2026-11-30', alta: '2025-12-01 09:00:00' }, {
+      historial: [simple('2025-12-16'), simple('2025-12-15')],
+      emails: [email({ id: 1, tipo: 'externo-vencido', enviado: '2025-12-15 12:00:00' }), email({ id: 2, tipo: 'externo-60', enviado: '2026-10-01 08:00:00' })]
+    });
+    const ciclos = ciclosDe(fuentes, HOY);
+    assert.deepEqual(ciclos.map((c) => [c.inicio, c.venc, c.cierre, c.origen]), [['2025-12-01', null, '2025-12-15', 'alta'],
+      ['2025-12-15', null, '2025-12-16', 'actualizacion'], ['2025-12-16', '2026-11-30', null, 'actualizacion']]);
+    assert.deepEqual([0, 1, 2].map((i) => avisosDelCiclo(fuentes, ciclos, i).emails), [0, 1, 1]);
+  });
+
+  it('una fila del historial con cambio_id es la del cambio: no corta nada', () => {
+    const fuentes = solo({ proxima: '2026-11-30', alta: '2025-12-01 09:00:00' }, { historial: [simple('2026-03-10', '2026-03-10 10:00:00', 77)] });
+    assert.equal(ciclosDe(fuentes, HOY).length, 1);
+  });
+
+  it('después de un cambio aprobado, el ciclo que cierra conoce su vencimiento y cuánto estuvo vencido', () => {
+    const fuentes = solo({ proxima: '2026-11-30', alta: '2026-01-10 09:00:00' }, {
+      cambios: [actualizacion(71, '2026-02-01 10:00:00', '2026-02-01', '2026-05-31', { carga: '2026-01-10', proxima: '2026-03-31' })],
+      historial: [simple('2026-06-10')]
+    });
+    const ciclos = ciclosDe(fuentes, HOY);
+    assert.deepEqual(ciclos.map((c) => [c.venc, c.cierre, c.como, c.diasVencido, c.origen]), [['2026-03-31', '2026-02-01', 'actualizacion', 0, 'alta'],
+      ['2026-05-31', '2026-06-10', 'actualizacion', 10, 'actualizacion'], ['2026-11-30', null, null, 0, 'actualizacion']]);
+    assert.deepEqual(hitosDe(ciclos, HOY)[0], { fecha: '2026-05-31', tipo: 'actualizado', texto: 'Venció. Actualizado el 10/06/2026, 10 días después del vencimiento' });
+  });
+
+  it('un ciclo sin vencimiento conocido no tiene días vencido ni hito', () => {
+    const ciclos = ciclosDe(f(58), HOY);
+    assert.equal(ciclos[0].diasVencido, 0);
+    assert.deepEqual(hitosDe(ciclos, HOY), []);
+  });
+
+  it('sin alta conocida, el primer ciclo empieza como siempre (en el vencimiento) y la simple igual lo cierra', () => {
+    const ciclos = ciclosDe(solo({ proxima: '2026-11-30', alta: null }, { historial: [simple('2025-12-16')] }), HOY);
+    assert.deepEqual(ciclos.map((c) => [c.inicio, c.venc, c.cierre]), [['2026-11-30', null, '2025-12-16'], ['2025-12-16', '2026-11-30', null]]);
+  });
+
+  it('con datos raros en el historial no tira error y los ignora', () => {
+    const fuentes = solo({ proxima: '2026-11-30', alta: '2025-12-01 09:00:00' }, { historial: [null, 'x', { fecha: 'mal', cambio_id: null }, { creado: '2025-12-16 10:00:00' }] });
+    assert.doesNotThrow(() => ciclosDe(fuentes, HOY));
+    assert.equal(ciclosDe(fuentes, HOY).length, 1);
+    assert.doesNotThrow(() => seguimientoDe({ ...fuentes, historial: 'no es una lista' }, HOY));
+  });
+});
+
 describe('cicloDelAviso', () => {
+  // El caso 10: el ciclo 0 es el de antes de la actualización simple del 17/12/2025, sin vencimiento conocido
   const ciclos = ciclosDe(f(10), HOY);
 
   it('con vencimiento, el ciclo que lo tiene', () => {
-    assert.equal(cicloDelAviso(ciclos, '2026-10-13 14:00:00', '2026-10-31'), 3);
-    assert.equal(cicloDelAviso(ciclos, '2026-10-13 14:00:00', '2027-01-31'), 4);
+    assert.equal(cicloDelAviso(ciclos, '2026-10-13 14:00:00', '2026-10-31'), 4);
+    assert.equal(cicloDelAviso(ciclos, '2026-10-13 14:00:00', '2027-01-31'), 5);
   });
   it('sin vencimiento, o con uno que ningún ciclo tiene, el ciclo que regía en el momento', () => {
-    assert.equal(cicloDelAviso(ciclos, '2026-02-10 08:00:00'), 0);
-    assert.equal(cicloDelAviso(ciclos, '2026-10-20 08:00:00'), 4);
-    assert.equal(cicloDelAviso(ciclos, '2026-10-20 08:00:00', '2030-01-31'), 4);
-    assert.equal(cicloDelAviso(ciclos, '2026-03-10 08:00:00', null), 1);
+    assert.equal(cicloDelAviso(ciclos, '2025-12-10 08:00:00'), 0);
+    assert.equal(cicloDelAviso(ciclos, '2026-02-10 08:00:00'), 1);
+    assert.equal(cicloDelAviso(ciclos, '2026-10-20 08:00:00'), 5);
+    assert.equal(cicloDelAviso(ciclos, '2026-10-20 08:00:00', '2030-01-31'), 5);
+    assert.equal(cicloDelAviso(ciclos, '2026-03-10 08:00:00', null), 2);
   });
   it('los límites: el ciclo empieza en su "desde" y termina justo antes de su "hasta"', () => {
-    const [uno, dos] = ciclos;
-    assert.equal(cicloDelAviso(ciclos, uno.desde), 0);
-    assert.equal(cicloDelAviso(ciclos, uno.hasta), 1);
-    assert.equal(cicloDelAviso(ciclos, dos.desde), 1);
+    const [cero, uno, dos] = ciclos;
+    assert.equal(cicloDelAviso(ciclos, cero.desde), 0);
+    assert.equal(cicloDelAviso(ciclos, cero.hasta), 1);
+    assert.equal(cicloDelAviso(ciclos, uno.desde), 1);
+    assert.equal(cicloDelAviso(ciclos, uno.hasta), 2);
+    assert.equal(cicloDelAviso(ciclos, dos.desde), 2);
   });
   it('si varios ciclos tienen el vencimiento, el que contiene el momento; si ninguno, el último de ellos', () => {
     const repetidos = [
@@ -814,10 +899,10 @@ describe('avisosDelCiclo', () => {
 
   it('las notas del caso 10 y del caso 9 van al ciclo de su vencimiento, no al abierto', () => {
     const c10 = ciclosDe(f(10), HOY);
-    assert.deepEqual(avisosDelCiclo(f(10), c10, 3).notas, ['2/26']);
-    assert.equal(avisosDelCiclo(f(10), c10, 4).total, 0);
+    assert.deepEqual(avisosDelCiclo(f(10), c10, 4).notas, ['2/26']);
+    assert.equal(avisosDelCiclo(f(10), c10, 5).total, 0);
     const c9 = ciclosDe(f(9), HOY);
-    assert.deepEqual(avisosDelCiclo(f(9), c9, 1).notas, ['2/26']);
+    assert.deepEqual(avisosDelCiclo(f(9), c9, 2).notas, ['2/26']);
   });
 
   it('el caso 42: los emails de antes del 06/04 son del ciclo vencido (el del 26/03 falló y no cuenta), y el email al área también', () => {
@@ -951,6 +1036,17 @@ describe('circuitoDe', () => {
       textoPdf: 'Al área: el 21/06/2026 el RPAD le anticipó por email que iba a recibir una nota formal.'
     });
     assert.deepEqual(c.vencimiento, { fecha: '2026-07-31', texto: 'Vencimiento del 31/07/2026' });
+  });
+
+  it('desde cuándo se cuentan los avisos: el inicio del ciclo abierto y cómo empezó', () => {
+    const alta11 = CASOS[11].dataset.alta.slice(0, 10).split('-').reverse().join('/');
+    assert.deepEqual(circuito(52).desde, { fecha: '2026-02-04', origen: 'actualizacion', texto: 'Desde la actualización del 04/02/2026' });
+    assert.deepEqual(circuito(58).desde, { fecha: '2025-12-16', origen: 'actualizacion', texto: 'Desde la actualización del 16/12/2025' });
+    assert.deepEqual(circuito(42).desde, { fecha: '2026-04-06', origen: 'reprogramacion', texto: 'Desde la reprogramación del 06/04/2026' });
+    assert.deepEqual(circuito(11).desde, { fecha: CASOS[11].dataset.alta.slice(0, 10), origen: 'alta', texto: `Desde el alta del ${alta11}` });
+    assert.equal(circuito(66).desde, null);
+    const sinAlta = solo({ alta: null });
+    assert.equal(circuitoDe(sinAlta, ciclosDe(sinAlta, HOY), HOY).desde, null);
   });
 
   it('caso 81: un aviso, una nota y vence en 11 días; sin email al área', () => {
