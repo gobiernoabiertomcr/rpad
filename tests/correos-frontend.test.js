@@ -42,13 +42,18 @@ const cargarCorreos = (api = {}, globales = {}) => {
   elemento('preview-tipo').value = 'aviso';
   elemento('preview-gestion').value = 'interna';
   const pendientes = [];
+  const descargas = [];
   // Los oyentes que la página le puso al documento (DOMContentLoaded, keydown), por tipo de evento
   const escuchasDeDocumento = {};
   const contexto = vm.createContext({
     document: {
       getElementById: elemento,
       addEventListener(tipo, funcion) { (escuchasDeDocumento[tipo] ??= []).push(funcion); },
-      createElement: () => ({ click() {} })
+      // Lo que descarga la página: el nombre de cada archivo que se hizo clic para bajar
+      createElement: () => {
+        const enlace = { click() { descargas.push(enlace.download); } };
+        return enlace;
+      }
     },
     API: { previewNotaAnexo: () => new Promise(resolve => pendientes.push(resolve)), ...api },
     URL: { createObjectURL: () => 'blob:anexo', revokeObjectURL() {} },
@@ -64,7 +69,7 @@ const cargarCorreos = (api = {}, globales = {}) => {
     elemento('preview-tipo').value = tipo;
     contexto.actualizarBotonAnexo();
   };
-  return { contexto, elemento, enfocados, escuchasDeDocumento, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
+  return { contexto, elemento, enfocados, descargas, escuchasDeDocumento, boton: elemento('btn-preview-anexo'), elegirTipo, terminarPedido: () => pendientes.shift()({}) };
 };
 
 describe('correos.js: botón "Ver anexo" de la vista previa', () => {
@@ -80,16 +85,70 @@ describe('correos.js: botón "Ver anexo" de la vista previa', () => {
     assert.equal(boton.disabled, false);
   });
 
-  it('si al terminar el pedido el tipo elegido es una reiteración, el botón queda deshabilitado', async () => {
+  it('si al terminar el pedido el tipo elegido es una auditoría, el botón queda deshabilitado', async () => {
     const { contexto, boton, elegirTipo, terminarPedido } = cargarCorreos();
     const pedido = contexto.verAnexoDeVistaPrevia();
-    elegirTipo('reiteracion');
+    elegirTipo('auditoria');
     terminarPedido();
     await pedido;
     assert.equal(boton.disabled, true);
-    assert.equal(boton.title, 'Solo los avisos llevan anexo');
+    assert.equal(boton.title, 'La nota de auditoría no lleva anexo');
     elegirTipo('aviso');
     assert.equal(boton.disabled, false);
+  });
+
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5: la reiteración también lleva anexo
+  it('el botón Ver anexo está habilitado con reiteración y deshabilitado con auditoría', () => {
+    const { boton, elegirTipo } = cargarCorreos();
+    elegirTipo('aviso');
+    assert.equal(boton.disabled, false);
+    assert.equal(boton.title, '');
+    elegirTipo('reiteracion');
+    assert.equal(boton.disabled, false);
+    assert.equal(boton.title, '', 'la reiteración ya no dice que solo los avisos llevan anexo');
+    elegirTipo('auditoria');
+    assert.equal(boton.disabled, true);
+    assert.equal(boton.title, 'La nota de auditoría no lleva anexo');
+    elegirTipo('reiteracion');
+    assert.equal(boton.disabled, false);
+    assert.equal(boton.title, '');
+  });
+
+  it('Ver anexo pide el anexo del tipo y la gestión elegidos y lo baja con el nombre del tipo', async () => {
+    const pedidos = [];
+    const { contexto, elemento, descargas } = cargarCorreos({ previewNotaAnexo: async (gestion, tipo) => { pedidos.push([gestion, tipo]); return {}; } });
+    elemento('preview-gestion').value = 'externa';
+    elemento('preview-tipo').value = 'reiteracion';
+    await contexto.verAnexoDeVistaPrevia();
+    elemento('preview-tipo').value = 'aviso';
+    await contexto.verAnexoDeVistaPrevia();
+    assert.deepEqual(pedidos, [['externa', 'reiteracion'], ['externa', 'aviso']]);
+    assert.deepEqual(descargas, ['Anexo-vista-previa-reiteracion-externa.pdf', 'Anexo-vista-previa-externa.pdf']);
+  });
+});
+
+// API.previewNotaAnexo (api.js) pide el anexo del tipo elegido: el aviso, si no se dice otra cosa
+describe('api.js: previewNotaAnexo', () => {
+  const pedir = async (...argumentos) => {
+    const urls = [];
+    const contexto = vm.createContext({
+      CONFIG: { API_URL: '/api' },
+      console,
+      URLSearchParams,
+      Auth: { getAuthHeaders: () => ({}) },
+      fetch: async (url) => { urls.push(url); return { ok: true, blob: async () => 'pdf' }; }
+    });
+    vm.runInContext(`${fs.readFileSync(new URL('../public/js/api.js', import.meta.url), 'utf8')}\n;globalThis.API = API;`, contexto);
+    await contexto.API.previewNotaAnexo(...argumentos);
+    return urls;
+  };
+
+  it('previewNotaAnexo manda tipo=reiteracion', async () => {
+    assert.deepEqual(await pedir('externa', 'reiteracion'), ['/api/notificaciones/notas-digitales/preview/anexo?gestion=externa&tipo=reiteracion']);
+  });
+
+  it('sin tipo, pide el anexo del aviso', async () => {
+    assert.deepEqual(await pedir('interna'), ['/api/notificaciones/notas-digitales/preview/anexo?gestion=interna&tipo=aviso']);
   });
 });
 

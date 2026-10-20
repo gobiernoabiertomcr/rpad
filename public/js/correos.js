@@ -54,6 +54,10 @@ const textoPeriodosSinAuditor = (a) => {
 };
 // Nombre del PDF de la vista previa: la nota de auditoría no tiene gestión
 const nombreVistaPrevia = (tipo, gestion) => `Nota-Digital-vista-previa-${tipo}${tipo === 'auditoria' ? '' : `-${gestion}`}.pdf`;
+// Los tipos de nota que llevan anexo (el de la reiteración, desde spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5) y el nombre
+// del archivo de su vista previa: el del aviso, como siempre; el de la reiteración, con el tipo
+const TIPOS_CON_ANEXO = ['aviso', 'reiteracion'];
+const nombreAnexoVistaPrevia = (tipo, gestion) => `Anexo-vista-previa-${tipo === 'aviso' ? '' : `${tipo}-`}${gestion}.pdf`;
 // Máximo de notas que devuelve la API del libro (las más recientes)
 const LIMITE_LIBRO = 500;
 
@@ -477,12 +481,12 @@ function verPdfDeVistaPrevia() {
 // Si hay un pedido del anexo en curso: mientras tanto el botón sigue deshabilitado aunque cambie el tipo
 let anexoEnCurso = false;
 
-// El anexo solo existe en los avisos: con una reiteración (o con un pedido en curso) el botón queda deshabilitado
+// El anexo existe en los avisos y las reiteraciones: con una auditoría (o con un pedido en curso) el botón queda deshabilitado
 function actualizarBotonAnexo() {
-  const esAviso = document.getElementById('preview-tipo').value === 'aviso';
+  const llevaAnexo = TIPOS_CON_ANEXO.includes(document.getElementById('preview-tipo').value);
   const boton = document.getElementById('btn-preview-anexo');
-  boton.disabled = !esAviso || anexoEnCurso;
-  boton.title = esAviso ? '' : 'Solo los avisos llevan anexo';
+  boton.disabled = !llevaAnexo || anexoEnCurso;
+  boton.title = llevaAnexo ? '' : 'La nota de auditoría no lleva anexo';
 }
 
 // La nota de auditoría no tiene gestión: el selector de gestión se deshabilita mientras está elegida
@@ -490,15 +494,15 @@ function actualizarSelectorGestion() {
   document.getElementById('preview-gestion').disabled = document.getElementById('preview-tipo').value === 'auditoria';
 }
 
-// El anexo del aviso de la vista previa (N° XX) para la gestión elegida
+// El anexo de la vista previa (N° XX) del tipo y la gestión elegidos: el del aviso o el de la reiteración
 async function verAnexoDeVistaPrevia() {
   if (anexoEnCurso) return;
   anexoEnCurso = true;
   try {
     await conBotonBloqueado(document.getElementById('btn-preview-anexo'), async () => {
-      const { gestion } = tipoYGestion();
+      const { tipo, gestion } = tipoYGestion();
       try {
-        descargarBlob(await API.previewNotaAnexo(gestion), `Anexo-vista-previa-${gestion}.pdf`);
+        descargarBlob(await API.previewNotaAnexo(gestion, tipo), nombreAnexoVistaPrevia(tipo, gestion));
       } catch (error) {
         avisar(error.message, 'error');
       }

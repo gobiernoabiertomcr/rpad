@@ -328,9 +328,9 @@ async registrarActualizacion(id, datos = {}) {
     return this.pedirArchivo(`/notificaciones/notas-digitales/preview/pdf?${query}`);
   },
 
-  // Anexo del aviso de la vista previa (N° XX), como Blob
-  async previewNotaAnexo(gestion) {
-    const query = new URLSearchParams({ gestion }).toString();
+  // Anexo de la vista previa (N° XX) del aviso o de la reiteración, como Blob
+  async previewNotaAnexo(gestion, tipo = 'aviso') {
+    const query = new URLSearchParams({ gestion, tipo }).toString();
     return this.pedirArchivo(`/notificaciones/notas-digitales/preview/anexo?${query}`);
   },
 

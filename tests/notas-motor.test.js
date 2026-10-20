@@ -1217,6 +1217,110 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.deepEqual(prueba.anexo_pdf, archivos[1].contenido);
     assert.ok(prueba.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
   });
+
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5: vista previa y prueba del anexo en Correos
+  it('la prueba de una reiteración de ejemplo adjunta el anexo', async () => {
+    const resultado = await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(resultado.ejemplo, true);
+    assert.equal(resultado.success, true);
+    const [mensaje] = await mailpit.mensajes();
+    assert.deepEqual(direcciones(mensaje.To), ['prueba@rpad.test']);
+    const archivos = await adjuntos(mensaje.ID);
+    assert.deepEqual(archivos.map(a => a.nombre), ['Nota-Digital-PRUEBA.pdf', 'Anexo-Nota-Digital-PRUEBA.pdf']);
+    // Los dos datasets de ejemplo, en el orden de la tabla: el a vencer y después el vencido; el pie con el número de la prueba
+    const hojas = lineasPorHoja(archivos[1].contenido);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° PRUEBA · Hoja ${k + 1} de 2`), lineas.join(' | '));
+    });
+    // La nota anuncia las dos hojas y la prueba guarda el anexo; no queda registro de datasets ni de números usados
+    const [prueba] = await laReiteracion();
+    assert.equal(prueba.es_prueba, 1);
+    assert.deepEqual(prueba.anexo_pdf, archivos[1].contenido);
+    assert.ok(prueba.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets'))[0].n, 0);
+  });
+
+  it('fuentesDeEjemplo da las fuentes de cada dataset de ejemplo, con su ficha y sin movimientos: seguimientoDe no falla con los ids 0 y -1', () => {
+    for (const gestion of ['interna', 'externa']) {
+      const { datasets } = motor.ejemplo('reiteracion', gestion, '2026-11-02');
+      const fuentes = motor.fuentesDeEjemplo(datasets, '2026-11-02');
+      assert.ok(fuentes instanceof Map);
+      assert.deepEqual([...fuentes.keys()], [0, -1]);
+      for (const d of datasets) {
+        const delDataset = fuentes.get(d.id);
+        // Lo mismo que devuelve fuentesDe: el dataset, las listas vacías y los catálogos
+        assert.deepEqual(Object.keys(delDataset).sort(), ['altasSinDataset', 'auditorias', 'cambios', 'catalogos', 'dataset', 'emails', 'historial', 'notas']);
+        for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias']) assert.deepEqual(delDataset[lista], [], lista);
+        assert.deepEqual(delDataset.dataset, {
+          id: d.id, titulo: d.titulo, area: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', area_id: 0, tipo_gestion: gestion,
+          requiere_nota: d.requiere_nota, frecuencia: 'Anualmente', meses: 12, proxima: d.vencimiento, datos_al: d.datos_al,
+          ultima: d.ultima_actualizacion, tipo_pedido: d.tipo_pedido, url_dataset: 'https://datos.comodoro.gov.ar', activo: true, alta: null
+        });
+        const seguimiento = seguimientoDe(delDataset, '2026-11-02', OPCIONES_CINTA_PDF);
+        assert.equal(seguimiento.ficha.titulo, d.titulo);
+        assert.equal(seguimiento.ficha.requiere_nota, d.requiere_nota);
+        assert.deepEqual(seguimiento.movimientos, []);
+      }
+    }
+  });
+
+  it('seguimientosDeLaNota con las fuentes de ejemplo no consulta la base: el próximo y después el vencido', async () => {
+    const { datasets } = motor.ejemplo('reiteracion', 'externa', '2026-11-02');
+    const fuentesPorId = motor.fuentesDeEjemplo(datasets, '2026-11-02');
+    const lista = await seguimientoNotas.seguimientosDeLaNota(datasets, '2026-11-02', fuentesPorId);
+    assert.deepEqual(lista.map(s => s.ficha.id), [0, -1]);
+    // Sin ellas lee la base (fuentesDe descarta los ids de ejemplo) y no encuentra el dataset
+    await assert.rejects(seguimientoNotas.seguimientosDeLaNota(datasets, '2026-11-02'), /dataset 0/);
+  });
+
+  it('previewAnexo de una reiteración: una hoja por dataset, en el orden de la tabla, con N° XX; es el de la próxima corrida y no guarda nada', async () => {
+    await reiteracionDel0211();
+    const pdf = await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 2);
+    // Los mismos que la vista previa de la nota
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(vista.cantidad, 2);
+    assert.ok(hojas[0].includes('Próximo avisado') && hojas[1].includes('Vencido sin aviso'), hojas.map(h => h.join(' | ')).join('\n'));
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° XX · Hoja ${k + 1} de 2`), lineas.join(' | '));
+      assert.ok(lineas.some(l => GENERADO.test(l)), lineas.join(' | '));
+    });
+    // Es el que saldría en la corrida: las mismas hojas que el anexo guardado de la reiteración del día
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    assert.deepEqual(lineasPorHoja(reiteracion.anexo_pdf).map(h => h.map(l => l.replace('N° 2/26', 'N° XX')).filter(l => !GENERADO.test(l))),
+      hojas.map(h => h.filter(l => !GENERADO.test(l))));
+    assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1, 'solo la de la corrida');
+  });
+
+  it('previewAnexo de una reiteración sin datasets reales usa el ejemplo: dos hojas, sin leer la base', async () => {
+    const pdf = await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
+    assert.ok(hojas[1].includes('Anexo de la Nota Digital N° XX · Hoja 2 de 2'), hojas[1].join(' | '));
+    assert.equal((await notas()).length, 0);
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('previewAnexo sin tipo es el del aviso; con un tipo que no lleva anexo, se rechaza', async () => {
+    await crearDataset({ titulo: 'Real a vencer', gestion: 'externa', vencimiento: '2026-11-30' });
+    const sinTipo = lineasPorHoja(await motor.previewAnexo({ gestion: 'externa', hoy: '2026-11-02' }));
+    const deAviso = lineasPorHoja(await motor.previewAnexo({ tipo: 'aviso', gestion: 'externa', hoy: '2026-11-02' }));
+    assert.equal(sinTipo.length, 1);
+    assert.ok(sinTipo[0].includes('Anexo – Nota Digital N° XX · Hoja 1 de 1'), sinTipo[0].join(' | '));
+    assert.deepEqual(sinTipo.map(h => h.filter(l => !GENERADO.test(l))), deAviso.map(h => h.filter(l => !GENERADO.test(l))));
+    for (const tipo of ['auditoria', 'autorizacion', 'otro']) {
+      await assert.rejects(motor.previewAnexo({ tipo, gestion: 'externa', hoy: '2026-11-02' }), motor.ErrorDeUso, tipo);
+    }
+  });
 });
 
 // Lo que pidió cada nota, congelado en notas_digitales_datasets (spec 2026-10-17-fechas-datasets, 6 y 9). El pedido depende

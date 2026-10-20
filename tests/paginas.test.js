@@ -5,14 +5,16 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 // main.js cambió con la carcasa nueva (spec 2026-10-18-rediseno-publico: el año del footer, la clase header--con-sesion y
-// aria-expanded en el botón del menú); auth.js y api.js suben con él
-const VERSION = '20261109';
+// aria-expanded en el botón del menú); auth.js y api.js suben con él. api.js cambió después (previewNotaAnexo recibe el tipo: el
+// anexo de la reiteración en Correos, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5)
+const VERSION = '20261117';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte; con persona autorizada, cada aviso adelantado
 // sale también en su fecha): su versión es propia
 const VERSION_PANTALLAS = '20261106';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
-// licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas): su versión es propia
-const VERSION_CORREOS = '20261107';
+// licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
+// reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): su versión es propia
+const VERSION_CORREOS = '20261116';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion): su versión es propia
 const VERSION_PERFIL = '20261112';
