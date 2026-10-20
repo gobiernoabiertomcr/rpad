@@ -17,8 +17,9 @@ const VERSION_CORREOS = '20261107';
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion): su versión es propia
 const VERSION_PERFIL = '20261112';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"; después, el ícono "Ver
-// seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset): su versión es propia
-const VERSION_ADMIN = '20261111';
+// seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset; "Requiere nota DGMIT" en el formulario, el filtro y la vista
+// previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion): su versión es propia
+const VERSION_ADMIN = '20261113';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';

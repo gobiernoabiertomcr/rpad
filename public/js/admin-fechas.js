@@ -677,6 +677,9 @@ const ERROR_FALTA_PROXIMA = 'Falta la próxima actualización: es obligatoria sa
 // El "Qué se solicita" que pone la nota cuando el dataset no lo tiene: copia de QUE_SE_SOLICITA_POR_DEFECTO de
 // services/notasDigitalesContenido.js, para que la vista previa diga lo mismo. Un test verifica que sean iguales
 const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
+// Lo que avisa el formulario cuando un dataset externo queda sin "Requiere nota DGMIT": copia de MENSAJE_FALTA_REQUIERE_NOTA de
+// services/requiereNotaReglas.js (el servidor responde 400 con el mismo texto). Un test verifica que sean iguales
+const MENSAJE_FALTA_REQUIERE_NOTA = 'Indicá si el dataset requiere nota DGMIT.';
 // Los años de "Datos al" empiezan acá (el selector se amplía si la fecha guardada es anterior)
 const PRIMER_ANIO_DE_DATOS_AL = 2015;
 
@@ -867,9 +870,39 @@ function tipoAEnviar({ tipo, gestion, meses, original } = {}) {
 }
 
 /**
+ * "Requiere nota DGMIT" como lo guarda el servidor: 1 (Sí), 0 (No) o null (sin elegir). Lo que dice el selector es '' (sin
+ * elegir), '1' o '0'; también se aceptan los números 1 y 0, que son lo que guarda la base. Ojo: el 0 es un valor, no "falta",
+ * así que nada de `valor || null`.
+ */
+function requiereNotaDe(valor) {
+  const texto = String(valor ?? '');
+  if (texto === '1') return 1;
+  if (texto === '0') return 0;
+  return null;
+}
+
+/**
+ * El aviso de un dataset externo que quedó sin elegir "Requiere nota DGMIT" (MENSAJE_FALTA_REQUIERE_NOTA), o null. Una
+ * interna no lleva el dato, y sin gestión elegida todavía no hay nada que exigir. Es copia de la regla del servidor
+ * (datasetController.js): el servidor valida igual.
+ */
+function errorDeRequiereNota({ gestion, valor } = {}) {
+  return gestion === 'externa' && requiereNotaDe(valor) === null ? MENSAJE_FALTA_REQUIERE_NOTA : null;
+}
+
+// Cómo se muestra el dato en la nota: Sí, No o una raya (copia de textoRequiereNota de services/requiereNotaReglas.js)
+function textoDeRequiereNota(valor) {
+  const requiere = requiereNotaDe(valor);
+  if (requiere === 1) return 'Sí';
+  if (requiere === 0) return 'No';
+  return SIN_DATO;
+}
+
+/**
  * El cuerpo de POST /datasets (alta) y PUT /datasets/:id (edición). `formulario` es lo que dicen los campos:
  *   titulo, area_id, descripcion, tema_principal_id, tema_secundario_id, frecuencia_id, formatos, url_dataset,
  *   observaciones, que_se_solicita, tipo_gestion, tipo_pedido   como en los campos (los ids, como texto)
+ *   requiere_nota                 "Requiere nota DGMIT": '', '1' o '0'; va como null, 1 o 0, y siempre null con la gestión interna
  *   meses                         los de la frecuencia elegida: un número, null si es Eventual, undefined sin elegir
  *   cargado                       "Cargado en el portal el" ('AAAA-MM-DD' o ''): va como ultima_actualizacion
  *   datosMes, datosAnio           "Datos al" (en un ejercicio cuenta solo el año)
@@ -891,6 +924,7 @@ function cuerpoDelDataset(formulario) {
     frecuencia_id: enteroDe(f.frecuencia_id),
     formatos: Array.isArray(f.formatos) ? [...f.formatos] : [],
     tipo_gestion: texto(f.tipo_gestion),
+    requiere_nota: f.tipo_gestion === 'interna' ? null : requiereNotaDe(f.requiere_nota),
     tipo_pedido: tipoAEnviar({ tipo: f.tipo_pedido, gestion: f.tipo_gestion, meses: f.meses, original }),
     ultima_actualizacion: soloFecha(f.cargado),
     datos_al: fechaDeSelectores({
@@ -921,8 +955,9 @@ function hayCambiosSinGuardar(huella, formulario) {
 }
 
 /**
- * Lo que se revisa antes de proponer, con el error de cada campo o null: { formatos, datosAl, proxima }.
+ * Lo que se revisa antes de proponer, con el error de cada campo o null: { formatos, requiereNota, datosAl, proxima }.
  * - formatos: al menos uno;
+ * - requiereNota: un externo tiene que decir si requiere nota DGMIT (errorDeRequiereNota);
  * - datosAl: uno nuevo (distinto del guardado) no pasa del tope, con las palabras del servidor (topeDeDatosAl);
  * - proxima: fuera de la frecuencia Eventual es obligatoria (la exige el formulario; el servidor no, spec 10.1).
  * Lo demás lo revisan el navegador (los campos obligatorios) y el servidor. `formulario`: el de cuerpoDelDataset.
@@ -939,6 +974,7 @@ function problemasDelFormulario(formulario, hoy) {
   const nuevo = Boolean(datosAl) && datosAl !== soloFecha(f.original?.datos_al);
   return {
     formatos: Array.isArray(f.formatos) && f.formatos.length > 0 ? null : 'Elegí al menos un formato',
+    requiereNota: errorDeRequiereNota({ gestion: f.tipo_gestion, valor: f.requiere_nota }),
     datosAl: nuevo && datosAl > topeDeDatosAl(f.tipo_pedido, hoy) ? `Todavía no puede haber datos al ${fechaCorta(datosAl)}` : null,
     proxima
   };
@@ -946,17 +982,21 @@ function problemasDelFormulario(formulario, hoy) {
 
 /**
  * Los textos de la vista previa "Así va a salir en la próxima nota", menos los datos solicitados (los calcula el servidor):
- * { cabecera, titulo, frecuencia, solicita }. `frecuencia` es el nombre de la elegida, con "(Acumulado)" si corresponde
- * (frecuenciaEnNotaDe con el tipo y los meses de la frecuencia), o una raya si no hay una elegida. Sin "Qué se solicita", el
- * texto por defecto.
+ * { cabecera, titulo, frecuencia, conRequiereNota, requiereNota, solicita }. `frecuencia` es el nombre de la elegida, con
+ * "(Acumulado)" si corresponde (frecuenciaEnNotaDe con el tipo y los meses de la frecuencia), o una raya si no hay una
+ * elegida. `requiereNota` es lo que elige el selector ('1', '0' o ''); sale como Sí, No o una raya, y la columna "Requiere
+ * nota DGMIT" (`conRequiereNota`) es solo de la gestión externa: una interna sigue con tres columnas, como su nota. Sin
+ * "Qué se solicita", el texto por defecto.
  */
-function textosDeVistaPrevia({ titulo, gestion, solicita, frecuencia, tipo, meses } = {}) {
+function textosDeVistaPrevia({ titulo, gestion, solicita, frecuencia, tipo, meses, requiereNota } = {}) {
   const limpio = (valor) => (typeof valor === 'string' ? valor.trim() : '');
   const nombre = limpio(frecuencia);
   return {
     cabecera: gestion ? `Nota Digital de gestión ${gestion} (vista previa)` : 'Nota Digital (vista previa)',
     titulo: limpio(titulo) || 'Título del dataset',
     frecuencia: nombre ? frecuenciaEnNotaDe({ frecuencia: nombre, tipo, meses }) : SIN_DATO,
+    conRequiereNota: gestion === 'externa',
+    requiereNota: textoDeRequiereNota(requiereNota),
     solicita: limpio(solicita) || QUE_SE_SOLICITA_POR_DEFECTO
   };
 }
