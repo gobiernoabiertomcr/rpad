@@ -247,6 +247,15 @@ function htmlDeDato(rotulo, valor, clase = '') {
   return `<div class="sg-dato"><dt>${rotulo}</dt><dd${clase ? ` class="${clase}"` : ''}>${valor}</dd></div>`;
 }
 
+// «Requiere nota DGMIT» como lo manda el servidor (ficha.requiere_nota: 1, 0 o null): Sí, No o Sin dato. Copia mínima de
+// textoRequiereNota(valor, 'Sin dato') de services/requiereNotaReglas.js, atada por un test de paridad. El 0 es un valor (No), no
+// un vacío: nunca `valor || …`.
+function textoDeRequiereNota(valor) {
+  if (valor === 1 || valor === true || valor === '1') return 'Sí';
+  if (valor === 0 || valor === false || valor === '0') return 'No';
+  return 'Sin dato';
+}
+
 // "Venció el" (en rojo, con "hace N días") o "Vence el"; sin vencimiento, por qué
 function htmlDeVencimientoDeLaFicha(ficha) {
   const estado = ficha.estado ?? {};
@@ -257,7 +266,8 @@ function htmlDeVencimientoDeLaFicha(ficha) {
   return htmlDeDato('Vencimiento', estado.estado === 'sin-fecha' ? 'Sin fecha' : 'Sin vencimiento');
 }
 
-// La ficha (va adentro de section#sg-ficha): el título, la insignia, el área, la baja, los botones y la fila de datos
+// La ficha (va adentro de section#sg-ficha): el título, la insignia, el área, la baja, los botones y la fila de datos («Requiere
+// nota DGMIT» solo en la gestión externa)
 function htmlDeFicha(ficha) {
   if (!ficha || typeof ficha !== 'object') return '';
   const estado = ficha.estado ?? {};
@@ -284,6 +294,7 @@ function htmlDeFicha(ficha) {
       ${htmlDeDato('Cargado en el portal', Utils.fechaCorta(ficha.ultima))}
       ${htmlDeVencimientoDeLaFicha(ficha)}
       ${htmlDeDato('Datos solicitados hoy', escaparTexto(ficha.pedido) || Utils.SIN_DATO)}
+      ${ficha.tipo_gestion === 'interna' ? '' : htmlDeDato('Requiere nota DGMIT', textoDeRequiereNota(ficha.requiere_nota))}
     </dl>`;
 }
 

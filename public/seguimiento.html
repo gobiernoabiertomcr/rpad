@@ -72,7 +72,8 @@
         .sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; }
         .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
         .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
-        .sg-datos { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--sg-linea); padding-top: 14px; margin: 0; }
+        /* Una sola fila con tantos datos como haya: 5 en la gestión interna y 6 en la externa (suma "Requiere nota DGMIT") */
+        .sg-datos { grid-column: 1 / -1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-top: 1px solid var(--sg-linea); padding-top: 14px; margin: 0; }
         .sg-dato { padding-right: 14px; }
         .sg-dato + .sg-dato { border-left: 1px solid var(--sg-linea); padding-left: 14px; }
         .sg-dato dt { font-size: 0.78rem; color: var(--sg-suave); margin: 0 0 2px; }
@@ -220,7 +221,7 @@
 
         @media (max-width: 960px) {
             .sg-ficha { grid-template-columns: 1fr; } .sg-acciones { flex-direction: row; flex-wrap: wrap; }
-            .sg-datos { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .sg-dato:nth-child(4) { border-left: 0; padding-left: 0; }
+            .sg-datos { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .sg-dato:nth-child(4) { border-left: 0; padding-left: 0; }
             .sg-tramos { grid-template-columns: 1fr; } .sg-flecha { padding: 8px 0 8px 18px; } .sg-flecha .l { display: none; }
             .sg-fila { grid-template-columns: 92px 20px minmax(0, 1fr) 20px; } .sg-fila .p { grid-column: 3; text-align: left; margin-top: 4px; }
             .sg-cuerpo { margin-left: 4px; margin-right: 4px; } .sg-cuerpo dl { grid-template-columns: 1fr; }
@@ -421,6 +422,6 @@
     <script src="js/auth.js?v=20261109"></script>
     <script src="js/main.js?v=20261109"></script>
     <script src="js/api.js?v=20261109"></script>
-    <script src="js/seguimiento.js?v=20261111"></script>
+    <script src="js/seguimiento.js?v=20261114"></script>
 </body>
 </html>

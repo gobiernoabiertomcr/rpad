@@ -335,3 +335,116 @@ describe('renderSeguimiento: los otros casos', () => {
     assert.ok(rectangulos(con) > rectangulos(sin) + 50);
   });
 });
+
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): en la ficha de un externo, «Datos que se piden»
+// comparte el renglón con este dato (mockup 6); la gestión interna no lo lleva. Con «No», el circuito dice que no hace falta nota formal.
+describe('renderSeguimiento: requiere nota DGMIT', () => {
+  const conDato = (id, requiere_nota, dataset = {}) => seguimiento(id, { requiere_nota, ...dataset });
+  // El texto de una celda de la grilla (el valor que está justo debajo de su rótulo) y su posición
+  const celda = (textos, rotulo) => {
+    const r = textos.find(t => t.texto === rotulo);
+    assert.ok(r, `falta "${rotulo}" en ${textos.map(t => t.texto).join(' | ')}`);
+    // El valor va debajo del rótulo, en la misma columna: el de base más alta entre los que quedan por debajo
+    const valor = textos.filter(t => Math.abs(t.x - r.x) < 0.5 && t.base < r.base).sort((a, b) => b.base - a.base)[0];
+    return { rotulo: r, valor };
+  };
+
+  for (const [dato, texto] of [[0, 'No'], [1, 'Sí'], [null, 'Sin dato']]) {
+    it(`la hoja de un externo con ${texto === 'Sin dato' ? 'dato sin cargar' : texto} dice REQUIERE NOTA DGMIT / ${texto} junto a DATOS QUE SE PIDEN`, async () => {
+      const s = conDato(81, dato);
+      assert.equal(s.ficha.requiere_nota, dato);
+      const textos = textosPorHoja(await render(s))[0];
+      const pide = celda(textos, 'DATOS QUE SE PIDEN');
+      const requiere = celda(textos, 'REQUIERE NOTA DGMIT');
+      // En el mismo renglón: el mismo alto el rótulo y el valor; el dato a la derecha del pedido
+      assert.ok(Math.abs(pide.rotulo.base - requiere.rotulo.base) < 0.5, 'rótulos en renglones distintos');
+      assert.ok(Math.abs(pide.valor.base - requiere.valor.base) < 0.5, 'valores en renglones distintos');
+      assert.ok(requiere.rotulo.x > pide.rotulo.x + 100, 'el dato no está a la derecha del pedido');
+      assert.equal(pide.valor.texto, s.ficha.pedido);
+      assert.equal(requiere.valor.texto, texto);
+      assert.equal(requiere.valor.tamano, pide.valor.tamano, 'mismo tamaño en la misma fila');
+      // El link al portal sigue abajo, en su renglón entero
+      assert.ok(celda(textos, 'LINK AL PORTAL').rotulo.base < pide.rotulo.base);
+    });
+  }
+
+  it('el dato va después de «Cargado en el portal» y antes del link al portal, y la ficha no crece', async () => {
+    const con = textosPorHoja(await render(conDato(81, 0)))[0];
+    const base = (textos, t) => textos.find(x => x.texto === t).base;
+    const orden = ['CARGADO EN EL PORTAL', 'REQUIERE NOTA DGMIT', 'LINK AL PORTAL', 'AVISOS DEL CICLO ABIERTO'].map(t => base(con, t));
+    orden.slice(1).forEach((valor, i) => assert.ok(valor < orden[i], `fuera de orden en la posición ${i + 1}: ${orden.join(', ')}`));
+    // Misma altura de todo lo de abajo que con la interna de siempre: el renglón que comparte no suma uno
+    const sin = textosPorHoja(await render(seguimiento(81)))[0];
+    for (const t of ['LINK AL PORTAL', 'AVISOS DEL CICLO ABIERTO', 'LOS ÚLTIMOS 12 MESES', 'ÚLTIMOS MOVIMIENTOS']) {
+      assert.ok(Math.abs(base(con, t) - base(sin, t)) < 0.5, `${t} se corrió`);
+    }
+  });
+
+  it('la hoja de una interna no lleva el dato, ni siquiera con un valor en el dataset', async () => {
+    for (const valor of [null, 0, 1]) {
+      const textos = textosPorHoja(await render(conDato(38, valor)))[0];
+      assert.ok(!textos.some(t => /REQUIERE NOTA/i.test(t.texto)), `valor ${valor}`);
+    }
+    // «Datos que se piden» sigue de ancho entero: nada a su derecha en su renglón
+    const textos = textosPorHoja(await render(seguimiento(38)))[0];
+    const pide = celda(textos, 'DATOS QUE SE PIDEN');
+    assert.ok(!textos.some(t => Math.abs(t.base - pide.rotulo.base) < 0.5 && t.x > pide.rotulo.x + 100), 'algo a la derecha del pedido');
+  });
+
+  it('el pedido más largo no se corta: «Presupuestos de los ejercicios 2021 a 2026» entra junto al dato', async () => {
+    const s = conDato(1, 0, { datos_al: '2020-12-31', proxima: '2026-01-31' });
+    assert.match(s.ficha.pedido, /^Presupuestos de los ejercicios \d{4} a \d{4}$/);
+    for (const url of ['https://datos.comodoro.gov.ar/dataset/presupuesto-municipal', null]) {
+      const con = { ...s, ficha: { ...s.ficha, url_dataset: url } };
+      const textos = textosPorHoja(await render(con))[0];
+      assert.equal(celda(textos, 'DATOS QUE SE PIDEN').valor.texto, s.ficha.pedido, `url ${url}`);
+      assert.ok(!celda(textos, 'DATOS QUE SE PIDEN').valor.texto.endsWith('…'));
+      verificarDiagramacion(await diagramacion(() => render(con)));
+    }
+  });
+
+  it('una hoja, nada encimado ni fuera de los márgenes: externos con Sí, No y sin dato, con título y áreas larguísimos y sin link', async () => {
+    const largos = { titulo: TITULO_LARGO, area: AREA_LARGA, area_superior: AREA_LARGA };
+    for (const dato of [1, 0, null]) {
+      for (const s of [conDato(52, dato), conDato(81, dato), conDato(52, dato, largos), conDato(66, dato, { tipo_gestion: 'externa' })]) {
+        const pdf = await render(s);
+        assert.equal(lineasPorHoja(pdf).length, 1);
+        verificarDiagramacion(await diagramacion(() => render(s)));
+        verificarDiagramacion(await diagramacion(() => render({ ...s, ficha: { ...s.ficha, url_dataset: null } })));
+      }
+    }
+  });
+
+  it('el circuito con No: «No hace falta nota formal», «Sin nota formal» y «Los datos se obtienen de la fuente»', async () => {
+    const lineas = lineasPorHoja(await render(conDato(81, 0)))[0];
+    for (const t of ['No hace falta nota formal', 'Sin nota formal']) assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    assert.ok(lineas.join(' ').includes('Los datos se obtienen de la fuente'), lineas.join(' | '));
+    assert.ok(lineas.join(' ').includes('DGMIT y Dirección Administrativa'), lineas.join(' | '));
+    assert.ok(!lineas.includes('Mandan la nota formal al área') && !lineas.includes('Nota formal'), lineas.join(' | '));
+    // Sin email al área en el ciclo: la línea «Al área» no se dibuja, ni la que dice que todavía no se le envió
+    assert.ok(!lineas.some(l => l.startsWith('Al área')), lineas.join(' | '));
+    assert.ok(!lineas.some(l => /todavía no se le envió/.test(l)), lineas.join(' | '));
+  });
+
+  it('el circuito con No y un email al área en el ciclo (caso 52): la línea «Al área» sigue con sus fechas', async () => {
+    const lineas = lineasPorHoja(await render(conDato(52, 0)))[0];
+    assert.ok(lineas.includes('Al área: el 21/06/2026 el RPAD le anticipó por email que iba a recibir una nota formal.'), lineas.join(' | '));
+    assert.ok(lineas.includes('No hace falta nota formal'));
+  });
+
+  it('el circuito con Sí o sin dato es el de siempre, con la línea «Al área»', async () => {
+    for (const dato of [1, null]) {
+      const lineas = lineasPorHoja(await render(conDato(81, dato)))[0];
+      assert.ok(lineas.includes('Mandan la nota formal al área'), lineas.join(' | '));
+      assert.ok(lineas.includes('Nota formal'));
+      assert.ok(lineas.includes('Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.'), lineas.join(' | '));
+    }
+  });
+
+  it('lenguaje neutro con No: ni «sin entregar», ni «sin respuesta», ni «atrasado» (en ninguno de los casos)', async () => {
+    for (const id of Object.keys(CASOS)) {
+      const lineas = lineasPorHoja(await render(conDato(Number(id), 0)))[0];
+      assert.deepEqual(lineas.filter(l => NEUTRO.test(l)), [], `caso ${id}`);
+    }
+  });
+});

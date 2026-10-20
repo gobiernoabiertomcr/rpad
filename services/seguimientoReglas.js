@@ -5,7 +5,7 @@
 import { esFechaIso, formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
 import { NOMBRES_TIPO_PEDIDO, estadoDelDataset, tipoEfectivo, pedido as calcularPedido } from './fechasDatasetReglas.js';
 import { cintaDe } from './seguimientoCinta.js';
-import { textoRequiereNota } from './requiereNotaReglas.js';
+import { normalizarRequiereNota, textoRequiereNota } from './requiereNotaReglas.js';
 
 // Desde cuándo hay registro: el primer email registrado es del 06/12/2025 y el primer cambio, del 26/01/2026
 export const REGISTRO_DESDE = Object.freeze({ envios: '2025-12-06', cambios: '2026-01-26' });
@@ -547,6 +547,21 @@ const TRAMO_FUERA = Object.freeze({
   externa: Object.freeze({ titulo: 'Nota formal', texto: 'Por fuera del RPAD: no queda registrada' }),
   interna: Object.freeze({ titulo: 'Relevamiento', texto: 'Por fuera del RPAD: no queda registrado' })
 });
+// Un externo con «Requiere nota DGMIT» en «No» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): DGMIT y la Dirección
+// Administrativa siguen recibiendo el aviso, pero no hay nota formal al área: los datos se obtienen de la fuente
+const NODO_MEDIO_SIN_NOTA = Object.freeze({ ...NODO_MEDIO.externa, rol: 'No hace falta nota formal' });
+const TRAMO_FUERA_SIN_NOTA = Object.freeze({ titulo: 'Sin nota formal', texto: 'Los datos se obtienen de la fuente' });
+
+// «Requiere nota DGMIT» del dataset: 1 (Sí), 0 (No) o null (sin dato). En gestión interna es siempre null; un valor que no es Sí ni
+// No es sin dato. El 0 es un valor: sobre este campo nunca se usa `|| null`.
+const requiereNotaDe = (dataset) => {
+  if (dataset?.tipo_gestion === 'interna') return null;
+  try {
+    return normalizarRequiereNota(dataset?.requiere_nota) ?? null;
+  } catch {
+    return null;
+  }
+};
 
 const tituloDeAvisos = (total) => (total === 0 ? 'Sin avisos' : total === 1 ? '1 aviso' : `${total} avisos`);
 
@@ -582,6 +597,10 @@ const alAreaDe = (fechas) => {
 // El circuito del ciclo abierto, para la pantalla y el PDF: el RPAD avisa a DGMIT (`avisos`), ellas mandan la nota formal al área
 // por fuera del RPAD (`nodoMedio`, `tramoFuera`) y el área (`area`) vence o no. `ciclos`: los de ciclosDe (si no se pasan, los
 // arma). Sin ciclos (eventual o sin fecha) no hay avisos que contar ni vencimiento.
+// Con «Requiere nota DGMIT» en «No» (solo externos) no hay nota formal: cambian los textos del medio y del tramo de afuera, y el
+// renglón «Al área» (`alArea`) es null, salvo que el RPAD ya le haya mandado al área el email de los 40 días en el ciclo abierto
+// (pasa si el dataset estaba en «Sí» y después pasó a «No»): ese email existió y se muestra con sus fechas. Con «No», lo que nunca
+// aparece es «todavía no se le envió el email que anticipa la nota formal». Con «Sí» o sin dato, todo como siempre.
 export const circuitoDe = (fuentes, ciclos, hoy) => {
   const dataset = fuentes?.dataset;
   if (!dataset || typeof dataset !== 'object') return null;
@@ -591,12 +610,14 @@ export const circuitoDe = (fuentes, ciclos, hoy) => {
   const gestion = dataset.tipo_gestion === 'interna' ? 'interna' : 'externa';
   const estado = estadoDeSeguimiento(dataset, hoy);
   const delCiclo = hayCiclos ? avisosDelCiclo(fuentes, todos, todos.length - 1) : { emails: 0, notas: [], alArea: [], total: 0 };
+  const sinNota = gestion === 'externa' && requiereNotaDe(dataset) === 0;
+  const fechasAlArea = [...new Set(delCiclo.alArea)];
   return {
-    nodoMedio: { ...NODO_MEDIO[gestion] },
-    tramoFuera: { ...TRAMO_FUERA[gestion] },
+    nodoMedio: { ...(sinNota ? NODO_MEDIO_SIN_NOTA : NODO_MEDIO[gestion]) },
+    tramoFuera: { ...(sinNota ? TRAMO_FUERA_SIN_NOTA : TRAMO_FUERA[gestion]) },
     avisos: { titulo: tituloDeAvisos(delCiclo.total), texto: hayCiclos ? textoDeAvisos(delCiclo, abierto.diasVencido > 0) : 'Sin vencimiento' },
     area: { nombre: dataset.area ?? null, texto: textoDelArea(estado), vencido: estado.estado === 'vencido' },
-    alArea: gestion === 'interna' ? null : alAreaDe([...new Set(delCiclo.alArea)]),
+    alArea: gestion === 'interna' || (sinNota && fechasAlArea.length === 0) ? null : alAreaDe(fechasAlArea),
     vencimiento: abierto ? { fecha: abierto.venc, texto: `Vencimiento del ${formatoCorto(abierto.venc)}` } : null
   };
 };
@@ -615,7 +636,8 @@ const urlWeb = (valor) => {
 
 // La ficha: lo que muestran la pantalla y el PDF del dataset. `baja`: el día de la baja aprobada (la del movimiento 'baja', el más
 // nuevo si hubiera más de uno), o null. `pedido`: el texto de lo que se pediría hoy, o null (eventual, sin vencimiento o dado de
-// baja: a un dataset dado de baja ya no se le pide nada).
+// baja: a un dataset dado de baja ya no se le pide nada). `requiere_nota`: «Requiere nota DGMIT», 1 (Sí), 0 (No) o null (sin dato;
+// siempre null en gestión interna): cada pantalla lo escribe a su manera (Sí, No o Sin dato).
 const fichaDe = (dataset, movimientos, hoy) => {
   const datos = objeto(dataset);
   const proxima = diaDe(datos.proxima);
@@ -627,6 +649,7 @@ const fichaDe = (dataset, movimientos, hoy) => {
     area: datos.area ?? null,
     area_superior: datos.area_superior ?? null,
     tipo_gestion: datos.tipo_gestion ?? null,
+    requiere_nota: requiereNotaDe(datos),
     frecuencia: datos.frecuencia ?? null,
     datos_al: datosAl,
     ultima: diaDe(datos.ultima),

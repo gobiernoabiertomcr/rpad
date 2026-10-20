@@ -8,6 +8,7 @@
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { ventanaDe } from './seguimientoCinta.js';
+import { textoRequiereNota } from './requiereNotaReglas.js';
 import {
   COLOR, MM, MARGEN, IZQUIERDA, DERECHA, CONTENIDO, ABAJO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE,
   desdeBase, ajustar, escribir, renglon, rotulo, filete, etiquetaDeCabecera, prepararGrilla, cargarQrcode, dibujarTarjetaQr
@@ -140,6 +141,18 @@ const celdaDelVencimiento = (ficha) => {
   return { etiqueta: 'Próximo vencimiento', valor: estado === 'eventual' ? 'Sin vencimiento (eventual)' : 'Sin fecha' };
 };
 
+// «Datos que se piden»: de ancho entero en la gestión interna; en un externo comparte el renglón con «Requiere nota DGMIT» (spec
+// 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7) y le queda media columna. El pedido más largo que arma pedido() ("Presupuestos
+// de los ejercicios 2021 a 2026", 178 puntos a 9,2) entra en la media columna más angosta (192 puntos, la de la ficha con el QR).
+const celdasDelPedido = (ficha) => {
+  const pedido = ficha.pedido ?? (ficha.estado?.estado === 'eventual' ? 'Sin pedido (eventual)' : 'Sin pedido');
+  if (ficha.tipo_gestion === 'interna') return [{ etiqueta: 'Datos que se piden', valor: pedido, completa: true }];
+  return [
+    { etiqueta: 'Datos que se piden', valor: pedido },
+    { etiqueta: 'Requiere nota DGMIT', valor: textoRequiereNota(ficha.requiere_nota, SIN_DATO) }
+  ];
+};
+
 // La grilla de dos columnas con filetes (cada valor en una línea, cortado con "…" si no entra) y, a la derecha, la tarjeta del QR
 // hacia el portal. Sin link al portal no hay QR y la grilla ocupa todo el ancho.
 const prepararFicha = (doc, ficha) => {
@@ -152,7 +165,7 @@ const prepararFicha = (doc, ficha) => {
     celdaDelVencimiento(ficha),
     { etiqueta: 'Datos al', valor: fecha(ficha.datos_al) },
     { etiqueta: 'Cargado en el portal', valor: fecha(ficha.ultima) },
-    { etiqueta: 'Datos que se piden', valor: ficha.pedido ?? (ficha.estado?.estado === 'eventual' ? 'Sin pedido (eventual)' : 'Sin pedido'), completa: true },
+    ...celdasDelPedido(ficha),
     url
       ? { etiqueta: 'Link al portal', valor: url, completa: true, link: url, color: COLOR.acento, tamanos: { max: LETRA.link, min: 7 } }
       : { etiqueta: 'Link al portal', valor: SIN_DATO, completa: true }

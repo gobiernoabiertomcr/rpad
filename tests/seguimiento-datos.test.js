@@ -69,16 +69,31 @@ describe('fuentesDe: los datasets', () => {
     const areaId = await crearArea({ nombre: 'Área del seguimiento', area_superior: 'Secretaría de prueba' });
     const id = await crearDataset({
       titulo: 'Dataset visto', gestion: 'externa', areaId, frecuencia: 'Trimestralmente', vencimiento: '2026-12-31',
-      ultima: '2026-09-15', datosAl: '2026-09-30', tipoPedido: 'acumulado', url: 'https://datos.comodoro.gov.ar/dataset/visto'
+      ultima: '2026-09-15', datosAl: '2026-09-30', tipoPedido: 'acumulado', url: 'https://datos.comodoro.gov.ar/dataset/visto',
+      requiereNota: 1
     });
     await fijarAlta(id, '2026-03-04 21:30:15');
     const fuentes = (await fuentesDe([id])).get(id);
     assert.deepEqual(fuentes.dataset, {
       id, titulo: 'Dataset visto', area: 'Área del seguimiento', area_superior: 'Secretaría de prueba', area_id: areaId,
-      tipo_gestion: 'externa', frecuencia: 'Trimestralmente', meses: 3, proxima: '2026-12-31', datos_al: '2026-09-30',
+      tipo_gestion: 'externa', requiere_nota: 1, frecuencia: 'Trimestralmente', meses: 3, proxima: '2026-12-31', datos_al: '2026-09-30',
       ultima: '2026-09-15', tipo_pedido: 'acumulado', url_dataset: 'https://datos.comodoro.gov.ar/dataset/visto',
       activo: true, alta: '2026-03-04 21:30:15'
     });
+  });
+
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): 1 es Sí, 0 es No (un valor, no un vacío) y
+  // NULL es sin dato
+  it('fuentesDe trae requiere_nota', async () => {
+    const si = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    const no = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 0 });
+    const sinDato = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31' });
+    const interna = await crearDataset({ gestion: 'interna', vencimiento: '2026-12-31' });
+    const mapa = await fuentesDe([si, no, sinDato, interna]);
+    assert.strictEqual(mapa.get(si).dataset.requiere_nota, 1);
+    assert.strictEqual(mapa.get(no).dataset.requiere_nota, 0);
+    assert.strictEqual(mapa.get(sinDato).dataset.requiere_nota, null);
+    assert.strictEqual(mapa.get(interna).dataset.requiere_nota, null);
   });
 
   it('las fechas vacías vuelven como null y la frecuencia sin meses (Eventual), con meses null', async () => {
