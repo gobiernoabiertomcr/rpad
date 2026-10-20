@@ -719,26 +719,62 @@ describe('textos del 14/10/2026', () => {
       'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.');
   });
 
-  it('el aviso lleva la línea del anexo con la cantidad de hojas; la reiteración no', () => {
+  it('el aviso lleva la línea del anexo con la cantidad de hojas', () => {
     assert.equal(nota().anexo, 'Anexo: reporte de los conjuntos de datos (1 hoja).');
     assert.equal(nota({ datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B' })] }).anexo,
       'Anexo: reporte de los conjuntos de datos (2 hojas).');
-    assert.equal(nota({ tipo: 'reiteracion' }).anexo, null);
   });
 
-  it('la línea del anexo va antes de "Justificación:" en el HTML y en el texto', () => {
-    const linea = 'Anexo: reporte de los conjuntos de datos (1 hoja).';
-    const html = renderHtml(nota());
-    assert.ok(html.includes(linea) && html.indexOf(linea) < html.indexOf('Justificación:'));
-    const texto = renderTexto(nota());
-    assert.ok(texto.includes(linea) && texto.indexOf(linea) < texto.indexOf('Justificación:'));
-    assert.ok(!renderHtml(nota({ tipo: 'reiteracion' })).includes('Anexo:'));
+  it('la línea del anexo va antes de "Justificación:" en el HTML y en el texto, en el aviso y en la reiteración', () => {
+    for (const [tipo, linea] of [
+      ['aviso', 'Anexo: reporte de los conjuntos de datos (1 hoja).'], ['reiteracion', 'Anexo: seguimiento de los conjuntos de datos (1 hoja).']
+    ]) {
+      const html = renderHtml(nota({ tipo }));
+      assert.ok(html.includes(`>${linea}</p>`) && html.indexOf(linea) < html.indexOf('Justificación:'), tipo);
+      const texto = renderTexto(nota({ tipo }));
+      assert.ok(texto.includes(`\n${linea}\n`) && texto.indexOf(linea) < texto.indexOf('Justificación:'), tipo);
+    }
   });
 
-  it('el email del aviso anuncia nota y anexo; el de la reiteración, solo la nota', () => {
+  it('el email del aviso anuncia nota y anexo', () => {
     assert.ok(renderHtml(nota()).includes('>SE ADJUNTAN NOTA Y ANEXO EN PDF</p>'));
     assert.ok(renderTexto(nota()).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\n'));
-    assert.ok(renderHtml(nota({ tipo: 'reiteracion' })).includes('>SE ADJUNTA NOTA EN PDF</p>'));
+  });
+});
+
+// La reiteración lleva su anexo: una hoja del Seguimiento por dataset (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3)
+describe('anexo de la reiteración', () => {
+  it('la reiteración anuncia el anexo de seguimiento (N hojas / 1 hoja) y su primera línea es SE ADJUNTAN NOTA Y ANEXO EN PDF; autorización y auditoría siguen con SE ADJUNTA NOTA EN PDF', () => {
+    const CON_ANEXO = '<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTAN NOTA Y ANEXO EN PDF</p>';
+    for (const gestion of ['interna', 'externa']) {
+      const una = nota({ tipo: 'reiteracion', gestion });
+      assert.equal(una.anexo, 'Anexo: seguimiento de los conjuntos de datos (1 hoja).', gestion);
+      // Cuenta todos los datasets de la nota: los próximos a vencer y los vencidos
+      const tres = nota({
+        tipo: 'reiteracion', gestion,
+        datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31' }), dataset({ id: 3, titulo: 'Dataset C' })]
+      });
+      assert.equal(tres.anexo, 'Anexo: seguimiento de los conjuntos de datos (3 hojas).', gestion);
+      assert.equal(una.avisoAdjunto, 'SE ADJUNTAN NOTA Y ANEXO EN PDF', gestion);
+      const html = renderHtml(una);
+      assert.ok(html.includes(CON_ANEXO) && html.indexOf(CON_ANEXO) < html.indexOf('REF.:'), gestion);
+      assert.ok(renderTexto(una).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\nREF.: "Reiteración – '), gestion);
+    }
+
+    const autorizacion = construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25',
+      firma: { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' }, presentante: null, leyenda: null },
+      autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' }
+    });
+    const auditoria = construirNotaDeAuditoria({ numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: [], reiterados: [], config });
+    for (const otra of [autorizacion, auditoria]) {
+      assert.equal(otra.avisoAdjunto, 'SE ADJUNTA NOTA EN PDF', otra.tipo);
+      assert.equal(otra.anexo, null, otra.tipo);
+      const html = renderHtml(otra);
+      assert.ok(html.includes('<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTA NOTA EN PDF</p>'), otra.tipo);
+      assert.ok(!html.includes('Anexo:') && !html.includes('ANEXO'), otra.tipo);
+      assert.ok(renderTexto(otra).startsWith('SE ADJUNTA NOTA EN PDF\n\n'), otra.tipo);
+    }
   });
 });
 

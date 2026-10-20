@@ -628,24 +628,25 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       });
     });
 
-    // La línea del anexo (solo avisos) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
-    // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con el título de la justificación y su
-    // primer párrafo: se reserva también el espacio que deja debajo (si no, el reservado a continuación puede
-    // mandar el título a otra hoja).
+    // El título de la justificación viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
+    // Si hay un solo párrafo (o ninguno; la reiteración tiene uno) es a la vez el primero y el último: se reserva todo junto
+    // antes de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
+    const ultimo = nota.justificacion.length - 1;
+    const reservaDeLaJustificacion = ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? altoCierre : 0);
+
+    // La línea del anexo (avisos y reiteraciones) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
+    // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con lo que reserva la justificación (su título y su
+    // primer párrafo y, si es también el último, el cierre): se reserva también el espacio que deja debajo (si no, el
+    // reservado a continuación puede mandar el título a otra hoja).
     if (nota.anexo) {
-      asegurarEspacio(AIRE_ANEXO + altoTexto(nota.anexo) + altoEspacio(ESPACIO_PARRAFO, 12) + ALTO_TITULO_JUSTIFICACION
-        + altoTexto(nota.justificacion[0] || ''));
+      asegurarEspacio(AIRE_ANEXO + altoTexto(nota.anexo) + altoEspacio(ESPACIO_PARRAFO, 12) + reservaDeLaJustificacion);
       if (doc.y > doc.page.margins.top + 1) doc.y += AIRE_ANEXO;
       parrafo(nota.anexo, { align: 'left', espacio: ESPACIO_PARRAFO });
     }
 
-    // El título viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
-    // Si hay un solo párrafo (o ninguno) es a la vez el primero y el último: se reserva todo junto antes
-    // de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
     // (la nota de autorización no tiene justificación: el cierre se reserva solo)
     if (nota.justificacion.length) {
-      const ultimo = nota.justificacion.length - 1;
-      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? altoCierre : 0));
+      asegurarEspacio(reservaDeLaJustificacion);
       parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
       nota.justificacion.forEach((texto, i) => {
         if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + altoCierre);

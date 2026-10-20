@@ -6,8 +6,9 @@ import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
 
 // qrcode se carga recién al dibujar el primer anexo, y queda cargado. Si faltara la dependencia (por ejemplo, si no se
-// corrió "npm install" después de subir el código), falla solo el aviso, que queda registrado con su alerta, y no el
-// arranque de toda la app (este módulo llega a app.js por las rutas).
+// corrió "npm install" después de subir el código), falla solo la nota con anexo (un aviso o una reiteración: el anexo de la
+// reiteración, seguimientoPdf.js, también lo usa), que queda registrada con su alerta, y no el arranque de toda la app (este
+// módulo llega a app.js por las rutas).
 let QRCode = null;
 export const cargarQrcode = async () => {
   if (!QRCode) {

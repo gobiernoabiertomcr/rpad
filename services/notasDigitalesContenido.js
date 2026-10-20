@@ -56,8 +56,14 @@ const CAMPOS_CONTACTO = [
   ['email_contacto', 'Email de contacto']
 ];
 
-// Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto, y el aviso suma su anexo
-const AVISO_ADJUNTO = { aviso: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', reiteracion: 'SE ADJUNTA NOTA EN PDF' };
+// Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto. El aviso y la reiteración suman su anexo (la
+// reiteración, el del Seguimiento: spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3); la nota de autorización y la de
+// auditoría van solas
+const AVISO_ADJUNTO = { conAnexo: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', soloNota: 'SE ADJUNTA NOTA EN PDF' };
+
+// La línea que anuncia el anexo, con una hoja por dataset: en el aviso, el reporte de cada uno (spec 6.7); en la reiteración, su
+// Seguimiento (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3)
+const ANEXO_DE = { aviso: 'reporte', reiteracion: 'seguimiento' };
 
 // Personal contratado (usuarios.vinculo = 'contrato', sin designación formal; pedido del usuario el 16/10/2026): en la firma,
 // un renglón más chico entre el nombre y el cargo; dentro de los párrafos, en minúscula. Quien no es contratado (o no tiene
@@ -93,7 +99,9 @@ export const escapeHtml = (texto) => String(texto ?? '')
 const urlSegura = (url) => (typeof url === 'string' && /^https?:\/\//i.test(url.trim()) ? url.trim() : null);
 const cantidad = (n, singular, plural) => `${n} ${n === 1 ? singular : plural}`;
 
-const textoNumero = ({ numero, anio, esPrueba = false }) => {
+// El número de la nota como lo escribe la nota: 'PRUEBA', 'XX' (vista previa, sin número) o 'N/AA'. También va en el pie del
+// anexo de la reiteración (notasDigitales.js)
+export const textoNumero = ({ numero, anio, esPrueba = false }) => {
   if (esPrueba) return 'PRUEBA';
   if (numero == null) return 'XX';
   return `${numero}/${String(anio).slice(-2)}`;
@@ -314,12 +322,12 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     asunto,
     ref,
     destinatario: DESTINATARIO,
-    avisoAdjunto: AVISO_ADJUNTO[tipo],
+    avisoAdjunto: AVISO_ADJUNTO.conAnexo,
     parrafoInicial: PARRAFO_INICIAL[tipo][gestion],
     secciones,
     contactos,
-    // Una hoja del anexo por dataset (spec 6.7); solo los avisos llevan anexo
-    anexo: tipo === 'aviso' ? `Anexo: reporte de los conjuntos de datos (${cantidad(datasets.length, 'hoja', 'hojas')}).` : null,
+    // Una hoja del anexo por dataset, los próximos a vencer y los vencidos
+    anexo: `Anexo: ${ANEXO_DE[tipo]} de los conjuntos de datos (${cantidad(datasets.length, 'hoja', 'hojas')}).`,
     autorizacion: autorizacion ? PARRAFO_AUTORIZACION(autorizacion) : null,
     // Solo el aviso en su fecha cita la nota que adelantó el pedido; la reiteración no (7.6)
     adelanto: tipo === 'aviso' ? textoAdelanto(datasets) : null,
@@ -344,7 +352,7 @@ export const construirNotaDeAutorizacion = ({ numero = null, anio = null, esPrue
     asunto: `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${REF_AUTORIZACION} (licencia ${periodoLicencia(autorizacion)})`,
     ref: REF_AUTORIZACION,
     destinatario: DESTINATARIO,
-    avisoAdjunto: AVISO_ADJUNTO.reiteracion,
+    avisoAdjunto: AVISO_ADJUNTO.soloNota,
     parrafoInicial: TEXTO_NOTA_AUTORIZACION(autorizacion),
     secciones: [],
     contactos: [],
@@ -542,7 +550,7 @@ export const construirNotaDeAuditoria = ({
     asunto: `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${ref}`,
     ref,
     destinatario: DESTINATARIO,
-    avisoAdjunto: AVISO_ADJUNTO.reiteracion,
+    avisoAdjunto: AVISO_ADJUNTO.soloNota,
     parrafoInicial: PARRAFO_AUDITORIA,
     secciones,
     detalles: {

@@ -177,7 +177,8 @@ export const descargarPdf = async (req, res) => {
   }
 };
 
-// El anexo guardado de un aviso (las reiteraciones no tienen)
+// El anexo guardado de un aviso o de una reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.4). No tienen anexo
+// las notas de autorización y de auditoría ni las reiteraciones anteriores al anexo de seguimiento: 404 "La nota no tiene anexo"
 export const descargarAnexo = async (req, res) => {
   try {
     const id = idDe(req.params.id);
@@ -243,7 +244,7 @@ export const verPreviewPdf = async (req, res) => {
   }
 };
 
-// El anexo del aviso de la vista previa (N° XX): no se guarda ni se envía. Solo los avisos llevan anexo.
+// El anexo del aviso de la vista previa (N° XX): no se guarda ni se envía.
 export const verPreviewAnexo = async (req, res) => {
   try {
     const { gestion } = req.query;

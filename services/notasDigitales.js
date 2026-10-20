@@ -6,10 +6,11 @@ import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos, remitente } from './emailService.js';
 import {
   construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto,
-  textoLeyendaAutorizacion
+  textoLeyendaAutorizacion, textoNumero
 } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
+import { seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
   periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta, diasEntre
@@ -116,7 +117,9 @@ const opcionesPdf = (config, firma) => ({
 const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: null, leyenda: null });
 
 /**
- * Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente.
+ * Asigna el número, renderiza HTML, texto, PDF y (en los avisos y las reiteraciones) el anexo y deja la nota registrada como
+ * pendiente. El anexo de la reiteración es el Seguimiento de cada dataset (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2):
+ * sus fuentes son las de preparado.fuentesPorId (las de ejemplo) o, sin ellas, las de la base.
  * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
  * autorizacion: { nombre, cargo, contratado, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo
  * de autorización; con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular.
@@ -137,6 +140,11 @@ export const generarNota = async ({
     ? { datasets: [], areas: [], fichas: [] }
     : preparado ?? await prepararContenido({ tipo, gestion, datasets, fecha });
   const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
+  // El Seguimiento de cada dataset de la reiteración se lee antes de abrir la transacción: la corrida ya tiene conexiones tomadas
+  // (el bloqueo) y fuentesDe hace sus consultas en paralelo. Si falla (o le falta un dataset), la reiteración no se genera.
+  const seguimientos = tipo === 'reiteracion'
+    ? await seguimientosDeLaNota(contenido.datasets, fecha, contenido.fuentesPorId ?? null)
+    : null;
   const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null, tipo);
   const conexion = await pool.getConnection();
   try {
@@ -161,8 +169,16 @@ export const generarNota = async ({
       });
     }
     const pdf = await renderPdf(nota, opcionesPdf(config, firmaNota));
-    // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo
-    const anexoPdf = fichas ? await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas })) : null;
+    // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo. El de la reiteración, ya con el
+    // número de la nota en el pie y la hora de la generación
+    let anexoPdf = null;
+    if (fichas) {
+      anexoPdf = await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas }));
+    } else if (seguimientos) {
+      anexoPdf = await renderAnexoDeReiteracion({
+        seguimientos, fecha, numeroTexto: textoNumero({ numero, anio, esPrueba }), momento: ahoraArgentina()
+      });
+    }
     const [resultado] = await conexion.query(
       `INSERT INTO notas_digitales
          (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, creado_por,
@@ -210,7 +226,9 @@ export const enviarNota = async (id) => {
   if (!nota) throw new ErrorDeUso(`No existe la nota ${id}`);
   if (nota.estado === 'enviada') return { success: true, yaEnviada: true };
 
-  // La nota y, en los avisos, su anexo (spec 6.7): los dos PDF guardados al generarla
+  // La nota y su anexo (spec 6.7; el de la reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.2): los dos PDF
+  // guardados al generarla, que nunca se regeneran. Las notas sin anexo (autorización, auditoría y las reiteraciones anteriores al
+  // anexo de seguimiento) van con la nota sola
   const sufijo = nota.es_prueba ? 'PRUEBA' : `${nota.numero}-${String(nota.anio).slice(-2)}`;
   const adjuntos = [{ filename: `Nota-Digital-${sufijo}.pdf`, content: nota.pdf, contentType: 'application/pdf' }];
   if (nota.anexo_pdf) adjuntos.push({ filename: `Anexo-Nota-Digital-${sufijo}.pdf`, content: nota.anexo_pdf, contentType: 'application/pdf' });

@@ -90,14 +90,18 @@ describe('renderPdf', () => {
     assert.equal(paginas(await renderPdf(nota(1))), 1);
   });
 
-  it('el aviso lleva la línea del anexo antes de "Justificación:"; la reiteración no', async () => {
-    for (const [cantidad, linea] of [[1, 'Anexo: reporte de los conjuntos de datos (1 hoja).'], [2, 'Anexo: reporte de los conjuntos de datos (2 hojas).']]) {
-      const lineas = lineasPorHoja(await renderPdf(nota(cantidad))).flat();
-      assert.equal(lineas.filter(l => l === linea).length, 1, lineas.join(' | '));
-      assert.ok(lineas.indexOf(linea) < lineas.indexOf('Justificación:'), lineas.join(' | '));
+  it('el aviso y la reiteración llevan la línea del anexo antes de "Justificación:"', async () => {
+    for (const [tipo, cantidad, linea] of [
+      ['aviso', 1, 'Anexo: reporte de los conjuntos de datos (1 hoja).'], ['aviso', 2, 'Anexo: reporte de los conjuntos de datos (2 hojas).'],
+      // La reiteración anuncia su anexo de seguimiento (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3)
+      ['reiteracion', 1, 'Anexo: seguimiento de los conjuntos de datos (1 hoja).'],
+      ['reiteracion', 2, 'Anexo: seguimiento de los conjuntos de datos (2 hojas).']
+    ]) {
+      const lineas = lineasPorHoja(await renderPdf(nota(cantidad, { tipo }))).flat();
+      assert.equal(lineas.filter(l => l === linea).length, 1, `${tipo}: ${lineas.join(' | ')}`);
+      assert.equal(lineas.filter(l => l.startsWith('Anexo:')).length, 1, `${tipo}: ${lineas.join(' | ')}`);
+      assert.ok(lineas.indexOf(linea) < lineas.indexOf('Justificación:'), `${tipo}: ${lineas.join(' | ')}`);
     }
-    const reiteracion = lineasPorHoja(await renderPdf(nota(2, { tipo: 'reiteracion' }))).flat();
-    assert.ok(!reiteracion.some(l => l.startsWith('Anexo:')), reiteracion.join(' | '));
   });
 
   it('la línea del anexo es un párrafo propio: tiene más aire arriba que el que separa dos contactos, y no menos que abajo', async () => {
@@ -270,17 +274,22 @@ describe('renderPdf: tabla de 7 columnas de la reiteración con valores reales',
   it('la oración chica en la última fila no le quita aire a lo que sigue debajo de la tabla', async () => {
     const ANTECEDENTE = { cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' };
     // Dos vencidos; el primero con antecedente en los dos casos (las mismas proporciones de columnas) y el último con
-    // un título tan largo que su celda es la más alta de la fila con o sin la oración chica: la tabla termina igual
-    const largo = { ...REITERACION_REAL[1], titulo: 'Siniestros viales por categoría '.repeat(6).trim() };
-    const justificacion = async (antecedente) => {
+    // un título tan largo que su celda es la más alta de la fila con o sin la oración chica: la tabla termina igual.
+    // (Cinco veces: con la línea del anexo de la reiteración, lo que sigue a la tabla todavía entra en la primera hoja)
+    const largo = { ...REITERACION_REAL[1], titulo: 'Siniestros viales por categoría '.repeat(5).trim() };
+    const debajo = async (antecedente) => {
       const datasets = [{ ...REITERACION_REAL[0], antecedente: ANTECEDENTE }, { ...largo, antecedente }];
       const [hoja] = textosPorHoja(await renderPdf(reiteracionReal({ datasets })));
       assert.ok(hoja.some(t => t.tamano === 7 && t.texto.startsWith('Anteriormente')));
-      return hoja.find(t => t.texto === 'Justificación:');
+      const anexo = hoja.find(t => t.texto.startsWith('Anexo: seguimiento'));
+      const titulo = hoja.find(t => t.texto === 'Justificación:');
+      assert.ok(anexo && titulo, hoja.map(t => t.texto).join(' | '));
+      return { anexo, titulo };
     };
-    const sin = await justificacion(null);
-    const con = await justificacion(ANTECEDENTE);
-    assert.ok(cerca(con.base, sin.base), `"Justificación:" ${(con.base - sin.base).toFixed(2)} pt más cerca de la tabla`);
+    const sin = await debajo(null);
+    const con = await debajo(ANTECEDENTE);
+    assert.ok(cerca(con.anexo.base, sin.anexo.base), `la línea del anexo ${(con.anexo.base - sin.anexo.base).toFixed(2)} pt más cerca de la tabla`);
+    assert.ok(cerca(con.titulo.base, sin.titulo.base), `"Justificación:" ${(con.titulo.base - sin.titulo.base).toFixed(2)} pt más cerca de la tabla`);
   });
 
   it('si los mínimos de las columnas no entran, cede primero el título y las demás palabras siguen enteras', async () => {
@@ -1033,20 +1042,18 @@ for (const variante of VARIANTES) {
       }
     });
 
-    it('la línea del anexo (solo avisos) está en la misma hoja que "Justificación:", justo antes', () => {
-      let avisos = 0;
+    // La reiteración también (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3): su justificación es un solo párrafo, que
+    // viaja con el cierre, y la línea del anexo viaja con todo eso
+    it('la línea del anexo (avisos y reiteraciones) está en la misma hoja que "Justificación:", justo antes', () => {
+      const porTipo = { aviso: 0, reiteracion: 0 };
       for (const { etiqueta, nota: n, hojas } of renderizadas) {
+        porTipo[n.tipo]++;
         const conAnexo = hojas.filter(lineas => lineas.some(l => l.startsWith('Anexo:')));
-        if (n.tipo === 'reiteracion') {
-          assert.equal(conAnexo.length, 0, etiqueta);
-          continue;
-        }
-        avisos++;
         assert.equal(conAnexo.length, 1, etiqueta);
         const lineas = conAnexo[0].filter(l => !esPie(l));
         assert.equal(lineas[lineas.indexOf(n.anexo) + 1], 'Justificación:', `${etiqueta}: el anexo no quedó junto al título de la justificación`);
       }
-      assert.ok(avisos > 0);
+      assert.ok(porTipo.aviso > 0 && porTipo.reiteracion > 0, JSON.stringify(porTipo));
     });
 
     it('el último párrafo, el remitente, la firma y la línea CC cierran la última hoja', () => {

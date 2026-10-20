@@ -42,7 +42,8 @@ const TIPOS_DE_MARCA = ['nota', 'email', 'area', 'act', 'actp', 'cambio', 'cambi
 const ESTADOS_DE_INSIGNIA = ['vencido', 'proximo', 'actualizado', 'eventual', 'sin-fecha', 'baja'];
 const ESTADOS_DE_NOTA = { enviada: 'Enviada', pendiente: 'Pendiente de envío', fallida: 'No se pudo enviar' };
 const SIN_DATOS_GUARDADOS = 'No quedó guardado: las notas 1/26 y 2/26 son anteriores a ese dato.';
-// Copia del mensaje de descargarAnexo (controllers/notasDigitalesController.js): las reiteraciones no tienen anexo
+// Copia del mensaje de descargarAnexo (controllers/notasDigitalesController.js): los avisos y las reiteraciones tienen anexo, pero
+// no las reiteraciones anteriores al anexo de seguimiento (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.4)
 const NOTA_SIN_ANEXO = 'La nota no tiene anexo';
 
 // La cinta en pantalla: las filas en unidades del espacio de 1000 × 170 (MEDIDAS.pantalla del prototipo), las líneas de los meses
@@ -866,7 +867,7 @@ async function descargarPdf(boton) {
   });
 }
 
-// La nota y, si tiene (los avisos sí, las reiteraciones no), su anexo
+// La nota y, si tiene (los avisos y las reiteraciones sí, salvo las reiteraciones anteriores al anexo de seguimiento), su anexo
 async function descargarNota(boton) {
   const id = boton.dataset.nota;
   const archivo = boton.dataset.archivo;
