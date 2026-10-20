@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  quienesAuditan, permisoParaAuditar, mensajeNoCorresponde, canalDelCambio, entraEnRecordatorio, seccionDeAuditoria,
+  quienesAuditan, permisoParaAuditar, mensajeNoCorresponde, avisoSinResponsabilidad, MENSAJE_SITUACION_CAMBIADA, canalDelCambio, entraEnRecordatorio, seccionDeAuditoria,
   ANTIGUEDAD_MINIMA_RECORDATORIO, RECORDATORIOS_ANTES_DE_LA_NOTA, disponibilidad, agruparDiasSinAuditor
 } from '../services/auditoriaReglas.js';
 
@@ -38,21 +38,62 @@ describe('quién audita un cambio (spec 8.2)', () => {
   });
 });
 
-describe('permiso para aprobar o rechazar (spec 8.2, Decisiones del plan 1 y 2)', () => {
-  const MENSAJE = 'Este cambio lo auditan Persona Auditora. Podés auditarlo solo si ninguno está disponible.';
+// Spec 8.2 y spec 2026-10-20-editor-sin-responsabilidad: siempre las cuatro claves
+describe('permiso para aprobar o rechazar (spec 8.2, Decisiones del plan 1 y 2; sin responsabilidad)', () => {
+  const AUDITOR = { puede: true, respaldo: false, sin_responsabilidad: false, mensaje: null };
+  const RESPALDO = { puede: true, respaldo: true, sin_responsabilidad: false, mensaje: null };
+  const AVISO = 'Este cambio lo auditan Persona Auditora. Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.';
 
   it('un auditor siempre puede, también si ese día está de licencia', () => {
-    assert.deepEqual(permisoParaAuditar({ id: 2, rol: 'admin' }, 1, equipo()), { puede: true, respaldo: false });
-    assert.deepEqual(permisoParaAuditar({ id: 2, rol: 'admin' }, 1, equipo({ 2: { disponible: false } })), { puede: true, respaldo: false });
-    assert.deepEqual(permisoParaAuditar({ id: 1, rol: 'superadmin' }, 3, equipo()), { puede: true, respaldo: false });
+    assert.deepEqual(permisoParaAuditar({ id: 2, rol: 'admin' }, 1, equipo()), AUDITOR);
+    assert.deepEqual(permisoParaAuditar({ id: 2, rol: 'admin' }, 1, equipo({ 2: { disponible: false } })), AUDITOR);
+    assert.deepEqual(permisoParaAuditar({ id: 1, rol: 'superadmin' }, 3, equipo()), AUDITOR);
   });
 
-  it('un editor, solo de respaldo: con un auditor disponible recibe el mensaje con su nombre', () => {
-    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 1, equipo()), { puede: false, mensaje: MENSAJE });
-    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 1, equipo({ 2: { disponible: false } })), { puede: true, respaldo: true });
-    // El editor de respaldo puede aunque él mismo esté de licencia
-    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 1, equipo({ 2: { disponible: false }, 3: { disponible: false } })),
-      { puede: true, respaldo: true });
+  it('un editor, con un auditor disponible, audita sin responsabilidad el cambio de un auditor, con el aviso que lo nombra', () => {
+    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 1, equipo()),
+      { puede: true, respaldo: false, sin_responsabilidad: true, mensaje: AVISO });
+  });
+
+  it('un editor sin auditores disponibles audita de respaldo, como siempre, también si él mismo está de licencia', () => {
+    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 1, equipo({ 2: { disponible: false } })), RESPALDO);
+    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 1, equipo({ 2: { disponible: false }, 3: { disponible: false } })), RESPALDO);
+  });
+
+  it('el cambio de otro editor, con auditores disponibles, sigue siendo de los auditores', () => {
+    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 4, equipo()), {
+      puede: false, respaldo: false, sin_responsabilidad: false,
+      mensaje: 'Este cambio lo auditan Persona Titular y Persona Auditora. Podés auditarlo solo si ninguno está disponible.'
+    });
+  });
+
+  it('si quien lo propuso ya no es superadmin, admin ni editor, no hay "sin responsabilidad" (falla cerrado)', () => {
+    assert.deepEqual(permisoParaAuditar({ id: 3, rol: 'editor' }, 99, equipo()), {
+      puede: false, respaldo: false, sin_responsabilidad: false, mensaje: mensajeNoCorresponde([EQUIPO[0], EQUIPO[1]])
+    });
+  });
+
+  it('respaldo y sin responsabilidad nunca van juntos', () => {
+    const dias = [{}, { 2: { disponible: false } }, { 1: { disponible: false }, 2: { disponible: false } },
+      { 1: { disponible: false }, 2: { disponible: false }, 3: { disponible: false }, 4: { disponible: false } }];
+    for (const revisor of [...EQUIPO, persona(9, 'lector', 'Persona Lectora')]) {
+      for (const proponente of [1, 2, 3, 4, 99]) {
+        for (const dia of dias) {
+          const permiso = permisoParaAuditar(revisor, proponente, equipo(dia));
+          assert.ok(!(permiso.respaldo && permiso.sin_responsabilidad), JSON.stringify({ revisor: revisor.id, proponente, dia, permiso }));
+          assert.deepEqual(Object.keys(permiso).sort(), ['mensaje', 'puede', 'respaldo', 'sin_responsabilidad']);
+        }
+      }
+    }
+  });
+
+  it('el aviso nombra a todos los auditores disponibles', () => {
+    assert.equal(avisoSinResponsabilidad([EQUIPO[0], EQUIPO[1]]),
+      'Este cambio lo auditan Persona Titular y Persona Auditora. Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.');
+  });
+
+  it('el texto del 409 (la situación cambió entre que se vio y se confirmó)', () => {
+    assert.equal(MENSAJE_SITUACION_CAMBIADA, 'La situación de este cambio cambió. Revisá el aviso y volvé a confirmar.');
   });
 
   it('el mensaje nombra a todos los auditores disponibles', () => {
@@ -63,7 +104,9 @@ describe('permiso para aprobar o rechazar (spec 8.2, Decisiones del plan 1 y 2)'
   });
 
   it('un lector nunca', () => {
-    assert.equal(permisoParaAuditar({ id: 9, rol: 'lector' }, 1, equipo()).puede, false);
+    assert.deepEqual(permisoParaAuditar({ id: 9, rol: 'lector' }, 1, equipo()), {
+      puede: false, respaldo: false, sin_responsabilidad: false, mensaje: 'Solo pueden auditar cambios los auditores y los editores.'
+    });
   });
 });
 

@@ -75,23 +75,36 @@ export const quienesAuditan = (personas, proponenteId) => {
   return { personas: candidatas.filter(p => p.rol === 'editor'), respaldo: true };
 };
 
-// El 403 de un editor que quiere auditar un cambio que tiene auditores disponibles (spec 8.2)
+// El 403 de un editor que quiere auditar el cambio de otro editor cuando hay auditores disponibles (spec 8.2)
 export const mensajeNoCorresponde = (auditores) =>
   `Este cambio lo auditan ${listaDeNombres(auditores.map(p => p.nombre_completo))}. Podés auditarlo solo si ninguno está disponible.`;
 
+// Lo que ve un editor antes de auditar sin responsabilidad el cambio de un auditor (spec 2026-10-20-editor-sin-responsabilidad)
+export const avisoSinResponsabilidad = (auditores) =>
+  `Este cambio lo auditan ${listaDeNombres(auditores.map(p => p.nombre_completo))}. Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.`;
+
+// El 409 al aprobar o rechazar: lo que la persona confirmó (con o sin responsabilidad) ya no es lo que corresponde hoy
+export const MENSAJE_SITUACION_CAMBIADA = 'La situación de este cambio cambió. Revisá el aviso y volvé a confirmar.';
+
 /**
- * Si usuario ({ id, rol }) puede aprobar o rechazar hoy un cambio que propuso otro (proponenteId), según la spec 8.2 y las
- * "Decisiones del plan" 1 y 2: un auditor, siempre; un editor, solo de respaldo, cuando ningún auditor que no lo propuso
- * está disponible. Que no sea su propio cambio lo controla quien llama.
- * Devuelve { puede: true, respaldo } o { puede: false, mensaje }.
+ * Si usuario ({ id, rol }) puede aprobar o rechazar hoy un cambio que propuso otro (proponenteId), según la spec 8.2, las
+ * "Decisiones del plan" 1 y 2 y la spec 2026-10-20-editor-sin-responsabilidad: un auditor, siempre; un editor, de respaldo
+ * cuando ningún auditor que no lo propuso está disponible y, si hay alguno, sin responsabilidad por la auditoría cuando el
+ * cambio lo propuso un auditor (por su rol de hoy, leído de personas: si no está, falla cerrado). Que no sea su propio
+ * cambio lo controla quien llama.
+ * Devuelve siempre { puede, respaldo, sin_responsabilidad, mensaje } (respaldo y sin_responsabilidad nunca juntos).
  */
 export const permisoParaAuditar = (usuario, proponenteId, personas) => {
-  if (esAuditor(usuario.rol)) return { puede: true, respaldo: false };
-  if (usuario.rol !== 'editor') {
-    return { puede: false, mensaje: 'Solo pueden auditar cambios los auditores y, de respaldo, los editores.' };
-  }
+  const permiso = (puede, { respaldo = false, sin_responsabilidad = false, mensaje = null } = {}) =>
+    ({ puede, respaldo, sin_responsabilidad, mensaje });
+  if (esAuditor(usuario.rol)) return permiso(true);
+  if (usuario.rol !== 'editor') return permiso(false, { mensaje: 'Solo pueden auditar cambios los auditores y los editores.' });
   const { personas: auditores, respaldo } = quienesAuditan(personas, proponenteId);
-  return respaldo ? { puede: true, respaldo: true } : { puede: false, mensaje: mensajeNoCorresponde(auditores) };
+  if (respaldo) return permiso(true, { respaldo: true });
+  const proponente = personas.find(p => p.id === proponenteId);
+  return proponente && esAuditor(proponente.rol)
+    ? permiso(true, { sin_responsabilidad: true, mensaje: avisoSinResponsabilidad(auditores) })
+    : permiso(false, { mensaje: mensajeNoCorresponde(auditores) });
 };
 
 // Recordatorios por email antes de pedir la auditoría por nota (pedido del usuario el 16/10/2026; antes era 1): el del día
