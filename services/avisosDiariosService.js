@@ -17,6 +17,9 @@ export const DIAS_AVISO_AREAS = 40;
  * Datasets externos que avisa en esa fecha el aviso a las áreas, agrupados por área (solo áreas con email).
  * Un día hábil avisa los vencimientos de fecha + 40 y los de los días no hábiles que siguen (spec 4.2).
  * Fuera de un día hábil no hay nada que avisar.
+ * Un dataset que no requiere nota DGMIT (requiere_nota = 0) queda afuera: este email anticipa la nota formal, que a ese
+ * dataset no le llega; el Sí (1) y el sin dato (NULL) siguen como hasta ahora (spec 2026-10-20-requiere-nota, 1.6). La vista
+ * previa y la prueba del email en Correos usan esta misma función, así que quedan coherentes con el envío.
  * Cada dataset trae su vencimiento ('AAAA-MM-DD') y su pedido, { desde, hasta, texto } o null (eventual): los datos que se
  * le van a solicitar, calculados con fecha, el día del aviso, igual que en las Notas Digitales (conPedido). Trae también su
  * tipo de pedido efectivo (el guardado o, si no tiene, el sugerido) y sus meses, del mismo conPedido. Con ellos el email dice
@@ -38,6 +41,7 @@ export const datasetsExternosPorArea = async (fecha) => {
      JOIN areas a ON d.area_id = a.id
      WHERE d.activo = TRUE
        AND d.tipo_gestion = 'externa'
+       AND (d.requiere_nota IS NULL OR d.requiere_nota = 1)
        AND d.proxima_actualizacion BETWEEN ? AND ?
        AND f.dias IS NOT NULL
        AND (a.email_principal IS NOT NULL OR a.email_secundario IS NOT NULL)
