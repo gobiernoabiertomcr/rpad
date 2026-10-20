@@ -109,6 +109,7 @@ CREATE TABLE `datasets` (
   `que_se_solicita` text DEFAULT NULL,
   `tipo_pedido` enum('acumulado','foto','anio_anterior','ejercicio','edicion','relevamiento','eventual') DEFAULT NULL,
   `tipo_gestion` enum('interna','externa') NOT NULL DEFAULT 'externa',
+  `requiere_nota` tinyint(1) DEFAULT NULL,
   `activo` tinyint(1) DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),

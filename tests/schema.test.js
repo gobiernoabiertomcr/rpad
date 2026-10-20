@@ -187,6 +187,15 @@ describe('database/schema.sql', () => {
     despuesDe('datasets', 'tipo_pedido', 'que_se_solicita');
   });
 
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.1: va después de tipo_gestion y no entre que_se_solicita y
+  // tipo_pedido, porque crearConEstructuraAnterior (más abajo) borra tipo_pedido y lo vuelve a poner AFTER que_se_solicita
+  it('datasets tiene requiere_nota TINYINT(1) NULL después de tipo_gestion', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('datasets.'));
+    const posicion = (columna) => lista.findIndex(c => c.startsWith(`datasets.${columna} `));
+    assert.ok(lista.includes('datasets.requiere_nota tinyint(1) null=YES default=NULL key='), lista.join('\n'));
+    assert.equal(posicion('requiere_nota'), posicion('tipo_gestion') + 1, lista.join('\n'));
+  });
+
   it('el historial borra el vínculo al cambio (SET NULL) cuando se borra el cambio pendiente', async () => {
     const [[fk]] = await root.query(
       `SELECT k.REFERENCED_TABLE_NAME AS tabla, k.REFERENCED_COLUMN_NAME AS columna, rc.DELETE_RULE AS borrado
@@ -326,6 +335,172 @@ describe('migración de las fechas de los datasets', () => {
     assert.deepEqual({ ...dataset }, { datos_al: null, tipo_pedido: null, ultima: '2026-03-15' });
     const [[historial]] = await root.query(`SELECT cambio_id, vencimiento, datos_al, recibido_el, proxima_nueva FROM \`${BASE_FECHAS}\`.historial_actualizaciones`);
     assert.deepEqual({ ...historial }, { cambio_id: null, vencimiento: null, datos_al: null, recibido_el: null, proxima_nueva: null });
+  });
+});
+
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.1 y 1.2): la estructura y la carga inicial,
+// cada una sobre una base descartable propia creada con schema.sql
+describe('migración de «Requiere nota DGMIT»', () => {
+  const BASE_NOTA = 'rpad_schema_requiere_nota_test';
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta (para no confundir una palabra de la cabecera con una sentencia)
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--'));
+
+  // La carga inicial que aprobó el usuario con el Excel RPAD-requiere-nota.xlsx: los 45 externos activos
+  const IDS_NO = [10, 30, 35, 36, 50, 63, 74, 77, 78, 81];
+  const IDS_SI = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 22, 23, 25, 27, 32, 33, 42, 44, 46, 48, 52, 53, 54, 56, 57, 58, 59, 61,
+    69, 70, 71, 72, 73, 75];
+  const IDS_EXTERNOS = [...IDS_NO, ...IDS_SI].sort((a, b) => a - b);
+  const TOTAL_DATASETS = 81;
+
+  // Una base con la estructura de schema.sql y, si no se quiere la columna nueva, la de antes de esta entrega
+  const crearBase = async ({ conColumna }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_NOTA}\``);
+    await root.query(`CREATE DATABASE \`${BASE_NOTA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_NOTA}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conColumna) await root.query('ALTER TABLE datasets DROP COLUMN requiere_nota');
+  };
+  // Los 81 datasets del registro: son externos los 45 de la carga y el resto, internos
+  const cargarDatasets = async () => {
+    await root.query(`INSERT INTO \`${BASE_NOTA}\`.areas (id, nombre) VALUES (1, 'Área de prueba')`);
+    const filas = Array.from({ length: TOTAL_DATASETS }, (_, i) => i + 1)
+      .map(id => [id, `Dataset ${id}`, 1, 6, 1, IDS_EXTERNOS.includes(id) ? 'externa' : 'interna']);
+    await root.query(`INSERT INTO \`${BASE_NOTA}\`.datasets (id, titulo, area_id, frecuencia_id, tema_principal_id, tipo_gestion) VALUES ?`, [filas]);
+  };
+  const valores = async () => {
+    const [filas] = await root.query(`SELECT id, requiere_nota FROM \`${BASE_NOTA}\`.datasets ORDER BY id`);
+    return new Map(filas.map(f => [f.id, f.requiere_nota]));
+  };
+  const conValor = (mapa, valor) => [...mapa].filter(([, v]) => v === valor).map(([id]) => id);
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_NOTA}\``);
+  });
+
+  describe('migracion-requiere-nota.sql (estructura)', () => {
+    const ARCHIVO = 'migracion-requiere-nota.sql';
+
+    it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+      assert.doesNotMatch(codigo(ARCHIVO).join('\n'), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    });
+
+    it('la cabecera dice la spec, que solo agrega y que va ANTES de subir el código', () => {
+      const cabecera = sql(ARCHIVO).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+      assert.match(cabecera, /2026-10-20-requiere-nota-y-anexo-reiteracion/);
+      assert.match(cabecera, /Solo agrega/);
+      assert.match(cabecera, /ANTES de subir el código/);
+    });
+
+    it('migracion-requiere-nota.sql se puede repetir y deja NULL', async () => {
+      await crearBase({ conColumna: false });
+      const anterior = await columnas(root, BASE_NOTA);
+      assert.ok(!anterior.some(c => c.startsWith('datasets.requiere_nota ')), 'la base de partida ya tiene la columna');
+      await cargarDatasets();
+      await root.query(sql(ARCHIVO));
+      await root.query(sql(ARCHIVO));
+      // Deja exactamente la estructura de schema.sql, con la columna después de tipo_gestion
+      assert.deepEqual(await columnas(root, BASE_NOTA), await columnas(root, BASE_TEMPORAL));
+      // Y no toca los datos: todos los datasets quedan sin dato
+      const mapa = await valores();
+      assert.equal(mapa.size, TOTAL_DATASETS);
+      assert.equal(conValor(mapa, null).length, TOTAL_DATASETS);
+    });
+  });
+
+  describe('migracion-requiere-nota-datos.sql (carga inicial)', () => {
+    const ARCHIVO = 'migracion-requiere-nota-datos.sql';
+    const FORMA = /^UPDATE datasets SET requiere_nota = ([01]) WHERE id = (\d+) AND tipo_gestion = 'externa' AND requiere_nota IS NULL;$/;
+    const LINEAS = sql(ARCHIVO).split(/\r?\n/);
+    // Una entrada por UPDATE, en el orden del archivo: { id, valor (0 o 1), comentario (la línea de arriba) }
+    const UPDATES = LINEAS.map((linea, i) => ({ linea, i })).filter(({ linea }) => /^\s*UPDATE\b/i.test(linea)).map(({ linea, i }) => {
+      const m = FORMA.exec(linea);
+      assert.ok(m, `UPDATE con una forma distinta de la acordada: ${linea}`);
+      return { id: Number(m[2]), valor: Number(m[1]), comentario: LINEAS[i - 1] };
+    });
+    // La consulta de verificación va comentada, en una sola línea: -- SELECT … ;
+    const VERIFICACION = LINEAS.map(l => /^-- (SELECT .+;)$/.exec(l)?.[1]).filter(Boolean);
+
+    it('se pega tal cual en phpMyAdmin: empieza con SET NAMES utf8mb4 y solo escribe UPDATE sobre datasets', () => {
+      const sentencias = codigo(ARCHIVO);
+      assert.equal(sentencias[0], 'SET NAMES utf8mb4;');
+      for (const l of sentencias.slice(1)) assert.match(l, FORMA, `sentencia inesperada: ${l}`);
+      assert.doesNotMatch(sentencias.join('\n'), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    });
+
+    it('la cabecera dice la spec, el orden (después de la estructura y ANTES de subir el código) y que se corre una sola vez', () => {
+      const cabecera = LINEAS.filter(l => l.startsWith('--')).join('\n');
+      assert.match(cabecera, /2026-10-20-requiere-nota-y-anexo-reiteracion/);
+      assert.match(cabecera, /migracion-requiere-nota\.sql/);
+      assert.match(cabecera, /Excel/);
+      assert.match(cabecera, /20\/10\/2026/);
+      assert.match(cabecera, /DESPUÉS de migracion-requiere-nota\.sql y ANTES de subir el código/);
+      assert.match(cabecera, /UNA SOLA VEZ/);
+    });
+
+    it('hay un UPDATE por cada uno de los 45 externos de la carga (10 en 0 y 35 en 1), sin repetir', () => {
+      assert.equal(UPDATES.length, 45);
+      assert.deepEqual(UPDATES.map(u => u.id).sort((a, b) => a - b), IDS_EXTERNOS);
+      assert.deepEqual(UPDATES.filter(u => u.valor === 0).map(u => u.id).sort((a, b) => a - b), [...IDS_NO].sort((a, b) => a - b));
+      assert.deepEqual(UPDATES.filter(u => u.valor === 1).map(u => u.id).sort((a, b) => a - b), [...IDS_SI].sort((a, b) => a - b));
+    });
+
+    it('cada UPDATE lleva arriba el comentario con su id y el título del dataset', () => {
+      for (const { id, comentario } of UPDATES) {
+        assert.match(comentario ?? '', new RegExp(`^-- ${id}\\. \\S`), `id ${id}: sin comentario con el título`);
+      }
+    });
+
+    it('termina con la consulta de verificación comentada: ningún externo activo queda sin dato', () => {
+      assert.deepEqual(VERIFICACION, ["SELECT id, titulo FROM datasets WHERE activo = 1 AND tipo_gestion = 'externa' AND requiere_nota IS NULL;"]);
+      const cabecera = LINEAS.filter(l => l.startsWith('--')).join('\n');
+      assert.match(cabecera, /0 filas/);
+    });
+
+    it('migracion-requiere-nota-datos.sql: los 10 «No» quedan en 0, los 35 «Sí» en 1, los internos en NULL y no pisa un valor ya cargado', async () => {
+      await crearBase({ conColumna: true });
+      await cargarDatasets();
+      await root.query(sql(ARCHIVO));
+      const mapa = await valores();
+      assert.deepEqual(conValor(mapa, 0), [...IDS_NO].sort((a, b) => a - b));
+      assert.deepEqual(conValor(mapa, 1), [...IDS_SI].sort((a, b) => a - b));
+      const internos = Array.from({ length: TOTAL_DATASETS }, (_, i) => i + 1).filter(id => !IDS_EXTERNOS.includes(id));
+      assert.equal(internos.length, 36);
+      assert.deepEqual(conValor(mapa, null), internos);
+
+      // Un cambio aprobado después de la carga (uno de «No» a «Sí» y uno de «Sí» a «No») sobrevive a una segunda corrida
+      await root.query(`UPDATE \`${BASE_NOTA}\`.datasets SET requiere_nota = 1 WHERE id = 10`);
+      await root.query(`UPDATE \`${BASE_NOTA}\`.datasets SET requiere_nota = 0 WHERE id = 1`);
+      await root.query(sql(ARCHIVO));
+      const repetido = await valores();
+      assert.equal(repetido.get(10), 1);
+      assert.equal(repetido.get(1), 0);
+      assert.deepEqual(conValor(repetido, 0), [1, ...IDS_NO.filter(id => id !== 10)].sort((a, b) => a - b));
+      assert.deepEqual(conValor(repetido, 1), [10, ...IDS_SI.filter(id => id !== 1)].sort((a, b) => a - b));
+    });
+
+    it('no carga un dataset de la lista que pasó a gestión interna (queda en NULL)', async () => {
+      await crearBase({ conColumna: true });
+      await cargarDatasets();
+      await root.query(`UPDATE \`${BASE_NOTA}\`.datasets SET tipo_gestion = 'interna' WHERE id IN (1, 10)`);
+      await root.query(sql(ARCHIVO));
+      const mapa = await valores();
+      assert.equal(mapa.get(1), null);
+      assert.equal(mapa.get(10), null);
+      assert.equal(mapa.get(2), 1);
+      assert.equal(mapa.get(30), 0);
+    });
+
+    it('la consulta de verificación da 45 filas antes de la carga y 0 después', async () => {
+      await crearBase({ conColumna: true });
+      await cargarDatasets();
+      const consulta = VERIFICACION[0].replace('FROM datasets', `FROM \`${BASE_NOTA}\`.datasets`);
+      const [antes] = await root.query(consulta);
+      assert.equal(antes.length, 45);
+      await root.query(sql(ARCHIVO));
+      const [despues] = await root.query(consulta);
+      assert.equal(despues.length, 0, JSON.stringify(despues));
+    });
   });
 });
 
