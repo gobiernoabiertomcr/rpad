@@ -143,6 +143,8 @@ describe('database/schema.sql', () => {
       'cambios_pendientes.primer_recordatorio_at datetime null=YES default=NULL key=',
       'cambios_pendientes.revisado_como_respaldo tinyint(1) null=NO default=0 key=',
       'cambios_pendientes.aviso_sin_auditores_at datetime null=YES default=NULL key=',
+      // El editor que audita con auditores disponibles (spec 2026-10-20-editor-sin-responsabilidad)
+      'cambios_pendientes.revisado_sin_responsabilidad tinyint(1) null=NO default=0 key=',
       'notas_digitales_cambios.nota_id int(11) null=NO default=null key=PRI',
       'notas_digitales_cambios.cambio_id int(11) null=NO default=null key=PRI',
       "notas_digitales_cambios.seccion enum('nuevo','reiterado') null=NO default=null key=",
@@ -157,6 +159,9 @@ describe('database/schema.sql', () => {
     const deCambios = lista.filter(c => c.startsWith('cambios_pendientes.'));
     const posicion = (columna) => deCambios.findIndex(c => c.startsWith(`cambios_pendientes.${columna} `));
     assert.equal(posicion('aviso_sin_auditores_at'), posicion('revisado_como_respaldo') + 1, deCambios.join('\n'));
+    // La marca "sin responsabilidad por la auditoría" va al final: así el rollback y la migración de la entrega 3 la dejan
+    // en su lugar
+    assert.equal(posicion('revisado_sin_responsabilidad'), posicion('aviso_sin_auditores_at') + 1, deCambios.join('\n'));
   });
 
   it('fechas de los datasets: "Datos al", tipo de pedido, frecuencia en meses, historial y pedido congelado (spec 2026-10-17-fechas-datasets, 6)', async () => {
@@ -551,5 +556,64 @@ describe('rollback y migración de la entrega 3 (editor y auditoría)', () => {
     await root.query(sql('migracion-editor-auditoria.sql'));
     await root.query(sql('migracion-editor-auditoria.sql'));
     assert.deepEqual(await columnas(root, BASE_ROLLBACK), original);
+  });
+});
+
+// El editor audita sin responsabilidad por la auditoría (spec 2026-10-20-editor-sin-responsabilidad): la migración y su
+// rollback, sobre una base descartable creada con schema.sql
+describe('migración del editor que audita sin responsabilidad', () => {
+  const BASE_SIN_RESPONSABILIDAD = 'rpad_schema_sin_responsabilidad_test';
+  const MIGRACION = 'migracion-editor-sin-responsabilidad.sql';
+  const ROLLBACK = 'rollback-editor-sin-responsabilidad.sql';
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  // La estructura de schema.sql y, si no se quiere la columna nueva, la de antes de esta entrega
+  const crearBase = async ({ conColumna }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_SIN_RESPONSABILIDAD}\``);
+    await root.query(`CREATE DATABASE \`${BASE_SIN_RESPONSABILIDAD}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_SIN_RESPONSABILIDAD}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conColumna) await root.query('ALTER TABLE cambios_pendientes DROP COLUMN revisado_sin_responsabilidad');
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_SIN_RESPONSABILIDAD}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden y cómo se deshace', () => {
+    assert.match(cabecera(MIGRACION), /2026-10-20-editor-sin-responsabilidad/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /rollback-editor-sin-responsabilidad\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /rollback-editor-auditoria\.sql/);
+  });
+
+  it('la migración se puede repetir y deja exactamente la estructura de schema.sql', async () => {
+    await crearBase({ conColumna: false });
+    const anterior = await columnas(root, BASE_SIN_RESPONSABILIDAD);
+    assert.ok(!anterior.some(c => c.startsWith('cambios_pendientes.revisado_sin_responsabilidad ')), 'la base de partida ya tiene la columna');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_SIN_RESPONSABILIDAD), await columnas(root, BASE_TEMPORAL));
+  });
+
+  it('el rollback se puede repetir y solo quita la columna nueva; la migración la vuelve a dejar en su lugar', async () => {
+    await crearBase({ conColumna: true });
+    const original = await columnas(root, BASE_SIN_RESPONSABILIDAD);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    const sinColumna = original.filter(c => !c.startsWith('cambios_pendientes.revisado_sin_responsabilidad '));
+    assert.equal(sinColumna.length, original.length - 1);
+    assert.deepEqual(await columnas(root, BASE_SIN_RESPONSABILIDAD), sinColumna);
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_SIN_RESPONSABILIDAD), original);
   });
 });
