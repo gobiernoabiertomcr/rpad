@@ -466,10 +466,63 @@ describe('vista previa y prueba', () => {
   });
 
   it('el anexo de la vista previa rechaza una gestión inválida o ausente', async () => {
-    for (const consulta of ['gestion=otra', 'gestion=', 'tipo=aviso', '']) {
+    for (const consulta of ['gestion=otra', 'gestion=', 'tipo=aviso', 'tipo=reiteracion', '']) {
       const res = await api.get(`/notificaciones/notas-digitales/preview/anexo?${consulta}`, comoAdmin());
       assert.equal(res.status, 400, consulta);
       assert.equal(res.body.success, false);
+    }
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 0);
+  });
+
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5: «Ver anexo» también para la reiteración
+  it('GET preview/anexo?tipo=reiteracion devuelve un PDF con una hoja por dataset', async () => {
+    // Un próximo a vencer avisado hace más de 20 días y un vencido sin aviso (más uno de la otra gestión, que no entra)
+    const proximo = await crearDataset({ titulo: 'Real avisado', gestion: 'externa', vencimiento: hoyMasDias(20) });
+    await crearDataset({ titulo: 'Real vencido', gestion: 'externa', vencimiento: hoyMasDias(-10) });
+    await crearDataset({ titulo: 'Real interno vencido', gestion: 'interna', vencimiento: hoyMasDias(-10) });
+    await crearNota({
+      tipo: 'aviso', gestion: 'externa', fecha: hoyMasDias(-25), numero: 1, datasets: [{ id: proximo, vencimiento: hoyMasDias(20) }]
+    });
+    const res = await api.get('/notificaciones/notas-digitales/preview/anexo?gestion=externa&tipo=reiteracion', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    assert.equal(res.headers.get('content-disposition'), 'inline; filename="Anexo-vista-previa-reiteracion-externa.pdf"');
+    assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+
+    // Una hoja por dataset de la nota, en el orden de la tabla (primero el próximo a vencer), con el pie de la vista previa
+    const hojas = lineasPorHoja(res.body);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Real avisado'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Real vencido'), hojas[1].join(' | '));
+    hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Anexo de la Nota Digital N° XX · Hoja ${k + 1} de 2`), lineas.join(' | ')));
+    // Los mismos datasets que la vista previa de la nota
+    const vista = (await api.get('/notificaciones/notas-digitales/preview?tipo=reiteracion&gestion=externa', comoAdmin())).body.data;
+    assert.equal(vista.ejemplo, false);
+    assert.equal(vista.cantidad, 2);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 1, 'solo el aviso de antes: no guarda nada');
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('GET preview/anexo?tipo=reiteracion con datos de ejemplo devuelve un PDF sin consultar fuentes', async () => {
+    // Un dataset real de la otra gestión no cambia nada: la reiteración externa no tiene datos y usa los de ejemplo
+    await crearDataset({ titulo: 'Real interno vencido', gestion: 'interna', vencimiento: hoyMasDias(-10) });
+    const res = await api.get('/notificaciones/notas-digitales/preview/anexo?gestion=externa&tipo=reiteracion', comoAdmin());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(res.body);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
+    assert.ok(!hojas.flat().some(l => l.includes('Real interno vencido')));
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('tipo inválido → 400', async () => {
+    for (const tipo of ['auditoria', 'autorizacion', 'otro', 'Aviso', '', 'aviso&tipo=reiteracion']) {
+      const res = await api.get(`/notificaciones/notas-digitales/preview/anexo?gestion=externa&tipo=${tipo}`, comoAdmin());
+      assert.equal(res.status, 400, tipo);
+      assert.equal(res.body.success, false);
+      assert.equal(res.body.error, 'Tipo inválido', tipo);
     }
     assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales'))[0].n, 0);
   });
@@ -538,7 +591,8 @@ describe('libro', () => {
     assert.equal((await api.post('/notificaciones/notas-digitales/prueba', { tipo: 'autorizacion', gestion: 'interna' }, comoAdmin())).status, 400);
   });
 
-  // Un aviso (con anexo) y, un mes después, su reiteración (sin anexo), generados por el motor
+  // Un aviso y, un mes después, su reiteración, generados por el motor: los dos con su anexo (el de la reiteración, con el
+  // Seguimiento de cada dataset: spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2)
   const avisoYReiteracion = async () => {
     await crearDataset({ titulo: 'Dataset avisado', vencimiento: '2026-12-31' });
     await motor.ejecutarNotasDigitales({ hoy: '2026-11-02' });
@@ -547,21 +601,24 @@ describe('libro', () => {
     assert.equal(aviso.tipo, 'aviso');
     assert.ok(aviso.anexo_pdf);
     assert.equal(reiteracion.tipo, 'reiteracion');
-    assert.equal(reiteracion.anexo_pdf, null);
+    assert.ok(reiteracion.anexo_pdf);
     return { aviso, reiteracion };
   };
 
-  it('el libro y el detalle indican si la nota tiene anexo (true en los avisos, false en las reiteraciones) sin traer el PDF', async () => {
+  it('el libro y el detalle indican si la nota tiene anexo (true en el aviso y la reiteración, false en una nota sin anexo) sin traer el PDF', async () => {
     const { aviso, reiteracion } = await avisoYReiteracion();
+    // Una nota sin anexo: como las reiteraciones anteriores al anexo de seguimiento
+    const vieja = { id: await crearNota({ tipo: 'reiteracion', fecha: '2026-10-01', numero: 9 }) };
 
     const lista = await api.get('/notificaciones/notas-digitales', comoAdmin());
     assert.equal(lista.status, 200);
     const filas = Object.fromEntries(lista.body.data.map(n => [n.id, n]));
     assert.strictEqual(filas[aviso.id].tiene_anexo, true);
-    assert.strictEqual(filas[reiteracion.id].tiene_anexo, false);
+    assert.strictEqual(filas[reiteracion.id].tiene_anexo, true);
+    assert.strictEqual(filas[vieja.id].tiene_anexo, false);
     for (const fila of lista.body.data) assert.equal('anexo_pdf' in fila, false);
 
-    for (const [nota, esperado] of [[aviso, true], [reiteracion, false]]) {
+    for (const [nota, esperado] of [[aviso, true], [reiteracion, true], [vieja, false]]) {
       const detalle = await api.get(`/notificaciones/notas-digitales/${nota.id}`, comoAdmin());
       assert.equal(detalle.status, 200);
       assert.strictEqual(detalle.body.data.tiene_anexo, esperado);
@@ -596,9 +653,25 @@ describe('libro', () => {
     assert.strictEqual(lista.body.data.find(n => n.id === prueba.id).tiene_anexo, true);
   });
 
-  it('una reiteración no tiene anexo: 404 con el mensaje "La nota no tiene anexo"', async () => {
+  it('una reiteración tiene tiene_anexo y descargarAnexo la entrega', async () => {
     const { reiteracion } = await avisoYReiteracion();
+    const detalle = await api.get(`/notificaciones/notas-digitales/${reiteracion.id}`, comoAdmin());
+    assert.strictEqual(detalle.body.data.tiene_anexo, true);
+
     const res = await api.get(`/notificaciones/notas-digitales/${reiteracion.id}/anexo`, comoAdmin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    assert.equal(res.headers.get('content-disposition'), 'attachment; filename="Anexo-Nota-Digital-2-26.pdf"');
+    assert.deepEqual(res.body, reiteracion.anexo_pdf);
+    const [hoja] = lineasPorHoja(res.body);
+    assert.ok(hoja.includes('Dataset avisado'), hoja.join(' | '));
+    assert.ok(hoja.includes('Anexo de la Nota Digital N° 2/26 · Hoja 1 de 1'), hoja.join(' | '));
+    assert.ok(hoja.includes('1 de diciembre de 2026'), hoja.join(' | '));
+  });
+
+  it('una nota sin anexo (anterior al anexo de la reiteración): 404 con el mensaje "La nota no tiene anexo"', async () => {
+    const id = await crearNota({ tipo: 'reiteracion', fecha: '2026-10-01', numero: 9 });
+    const res = await api.get(`/notificaciones/notas-digitales/${id}/anexo`, comoAdmin());
     assert.equal(res.status, 404);
     assert.deepEqual(res.body, { success: false, error: 'La nota no tiene anexo' });
   });

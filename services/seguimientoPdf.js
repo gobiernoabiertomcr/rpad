@@ -1,13 +1,18 @@
-// PDF del Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset-design, "El PDF"): una sola hoja A4 con el lenguaje del
-// ANEXO de los avisos (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie,
-// DocumentoNota y el QR vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
+// PDF del Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset-design, "El PDF"): una hoja A4 por dataset (nunca pasa a
+// una segunda; el anexo de la reiteración une N hojas en un mismo PDF), con el lenguaje del ANEXO de los avisos
+// (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie, DocumentoNota y el QR
+// vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
 // cinta del PDF (separación 12 y letra 8,4): no recalcula ninguna regla.
+// Hay dos PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1")
+// y el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
+// Hoja k de N"); los dos las dibujan con el mismo dibujante de N hojas.
 // Las secciones tienen lugar fijo y se completan solas: el título reserva dos líneas, cada valor de la ficha va en una línea, los
 // nodos del circuito tienen alto fijo, la leyenda reserva dos renglones, la tabla de movimientos tiene FILAS_PDF renglones y la
 // aclaración va siempre arriba del pie. Así la hoja nunca pasa a una segunda, con cualquier largo de título, área o movimientos.
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { ventanaDe } from './seguimientoCinta.js';
+import { textoRequiereNota } from './requiereNotaReglas.js';
 import {
   COLOR, MM, MARGEN, IZQUIERDA, DERECHA, CONTENIDO, ABAJO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE,
   desdeBase, ajustar, escribir, renglon, rotulo, filete, etiquetaDeCabecera, prepararGrilla, cargarQrcode, dibujarTarjetaQr
@@ -96,16 +101,16 @@ const textoDeGenerado = (momento, por) => {
   return ['Generado', cuando, por ? `por ${por}` : ''].filter(Boolean).join(' ');
 };
 
-// Pie: línea fina, quién y cuándo lo generó a la izquierda y "Seguimiento del dataset · Hoja 1 de 1" a la derecha, con los
-// descendentes sobre el margen inferior. Devuelve la y de la línea, el límite de todo lo que va arriba.
-const dibujarPie = (doc, generado) => {
+// Pie: línea fina, quién y cuándo lo generó a la izquierda y, a la derecha, `derecha` ("Seguimiento del dataset · Hoja 1 de 1" en la
+// descarga de una hoja; "Anexo de la Nota Digital N° … · Hoja k de N" en el anexo), con los descendentes sobre el margen inferior.
+// Si el texto no entra en su ancho, se corta con "…". Devuelve la y de la línea, el límite de todo lo que va arriba.
+const dibujarPie = (doc, generado, derecha) => {
   const y = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie);
   const yLinea = y - 8;
   const izquierda = CONTENIDO * 0.6;
   filete(doc, IZQUIERDA, yLinea, CONTENIDO);
   renglon(doc, textoDeGenerado(generado?.momento, generado?.por), IZQUIERDA, y, { ancho: izquierda, tamano: LETRA.pie, color: COLOR.gris });
-  renglon(doc, 'Seguimiento del dataset · Hoja 1 de 1', IZQUIERDA + izquierda, y,
-    { ancho: CONTENIDO - izquierda, tamano: LETRA.pie, color: COLOR.gris, align: 'right' });
+  renglon(doc, derecha, IZQUIERDA + izquierda, y, { ancho: CONTENIDO - izquierda, tamano: LETRA.pie, color: COLOR.gris, align: 'right' });
   return yLinea;
 };
 
@@ -140,6 +145,18 @@ const celdaDelVencimiento = (ficha) => {
   return { etiqueta: 'Próximo vencimiento', valor: estado === 'eventual' ? 'Sin vencimiento (eventual)' : 'Sin fecha' };
 };
 
+// «Datos que se piden»: de ancho entero en la gestión interna; en un externo comparte el renglón con «Requiere nota DGMIT» (spec
+// 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7) y le queda media columna. El pedido más largo que arma pedido() ("Presupuestos
+// de los ejercicios 2021 a 2026", 178 puntos a 9,2) entra en la media columna más angosta (192 puntos, la de la ficha con el QR).
+const celdasDelPedido = (ficha) => {
+  const pedido = ficha.pedido ?? (ficha.estado?.estado === 'eventual' ? 'Sin pedido (eventual)' : 'Sin pedido');
+  if (ficha.tipo_gestion === 'interna') return [{ etiqueta: 'Datos que se piden', valor: pedido, completa: true }];
+  return [
+    { etiqueta: 'Datos que se piden', valor: pedido },
+    { etiqueta: 'Requiere nota DGMIT', valor: textoRequiereNota(ficha.requiere_nota, SIN_DATO) }
+  ];
+};
+
 // La grilla de dos columnas con filetes (cada valor en una línea, cortado con "…" si no entra) y, a la derecha, la tarjeta del QR
 // hacia el portal. Sin link al portal no hay QR y la grilla ocupa todo el ancho.
 const prepararFicha = (doc, ficha) => {
@@ -152,7 +169,7 @@ const prepararFicha = (doc, ficha) => {
     celdaDelVencimiento(ficha),
     { etiqueta: 'Datos al', valor: fecha(ficha.datos_al) },
     { etiqueta: 'Cargado en el portal', valor: fecha(ficha.ultima) },
-    { etiqueta: 'Datos que se piden', valor: ficha.pedido ?? (ficha.estado?.estado === 'eventual' ? 'Sin pedido (eventual)' : 'Sin pedido'), completa: true },
+    ...celdasDelPedido(ficha),
     url
       ? { etiqueta: 'Link al portal', valor: url, completa: true, link: url, color: COLOR.acento, tamanos: { max: LETRA.link, min: 7 } }
       : { etiqueta: 'Link al portal', valor: SIN_DATO, completa: true }
@@ -245,7 +262,9 @@ const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
   return ALTO_NODO;
 };
 
-// La línea del email al área (solo en gestión externa y con un ciclo abierto: sin vencimiento no hay nada que anticipar)
+// La línea del email al área (solo en gestión externa y con un ciclo abierto: sin vencimiento no hay nada que anticipar). Con
+// «Requiere nota DGMIT» en «No» el servidor manda `alArea` en null, salvo que en el ciclo abierto ya se le haya mandado al área el
+// email de los 40 días: sin `alArea.textoPdf` no se dibuja nada y el lugar queda en blanco
 const dibujarAlArea = (doc, circuito, y) => {
   if (!circuito.alArea?.textoPdf || !circuito.vencimiento) return;
   doc.roundedRect(IZQUIERDA, y, CONTENIDO, ALTO_AL_AREA, 4).fill(COLOR.fondo);
@@ -563,12 +582,13 @@ const dibujarMovimientos = (doc, movimientos, y) => {
 // La hoja
 // =====================================================
 
-const dibujarHoja = (doc, seguimiento, { hoy, generado }) => {
+// Una hoja del Seguimiento de un dataset en la página actual de `doc`. `pie`: el texto de la derecha del pie.
+const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
   const { ficha, circuito, cinta } = seguimiento;
   const movimientos = Array.isArray(seguimiento.movimientos) ? seguimiento.movimientos : [];
   const registro = seguimiento.registro ?? {};
   let y = dibujarEncabezado(doc, hoy);
-  const limite = dibujarPie(doc, generado);
+  const limite = dibujarPie(doc, generado, pie);
 
   y += AIRE.etiqueta;
   y += dibujarCabecera(doc, ficha, y) + AIRE.ficha;
@@ -603,28 +623,57 @@ const dibujarHoja = (doc, seguimiento, { hoy, generado }) => {
   renglon(doc, aclaracion, IZQUIERDA, limite - AIRE.sobrePie - OJO * LETRA.nota, { ancho: CONTENIDO, tamano: LETRA.nota, color: COLOR.gris });
 };
 
-// El PDF de una hoja del Seguimiento de un dataset. `seguimiento`: el de seguimientoDe(fuentes, hoy, { separacion: 12, letra: 8.4 });
-// `hoy`: 'AAAA-MM-DD'; `generado`: { momento: 'AAAA-MM-DD HH:MM:SS', por: nombre corto o null }.
-export const renderSeguimiento = async (seguimiento, { hoy, generado }) => {
-  await cargarQrcode();
-  return dibujarSeguimiento(seguimiento, { hoy, generado });
-};
+// Las opciones de la cinta del PDF: las marcas a menos de 12 unidades se juntan y las letras miden 8,4 (las de la pantalla, 11 y
+// 6,6). Con ellas se calcula el Seguimiento (seguimientoDe) que dibujan la descarga de una hoja y el anexo de la reiteración.
+export const OPCIONES_CINTA_PDF = Object.freeze({ separacion: 12, letra: 8.4 });
 
-const dibujarSeguimiento = (seguimiento, opciones) => new Promise((resolve, reject) => {
+// El documento: una hoja A4 por elemento de `seguimientos`, en ese orden, con el mismo `hoy` y el mismo `generado` en todas.
+// `pieDe(k, total)`: el texto de la derecha del pie de la hoja k (de 1 a total); `titulo`: el título del PDF.
+const dibujarHojas = (seguimientos, { hoy, generado, pieDe, titulo }) => new Promise((resolve, reject) => {
   try {
     // Márgenes de PDFKit en 0: la diagramación es fija y nada se escribe donde PDFKit agregaría una hoja
     const doc = new DocumentoNota({
       size: 'A4', autoFirstPage: false, margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      info: { Title: 'Seguimiento del dataset', Author: 'Dirección de Datos Públicos y Comunicación' }
+      info: { Title: titulo, Author: 'Dirección de Datos Públicos y Comunicación' }
     });
     const partes = [];
     doc.on('data', parte => partes.push(parte));
     doc.on('end', () => resolve(Buffer.concat(partes)));
     doc.on('error', reject);
-    doc.addPage();
-    dibujarHoja(doc, seguimiento, opciones);
+    seguimientos.forEach((seguimiento, i) => {
+      doc.addPage();
+      dibujarHoja(doc, seguimiento, { hoy, generado, pie: pieDe(i + 1, seguimientos.length) });
+    });
     doc.end();
   } catch (error) {
     reject(error);
   }
 });
+
+// El PDF de una hoja del Seguimiento de un dataset. `seguimiento`: el de seguimientoDe(fuentes, hoy, OPCIONES_CINTA_PDF);
+// `hoy`: 'AAAA-MM-DD'; `generado`: { momento: 'AAAA-MM-DD HH:MM:SS', por: nombre corto o null }.
+export const renderSeguimiento = async (seguimiento, { hoy, generado }) => {
+  await cargarQrcode();
+  return dibujarHojas([seguimiento], {
+    hoy, generado, titulo: 'Seguimiento del dataset', pieDe: () => 'Seguimiento del dataset · Hoja 1 de 1'
+  });
+};
+
+// El anexo de una Nota Digital de reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.1): un solo PDF con una hoja
+// del Seguimiento por dataset, en el orden de `seguimientos` (cada uno, el de seguimientoDe(fuentes, hoy, OPCIONES_CINTA_PDF)).
+// Cada hoja es la de la descarga, con `hoy` = la fecha de la nota (arriba a la derecha va su fecha larga) y otro pie: a la izquierda
+// la hora de generación (`generado`: { momento, por: null }, un envío automático no tiene "por") y a la derecha "Anexo de la Nota
+// Digital N° <numeroTexto> · Hoja k de N".
+// Una lista vacía, o sin número de nota, tira error: no hay anexo sin hojas ni nota que lo cite.
+export const renderAnexoDeSeguimiento = async (seguimientos, { hoy, generado, numeroTexto }) => {
+  if (!Array.isArray(seguimientos) || seguimientos.length === 0) {
+    throw new Error('El anexo de seguimiento necesita al menos un seguimiento');
+  }
+  const numero = String(numeroTexto ?? '').trim();
+  if (!numero) throw new Error('El anexo de seguimiento necesita el número de la nota');
+  await cargarQrcode();
+  return dibujarHojas(seguimientos, {
+    hoy, generado, titulo: `Anexo de la Nota Digital N° ${numero}`,
+    pieDe: (k, total) => `Anexo de la Nota Digital N° ${numero} · Hoja ${k} de ${total}`
+  });
+};

@@ -1,7 +1,7 @@
 import pool from '../config/database.js';
 import { fuentesDe } from '../services/seguimientoDatos.js';
 import { seguimientoDe, resumenParaLista, nombreCorto, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos } from '../services/seguimientoReglas.js';
-import { renderSeguimiento } from '../services/seguimientoPdf.js';
+import { renderSeguimiento, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -12,9 +12,6 @@ import { esAdmin } from '../services/usuariosReglas.js';
 const NO_ENCONTRADO = { success: false, error: 'Dataset no encontrado' };
 const ERROR_AL_OBTENER = { success: false, error: 'Error al obtener el seguimiento' };
 const ERROR_AL_GENERAR_PDF = { success: false, error: 'Error al generar el PDF del seguimiento' };
-
-// La cinta del PDF: las marcas a menos de 12 unidades se juntan y las letras miden 8,4 (las de la pantalla, 11 y 6,6)
-const OPCIONES_CINTA_PDF = { separacion: 12, letra: 8.4 };
 
 // Un id es un entero positivo escrito solo con dígitos: 'abc', '0', '-3', '1.5' y '1e3' no lo son. Devuelve el número o null.
 const idDelDataset = (texto) => {

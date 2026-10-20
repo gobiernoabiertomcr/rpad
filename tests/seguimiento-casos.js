@@ -3,6 +3,8 @@
 // hora argentina 'AAAA-MM-DD HH:MM:SS' y fechas 'AAAA-MM-DD'. Los nombres de las personas y los correos están cambiados.
 // altasSinDataset: los cambios 'crear' aprobados con dataset_id NULL cuya aprobación cae a menos de 5 s del alta (la
 // unión con el dataset la decide unirAlta). Hoy, para todos estos casos: HOY_DE_LOS_CASOS.
+// dataset.requiere_nota: el dump es anterior a la columna («Requiere nota DGMIT»), así que es null (sin dato) en todos los casos;
+// los tests de «Sí» y de «No» lo pisan en una copia del dataset.
 export const HOY_DE_LOS_CASOS = '2026-10-20';
 
 export const CATALOGOS = {
@@ -78,6 +80,7 @@ export const CASOS = {
       "area_superior": "Intendencia",
       "area_id": 34,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Anualmente",
       "meses": 12,
       "proxima": "2026-01-31",
@@ -264,6 +267,7 @@ export const CASOS = {
       "area_superior": "Subsec. de Modernización y Transparencia. Sec. de Gobierno, Modernización y Transparencia",
       "area_id": 1,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Cuatrimestralmente",
       "meses": 4,
       "proxima": "2027-01-31",
@@ -558,6 +562,7 @@ export const CASOS = {
       "area_superior": "Secretaría General de Comunicación y de Relaciones Institucionale",
       "area_id": 40,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Trimestralmente",
       "meses": 3,
       "proxima": "2027-01-31",
@@ -899,6 +904,7 @@ export const CASOS = {
       "area_superior": "Secretaría de Recaudación",
       "area_id": 38,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Anualmente",
       "meses": 12,
       "proxima": "2024-01-31",
@@ -1064,6 +1070,7 @@ export const CASOS = {
       "area_superior": "Intendencia",
       "area_id": 25,
       "tipo_gestion": "interna",
+      "requiere_nota": null,
       "frecuencia": "Cada dos años",
       "meses": 24,
       "proxima": "2025-03-31",
@@ -1218,6 +1225,7 @@ export const CASOS = {
       "area_superior": "Subsec. de Gestión Presupuestaria. Sec. de Economía, Finanzas y Control de Gestión",
       "area_id": 20,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Anualmente",
       "meses": 12,
       "proxima": "2026-01-31",
@@ -1317,6 +1325,7 @@ export const CASOS = {
       "area_superior": null,
       "area_id": 27,
       "tipo_gestion": "interna",
+      "requiere_nota": null,
       "frecuencia": "Cada medio año",
       "meses": 6,
       "proxima": "2027-03-31",
@@ -1428,6 +1437,7 @@ export const CASOS = {
       "area_superior": "Ministerio de Educación del Chubut",
       "area_id": 6,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Anualmente",
       "meses": 12,
       "proxima": "2027-04-30",
@@ -1557,6 +1567,7 @@ export const CASOS = {
       "area_superior": "Subsec. de Recursos Humanos. Sec. Gobierno, Modernización y Transparencia",
       "area_id": 19,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Cada medio año",
       "meses": 6,
       "proxima": "2026-07-31",
@@ -1804,6 +1815,7 @@ export const CASOS = {
       "area_superior": "Subsec. de Fiscalización. Sec. de Control Urbano y Operativo",
       "area_id": 12,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Anualmente",
       "meses": 12,
       "proxima": "2026-01-31",
@@ -1943,6 +1955,7 @@ export const CASOS = {
       "area_superior": "Subsec. de Modernización y Transparencia. Sec. de Gobierno, Modernización y Transparencia",
       "area_id": 14,
       "tipo_gestion": "interna",
+      "requiere_nota": null,
       "frecuencia": "Eventual",
       "meses": null,
       "proxima": null,
@@ -2054,6 +2067,7 @@ export const CASOS = {
       "area_superior": null,
       "area_id": 46,
       "tipo_gestion": "externa",
+      "requiere_nota": null,
       "frecuencia": "Cada medio año",
       "meses": 6,
       "proxima": "2026-10-31",

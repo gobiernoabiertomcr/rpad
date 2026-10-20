@@ -57,7 +57,7 @@ describe('secciones', () => {
     assert.equal(ambas.secciones[1].introduccion, 'Los siguientes conjuntos de datos se encuentran con su plazo de actualización vencido:');
   });
 
-  // (spec 2026-10-17-fechas-datasets, 9: el aviso no tiene "Situación"; la reiteración sí, en la sexta columna)
+  // (spec 2026-10-17-fechas-datasets, 9: el aviso no tiene "Situación"; la reiteración interna sí, en la sexta columna)
   it('calcula la situación al día de la nota', () => {
     const situacion = (vencimiento) => {
       const s = nota({ tipo: 'reiteracion', datasets: [dataset({ vencimiento })] }).secciones[0];
@@ -75,12 +75,13 @@ describe('secciones', () => {
 
   // Spec 2026-10-17-fechas-datasets, 9 y 18: el aviso tiene 4 columnas (se van "Última actualización", "Situación" y, desde el
   // 18/10/2026, la fecha sugerida de envío) y la reiteración, las 7 de siempre con "Datos solicitados" en lugar de "Última
-  // actualización" e "Informado en" al final
-  it('columnas exactas del aviso: 4, con "Datos solicitados" y sin fecha', () => {
+  // actualización" e "Informado en" al final. Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: las externas suman
+  // "Requiere nota DGMIT" (el aviso pasa a 5) y la reiteración externa deja "Situación" debajo de la fecha (sigue con 7)
+  it('columnas exactas del aviso: 4 en la interna y 5 en la externa, con "Datos solicitados" y sin fecha', () => {
     assert.deepEqual(nota().secciones[0].columnas,
       ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados']);
     assert.deepEqual(nota({ gestion: 'externa' }).secciones[0].columnas,
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados']);
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados']);
   });
 
   it('columnas exactas de la reiteración: 7, con "Datos solicitados" y con "Informado en" al final', () => {
@@ -88,20 +89,32 @@ describe('secciones', () => {
       tipo: 'reiteracion', gestion, datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31' })]
     });
     assert.deepEqual(reiteracion('externa').secciones.map(s => s.columnas), [
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Vence', 'Situación', 'Informado en'],
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Vence', 'Informado en'],
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Venció', 'Informado en']
     ]);
     assert.deepEqual(reiteracion('interna').secciones[1].columnas,
       ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']);
   });
 
-  it('la sección de vencidos de un aviso usa las columnas de la reiteración, y los próximos las 4 del aviso', () => {
-    const aviso = nota({ gestion: 'externa', datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE })] });
+  it('la sección de vencidos de un aviso usa las columnas de la reiteración, y los próximos las del aviso', () => {
+    const aviso = nota({
+      gestion: 'externa',
+      datasets: [dataset({ requiere_nota: 1 }), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, requiere_nota: 0 })]
+    });
     assert.deepEqual(aviso.secciones.map(s => s.columnas), [
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados'],
-      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados'],
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Venció', 'Informado en']
     ]);
     assert.deepEqual(aviso.secciones[1].filas[0].valores,
+      ['Dataset B', 'Área Uno', 'Anualmente', 'No', 'Del 01/01/2026 al 30/09/2026', '31/10/2026', 'Sin aviso previo']);
+    assert.equal(aviso.secciones[1].filas[0].situacion, 'Vencido hace 2 días');
+    // El aviso no tiene "Informado en" con segunda parte: los vencidos van con las proporciones sin ella
+    assert.deepEqual(aviso.secciones[1].proporciones, [24, 14, 10, 10, 15, 12, 15]);
+    // Los próximos del aviso no llevan situación
+    assert.equal(aviso.secciones[0].filas[0].situacion, null);
+    // La interna, como siempre
+    const interno = nota({ datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE })] });
+    assert.deepEqual(interno.secciones[1].filas[0].valores,
       ['Dataset B', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/09/2026', '31/10/2026', 'Vencido hace 2 días', 'Sin aviso previo']);
   });
 
@@ -153,19 +166,34 @@ describe('secciones', () => {
     });
   });
 
-  it('celdas de la reiteración: el pedido en la cuarta, y "Venció", "Situación" e "Informado en" detrás', () => {
+  it('celdas de la reiteración interna: el pedido en la cuarta, y "Venció", "Situación" e "Informado en" detrás', () => {
     const fila = nota({
-      tipo: 'reiteracion', gestion: 'externa',
+      tipo: 'reiteracion', gestion: 'interna',
       datasets: [dataset({ vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, informado: { numero: 9, anio: 2026, fecha: '2026-10-01' } })]
     }).secciones[0].filas[0];
     assert.deepEqual(fila.valores, ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/09/2026', '31/10/2026',
       'Vencido hace 2 días', 'Nota Digital N° 9/26 (01/10/2026)']);
+    assert.equal(fila.situacion, null);
+  });
+
+  it('celdas de la reiteración externa: "Requiere nota DGMIT" en la cuarta, el pedido en la quinta, "Venció" e "Informado en" detrás', () => {
+    const fila = nota({
+      tipo: 'reiteracion', gestion: 'externa',
+      datasets: [dataset({ vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, requiere_nota: 1, informado: { numero: 9, anio: 2026, fecha: '2026-10-01' } })]
+    }).secciones[0].filas[0];
+    assert.deepEqual(fila.valores, ['Dataset A', 'Área Uno', 'Anualmente', 'Sí', 'Del 01/01/2026 al 30/09/2026', '31/10/2026',
+      'Nota Digital N° 9/26 (01/10/2026)']);
+    assert.equal(fila.situacion, 'Vencido hace 2 días');
   });
 
   it('sin pedido (eventual o sin datos para calcularlo), "Datos solicitados" dice "—"', () => {
     for (const pedido of [null, undefined]) {
       assert.equal(nota({ datasets: [dataset({ pedido })] }).secciones[0].filas[0].valores[3], '—', String(pedido));
       assert.equal(nota({ tipo: 'reiteracion', datasets: [dataset({ pedido })] }).secciones[0].filas[0].valores[3], '—', String(pedido));
+      // (en la externa, "Datos solicitados" es la quinta: la cuarta es "Requiere nota DGMIT")
+      for (const tipo of ['aviso', 'reiteracion']) {
+        assert.equal(nota({ tipo, gestion: 'externa', datasets: [dataset({ pedido })] }).secciones[0].filas[0].valores[4], '—', `${tipo} ${pedido}`);
+      }
     }
     assert.ok(renderHtml(nota({ datasets: [dataset({ pedido: null })] })).includes('>—</td>'));
   });
@@ -198,6 +226,162 @@ describe('secciones', () => {
       'Antecedente: notificado a la DGMIT por correo electrónico el 01/10/2026.');
     assert.equal(fila(null).antecedente, null);
     assert.equal(fila({ cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' }).informadoAnterior, null);
+  });
+});
+
+// Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: las tablas externas suman "Requiere nota DGMIT" (Sí, No o —) entre
+// "Frecuencia" y "Datos solicitados". La reiteración externa (y la sección de vencidos que pudiera traer un aviso externo) sigue
+// con 7 columnas: "Situación" deja de ser una columna y va debajo de la fecha, en la celda "Venció" (o "Vence"). La interna no cambia.
+describe('tablas externas: "Requiere nota DGMIT" (spec 2026-10-20, 1.5)', () => {
+  const AVISO = { numero: 2, anio: 2026, fecha: '2026-10-13' };
+  const DIEZ = { cantidad: 10, primera: '2026-01-01', ultima: '2026-10-01' };
+
+  it('aviso externo: 5 columnas con Requiere nota DGMIT; celdas Sí, No y — (NULL)', () => {
+    const n = nota({
+      gestion: 'externa',
+      datasets: [
+        dataset({ id: 1, titulo: 'Con nota', requiere_nota: 1 }),
+        dataset({ id: 2, titulo: 'Sin nota', requiere_nota: 0 }),
+        dataset({ id: 3, titulo: 'Sin dato', requiere_nota: null }),
+        // (sin la clave, como un dataset armado a mano)
+        dataset({ id: 4, titulo: 'Sin la clave' })
+      ]
+    });
+    const [proximos] = n.secciones;
+    assert.deepEqual(proximos.columnas, ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados']);
+    assert.deepEqual(proximos.filas.map(f => f.valores), [
+      ['Con nota', 'Área Uno', 'Anualmente', 'Sí', 'Del 01/01/2026 al 30/11/2026'],
+      ['Sin nota', 'Área Uno', 'Anualmente', 'No', 'Del 01/01/2026 al 30/11/2026'],
+      ['Sin dato', 'Área Uno', 'Anualmente', '—', 'Del 01/01/2026 al 30/11/2026'],
+      ['Sin la clave', 'Área Uno', 'Anualmente', '—', 'Del 01/01/2026 al 30/11/2026']
+    ]);
+    // De la base llega 0 o 1 como número; true y false también valen
+    assert.deepEqual(nota({ gestion: 'externa', datasets: [dataset({ requiere_nota: true }), dataset({ id: 2, requiere_nota: false })] })
+      .secciones[0].filas.map(f => f.valores[3]), ['Sí', 'No']);
+    // Sin situación ni proporciones propias: el PDF usa las de 5 columnas
+    assert.ok(proximos.filas.every(f => f.situacion === null));
+    assert.equal(proximos.proporciones, undefined);
+    // HTML y texto plano
+    const html = renderHtml(n);
+    assert.ok(html.includes('>Requiere nota DGMIT</th>'));
+    assert.ok(html.includes('>Anualmente</td><td style="border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;">No</td>'), html);
+    const texto = renderTexto(n);
+    assert.ok(texto.includes('    Requiere nota DGMIT: Sí\n') && texto.includes('    Requiere nota DGMIT: No\n') && texto.includes('    Requiere nota DGMIT: —\n'), texto);
+  });
+
+  it('reiteración externa: 7 columnas sin Situación; la celda Venció lleva la fecha y fila.situacion «Vencido hace N días»', () => {
+    const n = nota({
+      tipo: 'reiteracion', gestion: 'externa',
+      datasets: [dataset({ vencimiento: '2024-01-31', pedido: PEDIDO_OCTUBRE, requiere_nota: 1, informado: AVISO, antecedente: DIEZ })]
+    });
+    assert.deepEqual(n.secciones.map(s => s.clave), ['vencido']);
+    const [vencidos] = n.secciones;
+    assert.deepEqual(vencidos.columnas,
+      ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Venció', 'Informado en']);
+    assert.ok(!vencidos.columnas.includes('Situación'));
+    const [fila] = vencidos.filas;
+    assert.deepEqual(fila.valores,
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Sí', 'Del 01/01/2026 al 30/09/2026', '31/01/2024', 'Nota Digital N° 2/26 (13/10/2026).']);
+    assert.equal(fila.situacion, 'Vencido hace 1006 días');
+    assert.equal(fila.informadoAnterior, 'Anteriormente notificado DGMIT por e-mail en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026');
+    // La celda que lleva la situación debajo es la de la fecha
+    assert.equal(vencidos.columnaSituacion, 5);
+    // Con la segunda parte de "Informado en", las proporciones que le dan más ancho a esa columna
+    assert.deepEqual(vencidos.proporciones, [18, 14, 10, 10, 13, 10, 25]);
+    // Sin ella, las otras
+    const sinSegunda = nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento: '2024-01-31', informado: AVISO })] });
+    assert.deepEqual(sinSegunda.secciones[0].proporciones, [24, 14, 10, 10, 15, 12, 15]);
+    // Singular
+    assert.equal(nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento: '2026-11-01' })] }).secciones[0].filas[0].situacion,
+      'Vencido hace 1 día');
+  });
+
+  it('reiteración externa con un próximo: columna «Vence», situación de hoy «Faltan N días» (la misma de la interna)', () => {
+    const situacion = (vencimiento) => {
+      const [s] = nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento, requiere_nota: 0 })] }).secciones;
+      assert.equal(s.clave, 'proximo');
+      assert.equal(s.columnas[5], 'Vence');
+      assert.equal(s.filas[0].valores[5], `${vencimiento.slice(8, 10)}/${vencimiento.slice(5, 7)}/${vencimiento.slice(0, 4)}`);
+      assert.equal(s.filas[0].valores[3], 'No');
+      return s.filas[0].situacion;
+    };
+    assert.equal(situacion('2026-11-12'), 'Faltan 10 días');
+    assert.equal(situacion('2026-11-03'), 'Falta 1 día');
+    assert.equal(situacion('2026-11-02'), 'Vence hoy');
+    // El mismo texto que la columna "Situación" de la interna, para próximos y vencidos
+    for (const vencimiento of ['2026-11-12', '2026-11-03', '2026-11-02', '2026-11-01', '2024-01-31']) {
+      const externa = nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento })] }).secciones[0].filas[0].situacion;
+      const interna = nota({ tipo: 'reiteracion', gestion: 'interna', datasets: [dataset({ vencimiento })] }).secciones[0].filas[0].valores[5];
+      assert.equal(externa, interna, vencimiento);
+    }
+  });
+
+  it('interna sin cambios: aviso 4 columnas y reiteración 7 con Situación', () => {
+    const datasets = [dataset({ requiere_nota: 1 }), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, requiere_nota: 0 })];
+    const aviso = nota({ datasets });
+    assert.deepEqual(aviso.secciones.map(s => s.columnas), [
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados'],
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
+    ]);
+    const reiteracion = nota({ tipo: 'reiteracion', datasets: [...datasets, dataset({ id: 3, titulo: 'Dataset C', vencimiento: '2026-09-30', antecedente: DIEZ })] });
+    assert.deepEqual(reiteracion.secciones.map(s => s.columnas), [
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Vence', 'Situación', 'Informado en'],
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Venció', 'Situación', 'Informado en']
+    ]);
+    assert.deepEqual(reiteracion.secciones[0].filas[0].valores,
+      ['Dataset A', 'Área Uno', 'Anualmente', 'Del 01/01/2026 al 30/11/2026', '31/12/2026', 'Faltan 59 días', 'Sin aviso previo']);
+    for (const n of [aviso, reiteracion]) {
+      // Sin "Requiere nota DGMIT", sin situación aparte ni proporciones propias (el PDF elige las de siempre por cantidad de columnas)
+      for (const s of n.secciones) {
+        assert.ok(!s.columnas.includes('Requiere nota DGMIT'));
+        assert.equal(s.proporciones, undefined);
+        assert.equal(s.columnaSituacion ?? null, null);
+        assert.ok(s.filas.every(f => f.situacion === null));
+      }
+      assert.ok(!renderHtml(n).includes('Requiere nota') && !renderTexto(n).includes('Requiere nota'));
+    }
+  });
+
+  it('HTML: la situación va debajo de la fecha con <br> en la misma celda', () => {
+    const html = renderHtml(nota({
+      tipo: 'reiteracion', gestion: 'externa',
+      datasets: [
+        dataset({ vencimiento: '2024-01-31', requiere_nota: 1, informado: AVISO, antecedente: DIEZ }),
+        dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-11-12', requiere_nota: 0 })
+      ]
+    }));
+    const CELDA = '<td style="border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;">';
+    // En la misma letra que la fecha (sin el span chico de la segunda parte de "Informado en")
+    assert.ok(html.includes(`${CELDA}31/01/2024<br>Vencido hace 1006 días</td>`), html);
+    assert.ok(html.includes(`${CELDA}12/11/2026<br>Faltan 10 días</td>`), html);
+    // (sin una celda propia para la situación)
+    assert.ok(!html.includes('>Situación</th>') && !html.includes(`${CELDA}Vencido hace 1006 días</td>`));
+    // "Informado en" sigue última, con su segunda parte en letra más chica
+    assert.ok(html.includes('>Nota Digital N° 2/26 (13/10/2026).<br><span style="font-size:11px">Anteriormente notificado DGMIT por e-mail en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026</span></td></tr>'), html);
+    // Cada fila tiene sus 7 celdas: la situación no suma una
+    const filas = [...html.matchAll(/<tr>(<td [\s\S]*?)<\/tr>/g)].map(m => (m[1].match(/<td /g) ?? []).length);
+    assert.deepEqual(filas, [7, 7]);
+  });
+
+  it('texto plano de la reiteración externa: renglones «Venció: …» y «Situación: …»', () => {
+    const texto = renderTexto(nota({
+      tipo: 'reiteracion', gestion: 'externa',
+      datasets: [dataset({ vencimiento: '2026-10-31', pedido: PEDIDO_OCTUBRE, requiere_nota: 1, informado: { numero: 9, anio: 2026, fecha: '2026-10-01' }, antecedente: DIEZ })]
+    }));
+    assert.ok(texto.includes([
+      '- Dataset A (https://datos.comodoro.gov.ar/dataset/a)',
+      '    Área responsable: Área Uno',
+      '    Frecuencia: Anualmente',
+      '    Requiere nota DGMIT: Sí',
+      '    Datos solicitados: Del 01/01/2026 al 30/09/2026',
+      '    Venció: 31/10/2026',
+      '    Situación: Vencido hace 2 días',
+      '    Informado en: Nota Digital N° 9/26 (01/10/2026). Anteriormente notificado DGMIT por e-mail en 10 oportunidades, entre el 01/01/2026 y el 01/10/2026',
+      ''
+    ].join('\n')), texto);
+    // Un próximo: "Vence:" y su situación
+    const proximo = renderTexto(nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento: '2026-11-12', requiere_nota: 0 })] }));
+    assert.ok(proximo.includes('    Requiere nota DGMIT: No\n    Datos solicitados: Del 01/01/2026 al 30/11/2026\n    Vence: 12/11/2026\n    Situación: Faltan 10 días\n    Informado en: Sin aviso previo\n'), proximo);
   });
 });
 
@@ -270,15 +454,17 @@ describe('reiteración: antecedente en "Informado en"', () => {
     assert.ok(!html.includes('Anteriormente notificado'));
   });
 
-  it('la fila del antecedente ocupa todas las columnas de su tabla: 4 en los próximos y 7 en los vencidos de un aviso', () => {
-    const n = nota({ datasets: [dataset({ antecedente: DIEZ }), dataset({ id: 2, vencimiento: '2026-10-31', antecedente: UNA })] });
-    assert.deepEqual(n.secciones.map(s => s.columnas.length), [4, 7]);
-    const html = renderHtml(n);
-    const colspans = [...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1]));
-    assert.deepEqual(colspans, n.secciones.map(s => s.columnas.length));
-    // Cada fila del antecedente va inmediatamente debajo de la de su dataset
-    for (const seccion of n.secciones) {
-      assert.ok(html.includes(`</td></tr><tr><td colspan="${seccion.columnas.length}" style=`), seccion.clave);
+  it('la fila del antecedente ocupa todas las columnas de su tabla: 4 (5 en la externa) en los próximos y 7 en los vencidos de un aviso', () => {
+    for (const [gestion, columnas] of [['interna', [4, 7]], ['externa', [5, 7]]]) {
+      const n = nota({ gestion, datasets: [dataset({ antecedente: DIEZ }), dataset({ id: 2, vencimiento: '2026-10-31', antecedente: UNA })] });
+      assert.deepEqual(n.secciones.map(s => s.columnas.length), columnas, gestion);
+      const html = renderHtml(n);
+      const colspans = [...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1]));
+      assert.deepEqual(colspans, n.secciones.map(s => s.columnas.length), gestion);
+      // Cada fila del antecedente va inmediatamente debajo de la de su dataset
+      for (const seccion of n.secciones) {
+        assert.ok(html.includes(`</td></tr><tr><td colspan="${seccion.columnas.length}" style=`), `${gestion} ${seccion.clave}`);
+      }
     }
   });
 });
@@ -301,7 +487,7 @@ describe('varios vencimientos en un aviso (spec 18)', () => {
   const TITULOS = ['Fin de año A', 'Fin de año B', 'Fin de año C', 'Enero', 'Febrero A', 'Febrero B'];
   const GRUPOS = ['Vencen el 31/12/2026', 'Vence el 31/01/2027', 'Vencen el 28/02/2027'];
   const aviso = (datasets, cambios = {}) => nota({ gestion: 'externa', datasets, ...cambios });
-  // Las filas de grupo del HTML: una celda a todo el ancho (colspan 4) con "Vence el …" o "Vencen el …"
+  // Las filas de grupo del HTML: una celda a todo el ancho (colspan 5 en el aviso externo) con "Vence el …" o "Vencen el …"
   const gruposDelHtml = (html) => [...html.matchAll(/<td colspan="(\d+)" style="[^"]*">((?:Vence|Vencen) el \d{2}\/\d{2}\/\d{4})<\/td>/g)]
     .map(m => [Number(m[1]), m[2]]);
 
@@ -309,9 +495,9 @@ describe('varios vencimientos en un aviso (spec 18)', () => {
     const [proximos] = aviso(desordenados()).secciones;
     assert.deepEqual(proximos.filas.map(f => f.valores[0]), TITULOS);
     assert.deepEqual(proximos.filas.map(f => f.grupo), [GRUPOS[0], null, null, GRUPOS[1], GRUPOS[2], null]);
-    // Siguen siendo las 4 columnas de siempre: la fila de grupo no cambia las celdas de ningún dataset
-    assert.deepEqual(proximos.columnas, ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Datos solicitados']);
-    assert.ok(proximos.filas.every(f => f.valores.length === 4));
+    // Siguen siendo las 5 columnas del aviso externo: la fila de grupo no cambia las celdas de ningún dataset
+    assert.deepEqual(proximos.columnas, ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados']);
+    assert.ok(proximos.filas.every(f => f.valores.length === 5));
   });
 
   it('singular con un solo dataset en ese vencimiento, plural con más de uno', () => {
@@ -321,9 +507,9 @@ describe('varios vencimientos en un aviso (spec 18)', () => {
     assert.deepEqual(dos.secciones[0].filas.map(f => f.grupo), ['Vence el 31/12/2026', 'Vence el 31/01/2027']);
   });
 
-  it('HTML: una fila a todo el ancho (colspan 4) justo antes de la fila de su primer dataset', () => {
+  it('HTML: una fila a todo el ancho (colspan 5) justo antes de la fila de su primer dataset', () => {
     const html = renderHtml(aviso(desordenados()));
-    assert.deepEqual(gruposDelHtml(html), GRUPOS.map(g => [4, g]));
+    assert.deepEqual(gruposDelHtml(html), GRUPOS.map(g => [5, g]));
     // Cada fila de grupo va seguida de la fila de su primer dataset, y las filas salen en el orden de la tabla
     for (const [grupo, primero] of [[GRUPOS[0], 'Fin de año A'], [GRUPOS[1], 'Enero'], [GRUPOS[2], 'Febrero A']]) {
       assert.match(html, new RegExp(`${grupo}</td></tr><tr><td style="[^"]*"><a href="[^"]*" style="[^"]*">${primero}</a></td>`), grupo);
@@ -365,8 +551,8 @@ describe('varios vencimientos en un aviso (spec 18)', () => {
     const ANTECEDENTE = { cantidad: 1, primera: '2026-10-01', ultima: '2026-10-01' };
     const datasets = desordenados().map(d => (d.id === 2 ? { ...d, antecedente: ANTECEDENTE } : d));
     const html = renderHtml(aviso(datasets));
-    assert.match(html, new RegExp(`${GRUPOS[0]}</td></tr><tr><td style="[^"]*"><a [^>]*>Fin de año A</a></td>.*?</tr><tr><td colspan="4" style="[^"]*">Antecedente: `));
-    assert.deepEqual([...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1])), [4, 4, 4, 4]);
+    assert.match(html, new RegExp(`${GRUPOS[0]}</td></tr><tr><td style="[^"]*"><a [^>]*>Fin de año A</a></td>.*?</tr><tr><td colspan="5" style="[^"]*">Antecedente: `));
+    assert.deepEqual([...html.matchAll(/<td colspan="(\d+)"/g)].map(m => Number(m[1])), [5, 5, 5, 5]);
   });
 
   it('la sección de vencidos de un aviso no se agrupa: sigue con su orden, sus 7 columnas y sin filas de grupo', () => {
@@ -381,7 +567,7 @@ describe('varios vencimientos en un aviso (spec 18)', () => {
     assert.deepEqual(vencidos.filas.map(f => f.valores[0]), ['Vencido B', 'Vencido A']);
     assert.ok(vencidos.filas.every(f => !f.grupo));
     assert.deepEqual(n.secciones[0].filas.map(f => f.valores[0]), TITULOS);
-    assert.deepEqual(gruposDelHtml(renderHtml(n)), GRUPOS.map(g => [4, g]));
+    assert.deepEqual(gruposDelHtml(renderHtml(n)), GRUPOS.map(g => [5, g]));
   });
 
   it('un aviso con vencidos con más de un vencimiento, y próximos de uno solo, no lleva ninguna fila de grupo', () => {
@@ -483,11 +669,12 @@ describe('texto plano', () => {
 
   // Spec 2026-10-17-fechas-datasets, 9 y 18: cada columna sale como una línea más de la fila, en el orden de la tabla
   it('el aviso: "Datos solicitados" al final, sin fecha, "Situación" ni "Última actualización"', () => {
-    const texto = renderTexto(nota({ gestion: 'externa' }));
+    const texto = renderTexto(nota({ gestion: 'externa', datasets: [dataset({ requiere_nota: 1 })] }));
     assert.ok(texto.includes([
       '- Dataset A (https://datos.comodoro.gov.ar/dataset/a)',
       '    Área responsable: Área Uno',
       '    Frecuencia: Anualmente',
+      '    Requiere nota DGMIT: Sí',
       '    Datos solicitados: Del 01/01/2026 al 30/11/2026',
       ''
     ].join('\n')), texto);
@@ -532,26 +719,62 @@ describe('textos del 14/10/2026', () => {
       'La presente se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar). La información actualizada puede ser remitida a datospublicos@comodoro.gov.ar o mit@comodoro.gov.ar, y será publicada en cumplimiento del Artículo 9° de la mencionada ordenanza.');
   });
 
-  it('el aviso lleva la línea del anexo con la cantidad de hojas; la reiteración no', () => {
+  it('el aviso lleva la línea del anexo con la cantidad de hojas', () => {
     assert.equal(nota().anexo, 'Anexo: reporte de los conjuntos de datos (1 hoja).');
     assert.equal(nota({ datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B' })] }).anexo,
       'Anexo: reporte de los conjuntos de datos (2 hojas).');
-    assert.equal(nota({ tipo: 'reiteracion' }).anexo, null);
   });
 
-  it('la línea del anexo va antes de "Justificación:" en el HTML y en el texto', () => {
-    const linea = 'Anexo: reporte de los conjuntos de datos (1 hoja).';
-    const html = renderHtml(nota());
-    assert.ok(html.includes(linea) && html.indexOf(linea) < html.indexOf('Justificación:'));
-    const texto = renderTexto(nota());
-    assert.ok(texto.includes(linea) && texto.indexOf(linea) < texto.indexOf('Justificación:'));
-    assert.ok(!renderHtml(nota({ tipo: 'reiteracion' })).includes('Anexo:'));
+  it('la línea del anexo va antes de "Justificación:" en el HTML y en el texto, en el aviso y en la reiteración', () => {
+    for (const [tipo, linea] of [
+      ['aviso', 'Anexo: reporte de los conjuntos de datos (1 hoja).'], ['reiteracion', 'Anexo: seguimiento de los conjuntos de datos (1 hoja).']
+    ]) {
+      const html = renderHtml(nota({ tipo }));
+      assert.ok(html.includes(`>${linea}</p>`) && html.indexOf(linea) < html.indexOf('Justificación:'), tipo);
+      const texto = renderTexto(nota({ tipo }));
+      assert.ok(texto.includes(`\n${linea}\n`) && texto.indexOf(linea) < texto.indexOf('Justificación:'), tipo);
+    }
   });
 
-  it('el email del aviso anuncia nota y anexo; el de la reiteración, solo la nota', () => {
+  it('el email del aviso anuncia nota y anexo', () => {
     assert.ok(renderHtml(nota()).includes('>SE ADJUNTAN NOTA Y ANEXO EN PDF</p>'));
     assert.ok(renderTexto(nota()).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\n'));
-    assert.ok(renderHtml(nota({ tipo: 'reiteracion' })).includes('>SE ADJUNTA NOTA EN PDF</p>'));
+  });
+});
+
+// La reiteración lleva su anexo: una hoja del Seguimiento por dataset (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3)
+describe('anexo de la reiteración', () => {
+  it('la reiteración anuncia el anexo de seguimiento (N hojas / 1 hoja) y su primera línea es SE ADJUNTAN NOTA Y ANEXO EN PDF; autorización y auditoría siguen con SE ADJUNTA NOTA EN PDF', () => {
+    const CON_ANEXO = '<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTAN NOTA Y ANEXO EN PDF</p>';
+    for (const gestion of ['interna', 'externa']) {
+      const una = nota({ tipo: 'reiteracion', gestion });
+      assert.equal(una.anexo, 'Anexo: seguimiento de los conjuntos de datos (1 hoja).', gestion);
+      // Cuenta todos los datasets de la nota: los próximos a vencer y los vencidos
+      const tres = nota({
+        tipo: 'reiteracion', gestion,
+        datasets: [dataset(), dataset({ id: 2, titulo: 'Dataset B', vencimiento: '2026-10-31' }), dataset({ id: 3, titulo: 'Dataset C' })]
+      });
+      assert.equal(tres.anexo, 'Anexo: seguimiento de los conjuntos de datos (3 hojas).', gestion);
+      assert.equal(una.avisoAdjunto, 'SE ADJUNTAN NOTA Y ANEXO EN PDF', gestion);
+      const html = renderHtml(una);
+      assert.ok(html.includes(CON_ANEXO) && html.indexOf(CON_ANEXO) < html.indexOf('REF.:'), gestion);
+      assert.ok(renderTexto(una).startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\nREF.: "Reiteración – '), gestion);
+    }
+
+    const autorizacion = construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25',
+      firma: { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular' }, presentante: null, leyenda: null },
+      autorizacion: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', desde: '2026-11-26', hasta: '2027-01-14' }
+    });
+    const auditoria = construirNotaDeAuditoria({ numero: 15, anio: 2026, fecha: '2026-10-19', nuevos: [], reiterados: [], config });
+    for (const otra of [autorizacion, auditoria]) {
+      assert.equal(otra.avisoAdjunto, 'SE ADJUNTA NOTA EN PDF', otra.tipo);
+      assert.equal(otra.anexo, null, otra.tipo);
+      const html = renderHtml(otra);
+      assert.ok(html.includes('<p style="margin:0 0 20px;color:#800000;font-weight:bold;">SE ADJUNTA NOTA EN PDF</p>'), otra.tipo);
+      assert.ok(!html.includes('Anexo:') && !html.includes('ANEXO'), otra.tipo);
+      assert.ok(renderTexto(otra).startsWith('SE ADJUNTA NOTA EN PDF\n\n'), otra.tipo);
+    }
   });
 });
 
@@ -1103,6 +1326,59 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
       ['Datos al', '30/11/2025', '31/12/2025'],
       ['Recibido el', 'Sin dato', '05/01/2026']
     ]);
+  });
+
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3): el rótulo con Sí, No o —, justo después del
+  // tipo de gestión. De la base llega 0 o 1 como número: el 0 es un valor (No), no un campo vacío.
+  describe('«Requiere nota DGMIT»', () => {
+    const alta = (requiereNota) => auditoria({
+      nuevos: [{ ...ALTA, datos_nuevos: { ...ALTA.datos_nuevos, ...(requiereNota === undefined ? {} : { requiere_nota: requiereNota }) } }]
+    }).detalles.secciones[0].filas.map(f => f.valores);
+
+    it('la nota de auditoría lista «Requiere nota DGMIT: Sí» en un alta', () => {
+      assert.deepEqual(alta(1), [
+        ['Título', 'Dataset Nuevo'], ['Área Responsable', 'Área Uno'], ['Tema Principal', 'Economía y Finanzas'],
+        ['Frecuencia', 'Anualmente'], ['Tipo de Gestión', 'Externa'], ['Requiere nota DGMIT', 'Sí'], ['Formatos del Dataset', 'CSV'],
+        ['URL en Portal', 'https://datos.comodoro.gov.ar/dataset/nuevo']
+      ]);
+    });
+
+    it('el 0 es «No», no un campo vacío; sin dato (null) o sin la clave, no se lista', () => {
+      assert.ok(alta(0).some(([campo, valor]) => campo === 'Requiere nota DGMIT' && valor === 'No'));
+      assert.ok(!alta(null).some(([campo]) => campo === 'Requiere nota DGMIT'));
+      assert.ok(!alta(undefined).some(([campo]) => campo === 'Requiere nota DGMIT'));
+    });
+
+    it('una baja lista el dato del dataset que se daría de baja', () => {
+      const baja = { ...BAJA, datos_anteriores: { ...BAJA.datos_anteriores, tipo_gestion: 'externa', requiere_nota: 0 } };
+      const filas = auditoria({ nuevos: [], reiterados: [baja] }).detalles.secciones[0].filas.map(f => f.valores);
+      assert.ok(filas.some(([campo, valor]) => campo === 'Requiere nota DGMIT' && valor === 'No'), JSON.stringify(filas));
+    });
+
+    it('una modificación muestra el valor anterior y el nuevo: de Sí a No, y de — a Sí', () => {
+      const edicion = (anterior, nuevo) => auditoria({
+        nuevos: [modificacion({ datos_anteriores: { titulo: 'X', requiere_nota: anterior }, datos_nuevos: { titulo: 'X', requiere_nota: nuevo } })]
+      }).detalles.secciones[0].filas.map(f => f.valores);
+      assert.deepEqual(edicion(1, 0), [['Requiere nota DGMIT', 'Sí', 'No']]);
+      assert.deepEqual(edicion(0, 1), [['Requiere nota DGMIT', 'No', 'Sí']]);
+      assert.deepEqual(edicion(null, 1), [['Requiere nota DGMIT', '—', 'Sí']]);
+      assert.deepEqual(edicion(1, null), [['Requiere nota DGMIT', 'Sí', '—']]);
+      // Sin diferencia (también 1 contra "1"), no hay fila
+      assert.deepEqual(edicion(1, 1), [['—', 'Sin diferencias registradas', '—']]);
+    });
+
+    it('un cambio propuesto antes de que existiera el dato (sin la clave en datos_nuevos) no lo muestra', () => {
+      const [detalle] = auditoria({
+        nuevos: [modificacion({ datos_anteriores: { titulo: 'X', requiere_nota: 1 }, datos_nuevos: { titulo: 'X', descripcion: 'Nueva' } })]
+      }).detalles.secciones;
+      assert.ok(!detalle.filas.some(f => f.valores[0] === 'Requiere nota DGMIT'));
+    });
+
+    it('sale en el HTML y en el texto de la nota', () => {
+      const n = auditoria({ nuevos: [{ ...ALTA, datos_nuevos: { ...ALTA.datos_nuevos, requiere_nota: 1 } }] });
+      assert.ok(renderHtml(n).includes('>Requiere nota DGMIT</td>'));
+      assert.ok(renderTexto(n).includes('Requiere nota DGMIT'));
+    });
   });
 
   it('detalle de un alta (los datos cargados) y de una baja (el dataset que se daría de baja)', () => {

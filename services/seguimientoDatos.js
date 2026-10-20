@@ -58,8 +58,9 @@ const aNota = (n) => ({
 
 const aDataset = (d) => ({
   id: d.id, titulo: d.titulo, area: d.area, area_superior: d.area_superior ?? null, area_id: d.area_id, tipo_gestion: d.tipo_gestion,
-  frecuencia: d.frecuencia, meses: d.meses ?? null, proxima: d.proxima ?? null, datos_al: d.datos_al ?? null, ultima: d.ultima ?? null,
-  tipo_pedido: d.tipo_pedido ?? null, url_dataset: d.url_dataset ?? null, activo: Boolean(d.activo), alta: momento(d.alta_ts)
+  requiere_nota: d.requiere_nota ?? null, frecuencia: d.frecuencia, meses: d.meses ?? null, proxima: d.proxima ?? null,
+  datos_al: d.datos_al ?? null, ultima: d.ultima ?? null, tipo_pedido: d.tipo_pedido ?? null, url_dataset: d.url_dataset ?? null,
+  activo: Boolean(d.activo), alta: momento(d.alta_ts)
 });
 
 // Reparte las filas de auditoría entre los datasets: datasetsDeCambio dice de qué datasets es cada cambio (o alta unida). Cada
@@ -84,7 +85,7 @@ export const fuentesDe = async (ids = null) => {
   if (pedidos && pedidos.length === 0) return new Map();
 
   const [datasets] = await pool.query(
-    `SELECT d.id, d.titulo, a.nombre area, a.area_superior, d.area_id, d.tipo_gestion, f.nombre frecuencia, f.meses,
+    `SELECT d.id, d.titulo, a.nombre area, a.area_superior, d.area_id, d.tipo_gestion, d.requiere_nota, f.nombre frecuencia, f.meses,
        DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') proxima, DATE_FORMAT(d.datos_al, '%Y-%m-%d') datos_al,
        DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') ultima, d.tipo_pedido, d.url_dataset, d.activo,
        UNIX_TIMESTAMP(d.created_at) alta_ts

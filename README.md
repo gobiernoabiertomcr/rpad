@@ -106,16 +106,32 @@ Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada data
 - **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último aviso.
 - **Un dataset** (`seguimiento.html?id=N`):
   - la ficha, con **Descargar PDF** y **Ver en el portal**;
-  - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (no queda registrada) y a los 40 días el RPAD le anticipa al área por email que va a recibirla; en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
+  - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (no queda registrada) y a los 40 días el RPAD le anticipa al área por email que va a recibirla (si el dataset tiene "Requiere nota DGMIT" en "No", no hay nota formal ni email de anticipo: el circuito dice "No hace falta nota formal" y "Sin nota formal"); en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
   - **los últimos 12 meses**: una cinta con los ciclos, lo que estuvo vencido, los vencimientos y las marcas de cada movimiento;
   - los **movimientos** (altas, actualizaciones, cambios en la ficha, propuestas, Notas Digitales, emails y bajas), con filtros por tipo, filas que se despliegan para ver el detalle y los hitos de vencimiento entre ellas.
 - **Ciclos:** un ciclo es el tiempo en que rige un vencimiento. Una actualización que mueve la próxima y "Cargado en el portal" lo cierra; reprogramar la próxima antes de que venza lo mueve dentro del mismo ciclo y hacerlo después de vencido lo cierra como reprogramado. Cada aviso se asigna al ciclo del vencimiento que informa (las notas) o al que regía cuando se envió (los emails).
 - **Lenguaje neutro:** el atraso muchas veces depende de que no se mandó la nota formal, no del área. Por eso el Seguimiento dice "Vencido hace N días" o "Estuvo vencido N días" (y la insignia, "Vencido"), nunca "sin entregar" ni "atrasado". El resto del sitio conserva "Atrasado" y "Sin respuesta del área".
-- **PDF de una hoja** (A4, con el estilo del anexo de las Notas Digitales): ficha con QR al portal, avisos del ciclo abierto, la cinta y los últimos 8 movimientos. Se descarga como `Seguimiento - <título> - <AAAA-MM-DD>.pdf`.
+- **PDF de una hoja** (A4, con el estilo del anexo de las Notas Digitales): ficha con QR al portal (la de un externo, con "Requiere nota DGMIT"), avisos del ciclo abierto, la cinta y los últimos 8 movimientos. Se descarga como `Seguimiento - <título> - <AAAA-MM-DD>.pdf`. Esta misma hoja, una por dataset, es el anexo de cada reiteración de las Notas Digitales.
 - **Desde cuándo hay registro:** los envíos quedan registrados desde el 06/12/2025 y los cambios desde el 26/01/2026; antes de esas fechas no hay registro y no se reconstruye. Una aclaración al pie lo dice.
 - **Gestión de Datasets** suma, en cada fila, el ícono "Ver seguimiento" que abre el de ese dataset.
 - **Dónde está la regla:** `services/seguimientoReglas.js` (puro) y `services/seguimientoCinta.js`; la pantalla y el PDF dibujan lo que calcula el servidor.
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-20-seguimiento-dataset-design.md`.
+
+## Requiere nota DGMIT y anexo de la reiteración
+
+Dos cambios de las Notas Digitales que van juntos.
+
+**Requiere nota DGMIT.** Algunos datasets de gestión externa no se le piden a ningún área: los datos se sacan de una fuente pública (el TMDA, de la web de Vialidad Nacional; la cantidad de empleados municipales, del Boletín Oficial). Para esos la DGMIT no tiene que mandar una nota formal. Cada dataset externo tiene ahora el dato **"Requiere nota DGMIT"** (Sí o No):
+
+- **Dónde se carga:** en el formulario del dataset (`admin.html`, junto a "Tipo de gestión"; solo con gestión externa y obligatorio) y, con doble verificación, como cualquier otro cambio. La lista de Gestión de Datasets suma el filtro "Requiere nota" (Todos, Sí y No). En gestión interna no existe el dato.
+- **Las notas siguen informando todo como hoy** y solo agregan el dato: el aviso externo suma la columna "Requiere nota DGMIT" (5 columnas) y la reiteración externa también (7 columnas, con la situación de hoy debajo de la fecha de vencimiento). Un dataset con "No" no desaparece de ninguna nota. Las notas internas no cambian.
+- **Email de los 40 días al área:** no sale para los datasets con "No", porque anticipa una nota formal que no les llega.
+- **Seguimiento:** la ficha suma el dato y el circuito de un dataset con "No" dice "No hace falta nota formal" y "Sin nota formal: los datos se obtienen de la fuente".
+- **Carga inicial:** `database/updates/migracion-requiere-nota-datos.sql` (45 datasets externos: 35 con Sí y 10 con No). Ver [Migración: Requiere nota DGMIT](#migración-requiere-nota-dgmit).
+
+**Anexo de la reiteración.** Cada reiteración (interna o externa) viaja ahora con un segundo PDF, el **anexo**: una hoja A4 por dataset de la nota, en el orden de la tabla, que es la misma hoja que se descarga desde Herramientas → Seguimiento (cuántas veces avisó el RPAD, desde cuándo está vencido, qué se pide). Así la nota prueba por sí sola que ya se avisó. Se genera junto con la nota y queda guardado en el libro: no se regenera nunca. Si el anexo no se puede generar, la reiteración no sale y se reintenta en la próxima corrida. Las notas ya generadas no cambian: las reiteraciones anteriores siguen sin anexo.
+
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-20-requiere-nota-y-anexo-reiteracion-design.md`.
 
 ## Estructura del proyecto
 
@@ -146,8 +162,9 @@ rpad/
 │   ├── avisosDiariosService.js    # Aviso a las áreas y recordatorio de cambios pendientes a quienes pueden auditar (solo días hábiles)
 │   ├── emailTemplates.js          # Plantillas HTML de los emails, todas con el mismo marco (marcoEmail)
 │   ├── fechasDatasetReglas.js     # Reglas puras de las fechas de un dataset: pedido, opciones de próxima, estado y tasa
-│   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF de una hoja
-│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
+│   ├── requiereNotaReglas.js      # Reglas puras de "Requiere nota DGMIT": validación, normalización y texto (Sí, No o —)
+│   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF (de una hoja, o de N para un anexo)
+│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF, anexo del aviso y anexo de la reiteración (el Seguimiento de cada dataset)
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD
 │   └── updates/                   # Scripts de migración
@@ -160,7 +177,9 @@ rpad/
 │       ├── migracion-que-se-solicita-datos.sql   # Segunda entrega: carga inicial de los textos
 │       ├── migracion-fechas-datasets.sql         # Fechas de los datasets: estructura (va antes del código)
 │       ├── migracion-fechas-datasets-datos.sql   # Fechas de los datasets: "Datos al" y tipo de pedido de los datasets (después de la estructura y antes del código)
-│       └── migracion-fechas-datasets-textos.sql  # Fechas de los datasets: "Qué se solicita" sin el período (después de subir el código, antes del Restart)
+│       ├── migracion-fechas-datasets-textos.sql  # Fechas de los datasets: "Qué se solicita" sin el período (después de subir el código, antes del Restart)
+│       ├── migracion-requiere-nota.sql           # Requiere nota DGMIT: estructura, la columna datasets.requiere_nota (va antes del código)
+│       └── migracion-requiere-nota-datos.sql     # Requiere nota DGMIT: carga inicial de los 45 externos (después de la estructura y antes del código; una sola vez)
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -244,7 +263,7 @@ Desde **phpMyAdmin** en cPanel:
 | `frecuencias` | Catálogo de frecuencias de actualización |
 | `formatos` | Catálogo de formatos de archivo (CSV, XLSX, etc.) con distinción de habituales |
 | `areas` | Áreas responsables con contactos, emails y artículos gramaticales (el/la) |
-| `datasets` | Registro principal de datasets (sin columnas de formato fijas), con el texto opcional "Qué se solicita" (`que_se_solicita`), "Datos al" (`datos_al`) y el tipo de pedido (`tipo_pedido`) |
+| `datasets` | Registro principal de datasets (sin columnas de formato fijas), con el texto opcional "Qué se solicita" (`que_se_solicita`), "Datos al" (`datos_al`), el tipo de pedido (`tipo_pedido`) y, en los externos, si requiere nota DGMIT (`requiere_nota`: 1 Sí, 0 No, NULL sin dato) |
 | `dataset_formatos` | Tabla intermedia para la relación muchos-a-muchos entre datasets y formatos |
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
 | `historial_actualizaciones` | Log de actualizaciones realizadas: carga en el portal, "Datos al", fecha de recepción, próxima nueva, el cambio que la registró y el vencimiento que cumplió |
@@ -342,9 +361,9 @@ Los siete emails de aviso anteriores (interno y externo) dejan de salir apenas s
 Qué cambia en esta entrega:
 
 - **El aviso informa solo datasets a vencer** (todavía no vencidos). Un dataset vencido que nunca tuvo aviso ya no va en el aviso: entra en la **reiteración** mensual, con "Sin aviso previo" en la columna "Informado en".
-- **Cada aviso viaja con un segundo PDF, el anexo**: una hoja A4 por dataset, con la descripción, la ficha (con código QR al portal), "Qué se solicita", las observaciones y el contacto del área. Se genera junto con la nota y se guarda en el libro. Las reiteraciones no llevan anexo.
+- **Cada aviso viaja con un segundo PDF, el anexo**: una hoja A4 por dataset, con la descripción, la ficha (con código QR al portal), "Qué se solicita", las observaciones y el contacto del área. Se genera junto con la nota y se guarda en el libro. (Desde la entrega de [Requiere nota DGMIT y anexo de la reiteración](#requiere-nota-dgmit-y-anexo-de-la-reiteración), la reiteración también lleva su anexo, con el Seguimiento de cada dataset.)
 - **Campo nuevo "Qué se solicita"** en los datasets (ver [Campo "Qué se solicita"](#campo-qué-se-solicita-de-los-datasets)), con doble verificación; se muestra en la página pública del dataset y en el anexo.
-- **Correos**: botón "Ver anexo" en Vista previa y prueba (solo para avisos) y botón "Anexo" en cada aviso del libro.
+- **Correos**: botón "Ver anexo" en Vista previa y prueba (para avisos y, desde la entrega de Requiere nota DGMIT, también para reiteraciones) y botón "Anexo" en cada aviso o reiteración con anexo del libro.
 - **Textos**: se quitaron las menciones a WhatsApp y las notas dicen "En tal sentido, solicito…".
 - **Revisión de cambios**: el campo "Observaciones" muestra el valor anterior y el nuevo.
 
@@ -414,6 +433,39 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 4. **Subir todos los archivos**, en este orden: primero los del servidor, después `api.js` y los scripts, y al final los HTML.
 5. **SQL de textos:** `migracion-fechas-datasets-textos.sql` (saca el período de los 26 "Qué se solicita", porque la nota nueva ya dice los "Datos solicitados"). Va después de subir los archivos y justo antes del Restart. Cada `UPDATE` cambia el texto solo si sigue siendo el original del 17/10/2026, así que tienen que ser **26 filas afectadas**. Un `UPDATE` con 0 filas es un texto que cambió después: no se pisa, se revisa a mano. La cabecera del archivo trae la consulta que lista esos casos.
 6. **Restart** de la app.
+
+### Migración: Requiere nota DGMIT
+
+⚠️ Requisito: las migraciones anteriores aplicadas (la de fechas de los datasets incluida). No hay dependencias nuevas de npm (el anexo de la reiteración usa `qrcode`, que ya está instalada desde el anexo de los avisos). Se despliega en **un solo kit** (el dato y su carga, las notas y el email de los 40 días, el Seguimiento y el anexo de la reiteración), con backup de la base y de los archivos antes de empezar y fuera del horario de los crons (8:15 y 14:00). Los SQL se corren en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada). El orden es: **SQL de estructura → SQL de datos → subir todos los archivos → Restart**. Las dos migraciones van **antes** del código: sin la columna `requiere_nota` fallan las notas, el aviso a las áreas y la aprobación de cambios de datasets.
+
+1. **Consultas previas, de solo lectura.**
+   ```sql
+   -- Externos activos: tienen que ser 45, los de la carga inicial (35 con Sí y 10 con No)
+   SELECT COUNT(*) FROM datasets WHERE activo = 1 AND tipo_gestion = 'externa';
+   -- Altas y ediciones de datasets pendientes de aprobación: el código nuevo no les agrega el dato
+   SELECT id, tipo_cambio, dataset_id FROM cambios_pendientes WHERE estado = 'pendiente' AND tipo_cambio IN ('crear', 'editar');
+   ```
+   Si la primera da otro número (un externo creado después de la lista), ese dataset queda sin dato: la verificación del paso 3 lo lista y se completa desde el formulario, y mientras tanto se comporta como "Sí". Los cambios pendientes de la segunda consulta se pueden aprobar o rechazar antes de empezar; los que se aprueben después no pisan el dato (una edición no lo toca) y un alta queda sin dato hasta que se edite.
+2. **SQL de estructura:** `migracion-requiere-nota.sql`. Solo agrega la columna `datasets.requiere_nota` (en `NULL` para todos); el código anterior sigue funcionando con ella y, si se corta a mitad, se puede volver a correr. Después, esta consulta tiene que dar **1**:
+   ```sql
+   SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'datasets' AND column_name = 'requiere_nota';
+   ```
+3. **SQL de datos:** `migracion-requiere-nota-datos.sql` (45 `UPDATE`, uno por dataset externo: 35 con Sí y 10 con No, según la planilla de carga). **Se corre una sola vez**: después el dato cambia desde la aplicación, con doble verificación. Cada `UPDATE` escribe solo si el dataset sigue siendo externo y todavía no tiene dato, así que repetirlo no pisa un cambio aprobado. Después, esta consulta (la del final del archivo) tiene que dar **0 filas**:
+   ```sql
+   SELECT id, titulo FROM datasets WHERE activo = 1 AND tipo_gestion = 'externa' AND requiere_nota IS NULL;
+   ```
+   y esta, **0 → 10** y **1 → 35** (los datasets de gestión interna quedan en `NULL`: no aparecen):
+   ```sql
+   SELECT requiere_nota, COUNT(*) FROM datasets WHERE activo = 1 AND tipo_gestion = 'externa' GROUP BY requiere_nota;
+   ```
+4. **Subir todos los archivos**, en este orden: primero los del servidor, después `api.js` y los scripts, y al final los HTML.
+5. **Restart** de la app (Setup Node.js App). No hace falta Run NPM Install.
+6. **Controles después del despliegue:**
+   - **Correos → Vista previa y pruebas**, tipo Reiteración y gestión externa: la tabla trae la columna "Requiere nota DGMIT" y "Ver anexo" baja un PDF con una hoja por dataset. "Enviarme una prueba" tiene que llegar a las casillas de prueba con **2 adjuntos** (`Nota-Digital-PRUEBA.pdf` y `Anexo-Nota-Digital-PRUEBA.pdf`).
+   - **Gestión de Datasets**: el formulario de un dataset externo muestra "Requiere nota DGMIT" con su valor (en uno nuevo viene vacío y es obligatorio) y la lista tiene el filtro "Requiere nota".
+   - **Seguimiento** de un dataset con "No" (por ejemplo, el 74): la ficha dice "Requiere nota DGMIT: No" y el circuito, "No hace falta nota formal".
+
+**Si algo sale mal:** volver a subir los archivos del backup y Restart. La columna puede quedar: es aditiva y el código anterior no la usa. Las notas ya generadas (con su anexo) quedan guardadas tal cual.
 
 ### Migración desde v1.4.0 a v1.5.0
 
@@ -558,11 +610,11 @@ Si se cambia el horario de una tarea existente, hacerlo fuera de las 8:00–8:15
 
 El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales**:
 
-- **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento. Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
+- **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento (sin los datasets con "Requiere nota DGMIT" en "No": ese email anticipa una nota formal que no les llega). Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
 - **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
-- **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Lleva solo el PDF de la nota, sin anexo.
+- **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset, la del Seguimiento de ese dataset). Si el anexo no se puede generar, la reiteración no sale y se reintenta en la próxima corrida. Las reiteraciones generadas antes del anexo siguen sin él.
 - **Nota de auditoría**: pide a la Dirección General la auditoría de los cambios pendientes que el firmante no puede auditar (los propuso él o está de licencia) y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más: recordatorio el día 1 y el día 2 a las 14:00, nota el día 3 a las 8:15). Sale una sola por día, después de avisos y reiteraciones, y se reitera cada 5 días hábiles mientras sigan pendientes. Comparte el interruptor de **envío automático** con las demás notas y necesita la configuración completa y un Para de auditoría (Correos → Configuración → Notas de auditoría): con el envío automático apagado, la configuración incompleta o sin Para de auditoría no sale ninguna nota, y esos cambios siguen con los recordatorios de las 14:00 en lugar de quedar sin aviso.
-- Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
+- Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso y la reiteración, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
 - El envío automático (también el de la nota de auditoría) arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 
@@ -670,6 +722,14 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Requiere nota DGMIT y anexo de la reiteración (2026-10)
+- Dato nuevo en los datasets de gestión externa, "Requiere nota DGMIT" (Sí o No): se carga desde la planilla de los 45 externos y se edita con doble verificación; la lista de Gestión de Datasets suma el filtro "Requiere nota"
+- El aviso externo suma la columna "Requiere nota DGMIT" (5 columnas) y la reiteración externa también (7 columnas, con la situación de hoy debajo de la fecha de vencimiento); las notas internas no cambian y un dataset con "No" sigue saliendo en todas las notas
+- El email de los 40 días al área no sale para los datasets con "No", porque anticipa una nota formal que no les llega
+- Seguimiento: la ficha suma el dato y, con "No", el circuito dice "No hace falta nota formal"
+- Cada reiteración (interna y externa) lleva un anexo en PDF con la hoja del Seguimiento de cada dataset, y el email dice "SE ADJUNTAN NOTA Y ANEXO EN PDF"; en Correos, "Ver anexo" y la prueba también valen para la reiteración. Las notas ya generadas no cambian
+- Dos SQL (estructura y carga inicial) antes de subir el código; Restart, sin Run NPM Install
 
 ### Seguimiento del dataset (2026-10)
 - Página nueva, Herramientas → Seguimiento, para todos los roles con sesión: por dataset, la ficha, los avisos del ciclo abierto (el circuito del RPAD a DGMIT, de ahí al área y el email de anticipo a los 40 días), una cinta de los últimos 12 meses y la lista de movimientos (altas, actualizaciones, cambios, propuestas, Notas Digitales, emails a DGMIT y al área, bajas) con filtros, detalle y hitos de vencimiento

@@ -14,12 +14,14 @@ export const VENTANA_DIAS = { interna: 60, externa: 40 };
 export const DIAS_PARA_REITERAR = 20;
 export const TIPOS_EMAIL_REEMPLAZADOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido'];
 
-// Con lo que hace falta para el pedido (conPedido): la gestión (para el tipo sugerido), los meses, Datos al y el tipo
+// Con lo que hace falta para el pedido (conPedido): la gestión (para el tipo sugerido), los meses, Datos al y el tipo. Y
+// «Requiere nota DGMIT» (0, 1 o NULL), la columna de las tablas externas (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5):
+// llega así a la selección del aviso, a la de la reiteración y a los pendientes en su fecha
 const COLUMNAS_DATASET = `
   d.id, d.titulo, d.url_dataset, d.area_id, a.nombre AS area_nombre, f.nombre AS frecuencia_nombre,
   DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') AS ultima_actualizacion,
   DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS vencimiento,
-  d.tipo_gestion, f.meses, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al, d.tipo_pedido`;
+  d.tipo_gestion, f.meses, DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al, d.tipo_pedido, d.requiere_nota`;
 const DESDE_DATASETS = `
   FROM datasets d
   JOIN frecuencias f ON f.id = d.frecuencia_id

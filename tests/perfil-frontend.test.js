@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
+import { textoRequiereNota } from '../services/requiereNotaReglas.js';
 
 const escaparHtml = (texto) => String(texto ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // dd/mm/aaaa en UTC, para que los tests no dependan de la zona horaria de la máquina
@@ -1292,5 +1293,63 @@ describe('perfil.js: las fechas de los datasets', () => {
       assert.ok(!html.includes('Tipo de pedido') && !html.includes('Datos al'));
       assert.ok(html.includes('<dd>31/07/2026</dd>'));
     });
+  });
+});
+
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3): el rótulo con Sí y No en la comparación. De la
+// base llega 0 o 1 como número (no como booleano): el 0 es un valor y se muestra «No»
+describe('perfil.js: «Requiere nota DGMIT»', () => {
+  it('el rótulo se muestra tal cual', () => {
+    assert.equal(cargarPerfil().etiquetaDeCampo('Requiere nota DGMIT'), 'Requiere nota DGMIT');
+  });
+
+  it('la comparación muestra «Requiere nota DGMIT» con Sí y No', () => {
+    const contexto = cargarPerfil();
+    // Alta: el dato nuevo, justo después del tipo de gestión
+    const alta = contexto.htmlDeComparacion({
+      tipo_cambio: 'crear', datos_nuevos: { titulo: 'Nuevo', tipo_gestion: 'externa', requiere_nota: 1, tipo_pedido_nombre: 'Foto al corte' }
+    });
+    assert.ok(alta.includes('<dt>Requiere nota DGMIT</dt><dd>Sí</dd>'), alta);
+    assert.ok(alta.indexOf('Tipo de gestión') < alta.indexOf('Requiere nota DGMIT') && alta.indexOf('Requiere nota DGMIT') < alta.indexOf('Tipo de pedido'));
+    // Baja: el 0 es «No», no un campo vacío que se omite
+    const baja = contexto.htmlDeComparacion({ tipo_cambio: 'eliminar', datos_anteriores: { titulo: 'Viejo', tipo_gestion: 'externa', requiere_nota: 0 } });
+    assert.ok(baja.includes('<dt>Requiere nota DGMIT</dt><dd>No</dd>'), baja);
+    // Edición: los textos que manda el servidor (campos_modificados), el viejo tachado y el nuevo resaltado
+    const edicion = contexto.htmlDeComparacion({
+      tipo_cambio: 'editar', campos_modificados: [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: 'No' }]
+    });
+    assert.ok(edicion.includes('<dt>Requiere nota DGMIT</dt><dd><div class="pf-par"><del>Sí</del><ins>No</ins></div></dd>'), edicion);
+  });
+
+  it('sin dato (null), sin la clave (un cambio viejo) o con un valor que no es 0 ni 1, el renglón no se inventa', () => {
+    const contexto = cargarPerfil();
+    for (const datos of [{ titulo: 'X', requiere_nota: null }, { titulo: 'X' }, { titulo: 'X', requiere_nota: 'x' }, { titulo: 'X', requiere_nota: 2 }]) {
+      assert.ok(!contexto.htmlDeComparacion({ tipo_cambio: 'crear', datos_nuevos: datos }).includes('Requiere nota DGMIT'), JSON.stringify(datos));
+    }
+  });
+
+  it('textoDeRequiereNota es una copia de textoRequiereNota del servidor: dice lo mismo, y vacío donde el servidor dice "sin dato"', () => {
+    const contexto = cargarPerfil();
+    for (const valor of [1, 0, true, false, '1', '0', null, undefined, '', 2, -1, 'x', 'Sí', NaN, [], {}]) {
+      assert.equal(contexto.textoDeRequiereNota(valor), textoRequiereNota(valor, ''), String(valor));
+    }
+  });
+
+  it('el 0/1 como Sí/No es solo de este campo: en los demás, un 0 sigue siendo el texto que es', () => {
+    const contexto = cargarPerfil();
+    const alta = contexto.htmlDeComparacion({ tipo_cambio: 'crear', datos_nuevos: { titulo: 'X', observaciones: 0, descripcion: 1 } });
+    assert.ok(alta.includes('<dt>Observaciones</dt><dd>0</dd>') && alta.includes('<dt>Descripción</dt><dd>1</dd>'), alta);
+    assert.ok(!alta.includes('Sí') && !alta.includes('No</dd>'));
+  });
+
+  it('la fila abierta de una edición que solo cambia este dato, y su resumen en la fila cerrada', () => {
+    const contexto = cargarPerfil();
+    const cambio = {
+      id: 31, tipo_cambio: 'editar', usuario_id: 2, usuario_nombre: 'Ana', dataset_titulo: 'Arbolado urbano', estado: 'pendiente',
+      created_at: '2026-10-16T13:32:00Z', campos_modificados: [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: 'No' }], datos_nuevos: { requiere_nota: 0 }
+    };
+    assert.equal(contexto.resumenDelCambio(cambio), '<b>Requiere nota DGMIT</b> de Sí a No');
+    const html = contexto.htmlDeFila(cambio, 'revisar', { abierto: true, esEditor: false, idUsuario: 1 });
+    assert.ok(html.includes('<del>Sí</del><ins>No</ins>'));
   });
 });

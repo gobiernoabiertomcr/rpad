@@ -115,6 +115,49 @@ describe('aviso a las áreas (spec 4.2)', () => {
     assert.deepEqual(await servicio.datasetsExternosPorArea('2026-10-16'), []);
   });
 
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.6: el email de los 40 días anticipa la nota formal; un dataset que no
+  // requiere nota (0) no lo recibe, y el Sí (1) y el sin dato (NULL) siguen como hasta ahora
+  it('datasetsExternosPorArea deja afuera requiere_nota = 0 y conserva 1 y NULL', async () => {
+    const { areaId } = await prepararArea();
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'A requiere nota', requiereNota: 1 });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'B no requiere nota', requiereNota: 0 });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'C sin dato', requiereNota: null });
+
+    const [area] = await servicio.datasetsExternosPorArea('2026-10-16');
+
+    assert.deepEqual(area.datasets.map(d => d.titulo), ['A requiere nota', 'C sin dato']);
+  });
+
+  it('un área cuyos datasets del día no requieren nota no recibe el email de los 40 días ni queda en el log', async () => {
+    const { areaId, email } = await prepararArea();
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'Solo no requiere nota', requiereNota: 0 });
+
+    assert.deepEqual(await servicio.datasetsExternosPorArea('2026-10-16'), []);
+    const resultado = await servicio.enviarAvisoAreas({ hoy: '2026-10-16' });
+
+    assert.equal(resultado.sin_datasets, true);
+    assert.deepEqual(resultado.enviados, []);
+    assert.equal(para(await mailpit.mensajes(), email).length, 0);
+    assert.equal((await query("SELECT COUNT(*) AS n FROM notificaciones_log WHERE tipo = 'area-aviso-40'"))[0].n, 0);
+  });
+
+  it('el email de los 40 días sale solo con los datasets que requieren nota (o sin dato) y el log los registra', async () => {
+    const { areaId, email } = await prepararArea();
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'A requiere nota', requiereNota: 1 });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'B no requiere nota', requiereNota: 0 });
+    await crearDataset({ gestion: 'externa', vencimiento: '2026-11-25', areaId, titulo: 'C sin dato', requiereNota: null });
+
+    const resultado = await servicio.enviarAvisoAreas({ hoy: '2026-10-16' });
+
+    assert.equal(resultado.enviados[0].cantidad, 2);
+    const [mensaje] = para(await mailpit.esperar(m => m.To.some(t => t.Address === email)), email);
+    const texto = textoVisible(await mailpit.html(mensaje.ID));
+    assert.ok(texto.includes('A requiere nota') && texto.includes('C sin dato'), texto);
+    assert.ok(!texto.includes('B no requiere nota'), texto);
+    const [log] = await query("SELECT datasets_ids FROM notificaciones_log WHERE tipo = 'area-aviso-40'");
+    assert.equal(log.datasets_ids.split(',').length, 2);
+  });
+
   // Datos solicitados (spec 2026-10-17-fechas-datasets, 9), sin fecha sugerida de envío y con la frecuencia "(Acumulado)"
   // (spec 18). Miércoles 21/10/2026: avisa el vencimiento del 30/11/2026, el fin de mes que corresponde a los 40 días
   describe('datos solicitados y frecuencia', () => {

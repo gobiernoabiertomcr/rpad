@@ -42,7 +42,8 @@ const TIPOS_DE_MARCA = ['nota', 'email', 'area', 'act', 'actp', 'cambio', 'cambi
 const ESTADOS_DE_INSIGNIA = ['vencido', 'proximo', 'actualizado', 'eventual', 'sin-fecha', 'baja'];
 const ESTADOS_DE_NOTA = { enviada: 'Enviada', pendiente: 'Pendiente de envío', fallida: 'No se pudo enviar' };
 const SIN_DATOS_GUARDADOS = 'No quedó guardado: las notas 1/26 y 2/26 son anteriores a ese dato.';
-// Copia del mensaje de descargarAnexo (controllers/notasDigitalesController.js): las reiteraciones no tienen anexo
+// Copia del mensaje de descargarAnexo (controllers/notasDigitalesController.js): los avisos y las reiteraciones tienen anexo, pero
+// no las reiteraciones anteriores al anexo de seguimiento (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.4)
 const NOTA_SIN_ANEXO = 'La nota no tiene anexo';
 
 // La cinta en pantalla: las filas en unidades del espacio de 1000 × 170 (MEDIDAS.pantalla del prototipo), las líneas de los meses
@@ -247,6 +248,15 @@ function htmlDeDato(rotulo, valor, clase = '') {
   return `<div class="sg-dato"><dt>${rotulo}</dt><dd${clase ? ` class="${clase}"` : ''}>${valor}</dd></div>`;
 }
 
+// «Requiere nota DGMIT» como lo manda el servidor (ficha.requiere_nota: 1, 0 o null): Sí, No o Sin dato. Copia mínima de
+// textoRequiereNota(valor, 'Sin dato') de services/requiereNotaReglas.js, atada por un test de paridad. El 0 es un valor (No), no
+// un vacío: nunca `valor || …`.
+function textoDeRequiereNota(valor) {
+  if (valor === 1 || valor === true || valor === '1') return 'Sí';
+  if (valor === 0 || valor === false || valor === '0') return 'No';
+  return 'Sin dato';
+}
+
 // "Venció el" (en rojo, con "hace N días") o "Vence el"; sin vencimiento, por qué
 function htmlDeVencimientoDeLaFicha(ficha) {
   const estado = ficha.estado ?? {};
@@ -257,7 +267,8 @@ function htmlDeVencimientoDeLaFicha(ficha) {
   return htmlDeDato('Vencimiento', estado.estado === 'sin-fecha' ? 'Sin fecha' : 'Sin vencimiento');
 }
 
-// La ficha (va adentro de section#sg-ficha): el título, la insignia, el área, la baja, los botones y la fila de datos
+// La ficha (va adentro de section#sg-ficha): el título, la insignia, el área, la baja, los botones y la fila de datos («Requiere
+// nota DGMIT» solo en la gestión externa)
 function htmlDeFicha(ficha) {
   if (!ficha || typeof ficha !== 'object') return '';
   const estado = ficha.estado ?? {};
@@ -284,11 +295,15 @@ function htmlDeFicha(ficha) {
       ${htmlDeDato('Cargado en el portal', Utils.fechaCorta(ficha.ultima))}
       ${htmlDeVencimientoDeLaFicha(ficha)}
       ${htmlDeDato('Datos solicitados hoy', escaparTexto(ficha.pedido) || Utils.SIN_DATO)}
+      ${ficha.tipo_gestion === 'interna' ? '' : htmlDeDato('Requiere nota DGMIT', textoDeRequiereNota(ficha.requiere_nota))}
     </dl>`;
 }
 
 // El circuito del ciclo abierto, con los textos ya armados por el servidor (circuitoDe): el RPAD avisa a DGMIT, ellas mandan la
-// nota formal (o relevan) por fuera del RPAD y el área vence o no. Debajo, el email al área (solo en gestión externa)
+// nota formal (o relevan) por fuera del RPAD y el área vence o no. Debajo, el email al área: solo en gestión externa y, con
+// «Requiere nota DGMIT» en «No», solo si en el ciclo abierto ya se le mandó el email de los 40 días (si no, el servidor manda
+// `alArea` en null y no se dibuja). Con «No» el servidor también manda el medio («No hace falta nota formal») y el tramo («Sin
+// nota formal»): esta función los dibuja como vienen.
 function htmlDelCircuito(circuito) {
   if (!circuito || typeof circuito !== 'object') return '';
   const avisos = circuito.avisos ?? {};
@@ -855,7 +870,7 @@ async function descargarPdf(boton) {
   });
 }
 
-// La nota y, si tiene (los avisos sí, las reiteraciones no), su anexo
+// La nota y, si tiene (los avisos y las reiteraciones sí, salvo las reiteraciones anteriores al anexo de seguimiento), su anexo
 async function descargarNota(boton) {
   const id = boton.dataset.nota;
   const archivo = boton.dataset.archivo;

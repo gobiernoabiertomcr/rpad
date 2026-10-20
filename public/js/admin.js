@@ -29,9 +29,10 @@ let errorDeCarga = null;
 
 const ITEMS_POR_PAGINA = 25;
 
-// La lista: el filtro de estado ('' = todos), la búsqueda, la gestión, el tipo de pedido y la página. Se conserva al volver a
-// pedir los datos (después de crear, editar, eliminar o registrar una actualización)
-const estadoDeLista = { filtro: '', busqueda: '', gestion: '', tipo: '', pagina: 1 };
+// La lista: el filtro de estado ('' = todos), la búsqueda, la gestión, el tipo de pedido, "Requiere nota" ('' = todos, '1' = Sí,
+// '0' = No) y la página. Se conserva al volver a pedir los datos (después de crear, editar, eliminar o registrar una
+// actualización)
+const estadoDeLista = { filtro: '', busqueda: '', gestion: '', tipo: '', requiereNota: '', pagina: 1 };
 
 // Los filtros de estado, en el orden de los botones de admin.html ('' = Todos)
 const VALORES_DE_FILTRO = ['', 'vencido', 'proximo', 'al-dia', 'eventual', 'sin-fecha', 'pendiente'];
@@ -63,16 +64,20 @@ function textoParaBuscar(texto) {
 }
 
 /**
- * Los datasets que dejan los filtros de la barra: la búsqueda (en el título o en el área), la gestión y el tipo de pedido.
- * Sin el filtro de estado: sobre esta lista se cuentan los estados, así cada contador dice cuántos va a mostrar su botón.
+ * Los datasets que dejan los filtros de la barra: la búsqueda (en el título o en el área), la gestión, el tipo de pedido y
+ * "Requiere nota" ('1' = Sí, '0' = No; solo deja externos con ese valor: un externo sin dato y la gestión interna quedan
+ * afuera). Sin el filtro de estado: sobre esta lista se cuentan los estados, así cada contador dice cuántos va a mostrar su
+ * botón.
  */
 function filtrarPorBarra(lista, filtros) {
-  const { busqueda = '', gestion = '', tipo = '' } = filtros ?? {};
+  const { busqueda = '', gestion = '', tipo = '', requiereNota = '' } = filtros ?? {};
   const termino = textoParaBuscar(busqueda).trim();
+  // String(null) no es '0': un dataset sin dato (NULL) no cuenta como "No"
   return (Array.isArray(lista) ? lista : []).filter((d) =>
     (!termino || textoParaBuscar(d.titulo).includes(termino) || textoParaBuscar(d.area_nombre).includes(termino))
     && (!gestion || d.tipo_gestion === gestion)
-    && (!tipo || d.tipo_pedido === tipo));
+    && (!tipo || d.tipo_pedido === tipo)
+    && (!requiereNota || (d.tipo_gestion === 'externa' && String(d.requiere_nota) === requiereNota)));
 }
 
 /**
@@ -359,7 +364,7 @@ function prepararLista() {
     }, 300);
   });
 
-  for (const [id, campo] of [['filtro-gestion', 'gestion'], ['filtro-tipo', 'tipo']]) {
+  for (const [id, campo] of [['filtro-gestion', 'gestion'], ['filtro-tipo', 'tipo'], ['filtro-requiere-nota', 'requiereNota']]) {
     const selector = document.getElementById(id);
     selector.value = estadoDeLista[campo];
     selector.addEventListener('change', () => {
@@ -766,6 +771,7 @@ const edicion = {
 const DEMORA_DE_VISTA_PREVIA = 250;
 const CAMPOS_DE_DATOS_AL = ['form-datos-mes', 'form-datos-anio'];
 const CAMPOS_DE_PROXIMA = ['form-prox-mes', 'form-prox-anio'];
+const CAMPOS_DE_REQUIERE_NOTA = ['requiere_nota'];
 
 // Los oyentes del paso 1, del formulario y de sus ventanas. En DOMContentLoaded
 function prepararFormulario() {
@@ -820,7 +826,10 @@ function openModal(dataset = null, andinoData = null, origen = undefined) {
     ? {
       titulo: dataset.titulo, area_id: dataset.area_id, descripcion: dataset.descripcion,
       tema_principal_id: dataset.tema_principal_id, tema_secundario_id: dataset.tema_secundario_id,
-      frecuencia_id: dataset.frecuencia_id, tipo_gestion: dataset.tipo_gestion, url_dataset: dataset.url_dataset,
+      frecuencia_id: dataset.frecuencia_id, tipo_gestion: dataset.tipo_gestion,
+      // 1 (Sí) y 0 (No) son valores: vacío solo si es NULL (una interna, o un externo sin dato)
+      requiere_nota: dataset.requiere_nota === null || dataset.requiere_nota === undefined ? '' : String(dataset.requiere_nota),
+      url_dataset: dataset.url_dataset,
       observaciones: dataset.observaciones, que_se_solicita: dataset.que_se_solicita,
       ultima_actualizacion: soloFecha(dataset.ultima_actualizacion)
     }
@@ -900,7 +909,7 @@ function formularioDelDataset() {
     tema_principal_id: valorDe('tema_principal_id'), tema_secundario_id: valorDe('tema_secundario_id'),
     frecuencia_id: valorDe('frecuencia_id'), formatos: Array.from(formatosSeleccionados),
     url_dataset: valorDe('url_dataset'), observaciones: valorDe('observaciones'), que_se_solicita: valorDe('que_se_solicita'),
-    tipo_gestion: valorDe('tipo_gestion'), tipo_pedido: valorDe('tipo_pedido'),
+    tipo_gestion: valorDe('tipo_gestion'), requiere_nota: valorDe('requiere_nota'), tipo_pedido: valorDe('tipo_pedido'),
     meses: mesesDeLaFrecuencia(frecuencias, valorDe('frecuencia_id')),
     cargado: valorDe('ultima_actualizacion'),
     datosMes: valorDe('form-datos-mes'), datosAnio: valorDe('form-datos-anio'),
@@ -913,7 +922,10 @@ function formularioDelDataset() {
 function alCambiarCampoDelFormulario(evento) {
   const { id } = evento.target;
   if (id === 'frecuencia_id' || id === 'tipo_gestion') alCambiarFrecuenciaOGestion();
-  else if (id === 'tipo_pedido') alCambiarTipo();
+  else if (id === 'requiere_nota') {
+    mostrarError('form-error-requiere-nota', null, { campos: CAMPOS_DE_REQUIERE_NOTA });
+    alCambiarElFormularioDelDataset();
+  } else if (id === 'tipo_pedido') alCambiarTipo();
   else if (CAMPOS_DE_DATOS_AL.includes(id)) alCambiarDatosAlDelFormulario();
   else if (CAMPOS_DE_PROXIMA.includes(id)) {
     mostrarError('form-error-proxima', null, { campos: CAMPOS_DE_PROXIMA });
@@ -945,6 +957,8 @@ function alCambiarFrecuenciaOGestion() {
   const sigueAlSugerido = !edicion.original && !edicion.tipoAMano;
   pintarTipo(tipoCoherente(sigueAlSugerido ? tipoSugeridoDe(gestion, meses) : valorDe('tipo_pedido'), meses, gestion), meses);
   mostrarError('form-error-proxima', null, { campos: CAMPOS_DE_PROXIMA });
+  // El aviso de "Requiere nota DGMIT" es de la gestión externa: con otra gestión ya no corresponde
+  mostrarError('form-error-requiere-nota', null, { campos: CAMPOS_DE_REQUIERE_NOTA });
   alCambiarElFormularioDelDataset();
 }
 
@@ -1018,6 +1032,10 @@ function actualizarFormulario() {
   const f = formularioDelDataset();
   const eventual = f.meses === null;
 
+  // "Requiere nota DGMIT" es solo de la gestión externa: con otra gestión (o sin elegir) el selector se oculta, con el valor
+  // que tenga puesto (cuerpoDelDataset manda null si es interna)
+  document.getElementById('fila-requiere-nota').hidden = f.tipo_gestion !== 'externa';
+
   const sugerencia = htmlDeSugerencia(f.tipo_pedido, f.meses === undefined ? null : tipoSugeridoDe(f.tipo_gestion, f.meses));
   if (sugerencia !== edicion.sugerencia) {
     document.getElementById('form-sugerencia').innerHTML = sugerencia;
@@ -1050,13 +1068,19 @@ function pintarVistaPrevia(f) {
   const cuerpo = cuerpoDelDataset(f);
   const textos = textosDeVistaPrevia({
     titulo: f.titulo, gestion: f.tipo_gestion, solicita: f.que_se_solicita,
-    frecuencia: nombreDeLaFrecuencia(frecuencias, f.frecuencia_id), tipo: f.tipo_pedido, meses: f.meses
+    frecuencia: nombreDeLaFrecuencia(frecuencias, f.frecuencia_id), tipo: f.tipo_pedido, meses: f.meses,
+    requiereNota: f.requiere_nota
   });
   // Los textos se escriben antes de comparar los parámetros del pedido: si cambia solo la frecuencia (o el título), el servidor
   // no se vuelve a consultar, pero la vista previa tiene que cambiar igual
   document.getElementById('form-nota-cab').textContent = textos.cabecera;
   document.getElementById('form-nota-titulo').textContent = textos.titulo;
   document.getElementById('form-nota-frecuencia').textContent = textos.frecuencia;
+  // La columna "Requiere nota DGMIT" es solo de una nota externa: en una interna se ocultan el encabezado y la celda
+  document.getElementById('form-nota-th-requiere').hidden = !textos.conRequiereNota;
+  const celdaRequiere = document.getElementById('form-nota-requiere');
+  celdaRequiere.hidden = !textos.conRequiereNota;
+  celdaRequiere.textContent = textos.requiereNota;
   document.getElementById('form-nota-solicita').textContent = textos.solicita;
 
   const parametros = { tipo: f.tipo_pedido, meses: f.meses, proxima: cuerpo.proxima_actualizacion, datos_al: cuerpo.datos_al };
@@ -1104,8 +1128,9 @@ function mostrarErrorDeFormatos(texto) {
 }
 
 // Los errores de cada campo (problemasDelFormulario), en su lugar y marcando sus campos
-function mostrarProblemas({ formatos = null, datosAl = null, proxima = null } = {}) {
+function mostrarProblemas({ formatos = null, requiereNota = null, datosAl = null, proxima = null } = {}) {
   mostrarErrorDeFormatos(formatos);
+  mostrarError('form-error-requiere-nota', requiereNota, { campos: CAMPOS_DE_REQUIERE_NOTA });
   mostrarError('form-error-datos', datosAl, { campos: CAMPOS_DE_DATOS_AL });
   mostrarError('form-error-proxima', proxima, { campos: CAMPOS_DE_PROXIMA });
 }
@@ -1117,9 +1142,10 @@ function limpiarErroresDelFormulario() {
 }
 
 // El foco va al primer campo con error (en el orden del formulario)
-function enfocarElPrimerProblema({ formatos, datosAl, proxima }) {
+function enfocarElPrimerProblema({ formatos, requiereNota, datosAl, proxima }) {
   let campo = null;
   if (formatos) campo = document.querySelector('#chips-container [data-formato]') ?? document.getElementById('formato-dropdown');
+  else if (requiereNota) campo = document.getElementById('requiere_nota');
   else if (datosAl) campo = document.getElementById(edicion.soloAnio ? 'form-datos-anio' : 'form-datos-mes');
   else if (proxima) campo = document.getElementById(valorDe('form-prox-mes') ? 'form-prox-anio' : 'form-prox-mes');
   if (campo) campo.focus();
@@ -1138,7 +1164,7 @@ async function enviarFormulario(evento) {
   const problemas = problemasDelFormulario(f, edicion.hoy);
   mostrarProblemas(problemas);
   mostrarError('form-error', null);
-  if (problemas.formatos || problemas.datosAl || problemas.proxima) {
+  if (problemas.formatos || problemas.requiereNota || problemas.datosAl || problemas.proxima) {
     enfocarElPrimerProblema(problemas);
     return;
   }

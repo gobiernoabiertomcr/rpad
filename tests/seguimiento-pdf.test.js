@@ -3,14 +3,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
-import { renderSeguimiento, FILAS_PDF } from '../services/seguimientoPdf.js';
+import { renderSeguimiento, renderAnexoDeSeguimiento, FILAS_PDF, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
 import { lineasPorHoja, contenidoPorHoja, textosPorHoja } from './pdf-lector.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 
 const MM = 72 / 25.4;
-// Las opciones de la cinta del PDF (Task 4): marcas a menos de 12 se juntan y las letras miden 8,4
-const OPCIONES_CINTA = { separacion: 12, letra: 8.4 };
+// Las opciones de la cinta del PDF: marcas a menos de 12 se juntan y las letras miden 8,4 (las mismas del anexo y de la descarga)
+const OPCIONES_CINTA = OPCIONES_CINTA_PDF;
 const GENERADO = { momento: '2026-10-20 11:30:05', por: 'Usuario Uno' };
 // El Seguimiento de un caso real; `dataset` cambia campos del dataset antes de calcularlo
 const seguimiento = (id, dataset = {}) => seguimientoDe(
@@ -333,5 +333,236 @@ describe('renderSeguimiento: los otros casos', () => {
     const con = contenidoPorHoja(await render(s))[0];
     const sin = contenidoPorHoja(await render({ ...s, ficha: { ...s.ficha, url_dataset: null } }))[0];
     assert.ok(rectangulos(con) > rectangulos(sin) + 50);
+  });
+});
+
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): en la ficha de un externo, «Datos que se piden»
+// comparte el renglón con este dato (mockup 6); la gestión interna no lo lleva. Con «No», el circuito dice que no hace falta nota formal.
+describe('renderSeguimiento: requiere nota DGMIT', () => {
+  const conDato = (id, requiere_nota, dataset = {}) => seguimiento(id, { requiere_nota, ...dataset });
+  // El texto de una celda de la grilla (el valor que está justo debajo de su rótulo) y su posición
+  const celda = (textos, rotulo) => {
+    const r = textos.find(t => t.texto === rotulo);
+    assert.ok(r, `falta "${rotulo}" en ${textos.map(t => t.texto).join(' | ')}`);
+    // El valor va debajo del rótulo, en la misma columna: el de base más alta entre los que quedan por debajo
+    const valor = textos.filter(t => Math.abs(t.x - r.x) < 0.5 && t.base < r.base).sort((a, b) => b.base - a.base)[0];
+    return { rotulo: r, valor };
+  };
+
+  for (const [dato, texto] of [[0, 'No'], [1, 'Sí'], [null, 'Sin dato']]) {
+    it(`la hoja de un externo con ${texto === 'Sin dato' ? 'dato sin cargar' : texto} dice REQUIERE NOTA DGMIT / ${texto} junto a DATOS QUE SE PIDEN`, async () => {
+      const s = conDato(81, dato);
+      assert.equal(s.ficha.requiere_nota, dato);
+      const textos = textosPorHoja(await render(s))[0];
+      const pide = celda(textos, 'DATOS QUE SE PIDEN');
+      const requiere = celda(textos, 'REQUIERE NOTA DGMIT');
+      // En el mismo renglón: el mismo alto el rótulo y el valor; el dato a la derecha del pedido
+      assert.ok(Math.abs(pide.rotulo.base - requiere.rotulo.base) < 0.5, 'rótulos en renglones distintos');
+      assert.ok(Math.abs(pide.valor.base - requiere.valor.base) < 0.5, 'valores en renglones distintos');
+      assert.ok(requiere.rotulo.x > pide.rotulo.x + 100, 'el dato no está a la derecha del pedido');
+      assert.equal(pide.valor.texto, s.ficha.pedido);
+      assert.equal(requiere.valor.texto, texto);
+      assert.equal(requiere.valor.tamano, pide.valor.tamano, 'mismo tamaño en la misma fila');
+      // El link al portal sigue abajo, en su renglón entero
+      assert.ok(celda(textos, 'LINK AL PORTAL').rotulo.base < pide.rotulo.base);
+    });
+  }
+
+  it('el dato va después de «Cargado en el portal» y antes del link al portal, y la ficha no crece', async () => {
+    const con = textosPorHoja(await render(conDato(81, 0)))[0];
+    const base = (textos, t) => textos.find(x => x.texto === t).base;
+    const orden = ['CARGADO EN EL PORTAL', 'REQUIERE NOTA DGMIT', 'LINK AL PORTAL', 'AVISOS DEL CICLO ABIERTO'].map(t => base(con, t));
+    orden.slice(1).forEach((valor, i) => assert.ok(valor < orden[i], `fuera de orden en la posición ${i + 1}: ${orden.join(', ')}`));
+    // Misma altura de todo lo de abajo que con la interna de siempre: el renglón que comparte no suma uno
+    const sin = textosPorHoja(await render(seguimiento(81)))[0];
+    for (const t of ['LINK AL PORTAL', 'AVISOS DEL CICLO ABIERTO', 'LOS ÚLTIMOS 12 MESES', 'ÚLTIMOS MOVIMIENTOS']) {
+      assert.ok(Math.abs(base(con, t) - base(sin, t)) < 0.5, `${t} se corrió`);
+    }
+  });
+
+  it('la hoja de una interna no lleva el dato, ni siquiera con un valor en el dataset', async () => {
+    for (const valor of [null, 0, 1]) {
+      const textos = textosPorHoja(await render(conDato(38, valor)))[0];
+      assert.ok(!textos.some(t => /REQUIERE NOTA/i.test(t.texto)), `valor ${valor}`);
+    }
+    // «Datos que se piden» sigue de ancho entero: nada a su derecha en su renglón
+    const textos = textosPorHoja(await render(seguimiento(38)))[0];
+    const pide = celda(textos, 'DATOS QUE SE PIDEN');
+    assert.ok(!textos.some(t => Math.abs(t.base - pide.rotulo.base) < 0.5 && t.x > pide.rotulo.x + 100), 'algo a la derecha del pedido');
+  });
+
+  it('el pedido más largo no se corta: «Presupuestos de los ejercicios 2021 a 2026» entra junto al dato', async () => {
+    const s = conDato(1, 0, { datos_al: '2020-12-31', proxima: '2026-01-31' });
+    assert.match(s.ficha.pedido, /^Presupuestos de los ejercicios \d{4} a \d{4}$/);
+    for (const url of ['https://datos.comodoro.gov.ar/dataset/presupuesto-municipal', null]) {
+      const con = { ...s, ficha: { ...s.ficha, url_dataset: url } };
+      const textos = textosPorHoja(await render(con))[0];
+      assert.equal(celda(textos, 'DATOS QUE SE PIDEN').valor.texto, s.ficha.pedido, `url ${url}`);
+      assert.ok(!celda(textos, 'DATOS QUE SE PIDEN').valor.texto.endsWith('…'));
+      verificarDiagramacion(await diagramacion(() => render(con)));
+    }
+  });
+
+  it('una hoja, nada encimado ni fuera de los márgenes: externos con Sí, No y sin dato, con título y áreas larguísimos y sin link', async () => {
+    const largos = { titulo: TITULO_LARGO, area: AREA_LARGA, area_superior: AREA_LARGA };
+    for (const dato of [1, 0, null]) {
+      for (const s of [conDato(52, dato), conDato(81, dato), conDato(52, dato, largos), conDato(66, dato, { tipo_gestion: 'externa' })]) {
+        const pdf = await render(s);
+        assert.equal(lineasPorHoja(pdf).length, 1);
+        verificarDiagramacion(await diagramacion(() => render(s)));
+        verificarDiagramacion(await diagramacion(() => render({ ...s, ficha: { ...s.ficha, url_dataset: null } })));
+      }
+    }
+  });
+
+  it('el circuito con No: «No hace falta nota formal», «Sin nota formal» y «Los datos se obtienen de la fuente»', async () => {
+    const lineas = lineasPorHoja(await render(conDato(81, 0)))[0];
+    for (const t of ['No hace falta nota formal', 'Sin nota formal']) assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    assert.ok(lineas.join(' ').includes('Los datos se obtienen de la fuente'), lineas.join(' | '));
+    assert.ok(lineas.join(' ').includes('DGMIT y Dirección Administrativa'), lineas.join(' | '));
+    assert.ok(!lineas.includes('Mandan la nota formal al área') && !lineas.includes('Nota formal'), lineas.join(' | '));
+    // Sin email al área en el ciclo: la línea «Al área» no se dibuja, ni la que dice que todavía no se le envió
+    assert.ok(!lineas.some(l => l.startsWith('Al área')), lineas.join(' | '));
+    assert.ok(!lineas.some(l => /todavía no se le envió/.test(l)), lineas.join(' | '));
+  });
+
+  it('el circuito con No y un email al área en el ciclo (caso 52): la línea «Al área» sigue con sus fechas', async () => {
+    const lineas = lineasPorHoja(await render(conDato(52, 0)))[0];
+    assert.ok(lineas.includes('Al área: el 21/06/2026 el RPAD le anticipó por email que iba a recibir una nota formal.'), lineas.join(' | '));
+    assert.ok(lineas.includes('No hace falta nota formal'));
+  });
+
+  it('el circuito con Sí o sin dato es el de siempre, con la línea «Al área»', async () => {
+    for (const dato of [1, null]) {
+      const lineas = lineasPorHoja(await render(conDato(81, dato)))[0];
+      assert.ok(lineas.includes('Mandan la nota formal al área'), lineas.join(' | '));
+      assert.ok(lineas.includes('Nota formal'));
+      assert.ok(lineas.includes('Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.'), lineas.join(' | '));
+    }
+  });
+
+  it('lenguaje neutro con No: ni «sin entregar», ni «sin respuesta», ni «atrasado» (en ninguno de los casos)', async () => {
+    for (const id of Object.keys(CASOS)) {
+      const lineas = lineasPorHoja(await render(conDato(Number(id), 0)))[0];
+      assert.deepEqual(lineas.filter(l => NEUTRO.test(l)), [], `caso ${id}`);
+    }
+  });
+});
+
+// El anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.1 y 2.2): un solo PDF con la hoja del
+// Seguimiento de cada dataset de la nota, en orden. Cada hoja es la de siempre, con la fecha larga de la nota arriba y, abajo, la
+// hora en que se generó (sin «por») y «Anexo de la Nota Digital N° … · Hoja k de N».
+describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () => {
+  // Una nota del 20/10/2026 generada a las 08:15 del 21/10/2026 (un envío automático: sin «por»)
+  const GENERADO_AUTOMATICO = { momento: '2026-10-21 08:15:03', por: null };
+  const anexo = (lista, numeroTexto = '9/26', generado = GENERADO_AUTOMATICO) =>
+    renderAnexoDeSeguimiento(lista, { hoy: HOY, generado, numeroTexto });
+  const tres = () => [seguimiento(52), seguimiento(81), seguimiento(38)];
+  const FECHA = /^\d{2}\/\d{2}\/\d{4}$/;
+  const fechasDeLaTabla = (textos) => {
+    const rotulo = textos.find(t => t.texto === 'ÚLTIMOS MOVIMIENTOS');
+    assert.ok(rotulo, textos.map(t => t.texto).join(' | '));
+    return textos.filter(t => FECHA.test(t.texto) && t.base < rotulo.base).map(t => t.texto);
+  };
+  const ddmmaaaa = (dia) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+
+  it('OPCIONES_CINTA_PDF son las de la cinta del PDF: separación 12 y letra 8,4', () => {
+    assert.deepEqual(OPCIONES_CINTA_PDF, { separacion: 12, letra: 8.4 });
+  });
+
+  it('con 3 casos: 3 hojas, en orden, cada una con su título y «Anexo de la Nota Digital N° 9/26 · Hoja k de 3»', async () => {
+    const lista = tres();
+    const pdf = await anexo(lista);
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 3);
+    lista.forEach((s, k) => {
+      const lineas = hojas[k];
+      assert.ok(lineas.join(' ').includes(s.ficha.titulo), `la hoja ${k + 1} no lleva "${s.ficha.titulo}": ${lineas.join(' | ')}`);
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° 9/26 · Hoja ${k + 1} de 3`), `pie de la hoja ${k + 1}: ${lineas.join(' | ')}`);
+      assert.ok(!lineas.some(l => l.includes('Hoja 1 de 1')), lineas.join(' | '));
+      assert.ok(lineas.includes('Seguimiento del dataset'), lineas.join(' | '));
+    });
+    // Cada hoja es de su dataset, en el orden dado: el 52 (externo), el 81 (recién dado de alta) y el 38 (interno)
+    assert.ok(hojas[0].includes('CONJUNTO DE DATOS · GESTIÓN EXTERNA'));
+    assert.ok(hojas[1].includes('No hay movimientos anteriores: el dataset está en el RPAD desde el 19/10/2026.'));
+    assert.ok(hojas[2].includes('CONJUNTO DE DATOS · GESTIÓN INTERNA'));
+  });
+
+  it('arriba, la fecha larga de la nota (hoy); abajo, la hora de generación y sin «por»', async () => {
+    for (const lineas of lineasPorHoja(await anexo(tres()))) {
+      assert.ok(lineas.includes('20 de octubre de 2026'), lineas.join(' | '));
+      assert.ok(lineas.includes('Generado el 21/10/2026 a las 08:15'), lineas.join(' | '));
+      assert.ok(!lineas.some(l => /^Generado.* por /.test(l)), lineas.join(' | '));
+    }
+  });
+
+  it('una sola hoja: «Hoja 1 de 1» y el número tal como viene', async () => {
+    const lineas = lineasPorHoja(await anexo([seguimiento(52)], 'XX'))[0];
+    assert.ok(lineas.includes('Anexo de la Nota Digital N° XX · Hoja 1 de 1'), lineas.join(' | '));
+    assert.ok(!lineas.includes('Seguimiento del dataset · Hoja 1 de 1'), lineas.join(' | '));
+  });
+
+  it('diez hojas: cada pie dice su número, hasta «Hoja 10 de 10»', async () => {
+    const lista = [52, 81, 38, 10, 1, 9, 11, 26, 33, 42].map(id => seguimiento(id));
+    const hojas = lineasPorHoja(await anexo(lista));
+    assert.equal(hojas.length, 10);
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° 9/26 · Hoja ${k + 1} de 10`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+    });
+  });
+
+  it('cada hoja del anexo pasa la diagramación de una hoja (nada se pisa, 8 renglones)', async () => {
+    // Todos los casos reales y el 52 con título y áreas larguísimos
+    const lista = [...Object.keys(CASOS).map(id => seguimiento(id)), largo()];
+    const pdf = await anexo(lista);
+    const hojas = textosPorHoja(pdf);
+    assert.equal(hojas.length, lista.length);
+    verificarDiagramacion(await diagramacion(() => anexo(lista)));
+    // La tabla de movimientos de cada hoja: los 8 más nuevos de ese dataset (o todos, si son menos)
+    hojas.forEach((textos, k) => {
+      const esperadas = lista[k].movimientos.slice(0, FILAS_PDF).map(m => ddmmaaaa(m.fecha));
+      assert.deepEqual(fechasDeLaTabla(textos), esperadas, `hoja ${k + 1}`);
+    });
+    // El 52 tiene más de 8 movimientos: su tabla se llena
+    assert.equal(fechasDeLaTabla(hojas[Object.keys(CASOS).indexOf('52')]).length, FILAS_PDF);
+  });
+
+  it('un número de nota largo no se pisa con la izquierda del pie ni sale de los márgenes', async () => {
+    for (const numeroTexto of ['XX', '99999/26', 'PRUEBA 123456789/2026 PRUEBA 123456789/2026']) {
+      verificarDiagramacion(await diagramacion(() => anexo(tres(), numeroTexto)));
+    }
+  });
+
+  it('cada hoja es la de la descarga, salvo la hora del pie y el pie mismo', async () => {
+    const s = seguimiento(52);
+    const sola = lineasPorHoja(await render(s))[0];
+    const enAnexo = lineasPorHoja(await anexo([s]))[0];
+    assert.deepEqual(sola.filter(l => !enAnexo.includes(l)),
+      ['Generado el 20/10/2026 a las 11:30 por Usuario Uno', 'Seguimiento del dataset · Hoja 1 de 1']);
+    assert.deepEqual(enAnexo.filter(l => !sola.includes(l)),
+      ['Generado el 21/10/2026 a las 08:15', 'Anexo de la Nota Digital N° 9/26 · Hoja 1 de 1']);
+  });
+
+  it('una lista vacía tira error', async () => {
+    await assert.rejects(anexo([]), /al menos un seguimiento/);
+  });
+
+  it('lo que no es una lista o un anexo sin número de nota también tira error', async () => {
+    await assert.rejects(anexo(null), /al menos un seguimiento/);
+    await assert.rejects(anexo(undefined), /al menos un seguimiento/);
+    // (sin pasar por `anexo`, cuyo número por defecto es 9/26)
+    for (const numeroTexto of [undefined, null, '', '  ']) {
+      await assert.rejects(renderAnexoDeSeguimiento(tres(), { hoy: HOY, generado: GENERADO_AUTOMATICO, numeroTexto }), /número de la nota/);
+    }
+  });
+});
+
+describe('renderSeguimiento: la descarga de una hoja no cambió', () => {
+  it('la descarga de una hoja sigue con «Hoja 1 de 1» y quién la generó', async () => {
+    const lineas = lineasPorHoja(await render(seguimiento(52)))[0];
+    assert.ok(lineas.includes('Seguimiento del dataset · Hoja 1 de 1'), lineas.join(' | '));
+    assert.ok(lineas.includes('Generado el 20/10/2026 a las 11:30 por Usuario Uno'), lineas.join(' | '));
+    assert.ok(!lineas.some(l => l.startsWith('Anexo de la Nota Digital')), lineas.join(' | '));
   });
 });

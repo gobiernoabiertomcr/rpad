@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'fs';
 import vm from 'vm';
 import { NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, frecuenciaEnNota, tipoSugerido } from '../services/fechasDatasetReglas.js';
+import { MENSAJE_FALTA_REQUIERE_NOTA, textoRequiereNota } from '../services/requiereNotaReglas.js';
 
 // api.js es un script de navegador: se ejecuta en un contexto aislado y se expone el Utils de verdad, para que el escape
 // que prueban estos tests sea el que usa la página
@@ -937,7 +938,7 @@ describe('admin.js: al cargarse solo declara', () => {
 
   it('el estado de la lista arranca sin filtros, sin búsqueda y en la primera página', () => {
     const { contexto } = cargarAdminJs();
-    assert.deepEqual(plano(vm.runInContext('estadoDeLista', contexto)), { filtro: '', busqueda: '', gestion: '', tipo: '', pagina: 1 });
+    assert.deepEqual(plano(vm.runInContext('estadoDeLista', contexto)), { filtro: '', busqueda: '', gestion: '', tipo: '', requiereNota: '', pagina: 1 });
   });
 
   it('el submit del formulario se registra en DOMContentLoaded, no al cargarse', () => {
@@ -1003,6 +1004,50 @@ describe('admin.js: filtros de la barra', () => {
     assert.deepEqual(porBarra({ tipo: 'ejercicio' }), [5]);
     assert.deepEqual(porBarra({ busqueda: 'dirección', gestion: 'interna' }), [3]);
     assert.deepEqual(porBarra({ busqueda: 'dirección', gestion: 'externa', tipo: 'acumulado' }), [2]);
+  });
+
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.4): Sí es 1 y No es 0 (el 0 es un valor, no
+  // "falta"); un externo sin dato y toda la gestión interna quedan afuera de los dos
+  describe('filtro «Requiere nota»', () => {
+    const CON_NOTA = [
+      dataset({ id: 1, requiere_nota: 1 }),
+      dataset({ id: 2, requiere_nota: 0 }),
+      dataset({ id: 3, requiere_nota: null }),
+      dataset({ id: 4 }),
+      eventual({ id: 5, requiere_nota: null }),
+      dataset({ id: 6, requiere_nota: 1, tipo_gestion: 'interna' }),
+      dataset({ id: 7, requiere_nota: 0, tipo_gestion: 'interna' }),
+      dataset({ id: 8, requiere_nota: 1 })
+    ];
+    const conNota = (filtros) => ids(a.filtrarPorBarra(CON_NOTA, filtros));
+
+    it('Sí deja solo externos con 1', () => {
+      assert.deepEqual(conNota({ requiereNota: '1' }), [1, 8]);
+    });
+
+    it('No deja solo externos con 0 (el cero cuenta como valor)', () => {
+      assert.deepEqual(conNota({ requiereNota: '0' }), [2]);
+    });
+
+    it('sin elegir (Todos) deja pasar a todos, también a los que no tienen el dato', () => {
+      assert.deepEqual(conNota({ requiereNota: '' }), [1, 2, 3, 4, 5, 6, 7, 8]);
+      assert.deepEqual(conNota({}), [1, 2, 3, 4, 5, 6, 7, 8]);
+    });
+
+    it('se combina con la gestión, el tipo y la búsqueda', () => {
+      assert.deepEqual(conNota({ requiereNota: '1', gestion: 'externa' }), [1, 8]);
+      assert.deepEqual(conNota({ requiereNota: '1', gestion: 'interna' }), []);
+      assert.deepEqual(conNota({ requiereNota: '1', busqueda: 'pauta', tipo: 'acumulado' }), [1, 8]);
+      assert.deepEqual(conNota({ requiereNota: '0', tipo: 'eventual' }), []);
+    });
+
+    it('la vista de la lista cuenta los estados con el filtro aplicado', () => {
+      const lista = [dataset({ id: 1, requiere_nota: 1 }), dataset({ id: 2, requiere_nota: 0 }), vencido({ id: 3, requiere_nota: 0 })];
+      const vista = plano(a.vistaDeLista(lista, { requiereNota: '0', pagina: 1 }, []));
+      assert.deepEqual(vista.items.map((d) => d.id), [2, 3]);
+      assert.equal(vista.cuentas.todos, 2);
+      assert.equal(vista.cuentas.vencido, 1);
+    });
   });
 
   it('sin lista da una lista vacía y no tira error', () => {
@@ -1224,6 +1269,15 @@ describe('admin.html: la lista', () => {
     const gestion = PAGINA_ADMIN.match(/<select id="filtro-gestion">([\s\S]*?)<\/select>/)[1];
     assert.deepEqual([...gestion.matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
       [['', 'Interna y externa'], ['interna', 'Interna'], ['externa', 'Externa']]);
+  });
+
+  it('la barra suma el filtro «Requiere nota» (Todos, Sí, No), con su etiqueta y después del tipo de pedido', () => {
+    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="filtro-requiere-nota">Requiere nota DGMIT<\/label>\s*<select id="filtro-requiere-nota">/);
+    const filtro = PAGINA_ADMIN.match(/<select id="filtro-requiere-nota">([\s\S]*?)<\/select>/)[1];
+    assert.deepEqual([...filtro.matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
+      [['', 'Requiere nota: todos'], ['1', 'Requiere nota: Sí'], ['0', 'Requiere nota: No']]);
+    assert.ok(PAGINA_ADMIN.indexOf('id="filtro-requiere-nota"') > PAGINA_ADMIN.indexOf('id="filtro-tipo"'));
+    assert.ok(PAGINA_ADMIN.indexOf('id="filtro-requiere-nota"') < PAGINA_ADMIN.indexOf('id="filtros-estado"'));
   });
 
   it('los filtros de estado: un grupo con un botón por estado, con aria-pressed', () => {
@@ -2299,7 +2353,7 @@ describe('admin-fechas.js: selectores de "Datos al" y de la próxima del formula
 describe('admin-fechas.js: cuerpoDelDataset (el JSON de POST y PUT /datasets)', () => {
   // La Pauta, como la devuelve GET /datasets/:id
   const PAUTA_GET = {
-    id: 10, titulo: 'Pauta Publicitaria', frecuencia_id: 3, tipo_gestion: 'externa',
+    id: 10, titulo: 'Pauta Publicitaria', frecuencia_id: 3, tipo_gestion: 'externa', requiere_nota: 1,
     ultima_actualizacion: '2026-10-13T03:00:00.000Z', proxima_actualizacion: '2027-01-31T03:00:00.000Z', datos_al: '2026-07-31',
     tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado', tipo_pedido_nombre: 'Acumulado', frecuencia_meses: 3
   };
@@ -2307,17 +2361,33 @@ describe('admin-fechas.js: cuerpoDelDataset (el JSON de POST y PUT /datasets)', 
   const formulario = (extra = {}) => ({
     titulo: 'Pauta Publicitaria', area_id: '4', descripcion: 'Órdenes de publicidad', tema_principal_id: '2', tema_secundario_id: '',
     frecuencia_id: '3', formatos: [1, 3], url_dataset: 'https://datos.comodoro.gov.ar/dataset/pauta', observaciones: '',
-    que_se_solicita: '  La planilla de órdenes.  ', tipo_gestion: 'externa', tipo_pedido: 'acumulado', meses: 3,
+    que_se_solicita: '  La planilla de órdenes.  ', tipo_gestion: 'externa', requiere_nota: '1', tipo_pedido: 'acumulado', meses: 3,
     cargado: '2026-10-13', datosMes: '7', datosAnio: '2026', proxMes: '1', proxAnio: '2027', original: PAUTA_GET, ...extra
   });
 
   it('arma todo el cuerpo: números, nulos y textos como hoy, y las fechas', () => {
     assert.deepEqual(plano(admin.cuerpoDelDataset(formulario())), {
       titulo: 'Pauta Publicitaria', area_id: 4, descripcion: 'Órdenes de publicidad', tema_principal_id: 2, tema_secundario_id: null,
-      frecuencia_id: 3, formatos: [1, 3], tipo_gestion: 'externa', tipo_pedido: 'acumulado', ultima_actualizacion: '2026-10-13',
-      datos_al: '2026-07-31', proxima_actualizacion: '2027-01-31', url_dataset: 'https://datos.comodoro.gov.ar/dataset/pauta',
+      frecuencia_id: 3, formatos: [1, 3], tipo_gestion: 'externa', requiere_nota: 1, tipo_pedido: 'acumulado',
+      ultima_actualizacion: '2026-10-13', datos_al: '2026-07-31', proxima_actualizacion: '2027-01-31', url_dataset: 'https://datos.comodoro.gov.ar/dataset/pauta',
       observaciones: null, que_se_solicita: 'La planilla de órdenes.'
     });
+  });
+
+  it('cuerpoDelDataset manda requiere_nota 0 con «No», 1 con «Sí» y null con gestión interna', () => {
+    const conNota = (extra) => admin.cuerpoDelDataset(formulario(extra)).requiere_nota;
+    assert.strictEqual(conNota({ requiere_nota: '1' }), 1);
+    // El 0 es un valor: no se pierde como si faltara (nunca `x || null`)
+    assert.strictEqual(conNota({ requiere_nota: '0' }), 0);
+    assert.strictEqual(conNota({ requiere_nota: 0 }), 0);
+    assert.strictEqual(conNota({ requiere_nota: 1 }), 1);
+    // Sin elegir, o con cualquier otra cosa, va null (el servidor responde 400 si el dataset es externo)
+    assert.strictEqual(conNota({ requiere_nota: '' }), null);
+    assert.strictEqual(conNota({ requiere_nota: undefined }), null);
+    assert.strictEqual(conNota({ requiere_nota: 'x' }), null);
+    // La gestión interna no lleva el dato, aunque el selector (oculto) conserve un valor
+    assert.strictEqual(conNota({ tipo_gestion: 'interna', requiere_nota: '1' }), null);
+    assert.strictEqual(conNota({ tipo_gestion: 'interna', requiere_nota: '0' }), null);
   });
 
   it('las fechas cambiadas van como fin de mes, con febrero en 28', () => {
@@ -2392,7 +2462,14 @@ describe('admin-fechas.js: problemasDelFormulario (lo que se revisa antes de pro
   const problemas = (extra) => plano(admin.problemasDelFormulario(base(extra), HOY));
 
   it('sin problemas da todo en null', () => {
-    assert.deepEqual(problemas(), { formatos: null, datosAl: null, proxima: null });
+    assert.deepEqual(problemas(), { formatos: null, requiereNota: null, datosAl: null, proxima: null });
+  });
+
+  it('un externo sin elegir «Requiere nota DGMIT» no pasa, con el mensaje del servidor', () => {
+    assert.equal(problemas({ tipo_gestion: 'externa', requiere_nota: '' }).requiereNota, 'Indicá si el dataset requiere nota DGMIT.');
+    assert.equal(problemas({ tipo_gestion: 'externa', requiere_nota: '1' }).requiereNota, null);
+    assert.equal(problemas({ tipo_gestion: 'externa', requiere_nota: '0' }).requiereNota, null);
+    assert.equal(problemas({ tipo_gestion: 'interna', requiere_nota: '' }).requiereNota, null);
   });
 
   it('sin formatos', () => {
@@ -2420,13 +2497,57 @@ describe('admin-fechas.js: problemasDelFormulario (lo que se revisa antes de pro
   });
 });
 
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3): las copias mínimas del navegador
+describe('admin-fechas.js: «Requiere nota DGMIT» (el mensaje y el aviso antes de proponer)', () => {
+  it('MENSAJE_FALTA_REQUIERE_NOTA es el del servidor, con el texto exacto', () => {
+    assert.equal(vm.runInContext('MENSAJE_FALTA_REQUIERE_NOTA', admin), MENSAJE_FALTA_REQUIERE_NOTA);
+    assert.equal(vm.runInContext('MENSAJE_FALTA_REQUIERE_NOTA', admin), 'Indicá si el dataset requiere nota DGMIT.');
+  });
+
+  it('errorDeRequiereNota: externa sin elegir → mensaje exacto; interna → null', () => {
+    const error = (gestion, valor) => admin.errorDeRequiereNota({ gestion, valor });
+    for (const sinElegir of ['', undefined, null, 'x']) {
+      assert.equal(error('externa', sinElegir), 'Indicá si el dataset requiere nota DGMIT.', String(sinElegir));
+    }
+    for (const elegido of ['1', '0', 1, 0]) assert.equal(error('externa', elegido), null, String(elegido));
+    // La gestión interna no lleva el dato, y sin gestión elegida no hay nada que exigir todavía
+    for (const valor of ['', '1', '0', undefined]) {
+      assert.equal(error('interna', valor), null, `interna ${valor}`);
+      assert.equal(error('', valor), null, `sin gestión ${valor}`);
+    }
+    assert.doesNotThrow(() => admin.errorDeRequiereNota());
+    assert.equal(admin.errorDeRequiereNota(), null);
+  });
+
+  it('textoDeRequiereNota dice Sí, No o una raya, como el servidor (textoRequiereNota)', () => {
+    for (const valor of ['1', '0', '', 1, 0, null, undefined, 'x']) {
+      assert.equal(admin.textoDeRequiereNota(valor), textoRequiereNota(valor), String(valor));
+    }
+    assert.equal(admin.textoDeRequiereNota('1'), 'Sí');
+    assert.equal(admin.textoDeRequiereNota('0'), 'No');
+    assert.equal(admin.textoDeRequiereNota(''), '—');
+  });
+});
+
 describe('admin-fechas.js: la vista previa "Así va a salir en la próxima nota"', () => {
   it('con todo cargado, la frecuencia sale como en la nota: con "(Acumulado)"', () => {
     assert.deepEqual(plano(admin.textosDeVistaPrevia({
-      titulo: 'Pauta', gestion: 'externa', solicita: 'La planilla.', frecuencia: 'Trimestralmente', tipo: 'acumulado', meses: 3
+      titulo: 'Pauta', gestion: 'externa', solicita: 'La planilla.', frecuencia: 'Trimestralmente', tipo: 'acumulado', meses: 3,
+      requiereNota: '1'
     })), {
-      cabecera: 'Nota Digital de gestión externa (vista previa)', titulo: 'Pauta', frecuencia: 'Trimestralmente (Acumulado)', solicita: 'La planilla.'
+      cabecera: 'Nota Digital de gestión externa (vista previa)', titulo: 'Pauta', frecuencia: 'Trimestralmente (Acumulado)',
+      conRequiereNota: true, requiereNota: 'Sí', solicita: 'La planilla.'
     });
+  });
+
+  it('un externo suma la columna «Requiere nota DGMIT» (Sí, No o una raya); una interna, no', () => {
+    const textos = (extra) => plano(admin.textosDeVistaPrevia({ titulo: 'Pauta', frecuencia: 'Anualmente', tipo: 'foto', meses: 12, ...extra }));
+    assert.deepEqual([textos({ gestion: 'externa', requiereNota: '1' }).conRequiereNota, textos({ gestion: 'externa', requiereNota: '1' }).requiereNota], [true, 'Sí']);
+    assert.deepEqual([textos({ gestion: 'externa', requiereNota: '0' }).conRequiereNota, textos({ gestion: 'externa', requiereNota: '0' }).requiereNota], [true, 'No']);
+    assert.deepEqual([textos({ gestion: 'externa', requiereNota: '' }).conRequiereNota, textos({ gestion: 'externa', requiereNota: '' }).requiereNota], [true, '—']);
+    assert.equal(textos({ gestion: 'externa' }).requiereNota, '—');
+    assert.equal(textos({ gestion: 'interna', requiereNota: '1' }).conRequiereNota, false);
+    assert.equal(textos({ gestion: '', requiereNota: '1' }).conRequiereNota, false);
   });
 
   it('la frecuencia de la vista previa cambia con el tipo y los meses, sin pedirle nada al servidor', () => {
@@ -2439,7 +2560,7 @@ describe('admin-fechas.js: la vista previa "Así va a salir en la próxima nota"
 
   it('sin título, sin frecuencia, sin gestión y sin "Qué se solicita": lo que diría la nota', () => {
     assert.deepEqual(plano(admin.textosDeVistaPrevia({ titulo: '  ', gestion: '', frecuencia: '', tipo: 'acumulado', meses: 3, solicita: '' })), {
-      cabecera: 'Nota Digital (vista previa)', titulo: 'Título del dataset', frecuencia: '—',
+      cabecera: 'Nota Digital (vista previa)', titulo: 'Título del dataset', frecuencia: '—', conRequiereNota: false, requiereNota: '—',
       solicita: 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.'
     });
     assert.doesNotThrow(() => admin.textosDeVistaPrevia());
@@ -2663,7 +2784,34 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
 
   it('la gestión interna dice "Interna (relevamiento propio)", sin DGMIT', () => {
     assert.match(formulario, /<option value="externa">Externa \(la provee otra área\)<\/option>\s*<option value="interna">Interna \(relevamiento propio\)<\/option>/);
-    assert.doesNotMatch(PAGINA_ADMIN, /DGMIT/);
+    // «DGMIT» solo aparece en el nombre del campo nuevo, «Requiere nota DGMIT»
+    assert.doesNotMatch(PAGINA_ADMIN.replaceAll('Requiere nota DGMIT', ''), /DGMIT/);
+  });
+
+  it('el selector requiere_nota está en admin.html con Elegí una opción / Sí / No', () => {
+    const pedido = seccion('Actualización y pedido');
+    assert.match(pedido, /<label for="requiere_nota">Requiere nota DGMIT <span class="ad-obligatorio" aria-hidden="true">\*<\/span><\/label>/);
+    const selector = pedido.match(/<select id="requiere_nota"([^>]*)>([\s\S]*?)<\/select>/);
+    assert.ok(selector, 'el selector está en "Actualización y pedido"');
+    assert.deepEqual([...selector[2].matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
+      [['', 'Elegí una opción'], ['1', 'Sí'], ['0', 'No']]);
+    // No lleva required: con la gestión interna queda oculto, y un campo oculto y obligatorio frenaría el envío sin avisar
+    assert.doesNotMatch(selector[1], /(^|\s)required(\s|=|$)/);
+    // Lo obligatorio se dice a los lectores de pantalla con aria-required (el asterisco visible es aria-hidden)
+    assert.match(selector[1], /\baria-required="true"/);
+    assert.match(selector[1], /aria-describedby="form-ayuda-requiere-nota"/);
+    assert.match(pedido, /<p class="ad-ayuda" id="form-ayuda-requiere-nota">[^<]+<\/p>/);
+    assert.match(pedido, /<p class="ad-error" id="form-error-requiere-nota" role="alert" hidden><\/p>/);
+  });
+
+  it('el selector está en su propia fila, justo después de la de «Tipo de gestión», oculto hasta que la gestión sea externa', () => {
+    const pedido = seccion('Actualización y pedido');
+    assert.match(pedido, /<div class="fila" id="fila-requiere-nota" hidden>/);
+    assert.ok(pedido.indexOf('id="tipo_gestion"') < pedido.indexOf('id="fila-requiere-nota"'));
+    assert.ok(pedido.indexOf('id="fila-requiere-nota"') < pedido.indexOf('id="tipo_pedido"'));
+    // Es la fila que sigue a la de Frecuencia y gestión: ningún otro campo entre las dos
+    const entre = pedido.slice(pedido.indexOf('id="tipo_gestion"'), pedido.indexOf('id="fila-requiere-nota"'));
+    assert.doesNotMatch(entre, /<(select|input|textarea)\b/);
   });
 
   it('el aviso por las frases de período es ámbar y está oculto hasta que hace falta', () => {
@@ -2671,11 +2819,16 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
     assert.match(formulario, /<span id="form-alerta-texto" aria-live="polite"><\/span>/);
   });
 
-  it('la vista previa "Así va a salir en la próxima nota", con las tres columnas y "Qué se solicita"', () => {
+  it('la vista previa "Así va a salir en la próxima nota", con las cuatro columnas de un externo y "Qué se solicita"', () => {
     assert.ok(formulario.includes('Así va a salir en la próxima nota'));
     const nota = formulario.match(/<div class="ad-nota"[^>]*>([\s\S]*?)<!-- Fin de la vista previa -->/)?.[1] ?? '';
-    assert.deepEqual([...nota.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((m) => m[1]), ['Conjunto de datos', 'Frecuencia', 'Datos solicitados']);
-    assert.deepEqual([...nota.matchAll(/<td id="([^"]+)"/g)].map((m) => m[1]), ['form-nota-titulo', 'form-nota-frecuencia', 'form-nota-periodo']);
+    // «Requiere nota DGMIT» va entre Frecuencia y Datos solicitados; la interna la oculta y queda con tres
+    assert.deepEqual([...nota.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]),
+      ['Conjunto de datos', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados']);
+    assert.deepEqual([...nota.matchAll(/<td id="([^"]+)"/g)].map((m) => m[1]),
+      ['form-nota-titulo', 'form-nota-frecuencia', 'form-nota-requiere', 'form-nota-periodo']);
+    assert.match(nota, /<th scope="col" id="form-nota-th-requiere">Requiere nota DGMIT<\/th>/);
+    assert.match(nota, /<td id="form-nota-requiere"><\/td>/);
     assert.ok(!nota.includes('form-nota-fecha'), 'form-nota-fecha ya no existe');
     assert.match(nota, /<td id="form-nota-periodo" aria-live="polite"><\/td>/);
     assert.match(nota, /<b>Qué se solicita:<\/b> <span id="form-nota-solicita"><\/span>/);
@@ -2799,6 +2952,135 @@ describe('admin.js: el formulario del dataset (con una página de mentira)', () 
     assert.equal(pagina.elemento('modal-dataset').hidden, true);
   });
 
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3)
+  describe('«Requiere nota DGMIT»', () => {
+    const EXTERNA = { ...PAUTA, tipo_gestion: 'externa', requiere_nota: 1 };
+    const INTERNA = { ...PAUTA, tipo_gestion: 'interna', requiere_nota: null };
+    const MENSAJE = 'Indicá si el dataset requiere nota DGMIT.';
+    // La persona cambia un campo: el formulario escucha change por delegación
+    const cambiar = (contexto, pagina, id, valor) => {
+      pagina.elemento(id).value = valor;
+      contexto.alCambiarCampoDelFormulario({ target: pagina.elemento(id) });
+    };
+
+    it('al editar un externo viene con su valor guardado (también «No», que es 0) y el selector se ve', () => {
+      for (const [guardado, esperado] of [[1, '1'], [0, '0']]) {
+        const { contexto, pagina } = armar();
+        contexto.openModal({ ...EXTERNA, requiere_nota: guardado });
+        assert.strictEqual(pagina.elemento('requiere_nota').value, esperado);
+        assert.equal(pagina.elemento('fila-requiere-nota').hidden, false);
+      }
+    });
+
+    it('un externo sin dato (NULL) viene vacío, para elegir', () => {
+      const { contexto, pagina } = armar();
+      contexto.openModal({ ...EXTERNA, requiere_nota: null });
+      assert.strictEqual(pagina.elemento('requiere_nota').value, '');
+      assert.equal(pagina.elemento('fila-requiere-nota').hidden, false);
+    });
+
+    it('una interna y un alta sin gestión elegida no lo muestran', () => {
+      const { contexto, pagina } = armar();
+      contexto.openModal(INTERNA);
+      assert.equal(pagina.elemento('fila-requiere-nota').hidden, true);
+      assert.strictEqual(pagina.elemento('requiere_nota').value, '');
+      contexto.closeModal();
+      contexto.openModal(null);
+      assert.equal(pagina.elemento('fila-requiere-nota').hidden, true);
+    });
+
+    it('al cambiar la gestión, el selector aparece o se oculta', () => {
+      const { contexto, pagina } = armar();
+      contexto.openModal(INTERNA);
+      cambiar(contexto, pagina, 'tipo_gestion', 'externa');
+      assert.equal(pagina.elemento('fila-requiere-nota').hidden, false);
+      assert.strictEqual(pagina.elemento('requiere_nota').value, '', 'al pasar a externa viene vacío');
+      cambiar(contexto, pagina, 'tipo_gestion', 'interna');
+      assert.equal(pagina.elemento('fila-requiere-nota').hidden, true);
+    });
+
+    it('proponer un externo sin elegir no manda nada: el aviso queda junto al campo y el foco va ahí', async () => {
+      const { contexto, pagina, llamadas } = armar();
+      contexto.openModal({ ...EXTERNA, requiere_nota: null });
+      await contexto.enviarFormulario(evento);
+      assert.equal(llamadas.enviados.length, 0);
+      const lugar = pagina.elemento('form-error-requiere-nota');
+      assert.equal(lugar.textContent, MENSAJE);
+      assert.equal(lugar.hidden, false);
+      assert.equal(pagina.elemento('requiere_nota').getAttribute('aria-invalid'), 'true');
+      assert.match(pagina.elemento('requiere_nota').getAttribute('aria-describedby'), /form-error-requiere-nota/);
+      assert.ok(pagina.enfocados.includes('requiere_nota'));
+      assert.equal(pagina.elemento('modal-dataset').hidden, false, 'el formulario sigue abierto');
+    });
+
+    it('el aviso del campo vacío no tapa al de los formatos, que está antes en el formulario', async () => {
+      const { contexto, pagina, llamadas } = armar();
+      contexto.openModal({ ...EXTERNA, requiere_nota: null, formatos_array: [] });
+      await contexto.enviarFormulario(evento);
+      assert.equal(llamadas.enviados.length, 0);
+      assert.equal(pagina.elemento('form-error-formatos').textContent, 'Elegí al menos un formato');
+      assert.equal(pagina.elemento('form-error-requiere-nota').textContent, MENSAJE);
+      assert.equal(pagina.enfocados.at(-1), 'formato-dropdown');
+    });
+
+    it('elegir un valor borra el aviso, y lo que se elige viaja: «No» como 0 y «Sí» como 1', async () => {
+      for (const [elegido, esperado] of [['0', 0], ['1', 1]]) {
+        const { contexto, pagina, llamadas } = armar();
+        contexto.openModal({ ...EXTERNA, requiere_nota: null });
+        await contexto.enviarFormulario(evento);
+        assert.equal(pagina.elemento('form-error-requiere-nota').hidden, false);
+        cambiar(contexto, pagina, 'requiere_nota', elegido);
+        assert.equal(pagina.elemento('form-error-requiere-nota').hidden, true);
+        assert.equal(pagina.elemento('requiere_nota').hasAttribute('aria-invalid'), false);
+        await contexto.enviarFormulario(evento);
+        assert.equal(llamadas.enviados.length, 1);
+        assert.strictEqual(llamadas.enviados[0][2].requiere_nota, esperado);
+      }
+    });
+
+    it('un externo que ya tiene el dato lo manda como está (sin tocar el selector)', async () => {
+      const { contexto, llamadas } = armar();
+      contexto.openModal({ ...EXTERNA, requiere_nota: 0 });
+      await contexto.enviarFormulario(evento);
+      assert.strictEqual(llamadas.enviados[0][2].requiere_nota, 0);
+    });
+
+    it('una interna manda null y no pide el dato, aunque el selector oculto conserve un valor', async () => {
+      const { contexto, pagina, llamadas } = armar();
+      contexto.openModal(EXTERNA);
+      cambiar(contexto, pagina, 'tipo_gestion', 'interna');
+      assert.equal(pagina.elemento('requiere_nota').value, '1');
+      await contexto.enviarFormulario(evento);
+      assert.equal(llamadas.enviados.length, 1);
+      assert.strictEqual(llamadas.enviados[0][2].requiere_nota, null);
+    });
+
+    it('pasar a interna borra un aviso que había quedado', async () => {
+      const { contexto, pagina } = armar();
+      contexto.openModal({ ...EXTERNA, requiere_nota: null });
+      await contexto.enviarFormulario(evento);
+      assert.equal(pagina.elemento('form-error-requiere-nota').hidden, false);
+      cambiar(contexto, pagina, 'tipo_gestion', 'interna');
+      assert.equal(pagina.elemento('form-error-requiere-nota').hidden, true);
+    });
+
+    it('al abrir otra vez, el aviso del intento anterior ya no está', async () => {
+      const { contexto, pagina } = armar();
+      contexto.openModal({ ...EXTERNA, requiere_nota: null });
+      await contexto.enviarFormulario(evento);
+      contexto.openModal(EXTERNA);
+      assert.equal(pagina.elemento('form-error-requiere-nota').hidden, true);
+    });
+
+    it('cambiar el dato es un cambio sin guardar', () => {
+      const { contexto, pagina } = armar();
+      contexto.openModal(EXTERNA);
+      assert.equal(vm.runInContext('hayCambiosSinGuardar(edicion.huella, formularioDelDataset())', contexto), false);
+      pagina.elemento('requiere_nota').value = '0';
+      assert.equal(vm.runInContext('hayCambiosSinGuardar(edicion.huella, formularioDelDataset())', contexto), true);
+    });
+  });
+
   it('si el formulario se cerró mientras se enviaba, el error va en un aviso', async () => {
     let rechazar;
     const { contexto, llamadas } = armar({ api: { updateDataset: () => new Promise((_, r) => { rechazar = r; }) } });
@@ -2820,7 +3102,8 @@ describe('admin-fechas.js: cambios sin guardar en el formulario (Ruling 19)', ()
     titulo: 'Pauta', area_id: '4', descripcion: '', tema_principal_id: '2', tema_secundario_id: '', frecuencia_id: '3',
     formatos: [1, 3], url_dataset: '', observaciones: '', que_se_solicita: 'La planilla.', tipo_gestion: 'externa',
     tipo_pedido: 'acumulado', meses: 3, cargado: '2026-10-13', datosMes: '7', datosAnio: '2026', proxMes: '1', proxAnio: '2027',
-    original: { id: 10, datos_al: '2026-07-31', proxima_actualizacion: '2027-01-31', tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado' },
+    requiere_nota: '1',
+    original: { id: 10, datos_al: '2026-07-31', proxima_actualizacion: '2027-01-31', tipo_pedido: 'acumulado', tipo_pedido_guardado: 'acumulado', requiere_nota: 1 },
     ...extra
   });
 
@@ -2833,7 +3116,7 @@ describe('admin-fechas.js: cambios sin guardar en el formulario (Ruling 19)', ()
   it('cualquier campo que cambia lo que se mandaría cuenta como cambio', () => {
     const huella = admin.huellaDelFormulario(base());
     for (const extra of [{ titulo: 'Otra' }, { formatos: [1] }, { proxMes: '2' }, { datosMes: '' }, { tipo_pedido: 'foto' },
-      { cargado: '2026-10-14' }, { que_se_solicita: 'Otra planilla.' }, { tipo_gestion: 'interna' }]) {
+      { cargado: '2026-10-14' }, { que_se_solicita: 'Otra planilla.' }, { tipo_gestion: 'interna' }, { requiere_nota: '0' }, { requiere_nota: '' }]) {
       assert.equal(admin.hayCambiosSinGuardar(huella, base(extra)), true, JSON.stringify(extra));
     }
   });
@@ -2842,6 +3125,14 @@ describe('admin-fechas.js: cambios sin guardar en el formulario (Ruling 19)', ()
     const huella = admin.huellaDelFormulario(base());
     assert.equal(admin.hayCambiosSinGuardar(huella, base({ formatos: [3, 1] })), false);
     assert.equal(admin.hayCambiosSinGuardar(huella, base({ que_se_solicita: '  La planilla.  ' })), false);
+  });
+
+  it('la huella cambia si cambia requiere_nota, pero solo en un externo: en una interna el selector oculto no cuenta', () => {
+    const huella = admin.huellaDelFormulario(base());
+    assert.notEqual(admin.huellaDelFormulario(base({ requiere_nota: '0' })), huella);
+    assert.equal(admin.hayCambiosSinGuardar(huella, base({ requiere_nota: '0' })), true);
+    const deInterna = admin.huellaDelFormulario(base({ tipo_gestion: 'interna', requiere_nota: '' }));
+    assert.equal(admin.hayCambiosSinGuardar(deInterna, base({ tipo_gestion: 'interna', requiere_nota: '1' })), false);
   });
 
   it('volver a dejar un campo como estaba ya no es un cambio', () => {
@@ -3168,6 +3459,44 @@ describe('admin.js: la vista previa de la nota, con una página de mentira', () 
     pintar(formulario());
     pintar(formulario({ frecuencia_id: '4' }));
     assert.equal(pagina.elemento('form-nota-frecuencia').textContent, 'Cada tres meses (Acumulado)');
+  });
+
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5): un externo tiene cuatro columnas
+  it('la vista previa de un externo tiene 4 th con «Requiere nota DGMIT» entre Frecuencia y Datos solicitados', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario({ requiere_nota: '1' }));
+    // La columna a la vista: ni el th ni el td ocultos (las otras tres no se tocan nunca)
+    assert.equal(pagina.elemento('form-nota-th-requiere').hidden, false);
+    assert.equal(pagina.elemento('form-nota-requiere').hidden, false);
+    assert.equal(pagina.elemento('form-nota-requiere').textContent, 'Sí');
+    // Entre la de Frecuencia y la de Datos solicitados: el orden está probado en "admin.html: el formulario del dataset"
+  });
+
+  it('la columna dice Sí, No o una raya según lo que se elige en el formulario', () => {
+    const { pagina, pintar } = armar();
+    for (const [valor, texto] of [['1', 'Sí'], ['0', 'No'], ['', '—'], [undefined, '—']]) {
+      pintar(formulario({ requiere_nota: valor }));
+      assert.equal(pagina.elemento('form-nota-requiere').textContent, texto, String(valor));
+    }
+  });
+
+  it('cambiar solo el dato cambia la columna, aunque el pedido no se vuelva a calcular (misma clave)', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario({ requiere_nota: '1' }));
+    pintar(formulario({ requiere_nota: '0' }));
+    assert.equal(pagina.elemento('form-nota-requiere').textContent, 'No');
+  });
+
+  it('la vista previa de una interna sigue con 3 columnas: la de «Requiere nota DGMIT» se oculta', () => {
+    const { pagina, pintar } = armar();
+    pintar(formulario({ requiere_nota: '1' }));
+    pintar(formulario({ tipo_gestion: 'interna', requiere_nota: '1' }));
+    assert.equal(pagina.elemento('form-nota-th-requiere').hidden, true);
+    assert.equal(pagina.elemento('form-nota-requiere').hidden, true);
+    // Y vuelve cuando la gestión vuelve a ser externa
+    pintar(formulario({ tipo_gestion: 'externa', requiere_nota: '0' }));
+    assert.equal(pagina.elemento('form-nota-th-requiere').hidden, false);
+    assert.equal(pagina.elemento('form-nota-requiere').hidden, false);
   });
 
   it('la vista previa ya no tiene la columna de la fecha', () => {

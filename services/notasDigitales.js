@@ -6,10 +6,11 @@ import pool from '../config/database.js';
 import { sendEmail, listaDeCorreos, remitente } from './emailService.js';
 import {
   construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, construirAnexo, renderHtml, renderTexto,
-  textoLeyendaAutorizacion
+  textoLeyendaAutorizacion, textoNumero
 } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
+import { seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
   periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta, diasEntre
@@ -116,7 +117,9 @@ const opcionesPdf = (config, firma) => ({
 const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: null, leyenda: null });
 
 /**
- * Asigna el número, renderiza HTML, texto, PDF y (en los avisos) el anexo y deja la nota registrada como pendiente.
+ * Asigna el número, renderiza HTML, texto, PDF y (en los avisos y las reiteraciones) el anexo y deja la nota registrada como
+ * pendiente. El anexo de la reiteración es el Seguimiento de cada dataset (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2):
+ * sus fuentes son las de preparado.fuentesPorId (las de ejemplo) o, sin ellas, las de la base.
  * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
  * autorizacion: { nombre, cargo, contratado, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo
  * de autorización; con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular.
@@ -137,6 +140,11 @@ export const generarNota = async ({
     ? { datasets: [], areas: [], fichas: [] }
     : preparado ?? await prepararContenido({ tipo, gestion, datasets, fecha });
   const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
+  // El Seguimiento de cada dataset de la reiteración se lee antes de abrir la transacción: la corrida ya tiene conexiones tomadas
+  // (el bloqueo) y fuentesDe hace sus consultas en paralelo. Si falla (o le falta un dataset), la reiteración no se genera.
+  const seguimientos = tipo === 'reiteracion'
+    ? await seguimientosDeLaNota(contenido.datasets, fecha, contenido.fuentesPorId ?? null)
+    : null;
   const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null, tipo);
   const conexion = await pool.getConnection();
   try {
@@ -161,8 +169,16 @@ export const generarNota = async ({
       });
     }
     const pdf = await renderPdf(nota, opcionesPdf(config, firmaNota));
-    // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo
-    const anexoPdf = fichas ? await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas })) : null;
+    // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo. El de la reiteración, ya con el
+    // número de la nota en el pie y la hora de la generación
+    let anexoPdf = null;
+    if (fichas) {
+      anexoPdf = await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas }));
+    } else if (seguimientos) {
+      anexoPdf = await renderAnexoDeReiteracion({
+        seguimientos, fecha, numeroTexto: textoNumero({ numero, anio, esPrueba }), momento: ahoraArgentina()
+      });
+    }
     const [resultado] = await conexion.query(
       `INSERT INTO notas_digitales
          (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, creado_por,
@@ -210,7 +226,9 @@ export const enviarNota = async (id) => {
   if (!nota) throw new ErrorDeUso(`No existe la nota ${id}`);
   if (nota.estado === 'enviada') return { success: true, yaEnviada: true };
 
-  // La nota y, en los avisos, su anexo (spec 6.7): los dos PDF guardados al generarla
+  // La nota y su anexo (spec 6.7; el de la reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.2): los dos PDF
+  // guardados al generarla, que nunca se regeneran. Las notas sin anexo (autorización, auditoría y las reiteraciones anteriores al
+  // anexo de seguimiento) van con la nota sola
   const sufijo = nota.es_prueba ? 'PRUEBA' : `${nota.numero}-${String(nota.anio).slice(-2)}`;
   const adjuntos = [{ filename: `Nota-Digital-${sufijo}.pdf`, content: nota.pdf, contentType: 'application/pdf' }];
   if (nota.anexo_pdf) adjuntos.push({ filename: `Anexo-Nota-Digital-${sufijo}.pdf`, content: nota.anexo_pdf, contentType: 'application/pdf' });
@@ -626,6 +644,8 @@ export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId =
 // reales (spec 2026-10-17-fechas-datasets, 9): el a vencer, el fin del mes en que caen los 30 días o, si así queda fuera
 // de la ventana del aviso de su gestión (los 40 días de la externa), el fin del mes anterior a ese; el vencido, el fin del
 // mes pasado. Sus datos llegan al corte del ciclo anterior, como los de un dataset que se actualizó a tiempo.
+// En la externa, el a vencer requiere nota DGMIT y el vencido no (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: así la
+// reiteración de ejemplo muestra los dos valores); en la interna, sin el dato, como los reales.
 export const ejemplo = (tipo, gestion, hoy) => {
   const area = {
     id: 0, nombre: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', email_principal: 'area@ejemplo.gov.ar',
@@ -646,14 +666,15 @@ export const ejemplo = (tipo, gestion, hoy) => {
   // (el fin del mes anterior está a más de 9 días: nunca pasa de hoy; y a lo sumo a 32, adentro de las dos ventanas)
   let aVencer = vencimientoDelMes(sumarDias(hoy, 30));
   while (diasEntre(hoy, aVencer) > VENTANA_DIAS[gestion]) aVencer = sumarMeses(aVencer, -1);
+  const requiereNota = (valor) => (gestion === 'externa' ? valor : null);
   const proximo = conPedido({
     ...comun, id: 0, titulo: 'Dataset de ejemplo próximo a vencer', ultima_actualizacion: sumarDias(hoy, -335),
-    ...fechas(aVencer), reiteraciones: 0,
+    ...fechas(aVencer), requiere_nota: requiereNota(1), reiteraciones: 0,
     antecedente: { cantidad: 3, primera: sumarDias(hoy, -90), ultima: sumarDias(hoy, -30) }
   }, hoy);
   const vencido = conPedido({
     ...comun, id: -1, titulo: 'Dataset de ejemplo vencido', ultima_actualizacion: sumarDias(hoy, -380), ...fechas(sumarMeses(hoy, -1)),
-    reiteraciones: 1, antecedente: null
+    requiere_nota: requiereNota(0), reiteraciones: 1, antecedente: null
   }, hoy);
   return {
     datasets: tipo === 'aviso' ? [proximo] : [proximo, vencido],
@@ -661,6 +682,25 @@ export const ejemplo = (tipo, gestion, hoy) => {
     // El anexo del aviso: la ficha del dataset a vencer (el aviso no lleva vencidos)
     fichas: tipo === 'aviso' ? [proximo] : []
   };
+};
+
+// Las fuentes del Seguimiento de los datasets de ejemplo, en memoria (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): el
+// anexo de una reiteración de ejemplo, en la vista previa y la prueba, dibuja la hoja de cada uno. fuentesDe (seguimientoDatos.js)
+// no sirve: descarta los ids de ejemplo (0 y -1) y no están en la base. Mismo formato que devuelve fuentesDe, Map<id, Fuentes>:
+// el dataset con su ficha (la de ejemplo(): área, frecuencia, fechas, tipo de pedido, Requiere nota DGMIT) y sin ningún movimiento
+// (ni alta, cambios, historial, emails, notas ni auditorías), como un dataset del que todavía no hay registro. fecha: el día de la
+// nota, el mismo con el que se calcula el Seguimiento; hoy no interviene, porque los ejemplos ya traen sus fechas armadas con ella.
+export const fuentesDeEjemplo = (datasets, fecha) => {
+  const catalogos = { areas: {}, frecuencias: {}, temas: {}, formatos: {} };
+  return new Map(datasets.map(d => [d.id, {
+    dataset: {
+      id: d.id, titulo: d.titulo, area: d.area_nombre, area_superior: d.area_superior ?? null, area_id: d.area_id,
+      tipo_gestion: d.tipo_gestion, requiere_nota: d.requiere_nota ?? null, frecuencia: d.frecuencia_nombre, meses: d.meses,
+      proxima: d.vencimiento, datos_al: d.datos_al ?? null, ultima: d.ultima_actualizacion ?? null, tipo_pedido: d.tipo_pedido ?? null,
+      url_dataset: d.url_dataset ?? null, activo: true, alta: null
+    },
+    altasSinDataset: [], cambios: [], historial: [], emails: [], notas: [], auditorias: [], catalogos
+  }]));
 };
 
 // Ejemplo de la nota de auditoría para la vista previa y la prueba cuando hoy no hay cambios para pedir (spec 10.4):
@@ -768,7 +808,8 @@ const diaDeVistaPrevia = async (config, hoy) => {
 // Los datasets de la vista previa o la prueba de ese día, o el ejemplo si no hay. El aviso sale de avisoDelDia con el contexto
 // del día, igual que en la corrida (víspera de una licencia, aviso en su fecha); si buscar lo que sale en su fecha falla,
 // falla también la vista previa: no muestra una nota distinta a la que saldría. La reiteración sigue su selección de siempre.
-// Devuelve { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo }.
+// Devuelve { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo } y, con datos de ejemplo, fuentesPorId: las fuentes
+// del Seguimiento de esos datasets, que el anexo de la reiteración no puede leer de la base (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5).
 const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
   let reales;
   let aviso = { rangoVencimientos: null, autorizacion: null };
@@ -784,7 +825,10 @@ const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
     const { rangoVencimientos, autorizacion } = aviso;
     return { ...(await prepararContenido({ tipo, gestion, datasets: reales, fecha })), rangoVencimientos, autorizacion, ejemplo: false };
   }
-  return { ...ejemplo(tipo, gestion, fecha), rangoVencimientos: null, autorizacion: null, ejemplo: true };
+  const deEjemplo = ejemplo(tipo, gestion, fecha);
+  return {
+    ...deEjemplo, fuentesPorId: fuentesDeEjemplo(deEjemplo.datasets, fecha), rangoVencimientos: null, autorizacion: null, ejemplo: true
+  };
 };
 
 // La nota de la vista previa: los datos de la fecha de la próxima corrida con notas (o de ejemplo) con N° XX, firmada como
@@ -815,11 +859,22 @@ export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
   return renderPdf(nota, opcionesPdf(config, firma));
 };
 
-// Anexo del aviso de la vista previa (N° XX), del mismo día y la misma selección que la nota: no se guarda ni se envía
-export const previewAnexo = async ({ gestion, hoy = hoyArgentina() }) => {
+// Los tipos de nota que llevan anexo: el aviso (las fichas) y la reiteración (el Seguimiento de cada dataset). La autorización y la
+// auditoría no.
+const TIPOS_CON_ANEXO = ['aviso', 'reiteracion'];
+
+// Anexo de la vista previa (N° XX), del mismo día y la misma selección que la nota: no se guarda ni se envía. tipo: 'aviso' (el de
+// siempre) o 'reiteracion' (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): una hoja del Seguimiento por dataset, con las
+// fuentes de la base o, con datos de ejemplo, las de ejemplo.
+export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina() }) => {
+  if (!TIPOS_CON_ANEXO.includes(tipo)) throw new ErrorDeUso(`La nota de tipo ${tipo} no lleva anexo`);
   const { fecha, contexto } = await diaDeVistaPrevia(await obtenerConfig(), hoy);
-  const { fichas } = await contenidoParaMostrar('aviso', gestion, fecha, contexto);
-  return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas }));
+  const contenido = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
+  if (tipo === 'reiteracion') {
+    const seguimientos = await seguimientosDeLaNota(contenido.datasets, fecha, contenido.fuentesPorId ?? null);
+    return renderAnexoDeReiteracion({ seguimientos, fecha, numeroTexto: textoNumero({ numero: null, anio: null }), momento: ahoraArgentina() });
+  }
+  return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas: contenido.fichas }));
 };
 
 // "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día
@@ -842,9 +897,11 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
     const id = await generarNota({ tipo, gestion: null, fecha, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
     return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...(await enviarNota(id)) };
   }
-  const { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
+  const { datasets, areas, fichas, fuentesPorId, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
+  // fuentesPorId solo viene con datos de ejemplo: el anexo de la reiteración de prueba dibuja sus hojas con ellas (sin ellas, de la base)
   const id = await generarNota({
-    tipo, gestion, fecha, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas }, firma, rangoVencimientos, autorizacion
+    tipo, gestion, fecha, datasets, config, esPrueba: true, usuarioId, preparado: { datasets, areas, fichas, fuentesPorId }, firma,
+    rangoVencimientos, autorizacion
   });
   const resultado = await enviarNota(id);
   return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...resultado };

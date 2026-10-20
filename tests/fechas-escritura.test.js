@@ -48,10 +48,11 @@ const cargarDataset = async ({
   numero += 1;
   const resultado = await query(
     `INSERT INTO datasets (titulo, area_id, frecuencia_id, ultima_actualizacion, proxima_actualizacion, datos_al, tipo_pedido,
-       tema_principal_id, tipo_gestion, url_dataset, activo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'https://datos.comodoro.gov.ar/dataset/test', 1)`,
+       tema_principal_id, tipo_gestion, requiere_nota, url_dataset, activo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'https://datos.comodoro.gov.ar/dataset/test', 1)`,
+    // Requiere nota DGMIT: un externo siempre tiene el dato (el servidor lo exige al editar); un interno, NULL
     [`${PREFIJO_TEST} escritura ${numero}`, cat.areaId, await idDeFrecuencia(frecuencia), ultima, proxima, datosAl, tipoPedido,
-      cat.temaId, gestion]
+      cat.temaId, gestion, gestion === 'externa' ? 1 : null]
   );
   return resultado.insertId;
 };
@@ -95,6 +96,7 @@ const alta = (extra = {}) => ({
   frecuencia_id: cat.frecuenciaId,
   tema_principal_id: cat.temaId,
   tipo_gestion: 'externa',
+  requiere_nota: 1,
   formatos: [cat.formatoId],
   ...extra
 });

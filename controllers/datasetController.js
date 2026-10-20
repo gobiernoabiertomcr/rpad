@@ -5,6 +5,9 @@ import {
   NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, esFinDeMes, estadoDelDataset, opcionesDeProxima, pedido as pedidoDe, tasaDeActualizacion, tipoEfectivo,
   topeDatosAl
 } from '../services/fechasDatasetReglas.js';
+import {
+  MENSAJE_FALTA_REQUIERE_NOTA, normalizarRequiereNota, requiereNotaResultante
+} from '../services/requiereNotaReglas.js';
 
 // Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
 const responderBloqueado = (res, accion) => res.status(409).json({
@@ -71,7 +74,7 @@ const hayCambiosReales = (antes, despues) => {
     'titulo', 'descripcion', 'area_id', 'frecuencia_id',
     'tema_principal_id', 'tema_secundario_id', 'tipo_gestion',
     'ultima_actualizacion', 'datos_al', 'proxima_actualizacion', 'url_dataset', 'observaciones', 'que_se_solicita',
-    'tipo_pedido'
+    'tipo_pedido', 'requiere_nota'
   ];
 
   // Comparar campos simples
@@ -98,6 +101,39 @@ const hayCambiosReales = (antes, despues) => {
   }
 
   return false;
+};
+
+// =====================================================
+// Requiere nota DGMIT al escribir (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.1 y 1.3)
+// =====================================================
+const ERROR_REQUIERE_NOTA_INVALIDO = 'requiere_nota debe ser 1 (Sí) o 0 (No)';
+
+/**
+ * El requiere_nota que queda guardado al crear o editar, con las reglas del servidor: { valor } o { error }.
+ * - llegado: lo que vino en el pedido (undefined si no vino); gestion: la gestión resultante; guardado: lo que tiene el
+ *   dataset hoy (en un alta, undefined). Si el campo no vino, se conserva el guardado.
+ * - Un valor que no es 0 ni 1 (ni vacío) es un error, también en gestión interna. En interna queda siempre null, venga lo
+ *   que venga; en externa, null (sin dato) es un error: hay que indicar Sí o No. Siempre `??`, nunca `||`: 0 es un valor.
+ */
+const requiereNotaDelPedido = ({ llegado, gestion, guardado }) => {
+  let normalizado;
+  try {
+    normalizado = normalizarRequiereNota(llegado);
+  } catch {
+    return { error: ERROR_REQUIERE_NOTA_INVALIDO };
+  }
+  const valor = requiereNotaResultante({ gestion, valor: normalizado === undefined ? guardado : normalizado });
+  if (gestion !== 'interna' && valor === null) return { error: MENSAJE_FALTA_REQUIERE_NOTA };
+  return { valor };
+};
+
+// Lo guardado en la base como 0, 1 o null (un valor raro, cargado a mano, cuenta como sin dato)
+const requiereNotaGuardado = (valor) => {
+  try {
+    return normalizarRequiereNota(valor) ?? null;
+  } catch {
+    return null;
+  }
 };
 
 // =====================================================
@@ -479,6 +515,10 @@ export const createDataset = async (req, res) => {
       return res.status(400).json({ success: false, error: largoAlta });
     }
 
+    // Requiere nota DGMIT: obligatorio en un externo; en un interno, siempre NULL (spec 2026-10-20, 1.3)
+    const requiereNota = requiereNotaDelPedido({ llegado: data.requiere_nota, gestion: data.tipo_gestion });
+    if (requiereNota.error) return responderInvalido(res, requiereNota.error);
+
     // Fechas y tipo de pedido (spec 2026-10-17-fechas-datasets, 10.1): en un alta cambia todo lo que llega, y la
     // coherencia de Eventual se mira siempre
     const frecuenciaMeses = await mesesDeLaFrecuencia(data.frecuencia_id);
@@ -522,6 +562,7 @@ export const createDataset = async (req, res) => {
       que_se_solicita: normalizarTextoOpcional(data.que_se_solicita),
       tipo_pedido: data.tipo_pedido || null,
       tipo_gestion: data.tipo_gestion,
+      requiere_nota: requiereNota.valor,
       formatos: formatoIds
     };
 
@@ -589,6 +630,16 @@ export const updateDataset = async (req, res) => {
     if (largoEdicion) {
       return res.status(400).json({ success: false, error: largoEdicion });
     }
+
+    // Requiere nota DGMIT (spec 2026-10-20, 1.3): si no llega se conserva el guardado; con la gestión resultante externa
+    // tiene que haber un Sí o un No, y con la interna queda NULL
+    const requiereNotaAnterior = requiereNotaGuardado(existing[0].requiere_nota);
+    const requiereNota = requiereNotaDelPedido({
+      llegado: data.requiere_nota,
+      gestion: data.tipo_gestion ?? existing[0].tipo_gestion,
+      guardado: requiereNotaAnterior
+    });
+    if (requiereNota.error) return responderInvalido(res, requiereNota.error);
 
     // Validar formatos si se proporcionan
     let formatoIds = null;
@@ -665,6 +716,7 @@ export const updateDataset = async (req, res) => {
       que_se_solicita: datasetActual.que_se_solicita,
       tipo_pedido: datasetActual.tipo_pedido,
       tipo_gestion: datasetActual.tipo_gestion,
+      requiere_nota: requiereNotaAnterior,
       formatos: formatosActuales.map(f => f.formato_id)
     };
 
@@ -684,6 +736,7 @@ export const updateDataset = async (req, res) => {
       que_se_solicita: data.que_se_solicita !== undefined ? normalizarTextoOpcional(data.que_se_solicita) : datasetActual.que_se_solicita,
       tipo_pedido: data.tipo_pedido !== undefined ? (data.tipo_pedido || null) : datasetActual.tipo_pedido,
       tipo_gestion: data.tipo_gestion !== undefined ? data.tipo_gestion : datasetActual.tipo_gestion,
+      requiere_nota: requiereNota.valor,
       formatos: formatoIds !== null ? formatoIds : formatosActuales.map(f => f.formato_id)
     };
 

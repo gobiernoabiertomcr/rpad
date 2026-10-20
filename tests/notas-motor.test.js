@@ -7,10 +7,14 @@ import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, lineasPorHoja } from './pdf-lector.js';
 import { formatoCorto, hoyArgentina, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { esFinDeMes, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import { construirNota } from '../services/notasDigitalesContenido.js';
+import { seguimientoDe } from '../services/seguimientoReglas.js';
+import { OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
+import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS } from './seguimiento-casos.js';
 
 // Banner del membrete generado para los tests (la imagen institucional no se versiona)
 const BANNER = pngRgb({ ancho: 1241, alto: 178 });
-let base, motor, datos, dbReal;
+let base, motor, datos, seguimientoNotas, seguimientoDatos, dbReal;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -19,6 +23,9 @@ before(async () => {
   process.env.EMAIL_SOLO_A = '';
   motor = await import('../services/notasDigitales.js');
   datos = await import('../services/notasDigitalesDatos.js');
+  // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
+  seguimientoNotas = await import('../services/notasDigitalesSeguimiento.js');
+  seguimientoDatos = await import('../services/seguimientoDatos.js');
 });
 
 after(async () => {
@@ -756,6 +763,23 @@ describe('pruebas, vista previa y estado', () => {
     assert.equal(motor.ejemplo('aviso', 'externa', '2026-11-20').datasets[0].vencimiento, '2026-11-30');
   });
 
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: los ejemplos externos traen «Requiere nota DGMIT», uno en Sí y otro
+  // en No; los internos, sin el dato
+  it('los ejemplos externos traen requiere_nota: el a vencer en Sí (1) y el vencido en No (0); los internos, null', async () => {
+    const [proximo, vencido] = motor.ejemplo('reiteracion', 'externa', '2026-11-02').datasets;
+    assert.equal(proximo.requiere_nota, 1);
+    assert.equal(vencido.requiere_nota, 0);
+    assert.equal(motor.ejemplo('aviso', 'externa', '2026-11-02').datasets[0].requiere_nota, 1);
+    for (const tipo of ['aviso', 'reiteracion']) {
+      assert.ok(motor.ejemplo(tipo, 'interna', '2026-11-02').datasets.every(d => d.requiere_nota === null), tipo);
+    }
+    // En la vista previa de la reiteración externa de ejemplo, la columna con los dos valores
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(vista.ejemplo, true);
+    assert.ok(vista.html.includes('>Requiere nota DGMIT</th>'));
+    assert.ok(vista.html.includes('>Sí</td>') && vista.html.includes('>No</td>'), vista.html);
+  });
+
   it('el ejemplo a vencer cae en la ventana del aviso de su gestión (40 días la externa, 60 la interna), a fin de mes', () => {
     const VENTANA = { externa: 40, interna: 60 };
     const diasHasta = (hoy, fecha) => (Date.parse(fecha) - Date.parse(hoy)) / 86400000;
@@ -797,9 +821,11 @@ describe('pruebas, vista previa y estado', () => {
     assert.ok(!interno.html.includes('Fecha sugerida de envío') && !interno.html.includes('>31/12/2026</td>'), interno.html);
     assert.ok(!interno.html.includes(FRASE));
     const reiteracion = await motor.previewNota({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
-    for (const texto of ['>Datos solicitados</th>', '>Situación</th>', '>Informado en</th>', '>Del 01/10/2025 al 30/09/2026</td>']) {
+    // (la externa no tiene columna "Situación": va debajo de la fecha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5)
+    for (const texto of ['>Datos solicitados</th>', '>Requiere nota DGMIT</th>', '>Informado en</th>', '>Del 01/10/2025 al 30/09/2026</td>', '>31/10/2026<br>Vencido hace 2 días</td>']) {
       assert.ok(reiteracion.html.includes(texto), texto);
     }
+    assert.ok(!reiteracion.html.includes('>Situación</th>'));
     assert.ok(!reiteracion.html.includes(FRASE) && !reiteracion.html.includes('Fecha sugerida de envío'));
   });
 
@@ -871,22 +897,6 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.ok(hojas[1].includes('Anexo – Nota Digital N° 1/26 · Hoja 2 de 2'), hojas[1].join(' | '));
   });
 
-  it('la reiteración se envía con un solo adjunto y no guarda anexo', async () => {
-    await crearDataset({ vencimiento: '2026-12-31' });
-    await ejecutar('2026-11-02');
-    await mailpit.vaciar();
-    await ejecutar('2026-12-01');
-
-    const [mensaje] = await mailpit.mensajes();
-    assert.match(mensaje.Subject, /Reiteración – /);
-    assert.deepEqual((await adjuntos(mensaje.ID)).map(a => a.nombre), ['Nota-Digital-2-26.pdf']);
-    const [aviso, reiteracion] = await anexos();
-    assert.equal(aviso.tipo, 'aviso');
-    assert.ok(aviso.anexo_pdf);
-    assert.equal(reiteracion.tipo, 'reiteracion');
-    assert.equal(reiteracion.anexo_pdf, null);
-  });
-
   it('el reintento de un aviso fallido reenvía el mismo anexo, aunque el dataset haya cambiado', async () => {
     const id = await crearNotaFallida();
     const [{ anexo_pdf: anexo }] = await query('SELECT anexo_pdf FROM notas_digitales WHERE id = ?', [id]);
@@ -903,7 +913,7 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.deepEqual(despues.anexo_pdf, anexo);
   });
 
-  it('la prueba de un aviso adjunta Anexo-Nota-Digital-PRUEBA.pdf con los datasets de hoy; la de una reiteración, no', async () => {
+  it('la prueba de un aviso adjunta Anexo-Nota-Digital-PRUEBA.pdf con los datasets de hoy', async () => {
     await crearDataset({ titulo: 'Real B', vencimiento: '2026-12-31' });
     await crearDataset({ titulo: 'Real A', vencimiento: '2026-12-15' });
     await motor.enviarPrueba({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' });
@@ -915,13 +925,7 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.ok(hojas[0].includes('Real A'));
     assert.ok(hojas[1].includes('Real B'));
     assert.ok(hojas[0].includes('Anexo – Nota Digital N° PRUEBA · Hoja 1 de 2'), hojas[0].join(' | '));
-
-    await mailpit.vaciar();
-    await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
-    const [reiteracion] = await mailpit.mensajes();
-    assert.deepEqual((await adjuntos(reiteracion.ID)).map(a => a.nombre), ['Nota-Digital-PRUEBA.pdf']);
-    assert.deepEqual((await anexos()).map(n => [n.tipo, n.es_prueba, Boolean(n.anexo_pdf)]),
-      [['aviso', 1, true], ['reiteracion', 1, false]]);
+    assert.deepEqual((await anexos()).map(n => [n.tipo, n.es_prueba, Boolean(n.anexo_pdf)]), [['aviso', 1, true]]);
   });
 
   it('la prueba de un aviso sin datos reales adjunta el anexo del ejemplo', async () => {
@@ -1045,6 +1049,277 @@ describe('anexo de los avisos (spec 6.7)', () => {
       /El anexo del aviso necesita una ficha con vencimiento por cada dataset/
     );
     assert.equal((await notas()).length, 0);
+  });
+});
+
+// El anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2): un solo PDF con la hoja del Seguimiento de
+// cada dataset de la nota, en el orden de la tabla, calculado con la fecha de la nota y guardado al generarla
+describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2)', () => {
+  const GENERADO = /^Generado el \d{2}\/\d{2}\/\d{4} a las \d{2}:\d{2}$/;
+  const fuentesDelCaso = (id) => ({ ...CASOS[id], catalogos: CATALOGOS });
+  // Los datasets de la nota de los casos reales, en el orden de la selección (por vencimiento): el 52 venció el 31/07, el 81
+  // vence el 31/10 y el 38 el 31/03/2027
+  const DE_LOS_CASOS = [52, 81, 38].map(id => ({ id, titulo: CASOS[id].dataset.titulo, vencimiento: CASOS[id].dataset.proxima }));
+
+  // Un vencido que nunca tuvo aviso y un próximo a vencer avisado el 01/10 (N° 1/26): los dos van en la reiteración interna del
+  // 02/11, que toma el N° 2/26. La selección los trae por vencimiento (primero el vencido); la tabla, al revés
+  const reiteracionDel0211 = async () => {
+    const vencido = await crearDataset({ titulo: 'Vencido sin aviso', vencimiento: '2026-10-31' });
+    const proximo = await crearDataset({ titulo: 'Próximo avisado', vencimiento: '2026-11-30' });
+    await crearNota({ fecha: '2026-10-01', numero: 1, datasets: [{ id: proximo, vencimiento: '2026-11-30' }] });
+    return { vencido, proximo };
+  };
+  const laReiteracion = async () => (await query(
+    "SELECT id, numero, anio, estado, es_prueba, html, texto, pdf, anexo_pdf FROM notas_digitales WHERE tipo = 'reiteracion' ORDER BY id"
+  ));
+
+  it('ordenDeLaTabla deja primero los que vencen desde la fecha de la nota y después los vencidos, sin cambiar el orden dentro de cada grupo', () => {
+    const d = (id, vencimiento) => ({ id, titulo: `Dataset ${id}`, area_nombre: 'Área', frecuencia_nombre: 'Anualmente', vencimiento });
+    const lista = [d(1, '2026-10-31'), d(2, '2026-11-30'), d(3, '2026-09-30'), d(4, '2026-11-02'), d(5, '2026-12-31'), d(6, '2026-11-01')];
+    const ordenada = seguimientoNotas.ordenDeLaTabla(lista, '2026-11-02');
+    assert.deepEqual(ordenada.map(x => x.id), [2, 4, 5, 1, 3, 6]);
+    assert.deepEqual(lista.map(x => x.id), [1, 2, 3, 4, 5, 6], 'no cambia la lista que recibe');
+    // Es el orden de las filas de la nota: los próximos a vencer (el que vence ese día también) y después los vencidos
+    for (const gestion of ['interna', 'externa']) {
+      const nota = construirNota({ tipo: 'reiteracion', gestion, fecha: '2026-11-02', datasets: lista, config: {} });
+      const filas = nota.secciones.flatMap(s => s.filas.map(f => f.valores[0]));
+      assert.deepEqual(filas, ordenada.map(x => x.titulo), gestion);
+    }
+  });
+
+  it('seguimientosDeLaNota usa las fuentes que recibe: una hoja por dataset, en el orden de la tabla, con la fecha de la nota como hoy y la cinta del PDF', async () => {
+    const fuentesPorId = new Map([52, 81, 38].map(id => [id, fuentesDelCaso(id)]));
+    const lista = await seguimientoNotas.seguimientosDeLaNota(DE_LOS_CASOS, HOY_DE_LOS_CASOS, fuentesPorId);
+    assert.deepEqual(lista, [81, 38, 52].map(id => seguimientoDe(fuentesDelCaso(id), HOY_DE_LOS_CASOS, OPCIONES_CINTA_PDF)));
+    // Con otra fecha, otro Seguimiento: el 81 todavía no venció el 20/10 y el 02/11 ya está vencido
+    const despues = await seguimientoNotas.seguimientosDeLaNota(DE_LOS_CASOS, '2026-11-02', fuentesPorId);
+    assert.deepEqual(despues.map(s => s.ficha.id), [38, 52, 81]);
+    assert.deepEqual(despues, [38, 52, 81].map(id => seguimientoDe(fuentesDelCaso(id), '2026-11-02', OPCIONES_CINTA_PDF)));
+  });
+
+  it('seguimientosDeLaNota tira error si falta la fuente de un dataset', async () => {
+    const sinEl81 = new Map([52, 38].map(id => [id, fuentesDelCaso(id)]));
+    await assert.rejects(seguimientoNotas.seguimientosDeLaNota(DE_LOS_CASOS, HOY_DE_LOS_CASOS, sinEl81), /dataset 81/);
+  });
+
+  it('seguimientosDeLaNota sin fuentes las lee de la base: las mismas que da fuentesDe', async () => {
+    const { vencido, proximo } = await reiteracionDel0211();
+    const datasets = await datos.seleccionarParaReiteracion('interna', '2026-11-02');
+    assert.deepEqual(datasets.map(d => d.id), [vencido, proximo]);
+    const lista = await seguimientoNotas.seguimientosDeLaNota(datasets, '2026-11-02');
+    const fuentes = await seguimientoDatos.fuentesDe([vencido, proximo]);
+    assert.deepEqual(lista, [proximo, vencido].map(id => seguimientoDe(fuentes.get(id), '2026-11-02', OPCIONES_CINTA_PDF)));
+  });
+
+  it('generarNota de una reiteración guarda anexo_pdf con una hoja por dataset en el orden de la tabla y el pie con su número', async () => {
+    await reiteracionDel0211();
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    assert.equal(reiteracion.numero, 2);
+    assert.ok(reiteracion.anexo_pdf);
+    assert.equal(reiteracion.anexo_pdf.subarray(0, 5).toString(), '%PDF-');
+
+    const hojas = lineasPorHoja(reiteracion.anexo_pdf);
+    assert.equal(hojas.length, 2);
+    // Primero el próximo a vencer y después el vencido, como la tabla (la selección los trae al revés)
+    assert.ok(hojas[0].includes('Próximo avisado'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Vencido sin aviso'), hojas[1].join(' | '));
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° 2/26 · Hoja ${k + 1} de 2`), lineas.join(' | '));
+      // Arriba, «Seguimiento del dataset» con la fecha larga de la nota; abajo, la hora de generación, sin «por»
+      assert.ok(lineas.includes('Seguimiento del dataset') && lineas.includes('2 de noviembre de 2026'), lineas.join(' | '));
+      assert.equal(lineas.filter(l => GENERADO.test(l)).length, 1, lineas.join(' | '));
+      assert.ok(!lineas.some(l => /^Generado.* por /.test(l)), lineas.join(' | '));
+    });
+    // El Seguimiento es el del día de la nota: el vencido venció hace 2 días
+    assert.ok(hojas[1].includes('31/10/2026, hace 2 días'), hojas[1].join(' | '));
+
+    // La nota lo anuncia, en el HTML y en el texto
+    assert.ok(reiteracion.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
+    assert.ok(reiteracion.texto.startsWith('SE ADJUNTAN NOTA Y ANEXO EN PDF\n\n'));
+    assert.ok(reiteracion.texto.includes('\nAnexo: seguimiento de los conjuntos de datos (2 hojas).\n'));
+    // Lo de siempre: la reiteración guarda sus datasets
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets WHERE nota_id = ?', [reiteracion.id]))[0].n, 2);
+  });
+
+  it('enviarNota de una reiteración adjunta Nota y Anexo', async () => {
+    await reiteracionDel0211();
+    await ejecutar('2026-11-02');
+    const mensaje = (await mailpit.mensajes()).find(m => /Reiteración – /.test(m.Subject));
+    assert.ok(mensaje);
+    const archivos = await adjuntos(mensaje.ID);
+    assert.deepEqual(archivos.map(a => a.nombre), ['Nota-Digital-2-26.pdf', 'Anexo-Nota-Digital-2-26.pdf']);
+    const [reiteracion] = await laReiteracion();
+    assert.equal(reiteracion.estado, 'enviada');
+    assert.deepEqual(archivos[0].contenido, reiteracion.pdf);
+    assert.deepEqual(archivos[1].contenido, reiteracion.anexo_pdf);
+    assert.ok((await mailpit.html(mensaje.ID)).includes('>SE ADJUNTAN NOTA Y ANEXO EN PDF</p>'));
+  });
+
+  it('el reintento de una reiteración fallida reenvía el mismo anexo, aunque los datasets hayan cambiado', async () => {
+    await reiteracionDel0211();
+    process.env.EMAIL_SOLO_A = 'nadie@rpad.test';
+    await ejecutar('2026-11-02');
+    process.env.EMAIL_SOLO_A = '';
+    const [fallida] = await laReiteracion();
+    assert.equal(fallida.estado, 'fallida');
+    assert.ok(fallida.anexo_pdf);
+    await query("UPDATE datasets SET titulo = CONCAT('Cambiado: ', titulo), proxima_actualizacion = '2027-06-30'");
+
+    await ejecutar('2026-11-03');
+    const mensaje = (await mailpit.mensajes()).find(m => /Reiteración – /.test(m.Subject));
+    const archivos = await adjuntos(mensaje.ID);
+    assert.deepEqual(archivos.map(a => a.nombre), ['Nota-Digital-2-26.pdf', 'Anexo-Nota-Digital-2-26.pdf']);
+    assert.deepEqual(archivos[1].contenido, fallida.anexo_pdf);
+    const [despues] = await laReiteracion();
+    assert.equal(despues.estado, 'enviada');
+    assert.deepEqual(despues.anexo_pdf, fallida.anexo_pdf);
+  });
+
+  it('si el anexo de la reiteración falla, no queda nota ni número usado', async () => {
+    const { vencido, proximo } = await reiteracionDel0211();
+    const config = await datos.obtenerConfig();
+    const datasets = await datos.seleccionarParaReiteracion('interna', '2026-11-02');
+    const reiterar = (preparado) => motor.generarNota({
+      tipo: 'reiteracion', gestion: 'interna', fecha: '2026-11-02', datasets, config, preparado: { areas: [], fichas: [], ...preparado }
+    });
+    // Falta el Seguimiento de un dataset (se lee antes de abrir la transacción): la nota no se genera
+    const soloDelProximo = await seguimientoDatos.fuentesDe([proximo]);
+    await assert.rejects(reiterar({ datasets, fuentesPorId: soloDelProximo }), new RegExp(`dataset ${vencido}`));
+    // El anexo falla al dibujarse, dentro de la transacción y ya con el número asignado (sin hojas que dibujar)
+    await assert.rejects(reiterar({ datasets: [], fuentesPorId: new Map() }), /al menos un seguimiento/);
+    assert.equal((await query("SELECT COUNT(*) AS n FROM notas_digitales WHERE tipo = 'reiteracion'"))[0].n, 0);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets'))[0].n, 1, 'solo el aviso del 01/10');
+
+    // La reiteración de la corrida toma el N° 2: los intentos fallidos no gastaron números
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    assert.equal(reiteracion.numero, 2);
+    assert.ok(reiteracion.anexo_pdf);
+  });
+
+  it('una prueba de reiteración lleva anexo con N° PRUEBA', async () => {
+    await reiteracionDel0211();
+    const resultado = await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(resultado.ejemplo, false);
+    const [mensaje] = await mailpit.mensajes();
+    const archivos = await adjuntos(mensaje.ID);
+    assert.deepEqual(archivos.map(a => a.nombre), ['Nota-Digital-PRUEBA.pdf', 'Anexo-Nota-Digital-PRUEBA.pdf']);
+    const hojas = lineasPorHoja(archivos[1].contenido);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Próximo avisado'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Vencido sin aviso'), hojas[1].join(' | '));
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° PRUEBA · Hoja ${k + 1} de 2`), lineas.join(' | '));
+    });
+    const [prueba] = await laReiteracion();
+    assert.equal(prueba.es_prueba, 1);
+    assert.deepEqual(prueba.anexo_pdf, archivos[1].contenido);
+    assert.ok(prueba.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
+  });
+
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5: vista previa y prueba del anexo en Correos
+  it('la prueba de una reiteración de ejemplo adjunta el anexo', async () => {
+    const resultado = await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(resultado.ejemplo, true);
+    assert.equal(resultado.success, true);
+    const [mensaje] = await mailpit.mensajes();
+    assert.deepEqual(direcciones(mensaje.To), ['prueba@rpad.test']);
+    const archivos = await adjuntos(mensaje.ID);
+    assert.deepEqual(archivos.map(a => a.nombre), ['Nota-Digital-PRUEBA.pdf', 'Anexo-Nota-Digital-PRUEBA.pdf']);
+    // Los dos datasets de ejemplo, en el orden de la tabla: el a vencer y después el vencido; el pie con el número de la prueba
+    const hojas = lineasPorHoja(archivos[1].contenido);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° PRUEBA · Hoja ${k + 1} de 2`), lineas.join(' | '));
+    });
+    // La nota anuncia las dos hojas y la prueba guarda el anexo; no queda registro de datasets ni de números usados
+    const [prueba] = await laReiteracion();
+    assert.equal(prueba.es_prueba, 1);
+    assert.deepEqual(prueba.anexo_pdf, archivos[1].contenido);
+    assert.ok(prueba.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets'))[0].n, 0);
+  });
+
+  it('fuentesDeEjemplo da las fuentes de cada dataset de ejemplo, con su ficha y sin movimientos: seguimientoDe no falla con los ids 0 y -1', () => {
+    for (const gestion of ['interna', 'externa']) {
+      const { datasets } = motor.ejemplo('reiteracion', gestion, '2026-11-02');
+      const fuentes = motor.fuentesDeEjemplo(datasets, '2026-11-02');
+      assert.ok(fuentes instanceof Map);
+      assert.deepEqual([...fuentes.keys()], [0, -1]);
+      for (const d of datasets) {
+        const delDataset = fuentes.get(d.id);
+        // Lo mismo que devuelve fuentesDe: el dataset, las listas vacías y los catálogos
+        assert.deepEqual(Object.keys(delDataset).sort(), ['altasSinDataset', 'auditorias', 'cambios', 'catalogos', 'dataset', 'emails', 'historial', 'notas']);
+        for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias']) assert.deepEqual(delDataset[lista], [], lista);
+        assert.deepEqual(delDataset.dataset, {
+          id: d.id, titulo: d.titulo, area: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', area_id: 0, tipo_gestion: gestion,
+          requiere_nota: d.requiere_nota, frecuencia: 'Anualmente', meses: 12, proxima: d.vencimiento, datos_al: d.datos_al,
+          ultima: d.ultima_actualizacion, tipo_pedido: d.tipo_pedido, url_dataset: 'https://datos.comodoro.gov.ar', activo: true, alta: null
+        });
+        const seguimiento = seguimientoDe(delDataset, '2026-11-02', OPCIONES_CINTA_PDF);
+        assert.equal(seguimiento.ficha.titulo, d.titulo);
+        assert.equal(seguimiento.ficha.requiere_nota, d.requiere_nota);
+        assert.deepEqual(seguimiento.movimientos, []);
+      }
+    }
+  });
+
+  it('seguimientosDeLaNota con las fuentes de ejemplo no consulta la base: el próximo y después el vencido', async () => {
+    const { datasets } = motor.ejemplo('reiteracion', 'externa', '2026-11-02');
+    const fuentesPorId = motor.fuentesDeEjemplo(datasets, '2026-11-02');
+    const lista = await seguimientoNotas.seguimientosDeLaNota(datasets, '2026-11-02', fuentesPorId);
+    assert.deepEqual(lista.map(s => s.ficha.id), [0, -1]);
+    // Sin ellas lee la base (fuentesDe descarta los ids de ejemplo) y no encuentra el dataset
+    await assert.rejects(seguimientoNotas.seguimientosDeLaNota(datasets, '2026-11-02'), /dataset 0/);
+  });
+
+  it('previewAnexo de una reiteración: una hoja por dataset, en el orden de la tabla, con N° XX; es el de la próxima corrida y no guarda nada', async () => {
+    await reiteracionDel0211();
+    const pdf = await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 2);
+    // Los mismos que la vista previa de la nota
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' });
+    assert.equal(vista.cantidad, 2);
+    assert.ok(hojas[0].includes('Próximo avisado') && hojas[1].includes('Vencido sin aviso'), hojas.map(h => h.join(' | ')).join('\n'));
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° XX · Hoja ${k + 1} de 2`), lineas.join(' | '));
+      assert.ok(lineas.some(l => GENERADO.test(l)), lineas.join(' | '));
+    });
+    // Es el que saldría en la corrida: las mismas hojas que el anexo guardado de la reiteración del día
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    assert.deepEqual(lineasPorHoja(reiteracion.anexo_pdf).map(h => h.map(l => l.replace('N° 2/26', 'N° XX')).filter(l => !GENERADO.test(l))),
+      hojas.map(h => h.filter(l => !GENERADO.test(l))));
+    assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1, 'solo la de la corrida');
+  });
+
+  it('previewAnexo de una reiteración sin datasets reales usa el ejemplo: dos hojas, sin leer la base', async () => {
+    const pdf = await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
+    assert.ok(hojas[1].includes('Anexo de la Nota Digital N° XX · Hoja 2 de 2'), hojas[1].join(' | '));
+    assert.equal((await notas()).length, 0);
+    assert.equal((await mailpit.mensajes()).length, 0);
+  });
+
+  it('previewAnexo sin tipo es el del aviso; con un tipo que no lleva anexo, se rechaza', async () => {
+    await crearDataset({ titulo: 'Real a vencer', gestion: 'externa', vencimiento: '2026-11-30' });
+    const sinTipo = lineasPorHoja(await motor.previewAnexo({ gestion: 'externa', hoy: '2026-11-02' }));
+    const deAviso = lineasPorHoja(await motor.previewAnexo({ tipo: 'aviso', gestion: 'externa', hoy: '2026-11-02' }));
+    assert.equal(sinTipo.length, 1);
+    assert.ok(sinTipo[0].includes('Anexo – Nota Digital N° XX · Hoja 1 de 1'), sinTipo[0].join(' | '));
+    assert.deepEqual(sinTipo.map(h => h.filter(l => !GENERADO.test(l))), deAviso.map(h => h.filter(l => !GENERADO.test(l))));
+    for (const tipo of ['auditoria', 'autorizacion', 'otro']) {
+      await assert.rejects(motor.previewAnexo({ tipo, gestion: 'externa', hoy: '2026-11-02' }), motor.ErrorDeUso, tipo);
+    }
   });
 });
 

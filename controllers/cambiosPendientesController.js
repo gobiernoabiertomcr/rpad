@@ -8,6 +8,7 @@ import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditor
 import { permisoParaAuditar, quienesAuditan } from '../services/auditoriaReglas.js';
 import { esFechaIso, hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import { esFinDeMes, NOMBRES_TIPO_PEDIDO } from '../services/fechasDatasetReglas.js';
+import { textoRequiereNota } from '../services/requiereNotaReglas.js';
 
 // ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2): un
 // auditor siempre; un editor, solo de respaldo. conexion: la de la transacción o el pool.
@@ -43,6 +44,12 @@ const enriquecerDatos = (datos, catalogos) => {
     enriquecido.tipo_pedido_nombre = NOMBRES_TIPO_PEDIDO[datos.tipo_pedido];
   }
 
+  // Requiere nota DGMIT, como Sí, No o — (de la base llega 0 o 1, o null). Solo si el cambio trae el dato: los
+  // propuestos antes de que existiera no tienen la clave y no muestran el renglón
+  if (Object.hasOwn(datos, 'requiere_nota')) {
+    enriquecido.requiere_nota_texto = textoRequiereNota(datos.requiere_nota);
+  }
+
   // Convertir array de formato IDs a nombres
   if (datos.formatos && Array.isArray(datos.formatos)) {
     enriquecido.formatos_nombres = datos.formatos
@@ -74,6 +81,7 @@ const calcularCambios = (antes, despues) => {
     { key: 'tema_principal_nombre', label: 'Tema Principal', keyAntes: 'tema_principal_id', keyDespues: 'tema_principal_id' },
     { key: 'tema_secundario_nombre', label: 'Tema Secundario', keyAntes: 'tema_secundario_id', keyDespues: 'tema_secundario_id' },
     { key: 'tipo_gestion', label: 'Tipo de Gestion' },
+    { key: 'requiere_nota_texto', label: 'Requiere nota DGMIT', keyAntes: 'requiere_nota', keyDespues: 'requiere_nota' },
     { key: 'tipo_pedido_nombre', label: 'Tipo de pedido', keyAntes: 'tipo_pedido', keyDespues: 'tipo_pedido' },
     { key: 'datos_al', label: 'Datos al' },
     { key: 'ultima_actualizacion', label: 'Cargado en el portal' },
@@ -95,7 +103,7 @@ const calcularCambios = (antes, despues) => {
     let valorDespues = despues[keyD];
     
     // Usar nombres enriquecidos si existen
-    if (campo.key.includes('_nombre') || campo.key === 'formatos_nombres') {
+    if (campo.key.includes('_nombre') || campo.key === 'formatos_nombres' || campo.key === 'requiere_nota_texto') {
       valorAntes = antes[campo.key] || valorAntes;
       valorDespues = despues[campo.key] || valorDespues;
     }
@@ -475,8 +483,8 @@ export const aprobarCambio = async (req, res) => {
           titulo, descripcion, area_id, frecuencia_id,
           ultima_actualizacion, datos_al, proxima_actualizacion,
           tema_principal_id, tema_secundario_id,
-          url_dataset, observaciones, que_se_solicita, tipo_pedido, tipo_gestion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          url_dataset, observaciones, que_se_solicita, tipo_pedido, tipo_gestion, requiere_nota
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           datosNuevos.titulo,
           datosNuevos.descripcion || null,
@@ -491,7 +499,9 @@ export const aprobarCambio = async (req, res) => {
           datosNuevos.observaciones || null,
           datosNuevos.que_se_solicita || null,
           datosNuevos.tipo_pedido || null,
-          datosNuevos.tipo_gestion
+          datosNuevos.tipo_gestion,
+          // 0 (No) es un valor: con ?? y no con ||. Un alta propuesta antes de que existiera el dato no trae la clave: NULL
+          datosNuevos.requiere_nota ?? null
         ]
       );
 
@@ -516,7 +526,7 @@ export const aprobarCambio = async (req, res) => {
         'titulo', 'descripcion', 'area_id', 'frecuencia_id',
         'ultima_actualizacion', 'datos_al', 'proxima_actualizacion',
         'tema_principal_id', 'tema_secundario_id',
-        'url_dataset', 'observaciones', 'que_se_solicita', 'tipo_pedido', 'tipo_gestion'
+        'url_dataset', 'observaciones', 'que_se_solicita', 'tipo_pedido', 'tipo_gestion', 'requiere_nota'
       ];
 
       campos.forEach(campo => {

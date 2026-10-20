@@ -9,6 +9,7 @@ import fs from 'fs';
 import vm from 'vm';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 import { seguimientoDe, resumenParaLista, nombreDelPdf } from '../services/seguimientoReglas.js';
+import { textoRequiereNota } from '../services/requiereNotaReglas.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -203,6 +204,55 @@ describe('seguimiento.js: la ficha y el circuito', () => {
     const eventual = ctx.htmlDelCircuito(seguimientoDe(f(66), HOY).circuito);
     assert.equal(cuantas(eventual, /Sin vencimiento/g), 2);
     assert.equal(ctx.htmlDelCircuito(null), '');
+  });
+
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7)
+  const conDato = (id, requiere_nota) => seguimientoDe({ ...f(id), dataset: { ...CASOS[id].dataset, requiere_nota } }, HOY);
+  const DATO = (valor) => `<div class="sg-dato"><dt>Requiere nota DGMIT</dt><dd>${valor}</dd></div>`;
+
+  it('la ficha de un externo muestra Requiere nota DGMIT: No; con null, Sin dato; la interna no lo muestra', () => {
+    assert.ok(ctx.htmlDeFicha(conDato(52, 0).ficha).includes(DATO('No')), 'No');
+    assert.ok(ctx.htmlDeFicha(conDato(52, 1).ficha).includes(DATO('Sí')), 'Sí');
+    assert.ok(ctx.htmlDeFicha(conDato(52, null).ficha).includes(DATO('Sin dato')), 'null');
+    assert.ok(ctx.htmlDeFicha(seguimientoDe(f(52), HOY).ficha).includes(DATO('Sin dato')), 'los casos reales, sin dato');
+    // La interna no lo muestra, aunque el dataset traiga un valor (el servidor lo manda null)
+    for (const valor of [null, 0, 1]) {
+      const interna = ctx.htmlDeFicha(conDato(38, valor).ficha);
+      assert.ok(!interna.includes('Requiere nota'), `interna con ${valor}`);
+      assert.ok(interna.includes('gestión interna</p>'));
+    }
+    // Aunque le pasaran un 0 a la ficha de una interna, lo decide la gestión
+    assert.ok(!ctx.htmlDeFicha({ ...conDato(38, null).ficha, requiere_nota: 0 }).includes('Requiere nota'));
+  });
+
+  it('el dato va después de «Datos solicitados hoy» y es el último de la fila de datos', () => {
+    const html = ctx.htmlDeFicha(conDato(52, 0).ficha);
+    const rotulos = [...html.matchAll(/<dt>([^<]*)<\/dt>/g)].map(m => m[1]);
+    assert.deepEqual(rotulos, ['Frecuencia', 'Datos al', 'Cargado en el portal', 'Venció el', 'Datos solicitados hoy', 'Requiere nota DGMIT']);
+    assert.match(html, /Requiere nota DGMIT<\/dt><dd>No<\/dd><\/div>\s*<\/dl>/);
+  });
+
+  it('textoDeRequiereNota es una copia de textoRequiereNota del servidor, con «Sin dato» donde no hay dato', () => {
+    for (const valor of [1, 0, true, false, '1', '0', null, undefined, '', 'si', 2, -1, {}, [], NaN]) {
+      assert.equal(ctx.textoDeRequiereNota(valor), textoRequiereNota(valor, 'Sin dato'), String(valor));
+    }
+    assert.equal(ctx.textoDeRequiereNota(0), 'No');
+    assert.equal(ctx.textoDeRequiereNota(1), 'Sí');
+    assert.equal(ctx.textoDeRequiereNota(null), 'Sin dato');
+  });
+
+  it('el circuito con No dice lo que manda el servidor y no dibuja «Al área» si no hay email', () => {
+    const sinEmail = ctx.htmlDelCircuito(conDato(81, 0).circuito);
+    for (const t of ['DGMIT y Dirección Administrativa', 'No hace falta nota formal', 'Sin nota formal', 'Los datos se obtienen de la fuente']) {
+      assert.ok(sinEmail.includes(t), t);
+    }
+    assert.ok(!sinEmail.includes('Mandan la nota formal al área') && !sinEmail.includes('Por fuera del RPAD'));
+    assert.ok(sinEmail.includes('class="sg-flecha fuera"'), 'el tramo sigue punteado');
+    assert.ok(!sinEmail.includes('sg-directo'), 'sin la línea del email al área');
+    // Con un email al área en el ciclo (caso 52), la línea sigue
+    const conEmail = ctx.htmlDelCircuito(conDato(52, 0).circuito);
+    assert.ok(conEmail.includes('No hace falta nota formal'));
+    assert.ok(conEmail.includes('Además, el 21/06/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.'));
   });
 });
 

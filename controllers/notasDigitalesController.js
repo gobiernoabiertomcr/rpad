@@ -177,7 +177,8 @@ export const descargarPdf = async (req, res) => {
   }
 };
 
-// El anexo guardado de un aviso (las reiteraciones no tienen)
+// El anexo guardado de un aviso o de una reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.4). No tienen anexo
+// las notas de autorización y de auditoría ni las reiteraciones anteriores al anexo de seguimiento: 404 "La nota no tiene anexo"
 export const descargarAnexo = async (req, res) => {
   try {
     const id = idDe(req.params.id);
@@ -243,16 +244,21 @@ export const verPreviewPdf = async (req, res) => {
   }
 };
 
-// El anexo del aviso de la vista previa (N° XX): no se guarda ni se envía. Solo los avisos llevan anexo.
+// El anexo de la vista previa (N° XX), del aviso o de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5):
+// no se guarda ni se envía. Sin tipo, el aviso, como antes. La autorización y la auditoría no llevan anexo.
 export const verPreviewAnexo = async (req, res) => {
   try {
-    const { gestion } = req.query;
+    const { gestion, tipo = 'aviso' } = req.query;
+    if (!TIPOS.includes(tipo)) {
+      return res.status(400).json({ success: false, error: 'Tipo inválido' });
+    }
     if (!GESTIONES.includes(gestion)) {
       return res.status(400).json({ success: false, error: 'Gestión inválida' });
     }
-    const pdf = await notas.previewAnexo({ gestion });
+    const pdf = await notas.previewAnexo({ tipo, gestion });
+    const nombre = tipo === 'aviso' ? `Anexo-vista-previa-${gestion}.pdf` : `Anexo-vista-previa-${tipo}-${gestion}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Anexo-vista-previa-${gestion}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${nombre}"`);
     res.send(pdf);
   } catch (error) {
     errorInterno(res, 'Error al generar el anexo de la vista previa', error);

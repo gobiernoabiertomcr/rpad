@@ -29,9 +29,13 @@ const CURSIVA = 'Helvetica-Oblique';
 // de "Última actualización" (le ceden el título, "Situación" e "Informado en"). Un pedido "Del … al …" ocupa uno o dos
 // renglones (conFechasJuntas). Con los avisos reales de 2026, un área más ancha da tablas más bajas que un pedido en un solo
 // renglón. (6: la tabla de los avisos anteriores a esa spec; ninguna nota nueva la usa)
-const PROPORCIONES = { 4: [30, 26, 16, 28], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
+// 5 en los próximos a vencer del aviso externo, con "Requiere nota DGMIT" en la cuarta (spec 2026-10-20-requiere-nota-y-anexo-
+// reiteracion, 1.5; probadas con el aviso real del 22/12/2026): el encabezado ocupa tres renglones y "Del … al …", dos. La
+// tabla externa de 7 columnas no usa las de 7 de acá: trae las suyas (seccion.proporciones, de construirNota).
+const PROPORCIONES = { 4: [30, 26, 16, 28], 5: [28, 24, 15, 10, 23], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
 // Si alguna fila lleva el antecedente de los emails anteriores en "Informado en" (reiteraciones, en letra más chica),
-// esa columna necesita más ancho para que la fila no crezca de más: lo cede sobre todo el título
+// esa columna necesita más ancho para que la fila no crezca de más: lo cede sobre todo el título (la externa hace lo mismo con
+// las suyas, en construirNota)
 const PROPORCIONES_CON_SEGUNDA = { 7: [18, 14, 10, 13, 10, 10, 25] };
 const TAMANO_TABLA = 8.5;
 const RELLENO = 3;
@@ -258,11 +262,15 @@ export const pieEntraEnUnaLinea = (pie) => {
 
 // Palabra más ancha de un texto como la mide PDFKit al partir líneas: cada palabra con el espacio que la sigue (la
 // última, sin él). Si una palabra así no entra en el ancho de la celda, PDFKit la parte entre letras. PDFKit no corta en
-// el espacio duro (U+00A0): lo que une es una sola palabra.
+// el espacio duro (U+00A0): lo que une es una sola palabra. Un salto de línea (la situación debajo de la fecha, un texto
+// largo del detalle de la nota de auditoría) separa renglones: la última palabra de cada uno también va sin el espacio.
+const anchosDePalabras = (doc, renglon) => {
+  const palabras = renglon.split(/[^\S\u00a0]+/).filter(Boolean);
+  return palabras.map((palabra, i) => doc.widthOfString(i < palabras.length - 1 ? `${palabra} ` : palabra));
+};
 const palabraMasAncha = (doc, texto, fuente, tamano) => {
   doc.font(fuente).fontSize(tamano);
-  const palabras = String(texto ?? '').split(/[^\S\u00a0]+/).filter(Boolean);
-  return Math.max(0, ...palabras.map((palabra, i) => doc.widthOfString(i < palabras.length - 1 ? `${palabra} ` : palabra)));
+  return Math.max(0, ...String(texto ?? '').split(/\r\n?|\n/).flatMap(renglon => anchosDePalabras(doc, renglon)));
 };
 
 // En las celdas, salvo la del título, "Del" y "al" no se separan de la fecha que los sigue: un pedido como "Del 01/01/2026
@@ -282,11 +290,26 @@ const conFechasJuntas = (seccion) => ({
   }))
 });
 
+// La situación de las tablas externas (fila.situacion, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5) va en la celda
+// de la fecha ("Venció" o "Vence", seccion.columnaSituacion), en un renglón aparte y en la misma letra: se le suma al valor con un
+// salto de línea. Así cuenta en el alto de la fila, en el ancho mínimo de la columna (sus palabras no se parten) y se dibuja con
+// la celda. Una sección sin esa columna (las internas, la nota de auditoría) queda igual.
+const conSituacionDebajo = (seccion) => {
+  const columna = seccion.columnaSituacion;
+  if (columna == null) return seccion;
+  return {
+    ...seccion,
+    filas: seccion.filas.map(f => (f.situacion
+      ? { ...f, valores: f.valores.map((valor, i) => (i === columna ? `${valor}\n${f.situacion}` : valor)) }
+      : f))
+  };
+};
+
 // Ancho de cada columna: la proporción base, ampliada lo justo para que ninguna palabra de las columnas que no son
 // el título se parta (fechas, frecuencias, áreas, encabezados), y recortada de las columnas que tienen holgura.
 // Si los mínimos no entran, cede primero el título (que puede partir palabras larguísimas).
 const calcularAnchos = (doc, seccion, ancho) => {
-  // Una sección puede traer sus proporciones (las tablas de la nota de auditoría y de su detalle)
+  // Una sección puede traer sus proporciones (las tablas de la nota de auditoría y de su detalle, y la externa de 7 columnas)
   const proporciones = seccion.proporciones
     ?? (seccion.filas.some(f => f.informadoAnterior) ? PROPORCIONES_CON_SEGUNDA : PROPORCIONES)[seccion.columnas.length];
   const base = proporciones.map(p => (p / 100) * ancho);
@@ -318,12 +341,13 @@ const calcularAnchos = (doc, seccion, ancho) => {
 
 // Prepara la tabla de una sección: devuelve cuánto alto necesitan el encabezado y la primera fila (con su fila de
 // vencimiento, si la tiene, y su antecedente) para que quepan juntos, y la función que la dibuja.
-// Una fila es { valores, url, antecedente, informadoAnterior, grupo }: el antecedente de los avisos va en una fila a todo el
-// ancho debajo; informadoAnterior (reiteraciones) es la segunda parte de la última celda, debajo del texto de la nota
-// y en letra más chica; grupo (avisos con varios vencimientos, spec 18) es el texto de la fila a todo el ancho, en negrita,
-// que abre un vencimiento y va arriba de la fila.
+// Una fila es { valores, url, antecedente, informadoAnterior, situacion, grupo }: el antecedente de los avisos va en una fila a
+// todo el ancho debajo; informadoAnterior (reiteraciones) es la segunda parte de la última celda, debajo del texto de la nota
+// y en letra más chica; situacion (tablas externas de 7 columnas) va debajo de la fecha, en su celda y en la misma letra; grupo
+// (avisos con varios vencimientos, spec 18) es el texto de la fila a todo el ancho, en negrita, que abre un vencimiento y va
+// arriba de la fila.
 const prepararTabla = (doc, seccionDeLaNota, ancho) => {
-  const seccion = conFechasJuntas(seccionDeLaNota);
+  const seccion = conSituacionDebajo(conFechasJuntas(seccionDeLaNota));
   const anchos = calcularAnchos(doc, seccion, ancho);
   const limite = () => doc.page.height - doc.page.margins.bottom;
   const izquierda = MARGENES.left;
@@ -604,24 +628,25 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       });
     });
 
-    // La línea del anexo (solo avisos) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
-    // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con el título de la justificación y su
-    // primer párrafo: se reserva también el espacio que deja debajo (si no, el reservado a continuación puede
-    // mandar el título a otra hoja).
+    // El título de la justificación viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
+    // Si hay un solo párrafo (o ninguno; la reiteración tiene uno) es a la vez el primero y el último: se reserva todo junto
+    // antes de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
+    const ultimo = nota.justificacion.length - 1;
+    const reservaDeLaJustificacion = ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? altoCierre : 0);
+
+    // La línea del anexo (avisos y reiteraciones) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
+    // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con lo que reserva la justificación (su título y su
+    // primer párrafo y, si es también el último, el cierre): se reserva también el espacio que deja debajo (si no, el
+    // reservado a continuación puede mandar el título a otra hoja).
     if (nota.anexo) {
-      asegurarEspacio(AIRE_ANEXO + altoTexto(nota.anexo) + altoEspacio(ESPACIO_PARRAFO, 12) + ALTO_TITULO_JUSTIFICACION
-        + altoTexto(nota.justificacion[0] || ''));
+      asegurarEspacio(AIRE_ANEXO + altoTexto(nota.anexo) + altoEspacio(ESPACIO_PARRAFO, 12) + reservaDeLaJustificacion);
       if (doc.y > doc.page.margins.top + 1) doc.y += AIRE_ANEXO;
       parrafo(nota.anexo, { align: 'left', espacio: ESPACIO_PARRAFO });
     }
 
-    // El título viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
-    // Si hay un solo párrafo (o ninguno) es a la vez el primero y el último: se reserva todo junto antes
-    // de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
     // (la nota de autorización no tiene justificación: el cierre se reserva solo)
     if (nota.justificacion.length) {
-      const ultimo = nota.justificacion.length - 1;
-      asegurarEspacio(ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? altoCierre : 0));
+      asegurarEspacio(reservaDeLaJustificacion);
       parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
       nota.justificacion.forEach((texto, i) => {
         if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + altoCierre);

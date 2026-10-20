@@ -420,6 +420,36 @@ describe('movimientosDe: casos sintéticos sobre el 52', () => {
     assert.deepEqual(por.Formatos, { campo: 'Formatos', antes: '1, 2', despues: '1, 3' });
   });
 
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3): de la base llega 0 o 1; el 0 es un valor
+  it('un cambio de solo requiere_nota dice «Cambió: requiere nota DGMIT» con de Sí a No', () => {
+    const c = movimientosDe(con(52, { cambios: [cambio({ id: 72, nuevos: { requiere_nota: 0 }, anteriores: { requiere_nota: 1 } })] }))
+      .find((x) => x.extra.cambio_id === 72);
+    assert.equal(c.detalle, 'Cambió: requiere nota DGMIT. Cambio #72.');
+    assert.deepEqual(c.extra.campos, [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: 'No' }]);
+    assert.equal(c.tipo, 'cambio');
+  });
+
+  it('requiere_nota: de — a Sí y de Sí a — (sin dato es la raya, como los demás campos del movimiento); si no cambia (1 contra "1"), no es un cambio', () => {
+    const campos = (anterior, nuevo, id) => movimientosDe(con(52, { cambios: [cambio({ id, nuevos: { requiere_nota: nuevo }, anteriores: { requiere_nota: anterior } })] }))
+      .find((x) => x.extra.cambio_id === id).extra.campos;
+    assert.deepEqual(campos(null, 1, 73), [{ campo: 'Requiere nota DGMIT', antes: '—', despues: 'Sí' }]);
+    assert.deepEqual(campos(1, null, 74), [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: '—' }]);
+    assert.deepEqual(campos(undefined, 0, 79), [{ campo: 'Requiere nota DGMIT', antes: '—', despues: 'No' }]);
+    assert.ok(!JSON.stringify(campos(null, 1, 80)).includes('Sin dato'));
+    assert.deepEqual(campos(0, 1, 75), [{ campo: 'Requiere nota DGMIT', antes: 'No', despues: 'Sí' }]);
+    assert.deepEqual(campos(1, '1', 76), []);
+    assert.deepEqual(campos(0, false, 77), []);
+  });
+
+  it('«requiere nota DGMIT» va después de la gestión y antes de los temas en «Cambió:»', () => {
+    const c = movimientosDe(con(52, { cambios: [cambio({ id: 78,
+      nuevos: { tema_principal_id: 5, requiere_nota: 0, tipo_gestion: 'interna', tipo_pedido: 'acumulado', observaciones: 'Nueva' },
+      anteriores: { tema_principal_id: 4, requiere_nota: 1, tipo_gestion: 'externa', tipo_pedido: 'foto', observaciones: null } })] }))
+      .find((x) => x.extra.cambio_id === 78);
+    assert.equal(c.detalle, 'Cambió: observaciones, tipo de pedido, gestión, requiere nota DGMIT, tema principal. Cambio #78.');
+    assert.deepEqual(c.extra.campos.map((x) => x.campo), ['Observaciones', 'Tipo de pedido', 'Gestión', 'Requiere nota DGMIT', 'Tema principal']);
+  });
+
   it('con los catálogos de temas y formatos, el antes y el después dicen los nombres (los formatos, en orden alfabético)', () => {
     const catalogos = { ...CATALOGOS, temas: { 2: 'Economía', 4: 'Salud', 5: 'Ambiente' }, formatos: { 1: 'XLSX', 2: 'CSV', 3: 'JSON' } };
     const fuentes = { ...con(52, { cambios: [cambio({ id: 68,
@@ -1033,6 +1063,120 @@ describe('circuitoDe', () => {
   });
 });
 
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): con «No» no hay nota formal, y el renglón «Al área»
+// no se dibuja (alArea null) salvo que el RPAD ya le haya mandado al área el email de los 40 días en el ciclo abierto
+describe('circuitoDe: requiere nota DGMIT', () => {
+  const circuito = (fuentes) => circuitoDe(fuentes, ciclosDe(fuentes, HOY), HOY);
+  const externo = (requiere_nota, extra = {}, dataset = {}) => solo({ proxima: '2026-10-31', tipo_gestion: 'externa', requiere_nota, ...dataset }, extra);
+  const SIN_NOTA = {
+    nodoMedio: { nombre: 'DGMIT y Dirección Administrativa', rol: 'No hace falta nota formal' },
+    tramoFuera: { titulo: 'Sin nota formal', texto: 'Los datos se obtienen de la fuente' }
+  };
+  const CON_NOTA = {
+    nodoMedio: { nombre: 'DGMIT y Dirección Administrativa', rol: 'Mandan la nota formal al área' },
+    tramoFuera: { titulo: 'Nota formal', texto: 'Por fuera del RPAD: no queda registrada' }
+  };
+
+  it('circuito de un externo con No y sin emails al área: textos sin nota formal y alArea null', () => {
+    const c = circuito(externo(0));
+    assert.deepEqual(c.nodoMedio, SIN_NOTA.nodoMedio);
+    assert.deepEqual(c.tramoFuera, SIN_NOTA.tramoFuera);
+    assert.equal(c.alArea, null);
+    // Lo demás es lo de siempre: los avisos a DGMIT, el área y el vencimiento
+    const conSi = circuito(externo(1));
+    assert.deepEqual(c.avisos, conSi.avisos);
+    assert.deepEqual(c.area, conSi.area);
+    assert.deepEqual(c.vencimiento, conSi.vencimiento);
+    assert.deepEqual(c.vencimiento, { fecha: '2026-10-31', texto: 'Vencimiento del 31/10/2026' });
+  });
+
+  it('circuito de un externo con No y un email al área en el ciclo: alArea con sus fechas', () => {
+    const emails = [email({ id: 1, tipo: 'area-aviso-40', enviado: '2026-09-21 08:00:00' })];
+    const c = circuito(externo(0, { emails }));
+    assert.deepEqual(c.nodoMedio, SIN_NOTA.nodoMedio);
+    assert.deepEqual(c.tramoFuera, SIN_NOTA.tramoFuera);
+    assert.deepEqual(c.alArea, {
+      fechas: ['2026-09-21'],
+      texto: 'Además, el 21/09/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.',
+      textoPdf: 'Al área: el 21/09/2026 el RPAD le anticipó por email que iba a recibir una nota formal.'
+    });
+    assert.deepEqual(c.alArea, circuito(externo(1, { emails })).alArea);
+  });
+
+  it('con No, el caso 52 real (un email al área el 21/06/2026) conserva su renglón «Al área»', () => {
+    const fuentes = { ...f(52), dataset: { ...CASOS[52].dataset, requiere_nota: 0 } };
+    const c = circuito(fuentes);
+    assert.deepEqual(c.alArea.fechas, ['2026-06-21']);
+    assert.match(c.alArea.textoPdf, /^Al área: el 21\/06\/2026 el RPAD le anticipó por email/);
+    assert.deepEqual(c.nodoMedio, SIN_NOTA.nodoMedio);
+    assert.deepEqual(c.tramoFuera, SIN_NOTA.tramoFuera);
+  });
+
+  it('con No, un email al área que falló o que es de un ciclo anterior no cuenta: alArea null', () => {
+    const fallido = circuito(externo(0, { emails: [email({ id: 1, tipo: 'area-aviso-40', success: false, enviado: '2026-09-21 08:00:00' })] }));
+    assert.equal(fallido.alArea, null);
+    // El email del 05/01/2026 es del ciclo que vencía el 31/01/2026, cerrado por la actualización aprobada el 02/03/2026
+    const anterior = solo({ proxima: '2027-01-31', tipo_gestion: 'externa', requiere_nota: 0, alta: '2026-01-02 09:00:00' }, {
+      cambios: [actualizacion(70, '2026-03-02 10:00:00', '2026-02-01', '2027-01-31', { carga: '2025-12-20', proxima: '2026-01-31' })],
+      emails: [email({ id: 1, tipo: 'area-aviso-40', enviado: '2026-01-05 08:00:00' })]
+    });
+    assert.equal(circuito(anterior).alArea, null);
+    // Con «Sí», en cambio, el renglón «todavía no se le envió» sigue estando
+    const conSi = circuito({ ...anterior, dataset: { ...anterior.dataset, requiere_nota: 1 } });
+    assert.deepEqual(conSi.alArea.fechas, []);
+    assert.match(conSi.alArea.textoPdf, /todavía no se le envió el email que anticipa la nota formal/);
+  });
+
+  it('con No, lo que nunca aparece es «todavía no se le envió el email»', () => {
+    for (const id of [10, 81, 52, 61, 1, 42]) {
+      const c = circuito({ ...f(id), dataset: { ...CASOS[id].dataset, requiere_nota: 0 } });
+      assert.doesNotMatch(JSON.stringify(c), /todavía no se le envió/, `caso ${id}`);
+    }
+  });
+
+  it('circuito con NULL o Sí: como hoy', () => {
+    for (const valor of [1, null, undefined]) {
+      const c = circuito(externo(valor));
+      assert.deepEqual(c.nodoMedio, CON_NOTA.nodoMedio, String(valor));
+      assert.deepEqual(c.tramoFuera, CON_NOTA.tramoFuera, String(valor));
+      assert.deepEqual(c.alArea.fechas, [], String(valor));
+      assert.equal(c.alArea.texto, null, String(valor));
+      assert.equal(c.alArea.textoPdf, 'Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.', String(valor));
+    }
+    // Los casos reales (todos sin dato) son idénticos con null y con Sí
+    for (const id of Object.keys(CASOS)) {
+      const conSi = circuito({ ...f(id), dataset: { ...CASOS[id].dataset, requiere_nota: 1 } });
+      assert.deepEqual(conSi, circuito(f(id)), `caso ${id}`);
+    }
+  });
+
+  it('un valor que no es Sí ni No cuenta como sin dato: el circuito de siempre', () => {
+    for (const raro of ['si', 2, {}, NaN, '']) assert.deepEqual(circuito(externo(raro)).nodoMedio, CON_NOTA.nodoMedio, String(raro));
+  });
+
+  it('la gestión interna no cambia aunque el dataset traiga un 0', () => {
+    const interna = circuito({ ...f(38), dataset: { ...CASOS[38].dataset, requiere_nota: 0 } });
+    assert.deepEqual(interna, circuito(f(38)));
+    assert.deepEqual(interna.nodoMedio, { nombre: 'DGMIT y Dirección de Investigación Territorial', rol: 'Hacen el relevamiento' });
+    assert.deepEqual(interna.tramoFuera, { titulo: 'Relevamiento', texto: 'Por fuera del RPAD: no queda registrado' });
+    assert.equal(interna.alArea, null);
+  });
+
+  it('con No, ni los textos del circuito dicen «sin entregar», «sin respuesta» ni «atrasado»', () => {
+    for (const id of Object.keys(CASOS)) {
+      const c = circuito({ ...f(id), dataset: { ...CASOS[id].dataset, requiere_nota: 0 } });
+      assert.doesNotMatch(JSON.stringify([c.nodoMedio, c.tramoFuera, c.avisos, c.area.texto, c.alArea, c.vencimiento]), /sin entregar|sin respuesta|atrasad/i, `caso ${id}`);
+    }
+  });
+
+  it('seguimientoDe lleva el circuito con No', () => {
+    const s = seguimientoDe({ ...f(81), dataset: { ...CASOS[81].dataset, requiere_nota: 0 } }, HOY);
+    assert.deepEqual(s.circuito.nodoMedio, SIN_NOTA.nodoMedio);
+    assert.equal(s.circuito.alArea, null);
+    assert.equal(s.ficha.requiere_nota, 0);
+  });
+});
+
 describe('seguimientoDe', () => {
   it('el caso 52: ficha, movimientos, hitos, cinta y registro', () => {
     const s = seguimientoDe(f(52), HOY);
@@ -1049,10 +1193,31 @@ describe('seguimientoDe', () => {
     const { dataset } = CASOS[52];
     assert.deepEqual(seguimientoDe(f(52), HOY).ficha, {
       id: 52, titulo: dataset.titulo, area: dataset.area, area_superior: dataset.area_superior, tipo_gestion: 'externa',
-      frecuencia: 'Cada medio año', datos_al: '2025-12-31', ultima: '2026-02-04', proxima: '2026-07-31',
+      requiere_nota: null, frecuencia: 'Cada medio año', datos_al: '2025-12-31', ultima: '2026-02-04', proxima: '2026-07-31',
       pedido: 'Vigente al 30/06/2026', url_dataset: dataset.url_dataset,
       estado: estadoDeSeguimiento(dataset, HOY), activo: true, baja: null
     });
+  });
+
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): la ficha lo devuelve tal cual (1, 0 o null);
+  // el 0 es un valor, no un vacío; en gestión interna es null
+  it('ficha: requiere_nota de un externo es 1, 0 o null (el 0 se conserva) y se queda con lo que dice el dataset', () => {
+    const ficha = (valor) => seguimientoDe({ ...f(52), dataset: { ...CASOS[52].dataset, requiere_nota: valor } }, HOY).ficha;
+    assert.equal(ficha(1).requiere_nota, 1);
+    assert.equal(ficha(0).requiere_nota, 0);
+    assert.equal(ficha(null).requiere_nota, null);
+    assert.equal(ficha(undefined).requiere_nota, null);
+    // Tal como lo da la base o un cuerpo viejo: 1 y 0 de texto o booleanos
+    assert.equal(ficha('0').requiere_nota, 0);
+    assert.equal(ficha(true).requiere_nota, 1);
+    // Algo que no es Sí ni No es sin dato; no tira error
+    for (const raro of ['si', 2, -1, {}, NaN, '']) assert.equal(ficha(raro).requiere_nota, null, String(raro));
+  });
+
+  it('ficha: requiere_nota de un interno es null, aunque el dataset traiga un valor', () => {
+    const ficha = (valor) => seguimientoDe({ ...f(38), dataset: { ...CASOS[38].dataset, requiere_nota: valor } }, HOY).ficha;
+    for (const valor of [1, 0, null]) assert.equal(ficha(valor).requiere_nota, null, String(valor));
+    assert.equal(seguimientoDe(f(66), HOY).ficha.requiere_nota, null);
   });
 
   it('el circuito, los hitos y los movimientos son los de las reglas sueltas', () => {
