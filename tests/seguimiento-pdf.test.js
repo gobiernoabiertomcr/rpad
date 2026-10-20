@@ -3,14 +3,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
-import { renderSeguimiento, FILAS_PDF } from '../services/seguimientoPdf.js';
+import { renderSeguimiento, renderAnexoDeSeguimiento, FILAS_PDF, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
 import { lineasPorHoja, contenidoPorHoja, textosPorHoja } from './pdf-lector.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 
 const MM = 72 / 25.4;
-// Las opciones de la cinta del PDF (Task 4): marcas a menos de 12 se juntan y las letras miden 8,4
-const OPCIONES_CINTA = { separacion: 12, letra: 8.4 };
+// Las opciones de la cinta del PDF: marcas a menos de 12 se juntan y las letras miden 8,4 (las mismas del anexo y de la descarga)
+const OPCIONES_CINTA = OPCIONES_CINTA_PDF;
 const GENERADO = { momento: '2026-10-20 11:30:05', por: 'Usuario Uno' };
 // El Seguimiento de un caso real; `dataset` cambia campos del dataset antes de calcularlo
 const seguimiento = (id, dataset = {}) => seguimientoDe(
@@ -446,5 +446,123 @@ describe('renderSeguimiento: requiere nota DGMIT', () => {
       const lineas = lineasPorHoja(await render(conDato(Number(id), 0)))[0];
       assert.deepEqual(lineas.filter(l => NEUTRO.test(l)), [], `caso ${id}`);
     }
+  });
+});
+
+// El anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.1 y 2.2): un solo PDF con la hoja del
+// Seguimiento de cada dataset de la nota, en orden. Cada hoja es la de siempre, con la fecha larga de la nota arriba y, abajo, la
+// hora en que se generó (sin «por») y «Anexo de la Nota Digital N° … · Hoja k de N».
+describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () => {
+  // Una nota del 20/10/2026 generada a las 08:15 del 21/10/2026 (un envío automático: sin «por»)
+  const GENERADO_AUTOMATICO = { momento: '2026-10-21 08:15:03', por: null };
+  const anexo = (lista, numeroTexto = '9/26', generado = GENERADO_AUTOMATICO) =>
+    renderAnexoDeSeguimiento(lista, { hoy: HOY, generado, numeroTexto });
+  const tres = () => [seguimiento(52), seguimiento(81), seguimiento(38)];
+  const FECHA = /^\d{2}\/\d{2}\/\d{4}$/;
+  const fechasDeLaTabla = (textos) => {
+    const rotulo = textos.find(t => t.texto === 'ÚLTIMOS MOVIMIENTOS');
+    assert.ok(rotulo, textos.map(t => t.texto).join(' | '));
+    return textos.filter(t => FECHA.test(t.texto) && t.base < rotulo.base).map(t => t.texto);
+  };
+  const ddmmaaaa = (dia) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+
+  it('OPCIONES_CINTA_PDF son las de la cinta del PDF: separación 12 y letra 8,4', () => {
+    assert.deepEqual(OPCIONES_CINTA_PDF, { separacion: 12, letra: 8.4 });
+  });
+
+  it('con 3 casos: 3 hojas, en orden, cada una con su título y «Anexo de la Nota Digital N° 9/26 · Hoja k de 3»', async () => {
+    const lista = tres();
+    const pdf = await anexo(lista);
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 3);
+    lista.forEach((s, k) => {
+      const lineas = hojas[k];
+      assert.ok(lineas.join(' ').includes(s.ficha.titulo), `la hoja ${k + 1} no lleva "${s.ficha.titulo}": ${lineas.join(' | ')}`);
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° 9/26 · Hoja ${k + 1} de 3`), `pie de la hoja ${k + 1}: ${lineas.join(' | ')}`);
+      assert.ok(!lineas.some(l => l.includes('Hoja 1 de 1')), lineas.join(' | '));
+      assert.ok(lineas.includes('Seguimiento del dataset'), lineas.join(' | '));
+    });
+    // Cada hoja es de su dataset, en el orden dado: el 52 (externo), el 81 (recién dado de alta) y el 38 (interno)
+    assert.ok(hojas[0].includes('CONJUNTO DE DATOS · GESTIÓN EXTERNA'));
+    assert.ok(hojas[1].includes('No hay movimientos anteriores: el dataset está en el RPAD desde el 19/10/2026.'));
+    assert.ok(hojas[2].includes('CONJUNTO DE DATOS · GESTIÓN INTERNA'));
+  });
+
+  it('arriba, la fecha larga de la nota (hoy); abajo, la hora de generación y sin «por»', async () => {
+    for (const lineas of lineasPorHoja(await anexo(tres()))) {
+      assert.ok(lineas.includes('20 de octubre de 2026'), lineas.join(' | '));
+      assert.ok(lineas.includes('Generado el 21/10/2026 a las 08:15'), lineas.join(' | '));
+      assert.ok(!lineas.some(l => /^Generado.* por /.test(l)), lineas.join(' | '));
+    }
+  });
+
+  it('una sola hoja: «Hoja 1 de 1» y el número tal como viene', async () => {
+    const lineas = lineasPorHoja(await anexo([seguimiento(52)], 'XX'))[0];
+    assert.ok(lineas.includes('Anexo de la Nota Digital N° XX · Hoja 1 de 1'), lineas.join(' | '));
+    assert.ok(!lineas.includes('Seguimiento del dataset · Hoja 1 de 1'), lineas.join(' | '));
+  });
+
+  it('diez hojas: cada pie dice su número, hasta «Hoja 10 de 10»', async () => {
+    const lista = [52, 81, 38, 10, 1, 9, 11, 26, 33, 42].map(id => seguimiento(id));
+    const hojas = lineasPorHoja(await anexo(lista));
+    assert.equal(hojas.length, 10);
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° 9/26 · Hoja ${k + 1} de 10`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+    });
+  });
+
+  it('cada hoja del anexo pasa la diagramación de una hoja (nada se pisa, 8 renglones)', async () => {
+    // Todos los casos reales y el 52 con título y áreas larguísimos
+    const lista = [...Object.keys(CASOS).map(id => seguimiento(id)), largo()];
+    const pdf = await anexo(lista);
+    const hojas = textosPorHoja(pdf);
+    assert.equal(hojas.length, lista.length);
+    verificarDiagramacion(await diagramacion(() => anexo(lista)));
+    // La tabla de movimientos de cada hoja: los 8 más nuevos de ese dataset (o todos, si son menos)
+    hojas.forEach((textos, k) => {
+      const esperadas = lista[k].movimientos.slice(0, FILAS_PDF).map(m => ddmmaaaa(m.fecha));
+      assert.deepEqual(fechasDeLaTabla(textos), esperadas, `hoja ${k + 1}`);
+    });
+    // El 52 tiene más de 8 movimientos: su tabla se llena
+    assert.equal(fechasDeLaTabla(hojas[Object.keys(CASOS).indexOf('52')]).length, FILAS_PDF);
+  });
+
+  it('un número de nota largo no se pisa con la izquierda del pie ni sale de los márgenes', async () => {
+    for (const numeroTexto of ['XX', '99999/26', 'PRUEBA 123456789/2026 PRUEBA 123456789/2026']) {
+      verificarDiagramacion(await diagramacion(() => anexo(tres(), numeroTexto)));
+    }
+  });
+
+  it('cada hoja es la de la descarga, salvo la hora del pie y el pie mismo', async () => {
+    const s = seguimiento(52);
+    const sola = lineasPorHoja(await render(s))[0];
+    const enAnexo = lineasPorHoja(await anexo([s]))[0];
+    assert.deepEqual(sola.filter(l => !enAnexo.includes(l)),
+      ['Generado el 20/10/2026 a las 11:30 por Usuario Uno', 'Seguimiento del dataset · Hoja 1 de 1']);
+    assert.deepEqual(enAnexo.filter(l => !sola.includes(l)),
+      ['Generado el 21/10/2026 a las 08:15', 'Anexo de la Nota Digital N° 9/26 · Hoja 1 de 1']);
+  });
+
+  it('una lista vacía tira error', async () => {
+    await assert.rejects(anexo([]), /al menos un seguimiento/);
+  });
+
+  it('lo que no es una lista o un anexo sin número de nota también tira error', async () => {
+    await assert.rejects(anexo(null), /al menos un seguimiento/);
+    await assert.rejects(anexo(undefined), /al menos un seguimiento/);
+    // (sin pasar por `anexo`, cuyo número por defecto es 9/26)
+    for (const numeroTexto of [undefined, null, '', '  ']) {
+      await assert.rejects(renderAnexoDeSeguimiento(tres(), { hoy: HOY, generado: GENERADO_AUTOMATICO, numeroTexto }), /número de la nota/);
+    }
+  });
+});
+
+describe('renderSeguimiento: la descarga de una hoja no cambió', () => {
+  it('la descarga de una hoja sigue con «Hoja 1 de 1» y quién la generó', async () => {
+    const lineas = lineasPorHoja(await render(seguimiento(52)))[0];
+    assert.ok(lineas.includes('Seguimiento del dataset · Hoja 1 de 1'), lineas.join(' | '));
+    assert.ok(lineas.includes('Generado el 20/10/2026 a las 11:30 por Usuario Uno'), lineas.join(' | '));
+    assert.ok(!lineas.some(l => l.startsWith('Anexo de la Nota Digital')), lineas.join(' | '));
   });
 });

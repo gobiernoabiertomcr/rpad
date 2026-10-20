@@ -2,6 +2,9 @@
 // ANEXO de los avisos (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie,
 // DocumentoNota y el QR vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
 // cinta del PDF (separación 12 y letra 8,4): no recalcula ninguna regla.
+// Hay dos PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1")
+// y el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
+// Hoja k de N"); los dos las dibujan con el mismo dibujante de N hojas.
 // Las secciones tienen lugar fijo y se completan solas: el título reserva dos líneas, cada valor de la ficha va en una línea, los
 // nodos del circuito tienen alto fijo, la leyenda reserva dos renglones, la tabla de movimientos tiene FILAS_PDF renglones y la
 // aclaración va siempre arriba del pie. Así la hoja nunca pasa a una segunda, con cualquier largo de título, área o movimientos.
@@ -97,16 +100,16 @@ const textoDeGenerado = (momento, por) => {
   return ['Generado', cuando, por ? `por ${por}` : ''].filter(Boolean).join(' ');
 };
 
-// Pie: línea fina, quién y cuándo lo generó a la izquierda y "Seguimiento del dataset · Hoja 1 de 1" a la derecha, con los
-// descendentes sobre el margen inferior. Devuelve la y de la línea, el límite de todo lo que va arriba.
-const dibujarPie = (doc, generado) => {
+// Pie: línea fina, quién y cuándo lo generó a la izquierda y, a la derecha, `derecha` ("Seguimiento del dataset · Hoja 1 de 1" en la
+// descarga de una hoja; "Anexo de la Nota Digital N° … · Hoja k de N" en el anexo), con los descendentes sobre el margen inferior.
+// Si el texto no entra en su ancho, se corta con "…". Devuelve la y de la línea, el límite de todo lo que va arriba.
+const dibujarPie = (doc, generado, derecha) => {
   const y = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie);
   const yLinea = y - 8;
   const izquierda = CONTENIDO * 0.6;
   filete(doc, IZQUIERDA, yLinea, CONTENIDO);
   renglon(doc, textoDeGenerado(generado?.momento, generado?.por), IZQUIERDA, y, { ancho: izquierda, tamano: LETRA.pie, color: COLOR.gris });
-  renglon(doc, 'Seguimiento del dataset · Hoja 1 de 1', IZQUIERDA + izquierda, y,
-    { ancho: CONTENIDO - izquierda, tamano: LETRA.pie, color: COLOR.gris, align: 'right' });
+  renglon(doc, derecha, IZQUIERDA + izquierda, y, { ancho: CONTENIDO - izquierda, tamano: LETRA.pie, color: COLOR.gris, align: 'right' });
   return yLinea;
 };
 
@@ -576,12 +579,13 @@ const dibujarMovimientos = (doc, movimientos, y) => {
 // La hoja
 // =====================================================
 
-const dibujarHoja = (doc, seguimiento, { hoy, generado }) => {
+// Una hoja del Seguimiento de un dataset en la página actual de `doc`. `pie`: el texto de la derecha del pie.
+const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
   const { ficha, circuito, cinta } = seguimiento;
   const movimientos = Array.isArray(seguimiento.movimientos) ? seguimiento.movimientos : [];
   const registro = seguimiento.registro ?? {};
   let y = dibujarEncabezado(doc, hoy);
-  const limite = dibujarPie(doc, generado);
+  const limite = dibujarPie(doc, generado, pie);
 
   y += AIRE.etiqueta;
   y += dibujarCabecera(doc, ficha, y) + AIRE.ficha;
@@ -616,28 +620,57 @@ const dibujarHoja = (doc, seguimiento, { hoy, generado }) => {
   renglon(doc, aclaracion, IZQUIERDA, limite - AIRE.sobrePie - OJO * LETRA.nota, { ancho: CONTENIDO, tamano: LETRA.nota, color: COLOR.gris });
 };
 
-// El PDF de una hoja del Seguimiento de un dataset. `seguimiento`: el de seguimientoDe(fuentes, hoy, { separacion: 12, letra: 8.4 });
-// `hoy`: 'AAAA-MM-DD'; `generado`: { momento: 'AAAA-MM-DD HH:MM:SS', por: nombre corto o null }.
-export const renderSeguimiento = async (seguimiento, { hoy, generado }) => {
-  await cargarQrcode();
-  return dibujarSeguimiento(seguimiento, { hoy, generado });
-};
+// Las opciones de la cinta del PDF: las marcas a menos de 12 unidades se juntan y las letras miden 8,4 (las de la pantalla, 11 y
+// 6,6). Con ellas se calcula el Seguimiento (seguimientoDe) que dibujan la descarga de una hoja y el anexo de la reiteración.
+export const OPCIONES_CINTA_PDF = { separacion: 12, letra: 8.4 };
 
-const dibujarSeguimiento = (seguimiento, opciones) => new Promise((resolve, reject) => {
+// El documento: una hoja A4 por elemento de `seguimientos`, en ese orden, con el mismo `hoy` y el mismo `generado` en todas.
+// `pieDe(k, total)`: el texto de la derecha del pie de la hoja k (de 1 a total); `titulo`: el título del PDF.
+const dibujarHojas = (seguimientos, { hoy, generado, pieDe, titulo }) => new Promise((resolve, reject) => {
   try {
     // Márgenes de PDFKit en 0: la diagramación es fija y nada se escribe donde PDFKit agregaría una hoja
     const doc = new DocumentoNota({
       size: 'A4', autoFirstPage: false, margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      info: { Title: 'Seguimiento del dataset', Author: 'Dirección de Datos Públicos y Comunicación' }
+      info: { Title: titulo, Author: 'Dirección de Datos Públicos y Comunicación' }
     });
     const partes = [];
     doc.on('data', parte => partes.push(parte));
     doc.on('end', () => resolve(Buffer.concat(partes)));
     doc.on('error', reject);
-    doc.addPage();
-    dibujarHoja(doc, seguimiento, opciones);
+    seguimientos.forEach((seguimiento, i) => {
+      doc.addPage();
+      dibujarHoja(doc, seguimiento, { hoy, generado, pie: pieDe(i + 1, seguimientos.length) });
+    });
     doc.end();
   } catch (error) {
     reject(error);
   }
 });
+
+// El PDF de una hoja del Seguimiento de un dataset. `seguimiento`: el de seguimientoDe(fuentes, hoy, OPCIONES_CINTA_PDF);
+// `hoy`: 'AAAA-MM-DD'; `generado`: { momento: 'AAAA-MM-DD HH:MM:SS', por: nombre corto o null }.
+export const renderSeguimiento = async (seguimiento, { hoy, generado }) => {
+  await cargarQrcode();
+  return dibujarHojas([seguimiento], {
+    hoy, generado, titulo: 'Seguimiento del dataset', pieDe: () => 'Seguimiento del dataset · Hoja 1 de 1'
+  });
+};
+
+// El anexo de una Nota Digital de reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.1): un solo PDF con una hoja
+// del Seguimiento por dataset, en el orden de `seguimientos` (cada uno, el de seguimientoDe(fuentes, hoy, OPCIONES_CINTA_PDF)).
+// Cada hoja es la de la descarga, con `hoy` = la fecha de la nota (arriba a la derecha va su fecha larga) y otro pie: a la izquierda
+// la hora de generación (`generado`: { momento, por: null }, un envío automático no tiene "por") y a la derecha "Anexo de la Nota
+// Digital N° <numeroTexto> · Hoja k de N".
+// Una lista vacía, o sin número de nota, tira error: no hay anexo sin hojas ni nota que lo cite.
+export const renderAnexoDeSeguimiento = async (seguimientos, { hoy, generado, numeroTexto }) => {
+  if (!Array.isArray(seguimientos) || seguimientos.length === 0) {
+    throw new Error('El anexo de seguimiento necesita al menos un seguimiento');
+  }
+  const numero = String(numeroTexto ?? '').trim();
+  if (!numero) throw new Error('El anexo de seguimiento necesita el número de la nota');
+  await cargarQrcode();
+  return dibujarHojas(seguimientos, {
+    hoy, generado, titulo: `Anexo de la Nota Digital N° ${numero}`,
+    pieDe: (k, total) => `Anexo de la Nota Digital N° ${numero} · Hoja ${k} de ${total}`
+  });
+};
