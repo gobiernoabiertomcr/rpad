@@ -103,7 +103,7 @@ Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada data
 
 **Herramientas → Seguimiento** (`seguimiento.html`) junta, por dataset, todo lo que pasó con él: cuándo se actualizó en el RPAD, cuándo y cómo se avisó que había que pedir los datos, y quién propuso y quién aprobó cada cambio. Es el registro de todos los movimientos y la prueba de cada vez que el RPAD avisó. Lo ven todos los roles con sesión, el lector incluido; no es público ni permite cargar movimientos a mano: muestra solo lo que registró el sistema. No hay tablas ni migraciones nuevas.
 
-- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último aviso.
+- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último de ellos ("—" si en el ciclo no hubo ninguno).
 - **Un dataset** (`seguimiento.html?id=N`):
   - la ficha, con **Descargar PDF** y **Ver en el portal**;
   - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (no queda registrada) y a los 40 días el RPAD le anticipa al área por email que va a recibirla (si el dataset tiene "Requiere nota DGMIT" en "No", no hay nota formal ni email de anticipo: el circuito dice "No hace falta nota formal" y "Sin nota formal"); en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
@@ -726,6 +726,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ### Avisos del ciclo desde la última actualización (2026-10)
 - Seguimiento: las actualizaciones de antes de la doble verificación (diciembre de 2025) cierran el ciclo, así que los avisos de antes ya no cuentan para el ciclo abierto (Áreas específicas de género pasa de 3 avisos a 1; Hotelería, Medios Periodísticos y la Guía Telefónica de áreas de género, de 2 a 0). El ciclo de antes no tiene vencimiento conocido: en la cinta va sin "vence" ni rayado
 - "Avisos del ciclo abierto" dice desde cuándo se cuentan ("Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026"), en la pantalla, el PDF y el anexo de la reiteración
+- La columna "Último aviso" de la lista es la del ciclo abierto, el mismo que se cuenta ("—" si no hubo ninguno)
 - Sin SQL ni Run NPM Install; Restart
 
 ### Requiere nota DGMIT y anexo de la reiteración (2026-10)

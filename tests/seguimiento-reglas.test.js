@@ -917,7 +917,7 @@ describe('avisosDelCiclo', () => {
         email({ id: 5, tipo: 'area-aviso-40', enviado: '2026-09-21 08:00:00' })],
       notas: [nota({ id: 1 }), nota({ id: 2, estado: 'pendiente', enviada: null }), nota({ id: 3, estado: 'fallida', enviada: null }), nota({ id: 4, tipo: 'auditoria' })]
     });
-    assert.deepEqual(avisosDelCiclo(fuentes, ciclosDe(fuentes, HOY), 0), { emails: 1, notas: ['5/26'], alArea: ['2026-09-21'], total: 2 });
+    assert.deepEqual(avisosDelCiclo(fuentes, ciclosDe(fuentes, HOY), 0), { emails: 1, notas: ['5/26'], alArea: ['2026-09-21'], total: 2, ultimo: '2026-10-15' });
   });
 
   it('las notas salen por orden de envío y las reiteraciones cuentan', () => {
@@ -928,7 +928,7 @@ describe('avisosDelCiclo', () => {
   });
 
   it('sin ciclos, con un índice que no existe o con listas ausentes: ceros', () => {
-    const vacio = { emails: 0, notas: [], alArea: [], total: 0 };
+    const vacio = { emails: 0, notas: [], alArea: [], total: 0, ultimo: null };
     assert.deepEqual(avisosDelCiclo(f(66), null, 0), vacio);
     assert.deepEqual(avisosDelCiclo(f(52), ciclosDe(f(52), HOY), 7), vacio);
     assert.deepEqual(avisosDelCiclo({ dataset: CASOS[52].dataset }, ciclosDe({ dataset: CASOS[52].dataset }, HOY), 0), vacio);
@@ -1432,8 +1432,17 @@ describe('resumenParaLista', () => {
       const abierto = avisosDelCiclo(fuentes, ciclos, ciclos.length - 1);
       assert.deepEqual(r.avisos, { total: abierto.emails + abierto.notas.length, emails: abierto.emails, notas: abierto.notas.length }, `caso ${id}`);
       assert.equal(r.avisos.total, r.avisos.emails + r.avisos.notas, `caso ${id}`);
-      assert.equal(r.ultimo_aviso, ultimoAviso(fuentes), `caso ${id}`);
+      assert.equal(r.ultimo_aviso, abierto.ultimo, `caso ${id}`);
     }
+  });
+
+  it('el último aviso es el del ciclo abierto, como la cuenta: sin avisos en el ciclo, null', () => {
+    assert.equal(resumenParaLista(f(58), HOY).ultimo_aviso, '2026-10-01');
+    assert.equal(resumenParaLista(f(25), HOY).ultimo_aviso, null);
+    assert.equal(ultimoAviso(f(25)), '2025-12-10');
+    // 10 se actualizó el 13/10/2026: los avisos de antes son de otro ciclo
+    assert.equal(resumenParaLista(f(10), HOY).ultimo_aviso, null);
+    assert.equal(resumenParaLista(f(66), HOY).ultimo_aviso, null);
   });
 
   it('eventual y sin fecha: avisos en cero', () => {

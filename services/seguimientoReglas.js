@@ -493,13 +493,15 @@ const momentoDeEnvioDeNota = (nota) => {
   const fecha = diaDe(nota.fecha);
   return momentoDe(nota.enviada) ?? (fecha === null ? null : `${fecha} 00:00:00`);
 };
+const masNuevo = (a, b) => (a === null || b > a ? b : a);
 const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
 
 // Los avisos de un ciclo: los emails a DGMIT con éxito (`emails`), las Notas Digitales enviadas de aviso y reiteración (`notas`:
 // '2/26', por orden de envío) y las fechas de los emails al área (`alArea`, de la más vieja a la más nueva). `total`: emails +
-// notas. Las notas de auditoría no son avisos: tratan de un cambio, no del pedido de datos.
+// notas; `ultimo`: el día del más reciente de ellos (sin contar los emails al área), o null. Las notas de auditoría no son avisos:
+// tratan de un cambio, no del pedido de datos.
 export const avisosDelCiclo = (fuentes, ciclos, indice) => {
-  const avisos = { emails: 0, notas: [], alArea: [], total: 0 };
+  const avisos = { emails: 0, notas: [], alArea: [], total: 0, ultimo: null };
   if (!fuentes || typeof fuentes !== 'object' || !Array.isArray(ciclos)) return avisos;
   const alArea = [];
   for (const email of lista(fuentes.emails)) {
@@ -507,13 +509,14 @@ export const avisosDelCiclo = (fuentes, ciclos, indice) => {
     const momento = delArea || esEmailADgmit(email) ? momentoDe(email.enviado) : null;
     if (momento === null || cicloDelAviso(ciclos, momento) !== indice) continue;
     if (delArea) alArea.push(momento);
-    else avisos.emails += 1;
+    else { avisos.emails += 1; avisos.ultimo = masNuevo(avisos.ultimo, momento.slice(0, 10)); }
   }
   const notas = [];
   for (const nota of lista(fuentes.notas)) {
     const momento = esNotaEnviada(nota) ? momentoDeEnvioDeNota(nota) : null;
     if (momento !== null && cicloDelAviso(ciclos, momento, nota.vencimiento) === indice) {
       notas.push({ momento, id: Number(nota.id) || 0, numero: numeroDeNota(nota) });
+      avisos.ultimo = masNuevo(avisos.ultimo, momento.slice(0, 10));
     }
   }
   avisos.alArea = alArea.sort().map((momento) => momento.slice(0, 10));
@@ -522,7 +525,8 @@ export const avisosDelCiclo = (fuentes, ciclos, indice) => {
   return avisos;
 };
 
-// El día del aviso más reciente (email a DGMIT con éxito o Nota Digital enviada), de cualquier ciclo; null si no hubo
+// El día del aviso más reciente (email a DGMIT con éxito o Nota Digital enviada), de cualquier ciclo; null si no hubo. La lista de
+// "Sin elegir" no lo usa: muestra el último del ciclo abierto (`avisosDelCiclo(...).ultimo`), el mismo ciclo que cuenta
 export const ultimoAviso = (fuentes) => {
   if (!fuentes || typeof fuentes !== 'object') return null;
   const dias = [
@@ -740,7 +744,7 @@ export const resumenParaLista = (fuentes, hoy) => {
     dias,
     proxima: diaDe(dataset.proxima),
     avisos: { total: delCiclo.emails + delCiclo.notas.length, emails: delCiclo.emails, notas: delCiclo.notas.length },
-    ultimo_aviso: ultimoAviso(fuentes),
+    ultimo_aviso: delCiclo.ultimo ?? null,
     pendiente: lista(fuentes?.cambios).some((cambio) => cambio?.estado === 'pendiente')
   };
 };

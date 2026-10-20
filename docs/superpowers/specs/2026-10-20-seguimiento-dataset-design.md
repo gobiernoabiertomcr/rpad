@@ -186,7 +186,7 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
   - "Venció el" o "Vence el";
   - "Vencido hace" (los días);
   - **avisos a DGMIT en el ciclo**: el número y, debajo, el desglose (por ejemplo "11 emails y 1 nota");
-  - el último aviso.
+  - el último aviso del ciclo abierto ("—" si no hubo ninguno): el mismo ciclo que se cuenta (corrección del 20/10/2026: antes era el último de cualquier ciclo).
 - Orden: los vencidos por días de vencido, el mayor arriba; el resto, por vencimiento.
 - Cada fila abre `seguimiento.html?id=N`. El buscador filtra por título o por área, y elegir un resultado abre el dataset.
 
@@ -307,7 +307,7 @@ Las reglas tienen una sola fuente: `services/seguimientoReglas.js`. Es puro, sin
 La pantalla y el PDF dibujan lo que calcula el servidor: el navegador no recalcula nada.
 
 Los endpoints usan `authMiddleware` y **no** `adminOnly`, así que los puede usar el lector:
-- `GET /api/seguimiento`: la lista de "Sin elegir", con los activos y los dados de baja. Trae estado, vencimiento, días de vencido, avisos del ciclo abierto, último aviso y si hay una actualización pendiente.
+- `GET /api/seguimiento`: la lista de "Sin elegir", con los activos y los dados de baja. Trae estado, vencimiento, días de vencido, avisos del ciclo abierto, el último de ellos (`ultimo_aviso`, o null) y si hay una actualización pendiente.
 - `GET /api/seguimiento/:id`: la ficha, el pedido, el ciclo abierto con sus avisos, la cinta, los movimientos y los hitos. Incluye los dados de baja. Si no existe ningún dataset con ese id, 404.
 - `GET /api/seguimiento/:id/pdf`: el PDF.
 
