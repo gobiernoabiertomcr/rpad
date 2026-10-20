@@ -117,9 +117,16 @@ const firmaDeLaNota = (firma, config) => ({
   leyenda: firma?.presentante ? firma.leyenda ?? null : null
 });
 
-const situacion = (vencimiento, fecha) => {
+// La situación al día de la nota. En la columna "Situación" de la interna, un próximo dice "Faltan N días", como siempre; en la
+// externa la situación va debajo de la fecha, en la celda "Vence" (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5), y
+// dice "Vence en N días"
+const situacion = (vencimiento, fecha, { debajoDeLaFecha = false } = {}) => {
   const dias = diasEntre(fecha, vencimiento);
-  if (dias > 0) return `${dias === 1 ? 'Falta' : 'Faltan'} ${cantidad(dias, 'día', 'días')}`;
+  if (dias > 0) {
+    return debajoDeLaFecha
+      ? `Vence en ${cantidad(dias, 'día', 'días')}`
+      : `${dias === 1 ? 'Falta' : 'Faltan'} ${cantidad(dias, 'día', 'días')}`;
+  }
   if (dias === 0) return 'Vence hoy';
   return `Vencido hace ${cantidad(-dias, 'día', 'días')}`;
 };
@@ -186,18 +193,32 @@ const textoAnteriormente = (antecedente) => {
 // vacía del detalle de un registro de actualización (nota de auditoría)
 const RAYA = '—';
 
-// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9 y 18). Los próximos a vencer de un aviso: las 4 comunes, con el
+// Columnas de cada tabla (spec 2026-10-17-fechas-datasets, 9 y 18). Los próximos a vencer de un aviso: las comunes, con el
 // pedido y sin columna de fecha (desde el 18/10/2026 se fue la "Fecha sugerida de envío"): en el aviso de todos los días
 // todos vencen el mismo día; si el aviso junta más de un vencimiento, una fila a todo el ancho antes del primer dataset de
 // cada uno lo dice (ver agruparPorVencimiento). Las demás (la reiteración y la sección de vencidos que pudiera
 // traer un aviso): las 7 de la reiteración, con "Informado en" al final, porque la segunda parte de esa celda
 // (informadoAnterior) va en la última columna en el HTML, el texto y el PDF.
+// Las externas (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5) suman "Requiere nota DGMIT" entre la frecuencia y el
+// pedido: el aviso pasa a 5 columnas y la reiteración sigue con 7, porque "Situación" deja de ser una columna y va debajo de
+// la fecha, en la celda "Venció" (o "Vence"): con 8, todas quedaban en su mínimo y el título se partía. La interna no cambia.
 const conColumnasDeAviso = (tipo, clave) => tipo === 'aviso' && clave === 'proximo';
 const columnasDe = (tipo, gestion, clave) => {
-  const comunes = ['Conjunto de datos', gestion === 'externa' ? 'Área responsable' : 'Área', 'Frecuencia', 'Datos solicitados'];
-  if (conColumnasDeAviso(tipo, clave)) return comunes;
-  return [...comunes, clave === 'vencido' ? 'Venció' : 'Vence', 'Situación', 'Informado en'];
+  const vence = clave === 'vencido' ? 'Venció' : 'Vence';
+  if (gestion === 'externa') {
+    const comunes = ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados'];
+    return conColumnasDeAviso(tipo, clave) ? comunes : [...comunes, vence, 'Informado en'];
+  }
+  const comunes = ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados'];
+  return conColumnasDeAviso(tipo, clave) ? comunes : [...comunes, vence, 'Situación', 'Informado en'];
 };
+// En la tabla externa de 7 columnas, la celda "Venció" (o "Vence") es la sexta: lleva debajo la situación (fila.situacion)
+const COLUMNA_SITUACION_EXTERNA = 5;
+// Proporción del ancho de cada columna de la tabla externa de 7 en el PDF. Van en la sección porque la tabla interna también
+// tiene 7 columnas (y el PDF elige las de siempre por cantidad de columnas). Si alguna fila lleva la segunda parte de
+// "Informado en" (el antecedente de los emails anteriores, en letra más chica), esa columna se lleva más ancho, como en la
+// interna: probadas con la reiteración real del 02/11/2026 (10 datasets: 7 filas en la primera hoja, ningún título partido)
+const PROPORCIONES_EXTERNA = { conSegunda: [18, 14, 10, 10, 13, 10, 25], sinSegunda: [24, 14, 10, 10, 15, 12, 15] };
 
 // Varios vencimientos en un aviso (spec 18): un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, un
 // aviso que se recupera tarde) y sin columna de fecha la nota no diría qué vence cuándo. Solo "Próximos a vencer" de un aviso, y
@@ -224,26 +245,39 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
     : mesYAnio(fecha);
   const asunto = `${esPrueba ? '[PRUEBA] ' : ''}Nota Digital N° ${numeroTexto} – Ref.: ${ref} (gestión ${gestion} – ${cuando})`;
 
+  const externa = gestion === 'externa';
   const secciones = ['proximo', 'vencido'].map((clave) => {
     const incluidos = datasets.filter(d => (d.vencimiento < fecha ? 'vencido' : 'proximo') === clave);
     const columnas = columnasDe(tipo, gestion, clave);
+    const deAviso = conColumnasDeAviso(tipo, clave);
     // Los próximos de un aviso van agrupados por vencimiento si hay más de uno; las demás tablas, tal cual (sin grupos)
-    const agrupados = conColumnasDeAviso(tipo, clave)
+    const agrupados = deAviso
       ? agruparPorVencimiento(incluidos)
       : incluidos.map(dataset => ({ dataset, grupo: null }));
     const filas = agrupados.map(({ dataset: d, grupo }) => {
       // "Frecuencia": con "(Acumulado)" si el pedido acumula desde el 1/1 con una frecuencia menor al año (spec 18); el tipo es
-      // el del dataset (en las notas reales, el efectivo de conPedido). "Datos solicitados": el pedido calculado el día de la
-      // nota (d.pedido, de la selección)
+      // el del dataset (en las notas reales, el efectivo de conPedido). "Requiere nota DGMIT" (externas): Sí, No o — (sin
+      // dato; de la base llega 0 o 1). "Datos solicitados": el pedido calculado el día de la nota (d.pedido, de la selección)
       const frecuencia = frecuenciaEnNota({ frecuencia: d.frecuencia_nombre, tipo: d.tipo_pedido, meses: d.meses });
-      const valores = [d.titulo, d.area_nombre, frecuencia, d.pedido?.texto || RAYA];
+      const pedido = d.pedido?.texto || RAYA;
+      const valores = externa
+        ? [d.titulo, d.area_nombre, frecuencia, textoRequiereNota(d.requiere_nota, RAYA), pedido]
+        : [d.titulo, d.area_nombre, frecuencia, pedido];
       // Reiteraciones: el antecedente de los emails anteriores es la segunda parte de la celda "Informado en", en
       // todas las filas (con aviso o "Sin aviso previo"); cada formato la escribe en letra más chica
       const informadoAnterior = tipo === 'reiteracion' ? textoAnteriormente(d.antecedente) : null;
       // Los próximos de un aviso no llevan más columnas; las demás tablas suman cuándo vence (o venció), la situación y dónde
-      // se informó
-      if (!conColumnasDeAviso(tipo, clave)) {
-        valores.push(formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha), `${textoInformado(d)}${informadoAnterior ? '.' : ''}`);
+      // se informó. En la externa, la situación no es una columna: va aparte (fila.situacion) y cada formato la escribe
+      // debajo de la fecha, en la misma celda y en la misma letra
+      let situacionDebajo = null;
+      if (!deAviso) {
+        const informado = `${textoInformado(d)}${informadoAnterior ? '.' : ''}`;
+        if (externa) {
+          situacionDebajo = situacion(d.vencimiento, fecha, { debajoDeLaFecha: true });
+          valores.push(formatoCorto(d.vencimiento), informado);
+        } else {
+          valores.push(formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha), informado);
+        }
       }
       return {
         valores,
@@ -251,11 +285,20 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
         // Avisos: el antecedente va en una fila a todo el ancho, debajo de la del dataset
         antecedente: tipo === 'aviso' ? textoAntecedente(d.antecedente) : null,
         informadoAnterior,
+        // La situación que va debajo de la fecha (tablas externas de 7 columnas); en las demás, null
+        situacion: situacionDebajo,
         // La fila a todo el ancho, arriba de la del dataset, que abre un vencimiento (solo con varios en el mismo aviso)
         grupo
       };
     });
-    return { clave, ...SECCIONES[clave], columnas, filas };
+    // La tabla externa de 7 columnas dice en qué columna va la situación y trae sus proporciones del PDF
+    const deSieteExterna = externa && !deAviso
+      ? {
+        columnaSituacion: COLUMNA_SITUACION_EXTERNA,
+        proporciones: filas.some(f => f.informadoAnterior) ? PROPORCIONES_EXTERNA.conSegunda : PROPORCIONES_EXTERNA.sinSegunda
+      }
+      : {};
+    return { clave, ...SECCIONES[clave], columnas, filas, ...deSieteExterna };
   }).filter(seccion => seccion.filas.length > 0);
 
   const contactos = gestion === 'externa'
@@ -615,9 +658,14 @@ export const renderHtml = (nota) => {
       const celdaTitulo = fila.url
         ? `<a href="${escapeHtml(fila.url)}" style="color:#000000;">${escapeHtml(titulo)}</a>`
         : escapeHtml(titulo);
-      // La segunda parte de la última celda ("Informado en" de las reiteraciones), debajo y en letra más chica
-      const segunda = (k) => (k === resto.length - 1 && fila.informadoAnterior
-        ? `<br><span style="font-size:11px">${escapeHtml(fila.informadoAnterior)}</span>` : '');
+      // La segunda parte de la última celda ("Informado en" de las reiteraciones), debajo y en letra más chica; y la situación
+      // de las tablas externas, debajo de la fecha de su celda ("Venció" o "Vence") y en la misma letra. (k cuenta desde la
+      // segunda columna: el título va aparte)
+      const segunda = (k) => {
+        if (k === resto.length - 1 && fila.informadoAnterior) return `<br><span style="font-size:11px">${escapeHtml(fila.informadoAnterior)}</span>`;
+        if (k + 1 === seccion.columnaSituacion && fila.situacion) return `<br>${escapeHtml(fila.situacion)}`;
+        return '';
+      };
       const principal = `<tr><td style="${ESTILO_CELDA}">${celdaTitulo}</td>${resto.map((v, k) => `<td style="${ESTILO_CELDA}">${escapeHtml(v)}${segunda(k)}</td>`).join('')}</tr>`;
       const antecedente = fila.antecedente
         ? `<tr><td colspan="${seccion.columnas.length}" style="${ESTILO_CELDA}font-style:italic;font-size:12px;">${escapeHtml(fila.antecedente)}</td></tr>`
@@ -686,10 +734,13 @@ const lineasDeSeccion = (seccion) => {
     // El vencimiento que abre esta fila (aviso con varios vencimientos): un renglón propio antes de las filas de ese vencimiento
     if (fila.grupo) lineas.push(fila.grupo);
     lineas.push(`- ${fila.valores[0]}${fila.url ? ` (${fila.url})` : ''}`);
-    // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea
+    // La segunda parte de la última celda ("Informado en" de las reiteraciones) va en la misma línea. La situación de las
+    // tablas externas, que en el HTML y el PDF va debajo de la fecha, acá sigue en su renglón, "Situación: …", después del
+    // de la fecha (el texto no tiene problema de ancho)
     seccion.columnas.slice(1).forEach((columna, i) => {
       const segunda = i + 1 === seccion.columnas.length - 1 && fila.informadoAnterior ? ` ${fila.informadoAnterior}` : '';
       lineas.push(`    ${columna}: ${fila.valores[i + 1]}${segunda}`);
+      if (i + 1 === seccion.columnaSituacion && fila.situacion) lineas.push(`    Situación: ${fila.situacion}`);
     });
     if (fila.antecedente) lineas.push(`    ${fila.antecedente}`);
   }

@@ -255,6 +255,26 @@ describe('seleccionarParaReiteracion', () => {
 // Aviso en su fecha con autorizado (spec 2026-10-15, 7.6): los datasets que se avisaron por adelantado en la víspera de la
 // licencia del titular y todavía no tuvieron su aviso en su fecha. Lo que decide si sale hoy (día <= hoy) lo hacen la
 // corrida y el Estado: esta selección no filtra por hoy.
+// «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5): la columna de las tablas externas sale de la
+// selección. 0 es un valor (No), no un vacío
+describe('requiere_nota en la selección', () => {
+  it('la selección del aviso, la de la reiteración y los pendientes en su fecha traen requiere_nota como 1, 0 o null', async () => {
+    const si = await crearDataset({ titulo: 'A con nota', gestion: 'externa', vencimiento: '2026-11-30', requiereNota: 1 });
+    const no = await crearDataset({ titulo: 'B sin nota', gestion: 'externa', vencimiento: '2026-11-30', requiereNota: 0 });
+    const sinDato = await crearDataset({ titulo: 'C sin dato', gestion: 'externa', vencimiento: '2026-11-30' });
+    const valores = (lista) => Object.fromEntries(lista.map(d => [d.id, d.requiere_nota]));
+    assert.deepEqual(valores(await datos.seleccionarParaAviso('externa', '2026-11-02')), { [si]: 1, [no]: 0, [sinDato]: null });
+    // Vencidos sin aviso: la reiteración
+    assert.deepEqual(valores(await datos.seleccionarParaReiteracion('externa', '2026-12-02')), { [si]: 1, [no]: 0, [sinDato]: null });
+    // Adelantados por la licencia del firmante: los pendientes en su fecha
+    for (const id of [si, no, sinDato]) {
+      await crearNota({ gestion: 'externa', fecha: '2026-10-09', numero: 200 + id, datasets: [{ id, vencimiento: '2026-11-30', cuentaDesde: '2026-10-22' }] });
+    }
+    const enSuFecha = await datos.pendientesEnSuFecha('externa', '2026-10-22', { desde: '2026-10-12', hasta: '2026-10-30' });
+    assert.deepEqual(valores(enSuFecha), { [si]: 1, [no]: 0, [sinDato]: null });
+  });
+});
+
 describe('pendientesEnSuFecha', () => {
   const LICENCIA = { desde: '2026-12-10', hasta: '2027-01-08' };
   const HOY = '2026-12-22';

@@ -626,6 +626,8 @@ export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId =
 // reales (spec 2026-10-17-fechas-datasets, 9): el a vencer, el fin del mes en que caen los 30 días o, si así queda fuera
 // de la ventana del aviso de su gestión (los 40 días de la externa), el fin del mes anterior a ese; el vencido, el fin del
 // mes pasado. Sus datos llegan al corte del ciclo anterior, como los de un dataset que se actualizó a tiempo.
+// En la externa, el a vencer requiere nota DGMIT y el vencido no (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: así la
+// reiteración de ejemplo muestra los dos valores); en la interna, sin el dato, como los reales.
 export const ejemplo = (tipo, gestion, hoy) => {
   const area = {
     id: 0, nombre: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', email_principal: 'area@ejemplo.gov.ar',
@@ -646,14 +648,15 @@ export const ejemplo = (tipo, gestion, hoy) => {
   // (el fin del mes anterior está a más de 9 días: nunca pasa de hoy; y a lo sumo a 32, adentro de las dos ventanas)
   let aVencer = vencimientoDelMes(sumarDias(hoy, 30));
   while (diasEntre(hoy, aVencer) > VENTANA_DIAS[gestion]) aVencer = sumarMeses(aVencer, -1);
+  const requiereNota = (valor) => (gestion === 'externa' ? valor : null);
   const proximo = conPedido({
     ...comun, id: 0, titulo: 'Dataset de ejemplo próximo a vencer', ultima_actualizacion: sumarDias(hoy, -335),
-    ...fechas(aVencer), reiteraciones: 0,
+    ...fechas(aVencer), requiere_nota: requiereNota(1), reiteraciones: 0,
     antecedente: { cantidad: 3, primera: sumarDias(hoy, -90), ultima: sumarDias(hoy, -30) }
   }, hoy);
   const vencido = conPedido({
     ...comun, id: -1, titulo: 'Dataset de ejemplo vencido', ultima_actualizacion: sumarDias(hoy, -380), ...fechas(sumarMeses(hoy, -1)),
-    reiteraciones: 1, antecedente: null
+    requiere_nota: requiereNota(0), reiteraciones: 1, antecedente: null
   }, hoy);
   return {
     datasets: tipo === 'aviso' ? [proximo] : [proximo, vencido],

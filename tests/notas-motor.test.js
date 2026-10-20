@@ -756,6 +756,23 @@ describe('pruebas, vista previa y estado', () => {
     assert.equal(motor.ejemplo('aviso', 'externa', '2026-11-20').datasets[0].vencimiento, '2026-11-30');
   });
 
+  // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: los ejemplos externos traen «Requiere nota DGMIT», uno en Sí y otro
+  // en No; los internos, sin el dato
+  it('los ejemplos externos traen requiere_nota: el a vencer en Sí (1) y el vencido en No (0); los internos, null', async () => {
+    const [proximo, vencido] = motor.ejemplo('reiteracion', 'externa', '2026-11-02').datasets;
+    assert.equal(proximo.requiere_nota, 1);
+    assert.equal(vencido.requiere_nota, 0);
+    assert.equal(motor.ejemplo('aviso', 'externa', '2026-11-02').datasets[0].requiere_nota, 1);
+    for (const tipo of ['aviso', 'reiteracion']) {
+      assert.ok(motor.ejemplo(tipo, 'interna', '2026-11-02').datasets.every(d => d.requiere_nota === null), tipo);
+    }
+    // En la vista previa de la reiteración externa de ejemplo, la columna con los dos valores
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
+    assert.equal(vista.ejemplo, true);
+    assert.ok(vista.html.includes('>Requiere nota DGMIT</th>'));
+    assert.ok(vista.html.includes('>Sí</td>') && vista.html.includes('>No</td>'), vista.html);
+  });
+
   it('el ejemplo a vencer cae en la ventana del aviso de su gestión (40 días la externa, 60 la interna), a fin de mes', () => {
     const VENTANA = { externa: 40, interna: 60 };
     const diasHasta = (hoy, fecha) => (Date.parse(fecha) - Date.parse(hoy)) / 86400000;
@@ -797,9 +814,11 @@ describe('pruebas, vista previa y estado', () => {
     assert.ok(!interno.html.includes('Fecha sugerida de envío') && !interno.html.includes('>31/12/2026</td>'), interno.html);
     assert.ok(!interno.html.includes(FRASE));
     const reiteracion = await motor.previewNota({ tipo: 'reiteracion', gestion: 'externa', hoy: '2026-11-02' });
-    for (const texto of ['>Datos solicitados</th>', '>Situación</th>', '>Informado en</th>', '>Del 01/10/2025 al 30/09/2026</td>']) {
+    // (la externa no tiene columna "Situación": va debajo de la fecha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5)
+    for (const texto of ['>Datos solicitados</th>', '>Requiere nota DGMIT</th>', '>Informado en</th>', '>Del 01/10/2025 al 30/09/2026</td>', '>31/10/2026<br>Vencido hace 2 días</td>']) {
       assert.ok(reiteracion.html.includes(texto), texto);
     }
+    assert.ok(!reiteracion.html.includes('>Situación</th>'));
     assert.ok(!reiteracion.html.includes(FRASE) && !reiteracion.html.includes('Fecha sugerida de envío'));
   });
 
