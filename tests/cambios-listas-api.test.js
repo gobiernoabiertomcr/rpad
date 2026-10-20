@@ -7,7 +7,8 @@ import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, 
 import { crearArea, crearDataset, limpiarBase } from './notas-fixtures.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
-const MENSAJE = 'Este cambio lo auditan Test adminB y Test superadmin. Podés auditarlo solo si ninguno está disponible.';
+// El editor, con auditores disponibles, audita sin responsabilidad el cambio de un auditor (spec 2026-10-20-editor-sin-responsabilidad)
+const AVISO = 'Este cambio lo auditan Test adminB y Test superadmin. Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.';
 const hoy = hoyArgentina();
 let base, servidor, api, usuarios, dbReal;
 
@@ -114,28 +115,30 @@ describe('auditoria en la lista de para-revisar', () => {
     const delDetalle = async (clave) => (await detalle(id, clave)).auditoria;
     const sinAuditan = ({ auditan, ...resto }) => resto;
 
-    assert.deepEqual(await deLista('editor'), { puede: false, respaldo: false, mensaje: MENSAJE, auditan: AUDITAN });
-    assert.deepEqual(await deLista('adminB'), { puede: true, respaldo: false, mensaje: null, auditan: AUDITAN });
+    assert.deepEqual(await deLista('editor'), { puede: true, respaldo: false, sin_responsabilidad: true, mensaje: AVISO, auditan: AUDITAN });
+    assert.deepEqual(await deLista('adminB'), { puede: true, respaldo: false, sin_responsabilidad: false, mensaje: null, auditan: AUDITAN });
     assert.deepEqual(sinAuditan(await deLista('editor')), await delDetalle('editor'));
     assert.deepEqual(sinAuditan(await deLista('adminB')), await delDetalle('adminB'));
 
     await deLicenciaHoy('adminB', 'superadmin');
-    assert.deepEqual(await deLista('editor'), { puede: true, respaldo: true, mensaje: null, auditan: [] });
+    assert.deepEqual(await deLista('editor'), { puede: true, respaldo: true, sin_responsabilidad: false, mensaje: null, auditan: [] });
     assert.deepEqual(sinAuditan(await deLista('editor')), await delDetalle('editor'));
     await query('DELETE FROM usuarios_licencias');
 
     await query(`UPDATE cambios_pendientes SET estado = 'aprobado', revisor_id = ? WHERE id = ?`, [usuarios.adminB.id, id]);
-    assert.deepEqual(await deLista('editor', '?estado=todos'), { puede: false, respaldo: false, mensaje: null, auditan: [] });
-    assert.deepEqual(await delDetalle('editor'), { puede: false, respaldo: false, mensaje: null });
+    assert.deepEqual(await deLista('editor', '?estado=todos'),
+      { puede: false, respaldo: false, sin_responsabilidad: false, mensaje: null, auditan: [] });
+    assert.deepEqual(await delDetalle('editor'), { puede: false, respaldo: false, sin_responsabilidad: false, mensaje: null });
   });
 
-  it('el detalle sigue trayendo auditoria con las claves de siempre, sin auditan', async () => {
+  it('el detalle trae auditoria con sus cuatro claves, sin auditan', async () => {
+    const CLAVES = ['mensaje', 'puede', 'respaldo', 'sin_responsabilidad'];
     const id = await proponerBaja('adminA');
     for (const clave of ['editor', 'adminB', 'adminA']) {
-      assert.deepEqual(Object.keys((await detalle(id, clave)).auditoria).sort(), ['mensaje', 'puede', 'respaldo']);
+      assert.deepEqual(Object.keys((await detalle(id, clave)).auditoria).sort(), CLAVES);
     }
     await deLicenciaHoy('adminB', 'superadmin');
-    assert.deepEqual(Object.keys((await detalle(id, 'editor')).auditoria).sort(), ['mensaje', 'puede', 'respaldo']);
+    assert.deepEqual(Object.keys((await detalle(id, 'editor')).auditoria).sort(), CLAVES);
   });
 });
 

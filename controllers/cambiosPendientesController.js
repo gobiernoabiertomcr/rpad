@@ -5,17 +5,25 @@
 
 import pool from '../config/database.js';
 import { personasDeAuditoria, catalogosParaAuditoria } from '../services/auditoriaService.js';
-import { permisoParaAuditar, quienesAuditan } from '../services/auditoriaReglas.js';
+import { permisoParaAuditar, quienesAuditan, MENSAJE_SITUACION_CAMBIADA } from '../services/auditoriaReglas.js';
 import { esFechaIso, hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import { esFinDeMes, NOMBRES_TIPO_PEDIDO } from '../services/fechasDatasetReglas.js';
 import { textoRequiereNota } from '../services/requiereNotaReglas.js';
 
-// ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2): un
-// auditor siempre; un editor, solo de respaldo. conexion: la de la transacción o el pool.
-// Devuelve { puede: true, respaldo } o { puede: false, mensaje }.
+// ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2, y spec
+// 2026-10-20-editor-sin-responsabilidad): un auditor siempre; un editor, de respaldo o, el cambio de un auditor, sin
+// responsabilidad por la auditoría. conexion: la de la transacción o el pool.
+// Devuelve { puede, respaldo, sin_responsabilidad, mensaje }.
 const permisoParaAuditarHoy = async (conexion, usuario, proponenteId) => permisoParaAuditar(
   { id: usuario.userId, rol: usuario.rol }, proponenteId, await personasDeAuditoria(hoyArgentina(), conexion)
 );
+
+// El permiso de un cambio que no se audita (propio o ya resuelto)
+const SIN_AUDITAR = Object.freeze({ puede: false, respaldo: false, sin_responsabilidad: false, mensaje: null });
+
+// Lo que la persona confirmó en Mi Perfil contra lo que corresponde hoy: si no coinciden (la situación cambió, o la página es
+// de antes y no lo manda), no se registra algo que no vio (spec 2026-10-20-editor-sin-responsabilidad). Solo cuenta el true.
+const coincideLoConfirmado = (cuerpo, permiso) => (cuerpo?.sin_responsabilidad === true) === permiso.sin_responsabilidad;
 
 /**
  * Funcion auxiliar: Enriquecer datos con nombres de catalogos
@@ -261,12 +269,10 @@ export const getCambiosPendientesParaRevisar = async (req, res) => {
     const personas = rows.some(row => row.estado === 'pendiente') ? await personasDeAuditoria(hoyArgentina()) : [];
     const cambios = rows.map(row => {
       // Como en el detalle: si quien mira puede aprobarlo o rechazarlo hoy (auditoria) y, además, quiénes lo auditan
-      let auditoria = { puede: false, respaldo: false, mensaje: null, auditan: [] };
+      let auditoria = { ...SIN_AUDITAR, auditan: [] };
       if (row.estado === 'pendiente') {
         const { personas: quienes, respaldo } = quienesAuditan(personas, row.usuario_id);
         auditoria = {
-          respaldo: false,
-          mensaje: null,
           ...permisoParaAuditar({ id: userId, rol: req.user.rol }, row.usuario_id, personas),
           auditan: respaldo ? [] : quienes.map(p => p.nombre_completo)
         };
@@ -367,9 +373,7 @@ export const getCambioPendienteById = async (req, res) => {
 
     // Si quien mira puede aprobarlo o rechazarlo hoy (spec 2026-10-15, 8.2): Mi Perfil deshabilita los botones con el motivo
     const sinAuditar = rows[0].estado !== 'pendiente' || rows[0].usuario_id === req.user.userId;
-    const auditoria = sinAuditar
-      ? { puede: false, respaldo: false, mensaje: null }
-      : { respaldo: false, mensaje: null, ...(await permisoParaAuditarHoy(pool, req.user, rows[0].usuario_id)) };
+    const auditoria = sinAuditar ? { ...SIN_AUDITAR } : await permisoParaAuditarHoy(pool, req.user, rows[0].usuario_id);
 
     res.json({
       success: true,
@@ -454,11 +458,15 @@ export const aprobarCambio = async (req, res) => {
       });
     }
 
-    // Regla de respaldo (spec 2026-10-15, 8.2), con la fecha de hoy en Argentina
+    // Quién audita (spec 2026-10-15, 8.2, y spec 2026-10-20-editor-sin-responsabilidad), con la fecha de hoy en Argentina
     const permiso = await permisoParaAuditarHoy(connection, req.user, cambio.usuario_id);
     if (!permiso.puede) {
       await connection.rollback();
       return res.status(403).json({ success: false, error: permiso.mensaje });
+    }
+    if (!coincideLoConfirmado(req.body, permiso)) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, error: MENSAJE_SITUACION_CAMBIADA });
     }
 
     const datosNuevos = typeof cambio.datos_nuevos === 'string'
@@ -593,9 +601,9 @@ export const aprobarCambio = async (req, res) => {
     // Marcar cambio como aprobado
     await connection.execute(
       `UPDATE cambios_pendientes
-       SET estado = 'aprobado', revisor_id = ?, revisado_at = NOW(), revisado_como_respaldo = ?
+       SET estado = 'aprobado', revisor_id = ?, revisado_at = NOW(), revisado_como_respaldo = ?, revisado_sin_responsabilidad = ?
        WHERE id = ?`,
-      [revisorId, permiso.respaldo ? 1 : 0, id]
+      [revisorId, permiso.respaldo ? 1 : 0, permiso.sin_responsabilidad ? 1 : 0, id]
     );
 
     await connection.commit();
@@ -664,19 +672,24 @@ export const rechazarCambio = async (req, res) => {
       });
     }
 
-    // Regla de respaldo (spec 2026-10-15, 8.2), con la fecha de hoy en Argentina
+    // Quién audita (spec 2026-10-15, 8.2, y spec 2026-10-20-editor-sin-responsabilidad), con la fecha de hoy en Argentina
     const permiso = await permisoParaAuditarHoy(connection, req.user, cambio.usuario_id);
     if (!permiso.puede) {
       await connection.rollback();
       return res.status(403).json({ success: false, error: permiso.mensaje });
     }
+    if (!coincideLoConfirmado(req.body, permiso)) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, error: MENSAJE_SITUACION_CAMBIADA });
+    }
 
     // Marcar como rechazado
     await connection.execute(
       `UPDATE cambios_pendientes
-       SET estado = 'rechazado', revisor_id = ?, comentario_rechazo = ?, revisado_at = NOW(), revisado_como_respaldo = ?
+       SET estado = 'rechazado', revisor_id = ?, comentario_rechazo = ?, revisado_at = NOW(), revisado_como_respaldo = ?,
+           revisado_sin_responsabilidad = ?
        WHERE id = ?`,
-      [revisorId, comentario.trim(), permiso.respaldo ? 1 : 0, id]
+      [revisorId, comentario.trim(), permiso.respaldo ? 1 : 0, permiso.sin_responsabilidad ? 1 : 0, id]
     );
 
     await connection.commit();
