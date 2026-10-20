@@ -724,7 +724,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ## Changelog
 
 ### Avisos del ciclo desde la última actualización (2026-10)
-- Seguimiento: las actualizaciones de antes de la doble verificación (diciembre de 2025) cierran el ciclo, así que los avisos de antes ya no cuentan para el ciclo abierto (Áreas específicas de género pasa de 3 avisos a 1; Hotelería, Medios Periodísticos y la Guía Telefónica de áreas de género, de 2 a 0). El ciclo de antes no tiene vencimiento conocido: en la cinta va sin "vence" ni rayado
+- Seguimiento: las actualizaciones de antes de la doble verificación (diciembre de 2025) cierran el ciclo, así que los avisos de antes ya no cuentan para el ciclo abierto (Áreas específicas de género pasa de 3 avisos a 1; Hotelería, Medios Periodísticos y la Guía Telefónica de áreas de género, de 2 a 0). Las que después se deshicieron (la tanda del 17/12/2025 en 8 datasets, cuya carga volvió atrás) no cuentan. El ciclo de antes no tiene vencimiento conocido: en la cinta va sin "vence" ni rayado
 - "Avisos del ciclo abierto" dice desde cuándo se cuentan ("Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026"), en la pantalla, el PDF y el anexo de la reiteración
 - La columna "Último aviso" de la lista es la del ciclo abierto, el mismo que se cuenta ("—" si no hubo ninguno)
 - Sin SQL ni Run NPM Install; Restart

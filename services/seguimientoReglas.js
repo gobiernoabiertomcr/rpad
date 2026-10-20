@@ -390,8 +390,9 @@ const porMomentoYId = (a, b) => comparar(a.momento, b.momento) || a.id - b.id;
 // RPAD; `como`: 'actualizacion', 'reprogramacion' (con `nueva`, la próxima a la que se pasó), 'baja' o null (abierto); `origen`:
 // cómo empezó, 'alta', 'actualizacion' o 'reprogramacion'; `diasVencido`: cuánto estuvo vencido (hasta el cierre, o hasta hoy).
 // Una actualización de antes de la doble verificación cierra el ciclo en su fecha, pero la próxima que se cumplía no quedó
-// guardada: si nada la dice, el ciclo que cierra tiene `venc` null y `diasVencido` 0 (no se inventa un atraso). null si el dataset
-// no tiene ciclos: es eventual (frecuencia sin meses) o no tiene próxima.
+// guardada: si nada la dice, el ciclo que cierra tiene `venc` null y `diasVencido` 0 (no se inventa un atraso). Una que después se
+// deshizo por fuera del sistema (la carga que sigue es anterior a ella) no cuenta. null si el dataset no tiene ciclos: es eventual
+// (frecuencia sin meses) o no tiene próxima.
 export const ciclosDe = (fuentes, hoy) => {
   const dataset = fuentes?.dataset;
   if (!dataset || typeof dataset !== 'object' || !esFechaIso(hoy)) return null;
@@ -404,7 +405,13 @@ export const ciclosDe = (fuentes, hoy) => {
     .sort(porMomentoYId);
   const ediciones = aprobados('editar');
   const baja = aprobados('eliminar').pop();
-  // Las actualizaciones simples (el botón de antes de la doble verificación): una por día, la primera, como en los movimientos
+  // La carga que siguió a un momento: la anterior del primer cambio aprobado posterior que la trae o, si no hay, la de hoy
+  const cargaSiguiente = (momento) => {
+    const siguiente = ediciones.find((e) => e.momento > momento && diaDe(objeto(e.cambio.anteriores).ultima_actualizacion) !== null);
+    return siguiente ? diaDe(objeto(siguiente.cambio.anteriores).ultima_actualizacion) : diaDe(dataset.ultima);
+  };
+  // Las actualizaciones simples (el botón de antes de la doble verificación): una por día, la primera, como en los movimientos.
+  // Una que después se deshizo por fuera del sistema (la carga que siguió es anterior a ella) no cortó nada
   const vistas = new Set();
   const simples = lista(fuentes.historial)
     .filter((h) => h && typeof h === 'object' && (h.cambio_id === null || h.cambio_id === undefined))
@@ -413,17 +420,24 @@ export const ciclosDe = (fuentes, hoy) => {
       const fecha = diaDe(h.fecha);
       if (fecha === null || vistas.has(fecha)) return [];
       vistas.add(fecha);
-      return [{ simple: fecha, momento: momentoDe(h.creado) ?? `${fecha} 00:00:00`, id: 0 }];
+      const momento = momentoDe(h.creado) ?? `${fecha} 00:00:00`;
+      const despues = cargaSiguiente(momento);
+      return despues !== null && despues < fecha ? [] : [{ simple: fecha, momento, id: 0 }];
     });
   const eventos = [...ediciones, ...simples].sort(porMomentoYId);
 
-  // El vencimiento con el que nació el dataset: la próxima anterior del primer cambio que la trae. Si antes de ese cambio hubo una
-  // actualización simple, el vencimiento que ella cumplió no se conoce
-  const vencInicial = ediciones.map(({ cambio }) => diaDe(objeto(cambio.anteriores).proxima_actualizacion)).find(Boolean) ?? proxima;
-  let venc = eventos[0]?.simple ? null : vencInicial;
+  // El vencimiento con el que nació el dataset: la próxima anterior del primer cambio que la trae; sin cambios, la próxima actual.
+  // Solo valen los cambios de antes de la primera actualización simple: el vencimiento que ella cumplió no se conoce
+  const primeraSimple = simples.length ? simples[0].momento : null;
+  const anterioresALaSimple = primeraSimple === null ? ediciones : ediciones.filter((e) => e.momento < primeraSimple);
+  const vencInicial = anterioresALaSimple.map(({ cambio }) => diaDe(objeto(cambio.anteriores).proxima_actualizacion)).find(Boolean)
+    ?? (primeraSimple === null ? proxima : null);
+  let venc = vencInicial;
+  // Sin alta conocida, el primer ciclo empieza en su vencimiento; si tampoco se conoce (hubo una simple antes), lo de antes de la
+  // simple no es un ciclo: el primero es el que ella abre
   const alta = momentoDe(dataset.alta);
   let inicio = alta ? alta.slice(0, 10) : vencInicial;
-  let desde = alta ?? `${inicio} 00:00:00`;
+  let desde = alta ?? (inicio === null ? null : `${inicio} 00:00:00`);
   let origen = 'alta';
   const ciclos = [];
 
@@ -431,7 +445,7 @@ export const ciclosDe = (fuentes, hoy) => {
     if (evento.simple) {
       // Movía la carga y la próxima en el momento: cierra el ciclo en su fecha y abre otro, cuyo vencimiento lo dirá el cambio
       // siguiente (su próxima anterior) o, si no hay, la próxima actual
-      ciclos.push({ inicio, venc, cierre: evento.simple, como: 'actualizacion', desde, hasta: evento.momento, origen });
+      if (inicio !== null) ciclos.push({ inicio, venc, cierre: evento.simple, como: 'actualizacion', desde, hasta: evento.momento, origen });
       inicio = evento.simple; desde = evento.momento; venc = null; origen = 'actualizacion';
       continue;
     }

@@ -139,6 +139,8 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
 - **Una actualización anterior a la doble verificación** (una fila de `historial_actualizaciones` sin `cambio_id`: en diciembre de 2025 el botón de actualizar movía la carga y la próxima en el momento) **también cierra el ciclo**, en su fecha y en el momento en que se registró; las varias del mismo día cuentan como una. Los avisos de antes quedan en el ciclo que cierra (corrección del 20/10/2026: antes estas filas eran solo movimientos y esos avisos se contaban en el ciclo abierto; pasaba con los datasets 25, 32, 56 y 58).
   - La próxima que esa actualización cumplía no quedó guardada. Si ningún cambio anterior la dice, el ciclo que cierra no tiene vencimiento conocido (`venc` null): no se le cuentan días de vencido, no lleva hito y la cinta lo dibuja como un tramo sin "vence" ni rayado. No se inventa una fecha.
   - El vencimiento del ciclo que abre lo da la próxima anterior del cambio siguiente o, si no hay, la próxima actual.
+  - **Una que después se deshizo** por fuera del sistema no cuenta: si la carga que siguió (la `ultima_actualizacion` anterior del primer cambio aprobado posterior que la trae o, si no hay, la actual del dataset) es anterior a la fecha de la actualización, no corta nada. Pasó con la tanda del 17/12/2025 en 8 datasets (Presupuesto Municipal, Gasto Público, Funcionarios Públicos, Obra Pública, Pedidos de Acceso a la Información Pública, Pauta Publicitaria, Presupuesto con perspectiva de género y Comercios habilitados por rubro), cuya carga volvió atrás. Si no hay ninguna carga posterior conocida, cuenta.
+  - El vencimiento inicial sale solo de los cambios de antes de la primera actualización simple. Sin alta conocida, lo de antes de la primera simple no es un ciclo.
 - **Cada cambio se mide contra su propia próxima anterior** (`datos_anteriores.proxima_actualizacion`, si la trae), no contra la que dejó el cambio de antes: si la próxima se corrigió por SQL entre dos cambios, el siguiente cierra o reprograma el ciclo con la fecha corregida.
 - **El ciclo abierto vence siempre en la próxima actual del dataset.** Si una corrección por fuera del sistema (por SQL) la cambió sin dejar un cambio, manda la actual. Pasa con el dataset 9: su último cambio la dejó en el 31/12/2026 y hoy es el 31/01/2027.
 
@@ -155,7 +157,7 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
 **A qué ciclo pertenece cada aviso**
 - **Nota Digital:** pertenece al ciclo cuyo vencimiento es el `notas_digitales_datasets.vencimiento` de la nota.
   - Si ningún ciclo tiene ese vencimiento, va al ciclo que regía en el RPAD en el momento del envío. Pasa, por ejemplo, con los datasets 33 y 61, cuya próxima se corrigió por SQL.
-- **Email** (a DGMIT o al área): pertenece al ciclo que regía en el RPAD en el momento del envío. Se compara `enviado_at` con los momentos de aprobación que abren y cierran cada ciclo.
+- **Email** (a DGMIT o al área): pertenece al ciclo que regía en el RPAD en el momento del envío. Se compara `enviado_at` con los momentos que abren y cierran cada ciclo: las aprobaciones y el registro (`created_at`) de las actualizaciones anteriores a la doble verificación.
 - Las notas de auditoría no son avisos de ningún ciclo: tratan sobre un cambio, no sobre el pedido de datos.
 
 **Avisos del ciclo abierto** (la sección del circuito)

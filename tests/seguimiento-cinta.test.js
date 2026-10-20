@@ -144,10 +144,13 @@ describe('cintaDe: tramos', () => {
     assert.deepEqual(c.vencimientos, []);
     assert.equal(c.textos.some(t => t.tipo === 'vencido'), false);
   });
-  it('un ciclo sin vencimiento y sin cierre no se dibuja ni tira error', () => {
+  it('un ciclo sin vencimiento y sin cierre no se dibuja como ciclo ni tira error', () => {
     const fu = f(58);
     const ciclos = [{ inicio: '2025-12-02', venc: null, cierre: null, como: null, desde: '2025-12-02 09:00:00', hasta: null, diasVencido: 0 }];
     assert.doesNotThrow(() => cintaDe({ fuentes: fu, ciclos, movimientos: movimientosDe(fu), hoy: HOY }));
+    const c = cintaDe({ fuentes: fu, ciclos, movimientos: movimientosDe(fu), hoy: HOY });
+    assert.equal(c.tramos.some(t => t.tipo === 'ciclo'), false);
+    assert.deepEqual(c.vencimientos, []);
   });
   it('81: el ciclo abierto llega hasta hoy y de hoy al vencimiento va el tramo futuro', () => {
     const t = cinta(81).tramos;
