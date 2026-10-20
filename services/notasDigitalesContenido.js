@@ -117,16 +117,11 @@ const firmaDeLaNota = (firma, config) => ({
   leyenda: firma?.presentante ? firma.leyenda ?? null : null
 });
 
-// La situación al día de la nota. En la columna "Situación" de la interna, un próximo dice "Faltan N días", como siempre; en la
-// externa la situación va debajo de la fecha, en la celda "Vence" (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5), y
-// dice "Vence en N días"
-const situacion = (vencimiento, fecha, { debajoDeLaFecha = false } = {}) => {
+// La situación al día de la nota: la columna "Situación" de la interna y, en la externa, el segundo renglón de la celda "Venció"
+// (o "Vence"), con el mismo texto (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.5: "la situación de hoy")
+const situacion = (vencimiento, fecha) => {
   const dias = diasEntre(fecha, vencimiento);
-  if (dias > 0) {
-    return debajoDeLaFecha
-      ? `Vence en ${cantidad(dias, 'día', 'días')}`
-      : `${dias === 1 ? 'Falta' : 'Faltan'} ${cantidad(dias, 'día', 'días')}`;
-  }
+  if (dias > 0) return `${dias === 1 ? 'Falta' : 'Faltan'} ${cantidad(dias, 'día', 'días')}`;
   if (dias === 0) return 'Vence hoy';
   return `Vencido hace ${cantidad(-dias, 'día', 'días')}`;
 };
@@ -273,7 +268,7 @@ export const construirNota = ({ tipo, gestion, numero = null, anio = null, esPru
       if (!deAviso) {
         const informado = `${textoInformado(d)}${informadoAnterior ? '.' : ''}`;
         if (externa) {
-          situacionDebajo = situacion(d.vencimiento, fecha, { debajoDeLaFecha: true });
+          situacionDebajo = situacion(d.vencimiento, fecha);
           valores.push(formatoCorto(d.vencimiento), informado);
         } else {
           valores.push(formatoCorto(d.vencimiento), situacion(d.vencimiento, fecha), informado);

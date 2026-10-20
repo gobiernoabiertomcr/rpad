@@ -410,14 +410,14 @@ describe('renderPdf: reiteración externa (spec 2026-10-20-requiere-nota-y-anexo
     assert.ok(textos.filter(t => t.tamano === TAMANO_SECUNDARIO).every(t => cerca(t.x, informado, 0.5)));
   });
 
-  it('un próximo de la reiteración externa: "Vence" con "Vence en N días" debajo, y sin la segunda parte de "Informado en" las otras proporciones', async () => {
+  it('un próximo de la reiteración externa: "Vence" con "Faltan N días" debajo, y sin la segunda parte de "Informado en" las otras proporciones', async () => {
     const proximo = { ...REITERACION_DEL_02_11[0], vencimiento: '2026-11-30', antecedente: null };
     const n = nota(0, { tipo: 'reiteracion', fecha: '2026-11-02', datasets: [proximo], areas: [] });
     assert.deepEqual(n.secciones[0].proporciones, [24, 14, 10, 10, 15, 12, 15]);
     const textos = textosPorHoja(await renderPdf(n)).flat();
     const [columna] = xDeLasColumnas(textos, ['Vence']);
     assert.deepEqual(renglonesDeLaCelda(textos, '30/11/2026', columna), ['30/11/2026']);
-    assert.ok(renglonesDeLaCelda(textos, 'Vence en 28 días', columna).length > 0, textos.map(t => t.texto).join(' | '));
+    assert.ok(renglonesDeLaCelda(textos, 'Faltan 28 días', columna).length > 0, textos.map(t => t.texto).join(' | '));
     assert.deepEqual(fragmentos(n, textos), []);
   });
 });

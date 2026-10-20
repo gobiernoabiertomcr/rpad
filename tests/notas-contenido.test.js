@@ -296,7 +296,7 @@ describe('tablas externas: "Requiere nota DGMIT" (spec 2026-10-20, 1.5)', () => 
       'Vencido hace 1 día');
   });
 
-  it('reiteración externa con un próximo: columna «Vence», situación «Vence en N días»', () => {
+  it('reiteración externa con un próximo: columna «Vence», situación de hoy «Faltan N días» (la misma de la interna)', () => {
     const situacion = (vencimiento) => {
       const [s] = nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento, requiere_nota: 0 })] }).secciones;
       assert.equal(s.clave, 'proximo');
@@ -305,9 +305,15 @@ describe('tablas externas: "Requiere nota DGMIT" (spec 2026-10-20, 1.5)', () => 
       assert.equal(s.filas[0].valores[3], 'No');
       return s.filas[0].situacion;
     };
-    assert.equal(situacion('2026-11-12'), 'Vence en 10 días');
-    assert.equal(situacion('2026-11-03'), 'Vence en 1 día');
+    assert.equal(situacion('2026-11-12'), 'Faltan 10 días');
+    assert.equal(situacion('2026-11-03'), 'Falta 1 día');
     assert.equal(situacion('2026-11-02'), 'Vence hoy');
+    // El mismo texto que la columna "Situación" de la interna, para próximos y vencidos
+    for (const vencimiento of ['2026-11-12', '2026-11-03', '2026-11-02', '2026-11-01', '2024-01-31']) {
+      const externa = nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento })] }).secciones[0].filas[0].situacion;
+      const interna = nota({ tipo: 'reiteracion', gestion: 'interna', datasets: [dataset({ vencimiento })] }).secciones[0].filas[0].valores[5];
+      assert.equal(externa, interna, vencimiento);
+    }
   });
 
   it('interna sin cambios: aviso 4 columnas y reiteración 7 con Situación', () => {
@@ -347,7 +353,7 @@ describe('tablas externas: "Requiere nota DGMIT" (spec 2026-10-20, 1.5)', () => 
     const CELDA = '<td style="border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;">';
     // En la misma letra que la fecha (sin el span chico de la segunda parte de "Informado en")
     assert.ok(html.includes(`${CELDA}31/01/2024<br>Vencido hace 1006 días</td>`), html);
-    assert.ok(html.includes(`${CELDA}12/11/2026<br>Vence en 10 días</td>`), html);
+    assert.ok(html.includes(`${CELDA}12/11/2026<br>Faltan 10 días</td>`), html);
     // (sin una celda propia para la situación)
     assert.ok(!html.includes('>Situación</th>') && !html.includes(`${CELDA}Vencido hace 1006 días</td>`));
     // "Informado en" sigue última, con su segunda parte en letra más chica
@@ -375,7 +381,7 @@ describe('tablas externas: "Requiere nota DGMIT" (spec 2026-10-20, 1.5)', () => 
     ].join('\n')), texto);
     // Un próximo: "Vence:" y su situación
     const proximo = renderTexto(nota({ tipo: 'reiteracion', gestion: 'externa', datasets: [dataset({ vencimiento: '2026-11-12', requiere_nota: 0 })] }));
-    assert.ok(proximo.includes('    Requiere nota DGMIT: No\n    Datos solicitados: Del 01/01/2026 al 30/11/2026\n    Vence: 12/11/2026\n    Situación: Vence en 10 días\n    Informado en: Sin aviso previo\n'), proximo);
+    assert.ok(proximo.includes('    Requiere nota DGMIT: No\n    Datos solicitados: Del 01/01/2026 al 30/11/2026\n    Vence: 12/11/2026\n    Situación: Faltan 10 días\n    Informado en: Sin aviso previo\n'), proximo);
   });
 });
 
