@@ -32,7 +32,9 @@ const VERSION_PORTADA = '20261110';
 const VERSION_CSS = '20261109';
 // gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
 const VERSION_GESTION = '20261105';
-// seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset): su versión es propia
+// seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset); cambió después ("Requiere nota DGMIT" en la
+// ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
+// de la reiteración): su versión es propia
 const VERSION_SEGUIMIENTO = '20261118';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));

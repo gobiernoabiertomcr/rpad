@@ -2796,7 +2796,9 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
     assert.deepEqual([...selector[2].matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
       [['', 'Elegí una opción'], ['1', 'Sí'], ['0', 'No']]);
     // No lleva required: con la gestión interna queda oculto, y un campo oculto y obligatorio frenaría el envío sin avisar
-    assert.doesNotMatch(selector[1], /\brequired\b/);
+    assert.doesNotMatch(selector[1], /(^|\s)required(\s|=|$)/);
+    // Lo obligatorio se dice a los lectores de pantalla con aria-required (el asterisco visible es aria-hidden)
+    assert.match(selector[1], /\baria-required="true"/);
     assert.match(selector[1], /aria-describedby="form-ayuda-requiere-nota"/);
     assert.match(pedido, /<p class="ad-ayuda" id="form-ayuda-requiere-nota">[^<]+<\/p>/);
     assert.match(pedido, /<p class="ad-error" id="form-error-requiere-nota" role="alert" hidden><\/p>/);

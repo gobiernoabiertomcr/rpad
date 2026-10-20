@@ -625,7 +625,7 @@ const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
 
 // Las opciones de la cinta del PDF: las marcas a menos de 12 unidades se juntan y las letras miden 8,4 (las de la pantalla, 11 y
 // 6,6). Con ellas se calcula el Seguimiento (seguimientoDe) que dibujan la descarga de una hoja y el anexo de la reiteración.
-export const OPCIONES_CINTA_PDF = { separacion: 12, letra: 8.4 };
+export const OPCIONES_CINTA_PDF = Object.freeze({ separacion: 12, letra: 8.4 });
 
 // El documento: una hoja A4 por elemento de `seguimientos`, en ese orden, con el mismo `hoy` y el mismo `generado` en todas.
 // `pieDe(k, total)`: el texto de la derecha del pie de la hoja k (de 1 a total); `titulo`: el título del PDF.
