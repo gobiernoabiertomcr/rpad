@@ -499,18 +499,25 @@ function enfocarParaRevisar(opciones) {
   (lista.querySelector('.pf-cambio-cabeza') ?? lista).focus(opciones);
 }
 
-// Primer paso de aprobar: en lugar de los botones, la pregunta con [Cancelar] [Sí, aprobar], un grupo que la pregunta describe
+// Primer paso de aprobar: en lugar de los botones, la pregunta con [Cancelar] [Sí, aprobar], un grupo que la pregunta describe.
+// Sin responsabilidad (spec 2026-10-20-editor-sin-responsabilidad), la pregunta lo dice, el aviso de la fila también describe
+// los botones y el pedido guarda lo que la fila mostró, para mandarlo al confirmar
 function aprobarCambio(id) {
   const n = Number(id);
   const acciones = document.getElementById(`acciones-${n}`);
   if (!acciones) return;
-  const pedido = { lista: false };
+  const sinResponsabilidad = auditaSinResponsabilidad(n);
+  const pedido = { lista: false, sinResponsabilidad };
   confirmacionesDeAprobacion.set(n, pedido);
+  const pregunta = sinResponsabilidad
+    ? '¿Aprobar sin responsabilidad por la auditoría? El cambio se aplica al dataset ahora.'
+    : '¿Aprobar? El cambio se aplica al dataset ahora.';
+  const descriptos = sinResponsabilidad ? `pregunta-${n} aviso-${n}` : `pregunta-${n}`;
   acciones.setAttribute('role', 'group');
   acciones.setAttribute('aria-label', 'Confirmar la aprobación');
-  acciones.innerHTML = `<span class="pf-pregunta" id="pregunta-${n}">¿Aprobar? El cambio se aplica al dataset ahora.</span>`
-    + `<button type="button" class="pf-btn pf-btn-quieto" id="cancelar-${n}" aria-describedby="pregunta-${n}" onclick="cancelarAccion(${n})">Cancelar</button>`
-    + `<button type="button" class="pf-btn pf-btn-aprobar" id="confirmar-${n}" aria-describedby="pregunta-${n}" disabled onclick="confirmarAprobacion(${n})">${ICONO_APROBADO}Sí, aprobar</button>`;
+  acciones.innerHTML = `<span class="pf-pregunta" id="pregunta-${n}">${pregunta}</span>`
+    + `<button type="button" class="pf-btn pf-btn-quieto" id="cancelar-${n}" aria-describedby="${descriptos}" onclick="cancelarAccion(${n})">Cancelar</button>`
+    + `<button type="button" class="pf-btn pf-btn-aprobar" id="confirmar-${n}" aria-describedby="${descriptos}" disabled onclick="confirmarAprobacion(${n})">${ICONO_APROBADO}Sí, aprobar</button>`;
   document.getElementById(`cancelar-${n}`).focus();
   setTimeout(() => {
     // Si mientras tanto se canceló o se volvió a pedir, esta espera ya no cuenta
@@ -534,21 +541,24 @@ function mostrarResultado(id, resultado, texto) {
   fila.innerHTML = `<div class="pf-hecho ${resultado}" role="status">${icono}<span>${texto}</span></div>`;
 }
 
-// Segundo paso de aprobar: "Sí, aprobar"
+// Segundo paso de aprobar: "Sí, aprobar", con lo que la fila mostró (sin_responsabilidad): el servidor responde 409 si ya no
+// es lo que corresponde
 async function confirmarAprobacion(id) {
   const n = Number(id);
-  if (!confirmacionesDeAprobacion.get(n)?.lista) return;
+  const pedido = confirmacionesDeAprobacion.get(n);
+  if (!pedido?.lista) return;
   confirmacionesDeAprobacion.delete(n);
   deshabilitarControles(`acciones-${n}`);
   anunciar('');
 
   try {
-    await API.aprobarCambio(n);
+    await API.pedirJson('POST', `/cambios-pendientes/${n}/aprobar`, { sin_responsabilidad: pedido.sinResponsabilidad });
   } catch (error) {
-    // Ya lo resolvió otra persona (404), es propio o no le corresponde (403), o no se pudo (400): el mensaje del servidor
+    // Ya lo resolvió otra persona (404), es propio o no le corresponde (403), no se pudo (400) o la situación cambió (409):
+    // el mensaje del servidor. Con el 409, la fila vuelve a abrirse con lo que corresponde ahora
     mostrarErrorDeAccion(error.message);
     await recargarCambios();
-    enfocarParaRevisar({ preventScroll: true });
+    if (!(error.status === 409 && reabrirFila(n))) enfocarParaRevisar({ preventScroll: true });
     anunciar(error.message);
     return;
   }
@@ -567,9 +577,11 @@ function abrirModalRechazo(id) {
   const cuerpo = document.getElementById(`cuerpo-${n}`);
   if (!acciones || !cuerpo) return;
   if (!document.getElementById(`rechazo-${n}`)) {
+    // Sin responsabilidad, el aviso de la fila describe el motivo
+    const descripto = auditaSinResponsabilidad(n) ? ` aria-describedby="aviso-${n}"` : '';
     cuerpo.insertAdjacentHTML('beforeend', `<div class="pf-rechazo" id="rechazo-${n}">`
       + `<label for="motivo-${n}">Motivo del rechazo</label>`
-      + `<textarea id="motivo-${n}" placeholder="Quien lo propuso lo va a ver en Mis cambios."></textarea>`
+      + `<textarea id="motivo-${n}"${descripto} placeholder="Quien lo propuso lo va a ver en Mis cambios."></textarea>`
       + '<div class="pf-botones">'
       + `<button type="button" class="pf-btn pf-btn-quieto" onclick="cancelarAccion(${n})">Cancelar</button>`
       + `<button type="button" class="pf-btn pf-btn-rechazar" onclick="confirmarRechazo(${n})">${ICONO_RECHAZADO}Rechazar cambio</button>`
@@ -598,6 +610,17 @@ function reabrirRechazo(n) {
   return true;
 }
 
+// Después de una aprobación que el servidor frenó porque la situación cambió (409) y de recargar las listas: si el cambio
+// sigue pendiente en Para revisar, vuelve a abrir su fila, con el aviso (o sin él) de ahora. Devuelve si la abrió.
+function reabrirFila(n) {
+  const sigue = vistaParaRevisar.cambios.some(otro => Number(otro.id) === n && otro.estado === 'pendiente');
+  const cabeza = document.getElementById(`cabeza-${n}`);
+  if (!sigue || !cabeza) return false;
+  desplegarFila(cabeza, true);
+  cabeza.focus({ preventScroll: true });
+  return true;
+}
+
 // "Rechazar cambio": sin motivo no se envía
 async function confirmarRechazo(id) {
   const n = Number(id);
@@ -615,7 +638,8 @@ async function confirmarRechazo(id) {
   anunciar('');
 
   try {
-    await API.rechazarCambio(n, comentario);
+    // Con lo que la fila muestra (sin_responsabilidad): el servidor responde 409 si ya no es lo que corresponde
+    await API.pedirJson('POST', `/cambios-pendientes/${n}/rechazar`, { comentario, sin_responsabilidad: auditaSinResponsabilidad(n) });
   } catch (error) {
     motivosSinEnviar.set(n, escrito);
     mostrarErrorDeAccion(error.message);
@@ -758,19 +782,28 @@ async function guardarMiFirma(evento) {
 // =====================================================
 // AUDITAR UN CAMBIO (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2)
 // =====================================================
-// Lo que el servidor dice sobre si quien mira puede auditar el cambio ({ puede, respaldo, mensaje }). Si el detalle no
-// trae el dato, falla cerrado: los botones quedan deshabilitados (el servidor igual decide al aprobar o rechazar)
+// Lo que el servidor dice sobre si quien mira puede auditar el cambio ({ puede, respaldo, sin_responsabilidad, mensaje }).
+// Si el detalle no trae el dato, falla cerrado: los botones quedan deshabilitados (el servidor igual decide al aprobar o
+// rechazar)
 function permisoDeAuditoria(cambio) {
-  return cambio.auditoria ?? { puede: false, respaldo: false, mensaje: null };
+  return cambio.auditoria ?? { puede: false, respaldo: false, sin_responsabilidad: false, mensaje: null };
 }
 
-// Botones de un cambio pendiente ajeno, en el pie de su fila. permiso: { puede, mensaje } que manda el servidor; sin
-// permiso, deshabilitados con el motivo
+// Si quien mira audita sin responsabilidad el cambio de la lista de Para revisar (spec 2026-10-20-editor-sin-responsabilidad):
+// lo que la fila mostró, y lo que viaja con el pedido de aprobar o rechazar. Sin el cambio en la lista, no.
+function auditaSinResponsabilidad(n) {
+  const cambio = vistaParaRevisar.cambios.find(otro => Number(otro.id) === n);
+  return cambio ? permisoDeAuditoria(cambio).sin_responsabilidad === true : false;
+}
+
+// Botones de un cambio pendiente ajeno, en el pie de su fila. permiso: { puede, sin_responsabilidad, mensaje } que manda el
+// servidor; sin permiso, deshabilitados con el motivo; sin responsabilidad, descriptos por el aviso de la fila
 function botonesDeAuditoria(id, permiso) {
   const n = Number(id);
   if (permiso.puede) {
-    return `<button type="button" class="pf-btn pf-btn-rechazar" onclick="abrirModalRechazo(${n})">${ICONO_RECHAZADO}Rechazar</button>`
-      + `<button type="button" class="pf-btn pf-btn-aprobar" onclick="aprobarCambio(${n})">${ICONO_APROBADO}Aprobar</button>`;
+    const descriptos = permiso.sin_responsabilidad ? ` aria-describedby="aviso-${n}"` : '';
+    return `<button type="button" class="pf-btn pf-btn-rechazar"${descriptos} onclick="abrirModalRechazo(${n})">${ICONO_RECHAZADO}Rechazar</button>`
+      + `<button type="button" class="pf-btn pf-btn-aprobar"${descriptos} onclick="aprobarCambio(${n})">${ICONO_APROBADO}Aprobar</button>`;
   }
   const motivo = Utils.escapeHtml(permiso.mensaje ?? '');
   return `<button type="button" class="pf-btn pf-btn-rechazar" disabled title="${motivo}">${ICONO_RECHAZADO}Rechazar</button>`
@@ -782,11 +815,19 @@ function avisoNoCorresponde(mensaje) {
   return `<div class="pf-nota no-corresponde">${ICONO_ESCUDO}<span>${Utils.escapeHtml(mensaje)}</span></div>`;
 }
 
+// La nota ámbar de un cambio que quien mira audita sin responsabilidad, con el aviso del servidor, en el mismo lugar. Su id
+// describe los botones, la confirmación y el motivo del rechazo
+function notaSinResponsabilidad(id, mensaje) {
+  return `<div class="pf-nota sin-responsabilidad" id="aviso-${Number(id)}">${ICONO_ESCUDO}<span>${Utils.escapeHtml(mensaje)}</span></div>`;
+}
+
 // Quién auditó un cambio: "Aprobado por …" o "Rechazado por …", con "(respaldo)" si lo auditó un editor porque no había
-// auditores disponibles
+// auditores disponibles, o "(sin responsabilidad por la auditoría)" si lo auditó un editor habiendo auditores disponibles
 function textoRevisor(cambio) {
   const accion = cambio.estado === 'aprobado' ? 'Aprobado' : 'Rechazado';
-  return `${accion} por ${cambio.revisor_nombre}${Number(cambio.revisado_como_respaldo) ? ' (respaldo)' : ''}`;
+  const marca = Number(cambio.revisado_sin_responsabilidad) ? ' (sin responsabilidad por la auditoría)'
+    : Number(cambio.revisado_como_respaldo) ? ' (respaldo)' : '';
+  return `${accion} por ${cambio.revisor_nombre}${marca}`;
 }
 
 // =====================================================
@@ -1000,13 +1041,14 @@ function resumenDelCambio(cambio) {
 // Escudo de Lucide, para la marca del editor (quiénes lo auditan o la pastilla de respaldo)
 const ICONO_ESCUDO = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>';
 
-// Lo que ve un editor en un cambio pendiente: si lo puede auditar de respaldo o quiénes lo auditan. Sin marca (cadena vacía)
-// para quien no es editor, para un cambio ya resuelto, si el servidor no mandó la auditoría o si no hay a quién nombrar.
+// Lo que ve un editor en un cambio pendiente: si lo puede auditar de respaldo o quiénes lo auditan (también cuando lo puede
+// auditar sin responsabilidad). Sin marca (cadena vacía) para quien no es editor, para un cambio ya resuelto, si el servidor
+// no mandó la auditoría o si no hay a quién nombrar.
 function marcaDeAuditoria(cambio, esEditor) {
   const auditoria = cambio.auditoria;
   if (!esEditor || cambio.estado !== 'pendiente' || !auditoria) return '';
-  if (auditoria.puede) {
-    return auditoria.respaldo ? `<span class="pf-marca pf-marca-respaldo">${ICONO_ESCUDO}Podés auditarlo de respaldo</span>` : '';
+  if (auditoria.puede && auditoria.respaldo) {
+    return `<span class="pf-marca pf-marca-respaldo">${ICONO_ESCUDO}Podés auditarlo de respaldo</span>`;
   }
   const nombres = (auditoria.auditan ?? []).map(nombre => Utils.escapeHtml(nombre));
   return nombres.length ? `<span class="pf-marca">${ICONO_ESCUDO}Lo auditan ${listaDeNombres(nombres)}</span>` : '';
@@ -1225,7 +1267,11 @@ function htmlDeFila(cambio, modo, { abierto = false, esEditor = false, idUsuario
   const motivo = cambio.estado === 'rechazado' && cambio.comentario_rechazo
     ? `<div class="pf-nota motivo"><span><b>Motivo del rechazo:</b> ${Utils.escapeHtml(cambio.comentario_rechazo)}</span></div>`
     : '';
-  const aviso = conBotones && !permiso.puede && permiso.mensaje ? avisoNoCorresponde(permiso.mensaje) : '';
+  let aviso = '';
+  if (conBotones && permiso.mensaje) {
+    if (permiso.sin_responsabilidad) aviso = notaSinResponsabilidad(id, permiso.mensaje);
+    else if (!permiso.puede) aviso = avisoNoCorresponde(permiso.mensaje);
+  }
   const botones = conBotones ? `<div class="pf-botones" id="acciones-${id}">${botonesDeAuditoria(id, permiso)}</div>` : '';
 
   return `<li class="pf-cambio${pendiente ? '' : ' resuelto'}${abierto ? ' abierto' : ''}" data-id="${id}">
