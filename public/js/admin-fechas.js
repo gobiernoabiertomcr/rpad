@@ -29,9 +29,10 @@ const NOMBRES_DE_MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', '
 // Febrero en 28 siempre, también en los años bisiestos
 const DIAS_DE_CADA_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-// Íconos Lucide (check, pencil y trash-2). Son decorativos: el botón tiene su texto o su aria-label
+// Íconos Lucide (check, pencil, history y trash-2). Son decorativos: el botón o el link tiene su texto o su aria-label
 const ICONO_REGISTRAR = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>';
 const ICONO_EDITAR = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICONO_SEGUIMIENTO = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
 const ICONO_ELIMINAR = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 
 // =====================================================
@@ -255,18 +256,22 @@ function htmlDePastilla(estado) {
 }
 
 /**
- * Registrar, editar y eliminar. Sin permiso de administración no hay botones. Con un cambio pendiente los tres van
- * `disabled`, con el motivo en el `title`. Llevan data-registrar, data-editar y data-eliminar con el id: el que los usa
- * escucha los clics por delegación, sin onclick. Los tres tienen aria-label con el título (el de registrar también, porque
- * en el celular se oculta su texto, el span "largo", y el botón se quedaría sin nombre).
+ * Registrar, editar y eliminar, más el link "Ver seguimiento". Sin permiso de administración no hay botones ni link. Con un
+ * cambio pendiente los tres botones van `disabled`, con el motivo en el `title`; el link no: ver el seguimiento no cambia
+ * nada. Los botones llevan data-registrar, data-editar y data-eliminar con el id: el que los usa escucha los clics por
+ * delegación, sin onclick (el link navega solo, a seguimiento.html?id=, con el id codificado). Los cuatro tienen aria-label
+ * con el título (el de registrar también, porque en el celular se oculta su texto, el span "largo", y el botón se
+ * quedaría sin nombre).
  */
 function htmlDeAcciones(d, pendiente, esAdmin) {
   if (!esAdmin) return '';
   const id = textoSeguro(d.id);
+  const idEnLink = textoSeguro(encodeURIComponent(String(d.id ?? '')));
   const titulo = textoSeguro(d.titulo);
   const bloqueo = pendiente ? ` disabled title="${TEXTO_BLOQUEO}"` : '';
   return '<div class="ad-acciones">'
     + `<button type="button" class="ad-btn registrar" data-registrar="${id}" aria-label="Registrar actualización de ${titulo}"${bloqueo}>${ICONO_REGISTRAR}<span class="largo">Registrar actualización</span></button>`
+    + `<a class="ad-icono" href="seguimiento.html?id=${idEnLink}" aria-label="Ver seguimiento de ${titulo}">${ICONO_SEGUIMIENTO}</a>`
     + `<button type="button" class="ad-icono" data-editar="${id}" aria-label="Editar ${titulo}"${bloqueo}>${ICONO_EDITAR}</button>`
     + `<button type="button" class="ad-icono borrar" data-eliminar="${id}" aria-label="Eliminar ${titulo}"${bloqueo}>${ICONO_ELIMINAR}</button>`
     + '</div>';

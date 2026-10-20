@@ -2,7 +2,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
-import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb } from './helpers.js';
+import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 
 let servidor, api, usuarios;
 
@@ -91,12 +91,19 @@ describe('lector', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/gestion/metricas', '/gestion/proyectos']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/gestion/metricas', '/gestion/proyectos', '/seguimiento']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
     });
   }
+
+  // El Seguimiento de un dataset lo ve cualquier rol con sesión (spec 2026-10-20-seguimiento-dataset)
+  it('puede usar GET /seguimiento/:id', async () => {
+    const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
+    const res = await api.get(`/seguimiento/${id}`, { token: usuarios.lector.token });
+    assert.equal(res.status, 200);
+  });
 });
 
 describe('visitante sin sesión', () => {
@@ -106,6 +113,13 @@ describe('visitante sin sesión', () => {
       assert.equal(res.status, 401);
     });
   }
+
+  it('recibe 401 en las rutas del Seguimiento', async () => {
+    const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
+    for (const ruta of ['/seguimiento', `/seguimiento/${id}`, `/seguimiento/${id}/pdf`]) {
+      assert.equal((await api.get(ruta)).status, 401, ruta);
+    }
+  });
 
   it('no puede usar un token firmado con la clave por defecto que tenía el código', async () => {
     const falso = jwt.sign({ userId: usuarios.adminA.id, rol: 'admin' }, 'rpad-secret-key-cambiar-en-produccion');

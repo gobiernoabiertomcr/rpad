@@ -416,8 +416,46 @@ describe('admin-fechas.js: htmlDeFila', () => {
 
   it('los íconos son decorativos: no se leen', () => {
     const html = fila();
-    assert.equal(cantidad(html, '<svg'), 3);
-    assert.equal(cantidad(html, 'aria-hidden="true"'), 3);
+    assert.equal(cantidad(html, '<svg'), 4);
+    assert.equal(cantidad(html, 'aria-hidden="true"'), 4);
+  });
+
+  it('Ver seguimiento: un link de ícono a seguimiento.html?id=, después de Registrar y antes de Editar, con aria-label con el título', () => {
+    for (const armar of [fila, (d) => admin.htmlDeTarjeta(d, { pendiente: false, esAdmin: true, hoy: HOY })]) {
+      const html = armar(dataset({ id: 1 }));
+      assert.match(html, /<a class="ad-icono" href="seguimiento\.html\?id=1" aria-label="Ver seguimiento de Pauta Publicitaria"><svg[\s\S]*?<\/svg><\/a>/);
+      assert.equal(cantidad(html, '<a '), 1);
+      assert.ok(html.indexOf('data-registrar') < html.indexOf('seguimiento.html'), 'después de Registrar');
+      assert.ok(html.indexOf('seguimiento.html') < html.indexOf('data-editar'), 'antes de Editar');
+      assert.doesNotMatch(html, /<a [^>]*(target|onclick|data-)/i);
+    }
+  });
+
+  it('Ver seguimiento sigue siendo un link común con un cambio pendiente: no se deshabilita ni lleva el aviso de bloqueo', () => {
+    const html = fila(vencido(), { pendiente: true });
+    const enlace = html.match(/<a [^>]*>/)?.[0] ?? '';
+    assert.match(enlace, /href="seguimiento\.html\?id=\d+"/);
+    assert.doesNotMatch(enlace, /disabled|title=|aria-disabled/);
+    assert.equal(cantidad(html, '<button'), 3);
+    assert.equal(cantidad(html, ' disabled'), 3);
+  });
+
+  it('Ver seguimiento: un id hostil va codificado y escapado, no abre otro atributo; y el título hostil queda escapado en el aria-label', () => {
+    for (const armar of [fila, (d) => admin.htmlDeTarjeta(d, { pendiente: false, esAdmin: true, hoy: HOY })]) {
+      const html = armar(dataset({ id: '1" onmouseover="x', titulo: 'Nómina "oficial" <x>' }));
+      assert.doesNotMatch(html, /" onmouseover/);
+      assert.match(html, /href="seguimiento\.html\?id=1%22%20onmouseover%3D%22x"/);
+      assert.match(html, /aria-label="Ver seguimiento de Nómina &quot;oficial&quot; &lt;x&gt;"/);
+      assert.doesNotMatch(html, /<x>/);
+    }
+  });
+
+  it('Ver seguimiento: sin permiso de administración no hay link (ni en la fila ni en la tarjeta), y la fila conserva sus cinco columnas', () => {
+    const html = fila(dataset(), { esAdmin: false });
+    assert.doesNotMatch(html, /seguimiento\.html|Ver seguimiento|<a /);
+    assert.equal(cantidad(html, '<td'), 5);
+    assert.doesNotMatch(admin.htmlDeTarjeta(dataset(), { esAdmin: false, hoy: HOY }), /seguimiento\.html|Ver seguimiento|<a /);
+    assert.doesNotMatch(admin.htmlDeFila(dataset(), null), /seguimiento\.html/);
   });
 
   it('un eventual lleva "Eventual", no tiene pedido y no dice cuándo vence', () => {

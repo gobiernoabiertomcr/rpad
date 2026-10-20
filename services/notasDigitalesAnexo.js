@@ -9,7 +9,7 @@ import { formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
 // corrió "npm install" después de subir el código), falla solo el aviso, que queda registrado con su alerta, y no el
 // arranque de toda la app (este módulo llega a app.js por las rutas).
 let QRCode = null;
-const cargarQrcode = async () => {
+export const cargarQrcode = async () => {
   if (!QRCode) {
     try {
       QRCode = (await import('qrcode')).default;
@@ -19,20 +19,20 @@ const cargarQrcode = async () => {
   }
 };
 
-const MM = 72 / 25.4;
+export const MM = 72 / 25.4;
 const ANCHO = 210 * MM;
 const ALTO = 297 * MM;
 // Todo se dibuja dentro de los márgenes de 15 mm, también el encabezado y el pie
-const MARGEN = 15 * MM;
-const IZQUIERDA = MARGEN;
-const DERECHA = ANCHO - MARGEN;
-const ABAJO = ALTO - MARGEN;
-const CONTENIDO = ANCHO - 2 * MARGEN;
-const NORMAL = 'Helvetica';
-const NEGRITA = 'Helvetica-Bold';
+export const MARGEN = 15 * MM;
+export const IZQUIERDA = MARGEN;
+export const DERECHA = ANCHO - MARGEN;
+export const ABAJO = ALTO - MARGEN;
+export const CONTENIDO = ANCHO - 2 * MARGEN;
+export const NORMAL = 'Helvetica';
+export const NEGRITA = 'Helvetica-Bold';
 // Monocromático: gris oscuro para el texto, grises claros para fondos y líneas y un único acento azul suave.
 // Impreso en blanco y negro, el acento queda como un gris medio.
-const COLOR = {
+export const COLOR = {
   tinta: '#1F2933', gris: '#52606D', rotulo: '#7B8794', grisClaro: '#9AA5B1', linea: '#D9DEE3', fondo: '#F3F5F8',
   acento: '#3E6A99', acentoSuave: '#E4ECF5', blanco: '#FFFFFF'
 };
@@ -44,8 +44,8 @@ const PUNTOS = '…';
 const MINIMO = 8;
 // Helvetica (regular y negrita): la línea de ascendentes (y de mayúsculas) está a 0,718 em sobre la línea de base
 // y la de descendentes, a 0,207 em debajo. PDFKit ubica el texto por el borde superior de la línea.
-const ASCENDENTE = 0.718;
-const DESCENDENTE = 0.207;
+export const ASCENDENTE = 0.718;
+export const DESCENDENTE = 0.207;
 
 // Perfiles tipográficos, del más generoso al más compacto. La hoja usa el primero con el que todo entra en su
 // tamaño (sin achicar ni cortar nada); el último es también la base de los niveles de compactación (dibujarHoja).
@@ -79,7 +79,7 @@ const ALTO_TARJETA_QR = LADO_QR + RELLENO_QR + 18;
 const SEPARACION_QR = 7 * MM;
 
 // y del borde superior de un texto para que su línea de base quede en "base"
-const desdeBase = (base, tamano) => base - ASCENDENTE * tamano;
+export const desdeBase = (base, tamano) => base - ASCENDENTE * tamano;
 const suma = (valores) => valores.reduce((a, b) => a + b, 0);
 
 // Texto de la base listo para medir: espacios seguidos como uno, sin espacios en los extremos de cada línea ni más
@@ -127,7 +127,7 @@ const medidor = (doc, { ancho, fuente = NORMAL, opciones = {} }) => {
 // punto, y si aun así no entra lo corta en el último fin de palabra que entra, seguido de "corte" (si no entra ni
 // una palabra, corta entre letras). Mide con las mismas opciones con las que lo escribe "escribir".
 // Devuelve { texto, tamano, alto, fuente, opciones, cortado }, con el alto que ocupa.
-const ajustar = (doc, texto, { ancho, alto = null, lineas = null, max, min = max, fuente = NORMAL, opciones = {}, corte = PUNTOS }) => {
+export const ajustar = (doc, texto, { ancho, alto = null, lineas = null, max, min = max, fuente = NORMAL, opciones = {}, corte = PUNTOS }) => {
   const medida = medidor(doc, { ancho, fuente, opciones });
   const tope = (tamano) => (alto ?? lineas * medida.interlinea(tamano)) + 0.01;
   const limpio = medida.acotar(limpiar(texto), Math.floor(tope(min) / medida.interlinea(min)) + 1, min);
@@ -151,14 +151,14 @@ const entraEn = (doc, texto, { ancho, lineas, tamano, fuente = NORMAL }) =>
 // Escribe un texto ajustado con su borde superior en y. La holgura en el alto evita que un redondeo deje afuera la
 // última línea y no alcanza para una línea más. Con interlineado negativo suma ese interlineado: PDFKit decide si
 // sigue otra línea con el alto de línea sin él.
-const escribir = (doc, ajuste, x, y, color, extra = {}) => {
+export const escribir = (doc, ajuste, x, y, color, extra = {}) => {
   const holgura = 1 + Math.max(0, -(ajuste.opciones.lineGap ?? 0));
   doc.font(ajuste.fuente).fontSize(ajuste.tamano).fillColor(color)
     .text(ajuste.texto, x, y, { ...ajuste.opciones, height: ajuste.alto + holgura, ...extra });
 };
 
 // Una sola línea de texto en un ancho: si no entrara, PDFKit la termina con "…" en lugar de pasar a otra línea
-const renglon = (doc, texto, x, y, { ancho, tamano, fuente = NORMAL, color = COLOR.tinta, align = 'left', espaciado = 0 }) => {
+export const renglon = (doc, texto, x, y, { ancho, tamano, fuente = NORMAL, color = COLOR.tinta, align = 'left', espaciado = 0 }) => {
   doc.font(fuente).fontSize(tamano).fillColor(color);
   doc.text(texto, x, y, {
     width: ancho, align, characterSpacing: espaciado, height: doc.currentLineHeight(true) + 1, ellipsis: true
@@ -166,11 +166,11 @@ const renglon = (doc, texto, x, y, { ancho, tamano, fuente = NORMAL, color = COL
 };
 
 // Rótulo: mayúsculas chicas en negrita, con interletrado
-const rotulo = (doc, texto, x, y, { ancho, tamano, color = COLOR.rotulo, align = 'left' }) =>
+export const rotulo = (doc, texto, x, y, { ancho, tamano, color = COLOR.rotulo, align = 'left' }) =>
   renglon(doc, String(texto).toUpperCase(), x, y, { ancho, tamano, fuente: NEGRITA, color, align, espaciado: 0.5 });
 
 // Línea fina horizontal (un rectángulo lleno: más nítido que un trazo de medio punto)
-const filete = (doc, x, y, ancho, color = COLOR.linea) => doc.rect(x, y - 0.3, ancho, 0.6).fill(color);
+export const filete = (doc, x, y, ancho, color = COLOR.linea) => doc.rect(x, y - 0.3, ancho, 0.6).fill(color);
 
 // =====================================================
 // Partes de la hoja
@@ -218,7 +218,7 @@ const dibujarEstado = (doc, estado, x, y, tamano, alto) => {
 
 // Etiqueta de la cabecera: mayúsculas chicas en negrita, en el acento y con interletrado amplio ("CONJUNTO DE DATOS ·
 // GESTIÓN EXTERNA" y el rótulo del recuadro "Datos solicitados")
-const etiquetaDeCabecera = (doc, texto, x, y, { ancho, tamano }) =>
+export const etiquetaDeCabecera = (doc, texto, x, y, { ancho, tamano }) =>
   renglon(doc, texto, x, y, { ancho, tamano, fuente: NEGRITA, color: COLOR.acento, espaciado: 1.2 });
 
 // Recuadro "Datos solicitados" (spec 2026-10-17-fechas-datasets, 9): fondo gris claro y filete del acento a la izquierda,
@@ -328,7 +328,7 @@ const dibujarLineaDeTiempo = (doc, { inicio, rotuloInicio, fin, hoy }, y, p) => 
 // entra en esas líneas de media columna (en su tamaño) ocupa la fila entera, y también la ocupa una celda que queda
 // sola en su fila. Los valores de una misma fila van en el mismo tamaño: el del que más se tuvo que achicar.
 // Con "divisorias", una línea fina separa las filas (y cierra arriba y abajo).
-const prepararGrilla = (doc, celdas, { ancho, columnas, lineas, tamanos, tamanoRotulo, divisorias, filaEntera = null, aire = 1 }) => {
+export const prepararGrilla = (doc, celdas, { ancho, columnas, lineas, tamanos, tamanoRotulo, divisorias, filaEntera = null, aire = 1 }) => {
   const anchoColumna = anchoDeColumna(ancho, columnas);
   const arriba = divisorias ? 7 * aire : 0;
   const abajo = divisorias ? 4 * aire : 5 * aire;
@@ -402,7 +402,7 @@ const dibujarQr = (doc, url, x, y, lado) => {
 };
 
 // Tarjeta del QR: borde fino, el código y "Abrir en el portal"; toda la tarjeta es un link al dataset
-const dibujarTarjetaQr = (doc, url, x, y) => {
+export const dibujarTarjetaQr = (doc, url, x, y) => {
   doc.roundedRect(x, y, ANCHO_TARJETA_QR, ALTO_TARJETA_QR, 6).lineWidth(0.8).strokeColor(COLOR.linea).stroke();
   dibujarQr(doc, url, x + RELLENO_QR, y + RELLENO_QR, LADO_QR);
   renglon(doc, 'Abrir en el portal', x, y + RELLENO_QR + LADO_QR + 4, { ancho: ANCHO_TARJETA_QR, tamano: 7, color: COLOR.gris, align: 'center' });

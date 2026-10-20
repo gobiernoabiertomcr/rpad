@@ -37,7 +37,7 @@ El sistema cuenta con cuatro roles de usuario:
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
 | `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros solo **de respaldo** (si ese día no hay ningún auditor disponible), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
-| `lector` | Solo lectura | Ver todas las secciones (portada, calendario, datasets, reportes, notas) sin poder modificar datos. |
+| `lector` | Solo lectura | Ver todas las secciones (portada, calendario, datasets, reportes, notas, Seguimiento) sin poder modificar datos. |
 
 Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
@@ -99,6 +99,24 @@ Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada data
 - **Al compartir un link** de estas páginas (WhatsApp, Telegram, Facebook, X, LinkedIn, Slack) se ve una vista previa con la imagen `img/compartir.png`. `robots.txt` deja pasar solo a esos robots y sigue cerrado para los buscadores.
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-18-rediseno-publico-design.md`.
 
+## Seguimiento del dataset
+
+**Herramientas → Seguimiento** (`seguimiento.html`) junta, por dataset, todo lo que pasó con él: cuándo se actualizó en el RPAD, cuándo y cómo se avisó que había que pedir los datos, y quién propuso y quién aprobó cada cambio. Es el registro de todos los movimientos y la prueba de cada vez que el RPAD avisó. Lo ven todos los roles con sesión, el lector incluido; no es público ni permite cargar movimientos a mano: muestra solo lo que registró el sistema. No hay tablas ni migraciones nuevas.
+
+- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último aviso.
+- **Un dataset** (`seguimiento.html?id=N`):
+  - la ficha, con **Descargar PDF** y **Ver en el portal**;
+  - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (no queda registrada) y a los 40 días el RPAD le anticipa al área por email que va a recibirla; en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
+  - **los últimos 12 meses**: una cinta con los ciclos, lo que estuvo vencido, los vencimientos y las marcas de cada movimiento;
+  - los **movimientos** (altas, actualizaciones, cambios en la ficha, propuestas, Notas Digitales, emails y bajas), con filtros por tipo, filas que se despliegan para ver el detalle y los hitos de vencimiento entre ellas.
+- **Ciclos:** un ciclo es el tiempo en que rige un vencimiento. Una actualización que mueve la próxima y "Cargado en el portal" lo cierra; reprogramar la próxima antes de que venza lo mueve dentro del mismo ciclo y hacerlo después de vencido lo cierra como reprogramado. Cada aviso se asigna al ciclo del vencimiento que informa (las notas) o al que regía cuando se envió (los emails).
+- **Lenguaje neutro:** el atraso muchas veces depende de que no se mandó la nota formal, no del área. Por eso el Seguimiento dice "Vencido hace N días" o "Estuvo vencido N días" (y la insignia, "Vencido"), nunca "sin entregar" ni "atrasado". El resto del sitio conserva "Atrasado" y "Sin respuesta del área".
+- **PDF de una hoja** (A4, con el estilo del anexo de las Notas Digitales): ficha con QR al portal, avisos del ciclo abierto, la cinta y los últimos 8 movimientos. Se descarga como `Seguimiento - <título> - <AAAA-MM-DD>.pdf`.
+- **Desde cuándo hay registro:** los envíos quedan registrados desde el 06/12/2025 y los cambios desde el 26/01/2026; antes de esas fechas no hay registro y no se reconstruye. Una aclaración al pie lo dice.
+- **Gestión de Datasets** suma, en cada fila, el ícono "Ver seguimiento" que abre el de ese dataset.
+- **Dónde está la regla:** `services/seguimientoReglas.js` (puro) y `services/seguimientoCinta.js`; la pantalla y el PDF dibujan lo que calcula el servidor.
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-20-seguimiento-dataset-design.md`.
+
 ## Estructura del proyecto
 
 ```
@@ -121,12 +139,14 @@ rpad/
 │   ├── notificacionesController.js  # Cron diario: aviso a áreas y Notas Digitales
 │   ├── notasDigitalesController.js  # API de Notas Digitales (libro, prueba, configuración)
 │   ├── notasController.js         # Generador de notas DOCX
+│   ├── seguimientoController.js   # Seguimiento del dataset: lista, ficha y PDF (solo lectura)
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
 │   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
 │   ├── avisosDiariosService.js    # Aviso a las áreas y recordatorio de cambios pendientes a quienes pueden auditar (solo días hábiles)
 │   ├── emailTemplates.js          # Plantillas HTML de los emails, todas con el mismo marco (marcoEmail)
 │   ├── fechasDatasetReglas.js     # Reglas puras de las fechas de un dataset: pedido, opciones de próxima, estado y tasa
+│   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF de una hoja
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF y anexo
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD
@@ -162,10 +182,11 @@ rpad/
     ├── reportes.html              # Generador de reportes
     ├── notas.html                 # Generador de notas administrativas DOCX
     ├── gestion.html               # Gestión: métricas (Chart.js, la única librería por CDN)
+    ├── seguimiento.html           # Seguimiento del dataset: lista "Sin elegir" o un dataset (?id=N), con su cinta, movimientos y PDF
     ├── perfil.html                # Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma
     ├── robots.txt                 # Cerrado a todos, salvo a los robots de vista previa de un link
     ├── css/
-    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 13 páginas con carcasa
+    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 14 páginas con carcasa
     │   ├── publico.css            # Solo las 5 páginas públicas (index, datasets, dataset, calendario y contacto)
     │   └── styles.css, layout.css, perfil.css   # Sin uso: no los carga ninguna página
     ├── js/
@@ -186,6 +207,7 @@ rpad/
     │   ├── reportes.js            # Generación de reportes PDF
     │   ├── notas.js               # Generador de notas administrativas
     │   ├── gestion.js             # Gestión: métricas
+    │   ├── seguimiento.js         # Seguimiento del dataset: lista, ficha, circuito, cinta (SVG) y movimientos
     │   ├── perfil.js              # Mi Perfil: gestión de cambios (aprobar y rechazar en la fila), datos y firma
     │   └── establecer-contrasena.js  # Elegir la contraseña, o pedir un link nuevo
     └── img/
@@ -596,6 +618,9 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | GET | `/api/reportes/historial-notificaciones` | Descargar historial de notificaciones |
 | GET | `/api/reportes/por-area/:areaId` | Descargar reporte de un área |
 | GET | `/api/reportes/cumplimiento` | Descargar reporte de cumplimiento |
+| GET | `/api/seguimiento` | Seguimiento: la lista de todos los datasets con su estado y los avisos del ciclo abierto (cualquier rol con sesión) |
+| GET | `/api/seguimiento/:id` | Seguimiento de un dataset: ficha, ciclo abierto y sus avisos, cinta, movimientos e hitos (404 si no existe) |
+| GET | `/api/seguimiento/:id/pdf` | PDF de una hoja del seguimiento de un dataset |
 
 ### Cron (requiere secret)
 
@@ -645,6 +670,14 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Seguimiento del dataset (2026-10)
+- Página nueva, Herramientas → Seguimiento, para todos los roles con sesión: por dataset, la ficha, los avisos del ciclo abierto (el circuito del RPAD a DGMIT, de ahí al área y el email de anticipo a los 40 días), una cinta de los últimos 12 meses y la lista de movimientos (altas, actualizaciones, cambios, propuestas, Notas Digitales, emails a DGMIT y al área, bajas) con filtros, detalle y hitos de vencimiento
+- Vista "Sin elegir" con todos los datasets, los vencidos primero, y PDF de una sola hoja A4 con el estilo del anexo, QR al portal y los últimos 8 movimientos
+- Lenguaje neutro: "Vencido hace N días" y "Estuvo vencido N días"; la insignia "Vencido" solo en el Seguimiento (el resto del sitio no cambia)
+- Gestión de Datasets: cada fila suma el ícono "Ver seguimiento"
+- Las 14 páginas con carcasa suman el link en el menú lateral; los ayudantes del anexo (`services/notasDigitalesAnexo.js`) se exportan sin cambiar lo que dibujan
+- Sin cambios en la base, los crons ni los emails: no hay SQL ni "Run NPM Install"; hace falta Restart por las rutas nuevas
 
 ### Índice de la portada: "Al día" y el texto en orden (2026-10)
 - El cuadro del índice une Actualizados y Próximos a vencer en "Al día" (el mismo número que el texto), con una leyenda que dice cuántos hay de cada uno; la leyenda de Vencidos también dice cuántos atrasados y cuántos sin respuesta hay

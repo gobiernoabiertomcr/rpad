@@ -1,0 +1,67 @@
+/* Prototipo de la cinta del Seguimiento: tema de pantalla (RPAD) y tema del PDF (paleta del ANEXO) */
+.cinta-pantalla, .cinta-pdf { width: 100%; height: auto; display: block; }
+.cinta-pantalla text { font-family: 'Figtree', system-ui, sans-serif; }
+.cinta-pdf text { font-family: Helvetica, Arial, sans-serif; }
+.marca { cursor: help; }
+
+.cinta-pantalla .l-mes { stroke: #DAE3ED; }
+.cinta-pantalla .mes { font-size: 12px; fill: #56677F; text-anchor: middle; }
+.cinta-pantalla .anio { font-size: 11px; fill: #8A97A8; text-anchor: middle; }
+.cinta-pantalla .t-ciclo { fill: #DCEEF5; }
+.cinta-pantalla .t-vencido { fill: url(#rayado-pantalla); }
+.cinta-pantalla .t-futuro { fill: #F2F8FB; stroke: #DCEEF5; stroke-width: 1; }
+.cinta-pantalla .t-eventual { fill: #EEF2F6; }
+.cinta-pantalla .r-fondo { fill: #FCE8A8; }
+.cinta-pantalla .r-raya { fill: #F2CF5B; }
+.cinta-pantalla .en-banda { font-size: 12px; font-weight: 700; text-anchor: middle; }
+.cinta-pantalla .ambar { fill: #7A5200; }
+.cinta-pantalla .gris { fill: #56677F; font-weight: 600; }
+.cinta-pantalla .l-antes { stroke: #C9D3DE; stroke-width: 2; stroke-dasharray: 2 4; }
+.cinta-pantalla .t-gris { font-size: 12px; fill: #8A97A8; text-anchor: middle; }
+.cinta-pantalla .l-vence { stroke: #1A365D; stroke-width: 1.5; stroke-dasharray: 3 3; }
+.cinta-pantalla .vence { font-size: 11.5px; font-weight: 600; fill: #1A365D; text-anchor: middle; }
+.cinta-pantalla .hoy { font-size: 11.5px; font-weight: 700; fill: #142B4A; text-anchor: middle; }
+.cinta-pantalla .l-hoy { stroke: #142B4A; stroke-width: 2.2; }
+.cinta-pantalla .etq-nota { font-size: 11.5px; font-weight: 700; fill: #1A365D; text-anchor: middle; }
+.cinta-pantalla .i-nota { fill: #1A365D; }
+.cinta-pantalla .i-email { fill: #fff; stroke: #1A365D; stroke-width: 2.2; }
+.cinta-pantalla .i-area { fill: #fff; stroke: #76879F; stroke-width: 2; stroke-dasharray: 3 2.5; }
+.cinta-pantalla .i-act { fill: #2E6B4C; stroke: #fff; stroke-width: 2; }
+.cinta-pantalla .i-actp { fill: #fff; stroke: #2E6B4C; stroke-width: 2.5; stroke-dasharray: 3 2; }
+.cinta-pantalla .i-cambio { fill: #24507A; stroke: #fff; stroke-width: 1.5; }
+.cinta-pantalla .i-cambiop { fill: #fff; stroke: #24507A; stroke-width: 2; stroke-dasharray: 3 2; }
+.cinta-pantalla .i-alta { fill: #fff; stroke: #1A365D; stroke-width: 2.5; }
+.cinta-pantalla .i-rech { stroke: #8A3434; stroke-width: 2.4; stroke-linecap: round; }
+.cinta-pantalla .c-fondo { fill: #1A365D; }
+.cinta-pantalla .cuenta { font-size: 10px; font-weight: 700; fill: #fff; text-anchor: middle; }
+
+.cinta-pdf .l-mes { stroke: #D9DEE3; stroke-width: 1.2; }
+.cinta-pdf .mes { font-size: 15.5px; fill: #7B8794; text-anchor: middle; }
+.cinta-pdf .anio { font-size: 12.5px; fill: #9AA5B1; text-anchor: middle; }
+.cinta-pdf .t-ciclo { fill: #E4ECF5; }
+.cinta-pdf .t-vencido { fill: url(#rayado-pdf); }
+.cinta-pdf .t-futuro { fill: #F4F7FB; stroke: #E4ECF5; stroke-width: 1.2; }
+.cinta-pdf .t-eventual { fill: #F3F5F8; }
+.cinta-pdf .r-fondo { fill: #FCEFC7; }
+.cinta-pdf .r-raya { fill: #F2CF5B; }
+.cinta-pdf .en-banda { font-size: 14.5px; font-weight: 700; text-anchor: middle; }
+.cinta-pdf .ambar { fill: #7A5200; }
+.cinta-pdf .gris { fill: #52606D; }
+.cinta-pdf .l-antes { stroke: #C5CDD5; stroke-width: 2.5; stroke-dasharray: 2 5; }
+.cinta-pdf .t-gris { font-size: 14.5px; fill: #9AA5B1; text-anchor: middle; }
+.cinta-pdf .l-vence { stroke: #1F2933; stroke-width: 2; stroke-dasharray: 4 3; }
+.cinta-pdf .vence { font-size: 14px; font-weight: 700; fill: #1F2933; text-anchor: middle; }
+.cinta-pdf .hoy { font-size: 14px; font-weight: 700; fill: #1F2933; text-anchor: middle; }
+.cinta-pdf .l-hoy { stroke: #1F2933; stroke-width: 3; }
+.cinta-pdf .etq-nota { font-size: 14px; font-weight: 700; fill: #1F2933; text-anchor: middle; }
+.cinta-pdf .i-nota { fill: #1F2933; }
+.cinta-pdf .i-email { fill: #fff; stroke: #1F2933; stroke-width: 2.6; }
+.cinta-pdf .i-area { fill: #fff; stroke: #52606D; stroke-width: 2.2; stroke-dasharray: 3.5 2.5; }
+.cinta-pdf .i-act { fill: #2E6B4C; stroke: #fff; stroke-width: 2.4; }
+.cinta-pdf .i-actp { fill: #fff; stroke: #2E6B4C; stroke-width: 2.8; stroke-dasharray: 3.5 2.5; }
+.cinta-pdf .i-cambio { fill: #3E6A99; stroke: #fff; stroke-width: 1.8; }
+.cinta-pdf .i-cambiop { fill: #fff; stroke: #3E6A99; stroke-width: 2.4; stroke-dasharray: 3.5 2.5; }
+.cinta-pdf .i-alta { fill: #fff; stroke: #1F2933; stroke-width: 2.8; }
+.cinta-pdf .i-rech { stroke: #9B3B36; stroke-width: 2.8; stroke-linecap: round; }
+.cinta-pdf .c-fondo { fill: #1F2933; }
+.cinta-pdf .cuenta { font-size: 12px; font-weight: 700; fill: #fff; text-anchor: middle; }

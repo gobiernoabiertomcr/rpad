@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seguimiento: el PDF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,650;12..96,750&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="cinta.css">
+<link rel="stylesheet" href="/files/cinta.css">
+<style>
+  /* Paleta del ANEXO (services/notasDigitalesAnexo.js, COLOR) */
+  :root {
+    --tinta: #1F2933; --gris: #52606D; --rotulo: #7B8794; --gris-claro: #9AA5B1; --linea: #D9DEE3;
+    --fondo: #F3F5F8; --acento: #3E6A99; --acento-suave: #E4ECF5;
+    --rojo: #9B3B36; --rojo-suave: #F6E4E2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #E3E8EE; font-family: 'Figtree', system-ui, sans-serif; color: #22324A; }
+  .intro { max-width: 900px; margin: 0 auto; padding: 32px 20px 8px; }
+  .intro h1 { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 750; letter-spacing: -0.02em; color: #1A365D; font-size: 1.75rem; margin: 0 0 6px; }
+  .intro p { margin: 0 0 6px; color: #56677F; max-width: 74ch; }
+  .rotulo-hoja { max-width: 210mm; margin: 28px auto 10px; font-weight: 600; color: #1A365D; }
+  .rotulo-hoja span { font-weight: 400; color: #56677F; }
+
+  .hoja { width: 210mm; height: 297mm; margin: 0 auto 24px; background: #fff; padding: 15mm; box-shadow: 0 4px 24px rgb(20 43 74 / 0.12);
+          font-family: Helvetica, Arial, sans-serif; color: var(--tinta); display: flex; flex-direction: column; overflow: hidden; }
+  .r { font-size: 6.6pt; font-weight: 700; letter-spacing: 0.6pt; text-transform: uppercase; color: var(--rotulo); }
+
+  .enc { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 2.4mm; border-bottom: 0.6pt solid var(--linea); position: relative; }
+  .enc::after { content: ''; position: absolute; left: 0; bottom: -1.3pt; width: 28pt; height: 2pt; background: var(--acento); }
+  .enc .izq b { display: block; font-size: 7.5pt; letter-spacing: 0.6pt; }
+  .enc .izq span, .enc .der span { font-size: 7.5pt; color: var(--gris); }
+  .enc .der { text-align: right; }
+  .enc .der b { display: block; font-size: 9.5pt; }
+
+  .etiqueta { margin-top: 6.5mm; font-size: 7.5pt; font-weight: 700; letter-spacing: 1.2pt; color: var(--acento); }
+  .titulo { margin: 1.4mm 0 0; font-size: 20pt; line-height: 1.12; font-weight: 700; height: 15.8mm; }
+  .titulo span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .ficha { margin-top: 3mm; display: grid; grid-template-columns: 1fr 34mm; gap: 5mm; }
+  .grilla { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; border-top: 0.6pt solid var(--linea); }
+  .celda { padding: 1.6mm 0 1.5mm; border-bottom: 0.6pt solid var(--linea); min-width: 0; }
+  .celda.ancha { grid-column: 1 / -1; }
+  .celda .v { font-size: 9.2pt; margin-top: 0.6mm; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .celda .v.link { color: var(--acento); font-size: 8.4pt; }
+  .celda .v.alerta { color: var(--rojo); font-weight: 700; }
+  .qr { border: 0.8pt solid var(--linea); border-radius: 6pt; padding: 2.2mm 2.2mm 1.6mm; text-align: center; align-self: start; }
+  .qr img { width: 29.5mm; height: 29.5mm; display: block; margin: 0 auto; }
+  .qr span { display: block; font-size: 6.8pt; color: var(--gris); margin-top: 1.3mm; }
+
+  .bloque { margin-top: 5mm; }
+  .bloque-cabeza { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2mm; }
+  .bloque-cabeza .r { color: var(--acento); }
+  .bloque-cabeza span:last-child { font-size: 7.6pt; color: var(--gris); }
+
+  .circuito { display: grid; grid-template-columns: 1fr 1.25fr 1.05fr 1.15fr 1fr; align-items: stretch; }
+  .nodo { border: 0.9pt solid var(--tinta); border-radius: 5pt; padding: 2mm 2.4mm; display: flex; flex-direction: column; justify-content: center; }
+  .nodo b { font-size: 8.2pt; line-height: 1.15; }
+  .nodo span { font-size: 6.8pt; color: var(--gris); margin-top: 0.6mm; line-height: 1.2; }
+  .nodo em { font-style: normal; font-size: 7.4pt; font-weight: 700; margin-top: 1mm; color: var(--acento); }
+  .nodo.mal { border-color: var(--rojo); background: #FFFAFA; }
+  .nodo.mal em { color: var(--rojo); }
+  .tramo { display: flex; flex-direction: column; justify-content: center; padding: 0 2.6mm; }
+  .tramo b { font-size: 9.4pt; color: var(--acento); }
+  .tramo .l { position: relative; border-top: 1.6pt solid var(--acento); margin: 1.2mm 2mm 1.2mm 0; }
+  .tramo .l::after { content: ''; position: absolute; right: -2mm; top: -1.65mm; border: 1.5mm solid transparent; border-left: 2.2mm solid var(--acento); }
+  .tramo span { font-size: 6.8pt; color: var(--gris); line-height: 1.2; }
+  .tramo.fuera b { color: var(--gris); }
+  .tramo.fuera .l { border-top: 1.6pt dashed var(--gris-claro); }
+  .tramo.fuera .l::after { border-left-color: var(--gris-claro); }
+  .al-area { margin-top: 2mm; font-size: 7.8pt; color: var(--gris); padding: 1.5mm 2.6mm; background: var(--fondo); border-radius: 4pt; }
+  .al-area b { color: var(--tinta); }
+
+  .leyenda { display: flex; flex-wrap: wrap; gap: 1mm 3.6mm; font-size: 6.6pt; color: var(--gris); margin-top: 0.6mm; }
+  .leyenda span { display: inline-flex; align-items: center; gap: 1.2mm; }
+  .leyenda svg { width: 3mm; height: 3mm; }
+
+  .movs { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { text-align: left; font-size: 6.4pt; font-weight: 700; letter-spacing: 0.5pt; text-transform: uppercase; color: var(--rotulo); padding: 0 0 1.2mm; border-bottom: 0.9pt solid var(--tinta); }
+  td { height: 7.7mm; padding: 1.1mm 0; border-bottom: 0.6pt solid var(--linea); vertical-align: top; }
+  td.f { width: 17mm; font-size: 7.8pt; font-weight: 700; padding-top: 1.4mm; }
+  td.m { width: 5mm; padding-top: 1.2mm; }
+  td.m svg { width: 3.2mm; height: 3.2mm; }
+  td.q { font-size: 8pt; line-height: 1.22; }
+  td.q b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td.q span { display: block; font-size: 7pt; color: var(--gris); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td.p { width: 38mm; font-size: 7pt; color: var(--gris); text-align: right; line-height: 1.25; padding-top: 1.4mm; white-space: pre-line; }
+  tr.vacio td { border-bottom-color: transparent; }
+  tr.fin td { font-size: 7.4pt; color: var(--gris); font-style: italic; border-bottom-color: transparent; }
+  .nota-movs { margin-top: auto; padding-top: 1.6mm; font-size: 6.8pt; color: var(--gris); line-height: 1.3; }
+  .pie { margin-top: 2.2mm; padding-top: 2mm; border-top: 0.6pt solid var(--linea); display: flex; justify-content: space-between; font-size: 7pt; color: var(--gris); }
+
+  @media print {
+    @page { size: A4; margin: 0; }
+    body { background: #fff; }
+    .intro, .rotulo-hoja { display: none; }
+    .hoja { margin: 0; box-shadow: none; break-after: page; }
+  }
+</style>
+</head>
+<body>
+<div class="intro">
+  <h1>El PDF del seguimiento</h1>
+  <p>Una hoja A4 con el lenguaje del ANEXO: la misma paleta, la misma letra y el QR al portal. Sin la línea de estado y con los últimos 8 movimientos. La cinta y la lista se arman solas con las fechas reales.</p>
+  <p>Tres ejemplos: uno vencido, uno al día con muchas cargas y uno dado de alta ayer (con espacio en blanco).</p>
+</div>
+<div id="hojas"></div>
+
+<script src="datos-cinta.js"></script>
+<script>if (!window.DATOS) document.write('<script src="/files/datos-cinta.js"><\/script>');</script>
+<script src="cinta.js"></script>
+<script>if (!window.Cinta) document.write('<script src="/files/cinta.js"><\/script>');</script>
+<script>
+  var HOY = '2026-10-20', FILAS = 8, DIA = 86400000;
+  function num(s) { return Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / DIA; }
+  var dmy = Cinta.dmy;
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function corto(nombre) { return nombre; }
+
+  function hoja(d) {
+    var externa = d.tipo_gestion === 'externa';
+    var quien = externa ? 'DGMIT y Dirección Administrativa' : 'DGMIT y Dirección de Investigación Territorial';
+    var hace = externa ? 'Mandan la nota formal al área' : 'Hacen el relevamiento';
+    var ciclos = Cinta.ciclosDe(d), abierto = ciclos ? ciclos[ciclos.length - 1] : null;
+    var desde = abierto ? abierto.inicio : d.alta.slice(0, 10);
+    var emails = d.emails.filter(function (e) { return e.success && e.tipo !== 'area-aviso-40' && e.enviado.slice(0, 10) > desde; }).length;
+    var notas = d.notas.filter(function (n) { return n.fecha > desde || (abierto && n.vencimiento === abierto.venc); });
+    var alArea = d.emails.filter(function (e) { return e.success && e.tipo === 'area-aviso-40' && e.enviado.slice(0, 10) > desde; });
+    var avisos = emails + notas.length;
+    var comoAvisos = [emails ? emails + (emails === 1 ? ' email' : ' emails') : '', notas.map(function (n) { return 'la Nota Digital N° ' + n.numero + '/' + String(n.anio).slice(2); }).join(' y ')].filter(Boolean).join(' y ');
+    var vencido = abierto && abierto.venc < HOY, dias = abierto ? Math.abs(num(HOY) - num(abierto.venc)) : 0;
+    var estadoArea = !abierto ? 'Eventual' : vencido ? 'Sin entregar, ' + dias + ' días' : 'Vence en ' + dias + ' días';
+
+    var movs = Cinta.movimientosDe(d), vistos = movs.slice(0, FILAS);
+    var filas = vistos.map(function (m) {
+      return '<tr><td class="f">' + dmy(m.fecha) + '</td><td class="m"><svg class="cinta-pdf" viewBox="0 0 20 20">' + Cinta.icono(m.tipo, 10, 10) + '</svg></td><td class="q"><b>' + esc(m.titulo) + '</b><span>' + esc(m.detalle) + '</span></td><td class="p">' + esc(m.quien) + '</td></tr>';
+    });
+    if (movs.length < FILAS) {
+      filas.push('<tr class="fin"><td colspan="4">No hay movimientos anteriores: el dataset está en el RPAD desde el ' + dmy(d.alta.slice(0, 10)) + '.</td></tr>');
+      for (var i = movs.length + 1; i < FILAS; i++) filas.push('<tr class="vacio"><td colspan="4"></td></tr>');
+    }
+    var faltan = movs.length - vistos.length;
+
+    var cintaSvg = Cinta.svg(d, { hoy: HOY, tema: 'pdf' });
+    var hayTipo = {}; Cinta.eventosDe(d).forEach(function (e) { if (e.fecha >= '2025-11-01') hayTipo[e.tipo] = true; });
+    var leyenda = [['nota', 'Nota Digital a DGMIT'], ['email', 'Email a DGMIT'], ['area', 'Email al área'], ['act', 'Actualización'], ['actp', 'Actualización pendiente'], ['cambio', 'Cambio en la ficha'], ['rech', 'Propuesta rechazada'], ['alta', 'Alta']]
+      .filter(function (l) { return hayTipo[l[0]]; }).map(function (l) { return '<span><svg class="cinta-pdf" viewBox="0 0 20 20">' + Cinta.icono(l[0], 10, 10) + '</svg>' + l[1] + '</span>'; }).join('') +
+      (cintaSvg.indexOf('t-vencido') >= 0 ? '<span><svg viewBox="0 0 26 14" style="width:4.6mm"><rect width="26" height="14" fill="#FCEFC7"/><path d="M0 14 14 0M8 14 22 0M16 14 26 4" stroke="#F2CF5B" stroke-width="3"/></svg>Vencido sin entregar</span>' : '');
+
+    return '<div class="rotulo-hoja">' + esc(d.titulo) + ' <span>(' + movs.length + ' movimientos)</span></div>' +
+      '<section class="hoja">' +
+      '<div class="enc"><div class="izq"><b>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</b><span>Municipalidad de Comodoro Rivadavia</span></div><div class="der"><b>Seguimiento del dataset</b><span>20 de octubre de 2026</span></div></div>' +
+      '<div class="etiqueta">CONJUNTO DE DATOS · GESTIÓN ' + d.tipo_gestion.toUpperCase() + '</div>' +
+      '<h1 class="titulo"><span>' + esc(d.titulo) + '</span></h1>' +
+      '<div class="ficha"><div class="grilla">' +
+        '<div class="celda"><div class="r">Área responsable</div><div class="v">' + esc(d.area) + '</div></div>' +
+        '<div class="celda"><div class="r">Depende de</div><div class="v">' + esc(d.area_superior || 'Sin dato') + '</div></div>' +
+        '<div class="celda"><div class="r">Frecuencia</div><div class="v">' + esc(d.frecuencia) + '</div></div>' +
+        '<div class="celda"><div class="r">' + (vencido ? 'Venció el' : 'Próximo vencimiento') + '</div><div class="v' + (vencido ? ' alerta' : '') + '">' + (d.proxima ? dmy(d.proxima) + (vencido ? ', hace ' + dias + ' días' : '') : 'Sin vencimiento (eventual)') + '</div></div>' +
+        '<div class="celda"><div class="r">Datos al</div><div class="v">' + (d.datos_al ? dmy(d.datos_al) : 'Sin dato') + '</div></div>' +
+        '<div class="celda"><div class="r">Cargado en el portal</div><div class="v">' + dmy(d.ultima) + '</div></div>' +
+        '<div class="celda ancha"><div class="r">Datos que se piden</div><div class="v">' + esc(d.pedido_hoy || 'Sin pedido (eventual)') + '</div></div>' +
+        '<div class="celda ancha"><div class="r">Link al portal</div><div class="v link">' + esc(d.url_dataset) + '</div></div>' +
+      '</div><div class="qr"><img src="qr-' + d.id + '.svg" onerror="this.onerror=null;this.src=\'/files/qr-' + d.id + '.svg\'" alt=""><span>Abrir en el portal</span></div></div>' +
+      '<div class="bloque"><div class="bloque-cabeza"><span class="r">Avisos del ciclo abierto</span><span>' + (abierto ? 'Vencimiento del ' + dmy(abierto.venc) + (vencido ? ', todavía sin entregar' : '') : '') + '</span></div>' +
+        '<div class="circuito">' +
+          '<div class="nodo"><b>RPAD</b><span>Dir. de Datos Públicos y Comunicación</span></div>' +
+          '<div class="tramo"><b>' + (avisos === 0 ? 'Sin avisos' : avisos + (avisos === 1 ? ' aviso' : ' avisos')) + '</b><div class="l"></div><span>' + (avisos ? comoAvisos.charAt(0).toUpperCase() + comoAvisos.slice(1) : 'Todavía no hizo falta') + '</span></div>' +
+          '<div class="nodo"><b>' + quien + '</b><span>' + hace + '</span></div>' +
+          '<div class="tramo fuera"><b>' + (externa ? 'Nota formal' : 'Relevamiento') + '</b><div class="l"></div><span>Por fuera del RPAD: no queda registrado</span></div>' +
+          '<div class="nodo' + (vencido ? ' mal' : '') + '"><b>' + esc(d.area) + '</b><em>' + estadoArea + '</em></div>' +
+        '</div>' +
+        (externa ? '<div class="al-area">Al área: ' + (alArea.length ? alArea.map(function (e) { return 'el <b>' + dmy(e.enviado.slice(0, 10)) + '</b>'; }).join(' y ') + ' el RPAD le anticipó por email que iba a recibir una nota formal.' : 'en este ciclo todavía no se le envió el email que anticipa la nota formal.') + '</div>' : '') +
+      '</div>' +
+      '<div class="bloque"><div class="bloque-cabeza"><span class="r">Los últimos 12 meses</span><span>De noviembre de 2025 a octubre de 2026</span></div>' + cintaSvg + '<div class="leyenda">' + leyenda + '</div></div>' +
+      '<div class="bloque movs"><div class="bloque-cabeza"><span class="r">Últimos movimientos</span><span>' + (faltan > 0 ? FILAS + ' de ' + movs.length : movs.length) + ', del más nuevo al más viejo</span></div>' +
+        '<table><thead><tr><th style="width:17mm">Fecha</th><th style="width:5mm"></th><th>Movimiento</th><th style="width:38mm;text-align:right">Quién</th></tr></thead><tbody>' + filas.join('') + '</tbody></table>' +
+        '<div class="nota-movs">' + (faltan > 0 ? 'Hay ' + faltan + (faltan === 1 ? ' movimiento anterior' : ' movimientos anteriores') + ': el seguimiento completo está en el RPAD (Herramientas, Seguimiento). ' : '') + 'Los envíos quedan registrados desde el 07/12/2025 y los cambios desde el 26/01/2026.</div>' +
+      '</div>' +
+      '<div class="pie"><span>Generado el 20/10/2026 a las 11:30 por Usuario Uno</span><span>Seguimiento del dataset · Hoja 1 de 1</span></div>' +
+      '</section>';
+  }
+  var elegidos = [52, 10, 81];
+  document.getElementById('hojas').innerHTML = elegidos.map(function (id) { return hoja(window.DATOS.filter(function (d) { return d.id === id; })[0]); }).join('');
+</script>
+</body>
+</html>

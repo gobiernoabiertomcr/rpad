@@ -15,8 +15,9 @@ const VERSION_PANTALLAS = '20261106';
 const VERSION_CORREOS = '20261107';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas): su versión es propia
 const VERSION_PERFIL = '20261103';
-// admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"): su versión es propia
-const VERSION_ADMIN = '20261108';
+// admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"; después, el ícono "Ver
+// seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset): su versión es propia
+const VERSION_ADMIN = '20261111';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';
@@ -27,6 +28,8 @@ const VERSION_PORTADA = '20261110';
 const VERSION_CSS = '20261109';
 // gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
 const VERSION_GESTION = '20261105';
+// seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset): su versión es propia
+const VERSION_SEGUIMIENTO = '20261111';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -76,7 +79,7 @@ describe('páginas', () => {
 
   // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
   for (const [pagina, script, version] of [['datasets.html', 'datasets', VERSION_PUBLICAS], ['dataset.html', 'dataset-detail', VERSION_PUBLICAS],
-    ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA]]) {
+    ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA], ['seguimiento.html', 'seguimiento', VERSION_SEGUIMIENTO]]) {
     it(`${pagina}: ${script}.js con la versión ${version}, después de api.js`, () => {
       const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
       assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${version}`]);
@@ -102,12 +105,12 @@ describe('páginas', () => {
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página (las 13, con la portada)
+  // copiados a mano en cada página (las 14, con la portada)
   const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 13 páginas con carcasa', () => {
-    assert.equal(CON_CARCASA.length, 13);
+  it('hay 14 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 14);
   });
 
   for (const pagina of CON_CARCASA) {
@@ -125,7 +128,7 @@ describe('páginas', () => {
         assert.match(html, new RegExp(`id="${id}"`), id);
       }
       assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
-      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'areas.html', 'correos.html', 'reportes.html', 'notas.html', 'gestion.html', 'perfil.html']) {
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'areas.html', 'correos.html', 'reportes.html', 'notas.html', 'gestion.html', 'seguimiento.html', 'perfil.html']) {
         assert.ok(html.includes(`href="${destino}"`), destino);
       }
       assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');
@@ -157,7 +160,7 @@ describe('páginas', () => {
     });
   }
 
-  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 13): el encabezado, el velo, el menú lateral y el footer de cada
+  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 14): el encabezado, el velo, el menú lateral y el footer de cada
   // página son los de index.html, con sus atributos de accesibilidad. Solo cambian la marca de la página actual y la sangría
   const PIEZAS_DE_LA_CARCASA = {
     encabezado: /<header class="header">[\s\S]*?<\/header>/,

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seguimiento - RPAD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="main.css">
+<link rel="stylesheet" href="/files/main.css">
+<link rel="stylesheet" href="cinta.css">
+<link rel="stylesheet" href="/files/cinta.css">
+<style>
+  /* Colores propios de Seguimiento */
+  :root {
+    --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+    --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+    --sg-sol: #FCE8A8; --sg-ambar: #7A5200;
+    --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+    --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+    --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+    --sg-gris: #8A97A8;
+  }
+  [hidden] { display: none !important; }
+  .main-content { min-width: 0; background: #EEF2F6; }
+  .sg-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+  .sg-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 70ch; }
+
+  /* Buscador */
+  .sg-buscar { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+  .sg-campo { position: relative; flex: 1 1 520px; max-width: 640px; }
+  .sg-campo svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--sg-suave); }
+  .sg-campo input { width: 100%; height: 46px; border-radius: 12px; border: 1px solid var(--sg-borde-control); padding: 0 14px 0 42px; font: inherit; font-weight: 500; color: var(--sg-texto); background: #fff; }
+  .sg-campo input::placeholder { color: var(--sg-suave); font-weight: 400; }
+  .sg-volver { font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+
+  .sg-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
+  .sg-tarjeta + .sg-tarjeta { margin-top: 16px; }
+  .sg-tarjeta h2 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
+  .sg-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .sg-cabeza span { color: var(--sg-suave); font-size: 0.9rem; }
+
+  /* Ficha */
+  .sg-ficha { display: grid; grid-template-columns: 1fr auto; gap: 16px 28px; }
+  .sg-ficha h2.sg-titulo { font-family: var(--f-titulo); font-weight: 750; letter-spacing: -0.02em; font-size: 1.75rem; line-height: 1.12; margin: 0 0 10px; }
+  .sg-insignia { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 10px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; }
+  .sg-insignia::before { content: ''; width: 9px; height: 9px; border-radius: 3px; background: currentColor; }
+  .sg-insignia.vencido { background: var(--sg-rojo-fondo); color: var(--sg-rojo); }
+  .sg-area { margin: 10px 0 0; color: var(--sg-suave); }
+  .sg-area strong { color: var(--sg-texto); font-weight: 600; }
+  .sg-acciones { display: flex; flex-direction: column; gap: 8px; }
+  .sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; }
+  .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
+  .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+  .sg-datos { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--sg-linea); padding-top: 14px; margin: 0; }
+  .sg-dato { padding-right: 14px; }
+  .sg-dato + .sg-dato { border-left: 1px solid var(--sg-linea); padding-left: 14px; }
+  .sg-dato dt { font-size: 0.78rem; color: var(--sg-suave); margin: 0 0 2px; }
+  .sg-dato dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--sg-texto); }
+  .sg-dato dd.alerta { color: var(--sg-rojo); }
+
+  /* Circuito */
+  .sg-tramos { display: grid; grid-template-columns: 1fr 1.2fr 1fr 1.2fr 1fr; }
+  .sg-nodo { border: 1.5px solid var(--sg-tinta); border-radius: 14px; padding: 12px 14px; background: #fff; display: flex; flex-direction: column; justify-content: center; }
+  .sg-nodo .q { font-weight: 700; color: var(--sg-tinta); line-height: 1.2; }
+  .sg-nodo .r { font-size: 0.82rem; color: var(--sg-suave); margin-top: 3px; }
+  .sg-nodo.area { border-color: var(--sg-rojo); background: #FFFBFB; }
+  .sg-nodo.area .e { margin-top: 8px; font-size: 0.82rem; font-weight: 700; color: var(--sg-rojo); }
+  .sg-flecha { display: flex; flex-direction: column; justify-content: center; padding: 0 12px; }
+  .sg-flecha .l { position: relative; border-top: 3px solid var(--sg-tinta); margin: 8px 8px 8px 0; }
+  .sg-flecha .l::after { content: ''; position: absolute; right: -8px; top: -8.5px; border: 7px solid transparent; border-left: 10px solid var(--sg-tinta); }
+  .sg-flecha.fuera .l { border-top-style: dashed; border-top-color: var(--sg-gris); }
+  .sg-flecha.fuera .l::after { border-left-color: var(--sg-gris); }
+  .sg-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.1rem; color: var(--sg-tinta); line-height: 1.15; }
+  .sg-flecha.fuera .n { color: var(--sg-suave); font-weight: 650; }
+  .sg-flecha .c { font-size: 0.82rem; color: var(--sg-suave); }
+  .sg-directo { margin-top: 14px; display: flex; gap: 10px; align-items: center; padding: 10px 14px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; font-size: 0.9rem; }
+  .sg-directo .i { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sg-cielo); display: grid; place-items: center; color: var(--sg-tinta); }
+
+  /* Cinta */
+  .sg-cinta svg { width: 100%; height: auto; display: block; }
+  .sg-leyenda { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--sg-suave); margin-top: 8px; }
+  .sg-leyenda span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+
+  /* Marcas (lista y leyenda) */
+  .mk { display: inline-block; width: 14px; height: 14px; flex: none; }
+  .mk-nota { background: var(--sg-tinta); transform: rotate(45deg); border-radius: 2px; width: 12px; height: 12px; }
+  .mk-email { background: #fff; border: 2.4px solid var(--sg-tinta); transform: rotate(45deg); border-radius: 2px; width: 11px; height: 11px; }
+  .mk-area { border: 2px dashed var(--sg-borde-control); border-radius: 50%; width: 13px; height: 13px; }
+  .mk-act { background: var(--sg-verde); border-radius: 50%; }
+  .mk-alta { border: 2.5px solid var(--sg-tinta); border-radius: 50%; width: 13px; height: 13px; }
+  .mk-rech { position: relative; }
+  .mk-rech::before, .mk-rech::after { content: ''; position: absolute; left: 6px; top: 0; width: 2.5px; height: 14px; background: var(--sg-rojo); border-radius: 2px; }
+  .mk-rech::before { transform: rotate(45deg); } .mk-rech::after { transform: rotate(-45deg); }
+  .mk-rayado { width: 22px; height: 12px; border-radius: 2px; background: repeating-linear-gradient(45deg, #F2CF5B 0 3px, #FCE8A8 3px 7px); }
+
+  /* Filtros */
+  .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .sg-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sg-texto); cursor: pointer; }
+  .sg-chip b { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .sg-chip[aria-pressed="true"] { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+
+  /* Lista de movimientos */
+  .sg-movs { list-style: none; margin: 0; padding: 0; }
+  .sg-mov { border-top: 1px solid var(--sg-linea); }
+  .sg-mov:first-child { border-top: 0; }
+  .sg-fila { width: 100%; display: grid; grid-template-columns: 100px 22px minmax(0, 1fr) 210px 20px; gap: 0 12px; align-items: start; padding: 12px 4px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  .sg-fila:hover { background: var(--sg-sutil); }
+  .sg-fila .f { font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 1px; }
+  .sg-fila .mk { margin-top: 4px; justify-self: center; }
+  .sg-fila .mk-email { margin-top: 5px; }
+  .sg-fila .q { font-weight: 600; }
+  .sg-fila .d { display: block; font-size: 0.88rem; color: var(--sg-suave); margin-top: 1px; }
+  .sg-fila .p { font-size: 0.85rem; color: var(--sg-suave); text-align: right; }
+  .sg-fila .flecha-abrir { color: var(--sg-suave); margin-top: 2px; transition: transform .15s ease; }
+  .sg-fila[aria-expanded="true"] .flecha-abrir { transform: rotate(180deg); }
+  .sg-cuerpo { margin: 0 34px 14px 138px; padding: 14px 16px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 12px; }
+  .sg-cuerpo dl { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; margin: 0; font-size: 0.9rem; }
+  .sg-cuerpo dt { color: var(--sg-suave); }
+  .sg-cuerpo dd { margin: 0; }
+  .sg-cuerpo .sg-link { display: inline-block; margin-top: 12px; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+  .sg-cuerpo .aclara { font-size: 0.82rem; color: var(--sg-suave); }
+  .sg-hito { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 0 12px; padding: 8px 4px 8px; border-top: 1px solid var(--sg-linea); }
+  .sg-hito .f { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--sg-ambar); }
+  .sg-hito .t { font-size: 0.88rem; font-weight: 700; color: var(--sg-ambar); background: var(--sg-sol); border-radius: 999px; padding: 2px 12px; justify-self: start; }
+  .sg-hito.cumplido .f { color: var(--sg-verde); }
+  .sg-hito.cumplido .t { color: var(--sg-verde); background: var(--sg-verde-fondo); }
+  .sg-mas { margin-top: 6px; padding: 10px 4px 0; border-top: 1px solid var(--sg-linea); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .sg-mas button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .sg-mas small { color: var(--sg-suave); font-size: 0.82rem; max-width: 62ch; }
+
+  /* Vista sin dataset elegido */
+  .sg-tabla-marco { overflow-x: auto; }
+  table.sg-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  .sg-tabla th { text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--sg-suave); padding: 8px 10px; border-bottom: 1px solid var(--sg-linea); white-space: nowrap; }
+  .sg-tabla td { padding: 11px 10px; border-bottom: 1px solid var(--sg-linea); vertical-align: top; }
+  .sg-tabla tr:hover td { background: var(--sg-sutil); }
+  .sg-tabla .t a { font-weight: 600; color: var(--sg-tinta); text-decoration: none; }
+  .sg-tabla .t a:hover { text-decoration: underline; }
+  .sg-tabla .t small { display: block; color: var(--sg-suave); font-size: 0.82rem; }
+  .sg-tabla .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sg-tabla .atraso { font-weight: 700; color: var(--sg-rojo); }
+  .sg-tabla .avisos b { font-family: var(--f-titulo); font-size: 1.05rem; color: var(--sg-tinta); }
+  .sg-tabla .avisos small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
+  .sg-etq { display: inline-block; margin-top: 4px; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+  .sg-etq.interna { background: var(--sg-cielo); color: var(--sg-tinta); }
+  .sg-etq.pendiente { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+
+  /* Botonera del mockup (no es parte del diseño) */
+  .mockup-vistas { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: flex; gap: 4px; padding: 5px; border-radius: 999px; background: #142B4A; box-shadow: 0 6px 20px rgb(0 0 0 / 0.25); font-family: var(--f-texto); }
+  .mockup-vistas button { border: 0; background: none; color: #DCEEF5; font: inherit; font-size: 0.82rem; font-weight: 600; padding: 7px 13px; border-radius: 999px; cursor: pointer; }
+  .mockup-vistas button.activo { background: #F2B705; color: #142B4A; }
+  .sidebar-link.nuevo span::after { content: 'nuevo'; margin-left: 8px; font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: #F2B705; color: #142B4A; vertical-align: 1px; }
+
+  @media (max-width: 960px) {
+    .sg-ficha { grid-template-columns: 1fr; } .sg-acciones { flex-direction: row; flex-wrap: wrap; }
+    .sg-datos { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .sg-dato:nth-child(4) { border-left: 0; padding-left: 0; }
+    .sg-tramos { grid-template-columns: 1fr; } .sg-flecha { padding: 8px 0 8px 18px; } .sg-flecha .l { display: none; }
+    .sg-fila { grid-template-columns: 92px 20px minmax(0, 1fr) 20px; } .sg-fila .p { grid-column: 3; text-align: left; margin-top: 4px; }
+    .sg-cuerpo { margin-left: 4px; margin-right: 4px; } .sg-cuerpo dl { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header class="header header--con-sesion">
+    <div class="header-left">
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false" onclick="vista('menu')">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+      </button>
+      <a href="#" class="header-marca">
+        <img src="logo.png" onerror="this.onerror=null;this.src='/files/logo.png'" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+        <span class="header-marca-texto"><span class="header-title">RPAD</span><span class="header-subtitle">Registro Permanente de Actualización de Datasets</span></span>
+      </a>
+    </div>
+    <nav class="header-nav" aria-label="Principal"><a href="#">Inicio</a><a href="#">Datasets</a><a href="#">Calendario</a><a href="#">Contacto</a></nav>
+    <div class="header-right" id="header-actions">
+      <a href="#" class="header-user" title="Mi Perfil"><div class="header-user-info"><div class="header-user-name">Usuario Uno Ejemplo</div><div class="header-user-role">Superadmin</div></div><div class="header-user-avatar">U1</div></a>
+      <button class="btn btn-secondary btn-sm">Salir</button>
+    </div>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="vista(vistaAnterior)"></div>
+  <aside class="sidebar" id="sidebar" aria-label="Menú">
+    <div class="sidebar-header"><img src="logo-blanco.png" onerror="this.onerror=null;this.src='/files/logo-blanco.png'" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo"></div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-section" id="sidebarAdmin">
+        <div class="sidebar-section-title">Administración</div>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Gestión de Datasets</span></a>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4M10 10h4M10 14h4"/></svg><span>Áreas</span></a>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Usuarios</span></a>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+      </div>
+      <div class="sidebar-section" id="sidebarTools">
+        <div class="sidebar-section-title">Herramientas</div>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg><span>Reportes</span></a>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Gestión</span></a>
+        <a href="#" class="sidebar-link active nuevo"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+      </div>
+      <div class="sidebar-section" id="sidebarAccount">
+        <div class="sidebar-section-title">Mi cuenta</div>
+        <a href="#" class="sidebar-link"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main-content">
+    <div class="sg-pagina">
+      <div class="page-header">
+        <h1 class="page-title">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          Seguimiento de datasets
+        </h1>
+      </div>
+      <p class="sg-bajada">Todo lo que pasó con cada dataset: los avisos del RPAD, las actualizaciones y los cambios, con quién hizo cada cosa.</p>
+
+      <!-- ============ VISTA: UN DATASET ============ -->
+      <div id="vista-dataset">
+        <div class="sg-buscar">
+          <div class="sg-campo">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="search" value="Directores Generales de Planta Permanente" aria-label="Buscar un dataset por nombre o por área">
+          </div>
+          <a href="#" class="sg-volver" onclick="vista('sin-elegir'); return false;">Ver todos los datasets</a>
+        </div>
+
+        <section class="sg-tarjeta sg-ficha">
+          <div>
+            <h2 class="sg-titulo">Directores Generales de Planta Permanente</h2>
+            <span class="sg-insignia vencido">Sin respuesta del área</span>
+            <p class="sg-area">Área responsable: <strong>Dirección General de Relaciones Laborales</strong>, gestión externa</p>
+          </div>
+          <div class="sg-acciones">
+            <button class="sg-btn sg-btn-tinta"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>Descargar PDF</button>
+            <button class="sg-btn sg-btn-borde">Ver en el portal</button>
+          </div>
+          <dl class="sg-datos">
+            <div class="sg-dato"><dt>Frecuencia</dt><dd>Cada medio año</dd></div>
+            <div class="sg-dato"><dt>Datos al</dt><dd>31/12/2025</dd></div>
+            <div class="sg-dato"><dt>Cargado en el portal</dt><dd>04/02/2026</dd></div>
+            <div class="sg-dato"><dt>Venció el</dt><dd class="alerta">31/07/2026, hace 81 días</dd></div>
+            <div class="sg-dato"><dt>Datos solicitados hoy</dt><dd>Vigente al 30/06/2026</dd></div>
+          </dl>
+        </section>
+
+        <section class="sg-tarjeta">
+          <div class="sg-cabeza"><h2>Avisos del ciclo abierto</h2><span>Vencimiento del 31/07/2026, todavía sin entregar</span></div>
+          <div class="sg-tramos">
+            <div class="sg-nodo"><div class="q">RPAD</div><div class="r">Dirección de Datos Públicos y Comunicación</div></div>
+            <div class="sg-flecha"><div class="n">6 avisos</div><div class="l"></div><div class="c">5 emails y la Nota Digital N° 2/26</div></div>
+            <div class="sg-nodo"><div class="q">DGMIT y Dirección Administrativa</div><div class="r">Mandan la nota formal al área</div></div>
+            <div class="sg-flecha fuera"><div class="n">Nota formal</div><div class="l"></div><div class="c">Por fuera del RPAD: no queda registrada</div></div>
+            <div class="sg-nodo area"><div class="q">Dirección General de Relaciones Laborales</div><div class="r">Área responsable</div><div class="e">Sin entregar, 81 días</div></div>
+          </div>
+          <div class="sg-directo"><span class="i"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></span><span>Además, el 21/06/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.</span></div>
+        </section>
+
+        <section class="sg-tarjeta">
+          <div class="sg-cabeza"><h2>Los últimos 12 meses</h2><span>De noviembre de 2025 a octubre de 2026</span></div>
+          <div class="sg-cinta">
+            <div id="cinta-52"></div>
+            <div class="sg-leyenda">
+              <span><i class="mk mk-nota"></i> Nota Digital a DGMIT</span>
+              <span><i class="mk mk-email"></i> Email a DGMIT</span>
+              <span><i class="mk mk-area"></i> Email al área</span>
+              <span><i class="mk mk-act"></i> Actualización</span>
+              <span><i class="mk mk-rech"></i> Propuesta rechazada</span>
+              <span><i class="mk mk-alta"></i> Alta</span>
+              <span><i class="mk mk-rayado"></i> Vencido sin entregar</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="sg-tarjeta">
+          <div class="sg-cabeza"><h2>Movimientos</h2><span>Del más nuevo al más viejo</span></div>
+          <div class="sg-chips" role="group" aria-label="Filtrar movimientos">
+            <button class="sg-chip" aria-pressed="true">Todos <b>16</b></button>
+            <button class="sg-chip" aria-pressed="false">Avisos a DGMIT <b>9</b></button>
+            <button class="sg-chip" aria-pressed="false">Emails al área <b>2</b></button>
+            <button class="sg-chip" aria-pressed="false">Actualizaciones <b>2</b></button>
+            <button class="sg-chip" aria-pressed="false">Propuestas rechazadas <b>2</b></button>
+            <button class="sg-chip" aria-pressed="false">Alta <b>1</b></button>
+          </div>
+          <ol class="sg-movs">
+            <li class="sg-mov">
+              <button class="sg-fila" aria-expanded="true" onclick="alternar(this)"><span class="f">13/10/2026</span><i class="mk mk-nota"></i><span><span class="q">Nota Digital N° 2/26 a DGMIT</span><span class="d">Aviso de gestión externa, en la sección de vencidos. CC a la Dirección Administrativa.</span></span><span class="p">Envío automático</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+              <div class="sg-cuerpo">
+                <dl>
+                  <dt>Vencimiento informado</dt><dd>31/07/2026 (ya vencido)</dd>
+                  <dt>Datos solicitados</dt><dd>No quedó guardado: las notas 1/26 y 2/26 son anteriores a ese dato.</dd>
+                  <dt>Para</dt><dd>DGMIT (mit@comodoro.gov.ar)</dd>
+                  <dt>CC</dt><dd>Dirección Administrativa (investigacionterritorial@comodoro.gov.ar)</dd>
+                  <dt>Enviada</dt><dd>13/10/2026 a las 14:50</dd>
+                </dl>
+                <a href="#" class="sg-link">Descargar la nota y su anexo</a> <span class="aclara">(solo administración)</span>
+              </div>
+            </li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">01/10/2026</span><i class="mk mk-email"></i><span><span class="q">Email a DGMIT: resumen mensual de sin respuesta</span><span class="d">A Datos Públicos, DGMIT e Investigación Territorial, junto con otros 10 datasets.</span></span><span class="p">Sistema</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">01/09/2026</span><i class="mk mk-email"></i><span><span class="q">Email a DGMIT: resumen mensual de sin respuesta</span><span class="d">Junto con otros 11 datasets.</span></span><span class="p">Sistema</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">01/08/2026</span><i class="mk mk-email"></i><span><span class="q">Email a DGMIT: resumen mensual de sin respuesta</span><span class="d">Junto con otros 11 datasets.</span></span><span class="p">Sistema</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-hito"><span class="f">31/07/2026</span><span class="t">Venció sin entregar</span></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">26/07/2026</span><i class="mk mk-email"></i><span><span class="q">Email a DGMIT: vencimiento inminente</span><span class="d">Faltaban 5 días. Junto con otros 5 datasets.</span></span><span class="p">Sistema</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">21/06/2026</span><i class="mk mk-area"></i><span><span class="q">Email al área: anticipo de la nota formal</span><span class="d">A la Dirección General de Relaciones Laborales (1 dirección).</span></span><span class="p">Sistema</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">21/06/2026</span><i class="mk mk-email"></i><span><span class="q">Email a DGMIT: distribución de notas</span><span class="d">Faltaban 40 días: había que mandarle la nota al área. Junto con otros 5 datasets.</span></span><span class="p">Sistema</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">04/02/2026</span><i class="mk mk-act"></i><span><span class="q">Actualización registrada</span><span class="d">Cargado en el portal el 04/02/2026. Próxima: 31/07/2026. Cambio #7.</span></span><span class="p">Propuso Usuaria Dos Ejemplo<br>Aprobó Usuario Uno Ejemplo</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">04/02/2026</span><i class="mk mk-rech"></i><span><span class="q">Propuesta rechazada</span><span class="d">Próxima 03/08/2026. Motivo: "Mal la fecha". Cambio #6.</span></span><span class="p">Propuso Usuario Uno Ejemplo<br>Rechazó Usuaria Dos Ejemplo</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-mov"><button class="sg-fila" aria-expanded="false"><span class="f">04/02/2026</span><i class="mk mk-rech"></i><span><span class="q">Propuesta rechazada</span><span class="d">Próxima 03/08/2026. Motivo: "Prox fecha 31/7/2026". Cambio #5.</span></span><span class="p">Propuso Usuaria Dos Ejemplo<br>Rechazó Usuario Uno Ejemplo</span><svg class="flecha-abrir" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+            <li class="sg-hito cumplido"><span class="f">31/01/2026</span><span class="t">Vencimiento: entregado el 04/02/2026, 4 días tarde</span></li>
+          </ol>
+          <div class="sg-mas"><button>Ver los 6 anteriores</button><small>Los envíos quedan registrados desde el 07/12/2025 y los cambios desde el 26/01/2026: antes de esas fechas no hay registro.</small></div>
+        </section>
+      </div>
+
+      <!-- ============ VISTA: SIN DATASET ELEGIDO ============ -->
+      <div id="vista-sin-elegir" hidden>
+        <div class="sg-buscar">
+          <div class="sg-campo">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="search" placeholder="Buscá un dataset por nombre o por área" aria-label="Buscar un dataset por nombre o por área">
+          </div>
+        </div>
+        <section class="sg-tarjeta">
+          <div class="sg-cabeza"><h2>Datasets y sus avisos</h2><span>Elegí uno para ver todo su seguimiento</span></div>
+          <div class="sg-chips" role="group" aria-label="Filtrar por estado">
+            <button class="sg-chip" aria-pressed="true">Vencidos <b>13</b></button>
+            <button class="sg-chip" aria-pressed="false">Próximos a vencer <b>2</b></button>
+            <button class="sg-chip" aria-pressed="false">Al día <b>52</b></button>
+            <button class="sg-chip" aria-pressed="false">Eventuales <b>14</b></button>
+            <button class="sg-chip" aria-pressed="false">Todos <b>81</b></button>
+          </div>
+          <div class="sg-tabla-marco">
+            <table class="sg-tabla">
+              <thead><tr><th>Dataset y área</th><th>Venció el</th><th>Atraso</th><th>Avisos a DGMIT en el ciclo</th><th>Último aviso</th></tr></thead>
+              <tbody>
+                <tr><td class="t"><a href="#">Parque Automotor (Patentamiento)</a><small>Dirección de Información Tributaria</small></td><td class="num">31/01/2024</td><td class="num atraso">993 días</td><td class="avisos"><b>12</b><small>11 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Siniestros viales por categoría</a><small>Agencia Provincial de Seguridad Vial</small></td><td class="num">31/01/2025</td><td class="num atraso">627 días</td><td class="avisos"><b>12</b><small>11 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Infraestructura deportiva al aire libre</a><small>Ente Autárquico Comodoro Deportes</small><span class="sg-etq interna">Gestión interna</span></td><td class="num">31/03/2025</td><td class="num atraso">568 días</td><td class="avisos"><b>11</b><small>10 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Ejecución presupuestaria</a><small>Subsecretaría de Coordinación Económica</small></td><td class="num">31/07/2025</td><td class="num atraso">446 días</td><td class="avisos"><b>12</b><small>11 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Paradas de transporte público</a><small>Dirección General de Transporte</small><span class="sg-etq interna">Gestión interna</span></td><td class="num">30/09/2025</td><td class="num atraso">385 días</td><td class="avisos"><b>11</b><small>10 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Líneas de transporte público</a><small>Dirección General de Transporte</small><span class="sg-etq interna">Gestión interna</span></td><td class="num">30/09/2025</td><td class="num atraso">385 días</td><td class="avisos"><b>11</b><small>10 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Comercios habilitados por rubro</a><small>Dirección General de Habilitaciones Comerciales</small></td><td class="num">31/01/2026</td><td class="num atraso">262 días</td><td class="avisos"><b>7</b><small>6 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Listado de Proveedores</a><small>Dirección General de Servicios Administrativos</small></td><td class="num">31/01/2026</td><td class="num atraso">262 días</td><td class="avisos"><b>6</b><small>5 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Obra Pública</a><small>Secretaría de Infraestructura, Obras y Servicios Públicos</small></td><td class="num">31/01/2026</td><td class="num atraso">262 días</td><td class="avisos"><b>11</b><small>10 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Presupuesto Municipal</a><small>Secretaría de Economía, Finanzas y Control de Gestión</small><span class="sg-etq pendiente">Actualización pendiente de aprobación</span></td><td class="num">31/01/2026</td><td class="num atraso">262 días</td><td class="avisos"><b>11</b><small>10 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Gasto Público</a><small>Secretaría de Economía, Finanzas y Control de Gestión</small></td><td class="num">31/07/2026</td><td class="num atraso">81 días</td><td class="avisos"><b>6</b><small>5 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#">Funcionarios Públicos</a><small>Dirección General de Recursos Humanos</small></td><td class="num">31/07/2026</td><td class="num atraso">81 días</td><td class="avisos"><b>6</b><small>5 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+                <tr><td class="t"><a href="#" onclick="vista('dataset'); return false;">Directores Generales de Planta Permanente</a><small>Dirección General de Relaciones Laborales</small></td><td class="num">31/07/2026</td><td class="num atraso">81 días</td><td class="avisos"><b>6</b><small>5 emails y 1 nota</small></td><td class="num">13/10/2026</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <div class="footer-cuerpo">
+        <div class="footer-marca">
+          <img src="logo-blanco.png" onerror="this.onerror=null;this.src='/files/logo-blanco.png'" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+          <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+          <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+        </div>
+        <div class="footer-columna"><h2 class="footer-titulo">El registro</h2><ul><li><a href="#">Inicio</a></li><li><a href="#">Datasets</a></li><li><a href="#">Calendario</a></li><li><a href="#">Contacto</a></li></ul></div>
+        <div class="footer-columna"><h2 class="footer-titulo">Datos abiertos</h2><ul><li><a href="#">datos.comodoro.gov.ar</a></li><li>Licencia CC BY-SA 4.0</li></ul></div>
+        <div class="footer-columna"><h2 class="footer-titulo">Marco legal</h2><ul><li>Ordenanza N° 17.662/23, artículo 8°</li></ul></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span><span>RPAD v2.0.0</span></div>
+    </footer>
+  </main>
+</div>
+
+<div class="mockup-vistas" role="group" aria-label="Vistas del mockup">
+  <button data-choice="vista-dataset" data-vista="dataset" onclick="vista('dataset')">Un dataset</button>
+  <button data-choice="vista-sin-elegir" data-vista="sin-elegir" onclick="vista('sin-elegir')">Sin elegir</button>
+  <button data-choice="vista-menu" data-vista="menu" onclick="vista('menu')">Menú</button>
+</div>
+
+<script src="datos-cinta.js"></script>
+<script>if (!window.DATOS) document.write('<script src="/files/datos-cinta.js"><\/script>');</script>
+<script src="cinta.js"></script>
+<script>if (!window.Cinta) document.write('<script src="/files/cinta.js"><\/script>');</script>
+<script>
+  document.getElementById('cinta-52').innerHTML = Cinta.svg(window.DATOS.filter(function (d) { return d.id === 52; })[0], { hoy: '2026-10-20', tema: 'pantalla' });
+  var vistaAnterior = 'dataset';
+  function vista(nombre) {
+    var menu = nombre === 'menu';
+    if (!menu) {
+      vistaAnterior = nombre;
+      document.getElementById('vista-dataset').hidden = nombre !== 'dataset';
+      document.getElementById('vista-sin-elegir').hidden = nombre !== 'sin-elegir';
+    }
+    document.getElementById('sidebar').classList.toggle('open', menu);
+    document.getElementById('sidebarOverlay').classList.toggle('visible', menu);
+    document.querySelectorAll('.mockup-vistas button').forEach(function (b) { b.classList.toggle('activo', b.dataset.vista === nombre); });
+    window.scrollTo(0, 0);
+  }
+  function alternar(boton) {
+    var abierta = boton.getAttribute('aria-expanded') === 'true';
+    boton.setAttribute('aria-expanded', String(!abierta));
+    var cuerpo = boton.nextElementSibling;
+    if (cuerpo) cuerpo.hidden = abierta;
+  }
+  vista((location.hash || '#dataset').slice(1));
+</script>
+</body>
+</html>

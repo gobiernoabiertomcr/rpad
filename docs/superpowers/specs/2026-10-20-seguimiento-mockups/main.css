@@ -1,0 +1,1471 @@
+/**
+ * =====================================================
+ * RPAD - Main CSS
+ * Sistema de seguimiento de datasets
+ * Municipalidad de Comodoro Rivadavia
+ * =====================================================
+ */
+
+/* =====================================================
+   VARIABLES CSS
+   ===================================================== */
+:root {
+    /* Colores RPAD - Azul institucional */
+    --primary: #1a365d;
+    --primary-dark: #132744;
+    --primary-light: #2a5a8a;
+    --primary-gradient: linear-gradient(135deg, #1a365d 0%, #2a5a8a 50%, #3182ce 100%);
+    
+    /* Colores SIR (para footer y acentos) */
+    --sir-primary: #0B1C2B;
+    --sir-primary-dark: #091520;
+    --sir-accent: #F9B44F;
+    
+    /* Estados */
+    --success: #10b981;
+    --success-light: #d1fae5;
+    --warning: #f59e0b;
+    --warning-light: #fef3c7;
+    --danger: #ef4444;
+    --danger-light: #fee2e2;
+    --info: #3b82f6;
+    --info-light: #dbeafe;
+    --purple: #9333ea;
+    --purple-light: #f3e8ff;
+    
+    /* Neutros */
+    --gray-50: #f8fafc;
+    --gray-100: #f1f5f9;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e1;
+    --gray-400: #94a3b8;
+    --gray-500: #64748b;
+    --gray-600: #475569;
+    --gray-700: #334155;
+    --gray-800: #1e293b;
+    --gray-900: #0f172a;
+    
+    /* Fondos */
+    --bg-body: #f1f5f9;
+    --bg-card: #ffffff;
+    --bg-sidebar: #1e293b;
+    --bg-header: #ffffff;
+    
+    /* Bordes y sombras */
+    --border-color: #e2e8f0;
+    --border-radius: 8px;
+    --border-radius-lg: 12px;
+    --border-radius-xl: 16px;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    
+    /* Layout */
+    --sidebar-width: 260px;
+    --header-height: 72px;
+    --transition: all 0.3s ease;
+
+    /* Rediseño 2026 (spec 2026-10-18-rediseno-publico, 4.1 y 4.2): la carcasa de todas las páginas y, en publico.css, las
+       páginas públicas. Las variables de arriba no cambian: administración conserva sus colores */
+    --tinta: #1A365D;
+    --tinta-honda: #142B4A;
+    --texto: #22324A;
+    --suave: #56677F;
+    --bruma: #F4F7FA;
+    --papel: #FFFFFF;
+    --linea: #DAE3ED;
+    --cielo: #DCEEF5;
+    --cielo-medio: #9FD3E6;
+    --sol: #FCE8A8;
+    --sol-fuerte: #F2B705;
+    --f-titulo: 'Bricolage Grotesque', system-ui, sans-serif;
+    --f-texto: 'Figtree', system-ui, sans-serif;
+
+    /* Paginación: los colores y los bordes que usa (.paginacion, .pag-*) no estaban definidos y no se veían.
+       Son los de styles.css, salvo el celeste: #0091e1 no llega a 4.5:1 sobre blanco, #0075bd sí */
+    --mcr-blue-50: #f0f9ff;
+    --mcr-blue-100: #e0f2ff;
+    --mcr-blue-800: #1e4976;
+    --mcr-blue-900: #1a365d;
+    --mcr-sky: #0075bd;
+    --radius-sm: 0.375rem;
+    --radius: 0.5rem;
+    --radius-lg: 0.75rem;
+}
+
+/* =====================================================
+   RESET
+   ===================================================== */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--f-texto);
+    background-color: var(--bg-body);
+    color: var(--gray-800);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+/* Títulos en Bricolage Grotesque en todo el sitio; en administración solo cambia la letra (tamaños y colores siguen) */
+h1, h2, h3, h4, .page-title {
+    font-family: var(--f-titulo);
+    letter-spacing: -0.02em;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+ul, ol {
+    list-style: none;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+button {
+    cursor: pointer;
+    font-family: inherit;
+}
+
+/* =====================================================
+   LAYOUT PRINCIPAL
+   ===================================================== */
+.app-container {
+    min-height: 100vh;
+    display: flex;
+}
+
+/* =====================================================
+   HEADER (spec 2026-10-18-rediseno-publico, 5.1)
+   ===================================================== */
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--header-height);
+    background: var(--papel);
+    border-bottom: 1px solid var(--linea);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 24px;
+    z-index: 100;
+}
+
+/* El margen empuja el nav y las acciones a la derecha, juntos (y solo las acciones, cuando el nav pasa al menú) */
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: auto;
+    min-width: 0;
+}
+
+/* Logo, separador y "RPAD" con el subtítulo: un solo link a la portada */
+.header-marca {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    color: inherit;
+    border-radius: 8px;
+}
+
+.header-logo {
+    display: block;
+    height: 40px;
+    width: auto;
+}
+
+.header-marca-texto {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding-left: 15px;
+    line-height: 1.15;
+}
+
+/* El separador de 1 px entre el logo y el texto */
+.header-marca-texto::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 1px;
+    height: 34px;
+    background: var(--linea);
+    transform: translateY(-50%);
+}
+
+.header-title {
+    font-family: var(--f-titulo);
+    font-size: 1.25rem;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    color: var(--tinta);
+}
+
+/* Sin mayúsculas, en dos líneas */
+.header-subtitle {
+    max-width: 190px;
+    margin-top: 2px;
+    font-size: 0.75rem;
+    line-height: 1.25;
+    color: var(--suave);
+}
+
+/* Inicio, Datasets, Calendario y Contacto, a la vista; la página actual lleva aria-current en su HTML */
+.header-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.header-nav a {
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--texto);
+    white-space: nowrap;
+    transition: background 0.15s ease;
+}
+
+.header-nav a:hover {
+    background: var(--bruma);
+}
+
+.header-nav a[aria-current="page"] {
+    background: var(--cielo);
+    color: var(--tinta);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.header-right .btn {
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+/* User info en header (cuando está logueado) */
+.header-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 8px 6px 14px;
+    border-radius: 999px;
+    transition: var(--transition);
+}
+
+.header-user:hover {
+    background: var(--bruma);
+}
+
+.header-user-avatar {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--tinta);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.header-user-info {
+    text-align: right;
+    min-width: 0;
+}
+
+/* Un nombre largo no empuja el encabezado: se corta con "…" (el completo está en Mi Perfil) */
+.header-user-name,
+.header-user-role {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-user-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--texto);
+}
+
+.header-user-role {
+    font-size: 0.75rem;
+    color: var(--suave);
+}
+
+/* Notification bell en header */
+.header-notification {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    color: var(--suave);
+    transition: var(--transition);
+}
+
+.header-notification:hover {
+    background: var(--bruma);
+    color: var(--tinta);
+}
+
+.header-notification.has-notifications {
+    color: var(--tinta);
+}
+
+.header-notification-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--danger);
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 9px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Botón del menú lateral: con sesión, siempre (la clase la pone main.js); sin sesión, solo cuando el nav no entra */
+.sidebar-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    color: var(--tinta);
+}
+
+.header--con-sesion .sidebar-toggle {
+    display: inline-flex;
+}
+
+.sidebar-toggle:hover {
+    background: var(--bruma);
+}
+
+/* Foco visible en los links y botones de la carcasa (spec 4.1 y 11, al menos 3:1 contra el fondo). Sobre el encabezado
+   blanco, anillo --tinta con un halo --sol-fuerte (el amarillo solo da 1,8:1 sobre blanco); sobre el azul del menú
+   lateral y del footer, anillo --sol-fuerte */
+.header a:focus-visible,
+.header button:focus-visible {
+    outline: 3px solid var(--tinta);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--sol-fuerte);
+}
+
+.sidebar a:focus-visible,
+.footer a:focus-visible {
+    outline: 3px solid var(--sol-fuerte);
+    outline-offset: 2px;
+}
+
+/* =====================================================
+   SIDEBAR (spec 2026-10-18-rediseno-publico, 5.2)
+   ===================================================== */
+.sidebar {
+    position: fixed;
+    top: var(--header-height);
+    left: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    background: var(--tinta);
+    transform: translateX(-100%);
+    /* Cerrado no se puede tabular */
+    visibility: hidden;
+    z-index: 90;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.sidebar.open {
+    transform: translateX(0);
+    visibility: visible;
+}
+
+.sidebar-overlay {
+    position: fixed;
+    top: var(--header-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(20, 43, 74, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    z-index: 80;
+}
+
+.sidebar-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Las transiciones del menú, del velo y del botón, recién después de la carga: la clase menu-animable la pone main.js
+   (initSidebar) después del primer cuadro. Si Firefox calcula la página antes de que llegue esta hoja, al aplicarla corre la
+   transición y el menú se asoma y se vuelve a esconder al pasar de una página a otra (Ruling 13). La de visibility deja el
+   menú visible hasta que termina de salir */
+.sidebar.menu-animable {
+    transition: transform 0.3s ease, visibility 0.3s;
+}
+
+.sidebar-overlay.menu-animable,
+.sidebar-toggle.menu-animable {
+    transition: var(--transition);
+}
+
+.sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-logo {
+    display: block;
+    height: 44px;
+    width: auto;
+}
+
+.sidebar-nav {
+    padding: 16px 0;
+}
+
+.sidebar-section {
+    padding: 0 12px;
+    margin-bottom: 12px;
+}
+
+/* "Principal" ya está en el encabezado: el menú lo muestra solo cuando el nav del encabezado no entra (responsive) */
+#sidebarPrincipal {
+    display: none;
+}
+
+.sidebar-section-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--sol);
+    opacity: 0.85;
+    padding: 8px 14px 4px;
+}
+
+.sidebar-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    color: rgba(255, 255, 255, 0.85);
+    border-radius: 10px;
+    transition: background 0.15s ease, color 0.15s ease;
+    margin-bottom: 2px;
+}
+
+.sidebar-link:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.sidebar-link.active {
+    background: rgba(255, 255, 255, 0.14);
+    color: white;
+}
+
+/* La barra del link activo */
+.sidebar-link.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--sol);
+}
+
+.sidebar-link svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.sidebar-link span {
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+
+/* Con el mismo selector que las transiciones (menu-animable): si no, no les gana */
+@media (prefers-reduced-motion: reduce) {
+    .sidebar.menu-animable,
+    .sidebar-overlay.menu-animable {
+        transition: none;
+    }
+}
+
+/* =====================================================
+   MAIN CONTENT
+   ===================================================== */
+/* --relleno-main: el relleno de la página, que el footer anula para llegar a los bordes (publico.css lo pone en 0) */
+.main-content {
+    --relleno-main: 24px;
+    flex: 1;
+    margin-top: var(--header-height);
+    padding: var(--relleno-main);
+    min-height: calc(100vh - var(--header-height));
+    display: flex;
+    flex-direction: column;
+}
+
+/* =====================================================
+   PAGE HEADER
+   ===================================================== */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.page-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--gray-800);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.page-title svg {
+    color: var(--primary);
+}
+
+/* =====================================================
+   CARDS
+   ===================================================== */
+.card {
+    background: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow);
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--gray-800);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-title svg {
+    color: var(--primary);
+}
+
+/* =====================================================
+   SECTION TITLE
+   ===================================================== */
+.section-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.section-title svg {
+    color: var(--primary);
+}
+
+/* =====================================================
+   EMPTY STATE
+   ===================================================== */
+.empty-state {
+    text-align: center;
+    padding: 32px;
+    color: var(--gray-500);
+}
+
+.empty-state svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    font-size: 0.9rem;
+}
+
+/* =====================================================
+   BUTTONS
+   ===================================================== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: var(--border-radius);
+    border: none;
+    transition: var(--transition);
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-dark);
+}
+
+.btn-secondary {
+    background: var(--gray-100);
+    color: var(--gray-700);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: var(--gray-200);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--gray-700);
+    border: 1px solid var(--border-color);
+}
+
+.btn-outline:hover {
+    background: var(--gray-100);
+}
+
+.btn-success {
+    background: var(--success);
+    color: white;
+}
+
+.btn-success:hover {
+    background: #059669;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}
+
+.btn-lg {
+    padding: 12px 24px;
+    font-size: 1rem;
+}
+
+/* =====================================================
+   BADGES
+   ===================================================== */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.badge-primary {
+    background: var(--info-light);
+    color: var(--info);
+}
+
+.badge-success {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.badge-warning {
+    background: var(--warning-light);
+    color: #b45309;
+}
+
+.badge-danger {
+    background: var(--danger-light);
+    color: var(--danger);
+}
+
+.badge-secondary {
+    background: var(--gray-200);
+    color: var(--gray-600);
+}
+
+.badge-atrasado {
+    background: var(--danger-light);
+    color: var(--danger);
+}
+
+.badge-sin-respuesta {
+    background: var(--purple-light);
+    color: var(--purple);
+}
+
+.badge-proximo {
+    background: var(--warning-light);
+    color: #b45309;
+}
+
+.badge-actualizado {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.badge-eventual {
+    background: var(--gray-200);
+    color: var(--gray-600);
+}
+
+/* =====================================================
+   FORMS
+   ===================================================== */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--gray-700);
+    margin-bottom: 6px;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: white;
+    color: var(--gray-800);
+    transition: var(--transition);
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(26, 54, 93, 0.1);
+}
+
+.form-textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.form-hint {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    margin-top: 4px;
+}
+
+.form-error {
+    font-size: 0.8rem;
+    color: var(--danger);
+    margin-top: 4px;
+}
+
+/* Filtros */
+.filters-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+    margin-bottom: 24px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 180px;
+}
+
+.filter-group label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--gray-600);
+}
+
+/* =====================================================
+   TABLES
+   ===================================================== */
+.table-container {
+    overflow-x: auto;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.table th {
+    background: var(--gray-50);
+    font-weight: 600;
+    color: var(--gray-700);
+    white-space: nowrap;
+}
+
+.table tbody tr:hover {
+    background: var(--gray-50);
+}
+
+.table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* =====================================================
+   MODALS
+   ===================================================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--transition);
+    padding: 20px;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal {
+    background: white;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transform: scale(0.95);
+    transition: var(--transition);
+}
+
+.modal-overlay.active .modal {
+    transform: scale(1);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.modal-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: var(--border-radius);
+    font-size: 1.5rem;
+    color: var(--gray-400);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.modal-close:hover {
+    background: var(--gray-100);
+    color: var(--gray-600);
+}
+
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-color);
+    background: var(--gray-50);
+}
+
+/* =====================================================
+   FOOTER (spec 2026-10-18-rediseno-publico, 5.3)
+   ===================================================== */
+/* Último hijo de .main-content. Llega a los bordes: los márgenes negativos anulan el relleno de .main-content. Va abajo de
+   todo aunque la página sea corta (margin-top: auto en la columna) y a 56 px del contenido como mínimo: el borde de
+   arriba es transparente y el fondo no lo pinta (padding-box) */
+.footer {
+    margin: auto calc(-1 * var(--relleno-main)) calc(-1 * var(--relleno-main));
+    border-top: 56px solid transparent;
+    background: var(--tinta) padding-box;
+    color: #E6EEF6;
+}
+
+.footer-cuerpo {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr 1fr 1fr;
+    gap: 32px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 48px 24px 40px;
+}
+
+.footer-logo {
+    display: block;
+    height: 46px;
+    width: auto;
+    margin-bottom: 18px;
+}
+
+.footer-marca p {
+    margin-top: 6px;
+    font-size: 0.9rem;
+    color: #B9CBE0;
+}
+
+.footer-marca .footer-direccion {
+    margin-top: 0;
+    font-family: var(--f-titulo);
+    font-size: 1.05rem;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    color: white;
+}
+
+.footer-titulo {
+    margin-bottom: 10px;
+    font-size: 0.98rem;
+    font-weight: 750;
+    color: var(--sol);
+}
+
+.footer-columna li {
+    padding: 3px 0;
+    font-size: 0.92rem;
+    color: #C9D7E6;
+}
+
+.footer-columna a {
+    color: white;
+    text-decoration: underline;
+    text-decoration-color: rgba(252, 232, 168, 0.45);
+    text-underline-offset: 3px;
+}
+
+.footer-columna a:hover {
+    text-decoration-color: var(--sol);
+}
+
+/* El borde va de lado a lado; el texto, alineado con el cuerpo (1180 px centrados) */
+.footer-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 16px max(24px, calc((100% - 1180px) / 2 + 24px)) 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 0.82rem;
+    color: #A9BDD3;
+}
+
+/* Alto contraste (forced colors: el de Windows, o "reemplazar los colores" de Firefox). El borde transparente de arriba del
+   footer se pintaba con el color del texto (una franja de 56 px) y los logos blancos del footer y del menú lateral
+   desaparecían sobre el fondo forzado: el footer y el menú conservan su azul con el texto claro (más de 4,5:1) y el borde
+   toma el color del fondo de la página */
+@media (forced-colors: active) {
+    .footer {
+        border-top-color: Canvas;
+    }
+
+    .footer,
+    .sidebar {
+        forced-color-adjust: none;
+    }
+}
+
+/* =====================================================
+   LOADING / SPINNER
+   ===================================================== */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--gray-200);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.spinner-sm {
+    width: 20px;
+    height: 20px;
+    border-width: 2px;
+}
+
+/* =====================================================
+   ANIMATIONS
+   ===================================================== */
+.animate-fade-in {
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* =====================================================
+   UTILITIES
+   ===================================================== */
+.hidden { display: none !important; }
+.text-muted { color: var(--gray-500); }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
+.flex { display: flex; }
+.flex-wrap { flex-wrap: wrap; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+.gap-1 { gap: 4px; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.gap-4 { gap: 16px; }
+
+.mb-0 { margin-bottom: 0; }
+.mb-1 { margin-bottom: 4px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+.mb-5 { margin-bottom: 24px; }
+.mb-6 { margin-bottom: 32px; }
+
+.mt-0 { margin-top: 0; }
+.mt-4 { margin-top: 16px; }
+
+.w-full { width: 100%; }
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+/* El encabezado no se superpone en ningún ancho (spec 2026-10-18-rediseno-publico, 5.1). Con sesión la derecha es más ancha
+   (campana, usuario y "Salir"): primero se va el subtítulo, después el nombre y el rol, y por último el nav pasa al menú
+   lateral, antes que sin sesión. Los cortes salen de medir el encabezado con las fuentes cargadas (18/10/2026), con lugar
+   para la barra de desplazamiento: sin sesión necesita 886 px (748 sin el subtítulo); con sesión, 1233 px con un nombre de
+   180 px (el tope), 1094 sin el subtítulo y 902 sin el nombre ni el rol */
+@media (max-width: 1260px) {
+    .header--con-sesion .header-subtitle {
+        display: none;
+    }
+}
+
+@media (max-width: 1120px) {
+    .header--con-sesion .header-user-info {
+        display: none;
+    }
+
+    .header--con-sesion .header-user {
+        padding: 2px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .main-content {
+        --relleno-main: 16px;
+    }
+}
+
+@media (max-width: 980px) {
+    .footer-cuerpo {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 940px) {
+    .header--con-sesion .header-nav {
+        display: none;
+    }
+
+    .header--con-sesion ~ .sidebar #sidebarPrincipal {
+        display: block;
+    }
+}
+
+@media (max-width: 920px) {
+    .header-subtitle {
+        display: none;
+    }
+}
+
+/* Sin sesión, el nav sigue a la vista hasta 761 px: un poco más junto */
+@media (max-width: 900px) {
+    .header {
+        gap: 16px;
+    }
+
+    .header-nav a {
+        padding: 8px 12px;
+    }
+}
+
+@media (max-width: 768px) {
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .filters-bar {
+        flex-direction: column;
+    }
+
+    .filter-group {
+        width: 100%;
+    }
+
+    /* Modal responsive */
+    .modal {
+        max-height: 85vh;
+    }
+
+    .modal-footer {
+        flex-direction: column;
+    }
+
+    .modal-footer .btn {
+        width: 100%;
+    }
+}
+
+/* Celular: el nav pasa al menú lateral y quedan el logo, "RPAD" y las acciones (con sesión, el avatar) */
+@media (max-width: 760px) {
+    .header {
+        gap: 12px;
+        padding: 0 16px;
+    }
+
+    .header-left {
+        gap: 8px;
+    }
+
+    .header-nav,
+    .header-subtitle,
+    .header-user-info {
+        display: none;
+    }
+
+    .header-marca-texto {
+        padding-left: 0;
+    }
+
+    .header-marca-texto::before {
+        display: none;
+    }
+
+    .sidebar-toggle {
+        display: inline-flex;
+    }
+
+    #sidebarPrincipal {
+        display: block;
+    }
+
+    .header-right {
+        gap: 8px;
+    }
+
+    .header-user {
+        padding: 2px;
+    }
+
+    .footer-cuerpo {
+        grid-template-columns: 1fr;
+        gap: 24px;
+        padding: 40px 16px 32px;
+    }
+
+    .footer-bottom {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .page-title {
+        font-size: 1.25rem;
+    }
+
+    /* Celular angosto (375 px): todo un poco más chico y, con sesión, "Salir" queda solo con su ícono (el texto sigue ahí
+       para los lectores de pantalla) */
+    .header {
+        gap: 8px;
+        padding: 0 12px;
+    }
+
+    .header-left {
+        gap: 6px;
+    }
+
+    .header-marca {
+        gap: 10px;
+    }
+
+    .header-logo {
+        height: 32px;
+    }
+
+    .header-right {
+        gap: 6px;
+    }
+
+    .header--con-sesion #header-actions > .btn {
+        gap: 0;
+        padding: 8px 10px;
+        font-size: 0;
+    }
+}
+
+/* 360 px con sesión y 320 px sin ella: queda el logo, que sigue siendo el link a la portada */
+@media (max-width: 370px) {
+    .header--con-sesion .header-marca-texto {
+        display: none;
+    }
+}
+
+@media (max-width: 340px) {
+    .header-marca-texto {
+        display: none;
+    }
+}
+
+.table-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+}
+
+/* Link al portal en modal de revisión */
+.link-portal-revision {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+  border: 1px solid #93c5fd;
+  border-radius: var(--radius);
+  color: #1e40af;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.link-portal-revision:hover {
+  background: linear-gradient(135deg, #bfdbfe 0%, #c7d2fe 100%);
+  border-color: #60a5fa;
+  color: #1e3a8a;
+}
+
+.link-portal-revision svg {
+  flex-shrink: 0;
+}
+
+/* === PAGINACIÓN === */
+.paginacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--mcr-blue-50);
+  border-top: 1px solid var(--mcr-blue-100);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  padding: 1rem 1.5rem;
+  margin-top: 0;
+}
+.paginacion--standalone {
+  margin-top: 0.75rem;
+  border-top: none;
+  border: 1px solid var(--mcr-blue-100);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.pag-info {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  letter-spacing: 0.01em;
+}
+.pag-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.pag-pagina {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.625rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background: var(--mcr-blue-100);
+  color: var(--mcr-blue-800);
+  white-space: nowrap;
+}
+.pag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1.4;
+  color: var(--mcr-sky);
+  background: white;
+  border: 1px solid var(--mcr-blue-100);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pag-btn:hover:not(:disabled) {
+  background: var(--mcr-blue-50);
+  border-color: var(--mcr-sky);
+  color: var(--mcr-blue-900);
+}
+.pag-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 145, 225, 0.15);
+}
+.pag-btn:disabled {
+  color: var(--gray-300);
+  background: var(--gray-50);
+  border-color: var(--gray-200);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.table-container:has(+ .paginacion) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+@media (max-width: 768px) {
+  .paginacion {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: center;
+    padding: 0.875rem 1rem;
+  }
+}

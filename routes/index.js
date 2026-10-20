@@ -109,6 +109,7 @@ import {
   descargarHitoArchivo,
   deleteHitoArchivo
 } from '../controllers/gestionController.js';
+import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
 import { uploadProyectoMiddleware, uploadHitoMiddleware } from '../config/upload.js';
 
 const router = Router();
@@ -243,6 +244,13 @@ router.get('/reportes/estado-general', authMiddleware, reporteEstadoGeneral);
 router.get('/reportes/historial-notificaciones', authMiddleware, reporteHistorialNotificaciones);
 router.get('/reportes/por-area/:areaId', authMiddleware, reportePorArea);
 router.get('/reportes/cumplimiento', authMiddleware, reporteCumplimiento);
+
+// =====================================================
+// Seguimiento del dataset (protegidas, para todos los roles con sesión)
+// =====================================================
+router.get('/seguimiento', authMiddleware, listarSeguimiento);
+router.get('/seguimiento/:id/pdf', authMiddleware, descargarSeguimientoPdf);
+router.get('/seguimiento/:id', authMiddleware, verSeguimiento);
 
 // =====================================================
 // Notas DOCX (protegidas)

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seguimiento: pruebas de la cinta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,650;12..96,750&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="cinta.css">
+<link rel="stylesheet" href="/files/cinta.css">
+<style>
+  :root { --tinta: #1A365D; --texto: #22324A; --suave: #56677F; --linea: #DAE3ED; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #EEF2F6; color: var(--texto); font-family: 'Figtree', system-ui, sans-serif; font-size: 15px; }
+  .lienzo { max-width: 1180px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 750; letter-spacing: -0.02em; color: var(--tinta); font-size: 1.75rem; margin: 0 0 6px; }
+  .intro p { margin: 0 0 6px; color: var(--suave); max-width: 80ch; }
+  .prueba { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 18px 22px; margin-top: 18px; }
+  .prueba h2 { margin: 0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 650; font-size: 1.12rem; color: var(--tinta); }
+  .prueba .sub { margin: 2px 0 6px; color: var(--suave); font-size: 0.88rem; }
+  .prueba .mirar { margin: 0 0 6px; font-size: 0.92rem; }
+  details { margin-top: 6px; font-size: 0.85rem; color: var(--suave); }
+  details summary { cursor: pointer; font-weight: 600; color: var(--tinta); }
+  details ol { columns: 2; column-gap: 32px; margin: 8px 0 0; padding-left: 18px; }
+  details li { break-inside: avoid; margin-bottom: 2px; }
+  .leyenda { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--suave); margin: 14px 0 0; }
+  .leyenda span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .leyenda svg { width: 18px; height: 18px; }
+</style>
+</head>
+<body>
+<div class="lienzo">
+  <div class="intro">
+    <h1>La cinta, calculada con las fechas reales</h1>
+    <p>Cada marca va en el día exacto, sin corrimientos a mano. Si dos cosas de la misma fila caen el mismo día (o casi), se dibuja una sola marca con la cantidad. Pasá el mouse por una marca para ver qué es y cuándo fue.</p>
+    <p>Hoy es 20/10/2026 y la ventana va del 01/11/2025 al 31/10/2026. Debajo de cada cinta podés desplegar la lista de fechas para controlar.</p>
+    <div class="leyenda" id="leyenda"></div>
+  </div>
+  <div id="pruebas"></div>
+</div>
+
+<script src="datos-cinta.js"></script>
+<script>if (!window.DATOS) document.write('<script src="/files/datos-cinta.js"><\/script>');</script>
+<script src="cinta.js"></script>
+<script>if (!window.Cinta) document.write('<script src="/files/cinta.js"><\/script>');</script>
+<script>
+  var HOY = '2026-10-20';
+  var MIRAR = {
+    52: 'Las dos propuestas rechazadas y la actualización del 04/02 caen en la misma vertical: el ✕ lleva un 2. El ciclo del 31/01 se entregó 4 días tarde.',
+    10: 'Muchas cargas: un ciclo entregado 18 días tarde, otro 56 días tarde y los demás antes de vencer. El 25/02 hubo un cambio de frecuencia y una carga el mismo día (una marca con un 2).',
+    9: 'Ya estaba vencido al darse de alta. Se cargó el 13/03 y la próxima se reprogramó ese mismo día. Volvió a vencer el 30/04, se cargó el 09/10 y se aprobó el 14/10: por eso la Nota 2/26 del 13/10 todavía lo da como vencido.',
+    1: 'Vencido desde el 31/01/2026, con una actualización pendiente de aprobación (el círculo verde punteado del 19/10).',
+    11: 'Vencido desde el 31/01/2024: desde el alta, todo rayado.',
+    81: 'Dado de alta ayer: el alta, la Nota 3/26 y hoy quedan casi juntos, y el vencimiento del 31/10 está por delante.',
+    38: 'Gestión interna: se cargó antes de tiempo en febrero; el 30/09 venció y se cargó el 02/10, 2 días tarde.',
+    66: 'Eventual: sin vencimientos ni rayado. En diciembre salieron dos emails el mismo día, por corridas manuales (una marca con un 2 en cada fila).',
+    26: 'Gestión interna, vencido desde el 31/03/2025.'
+  };
+  var html = '';
+  window.DATOS.forEach(function (d) {
+    var ev = Cinta.eventosDe(d);
+    html += '<section class="prueba"><h2>' + d.titulo + '</h2><p class="sub">' + d.area + ', gestión ' + d.tipo_gestion + ', ' + d.frecuencia.toLowerCase() + (d.proxima ? ', próxima ' + Cinta.dmy(d.proxima) : '') + '</p>' +
+      '<p class="mirar">' + (MIRAR[d.id] || '') + '</p>' + Cinta.svg(d, { hoy: HOY, tema: 'pantalla' }) +
+      '<details><summary>Ver las ' + ev.length + ' fechas</summary><ol>' + ev.map(function (e) { return '<li>' + Cinta.dmy(e.fecha) + ': ' + e.texto + '</li>'; }).join('') + '</ol></details></section>';
+  });
+  document.getElementById('pruebas').innerHTML = html;
+  var L = [['nota', 'Nota Digital a DGMIT'], ['email', 'Email a DGMIT'], ['area', 'Email al área'], ['act', 'Actualización'], ['actp', 'Actualización pendiente'], ['cambio', 'Cambio en la ficha'], ['rech', 'Propuesta rechazada'], ['alta', 'Alta']];
+  document.getElementById('leyenda').innerHTML = L.map(function (l) { return '<span><svg class="cinta-pantalla" viewBox="0 0 20 20" style="width:18px">' + Cinta.icono(l[0], 10, 10) + '</svg>' + l[1] + '</span>'; }).join('') +
+    '<span><svg class="cinta-pantalla" viewBox="0 0 26 14" style="width:26px"><rect width="26" height="14" fill="#FCE8A8"/><path d="M0 14 14 0M8 14 22 0M16 14 26 4" stroke="#F2CF5B" stroke-width="3"/></svg>Vencido sin entregar</span>';
+</script>
+</body>
+</html>
