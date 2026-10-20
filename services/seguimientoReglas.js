@@ -155,9 +155,10 @@ const nombreEnCatalogo = (k, valor, catalogos) => {
 };
 
 // El valor de un campo para mostrarlo: las fechas en dd/mm/aaaa, los ids por su nombre (si no hay catálogo, el id; una lista, en
-// orden alfabético) y '—' si está vacío. Requiere nota DGMIT dice Sí, No o Sin dato (el 0 es un valor, no un vacío)
+// orden alfabético) y '—' si está vacío. Requiere nota DGMIT dice Sí, No o — (el 0 es un valor, no un vacío; «Sin dato» es solo
+// de la ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3 y 1.7)
 const textoDelValor = (k, valor, catalogos) => {
-  if (k.campo === 'requiere_nota') return textoRequiereNota(valor, 'Sin dato');
+  if (k.campo === 'requiere_nota') return textoRequiereNota(valor);
   if (k.tipo === 'fecha') return formatoCorto(diaDe(valor));
   if (Array.isArray(valor)) {
     if (!valor.length) return '—';

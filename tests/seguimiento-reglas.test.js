@@ -429,11 +429,13 @@ describe('movimientosDe: casos sintéticos sobre el 52', () => {
     assert.equal(c.tipo, 'cambio');
   });
 
-  it('requiere_nota: de Sin dato a Sí y de Sí a Sin dato; si no cambia (1 contra "1"), no es un cambio', () => {
+  it('requiere_nota: de — a Sí y de Sí a — (sin dato es la raya, como los demás campos del movimiento); si no cambia (1 contra "1"), no es un cambio', () => {
     const campos = (anterior, nuevo, id) => movimientosDe(con(52, { cambios: [cambio({ id, nuevos: { requiere_nota: nuevo }, anteriores: { requiere_nota: anterior } })] }))
       .find((x) => x.extra.cambio_id === id).extra.campos;
-    assert.deepEqual(campos(null, 1, 73), [{ campo: 'Requiere nota DGMIT', antes: 'Sin dato', despues: 'Sí' }]);
-    assert.deepEqual(campos(1, null, 74), [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: 'Sin dato' }]);
+    assert.deepEqual(campos(null, 1, 73), [{ campo: 'Requiere nota DGMIT', antes: '—', despues: 'Sí' }]);
+    assert.deepEqual(campos(1, null, 74), [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: '—' }]);
+    assert.deepEqual(campos(undefined, 0, 79), [{ campo: 'Requiere nota DGMIT', antes: '—', despues: 'No' }]);
+    assert.ok(!JSON.stringify(campos(null, 1, 80)).includes('Sin dato'));
     assert.deepEqual(campos(0, 1, 75), [{ campo: 'Requiere nota DGMIT', antes: 'No', despues: 'Sí' }]);
     assert.deepEqual(campos(1, '1', 76), []);
     assert.deepEqual(campos(0, false, 77), []);
