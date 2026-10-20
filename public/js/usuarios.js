@@ -123,16 +123,19 @@ const avisoSoloLectura = (u) => {
   if (soyEditor() && u.rol !== 'lector') return 'Como editor, solo podés modificar usuarios lectores.';
   return null;
 };
-// Confirmación al cambiar un rol, y en especial el propio (spec 8.5; el editor, spec 2026-10-15, 8.1)
+// Confirmación al cambiar un rol, y en especial el propio (spec 8.5; el editor, spec 2026-10-15, 8.1, y spec
+// 2026-10-20-editor-sin-responsabilidad)
 const textoCambioDeRol = (u, rol) => {
   if (soyYo(u)) {
     return rol === 'editor'
-      ? 'Vas a pasar a Editor: dejás de auditar cambios, salvo de respaldo cuando no haya auditores disponibles. ¿Continuar?'
+      ? 'Vas a pasar a Editor: dejás de ser auditor. Vas a poder auditar de respaldo, cuando no haya auditores disponibles, y sin '
+        + 'responsabilidad por la auditoría los cambios de los auditores. ¿Continuar?'
       : 'Vas a perder el acceso de administrador en este momento. ¿Continuar?';
   }
   if (rol === 'admin') return `${u.nombre_completo} va a pasar a Admin: podrá proponer y aprobar cambios. ¿Continuar?`;
   if (rol === 'editor') {
-    return `${u.nombre_completo} va a pasar a Editor: podrá proponer cambios y auditarlos solo de respaldo, cuando no haya auditores disponibles. ¿Continuar?`;
+    return `${u.nombre_completo} va a pasar a Editor: podrá proponer cambios y auditarlos de respaldo, cuando no haya auditores `
+      + 'disponibles, y sin responsabilidad por la auditoría los de los auditores. ¿Continuar?';
   }
   return `${u.nombre_completo} va a pasar a Lector: deja de poder proponer y aprobar cambios. ¿Continuar?`;
 };

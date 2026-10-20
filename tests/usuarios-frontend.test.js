@@ -624,11 +624,19 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
     const { contexto } = cargarPanel();
     const texto = (u, rol) => evaluar(contexto, `textoCambioDeRol(${JSON.stringify(u)}, '${rol}')`);
     const otro = { id: 7, nombre_completo: 'Persona de Prueba' };
-    assert.match(texto(otro, 'editor'), /^Persona de Prueba va a pasar a Editor: podrá proponer cambios y auditarlos solo de respaldo/);
+    // El editor audita de respaldo y, los cambios de los auditores, sin responsabilidad (spec 2026-10-20-editor-sin-responsabilidad)
+    assert.equal(texto(otro, 'editor'), 'Persona de Prueba va a pasar a Editor: podrá proponer cambios y auditarlos de respaldo, '
+      + 'cuando no haya auditores disponibles, y sin responsabilidad por la auditoría los de los auditores. ¿Continuar?');
     assert.match(texto(otro, 'admin'), /va a pasar a Admin: podrá proponer y aprobar cambios/);
     assert.match(texto(otro, 'lector'), /va a pasar a Lector/);
-    assert.match(texto({ id: 1 }, 'editor'), /^Vas a pasar a Editor: dejás de auditar cambios/);
+    assert.equal(texto({ id: 1 }, 'editor'), 'Vas a pasar a Editor: dejás de ser auditor. Vas a poder auditar de respaldo, cuando no '
+      + 'haya auditores disponibles, y sin responsabilidad por la auditoría los cambios de los auditores. ¿Continuar?');
     assert.match(texto({ id: 1 }, 'lector'), /^Vas a perder el acceso de administrador/);
+  });
+
+  it('el grupo Editores dice que auditan de respaldo o sin responsabilidad', () => {
+    const PAGINA = fs.readFileSync(new URL('../public/usuarios.html', import.meta.url), 'utf8');
+    assert.ok(PAGINA.includes('<span class="grupo-contador">Proponen cambios y auditan de respaldo o sin responsabilidad</span>'));
   });
 });
 
