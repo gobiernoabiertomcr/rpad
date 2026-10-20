@@ -1105,6 +1105,59 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
     ]);
   });
 
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3): el rótulo con Sí, No o —, justo después del
+  // tipo de gestión. De la base llega 0 o 1 como número: el 0 es un valor (No), no un campo vacío.
+  describe('«Requiere nota DGMIT»', () => {
+    const alta = (requiereNota) => auditoria({
+      nuevos: [{ ...ALTA, datos_nuevos: { ...ALTA.datos_nuevos, ...(requiereNota === undefined ? {} : { requiere_nota: requiereNota }) } }]
+    }).detalles.secciones[0].filas.map(f => f.valores);
+
+    it('la nota de auditoría lista «Requiere nota DGMIT: Sí» en un alta', () => {
+      assert.deepEqual(alta(1), [
+        ['Título', 'Dataset Nuevo'], ['Área Responsable', 'Área Uno'], ['Tema Principal', 'Economía y Finanzas'],
+        ['Frecuencia', 'Anualmente'], ['Tipo de Gestión', 'Externa'], ['Requiere nota DGMIT', 'Sí'], ['Formatos del Dataset', 'CSV'],
+        ['URL en Portal', 'https://datos.comodoro.gov.ar/dataset/nuevo']
+      ]);
+    });
+
+    it('el 0 es «No», no un campo vacío; sin dato (null) o sin la clave, no se lista', () => {
+      assert.ok(alta(0).some(([campo, valor]) => campo === 'Requiere nota DGMIT' && valor === 'No'));
+      assert.ok(!alta(null).some(([campo]) => campo === 'Requiere nota DGMIT'));
+      assert.ok(!alta(undefined).some(([campo]) => campo === 'Requiere nota DGMIT'));
+    });
+
+    it('una baja lista el dato del dataset que se daría de baja', () => {
+      const baja = { ...BAJA, datos_anteriores: { ...BAJA.datos_anteriores, tipo_gestion: 'externa', requiere_nota: 0 } };
+      const filas = auditoria({ nuevos: [], reiterados: [baja] }).detalles.secciones[0].filas.map(f => f.valores);
+      assert.ok(filas.some(([campo, valor]) => campo === 'Requiere nota DGMIT' && valor === 'No'), JSON.stringify(filas));
+    });
+
+    it('una modificación muestra el valor anterior y el nuevo: de Sí a No, y de — a Sí', () => {
+      const edicion = (anterior, nuevo) => auditoria({
+        nuevos: [modificacion({ datos_anteriores: { titulo: 'X', requiere_nota: anterior }, datos_nuevos: { titulo: 'X', requiere_nota: nuevo } })]
+      }).detalles.secciones[0].filas.map(f => f.valores);
+      assert.deepEqual(edicion(1, 0), [['Requiere nota DGMIT', 'Sí', 'No']]);
+      assert.deepEqual(edicion(0, 1), [['Requiere nota DGMIT', 'No', 'Sí']]);
+      assert.deepEqual(edicion(null, 1), [['Requiere nota DGMIT', '—', 'Sí']]);
+      assert.deepEqual(edicion(1, null), [['Requiere nota DGMIT', 'Sí', '—']]);
+      // Sin diferencia (también 1 contra "1"), no hay fila
+      assert.deepEqual(edicion(1, 1), [['—', 'Sin diferencias registradas', '—']]);
+    });
+
+    it('un cambio propuesto antes de que existiera el dato (sin la clave en datos_nuevos) no lo muestra', () => {
+      const [detalle] = auditoria({
+        nuevos: [modificacion({ datos_anteriores: { titulo: 'X', requiere_nota: 1 }, datos_nuevos: { titulo: 'X', descripcion: 'Nueva' } })]
+      }).detalles.secciones;
+      assert.ok(!detalle.filas.some(f => f.valores[0] === 'Requiere nota DGMIT'));
+    });
+
+    it('sale en el HTML y en el texto de la nota', () => {
+      const n = auditoria({ nuevos: [{ ...ALTA, datos_nuevos: { ...ALTA.datos_nuevos, requiere_nota: 1 } }] });
+      assert.ok(renderHtml(n).includes('>Requiere nota DGMIT</td>'));
+      assert.ok(renderTexto(n).includes('Requiere nota DGMIT'));
+    });
+  });
+
   it('detalle de un alta (los datos cargados) y de una baja (el dataset que se daría de baja)', () => {
     const [, alta, baja] = auditoria({ nuevos: [modificacion(), ALTA], reiterados: [BAJA] }).detalles.secciones;
     assert.equal(alta.titulo, '2. Dataset Nuevo – Alta');

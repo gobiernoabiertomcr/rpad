@@ -420,6 +420,34 @@ describe('movimientosDe: casos sintéticos sobre el 52', () => {
     assert.deepEqual(por.Formatos, { campo: 'Formatos', antes: '1, 2', despues: '1, 3' });
   });
 
+  // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3): de la base llega 0 o 1; el 0 es un valor
+  it('un cambio de solo requiere_nota dice «Cambió: requiere nota DGMIT» con de Sí a No', () => {
+    const c = movimientosDe(con(52, { cambios: [cambio({ id: 72, nuevos: { requiere_nota: 0 }, anteriores: { requiere_nota: 1 } })] }))
+      .find((x) => x.extra.cambio_id === 72);
+    assert.equal(c.detalle, 'Cambió: requiere nota DGMIT. Cambio #72.');
+    assert.deepEqual(c.extra.campos, [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: 'No' }]);
+    assert.equal(c.tipo, 'cambio');
+  });
+
+  it('requiere_nota: de Sin dato a Sí y de Sí a Sin dato; si no cambia (1 contra "1"), no es un cambio', () => {
+    const campos = (anterior, nuevo, id) => movimientosDe(con(52, { cambios: [cambio({ id, nuevos: { requiere_nota: nuevo }, anteriores: { requiere_nota: anterior } })] }))
+      .find((x) => x.extra.cambio_id === id).extra.campos;
+    assert.deepEqual(campos(null, 1, 73), [{ campo: 'Requiere nota DGMIT', antes: 'Sin dato', despues: 'Sí' }]);
+    assert.deepEqual(campos(1, null, 74), [{ campo: 'Requiere nota DGMIT', antes: 'Sí', despues: 'Sin dato' }]);
+    assert.deepEqual(campos(0, 1, 75), [{ campo: 'Requiere nota DGMIT', antes: 'No', despues: 'Sí' }]);
+    assert.deepEqual(campos(1, '1', 76), []);
+    assert.deepEqual(campos(0, false, 77), []);
+  });
+
+  it('«requiere nota DGMIT» va después de la gestión y antes de los temas en «Cambió:»', () => {
+    const c = movimientosDe(con(52, { cambios: [cambio({ id: 78,
+      nuevos: { tema_principal_id: 5, requiere_nota: 0, tipo_gestion: 'interna', tipo_pedido: 'acumulado', observaciones: 'Nueva' },
+      anteriores: { tema_principal_id: 4, requiere_nota: 1, tipo_gestion: 'externa', tipo_pedido: 'foto', observaciones: null } })] }))
+      .find((x) => x.extra.cambio_id === 78);
+    assert.equal(c.detalle, 'Cambió: observaciones, tipo de pedido, gestión, requiere nota DGMIT, tema principal. Cambio #78.');
+    assert.deepEqual(c.extra.campos.map((x) => x.campo), ['Observaciones', 'Tipo de pedido', 'Gestión', 'Requiere nota DGMIT', 'Tema principal']);
+  });
+
   it('con los catálogos de temas y formatos, el antes y el después dicen los nombres (los formatos, en orden alfabético)', () => {
     const catalogos = { ...CATALOGOS, temas: { 2: 'Economía', 4: 'Salud', 5: 'Ambiente' }, formatos: { 1: 'XLSX', 2: 'CSV', 3: 'JSON' } };
     const fuentes = { ...con(52, { cambios: [cambio({ id: 68,

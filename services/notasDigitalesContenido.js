@@ -5,6 +5,7 @@ import {
 } from './notasDigitalesCalendario.js';
 import { RPAD_URL } from './emailTemplates.js';
 import { NOMBRES_TIPO_PEDIDO, frecuenciaEnNota } from './fechasDatasetReglas.js';
+import { textoRequiereNota } from './requiereNotaReglas.js';
 
 const REF = 'Solicitud de gestión de datos para el Portal de Datos Abiertos Municipal';
 const DESTINATARIO = 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL';
@@ -366,6 +367,7 @@ const CAMPOS_DEL_DATASET = [
   { campo: 'tema_secundario_id', etiqueta: 'Tema Secundario', catalogo: 'temas' },
   { campo: 'frecuencia_id', etiqueta: 'Frecuencia', catalogo: 'frecuencias' },
   { campo: 'tipo_gestion', etiqueta: 'Tipo de Gestión' },
+  { campo: 'requiere_nota', etiqueta: 'Requiere nota DGMIT' },
   { campo: 'formatos', etiqueta: 'Formatos del Dataset', catalogo: 'formatos' },
   { campo: 'tipo_pedido', etiqueta: 'Tipo de pedido' },
   { campo: 'datos_al', etiqueta: 'Datos al' },
@@ -387,8 +389,9 @@ const vacio = (valor) => valor === null || valor === undefined || String(valor).
 
 // Para comparar el valor anterior con el nuevo: las fechas por el día (al proponer un cambio, las fechas guardadas llegan
 // con hora, "2026-03-15T03:00:00.000Z": el día es el de los primeros 10 caracteres con Node en hora argentina o en UTC) y
-// los formatos sin importar el orden
+// los formatos sin importar el orden, «Requiere nota DGMIT» por su texto (1, '1' y true son lo mismo: Sí)
 const valorComparable = (campo, valor) => {
+  if (campo === 'requiere_nota') return textoRequiereNota(valor, '');
   if (vacio(valor)) return '';
   if (campo === 'formatos') return (Array.isArray(valor) ? valor : [valor]).map(Number).sort((a, b) => a - b).join(',');
   if (CAMPOS_DE_FECHA.includes(campo)) return String(valor).slice(0, 10);
@@ -396,8 +399,10 @@ const valorComparable = (campo, valor) => {
 };
 
 // Un valor del dataset como se lee en la nota: el nombre de un id de catálogo o de un tipo de pedido, la fecha dd/mm/aaaa,
-// la gestión con mayúscula; si está vacío, siVacio ("Sin dato")
+// la gestión con mayúscula; si está vacío, siVacio ("Sin dato"). «Requiere nota DGMIT» es Sí, No o — (el 0 es un valor, no un
+// vacío: de la base llega 0 o 1 como número)
 const valorDelCampo = ({ campo, catalogo }, valor, catalogos, siVacio = SIN_DATO) => {
+  if (campo === 'requiere_nota') return textoRequiereNota(valor, RAYA);
   if (vacio(valor)) return siVacio;
   if (campo === 'formatos') return (Array.isArray(valor) ? valor : [valor]).map(id => catalogos.formatos?.[id] ?? String(id)).join(', ');
   if (catalogo) return catalogos[catalogo]?.[valor] ?? String(valor);

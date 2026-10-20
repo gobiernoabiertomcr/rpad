@@ -5,6 +5,7 @@
 import { esFechaIso, formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
 import { NOMBRES_TIPO_PEDIDO, estadoDelDataset, tipoEfectivo, pedido as calcularPedido } from './fechasDatasetReglas.js';
 import { cintaDe } from './seguimientoCinta.js';
+import { textoRequiereNota } from './requiereNotaReglas.js';
 
 // Desde cuándo hay registro: el primer email registrado es del 06/12/2025 y el primer cambio, del 26/01/2026
 export const REGISTRO_DESDE = Object.freeze({ envios: '2025-12-06', cambios: '2026-01-26' });
@@ -130,6 +131,7 @@ const CAMPOS = [
   { campo: 'observaciones', rotulo: 'Observaciones', enTexto: 'observaciones', otro: true },
   { campo: 'tipo_pedido', rotulo: 'Tipo de pedido', tipo: 'pedido', enTexto: 'tipo de pedido', otro: true },
   { campo: 'tipo_gestion', rotulo: 'Gestión', enTexto: 'gestión', otro: true },
+  { campo: 'requiere_nota', rotulo: 'Requiere nota DGMIT', enTexto: 'requiere nota DGMIT', otro: true },
   { campo: 'tema_principal_id', rotulo: 'Tema principal', catalogo: 'temas', enTexto: 'tema principal', otro: true },
   { campo: 'tema_secundario_id', rotulo: 'Tema secundario', catalogo: 'temas', enTexto: 'tema secundario', otro: true },
   { campo: 'formatos', rotulo: 'Formatos', catalogo: 'formatos', enTexto: 'formatos', otro: true }
@@ -137,8 +139,10 @@ const CAMPOS = [
 
 const ordenados = (valores) => [...valores].map(String).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
 
-// El valor de un campo para compararlo: las fechas por su día, las listas ordenadas y el resto como texto recortado
+// El valor de un campo para compararlo: las fechas por su día, las listas ordenadas y el resto como texto recortado. Requiere
+// nota DGMIT por su texto (de la base llega 0 o 1; 1, '1' y true son lo mismo, y sin dato es vacío)
 const normalizado = (k, valor) => {
+  if (k.campo === 'requiere_nota') return textoRequiereNota(valor, '');
   if (k.tipo === 'fecha') return diaDe(valor) ?? (textoVacio(valor) ? '' : String(valor).trim());
   if (Array.isArray(valor)) return ordenados(valor).join(',');
   return textoVacio(valor) ? '' : String(valor).trim();
@@ -151,8 +155,9 @@ const nombreEnCatalogo = (k, valor, catalogos) => {
 };
 
 // El valor de un campo para mostrarlo: las fechas en dd/mm/aaaa, los ids por su nombre (si no hay catálogo, el id; una lista, en
-// orden alfabético) y '—' si está vacío
+// orden alfabético) y '—' si está vacío. Requiere nota DGMIT dice Sí, No o Sin dato (el 0 es un valor, no un vacío)
 const textoDelValor = (k, valor, catalogos) => {
+  if (k.campo === 'requiere_nota') return textoRequiereNota(valor, 'Sin dato');
   if (k.tipo === 'fecha') return formatoCorto(diaDe(valor));
   if (Array.isArray(valor)) {
     if (!valor.length) return '—';

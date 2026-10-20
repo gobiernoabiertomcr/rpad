@@ -803,6 +803,7 @@ const ETIQUETAS_DE_CAMPO = {
   'Tema Principal': 'Tema principal',
   'Tema Secundario': 'Tema secundario',
   'Tipo de Gestion': 'Tipo de gestión',
+  'Requiere nota DGMIT': 'Requiere nota DGMIT',
   'Ultima Actualizacion': 'Última actualización',
   'Proxima Actualizacion': 'Próxima actualización',
   'URL en Portal': 'URL en el portal',
@@ -1045,8 +1046,18 @@ const ICONO_ALERTA = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height=
 const ETIQUETAS_DE_TIPO = { crear: 'Crear', editar: 'Editar', eliminar: 'Eliminar' };
 const RESULTADOS = { aprobado: 'Aprobado', rechazado: 'Rechazado' };
 
+// «Requiere nota DGMIT» en un alta o una baja: de la base llega 1 (Sí) o 0 (No) como número, y el 0 es un valor, no un vacío.
+// Copia mínima de textoRequiereNota (services/requiereNotaReglas.js, atada por un test de paridad); sin dato, o con cualquier
+// otro valor, queda vacío y el renglón no se lista. Solo se usa para este campo: en los demás, un 0 es el texto que es.
+function textoDeRequiereNota(valor) {
+  if (valor === 1 || valor === true || valor === '1') return 'Sí';
+  if (valor === 0 || valor === false || valor === '0') return 'No';
+  return '';
+}
+
 // Los campos de un alta o de una baja, en el orden de siempre, con la etiqueta del servidor (se muestran con
-// etiquetaDeCampo). Los valores con nombre (área, frecuencia, temas, formatos) vienen enriquecidos de la lista.
+// etiquetaDeCampo). Los valores con nombre (área, frecuencia, temas, formatos) vienen enriquecidos de la lista. `texto`: cómo se
+// escribe el valor (por defecto, textoDeValor).
 const CAMPOS_DE_ALTA_Y_BAJA = [
   { clave: 'titulo', campo: 'Titulo' },
   { clave: 'descripcion', campo: 'Descripcion' },
@@ -1055,6 +1066,7 @@ const CAMPOS_DE_ALTA_Y_BAJA = [
   { clave: 'tema_principal_nombre', campo: 'Tema Principal' },
   { clave: 'tema_secundario_nombre', campo: 'Tema Secundario' },
   { clave: 'tipo_gestion', campo: 'Tipo de Gestion' },
+  { clave: 'requiere_nota', campo: 'Requiere nota DGMIT', texto: textoDeRequiereNota },
   { clave: 'tipo_pedido_nombre', campo: 'Tipo de pedido' },
   { clave: 'datos_al', campo: 'Datos al' },
   { clave: 'ultima_actualizacion', campo: 'Cargado en el portal' },
@@ -1111,8 +1123,8 @@ function htmlDeComparacion(cambio) {
     const datos = (cambio.tipo_cambio === 'crear' ? cambio.datos_nuevos : cambio.datos_anteriores) ?? {};
     // En un alta, la próxima que no es fin de mes lleva la marca (en una baja no: no es un valor nuevo)
     const filas = CAMPOS_DE_ALTA_Y_BAJA
-      .map(({ clave, campo }) => ({
-        campo, valor: textoDeValor(datos[clave]), marca: cambio.tipo_cambio === 'crear' && campo === CAMPO_PROXIMA ? marcaDeFinDeMes(datos[clave]) : ''
+      .map(({ clave, campo, texto = textoDeValor }) => ({
+        campo, valor: texto(datos[clave]), marca: cambio.tipo_cambio === 'crear' && campo === CAMPO_PROXIMA ? marcaDeFinDeMes(datos[clave]) : ''
       }))
       .filter(({ valor }) => valor)
       .map(({ campo, valor, marca }) => `<dt>${Utils.escapeHtml(etiquetaDeCampo(campo))}</dt><dd>${Utils.escapeHtml(valor)}${marca ? ` ${marca}` : ''}</dd>`)
