@@ -96,7 +96,7 @@ Un filtro nuevo, «Requiere nota» (Todos, Sí, No), en la barra de filtros de `
 - El encabezado ocupa tres renglones y «Del … al …» pasa a dos. La tabla no crece de más.
 
 **Reiteración externa (y la sección de vencidos que pudiera traer un aviso externo): 7 columnas, reorganizadas.** Conjunto de datos, Área responsable, Frecuencia, **Requiere nota DGMIT**, Datos solicitados, **Venció/Vence** e Informado en.
-- La celda «Venció» (o «Vence») lleva la fecha y, **en un segundo renglón de la misma celda**, la situación de hoy: «Vencido hace 1006 días», «Vence en 10 días», «Vence hoy». La columna «Situación» deja de existir en la externa.
+- La celda «Venció» (o «Vence») lleva la fecha y, **en un segundo renglón de la misma celda**, la situación de hoy, con el mismo texto de la columna «Situación» de la interna: «Vencido hace 1006 días», «Faltan 10 días», «Falta 1 día», «Vence hoy». La columna «Situación» deja de existir en la externa.
 - «Informado en» sigue última (ahí va `informadoAnterior`).
 - Proporciones del PDF con la segunda parte de «Informado en»: `[18, 14, 10, 10, 13, 10, 25]`, probadas con la reiteración real del 02/11/2026 (10 datasets): 7 filas en la primera hoja y ningún título partido, como hoy. Sin la segunda parte, unas análogas a criterio de quien lo construye.
 - Esta tabla de 7 columnas no es la de 7 columnas de la interna. `PROPORCIONES` hoy se elige por cantidad de columnas, así que hay que distinguirlas (por ejemplo, con `seccion.proporciones`, que `calcularAnchos` ya acepta).

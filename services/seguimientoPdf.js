@@ -1,6 +1,7 @@
-// PDF del Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset-design, "El PDF"): una sola hoja A4 con el lenguaje del
-// ANEXO de los avisos (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie,
-// DocumentoNota y el QR vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
+// PDF del Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset-design, "El PDF"): una hoja A4 por dataset (nunca pasa a
+// una segunda; el anexo de la reiteración une N hojas en un mismo PDF), con el lenguaje del ANEXO de los avisos
+// (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie, DocumentoNota y el QR
+// vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
 // cinta del PDF (separación 12 y letra 8,4): no recalcula ninguna regla.
 // Hay dos PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1")
 // y el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
@@ -261,7 +262,9 @@ const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
   return ALTO_NODO;
 };
 
-// La línea del email al área (solo en gestión externa y con un ciclo abierto: sin vencimiento no hay nada que anticipar)
+// La línea del email al área (solo en gestión externa y con un ciclo abierto: sin vencimiento no hay nada que anticipar). Con
+// «Requiere nota DGMIT» en «No» el servidor manda `alArea` en null, salvo que en el ciclo abierto ya se le haya mandado al área el
+// email de los 40 días: sin `alArea.textoPdf` no se dibuja nada y el lugar queda en blanco
 const dibujarAlArea = (doc, circuito, y) => {
   if (!circuito.alArea?.textoPdf || !circuito.vencimiento) return;
   doc.roundedRect(IZQUIERDA, y, CONTENIDO, ALTO_AL_AREA, 4).fill(COLOR.fondo);

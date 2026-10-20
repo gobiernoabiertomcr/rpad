@@ -300,7 +300,10 @@ function htmlDeFicha(ficha) {
 }
 
 // El circuito del ciclo abierto, con los textos ya armados por el servidor (circuitoDe): el RPAD avisa a DGMIT, ellas mandan la
-// nota formal (o relevan) por fuera del RPAD y el área vence o no. Debajo, el email al área (solo en gestión externa)
+// nota formal (o relevan) por fuera del RPAD y el área vence o no. Debajo, el email al área: solo en gestión externa y, con
+// «Requiere nota DGMIT» en «No», solo si en el ciclo abierto ya se le mandó el email de los 40 días (si no, el servidor manda
+// `alArea` en null y no se dibuja). Con «No» el servidor también manda el medio («No hace falta nota formal») y el tramo («Sin
+// nota formal»): esta función los dibuja como vienen.
 function htmlDelCircuito(circuito) {
   if (!circuito || typeof circuito !== 'object') return '';
   const avisos = circuito.avisos ?? {};

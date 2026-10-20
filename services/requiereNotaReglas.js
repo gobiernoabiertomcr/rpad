@@ -30,8 +30,8 @@ export const normalizarRequiereNota = (valor) => {
 export const requiereNotaResultante = ({ gestion, valor }) => (gestion === 'interna' ? null : (valor ?? null));
 
 /**
- * El texto con que se muestra el dato: 'Sí', 'No' o sinDato (por defecto la raya; el Seguimiento pasa 'Sin dato'). Nunca
- * tira: un valor que no es 0 ni 1 cuenta como sin dato.
+ * El texto con que se muestra el dato: 'Sí', 'No' o sinDato (por defecto la raya: las notas y los movimientos del Seguimiento;
+ * solo la ficha del Seguimiento, pantalla y PDF, pasa 'Sin dato'). Nunca tira: un valor que no es 0 ni 1 cuenta como sin dato.
  */
 export const textoRequiereNota = (valor, sinDato = '—') => {
   let normalizado;

@@ -40,7 +40,7 @@
 
 1. **Un «No» (0) que se pierde en el camino.** El formulario manda `"0"`; si la propuesta, la aprobación (INSERT y UPDATE) o el enriquecido usan `||`, se guarda NULL. Esperado: se propone «No», se aprueba y la base tiene 0. → Task 2.
 2. **Cambiar la gestión.** De externa a interna con `requiere_nota = 1`, se guarda NULL. De interna a externa sin el dato, 400 con el mensaje exacto. Una edición que solo cambia este dato es un cambio real, no un 400 «No se detectaron cambios». → Task 2.
-3. **Una reiteración externa con un dataset próximo a vencer (no vencido).** La celda dice «Vence» con «Vence en N días» debajo, va en la sección de próximos y es la primera hoja del anexo. → Tasks 5 y 9.
+3. **Una reiteración externa con un dataset próximo a vencer (no vencido).** La celda dice «Vence» con «Faltan N días» debajo, va en la sección de próximos y es la primera hoja del anexo. → Tasks 5 y 9.
 4. **Un externo con NULL.** La nota muestra «—», el Seguimiento «Sin dato», recibe el email de 40 días y su circuito es el de siempre. → Tasks 5, 6 y 7.
 5. **Vista previa y prueba de una reiteración sin datos reales (ejemplo).** El anexo de ejemplo se arma sin consultar la base y no falla con los ids 0 y -1. → Task 10.
 
@@ -185,7 +185,7 @@
 - [ ] **Step 1: Write the failing tests** (actualizar las listas exactas de `notas-contenido.test.js` :61, 79, 86, 98, 108, 156, 165, 183, 267, 273, 308, 324, 364, 372, 398, 485, 497 según el diseño nuevo, y sumar):
   - `'aviso externo: 5 columnas con Requiere nota DGMIT; celdas Sí, No y — (NULL)'`
   - `'reiteración externa: 7 columnas sin Situación; la celda Venció lleva la fecha y fila.situacion «Vencido hace N días»'`
-  - `'reiteración externa con un próximo: columna «Vence», situación «Vence en N días»'`
+  - `'reiteración externa con un próximo: columna «Vence», situación «Faltan N días»'`
   - `'interna sin cambios: aviso 4 columnas y reiteración 7 con Situación'`
   - `'HTML: la situación va debajo de la fecha con <br> en la misma celda'`
   - `'texto plano de la reiteración externa: renglones «Venció: …» y «Situación: …»'`
