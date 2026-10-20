@@ -299,6 +299,13 @@ function htmlDeFicha(ficha) {
     </dl>`;
 }
 
+// El encabezado del circuito: desde cuándo se cuentan los avisos y el vencimiento del ciclo abierto, con los textos del servidor
+// ("Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026"); sin ciclo, vacío
+function textoDeCabezaDelCircuito(circuito) {
+  if (!circuito || typeof circuito !== 'object') return '';
+  return [circuito.desde?.texto, circuito.vencimiento?.texto].filter((t) => typeof t === 'string' && t).join(' · ');
+}
+
 // El circuito del ciclo abierto, con los textos ya armados por el servidor (circuitoDe): el RPAD avisa a DGMIT, ellas mandan la
 // nota formal (o relevan) por fuera del RPAD y el área vence o no. Debajo, el email al área: solo en gestión externa y, con
 // «Requiere nota DGMIT» en «No», solo si en el ciclo abierto ya se le mandó el email de los 40 días (si no, el servidor manda
@@ -765,7 +772,7 @@ function dibujarLista() {
 function dibujarDataset() {
   const { ficha, circuito, cinta } = vista.seguimiento;
   porId('sg-ficha').innerHTML = htmlDeFicha(ficha);
-  porId('sg-circuito-vencimiento').textContent = circuito?.vencimiento?.texto ?? '';
+  porId('sg-circuito-vencimiento').textContent = textoDeCabezaDelCircuito(circuito);
   porId('sg-circuito').innerHTML = htmlDelCircuito(circuito);
   porId('sg-cinta').innerHTML = svgDeCinta(cinta);
   porId('sg-leyenda').innerHTML = htmlDeLeyenda();

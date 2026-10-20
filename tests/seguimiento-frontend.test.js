@@ -67,13 +67,13 @@ describe('seguimiento.js: la lista de "Sin elegir"', () => {
     assert.equal(orden.at(-1), 66);
     const a = orden.indexOf(61), b = orden.indexOf(33), c = orden.indexOf(1);
     assert.ok(a < b && b < c, 'Comercios, Listado y Presupuesto vencen el mismo día: por título');
-    assert.deepEqual(plano(ctx.ordenarFilas(ctx.filasDelFiltro(filasDeLosCasos(), 'actualizados', ''), 'actualizados').map(x => x.id)), [10, 9, 38, 42]);
+    assert.deepEqual(plano(ctx.ordenarFilas(ctx.filasDelFiltro(filasDeLosCasos(), 'actualizados', ''), 'actualizados').map(x => x.id)), [10, 9, 38, 42, 25]);
   });
 
   it('las cantidades de cada filtro; "Todos" son los activos y los dados de baja van aparte', () => {
     const filas = [...filasDeLosCasos(), { ...resumenParaLista(f(52), HOY), id: 999, activo: false, estado: 'baja', dias: null }];
     assert.deepEqual(plano(ctx.cantidadesPorFiltro(filas, '')),
-      { vencidos: 6, proximos: 1, actualizados: 4, eventuales: 1, 'sin-fecha': 0, bajas: 1, todos: 12 });
+      { vencidos: 6, proximos: 2, actualizados: 5, eventuales: 1, 'sin-fecha': 0, bajas: 1, todos: 14 });
     assert.deepEqual(plano(ctx.filasDelFiltro(filas, 'bajas', '').map(x => x.id)), [999]);
     assert.ok(!ctx.filasDelFiltro(filas, 'todos', '').some(x => x.id === 999));
   });
@@ -92,7 +92,7 @@ describe('seguimiento.js: la lista de "Sin elegir"', () => {
     const cantidades = ctx.cantidadesPorFiltro(filasDeLosCasos(), '');
     const html = ctx.htmlDeFiltros(cantidades, 'vencidos');
     assert.match(html, /<button type="button" class="sg-chip" data-filtro="vencidos" aria-pressed="true">Vencidos <b>6<\/b><\/button>/);
-    assert.match(html, /data-filtro="todos" aria-pressed="false">Todos <b>12<\/b>/);
+    assert.match(html, /data-filtro="todos" aria-pressed="false">Todos <b>14<\/b>/);
     assert.equal(cuantas(html, /aria-pressed="true"/g), 1);
     assert.ok(!html.includes('Sin fecha') && !html.includes('Dados de baja'));
     const elegido = ctx.htmlDeFiltros(cantidades, 'bajas');
@@ -135,7 +135,7 @@ describe('seguimiento.js: la lista de "Sin elegir"', () => {
   it('las sugerencias del buscador son "título — área", y elegir una que coincide exacto da su id', () => {
     const filas = filasDeLosCasos();
     const html = ctx.htmlDeSugerencias(filas);
-    assert.equal(cuantas(html, /<option /g), 12);
+    assert.equal(cuantas(html, /<option /g), 14);
     assert.ok(html.includes('<option value="Directores Generales de Planta Permanente — Dirección General de Relaciones Laborales"></option>'));
     assert.equal(ctx.idDeLaSugerencia('Directores Generales de Planta Permanente — Dirección General de Relaciones Laborales', filas), 52);
     assert.equal(ctx.idDeLaSugerencia('Directores Generales de Planta Permanente', filas), null);
@@ -192,6 +192,13 @@ describe('seguimiento.js: la ficha y el circuito', () => {
     assert.ok(html.includes('<div class="sg-nodo area">'), 'el área vencida, en rojo');
     assert.ok(html.includes('Además, el 21/06/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.'));
     assert.ok(html.includes('class="sg-flecha fuera"') && html.includes('Por fuera del RPAD: no queda registrada'));
+  });
+
+  it('el encabezado del circuito: desde cuándo se cuentan los avisos y el vencimiento, con los textos del servidor', () => {
+    assert.equal(ctx.textoDeCabezaDelCircuito(seguimientoDe(f(58), HOY).circuito), 'Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026');
+    assert.equal(ctx.textoDeCabezaDelCircuito({ desde: null, vencimiento: { texto: 'Vencimiento del 31/07/2026' } }), 'Vencimiento del 31/07/2026');
+    assert.equal(ctx.textoDeCabezaDelCircuito(seguimientoDe(f(66), HOY).circuito), '');
+    assert.equal(ctx.textoDeCabezaDelCircuito(null), '');
   });
 
   it('el circuito de gestión interna (26), sin avisos (10) y eventual (66)', () => {
@@ -280,8 +287,10 @@ describe('seguimiento.js: la cinta', () => {
 
   it('un ciclo que empieza donde terminó otro se dibuja 1,5 más adentro', () => {
     const svg = ctx.svgDeCinta(seguimientoDe(f(52), HOY).cinta);
-    // El segundo ciclo de 52 empieza en 275.95, donde termina lo vencido del primero
+    // El segundo ciclo de 52 empieza en 275.95, donde termina lo vencido del primero; el de después de la actualización simple del
+    // 17/12/2025, en 149.75, donde termina el ciclo de antes (que no tiene vencimiento conocido)
     assert.match(svg, /<rect x="277.45" y="54" width="[\d.]+" height="22" class="t-ciclo"\/>/);
+    assert.match(svg, /<rect x="151.25" y="54" width="[\d.]+" height="22" class="t-ciclo"\/>/);
     assert.match(svg, /<rect x="108.55" y="54" width="[\d.]+" height="22" class="t-ciclo"\/>/);
   });
 
@@ -469,7 +478,7 @@ describe('seguimiento.js: la página', () => {
     assert.equal(cuantas(el('sg-filas').innerHTML, /<tr>/g), 6);
     assert.match(el('sg-filtros').innerHTML, /data-filtro="vencidos" aria-pressed="true"/);
     assert.equal(el('sg-vacio').hidden, true);
-    assert.equal(cuantas(el('sg-sugerencias').innerHTML, /<option /g), 12);
+    assert.equal(cuantas(el('sg-sugerencias').innerHTML, /<option /g), 14);
   });
 
   it('con id: el dataset, y además la lista para las sugerencias', async () => {
@@ -480,14 +489,14 @@ describe('seguimiento.js: la página', () => {
     assert.equal(el('sg-volver').hidden, false);
     assert.ok(el('sg-ficha').innerHTML.includes('Directores Generales de Planta Permanente'));
     assert.ok(el('sg-circuito').innerHTML.includes('6 avisos'));
-    assert.equal(el('sg-circuito-vencimiento').textContent, 'Vencimiento del 31/07/2026');
+    assert.equal(el('sg-circuito-vencimiento').textContent, 'Desde la actualización del 04/02/2026 · Vencimiento del 31/07/2026');
     assert.ok(el('sg-cinta').innerHTML.startsWith('<svg class="sg-cinta-svg"'));
     assert.ok(el('sg-leyenda').innerHTML.includes('Nota Digital a DGMIT'));
     assert.equal(cuantas(el('sg-movimientos').innerHTML, /<li class="sg-mov">/g), 10);
     assert.equal(el('sg-mas').hidden, false);
     assert.equal(el('sg-mas').textContent, 'Ver los 6 anteriores');
     assert.equal(el('sg-buscar').value, 'Directores Generales de Planta Permanente');
-    assert.equal(cuantas(el('sg-sugerencias').innerHTML, /<option /g), 12);
+    assert.equal(cuantas(el('sg-sugerencias').innerHTML, /<option /g), 14);
     assert.equal(pagina.document.title, 'Directores Generales de Planta Permanente - Seguimiento - RPAD');
   });
 
@@ -584,7 +593,7 @@ describe('seguimiento.js: la página', () => {
 });
 
 describe('seguimiento.js: lenguaje neutro', () => {
-  it('lenguaje neutro en todo el HTML de los 12 casos', () => {
+  it('lenguaje neutro en todo el HTML de los 14 casos', () => {
     for (const id of IDS) {
       const s = seguimientoDe(f(id), HOY);
       const html = [

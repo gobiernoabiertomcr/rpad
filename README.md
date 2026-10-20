@@ -103,13 +103,13 @@ Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada data
 
 **Herramientas → Seguimiento** (`seguimiento.html`) junta, por dataset, todo lo que pasó con él: cuándo se actualizó en el RPAD, cuándo y cómo se avisó que había que pedir los datos, y quién propuso y quién aprobó cada cambio. Es el registro de todos los movimientos y la prueba de cada vez que el RPAD avisó. Lo ven todos los roles con sesión, el lector incluido; no es público ni permite cargar movimientos a mano: muestra solo lo que registró el sistema. No hay tablas ni migraciones nuevas.
 
-- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último aviso.
+- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último de ellos ("—" si en el ciclo no hubo ninguno).
 - **Un dataset** (`seguimiento.html?id=N`):
   - la ficha, con **Descargar PDF** y **Ver en el portal**;
   - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (no queda registrada) y a los 40 días el RPAD le anticipa al área por email que va a recibirla (si el dataset tiene "Requiere nota DGMIT" en "No", no hay nota formal ni email de anticipo: el circuito dice "No hace falta nota formal" y "Sin nota formal"); en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
   - **los últimos 12 meses**: una cinta con los ciclos, lo que estuvo vencido, los vencimientos y las marcas de cada movimiento;
   - los **movimientos** (altas, actualizaciones, cambios en la ficha, propuestas, Notas Digitales, emails y bajas), con filtros por tipo, filas que se despliegan para ver el detalle y los hitos de vencimiento entre ellas.
-- **Ciclos:** un ciclo es el tiempo en que rige un vencimiento. Una actualización que mueve la próxima y "Cargado en el portal" lo cierra; reprogramar la próxima antes de que venza lo mueve dentro del mismo ciclo y hacerlo después de vencido lo cierra como reprogramado. Cada aviso se asigna al ciclo del vencimiento que informa (las notas) o al que regía cuando se envió (los emails).
+- **Ciclos:** un ciclo es el tiempo en que rige un vencimiento. Una actualización que mueve la próxima y "Cargado en el portal" lo cierra; reprogramar la próxima antes de que venza lo mueve dentro del mismo ciclo y hacerlo después de vencido lo cierra como reprogramado. Las actualizaciones de antes de la doble verificación (diciembre de 2025) también lo cierran, en su fecha. Cada aviso se asigna al ciclo del vencimiento que informa (las notas) o al que regía cuando se envió (los emails), y "Avisos del ciclo abierto" dice desde cuándo se cuentan ("Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026").
 - **Lenguaje neutro:** el atraso muchas veces depende de que no se mandó la nota formal, no del área. Por eso el Seguimiento dice "Vencido hace N días" o "Estuvo vencido N días" (y la insignia, "Vencido"), nunca "sin entregar" ni "atrasado". El resto del sitio conserva "Atrasado" y "Sin respuesta del área".
 - **PDF de una hoja** (A4, con el estilo del anexo de las Notas Digitales): ficha con QR al portal (la de un externo, con "Requiere nota DGMIT"), avisos del ciclo abierto, la cinta y los últimos 8 movimientos. Se descarga como `Seguimiento - <título> - <AAAA-MM-DD>.pdf`. Esta misma hoja, una por dataset, es el anexo de cada reiteración de las Notas Digitales.
 - **Desde cuándo hay registro:** los envíos quedan registrados desde el 06/12/2025 y los cambios desde el 26/01/2026; antes de esas fechas no hay registro y no se reconstruye. Una aclaración al pie lo dice.
@@ -722,6 +722,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Avisos del ciclo desde la última actualización (2026-10)
+- Seguimiento: las actualizaciones de antes de la doble verificación (diciembre de 2025) cierran el ciclo, así que los avisos de antes ya no cuentan para el ciclo abierto (Áreas específicas de género pasa de 3 avisos a 1; Hotelería, Medios Periodísticos y la Guía Telefónica de áreas de género, de 2 a 0). Las que después se deshicieron (la tanda del 17/12/2025 en 8 datasets, cuya carga volvió atrás) no cuentan. El ciclo de antes no tiene vencimiento conocido: en la cinta va sin "vence" ni rayado
+- "Avisos del ciclo abierto" dice desde cuándo se cuentan ("Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026"), en la pantalla, el PDF y el anexo de la reiteración
+- La columna "Último aviso" de la lista es la del ciclo abierto, el mismo que se cuenta ("—" si no hubo ninguno)
+- Sin SQL ni Run NPM Install; Restart
 
 ### Requiere nota DGMIT y anexo de la reiteración (2026-10)
 - Dato nuevo en los datasets de gestión externa, "Requiere nota DGMIT" (Sí o No): se carga desde la planilla de los 45 externos y se edita con doble verificación; la lista de Gestión de Datasets suma el filtro "Requiere nota"

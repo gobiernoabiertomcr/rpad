@@ -201,7 +201,10 @@ export const cintaDe = (opciones) => {
   }
 
   const vencimientos = [];
-  const ciclosValidos = lista(ciclos).filter((c) => c && typeof c === 'object' && esFechaIso(c.inicio) && esFechaIso(c.venc));
+  // Un ciclo cerrado por una actualización de antes de la doble verificación puede no tener vencimiento conocido (venc null): se
+  // dibuja de su inicio a su cierre, sin "vence" ni vencido
+  const sinVencimiento = (c) => c.venc === null && esFechaIso(c.cierre);
+  const ciclosValidos = lista(ciclos).filter((c) => c && typeof c === 'object' && esFechaIso(c.inicio) && (esFechaIso(c.venc) || sinVencimiento(c)));
   if (ciclosValidos.length === 0) {
     // Sin ciclos (frecuencia eventual, o sin próxima): una banda gris del alta (o del inicio de la ventana) a hoy; si lo dieron de
     // baja, hasta la baja
@@ -216,6 +219,10 @@ export const cintaDe = (opciones) => {
   } else {
     const textosDeVencido = [];
     for (const ciclo of ciclosValidos) {
+      if (sinVencimiento(ciclo)) {
+        agregarTramo(recorte(xDe(ciclo.inicio)), recorte(xDe(ciclo.cierre)), 'ciclo');
+        continue;
+      }
       const cierre = esFechaIso(ciclo.cierre) ? ciclo.cierre : null;
       const fin = cierre ?? hoy;
       const vencidoEnDias = Number.isFinite(ciclo.diasVencido) ? ciclo.diasVencido : Math.max(0, numeroDeDia(fin) - numeroDeDia(ciclo.venc));

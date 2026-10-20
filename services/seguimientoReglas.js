@@ -382,13 +382,17 @@ const unirConY = (items) => (items.length <= 1 ? items.join('') : `${items.slice
 const mayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
 const porMomentoYId = (a, b) => comparar(a.momento, b.momento) || a.id - b.id;
 
-// Un ciclo es el tiempo en que rige un vencimiento (spec, "Ciclos"). Se reconstruye con los cambios 'editar' aprobados, en el
-// orden en que se aprobaron, y el último, el abierto, vence siempre en la próxima actual del dataset. Cada ciclo:
-// { inicio, venc, cierre, como, nueva?, desde, hasta, diasVencido }. `inicio`, `venc` y `cierre` son días; `desde` y `hasta`, los
-// momentos de aprobación (el alta, o la aprobación que lo abrió, y la que lo cerró) entre los que el ciclo rige en el RPAD;
-// `como`: 'actualizacion', 'reprogramacion' (con `nueva`, la próxima a la que se pasó), 'baja' o null (abierto); `diasVencido`:
-// cuánto estuvo vencido (hasta el cierre, o hasta hoy). null si el dataset no tiene ciclos: es eventual (frecuencia sin meses) o no
-// tiene próxima.
+// Un ciclo es el tiempo en que rige un vencimiento (spec, "Ciclos"). Se reconstruye con los cambios 'editar' aprobados y las
+// actualizaciones anteriores a la doble verificación (las filas del historial sin cambio_id, una por día), en el orden en que pasaron,
+// y el último, el abierto, vence siempre en la próxima actual del dataset. Cada ciclo:
+// { inicio, venc, cierre, como, nueva?, desde, hasta, origen, diasVencido }. `inicio`, `venc` y `cierre` son días; `desde` y
+// `hasta`, los momentos (el alta, o la aprobación o la actualización que lo abrió, y la que lo cerró) entre los que el ciclo rige en el
+// RPAD; `como`: 'actualizacion', 'reprogramacion' (con `nueva`, la próxima a la que se pasó), 'baja' o null (abierto); `origen`:
+// cómo empezó, 'alta', 'actualizacion' o 'reprogramacion'; `diasVencido`: cuánto estuvo vencido (hasta el cierre, o hasta hoy).
+// Una actualización de antes de la doble verificación cierra el ciclo en su fecha, pero la próxima que se cumplía no quedó
+// guardada: si nada la dice, el ciclo que cierra tiene `venc` null y `diasVencido` 0 (no se inventa un atraso). Una que después se
+// deshizo por fuera del sistema (la carga que sigue es anterior a ella) no cuenta. null si el dataset no tiene ciclos: es eventual
+// (frecuencia sin meses) o no tiene próxima.
 export const ciclosDe = (fuentes, hoy) => {
   const dataset = fuentes?.dataset;
   if (!dataset || typeof dataset !== 'object' || !esFechaIso(hoy)) return null;
@@ -401,15 +405,51 @@ export const ciclosDe = (fuentes, hoy) => {
     .sort(porMomentoYId);
   const ediciones = aprobados('editar');
   const baja = aprobados('eliminar').pop();
+  // La carga que siguió a un momento: la anterior del primer cambio aprobado posterior que la trae o, si no hay, la de hoy
+  const cargaSiguiente = (momento) => {
+    const siguiente = ediciones.find((e) => e.momento > momento && diaDe(objeto(e.cambio.anteriores).ultima_actualizacion) !== null);
+    return siguiente ? diaDe(objeto(siguiente.cambio.anteriores).ultima_actualizacion) : diaDe(dataset.ultima);
+  };
+  // Las actualizaciones simples (el botón de antes de la doble verificación): una por día, la primera, como en los movimientos.
+  // Una que después se deshizo por fuera del sistema (la carga que siguió es anterior a ella) no cortó nada
+  const vistas = new Set();
+  const simples = lista(fuentes.historial)
+    .filter((h) => h && typeof h === 'object' && (h.cambio_id === null || h.cambio_id === undefined))
+    .sort((a, b) => comparar(String(a.creado ?? ''), String(b.creado ?? '')))
+    .flatMap((h) => {
+      const fecha = diaDe(h.fecha);
+      if (fecha === null || vistas.has(fecha)) return [];
+      vistas.add(fecha);
+      const momento = momentoDe(h.creado) ?? `${fecha} 00:00:00`;
+      const despues = cargaSiguiente(momento);
+      return despues !== null && despues < fecha ? [] : [{ simple: fecha, momento, id: 0 }];
+    });
+  const eventos = [...ediciones, ...simples].sort(porMomentoYId);
 
-  // El vencimiento con el que nació el dataset: la próxima anterior del primer cambio que la trae
-  let venc = ediciones.map(({ cambio }) => diaDe(objeto(cambio.anteriores).proxima_actualizacion)).find(Boolean) ?? proxima;
+  // El vencimiento con el que nació el dataset: la próxima anterior del primer cambio que la trae; sin cambios, la próxima actual.
+  // Solo valen los cambios de antes de la primera actualización simple: el vencimiento que ella cumplió no se conoce
+  const primeraSimple = simples.length ? simples[0].momento : null;
+  const anterioresALaSimple = primeraSimple === null ? ediciones : ediciones.filter((e) => e.momento < primeraSimple);
+  const vencInicial = anterioresALaSimple.map(({ cambio }) => diaDe(objeto(cambio.anteriores).proxima_actualizacion)).find(Boolean)
+    ?? (primeraSimple === null ? proxima : null);
+  let venc = vencInicial;
+  // Sin alta conocida, el primer ciclo empieza en su vencimiento; si tampoco se conoce (hubo una simple antes), lo de antes de la
+  // simple no es un ciclo: el primero es el que ella abre
   const alta = momentoDe(dataset.alta);
-  let inicio = alta ? alta.slice(0, 10) : venc;
-  let desde = alta ?? `${inicio} 00:00:00`;
+  let inicio = alta ? alta.slice(0, 10) : vencInicial;
+  let desde = alta ?? (inicio === null ? null : `${inicio} 00:00:00`);
+  let origen = 'alta';
   const ciclos = [];
 
-  for (const { cambio, momento } of ediciones) {
+  for (const evento of eventos) {
+    if (evento.simple) {
+      // Movía la carga y la próxima en el momento: cierra el ciclo en su fecha y abre otro, cuyo vencimiento lo dirá el cambio
+      // siguiente (su próxima anterior) o, si no hay, la próxima actual
+      if (inicio !== null) ciclos.push({ inicio, venc, cierre: evento.simple, como: 'actualizacion', desde, hasta: evento.momento, origen });
+      inicio = evento.simple; desde = evento.momento; venc = null; origen = 'actualizacion';
+      continue;
+    }
+    const { cambio, momento } = evento;
     // Cada cambio arranca de su propia próxima anterior: si la próxima se corrigió por fuera del sistema (por SQL) después del
     // cambio de antes, manda la que el dataset tenía al proponer este
     const anterior = diaDe(objeto(cambio.anteriores).proxima_actualizacion);
@@ -421,24 +461,24 @@ export const ciclosDe = (fuentes, hoy) => {
     const dia = momento.slice(0, 10);
     if (carga && carga !== cargaAnterior && nuevaProxima && nuevaProxima !== venc) {
       // Mueve la carga y la próxima: una actualización. El atraso corre hasta la carga; el ciclo rige en el RPAD hasta la aprobación
-      ciclos.push({ inicio, venc, cierre: carga, como: 'actualizacion', desde, hasta: momento });
-      inicio = carga; desde = momento; venc = nuevaProxima;
+      ciclos.push({ inicio, venc, cierre: carga, como: 'actualizacion', desde, hasta: momento, origen });
+      inicio = carga; desde = momento; venc = nuevaProxima; origen = 'actualizacion';
     } else if (nuevaProxima && nuevaProxima !== venc) {
       // Solo mueve la próxima: antes de vencer se reprograma dentro del ciclo; después de vencer, lo cierra
       if (dia > venc) {
-        ciclos.push({ inicio, venc, cierre: dia, como: 'reprogramacion', nueva: nuevaProxima, desde, hasta: momento });
-        inicio = dia; desde = momento;
+        ciclos.push({ inicio, venc, cierre: dia, como: 'reprogramacion', nueva: nuevaProxima, desde, hasta: momento, origen });
+        inicio = dia; desde = momento; origen = 'reprogramacion';
       }
       venc = nuevaProxima;
     }
   }
 
-  const abierto = { inicio, venc: proxima, cierre: null, como: null, desde, hasta: null };
+  const abierto = { inicio, venc: proxima, cierre: null, como: null, desde, hasta: null, origen };
   if (baja) Object.assign(abierto, { cierre: baja.momento.slice(0, 10), como: 'baja', hasta: baja.momento });
   ciclos.push(abierto);
   for (const ciclo of ciclos) {
     const fin = ciclo.cierre ?? hoy;
-    ciclo.diasVencido = fin > ciclo.venc ? diasEntre(ciclo.venc, fin) : 0;
+    ciclo.diasVencido = ciclo.venc !== null && fin > ciclo.venc ? diasEntre(ciclo.venc, fin) : 0;
   }
   return ciclos;
 };
@@ -467,13 +507,15 @@ const momentoDeEnvioDeNota = (nota) => {
   const fecha = diaDe(nota.fecha);
   return momentoDe(nota.enviada) ?? (fecha === null ? null : `${fecha} 00:00:00`);
 };
+const masNuevo = (a, b) => (a === null || b > a ? b : a);
 const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
 
 // Los avisos de un ciclo: los emails a DGMIT con éxito (`emails`), las Notas Digitales enviadas de aviso y reiteración (`notas`:
 // '2/26', por orden de envío) y las fechas de los emails al área (`alArea`, de la más vieja a la más nueva). `total`: emails +
-// notas. Las notas de auditoría no son avisos: tratan de un cambio, no del pedido de datos.
+// notas; `ultimo`: el día del más reciente de ellos (sin contar los emails al área), o null. Las notas de auditoría no son avisos:
+// tratan de un cambio, no del pedido de datos.
 export const avisosDelCiclo = (fuentes, ciclos, indice) => {
-  const avisos = { emails: 0, notas: [], alArea: [], total: 0 };
+  const avisos = { emails: 0, notas: [], alArea: [], total: 0, ultimo: null };
   if (!fuentes || typeof fuentes !== 'object' || !Array.isArray(ciclos)) return avisos;
   const alArea = [];
   for (const email of lista(fuentes.emails)) {
@@ -481,13 +523,14 @@ export const avisosDelCiclo = (fuentes, ciclos, indice) => {
     const momento = delArea || esEmailADgmit(email) ? momentoDe(email.enviado) : null;
     if (momento === null || cicloDelAviso(ciclos, momento) !== indice) continue;
     if (delArea) alArea.push(momento);
-    else avisos.emails += 1;
+    else { avisos.emails += 1; avisos.ultimo = masNuevo(avisos.ultimo, momento.slice(0, 10)); }
   }
   const notas = [];
   for (const nota of lista(fuentes.notas)) {
     const momento = esNotaEnviada(nota) ? momentoDeEnvioDeNota(nota) : null;
     if (momento !== null && cicloDelAviso(ciclos, momento, nota.vencimiento) === indice) {
       notas.push({ momento, id: Number(nota.id) || 0, numero: numeroDeNota(nota) });
+      avisos.ultimo = masNuevo(avisos.ultimo, momento.slice(0, 10));
     }
   }
   avisos.alArea = alArea.sort().map((momento) => momento.slice(0, 10));
@@ -496,7 +539,8 @@ export const avisosDelCiclo = (fuentes, ciclos, indice) => {
   return avisos;
 };
 
-// El día del aviso más reciente (email a DGMIT con éxito o Nota Digital enviada), de cualquier ciclo; null si no hubo
+// El día del aviso más reciente (email a DGMIT con éxito o Nota Digital enviada), de cualquier ciclo; null si no hubo. La lista de
+// "Sin elegir" no lo usa: muestra el último del ciclo abierto (`avisosDelCiclo(...).ultimo`), el mismo ciclo que cuenta
 export const ultimoAviso = (fuentes) => {
   if (!fuentes || typeof fuentes !== 'object') return null;
   const dias = [
@@ -596,11 +640,20 @@ const alAreaDe = (fechas) => {
 
 // El circuito del ciclo abierto, para la pantalla y el PDF: el RPAD avisa a DGMIT (`avisos`), ellas mandan la nota formal al área
 // por fuera del RPAD (`nodoMedio`, `tramoFuera`) y el área (`area`) vence o no. `ciclos`: los de ciclosDe (si no se pasan, los
-// arma). Sin ciclos (eventual o sin fecha) no hay avisos que contar ni vencimiento.
+// arma). Sin ciclos (eventual o sin fecha) no hay avisos que contar ni vencimiento. `desde`: desde cuándo se cuentan los avisos, el
+// inicio del ciclo abierto y cómo empezó ({ fecha, origen, texto }: "Desde la actualización del 16/12/2025"); null sin ciclos o si
+// el ciclo empieza en un alta que no se conoce.
 // Con «Requiere nota DGMIT» en «No» (solo externos) no hay nota formal: cambian los textos del medio y del tramo de afuera, y el
 // renglón «Al área» (`alArea`) es null, salvo que el RPAD ya le haya mandado al área el email de los 40 días en el ciclo abierto
 // (pasa si el dataset estaba en «Sí» y después pasó a «No»): ese email existió y se muestra con sus fechas. Con «No», lo que nunca
 // aparece es «todavía no se le envió el email que anticipa la nota formal». Con «Sí» o sin dato, todo como siempre.
+const DESDE = Object.freeze({ alta: 'Desde el alta del', actualizacion: 'Desde la actualización del', reprogramacion: 'Desde la reprogramación del' });
+const desdeDe = (abierto, dataset) => {
+  if (!abierto || !Object.hasOwn(DESDE, abierto.origen) || !esFechaIso(abierto.inicio)) return null;
+  if (abierto.origen === 'alta' && momentoDe(dataset.alta) === null) return null;
+  return { fecha: abierto.inicio, origen: abierto.origen, texto: `${DESDE[abierto.origen]} ${formatoCorto(abierto.inicio)}` };
+};
+
 export const circuitoDe = (fuentes, ciclos, hoy) => {
   const dataset = fuentes?.dataset;
   if (!dataset || typeof dataset !== 'object') return null;
@@ -618,6 +671,7 @@ export const circuitoDe = (fuentes, ciclos, hoy) => {
     avisos: { titulo: tituloDeAvisos(delCiclo.total), texto: hayCiclos ? textoDeAvisos(delCiclo, abierto.diasVencido > 0) : 'Sin vencimiento' },
     area: { nombre: dataset.area ?? null, texto: textoDelArea(estado), vencido: estado.estado === 'vencido' },
     alArea: gestion === 'interna' || (sinNota && fechasAlArea.length === 0) ? null : alAreaDe(fechasAlArea),
+    desde: desdeDe(abierto, dataset),
     vencimiento: abierto ? { fecha: abierto.venc, texto: `Vencimiento del ${formatoCorto(abierto.venc)}` } : null
   };
 };
@@ -704,7 +758,7 @@ export const resumenParaLista = (fuentes, hoy) => {
     dias,
     proxima: diaDe(dataset.proxima),
     avisos: { total: delCiclo.emails + delCiclo.notas.length, emails: delCiclo.emails, notas: delCiclo.notas.length },
-    ultimo_aviso: ultimoAviso(fuentes),
+    ultimo_aviso: delCiclo.ultimo ?? null,
     pendiente: lista(fuentes?.cambios).some((cambio) => cambio?.estado === 'pendiente')
   };
 };

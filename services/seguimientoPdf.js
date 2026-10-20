@@ -238,6 +238,9 @@ const dibujarTramo = (doc, x, y, ancho, { titulo, texto, color, punteado }) => {
   escribir(doc, ajuste, x0, y + 28, COLOR.gris);
 };
 
+// El encabezado de los avisos: desde cuándo se cuentan y el vencimiento del ciclo abierto (los textos del servidor, como en la pantalla)
+const cabezaDelCircuito = (circuito) => [circuito?.desde?.texto, circuito?.vencimiento?.texto].filter((t) => typeof t === 'string' && t).join(' · ');
+
 // RPAD → avisos → DGMIT y la otra dirección → la nota formal o el relevamiento (por fuera del RPAD) → el área. Los textos son
 // los del servidor (circuitoDe). El estado del área va en rojo si está vencido, en gris si no tiene vencimiento o se dio de baja
 // (`activo` false) y si no, en el acento. Devuelve el alto de los nodos.
@@ -597,7 +600,7 @@ const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
   datos.dibujar(y);
   y += datos.alto + AIRE.seccion;
 
-  dibujarCabezaDeSeccion(doc, 'Avisos del ciclo abierto', circuito?.vencimiento?.texto ?? '', y);
+  dibujarCabezaDeSeccion(doc, 'Avisos del ciclo abierto', cabezaDelCircuito(circuito), y);
   y += AIRE.cabeza;
   if (circuito) y += dibujarCircuito(doc, circuito, y, { activo: ficha.activo !== false });
   else y += ALTO_NODO;

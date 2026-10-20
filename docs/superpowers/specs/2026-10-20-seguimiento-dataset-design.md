@@ -124,10 +124,10 @@ Todo sale de la base que ya existe: **no hay tablas, columnas ni migraciones nue
 
 ## Ciclos
 
-Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). Se reconstruye con los cambios aprobados, en el orden en que se aprobaron (`revisado_at`).
+Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). Se reconstruye con los cambios aprobados y las actualizaciones anteriores a la doble verificación, en el orden en que pasaron (`revisado_at` y `created_at`). Cada ciclo dice cómo empezó (`origen`: `alta`, `actualizacion` o `reprogramacion`).
 
 **Reglas**
-- **Vencimiento inicial.** Es la próxima anterior (`datos_anteriores.proxima_actualizacion`) del primer cambio aprobado que la trae. Si no hay cambios, es la próxima actual. El primer ciclo empieza en el alta.
+- **Vencimiento inicial.** Es la próxima anterior (`datos_anteriores.proxima_actualizacion`) del primer cambio aprobado que la trae. Si no hay cambios, es la próxima actual. Si antes de todo hubo una actualización anterior a la doble verificación, no se conoce (ver abajo). El primer ciclo empieza en el alta.
 - **Un cambio que mueve la próxima y "Cargado en el portal"** es una actualización y **cierra el ciclo**.
   - Para el atraso, la fecha de cierre es la de la carga.
   - Para saber qué avisos le corresponden, el ciclo rige en el RPAD hasta el momento de la aprobación.
@@ -136,6 +136,11 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
   - **antes** del vencimiento, el vencimiento se reprograma dentro del mismo ciclo;
   - **después** del vencimiento (aprobada después de la fecha de vencimiento), **cierra el ciclo como reprogramado**, en el momento de la aprobación. Ese ciclo estuvo vencido desde el vencimiento hasta la aprobación, y el ciclo nuevo empieza ahí.
 - **Un cambio que solo cambia "Cargado en el portal"** es una carga dentro del ciclo y no lo cierra.
+- **Una actualización anterior a la doble verificación** (una fila de `historial_actualizaciones` sin `cambio_id`: en diciembre de 2025 el botón de actualizar movía la carga y la próxima en el momento) **también cierra el ciclo**, en su fecha y en el momento en que se registró; las varias del mismo día cuentan como una. Los avisos de antes quedan en el ciclo que cierra (corrección del 20/10/2026: antes estas filas eran solo movimientos y esos avisos se contaban en el ciclo abierto; pasaba con los datasets 25, 32, 56 y 58).
+  - La próxima que esa actualización cumplía no quedó guardada. Si ningún cambio anterior la dice, el ciclo que cierra no tiene vencimiento conocido (`venc` null): no se le cuentan días de vencido, no lleva hito y la cinta lo dibuja como un tramo sin "vence" ni rayado. No se inventa una fecha.
+  - El vencimiento del ciclo que abre lo da la próxima anterior del cambio siguiente o, si no hay, la próxima actual.
+  - **Una que después se deshizo** por fuera del sistema no cuenta: si la carga que siguió (la `ultima_actualizacion` anterior del primer cambio aprobado posterior que la trae o, si no hay, la actual del dataset) es anterior a la fecha de la actualización, no corta nada. Pasó con la tanda del 17/12/2025 en 8 datasets (Presupuesto Municipal, Gasto Público, Funcionarios Públicos, Obra Pública, Pedidos de Acceso a la Información Pública, Pauta Publicitaria, Presupuesto con perspectiva de género y Comercios habilitados por rubro), cuya carga volvió atrás. Si no hay ninguna carga posterior conocida, cuenta.
+  - El vencimiento inicial sale solo de los cambios de antes de la primera actualización simple. Sin alta conocida, lo de antes de la primera simple no es un ciclo.
 - **Cada cambio se mide contra su propia próxima anterior** (`datos_anteriores.proxima_actualizacion`, si la trae), no contra la que dejó el cambio de antes: si la próxima se corrigió por SQL entre dos cambios, el siguiente cierra o reprograma el ciclo con la fecha corregida.
 - **El ciclo abierto vence siempre en la próxima actual del dataset.** Si una corrección por fuera del sistema (por SQL) la cambió sin dejar un cambio, manda la actual. Pasa con el dataset 9: su último cambio la dejó en el 31/12/2026 y hoy es el 31/01/2027.
 
@@ -152,12 +157,13 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
 **A qué ciclo pertenece cada aviso**
 - **Nota Digital:** pertenece al ciclo cuyo vencimiento es el `notas_digitales_datasets.vencimiento` de la nota.
   - Si ningún ciclo tiene ese vencimiento, va al ciclo que regía en el RPAD en el momento del envío. Pasa, por ejemplo, con los datasets 33 y 61, cuya próxima se corrigió por SQL.
-- **Email** (a DGMIT o al área): pertenece al ciclo que regía en el RPAD en el momento del envío. Se compara `enviado_at` con los momentos de aprobación que abren y cierran cada ciclo.
+- **Email** (a DGMIT o al área): pertenece al ciclo que regía en el RPAD en el momento del envío. Se compara `enviado_at` con los momentos que abren y cierran cada ciclo: las aprobaciones y el registro (`created_at`) de las actualizaciones anteriores a la doble verificación.
 - Las notas de auditoría no son avisos de ningún ciclo: tratan sobre un cambio, no sobre el pedido de datos.
 
 **Avisos del ciclo abierto** (la sección del circuito)
 - Son los emails a DGMIT enviados con éxito y las Notas Digitales enviadas (aviso y reiteración) que pertenecen al ciclo abierto.
 - Los emails al área se cuentan aparte, con la misma regla.
+- El encabezado de la sección dice desde cuándo se cuentan y el vencimiento (`circuito.desde` y `circuito.vencimiento`): "Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026" ("Desde la reprogramación del …" o "Desde el alta del …"; sin alta conocida, solo el vencimiento). Va igual en la pantalla, en el PDF y en las hojas del anexo de la reiteración.
 
 ## La pantalla
 
@@ -182,7 +188,7 @@ Un **ciclo** es el tiempo en que rige un vencimiento (`proxima_actualizacion`). 
   - "Venció el" o "Vence el";
   - "Vencido hace" (los días);
   - **avisos a DGMIT en el ciclo**: el número y, debajo, el desglose (por ejemplo "11 emails y 1 nota");
-  - el último aviso.
+  - el último aviso del ciclo abierto ("—" si no hubo ninguno): el mismo ciclo que se cuenta (corrección del 20/10/2026: antes era el último de cualquier ciclo).
 - Orden: los vencidos por días de vencido, el mayor arriba; el resto, por vencimiento.
 - Cada fila abre `seguimiento.html?id=N`. El buscador filtra por título o por área, y elegir un resultado abre el dataset.
 
@@ -303,7 +309,7 @@ Las reglas tienen una sola fuente: `services/seguimientoReglas.js`. Es puro, sin
 La pantalla y el PDF dibujan lo que calcula el servidor: el navegador no recalcula nada.
 
 Los endpoints usan `authMiddleware` y **no** `adminOnly`, así que los puede usar el lector:
-- `GET /api/seguimiento`: la lista de "Sin elegir", con los activos y los dados de baja. Trae estado, vencimiento, días de vencido, avisos del ciclo abierto, último aviso y si hay una actualización pendiente.
+- `GET /api/seguimiento`: la lista de "Sin elegir", con los activos y los dados de baja. Trae estado, vencimiento, días de vencido, avisos del ciclo abierto, el último de ellos (`ultimo_aviso`, o null) y si hay una actualización pendiente.
 - `GET /api/seguimiento/:id`: la ficha, el pedido, el ciclo abierto con sus avisos, la cinta, los movimientos y los hitos. Incluye los dados de baja. Si no existe ningún dataset con ese id, 404.
 - `GET /api/seguimiento/:id/pdf`: el PDF.
 
