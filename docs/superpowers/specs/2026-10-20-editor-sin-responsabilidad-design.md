@@ -130,6 +130,8 @@ Además de la suite, la prueba de aceptación es el caso que originó este cambi
 
 ## Despliegue
 
+Requisito: la entrega «Requiere nota DGMIT y anexo de la reiteración» desplegada (su código y sus dos SQL), porque este código se apoya en ella (el controlador importa `requiereNotaReglas.js` y escribe `datasets.requiere_nota`). Si van juntas, un solo kit, con los SQL en este orden: `migracion-requiere-nota.sql`, `migracion-requiere-nota-datos.sql` y `migracion-editor-sin-responsabilidad.sql`. (Agregado después de la revisión final.)
+
 1. Respaldo de la base y de los archivos.
 2. phpMyAdmin → SQL: `migracion-editor-sin-responsabilidad.sql`. Con el código viejo es inofensiva (`DEFAULT 0`; las listas usan `cp.*` y solo traen un campo de más).
 3. Subir los archivos y Restart. No hace falta «Run NPM Install».
