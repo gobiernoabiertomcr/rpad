@@ -1388,6 +1388,81 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
 
 // La letra de la firma (pedido del usuario el 21/10/2026): el nombre en negrita, para destacarlo, y el cargo un punto menos,
 // en todas las notas y en las dos firmas
+// El cierre se mide de verdad (pedido del usuario el 21/10/2026, con la Nota 8/26 de la simulación como ejemplo: el bloque
+// del cierre ocupaba 103 mm, quedaban 111 libres y se reservaban 114): lo que viaja con la firma (el último párrafo, o el anexo
+// y la justificación de un solo párrafo, o el último bloque de la nota de auditoría, con el remitente, la firma y la línea CC)
+// se reserva con lo que ocupa, no con un alto fijo. En todas las notas y con todas las firmas: si la nota entera entra en la
+// hoja, sale en una hoja; si no entra, en dos. Se agregan renglones al primer párrafo para que el final cruce el pie de la hoja.
+describe('renderPdf: el cierre se mide de verdad (pedido del usuario el 21/10/2026)', () => {
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  // Alto de un renglón de Helvetica (con el interlineado de PDFKit), en fracción del tamaño, y dónde termina lo escribible
+  const RENGLON = new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(1).currentLineHeight(true);
+  const LIMITE = ALTO_HOJA - 25 * MM;
+  const titular = { nombre: 'Persona Titular', cargo: 'Cargo Titular' };
+  const presentante = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', contratado: true };
+  const leyenda = 'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
+  const FIRMAS = [
+    ['una firma con imagen', { titular, presentante: null, leyenda: null }, { firmaImagen: FIRMA_A }],
+    ['una firma sin imagen', { titular, presentante: null, leyenda: null }, {}],
+    ['dos firmas y la leyenda', { titular, presentante, leyenda }, { firmaImagen: FIRMA_A }]
+  ];
+  const NOTAS = [
+    ['aviso externo', (firma) => nota(1, { firma })],
+    ['aviso interno', (firma) => nota(1, { gestion: 'interna', firma })],
+    ['reiteración externa', (firma) => nota(1, { tipo: 'reiteracion', firma })],
+    ['reiteración interna', (firma) => nota(1, { tipo: 'reiteracion', gestion: 'interna', firma })],
+    ['autorización', (firma) => construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25', firma, config,
+      autorizacion: { nombre: 'Otra Persona', cargo: 'Otro Cargo', contratado: false, desde: '2026-11-26', hasta: '2027-01-14' }
+    })],
+    // (con todos sus apartados ocupa más de una hoja: queda el último, "Importancia", el que viaja con la firma)
+    ['auditoría', (firma) => {
+      const n = construirNotaDeAuditoria({
+        numero: 16, anio: 2026, fecha: '2026-11-25', firma, config, reiterados: [],
+        nuevos: [{
+          id: 1, tipo_cambio: 'editar', dataset_titulo: 'Dataset auditado', usuario_nombre: 'Persona Editora', usuario_cargo: 'Cargo de Prueba',
+          fecha_propuesta: '2026-11-20', datos_anteriores: { descripcion: 'Antes' }, datos_nuevos: { descripcion: 'Después' }
+        }],
+        catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
+      });
+      return { ...n, apartados: n.apartados.slice(-1) };
+    }]
+  ];
+  // Dónde termina lo escrito en la última hoja (el borde inferior del renglón más bajo, con su interlineado), desde arriba
+  const fin = (pdf) => Math.max(...textosPorHoja(pdf).at(-1).map(t => tope(t) + RENGLON * t.tamano));
+  const conRelleno = (n, k) => ({ ...n, parrafoInicial: n.parrafoInicial + '\nRenglón de relleno.'.repeat(k) });
+
+  for (const [tipo, armar] of NOTAS) {
+    it(`${tipo}: si entra entera en la hoja sale en una, y si no, en dos`, async () => {
+      for (const [caso, firma, imagenes] of FIRMAS) {
+        // (la nota de autorización la firma siempre el titular solo)
+        if (tipo === 'autorización' && firma.presentante) continue;
+        const n = armar(firma);
+        const pdf = await renderPdf(n, imagenes);
+        assert.equal(paginas(pdf), 1, `${caso}: sin relleno tiene que entrar en una hoja`);
+        // Cada renglón de relleno baja todo lo que sigue lo mismo: dónde terminaría la nota en una hoja sin pie
+        const finSinRelleno = fin(pdf);
+        const desde = Math.max(0, Math.floor((LIMITE - finSinRelleno - 60) / (RENGLON * 12)));
+        let entran = 0;
+        let noEntran = 0;
+        for (let k = desde; k <= desde + 6; k++) {
+          const termina = finSinRelleno + k * RENGLON * 12;
+          const hojas = paginas(await renderPdf(conRelleno(n, k), imagenes));
+          if (termina <= LIMITE - 1.5) {
+            entran++;
+            assert.equal(hojas, 1, `${caso}, ${k} renglones de relleno: entraba (sobraban ${(LIMITE - termina).toFixed(1)} pt) y pasó a otra hoja`);
+          }
+          if (termina > LIMITE) {
+            noEntran++;
+            assert.ok(hojas >= 2, `${caso}, ${k} renglones de relleno: no entraba y salió en una hoja`);
+          }
+        }
+        assert.ok(entran > 0 && noEntran > 0, `${caso}: el barrido tiene que cruzar el pie de la hoja`);
+      }
+    });
+  }
+});
+
 describe('renderPdf: la letra de la firma (pedido del usuario el 21/10/2026)', () => {
   const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
   const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
@@ -1711,10 +1786,12 @@ describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-
     }
   };
 
+  // (con el cierre reservado con un alto fijo ocupaba tres hojas; medido de verdad, desde el 21/10/2026, "Importancia" y el
+  // cierre entran juntos en la segunda)
   it('el caso que dejaba el remitente y la firma solos en la última hoja: "Importancia" viaja con ellos', async () => {
     const n = auditoria(3, { nuevos: REPRODUCTOR, catalogos: CATALOGOS_AREAS });
     const hojas = lineasPorHoja(await renderPdf(n));
-    assert.equal(hojas.length, 3, 'el caso tiene que ocupar tres hojas');
+    assert.equal(hojas.length, 2, 'el caso tiene que ocupar dos hojas');
     cierreConElTexto(n, hojas, 'reproductor');
   });
 

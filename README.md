@@ -741,6 +741,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ### Firma de las notas: nombre en negrita (2026-10)
 - En todas las Notas Digitales (aviso, reiteración, autorización y auditoría) y en las dos firmas, el nombre va en negrita y el cargo un punto más chico; el renglón "Personal contratado, cumpliendo funciones de" también baja un punto. En el PDF: nombre en negrita de 11 pt, cargo en 10 y el renglón en 8; en el email: 15, 14 y 11 px. El aire hasta la leyenda y la línea CC no cambia
 - La vista previa "Así sale en las notas" de Mi Perfil muestra lo mismo. El texto plano del email no cambia
+- El final de la nota se mide de verdad: el remitente, la firma y la línea CC se reservaban con un alto fijo (unos 70 mm) y un cierre que entraba pasaba a la hoja siguiente (la reiteración del 02/11 de la simulación dejaba 111 mm en blanco y pasaba a una segunda hoja un bloque de 103 mm). Ahora se reserva lo que ocupa; lo que viaja junto no cambia (si no entra entero, pasa entero a la hoja siguiente). En todas las notas
 - Las notas ya generadas conservan su PDF guardado (también las pendientes o fallidas generadas antes del despliegue)
 - Solo archivos (`services/notasDigitalesContenido.js`, `services/notasDigitalesPdf.js`, `public/js/perfil.js` y `public/perfil.html`); Restart, sin SQL ni Run NPM Install
 
