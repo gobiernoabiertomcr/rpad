@@ -237,6 +237,8 @@ Tokens (en el `<style>` de `perfil.html`, con prefijo propio). Son los colores d
 
 ## 8. Servidor: agregado de solo lectura en las listas
 
+> **Cambio del 20/10/2026:** el objeto `auditoria` suma la clave `sin_responsabilidad` (en las listas y en `GET /:id`, que pasa a tener cuatro claves), y aprobar y rechazar reciben `sin_responsabilidad` (409 si no coincide). Ver `2026-10-20-editor-sin-responsabilidad-design.md`.
+
 Archivo: `controllers/cambiosPendientesController.js`.
 
 `getCambiosPendientesParaRevisar` y `getMisCambios` agregan, a cada cambio, lo que hoy calcula `getCambioPendienteById`:

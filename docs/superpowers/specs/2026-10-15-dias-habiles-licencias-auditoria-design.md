@@ -306,6 +306,8 @@ En el código:
 
 ### 8.2 Quién audita un cambio
 
+> **Cambio del 20/10/2026:** con auditores disponibles, un editor también puede auditar el cambio que propuso un auditor, sin responsabilidad por la auditoría (`revisado_sin_responsabilidad`). El 403 de abajo queda para el cambio de otro editor. Ver `2026-10-20-editor-sin-responsabilidad-design.md`.
+
 En un día dado, pueden auditar un cambio:
 1. los **auditores disponibles** que no lo propusieron;
 2. si no hay ninguno, los **editores disponibles** que no lo propusieron (**respaldo**).
