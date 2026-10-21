@@ -699,11 +699,12 @@ async function cargarMiFirma() {
 const RENGLON_FIRMA_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
 
 // Vista previa "Así sale en las notas", para todos (pedido del usuario el 16/10/2026), como la arma dibujarFirma del PDF:
-// el nombre y el cargo; el personal contratado lleva entre los dos el renglón, más chico. Sin nombre ni cargo, nada.
+// el nombre (en negrita) y el cargo (un punto menos); el personal contratado lleva entre los dos el renglón, el más chico
+// (pedido del usuario el 21/10/2026; la letra de cada clase está en perfil.html). Sin nombre ni cargo, nada.
 function muestraDeFirma(nombre, cargo, contratado) {
   if (!nombre && !cargo) return '';
-  const renglon = (texto) => `<div class="firma-muestra-renglon">${Utils.escapeHtml(texto)}</div>`;
-  return renglon(nombre) + (contratado ? `<div class="firma-muestra-chico">${RENGLON_FIRMA_CONTRATADO}</div>` : '') + renglon(cargo);
+  const renglon = (clase, texto) => `<div class="firma-muestra-${clase}">${Utils.escapeHtml(texto)}</div>`;
+  return renglon('nombre', nombre) + (contratado ? renglon('chico', RENGLON_FIRMA_CONTRATADO) : '') + renglon('cargo', cargo);
 }
 
 // La muestra con lo que está escrito en los campos de la firma (se actualiza al escribir)

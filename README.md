@@ -738,6 +738,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ## Changelog
 
+### Firma de las notas: nombre en negrita (2026-10)
+- En todas las Notas Digitales (aviso, reiteración, autorización y auditoría) y en las dos firmas, el nombre va en negrita y el cargo un punto más chico; el renglón "Personal contratado, cumpliendo funciones de" también baja un punto. En el PDF: nombre en negrita de 11 pt, cargo en 10 y el renglón en 8; en el email: 15, 14 y 11 px. El aire hasta la leyenda y la línea CC no cambia
+- La vista previa "Así sale en las notas" de Mi Perfil muestra lo mismo. El texto plano del email no cambia
+- Las notas ya generadas conservan su PDF guardado (también las pendientes o fallidas generadas antes del despliegue)
+- Solo archivos (`services/notasDigitalesContenido.js`, `services/notasDigitalesPdf.js`, `public/js/perfil.js` y `public/perfil.html`); Restart, sin SQL ni Run NPM Install
+
 ### El editor audita sin responsabilidad (2026-10)
 - Con auditores disponibles, un editor puede aprobar o rechazar el cambio que propuso un auditor; queda registrado "sin responsabilidad por la auditoría". El respaldo (sin auditores disponibles) no cambia, y el cambio de un editor sigue siendo de los auditores
 - Mi Perfil lo avisa en la fila ("Este cambio lo auditan … Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría."), lo repite al confirmar y lo muestra en Revisados y Mis cambios; si mientras tanto la situación cambia, no se registra y la fila se actualiza

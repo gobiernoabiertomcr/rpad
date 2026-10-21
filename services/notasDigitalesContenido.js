@@ -74,12 +74,13 @@ const CONTRATADO_EN_TEXTO = 'personal contratado, cumpliendo funciones de';
 // El cargo de una persona como se nombra dentro de un párrafo
 export const cargoEnTexto = ({ cargo, contratado }) => (contratado ? `${CONTRATADO_EN_TEXTO} ${cargo}` : cargo);
 
-// Los renglones de una firma, en orden: el nombre, el renglón del personal contratado (chico: más chico que el cargo) y el
-// cargo. Los dibujan el HTML, el texto y el PDF.
+// Los renglones de una firma, en orden: el nombre, el renglón del personal contratado y el cargo. Los dibujan el HTML, el
+// texto y el PDF; cada renglón dice cuál es (tipo) y cada uno elige su letra: el nombre en negrita, el cargo un punto menos y
+// el renglón del personal contratado, el más chico (pedido del usuario el 21/10/2026).
 export const renglonesDeFirma = ({ nombre, cargo, contratado }) => [
-  { texto: nombre, chico: false },
-  ...(contratado ? [{ texto: RENGLON_FIRMA_CONTRATADO, chico: true }] : []),
-  { texto: cargo, chico: false }
+  { texto: nombre, tipo: 'nombre' },
+  ...(contratado ? [{ texto: RENGLON_FIRMA_CONTRATADO, tipo: 'contratado' }] : []),
+  { texto: cargo, tipo: 'cargo' }
 ];
 
 // Autorización para presentar las notas durante la licencia del firmante (spec 2026-10-15-dias-habiles-licencias-auditoria, 7.2).
@@ -635,9 +636,15 @@ export const construirAnexo = ({ numero = null, anio = null, esPrueba = false, f
 
 const ESTILO_CELDA = 'border:1px solid #000000;padding:5px 6px;vertical-align:top;text-align:left;';
 
-// Los renglones de una firma, uno por línea; el del personal contratado, en 12px (el cargo va en los 15px de la nota)
+// Los renglones de una firma, uno por línea: el nombre en negrita, en los 15px de la nota; el cargo, en 14px, y el del
+// personal contratado, en 11px (pedido del usuario el 21/10/2026)
+const RENGLON_FIRMA_HTML = {
+  nombre: (texto) => `<b>${texto}</b>`,
+  contratado: (texto) => `<span style="font-size:11px">${texto}</span>`,
+  cargo: (texto) => `<span style="font-size:14px">${texto}</span>`
+};
 const renglonesFirmaHtml = (firma) => renglonesDeFirma(firma)
-  .map(({ texto, chico }) => (chico ? `<span style="font-size:12px">${escapeHtml(texto)}</span>` : escapeHtml(texto)))
+  .map(({ texto, tipo }) => RENGLON_FIRMA_HTML[tipo](escapeHtml(texto)))
   .join('<br>');
 
 // Una firma (sin presentante): a la derecha, como siempre. Con presentante: las dos lado a lado, quien presenta a la

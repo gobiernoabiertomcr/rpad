@@ -175,8 +175,10 @@
         /* El nombre y el cargo se centran en el ancho de la firma del PDF (ANCHO_FIRMA, 200 pt ≈ 267 px): un cargo largo se
            parte en los mismos renglones que en la nota */
         .firma-muestra { line-height: 1.4; max-width: 267px; margin: 0 auto; }
-        .firma-muestra-renglon { font-size: 0.9375rem; }
-        .firma-muestra-chico { font-size: 0.75rem; }
+        /* La letra del email de la nota: el nombre en negrita de 15 px, el cargo en 14 y el renglón del personal contratado en 11 */
+        .firma-muestra-nombre { font-size: 0.9375rem; font-weight: 700; }
+        .firma-muestra-cargo { font-size: 0.875rem; }
+        .firma-muestra-chico { font-size: 0.6875rem; }
 
         @media (max-width: 760px) {
             .pf-tarjetas { grid-template-columns: 1fr; }
@@ -465,6 +467,6 @@
     <script src="js/auth.js?v=20261117"></script>
     <script src="js/main.js?v=20261117"></script>
     <script src="js/api.js?v=20261117"></script>
-    <script src="js/perfil.js?v=20261118"></script>
+    <script src="js/perfil.js?v=20261119"></script>
 </body>
 </html>

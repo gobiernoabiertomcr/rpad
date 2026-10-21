@@ -83,7 +83,7 @@ describe('firmante titular sin licencia', () => {
     const [nota] = await notas();
     assert.equal(nota.firmante_id, titular.id);
     assert.equal(nota.presentada_por_id, null);
-    assert.match(nota.html, /Firma superadmin<br>Cargo superadmin/);
+    assert.ok(nota.html.includes('<b>Firma superadmin</b><br><span style="font-size:14px">Cargo superadmin</span>'));
     assert.doesNotMatch(nota.html, /Nota presentada por/);
   });
 
@@ -94,7 +94,7 @@ describe('firmante titular sin licencia', () => {
     await correr('2026-11-02');
     const [nota] = await notas();
     assert.equal(nota.firmante_id, null);
-    assert.match(nota.html, /Firma de Prueba<br>Cargo de Prueba/);
+    assert.ok(nota.html.includes('<b>Firma de Prueba</b><br><span style="font-size:14px">Cargo de Prueba</span>'));
   });
 });
 
@@ -821,7 +821,7 @@ describe('persona autorizada contratada (pedido del usuario el 16/10/2026)', () 
     const [aviso] = await notas();
     assert.equal(aviso.tipo, 'aviso');
     assert.ok(aviso.html.includes(`autorizo expresamente a ${CONTRATADA}, a presentar en mi nombre las Notas Digitales durante mi licencia`), aviso.html);
-    assert.ok(aviso.html.includes('>Firma superadmin<br>Cargo superadmin</p>'));
+    assert.ok(aviso.html.includes('><b>Firma superadmin</b><br><span style="font-size:14px">Cargo superadmin</span></p>'));
     assert.ok(!aviso.html.includes(RENGLON));
   });
 
@@ -845,8 +845,8 @@ describe('persona autorizada contratada (pedido del usuario el 16/10/2026)', () 
     const [reiteracion] = (await notas()).filter(n => n.tipo === 'reiteracion' && n.fecha === '2026-12-01');
     assert.equal(reiteracion.presentada_por_id, autorizado.id);
     assert.ok(reiteracion.html.includes(`Nota presentada por ${CONTRATADA}, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${autorizacion.numero}/26 (licencia del 26/11/2026 al 14/01/2027).`));
-    assert.ok(reiteracion.html.includes(`>Firma admin<br><span style="font-size:12px">${RENGLON}</span><br>Cargo admin</td>`));
-    assert.ok(reiteracion.html.includes('>Firma superadmin<br>Cargo superadmin</td>'));
+    assert.ok(reiteracion.html.includes(`><b>Firma admin</b><br><span style="font-size:11px">${RENGLON}</span><br><span style="font-size:14px">Cargo admin</span></td>`));
+    assert.ok(reiteracion.html.includes('><b>Firma superadmin</b><br><span style="font-size:14px">Cargo superadmin</span></td>'));
     assert.ok(lineasPorHoja(reiteracion.pdf).at(-1).includes(RENGLON));
   });
 });
@@ -1045,7 +1045,7 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
     assert.equal(reiteracion.tipo, 'reiteracion');
     assert.equal(reiteracion.presentada_por_id, autorizado.id);
     assert.ok(reiteracion.html.includes(`Nota presentada por ${CONTRATADA}, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${aviso.numero}/27 (licencia del 01/03/2027 al 31/03/2027).`));
-    assert.ok(reiteracion.html.includes(`>Firma admin<br><span style="font-size:12px">${RENGLON}</span><br>Cargo admin</td>`));
+    assert.ok(reiteracion.html.includes(`><b>Firma admin</b><br><span style="font-size:11px">${RENGLON}</span><br><span style="font-size:14px">Cargo admin</span></td>`));
     // En el PDF, el renglón chico va en su firma, entre su nombre y su cargo, más chico que el cargo
     const ultima = textosPorHoja(reiteracion.pdf).at(-1);
     const de = (texto) => {
@@ -1213,7 +1213,7 @@ describe('otros casos', () => {
     // El 13/11 es viernes: la licencia termina y el primer día hábil siguiente es el lunes 16/11
     assert.equal(vista.fecha, '2026-11-16');
     assert.equal(vista.motivo, 'licencia del firmante sin persona autorizada');
-    assert.match(vista.html, /Firma superadmin<br>Cargo superadmin/);
+    assert.ok(vista.html.includes('<b>Firma superadmin</b><br><span style="font-size:14px">Cargo superadmin</span>'));
     assert.doesNotMatch(vista.html, /Nota presentada por/);
     assert.ok(vista.html.includes('16 de noviembre de 2026'));
   });
@@ -1299,7 +1299,7 @@ describe('vista previa y prueba de Correos: la nota como saldría (spec 7.7)', (
     const vista = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-14' });
     // El 08/01 es viernes: el titular vuelve el lunes 11/01 y firma él
     assert.deepEqual([vista.fecha, vista.motivo], ['2027-01-11', 'la persona autorizada está de licencia']);
-    assert.match(vista.html, /Firma superadmin<br>Cargo superadmin/);
+    assert.ok(vista.html.includes('<b>Firma superadmin</b><br><span style="font-size:14px">Cargo superadmin</span>'));
     assert.doesNotMatch(vista.html, /Nota presentada por/);
   });
 

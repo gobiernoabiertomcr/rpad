@@ -105,25 +105,32 @@ describe('perfil.js: auditar un cambio (spec 8.2)', () => {
 
 // Mi firma: la vista previa "Así sale en las notas", para todos (pedido del usuario el 16/10/2026), armada como la firma del
 // PDF: la imagen, el nombre y el cargo; el personal contratado (usuarios.vinculo = 'contrato') lleva entre los dos el renglón
-// "Personal contratado, cumpliendo funciones de", más chico
+// "Personal contratado, cumpliendo funciones de", más chico. Desde el 21/10/2026 (pedido del usuario), con la letra del email
+// de la nota: el nombre en negrita de 15px, el cargo en 14px y el renglón en 11px
 describe('perfil.js: vista previa de la firma', () => {
   const RENGLON = 'Personal contratado, cumpliendo funciones de';
   const renglones = (html) => [...html.matchAll(/<div class="(firma-muestra-[a-z]+)">([^<]*)<\/div>/g)].map(m => [m[1], m[2]]);
   const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
-  const tamanoCss = (clase) => Number(PAGINA.match(new RegExp(`\\.${clase}\\s*\\{[^}]*font-size:\\s*([\\d.]+)rem`))?.[1]);
+  const reglaCss = (clase) => PAGINA.match(new RegExp(`\\.${clase}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+  const tamanoCss = (clase) => Number(reglaCss(clase).match(/font-size:\s*([\d.]+)rem/)?.[1]);
 
-  it('contratado: los tres renglones, el del medio más chico, con los datos escapados', () => {
+  it('contratado: los tres renglones, el nombre, el del medio y el cargo, con los datos escapados', () => {
     const html = cargarPerfil().muestraDeFirma('Nombre <b>Apellido</b>', 'Cargo de Prueba', true);
     assert.deepEqual(renglones(html), [
-      ['firma-muestra-renglon', 'Nombre &lt;b&gt;Apellido&lt;/b&gt;'], ['firma-muestra-chico', RENGLON], ['firma-muestra-renglon', 'Cargo de Prueba']
+      ['firma-muestra-nombre', 'Nombre &lt;b&gt;Apellido&lt;/b&gt;'], ['firma-muestra-chico', RENGLON], ['firma-muestra-cargo', 'Cargo de Prueba']
     ]);
-    assert.ok(tamanoCss('firma-muestra-chico') < tamanoCss('firma-muestra-renglon'), 'el renglón del medio tiene que ser más chico');
   });
 
   it('sin contrato: el nombre y el cargo, como sale en las notas', () => {
     assert.deepEqual(renglones(cargarPerfil().muestraDeFirma('Nombre Apellido', 'Cargo <i>x</i>', false)), [
-      ['firma-muestra-renglon', 'Nombre Apellido'], ['firma-muestra-renglon', 'Cargo &lt;i&gt;x&lt;/i&gt;']
+      ['firma-muestra-nombre', 'Nombre Apellido'], ['firma-muestra-cargo', 'Cargo &lt;i&gt;x&lt;/i&gt;']
     ]);
+  });
+
+  it('la letra es la del email de la nota: el nombre en negrita de 15px, el cargo en 14px y el renglón en 11px', () => {
+    assert.deepEqual(['firma-muestra-nombre', 'firma-muestra-cargo', 'firma-muestra-chico'].map(tamanoCss), [0.9375, 0.875, 0.6875]);
+    assert.match(reglaCss('firma-muestra-nombre'), /font-weight:\s*700/);
+    assert.doesNotMatch(reglaCss('firma-muestra-cargo'), /font-weight/);
   });
 
   it('sin nombre ni cargo no hay nada que mostrar', () => {

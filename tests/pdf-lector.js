@@ -8,7 +8,16 @@ const texto = (pdf) => pdf.toString('latin1');
 const CP1252 = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
 const winAnsi = (bytes) => bytes.toString('latin1').replace(/[\x80-\x9f]/g, c => CP1252[c.charCodeAt(0) - 0x80]);
 
-// Cada hoja, en orden: su flujo de contenido (descomprimido) y su alto en puntos
+// Las letras de una hoja: el nombre con que la usa el flujo (F1, F2…) y su nombre de verdad (Helvetica, Helvetica-Bold…)
+const fuentesDeLaHoja = (hoja, objetos) => {
+  const referencia = hoja.match(/\/Resources (\d+) 0 R/);
+  const recursos = referencia ? objetos.get(Number(referencia[1])) : hoja;
+  const letras = recursos.match(/\/Font <<([^>]*)>>/)?.[1] ?? '';
+  return Object.fromEntries([...letras.matchAll(/\/(\w+) (\d+) 0 R/g)]
+    .map(([, nombre, id]) => [nombre, objetos.get(Number(id)).match(/\/BaseFont \/([\w-]+)/)[1]]));
+};
+
+// Cada hoja, en orden: su flujo de contenido (descomprimido), su alto en puntos y sus letras
 const hojasDelPdf = (pdf) => {
   const objetos = new Map();
   for (const m of texto(pdf).matchAll(/(\d+) 0 obj\r?\n([\s\S]*?)endobj/g)) objetos.set(Number(m[1]), m[2]);
@@ -21,7 +30,8 @@ const hojasDelPdf = (pdf) => {
     const datos = flujo.substr(inicio.index + inicio[0].length, Number(flujo.match(/\/Length (\d+)/)[1]));
     return {
       contenido: zlib.inflateSync(Buffer.from(datos, 'latin1')).toString('latin1'),
-      alto: Number(hoja.match(/\/MediaBox \[\s*[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s*\]/)[1])
+      alto: Number(hoja.match(/\/MediaBox \[\s*[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s*\]/)[1]),
+      fuentes: fuentesDeLaHoja(hoja, objetos)
     };
   });
 };
@@ -35,14 +45,15 @@ const textoDeTj = (contenido) => [...contenido.matchAll(/<([0-9a-f]*)>|(-?\d+(?:
   .map(([, hex, ajuste]) => hex !== undefined ? winAnsi(Buffer.from(hex, 'hex')) : (Number(ajuste) < -150 ? ' ' : ''))
   .join('').replace(/\s+/g, ' ').trim();
 
-// Cada línea de texto de cada hoja, en el orden en que se dibujó: { texto, x, base, tamano }.
-// base: altura de la línea de base medida desde el borde inferior de la hoja (en puntos).
-export const textosPorHoja = (pdf) => contenidoPorHoja(pdf).map(contenido =>
+// Cada línea de texto de cada hoja, en el orden en que se dibujó: { texto, x, base, tamano, fuente }.
+// base: altura de la línea de base medida desde el borde inferior de la hoja (en puntos); fuente: el nombre de la letra
+// (Helvetica, Helvetica-Bold, Helvetica-Oblique…).
+export const textosPorHoja = (pdf) => hojasDelPdf(pdf).map(({ contenido, fuentes }) =>
   [...contenido.matchAll(/BT\s([\s\S]*?)\sET/g)].flatMap(([, bloque]) => {
     const posicion = bloque.match(/1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm/);
-    const fuente = bloque.match(/\/\w+ (-?[\d.]+) Tf/);
+    const fuente = bloque.match(/\/(\w+) (-?[\d.]+) Tf/);
     return [...bloque.matchAll(/\[([^\]]*)\]\s*TJ/g)].map(tj => ({
-      texto: textoDeTj(tj[1]), x: Number(posicion[1]), base: Number(posicion[2]), tamano: Number(fuente[1])
+      texto: textoDeTj(tj[1]), x: Number(posicion[1]), base: Number(posicion[2]), tamano: Number(fuente[2]), fuente: fuentes[fuente[1]]
     }));
   }));
 
