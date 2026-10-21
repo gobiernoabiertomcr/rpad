@@ -96,7 +96,7 @@ describe('ejemplo 9.4: propone el titular y hay otro auditor disponible (dos rec
     assert.deepEqual(await incluidos(nota.id), [{ cambio_id: id, seccion: 'nuevo' }]);
     assert.ok(nota.html.includes('Dataset nuevo auditado'));
     assert.ok(nota.html.includes('Persona superadmin, Cargo superadmin'));
-    assert.ok(nota.html.includes('Firma superadmin<br>Cargo de firma superadmin'));
+    assert.ok(nota.html.includes('<b>Firma superadmin</b><br><span style="font-size:14px">Cargo de firma superadmin</span>'));
     assert.ok(lineasPorHoja(nota.pdf).flat().join(' ').includes('Detalle de cada cambio'));
     const [mensaje] = await mailpit.esperar(m => m.Subject === nota.asunto);
     assert.deepEqual(mensaje.To.map(t => t.Address), ['auditoria@rpad.test']);
@@ -110,7 +110,7 @@ describe('ejemplo 9.4: propone el titular y hay otro auditor disponible (dos rec
     await correr('2026-10-19');
     const [nota] = await auditorias();
     assert.ok(nota.html.includes('>Persona superadmin, personal contratado, cumpliendo funciones de Cargo superadmin</td>'), nota.html);
-    assert.ok(nota.html.includes('>Firma superadmin<br><span style="font-size:12px">Personal contratado, cumpliendo funciones de</span><br>Cargo de firma superadmin</p>'));
+    assert.ok(nota.html.includes('><b>Firma superadmin</b><br><span style="font-size:11px">Personal contratado, cumpliendo funciones de</span><br><span style="font-size:14px">Cargo de firma superadmin</span></p>'));
     assert.ok(lineasPorHoja(nota.pdf).at(-1).includes('Personal contratado, cumpliendo funciones de'));
   });
 
@@ -193,7 +193,7 @@ describe('canal de cada cambio en la corrida (spec 9.1 y 9.4)', () => {
     await correr('2026-10-19');
     const [nota] = await auditorias();
     assert.equal(nota.firmante_id, null);
-    assert.ok(nota.html.includes('Firma de Prueba<br>Cargo de Prueba'));
+    assert.ok(nota.html.includes('<b>Firma de Prueba</b><br><span style="font-size:14px">Cargo de Prueba</span>'));
   });
 });
 
@@ -248,7 +248,7 @@ describe('una por día, numeración del libro, reintentos, autorización e inter
     const [nota] = await auditorias();
     assert.deepEqual([nota.fecha, nota.estado, nota.firmante_id, nota.presentada_por_id], ['2026-10-19', 'enviada', titular.id, null]);
     assert.deepEqual(await incluidos(nota.id), [{ cambio_id: id, seccion: 'nuevo' }]);
-    assert.ok(nota.html.includes('Firma superadmin<br>Cargo de firma superadmin'));
+    assert.ok(nota.html.includes('<b>Firma superadmin</b><br><span style="font-size:14px">Cargo de firma superadmin</span>'));
     assert.ok(!nota.html.includes('Nota presentada por'));
   });
 

@@ -639,7 +639,7 @@ describe('HTML', () => {
     assert.ok(html.includes('<b><u>DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL</u></b>'));
     assert.ok(html.includes('Ordenanza N° 17.662/23'));
     assert.ok(html.includes('<b><u>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</u></b>, 2 de noviembre de 2026.'));
-    assert.ok(html.includes('Nombre de Firma<br>Cargo de Firma'));
+    assert.ok(html.includes('<b>Nombre de Firma</b><br><span style="font-size:14px">Cargo de Firma</span>'));
     assert.ok(html.includes('CC. Dir. de Investigación Territorial'));
   });
 
@@ -861,14 +861,15 @@ describe('firma con autorización (spec 2026-10-15-dias-habiles-licencias-audito
 
   it('HTML: las dos firmas lado a lado (quien presenta a la izquierda), escapadas, y la leyenda', () => {
     const html = renderHtml(nota({ firma: { ...firma, presentante: { nombre: 'Persona <b>Autorizada</b>', cargo: 'Cargo Autorizado' } } }));
-    const izquierda = html.indexOf('Persona &lt;b&gt;Autorizada&lt;/b&gt;<br>Cargo Autorizado');
-    const derecha = html.indexOf('Persona Titular<br>Cargo Titular');
+    const izquierda = html.indexOf('<b>Persona &lt;b&gt;Autorizada&lt;/b&gt;</b><br><span style="font-size:14px">Cargo Autorizado</span>');
+    const derecha = html.indexOf('<b>Persona Titular</b><br><span style="font-size:14px">Cargo Titular</span>');
     assert.ok(izquierda > 0 && derecha > izquierda, 'quien presenta va antes (a la izquierda) que el titular');
     assert.ok(html.includes('conforme a la autorización conferida mediante Nota Digital N° 15/26'));
   });
 
-  it('HTML sin presentante: el bloque de firma queda exactamente como antes', () => {
-    assert.ok(renderHtml(nota()).includes('<p style="margin:32px 0 0;text-align:right;">Nombre de Firma<br>Cargo de Firma</p>'));
+  // (desde el 21/10/2026, a pedido del usuario, el nombre va en negrita y el cargo en 14px)
+  it('HTML sin presentante: el bloque de firma, a la derecha, con el nombre en negrita y el cargo en 14px', () => {
+    assert.ok(renderHtml(nota()).includes('<p style="margin:32px 0 0;text-align:right;"><b>Nombre de Firma</b><br><span style="font-size:14px">Cargo de Firma</span></p>'));
   });
 
   it('texto plano: quien presenta, el titular y la leyenda, antes de la línea de CC', () => {
@@ -1406,7 +1407,7 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
     assert.ok(html.includes('<li style="margin:0 0 4px;text-align:justify;">los datos coincidan con la información remitida por el área responsable;</li>'));
     assert.ok(html.includes('<b>Detalle de cada cambio</b>'));
     assert.ok(html.includes('<b>Qué implica la auditoría:</b>'));
-    assert.ok(html.includes('Nombre de Firma<br>Cargo de Firma'));
+    assert.ok(html.includes('<b>Nombre de Firma</b><br><span style="font-size:14px">Cargo de Firma</span>'));
     assert.ok(!html.includes('Justificación'));
     const texto = renderTexto(nota);
     assert.ok(texto.includes('- los datos coincidan con la información remitida por el área responsable;'));
@@ -1422,8 +1423,8 @@ describe('nota de auditoría (spec 2026-10-15-dias-habiles-licencias-auditoria, 
     };
     const html = renderHtml(auditoria({ firma }));
     assert.ok(html.includes(firma.leyenda));
-    assert.ok(html.includes('Firma Autorizada<br>Coordinadora'));
-    assert.ok(html.includes('Firma Titular<br>Director'));
+    assert.ok(html.includes('<b>Firma Autorizada</b><br><span style="font-size:14px">Coordinadora</span>'));
+    assert.ok(html.includes('<b>Firma Titular</b><br><span style="font-size:14px">Director</span>'));
   });
 
   it('las notas de siempre no cambian: sin detalle ni apartados', () => {
@@ -1484,13 +1485,13 @@ describe('personal contratado (pedido del usuario el 16/10/2026)', () => {
     assert.equal(deAutorizacion.firma.contratado, true);
   });
 
-  it('HTML: el renglón va entre el nombre y el cargo, en 12px (el cargo, en los 15px de la nota), en una firma y en las dos', () => {
+  it('HTML: el renglón va entre el nombre (en negrita, en los 15px de la nota) y el cargo (14px), en 11px, en una firma y en las dos', () => {
     const una = renderHtml(nota({ firma: { titular: titular(true), presentante: null, leyenda: null } }));
-    assert.ok(una.includes(`<p style="margin:32px 0 0;text-align:right;">Persona Titular<br><span style="font-size:12px">${RENGLON}</span><br>Cargo Titular</p>`), una);
+    assert.ok(una.includes(`<p style="margin:32px 0 0;text-align:right;"><b>Persona Titular</b><br><span style="font-size:11px">${RENGLON}</span><br><span style="font-size:14px">Cargo Titular</span></p>`), una);
     assert.ok(una.includes('font-family:Arial,Helvetica,sans-serif;font-size:15px;'));
     const dos = renderHtml(nota({ firma: dosFirmas({ ...autorizada(true), nombre: 'Persona <b>Autorizada</b>' }) }));
-    assert.ok(dos.includes(`>Persona &lt;b&gt;Autorizada&lt;/b&gt;<br><span style="font-size:12px">${RENGLON}</span><br>Cargo Autorizado</td>`), dos);
-    assert.ok(dos.includes('>Persona Titular<br>Cargo Titular</td>'), 'el titular de planta, como siempre');
+    assert.ok(dos.includes(`><b>Persona &lt;b&gt;Autorizada&lt;/b&gt;</b><br><span style="font-size:11px">${RENGLON}</span><br><span style="font-size:14px">Cargo Autorizado</span></td>`), dos);
+    assert.ok(dos.includes('><b>Persona Titular</b><br><span style="font-size:14px">Cargo Titular</span></td>'), 'el titular de planta, como siempre');
     assert.equal(dos.split(RENGLON).length - 1, 1, 'solo la firma de la persona contratada lleva el renglón');
     assert.ok(dos.includes(LEYENDA_CONTRATADA));
   });

@@ -27,7 +27,7 @@ const DESCENDENTE = 0.207;
 const cerca = (a, b, tolerancia = 0.01) => Math.abs(a - b) <= tolerancia;
 // Borde superior de una línea de texto medido desde arriba de la hoja (donde la ubicó PDFKit)
 const tope = (t) => ALTO_HOJA - t.base - ASCENDENTE * t.tamano;
-const anchoDe = (texto, tamano) => new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(tamano).widthOfString(texto);
+const anchoDe = (texto, tamano, fuente = 'Helvetica') => new PDFDocument({ autoFirstPage: false }).font(fuente).fontSize(tamano).widthOfString(texto);
 const esPaginacion = (linea) => /Página \d+ de \d+/.test(linea);
 const esDelMembrete = (error) => error instanceof Error && /^La imagen del membrete no es válida: /.test(error.message);
 
@@ -1386,8 +1386,96 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
   });
 });
 
+// La letra de la firma (pedido del usuario el 21/10/2026): el nombre en negrita, para destacarlo, y el cargo un punto menos,
+// en todas las notas y en las dos firmas
+describe('renderPdf: la letra de la firma (pedido del usuario el 21/10/2026)', () => {
+  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
+  const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
+  const titular = { nombre: 'Persona Titular', cargo: 'Cargo Titular' };
+  const presentante = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado' };
+  const leyenda = 'Nota presentada por Persona Autorizada, Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
+  const unica = (textos, texto) => {
+    const encontrados = textos.filter(t => t.texto === texto);
+    assert.equal(encontrados.length, 1, `"${texto}": ${encontrados.length} veces`);
+    return encontrados[0];
+  };
+  const letra = (t) => [t.fuente, t.tamano];
+  // Alto de un renglón de Helvetica (ascendente, descendente y el interlineado de PDFKit), en fracción del tamaño
+  const RENGLON = new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(1).currentLineHeight(true);
+
+  it('una firma: el nombre en negrita de 11 pt y el cargo en 10 pt; el remitente y la línea CC, como siempre', async () => {
+    const n = nota(1, { firma: { titular, presentante: null, leyenda: null } });
+    const textos = textosPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A })).flat();
+    assert.deepEqual(letra(unica(textos, 'Persona Titular')), ['Helvetica-Bold', 11]);
+    assert.deepEqual(letra(unica(textos, 'Cargo Titular')), ['Helvetica', 10]);
+    assert.deepEqual(letra(unica(textos, n.lineaCc)), ['Helvetica', 11]);
+    assert.deepEqual(letra(textos.find(t => t.texto.startsWith(n.remitente))), ['Helvetica-Bold', 12]);
+  });
+
+  it('dos firmas: los dos nombres en negrita de 11 pt y los dos cargos en 10 pt; la leyenda, como siempre', async () => {
+    const textos = textosPorHoja(await renderPdf(nota(1, { firma: { titular, presentante, leyenda } }), { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B })).flat();
+    for (const nombre of ['Persona Titular', 'Persona Autorizada']) assert.deepEqual(letra(unica(textos, nombre)), ['Helvetica-Bold', 11], nombre);
+    for (const cargo of ['Cargo Titular', 'Cargo Autorizado']) assert.deepEqual(letra(unica(textos, cargo)), ['Helvetica', 10], cargo);
+    assert.deepEqual(letra(textos.find(t => t.texto.startsWith('Nota presentada por'))), ['Helvetica-Oblique', 9]);
+  });
+
+  it('la nota de autorización y la de auditoría firman igual', async () => {
+    const firma = { titular, presentante: null, leyenda: null };
+    const autorizacion = construirNotaDeAutorizacion({
+      numero: 15, anio: 2026, fecha: '2026-11-25', firma, config,
+      autorizacion: { nombre: 'Otra Persona', cargo: 'Otro Cargo', contratado: false, desde: '2026-11-26', hasta: '2027-01-14' }
+    });
+    const auditoria = construirNotaDeAuditoria({
+      numero: 16, anio: 2026, fecha: '2026-11-25', firma, config, reiterados: [],
+      nuevos: [{
+        id: 1, tipo_cambio: 'editar', dataset_titulo: 'Dataset auditado', usuario_nombre: 'Persona Editora', usuario_cargo: 'Cargo de Prueba',
+        fecha_propuesta: '2026-11-20', datos_anteriores: { descripcion: 'Antes' }, datos_nuevos: { descripcion: 'Después' }
+      }],
+      catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
+    });
+    for (const [caso, n] of [['autorización', autorizacion], ['auditoría', auditoria]]) {
+      const textos = textosPorHoja(await renderPdf(n, { firmaImagen: FIRMA_A })).flat();
+      assert.deepEqual(letra(unica(textos, 'Persona Titular')), ['Helvetica-Bold', 11], caso);
+      assert.deepEqual(letra(unica(textos, 'Cargo Titular')), ['Helvetica', 10], caso);
+    }
+  });
+
+  // Con el cargo en 10 pt, el aire hasta lo que sigue se sigue midiendo en renglones de 11 pt: no cambia
+  it('el aire entre el cargo y la línea CC (1,5 renglones de 11 pt) y entre las firmas y la leyenda (0,8) no cambia', async () => {
+    const una = nota(1, { firma: { titular, presentante: null, leyenda: null } });
+    const textosUna = textosPorHoja(await renderPdf(una, { firmaImagen: FIRMA_A })).flat();
+    const finDe = (t) => tope(t) + RENGLON * t.tamano;
+    assert.ok(cerca(tope(unica(textosUna, una.lineaCc)) - finDe(unica(textosUna, 'Cargo Titular')), 1.5 * RENGLON * 11));
+    const textosDos = textosPorHoja(await renderPdf(nota(1, { firma: { titular, presentante, leyenda } }), { firmaImagen: FIRMA_A, presentanteImagen: FIRMA_B })).flat();
+    const leyendaDibujada = textosDos.find(t => t.texto.startsWith('Nota presentada por'));
+    assert.ok(cerca(tope(leyendaDibujada) - finDe(unica(textosDos, 'Cargo Titular')), 0.8 * RENGLON * 11));
+  });
+
+  // Un nombre que en letra normal entra en el ancho de la firma y en negrita no: la reserva del cierre lo mide en negrita (si
+  // lo midiera en letra normal, las dos firmas cortarían siempre igual)
+  it('la reserva del cierre mide el nombre en negrita: nunca menos hojas que con un nombre corto, y en algún caso una más', async () => {
+    const NOMBRE = 'Persona Titular con Apellido Compuesto';
+    const medidor = new PDFDocument({ autoFirstPage: false });
+    assert.ok(medidor.font('Helvetica').fontSize(11).widthOfString(NOMBRE) < 200, 'en letra normal tiene que entrar en un renglón');
+    assert.ok(medidor.font('Helvetica-Bold').fontSize(11).widthOfString(NOMBRE) > 200, 'en negrita tiene que pasar a dos');
+    const firma = (nombre) => ({ titular: { nombre, cargo: 'Cargo Titular' }, presentante: null, leyenda: null });
+    let conUnaMas = 0;
+    for (let cantidadAreas = 1; cantidadAreas <= 5; cantidadAreas++) {
+      const areas = Array.from({ length: cantidadAreas }, (_, i) => ({
+        id: i + 1, nombre: `Área ${i + 1}`, email_principal: 'area@rpad.test', telefono_area: '297 400-0000'
+      }));
+      for (let cantidad = 1; cantidad <= 30; cantidad++) {
+        const [corto, largo] = await Promise.all(['Persona Titular', NOMBRE].map(async (nombre) => paginas(await renderPdf(nota(cantidad, { areas, firma: firma(nombre) })))));
+        assert.ok(largo >= corto, `${cantidadAreas} áreas, ${cantidad} datasets: ${largo} hojas contra ${corto}`);
+        if (largo > corto) conUnaMas++;
+      }
+    }
+    assert.ok(conUnaMas > 0, 'el nombre en dos renglones tiene que mover el corte en alguna nota');
+  });
+});
+
 // Personal contratado (pedido del usuario el 16/10/2026): en la firma, entre el nombre y el cargo, el renglón "Personal
-// contratado, cumpliendo funciones de", más chico que el cargo
+// contratado, cumpliendo funciones de", más chico que el cargo (8 pt desde el 21/10/2026)
 const RENGLON_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
 const LEYENDA_CONTRATADA = 'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
 const firmasContratadas = ({ titular = false, autorizada = false } = {}) => ({
@@ -1409,14 +1497,16 @@ describe('renderPdf: personal contratado en la firma (pedido del usuario el 16/1
   // Borde inferior e superior de una línea, desde el borde inferior de la hoja
   const abajo = (t) => t.base - DESCENDENTE * t.tamano;
   const arriba = (t) => t.base + ASCENDENTE * t.tamano;
-  const centro = (t) => t.x + anchoDe(t.texto, t.tamano) / 2;
+  // (con la letra de cada renglón: el nombre va en negrita)
+  const centro = (t) => t.x + anchoDe(t.texto, t.tamano, t.fuente) / 2;
 
-  it('el renglón va en la firma de la persona autorizada, entre su nombre y su cargo, centrado y en 9 pt (el nombre y el cargo, en 11)', async () => {
+  it('el renglón va en la firma de la persona autorizada, entre su nombre y su cargo, centrado y en 8 pt (el nombre, en negrita de 11, y el cargo, en 10)', async () => {
     const textos = await textosDe(nota(1, { firma: firmasContratadas({ autorizada: true }) }));
     const renglon = unica(textos, RENGLON_CONTRATADO);
     const nombre = unica(textos, 'Persona Autorizada');
     const cargo = unica(textos, 'Cargo Autorizado');
-    assert.deepEqual([nombre.tamano, renglon.tamano, cargo.tamano], [11, 9, 11]);
+    assert.deepEqual([nombre.tamano, renglon.tamano, cargo.tamano], [11, 8, 10]);
+    assert.deepEqual([nombre.fuente, renglon.fuente, cargo.fuente], ['Helvetica-Bold', 'Helvetica', 'Helvetica']);
     assert.ok(abajo(nombre) >= arriba(renglon) - 0.01 && abajo(renglon) >= arriba(cargo) - 0.01, 'entre el nombre y el cargo, sin pisarlos');
     // Centrado en el ancho de la firma de la izquierda (200 pt desde el margen), como el nombre y el cargo
     for (const t of [nombre, renglon, cargo]) assert.ok(cerca(centro(t), 30 * MM + 100, 0.5), `"${t.texto}" no está centrado`);
@@ -1428,7 +1518,7 @@ describe('renderPdf: personal contratado en la firma (pedido del usuario el 16/1
     const firma = { titular: { nombre: 'Persona Titular', cargo: 'Cargo Titular', contratado: true }, presentante: null, leyenda: null };
     const textos = await textosDe(nota(1, { firma }), { firmaImagen: FIRMA_A });
     const renglon = unica(textos, RENGLON_CONTRATADO);
-    assert.equal(renglon.tamano, 9);
+    assert.equal(renglon.tamano, 8);
     assert.ok(cerca(centro(renglon), ANCHO_HOJA - 30 * MM - 100, 0.5), 'centrado en la firma de la derecha');
     assert.ok(unica(textos, 'Persona Titular').base > renglon.base && renglon.base > unica(textos, 'Cargo Titular').base);
   });

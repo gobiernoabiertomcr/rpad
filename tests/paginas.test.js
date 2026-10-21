@@ -18,8 +18,9 @@ const VERSION_PANTALLAS = '20261118';
 const VERSION_CORREOS = '20261116';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
-// 2026-10-20-editor-sin-responsabilidad): su versión es propia
-const VERSION_PERFIL = '20261118';
+// 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos): su
+// versión es propia
+const VERSION_PERFIL = '20261119';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"; después, el ícono "Ver
 // seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset; "Requiere nota DGMIT" en el formulario, el filtro y la vista
 // previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion): su versión es propia
