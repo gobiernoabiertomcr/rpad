@@ -45,10 +45,10 @@ const MINIMO_TITULO = 55;
 // anteriores, spec 6.4), debajo del texto de la nota
 const TAMANO_SECUNDARIO = 7;
 const SEPARACION_SECUNDARIO = 1.5;
-// Alto que necesitan el remitente, la firma y la línea CC: van juntos, sin que la firma quede sola en una hoja.
-// Cuenta una línea de 11 pt por el nombre y una por el cargo de la firma; si no entran en ANCHO_FIRMA, renderPdf suma lo que
-// ocupan de más, y también el renglón del personal contratado.
-const ALTO_CIERRE = 200;
+// El remitente, la firma y la línea CC van juntos, sin que la firma quede sola en una hoja, y se reservan con lo que ocupan
+// (medirCierre; pedido del usuario el 21/10/2026: un alto fijo de 200 pt reservaba de más y mandaba a la hoja siguiente un
+// cierre que entraba). HOLGURA_CIERRE (puntos) se suma a la medida exacta: un redondeo no manda la línea CC sola a otra hoja.
+const HOLGURA_CIERRE = 1;
 // Ancho en que se centran el nombre y el cargo de cada firma (puntos)
 const ANCHO_FIRMA = 200;
 // La letra de siempre de la firma (11 pt): la del nombre y la de los renglones con que se mide el aire de debajo
@@ -62,9 +62,8 @@ const LETRA_FIRMA = {
 };
 // Aire entre las firmas y la leyenda de una nota presentada por autorización (spec 2026-10-15, 7.2), en líneas de 11 pt
 const ESPACIO_LEYENDA = 0.8;
-// Espacio debajo de cada párrafo (en líneas de su letra) y alto que se reserva para el título "Justificación:"
+// Espacio debajo de cada párrafo (en líneas de su letra)
 const ESPACIO_PARRAFO = 0.6;
-const ALTO_TITULO_JUSTIFICACION = 25;
 // Aire de más arriba de la línea del anexo (puntos): con él queda más separada del último contacto (o de la tabla)
 // que los contactos entre sí, y un poco más que de "Justificación:"
 const AIRE_ANEXO = 6;
@@ -470,6 +469,69 @@ const agregarMembreteYPies = (doc, nota, ancho, { banner, pie }) => {
   }
 };
 
+// La firma: imagen (si está cargada), nombre y cargo (con el renglón chico del personal contratado entre los dos), centrados
+// en un ancho de 200 pt, cada renglón con su letra (LETRA_FIRMA). El nombre baja 'bajada' puntos desde y (el alto de la
+// imagen y un aire): la imagen no corre el texto. Termina en la letra normal de 11 pt: el aire de debajo (hasta la leyenda
+// o la línea CC) se mide como siempre, aunque el cargo vaya en 10. Devuelve dónde termina.
+const BAJADA_CON_IMAGEN = 64;
+const BAJADA_SIN_IMAGEN = 30;
+const dibujarFirma = (doc, x, y, imagen, firma, bajada) => {
+  if (imagen) doc.image(imagen, x + (ANCHO_FIRMA - 140) / 2, y, { fit: [140, 60], align: 'center', valign: 'bottom' });
+  renglonesDeFirma(firma).forEach(({ texto, tipo }, i) => {
+    const { fuente, tamano } = LETRA_FIRMA[tipo];
+    doc.font(fuente).fontSize(tamano)
+      .text(texto, x, i === 0 ? y + bajada : doc.y, { width: ANCHO_FIRMA, align: 'center' });
+  });
+  doc.font(NORMAL).fontSize(TAMANO_FIRMA);
+  return doc.y;
+};
+
+// El cierre de todas las notas, desde doc.y: el remitente con la fecha, la firma (o las dos, con la leyenda) y la línea CC.
+// Lo dibuja renderPdf y lo mide medirCierre; para medir, sin las imágenes ({ medir: true }), que no corren el texto.
+const dibujarCierre = (doc, nota, { firmaImagen, presentanteImagen }, { medir = false } = {}) => {
+  const imagen = (archivo) => (medir ? null : archivo);
+  doc.moveDown(0.6);
+  // La fecha con espacios que no se cortan: si no entra en el renglón del remitente pasa entera al siguiente
+  // (nunca "2 de noviembre de" / "2026.")
+  doc.font(NEGRITA).fontSize(12).text(nota.remitente, MARGENES.left, doc.y, { underline: true, continued: true })
+    .font(NORMAL).text(`, ${nota.fechaLarga.replace(/ /g, ' ')}.`, { underline: false });
+
+  const xDerecha = MARGENES.left + ANCHO_TEXTO - ANCHO_FIRMA;
+  doc.moveDown(1.5);
+  const yFirmas = doc.y;
+  if (nota.firma.presentante) {
+    // Dos firmas lado a lado: quien presenta a la izquierda, el titular a la derecha; debajo, la leyenda.
+    // Los dos nombres bajan lo mismo aunque solo una de las firmas tenga imagen: así quedan a la misma altura
+    const bajada = firmaImagen || presentanteImagen ? BAJADA_CON_IMAGEN : BAJADA_SIN_IMAGEN;
+    const finIzquierda = dibujarFirma(doc, MARGENES.left, yFirmas, imagen(presentanteImagen), nota.firma.presentante, bajada);
+    const finDerecha = dibujarFirma(doc, xDerecha, yFirmas, imagen(firmaImagen), nota.firma, bajada);
+    doc.y = Math.max(finIzquierda, finDerecha);
+    doc.moveDown(ESPACIO_LEYENDA);
+    doc.font(CURSIVA).fontSize(9).text(nota.firma.leyenda, MARGENES.left, doc.y, { width: ANCHO_TEXTO, align: 'justify' });
+    doc.font(NORMAL).fontSize(11);
+  } else {
+    dibujarFirma(doc, xDerecha, yFirmas, imagen(firmaImagen), nota.firma, firmaImagen ? BAJADA_CON_IMAGEN : BAJADA_SIN_IMAGEN);
+  }
+
+  // (la nota de autorización y la de auditoría no llevan línea CC: el cierre termina en la firma)
+  if (nota.lineaCc) {
+    doc.moveDown(1.5);
+    doc.font(NORMAL).fontSize(11).text(nota.lineaCc, MARGENES.left, doc.y, { width: ANCHO_TEXTO, align: 'left' });
+  }
+};
+
+// Lo que ocupa el cierre (pedido del usuario el 21/10/2026): se dibuja con dibujarCierre en un documento borrador, alto y
+// sin márgenes arriba ni abajo, desde la letra con que termina el último párrafo (12 pt), y se mide cuánto bajó. Así la
+// medida sale del mismo código que dibuja: una o dos firmas, con imagen o sin ella, la leyenda, los renglones de más de un
+// nombre o un cargo largo y la fecha que pasa al renglón siguiente.
+const medirCierre = (nota, imagenes) => {
+  const borrador = new DocumentoNota({ size: [PAGINA[0], 10000], margins: { ...MARGENES, top: 0, bottom: 0 } });
+  borrador.font(NORMAL).fontSize(12);
+  const inicio = borrador.y;
+  dibujarCierre(borrador, nota, imagenes, { medir: true });
+  return borrador.y - inicio;
+};
+
 export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, membreteImagen = null, membretePie = null } = {}) => new Promise((resolve, reject) => {
   try {
     // Una imagen dañada rechaza la promesa acá, antes de llegar a PDFKit (que tumbaría el proceso)
@@ -506,19 +568,8 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       doc.font(fuente).fontSize(tamano);
       return doc.currentLineHeight(true) * espacio;
     };
-    // Lo que el nombre y el cargo de una firma ocupan de más que una línea de 11 pt cada uno, medidos con su letra (el nombre en
-    // negrita), en ANCHO_FIRMA: con textos largos se parten en varias, y dos firmas lado a lado ocupan lo que la más alta. Una
-    // línea cada uno ya está en ALTO_CIERRE. El renglón del personal contratado no está: se suma entero.
-    const unaLineaDeFirma = altoTexto('X', TAMANO_FIRMA, NORMAL, ANCHO_FIRMA);
-    const altoFirmaDeMas = (firma) => renglonesDeFirma(firma).reduce((total, { texto, tipo }) => {
-      const { fuente, tamano } = LETRA_FIRMA[tipo];
-      const alto = altoTexto(texto, tamano, fuente, ANCHO_FIRMA);
-      return total + (tipo === 'contratado' ? alto : Math.max(0, alto - unaLineaDeFirma));
-    }, 0);
-    // El cierre mide el nombre y el cargo de más y, con presentante, la leyenda (todo medido, no estimado)
-    const altoCierre = ALTO_CIERRE
-      + Math.max(altoFirmaDeMas(nota.firma), nota.firma.presentante ? altoFirmaDeMas(nota.firma.presentante) : 0)
-      + (nota.firma.presentante ? altoEspacio(ESPACIO_LEYENDA, 11) + altoTexto(nota.firma.leyenda, 9, CURSIVA) : 0);
+    // El cierre (remitente, firma y línea CC), medido con el mismo código que lo dibuja, y la holgura
+    const altoCierre = medirCierre(nota, { firmaImagen, presentanteImagen }) + HOLGURA_CIERRE;
     // Alto real de un contacto como lo dibuja el bucle de abajo: nombre en negrita 10, espacio y líneas en 10
     const altoContacto = (contacto) => altoTexto(contacto.nombre, 10, NEGRITA) + altoEspacio(0.1, 10, NEGRITA)
       + altoTexto(contacto.lineas.join('\n'), 10);
@@ -637,9 +688,13 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
 
     // El título de la justificación viaja con el primer párrafo; y el último párrafo, con el remitente, la firma y la línea CC.
     // Si hay un solo párrafo (o ninguno; la reiteración tiene uno) es a la vez el primero y el último: se reserva todo junto
-    // antes de imprimir el título, para que no se cambie de hoja justo después de escribirlo.
+    // antes de imprimir el título, para que no se cambie de hoja justo después de escribirlo. Todo medido: el título como se
+    // dibuja (negrita y su aire) y, antes del cierre, el aire que deja el último párrafo.
     const ultimo = nota.justificacion.length - 1;
-    const reservaDeLaJustificacion = ALTO_TITULO_JUSTIFICACION + altoTexto(nota.justificacion[0] || '') + (ultimo <= 0 ? altoCierre : 0);
+    const altoTituloJustificacion = altoTexto('Justificación:', 12, NEGRITA) + altoEspacio(0.3, 12, NEGRITA);
+    const conElCierre = (texto) => altoTexto(texto) + altoEspacio(ESPACIO_PARRAFO, 12) + altoCierre;
+    const reservaDeLaJustificacion = altoTituloJustificacion
+      + (ultimo <= 0 ? conElCierre(nota.justificacion[0] || '') : altoTexto(nota.justificacion[0]));
 
     // La línea del anexo (avisos y reiteraciones) es un párrafo propio: lleva aire arriba, así no se lee como un dato más del
     // último contacto ni de la tabla (arriba de una hoja nueva, no). Viaja con lo que reserva la justificación (su título y su
@@ -656,7 +711,7 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       asegurarEspacio(reservaDeLaJustificacion);
       parrafo('Justificación:', { fuente: NEGRITA, align: 'left', espacio: 0.3 });
       nota.justificacion.forEach((texto, i) => {
-        if (i === ultimo && ultimo > 0) asegurarEspacio(altoTexto(texto) + altoCierre);
+        if (i === ultimo && ultimo > 0) asegurarEspacio(conElCierre(texto));
         parrafo(texto);
       });
     } else if (!apartados.length) {
@@ -664,47 +719,7 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
       asegurarEspacio(altoCierre);
     }
 
-    doc.moveDown(0.6);
-    // La fecha con espacios que no se cortan: si no entra en el renglón del remitente pasa entera al siguiente
-    // (nunca "2 de noviembre de" / "2026.")
-    doc.font(NEGRITA).fontSize(12).text(nota.remitente, MARGENES.left, doc.y, { underline: true, continued: true })
-      .font(NORMAL).text(`, ${nota.fechaLarga.replace(/ /g, ' ')}.`, { underline: false });
-
-    // Firma: imagen (si está cargada), nombre y cargo (con el renglón chico del personal contratado entre los dos), centrados
-    // en un ancho de 200 pt, cada renglón con su letra (LETRA_FIRMA). El nombre baja 'bajada' puntos desde y (el alto de la
-    // imagen y un aire). Termina en la letra normal de 11 pt: el aire de debajo (hasta la leyenda o la línea CC) se mide como
-    // siempre, aunque el cargo vaya en 10. Devuelve dónde termina.
-    const BAJADA_CON_IMAGEN = 64;
-    const BAJADA_SIN_IMAGEN = 30;
-    const dibujarFirma = (x, y, imagen, firma, bajada) => {
-      if (imagen) doc.image(imagen, x + (ANCHO_FIRMA - 140) / 2, y, { fit: [140, 60], align: 'center', valign: 'bottom' });
-      renglonesDeFirma(firma).forEach(({ texto, tipo }, i) => {
-        const { fuente, tamano } = LETRA_FIRMA[tipo];
-        doc.font(fuente).fontSize(tamano)
-          .text(texto, x, i === 0 ? y + bajada : doc.y, { width: ANCHO_FIRMA, align: 'center' });
-      });
-      doc.font(NORMAL).fontSize(TAMANO_FIRMA);
-      return doc.y;
-    };
-    const xDerecha = MARGENES.left + ancho - ANCHO_FIRMA;
-    doc.moveDown(1.5);
-    const yFirmas = doc.y;
-    if (nota.firma.presentante) {
-      // Dos firmas lado a lado: quien presenta a la izquierda, el titular a la derecha; debajo, la leyenda.
-      // Los dos nombres bajan lo mismo aunque solo una de las firmas tenga imagen: así quedan a la misma altura
-      const bajada = firmaImagen || presentanteImagen ? BAJADA_CON_IMAGEN : BAJADA_SIN_IMAGEN;
-      const finIzquierda = dibujarFirma(MARGENES.left, yFirmas, presentanteImagen, nota.firma.presentante, bajada);
-      const finDerecha = dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma, bajada);
-      doc.y = Math.max(finIzquierda, finDerecha);
-      doc.moveDown(ESPACIO_LEYENDA);
-      doc.font(CURSIVA).fontSize(9).text(nota.firma.leyenda, MARGENES.left, doc.y, { width: ancho, align: 'justify' });
-      doc.font(NORMAL).fontSize(11);
-    } else {
-      dibujarFirma(xDerecha, yFirmas, firmaImagen, nota.firma, firmaImagen ? BAJADA_CON_IMAGEN : BAJADA_SIN_IMAGEN);
-    }
-
-    doc.moveDown(1.5);
-    parrafo(nota.lineaCc, { tamano: 11, align: 'left' });
+    dibujarCierre(doc, nota, { firmaImagen, presentanteImagen });
 
     agregarMembreteYPies(doc, nota, ancho, { banner, pie });
     doc.end();
