@@ -36,10 +36,10 @@ El sistema cuenta con cuatro roles de usuario:
 |-----|-------------|----------|
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
-| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros solo **de respaldo** (si ese día no hay ningún auditor disponible), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
+| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros **de respaldo** (si ese día no hay ningún auditor disponible) o, los que propuso un auditor, **sin responsabilidad por la auditoría** (si hay auditores disponibles), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
 | `lector` | Solo lectura | Ver todas las secciones (portada, calendario, datasets, reportes, notas, Seguimiento) sin poder modificar datos. |
 
-Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins); un editor, solo si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
+Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins). Un editor audita **de respaldo** si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Si hay auditores disponibles, un editor puede aprobar o rechazar el cambio que propuso un auditor (por ejemplo, cuando un auditor se lo pide), y queda "aprobado o rechazado **sin responsabilidad por la auditoría**": Mi Perfil se lo avisa antes y lo muestra después. El cambio que propuso un editor, con auditores disponibles, lo auditan ellos. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
 **Días sin auditor:** un día hábil en el que ningún superadmin ni admin está disponible (activo, con contraseña y sin licencia; los editores no cuentan, se informan como respaldo). Los días hábiles seguidos forman un período (un fin de semana o un feriado en el medio no lo cortan) y cada período dice cuándo vuelve a haber un auditor. El sistema lo avisa en tres lugares: el formulario de licencias advierte los días sin auditor que dejaría esa licencia (sin bloquear el guardado); a quien propone un cambio que hoy no tiene a nadie que lo audite le llega, en el recordatorio de las 14:00, un único aviso por cambio con la fecha de vuelta; y Correos → Estado muestra cuántos cambios no tienen a quién pedirle la auditoría y los próximos períodos.
 
@@ -179,7 +179,9 @@ rpad/
 │       ├── migracion-fechas-datasets-datos.sql   # Fechas de los datasets: "Datos al" y tipo de pedido de los datasets (después de la estructura y antes del código)
 │       ├── migracion-fechas-datasets-textos.sql  # Fechas de los datasets: "Qué se solicita" sin el período (después de subir el código, antes del Restart)
 │       ├── migracion-requiere-nota.sql           # Requiere nota DGMIT: estructura, la columna datasets.requiere_nota (va antes del código)
-│       └── migracion-requiere-nota-datos.sql     # Requiere nota DGMIT: carga inicial de los 45 externos (después de la estructura y antes del código; una sola vez)
+│       ├── migracion-requiere-nota-datos.sql     # Requiere nota DGMIT: carga inicial de los 45 externos (después de la estructura y antes del código; una sola vez)
+│       ├── migracion-editor-sin-responsabilidad.sql  # El editor audita sin responsabilidad: la columna cambios_pendientes.revisado_sin_responsabilidad (va antes del código)
+│       └── rollback-editor-sin-responsabilidad.sql   # Deshace la anterior (después de volver a los archivos anteriores)
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -467,6 +469,19 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** volver a subir los archivos del backup y Restart. La columna puede quedar: es aditiva y el código anterior no la usa. Las notas ya generadas (con su anexo) quedan guardadas tal cual.
 
+### Migración: El editor audita sin responsabilidad
+
+⚠️ Requisito: la entrega **«Requiere nota DGMIT y anexo de la reiteración» desplegada completa** (sus dos SQL y su código), y las migraciones anteriores aplicadas. Este código se apoya en ella: `controllers/cambiosPendientesController.js` importa `services/requiereNotaReglas.js` y escribe `datasets.requiere_nota` al aprobar, y las páginas piden las versiones nuevas de `auth.js`, `main.js` y `api.js`. **Subir solo los archivos de esta sección sobre una instalación sin esa entrega deja la aplicación sin arrancar.** Si las dos van juntas, es un solo kit: los SQL en este orden, `migracion-requiere-nota.sql`, `migracion-requiere-nota-datos.sql` y `migracion-editor-sin-responsabilidad.sql`, y después todos los archivos de las dos entregas y un solo Restart. No hay dependencias nuevas de npm. Backup de la base y de los archivos antes de empezar, y fuera del horario de los crons (8:15 y 14:00). El orden es: **SQL → subir los archivos → Restart**. La migración va **antes** del código: si el código sube sin la columna, toda aprobación y todo rechazo de cambios, de cualquier rol, dan error hasta que se corra.
+
+1. **SQL de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-editor-sin-responsabilidad.sql` → **Continuar**. Solo agrega la columna `cambios_pendientes.revisado_sin_responsabilidad` (en 0 para todos los cambios); el código anterior sigue funcionando con ella y se puede volver a correr. Después, esta consulta tiene que dar **1**:
+   ```sql
+   SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cambios_pendientes' AND column_name = 'revisado_sin_responsabilidad';
+   ```
+2. **Subir los archivos** (`controllers/cambiosPendientesController.js`, `services/auditoriaReglas.js`, `public/js/perfil.js`, `public/perfil.html`, `public/js/usuarios.js` y `public/usuarios.html`) y **Restart** (Setup Node.js App). No hace falta Run NPM Install.
+3. **Verificar:** un editor, con un auditor disponible, ve en Mi Perfil → Para revisar el cambio de un auditor con "Lo auditan …", la nota ámbar "… queda registrado sin responsabilidad por la auditoría" y los botones habilitados; al aprobar, la pregunta dice "¿Aprobar sin responsabilidad por la auditoría?" y Revisados muestra "Aprobado por … (sin responsabilidad por la auditoría)". Usuarios → Editores dice "Proponen cambios y auditan de respaldo o sin responsabilidad".
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-editor-sin-responsabilidad.sql`. Se pierde qué cambios se auditaron sin responsabilidad (quedan como aprobados o rechazados por esa persona, sin la marca). Si alguna vez también hay que deshacer la migración del editor, este rollback va primero.
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -722,6 +737,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### El editor audita sin responsabilidad (2026-10)
+- Con auditores disponibles, un editor puede aprobar o rechazar el cambio que propuso un auditor; queda registrado "sin responsabilidad por la auditoría". El respaldo (sin auditores disponibles) no cambia, y el cambio de un editor sigue siendo de los auditores
+- Mi Perfil lo avisa en la fila ("Este cambio lo auditan … Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría."), lo repite al confirmar y lo muestra en Revisados y Mis cambios; si mientras tanto la situación cambia, no se registra y la fila se actualiza
+- Los recordatorios, la nota de auditoría, los días sin auditor, el Seguimiento y los PDF no cambian
+- Un SQL de estructura antes de subir el código; Restart, sin Run NPM Install
 
 ### Avisos del ciclo desde la última actualización (2026-10)
 - Seguimiento: las actualizaciones de antes de la doble verificación (diciembre de 2025) cierran el ciclo, así que los avisos de antes ya no cuentan para el ciclo abierto (Áreas específicas de género pasa de 3 avisos a 1; Hotelería, Medios Periodísticos y la Guía Telefónica de áreas de género, de 2 a 0). Las que después se deshicieron (la tanda del 17/12/2025 en 8 datasets, cuya carga volvió atrás) no cuentan. El ciclo de antes no tiene vencimiento conocido: en la cinta va sin "vence" ni rayado

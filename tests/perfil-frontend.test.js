@@ -66,6 +66,41 @@ describe('perfil.js: auditar un cambio (spec 8.2)', () => {
     assert.equal(contexto.textoRevisor({ estado: 'rechazado', revisor_nombre: 'Persona Editora', revisado_como_respaldo: 1 }),
       'Rechazado por Persona Editora (respaldo)');
   });
+
+  // Spec 2026-10-20-editor-sin-responsabilidad
+  it('quién auditó: con "(sin responsabilidad por la auditoría)" si fue un editor con auditores disponibles', () => {
+    const contexto = cargarPerfil();
+    assert.equal(contexto.textoRevisor({
+      estado: 'aprobado', revisor_nombre: 'Persona Editora', revisado_como_respaldo: 0, revisado_sin_responsabilidad: 1
+    }), 'Aprobado por Persona Editora (sin responsabilidad por la auditoría)');
+    assert.equal(contexto.textoRevisor({
+      estado: 'rechazado', revisor_nombre: 'Persona Editora', revisado_como_respaldo: 0, revisado_sin_responsabilidad: 1
+    }), 'Rechazado por Persona Editora (sin responsabilidad por la auditoría)');
+    assert.equal(contexto.textoRevisor({
+      estado: 'aprobado', revisor_nombre: 'Persona Auditora', revisado_como_respaldo: 0, revisado_sin_responsabilidad: 0
+    }), 'Aprobado por Persona Auditora');
+  });
+
+  it('sin responsabilidad: los botones habilitados, descriptos por el aviso de la fila', () => {
+    const contexto = cargarPerfil();
+    const html = contexto.botonesDeAuditoria(5, { puede: true, respaldo: false, sin_responsabilidad: true, mensaje: 'x' });
+    assert.doesNotMatch(html, /disabled/);
+    assert.equal(html.match(/aria-describedby="aviso-5"/g).length, 2);
+    assert.match(html, /onclick="aprobarCambio\(5\)"/);
+    assert.doesNotMatch(contexto.botonesDeAuditoria(5, { puede: true, respaldo: false, sin_responsabilidad: false, mensaje: null }), /aria-describedby/);
+    assert.equal(contexto.permisoDeAuditoria({ id: 5 }).sin_responsabilidad, false);
+  });
+
+  it('el aviso sin responsabilidad: la nota ámbar con su id, el escudo y el texto escapado', () => {
+    const html = cargarPerfil().notaSinResponsabilidad(5, 'Lo auditan <b>Ana</b>.');
+    assert.ok(html.startsWith('<div class="pf-nota sin-responsabilidad" id="aviso-5"><svg'));
+    assert.ok(html.includes('<span>Lo auditan &lt;b&gt;Ana&lt;/b&gt;.</span>'));
+  });
+
+  it('la página tiene el estilo del aviso sin responsabilidad, como el de "no corresponde"', () => {
+    const PAGINA = fs.readFileSync(new URL('../public/perfil.html', import.meta.url), 'utf8');
+    assert.match(PAGINA, /\.pf-nota\.sin-responsabilidad\b[^{]*\{[^}]*var\(--pf-aviso-fondo\)/);
+  });
 });
 
 // Mi firma: la vista previa "Así sale en las notas", para todos (pedido del usuario el 16/10/2026), armada como la firma del
@@ -385,6 +420,12 @@ describe('perfil.js: marca del editor', () => {
     assert.ok(html.includes('class="pf-marca"'));
     assert.ok(!html.includes('pf-marca-respaldo'));
     assert.ok(marca({ puede: false, respaldo: false, auditan: ['<b>Ana</b>'] }).includes('Lo auditan &lt;b&gt;Ana&lt;/b&gt;'));
+  });
+
+  it('si puede auditarlo sin responsabilidad, también dice quiénes lo auditan', () => {
+    const html = marca({ puede: true, respaldo: false, sin_responsabilidad: true, auditan: ['Laura'] });
+    assert.ok(html.startsWith('<span class="pf-marca"><svg'));
+    assert.ok(html.endsWith('Lo auditan Laura</span>'));
   });
 
   it('quiénes lo auditan también lleva el escudo (spec 5)', () => {
@@ -726,7 +767,20 @@ describe('perfil.js: filas de la gestión de cambios', () => {
     assert.ok(html.includes('id="acciones-7"'));
   });
 
-  it('un editor sin permiso: los botones deshabilitados, quiénes lo auditan y el motivo', () => {
+  it('un editor con auditores disponibles, en el cambio de un auditor: los botones habilitados, quiénes lo auditan y el aviso', () => {
+    const contexto = cargarPerfil();
+    const aviso = 'Este cambio lo auditan Laura. Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.';
+    const cambio = { ...EDITAR, auditoria: { puede: true, respaldo: false, sin_responsabilidad: true, mensaje: aviso, auditan: ['Laura'] } };
+    const html = contexto.htmlDeFila(cambio, 'revisar', { ...AUDITOR, esEditor: true });
+    assert.ok(html.includes('Lo auditan Laura'));
+    assert.ok(html.includes(contexto.notaSinResponsabilidad(7, aviso)));
+    assert.ok(html.includes('onclick="aprobarCambio(7)"'));
+    assert.doesNotMatch(html, /disabled|no-corresponde/);
+    // En Mis cambios, ni el aviso ni los botones
+    assert.doesNotMatch(contexto.htmlDeFila(cambio, 'mio', AUDITOR), /sin-responsabilidad|aprobarCambio/);
+  });
+
+  it('un editor sin permiso (el cambio es de otro editor): los botones deshabilitados, quiénes lo auditan y el motivo', () => {
     const contexto = cargarPerfil();
     const cambio = { ...EDITAR, auditoria: { puede: false, respaldo: false, mensaje: MENSAJE_EDITOR, auditan: ['Laura'] } };
     const html = contexto.htmlDeFila(cambio, 'revisar', { ...AUDITOR, esEditor: true });
@@ -874,12 +928,22 @@ describe('perfil.js: filas de la gestión de cambios', () => {
       const primera = htmlLista.match(/id="(cabeza-\d+)"/)?.[1];
       return primera ? elementos[primera] : null;
     };
+    const api = {
+      getCambiosPendientesParaRevisar: async () => registro.paraRevisar, getMisCambios: async () => [], getContadorPendientes: async () => ({ cantidad: 0 }),
+      ...API
+    };
+    // La página aprueba y rechaza con API.pedirJson (con lo que la fila mostró): llega a los stubs aprobarCambio(id, cuerpo) y
+    // rechazarCambio(id, comentario, cuerpo) de cada test; otra ruta es un error del test
+    api.pedirJson ??= async (metodo, ruta, cuerpo) => {
+      const [, id, accion] = /^\/cambios-pendientes\/(\d+)\/(aprobar|rechazar)$/.exec(ruta) ?? [];
+      assert.equal(metodo, 'POST');
+      if (accion === 'aprobar') return api.aprobarCambio(Number(id), cuerpo);
+      if (accion === 'rechazar') return api.rechazarCambio(Number(id), cuerpo.comentario, cuerpo);
+      throw new Error(`pedirJson inesperado: ${metodo} ${ruta}`);
+    };
     const contexto = cargarPerfil({
       elementos,
-      API: {
-        getCambiosPendientesParaRevisar: async () => registro.paraRevisar, getMisCambios: async () => [], getContadorPendientes: async () => ({ cantidad: 0 }),
-        ...API
-      },
+      API: api,
       globales: {
         // Como en el navegador: un id que no está da null
         document: { addEventListener() {}, getElementById: (id) => elementos[id] ?? null },
@@ -920,6 +984,65 @@ describe('perfil.js: filas de la gestión de cambios', () => {
     assert.deepEqual(temporizadores.map(t => t.ms), [500]);
     temporizadores[0].funcion();
     assert.equal(elementos['confirmar-7'].disabled, false);
+  });
+
+  // Spec 2026-10-20-editor-sin-responsabilidad: lo que la fila mostró viaja con el pedido, y la pregunta lo repite
+  const AVISO_EDITOR = 'Este cambio lo auditan Laura. Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.';
+  const SIN_RESPONSABILIDAD = { puede: true, respaldo: false, sin_responsabilidad: true, mensaje: AVISO_EDITOR, auditan: ['Laura'] };
+
+  it('aprobar sin responsabilidad: la pregunta lo dice, el aviso describe los botones y el pedido lo confirma', async () => {
+    const cuerpos = [];
+    const { contexto, elementos } = armarAcciones({
+      API: { aprobarCambio: async (id, cuerpo) => { cuerpos.push([id, cuerpo]); } },
+      paraRevisar: [pendiente(7, SIN_RESPONSABILIDAD), pendiente(8)]
+    });
+    await contexto.cargarCambiosParaRevisar();
+    contexto.aprobarCambio(7);
+    assert.match(elementos['acciones-7'].innerHTML,
+      /<span class="pf-pregunta" id="pregunta-7">¿Aprobar sin responsabilidad por la auditoría\? El cambio se aplica al dataset ahora\.<\/span>/);
+    assert.equal(elementos['cancelar-7'].attrs['aria-describedby'], 'pregunta-7 aviso-7');
+    assert.equal(elementos['confirmar-7'].attrs['aria-describedby'], 'pregunta-7 aviso-7');
+    await contexto.confirmarAprobacion(7);
+    // Y uno normal manda que no es sin responsabilidad
+    contexto.aprobarCambio(8);
+    await contexto.confirmarAprobacion(8);
+    assert.deepEqual(plano(cuerpos), [[7, { sin_responsabilidad: true }], [8, { sin_responsabilidad: false }]]);
+  });
+
+  it('rechazar sin responsabilidad: el aviso describe el motivo y el pedido lo confirma', async () => {
+    const cuerpos = [];
+    const { contexto, elementos } = armarAcciones({
+      API: { rechazarCambio: async (id, comentario, cuerpo) => { cuerpos.push([id, comentario, cuerpo]); } },
+      paraRevisar: [pendiente(7, SIN_RESPONSABILIDAD)]
+    });
+    await contexto.cargarCambiosParaRevisar();
+    contexto.abrirModalRechazo(7);
+    assert.equal(elementos['motivo-7'].attrs['aria-describedby'], 'aviso-7');
+    elementos['motivo-7'].value = 'Falta la fuente';
+    await contexto.confirmarRechazo(7);
+    assert.deepEqual(plano(cuerpos), [[7, 'Falta la fuente', { comentario: 'Falta la fuente', sin_responsabilidad: true }]]);
+  });
+
+  it('aprobar con un 409 (la situación cambió): el mensaje a la vista y la fila vuelve a abrirse con lo que corresponde ahora', async () => {
+    const MENSAJE_409 = 'La situación de este cambio cambió. Revisá el aviso y volvé a confirmar.';
+    const RESPALDO = { puede: true, respaldo: true, sin_responsabilidad: false, mensaje: null, auditan: [] };
+    const { contexto, elementos, registro } = armarAcciones({
+      API: {
+        aprobarCambio: async () => {
+          registro.paraRevisar = [pendiente(8), pendiente(7, RESPALDO)];
+          throw Object.assign(new Error(MENSAJE_409), { status: 409 });
+        }
+      },
+      paraRevisar: [pendiente(7, SIN_RESPONSABILIDAD), pendiente(8)]
+    });
+    await contexto.cargarCambiosParaRevisar();
+    contexto.aprobarCambio(7);
+    await contexto.confirmarAprobacion(7);
+    assert.deepEqual(registro.errores, [MENSAJE_409]);
+    assert.equal(elementos['cabeza-7'].attrs['aria-expanded'], 'true');
+    assert.equal(elementos['cuerpo-7'].hidden, false);
+    assert.deepEqual(registro.foco, { id: 'cabeza-7', opciones: { preventScroll: true } });
+    assert.equal(elementos['anuncio-cambios'].textContent, MENSAJE_409);
   });
 
   it('cancelar y volver a pedir la confirmación: la espera vuelve a empezar (la anterior no habilita la nueva)', async () => {

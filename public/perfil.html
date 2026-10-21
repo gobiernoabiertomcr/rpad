@@ -115,11 +115,12 @@
         .pf-fecha-aviso svg { flex: none; width: 14px; height: 14px; }
         .pf-sin-campos { margin: 12px 0 0; font-size: 0.9rem; color: var(--pf-suave); }
 
-        /* Notas de la fila abierta: la baja, el motivo del rechazo y el cambio que no le corresponde auditar */
+        /* Notas de la fila abierta: la baja, el motivo del rechazo, el cambio que no le corresponde auditar y el que audita sin
+           responsabilidad por la auditoría */
         .pf-nota { display: flex; gap: 10px; align-items: flex-start; font-size: 0.875rem; border-radius: 10px; padding: 10px 14px; margin: 14px 0 0; }
         .pf-nota svg { flex: none; margin-top: 2px; }
         .pf-nota.baja { background: #FBEEEE; color: var(--pf-eliminar); }
-        .pf-nota.no-corresponde { background: var(--pf-aviso-fondo); border: 1px solid var(--pf-aviso-borde); color: var(--pf-aviso); }
+        .pf-nota.no-corresponde, .pf-nota.sin-responsabilidad { background: var(--pf-aviso-fondo); border: 1px solid var(--pf-aviso-borde); color: var(--pf-aviso); }
         .pf-nota.motivo { background: #fff; border: 1px solid var(--pf-linea); color: var(--pf-texto); overflow-wrap: anywhere; }
         .pf-nota.motivo b { color: var(--pf-eliminar); font-weight: 600; }
 
@@ -464,6 +465,6 @@
     <script src="js/auth.js?v=20261117"></script>
     <script src="js/main.js?v=20261117"></script>
     <script src="js/api.js?v=20261117"></script>
-    <script src="js/perfil.js?v=20261112"></script>
+    <script src="js/perfil.js?v=20261118"></script>
 </body>
 </html>
