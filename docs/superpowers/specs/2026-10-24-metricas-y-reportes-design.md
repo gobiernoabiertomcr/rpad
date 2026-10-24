@@ -8,7 +8,7 @@ Mockups en `docs/superpowers/specs/2026-10-24-metricas-y-reportes-mockups/` (HTM
 - `2-circuito-interna.html`: el circuito con la gestión interna elegida.
 - `3-reportes.html`: la pestaña Reportes, dos hojas de PDF con el diseño del anexo y la sección «Para completar».
 - `4-metricas-datos-reales.html`, `5-circuito-interna-datos-reales.html` y `6-reportes-datos-reales.html`: las mismas tres maquetas con los números reales al 24/10/2026, calculados con las reglas de este documento por un script descartable. Las fuentes:
-  - la base local del 20/10;
+  - la base local del 20/10. Después se verificó contra la base recargada con el dump de producción del 24/10 a las 16:45, sin parches, y da exactamente lo mismo;
   - lo que trae el dump del 24/10: el Presupuesto actualizado el 21/10 y la Nota Digital 4/26;
   - el Excel de «Recibido el» del usuario, con 27 de 32 fechas. El Presupuesto del 19/10 salió de una fuente pública: lo confirmó el usuario. Se consultó el digesto municipal y el dataset se armó con lo publicado ahí, porque el área nunca contestó.
   
@@ -74,10 +74,11 @@ Se mide cuánto tarda cada paso, en días hábiles.
 ## Dependencia y orden
 
 - **Todo va junto** (lo decidió el usuario): una rama (`feat/metricas-y-reportes`), un despliegue. La implementación **empieza cuando `feat/nota-dgmit` esté en main**, y esta rama se pone al día con main antes de empezar.
+- **Esa condición ya se cumplió:** notas DGMIT está en main (merge 8b25ae0) y en producción desde el 24/10/2026. Lo que vale es su spec en main y la sección «Notas DGMIT» de CLAUDE.md. Esta rama arrancó antes (en c4ea542), así que lo primero del plan es traerse main.
 - Lo que se usa de notas DGMIT (spec `2026-10-24-notas-dgmit-design.md`):
   - las tablas `notas_dgmit` (`numero`, `tipo` solicitud o reiteración, `recibida`, `anulada`) y `notas_dgmit_datasets`;
   - `fuentesDe(…).notasDgmit`;
-  - la regla de a qué ciclo pertenece una nota (el que regía en `recibida 00:00:00`, con `cicloDelAviso`) y las vigentes (las no anuladas con `recibida` ≤ hoy);
+  - la regla de a qué ciclo pertenece una nota (el que regía en `recibida 00:00:00`, con `cicloDelAviso`, más la regla R7 de su revisión final para el ciclo 0) y las vigentes (las no anuladas con `recibida` ≤ hoy). **Se reutiliza el código del Seguimiento, no una copia de la regla**: las métricas y el Seguimiento tienen que ubicar cada nota en el mismo ciclo. La nota del ciclo abierto ya la da `notaDgmitDelCiclo` (`services/seguimientoReglas.js`); para los ciclos cerrados hace falta lo mismo para cada ciclo;
   - el rol `colaborador`, `puedeCargarNotasDgmit(rol)` / `Auth.puedeCargarNotasDgmit()`;
   - el formulario «Cargar nota DGMIT» del Seguimiento.
 - Si al llegar a main algo de eso cambió, quien construye lo adapta, y solo pregunta si cambia lo que se ve.
