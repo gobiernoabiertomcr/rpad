@@ -30,21 +30,32 @@ const FILTRO_DEL_ESTADO = { vencido: 'vencidos', proximo: 'proximos', actualizad
 // Estos dos aparecen solo si tienen algo o si están elegidos
 const FILTROS_SOLO_SI_HAY = ['sin-fecha', 'bajas'];
 
-// Los filtros de los movimientos: cada movimiento trae su `filtro` del servidor
-const FILTROS_MOVIMIENTOS = [['todos', 'Todos'], ['avisos', 'Avisos a DGMIT'], ['area', 'Emails al área'], ['actualizaciones', 'Actualizaciones'],
-  ['cambios', 'Cambios en la ficha'], ['propuestas', 'Propuestas'], ['auditoria', 'Notas de auditoría'], ['altas', 'Alta y baja']];
+// Los filtros de los movimientos: cada movimiento trae su `filtro` del servidor ('dgmit': las notas DGMIT al área, también las
+// anuladas; spec 2026-10-24-notas-dgmit, 6)
+const FILTROS_MOVIMIENTOS = [['todos', 'Todos'], ['avisos', 'Avisos a DGMIT'], ['area', 'Emails al área'], ['dgmit', 'Notas DGMIT'],
+  ['actualizaciones', 'Actualizaciones'], ['cambios', 'Cambios en la ficha'], ['propuestas', 'Propuestas'], ['auditoria', 'Notas de auditoría'],
+  ['altas', 'Alta y baja']];
 // La lista muestra 10 movimientos y después tandas de 20 (los hitos no cuentan)
 const FILAS_INICIALES = 10;
 const FILAS_POR_TANDA = 20;
 
 // Las marcas de la lista (clases mk-*) y las insignias del estado (clases sg-*)
-const TIPOS_DE_MARCA = ['nota', 'email', 'area', 'act', 'actp', 'cambio', 'cambiop', 'rech', 'alta', 'baja', 'auditoria'];
+const TIPOS_DE_MARCA = ['nota', 'email', 'area', 'dgmit', 'act', 'actp', 'cambio', 'cambiop', 'rech', 'alta', 'baja', 'auditoria'];
 const ESTADOS_DE_INSIGNIA = ['vencido', 'proximo', 'actualizado', 'eventual', 'sin-fecha', 'baja'];
 const ESTADOS_DE_NOTA = { enviada: 'Enviada', pendiente: 'Pendiente de envío', fallida: 'No se pudo enviar' };
 const SIN_DATOS_GUARDADOS = 'No quedó guardado: las notas 1/26 y 2/26 son anteriores a ese dato.';
 // Copia del mensaje de descargarAnexo (controllers/notasDigitalesController.js): los avisos y las reiteraciones tienen anexo, pero
 // no las reiteraciones anteriores al anexo de seguimiento (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.4)
 const NOTA_SIN_ANEXO = 'La nota no tiene anexo';
+// Los tipos de nota DGMIT: copia de TEXTO_TIPO_NOTA_DGMIT (services/notasDgmitReglas.js), atada por un test de paridad, y lo que
+// dice cada uno al desplegar el movimiento (spec 2026-10-24-notas-dgmit, 6)
+const TIPOS_NOTA_DGMIT = { solicitud: 'Solicitud', reiteracion: 'Reiteración' };
+const TIPOS_NOTA_DGMIT_LARGOS = {
+  solicitud: 'Solicitud: la primera vez que se le piden los datos al área',
+  reiteracion: 'Reiteración: ya se le habían pedido y se le vuelven a pedir'
+};
+// Cada entrada del historial de una nota DGMIT, en su detalle
+const ACCIONES_DE_NOTA_DGMIT = { correccion: 'Corregida', anulacion: 'Anulada' };
 
 // La cinta en pantalla: las filas en unidades del espacio de 1000 × 170 (MEDIDAS.pantalla del prototipo), las líneas de los meses
 // de 24 a 102 y la línea útil de 30 a 970
@@ -58,9 +69,9 @@ const LETRA_CINTA = 6.6;
 const TOPES_CINTA = { nota: [60, 940], vence: 940, hoy: 956 };
 const TRAMOS_CON_RECTANGULO = ['ciclo', 'vencido', 'futuro', 'eventual'];
 // La leyenda de la pantalla: todos los tipos, y el rayado "Vencido"
-const LEYENDA_CINTA = [['nota', 'Nota Digital a DGMIT'], ['email', 'Email a DGMIT'], ['area', 'Email al área'], ['act', 'Actualización'],
-  ['actp', 'Actualización pendiente'], ['cambio', 'Cambio en la ficha'], ['cambiop', 'Cambio pendiente'], ['rech', 'Propuesta rechazada'],
-  ['alta', 'Alta'], ['vencido', 'Vencido']];
+const LEYENDA_CINTA = [['nota', 'Nota Digital a DGMIT'], ['email', 'Email a DGMIT'], ['area', 'Email al área'], ['dgmit', 'Nota DGMIT al área'],
+  ['act', 'Actualización'], ['actp', 'Actualización pendiente'], ['cambio', 'Cambio en la ficha'], ['cambiop', 'Cambio pendiente'],
+  ['rech', 'Propuesta rechazada'], ['alta', 'Alta'], ['vencido', 'Vencido']];
 
 const ICONO_DESCARGA = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
 const ICONO_SOBRE = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>';
@@ -199,8 +210,17 @@ function htmlDeAvisosDeLaFila(fila) {
   return `<b>${numeroEnTexto(fila.avisos?.total)}</b>${desglose ? `<small>${desglose}</small>` : ''}`;
 }
 
+// La columna "Última nota DGMIT al área": la nota del ciclo abierto tal como la manda el servidor (`nota_dgmit`: { numero, tipo,
+// recibida } o null), con el número y abajo, más chico, el tipo y el día en que el área la recibió; sin nota, una raya
+function htmlDeNotaDgmitDeLaFila(nota) {
+  if (!nota || typeof nota !== 'object' || !String(nota.numero ?? '').trim()) return Utils.SIN_DATO;
+  const tipo = esClaveDe(TIPOS_NOTA_DGMIT, nota.tipo) ? TIPOS_NOTA_DGMIT[nota.tipo] : '';
+  return `<b>N° ${escaparTexto(nota.numero)}</b><small>${tipo ? `${tipo}, recibida` : 'Recibida'} el ${Utils.fechaCorta(nota.recibida)}</small>`;
+}
+
 // Una fila de la tabla: el dataset (link a su seguimiento) y el área con sus etiquetas, el vencimiento, cuánto hace que venció,
-// los avisos del ciclo y el último aviso. `pendiente` (del servidor) es cualquier cambio pendiente de aprobación
+// los avisos del ciclo, el último aviso y la última nota DGMIT al área. `pendiente` (del servidor) es cualquier cambio pendiente de
+// aprobación
 function htmlDeFilaDeLista(fila) {
   const etiquetas = [
     fila.tipo_gestion === 'interna' ? '<span class="sg-etq interna">Gestión interna</span>' : '',
@@ -213,6 +233,7 @@ function htmlDeFilaDeLista(fila) {
     <td class="num${vencido ? ' atraso' : ''}">${vencido ? diasEnTexto(-fila.dias) : Utils.SIN_DATO}</td>
     <td class="avisos">${htmlDeAvisosDeLaFila(fila)}</td>
     <td class="num">${Utils.fechaCorta(fila.ultimo_aviso)}</td>
+    <td class="nota-dgmit">${htmlDeNotaDgmitDeLaFila(fila.nota_dgmit)}</td>
   </tr>`;
 }
 
@@ -311,6 +332,9 @@ function textoDeCabezaDelCircuito(circuito) {
 // «Requiere nota DGMIT» en «No», solo si en el ciclo abierto ya se le mandó el email de los 40 días (si no, el servidor manda
 // `alArea` en null y no se dibuja). Con «No» el servidor también manda el medio («No hace falta nota formal») y el tramo («Sin
 // nota formal»): esta función los dibuja como vienen.
+// Con una nota DGMIT cargada en el ciclo abierto (`tramoFuera.registrada`, spec 2026-10-24-notas-dgmit, 6) el tramo es una línea llena
+// violeta (`sg-flecha registrada`); sin nota, la punteada gris de siempre (`sg-flecha fuera`). En alto contraste se distinguen por el
+// trazo (lleno o punteado).
 function htmlDelCircuito(circuito) {
   if (!circuito || typeof circuito !== 'object') return '';
   const avisos = circuito.avisos ?? {};
@@ -323,7 +347,7 @@ function htmlDelCircuito(circuito) {
       <div class="sg-nodo"><div class="q">RPAD</div><div class="r">Dirección de Datos Públicos y Comunicación</div></div>
       <div class="sg-flecha"><div class="n">${escaparTexto(avisos.titulo)}</div><div class="l" aria-hidden="true"></div><div class="c">${escaparTexto(avisos.texto)}</div></div>
       <div class="sg-nodo"><div class="q">${escaparTexto(medio.nombre)}</div><div class="r">${escaparTexto(medio.rol)}</div></div>
-      <div class="sg-flecha fuera"><div class="n">${escaparTexto(fuera.titulo)}</div><div class="l" aria-hidden="true"></div><div class="c">${escaparTexto(fuera.texto)}</div></div>
+      <div class="sg-flecha ${fuera.registrada === true ? 'registrada' : 'fuera'}"><div class="n">${escaparTexto(fuera.titulo)}</div><div class="l" aria-hidden="true"></div><div class="c">${escaparTexto(fuera.texto)}</div></div>
       <div class="sg-nodo${area.vencido ? ' area' : ''}"><div class="q">${escaparTexto(area.nombre) || Utils.SIN_DATO}</div><div class="r">Área responsable</div><div class="e">${escaparTexto(area.texto)}</div></div>
     </div>${alArea}`;
 }
@@ -338,7 +362,8 @@ function coordenada(valor) {
 }
 
 // El ícono de cada marca (los del prototipo, cinta.js): rombo lleno nota, rombo hueco email, círculo punteado email al área,
-// círculo verde actualización, círculo verde punteado pendiente, cuadradito azul cambio y punteado pendiente, aro alta y ✕ rechazo
+// círculo verde actualización, círculo verde punteado pendiente, cuadradito azul cambio y punteado pendiente, aro alta y ✕ rechazo;
+// la nota DGMIT al área, una hoja violeta (un rectángulo lleno de 10 × 13)
 function iconoDeCinta(tipo, cx, cy) {
   const x = coordenada(cx);
   const y = coordenada(cy);
@@ -349,6 +374,7 @@ function iconoDeCinta(tipo, cx, cy) {
     case 'nota': return cuadrado(13, 'i-nota', girado);
     case 'email': return cuadrado(10, 'i-email', girado);
     case 'area': return `<circle cx="${x}" cy="${y}" r="5.5" class="i-area"/>`;
+    case 'dgmit': return `<rect x="${coordenada(cx - 5)}" y="${coordenada(cy - 6.5)}" width="10" height="13" rx="1.5" class="i-dgmit"/>`;
     case 'act': return `<circle cx="${x}" cy="${y}" r="7" class="i-act"/>`;
     case 'actp': return `<circle cx="${x}" cy="${y}" r="6" class="i-actp"/>`;
     case 'cambio': return cuadrado(11, 'i-cambio', ' rx="2"');
@@ -559,10 +585,45 @@ function htmlDelCuerpoDeCambio(tipo, extra) {
   return htmlDeDatos(pares);
 }
 
+// "16/10/2026 a las 09:30, por Diego Cuatro" (sin nombre, solo el momento), con el nombre escapado
+function momentoConQuien(momento, por) {
+  const nombre = String(por ?? '').trim();
+  return `${momentoEnTexto(momento)}${nombre ? `, por ${escaparTexto(nombre)}` : ''}`;
+}
+
+// Lo que se ve al desplegar una nota DGMIT (spec 2026-10-24-notas-dgmit, 3 y 6): el número, el tipo (el texto largo), el día en que la
+// recibió el área, el área (la del dataset hoy), todos los datasets de la nota (uno por renglón), quién la cargó y cuándo, y cada
+// corrección o anulación del historial (la más nueva primero, como llega). "Corregir" y "Anular" solo si el servidor dice que quien
+// mira puede (`editable`: quien la cargó o administración; solo cuenta el true literal) y la nota no está anulada. Los botones llevan
+// el id de la nota (los conecta la página)
+function htmlDelCuerpoDeNotaDgmit(extra) {
+  const datasets = comoLista(extra.datasets).filter((d) => d && typeof d === 'object' && String(d.titulo ?? '').trim())
+    .map((d) => escaparTexto(d.titulo)).join('<br>');
+  const pares = [
+    ['Número de nota DGMIT', escaparTexto(extra.numero) || Utils.SIN_DATO],
+    ['Tipo de nota', esClaveDe(TIPOS_NOTA_DGMIT_LARGOS, extra.tipo) ? TIPOS_NOTA_DGMIT_LARGOS[extra.tipo] : escaparTexto(extra.tipo) || Utils.SIN_DATO],
+    ['Recibida por el área', Utils.fechaCorta(extra.recibida)],
+    ['Área', escaparTexto(extra.area) || Utils.SIN_DATO],
+    ['Datasets de la nota', datasets || Utils.SIN_DATO],
+    ['Cargada', momentoConQuien(extra.cargada, extra.por)]
+  ];
+  for (const entrada of comoLista(extra.historial)) {
+    if (!entrada || typeof entrada !== 'object' || !esClaveDe(ACCIONES_DE_NOTA_DGMIT, entrada.accion)) continue;
+    const motivo = String(entrada.motivo ?? '').trim();
+    pares.push([ACCIONES_DE_NOTA_DGMIT[entrada.accion], `${momentoConQuien(entrada.momento, entrada.por)}${motivo ? `: ${escaparTexto(motivo)}` : ''}`]);
+  }
+  const id = extra.nota_id;
+  if (extra.editable !== true || extra.anulada || id === null || id === undefined) return htmlDeDatos(pares);
+  const boton = (accion, texto) => `<button type="button" class="sg-link" data-accion="${accion}" data-nota="${escaparTexto(id)}">${texto}</button>`;
+  return `${htmlDeDatos(pares)}<div class="sg-acciones-nota">${boton('corregir-nota', 'Corregir')}${boton('anular-nota', 'Anular')}`
+    + '<span class="aclara">Lo ven quien la cargó y administración.</span></div>';
+}
+
 function htmlDelCuerpo(m, esAdmin) {
   const extra = m.extra && typeof m.extra === 'object' ? m.extra : {};
   switch (m.tipo) {
     case 'nota': return htmlDelCuerpoDeNota(extra, esAdmin);
+    case 'dgmit': return htmlDelCuerpoDeNotaDgmit(extra);
     case 'email':
     case 'area': return htmlDelCuerpoDeEmail(extra);
     case 'auditoria': return htmlDeDatos([['Cambio auditado', `#${numeroEnTexto(extra.cambio_id)}`], ['Fecha de la nota', Utils.fechaCorta(m.fecha)]]);
@@ -575,13 +636,15 @@ function htmlDelCuerpo(m, esAdmin) {
 }
 
 // Un movimiento: la fila (un botón que despliega el cuerpo, con aria-expanded y aria-controls) con la fecha, la marca, el título,
-// el detalle y quién; el cuerpo, oculto. `i`: su número en la lista, para el id del cuerpo
+// el detalle y quién; el cuerpo, oculto. `i`: su número en la lista, para el id del cuerpo. Una nota DGMIT anulada lleva la clase
+// `anulada` (el título tachado y en gris, la marca hueca)
 function htmlDeMovimiento(m, i, { esAdmin = false } = {}) {
   if (!m || typeof m !== 'object') return '';
   const idCuerpo = `sg-cuerpo-${numeroEnTexto(i)}`;
   const tipo = TIPOS_DE_MARCA.includes(m.tipo) ? m.tipo : 'cambio';
   const quien = comoLista(m.quien).map(escaparTexto).filter(Boolean).join('<br>');
-  return `<li class="sg-mov"><button type="button" class="sg-fila" aria-expanded="false" aria-controls="${idCuerpo}">`
+  const clase = m.tipo === 'dgmit' && m.extra?.anulada ? 'sg-mov anulada' : 'sg-mov';
+  return `<li class="${clase}"><button type="button" class="sg-fila" aria-expanded="false" aria-controls="${idCuerpo}">`
     + `<span class="f">${Utils.fechaCorta(m.fecha)}</span><i class="mk mk-${tipo}" aria-hidden="true"></i>`
     + `<span><span class="q">${escaparTexto(m.titulo)}</span>${m.detalle ? `<span class="d">${escaparTexto(m.detalle)}</span>` : ''}</span>`
     + `<span class="p">${quien}</span>${ICONO_ABRIR}</button>`
@@ -832,8 +895,10 @@ function alternarFila(evento) {
   if (cuerpo) cuerpo.hidden = !abrir;
 }
 
+// "Descargar la nota y su anexo" se reconoce por data-archivo: "Corregir" y "Anular" de una nota DGMIT también llevan data-nota (el
+// id de la nota DGMIT, no el de una Nota Digital) y no descargan nada
 function alTocarUnMovimiento(evento) {
-  const descarga = evento.target.closest('button[data-nota]');
+  const descarga = evento.target.closest('button[data-archivo]');
   if (descarga) {
     descargarNota(descarga);
     return;

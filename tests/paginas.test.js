@@ -38,8 +38,9 @@ const VERSION_CSS = '20261109';
 const VERSION_GESTION = '20261105';
 // seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset); cambió después ("Requiere nota DGMIT" en la
 // ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
-// de la reiteración): su versión es propia
-const VERSION_SEGUIMIENTO = '20261119';
+// de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, spec 2026-10-24-notas-dgmit): su versión
+// es propia
+const VERSION_SEGUIMIENTO = '20261124';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

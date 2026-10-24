@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
-import { seguimientoDe, resumenParaLista, nombreDelPdf } from '../services/seguimientoReglas.js';
+import { seguimientoDe, resumenParaLista, nombreDelPdf, conNotasDgmitEditables } from '../services/seguimientoReglas.js';
 import { textoRequiereNota } from '../services/requiereNotaReglas.js';
+import { TEXTO_TIPO_NOTA_DGMIT } from '../services/notasDgmitReglas.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -312,9 +313,9 @@ describe('seguimiento.js: la cinta', () => {
 
   it('la leyenda, con todos los tipos y el rayado "Vencido"', () => {
     const html = ctx.htmlDeLeyenda();
-    for (const texto of ['Nota Digital a DGMIT', 'Email a DGMIT', 'Email al área', 'Actualización', 'Actualización pendiente', 'Cambio en la ficha',
-      'Cambio pendiente', 'Propuesta rechazada', 'Alta', 'Vencido']) assert.ok(html.includes(`</i>${texto}</span>`), texto);
-    assert.equal(cuantas(html, /aria-hidden="true"/g), 10);
+    for (const texto of ['Nota Digital a DGMIT', 'Email a DGMIT', 'Email al área', 'Nota DGMIT al área', 'Actualización', 'Actualización pendiente',
+      'Cambio en la ficha', 'Cambio pendiente', 'Propuesta rechazada', 'Alta', 'Vencido']) assert.ok(html.includes(`</i>${texto}</span>`), texto);
+    assert.equal(cuantas(html, /aria-hidden="true"/g), 11);
   });
 });
 
@@ -324,7 +325,8 @@ describe('seguimiento.js: los movimientos', () => {
 
   it('los filtros, en orden y con sus textos', () => {
     assert.deepEqual(plano(vm.runInContext('FILTROS_MOVIMIENTOS', ctx)), [['todos', 'Todos'], ['avisos', 'Avisos a DGMIT'], ['area', 'Emails al área'],
-      ['actualizaciones', 'Actualizaciones'], ['cambios', 'Cambios en la ficha'], ['propuestas', 'Propuestas'], ['auditoria', 'Notas de auditoría'], ['altas', 'Alta y baja']]);
+      ['dgmit', 'Notas DGMIT'], ['actualizaciones', 'Actualizaciones'], ['cambios', 'Cambios en la ficha'], ['propuestas', 'Propuestas'],
+      ['auditoria', 'Notas de auditoría'], ['altas', 'Alta y baja']]);
   });
 
   it('los botones de los filtros, con su cantidad y solo los que tienen algo', () => {
@@ -421,6 +423,192 @@ describe('seguimiento.js: los movimientos', () => {
     for (const titulo of ['Directores Generales de Planta Permanente', 'Título — con "comillas" y <b>', '']) {
       assert.equal(ctx.nombreDelPdf(titulo, HOY), nombreDelPdf(titulo, HOY));
     }
+  });
+});
+
+// Notas DGMIT (spec 2026-10-24-notas-dgmit, 6): la columna de la lista, el tramo del circuito, la marca de la cinta, el filtro y el
+// detalle del movimiento, con lo que arma el servidor (seguimientoDe sobre los casos más `notasDgmit`, y conNotasDgmitEditables según
+// quién mira, como GET /api/seguimiento/:id)
+describe('seguimiento.js: las notas DGMIT', () => {
+  // Una nota DGMIT como la da fuentesDe: `por` y los `por` del historial con el nombre completo (el servidor los acorta)
+  const notaDgmit = (datos) => ({
+    id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '2026-10-16 09:30:00',
+    por: 'Diego Martín Cuatro', por_id: 7, datasets: [{ id: 58, titulo: 'Áreas específicas de género' }], historial: [], ...datos
+  });
+  const conNotasDgmit = (id, notasDgmit, dataset = {}) => ({ ...f(id), dataset: { ...CASOS[id].dataset, ...dataset }, notasDgmit });
+  // El seguimiento como lo manda el servidor a quien mira (por defecto, quien cargó las notas: el usuario 7)
+  const comoLoVe = (fuentes, quien = { usuarioId: 7 }) => conNotasDgmitEditables(seguimientoDe(fuentes, HOY), quien);
+  const dgmitDe = (seguimiento) => seguimiento.movimientos.filter((m) => m.tipo === 'dgmit');
+  const AREA_58 = CASOS[58].dataset.area;
+  const HOTELERIA = { id: 25, titulo: 'Hotelería en Comodoro Rivadavia' };
+  const CORRECCION = { accion: 'correccion', motivo: 'Faltaba un dataset', por: 'Elena Noelia Cuatro', momento: '2026-10-17 10:00:00' };
+  const ANULACION = { accion: 'anulacion', motivo: 'Se cargó dos veces', por: 'Elena Noelia Cuatro', momento: '2026-10-18 09:30:00' };
+  const BOTON = (accion, texto, id = 1) => `<button type="button" class="sg-link" data-accion="${accion}" data-nota="${id}">${texto}</button>`;
+
+  it('la lista tiene la columna Última nota DGMIT al área: con nota y con —', () => {
+    // El encabezado: la columna nueva va al final, y cada fila tiene tantas celdas como columnas
+    const thead = leer('seguimiento.html').match(/<thead>([\s\S]*?)<\/thead>/)[1];
+    const columnas = [...thead.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((m) => m[1]);
+    assert.deepEqual(columnas, ['Dataset y área', 'Vencimiento', 'Vencido hace', 'Avisos a DGMIT en el ciclo', 'Último aviso', 'Última nota DGMIT al área']);
+    const conNota = ctx.htmlDeFilaDeLista(resumenParaLista(conNotasDgmit(58, [notaDgmit({})]), HOY));
+    assert.equal(cuantas(conNota, /<td[ >]/g), columnas.length);
+    assert.match(conNota, /<td class="nota-dgmit"><b>N° 156\/26<\/b><small>Solicitud, recibida el 15\/10\/2026<\/small><\/td>\s*<\/tr>$/);
+    const reiteracion = ctx.htmlDeFilaDeLista(resumenParaLista(conNotasDgmit(58, [notaDgmit({ tipo: 'reiteracion', numero: '305/26' })]), HOY));
+    assert.ok(reiteracion.includes('<td class="nota-dgmit"><b>N° 305/26</b><small>Reiteración, recibida el 15/10/2026</small></td>'));
+    // Sin nota (o con la nota anulada), una raya
+    for (const fila of [resumenParaLista(f(52), HOY), resumenParaLista(conNotasDgmit(58, [notaDgmit({ anulada: true })]), HOY)]) {
+      const html = ctx.htmlDeFilaDeLista(fila);
+      assert.equal(cuantas(html, /<td[ >]/g), columnas.length);
+      assert.match(html, /<td class="nota-dgmit">—<\/td>\s*<\/tr>$/);
+    }
+    // Lo que manda el servidor tal cual: con un tipo que no conoce, sin el tipo; con algo raro, la raya
+    assert.ok(ctx.htmlDeFilaDeLista({ ...resumenParaLista(f(52), HOY), nota_dgmit: { numero: '9/26', tipo: 'otra', recibida: '2026-10-01' } })
+      .includes('<td class="nota-dgmit"><b>N° 9/26</b><small>Recibida el 01/10/2026</small></td>'));
+    for (const raro of [null, undefined, 'x', {}, { numero: '  ' }]) {
+      assert.match(ctx.htmlDeFilaDeLista({ ...resumenParaLista(f(52), HOY), nota_dgmit: raro }), /<td class="nota-dgmit">—<\/td>/, String(raro));
+    }
+  });
+
+  it('el circuito con nota usa sg-flecha registrada; sin nota, fuera, con Pendiente de carga', () => {
+    const con = ctx.htmlDelCircuito(comoLoVe(conNotasDgmit(58, [notaDgmit({})])).circuito);
+    assert.ok(con.includes('<div class="sg-flecha registrada"><div class="n">Nota DGMIT N° 156/26</div><div class="l" aria-hidden="true"></div>'
+      + '<div class="c">Solicitud recibida por el área el 15/10/2026, hace 5 días</div></div>'));
+    assert.ok(!con.includes('sg-flecha fuera'));
+    assert.equal(cuantas(con, /class="sg-flecha"/g), 1, 'el tramo de los avisos sigue igual');
+    const sin = ctx.htmlDelCircuito(seguimientoDe(f(52), HOY).circuito);
+    assert.ok(sin.includes('<div class="sg-flecha fuera"><div class="n">Nota formal</div><div class="l" aria-hidden="true"></div><div class="c">Pendiente de carga</div></div>'));
+    assert.ok(!sin.includes('registrada'));
+    // Solo el true literal: cualquier otra cosa es el tramo punteado
+    for (const registrada of ['true', 1, null, undefined]) {
+      assert.ok(ctx.htmlDelCircuito({ tramoFuera: { titulo: 'Nota formal', texto: 'Pendiente de carga', registrada } }).includes('class="sg-flecha fuera"'), String(registrada));
+    }
+  });
+
+  it('el filtro Notas DGMIT aparece con su cantidad, después de Emails al área', () => {
+    // Cuenta también las anuladas
+    const s = comoLoVe(conNotasDgmit(52, [notaDgmit({ datasets: [] }), notaDgmit({ id: 2, numero: '151/26', recibida: '2026-10-10', anulada: true, datasets: [] })]));
+    const html = ctx.htmlDeFiltrosDeMovimientos(s.movimientos, 'todos');
+    const botones = [...html.matchAll(/data-filtro="([^"]+)" aria-pressed="(?:true|false)">([^<]+) <b>(\d+)<\/b>/g)].map((m) => [m[1], m[2], Number(m[3])]);
+    assert.deepEqual(botones, [['todos', 'Todos', 18], ['avisos', 'Avisos a DGMIT', 9], ['area', 'Emails al área', 2], ['dgmit', 'Notas DGMIT', 2],
+      ['actualizaciones', 'Actualizaciones', 2], ['propuestas', 'Propuestas', 2], ['altas', 'Alta y baja', 1]]);
+    // Sin notas DGMIT, el botón no aparece; elegido, sí (con 0)
+    assert.ok(!ctx.htmlDeFiltrosDeMovimientos(seguimientoDe(f(52), HOY).movimientos, 'todos').includes('Notas DGMIT'));
+    assert.ok(ctx.htmlDeFiltrosDeMovimientos(seguimientoDe(f(52), HOY).movimientos, 'dgmit').includes('data-filtro="dgmit" aria-pressed="true">Notas DGMIT <b>0</b>'));
+    // El filtro deja solo las notas DGMIT (sin hitos)
+    const items = ctx.itemsDeLaLista(s.movimientos, s.hitos, 'dgmit');
+    assert.deepEqual(plano(items.map((i) => i.movimiento.extra.numero)), ['156/26', '151/26']);
+  });
+
+  it('la leyenda incluye Nota DGMIT al área', () => {
+    assert.deepEqual(plano(vm.runInContext('LEYENDA_CINTA', ctx)).map(([tipo]) => tipo),
+      ['nota', 'email', 'area', 'dgmit', 'act', 'actp', 'cambio', 'cambiop', 'rech', 'alta', 'vencido']);
+    assert.ok(ctx.htmlDeLeyenda().includes('<span><i class="mk mk-dgmit" aria-hidden="true"></i>Nota DGMIT al área</span>'));
+  });
+
+  it('el ícono de la cinta de una nota DGMIT', () => {
+    assert.equal(ctx.iconoDeCinta('dgmit', 100, 92), '<rect x="95" y="85.5" width="10" height="13" rx="1.5" class="i-dgmit"/>');
+    assert.equal(ctx.iconoDeCinta('dgmit', 500.123, 92), '<rect x="495.12" y="85.5" width="10" height="13" rx="1.5" class="i-dgmit"/>');
+    // En la cinta del dataset: una marca en la fila de abajo (y = 92), con su <title>; la anulada no tiene marca
+    const svg = ctx.svgDeCinta(comoLoVe(conNotasDgmit(58, [notaDgmit({}), notaDgmit({ id: 2, numero: '151/26', recibida: '2026-08-10', anulada: true })])).cinta);
+    assert.equal(cuantas(svg, /class="i-dgmit"/g), 1);
+    assert.match(svg, /<title>15\/10\/2026: Nota DGMIT N° 156\/26 al área: solicitud<\/title><rect x="[\d.]+" y="85.5" width="10" height="13" rx="1.5" class="i-dgmit"\/>/);
+    // La marca de la lista y de la leyenda
+    assert.ok(vm.runInContext('TIPOS_DE_MARCA', ctx).includes('dgmit'));
+  });
+
+  it('el detalle de una nota DGMIT: filas, correcciones y botones solo si editable', () => {
+    const fuentes = conNotasDgmit(58, [notaDgmit({ datasets: [{ id: 58, titulo: 'Áreas específicas de género' }, HOTELERIA],
+      historial: [{ ...CORRECCION, momento: '2026-10-19 11:20:00', motivo: 'El número estaba mal escrito (decía 165/26).' }, CORRECCION] })]);
+    const [m] = dgmitDe(comoLoVe(fuentes));
+    const html = ctx.htmlDeMovimiento(m, 0, {});
+    assert.match(html, /^<li class="sg-mov"><button type="button" class="sg-fila"/);
+    assert.ok(html.includes('<i class="mk mk-dgmit" aria-hidden="true"></i><span><span class="q">Nota DGMIT N° 156/26 al área: solicitud</span>'));
+    assert.ok(html.includes('<span class="p">Cargó Diego Cuatro</span>'));
+    const pares = [...html.matchAll(/<dt>([^<]*)<\/dt><dd>(.*?)<\/dd>/g)].map((par) => [par[1], par[2]]);
+    assert.deepEqual(pares, [
+      ['Número de nota DGMIT', '156/26'],
+      ['Tipo de nota', 'Solicitud: la primera vez que se le piden los datos al área'],
+      ['Recibida por el área', '15/10/2026'],
+      ['Área', AREA_58],
+      ['Datasets de la nota', 'Áreas específicas de género<br>Hotelería en Comodoro Rivadavia'],
+      ['Cargada', '16/10/2026 a las 09:30, por Diego Cuatro'],
+      ['Corregida', '19/10/2026 a las 11:20, por Elena Cuatro: El número estaba mal escrito (decía 165/26).'],
+      ['Corregida', '17/10/2026 a las 10:00, por Elena Cuatro: Faltaba un dataset']
+    ]);
+    // Quien la cargó (o administración) ve Corregir y Anular, con el id de la nota
+    assert.ok(html.includes(`<div class="sg-acciones-nota">${BOTON('corregir-nota', 'Corregir')}${BOTON('anular-nota', 'Anular')}`));
+    const admin = ctx.htmlDeMovimiento(dgmitDe(comoLoVe(fuentes, { usuarioId: 99, administracion: true }))[0], 0, {});
+    assert.ok(admin.includes(BOTON('corregir-nota', 'Corregir')) && admin.includes(BOTON('anular-nota', 'Anular')));
+    // Otro usuario (o una respuesta sin `editable`) no ve los botones
+    for (const otro of [dgmitDe(comoLoVe(fuentes, { usuarioId: 99 }))[0], { ...m, extra: { ...m.extra, editable: undefined } },
+      { ...m, extra: { ...m.extra, editable: 'true' } }]) {
+      const sinBotones = ctx.htmlDeMovimiento(otro, 0, { esAdmin: true });
+      assert.ok(!sinBotones.includes('data-accion=') && !sinBotones.includes('sg-acciones-nota'));
+      assert.ok(sinBotones.includes('<dt>Número de nota DGMIT</dt><dd>156/26</dd>'));
+    }
+    // Una reiteración, sin quién la cargó y sin correcciones
+    const reiteracion = ctx.htmlDeMovimiento(dgmitDe(comoLoVe(conNotasDgmit(58, [notaDgmit({ tipo: 'reiteracion', por: null, por_id: null })])))[0], 0, {});
+    assert.ok(reiteracion.includes('<dt>Tipo de nota</dt><dd>Reiteración: ya se le habían pedido y se le vuelven a pedir</dd>'));
+    assert.ok(reiteracion.includes('<dt>Cargada</dt><dd>16/10/2026 a las 09:30</dd>'));
+    assert.ok(!reiteracion.includes('Corregida') && !reiteracion.includes('data-accion='));
+  });
+
+  it('la anulada: li con clase anulada, sin botones, con la fila Anulada', () => {
+    const fuentes = conNotasDgmit(58, [notaDgmit({ anulada: true, historial: [ANULACION, CORRECCION] })]);
+    // La ve administración (editable): igual no tiene botones
+    const [m] = dgmitDe(comoLoVe(fuentes, { usuarioId: 7, administracion: true }));
+    assert.equal(m.extra.editable, true);
+    const html = ctx.htmlDeMovimiento(m, 2, {});
+    assert.match(html, /^<li class="sg-mov anulada"><button type="button" class="sg-fila" aria-expanded="false" aria-controls="sg-cuerpo-2">/);
+    assert.ok(html.includes('<span class="d">Recibida por el área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro: Se cargó dos veces.</span>'));
+    assert.ok(!html.includes('data-accion=') && !html.includes('sg-acciones-nota'));
+    assert.ok(html.includes('<dt>Anulada</dt><dd>18/10/2026 a las 09:30, por Elena Cuatro: Se cargó dos veces</dd>'
+      + '<dt>Corregida</dt><dd>17/10/2026 a las 10:00, por Elena Cuatro: Faltaba un dataset</dd>'));
+    // Las que no están anuladas, y los demás movimientos, siguen sin la clase
+    assert.match(ctx.htmlDeMovimiento(dgmitDe(comoLoVe(conNotasDgmit(58, [notaDgmit({})])))[0], 0, {}), /^<li class="sg-mov">/);
+    assert.ok(!ctx.htmlDeMovimiento({ ...seguimientoDe(f(52), HOY).movimientos[0], extra: { anulada: true } }, 0, {}).includes('anulada'));
+    // En la lista, con las demás
+    const lista = ctx.htmlDeMovimientos(ctx.itemsDeLaLista(comoLoVe(fuentes).movimientos, [], 'dgmit'), 10, {});
+    assert.equal(cuantas(lista, /<li class="sg-mov anulada">/g), 1);
+  });
+
+  it('TIPOS_NOTA_DGMIT del navegador = TEXTO_TIPO_NOTA_DGMIT del servidor', () => {
+    assert.deepEqual(plano(vm.runInContext('TIPOS_NOTA_DGMIT', ctx)), { ...TEXTO_TIPO_NOTA_DGMIT });
+    assert.deepEqual(plano(vm.runInContext('TIPOS_NOTA_DGMIT_LARGOS', ctx)), {
+      solicitud: 'Solicitud: la primera vez que se le piden los datos al área',
+      reiteracion: 'Reiteración: ya se le habían pedido y se le vuelven a pedir'
+    });
+    // Cada texto largo empieza con el nombre del tipo
+    for (const [tipo, texto] of Object.entries(TEXTO_TIPO_NOTA_DGMIT)) {
+      assert.ok(vm.runInContext('TIPOS_NOTA_DGMIT_LARGOS', ctx)[tipo].startsWith(`${texto}: `), tipo);
+    }
+  });
+
+  it('un texto con < > & en el número o el motivo llega escapado', () => {
+    const raro = '<img src=x onerror=alert(1)> & "co"';
+    const fuentes = conNotasDgmit(58, [notaDgmit({ numero: raro, datasets: [{ id: 58, titulo: 'Áreas específicas de género' }, { id: 9, titulo: '<b>Otro</b>' }],
+      historial: [{ ...CORRECCION, motivo: '<script>x</script> & y' }] })]);
+    const s = comoLoVe(fuentes);
+    const html = [ctx.htmlDeMovimiento(dgmitDe(s)[0], 0, {}), ctx.htmlDelCircuito(s.circuito), ctx.svgDeCinta(s.cinta),
+      ctx.htmlDeFilaDeLista(resumenParaLista(fuentes, HOY))].join('');
+    assert.ok(!html.includes('<img') && !html.includes('<script') && !html.includes('<b>Otro'));
+    assert.ok(html.includes('<dt>Número de nota DGMIT</dt><dd>&lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;</dd>'));
+    assert.ok(html.includes('por Elena Cuatro: &lt;script&gt;x&lt;/script&gt; &amp; y</dd>'));
+    assert.ok(html.includes('Áreas específicas de género<br>&lt;b&gt;Otro&lt;/b&gt;</dd>'));
+    assert.ok(html.includes('<td class="nota-dgmit"><b>N° &lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;</b>'));
+    assert.ok(html.includes('class="n">Nota DGMIT N° &lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;</div>'));
+    // Lo que no pasa por el servidor también: el área, quién, el id de la nota y el momento
+    const directo = ctx.htmlDeMovimiento({ tipo: 'dgmit', filtro: 'dgmit', fecha: '2026-10-15', titulo: 't', quien: [], extra: {
+      nota_id: '1" onclick="x', numero: '1', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '<b>', por: '<i>Ana</i>',
+      area: '<u>Área</u>', datasets: [{ id: 1, titulo: 'a & b' }], historial: [{ accion: 'correccion', motivo: 'm', por: '<i>X</i>', momento: '2026-10-16 10:00:00' }],
+      editable: true } }, 0, {});
+    assert.ok(!directo.includes('<i>') && !directo.includes('<u>') && !directo.includes('" onclick'));
+    assert.ok(directo.includes('data-nota="1&quot; onclick=&quot;x"'));
+    assert.ok(directo.includes('<dt>Área</dt><dd>&lt;u&gt;Área&lt;/u&gt;</dd>') && directo.includes('<dd>a &amp; b</dd>'));
+    assert.ok(directo.includes('<dt>Cargada</dt><dd>—, por &lt;i&gt;Ana&lt;/i&gt;</dd>'));
+    // Datos raros: no tira error
+    assert.doesNotThrow(() => ctx.htmlDeMovimiento({ tipo: 'dgmit', extra: null }, 0, {}));
+    assert.doesNotThrow(() => ctx.htmlDeMovimiento({ tipo: 'dgmit', extra: { datasets: 'x', historial: [null, 'x', {}] } }, 0, {}));
   });
 });
 
@@ -582,6 +770,32 @@ describe('seguimiento.js: la página', () => {
     assert.equal(cuantas(el('sg-filas').innerHTML, /<tr>/g), 0);
     assert.equal(el('sg-vacio').hidden, false);
     assert.match(el('sg-filtros').innerHTML, /Actualizados <b>1<\/b>/);
+  });
+
+  it('Corregir y Anular de una nota DGMIT no descargan nada ni despliegan la fila; "Descargar la nota y su anexo" sí descarga', async () => {
+    // Un botón falso con sus data-*; closest entiende los selectores de atributo de seguimiento.js (button[data-x] y button[data-x="v"])
+    const boton = (datos) => ({
+      dataset: datos, disabled: false,
+      closest(selector) {
+        const partes = /^button\[data-([a-z-]+)(?:="([^"]*)")?\]$/.exec(selector);
+        if (!partes) return null;
+        const clave = partes[1].replace(/-([a-z])/g, (_, letra) => letra.toUpperCase());
+        return Object.hasOwn(datos, clave) && (partes[2] === undefined || datos[clave] === partes[2]) ? this : null;
+      }
+    });
+    const { pagina } = preparar({ esAdmin: true });
+    const pedidas = [];
+    pagina.showToast = () => {};
+    const api = vm.runInContext('API', pagina);
+    api.getNotaPdf = async (id) => { pedidas.push(id); throw new Error('sin servidor'); };
+    for (const accion of ['corregir-nota', 'anular-nota']) {
+      pagina.alTocarUnMovimiento({ target: boton({ accion, nota: '1' }) });
+    }
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.deepEqual(pedidas, []);
+    pagina.alTocarUnMovimiento({ target: boton({ nota: '4', archivo: 'Nota-Digital-2-26.pdf' }) });
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.deepEqual(pedidas, ['4']);
   });
 
   it('elegir una sugerencia que coincide exacto abre su seguimiento', async () => {

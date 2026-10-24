@@ -21,6 +21,8 @@
             --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
             --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
             --sg-gris: #8A97A8;
+            /* Las notas DGMIT al área (spec 2026-10-24-notas-dgmit, 6): contraste mayor a 7:1 sobre blanco */
+            --sg-violeta: #5B4691;
         }
 
         /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
@@ -96,6 +98,12 @@
         .sg-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.1rem; color: var(--sg-tinta); line-height: 1.15; }
         .sg-flecha.fuera .n { color: var(--sg-suave); font-weight: 650; }
         .sg-flecha .c { font-size: 0.82rem; color: var(--sg-suave); }
+        /* El tramo de la nota formal con una nota DGMIT cargada: línea llena violeta (en alto contraste se distingue de la punteada
+           por el trazo, que sigue lleno) */
+        .sg-flecha.registrada .l { border-top-color: var(--sg-violeta); }
+        .sg-flecha.registrada .l::after { border-left-color: var(--sg-violeta); }
+        .sg-flecha.registrada .n { color: var(--sg-violeta); }
+        .sg-flecha.registrada .c { color: var(--sg-texto); font-weight: 600; }
         .sg-directo { margin-top: 14px; display: flex; gap: 10px; align-items: center; padding: 10px 14px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; font-size: 0.9rem; }
         .sg-directo .i { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sg-cielo); display: grid; place-items: center; color: var(--sg-tinta); }
 
@@ -138,6 +146,7 @@
         .sg-cinta-svg .i-cambiop { fill: #fff; stroke: var(--sg-azul); stroke-width: 2; stroke-dasharray: 3 2; }
         .sg-cinta-svg .i-alta { fill: #fff; stroke: var(--sg-tinta); stroke-width: 2.5; }
         .sg-cinta-svg .i-rech { stroke: var(--sg-rojo); stroke-width: 2.4; stroke-linecap: round; }
+        .sg-cinta-svg .i-dgmit { fill: var(--sg-violeta); stroke: #fff; stroke-width: 1.2; }
         .sg-cinta-svg .c-fondo { fill: var(--sg-tinta); }
         .sg-cinta-svg .cuenta { font-size: 9.5px; font-weight: 700; fill: #fff; text-anchor: middle; }
 
@@ -157,6 +166,8 @@
         .mk-cambiop { border: 2px dashed var(--sg-azul); border-radius: 3px; width: 11px; height: 11px; }
         .mk-auditoria { background: var(--sg-suave); transform: rotate(45deg); border-radius: 2px; width: 11px; height: 11px; }
         .mk-baja { border: 2.5px solid var(--sg-rojo); border-radius: 50%; width: 13px; height: 13px; }
+        /* La nota DGMIT al área: una hoja violeta */
+        .mk-dgmit { background: var(--sg-violeta); border-radius: 2px; width: 10px; height: 13px; }
 
         /* Filtros */
         .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -187,6 +198,12 @@
         .sg-cuerpo button.sg-link:disabled { cursor: progress; opacity: 0.7; }
         .sg-cuerpo .aclara { font-size: 0.82rem; color: var(--sg-suave); }
         .sg-cuerpo .sg-antes { color: var(--sg-suave); text-decoration: line-through; }
+        .sg-fila .mk-dgmit { margin-top: 3px; }
+        .sg-cuerpo .sg-acciones-nota { margin-top: 12px; display: flex; gap: 6px 18px; align-items: baseline; flex-wrap: wrap; }
+        .sg-cuerpo .sg-acciones-nota .sg-link { margin-top: 0; }
+        /* Una nota DGMIT anulada: el título tachado y en gris, la marca hueca */
+        .sg-mov.anulada .q { text-decoration: line-through; text-decoration-thickness: 1.5px; color: var(--sg-suave); }
+        .sg-mov.anulada .mk-dgmit { background: transparent; border: 2px solid var(--sg-suave); }
         .sg-sin-movs { padding: 12px 4px; color: var(--sg-suave); }
         .sg-hito { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 0 12px; padding: 8px 4px 8px; border-top: 1px solid var(--sg-linea); }
         .sg-hito .f { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--sg-ambar); }
@@ -210,6 +227,10 @@
         .sg-tabla .atraso { font-weight: 700; color: var(--sg-rojo); }
         .sg-tabla .avisos b { font-family: var(--f-titulo); font-size: 1.05rem; color: var(--sg-tinta); }
         .sg-tabla .avisos small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
+        /* La última nota DGMIT al área: la del ciclo abierto */
+        .sg-tabla .nota-dgmit { white-space: nowrap; }
+        .sg-tabla .nota-dgmit b { font-weight: 700; color: var(--sg-violeta); }
+        .sg-tabla .nota-dgmit small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
         .sg-etq { display: inline-block; margin-top: 4px; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
         .sg-etq.interna { background: var(--sg-cielo); color: var(--sg-tinta); }
         .sg-etq.pendiente { background: var(--sg-azul-fondo); color: var(--sg-azul); }
@@ -341,6 +362,7 @@
                                         <th scope="col">Vencido hace</th>
                                         <th scope="col">Avisos a DGMIT en el ciclo</th>
                                         <th scope="col">Último aviso</th>
+                                        <th scope="col">Última nota DGMIT al área</th>
                                     </tr>
                                 </thead>
                                 <tbody id="sg-filas"></tbody>
@@ -422,6 +444,6 @@
     <script src="js/auth.js?v=20261124"></script>
     <script src="js/main.js?v=20261124"></script>
     <script src="js/api.js?v=20261124"></script>
-    <script src="js/seguimiento.js?v=20261119"></script>
+    <script src="js/seguimiento.js?v=20261124"></script>
 </body>
 </html>
