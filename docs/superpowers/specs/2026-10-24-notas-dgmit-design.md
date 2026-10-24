@@ -128,7 +128,7 @@ Con el estilo de `database/schema.sql` (InnoDB, utf8mb4_unicode_ci, nombres de l
 
 ## 5. Las reglas
 
-- `fuentesDe` (`services/seguimientoDatos.js`, solo lectura) suma `notasDgmit` a las fuentes de cada dataset: `[{ id, numero, tipo, recibida, anulada, cargada, por, por_id, otros, historial }]`. `cargada` es el momento de la carga en hora argentina, `por` el nombre de quien la cargó, `otros` los títulos de los demás datasets de la nota y `historial` sus correcciones y anulación (`{ accion, motivo, por, momento }`, la más nueva primero). Todas, también las anuladas. `tests/seguimiento-casos.js` y los demás armadores de fuentes la reciben vacía.
+- `fuentesDe` (`services/seguimientoDatos.js`, solo lectura) suma `notasDgmit` a las fuentes de cada dataset: `[{ id, numero, tipo, recibida, anulada, cargada, por, por_id, datasets, historial }]`. `cargada` es el momento de la carga en hora argentina, `por` el nombre de quien la cargó, `datasets` todos los datasets de la nota (`{ id, titulo }`, por título; "Corregir" los necesita y el detalle nombra a los otros) y `historial` sus correcciones y anulación (`{ accion, motivo, por, momento }`, la más nueva primero). Todas, también las anuladas. `tests/seguimiento-casos.js` y los demás armadores de fuentes la reciben vacía.
 - **Nunca frena una Nota Digital.** `fuentesDe` también arma el anexo de la reiteración, y si el anexo falla la reiteración no se genera. Por eso la consulta de las notas DGMIT va aislada: si falla (por ejemplo, porque falta la migración), se registra el error y cada dataset queda con `notasDgmit` vacía; el resto de las fuentes y el anexo salen como siempre.
 - Las reglas viven en `services/seguimientoReglas.js` (puro). Lo de validar la carga, en un módulo puro nuevo, `services/notasDgmitReglas.js` (sección 8). Ninguna función tira error y una fuente sin `notasDgmit` es una lista vacía.
 - **Vigentes:** las no anuladas con `recibida` igual o anterior a hoy (el anexo de la reiteración calcula con la fecha de la nota como hoy).
@@ -156,7 +156,7 @@ Con el estilo de `database/schema.sql` (InnoDB, utf8mb4_unicode_ci, nombres de l
 - Al desplegarlo: Número de nota DGMIT, Tipo de nota ("Solicitud: la primera vez que se le piden los datos al área" o "Reiteración: ya se le habían pedido y se le vuelven a pedir"), Recibida por el área, Área (la del dataset hoy), Datasets de la nota (todos, uno por renglón), Cargada (momento y quién), las correcciones y, si corresponde, "Corregir" y "Anular".
 - Una anulada se ve con el título tachado y el texto en gris.
 
-**La cinta.** Una marca violeta en la fila de abajo (la de los emails al área y las propuestas rechazadas), el día de la recepción: un rectángulo lleno, como una hoja. Prioridad dentro de la fila: nota DGMIT, después rechazo, después email al área. Detalle de la marca: "22/10/2026: Nota DGMIT N° 156/26 (solicitud), recibida por el área". Leyenda: "Nota DGMIT al área". Las anuladas no tienen marca.
+**La cinta.** Una marca violeta en la fila de abajo (la de los emails al área y las propuestas rechazadas), el día de la recepción: un rectángulo lleno, como una hoja. Prioridad dentro de la fila: nota DGMIT, después rechazo, después email al área. Detalle de la marca, como el de todas: la fecha y el título del movimiento ("22/10/2026: Nota DGMIT N° 156/26 al área: solicitud"). Leyenda: "Nota DGMIT al área". Las anuladas no tienen marca.
 
 **La lista "Sin elegir".** Una columna nueva, "Última nota DGMIT al área": "N° 156/26" y abajo, más chico, "Solicitud, recibida el 22/10/2026", o "—". Es la nota del ciclo abierto (sección 5). `resumenParaLista` suma `requiere_nota` (1, 0 o null, como la ficha) y `nota_dgmit` (`{ numero, tipo, recibida }` o null). En el teléfono, la columna se acomoda como las demás.
 
@@ -180,7 +180,7 @@ Con el estilo de `database/schema.sql` (InnoDB, utf8mb4_unicode_ci, nombres de l
 - Validación pura en `services/notasDgmitReglas.js`: `validarNotaDgmit(entrada, hoy)` devuelve `{ datos, errores }` (errores por campo, con los mensajes de la sección 2) y `validarMotivo(motivo)`. El controlador (`controllers/notasDgmitController.js`) chequea en la base que los datasets existan y se puedan elegir (activos, externos, `requiere_nota` NULL o 1; en una corrección, también los que la nota ya tenía) y que el número no esté repetido. Un dataset que no se puede elegir da 400 con "«título» no se puede elegir: solo los datasets activos de gestión externa que requieren nota DGMIT."
 - Cargar, corregir y anular son transacciones (`beginTransaction`/`commit`/`rollback`): cabecera, datasets e historial juntos.
 - `GET /api/seguimiento` suma `requiere_nota` y `nota_dgmit` a cada fila. `GET /api/seguimiento/:id` pone `extra.editable` en cada movimiento `dgmit` según quién mira (quien la cargó o administración) y saca `por_id` de la respuesta.
-- Las páginas usan `API.pedirJson` (como el resto del Seguimiento) con los métodos nuevos en `api.js` (`API.cargarNotaDgmit`, `API.corregirNotaDgmit`, `API.anularNotaDgmit`).
+- La página llama a estas rutas con `API.pedirJson`, como el resto del Seguimiento: `api.js` no cambia.
 
 ## 9. La importación de las notas anteriores (después)
 
