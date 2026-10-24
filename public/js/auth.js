@@ -33,9 +33,15 @@ const Auth = {
     return this.getRole() === 'superadmin';
   },
 
+  // Carga notas DGMIT: administración y el colaborador, que no es de administración ni audita. Copia de
+  // puedeCargarNotasDgmit de services/usuariosReglas.js (spec 2026-10-24-notas-dgmit, 1): el servidor valida igual
+  puedeCargarNotasDgmit() {
+    return ['superadmin', 'admin', 'editor', 'colaborador'].includes(this.getRole());
+  },
+
   // Rol para mostrar en el header
   getRoleText() {
-    return { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor' }[this.getRole()] || 'Lector';
+    return { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', colaborador: 'Colaborador' }[this.getRole()] || 'Lector';
   },
 
   // Confirma la sesión con el servidor y actualiza el usuario guardado (rol, nombre, cargo).

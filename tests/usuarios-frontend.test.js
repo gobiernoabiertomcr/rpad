@@ -594,11 +594,12 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
   const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
   const aviso = (contexto, u) => evaluar(contexto, `avisoSoloLectura(${JSON.stringify(u)})`);
 
-  it('un editor solo modifica lectores: los demás se ven con el aviso y sin acciones', () => {
+  it('un editor solo modifica lectores y colaboradores: los demás se ven con el aviso y sin acciones', () => {
     const { contexto } = cargarPanel(USUARIO, () => {}, 'editor');
     assert.equal(aviso(contexto, { id: 7, rol: 'lector' }), null);
-    assert.equal(aviso(contexto, { id: 8, rol: 'admin' }), 'Como editor, solo podés modificar usuarios lectores.');
-    assert.equal(aviso(contexto, { id: 9, rol: 'editor' }), 'Como editor, solo podés modificar usuarios lectores.');
+    assert.equal(aviso(contexto, { id: 11, rol: 'colaborador' }), null);
+    assert.equal(aviso(contexto, { id: 8, rol: 'admin' }), 'Como editor, solo podés modificar usuarios lectores y colaboradores.');
+    assert.equal(aviso(contexto, { id: 9, rol: 'editor' }), 'Como editor, solo podés modificar usuarios lectores y colaboradores.');
     assert.equal(aviso(contexto, { id: 10, rol: 'superadmin' }), 'Esta cuenta solo la modifica su titular.');
     assert.equal(aviso(contexto, null), null);
   });
@@ -610,7 +611,7 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
     assert.equal(aviso(contexto, { id: 10, rol: 'superadmin' }), 'Esta cuenta solo la modifica su titular.');
   });
 
-  it('en el alta, el rol va siempre, aunque el selector esté fijo en Lector para el editor', async () => {
+  it('en el alta, el rol va siempre, aunque el selector esté deshabilitado', async () => {
     const panel = cargarPanel(null, () => {}, 'editor');
     panel.formulario({ nombre_completo: 'Persona Nueva', username: 'PNUEVA', email: 'pnueva@rpad.test' });
     panel.elemento('u-rol').value = 'lector';
@@ -637,6 +638,176 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
   it('el grupo Editores dice que auditan de respaldo o sin responsabilidad', () => {
     const PAGINA = fs.readFileSync(new URL('../public/usuarios.html', import.meta.url), 'utf8');
     assert.ok(PAGINA.includes('<span class="grupo-contador">Proponen cambios y auditan de respaldo o sin responsabilidad</span>'));
+  });
+});
+
+describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+  const PAGINA = fs.readFileSync(new URL('../public/usuarios.html', import.meta.url), 'utf8');
+  const AYUDAS = {
+    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Reportes, Notas, Gestión y Seguimiento). No modifica nada.',
+    colaborador: '<b>Colaborador:</b> Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula '
+      + 'las que cargó). No modifica datasets ni audita cambios.',
+    editor: '<b>Editor:</b> Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y '
+      + 'colaboradores.',
+    admin: '<b>Admin:</b> Propone y audita cambios en los datasets, maneja áreas, usuarios, reportes y notificaciones. También carga '
+      + 'notas DGMIT.'
+  };
+  // El selector de rol con sus opciones, en el orden de la página (abrirModal las muestra u oculta). Devuelve las visibles; las
+  // ocultas, además, quedan deshabilitadas
+  const conSelectorDeRol = (panel) => {
+    const opciones = [...PAGINA.matchAll(/<option value="(lector|colaborador|editor|admin|superadmin)"/g)]
+      .map(m => ({ value: m[1], hidden: false, disabled: false }));
+    panel.elemento('u-rol').options = opciones;
+    return () => {
+      for (const o of opciones) assert.equal(o.disabled, o.hidden, `${o.value}: oculta y deshabilitada, o ninguna de las dos`);
+      return opciones.filter(o => !o.hidden).map(o => o.value);
+    };
+  };
+  // Las filas de la lista llaman a estas ayudas de api.js y main.js
+  const conAyudasDeLaLista = (panel) => {
+    Object.assign(panel.contexto.Utils, { textoCargo: (cargo) => cargo ?? '', textoVinculo: (vinculo) => vinculo ?? '' });
+    panel.contexto.getInitials = (nombre) => nombre.slice(0, 2);
+  };
+
+  it('los colaboradores tienen su grupo, entre Editores y Solo lectura, y no aparecen entre los de solo lectura', () => {
+    const posicion = (texto) => PAGINA.indexOf(texto);
+    assert.ok(PAGINA.includes('<h2 id="titulo-colaboradores">Colaboradores</h2>'));
+    assert.ok(posicion('id="titulo-editores"') < posicion('id="titulo-colaboradores"'), 'después de Editores');
+    assert.ok(posicion('id="titulo-colaboradores"') < posicion('id="titulo-lectores"'), 'antes de Solo lectura');
+    assert.match(PAGINA, /<section class="grupo-usuarios" aria-labelledby="titulo-colaboradores">[\s\S]*?<span class="grupo-contador" id="contador-colaboradores"><\/span>[\s\S]*?<div id="lista-colaboradores"><\/div>\s*<\/section>/);
+
+    const panel = cargarPanel(null);
+    conAyudasDeLaLista(panel);
+    panel.contexto.__usuarios = [
+      { id: 1, nombre_completo: 'Persona Lectora', username: 'PLECTORA', rol: 'lector', estado: 'activo', email_valido: true },
+      { id: 2, nombre_completo: 'Persona Colaboradora', username: 'PCOLAB', rol: 'colaborador', estado: 'activo', email_valido: true },
+      { id: 3, nombre_completo: 'Persona Dada de Baja', username: 'PBAJA', rol: 'colaborador', estado: 'desactivado', email_valido: true },
+      { id: 4, nombre_completo: 'Persona Editora', username: 'PEDITORA', rol: 'editor', estado: 'activo', email_valido: true }
+    ];
+    evaluar(panel.contexto, 'usuarios = __usuarios');
+    panel.contexto.renderLista();
+    const lista = (id) => panel.elemento(id).innerHTML;
+    assert.match(lista('lista-colaboradores'), /Persona Colaboradora/);
+    assert.match(lista('lista-colaboradores'), /<span class="etiqueta rol-colaborador">Colaborador<\/span>/);
+    assert.doesNotMatch(lista('lista-colaboradores'), /Persona Lectora|Persona Dada de Baja|Persona Editora/);
+    assert.match(lista('lista-lectores'), /Persona Lectora/);
+    assert.doesNotMatch(lista('lista-lectores'), /Persona Colaboradora/);
+    assert.doesNotMatch(lista('lista-editores'), /Persona Colaboradora/);
+    assert.match(lista('lista-desactivados'), /Persona Dada de Baja/);
+    assert.equal(panel.elemento('contador-colaboradores').textContent, '1 activo');
+    assert.equal(panel.elemento('contador-lectores').textContent, '1 activo');
+
+    // Sin colaboradores, o con una búsqueda que no encuentra ninguno
+    panel.elemento('buscar-usuario').value = 'lectora';
+    panel.contexto.renderLista();
+    assert.equal(lista('lista-colaboradores'), '<p class="lista-vacia">Ningún colaborador coincide con la búsqueda.</p>');
+    panel.elemento('buscar-usuario').value = '';
+    evaluar(panel.contexto, 'usuarios = __usuarios.filter(u => u.rol !== "colaborador")');
+    panel.contexto.renderLista();
+    assert.equal(lista('lista-colaboradores'), '<p class="lista-vacia">No hay colaboradores.</p>');
+    assert.equal(panel.elemento('contador-colaboradores').textContent, '0 activos');
+  });
+
+  it('la ayuda de cada rol', () => {
+    const panel = cargarPanel(null);
+    assert.deepEqual(JSON.parse(JSON.stringify(evaluar(panel.contexto, 'Object.keys(AYUDA_DEL_ROL)'))), ['lector', 'colaborador', 'editor', 'admin']);
+    for (const [rol, html] of Object.entries(AYUDAS)) assert.equal(evaluar(panel.contexto, `htmlDeAyudaDelRol('${rol}')`), html, rol);
+    // La cuenta del superadmin solo la modifica su titular: no lleva línea
+    assert.equal(evaluar(panel.contexto, "htmlDeAyudaDelRol('superadmin')"), '');
+    assert.equal(evaluar(panel.contexto, "htmlDeAyudaDelRol('constructor')"), '');
+
+    // En la página: debajo del selector, unida por aria-describedby, y el selector con Colaborador entre Lector y Editor
+    assert.match(PAGINA, /<select id="u-rol" class="form-input" aria-describedby="u-rol-ayuda">/);
+    assert.match(PAGINA, /<\/select>[\s\S]*?<p class="rol-ayuda" id="u-rol-ayuda"><\/p>/);
+    assert.deepEqual([...PAGINA.matchAll(/<option value="(lector|colaborador|editor|admin|superadmin)"[^>]*>([^<]+)</g)].map(m => `${m[1]}:${m[2]}`),
+      ['lector:Lector', 'colaborador:Colaborador', 'editor:Editor', 'admin:Admin', 'superadmin:Superadmin']);
+
+    // Cambia al elegir otro rol
+    panel.alCargar();
+    const selector = panel.elemento('u-rol');
+    const ayuda = panel.elemento('u-rol-ayuda');
+    assert.ok(selector.oyentes.change?.length, 'u-rol tiene un oyente de change');
+    const elegir = (rol) => {
+      selector.value = rol;
+      for (const oyente of selector.oyentes.change) oyente({ target: selector });
+    };
+    elegir('colaborador');
+    assert.equal(ayuda.innerHTML, AYUDAS.colaborador);
+    assert.equal(ayuda.hidden, false);
+    elegir('superadmin');
+    assert.equal(ayuda.innerHTML, '');
+    assert.equal(ayuda.hidden, true);
+
+    // Y al abrir a un usuario, la del rol que tiene
+    const visibles = conSelectorDeRol(panel);
+    panel.contexto.abrirModal({ ...USUARIO, rol: 'editor' });
+    assert.equal(ayuda.innerHTML, AYUDAS.editor);
+    assert.equal(ayuda.hidden, false);
+    assert.deepEqual(visibles(), ['lector', 'colaborador', 'editor', 'admin'], 'el admin ve los cuatro roles, sin Superadmin');
+  });
+
+  it('el editor puede modificar un colaborador y solo ofrece Lector y Colaborador', async () => {
+    const { ROLES_DEL_EDITOR } = await import('../services/usuariosReglas.js');
+    const colaborador = { ...USUARIO, id: 11, rol: 'colaborador' };
+    const panel = cargarPanel(colaborador, () => {}, 'editor');
+    assert.deepEqual(JSON.parse(JSON.stringify(evaluar(panel.contexto, 'ROLES_DEL_EDITOR'))), ROLES_DEL_EDITOR, 'copia de la regla del servidor');
+    const visibles = conSelectorDeRol(panel);
+
+    for (const u of [colaborador, USUARIO, null]) {
+      panel.contexto.abrirModal(u);
+      const que = u ? u.rol : 'alta';
+      assert.equal(panel.elemento('aviso-protegida').hidden, true, que);
+      assert.equal(panel.elemento('u-rol').disabled, false, que);
+      assert.equal(panel.elemento('acciones-form').hidden, false, que);
+      assert.deepEqual(visibles(), ['lector', 'colaborador'], que);
+      assert.equal(panel.elemento('u-rol').value, u ? u.rol : 'lector', que);
+    }
+
+    // Pasa a un lector a colaborador: confirma y manda el rol
+    panel.contexto.abrirModal(USUARIO);
+    panel.formulario(USUARIO);
+    panel.elemento('u-rol').value = 'colaborador';
+    await panel.contexto.guardarUsuario({ preventDefault() {} });
+    assert.ok(panel.llamadas.includes('confirm'));
+    assert.deepEqual(panel.pedidos.find(p => p.nombre === 'actualizarUsuario').args, [7, {
+      nombre_completo: USUARIO.nombre_completo, username: USUARIO.username, email: USUARIO.email, cargo: USUARIO.cargo,
+      vinculo: USUARIO.vinculo, rol: 'colaborador'
+    }]);
+
+    // La confirmación nombra el rol nuevo y lo que cambia
+    const texto = (u, rol) => evaluar(panel.contexto, `textoCambioDeRol(${JSON.stringify(u)}, '${rol}')`);
+    assert.equal(texto(USUARIO, 'colaborador'),
+      'Persona de Prueba va a pasar a Colaborador: podrá cargar notas DGMIT en el Seguimiento, pero no proponer ni aprobar cambios. ¿Continuar?');
+    assert.equal(texto(colaborador, 'lector'), 'Persona de Prueba va a pasar a Lector: deja de poder cargar notas DGMIT. ¿Continuar?');
+  });
+
+  it('el editor no puede modificar un editor ni un admin', () => {
+    const panel = cargarPanel(null, () => {}, 'editor');
+    const visibles = conSelectorDeRol(panel);
+    for (const rol of ['editor', 'admin']) {
+      panel.contexto.abrirModal({ ...USUARIO, id: 20, rol });
+      assert.equal(panel.elemento('aviso-protegida').hidden, false, rol);
+      assert.equal(panel.elemento('aviso-protegida').textContent, 'Como editor, solo podés modificar usuarios lectores y colaboradores.', rol);
+      assert.equal(panel.elemento('u-rol').disabled, true, rol);
+      assert.equal(panel.elemento('u-nombre').disabled, true, rol);
+      assert.equal(panel.elemento('acciones-form').hidden, true, rol);
+      // El selector, deshabilitado, muestra el rol que tiene
+      assert.equal(panel.elemento('u-rol').value, rol);
+      assert.deepEqual(visibles(), ['lector', 'colaborador', rol], rol);
+    }
+  });
+
+  it('quien se pasa a sí mismo a colaborador deja la administración', async () => {
+    const yo = { ...USUARIO, id: 1, rol: 'admin' };
+    const panel = cargarPanel(yo);
+    conSelectorDeRol(panel);
+    panel.contexto.abrirModal(yo);
+    panel.formulario(yo);
+    panel.elemento('u-rol').value = 'colaborador';
+    await panel.contexto.guardarUsuario({ preventDefault() {} });
+    assert.ok(panel.pedidos.some(p => p.nombre === 'actualizarUsuario'));
+    assert.equal(panel.contexto.window.location.href, 'index.html');
   });
 });
 
