@@ -1735,14 +1735,34 @@ describe('admin-fechas.js: revisionDelRegistro (el error del paso 2 y si se pued
     assert.equal(revision({}, { recibido: '2026-10-15', cargado: '2026-10-16' }).campoFechas, null);
   });
 
-  it('sin «Recibido el», o en externa sin el origen, no se puede proponer, y el error dice cuál falta', () => {
-    assert.deepEqual(revision({}, { recibido: '' }), { errorFechas: 'Indicá cuándo se recibieron los datos.', campoFechas: 'recibido', puedeProponer: false });
-    assert.deepEqual(revision({}, { gestion: 'externa', origen: '' }), { errorFechas: 'Indicá quién entregó los datos.', campoFechas: 'origen', puedeProponer: false });
+  // Lo que falta se avisa recién cuando la persona pasó por el campo (`tocados`), como la próxima del paso 3, que sin elegir
+  // solo deja el botón deshabilitado: la ventana recién abierta no muestra errores
+  it('sin «Recibido el», o en externa sin el origen, no se puede proponer; el error dice cuál falta solo si ya se tocó', () => {
+    const SIN_MENSAJE = { errorFechas: null, campoFechas: null, puedeProponer: false };
+    assert.deepEqual(revision({}, { recibido: '' }), SIN_MENSAJE);
+    assert.deepEqual(revision({ tocados: ['origen'] }, { recibido: '' }), SIN_MENSAJE);
+    assert.deepEqual(revision({ tocados: ['recibido'] }, { recibido: '' }), {
+      errorFechas: 'Indicá cuándo se recibieron los datos.', campoFechas: 'recibido', puedeProponer: false
+    });
+    assert.deepEqual(revision({}, { gestion: 'externa', origen: '' }), SIN_MENSAJE);
+    assert.deepEqual(revision({ tocados: ['recibido'] }, { gestion: 'externa', origen: '' }), SIN_MENSAJE);
+    assert.deepEqual(revision({ tocados: ['origen'] }, { gestion: 'externa', origen: '' }), {
+      errorFechas: 'Indicá quién entregó los datos.', campoFechas: 'origen', puedeProponer: false
+    });
+    // Con los dos sin completar y los dos tocados, el primero en el orden del servidor: la recepción
+    assert.equal(revision({ tocados: ['origen', 'recibido'] }, { gestion: 'externa', origen: '', recibido: '' }).campoFechas, 'recibido');
     assert.equal(revision({}, { gestion: 'externa', origen: 'area' }).puedeProponer, true);
     assert.equal(revision({}, { gestion: 'externa', origen: 'fuente_publica' }).puedeProponer, true);
     assert.equal(revision({}, { gestion: 'interna', origen: '' }).puedeProponer, true);
     // Un eventual tampoco se propone sin la recepción
     assert.equal(revision({}, { eventual: true, opcion: null, recibido: '' }).puedeProponer, false);
+    // Un `tocados` que no es una lista cuenta como ninguno
+    assert.deepEqual(revision({ tocados: 'recibido' }, { recibido: '' }), SIN_MENSAJE);
+  });
+
+  it('los errores que no son "falta" se muestran aunque el campo no se haya tocado (como hasta ahora)', () => {
+    assert.equal(revision({}, { recibido: '2026-10-18' }).errorFechas, 'La fecha de recepción no puede ser posterior a hoy (17/10/2026)');
+    assert.equal(revision({}, { cargado: '' }).errorFechas, 'Falta la fecha de carga en el portal');
   });
 
   it('mientras llegan las opciones o mientras se envía, no', () => {
@@ -2164,28 +2184,84 @@ describe('admin.js: Registrar actualización, la ventana (con una página de men
       assert.equal(armado.contexto.cuerpoDelRegistro(formulario).origen_datos, 'area');
     });
 
-    it('un externo sin origen no deja proponer: el error marca el selector', () => {
-      const armado = armar({ consultas: ELEGIDA });
-      abierta(armado, { dataset: EXTERNO });
-      armado.contexto.revisarRegistro();
-      assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, 'Indicá quién entregó los datos.');
-      assert.equal(armado.pagina.elemento('registrar-origen').getAttribute('aria-invalid'), 'true');
-      assert.equal(armado.pagina.elemento('registrar-recibido').hasAttribute('aria-invalid'), false);
-      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, true);
-      armado.pagina.elemento('registrar-origen').value = 'area';
-      armado.contexto.revisarRegistro();
-      assert.equal(armado.pagina.elemento('registrar-error-fechas').hidden, true);
-      assert.equal(armado.pagina.elemento('registrar-origen').hasAttribute('aria-invalid'), false);
-      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, false);
-    });
+    // Lo que falta se avisa recién cuando la persona pasó por el campo: la ventana recién abierta no muestra errores (como la
+    // próxima del paso 3, que sin elegir solo deja el botón deshabilitado)
+    describe('lo que falta, recién cuando se tocó el campo', () => {
+      // Con una opción de la próxima elegida: lo único que falta es lo del paso 2
+      const OPCION = { opcionesDeProxima: async () => ({ opciones: [{ fecha: '2027-04-30' }] }) };
+      const abrirYEsperar = async (armado, dataset) => {
+        abrir(armado, dataset);
+        await new Promise((listo) => setImmediate(listo)); // llegan las opciones
+      };
+      const estado = (armado) => ({
+        mensaje: armado.pagina.elemento('registrar-error-fechas').hidden ? null : armado.pagina.elemento('registrar-error-fechas').textContent,
+        recibidoInvalido: armado.pagina.elemento('registrar-recibido').getAttribute('aria-invalid'),
+        origenInvalido: armado.pagina.elemento('registrar-origen').getAttribute('aria-invalid'),
+        deshabilitado: armado.pagina.elemento('registrar-proponer').disabled
+      });
+      const SIN_NADA = { mensaje: null, recibidoInvalido: null, origenInvalido: null, deshabilitado: true };
 
-    it('sin «Recibido el» no deja proponer: el error marca la fecha', () => {
-      const armado = armar({ valores: { 'registrar-recibido': '' }, consultas: ELEGIDA });
-      abierta(armado);
-      armado.contexto.revisarRegistro();
-      assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, 'Indicá cuándo se recibieron los datos.');
-      assert.equal(armado.pagina.elemento('registrar-recibido').getAttribute('aria-invalid'), 'true');
-      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, true);
+      it('al abrir no hay mensaje ni aria-invalid, y «Proponer actualización» queda deshabilitado', async () => {
+        for (const dataset of [EXTERNO, { ...PAUTA, tipo_gestion: 'interna', requiere_nota: null }]) {
+          const armado = armar({ consultas: ELEGIDA, api: OPCION });
+          await abrirYEsperar(armado, dataset);
+          assert.deepEqual(estado(armado), SIN_NADA, dataset.tipo_gestion);
+          assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, '');
+        }
+      });
+
+      it('al pasar por «Recibido el» y dejarlo vacío, aparecen el mensaje y aria-invalid; con la fecha se van', async () => {
+        const armado = armar({ consultas: ELEGIDA, api: OPCION });
+        await abrirYEsperar(armado, { ...PAUTA, tipo_gestion: 'interna', requiere_nota: null });
+        armado.contexto.tocarCampoDelRegistro('recibido');
+        assert.deepEqual(estado(armado), { ...SIN_NADA, mensaje: 'Indicá cuándo se recibieron los datos.', recibidoInvalido: 'true' });
+        assert.equal(armado.pagina.elemento('registrar-recibido').getAttribute('aria-describedby'), 'registrar-error-fechas');
+        armado.pagina.elemento('registrar-recibido').value = '2026-10-16';
+        armado.contexto.alCambiarElFormulario();
+        assert.deepEqual(estado(armado), { ...SIN_NADA, deshabilitado: false });
+      });
+
+      it('en un externo, lo mismo con el origen: sin tocarlo no avisa, pero el botón sigue deshabilitado', async () => {
+        const armado = armar({ consultas: ELEGIDA, api: OPCION });
+        await abrirYEsperar(armado, EXTERNO);
+        armado.pagina.elemento('registrar-recibido').value = '2026-10-16';
+        armado.contexto.tocarCampoDelRegistro('recibido');
+        assert.deepEqual(estado(armado), SIN_NADA, 'con la fecha y sin tocar el origen');
+        armado.contexto.tocarCampoDelRegistro('origen');
+        assert.deepEqual(estado(armado), { ...SIN_NADA, mensaje: 'Indicá quién entregó los datos.', origenInvalido: 'true' });
+        armado.pagina.elemento('registrar-origen').value = 'area';
+        armado.contexto.alCambiarElFormulario();
+        assert.deepEqual(estado(armado), { ...SIN_NADA, deshabilitado: false });
+      });
+
+      it('con los dos tocados y vacíos avisa primero la fecha (el orden del servidor)', async () => {
+        const armado = armar({ consultas: ELEGIDA, api: OPCION });
+        await abrirYEsperar(armado, EXTERNO);
+        armado.contexto.tocarCampoDelRegistro('origen');
+        assert.deepEqual(estado(armado), SIN_NADA, 'la fecha falta y no se tocó: no hay mensaje');
+        armado.contexto.tocarCampoDelRegistro('recibido');
+        assert.deepEqual(estado(armado), { ...SIN_NADA, mensaje: 'Indicá cuándo se recibieron los datos.', recibidoInvalido: 'true' });
+      });
+
+      it('al cerrar se borra el error del paso 2, y al abrir otra vez no hay nada tocado', async () => {
+        const armado = armar({ consultas: ELEGIDA, api: OPCION });
+        await abrirYEsperar(armado, EXTERNO);
+        armado.contexto.tocarCampoDelRegistro('recibido');
+        assert.equal(estado(armado).mensaje, 'Indicá cuándo se recibieron los datos.');
+        armado.contexto.cerrarRegistro();
+        assert.equal(armado.pagina.elemento('registrar-error-fechas').hidden, true);
+        assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, '');
+        assert.equal(armado.pagina.elemento('registrar-recibido').hasAttribute('aria-invalid'), false);
+        assert.deepEqual(plano(armado.registro.tocados), []);
+        await abrirYEsperar(armado, EXTERNO);
+        assert.deepEqual(estado(armado), SIN_NADA);
+      });
+
+      it('los campos se marcan como tocados al cambiarlos o al salir de ellos', () => {
+        assert.match(CODIGO_ADMIN, /addEventListener\('change', \(\) => tocarCampoDelRegistro\(campo\)\)/);
+        assert.match(CODIGO_ADMIN, /addEventListener\('blur', \(\) => tocarCampoDelRegistro\(campo\)\)/);
+        assert.match(CODIGO_ADMIN, /\['registrar-recibido', 'recibido'\], \['registrar-origen', 'origen'\]/);
+      });
     });
   });
 

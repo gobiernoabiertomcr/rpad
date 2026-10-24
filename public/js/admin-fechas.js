@@ -640,25 +640,34 @@ function cuerpoDelRegistro(formulario) {
   };
 }
 
+// Los avisos de lo que falta en el paso 2, por campo: se muestran recién cuando la persona pasó por el campo
+const FALTA_EN_EL_PASO2 = Object.freeze({ recibido: MENSAJE_FALTA_RECIBIDO, origen: MENSAJE_FALTA_ORIGEN });
+
 /**
  * Cómo queda la ventana con lo que dicen sus campos: { errorFechas, campoFechas, puedeProponer }. errorFechas es el error
  * del paso 2 (o null) para mostrar debajo de sus campos, y campoFechas el campo al que se refiere ('cargado', 'recibido' u
  * 'origen'). "Proponer actualización" se habilita solo con una próxima elegida (completa, si es "Otra fecha"; un eventual no
  * elige), sin error en "Datos al" ni en el paso 2 (que pide la recepción y, en externa, el origen), sin opciones por llegar
  * (`cargando`: la elección se acaba de borrar y el servidor todavía no revisó "Datos al") y sin un envío en curso.
+ * `tocados`: los campos del paso 2 por los que ya pasó la persona ('recibido', 'origen'). Que falte uno que todavía no se
+ * tocó no se muestra (la ventana recién abierta no dice nada, como con la próxima sin elegir), pero el botón sigue
+ * deshabilitado. Los demás errores se muestran siempre.
  */
-function revisionDelRegistro({ formulario, errorDatosAl = null, cargando = false, enviando = false, hoy } = {}) {
+function revisionDelRegistro({ formulario, errorDatosAl = null, cargando = false, enviando = false, hoy, tocados = [] } = {}) {
   const f = formulario ?? {};
   const problema = problemaDeFechasDelRegistro({
     recibido: f.recibido, cargado: f.cargado, hoy, gestion: f.gestion, origen: f.origen
   });
-  const errorFechas = problema?.mensaje ?? null;
+  const falta = problema !== null && Object.hasOwn(FALTA_EN_EL_PASO2, problema.campo)
+    && FALTA_EN_EL_PASO2[problema.campo] === problema.mensaje;
+  const callado = falta && !(Array.isArray(tocados) && tocados.includes(problema.campo));
+  const errorFechas = callado ? null : (problema?.mensaje ?? null);
   return {
     errorFechas,
-    campoFechas: problema?.campo ?? null,
+    campoFechas: callado ? null : (problema?.campo ?? null),
     puedeProponer: puedeProponer({
       opcionElegida: proximaDelRegistro(f),
-      errores: { datosAl: errorDatosAl, fechas: errorFechas },
+      errores: { datosAl: errorDatosAl, fechas: problema?.mensaje ?? null },
       enviando: Boolean(enviando || cargando),
       requiereOpcion: !f.eventual
     })

@@ -48,10 +48,12 @@ let formatosCatalogo = [];
 // - errorDatosAl: el error del paso 1 (de acá o del servidor), o null;
 // - cargando, enviando: se están pidiendo las opciones o se está mandando la propuesta (el botón no se puede apretar);
 // - origen: el botón que la abrió (el foco vuelve a él al cerrar);
+// - tocados: los campos del paso 2 por los que ya pasó la persona ('recibido', 'origen'): recién entonces se avisa si faltan;
 // - secuencia: cuenta los pedidos de opciones, así una respuesta que llega tarde no pisa a la última;
 // - apertura: cuenta las aperturas, así el error de un envío no cae en otra ventana.
 const registro = {
-  dataset: null, hoy: null, opciones: [], errorDatosAl: null, cargando: false, enviando: false, origen: null, secuencia: 0, apertura: 0
+  dataset: null, hoy: null, opciones: [], errorDatosAl: null, cargando: false, enviando: false, origen: null, tocados: [],
+  secuencia: 0, apertura: 0
 };
 
 // =====================================================
@@ -1454,6 +1456,12 @@ function prepararRegistro() {
   origen.innerHTML = htmlDeOpcionesDeOrigen();
   origen.addEventListener('change', alCambiarElFormulario);
   for (const id of ['registrar-recibido', 'registrar-cargado']) document.getElementById(id).addEventListener('input', alCambiarElFormulario);
+  // «Recibido el» y el origen: que falten se avisa recién cuando la persona los cambió o salió de ellos
+  for (const [id, campo] of [['registrar-recibido', 'recibido'], ['registrar-origen', 'origen']]) {
+    const elemento = document.getElementById(id);
+    elemento.addEventListener('change', () => tocarCampoDelRegistro(campo));
+    elemento.addEventListener('blur', () => tocarCampoDelRegistro(campo));
+  }
   document.getElementById('registrar-opciones').addEventListener('change', alElegirOpcion);
   for (const id of ['registrar-otra-mes', 'registrar-otra-anio']) document.getElementById(id).addEventListener('change', alCambiarElFormulario);
   document.getElementById('registrar-proponer').addEventListener('click', proponerActualizacion);
@@ -1478,7 +1486,7 @@ function abrirRegistro(id, origen) {
   const hoy = hoyEnArgentina();
   const anioDeHoy = Number(hoy.slice(0, 4));
   Object.assign(registro, {
-    dataset, hoy, opciones: [], errorDatosAl: null, cargando: false, enviando: false,
+    dataset, hoy, opciones: [], errorDatosAl: null, cargando: false, enviando: false, tocados: [],
     origen: origen ?? document.activeElement, apertura: registro.apertura + 1
   });
 
@@ -1523,6 +1531,8 @@ function abrirRegistro(id, origen) {
   document.getElementById('registrar-otra-anio').innerHTML = '<option value="">Año</option>' + opcionesDeAnio(anioDeHoy - 1, anioDeHoy + 10, null);
 
   mostrarError('registrar-error', null);
+  // El error del paso 2 de la apertura anterior no corresponde (y así, si vuelve, el lector de pantalla lo anuncia otra vez)
+  mostrarError('registrar-error-fechas', null, { campos: CAMPOS_DEL_PASO2 });
   document.getElementById('registrar-proponer').textContent = 'Proponer actualización';
   // En la pila de ventanas solo para el teclado: el foco al cerrar lo maneja cerrarRegistro
   apilarVentana(ID_REGISTRO, null);
@@ -1531,14 +1541,16 @@ function abrirRegistro(id, origen) {
   alCambiarDatosAl();
 }
 
-// Cierra la ventana y devuelve el foco al botón que la abrió. Una respuesta de opciones que llegue después se descarta
+// Cierra la ventana y devuelve el foco al botón que la abrió. Una respuesta de opciones que llegue después se descarta. El
+// error del paso 2 se borra: si al volver a abrir aparece el mismo texto, el lector de pantalla lo anuncia otra vez
 function cerrarRegistro() {
   if (!registroAbierto()) return;
   document.getElementById('modal-registrar-actualizacion').hidden = true;
   desapilarVentana(ID_REGISTRO);
   registro.secuencia++;
   const { origen, dataset } = registro;
-  Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null });
+  Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null, tocados: [] });
+  mostrarError('registrar-error-fechas', null, { campos: CAMPOS_DEL_PASO2 });
   enfocarDespuesDeCerrar(origen, dataset?.id);
 }
 
@@ -1704,6 +1716,13 @@ function alElegirOpcion(evento) {
   revisarRegistro();
 }
 
+// La persona cambió «Recibido el» o el origen, o salió de ellos: desde ahora, si faltan, se avisa
+function tocarCampoDelRegistro(campo) {
+  if (!registro.dataset) return;
+  if (!registro.tocados.includes(campo)) registro.tocados.push(campo);
+  revisarRegistro();
+}
+
 // La persona cambió el origen o las fechas del paso 2, o la "Otra fecha": el error de un envío anterior ya no corresponde
 function alCambiarElFormulario() {
   mostrarError('registrar-error', null);
@@ -1723,7 +1742,7 @@ function revisarRegistro() {
   if (rotulo.textContent !== textoDelRotulo) rotulo.textContent = textoDelRotulo;
   const { errorFechas, campoFechas, puedeProponer: sePuede } = revisionDelRegistro({
     formulario, errorDatosAl: registro.errorDatosAl, cargando: registro.cargando,
-    enviando: registro.enviando, hoy: registro.hoy
+    enviando: registro.enviando, hoy: registro.hoy, tocados: registro.tocados
   });
   mostrarError('registrar-error-fechas', errorFechas, {
     campos: CAMPOS_DEL_PASO2, invalidos: campoFechas ? [`registrar-${campoFechas}`] : []
