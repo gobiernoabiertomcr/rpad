@@ -133,6 +133,15 @@ describe('validarNotaDgmit', () => {
       assert.deepEqual(errores, { datasets: MENSAJES_NOTA_DGMIT.datasets }, String(datasets));
       assert.equal(datos.datasets, null);
     }
+    // Los repetidos se sacan en tiempo lineal: un cuerpo de casi 1 MB (lo que acepta express.json) no traba el servidor
+    const muchos = Array.from({ length: 100000 }, (_, i) => i + 1);
+    const conRepetidos = [...muchos, ...muchos.map(String), 50000];
+    const inicio = performance.now();
+    const grande = validarNotaDgmit({ ...VALIDA, datasets: conRepetidos }, HOY);
+    const demora = performance.now() - inicio;
+    assert.deepEqual(grande.errores, {});
+    assert.deepEqual(grande.datos.datasets, muchos, 'sin repetidos y en el orden recibido');
+    assert.ok(demora < 1000, `100.000 ids tardaron ${Math.round(demora)} ms`);
     // Textos de solo dígitos, también con ceros a la izquierda, y el entero seguro más grande
     assert.deepEqual(validarNotaDgmit({ ...VALIDA, datasets: ['007', Number.MAX_SAFE_INTEGER] }, HOY).datos.datasets,
       [7, Number.MAX_SAFE_INTEGER]);

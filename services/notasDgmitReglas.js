@@ -63,14 +63,19 @@ const idDeDataset = (valor) => {
 };
 
 // Los ids de los datasets, sin repetidos y en el orden recibido. null si no es un array, si está vacío o si algún
-// elemento no es un id (no se descartan en silencio)
+// elemento no es un id (no se descartan en silencio). Los vistos van en un Set: tiempo lineal, así un cuerpo grande no
+// traba el servidor
 const idsDeDatasets = (datasets) => {
   if (!Array.isArray(datasets) || datasets.length === 0) return null;
   const ids = [];
+  const vistos = new Set();
   for (const valor of datasets) {
     const id = idDeDataset(valor);
     if (id === null) return null;
-    if (!ids.includes(id)) ids.push(id);
+    if (!vistos.has(id)) {
+      vistos.add(id);
+      ids.push(id);
+    }
   }
   return ids;
 };
