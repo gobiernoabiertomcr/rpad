@@ -236,7 +236,8 @@ const quienDe = (...pares) => pares.flatMap(([verbo, nombre]) => {
   return corto ? [`${verbo} ${corto}`] : [];
 });
 
-const numeroDeNota = (nota) => `${nota.numero}/${String(nota.anio).slice(-2)}`;
+// El número de una Nota Digital como lo escribe el libro ('2/26'). Lo usan también las métricas (qué fue el aviso de un ciclo)
+export const numeroDeNota = (nota) => `${nota.numero}/${String(nota.anio).slice(-2)}`;
 
 const movimientoDeAlta = (dataset, alta) => {
   const momento = momentoDe(dataset?.alta);

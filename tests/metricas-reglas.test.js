@@ -1,12 +1,12 @@
-// Reglas de las métricas (spec 2026-10-24-metricas-y-reportes, 1.1 a 1.3): funciones puras, probadas con los casos reales
-// anonimizados del Seguimiento y con casos armados a mano (tests/metricas-casos.js)
+// Reglas de las métricas (spec 2026-10-24-metricas-y-reportes, 1.1 a 1.7 y 2.2): funciones puras, probadas con los casos reales
+// anonimizados del Seguimiento y con casos armados a mano (tests/metricas-casos.js y, para la vista, los de este archivo)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CASOS, HOY_DE_LOS_CASOS as HOY, HOY_DE_LAS_METRICAS, fuentesDelCaso, con, mapaDe, mapaDeLosCasos, cambio, email, nota, notaDgmit, solo
 } from './metricas-casos.js';
 import {
-  ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, duracion, cifraDe, unidadDe, casosDe
+  ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, duracion, cifraDe, unidadDe, casosDe, vistaDe
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { diasEntre, diasHabilesTranscurridos } from '../services/notasDigitalesCalendario.js';
@@ -18,7 +18,8 @@ const CLAVES = [
   'aviso_regla', 'primer_aviso', 'heredado', 'inicio_tramos', 'fecha_regla', 'pudo_avisar', 'motivo_sin_aviso',
   'nota_dgmit', 'reiteraciones_dgmit',
   'recibido', 'origen', 'carga', 'cambio_id',
-  'avisos_rpad', 'reiteraciones_rpad'
+  'avisos_rpad', 'reiteraciones_rpad',
+  'alta', 'aviso_que'
 ];
 
 // Los casos de un dataset (por defecto, el real), en el orden de sus ciclos
@@ -153,7 +154,8 @@ describe('casosDe', () => {
       nota_dgmit: { numero: '45/26', tipo: 'solicitud', recibida: '2026-01-05' }, reiteraciones_dgmit: 1,
       recibido: '2026-02-02', origen: 'area', carga: '2026-02-04', cambio_id: 7,
       // El externo-40, el externo-5 y el de vencidos (el email al área no es un aviso a la DGMIT)
-      avisos_rpad: ['2025-12-22', '2026-01-26', '2026-02-01'], reiteraciones_rpad: 2
+      avisos_rpad: ['2025-12-22', '2026-01-26', '2026-02-01'], reiteraciones_rpad: 2,
+      alta: '2025-12-01', aviso_que: 'email de 40 días'
     });
     // La anticipación del aviso de la regla es justo la ventana
     assert.equal(duracion(caso.aviso_regla, caso.venc, 'corridos'), VENTANA_DE_LA_REGLA.externa);
@@ -475,6 +477,29 @@ describe('casosDe', () => {
     assert.ok(casosDel(fuentesDelCaso(52, { dataset: { tema_principal: undefined } })).every((c) => c.tema === null));
   });
 
+  it('alta y aviso_que: el día del alta y qué fue el aviso desde el que se cuentan los tramos (o, sin él, el primero)', () => {
+    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
+    const del = (id, venc) => casos.find((c) => c.dataset_id === id && c.venc === venc);
+    // El aviso de la regla: el email de 40 días (el 52) o de 60 (el 38, interno), o la Nota Digital de aviso (el 10 y el 81)
+    assert.deepEqual([del(52, '2026-01-31').alta, del(52, '2026-01-31').aviso_que], ['2025-12-01', 'email de 40 días']);
+    assert.equal(del(38, '2026-03-31').aviso_que, 'email de 60 días');
+    assert.equal(del(10, '2026-10-31').aviso_que, 'Nota Digital 2/26');
+    assert.deepEqual([del(81, '2026-10-31').alta, del(81, '2026-10-31').aviso_que], ['2026-10-19', 'Nota Digital 3/26']);
+    // El ciclo del 31/05/2026 del 10 tuvo antes el email de 60 días: el que cuenta es el de la regla
+    assert.deepEqual([del(10, '2026-05-31').primer_aviso, del(10, '2026-05-31').aviso_que], ['2026-04-01', 'email de 40 días']);
+    // Avisado ya vencido (el 11, el 26) o sin aviso de la regla (el 33): el primero del ciclo
+    assert.equal(del(11, '2024-01-31').aviso_que, 'email mensual de vencidos');
+    assert.equal(del(26, '2025-03-31').aviso_que, 'email mensual de vencidos');
+    assert.equal(del(33, '2026-01-31').aviso_que, 'email de 40 días');
+    // Sin avisos, null; los demás emails dicen sus días
+    assert.equal(del(9, '2027-01-31').aviso_que, null);
+    const [cinco] = casosDel(solo({ id: 900, alta: '2026-02-20 09:00:00', proxima: '2026-03-31', ultima: '2026-02-20' },
+      { emails: [email({ tipo: 'externo-5', enviado: '2026-03-26 08:00:00' })] }));
+    assert.deepEqual([cinco.alta, cinco.aviso_que], ['2026-02-20', 'email de 5 días']);
+    // Sin alta conocida, null
+    assert.ok(casosDel(fuentesDelCaso(52, { dataset: { alta: null } })).every((c) => c.alta === null));
+  });
+
   it('con datos raros no tira: devuelve una lista vacía o ignora lo que no puede leer', () => {
     const fuentes = fuentesDelCaso(52);
     for (const [mapa, opciones] of [[null, { hoy: HOY }], [undefined, { hoy: HOY }], [[fuentes], { hoy: HOY }], [{ 52: fuentes }, { hoy: HOY }],
@@ -514,5 +539,647 @@ describe('casosDe', () => {
     // La anticipación y la preparación y carga (el mismo día: 0), contadas como las cuenta la página
     assert.equal(duracion(caso.aviso_regla, caso.venc, 'habiles'), diasHabilesTranscurridos('2025-12-22', '2026-01-31'));
     assert.equal(duracion(caso.recibido, caso.carga, 'habiles'), 0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// La vista (spec, 1.3 a 1.5, 1.7 y 2.2)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Las opciones de la página al entrar, al 24/10/2026: el año en curso, mediana y días hábiles, con todos los datasets
+const AL = HOY_DE_LAS_METRICAS;
+const OPCIONES = Object.freeze({ anio: 2026, al: AL, estadistico: 'mediana', dias: 'habiles' });
+const vista = (casos, opciones = {}) => vistaDe(casos, { ...OPCIONES, ...opciones });
+const casosReales = (opciones) => casosDe(mapaDeLosCasos(opciones), { hoy: AL });
+const tramoDe = (v, gestion, clave) => v.circuito[gestion].find((t) => t.clave === clave);
+const cifraDel = (v, gestion, clave) => tramoDe(v, gestion, clave).cifra;
+const filasDe = (v, id) => v.casos.filter((f) => f.dataset_id === id);
+
+// Un caso armado a mano, con la forma de casosDe: un externo con «Requiere nota» Sí que vence el 31/03/2026, avisado por la regla el
+// 19/02/2026 (27 días hábiles y 40 corridos antes), abierto y sin nota DGMIT
+const caso = (datos = {}) => ({
+  dataset_id: 900, titulo: 'Dataset de prueba', area: 'Área de prueba', gestion: 'externa', requiere_nota: 1, activo: true, tema: null,
+  venc: '2026-03-31', inicio: '2026-01-02', cierre: null, como: null, abierto: true, aprobado: null,
+  aviso_regla: '2026-02-19', primer_aviso: '2026-02-19', heredado: false, inicio_tramos: '2026-02-19', fecha_regla: '2026-02-19',
+  pudo_avisar: true, motivo_sin_aviso: null, nota_dgmit: null, reiteraciones_dgmit: 0, recibido: null, origen: null, carga: null,
+  cambio_id: null, avisos_rpad: ['2026-02-19'], reiteraciones_rpad: 0, alta: '2026-01-02', aviso_que: 'email de 40 días', ...datos
+});
+// El mismo, cerrado por una actualización: los datos llegaron el 06/04/2026 y se cargaron el 08/04/2026 (2 días hábiles)
+const cerrado = (datos = {}) => caso({
+  cierre: '2026-04-08', como: 'actualizacion', abierto: false, aprobado: '2026-04-08 10:00:00', recibido: '2026-04-06', origen: 'area',
+  carga: '2026-04-08', cambio_id: 500, ...datos
+});
+const notaDe = (recibida, datos = {}) => ({ numero: '45/26', tipo: 'solicitud', recibida, ...datos });
+
+// Los textos que muestra la vista nunca son null; ningún string dice null, undefined, NaN o Infinity, y ningún número es NaN
+const CLAVES_DE_TEXTO = new Set(['nombre', 'desde_hasta', 'responsable', 'texto', 'unidad', 'debajo', 'que', 'motivo']);
+const recorrer = (valor, ruta, visitar) => {
+  if (Array.isArray(valor)) valor.forEach((v, i) => recorrer(v, `${ruta}[${i}]`, visitar));
+  else if (valor && typeof valor === 'object') {
+    for (const [clave, v] of Object.entries(valor)) {
+      visitar(`${ruta}.${clave}`, clave, v);
+      recorrer(v, `${ruta}.${clave}`, visitar);
+    }
+  }
+};
+const sinNadaNulo = (v) => {
+  recorrer(v, 'vista', (ruta, clave, valor) => {
+    if (CLAVES_DE_TEXTO.has(clave) || ruta.endsWith('vacio.titulo')) assert.equal(typeof valor, 'string', ruta);
+    if (typeof valor === 'string') assert.doesNotMatch(valor, /null|undefined|NaN|Infinity/, ruta);
+    if (typeof valor === 'number') assert.ok(Number.isFinite(valor), ruta);
+  });
+};
+
+describe('vistaDe', () => {
+  it('el circuito de cada gestión: sus tramos en orden, con nombre, desde y hasta, responsable y si es de la DGMIT', () => {
+    const v = vista(casosReales());
+    assert.deepEqual(Object.keys(v), ['circuito', 'resultados', 'casos', 'para_completar']);
+    const sinCifras = (t) => [t.clave, t.nombre, t.desde_hasta, t.responsable, t.dgmit];
+    assert.deepEqual(v.circuito.externa.map(sinCifras), [
+      ['aviso', 'Aviso anticipado', 'Del aviso al vencimiento', 'DDPC', false],
+      ['tramite', 'Trámite y entrega de la nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true],
+      ['respuesta', 'Respuesta del área', 'De la nota a la entrega', 'Área', false],
+      ['carga', 'Preparación y carga', 'De la entrega a la carga', 'DDPC', false]
+    ]);
+    assert.deepEqual(v.circuito.interna.map(sinCifras), [
+      ['aviso', 'Aviso anticipado', 'Del aviso al vencimiento', 'DDPC', false],
+      ['produccion', 'Producción del relevamiento', 'Del aviso a la entrega', 'DGMIT y DIT', true],
+      ['carga', 'Preparación y carga', 'De la entrega a la carga', 'DDPC', false]
+    ]);
+    for (const t of [...v.circuito.externa, ...v.circuito.interna]) {
+      assert.deepEqual(Object.keys(t), ['clave', 'nombre', 'desde_hasta', 'responsable', 'dgmit', 'cifra', 'vacio', 'en_curso', 'pendientes']);
+    }
+    // El aviso anticipado: del aviso de la regla al vencimiento, en los ciclos que vencen en el año, también los que vencen después de
+    // al (se conoce entero cuando sale el aviso): el 1, el 9, el 10 (cuatro), el 42, el 52 (dos), el 61 y el 81 en externa; el 38 (dos)
+    // en interna
+    assert.equal(cifraDel(v, 'externa', 'aviso').ciclos, 11);
+    assert.equal(cifraDel(v, 'interna', 'aviso').ciclos, 2);
+    const anticipaciones = casosReales()
+      .filter((c) => c.gestion === 'externa' && c.aviso_regla && c.venc >= '2026-01-01' && c.venc <= '2026-12-31')
+      .map((c) => duracion(c.aviso_regla, c.venc, 'habiles'));
+    assert.equal(cifraDel(v, 'externa', 'aviso').valor, cifraDe(anticipaciones).mediana);
+    // Avisados ya vencidos: no cuentan en la anticipación (el 9 del 31/01/2025 y el 11 en externa, el 26 en interna)
+    assert.deepEqual(v.circuito.aclaraciones, {
+      externa: {
+        ya_vencidos: {
+          n: 2,
+          texto: '2 ciclos se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y el resto de sus tramos se cuenta desde ese primer aviso.'
+        },
+        fuente_publica: { n: 0, texto: '' }
+      },
+      interna: {
+        ya_vencidos: {
+          n: 1,
+          texto: '1 ciclo se avisó cuando ya estaba vencido (venció antes de que existiera el aviso): no cuenta en la anticipación, y el resto de sus tramos se cuenta desde ese primer aviso.'
+        }
+      }
+    });
+  });
+
+  it('sin notas DGMIT, la DGMIT y el área van vacías y la DGMIT cuenta los pendientes sin días', () => {
+    const v = vista(casosReales());
+    // Los ciclos abiertos de externos con algún aviso y sin nota DGMIT: el 1, el 11, el 33, el 52, el 58, el 61 y el 81 (los abiertos
+    // del 9, el 10, el 25 y el 42 todavía no tuvieron avisos)
+    assert.deepEqual(tramoDe(v, 'externa', 'tramite'), {
+      clave: 'tramite', nombre: 'Trámite y entrega de la nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true,
+      cifra: null, vacio: { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '7 notas pendientes de carga' }, en_curso: null, pendientes: 7
+    });
+    assert.deepEqual(tramoDe(v, 'externa', 'respuesta'), {
+      clave: 'respuesta', nombre: 'Respuesta del área', desde_hasta: 'De la nota a la entrega', responsable: 'Área', dgmit: false,
+      cifra: null, vacio: { titulo: 'Sin datos todavía', texto: 'Se empieza a contar cuando haya notas DGMIT cargadas' }, en_curso: null,
+      pendientes: null
+    });
+    // Solo el tramo de la DGMIT tiene pendientes; los demás no dependen de las notas DGMIT
+    for (const t of [...v.circuito.externa, ...v.circuito.interna]) if (t.clave !== 'tramite') assert.equal(t.pendientes, null, t.clave);
+    assert.notEqual(cifraDel(v, 'externa', 'aviso'), null);
+    // Uno solo: en singular
+    const uno = vista(casosDe(mapaDe(fuentesDelCaso(81)), { hoy: AL }));
+    assert.deepEqual(tramoDe(uno, 'externa', 'tramite').vacio, { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '1 nota pendiente de carga' });
+    // No son pendientes: un externo con «Requiere nota» No, un abierto sin avisos, uno cerrado, uno interno y uno con el aviso después de al
+    const otros = [
+      caso({ requiere_nota: 0 }), caso({ aviso_regla: null, primer_aviso: null, inicio_tramos: null, avisos_rpad: [] }), cerrado(),
+      caso({ gestion: 'interna', requiere_nota: null }), caso({ avisos_rpad: ['2026-10-26'], aviso_regla: '2026-10-26', primer_aviso: '2026-10-26' })
+    ];
+    assert.equal(tramoDe(vista(otros), 'externa', 'tramite').pendientes, 0);
+    assert.equal(tramoDe(vista(otros), 'externa', 'tramite').vacio.texto, '0 notas pendientes de carga');
+    // «Requiere nota» sin dato se comporta como Sí
+    assert.equal(tramoDe(vista([caso({ requiere_nota: null })]), 'externa', 'tramite').pendientes, 1);
+  });
+
+  it('con una nota DGMIT, el trámite cuenta desde el aviso y la respuesta desde la nota', () => {
+    const fuentes = con(fuentesDelCaso(52, { importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } } }), {
+      notasDgmit: [notaDgmit({ recibida: '2026-01-05' })]
+    });
+    const v = vista(casosDe(mapaDe(fuentes), { hoy: AL }));
+    // Del aviso de 40 días (22/12/2025) a la nota (05/01/2026), 8 días hábiles; de la nota a la entrega (02/02/2026), 20
+    const uno = { unidad: 'días hábiles', debajo: 'mediana de 1 ciclo', ciclos: 1, orientativo: true };
+    assert.deepEqual(cifraDel(v, 'externa', 'tramite'), { valor: 8, texto: '8', ...uno });
+    assert.deepEqual(cifraDel(v, 'externa', 'respuesta'), { valor: 20, texto: '20', ...uno });
+    assert.equal(tramoDe(v, 'externa', 'tramite').vacio, null);
+    assert.equal(tramoDe(v, 'externa', 'respuesta').vacio, null);
+    // El ciclo abierto (vence el 31/07/2026) tuvo avisos y no tiene nota: sigue pendiente de carga
+    assert.equal(tramoDe(v, 'externa', 'tramite').pendientes, 1);
+    assert.equal(tramoDe(v, 'externa', 'respuesta').en_curso, null);
+    // Con una nota en el ciclo abierto: el trámite suma ese ciclo (del aviso del 21/06/2026 a la nota del 10/07/2026), no quedan
+    // pendientes y la respuesta está en curso hasta al
+    const abierta = con(fuentes, { notasDgmit: [notaDgmit({ id: 2, numero: '90/26', tipo: 'reiteracion', recibida: '2026-07-10' })] });
+    const w = vista(casosDe(mapaDe(abierta), { hoy: AL }));
+    assert.equal(cifraDel(w, 'externa', 'tramite').ciclos, 2);
+    assert.equal(cifraDel(w, 'externa', 'tramite').valor, cifraDe([8, duracion('2026-06-21', '2026-07-10', 'habiles')]).mediana);
+    assert.equal(tramoDe(w, 'externa', 'tramite').pendientes, 0);
+    const hace = duracion('2026-07-10', AL, 'habiles');
+    assert.deepEqual(tramoDe(w, 'externa', 'respuesta').en_curso, { n: 1, valor: hace, texto: `1 sin datos registrados todavía, hace ${hace} (mediana)` });
+    // La respuesta se cuenta desde la primera nota del ciclo, aunque después llegue una reiteración
+    const reiterada = con(fuentes, { notasDgmit: [notaDgmit({ id: 3, numero: '50/26', tipo: 'reiteracion', recibida: '2026-01-20' })] });
+    assert.equal(cifraDel(vista(casosDe(mapaDe(reiterada), { hoy: AL })), 'externa', 'respuesta').valor, 20);
+    // Una nota recibida después de al todavía no llegó (la foto al 31/12 con los casos de enero)
+    const despues = vista([cerrado({ nota_dgmit: notaDe('2026-11-02') })], { al: '2026-10-31' });
+    assert.equal(cifraDel(despues, 'externa', 'tramite'), null);
+    assert.equal(tramoDe(despues, 'externa', 'tramite').vacio.titulo, 'Todavía no hay notas DGMIT cargadas');
+  });
+
+  it('la nota antes del aviso da 0 y se escribe «En el día»', () => {
+    // El abierto del 52: la nota DGMIT del 15/06/2026 llegó antes del aviso de 40 días (21/06/2026), porque la DGMIT ya había actuado.
+    // En el ciclo del 31/01/2026, los datos llegaron el mismo día de la carga (04/02/2026)
+    const fuentes = con(fuentesDelCaso(52), { notasDgmit: [notaDgmit({ recibida: '2026-06-15' })] });
+    const casos = casosDe(mapaDe(fuentes), { hoy: AL });
+    for (const dias of DIAS) {
+      for (const estadistico of ESTADISTICOS) {
+        const v = vista(casos, { dias, estadistico });
+        const cero = {
+          valor: 0, texto: 'En el día', unidad: '', debajo: `${estadistico} en ${dias === 'habiles' ? 'días hábiles' : 'días corridos'}`,
+          ciclos: 1, orientativo: true
+        };
+        assert.deepEqual(cifraDel(v, 'externa', 'tramite'), cero, `${estadistico}, ${dias}`);
+        assert.deepEqual(cifraDel(v, 'externa', 'carga'), cero, `${estadistico}, ${dias}`);
+      }
+    }
+    // Los datos antes de la nota: la respuesta también da 0; en la lista de casos, «en el día» debajo de la fecha
+    const antes = vista([cerrado({ nota_dgmit: notaDe('2026-04-07'), recibido: '2026-04-06', carga: '2026-04-06', cierre: '2026-04-06' })]);
+    assert.equal(cifraDel(antes, 'externa', 'respuesta').texto, 'En el día');
+    const [fila] = antes.casos;
+    assert.deepEqual([fila.recibido.texto, fila.carga.texto], ['en el día', 'en el día']);
+    // Con el promedio, un valor que redondea a 0 también es «En el día» (0, 0 y 1: 0,33)
+    const tres = [0, 1, 2].map((i) => cerrado({ dataset_id: 901 + i, recibido: '2026-04-08', carga: i === 2 ? '2026-04-09' : '2026-04-08' }));
+    assert.equal(cifraDel(vista(tres, { estadistico: 'promedio' }), 'externa', 'carga').texto, 'En el día');
+  });
+
+  it('fuente pública: no cuenta en la respuesta y suma en la aclaración', () => {
+    const area = cerrado({ dataset_id: 901, nota_dgmit: notaDe('2026-03-02') });
+    const publica = cerrado({ dataset_id: 902, nota_dgmit: notaDe('2026-03-02'), origen: 'fuente_publica', recibido: '2026-04-01' });
+    const v = vista([area, publica]);
+    assert.equal(cifraDel(v, 'externa', 'respuesta').ciclos, 1);
+    assert.equal(cifraDel(v, 'externa', 'respuesta').valor, duracion('2026-03-02', '2026-04-06', 'habiles'));
+    // El trámite de la nota se cuenta igual, y la preparación y carga, desde el día en que se obtuvo la fuente
+    assert.equal(cifraDel(v, 'externa', 'tramite').ciclos, 2);
+    assert.equal(cifraDel(v, 'externa', 'carga').ciclos, 2);
+    assert.equal(cifraDel(v, 'externa', 'carga').valor, cifraDe([2, duracion('2026-04-01', '2026-04-08', 'habiles')]).mediana);
+    assert.deepEqual(v.circuito.aclaraciones.externa.fuente_publica,
+      { n: 1, texto: '1 ciclo se resolvió con datos de una fuente pública: no cuenta en la respuesta del área.' });
+    const dos = vista([area, publica, { ...publica, dataset_id: 903 }]);
+    assert.deepEqual(dos.circuito.aclaraciones.externa.fuente_publica,
+      { n: 2, texto: '2 ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área.' });
+    assert.deepEqual(vista([area]).circuito.aclaraciones.externa.fuente_publica, { n: 0, texto: '' });
+    // En un dataset con «Requiere nota» No es lo normal (y no tiene respuesta del área): no va en la aclaración
+    assert.equal(vista([area, { ...publica, requiere_nota: 0, nota_dgmit: null }]).circuito.aclaraciones.externa.fuente_publica.n, 0);
+    // Un ciclo resuelto con una fuente pública puede no haber tenido nota: no es una nota pendiente de carga
+    assert.deepEqual(vista([{ ...publica, nota_dgmit: null }]).para_completar.notas, []);
+    assert.equal(vista([{ ...area, nota_dgmit: null }]).para_completar.notas.length, 1);
+  });
+
+  it('requiere nota No: solo aviso y carga', () => {
+    const v = vista([cerrado({ requiere_nota: 0 }), caso({ dataset_id: 901, requiere_nota: 0 })]);
+    assert.equal(cifraDel(v, 'externa', 'aviso').ciclos, 2);
+    assert.equal(cifraDel(v, 'externa', 'carga').ciclos, 1);
+    assert.equal(cifraDel(v, 'externa', 'tramite'), null);
+    assert.equal(cifraDel(v, 'externa', 'respuesta'), null);
+    assert.equal(tramoDe(v, 'externa', 'tramite').pendientes, 0);
+    assert.equal(tramoDe(v, 'externa', 'respuesta').en_curso, null);
+    assert.deepEqual(v.para_completar.notas, []);
+    assert.deepEqual(v.casos.map((f) => f.nota.texto), ['', '']);
+    // Con una nota DGMIT, los tramos de la DGMIT y del área le corresponden
+    const conNota = vista([
+      cerrado({ requiere_nota: 0, nota_dgmit: notaDe('2026-03-02') }), caso({ dataset_id: 901, requiere_nota: 0, nota_dgmit: notaDe('2026-03-05') })
+    ]);
+    assert.equal(cifraDel(conNota, 'externa', 'tramite').ciclos, 2);
+    assert.equal(cifraDel(conNota, 'externa', 'respuesta').ciclos, 1);
+    assert.equal(tramoDe(conNota, 'externa', 'respuesta').en_curso.n, 1);
+    // Sin aviso de la regla y sin avisarse ya vencido, el trámite (que empieza en el aviso) no cuenta; la respuesta (desde la nota), sí
+    const sinAviso = vista([cerrado({ aviso_regla: null, inicio_tramos: null, nota_dgmit: notaDe('2026-03-02') })]);
+    assert.equal(cifraDel(sinAviso, 'externa', 'tramite'), null);
+    assert.equal(cifraDel(sinAviso, 'externa', 'respuesta').ciclos, 1);
+  });
+
+  it('la carga nunca está en curso; la producción en curso cuenta hasta al', () => {
+    const v = vista(casosReales());
+    // El 26 (interno, avisado ya vencido el 01/01/2026) sigue sin datos: la producción está en curso desde ese primer aviso hasta al
+    const hace = (al) => duracion('2026-01-01', al, 'habiles');
+    assert.deepEqual(tramoDe(v, 'interna', 'produccion').en_curso,
+      { n: 1, valor: hace(AL), texto: `1 sin datos registrados todavía, hace ${hace(AL)} (mediana)` });
+    assert.equal(tramoDe(vista(casosReales(), { al: '2026-06-30' }), 'interna', 'produccion').en_curso.valor, hace('2026-06-30'));
+    // La producción terminada va del aviso a la entrega, y la carga, de la entrega a la carga (el 38 del 31/03/2026: aviso de 60 días
+    // el 30/01, datos el 10/02 y carga el 12/02)
+    const conEntrega = vista(casosReales({ importados: { 12: { recibido_el: '2026-02-10' } } }));
+    assert.equal(cifraDel(conEntrega, 'interna', 'produccion').valor, duracion('2026-01-30', '2026-02-10', 'habiles'));
+    assert.equal(cifraDel(conEntrega, 'interna', 'carga').valor, duracion('2026-02-10', '2026-02-12', 'habiles'));
+    // La carga y el aviso nunca están en curso
+    for (const cada of [v, conEntrega, vista([caso({ recibido: '2026-04-06' })])]) {
+      for (const gestion of ['externa', 'interna']) {
+        assert.equal(tramoDe(cada, gestion, 'carga').en_curso, null);
+        assert.equal(tramoDe(cada, gestion, 'aviso').en_curso, null);
+      }
+    }
+    // Un abierto sin aviso de la regla que no se avisó ya vencido no cuenta en la producción; uno cerrado, tampoco en curso
+    const interno = { gestion: 'interna', requiere_nota: null };
+    assert.equal(tramoDe(vista([caso({ ...interno, aviso_regla: null, inicio_tramos: null })]), 'interna', 'produccion').en_curso, null);
+    assert.equal(tramoDe(vista([cerrado({ ...interno, recibido: null })]), 'interna', 'produccion').en_curso, null);
+    // Avisado hoy: lleva menos de un día
+    const hoy = caso({ ...interno, venc: '2026-12-31', aviso_regla: AL, primer_aviso: AL, inicio_tramos: AL, avisos_rpad: [AL] });
+    assert.equal(tramoDe(vista([hoy]), 'interna', 'produccion').en_curso.texto, '1 sin datos registrados todavía, hace menos de 1 día hábil (mediana)');
+    // La preparación y carga no necesita el vencimiento
+    assert.equal(cifraDel(vista([cerrado({ venc: null })]), 'externa', 'carga').ciclos, 1);
+  });
+
+  it('destildar saca al dataset de todos los números', () => {
+    const mapa = mapaDeLosCasos();
+    mapa.set(52, con(mapa.get(52), { notasDgmit: [notaDgmit({ recibida: '2026-01-05' })] }));
+    mapa.set(10, con(mapa.get(10), { notasDgmit: [notaDgmit({ id: 2, numero: '46/26', recibida: '2026-01-12' })] }));
+    const casos = casosDe(mapa, { hoy: AL });
+    const todos = vista(casos);
+    const sin52 = vista(casos, { sin: [52] });
+    const sinElDataset = vista(casos.filter((c) => c.dataset_id !== 52));
+    assert.deepEqual(sin52.circuito, sinElDataset.circuito);
+    assert.deepEqual(sin52.resultados, sinElDataset.resultados);
+    // Cambia de verdad: con todos, la respuesta del área tiene el ciclo del 52 y hay más avisos
+    assert.equal(cifraDel(todos, 'externa', 'respuesta').ciclos, 1);
+    assert.equal(cifraDel(sin52, 'externa', 'respuesta'), null);
+    assert.equal(tramoDe(sin52, 'externa', 'respuesta').vacio.titulo, 'Sin casos en 2026');
+    assert.equal(cifraDel(todos, 'externa', 'aviso').ciclos - cifraDel(sin52, 'externa', 'aviso').ciclos, 2);
+    assert.notDeepEqual(sin52.resultados, todos.resultados);
+    // En la lista sigue, sin contar (la página lo tacha); lo demás, igual
+    assert.ok(filasDe(sin52, 52).length === 2 && filasDe(sin52, 52).every((f) => f.contar === false));
+    assert.ok(todos.casos.every((f) => f.contar === true));
+    assert.deepEqual(sin52.casos.filter((f) => f.dataset_id !== 52), sinElDataset.casos);
+    assert.deepEqual(sin52.casos.map((f) => ({ ...f, contar: true })), todos.casos);
+    // «Para completar» no es una cuenta: lo que falta cargar sigue en la lista
+    assert.deepEqual(sin52.para_completar, todos.para_completar);
+    // Varios, y con lo que no es un dataset de la lista: los mismos números
+    const varios = vista(casos, { sin: [52, 10, 9999] });
+    const sinLosDos = vista(casos.filter((c) => c.dataset_id !== 52 && c.dataset_id !== 10));
+    const numeros = (v) => [...v.circuito.externa, ...v.circuito.interna].map((t) => [t.cifra, t.en_curso, t.pendientes]);
+    assert.deepEqual(numeros(varios), numeros(sinLosDos));
+    assert.deepEqual(varios.resultados.reiteraciones.rpad, sinLosDos.resultados.reiteraciones.rpad);
+    // Las notas DGMIT siguen existiendo en el RPAD aunque estén en datasets destildados: el tramo dice «Sin casos en 2026», no
+    // «Todavía no hay notas DGMIT cargadas»
+    assert.equal(tramoDe(varios, 'externa', 'tramite').vacio.titulo, 'Sin casos en 2026');
+    assert.equal(tramoDe(sinLosDos, 'externa', 'tramite').vacio.titulo, 'Todavía no hay notas DGMIT cargadas');
+  });
+
+  it('estadístico y días cambian cifra, unidad y debajo; 1 da singular', () => {
+    // Tres avisos para el 31/03/2026: el 19/02 (27 días hábiles y 40 corridos), el 02/03 (20 y 29) y el 30/03 (1 y 1)
+    const casos = [['2026-02-19', 901], ['2026-03-02', 902], ['2026-03-30', 903]]
+      .map(([aviso, id]) => caso({ dataset_id: id, aviso_regla: aviso, primer_aviso: aviso, inicio_tramos: aviso, avisos_rpad: [aviso] }));
+    const cifra = (estadistico, dias, lista = casos) => cifraDel(vista(lista, { estadistico, dias }), 'externa', 'aviso');
+    const tres = { ciclos: 3, orientativo: true };
+    assert.deepEqual(cifra('mediana', 'habiles'), { valor: 20, texto: '20', unidad: 'días hábiles', debajo: 'mediana de 3 ciclos', ...tres });
+    assert.deepEqual(cifra('promedio', 'habiles'), { valor: 16, texto: '16', unidad: 'días hábiles', debajo: 'promedio de 3 ciclos', ...tres });
+    assert.deepEqual(cifra('mediana', 'corridos'), { valor: 29, texto: '29', unidad: 'días corridos', debajo: 'mediana de 3 ciclos', ...tres });
+    assert.deepEqual(cifra('promedio', 'corridos'), { valor: 23, texto: '23', unidad: 'días corridos', debajo: 'promedio de 3 ciclos', ...tres });
+    // Uno solo, de 1 día: en singular
+    const uno = { valor: 1, texto: '1', debajo: 'mediana de 1 ciclo', ciclos: 1, orientativo: true };
+    assert.deepEqual(cifra('mediana', 'habiles', [casos[2]]), { ...uno, unidad: 'día hábil' });
+    assert.deepEqual(cifra('mediana', 'corridos', [casos[2]]), { ...uno, unidad: 'día corrido' });
+    // Sin selectores, o con valores que no existen: mediana en días hábiles (los de entrada)
+    assert.deepEqual(cifraDel(vistaDe(casos, { anio: 2026, al: AL }), 'externa', 'aviso'), cifra('mediana', 'habiles'));
+    assert.deepEqual(cifraDel(vista(casos, { estadistico: 'moda', dias: 'semanas' }), 'externa', 'aviso'), cifra('mediana', 'habiles'));
+    // Lo que está en curso, lo de «Actualizados a tiempo» y los días de la lista de casos también siguen a los selectores
+    const interno = caso({ dataset_id: 904, gestion: 'interna', requiere_nota: null });
+    const corridos = duracion('2026-02-19', AL, 'corridos');
+    assert.equal(tramoDe(vista([interno], { estadistico: 'promedio', dias: 'corridos' }), 'interna', 'produccion').en_curso.texto,
+      `1 sin datos registrados todavía, hace ${corridos} (promedio)`);
+    const tarde = [cerrado({ dataset_id: 905 }), cerrado({ dataset_id: 906, carga: '2026-04-30', cierre: '2026-04-30' })];
+    assert.equal(vista(tarde, { estadistico: 'promedio', dias: 'corridos' }).resultados.a_tiempo.despues.texto,
+      `Los 2 se cargaron un promedio de ${cifraDe([8, 30]).promedio} días corridos después.`);
+    assert.equal(vista([casos[0]], { dias: 'corridos' }).casos[0].aviso.texto, '40 antes');
+    assert.equal(vista([casos[0]]).casos[0].aviso.texto, '27 antes');
+  });
+
+  it('con 4 casos, orientativo; con 0, «Sin casos en 2026» y nada null en los textos', () => {
+    const casos = (n) => Array.from({ length: n }, (_, i) => cerrado({ dataset_id: 901 + i }));
+    assert.equal(cifraDel(vista(casos(4)), 'externa', 'aviso').orientativo, true);
+    assert.equal(cifraDel(vista(casos(4)), 'externa', 'carga').orientativo, true);
+    assert.equal(cifraDel(vista(casos(5)), 'externa', 'aviso').orientativo, false);
+    // Sin ningún caso: ninguna cifra, ningún en curso, y los textos de lo vacío
+    const vacia = vista([]);
+    const sinCasos = { cifra: null, vacio: { titulo: 'Sin casos en 2026', texto: '' }, en_curso: null, pendientes: null };
+    const resto = (t) => ({ cifra: t.cifra, vacio: t.vacio, en_curso: t.en_curso, pendientes: t.pendientes });
+    assert.deepEqual(vacia.circuito.externa.map(resto), [
+      sinCasos,
+      { cifra: null, vacio: { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '0 notas pendientes de carga' }, en_curso: null, pendientes: 0 },
+      { cifra: null, vacio: { titulo: 'Sin datos todavía', texto: 'Se empieza a contar cuando haya notas DGMIT cargadas' }, en_curso: null, pendientes: null },
+      sinCasos
+    ]);
+    assert.deepEqual(vacia.circuito.interna.map(resto), [sinCasos, sinCasos, sinCasos]);
+    assert.deepEqual(vacia.circuito.aclaraciones, {
+      externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 0, texto: '' } }, interna: { ya_vencidos: { n: 0, texto: '' } }
+    });
+    assert.deepEqual(vacia.resultados, {
+      a_tiempo: { a_tiempo: 0, total: 0, externa: [0, 0], interna: [0, 0], despues: { valor: null, texto: '' } },
+      cobertura: { si: 0, total: 0, faltan: [] },
+      reiteraciones: { rpad: { ninguna: 0, una: 0, dos_o_mas: 0, total: 0 }, dgmit: null }
+    });
+    assert.deepEqual([vacia.casos, vacia.para_completar], [[], { notas: [], recibido: [] }]);
+    // Con notas DGMIT y todo destildado, también los tramos de la DGMIT y del área dicen «Sin casos en 2026»
+    const conNotas = [cerrado({ nota_dgmit: notaDe('2026-03-02') }), caso({ dataset_id: 901, nota_dgmit: notaDe('2026-03-05') })];
+    const destildada = vista(conNotas, { sin: [900, 901] });
+    for (const t of [...destildada.circuito.externa, ...destildada.circuito.interna]) {
+      assert.deepEqual([t.cifra, t.vacio, t.en_curso], [null, { titulo: 'Sin casos en 2026', texto: '' }, null], t.clave);
+    }
+    assert.deepEqual(destildada.resultados.reiteraciones.dgmit, { ninguna: 0, una_o_mas: 0, total: 0 });
+    // El año va en el texto
+    assert.equal(tramoDe(vistaDe([], { anio: 2027, al: '2027-03-01' }), 'externa', 'aviso').vacio.titulo, 'Sin casos en 2027');
+    // Ningún texto es null ni dice null, undefined o NaN, en ninguna combinación
+    const heredado = caso({ dataset_id: 950, heredado: true, aviso_regla: null, primer_aviso: '2026-04-02', inicio_tramos: '2026-04-02' });
+    for (const [lista, opciones] of [[[], {}], [conNotas, { sin: [900, 901] }], [casosReales(), {}], [casosReales(), { anio: 2025, al: '2025-12-31' }],
+      [conNotas, {}], [[...casos(3), heredado], {}]]) {
+      for (const estadistico of ESTADISTICOS) for (const dias of DIAS) sinNadaNulo(vista(lista, { estadistico, dias, ...opciones }));
+    }
+  });
+
+  it('un tramo que termina después de al está en curso al 31/12', () => {
+    // Avisado el 21/10/2026 para el 30/11/2026, la nota DGMIT llegó el 01/12/2026, los datos el 04/01/2027 y se cargaron el 05/01/2027:
+    // la foto de 2026 (al 31/12, con los casos del 10/01/2027) lo ve en curso
+    const venc = {
+      venc: '2026-11-30', aviso_regla: '2026-10-21', primer_aviso: '2026-10-21', inicio_tramos: '2026-10-21', fecha_regla: '2026-10-21',
+      avisos_rpad: ['2026-10-21']
+    };
+    const despues = { cierre: '2027-01-05', aprobado: '2027-01-05 10:00:00', recibido: '2027-01-04', carga: '2027-01-05' };
+    const externo = cerrado({ ...venc, ...despues, nota_dgmit: notaDe('2026-12-01') });
+    const foto = vista([externo], { al: '2026-12-31' });
+    const hace = duracion('2026-12-01', '2026-12-31', 'habiles');
+    assert.deepEqual(tramoDe(foto, 'externa', 'respuesta').en_curso, { n: 1, valor: hace, texto: `1 sin datos registrados todavía, hace ${hace} (mediana)` });
+    assert.equal(cifraDel(foto, 'externa', 'respuesta'), null);
+    assert.equal(cifraDel(foto, 'externa', 'tramite').ciclos, 1);
+    assert.equal(cifraDel(foto, 'externa', 'aviso').ciclos, 1);
+    assert.deepEqual([cifraDel(foto, 'externa', 'carga'), tramoDe(foto, 'externa', 'carga').en_curso], [null, null]);
+    assert.equal(foto.resultados.a_tiempo.total, 0);
+    assert.deepEqual(foto.para_completar.recibido, []);
+    const [fila] = foto.casos;
+    assert.deepEqual([fila.recibido, fila.carga], [{ fecha: null, texto: `en curso, hace ${hace}`, origen: '' }, { fecha: null, texto: '' }]);
+    // Un año cerrado no cuenta los abiertos en las reiteraciones (siguen en el año siguiente)
+    assert.equal(foto.resultados.reiteraciones.rpad.total, 0);
+    // En 2027 terminó: la respuesta y la carga cuentan ahí
+    const enero = vistaDe([externo], { ...OPCIONES, anio: 2027, al: '2027-01-10' });
+    assert.equal(cifraDel(enero, 'externa', 'respuesta').valor, duracion('2026-12-01', '2027-01-04', 'habiles'));
+    assert.equal(cifraDel(enero, 'externa', 'carga').ciclos, 1);
+    assert.deepEqual([enero.resultados.a_tiempo.a_tiempo, enero.resultados.a_tiempo.total], [0, 1]);
+    assert.equal(enero.resultados.reiteraciones.rpad.total, 1);
+    // Interna: la producción
+    const interno = cerrado({ ...venc, ...despues, gestion: 'interna', requiere_nota: null, origen: null });
+    const produccion = duracion('2026-10-21', '2026-12-31', 'habiles');
+    assert.deepEqual(tramoDe(vista([interno], { al: '2026-12-31' }), 'interna', 'produccion').en_curso,
+      { n: 1, valor: produccion, texto: `1 sin datos registrados todavía, hace ${produccion} (mediana)` });
+    // Reprogramado después de al: al 31/12 estaba abierto y sin nota, así que era una nota pendiente de carga
+    const reprogramado = caso({ ...venc, como: 'reprogramacion', abierto: false, cierre: '2027-01-08', aprobado: '2027-01-08 09:00:00' });
+    assert.equal(tramoDe(vista([reprogramado], { al: '2026-12-31' }), 'externa', 'tramite').pendientes, 1);
+    assert.equal(vista([reprogramado], { al: '2026-12-31' }).para_completar.notas[0].abierto, true);
+    // Un ciclo que empezó después de al todavía no estaba abierto (avisado el 28/12/2026 por una nota con su vencimiento)
+    const posterior = caso({
+      inicio: '2027-01-05', venc: '2027-02-28', aviso_regla: '2026-12-28', primer_aviso: '2026-12-28', inicio_tramos: '2026-12-28',
+      fecha_regla: '2027-01-19', avisos_rpad: ['2026-12-28']
+    });
+    assert.equal(tramoDe(vista([posterior], { al: '2026-12-31' }), 'externa', 'tramite').pendientes, 0);
+    // Pedir un al posterior al año es pedir el 31/12: lo de 2027 no entra
+    assert.deepEqual(vistaDe([externo], { anio: 2026, al: '2027-01-10' }), foto);
+  });
+
+  it('actualizados a tiempo: los cerrados por actualización con la carga en el año y vencimiento; los otros, cuánto después', () => {
+    // Los reales: en externa, el 10 del 31/05 y el del 31/10, de 7 (los otros: el 9 dos veces, el 10 dos veces y el 52); en interna, el
+    // 38 del 31/03, de 2
+    const reales = casosReales();
+    const { a_tiempo: aTiempo } = vista(reales).resultados;
+    const tarde = reales.filter((c) => c.como === 'actualizacion' && c.venc && c.carga >= '2026-01-01' && c.carga > c.venc);
+    const mediana = cifraDe(tarde.map((c) => duracion(c.venc, c.carga, 'habiles'))).mediana;
+    assert.deepEqual(aTiempo, {
+      a_tiempo: 3, total: 9, externa: [2, 7], interna: [1, 2],
+      despues: { valor: mediana, texto: `Los otros 6 se cargaron una mediana de ${mediana} días hábiles después.` }
+    });
+    // El día del vencimiento todavía es a tiempo; una reprogramación, una baja, un ciclo sin vencimiento o una carga de otro año no
+    // cuentan
+    const lista = [
+      cerrado({ dataset_id: 901, carga: '2026-03-31', cierre: '2026-03-31', recibido: '2026-03-30' }),
+      cerrado({ dataset_id: 902 }),
+      caso({ dataset_id: 903, como: 'reprogramacion', abierto: false, cierre: '2026-04-06' }),
+      caso({ dataset_id: 904, como: 'baja', abierto: false, cierre: '2026-04-06' }),
+      cerrado({ dataset_id: 905, venc: null }),
+      cerrado({ dataset_id: 906, venc: '2025-11-30', carga: '2025-12-16', cierre: '2025-12-16', recibido: '2025-12-15' })
+    ];
+    assert.deepEqual(vista(lista).resultados.a_tiempo,
+      { a_tiempo: 1, total: 2, externa: [1, 2], interna: [0, 0], despues: { valor: 5, texto: 'El otro se cargó 5 días hábiles después.' } });
+    // Ninguno a tiempo
+    assert.equal(vista([cerrado()]).resultados.a_tiempo.despues.texto, 'Se cargó 5 días hábiles después.');
+    assert.equal(vista([cerrado(), cerrado({ dataset_id: 902 })]).resultados.a_tiempo.despues.texto,
+      'Los 2 se cargaron una mediana de 5 días hábiles después.');
+    // Uno que se cargó después del vencimiento sin que pasara un día hábil (sábado 31/01/2026 y domingo 01/02/2026)
+    const finDeSemana = cerrado({ venc: '2026-01-31', carga: '2026-02-01', cierre: '2026-02-01', recibido: '2026-02-01' });
+    assert.equal(vista([finDeSemana]).resultados.a_tiempo.despues.texto, 'Se cargó menos de 1 día hábil después.');
+    assert.equal(vista([finDeSemana], { dias: 'corridos' }).resultados.a_tiempo.despues.texto, 'Se cargó 1 día corrido después.');
+    // Todos a tiempo: sin texto
+    assert.deepEqual(vista([lista[0]]).resultados.a_tiempo.despues, { valor: null, texto: '' });
+  });
+
+  it('cobertura del aviso: los vencimientos del año con la fecha de la regla ya pasada, desde que hay registro; los que faltan, con su motivo', () => {
+    // Los reales: 15 vencimientos, 13 avisados por la regla. El 81 se dio de alta después de su fecha de la regla y la nota 3/26 lo
+    // avisó antes de vencer: cuenta, y está avisado (Ruling 5: no se filtra por pudo_avisar)
+    assert.deepEqual(vista(casosReales()).resultados.cobertura, {
+      si: 13, total: 15,
+      faltan: [
+        { titulo: CASOS[33].dataset.titulo, venc: '2026-01-31', motivo: 'se avisó ya vencido' },
+        { titulo: CASOS[58].dataset.titulo, venc: '2026-11-30', motivo: 'sin el aviso de la regla' }
+      ]
+    });
+    // Afuera: una fecha de la regla anterior al registro de los avisos (06/12/2025), una que todavía no llegó, uno de otro año
+    const afuera = [
+      caso({ dataset_id: 901, venc: '2026-01-14', fecha_regla: '2025-12-05', aviso_regla: null }),
+      caso({ dataset_id: 902, venc: '2026-12-31', fecha_regla: '2026-11-21', aviso_regla: null }),
+      caso({ dataset_id: 903, venc: '2025-12-31', fecha_regla: '2025-12-06' }),
+      caso({ dataset_id: 904, venc: null, fecha_regla: null })
+    ];
+    assert.deepEqual(vista(afuera).resultados.cobertura, { si: 0, total: 0, faltan: [] });
+    // Los motivos (Ruling 7)
+    const sinAviso = (motivo, datos = {}) => caso({ aviso_regla: null, inicio_tramos: null, motivo_sin_aviso: motivo, ...datos });
+    const motivos = (lista) => vista(lista).resultados.cobertura.faltan.map((f) => f.motivo);
+    assert.deepEqual(motivos([
+      sinAviso('email-fallido', { dataset_id: 901, titulo: 'A' }),
+      sinAviso('alta-cercana', { dataset_id: 902, titulo: 'B', alta: '2026-03-10' }),
+      sinAviso('alta-cercana', { dataset_id: 903, titulo: 'C', alta: '2026-04-02' }),
+      sinAviso('ya-vencido', { dataset_id: 904, titulo: 'D' }),
+      sinAviso('sin-aviso', { dataset_id: 905, titulo: 'E' }),
+      sinAviso(null, { dataset_id: 906, titulo: 'F' })
+    ]), ['el email no se pudo enviar', 'se dio de alta con el vencimiento ya cerca', 'se dio de alta ya vencido', 'se avisó ya vencido',
+      'sin el aviso de la regla', 'sin el aviso de la regla']);
+    // Con casosDe: dado de alta el 10/03/2026 con el vencimiento del 28/02/2026 ya pasado
+    const [yaVencido] = casosDel(solo({ id: 900, alta: '2026-03-10 09:00:00', proxima: '2026-02-28', ultima: '2026-03-10' },
+      { emails: [email({ tipo: 'externo-vencido', enviado: '2026-04-01 08:00:00' })] }), AL);
+    assert.deepEqual(vista([yaVencido]).resultados.cobertura.faltan,
+      [{ titulo: CASOS[52].dataset.titulo, venc: '2026-02-28', motivo: 'se dio de alta ya vencido' }]);
+    // Los que faltan, por vencimiento y después por título
+    const orden = [
+      sinAviso('sin-aviso', { dataset_id: 901, titulo: 'B' }), sinAviso('sin-aviso', { dataset_id: 902, titulo: 'A', venc: '2026-04-30', fecha_regla: '2026-03-21' }),
+      sinAviso('sin-aviso', { dataset_id: 903, titulo: 'Á' })
+    ];
+    assert.deepEqual(vista(orden).resultados.cobertura.faltan.map((f) => f.titulo), ['Á', 'B', 'A']);
+  });
+
+  it('reiteraciones por ciclo: las de los ciclos que terminaron en el año y, en el año en curso, los abiertos', () => {
+    // Los reales: 16 ciclos (los abiertos sin aviso de la regla ni avisados ya vencidos, como el 33 o el 58, no cuentan: Ruling 6)
+    assert.deepEqual(vista(casosReales()).resultados.reiteraciones, { rpad: { ninguna: 4, una: 1, dos_o_mas: 11, total: 16 }, dgmit: null });
+    // Los avisos de un día posterior al inicio de los tramos y hasta al
+    const reiterado = (avisos, datos = {}) => cerrado({ avisos_rpad: ['2026-02-19', ...avisos], ...datos });
+    const grupos = (lista, opciones) => vista(lista, opciones).resultados.reiteraciones.rpad;
+    assert.deepEqual(grupos([
+      reiterado([]), reiterado(['2026-02-19'], { dataset_id: 901 }), reiterado(['2026-03-26'], { dataset_id: 902 }),
+      reiterado(['2026-03-26', '2026-04-01'], { dataset_id: 903 }), reiterado(['2026-03-26', '2026-04-01', '2026-05-01'], { dataset_id: 904 })
+    ]), { ninguna: 2, una: 1, dos_o_mas: 2, total: 5 });
+    assert.deepEqual(grupos([caso({ avisos_rpad: ['2026-02-19', '2026-03-26', '2026-11-02'] })], { al: '2026-10-31' }),
+      { ninguna: 0, una: 1, dos_o_mas: 0, total: 1 });
+    // Sin inicio de los tramos no cuentan; un ciclo cerrado en otro año, tampoco; un año cerrado no cuenta los abiertos
+    assert.equal(grupos([caso({ aviso_regla: null, inicio_tramos: null, reiteraciones_rpad: null })]).total, 0);
+    assert.equal(grupos([cerrado({ cierre: '2025-12-16', carga: '2025-12-16' })]).total, 0);
+    assert.deepEqual([grupos([caso()]).total, grupos([caso()], { anio: 2026, al: '2026-12-31' }).total], [1, 0]);
+    // De la DGMIT al área: las reiteraciones de los ciclos con nota DGMIT, solo cuando hay notas cargadas
+    const conNotas = [
+      cerrado({ nota_dgmit: notaDe('2026-03-02') }), cerrado({ dataset_id: 901, nota_dgmit: notaDe('2026-03-02'), reiteraciones_dgmit: 1 }),
+      caso({ dataset_id: 902, nota_dgmit: notaDe('2026-03-02', { tipo: 'reiteracion' }), reiteraciones_dgmit: 2 }), cerrado({ dataset_id: 903 }),
+      caso({ dataset_id: 904, gestion: 'interna', requiere_nota: null })
+    ];
+    assert.deepEqual(vista(conNotas).resultados.reiteraciones.dgmit, { ninguna: 1, una_o_mas: 2, total: 3 });
+  });
+
+  it('los casos: los de aviso o carga en el año, por vencimiento, con los días o el estado debajo de cada fecha', () => {
+    const v = vista(casosReales());
+    // 15 externos y 3 internos (los ciclos de diciembre de 2025 y los abiertos todavía sin avisos no van)
+    assert.deepEqual([v.casos.length, v.casos.filter((f) => f.gestion === 'externa').length], [18, 15]);
+    assert.ok(v.casos.every((f, i) => i === 0 || (f.vencimiento ?? '9999') >= (v.casos[i - 1].vencimiento ?? '9999')));
+    for (const f of v.casos) {
+      assert.deepEqual(Object.keys(f), ['dataset_id', 'titulo', 'area', 'gestion', 'contar', 'vencimiento', 'aviso', 'nota', 'recibido', 'carga']);
+    }
+    // El 52 del 31/01/2026: aviso de 40 días, nota DGMIT pendiente de carga, los datos el día de la carga
+    const d = (desde, hasta) => String(duracion(desde, hasta, 'habiles'));
+    assert.deepEqual(filasDe(v, 52)[0], {
+      dataset_id: 52, titulo: DEL_52.titulo, area: DEL_52.area, gestion: 'externa', contar: true, vencimiento: '2026-01-31',
+      aviso: { fecha: '2025-12-22', texto: `${d('2025-12-22', '2026-01-31')} antes`, que: 'email de 40 días' },
+      nota: { numero: null, tipo: '', texto: 'pendiente de carga' },
+      recibido: { fecha: '2026-02-04', texto: '', origen: 'Los entregó el área' },
+      carga: { fecha: '2026-02-04', texto: 'en el día' }
+    });
+    // El abierto del 52: sin datos, en curso desde el aviso
+    assert.deepEqual(filasDe(v, 52)[1].recibido, { fecha: null, texto: `en curso, hace ${d('2026-06-21', AL)}`, origen: '' });
+    // Avisado ya vencido (el 11) y sin el aviso de la regla (el 33, que se avisó ya vencido)
+    assert.deepEqual(filasDe(v, 11)[0].aviso, { fecha: '2025-12-06', texto: 'avisado ya vencido', que: 'email mensual de vencidos' });
+    assert.equal(filasDe(v, 11)[0].recibido.texto, `en curso, hace ${d('2025-12-06', AL)}`);
+    assert.deepEqual(filasDe(v, 33)[0].aviso, { fecha: '2026-06-21', texto: 'se avisó ya vencido', que: 'email de 40 días' });
+    // Con nota DGMIT: su número y su tipo, los días del trámite, y los de la respuesta debajo de «Recibido el»
+    const conNota = vista([cerrado({ nota_dgmit: notaDe('2026-03-02', { tipo: 'reiteracion' }) })]).casos[0];
+    assert.deepEqual([conNota.nota, conNota.recibido], [
+      { numero: '45/26', tipo: 'Reiteración', texto: d('2026-02-19', '2026-03-02') },
+      { fecha: '2026-04-06', texto: d('2026-03-02', '2026-04-06'), origen: 'Los entregó el área' }
+    ]);
+    // Interna: sin nota DGMIT, y la producción debajo de «Recibido el» (el 38 del 31/03/2026, con los datos del 10/02/2026)
+    const interno = filasDe(vista(casosReales({ importados: { 12: { recibido_el: '2026-02-10' } } })), 38)[0];
+    assert.deepEqual([interno.nota, interno.recibido, interno.carga], [
+      { numero: null, tipo: '', texto: '' }, { fecha: '2026-02-10', texto: d('2026-01-30', '2026-02-10'), origen: '' },
+      { fecha: '2026-02-12', texto: d('2026-02-10', '2026-02-12') }
+    ]);
+    // Fuente pública: el origen, y sin días de respuesta
+    assert.deepEqual(vista([cerrado({ nota_dgmit: notaDe('2026-03-02'), origen: 'fuente_publica' })]).casos[0].recibido,
+      { fecha: '2026-04-06', texto: '', origen: 'Fuente pública' });
+    // Lo que pasó después de al todavía no está (la foto al 31/12 con los casos de enero)
+    const [antes] = vista([cerrado()], { al: '2026-04-07' }).casos;
+    assert.deepEqual([antes.recibido.fecha, antes.carga, antes.nota.texto], ['2026-04-06', { fecha: null, texto: '' }, 'pendiente de carga']);
+    // Un ciclo sin nada en el año no va (avisado y cargado en 2025), y tampoco cuenta como avisado ya vencido; uno sin vencimiento, al
+    // final
+    const de2025 = { venc: '2025-11-30', aviso_regla: '2025-10-21', primer_aviso: '2025-10-21', inicio_tramos: '2025-10-21', avisos_rpad: ['2025-10-21'] };
+    assert.deepEqual(vista([cerrado({ ...de2025, recibido: '2025-12-15', carga: '2025-12-16', cierre: '2025-12-16' })]).casos, []);
+    const heredadoDe2025 = cerrado({
+      ...de2025, aviso_regla: null, primer_aviso: '2025-12-06', inicio_tramos: '2025-12-06', avisos_rpad: ['2025-12-06'], heredado: true,
+      recibido: '2025-12-15', carga: '2025-12-16', cierre: '2025-12-16'
+    });
+    assert.equal(vista([heredadoDe2025]).circuito.aclaraciones.externa.ya_vencidos.n, 0);
+    // Va con solo la carga en el año (avisado en 2025, sin vencimiento conocido ni «Recibido el»), o con solo un tramo (el aviso
+    // anticipado del 31/01/2026, avisado en 2025 y reprogramado en enero)
+    const soloLaCarga = cerrado({ venc: null, aviso_regla: null, inicio_tramos: null, avisos_rpad: ['2025-12-10'], recibido: null, carga: '2026-01-21', cierre: '2026-01-21' });
+    const soloUnTramo = caso({
+      venc: '2026-01-31', aviso_regla: '2025-12-22', primer_aviso: '2025-12-22', inicio_tramos: '2025-12-22', fecha_regla: '2025-12-22',
+      avisos_rpad: ['2025-12-22'], como: 'reprogramacion', abierto: false, cierre: '2026-01-05'
+    });
+    assert.equal(vista([soloLaCarga]).casos.length, 1);
+    assert.equal(vista([soloUnTramo]).casos.length, 1);
+    const orden = vista([
+      cerrado({ dataset_id: 901, venc: null }), cerrado({ dataset_id: 902, titulo: 'B' }), cerrado({ dataset_id: 903, titulo: 'A' }),
+      cerrado({ dataset_id: 904, venc: '2026-02-28' })
+    ]).casos.map((f) => f.dataset_id);
+    assert.deepEqual(orden, [904, 903, 902, 901]);
+  });
+
+  it('para completar: las notas DGMIT pendientes de carga y las actualizaciones sin «Recibido el» o sin origen', () => {
+    const v = vista(casosReales());
+    // Notas: los 7 abiertos con avisos y sin nota, y los 7 cerrados en el año por actualización (el 9 dos veces, el 10 cuatro y el 52);
+    // la reprogramación del 42 no. Primero los abiertos, cada grupo por vencimiento
+    const notas = v.para_completar.notas;
+    assert.equal(notas.length, 14);
+    assert.deepEqual(notas.filter((n) => n.abierto).map((n) => n.dataset_id), [11, 61, 33, 1, 52, 81, 58]);
+    assert.ok(notas.every((n, i) => i === 0 || n.abierto <= notas[i - 1].abierto));
+    assert.deepEqual(notas.find((n) => n.dataset_id === 81), {
+      dataset_id: 81, titulo: CASOS[81].dataset.titulo, area: CASOS[81].dataset.area, abierto: true, aviso: '2026-10-20', que: 'Nota Digital 3/26',
+      carga: null
+    });
+    assert.deepEqual(notas.find((n) => n.dataset_id === 52 && !n.abierto),
+      { dataset_id: 52, titulo: DEL_52.titulo, area: DEL_52.area, abierto: false, aviso: '2025-12-22', que: 'email de 40 días', carga: '2026-02-04' });
+    // Recibido: las actualizaciones del año sin «Recibido el» (todas menos la del 52, que vino del Excel), por fecha de carga
+    const recibido = v.para_completar.recibido;
+    assert.deepEqual(recibido.map((r) => [r.dataset_id, r.carga, r.falta]), [
+      [38, '2026-02-12', 'recibido'], [10, '2026-02-18', 'recibido'], [9, '2026-03-13', 'recibido'], [10, '2026-05-22', 'recibido'],
+      [10, '2026-09-25', 'recibido'], [38, '2026-10-02', 'recibido'], [9, '2026-10-09', 'recibido'], [10, '2026-10-13', 'recibido']
+    ]);
+    assert.deepEqual(Object.keys(recibido[0]), ['dataset_id', 'titulo', 'gestion', 'carga', 'falta']);
+    // En externa, sin origen; en interna el origen no se pregunta; una actualización simple (sin cambio) no se puede completar
+    const lista = [
+      cerrado({ dataset_id: 901, origen: null }), cerrado({ dataset_id: 902, gestion: 'interna', requiere_nota: null, origen: null }),
+      cerrado({ dataset_id: 903, recibido: null, cambio_id: null }), cerrado({ dataset_id: 904, recibido: null, origen: null, carga: '2026-04-07', cierre: '2026-04-07' })
+    ];
+    assert.deepEqual(vista(lista).para_completar.recibido.map((r) => [r.dataset_id, r.gestion, r.falta]),
+      [[904, 'externa', 'recibido'], [901, 'externa', 'origen']]);
+    // Notas: sin avisos, no; interna, no
+    assert.deepEqual(vista([caso({ avisos_rpad: [], aviso_regla: null, primer_aviso: null, inicio_tramos: null }),
+      caso({ dataset_id: 901, gestion: 'interna', requiere_nota: null })]).para_completar.notas, []);
+  });
+
+  it('con datos raros no tira', () => {
+    for (const casos of [null, undefined, 'x', 3, {}, [null, 'x', 3, []]]) {
+      const v = vista(casos);
+      assert.deepEqual(v.resultados.cobertura, { si: 0, total: 0, faltan: [] });
+      sinNadaNulo(v);
+    }
+    // Un año y un al que no sirven: null. El año sale del al y el al del año; un al posterior al año es el 31/12; uno anterior, null
+    for (const opciones of [null, undefined, {}, { anio: 'x' }, { al: 'x' }, { anio: 2026, al: '2025-12-31' }, { anio: 1e6 }]) {
+      assert.equal(vistaDe([], opciones), null, JSON.stringify(opciones));
+    }
+    assert.deepEqual(vistaDe([cerrado()], { al: AL }), vista([cerrado()]));
+    assert.deepEqual(vistaDe([cerrado()], { anio: 2026 }), vista([cerrado()], { al: '2026-12-31' }));
+    assert.deepEqual(vistaDe([cerrado()], { anio: '2026', al: '2027-01-10' }), vista([cerrado()], { al: '2026-12-31' }));
+    // Casos con fechas que no se pueden leer o listas que no son listas
+    const raro = cerrado({ recibido: 'mal', carga: '2026-02-30', avisos_rpad: null, nota_dgmit: { numero: '1/26', tipo: 'otra', recibida: 'x' }, venc: 20260331 });
+    sinNadaNulo(vista([raro, cerrado({ dataset_id: 901 })]));
+    assert.equal(cifraDel(vista([raro, cerrado({ dataset_id: 901 })]), 'externa', 'carga').ciclos, 1);
+    // Un sin que no es una lista no destilda nada
+    assert.deepEqual(vista([cerrado()], { sin: 'x' }), vista([cerrado()]));
+  });
+
+  it('vistaDe no modifica los casos', () => {
+    const casos = casosReales();
+    const antes = structuredClone(casos);
+    vista(casos, { sin: [52] });
+    assert.deepEqual(casos, antes);
   });
 });
