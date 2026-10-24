@@ -2,7 +2,7 @@
 
 Fecha: 24/10/2026.
 
-Maquetas: `2026-10-24-generador-de-notas-mockups/generador.html` (se abre en el navegador; los tres pasos se pueden recorrer y la vista previa cambia en el momento). Este documento manda sobre la maqueta.
+Maquetas: `2026-10-24-generador-de-notas-mockups/generador.html` (se abre en el navegador; los tres pasos se pueden recorrer y la vista previa cambia en el momento). Usa los datos reales de la base local al 24/10/2026, salvo las notas DGMIT (la tabla real está vacía) y el estado de tres datasets de la Cooperativa, inventados para mostrar una reiteración con dos notas. El recuadro oscuro de abajo a la derecha es de la maqueta, no de la página. Este documento manda sobre la maqueta.
 
 ## Por qué
 
@@ -81,12 +81,18 @@ Herramientas → Notas (`notas.html` + `js/notas.js`). Título de la página: "G
   - "Externa": "Directo al área u organismo, con "Al/A la … PRESENTE"."
   - Viene elegida por el ámbito del área, con la línea "Viene elegida porque el área figura como municipal en Áreas." (o "fuera del municipio"). Si la persona la cambia: "Cambiada a mano: el área figura como municipal, que lleva nota interna."
 - **Pedido** (`fieldset`): "Solicitud" ("La primera vez que se piden estos datos.") o "Reiteración" ("Ya se pidieron y siguen pendientes."). Solicitud es el inicial.
-  - Con "Reiteración" aparece **Nota anterior (opcional)**: uno o más números de nota (cada uno, texto de hasta 40 caracteres; se muestran como etiquetas que se quitan, con un campo para sumar otro) y una fecha, que solo se usa cuando hay un único número. La nota los cita (sección 4.4). Una fecha sin número no se usa y el formulario lo avisa ("Para citar la nota anterior, escribí su número.").
-  - **Viene completada con las notas DGMIT cargadas** (pedido del usuario): para cada dataset tildado, la nota DGMIT original de su ciclo abierto, es decir, la primera vigente (sin anular) del ciclo, por fecha de recepción, después por fecha de carga y después por id. Es la misma asignación de una nota a un ciclo que usa el Seguimiento (`cicloDelAviso` con la recepción a las 00:00, y la regla de `algunCicloRige`); hace falta una función hermana de `notaDgmitDelCiclo` que dé la primera en lugar de la más reciente. Se juntan los números distintos, ordenados por recepción (decisión del usuario: "Todas"). Debajo, la línea "Traído de las notas DGMIT cargadas en el Seguimiento." Se trae **solo el número**: la fecha que guarda el registro es la de recepción por el área, no la de la nota, así que la fecha queda vacía para escribirla a mano (decisión del usuario).
-  - Si la persona edita la lista, deja de completarse sola; mientras no la toque, se vuelve a completar cuando cambian los datasets tildados. Sin notas DGMIT cargadas para los elegidos, la lista viene vacía (hoy la tabla de notas DGMIT está vacía hasta que se importe el Excel).
-- **Fecha de la nota**: por defecto hoy en Argentina (`Utils.hoyEnArgentina()`), editable. Los "Datos solicitados" se calculan con esta fecha.
-- **Número de nota (opcional)**: texto de hasta 40 caracteres (sin los espacios de los extremos), con el ejemplo "Por ejemplo, 156/26" y la ayuda "Si queda vacío, la nota sale con "Nota N° ____/26" para completarlo después." (el año, de la fecha de la nota). No se guarda en ningún lado.
-- **Datasets del área que requieren nota DGMIT** (`fieldset`): una fila por dataset pedible del área, con casilla, título, insignia de estado y, debajo, "Frecuencia · Datos solicitados: …". Vienen tildados los vencidos y los próximos a vencer; los demás, sin tildar. Ayuda: "Vienen elegidos los vencidos y los próximos a vencer. Los "Datos solicitados" los calcula el RPAD, igual que en las Notas Digitales."
+  - Con "Reiteración" aparece, dentro del mismo grupo y en un recuadro con borde violeta (el color de lo de la DGMIT en el Seguimiento), **Nota anterior (opcional)**: uno o más números de nota, como etiquetas con su "×" para quitarlas, y un campo chico con "Agregar" (también con Enter) para sumar otro (cada número, texto de hasta 40 caracteres, sin repetidos). **Solo números, sin fecha** (decisión del usuario). La nota los cita (sección 4.4).
+  - **Viene completada con las notas DGMIT cargadas** (pedido del usuario): para cada dataset tildado, la nota DGMIT original de su ciclo abierto, es decir, la primera vigente (sin anular) del ciclo, por fecha de recepción, después por fecha de carga y después por id. Es la misma asignación de una nota a un ciclo que usa el Seguimiento (`cicloDelAviso` con la recepción a las 00:00, y la regla de `algunCicloRige`); hace falta una función hermana de `notaDgmitDelCiclo` que dé la primera en lugar de la más reciente. Se juntan los números distintos, ordenados por recepción (decisión del usuario: "Todas"). Debajo, "Traída de las notas DGMIT cargadas en el Seguimiento." (con el ícono del Seguimiento).
+  - Si la persona quita o agrega un número, deja de completarse sola y la línea pasa a "Editada a mano." con el botón "Volver a traer las cargadas"; mientras no la toque, se vuelve a completar cuando cambian los datasets tildados. Sin notas DGMIT cargadas para los elegidos, la lista viene vacía y la línea dice "No hay notas DGMIT cargadas para estos datasets: escribila si la sabés." (hoy la tabla de notas DGMIT está vacía hasta que se importe el Excel).
+- **Datos de la nota** (`fieldset`), los dos campos en una fila, del tamaño de lo que contienen (no a todo el ancho):
+  - **Fecha**: por defecto hoy en Argentina (`Utils.hoyEnArgentina()`), editable. El estado de cada dataset y sus "Datos solicitados" se calculan con esta fecha.
+  - **Número (opcional)**: texto de hasta 40 caracteres (sin los espacios de los extremos), con el ejemplo "Ej.: 156/26".
+  - Debajo: "Sin número, la nota sale con "Nota N° ____/26" para completarlo después. No se guarda en ningún lado." (el año, de la fecha de la nota).
+- **Datasets del área que requieren nota DGMIT** (`fieldset`): una fila por cada dataset del área que requiere nota (activo, externo, con «Requiere nota» en Sí o sin dato), con casilla, título, insignia de estado y, debajo, "Frecuencia · Datos solicitados: …". Ayuda: "Vienen elegidos los vencidos y los próximos a vencer. Los "Datos solicitados" los calcula el RPAD, igual que en las Notas Digitales."
+  - Se pueden elegir los **vencidos, los próximos a vencer, los eventuales y los sin fecha**. Vienen tildados los vencidos y los próximos.
+  - **Los que están al día se ven pero no se eligen** (decisión del usuario): la fila en gris, la casilla deshabilitada y "Frecuencia · Vence el dd/mm/aaaa. Al día: todavía no hay datos para pedir." Para un dataset al día, el cálculo del pedido daría el período de un vencimiento futuro ("Vigente al 31/03/2027" en octubre de 2026), y las Notas Digitales nunca piden uno al día.
+  - Un área con todos sus datasets al día (se llega desde "Todas") muestra la lista en gris y el aviso "Hoy no hay datos para pedirle a esta área: sus datasets están al día."
+  - **Las notas DGMIT del ciclo**, en violeta, debajo de los datos de cada dataset que las tenga: "Notas DGMIT del ciclo: N° 97/26 (solicitud, recibida el 02/07/2026) · N° 131/26 (reiteración, recibida el 10/09/2026)". Las vigentes del ciclo abierto, por fecha de recepción. Ayudan a elegir entre solicitud y reiteración (la propuse yo; el usuario la dejó).
 - Botones: "Volver" y "Siguiente: revisar la nota". Sin ningún dataset tildado, "Siguiente" muestra el error "Elegí al menos un dataset." junto a la lista (y lleva el foco ahí), en lugar de quedar deshabilitado.
 - La vista previa se actualiza con cada cambio (tipo, pedido, nota anterior, fecha, número, datasets).
 
@@ -107,7 +113,7 @@ Herramientas → Notas (`notas.html` + `js/notas.js`). Título de la página: "G
 
 ### 4.1 La hoja
 
-- **Tamaño oficio 21,6 × 35,6 cm** (8,5 × 14 in, el de la hoja membretada que usa la Municipalidad; "Legal" en Word).
+- **Tamaño oficio 21,6 × 35,6 cm** (8,5 × 14 in, el de la hoja membretada que usa la Municipalidad y el papel en el que se imprime, según el usuario; "Legal" en Word). En la hoja membretada el encabezado es una imagen de 1241 px de ancho estirada a todo el ancho de la hoja: el tamaño de la hoja lo fija la sección, no la imagen.
 - Márgenes como la hoja membretada: 3 cm a los costados, 3,5 cm arriba, 2,5 cm abajo; encabezado pegado al borde superior.
 - **Encabezado**: la imagen del membrete a todo el ancho (la misma de la hoja membretada y de las Notas Digitales: la de `notas_digitales_config.membrete_imagen`). **Marca de agua**: el isotipo de Comodoro Rivadavia, grande, centrado y muy aclarado, en todas las hojas. **Pie**: el texto de `notas_digitales_config.membrete_pie` ("www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.") centrado, en letra chica, y debajo "Página X de Y".
 - Arial 12 en el cuerpo; la tabla en 10; el "Qué se solicita" en 9.
@@ -153,15 +159,15 @@ Cambian tres cosas; el resto de la nota no cambia.
   - Interna: "Solicito a Ud. tenga a bien reiterar ante {artículo} **{área}**, dependiente de {artículo superior} {dependencia}, el pedido de la siguiente información, preferiblemente en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso:" (sin dependencia: "…ante la **{área}**, el pedido…").
   - Externa: "Nos dirigimos nuevamente a Uds. a fin de reiterar la solicitud de la siguiente información, preferiblemente en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso:"
 - **Un párrafo nuevo, después de la tabla** (antes de "Justificación:" en la interna; antes de "Motiva dicha solicitud…" en la externa), igual en las dos:
-  - con una nota anterior: "La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información solicitada mediante Nota N° {n}{ del dd/mm/aaaa}, conforme a lo establecido en la Ordenanza N° 17.662/23."
-  - con varias: "…solicitada mediante Notas N° {n1}, N° {n2} y N° {n3}, conforme a…" (sin fecha).
+  - con una nota anterior: "La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información solicitada mediante Nota N° {n}, conforme a lo establecido en la Ordenanza N° 17.662/23."
+  - con varias: "…solicitada mediante Notas N° {n1}, N° {n2} y N° {n3}, conforme a…".
   - sin nota anterior: "La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información correspondiente, conforme a lo establecido en la Ordenanza N° 17.662/23."
 
 ### 4.5 La tabla de datasets
 
 - Tres columnas: **Conjunto de datos**, **Frecuencia** y **Datos solicitados** (encabezado en negrita sobre gris claro, bordes finos negros), y debajo de cada dataset una fila a todo el ancho: "*Qué se solicita:* {texto}" (decisión del usuario: "Tabla + Qué se solicita").
 - Frecuencia: `frecuenciaEnNota` ("Trimestralmente (Acumulado)" en un acumulado de 1 a 11 meses), como en las Notas Digitales.
-- Datos solicitados: `pedido(...).texto`, calculado con la fecha de la nota ("Del 01/01/2026 al 30/06/2026", "Vigente al 31/10/2026", "Presupuestos de los ejercicios 2026 y 2027", "Próxima edición disponible"…). Un dataset eventual (sin pedido) dice "Información actualizada disponible".
+- Datos solicitados: `pedido(...).texto`, calculado con la fecha de la nota ("Del 01/01/2026 al 30/06/2026", "Vigente al 31/10/2026", "Presupuestos de los ejercicios 2026 y 2027", "Próxima edición disponible"…). Un dataset eventual o sin fecha (sin pedido) dice "Información actualizada disponible".
 - Qué se solicita: `datasets.que_se_solicita`; vacío, el texto por defecto de las Notas Digitales (`QUE_SE_SOLICITA_POR_DEFECTO`, que hoy es privado y habría que exportar).
 - Orden: los vencidos primero (el más vencido arriba), después los próximos a vencer, después el resto por vencimiento; empates, por título. Es el mismo orden de la lista del paso 2.
 
@@ -187,7 +193,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 - **Sin firma**: se quitan las firmas (imagen, nombre, cargo y el renglón del personal contratado) y queda solo el espacio en blanco debajo de "DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN, {fecha}." (decisión del usuario: "Solo el espacio en blanco"). Con dos firmas (licencia con persona autorizada), quedan los dos espacios y la leyenda que cita la autorización.
 - Se quita la primera línea del email ("SE ADJUNTAN NOTA Y ANEXO EN PDF" / "SE ADJUNTA NOTA EN PDF"): es del email, no de la nota.
 - Todo lo demás queda: REF, número ("Nota Digital N° 9/26"; "PRUEBA" en una prueba), destinatario, párrafos, tablas, datos de contacto, la línea "Anexo: …", la justificación y la línea CC.
-- **Hoja**: la misma de la nota de la DGMIT (4.1): oficio de 21,6 × 35,6 cm, encabezado, marca de agua, pie y "Página X de Y".
+- **Hoja**: la misma de la nota de la DGMIT (4.1): oficio de 21,6 × 35,6 cm, encabezado, marca de agua, pie y "Página X de Y". Es el papel en el que se imprime para firmar (lo confirmó el usuario); el PDF de las Notas Digitales sigue en 21,6 × 33 cm, así que el Word puede cortar las hojas en otros lugares que el PDF. No importa: el contenido es el mismo.
 - El anexo sigue en PDF (botón "Anexo"): no hay Word del anexo.
 - Nombre del archivo: "Nota-Digital-{N}-{AA}.docx" (como "Anexo-Nota-Digital-N-AA.pdf"); una prueba, "Nota-Digital-prueba-{id}.docx".
 
@@ -196,12 +202,12 @@ Cambian tres cosas; el resto de la nota no cambia.
 - **Una sola fuente**: un módulo puro arma el contenido de la nota de la DGMIT (un objeto con los párrafos, la tabla y el cierre, como `construirNota` de las Notas Digitales) y de ese mismo objeto salen la vista previa (HTML) y el Word. Así la vista previa y el Word no pueden decir cosas distintas. El navegador no arma el texto de la nota: lo pide.
 - Las reglas de fechas, de estado y de "pedible" son las de siempre (`pedido`, `tipoEfectivo`, `frecuenciaEnNota`, `estadoDelDataset`, `sePuedeElegir`); no se copian.
 - **Validación** de `POST /api/notas/generar` (y de la vista previa), con 400 `{ success: false, error, campo }`:
-  - fecha `AAAA-MM-DD` válida;
+  - fecha `AAAA-MM-DD` válida, desde el 01/01/2025 y hasta 30 días después de hoy;
   - número opcional, hasta 40 caracteres sin los espacios de los extremos (contados con `Array.from`, como las notas DGMIT); un número que no es texto, 400 (hoy da 500);
   - tipo `interna` o `externa` (hoy cualquier otro valor sale como externa);
-  - pedido `solicitud` o `reiteracion`; nota anterior (lista de números, cada uno hasta 40, sin repetidos; fecha válida y solo con un único número) solo con reiteración;
+  - pedido `solicitud` o `reiteracion`; nota anterior (lista de números, cada uno hasta 40, sin repetidos) solo con reiteración;
   - área existente;
-  - datasets: lista no vacía de ids enteros positivos, sin repetidos; cada uno existente, activo, **del área elegida** (hoy acepta de otra área) y pedible (externo con «Requiere nota» en Sí o sin dato).
+  - datasets: lista no vacía de ids enteros positivos, sin repetidos; cada uno existente, activo, **del área elegida** (hoy acepta de otra área), pedible (externo con «Requiere nota» en Sí o sin dato) y **no al día** a la fecha de la nota (400: "«título» está al día: todavía no hay datos para pedir.").
 - Ninguna fecha se arma con `new Date` local ni `toISOString`: texto `AAAA-MM-DD` y `hoyArgentina()`, como el resto del sistema.
 - Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido, "Qué se solicita" y el número de su nota DGMIT original del ciclo abierto) los da un endpoint nuevo detrás de `cargaNotasDgmit`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos, sin el ámbito ni el pedido para otra fecha).
 
@@ -231,7 +237,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 - Íconos decorativos con `aria-hidden="true"`; jerarquía de títulos sin saltos.
 
 **Pruebas** (`npm test` completo antes y después de cada cambio)
-- Puras: la nota DGMIT original del ciclo de cada dataset (la primera vigente, sin las anuladas, con la regla de ciclos del Seguimiento); el contenido de la nota (interna y externa; solicitud y reiteración, sin nota anterior, con una, con una y su fecha, con varias; "Al" y "A la"; con y sin dependencia; número vacío → "____/AA"; la tabla con el "Qué se solicita"; eventual; el orden), el Word (abrir el XML: tamaño 12240 × 20160, márgenes, encabezado con imagen, marca de agua, pie, ninguna firma, los textos) y la validación.
+- Puras: la nota DGMIT original del ciclo de cada dataset (la primera vigente, sin las anuladas, con la regla de ciclos del Seguimiento); qué datasets se pueden elegir (los al día no); el contenido de la nota (interna y externa; solicitud y reiteración, sin nota anterior, con una, con varias; "Al" y "A la"; con y sin dependencia; número vacío → "____/AA"; la tabla con el "Qué se solicita"; eventual; el orden), el Word (abrir el XML: tamaño 12240 × 20160, márgenes, encabezado con imagen, marca de agua, pie, ninguna firma, los textos) y la validación.
 - API (Docker): permisos de las rutas nuevas y de `POST /api/notas/generar` (sin sesión 401, lector 403, colaborador y administración 200; `tests/permisos.test.js`); cada 400; un dataset de otra área; el `Content-Disposition`.
 - Word de la Nota Digital: sobre el HTML de notas de cada tipo y época (aviso interno y externo, reiteración, autorización, auditoría, con dos firmas, una de antes del anexo), sin la primera línea ni ningún dato de la firma. **Los HTML de prueba van con los nombres de las personas cambiados** (regla del proyecto: nada de nombres de personas en archivos versionados).
 - Áreas: el formulario guarda el ámbito; la migración clasifica y corrige.
@@ -242,19 +248,20 @@ Cambian tres cosas; el resto de la nota no cambia.
 
 ## 10. Decisiones mías (para revisar al leer)
 
-1. La marca de agua es un archivo fijo del repositorio (el isotipo ya aclarado); el encabezado y el pie salen de la configuración de Correos (los mismos que usa el PDF de las Notas Digitales). Si cambia el membrete, se cambia en un solo lugar; la marca de agua, en el código.
+1. La marca de agua es un archivo fijo del repositorio; el encabezado y el pie salen de la configuración de Correos (los mismos que usa el PDF de las Notas Digitales). Si cambia el membrete, se cambia en un solo lugar; la marca de agua, en el código. El PNG del isotipo de la maqueta está a todo color: hay que generar una versión ya aclarada (como la deja Word en la hoja membretada), porque la librería `docx` no aplica transparencia.
 2. "Página X de Y" en el pie de las dos notas en Word (la hoja membretada no lo trae).
-3. Un dataset eventual dice "Información actualizada disponible" en "Datos solicitados".
+3. Un dataset eventual o sin fecha dice "Información actualizada disponible" en "Datos solicitados", y se puede elegir.
 4. El orden de la tabla (vencidos, próximos, el resto por vencimiento).
 5. Textos: la REF dice "para **el** Portal…" (hoy "para Portal…"); el primer párrafo suma "con los datos del período que se indica en cada caso" (como el aviso de las Notas Digitales); la redacción final de la reiteración (sección 4.4, a partir de la idea del usuario) y que el párrafo de la reiteración vaya después de la tabla, también en la externa; en la externa, la Dirección General va debajo de "Sin más, saludamos…" y después el espacio para la firma.
 6. Letras: cuerpo Arial 12, tabla 10, "Qué se solicita" 9.
-7. Clasificación dudosa en el Anexo A: el Concejo Deliberante, fuera del municipio (la Subsecretaría no puede gestionar ante el Poder Legislativo); los dos Entes Autárquicos (Deportes y Turismo), municipales.
+7. Clasificación dudosa en el Anexo A: el Concejo Deliberante, fuera del municipio (la Subsecretaría no puede gestionar ante el Poder Legislativo; hoy solo tiene datasets internos, así que no aparece en el generador). Los dos Entes Autárquicos (Deportes y Turismo) son municipales: lo confirmó el usuario.
 8. Word de la Nota Digital: sin la primera línea del email; con dos firmas, los dos espacios y la leyenda; también para las pruebas.
 9. "Siguiente" con un error en lugar de deshabilitado cuando no hay datasets tildados.
 10. `notas.js` con `?v=`.
 11. La vuelta atrás devuelve los textos de las áreas solo donde siguen siendo los corregidos.
 12. "Cambiar el área" conserva el filtro y la búsqueda del paso 1.
-13. "Nota anterior": se trae la nota original del ciclo (la primera vigente), no la más reciente; si la persona edita la lista, deja de completarse sola; la fecha solo se usa con un único número.
+13. "Nota anterior": se trae la nota original del ciclo (la primera vigente), no la más reciente; si la persona edita la lista, deja de completarse sola.
+14. La fecha de la nota va del 01/01/2025 hasta 30 días después de hoy, y el estado de cada dataset (qué se puede elegir y qué viene tildado) se calcula con esa fecha, igual que el pedido. La lista del paso 1 usa el estado de hoy.
 
 ## 11. Lo que queda al constructor
 
@@ -301,8 +308,8 @@ Cambian tres cosas; el resto de la nota no cambia.
 | 22 | Dirección General de Transporte | **Subsecretaría de Transporte de la Secretaría de Gobierno, Modernización y Transparencia** | Municipal |
 | 23 | Dirección General de Veterinaria, Control de Fauna Urbana y Plagas | **Subsecretaría de Fiscalización de la Secretaría de Control Urbano y Operativo** | Municipal |
 | 24 | Empresa Argentina de Navegación Aérea | — (sin dependencia) | Fuera del municipio |
-| 25 | Ente Autárquico Comodoro Deportes | Intendencia | Municipal (a revisar) |
-| 26 | Ente Autárquico Comodoro Turismo | Intendencia | Municipal (a revisar) |
+| 25 | Ente Autárquico Comodoro Deportes | Intendencia | Municipal (confirmado por el usuario) |
+| 26 | Ente Autárquico Comodoro Turismo | Intendencia | Municipal (confirmado por el usuario) |
 | 27 | Honorable Concejo Deliberante de Comodoro Rivadavia | — (sin dependencia) | Fuera del municipio (a revisar) |
 | 28 | Instituto Geográfico Nacional de la República Argentina | — (sin dependencia) | Fuera del municipio |
 | 29 | Instituto Nacional de Estadística y Censos de la República Argentina | — (sin dependencia) | Fuera del municipio |

@@ -93,6 +93,27 @@
         .hoja .sep { margin-bottom: 18px; }
         .hoja .dest { font-weight: 700; text-decoration: underline; margin: 0; text-align: left; }
         .hoja .dest.sep { margin-bottom: 18px; }
+        .subpanel { margin-top: 12px; padding: 14px 16px; background: var(--gray-50); border: 1px solid var(--border-color); border-left: 3px solid #5b4691; border-radius: var(--border-radius); }
+        .subpanel-titulo { font-weight: 600; color: var(--gray-800); font-size: 0.875rem; margin-bottom: 10px; }
+        .subpanel-titulo .text-muted { font-weight: 400; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .chip-nota { display: inline-flex; align-items: center; gap: 4px; background: #ede9f8; color: #4a3878; border: 1px solid #d9d1f0; border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 0.85rem; font-weight: 600; }
+        .chip-nota button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 0 4px; border-radius: 50%; }
+        .chip-nota button:hover { background: #d9d1f0; }
+        .chip-agregar { display: inline-flex; gap: 6px; align-items: center; }
+        .chip-agregar .form-input { width: 130px; padding: 6px 10px; font-size: 0.85rem; }
+        .origen { display: flex; gap: 6px; align-items: center; font-size: 0.78rem; color: #5b4691; margin-top: 8px; }
+        .origen.gris { color: var(--gray-500); }
+        .ant-fecha { margin-top: 12px; }
+        .campos-cortos { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+        .maqueta.plegada { width: auto; padding: 6px; }
+        .maqueta.plegada .plegar { float: none; margin: 0; }
+        .campos-cortos .form-label { margin-bottom: 6px; }
+        .form-input.corto { width: 170px; }
+        .form-input.corto-num { width: 190px; }
+        .ds-dgmit { font-size: 0.78rem; color: #5b4691; margin-top: 3px; }
+        .ds.ds-off { background: var(--gray-50); cursor: default; }
+        .ds.ds-off .ds-titulo, .ds.ds-off .ds-datos { color: var(--gray-500); }
         .maqueta.plegada > :not(.plegar) { display: none; }
         .maqueta .plegar { float: right; margin: -2px -4px 0 0; }
         .hoja table { width: 100%; border-collapse: collapse; margin: 4px 0 14px; font-size: 11px; }
@@ -228,6 +249,12 @@
             <button type="button" data-area="2">Externa (Seg. Vial)</button>
             <button type="button" data-area="41">7 datasets (Coop.)</button>
         </div>
+        <p>Reiteraciones (notas DGMIT inventadas; en la Cooperativa también los vencidos):</p>
+        <div id="m-reiteraciones">
+            <button type="button" data-area="2">Una nota (Seg. Vial)</button>
+            <button type="button" data-area="41">Dos notas (Coop.)</button>
+            <button type="button" data-area="36">Sin nota cargada</button>
+        </div>
     </aside>
     <div class="aviso-maqueta" id="aviso-maqueta" role="status"></div>
 
@@ -241,7 +268,26 @@
         const largo = (iso) => { const [a, m, d] = iso.split('-').map(Number); return `${d} de ${MESES[m - 1]} de ${a}`; };
         const corto = (iso) => { const [a, m, d] = iso.split('-'); return `${d}/${m}/${a}`; };
 
-        const st = { paso: 1, filtro: 'urgentes', busqueda: '', areaId: null, tipo: null, pedido: 'solicitud', fecha: D.hoy, numero: '', antNumero: '', antFecha: '', elegidos: new Set(), variante: 'tabla-qss' };
+        const st = { paso: 1, filtro: 'urgentes', busqueda: '', areaId: null, tipo: null, pedido: 'solicitud', fecha: D.hoy, numero: '', antNumeros: [], antEditado: false, antFecha: '', elegidos: new Set(), variante: 'tabla-qss' };
+
+        // Notas DGMIT INVENTADAS para la maqueta (la tabla real todavía está vacía): las vigentes del ciclo abierto de cada dataset
+        const NOTAS_DGMIT = {
+            11: [{ numero: '45/26', tipo: 'solicitud', recibida: '2026-03-05' }],
+            13: [{ numero: '97/26', tipo: 'solicitud', recibida: '2026-07-02' }, { numero: '131/26', tipo: 'reiteracion', recibida: '2026-09-10' }],
+            2: [{ numero: '118/26', tipo: 'solicitud', recibida: '2026-08-14' }],
+            61: [{ numero: '112/26', tipo: 'solicitud', recibida: '2026-08-01' }],
+            46: [{ numero: '88/26', tipo: 'solicitud', recibida: '2026-06-20' }],
+            48: [{ numero: '88/26', tipo: 'solicitud', recibida: '2026-06-20' }],
+            69: [{ numero: '102/26', tipo: 'solicitud', recibida: '2026-07-15' }]
+        };
+        // Estados INVENTADOS para la maqueta: tres datasets de la Cooperativa vencidos, para ver una reiteración con dos notas
+        D.areas.find((a) => a.id === 41).datasets.forEach((d) => { if ([46, 48, 69].includes(d.id)) { d.estado = 'vencido'; d.dias = d.id === 69 ? -52 : -118; } });
+        const originalDe = (id) => (NOTAS_DGMIT[id] || []).slice().sort((x, y) => x.recibida.localeCompare(y.recibida))[0] || null;
+        const notasTraidas = () => {
+            const orig = [...st.elegidos].map(originalDe).filter(Boolean).sort((x, y) => x.recibida.localeCompare(y.recibida));
+            return [...new Set(orig.map((n) => n.numero))];
+        };
+        const completarNotaAnterior = () => { if (!st.antEditado) { st.antNumeros = notasTraidas(); if (st.antNumeros.length !== 1) st.antFecha = ''; } };
 
         const urgente = (d) => d.estado === 'vencido' || d.estado === 'proximo';
         const peor = (a) => Math.min(...a.datasets.map((d) => (urgente(d) ? d.dias : 9999)));
@@ -309,7 +355,7 @@
                 return `<ul>${ds.map((d) => `<li>${esc(d.titulo)} (frecuencia de actualización: ${esc(d.frecuencia)}). Datos solicitados: ${esc(d.pedido || '—')}.</li>`).join('')}</ul>`;
             }
             const filas = ds.map((d) => {
-                let f = `<tr><td>${esc(d.titulo)}</td><td>${esc(d.frecuencia)}</td><td>${esc(d.pedido || '—')}</td></tr>`;
+                let f = `<tr><td>${esc(d.titulo)}</td><td>${esc(d.frecuencia)}</td><td>${esc(d.pedido || 'Información actualizada disponible')}</td></tr>`;
                 if (st.variante === 'tabla-qss' && d.qss) f += `<tr><td class="qss" colspan="3"><i>Qué se solicita:</i> ${esc(d.qss)}</td></tr>`;
                 return f;
             }).join('');
@@ -324,8 +370,11 @@
             const ref = `${reit ? 'Reiteración – ' : ''}Solicitud de datos para el Portal de Datos Abiertos Municipal`;
             const formato = 'preferiblemente en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso:';
             const sinDs = '<p style="color:#888"><i>(Elegí al menos un dataset.)</i></p>';
-            const antN = st.antNumero.trim();
-            const citada = antN ? `solicitada mediante Nota N° ${esc(antN)}${st.antFecha ? ` del ${corto(st.antFecha)}` : ''}` : 'correspondiente';
+            const ns = st.antNumeros;
+            const lista = (xs) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
+            const citada = ns.length === 0 ? 'correspondiente'
+                : ns.length === 1 ? `solicitada mediante Nota N° ${esc(ns[0])}`
+                : `solicitada mediante Notas ${lista(ns.map((n) => `N° ${esc(n)}`))}`;
             const motivo = `La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información ${citada}, conforme a lo establecido en la Ordenanza N° 17.662/23.`;
             let t;
             if (st.tipo === 'interna') {
@@ -369,14 +418,38 @@
             </div>`;
         };
 
+        // ---------- Nota anterior ----------
+        const subpanelNotaAnterior = () => {
+            const chips = st.antNumeros.map((n, i) => `<span class="chip-nota">N° ${esc(n)}<button type="button" data-quitar-nota="${i}" aria-label="Quitar la nota ${esc(n)}">×</button></span>`).join('');
+            const origen = st.antEditado
+                ? `<div class="origen">Editada a mano. <button type="button" class="link" data-reponer-notas>Volver a traer las cargadas</button></div>`
+                : (st.antNumeros.length
+                    ? `<div class="origen"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>Traída de las notas DGMIT cargadas en el Seguimiento.</div>`
+                    : `<div class="origen gris">No hay notas DGMIT cargadas para estos datasets: escribila si la sabés.</div>`);
+            const fecha = st.antNumeros.length === 1
+                ? `<div class="ant-fecha"><label class="form-label" for="f-ant-fecha">Fecha de la nota ${esc(st.antNumeros[0])} <span class="text-muted" style="font-weight:400">(opcional)</span></label><input class="form-input corto" id="f-ant-fecha" type="date" value="${st.antFecha}"></div>`
+                : '';
+            return `<div class="subpanel">
+                <div class="subpanel-titulo">Nota anterior <span class="text-muted">(opcional)</span></div>
+                <div class="chips">${chips}<span class="chip-agregar"><input class="form-input" id="f-ant-nuevo" type="text" maxlength="40" placeholder="Ej.: 124/25" aria-label="Número de otra nota anterior"><button type="button" class="btn btn-outline btn-sm" data-agregar-nota>Agregar</button></span></div>
+                ${origen}
+            </div>`;
+        };
+
         // ---------- Paso 2 ----------
         const paso2 = () => {
             const a = area();
-            const filas = a.datasets.map((d) => `
+            const filas = a.datasets.map((d) => d.estado === 'actualizado' ? `
+                <div class="ds ds-off">
+                    <input type="checkbox" disabled aria-label="${esc(d.titulo)}: al día, no se puede pedir">
+                    <div><span class="ds-titulo">${esc(d.titulo)}</span>${badge(d)}
+                    <div class="ds-datos">${esc(d.frecuencia)} · Vence el ${corto(d.proxima)}. Al día: todavía no hay datos para pedir.</div></div>
+                </div>` : `
                 <label class="ds">
                     <input type="checkbox" value="${d.id}" ${st.elegidos.has(d.id) ? 'checked' : ''}>
                     <div><span class="ds-titulo">${esc(d.titulo)}</span>${badge(d)}
-                    <div class="ds-datos">${esc(d.frecuencia)} · Datos solicitados: <b>${esc(d.pedido || 'sin pedido')}</b></div></div>
+                    <div class="ds-datos">${esc(d.frecuencia)} · Datos solicitados: <b>${esc(d.pedido || 'Información actualizada disponible')}</b></div>
+                    ${(NOTAS_DGMIT[d.id] || []).length ? `<div class="ds-dgmit">Notas DGMIT del ciclo: ${NOTAS_DGMIT[d.id].map((n) => `N° ${esc(n.numero)} (${n.tipo === 'solicitud' ? 'solicitud' : 'reiteración'}, recibida el ${corto(n.recibida)})`).join(' · ')}</div>` : ''}</div>
                 </label>`).join('');
             const sugerido = a.ambito === 'externa' ? 'externa' : 'interna';
             return `
@@ -398,20 +471,16 @@
                                 <label class="opcion ${st.pedido === 'solicitud' ? 'elegida' : ''}"><input type="radio" name="pedido" value="solicitud" ${st.pedido === 'solicitud' ? 'checked' : ''}><div><strong>Solicitud</strong><span>La primera vez que se piden estos datos.</span></div></label>
                                 <label class="opcion ${st.pedido === 'reiteracion' ? 'elegida' : ''}"><input type="radio" name="pedido" value="reiteracion" ${st.pedido === 'reiteracion' ? 'checked' : ''}><div><strong>Reiteración</strong><span>Ya se pidieron y siguen pendientes.</span></div></label>
                             </div>
+                            ${st.pedido === 'reiteracion' ? subpanelNotaAnterior() : ''}
                         </fieldset>
-                        ${st.pedido === 'reiteracion' ? `
                         <fieldset>
-                            <legend>Nota anterior <span class="text-muted" style="font-weight:400">(opcional)</span></legend>
-                            <div class="fila-campos" style="grid-template-columns: 1fr 180px">
-                                <div class="form-group"><label class="form-label" for="f-ant-num">Número</label><input class="form-input" id="f-ant-num" type="text" maxlength="40" placeholder="Por ejemplo, 156/26" value="${esc(st.antNumero)}"></div>
-                                <div class="form-group"><label class="form-label" for="f-ant-fecha">Fecha</label><input class="form-input" id="f-ant-fecha" type="date" value="${st.antFecha}"></div>
+                            <legend>Datos de la nota</legend>
+                            <div class="campos-cortos">
+                                <div><label class="form-label" for="f-fecha">Fecha</label><input class="form-input corto" id="f-fecha" type="date" value="${st.fecha}"></div>
+                                <div><label class="form-label" for="f-numero">Número <span class="text-muted" style="font-weight:400">(opcional)</span></label><input class="form-input corto-num" id="f-numero" type="text" maxlength="40" placeholder="Ej.: 156/26" value="${esc(st.numero)}" aria-describedby="f-numero-ayuda"></div>
                             </div>
-                            <div class="pista" style="margin-top:-12px;margin-bottom:8px">Si la escribís, la nota la cita: "…no se ha recibido la información solicitada mediante Nota N° …".</div>
-                        </fieldset>` : ''}
-                        <div class="fila-campos">
-                            <div class="form-group"><label class="form-label" for="f-fecha">Fecha de la nota</label><input class="form-input" id="f-fecha" type="date" value="${st.fecha}"></div>
-                            <div class="form-group"><label class="form-label" for="f-numero">Número de nota <span class="text-muted">(opcional)</span></label><input class="form-input" id="f-numero" type="text" maxlength="40" placeholder="Por ejemplo, 156/26" value="${esc(st.numero)}" aria-describedby="f-numero-ayuda"><div class="form-hint" id="f-numero-ayuda">Si queda vacío, la nota sale con "Nota N° ____/${st.fecha.slice(2, 4)}" para completarlo después.</div></div>
-                        </div>
+                            <div class="form-hint" id="f-numero-ayuda" style="margin-top:6px">Sin número, la nota sale con "Nota N° ____/${st.fecha.slice(2, 4)}" para completarlo después. No se guarda en ningún lado.</div>
+                        </fieldset>
                         <fieldset>
                             <legend>Datasets del área que requieren nota DGMIT</legend>
                             <div class="pista" style="margin:-4px 0 8px">Vienen elegidos los vencidos y los próximos a vencer. Los "Datos solicitados" los calcula el RPAD, igual que en las Notas Digitales.</div>
@@ -476,8 +545,20 @@
                 const a = area();
                 st.tipo = a.ambito === 'externa' ? 'externa' : 'interna';
                 st.elegidos = new Set(a.datasets.filter(urgente).map((d) => d.id));
+                st.antEditado = false; st.antFecha = '';
+                completarNotaAnterior();
             }
         };
+        const agregarNota = () => {
+            const campo = document.getElementById('f-ant-nuevo');
+            const n = (campo?.value || '').trim();
+            if (!n) { campo?.focus(); return; }
+            if (!st.antNumeros.includes(n)) st.antNumeros.push(n);
+            st.antEditado = true; if (st.antNumeros.length !== 1) st.antFecha = '';
+            dibujar();
+            document.getElementById('f-ant-nuevo')?.focus();
+        };
+        cuerpo.addEventListener('keydown', (e) => { if (e.target.id === 'f-ant-nuevo' && e.key === 'Enter') { e.preventDefault(); agregarNota(); } });
         const avisar = (texto) => {
             const el = document.getElementById('aviso-maqueta');
             el.textContent = texto; el.style.display = 'block';
@@ -491,6 +572,10 @@
             if (f) { st.filtro = f.dataset.filtro; dibujar(); return; }
             const fila = e.target.closest('.area-opcion[data-area]');
             if (fila) { elegirArea(Number(fila.dataset.area)); st.paso = 2; dibujar(); window.scrollTo({ top: 0 }); return; }
+            const quitar = e.target.closest('[data-quitar-nota]');
+            if (quitar) { st.antNumeros.splice(Number(quitar.dataset.quitarNota), 1); st.antEditado = true; if (st.antNumeros.length !== 1) st.antFecha = ''; dibujar(); return; }
+            if (e.target.closest('[data-agregar-nota]')) { agregarNota(); return; }
+            if (e.target.closest('[data-reponer-notas]')) { st.antEditado = false; completarNotaAnterior(); dibujar(); return; }
             if (e.target.closest('#descargar')) { avisar('En la maqueta no se descarga: en la real baja el Word.'); return; }
             if (e.target.closest('[data-nueva]')) { st.paso = 1; st.areaId = null; st.numero = ''; st.pedido = 'solicitud'; dibujar(); }
         });
@@ -499,7 +584,7 @@
             if (t.name === 'area') { elegirArea(Number(t.value)); dibujar(); return; }
             if (t.name === 'tipo') { st.tipo = t.value; dibujar(); return; }
             if (t.name === 'pedido') { st.pedido = t.value; dibujar(); return; }
-            if (t.type === 'checkbox') { t.checked ? st.elegidos.add(Number(t.value)) : st.elegidos.delete(Number(t.value)); dibujar(); return; }
+            if (t.type === 'checkbox') { t.checked ? st.elegidos.add(Number(t.value)) : st.elegidos.delete(Number(t.value)); completarNotaAnterior(); dibujar(); return; }
             if (t.id === 'f-fecha' && t.value) { st.fecha = t.value; dibujar(); }
             if (t.id === 'f-ant-fecha') { st.antFecha = t.value; document.getElementById('mini').innerHTML = hoja(); }
         });
@@ -527,8 +612,16 @@
         document.getElementById('m-ejemplos').addEventListener('click', (e) => {
             const b = e.target.closest('button'); if (!b) return;
             st.areaId = null; elegirArea(Number(b.dataset.area));
-            if (st.elegidos.size === 0) st.elegidos = new Set(area().datasets.map((d) => d.id));
+            if (st.elegidos.size === 0) st.elegidos = new Set(area().datasets.filter((d) => d.estado !== 'actualizado').map((d) => d.id));
             st.paso = 3; dibujar(); window.scrollTo({ top: 0 });
+        });
+
+        document.getElementById('m-reiteraciones').addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            st.areaId = null; elegirArea(Number(b.dataset.area));
+            if (b.dataset.area === '41') { st.elegidos = new Set([46, 48, 69]); }
+            st.antEditado = false; completarNotaAnterior();
+            st.pedido = 'reiteracion'; st.paso = 2; dibujar(); window.scrollTo({ top: 0 });
         });
 
         const toggle = document.getElementById('sidebarToggle');
