@@ -74,7 +74,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - **La columna:** en `areas`, después de `articulo_superior`, `` `ambito` enum('municipal','externo') NOT NULL DEFAULT 'municipal' ``. Con `DEFAULT 'municipal'`, los `crearArea` de los fixtures siguen andando.
   - **La migración**, repetible:
     - `ADD COLUMN IF NOT EXISTS`.
-    - Una sentencia por área de afuera (las 13 del Anexo A: 2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43 y 44), con la forma `UPDATE areas SET ambito = 'externo' WHERE id = N AND nombre = '<nombre original>';`.
+    - Una sentencia por área de afuera, con la forma `UPDATE areas SET ambito = 'externo' WHERE id = N AND nombre = '<nombre original>';`. **La lista final la da el usuario**, en `Escritorio/RPAD-generador-de-notas/RPAD - Ámbito de las áreas - para confirmar.xlsx` (hoja "Áreas", columna J "Ámbito (CONFIRMÁ ACÁ)"; columna M, observaciones). La propuesta son las 13 del Anexo A: 2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43 y 44. Si el Excel confirmado difiere, o trae observaciones sobre nombres o dependencias, primero se actualiza el Anexo A de la spec (con su commit) y después se escribe la migración. Sin el Excel confirmado, esta tarea no empieza.
     - Una sentencia por texto corregido del Anexo A, con la forma `UPDATE areas SET <col> = '<corregido>' WHERE id = N AND <col> = '<original>';`. Las columnas son `nombre`, `area_superior` y `articulo_superior`.
     - Cada sentencia lleva arriba el comentario `-- <id>. <nombre>`.
     - Los originales salen de `SELECT id, nombre, area_superior, articulo_superior FROM areas` en la base de la rama, que tiene el dump del 24/10. Los corregidos, del Anexo A de la spec, tal cual.
