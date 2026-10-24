@@ -1979,6 +1979,11 @@ describe('resumenParaLista y conNotasDgmitEditables: notas DGMIT', () => {
     assert.deepEqual(editables({ administracion: false }), [[1, false], [2, false]]);
     assert.deepEqual(editables(undefined), [[1, false], [2, false]]);
     assert.deepEqual(editables(null), [[1, false], [2, false]]);
+    // Falla cerrado: administración es solo el true literal; otro valor "verdadero" no da permiso sobre la nota de otro
+    for (const administracion of ['si', 'true', 1, {}, [], 'admin']) {
+      assert.deepEqual(editables({ usuarioId: 8, administracion }), [[1, false], [2, false]], JSON.stringify(administracion));
+      assert.deepEqual(editables({ usuarioId: 7, administracion }), [[1, true], [2, false]], JSON.stringify(administracion));
+    }
     // Saca por_id; lo demás del movimiento queda igual
     const r = conNotasDgmitEditables(s, { usuarioId: 7, administracion: false });
     assert.ok(dgmit(r).every((m) => !Object.hasOwn(m.extra, 'por_id')));

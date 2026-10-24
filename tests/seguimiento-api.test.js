@@ -3,7 +3,7 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
-import { crearArea, crearDataset, crearEmailViejo, limpiarBase } from './notas-fixtures.js';
+import { crearArea, crearDataset, crearEmailViejo, limpiarBase, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { lineasPorHoja } from './pdf-lector.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 
@@ -15,7 +15,7 @@ before(async () => {
   process.env.DB_NAME = base.nombre;
   servidor = await iniciarServidor({ env: { DB_NAME: base.nombre } });
   api = crearCliente(servidor.url);
-  usuarios = await crearUsuariosPrueba(api, { adminA: 'admin', lector: 'lector' });
+  usuarios = await crearUsuariosPrueba(api, { adminA: 'admin', lector: 'lector', colab: 'colaborador', colab2: 'colaborador' });
 });
 
 after(async () => {
@@ -129,6 +129,78 @@ describe('GET /seguimiento/:id (el detalle)', () => {
     const res = await api.get('/seguimiento/99999999999999999999999999', como('lector'));
     assert.equal(res.status, 404);
     assert.deepEqual(res.body, { success: false, error: 'Dataset no encontrado' });
+  });
+});
+
+// Notas DGMIT según quién mira (spec 2026-10-24-notas-dgmit, 3 y 8): en el detalle, cada movimiento de una nota DGMIT dice si quien
+// mira puede corregirla o anularla (extra.editable: quien la cargó o administración) y la respuesta no trae el id de quien la cargó
+// (por_id). Las notas se cargan por la API, con la sesión de cada usuario: así creado_por es el de verdad.
+describe('notas DGMIT según quién mira', () => {
+  beforeEach(async () => {
+    // limpiarBase borra los datasets (y, en cascada, sus filas de notas_dgmit_datasets), pero no las notas: sin esto, el número
+    // de una nota de un test chocaría con el del siguiente
+    await asegurarBaseDePrueba();
+    await query('DELETE FROM notas_dgmit');
+  });
+
+  const cargarNota = async (quien, datos) => {
+    const res = await api.post('/notas-dgmit', { recibida: '2026-10-01', tipo: 'solicitud', datasets: [datasetId], ...datos }, como(quien));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    return res.body.data.id;
+  };
+  const verDetalle = async (quien) => {
+    const res = await api.get(`/seguimiento/${datasetId}`, como(quien));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res;
+  };
+  const notasDgmitDe = (res) => res.body.data.movimientos.filter((m) => m.tipo === 'dgmit');
+  const editables = async (quien) => notasDgmitDe(await verDetalle(quien)).map((m) => [m.extra.numero, m.extra.editable]).sort();
+
+  it('el colaborador que la cargó ve editable: true; otro colaborador y el lector, false; el admin, true', async () => {
+    const delColaborador = await cargarNota('colab', { numero: '156/26' });
+    await cargarNota('adminA', { numero: '157/26', tipo: 'reiteracion', recibida: '2026-10-05' });
+    assert.deepEqual(await editables('colab'), [['156/26', true], ['157/26', false]]);
+    assert.deepEqual(await editables('colab2'), [['156/26', false], ['157/26', false]]);
+    assert.deepEqual(await editables('lector'), [['156/26', false], ['157/26', false]]);
+    assert.deepEqual(await editables('adminA'), [['156/26', true], ['157/26', true]]);
+    // Si se borró el usuario que la cargó (creado_por queda NULL), solo la corrige administración
+    await query('UPDATE notas_dgmit SET creado_por = NULL WHERE id = ?', [delColaborador]);
+    assert.deepEqual(await editables('colab'), [['156/26', false], ['157/26', false]]);
+    assert.deepEqual(await editables('adminA'), [['156/26', true], ['157/26', true]]);
+  });
+
+  it('la respuesta no trae por_id', async () => {
+    await cargarNota('colab', { numero: '156/26' });
+    for (const quien of ['colab', 'colab2', 'lector', 'adminA']) {
+      const res = await verDetalle(quien);
+      const notas = notasDgmitDe(res);
+      assert.equal(notas.length, 1, quien);
+      assert.ok(!Object.hasOwn(notas[0].extra, 'por_id'), quien);
+      // En ningún lugar de la respuesta (ni en el circuito ni en la cinta) va el id de quien la cargó
+      const texto = JSON.stringify(res.body);
+      assert.ok(!texto.includes('por_id') && !texto.includes('creado_por'), `${quien}: ${texto}`);
+      // Quién la cargó se sigue viendo, por su nombre corto
+      assert.equal(notas[0].extra.por, 'Test colab', quien);
+      assert.deepEqual(notas[0].quien, ['Cargó Test colab'], quien);
+    }
+  });
+
+  it('la lista trae requiere_nota y nota_dgmit', async () => {
+    const conSi = await crearDataset({ titulo: 'Externo con Sí', vencimiento: '2027-06-30', gestion: 'externa', requiereNota: 1 });
+    const conNo = await crearDataset({ titulo: 'Externo con No', vencimiento: '2027-06-30', gestion: 'externa', requiereNota: 0 });
+    const interno = await crearDataset({ titulo: 'Interno', vencimiento: '2027-06-30', gestion: 'interna' });
+    await cargarNota('colab', { numero: '156/26', datasets: [conSi] });
+    const res = await api.get('/seguimiento', como('lector'));
+    assert.equal(res.status, 200);
+    const fila = (id) => {
+      const encontrada = res.body.data.find((f) => f.id === id);
+      return [encontrada.requiere_nota, encontrada.nota_dgmit];
+    };
+    assert.deepEqual(fila(conSi), [1, { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-01' }]);
+    assert.deepEqual(fila(conNo), [0, null]);
+    assert.deepEqual(fila(datasetId), [null, null]);
+    assert.deepEqual(fila(interno), [null, null]);
+    assert.ok(!JSON.stringify(res.body).includes('por_id'));
   });
 });
 

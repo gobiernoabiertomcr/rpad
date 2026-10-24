@@ -867,8 +867,8 @@ export const sinErroresTecnicos = (seguimiento) => {
 
 // Según quién mira (spec 2026-10-24-notas-dgmit, 8): en cada movimiento de una nota DGMIT, `extra.editable` dice si puede corregirla
 // o anularla (quien la cargó o administración) y `extra.por_id` sale de la respuesta. `usuarioId`: el id de quien mira;
-// `administracion`: si es de administración (esAdmin). Una nota sin quién la cargó solo la edita administración. Devuelve una copia
-// (no toca la que recibe) y deja todo lo demás igual.
+// `administracion`: si es de administración (esAdmin); falla cerrado, solo cuenta el `true` literal. Una nota sin quién la cargó solo
+// la edita administración. Devuelve una copia (no toca la que recibe) y deja todo lo demás igual.
 export const conNotasDgmitEditables = (seguimiento, quien = {}) => {
   if (!seguimiento || typeof seguimiento !== 'object' || !Array.isArray(seguimiento.movimientos)) return seguimiento;
   const { usuarioId, administracion } = objeto(quien);
@@ -878,7 +878,7 @@ export const conNotasDgmitEditables = (seguimiento, quien = {}) => {
     movimientos: seguimiento.movimientos.map((m) => {
       if (m?.tipo !== 'dgmit' || !m.extra || typeof m.extra !== 'object') return m;
       const { por_id: porId, ...extra } = m.extra;
-      return { ...m, extra: { ...extra, editable: Boolean(administracion) || esSuya(porId) } };
+      return { ...m, extra: { ...extra, editable: administracion === true || esSuya(porId) } };
     })
   };
 };

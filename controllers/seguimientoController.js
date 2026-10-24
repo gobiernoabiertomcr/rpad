@@ -1,6 +1,8 @@
 import pool from '../config/database.js';
 import { fuentesDe } from '../services/seguimientoDatos.js';
-import { seguimientoDe, resumenParaLista, nombreCorto, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos } from '../services/seguimientoReglas.js';
+import {
+  seguimientoDe, resumenParaLista, nombreCorto, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos, conNotasDgmitEditables
+} from '../services/seguimientoReglas.js';
 import { renderSeguimiento, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { esAdmin } from '../services/usuariosReglas.js';
@@ -39,14 +41,17 @@ export const listarSeguimiento = async (req, res) => {
   }
 };
 
-// GET /api/seguimiento/:id: todo el Seguimiento de un dataset. El texto técnico del error de un email que no se pudo enviar lo
-// recibe solo administración (esAdmin); el lector ve "No se pudo enviar.".
+// GET /api/seguimiento/:id: todo el Seguimiento de un dataset, según quién mira. El texto técnico del error de un email que no se pudo
+// enviar lo recibe solo administración (esAdmin); el lector ve "No se pudo enviar.". En cada nota DGMIT, `extra.editable` dice si
+// quien mira puede corregirla o anularla (quien la cargó o administración) y el id de quien la cargó no sale en la respuesta
+// (spec 2026-10-24-notas-dgmit, 3 y 8).
 export const verSeguimiento = async (req, res) => {
   try {
     const fuentes = await fuentesDelDataset(req.params.id);
     if (!fuentes) return res.status(404).json(NO_ENCONTRADO);
-    const seguimiento = seguimientoDe(fuentes, hoyArgentina());
-    res.json({ success: true, data: esAdmin(req.user?.rol) ? seguimiento : sinErroresTecnicos(seguimiento) });
+    const administracion = esAdmin(req.user?.rol) === true;
+    const seguimiento = conNotasDgmitEditables(seguimientoDe(fuentes, hoyArgentina()), { usuarioId: req.user?.userId, administracion });
+    res.json({ success: true, data: administracion ? seguimiento : sinErroresTecnicos(seguimiento) });
   } catch (error) {
     console.error('Error al obtener el seguimiento:', error);
     res.status(500).json(ERROR_AL_OBTENER);
