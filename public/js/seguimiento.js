@@ -595,7 +595,8 @@ function momentoConQuien(momento, por) {
 // recibió el área, el área (la del dataset hoy), todos los datasets de la nota (uno por renglón), quién la cargó y cuándo, y cada
 // corrección o anulación del historial (la más nueva primero, como llega). "Corregir" y "Anular" solo si el servidor dice que quien
 // mira puede (`editable`: quien la cargó o administración; solo cuenta el true literal) y la nota no está anulada. Los botones llevan
-// el id de la nota (los conecta la página)
+// el id de la nota (los conecta la página) y un nombre accesible propio ("Corregir la nota DGMIT N° 156/26"): en la lista puede haber
+// varias notas desplegadas. La fila de la anulación va en rojo y negrita (`motivo-anulacion`)
 function htmlDelCuerpoDeNotaDgmit(extra) {
   const datasets = comoLista(extra.datasets).filter((d) => d && typeof d === 'object' && String(d.titulo ?? '').trim())
     .map((d) => escaparTexto(d.titulo)).join('<br>');
@@ -610,11 +611,14 @@ function htmlDelCuerpoDeNotaDgmit(extra) {
   for (const entrada of comoLista(extra.historial)) {
     if (!entrada || typeof entrada !== 'object' || !esClaveDe(ACCIONES_DE_NOTA_DGMIT, entrada.accion)) continue;
     const motivo = String(entrada.motivo ?? '').trim();
-    pares.push([ACCIONES_DE_NOTA_DGMIT[entrada.accion], `${momentoConQuien(entrada.momento, entrada.por)}${motivo ? `: ${escaparTexto(motivo)}` : ''}`]);
+    pares.push([ACCIONES_DE_NOTA_DGMIT[entrada.accion], `${momentoConQuien(entrada.momento, entrada.por)}${motivo ? `: ${escaparTexto(motivo)}` : ''}`,
+      entrada.accion === 'anulacion' ? 'motivo-anulacion' : '']);
   }
   const id = extra.nota_id;
   if (extra.editable !== true || extra.anulada || id === null || id === undefined) return htmlDeDatos(pares);
-  const boton = (accion, texto) => `<button type="button" class="sg-link" data-accion="${accion}" data-nota="${escaparTexto(id)}">${texto}</button>`;
+  const numero = escaparTexto(extra.numero);
+  const boton = (accion, texto) => `<button type="button" class="sg-link" data-accion="${accion}" data-nota="${escaparTexto(id)}" `
+    + `aria-label="${texto} la nota DGMIT${numero ? ` N° ${numero}` : ''}">${texto}</button>`;
   return `${htmlDeDatos(pares)}<div class="sg-acciones-nota">${boton('corregir-nota', 'Corregir')}${boton('anular-nota', 'Anular')}`
     + '<span class="aclara">Lo ven quien la cargó y administración.</span></div>';
 }
@@ -683,6 +687,258 @@ function textoDeMas(total, visibles) {
 }
 
 // =====================================================
+// Cargar, corregir y anular notas DGMIT (puro; spec 2026-10-24-notas-dgmit, 2 y 3)
+// =====================================================
+
+// Copia de services/notasDgmitReglas.js, atada por un test de paridad: los mensajes, los largos (en caracteres, sin los espacios de
+// los extremos) y la fecha de recepción más vieja. El servidor valida igual; acá es para avisar en el campo antes de mandar
+const MENSAJES_NOTA_DGMIT = Object.freeze({
+  numero: 'Escribí el número de la nota.',
+  numeroLargo: 'El número de la nota puede tener hasta 40 caracteres.',
+  recibida: 'Elegí la fecha en que el área recibió la nota.',
+  recibidaFutura: 'La fecha de recepción no puede ser posterior a hoy.',
+  recibidaVieja: 'La fecha de recepción no puede ser anterior al 01/01/2025.',
+  tipo: 'Elegí si es una solicitud o una reiteración.',
+  datasets: 'Elegí al menos un dataset.',
+  motivo: 'Escribí el motivo.',
+  motivoLargo: 'El motivo puede tener hasta 500 caracteres.'
+});
+const LARGO_NUMERO_NOTA_DGMIT = 40;
+const LARGO_MOTIVO_NOTA_DGMIT = 500;
+const FECHA_MINIMA_NOTA_DGMIT = '2025-01-01';
+// Los campos del formulario, en el orden en que se informan (el mismo con el que el servidor elige el primero)
+const CAMPOS_DEL_FORMULARIO_DE_NOTA = ['numero', 'recibida', 'tipo', 'datasets', 'motivo'];
+// Los dos alcances de la lista de datasets: el inicial (los que ya hacen falta) y todos
+const ALCANCES_DE_NOTA = [['inicial', 'Vencidos y próximos a vencer'], ['todos', 'Todos']];
+const TEXTOS_DEL_FORMULARIO_DE_NOTA = {
+  cargar: { boton: 'Guardar nota', pie: 'Se guarda al confirmar y queda registrado quién la cargó y cuándo.' },
+  corregir: { boton: 'Guardar corrección', pie: 'Se guarda al confirmar. Queda registrado quién la corrigió, cuándo, por qué y qué decía antes.' }
+};
+const PISTA_DE_REITERACION = 'Si se le vuelven a pedir los datos, es una reiteración.';
+
+// Los ids como texto (llegan como número de la API y como texto de las casillas), sin repetidos
+function conjuntoDeIds(valor) {
+  const lista = valor !== null && typeof valor === 'object' && typeof valor[Symbol.iterator] === 'function' ? Array.from(valor) : [];
+  return new Set(lista.filter((id) => id !== null && id !== undefined).map(String));
+}
+
+function tieneId(fila) {
+  return Boolean(fila) && typeof fila === 'object' && fila.id !== null && fila.id !== undefined;
+}
+
+// El área de una fila, para agrupar
+function areaDeLaFila(fila) {
+  return String(fila?.area ?? '').trim() || 'Sin área';
+}
+
+// Por área y después por título, en orden alfabético en español (la Á va con la A)
+function ordenarFilasDeNota(filas) {
+  return [...comoLista(filas)].filter(tieneId)
+    .sort((a, b) => areaDeLaFila(a).localeCompare(areaDeLaFila(b), 'es') || porTitulo(a, b));
+}
+
+// Las filas de la lista de "Sin elegir" que se pueden elegir para una nota DGMIT (las mismas que acepta el servidor: activas, de
+// gestión externa y con «Requiere nota DGMIT» en Sí o sin dato; el 0 es No), más las de `incluir` aunque hoy no se puedan elegir:
+// en una corrección, los datasets que la nota ya tenía siguen marcados y se pueden quitar
+function datasetsParaElegir(filas, incluir = []) {
+  const incluidos = conjuntoDeIds(incluir);
+  return comoLista(filas).filter((fila) => tieneId(fila)
+    && (incluidos.has(String(fila.id)) || (fila.activo !== false && fila.tipo_gestion === 'externa' && fila.requiere_nota !== 0)));
+}
+
+// Los datasets de la nota que se corrige que no están entre las filas (una lista vieja): se suman con lo mínimo, así la corrección
+// no los saca sin que nadie lo haya pedido
+function conLosDatasetsDeLaNota(filas, datasets) {
+  const presentes = conjuntoDeIds(comoLista(filas).filter(tieneId).map((fila) => fila.id));
+  const faltan = comoLista(datasets).filter((d) => tieneId(d) && !presentes.has(String(d.id)))
+    .map((d) => ({ id: d.id, titulo: d.titulo ?? null, area: null, tipo_gestion: null, requiere_nota: null, activo: true,
+      estado: null, dias: null, proxima: null, nota_dgmit: null }));
+  return [...comoLista(filas), ...faltan];
+}
+
+// El alcance inicial: los vencidos y los próximos a vencer (los que ya hacen falta)
+function estaEnElAlcanceInicial(fila) {
+  return fila?.estado === 'vencido' || fila?.estado === 'proximo';
+}
+
+// El estado de cada opción, con los datos del servidor: [clase, texto]. La clase colorea los vencidos y los próximos
+function textoDeEstadoDeOpcion(fila) {
+  const dias = Number.isFinite(fila?.dias) ? fila.dias : null;
+  switch (fila?.estado) {
+    case 'vencido': return ['vencido', dias !== null && dias < 0 ? `Vencido hace ${diasEnTexto(-dias)}` : 'Vencido'];
+    case 'proximo':
+      if (dias === 0) return ['proximo', 'Vence hoy'];
+      return ['proximo', dias !== null && dias > 0 ? `Vence en ${diasEnTexto(dias)}` : 'Próximo a vencer'];
+    case 'actualizado': return ['', fila.proxima ? `Vence el ${Utils.fechaCorta(fila.proxima)}` : 'Actualizado'];
+    case 'sin-fecha': return ['', 'Sin fecha'];
+    case 'eventual': return ['', 'Sin vencimiento'];
+    case 'baja': return ['', 'Dado de baja'];
+    default: return ['', Utils.SIN_DATO];
+  }
+}
+
+// Las filas del alcance con la búsqueda (sin tildes ni mayúsculas, en el título o en el área)
+function opcionesDeNota(filas, alcance, busqueda) {
+  const buscado = textoParaBuscar(busqueda);
+  return comoLista(filas).filter((fila) => tieneId(fila) && (alcance === 'todos' || estaEnElAlcanceInicial(fila))
+    && (!buscado || textoParaBuscar(fila.titulo).includes(buscado) || textoParaBuscar(fila.area).includes(buscado)));
+}
+
+// { inicial: n, todos: n } con la búsqueda aplicada (como los filtros de la lista)
+function cantidadesDeAlcance(filas, busqueda) {
+  return Object.fromEntries(ALCANCES_DE_NOTA.map(([clave]) => [clave, opcionesDeNota(filas, clave, busqueda).length]));
+}
+
+function htmlDeAlcanceDeNota(cantidades, alcance) {
+  return ALCANCES_DE_NOTA.map(([clave, texto]) => `<button type="button" class="sg-chip" data-alcance="${clave}" `
+    + `aria-pressed="${clave === alcance ? 'true' : 'false'}">${texto} <b>${numeroEnTexto(cantidades?.[clave])}</b></button>`).join('');
+}
+
+// Con un dataset elegido de antemano que todavía no está en el alcance inicial (o que no está en la lista), el formulario abre en
+// "Todos": así se ve marcado
+function alcanceInicialDeNota(filas, elegidos) {
+  const filaDe = new Map(comoLista(filas).filter(tieneId).map((fila) => [String(fila.id), fila]));
+  return [...conjuntoDeIds(elegidos)].some((id) => !estaEnElAlcanceInicial(filaDe.get(id))) ? 'todos' : 'inicial';
+}
+
+// Qué decir cuando no queda ninguna opción
+function textoSinOpcionesDeNota(busqueda, alcance) {
+  if (textoParaBuscar(busqueda)) {
+    return `Ningún dataset coincide con lo que buscaste.${alcance === 'inicial' ? ' Si es uno que todavía no vence, buscalo en «Todos».' : ''}`;
+  }
+  return alcance === 'inicial' ? 'No hay datasets vencidos ni próximos a vencer. Los demás están en «Todos».'
+    : 'No hay datasets de gestión externa que requieran nota DGMIT.';
+}
+
+// La lista de datasets del formulario: un grupo por área (las áreas y los títulos por orden alfabético), con una casilla por dataset
+// (value = id), su título, su estado y la marca de alcance (`data-inicial`); los elegidos, marcados
+function htmlDeOpcionesDeNota(filas, elegidos) {
+  const marcados = conjuntoDeIds(elegidos);
+  const grupos = new Map();
+  for (const fila of ordenarFilasDeNota(filas)) {
+    const area = areaDeLaFila(fila);
+    if (!grupos.has(area)) grupos.set(area, []);
+    grupos.get(area).push(fila);
+  }
+  return [...grupos].map(([area, deLaArea]) => `<div class="sg-grupo" data-area="${escaparTexto(area)}"><div class="sg-grupo-area">${escaparTexto(area)}</div>`
+    + deLaArea.map((fila) => {
+      const elegida = marcados.has(String(fila.id));
+      const titulo = escaparTexto(fila.titulo) || 'Sin título';
+      const [clase, estado] = textoDeEstadoDeOpcion(fila);
+      return `<label class="sg-opcion${elegida ? ' elegida' : ''}" data-inicial="${estaEnElAlcanceInicial(fila) ? '1' : '0'}">`
+        + `<input type="checkbox" value="${escaparTexto(fila.id)}" data-titulo="${titulo}"${elegida ? ' checked' : ''}>`
+        + `<span class="t">${titulo}</span><span class="e${clase ? ` ${clase}` : ''}">${estado}</span></label>`;
+    }).join('') + '</div>').join('');
+}
+
+// Los elegidos, como etiquetas que se pueden quitar, en el orden de la lista: "N datasets elegidos:" ("1 dataset elegido:")
+function htmlDeElegidos(filas, ids) {
+  const marcados = conjuntoDeIds(ids);
+  const elegidas = ordenarFilasDeNota(filas).filter((fila) => marcados.has(String(fila.id)));
+  if (!elegidas.length) return '<span>Todavía no elegiste ningún dataset.</span>';
+  return `<span>${elegidas.length === 1 ? '1 dataset elegido:' : `${elegidas.length} datasets elegidos:`}</span>`
+    + elegidas.map((fila) => {
+      const titulo = escaparTexto(fila.titulo) || 'Sin título';
+      return `<span class="sg-elegido">${titulo}<button type="button" data-quitar="${escaparTexto(fila.id)}" aria-label="Quitar ${titulo}">×</button></span>`;
+    }).join('');
+}
+
+// Un número de nota para comparar: sin mayúsculas ni los espacios de los extremos (como el servidor busca el repetido)
+function numeroParaComparar(numero) {
+  return String(numero ?? '').trim().toLowerCase();
+}
+
+// El aviso de solicitud repetida (no bloquea): si el tipo es Solicitud y algún elegido ya tiene una nota DGMIT en su ciclo abierto (la
+// `nota_dgmit` de su fila), un renglón por dataset y al final que eso es una reiteración. La nota que se corrige (`excluirNumero`) no
+// cuenta. Texto plano: va con textContent
+function textoDePistaDeSolicitud(filas, ids, tipo, excluirNumero = null) {
+  if (tipo !== 'solicitud') return '';
+  const marcados = conjuntoDeIds(ids);
+  const excluido = numeroParaComparar(excluirNumero);
+  const renglones = ordenarFilasDeNota(filas).filter((fila) => marcados.has(String(fila.id))).flatMap((fila) => {
+    const nota = fila.nota_dgmit;
+    const numero = nota && typeof nota === 'object' ? numeroParaComparar(nota.numero) : '';
+    if (!numero || numero === excluido) return [];
+    const tipoDeLaNota = esClaveDe(TIPOS_NOTA_DGMIT, nota.tipo) ? `${TIPOS_NOTA_DGMIT[nota.tipo].toLowerCase()}, ` : '';
+    return [`«${String(fila.titulo ?? '').trim()}» ya tiene la nota DGMIT N° ${String(nota.numero).trim()} (${tipoDeLaNota}recibida el `
+      + `${Utils.fechaCorta(nota.recibida)}) en este ciclo.`];
+  });
+  return renglones.length ? [...renglones, PISTA_DE_REITERACION].join('\n') : '';
+}
+
+// 'AAAA-MM-DD' de un día que existe (copia de esFechaIso de services/notasDigitalesCalendario.js, sobre el texto: sin Date local)
+function esFechaDeTexto(valor) {
+  return typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor) && Utils.soloFecha(valor) === valor;
+}
+
+// Un texto obligatorio con largo máximo, contado en caracteres (Array.from, como el varchar de la base) y sin los espacios de los
+// extremos: el mensaje del error, o null
+function errorDeTextoDeNota(valor, largo, mensajeVacio, mensajeLargo) {
+  const recortado = typeof valor === 'string' ? valor.trim() : '';
+  if (recortado === '') return mensajeVacio;
+  return Array.from(recortado).length > largo ? mensajeLargo : null;
+}
+
+// El motivo de una corrección o de una anulación (validarMotivo del servidor): el mensaje del error, o null
+function errorDeMotivoDeNota(valor) {
+  return errorDeTextoDeNota(valor, LARGO_MOTIVO_NOTA_DGMIT, MENSAJES_NOTA_DGMIT.motivo, MENSAJES_NOTA_DGMIT.motivoLargo);
+}
+
+// La fecha de recepción, entre el 01/01/2025 y hoy; sin un hoy válido no pasa (no se puede saber si es posterior)
+function errorDeRecibidaDeNota(recibida, hoy) {
+  if (!esFechaDeTexto(recibida)) return MENSAJES_NOTA_DGMIT.recibida;
+  if (recibida < FECHA_MINIMA_NOTA_DGMIT) return MENSAJES_NOTA_DGMIT.recibidaVieja;
+  if (!esFechaDeTexto(hoy) || recibida > hoy) return MENSAJES_NOTA_DGMIT.recibidaFutura;
+  return null;
+}
+
+// Un id de dataset: un entero positivo seguro, como número o como texto de solo dígitos
+function esIdDeDataset(valor) {
+  const numero = typeof valor === 'string' && /^\d+$/.test(valor) ? Number(valor) : valor;
+  return Number.isSafeInteger(numero) && numero > 0;
+}
+
+// Una lista no vacía de ids (un hueco es undefined: no es un id)
+function sonIdsDeDatasets(datasets) {
+  if (!Array.isArray(datasets) || datasets.length === 0) return false;
+  for (const valor of datasets) if (!esIdDeDataset(valor)) return false;
+  return true;
+}
+
+// Los errores del formulario por campo, con las reglas y los mensajes de validarNotaDgmit (y, con `conMotivo`, de validarMotivo):
+// `{}` si se puede mandar
+function erroresDelFormularioDeNota(entrada, { hoy, conMotivo = false } = {}) {
+  const fuente = entrada !== null && typeof entrada === 'object' ? entrada : {};
+  const errores = {
+    numero: errorDeTextoDeNota(fuente.numero, LARGO_NUMERO_NOTA_DGMIT, MENSAJES_NOTA_DGMIT.numero, MENSAJES_NOTA_DGMIT.numeroLargo),
+    recibida: errorDeRecibidaDeNota(fuente.recibida, hoy),
+    tipo: typeof fuente.tipo === 'string' && esClaveDe(TIPOS_NOTA_DGMIT, fuente.tipo) ? null : MENSAJES_NOTA_DGMIT.tipo,
+    datasets: sonIdsDeDatasets(fuente.datasets) ? null : MENSAJES_NOTA_DGMIT.datasets,
+    motivo: conMotivo ? errorDeMotivoDeNota(fuente.motivo) : null
+  };
+  return Object.fromEntries(CAMPOS_DEL_FORMULARIO_DE_NOTA.filter((campo) => errores[campo]).map((campo) => [campo, errores[campo]]));
+}
+
+// Lo que se manda (ya validado): el número y el motivo sin los espacios de los extremos, los datasets como números y sin repetir
+function cuerpoDeLaNota({ numero, recibida, tipo, datasets, motivo }, conMotivo) {
+  const cuerpo = { numero: String(numero ?? '').trim(), recibida, tipo, datasets: [...conjuntoDeIds(datasets)].map(Number) };
+  if (conMotivo) cuerpo.motivo = String(motivo ?? '').trim();
+  return cuerpo;
+}
+
+// El título, el botón y el pie del formulario, para cargar o para corregir
+function textosDelFormularioDeNota(modo, numero) {
+  const corrige = modo === 'corregir';
+  return { titulo: corrige ? `Corregir nota DGMIT N° ${numero}` : 'Cargar nota DGMIT', ...TEXTOS_DEL_FORMULARIO_DE_NOTA[corrige ? 'corregir' : 'cargar'] };
+}
+
+// La pregunta del modal de anular: "de su dataset" con uno, "de sus N datasets" con más
+function textoDeConfirmarAnulacion(numero, cantidad) {
+  const donde = cantidad > 1 ? `de sus ${cantidad} datasets` : 'de su dataset';
+  return `¿Anular la nota DGMIT N° ${numero}? Deja de contar en el Seguimiento ${donde}, pero no se borra: queda en los movimientos, tachada y con el motivo.`;
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
@@ -721,6 +977,8 @@ async function iniciarSeguimiento() {
   const id = Utils.getUrlParams().id;
   conectarEventos();
   porId('sg-volver').hidden = !id;
+  // "Cargar nota DGMIT", solo para quien puede cargar (administración y el colaborador): el servidor valida igual
+  porId('sg-cargar-nota').hidden = !puedeCargarNotas();
   if (!id) {
     await cargarLista();
     return;
@@ -741,6 +999,7 @@ function conectarEventos() {
   });
   porId('sg-movimientos').addEventListener('click', alTocarUnMovimiento);
   porId('sg-mas').addEventListener('click', verMasMovimientos);
+  conectarEventosDeNotas();
 }
 
 // Los cinco estados de la página: cargando, la lista, el dataset, no encontrado y el error. Solo se ve uno
@@ -896,11 +1155,21 @@ function alternarFila(evento) {
 }
 
 // "Descargar la nota y su anexo" se reconoce por data-archivo: "Corregir" y "Anular" de una nota DGMIT también llevan data-nota (el
-// id de la nota DGMIT, no el de una Nota Digital) y no descargan nada
+// id de la nota DGMIT, no el de una Nota Digital) y abren su modal, sin descargar nada
 function alTocarUnMovimiento(evento) {
   const descarga = evento.target.closest('button[data-archivo]');
   if (descarga) {
     descargarNota(descarga);
+    return;
+  }
+  const corregir = evento.target.closest('button[data-accion="corregir-nota"]');
+  if (corregir) {
+    abrirFormularioDeNota(corregir, corregir.dataset.nota);
+    return;
+  }
+  const anular = evento.target.closest('button[data-accion="anular-nota"]');
+  if (anular) {
+    abrirAnulacion(anular, anular.dataset.nota);
     return;
   }
   alternarFila(evento);
@@ -959,4 +1228,372 @@ async function descargarNota(boton) {
       if (error.message !== NOTA_SIN_ANEXO) avisarError(`Se descargó la nota, pero no su anexo: ${error.message}`);
     }
   });
+}
+
+// =====================================================
+// Cargar, corregir y anular notas DGMIT (DOM y API; spec 2026-10-24-notas-dgmit, 2 y 3)
+// =====================================================
+
+// El formulario abierto: el modo, la nota que se corrige (su id y el número que tenía), las filas que se pueden elegir, los elegidos
+// (ids en texto), el alcance y el botón al que vuelve el foco al cerrar
+const formularioDeNota = { modo: 'cargar', notaId: null, numeroOriginal: null, filas: [], elegidos: new Set(), alcance: 'inicial', volverA: null };
+// La nota que se anula y el botón al que vuelve el foco
+const anulacionDeNota = { notaId: null, volverA: null };
+
+// Dónde va el error de cada campo: su párrafo, los controles que quedan con aria-invalid (la ayuda y el error ya están unidos a ellos
+// en el HTML, con aria-describedby), el marco que se pinta y adónde va el foco
+const LUGARES_DE_ERROR_DE_NOTA = {
+  numero: { error: 'nd-numero-error', controles: ['nd-numero'], foco: 'nd-numero' },
+  recibida: { error: 'nd-fecha-error', controles: ['nd-fecha'], foco: 'nd-fecha' },
+  tipo: { error: 'nd-tipo-error', controles: ['nd-tipo-solicitud', 'nd-tipo-reiteracion'], marco: 'nd-tipos', foco: 'nd-tipo-solicitud' },
+  datasets: { error: 'nd-datasets-error', controles: ['nd-buscar'], marco: 'nd-opciones', foco: 'nd-buscar' },
+  motivo: { error: 'nd-motivo-error', controles: ['nd-motivo'], foco: 'nd-motivo' }
+};
+const TIPOS_DEL_FORMULARIO_DE_NOTA = ['nd-tipo-solicitud', 'nd-tipo-reiteracion'];
+
+// Quién carga notas DGMIT lo dice auth.js (administración y el colaborador); solo cuenta el true literal
+function puedeCargarNotas() {
+  return typeof Auth.puedeCargarNotasDgmit === 'function' && Auth.puedeCargarNotasDgmit() === true;
+}
+
+// Los mensajes del servidor se escapan: showToast inserta HTML
+function avisarExito(mensaje) {
+  if (typeof showToast === 'function') showToast(Utils.escapeHtml(mensaje), 'success');
+  else Utils.showSuccess(mensaje);
+}
+
+function conectarEventosDeNotas() {
+  porId('sg-cargar-nota').addEventListener('click', () => abrirFormularioDeNota(porId('sg-cargar-nota')));
+  conectarCierre(porId('modal-nota'), () => cerrarFormularioDeNota());
+  conectarCierre(porId('modal-anular'), () => cerrarAnulacion());
+  document.addEventListener('keydown', alApretarEscape);
+  porId('nd-guardar').addEventListener('click', guardarNotaDgmit);
+  porId('nd-buscar').addEventListener('input', () => dibujarOpcionesDeNota());
+  porId('nd-alcance').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('button[data-alcance]');
+    if (boton) elegirAlcanceDeNota(boton.dataset.alcance);
+  });
+  porId('nd-opciones').addEventListener('change', alMarcarDataset);
+  porId('nd-elegidos').addEventListener('click', alQuitarElegido);
+  for (const id of TIPOS_DEL_FORMULARIO_DE_NOTA) porId(id).addEventListener('change', alElegirTipoDeNota);
+  // Lo que se corrige deja de marcarse como error
+  porId('nd-numero').addEventListener('input', () => ponerErrorDeNota('numero', null));
+  porId('nd-fecha').addEventListener('input', () => ponerErrorDeNota('recibida', null));
+  porId('nd-motivo').addEventListener('input', () => ponerErrorDeNota('motivo', null));
+  porId('an-confirmar').addEventListener('click', confirmarAnulacion);
+  porId('an-motivo').addEventListener('input', () => ponerErrorDeAnulacion(null));
+}
+
+// Cierran la × y "Cancelar" (data-cerrar) y el clic en el velo, solo si empezó en el velo: soltar ahí una selección de texto que
+// empezó en un campo no cierra el modal
+function conectarCierre(modal, cerrar) {
+  let desdeElVelo = false;
+  modal.addEventListener('mousedown', (evento) => {
+    desdeElVelo = evento.target === modal;
+  });
+  modal.addEventListener('click', (evento) => {
+    if (evento.target.closest('[data-cerrar]')) cerrar();
+    else if (evento.target === modal && desdeElVelo) cerrar();
+    desdeElVelo = false;
+  });
+}
+
+function estaAbierto(id) {
+  return porId(id).classList.contains('active');
+}
+
+// Escape cierra el modal abierto
+function alApretarEscape(evento) {
+  if (evento.key !== 'Escape') return;
+  if (estaAbierto('modal-anular')) cerrarAnulacion();
+  else if (estaAbierto('modal-nota')) cerrarFormularioDeNota();
+}
+
+// El foco vuelve al botón que abrió el modal; si ya no está en la página, al botón del encabezado
+function devolverElFoco(boton) {
+  const destino = boton && boton.isConnected !== false ? boton : porId('sg-cargar-nota');
+  destino?.focus();
+}
+
+// Después de guardar o anular: la lista, o el dataset y las sugerencias, así la nota se ve sin recargar la página
+async function recargarLaVista() {
+  const id = Utils.getUrlParams().id;
+  if (!id) {
+    await cargarLista();
+    return;
+  }
+  await Promise.all([cargarDataset(id), cargarSugerencias()]);
+}
+
+// El `extra` de la nota DGMIT `notaId` de la vista, si quien mira la puede corregir o anular (lo dice el servidor: `editable`) y no está
+// anulada; si no, null
+function notaDgmitEditable(notaId) {
+  const movimiento = comoLista(vista.seguimiento?.movimientos)
+    .find((m) => m?.tipo === 'dgmit' && m.extra && typeof m.extra === 'object' && String(m.extra.nota_id) === String(notaId));
+  const extra = movimiento?.extra;
+  return extra && extra.editable === true && !extra.anulada ? extra : null;
+}
+
+// Las filas de "Sin elegir" (las de la lista o las de las sugerencias); si todavía no están, se piden. null si no llegan (con un aviso:
+// el formulario no se abre vacío)
+async function filasDelSeguimiento(boton) {
+  if (vista.filas.length) return vista.filas;
+  let filas = null;
+  const pedir = async () => {
+    try {
+      const datos = (await API.pedirJson('GET', '/seguimiento'))?.data;
+      if (!Array.isArray(datos)) throw new TypeError('la respuesta no es la lista del seguimiento');
+      vista.filas = datos;
+      porId('sg-sugerencias').innerHTML = htmlDeSugerencias(datos);
+      filas = datos;
+    } catch (error) {
+      avisarError(`No se pudo cargar la lista de datasets: ${error.message}`);
+    }
+  };
+  if (boton) await conBotonBloqueado(boton, pedir);
+  else await pedir();
+  return filas;
+}
+
+// Desde la vista de un dataset, ese dataset, si se puede elegir; si no (interno, con «No» o dado de baja), ninguno
+function datasetPropioElegible(elegibles) {
+  const propio = Utils.getUrlParams().id ? vista.seguimiento?.ficha?.id : null;
+  return propio !== null && propio !== undefined && elegibles.some((fila) => String(fila.id) === String(propio)) ? [propio] : [];
+}
+
+// Abre el formulario para cargar (sin `notaId`) o para corregir la nota `notaId` de la vista, con sus datos, el motivo y sus datasets
+// marcados aunque hoy no se puedan elegir
+async function abrirFormularioDeNota(boton, notaId = null) {
+  if (!puedeCargarNotas()) return;
+  const nota = notaId === null ? null : notaDgmitEditable(notaId);
+  if (notaId !== null && !nota) return;
+  const filas = await filasDelSeguimiento(boton);
+  if (!filas) return;
+  const deLaNota = nota ? comoLista(nota.datasets).filter(tieneId) : [];
+  const elegibles = datasetsParaElegir(conLosDatasetsDeLaNota(filas, deLaNota), deLaNota.map((d) => d.id));
+  const elegidos = nota ? deLaNota.map((d) => d.id) : datasetPropioElegible(elegibles);
+  Object.assign(formularioDeNota, {
+    modo: nota ? 'corregir' : 'cargar', notaId: nota ? notaId : null, numeroOriginal: nota ? nota.numero : null, filas: elegibles,
+    elegidos: conjuntoDeIds(elegidos), alcance: alcanceInicialDeNota(elegibles, elegidos), volverA: boton
+  });
+  const textos = textosDelFormularioDeNota(formularioDeNota.modo, nota?.numero);
+  porId('modal-nota-titulo').textContent = textos.titulo;
+  porId('nd-guardar').textContent = textos.boton;
+  porId('nd-pie').textContent = textos.pie;
+  porId('nd-motivo-grupo').hidden = !nota;
+  porId('nd-numero').value = nota?.numero ?? '';
+  const fecha = porId('nd-fecha');
+  fecha.value = nota?.recibida ?? '';
+  fecha.max = Utils.hoyEnArgentina();
+  porId('nd-tipo-solicitud').checked = nota?.tipo === 'solicitud';
+  porId('nd-tipo-reiteracion').checked = nota?.tipo === 'reiteracion';
+  porId('nd-motivo').value = '';
+  porId('nd-buscar').value = '';
+  for (const campo of CAMPOS_DEL_FORMULARIO_DE_NOTA) ponerErrorDeNota(campo, null);
+  dibujarOpcionesDeNota();
+  dibujarElegidosDeNota();
+  marcarTipoElegido();
+  porId('modal-nota').classList.add('active');
+  mostrarElPrimerElegido();
+  // El velo entra con una transición de visibility: hasta que termina, el campo no acepta foco (como en usuarios.js)
+  setTimeout(() => porId('nd-numero').focus(), 100);
+}
+
+function cerrarFormularioDeNota(destino = formularioDeNota.volverA) {
+  porId('modal-nota').classList.remove('active');
+  formularioDeNota.volverA = null;
+  devolverElFoco(destino);
+}
+
+// El alcance (con sus cantidades) y la lista de datasets con la búsqueda; los elegidos siguen marcados aunque no se vean
+function dibujarOpcionesDeNota() {
+  const { filas, alcance, elegidos } = formularioDeNota;
+  const busqueda = porId('nd-buscar').value;
+  porId('nd-alcance').innerHTML = htmlDeAlcanceDeNota(cantidadesDeAlcance(filas, busqueda), alcance);
+  const visibles = opcionesDeNota(filas, alcance, busqueda);
+  porId('nd-opciones').innerHTML = visibles.length ? htmlDeOpcionesDeNota(visibles, elegidos)
+    : `<p class="sg-sin-opciones">${textoSinOpcionesDeNota(busqueda, alcance)}</p>`;
+}
+
+// Con un dataset elegido de antemano, su área va primero a la vista (la lista se desplaza)
+function mostrarElPrimerElegido() {
+  const opciones = porId('nd-opciones');
+  const caja = opciones.querySelector('input[type="checkbox"]:checked');
+  opciones.scrollTop = caja?.closest('.sg-grupo')?.offsetTop ?? 0;
+}
+
+function elegirAlcanceDeNota(alcance) {
+  if (!ALCANCES_DE_NOTA.some(([clave]) => clave === alcance)) return;
+  formularioDeNota.alcance = alcance;
+  dibujarOpcionesDeNota();
+  porId('nd-alcance').querySelector(`button[data-alcance="${alcance}"]`)?.focus();
+}
+
+// Marcar o desmarcar una casilla (clic delegado en la lista): la lista no se rehace, así el foco queda en la casilla
+function alMarcarDataset(evento) {
+  const caja = evento.target;
+  if (!caja || caja.type !== 'checkbox') return;
+  if (caja.checked) formularioDeNota.elegidos.add(String(caja.value));
+  else formularioDeNota.elegidos.delete(String(caja.value));
+  caja.closest('.sg-opcion')?.classList.toggle('elegida', caja.checked);
+  if (formularioDeNota.elegidos.size) ponerErrorDeNota('datasets', null);
+  dibujarElegidosDeNota();
+}
+
+// Quitar una etiqueta desmarca su dataset; el foco pasa a la etiqueta que quedó en su lugar (o al buscador si no quedó ninguna)
+function alQuitarElegido(evento) {
+  const boton = evento.target.closest('button[data-quitar]');
+  if (!boton) return;
+  const lugar = [...porId('nd-elegidos').querySelectorAll('button[data-quitar]')].indexOf(boton);
+  formularioDeNota.elegidos.delete(String(boton.dataset.quitar));
+  dibujarOpcionesDeNota();
+  dibujarElegidosDeNota();
+  const quedan = porId('nd-elegidos').querySelectorAll('button[data-quitar]');
+  (quedan[Math.min(Math.max(lugar, 0), quedan.length - 1)] ?? porId('nd-buscar')).focus();
+}
+
+function dibujarElegidosDeNota() {
+  porId('nd-elegidos').innerHTML = htmlDeElegidos(formularioDeNota.filas, formularioDeNota.elegidos);
+  dibujarPistaDeNota();
+}
+
+// El aviso de solicitud repetida, que no bloquea (la nota que se corrige no se avisa a sí misma)
+function dibujarPistaDeNota() {
+  const { filas, elegidos, numeroOriginal } = formularioDeNota;
+  const texto = textoDePistaDeSolicitud(filas, elegidos, tipoDeNotaElegido(), numeroOriginal);
+  const pista = porId('nd-pista');
+  pista.textContent = texto;
+  pista.hidden = !texto;
+}
+
+function tipoDeNotaElegido() {
+  if (porId('nd-tipo-solicitud').checked) return 'solicitud';
+  return porId('nd-tipo-reiteracion').checked ? 'reiteracion' : '';
+}
+
+// La opción elegida, marcada con una clase (sin :has(), como el resto del sitio)
+function marcarTipoElegido() {
+  for (const id of TIPOS_DEL_FORMULARIO_DE_NOTA) {
+    const radio = porId(id);
+    radio.closest('.sg-tipo-opcion')?.classList.toggle('elegida', radio.checked);
+  }
+}
+
+function alElegirTipoDeNota() {
+  if (tipoDeNotaElegido()) ponerErrorDeNota('tipo', null);
+  marcarTipoElegido();
+  dibujarPistaDeNota();
+}
+
+// Muestra (o saca, con null) el error de un campo: el párrafo, aria-invalid en sus controles y el marco. false si no es un campo del
+// formulario
+function ponerErrorDeNota(campo, mensaje) {
+  const lugar = esClaveDe(LUGARES_DE_ERROR_DE_NOTA, campo) ? LUGARES_DE_ERROR_DE_NOTA[campo] : null;
+  if (!lugar) return false;
+  const parrafo = porId(lugar.error);
+  parrafo.textContent = mensaje ?? '';
+  parrafo.hidden = !mensaje;
+  for (const id of lugar.controles) {
+    if (mensaje) porId(id).setAttribute('aria-invalid', 'true');
+    else porId(id).removeAttribute('aria-invalid');
+  }
+  if (lugar.marco) porId(lugar.marco).classList.toggle('invalido', Boolean(mensaje));
+  return true;
+}
+
+// Todos los errores juntos (los campos sin error quedan limpios) y el foco al primero. true si hubo alguno
+function mostrarErroresDeNota(errores) {
+  for (const campo of CAMPOS_DEL_FORMULARIO_DE_NOTA) ponerErrorDeNota(campo, errores[campo] ?? null);
+  const primero = CAMPOS_DEL_FORMULARIO_DE_NOTA.find((campo) => errores[campo]);
+  if (primero) porId(LUGARES_DE_ERROR_DE_NOTA[primero].foco).focus();
+  return Boolean(primero);
+}
+
+// Guardar: valida en el navegador (con los mensajes del servidor) y manda POST /notas-dgmit o PUT /notas-dgmit/:id. Un error del
+// servidor con campo (el número repetido, un dataset que no se puede elegir) va a ese campo; sin campo, un aviso. Si sale bien: el
+// aviso del servidor, se cierra y se vuelve a pedir la vista
+async function guardarNotaDgmit() {
+  const boton = porId('nd-guardar');
+  if (boton.disabled) return;
+  const corrige = formularioDeNota.modo === 'corregir';
+  const entrada = {
+    numero: porId('nd-numero').value, recibida: porId('nd-fecha').value, tipo: tipoDeNotaElegido(),
+    datasets: [...formularioDeNota.elegidos], motivo: porId('nd-motivo').value
+  };
+  if (mostrarErroresDeNota(erroresDelFormularioDeNota(entrada, { hoy: Utils.hoyEnArgentina(), conMotivo: corrige }))) return;
+  const cuerpo = cuerpoDeLaNota(entrada, corrige);
+  let respuesta = null;
+  await conBotonBloqueado(boton, async () => {
+    try {
+      respuesta = corrige
+        ? await API.pedirJson('PUT', `/notas-dgmit/${encodeURIComponent(formularioDeNota.notaId)}`, cuerpo)
+        : await API.pedirJson('POST', '/notas-dgmit', cuerpo);
+    } catch (error) {
+      if (ponerErrorDeNota(error?.campo, error?.message)) porId(LUGARES_DE_ERROR_DE_NOTA[error.campo].foco).focus();
+      else avisarError(error?.message);
+    }
+  });
+  if (!respuesta) return;
+  avisarExito(respuesta.message ?? '');
+  // El botón que abrió el formulario se vuelve a dibujar con la vista: el foco va al del encabezado
+  cerrarFormularioDeNota(porId('sg-cargar-nota'));
+  await recargarLaVista();
+}
+
+// "Anular": el modal chico, con la pregunta ("de su dataset" o "de sus N datasets") y el motivo obligatorio
+function abrirAnulacion(boton, notaId) {
+  if (!puedeCargarNotas()) return;
+  const nota = notaDgmitEditable(notaId);
+  if (!nota) return;
+  Object.assign(anulacionDeNota, { notaId, volverA: boton });
+  porId('modal-anular-titulo').textContent = `Anular nota DGMIT N° ${nota.numero}`;
+  porId('an-texto').textContent = textoDeConfirmarAnulacion(nota.numero, comoLista(nota.datasets).length);
+  porId('an-motivo').value = '';
+  ponerErrorDeAnulacion(null);
+  porId('modal-anular').classList.add('active');
+  setTimeout(() => porId('an-motivo').focus(), 100);
+}
+
+function cerrarAnulacion(destino = anulacionDeNota.volverA) {
+  porId('modal-anular').classList.remove('active');
+  anulacionDeNota.volverA = null;
+  devolverElFoco(destino);
+}
+
+function ponerErrorDeAnulacion(mensaje) {
+  const parrafo = porId('an-motivo-error');
+  parrafo.textContent = mensaje ?? '';
+  parrafo.hidden = !mensaje;
+  if (mensaje) porId('an-motivo').setAttribute('aria-invalid', 'true');
+  else porId('an-motivo').removeAttribute('aria-invalid');
+}
+
+// Confirmar: POST /notas-dgmit/:id/anular con el motivo. Si sale bien, el aviso del servidor, se cierra y se vuelve a pedir la vista
+async function confirmarAnulacion() {
+  const boton = porId('an-confirmar');
+  if (boton.disabled) return;
+  const motivo = porId('an-motivo').value;
+  const error = errorDeMotivoDeNota(motivo);
+  if (error) {
+    ponerErrorDeAnulacion(error);
+    porId('an-motivo').focus();
+    return;
+  }
+  let respuesta = null;
+  await conBotonBloqueado(boton, async () => {
+    try {
+      respuesta = await API.pedirJson('POST', `/notas-dgmit/${encodeURIComponent(anulacionDeNota.notaId)}/anular`, { motivo: motivo.trim() });
+    } catch (falla) {
+      if (falla?.campo === 'motivo') {
+        ponerErrorDeAnulacion(falla.message);
+        porId('an-motivo').focus();
+      } else {
+        avisarError(falla?.message);
+      }
+    }
+  });
+  if (!respuesta) return;
+  avisarExito(respuesta.message ?? '');
+  cerrarAnulacion(porId('sg-cargar-nota'));
+  await recargarLaVista();
 }

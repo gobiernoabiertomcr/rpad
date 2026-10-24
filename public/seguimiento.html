@@ -204,6 +204,7 @@
         /* Una nota DGMIT anulada: el título tachado y en gris, la marca hueca */
         .sg-mov.anulada .q { text-decoration: line-through; text-decoration-thickness: 1.5px; color: var(--sg-suave); }
         .sg-mov.anulada .mk-dgmit { background: transparent; border: 2px solid var(--sg-suave); }
+        .sg-cuerpo dd.motivo-anulacion { color: var(--sg-rojo); font-weight: 600; }
         .sg-sin-movs { padding: 12px 4px; color: var(--sg-suave); }
         .sg-hito { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 0 12px; padding: 8px 4px 8px; border-top: 1px solid var(--sg-linea); }
         .sg-hito .f { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--sg-ambar); }
@@ -240,12 +241,79 @@
         .sg-pagina a:focus-visible, .sg-pagina button:focus-visible, .sg-pagina input:focus-visible, .sg-pagina [tabindex]:focus-visible { outline: 2px solid var(--sg-tinta); outline-offset: 2px; }
         .sg-pagina .sg-fila:focus-visible { outline-offset: -2px; border-radius: 8px; }
 
+        /* Cargar, corregir y anular notas DGMIT (spec 2026-10-24-notas-dgmit, 2 y 3): el botón del encabezado y los dos modales.
+           Los modales van fuera de .sg-pagina y llevan el foco visible de la carcasa: anillo --tinta de 3 px con halo --sol-fuerte */
+        .sg-btn svg { flex: none; }
+        .sg-btn:disabled { cursor: progress; opacity: 0.7; }
+        .sg-btn-rojo { background: var(--sg-rojo); color: #fff; border-color: var(--sg-rojo); }
+        .modal.sg-modal { max-width: 720px; border-radius: 18px; }
+        .modal.sg-modal-chico { max-width: 520px; }
+        .sg-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .sg-modal .modal-header { padding: 18px 24px; }
+        .sg-modal .modal-title { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .sg-modal .modal-body { padding: 18px 24px 8px; }
+        .sg-modal-bajada { margin: 0 0 18px; color: var(--sg-suave); font-size: 0.92rem; max-width: 62ch; }
+        .sg-modal .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .sg-modal .form-group { margin-bottom: 16px; }
+        .sg-modal .form-label { font-weight: 600; color: var(--sg-texto); }
+        .sg-modal .form-input { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; font-weight: 500; color: var(--sg-texto); }
+        .sg-modal textarea.form-input { height: auto; min-height: 64px; padding: 10px 12px; resize: vertical; line-height: 1.4; }
+        .sg-modal .form-input[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .sg-modal .form-hint { color: var(--sg-suave); }
+        .sg-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; }
+        .sg-modal .requerido { color: var(--sg-rojo); }
+        .sg-motivo { margin-top: 16px; }
+        /* El tipo de nota: dos opciones grandes; la elegida, marcada (la clase la pone seguimiento.js) */
+        .sg-tipo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .sg-tipo legend { padding: 0; margin-bottom: 6px; }
+        .sg-tipos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .sg-tipo-opcion { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--sg-borde-control); border-radius: 12px; cursor: pointer; }
+        .sg-tipo-opcion:hover { background: var(--sg-sutil); }
+        .sg-tipo-opcion input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
+        .sg-tipo-opcion b { display: block; font-weight: 700; color: var(--sg-texto); }
+        .sg-tipo-opcion small { display: block; color: var(--sg-suave); font-size: 0.8rem; line-height: 1.35; margin-top: 1px; }
+        .sg-tipo-opcion.elegida { border-color: var(--sg-tinta); background: #EEF5FB; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        .sg-tipos.invalido .sg-tipo-opcion { border-color: var(--sg-rojo); }
+        /* Los datasets: el buscador, el alcance, la lista agrupada por área, los elegidos y la pista de solicitud repetida */
+        .sg-elegir { border: 0; padding: 0; margin: 0; min-width: 0; }
+        .sg-elegir legend { padding: 0; margin-bottom: 6px; }
+        .sg-elegir .sg-campo { max-width: none; }
+        .sg-elegir .sg-campo input { height: 42px; }
+        .sg-alcance { margin: 10px 0 0; }
+        .sg-alcance .sg-chip { height: 30px; font-size: 0.82rem; }
+        .sg-opciones { position: relative; margin-top: 8px; max-height: 214px; overflow-y: auto; border: 1px solid var(--sg-linea); border-radius: 12px; }
+        .sg-opciones.invalido { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .sg-grupo-area { position: sticky; top: 0; z-index: 1; background: var(--sg-sutil); padding: 7px 12px; font-size: 0.8rem; font-weight: 700; color: var(--sg-suave); border-bottom: 1px solid var(--sg-linea); }
+        .sg-opcion { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--sg-linea); cursor: pointer; font-size: 0.92rem; color: var(--sg-texto); }
+        .sg-grupo:last-child .sg-opcion:last-child { border-bottom: 0; }
+        .sg-opcion:hover { background: var(--sg-sutil); }
+        .sg-opcion input { width: 18px; height: 18px; margin: 0; accent-color: var(--sg-tinta); }
+        .sg-opcion.elegida { background: #EEF5FB; }
+        .sg-opcion .t { font-weight: 500; }
+        .sg-opcion .e { font-size: 0.8rem; color: var(--sg-suave); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .sg-opcion .e.vencido { color: var(--sg-rojo); font-weight: 600; }
+        .sg-opcion .e.proximo { color: var(--sg-ambar); font-weight: 600; }
+        .sg-sin-opciones { margin: 0; padding: 12px; color: var(--sg-suave); font-size: 0.9rem; }
+        .sg-elegidos { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.88rem; color: var(--sg-suave); min-height: 28px; }
+        .sg-elegido { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 11px; border-radius: 999px; background: var(--sg-cielo); color: var(--sg-tinta); font-weight: 600; font-size: 0.82rem; }
+        .sg-elegido button { width: 22px; height: 22px; border: 0; border-radius: 50%; background: none; color: var(--sg-tinta); font-size: 1rem; line-height: 1; cursor: pointer; }
+        .sg-elegido button:hover { background: #fff; }
+        .sg-pista { margin: 10px 0 0; padding: 9px 12px; border-radius: 10px; background: var(--sg-sol); color: var(--sg-ambar); font-size: 0.86rem; font-weight: 600; white-space: pre-line; }
+        .sg-modal .modal-footer { background: #fff; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .sg-modal .modal-footer small { color: var(--sg-suave); font-size: 0.82rem; max-width: 36ch; }
+        .sg-modal .modal-footer .botones { display: flex; gap: 10px; }
+
         @media (max-width: 960px) {
             .sg-ficha { grid-template-columns: 1fr; } .sg-acciones { flex-direction: row; flex-wrap: wrap; }
             .sg-datos { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .sg-dato:nth-child(4) { border-left: 0; padding-left: 0; }
             .sg-tramos { grid-template-columns: 1fr; } .sg-flecha { padding: 8px 0 8px 18px; } .sg-flecha .l { display: none; }
             .sg-fila { grid-template-columns: 92px 20px minmax(0, 1fr) 20px; } .sg-fila .p { grid-column: 3; text-align: left; margin-top: 4px; }
             .sg-cuerpo { margin-left: 4px; margin-right: 4px; } .sg-cuerpo dl { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 700px) {
+            .sg-modal .form-row, .sg-tipos { grid-template-columns: 1fr; }
+            .sg-opcion { grid-template-columns: 20px minmax(0, 1fr); } .sg-opcion .e { grid-column: 2; }
+            .sg-modal .modal-footer .botones { width: 100%; justify-content: flex-end; }
         }
     </style>
 </head>
@@ -322,6 +390,8 @@
                         <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
                         Seguimiento de datasets
                     </h1>
+                    <!-- Solo para quien puede cargar notas DGMIT (Auth.puedeCargarNotasDgmit): seguimiento.js lo muestra -->
+                    <button type="button" class="sg-btn sg-btn-tinta" id="sg-cargar-nota" hidden><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>Cargar nota DGMIT</button>
                 </div>
                 <p class="sg-bajada">Todo lo que pasó con cada dataset: los avisos del RPAD, las actualizaciones y los cambios, con quién hizo cada cosa.</p>
 
@@ -439,11 +509,99 @@
         </main>
     </div>
 
+    <!-- Cargar o corregir una nota DGMIT (spec 2026-10-24-notas-dgmit, 2 y 3). seguimiento.js arma el alcance, la lista de datasets,
+         los elegidos y la pista, y cambia los textos para corregir -->
+    <div class="modal-overlay" id="modal-nota">
+        <div class="modal sg-modal" role="dialog" aria-modal="true" aria-labelledby="modal-nota-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-nota-titulo">Cargar nota DGMIT</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="sg-modal-bajada">La nota formal con la que la DGMIT le pidió los datos al área. Queda en el Seguimiento de cada dataset que elijas.</p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="nd-numero">Número de nota DGMIT <span class="requerido" aria-hidden="true">*</span></label>
+                        <input type="text" id="nd-numero" class="form-input" maxlength="40" placeholder="Ej.: 156/26" autocomplete="off" aria-required="true" aria-describedby="nd-numero-ayuda nd-numero-error">
+                        <p class="form-hint" id="nd-numero-ayuda">Como figura en la nota.</p>
+                        <p class="form-error" id="nd-numero-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="nd-fecha">Fecha de recepción <span class="requerido" aria-hidden="true">*</span></label>
+                        <input type="date" id="nd-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="nd-fecha-ayuda nd-fecha-error">
+                        <p class="form-hint" id="nd-fecha-ayuda">El día en que el área recibió la nota.</p>
+                        <p class="form-error" id="nd-fecha-error" hidden></p>
+                    </div>
+                </div>
+                <fieldset class="sg-tipo">
+                    <legend class="form-label">Tipo de nota <span class="requerido">*</span></legend>
+                    <div class="sg-tipos" id="nd-tipos">
+                        <label class="sg-tipo-opcion"><input type="radio" name="nd-tipo" id="nd-tipo-solicitud" value="solicitud" aria-describedby="nd-tipo-error"><span><b>Solicitud</b><small>La primera vez que se le piden los datos al área.</small></span></label>
+                        <label class="sg-tipo-opcion"><input type="radio" name="nd-tipo" id="nd-tipo-reiteracion" value="reiteracion" aria-describedby="nd-tipo-error"><span><b>Reiteración</b><small>Ya se le habían pedido y se le vuelven a pedir.</small></span></label>
+                    </div>
+                    <p class="form-error" id="nd-tipo-error" hidden></p>
+                </fieldset>
+                <fieldset class="sg-elegir">
+                    <legend class="form-label">Datasets asociados <span class="requerido">*</span></legend>
+                    <div class="sg-campo">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        <input type="search" id="nd-buscar" placeholder="Buscá por nombre o por área" aria-label="Buscar datasets por nombre o por área" autocomplete="off" aria-describedby="nd-datasets-ayuda nd-datasets-error">
+                    </div>
+                    <div class="sg-chips sg-alcance" id="nd-alcance" role="group" aria-label="Qué datasets mostrar"></div>
+                    <div class="sg-opciones" id="nd-opciones" role="group" aria-label="Datasets de gestión externa que requieren nota DGMIT"></div>
+                    <p class="form-hint" id="nd-datasets-ayuda">Están los de gestión externa que requieren nota DGMIT, agrupados por área.</p>
+                    <div aria-live="polite">
+                        <div class="sg-elegidos" id="nd-elegidos"></div>
+                        <p class="sg-pista" id="nd-pista" hidden></p>
+                    </div>
+                    <p class="form-error" id="nd-datasets-error" hidden></p>
+                </fieldset>
+                <div class="form-group sg-motivo" id="nd-motivo-grupo" hidden>
+                    <label class="form-label" for="nd-motivo">Motivo de la corrección <span class="requerido" aria-hidden="true">*</span></label>
+                    <textarea id="nd-motivo" class="form-input" rows="2" maxlength="500" aria-required="true" aria-describedby="nd-motivo-error"></textarea>
+                    <p class="form-error" id="nd-motivo-error" hidden></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <small id="nd-pie">Se guarda al confirmar y queda registrado quién la cargó y cuándo.</small>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="nd-guardar">Guardar nota</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Anular una nota DGMIT: no se borra, queda tachada en los movimientos con el motivo -->
+    <div class="modal-overlay" id="modal-anular">
+        <div class="modal sg-modal sg-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-anular-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-anular-titulo">Anular nota DGMIT</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="sg-modal-bajada" id="an-texto"></p>
+                <div class="form-group">
+                    <label class="form-label" for="an-motivo">Motivo de la anulación <span class="requerido" aria-hidden="true">*</span></label>
+                    <textarea id="an-motivo" class="form-input" rows="3" maxlength="500" aria-required="true" aria-describedby="an-motivo-error"></textarea>
+                    <p class="form-error" id="an-motivo-error" hidden></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <small></small>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-rojo" id="an-confirmar">Anular nota</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/auth.js?v=20261124"></script>
     <script src="js/main.js?v=20261124"></script>
     <script src="js/api.js?v=20261124"></script>
-    <script src="js/seguimiento.js?v=20261124"></script>
+    <script src="js/seguimiento.js?v=20261125"></script>
 </body>
 </html>
