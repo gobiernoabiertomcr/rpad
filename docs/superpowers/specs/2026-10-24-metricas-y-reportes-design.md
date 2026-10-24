@@ -339,7 +339,7 @@ Sigue el mockup `3-reportes.html`. Son siete tarjetas en dos grupos y cada una d
    - Un año con foto sale de la foto.
    - Unas 4 hojas.
 2. **Informe anual:**
-   - Solo para un año con foto: hasta entonces, el botón dice «Disponible desde el 1/1/AAAA+1».
+   - Solo para un año con foto: hasta entonces, el botón dice «Disponible desde el 10/01/AAAA+1» (el día de la foto).
    - Lleva la foto del 31/12, la comparación con la foto del año anterior («Primer año con foto» si no hay) y los **logros del año**.
    - Los logros son los hitos con fecha en ese año de Gestión → Proyectos (`proyecto_hitos`), agrupados por proyecto. No hay que escribir nada nuevo.
 3. **Estado general de los datasets:**
