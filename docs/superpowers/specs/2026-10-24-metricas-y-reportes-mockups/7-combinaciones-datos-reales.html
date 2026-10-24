@@ -334,7 +334,7 @@ function cinta() {
   const paso = [5, 10, 20, 30, 50, 100].find((p) => (fin - aviso) / p <= 8) ?? 100;
   const min = Math.floor((aviso - paso * 0.4) / paso) * paso, max = Math.ceil((fin + paso * 0.6) / paso) * paso;
   const x = (d) => 30 + ((d - min) / (max - min)) * 940;
-  let s = `<svg viewBox="0 0 1000 150" role="img" aria-label="Recorrido típico"><defs><pattern id="rayado" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#FCE8A8"/><rect width="3" height="7" fill="#F2CF5B"/></pattern></defs>`;
+  let s = `<svg viewBox="0 0 1000 156" role="img" aria-label="Recorrido típico"><defs><pattern id="rayado" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#FCE8A8"/><rect width="3" height="7" fill="#F2CF5B"/></pattern></defs>`;
   s += `<line x1="30" y1="118" x2="970" y2="118" stroke="#DAE3ED"/>`;
   for (let t = min; t <= max; t += paso) if (t !== 0) s += `<text x="${x(t)}" y="136" font-size="11.5" fill="#56677F" text-anchor="middle">${t > 0 ? '+' : (t < 0 ? '−' : '')}${Math.abs(t)}</text>`;
   s += `<rect x="${x(aviso)}" y="74" width="${x(0) - x(aviso)}" height="26" fill="#DCEEF5"/>`;
@@ -346,14 +346,15 @@ function cinta() {
     const juntas = Math.abs(x(carga) - x(datos)) < 11;
     const vc = valor(D.interna.carga);
     const rotulo = vc === 0 ? 'Entrega y carga, el mismo día' : `Entrega y carga, ${vc} ${unidad(vc)} después`;
+    const rot = (xm, texto) => (xm + 12 + texto.length * 6.6 > 990 ? `<text x="${xm - 12}" y="26" font-size="12" font-weight="700" fill="#2E6B4C" text-anchor="end">${texto}</text>` : `<text x="${xm + 12}" y="26" font-size="12" font-weight="700" fill="#2E6B4C">${texto}</text>`);
     if (juntas) {
-      s += `<circle cx="${x(datos)}" cy="87" r="8.5" fill="#2E6B4C" stroke="#1A365D" stroke-width="2.5"/><text x="${x(datos) + 12}" y="42" font-size="12" font-weight="700" fill="#2E6B4C">${rotulo}</text>`;
+      s += `<circle cx="${x(datos)}" cy="87" r="8.5" fill="#2E6B4C" stroke="#1A365D" stroke-width="2.5"/>` + rot(x(datos), rotulo);
     } else {
-      s += `<circle cx="${x(datos)}" cy="87" r="6.5" fill="#fff" stroke="#1A365D" stroke-width="2.5"/><circle cx="${x(carga)}" cy="87" r="7" fill="#2E6B4C" stroke="#fff" stroke-width="2"/><text x="${x(carga) + 10}" y="42" font-size="12" font-weight="700" fill="#2E6B4C">Carga · ${vc} ${unidad(vc)} después</text>`;
+      s += `<circle cx="${x(datos)}" cy="87" r="6.5" fill="#fff" stroke="#1A365D" stroke-width="2.5"/><circle cx="${x(carga)}" cy="87" r="7" fill="#2E6B4C" stroke="#fff" stroke-width="2"/>` + rot(x(carga), `Carga · ${vc} ${unidad(vc)} después`);
     }
   }
   s += `<line x1="${x(0)}" y1="30" x2="${x(0)}" y2="118" stroke="#1A365D" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${x(0)}" y="148" font-size="11.5" font-weight="600" fill="#1A365D" text-anchor="middle">vencimiento</text>`;
-  s += `<text x="970" y="148" font-size="11" fill="#56677F" text-anchor="end">${dias} respecto del vencimiento</text>`;
+  s += `<text x="30" y="152" font-size="11" fill="#56677F">${dias} respecto del vencimiento</text>`;
   s += `<rect x="${x(aviso) - 7}" y="80" width="14" height="14" transform="rotate(45 ${x(aviso)} 87)" fill="#1A365D"/><text x="${Math.max(x(aviso), 90)}" y="16" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso · ${antic} ${unidad(antic)} antes</text>`;
   return s + '</svg>';
 }
