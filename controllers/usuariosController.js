@@ -1,9 +1,10 @@
 // Panel de usuarios (spec 8 a 11). Las rutas exigen authMiddleware + adminOnly: superadmin, admin y editor. El editor solo
-// crea y modifica lectores y no cambia roles (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1).
+// crea y modifica lectores y colaboradores, y solo pasa a alguien de uno de esos roles al otro
+// (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1; spec 2026-10-24-notas-dgmit, 1).
 import pool from '../config/database.js';
 import {
   validarDatosUsuario, violaMinimoAprobadores, estadoDeUsuario, esAprobadorActivo, esAdmin, esAuditor, emailValido, camposCambiados,
-  rechazoParaEditor, MENSAJE_EDITOR_SOLO_LECTORES, MINIMO_APROBADORES, TEXTO_ROL
+  rechazoParaEditor, ROLES_DEL_EDITOR, MENSAJE_EDITOR_SOLO_LECTORES, MINIMO_APROBADORES, TEXTO_ROL
 } from '../services/usuariosReglas.js';
 import { registrarAuditoria, historialDe } from '../services/usuariosAuditoriaService.js';
 import { enviarLinkDeAcceso } from '../services/accesoService.js';
@@ -141,7 +142,7 @@ export const crearUsuario = async (req, res) => {
   if (entrada.rol === 'superadmin') return responderError(res, 400, 'El rol superadmin no se asigna desde el panel', 'rol');
   const { errores, datos } = validarDatosUsuario(entrada);
   if (errores.length > 0) return responderError(res, 400, errores[0].error, errores[0].campo);
-  // El editor solo crea lectores (spec 2026-10-15, 8.1)
+  // El editor solo crea lectores y colaboradores (spec 2026-10-15, 8.1; 2026-10-24, 1)
   const rechazoEditor = req.user.rol === 'editor' ? rechazoParaEditor({ objetivo: datos.rol }) : null;
   if (rechazoEditor) return responderError(res, 403, rechazoEditor, 'rol');
 
@@ -234,8 +235,9 @@ export const actualizarUsuario = async (req, res) => {
     }
 
     rolNuevo = datos.rol !== undefined && datos.rol !== antes.rol ? datos.rol : null;
-    // El editor solo modifica lectores y no cambia roles, tampoco el suyo (spec 2026-10-15, 8.1)
-    const rechazoEditor = req.user.rol === 'editor' ? rechazoParaEditor({ objetivo: antes.rol, cambiaRol: Boolean(rolNuevo) }) : null;
+    // El editor solo modifica lectores y colaboradores, y solo pasa a alguien de uno de esos roles al otro; el suyo no lo
+    // cambia (spec 2026-10-15, 8.1; 2026-10-24, 1)
+    const rechazoEditor = req.user.rol === 'editor' ? rechazoParaEditor({ objetivo: antes.rol, rolNuevo }) : null;
     if (rechazoEditor) {
       await conexion.rollback();
       return responderError(res, 403, rechazoEditor);
@@ -245,7 +247,7 @@ export const actualizarUsuario = async (req, res) => {
       await conexion.rollback();
       return responderError(res, 409, MENSAJE_FIRMANTE, 'rol');
     }
-    // Pasar a un admin a editor o a lector saca un auditor (spec 2026-10-15, 8.3)
+    // Pasar a un admin a editor, a colaborador o a lector saca un auditor (spec 2026-10-15, 8.3)
     if (rolNuevo && violaMinimoAprobadores(todos, id, { rol: rolNuevo })) {
       await conexion.rollback();
       return responderError(res, 409, MENSAJE_MINIMO);
@@ -326,7 +328,7 @@ export const desactivarUsuario = async (req, res) => {
     if (!usuario) rechazo = [404, 'Usuario no encontrado'];
     else if (usuario.rol === 'superadmin') {
       rechazo = [403, req.user.userId === id ? 'La cuenta del superadmin no se puede desactivar.' : MENSAJE_PROTEGIDA];
-    } else if (req.user.rol === 'editor' && usuario.rol !== 'lector') rechazo = [403, MENSAJE_EDITOR_SOLO_LECTORES];
+    } else if (req.user.rol === 'editor' && !ROLES_DEL_EDITOR.includes(usuario.rol)) rechazo = [403, MENSAJE_EDITOR_SOLO_LECTORES];
     else if (!usuario.activo) rechazo = [409, 'El usuario ya está desactivado'];
     else if (violaMinimoAprobadores(todos, id, { activo: 0 })) rechazo = [409, MENSAJE_MINIMO];
     if (rechazo) {
@@ -376,7 +378,7 @@ export const reactivarUsuario = async (req, res) => {
     let rechazo = null;
     if (!usuario) rechazo = [404, 'Usuario no encontrado'];
     else if (usuario.rol === 'superadmin' && req.user.userId !== id) rechazo = [403, MENSAJE_PROTEGIDA];
-    else if (req.user.rol === 'editor' && usuario.rol !== 'lector') rechazo = [403, MENSAJE_EDITOR_SOLO_LECTORES];
+    else if (req.user.rol === 'editor' && !ROLES_DEL_EDITOR.includes(usuario.rol)) rechazo = [403, MENSAJE_EDITOR_SOLO_LECTORES];
     else if (usuario.activo) rechazo = [409, 'El usuario ya está activo'];
     if (rechazo) {
       await conexion.rollback();
@@ -412,8 +414,10 @@ export const enviarAcceso = async (req, res) => {
     const usuario = await buscarUsuario(pool, id);
     if (!usuario) return responderError(res, 404, 'Usuario no encontrado');
     if (usuario.rol === 'superadmin' && req.user.userId !== id) return responderError(res, 403, MENSAJE_PROTEGIDA);
-    // El editor solo envía links a lectores (spec 2026-10-15, 8.1)
-    if (req.user.rol === 'editor' && usuario.rol !== 'lector') return responderError(res, 403, MENSAJE_EDITOR_SOLO_LECTORES);
+    // El editor solo envía links a lectores y colaboradores (spec 2026-10-15, 8.1; 2026-10-24, 1)
+    if (req.user.rol === 'editor' && !ROLES_DEL_EDITOR.includes(usuario.rol)) {
+      return responderError(res, 403, MENSAJE_EDITOR_SOLO_LECTORES);
+    }
     if (!usuario.activo) return responderError(res, 409, 'El usuario está desactivado: reactivalo antes de enviarle un link');
     if (!emailValido(usuario.email)) {
       return responderError(res, 409, 'El usuario no tiene un email válido. Cargale uno y guardá antes de enviarle el link.', 'email');

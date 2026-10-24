@@ -9,7 +9,7 @@ import {
 import { pngRgba } from './firma-fixtures.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
-const SOLO_LECTORES = 'Un editor solo puede crear y modificar usuarios lectores.';
+const SOLO_LECTORES = 'Un editor solo puede crear y modificar usuarios lectores y colaboradores.';
 const SIN_ROLES = 'Un editor no puede cambiar roles.';
 const PROTEGIDA = 'Esta cuenta solo la modifica su titular.';
 const MINIMO = 'No se puede: quedarían menos de 2 usuarios que puedan aprobar cambios.';
@@ -24,7 +24,8 @@ before(async () => {
   servidor = await iniciarServidor({ env: { DB_NAME: base.nombre } });
   api = crearCliente(servidor.url);
   usuarios = await crearUsuariosPrueba(api, {
-    adminA: 'admin', adminB: 'admin', superadmin: 'superadmin', editor: 'editor', editor2: 'editor', lector: 'lector'
+    adminA: 'admin', adminB: 'admin', superadmin: 'superadmin', editor: 'editor', editor2: 'editor', lector: 'lector',
+    colaborador: 'colaborador'
   });
 });
 
@@ -115,6 +116,45 @@ describe('lo que el editor no puede (spec 8.1)', () => {
     assert.equal((await api.put(`/usuarios/${usuarios.editor.id}`, { rol: 'admin' }, como('editor'))).status, 403);
     const roles = await query('SELECT id, rol FROM usuarios WHERE id IN (?) ORDER BY id', [[usuarios.lector.id, usuarios.editor.id]]);
     assert.deepEqual(roles.map(r => r.rol).sort(), ['editor', 'lector']);
+  });
+});
+
+describe('el editor y los colaboradores (spec 2026-10-24-notas-dgmit, 1)', () => {
+  it('el editor crea un colaborador', async () => {
+    const res = await api.post('/usuarios', nuevo({ rol: 'colaborador' }), como('editor'));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.usuario.rol, 'colaborador');
+  });
+
+  it('el editor pasa un lector a colaborador y vuelta', async () => {
+    const id = usuarios.lector.id;
+    const ida = await api.put(`/usuarios/${id}`, { rol: 'colaborador' }, como('editor'));
+    assert.equal(ida.status, 200, JSON.stringify(ida.body));
+    assert.equal(ida.body.data.rol, 'colaborador');
+    const vuelta = await api.put(`/usuarios/${id}`, { rol: 'lector' }, como('editor'));
+    assert.equal(vuelta.status, 200, JSON.stringify(vuelta.body));
+    assert.equal(vuelta.body.data.rol, 'lector');
+    const cambios = await query("SELECT detalle FROM usuarios_auditoria WHERE usuario_id = ? AND accion = 'cambio_rol' ORDER BY id", [id]);
+    const detalles = cambios.map(c => (typeof c.detalle === 'string' ? JSON.parse(c.detalle) : c.detalle));
+    assert.deepEqual(detalles.slice(-2), [{ antes: 'lector', despues: 'colaborador' }, { antes: 'colaborador', despues: 'lector' }]);
+  });
+
+  it('el editor no pasa un colaborador a editor (403 sin roles)', async () => {
+    const id = usuarios.colaborador.id;
+    for (const rol of ['editor', 'admin']) {
+      const res = await api.put(`/usuarios/${id}`, { rol }, como('editor'));
+      assert.equal(res.status, 403, rol);
+      assert.equal(res.body.error, SIN_ROLES, rol);
+    }
+    assert.equal((await query('SELECT rol FROM usuarios WHERE id = ?', [id]))[0].rol, 'colaborador');
+  });
+
+  it('el editor desactiva, reactiva y envía el link a un colaborador', async () => {
+    const id = usuarios.colaborador.id;
+    assert.equal((await api.put(`/usuarios/${id}`, { cargo: 'Cargo de colaborador' }, como('editor'))).status, 200);
+    assert.equal((await api.post(`/usuarios/${id}/enviar-acceso`, {}, como('editor'))).status, 200);
+    assert.equal((await api.post(`/usuarios/${id}/desactivar`, {}, como('editor'))).status, 200);
+    assert.equal((await api.post(`/usuarios/${id}/reactivar`, {}, como('editor'))).status, 200);
   });
 });
 

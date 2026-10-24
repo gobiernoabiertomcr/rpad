@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   esAdmin, esAuditor, estadoDeUsuario, esAprobadorActivo, violaMinimoAprobadores, emailValido,
   validarContrasena, validarDatosUsuario, camposCambiados, TEXTO_ROL,
-  ROLES_ASIGNABLES, rechazoParaEditor, MENSAJE_EDITOR_SOLO_LECTORES, MENSAJE_EDITOR_SIN_ROLES
+  ROLES_ASIGNABLES, ROLES_DEL_EDITOR, rechazoParaEditor, puedeCargarNotasDgmit, MENSAJE_EDITOR_SOLO_LECTORES,
+  MENSAJE_EDITOR_SIN_ROLES
 } from '../services/usuariosReglas.js';
 
 const u = (id, rol, activo = 1, tieneContrasena = 1) => ({ id, rol, activo, tiene_contrasena: tieneContrasena });
@@ -14,11 +15,14 @@ describe('roles', () => {
     assert.equal(esAdmin('superadmin'), true);
     assert.equal(esAdmin('admin'), true);
     assert.equal(esAdmin('lector'), false);
+    assert.equal(esAdmin('colaborador'), false);
     assert.equal(esAdmin(undefined), false);
   });
 
   it('textos de los roles', () => {
-    assert.deepEqual(TEXTO_ROL, { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', lector: 'Lector' });
+    assert.deepEqual(TEXTO_ROL, {
+      superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', colaborador: 'Colaborador', lector: 'Lector'
+    });
   });
 
   it('auditores: superadmin y admin (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () => {
@@ -26,6 +30,7 @@ describe('roles', () => {
     assert.equal(esAuditor('admin'), true);
     assert.equal(esAuditor('editor'), false);
     assert.equal(esAuditor('lector'), false);
+    assert.equal(esAuditor('colaborador'), false);
     assert.equal(esAuditor(undefined), false);
   });
 });
@@ -42,6 +47,7 @@ describe('estado del usuario', () => {
     assert.equal(esAprobadorActivo(u(1, 'superadmin')), true);
     assert.equal(esAprobadorActivo(u(1, 'admin')), true);
     assert.equal(esAprobadorActivo(u(1, 'lector')), false);
+    assert.equal(esAprobadorActivo(u(1, 'colaborador')), false);
     assert.equal(esAprobadorActivo(u(1, 'admin', 0)), false);
     assert.equal(esAprobadorActivo(u(1, 'admin', 1, 0)), false);
   });
@@ -145,7 +151,7 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1 y 8.3)',
     assert.equal(esAdmin('editor'), true);
     assert.equal(esAuditor('editor'), false);
     assert.equal(esAprobadorActivo(u(1, 'editor')), false);
-    assert.deepEqual(ROLES_ASIGNABLES, ['admin', 'editor', 'lector']);
+    assert.deepEqual(ROLES_ASIGNABLES, ['admin', 'editor', 'colaborador', 'lector']);
   });
 
   it('pasar a un admin a editor cuenta como quitar un aprobador', () => {
@@ -156,16 +162,51 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1 y 8.3)',
 
   it('el formulario acepta el rol editor', () => {
     assert.equal(validarDatosUsuario({ rol: 'editor' }, { parcial: true }).datos.rol, 'editor');
-    assert.equal(validarDatosUsuario({ rol: 'jefe' }, { parcial: true }).errores[0].error, 'El rol debe ser admin, editor o lector');
+    assert.equal(validarDatosUsuario({ rol: 'jefe' }, { parcial: true }).errores[0].error, 'El rol debe ser admin, editor, colaborador o lector');
   });
 
-  it('lo que el editor no puede en el panel: tocar a quien no es lector, o cambiar un rol', () => {
+  it('lo que el editor no puede en el panel: tocar a quien no es lector ni colaborador, o cambiar un rol', () => {
     assert.equal(rechazoParaEditor({ objetivo: 'lector' }), null);
     for (const objetivo of ['admin', 'editor', 'superadmin']) {
       assert.equal(rechazoParaEditor({ objetivo }), MENSAJE_EDITOR_SOLO_LECTORES, objetivo);
     }
-    assert.equal(rechazoParaEditor({ objetivo: 'lector', cambiaRol: true }), MENSAJE_EDITOR_SIN_ROLES);
-    assert.equal(MENSAJE_EDITOR_SOLO_LECTORES, 'Un editor solo puede crear y modificar usuarios lectores.');
+    assert.equal(rechazoParaEditor({ objetivo: 'lector', rolNuevo: 'admin' }), MENSAJE_EDITOR_SIN_ROLES);
+    assert.equal(MENSAJE_EDITOR_SOLO_LECTORES, 'Un editor solo puede crear y modificar usuarios lectores y colaboradores.');
     assert.equal(MENSAJE_EDITOR_SIN_ROLES, 'Un editor no puede cambiar roles.');
+  });
+});
+
+describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
+  it('puedeCargarNotasDgmit: superadmin, admin, editor y colaborador sí; lector y null no', () => {
+    for (const rol of ['superadmin', 'admin', 'editor', 'colaborador']) assert.equal(puedeCargarNotasDgmit(rol), true, rol);
+    for (const rol of ['lector', null, undefined, '', 'jefe']) assert.equal(puedeCargarNotasDgmit(rol), false, String(rol));
+  });
+
+  it('rechazoParaEditor: lector↔colaborador sí; a editor o admin no; sobre un editor o un admin no', () => {
+    assert.deepEqual(ROLES_DEL_EDITOR, ['lector', 'colaborador']);
+    for (const objetivo of ROLES_DEL_EDITOR) assert.equal(rechazoParaEditor({ objetivo }), null, objetivo);
+    assert.equal(rechazoParaEditor({ objetivo: 'lector', rolNuevo: 'colaborador' }), null);
+    assert.equal(rechazoParaEditor({ objetivo: 'colaborador', rolNuevo: 'lector' }), null);
+    assert.equal(rechazoParaEditor({ objetivo: 'colaborador', rolNuevo: null }), null);
+    for (const objetivo of ROLES_DEL_EDITOR) {
+      for (const rolNuevo of ['editor', 'admin', 'superadmin']) {
+        assert.equal(rechazoParaEditor({ objetivo, rolNuevo }), MENSAJE_EDITOR_SIN_ROLES, `${objetivo} → ${rolNuevo}`);
+      }
+    }
+    for (const objetivo of ['editor', 'admin', 'superadmin']) {
+      for (const rolNuevo of [null, 'lector', 'colaborador']) {
+        assert.equal(rechazoParaEditor({ objetivo, rolNuevo }), MENSAJE_EDITOR_SOLO_LECTORES, `${objetivo} → ${rolNuevo}`);
+      }
+    }
+  });
+
+  it('validarUsuario acepta colaborador', () => {
+    assert.equal(validarDatosUsuario({ rol: 'colaborador' }, { parcial: true }).datos.rol, 'colaborador');
+    const { errores, datos } = validarDatosUsuario({
+      nombre_completo: 'Persona Colaboradora', username: 'pcolab', email: 'pcolab@rpad.test', rol: 'colaborador'
+    });
+    assert.deepEqual(errores, []);
+    assert.equal(datos.rol, 'colaborador');
+    assert.ok(ROLES_ASIGNABLES.includes('colaborador'));
   });
 });
