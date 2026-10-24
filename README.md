@@ -30,13 +30,14 @@ RPAD permite registrar datasets, asignarles frecuencias de actualización y moni
 
 ## Roles de Usuario
 
-El sistema cuenta con cuatro roles de usuario:
+El sistema cuenta con cinco roles de usuario:
 
 | Rol | Descripción | Permisos |
 |-----|-------------|----------|
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. |
-| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros **de respaldo** (si ese día no hay ningún auditor disponible) o, los que propuso un auditor, **sin responsabilidad por la auditoría** (si hay auditores disponibles), en el panel de usuarios solo crea y modifica lectores y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
+| `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros **de respaldo** (si ese día no hay ningún auditor disponible) o, los que propuso un auditor, **sin responsabilidad por la auditoría** (si hay auditores disponibles), en el panel de usuarios solo crea y modifica lectores y colaboradores (y solo pasa a alguien de lector a colaborador o al revés) y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
+| `colaborador` | Lector que carga notas DGMIT | Todo lo de `lector` y, además, carga las notas DGMIT en Herramientas → Seguimiento (y corrige o anula las que cargó). No modifica datasets, no audita cambios y no entra a la administración. Pensado para el personal de la DGMIT (ver [Notas DGMIT](#notas-dgmit)). |
 | `lector` | Solo lectura | Ver todas las secciones (portada, calendario, datasets, reportes, notas, Seguimiento) sin poder modificar datos. |
 
 Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins). Un editor audita **de respaldo** si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Si hay auditores disponibles, un editor puede aprobar o rechazar el cambio que propuso un auditor (por ejemplo, cuando un auditor se lo pide), y queda "aprobado o rechazado **sin responsabilidad por la auditoría**": Mi Perfil se lo avisa antes y lo muestra después. El cambio que propuso un editor, con auditores disponibles, lo auditan ellos. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
@@ -45,16 +46,16 @@ Los cambios sobre datasets requieren doble verificación: alguien propone y otra
 
 ### Panel de usuarios
 
-En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y sin cambiar roles):
+En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y colaboradores, y como cambio de rol solo de lector a colaborador o al revés):
 
 - **Crear usuarios.** El usuario nuevo recibe un email con un link para elegir su contraseña (vence en 72 h). Nadie ve ni envía contraseñas.
-- **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin, editor o lector).
+- **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin, editor, colaborador o lector). Debajo del rol, una línea explica qué puede hacer cada uno.
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
 - **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
 - **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número, y vuelve a presentar cada aviso adelantado en su fecha. Si no autoriza a nadie, las reiteraciones salen a la vuelta. Si la persona autorizada también va a faltar algunos días, el formulario lo advierte (esos días no se generan notas). El formulario avisa, debajo de las fechas, los días en que no habría ningún auditor disponible (cuenta las demás licencias y la que se está cargando), y arriba de la lista se muestran los próximos 60 días sin auditores.
 
-Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor o a lector a un admin si quedarían menos, ni pasar a editor o a lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
+Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor, colaborador o lector a un admin si quedarían menos, ni pasar a editor, colaborador o lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
 El superadmin recibe un aviso por email cuando otro usuario crea un administrador o un editor, cambia un rol, cambia el email de un administrador o un editor, reactiva a uno de ellos o desactiva a alguien. Durante su licencia esos avisos se retienen: a la vuelta le llega un solo email de resumen con todos.
 
@@ -101,14 +102,14 @@ Cinco páginas se ven sin sesión: la portada, Datasets, el detalle de cada data
 
 ## Seguimiento del dataset
 
-**Herramientas → Seguimiento** (`seguimiento.html`) junta, por dataset, todo lo que pasó con él: cuándo se actualizó en el RPAD, cuándo y cómo se avisó que había que pedir los datos, y quién propuso y quién aprobó cada cambio. Es el registro de todos los movimientos y la prueba de cada vez que el RPAD avisó. Lo ven todos los roles con sesión, el lector incluido; no es público ni permite cargar movimientos a mano: muestra solo lo que registró el sistema. No hay tablas ni migraciones nuevas.
+**Herramientas → Seguimiento** (`seguimiento.html`) junta, por dataset, todo lo que pasó con él: cuándo se actualizó en el RPAD, cuándo y cómo se avisó que había que pedir los datos, y quién propuso y quién aprobó cada cambio. Es el registro de todos los movimientos y la prueba de cada vez que el RPAD avisó. Lo ven todos los roles con sesión, el lector incluido; no es público. Muestra lo que registró el sistema y, además, las notas DGMIT, lo único que se carga a mano (ver [Notas DGMIT](#notas-dgmit)).
 
-- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota") y el último de ellos ("—" si en el ciclo no hubo ninguno).
+- **Sin elegir** (sin `?id`): la lista de todos los datasets con buscador (título o área) y estados como botones con su cantidad: Vencidos (el inicial), Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja (estos dos, solo si hay) y Todos (solo los activos). Para cada uno: cuándo vence o venció, cuántos días lleva vencido, cuántos avisos a DGMIT hubo en el ciclo ("11 emails y 1 nota"), el último de ellos ("—" si en el ciclo no hubo ninguno) y la última nota DGMIT al área del ciclo.
 - **Un dataset** (`seguimiento.html?id=N`):
   - la ficha, con **Descargar PDF** y **Ver en el portal**;
-  - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (no queda registrada) y a los 40 días el RPAD le anticipa al área por email que va a recibirla (si el dataset tiene "Requiere nota DGMIT" en "No", no hay nota formal ni email de anticipo: el circuito dice "No hace falta nota formal" y "Sin nota formal"); en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
+  - los **avisos del ciclo abierto**, con el circuito dibujado: en gestión externa, el RPAD avisa a DGMIT y a la Dirección Administrativa, ellas mandan la nota formal al área por fuera del RPAD (queda en el Seguimiento cuando alguien la carga como nota DGMIT; si no, el circuito dice "Pendiente de carga" o "Todavía no hizo falta") y a los 40 días el RPAD le anticipa al área por email que va a recibirla (si el dataset tiene "Requiere nota DGMIT" en "No", no hay nota formal ni email de anticipo: el circuito dice "No hace falta nota formal" y "Sin nota formal"); en gestión interna, el RPAD avisa a DGMIT y a la Dirección de Investigación Territorial, que hacen el relevamiento por fuera del RPAD (no queda registrado), y no hay email al área;
   - **los últimos 12 meses**: una cinta con los ciclos, lo que estuvo vencido, los vencimientos y las marcas de cada movimiento;
-  - los **movimientos** (altas, actualizaciones, cambios en la ficha, propuestas, Notas Digitales, emails y bajas), con filtros por tipo, filas que se despliegan para ver el detalle y los hitos de vencimiento entre ellas.
+  - los **movimientos** (altas, actualizaciones, cambios en la ficha, propuestas, Notas Digitales, emails, notas DGMIT y bajas), con filtros por tipo, filas que se despliegan para ver el detalle y los hitos de vencimiento entre ellas.
 - **Ciclos:** un ciclo es el tiempo en que rige un vencimiento. Una actualización que mueve la próxima y "Cargado en el portal" lo cierra; reprogramar la próxima antes de que venza lo mueve dentro del mismo ciclo y hacerlo después de vencido lo cierra como reprogramado. Las actualizaciones de antes de la doble verificación (diciembre de 2025) también lo cierran, en su fecha. Cada aviso se asigna al ciclo del vencimiento que informa (las notas) o al que regía cuando se envió (los emails), y "Avisos del ciclo abierto" dice desde cuándo se cuentan ("Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026").
 - **Lenguaje neutro:** el atraso muchas veces depende de que no se mandó la nota formal, no del área. Por eso el Seguimiento dice "Vencido hace N días" o "Estuvo vencido N días" (y la insignia, "Vencido"), nunca "sin entregar" ni "atrasado". El resto del sitio conserva "Atrasado" y "Sin respuesta del área".
 - **PDF de una hoja** (A4, con el estilo del anexo de las Notas Digitales): ficha con QR al portal (la de un externo, con "Requiere nota DGMIT"), avisos del ciclo abierto, la cinta y los últimos 8 movimientos. Se descarga como `Seguimiento - <título> - <AAAA-MM-DD>.pdf`. Esta misma hoja, una por dataset, es el anexo de cada reiteración de las Notas Digitales.
@@ -133,6 +134,20 @@ Dos cambios de las Notas Digitales que van juntos.
 
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-20-requiere-nota-y-anexo-reiteracion-design.md`.
 
+## Notas DGMIT
+
+En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, y ellas le mandan una **nota formal** al área por fuera del RPAD. Ese paso no quedaba registrado: no se podía saber si un dataset estaba vencido porque el área no respondió o porque la nota todavía no había salido. Ahora quien tiene los datos de la nota la carga en el RPAD y queda en el Seguimiento de cada dataset que pide. La DGMIT hace sus notas como siempre, por fuera: acá solo se registran.
+
+- **Quién carga:** el rol nuevo **Colaborador** (ve lo mismo que un lector y, además, carga notas DGMIT; pensado para el personal de la DGMIT) y administración (superadmin, admin y editor). Cada uno corrige o anula las que cargó; administración, cualquiera. Ninguna cuenta es Colaborador al desplegar: se asigna desde Usuarios.
+- **Cómo:** Herramientas → Seguimiento → **Cargar nota DGMIT**: número de la nota, fecha en que el área la recibió (desde el 01/01/2025 hasta hoy), tipo (solicitud o reiteración) y los datasets que pide (solo los externos activos que requieren nota DGMIT). Se guarda directo, sin doble verificación, y queda registrado quién la cargó y cuándo. Un número no se repite entre las notas sin anular: si la DGMIT y la Dirección cargan la misma nota, no queda dos veces.
+- **Corregir y anular:** con motivo. Una nota nunca se borra: la anulada queda tachada en los movimientos, con el motivo, y deja de contar en todo lo demás. Cada corrección guarda los datos de antes.
+- **Dónde se ve:** en el circuito ("Nota DGMIT N° 156/26 / Solicitud recibida por el área el 22/10/2026, hace 2 días", en violeta; sin nota, "Pendiente de carga" si ya hacía falta, "Todavía no hizo falta" si no, o "Ya no se pide" en un dado de baja), en los movimientos (filtro "Notas DGMIT"), en la cinta, en la columna "Última nota DGMIT al área" de la lista, en el PDF del Seguimiento y en el anexo de cada reiteración.
+- **En el anexo de la reiteración**, que le llega a la DGMIT, sin nota el circuito dice solo "La manda la DGMIT al área" (nunca "Pendiente de carga").
+- **No cambia:** una nota DGMIT no es un aviso del RPAD (no cuenta en los avisos del ciclo, el estado ni los ciclos), no sale ningún email y las Notas Digitales no cambian. Gestión interna sigue igual.
+- **Las notas anteriores** no se cargan en esta entrega: las tablas arrancan vacías y, cuando llegue el Excel completo, se importan con un SQL aparte.
+- **Dónde está la regla:** `services/notasDgmitReglas.js` (validación, pura), `controllers/notasDgmitController.js` (la API) y `services/seguimientoReglas.js` (cómo se ve en el Seguimiento). Ver [Migración: Notas DGMIT](#migración-notas-dgmit).
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-notas-dgmit-design.md`.
+
 ## Estructura del proyecto
 
 ```
@@ -156,6 +171,7 @@ rpad/
 │   ├── notasDigitalesController.js  # API de Notas Digitales (libro, prueba, configuración)
 │   ├── notasController.js         # Generador de notas DOCX
 │   ├── seguimientoController.js   # Seguimiento del dataset: lista, ficha y PDF (solo lectura)
+│   ├── notasDgmitController.js    # Notas DGMIT: cargar, corregir y anular (administración y el colaborador)
 │   └── reportesController.js      # Generación de reportes PDF
 ├── services/
 │   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
@@ -163,6 +179,7 @@ rpad/
 │   ├── emailTemplates.js          # Plantillas HTML de los emails, todas con el mismo marco (marcoEmail)
 │   ├── fechasDatasetReglas.js     # Reglas puras de las fechas de un dataset: pedido, opciones de próxima, estado y tasa
 │   ├── requiereNotaReglas.js      # Reglas puras de "Requiere nota DGMIT": validación, normalización y texto (Sí, No o —)
+│   ├── notasDgmitReglas.js        # Reglas puras de las notas DGMIT: validación de la nota y del motivo, mensajes
 │   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF (de una hoja, o de N para un anexo)
 │   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF, anexo del aviso y anexo de la reiteración (el Seguimiento de cada dataset)
 ├── database/
@@ -181,7 +198,9 @@ rpad/
 │       ├── migracion-requiere-nota.sql           # Requiere nota DGMIT: estructura, la columna datasets.requiere_nota (va antes del código)
 │       ├── migracion-requiere-nota-datos.sql     # Requiere nota DGMIT: carga inicial de los 45 externos (después de la estructura y antes del código; una sola vez)
 │       ├── migracion-editor-sin-responsabilidad.sql  # El editor audita sin responsabilidad: la columna cambios_pendientes.revisado_sin_responsabilidad (va antes del código)
-│       └── rollback-editor-sin-responsabilidad.sql   # Deshace la anterior (después de volver a los archivos anteriores)
+│       ├── rollback-editor-sin-responsabilidad.sql   # Deshace la anterior (después de volver a los archivos anteriores)
+│       ├── migracion-notas-dgmit.sql             # Notas DGMIT: el rol colaborador y las tres tablas (va antes del código; repetible)
+│       └── rollback-notas-dgmit.sql              # Deshace la anterior (después de volver a los archivos anteriores; antes que las vueltas atrás del editor)
 ├── middleware/
 │   └── auth.js                    # JWT middleware
 ├── routes/
@@ -270,6 +289,9 @@ Desde **phpMyAdmin** en cPanel:
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
 | `historial_actualizaciones` | Log de actualizaciones realizadas: carga en el portal, "Datos al", fecha de recepción, próxima nueva, el cambio que la registró y el vencimiento que cumplió |
 | `notificaciones_log` | Registro de notificaciones enviadas |
+| `notas_dgmit` | Notas DGMIT al área cargadas a mano: número, tipo (solicitud o reiteración), fecha en que el área la recibió, si está anulada y quién la cargó |
+| `notas_dgmit_datasets` | Qué datasets pide cada nota DGMIT |
+| `notas_dgmit_historial` | Correcciones y anulación de cada nota DGMIT: motivo, quién, cuándo y los datos de antes |
 
 ### Migración: Usuarios (superadmin y panel de usuarios)
 
@@ -482,6 +504,25 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart → phpMyAdmin → pegar `database/updates/rollback-editor-sin-responsabilidad.sql`. Se pierde qué cambios se auditaron sin responsabilidad (quedan como aprobados o rechazados por esa persona, sin la marca). Si alguna vez también hay que deshacer la migración del editor, este rollback va primero.
 
+### Migración: Notas DGMIT
+
+⚠️ Requisito: las migraciones anteriores aplicadas y el código desplegado hasta la entrega anterior (**«Firma de las notas: nombre en negrita»**, y antes **«El editor audita sin responsabilidad»**): los archivos de esta entrega se armaron sobre ese código (por ejemplo, `public/perfil.html` es el de la firma, con las versiones nuevas de `auth.js`, `main.js` y `api.js`). No hay dependencias nuevas de npm y no cambian el cron ni las variables de entorno. Backup de la base y de los archivos antes de empezar, y fuera del horario de los crons (8:15 y 14:00). El orden es: **SQL → subir los archivos → Restart**. La migración va **antes** del código: sin ella, cargar una nota DGMIT y asignar el rol Colaborador dan error (el Seguimiento y el anexo de la reiteración siguen funcionando: la consulta de las notas DGMIT va aislada y, si falla, salen sin ellas).
+
+1. **SQL de estructura:** phpMyAdmin → pestaña **SQL** → pegar `database/updates/migracion-notas-dgmit.sql` → **Continuar**. Suma el rol `colaborador` a `usuarios.rol` (los roles que ya hay no cambian) y crea las tablas `notas_dgmit`, `notas_dgmit_datasets` y `notas_dgmit_historial`, vacías. No cambia datos, el código anterior sigue funcionando con la estructura nueva y se puede volver a correr. Después, la primera consulta tiene que listar las **3 tablas** y la segunda, `enum('superadmin','admin','editor','colaborador','lector')`:
+   ```sql
+   SHOW TABLES LIKE 'notas_dgmit%';
+   SELECT COLUMN_TYPE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'usuarios' AND column_name = 'rol';
+   ```
+   ⚠️ **Desde acá, no volver a correr `migracion-editor-auditoria.sql` ni `migracion-usuarios-superadmin.sql`**: las dos fijan el rol sin `colaborador` y, si hay algún colaborador, fallan o le dejan el rol vacío.
+2. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app). Agrega `controllers/notasDgmitController.js` y `services/notasDgmitReglas.js`, y reemplaza archivos de `controllers`, `middleware`, `routes`, `scripts` y `services`, las 15 páginas HTML de `public` (suben las versiones de `auth.js`, `main.js` y `api.js`) y `public/js/auth.js`, `seguimiento.js` y `usuarios.js`. Si falta cualquiera de los dos archivos nuevos, la app no arranca. Enseguida, **Restart** (Setup Node.js App). No hace falta Run NPM Install.
+3. **Verificar** (Ctrl+F5; solo mirar: no cargar una nota de prueba, porque no se borra, solo se anula):
+   - **Seguimiento**: la lista tiene la columna "Última nota DGMIT al área" (con "—") y, arriba a la derecha, "Cargar nota DGMIT" (para administración); un dataset externo vencido dice "Nota formal / Pendiente de carga" en el circuito, y uno externo sin avisos en el ciclo y sin vencer, "Todavía no hizo falta". Con un lector, el botón no aparece.
+   - **Usuarios → Nuevo usuario**: el rol ofrece **Colaborador** (entre Editor y Lector) con su línea de ayuda, y la lista tiene el grupo "Colaboradores". Cancelar sin guardar.
+   - **Correos → Vista previa y pruebas**, tipo Reiteración y gestión externa → "Ver anexo": en la hoja de un dataset que requiere nota DGMIT, el circuito dice "Nota formal / La manda la DGMIT al área".
+4. **Opcional, después:** pasar a Colaborador la cuenta de la DGMIT desde Usuarios (Ver → Rol → Colaborador → Guardar cambios; el superadmin recibe el aviso del cambio de rol, como siempre), o por SQL en `database/privado/` (no versionado).
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart. La estructura nueva puede quedar (es aditiva y el código anterior no la usa), salvo que ya haya algún colaborador: el código anterior no conoce el rol (lo trata como lector y no lo muestra en ningún grupo de Usuarios). En ese caso, o para sacar la estructura, phpMyAdmin → pegar `database/updates/rollback-notas-dgmit.sql` **después** del Restart: pasa los colaboradores a lector, vuelve el rol a cuatro valores y borra las tres tablas. **Se pierden todas las notas DGMIT cargadas** (exportar las tres tablas antes si hace falta conservarlas). Si también hay que deshacer las entregas del editor, este rollback va **antes** que `rollback-editor-sin-responsabilidad.sql` y `rollback-editor-auditoria.sql`.
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -688,6 +729,9 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | GET | `/api/seguimiento` | Seguimiento: la lista de todos los datasets con su estado y los avisos del ciclo abierto (cualquier rol con sesión) |
 | GET | `/api/seguimiento/:id` | Seguimiento de un dataset: ficha, ciclo abierto y sus avisos, cinta, movimientos e hitos (404 si no existe) |
 | GET | `/api/seguimiento/:id/pdf` | PDF de una hoja del seguimiento de un dataset |
+| POST | `/api/notas-dgmit` | Cargar una nota DGMIT (`{ numero, recibida, tipo, datasets }`; administración y el colaborador) |
+| PUT | `/api/notas-dgmit/:id` | Corregir una nota DGMIT (lo mismo más `motivo`; quien la cargó o administración) |
+| POST | `/api/notas-dgmit/:id/anular` | Anular una nota DGMIT (`{ motivo }`; quien la cargó o administración) |
 
 ### Cron (requiere secret)
 
@@ -737,6 +781,13 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Notas DGMIT en el Seguimiento (2026-10)
+- Rol nuevo, **Colaborador**: ve lo mismo que un lector y, además, carga notas DGMIT. El editor crea y modifica lectores y colaboradores, y pasa a alguien de uno a otro; Usuarios suma el grupo "Colaboradores" y una línea de ayuda debajo del rol
+- Herramientas → Seguimiento → **Cargar nota DGMIT**: número, fecha de recepción, tipo (solicitud o reiteración) y datasets; se corrige o se anula con motivo y nunca se borra. El número no se repite entre las notas sin anular
+- La nota se ve en el circuito (en violeta; sin nota, "Pendiente de carga", "Todavía no hizo falta" o "Ya no se pide"), en los movimientos, en la cinta, en la columna "Última nota DGMIT al área", en el PDF y en el anexo de la reiteración, donde sin nota el circuito dice solo "La manda la DGMIT al área"
+- No es un aviso del RPAD: no cambia los avisos del ciclo, el estado ni los ciclos; no sale ningún email y las Notas Digitales no cambian
+- Un SQL de estructura antes de subir el código (el rol y tres tablas nuevas, de 24 a 27); Restart, sin Run NPM Install
 
 ### Firma de las notas: nombre en negrita (2026-10)
 - En todas las Notas Digitales (aviso, reiteración, autorización y auditoría) y en las dos firmas, el nombre va en negrita y el cargo un punto más chico; el renglón "Personal contratado, cumpliendo funciones de" también baja un punto. En el PDF: nombre en negrita de 11 pt, cargo en 10 y el renglón en 8; en el email: 15, 14 y 11 px. El aire hasta la leyenda y la línea CC no cambia

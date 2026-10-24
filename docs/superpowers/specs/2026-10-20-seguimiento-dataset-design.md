@@ -61,6 +61,7 @@ Todo el texto de la pantalla y del PDF respeta este circuito:
 
 **No objetivos**
 - No hay carga manual de movimientos: el Seguimiento muestra solo lo que registró el sistema. Lo decidió el usuario, también para las notas formales que mandan DGMIT o la Dirección Administrativa.
+  - **Nota (24/10/2026): esta decisión se revirtió para las notas formales.** Las notas que la DGMIT le manda al área se cargan a mano desde el Seguimiento (rol Colaborador y administración) y se ven en el circuito, los movimientos, la cinta, la lista, el PDF y el anexo de la reiteración. Ver `docs/superpowers/specs/2026-10-24-notas-dgmit-design.md`. Todo lo demás sigue sin carga manual.
 - No hay PDF por área ni PDF de todos los datasets: es de a un dataset.
 - No se reconstruye lo que no quedó registrado: las ediciones directas anteriores al 26/01/2026 y las cargas por SQL.
 - No se usan las fechas del portal (CKAN).
