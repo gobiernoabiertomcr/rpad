@@ -106,6 +106,34 @@ describe('lector', () => {
   });
 });
 
+// Notas DGMIT (spec 2026-10-24-notas-dgmit, sección 8): las cargan administración y el colaborador, no el lector. Los IDs no
+// importan: el rol se valida antes
+const RUTAS_NOTAS_DGMIT = [
+  ['POST', '/notas-dgmit'],
+  ['PUT', '/notas-dgmit/1'],
+  ['POST', '/notas-dgmit/1/anular']
+];
+
+describe('notas DGMIT', () => {
+  for (const [metodo, ruta] of RUTAS_NOTAS_DGMIT) {
+    it(`el lector recibe 403 en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, usuarios.lector.token);
+      assert.equal(res.status, 403);
+      assert.equal(res.body.error, 'No tenés permiso para cargar notas DGMIT.');
+    });
+
+    it(`el visitante sin sesión recibe 401 en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, undefined);
+      assert.equal(res.status, 401);
+    });
+  }
+
+  it('el lector sigue pudiendo usar GET /seguimiento', async () => {
+    const res = await api.get('/seguimiento', { token: usuarios.lector.token });
+    assert.equal(res.status, 200);
+  });
+});
+
 describe('visitante sin sesión', () => {
   for (const [metodo, ruta] of RUTAS_SOLO_ADMIN) {
     it(`recibe 401 en ${metodo} ${ruta}`, async () => {
