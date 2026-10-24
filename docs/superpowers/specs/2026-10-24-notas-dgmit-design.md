@@ -29,7 +29,7 @@ Con esta entrega, quien tenga los datos de la nota (número, fecha en que el ár
 - No hay indicadores nuevos en Gestión ni avisos a la DGMIT de vencidos sin nota (ideas para más adelante).
 
 **Antiobjetivos**
-- Que algo se lea como un reproche o un control sobre la DGMIT. Por eso, mientras no hay nota, el circuito dice "Pendiente de carga" (lo que falta es el registro, no la nota), y nunca "la DGMIT no mandó la nota" ni nada parecido.
+- Que algo se lea como un reproche o un control sobre la DGMIT. Por eso, mientras no hay nota, el circuito dice "Pendiente de carga" (lo que falta es el registro, no la nota), y nunca "la DGMIT no mandó la nota" ni nada parecido; y el anexo de la reiteración, que le llega a la DGMIT, ni siquiera eso (sección 7).
 - Que una nota DGMIT se confunda con un aviso del RPAD o con una Nota Digital a DGMIT (el nombre parecido es otra cosa: la Nota Digital la manda el RPAD a la DGMIT; la nota DGMIT la manda la DGMIT al área).
 - Que se pueda borrar una nota cargada, o que un Colaborador pueda tocar algo más que las notas DGMIT que cargó.
 
@@ -42,7 +42,12 @@ Con esta entrega, quien tenga los datos de la nota (número, fecha en que el ár
 - Se llama "Colaborador" en todos lados: `TEXTO_ROL` (servidor y `usuarios.js`), `Auth.getRoleText()` (encabezado), `scripts/setup-admin.js` y el selector de rol de Usuarios (entre Editor y Lector).
 - Usuarios:
   - Un grupo propio, "Colaboradores", entre Editores y los de solo lectura, con su contador.
-  - Debajo del selector de rol, una línea que explica el rol elegido. La del Colaborador: "Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula las que cargó). No modifica datasets ni audita cambios."
+  - Debajo del selector de rol, una línea que explica el rol elegido (hoy no hay ninguna), una para cada rol que se puede elegir, con los textos de la maqueta de Usuarios:
+    - Lector: "Ve los datos públicos y usa las Herramientas (Reportes, Notas, Gestión y Seguimiento). No modifica nada."
+    - Colaborador: "Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula las que cargó). No modifica datasets ni audita cambios."
+    - Editor: "Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y colaboradores."
+    - Admin: "Propone y audita cambios en los datasets, maneja áreas, usuarios, reportes y notificaciones. También carga notas DGMIT."
+    - La cuenta del superadmin no la modifica nadie más que su titular: no lleva línea.
   - Lo asignan el admin y el superadmin, como cualquier rol. El editor también: hoy crea y modifica solo lectores y no cambia roles; ahora crea y modifica lectores y colaboradores, y puede pasar a alguien de lector a colaborador o al revés, nada más. El mensaje pasa a "Un editor solo puede crear y modificar usuarios lectores y colaboradores." (`MENSAJE_EDITOR_SOLO_LECTORES`).
   - Los avisos al superadmin no cambian de regla: un cambio de rol le avisa (también de lector a colaborador), y crear un colaborador no, como crear un lector.
 - El usuario va a pasar a Colaborador a una cuenta de la DGMIT más adelante: eso va por SQL en `database/privado/` (no versionado), después del código, o desde el panel.
@@ -124,6 +129,7 @@ Con el estilo de `database/schema.sql` (InnoDB, utf8mb4_unicode_ci, nombres de l
 ## 5. Las reglas
 
 - `fuentesDe` (`services/seguimientoDatos.js`, solo lectura) suma `notasDgmit` a las fuentes de cada dataset: `[{ id, numero, tipo, recibida, anulada, cargada, por, por_id, otros, historial }]`. `cargada` es el momento de la carga en hora argentina, `por` el nombre de quien la cargó, `otros` los títulos de los demás datasets de la nota y `historial` sus correcciones y anulación (`{ accion, motivo, por, momento }`, la más nueva primero). Todas, también las anuladas. `tests/seguimiento-casos.js` y los demás armadores de fuentes la reciben vacía.
+- **Nunca frena una Nota Digital.** `fuentesDe` también arma el anexo de la reiteración, y si el anexo falla la reiteración no se genera. Por eso la consulta de las notas DGMIT va aislada: si falla (por ejemplo, porque falta la migración), se registra el error y cada dataset queda con `notasDgmit` vacía; el resto de las fuentes y el anexo salen como siempre.
 - Las reglas viven en `services/seguimientoReglas.js` (puro). Lo de validar la carga, en un módulo puro nuevo, `services/notasDgmitReglas.js` (sección 8). Ninguna función tira error y una fuente sin `notasDgmit` es una lista vacía.
 - **Vigentes:** las no anuladas con `recibida` igual o anterior a hoy (el anexo de la reiteración calcula con la fecha de la nota como hoy).
 - **A qué ciclo pertenece:** al que regía el día en que el área la recibió, con el momento `recibida 00:00:00` (`cicloDelAviso(ciclos, momento)`). Si una actualización se aprobó ese mismo día, la nota queda en el ciclo anterior: se mandó antes de que llegaran los datos.
@@ -133,7 +139,7 @@ Con el estilo de `database/schema.sql` (InnoDB, utf8mb4_unicode_ci, nombres de l
 ## 6. Cómo se ve en la pantalla
 
 **El circuito** (`circuitoDe`, `tramoFuera`), solo en gestión externa:
-- Con nota en el ciclo abierto, el tramo pasa a línea llena violeta (#5B4691): título "Nota DGMIT N° 156/26" y texto "Solicitud recibida por el área el 22/10/2026, hace 2 días" ("hoy", "hace 1 día"; "Reiteración recibida…" si es una reiteración). Se muestra la del ciclo abierto aunque el dataset esté en "Requiere nota DGMIT: No" (si la nota existió, se muestra, como el email de los 40 días).
+- Con nota en el ciclo abierto, el tramo pasa a línea llena violeta (#5B4691): título "Nota DGMIT N° 156/26" y texto "Solicitud recibida por el área el 22/10/2026, hace 2 días" ("hoy", "hace 1 día"; "Reiteración recibida…" si es una reiteración). Se muestra la del ciclo abierto aunque el dataset esté en "Requiere nota DGMIT: No" (si la nota existió, se muestra, como el email de los 40 días); en ese caso el recuadro del medio vuelve a decir "Mandan la nota formal al área", para no contradecir al tramo.
 - Sin nota, línea punteada gris y título "Nota formal", con uno de tres textos:
   - "Pendiente de carga": el ciclo abierto ya tuvo algún aviso del RPAD o ya venció (ya hacía falta la nota).
   - "Todavía no hizo falta": el ciclo abierto todavía no tuvo avisos y no venció, o no hay ciclos (eventual o sin fecha). Es la misma frase del recuadro de avisos.
@@ -162,7 +168,8 @@ Con el estilo de `database/schema.sql` (InnoDB, utf8mb4_unicode_ci, nombres de l
 - El renglón "Al área": con nota, "Al área: el 22/10/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset." (reemplaza al texto del email de los 40 días, que sigue en la cinta y en los movimientos). Sin nota, como hoy.
 - Los movimientos de la hoja incluyen los de notas DGMIT vigentes (las anuladas no van). `FILAS_PDF` sigue en 8 y la hoja sigue siendo una.
 - La marca y su renglón en la leyenda, como en la pantalla (la leyenda solo lista los tipos que aparecen).
-- El anexo de la reiteración no necesita nada propio: `seguimientosDeLaNota` arma cada hoja con `fuentesDe` y `seguimientoDe`, así que lleva las notas DGMIT cargadas hasta el momento en que se genera. Lo ya generado no cambia (queda en bytes).
+- El anexo de la reiteración: `seguimientosDeLaNota` arma cada hoja con `fuentesDe` y `seguimientoDe`, así que lleva las notas DGMIT cargadas hasta el momento en que se genera. Lo ya generado no cambia (queda en bytes).
+- **En el anexo, sin nota, el tramo es neutral** (decisión del usuario, 24/10/2026): "Nota formal / La manda la DGMIT al área", en lugar de "Pendiente de carga", "Todavía no hizo falta" o "Ya no se pide". El anexo le llega solo a la DGMIT y a la Dirección Administrativa con cada reiteración, y la tabla arranca vacía: sin esto, todas las hojas dirían "Pendiente de carga" desde el primer día. Con una nota cargada, el anexo la muestra en violeta, igual que el PDF. Vale también para la vista previa y la prueba del anexo en Correos (son el mismo anexo). El PDF que se descarga desde el Seguimiento y la pantalla siguen con los tres textos de la sección 6. El renglón "Al área" del anexo sin nota sigue como hoy. Cómo le llega esa opción a `circuitoDe` (por ejemplo, un parámetro de `seguimientoDe` que pasa `seguimientosDeLaNota`) queda para quien lo construye.
 
 ## 8. La API
 
@@ -184,7 +191,7 @@ No es parte de esta entrega. Cuando la Dirección Administrativa devuelva el Exc
 - `tests/seguimiento-reglas.test.js` (puro): a qué ciclo pertenece una nota (incluido el día de una actualización aprobada), cuál es la del ciclo abierto, las anuladas y las posteriores a hoy no cuentan, los tres textos sin nota, el externo con "No" con y sin nota, gestión interna sin cambios, el movimiento `dgmit` (título, detalle, otros datasets, anulada, quién), que una nota DGMIT no cambia avisos, ciclos, hitos ni estado, y `resumenParaLista` con `requiere_nota` y `nota_dgmit`.
 - `tests/notas-dgmit-reglas.test.js` (puro): `validarNotaDgmit` y `validarMotivo` con cada mensaje, los bordes de la fecha (01/01/2025, hoy, mañana) y el número de 40 y 41 caracteres.
 - `tests/seguimiento-cinta.test.js`: la marca en la fila de abajo, la prioridad y que la anulada no tiene marca.
-- `tests/seguimiento-pdf.test.js` (con `tests/pdf-lector.js`): el tramo con y sin nota, el renglón "Al área", la fila de la nota en los movimientos, la leyenda, una sola hoja y que nada se pise; el anexo con una hoja con nota y otra sin.
+- `tests/seguimiento-pdf.test.js` (con `tests/pdf-lector.js`): el tramo con y sin nota, el renglón "Al área", la fila de la nota en los movimientos, la leyenda, una sola hoja y que nada se pise; el anexo con una hoja con nota y otra sin (la que no tiene nota, con "Nota formal / La manda la DGMIT al área" y nunca "Pendiente de carga").
 - `tests/seguimiento-frontend.test.js` (en el `vm`): la columna de la lista, el circuito con la clase de la línea llena, el detalle del movimiento con y sin "Corregir" y "Anular", la anulada tachada, el armado del formulario (grupos, alcance, estado de cada dataset, preselección) y el aviso de solicitud repetida.
 - `tests/notas-dgmit-api.test.js` (Docker): cargar, corregir y anular; los permisos (lector 403, colaborador puede, colaborador no corrige la de otro, administración corrige cualquiera); los 400 de cada campo y del dataset que no se puede elegir; el 409 del número repetido (y que una anulada no lo bloquea); el 409 de corregir o anular una anulada; el historial; que `GET /api/seguimiento/:id` muestra la nota con `editable` según quién mira.
 - `tests/permisos.test.js`: las tres rutas nuevas (sin sesión 401, lector 403).
@@ -209,6 +216,10 @@ No es parte de esta entrega. Cuando la Dirección Administrativa devuelva el Exc
 6. **"Al área" en el PDF.** Con nota, el renglón nombra la nota y deja de nombrar el email de los 40 días (no entran los dos en un renglón; el email sigue en la cinta y en los movimientos).
 7. **Fecha mínima 01/01/2025**, como en el Excel.
 8. **Una nota recibida el mismo día de una actualización** queda en el ciclo anterior.
+9. **Un externo con "No" que tiene nota** muestra la nota y el recuadro del medio vuelve a "Mandan la nota formal al área".
+10. **La consulta de las notas DGMIT va aislada** en `fuentesDe`: si falla, las notas quedan vacías y la reiteración sale igual.
+11. **Una línea de ayuda para cada rol** en Usuarios, con los textos de la maqueta (el del lector, ajustado a lo que de verdad ve: las Herramientas).
+12. **Detalles para quien lo construye:** el movimiento lleva los datasets de la nota con id y título (`extra.datasets`), porque "Corregir" los necesita; el aviso de solicitud repetida no cuenta la nota que se está corrigiendo; el número repetido se controla con `SELECT … FOR UPDATE` dentro de la transacción.
 
 ## Lo que queda para quien lo construye
 
