@@ -7,9 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { construirAnexo } from '../services/notasDigitalesContenido.js';
 import { renderAnexo } from '../services/notasDigitalesAnexo.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
-import { lineasPorHoja, contenidoPorHoja, textosPorHoja } from './pdf-lector.js';
+import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja } from './pdf-lector.js';
 
 const MM = 72 / 25.4;
+// El anexo sigue en A4 (595,28 × 841,89 puntos) aunque la nota pase a la hoja oficio
+const A4 = { ancho: 595.28, alto: 841.89 };
+const enA4 = (tamano) => Math.abs(tamano.ancho - A4.ancho) < 0.01 && Math.abs(tamano.alto - A4.alto) < 0.01;
 const ficha = (cambios = {}) => ({
   id: 1, titulo: 'Áreas específicas de género', descripcion: 'Listado de áreas municipales con funciones específicas de género.',
   observaciones: null, url_dataset: 'https://datos.comodoro.gov.ar/dataset/areas-genero', tipo_gestion: 'externa',
@@ -267,8 +270,7 @@ describe('renderAnexo', () => {
     assert.ok(hojas[0].some(l => l.includes('Hoja 1 de 2')));
     assert.ok(hojas[1].some(l => l.includes('Hoja 2 de 2')));
     assert.ok(hojas[0].some(l => l.includes('Anexo – Nota Digital N° 3/26')));
-    const texto = pdf.toString('latin1');
-    assert.ok(texto.includes(`/MediaBox [0 0 ${(210 * MM).toFixed(2).replace(/\.?0+$/, '')}`) || /\/MediaBox \[0 0 595\.2/.test(texto));
+    assert.ok(tamanosPorHoja(pdf).every(enA4), JSON.stringify(tamanosPorHoja(pdf)));
   });
 
   it('textos larguísimos: sigue siendo una sola hoja por dataset y corta con "(continúa en el portal)"', async () => {

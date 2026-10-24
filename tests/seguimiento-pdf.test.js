@@ -5,10 +5,13 @@ import assert from 'node:assert/strict';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { renderSeguimiento, renderAnexoDeSeguimiento, FILAS_PDF, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
-import { lineasPorHoja, contenidoPorHoja, textosPorHoja } from './pdf-lector.js';
+import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja } from './pdf-lector.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 
 const MM = 72 / 25.4;
+// El Seguimiento y el anexo de la reiteración siguen en A4 (595,28 × 841,89 puntos) aunque la nota pase a la hoja oficio
+const A4 = { ancho: 595.28, alto: 841.89 };
+const enA4 = (tamano) => Math.abs(tamano.ancho - A4.ancho) < 0.01 && Math.abs(tamano.alto - A4.alto) < 0.01;
 // Las opciones de la cinta del PDF: marcas a menos de 12 se juntan y las letras miden 8,4 (las mismas del anexo y de la descarga)
 const OPCIONES_CINTA = OPCIONES_CINTA_PDF;
 const GENERADO = { momento: '2026-10-20 11:30:05', por: 'Usuario Uno' };
@@ -111,6 +114,12 @@ const verificarDiagramacion = ({ textos, bloques, lineas }) => {
 describe('renderSeguimiento: una sola hoja, sin nada encimado', () => {
   it('FILAS_PDF es 8', () => {
     assert.equal(FILAS_PDF, 8);
+  });
+
+  it('renderSeguimiento: la hoja es A4 (595,28 × 841,89), no la hoja oficio de la nota', async () => {
+    const tamanos = tamanosPorHoja(await render(seguimiento(52)));
+    assert.equal(tamanos.length, 1);
+    assert.ok(enA4(tamanos[0]), JSON.stringify(tamanos));
   });
 
   // Los casos de la spec (52, 10, 81 y 66), el resto de los casos reales y el 52 con título y área larguísimos (Review Focus 3)
@@ -496,6 +505,12 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
     assert.ok(hojas[0].includes('CONJUNTO DE DATOS · GESTIÓN EXTERNA'));
     assert.ok(hojas[1].includes('No hay movimientos anteriores: el dataset está en el RPAD desde el 19/10/2026.'));
     assert.ok(hojas[2].includes('CONJUNTO DE DATOS · GESTIÓN INTERNA'));
+  });
+
+  it('renderAnexoDeSeguimiento: todas las hojas son A4, no la hoja oficio de la nota', async () => {
+    const tamanos = tamanosPorHoja(await anexo(tres()));
+    assert.equal(tamanos.length, 3);
+    assert.ok(tamanos.every(enA4), JSON.stringify(tamanos));
   });
 
   it('arriba, la fecha larga de la nota (hoy); abajo, la hora de generación y sin «por»', async () => {
