@@ -323,13 +323,14 @@ describe('renderSeguimiento: los otros casos', () => {
 
   it('la leyenda con todos los tipos pasa a un segundo renglón sin encimarse', async () => {
     const s = seguimiento(52);
-    const tipos = ['nota', 'email', 'area', 'act', 'actp', 'cambio', 'cambiop', 'rech', 'alta'];
-    const filaDe = { nota: 'arriba', email: 'arriba', area: 'abajo', rech: 'abajo' };
-    const cinta = { ...s.cinta, marcas: tipos.map((tipo, i) => ({ x: 100 + i * 90, fila: filaDe[tipo] ?? 'banda', tipo, cantidad: 1, etiqueta: null, detalle: [] })) };
+    // (con la nota DGMIT al área, spec 2026-10-24-notas-dgmit, 7)
+    const tipos = ['nota', 'email', 'area', 'dgmit', 'act', 'actp', 'cambio', 'cambiop', 'rech', 'alta'];
+    const filaDe = { nota: 'arriba', email: 'arriba', area: 'abajo', dgmit: 'abajo', rech: 'abajo' };
+    const cinta = { ...s.cinta, marcas: tipos.map((tipo, i) => ({ x: 100 + i * 85, fila: filaDe[tipo] ?? 'banda', tipo, cantidad: 1, etiqueta: null, detalle: [] })) };
     const con = { ...s, cinta };
     const { textos } = await diagramacion(() => render(con));
-    const rotulos = ['Nota Digital a DGMIT', 'Email a DGMIT', 'Email al área', 'Actualización', 'Actualización pendiente', 'Cambio en la ficha',
-      'Cambio pendiente', 'Propuesta rechazada', 'Alta', 'Vencido'];
+    const rotulos = ['Nota Digital a DGMIT', 'Email a DGMIT', 'Email al área', 'Nota DGMIT al área', 'Actualización', 'Actualización pendiente',
+      'Cambio en la ficha', 'Cambio pendiente', 'Propuesta rechazada', 'Alta', 'Vencido'];
     for (const t of rotulos) assert.ok(textos.some(c => c.texto === t), `falta "${t}" en la leyenda`);
     const renglones = new Set(rotulos.map(t => textos.find(c => c.texto === t).y0.toFixed(1)));
     assert.equal(renglones.size, 2);
@@ -563,6 +564,203 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
     for (const numeroTexto of [undefined, null, '', '  ']) {
       await assert.rejects(renderAnexoDeSeguimiento(tres(), { hoy: HOY, generado: GENERADO_AUTOMATICO, numeroTexto }), /número de la nota/);
     }
+  });
+});
+
+// Notas DGMIT (spec 2026-10-24-notas-dgmit, 7): la nota formal que la DGMIT le manda al área, cargada a mano. Con una nota en el
+// ciclo abierto, el tramo de afuera va en violeta y con línea llena («Nota DGMIT» / «Solicitud 156/26. Recibida el …», sin «hace N
+// días»: el anexo queda guardado y se lee después) y el renglón «Al área» la nombra. Los movimientos de la hoja llevan las vigentes
+// (las anuladas no van, ni en la cuenta) y la cinta, su marca violeta, con su renglón en la leyenda. En el anexo de la reiteración,
+// sin nota, el tramo es neutral: «Nota formal» / «La manda la DGMIT al área».
+describe('renderSeguimiento: notas DGMIT (spec 2026-10-24-notas-dgmit, 7)', () => {
+  // El violeta de las notas DGMIT (#5B4691), como lo escribe PDFKit: cada canal sobre 255
+  const rgb = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).join(' ');
+  const VIOLETA = rgb('#5B4691');
+  const GRIS_CLARO = rgb('#9AA5B1');
+  // Cada trazo de un color (q … <color> SCN S Q), con lo que va antes en su bloque: ahí está la raya ("[3.5 2.5] 0 d") si es punteado
+  const trazos = (contenido, color) => [...contenido.matchAll(new RegExp(`q\\n([^Q]*?)${color.replace(/\./g, '\\.')} SCN\\nS\\nQ`, 'g'))].map(m => m[1]);
+  const PUNTEADO = /\] 0 d\n/;
+  // Una nota DGMIT como la da fuentesDe (la del 58, recibida el 15/10/2026; hoy es el 20/10/2026)
+  const notaDgmit = (datos = {}) => ({
+    id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '2026-10-16 09:30:00',
+    por: 'Diego Martín Cuatro', por_id: 7, datasets: [{ id: 58, titulo: 'Áreas específicas de género' }], historial: [], ...datos
+  });
+  // El Seguimiento de un caso real con sus notas DGMIT; `opciones`, las de circuitoDe ({ anexo: true } en el anexo)
+  const conNotas = (id, notasDgmit, dataset = {}, opciones = {}) => seguimientoDe(
+    { ...CASOS[id], dataset: { ...CASOS[id].dataset, ...dataset }, notasDgmit, catalogos: CATALOGOS }, HOY, OPCIONES_CINTA, opciones
+  );
+  const anulada = (datos = {}) => notaDgmit({
+    id: 2, numero: '155/26', recibida: '2026-10-18', anulada: true,
+    historial: [{ accion: 'anulacion', motivo: 'Se cargó dos veces', por: 'Elena Noelia Cuatro', momento: '2026-10-19 10:00:00' }], ...datos
+  });
+  const unidas = (lineas) => lineas.join(' ');
+  // El texto del tramo de la nota formal: lo que se escribe después de su título (hasta dos líneas)
+  const textoDelTramo = (lineas, titulo = 'Nota formal') => {
+    const i = lineas.indexOf(titulo);
+    assert.ok(i >= 0, `falta "${titulo}" en ${lineas.join(' | ')}`);
+    return lineas.slice(i + 1, i + 3).join(' ');
+  };
+
+  it('con nota: el tramo dice Nota DGMIT / Solicitud 156/26. Recibida el …, en violeta y lleno', async () => {
+    const s = conNotas(58, [notaDgmit()]);
+    const pdf = await render(s);
+    const lineas = lineasPorHoja(pdf)[0];
+    assert.ok(lineas.includes('Nota DGMIT'), lineas.join(' | '));
+    // El texto entra entero en las dos líneas del tramo (sin «…»), y sin «hace N días» (el de la pantalla)
+    assert.ok(textoDelTramo(lineas, 'Nota DGMIT').includes('Solicitud 156/26. Recibida el 15/10/2026'), lineas.join(' | '));
+    assert.ok(!lineas.some(l => l.includes('…') && /Solicitud|Recibida/.test(l)), lineas.join(' | '));
+    assert.ok(!unidas(lineas).includes('recibida por el área el 15/10/2026, hace'), lineas.join(' | '));
+    for (const t of ['Nota formal', 'Pendiente de carga', 'Nota DGMIT N° 156/26']) assert.ok(!lineas.includes(t), `sobra "${t}": ${lineas.join(' | ')}`);
+    // Una reiteración lo dice
+    const reiteracion = lineasPorHoja(await render(conNotas(58, [notaDgmit({ numero: '160/26', tipo: 'reiteracion' })])))[0];
+    assert.ok(textoDelTramo(reiteracion, 'Nota DGMIT').includes('Reiteración 160/26. Recibida el 15/10/2026'), reiteracion.join(' | '));
+    // En violeta (el título y la punta, rellenos; la línea, trazada) y con línea llena
+    const contenido = contenidoPorHoja(pdf)[0];
+    const violetas = trazos(contenido, VIOLETA);
+    assert.equal(violetas.length, 1, 'la línea del tramo, en violeta');
+    assert.ok(!PUNTEADO.test(violetas[0]), 'la línea del tramo con nota es llena');
+    assert.ok(contenido.includes(`${VIOLETA} scn`), 'el título y la punta, en violeta');
+    // El título del tramo en negrita, como siempre
+    const { textos } = await diagramacion(() => render(s));
+    assert.equal(textos.find(t => t.texto === 'Nota DGMIT').fuente, 'Helvetica-Bold');
+  });
+
+  it('con nota: el renglón Al área nombra la nota', async () => {
+    const lineas = lineasPorHoja(await render(conNotas(58, [notaDgmit()])))[0];
+    assert.ok(lineas.includes('Al área: el 15/10/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), lineas.join(' | '));
+    assert.ok(!lineas.some(l => /todavía no se le envió|le anticipó por email/.test(l)), lineas.join(' | '));
+    // Con el email de los 40 días en el ciclo (el 52), la nota reemplaza al email en el renglón
+    const del52 = lineasPorHoja(await render(conNotas(52, [notaDgmit({ numero: '120/26', tipo: 'reiteracion', recibida: '2026-08-10' })])))[0];
+    assert.ok(del52.includes('Al área: el 10/08/2026 recibió la nota DGMIT N° 120/26 (reiteración), que pide los datos de este dataset.'), del52.join(' | '));
+    assert.ok(!del52.some(l => l.startsWith('Al área: el 21/06/2026')), del52.join(' | '));
+    // Un externo sin vencimiento (eventual) con una nota: el renglón la nombra igual
+    const eventual = lineasPorHoja(await render(conNotas(66, [notaDgmit({ recibida: '2026-09-01' })], { tipo_gestion: 'externa' })))[0];
+    assert.ok(eventual.includes('Al área: el 01/09/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), eventual.join(' | '));
+  });
+
+  it('sin nota: Nota formal / Pendiente de carga', async () => {
+    const pdf = await render(conNotas(58, []));
+    const lineas = lineasPorHoja(pdf)[0];
+    assert.ok(textoDelTramo(lineas).includes('Pendiente de carga'), lineas.join(' | '));
+    assert.ok(!lineas.includes('Nota DGMIT'), lineas.join(' | '));
+    assert.ok(lineas.includes('Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.'), lineas.join(' | '));
+    // Punteado y en gris claro; nada en violeta
+    const contenido = contenidoPorHoja(pdf)[0];
+    const grises = trazos(contenido, GRIS_CLARO);
+    assert.ok(grises.some(t => PUNTEADO.test(t)), 'la línea del tramo sin nota es punteada');
+    assert.ok(!contenido.includes(VIOLETA), 'sin nota no hay violeta');
+    // Una anulada o una recibida después de hoy no cuentan: sigue sin nota
+    const noCuentan = lineasPorHoja(await render(conNotas(58, [anulada(), notaDgmit({ id: 3, recibida: '2026-10-21' })])))[0];
+    assert.ok(textoDelTramo(noCuentan).includes('Pendiente de carga'), noCuentan.join(' | '));
+    // Los otros dos textos: todavía no hizo falta (el 25: sin avisos y sin vencer) y ya no se pide (dado de baja)
+    assert.ok(textoDelTramo(lineasPorHoja(await render(conNotas(25, [])))[0]).includes('Todavía no hizo falta'));
+    assert.ok(textoDelTramo(lineasPorHoja(await render(conNotas(52, [], { activo: false })))[0]).includes('Ya no se pide'));
+  });
+
+  it('la fila de la nota DGMIT en los movimientos, y la anulada no', async () => {
+    // El 52 tiene 16 movimientos; con la nota, 17. La anulada, más nueva, no va en la tabla ni en las cuentas
+    const s = conNotas(52, [notaDgmit({ datasets: [{ id: 52, titulo: CASOS[52].dataset.titulo }, { id: 1, titulo: 'Presupuesto Municipal' }] }), anulada()]);
+    assert.equal(s.movimientos.length, 18);
+    assert.equal(s.movimientos[0].extra.anulada, true, 'la anulada es la más nueva');
+    const pdf = await render(s);
+    const lineas = lineasPorHoja(pdf)[0];
+    for (const t of ['Nota DGMIT N° 156/26 al área: solicitud', 'Recibida por el área el 15/10/2026. La misma nota pide también Presupuesto Municipal.',
+      'Cargó Diego Cuatro', '8 de 17, del más nuevo al más viejo',
+      'Hay 9 movimientos anteriores: el seguimiento completo está en el RPAD (Herramientas, Seguimiento).']) {
+      assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    }
+    assert.ok(!lineas.some(l => l.includes('155/26') || /Anulada/.test(l)), lineas.join(' | '));
+    // La tabla: los 8 más nuevos sin la anulada, el primero la nota del 15/10
+    const textos = textosPorHoja(pdf)[0];
+    const rotulo = textos.find(t => t.texto === 'ÚLTIMOS MOVIMIENTOS');
+    const fechas = textos.filter(t => /^\d{2}\/\d{2}\/\d{4}$/.test(t.texto) && t.base < rotulo.base).map(t => t.texto);
+    const vigentes = s.movimientos.filter(m => !(m.tipo === 'dgmit' && m.extra.anulada));
+    assert.deepEqual(fechas, vigentes.slice(0, FILAS_PDF).map(m => `${m.fecha.slice(8, 10)}/${m.fecha.slice(5, 7)}/${m.fecha.slice(0, 4)}`));
+    assert.equal(fechas[0], '15/10/2026');
+    // Con 7 vigentes y una anulada: «7, …» y «No hay movimientos anteriores», como si la anulada no estuviera
+    const del58 = lineasPorHoja(await render(conNotas(58, [notaDgmit(), notaDgmit({ id: 4, numero: '157/26', recibida: '2026-10-16' }), anulada()])))[0];
+    assert.ok(del58.includes('7, del más nuevo al más viejo'), del58.join(' | '));
+    assert.ok(del58.includes('No hay movimientos anteriores: el dataset está en el RPAD desde el 02/12/2025.'), del58.join(' | '));
+    // Solo una anulada: la hoja es la de siempre
+    const sinNota = lineasPorHoja(await render(conNotas(58, [])))[0];
+    assert.deepEqual(lineasPorHoja(await render(conNotas(58, [anulada()])))[0], sinNota);
+  });
+
+  it('la leyenda dice Nota DGMIT al área solo si hay una marca', async () => {
+    const con = lineasPorHoja(await render(conNotas(58, [notaDgmit()])))[0];
+    assert.ok(con.includes('Nota DGMIT al área'), con.join(' | '));
+    // La marca, un rectángulo violeta lleno: en la cinta, en la leyenda y en la fila de la tabla
+    const contenido = contenidoPorHoja(await render(conNotas(58, [notaDgmit()])))[0];
+    const rellenos = [...contenido.matchAll(new RegExp(`re\\n/DeviceRGB cs\\n${VIOLETA.replace(/\./g, '\\.')} scn\\nf`, 'g'))];
+    assert.equal(rellenos.length, 3, 'la marca en la cinta, la leyenda y la tabla');
+    // Sin notas, o solo con una anulada, no hay marca ni renglón en la leyenda
+    for (const notas of [[], [anulada()]]) {
+      const lineas = lineasPorHoja(await render(conNotas(58, notas)))[0];
+      assert.ok(!lineas.includes('Nota DGMIT al área'), lineas.join(' | '));
+    }
+    // El renglón va después de «Email al área»: en el 52, que tiene emails al área
+    const del52 = lineasPorHoja(await render(conNotas(52, [notaDgmit({ datasets: [] })])))[0];
+    const posicion = (t) => del52.indexOf(t);
+    assert.ok(posicion('Email al área') >= 0 && posicion('Email al área') < posicion('Nota DGMIT al área')
+      && posicion('Nota DGMIT al área') < posicion('Actualización'), del52.join(' | '));
+  });
+
+  it('con nota sigue en una hoja, con 8 renglones y sin pisadas', async () => {
+    const NUMERO_LARGO = '1234567890/2026-DGMIT-NOTA-MUY-LARGA-XYZ';
+    assert.equal(NUMERO_LARGO.length, 40);
+    const largos = { titulo: TITULO_LARGO, area: AREA_LARGA, area_superior: AREA_LARGA };
+    const casos = [
+      conNotas(58, [notaDgmit()]),
+      conNotas(52, [notaDgmit(), anulada()]),
+      conNotas(52, [notaDgmit({ numero: NUMERO_LARGO, tipo: 'reiteracion' })], largos),
+      conNotas(81, [notaDgmit({ numero: NUMERO_LARGO, recibida: '2026-10-20' })], { requiere_nota: 0 }),
+      conNotas(66, [notaDgmit()], { tipo_gestion: 'externa' }),
+      conNotas(52, [notaDgmit()], {}, { anexo: true }),
+      conNotas(52, [], {}, { anexo: true })
+    ];
+    for (const s of casos) {
+      const pdf = await render(s);
+      assert.equal(lineasPorHoja(pdf).length, 1);
+      verificarDiagramacion(await diagramacion(() => render(s)));
+      verificarDiagramacion(await diagramacion(() => render({ ...s, ficha: { ...s.ficha, url_dataset: null } })));
+    }
+    // El 52 con nota llena sus 8 renglones
+    const textos = textosPorHoja(await render(casos[1]))[0];
+    const rotulo = textos.find(t => t.texto === 'ÚLTIMOS MOVIMIENTOS');
+    assert.equal(textos.filter(t => /^\d{2}\/\d{2}\/\d{4}$/.test(t.texto) && t.base < rotulo.base).length, FILAS_PDF);
+    // Un número de 40 caracteres se corta con «…» en el tramo, sin salir de sus dos líneas
+    const { textos: delLargo } = await diagramacion(() => render(casos[2]));
+    const tramo = delLargo.find(t => t.texto.startsWith('Reiteración'));
+    assert.ok(tramo, delLargo.map(t => t.texto).join(' | '));
+    assert.ok(tramo.y1 - tramo.y0 < 2 * tramo.tamano * 1.2, 'el texto del tramo ocupa hasta dos líneas');
+  });
+
+  it('el anexo: una hoja con nota y otra sin; la sin nota dice La manda la DGMIT al área y nunca Pendiente de carga', async () => {
+    const conNota = conNotas(58, [notaDgmit()], {}, { anexo: true });
+    // El 52 sin nota: vencido y con avisos, fuera del anexo diría «Pendiente de carga»
+    assert.equal(conNotas(52, []).circuito.tramoFuera.texto, 'Pendiente de carga');
+    const sinNota = conNotas(52, [], {}, { anexo: true });
+    const lista = [conNota, sinNota];
+    const pdf = await renderAnexoDeSeguimiento(lista, { hoy: HOY, generado: { momento: '2026-10-21 08:15:03', por: null }, numeroTexto: '9/26' });
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 2);
+    // La hoja con nota, en violeta y con la nota, como el PDF de la descarga
+    assert.ok(textoDelTramo(hojas[0], 'Nota DGMIT').includes('Solicitud 156/26. Recibida el 15/10/2026'), hojas[0].join(' | '));
+    assert.ok(hojas[0].includes('Al área: el 15/10/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), hojas[0].join(' | '));
+    assert.ok(hojas[0].includes('Nota DGMIT al área'), hojas[0].join(' | '));
+    assert.ok(!hojas[0].includes('Nota formal'), hojas[0].join(' | '));
+    const [contenidoCon, contenidoSin] = contenidoPorHoja(pdf);
+    assert.ok(trazos(contenidoCon, VIOLETA).length === 1 && !PUNTEADO.test(trazos(contenidoCon, VIOLETA)[0]), 'violeta y llena');
+    // La hoja sin nota: neutral, punteada y en gris; el renglón «Al área», como hoy
+    assert.ok(textoDelTramo(hojas[1]).includes('La manda la DGMIT al área'), hojas[1].join(' | '));
+    assert.ok(hojas[1].includes('Al área: el 21/06/2026 el RPAD le anticipó por email que iba a recibir una nota formal.'), hojas[1].join(' | '));
+    assert.ok(!contenidoSin.includes(VIOLETA), 'sin nota no hay violeta');
+    assert.ok(trazos(contenidoSin, GRIS_CLARO).some(t => PUNTEADO.test(t)), 'punteada');
+    // En ninguna hoja «Pendiente de carga» (ni los otros dos textos de la pantalla)
+    for (const lineas of hojas) {
+      for (const t of ['Pendiente de carga', 'Todavía no hizo falta', 'Ya no se pide']) assert.ok(!unidas(lineas).includes(t), `sobra "${t}": ${lineas.join(' | ')}`);
+    }
+    verificarDiagramacion(await diagramacion(() => renderAnexoDeSeguimiento(lista, { hoy: HOY, generado: { momento: '2026-10-21 08:15:03', por: null }, numeroTexto: '9/26' })));
   });
 });
 

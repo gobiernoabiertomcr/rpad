@@ -2,10 +2,16 @@
 // cada dataset de la nota (services/seguimientoPdf.js), en el orden de la tabla. Lo arma generarNota (services/notasDigitales.js):
 // lee las fuentes antes de abrir la transacción (seguimientosDeLaNota) y dibuja adentro, ya con el número (renderAnexoDeReiteracion).
 // El Seguimiento se calcula con la fecha de la nota como hoy: la hoja muestra todo lo anterior a la nota, no la reiteración que
-// acompaña (todavía no existe).
+// acompaña (todavía no existe). Lleva las notas DGMIT cargadas hasta el momento en que se genera; sin nota, el tramo de la nota
+// formal es neutral (spec 2026-10-24-notas-dgmit, 7).
 import { fuentesDe } from './seguimientoDatos.js';
 import { seguimientoDe } from './seguimientoReglas.js';
 import { renderAnexoDeSeguimiento, OPCIONES_CINTA_PDF } from './seguimientoPdf.js';
+
+// El circuito del anexo (spec 2026-10-24-notas-dgmit, 7): el anexo le llega solo a la DGMIT y a la Dirección Administrativa con cada
+// reiteración, así que sin una nota DGMIT cargada el tramo de la nota formal es neutral («La manda la DGMIT al área»), nunca
+// «Pendiente de carga». Con una nota cargada hasta el momento de generarlo, la muestra en violeta, como el PDF de la descarga.
+const OPCIONES_CIRCUITO_ANEXO = Object.freeze({ anexo: true });
 
 // El vencido de la tabla, con la misma comparación que construirNota (notasDigitalesContenido.js): vence antes del día de la nota
 const vencido = (dataset, fecha) => dataset.vencimiento < fecha;
@@ -18,9 +24,9 @@ export const ordenDeLaTabla = (datasets, fecha) => [
 ];
 
 /**
- * El Seguimiento de cada dataset de la nota, en el orden de la tabla, calculado con la fecha de la nota como hoy y las opciones de
- * la cinta del PDF. fuentesPorId: Map<id, Fuentes> ya armado (las fuentes de ejemplo de la vista previa y la prueba); sin él, se
- * leen de la base con una sola llamada a fuentesDe, con todos los ids. Si falta la fuente de algún dataset, tira error: la nota no
+ * El Seguimiento de cada dataset de la nota, en el orden de la tabla, calculado con la fecha de la nota como hoy, las opciones de
+ * la cinta del PDF y el circuito del anexo (OPCIONES_CIRCUITO_ANEXO). fuentesPorId: Map<id, Fuentes> ya armado (las fuentes de
+ * ejemplo de la vista previa y la prueba); sin él, se leen de la base con una sola llamada a fuentesDe, con todos los ids. Si falta la fuente de algún dataset, tira error: la nota no
  * puede salir anunciando una hoja que su anexo no tiene.
  */
 export const seguimientosDeLaNota = async (datasets, fecha, fuentesPorId = null) => {
@@ -29,7 +35,7 @@ export const seguimientosDeLaNota = async (datasets, fecha, fuentesPorId = null)
   return ordenados.map((dataset) => {
     const delDataset = fuentes.get(dataset.id);
     if (!delDataset) throw new Error(`El anexo de la reiteración necesita el Seguimiento de cada dataset: falta el del dataset ${dataset.id}`);
-    return seguimientoDe(delDataset, fecha, OPCIONES_CINTA_PDF);
+    return seguimientoDe(delDataset, fecha, OPCIONES_CINTA_PDF, OPCIONES_CIRCUITO_ANEXO);
   });
 };
 

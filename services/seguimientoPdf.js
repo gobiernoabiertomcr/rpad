@@ -9,6 +9,9 @@
 // Las secciones tienen lugar fijo y se completan solas: el título reserva dos líneas, cada valor de la ficha va en una línea, los
 // nodos del circuito tienen alto fijo, la leyenda reserva dos renglones, la tabla de movimientos tiene FILAS_PDF renglones y la
 // aclaración va siempre arriba del pie. Así la hoja nunca pasa a una segunda, con cualquier largo de título, área o movimientos.
+// Las notas DGMIT al área (spec 2026-10-24-notas-dgmit, 7): el tramo de la nota formal en violeta y con línea llena cuando hay una
+// cargada en el ciclo abierto, su marca (un rectángulo violeta) en la cinta, la leyenda y la tabla, y sus movimientos, sin las
+// anuladas (la pantalla las muestra tachadas; la hoja impresa, no).
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { ventanaDe } from './seguimientoCinta.js';
@@ -23,6 +26,9 @@ export const FILAS_PDF = 8;
 
 // Colores que el ANEXO no tiene: el vencido (rojo), las actualizaciones (verde), el texto del rayado (ámbar) y el rayado
 const COLORES = { rojo: '#9B3B36', verde: '#2E6B4C', ambar: '#7A5200', rayaFondo: '#FCEFC7', raya: '#F2CF5B' };
+// El violeta de las notas DGMIT al área (spec 2026-10-24-notas-dgmit, 7; el --sg-violeta de la pantalla): el tramo de la nota formal
+// cuando hay una cargada y su marca
+const VIOLETA = '#5B4691';
 
 const SIN_DATO = 'Sin dato';
 const OJO = ASCENDENTE + DESCENDENTE;
@@ -244,6 +250,9 @@ const cabezaDelCircuito = (circuito) => [circuito?.desde?.texto, circuito?.venci
 // RPAD → avisos → DGMIT y la otra dirección → la nota formal o el relevamiento (por fuera del RPAD) → el área. Los textos son
 // los del servidor (circuitoDe). El estado del área va en rojo si está vencido, en gris si no tiene vencimiento o se dio de baja
 // (`activo` false) y si no, en el acento. Devuelve el alto de los nodos.
+// El tramo de la nota formal lleva los textos del PDF (`tituloPdf` y `textoPdf`: «Nota DGMIT» / «Solicitud 156/26. Recibida el …»,
+// sin «hace N días», porque el anexo queda guardado y se lee después). Con una nota DGMIT cargada (`registrada`) va en violeta y
+// con línea llena; sin ella, en gris claro y punteado (spec 2026-10-24-notas-dgmit, 7).
 const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
   const xs = ANCHOS_CIRCUITO.reduce((lista, ancho) => [...lista, lista.at(-1) + ancho], [IZQUIERDA]);
   dibujarNodo(doc, xs[0], y, ANCHOS_CIRCUITO[0], [
@@ -255,7 +264,11 @@ const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
     { texto: circuito.nodoMedio?.nombre, tamano: LETRA.nodo, fuente: NEGRITA, lineas: 3 },
     { texto: circuito.nodoMedio?.rol, tamano: LETRA.nodoTexto, color: COLOR.gris, lineas: 2 }
   ]);
-  dibujarTramo(doc, xs[3], y, ANCHOS_CIRCUITO[3], { titulo: circuito.tramoFuera?.titulo, texto: circuito.tramoFuera?.texto, color: COLOR.grisClaro, punteado: true });
+  const fuera = circuito.tramoFuera ?? {};
+  const registrada = fuera.registrada === true;
+  dibujarTramo(doc, xs[3], y, ANCHOS_CIRCUITO[3], {
+    titulo: fuera.tituloPdf ?? fuera.titulo, texto: fuera.textoPdf ?? fuera.texto, color: registrada ? VIOLETA : COLOR.grisClaro, punteado: !registrada
+  });
   const vencido = Boolean(circuito.area?.vencido);
   const colorEstado = vencido ? COLORES.rojo : circuito.vencimiento && activo ? COLOR.acento : COLOR.gris;
   dibujarNodo(doc, xs[4], y, ANCHOS_CIRCUITO[4], [
@@ -267,12 +280,16 @@ const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
 
 // La línea del email al área (solo en gestión externa y con un ciclo abierto: sin vencimiento no hay nada que anticipar). Con
 // «Requiere nota DGMIT» en «No» el servidor manda `alArea` en null, salvo que en el ciclo abierto ya se le haya mandado al área el
-// email de los 40 días: sin `alArea.textoPdf` no se dibuja nada y el lugar queda en blanco
+// email de los 40 días: sin `alArea.textoPdf` no se dibuja nada y el lugar queda en blanco.
+// Con una nota DGMIT cargada, el servidor manda en `alArea.textoPdf` la nota que recibió el área (spec 2026-10-24-notas-dgmit, 7):
+// esa sí existió, y se dibuja también sin vencimiento (un externo eventual o sin fecha, con la nota más reciente)
 const dibujarAlArea = (doc, circuito, y) => {
-  if (!circuito.alArea?.textoPdf || !circuito.vencimiento) return;
+  if (!circuito.alArea?.textoPdf || !(circuito.vencimiento || circuito.tramoFuera?.registrada === true)) return;
   doc.roundedRect(IZQUIERDA, y, CONTENIDO, ALTO_AL_AREA, 4).fill(COLOR.fondo);
-  renglon(doc, circuito.alArea.textoPdf, IZQUIERDA + 7.5, y + (ALTO_AL_AREA - ASCENDENTE * LETRA.alArea) / 2,
-    { ancho: CONTENIDO - 15, tamano: LETRA.alArea, color: COLOR.gris });
+  // Ajustado a una línea antes de escribirlo (cortado con "…" si no entra): el número de una nota DGMIT puede tener hasta 40
+  // caracteres
+  const texto = ajustar(doc, circuito.alArea.textoPdf, { ancho: CONTENIDO - 15, lineas: 1, max: LETRA.alArea });
+  escribir(doc, texto, IZQUIERDA + 7.5, y + (ALTO_AL_AREA - ASCENDENTE * LETRA.alArea) / 2, COLOR.gris);
 };
 
 // =====================================================
@@ -298,6 +315,8 @@ const dibujarMarca = (doc, tipo, cx, cy, s) => {
     case 'cambiop': punteado(); doc.rect(cx - 5 * s, cy - 5 * s, 10 * s, 10 * s).lineWidth(2.4 * g).fillAndStroke(COLOR.blanco, COLOR.acento); break;
     case 'alta': doc.circle(cx, cy, 6 * s).lineWidth(2.8 * g).fillAndStroke(COLOR.blanco, COLOR.tinta); break;
     case 'baja': doc.circle(cx, cy, 6 * s).fill(COLOR.tinta); break;
+    // La nota DGMIT al área: un rectángulo lleno, como una hoja
+    case 'dgmit': doc.rect(cx - 4.5 * s, cy - 6 * s, 9 * s, 12 * s).fill(VIOLETA); break;
     case 'rech': {
       const d = 5 * s;
       doc.lineCap('round').lineWidth(2.8 * g).moveTo(cx - d, cy - d).lineTo(cx + d, cy + d).moveTo(cx + d, cy - d).lineTo(cx - d, cy + d).stroke(COLORES.rojo);
@@ -487,7 +506,7 @@ const dibujarCinta = (doc, cinta, y) => {
 
 // La leyenda: solo los tipos de las marcas que aparecen y "Vencido" si hay rayado. En hasta dos renglones.
 const LEYENDA = [
-  ['nota', 'Nota Digital a DGMIT'], ['email', 'Email a DGMIT'], ['area', 'Email al área'], ['act', 'Actualización'],
+  ['nota', 'Nota Digital a DGMIT'], ['email', 'Email a DGMIT'], ['area', 'Email al área'], ['dgmit', 'Nota DGMIT al área'], ['act', 'Actualización'],
   ['actp', 'Actualización pendiente'], ['cambio', 'Cambio en la ficha'], ['cambiop', 'Cambio pendiente'],
   ['rech', 'Propuesta rechazada'], ['alta', 'Alta']
 ];
@@ -529,6 +548,11 @@ const ESCALA_TABLA = 0.46;
 const COLUMNA = { fecha: 0, marca: 55, movimiento: 64, quien: 100 };
 const ANCHO_MOVIMIENTO = CONTENIDO - COLUMNA.movimiento - COLUMNA.quien - 10;
 
+// Los movimientos de la hoja impresa: todos los de seguimientoDe menos las notas DGMIT anuladas (spec 2026-10-24-notas-dgmit, 7: la
+// pantalla las muestra tachadas; la hoja, no). La tabla, "N de M" y lo que sigue al último renglón cuentan solo estos.
+const movimientosDeLaHoja = (movimientos) => (Array.isArray(movimientos) ? movimientos : [])
+  .filter((m) => !(m?.tipo === 'dgmit' && m.extra?.anulada));
+
 // "8 de 16, del más nuevo al más viejo" (o "2, …" si entran todos)
 const resumenDeMovimientos = (total) => {
   if (total === 0) return '';
@@ -551,7 +575,8 @@ const dibujarFila = (doc, m, y) => {
   renglon(doc, formatoCorto(m.fecha), IZQUIERDA + COLUMNA.fecha, yTexto, { ancho: COLUMNA.marca - 6, tamano: LETRA.fecha, fuente: NEGRITA });
   dibujarMarca(doc, m.tipo, IZQUIERDA + COLUMNA.marca + 1, yTexto + (ASCENDENTE * LETRA.fecha) / 2, ESCALA_TABLA);
   const xMovimiento = IZQUIERDA + COLUMNA.movimiento;
-  renglon(doc, m.titulo ?? '', xMovimiento, yTexto, { ancho: ANCHO_MOVIMIENTO, tamano: LETRA.movimiento, fuente: NEGRITA });
+  // El título, ajustado a una línea (el de una nota DGMIT lleva su número, de hasta 40 caracteres)
+  escribir(doc, ajustar(doc, m.titulo ?? '', { ancho: ANCHO_MOVIMIENTO, lineas: 1, max: LETRA.movimiento, fuente: NEGRITA }), xMovimiento, yTexto, COLOR.tinta);
   if (m.detalle) {
     const detalle = ajustar(doc, m.detalle, { ancho: ANCHO_MOVIMIENTO, lineas: 1, max: LETRA.detalle, min: LETRA.detalle - 0.5 });
     escribir(doc, detalle, xMovimiento, yTexto + 9.3, COLOR.gris);
@@ -588,7 +613,7 @@ const dibujarMovimientos = (doc, movimientos, y) => {
 // Una hoja del Seguimiento de un dataset en la página actual de `doc`. `pie`: el texto de la derecha del pie.
 const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
   const { ficha, circuito, cinta } = seguimiento;
-  const movimientos = Array.isArray(seguimiento.movimientos) ? seguimiento.movimientos : [];
+  const movimientos = movimientosDeLaHoja(seguimiento.movimientos);
   const registro = seguimiento.registro ?? {};
   let y = dibujarEncabezado(doc, hoy);
   const limite = dibujarPie(doc, generado, pie);
