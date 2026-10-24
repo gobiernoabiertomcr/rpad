@@ -1,6 +1,6 @@
 # Generador de Notas (Herramientas → Notas)
 
-Fecha: 24/10/2026.
+Fecha: 24/10/2026. **Estado: aprobado por el usuario el 24/10/2026** (con el Anexo A y las decisiones de la sección 10). Se implementa después de que "Métricas y Reportes" esté en main (sección 8).
 
 Maquetas: `2026-10-24-generador-de-notas-mockups/generador.html` (se abre en el navegador; los tres pasos se pueden recorrer y la vista previa cambia en el momento). Usa los datos reales de la base local al 24/10/2026, salvo las notas DGMIT (la tabla real está vacía) y el estado de tres datasets de la Cooperativa, inventados para mostrar una reiteración con dos notas. El recuadro oscuro de abajo a la derecha es de la maqueta, no de la página. Este documento manda sobre la maqueta.
 
