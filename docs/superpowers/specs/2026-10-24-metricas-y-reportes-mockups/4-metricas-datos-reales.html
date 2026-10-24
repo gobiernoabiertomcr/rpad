@@ -64,7 +64,7 @@
   .nodo.fin { border-color:var(--verde); background:#FAFDFB; } .nodo.fin .q { color:var(--verde); }
   .flecha { display:flex; flex-direction:column; justify-content:center; padding:0 10px; }
   .flecha .n { font-family:var(--f-titulo); font-weight:750; font-size:1.55rem; color:var(--tinta); line-height:1.05; letter-spacing:-.02em; }
-  .flecha .n small { font-family:var(--f-texto); font-size:.78rem; font-weight:600; letter-spacing:0; color:var(--suave); }
+  .flecha .n small { white-space:nowrap; font-family:var(--f-texto); font-size:.78rem; font-weight:600; letter-spacing:0; color:var(--suave); }
   .flecha .t { font-size:.82rem; font-weight:700; margin-top:2px; }
   .flecha .l { position:relative; border-top:3px solid var(--tinta); margin:9px 9px 8px 0; }
   .flecha .l::after { content:''; position:absolute; right:-8px; top:-8.5px; border:7px solid transparent; border-left:10px solid var(--tinta); }
@@ -168,7 +168,7 @@
       <div class="cabeza"><h3>El circuito</h3><div class="chips"><span class="chip on">Gestión externa</span><span class="chip">Gestión interna</span></div></div>
       <div class="tramos">
         <div class="nodo"><span class="q">RPAD</span><span class="r">Datos Públicos avisa</span></div>
-        <div class="flecha"><span class="n">27 <small>días hábiles antes</small></span><span class="u">mediana de 32 ciclos</span><span class="t">Aviso anticipado</span><div class="l"></div><span class="c">Del aviso al vencimiento</span></div>
+        <div class="flecha"><span class="n">27 <small>días hábiles</small></span><span class="u">mediana de 32 ciclos</span><span class="t">Aviso anticipado</span><div class="l"></div><span class="c">Del aviso al vencimiento</span></div>
         <div class="nodo dgmit"><span class="q">DGMIT y Dirección Administrativa</span><span class="r">Mandan la nota formal</span></div>
         <div class="flecha vacia"><span class="n">Todavía no hay notas DGMIT cargadas</span><span class="t">Trámite y entrega de la nota</span><div class="l"></div><span class="c">10 notas pendientes de carga</span></div>
         <div class="nodo"><span class="q">Área responsable</span><span class="r">Prepara los datos</span></div>
