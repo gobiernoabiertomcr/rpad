@@ -5,7 +5,7 @@ import {
 } from '../services/seguimientoReglas.js';
 import { renderSeguimiento, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
-import { esAdmin } from '../services/usuariosReglas.js';
+import { esAdmin, puedeCargarNotasDgmit } from '../services/usuariosReglas.js';
 
 // Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset-design): solo lectura, para todos los roles con sesión
 // (authMiddleware, sin adminOnly). Las reglas y las consultas están en services/seguimientoReglas.js y seguimientoDatos.js; el
@@ -50,7 +50,10 @@ export const verSeguimiento = async (req, res) => {
     const fuentes = await fuentesDelDataset(req.params.id);
     if (!fuentes) return res.status(404).json(NO_ENCONTRADO);
     const administracion = esAdmin(req.user?.rol) === true;
-    const seguimiento = conNotasDgmitEditables(seguimientoDe(fuentes, hoyArgentina()), { usuarioId: req.user?.userId, administracion });
+    // Quien cargó la nota y después dejó de tener un rol que carga (por ejemplo, pasó a lector) ya no la puede corregir ni anular
+    // (el middleware cargaNotasDgmit lo frena): no se le muestran los botones
+    const usuarioId = puedeCargarNotasDgmit(req.user?.rol) ? req.user.userId : null;
+    const seguimiento = conNotasDgmitEditables(seguimientoDe(fuentes, hoyArgentina()), { usuarioId, administracion });
     res.json({ success: true, data: administracion ? seguimiento : sinErroresTecnicos(seguimiento) });
   } catch (error) {
     console.error('Error al obtener el seguimiento:', error);

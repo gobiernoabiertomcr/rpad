@@ -169,6 +169,25 @@ describe('notas DGMIT según quién mira', () => {
     assert.deepEqual(await editables('adminA'), [['156/26', true], ['157/26', true]]);
   });
 
+  it('quien la cargó y después pasó a lector ve editable: false (el middleware ya no lo dejaría corregirla)', async () => {
+    await cargarNota('colab2', { numero: '158/26' });
+    assert.deepEqual(await editables('colab2'), [['158/26', true]]);
+    try {
+      // El rol se lee de la base en cada pedido: el mismo token, ya como lector
+      await query('UPDATE usuarios SET rol = ? WHERE id = ?', ['lector', usuarios.colab2.id]);
+      assert.deepEqual(await editables('colab2'), [['158/26', false]]);
+      // Y el middleware lo frena si igual lo intenta
+      const res = await api.post(`/notas-dgmit/${(await query('SELECT id FROM notas_dgmit WHERE numero = ?', ['158/26']))[0].id}/anular`,
+        { motivo: 'Prueba' }, como('colab2'));
+      assert.equal(res.status, 403);
+      // De vuelta a colaborador, la vuelve a ver editable
+      await query('UPDATE usuarios SET rol = ? WHERE id = ?', ['colaborador', usuarios.colab2.id]);
+      assert.deepEqual(await editables('colab2'), [['158/26', true]]);
+    } finally {
+      await query('UPDATE usuarios SET rol = ? WHERE id = ?', ['colaborador', usuarios.colab2.id]);
+    }
+  });
+
   it('la respuesta no trae por_id', async () => {
     await cargarNota('colab', { numero: '156/26' });
     for (const quien of ['colab', 'colab2', 'lector', 'adminA']) {

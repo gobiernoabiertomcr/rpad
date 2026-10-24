@@ -1,4 +1,4 @@
-// Permisos por rol: qué puede hacer un visitante, un lector y un admin
+// Permisos por rol: qué puede hacer un visitante, un lector, un colaborador y un admin
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
@@ -9,7 +9,8 @@ let servidor, api, usuarios;
 before(async () => {
   servidor = await iniciarServidor();
   api = crearCliente(servidor.url);
-  usuarios = await crearUsuariosPrueba(api);
+  usuarios = await crearUsuariosPrueba(api,
+    { adminA: 'admin', adminB: 'admin', lector: 'lector', superadmin: 'superadmin', colaborador: 'colaborador' });
 });
 
 after(async () => {
@@ -131,6 +132,46 @@ describe('notas DGMIT', () => {
   it('el lector sigue pudiendo usar GET /seguimiento', async () => {
     const res = await api.get('/seguimiento', { token: usuarios.lector.token });
     assert.equal(res.status, 200);
+  });
+});
+
+// El colaborador (spec 2026-10-24-notas-dgmit, sección 1): ve lo que ve un lector y carga notas DGMIT; no entra a la administración
+describe('colaborador', () => {
+  for (const [metodo, ruta] of RUTAS_SOLO_ADMIN) {
+    it(`recibe 403 en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, usuarios.colaborador.token);
+      assert.equal(res.status, 403);
+    });
+  }
+
+  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento']) {
+    it(`puede usar GET ${ruta}`, async () => {
+      const res = await api.get(ruta, { token: usuarios.colaborador.token });
+      assert.equal(res.status, 200);
+    });
+  }
+
+  it('puede usar GET /seguimiento/:id', async () => {
+    const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
+    const res = await api.get(`/seguimiento/${id}`, { token: usuarios.colaborador.token });
+    assert.equal(res.status, 200);
+  });
+
+  // Con el cuerpo vacío, el middleware lo deja pasar y contesta el controlador (la validación, o la nota que no existe o no es suya):
+  // nunca el 403 del middleware ni un 401. Nada se guarda
+  for (const [metodo, ruta] of RUTAS_NOTAS_DGMIT) {
+    it(`llega al controlador en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, usuarios.colaborador.token);
+      assert.ok([400, 403, 404].includes(res.status), `${res.status} ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.success, false);
+      assert.notEqual(res.body.error, 'No tenés permiso para cargar notas DGMIT.');
+    });
+  }
+
+  it('POST /notas-dgmit sin datos da el 400 de la validación, en el número', async () => {
+    const res = await pedir('POST', '/notas-dgmit', usuarios.colaborador.token);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.campo, 'numero');
   });
 });
 
