@@ -51,6 +51,8 @@
   .directo { margin-top:14px; display:flex; gap:10px; align-items:center; padding:10px 14px; border:1px dashed var(--borde); border-radius:12px; font-size:.88rem; }
   .directo .i { flex:none; width:26px; height:26px; border-radius:50%; background:var(--cielo); display:grid; place-items:center; color:var(--tinta); font-weight:700; }
   .pie { margin-top:10px; font-size:.8rem; color:var(--suave); }
+  .flecha .u { font-size:.74rem; font-weight:600; color:var(--suave); line-height:1.2; margin-top:1px; }
+  .flecha.dgmit .u { color:var(--violeta); }
 </style>
 </head>
 <body>
@@ -60,11 +62,11 @@
       <div class="cabeza"><h3>El circuito</h3><div class="chips"><span class="chip">Gestión externa</span><span class="chip on">Gestión interna</span></div></div>
       <div class="tramos">
         <div class="nodo"><span class="q">RPAD</span><span class="r">Datos Públicos avisa</span></div>
-        <div class="flecha"><span class="n">41 <small>antes</small></span><span class="t">Anticipación del aviso</span><div class="l"></div><span class="c">Del aviso al vencimiento<br>Promedio 42 · <b>3 ciclos</b></span></div>
+        <div class="flecha"><span class="n">41</span><span class="u">días hábiles antes del vencimiento</span><span class="t">Aviso anticipado</span><div class="l"></div><span class="c">Del aviso al vencimiento<br>Promedio 42 · <b>3 ciclos</b></span></div>
         <div class="nodo dgmit"><span class="q">DGMIT y Dirección de Investigación Territorial</span><span class="r">Hacen el relevamiento</span></div>
-        <div class="flecha dgmit"><span class="n">45</span><span class="t">Producción del relevamiento</span><div class="l"></div><span class="c">Del aviso a la entrega<br>Promedio 56 · <b>5 ciclos</b><br>3 sin datos registrados todavía, hace 206 (mediana)</span></div>
+        <div class="flecha dgmit"><span class="n">45</span><span class="u">días hábiles</span><span class="t">Producción del relevamiento</span><div class="l"></div><span class="c">Del aviso a la entrega<br>Promedio 56 · <b>5 ciclos</b><br>3 sin datos registrados todavía, hace 206 (mediana)</span></div>
         <div class="nodo"><span class="q">Datos Públicos</span><span class="r">Limpia y estructura</span></div>
-        <div class="flecha"><span class="n">0</span><span class="t">Preparación y carga</span><div class="l"></div><span class="c">De la entrega a la carga<br>Promedio 1 · <b>5 ciclos</b></span></div>
+        <div class="flecha"><span class="n">En el día</span><span class="u">mediana · promedio 1 día hábil</span><span class="t">Preparación y carga</span><div class="l"></div><span class="c">De la entrega a la carga<br><b>5 ciclos</b></span></div>
         <div class="nodo fin"><span class="q">Portal</span><span class="r">Datos publicados</span></div>
       </div>
       <div class="cinta">
@@ -76,16 +78,15 @@
           <rect x="88" y="74" width="593" height="26" fill="#DCEEF5"/>
           <rect x="681" y="74" width="58" height="26" fill="url(#rayado)"/>
           <line x1="681" y1="30" x2="681" y2="118" stroke="#1A365D" stroke-width="1.5" stroke-dasharray="3 3"/>
-          <text x="681" y="148" font-size="11.5" font-weight="600" fill="#1A365D" text-anchor="middle">vencimiento</text>
+          <text x="681" y="148" font-size="11.5" font-weight="600" fill="#1A365D" text-anchor="middle">vencimiento</text><text x="30" y="148" font-size="11" fill="#56677F">días hábiles respecto del vencimiento</text>
           <rect x="88" y="50" width="651" height="8" rx="4" fill="#5B4691"/><text x="413" y="42" font-size="12" font-weight="700" fill="#5B4691" text-anchor="middle">Producción del relevamiento · 45</text>
-          <text x="752" y="42" font-size="12" font-weight="700" fill="#2E6B4C">Carga · 0</text>
+          <text x="752" y="42" font-size="12" font-weight="700" fill="#2E6B4C">Entrega y carga, el mismo día</text>
           <rect x="81" y="80" width="14" height="14" transform="rotate(45 88 87)" fill="#1A365D"/>
-          <text x="95" y="16" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso · 41 antes</text>
-          <circle cx="733" cy="87" r="6.5" fill="#fff" stroke="#1A365D" stroke-width="2.5"/>
-          <circle cx="745" cy="87" r="7" fill="#2E6B4C" stroke="#fff" stroke-width="2"/>
+          <text x="95" y="16" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso · 41 días hábiles antes</text>
+          <circle cx="739" cy="87" r="8.5" fill="#2E6B4C" stroke="#1A365D" stroke-width="2.5"/>
         </svg>
       </div>
-      <div class="leyenda"><span><i class="mk mk-nota"></i>Aviso del RPAD</span><span><i class="mk mk-datos"></i>Relevamiento entregado</span><span><i class="mk mk-act"></i>Carga en el portal</span><span><i class="mk mk-rayado"></i>Después del vencimiento</span></div>
+      <div class="leyenda"><span><i class="mk mk-nota"></i>Aviso del RPAD</span><span><i class="mk mk-datos"></i>Relevamiento entregado</span><span><i class="mk mk-act"></i>Carga en el portal</span><span><i class="mk" style="background:#2E6B4C;border:2.5px solid #1A365D;border-radius:50%;width:14px;height:14px"></i>Entrega y carga el mismo día</span><span><i class="mk mk-rayado"></i>Después del vencimiento</span></div>
       <div class="directo"><span class="i">i</span><span><b>6 ciclos</b> se avisaron cuando ya estaban vencidos: no cuentan en la anticipación, y la producción se cuenta desde ese primer aviso.</span></div>
       <p class="pie">El número grande de cada flecha es la mediana: en la mitad de los casos, ese número de días hábiles o menos. La cinta es orientativa: pone las medianas una detrás de la otra.</p>
     </section>

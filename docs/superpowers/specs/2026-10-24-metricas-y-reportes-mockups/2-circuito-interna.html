@@ -51,6 +51,8 @@
   .directo { margin-top:14px; display:flex; gap:10px; align-items:center; padding:10px 14px; border:1px dashed var(--borde); border-radius:12px; font-size:.88rem; }
   .directo .i { flex:none; width:26px; height:26px; border-radius:50%; background:var(--cielo); display:grid; place-items:center; color:var(--tinta); font-weight:700; }
   .pie { margin-top:10px; font-size:.8rem; color:var(--suave); }
+  .flecha .u { font-size:.74rem; font-weight:600; color:var(--suave); line-height:1.2; margin-top:1px; }
+  .flecha.dgmit .u { color:var(--violeta); }
 </style>
 </head>
 <body>
@@ -60,11 +62,11 @@
       <div class="cabeza"><h3>El circuito</h3><div class="chips"><span class="chip">Gestión externa</span><span class="chip on">Gestión interna</span></div></div>
       <div class="tramos">
         <div class="nodo"><span class="q">RPAD</span><span class="r">Datos Públicos avisa</span></div>
-        <div class="flecha"><span class="n">42 <small>antes</small></span><span class="t">Anticipación del aviso</span><div class="l"></div><span class="c">Del aviso al vencimiento<br>Promedio 44 · <b>6 ciclos</b></span></div>
+        <div class="flecha"><span class="n">42</span><span class="u">días hábiles antes del vencimiento</span><span class="t">Aviso anticipado</span><div class="l"></div><span class="c">Del aviso al vencimiento<br>Promedio 44 · <b>6 ciclos</b></span></div>
         <div class="nodo dgmit"><span class="q">DGMIT y Dirección de Investigación Territorial</span><span class="r">Hacen el relevamiento</span></div>
-        <div class="flecha dgmit"><span class="n">50</span><span class="t">Producción del relevamiento</span><div class="l"></div><span class="c">Del aviso a la entrega<br>Promedio 63 · <b>5 ciclos</b><br>2 en curso, hace 38 (mediana)</span></div>
+        <div class="flecha dgmit"><span class="n">50</span><span class="u">días hábiles</span><span class="t">Producción del relevamiento</span><div class="l"></div><span class="c">Del aviso a la entrega<br>Promedio 63 · <b>5 ciclos</b><br>2 en curso, hace 38 (mediana)</span></div>
         <div class="nodo"><span class="q">Datos Públicos</span><span class="r">Limpia y estructura</span></div>
-        <div class="flecha"><span class="n">3</span><span class="t">Preparación y carga</span><div class="l"></div><span class="c">De la entrega a la carga<br>Promedio 5 · <b>5 ciclos</b></span></div>
+        <div class="flecha"><span class="n">3</span><span class="u">días hábiles</span><span class="t">Preparación y carga</span><div class="l"></div><span class="c">De la entrega a la carga<br>Promedio 5 · <b>5 ciclos</b></span></div>
         <div class="nodo fin"><span class="q">Portal</span><span class="r">Datos publicados</span></div>
       </div>
       <div class="cinta">
@@ -80,7 +82,7 @@
           <rect x="73" y="50" width="723" height="8" rx="4" fill="#5B4691"/><text x="420" y="42" font-size="12" font-weight="700" fill="#5B4691" text-anchor="middle">Producción del relevamiento · 50</text>
           <rect x="796" y="50" width="44" height="8" rx="4" fill="#2E6B4C"/><text x="850" y="42" font-size="12" font-weight="700" fill="#2E6B4C">Carga · 3</text>
           <rect x="66" y="80" width="14" height="14" transform="rotate(45 73 87)" fill="#1A365D"/>
-          <text x="80" y="16" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso · 42 antes</text>
+          <text x="80" y="16" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso · 42 días hábiles antes</text>
           <circle cx="796" cy="87" r="6.5" fill="#fff" stroke="#1A365D" stroke-width="2.5"/>
           <circle cx="840" cy="87" r="7" fill="#2E6B4C" stroke="#fff" stroke-width="2"/>
         </svg>

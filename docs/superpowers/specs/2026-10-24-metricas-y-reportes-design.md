@@ -10,7 +10,7 @@ Mockups en `docs/superpowers/specs/2026-10-24-metricas-y-reportes-mockups/` (HTM
 - `4-metricas-datos-reales.html`, `5-circuito-interna-datos-reales.html` y `6-reportes-datos-reales.html`: las mismas tres maquetas con los números reales al 24/10/2026, calculados con las reglas de este documento por un script descartable. Las fuentes:
   - la base local del 20/10;
   - lo que trae el dump del 24/10: el Presupuesto actualizado el 21/10 y la Nota Digital 4/26;
-  - el Excel de «Recibido el» del usuario, con 27 de 32 fechas. Se supuso que el Presupuesto del 19/10 salió de una fuente pública.
+  - el Excel de «Recibido el» del usuario, con 27 de 32 fechas. El Presupuesto del 19/10 salió de una fuente pública: lo confirmó el usuario. Se consultó el digesto municipal y el dataset se armó con lo publicado ahí, porque el área nunca contestó.
   
   Todavía no hay notas DGMIT. Estas maquetas muestran cómo se ve la página casi sin datos, y sirven de referencia para los tests: por ejemplo, 5 de 33 actualizados a tiempo, 34 de 35 vencimientos avisados y el índice de hoy en 82 %.
 
@@ -113,7 +113,7 @@ Cada ciclo tiene estos hitos:
 
 | Tramo | Responsable (insignia) | Desde → hasta | Gestión |
 |---|---|---|---|
-| Anticipación del aviso | DDPC | aviso de la regla → vencimiento | las dos |
+| Aviso anticipado (nombre elegido por el usuario; en el texto, «la anticipación») | DDPC | aviso de la regla → vencimiento | las dos |
 | Trámite y entrega de la nota | DGMIT y DA | aviso (de la regla o el primero, ya vencido) → nota DGMIT recibida | externa con «Requiere nota» Sí o sin dato |
 | Respuesta del área | Área | nota DGMIT recibida → datos recibidos | externa con «Requiere nota» Sí o sin dato |
 | Producción del relevamiento | DGMIT y DIT | aviso (de la regla o el primero, ya vencido) → datos recibidos | interna |
@@ -142,6 +142,8 @@ Cada ciclo tiene estos hitos:
   - el de respuesta del área, «Se empieza a contar cuando haya notas DGMIT cargadas».
 - **La cifra**, como en el mockup:
   - la **mediana**, grande; con una cantidad par, el promedio de las dos del medio, redondeado;
+  - **la unidad, siempre, debajo de la cifra** (pedido del usuario): «días hábiles», y en el aviso anticipado «días hábiles antes del vencimiento». Una cifra nunca va sola;
+  - **una mediana de 0 se escribe «En el día»** (pedido del usuario), con «mediana · promedio N días hábiles» debajo. Pasa sobre todo en la preparación y carga, cuando la DDPC carga el mismo día en que recibe los datos: es un logro y se tiene que leer así, no como «0»;
   - debajo, chicos, el **promedio** redondeado y la **cantidad de ciclos**;
   - la aclaración fija: «El número grande es la mediana: en la mitad de los casos, ese número de días hábiles o menos.»
   - Sin casos, no hay cifra: «Sin casos en 2026».
@@ -181,6 +183,8 @@ Sigue el mockup `1-metricas.html`, con el lenguaje visual del Seguimiento, que e
   - **La cinta del «recorrido típico»:** las medianas una detrás de la otra alrededor del vencimiento, con el eje en días hábiles, la banda celeste antes del vencimiento, el rayado después, las marcas (aviso, nota DGMIT, datos y carga) y su leyenda.
     - **Sin texto dentro de la banda** (pedido del usuario): el dato real de cuándo se carga respecto del vencimiento está en «Actualizados a tiempo».
     - La aclaración: «La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real.»
+    - El eje lleva el rótulo «días hábiles respecto del vencimiento», y la marca del aviso dice «Aviso · 27 días hábiles antes».
+    - **Marcas que caen juntas:** se dibuja una sola, como en la cinta del Seguimiento, donde las marcas que se pisan se juntan. Por ejemplo, si la carga es «En el día», la entrega y la carga van en una sola marca: «Entrega y carga, el mismo día» (verde con borde azul), con su renglón en la leyenda. Lo eligió el usuario.
     - **Si a la cadena le falta un tramo sin cifra,** como hoy los de la DGMIT y el área, que no tienen notas cargadas, la cinta dibuja solo hasta donde se sabe: el aviso y el vencimiento. El resto de la banda va en gris, con «La cinta se completa cuando haya notas DGMIT cargadas». *(Decisión mía.)*
     - **No se suman tramos** para tapar el hueco. Por ejemplo, no hay un «del aviso a la entrega» con la nota y la respuesta juntas: el usuario lo descartó.
   - **La aclaración de los avisados ya vencidos.**
