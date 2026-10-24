@@ -26,30 +26,39 @@ const columnas = async (conexion, base) => {
   return filas.map(f => `${f.tabla}.${f.columna} ${f.tipo} null=${f.nulo} default=${f.defecto} key=${f.clave}`);
 };
 
-// Claves foráneas e índices de las tres tablas de las notas DGMIT (spec 2026-10-24-notas-dgmit, 4): `columnas` no los ve
-const clavesAjenasDgmit = async (conexion, base) => {
+// Claves foráneas e índices de unas tablas: `columnas` no los ve
+const clavesAjenasDe = async (conexion, base, tablas) => {
   const [filas] = await conexion.query(
     `SELECT rc.CONSTRAINT_NAME AS nombre, rc.TABLE_NAME AS tabla, k.COLUMN_NAME AS columna,
             rc.REFERENCED_TABLE_NAME AS destino, k.REFERENCED_COLUMN_NAME AS destino_columna, rc.DELETE_RULE AS borrado
      FROM information_schema.REFERENTIAL_CONSTRAINTS rc
      JOIN information_schema.KEY_COLUMN_USAGE k USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_NAME)
-     WHERE rc.CONSTRAINT_SCHEMA = ? AND LEFT(rc.TABLE_NAME, 11) = 'notas_dgmit'
+     WHERE rc.CONSTRAINT_SCHEMA = ? AND rc.TABLE_NAME IN (?)
      ORDER BY rc.TABLE_NAME, rc.CONSTRAINT_NAME`,
-    [base]
+    [base, tablas]
   );
   return filas.map(f => `${f.tabla}.${f.columna} -> ${f.destino}.${f.destino_columna} (${f.nombre}) borrado=${f.borrado}`);
 };
 
-const indicesDgmit = async (conexion, base) => {
+const indicesDe = async (conexion, base, tablas) => {
   const [filas] = await conexion.query(
     `SELECT TABLE_NAME AS tabla, INDEX_NAME AS indice, NON_UNIQUE AS repetible,
             GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columnas
-     FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND LEFT(TABLE_NAME, 11) = 'notas_dgmit'
+     FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?)
      GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE ORDER BY TABLE_NAME, INDEX_NAME`,
-    [base]
+    [base, tablas]
   );
   return filas.map(f => `${f.tabla}.${f.indice} (${f.columnas}) repetible=${f.repetible}`);
 };
+
+// Las tres tablas de las notas DGMIT (spec 2026-10-24-notas-dgmit, 4)
+const TABLAS_DGMIT = ['notas_dgmit', 'notas_dgmit_datasets', 'notas_dgmit_historial'];
+const clavesAjenasDgmit = (conexion, base) => clavesAjenasDe(conexion, base, TABLAS_DGMIT);
+const indicesDgmit = (conexion, base) => indicesDe(conexion, base, TABLAS_DGMIT);
+
+// Las dos tablas de Métricas y Reportes (spec 2026-10-24-metricas-y-reportes, 3 y 4): la foto anual y los «Recibido el»
+// importados
+const TABLAS_METRICAS = ['metricas_fotos', 'actualizaciones_recibido'];
 
 const contar = async (tabla) => {
   const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_TEMPORAL}\`.\`${tabla}\``);
@@ -271,6 +280,30 @@ describe('database/schema.sql', () => {
     ]);
   });
 
+  it('métricas: la foto anual y los «Recibido el» importados, con sus columnas, claves y FK (spec 2026-10-24-metricas-y-reportes, 3 y 4)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_METRICAS.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      // Un «Recibido el» importado por cambio aprobado: la clave es el cambio
+      'actualizaciones_recibido.cambio_id int(11) null=NO default=null key=PRI',
+      'actualizaciones_recibido.recibido_el date null=YES default=NULL key=',
+      "actualizaciones_recibido.origen_datos enum('area','fuente_publica') null=YES default=NULL key=",
+      'actualizaciones_recibido.created_at timestamp null=YES default=current_timestamp() key=',
+      // Una foto por año, al 31/12 de ese año; datos es el JSON de la foto
+      'metricas_fotos.anio smallint(6) null=NO default=null key=PRI',
+      'metricas_fotos.al date null=NO default=null key=',
+      'metricas_fotos.datos longtext null=NO default=null key=',
+      'metricas_fotos.created_at timestamp null=YES default=current_timestamp() key='
+    ]);
+    // Borrar el cambio pendiente borra su «Recibido el» importado
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_METRICAS), [
+      'actualizaciones_recibido.cambio_id -> cambios_pendientes.id (fk_actualizaciones_recibido_cambio) borrado=CASCADE'
+    ]);
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_METRICAS), [
+      'actualizaciones_recibido.PRIMARY (cambio_id) repetible=0',
+      'metricas_fotos.PRIMARY (anio) repetible=0'
+    ]);
+  });
+
   it('el historial borra el vínculo al cambio (SET NULL) cuando se borra el cambio pendiente', async () => {
     const [[fk]] = await root.query(
       `SELECT k.REFERENCED_TABLE_NAME AS tabla, k.REFERENCED_COLUMN_NAME AS columna, rc.DELETE_RULE AS borrado
@@ -283,7 +316,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios']) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -833,5 +866,94 @@ describe('migración de las notas DGMIT', () => {
         lista.filter(c => c.startsWith('usuarios.rol')).join('\n'));
       assert.deepEqual(await roles(), [['t_admin', 'admin'], ['t_colaborador', 'lector'], ['t_editor', 'admin']]);
     });
+  });
+});
+
+// Métricas y Reportes (spec 2026-10-24-metricas-y-reportes, 3 y 4): la foto anual de las métricas y los «Recibido el»
+// importados. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-metricas.sql', () => {
+  const BASE_METRICAS = 'rpad_schema_metricas_test';
+  const MIGRACION = 'migracion-metricas.sql';
+  const ROLLBACK = 'rollback-metricas.sql';
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_METRICAS.some(tabla => c.startsWith(`${tabla}.`));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_METRICAS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_METRICAS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_METRICAS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`
+        DROP TABLE actualizaciones_recibido;
+        DROP TABLE metricas_fotos;`);
+    }
+  };
+  // Una foto y un «Recibido el» importado: lo que la vuelta atrás tiene que poder borrar con la FK puesta
+  const cargarDatos = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO \`${BASE_METRICAS}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_editor', 'x', 't_editor', 't_editor@rpad.test', 'editor')`);
+    const [{ insertId: cambio }] = await root.query(
+      `INSERT INTO \`${BASE_METRICAS}\`.cambios_pendientes (tipo_cambio, datos_nuevos, usuario_id, estado) VALUES ('editar', '{}', ?, 'aprobado')`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_METRICAS}\`.metricas_fotos (anio, al, datos) VALUES (2026, '2026-12-31', '{"version":1}')`);
+    await root.query(`INSERT INTO \`${BASE_METRICAS}\`.actualizaciones_recibido (cambio_id, recibido_el, origen_datos) VALUES (?, '2026-03-02', 'area')`, [cambio]);
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_METRICAS}\`.\`${tabla}\``);
+    return total;
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_METRICAS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir y cómo se deshace; el rollback, que se pierden la foto y lo importado', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-24-metricas-y-reportes-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-metricas\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-metricas\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /se pierden/i);
+    assert.match(cabecera(ROLLBACK), /foto/);
+    assert.match(cabecera(ROLLBACK), /importad/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_METRICAS);
+    assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_METRICAS), await columnas(root, BASE_TEMPORAL));
+    // Y también la clave foránea y las claves primarias, que las columnas no muestran del todo
+    assert.deepEqual(await clavesAjenasDe(root, BASE_METRICAS, TABLAS_METRICAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_METRICAS));
+    assert.deepEqual(await indicesDe(root, BASE_METRICAS, TABLAS_METRICAS), await indicesDe(root, BASE_TEMPORAL, TABLAS_METRICAS));
+  });
+
+  it('el rollback deja la estructura anterior', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las dos tablas
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_METRICAS), deMain);
+    // El cambio al que apuntaba el «Recibido el» importado sigue ahí
+    assert.equal(await contarEn('cambios_pendientes'), 1);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_METRICAS), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_METRICAS, TABLAS_METRICAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_METRICAS));
   });
 });
