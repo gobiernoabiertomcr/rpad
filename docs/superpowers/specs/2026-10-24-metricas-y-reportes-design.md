@@ -12,6 +12,8 @@ Mockups en `docs/superpowers/specs/2026-10-24-metricas-y-reportes-mockups/` (HTM
   - lo que trae el dump del 24/10: el Presupuesto actualizado el 21/10 y la Nota Digital 4/26;
   - el Excel de «Recibido el» del usuario, con 27 de 32 fechas. El Presupuesto del 19/10 salió de una fuente pública: lo confirmó el usuario. Se consultó el digesto municipal y el dataset se armó con lo publicado ahí, porque el área nunca contestó.
   
+- `7-combinaciones-datos-reales.html`: el circuito, la cinta y los textos con los selectores andando (mediana o promedio, días hábiles o corridos, externa o interna), con los datos reales, y un cuadro con las cuatro combinaciones juntas. El cuadro es solo de la maqueta, para comparar: la página no lo lleva. En días corridos, el aviso anticipado da 40 en externa y 60 en interna, justo lo que dice la regla.
+
   Todavía no hay notas DGMIT. Estas maquetas muestran cómo se ve la página casi sin datos, y sirven de referencia para los tests: por ejemplo, 5 de 33 actualizados a tiempo, 34 de 35 vencimientos avisados y el índice de hoy en 82 %.
 
 ## Por qué
@@ -197,7 +199,8 @@ Sigue el mockup `1-metricas.html`, con el lenguaje visual del Seguimiento, que e
     - **Sin texto dentro de la banda** (pedido del usuario): el dato real de cuándo se carga respecto del vencimiento está en «Actualizados a tiempo».
     - La aclaración: «La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real.»
     - El eje lleva el rótulo «días hábiles respecto del vencimiento», y la marca del aviso dice «Aviso · 27 días hábiles antes».
-    - **Marcas que caen juntas:** se dibuja una sola, como en la cinta del Seguimiento, donde las marcas que se pisan se juntan. Por ejemplo, si la carga es «En el día», la entrega y la carga van en una sola marca: «Entrega y carga, el mismo día» (verde con borde azul), con su renglón en la leyenda. Lo eligió el usuario.
+    - **Marcas que caen juntas:** se dibuja una sola, como en la cinta del Seguimiento, donde las marcas que se pisan se juntan. Por ejemplo, la entrega y la carga van en una sola marca, verde con borde azul, con el renglón «Entrega y carga juntas» en la leyenda. Lo eligió el usuario. El rótulo dice lo que pasó: «Entrega y carga, el mismo día» si la cifra es 0, y «Entrega y carga, 1 día corrido después» si no lo es. Nunca dice «el mismo día» si no lo fue.
+    - **Singular y plural:** «1 día hábil», «1 día corrido» y «2 días hábiles», en la pantalla, la cinta y el PDF.
     - **Si a la cadena le falta un tramo sin cifra,** como hoy los de la DGMIT y el área, que no tienen notas cargadas, la cinta dibuja solo hasta donde se sabe: el aviso y el vencimiento. El resto de la banda va en gris, con «La cinta se completa cuando haya notas DGMIT cargadas». *(Decisión mía.)*
     - **No se suman tramos** para tapar el hueco. Por ejemplo, no hay un «del aviso a la entrega» con la nota y la respuesta juntas: el usuario lo descartó.
   - **La aclaración de los avisados ya vencidos.**
