@@ -85,6 +85,10 @@ const requiereNotaDe = (dataset) => {
 // vencimiento, FALTABAN) o 'email mensual de vencidos'
 const queDelEmail = (tipo) => (Object.hasOwn(FALTABAN, tipo) ? `email de ${FALTABAN[tipo]} días` : 'email mensual de vencidos');
 
+// Qué fue una Nota Digital: 'Nota Digital 4/26' o, si le falta el número o el año (los dos pueden ser NULL en la tabla), 'Nota Digital'
+const tieneValor = (valor) => valor !== null && valor !== undefined && valor !== '';
+const queDeLaNota = (nota) => (tieneValor(nota.numero) && tieneValor(nota.anio) ? `Nota Digital ${numeroDeNota(nota)}` : 'Nota Digital');
+
 // Los avisos del RPAD a la DGMIT de cada ciclo (una lista por ciclo, en el orden de `ciclos`), cada lista por momento y después por
 // id: los emails a la DGMIT que se enviaron y las Notas Digitales de aviso y de reiteración enviadas, con las mismas reglas que el
 // Seguimiento (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota), y además los emails de la regla que no se pudieron enviar
@@ -107,7 +111,7 @@ const avisosPorCiclo = (fuentes, ciclos, hoy) => {
   for (const nota of lista(fuentes.notas)) {
     if (!esNotaEnviada(nota)) continue;
     sumar(momentoDeEnvioDeNota(nota), nota.vencimiento ?? null, {
-      id: Number(nota.id) || 0, enviado: true, regla: nota.tipo === 'aviso' && nota.seccion === 'proximo', que: `Nota Digital ${numeroDeNota(nota)}`
+      id: Number(nota.id) || 0, enviado: true, regla: nota.tipo === 'aviso' && nota.seccion === 'proximo', que: queDeLaNota(nota)
     });
   }
   for (const avisos of porCiclo) avisos.sort((a, b) => comparar(a.momento, b.momento) || a.id - b.id);
@@ -263,8 +267,8 @@ const MOTIVOS = Object.freeze({
 const ALTA_YA_VENCIDO = 'se dio de alta ya vencido';
 
 // Las opciones de vistaDe, leídas. `anio`: el pedido o, si no sirve, el de `al`; `al`: hoy en el año en curso y el 31/12 en uno
-// cerrado (sin `al`, o con uno posterior al año, el 31/12); `enCurso`: si `al` es anterior al 31/12; el estadístico y los días, los de
-// entrada si no son válidos; `sin`: los dataset_id destildados. null si no hay año o si `al` es anterior a él.
+// cerrado (sin `al`, o con uno posterior al año, el 31/12); el estadístico y los días, los de entrada si no son válidos; `sin`: los
+// dataset_id destildados. null si no hay año o si `al` es anterior a él.
 const contextoDe = (opciones) => {
   const o = objeto(opciones);
   const pedido = typeof o.anio === 'number' || (typeof o.anio === 'string' && /^\d{4}$/.test(o.anio)) ? Number(o.anio) : NaN;
@@ -276,7 +280,7 @@ const contextoDe = (opciones) => {
   if (al < inicio) return null;
   const sin = Array.isArray(o.sin) || o.sin instanceof Set ? [...o.sin] : [];
   return {
-    anio, inicio, fin, al, enCurso: al < fin,
+    anio, inicio, fin, al,
     estadistico: ESTADISTICOS.includes(o.estadistico) ? o.estadistico : ESTADISTICOS[0],
     dias: DIAS.includes(o.dias) ? o.dias : DIAS[0],
     sin: new Set(sin.map(Number).filter(Number.isInteger))
@@ -286,7 +290,7 @@ const contextoDe = (opciones) => {
 // Un caso de casosDe, leído para la vista: lo que no se puede leer no está, y lo que pasó después de `al` todavía no pasó (la foto
 // al 31/12 se puede calcular con los casos de enero). `abierto`: si el ciclo estaba abierto en `al` (sigue abierto, o se cerró
 // después); `aplicaNota`: si le corresponden los tramos de la DGMIT y del área (un externo con «Requiere nota» Sí o sin dato, o uno
-// con nota DGMIT); `requiereNota`: si la nota se pide («Requiere nota» Sí o sin dato).
+// con nota DGMIT); `requiereNota`: si la nota se pide («Requiere nota» Sí o sin dato); `como` y `activo`, los del caso.
 const hechosDe = (caso, ctx) => {
   const yaPaso = (valor) => {
     const dia = diaDe(valor);
@@ -311,7 +315,7 @@ const hechosDe = (caso, ctx) => {
     recibido: actualizacion ? yaPaso(caso.recibido) : null,
     carga: actualizacion ? yaPaso(caso.carga) : null,
     origen: externa && ORIGENES_DATOS.includes(caso.origen) ? caso.origen : null,
-    actualizacion, cierre,
+    actualizacion, cierre, como: caso.como ?? null, activo: caso.activo !== false,
     abierto: (inicio === null || inicio <= ctx.al) && (caso.abierto === true || (cierre !== null && cierre > ctx.al)),
     requiereNota: externa && caso.requiere_nota !== 0,
     aplicaNota: externa && (caso.requiere_nota !== 0 || recibida !== null)
@@ -357,11 +361,13 @@ const medir = (h, ctx) => {
 const entraEnLaLista = (h, m, ctx) => h.avisos.some((dia) => dia >= ctx.inicio) || enElAnio(h.carga, ctx)
   || Object.keys(m.terminados).length > 0 || Object.keys(m.enCurso).length > 0 || m.pendiente;
 
-// Una nota DGMIT pendiente de carga (spec, 2.2): un externo con nota requerida, avisado y sin nota DGMIT, en un ciclo abierto o en uno
-// que se cerró por actualización en el año con los datos del área o sin ese dato (uno resuelto con una fuente pública puede no haber
-// tenido nota)
-const notaPendiente = (h, ctx) => h.requiereNota && h.nota === null && h.avisos.length > 0
-  && (h.abierto || (h.actualizacion && enElAnio(h.carga, ctx) && h.origen !== 'fuente_publica'));
+// Una nota DGMIT pendiente de carga (spec, 2.2): un externo activo con nota requerida, avisado y sin nota DGMIT, en un ciclo abierto
+// o en uno que se cerró en el año, hasta `al`, por una actualización con los datos del área o sin ese dato (uno resuelto con una fuente
+// pública puede no haber tenido nota) o por una reprogramación (que no tiene origen: el trámite de la nota cuenta igual, spec 1.2).
+// Uno cerrado por la baja, o de un dataset dado de baja, no: la nota DGMIT solo se carga en los datasets activos.
+const CIERRES_CON_NOTA = Object.freeze(['actualizacion', 'reprogramacion']);
+const notaPendiente = (h, ctx) => h.requiereNota && h.activo && h.nota === null && h.avisos.length > 0
+  && (h.abierto || (CIERRES_CON_NOTA.includes(h.como) && enElAnio(h.cierre, ctx) && h.origen !== 'fuente_publica'));
 
 // El aviso que se muestra de un ciclo: el de la regla o, si no lo hubo, el primero ({ dia, que }; sin aviso hasta `al`, null y '')
 const avisoMostrado = (h) => {
@@ -399,12 +405,13 @@ const cifraDelTramo = (valores, ctx) => {
   };
 };
 
-// Los que están en curso (spec, 1.4): «4 sin datos registrados todavía, hace 41 (mediana)»; null si no hay ninguno
+// Los que están en curso (spec, 1.4), con la unidad (con «Días corridos» el número solo no se entiende): «4 sin datos registrados
+// todavía, hace 41 días hábiles (mediana)», «… hace 1 día corrido (promedio)»; con 0, «hace menos de 1 día hábil». null sin ninguno
 const enCursoDelTramo = (valores, ctx) => {
   const { n, ...estadisticos } = cifraDe(valores);
   if (n === 0) return null;
   const valor = estadisticos[ctx.estadistico];
-  const hace = valor === 0 ? `menos de 1 ${unidadDe(1, ctx.dias)}` : String(valor);
+  const hace = valor === 0 ? `menos de 1 ${unidadDe(1, ctx.dias)}` : `${valor} ${unidadDe(valor, ctx.dias)}`;
   return { n, valor, texto: `${n} sin datos registrados todavía, hace ${hace} (${ctx.estadistico})` };
 };
 
@@ -468,9 +475,10 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
   const faltan = vencimientos.filter((h) => h.avisoRegla === null).sort(porVencimiento)
     .map((h) => ({ titulo: h.caso.titulo ?? null, venc: h.venc, motivo: textoDelMotivo(h) }));
 
-  // Reiteraciones: las de los ciclos que terminaron en el año y, en el año en curso, los abiertos. Sin inicio de los tramos (sin aviso
-  // de la regla ni avisado ya vencido) no cuentan (Ruling 6)
-  const delPeriodo = cuentan.map((m) => m.h).filter((h) => (!h.abierto && enElAnio(h.cierre, ctx)) || (ctx.enCurso && h.abierto));
+  // Reiteraciones: las de los ciclos que terminaron en el año y las de los abiertos a `al` (también en la foto al 31/12: los mismos que
+  // el circuito muestra en curso), con los avisos hasta `al`. Sin inicio de los tramos (sin aviso de la regla ni avisado ya vencido) no
+  // cuentan (Ruling 6)
+  const delPeriodo = cuentan.map((m) => m.h).filter((h) => h.abierto || enElAnio(h.cierre, ctx));
   const delRpad = delPeriodo.filter((h) => h.caso.reiteraciones_rpad !== null && h.inicioTramos !== null)
     .map((h) => h.avisos.filter((dia) => dia > h.inicioTramos).length);
   const deLaDgmit = delPeriodo.filter((h) => h.externa && h.nota !== null).map((h) => Number(h.caso.reiteraciones_dgmit) || 0);
@@ -529,8 +537,9 @@ const filaDe = (m, ctx) => {
 };
 
 // «Para completar» (spec, 2.2): lo que falta cargar para que las métricas queden completas. No cambia con lo destildado: no es una
-// cuenta. `notas`: las notas DGMIT pendientes de carga, primero las de los ciclos abiertos y cada grupo por vencimiento, con el aviso
-// del RPAD que se muestra (`aviso`, su día, y `que`) y, en un ciclo cerrado, la carga que lo cerró; `recibido`: las actualizaciones del
+// cuenta. `notas`: las notas DGMIT pendientes de carga (notaPendiente), primero las de los ciclos abiertos y cada grupo por
+// vencimiento, con el aviso del RPAD que se muestra (`aviso`, su día, y `que`) y, en un ciclo cerrado por actualización, la carga que
+// lo cerró (en uno reprogramado, null); `recibido`: las actualizaciones del
 // año sin «Recibido el» o, en externa, sin origen, por la fecha de la carga (las simples de diciembre de 2025 no tienen cambio y no se
 // pueden completar).
 const paraCompletarDe = (medidas, ctx) => {
@@ -575,7 +584,7 @@ const paraCompletarDe = (medidas, ctx) => {
 //   datos de una fuente pública no cuenta en la respuesta del área.
 // - resultados: { a_tiempo: { a_tiempo, total, externa: [a, t], interna: [a, t], despues: { valor, texto } }, cobertura: { si, total,
 //   faltan: [{ titulo, venc, motivo }] }, reiteraciones: { rpad: { ninguna, una, dos_o_mas, total }, dgmit: { ninguna, una_o_mas,
-//   total } (null sin notas DGMIT) } }.
+//   total } (null sin notas DGMIT) } }. Las reiteraciones son las de los ciclos que terminaron en el año y las de los abiertos a `al`.
 // - casos: las filas de los ciclos de las dos gestiones (cada una con su `gestion`) con algún aviso o la carga en el año, o que cuentan
 //   en algún tramo, por vencimiento: { dataset_id, titulo, area, gestion, contar, vencimiento, aviso: { fecha, texto, que }, nota:
 //   { numero, tipo, texto }, recibido: { fecha, texto, origen }, carga: { fecha, texto } }. Los `texto` son lo de debajo de cada fecha:
