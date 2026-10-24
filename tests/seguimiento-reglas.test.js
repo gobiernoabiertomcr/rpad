@@ -1779,6 +1779,65 @@ describe('notaDgmitDelCiclo', () => {
     assert.equal(notaDgmitDelCiclo(despues, ciclosDe(despues, HOY), HOY).recibida, '2025-12-17');
   });
 
+  // R7 (revisión final): si ningún ciclo regía el día en que el área recibió la nota, cicloDelAviso cae en el ciclo 0, que con un solo
+  // ciclo es el abierto. En ese camino la nota cuenta para el ciclo abierto solo si no es anterior a la última carga en el portal
+  it('un solo ciclo con alta conocida: una nota anterior al alta y a la última carga no es del ciclo abierto', () => {
+    // Sin cambios: un solo ciclo, desde el alta del 01/02/2026; la última carga en el portal, el 04/02/2026; vencido desde el 31/07/2026
+    const fuentes = (notas, dataset = {}) => ({ ...solo({ alta: '2026-02-01 10:00:00', proxima: '2026-07-31', ultima: '2026-02-04', ...dataset }), notasDgmit: notas });
+    const del = (notas, dataset) => {
+      const conNotas = fuentes(notas, dataset);
+      return notaDgmitDelCiclo(conNotas, ciclosDe(conNotas, HOY), HOY);
+    };
+    const vieja = notaDgmit({ recibida: '2025-03-01' });
+    const conVieja = fuentes([vieja]);
+    const ciclos = ciclosDe(conVieja, HOY);
+    assert.equal(ciclos.length, 1);
+    // cicloDelAviso no cambia: sin un ciclo que rija ese día, el 0
+    assert.equal(cicloDelAviso(ciclos, '2025-03-01 00:00:00'), 0);
+    assert.equal(notaDgmitDelCiclo(conVieja, ciclos, HOY), null);
+    // El circuito (pantalla, PDF y anexo) y la lista (y con ella la pista de solicitud repetida) siguen sin nota
+    assert.deepEqual(circuitoDe(conVieja, ciclos, HOY).tramoFuera, tramoSinNota('Pendiente de carga'));
+    assert.deepEqual(seguimientoDe(conVieja, HOY).circuito.tramoFuera, tramoSinNota('Pendiente de carga'));
+    assert.equal(resumenParaLista(conVieja, HOY).nota_dgmit, null);
+    // Una del ciclo (el camino de siempre) cuenta, aunque también esté la vieja
+    const delCiclo = notaDgmit({ id: 2, numero: '40/26', recibida: '2026-03-10' });
+    assert.deepEqual(del([vieja, delCiclo]), { numero: '40/26', tipo: 'solicitud', recibida: '2026-03-10' });
+    assert.deepEqual(resumenParaLista(fuentes([vieja, delCiclo]), HOY).nota_dgmit, { numero: '40/26', tipo: 'solicitud', recibida: '2026-03-10' });
+    // Anterior al alta pero no a la última carga (cargado antes de entrar al RPAD): cuenta
+    const esperada = { numero: '156/26', tipo: 'solicitud', recibida: '2025-03-01' };
+    assert.deepEqual(del([vieja], { ultima: '2024-12-31' }), esperada);
+    assert.deepEqual(del([vieja], { ultima: '2025-03-01' }), esperada);
+    // Sin última carga, o con una que no es una fecha: cuenta (como antes)
+    assert.deepEqual(del([vieja], { ultima: null }), esperada);
+    assert.deepEqual(del([vieja], { ultima: 'ayer' }), esperada);
+  });
+
+  it('un solo ciclo sin alta conocida (empieza en su vencimiento): cuenta una nota desde la última carga; una anterior, no', () => {
+    // Sin alta y sin cambios: el único ciclo empieza el día de su vencimiento (31/07/2026); la última carga, el 04/02/2026
+    const fuentes = (notas) => ({ ...solo({ alta: null, proxima: '2026-07-31', ultima: '2026-02-04' }), notasDgmit: notas });
+    const del = (notas) => {
+      const conNotas = fuentes(notas);
+      return notaDgmitDelCiclo(conNotas, ciclosDe(conNotas, HOY), HOY);
+    };
+    const ciclos = ciclosDe(fuentes([]), HOY);
+    assert.equal(ciclos.length, 1);
+    assert.equal(ciclos[0].desde, '2026-07-31 00:00:00');
+    // Anterior a la última carga: ya la respondió esa carga (o una anterior)
+    const vieja = notaDgmit({ id: 1, numero: '5/26', recibida: '2026-01-10' });
+    assert.equal(del([vieja]), null);
+    assert.equal(resumenParaLista(fuentes([vieja]), HOY).nota_dgmit, null);
+    assert.deepEqual(circuitoDe(fuentes([vieja]), ciclos, HOY).tramoFuera, tramoSinNota('Pendiente de carga'));
+    // El mismo día de la última carga o después, antes del vencimiento (ningún ciclo rige todavía): cuenta
+    assert.deepEqual(del([notaDgmit({ recibida: '2026-02-04' })]), { numero: '156/26', tipo: 'solicitud', recibida: '2026-02-04' });
+    const antesDelVencimiento = notaDgmit({ id: 2, numero: '60/26', recibida: '2026-06-15' });
+    assert.deepEqual(del([vieja, antesDelVencimiento]), { numero: '60/26', tipo: 'solicitud', recibida: '2026-06-15' });
+    assert.equal(circuitoDe(fuentes([vieja, antesDelVencimiento]), ciclos, HOY).tramoFuera.texto, 'Solicitud recibida por el área el 15/06/2026, hace 127 días');
+    assert.deepEqual(resumenParaLista(fuentes([vieja, antesDelVencimiento]), HOY).nota_dgmit, { numero: '60/26', tipo: 'solicitud', recibida: '2026-06-15' });
+    // Desde el vencimiento, el ciclo rige: el camino de siempre
+    assert.deepEqual(del([vieja, notaDgmit({ id: 3, numero: '90/26', tipo: 'reiteracion', recibida: '2026-08-15' })]),
+      { numero: '90/26', tipo: 'reiteracion', recibida: '2026-08-15' });
+  });
+
   it('sin ciclos: la vigente más reciente', () => {
     const notas = [notaDgmit({ id: 1, numero: '5/25', recibida: '2025-06-10' }), notaDgmit({ id: 2, numero: '7/26', recibida: '2026-03-01' }),
       notaDgmit({ id: 3, numero: '8/26', recibida: '2026-05-01', anulada: true }), notaDgmit({ id: 4, numero: '9/26', recibida: '2026-10-25' })];

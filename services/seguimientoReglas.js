@@ -551,6 +551,13 @@ export const cicloDelAviso = (ciclos, momento, vencimiento = null) => {
   return i === -1 ? 0 : i;
 };
 
+// ¿Algún ciclo regía en `momento` ('AAAA-MM-DD HH:MM:SS')? El mismo criterio que cicloDelAviso (desde la aprobación que lo abrió
+// hasta la que lo cerró), sin su respaldo del ciclo 0: dice si cicloDelAviso encontró el ciclo o cayó en el 0 porque ninguno regía
+const algunCicloRige = (ciclos, momento) => {
+  const cuando = momentoDe(momento);
+  return cuando !== null && lista(ciclos).some((ciclo) => Boolean(ciclo) && cuando >= ciclo.desde && (!ciclo.hasta || cuando < ciclo.hasta));
+};
+
 const esNotaEnviada = (nota) => Boolean(nota) && (nota.tipo === 'aviso' || nota.tipo === 'reiteracion') && nota.estado === 'enviada';
 // El momento de una nota enviada: cuándo se mandó, y si no está, el día de la nota a las 00:00
 const momentoDeEnvioDeNota = (nota) => {
@@ -604,12 +611,21 @@ export const ultimoAviso = (fuentes) => {
 // avisosDelCiclo ni en ultimoAviso, y no cambia los ciclos, los hitos ni el estado. Cuentan las vigentes (no anuladas y recibidas
 // hasta `hoy`). Con ciclos, la más reciente (por recibida, después por el momento de la carga y después por id) de las que son del
 // ciclo abierto: el que regía el día en que el área la recibió, a las 00:00, así que si ese mismo día se aprobó la actualización que
-// cerró el ciclo anterior, la nota es de ese ciclo (se mandó antes de que llegaran los datos). Sin ciclos (eventual o sin fecha), la
+// cerró el ciclo anterior, la nota es de ese ciclo (se mandó antes de que llegaran los datos). Si ningún ciclo regía ese día (anterior
+// al primero, o posterior a la baja), cicloDelAviso da el 0, que con un solo ciclo es el abierto: ahí la nota cuenta para el ciclo
+// abierto solo si no es anterior a la última carga en el portal (`dataset.ultima`; sin ella, o si no es una fecha, cuenta), porque
+// una nota anterior ya la respondió esa carga o una anterior (ruling R7 de la revisión final). Sin ciclos (eventual o sin fecha), la
 // vigente más reciente. { numero, tipo, recibida } o null.
 export const notaDgmitDelCiclo = (fuentes, ciclos, hoy) => {
   if (!fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return null;
   const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
-  const delCiclo = (nota) => !hayCiclos || cicloDelAviso(ciclos, `${nota.recibida} 00:00:00`) === ciclos.length - 1;
+  const ultima = diaDe(objeto(fuentes.dataset).ultima);
+  const delCiclo = (nota) => {
+    if (!hayCiclos) return true;
+    const momento = `${nota.recibida} 00:00:00`;
+    if (cicloDelAviso(ciclos, momento) !== ciclos.length - 1) return false;
+    return algunCicloRige(ciclos, momento) || ultima === null || nota.recibida >= ultima;
+  };
   const [nota] = lista(fuentes.notasDgmit).map(notaDgmitLeida)
     .filter((n) => n && !n.anulada && n.recibida <= hoy && delCiclo(n))
     .sort((a, b) => comparar(b.recibida, a.recibida) || comparar(b.cargada ?? '', a.cargada ?? '') || b.id - a.id);
