@@ -144,6 +144,7 @@
     <div class="pestanas"><span class="on">Métricas</span><span>Reportes</span></div>
     <div class="barra">
       <span class="sel">2026 (en curso) ▾</span>
+      <div class="chips"><span class="chip on">Mediana</span><span class="chip">Promedio</span></div><div class="chips"><span class="chip on">Días hábiles</span><span class="chip">Días corridos</span></div>
       <span class="chip">Casos: <b>todos menos 1</b> ▾</span>
       <div class="derecha"><span class="btn tinta">⤓ Descargar PDF</span></div>
     </div>
@@ -155,13 +156,13 @@
       <div class="cabeza"><h3>El circuito</h3><div class="chips"><span class="chip on">Gestión externa</span><span class="chip">Gestión interna</span></div></div>
       <div class="tramos">
         <div class="nodo"><span class="q">RPAD</span><span class="r">Datos Públicos avisa</span></div>
-        <div class="flecha"><span class="n">28</span><span class="u">días hábiles antes del vencimiento</span><span class="t">Aviso anticipado</span><div class="l"></div><span class="c">Del aviso al vencimiento<br>Promedio 31 · <b>24 ciclos</b></span></div>
+        <div class="flecha"><span class="n">28</span><span class="u">mediana en días hábiles, antes del vencimiento</span><span class="t">Aviso anticipado</span><div class="l"></div><span class="c">Del aviso al vencimiento<br><b>24 ciclos</b></span></div>
         <div class="nodo dgmit"><span class="q">DGMIT y Dirección Administrativa</span><span class="r">Mandan la nota formal</span></div>
-        <div class="flecha dgmit"><span class="n">12</span><span class="u">días hábiles</span><span class="t">Trámite y entrega de la nota</span><div class="l"></div><span class="c">Del aviso a la nota en el área<br>Promedio 15 · <b>9 ciclos</b><br>3 notas pendientes de carga</span></div>
+        <div class="flecha dgmit"><span class="n">12</span><span class="u">mediana en días hábiles</span><span class="t">Trámite y entrega de la nota</span><div class="l"></div><span class="c">Del aviso a la nota en el área<br><b>9 ciclos</b><br>3 notas pendientes de carga</span></div>
         <div class="nodo"><span class="q">Área responsable</span><span class="r">Prepara los datos</span></div>
-        <div class="flecha"><span class="n">35</span><span class="u">días hábiles</span><span class="t">Respuesta del área</span><div class="l"></div><span class="c">De la nota a la entrega<br>Promedio 61 · <b>7 ciclos</b><br>4 en curso, hace 41 (mediana)</span></div>
+        <div class="flecha"><span class="n">35</span><span class="u">mediana en días hábiles</span><span class="t">Respuesta del área</span><div class="l"></div><span class="c">De la nota a la entrega<br><b>7 ciclos</b><br>4 en curso, hace 41 (mediana)</span></div>
         <div class="nodo"><span class="q">Datos Públicos</span><span class="r">Limpia y estructura</span></div>
-        <div class="flecha"><span class="n">2</span><span class="u">días hábiles</span><span class="t">Preparación y carga</span><div class="l"></div><span class="c">De la entrega a la carga<br>Promedio 4 · <b>7 ciclos</b><br>1 en curso, hace 3</span></div>
+        <div class="flecha"><span class="n">2</span><span class="u">mediana en días hábiles</span><span class="t">Preparación y carga</span><div class="l"></div><span class="c">De la entrega a la carga<br><b>7 ciclos</b><br>1 en curso, hace 3</span></div>
         <div class="nodo fin"><span class="q">Portal</span><span class="r">Datos publicados</span></div>
       </div>
       <div class="cinta">
@@ -185,7 +186,7 @@
       </div>
       <div class="leyenda"><span><i class="mk mk-nota"></i>Aviso del RPAD</span><span><i class="mk mk-dgmit"></i>Nota DGMIT recibida por el área</span><span><i class="mk mk-datos"></i>Datos entregados</span><span><i class="mk mk-act"></i>Carga en el portal</span><span><i class="mk mk-rayado"></i>Después del vencimiento</span></div>
       <div class="directo"><span class="i">i</span><span><b>11 ciclos</b> se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y el resto de sus tramos se cuenta desde ese primer aviso.</span></div>
-      <p class="pie">El número grande de cada flecha es la mediana: en la mitad de los casos, ese número de días hábiles o menos. La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real. Un tramo cuenta en el año en que terminó.</p>
+      <p class="pie">Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo. La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real. Un tramo cuenta en el año en que terminó.</p>
 
       <div class="separa"></div>
       <div class="casos-cab"><b>Los casos de 2026 (24)</b><span class="link">Ocultar los casos</span></div>
@@ -209,7 +210,7 @@
         <div class="cabeza"><h3>Actualizados a tiempo</h3></div>
         <div class="heroe">5 <small>de 32 ciclos</small></div>
         <div class="medidor"><i style="width:16%"></i></div>
-        <p class="tile-txt">Se cargaron hasta el día del vencimiento. Los otros 27 se cargaron una mediana de <b>38 días hábiles</b> después <span class="s">(promedio 74)</span>.</p>
+        <p class="tile-txt">Se cargaron hasta el día del vencimiento. Los otros 27 se cargaron una mediana de <b>38 días hábiles</b> después.</p>
         <p class="tile-txt s">Externa: 4 de 26 · Interna: 1 de 6</p>
       </section>
       <section class="tarjeta">
@@ -292,7 +293,7 @@
         </div>
         <div>
           <div class="mini-cab">Doble verificación</div>
-          <p class="tile-txt">Un cambio propuesto se audita en una mediana de <b>6 minutos</b> <span class="s">(promedio 9 horas; 49 cambios)</span>.</p>
+          <p class="tile-txt">Un cambio propuesto se audita en una mediana de <b>6 minutos</b> <span class="s">(49 cambios)</span>.</p>
           <p class="pie">Hoy, en Gestión, es «Días prom. aprobación».</p>
         </div>
       </div>

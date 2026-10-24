@@ -140,12 +140,12 @@ Cada ciclo tiene estos hitos:
 - **Sin ninguna nota DGMIT vigente cargada en todo el RPAD:**
   - el tramo de la DGMIT dice «Todavía no hay notas DGMIT cargadas»;
   - el de respuesta del área, «Se empieza a contar cuando haya notas DGMIT cargadas».
-- **La cifra**, como en el mockup:
-  - la **mediana**, grande; con una cantidad par, el promedio de las dos del medio, redondeado;
-  - **la unidad, siempre, debajo de la cifra** (pedido del usuario): «días hábiles», y en el aviso anticipado «días hábiles antes del vencimiento». Una cifra nunca va sola;
-  - **una mediana de 0 se escribe «En el día»** (pedido del usuario), con «mediana · promedio N días hábiles» debajo. Pasa sobre todo en la preparación y carga, cuando la DDPC carga el mismo día en que recibe los datos: es un logro y se tiene que leer así, no como «0»;
-  - debajo, chicos, el **promedio** redondeado y la **cantidad de ciclos**;
-  - la aclaración fija: «El número grande es la mediana: en la mitad de los casos, ese número de días hábiles o menos.»
+- **La cifra**, como en el mockup, con lo que se eligió en los selectores (sección 1.7):
+  - la **mediana** o el **promedio**, grande y redondeado. Si la mediana sale de una cantidad par de casos, es el promedio de las dos del medio, redondeado;
+  - **la unidad, siempre, debajo de la cifra** (pedido del usuario), con el estadístico: «mediana en días hábiles», «promedio en días corridos», y en el aviso anticipado «mediana en días hábiles, antes del vencimiento». Una cifra nunca va sola;
+  - **una cifra de 0 se escribe «En el día»** (pedido del usuario). Pasa sobre todo en la preparación y carga, cuando la DDPC carga el mismo día en que recibe los datos: es un logro y se tiene que leer así, no como «0». Con el promedio, un valor que redondea a 0 también dice «En el día»;
+  - debajo, la **cantidad de ciclos**. **El otro estadístico no se muestra**: lo pidió el usuario, para que el circuito quede limpio y sin tantos datos;
+  - la aclaración fija: «Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.»
   - Sin casos, no hay cifra: «Sin casos en 2026».
   - Con 4 casos o menos, se suma «con tan pocos casos, es orientativo».
 
@@ -163,20 +163,33 @@ Cada ciclo tiene estos hitos:
 - **Los años anteriores** salen de su foto.
 - **El primer año** que muestra el selector es 2026. Lo de diciembre de 2025 cuenta si terminó en 2026.
 
+### 1.7 Mediana o promedio, días hábiles o corridos
+
+Pedido del usuario, después de aprobar el documento.
+- **Los selectores:** arriba de la página hay dos grupos de chips, «Mediana | Promedio» y «Días hábiles | Días corridos».
+- **Al entrar:** mediana y días hábiles.
+- **A qué afectan:** a todo lo que cuenta días, es decir el circuito, la cinta (su escala y sus rótulos), los «en curso, hace N», el «se cargaron N días después» de «Actualizados a tiempo» y los días debajo de cada fecha de la lista de casos.
+  - No cambian la antigüedad de los vencidos, que va por meses, ni la cobertura y las reiteraciones, que son cantidades.
+  - La doble verificación va en minutos u horas, así que no cambia de unidad, pero sí sigue a mediana o promedio.
+- **Días corridos:** `diasEntre(desde, hasta)`, con el mismo piso de 0. **Días hábiles:** `diasHabilesTranscurridos`.
+- **Viajan en la URL, como lo destildado** (por ejemplo `?estadistico=promedio&dias=corridos`; sin parámetros, los de entrada). No se guardan en la base.
+- **El PDF de Métricas** sale con lo elegido y lo dice en su píldora: «Mediana en días hábiles · con todos los datasets».
+- **Un año con foto** también se puede ver con cualquier combinación. La foto guarda los casos con sus fechas y las cifras se sacan de esos casos, nunca de la base de hoy. Lo más simple es que la foto guarde, además, las cuatro combinaciones ya calculadas.
+
 ## 2. La pestaña Métricas
 
 Sigue el mockup `1-metricas.html`, con el lenguaje visual del Seguimiento, que es el que más le gusta al usuario: tarjetas blancas de 16 px de radio, títulos en Bricolage, chips, el circuito con nodos y flechas y la cinta.
 
 ### 2.1 Arriba
 
-- **Controles:** el selector de año, el chip «Casos: todos» («todos menos 1» si hay algo destildado) y el botón «Descargar PDF».
+- **Controles:** el selector de año, los selectores «Mediana | Promedio» y «Días hábiles | Días corridos» (sección 1.7), el chip «Casos: todos» («todos menos 1» si hay algo destildado) y el botón «Descargar PDF».
 - **La franja de lo destildado**, si la hay.
 - **El índice de la página:** El circuito, Resultados del año, Contexto, El trabajo del RPAD, Áreas y temas y Para completar (este último con la cantidad pendiente).
 
 ### 2.2 Las secciones
 
 - **El circuito** (una tarjeta), con el selector «Gestión externa» / «Gestión interna» adentro:
-  - **El circuito:** nodos y flechas como en «Avisos del ciclo abierto» del Seguimiento. En cada flecha van la mediana, el nombre del tramo, «desde → hasta», el promedio con los ciclos y los en curso o pendientes.
+  - **El circuito:** nodos y flechas como en «Avisos del ciclo abierto» del Seguimiento. En cada flecha van la cifra (mediana o promedio, sección 1.7) con su unidad debajo, el nombre del tramo, «desde → hasta», la cantidad de ciclos y los en curso o pendientes.
     - Nodos de la externa: RPAD (Datos Públicos avisa), DGMIT y Dirección Administrativa (Mandan la nota formal), Área responsable (Prepara los datos), Datos Públicos (Limpia y estructura) y Portal (Datos publicados).
     - Nodos de la interna: RPAD, DGMIT y Dirección de Investigación Territorial (Hacen el relevamiento), Datos Públicos y Portal.
     - Lo de la DGMIT va en violeta (#5B4691), como en notas DGMIT, y el Portal en verde.
@@ -195,7 +208,7 @@ Sigue el mockup `1-metricas.html`, con el lenguaje visual del Seguimiento, que e
 - **Resultados del año**, con las dos gestiones juntas:
   - **Actualizados a tiempo:**
     - La cifra grande: «5 de 32 ciclos», con un medidor. Son los ciclos cerrados por actualización en el año con carga ≤ vencimiento.
-    - El texto: «Los otros 27 se cargaron una mediana de 38 días hábiles después (promedio 74).»
+    - El texto: «Los otros 27 se cargaron una mediana de 38 días hábiles después.» (o «un promedio de …», «… días corridos …», según los selectores).
     - El desglose: «Externa: 4 de 26 · Interna: 1 de 6».
     - No cuentan los cerrados por reprogramación ni los que tienen `venc` null.
   - **Cobertura del aviso:**
@@ -400,6 +413,7 @@ El de los anexos de las Notas Digitales y la hoja del Seguimiento (mockup, «As�
     - años sin casos;
     - 4 casos o menos («orientativo»).
 - **Destildar** saca al dataset de todas las cuentas.
+- **Los selectores:** mediana o promedio, días hábiles o corridos, en la pantalla, en el PDF (con la píldora) y en un año con foto. Una cifra de 0 dice «En el día».
 - **El índice:** el punto de hoy coincide con `tasaDeActualizacion` de la portada y del Estado general.
 - **La foto:** se saca una sola vez por año, a partir del 10/01, con hoy = 31/12. Antes del 10/01 no se saca, lo registrado entre el 1 y el 10 de enero con fecha del año entra, y un error no frena las notas.
 - **«Recibido el» y el origen:**
