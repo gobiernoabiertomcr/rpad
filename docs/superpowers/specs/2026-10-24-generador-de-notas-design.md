@@ -81,7 +81,9 @@ Herramientas → Notas (`notas.html` + `js/notas.js`). Título de la página: "G
   - "Externa": "Directo al área u organismo, con "Al/A la … PRESENTE"."
   - Viene elegida por el ámbito del área, con la línea "Viene elegida porque el área figura como municipal en Áreas." (o "fuera del municipio"). Si la persona la cambia: "Cambiada a mano: el área figura como municipal, que lleva nota interna."
 - **Pedido** (`fieldset`): "Solicitud" ("La primera vez que se piden estos datos.") o "Reiteración" ("Ya se pidieron y siguen pendientes."). Solicitud es el inicial.
-  - Con "Reiteración" aparece **Nota anterior (opcional)**: número (texto, hasta 40 caracteres) y fecha. Si se completa el número, la nota la cita (sección 4.4); la fecha es opcional aunque haya número; una fecha sin número no se usa y el formulario lo avisa ("Para citar la nota anterior, escribí su número.").
+  - Con "Reiteración" aparece **Nota anterior (opcional)**: uno o más números de nota (cada uno, texto de hasta 40 caracteres; se muestran como etiquetas que se quitan, con un campo para sumar otro) y una fecha, que solo se usa cuando hay un único número. La nota los cita (sección 4.4). Una fecha sin número no se usa y el formulario lo avisa ("Para citar la nota anterior, escribí su número.").
+  - **Viene completada con las notas DGMIT cargadas** (pedido del usuario): para cada dataset tildado, la nota DGMIT original de su ciclo abierto, es decir, la primera vigente (sin anular) del ciclo, por fecha de recepción, después por fecha de carga y después por id. Es la misma asignación de una nota a un ciclo que usa el Seguimiento (`cicloDelAviso` con la recepción a las 00:00, y la regla de `algunCicloRige`); hace falta una función hermana de `notaDgmitDelCiclo` que dé la primera en lugar de la más reciente. Se juntan los números distintos, ordenados por recepción (decisión del usuario: "Todas"). Debajo, la línea "Traído de las notas DGMIT cargadas en el Seguimiento." Se trae **solo el número**: la fecha que guarda el registro es la de recepción por el área, no la de la nota, así que la fecha queda vacía para escribirla a mano (decisión del usuario).
+  - Si la persona edita la lista, deja de completarse sola; mientras no la toque, se vuelve a completar cuando cambian los datasets tildados. Sin notas DGMIT cargadas para los elegidos, la lista viene vacía (hoy la tabla de notas DGMIT está vacía hasta que se importe el Excel).
 - **Fecha de la nota**: por defecto hoy en Argentina (`Utils.hoyEnArgentina()`), editable. Los "Datos solicitados" se calculan con esta fecha.
 - **Número de nota (opcional)**: texto de hasta 40 caracteres (sin los espacios de los extremos), con el ejemplo "Por ejemplo, 156/26" y la ayuda "Si queda vacío, la nota sale con "Nota N° ____/26" para completarlo después." (el año, de la fecha de la nota). No se guarda en ningún lado.
 - **Datasets del área que requieren nota DGMIT** (`fieldset`): una fila por dataset pedible del área, con casilla, título, insignia de estado y, debajo, "Frecuencia · Datos solicitados: …". Vienen tildados los vencidos y los próximos a vencer; los demás, sin tildar. Ayuda: "Vienen elegidos los vencidos y los próximos a vencer. Los "Datos solicitados" los calcula el RPAD, igual que en las Notas Digitales."
@@ -151,7 +153,8 @@ Cambian tres cosas; el resto de la nota no cambia.
   - Interna: "Solicito a Ud. tenga a bien reiterar ante {artículo} **{área}**, dependiente de {artículo superior} {dependencia}, el pedido de la siguiente información, preferiblemente en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso:" (sin dependencia: "…ante la **{área}**, el pedido…").
   - Externa: "Nos dirigimos nuevamente a Uds. a fin de reiterar la solicitud de la siguiente información, preferiblemente en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso:"
 - **Un párrafo nuevo, después de la tabla** (antes de "Justificación:" en la interna; antes de "Motiva dicha solicitud…" en la externa), igual en las dos:
-  - con nota anterior: "La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información solicitada mediante Nota N° {n}{ del dd/mm/aaaa}, conforme a lo establecido en la Ordenanza N° 17.662/23."
+  - con una nota anterior: "La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información solicitada mediante Nota N° {n}{ del dd/mm/aaaa}, conforme a lo establecido en la Ordenanza N° 17.662/23."
+  - con varias: "…solicitada mediante Notas N° {n1}, N° {n2} y N° {n3}, conforme a…" (sin fecha).
   - sin nota anterior: "La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información correspondiente, conforme a lo establecido en la Ordenanza N° 17.662/23."
 
 ### 4.5 La tabla de datasets
@@ -196,11 +199,11 @@ Cambian tres cosas; el resto de la nota no cambia.
   - fecha `AAAA-MM-DD` válida;
   - número opcional, hasta 40 caracteres sin los espacios de los extremos (contados con `Array.from`, como las notas DGMIT); un número que no es texto, 400 (hoy da 500);
   - tipo `interna` o `externa` (hoy cualquier otro valor sale como externa);
-  - pedido `solicitud` o `reiteracion`; nota anterior (número hasta 40, fecha válida) solo con reiteración;
+  - pedido `solicitud` o `reiteracion`; nota anterior (lista de números, cada uno hasta 40, sin repetidos; fecha válida y solo con un único número) solo con reiteración;
   - área existente;
   - datasets: lista no vacía de ids enteros positivos, sin repetidos; cada uno existente, activo, **del área elegida** (hoy acepta de otra área) y pedible (externo con «Requiere nota» en Sí o sin dato).
 - Ninguna fecha se arma con `new Date` local ni `toISOString`: texto `AAAA-MM-DD` y `hoyArgentina()`, como el resto del sistema.
-- Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido y "Qué se solicita") los da un endpoint nuevo detrás de `cargaNotasDgmit`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos, sin el ámbito ni el pedido para otra fecha).
+- Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido, "Qué se solicita" y el número de su nota DGMIT original del ciclo abierto) los da un endpoint nuevo detrás de `cargaNotasDgmit`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos, sin el ámbito ni el pedido para otra fecha).
 
 ## 8. Base de datos y despliegue
 
@@ -228,7 +231,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 - Íconos decorativos con `aria-hidden="true"`; jerarquía de títulos sin saltos.
 
 **Pruebas** (`npm test` completo antes y después de cada cambio)
-- Puras: el contenido de la nota (interna y externa; solicitud y reiteración, con y sin nota anterior y con y sin fecha; "Al" y "A la"; con y sin dependencia; número vacío → "____/AA"; la tabla con el "Qué se solicita"; eventual; el orden), el Word (abrir el XML: tamaño 12240 × 20160, márgenes, encabezado con imagen, marca de agua, pie, ninguna firma, los textos) y la validación.
+- Puras: la nota DGMIT original del ciclo de cada dataset (la primera vigente, sin las anuladas, con la regla de ciclos del Seguimiento); el contenido de la nota (interna y externa; solicitud y reiteración, sin nota anterior, con una, con una y su fecha, con varias; "Al" y "A la"; con y sin dependencia; número vacío → "____/AA"; la tabla con el "Qué se solicita"; eventual; el orden), el Word (abrir el XML: tamaño 12240 × 20160, márgenes, encabezado con imagen, marca de agua, pie, ninguna firma, los textos) y la validación.
 - API (Docker): permisos de las rutas nuevas y de `POST /api/notas/generar` (sin sesión 401, lector 403, colaborador y administración 200; `tests/permisos.test.js`); cada 400; un dataset de otra área; el `Content-Disposition`.
 - Word de la Nota Digital: sobre el HTML de notas de cada tipo y época (aviso interno y externo, reiteración, autorización, auditoría, con dos firmas, una de antes del anexo), sin la primera línea ni ningún dato de la firma. **Los HTML de prueba van con los nombres de las personas cambiados** (regla del proyecto: nada de nombres de personas en archivos versionados).
 - Áreas: el formulario guarda el ámbito; la migración clasifica y corrige.
@@ -251,6 +254,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 10. `notas.js` con `?v=`.
 11. La vuelta atrás devuelve los textos de las áreas solo donde siguen siendo los corregidos.
 12. "Cambiar el área" conserva el filtro y la búsqueda del paso 1.
+13. "Nota anterior": se trae la nota original del ciclo (la primera vigente), no la más reciente; si la persona edita la lista, deja de completarse sola; la fecha solo se usa con un único número.
 
 ## 11. Lo que queda al constructor
 
@@ -264,7 +268,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 ## 12. Ideas para más adelante (no entran)
 
 - Después de descargar, un enlace a "Cargar nota DGMIT" en el Seguimiento, para cuando el área la reciba.
-- Que la reiteración se proponga sola cuando el dataset ya tiene una nota DGMIT de solicitud en el ciclo, citándola.
+- Que la reiteración se elija sola cuando el dataset ya tiene una nota DGMIT de solicitud en el ciclo (hoy la elige la persona; lo único automático es completar la nota anterior).
 - Varias áreas a la vez (una nota por área, en un solo zip).
 
 ## Anexo A. Áreas: ámbito y textos
