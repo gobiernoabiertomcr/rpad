@@ -19,13 +19,14 @@ const VERSION_PANTALLAS = '20261124';
 const VERSION_CORREOS = '20261116';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
-// 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos): su
-// versión es propia
-const VERSION_PERFIL = '20261119';
+// 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
+// rótulo «Origen de los datos», spec 2026-10-24-metricas-y-reportes): su versión es propia
+const VERSION_PERFIL = '20261127';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"; después, el ícono "Ver
 // seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset; "Requiere nota DGMIT" en el formulario, el filtro y la vista
-// previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion): su versión es propia
-const VERSION_ADMIN = '20261113';
+// previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; «Recibido el» obligatorio, el origen de los datos y el aviso de la
+// edición que no registra actualizaciones, spec 2026-10-24-metricas-y-reportes): su versión es propia
+const VERSION_ADMIN = '20261127';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';

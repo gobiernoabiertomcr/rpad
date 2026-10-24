@@ -8,6 +8,9 @@ import fs from 'fs';
 import vm from 'vm';
 import { NOMBRES_TIPO_PEDIDO, TIPOS_PEDIDO, frecuenciaEnNota, tipoSugerido } from '../services/fechasDatasetReglas.js';
 import { MENSAJE_FALTA_REQUIERE_NOTA, textoRequiereNota } from '../services/requiereNotaReglas.js';
+import {
+  MENSAJE_EDICION_REGISTRA, MENSAJE_FALTA_ORIGEN, MENSAJE_FALTA_RECIBIDO, OPCIONES_ORIGEN, origenSugerido, rotuloDeLaFecha
+} from '../services/registroReglas.js';
 
 // api.js es un script de navegador: se ejecuta en un contexto aislado y se expone el Utils de verdad, para que el escape
 // que prueban estos tests sea el que usa la página
@@ -1498,8 +1501,10 @@ describe('admin-fechas.js: textosDelPaso1 y datosAlDelPaso1', () => {
 });
 
 describe('admin-fechas.js: errorDeFechasDelRegistro', () => {
-  it('sin recepción y con la carga de hoy no hay error', () => {
-    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '', cargado: HOY, hoy: HOY }), null);
+  // Desde la spec 2026-10-24-metricas-y-reportes (4), «Recibido el» es obligatorio: sin recepción, el mensaje del servidor
+  it('sin recepción, el mensaje del servidor; con la recepción y la carga de hoy no hay error', () => {
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: '', cargado: HOY, hoy: HOY }), 'Indicá cuándo se recibieron los datos.');
+    assert.equal(admin.errorDeFechasDelRegistro({ recibido: HOY, cargado: HOY, hoy: HOY }), null);
     assert.equal(admin.errorDeFechasDelRegistro({ recibido: '2026-10-10', cargado: '2026-10-10', hoy: HOY }), null);
   });
 
@@ -1521,6 +1526,91 @@ describe('admin-fechas.js: errorDeFechasDelRegistro', () => {
   });
 });
 
+// «Recibido el» obligatorio y el origen de los datos (spec 2026-10-24-metricas-y-reportes, 4): las copias mínimas del
+// navegador, atadas a services/registroReglas.js, y el paso 2 con el mismo orden de errores que el servidor
+describe('admin-fechas.js: «Recibido el» y el origen de los datos', () => {
+  it('los mensajes son los del servidor, con el texto exacto', () => {
+    const copia = (nombre) => vm.runInContext(nombre, admin);
+    assert.equal(copia('MENSAJE_FALTA_RECIBIDO'), MENSAJE_FALTA_RECIBIDO);
+    assert.equal(copia('MENSAJE_FALTA_ORIGEN'), MENSAJE_FALTA_ORIGEN);
+    assert.equal(copia('MENSAJE_EDICION_REGISTRA'), MENSAJE_EDICION_REGISTRA);
+    assert.equal(copia('MENSAJE_FALTA_RECIBIDO'), 'Indicá cuándo se recibieron los datos.');
+    assert.equal(copia('MENSAJE_FALTA_ORIGEN'), 'Indicá quién entregó los datos.');
+    assert.equal(copia('MENSAJE_EDICION_REGISTRA'), 'Para registrar una actualización, usá «Registrar actualización».');
+  });
+
+  it('OPCIONES_ORIGEN son las del servidor: las mismas claves, en el mismo orden, con los mismos textos', () => {
+    const copia = plano(vm.runInContext('OPCIONES_ORIGEN', admin));
+    assert.deepEqual(copia, { ...OPCIONES_ORIGEN });
+    assert.deepEqual(Object.keys(copia), Object.keys(OPCIONES_ORIGEN));
+  });
+
+  it('origenSugeridoDe da lo mismo que origenSugerido del servidor (el 0 es un valor)', () => {
+    for (const tipo_gestion of ['externa', 'interna', '', undefined, null]) {
+      for (const requiere_nota of [0, 1, null, undefined, '0', '1', false, true, '']) {
+        const dataset = { tipo_gestion, requiere_nota };
+        assert.equal(admin.origenSugeridoDe(dataset), origenSugerido(dataset), JSON.stringify(dataset));
+      }
+    }
+    assert.equal(admin.origenSugeridoDe({ tipo_gestion: 'externa', requiere_nota: 0 }), 'fuente_publica');
+    assert.equal(admin.origenSugeridoDe({}), origenSugerido({}));
+    assert.equal(admin.origenSugeridoDe(), origenSugerido());
+    // Sin dataset no tira (como el resto de este archivo): no sugiere nada
+    assert.equal(admin.origenSugeridoDe(null), null);
+  });
+
+  it('rotuloDeLaFechaDe da lo mismo que rotuloDeLaFecha del servidor', () => {
+    for (const origen of ['area', 'fuente_publica', '', null, undefined, 'x']) {
+      assert.equal(admin.rotuloDeLaFechaDe(origen), rotuloDeLaFecha(origen), String(origen));
+    }
+    assert.equal(admin.rotuloDeLaFechaDe('fuente_publica'), 'Obtenido el');
+    assert.equal(admin.rotuloDeLaFechaDe('area'), 'Recibido el');
+  });
+
+  it('htmlDeOpcionesDeOrigen: "Elegí una opción" vacía y después las de OPCIONES_ORIGEN, en su orden', () => {
+    assert.equal(admin.htmlDeOpcionesDeOrigen(), '<option value="">Elegí una opción</option>'
+      + '<option value="area">Los entregó el área</option>'
+      + '<option value="fuente_publica">Los obtuvo Datos Públicos de una fuente pública</option>');
+  });
+
+  describe('problemaDeFechasDelRegistro', () => {
+    const problema = (extra = {}) => plano(admin.problemaDeFechasDelRegistro({ recibido: '2026-10-16', cargado: HOY, hoy: HOY, ...extra }));
+
+    it('problemaDeFechasDelRegistro sin recibido devuelve el campo recibido con el mensaje', () => {
+      for (const recibido of ['', undefined, null, '2026-02-31']) {
+        assert.deepEqual(problema({ recibido }), { campo: 'recibido', mensaje: 'Indicá cuándo se recibieron los datos.' }, String(recibido));
+      }
+    });
+
+    it('en externa sin origen devuelve el campo origen', () => {
+      for (const origen of ['', undefined, null, 'x']) {
+        assert.deepEqual(problema({ gestion: 'externa', origen }), { campo: 'origen', mensaje: 'Indicá quién entregó los datos.' }, String(origen));
+      }
+      assert.equal(problema({ gestion: 'externa', origen: 'area' }), null);
+      assert.equal(problema({ gestion: 'externa', origen: 'fuente_publica' }), null);
+      // En interna (o sin gestión) no se pregunta
+      assert.equal(problema({ gestion: 'interna', origen: '' }), null);
+      assert.equal(problema({ origen: '' }), null);
+    });
+
+    it('el orden es el del servidor: la carga, después la recepción y recién después el origen', () => {
+      const externaSinNada = { gestion: 'externa', origen: '', recibido: '' };
+      assert.deepEqual(problema({ ...externaSinNada, cargado: '' }), { campo: 'cargado', mensaje: 'Falta la fecha de carga en el portal' });
+      assert.equal(problema({ ...externaSinNada, cargado: '2026-10-18' }).campo, 'cargado');
+      assert.equal(problema(externaSinNada).campo, 'recibido');
+      assert.deepEqual(problema({ ...externaSinNada, recibido: '2026-10-18' }), {
+        campo: 'recibido', mensaje: 'La fecha de recepción no puede ser posterior a hoy (17/10/2026)'
+      });
+      assert.equal(problema({ ...externaSinNada, recibido: HOY, cargado: '2026-10-16' }).campo, 'recibido');
+      assert.equal(problema({ ...externaSinNada, recibido: '2026-10-16' }).campo, 'origen');
+    });
+
+    it('sin argumentos no tira error', () => {
+      assert.deepEqual(plano(admin.problemaDeFechasDelRegistro()), { campo: 'cargado', mensaje: 'Falta la fecha de carga en el portal' });
+    });
+  });
+});
+
 describe('admin-fechas.js: cuerpoDelRegistro (el JSON del POST /datasets/:id/actualizar)', () => {
   const OPCIONES = [
     { fecha: '2027-04-30', motivo: 'Siguiente período', sugerida: true, advertencia: null, pideDespues: 'Del 01/10/2026 al 31/03/2027' },
@@ -1532,8 +1622,24 @@ describe('admin-fechas.js: cuerpoDelRegistro (el JSON del POST /datasets/:id/act
   });
   const cuerpo = (extra) => plano(admin.cuerpoDelRegistro(formulario(extra)));
 
-  it('arma datos_al, cargado_el, recibido_el y proxima_actualizacion, y nada más (sin notas)', () => {
-    assert.deepEqual(cuerpo(), { datos_al: '2026-09-30', cargado_el: HOY, recibido_el: null, proxima_actualizacion: '2027-04-30' });
+  it('arma datos_al, cargado_el, recibido_el, origen_datos y proxima_actualizacion, y nada más (sin notas)', () => {
+    assert.deepEqual(cuerpo(), { datos_al: '2026-09-30', cargado_el: HOY, recibido_el: null, origen_datos: null, proxima_actualizacion: '2027-04-30' });
+    assert.deepEqual(cuerpo({ recibido: '2026-10-15', gestion: 'externa', origen: 'area' }), {
+      datos_al: '2026-09-30', cargado_el: HOY, recibido_el: '2026-10-15', origen_datos: 'area', proxima_actualizacion: '2027-04-30'
+    });
+  });
+
+  // Spec 2026-10-24-metricas-y-reportes, 4: el origen de los datos va solo en gestión externa
+  it('cuerpoDelRegistro lleva origen_datos y en interna null', () => {
+    assert.equal(cuerpo({ gestion: 'externa', origen: 'area' }).origen_datos, 'area');
+    assert.equal(cuerpo({ gestion: 'externa', origen: 'fuente_publica' }).origen_datos, 'fuente_publica');
+    // Sin elegir, o con algo que no es un origen, va null: el servidor responde con su mensaje
+    for (const origen of ['', undefined, null, 'x', 'constructor', ['area']]) {
+      assert.equal(cuerpo({ gestion: 'externa', origen }).origen_datos, null, String(origen));
+    }
+    // En gestión interna no se pregunta: null aunque el selector oculto conserve un valor
+    for (const origen of ['area', 'fuente_publica', '']) assert.equal(cuerpo({ gestion: 'interna', origen }).origen_datos, null, origen);
+    assert.equal(cuerpo({ gestion: undefined, origen: 'area' }).origen_datos, null);
   });
 
   it('"Recibido el" vacío da null; con fecha, la fecha', () => {
@@ -1579,7 +1685,9 @@ describe('admin-fechas.js: cuerpoDelRegistro (el JSON del POST /datasets/:id/act
   });
 
   it('sin formulario no tira error', () => {
-    assert.deepEqual(plano(admin.cuerpoDelRegistro()), { datos_al: null, cargado_el: null, recibido_el: null, proxima_actualizacion: null });
+    assert.deepEqual(plano(admin.cuerpoDelRegistro()), {
+      datos_al: null, cargado_el: null, recibido_el: null, origen_datos: null, proxima_actualizacion: null
+    });
   });
 
   it('proximaDelRegistro es la próxima que lleva el cuerpo: lo que habilita "Proponer actualización"', () => {
@@ -1593,8 +1701,9 @@ describe('admin-fechas.js: cuerpoDelRegistro (el JSON del POST /datasets/:id/act
 
 describe('admin-fechas.js: revisionDelRegistro (el error del paso 2 y si se puede proponer)', () => {
   const OPCIONES = [{ fecha: '2027-04-30', motivo: 'Siguiente período', sugerida: true }];
+  // «Recibido el» es obligatorio (spec 2026-10-24-metricas-y-reportes, 4): el formulario de base lo trae
   const formulario = (extra = {}) => ({
-    tipo: 'acumulado', eventual: false, mes: '9', anio: '2026', recibido: '', cargado: HOY,
+    tipo: 'acumulado', eventual: false, mes: '9', anio: '2026', recibido: '2026-10-16', cargado: HOY,
     opcion: '0', opciones: OPCIONES, otraMes: '', otraAnio: '', ...extra
   });
   const revision = (extra = {}, formularioExtra = {}) => plano(admin.revisionDelRegistro({
@@ -1624,6 +1733,16 @@ describe('admin-fechas.js: revisionDelRegistro (el error del paso 2 y si se pued
     assert.equal(revision({}, { recibido: '2026-10-18' }).campoFechas, 'recibido');
     assert.equal(revision({}, { recibido: '2026-10-16', cargado: '2026-10-15' }).campoFechas, 'recibido');
     assert.equal(revision({}, { recibido: '2026-10-15', cargado: '2026-10-16' }).campoFechas, null);
+  });
+
+  it('sin «Recibido el», o en externa sin el origen, no se puede proponer, y el error dice cuál falta', () => {
+    assert.deepEqual(revision({}, { recibido: '' }), { errorFechas: 'Indicá cuándo se recibieron los datos.', campoFechas: 'recibido', puedeProponer: false });
+    assert.deepEqual(revision({}, { gestion: 'externa', origen: '' }), { errorFechas: 'Indicá quién entregó los datos.', campoFechas: 'origen', puedeProponer: false });
+    assert.equal(revision({}, { gestion: 'externa', origen: 'area' }).puedeProponer, true);
+    assert.equal(revision({}, { gestion: 'externa', origen: 'fuente_publica' }).puedeProponer, true);
+    assert.equal(revision({}, { gestion: 'interna', origen: '' }).puedeProponer, true);
+    // Un eventual tampoco se propone sin la recepción
+    assert.equal(revision({}, { eventual: true, opcion: null, recibido: '' }).puedeProponer, false);
   });
 
   it('mientras llegan las opciones o mientras se envía, no', () => {
@@ -1794,10 +1913,19 @@ describe('admin.html: la ventana de Registrar actualización', () => {
     assert.match(ventana, /<p class="ad-error" id="registrar-error-datos" role="alert" hidden><\/p>/);
   });
 
-  it('paso 2: "Recibido el (opcional)" y "Cargado en el portal el", con etiquetas con for', () => {
-    assert.match(ventana, /<label for="registrar-recibido">Recibido el \(opcional\)<\/label>\s*<input type="date" id="registrar-recibido">/);
+  // «Recibido el» es obligatorio desde la spec 2026-10-24-metricas-y-reportes (4): ya no dice «(opcional)». Su rótulo cambia a
+  // «Obtenido el» con la fuente pública (admin.js lo escribe, por eso tiene id)
+  it('paso 2: "Recibido el" obligatorio y "Cargado en el portal el", con etiquetas con for', () => {
+    assert.doesNotMatch(ventana, /\(opcional\)/);
+    assert.match(ventana, /<label for="registrar-recibido" id="registrar-rotulo-recibido">Recibido el<\/label>\s*<input type="date" id="registrar-recibido" required>/);
     assert.match(ventana, /<label for="registrar-cargado">Cargado en el portal el<\/label>\s*<input type="date" id="registrar-cargado" required>/);
     assert.match(ventana, /<p class="ad-error" id="registrar-error-fechas" role="alert" hidden><\/p>/);
+  });
+
+  it('paso 2: «¿Quién entregó los datos?», un selector obligatorio que admin.js muestra solo en gestión externa, antes de la fecha', () => {
+    assert.match(ventana, /<div class="ad-ancho" id="registrar-campo-origen" hidden>\s*<label for="registrar-origen">¿Quién entregó los datos\?<\/label>\s*<select id="registrar-origen" required><\/select>\s*<\/div>/);
+    assert.ok(ventana.indexOf('id="registrar-origen"') < ventana.indexOf('id="registrar-recibido"'), 'el origen va antes de la fecha');
+    assert.ok(ventana.indexOf('id="registrar-origen"') > ventana.indexOf('id="registrar-ayuda1"'), 'en el paso 2');
   });
 
   it('paso 3: las opciones en un radiogroup y "Otra fecha" con mes y año', () => {
@@ -1891,8 +2019,9 @@ describe('admin.js: Registrar actualización, la ventana (con una página de men
   // tocan la red o los avisos por registros de llamadas
   const armar = ({ valores = {}, consultas = {}, api = {} } = {}) => {
     const { contexto } = cargarAdminJs();
+    // «Recibido el» es obligatorio (spec 2026-10-24-metricas-y-reportes, 4): la ventana de base ya lo tiene completo
     const pagina = paginaDeMentira({
-      valores: { 'registrar-mes': '9', 'registrar-anio': '2026', 'registrar-cargado': HOY, 'registrar-recibido': '', ...valores },
+      valores: { 'registrar-mes': '9', 'registrar-anio': '2026', 'registrar-cargado': HOY, 'registrar-recibido': '2026-10-16', ...valores },
       consultas
     });
     contexto.document = pagina.documento;
@@ -1973,6 +2102,90 @@ describe('admin.js: Registrar actualización, la ventana (con una página de men
       assert.equal(contexto.describedbyCon('ayuda e', 'e', false), 'ayuda');
       assert.equal(contexto.describedbyCon('e', 'e', false), null);
       assert.equal(contexto.describedbyCon('', 'e', false), null);
+    });
+  });
+
+  // Spec 2026-10-24-metricas-y-reportes, 4: «¿Quién entregó los datos?» solo en gestión externa, con lo sugerido, y la fecha que
+  // se llama «Recibido el» u «Obtenido el» según el origen
+  describe('«Recibido el» y el origen de los datos', () => {
+    const EXTERNO = { ...PAUTA, tipo_gestion: 'externa', requiere_nota: 1 };
+    // abrirRegistro busca el dataset en la lista de la página
+    const abrir = (armado, dataset) => {
+      armado.contexto.__lista = [dataset];
+      vm.runInContext('datasets = __lista', armado.contexto);
+      armado.contexto.abrirRegistro(dataset.id, armado.pagina.elemento('boton-de-la-fila'));
+    };
+    const rotulo = (armado) => armado.pagina.elemento('registrar-rotulo-recibido').textContent;
+
+    it('al abrir, «Recibido el» viene vacío', () => {
+      const armado = armar();
+      abrir(armado, EXTERNO);
+      assert.equal(armado.pagina.elemento('registrar-recibido').value, '');
+    });
+
+    it('un externo con «Requiere nota DGMIT: No» viene con la fuente pública elegida, y la fecha se llama «Obtenido el»', () => {
+      const armado = armar();
+      abrir(armado, { ...EXTERNO, requiere_nota: 0 });
+      assert.equal(armado.pagina.elemento('registrar-campo-origen').hidden, false);
+      assert.equal(armado.pagina.elemento('registrar-origen').value, 'fuente_publica');
+      assert.equal(rotulo(armado), 'Obtenido el');
+    });
+
+    it('un externo con «Sí» (o sin dato) viene sin elegir, y la fecha se llama «Recibido el»', () => {
+      for (const requiere_nota of [1, null]) {
+        const armado = armar({ valores: { 'registrar-origen': 'fuente_publica' } });
+        abrir(armado, { ...EXTERNO, requiere_nota });
+        assert.equal(armado.pagina.elemento('registrar-campo-origen').hidden, false);
+        assert.equal(armado.pagina.elemento('registrar-origen').value, '', String(requiere_nota));
+        assert.equal(rotulo(armado), 'Recibido el');
+      }
+    });
+
+    it('una interna no pregunta el origen: el selector queda oculto y vacío, y la fecha es «Recibido el»', () => {
+      const armado = armar({ valores: { 'registrar-origen': 'area' } });
+      abrir(armado, { ...PAUTA, tipo_gestion: 'interna', requiere_nota: null });
+      assert.equal(armado.pagina.elemento('registrar-campo-origen').hidden, true);
+      assert.equal(armado.pagina.elemento('registrar-origen').value, '');
+      assert.equal(rotulo(armado), 'Recibido el');
+    });
+
+    it('al cambiar el origen, el rótulo cambia, y el origen viaja en el cuerpo', () => {
+      const armado = armar({ consultas: ELEGIDA });
+      abrir(armado, EXTERNO);
+      const origen = armado.pagina.elemento('registrar-origen');
+      origen.value = 'fuente_publica';
+      armado.contexto.alCambiarElFormulario();
+      assert.equal(rotulo(armado), 'Obtenido el');
+      origen.value = 'area';
+      armado.contexto.alCambiarElFormulario();
+      assert.equal(rotulo(armado), 'Recibido el');
+      const formulario = armado.contexto.formularioDelRegistro();
+      assert.equal(formulario.gestion, 'externa');
+      assert.equal(armado.contexto.cuerpoDelRegistro(formulario).origen_datos, 'area');
+    });
+
+    it('un externo sin origen no deja proponer: el error marca el selector', () => {
+      const armado = armar({ consultas: ELEGIDA });
+      abierta(armado, { dataset: EXTERNO });
+      armado.contexto.revisarRegistro();
+      assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, 'Indicá quién entregó los datos.');
+      assert.equal(armado.pagina.elemento('registrar-origen').getAttribute('aria-invalid'), 'true');
+      assert.equal(armado.pagina.elemento('registrar-recibido').hasAttribute('aria-invalid'), false);
+      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, true);
+      armado.pagina.elemento('registrar-origen').value = 'area';
+      armado.contexto.revisarRegistro();
+      assert.equal(armado.pagina.elemento('registrar-error-fechas').hidden, true);
+      assert.equal(armado.pagina.elemento('registrar-origen').hasAttribute('aria-invalid'), false);
+      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, false);
+    });
+
+    it('sin «Recibido el» no deja proponer: el error marca la fecha', () => {
+      const armado = armar({ valores: { 'registrar-recibido': '' }, consultas: ELEGIDA });
+      abierta(armado);
+      armado.contexto.revisarRegistro();
+      assert.equal(armado.pagina.elemento('registrar-error-fechas').textContent, 'Indicá cuándo se recibieron los datos.');
+      assert.equal(armado.pagina.elemento('registrar-recibido').getAttribute('aria-invalid'), 'true');
+      assert.equal(armado.pagina.elemento('registrar-proponer').disabled, true);
     });
   });
 
@@ -2462,7 +2675,30 @@ describe('admin-fechas.js: problemasDelFormulario (lo que se revisa antes de pro
   const problemas = (extra) => plano(admin.problemasDelFormulario(base(extra), HOY));
 
   it('sin problemas da todo en null', () => {
-    assert.deepEqual(problemas(), { formatos: null, requiereNota: null, datosAl: null, proxima: null });
+    assert.deepEqual(problemas(), { formatos: null, requiereNota: null, datosAl: null, proxima: null, edicion: null });
+  });
+
+  // Spec 2026-10-24-metricas-y-reportes, 4: la edición no registra actualizaciones. Si contra lo guardado cambian a la vez
+  // «Cargado en el portal» y la próxima, el servidor responde 400 con este mensaje: el formulario lo avisa antes
+  it('problemasDelFormulario marca la edición que mueve carga y próxima', () => {
+    const MENSAJE = 'Para registrar una actualización, usá «Registrar actualización».';
+    // Como lo devuelve GET /datasets/:id: las fechas de MySQL con hora
+    const original = { ultima_actualizacion: '2026-10-13T03:00:00.000Z', proxima_actualizacion: '2027-01-31T03:00:00.000Z', datos_al: '2026-07-31' };
+    const edicion = (extra) => problemas({ original, cargado: '2026-10-13', proxMes: '1', proxAnio: '2027', ...extra }).edicion;
+    assert.equal(edicion(), null, 'sin tocar nada');
+    assert.equal(edicion({ cargado: HOY, proxMes: '4' }), MENSAJE, 'las dos');
+    assert.equal(edicion({ cargado: HOY }), null, 'solo la carga');
+    assert.equal(edicion({ proxMes: '4' }), null, 'solo la próxima');
+    // Vaciar una de las dos también es cambiarla (como en el servidor, que compara lo que llega con lo guardado)
+    assert.equal(edicion({ cargado: '', proxMes: '4' }), MENSAJE, 'carga vaciada y próxima movida');
+    assert.equal(edicion({ cargado: HOY, meses: null, tipo_pedido: 'eventual', proxMes: '', proxAnio: '' }), MENSAJE, 'pasa a Eventual y cambia la carga');
+    // Un dataset sin las dos fechas guardadas: completar las dos también es moverlas
+    assert.equal(problemas({ original: { datos_al: null }, cargado: HOY }).edicion, MENSAJE);
+    assert.equal(problemas({ original: { datos_al: null }, cargado: '', proxMes: '', proxAnio: '', meses: null, tipo_pedido: 'eventual' }).edicion, null);
+  });
+
+  it('en un alta no hay edición que avisar', () => {
+    assert.equal(problemas({ original: null, cargado: HOY }).edicion, null);
   });
 
   it('un externo sin elegir «Requiere nota DGMIT» no pasa, con el mensaje del servidor', () => {
@@ -3078,6 +3314,64 @@ describe('admin.js: el formulario del dataset (con una página de mentira)', () 
       assert.equal(vm.runInContext('hayCambiosSinGuardar(edicion.huella, formularioDelDataset())', contexto), false);
       pagina.elemento('requiere_nota').value = '0';
       assert.equal(vm.runInContext('hayCambiosSinGuardar(edicion.huella, formularioDelDataset())', contexto), true);
+    });
+  });
+
+  // Spec 2026-10-24-metricas-y-reportes, 4: la edición no registra actualizaciones
+  describe('la edición que mueve la carga y la próxima', () => {
+    const MENSAJE = 'Para registrar una actualización, usá «Registrar actualización».';
+    const GUARDADO = { ...PAUTA, ultima_actualizacion: '2026-10-13T03:00:00.000Z', proxima_actualizacion: '2027-01-31T03:00:00.000Z' };
+    // Abre la edición de la Pauta y deja la carga y la próxima como pide el test (la página de mentira no elige la opción
+    // guardada de los selectores: se escribe a mano)
+    const editar = (armado, { cargado, proxMes = '1', proxAnio = '2027' }) => {
+      armado.contexto.openModal(GUARDADO);
+      armado.pagina.elemento('ultima_actualizacion').value = cargado;
+      armado.pagina.elemento('form-prox-mes').value = proxMes;
+      armado.pagina.elemento('form-prox-anio').value = proxAnio;
+    };
+
+    it('no se manda: el aviso queda junto a «Cargado en el portal el» y el foco va ahí', async () => {
+      const { contexto, pagina, llamadas } = armar();
+      editar({ contexto, pagina }, { cargado: HOY, proxMes: '4' });
+      await contexto.enviarFormulario(evento);
+      assert.equal(llamadas.enviados.length, 0);
+      const lugar = pagina.elemento('form-error-edicion');
+      assert.equal(lugar.textContent, MENSAJE);
+      assert.equal(lugar.hidden, false);
+      assert.equal(pagina.elemento('ultima_actualizacion').getAttribute('aria-invalid'), 'true');
+      assert.match(pagina.elemento('ultima_actualizacion').getAttribute('aria-describedby'), /form-error-edicion/);
+      assert.equal(pagina.enfocados.at(-1), 'ultima_actualizacion');
+      assert.equal(pagina.elemento('modal-dataset').hidden, false, 'el formulario sigue abierto');
+    });
+
+    it('corregir una sola de las dos se manda', async () => {
+      for (const cambio of [{ cargado: HOY }, { cargado: '2026-10-13', proxMes: '4' }]) {
+        const { contexto, pagina, llamadas } = armar();
+        editar({ contexto, pagina }, cambio);
+        await contexto.enviarFormulario(evento);
+        assert.equal(llamadas.enviados.length, 1, JSON.stringify(cambio));
+        assert.equal(pagina.elemento('form-error-edicion').hidden, true);
+      }
+    });
+
+    it('cambiar la carga o la próxima borra el aviso', async () => {
+      for (const id of ['ultima_actualizacion', 'form-prox-mes', 'frecuencia_id']) {
+        const { contexto, pagina } = armar();
+        editar({ contexto, pagina }, { cargado: HOY, proxMes: '4' });
+        await contexto.enviarFormulario(evento);
+        assert.equal(pagina.elemento('form-error-edicion').hidden, false);
+        contexto.alCambiarCampoDelFormulario({ target: pagina.elemento(id) });
+        assert.equal(pagina.elemento('form-error-edicion').hidden, true, id);
+        assert.equal(pagina.elemento('ultima_actualizacion').hasAttribute('aria-invalid'), false, id);
+      }
+    });
+
+    it('al abrir otra vez, el aviso del intento anterior ya no está', async () => {
+      const { contexto, pagina } = armar();
+      editar({ contexto, pagina }, { cargado: HOY, proxMes: '4' });
+      await contexto.enviarFormulario(evento);
+      contexto.openModal(GUARDADO);
+      assert.equal(pagina.elemento('form-error-edicion').hidden, true);
     });
   });
 

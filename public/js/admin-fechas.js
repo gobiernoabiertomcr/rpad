@@ -463,6 +463,45 @@ const TEXTOS_DEL_PASO1 = Object.freeze({
 const ERROR_FALTA_DATOS_AL = 'Falta Datos al: la fecha a la que son los datos que llegaron';
 const ERROR_FALTA_CARGA = 'Falta la fecha de carga en el portal';
 
+// «Recibido el» y el origen de los datos (spec 2026-10-24-metricas-y-reportes, 4): la recepción es obligatoria y, en gestión
+// externa, también quién entregó los datos. Copias de services/registroReglas.js (el servidor responde 400 con los mismos
+// textos y valida igual); un test verifica que sean iguales
+const MENSAJE_FALTA_RECIBIDO = 'Indicá cuándo se recibieron los datos.';
+const MENSAJE_FALTA_ORIGEN = 'Indicá quién entregó los datos.';
+// Las opciones de «¿Quién entregó los datos?», en el orden del servidor
+const OPCIONES_ORIGEN = Object.freeze({
+  area: 'Los entregó el área',
+  fuente_publica: 'Los obtuvo Datos Públicos de una fuente pública'
+});
+
+// El origen elegido, 'area' o 'fuente_publica', o null si no es ninguno ('' sin elegir, o cualquier otra cosa)
+function origenDelRegistro(valor) {
+  return typeof valor === 'string' && Object.hasOwn(OPCIONES_ORIGEN, valor) ? valor : null;
+}
+
+/**
+ * El origen con que viene la ventana (se puede cambiar): la fuente pública en un externo con «Requiere nota DGMIT: No»; si
+ * no, ninguno. Copia deliberada de origenSugerido de services/registroReglas.js: un test verifica que las dos den lo mismo.
+ * Ojo: el 0 es un valor y se compara con ===. Sin dataset no tira: no sugiere nada.
+ */
+function origenSugeridoDe(dataset) {
+  const { tipo_gestion, requiere_nota } = dataset ?? {};
+  return tipo_gestion === 'externa' && requiere_nota === 0 ? 'fuente_publica' : null;
+}
+
+// Cómo se llama la fecha del paso 2: «Obtenido el» si los datos salieron de una fuente pública; si no, «Recibido el». Copia
+// de rotuloDeLaFecha de services/registroReglas.js (un test verifica que den lo mismo)
+function rotuloDeLaFechaDe(origen) {
+  return origen === 'fuente_publica' ? 'Obtenido el' : 'Recibido el';
+}
+
+// Las <option> de «¿Quién entregó los datos?»: primero la vacía, después las de OPCIONES_ORIGEN en su orden
+function htmlDeOpcionesDeOrigen() {
+  return '<option value="">Elegí una opción</option>' + Object.entries(OPCIONES_ORIGEN)
+    .map(([valor, texto]) => `<option value="${valor}">${textoSeguro(texto)}</option>`)
+    .join('');
+}
+
 // Es eventual el dataset sin frecuencia en meses: lo mismo que mira el servidor (esFrecuenciaEventual). No tiene paso 3
 function esEventual(dataset) {
   const meses = dataset?.frecuencia_meses;
@@ -533,17 +572,19 @@ function datosAlDelPaso1({ tipo, mes, anio } = {}) {
 }
 
 /**
- * El problema del paso 2, { campo, mensaje }, o null. `mensaje` lleva las palabras del servidor: la carga en el portal es
- * obligatoria y no puede ser posterior a hoy; la recepción es opcional, pero no puede ser posterior a hoy ni a la carga.
- * `campo` ('cargado' o 'recibido') es el campo al que se refiere, para marcarlo (aria-invalid).
+ * El problema del paso 2, { campo, mensaje }, o null. `mensaje` lleva las palabras del servidor, en su mismo orden
+ * (errorDelRegistro): la carga en el portal es obligatoria y no puede ser posterior a hoy; la recepción es obligatoria
+ * (spec 2026-10-24-metricas-y-reportes, 4) y no puede ser posterior a hoy ni a la carga; y en gestión externa (`gestion`)
+ * hay que decir quién entregó los datos (`origen`: 'area' o 'fuente_publica'). `campo` ('cargado', 'recibido' u 'origen')
+ * es el campo al que se refiere, para marcarlo (aria-invalid).
  */
-function problemaDeFechasDelRegistro({ recibido, cargado, hoy } = {}) {
+function problemaDeFechasDelRegistro({ recibido, cargado, hoy, gestion, origen } = {}) {
   const fecha = hoyDe(hoy);
   const carga = soloFecha(cargado);
   if (!carga) return { campo: 'cargado', mensaje: ERROR_FALTA_CARGA };
   if (carga > fecha) return { campo: 'cargado', mensaje: `La fecha de carga en el portal no puede ser posterior a hoy (${fechaCorta(fecha)})` };
   const recepcion = soloFecha(recibido);
-  if (!recepcion) return null;
+  if (!recepcion) return { campo: 'recibido', mensaje: MENSAJE_FALTA_RECIBIDO };
   if (recepcion > fecha) return { campo: 'recibido', mensaje: `La fecha de recepción no puede ser posterior a hoy (${fechaCorta(fecha)})` };
   if (recepcion > carga) {
     return {
@@ -551,6 +592,7 @@ function problemaDeFechasDelRegistro({ recibido, cargado, hoy } = {}) {
       mensaje: `La fecha de recepción (${fechaCorta(recepcion)}) no puede ser posterior a la de carga en el portal (${fechaCorta(carga)})`
     };
   }
+  if (gestion === 'externa' && origenDelRegistro(origen) === null) return { campo: 'origen', mensaje: MENSAJE_FALTA_ORIGEN };
   return null;
 }
 
@@ -575,14 +617,17 @@ function proximaDelRegistro(formulario) {
 }
 
 /**
- * El cuerpo de POST /datasets/:id/actualizar: { datos_al, cargado_el, recibido_el, proxima_actualizacion }. `formulario`
- * es lo que dicen los campos de la ventana:
+ * El cuerpo de POST /datasets/:id/actualizar: { datos_al, cargado_el, recibido_el, origen_datos, proxima_actualizacion }.
+ * `formulario` es lo que dicen los campos de la ventana:
  *   tipo, eventual       el tipo de pedido del dataset y si es eventual (esEventual)
+ *   gestion              la gestión del dataset ('externa' o 'interna'): el origen se pregunta solo en la externa
  *   mes, anio            paso 1 (en un ejercicio el mes no cuenta: va el 31/12)
+ *   origen               paso 2, «¿Quién entregó los datos?» ('area', 'fuente_publica' o '' sin elegir)
  *   recibido, cargado    paso 2 ('' si están vacíos)
  *   opcion, opciones     paso 3: el valor del radio elegido ('0', '1'... u 'otra'; null sin elegir) y las opciones del servidor
  *   otraMes, otraAnio    los selectores de "Otra fecha"
- * "Recibido el" vacío va null; lo que no se puede armar, también (el servidor lo rechaza con su mensaje).
+ * El origen va null en la gestión interna (no se pregunta). Lo vacío o lo que no se puede armar va null: la ventana no deja
+ * proponer así, y el servidor lo rechazaría con su mensaje.
  */
 function cuerpoDelRegistro(formulario) {
   const f = formulario ?? {};
@@ -590,20 +635,23 @@ function cuerpoDelRegistro(formulario) {
     datos_al: datosAlDelPaso1(f),
     cargado_el: soloFecha(f.cargado),
     recibido_el: soloFecha(f.recibido),
+    origen_datos: f.gestion === 'externa' ? origenDelRegistro(f.origen) : null,
     proxima_actualizacion: proximaDelRegistro(f)
   };
 }
 
 /**
  * Cómo queda la ventana con lo que dicen sus campos: { errorFechas, campoFechas, puedeProponer }. errorFechas es el error
- * del paso 2 (o null) para mostrar debajo de sus campos, y campoFechas el campo al que se refiere ('cargado' o 'recibido').
- * "Proponer actualización" se habilita solo con una próxima elegida (completa, si es "Otra fecha"; un eventual no elige),
- * sin error en "Datos al" ni en las fechas, sin opciones por llegar (`cargando`: la elección se acaba de borrar y el
- * servidor todavía no revisó "Datos al") y sin un envío en curso.
+ * del paso 2 (o null) para mostrar debajo de sus campos, y campoFechas el campo al que se refiere ('cargado', 'recibido' u
+ * 'origen'). "Proponer actualización" se habilita solo con una próxima elegida (completa, si es "Otra fecha"; un eventual no
+ * elige), sin error en "Datos al" ni en el paso 2 (que pide la recepción y, en externa, el origen), sin opciones por llegar
+ * (`cargando`: la elección se acaba de borrar y el servidor todavía no revisó "Datos al") y sin un envío en curso.
  */
 function revisionDelRegistro({ formulario, errorDatosAl = null, cargando = false, enviando = false, hoy } = {}) {
   const f = formulario ?? {};
-  const problema = problemaDeFechasDelRegistro({ recibido: f.recibido, cargado: f.cargado, hoy });
+  const problema = problemaDeFechasDelRegistro({
+    recibido: f.recibido, cargado: f.cargado, hoy, gestion: f.gestion, origen: f.origen
+  });
   const errorFechas = problema?.mensaje ?? null;
   return {
     errorFechas,
@@ -680,6 +728,10 @@ const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de dat
 // Lo que avisa el formulario cuando un dataset externo queda sin "Requiere nota DGMIT": copia de MENSAJE_FALTA_REQUIERE_NOTA de
 // services/requiereNotaReglas.js (el servidor responde 400 con el mismo texto). Un test verifica que sean iguales
 const MENSAJE_FALTA_REQUIERE_NOTA = 'Indicá si el dataset requiere nota DGMIT.';
+// La edición no registra actualizaciones (spec 2026-10-24-metricas-y-reportes, 4): si cambian a la vez «Cargado en el portal» y
+// la próxima, el servidor responde 400 con este texto. Copia de MENSAJE_EDICION_REGISTRA de services/registroReglas.js; un
+// test verifica que sean iguales
+const MENSAJE_EDICION_REGISTRA = 'Para registrar una actualización, usá «Registrar actualización».';
 // Los años de "Datos al" empiezan acá (el selector se amplía si la fecha guardada es anterior)
 const PRIMER_ANIO_DE_DATOS_AL = 2015;
 
@@ -955,11 +1007,15 @@ function hayCambiosSinGuardar(huella, formulario) {
 }
 
 /**
- * Lo que se revisa antes de proponer, con el error de cada campo o null: { formatos, requiereNota, datosAl, proxima }.
+ * Lo que se revisa antes de proponer, con el error de cada campo o null: { formatos, requiereNota, datosAl, proxima, edicion }.
  * - formatos: al menos uno;
  * - requiereNota: un externo tiene que decir si requiere nota DGMIT (errorDeRequiereNota);
  * - datosAl: uno nuevo (distinto del guardado) no pasa del tope, con las palabras del servidor (topeDeDatosAl);
- * - proxima: fuera de la frecuencia Eventual es obligatoria (la exige el formulario; el servidor no, spec 10.1).
+ * - proxima: fuera de la frecuencia Eventual es obligatoria (la exige el formulario; el servidor no, spec 10.1);
+ * - edicion: una edición que, contra lo guardado (`original`), cambia a la vez «Cargado en el portal» y la próxima es
+ *   registrar una actualización, y eso va por «Registrar actualización» (MENSAJE_EDICION_REGISTRA; spec
+ *   2026-10-24-metricas-y-reportes, 4). Se compara como el servidor: por el día, y lo vacío cuenta como un valor. En un
+ *   alta no hay nada guardado.
  * Lo demás lo revisan el navegador (los campos obligatorios) y el servidor. `formulario`: el de cuerpoDelDataset.
  */
 function problemasDelFormulario(formulario, hoy) {
@@ -972,11 +1028,14 @@ function problemasDelFormulario(formulario, hoy) {
   }
   const datosAl = cuerpo.datos_al;
   const nuevo = Boolean(datosAl) && datosAl !== soloFecha(f.original?.datos_al);
+  const original = f.original ?? null;
+  const cambia = (campo) => (cuerpo[campo] ?? '') !== (soloFecha(original?.[campo]) ?? '');
   return {
     formatos: Array.isArray(f.formatos) && f.formatos.length > 0 ? null : 'Elegí al menos un formato',
     requiereNota: errorDeRequiereNota({ gestion: f.tipo_gestion, valor: f.requiere_nota }),
     datosAl: nuevo && datosAl > topeDeDatosAl(f.tipo_pedido, hoy) ? `Todavía no puede haber datos al ${fechaCorta(datosAl)}` : null,
-    proxima
+    proxima,
+    edicion: original && cambia('ultima_actualizacion') && cambia('proxima_actualizacion') ? MENSAJE_EDICION_REGISTRA : null
   };
 }
 
