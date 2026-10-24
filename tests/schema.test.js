@@ -26,6 +26,31 @@ const columnas = async (conexion, base) => {
   return filas.map(f => `${f.tabla}.${f.columna} ${f.tipo} null=${f.nulo} default=${f.defecto} key=${f.clave}`);
 };
 
+// Claves foráneas e índices de las tres tablas de las notas DGMIT (spec 2026-10-24-notas-dgmit, 4): `columnas` no los ve
+const clavesAjenasDgmit = async (conexion, base) => {
+  const [filas] = await conexion.query(
+    `SELECT rc.CONSTRAINT_NAME AS nombre, rc.TABLE_NAME AS tabla, k.COLUMN_NAME AS columna,
+            rc.REFERENCED_TABLE_NAME AS destino, k.REFERENCED_COLUMN_NAME AS destino_columna, rc.DELETE_RULE AS borrado
+     FROM information_schema.REFERENTIAL_CONSTRAINTS rc
+     JOIN information_schema.KEY_COLUMN_USAGE k USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_NAME)
+     WHERE rc.CONSTRAINT_SCHEMA = ? AND LEFT(rc.TABLE_NAME, 11) = 'notas_dgmit'
+     ORDER BY rc.TABLE_NAME, rc.CONSTRAINT_NAME`,
+    [base]
+  );
+  return filas.map(f => `${f.tabla}.${f.columna} -> ${f.destino}.${f.destino_columna} (${f.nombre}) borrado=${f.borrado}`);
+};
+
+const indicesDgmit = async (conexion, base) => {
+  const [filas] = await conexion.query(
+    `SELECT TABLE_NAME AS tabla, INDEX_NAME AS indice, NON_UNIQUE AS repetible,
+            GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columnas
+     FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND LEFT(TABLE_NAME, 11) = 'notas_dgmit'
+     GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE ORDER BY TABLE_NAME, INDEX_NAME`,
+    [base]
+  );
+  return filas.map(f => `${f.tabla}.${f.indice} (${f.columnas}) repetible=${f.repetible}`);
+};
+
 const contar = async (tabla) => {
   const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_TEMPORAL}\`.\`${tabla}\``);
   return total;
@@ -86,7 +111,7 @@ describe('database/schema.sql', () => {
   it('usuarios admite el rol superadmin, contraseña nula, cargo, vínculo, último ingreso y versión de sesión', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('usuarios.'));
     for (const esperada of [
-      "usuarios.rol enum('superadmin','admin','editor','lector') null=NO default='lector' key=",
+      "usuarios.rol enum('superadmin','admin','editor','colaborador','lector') null=NO default='lector' key=",
       'usuarios.password_hash varchar(255) null=YES default=NULL key=',
       'usuarios.cargo varchar(200) null=YES default=NULL key=',
       "usuarios.vinculo enum('planta_permanente','planta_politica','contrato') null=YES default=NULL key=",
@@ -139,7 +164,8 @@ describe('database/schema.sql', () => {
   it('editor y auditoría de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 11.2)', async () => {
     const lista = await columnas(root, BASE_TEMPORAL);
     for (const esperada of [
-      "usuarios.rol enum('superadmin','admin','editor','lector') null=NO default='lector' key=",
+      // El rol colaborador (spec 2026-10-24-notas-dgmit) se suma después de editor
+      "usuarios.rol enum('superadmin','admin','editor','colaborador','lector') null=NO default='lector' key=",
       'cambios_pendientes.primer_recordatorio_at datetime null=YES default=NULL key=',
       'cambios_pendientes.revisado_como_respaldo tinyint(1) null=NO default=0 key=',
       'cambios_pendientes.aviso_sin_auditores_at datetime null=YES default=NULL key=',
@@ -199,6 +225,50 @@ describe('database/schema.sql', () => {
     const posicion = (columna) => lista.findIndex(c => c.startsWith(`datasets.${columna} `));
     assert.ok(lista.includes('datasets.requiere_nota tinyint(1) null=YES default=NULL key='), lista.join('\n'));
     assert.equal(posicion('requiere_nota'), posicion('tipo_gestion') + 1, lista.join('\n'));
+  });
+
+  // Notas DGMIT (spec 2026-10-24-notas-dgmit, 1 y 4): el rol Colaborador y las tres tablas nuevas
+  it('usuarios admite el rol colaborador (después de editor) y sigue con lector por defecto', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('usuarios.rol '));
+    assert.deepEqual(lista, ["usuarios.rol enum('superadmin','admin','editor','colaborador','lector') null=NO default='lector' key="]);
+  });
+
+  it('notas DGMIT: tres tablas con sus columnas, claves y FK (spec 2026-10-24-notas-dgmit, 4)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('notas_dgmit'));
+    assert.deepEqual(lista, [
+      'notas_dgmit.id int(11) null=NO default=null key=PRI',
+      'notas_dgmit.numero varchar(40) null=NO default=null key=',
+      "notas_dgmit.tipo enum('solicitud','reiteracion') null=NO default=null key=",
+      'notas_dgmit.recibida date null=NO default=null key=MUL',
+      'notas_dgmit.anulada tinyint(1) null=NO default=0 key=',
+      'notas_dgmit.creado_por int(11) null=YES default=NULL key=MUL',
+      'notas_dgmit.created_at timestamp null=YES default=current_timestamp() key=',
+      'notas_dgmit.updated_at timestamp null=YES default=current_timestamp() key=',
+      // La clave primaria es compuesta: una nota no repite un dataset
+      'notas_dgmit_datasets.nota_id int(11) null=NO default=null key=PRI',
+      'notas_dgmit_datasets.dataset_id int(11) null=NO default=null key=PRI',
+      'notas_dgmit_historial.id int(11) null=NO default=null key=PRI',
+      'notas_dgmit_historial.nota_id int(11) null=NO default=null key=MUL',
+      "notas_dgmit_historial.accion enum('correccion','anulacion') null=NO default=null key=",
+      'notas_dgmit_historial.motivo varchar(500) null=NO default=null key=',
+      'notas_dgmit_historial.anteriores longtext null=YES default=NULL key=',
+      'notas_dgmit_historial.usuario_id int(11) null=YES default=NULL key=MUL',
+      'notas_dgmit_historial.created_at timestamp null=YES default=current_timestamp() key='
+    ]);
+    const [[{ clave }]] = await root.query(
+      `SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS clave FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'notas_dgmit_datasets' AND INDEX_NAME = 'PRIMARY'`,
+      [BASE_TEMPORAL]
+    );
+    assert.equal(clave, 'nota_id,dataset_id');
+    // Borrar la nota o el dataset borra el vínculo; borrar a la persona deja la nota (y su historial) sin autor
+    assert.deepEqual(await clavesAjenasDgmit(root, BASE_TEMPORAL), [
+      'notas_dgmit.creado_por -> usuarios.id (fk_notas_dgmit_creado_por) borrado=SET NULL',
+      'notas_dgmit_datasets.dataset_id -> datasets.id (fk_notas_dgmit_datasets_dataset) borrado=CASCADE',
+      'notas_dgmit_datasets.nota_id -> notas_dgmit.id (fk_notas_dgmit_datasets_nota) borrado=CASCADE',
+      'notas_dgmit_historial.nota_id -> notas_dgmit.id (fk_notas_dgmit_historial_nota) borrado=CASCADE',
+      'notas_dgmit_historial.usuario_id -> usuarios.id (fk_notas_dgmit_historial_usuario) borrado=SET NULL'
+    ]);
   });
 
   it('el historial borra el vínculo al cambio (SET NULL) cuando se borra el cambio pendiente', async () => {
@@ -555,6 +625,8 @@ describe('rollback y migración de la entrega 3 (editor y auditoría)', () => {
     await root.query(sql('rollback-editor-auditoria.sql'));
     await root.query(sql('migracion-editor-auditoria.sql'));
     await root.query(sql('migracion-editor-auditoria.sql'));
+    // Esa migración es anterior al rol colaborador (spec 2026-10-24-notas-dgmit): lo vuelve a dejar migracion-notas-dgmit.sql
+    await root.query(sql('migracion-notas-dgmit.sql'));
     assert.deepEqual(await columnas(root, BASE_ROLLBACK), original);
   });
 });
@@ -615,5 +687,151 @@ describe('migración del editor que audita sin responsabilidad', () => {
     assert.deepEqual(await columnas(root, BASE_SIN_RESPONSABILIDAD), sinColumna);
     await root.query(sql(MIGRACION));
     assert.deepEqual(await columnas(root, BASE_SIN_RESPONSABILIDAD), original);
+  });
+});
+
+// Notas DGMIT (spec 2026-10-24-notas-dgmit, 4 y 11): el rol Colaborador y las tres tablas. La migración y su vuelta atrás,
+// sobre una base descartable creada con schema.sql
+describe('migración de las notas DGMIT', () => {
+  const BASE_DGMIT = 'rpad_schema_notas_dgmit_test';
+  const MIGRACION = 'migracion-notas-dgmit.sql';
+  const ROLLBACK = 'rollback-notas-dgmit.sql';
+  const ROL_ANTERIOR = "usuarios.rol enum('superadmin','admin','editor','lector') null=NO default='lector' key=";
+  const ROL_NUEVO = "usuarios.rol enum('superadmin','admin','editor','colaborador','lector') null=NO default='lector' key=";
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_DGMIT}\``);
+    await root.query(`CREATE DATABASE \`${BASE_DGMIT}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_DGMIT}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`
+        DROP TABLE notas_dgmit_historial;
+        DROP TABLE notas_dgmit_datasets;
+        DROP TABLE notas_dgmit;
+        ALTER TABLE usuarios MODIFY COLUMN rol enum('superadmin','admin','editor','lector') NOT NULL DEFAULT 'lector';`);
+    }
+  };
+  const crearUsuario = async (username, rol) => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO \`${BASE_DGMIT}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES (?, 'x', ?, ?, ?)`,
+      [username, username, `${username}@rpad.test`, rol]
+    );
+    return insertId;
+  };
+  // Una nota con un dataset y una anulación: lo que la vuelta atrás tiene que poder borrar con las FK puestas
+  const cargarUnaNota = async (usuarioId) => {
+    await root.query(`
+      INSERT INTO \`${BASE_DGMIT}\`.areas (id, nombre) VALUES (1, 'Área de prueba');
+      INSERT INTO \`${BASE_DGMIT}\`.datasets (id, titulo, area_id, frecuencia_id, tema_principal_id) VALUES (1, 'Dataset de prueba', 1, 6, 1);`);
+    await root.query(`INSERT INTO \`${BASE_DGMIT}\`.notas_dgmit (id, numero, tipo, recibida, creado_por) VALUES (1, 'NO-2026-0001', 'solicitud', '2026-10-01', ?)`, [usuarioId]);
+    await root.query(`INSERT INTO \`${BASE_DGMIT}\`.notas_dgmit_datasets (nota_id, dataset_id) VALUES (1, 1)`);
+    await root.query(`INSERT INTO \`${BASE_DGMIT}\`.notas_dgmit_historial (nota_id, accion, motivo, usuario_id) VALUES (1, 'anulacion', 'Prueba', ?)`, [usuarioId]);
+  };
+  const roles = async () => {
+    const [filas] = await root.query(`SELECT username, rol FROM \`${BASE_DGMIT}\`.usuarios ORDER BY username`);
+    return filas.map(f => [f.username, f.rol]);
+  };
+  const sinTablas = (lista) => !lista.some(c => c.startsWith('notas_dgmit'));
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_DGMIT}\``);
+  });
+
+  describe('migracion-notas-dgmit.sql', () => {
+    it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+      assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    });
+
+    it('la cabecera dice la spec y que va ANTES de subir el código', () => {
+      assert.match(cabecera(MIGRACION), /2026-10-24-notas-dgmit/);
+      assert.match(cabecera(MIGRACION), /Solo agrega/);
+      assert.match(cabecera(MIGRACION), /ANTES de subir el código/);
+      assert.match(cabecera(MIGRACION), /rollback-notas-dgmit\.sql/);
+    });
+
+    it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+      await crearBase({ conLoNuevo: false });
+      const anterior = await columnas(root, BASE_DGMIT);
+      assert.ok(sinTablas(anterior), 'la base de partida ya tiene las tablas');
+      assert.ok(anterior.includes(ROL_ANTERIOR), anterior.filter(c => c.startsWith('usuarios.rol')).join('\n'));
+      await root.query(sql(MIGRACION));
+      await root.query(sql(MIGRACION));
+      assert.deepEqual(await columnas(root, BASE_DGMIT), await columnas(root, BASE_TEMPORAL));
+      // Y también las claves foráneas y los índices, que las columnas no muestran
+      assert.deepEqual(await clavesAjenasDgmit(root, BASE_DGMIT), await clavesAjenasDgmit(root, BASE_TEMPORAL));
+      assert.deepEqual(await indicesDgmit(root, BASE_DGMIT), await indicesDgmit(root, BASE_TEMPORAL));
+    });
+
+    it('no cambia el rol de nadie y desde entonces admite colaborador', async () => {
+      await crearBase({ conLoNuevo: false });
+      for (const rol of ['superadmin', 'admin', 'editor', 'lector']) await crearUsuario(`t_${rol}`, rol);
+      await root.query(sql(MIGRACION));
+      assert.deepEqual(await roles(), [['t_admin', 'admin'], ['t_editor', 'editor'], ['t_lector', 'lector'], ['t_superadmin', 'superadmin']]);
+      await crearUsuario('t_colaborador', 'colaborador');
+      assert.deepEqual((await roles()).find(([username]) => username === 't_colaborador'), ['t_colaborador', 'colaborador']);
+    });
+  });
+
+  describe('rollback-notas-dgmit.sql', () => {
+    it('se pega tal cual en phpMyAdmin, y su cabecera dice el orden, que se pierden las notas y que va antes que las del editor', () => {
+      assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+      assert.match(cabecera(ROLLBACK), /migracion-notas-dgmit\.sql/);
+      assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+      assert.match(cabecera(ROLLBACK), /se pierden/i);
+      assert.match(cabecera(ROLLBACK), /colaborador/i);
+      assert.match(cabecera(ROLLBACK), /rollback-editor-auditoria\.sql/);
+      // Borra primero el historial, después los vínculos y al final la nota: así no choca con sus FK
+      const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
+      assert.deepEqual(borrados, ['notas_dgmit_historial', 'notas_dgmit_datasets', 'notas_dgmit']);
+    });
+
+    it('sin colaboradores: borra las tres tablas y el rol vuelve a cuatro valores', async () => {
+      await crearBase({ conLoNuevo: true });
+      await crearUsuario('t_editor', 'editor');
+      const autor = await crearUsuario('t_lector', 'lector');
+      await cargarUnaNota(autor);
+      await root.query(sql(ROLLBACK));
+      await root.query(sql(ROLLBACK));
+      const lista = await columnas(root, BASE_DGMIT);
+      assert.ok(sinTablas(lista), lista.filter(c => c.startsWith('notas_dgmit')).join('\n'));
+      assert.ok(lista.includes(ROL_ANTERIOR), lista.filter(c => c.startsWith('usuarios.rol')).join('\n'));
+      assert.deepEqual(await roles(), [['t_editor', 'editor'], ['t_lector', 'lector']]);
+      // La migración vuelve a dejar exactamente la estructura de schema.sql
+      await root.query(sql(MIGRACION));
+      assert.deepEqual(await columnas(root, BASE_DGMIT), await columnas(root, BASE_TEMPORAL));
+      assert.deepEqual(await clavesAjenasDgmit(root, BASE_DGMIT), await clavesAjenasDgmit(root, BASE_TEMPORAL));
+    });
+
+    it('con un colaborador: lo pasa a lector y el rol vuelve a cuatro valores', async () => {
+      await crearBase({ conLoNuevo: true });
+      const colaborador = await crearUsuario('t_colaborador', 'colaborador');
+      await crearUsuario('t_editor', 'editor');
+      await cargarUnaNota(colaborador);
+      await root.query(sql(ROLLBACK));
+      const lista = await columnas(root, BASE_DGMIT);
+      assert.ok(lista.includes(ROL_ANTERIOR), lista.filter(c => c.startsWith('usuarios.rol')).join('\n'));
+      assert.ok(!lista.includes(ROL_NUEVO));
+      assert.ok(sinTablas(lista));
+      assert.deepEqual(await roles(), [['t_colaborador', 'lector'], ['t_editor', 'editor']]);
+    });
+
+    it('en el orden de la cabecera, antes que la vuelta atrás del editor, aun con un colaborador y un editor', async () => {
+      await crearBase({ conLoNuevo: true });
+      await crearUsuario('t_colaborador', 'colaborador');
+      await crearUsuario('t_editor', 'editor');
+      await crearUsuario('t_admin', 'admin');
+      await root.query(sql(ROLLBACK));
+      await root.query(sql('rollback-editor-sin-responsabilidad.sql'));
+      await root.query(sql('rollback-editor-auditoria.sql'));
+      const lista = await columnas(root, BASE_DGMIT);
+      assert.ok(lista.includes("usuarios.rol enum('superadmin','admin','lector') null=NO default='lector' key="),
+        lista.filter(c => c.startsWith('usuarios.rol')).join('\n'));
+      assert.deepEqual(await roles(), [['t_admin', 'admin'], ['t_colaborador', 'lector'], ['t_editor', 'admin']]);
+    });
   });
 });
