@@ -113,7 +113,7 @@ Herramientas → Notas (`notas.html` + `js/notas.js`). Título de la página: "G
 
 ### 4.1 La hoja
 
-- **Tamaño oficio 21,6 × 35,6 cm** (8,5 × 14 in, el de la hoja membretada que usa la Municipalidad y el papel en el que se imprime, según el usuario; "Legal" en Word). En la hoja membretada el encabezado es una imagen de 1241 px de ancho estirada a todo el ancho de la hoja: el tamaño de la hoja lo fija la sección, no la imagen.
+- **Tamaño oficio 21,6 × 35,6 cm** (216 × 356 mm, "Legal" 8½ × 14″ en Word): el de la hoja membretada que usa la Municipalidad y el del papel en el que se imprime (resma "Oficio 216 × 356 mm / Legal 8 1/2" × 14"", confirmado por el usuario). En la hoja membretada el encabezado es una imagen de 1241 px de ancho estirada a todo el ancho de la hoja: el tamaño de la hoja lo fija la sección, no la imagen.
 - Márgenes como la hoja membretada: 3 cm a los costados, 3,5 cm arriba, 2,5 cm abajo; encabezado pegado al borde superior.
 - **Encabezado**: la imagen del membrete a todo el ancho (la misma de la hoja membretada y de las Notas Digitales: la de `notas_digitales_config.membrete_imagen`). **Marca de agua**: el isotipo de Comodoro Rivadavia, grande, centrado y muy aclarado, en todas las hojas. **Pie**: el texto de `notas_digitales_config.membrete_pie` ("www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.") centrado, en letra chica, y debajo "Página X de Y".
 - Arial 12 en el cuerpo; la tabla en 10; el "Qué se solicita" en 9.
