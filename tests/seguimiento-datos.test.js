@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
 import { crearArea, crearDataset, crearNota, crearEmailViejo, limpiarBase, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { CASOS } from './seguimiento-casos.js';
+import { movimientosDe } from '../services/seguimientoReglas.js';
 
 const MOMENTO = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 let base, dbReal, fuentesDe;
@@ -99,8 +100,18 @@ describe('fuentesDe: los datasets', () => {
       id, titulo: 'Dataset visto', area: 'Área del seguimiento', area_superior: 'Secretaría de prueba', area_id: areaId,
       tipo_gestion: 'externa', requiere_nota: 1, frecuencia: 'Trimestralmente', meses: 3, proxima: '2026-12-31', datos_al: '2026-09-30',
       ultima: '2026-09-15', tipo_pedido: 'acumulado', url_dataset: 'https://datos.comodoro.gov.ar/dataset/visto',
-      activo: true, alta: '2026-03-04 21:30:15'
+      activo: true, alta: '2026-03-04 21:30:15', tema_principal: 'Economía y Finanzas'
     });
+  });
+
+  // El tema principal, por su nombre (spec 2026-10-24-metricas-y-reportes: las métricas se filtran por tema)
+  it('el dataset trae tema_principal', async () => {
+    const turismo = await crearDataset({ vencimiento: '2026-12-31' });
+    await query("UPDATE datasets SET tema_principal_id = (SELECT id FROM temas WHERE nombre = 'Turismo y Deportes') WHERE id = ?", [turismo]);
+    const economia = await crearDataset({ vencimiento: '2026-12-31' });
+    const mapa = await fuentesDe([turismo, economia]);
+    assert.strictEqual(mapa.get(turismo).dataset.tema_principal, 'Turismo y Deportes');
+    assert.strictEqual(mapa.get(economia).dataset.tema_principal, 'Economía y Finanzas');
   });
 
   // «Requiere nota DGMIT» (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.7): 1 es Sí, 0 es No (un valor, no un vacío) y
@@ -226,6 +237,104 @@ describe('fuentesDe: los cambios', () => {
     const [cambio] = (await fuentesDe([id])).get(id).cambios;
     assert.equal(cambio.reviso, null);
     assert.equal(cambio.propuso, 'Ana Prueba Uno');
+  });
+});
+
+// Los «Recibido el» y los orígenes de las actualizaciones viejas, importados de un Excel a actualizaciones_recibido (spec
+// 2026-10-24-metricas-y-reportes, 4): se suman a `nuevos` sin reescribir datos_nuevos y sin pisar lo que el cambio ya decía
+describe('fuentesDe: lo importado (actualizaciones_recibido)', () => {
+  const importar = (cambioId, recibido, origen) => query(
+    'INSERT INTO actualizaciones_recibido (cambio_id, recibido_el, origen_datos) VALUES (?, ?, ?)', [cambioId, recibido, origen]
+  );
+  // Una actualización vieja: mueve la carga y la próxima, sin «Recibido el» ni origen
+  const actualizacionVieja = (datasetId, propuso, extra = {}) => insertarCambio({
+    datasetId, propuso, estado: 'aprobado', creado: '2026-02-04 09:00:00', revisado: '2026-02-04 09:58:15',
+    nuevos: { ultima_actualizacion: '2026-02-04', proxima_actualizacion: '2026-07-31', ...extra },
+    anteriores: { ultima_actualizacion: '2025-12-17', proxima_actualizacion: '2026-01-31' }
+  });
+
+  it('fuentesDe suma a un cambio viejo el recibido y el origen importados', async () => {
+    const propuso = await crearUsuario('Ana Prueba Uno');
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-07-31', ultima: '2026-02-04', requiereNota: 1 });
+    const viejo = await actualizacionVieja(id, propuso);
+    // Ya traía la fecha: se conserva la suya y solo se suma el origen
+    const conFecha = await actualizacionVieja(id, propuso, { recibido_el: '2026-02-01' });
+    // Lo traía vacío (el modal de antes guardaba null): cuenta como que no lo trae
+    const conNull = await actualizacionVieja(id, propuso, { recibido_el: null });
+    // Importado sin fecha: solo el origen
+    const sinFecha = await actualizacionVieja(id, propuso);
+    const sinImportar = await actualizacionVieja(id, propuso);
+    await importar(viejo, '2026-02-02', 'fuente_publica');
+    await importar(conFecha, '2026-01-30', 'area');
+    await importar(conNull, '2026-02-03', 'area');
+    await importar(sinFecha, null, 'area');
+
+    const { cambios } = (await fuentesDe([id])).get(id);
+    const nuevos = Object.fromEntries(cambios.map((c) => [c.id, c.nuevos]));
+    const base = { ultima_actualizacion: '2026-02-04', proxima_actualizacion: '2026-07-31' };
+    assert.deepEqual(nuevos[viejo], { ...base, recibido_el: '2026-02-02', origen_datos: 'fuente_publica' });
+    assert.deepEqual(nuevos[conFecha], { ...base, recibido_el: '2026-02-01', origen_datos: 'area' });
+    assert.deepEqual(nuevos[conNull], { ...base, recibido_el: '2026-02-03', origen_datos: 'area' });
+    assert.deepEqual(nuevos[sinFecha], { ...base, origen_datos: 'area' });
+    assert.deepEqual(nuevos[sinImportar], base);
+    // La fecha importada viene como texto, sin correrse un día
+    assert.strictEqual(nuevos[viejo].recibido_el, '2026-02-02');
+    // Y se ve en el movimiento del Seguimiento
+    const movimiento = movimientosDe((await fuentesDe([id])).get(id)).find((m) => m.extra.cambio_id === viejo);
+    assert.equal(movimiento.detalle,
+      `Cargado en el portal el 04/02/2026. Recibido el 02/02/2026. Origen de los datos: Fuente pública. Próxima: 31/07/2026. Cambio #${viejo}.`);
+    // datos_nuevos no se reescribe
+    const [fila] = await query("SELECT JSON_CONTAINS_PATH(datos_nuevos, 'one', '$.recibido_el', '$.origen_datos') tiene FROM cambios_pendientes WHERE id = ?", [viejo]);
+    assert.equal(fila.tiene, 0);
+  });
+
+  // La consulta va aislada, como la de las notas DGMIT: fuentesDe también arma el anexo de la reiteración. Se renombra la tabla
+  // solo en la base de prueba de este archivo, y se vuelve a su nombre pase lo que pase
+  it('si la tabla de importados no existe, fuentesDe sale igual', async () => {
+    const propuso = await crearUsuario('Ana Prueba Uno');
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-07-31', ultima: '2026-02-04', requiereNota: 1 });
+    const viejo = await actualizacionVieja(id, propuso);
+    await importar(viejo, '2026-02-02', 'fuente_publica');
+    const aviso = await crearNota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-06-22', numero: 2, anio: 2026, datasets: [{ id, vencimiento: '2026-07-31' }] });
+    assert.equal((await fuentesDe([id])).get(id).cambios[0].nuevos.origen_datos, 'fuente_publica');
+
+    await asegurarBaseDePrueba();
+    const errores = [];
+    const consoleError = console.error;
+    await query('RENAME TABLE actualizaciones_recibido TO actualizaciones_recibido_x');
+    try {
+      console.error = (...args) => { errores.push(args); };
+      const fuentes = (await fuentesDe([id])).get(id);
+      console.error = consoleError;
+      assert.deepEqual(fuentes.cambios.map((c) => c.id), [viejo]);
+      assert.deepEqual(fuentes.cambios[0].nuevos, { ultima_actualizacion: '2026-02-04', proxima_actualizacion: '2026-07-31' });
+      assert.equal(fuentes.dataset.id, id);
+      assert.deepEqual(fuentes.notas.map((n) => n.id), [aviso]);
+      assert.equal(errores.length, 1);
+      assert.equal(errores[0][0], 'No se pudieron leer los «Recibido el» importados:');
+      assert.equal(errores[0][1]?.code, 'ER_NO_SUCH_TABLE');
+    } finally {
+      console.error = consoleError;
+      await query('RENAME TABLE actualizaciones_recibido_x TO actualizaciones_recibido');
+    }
+  });
+
+  it('sin cambios no se consulta la tabla de importados', async () => {
+    const id = await crearDataset({ vencimiento: '2026-12-31' });
+    await asegurarBaseDePrueba();
+    const errores = [];
+    const consoleError = console.error;
+    await query('RENAME TABLE actualizaciones_recibido TO actualizaciones_recibido_x');
+    try {
+      console.error = (...args) => { errores.push(args); };
+      const fuentes = (await fuentesDe([id])).get(id);
+      console.error = consoleError;
+      assert.deepEqual(fuentes.cambios, []);
+      assert.equal(errores.length, 0);
+    } finally {
+      console.error = consoleError;
+      await query('RENAME TABLE actualizaciones_recibido_x TO actualizaciones_recibido');
+    }
   });
 });
 

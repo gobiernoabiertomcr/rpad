@@ -7,6 +7,7 @@ import { NOMBRES_TIPO_PEDIDO, estadoDelDataset, tipoEfectivo, pedido as calcular
 import { cintaDe } from './seguimientoCinta.js';
 import { normalizarRequiereNota, textoRequiereNota } from './requiereNotaReglas.js';
 import { TEXTO_TIPO_NOTA_DGMIT } from './notasDgmitReglas.js';
+import { textoOrigen } from './registroReglas.js';
 
 // Desde cuándo hay registro: el primer email registrado es del 06/12/2025 y el primer cambio, del 26/01/2026
 export const REGISTRO_DESDE = Object.freeze({ envios: '2025-12-06', cambios: '2026-01-26' });
@@ -122,11 +123,13 @@ export const unirAlta = (dataset, altasSinDataset) => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 // Los campos que cuentan, en el orden en que se dicen. `rotulo`: el nombre en la comparación. Los que tienen `frase` la dicen
-// con su valor nuevo; `otro`: no tiene frase propia y va junto en "Cambió: …" (con `enTexto`).
+// con su valor nuevo; `otro`: no tiene frase propia y va junto en "Cambió: …" (con `enTexto`). Los de tipo 'texto' dicen su valor
+// con `texto` (el origen de los datos, spec 2026-10-24-metricas-y-reportes, 4: «Fuente pública», «Los entregó el área» o —).
 const CAMPOS = [
   { campo: 'ultima_actualizacion', rotulo: 'Cargado en el portal', tipo: 'fecha', frase: (dia) => `Cargado en el portal el ${dia}.` },
   { campo: 'datos_al', rotulo: 'Datos al', tipo: 'fecha', frase: (dia) => `Datos al ${dia}.` },
   { campo: 'recibido_el', rotulo: 'Recibido el', tipo: 'fecha', frase: (dia) => `Recibido el ${dia}.` },
+  { campo: 'origen_datos', rotulo: 'Origen de los datos', tipo: 'texto', texto: textoOrigen, frase: (texto) => `Origen de los datos: ${texto}.` },
   { campo: 'proxima_actualizacion', rotulo: 'Próxima actualización', tipo: 'fecha' },
   { campo: 'frecuencia_id', rotulo: 'Frecuencia', tipo: 'catalogo', catalogo: 'frecuencias', prefijo: 'Frecuencia' },
   { campo: 'area_id', rotulo: 'Área responsable', tipo: 'catalogo', catalogo: 'areas', prefijo: 'Área' },
@@ -146,9 +149,11 @@ const CAMPOS = [
 const ordenados = (valores) => [...valores].map(String).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
 
 // El valor de un campo para compararlo: las fechas por su día, las listas ordenadas y el resto como texto recortado. Requiere
-// nota DGMIT por su texto (de la base llega 0 o 1; 1, '1' y true son lo mismo, y sin dato es vacío)
+// nota DGMIT por su texto (de la base llega 0 o 1; 1, '1' y true son lo mismo, y sin dato es vacío), y los de tipo 'texto' también
+// (un valor que no es un origen es como vacío)
 const normalizado = (k, valor) => {
   if (k.campo === 'requiere_nota') return textoRequiereNota(valor, '');
+  if (k.tipo === 'texto') return k.texto(valor, '');
   if (k.tipo === 'fecha') return diaDe(valor) ?? (textoVacio(valor) ? '' : String(valor).trim());
   if (Array.isArray(valor)) return ordenados(valor).join(',');
   return textoVacio(valor) ? '' : String(valor).trim();
@@ -165,6 +170,7 @@ const nombreEnCatalogo = (k, valor, catalogos) => {
 // de la ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3 y 1.7)
 const textoDelValor = (k, valor, catalogos) => {
   if (k.campo === 'requiere_nota') return textoRequiereNota(valor);
+  if (k.tipo === 'texto') return k.texto(valor);
   if (k.tipo === 'fecha') return formatoCorto(diaDe(valor));
   if (Array.isArray(valor)) {
     if (!valor.length) return '—';
@@ -189,6 +195,7 @@ const frasesDeLosCampos = (cambio, cambiados, catalogos) => {
   const anteriores = objeto(cambio.anteriores);
   const cambiaLaCarga = cambiados.some((k) => k.campo === 'ultima_actualizacion');
   const frases = cambiados.filter((k) => !k.otro).map((k) => {
+    if (k.tipo === 'texto') return k.frase(textoDelValor(k, nuevos[k.campo], catalogos));
     if (k.tipo === 'catalogo') {
       return `${k.prefijo}: ${textoDelValor(k, anteriores[k.campo], catalogos)} a ${textoDelValor(k, nuevos[k.campo], catalogos)}.`;
     }
@@ -607,28 +614,44 @@ export const ultimoAviso = (fuentes) => {
   return dias.length === 0 ? null : dias.reduce((mayor, dia) => (dia > mayor ? dia : mayor));
 };
 
-// La nota DGMIT del ciclo abierto (spec 2026-10-24-notas-dgmit, 5). Una nota DGMIT no es un aviso del RPAD: no cuenta en
-// avisosDelCiclo ni en ultimoAviso, y no cambia los ciclos, los hitos ni el estado. Cuentan las vigentes (no anuladas y recibidas
-// hasta `hoy`). Con ciclos, la más reciente (por recibida, después por el momento de la carga y después por id) de las que son del
-// ciclo abierto: el que regía el día en que el área la recibió, a las 00:00, así que si ese mismo día se aprobó la actualización que
-// cerró el ciclo anterior, la nota es de ese ciclo (se mandó antes de que llegaran los datos). Si ningún ciclo regía ese día (anterior
-// al primero, o posterior a la baja), cicloDelAviso da el 0, que con un solo ciclo es el abierto: ahí la nota cuenta para el ciclo
-// abierto solo si no es anterior a la última carga en el portal (`dataset.ultima`; sin ella, o si no es una fecha, cuenta), porque
-// una nota anterior ya la respondió esa carga o una anterior (ruling R7 de la revisión final). Sin ciclos (eventual o sin fecha), la
-// vigente más reciente. { numero, tipo, recibida } o null.
+// Las notas DGMIT vigentes de un dataset (no anuladas y recibidas hasta `hoy`), leídas, de la más vieja a la más nueva: por recibida,
+// después por el momento de la carga y después por id
+const notasDgmitVigentes = (fuentes, hoy) => lista(fuentes.notasDgmit).map(notaDgmitLeida)
+  .filter((n) => n && !n.anulada && n.recibida <= hoy)
+  .sort((a, b) => comparar(a.recibida, b.recibida) || comparar(a.cargada ?? '', b.cargada ?? '') || a.id - b.id);
+
+// Las notas DGMIT de cada ciclo (spec 2026-10-24-notas-dgmit, 5; las métricas las ubican igual que el Seguimiento: spec
+// 2026-10-24-metricas-y-reportes, 1.2). Una nota DGMIT no es un aviso del RPAD: no cuenta en avisosDelCiclo ni en ultimoAviso, y no
+// cambia los ciclos, los hitos ni el estado. Cuentan las vigentes. Cada una es del ciclo que regía el día en que el área la recibió,
+// a las 00:00 (cicloDelAviso), así que si ese mismo día se aprobó la actualización que cerró un ciclo, la nota es de ese ciclo (se
+// mandó antes de que llegaran los datos). Si ningún ciclo regía ese día (anterior al primero, o posterior a la baja), cicloDelAviso
+// da el 0; si ese 0 es el abierto (un solo ciclo), la nota es suya solo si no es anterior a la última carga en el portal
+// (`dataset.ultima`; sin ella, o si no es una fecha, lo es), porque una nota anterior ya la respondió esa carga o una anterior
+// (ruling R7 de la revisión final); si no, no es de ningún ciclo. Una lista por ciclo, en el orden de `ciclos`, cada una con sus
+// notas { id, numero, tipo, recibida, anulada, cargada } de la más vieja a la más nueva (por recibida, después por el momento de
+// la carga y después por id). Sin ciclos (eventual o sin fecha), [].
+export const notasDgmitPorCiclo = (fuentes, ciclos, hoy) => {
+  if (!Array.isArray(ciclos)) return [];
+  const porCiclo = ciclos.map(() => []);
+  if (ciclos.length === 0 || !fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return porCiclo;
+  const abierto = ciclos.length - 1;
+  const ultima = diaDe(objeto(fuentes.dataset).ultima);
+  for (const nota of notasDgmitVigentes(fuentes, hoy)) {
+    const momento = `${nota.recibida} 00:00:00`;
+    const indice = cicloDelAviso(ciclos, momento);
+    // R7: el ciclo 0 de respaldo, cuando es el abierto, no se queda con una nota anterior a la última carga
+    if (indice === abierto && !algunCicloRige(ciclos, momento) && ultima !== null && nota.recibida < ultima) continue;
+    porCiclo[indice].push(nota);
+  }
+  return porCiclo;
+};
+
+// La nota DGMIT del ciclo abierto (spec 2026-10-24-notas-dgmit, 5): la más reciente de las suyas en notasDgmitPorCiclo (la última
+// de la lista del último ciclo). Sin ciclos (eventual o sin fecha), la vigente más reciente. { numero, tipo, recibida } o null.
 export const notaDgmitDelCiclo = (fuentes, ciclos, hoy) => {
   if (!fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return null;
   const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
-  const ultima = diaDe(objeto(fuentes.dataset).ultima);
-  const delCiclo = (nota) => {
-    if (!hayCiclos) return true;
-    const momento = `${nota.recibida} 00:00:00`;
-    if (cicloDelAviso(ciclos, momento) !== ciclos.length - 1) return false;
-    return algunCicloRige(ciclos, momento) || ultima === null || nota.recibida >= ultima;
-  };
-  const [nota] = lista(fuentes.notasDgmit).map(notaDgmitLeida)
-    .filter((n) => n && !n.anulada && n.recibida <= hoy && delCiclo(n))
-    .sort((a, b) => comparar(b.recibida, a.recibida) || comparar(b.cargada ?? '', a.cargada ?? '') || b.id - a.id);
+  const nota = (hayCiclos ? notasDgmitPorCiclo(fuentes, ciclos, hoy).at(-1) : notasDgmitVigentes(fuentes, hoy)).at(-1);
   return nota ? { numero: nota.numero, tipo: nota.tipo, recibida: nota.recibida } : null;
 };
 

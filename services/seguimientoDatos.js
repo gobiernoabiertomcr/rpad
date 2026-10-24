@@ -9,6 +9,11 @@
 // anuladas). Su consulta va aislada (notasDgmitDe): fuentesDe también arma el anexo de la reiteración, y si falla (por ejemplo,
 // sin la migración) cada dataset queda con notasDgmit vacía y el resto de las fuentes sale como siempre.
 //
+// Lo importado (spec 2026-10-24-metricas-y-reportes, 4): los «Recibido el» y los orígenes de los datos de las actualizaciones
+// viejas que no los traían, cargados una vez en `actualizaciones_recibido` (por cambio_id). Completan `nuevos` del cambio sin
+// reescribir datos_nuevos (conImportado). Su consulta también va aislada (importadosDe), por lo mismo que la de las notas DGMIT.
+// dataset.tema_principal: el nombre del tema principal (las métricas se filtran por tema).
+//
 // Fechas y momentos (la base no usa `dateStrings` ni `timezone`: sin esto, DATE y TIMESTAMP volverían como Date):
 // - DATE → `DATE_FORMAT(col, '%Y-%m-%d')`: 'AAAA-MM-DD'.
 // - TIMESTAMP → `UNIX_TIMESTAMP(col)` y `ahoraArgentina(...)`: 'AAAA-MM-DD HH:MM:SS' en hora argentina, sea cual sea la zona
@@ -48,10 +53,22 @@ const SQL_CAMBIOS = `SELECT c.id, c.tipo_cambio tipo, c.estado, c.dataset_id, UN
   LEFT JOIN usuarios u ON u.id = c.usuario_id
   LEFT JOIN usuarios r ON r.id = c.revisor_id`;
 
-const aCambio = (c) => ({
+// Lo importado completa lo que el cambio no dice: `recibido_el` y `origen_datos` se suman a `nuevos` solo si el cambio no los trae
+// (o los trae vacíos: el modal de antes guardaba null) y lo importado no es null. Nunca pisa lo que guardó el cambio, y devuelve un
+// objeto nuevo (o el mismo `nuevos` si no hay nada que sumar).
+const conImportado = (nuevos, importado) => {
+  if (!importado || !nuevos || typeof nuevos !== 'object') return nuevos;
+  const suma = Object.fromEntries(['recibido_el', 'origen_datos']
+    .filter((clave) => nuevos[clave] == null && importado[clave] != null).map((clave) => [clave, importado[clave]]));
+  return Object.keys(suma).length === 0 ? nuevos : { ...nuevos, ...suma };
+};
+
+// `importados`: Map<cambio_id, { recibido_el, origen_datos }> de importadosDe (sin él, nada que sumar)
+const aCambio = (c, importados = new Map()) => ({
   id: c.id, tipo: c.tipo, estado: c.estado, creado: momento(c.creado_ts), revisado: momento(c.revisado_ts),
   propuso: c.propuso ?? null, reviso: c.reviso ?? null, motivo: c.motivo ?? null,
-  nuevos: leerJson(c.datos_nuevos), anteriores: leerJson(c.datos_anteriores), dataset_id: c.dataset_id ?? null
+  nuevos: conImportado(leerJson(c.datos_nuevos), importados.get(c.id)), anteriores: leerJson(c.datos_anteriores),
+  dataset_id: c.dataset_id ?? null
 });
 
 const aNota = (n) => ({
@@ -64,7 +81,7 @@ const aDataset = (d) => ({
   id: d.id, titulo: d.titulo, area: d.area, area_superior: d.area_superior ?? null, area_id: d.area_id, tipo_gestion: d.tipo_gestion,
   requiere_nota: d.requiere_nota ?? null, frecuencia: d.frecuencia, meses: d.meses ?? null, proxima: d.proxima ?? null,
   datos_al: d.datos_al ?? null, ultima: d.ultima ?? null, tipo_pedido: d.tipo_pedido ?? null, url_dataset: d.url_dataset ?? null,
-  activo: Boolean(d.activo), alta: momento(d.alta_ts)
+  activo: Boolean(d.activo), alta: momento(d.alta_ts), tema_principal: d.tema_principal ?? null
 });
 
 // Reparte las filas de auditoría entre los datasets: datasetsDeCambio dice de qué datasets es cada cambio (o alta unida). Cada
@@ -135,6 +152,23 @@ const notasDgmitDe = async (datasetIds) => {
   }
 };
 
+// Los «Recibido el» y los orígenes importados de los cambios, Map<cambio_id, { recibido_el, origen_datos }> (cualquiera de los dos
+// puede ser null). Sin cambios, ni consulta. Nunca tira: si algo falla (por ejemplo, sin la migración), lo registra y devuelve un Map
+// vacío (una falla acá no puede frenar el anexo de la reiteración).
+const importadosDe = async (cambioIds) => {
+  if (cambioIds.length === 0) return new Map();
+  try {
+    const [filas] = await pool.query(
+      `SELECT cambio_id, DATE_FORMAT(recibido_el, '%Y-%m-%d') recibido_el, origen_datos FROM actualizaciones_recibido WHERE cambio_id IN (?)`,
+      [cambioIds]
+    );
+    return new Map(filas.map((f) => [f.cambio_id, { recibido_el: f.recibido_el ?? null, origen_datos: f.origen_datos ?? null }]));
+  } catch (error) {
+    console.error('No se pudieron leer los «Recibido el» importados:', error);
+    return new Map();
+  }
+};
+
 // `ids`: lista de ids de datasets, o null (también sin argumento) para todos. Devuelve Map<id, Fuentes>; un id que no existe
 // no figura. Los inactivos también vienen (activo: false): el Seguimiento sirve para ver qué pasó con un dataset dado de baja.
 export const fuentesDe = async (ids = null) => {
@@ -145,10 +179,11 @@ export const fuentesDe = async (ids = null) => {
     `SELECT d.id, d.titulo, a.nombre area, a.area_superior, d.area_id, d.tipo_gestion, d.requiere_nota, f.nombre frecuencia, f.meses,
        DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') proxima, DATE_FORMAT(d.datos_al, '%Y-%m-%d') datos_al,
        DATE_FORMAT(d.ultima_actualizacion, '%Y-%m-%d') ultima, d.tipo_pedido, d.url_dataset, d.activo,
-       UNIX_TIMESTAMP(d.created_at) alta_ts
+       UNIX_TIMESTAMP(d.created_at) alta_ts, t.nombre tema_principal
      FROM datasets d
      JOIN areas a ON a.id = d.area_id
      JOIN frecuencias f ON f.id = d.frecuencia_id
+     LEFT JOIN temas t ON t.id = d.tema_principal_id
      ${pedidos ? 'WHERE d.id IN (?)' : ''}
      ORDER BY d.id`,
     pedidos ? [pedidos] : []
@@ -228,24 +263,25 @@ export const fuentesDe = async (ids = null) => {
     }
     for (const id of delDataset) agregar(datasetsDeCambio, id, d.id);
   }
-  let auditoriasDe = new Map();
-  if (datasetsDeCambio.size > 0) {
-    const [auditorias] = await pool.query(
+  // importadosDe nunca rechaza: si su consulta falla, los cambios salen como siempre, sin lo importado
+  const [auditorias, importados] = await Promise.all([
+    datasetsDeCambio.size === 0 ? [] : pool.query(
       `SELECT n.id, n.numero, n.anio, DATE_FORMAT(n.fecha, '%Y-%m-%d') fecha, n.estado, nc.cambio_id, nc.seccion,
          cp.nombre_completo creado_por, fi.nombre_completo firmante
        FROM notas_digitales_cambios nc JOIN notas_digitales n ON n.id = nc.nota_id
        LEFT JOIN usuarios cp ON cp.id = n.creado_por
        LEFT JOIN usuarios fi ON fi.id = n.firmante_id
        WHERE n.es_prueba = 0 AND nc.cambio_id IN (?) ORDER BY n.fecha, n.id`, [[...datasetsDeCambio.keys()]]
-    );
-    auditoriasDe = repartirAuditorias(auditorias, datasetsDeCambio);
-  }
+    ).then(([filas]) => filas),
+    importadosDe(cambios.map((c) => c.id))
+  ]);
+  const auditoriasDe = repartirAuditorias(auditorias, datasetsDeCambio);
 
   for (const d of datasets) {
     resultado.set(d.id, {
       dataset: aDataset(d),
       altasSinDataset: altasDe.get(d.id) ?? [],
-      cambios: (cambiosDe.get(d.id) ?? []).map(aCambio),
+      cambios: (cambiosDe.get(d.id) ?? []).map((c) => aCambio(c, importados)),
       historial: (historialDe.get(d.id) ?? []).map((h) => ({ fecha: h.fecha, creado: momento(h.creado_ts), usuario: h.usuario ?? null, cambio_id: h.cambio_id ?? null })),
       emails: emailsDe.get(d.id) ?? [],
       notas: (notasDe.get(d.id) ?? []).map(aNota),

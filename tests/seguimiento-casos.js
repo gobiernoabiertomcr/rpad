@@ -7,6 +7,8 @@
 // los tests de «Sí» y de «No» lo pisan en una copia del dataset.
 // notasDgmit: el dump también es anterior a las notas DGMIT (spec 2026-10-24-notas-dgmit), así que es una lista vacía en todos los
 // casos; los tests que las necesitan las arman en una copia.
+// dataset.tema_principal: el nombre del tema principal de cada dataset en el dump (spec 2026-10-24-metricas-y-reportes, las
+// métricas se filtran por tema).
 export const HOY_DE_LOS_CASOS = '2026-10-20';
 
 export const CATALOGOS = {
@@ -91,7 +93,8 @@ export const CASOS = {
       "tipo_pedido": "ejercicio",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/presupuesto-municipal",
       "activo": true,
-      "alta": "2025-11-30 18:00:52"
+      "alta": "2025-11-30 18:00:52",
+      "tema_principal": "Economía y Finanzas"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -279,7 +282,8 @@ export const CASOS = {
       "tipo_pedido": "acumulado",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/pedidos-de-acceso-a-la-informacion-publica",
       "activo": true,
-      "alta": "2025-12-01 09:56:13"
+      "alta": "2025-12-01 09:56:13",
+      "tema_principal": "Gobierno y Gestión Pública"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -575,7 +579,8 @@ export const CASOS = {
       "tipo_pedido": "acumulado",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/pauta-publicitaria",
       "activo": true,
-      "alta": "2025-12-01 09:57:48"
+      "alta": "2025-12-01 09:57:48",
+      "tema_principal": "Gobierno y Gestión Pública"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -918,7 +923,8 @@ export const CASOS = {
       "tipo_pedido": "acumulado",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/parque-automotor",
       "activo": true,
-      "alta": "2025-12-01 10:01:35"
+      "alta": "2025-12-01 10:01:35",
+      "tema_principal": "Economía y Finanzas"
     },
     "altasSinDataset": [],
     "cambios": [],
@@ -1085,7 +1091,8 @@ export const CASOS = {
       "tipo_pedido": "foto",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/hoteleria-en-comodoro-rivadavia",
       "activo": true,
-      "alta": "2025-12-01 11:40:23"
+      "alta": "2025-12-01 11:40:23",
+      "tema_principal": "Turismo y Deportes"
     },
     "altasSinDataset": [],
     "cambios": [],
@@ -1148,7 +1155,8 @@ export const CASOS = {
       "tipo_pedido": "relevamiento",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/infraestructura-deportiva-al-aire-libre-en-comodoro-rivadavia",
       "activo": true,
-      "alta": "2025-12-01 11:41:32"
+      "alta": "2025-12-01 11:41:32",
+      "tema_principal": "Turismo y Deportes"
     },
     "altasSinDataset": [],
     "cambios": [],
@@ -1304,7 +1312,8 @@ export const CASOS = {
       "tipo_pedido": "foto",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/listado-de-proveedores",
       "activo": true,
-      "alta": "2025-12-01 11:54:54"
+      "alta": "2025-12-01 11:54:54",
+      "tema_principal": "Gobierno y Gestión Pública"
     },
     "altasSinDataset": [],
     "cambios": [],
@@ -1405,7 +1414,8 @@ export const CASOS = {
       "tipo_pedido": "relevamiento",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/escala-salarial-municipal-planta-permanente",
       "activo": true,
-      "alta": "2025-12-01 12:16:22"
+      "alta": "2025-12-01 12:16:22",
+      "tema_principal": "Gobierno y Gestión Pública"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -1518,7 +1528,8 @@ export const CASOS = {
       "tipo_pedido": "foto",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/establecimientos-educativos-de-comodoro-rivadavia",
       "activo": true,
-      "alta": "2025-12-01 12:23:40"
+      "alta": "2025-12-01 12:23:40",
+      "tema_principal": "Educación y Cultura"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -1649,7 +1660,8 @@ export const CASOS = {
       "tipo_pedido": "foto",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/directores-generales-de-planta-permanente",
       "activo": true,
-      "alta": "2025-12-01 21:51:48"
+      "alta": "2025-12-01 21:51:48",
+      "tema_principal": "Gobierno y Gestión Pública"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -1898,7 +1910,8 @@ export const CASOS = {
       "tipo_pedido": "foto",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/areas-especificas-de-genero",
       "activo": true,
-      "alta": "2025-12-02 09:35:43"
+      "alta": "2025-12-02 09:35:43",
+      "tema_principal": "Salud, Género y Desarrollo Social"
     },
     "altasSinDataset": [],
     "cambios": [],
@@ -1966,7 +1979,8 @@ export const CASOS = {
       "tipo_pedido": "acumulado",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/comercios-habilitados-por-rubro",
       "activo": true,
-      "alta": "2025-12-02 09:39:10"
+      "alta": "2025-12-02 09:39:10",
+      "tema_principal": "Economía y Finanzas"
     },
     "altasSinDataset": [],
     "cambios": [],
@@ -2107,7 +2121,8 @@ export const CASOS = {
       "tipo_pedido": "eventual",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/barrios-de-comodoro-rivadavia",
       "activo": true,
-      "alta": "2025-12-02 09:47:16"
+      "alta": "2025-12-02 09:47:16",
+      "tema_principal": "Geografía y Territorio"
     },
     "altasSinDataset": [],
     "cambios": [
@@ -2220,7 +2235,8 @@ export const CASOS = {
       "tipo_pedido": "foto",
       "url_dataset": "https://datos.comodoro.gov.ar/dataset/cantidad-de-empleados-municipales-planta-permanente-y-transitoria",
       "activo": true,
-      "alta": "2026-10-19 10:29:17"
+      "alta": "2026-10-19 10:29:17",
+      "tema_principal": "Gobierno y Gestión Pública"
     },
     "altasSinDataset": [
       {

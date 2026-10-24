@@ -6,7 +6,8 @@ import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.j
 import {
   REGISTRO_DESDE, ASUNTOS_EMAIL, QUE_PEDIA, FALTABAN, diaDe, nombreCorto, unirAlta, movimientosDe,
   ciclosDe, cicloDelAviso, avisosDelCiclo, ultimoAviso, hitosDe, estadoDeSeguimiento, circuitoDe,
-  seguimientoDe, resumenParaLista, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos, notaDgmitDelCiclo, conNotasDgmitEditables
+  seguimientoDe, resumenParaLista, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos, notaDgmitDelCiclo, conNotasDgmitEditables,
+  notasDgmitPorCiclo
 } from '../services/seguimientoReglas.js';
 import { cintaDe } from '../services/seguimientoCinta.js';
 
@@ -152,6 +153,31 @@ describe('movimientosDe: los casos reales', () => {
     const p = movimientosDe(f(1)).find((x) => x.extra.cambio_id === 51);
     assert.deepEqual([p.tipo, p.titulo, p.fecha, p.quien], ['actp', 'Actualización pendiente de aprobación', '2026-10-19', ['Propuso Bruno Dos']]);
     assert.equal(p.detalle, 'Cargado en el portal el 19/10/2026. Datos al 31/12/2026. Recibido el 19/10/2026. Próxima: 31/01/2027. Cambio #51.');
+  });
+
+  // El origen de los datos (spec 2026-10-24-metricas-y-reportes, 4): viaja en el cambio junto con «Recibido el» y se dice con su
+  // texto corto (textoOrigen); en gestión interna viaja vacío y no se dice
+  it('el movimiento de una actualización con origen dice «Origen de los datos: Fuente pública»', () => {
+    const registro = (id, origen, anteriores = {}) => cambio({
+      id, revisado: '2026-10-20 12:00:00',
+      nuevos: { ultima_actualizacion: '2026-10-20', proxima_actualizacion: '2027-01-31', recibido_el: '2026-10-15', origen_datos: origen, registro_actualizacion: true },
+      anteriores: { ultima_actualizacion: '2026-02-04', proxima_actualizacion: '2026-07-31', ...anteriores }
+    });
+    const movs = movimientosDe(con(52, { cambios: [registro(60, 'fuente_publica'), registro(61, 'area'), registro(62, null),
+      registro(63, 'area', { origen_datos: 'area' }), registro(64, 'otro')] }));
+    const de = (id) => movs.find((m) => m.extra.cambio_id === id);
+    assert.equal(de(60).tipo, 'act');
+    assert.equal(de(60).detalle,
+      'Cargado en el portal el 20/10/2026. Recibido el 15/10/2026. Origen de los datos: Fuente pública. Próxima: 31/01/2027. Cambio #60.');
+    assert.deepEqual(de(60).extra.campos.map((c) => c.campo), ['Cargado en el portal', 'Recibido el', 'Origen de los datos', 'Próxima actualización']);
+    assert.deepEqual(de(60).extra.campos[2], { campo: 'Origen de los datos', antes: '—', despues: 'Fuente pública' });
+    assert.equal(de(61).detalle,
+      'Cargado en el portal el 20/10/2026. Recibido el 15/10/2026. Origen de los datos: Los entregó el área. Próxima: 31/01/2027. Cambio #61.');
+    // Vacío (gestión interna), el mismo que tenía o un valor que no es un origen: no se dice
+    for (const id of [62, 63, 64]) {
+      assert.equal(de(id).detalle, `Cargado en el portal el 20/10/2026. Recibido el 15/10/2026. Próxima: 31/01/2027. Cambio #${id}.`, `cambio ${id}`);
+      assert.ok(!de(id).extra.campos.some((c) => c.campo === 'Origen de los datos'), `cambio ${id}`);
+    }
   });
 
   it('lenguaje neutro: ningún título, detalle ni quién dice "sin entregar", "sin respuesta" ni "atrasado"', () => {
@@ -1859,6 +1885,108 @@ describe('notaDgmitDelCiclo', () => {
     assert.equal(notaDgmitDelCiclo(null, null, HOY), null);
     assert.equal(notaDgmitDelCiclo({}, 'x', HOY), null);
     assert.equal(notaDgmitDelCiclo(eventual, null, 'mañana'), null);
+  });
+});
+
+// Las notas DGMIT de cada ciclo (spec 2026-10-24-metricas-y-reportes, 1.2: las métricas tienen que ubicar cada nota en el mismo ciclo
+// que el Seguimiento). La regla es la de notaDgmitDelCiclo para todos los ciclos: el que regía el día en que el área la recibió, a las
+// 00:00 (cicloDelAviso), y R7 solo en el camino del ciclo 0 cuando es el abierto
+describe('notasDgmitPorCiclo', () => {
+  // La nota como la lee el Seguimiento
+  const leida = (n) => ({ id: n.id, numero: n.numero, tipo: n.tipo, recibida: n.recibida, anulada: false, cargada: n.cargada });
+  const ids = (porCiclo) => porCiclo.map((notas) => notas.map((n) => n.id));
+  // Para cada ciclo, la lista; y notaDgmitDelCiclo es la última de la lista del último ciclo
+  const porCicloDe = (fuentes) => {
+    const ciclos = ciclosDe(fuentes, HOY);
+    const porCiclo = notasDgmitPorCiclo(fuentes, ciclos, HOY);
+    assert.equal(porCiclo.length, ciclos.length);
+    const ultima = porCiclo.at(-1).at(-1);
+    assert.deepEqual(notaDgmitDelCiclo(fuentes, ciclos, HOY), ultima ? { numero: ultima.numero, tipo: ultima.tipo, recibida: ultima.recibida } : null);
+    return porCiclo;
+  };
+
+  it('notasDgmitPorCiclo pone cada nota en el ciclo de notaDgmitDelCiclo', () => {
+    // 52: tres ciclos; el segundo se abrió el 17/12/2025 a las 08:54:29 y el abierto, el 04/02/2026 a las 09:58:15
+    const notas = [
+      notaDgmit({ id: 1, numero: '10/26', recibida: '2026-01-20' }),
+      notaDgmit({ id: 2, numero: '40/26', recibida: '2026-03-10' }),
+      notaDgmit({ id: 3, numero: '90/26', tipo: 'reiteracion', recibida: '2026-08-15' }),
+      notaDgmit({ id: 4, numero: '95/26', recibida: '2026-09-01', anulada: true }),
+      notaDgmit({ id: 5, numero: '99/26', recibida: '2026-10-21' }),
+      notaDgmit({ id: 6, numero: '3/25', recibida: '2025-12-10' }),
+      // El mismo día de la aprobación que cerró el segundo ciclo: es del segundo
+      notaDgmit({ id: 7, numero: '12/26', recibida: '2026-02-04' }),
+      // Anterior al alta: ningún ciclo regía y cicloDelAviso da el 0, que con tres ciclos no es el abierto (R7 no interviene)
+      notaDgmit({ id: 8, numero: '1/25', recibida: '2025-11-15' })
+    ];
+    const porCiclo = porCicloDe(conNotasDgmit(52, notas));
+    // La anulada y la posterior a hoy no son de ninguno; cada lista, por recibida
+    assert.deepEqual(ids(porCiclo), [[8, 6], [1, 7], [2, 3]]);
+    assert.deepEqual(porCiclo[2], [leida(notas[1]), leida(notas[2])]);
+    // El orden de las fuentes no importa
+    assert.deepEqual(notasDgmitPorCiclo(conNotasDgmit(52, [...notas].reverse()), ciclosDe(conNotasDgmit(52, notas), HOY), HOY), porCiclo);
+    // Cada nota, en el ciclo que dice cicloDelAviso
+    const ciclos = ciclosDe(conNotasDgmit(52, notas), HOY);
+    porCiclo.forEach((lista, i) => lista.forEach((n) => assert.equal(cicloDelAviso(ciclos, `${n.recibida} 00:00:00`), i, n.numero)));
+
+    // 58: la actualización anterior a la doble verificación, el 16/12/2025 a las 11:47:48, cierra el primero
+    assert.deepEqual(ids(porCicloDe(conNotasDgmit(58, [notaDgmit({ id: 1, recibida: '2025-12-16' }), notaDgmit({ id: 2, recibida: '2025-12-17' })]))),
+      [[1], [2]]);
+    // 10: cinco ciclos; cada nota en el que regía (las aprobaciones fueron el 22/05, el 28/09 y el 14/10, de mañana)
+    const del10 = [['2026-03-01', 1], ['2026-05-22', 2], ['2026-09-28', 3], ['2026-10-14', 4], ['2026-10-15', 5]]
+      .map(([recibida, id]) => notaDgmit({ id, numero: `${id}/26`, recibida }));
+    assert.deepEqual(ids(porCicloDe(conNotasDgmit(10, del10))), [[], [1, 2], [3], [4], [5]]);
+    // Sin notas, una lista vacía por ciclo
+    assert.deepEqual(porCicloDe(conNotasDgmit(52, [])), [[], [], []]);
+  });
+
+  it('notasDgmitPorCiclo: la misma recibida, por la carga y después por id (el orden de notaDgmitDelCiclo)', () => {
+    const mismoDia = [notaDgmit({ id: 7, numero: 'A', recibida: '2026-08-15', cargada: '2026-08-16 11:00:00' }),
+      notaDgmit({ id: 6, numero: 'B', recibida: '2026-08-15', cargada: '2026-08-16 10:00:00' }),
+      // Cargada antes pero con id mayor: va primero
+      notaDgmit({ id: 9, numero: 'E', recibida: '2026-08-15', cargada: '2026-08-16 09:00:00' })];
+    assert.deepEqual(ids(porCicloDe(conNotasDgmit(52, mismoDia))), [[], [], [9, 6, 7]]);
+    const mismaCarga = [notaDgmit({ id: 9, numero: 'D', recibida: '2026-08-15' }), notaDgmit({ id: 8, numero: 'C', recibida: '2026-08-15' })];
+    assert.deepEqual(ids(porCicloDe(conNotasDgmit(52, mismaCarga))), [[], [], [8, 9]]);
+  });
+
+  it('notasDgmitPorCiclo: R7 en un solo ciclo, y sin ciclos ninguna lista', () => {
+    // Un solo ciclo, desde el alta del 01/02/2026; la última carga en el portal, el 04/02/2026
+    const conAlta = (notas, dataset = {}) => ({ ...solo({ alta: '2026-02-01 10:00:00', proxima: '2026-07-31', ultima: '2026-02-04', ...dataset }), notasDgmit: notas });
+    const vieja = notaDgmit({ id: 1, numero: '5/25', recibida: '2025-03-01' });
+    const delCiclo = notaDgmit({ id: 2, numero: '40/26', recibida: '2026-03-10' });
+    // Anterior al alta y a la última carga: de ningún ciclo
+    assert.deepEqual(ids(porCicloDe(conAlta([vieja, delCiclo]))), [[2]]);
+    // Anterior al alta pero no a la última carga, o sin última carga: del ciclo abierto
+    assert.deepEqual(ids(porCicloDe(conAlta([vieja, delCiclo], { ultima: '2024-12-31' }))), [[1, 2]]);
+    assert.deepEqual(ids(porCicloDe(conAlta([vieja], { ultima: null }))), [[1]]);
+    // Sin alta conocida: el único ciclo empieza en su vencimiento (31/07/2026)
+    const sinAlta = (notas) => ({ ...solo({ alta: null, proxima: '2026-07-31', ultima: '2026-02-04' }), notasDgmit: notas });
+    const notas = [notaDgmit({ id: 1, recibida: '2026-01-10' }), notaDgmit({ id: 2, recibida: '2026-02-04' }),
+      notaDgmit({ id: 3, recibida: '2026-06-15' }), notaDgmit({ id: 4, recibida: '2026-08-15' })];
+    assert.deepEqual(ids(porCicloDe(sinAlta(notas))), [[2, 3, 4]]);
+
+    // Sin ciclos (eventual o sin fecha): ninguna lista; notaDgmitDelCiclo sigue con la vigente más reciente
+    const eventual = conNotasDgmit(66, notas);
+    for (const ciclos of [null, undefined, [], 'x']) assert.deepEqual(notasDgmitPorCiclo(eventual, ciclos, HOY), [], String(ciclos));
+    // Fuentes o un hoy raros: una lista vacía por ciclo
+    const ciclos52 = ciclosDe(f(52), HOY);
+    for (const fuentes of [null, undefined, 'x', {}]) assert.deepEqual(notasDgmitPorCiclo(fuentes, ciclos52, HOY), [[], [], []]);
+    assert.deepEqual(notasDgmitPorCiclo(conNotasDgmit(52, notas), ciclos52, 'mañana'), [[], [], []]);
+    // Notas con datos raros: se ignoran, sin error
+    const raras = [null, 'x', {}, notaDgmit({ id: 2, recibida: '2026-02-30' }), notaDgmit({ id: 3, tipo: 'otra' }), notaDgmit({ id: 4, numero: '  ' }),
+      notaDgmit({ id: 5, recibida: null }), notaDgmit({ id: 6, cargada: 'ayer' }), notaDgmit({ id: 7, anulada: true })];
+    assert.deepEqual(porCicloDe(conNotasDgmit(58, raras)),
+      [[], [{ id: 6, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: null }]]);
+  });
+
+  it('notasDgmitPorCiclo no modifica las fuentes ni los ciclos', () => {
+    const fuentes = conNotasDgmit(52, [notaDgmit({ id: 1, recibida: '2026-03-10' }), notaDgmit({ id: 2, recibida: '2026-01-20' })]);
+    const ciclos = ciclosDe(fuentes, HOY);
+    const [antes, ciclosAntes] = [JSON.stringify(fuentes), JSON.stringify(ciclos)];
+    notasDgmitPorCiclo(fuentes, ciclos, HOY);
+    assert.equal(JSON.stringify(fuentes), antes);
+    assert.equal(JSON.stringify(ciclos), ciclosAntes);
   });
 });
 
