@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, db, MAILPIT_URL } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
-import { textosPorHoja, imagenesPorHoja, lineasPorHoja } from './pdf-lector.js';
+import { textosPorHoja, imagenesPorHoja, lineasPorHoja, tamanosPorHoja, HOJA_A4, HOJA_OFICIO, esDelTamano } from './pdf-lector.js';
 import { formatoCorto, hoyArgentina, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { esFinDeMes, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 import { construirNota } from '../services/notasDigitalesContenido.js';
@@ -887,6 +887,9 @@ describe('anexo de los avisos (spec 6.7)', () => {
     const [{ pdf, anexo_pdf: anexo }] = await query('SELECT pdf, anexo_pdf FROM notas_digitales');
     assert.deepEqual(archivos[0].contenido, pdf);
     assert.deepEqual(archivos[1].contenido, anexo);
+    // La nota sale en hoja oficio y el anexo sigue en A4 (spec 2026-10-24-notas-hoja-oficio)
+    assert.ok(tamanosPorHoja(pdf).every(t => esDelTamano(t, HOJA_OFICIO)), JSON.stringify(tamanosPorHoja(pdf)));
+    assert.ok(tamanosPorHoja(anexo).every(t => esDelTamano(t, HOJA_A4)), JSON.stringify(tamanosPorHoja(anexo)));
 
     assert.equal(anexo.subarray(0, 5).toString(), '%PDF-');
     const hojas = lineasPorHoja(anexo);
@@ -920,6 +923,10 @@ describe('anexo de los avisos (spec 6.7)', () => {
     const [aviso] = await mailpit.mensajes();
     const archivos = await adjuntos(aviso.ID);
     assert.deepEqual(archivos.map(a => a.nombre), ['Nota-Digital-PRUEBA.pdf', 'Anexo-Nota-Digital-PRUEBA.pdf']);
+    // La nota de prueba, en hoja oficio; su anexo, en A4
+    const [deLaNota, delAnexo] = archivos.map(a => tamanosPorHoja(a.contenido));
+    assert.ok(deLaNota.every(t => esDelTamano(t, HOJA_OFICIO)), JSON.stringify(deLaNota));
+    assert.ok(delAnexo.every(t => esDelTamano(t, HOJA_A4)), JSON.stringify(delAnexo));
     const hojas = lineasPorHoja(archivos[1].contenido);
     assert.equal(hojas.length, 2);
     assert.ok(hojas[0].includes('Real A'));
@@ -1120,6 +1127,9 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.equal(reiteracion.numero, 2);
     assert.ok(reiteracion.anexo_pdf);
     assert.equal(reiteracion.anexo_pdf.subarray(0, 5).toString(), '%PDF-');
+    // La reiteración sale en hoja oficio y su anexo de seguimiento sigue en A4
+    assert.ok(tamanosPorHoja(reiteracion.pdf).every(t => esDelTamano(t, HOJA_OFICIO)), JSON.stringify(tamanosPorHoja(reiteracion.pdf)));
+    assert.ok(tamanosPorHoja(reiteracion.anexo_pdf).every(t => esDelTamano(t, HOJA_A4)), JSON.stringify(tamanosPorHoja(reiteracion.anexo_pdf)));
 
     const hojas = lineasPorHoja(reiteracion.anexo_pdf);
     assert.equal(hojas.length, 2);

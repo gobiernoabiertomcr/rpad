@@ -221,7 +221,7 @@ const COLUMNA_SITUACION_EXTERNA = 5;
 // Proporción del ancho de cada columna de la tabla externa de 7 en el PDF. Van en la sección porque la tabla interna también
 // tiene 7 columnas (y el PDF elige las de siempre por cantidad de columnas). Si alguna fila lleva la segunda parte de
 // "Informado en" (el antecedente de los emails anteriores, en letra más chica), esa columna se lleva más ancho, como en la
-// interna: probadas con la reiteración real del 02/11/2026 (10 datasets: 7 filas en la primera hoja, ningún título partido)
+// interna: probadas con la reiteración real del 02/11/2026 (10 datasets: 8 filas en la primera hoja oficio, ningún título partido)
 const PROPORCIONES_EXTERNA = { conSegunda: [18, 14, 10, 10, 13, 10, 25], sinSegunda: [24, 14, 10, 10, 15, 12, 15] };
 
 // Varios vencimientos en un aviso (spec 18): un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, un

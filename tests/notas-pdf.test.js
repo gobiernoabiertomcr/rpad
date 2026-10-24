@@ -5,14 +5,17 @@ import PDFDocument from 'pdfkit';
 import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria } from '../services/notasDigitalesContenido.js';
 import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
-import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas } from './pdf-lector.js';
+import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas, tamanosPorHoja, HOJA_OFICIO, esDelTamano } from './pdf-lector.js';
 
 // PNG válido de 1x1 píxel
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
 const MM = 72 / 25.4;
-const ANCHO_HOJA = 216 * MM;
-const ALTO_HOJA = 330 * MM;
+// Hoja oficio: Legal, 8½ × 14 pulgadas (spec 2026-10-24-notas-hoja-oficio). MM queda para los márgenes
+const ANCHO_HOJA = 612;
+const ALTO_HOJA = 1008;
+// Dónde terminaba el contenido en la hoja de antes (216 × 330 mm, con el margen inferior de 25 mm), desde arriba de la hoja
+const LIMITE_VIEJO = 330 * MM - 25 * MM;
 // Banner con las proporciones del real (1241 × 178 píxeles), generado acá: la imagen institucional no se versiona
 const BANNER = pngRgb({ ancho: 1241, alto: 178 });
 // El banner real es RGBA: PDFKit lo decodifica con png-js (asíncrono) y le separa la máscara de transparencia
@@ -72,7 +75,8 @@ describe('renderPdf', () => {
   it('genera un PDF oficio con el número en el título', async () => {
     const pdf = await renderPdf(nota(2));
     assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
-    assert.match(texto(pdf), /\/MediaBox \[0 0 612\.28\d* 935\.43\d*\]/);
+    assert.match(texto(pdf), /\/MediaBox \[0 0 612 1008\]/);
+    assert.ok(tamanosPorHoja(pdf).every(t => esDelTamano(t, HOJA_OFICIO)), JSON.stringify(tamanosPorHoja(pdf)));
     assert.ok(texto(pdf).includes('(Nota Digital 12/26)'));
   });
 
@@ -387,9 +391,9 @@ describe('renderPdf: reiteración externa (spec 2026-10-20-requiere-nota-y-anexo
     for (const { titulo } of REITERACION_DEL_02_11) {
       assert.ok(renglonesDeLaCelda(textos, titulo, columna).length > 0, `"${titulo}" no está entero en su celda`);
     }
-    // 7 filas en la primera hoja, como con la tabla de antes (y no 4, como con 8 columnas)
+    // En la hoja oficio entran 8 filas en la primera hoja: 7 en la de 330 mm, y 4 con la tabla de 8 columnas
     const primeras = REITERACION_DEL_02_11.filter(({ titulo }) => hojas[0].some(t => cerca(t.x, columna, 0.5) && titulo.startsWith(t.texto)));
-    assert.equal(primeras.length, 7, primeras.map(d => d.titulo).join(' | '));
+    assert.equal(primeras.length, 8, primeras.map(d => d.titulo).join(' | '));
     // Y todo dentro de los márgenes
     for (const t of textos) assert.ok(t.x + anchoDe(t.texto, t.tamano) <= ANCHO_HOJA - 30 * MM + 0.5, `"${t.texto}" sale del margen derecho`);
   });
@@ -1386,51 +1390,64 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
   });
 });
 
-// La letra de la firma (pedido del usuario el 21/10/2026): el nombre en negrita, para destacarlo, y el cargo un punto menos,
-// en todas las notas y en las dos firmas
+// Para el cierre medido y la hoja oficio: alto de un renglón de Helvetica (con el interlineado de PDFKit), en fracción del
+// tamaño; dónde termina lo escrito en la última hoja (el borde inferior del renglón más bajo, con su interlineado), desde
+// arriba de esa hoja (con su alto de verdad: así también mide bien una hoja de otro tamaño); y la nota con k renglones de
+// relleno al final del primer párrafo
+const RENGLON = new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(1).currentLineHeight(true);
+const fin = (pdf) => {
+  const alto = tamanosPorHoja(pdf).at(-1).alto;
+  return Math.max(...textosPorHoja(pdf).at(-1).map(t => alto - t.base - ASCENDENTE * t.tamano + RENGLON * t.tamano));
+};
+const conRelleno = (n, k) => ({ ...n, parrafoInicial: n.parrafoInicial + '\nRenglón de relleno.'.repeat(k) });
+// Las firmas y las notas del cierre medido, que también recorre la hoja oficio: el titular solo y las dos firmas con la
+// leyenda (la persona autorizada es personal contratado), la autorización y la auditoría con todos sus apartados
+const IMAGEN_FIRMA = pngRgba({ ancho: 40, alto: 20 });
+const TITULAR = { nombre: 'Persona Titular', cargo: 'Cargo Titular' };
+const FIRMA_TITULAR = { titular: TITULAR, presentante: null, leyenda: null };
+const FIRMA_CON_LEYENDA = {
+  titular: TITULAR,
+  presentante: { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', contratado: true },
+  leyenda: 'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).'
+};
+const notaDeAutorizacion = (firma) => construirNotaDeAutorizacion({
+  numero: 15, anio: 2026, fecha: '2026-11-25', firma, config,
+  autorizacion: { nombre: 'Otra Persona', cargo: 'Otro Cargo', contratado: false, desde: '2026-11-26', hasta: '2027-01-14' }
+});
+const notaDeAuditoria = (firma) => construirNotaDeAuditoria({
+  numero: 16, anio: 2026, fecha: '2026-11-25', firma, config, reiterados: [],
+  nuevos: [{
+    id: 1, tipo_cambio: 'editar', dataset_titulo: 'Dataset auditado', usuario_nombre: 'Persona Editora', usuario_cargo: 'Cargo de Prueba',
+    fecha_propuesta: '2026-11-20', datos_anteriores: { descripcion: 'Antes' }, datos_nuevos: { descripcion: 'Después' }
+  }],
+  catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
+});
+
 // El cierre se mide de verdad (pedido del usuario el 21/10/2026, con la Nota 8/26 de la simulación como ejemplo: el bloque
 // del cierre ocupaba 103 mm, quedaban 111 libres y se reservaban 114): lo que viaja con la firma (el último párrafo, o el anexo
 // y la justificación de un solo párrafo, o el último bloque de la nota de auditoría, con el remitente, la firma y la línea CC)
 // se reserva con lo que ocupa, no con un alto fijo. En todas las notas y con todas las firmas: si la nota entera entra en la
 // hoja, sale en una hoja; si no entra, en dos. Se agregan renglones al primer párrafo para que el final cruce el pie de la hoja.
 describe('renderPdf: el cierre se mide de verdad (pedido del usuario el 21/10/2026)', () => {
-  const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
-  // Alto de un renglón de Helvetica (con el interlineado de PDFKit), en fracción del tamaño, y dónde termina lo escribible
-  const RENGLON = new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(1).currentLineHeight(true);
+  // Dónde termina lo escribible, desde arriba de la hoja
   const LIMITE = ALTO_HOJA - 25 * MM;
-  const titular = { nombre: 'Persona Titular', cargo: 'Cargo Titular' };
-  const presentante = { nombre: 'Persona Autorizada', cargo: 'Cargo Autorizado', contratado: true };
-  const leyenda = 'Nota presentada por Persona Autorizada, personal contratado, cumpliendo funciones de Cargo Autorizado, en nombre de Persona Titular, Cargo Titular, conforme a la autorización conferida mediante Nota Digital N° 15/26 (licencia del 26/11/2026 al 14/01/2027).';
   const FIRMAS = [
-    ['una firma con imagen', { titular, presentante: null, leyenda: null }, { firmaImagen: FIRMA_A }],
-    ['una firma sin imagen', { titular, presentante: null, leyenda: null }, {}],
-    ['dos firmas y la leyenda', { titular, presentante, leyenda }, { firmaImagen: FIRMA_A }]
+    ['una firma con imagen', FIRMA_TITULAR, { firmaImagen: IMAGEN_FIRMA }],
+    ['una firma sin imagen', FIRMA_TITULAR, {}],
+    ['dos firmas y la leyenda', FIRMA_CON_LEYENDA, { firmaImagen: IMAGEN_FIRMA }]
   ];
   const NOTAS = [
     ['aviso externo', (firma) => nota(1, { firma })],
     ['aviso interno', (firma) => nota(1, { gestion: 'interna', firma })],
     ['reiteración externa', (firma) => nota(1, { tipo: 'reiteracion', firma })],
     ['reiteración interna', (firma) => nota(1, { tipo: 'reiteracion', gestion: 'interna', firma })],
-    ['autorización', (firma) => construirNotaDeAutorizacion({
-      numero: 15, anio: 2026, fecha: '2026-11-25', firma, config,
-      autorizacion: { nombre: 'Otra Persona', cargo: 'Otro Cargo', contratado: false, desde: '2026-11-26', hasta: '2027-01-14' }
-    })],
+    ['autorización', notaDeAutorizacion],
     // (con todos sus apartados ocupa más de una hoja: queda el último, "Importancia", el que viaja con la firma)
     ['auditoría', (firma) => {
-      const n = construirNotaDeAuditoria({
-        numero: 16, anio: 2026, fecha: '2026-11-25', firma, config, reiterados: [],
-        nuevos: [{
-          id: 1, tipo_cambio: 'editar', dataset_titulo: 'Dataset auditado', usuario_nombre: 'Persona Editora', usuario_cargo: 'Cargo de Prueba',
-          fecha_propuesta: '2026-11-20', datos_anteriores: { descripcion: 'Antes' }, datos_nuevos: { descripcion: 'Después' }
-        }],
-        catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
-      });
+      const n = notaDeAuditoria(firma);
       return { ...n, apartados: n.apartados.slice(-1) };
     }]
   ];
-  // Dónde termina lo escrito en la última hoja (el borde inferior del renglón más bajo, con su interlineado), desde arriba
-  const fin = (pdf) => Math.max(...textosPorHoja(pdf).at(-1).map(t => tope(t) + RENGLON * t.tamano));
-  const conRelleno = (n, k) => ({ ...n, parrafoInicial: n.parrafoInicial + '\nRenglón de relleno.'.repeat(k) });
 
   for (const [tipo, armar] of NOTAS) {
     it(`${tipo}: si entra entera en la hoja sale en una, y si no, en dos`, async () => {
@@ -1463,6 +1480,53 @@ describe('renderPdf: el cierre se mide de verdad (pedido del usuario el 21/10/20
   }
 });
 
+// Hoja oficio Legal (spec 2026-10-24-notas-hoja-oficio): la Municipalidad imprime en oficio, 8½ × 14 pulgadas (612 × 1008
+// puntos); la nota salía en 216 × 330 mm (612,28 × 935,43), una hoja que ninguna impresora toma como oficio. Todas las hojas
+// de todas las notas miden lo mismo, con el membrete y sin él, y lo que gana la hoja se aprovecha: una nota que en la de
+// 330 mm pasaba a una segunda hoja ahora entra en una
+describe('renderPdf: hoja oficio Legal (spec 2026-10-24-notas-hoja-oficio)', () => {
+  it('todas las hojas de todas las notas miden 612 × 1008, con membrete y sin él', async () => {
+    const NOTAS = [
+      ['aviso externo de 1 dataset', nota(1)],
+      ['aviso externo de 60 datasets', nota(60)],
+      ['aviso interno de 1 dataset', nota(1, { gestion: 'interna' })],
+      ['aviso interno de 60 datasets', nota(60, { gestion: 'interna' })],
+      ['reiteración externa', nota(60, { tipo: 'reiteracion' })],
+      ['reiteración interna', nota(60, { tipo: 'reiteracion', gestion: 'interna' })],
+      ['autorización', notaDeAutorizacion(FIRMA_TITULAR)],
+      ['auditoría', notaDeAuditoria(FIRMA_TITULAR)],
+      ['aviso con dos firmas y la leyenda', nota(1, { firma: FIRMA_CON_LEYENDA })]
+    ];
+    const cantidades = [];
+    for (const [caso, n] of NOTAS) {
+      for (const [membrete, opciones] of [['sin membrete', {}], ['con membrete', { membreteImagen: BANNER, membretePie: PIE }]]) {
+        const tamanos = tamanosPorHoja(await renderPdf(n, opciones));
+        assert.ok(tamanos.every(t => esDelTamano(t, HOJA_OFICIO)), `${caso}, ${membrete}: ${JSON.stringify(tamanos)}`);
+        cantidades.push(tamanos.length);
+      }
+    }
+    // Notas de una hoja y de tres o más (las que agrega addPage miden lo mismo que la primera)
+    assert.ok(cantidades.includes(1), `hojas: ${cantidades}`);
+    assert.ok(cantidades.some(c => c >= 3), `hojas: ${cantidades}`);
+  });
+
+  it('una nota que en la hoja de 330 mm pasaba a una segunda hoja ahora entra en una', async () => {
+    const n = nota(1, { firma: FIRMA_TITULAR });
+    const imagenes = { firmaImagen: IMAGEN_FIRMA };
+    const finSinRelleno = fin(await renderPdf(n, imagenes));
+    // Los renglones de relleno justos para que lo escrito pase del límite de la hoja vieja (con el margen de 1,5 pt del
+    // cierre medido): tienen que entrar en la hoja oficio
+    let k = 0;
+    while (finSinRelleno + k * RENGLON * 12 <= LIMITE_VIEJO + 1.5) k++;
+    assert.ok(finSinRelleno + k * RENGLON * 12 <= ALTO_HOJA - 25 * MM - 1.5, `con ${k} renglones de relleno no entra en la hoja oficio`);
+    const pdf = await renderPdf(conRelleno(n, k), imagenes);
+    assert.equal(paginas(pdf), 1, `${k} renglones de relleno`);
+    assert.ok(fin(pdf) > LIMITE_VIEJO, `termina a ${fin(pdf).toFixed(1)} pt de arriba: no pasa del límite de la hoja vieja`);
+  });
+});
+
+// La letra de la firma (pedido del usuario el 21/10/2026): el nombre en negrita, para destacarlo, y el cargo un punto menos,
+// en todas las notas y en las dos firmas
 describe('renderPdf: la letra de la firma (pedido del usuario el 21/10/2026)', () => {
   const FIRMA_A = pngRgba({ ancho: 40, alto: 20 });
   const FIRMA_B = pngRgba({ ancho: 60, alto: 20 });
@@ -1475,8 +1539,6 @@ describe('renderPdf: la letra de la firma (pedido del usuario el 21/10/2026)', (
     return encontrados[0];
   };
   const letra = (t) => [t.fuente, t.tamano];
-  // Alto de un renglón de Helvetica (ascendente, descendente y el interlineado de PDFKit), en fracción del tamaño
-  const RENGLON = new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(1).currentLineHeight(true);
 
   it('una firma: el nombre en negrita de 11 pt y el cargo en 10 pt; el remitente y la línea CC, como siempre', async () => {
     const n = nota(1, { firma: { titular, presentante: null, leyenda: null } });
