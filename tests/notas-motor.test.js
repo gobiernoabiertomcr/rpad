@@ -1252,8 +1252,8 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
       for (const d of datasets) {
         const delDataset = fuentes.get(d.id);
         // Lo mismo que devuelve fuentesDe: el dataset, las listas vacías y los catálogos
-        assert.deepEqual(Object.keys(delDataset).sort(), ['altasSinDataset', 'auditorias', 'cambios', 'catalogos', 'dataset', 'emails', 'historial', 'notas']);
-        for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias']) assert.deepEqual(delDataset[lista], [], lista);
+        assert.deepEqual(Object.keys(delDataset).sort(), ['altasSinDataset', 'auditorias', 'cambios', 'catalogos', 'dataset', 'emails', 'historial', 'notas', 'notasDgmit']);
+        for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias', 'notasDgmit']) assert.deepEqual(delDataset[lista], [], lista);
         assert.deepEqual(delDataset.dataset, {
           id: d.id, titulo: d.titulo, area: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', area_id: 0, tipo_gestion: gestion,
           requiere_nota: d.requiere_nota, frecuencia: 'Anualmente', meses: 12, proxima: d.vencimiento, datos_al: d.datos_al,
