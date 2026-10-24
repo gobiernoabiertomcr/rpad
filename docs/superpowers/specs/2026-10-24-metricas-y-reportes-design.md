@@ -7,6 +7,12 @@ Mockups en `docs/superpowers/specs/2026-10-24-metricas-y-reportes-mockups/` (HTM
 - `1-metricas.html`: la pestaña Métricas completa, con la gestión externa elegida en el circuito.
 - `2-circuito-interna.html`: el circuito con la gestión interna elegida.
 - `3-reportes.html`: la pestaña Reportes, dos hojas de PDF con el diseño del anexo y la sección «Para completar».
+- `4-metricas-datos-reales.html`, `5-circuito-interna-datos-reales.html` y `6-reportes-datos-reales.html`: las mismas tres maquetas con los números reales al 24/10/2026, calculados con las reglas de este documento por un script descartable. Las fuentes:
+  - la base local del 20/10;
+  - lo que trae el dump del 24/10: el Presupuesto actualizado el 21/10 y la Nota Digital 4/26;
+  - el Excel de «Recibido el» del usuario, con 27 de 32 fechas. Se supuso que el Presupuesto del 19/10 salió de una fuente pública.
+  
+  Todavía no hay notas DGMIT. Estas maquetas muestran cómo se ve la página casi sin datos, y sirven de referencia para los tests: por ejemplo, 5 de 33 actualizados a tiempo, 34 de 35 vencimientos avisados y el índice de hoy en 82 %.
 
 ## Por qué
 
@@ -175,6 +181,8 @@ Sigue el mockup `1-metricas.html`, con el lenguaje visual del Seguimiento, que e
   - **La cinta del «recorrido típico»:** las medianas una detrás de la otra alrededor del vencimiento, con el eje en días hábiles, la banda celeste antes del vencimiento, el rayado después, las marcas (aviso, nota DGMIT, datos y carga) y su leyenda.
     - **Sin texto dentro de la banda** (pedido del usuario): el dato real de cuándo se carga respecto del vencimiento está en «Actualizados a tiempo».
     - La aclaración: «La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real.»
+    - **Si a la cadena le falta un tramo sin cifra,** como hoy los de la DGMIT y el área, que no tienen notas cargadas, la cinta dibuja solo hasta donde se sabe: el aviso y el vencimiento. El resto de la banda va en gris, con «La cinta se completa cuando haya notas DGMIT cargadas». *(Decisión mía.)*
+    - **No se suman tramos** para tapar el hueco. Por ejemplo, no hay un «del aviso a la entrega» con la nota y la respuesta juntas: el usuario lo descartó.
   - **La aclaración de los avisados ya vencidos.**
   - **Los casos** («Ver los casos» / «Ocultar los casos»): una fila por ciclo del año.
     - Columnas: Contar, Dataset (con el área), Vencimiento, Aviso, Nota DGMIT (número y tipo), Recibido el y Carga.
@@ -195,10 +203,11 @@ Sigue el mockup `1-metricas.html`, con el lenguaje visual del Seguimiento, que e
     - De la DGMIT al área: las notas DGMIT de tipo reiteración del ciclo. Agrupadas en Ninguna y 1 o más.
     - Cuentan los ciclos que terminaron en el año y, en el año en curso, los abiertos.
 - **Contexto:**
-  - **Índice de actualización, mes a mes:** una línea, una sola serie, sin leyenda. Un punto por cada fin de mes del año hasta hoy, y el último punto es hoy.
+  - **Índice de actualización, mes a mes:** una línea, una sola serie, sin leyenda. Un punto **por el primer día de cada mes** del año hasta hoy, y el último punto es hoy.
     - Es el mismo índice que la portada: al día (actualizados más próximos) sobre el total sin los eventuales.
+    - **¿Por qué el primer día?** Las próximas siempre son fin de mes y el día del vencimiento todavía cuenta como al día. Tomado a fin de mes, un vencimiento nunca se vería en el punto de su mes. Con los datos reales, el índice da 81 % el 1/1/2026, cae a 50 % el 1/2 (el vencimiento del 31/01, el de casi todos los externos) y llega al 82 % de hoy.
     - **El punto de hoy tiene que dar lo mismo que `tasaDeActualizacion`** de la portada y del Estado general (test).
-    - Los meses pasados se reconstruyen con los ciclos del Seguimiento (*decisión mía*): un dataset estaba al día a fin de mes si existía, no era eventual y el ciclo que regía ese día vencía ese día o después.
+    - Los meses pasados se reconstruyen con los ciclos del Seguimiento (*decisión mía*): un dataset estaba al día ese día si existía, no era eventual y el ciclo que regía ese día vencía ese día o después.
     - Un mes en el que no se puede saber para una parte importante de los datasets (por ciclos con `venc` null) no se dibuja, en lugar de inventarse.
     - Al pasar el mouse o el foco por un punto, se ve el valor.
   - **Antigüedad de los vencidos:** barras horizontales en ámbar.

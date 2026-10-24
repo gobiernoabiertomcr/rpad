@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maqueta 4 con datos reales · Reportes</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --tinta:#1A365D; --texto:#22324A; --suave:#56677F; --linea:#DAE3ED; --sutil:#F4F7FA;
+    --borde:#76879F; --cielo:#DCEEF5; --sol:#FCE8A8; --ambar:#7A5200; --verde:#2E6B4C; --verde-f:#DDF1E6;
+    --rojo:#8A3434; --rojo-f:#F8E1E1; --azul:#24507A; --azul-f:#DCEAF7; --violeta:#5B4691;
+    --f-titulo:'Bricolage Grotesque',system-ui,sans-serif; --f-texto:'Figtree',system-ui,sans-serif;
+    /* PDF (como notasDigitalesAnexo.js) */
+    --pdf-tinta:#1F2A37; --pdf-azul:#3E6A9A; --pdf-rotulo:#4A6FA0; --pdf-suave:#5B6573; --pdf-caja:#F1F4F8; --pdf-caja-azul:#E3ECF6; --pdf-linea:#DDE3EA;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:var(--f-texto); color:var(--texto); background:#f1f5f9; font-size:15px; }
+  .guia { background:#FFF7DD; border-bottom:1px solid #EED89A; padding:12px 28px; font-size:.92rem; line-height:1.45; }
+  .guia b { color:var(--ambar); }
+  main { max-width:1180px; margin:0 auto; padding:26px 28px 70px; }
+  h1 { font-family:var(--f-titulo); letter-spacing:-.02em; color:var(--tinta); font-size:1.6rem; margin:0 0 8px; display:flex; align-items:center; gap:10px; }
+  .bajada { color:var(--suave); margin:0 0 18px; max-width:72ch; line-height:1.5; }
+  .pestanas { display:flex; gap:2px; border-bottom:1px solid var(--linea); margin:0 0 18px; }
+  .pestanas span { padding:10px 18px; font-weight:600; color:var(--suave); border-bottom:3px solid transparent; margin-bottom:-1px; }
+  .pestanas span.on { color:var(--tinta); border-bottom-color:var(--tinta); }
+  h2.seccion { font-family:var(--f-titulo); font-weight:700; letter-spacing:-.01em; color:var(--tinta); font-size:1.2rem; margin:24px 0 4px; }
+  p.seccion { color:var(--suave); margin:0 0 12px; font-size:.92rem; }
+  .grilla { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  .g4 { grid-template-columns:repeat(4,1fr); }
+  .tarjeta { background:#fff; border:1px solid var(--linea); border-radius:16px; padding:18px 20px; display:flex; flex-direction:column; }
+  .tarjeta h3 { margin:0 0 6px; font-family:var(--f-titulo); font-weight:650; font-size:1.05rem; color:var(--tinta); display:flex; gap:8px; align-items:center; }
+  .tarjeta h3 svg { flex:none; color:var(--tinta); }
+  .tarjeta p { margin:0 0 12px; color:var(--suave); font-size:.86rem; line-height:1.45; flex:1; }
+  .campos { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .sel { height:38px; border:1px solid var(--borde); border-radius:12px; background:#fff; padding:0 12px; display:inline-flex; align-items:center; font-weight:600; font-size:.86rem; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { display:inline-flex; align-items:center; height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--borde); background:#fff; font-size:.84rem; font-weight:500; }
+  .chip.on { background:var(--tinta); border-color:var(--tinta); color:#fff; }
+  .btn { height:40px; border-radius:999px; padding:0 16px; display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:600; font-size:.88rem; border:1px solid var(--tinta); background:var(--tinta); color:#fff; }
+  .btn.off { background:#fff; color:var(--suave); border-color:var(--linea); }
+  .hojas { font-size:.78rem; color:var(--suave); margin-top:8px; text-align:center; }
+
+  /* Hojas A4 */
+  .pdfs { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-top:8px; }
+  .pdf-tit { font-weight:700; color:var(--tinta); margin:0 0 8px; }
+  .hoja { background:#fff; aspect-ratio:210/297; box-shadow:0 2px 10px rgba(0,0,0,.12); padding:5.2% 6.5% 4%; font-family:Helvetica,Arial,sans-serif; color:var(--pdf-tinta); font-size:9.6px; position:relative; display:flex; flex-direction:column; }
+  .h-cab { display:flex; justify-content:space-between; border-bottom:1px solid var(--pdf-linea); padding-bottom:6px; position:relative; }
+  .h-cab::after { content:''; position:absolute; left:0; bottom:-2px; width:40px; height:3px; background:var(--pdf-azul); }
+  .h-cab b { font-size:8.6px; letter-spacing:.06em; }
+  .h-cab small { display:block; font-size:7.6px; color:var(--pdf-suave); margin-top:2px; }
+  .h-cab .d { text-align:right; } .h-cab .d b { letter-spacing:0; font-size:9.4px; }
+  .rotulo { font-size:7.4px; font-weight:700; letter-spacing:.14em; color:var(--pdf-rotulo); text-transform:uppercase; }
+  .h-titulo { font-size:20px; font-weight:700; line-height:1.15; margin:4px 0 8px; }
+  .pildora { display:inline-flex; gap:6px; align-items:center; background:var(--pdf-caja-azul); color:var(--pdf-azul); border-radius:999px; padding:4px 10px; font-weight:700; font-size:8.4px; align-self:flex-start; }
+  .pildora::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--pdf-azul); }
+  .pildora.sol { background:#FDF1CC; color:#7A5200; } .pildora.sol::before { background:#7A5200; }
+  .caja { background:var(--pdf-caja); border-radius:6px; padding:8px 10px; margin-top:9px; }
+  .caja.azul { background:var(--pdf-caja-azul); border-left:3px solid var(--pdf-azul); }
+  .caja .v { font-size:11px; font-weight:700; margin-top:2px; }
+  .h-circ { display:grid; grid-template-columns:.8fr 1.3fr 1fr 1.3fr .9fr 1.3fr .9fr 1.3fr .7fr; align-items:center; margin-top:6px; }
+  .h-nodo { border:1px solid var(--pdf-azul); border-radius:5px; padding:5px 4px; font-size:7.4px; font-weight:700; text-align:center; line-height:1.15; }
+  .h-nodo.v { border-color:#5B4691; color:#5B4691; } .h-nodo.f { border-color:#2E6B4C; color:#2E6B4C; }
+  .h-fl { padding:0 4px; text-align:center; }
+  .h-fl b { display:block; font-size:12px; }
+  .h-fl i { display:block; border-top:1.6px solid var(--pdf-azul); margin:2px 2px; position:relative; }
+  .h-fl i::after { content:''; position:absolute; right:-3px; top:-4px; border:3px solid transparent; border-left:4px solid var(--pdf-azul); }
+  .h-fl.v b { color:#5B4691; } .h-fl.v i { border-top-color:#5B4691; } .h-fl.v i::after { border-left-color:#5B4691; }
+  .h-fl small { font-size:6.6px; color:var(--pdf-suave); display:block; line-height:1.2; }
+  .h-grilla { display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 14px; margin-top:8px; }
+  .h-dato { border-top:1px solid var(--pdf-linea); padding:5px 0; }
+  .h-dato .n { font-size:15px; font-weight:700; }
+  .h-dato small { display:block; color:var(--pdf-suave); font-size:7.4px; }
+  .h-tiles { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-top:9px; }
+  .h-tiles div { border:1px solid var(--pdf-linea); border-radius:6px; padding:6px; }
+  .h-tiles b { display:block; font-size:16px; }
+  .h-tiles small { font-size:7px; color:var(--pdf-suave); }
+  table.h-tabla { width:100%; border-collapse:collapse; margin-top:8px; font-size:7.6px; }
+  .h-tabla th { text-align:left; font-size:6.6px; letter-spacing:.1em; color:var(--pdf-rotulo); text-transform:uppercase; padding:4px 3px; border-bottom:1px solid var(--pdf-linea); }
+  .h-tabla td { padding:4px 3px; border-bottom:1px solid var(--pdf-linea); }
+  .est { display:inline-block; border-radius:999px; padding:1px 6px; font-weight:700; font-size:6.8px; }
+  .est.v { background:#F8E1E1; color:#8A3434; } .est.p { background:#FCE8A8; color:#7A5200; } .est.a { background:#DDF1E6; color:#2E6B4C; } .est.e { background:#DCEAF7; color:#24507A; }
+  .h-pie { margin-top:auto; border-top:1px solid var(--pdf-linea); padding-top:5px; display:flex; justify-content:space-between; font-size:7px; color:var(--pdf-suave); }
+
+  /* Para completar (en Métricas) */
+  .completar { background:#fff; border:1px solid var(--linea); border-radius:16px; padding:18px 22px; }
+  .completar .cab { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .completar h3 { margin:0; font-family:var(--f-titulo); font-weight:650; font-size:1.08rem; color:var(--tinta); }
+  .tarea { display:grid; grid-template-columns:minmax(0,1fr) 190px 140px; gap:12px; align-items:center; padding:10px 4px; border-top:1px solid var(--linea); font-size:.9rem; }
+  .tarea b { color:var(--tinta); }
+  .tarea small { display:block; color:var(--suave); font-size:.8rem; }
+  .tarea .q { color:var(--suave); font-size:.85rem; }
+  .tarea a { font-weight:600; color:var(--tinta); text-decoration:underline; text-underline-offset:3px; text-align:right; }
+  .grupo { font-size:.82rem; font-weight:700; color:var(--suave); margin:12px 0 2px; }
+</style>
+</head>
+<body>
+  <div class="guia"><b>Maqueta 4, con datos reales al 24/10/2026.</b> La pestaña Reportes y dos hojas de PDF con el diseño del anexo (Métricas y Estado general), con los números de hoy. Al final, «Para completar».</div>
+  <main>
+    <h1><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg> Métricas y Reportes</h1>
+    <p class="bajada">Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF.</p>
+    <div class="pestanas"><span>Métricas</span><span class="on">Reportes</span></div>
+
+    <h2 class="seccion">Para presentar</h2>
+    <p class="seccion">El estado del registro y cómo funcionó el circuito.</p>
+    <div class="grilla">
+      <section class="tarjeta">
+        <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Métricas del año</h3>
+        <p>Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.</p>
+        <div class="campos"><span class="sel">2026 (en curso) ▾</span></div>
+        <span class="btn">⤓ Descargar PDF</span><div class="hojas">Unas 4 hojas</div>
+      </section>
+      <section class="tarjeta">
+        <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>Informe anual</h3>
+        <p>Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).</p>
+        <div class="campos"><span class="sel">2026 ▾</span></div>
+        <span class="btn off">Disponible desde el 1/1/2027</span><div class="hojas">Se arma con la foto del 31/12</div>
+      </section>
+      <section class="tarjeta">
+        <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 9-5 5-4-4-3 3"/><path d="M3 3v18h18"/></svg>Estado general de los datasets</h3>
+        <p>La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.</p>
+        <div class="campos"></div>
+        <span class="btn">⤓ Descargar PDF</span><div class="hojas">Unas 3 hojas</div>
+      </section>
+    </div>
+
+    <h2 class="seccion">Para trabajar</h2>
+    <p class="seccion">Para preparar una reunión, planificar o dejar constancia.</p>
+    <div class="grilla g4">
+      <section class="tarjeta">
+        <h3>Por área</h3>
+        <p>Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.</p>
+        <div class="campos"><span class="sel" style="width:100%">Secretaría de Economía, Finanzas y Control… ▾</span></div>
+        <span class="btn">⤓ Descargar PDF</span><div class="hojas">1 + 2 hojas</div>
+      </section>
+      <section class="tarjeta">
+        <h3>Avisos del RPAD</h3>
+        <p>La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.</p>
+        <div class="campos"><span class="sel">01/01/2026</span><span class="sel">24/10/2026</span></div>
+        <span class="btn">⤓ Descargar PDF</span>
+      </section>
+      <section class="tarjeta">
+        <h3>Agenda de pedidos</h3>
+        <p>Qué vence en los próximos meses, mes por mes, con el área y los datos que se van a pedir.</p>
+        <div class="campos"><div class="chips"><span class="chip">3</span><span class="chip on">6</span><span class="chip">12 meses</span></div><span class="sel">Las dos gestiones ▾</span></div>
+        <span class="btn">⤓ Descargar PDF</span>
+      </section>
+      <section class="tarjeta">
+        <h3>Datos para completar</h3>
+        <p>Lo que falta cargar para que las métricas estén completas: notas DGMIT pendientes de carga y actualizaciones sin «Recibido el».</p>
+        <div class="campos"></div>
+        <span class="btn">⤓ Descargar PDF</span><div class="hojas">También en Métricas → Para completar</div>
+      </section>
+    </div>
+
+    <h2 class="seccion">Así se verían los PDF</h2>
+    <p class="seccion">Con el diseño del anexo de las notas: encabezado de la Dirección, rótulos espaciados, título grande, píldora, recuadros con borde azul y el pie «Hoja k de N».</p>
+    <div class="pdfs">
+      <div>
+        <p class="pdf-tit">Métricas del año · hoja 1</p>
+        <div class="hoja">
+          <div class="h-cab"><div><b>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</b><small>Municipalidad de Comodoro Rivadavia</small></div><div class="d"><b>Métricas del RPAD · 2026</b><small>24 de octubre de 2026</small></div></div>
+          <div style="margin-top:12px" class="rotulo">Métricas · año 2026, en curso</div>
+          <div class="h-titulo">El circuito, del aviso del RPAD a la carga en el portal</div>
+          <span class="pildora">Calculado con todos los datasets</span>
+          <div class="caja azul"><div class="rotulo">Gestión externa · mediana en días hábiles</div>
+            <div class="h-circ">
+              <div class="h-nodo">RPAD</div><div class="h-fl"><b>27</b><i></i><small>antes del venc.<br>32 ciclos</small></div>
+              <div class="h-nodo v">DGMIT y DA</div><div class="h-fl v"><b style="font-size:8px">sin notas cargadas</b><i></i><small>10 pendientes<br>de carga</small></div>
+              <div class="h-nodo">Área</div><div class="h-fl"><b style="font-size:8px">sin datos todavía</b><i></i><small>respuesta</small></div>
+              <div class="h-nodo">DDPC</div><div class="h-fl"><b>0</b><i></i><small>carga<br>23 ciclos</small></div>
+              <div class="h-nodo f">Portal</div>
+            </div>
+          </div>
+          <div class="caja azul"><div class="rotulo">Gestión interna · mediana en días hábiles</div>
+            <div class="h-circ" style="grid-template-columns:.8fr 1.4fr 1.3fr 1.4fr .9fr 1.4fr .7fr">
+              <div class="h-nodo">RPAD</div><div class="h-fl"><b>41</b><i></i><small>antes del venc.<br>3 ciclos</small></div>
+              <div class="h-nodo v">DGMIT y DIT</div><div class="h-fl v"><b>45</b><i></i><small>relevamiento<br>5 ciclos</small></div>
+              <div class="h-nodo">DDPC</div><div class="h-fl"><b>0</b><i></i><small>carga<br>5 ciclos</small></div>
+              <div class="h-nodo f">Portal</div>
+            </div>
+          </div>
+          <div style="margin-top:12px" class="rotulo">Resultados del año</div>
+          <div class="h-grilla">
+            <div class="h-dato"><span class="n">5 de 33</span><small>ciclos actualizados a tiempo</small></div>
+            <div class="h-dato"><span class="n">34 de 35</span><small>vencimientos avisados con la anticipación de la regla</small></div>
+            <div class="h-dato"><span class="n">82 %</span><small>índice de actualización (hoy)</small></div>
+          </div>
+          <div class="caja"><div class="rotulo">Cómo se cuenta</div><div style="margin-top:3px;line-height:1.4">Días hábiles: de lunes a viernes, sin los feriados nacionales fijos. La mediana es el valor del medio: la mitad de los casos tardó eso o menos. Un tramo cuenta en el año en que terminó.</div></div>
+          <div class="h-pie"><span>Generado el 24/10/2026 a las 15:20 por Usuario Ejemplo</span><span>Métricas del RPAD · 2026 · Hoja 1 de 4</span></div>
+        </div>
+      </div>
+      <div>
+        <p class="pdf-tit">Estado general · hoja 1</p>
+        <div class="hoja">
+          <div class="h-cab"><div><b>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</b><small>Municipalidad de Comodoro Rivadavia</small></div><div class="d"><b>Estado general de los datasets</b><small>24 de octubre de 2026</small></div></div>
+          <div style="margin-top:12px" class="rotulo">Estado general · al 24/10/2026</div>
+          <div class="h-titulo">81 conjuntos de datos en el registro</div>
+          <span class="pildora">El 82 % de los que tienen vencimiento están al día: 55 de 67</span>
+          <div class="h-tiles">
+            <div><b>81</b><small>Total</small></div><div><b>53</b><small>Actualizados</small></div><div><b>2</b><small>Próximos a vencer</small></div><div><b>12</b><small>Vencidos</small></div><div><b>14</b><small>Eventuales</small></div>
+          </div>
+          <table class="h-tabla">
+            <thead><tr><th>Conjunto de datos</th><th>Área</th><th>Frecuencia</th><th>Datos al</th><th>Próxima</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr><td>Parque Automotor (Patentamiento)</td><td>Dir. de Información Tributaria</td><td>Anualmente</td><td>31/12/2022</td><td>31/01/2024</td><td><span class="est v">Sin respuesta del área</span></td></tr>
+              <tr><td>Comercios habilitados por rubro</td><td>Dir. Gral. de Habilitaciones Comerciales</td><td>Anualmente</td><td>30/06/2025</td><td>31/01/2026</td><td><span class="est v">Sin respuesta del área</span></td></tr>
+              <tr><td>Áreas específicas de género</td><td>Sec. de la Mujer, Género y Diversidad</td><td>Anualmente</td><td>31/10/2025</td><td>30/11/2026</td><td><span class="est p">Próximo a vencer</span></td></tr>
+              <tr><td>Cantidad de empleados municipales</td><td>Dir. Gral. de Sueldos</td><td>Cada medio año</td><td>30/09/2026</td><td>31/10/2026</td><td><span class="est p">Próximo a vencer</span></td></tr>
+              <tr><td>Presupuesto Municipal</td><td>Sec. de Economía, Finanzas y Control de Gestión</td><td>Anualmente</td><td>31/12/2026</td><td>31/01/2027</td><td><span class="est a">Actualizado</span></td></tr>
+              <tr><td>Pauta Publicitaria</td><td>Subsecretaría de Comunicación</td><td>Trimestralmente</td><td>31/07/2026</td><td>31/01/2027</td><td><span class="est a">Actualizado</span></td></tr>
+              <tr><td>…</td><td></td><td></td><td></td><td></td><td></td></tr>
+            </tbody>
+          </table>
+          <div class="h-pie"><span>Generado el 24/10/2026 a las 15:22 por Usuario Ejemplo</span><span>Estado general · Hoja 1 de 3</span></div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="seccion">En la pestaña Métricas: «Para completar»</h2>
+    <p class="seccion">Una sección al final (o arriba, si hay algo pendiente), con un link para cargar cada dato.</p>
+    <section class="completar">
+      <div class="cab"><h3>Para completar</h3><span style="color:var(--suave);font-size:.88rem">Con estos datos, las métricas quedan completas</span></div>
+      <div class="grupo">Notas DGMIT pendientes de carga (26: 10 de ciclos abiertos y 16 de ciclos cerrados en 2026)</div>
+      <div class="tarea"><span><b>Áreas específicas de género</b><small>Secretaría de la Mujer, Género y Diversidad · ciclo abierto</small></span><span class="q">Aviso del 21/10/2026 (Nota Digital 4/26)</span><a>Cargar nota DGMIT</a></div>
+      <div class="tarea"><span><b>Comercios habilitados por rubro</b><small>Dirección General de Habilitaciones Comerciales · ciclo abierto</small></span><span class="q">Aviso del 22/12/2025 (email de 40 días)</span><a>Cargar nota DGMIT</a></div>
+      <div class="grupo">Actualizaciones sin «Recibido el» (5)</div>
+      <div class="tarea"><span><b>Infracciones de Tránsito</b><small>gestión externa</small></span><span class="q">Cargada en el portal el 16/03/2026</span><a>Ver en el Seguimiento</a></div>
+      <div class="tarea"><span><b>Gasto Público</b><small>gestión externa</small></span><span class="q">Cargada en el portal el 26/03/2026</span><a>Ver en el Seguimiento</a></div>
+      <p style="color:var(--suave);font-size:.8rem;margin:10px 0 0">… y 3 más. Las notas de 2026 y los «Recibido el» viejos se completan con los Excel; las actualizaciones nuevas ya piden la fecha y el origen.</p>
+    </section>
+  </main>
+</body>
+</html>
