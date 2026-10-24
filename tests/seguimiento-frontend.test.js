@@ -1231,7 +1231,9 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     llenar(sinPermiso.pagina, sinPermiso.el);
     await sinPermiso.pagina.guardarNotaDgmit();
     assert.deepEqual(sinPermiso.avisos, [['error', 'No tenés permiso &lt;b&gt;para&lt;/b&gt; cargar notas DGMIT.']]);
-    assert.ok(activo(sinPermiso.el, 'modal-nota'));
+    // Un 403 sin campo (quien mira ya no puede cargar): se cierra y se vuelve a pedir la lista
+    assert.ok(!activo(sinPermiso.el, 'modal-nota'));
+    assert.deepEqual(sinPermiso.pedidos, ['GET /seguimiento', 'POST /notas-dgmit', 'GET /seguimiento']);
 
     const raro = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': { success: true, message: 'Nota DGMIT N° <i>1</i> (reiteración) cargada en 1 dataset.' } } });
     await raro.pagina.iniciarSeguimiento();
@@ -1358,6 +1360,98 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     assert.ok(activo(el, 'modal-nota'));
     pagina.alApretarEscape({ key: 'Escape' });
     assert.ok(!activo(el, 'modal-nota'));
+  });
+
+  // Un error del servidor sin campo. Con 403, 404 o 409 (alguien anuló la nota mientras tanto, o quien mira ya no puede corregirla) la
+  // vista quedó vieja: el aviso, se cierra el modal y se vuelve a pedir la vista. Con otro (un 400 como «La corrección no cambia ningún
+  // dato de la nota.», un 500 o sin conexión) el modal queda abierto y el foco vuelve al botón, ya habilitado (deshabilitado durante el
+  // pedido, lo había soltado)
+  const conFocoAnotado = (prueba, id) => {
+    prueba.el(id).focus = function () { prueba.enfocados.push(this.disabled ? `${id} (deshabilitado)` : id); };
+  };
+  const corregirConFalla = async (falla) => {
+    const prueba = preparar({ id: '58', puedeCargar: true,
+      respuestas: { '/seguimiento/58': DE_58_CON_NOTA, '/seguimiento': LISTA() }, errores: { '/notas-dgmit/1': falla } });
+    await prueba.pagina.iniciarSeguimiento();
+    const corregir = Object.assign(elementoFalso('corregir'), { dataset: { accion: 'corregir-nota', nota: '1' } });
+    prueba.pagina.alTocarUnMovimiento({ target: { closest: (selector) => (selector === 'button[data-accion="corregir-nota"]' ? corregir : null) } });
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.ok(activo(prueba.el, 'modal-nota'));
+    prueba.el('nd-motivo').value = 'Otra fecha';
+    conFocoAnotado(prueba, 'nd-guardar');
+    const antes = prueba.pedidos.length;
+    await prueba.pagina.guardarNotaDgmit();
+    return { ...prueba, nuevos: prueba.pedidos.slice(antes) };
+  };
+  const anularConFalla = async (falla) => {
+    const prueba = preparar({ id: '58', puedeCargar: true,
+      respuestas: { '/seguimiento/58': DE_58_CON_NOTA, '/seguimiento': LISTA() }, errores: { '/notas-dgmit/1/anular': falla } });
+    await prueba.pagina.iniciarSeguimiento();
+    prueba.pagina.abrirAnulacion(elementoFalso('anular'), '1');
+    assert.ok(activo(prueba.el, 'modal-anular'));
+    prueba.el('an-motivo').value = 'Se cargó dos veces';
+    conFocoAnotado(prueba, 'an-confirmar');
+    const antes = prueba.pedidos.length;
+    await prueba.pagina.confirmarAnulacion();
+    return { ...prueba, nuevos: prueba.pedidos.slice(antes) };
+  };
+  const VIEJAS = [
+    [403, 'Solo quien cargó la nota o administración pueden corregirla o anularla.'],
+    [404, 'Nota DGMIT no encontrada'],
+    [409, 'La nota está anulada: no se puede corregir ni volver a anular.']
+  ];
+
+  it('corregir: un 400 sin campo deja el formulario abierto y el foco en el botón; un 403, 404 o 409 lo cierra y vuelve a pedir la vista', async () => {
+    const mensaje = 'La corrección no cambia ningún dato de la nota.';
+    const sinCambios = await corregirConFalla(Object.assign(new Error(mensaje), { status: 400 }));
+    assert.deepEqual(sinCambios.avisos, [['error', mensaje]]);
+    assert.ok(activo(sinCambios.el, 'modal-nota'), 'el formulario queda abierto');
+    assert.equal(sinCambios.el('nd-guardar').disabled, false);
+    assert.equal(sinCambios.enfocados.at(-1), 'nd-guardar', 'el foco vuelve al botón, ya habilitado');
+    assert.deepEqual(sinCambios.nuevos, ['PUT /notas-dgmit/1'], 'no se vuelve a pedir la vista');
+    // Lo mismo con un 500 o sin conexión (sin status)
+    for (const falla of [conEstado(500), new Error('Failed to fetch')]) {
+      const otra = await corregirConFalla(falla);
+      assert.ok(activo(otra.el, 'modal-nota'));
+      assert.equal(otra.enfocados.at(-1), 'nd-guardar');
+      assert.deepEqual(otra.nuevos, ['PUT /notas-dgmit/1']);
+    }
+    for (const [status, texto] of VIEJAS) {
+      const vieja = await corregirConFalla(Object.assign(new Error(texto), { status }));
+      assert.deepEqual(vieja.avisos, [['error', texto]], `${status}`);
+      assert.ok(!activo(vieja.el, 'modal-nota'), `${status}: se cierra`);
+      assert.deepEqual(vieja.nuevos.slice(1).sort(), ['GET /seguimiento', 'GET /seguimiento/58'], `${status}: vuelve a pedir la vista`);
+      assert.equal(vieja.enfocados.at(-1), 'sg-cargar-nota', `${status}: el foco, al botón del encabezado`);
+    }
+    // Con campo, como siempre: al campo, sin cerrar (el número repetido es un 409 con campo)
+    const repetido = await corregirConFalla(Object.assign(new Error('Ya hay una nota DGMIT N° 9/26 cargada.'), { status: 409, campo: 'numero' }));
+    assert.ok(activo(repetido.el, 'modal-nota'));
+    assert.equal(repetido.el('nd-numero-error').textContent, 'Ya hay una nota DGMIT N° 9/26 cargada.');
+    assert.equal(repetido.enfocados.at(-1), 'nd-numero');
+    assert.deepEqual(repetido.avisos, []);
+    assert.deepEqual(repetido.nuevos, ['PUT /notas-dgmit/1']);
+  });
+
+  it('anular: un error sin campo que no es 403, 404 ni 409 deja el modal abierto y el foco en Anular; esos lo cierran y vuelven a pedir la vista', async () => {
+    const caida = await anularConFalla(conEstado(500));
+    assert.deepEqual(caida.avisos, [['error', 'Error 500']]);
+    assert.ok(activo(caida.el, 'modal-anular'));
+    assert.equal(caida.el('an-confirmar').disabled, false);
+    assert.equal(caida.enfocados.at(-1), 'an-confirmar', 'el foco vuelve al botón, ya habilitado');
+    assert.deepEqual(caida.nuevos, ['POST /notas-dgmit/1/anular']);
+    for (const [status, texto] of VIEJAS) {
+      const vieja = await anularConFalla(Object.assign(new Error(texto), { status }));
+      assert.deepEqual(vieja.avisos, [['error', texto]], `${status}`);
+      assert.ok(!activo(vieja.el, 'modal-anular'), `${status}: se cierra`);
+      assert.deepEqual(vieja.nuevos.slice(1).sort(), ['GET /seguimiento', 'GET /seguimiento/58'], `${status}: vuelve a pedir la vista`);
+      assert.equal(vieja.enfocados.at(-1), 'sg-cargar-nota', `${status}`);
+    }
+    // El motivo que el servidor rechaza va al campo, sin cerrar
+    const motivo = await anularConFalla(Object.assign(new Error('El motivo no puede tener más de 500 caracteres.'), { status: 400, campo: 'motivo' }));
+    assert.ok(activo(motivo.el, 'modal-anular'));
+    assert.equal(motivo.el('an-motivo-error').textContent, 'El motivo no puede tener más de 500 caracteres.');
+    assert.equal(motivo.enfocados.at(-1), 'an-motivo');
+    assert.deepEqual(motivo.avisos, []);
   });
 
   it('si la lista no se puede cargar, avisa y no abre el formulario', async () => {

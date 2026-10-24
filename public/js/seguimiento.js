@@ -1509,9 +1509,27 @@ function mostrarErroresDeNota(errores) {
   return Boolean(primero);
 }
 
+// Los errores sin campo que dicen que la vista quedó vieja: 403 (quien mira ya no puede cargar, corregir o anular), 404 (la nota ya no
+// existe) y 409 (alguien la anuló mientras tanto). El 409 del número repetido trae campo y va a ese campo
+const ESTADOS_DE_VISTA_VIEJA = [403, 404, 409];
+
+// Un error del servidor sin campo, al guardar o al anular: el aviso y, si la vista quedó vieja, se cierra el modal (`cerrar`) y se
+// vuelve a pedir la vista, así desaparecen los botones que ya no sirven. Con cualquier otro (un 400 como «La corrección no cambia
+// ningún dato de la nota.», un 500 o sin conexión) el modal queda abierto y el foco vuelve a `boton`: deshabilitado durante el pedido,
+// lo había soltado. Se llama con el botón ya habilitado
+async function avisarFallaSinCampo(falla, boton, cerrar) {
+  avisarError(falla?.message);
+  if (!ESTADOS_DE_VISTA_VIEJA.includes(falla?.status)) {
+    boton.focus();
+    return;
+  }
+  cerrar();
+  await recargarLaVista();
+}
+
 // Guardar: valida en el navegador (con los mensajes del servidor) y manda POST /notas-dgmit o PUT /notas-dgmit/:id. Un error del
-// servidor con campo (el número repetido, un dataset que no se puede elegir) va a ese campo; sin campo, un aviso. Si sale bien: el
-// aviso del servidor, se cierra y se vuelve a pedir la vista
+// servidor con campo (el número repetido, un dataset que no se puede elegir) va a ese campo; sin campo, un aviso (avisarFallaSinCampo).
+// Si sale bien: el aviso del servidor, se cierra y se vuelve a pedir la vista
 async function guardarNotaDgmit() {
   const boton = porId('nd-guardar');
   if (boton.disabled) return;
@@ -1523,16 +1541,21 @@ async function guardarNotaDgmit() {
   if (mostrarErroresDeNota(erroresDelFormularioDeNota(entrada, { hoy: Utils.hoyEnArgentina(), conMotivo: corrige }))) return;
   const cuerpo = cuerpoDeLaNota(entrada, corrige);
   let respuesta = null;
+  let falla = null;
   await conBotonBloqueado(boton, async () => {
     try {
       respuesta = corrige
         ? await API.pedirJson('PUT', `/notas-dgmit/${encodeURIComponent(formularioDeNota.notaId)}`, cuerpo)
         : await API.pedirJson('POST', '/notas-dgmit', cuerpo);
     } catch (error) {
-      if (ponerErrorDeNota(error?.campo, error?.message)) porId(LUGARES_DE_ERROR_DE_NOTA[error.campo].foco).focus();
-      else avisarError(error?.message);
+      falla = error ?? new Error('');
     }
   });
+  if (falla) {
+    if (ponerErrorDeNota(falla.campo, falla.message)) porId(LUGARES_DE_ERROR_DE_NOTA[falla.campo].foco).focus();
+    else await avisarFallaSinCampo(falla, boton, () => cerrarFormularioDeNota(porId('sg-cargar-nota')));
+    return;
+  }
   if (!respuesta) return;
   avisarExito(respuesta.message ?? '');
   // El botón que abrió el formulario se vuelve a dibujar con la vista: el foco va al del encabezado
@@ -1568,7 +1591,8 @@ function ponerErrorDeAnulacion(mensaje) {
   else porId('an-motivo').removeAttribute('aria-invalid');
 }
 
-// Confirmar: POST /notas-dgmit/:id/anular con el motivo. Si sale bien, el aviso del servidor, se cierra y se vuelve a pedir la vista
+// Confirmar: POST /notas-dgmit/:id/anular con el motivo. Si sale bien, el aviso del servidor, se cierra y se vuelve a pedir la vista. Un
+// error en el motivo va al campo; otro, un aviso (avisarFallaSinCampo)
 async function confirmarAnulacion() {
   const boton = porId('an-confirmar');
   if (boton.disabled) return;
@@ -1580,18 +1604,23 @@ async function confirmarAnulacion() {
     return;
   }
   let respuesta = null;
+  let falla = null;
   await conBotonBloqueado(boton, async () => {
     try {
       respuesta = await API.pedirJson('POST', `/notas-dgmit/${encodeURIComponent(anulacionDeNota.notaId)}/anular`, { motivo: motivo.trim() });
-    } catch (falla) {
-      if (falla?.campo === 'motivo') {
-        ponerErrorDeAnulacion(falla.message);
-        porId('an-motivo').focus();
-      } else {
-        avisarError(falla?.message);
-      }
+    } catch (error) {
+      falla = error ?? new Error('');
     }
   });
+  if (falla) {
+    if (falla.campo === 'motivo') {
+      ponerErrorDeAnulacion(falla.message);
+      porId('an-motivo').focus();
+    } else {
+      await avisarFallaSinCampo(falla, boton, () => cerrarAnulacion(porId('sg-cargar-nota')));
+    }
+    return;
+  }
   if (!respuesta) return;
   avisarExito(respuesta.message ?? '');
   cerrarAnulacion(porId('sg-cargar-nota'));

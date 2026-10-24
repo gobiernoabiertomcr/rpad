@@ -40,7 +40,7 @@ const VERSION_GESTION = '20261105';
 // ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
 // de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, y después cargar, corregir y anular notas
 // DGMIT desde la página, spec 2026-10-24-notas-dgmit): su versión es propia
-const VERSION_SEGUIMIENTO = '20261125';
+const VERSION_SEGUIMIENTO = '20261126';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
