@@ -142,9 +142,9 @@ Cada ciclo tiene estos hitos:
   - el de respuesta del área, «Se empieza a contar cuando haya notas DGMIT cargadas».
 - **La cifra**, como en el mockup, con lo que se eligió en los selectores (sección 1.7):
   - la **mediana** o el **promedio**, grande y redondeado. Si la mediana sale de una cantidad par de casos, es el promedio de las dos del medio, redondeado;
-  - **la unidad, siempre, debajo de la cifra** (pedido del usuario), con el estadístico: «mediana en días hábiles», «promedio en días corridos», y en el aviso anticipado «mediana en días hábiles, antes del vencimiento». Una cifra nunca va sola;
-  - **una cifra de 0 se escribe «En el día»** (pedido del usuario). Pasa sobre todo en la preparación y carga, cuando la DDPC carga el mismo día en que recibe los datos: es un logro y se tiene que leer así, no como «0». Con el promedio, un valor que redondea a 0 también dice «En el día»;
-  - debajo, la **cantidad de ciclos**. **El otro estadístico no se muestra**: lo pidió el usuario, para que el circuito quede limpio y sin tantos datos;
+  - **la unidad, siempre, al lado de la cifra** (pedido del usuario): «27 días hábiles antes» (en el aviso anticipado), «45 días hábiles», «45 días corridos». Una cifra nunca va sola;
+  - **debajo, el estadístico y la cantidad de ciclos en un solo renglón**: «mediana de 32 ciclos» o «promedio de 32 ciclos». La cantidad no se repite en el texto de la flecha. **El otro estadístico no se muestra**: lo pidió el usuario, para que el circuito quede limpio y sin tantos datos;
+  - **una cifra de 0 se escribe «En el día»** (pedido del usuario), y debajo «mediana en días hábiles» (o lo que se haya elegido). En ese caso la cantidad de ciclos queda en el texto de la flecha. Pasa sobre todo en la preparación y carga, cuando la DDPC carga el mismo día en que recibe los datos: es un logro y se tiene que leer así, no como «0». Con el promedio, un valor que redondea a 0 también dice «En el día»;
   - la aclaración fija: «Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.»
   - Sin casos, no hay cifra: «Sin casos en 2026».
   - Con 4 casos o menos, se suma «con tan pocos casos, es orientativo».
