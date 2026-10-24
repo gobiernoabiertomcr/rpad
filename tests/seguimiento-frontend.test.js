@@ -191,7 +191,7 @@ describe('seguimiento.js: la ficha y el circuito', () => {
     for (const t of ['6 avisos', '5 emails y la Nota Digital N° 2/26', 'DGMIT y Dirección Administrativa', 'Vencido hace 81 días']) assert.ok(html.includes(t), t);
     assert.ok(html.includes('<div class="sg-nodo area">'), 'el área vencida, en rojo');
     assert.ok(html.includes('Además, el 21/06/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.'));
-    assert.ok(html.includes('class="sg-flecha fuera"') && html.includes('Por fuera del RPAD: no queda registrada'));
+    assert.ok(html.includes('class="sg-flecha fuera"') && html.includes('Pendiente de carga'));
   });
 
   it('el encabezado del circuito: desde cuándo se cuentan los avisos y el vencimiento, con los textos del servidor', () => {

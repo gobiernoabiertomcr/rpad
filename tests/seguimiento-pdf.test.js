@@ -216,7 +216,7 @@ describe('renderSeguimiento: los textos del 52', () => {
       assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
     }
     // Los textos de los nodos y del tramo de afuera van en dos líneas
-    for (const t of ['DGMIT y Dirección Administrativa', 'Por fuera del RPAD: no queda registrada', 'Dirección General de Relaciones Laborales']) {
+    for (const t of ['DGMIT y Dirección Administrativa', 'Pendiente de carga', 'Dirección General de Relaciones Laborales']) {
       assert.ok(lineas.join(' ').includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
     }
     // En el 52 no hay cambios en la ficha ni pendientes
