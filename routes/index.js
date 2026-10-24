@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, adminOnly, cronAuth } from '../middleware/auth.js';
+import { authMiddleware, adminOnly, cargaNotasDgmit, cronAuth } from '../middleware/auth.js';
 import { limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso } from '../middleware/rateLimit.js';
 
 // Controladores
@@ -110,6 +110,7 @@ import {
   deleteHitoArchivo
 } from '../controllers/gestionController.js';
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
+import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
 import { uploadProyectoMiddleware, uploadHitoMiddleware } from '../config/upload.js';
 
 const router = Router();
@@ -251,6 +252,13 @@ router.get('/reportes/cumplimiento', authMiddleware, reporteCumplimiento);
 router.get('/seguimiento', authMiddleware, listarSeguimiento);
 router.get('/seguimiento/:id/pdf', authMiddleware, descargarSeguimientoPdf);
 router.get('/seguimiento/:id', authMiddleware, verSeguimiento);
+
+// =====================================================
+// Notas DGMIT (protegidas: administración y el colaborador; corregir y anular, quien la cargó o administración)
+// =====================================================
+router.post('/notas-dgmit', authMiddleware, cargaNotasDgmit, cargarNotaDgmit);
+router.put('/notas-dgmit/:id', authMiddleware, cargaNotasDgmit, corregirNotaDgmit);
+router.post('/notas-dgmit/:id/anular', authMiddleware, cargaNotasDgmit, anularNotaDgmit);
 
 // =====================================================
 // Notas DOCX (protegidas)

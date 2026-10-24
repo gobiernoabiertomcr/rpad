@@ -5,6 +5,8 @@
 // unión con el dataset la decide unirAlta). Hoy, para todos estos casos: HOY_DE_LOS_CASOS.
 // dataset.requiere_nota: el dump es anterior a la columna («Requiere nota DGMIT»), así que es null (sin dato) en todos los casos;
 // los tests de «Sí» y de «No» lo pisan en una copia del dataset.
+// notasDgmit: el dump también es anterior a las notas DGMIT (spec 2026-10-24-notas-dgmit), así que es una lista vacía en todos los
+// casos; los tests que las necesitan las arman en una copia.
 export const HOY_DE_LOS_CASOS = '2026-10-20';
 
 export const CATALOGOS = {
@@ -257,7 +259,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "9": {
     "dataset": {
@@ -552,7 +555,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "10": {
     "dataset": {
@@ -894,7 +898,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "11": {
     "dataset": {
@@ -1060,7 +1065,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "25": {
     "dataset": {
@@ -1122,7 +1128,8 @@ export const CASOS = {
       }
     ],
     "notas": [],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "26": {
     "dataset": {
@@ -1277,7 +1284,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "33": {
     "dataset": {
@@ -1377,7 +1385,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "38": {
     "dataset": {
@@ -1489,7 +1498,8 @@ export const CASOS = {
       }
     ],
     "notas": [],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "42": {
     "dataset": {
@@ -1619,7 +1629,8 @@ export const CASOS = {
       }
     ],
     "notas": [],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "52": {
     "dataset": {
@@ -1867,7 +1878,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "58": {
     "dataset": {
@@ -1934,7 +1946,8 @@ export const CASOS = {
       }
     ],
     "notas": [],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "61": {
     "dataset": {
@@ -2074,7 +2087,8 @@ export const CASOS = {
         "firmante": null
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "66": {
     "dataset": {
@@ -2186,7 +2200,8 @@ export const CASOS = {
       }
     ],
     "notas": [],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   },
   "81": {
     "dataset": {
@@ -2263,6 +2278,7 @@ export const CASOS = {
         "firmante": "Bruno Pablo Dos"
       }
     ],
-    "auditorias": []
+    "auditorias": [],
+    "notasDgmit": []
   }
 };

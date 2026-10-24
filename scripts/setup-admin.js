@@ -42,9 +42,9 @@ const setupAdmin = async () => {
     const nombre_completo = await question('Nombre completo: ');
     const email = await question('Email: ');
     const password = await question('Contraseña (mínimo 8 caracteres): ');
-    const rolInput = await question('Rol (superadmin/admin/editor/lector) [lector]: ');
+    const rolInput = await question('Rol (superadmin/admin/editor/colaborador/lector) [lector]: ');
     const rolElegido = rolInput.trim().toLowerCase();
-    const rol = ['superadmin', 'admin', 'editor', 'lector'].includes(rolElegido) ? rolElegido : 'lector';
+    const rol = ['superadmin', 'admin', 'editor', 'colaborador', 'lector'].includes(rolElegido) ? rolElegido : 'lector';
 
     if (!emailValido(email.trim().toLowerCase())) {
       console.error('❌ El email no es válido.');

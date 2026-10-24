@@ -26,16 +26,17 @@ const LETRA_POR_DEFECTO = 6.6;
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
-// En qué fila va cada tipo de marca. Quedan afuera 'auditoria' y 'baja' (la baja corta la banda, no es una marca)
+// En qué fila va cada tipo de marca. Quedan afuera 'auditoria' y 'baja' (la baja corta la banda, no es una marca). Las notas DGMIT
+// al área ('dgmit', spec 2026-10-24-notas-dgmit) van abajo, con los emails al área y las propuestas rechazadas
 const FILA_DEL_TIPO = Object.freeze({
   nota: 'arriba', email: 'arriba',
   alta: 'banda', act: 'banda', actp: 'banda', cambio: 'banda', cambiop: 'banda',
-  area: 'abajo', rech: 'abajo'
+  area: 'abajo', rech: 'abajo', dgmit: 'abajo'
 });
 const FILAS = ['arriba', 'banda', 'abajo'];
 
-// Qué marca se dibuja cuando varias se juntan: la primera de esta lista
-const PRIORIDAD = ['nota', 'email', 'act', 'actp', 'cambio', 'cambiop', 'alta', 'rech', 'area'];
+// Qué marca se dibuja cuando varias se juntan: la primera de esta lista (en la fila de abajo: nota DGMIT, rechazo, email al área)
+const PRIORIDAD = ['nota', 'email', 'act', 'actp', 'cambio', 'cambiop', 'alta', 'dgmit', 'rech', 'area'];
 
 const lista = (valor) => (Array.isArray(valor) ? valor : []);
 const comparar = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -90,12 +91,13 @@ const etiquetaDeNota = (movimiento) => {
   return `Nota ${numero}/${String(anio).slice(-2)}`;
 };
 
-// Las marcas que van en la cinta: las notas enviadas, los emails que salieron, y los movimientos de la ficha (no la auditoría, que
-// no es de este dataset, ni la baja, que corta la banda).
+// Las marcas que van en la cinta: las notas enviadas, los emails que salieron, las notas DGMIT sin anular y los movimientos de la
+// ficha (no la auditoría, que no es de este dataset, ni la baja, que corta la banda).
 const vaEnLaCinta = (movimiento) => {
   if (!Object.hasOwn(FILA_DEL_TIPO, movimiento.tipo)) return false;
   if (movimiento.tipo === 'nota') return movimiento.extra?.estado === 'enviada';
   if (movimiento.tipo === 'email' || movimiento.tipo === 'area') return Boolean(movimiento.extra?.success);
+  if (movimiento.tipo === 'dgmit') return !movimiento.extra?.anulada;
   return true;
 };
 

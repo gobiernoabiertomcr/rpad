@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import pool from '../config/database.js';
-import { esAdmin } from '../services/usuariosReglas.js';
+import { esAdmin, puedeCargarNotasDgmit } from '../services/usuariosReglas.js';
 
 // Sin JWT_SECRET cualquiera podría firmar tokens válidos: no se permite iniciar
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -71,6 +71,19 @@ export const adminOnly = (req, res, next) => {
     return res.status(403).json({
       success: false,
       error: 'Acceso denegado. Se requiere rol de administrador.'
+    });
+  }
+  next();
+};
+
+// Middleware para las notas DGMIT (spec 2026-10-24-notas-dgmit, sección 8): las cargan, corrigen y anulan administración
+// (esAdmin) y el colaborador. Corregir y anular, además, solo quien la cargó o administración: eso lo decide el controlador,
+// que conoce la nota
+export const cargaNotasDgmit = (req, res, next) => {
+  if (!puedeCargarNotasDgmit(req.user?.rol)) {
+    return res.status(403).json({
+      success: false,
+      error: 'No tenés permiso para cargar notas DGMIT.'
     });
   }
   next();

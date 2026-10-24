@@ -5,7 +5,20 @@ let resumen = { aprobadores_activos: 0, minimo: 2 };
 let abierto = null;          // usuario del modal; null = alta
 let usernameTocado = false;  // si se escribió el usuario a mano, la sugerencia no lo pisa
 
-const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Admin', editor: 'Editor', lector: 'Lector' };
+const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Admin', editor: 'Editor', colaborador: 'Colaborador', lector: 'Lector' };
+// La línea debajo del selector de rol, una por rol que se puede elegir; la cuenta del superadmin no lleva (spec
+// 2026-10-24-notas-dgmit, 1)
+const AYUDA_DEL_ROL = {
+  lector: 'Ve los datos públicos y usa las Herramientas (Reportes, Notas, Gestión y Seguimiento). No modifica nada.',
+  colaborador: 'Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula las que cargó). '
+    + 'No modifica datasets ni audita cambios.',
+  editor: 'Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y colaboradores.',
+  admin: 'Propone y audita cambios en los datasets, maneja áreas, usuarios, reportes y notificaciones. También carga notas DGMIT.'
+};
+// Los roles del selector, sin el superadmin (se asigna por SQL); el editor ofrece solo los suyos. ROLES_DEL_EDITOR es copia
+// de la de services/usuariosReglas.js (el servidor valida igual)
+const ROLES_DEL_SELECTOR = ['lector', 'colaborador', 'editor', 'admin'];
+const ROLES_DEL_EDITOR = ['lector', 'colaborador'];
 const ACCION_LICENCIA = { licencia_cargada: 'Licencia cargada', licencia_editada: 'Licencia modificada', licencia_anulada: 'Licencia anulada' };
 const TEXTO_ACCION = {
   alta: 'Alta del usuario',
@@ -113,16 +126,27 @@ const esc = (texto) => Utils.escapeHtml(texto == null ? '' : String(texto));
 const avisar = (mensaje, tipo = 'info') => showToast(esc(mensaje), tipo);
 const esAprobador = (u) => u.rol === 'admin' || u.rol === 'superadmin';
 const soyYo = (u) => Boolean(u) && u.id === Auth.getUser()?.id;
-// El editor solo crea y modifica lectores y no cambia roles (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)
+// El editor solo crea y modifica lectores y colaboradores, y solo pasa a alguien de uno a otro (spec
+// 2026-10-15-dias-habiles-licencias-auditoria, 8.1; el colaborador, spec 2026-10-24-notas-dgmit, 1)
 const soyEditor = () => Auth.getRole() === 'editor';
 // Aviso de un usuario que quien está conectado no puede modificar (la cuenta del superadmin, o para un editor cualquiera
-// que no sea lector), o null
+// que no sea lector ni colaborador), o null
 const avisoSoloLectura = (u) => {
   if (!u) return null;
   if (u.rol === 'superadmin' && !soyYo(u)) return 'Esta cuenta solo la modifica su titular.';
-  if (soyEditor() && u.rol !== 'lector') return 'Como editor, solo podés modificar usuarios lectores.';
+  if (soyEditor() && !ROLES_DEL_EDITOR.includes(u.rol)) return 'Como editor, solo podés modificar usuarios lectores y colaboradores.';
   return null;
 };
+// Los roles que muestra el selector: los que puede elegir quien está conectado, más el que ya tiene el usuario (la cuenta
+// del superadmin, o un admin que un editor ve en solo lectura)
+const rolesVisibles = (rolActual = null) => {
+  const ofrecidos = soyEditor() ? ROLES_DEL_EDITOR : ROLES_DEL_SELECTOR;
+  return rolActual && !ofrecidos.includes(rolActual) ? [...ofrecidos, rolActual] : ofrecidos;
+};
+// "<b>Colaborador:</b> Ve todo lo que…", o '' si el rol no lleva línea (el superadmin)
+const htmlDeAyudaDelRol = (rol) => (Object.hasOwn(AYUDA_DEL_ROL, rol ?? '')
+  ? `<b>${esc(TEXTO_ROL[rol])}:</b> ${esc(AYUDA_DEL_ROL[rol])}`
+  : '');
 // Confirmación al cambiar un rol, y en especial el propio (spec 8.5; el editor, spec 2026-10-15, 8.1, y spec
 // 2026-10-20-editor-sin-responsabilidad)
 const textoCambioDeRol = (u, rol) => {
@@ -137,6 +161,11 @@ const textoCambioDeRol = (u, rol) => {
     return `${u.nombre_completo} va a pasar a Editor: podrá proponer cambios y auditarlos de respaldo, cuando no haya auditores `
       + 'disponibles, y sin responsabilidad por la auditoría los de los auditores. ¿Continuar?';
   }
+  if (rol === 'colaborador') {
+    return `${u.nombre_completo} va a pasar a Colaborador: podrá cargar notas DGMIT en el Seguimiento, pero no proponer ni aprobar `
+      + 'cambios. ¿Continuar?';
+  }
+  if (u.rol === 'colaborador') return `${u.nombre_completo} va a pasar a Lector: deja de poder cargar notas DGMIT. ¿Continuar?`;
   return `${u.nombre_completo} va a pasar a Lector: deja de poder proponer y aprobar cambios. ¿Continuar?`;
 };
 const sinTildes = (texto) => String(texto ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -181,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('form-usuario').addEventListener('submit', guardarUsuario);
   document.getElementById('u-nombre').addEventListener('input', sugerirUsuario);
+  document.getElementById('u-rol').addEventListener('change', mostrarAyudaDelRol);
   document.getElementById('u-username').addEventListener('input', (evento) => {
     usernameTocado = evento.target.value.trim() !== '';
   });
@@ -281,12 +311,15 @@ function renderLista() {
     texto ? 'Ningún aprobador coincide con la búsqueda.' : 'Todavía no hay aprobadores.');
   pintar('lista-editores', vigentes.filter(u => u.rol === 'editor'),
     texto ? 'Ningún editor coincide con la búsqueda.' : 'No hay editores.');
+  pintar('lista-colaboradores', vigentes.filter(u => u.rol === 'colaborador'),
+    texto ? 'Ningún colaborador coincide con la búsqueda.' : 'No hay colaboradores.');
   pintar('lista-lectores', vigentes.filter(u => u.rol === 'lector'),
     texto ? 'Ningún usuario de solo lectura coincide con la búsqueda.' : 'No hay usuarios de solo lectura.');
   pintar('lista-desactivados', visibles.filter(u => u.estado === 'desactivado'), 'No hay usuarios desactivados.');
 
-  const lectores = usuarios.filter(u => u.estado !== 'desactivado' && u.rol === 'lector').length;
-  document.getElementById('contador-lectores').textContent = plural(lectores, 'activo', 'activos');
+  const activosCon = (rol) => usuarios.filter(u => u.estado !== 'desactivado' && u.rol === rol).length;
+  document.getElementById('contador-colaboradores').textContent = plural(activosCon('colaborador'), 'activo', 'activos');
+  document.getElementById('contador-lectores').textContent = plural(activosCon('lector'), 'activo', 'activos');
   document.getElementById('contador-desactivados').textContent = String(usuarios.filter(u => u.estado === 'desactivado').length);
   renderResumenAprobadores();
 }
@@ -321,7 +354,8 @@ function abrirModal(u) {
   abierto = u;
   usernameTocado = Boolean(u);
   limpiarErrores();
-  // Solo lectura: la cuenta protegida del superadmin o, para un editor, cualquiera que no sea lector (spec 2026-10-15, 8.1)
+  // Solo lectura: la cuenta protegida del superadmin o, para un editor, cualquiera que no sea lector ni colaborador (spec
+  // 2026-10-15, 8.1; spec 2026-10-24-notas-dgmit, 1)
   const aviso = avisoSoloLectura(u);
   const protegida = Boolean(aviso);
   const superadminPropio = Boolean(u) && u.rol === 'superadmin' && soyYo(u);
@@ -338,11 +372,15 @@ function abrirModal(u) {
   escribir('u-cargo', u?.cargo);
   document.getElementById('u-vinculo').value = u?.vinculo || '';
   const selectRol = document.getElementById('u-rol');
-  selectRol.querySelector('option[value="superadmin"]').hidden = !(u && u.rol === 'superadmin');
+  // Las opciones que no se ofrecen, además de ocultas, deshabilitadas (hay navegadores que no ocultan un <option>)
+  const visibles = rolesVisibles(u?.rol ?? null);
+  for (const opcion of Array.from(selectRol.options)) opcion.hidden = opcion.disabled = !visibles.includes(opcion.value);
   selectRol.value = u?.rol || 'lector';
+  mostrarAyudaDelRol();
 
   for (const id of Object.values(CAMPO_A_INPUT)) document.getElementById(id).disabled = protegida;
-  selectRol.disabled = protegida || superadminPropio || soyEditor();
+  // El editor elige entre Lector y Colaborador (las demás opciones no se muestran)
+  selectRol.disabled = protegida || superadminPropio;
   document.getElementById('acciones-form').hidden = protegida;
   document.getElementById('btn-guardar-usuario').textContent = u ? 'Guardar cambios' : 'Crear usuario';
 
@@ -357,6 +395,13 @@ function abrirModal(u) {
 function cerrarModal() {
   document.getElementById('modal-usuario').classList.remove('active');
   abierto = null;
+}
+
+// La línea que explica el rol elegido en el selector (sin línea, se oculta)
+function mostrarAyudaDelRol() {
+  const ayuda = document.getElementById('u-rol-ayuda');
+  ayuda.innerHTML = htmlDeAyudaDelRol(document.getElementById('u-rol').value);
+  ayuda.hidden = ayuda.innerHTML === '';
 }
 
 function mostrarPestana(nombre) {
@@ -414,7 +459,7 @@ async function guardarUsuario(evento) {
     vinculo: document.getElementById('u-vinculo').value || null
   };
   const selectRol = document.getElementById('u-rol');
-  // En el alta el rol va siempre (al editor el selector le queda fijo en Lector)
+  // En el alta el rol va siempre (el del editor, Lector o Colaborador)
   if (!abierto || !selectRol.disabled) datos.rol = selectRol.value;
 
   // Confirmación al cambiar un rol, y en especial el propio (spec 8.5)
@@ -426,7 +471,8 @@ async function guardarUsuario(evento) {
     if (abierto) {
       const res = await API.actualizarUsuario(abierto.id, datos);
       avisar(res.message || 'Cambios guardados', 'success');
-      if (soyYo(abierto) && datos.rol === 'lector') {
+      // Quien se pasa a sí mismo a lector o colaborador deja la administración
+      if (soyYo(abierto) && (datos.rol === 'lector' || datos.rol === 'colaborador')) {
         window.location.href = 'index.html';
         return;
       }
@@ -524,12 +570,16 @@ async function recargarAbierto() {
 // =====================================================
 // ERRORES E HISTORIAL
 // =====================================================
+// Lo que describe a un campo además de su error: la ayuda del rol sigue unida al selector cuando el rol tiene un error
+const AYUDA_DEL_CAMPO = { 'u-rol': 'u-rol-ayuda' };
+
 function limpiarErrores() {
   document.getElementById('usuario-error').hidden = true;
   document.querySelectorAll('#form-usuario .campo-error').forEach(nodo => nodo.remove());
   document.querySelectorAll('#form-usuario [aria-invalid]').forEach(nodo => {
     nodo.removeAttribute('aria-invalid');
-    nodo.removeAttribute('aria-describedby');
+    if (AYUDA_DEL_CAMPO[nodo.id]) nodo.setAttribute('aria-describedby', AYUDA_DEL_CAMPO[nodo.id]);
+    else nodo.removeAttribute('aria-describedby');
   });
 }
 
@@ -542,7 +592,7 @@ function mostrarError(error) {
     mensaje.id = `${input.id}-error`;
     mensaje.textContent = error.message;
     input.setAttribute('aria-invalid', 'true');
-    input.setAttribute('aria-describedby', mensaje.id);
+    input.setAttribute('aria-describedby', [mensaje.id, AYUDA_DEL_CAMPO[input.id]].filter(Boolean).join(' '));
     input.insertAdjacentElement('afterend', mensaje);
     mostrarPestana('datos');
     input.focus();

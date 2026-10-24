@@ -2,8 +2,12 @@
 // (spec 2026-10-20-seguimiento-dataset-design). Trae lo que hay, tal cual: no filtra por `activo`, no cambia nombres ni
 // correos y no decide nada; las reglas están en seguimientoReglas.js (puro) y se pueden probar sin base.
 //
-// Fuentes = { dataset, altasSinDataset, cambios, historial, emails, notas, auditorias, catalogos }; la forma exacta es la de
-// CASOS[id] de tests/seguimiento-casos.js más `catalogos`.
+// Fuentes = { dataset, altasSinDataset, cambios, historial, emails, notas, auditorias, notasDgmit, catalogos }; la forma exacta
+// es la de CASOS[id] de tests/seguimiento-casos.js más `catalogos`.
+//
+// notasDgmit (spec 2026-10-24-notas-dgmit, 5): las notas que la DGMIT le mandó al área, cargadas a mano, todas (también las
+// anuladas). Su consulta va aislada (notasDgmitDe): fuentesDe también arma el anexo de la reiteración, y si falla (por ejemplo,
+// sin la migración) cada dataset queda con notasDgmit vacía y el resto de las fuentes sale como siempre.
 //
 // Fechas y momentos (la base no usa `dateStrings` ni `timezone`: sin esto, DATE y TIMESTAMP volverían como Date):
 // - DATE → `DATE_FORMAT(col, '%Y-%m-%d')`: 'AAAA-MM-DD'.
@@ -78,6 +82,59 @@ const repartirAuditorias = (filas, datasetsDeCambio) => {
   return porDataset;
 };
 
+// Las notas DGMIT de los datasets, Map<datasetId, [nota]>, cada lista en orden de recibida y después de id. Cada nota trae todos
+// sus datasets ({ id, titulo }, por título; también los dados de baja y los que no se pidieron), quién la cargó (nombre completo
+// y id, o null) y su historial (correcciones y anulación, la más nueva primero). Tres consultas para todos los datasets juntos.
+// Nunca tira: si algo falla, lo registra y devuelve un Map vacío (una falla acá no puede frenar el anexo de la reiteración).
+const notasDgmitDe = async (datasetIds) => {
+  try {
+    const [notas] = await pool.query(
+      `SELECT n.id, n.numero, n.tipo, DATE_FORMAT(n.recibida, '%Y-%m-%d') recibida, n.anulada, UNIX_TIMESTAMP(n.created_at) cargada_ts,
+         u.nombre_completo por, n.creado_por por_id
+       FROM notas_dgmit n LEFT JOIN usuarios u ON u.id = n.creado_por
+       WHERE n.id IN (SELECT nota_id FROM notas_dgmit_datasets WHERE dataset_id IN (?))
+       ORDER BY n.recibida, n.id`, [datasetIds]
+    );
+    const resultado = new Map();
+    if (notas.length === 0) return resultado;
+    const notaIds = notas.map((n) => n.id);
+    const [[datasets], [historial]] = await Promise.all([
+      pool.query(
+        `SELECT nd.nota_id, d.id, d.titulo FROM notas_dgmit_datasets nd JOIN datasets d ON d.id = nd.dataset_id
+         WHERE nd.nota_id IN (?) ORDER BY d.titulo, d.id`, [notaIds]
+      ),
+      pool.query(
+        `SELECT h.nota_id, h.accion, h.motivo, u.nombre_completo por, UNIX_TIMESTAMP(h.created_at) ts
+         FROM notas_dgmit_historial h LEFT JOIN usuarios u ON u.id = h.usuario_id
+         WHERE h.nota_id IN (?) ORDER BY h.created_at DESC, h.id DESC`, [notaIds]
+      )
+    ]);
+    const datasetsDe = new Map();
+    for (const d of datasets) agregar(datasetsDe, d.nota_id, { id: d.id, titulo: d.titulo });
+    const historialDe = new Map();
+    for (const h of historial) agregar(historialDe, h.nota_id, { accion: h.accion, motivo: h.motivo, por: h.por ?? null, momento: momento(h.ts) });
+
+    const pedidos = new Set(datasetIds);
+    for (const n of notas) {
+      const nota = {
+        id: n.id, numero: n.numero, tipo: n.tipo, recibida: n.recibida, anulada: Boolean(n.anulada), cargada: momento(n.cargada_ts),
+        por: n.por ?? null, por_id: n.por_id ?? null, datasets: datasetsDe.get(n.id) ?? [], historial: historialDe.get(n.id) ?? []
+      };
+      // Una copia por dataset pedido, con sus propias listas: ninguna se comparte con la de otro dataset
+      for (const d of nota.datasets) {
+        if (!pedidos.has(d.id)) continue;
+        agregar(resultado, d.id, {
+          ...nota, datasets: nota.datasets.map((x) => ({ ...x })), historial: nota.historial.map((h) => ({ ...h }))
+        });
+      }
+    }
+    return resultado;
+  } catch (error) {
+    console.error('No se pudieron leer las notas DGMIT:', error);
+    return new Map();
+  }
+};
+
 // `ids`: lista de ids de datasets, o null (también sin argumento) para todos. Devuelve Map<id, Fuentes>; un id que no existe
 // no figura. Los inactivos también vienen (activo: false): el Seguimiento sirve para ver qué pasó con un dataset dado de baja.
 export const fuentesDe = async (ids = null) => {
@@ -100,7 +157,8 @@ export const fuentesDe = async (ids = null) => {
   if (datasets.length === 0) return resultado;
   const datasetIds = datasets.map((d) => d.id);
 
-  const [catalogosCompletos, [cambios], [altas], [historial], [logs], [notas]] = await Promise.all([
+  // notasDgmitDe nunca rechaza: si su consulta falla, las demás siguen y cada dataset queda sin notas DGMIT
+  const [catalogosCompletos, [cambios], [altas], [historial], [logs], [notas], notasDgmitPorDataset] = await Promise.all([
     catalogosParaAuditoria(),
     pool.query(`${SQL_CAMBIOS} WHERE c.dataset_id IN (?) ORDER BY c.created_at, c.id`, [datasetIds]),
     pool.query(`${SQL_CAMBIOS} WHERE c.tipo_cambio = 'crear' AND c.estado = 'aprobado' AND c.dataset_id IS NULL ORDER BY c.created_at, c.id`),
@@ -127,7 +185,8 @@ export const fuentesDe = async (ids = null) => {
        LEFT JOIN usuarios fi ON fi.id = n.firmante_id
        WHERE n.es_prueba = 0 AND n.tipo IN ('aviso', 'reiteracion') AND nd.dataset_id IN (?)
        ORDER BY n.fecha, n.id`, [datasetIds]
-    )
+    ),
+    notasDgmitDe(datasetIds)
   ]);
   // Un solo objeto de catálogos para todos los datasets (los temas y los formatos, para decir sus nombres en los cambios)
   const catalogos = {
@@ -191,6 +250,7 @@ export const fuentesDe = async (ids = null) => {
       emails: emailsDe.get(d.id) ?? [],
       notas: (notasDe.get(d.id) ?? []).map(aNota),
       auditorias: auditoriasDe.get(d.id) ?? [],
+      notasDgmit: notasDgmitPorDataset.get(d.id) ?? [],
       catalogos
     });
   }

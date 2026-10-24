@@ -1,9 +1,11 @@
 // Reglas de usuarios y roles (spec 2026-10-15-usuarios-superadmin): funciones puras, sin base de datos
 
-export const ROLES_ASIGNABLES = ['admin', 'editor', 'lector'];
+export const ROLES_ASIGNABLES = ['admin', 'editor', 'colaborador', 'lector'];
 export const VINCULOS = ['planta_permanente', 'planta_politica', 'contrato'];
 export const MINIMO_APROBADORES = 2;
-export const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', lector: 'Lector' };
+export const TEXTO_ROL = {
+  superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', colaborador: 'Colaborador', lector: 'Lector'
+};
 
 const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PATRON_USERNAME = /^[A-Z0-9._-]{3,50}$/;
@@ -14,6 +16,10 @@ export const esAdmin = (rol) => rol === 'admin' || rol === 'superadmin' || rol =
 // Auditor: aprueba y rechaza cambios de otros y cuenta para el mínimo de aprobadores
 // (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1). El editor no lo es: audita solo de respaldo.
 export const esAuditor = (rol) => rol === 'admin' || rol === 'superadmin';
+
+// Quién carga notas DGMIT: administración y el colaborador, que no es de administración ni audita
+// (spec 2026-10-24-notas-dgmit, 1)
+export const puedeCargarNotasDgmit = (rol) => esAdmin(rol) || rol === 'colaborador';
 
 // Estado derivado (spec 3): no se guarda, sale de activo y de si tiene contraseña
 export const estadoDeUsuario = ({ activo, tiene_contrasena }) => {
@@ -87,7 +93,7 @@ export const validarDatosUsuario = (entrada, { parcial = false } = {}) => {
     else datos.vinculo = vinculo;
   }
   if (!parcial || viene('rol')) {
-    if (!ROLES_ASIGNABLES.includes(entrada.rol)) error('rol', 'El rol debe ser admin, editor o lector');
+    if (!ROLES_ASIGNABLES.includes(entrada.rol)) error('rol', 'El rol debe ser admin, editor, colaborador o lector');
     else datos.rol = entrada.rol;
   }
   return { errores, datos };
@@ -98,18 +104,20 @@ export const camposCambiados = (antes, nuevos, campos) => Object.fromEntries(cam
   .filter(campo => nuevos[campo] !== undefined && (antes[campo] ?? null) !== (nuevos[campo] ?? null))
   .map(campo => [campo, { antes: antes[campo] ?? null, despues: nuevos[campo] ?? null }]));
 
-// Lo que el editor no puede hacer en el panel (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)
-export const MENSAJE_EDITOR_SOLO_LECTORES = 'Un editor solo puede crear y modificar usuarios lectores.';
+// Lo que el editor no puede hacer en el panel (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1; el colaborador,
+// spec 2026-10-24-notas-dgmit, 1)
+export const ROLES_DEL_EDITOR = ['lector', 'colaborador'];
+export const MENSAJE_EDITOR_SOLO_LECTORES = 'Un editor solo puede crear y modificar usuarios lectores y colaboradores.';
 export const MENSAJE_EDITOR_SIN_ROLES = 'Un editor no puede cambiar roles.';
 
 /**
  * Motivo del 403 si un editor no puede hacer la operación, o null. objetivo: el rol del usuario afectado (en el alta, el
- * rol pedido); cambiaRol: si el pedido le cambia el rol. El editor solo crea, edita, activa, desactiva y envía links a
- * lectores, y no cambia roles (tampoco el suyo): cambiándole el email y enviándole un link a otro editor podría quedarse
- * con su cuenta.
+ * rol pedido); rolNuevo: el rol al que lo pasa el pedido, o null si no se lo cambia. El editor solo crea, edita, activa,
+ * desactiva y envía links a lectores y colaboradores, y solo pasa a alguien de lector a colaborador o al revés (nunca
+ * cambia el suyo): cambiándole el email y enviándole un link a otro editor podría quedarse con su cuenta.
  */
-export const rechazoParaEditor = ({ objetivo, cambiaRol = false }) => {
-  if (objetivo !== 'lector') return MENSAJE_EDITOR_SOLO_LECTORES;
-  if (cambiaRol) return MENSAJE_EDITOR_SIN_ROLES;
+export const rechazoParaEditor = ({ objetivo, rolNuevo = null }) => {
+  if (!ROLES_DEL_EDITOR.includes(objetivo)) return MENSAJE_EDITOR_SOLO_LECTORES;
+  if (rolNuevo !== null && !ROLES_DEL_EDITOR.includes(rolNuevo)) return MENSAJE_EDITOR_SIN_ROLES;
   return null;
 };
