@@ -9,6 +9,7 @@ import { permisoParaAuditar, quienesAuditan, MENSAJE_SITUACION_CAMBIADA } from '
 import { esFechaIso, hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import { esFinDeMes, NOMBRES_TIPO_PEDIDO } from '../services/fechasDatasetReglas.js';
 import { textoRequiereNota } from '../services/requiereNotaReglas.js';
+import { textoOrigen } from '../services/registroReglas.js';
 
 // ¿Quien pide puede aprobar o rechazar hoy este cambio? (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2, y spec
 // 2026-10-20-editor-sin-responsabilidad): un auditor siempre; un editor, de respaldo o, el cambio de un auditor, sin
@@ -58,6 +59,13 @@ const enriquecerDatos = (datos, catalogos) => {
     enriquecido.requiere_nota_texto = textoRequiereNota(datos.requiere_nota);
   }
 
+  // El origen de los datos de un registro de actualización (spec 2026-10-24-metricas-y-reportes, 4), como «Los entregó el
+  // área» o «Fuente pública». Solo si el cambio trae la clave: los registrados antes no la tienen y no muestran el renglón.
+  // En gestión interna llega null (no se pregunta) y queda vacío: el renglón tampoco se lista
+  if (Object.hasOwn(datos, 'origen_datos')) {
+    enriquecido.origen_datos_texto = textoOrigen(datos.origen_datos, '');
+  }
+
   // Convertir array de formato IDs a nombres
   if (datos.formatos && Array.isArray(datos.formatos)) {
     enriquecido.formatos_nombres = datos.formatos
@@ -94,6 +102,7 @@ const calcularCambios = (antes, despues) => {
     { key: 'datos_al', label: 'Datos al' },
     { key: 'ultima_actualizacion', label: 'Cargado en el portal' },
     { key: 'recibido_el', label: 'Recibido el' },
+    { key: 'origen_datos_texto', label: 'Origen de los datos', keyAntes: 'origen_datos', keyDespues: 'origen_datos' },
     { key: 'proxima_actualizacion', label: 'Proxima Actualizacion' },
     { key: 'url_dataset', label: 'URL en Portal' },
     { key: 'observaciones', label: 'Observaciones' },
@@ -111,7 +120,8 @@ const calcularCambios = (antes, despues) => {
     let valorDespues = despues[keyD];
     
     // Usar nombres enriquecidos si existen
-    if (campo.key.includes('_nombre') || campo.key === 'formatos_nombres' || campo.key === 'requiere_nota_texto') {
+    if (campo.key.includes('_nombre') || campo.key === 'formatos_nombres' || campo.key === 'requiere_nota_texto'
+      || campo.key === 'origen_datos_texto') {
       valorAntes = antes[campo.key] || valorAntes;
       valorDespues = despues[campo.key] || valorDespues;
     }
