@@ -61,8 +61,8 @@ export const diaDe = (valor) => {
   return esFechaIso(dia) && (corte === undefined || corte === 'T' || corte === ' ') ? dia : null;
 };
 
-// 'AAAA-MM-DD HH:MM:SS' o null (la hora se corta como texto; acá no hay conversión de zona)
-const momentoDe = (valor) => {
+// 'AAAA-MM-DD HH:MM:SS' o null (la hora se corta como texto; acá no hay conversión de zona). Lo usan también las métricas
+export const momentoDe = (valor) => {
   if (typeof valor !== 'string') return null;
   const partes = valor.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
   return partes && esFechaIso(partes[1]) ? `${partes[1]} ${partes[2]}` : null;
@@ -565,14 +565,18 @@ const algunCicloRige = (ciclos, momento) => {
   return cuando !== null && lista(ciclos).some((ciclo) => Boolean(ciclo) && cuando >= ciclo.desde && (!ciclo.hasta || cuando < ciclo.hasta));
 };
 
-const esNotaEnviada = (nota) => Boolean(nota) && (nota.tipo === 'aviso' || nota.tipo === 'reiteracion') && nota.estado === 'enviada';
+// Qué es un aviso del RPAD a la DGMIT y cuándo salió. Se exportan para que las métricas (services/metricasReglas.js) cuenten los
+// mismos avisos que el Seguimiento, sin una copia de la regla.
+// Una Nota Digital de aviso o de reiteración que se envió
+export const esNotaEnviada = (nota) => Boolean(nota) && (nota.tipo === 'aviso' || nota.tipo === 'reiteracion') && nota.estado === 'enviada';
 // El momento de una nota enviada: cuándo se mandó, y si no está, el día de la nota a las 00:00
-const momentoDeEnvioDeNota = (nota) => {
+export const momentoDeEnvioDeNota = (nota) => {
   const fecha = diaDe(nota.fecha);
   return momentoDe(nota.enviada) ?? (fecha === null ? null : `${fecha} 00:00:00`);
 };
 const masNuevo = (a, b) => (a === null || b > a ? b : a);
-const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
+// Un email a la DGMIT (los siete retirados, QUE_PEDIA) que se pudo enviar
+export const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
 
 // Los avisos de un ciclo: los emails a DGMIT con éxito (`emails`), las Notas Digitales enviadas de aviso y reiteración (`notas`:
 // '2/26', por orden de envío) y las fechas de los emails al área (`alArea`, de la más vieja a la más nueva). `total`: emails +

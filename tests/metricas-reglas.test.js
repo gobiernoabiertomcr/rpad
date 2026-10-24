@@ -221,11 +221,13 @@ describe('casosDe', () => {
   });
 
   it('un ciclo avisado ya vencido es heredado y empieza en su primer aviso', () => {
-    // El 11 (Parque Automotor) venció el 31/01/2024: la fecha de la regla (22/12/2023) es anterior al registro de los envíos
+    // El 11 (Parque Automotor) venció el 31/01/2024: la fecha de la regla (22/12/2023) es anterior al registro de los envíos y al alta
+    // (01/12/2025), que es el motivo de que no tuviera el aviso de la regla
     const [once] = casosDelCaso(11);
     assert.deepEqual(once, {
       ...once, ...NADA, dataset_id: 11, venc: '2024-01-31', inicio: '2025-12-01', abierto: true,
       primer_aviso: '2025-12-06', heredado: true, inicio_tramos: '2025-12-06', fecha_regla: '2023-12-22', pudo_avisar: false,
+      motivo_sin_aviso: 'alta-cercana',
       avisos_rpad: ['2025-12-06', '2025-12-10', '2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-07-01',
         '2026-08-01', '2026-09-01', '2026-10-01', '2026-10-13'],
       reiteraciones_rpad: 11
@@ -233,28 +235,28 @@ describe('casosDe', () => {
     // El primer ciclo del 9 (venció el 31/01/2025): su primer aviso es un email de 40 días, pero llegó después del vencimiento, así
     // que no es el aviso de la regla
     const [nueve] = casosDelCaso(9);
-    assert.deepEqual([nueve.aviso_regla, nueve.primer_aviso, nueve.heredado, nueve.inicio_tramos, nueve.pudo_avisar, nueve.reiteraciones_rpad],
-      [null, '2025-12-22', true, '2025-12-22', false, 2]);
+    assert.deepEqual([nueve.aviso_regla, nueve.primer_aviso, nueve.heredado, nueve.inicio_tramos, nueve.pudo_avisar, nueve.reiteraciones_rpad, nueve.motivo_sin_aviso],
+      [null, '2025-12-22', true, '2025-12-22', false, 2, 'alta-cercana']);
     // Interna: el 26 venció el 31/03/2025
     const [veintiseis] = casosDelCaso(26);
-    assert.deepEqual([veintiseis.gestion, veintiseis.fecha_regla, veintiseis.heredado, veintiseis.inicio_tramos, veintiseis.reiteraciones_rpad],
-      ['interna', '2025-01-30', true, '2026-01-01', 10]);
+    assert.deepEqual([veintiseis.gestion, veintiseis.fecha_regla, veintiseis.heredado, veintiseis.inicio_tramos, veintiseis.reiteraciones_rpad, veintiseis.motivo_sin_aviso],
+      ['interna', '2025-01-30', true, '2026-01-01', 10, 'alta-cercana']);
     // Por el alta: dado de alta después de la fecha de la regla (19/02/2026) y avisado recién vencido
     const [porElAlta] = casosDel(solo({ id: 900, alta: '2026-02-20 09:00:00', proxima: '2026-03-31', ultima: '2026-02-20' },
       { emails: [email({ tipo: 'externo-vencido', enviado: '2026-04-01 08:00:00' }), email({ id: 901, tipo: 'externo-vencido', enviado: '2026-05-01 08:00:00' })] }));
     assert.deepEqual([porElAlta.pudo_avisar, porElAlta.heredado, porElAlta.inicio_tramos, porElAlta.motivo_sin_aviso, porElAlta.reiteraciones_rpad],
-      [false, true, '2026-04-01', null, 1]);
+      [false, true, '2026-04-01', 'alta-cercana', 1]);
     // Por el registro: un interno dado de alta en noviembre de 2025 que vencía el 31/01/2026 (su regla, el 02/12/2025, es anterior
     // al 06/12/2025, aunque posterior al alta)
     const [porElRegistro] = casosDel(solo({ id: 900, tipo_gestion: 'interna', alta: '2025-11-01 09:00:00', proxima: '2026-01-31', ultima: '2025-11-01' },
       { emails: [email({ tipo: 'interno-vencido', enviado: '2026-02-01 08:00:00' })] }));
-    assert.deepEqual([porElRegistro.fecha_regla, porElRegistro.pudo_avisar, porElRegistro.heredado, porElRegistro.inicio_tramos],
-      ['2025-12-02', false, true, '2026-02-01']);
+    assert.deepEqual([porElRegistro.fecha_regla, porElRegistro.pudo_avisar, porElRegistro.heredado, porElRegistro.inicio_tramos, porElRegistro.motivo_sin_aviso],
+      ['2025-12-02', false, true, '2026-02-01', 'ya-vencido']);
     // Un ciclo que no se pudo avisar a tiempo pero se avisó antes de vencer no es heredado
     const [antes] = casosDel(solo({ id: 900, alta: '2026-02-20 09:00:00', proxima: '2026-03-31', ultima: '2026-02-20' },
       { emails: [email({ enviado: '2026-03-26 08:00:00' })] }));
-    assert.deepEqual([antes.pudo_avisar, antes.primer_aviso, antes.heredado, antes.inicio_tramos, antes.reiteraciones_rpad],
-      [false, '2026-03-26', false, null, null]);
+    assert.deepEqual([antes.pudo_avisar, antes.primer_aviso, antes.heredado, antes.inicio_tramos, antes.reiteraciones_rpad, antes.motivo_sin_aviso],
+      [false, '2026-03-26', false, null, null, 'alta-cercana']);
   });
 
   it('sin el email de 40 porque falló: no es heredado y el motivo es email-fallido', () => {
@@ -267,36 +269,68 @@ describe('casosDe', () => {
       // El email que falló no es un aviso
       avisos_rpad: ['2026-07-26', '2026-08-01', '2026-09-01', '2026-10-01', '2026-10-13']
     });
-    // Aunque fallaran también los de antes del vencimiento y el primer aviso llegara vencido: se podía avisar a tiempo
+    // Aunque fallaran también los de antes del vencimiento y el primer aviso llegara vencido: se podía avisar a tiempo, y el email que
+    // falló pesa más que «ya vencido»
     fallido.emails.find((e) => e.id === 49).success = false;
     const vencido = casosDel(fallido)[2];
     assert.deepEqual([vencido.primer_aviso, vencido.heredado, vencido.inicio_tramos, vencido.motivo_sin_aviso, vencido.reiteraciones_rpad],
       ['2026-08-01', false, null, 'email-fallido', null]);
   });
 
-  it('sin aviso de la regla: con el alta el mismo día de la regla, alta-cercana; si no, sin-aviso; antes de la fecha de la regla, ninguno', () => {
+  it('sin aviso de la regla: alta-cercana si el alta es de un día posterior a la regla; si no, sin-aviso; antes de la fecha de la regla, ninguno', () => {
     const conAlta = (alta) => casosDel(solo({ id: 900, alta, proxima: '2026-03-31', ultima: alta.slice(0, 10) },
       { emails: [email({ enviado: '2026-03-26 08:00:00' })] }))[0];
-    // La fecha de la regla del 31/03/2026 es el 19/02/2026
+    // La fecha de la regla del 31/03/2026 es el 19/02/2026; el primer aviso (26/03) es de antes del vencimiento
     const mismoDia = conAlta('2026-02-19 10:00:00');
-    assert.deepEqual([mismoDia.fecha_regla, mismoDia.pudo_avisar, mismoDia.motivo_sin_aviso, mismoDia.heredado], ['2026-02-19', true, 'alta-cercana', false]);
+    assert.deepEqual([mismoDia.fecha_regla, mismoDia.pudo_avisar, mismoDia.motivo_sin_aviso, mismoDia.heredado], ['2026-02-19', true, 'sin-aviso', false]);
     const antes = conAlta('2026-02-18 10:00:00');
     assert.deepEqual([antes.pudo_avisar, antes.motivo_sin_aviso], [true, 'sin-aviso']);
+    // Un alta posterior a la fecha de la regla: no se podía avisar a tiempo, y ese es el motivo
     const despues = conAlta('2026-02-20 10:00:00');
-    assert.deepEqual([despues.pudo_avisar, despues.motivo_sin_aviso], [false, null]);
-    // El email que falló pesa más que el alta
-    const fallo = casosDel(solo({ id: 900, alta: '2026-02-19 06:00:00', proxima: '2026-03-31', ultima: '2026-02-19' },
-      { emails: [email({ tipo: 'externo-40', enviado: '2026-02-19 08:00:00', success: false })] }))[0];
-    assert.equal(fallo.motivo_sin_aviso, 'email-fallido');
-    // El 33 (real): vence el 31/01/2026, se dio de alta antes del 22/12/2025 y su primer aviso es de junio
-    const [treinta] = casosDelCaso(33);
-    assert.deepEqual([treinta.aviso_regla, treinta.primer_aviso, treinta.pudo_avisar, treinta.heredado, treinta.motivo_sin_aviso, treinta.inicio_tramos],
-      [null, '2026-06-21', true, false, 'sin-aviso', null]);
+    assert.deepEqual([despues.pudo_avisar, despues.motivo_sin_aviso], [false, 'alta-cercana']);
     // Antes de la fecha de la regla todavía no hay motivo (el abierto del 58 vence el 30/11/2026: su regla es el 21/10)
     const abierto58 = casosDelCaso(58)[1];
     assert.deepEqual([abierto58.fecha_regla, abierto58.pudo_avisar, abierto58.aviso_regla, abierto58.motivo_sin_aviso, abierto58.avisos_rpad],
       ['2026-10-21', true, null, null, ['2026-10-01']]);
     assert.equal(casosDelCaso(58, {}, '2026-10-21')[1].motivo_sin_aviso, 'sin-aviso');
+    // Con venc null no hay fecha de la regla ni motivo, aunque el ciclo haya tenido avisos (el que cerró la simple del 16/12/2025)
+    const [simple58] = casosDelCaso(58);
+    assert.deepEqual([simple58.venc, simple58.fecha_regla, simple58.avisos_rpad.length, simple58.motivo_sin_aviso], [null, null, 2, null]);
+  });
+
+  it('ya-vencido: sin aviso de la regla, con el alta antes de la regla y el primer aviso después del vencimiento', () => {
+    // El 33 (real): vence el 31/01/2026, se dio de alta el 01/12/2025 (antes de su regla, el 22/12/2025) y su primer aviso es de junio.
+    // Se podía avisar a tiempo, así que no es heredado
+    const [treinta] = casosDelCaso(33);
+    assert.deepEqual([treinta.aviso_regla, treinta.primer_aviso, treinta.pudo_avisar, treinta.heredado, treinta.motivo_sin_aviso, treinta.inicio_tramos],
+      [null, '2026-06-21', true, false, 'ya-vencido', null]);
+    // Armado: alta el 18/02/2026, regla el 19/02 y el primer aviso, el de vencidos del 01/04
+    const [armado] = casosDel(solo({ id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' },
+      { emails: [email({ tipo: 'externo-vencido', enviado: '2026-04-01 08:00:00' })] }));
+    assert.deepEqual([armado.pudo_avisar, armado.heredado, armado.motivo_sin_aviso], [true, false, 'ya-vencido']);
+    // Sin ningún aviso, no es «ya vencido»: sin-aviso
+    const [sinNada] = casosDel(solo({ id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' }));
+    assert.deepEqual([sinNada.primer_aviso, sinNada.motivo_sin_aviso], [null, 'sin-aviso']);
+    // El día del vencimiento todavía no venció: un primer aviso ese día no es «ya vencido»
+    const [elDia] = casosDel(solo({ id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' },
+      { emails: [email({ enviado: '2026-03-31 08:00:00' })] }));
+    assert.deepEqual([elDia.primer_aviso, elDia.motivo_sin_aviso], ['2026-03-31', 'sin-aviso']);
+  });
+
+  it('el orden de los motivos: email-fallido, después alta-cercana, después ya-vencido', () => {
+    // La fecha de la regla del 31/03/2026 es el 19/02/2026; el primer aviso, el de vencidos del 01/04, llega después del vencimiento
+    const motivo = (alta, emails) => casosDel(solo({ id: 900, alta, proxima: '2026-03-31', ultima: alta.slice(0, 10) },
+      { emails: [email({ tipo: 'externo-vencido', enviado: '2026-04-01 08:00:00' }), ...emails] }))[0].motivo_sin_aviso;
+    // alta-cercana pesa más que ya-vencido (también en los reales 9, 11 y 26, arriba)
+    assert.equal(motivo('2026-02-20 09:00:00', []), 'alta-cercana');
+    assert.equal(motivo('2026-02-18 09:00:00', []), 'ya-vencido');
+    // email-fallido pesa más que los dos
+    const fallido = [email({ id: 901, tipo: 'externo-40', enviado: '2026-02-21 08:00:00', success: false })];
+    assert.equal(motivo('2026-02-20 06:00:00', fallido), 'email-fallido');
+    assert.equal(motivo('2026-02-18 09:00:00', fallido), 'email-fallido');
+    // Un email que falló y no es de la regla no es el motivo, ni uno de la regla que falló después del vencimiento
+    assert.equal(motivo('2026-02-18 09:00:00', [email({ id: 902, tipo: 'externo-5', enviado: '2026-03-26 08:00:00', success: false })]), 'ya-vencido');
+    assert.equal(motivo('2026-02-18 09:00:00', [email({ id: 903, tipo: 'externo-40', enviado: '2026-04-05 08:00:00', success: false })]), 'ya-vencido');
   });
 
   it('la nota DGMIT anulada no cuenta', () => {

@@ -2,10 +2,13 @@
 // tramo y un caso por ciclo de cada dataset, con sus hitos. Funciones puras, sin base de datos ni Date local: las fechas son strings
 // 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora argentina, como en services/seguimientoReglas.js. De ahí se reutilizan los
 // ciclos (ciclosDe) y a qué ciclo pertenece cada aviso (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el
-// Seguimiento ubican todo en el mismo ciclo. Las fuentes son las de services/seguimientoDatos.js (fuentesDe). Ninguna función tira
-// error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
+// Seguimiento ubican todo en el mismo ciclo, y cuentan los mismos avisos (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las
+// fuentes son las de services/seguimientoDatos.js (fuentesDe). Ninguna función tira error: con datos raros devuelven null o una
+// lista vacía, o ignoran lo que no pueden leer.
 import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias } from './notasDigitalesCalendario.js';
-import { REGISTRO_DESDE, QUE_PEDIA, diaDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo } from './seguimientoReglas.js';
+import {
+  REGISTRO_DESDE, diaDe, momentoDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada, momentoDeEnvioDeNota
+} from './seguimientoReglas.js';
 import { normalizarRequiereNota, requiereNotaResultante } from './requiereNotaReglas.js';
 import { ORIGENES_DATOS } from './registroReglas.js';
 
@@ -26,14 +29,6 @@ const EMAILS_DE_LA_REGLA = Object.freeze(['externo-40', 'interno-60']);
 const lista = (valor) => (Array.isArray(valor) ? valor : []);
 const objeto = (valor) => (valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {});
 const comparar = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-
-// 'AAAA-MM-DD HH:MM:SS' o null: la misma lectura que hace seguimientoReglas.js (que no la exporta), para ordenar los avisos y
-// pasárselos a cicloDelAviso
-const momentoDe = (valor) => {
-  if (typeof valor !== 'string') return null;
-  const partes = valor.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
-  return partes && esFechaIso(partes[1]) ? `${partes[1]} ${partes[2]}` : null;
-};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Días y cifras
@@ -84,11 +79,12 @@ const requiereNotaDe = (dataset) => {
 };
 
 // Los avisos del RPAD a la DGMIT de cada ciclo (una lista por ciclo, en el orden de `ciclos`), cada lista por momento y después por
-// id: los emails a la DGMIT (los de QUE_PEDIA; también los que no se pudieron enviar, con `enviado` false) y las Notas Digitales de
-// aviso y de reiteración enviadas. Cada uno va al ciclo que dice cicloDelAviso, como en el Seguimiento (avisosDelCiclo): el email,
-// por el momento del envío; la nota, por su vencimiento (y, si hace falta, por cuándo se envió: `enviada`, o el día de la nota a
-// las 00:00). `regla`: si es de la clase del aviso de la regla, el email de 40 o de 60 días o la Nota Digital de aviso en la sección
-// de próximos a vencer. Lo de después de `hoy` no entra: todavía no pasó (la foto del año se calcula al 31/12).
+// id: los emails a la DGMIT que se enviaron y las Notas Digitales de aviso y de reiteración enviadas, con las mismas reglas que el
+// Seguimiento (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota), y además los emails de la regla que no se pudieron enviar
+// (`enviado` false: solo sirven para el motivo 'email-fallido'). Cada uno va al ciclo que dice cicloDelAviso, como en avisosDelCiclo:
+// el email, por el momento del envío; la nota, por su vencimiento (y, si hace falta, por cuándo se envió). `regla`: si es de la clase
+// del aviso de la regla, el email de 40 o de 60 días o la Nota Digital de aviso en la sección de próximos a vencer. Lo de después de
+// `hoy` no entra: todavía no pasó (la foto del año se calcula al 31/12).
 const avisosPorCiclo = (fuentes, ciclos, hoy) => {
   const porCiclo = ciclos.map(() => []);
   const sumar = (momento, vencimiento, aviso) => {
@@ -96,13 +92,14 @@ const avisosPorCiclo = (fuentes, ciclos, hoy) => {
     porCiclo[cicloDelAviso(ciclos, momento, vencimiento)].push({ ...aviso, momento, dia: momento.slice(0, 10) });
   };
   for (const email of lista(fuentes.emails)) {
-    if (!email || typeof email !== 'object' || !Object.hasOwn(QUE_PEDIA, email.tipo)) continue;
-    sumar(momentoDe(email.enviado), null, { id: Number(email.id) || 0, enviado: Boolean(email.success), regla: EMAILS_DE_LA_REGLA.includes(email.tipo) });
+    const enviado = esEmailADgmit(email);
+    const esDeLaRegla = Boolean(email) && typeof email === 'object' && EMAILS_DE_LA_REGLA.includes(email.tipo);
+    if (!enviado && !esDeLaRegla) continue;
+    sumar(momentoDe(email.enviado), null, { id: Number(email.id) || 0, enviado, regla: esDeLaRegla });
   }
   for (const nota of lista(fuentes.notas)) {
-    if (!nota || typeof nota !== 'object' || (nota.tipo !== 'aviso' && nota.tipo !== 'reiteracion') || nota.estado !== 'enviada') continue;
-    const fecha = diaDe(nota.fecha);
-    sumar(momentoDe(nota.enviada) ?? (fecha === null ? null : `${fecha} 00:00:00`), nota.vencimiento ?? null,
+    if (!esNotaEnviada(nota)) continue;
+    sumar(momentoDeEnvioDeNota(nota), nota.vencimiento ?? null,
       { id: Number(nota.id) || 0, enviado: true, regla: nota.tipo === 'aviso' && nota.seccion === 'proximo' });
   }
   for (const avisos of porCiclo) avisos.sort((a, b) => comparar(a.momento, b.momento) || a.id - b.id);
@@ -117,19 +114,21 @@ const cambioQueCerro = (ediciones, ciclo) => {
   return ediciones.find((c) => momentoDe(c.revisado) === ciclo.hasta) ?? null;
 };
 
-// El motivo por el que no hubo aviso de la regla en un ciclo que se podía avisar a tiempo, si su fecha ya llegó: 'email-fallido' si
-// hubo un email de la regla que no se pudo enviar; 'alta-cercana' si el dataset se dio de alta el mismo día de la regla, después de
-// las 00:00 (pudo_avisar ya dejó afuera un alta posterior a ese día); si no, 'sin-aviso'.
-const motivoSinAviso = (avisos, deLaRegla, fechaRegla, altaMomento) => {
+// El motivo por el que un ciclo no tuvo el aviso de la regla, para la lista de la cobertura (spec, 2.2: «se dio de alta con el
+// vencimiento ya cerca», «el email no se pudo enviar», «se avisó ya vencido»). En este orden: 'email-fallido' si hubo un email de la
+// regla del ciclo que no se pudo enviar; 'alta-cercana' si el dataset se dio de alta después de la fecha de la regla (por día);
+// 'ya-vencido' si el primer aviso llegó después del vencimiento; si no, 'sin-aviso'.
+const motivoSinAviso = ({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, venc }) => {
   if (avisos.some((a) => !a.enviado && deLaRegla(a))) return 'email-fallido';
-  if (altaMomento !== null && altaMomento > `${fechaRegla} 00:00:00`) return 'alta-cercana';
+  if (altaDia !== null && altaDia > fechaRegla) return 'alta-cercana';
+  if (primerAviso !== null && primerAviso > venc) return 'ya-vencido';
   return 'sin-aviso';
 };
 
 // El caso de un ciclo (ver casosDe). `avisos`: los del ciclo (avisosPorCiclo); `notasDgmit`: las suyas (notasDgmitPorCiclo);
 // `cerro`: el cambio que lo cerró, o null
 const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
-  const { dataset, gestion, requiereNota, alta } = datos;
+  const { dataset, gestion, requiereNota, altaDia } = datos;
   const venc = esFechaIso(ciclo.venc) ? ciclo.venc : null;
   const enviados = avisos.filter((a) => a.enviado);
   const avisosRpad = enviados.map((a) => a.dia);
@@ -137,11 +136,13 @@ const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
   const deLaRegla = (a) => a.regla && venc !== null && a.dia <= venc;
   const avisoRegla = enviados.find(deLaRegla)?.dia ?? null;
   const fechaRegla = venc === null ? null : sumarDias(venc, -VENTANA_DE_LA_REGLA[gestion]);
-  const pudoAvisar = fechaRegla !== null && fechaRegla >= INICIO_DEL_REGISTRO && (alta.dia === null || fechaRegla >= alta.dia);
+  const pudoAvisar = fechaRegla !== null && fechaRegla >= INICIO_DEL_REGISTRO && (altaDia === null || fechaRegla >= altaDia);
   // Avisado ya vencido: el RPAD no pudo avisarlo a tiempo y su primer aviso llegó después del vencimiento (spec, 1.2)
   const heredado = avisoRegla === null && primerAviso !== null && venc !== null && primerAviso > venc && !pudoAvisar;
   const inicioTramos = heredado ? primerAviso : avisoRegla;
-  const motivo = pudoAvisar && avisoRegla === null && fechaRegla <= hoy ? motivoSinAviso(avisos, deLaRegla, fechaRegla, alta.momento) : null;
+  // El motivo, en todo ciclo sin aviso de la regla cuya fecha ya llegó, se pudiera avisar a tiempo o no (spec, 2.2)
+  const motivo = venc !== null && fechaRegla !== null && avisoRegla === null && fechaRegla <= hoy
+    ? motivoSinAviso({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, venc }) : null;
   // Los datos recibidos y su origen son de la actualización que cerró el ciclo: una reprogramación no recibió nada (spec, 1.2)
   const actualizacion = ciclo.como === 'actualizacion';
   const nuevos = actualizacion && cerro ? objeto(cerro.nuevos) : {};
@@ -175,7 +176,7 @@ const casosDelDataset = (fuentes, hoy) => {
     .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
   const datos = {
     dataset, gestion: dataset.tipo_gestion === 'interna' ? 'interna' : 'externa', requiereNota: requiereNotaDe(dataset),
-    alta: { dia: diaDe(dataset.alta), momento: momentoDe(dataset.alta) }
+    altaDia: diaDe(dataset.alta)
   };
   return ciclos.map((ciclo, i) => casoDelCiclo(datos, ciclo, avisos[i], notasDgmit[i] ?? [], cambioQueCerro(ediciones, ciclo), hoy));
 };
@@ -193,7 +194,8 @@ const casosDelDataset = (fuentes, hoy) => {
 //   (venc − 40 o 60 días corridos), pudo_avisar (fecha_regla ≥ INICIO_DEL_REGISTRO y ≥ el día del alta), heredado (avisado ya
 //   vencido: sin aviso de la regla, con el primer aviso después del venc y sin poder avisarse a tiempo), inicio_tramos (desde dónde
 //   se cuentan los tramos que empiezan en el aviso: el primer aviso si es heredado; si no, el aviso de la regla o null) y
-//   motivo_sin_aviso (ver motivoSinAviso; solo si pudo_avisar, sin aviso de la regla y con fecha_regla ≤ hoy; si no, null);
+//   motivo_sin_aviso ('email-fallido', 'alta-cercana', 'ya-vencido' o 'sin-aviso': ver motivoSinAviso; en todo ciclo sin aviso de la
+//   regla cuya fecha_regla ya llegó, ≤ hoy, se pudiera avisar a tiempo o no; si no, null, también con venc null);
 // - la nota DGMIT: nota_dgmit ({ numero, tipo, recibida } de la primera vigente del ciclo, o null) y reiteraciones_dgmit (cuántas
 //   del ciclo son reiteraciones);
 // - la actualización que lo cerró: recibido (su «Recibido el»), origen ('area' o 'fuente_publica'; null en interna), carga (el
@@ -201,7 +203,8 @@ const casosDelDataset = (fuentes, hoy) => {
 //   reprogramación; null si lo cerró una actualización simple, la baja, o si está abierto). Una reprogramación no tiene recibido,
 //   origen ni carga;
 // - avisos_rpad (los días de los avisos del ciclo a la DGMIT, los mismos que cuenta avisosDelCiclo, de la más vieja a la más
-//   nueva) y reiteraciones_rpad (cuántos son de un día posterior a inicio_tramos; null si no hay inicio_tramos).
+//   nueva) y reiteraciones_rpad (cuántos son de un día posterior a inicio_tramos; null, no 0, si no hay inicio_tramos: un ciclo
+//   sin aviso de la regla que no se avisó ya vencido no cuenta en las reiteraciones).
 // Con un Map que no es un Map o un `hoy` que no es una fecha, [].
 export const casosDe = (fuentesPorDataset, opciones) => {
   const hoy = objeto(opciones).hoy;
