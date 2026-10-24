@@ -4,7 +4,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
-import { crearArea, crearDataset, crearNota, crearEmailViejo, limpiarBase } from './notas-fixtures.js';
+import { crearArea, crearDataset, crearNota, crearEmailViejo, limpiarBase, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { CASOS } from './seguimiento-casos.js';
 
 const MOMENTO = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
@@ -29,6 +29,8 @@ after(async () => {
 beforeEach(async () => {
   await limpiarBase();
   await query('DELETE FROM cambios_pendientes');
+  // Las notas DGMIT no se van con sus datasets (solo sus filas de notas_dgmit_datasets): se borran aparte, con su historial
+  await query('DELETE FROM notas_dgmit');
   await query('DELETE FROM usuarios');
 });
 
@@ -63,6 +65,25 @@ const insertarEmail = async ({ tipo = 'area-aviso-40', areaId = null, destinatar
    VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?)`,
   [tipo, areaId, destinatarios, ids, cantidad ?? 1, instante(enviado), success, error]
 )).insertId;
+
+// Una nota DGMIT como la guarda la API (controllers/notasDgmitController.js): la cabecera y sus datasets. cargada: el momento
+// de la carga (created_at), en hora argentina
+const insertarNotaDgmit = async ({
+  numero, tipo = 'solicitud', recibida, anulada = 0, creadoPor = null, cargada = '2026-10-22 10:00:00', datasets = []
+}) => {
+  const id = (await query(
+    'INSERT INTO notas_dgmit (numero, tipo, recibida, anulada, creado_por, created_at) VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?))',
+    [numero, tipo, recibida, anulada, creadoPor, instante(cargada)]
+  )).insertId;
+  if (datasets.length > 0) await query('INSERT INTO notas_dgmit_datasets (nota_id, dataset_id) VALUES ?', [datasets.map((d) => [id, d])]);
+  return id;
+};
+
+// Una corrección o la anulación de una nota DGMIT, como las guarda la API: anteriores (JSON) solo en una corrección
+const insertarHistorialDgmit = ({ notaId, accion = 'correccion', motivo, usuarioId = null, momento, anteriores = null }) => query(
+  'INSERT INTO notas_dgmit_historial (nota_id, accion, motivo, anteriores, usuario_id, created_at) VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?))',
+  [notaId, accion, motivo, anteriores && JSON.stringify(anteriores), usuarioId, instante(momento)]
+);
 
 describe('fuentesDe: los datasets', () => {
   it('trae la ficha con la forma de Fuentes: fechas como texto, activo booleano, meses y alta en hora argentina', async () => {
@@ -114,7 +135,7 @@ describe('fuentesDe: los datasets', () => {
     assert.equal(mapa.get(inactivo).dataset.activo, false);
   });
 
-  it('fuentesDe(null) trae todos los datasets, activos e inactivos, y cada uno con las seis listas vacías', async () => {
+  it('fuentesDe(null) trae todos los datasets, activos e inactivos, y cada uno con las siete listas vacías', async () => {
     const a = await crearDataset({ vencimiento: '2026-12-31' });
     const b = await crearDataset({ vencimiento: '2026-12-31', activo: 0 });
     const c = await crearDataset({ vencimiento: '2026-12-31' });
@@ -122,7 +143,7 @@ describe('fuentesDe: los datasets', () => {
     assert.ok(mapa instanceof Map);
     assert.deepEqual([...mapa.keys()], [a, b, c]);
     for (const f of mapa.values()) {
-      for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias']) assert.deepEqual(f[lista], [], lista);
+      for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias', 'notasDgmit']) assert.deepEqual(f[lista], [], lista);
     }
   });
 
@@ -476,6 +497,145 @@ describe('fuentesDe: las auditorías', () => {
   });
 });
 
+// Las notas DGMIT (spec 2026-10-24-notas-dgmit, 5): las notas que la DGMIT le mandó al área, cargadas a mano. Todas, también las
+// anuladas, con todos los datasets de la nota, quién la cargó (nombre completo: las reglas lo acortan) y su historial
+describe('fuentesDe: las notas DGMIT', () => {
+  it('fuentesDe trae las notas DGMIT de cada dataset, con todos sus datasets, quién la cargó y el historial', async () => {
+    const diego = await crearUsuario('Diego Prueba Cuatro');
+    const ana = await crearUsuario('Ana Prueba Uno');
+    const gasto = await crearDataset({ titulo: 'Gasto Público', gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    const presupuesto = await crearDataset({ titulo: 'Presupuesto Municipal', gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    // Dado de baja después de la carga y no pedido a fuentesDe: igual figura entre los datasets de la nota
+    const agua = await crearDataset({ titulo: 'Agua potable', gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1, activo: 0 });
+    const ajeno = await crearDataset({ titulo: 'Dataset ajeno', gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    const sinNotas = await crearDataset({ titulo: 'Sin notas', gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+
+    // La de menor id es la más nueva: el orden es por recibida y, el mismo día, por id
+    const solicitud = await insertarNotaDgmit({
+      numero: '156/26', recibida: '2026-10-22', creadoPor: diego, cargada: '2026-10-22 11:15:00', datasets: [presupuesto, gasto, agua]
+    });
+    const reiteracion = await insertarNotaDgmit({ numero: '98/26', tipo: 'reiteracion', recibida: '2026-10-01', cargada: '2026-10-02 09:00:00', datasets: [gasto] });
+    const mismoDia = await insertarNotaDgmit({ numero: '99/26', recibida: '2026-10-01', creadoPor: ana, cargada: '2026-10-02 09:05:00', datasets: [gasto] });
+    await insertarNotaDgmit({ numero: '200/26', recibida: '2026-10-05', creadoPor: diego, datasets: [ajeno] });
+    await insertarHistorialDgmit({
+      notaId: solicitud, motivo: 'Faltaba Agua potable', usuarioId: ana, momento: '2026-10-23 09:00:00',
+      anteriores: { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-22', datasets: [gasto, presupuesto] }
+    });
+    await insertarHistorialDgmit({
+      notaId: solicitud, motivo: 'La fecha estaba mal', usuarioId: diego, momento: '2026-10-23 10:30:00',
+      anteriores: { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-21', datasets: [gasto, presupuesto, agua] }
+    });
+
+    const mapa = await fuentesDe([gasto, presupuesto, sinNotas]);
+    const datasetsDeLaSolicitud = [
+      { id: agua, titulo: 'Agua potable' }, { id: gasto, titulo: 'Gasto Público' }, { id: presupuesto, titulo: 'Presupuesto Municipal' }
+    ];
+    const laSolicitud = {
+      id: solicitud, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-22', anulada: false, cargada: '2026-10-22 11:15:00',
+      por: 'Diego Prueba Cuatro', por_id: diego, datasets: datasetsDeLaSolicitud,
+      historial: [
+        { accion: 'correccion', motivo: 'La fecha estaba mal', por: 'Diego Prueba Cuatro', momento: '2026-10-23 10:30:00' },
+        { accion: 'correccion', motivo: 'Faltaba Agua potable', por: 'Ana Prueba Uno', momento: '2026-10-23 09:00:00' }
+      ]
+    };
+    assert.deepEqual(mapa.get(gasto).notasDgmit, [
+      {
+        id: reiteracion, numero: '98/26', tipo: 'reiteracion', recibida: '2026-10-01', anulada: false, cargada: '2026-10-02 09:00:00',
+        por: null, por_id: null, datasets: [{ id: gasto, titulo: 'Gasto Público' }], historial: []
+      },
+      {
+        id: mismoDia, numero: '99/26', tipo: 'solicitud', recibida: '2026-10-01', anulada: false, cargada: '2026-10-02 09:05:00',
+        por: 'Ana Prueba Uno', por_id: ana, datasets: [{ id: gasto, titulo: 'Gasto Público' }], historial: []
+      },
+      laSolicitud
+    ]);
+    assert.deepEqual(mapa.get(presupuesto).notasDgmit, [laSolicitud]);
+    assert.deepEqual(mapa.get(sinNotas).notasDgmit, []);
+    // Una copia por dataset: ninguna nota, lista de datasets ni historial se comparte con la de otro dataset
+    const [deGasto, dePresupuesto] = [mapa.get(gasto).notasDgmit[2], mapa.get(presupuesto).notasDgmit[0]];
+    assert.notStrictEqual(deGasto, dePresupuesto);
+    assert.notStrictEqual(deGasto.datasets, dePresupuesto.datasets);
+    assert.notStrictEqual(deGasto.datasets[0], dePresupuesto.datasets[0]);
+    assert.notStrictEqual(deGasto.historial, dePresupuesto.historial);
+    assert.notStrictEqual(deGasto.historial[0], dePresupuesto.historial[0]);
+  });
+
+  it('si quien la cargó o quien la corrigió ya no existe (se borró el usuario), por y por_id son null', async () => {
+    const diego = await crearUsuario('Diego Prueba Cuatro');
+    const ana = await crearUsuario('Ana Prueba Uno');
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    const nota = await insertarNotaDgmit({ numero: '156/26', recibida: '2026-10-22', creadoPor: diego, datasets: [id] });
+    await insertarHistorialDgmit({ notaId: nota, motivo: 'Número mal escrito', usuarioId: ana, momento: '2026-10-23 09:00:00' });
+    await query('DELETE FROM usuarios WHERE id IN (?)', [[diego, ana]]);
+    const [deLaBase] = (await fuentesDe([id])).get(id).notasDgmit;
+    assert.deepEqual([deLaBase.por, deLaBase.por_id, deLaBase.historial[0].por], [null, null, null]);
+  });
+
+  it('la anulada viene con anulada: true y su anulación en el historial', async () => {
+    const diego = await crearUsuario('Diego Prueba Cuatro');
+    const ana = await crearUsuario('Ana Prueba Uno');
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    const anulada = await insertarNotaDgmit({ numero: '156/26', recibida: '2026-10-22', anulada: 1, creadoPor: diego, datasets: [id] });
+    const vigente = await insertarNotaDgmit({ numero: '157/26', recibida: '2026-10-23', creadoPor: diego, datasets: [id] });
+    await insertarHistorialDgmit({
+      notaId: anulada, motivo: 'Faltaba un dataset', usuarioId: diego, momento: '2026-10-22 12:00:00',
+      anteriores: { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-22', datasets: [] }
+    });
+    await insertarHistorialDgmit({ notaId: anulada, accion: 'anulacion', motivo: 'Se cargó dos veces', usuarioId: ana, momento: '2026-10-23 08:45:00' });
+    const notas = (await fuentesDe([id])).get(id).notasDgmit;
+    assert.deepEqual(notas.map((n) => [n.id, n.anulada]), [[anulada, true], [vigente, false]]);
+    assert.deepEqual(notas[0].historial, [
+      { accion: 'anulacion', motivo: 'Se cargó dos veces', por: 'Ana Prueba Uno', momento: '2026-10-23 08:45:00' },
+      { accion: 'correccion', motivo: 'Faltaba un dataset', por: 'Diego Prueba Cuatro', momento: '2026-10-22 12:00:00' }
+    ]);
+  });
+
+  it('recibida sin correrse un día y cargada en hora argentina', async () => {
+    const diego = await crearUsuario('Diego Prueba Cuatro');
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    // 23:30 y 22:15 argentinas: en la base (UTC) ya es el día siguiente
+    const nota = await insertarNotaDgmit({ numero: '156/26', recibida: '2026-10-22', creadoPor: diego, cargada: '2026-10-22 23:30:00', datasets: [id] });
+    await insertarHistorialDgmit({ notaId: nota, accion: 'anulacion', motivo: 'Duplicada', usuarioId: diego, momento: '2026-10-23 22:15:00' });
+    const [deLaBase] = (await fuentesDe([id])).get(id).notasDgmit;
+    assert.equal(deLaBase.recibida, '2026-10-22');
+    assert.equal(deLaBase.cargada, '2026-10-22 23:30:00');
+    assert.equal(deLaBase.historial[0].momento, '2026-10-23 22:15:00');
+    assert.match(deLaBase.cargada, MOMENTO);
+    assert.match(deLaBase.historial[0].momento, MOMENTO);
+  });
+
+  // La consulta va aislada: fuentesDe también arma el anexo de la reiteración, y una falla de las notas DGMIT (por ejemplo, la
+  // migración sin correr) no puede frenarlo. Se renombra la tabla solo en la base de prueba de este archivo, y se vuelve a su
+  // nombre pase lo que pase; el console.error esperado se captura para no ensuciar la salida
+  it('si la tabla de notas DGMIT no existe, fuentesDe sale igual con notasDgmit vacía', async () => {
+    const id = await crearDataset({ gestion: 'externa', vencimiento: '2026-12-31', requiereNota: 1 });
+    await insertarEmail({ tipo: 'externo-40', ids: String(id), enviado: '2026-06-21 08:00:04' });
+    const aviso = await crearNota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-10-13', numero: 2, anio: 2026, datasets: [{ id, vencimiento: '2026-12-31' }] });
+    await insertarNotaDgmit({ numero: '156/26', recibida: '2026-10-22', datasets: [id] });
+    assert.equal((await fuentesDe([id])).get(id).notasDgmit.length, 1);
+
+    await asegurarBaseDePrueba();
+    const errores = [];
+    const consoleError = console.error;
+    await query('RENAME TABLE notas_dgmit TO notas_dgmit_x');
+    try {
+      console.error = (...args) => { errores.push(args); };
+      const fuentes = (await fuentesDe([id])).get(id);
+      console.error = consoleError;
+      assert.deepEqual(fuentes.notasDgmit, []);
+      assert.equal(fuentes.dataset.id, id);
+      assert.deepEqual(fuentes.notas.map((n) => n.id), [aviso]);
+      assert.equal(fuentes.emails.length, 1);
+      assert.equal(errores.length, 1);
+      assert.equal(errores[0][0], 'No se pudieron leer las notas DGMIT:');
+      assert.equal(errores[0][1]?.code, 'ER_NO_SUCH_TABLE');
+    } finally {
+      console.error = consoleError;
+      await query('RENAME TABLE notas_dgmit_x TO notas_dgmit');
+    }
+  });
+});
+
 describe('fuentesDe: la forma y los momentos', () => {
   it('una base con de todo: cada lista tiene exactamente las claves de CASOS (guarda de regresión de la forma)', async () => {
     const propuso = await crearUsuario('Ana Prueba Uno');
@@ -490,6 +650,8 @@ describe('fuentesDe: la forma y los momentos', () => {
     await crearNota({ fecha: '2026-10-13', numero: 2, anio: 2026, datasets: [{ id, seccion: 'vencido', vencimiento: '2026-01-31' }] });
     const auditoria = await crearNota({ tipo: 'auditoria', gestion: null, fecha: '2026-02-05', numero: 1, anio: 2026 });
     await query("INSERT INTO notas_digitales_cambios (nota_id, cambio_id, seccion) VALUES (?, ?, 'nuevo'), (?, ?, 'nuevo')", [auditoria, alta, auditoria, edicion]);
+    const notaDgmit = await insertarNotaDgmit({ numero: '156/26', recibida: '2026-10-22', creadoPor: propuso, datasets: [id] });
+    await insertarHistorialDgmit({ notaId: notaDgmit, motivo: 'Número mal escrito', usuarioId: reviso, momento: '2026-10-23 09:00:00' });
 
     const fuentes = (await fuentesDe([id])).get(id);
     const modelo = CASOS[52] ?? Object.values(CASOS)[0];
@@ -498,7 +660,8 @@ describe('fuentesDe: la forma y los momentos', () => {
     assert.deepEqual(claves(fuentes.dataset), claves(modelo.dataset));
     const conTodo = Object.values(CASOS);
     const primera = (campo) => conTodo.flatMap(c => c[campo])[0];
-    assert.ok(fuentes.altasSinDataset.length && fuentes.cambios.length && fuentes.historial.length && fuentes.emails.length && fuentes.notas.length && fuentes.auditorias.length);
+    assert.ok(fuentes.altasSinDataset.length && fuentes.cambios.length && fuentes.historial.length && fuentes.emails.length && fuentes.notas.length && fuentes.auditorias.length
+      && fuentes.notasDgmit.length);
     assert.deepEqual(claves(fuentes.altasSinDataset[0]), claves(primera('altasSinDataset')));
     assert.deepEqual(claves(fuentes.cambios[0]), claves(primera('cambios')));
     assert.deepEqual(claves(fuentes.historial[0]), claves(primera('historial')));
@@ -506,6 +669,10 @@ describe('fuentesDe: la forma y los momentos', () => {
     assert.deepEqual(claves(fuentes.notas[0]), claves(primera('notas')));
     // Ningún caso real tiene auditorías: la forma sale del plan (Fuentes.auditorias)
     assert.deepEqual(claves(fuentes.auditorias[0]), ['id', 'numero', 'anio', 'fecha', 'estado', 'cambio_id', 'seccion', 'creado_por', 'firmante']);
+    // Ni las notas DGMIT: el dump de los casos es anterior a ellas (spec 2026-10-24-notas-dgmit, 5)
+    assert.deepEqual(claves(fuentes.notasDgmit[0]), ['id', 'numero', 'tipo', 'recibida', 'anulada', 'cargada', 'por', 'por_id', 'datasets', 'historial']);
+    assert.deepEqual(claves(fuentes.notasDgmit[0].datasets[0]), ['id', 'titulo']);
+    assert.deepEqual(claves(fuentes.notasDgmit[0].historial[0]), ['accion', 'motivo', 'por', 'momento']);
   });
 
   it('todos los momentos (alta, creado, revisado, historial, emails) tienen el formato AAAA-MM-DD HH:MM:SS', async () => {

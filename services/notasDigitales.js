@@ -688,8 +688,9 @@ export const ejemplo = (tipo, gestion, hoy) => {
 // anexo de una reiteración de ejemplo, en la vista previa y la prueba, dibuja la hoja de cada uno. fuentesDe (seguimientoDatos.js)
 // no sirve: descarta los ids de ejemplo (0 y -1) y no están en la base. Mismo formato que devuelve fuentesDe, Map<id, Fuentes>:
 // el dataset con su ficha (la de ejemplo(): área, frecuencia, fechas, tipo de pedido, Requiere nota DGMIT) y sin ningún movimiento
-// (ni alta, cambios, historial, emails, notas ni auditorías), como un dataset del que todavía no hay registro. fecha: el día de la
-// nota, el mismo con el que se calcula el Seguimiento; hoy no interviene, porque los ejemplos ya traen sus fechas armadas con ella.
+// (ni alta, cambios, historial, emails, notas, auditorías ni notas DGMIT), como un dataset del que todavía no hay registro.
+// fecha: el día de la nota, el mismo con el que se calcula el Seguimiento; hoy no interviene, porque los ejemplos ya traen sus
+// fechas armadas con ella.
 export const fuentesDeEjemplo = (datasets, fecha) => {
   const catalogos = { areas: {}, frecuencias: {}, temas: {}, formatos: {} };
   return new Map(datasets.map(d => [d.id, {
@@ -699,7 +700,7 @@ export const fuentesDeEjemplo = (datasets, fecha) => {
       proxima: d.vencimiento, datos_al: d.datos_al ?? null, ultima: d.ultima_actualizacion ?? null, tipo_pedido: d.tipo_pedido ?? null,
       url_dataset: d.url_dataset ?? null, activo: true, alta: null
     },
-    altasSinDataset: [], cambios: [], historial: [], emails: [], notas: [], auditorias: [], catalogos
+    altasSinDataset: [], cambios: [], historial: [], emails: [], notas: [], auditorias: [], notasDgmit: [], catalogos
   }]));
 };
 

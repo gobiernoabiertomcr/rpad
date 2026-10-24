@@ -74,3 +74,30 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
     assert.equal(cargarAuth(null).Auth.isAuditor(), false);
   });
 });
+
+describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
+  it('getRoleText de colaborador es Colaborador', () => {
+    const { Auth } = cargarAuth({ rol: 'colaborador' });
+    assert.equal(Auth.getRoleText(), 'Colaborador');
+    // Ve lo mismo que un lector: no es de administración ni audita
+    assert.equal(Auth.isAdmin(), false);
+    assert.equal(Auth.isAuditor(), false);
+    assert.equal(Auth.isSuperadmin(), false);
+  });
+
+  it('puedeCargarNotasDgmit: superadmin, admin, editor y colaborador sí; lector y sin sesión no', () => {
+    for (const rol of ['superadmin', 'admin', 'editor', 'colaborador']) {
+      assert.equal(cargarAuth({ rol }).Auth.puedeCargarNotasDgmit(), true, rol);
+    }
+    assert.equal(cargarAuth({ rol: 'lector' }).Auth.puedeCargarNotasDgmit(), false);
+    assert.equal(cargarAuth(null).Auth.puedeCargarNotasDgmit(), false);
+  });
+
+  it('puedeCargarNotasDgmit del navegador da lo mismo que la regla del servidor para cada rol', async () => {
+    const { puedeCargarNotasDgmit, ROLES_ASIGNABLES } = await import('../services/usuariosReglas.js');
+    for (const rol of [...ROLES_ASIGNABLES, 'superadmin', 'otro', '', null]) {
+      assert.equal(cargarAuth({ rol }).Auth.puedeCargarNotasDgmit(), puedeCargarNotasDgmit(rol), String(rol));
+    }
+    assert.equal(cargarAuth(null).Auth.puedeCargarNotasDgmit(), puedeCargarNotasDgmit(null));
+  });
+});

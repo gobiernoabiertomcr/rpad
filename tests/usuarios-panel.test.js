@@ -131,6 +131,18 @@ describe('alta', () => {
     assert.equal((await query("SELECT COUNT(*) AS n FROM usuarios WHERE username = 'PPRUEBA'"))[0].n, 0);
   });
 
+  it('el admin crea un colaborador', async () => {
+    const res = await api.post('/usuarios', nuevo({
+      nombre_completo: 'Persona Colaboradora', username: 'PCOLABORA', email: 'pcolabora@rpad.test', rol: 'colaborador'
+    }), comoA());
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.usuario.rol, 'colaborador');
+    const [mensaje] = await mailpit.esperar(paraCasilla('pcolabora@rpad.test'));
+    assert.match(await mailpit.html(mensaje.ID), /Colaborador/);
+    const [fila] = await auditoria(res.body.data.usuario.id, 'alta');
+    assert.equal(detalleDe(fila).rol, 'colaborador');
+  });
+
   it('si el email no sale, el usuario igual se crea y la respuesta lo avisa', async () => {
     const bloqueado = await iniciarServidor({ env: { DB_NAME: base.nombre, EMAIL_SOLO_A: 'nadie@rpad.test' } });
     try {
@@ -283,6 +295,23 @@ describe('mínimo de aprobadores', () => {
     const alta = await api.post('/usuarios', { nombre_completo: 'Admin Pendiente', username: 'APENDIENTE', email: 'apendiente@rpad.test', rol: 'admin' }, comoA());
     assert.equal(alta.status, 201);
     assert.equal((await api.post(`/usuarios/${usuarios.adminB.id}/desactivar`, {}, comoA())).status, 409);
+  });
+
+  it('un colaborador no cuenta para el mínimo de aprobadores', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'colaborador' });
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [usuarios.superadmin.id]);
+    assert.equal((await api.get('/usuarios', comoA())).body.data.resumen.aprobadores_activos, 2);
+    // Pasar a un admin a colaborador saca un aprobador, como pasarlo a lector
+    const res = await api.put(`/usuarios/${usuarios.adminB.id}`, { rol: 'colaborador' }, comoA());
+    assert.equal(res.status, 409, JSON.stringify(res.body));
+    assert.equal(res.body.error, MINIMO);
+    // Y desactivar a un colaborador no saca ninguno
+    assert.equal((await api.post(`/usuarios/${x.id}/desactivar`, {}, comoA())).status, 200);
+
+    await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [usuarios.superadmin.id]);
+    const conTres = await api.put(`/usuarios/${usuarios.adminB.id}`, { rol: 'colaborador' }, comoA());
+    assert.equal(conTres.status, 200, JSON.stringify(conTres.body));
+    assert.equal((await api.get('/usuarios', comoA())).body.data.resumen.aprobadores_activos, 2);
   });
 
   it('con 3 aprobadores se puede sacar a uno', async () => {
@@ -450,6 +479,29 @@ describe('aviso al superadmin', () => {
     const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
     await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [x.id]);
     assert.equal((await api.post(`/usuarios/${x.id}/reactivar`, {}, comoA())).status, 200);
+    assert.equal((await avisosRecibidos()).length, 0);
+  });
+
+  it('pasar un lector a colaborador avisa al superadmin y queda en el historial', async () => {
+    const { x } = await crearUsuariosPrueba(api, { x: 'lector' });
+    const res = await api.put(`/usuarios/${x.id}`, { rol: 'colaborador' }, comoA());
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const [aviso, ...otros] = await avisos();
+    assert.equal(otros.length, 0);
+    const html = await mailpit.html(aviso.ID);
+    assert.match(html, /Test x/);
+    assert.match(html, /Lector → Colaborador/);
+    const [fila] = await auditoria(x.id, 'cambio_rol');
+    assert.deepEqual(detalleDe(fila), { antes: 'lector', despues: 'colaborador' });
+    const historial = (await api.get(`/usuarios/${x.id}`, comoA())).body.data.historial;
+    assert.equal(historial[0].accion, 'cambio_rol');
+  });
+
+  it('crear un colaborador no avisa al superadmin', async () => {
+    const res = await api.post('/usuarios', nuevo({
+      nombre_completo: 'Colaborador Sin Aviso', username: 'CSINAVISO', email: 'csinaviso@rpad.test', rol: 'colaborador'
+    }), comoA());
+    assert.equal(res.status, 201, JSON.stringify(res.body));
     assert.equal((await avisosRecibidos()).length, 0);
   });
 });

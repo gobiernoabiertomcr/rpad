@@ -2,7 +2,7 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, db, MAILPIT_URL } from './helpers.js';
-import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada } from './notas-fixtures.js';
+import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, lineasPorHoja } from './pdf-lector.js';
 import { formatoCorto, hoyArgentina, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -1060,6 +1060,8 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
   // Los datasets de la nota de los casos reales, en el orden de la selección (por vencimiento): el 52 venció el 31/07, el 81
   // vence el 31/10 y el 38 el 31/03/2027
   const DE_LOS_CASOS = [52, 81, 38].map(id => ({ id, titulo: CASOS[id].dataset.titulo, vencimiento: CASOS[id].dataset.proxima }));
+  // Las opciones del circuito en el anexo: sin nota DGMIT, el tramo de la nota formal es neutral (spec 2026-10-24-notas-dgmit, 7)
+  const ANEXO = { anexo: true };
 
   // Un vencido que nunca tuvo aviso y un próximo a vencer avisado el 01/10 (N° 1/26): los dos van en la reiteración interna del
   // 02/11, que toma el N° 2/26. La selección los trae por vencimiento (primero el vencido); la tabla, al revés
@@ -1090,11 +1092,11 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
   it('seguimientosDeLaNota usa las fuentes que recibe: una hoja por dataset, en el orden de la tabla, con la fecha de la nota como hoy y la cinta del PDF', async () => {
     const fuentesPorId = new Map([52, 81, 38].map(id => [id, fuentesDelCaso(id)]));
     const lista = await seguimientoNotas.seguimientosDeLaNota(DE_LOS_CASOS, HOY_DE_LOS_CASOS, fuentesPorId);
-    assert.deepEqual(lista, [81, 38, 52].map(id => seguimientoDe(fuentesDelCaso(id), HOY_DE_LOS_CASOS, OPCIONES_CINTA_PDF)));
+    assert.deepEqual(lista, [81, 38, 52].map(id => seguimientoDe(fuentesDelCaso(id), HOY_DE_LOS_CASOS, OPCIONES_CINTA_PDF, ANEXO)));
     // Con otra fecha, otro Seguimiento: el 81 todavía no venció el 20/10 y el 02/11 ya está vencido
     const despues = await seguimientoNotas.seguimientosDeLaNota(DE_LOS_CASOS, '2026-11-02', fuentesPorId);
     assert.deepEqual(despues.map(s => s.ficha.id), [38, 52, 81]);
-    assert.deepEqual(despues, [38, 52, 81].map(id => seguimientoDe(fuentesDelCaso(id), '2026-11-02', OPCIONES_CINTA_PDF)));
+    assert.deepEqual(despues, [38, 52, 81].map(id => seguimientoDe(fuentesDelCaso(id), '2026-11-02', OPCIONES_CINTA_PDF, ANEXO)));
   });
 
   it('seguimientosDeLaNota tira error si falta la fuente de un dataset', async () => {
@@ -1108,7 +1110,7 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.deepEqual(datasets.map(d => d.id), [vencido, proximo]);
     const lista = await seguimientoNotas.seguimientosDeLaNota(datasets, '2026-11-02');
     const fuentes = await seguimientoDatos.fuentesDe([vencido, proximo]);
-    assert.deepEqual(lista, [proximo, vencido].map(id => seguimientoDe(fuentes.get(id), '2026-11-02', OPCIONES_CINTA_PDF)));
+    assert.deepEqual(lista, [proximo, vencido].map(id => seguimientoDe(fuentes.get(id), '2026-11-02', OPCIONES_CINTA_PDF, ANEXO)));
   });
 
   it('generarNota de una reiteración guarda anexo_pdf con una hoja por dataset en el orden de la tabla y el pie con su número', async () => {
@@ -1252,8 +1254,8 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
       for (const d of datasets) {
         const delDataset = fuentes.get(d.id);
         // Lo mismo que devuelve fuentesDe: el dataset, las listas vacías y los catálogos
-        assert.deepEqual(Object.keys(delDataset).sort(), ['altasSinDataset', 'auditorias', 'cambios', 'catalogos', 'dataset', 'emails', 'historial', 'notas']);
-        for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias']) assert.deepEqual(delDataset[lista], [], lista);
+        assert.deepEqual(Object.keys(delDataset).sort(), ['altasSinDataset', 'auditorias', 'cambios', 'catalogos', 'dataset', 'emails', 'historial', 'notas', 'notasDgmit']);
+        for (const lista of ['altasSinDataset', 'cambios', 'historial', 'emails', 'notas', 'auditorias', 'notasDgmit']) assert.deepEqual(delDataset[lista], [], lista);
         assert.deepEqual(delDataset.dataset, {
           id: d.id, titulo: d.titulo, area: 'Área de ejemplo', area_superior: 'Secretaría de ejemplo', area_id: 0, tipo_gestion: gestion,
           requiere_nota: d.requiere_nota, frecuencia: 'Anualmente', meses: 12, proxima: d.vencimiento, datos_al: d.datos_al,
@@ -1320,6 +1322,77 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     for (const tipo of ['auditoria', 'autorizacion', 'otro']) {
       await assert.rejects(motor.previewAnexo({ tipo, gestion: 'externa', hoy: '2026-11-02' }), motor.ErrorDeUso, tipo);
     }
+  });
+
+  // Notas DGMIT (spec 2026-10-24-notas-dgmit, 7): el anexo le llega solo a la DGMIT y a la Dirección Administrativa con cada
+  // reiteración y la tabla de notas DGMIT arranca vacía. Sin nota, el tramo de la nota formal es neutral («La manda la DGMIT al
+  // área»), nunca «Pendiente de carga». La reiteración externa del 02/11: un vencido sin aviso y un próximo avisado el 01/10
+  const reiteracionExternaDel0211 = async () => {
+    const vencido = await crearDataset({ titulo: 'Externo vencido sin aviso', gestion: 'externa', requiereNota: 1, vencimiento: '2026-10-31' });
+    const proximo = await crearDataset({ titulo: 'Externo próximo avisado', gestion: 'externa', requiereNota: 1, vencimiento: '2026-11-30' });
+    await crearNota({ gestion: 'externa', fecha: '2026-10-01', numero: 1, datasets: [{ id: proximo, vencimiento: '2026-11-30' }] });
+    return { vencido, proximo };
+  };
+
+  it('el anexo de una reiteración real sin notas DGMIT no dice Pendiente de carga en ninguna hoja', async () => {
+    const { vencido, proximo } = await reiteracionExternaDel0211();
+    // Fuera del anexo (la pantalla y la descarga del Seguimiento) los dos dirían «Pendiente de carga»: el vencido ya venció y el
+    // próximo ya tuvo un aviso del RPAD en su ciclo
+    const fuentes = await seguimientoDatos.fuentesDe([vencido, proximo]);
+    for (const id of [vencido, proximo]) {
+      assert.equal(seguimientoDe(fuentes.get(id), '2026-11-02', OPCIONES_CINTA_PDF).circuito.tramoFuera.texto, 'Pendiente de carga', `dataset ${id}`);
+    }
+    const resumen = await ejecutar('2026-11-02');
+    assert.deepEqual(resumen.errores, []);
+    const [reiteracion] = await laReiteracion();
+    assert.ok(reiteracion?.anexo_pdf, 'la reiteración externa, con su anexo');
+    const hojas = lineasPorHoja(reiteracion.anexo_pdf);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('Externo próximo avisado') && hojas[1].includes('Externo vencido sin aviso'), hojas.map(h => h.join(' | ')).join('\n'));
+    for (const lineas of hojas) {
+      assert.ok(lineas.includes('CONJUNTO DE DATOS · GESTIÓN EXTERNA'), lineas.join(' | '));
+      assert.ok(lineas.includes('Nota formal'), lineas.join(' | '));
+      assert.ok(lineas.join(' ').includes('La manda la DGMIT al área'), lineas.join(' | '));
+      for (const t of ['Pendiente de carga', 'Todavía no hizo falta', 'Ya no se pide']) assert.ok(!lineas.join(' ').includes(t), `sobra "${t}": ${lineas.join(' | ')}`);
+    }
+  });
+
+  // fuentesDe también arma el anexo, y si el anexo falla la reiteración no se genera: la consulta de las notas DGMIT va aislada. Se
+  // renombra la tabla solo en la base de prueba de este archivo (rpad_test_notas_motor) y se vuelve a su nombre pase lo que pase;
+  // el console.error esperado se captura para no ensuciar la salida
+  it('si la tabla de notas DGMIT falta, la reiteración se genera con su anexo', async () => {
+    await reiteracionExternaDel0211();
+    await asegurarBaseDePrueba();
+    const errores = [];
+    const consoleError = console.error;
+    let resumen;
+    await query('RENAME TABLE notas_dgmit TO notas_dgmit_x');
+    try {
+      console.error = (...args) => { errores.push(args); };
+      resumen = await ejecutar('2026-11-02');
+    } finally {
+      console.error = consoleError;
+      await query('RENAME TABLE notas_dgmit_x TO notas_dgmit');
+    }
+    assert.deepEqual(resumen.errores, []);
+    const [reiteracion] = await laReiteracion();
+    assert.equal(reiteracion?.estado, 'enviada');
+    assert.ok(reiteracion.anexo_pdf);
+    const hojas = lineasPorHoja(reiteracion.anexo_pdf);
+    assert.equal(hojas.length, 2);
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Anexo de la Nota Digital N° ${reiteracion.numero}/26 · Hoja ${k + 1} de 2`), lineas.join(' | '));
+      assert.ok(lineas.join(' ').includes('La manda la DGMIT al área'), lineas.join(' | '));
+    });
+    assert.ok(reiteracion.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
+    // Lo único que se registró: que no se pudieron leer las notas DGMIT (la tabla no existe)
+    assert.ok(errores.length >= 1);
+    for (const [mensaje, error] of errores) {
+      assert.equal(mensaje, 'No se pudieron leer las notas DGMIT:');
+      assert.equal(error?.code, 'ER_NO_SUCH_TABLE');
+    }
+    // La tabla volvió a su nombre
+    assert.equal((await query("SHOW TABLES LIKE 'notas_dgmit'")).length, 1);
   });
 });
 

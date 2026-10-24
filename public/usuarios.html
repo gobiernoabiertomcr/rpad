@@ -36,6 +36,7 @@
         .usuario-avatar.rol-superadmin { background: var(--primary); color: #fff; }
         .usuario-avatar.rol-admin { background: var(--info-light); color: var(--primary); }
         .usuario-avatar.rol-editor { background: #e6f4f1; color: #0f766e; }
+        .usuario-avatar.rol-colaborador { background: #eeeaf7; color: #5b4691; }
         .usuario-avatar.mini { width: 28px; height: 28px; font-size: 0.7rem; }
         .usuario-datos { flex: 1; min-width: 0; }
         .usuario-nombre { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--gray-800); }
@@ -49,6 +50,8 @@
         .etiqueta.rol-superadmin { background: var(--primary); color: #fff; }
         .etiqueta.rol-admin { background: var(--info-light); color: var(--primary); }
         .etiqueta.rol-editor { background: #e6f4f1; color: #0f766e; }
+        /* El violeta de las notas DGMIT, que carga el colaborador (spec 2026-10-24-notas-dgmit) */
+        .etiqueta.rol-colaborador { background: #eeeaf7; color: #5b4691; }
         .etiqueta.rol-lector { background: var(--gray-100); color: var(--gray-600); }
         .etiqueta-contrato { background: var(--purple-light); color: var(--purple); }
         .etiqueta-pendiente { background: var(--warning-light); color: #92400e; }
@@ -68,6 +71,9 @@
         .usuario-pestana.activa { color: var(--primary); border-bottom-color: var(--primary); }
         .usuario-pestana:focus-visible, .fila-usuario .btn:focus-visible, .grupo-desactivados summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        /* Qué puede hacer el rol elegido, debajo de la fila del selector */
+        .rol-ayuda { margin: -8px 0 20px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius); background: var(--gray-50); color: var(--gray-700); font-size: 0.85rem; line-height: 1.45; }
+        .rol-ayuda b { color: var(--gray-800); font-weight: 600; }
         .requerido { color: var(--danger); }
         .campo-error { color: #b91c1c; font-size: 0.8rem; margin: 4px 0 0; }
         .form-input[aria-invalid="true"] { border-color: var(--danger); }
@@ -213,6 +219,14 @@
                 <div id="lista-editores"></div>
             </section>
 
+            <section class="grupo-usuarios" aria-labelledby="titulo-colaboradores">
+                <div class="grupo-encabezado">
+                    <h2 id="titulo-colaboradores">Colaboradores</h2>
+                    <span class="grupo-contador" id="contador-colaboradores"></span>
+                </div>
+                <div id="lista-colaboradores"></div>
+            </section>
+
             <section class="grupo-usuarios" aria-labelledby="titulo-lectores">
                 <div class="grupo-encabezado">
                     <h2 id="titulo-lectores">Solo lectura</h2>
@@ -318,14 +332,16 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="u-rol">Rol</label>
-                                <select id="u-rol" class="form-input">
+                                <select id="u-rol" class="form-input" aria-describedby="u-rol-ayuda">
                                     <option value="lector">Lector</option>
+                                    <option value="colaborador">Colaborador</option>
                                     <option value="editor">Editor</option>
                                     <option value="admin">Admin</option>
                                     <option value="superadmin" hidden>Superadmin</option>
                                 </select>
                             </div>
                         </div>
+                        <p class="rol-ayuda" id="u-rol-ayuda"></p>
                         <div class="form-group">
                             <label class="form-label" for="u-cargo">Cargo</label>
                             <input type="text" id="u-cargo" class="form-input" maxlength="200" placeholder="Ej.: Directora Administrativa">
@@ -406,9 +422,9 @@
     </div>
 
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261117"></script>
-    <script src="js/main.js?v=20261117"></script>
-    <script src="js/api.js?v=20261117"></script>
-    <script src="js/usuarios.js?v=20261118"></script>
+    <script src="js/auth.js?v=20261124"></script>
+    <script src="js/main.js?v=20261124"></script>
+    <script src="js/api.js?v=20261124"></script>
+    <script src="js/usuarios.js?v=20261124"></script>
 </body>
 </html>

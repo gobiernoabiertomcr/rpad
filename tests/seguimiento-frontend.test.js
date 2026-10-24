@@ -8,8 +8,11 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
-import { seguimientoDe, resumenParaLista, nombreDelPdf } from '../services/seguimientoReglas.js';
+import { seguimientoDe, resumenParaLista, nombreDelPdf, conNotasDgmitEditables } from '../services/seguimientoReglas.js';
 import { textoRequiereNota } from '../services/requiereNotaReglas.js';
+import {
+  TEXTO_TIPO_NOTA_DGMIT, MENSAJES_NOTA_DGMIT, LARGO_NUMERO, LARGO_MOTIVO, FECHA_MINIMA, validarNotaDgmit, validarMotivo
+} from '../services/notasDgmitReglas.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -191,7 +194,7 @@ describe('seguimiento.js: la ficha y el circuito', () => {
     for (const t of ['6 avisos', '5 emails y la Nota Digital N° 2/26', 'DGMIT y Dirección Administrativa', 'Vencido hace 81 días']) assert.ok(html.includes(t), t);
     assert.ok(html.includes('<div class="sg-nodo area">'), 'el área vencida, en rojo');
     assert.ok(html.includes('Además, el 21/06/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.'));
-    assert.ok(html.includes('class="sg-flecha fuera"') && html.includes('Por fuera del RPAD: no queda registrada'));
+    assert.ok(html.includes('class="sg-flecha fuera"') && html.includes('Pendiente de carga'));
   });
 
   it('el encabezado del circuito: desde cuándo se cuentan los avisos y el vencimiento, con los textos del servidor', () => {
@@ -312,9 +315,9 @@ describe('seguimiento.js: la cinta', () => {
 
   it('la leyenda, con todos los tipos y el rayado "Vencido"', () => {
     const html = ctx.htmlDeLeyenda();
-    for (const texto of ['Nota Digital a DGMIT', 'Email a DGMIT', 'Email al área', 'Actualización', 'Actualización pendiente', 'Cambio en la ficha',
-      'Cambio pendiente', 'Propuesta rechazada', 'Alta', 'Vencido']) assert.ok(html.includes(`</i>${texto}</span>`), texto);
-    assert.equal(cuantas(html, /aria-hidden="true"/g), 10);
+    for (const texto of ['Nota Digital a DGMIT', 'Email a DGMIT', 'Email al área', 'Nota DGMIT al área', 'Actualización', 'Actualización pendiente',
+      'Cambio en la ficha', 'Cambio pendiente', 'Propuesta rechazada', 'Alta', 'Vencido']) assert.ok(html.includes(`</i>${texto}</span>`), texto);
+    assert.equal(cuantas(html, /aria-hidden="true"/g), 11);
   });
 });
 
@@ -324,7 +327,8 @@ describe('seguimiento.js: los movimientos', () => {
 
   it('los filtros, en orden y con sus textos', () => {
     assert.deepEqual(plano(vm.runInContext('FILTROS_MOVIMIENTOS', ctx)), [['todos', 'Todos'], ['avisos', 'Avisos a DGMIT'], ['area', 'Emails al área'],
-      ['actualizaciones', 'Actualizaciones'], ['cambios', 'Cambios en la ficha'], ['propuestas', 'Propuestas'], ['auditoria', 'Notas de auditoría'], ['altas', 'Alta y baja']]);
+      ['dgmit', 'Notas DGMIT'], ['actualizaciones', 'Actualizaciones'], ['cambios', 'Cambios en la ficha'], ['propuestas', 'Propuestas'],
+      ['auditoria', 'Notas de auditoría'], ['altas', 'Alta y baja']]);
   });
 
   it('los botones de los filtros, con su cantidad y solo los que tienen algo', () => {
@@ -424,29 +428,519 @@ describe('seguimiento.js: los movimientos', () => {
   });
 });
 
-// La página con un DOM falso: cada id es un elemento (oculto, salvo #loading y #sg-volver, como en seguimiento.html), un
-// API.pedirJson falso y el id de la URL
-const elementoFalso = (id) => ({
-  id, hidden: !['loading', 'sg-volver'].includes(id), innerHTML: '', textContent: '', value: '',
-  addEventListener() {}, insertAdjacentHTML(_donde, html) { this.innerHTML += html; }, querySelector: () => null, querySelectorAll: () => [], focus() {}
+// Notas DGMIT (spec 2026-10-24-notas-dgmit, 6): la columna de la lista, el tramo del circuito, la marca de la cinta, el filtro y el
+// detalle del movimiento, con lo que arma el servidor (seguimientoDe sobre los casos más `notasDgmit`, y conNotasDgmitEditables según
+// quién mira, como GET /api/seguimiento/:id)
+describe('seguimiento.js: las notas DGMIT', () => {
+  // Una nota DGMIT como la da fuentesDe: `por` y los `por` del historial con el nombre completo (el servidor los acorta)
+  const notaDgmit = (datos) => ({
+    id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '2026-10-16 09:30:00',
+    por: 'Diego Martín Cuatro', por_id: 7, datasets: [{ id: 58, titulo: 'Áreas específicas de género' }], historial: [], ...datos
+  });
+  const conNotasDgmit = (id, notasDgmit, dataset = {}) => ({ ...f(id), dataset: { ...CASOS[id].dataset, ...dataset }, notasDgmit });
+  // El seguimiento como lo manda el servidor a quien mira (por defecto, quien cargó las notas: el usuario 7)
+  const comoLoVe = (fuentes, quien = { usuarioId: 7 }) => conNotasDgmitEditables(seguimientoDe(fuentes, HOY), quien);
+  const dgmitDe = (seguimiento) => seguimiento.movimientos.filter((m) => m.tipo === 'dgmit');
+  const AREA_58 = CASOS[58].dataset.area;
+  const HOTELERIA = { id: 25, titulo: 'Hotelería en Comodoro Rivadavia' };
+  const CORRECCION = { accion: 'correccion', motivo: 'Faltaba un dataset', por: 'Elena Noelia Cuatro', momento: '2026-10-17 10:00:00' };
+  const ANULACION = { accion: 'anulacion', motivo: 'Se cargó dos veces', por: 'Elena Noelia Cuatro', momento: '2026-10-18 09:30:00' };
+  // Cada botón con un nombre accesible propio: "Corregir la nota DGMIT N° 156/26" (ruling R6)
+  const BOTON = (accion, texto, id = 1, numero = '156/26') =>
+    `<button type="button" class="sg-link" data-accion="${accion}" data-nota="${id}" aria-label="${texto} la nota DGMIT N° ${numero}">${texto}</button>`;
+
+  it('la lista tiene la columna Última nota DGMIT al área: con nota y con —', () => {
+    // El encabezado: la columna nueva va al final, y cada fila tiene tantas celdas como columnas
+    const thead = leer('seguimiento.html').match(/<thead>([\s\S]*?)<\/thead>/)[1];
+    const columnas = [...thead.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((m) => m[1]);
+    assert.deepEqual(columnas, ['Dataset y área', 'Vencimiento', 'Vencido hace', 'Avisos a DGMIT en el ciclo', 'Último aviso', 'Última nota DGMIT al área']);
+    const conNota = ctx.htmlDeFilaDeLista(resumenParaLista(conNotasDgmit(58, [notaDgmit({})]), HOY));
+    assert.equal(cuantas(conNota, /<td[ >]/g), columnas.length);
+    assert.match(conNota, /<td class="nota-dgmit"><b>N° 156\/26<\/b><small>Solicitud, recibida el 15\/10\/2026<\/small><\/td>\s*<\/tr>$/);
+    const reiteracion = ctx.htmlDeFilaDeLista(resumenParaLista(conNotasDgmit(58, [notaDgmit({ tipo: 'reiteracion', numero: '305/26' })]), HOY));
+    assert.ok(reiteracion.includes('<td class="nota-dgmit"><b>N° 305/26</b><small>Reiteración, recibida el 15/10/2026</small></td>'));
+    // Sin nota (o con la nota anulada), una raya
+    for (const fila of [resumenParaLista(f(52), HOY), resumenParaLista(conNotasDgmit(58, [notaDgmit({ anulada: true })]), HOY)]) {
+      const html = ctx.htmlDeFilaDeLista(fila);
+      assert.equal(cuantas(html, /<td[ >]/g), columnas.length);
+      assert.match(html, /<td class="nota-dgmit">—<\/td>\s*<\/tr>$/);
+    }
+    // Lo que manda el servidor tal cual: con un tipo que no conoce, sin el tipo; con algo raro, la raya
+    assert.ok(ctx.htmlDeFilaDeLista({ ...resumenParaLista(f(52), HOY), nota_dgmit: { numero: '9/26', tipo: 'otra', recibida: '2026-10-01' } })
+      .includes('<td class="nota-dgmit"><b>N° 9/26</b><small>Recibida el 01/10/2026</small></td>'));
+    for (const raro of [null, undefined, 'x', {}, { numero: '  ' }]) {
+      assert.match(ctx.htmlDeFilaDeLista({ ...resumenParaLista(f(52), HOY), nota_dgmit: raro }), /<td class="nota-dgmit">—<\/td>/, String(raro));
+    }
+  });
+
+  it('el circuito con nota usa sg-flecha registrada; sin nota, fuera, con Pendiente de carga', () => {
+    const con = ctx.htmlDelCircuito(comoLoVe(conNotasDgmit(58, [notaDgmit({})])).circuito);
+    assert.ok(con.includes('<div class="sg-flecha registrada"><div class="n">Nota DGMIT N° 156/26</div><div class="l" aria-hidden="true"></div>'
+      + '<div class="c">Solicitud recibida por el área el 15/10/2026, hace 5 días</div></div>'));
+    assert.ok(!con.includes('sg-flecha fuera'));
+    assert.equal(cuantas(con, /class="sg-flecha"/g), 1, 'el tramo de los avisos sigue igual');
+    const sin = ctx.htmlDelCircuito(seguimientoDe(f(52), HOY).circuito);
+    assert.ok(sin.includes('<div class="sg-flecha fuera"><div class="n">Nota formal</div><div class="l" aria-hidden="true"></div><div class="c">Pendiente de carga</div></div>'));
+    assert.ok(!sin.includes('registrada'));
+    // Solo el true literal: cualquier otra cosa es el tramo punteado
+    for (const registrada of ['true', 1, null, undefined]) {
+      assert.ok(ctx.htmlDelCircuito({ tramoFuera: { titulo: 'Nota formal', texto: 'Pendiente de carga', registrada } }).includes('class="sg-flecha fuera"'), String(registrada));
+    }
+  });
+
+  it('el filtro Notas DGMIT aparece con su cantidad, después de Emails al área', () => {
+    // Cuenta también las anuladas
+    const s = comoLoVe(conNotasDgmit(52, [notaDgmit({ datasets: [] }), notaDgmit({ id: 2, numero: '151/26', recibida: '2026-10-10', anulada: true, datasets: [] })]));
+    const html = ctx.htmlDeFiltrosDeMovimientos(s.movimientos, 'todos');
+    const botones = [...html.matchAll(/data-filtro="([^"]+)" aria-pressed="(?:true|false)">([^<]+) <b>(\d+)<\/b>/g)].map((m) => [m[1], m[2], Number(m[3])]);
+    assert.deepEqual(botones, [['todos', 'Todos', 18], ['avisos', 'Avisos a DGMIT', 9], ['area', 'Emails al área', 2], ['dgmit', 'Notas DGMIT', 2],
+      ['actualizaciones', 'Actualizaciones', 2], ['propuestas', 'Propuestas', 2], ['altas', 'Alta y baja', 1]]);
+    // Sin notas DGMIT, el botón no aparece; elegido, sí (con 0)
+    assert.ok(!ctx.htmlDeFiltrosDeMovimientos(seguimientoDe(f(52), HOY).movimientos, 'todos').includes('Notas DGMIT'));
+    assert.ok(ctx.htmlDeFiltrosDeMovimientos(seguimientoDe(f(52), HOY).movimientos, 'dgmit').includes('data-filtro="dgmit" aria-pressed="true">Notas DGMIT <b>0</b>'));
+    // El filtro deja solo las notas DGMIT (sin hitos)
+    const items = ctx.itemsDeLaLista(s.movimientos, s.hitos, 'dgmit');
+    assert.deepEqual(plano(items.map((i) => i.movimiento.extra.numero)), ['156/26', '151/26']);
+  });
+
+  it('la leyenda incluye Nota DGMIT al área', () => {
+    assert.deepEqual(plano(vm.runInContext('LEYENDA_CINTA', ctx)).map(([tipo]) => tipo),
+      ['nota', 'email', 'area', 'dgmit', 'act', 'actp', 'cambio', 'cambiop', 'rech', 'alta', 'vencido']);
+    assert.ok(ctx.htmlDeLeyenda().includes('<span><i class="mk mk-dgmit" aria-hidden="true"></i>Nota DGMIT al área</span>'));
+  });
+
+  it('el ícono de la cinta de una nota DGMIT', () => {
+    assert.equal(ctx.iconoDeCinta('dgmit', 100, 92), '<rect x="95" y="85.5" width="10" height="13" rx="1.5" class="i-dgmit"/>');
+    assert.equal(ctx.iconoDeCinta('dgmit', 500.123, 92), '<rect x="495.12" y="85.5" width="10" height="13" rx="1.5" class="i-dgmit"/>');
+    // En la cinta del dataset: una marca en la fila de abajo (y = 92), con su <title>; la anulada no tiene marca
+    const svg = ctx.svgDeCinta(comoLoVe(conNotasDgmit(58, [notaDgmit({}), notaDgmit({ id: 2, numero: '151/26', recibida: '2026-08-10', anulada: true })])).cinta);
+    assert.equal(cuantas(svg, /class="i-dgmit"/g), 1);
+    assert.match(svg, /<title>15\/10\/2026: Nota DGMIT N° 156\/26 al área: solicitud<\/title><rect x="[\d.]+" y="85.5" width="10" height="13" rx="1.5" class="i-dgmit"\/>/);
+    // La marca de la lista y de la leyenda
+    assert.ok(vm.runInContext('TIPOS_DE_MARCA', ctx).includes('dgmit'));
+  });
+
+  it('el detalle de una nota DGMIT: filas, correcciones y botones solo si editable', () => {
+    const fuentes = conNotasDgmit(58, [notaDgmit({ datasets: [{ id: 58, titulo: 'Áreas específicas de género' }, HOTELERIA],
+      historial: [{ ...CORRECCION, momento: '2026-10-19 11:20:00', motivo: 'El número estaba mal escrito (decía 165/26).' }, CORRECCION] })]);
+    const [m] = dgmitDe(comoLoVe(fuentes));
+    const html = ctx.htmlDeMovimiento(m, 0, {});
+    assert.match(html, /^<li class="sg-mov"><button type="button" class="sg-fila"/);
+    assert.ok(html.includes('<i class="mk mk-dgmit" aria-hidden="true"></i><span><span class="q">Nota DGMIT N° 156/26 al área: solicitud</span>'));
+    assert.ok(html.includes('<span class="p">Cargó Diego Cuatro</span>'));
+    const pares = [...html.matchAll(/<dt>([^<]*)<\/dt><dd>(.*?)<\/dd>/g)].map((par) => [par[1], par[2]]);
+    assert.deepEqual(pares, [
+      ['Número de nota DGMIT', '156/26'],
+      ['Tipo de nota', 'Solicitud: la primera vez que se le piden los datos al área'],
+      ['Recibida por el área', '15/10/2026'],
+      ['Área', AREA_58],
+      ['Datasets de la nota', 'Áreas específicas de género<br>Hotelería en Comodoro Rivadavia'],
+      ['Cargada', '16/10/2026 a las 09:30, por Diego Cuatro'],
+      ['Corregida', '19/10/2026 a las 11:20, por Elena Cuatro: El número estaba mal escrito (decía 165/26).'],
+      ['Corregida', '17/10/2026 a las 10:00, por Elena Cuatro: Faltaba un dataset']
+    ]);
+    // Quien la cargó (o administración) ve Corregir y Anular, con el id de la nota
+    assert.ok(html.includes(`<div class="sg-acciones-nota">${BOTON('corregir-nota', 'Corregir')}${BOTON('anular-nota', 'Anular')}`));
+    const admin = ctx.htmlDeMovimiento(dgmitDe(comoLoVe(fuentes, { usuarioId: 99, administracion: true }))[0], 0, {});
+    assert.ok(admin.includes(BOTON('corregir-nota', 'Corregir')) && admin.includes(BOTON('anular-nota', 'Anular')));
+    // Otro usuario (o una respuesta sin `editable`) no ve los botones
+    for (const otro of [dgmitDe(comoLoVe(fuentes, { usuarioId: 99 }))[0], { ...m, extra: { ...m.extra, editable: undefined } },
+      { ...m, extra: { ...m.extra, editable: 'true' } }]) {
+      const sinBotones = ctx.htmlDeMovimiento(otro, 0, { esAdmin: true });
+      assert.ok(!sinBotones.includes('data-accion=') && !sinBotones.includes('sg-acciones-nota'));
+      assert.ok(sinBotones.includes('<dt>Número de nota DGMIT</dt><dd>156/26</dd>'));
+    }
+    // Una reiteración, sin quién la cargó y sin correcciones
+    const reiteracion = ctx.htmlDeMovimiento(dgmitDe(comoLoVe(conNotasDgmit(58, [notaDgmit({ tipo: 'reiteracion', por: null, por_id: null })])))[0], 0, {});
+    assert.ok(reiteracion.includes('<dt>Tipo de nota</dt><dd>Reiteración: ya se le habían pedido y se le vuelven a pedir</dd>'));
+    assert.ok(reiteracion.includes('<dt>Cargada</dt><dd>16/10/2026 a las 09:30</dd>'));
+    assert.ok(!reiteracion.includes('Corregida') && !reiteracion.includes('data-accion='));
+  });
+
+  it('la anulada: li con clase anulada, sin botones, con la fila Anulada', () => {
+    const fuentes = conNotasDgmit(58, [notaDgmit({ anulada: true, historial: [ANULACION, CORRECCION] })]);
+    // La ve administración (editable): igual no tiene botones
+    const [m] = dgmitDe(comoLoVe(fuentes, { usuarioId: 7, administracion: true }));
+    assert.equal(m.extra.editable, true);
+    const html = ctx.htmlDeMovimiento(m, 2, {});
+    assert.match(html, /^<li class="sg-mov anulada"><button type="button" class="sg-fila" aria-expanded="false" aria-controls="sg-cuerpo-2">/);
+    assert.ok(html.includes('<span class="d">Recibida por el área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro: Se cargó dos veces.</span>'));
+    assert.ok(!html.includes('data-accion=') && !html.includes('sg-acciones-nota'));
+    // La fila "Anulada", en rojo y negrita como en la maqueta (ruling R6): su <dd> lleva la clase motivo-anulacion
+    assert.ok(html.includes('<dt>Anulada</dt><dd class="motivo-anulacion">18/10/2026 a las 09:30, por Elena Cuatro: Se cargó dos veces</dd>'
+      + '<dt>Corregida</dt><dd>17/10/2026 a las 10:00, por Elena Cuatro: Faltaba un dataset</dd>'));
+    assert.match(leer('seguimiento.html'), /\.sg-cuerpo dd\.motivo-anulacion \{ color: var\(--sg-rojo\); font-weight: 600; \}/);
+    // Las que no están anuladas, y los demás movimientos, siguen sin la clase
+    assert.match(ctx.htmlDeMovimiento(dgmitDe(comoLoVe(conNotasDgmit(58, [notaDgmit({})])))[0], 0, {}), /^<li class="sg-mov">/);
+    assert.ok(!ctx.htmlDeMovimiento({ ...seguimientoDe(f(52), HOY).movimientos[0], extra: { anulada: true } }, 0, {}).includes('anulada'));
+    // En la lista, con las demás
+    const lista = ctx.htmlDeMovimientos(ctx.itemsDeLaLista(comoLoVe(fuentes).movimientos, [], 'dgmit'), 10, {});
+    assert.equal(cuantas(lista, /<li class="sg-mov anulada">/g), 1);
+  });
+
+  it('TIPOS_NOTA_DGMIT del navegador = TEXTO_TIPO_NOTA_DGMIT del servidor', () => {
+    assert.deepEqual(plano(vm.runInContext('TIPOS_NOTA_DGMIT', ctx)), { ...TEXTO_TIPO_NOTA_DGMIT });
+    assert.deepEqual(plano(vm.runInContext('TIPOS_NOTA_DGMIT_LARGOS', ctx)), {
+      solicitud: 'Solicitud: la primera vez que se le piden los datos al área',
+      reiteracion: 'Reiteración: ya se le habían pedido y se le vuelven a pedir'
+    });
+    // Cada texto largo empieza con el nombre del tipo
+    for (const [tipo, texto] of Object.entries(TEXTO_TIPO_NOTA_DGMIT)) {
+      assert.ok(vm.runInContext('TIPOS_NOTA_DGMIT_LARGOS', ctx)[tipo].startsWith(`${texto}: `), tipo);
+    }
+  });
+
+  it('un texto con < > & en el número o el motivo llega escapado', () => {
+    const raro = '<img src=x onerror=alert(1)> & "co"';
+    const fuentes = conNotasDgmit(58, [notaDgmit({ numero: raro, datasets: [{ id: 58, titulo: 'Áreas específicas de género' }, { id: 9, titulo: '<b>Otro</b>' }],
+      historial: [{ ...CORRECCION, motivo: '<script>x</script> & y' }] })]);
+    const s = comoLoVe(fuentes);
+    const html = [ctx.htmlDeMovimiento(dgmitDe(s)[0], 0, {}), ctx.htmlDelCircuito(s.circuito), ctx.svgDeCinta(s.cinta),
+      ctx.htmlDeFilaDeLista(resumenParaLista(fuentes, HOY))].join('');
+    assert.ok(!html.includes('<img') && !html.includes('<script') && !html.includes('<b>Otro'));
+    assert.ok(html.includes('<dt>Número de nota DGMIT</dt><dd>&lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;</dd>'));
+    assert.ok(html.includes('por Elena Cuatro: &lt;script&gt;x&lt;/script&gt; &amp; y</dd>'));
+    assert.ok(html.includes('Áreas específicas de género<br>&lt;b&gt;Otro&lt;/b&gt;</dd>'));
+    assert.ok(html.includes('<td class="nota-dgmit"><b>N° &lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;</b>'));
+    assert.ok(html.includes('class="n">Nota DGMIT N° &lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;</div>'));
+    // El nombre accesible de los botones, también escapado
+    assert.ok(html.includes('aria-label="Corregir la nota DGMIT N° &lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;">Corregir</button>'));
+    assert.ok(html.includes('aria-label="Anular la nota DGMIT N° &lt;img src=x onerror=alert(1)&gt; &amp; &quot;co&quot;">Anular</button>'));
+    // Lo que no pasa por el servidor también: el área, quién, el id de la nota y el momento
+    const directo = ctx.htmlDeMovimiento({ tipo: 'dgmit', filtro: 'dgmit', fecha: '2026-10-15', titulo: 't', quien: [], extra: {
+      nota_id: '1" onclick="x', numero: '1', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '<b>', por: '<i>Ana</i>',
+      area: '<u>Área</u>', datasets: [{ id: 1, titulo: 'a & b' }], historial: [{ accion: 'correccion', motivo: 'm', por: '<i>X</i>', momento: '2026-10-16 10:00:00' }],
+      editable: true } }, 0, {});
+    assert.ok(!directo.includes('<i>') && !directo.includes('<u>') && !directo.includes('" onclick'));
+    assert.ok(directo.includes('data-nota="1&quot; onclick=&quot;x"'));
+    assert.ok(directo.includes('<dt>Área</dt><dd>&lt;u&gt;Área&lt;/u&gt;</dd>') && directo.includes('<dd>a &amp; b</dd>'));
+    assert.ok(directo.includes('<dt>Cargada</dt><dd>—, por &lt;i&gt;Ana&lt;/i&gt;</dd>'));
+    // Datos raros: no tira error
+    assert.doesNotThrow(() => ctx.htmlDeMovimiento({ tipo: 'dgmit', extra: null }, 0, {}));
+    assert.doesNotThrow(() => ctx.htmlDeMovimiento({ tipo: 'dgmit', extra: { datasets: 'x', historial: [null, 'x', {}] } }, 0, {}));
+  });
 });
-const preparar = ({ id = null, respuestas = {}, errores = {}, esAdmin = false } = {}) => {
-  const pagina = cargar();
+
+// Cargar, corregir y anular notas DGMIT (spec 2026-10-24-notas-dgmit, 2 y 3): lo puro del formulario y del modal de anular, con las
+// filas de la lista de "Sin elegir" que arma el servidor (resumenParaLista)
+describe('seguimiento.js: el formulario de las notas DGMIT', () => {
+  const ids = (filas) => plano(filas.map((fila) => fila.id)).sort((a, b) => a - b);
+  // De los casos, los externos activos (todos sin dato en «Requiere nota DGMIT»): 11; vencidos o próximos: 7
+  const ELEGIBLES = [1, 9, 10, 11, 25, 33, 42, 52, 58, 61, 81];
+  const INICIALES = [1, 11, 33, 52, 58, 61, 81];
+  const conNota = (filas, id, nota) => filas.map((fila) => (fila.id === id ? { ...fila, nota_dgmit: nota } : fila));
+
+  it('MENSAJES_NOTA_DGMIT del navegador = los del servidor', () => {
+    assert.deepEqual(plano(vm.runInContext('MENSAJES_NOTA_DGMIT', ctx)), { ...MENSAJES_NOTA_DGMIT });
+    assert.equal(vm.runInContext('LARGO_NUMERO_NOTA_DGMIT', ctx), LARGO_NUMERO);
+    assert.equal(vm.runInContext('LARGO_MOTIVO_NOTA_DGMIT', ctx), LARGO_MOTIVO);
+    assert.equal(vm.runInContext('FECHA_MINIMA_NOTA_DGMIT', ctx), FECHA_MINIMA);
+    assert.ok(vm.runInContext('Object.isFrozen(MENSAJES_NOTA_DGMIT)', ctx));
+  });
+
+  it('datasetsParaElegir: deja afuera internos, No e inactivos; incluir los suma', () => {
+    const filas = [...filasDeLosCasos(),
+      { id: 200, titulo: 'Con No', area: 'A', tipo_gestion: 'externa', requiere_nota: 0, activo: true, estado: 'vencido', dias: -5 },
+      { id: 201, titulo: 'Dado de baja', area: 'A', tipo_gestion: 'externa', requiere_nota: 1, activo: false, estado: 'baja', dias: null },
+      { id: 202, titulo: 'Con Sí', area: 'A', tipo_gestion: 'externa', requiere_nota: 1, activo: true, estado: 'proximo', dias: 3 },
+      { id: 203, titulo: 'Sin gestión', area: 'A', tipo_gestion: null, requiere_nota: null, activo: true, estado: 'proximo', dias: 3 }];
+    assert.deepEqual(ids(ctx.datasetsParaElegir(filas)), [...ELEGIBLES, 202]);
+    // Los de la nota que se corrige se suman aunque hoy no se puedan elegir (el id, como número o como texto)
+    assert.deepEqual(ids(ctx.datasetsParaElegir(filas, [200, '26', 201, 999])), [...ELEGIBLES, 26, 200, 201, 202].sort((a, b) => a - b));
+    // Cada fila una sola vez, en el orden en que llegan
+    assert.deepEqual(plano(ctx.datasetsParaElegir(filas, [1, 1, '1']).map((f) => f.id)).filter((id) => id === 1), [1]);
+    for (const raro of [null, undefined, 'x', {}, [null, 'x', { titulo: 'sin id', tipo_gestion: 'externa' }]]) {
+      assert.deepEqual(plano(ctx.datasetsParaElegir(raro, null)), [], String(raro));
+    }
+  });
+
+  it('estaEnElAlcanceInicial: los vencidos y los próximos a vencer', () => {
+    assert.deepEqual(ids(filasDeLosCasos().filter((fila) => ctx.estaEnElAlcanceInicial(fila))), [1, 11, 26, 33, 52, 58, 61, 81]);
+    for (const estado of ['actualizado', 'eventual', 'sin-fecha', 'baja', 'atrasado', null]) assert.equal(ctx.estaEnElAlcanceInicial({ estado }), false, String(estado));
+    assert.equal(ctx.estaEnElAlcanceInicial(null), false);
+  });
+
+  it('textoDeEstadoDeOpcion para vencido, próximo, actualizado, sin fecha y eventual', () => {
+    const fila = (id) => filasDeLosCasos().find((f) => f.id === id);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion(fila(52))), ['vencido', 'Vencido hace 81 días']);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion(fila(81))), ['proximo', 'Vence en 11 días']);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion(fila(9))), ['', 'Vence el 31/01/2027']);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion(fila(66))), ['', 'Sin vencimiento']);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion({ estado: 'sin-fecha', dias: null, proxima: null })), ['', 'Sin fecha']);
+    // Un día, en singular; el día del vencimiento, "Vence hoy"
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion({ estado: 'vencido', dias: -1 })), ['vencido', 'Vencido hace 1 día']);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion({ estado: 'proximo', dias: 1 })), ['proximo', 'Vence en 1 día']);
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion({ estado: 'proximo', dias: 0 })), ['proximo', 'Vence hoy']);
+    // Uno que la nota ya tenía y se dio de baja
+    assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion({ estado: 'baja', dias: null })), ['', 'Dado de baja']);
+    for (const raro of [null, {}, { estado: 'otro' }]) assert.deepEqual(plano(ctx.textoDeEstadoDeOpcion(raro)), ['', '—'], JSON.stringify(raro));
+  });
+
+  it('htmlDeOpcionesDeNota: agrupado por área en orden, con los elegidos marcados y los textos escapados', () => {
+    const MUJER = 'Secretaría de la Mujer, Género y Diversidad';
+    const ECONOMIA = 'Secretaría de Economía, Finanzas y Control de Gestión';
+    const filas = [...ctx.datasetsParaElegir(filasDeLosCasos()),
+      { id: 300, titulo: 'Zonas', area: MUJER, tipo_gestion: 'externa', requiere_nota: 1, activo: true, estado: 'actualizado', dias: 90, proxima: '2027-01-31' },
+      { id: 301, titulo: 'Gasto Público', area: ECONOMIA, tipo_gestion: 'externa', requiere_nota: null, activo: true, estado: 'vencido', dias: -83 }];
+    const html = ctx.htmlDeOpcionesDeNota(filas, [52, '58']);
+    const areas = [...html.matchAll(/<div class="sg-grupo" data-area="([^"]*)">/g)].map((m) => m[1]);
+    assert.deepEqual(areas, ['Agencia de Acceso a la Información Pública', 'Dirección de Estadística y Evaluación Educativa',
+      'Dirección de Información Tributaria. Dirección General de Análisis y Administración Tributaria', 'Dirección General de Habilitaciones Comerciales',
+      'Dirección General de Relaciones Laborales', 'Dirección General de Servicios Administrativos', 'Dirección General de Sueldos',
+      'Ente Autárquico Comodoro Turismo', ECONOMIA, MUJER, 'Subsecretaría de Comunicación']);
+    assert.equal(cuantas(html, /<div class="sg-grupo-area">/g), 11);
+    // Los títulos, por orden alfabético en español (la Á va con la A)
+    const valores = [...html.matchAll(/<input type="checkbox" value="(\d+)"/g)].map((m) => Number(m[1]));
+    assert.deepEqual(valores, [9, 42, 11, 61, 52, 33, 81, 25, 301, 1, 58, 300, 10]);
+    // Cada opción: la casilla (value = id, data-titulo), el título, el estado y la marca de alcance; los elegidos, marcados
+    assert.ok(html.includes('<label class="sg-opcion elegida" data-inicial="1"><input type="checkbox" value="52" data-titulo="Directores Generales de Planta Permanente" checked>'
+      + '<span class="t">Directores Generales de Planta Permanente</span><span class="e vencido">Vencido hace 81 días</span></label>'));
+    assert.ok(html.includes('<label class="sg-opcion elegida" data-inicial="1"><input type="checkbox" value="58" data-titulo="Áreas específicas de género" checked>'
+      + '<span class="t">Áreas específicas de género</span><span class="e proximo">Vence en 41 días</span></label>'));
+    assert.ok(html.includes('<label class="sg-opcion" data-inicial="0"><input type="checkbox" value="9" data-titulo="Pedidos de Acceso a la Información Pública">'
+      + '<span class="t">Pedidos de Acceso a la Información Pública</span><span class="e">Vence el 31/01/2027</span></label>'));
+    assert.equal(cuantas(html, / checked>/g), 2);
+    // Escapa el título y el área; sin área, "Sin área"
+    const raro = ctx.htmlDeOpcionesDeNota([{ id: 7, titulo: '<b>x</b> & "y"', area: '<i>A</i>', estado: 'vencido', dias: -2 }, { id: 8, titulo: 'Sola', area: null, estado: 'eventual' }], []);
+    assert.ok(!raro.includes('<b>') && !raro.includes('<i>'));
+    assert.ok(raro.includes('data-area="&lt;i&gt;A&lt;/i&gt;"') && raro.includes('<div class="sg-grupo-area">&lt;i&gt;A&lt;/i&gt;</div>'));
+    assert.ok(raro.includes('data-titulo="&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;"') && raro.includes('<span class="t">&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;</span>'));
+    assert.ok(raro.includes('<div class="sg-grupo-area">Sin área</div>'));
+    assert.equal(ctx.htmlDeOpcionesDeNota([], []), '');
+    assert.equal(ctx.htmlDeOpcionesDeNota(null, null), '');
+  });
+
+  it('el alcance: "Vencidos y próximos a vencer" (el inicial) y "Todos", con su cantidad y la búsqueda sin tildes ni mayúsculas', () => {
+    const filas = ctx.datasetsParaElegir(filasDeLosCasos());
+    assert.deepEqual(ids(ctx.opcionesDeNota(filas, 'inicial', '')), INICIALES);
+    assert.deepEqual(ids(ctx.opcionesDeNota(filas, 'todos', '')), ELEGIBLES);
+    assert.deepEqual(ids(ctx.opcionesDeNota(filas, 'todos', '  AREAS especificas ')), [58]);
+    assert.deepEqual(ids(ctx.opcionesDeNota(filas, 'todos', 'turismo')), [25], 'también por el área');
+    assert.deepEqual(ids(ctx.opcionesDeNota(filas, 'inicial', 'turismo')), []);
+    assert.deepEqual(plano(ctx.cantidadesDeAlcance(filas, '')), { inicial: 7, todos: 11 });
+    assert.deepEqual(plano(ctx.cantidadesDeAlcance(filas, 'turismo')), { inicial: 0, todos: 1 });
+    const chips = ctx.htmlDeAlcanceDeNota({ inicial: 7, todos: 11 }, 'inicial');
+    assert.equal(chips, '<button type="button" class="sg-chip" data-alcance="inicial" aria-pressed="true">Vencidos y próximos a vencer <b>7</b></button>'
+      + '<button type="button" class="sg-chip" data-alcance="todos" aria-pressed="false">Todos <b>11</b></button>');
+    assert.match(ctx.htmlDeAlcanceDeNota({}, 'todos'), /data-alcance="todos" aria-pressed="true">Todos <b>0<\/b>/);
+    // Sin opciones: qué decir
+    assert.equal(ctx.textoSinOpcionesDeNota('xyz', 'inicial'), 'Ningún dataset coincide con lo que buscaste. Si es uno que todavía no vence, buscalo en «Todos».');
+    assert.equal(ctx.textoSinOpcionesDeNota('xyz', 'todos'), 'Ningún dataset coincide con lo que buscaste.');
+    assert.equal(ctx.textoSinOpcionesDeNota('  ', 'inicial'), 'No hay datasets vencidos ni próximos a vencer. Los demás están en «Todos».');
+    assert.equal(ctx.textoSinOpcionesDeNota('', 'todos'), 'No hay datasets de gestión externa que requieran nota DGMIT.');
+  });
+
+  it('alcanceInicialDeNota: en "Todos" si algún elegido no está en el alcance inicial', () => {
+    const filas = ctx.datasetsParaElegir(filasDeLosCasos());
+    assert.equal(ctx.alcanceInicialDeNota(filas, []), 'inicial');
+    assert.equal(ctx.alcanceInicialDeNota(filas, [52]), 'inicial');
+    assert.equal(ctx.alcanceInicialDeNota(filas, ['52', 58]), 'inicial');
+    assert.equal(ctx.alcanceInicialDeNota(filas, [52, 9]), 'todos', '9 vence el 31/01/2027');
+    assert.equal(ctx.alcanceInicialDeNota(filas, [999]), 'todos', 'uno que no está en la lista');
+  });
+
+  it('htmlDeElegidos con 0, 1 y 2', () => {
+    const filas = ctx.datasetsParaElegir(filasDeLosCasos());
+    assert.equal(ctx.htmlDeElegidos(filas, []), '<span>Todavía no elegiste ningún dataset.</span>');
+    assert.equal(ctx.htmlDeElegidos(filas, [52]), '<span>1 dataset elegido:</span><span class="sg-elegido">Directores Generales de Planta Permanente'
+      + '<button type="button" data-quitar="52" aria-label="Quitar Directores Generales de Planta Permanente">×</button></span>');
+    // Dos, en el orden de la lista (por área y por título), no en el de la elección
+    const dos = ctx.htmlDeElegidos(filas, ['58', 52]);
+    assert.ok(dos.startsWith('<span>2 datasets elegidos:</span>'));
+    assert.deepEqual([...dos.matchAll(/data-quitar="(\d+)"/g)].map((m) => m[1]), ['52', '58']);
+    assert.ok(dos.includes('aria-label="Quitar Áreas específicas de género">×</button>'));
+    // Un id que no está entre las filas no cuenta; los textos, escapados
+    assert.equal(ctx.htmlDeElegidos(filas, [999]), '<span>Todavía no elegiste ningún dataset.</span>');
+    const raro = ctx.htmlDeElegidos([{ id: 3, titulo: '<b>"x"</b>', area: 'A' }], [3]);
+    assert.ok(!raro.includes('<b>') && raro.includes('&lt;b&gt;&quot;x&quot;&lt;/b&gt;<button') && raro.includes('aria-label="Quitar &lt;b&gt;&quot;x&quot;&lt;/b&gt;"'));
+  });
+
+  it('textoDePistaDeSolicitud: con Solicitud y un dataset con nota en el ciclo; con Reiteración, vacío; excluye el número que se corrige', () => {
+    let filas = ctx.datasetsParaElegir(filasDeLosCasos());
+    filas = conNota(filas, 58, { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15' });
+    filas = conNota(filas, 61, { numero: '305/26', tipo: 'reiteracion', recibida: '2026-10-19' });
+    const REITERACION = 'Si se le vuelven a pedir los datos, es una reiteración.';
+    assert.equal(ctx.textoDePistaDeSolicitud(filas, [58, 52], 'solicitud'),
+      `«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, recibida el 15/10/2026) en este ciclo.\n${REITERACION}`);
+    // Con más de uno, un renglón por dataset, en el orden de la lista
+    assert.equal(ctx.textoDePistaDeSolicitud(filas, ['58', '61'], 'solicitud'),
+      '«Comercios habilitados por rubro» ya tiene la nota DGMIT N° 305/26 (reiteración, recibida el 19/10/2026) en este ciclo.\n'
+      + `«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, recibida el 15/10/2026) en este ciclo.\n${REITERACION}`);
+    // Con Reiteración (o sin tipo), nada; sin nota en el ciclo, nada
+    for (const tipo of ['reiteracion', '', null]) assert.equal(ctx.textoDePistaDeSolicitud(filas, [58, 61], tipo), '', String(tipo));
+    assert.equal(ctx.textoDePistaDeSolicitud(filas, [52, 1], 'solicitud'), '');
+    assert.equal(ctx.textoDePistaDeSolicitud(filas, [], 'solicitud'), '');
+    // La nota que se corrige no cuenta (sin importar mayúsculas ni los espacios de los extremos)
+    assert.equal(ctx.textoDePistaDeSolicitud(filas, [58], 'solicitud', '156/26'), '');
+    const conLetras = conNota(filas, 58, { numero: 'DGMIT-156/26', tipo: 'solicitud', recibida: '2026-10-15' });
+    assert.equal(ctx.textoDePistaDeSolicitud(conLetras, [58], 'solicitud', ' dgmit-156/26 '), '');
+    assert.ok(ctx.textoDePistaDeSolicitud(filas, [58, 61], 'solicitud', '156/26').startsWith('«Comercios habilitados por rubro» ya tiene'));
+    // Es texto plano (va con textContent): el título no se escapa; un tipo desconocido no se nombra
+    const raro = [{ id: 4, titulo: '<b>x</b>', area: 'A', nota_dgmit: { numero: '1/26', tipo: 'otra', recibida: '2026-10-01' } }];
+    assert.equal(ctx.textoDePistaDeSolicitud(raro, [4], 'solicitud'), `«<b>x</b>» ya tiene la nota DGMIT N° 1/26 (recibida el 01/10/2026) en este ciclo.\n${REITERACION}`);
+    assert.equal(ctx.textoDePistaDeSolicitud([{ id: 4, titulo: 'x', nota_dgmit: { numero: '  ' } }], [4], 'solicitud'), '');
+  });
+
+  it('erroresDelFormularioDeNota da lo mismo que validarNotaDgmit en los casos de borde', () => {
+    const VALIDA = { numero: '156/26', recibida: '2026-10-22', tipo: 'solicitud', datasets: [12] };
+    // Los casos de tests/notas-dgmit-reglas.test.js
+    const cambios = [
+      {}, { numero: '' }, { numero: '   ' }, { numero: '\t \n' }, { numero: '  N° 156 / 26  ' }, { numero: 'A'.repeat(40) },
+      { numero: `   ${'A'.repeat(40)}   ` }, { numero: 'A'.repeat(41) }, { numero: `A${' '.repeat(39)}B` }, { numero: 'Ñ°'.repeat(20) },
+      { numero: '𝟙'.repeat(40) }, { numero: '𝟙'.repeat(41) }, { numero: 156 }, { numero: null }, { numero: undefined },
+      ...['2025-01-01', '2026-10-24', '2024-12-31', '2026-10-25', '2027-01-01', '2026-02-30', '22/10/2026', '2026-10-22 ', ' 2026-10-22',
+        '2026-10-22T00:00:00', '2026-1-5', '2026-13-01', '2026-00-10', '2026-10-00', '0000-01-01', '1900-02-29', '2000-02-29', '2028-02-29',
+        '', null, undefined, 20261022].map((recibida) => ({ recibida })),
+      ...['reiteracion', 'Solicitud', 'SOLICITUD', ' solicitud', 'reiteración', 'otro', 'autorizacion', 'constructor', 'toString', '',
+        1, true, ['solicitud'], {}, null].map((tipo) => ({ tipo })),
+      // Con huecos ([, 7], new Array(2)): un hueco es undefined, no un id
+      ...[[], '5', [0], [-1], ['a'], [1.5], ['7', 7, 8], [7, 'x'], ['0'], ['-1'], ['1.5'], ['1e3'], [' 7'], ['7 '], [''], [null], [undefined],
+        [true], [NaN], [Infinity], [Number.MAX_SAFE_INTEGER + 1], ['9007199254740993'], [[7]], [{}], {}, { 0: 7, length: 1 }, 7, null,
+        ['007', Number.MAX_SAFE_INTEGER], [, 7], new Array(2)].map((datasets) => ({ datasets })),
+      { numero: '', recibida: '', tipo: '', datasets: [] }, { numero: 156, recibida: 20261022, tipo: 1, datasets: 'abc' }
+    ];
+    for (const hoy of ['2026-10-24', '2028-03-01', undefined, null, '', '24/10/2026', 20261024]) {
+      for (const cambio of cambios) {
+        const entrada = { ...VALIDA, ...cambio };
+        const esperado = validarNotaDgmit(entrada, hoy).errores;
+        assert.deepEqual(plano(ctx.erroresDelFormularioDeNota(entrada, { hoy })), esperado, `${String(hoy)} ${JSON.stringify(cambio)}`);
+        assert.deepEqual(plano(ctx.erroresDelFormularioDeNota(entrada, { hoy, conMotivo: false })), esperado);
+      }
+    }
+    // Entradas que no son un objeto: los cuatro errores, como el servidor
+    for (const entrada of [null, undefined, 'texto', 5, true, []]) {
+      assert.deepEqual(plano(ctx.erroresDelFormularioDeNota(entrada, { hoy: '2026-10-24' })), validarNotaDgmit(entrada, '2026-10-24').errores, String(entrada));
+    }
+    assert.deepEqual(plano(ctx.erroresDelFormularioDeNota(VALIDA)), validarNotaDgmit(VALIDA).errores, 'sin hoy no pasa');
+    // El motivo, con conMotivo: el error de validarMotivo, con la misma clave que el servidor
+    for (const motivo of ['', '   ', '\n\t', 'm'.repeat(500), `  ${'m'.repeat(500)}  `, 'm'.repeat(501), '  El número estaba mal  ', '𝟙'.repeat(500),
+      '𝟙'.repeat(501), null, undefined, 5, true, {}, ['motivo']]) {
+      const errores = plano(ctx.erroresDelFormularioDeNota({ ...VALIDA, motivo }, { hoy: '2026-10-24', conMotivo: true }));
+      const { error } = validarMotivo(motivo);
+      assert.deepEqual(errores, error ? { motivo: error } : {}, JSON.stringify(motivo));
+      assert.equal(ctx.errorDeMotivoDeNota(motivo), error, JSON.stringify(motivo));
+      // Sin conMotivo, el motivo no se mira (la carga no lo lleva)
+      assert.deepEqual(plano(ctx.erroresDelFormularioDeNota({ ...VALIDA, motivo }, { hoy: '2026-10-24' })), {});
+    }
+    // Los errores van en el orden de los campos del formulario, el mismo con el que el servidor elige el primero
+    assert.deepEqual(plano(Object.keys(ctx.erroresDelFormularioDeNota({}, { hoy: '2026-10-24', conMotivo: true }))), ['numero', 'recibida', 'tipo', 'datasets', 'motivo']);
+  });
+
+  it('los textos del formulario según el modo, el cuerpo que se manda y el texto de anular', () => {
+    assert.deepEqual(plano(ctx.textosDelFormularioDeNota('cargar')), {
+      titulo: 'Cargar nota DGMIT', boton: 'Guardar nota', pie: 'Se guarda al confirmar y queda registrado quién la cargó y cuándo.'
+    });
+    assert.deepEqual(plano(ctx.textosDelFormularioDeNota('corregir', '156/26')), {
+      titulo: 'Corregir nota DGMIT N° 156/26', boton: 'Guardar corrección',
+      pie: 'Se guarda al confirmar. Queda registrado quién la corrigió, cuándo, por qué y qué decía antes.'
+    });
+    // El cuerpo: el número y el motivo sin los espacios de los extremos, los datasets como números, sin repetidos
+    assert.deepEqual(plano(ctx.cuerpoDeLaNota({ numero: ' 156/26 ', recibida: '2026-10-15', tipo: 'solicitud', datasets: ['58', 25, '58'], motivo: ' x ' }, false)),
+      { numero: '156/26', recibida: '2026-10-15', tipo: 'solicitud', datasets: [58, 25] });
+    assert.deepEqual(plano(ctx.cuerpoDeLaNota({ numero: '156/26', recibida: '2026-10-15', tipo: 'reiteracion', datasets: [58], motivo: '  Estaba mal  ' }, true)),
+      { numero: '156/26', recibida: '2026-10-15', tipo: 'reiteracion', datasets: [58], motivo: 'Estaba mal' });
+    // Anular: "de su dataset" con uno, "de sus N datasets" con más
+    assert.equal(ctx.textoDeConfirmarAnulacion('156/26', 1),
+      '¿Anular la nota DGMIT N° 156/26? Deja de contar en el Seguimiento de su dataset, pero no se borra: queda en los movimientos, tachada y con el motivo.');
+    assert.equal(ctx.textoDeConfirmarAnulacion('156/26', 3),
+      '¿Anular la nota DGMIT N° 156/26? Deja de contar en el Seguimiento de sus 3 datasets, pero no se borra: queda en los movimientos, tachada y con el motivo.');
+  });
+
+  it('conLosDatasetsDeLaNota: un dataset de la nota que no está en la lista se suma, para que corregir no lo saque sin querer', () => {
+    const filas = filasDeLosCasos();
+    const juntas = ctx.conLosDatasetsDeLaNota(filas, [{ id: 58, titulo: 'Áreas específicas de género' }, { id: 500, titulo: 'Otro' }, null, { titulo: 'sin id' }]);
+    assert.equal(juntas.length, filas.length + 1);
+    assert.deepEqual(plano(juntas.at(-1)), { id: 500, titulo: 'Otro', area: null, tipo_gestion: null, requiere_nota: null, activo: true,
+      estado: null, dias: null, proxima: null, nota_dgmit: null });
+    assert.deepEqual(ids(ctx.datasetsParaElegir(juntas, [58, 500])), [...ELEGIBLES, 500]);
+    assert.equal(ctx.conLosDatasetsDeLaNota(filas, null).length, filas.length);
+  });
+
+  it('cargar la página no hace nada en el vm', () => {
+    // Un document sin nada más que addEventListener: si el script tocara el DOM al cargarse, tiraría error
+    const registrados = [];
+    assert.doesNotThrow(() => cargar({ document: { addEventListener: (tipo) => registrados.push(tipo) } }));
+    assert.deepEqual(registrados, ['DOMContentLoaded']);
+  });
+
+  it('la página tiene el botón Cargar nota DGMIT oculto, el formulario y el modal de anular, con sus ids', () => {
+    const html = leer('seguimiento.html');
+    // El botón, en el encabezado, junto al título, oculto hasta que el script lo muestre
+    const cabecera = html.match(/<div class="page-header">([\s\S]*?)<\/div>\s*<p class="sg-bajada">/)[1];
+    assert.match(cabecera, /<button type="button" class="sg-btn sg-btn-tinta" id="sg-cargar-nota" hidden>[\s\S]*Cargar nota DGMIT<\/button>/);
+    // Cada id, una sola vez en la página
+    const todos = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+    assert.equal(new Set(todos).size, todos.length, 'ids repetidos');
+    for (const id of ['modal-nota', 'modal-nota-titulo', 'nd-numero', 'nd-numero-error', 'nd-fecha', 'nd-fecha-error', 'nd-tipos', 'nd-tipo-solicitud',
+      'nd-tipo-reiteracion', 'nd-tipo-error', 'nd-buscar', 'nd-alcance', 'nd-opciones', 'nd-elegidos', 'nd-datasets-error', 'nd-pista', 'nd-motivo-grupo',
+      'nd-motivo', 'nd-motivo-error', 'nd-pie', 'nd-guardar', 'modal-anular', 'modal-anular-titulo', 'an-texto', 'an-motivo', 'an-motivo-error', 'an-confirmar']) {
+      assert.ok(todos.includes(id), id);
+    }
+    // Los diálogos, como los de administración: role, aria-modal y el título
+    assert.match(html, /<div class="modal-overlay" id="modal-nota">\s*<div class="modal sg-modal" role="dialog" aria-modal="true" aria-labelledby="modal-nota-titulo">/);
+    assert.match(html, /<div class="modal-overlay" id="modal-anular">\s*<div class="modal sg-modal sg-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-anular-titulo">/);
+    // Los campos, con sus límites, obligatorios y con su ayuda y su error unidos
+    assert.match(html, /<input type="text" id="nd-numero" class="form-input" maxlength="40" placeholder="Ej\.: 156\/26" autocomplete="off" aria-required="true" aria-describedby="nd-numero-ayuda nd-numero-error">/);
+    assert.match(html, /<input type="date" id="nd-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="nd-fecha-ayuda nd-fecha-error">/);
+    assert.equal(cuantas(html, /<input type="radio" name="nd-tipo" id="nd-tipo-(solicitud|reiteracion)" value="\1" aria-describedby="nd-tipo-error">/g), 2);
+    assert.match(html, /<input type="search" id="nd-buscar" [^>]*aria-describedby="nd-datasets-ayuda nd-datasets-error">/);
+    assert.match(html, /<textarea id="nd-motivo" class="form-input" rows="2" maxlength="500" aria-required="true" aria-describedby="nd-motivo-error"><\/textarea>/);
+    assert.match(html, /<textarea id="an-motivo" class="form-input" rows="3" maxlength="500" aria-required="true" aria-describedby="an-motivo-error"><\/textarea>/);
+    assert.ok(html.includes('<div class="form-group sg-motivo" id="nd-motivo-grupo" hidden>'));
+    for (const texto of ['Número de nota DGMIT', 'Como figura en la nota.', 'Fecha de recepción', 'El día en que el área recibió la nota.', 'Tipo de nota',
+      '<b>Solicitud</b><small>La primera vez que se le piden los datos al área.</small>', '<b>Reiteración</b><small>Ya se le habían pedido y se le vuelven a pedir.</small>',
+      'Datasets asociados', 'Motivo de la corrección', 'Motivo de la anulación', '>Guardar nota</button>', '>Anular nota</button>',
+      'Se guarda al confirmar y queda registrado quién la cargó y cuándo.']) {
+      assert.ok(html.includes(texto), texto);
+    }
+    assert.match(html, /<button type="button" class="sg-btn sg-btn-rojo" id="an-confirmar">Anular nota<\/button>/);
+    // El foco visible de los modales: anillo --tinta de 3 px con halo --sol-fuerte
+    assert.match(html, /\.sg-modal :focus-visible \{ outline: 3px solid var\(--tinta\); outline-offset: 2px; box-shadow: 0 0 0 5px var\(--sol-fuerte\); \}/);
+    // Los modales van fuera del contenido, antes de los scripts
+    assert.ok(html.indexOf('id="modal-nota"') > html.indexOf('</main>') && html.indexOf('id="modal-anular"') < html.indexOf('<script'));
+  });
+});
+
+// La página con un DOM falso: cada id es un elemento (oculto, salvo #loading y #sg-volver, como en seguimiento.html), un
+// API.pedirJson falso y el id de la URL. Cada elemento lleva lo que usan los modales de las notas DGMIT (classList, atributos,
+// checked, disabled) y anota a quién va el foco
+const elementoFalso = (id, alEnfocar = () => {}) => {
+  const clases = new Set();
+  const atributos = {};
+  return {
+    id, hidden: !['loading', 'sg-volver'].includes(id), innerHTML: '', textContent: '', value: '', checked: false, disabled: false,
+    isConnected: true, dataset: {}, scrollTop: 0,
+    classList: { add: (c) => clases.add(c), remove: (c) => clases.delete(c), contains: (c) => clases.has(c), toggle: (c, si = !clases.has(c)) => (si ? clases.add(c) : clases.delete(c), si) },
+    setAttribute(nombre, valor) { atributos[nombre] = String(valor); }, removeAttribute(nombre) { delete atributos[nombre]; },
+    getAttribute: (nombre) => atributos[nombre] ?? null,
+    addEventListener() {}, insertAdjacentHTML(_donde, html) { this.innerHTML += html; }, querySelector: () => null, querySelectorAll: () => [],
+    closest: () => null, focus() { alEnfocar(id); }
+  };
+};
+const preparar = ({ id = null, respuestas = {}, errores = {}, esAdmin = false, puedeCargar = false } = {}) => {
+  // setTimeout, en el acto: el foco del modal abierto se pone después de la transición
+  const pagina = cargar({ setTimeout: (funcion) => { funcion(); return 0; } });
   const elementos = {};
   const pedidos = [];
-  pagina.document.getElementById = (clave) => (elementos[clave] ??= elementoFalso(clave));
+  const cuerpos = [];
+  const avisos = [];
+  const enfocados = [];
+  pagina.document.getElementById = (clave) => (elementos[clave] ??= elementoFalso(clave, (quien) => enfocados.push(quien)));
   pagina.console = { error() {} };
-  pagina.Auth = { isAuthenticated: () => true, isAdmin: () => esAdmin };
+  pagina.Auth = { isAuthenticated: () => true, isAdmin: () => esAdmin, puedeCargarNotasDgmit: () => puedeCargar };
   pagina.Utils.getUrlParams = () => (id === null ? {} : { id });
-  vm.runInContext('API', pagina).pedirJson = async (metodo, ruta) => {
+  pagina.Utils.hoyEnArgentina = () => HOY;
+  pagina.showToast = (mensaje, tipo) => avisos.push([tipo, mensaje]);
+  vm.runInContext('API', pagina).pedirJson = async (metodo, ruta, cuerpo) => {
     pedidos.push(`${metodo} ${ruta}`);
+    if (cuerpo !== undefined) cuerpos.push([`${metodo} ${ruta}`, plano(cuerpo)]);
     if (errores[ruta]) throw errores[ruta];
     return typeof respuestas[ruta] === 'function' ? respuestas[ruta]() : respuestas[ruta];
   };
   const el = (clave) => pagina.document.getElementById(clave);
   const ESTADOS = ['loading', 'vista-lista', 'vista-dataset', 'not-found', 'sg-error'];
   const visibles = () => ESTADOS.filter((clave) => !el(clave).hidden);
-  return { pagina, el, visibles, pedidos };
+  return { pagina, el, visibles, pedidos, cuerpos, avisos, enfocados };
 };
 const conEstado = (status) => Object.assign(new Error(`Error ${status}`), { status });
 const LISTA = () => ({ success: true, data: filasDeLosCasos() });
@@ -584,11 +1078,388 @@ describe('seguimiento.js: la página', () => {
     assert.match(el('sg-filtros').innerHTML, /Actualizados <b>1<\/b>/);
   });
 
+  it('Corregir y Anular de una nota DGMIT no descargan nada ni despliegan la fila; "Descargar la nota y su anexo" sí descarga', async () => {
+    // Un botón falso con sus data-*; closest entiende los selectores de atributo de seguimiento.js (button[data-x] y button[data-x="v"])
+    const boton = (datos) => ({
+      dataset: datos, disabled: false,
+      closest(selector) {
+        const partes = /^button\[data-([a-z-]+)(?:="([^"]*)")?\]$/.exec(selector);
+        if (!partes) return null;
+        const clave = partes[1].replace(/-([a-z])/g, (_, letra) => letra.toUpperCase());
+        return Object.hasOwn(datos, clave) && (partes[2] === undefined || datos[clave] === partes[2]) ? this : null;
+      }
+    });
+    const { pagina } = preparar({ esAdmin: true });
+    const pedidas = [];
+    pagina.showToast = () => {};
+    const api = vm.runInContext('API', pagina);
+    api.getNotaPdf = async (id) => { pedidas.push(id); throw new Error('sin servidor'); };
+    for (const accion of ['corregir-nota', 'anular-nota']) {
+      pagina.alTocarUnMovimiento({ target: boton({ accion, nota: '1' }) });
+    }
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.deepEqual(pedidas, []);
+    pagina.alTocarUnMovimiento({ target: boton({ nota: '4', archivo: 'Nota-Digital-2-26.pdf' }) });
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.deepEqual(pedidas, ['4']);
+  });
+
   it('elegir una sugerencia que coincide exacto abre su seguimiento', async () => {
     const { pagina } = preparar({ respuestas: { '/seguimiento': LISTA() } });
     await pagina.cargarLista();
     pagina.alEscribirEnElBuscador({ target: { value: 'Pauta Publicitaria — Subsecretaría de Comunicación' } });
     assert.equal(pagina.window.location.href, 'seguimiento.html?id=10');
+  });
+});
+
+// Cargar, corregir y anular desde la página (DOM falso): lo que se manda, los errores en su campo, el aviso y la recarga de la vista
+describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
+  const activo = (el, id) => el(id).classList.contains('active');
+  // Una casilla de la lista de datasets, marcada o desmarcada
+  const marcar = (pagina, valor, checked = true) => pagina.alMarcarDataset({ target: { type: 'checkbox', value: String(valor), checked, closest: () => null } });
+  // El seguimiento de 58 con la nota 156/26 (solicitud del 15/10, también para Hotelería, 25), como lo ve quien la cargó
+  const NOTA = {
+    id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '2026-10-16 09:30:00', por: 'Diego Martín Cuatro', por_id: 7,
+    datasets: [{ id: 58, titulo: 'Áreas específicas de género' }, { id: 25, titulo: 'Hotelería en Comodoro Rivadavia' }], historial: []
+  };
+  const DE_58_CON_NOTA = () => ({ success: true, data: conNotasDgmitEditables(seguimientoDe({ ...f(58), notasDgmit: [NOTA] }, HOY), { usuarioId: 7 }) });
+  const conCampo = (status, campo, mensaje) => Object.assign(new Error(mensaje), { status, campo });
+
+  it('el botón Cargar nota DGMIT: oculto para el lector, visible para quien puede cargar', async () => {
+    const lector = preparar({ respuestas: { '/seguimiento': LISTA() } });
+    await lector.pagina.iniciarSeguimiento();
+    assert.equal(lector.el('sg-cargar-nota').hidden, true);
+    // El lector no abre nada, aunque llegue a llamar a las funciones
+    await lector.pagina.abrirFormularioDeNota(lector.el('sg-cargar-nota'));
+    lector.pagina.abrirAnulacion(lector.el('x'), '1');
+    assert.ok(!activo(lector.el, 'modal-nota') && !activo(lector.el, 'modal-anular'));
+    assert.deepEqual(lector.pedidos, ['GET /seguimiento']);
+    const colaborador = preparar({ respuestas: { '/seguimiento': LISTA() }, puedeCargar: true });
+    await colaborador.pagina.iniciarSeguimiento();
+    assert.equal(colaborador.el('sg-cargar-nota').hidden, false);
+  });
+
+  it('cargar desde la lista: abre con los vencidos y próximos, valida en el navegador y guarda con POST', async () => {
+    const mensaje = 'Nota DGMIT N° 9/26 (solicitud) cargada en 1 dataset.';
+    const { pagina, el, pedidos, cuerpos, avisos, enfocados } = preparar({ puedeCargar: true,
+      respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': { success: true, data: { id: 3 }, message: mensaje } } });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirFormularioDeNota(el('sg-cargar-nota'));
+    assert.ok(activo(el, 'modal-nota'));
+    assert.equal(el('modal-nota-titulo').textContent, 'Cargar nota DGMIT');
+    assert.equal(el('nd-guardar').textContent, 'Guardar nota');
+    assert.equal(el('nd-pie').textContent, 'Se guarda al confirmar y queda registrado quién la cargó y cuándo.');
+    assert.equal(el('nd-motivo-grupo').hidden, true);
+    assert.equal(el('nd-fecha').max, HOY);
+    assert.match(el('nd-alcance').innerHTML, /data-alcance="inicial" aria-pressed="true">Vencidos y próximos a vencer <b>7<\/b>/);
+    assert.match(el('nd-alcance').innerHTML, /data-alcance="todos" aria-pressed="false">Todos <b>11<\/b>/);
+    assert.equal(cuantas(el('nd-opciones').innerHTML, /type="checkbox"/g), 7);
+    assert.equal(el('nd-elegidos').innerHTML, '<span>Todavía no elegiste ningún dataset.</span>');
+    assert.equal(enfocados.at(-1), 'nd-numero', 'el foco, al primer campo');
+    // "Todos" y la búsqueda
+    pagina.elegirAlcanceDeNota('todos');
+    assert.equal(cuantas(el('nd-opciones').innerHTML, /type="checkbox"/g), 11);
+    el('nd-buscar').value = 'RELACIONES laborales';
+    pagina.dibujarOpcionesDeNota();
+    assert.equal(cuantas(el('nd-opciones').innerHTML, /type="checkbox"/g), 1);
+    el('nd-buscar').value = 'xyz';
+    pagina.dibujarOpcionesDeNota();
+    assert.equal(el('nd-opciones').innerHTML, '<p class="sg-sin-opciones">Ningún dataset coincide con lo que buscaste.</p>');
+
+    // Sin nada: los cuatro errores en sus campos, el foco al primero y ningún pedido
+    await pagina.guardarNotaDgmit();
+    assert.deepEqual(pedidos, ['GET /seguimiento']);
+    assert.equal(el('nd-numero-error').textContent, 'Escribí el número de la nota.');
+    assert.equal(el('nd-numero-error').hidden, false);
+    assert.equal(el('nd-numero').getAttribute('aria-invalid'), 'true');
+    assert.equal(el('nd-fecha-error').textContent, 'Elegí la fecha en que el área recibió la nota.');
+    assert.equal(el('nd-tipo-error').textContent, 'Elegí si es una solicitud o una reiteración.');
+    assert.equal(el('nd-tipo-solicitud').getAttribute('aria-invalid'), 'true');
+    assert.ok(el('nd-tipos').classList.contains('invalido'));
+    assert.equal(el('nd-datasets-error').textContent, 'Elegí al menos un dataset.');
+    assert.ok(el('nd-opciones').classList.contains('invalido'));
+    assert.equal(el('nd-motivo-error').hidden, true, 'la carga no pide motivo');
+    assert.equal(enfocados.at(-1), 'nd-numero');
+    // Una fecha posterior a hoy
+    el('nd-numero').value = ' 9/26 ';
+    el('nd-fecha').value = '2026-10-21';
+    await pagina.guardarNotaDgmit();
+    assert.equal(el('nd-numero-error').hidden, true);
+    assert.equal(el('nd-numero').getAttribute('aria-invalid'), null);
+    assert.equal(el('nd-fecha-error').textContent, 'La fecha de recepción no puede ser posterior a hoy.');
+    assert.equal(enfocados.at(-1), 'nd-fecha');
+
+    // Completo: POST con el número recortado y el dataset elegido
+    el('nd-fecha').value = '2026-10-15';
+    el('nd-tipo-solicitud').checked = true;
+    pagina.alElegirTipoDeNota();
+    marcar(pagina, 52);
+    assert.ok(el('nd-elegidos').innerHTML.startsWith('<span>1 dataset elegido:</span>'));
+    assert.equal(el('nd-datasets-error').hidden, true, 'elegir uno saca el error');
+    await pagina.guardarNotaDgmit();
+    assert.deepEqual(cuerpos, [['POST /notas-dgmit', { numero: '9/26', recibida: '2026-10-15', tipo: 'solicitud', datasets: [52] }]]);
+    assert.deepEqual(avisos, [['success', mensaje]]);
+    assert.ok(!activo(el, 'modal-nota'));
+    // La lista se vuelve a pedir
+    assert.deepEqual(pedidos, ['GET /seguimiento', 'POST /notas-dgmit', 'GET /seguimiento']);
+  });
+
+  it('un error del servidor con campo va a ese campo; sin campo, un aviso; el aviso de éxito se escapa', async () => {
+    const repetido = 'Ya hay una nota DGMIT N° 9/26 cargada. Para sumarle datasets o cambiar algo, corregila.';
+    const llenar = (pagina, el) => {
+      el('nd-numero').value = '9/26';
+      el('nd-fecha').value = '2026-10-15';
+      el('nd-tipo-reiteracion').checked = true;
+      marcar(pagina, 52);
+    };
+    const conRepetido = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA() }, errores: { '/notas-dgmit': conCampo(409, 'numero', repetido) } });
+    await conRepetido.pagina.iniciarSeguimiento();
+    await conRepetido.pagina.abrirFormularioDeNota(conRepetido.el('sg-cargar-nota'));
+    llenar(conRepetido.pagina, conRepetido.el);
+    await conRepetido.pagina.guardarNotaDgmit();
+    assert.equal(conRepetido.el('nd-numero-error').textContent, repetido);
+    assert.equal(conRepetido.el('nd-numero').getAttribute('aria-invalid'), 'true');
+    assert.equal(conRepetido.enfocados.at(-1), 'nd-numero');
+    assert.ok(activo(conRepetido.el, 'modal-nota'), 'el formulario queda abierto');
+    assert.deepEqual(conRepetido.avisos, []);
+    assert.equal(conRepetido.el('nd-guardar').disabled, false);
+
+    const sinPermiso = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA() },
+      errores: { '/notas-dgmit': Object.assign(new Error('No tenés permiso <b>para</b> cargar notas DGMIT.'), { status: 403 }) } });
+    await sinPermiso.pagina.iniciarSeguimiento();
+    await sinPermiso.pagina.abrirFormularioDeNota(sinPermiso.el('sg-cargar-nota'));
+    llenar(sinPermiso.pagina, sinPermiso.el);
+    await sinPermiso.pagina.guardarNotaDgmit();
+    assert.deepEqual(sinPermiso.avisos, [['error', 'No tenés permiso &lt;b&gt;para&lt;/b&gt; cargar notas DGMIT.']]);
+    // Un 403 sin campo (quien mira ya no puede cargar): se cierra y se vuelve a pedir la lista
+    assert.ok(!activo(sinPermiso.el, 'modal-nota'));
+    assert.deepEqual(sinPermiso.pedidos, ['GET /seguimiento', 'POST /notas-dgmit', 'GET /seguimiento']);
+
+    const raro = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': { success: true, message: 'Nota DGMIT N° <i>1</i> (reiteración) cargada en 1 dataset.' } } });
+    await raro.pagina.iniciarSeguimiento();
+    await raro.pagina.abrirFormularioDeNota(raro.el('sg-cargar-nota'));
+    llenar(raro.pagina, raro.el);
+    await raro.pagina.guardarNotaDgmit();
+    assert.deepEqual(raro.avisos, [['success', 'Nota DGMIT N° &lt;i&gt;1&lt;/i&gt; (reiteración) cargada en 1 dataset.']]);
+  });
+
+  it('desde un dataset, abre con ese dataset elegido (y en Todos si no está en el alcance inicial); uno que no se puede elegir, ninguno', async () => {
+    const abrir = async (id) => {
+      const pagina = preparar({ id: String(id), puedeCargar: true, respuestas: { [`/seguimiento/${id}`]: DE(id), '/seguimiento': LISTA() } });
+      await pagina.pagina.iniciarSeguimiento();
+      await pagina.pagina.abrirFormularioDeNota(pagina.el('sg-cargar-nota'));
+      return pagina;
+    };
+    const vencido = await abrir(52);
+    assert.match(vencido.el('nd-alcance').innerHTML, /data-alcance="inicial" aria-pressed="true"/);
+    assert.ok(vencido.el('nd-opciones').innerHTML.includes('value="52" data-titulo="Directores Generales de Planta Permanente" checked>'));
+    assert.ok(vencido.el('nd-elegidos').innerHTML.startsWith('<span>1 dataset elegido:</span>'));
+    const alDia = await abrir(9);
+    assert.match(alDia.el('nd-alcance').innerHTML, /data-alcance="todos" aria-pressed="true"/);
+    assert.ok(alDia.el('nd-opciones').innerHTML.includes('value="9" data-titulo="Pedidos de Acceso a la Información Pública" checked>'));
+    const interna = await abrir(26);
+    assert.match(interna.el('nd-alcance').innerHTML, /data-alcance="inicial" aria-pressed="true"/);
+    assert.ok(!interna.el('nd-opciones').innerHTML.includes(' checked>'));
+    assert.equal(interna.el('nd-elegidos').innerHTML, '<span>Todavía no elegiste ningún dataset.</span>');
+  });
+
+  it('la pista de solicitud repetida aparece al elegir Solicitud con un dataset que ya tiene nota en el ciclo', async () => {
+    const filas = filasDeLosCasos().map((fila) => (fila.id === 58 ? { ...fila, nota_dgmit: { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15' } } : fila));
+    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': { success: true, data: filas } } });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirFormularioDeNota(el('sg-cargar-nota'));
+    marcar(pagina, 58);
+    assert.equal(el('nd-pista').hidden, true, 'sin tipo, nada');
+    el('nd-tipo-solicitud').checked = true;
+    pagina.alElegirTipoDeNota();
+    assert.equal(el('nd-pista').hidden, false);
+    assert.equal(el('nd-pista').textContent, '«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, recibida el 15/10/2026) en este ciclo.\n'
+      + 'Si se le vuelven a pedir los datos, es una reiteración.');
+    el('nd-tipo-solicitud').checked = false;
+    el('nd-tipo-reiteracion').checked = true;
+    pagina.alElegirTipoDeNota();
+    assert.equal(el('nd-pista').hidden, true);
+    assert.equal(el('nd-pista').textContent, '');
+  });
+
+  it('Corregir abre el formulario con los datos de la nota y guarda con PUT y el motivo', async () => {
+    const { pagina, el, pedidos, cuerpos, avisos, enfocados } = preparar({ id: '58', puedeCargar: true, respuestas: {
+      '/seguimiento/58': DE_58_CON_NOTA, '/seguimiento': LISTA(), '/notas-dgmit/1': { success: true, message: 'Nota DGMIT N° 156/27 corregida.' } } });
+    await pagina.iniciarSeguimiento();
+    const corregir = elementoFalso('corregir');
+    pagina.alTocarUnMovimiento({ target: { closest: (selector) => (selector === 'button[data-accion="corregir-nota"]' ? Object.assign(corregir, { dataset: { accion: 'corregir-nota', nota: '1' } }) : null) } });
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.ok(activo(el, 'modal-nota'));
+    assert.equal(el('modal-nota-titulo').textContent, 'Corregir nota DGMIT N° 156/26');
+    assert.equal(el('nd-guardar').textContent, 'Guardar corrección');
+    assert.equal(el('nd-pie').textContent, 'Se guarda al confirmar. Queda registrado quién la corrigió, cuándo, por qué y qué decía antes.');
+    assert.equal(el('nd-motivo-grupo').hidden, false);
+    assert.equal(el('nd-numero').value, '156/26');
+    assert.equal(el('nd-fecha').value, '2026-10-15');
+    assert.equal(el('nd-tipo-solicitud').checked, true);
+    assert.equal(el('nd-tipo-reiteracion').checked, false);
+    // Los dos datasets de la nota, marcados; Hotelería todavía no vence: abre en "Todos"
+    assert.match(el('nd-alcance').innerHTML, /data-alcance="todos" aria-pressed="true"/);
+    assert.equal(cuantas(el('nd-opciones').innerHTML, / checked>/g), 2);
+    assert.ok(el('nd-elegidos').innerHTML.startsWith('<span>2 datasets elegidos:</span>'));
+    // La nota que se corrige no se avisa a sí misma
+    assert.equal(el('nd-pista').hidden, true);
+    // Sin motivo, no se manda
+    await pagina.guardarNotaDgmit();
+    assert.equal(el('nd-motivo-error').textContent, 'Escribí el motivo.');
+    assert.equal(el('nd-motivo').getAttribute('aria-invalid'), 'true');
+    assert.equal(enfocados.at(-1), 'nd-motivo');
+    assert.ok(!pedidos.includes('PUT /notas-dgmit/1'));
+    // Con el motivo: PUT con todo
+    el('nd-numero').value = '156/27';
+    el('nd-motivo').value = '  El número estaba mal  ';
+    marcar(pagina, 25, false);
+    await pagina.guardarNotaDgmit();
+    assert.deepEqual(cuerpos, [['PUT /notas-dgmit/1', { numero: '156/27', recibida: '2026-10-15', tipo: 'solicitud', datasets: [58], motivo: 'El número estaba mal' }]]);
+    assert.deepEqual(avisos, [['success', 'Nota DGMIT N° 156/27 corregida.']]);
+    assert.ok(!activo(el, 'modal-nota'));
+    // Vuelve a pedir el dataset y la lista; el foco, al botón del encabezado (el de "Corregir" se volvió a dibujar)
+    assert.deepEqual(pedidos.slice(-2).sort(), ['GET /seguimiento', 'GET /seguimiento/58']);
+    assert.equal(enfocados.at(-1), 'sg-cargar-nota');
+  });
+
+  it('Anular pide el motivo y anula con POST; Escape cierra sin mandar nada', async () => {
+    const { pagina, el, pedidos, cuerpos, avisos, enfocados } = preparar({ id: '58', puedeCargar: true, respuestas: {
+      '/seguimiento/58': DE_58_CON_NOTA, '/seguimiento': LISTA(), '/notas-dgmit/1/anular': { success: true, message: 'Nota DGMIT N° 156/26 anulada.' } } });
+    await pagina.iniciarSeguimiento();
+    const anular = elementoFalso('anular', (quien) => enfocados.push(quien));
+    pagina.abrirAnulacion(anular, '1');
+    assert.ok(activo(el, 'modal-anular'));
+    assert.equal(el('modal-anular-titulo').textContent, 'Anular nota DGMIT N° 156/26');
+    assert.equal(el('an-texto').textContent,
+      '¿Anular la nota DGMIT N° 156/26? Deja de contar en el Seguimiento de sus 2 datasets, pero no se borra: queda en los movimientos, tachada y con el motivo.');
+    assert.equal(enfocados.at(-1), 'an-motivo');
+    // Escape cierra y el foco vuelve al botón
+    pagina.alApretarEscape({ key: 'Escape' });
+    assert.ok(!activo(el, 'modal-anular'));
+    assert.equal(enfocados.at(-1), 'anular');
+    // Sin motivo, no se manda
+    pagina.abrirAnulacion(anular, '1');
+    await pagina.confirmarAnulacion();
+    assert.equal(el('an-motivo-error').textContent, 'Escribí el motivo.');
+    assert.equal(el('an-motivo').getAttribute('aria-invalid'), 'true');
+    assert.ok(!pedidos.some((p) => p.startsWith('POST')));
+    el('an-motivo').value = ' Se cargó dos veces ';
+    await pagina.confirmarAnulacion();
+    assert.deepEqual(cuerpos, [['POST /notas-dgmit/1/anular', { motivo: 'Se cargó dos veces' }]]);
+    assert.deepEqual(avisos, [['success', 'Nota DGMIT N° 156/26 anulada.']]);
+    assert.ok(!activo(el, 'modal-anular'));
+    assert.deepEqual(pedidos.slice(-2).sort(), ['GET /seguimiento', 'GET /seguimiento/58']);
+    // Una nota que no está en la vista (o ya anulada) no abre nada
+    pagina.abrirAnulacion(anular, '99');
+    assert.ok(!activo(el, 'modal-anular'));
+    // El formulario también se cierra con Escape (otra tecla no)
+    await pagina.abrirFormularioDeNota(el('sg-cargar-nota'));
+    assert.ok(activo(el, 'modal-nota'));
+    pagina.alApretarEscape({ key: 'Enter' });
+    assert.ok(activo(el, 'modal-nota'));
+    pagina.alApretarEscape({ key: 'Escape' });
+    assert.ok(!activo(el, 'modal-nota'));
+  });
+
+  // Un error del servidor sin campo. Con 403, 404 o 409 (alguien anuló la nota mientras tanto, o quien mira ya no puede corregirla) la
+  // vista quedó vieja: el aviso, se cierra el modal y se vuelve a pedir la vista. Con otro (un 400 como «La corrección no cambia ningún
+  // dato de la nota.», un 500 o sin conexión) el modal queda abierto y el foco vuelve al botón, ya habilitado (deshabilitado durante el
+  // pedido, lo había soltado)
+  const conFocoAnotado = (prueba, id) => {
+    prueba.el(id).focus = function () { prueba.enfocados.push(this.disabled ? `${id} (deshabilitado)` : id); };
+  };
+  const corregirConFalla = async (falla) => {
+    const prueba = preparar({ id: '58', puedeCargar: true,
+      respuestas: { '/seguimiento/58': DE_58_CON_NOTA, '/seguimiento': LISTA() }, errores: { '/notas-dgmit/1': falla } });
+    await prueba.pagina.iniciarSeguimiento();
+    const corregir = Object.assign(elementoFalso('corregir'), { dataset: { accion: 'corregir-nota', nota: '1' } });
+    prueba.pagina.alTocarUnMovimiento({ target: { closest: (selector) => (selector === 'button[data-accion="corregir-nota"]' ? corregir : null) } });
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.ok(activo(prueba.el, 'modal-nota'));
+    prueba.el('nd-motivo').value = 'Otra fecha';
+    conFocoAnotado(prueba, 'nd-guardar');
+    const antes = prueba.pedidos.length;
+    await prueba.pagina.guardarNotaDgmit();
+    return { ...prueba, nuevos: prueba.pedidos.slice(antes) };
+  };
+  const anularConFalla = async (falla) => {
+    const prueba = preparar({ id: '58', puedeCargar: true,
+      respuestas: { '/seguimiento/58': DE_58_CON_NOTA, '/seguimiento': LISTA() }, errores: { '/notas-dgmit/1/anular': falla } });
+    await prueba.pagina.iniciarSeguimiento();
+    prueba.pagina.abrirAnulacion(elementoFalso('anular'), '1');
+    assert.ok(activo(prueba.el, 'modal-anular'));
+    prueba.el('an-motivo').value = 'Se cargó dos veces';
+    conFocoAnotado(prueba, 'an-confirmar');
+    const antes = prueba.pedidos.length;
+    await prueba.pagina.confirmarAnulacion();
+    return { ...prueba, nuevos: prueba.pedidos.slice(antes) };
+  };
+  const VIEJAS = [
+    [403, 'Solo quien cargó la nota o administración pueden corregirla o anularla.'],
+    [404, 'Nota DGMIT no encontrada'],
+    [409, 'La nota está anulada: no se puede corregir ni volver a anular.']
+  ];
+
+  it('corregir: un 400 sin campo deja el formulario abierto y el foco en el botón; un 403, 404 o 409 lo cierra y vuelve a pedir la vista', async () => {
+    const mensaje = 'La corrección no cambia ningún dato de la nota.';
+    const sinCambios = await corregirConFalla(Object.assign(new Error(mensaje), { status: 400 }));
+    assert.deepEqual(sinCambios.avisos, [['error', mensaje]]);
+    assert.ok(activo(sinCambios.el, 'modal-nota'), 'el formulario queda abierto');
+    assert.equal(sinCambios.el('nd-guardar').disabled, false);
+    assert.equal(sinCambios.enfocados.at(-1), 'nd-guardar', 'el foco vuelve al botón, ya habilitado');
+    assert.deepEqual(sinCambios.nuevos, ['PUT /notas-dgmit/1'], 'no se vuelve a pedir la vista');
+    // Lo mismo con un 500 o sin conexión (sin status)
+    for (const falla of [conEstado(500), new Error('Failed to fetch')]) {
+      const otra = await corregirConFalla(falla);
+      assert.ok(activo(otra.el, 'modal-nota'));
+      assert.equal(otra.enfocados.at(-1), 'nd-guardar');
+      assert.deepEqual(otra.nuevos, ['PUT /notas-dgmit/1']);
+    }
+    for (const [status, texto] of VIEJAS) {
+      const vieja = await corregirConFalla(Object.assign(new Error(texto), { status }));
+      assert.deepEqual(vieja.avisos, [['error', texto]], `${status}`);
+      assert.ok(!activo(vieja.el, 'modal-nota'), `${status}: se cierra`);
+      assert.deepEqual(vieja.nuevos.slice(1).sort(), ['GET /seguimiento', 'GET /seguimiento/58'], `${status}: vuelve a pedir la vista`);
+      assert.equal(vieja.enfocados.at(-1), 'sg-cargar-nota', `${status}: el foco, al botón del encabezado`);
+    }
+    // Con campo, como siempre: al campo, sin cerrar (el número repetido es un 409 con campo)
+    const repetido = await corregirConFalla(Object.assign(new Error('Ya hay una nota DGMIT N° 9/26 cargada.'), { status: 409, campo: 'numero' }));
+    assert.ok(activo(repetido.el, 'modal-nota'));
+    assert.equal(repetido.el('nd-numero-error').textContent, 'Ya hay una nota DGMIT N° 9/26 cargada.');
+    assert.equal(repetido.enfocados.at(-1), 'nd-numero');
+    assert.deepEqual(repetido.avisos, []);
+    assert.deepEqual(repetido.nuevos, ['PUT /notas-dgmit/1']);
+  });
+
+  it('anular: un error sin campo que no es 403, 404 ni 409 deja el modal abierto y el foco en Anular; esos lo cierran y vuelven a pedir la vista', async () => {
+    const caida = await anularConFalla(conEstado(500));
+    assert.deepEqual(caida.avisos, [['error', 'Error 500']]);
+    assert.ok(activo(caida.el, 'modal-anular'));
+    assert.equal(caida.el('an-confirmar').disabled, false);
+    assert.equal(caida.enfocados.at(-1), 'an-confirmar', 'el foco vuelve al botón, ya habilitado');
+    assert.deepEqual(caida.nuevos, ['POST /notas-dgmit/1/anular']);
+    for (const [status, texto] of VIEJAS) {
+      const vieja = await anularConFalla(Object.assign(new Error(texto), { status }));
+      assert.deepEqual(vieja.avisos, [['error', texto]], `${status}`);
+      assert.ok(!activo(vieja.el, 'modal-anular'), `${status}: se cierra`);
+      assert.deepEqual(vieja.nuevos.slice(1).sort(), ['GET /seguimiento', 'GET /seguimiento/58'], `${status}: vuelve a pedir la vista`);
+      assert.equal(vieja.enfocados.at(-1), 'sg-cargar-nota', `${status}`);
+    }
+    // El motivo que el servidor rechaza va al campo, sin cerrar
+    const motivo = await anularConFalla(Object.assign(new Error('El motivo no puede tener más de 500 caracteres.'), { status: 400, campo: 'motivo' }));
+    assert.ok(activo(motivo.el, 'modal-anular'));
+    assert.equal(motivo.el('an-motivo-error').textContent, 'El motivo no puede tener más de 500 caracteres.');
+    assert.equal(motivo.enfocados.at(-1), 'an-motivo');
+    assert.deepEqual(motivo.avisos, []);
+  });
+
+  it('si la lista no se puede cargar, avisa y no abre el formulario', async () => {
+    const { pagina, el, avisos } = preparar({ id: '58', puedeCargar: true, respuestas: { '/seguimiento/58': DE(58) }, errores: { '/seguimiento': conEstado(500) } });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirFormularioDeNota(el('sg-cargar-nota'));
+    assert.ok(!activo(el, 'modal-nota'));
+    assert.deepEqual(avisos, [['error', 'No se pudo cargar la lista de datasets: Error 500']]);
   });
 });
 

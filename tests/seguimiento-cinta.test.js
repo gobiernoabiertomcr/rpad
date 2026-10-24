@@ -397,6 +397,46 @@ describe('cintaDe: marcas', () => {
   });
 });
 
+// Las notas DGMIT (spec 2026-10-24-notas-dgmit, 6): una marca en la fila de abajo, el día de la recepción
+describe('cintaDe: notas DGMIT', () => {
+  const dgmit = (fecha, anulada = false) => mov('dgmit', fecha, { anulada }, 'Nota DGMIT N° 156/26 al área: solicitud');
+
+  it('la nota DGMIT va en la fila de abajo, con el título en el detalle', () => {
+    const c = sinCiclos([dgmit('2026-04-10')]);
+    assert.deepEqual(c.marcas.map(m => [m.fila, m.tipo, m.cantidad, m.etiqueta]), [['abajo', 'dgmit', 1, null]]);
+    assert.deepEqual(c.marcas[0].detalle, ['10/04/2026: Nota DGMIT N° 156/26 al área: solicitud']);
+    assert.ok(casi(c.marcas[0].x, xDe('2026-04-10')));
+    // Con las reglas: el 58 con una nota recibida el 15/10/2026
+    const fu = { ...f(58), notasDgmit: [{ id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false,
+      cargada: '2026-10-16 09:30:00', por: 'Diego Martín Cuatro', por_id: 7, datasets: [{ id: 58, titulo: CASOS[58].dataset.titulo }], historial: [] }] };
+    const marcas = cintaDe({ fuentes: fu, ciclos: ciclosDe(fu, HOY), movimientos: movimientosDe(fu, HOY), hoy: HOY }).marcas.filter(m => m.tipo === 'dgmit');
+    assert.deepEqual(marcas.map(m => [m.fila, m.cantidad, m.detalle]), [['abajo', 1, ['15/10/2026: Nota DGMIT N° 156/26 al área: solicitud']]]);
+    // Las demás marcas del 58 no cambian
+    assert.deepEqual(cintaDeFuentes(fu, { movimientos: movimientosDe(fu, HOY) }).marcas.filter(m => m.tipo !== 'dgmit'), cinta(58).marcas);
+  });
+
+  it('junto a un rechazo se dibuja la nota DGMIT', () => {
+    const juntos = sinCiclos([mov('rech', '2026-04-10'), dgmit('2026-04-10'), mov('area', '2026-04-10', { success: true })]);
+    assert.deepEqual(juntos.marcas.map(m => [m.fila, m.tipo, m.cantidad]), [['abajo', 'dgmit', 3]]);
+    assert.equal(sinCiclos([mov('area', '2026-04-10', { success: true }), dgmit('2026-04-11')]).marcas[0].tipo, 'dgmit');
+    assert.equal(sinCiclos([mov('area', '2026-04-10', { success: true }), mov('rech', '2026-04-11')]).marcas[0].tipo, 'rech');
+    // No se mezcla con las Notas Digitales a DGMIT, que van arriba
+    const filas = sinCiclos([nota('2026-04-10', 3), dgmit('2026-04-10')]);
+    assert.deepEqual(filas.marcas.map(m => [m.fila, m.tipo, m.etiqueta]).sort(), [['abajo', 'dgmit', null], ['arriba', 'nota', 'Nota 3/26']]);
+  });
+
+  it('la anulada no tiene marca', () => {
+    assert.deepEqual(sinCiclos([dgmit('2026-04-10', true)]).marcas, []);
+    assert.deepEqual(sinCiclos([dgmit('2026-04-10', true), mov('rech', '2026-04-10')]).marcas.map(m => [m.tipo, m.cantidad]), [['rech', 1]]);
+    // Con las reglas: la anulada sigue entre los movimientos, pero no en la cinta
+    const fu = { ...f(58), notasDgmit: [{ id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: true,
+      cargada: '2026-10-16 09:30:00', por: null, por_id: null, datasets: [], historial: [] }] };
+    const movimientos = movimientosDe(fu, HOY);
+    assert.ok(movimientos.some(m => m.tipo === 'dgmit'));
+    assert.deepEqual(cintaDeFuentes(fu, { movimientos }).marcas, cinta(58).marcas);
+  });
+});
+
 describe('cintaDe: datos raros y pureza', () => {
   it('sin ciclos, sin movimientos y sin fuentes, no tira error', () => {
     assert.doesNotThrow(() => cintaDe({ hoy: HOY }));
