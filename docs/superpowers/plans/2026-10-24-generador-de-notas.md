@@ -24,7 +24,12 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 
 ## Global Constraints
 
-- **Cuándo:** se empieza cuando `feat/metricas-y-reportes` esté mergeada en main (pedido del usuario). La Task 1 trae main a esta rama. Los números de línea que cita este plan son de main 8b25ae0: después de traer main, se vuelven a buscar por nombre.
+- **Cuándo:** se empieza apenas `feat/metricas-y-reportes` esté mergeada en main y pusheada. Instrucción del usuario del 24/10/2026:
+  1. traer main a esta rama;
+  2. volver a analizar si el plan necesita cambios por lo que trajo Métricas, y aplicarlos al plan (con su commit);
+  3. empezar la ejecución enseguida, **sin pedirle aprobación**.
+
+  Los números de línea que cita este plan son de main 8b25ae0: después de traer main, se vuelven a buscar por nombre.
 - **Dónde:** worktree `C:/git/rpad/.claude/worktrees/generador-de-notas`, rama `feat/generador-de-notas`. Nunca se escribe en `C:/git/rpad` (main) ni en su base.
 - **Base de la rama:** `rpad_rama_generador`, copia de `datospublicos_mcr_rpad` con las migraciones de Métricas y la de esta rama aplicadas. El `.env` del worktree apunta a ella. `node_modules`, con un enlace (junction) a `C:\git\rpad\node_modules`. Antes de `git worktree remove`, sacar el enlace con `cmd //c "rmdir node_modules"` y comprobar que el `node_modules` de main sigue entero.
 - **No romper lo implementado:** `npm test` completo antes de empezar (la línea de base queda en el ledger) y al final de cada tarea. Cuando una tarea cambia a propósito algo que afirmaba un test viejo, el cambio del test va en esa tarea y se nombra en su paso.
@@ -62,7 +67,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 
 ---
 
-### Task 1: Base de la rama y migración de las áreas
+### Task 1: Base de la rama y el ámbito de las áreas (migración)
 
 **Files:**
 - Create: `database/updates/migracion-generador-notas.sql`, `database/updates/rollback-generador-notas.sql`
@@ -74,19 +79,17 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - **La columna:** en `areas`, después de `articulo_superior`, `` `ambito` enum('municipal','externo') NOT NULL DEFAULT 'municipal' ``. Con `DEFAULT 'municipal'`, los `crearArea` de los fixtures siguen andando.
   - **La migración**, repetible:
     - `ADD COLUMN IF NOT EXISTS`.
-    - Una sentencia por área de afuera, con la forma `UPDATE areas SET ambito = 'externo' WHERE id = N AND nombre = '<nombre original>';`. **La lista final la da el usuario**, en `Escritorio/RPAD-generador-de-notas/RPAD - Ámbito de las áreas - para confirmar.xlsx` (hoja "Áreas", columna J "Ámbito (CONFIRMÁ ACÁ)"; columna M, observaciones). La propuesta son las 13 del Anexo A: 2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43 y 44. Si el Excel confirmado difiere, o trae observaciones sobre nombres o dependencias, primero se actualiza el Anexo A de la spec (con su commit) y después se escribe la migración. Sin el Excel confirmado, esta tarea no empieza.
-    - Una sentencia por texto corregido del Anexo A, con la forma `UPDATE areas SET <col> = '<corregido>' WHERE id = N AND <col> = '<original>';`. Las columnas son `nombre`, `area_superior` y `articulo_superior`.
+    - Una sentencia por área de afuera, con la forma `UPDATE areas SET ambito = 'externo' WHERE id = N AND nombre = '<nombre tal como está en la base>';`. Son las 13 del Anexo A, confirmadas por el usuario el 24/10/2026: 2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43 y 44. El nombre sale de `SELECT id, nombre FROM areas` en la base de la rama, que tiene el dump del 24/10.
     - Cada sentencia lleva arriba el comentario `-- <id>. <nombre>`.
-    - Los originales salen de `SELECT id, nombre, area_superior, articulo_superior FROM areas` en la base de la rama, que tiene el dump del 24/10. Los corregidos, del Anexo A de la spec, tal cual.
-    - El ámbito va antes que los textos, porque usa el nombre original.
+    - **Los nombres y las dependencias no se tocan** (decisión del usuario): no hay ningún `UPDATE` de `nombre`, `area_superior` ni `articulo_superior`.
   - **La cabecera de la migración:**
     - la ruta de la spec;
     - "ORDEN: correr ANTES de subir el código y después de migracion-metricas.sql";
-    - "Se puede volver a correr: los textos solo cambian si siguen siendo los originales";
+    - "Se puede volver a correr";
     - "Si después alguien cambia en Áreas el ámbito de una de las 13, no la vuelvas a correr: la vuelve a marcar como externa";
     - "Para deshacer: rollback-generador-notas.sql".
     - Al final, una consulta de verificación comentada: cuántas áreas quedaron `externo` (13).
-  - **La vuelta atrás:** `UPDATE … SET <col> = '<original>' WHERE id = N AND <col> = '<corregido>'` para cada texto, y después `ALTER TABLE areas DROP COLUMN IF EXISTS ambito`. La cabecera dice que va después de volver a los archivos anteriores.
+  - **La vuelta atrás:** `ALTER TABLE areas DROP COLUMN IF EXISTS ambito`. La cabecera dice que va después de volver a los archivos anteriores.
 
 - [ ] **Step 1: Preparar la rama.**
   - En el worktree: `git merge main`, con Métricas ya adentro (un merge, no un rebase). Volver a ubicar por nombre lo que este plan cita por número de línea.
@@ -98,14 +101,14 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - `codigo(MIGRACION)` no tiene `DELIMITER`, `USE`, `DROP`, `RENAME` ni `CHECK`;
   - la cabecera tiene la spec, "ANTES de subir el código" y `rollback-generador-notas.sql`;
   - cada `UPDATE` cumple la forma exacta y tiene el comentario `-- <id>. ` arriba;
-  - desde la estructura sin la columna, con 9 áreas originales cargadas (2, 6, 7, 11, 18, 25, 35, 38 y 42, con sus textos del dump), la migración corrida dos veces deja las columnas de `schema.sql`. Además: las áreas 2, 6 y 35 en `externo`; la 18 y la 25 en `municipal`; el nombre de la 7 "Dirección de Patrimonio Cultural y Natural"; la dependencia de la 18 "Subsecretaría de Recursos Humanos de la Secretaría de Gobierno, Modernización y Transparencia"; el artículo de la dependencia de la 6 `el`; y la dependencia de la 35 NULL;
-  - un texto cambiado a mano antes de migrar (la dependencia de la 18) no se pisa;
-  - la vuelta atrás, corrida dos veces, deja las columnas de antes y los 9 textos originales; la migración otra vez deja `schema.sql`;
+  - desde la estructura sin la columna, con 6 áreas cargadas con sus textos del dump (2, 6, 18, 25, 27 y 35), la migración corrida dos veces deja las columnas de `schema.sql`. Además: las áreas 2, 6, 27 y 35 en `externo`, la 18 y la 25 en `municipal`, y el nombre, la dependencia y el artículo de las 6 sin ningún cambio;
+  - un área 2 con otro nombre (un renombre hecho a mano) queda `municipal`: el `UPDATE` no la encuentra;
+  - la vuelta atrás, corrida dos veces, deja las columnas de antes; la migración otra vez deja `schema.sql`;
   - "no trae datos en" sigue pasando para `areas`.
 - [ ] **Step 3: Run** `node --test tests/schema.test.js`. Expected: FAIL (no existe la migración).
 - [ ] **Step 4: Implement** la migración, la vuelta atrás y la columna en `schema.sql`.
 - [ ] **Step 5: Aplicar** la migración en `rpad_rama_generador`: la primera prueba de `schema.test.js` compara `schema.sql` contra la base del `.env`. Correr la consulta de verificación: tiene que dar 13. Run `node --test tests/schema.test.js` y `npm test`. Expected: PASS.
-- [ ] **Step 6: Commit** `feat: ámbito de las áreas (municipal o fuera del municipio) y textos corregidos (migración y vuelta atrás)`.
+- [ ] **Step 6: Commit** `feat: ámbito de las áreas, municipal o fuera del municipio (migración y vuelta atrás)`.
 
 ### Task 2: El ámbito en Áreas (API y formulario)
 

@@ -2,6 +2,8 @@
 
 Fecha: 24/10/2026. **Estado: aprobado por el usuario el 24/10/2026** (con el Anexo A y las decisiones de la sección 10). Se implementa después de que "Métricas y Reportes" esté en main (sección 8).
 
+**Cambio del 24/10/2026, posterior a la aprobación (decisión del usuario):** el ámbito del Anexo A quedó confirmado tal cual, con 13 áreas fuera del municipio. Los nombres y las dependencias de las áreas **no se tocan**: quedan como están en la base de producción, y la migración solo agrega y carga el ámbito (secciones 2 y 8).
+
 Maquetas: `2026-10-24-generador-de-notas-mockups/generador.html` (se abre en el navegador; los tres pasos se pueden recorrer y la vista previa cambia en el momento). Usa los datos reales de la base local al 24/10/2026, salvo las notas DGMIT (la tabla real está vacía) y el estado de tres datasets de la Cooperativa, inventados para mostrar una reiteración con dos notas. El recuadro oscuro de abajo a la derecha es de la maqueta, no de la página. Este documento manda sobre la maqueta.
 
 ## Por qué
@@ -20,7 +22,7 @@ Lo que pidió el usuario, en sus palabras: "automatizar un poco más la generaci
 - Cada dataset sale con los "Datos solicitados" que calcula el RPAD (las mismas reglas que las Notas Digitales) y con su "Qué se solicita".
 - La nota sale en Word, en la hoja membretada (oficio de 21,6 × 35,6 cm, con encabezado, marca de agua y pie), sin firma: se imprime y se firma a mano.
 - En Correos → Libro de Notas Digitales, cada nota se puede bajar en Word, en la hoja membretada y sin firma, también las que ya salieron.
-- Las áreas se corrigen: sin abreviaturas ni errores en el nombre y en "dependiente de…" (Anexo A).
+- Cada área sabe si es municipal o de fuera del municipio (Anexo A, confirmado por el usuario).
 
 **No objetivos**
 - El generador **no registra nada**: ni el número, ni la nota, ni quién la generó. La nota DGMIT se sigue cargando aparte, en el Seguimiento, cuando el área la recibe.
@@ -47,15 +49,9 @@ Lo que pidió el usuario, en sus palabras: "automatizar un poco más la generaci
 **El dato.** Cada área suma un ámbito: **Municipal** o **Fuera del municipio**. Decide qué nota de la DGMIT le corresponde: municipal → interna (por la Subsecretaría); fuera del municipio → externa (directo al organismo).
 - Columna nueva en `areas` (nombre sugerido `ambito`, `enum('municipal','externo') NOT NULL DEFAULT 'municipal'`).
 - Se edita en Áreas: un selector "Ámbito" en el formulario (Municipal / Fuera del municipio), con la ayuda "Define si la nota de la DGMIT va por la Subsecretaría (municipal) o directo al organismo (fuera del municipio)." Lo valida el servidor (otro valor, 400). La lista de Áreas puede mostrarlo como una insignia junto al nombre.
-- La clasificación inicial la carga la migración (Anexo A): 13 áreas fuera del municipio y 33 municipales.
+- La clasificación inicial la carga la migración (Anexo A, confirmado por el usuario el 24/10/2026): 13 áreas fuera del municipio y 33 municipales.
 
-**Textos corregidos.** El nombre y el "dependiente de…" de las áreas salen tal cual en la nota interna ("…gestionar ante la **Dirección General de Recursos Humanos**, dependiente de la Subsec. de Recursos Humanos. Sec. Gobierno…"). La misma migración los corrige (Anexo A):
-- sin abreviaturas ("Subsec." → "Subsecretaría", "Sec." → "Secretaría", "D. G." → "Dirección General");
-- los niveles unidos con "de la" en lugar de puntos ("Subsecretaría de Recursos Humanos de la Secretaría de Gobierno, Modernización y Transparencia");
-- la jerarquía fuera del nombre: "Dirección de Información Tributaria. Dirección General de Análisis y Administración Tributaria" pasa a llamarse "Dirección de Información Tributaria", dependiente de "la Dirección General de Análisis y Administración Tributaria de la Secretaría de Recaudación" (lo mismo con Patrimonio Cultural y Natural);
-- errores: "Gestión lntegral" (con l), "Subsecretaria" sin tilde, "Relaciones Institucionale", "la Ministerio de Educación del Chubut" (el artículo pasa a "el"), "Secretaría de Energía de Nación" dependiente de la Intendencia (pasa a "Secretaría de Energía de la Nación", sin dependencia).
-
-Los nombres corregidos se ven en todo el sitio (listados, fichas, Notas Digitales que se generen desde entonces). Lo ya enviado no cambia (las notas quedan guardadas en bytes).
+**Los textos de las áreas no se tocan** (decisión del usuario, 24/10/2026). El nombre y el "dependiente de…" salen en la nota interna tal como están en la base, también con sus abreviaturas: "…gestionar ante la **Dirección General de Recursos Humanos**, dependiente de la Subsec. de Recursos Humanos. Sec. Gobierno, Modernización y Transparencia, …". Si alguno está mal, se corrige a mano en Áreas. Los errores conocidos (por ejemplo "la Ministerio de Educación del Chubut" o la Secretaría de Energía "dependiente de la Intendencia") son de áreas de fuera del municipio, que llevan nota externa, y la nota externa no imprime la dependencia.
 
 ## 3. La pantalla
 
@@ -215,10 +211,9 @@ Cambian tres cosas; el resto de la nota no cambia.
 
 - **Migración** `database/updates/migracion-generador-notas.sql`, aditiva y repetible, **antes del código**:
   - la columna del ámbito (si no existe);
-  - la clasificación inicial (Anexo A);
-  - las correcciones de nombre, dependencia y artículo (Anexo A), cada `UPDATE` por id y solo si el texto sigue siendo el original (como `migracion-fechas-datasets-textos.sql`).
+  - la clasificación inicial (Anexo A, columna Ámbito). Los nombres y las dependencias no se tocan.
   - Sin `CHECK` en la base: valida la API.
-- **Vuelta atrás** `rollback-generador-notas.sql`, después de volver a los archivos anteriores: borra la columna y devuelve los textos originales solo donde siguen siendo los corregidos.
+- **Vuelta atrás** `rollback-generador-notas.sql`, después de volver a los archivos anteriores: borra la columna.
 - `database/schema.sql` suma la columna; `tests/schema.test.js` controla la migración y la vuelta atrás, como en las entregas anteriores.
 - No hay datos de personas: las áreas son organismos. Todo va versionado.
 - **Coordinación con "Métricas y Reportes"** (rama `feat/metricas-y-reportes`, aprobada y en plan): las dos entregas tocan `routes/index.js`, `database/schema.sql`, `CLAUDE.md`, `README.md` y probablemente `public/js/main.js` (el menú lateral) y los tests de páginas. Esta entrega se implementa y se mergea **después** de Métricas, partiendo de main con Métricas adentro, para no pisarse.
@@ -240,7 +235,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 - Puras: la nota DGMIT original del ciclo de cada dataset (la primera vigente, sin las anuladas, con la regla de ciclos del Seguimiento); qué datasets se pueden elegir (los al día no); el contenido de la nota (interna y externa; solicitud y reiteración, sin nota anterior, con una, con varias; "Al" y "A la"; con y sin dependencia; número vacío → "____/AA"; la tabla con el "Qué se solicita"; eventual; el orden), el Word (abrir el XML: tamaño 12240 × 20160, márgenes, encabezado con imagen, marca de agua, pie, ninguna firma, los textos) y la validación.
 - API (Docker): permisos de las rutas nuevas y de `POST /api/notas/generar` (sin sesión 401, lector 403, colaborador y administración 200; `tests/permisos.test.js`); cada 400; un dataset de otra área; el `Content-Disposition`.
 - Word de la Nota Digital: sobre el HTML de notas de cada tipo y época (aviso interno y externo, reiteración, autorización, auditoría, con dos firmas, una de antes del anexo), sin la primera línea ni ningún dato de la firma. **Los HTML de prueba van con los nombres de las personas cambiados** (regla del proyecto: nada de nombres de personas en archivos versionados).
-- Áreas: el formulario guarda el ámbito; la migración clasifica y corrige.
+- Áreas: el formulario guarda el ámbito; la migración clasifica y no toca los textos.
 - Página: `notas.js` en un `vm`, como las demás.
 - Los tests actuales del DOCX (`tests/reportes.test.js`, "notas DOCX") se adaptan: la escalonada deja de existir.
 
@@ -254,11 +249,11 @@ Cambian tres cosas; el resto de la nota no cambia.
 4. El orden de la tabla (vencidos, próximos, el resto por vencimiento).
 5. Textos: la REF dice "para **el** Portal…" (hoy "para Portal…"); el primer párrafo suma "con los datos del período que se indica en cada caso" (como el aviso de las Notas Digitales); la redacción final de la reiteración (sección 4.4, a partir de la idea del usuario) y que el párrafo de la reiteración vaya después de la tabla, también en la externa; en la externa, la Dirección General va debajo de "Sin más, saludamos…" y después el espacio para la firma.
 6. Letras: cuerpo Arial 12, tabla 10, "Qué se solicita" 9.
-7. Clasificación dudosa en el Anexo A: el Concejo Deliberante, fuera del municipio (la Subsecretaría no puede gestionar ante el Poder Legislativo; hoy solo tiene datasets internos, así que no aparece en el generador). Los dos Entes Autárquicos (Deportes y Turismo) son municipales: lo confirmó el usuario.
+7. Clasificación del Anexo A: el usuario la confirmó entera el 24/10/2026, con el Concejo Deliberante fuera del municipio y los dos Entes Autárquicos municipales.
 8. Word de la Nota Digital: sin la primera línea del email; con dos firmas, los dos espacios y la leyenda; también para las pruebas.
 9. "Siguiente" con un error en lugar de deshabilitado cuando no hay datasets tildados.
 10. `notas.js` con `?v=`.
-11. La vuelta atrás devuelve los textos de las áreas solo donde siguen siendo los corregidos.
+11. (Retirada: los textos de las áreas no se tocan, así que la vuelta atrás solo borra la columna.)
 12. "Cambiar el área" conserva el filtro y la búsqueda del paso 1.
 13. "Nota anterior": se trae la nota original del ciclo (la primera vigente), no la más reciente; si la persona edita la lista, deja de completarse sola.
 14. La fecha de la nota va del 01/01/2025 hasta 30 días después de hoy, y el estado de cada dataset (qué se puede elegir y qué viene tildado) se calcula con esa fecha, igual que el pedido. La lista del paso 1 usa el estado de hoy.
@@ -280,7 +275,9 @@ Cambian tres cosas; el resto de la nota no cambia.
 
 ## Anexo A. Áreas: ámbito y textos
 
-"Dependencia" es `area_superior`; el artículo de la dependencia (`articulo_superior`) va entre paréntesis cuando cambia. "—": sin cambios. En negrita, lo que se corrige.
+**Vale solo la columna Ámbito,** confirmada por el usuario el 24/10/2026. Las correcciones de nombre y de dependencia de las otras columnas **no se aplican** (decisión del usuario: las áreas quedan como están en la base de producción). Se dejan acá como registro de los errores encontrados, por si algún día se corrigen a mano en Áreas.
+
+"Dependencia" es `area_superior`; el artículo de la dependencia (`articulo_superior`) va entre paréntesis cuando cambia. "—": sin cambios. En negrita, lo que se habría corregido.
 
 | Id | Nombre (corrección) | Dependencia corregida | Ámbito |
 |---|---|---|---|
@@ -310,7 +307,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 | 24 | Empresa Argentina de Navegación Aérea | — (sin dependencia) | Fuera del municipio |
 | 25 | Ente Autárquico Comodoro Deportes | Intendencia | Municipal (confirmado por el usuario) |
 | 26 | Ente Autárquico Comodoro Turismo | Intendencia | Municipal (confirmado por el usuario) |
-| 27 | Honorable Concejo Deliberante de Comodoro Rivadavia | — (sin dependencia) | Fuera del municipio (a revisar) |
+| 27 | Honorable Concejo Deliberante de Comodoro Rivadavia | — (sin dependencia) | Fuera del municipio (confirmado por el usuario) |
 | 28 | Instituto Geográfico Nacional de la República Argentina | — (sin dependencia) | Fuera del municipio |
 | 29 | Instituto Nacional de Estadística y Censos de la República Argentina | — (sin dependencia) | Fuera del municipio |
 | 30 | Ministerio de Educación del Chubut | Gobierno de la Provincia del Chubut | Fuera del municipio |
