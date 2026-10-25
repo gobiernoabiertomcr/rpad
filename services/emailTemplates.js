@@ -430,7 +430,7 @@ export const avisoSuperadminTemplate = ({ actor, afectado, cambio, fecha }) => {
         `${escapeHtml(aQuien)}: <strong>${escapeHtml(cambio)}</strong>`,
         `Fecha: ${escapeHtml(cuando)} h`
       ],
-      boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/usuarios.html` },
+      boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/configuracion.html` },
       notas: ['Este aviso te llega porque sos superadmin y el cambio lo hizo otro administrador.']
     }),
     text: [
@@ -438,7 +438,7 @@ export const avisoSuperadminTemplate = ({ actor, afectado, cambio, fecha }) => {
       `${aQuien}: ${cambio}`,
       `Fecha: ${cuando} h`,
       '',
-      `Panel de usuarios: ${RPAD_URL}/usuarios.html`
+      `Panel de usuarios: ${RPAD_URL}/configuracion.html`
     ].join('\n')
   };
 };
@@ -463,14 +463,14 @@ export const resumenAvisosRetenidosTemplate = (retenidos) => {
         `Mientras estabas de licencia ${cuantos} como aviso:`,
         ...lineas.map(l => `${escapeHtml(l.cuando)} h – <strong>${escapeHtml(l.quien)}</strong>: ${escapeHtml(l.aQuien)}: <strong>${escapeHtml(l.cambio)}</strong>`)
       ],
-      boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/usuarios.html` },
+      boton: { texto: 'Ver el panel de usuarios', url: `${RPAD_URL}/configuracion.html` },
       notas: ['Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia.']
     }),
     text: [
       `Mientras estabas de licencia ${cuantos} como aviso:`,
       ...lineas.map(l => `- ${l.cuando} h – ${l.quien}: ${l.aQuien}: ${l.cambio}`),
       '',
-      `Panel de usuarios: ${RPAD_URL}/usuarios.html`
+      `Panel de usuarios: ${RPAD_URL}/configuracion.html`
     ].join('\n')
   };
 };

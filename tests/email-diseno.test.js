@@ -353,6 +353,22 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
   });
 });
 
+// Los dos avisos al superadmin abren Configuración (spec 2026-10-24-configuracion, 3): el botón y el texto llevan a
+// configuracion.html (abre en la pestaña Usuarios), y el botón sigue diciendo "Ver el panel de usuarios". Sin depender del
+// dominio (RPAD_URL sale de APP_URL)
+describe('Los avisos al superadmin abren Configuración', () => {
+  for (const nombre of ['aviso al superadmin', 'resumen de avisos retenidos']) {
+    it(`${nombre}: el botón y el texto llevan a configuracion.html, no a usuarios.html`, () => {
+      const { email: { html, text } } = casos.find(c => c.nombre === nombre);
+      assert.ok(html.includes('/configuracion.html"'));
+      assert.match(html, /<a href="[^"]*\/configuracion\.html" [^>]*>Ver el panel de usuarios<\/a>/);
+      assert.ok(text.includes('/configuracion.html'));
+      assert.match(text, /^Panel de usuarios: \S+\/configuracion\.html$/m);
+      for (const texto of [html, text]) assert.ok(!texto.includes('usuarios.html'), nombre);
+    });
+  }
+});
+
 describe('Remitente único', () => {
   it('remitente(): "Dir. de Datos Públicos y Comunicación" con la casilla de SMTP_USER', () => {
     const antes = process.env.SMTP_USER;
