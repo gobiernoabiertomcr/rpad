@@ -1139,6 +1139,50 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     assert.equal(colaborador.el('sg-cargar-nota').hidden, false);
   });
 
+  // El link «Cargar nota DGMIT» de «Para completar», en Métricas (spec 2026-10-24-metricas-y-reportes, 2.2): seguimiento.html?id=N#cargar-nota
+  it('abreLaCargaPorElHash: solo #cargar-nota y solo para quien puede cargar (el true literal)', () => {
+    assert.equal(ctx.abreLaCargaPorElHash('#cargar-nota', true), true);
+    for (const [hash, puede] of [['#cargar-nota', false], ['#cargar-nota', 'true'], ['#cargar-notas', true], ['cargar-nota', true], ['', true], [undefined, true]]) {
+      assert.equal(ctx.abreLaCargaPorElHash(hash, puede), false, `${hash} ${puede}`);
+    }
+  });
+
+  it('con #cargar-nota, el formulario abre con ese dataset elegido y el hash se va de la dirección; al lector no se le abre', async () => {
+    const respuestas = { '/seguimiento/52': DE(52), '/seguimiento': LISTA() };
+    const conHash = (preparado) => {
+      const reemplazos = [];
+      Object.assign(preparado.pagina.window.location, { pathname: '/seguimiento.html', search: '?id=52', hash: '#cargar-nota' });
+      preparado.pagina.window.history = { replaceState: (_estado, _titulo, url) => reemplazos.push(url) };
+      return reemplazos;
+    };
+    const colaborador = preparar({ id: '52', respuestas, puedeCargar: true });
+    const reemplazos = conHash(colaborador);
+    await colaborador.pagina.iniciarSeguimiento();
+    assert.deepEqual(colaborador.visibles(), ['vista-dataset']);
+    assert.ok(activo(colaborador.el, 'modal-nota'));
+    assert.equal(colaborador.el('modal-nota-titulo').textContent, 'Cargar nota DGMIT');
+    assert.ok(colaborador.el('nd-elegidos').innerHTML.startsWith('<span>1 dataset elegido:</span>'));
+    assert.ok(colaborador.el('nd-elegidos').innerHTML.includes('Directores Generales de Planta Permanente'));
+    assert.deepEqual(reemplazos, ['/seguimiento.html?id=52']);
+    // El lector no ve el formulario (y la dirección no cambia)
+    const lector = preparar({ id: '52', respuestas });
+    const sinCambios = conHash(lector);
+    await lector.pagina.iniciarSeguimiento();
+    assert.deepEqual(lector.visibles(), ['vista-dataset']);
+    assert.ok(!activo(lector.el, 'modal-nota'));
+    assert.deepEqual(sinCambios, []);
+    // Sin el hash, no se abre
+    const sinHash = preparar({ id: '52', respuestas, puedeCargar: true });
+    await sinHash.pagina.iniciarSeguimiento();
+    assert.ok(!activo(sinHash.el, 'modal-nota'));
+    // Un dataset que no existe: no encontrado, sin formulario
+    const noExiste = preparar({ id: '999', errores: { '/seguimiento/999': conEstado(404) }, respuestas: { '/seguimiento': LISTA() }, puedeCargar: true });
+    conHash(noExiste);
+    await noExiste.pagina.iniciarSeguimiento();
+    assert.deepEqual(noExiste.visibles(), ['not-found']);
+    assert.ok(!activo(noExiste.el, 'modal-nota'));
+  });
+
   it('cargar desde la lista: abre con los vencidos y próximos, valida en el navegador y guarda con POST', async () => {
     const mensaje = 'Nota DGMIT N° 9/26 (solicitud) cargada en 1 dataset.';
     const { pagina, el, pedidos, cuerpos, avisos, enfocados } = preparar({ puedeCargar: true,

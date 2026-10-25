@@ -325,13 +325,16 @@ describe('la foto del 31/12', () => {
 
     // El contexto va con el reloj del RPAD (Ruling 12): al 31/12 la actualización de A todavía no estaba aprobada, así que A figuraba
     // vencido, como B; C ya se había dado de baja
-    assert.deepEqual(datos.contexto.antiguedad, { total: 2, menos_de_3_meses: 2, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } });
-    assert.deepEqual(datos.contexto.indice.at(-1), { dia: AL, tasa: 0, al_dia: 0, base: 2 });
+    assert.deepEqual(datos.contexto.antiguedad, {
+      total: 2, menos_de_3_meses: 2, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 },
+      textos: { titulo: 'Al 31/12/2026: 2 datasets vencidos', inicio: 'Al 1/1/2026 no había datasets vencidos.' }
+    });
+    assert.deepEqual(datos.contexto.indice.at(-1), { dia: AL, tasa: 0, al_dia: 0, base: 2, etiqueta: '31/12', texto: 'Al 31/12/2026: 0% al día (0 de 2)' });
     assert.deepEqual(datos.contexto.estados, {
       dia: AL, total: 2, actualizado: 0, proximo: 0, atrasado: 1, sin_respuesta: 1, sin_fecha: 0, eventual: 0, desconocido: 0, vencidos: 2,
       al_dia: 0, tasa: 0
     });
-    assert.deepEqual(datos.areas.ranking.map((area) => [area.total, area.al_dia, area.porcentaje]), [[1, 0, 0], [1, 0, 0]]);
+    assert.deepEqual(datos.areas.ranking.map((area) => [area.total_datasets, area.al_dia, area.porcentaje]), [[1, 0, 0], [1, 0, 0]]);
   });
 
   it('un error al guardar no tira: queda en la última corrida y con_errores = 1', async () => {

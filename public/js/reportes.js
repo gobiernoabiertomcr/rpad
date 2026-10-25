@@ -2,12 +2,16 @@
  * Métricas y Reportes - RPAD (spec 2026-10-24-metricas-y-reportes, 1.4 a 1.7, 2 y 6)
  * Dos pestañas con hash, como Correos: Métricas (la inicial; #metricas) y Reportes (#reportes).
  * Métricas dibuja lo que manda GET /api/metricas: la barra (el año, «Mediana | Promedio», «Días hábiles | Días corridos», los casos
- * y el PDF), la franja de lo destildado, el circuito de cada gestión, la cinta del recorrido típico y la lista de casos, donde se
- * destilda un dataset. Lo elegido viaja en la URL (?anio=&estadistico=&dias=&gestion=&sin=12,45#reportes) y no se guarda.
- * La página no recalcula ninguna regla: las cifras, sus textos, los en curso, la cinta (con sus x, sus rótulos y sus anclajes) y los
- * textos de los casos los manda el servidor (services/metricasReglas.js y metricasCinta.js); acá solo se dibujan. Las fechas se leen
- * como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa por Utils.escapeHtml, y un número se escribe con String (un
- * 0 es «0»: Utils.escapeHtml(0) da '').
+ * y el PDF), la franja de lo destildado, el índice de la página, el circuito de cada gestión, la cinta del recorrido típico y la lista
+ * de casos, donde se destilda un dataset; debajo, los resultados del año, el contexto (el índice mes a mes y la antigüedad de los
+ * vencidos), el trabajo del RPAD (con las métricas manuales y el CSV de Gestión, su API de siempre), las áreas y los temas (el ranking
+ * de Gestión) y «Para completar» (con «Cargar nota DGMIT», que abre el formulario del Seguimiento). Lo elegido viaja en la URL
+ * (?anio=&estadistico=&dias=&gestion=&sin=12,45#reportes) y no se guarda; la serie del trabajo por mes y el agrupado de los datasets,
+ * tampoco (son de la página).
+ * La página no recalcula ninguna regla: las cifras, sus textos (también los plurales y lo que dice cuando no hay casos), los en curso,
+ * la cinta (con sus x, sus rótulos y sus anclajes) y los textos de los casos los manda el servidor (services/metricasReglas.js y
+ * metricasCinta.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
+ * por Utils.escapeHtml, y un número se escribe con String (un 0 es «0»: Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
  * el DOM o la API va aparte, al final. La pestaña Reportes conserva, por ahora, las cuatro tarjetas de siempre (al final del archivo).
  */
@@ -502,12 +506,368 @@ function htmlDeCasos(vista, estado, { anio = null, editable = true } = {}) {
 }
 
 // =====================================================
+// El índice de la página (puro)
+// =====================================================
+
+// Las secciones de la pestaña, en el orden de la spec (2.1): cada una es la <section id="mt-seccion-…"> de reportes.html, con su
+// título <h2 id="mt-titulo-…" tabindex="-1"> (el índice lleva el foco ahí)
+const SECCIONES = [['circuito', 'El circuito'], ['resultados', 'Resultados del año'], ['contexto', 'Contexto'], ['trabajo', 'El trabajo del RPAD'],
+  ['areas', 'Áreas y temas'], ['completar', 'Para completar']];
+
+// «En esta página:» con un link a cada sección. El de «Para completar» lleva la cantidad que manda el servidor
+// (vista.para_completar.total; «Para completar (0)» también); sin ella, sin número
+function htmlDelIndiceDeLaPagina(vista) {
+  const total = esObjeto(vista) && esObjeto(vista.para_completar) ? vista.para_completar.total : null;
+  const links = SECCIONES.map(([clave, texto]) => {
+    const conTotal = clave === 'completar' && Number.isInteger(total) ? `${texto} (${String(total)})` : texto;
+    return `<a href="#mt-seccion-${clave}" data-ir="mt-titulo-${clave}">${conTotal}</a>`;
+  });
+  return `<span class="mt-indice-rotulo">En esta página:</span>${links.join('')}`;
+}
+
+// =====================================================
+// Ayudantes de las secciones de abajo (puros)
+// =====================================================
+
+function objetoDe(valor) {
+  return esObjeto(valor) ? valor : {};
+}
+
+// Una cantidad del servidor: un número se escribe con String (un 0 es «0»); lo que no es un número, «0»
+function cuenta(valor) {
+  return esNumero(valor) ? String(valor) : '0';
+}
+
+// El ancho (o el alto) de una barra o de un medidor, en %: un entero de 0 a 100; lo que no es un número, 0
+function porciento(valor) {
+  return esNumero(valor) ? String(Math.min(100, Math.max(0, Math.round(valor)))) : '0';
+}
+
+// Barras horizontales: [texto, cantidad], cada una relativa a la más larga (todas en 0 si ninguna tiene algo), con la cantidad al lado.
+// `barra`: la clase de la barra ('ambar' en la antigüedad). Los textos se escapan (los temas y las frecuencias llegan del servidor)
+function htmlDeBarras(filas, barra = '') {
+  const valores = filas.map(([, n]) => (esNumero(n) ? n : 0));
+  const maximo = Math.max(0, ...valores);
+  return `<div class="mt-barras">${filas.map(([texto], i) => `<div><span>${escaparTexto(texto)}</span>`
+    + `<i${barra ? ` class="${barra}"` : ''} aria-hidden="true" style="width:${porciento(maximo > 0 ? (valores[i] * 100) / maximo : 0)}%"></i>`
+    + `<b>${String(valores[i])}</b></div>`).join('')}</div>`;
+}
+
+// Una tarjeta de una sección, con su título (h3) y, a la derecha, un texto o unos chips
+function abrirTarjeta(id, titulo, derecha = '') {
+  return `<section class="mt-tarjeta" aria-labelledby="${id}"><div class="mt-cabeza"><h3 id="${id}">${titulo}</h3>${derecha}</div>`;
+}
+
+// La cifra grande con lo que manda el servidor al lado («5» + «de 33 ciclos») y, debajo, el medidor (el porcentaje del servidor; sin
+// él, no va)
+function htmlDeCifra(valor, de, medidor) {
+  return `<div class="mt-heroe">${cuenta(valor)} <small>${escaparTexto(de)}</small></div>`
+    + (esNumero(medidor) ? `<div class="mt-medidor" aria-hidden="true"><i style="width:${porciento(medidor)}%"></i></div>` : '');
+}
+
+// =====================================================
+// Los resultados del año (puros)
+// =====================================================
+
+const GRUPOS_DEL_RPAD = [['ninguna', 'Ninguna'], ['una', '1'], ['dos_o_mas', '2 o más']];
+const GRUPOS_DE_LA_DGMIT = [['ninguna', 'Ninguna'], ['una_o_mas', '1 o más']];
+
+// Actualizados a tiempo (spec 2.2): «5 de 33 ciclos» con el medidor, qué es estar a tiempo, cuánto después se cargaron los otros (el
+// texto del servidor) y el desglose por gestión; sin casos, el texto del servidor
+function htmlDeATiempo(a, t) {
+  const abre = abrirTarjeta('mt-res-a-tiempo', 'Actualizados a tiempo');
+  if (escaparTexto(t.vacio)) return `${abre}<p class="mt-vacio">${escaparTexto(t.vacio)}</p></section>`;
+  const despues = escaparTexto(objetoDe(a.despues).texto);
+  const desglose = [['externa', 'Externa'], ['interna', 'Interna']].map(([clave, texto]) => {
+    const [aTiempo, total] = comoLista(a[clave]);
+    return `${texto}: ${cuenta(aTiempo)} de ${cuenta(total)}`;
+  }).join(' · ');
+  return abre + htmlDeCifra(a.a_tiempo, t.de, t.medidor)
+    + `<p class="mt-texto">Cargados en el portal hasta el día del vencimiento.${despues ? ` ${despues}` : ''}</p>`
+    + `<p class="mt-texto s">${desglose}</p></section>`;
+}
+
+// Cobertura del aviso (spec 2.2): «34 de 35 vencimientos» con el medidor, qué es estar avisado (con los días de la regla, del
+// servidor) y los que faltan, con su vencimiento y su motivo; sin vencimientos, el texto del servidor
+function htmlDeCobertura(c, t) {
+  const abre = abrirTarjeta('mt-res-cobertura', 'Cobertura del aviso');
+  if (escaparTexto(t.vacio)) return `${abre}<p class="mt-vacio">${escaparTexto(t.vacio)}</p></section>`;
+  const faltan = comoLista(c.faltan).filter(esObjeto);
+  const lista = faltan.length && escaparTexto(t.faltan)
+    ? `<p class="mt-texto s">${escaparTexto(t.faltan)}</p><ul class="mt-faltan">${faltan
+      .map((f) => `<li>${escaparTexto(f.titulo)} (vencimiento ${fecha(f.venc)}), ${escaparTexto(f.motivo)}</li>`).join('')}</ul>`
+    : '';
+  return abre + htmlDeCifra(c.si, t.de, t.medidor) + `<p class="mt-texto">${escaparTexto(t.regla)}</p>${lista}</section>`;
+}
+
+// Reiteraciones por ciclo (spec 2.2), en dos grupos de barras: del RPAD a la DGMIT (Ninguna, 1 y 2 o más) y de la DGMIT al área
+// (Ninguna y 1 o más), cada uno con su título del servidor; sin nada que mostrar, por qué (también del servidor)
+function htmlDeReiteraciones(r, t) {
+  const rpad = objetoDe(r.rpad);
+  const dgmit = esObjeto(r.dgmit) ? r.dgmit : null;
+  const vacio = (texto) => (escaparTexto(texto) ? `<p class="mt-vacio-caja">${escaparTexto(texto)}</p>` : '');
+  const delRpad = escaparTexto(t.rpad_vacio) ? vacio(t.rpad_vacio) : htmlDeBarras(GRUPOS_DEL_RPAD.map(([clave, texto]) => [texto, rpad[clave]]));
+  const deLaDgmit = escaparTexto(t.dgmit_vacio) || dgmit === null ? vacio(t.dgmit_vacio)
+    : htmlDeBarras(GRUPOS_DE_LA_DGMIT.map(([clave, texto]) => [texto, dgmit[clave]]));
+  return abrirTarjeta('mt-res-reiteraciones', 'Reiteraciones por ciclo')
+    + `<h4 class="mt-mini">${escaparTexto(t.rpad)}</h4>${delRpad}<h4 class="mt-mini dgmit">${escaparTexto(t.dgmit)}</h4>${deLaDgmit}`
+    + '<p class="mt-pie">Del RPAD a la DGMIT, los avisos de cada ciclo después del aviso de la regla (o del primero, si se avisó ya vencido); de la DGMIT al área, las notas DGMIT de reiteración.</p></section>';
+}
+
+// Los resultados del año, con las dos gestiones juntas (spec 2.2): las tres tarjetas, con los números y los textos del servidor
+// (vista.resultados y sus textos). Sin resultados, nada
+function htmlDeResultados(vista) {
+  const r = esObjeto(vista) && esObjeto(vista.resultados) ? vista.resultados : null;
+  if (r === null) return '';
+  const textos = objetoDe(r.textos);
+  return htmlDeATiempo(objetoDe(r.a_tiempo), objetoDe(textos.a_tiempo)) + htmlDeCobertura(objetoDe(r.cobertura), objetoDe(textos.cobertura))
+    + htmlDeReiteraciones(objetoDe(r.reiteraciones), objetoDe(textos.reiteraciones));
+}
+
+// =====================================================
+// El contexto (puro)
+// =====================================================
+
+// El dibujo del índice: un espacio de 600 × 220, con la línea útil de x = 50 a x = 580 (el año entero) y de y = 190 (0 %) a y = 20
+// (100 %). La x de un día es la de su mes más lo que va del mes (alcanza para dibujar: los puntos son el primero de cada mes y hoy)
+const INDICE_X = { desde: 50, ancho: 530 };
+const INDICE_Y = { cero: 190, alto: 170 };
+function xDelDia(dia) {
+  return INDICE_X.desde + ((Number(dia.slice(5, 7)) - 1 + (Number(dia.slice(8, 10)) - 1) / 31) / 12) * INDICE_X.ancho;
+}
+function yDeLaTasa(tasa) {
+  return INDICE_Y.cero - (Math.min(100, Math.max(0, tasa)) * INDICE_Y.alto) / 100;
+}
+
+// El índice de actualización mes a mes (spec 2.2) como SVG: una línea, una sola serie, sin leyenda, con los puntos que manda el servidor
+// (contexto.indice). Un punto sin tasa no se dibuja y corta la línea (no se inventa); cada punto dibujado se alcanza con el teclado y
+// lleva su valor en un <title> (el texto del servidor), que se ve al pasar el mouse o el foco; el primero, el más bajo y el último lo
+// muestran siempre. Debajo, la etiqueta de cada punto (los meses y «hoy»); la última, si cae muy cerca de la anterior, un renglón más
+// abajo. Sin ningún punto con tasa, nada. Los colores están en el <style> de reportes.html
+function svgDeIndice(indice) {
+  const puntos = comoLista(indice).filter((p) => esObjeto(p) && Utils.soloFecha(p.dia) !== null);
+  const conTasa = puntos.filter((p) => esNumero(p.tasa));
+  if (conTasa.length === 0) return '';
+  const partes = [];
+  for (const valor of [0, 25, 50, 75, 100]) {
+    const y = yDeLaTasa(valor);
+    partes.push(`<line x1="44" y1="${coordenada(y)}" x2="590" y2="${coordenada(y)}" class="${valor === 0 ? 'l-base' : 'l-grilla'}"/>`
+      + `<text x="38" y="${coordenada(y + 4)}" class="eje-y">${String(valor)}%</text>`);
+  }
+  const tramos = [[]];
+  for (const p of puntos) {
+    if (esNumero(p.tasa)) tramos.at(-1).push(p);
+    else if (tramos.at(-1).length) tramos.push([]);
+  }
+  for (const tramo of tramos.filter((t) => t.length > 1)) {
+    partes.push(`<polyline points="${tramo.map((p) => `${coordenada(xDelDia(p.dia))},${coordenada(yDeLaTasa(p.tasa))}`).join(' ')}" class="linea"/>`);
+  }
+  puntos.forEach((p, i) => {
+    const cerca = i > 0 && xDelDia(p.dia) - xDelDia(puntos[i - 1].dia) < 28;
+    partes.push(`<text x="${coordenada(xDelDia(p.dia))}" y="${cerca ? '217' : '205'}" class="mes">${escaparTexto(p.etiqueta)}</text>`);
+  });
+  const primero = conTasa[0];
+  const ultimo = conTasa.at(-1);
+  const minimo = conTasa.reduce((menor, p) => (p.tasa < menor.tasa ? p : menor), primero);
+  const lejos = (p) => [primero, ultimo].every((otro) => Math.abs(xDelDia(p.dia) - xDelDia(otro.dia)) >= 40);
+  const fijos = new Set([primero, ultimo, ...(lejos(minimo) ? [minimo] : [])]);
+  for (const p of conTasa) {
+    const x = coordenada(xDelDia(p.dia));
+    const y = yDeLaTasa(p.tasa);
+    const texto = escaparTexto(p.texto);
+    partes.push(`<g class="mt-punto${fijos.has(p) ? ' fijo' : ''}" tabindex="0" role="img" aria-label="${texto}"><title>${texto}</title>`
+      + `<circle cx="${x}" cy="${coordenada(y)}" r="${p === ultimo ? '5.5' : '4.5'}"/>`
+      + `<text x="${x}" y="${coordenada(y - 11)}" class="v">${escaparTexto(textoPorcentaje(p.tasa))}</text></g>`);
+  }
+  return '<svg class="mt-indice-svg" viewBox="0 0 600 220" role="group" aria-label="Índice de actualización, mes a mes" xmlns="http://www.w3.org/2000/svg">'
+    + `${partes.join('')}</svg>`;
+}
+
+// La antigüedad de los vencidos (spec 2.2): barras horizontales en ámbar (menos de 3 meses, de 3 a 12 meses y más de un año), con
+// los textos del servidor (los vencidos de hoy en la cabeza y los del 1/1 debajo). Sin antigüedad, nada
+function htmlDeAntiguedad(antiguedad) {
+  if (!esObjeto(antiguedad)) return '';
+  const textos = objetoDe(antiguedad.textos);
+  const titulo = escaparTexto(textos.titulo);
+  const inicio = escaparTexto(textos.inicio);
+  const grupos = [['Menos de 3 meses', antiguedad.menos_de_3_meses], ['De 3 a 12 meses', antiguedad.de_3_a_12], ['Más de un año', antiguedad.mas_de_un_anio]];
+  return abrirTarjeta('mt-ctx-antiguedad', 'Antigüedad de los vencidos', titulo ? `<span>${titulo}</span>` : '')
+    + htmlDeBarras(grupos, 'ambar') + (inicio ? `<p class="mt-texto">${inicio}</p>` : '')
+    + '<p class="mt-pie">Por días corridos desde el vencimiento. Los eventuales y los sin fecha no tienen vencimiento.</p></section>';
+}
+
+// El contexto (spec 2.2): el índice mes a mes (con el valor de hoy en la cabeza y todos los valores también en una lista) y la
+// antigüedad de los vencidos. Sin contexto, nada
+function htmlDeContexto(contexto) {
+  if (!esObjeto(contexto)) return '';
+  const indice = comoLista(contexto.indice).filter(esObjeto);
+  const svg = svgDeIndice(indice);
+  const hoy = escaparTexto(indice.at(-1)?.texto);
+  const valores = indice.map((p) => escaparTexto(p.texto)).filter(Boolean);
+  return abrirTarjeta('mt-ctx-indice', 'Índice de actualización, mes a mes', hoy ? `<span>${hoy}</span>` : '')
+    + (svg ? `<div class="mt-indice-marco">${svg}</div>` : '<p class="mt-vacio">No hay datos para dibujar el índice.</p>')
+    + (valores.length ? `<details class="mt-valores"><summary>Ver los valores</summary><ul>${valores.map((v) => `<li>${v}</li>`).join('')}</ul></details>` : '')
+    + '<p class="mt-pie">Es el índice de la portada: al día (actualizados y próximos a vencer) sobre los que tienen vencimiento. Un punto por el primer día de cada mes, y el último, el de hoy (en un año cerrado, el 31/12).</p></section>'
+    + htmlDeAntiguedad(contexto.antiguedad);
+}
+
+// =====================================================
+// El trabajo del RPAD (puro)
+// =====================================================
+
+// Los cinco totales, en este orden; las series del gráfico por mes (la primera es la de entrada)
+const TOTALES_DEL_TRABAJO = ['avisos', 'actualizaciones', 'auditados', 'nuevos', 'fuente_publica'];
+const SERIES = [['avisos', 'Avisos y notas'], ['actualizaciones', 'Actualizaciones'], ['auditados', 'Cambios auditados']];
+
+// El trabajo del RPAD (spec 2.2): los cinco totales, cada uno con su texto del servidor (en singular o en plural), y las columnas por
+// mes de la serie elegida (`estado.serie`), con chips para cambiarla. Los meses son los que manda el servidor (de enero al de hoy);
+// cada columna, relativa a la más alta, con su valor arriba. Sin trabajo, nada
+function htmlDeTrabajo(trabajo, estado = {}) {
+  if (!esObjeto(trabajo)) return '';
+  const textos = objetoDe(trabajo.textos);
+  const totales = objetoDe(textos.totales);
+  const serie = elegido(objetoDe(estado).serie, SERIES);
+  const valores = comoLista(objetoDe(trabajo.por_mes)[serie]);
+  const meses = comoLista(textos.meses).map((mes, i) => [mes, esNumero(valores[i]) ? valores[i] : 0]);
+  const maximo = Math.max(0, ...meses.map(([, n]) => n));
+  const nombre = SERIES.find(([clave]) => clave === serie)[1];
+  return `<div class="mt-kpis">${TOTALES_DEL_TRABAJO.map((clave) => `<div><b>${cuenta(trabajo[clave])}</b><span>${escaparTexto(totales[clave])}</span></div>`).join('')}</div>`
+    + `<div class="mt-cabeza mt-cabeza-mes"><h3 id="mt-titulo-por-mes">Por mes</h3>${htmlDeChips('serie', SERIES, serie, 'Qué se muestra por mes')}</div>`
+    + `<div class="mt-columnas" role="group" aria-label="${nombre} por mes">${meses.map(([mes, n]) => '<div class="mt-columna">'
+      + `<b>${String(n)}</b><i aria-hidden="true" style="height:${porciento(maximo > 0 ? (n * 100) / maximo : 0)}%"></i><span>${escaparTexto(mes)}</span></div>`).join('')}</div>`;
+}
+
+// Las métricas manuales de Gestión (la misma API, /gestion/metricas-manuales), con sus nombres
+const TIPOS_DE_METRICA_MANUAL = {
+  reuniones_capacitaciones: 'Reuniones y capacitaciones', consultas_atendidas: 'Consultas atendidas', notas_enviadas: 'Notas enviadas fuera del RPAD'
+};
+
+// Las métricas manuales del año `anio` (las de Gestión: la API manda las de los últimos meses), una por renglón, con su tipo, su mes y
+// su cantidad; administración (`esAdmin`, solo el true literal) ve además el botón para eliminarla. Sin ninguna, lo dice
+function htmlDeMetricasManuales(lista, { anio = null, esAdmin = false } = {}) {
+  const delAnio = comoLista(lista).filter((m) => esObjeto(m) && Number(m.anio) === anio);
+  if (delAnio.length === 0) return `<p class="mt-vacio-caja">Todavía no hay métricas manuales cargadas${Number.isInteger(anio) ? ` en ${String(anio)}` : ''}.</p>`;
+  return `<ul class="mt-manuales">${delAnio.map((m) => {
+    const tipo = Object.hasOwn(TIPOS_DE_METRICA_MANUAL, m.tipo) ? TIPOS_DE_METRICA_MANUAL[m.tipo] : escaparTexto(m.tipo);
+    const mes = `${conMayuscula(Utils.nombreDeMes(Number(m.mes)))} ${String(Number(m.anio))}`;
+    const id = Number.isSafeInteger(Number(m.id)) && Number(m.id) > 0 ? String(Number(m.id)) : null;
+    const eliminar = esAdmin === true && id !== null
+      ? `<button type="button" class="mt-eliminar" data-eliminar="${id}" aria-label="Eliminar ${tipo} de ${mes}">×</button>` : '';
+    return `<li><span class="t">${tipo}</span><span class="p">${mes}</span><b>${cuenta(Number(m.cantidad))}</b>${eliminar}</li>`;
+  }).join('')}</ul>`;
+}
+
+// =====================================================
+// Áreas y temas (puros; textoPorcentaje y htmlDelRanking vienen de gestion.js, sin cambios)
+// =====================================================
+
+// "83%", o una raya si no hay nada que medir (null: solo eventuales, que no tienen vencimiento; Ruling 23)
+function textoPorcentaje(valor) {
+  return valor === null || valor === undefined ? '—' : `${valor}%`;
+}
+
+// La tabla del ranking de áreas (tests/reportes-frontend.test.js)
+function htmlDelRanking(areas) {
+  if (!areas || areas.length === 0) {
+    return '<p style="color:var(--gray-500);font-size:0.9rem;">Sin datos de áreas</p>';
+  }
+
+  let html = `<table class="ranking-table">
+    <thead><tr><th>#</th><th>Área</th><th>Datasets</th><th>Al día</th><th>Cumplimiento</th><th></th></tr></thead><tbody>`;
+
+  areas.forEach((area, i) => {
+    const porcentaje = Number.isFinite(area.porcentaje) ? area.porcentaje : null;
+    const color = porcentaje === null ? 'var(--gray-300)' : porcentaje >= 80 ? '#10b981' : porcentaje >= 50 ? '#f59e0b' : '#ef4444';
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td>${Utils.escapeHtml(area.area)}</td>
+      <td>${Number(area.total_datasets) || 0}</td>
+      <td>${Number(area.al_dia) || 0}</td>
+      <td>${textoPorcentaje(porcentaje)}</td>
+      <td style="width:120px"><div class="progress-bar-container"><div class="progress-bar" style="width:${porcentaje ?? 0}%;background:${color}"></div></div></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  return html;
+}
+
+const AGRUPAR = [['temas', 'Tema'], ['frecuencias', 'Frecuencia']];
+
+// Áreas y temas (spec 2.2, lo que estaba en la pestaña Métricas de Gestión): el ranking de áreas (htmlDelRanking, con lo que manda el
+// servidor: la regla de cumplimientoPorArea) y los datasets por tema o por frecuencia (`agrupar`) en barras horizontales, con un chip
+// para cambiar entre los dos. Sin áreas, nada
+function htmlDeAreas(areas, agrupar = 'temas') {
+  if (!esObjeto(areas)) return '';
+  const g = elegido(agrupar, AGRUPAR);
+  const filas = comoLista(areas[g]).filter((fila) => Array.isArray(fila) && esNumero(fila[1]));
+  return abrirTarjeta('mt-titulo-ranking', 'Ranking de áreas', '<span>Al día sobre los que tienen vencimiento</span>')
+    + `<div class="mt-tabla-marco mt-ranking" tabindex="0" role="group" aria-label="Ranking de áreas">${htmlDelRanking(comoLista(areas.ranking).filter(esObjeto))}</div></section>`
+    + abrirTarjeta('mt-titulo-temas', 'Datasets por tema y por frecuencia', htmlDeChips('agrupar', AGRUPAR, g, 'Agrupar los datasets por'))
+    + (filas.length ? htmlDeBarras(filas) : '<p class="mt-vacio">Sin datasets.</p>') + '</section>';
+}
+
+// =====================================================
+// «Para completar» (puro)
+// =====================================================
+
+// Un id de dataset que puede ir en una dirección (un entero positivo), o null
+function idDeDataset(valor) {
+  return Number.isSafeInteger(valor) && valor > 0 ? valor : null;
+}
+
+// Una tarea de «Para completar»: el dataset con lo de debajo, qué pasó y el link
+function htmlDeTarea(titulo, debajo, que, link) {
+  return `<li class="mt-tarea"><span class="d"><b>${titulo}</b><small>${debajo}</small></span><span class="q">${que}</span>${link}</li>`;
+}
+
+// «Para completar» (spec 2.2), con lo que manda el servidor (vista.para_completar): las notas DGMIT pendientes de carga (el dataset, su
+// área y cómo está el ciclo, y el aviso del RPAD con qué fue) y las actualizaciones sin «Recibido el» o sin origen (con un link al
+// Seguimiento del dataset), cada grupo con su título y, vacío, su texto. El link «Cargar nota DGMIT» (al Seguimiento del dataset,
+// #cargar-nota: abre el formulario con ese dataset) lo ve solo quien puede cargar (`puedeCargar`, el true literal de
+// Auth.puedeCargarNotasDgmit()); el resto ve la lista sin el link. Sin «Para completar», nada
+function htmlDeParaCompletar(vista, puedeCargar) {
+  const pc = esObjeto(vista) && esObjeto(vista.para_completar) ? vista.para_completar : null;
+  if (pc === null) return '';
+  const textos = objetoDe(pc.textos);
+  const deNota = (n) => {
+    const titulo = escaparTexto(n.titulo);
+    const id = idDeDataset(n.dataset_id);
+    const que = typeof n.aviso === 'string' ? `Aviso del ${fecha(n.aviso)}${escaparTexto(n.que) ? ` (${escaparTexto(n.que)})` : ''}` : '';
+    const link = puedeCargar === true && id !== null
+      ? `<a href="seguimiento.html?id=${String(id)}#cargar-nota" aria-label="Cargar nota DGMIT: ${titulo}">Cargar nota DGMIT</a>` : '';
+    return htmlDeTarea(titulo, [n.area, n.situacion].map(escaparTexto).filter(Boolean).join(' · '), que, link);
+  };
+  const deRecibido = (r) => {
+    const titulo = escaparTexto(r.titulo);
+    const id = idDeDataset(r.dataset_id);
+    const gestion = escaparTexto(r.gestion);
+    const que = typeof r.carga === 'string' ? `Cargada en el portal el ${fecha(r.carga)}` : '';
+    const link = id !== null ? `<a href="seguimiento.html?id=${String(id)}" aria-label="Ver en el Seguimiento: ${titulo}">Ver en el Seguimiento</a>` : '';
+    return htmlDeTarea(titulo, [gestion ? `gestión ${gestion}` : '', escaparTexto(r.falta_texto)].filter(Boolean).join(' · '), que, link);
+  };
+  const grupo = (titulo, vacio, filas, deFila) => {
+    const lista = comoLista(filas).filter(esObjeto);
+    const cuerpo = lista.length ? `<ul class="mt-tareas">${lista.map(deFila).join('')}</ul>`
+      : (escaparTexto(vacio) ? `<p class="mt-vacio">${escaparTexto(vacio)}</p>` : '');
+    return `<h3 class="mt-grupo">${escaparTexto(titulo)}</h3>${cuerpo}`;
+  };
+  return `<div class="mt-tarjeta mt-completar">${grupo(textos.notas, textos.notas_vacio, pc.notas, deNota)}`
+    + grupo(textos.recibido, textos.recibido_vacio, pc.recibido, deRecibido)
+    + '<p class="mt-pie">Las notas DGMIT se cargan desde el Seguimiento de cada dataset. Los «Recibido el» de las actualizaciones anteriores se completan con el Excel; en las nuevas, ya los pide «Registrar actualización».</p></div>';
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
-// Lo elegido, las métricas que llegaron, si la lista de casos está abierta y el número de pedido (una respuesta que llega después de
-// otra más nueva se descarta)
-const pagina = { estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0 };
+// Lo elegido, las métricas que llegaron, si la lista de casos está abierta, el número de pedido (una respuesta que llega después de
+// otra más nueva se descarta), la serie del trabajo por mes, cómo se agrupan los datasets y las métricas manuales del año (con su
+// propio número de pedido)
+const pagina = {
+  estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0, serie: SERIES[0][0], agrupar: AGRUPAR[0][0],
+  manuales: { anio: null, lista: [], pedido: 0 }
+};
 
 const porId = (id) => document.getElementById(id);
 
@@ -536,11 +896,22 @@ function avisarError(mensaje) {
   else Utils.showError(mensaje);
 }
 
+function avisarExito(mensaje) {
+  if (typeof showToast === 'function') showToast(Utils.escapeHtml(mensaje), 'success');
+  else Utils.showSuccess(mensaje);
+}
+
+// Quién carga notas DGMIT lo dice auth.js (administración y el colaborador); solo cuenta el true literal (como en seguimiento.js)
+function puedeCargarNotas() {
+  return typeof Auth.puedeCargarNotasDgmit === 'function' && Auth.puedeCargarNotasDgmit() === true;
+}
+
 function iniciarReportes() {
   pagina.estado = estadoDeLaUrl(`${location.search}${location.hash}`);
   pagina.casosAbiertos = pagina.estado.sin.length > 0;
   conectarPestanas();
   conectarEventos();
+  iniciarMetricasManuales();
   mostrarPestana(pagina.estado.pestana);
   // El hash de la dirección (el botón atrás, un enlace a #reportes) cambia de pestaña
   window.addEventListener('hashchange', () => mostrarPestana(estadoDeLaUrl(location.hash).pestana));
@@ -627,6 +998,29 @@ function conectarEventos() {
     const casilla = evento.target.closest('input.mt-contar');
     if (casilla) alDestildar(Number(casilla.dataset.dataset), casilla.checked);
   });
+  // El índice de la página lleva a la sección y deja el foco en su título (sin tocar el hash: es el de las pestañas)
+  porId('mt-indice').addEventListener('click', (evento) => {
+    const link = evento.target.closest('a[data-ir]');
+    const titulo = link ? porId(link.dataset.ir) : null;
+    if (!titulo) return;
+    evento.preventDefault();
+    titulo.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    titulo.focus({ preventScroll: true });
+  });
+  // La serie del trabajo por mes y cómo se agrupan los datasets: solo se redibuja su tarjeta (no viajan en la URL)
+  porId('mt-trabajo').addEventListener('click', (evento) => {
+    const chip = evento.target.closest('button[data-selector="serie"]');
+    if (!chip || !pagina.datos) return;
+    pagina.serie = elegido(chip.dataset.valor, SERIES);
+    conElFoco(porId('mt-trabajo'), htmlDeTrabajo(pagina.datos.trabajo, { serie: pagina.serie }));
+  });
+  porId('mt-areas').addEventListener('click', (evento) => {
+    const chip = evento.target.closest('button[data-selector="agrupar"]');
+    if (!chip || !pagina.datos) return;
+    pagina.agrupar = elegido(chip.dataset.valor, AGRUPAR);
+    conElFoco(porId('mt-areas'), htmlDeAreas(pagina.datos.areas, pagina.agrupar));
+  });
+  porId('mt-csv').addEventListener('click', (evento) => descargarCsv(evento.currentTarget));
 }
 
 // Uno solo de los estados de la pestaña: cargando, el error, sin datos (un año sin métricas) o el contenido. La franja de lo
@@ -701,8 +1095,26 @@ function dibujarMetricas(datos) {
   porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
   dibujarLaBarra(datos);
   porId('mt-franja').innerHTML = htmlDeFranjaSin(datos, pagina.estado);
+  porId('mt-indice').innerHTML = htmlDelIndiceDeLaPagina(datos.vista);
   dibujarElCircuito(datos);
   dibujarLosCasos(datos);
+  dibujarLasSeccionesDeAbajo(datos);
+}
+
+// Los resultados, el contexto, el trabajo del RPAD, las áreas y «Para completar». Las métricas manuales se piden aparte, solo cuando
+// cambia el año
+function dibujarLasSeccionesDeAbajo(datos) {
+  const anio = Number.isInteger(datos.anio) ? ` en ${String(datos.anio)}` : '';
+  porId('mt-bajada-resultados').textContent = `Lo que dejó el circuito${anio}, con las dos gestiones juntas.`;
+  porId('mt-resultados').innerHTML = htmlDeResultados(datos.vista);
+  porId('mt-contexto').innerHTML = htmlDeContexto(datos.contexto);
+  porId('mt-bajada-trabajo').textContent = `Lo que hizo el sistema y el equipo de Datos Públicos${anio}.`;
+  conElFoco(porId('mt-trabajo'), htmlDeTrabajo(datos.trabajo, { serie: pagina.serie }));
+  const auditoria = esObjeto(datos.trabajo) ? objetoDe(datos.trabajo.textos).auditoria : null;
+  porId('mt-auditoria').textContent = typeof auditoria === 'string' ? auditoria : '';
+  conElFoco(porId('mt-areas'), htmlDeAreas(datos.areas, pagina.agrupar));
+  porId('mt-completar').innerHTML = htmlDeParaCompletar(datos.vista, puedeCargarNotas());
+  if (Number.isInteger(datos.anio) && pagina.manuales.anio !== datos.anio) cargarMetricasManuales(datos.anio);
 }
 
 // El circuito, la cinta y las aclaraciones de la gestión elegida
@@ -782,6 +1194,111 @@ async function descargarPdfDeMetricas(boton) {
       descargarBlob(blob, `Metricas-RPAD-${String(pagina.datos.anio)}.pdf`);
     } catch (error) {
       avisarError(`No se pudo descargar el PDF: ${error.message}`);
+    }
+  });
+}
+
+// El CSV de métricas de Gestión, el de siempre (/gestion/metricas/csv, los últimos 12 meses), con el JWT en el encabezado
+async function descargarCsv(boton) {
+  await conBotonBloqueado(boton, async () => {
+    try {
+      const blob = await API.pedirArchivo('/gestion/metricas/csv');
+      descargarBlob(blob, `metricas-${Utils.hoyEnArgentina()}.csv`);
+    } catch (error) {
+      avisarError(`No se pudo descargar el CSV: ${error.message}`);
+    }
+  });
+}
+
+// ---- Las métricas manuales (la API de Gestión; las carga administración) ----
+
+// «Cargar el mes» y su formulario, solo para administración (el servidor valida igual: adminOnly)
+function iniciarMetricasManuales() {
+  const abrir = porId('mt-manual-abrir');
+  abrir.hidden = !Auth.isAdmin();
+  if (abrir.hidden) return;
+  abrir.addEventListener('click', () => (porId('mt-manual-form').hidden ? abrirFormularioManual() : cerrarFormularioManual()));
+  porId('mt-manual-cancelar').addEventListener('click', cerrarFormularioManual);
+  porId('mt-manual-form').addEventListener('submit', guardarMetricaManual);
+  porId('mt-manuales').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('button[data-eliminar]');
+    if (boton) eliminarMetricaManual(boton);
+  });
+}
+
+// El formulario abre con el mes de hoy (en Argentina), como en Gestión
+function abrirFormularioManual() {
+  const hoy = Utils.hoyEnArgentina();
+  porId('mt-manual-anio').value = String(Number(hoy.slice(0, 4)));
+  porId('mt-manual-mes').value = String(Number(hoy.slice(5, 7)));
+  porId('mt-manual-cantidad').value = '0';
+  porId('mt-manual-form').hidden = false;
+  porId('mt-manual-abrir').setAttribute('aria-expanded', 'true');
+  porId('mt-manual-tipo').focus();
+}
+
+function cerrarFormularioManual() {
+  porId('mt-manual-form').hidden = true;
+  const abrir = porId('mt-manual-abrir');
+  abrir.setAttribute('aria-expanded', 'false');
+  abrir.focus();
+}
+
+// Las métricas manuales del año `anio`: la API de Gestión manda las de los últimos N meses, así que se piden desde enero de ese año y la
+// página se queda con las del año. Un error lo dice en su lugar (el resto de la pestaña sigue)
+async function cargarMetricasManuales(anio) {
+  const pedido = ++pagina.manuales.pedido;
+  pagina.manuales.anio = anio;
+  const hoy = Utils.hoyEnArgentina();
+  const meses = Math.max(1, (Number(hoy.slice(0, 4)) - anio) * 12 + Number(hoy.slice(5, 7)) - 1);
+  try {
+    const lista = (await API.pedirJson('GET', `/gestion/metricas-manuales?meses=${String(meses)}`))?.data;
+    if (pedido !== pagina.manuales.pedido) return;
+    pagina.manuales.lista = Array.isArray(lista) ? lista : [];
+    porId('mt-manuales').innerHTML = htmlDeMetricasManuales(pagina.manuales.lista, { anio, esAdmin: Auth.isAdmin() });
+  } catch (error) {
+    if (pedido !== pagina.manuales.pedido) return;
+    console.error('Error cargando las métricas manuales:', error);
+    pagina.manuales.anio = null;
+    porId('mt-manuales').innerHTML = '<p class="mt-vacio-caja">No se pudieron cargar las métricas manuales.</p>';
+  }
+}
+
+// Guarda el mes (si ya estaba cargado, la API lo reemplaza) y vuelve a pedir la lista
+async function guardarMetricaManual(evento) {
+  evento.preventDefault();
+  const tipo = porId('mt-manual-tipo').value;
+  const anio = parseInt(porId('mt-manual-anio').value, 10);
+  const mes = parseInt(porId('mt-manual-mes').value, 10);
+  const cantidad = parseInt(porId('mt-manual-cantidad').value, 10);
+  if (Number.isNaN(cantidad) || cantidad < 0) {
+    avisarError('La cantidad debe ser un número positivo');
+    porId('mt-manual-cantidad').focus();
+    return;
+  }
+  await conBotonBloqueado(porId('mt-manual-guardar'), async () => {
+    try {
+      const respuesta = await API.pedirJson('POST', '/gestion/metricas-manuales', { tipo, anio, mes, cantidad });
+      avisarExito(respuesta?.message || 'Métrica guardada');
+      porId('mt-manual-cantidad').value = '0';
+      if (Number.isInteger(pagina.datos?.anio)) await cargarMetricasManuales(pagina.datos.anio);
+    } catch (error) {
+      avisarError(error.message || 'Error al guardar métrica');
+    }
+  });
+}
+
+async function eliminarMetricaManual(boton) {
+  if (!confirm('¿Eliminar esta métrica?')) return;
+  await conBotonBloqueado(boton, async () => {
+    try {
+      await API.pedirJson('DELETE', `/gestion/metricas-manuales/${encodeURIComponent(boton.dataset.eliminar)}`);
+      avisarExito('Métrica eliminada');
+      if (Number.isInteger(pagina.datos?.anio)) await cargarMetricasManuales(pagina.datos.anio);
+      // El botón ya no está: el foco va a «Cargar el mes»
+      porId('mt-manual-abrir').focus();
+    } catch (error) {
+      avisarError(error.message || 'Error al eliminar métrica');
     }
   });
 }

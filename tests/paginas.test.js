@@ -36,16 +36,18 @@ const VERSION_PUBLICAS = '20261109';
 const VERSION_PORTADA = '20261110';
 // main.css (la carcasa nueva y las fuentes Bricolage Grotesque y Figtree): hasta el rediseño se cargaba sin ?v=
 const VERSION_CSS = '20261109';
-// gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
-const VERSION_GESTION = '20261105';
+// gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales; después, Gestión queda solo con Proyectos: la pestaña
+// Métricas se mudó a «Métricas y Reportes», spec 2026-10-24-metricas-y-reportes, 6): su versión es propia
+const VERSION_GESTION = '20261129';
 // seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset); cambió después ("Requiere nota DGMIT" en la
 // ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
 // de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, y después cargar, corregir y anular notas
-// DGMIT desde la página, spec 2026-10-24-notas-dgmit): su versión es propia
-const VERSION_SEGUIMIENTO = '20261126';
+// DGMIT desde la página, spec 2026-10-24-notas-dgmit; después, #cargar-nota abre el formulario con el dataset, el link de «Para
+// completar» de Métricas, spec 2026-10-24-metricas-y-reportes, 2.2): su versión es propia
+const VERSION_SEGUIMIENTO = '20261129';
 // reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
-// ahora se cargaba sin ?v=: su versión es propia
-const VERSION_REPORTES = '20261128';
+// ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»: su versión es propia
+const VERSION_REPORTES = '20261129';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -107,6 +109,17 @@ describe('páginas', () => {
 
   it(`gestion.html: gestion.js con la versión ${VERSION_GESTION}`, () => {
     assert.ok(leer('gestion.html').includes(`js/gestion.js?v=${VERSION_GESTION}"`));
+  });
+
+  // La pestaña Métricas de Gestión se mudó a «Métricas y Reportes» (spec 2026-10-24-metricas-y-reportes, 6): Gestión queda con
+  // Proyectos, sin pestañas y sin Chart.js (Proyectos no lo usa)
+  it('gestion.html ya no tiene Chart.js ni #tab-metricas', () => {
+    const html = leer('gestion.html');
+    assert.doesNotMatch(html, /chart\.js|chart\.umd/i);
+    assert.doesNotMatch(html, /id="tab-metricas"|data-tab=|switchTab|kpi-grid|ranking-container|metricas-manuales|metricas-periodo/);
+    assert.match(html, /<div id="tab-proyectos">/);
+    const gestion = fs.readFileSync(new URL('js/gestion.js', DIRECTORIO), 'utf8');
+    assert.doesNotMatch(gestion, /new Chart|cargarMetricas|htmlDelRanking|textoPorcentaje|exportarCSV|switchTab|\/gestion\/metricas/);
   });
 
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {

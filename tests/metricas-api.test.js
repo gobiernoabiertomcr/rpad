@@ -207,7 +207,7 @@ describe('GET /metricas', () => {
     const [metricas, portada] = await Promise.all([api.get('/metricas', como('lector')), api.get('/datasets/estadisticas')]);
     assert.equal(portada.body.data.tasaActualizacion, 75);
     const { contexto } = metricas.body.data;
-    assert.deepEqual(contexto.indice.at(-1), { dia: hoy, tasa: 75, al_dia: 3, base: 4 });
+    assert.deepEqual(contexto.indice.at(-1), { dia: hoy, tasa: 75, al_dia: 3, base: 4, etiqueta: contexto.indice.at(-1).etiqueta, texto: 'Hoy: 75% al día (3 de 4)' });
     assert.deepEqual([contexto.estados.tasa, contexto.estados.actualizado, contexto.estados.vencidos], [75, 3, 1]);
   });
 });

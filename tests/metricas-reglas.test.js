@@ -10,7 +10,7 @@ import {
   casosQueTocanElAnio, indiceMesAMes, estadosAl, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
-import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
+import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from '../services/fechasDatasetReglas.js';
 import { diasEntre, diasHabilesTranscurridos, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 // Las claves de un caso, en el orden de la spec
@@ -579,6 +579,8 @@ const cerrado = (datos = {}) => caso({
   carga: '2026-04-08', cambio_id: 500, ...datos
 });
 const notaDe = (recibida, datos = {}) => ({ numero: '45/26', tipo: 'solicitud', recibida, ...datos });
+// Qué dice la cobertura del aviso de los que sí lo tuvieron (con los días de la regla: 40 en externa y 60 en interna)
+const REGLA_DEL_AVISO = 'El RPAD avisó con la anticipación de la regla (40 días en externa, 60 en interna).';
 
 // Los textos que muestra la vista nunca son null; ningún string dice null, undefined, NaN o Infinity, y ningún número es NaN
 const CLAVES_DE_TEXTO = new Set(['nombre', 'desde_hasta', 'responsable', 'texto', 'unidad', 'debajo', 'ciclos_texto', 'que', 'motivo']);
@@ -922,9 +924,21 @@ describe('vistaDe', () => {
     assert.deepEqual(vacia.resultados, {
       a_tiempo: { a_tiempo: 0, total: 0, externa: [0, 0], interna: [0, 0], despues: { valor: null, texto: '' } },
       cobertura: { si: 0, total: 0, faltan: [] },
-      reiteraciones: { rpad: { ninguna: 0, una: 0, dos_o_mas: 0, total: 0 }, dgmit: null }
+      reiteraciones: { rpad: { ninguna: 0, una: 0, dos_o_mas: 0, total: 0 }, dgmit: null },
+      textos: {
+        a_tiempo: { de: 'de 0 ciclos', medidor: null, vacio: 'Sin actualizaciones registradas en 2026.' },
+        cobertura: { de: 'de 0 vencimientos', medidor: null, regla: REGLA_DEL_AVISO, faltan: '', vacio: 'Sin vencimientos de 2026 con la fecha del aviso ya cumplida.' },
+        reiteraciones: { rpad: 'Del RPAD a la DGMIT (0 ciclos)', rpad_vacio: 'Sin ciclos en 2026.', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+      }
     });
-    assert.deepEqual([vacia.casos, vacia.para_completar], [[], { notas: [], recibido: [] }]);
+    assert.deepEqual([vacia.casos, vacia.para_completar], [[], {
+      notas: [], recibido: [], total: 0,
+      textos: {
+        notas: 'Notas DGMIT pendientes de carga (0)', notas_vacio: 'No hay notas DGMIT pendientes de carga.',
+        recibido: 'Actualizaciones sin «Recibido el» o sin el origen de los datos (0)',
+        recibido_vacio: 'No hay actualizaciones sin «Recibido el» ni sin el origen de los datos.'
+      }
+    }]);
     // Con notas DGMIT y todo destildado, también los tramos de la DGMIT y del área dicen «Sin casos en 2026»
     const conNotas = [cerrado({ nota_dgmit: notaDe('2026-03-02') }), caso({ dataset_id: 901, nota_dgmit: notaDe('2026-03-05') })];
     const destildada = vista(conNotas, { sin: [900, 901] });
@@ -1094,6 +1108,35 @@ describe('vistaDe', () => {
     assert.deepEqual(vista(conNotas).resultados.reiteraciones.dgmit, { ninguna: 1, una_o_mas: 2, total: 3 });
   });
 
+  it('los textos de los resultados los arma el servidor: «de 9 ciclos», el medidor, la regla, los que faltan y las reiteraciones', () => {
+    // Los reales: 3 de 9 a tiempo (33 %), 13 de 15 vencimientos avisados (87 %) y 16 ciclos con reiteraciones del RPAD; sin notas DGMIT
+    assert.deepEqual(vista(casosReales()).resultados.textos, {
+      a_tiempo: { de: 'de 9 ciclos', medidor: 33, vacio: '' },
+      cobertura: { de: 'de 15 vencimientos', medidor: 87, regla: REGLA_DEL_AVISO, faltan: 'Los 2 que faltan:', vacio: '' },
+      reiteraciones: { rpad: 'Del RPAD a la DGMIT (16 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+    });
+    // En singular: uno cargado tarde (0 de 1, el medidor en 0), un vencimiento avisado y un ciclo
+    assert.deepEqual(vista([cerrado()]).resultados.textos, {
+      a_tiempo: { de: 'de 1 ciclo', medidor: 0, vacio: '' },
+      cobertura: { de: 'de 1 vencimiento', medidor: 100, regla: REGLA_DEL_AVISO, faltan: '', vacio: '' },
+      reiteraciones: { rpad: 'Del RPAD a la DGMIT (1 ciclo)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+    });
+    // Uno solo que falta
+    const sinAviso = caso({ aviso_regla: null, inicio_tramos: null, motivo_sin_aviso: 'sin-aviso', reiteraciones_rpad: null });
+    assert.equal(vista([sinAviso]).resultados.textos.cobertura.faltan, 'El que falta:');
+    // Con notas DGMIT: los ciclos con nota de la DGMIT al área; si hay notas pero ninguna de estos ciclos, lo dice
+    const conNotas = [cerrado({ nota_dgmit: notaDe('2026-03-02') }), caso({ dataset_id: 901, nota_dgmit: notaDe('2026-03-05'), reiteraciones_dgmit: 1 })];
+    const dgmit = (lista, opciones) => {
+      const { dgmit: titulo, dgmit_vacio: vacio } = vista(lista, opciones).resultados.textos.reiteraciones;
+      return [titulo, vacio];
+    };
+    assert.deepEqual(dgmit(conNotas), ['De la DGMIT al área (2 ciclos)', '']);
+    assert.deepEqual(dgmit(conNotas.slice(0, 1)), ['De la DGMIT al área (1 ciclo)', '']);
+    assert.deepEqual(dgmit(conNotas, { sin: [900, 901] }), ['De la DGMIT al área (0 ciclos)', 'Sin ciclos con nota DGMIT en 2026.']);
+    // El año va en los textos de lo vacío
+    assert.equal(vistaDe([], { anio: 2027, al: '2027-03-01' }).resultados.textos.a_tiempo.vacio, 'Sin actualizaciones registradas en 2027.');
+  });
+
   it('los casos: los de aviso o carga en el año, por vencimiento, con los días o el estado debajo de cada fecha', () => {
     const v = vista(casosReales());
     // 15 externos y 3 internos (los ciclos de diciembre de 2025 y los abiertos todavía sin avisos no van)
@@ -1170,29 +1213,51 @@ describe('vistaDe', () => {
     assert.deepEqual(notas.filter((n) => n.abierto).map((n) => n.dataset_id), [11, 61, 33, 1, 52, 81, 58]);
     assert.deepEqual(notas.filter((n) => !n.abierto).map((n) => n.dataset_id), [9, 52, 10, 42, 9, 10, 10, 10]);
     assert.ok(notas.every((n, i) => i === 0 || n.abierto <= notas[i - 1].abierto));
-    assert.deepEqual(notas.find((n) => n.dataset_id === 42),
-      { dataset_id: 42, titulo: CASOS[42].dataset.titulo, area: CASOS[42].dataset.area, abierto: false, aviso: '2026-02-19', que: 'email de 40 días', carga: null });
+    // Cada una dice cómo está su ciclo: abierto, actualizado (con la carga) o reprogramado (con la aprobación)
+    assert.deepEqual(notas.find((n) => n.dataset_id === 42), {
+      dataset_id: 42, titulo: CASOS[42].dataset.titulo, area: CASOS[42].dataset.area, abierto: false, aviso: '2026-02-19', que: 'email de 40 días', carga: null,
+      situacion: 'reprogramado el 06/04/2026'
+    });
     assert.equal(filasDe(v, 42)[0].nota.texto, 'pendiente de carga');
     assert.deepEqual(notas.find((n) => n.dataset_id === 81), {
       dataset_id: 81, titulo: CASOS[81].dataset.titulo, area: CASOS[81].dataset.area, abierto: true, aviso: '2026-10-20', que: 'Nota Digital 3/26',
-      carga: null
+      carga: null, situacion: 'ciclo abierto'
     });
-    assert.deepEqual(notas.find((n) => n.dataset_id === 52 && !n.abierto),
-      { dataset_id: 52, titulo: DEL_52.titulo, area: DEL_52.area, abierto: false, aviso: '2025-12-22', que: 'email de 40 días', carga: '2026-02-04' });
+    assert.deepEqual(notas.find((n) => n.dataset_id === 52 && !n.abierto), {
+      dataset_id: 52, titulo: DEL_52.titulo, area: DEL_52.area, abierto: false, aviso: '2025-12-22', que: 'email de 40 días', carga: '2026-02-04',
+      situacion: 'actualizado el 04/02/2026'
+    });
     // Recibido: las actualizaciones del año sin «Recibido el» (todas menos la del 52, que vino del Excel), por fecha de carga
     const recibido = v.para_completar.recibido;
     assert.deepEqual(recibido.map((r) => [r.dataset_id, r.carga, r.falta]), [
       [38, '2026-02-12', 'recibido'], [10, '2026-02-18', 'recibido'], [9, '2026-03-13', 'recibido'], [10, '2026-05-22', 'recibido'],
       [10, '2026-09-25', 'recibido'], [38, '2026-10-02', 'recibido'], [9, '2026-10-09', 'recibido'], [10, '2026-10-13', 'recibido']
     ]);
-    assert.deepEqual(Object.keys(recibido[0]), ['dataset_id', 'titulo', 'gestion', 'carga', 'falta']);
+    assert.deepEqual(Object.keys(recibido[0]), ['dataset_id', 'titulo', 'gestion', 'carga', 'falta', 'falta_texto']);
+    assert.ok(recibido.every((r) => r.falta_texto === 'Falta «Recibido el»'));
+    // El total (el del índice de la página, «Para completar (23)») y el título de cada grupo
+    assert.equal(v.para_completar.total, 23);
+    assert.deepEqual(v.para_completar.textos, {
+      notas: 'Notas DGMIT pendientes de carga (15: 7 de ciclos abiertos y 8 de ciclos cerrados en 2026)', notas_vacio: '',
+      recibido: 'Actualizaciones sin «Recibido el» o sin el origen de los datos (8)', recibido_vacio: ''
+    });
     // En externa, sin origen; en interna el origen no se pregunta; una actualización simple (sin cambio) no se puede completar
     const lista = [
       cerrado({ dataset_id: 901, origen: null }), cerrado({ dataset_id: 902, gestion: 'interna', requiere_nota: null, origen: null }),
       cerrado({ dataset_id: 903, recibido: null, cambio_id: null }), cerrado({ dataset_id: 904, recibido: null, origen: null, carga: '2026-04-07', cierre: '2026-04-07' })
     ];
-    assert.deepEqual(vista(lista).para_completar.recibido.map((r) => [r.dataset_id, r.gestion, r.falta]),
-      [[904, 'externa', 'recibido'], [901, 'externa', 'origen']]);
+    assert.deepEqual(vista(lista).para_completar.recibido.map((r) => [r.dataset_id, r.gestion, r.falta, r.falta_texto]),
+      [[904, 'externa', 'recibido', 'Falta «Recibido el»'], [901, 'externa', 'origen', 'Falta el origen de los datos']]);
+    // Un solo grupo de notas, o una sola de cada uno: el título lo dice
+    const titulo = (lista) => vista(lista).para_completar.textos.notas;
+    assert.equal(titulo([caso()]), 'Notas DGMIT pendientes de carga (1, de un ciclo abierto)');
+    assert.equal(titulo([caso(), caso({ dataset_id: 901 })]), 'Notas DGMIT pendientes de carga (2, de ciclos abiertos)');
+    assert.equal(titulo([cerrado({ origen: null })]), 'Notas DGMIT pendientes de carga (1, de un ciclo cerrado en 2026)');
+    assert.equal(titulo([cerrado({ origen: null }), cerrado({ dataset_id: 901, origen: null })]),
+      'Notas DGMIT pendientes de carga (2, de ciclos cerrados en 2026)');
+    assert.equal(titulo([caso(), cerrado({ dataset_id: 901, origen: null })]),
+      'Notas DGMIT pendientes de carga (2: 1 de un ciclo abierto y 1 de un ciclo cerrado en 2026)');
+    assert.deepEqual(vista([caso()]).para_completar.textos.recibido_vacio, 'No hay actualizaciones sin «Recibido el» ni sin el origen de los datos.');
     // Notas: sin avisos, no; interna, no
     assert.deepEqual(vista([caso({ avisos_rpad: [], aviso_regla: null, primer_aviso: null, inicio_tramos: null }),
       caso({ dataset_id: 901, gestion: 'interna', requiere_nota: null })]).para_completar.notas, []);
@@ -1332,6 +1397,8 @@ const baja = (id, datasetId, revisado) => cambio({ id, tipo: 'eliminar', dataset
 // Lo que dicen los puntos del índice: [día, tasa] o [día, tasa, al día, base]
 const tasas = (puntos) => puntos.map((p) => [p.dia, p.tasa]);
 const conCuentas = (puntos) => puntos.map((p) => [p.dia, p.tasa, p.al_dia, p.base]);
+// Los números de un punto del índice, sin sus textos
+const numerosDelPunto = ({ dia, tasa, al_dia: alDia, base }) => ({ dia, tasa, al_dia: alDia, base });
 
 // La portada hoy: estadoDelDataset con la próxima de hoy, de los datasets activos (lo que cuentan la portada y el Estado general)
 const comoLaPortada = (mapa, hoy) => {
@@ -1365,13 +1432,13 @@ describe('indiceMesAMes', () => {
       ds(910, { proxima: '2027-01-31', activo: false }, { cambios: [baja(71, 910, '2026-08-03 10:00:00')] })
     );
     const portada = comoLaPortada(mapa, hoy);
-    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: hoy }).at(-1), { dia: hoy, tasa: portada.tasa, al_dia: portada.alDia, base: portada.base });
+    assert.deepEqual(numerosDelPunto(indiceMesAMes(mapa, { anio: 2026, al: hoy }).at(-1)), { dia: hoy, tasa: portada.tasa, al_dia: portada.alDia, base: portada.base });
     // 901, 902, 903, 908 y 909 al día, de 8 (los activos sin el eventual)
     assert.deepEqual([portada.tasa, portada.alDia, portada.base], [63, 5, 8]);
     // Con los casos reales, en el día de los casos, en el de las métricas y al 31/12
     for (const al of [HOY, HOY_DE_LAS_METRICAS, '2026-12-31']) {
       const reales = comoLaPortada(mapaDeLosCasos(), al);
-      assert.deepEqual(indiceMesAMes(mapaDeLosCasos(), { anio: 2026, al }).at(-1), { dia: al, tasa: reales.tasa, al_dia: reales.alDia, base: reales.base }, al);
+      assert.deepEqual(numerosDelPunto(indiceMesAMes(mapaDeLosCasos(), { anio: 2026, al }).at(-1)), { dia: al, tasa: reales.tasa, al_dia: reales.alDia, base: reales.base }, al);
     }
   });
 
@@ -1437,8 +1504,8 @@ describe('indiceMesAMes', () => {
     // Ni la antigüedad de los vencidos ni el ranking lo cuentan después de la baja
     assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-31' }).total, 1);
     assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-04-01' }).total, 0);
-    assert.deepEqual(areasYTemas(mapa, { al: '2026-03-31' }).ranking.map((a) => a.total), [2]);
-    assert.deepEqual(areasYTemas(mapa, { al: '2026-04-01' }).ranking.map((a) => a.total), [1]);
+    assert.deepEqual(areasYTemas(mapa, { al: '2026-03-31' }).ranking.map((a) => a.total_datasets), [2]);
+    assert.deepEqual(areasYTemas(mapa, { al: '2026-04-01' }).ranking.map((a) => a.total_datasets), [1]);
   });
 
   it('un dataset entra el día de su alta; los sin fecha están en la base sin estar al día; los eventuales no cuentan', () => {
@@ -1471,6 +1538,10 @@ describe('indiceMesAMes', () => {
     assert.deepEqual(conCuentas(indiceMesAMes(mapaDe(simple(901), simple(902), ...conocidos(8)), { anio: 2026, al: '2026-03-01' })), [
       ['2026-01-01', null, null, null], ['2026-02-01', null, null, null], ['2026-03-01', 100, 10, 10]
     ]);
+    // El punto sin tasa lo dice en palabras
+    assert.deepEqual(indiceMesAMes(mapaDe(simple(901), simple(902), ...conocidos(8)), { anio: 2026, al: '2026-03-01' }).map((p) => p.texto), [
+      'Al 1/1/2026: sin datos suficientes para calcularlo', 'Al 1/2/2026: sin datos suficientes para calcularlo', 'Hoy: 100% al día (10 de 10)'
+    ]);
   });
 
   it('destildar saca al dataset del índice', () => {
@@ -1478,6 +1549,25 @@ describe('indiceMesAMes', () => {
     assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01', sin: [901] }),
       indiceMesAMes(mapaDe(ds(902, { proxima: '2026-12-31' })), { anio: 2026, al: '2026-03-01' }));
     assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01', sin: new Set([901]) }).map((p) => p.tasa), [100, 100, 100]);
+  });
+
+  it('cada punto dice su mes (o «hoy», o el 31/12) y su valor en palabras', () => {
+    // Con los casos reales al 24/10/2026: un punto por mes y el de hoy
+    const reales = indiceMesAMes(mapaDeLosCasos(), { anio: 2026, al: HOY_DE_LAS_METRICAS });
+    assert.deepEqual(reales.map((p) => p.etiqueta), ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'hoy']);
+    assert.deepEqual([reales[0].texto, reales[1].texto, reales.at(-1).texto],
+      ['Al 1/1/2026: 75% al día (9 de 12)', 'Al 1/2/2026: 33% al día (4 de 12)', 'Hoy: 54% al día (7 de 13)']);
+    // Un año cerrado termina en el 31/12; con hoy en el primer día de un mes, ese punto es el de hoy y lleva el nombre del mes
+    const mapa = mapaDe(ds(901, { proxima: '2026-01-31' }), ds(902, { proxima: '2026-12-31' }));
+    const anio = indiceMesAMes(mapa, { anio: 2026 });
+    assert.deepEqual([anio.at(-2).etiqueta, anio.at(-1).etiqueta, anio.at(-1).texto], ['dic', '31/12', 'Al 31/12/2026: 50% al día (1 de 2)']);
+    const primero = indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01' });
+    assert.deepEqual(primero.map((p) => [p.etiqueta, p.texto]), [
+      ['ene', 'Al 1/1/2026: 100% al día (2 de 2)'], ['feb', 'Al 1/2/2026: 50% al día (1 de 2)'], ['mar', 'Hoy: 50% al día (1 de 2)']
+    ]);
+    // Sin ninguno con vencimiento, o sin saber el estado de más del 10 %, lo dice en lugar del número
+    assert.deepEqual(indiceMesAMes(mapaDe(ds(904, { proxima: null, meses: null })), { anio: 2026, al: '2026-01-01' }).map((p) => p.texto),
+      ['Hoy: sin datasets con vencimiento']);
   });
 });
 
@@ -1508,7 +1598,7 @@ describe('estadosAl', () => {
     assert.equal(suma(estados), estados.total);
     const portada = comoLaPortada(mapaDe(...[...mapa.values()].filter((f) => f.dataset.id !== 909)), hoy);
     assert.deepEqual([estados.tasa, estados.al_dia, estados.vencidos], [portada.tasa, portada.alDia, portada.vencidos]);
-    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: hoy }).at(-1), { dia: hoy, tasa: estados.tasa, al_dia: estados.al_dia, base: 7 });
+    assert.deepEqual(numerosDelPunto(indiceMesAMes(mapa, { anio: 2026, al: hoy }).at(-1)), { dia: hoy, tasa: estados.tasa, al_dia: estados.al_dia, base: 7 });
     assert.equal(estados.vencidos, antiguedadDeVencidos(mapa, { anio: 2026, al: hoy }).total);
     // Con los casos reales, en el día de los casos, en el de las métricas y al 31/12
     for (const al of [HOY, HOY_DE_LAS_METRICAS, '2026-12-31']) {
@@ -1564,13 +1654,15 @@ describe('antiguedadDeVencidos', () => {
       ds(908, { proxima: null, meses: null }) // eventual
     );
     assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al }), {
-      total: 5, menos_de_3_meses: 2, de_3_a_12: 2, mas_de_un_anio: 1, al_inicio: { total: 2, actualizados: 0 }
+      total: 5, menos_de_3_meses: 2, de_3_a_12: 2, mas_de_un_anio: 1, al_inicio: { total: 2, actualizados: 0 },
+      textos: { titulo: 'Hoy: 5 datasets vencidos', inicio: 'Al 1/1/2026 eran 2: todavía no se actualizó ninguno.' }
     });
     // Hoy, los mismos vencidos que la portada
     assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al }).total, comoLaPortada(mapa, al).vencidos);
     // Destildados, no cuentan
     assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al, sin: [901, 904] }), {
-      total: 3, menos_de_3_meses: 1, de_3_a_12: 2, mas_de_un_anio: 0, al_inicio: { total: 1, actualizados: 0 }
+      total: 3, menos_de_3_meses: 1, de_3_a_12: 2, mas_de_un_anio: 0, al_inicio: { total: 1, actualizados: 0 },
+      textos: { titulo: 'Hoy: 3 datasets vencidos', inicio: 'Al 1/1/2026 era 1: todavía no se actualizó.' }
     });
   });
 
@@ -1603,6 +1695,29 @@ describe('antiguedadDeVencidos', () => {
     assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-08' }).al_inicio, { total: 4, actualizados: 0 });
     assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-09' }).al_inicio, { total: 4, actualizados: 0 });
     assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-10' }).al_inicio, { total: 4, actualizados: 1 });
+    // Los textos: hoy, y los del 1/1 con los que ya se actualizaron
+    assert.deepEqual(antiguedad.textos, { titulo: 'Hoy: 2 datasets vencidos', inicio: 'Al 1/1/2026 eran 4: de esos, 2 ya se actualizaron.' });
+    assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-10' }).textos.inicio, 'Al 1/1/2026 eran 4: de esos, 1 ya se actualizó.');
+  });
+
+  it('los textos de la antigüedad: hoy (o al 31/12), en singular, y sin vencidos', () => {
+    // Con los casos reales al 24/10/2026
+    assert.deepEqual(antiguedadDeVencidos(mapaDeLosCasos(), { anio: 2026, al: HOY_DE_LAS_METRICAS }).textos,
+      { titulo: 'Hoy: 6 datasets vencidos', inicio: 'Al 1/1/2026 eran 3: de esos, 1 ya se actualizó.' });
+    // Uno vencido desde el 30/11/2025 y actualizado el 10/03: al 1/1 era 1 y ya se actualizó; uno solo vencido hoy
+    const uno = mapaDe(
+      ds(901, { proxima: '2026-11-30', ultima: '2026-03-09' }, {
+        cambios: [actualizacion(70, 901, { revisado: '2026-03-10 10:00:00', carga: '2026-03-09', de: '2025-11-30', a: '2026-11-30' })]
+      }),
+      ds(902, { proxima: '2026-09-30' })
+    );
+    assert.deepEqual(antiguedadDeVencidos(uno, { anio: 2026, al: HOY_DE_LAS_METRICAS }).textos,
+      { titulo: 'Hoy: 1 dataset vencido', inicio: 'Al 1/1/2026 era 1: ya se actualizó.' });
+    // Un año cerrado dice el 31/12; sin vencidos, lo dice
+    assert.equal(antiguedadDeVencidos(uno, { anio: 2026 }).textos.titulo, 'Al 31/12/2026: 2 datasets vencidos');
+    const ninguno = mapaDe(ds(903, { proxima: '2027-03-31' }));
+    assert.deepEqual(antiguedadDeVencidos(ninguno, { anio: 2026, al: HOY_DE_LAS_METRICAS }).textos,
+      { titulo: 'Hoy: ningún dataset vencido', inicio: 'Al 1/1/2026 no había datasets vencidos.' });
   });
 
   it('al 31/12, una carga del 30/12 aprobada el 05/01 todavía no se actualizó; aprobada el 30/12, sí (Ruling 12)', () => {
@@ -1619,7 +1734,7 @@ describe('antiguedadDeVencidos', () => {
     assert.deepEqual(foto.al_inicio, { total: 4, actualizados: 2 });
     // Con el mismo reloj, los de enero todavía figuraban vencidos al 31/12, desde el 30/11/2025 (más de un año)
     assert.deepEqual([foto.total, foto.menos_de_3_meses, foto.de_3_a_12, foto.mas_de_un_anio], [2, 0, 0, 2]);
-    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-12-31' }).at(-1), { dia: '2026-12-31', tasa: 50, al_dia: 2, base: 4 });
+    assert.deepEqual(numerosDelPunto(indiceMesAMes(mapa, { anio: 2026, al: '2026-12-31' }).at(-1)), { dia: '2026-12-31', tasa: 50, al_dia: 2, base: 4 });
     // En enero de 2027 ya se habían aprobado las cuatro
     assert.equal(antiguedadDeVencidos(mapa, { anio: 2027, al: '2027-01-05' }).total, 0);
   });
@@ -1628,6 +1743,11 @@ describe('antiguedadDeVencidos', () => {
 describe('trabajoDelAnio', () => {
   const trabajo = (mapa, casos = [], opciones = {}) => trabajoDelAnio(mapa, casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, ...opciones });
   const ceros = () => Array(12).fill(0);
+  // Qué es cada total, con 0 o con más de 1
+  const TOTALES_EN_PLURAL = {
+    avisos: 'avisos y notas a la DGMIT', actualizaciones: 'actualizaciones registradas', auditados: 'cambios auditados (doble verificación)',
+    nuevos: 'datasets nuevos', fuente_publica: 'pedidos resueltos con una fuente pública'
+  };
 
   it('trabajo: un email con tres datasets cuenta una vez y no cuenta si se destildan los tres', () => {
     const delAviso = email({ id: 950, tipo: 'externo-40', enviado: '2026-03-02 08:00:00' });
@@ -1741,15 +1861,51 @@ describe('trabajoDelAnio', () => {
     assert.deepEqual(trabajo(mapaDe(ds(901))).auditoria, { valor: null, texto: '', n: 0 });
   });
 
+  it('los textos del trabajo: cada total en singular o en plural, los meses hasta al y la doble verificación en una oración', () => {
+    // Con los casos reales al 24/10/2026: 35 avisos, 9 actualizaciones, 19 auditados, 1 dataset nuevo y ninguna fuente pública
+    const mapa = mapaDeLosCasos();
+    const casos = casosDe(mapa, { hoy: HOY_DE_LAS_METRICAS });
+    const real = trabajo(mapa, casos);
+    assert.deepEqual(real.textos, {
+      totales: { ...TOTALES_EN_PLURAL, nuevos: 'dataset nuevo' },
+      meses: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct'],
+      auditoria: 'Un cambio propuesto se audita en una mediana de 69 minutos (19 cambios).'
+    });
+    const promedio = trabajo(mapa, casos, { estadistico: 'promedio' });
+    assert.equal(promedio.textos.auditoria, `Un cambio propuesto se audita en un ${promedio.auditoria.texto} (19 cambios).`);
+    assert.match(promedio.auditoria.texto, /^promedio de \d+ (minutos|horas)$/);
+    // Uno de cada uno: todo en singular
+    const unoDeCada = mapaDe(ds(901, { alta: '2026-03-01 10:00:00' }, {
+      emails: [email({ id: 950, tipo: 'externo-40', enviado: '2026-03-02 08:00:00' })],
+      cambios: [cambio({ id: 80, dataset_id: 901, creado: '2026-03-02 10:00:00', revisado: '2026-03-02 10:03:00' })]
+    }));
+    const uno = trabajo(unoDeCada, [cerrado({ dataset_id: 901, origen: 'fuente_publica' })]);
+    assert.deepEqual([uno.avisos, uno.actualizaciones, uno.auditados, uno.nuevos, uno.fuente_publica], [1, 1, 1, 1, 1]);
+    assert.deepEqual(uno.textos.totales, {
+      avisos: 'aviso o nota a la DGMIT', actualizaciones: 'actualización registrada', auditados: 'cambio auditado (doble verificación)',
+      nuevos: 'dataset nuevo', fuente_publica: 'pedido resuelto con una fuente pública'
+    });
+    assert.equal(uno.textos.auditoria, 'Un cambio propuesto se audita en una mediana de 3 minutos (1 cambio).');
+    // Sin cambios auditados, lo dice; los meses van hasta el de al (todo el año en uno cerrado)
+    assert.equal(trabajo(mapaDe(ds(901))).textos.auditoria, 'Sin cambios auditados en 2026.');
+    assert.equal(trabajo(mapaDe(ds(901)), [], { al: '2026-12-31' }).textos.meses.length, 12);
+    assert.deepEqual(trabajo(mapaDe(ds(901)), [], { al: '2026-01-01' }).textos.meses, ['ene']);
+  });
+
   it('con datos raros no tira, y no modifica las fuentes ni los casos', () => {
     const vacio = {
       avisos: 0, actualizaciones: 0, auditados: 0, nuevos: 0, fuente_publica: 0,
-      por_mes: { avisos: ceros(), actualizaciones: ceros(), auditados: ceros() }, auditoria: { valor: null, texto: '', n: 0 }
+      por_mes: { avisos: ceros(), actualizaciones: ceros(), auditados: ceros() }, auditoria: { valor: null, texto: '', n: 0 },
+      textos: {
+        totales: TOTALES_EN_PLURAL, meses: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct'],
+        auditoria: 'Sin cambios auditados en 2026.'
+      }
     };
     for (const mapa of [null, undefined, 'x', {}, new Map([[1, null], [2, 'x'], [3, { dataset: null }]])]) {
       assert.deepEqual(trabajo(mapa, 'x'), vacio);
     }
-    assert.deepEqual(trabajoDelAnio(mapaDe(ds(901)), [], {}), vacio);
+    // Sin año, sin meses ni oración
+    assert.deepEqual(trabajoDelAnio(mapaDe(ds(901)), [], {}), { ...vacio, textos: { totales: TOTALES_EN_PLURAL, meses: [], auditoria: '' } });
     // Lo que no se puede leer no cuenta: un email sin id, un envío sin fecha, una revisión en un mes que no existe; un cambio sin la
     // fecha de la propuesta se auditó, pero no se sabe cuánto tardó
     const raro = mapaDe(ds(901, { alta: 'x' }, {
@@ -1786,11 +1942,11 @@ describe('areasYTemas', () => {
     );
     assert.deepEqual(areasYTemas(mapa, { al, sin: [910] }), {
       ranking: [
-        { area: 'Área Cinco', total: 1, al_dia: 1, porcentaje: 100 },
-        { area: 'Área Cuatro', total: 1, al_dia: 1, porcentaje: 100 },
-        { area: 'Área Uno', total: 4, al_dia: 2, porcentaje: 67 },
-        { area: 'Área Dos', total: 1, al_dia: 0, porcentaje: 0 },
-        { area: 'Área Tres', total: 1, al_dia: 0, porcentaje: null }
+        { area: 'Área Cinco', total_datasets: 1, al_dia: 1, porcentaje: 100 },
+        { area: 'Área Cuatro', total_datasets: 1, al_dia: 1, porcentaje: 100 },
+        { area: 'Área Uno', total_datasets: 4, al_dia: 2, porcentaje: 67 },
+        { area: 'Área Dos', total_datasets: 1, al_dia: 0, porcentaje: 0 },
+        { area: 'Área Tres', total_datasets: 1, al_dia: 0, porcentaje: null }
       ],
       // Por cantidad y, en un empate, por nombre; los que no tienen tema no van
       temas: [['Economía y Finanzas', 4], ['Turismo y Deportes', 2], ['Geografía y Territorio', 1]],
@@ -1798,6 +1954,10 @@ describe('areasYTemas', () => {
     });
     assert.deepEqual(areasYTemas(mapa, { al }).ranking.map((a) => a.area),
       ['Área Cinco', 'Área Cuatro', 'Área Seis', 'Área Uno', 'Área Dos', 'Área Tres']);
+    // Es la regla de Gestión (una sola: cumplimientoPorArea), con el estado de cada dataset que cuenta
+    const filas = [...mapa.values()].filter((f) => f.dataset.activo !== false && f.dataset.id !== 910)
+      .map((f) => ({ area: f.dataset.area, estado: estadoDelDataset({ proxima: f.dataset.proxima, meses: f.dataset.meses, tipoGestion: f.dataset.tipo_gestion, hoy: al }).estado }));
+    assert.deepEqual(areasYTemas(mapa, { al, sin: [910] }).ranking, cumplimientoPorArea(filas).ranking);
   });
 
   it('con los casos reales, el ranking da lo mismo que la portada en cada área', () => {
@@ -1808,7 +1968,7 @@ describe('areasYTemas', () => {
     for (const fila of ranking) {
       const delArea = new Map([...mapa].filter(([, f]) => f.dataset.area === fila.area));
       const portada = comoLaPortada(delArea, al);
-      assert.deepEqual([fila.total, fila.al_dia, fila.porcentaje], [delArea.size, portada.alDia, portada.tasa], fila.area);
+      assert.deepEqual([fila.total_datasets, fila.al_dia, fila.porcentaje], [delArea.size, portada.alDia, portada.tasa], fila.area);
     }
     assert.ok(ranking.every((a, i) => i === 0 || (a.porcentaje ?? -1) <= (ranking[i - 1].porcentaje ?? -1)));
   });
@@ -1821,8 +1981,11 @@ describe('areasYTemas', () => {
     }
     assert.deepEqual(areasYTemas(mapaDe(ds(901)), {}), nada);
     assert.deepEqual(indiceMesAMes(mapaDe(ds(901)), {}), []);
-    assert.deepEqual(antiguedadDeVencidos(null, { anio: 2026 }),
-      { total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } });
+    assert.deepEqual(antiguedadDeVencidos(null, { anio: 2026 }), {
+      total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 },
+      textos: { titulo: 'Al 31/12/2026: ningún dataset vencido', inicio: 'Al 1/1/2026 no había datasets vencidos.' }
+    });
+    assert.deepEqual(antiguedadDeVencidos(null, {}).textos, { titulo: '', inicio: '' });
     // Fechas que no se pueden leer: el dataset sin alta cuenta desde siempre; uno con la próxima mal escrita es sin fecha
     const raros = mapaDe(ds(901, { alta: null, proxima: '2026-12-31' }), ds(902, { proxima: '2026-02-30' }));
     assert.deepEqual(conCuentas(indiceMesAMes(raros, { anio: 2026, al: '2026-01-01' })), [['2026-01-01', 50, 1, 2]]);

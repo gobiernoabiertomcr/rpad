@@ -8,12 +8,12 @@
 // (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
 // mismos avisos (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js
 // (fuentesDe). Ninguna función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
-import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias } from './notasDigitalesCalendario.js';
+import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias, formatoCorto } from './notasDigitalesCalendario.js';
 import {
   REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
   momentoDeEnvioDeNota, numeroDeNota, unirAlta
 } from './seguimientoReglas.js';
-import { estadoDelDataset, tasaDeActualizacion } from './fechasDatasetReglas.js';
+import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from './fechasDatasetReglas.js';
 import { normalizarRequiereNota, requiereNotaResultante } from './requiereNotaReglas.js';
 import { ORIGENES_DATOS, textoOrigen } from './registroReglas.js';
 import { TEXTO_TIPO_NOTA_DGMIT } from './notasDgmitReglas.js';
@@ -41,6 +41,13 @@ const EMAILS_DE_LA_REGLA = Object.freeze(['externo-40', 'interno-60']);
 const lista = (valor) => (Array.isArray(valor) ? valor : []);
 const objeto = (valor) => (valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {});
 const comparar = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Los textos que arma el servidor para la página (Ruling 19: la página los imprime): los meses cortos del eje, una fecha sin ceros a la
+// izquierda (la spec dice «Al 1/1/2026 eran 20»), el porcentaje de un medidor (null sin total) y un singular o un plural
+const MESES_CORTOS = Object.freeze(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']);
+const fechaSinCeros = (dia) => `${Number(dia.slice(8, 10))}/${Number(dia.slice(5, 7))}/${dia.slice(0, 4)}`;
+const porcentajeDe = (parte, total) => (total > 0 ? Math.round((parte * 100) / total) : null);
+const enNumero = (n, singular, plural) => (n === 1 ? singular : plural);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Días y cifras
@@ -508,21 +515,49 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
     .map((h) => h.avisos.filter((dia) => dia > h.inicioTramos).length);
   const deLaDgmit = delPeriodo.filter((h) => h.externa && h.nota !== null).map((h) => Number(h.caso.reiteraciones_dgmit) || 0);
 
+  const dgmit = hayNotas ? { ninguna: deLaDgmit.filter((n) => n === 0).length, una_o_mas: deLaDgmit.filter((n) => n > 0).length, total: deLaDgmit.length } : null;
+  const cuentas = {
+    aTiempo: aTiempo(actualizados), actualizados: actualizados.length, si: vencimientos.length - faltan.length, vencimientos: vencimientos.length,
+    faltan: faltan.length, rpad: delRpad.length, dgmit
+  };
   return {
     a_tiempo: {
-      a_tiempo: aTiempo(actualizados), total: actualizados.length, externa: deLaGestion('externa'), interna: deLaGestion('interna'),
-      despues: { valor, texto: textoDeDespues(tarde, valor, aTiempo(actualizados), ctx) }
+      a_tiempo: cuentas.aTiempo, total: cuentas.actualizados, externa: deLaGestion('externa'), interna: deLaGestion('interna'),
+      despues: { valor, texto: textoDeDespues(tarde, valor, cuentas.aTiempo, ctx) }
     },
-    cobertura: { si: vencimientos.length - faltan.length, total: vencimientos.length, faltan },
+    cobertura: { si: cuentas.si, total: cuentas.vencimientos, faltan },
     reiteraciones: {
       rpad: {
         ninguna: delRpad.filter((n) => n === 0).length, una: delRpad.filter((n) => n === 1).length,
         dos_o_mas: delRpad.filter((n) => n >= 2).length, total: delRpad.length
       },
-      dgmit: hayNotas ? { ninguna: deLaDgmit.filter((n) => n === 0).length, una_o_mas: deLaDgmit.filter((n) => n > 0).length, total: deLaDgmit.length } : null
-    }
+      dgmit
+    },
+    textos: textosDeResultados(cuentas, ctx)
   };
 };
+
+// Los textos de los resultados (Ruling 19: la página los imprime): lo que va al lado de la cifra («de 33 ciclos», «de 1 vencimiento»), el
+// medidor (el porcentaje; null sin total) y lo de cuando no hay casos; en la cobertura, qué es estar avisado (con los días de la regla) y
+// el título de los que faltan («El que falta:», «Los 2 que faltan:»); en las reiteraciones, el título de cada grupo con sus ciclos y, si
+// no hay nada que mostrar, por qué (sin notas DGMIT: «Todavía no hay notas DGMIT cargadas.»)
+const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, rpad, dgmit }, ctx) => ({
+  a_tiempo: {
+    de: `de ${cantidadDeCiclos(actualizados)}`, medidor: porcentajeDe(aTiempo, actualizados),
+    vacio: actualizados === 0 ? `Sin actualizaciones registradas en ${ctx.anio}.` : ''
+  },
+  cobertura: {
+    de: `de ${vencimientos} ${enNumero(vencimientos, 'vencimiento', 'vencimientos')}`, medidor: porcentajeDe(si, vencimientos),
+    regla: `El RPAD avisó con la anticipación de la regla (${VENTANA_DE_LA_REGLA.externa} días en externa, ${VENTANA_DE_LA_REGLA.interna} en interna).`,
+    faltan: faltan === 0 ? '' : faltan === 1 ? 'El que falta:' : `Los ${faltan} que faltan:`,
+    vacio: vencimientos === 0 ? `Sin vencimientos de ${ctx.anio} con la fecha del aviso ya cumplida.` : ''
+  },
+  reiteraciones: {
+    rpad: `Del RPAD a la DGMIT (${cantidadDeCiclos(rpad)})`, rpad_vacio: rpad === 0 ? `Sin ciclos en ${ctx.anio}.` : '',
+    dgmit: dgmit === null ? 'De la DGMIT al área' : `De la DGMIT al área (${cantidadDeCiclos(dgmit.total)})`,
+    dgmit_vacio: dgmit === null ? `${SIN_NOTAS_DGMIT}.` : dgmit.total === 0 ? `Sin ciclos con nota DGMIT en ${ctx.anio}.` : ''
+  }
+});
 
 const textoDeDias = (valor) => (valor === null ? '' : valor === 0 ? 'en el día' : String(valor));
 
@@ -563,10 +598,11 @@ const filaDe = (m, ctx) => {
 
 // «Para completar» (spec, 2.2): lo que falta cargar para que las métricas queden completas. No cambia con lo destildado: no es una
 // cuenta. `notas`: las notas DGMIT pendientes de carga (notaPendiente), primero las de los ciclos abiertos y cada grupo por
-// vencimiento, con el aviso del RPAD que se muestra (`aviso`, su día, y `que`) y, en un ciclo cerrado por actualización, la carga que
-// lo cerró (en uno reprogramado, null); `recibido`: las actualizaciones del
+// vencimiento, con el aviso del RPAD que se muestra (`aviso`, su día, y `que`), en un ciclo cerrado por actualización la carga que
+// lo cerró (en uno reprogramado, null) y cómo está el ciclo (`situacion`); `recibido`: las actualizaciones del
 // año sin «Recibido el» o, en externa, sin origen, por la fecha de la carga (las simples de diciembre de 2025 no tienen cambio y no se
-// pueden completar).
+// pueden completar), con qué les falta (`falta` y `falta_texto`). `total`: las dos juntas; `textos`: el título de cada grupo y, sin
+// ninguna, lo que dice la página.
 const paraCompletarDe = (medidas, ctx) => {
   const hechos = medidas.map((m) => m.h);
   const notas = hechos.filter((h) => notaPendiente(h, ctx))
@@ -575,18 +611,53 @@ const paraCompletarDe = (medidas, ctx) => {
       const aviso = avisoMostrado(h);
       return {
         dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, area: h.caso.area ?? null, abierto: h.abierto,
-        aviso: aviso.dia, que: aviso.que, carga: h.abierto ? null : h.carga
+        aviso: aviso.dia, que: aviso.que, carga: h.abierto ? null : h.carga, situacion: situacionDelCiclo(h)
       };
     });
   const recibido = hechos
     .filter((h) => h.actualizacion && h.caso.cambio_id != null && enElAnio(h.carga, ctx)
       && (diaDe(h.caso.recibido) === null || (h.externa && h.origen === null)))
     .sort((a, b) => comparar(a.carga, b.carga) || porVencimiento(a, b))
-    .map((h) => ({
-      dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, gestion: h.gestion, carga: h.carga,
-      falta: diaDe(h.caso.recibido) === null ? 'recibido' : 'origen'
-    }));
-  return { notas, recibido };
+    .map((h) => {
+      const falta = diaDe(h.caso.recibido) === null ? 'recibido' : 'origen';
+      return { dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, gestion: h.gestion, carga: h.carga, falta, falta_texto: FALTA[falta] };
+    });
+  const abiertas = notas.filter((n) => n.abierto).length;
+  return {
+    notas, recibido, total: notas.length + recibido.length,
+    textos: {
+      notas: textoDeNotasPendientes(abiertas, notas.length - abiertas, ctx.anio),
+      notas_vacio: notas.length === 0 ? 'No hay notas DGMIT pendientes de carga.' : '',
+      recibido: `Actualizaciones sin «Recibido el» o sin el origen de los datos (${recibido.length})`,
+      recibido_vacio: recibido.length === 0 ? 'No hay actualizaciones sin «Recibido el» ni sin el origen de los datos.' : ''
+    }
+  };
+};
+
+// Qué le falta a una actualización de «Para completar»
+const FALTA = Object.freeze({ recibido: 'Falta «Recibido el»', origen: 'Falta el origen de los datos' });
+
+// Cómo está el ciclo de una nota DGMIT pendiente de carga: abierto, actualizado (el día de la carga) o reprogramado (el de la
+// aprobación)
+const situacionDelCiclo = (h) => {
+  if (h.abierto) return 'ciclo abierto';
+  if (h.carga !== null) return `actualizado el ${formatoCorto(h.carga)}`;
+  if (h.como === 'reprogramacion' && h.cierre !== null) return `reprogramado el ${formatoCorto(h.cierre)}`;
+  return 'ciclo cerrado';
+};
+
+// «Notas DGMIT pendientes de carga (26: 10 de ciclos abiertos y 16 de ciclos cerrados en 2026)»; de un solo grupo, «(10, de ciclos
+// abiertos)»; sin ninguna, «(0)»
+const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
+  const titulo = 'Notas DGMIT pendientes de carga';
+  const partes = [
+    ...(abiertas > 0 ? [[abiertas, enNumero(abiertas, 'un ciclo abierto', 'ciclos abiertos')]] : []),
+    ...(cerradas > 0 ? [[cerradas, `${enNumero(cerradas, 'un ciclo cerrado', 'ciclos cerrados')} en ${anio}`]] : [])
+  ];
+  const total = abiertas + cerradas;
+  if (partes.length === 2) return `${titulo} (${total}: ${partes.map(([n, de]) => `${n} de ${de}`).join(' y ')})`;
+  if (partes.length === 1) return `${titulo} (${total}, de ${partes[0][1]})`;
+  return `${titulo} (0)`;
 };
 
 // Todo lo que muestra la pestaña Métricas de un año, a partir de los casos de casosDe (o los de la foto del año: la misma función).
@@ -611,14 +682,17 @@ const paraCompletarDe = (medidas, ctx) => {
 //   datos de una fuente pública no cuenta en la respuesta del área.
 // - resultados: { a_tiempo: { a_tiempo, total, externa: [a, t], interna: [a, t], despues: { valor, texto } }, cobertura: { si, total,
 //   faltan: [{ titulo, venc, motivo }] }, reiteraciones: { rpad: { ninguna, una, dos_o_mas, total }, dgmit: { ninguna, una_o_mas,
-//   total } (null sin notas DGMIT) } }. Las reiteraciones son las de los ciclos que terminaron en el año y las de los abiertos a `al`.
+//   total } (null sin notas DGMIT) }, textos }. Las reiteraciones son las de los ciclos que terminaron en el año y las de los abiertos a
+//   `al`. textos (textosDeResultados): { a_tiempo: { de, medidor, vacio }, cobertura: { de, medidor, regla, faltan, vacio },
+//   reiteraciones: { rpad, rpad_vacio, dgmit, dgmit_vacio } }, lo que la página escribe tal cual.
 // - casos: las filas de los ciclos de las dos gestiones (cada una con su `gestion`) con algún aviso o la carga en el año, o que cuentan
 //   en algún tramo, por vencimiento: { dataset_id, titulo, area, gestion, contar, vencimiento, aviso: { fecha, texto, que }, nota:
 //   { numero, tipo, texto }, recibido: { fecha, texto, origen }, carga: { fecha, texto } }. Los `texto` son lo de debajo de cada fecha:
 //   los días del tramo que termina ahí ('27 antes' en el aviso, 'en el día' con 0), o su estado ('avisado ya vencido', el motivo sin
 //   el aviso de la regla, 'pendiente de carga', 'en curso, hace 89').
-// - para_completar: { notas: [{ dataset_id, titulo, area, abierto, aviso, que, carga }], recibido: [{ dataset_id, titulo, gestion,
-//   carga, falta: 'recibido' | 'origen' }] } (paraCompletarDe).
+// - para_completar: { notas: [{ dataset_id, titulo, area, abierto, aviso, que, carga, situacion }], recibido: [{ dataset_id, titulo,
+//   gestion, carga, falta: 'recibido' | 'origen', falta_texto }], total, textos: { notas, notas_vacio, recibido, recibido_vacio } }
+//   (paraCompletarDe; `total`, las dos listas juntas: el «Para completar (N)» del índice de la página).
 // Las fechas van como 'AAAA-MM-DD' (o null), y los textos nunca son null.
 export const vistaDe = (casos, opciones) => {
   const ctx = contextoDe(opciones);
@@ -772,8 +846,19 @@ const indiceDeLaCuenta = (cuenta) => {
   return { tasa: tasaDeActualizacion({ alDia, total: base, eventuales: 0 }), al_dia: alDia, base };
 };
 
-// Un punto del índice: el índice de la cuenta de ese día
-const puntoDelIndice = (datasets, dia) => ({ dia, ...indiceDeLaCuenta(cuentaDelDia(datasets, dia)) });
+// Un punto del índice: el índice de la cuenta de ese día y sus textos (Ruling 19: la página los imprime). `etiqueta`, la del eje: el mes
+// ('ene'), y en el último punto, si no es el primero de un mes, 'hoy' (o '31/12' en un año cerrado). `texto`, el valor en palabras para
+// la página (el <title> del punto, la cabeza de la tarjeta y la lista de los valores): «Al 1/3/2026: 82% al día (40 de 49)», «Hoy: …» o
+// «Al 31/12/2026: …»; sin tasa, por qué («sin datasets con vencimiento», «sin datos suficientes para calcularlo»)
+const puntoDelIndice = (datasets, dia, ctx) => {
+  const punto = { dia, ...indiceDeLaCuenta(cuentaDelDia(datasets, dia)) };
+  const ultimo = dia === ctx.al;
+  const etiqueta = ultimo && !dia.endsWith('-01') ? (dia === ctx.fin ? '31/12' : 'hoy') : MESES_CORTOS[mesDe(dia)];
+  const cuando = ultimo ? (ctx.al < ctx.fin ? 'Hoy' : `Al ${formatoCorto(dia)}`) : `Al ${fechaSinCeros(dia)}`;
+  let valor = `${punto.tasa}% al día (${punto.al_dia} de ${punto.base})`;
+  if (punto.tasa === null) valor = punto.base === null ? 'sin datos suficientes para calcularlo' : 'sin datasets con vencimiento';
+  return { ...punto, etiqueta, texto: `${cuando}: ${valor}` };
+};
 
 // El índice de actualización mes a mes (spec, 2.2): el mismo de la portada, al día (actualizados y próximos a vencer) sobre el total
 // sin los eventuales, reconstruido con los ciclos del Seguimiento. Un punto por el primer día de cada mes del año hasta `al`, y el
@@ -781,15 +866,15 @@ const puntoDelIndice = (datasets, dia) => ({ dia, ...indiceDeLaCuenta(cuentaDelD
 // día, así que tomado a fin de mes un vencimiento no se vería en el punto de su mes. Cada día cuenta un dataset si ya existía y seguía
 // activo y no es eventual; está al día si el ciclo que regía ese día (en el RPAD, al terminar el día) vence ese día o después; uno sin
 // ciclos (sin fecha) está en la base sin estar al día. El punto de hoy da lo mismo que tasaDeActualizacion con los datasets activos y
-// su próxima de hoy. `opciones`: { anio, al, sin } (como en vistaDe; los destildados no cuentan). [{ dia, tasa, al_dia, base }]: la
-// tasa es un entero (%), o null sin ninguno con vencimiento (con al_dia y base en 0) o si no se sabe el estado de más del 10 % de los
-// que cuentan ese día, por ciclos con venc null (con al_dia y base también en null: no se dibuja, en lugar de inventarse). [] si no
-// hay año. Nunca tira.
+// su próxima de hoy. `opciones`: { anio, al, sin } (como en vistaDe; los destildados no cuentan). [{ dia, tasa, al_dia, base, etiqueta,
+// texto }]: la tasa es un entero (%), o null sin ninguno con vencimiento (con al_dia y base en 0) o si no se sabe el estado de más del
+// 10 % de los que cuentan ese día, por ciclos con venc null (con al_dia y base también en null: no se dibuja, en lugar de inventarse);
+// etiqueta y texto, los de puntoDelIndice. [] si no hay año. Nunca tira.
 export const indiceMesAMes = (fuentesPorDataset, opciones) => {
   const ctx = contextoDe(opciones);
   if (ctx === null) return [];
   const datasets = datasetsDe(fuentesPorDataset, ctx);
-  return diasDelIndice(ctx).map((dia) => puntoDelIndice(datasets, dia));
+  return diasDelIndice(ctx).map((dia) => puntoDelIndice(datasets, dia, ctx));
 };
 
 // Cuántos datasets había en cada estado en `al` (spec, 3: lo que guarda la foto del 31/12, las tarjetas del Estado general de ese
@@ -821,10 +906,13 @@ const seActualizo = (ciclos, indice, al) => ciclos.slice(indice)
 // La antigüedad de los vencidos (spec, 2.2), con el mismo estado que el índice: los vencidos de `al` (atrasados y sin respuesta; los
 // eventuales y los sin fecha no tienen vencimiento), por los días corridos desde el vencimiento: menos de 90, de 90 a 365 y más de
 // 365. `al_inicio`: los vencidos al 1/1 del año y, de esos, cuántos se actualizaron hasta `al` (el ciclo que regía el 1/1, o uno
-// siguiente, cerró por una actualización aprobada hasta `al`). `opciones`: { anio, al, sin }. { total, menos_de_3_meses, de_3_a_12,
-// mas_de_un_anio, al_inicio: { total, actualizados } }, todo en 0 si no hay año. Nunca tira.
+// siguiente, cerró por una actualización aprobada hasta `al`). `textos` (textosDeAntiguedad): lo que dice la página. `opciones`:
+// { anio, al, sin }. { total, menos_de_3_meses, de_3_a_12, mas_de_un_anio, al_inicio: { total, actualizados }, textos: { titulo,
+// inicio } }, todo en 0 (y los textos vacíos) si no hay año. Nunca tira.
 export const antiguedadDeVencidos = (fuentesPorDataset, opciones) => {
-  const resultado = { total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } };
+  const resultado = {
+    total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 }, textos: { titulo: '', inicio: '' }
+  };
   const ctx = contextoDe(opciones);
   if (ctx === null) return resultado;
   for (const d of datasetsDe(fuentesPorDataset, ctx)) {
@@ -842,7 +930,23 @@ export const antiguedadDeVencidos = (fuentesPorDataset, opciones) => {
       if (seActualizo(d.ciclos, alInicio.indice, ctx.al)) resultado.al_inicio.actualizados += 1;
     }
   }
+  resultado.textos = textosDeAntiguedad(resultado, ctx);
   return resultado;
+};
+
+// Los textos de la antigüedad (Ruling 19: la página los imprime): `titulo`, los vencidos de `al` («Hoy: 12 datasets vencidos», «Hoy: 1
+// dataset vencido», «Hoy: ningún dataset vencido»; en un año cerrado, «Al 31/12/2026: …»), e `inicio`, los del 1/1 y cuántos se
+// actualizaron («Al 1/1/2026 eran 20: de esos, 11 ya se actualizaron.», «… era 1: ya se actualizó.», «… no había datasets vencidos.»)
+const textosDeAntiguedad = ({ total, al_inicio: alInicio }, ctx) => {
+  const cuando = ctx.al < ctx.fin ? 'Hoy' : `Al ${formatoCorto(ctx.al)}`;
+  const titulo = total === 0 ? `${cuando}: ningún dataset vencido` : `${cuando}: ${total} ${enNumero(total, 'dataset vencido', 'datasets vencidos')}`;
+  const al1 = `Al 1/1/${ctx.anio}`;
+  const { total: eran, actualizados } = alInicio;
+  let inicio = `${al1} no había datasets vencidos.`;
+  if (eran === 1) inicio = `${al1} era 1: ${actualizados === 1 ? 'ya se actualizó' : 'todavía no se actualizó'}.`;
+  else if (eran > 1 && actualizados === 0) inicio = `${al1} eran ${eran}: todavía no se actualizó ninguno.`;
+  else if (eran > 1) inicio = `${al1} eran ${eran}: de esos, ${actualizados} ya ${enNumero(actualizados, 'se actualizó', 'se actualizaron')}.`;
+  return { titulo, inicio };
 };
 
 // Los avisos del RPAD a la DGMIT de un dataset, los mismos que cuenta el Seguimiento: los emails a la DGMIT que se enviaron
@@ -877,6 +981,24 @@ const textoDeAuditoria = (minutos, estadistico) => {
 const doceMeses = () => Array(12).fill(0);
 const mesDe = (dia) => Number(dia.slice(5, 7)) - 1;
 
+// Qué es cada total del trabajo del RPAD, en singular (con 1) y en plural
+const TOTALES_DEL_TRABAJO = Object.freeze({
+  avisos: Object.freeze(['aviso o nota a la DGMIT', 'avisos y notas a la DGMIT']),
+  actualizaciones: Object.freeze(['actualización registrada', 'actualizaciones registradas']),
+  auditados: Object.freeze(['cambio auditado (doble verificación)', 'cambios auditados (doble verificación)']),
+  nuevos: Object.freeze(['dataset nuevo', 'datasets nuevos']),
+  fuente_publica: Object.freeze(['pedido resuelto con una fuente pública', 'pedidos resueltos con una fuente pública'])
+});
+const textosDeTotales = (resultado) => Object.fromEntries(Object.entries(TOTALES_DEL_TRABAJO)
+  .map(([clave, [uno, varios]]) => [clave, enNumero(resultado[clave], uno, varios)]));
+
+// La doble verificación en una oración: «Un cambio propuesto se audita en una mediana de 3 minutos (50 cambios).», «… en un promedio de 9
+// horas (1 cambio).»; sin cambios, «Sin cambios auditados en 2026.»
+const oracionDeAuditoria = ({ texto, n }, ctx) => {
+  if (n === 0) return `Sin cambios auditados en ${ctx.anio}.`;
+  return `Un cambio propuesto se audita en ${ctx.estadistico === 'promedio' ? 'un' : 'una'} ${texto} (${n} ${enNumero(n, 'cambio', 'cambios')}).`;
+};
+
 // El trabajo del RPAD en el año, del 1/1 a `al` (spec, 2.2), con los datasets que cuentan (sin los destildados):
 // - avisos: los avisos y las notas a la DGMIT (avisosDelDataset), cada uno una sola vez aunque trate de varios datasets (un email con
 //   tres datasets cuenta una vez, y no cuenta si se destildan los tres), por el día del envío;
@@ -887,15 +1009,17 @@ const mesDe = (dia) => Number(dia.slice(5, 7)) - 1;
 //   DGMIT: No» (para ellos es lo normal);
 // - por_mes: los avisos, las actualizaciones y los auditados de cada mes, de enero a diciembre (12 números; después de `al`, 0);
 // - auditoria: cuánto tarda la doble verificación, de la propuesta a la revisión de los cambios auditados, en minutos corridos: { valor
-//   (la mediana o el promedio, según `estadistico`, redondeado), texto (textoDeAuditoria), n } ({ null, '', 0 } sin cambios).
-// `opciones`: { anio, al, sin, estadistico } (como en vistaDe). Todo en 0 si no hay año. Nunca tira.
+//   (la mediana o el promedio, según `estadistico`, redondeado), texto (textoDeAuditoria), n } ({ null, '', 0 } sin cambios);
+// - textos (Ruling 19: la página los imprime): totales (qué es cada total, en singular o en plural: TOTALES_DEL_TRABAJO), meses (los
+//   del eje de por_mes, de enero al mes de `al`: 'ene', 'feb'…) y auditoria (oracionDeAuditoria).
+// `opciones`: { anio, al, sin, estadistico } (como en vistaDe). Todo en 0 si no hay año (sin meses ni oración). Nunca tira.
 export const trabajoDelAnio = (fuentesPorDataset, casos, opciones) => {
   const resultado = {
     avisos: 0, actualizaciones: 0, auditados: 0, nuevos: 0, fuente_publica: 0,
     por_mes: { avisos: doceMeses(), actualizaciones: doceMeses(), auditados: doceMeses() }, auditoria: { valor: null, texto: '', n: 0 }
   };
   const ctx = contextoDe(opciones);
-  if (ctx === null) return resultado;
+  if (ctx === null) return { ...resultado, textos: { totales: textosDeTotales(resultado), meses: [], auditoria: '' } };
   const avisos = new Map();
   const revisados = new Map();
   for (const { fuentes, dataset } of fuentesQueCuentan(fuentesPorDataset, ctx)) {
@@ -922,6 +1046,9 @@ export const trabajoDelAnio = (fuentesPorDataset, casos, opciones) => {
   const { n, ...estadisticos } = cifraDe(minutos);
   const valor = n === 0 ? null : estadisticos[ctx.estadistico];
   resultado.auditoria = { valor, texto: textoDeAuditoria(valor, ctx.estadistico), n };
+  resultado.textos = {
+    totales: textosDeTotales(resultado), meses: MESES_CORTOS.slice(0, mesDe(ctx.al) + 1), auditoria: oracionDeAuditoria(resultado.auditoria, ctx)
+  };
   return resultado;
 };
 
@@ -930,19 +1057,19 @@ const porCantidad = (conteo) => [...conteo].sort(([nombreA, a], [nombreB, b]) =>
 
 // Áreas y temas (spec, 2.2: lo que estaba en la pestaña Métricas de Gestión), con los datasets que contaban en `al` (ya dados de alta y
 // todavía activos; sin los destildados):
-// - ranking: por área, con la misma regla que la tasa de cumplimiento de Gestión (cumplimientoDeGestion) y con el estado del índice
-//   en `al`: total (todos los del área, también los eventuales), al_dia (actualizados y próximos a vencer) y porcentaje
+// - ranking: por área, con la regla de la tasa de cumplimiento de Gestión (una sola: cumplimientoPorArea) y con el estado del índice
+//   en `al`: total_datasets (todos los del área, también los eventuales), al_dia (actualizados y próximos a vencer) y porcentaje
 //   (tasaDeActualizacion: al día sobre el total sin los eventuales; null si el área solo tiene eventuales). De mayor a menor
 //   porcentaje, el null al final, y en un empate por nombre. Uno de estado desconocido (un ciclo con venc null) no va;
 // - temas y frecuencias: [nombre, cantidad] de los datasets por tema principal y por frecuencia, por cantidad y en un empate por
 //   nombre (los que no tienen tema no van).
-// `opciones`: { al, sin } (el año sale de `al`). { ranking: [{ area, total, al_dia, porcentaje }], temas, frecuencias }, con listas
-// vacías si no hay `al`. Nunca tira.
+// `opciones`: { al, sin } (el año sale de `al`). { ranking: [{ area, total_datasets, al_dia, porcentaje }], temas, frecuencias }, con
+// listas vacías si no hay `al`. Nunca tira.
 export const areasYTemas = (fuentesPorDataset, opciones) => {
   const resultado = { ranking: [], temas: [], frecuencias: [] };
   const ctx = contextoDe(opciones);
   if (ctx === null) return resultado;
-  const porArea = new Map();
+  const filas = [];
   const temas = new Map();
   const frecuencias = new Map();
   const sumar = (conteo, nombre) => { if (tieneValor(nombre)) conteo.set(String(nombre), (conteo.get(String(nombre)) ?? 0) + 1); };
@@ -951,17 +1078,10 @@ export const areasYTemas = (fuentesPorDataset, opciones) => {
     if (estado === undefined) continue;
     sumar(temas, d.dataset.tema_principal);
     sumar(frecuencias, d.dataset.frecuencia);
-    const { area } = d.dataset;
-    if (area === null || area === undefined || estado === 'desconocido') continue;
-    if (!porArea.has(area)) porArea.set(area, { total: 0, alDia: 0, eventuales: 0 });
-    const cuenta = porArea.get(area);
-    cuenta.total += 1;
-    if (AL_DIA.includes(estado)) cuenta.alDia += 1;
-    if (estado === 'eventual') cuenta.eventuales += 1;
+    // Uno de estado desconocido no va en el ranking; uno sin área, tampoco (cumplimientoPorArea)
+    if (estado !== 'desconocido') filas.push({ area: d.dataset.area, estado });
   }
-  resultado.ranking = [...porArea]
-    .map(([area, cuenta]) => ({ area, total: cuenta.total, al_dia: cuenta.alDia, porcentaje: tasaDeActualizacion(cuenta) }))
-    .sort((a, b) => (b.porcentaje ?? -1) - (a.porcentaje ?? -1) || String(a.area).localeCompare(String(b.area), 'es'));
+  resultado.ranking = cumplimientoPorArea(filas).ranking;
   resultado.temas = porCantidad(temas);
   resultado.frecuencias = porCantidad(frecuencias);
   return resultado;
