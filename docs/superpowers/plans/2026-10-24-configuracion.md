@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **EN COLA. No empezar hasta que estén en main las tres ramas:** "Métricas y Reportes" (`feat/metricas-y-reportes`), el Generador de Notas (`feat/generador-de-notas`) y "Notas Digitales en hoja oficio" (`feat/notas-hoja-oficio`). La Task 1 lo comprueba, trae main y relee el código. Si algo cambió respecto de lo que dice este plan, se ajusta el plan y se le avisa al usuario **antes** de la Task 2.
+> **APROBADO por el usuario el 24/10/2026. EN COLA. No empezar hasta que estén en main las tres ramas:** "Métricas y Reportes" (`feat/metricas-y-reportes`), el Generador de Notas (`feat/generador-de-notas`) y "Notas Digitales en hoja oficio" (`feat/notas-hoja-oficio`). La Task 1 lo comprueba, trae main y relee el código. Si algo cambió respecto de lo que dice este plan, se ajusta el plan y se le avisa al usuario **antes** de la Task 2.
 
 **Goal:** Fusionar `usuarios.html` y `areas.html` en `configuracion.html` (pestañas Usuarios | Licencias | Áreas), rediseñar la pestaña Áreas con el modal arreglado, actualizar el menú de las páginas y sacar los datos de contacto de las APIs públicas, sin perder nada de lo que hacen hoy.
 
