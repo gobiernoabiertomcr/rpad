@@ -68,7 +68,9 @@ export const momentoDe = (valor) => {
   return partes && esFechaIso(partes[1]) ? `${partes[1]} ${partes[2]}` : null;
 };
 
-const segundosDe = (valor) => {
+// Los segundos de un momento en hora argentina (para restar dos momentos: la zona no importa), o null. Lo usan también las métricas
+// (cuánto tarda la doble verificación)
+export const segundosDe = (valor) => {
   const momento = momentoDe(valor);
   if (!momento) return null;
   const [anio, mes, dia, hora, minuto, segundo] = momento.split(/[- :]/).map(Number);

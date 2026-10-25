@@ -1,6 +1,8 @@
 // Reglas de las métricas (spec 2026-10-24-metricas-y-reportes, secciones 1.1 a 1.7 y 2.2): cómo se cuentan los días, la cifra de un
 // tramo, un caso por ciclo de cada dataset, con sus hitos (casosDe), y lo que la pestaña Métricas muestra de esos casos: el circuito,
-// los resultados del año, la lista de casos y «Para completar» (vistaDe). Funciones puras, sin base de datos ni Date local: las
+// los resultados del año, la lista de casos y «Para completar» (vistaDe). Además, el resto de la pestaña: el índice de actualización
+// mes a mes (indiceMesAMes), la antigüedad de los vencidos (antiguedadDeVencidos), el trabajo del RPAD (trabajoDelAnio) y las áreas y
+// los temas (areasYTemas). Funciones puras, sin base de datos ni Date local: las
 // fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora argentina, como en services/seguimientoReglas.js. De
 // ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo):
 // las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los mismos avisos (esEmailADgmit, esNotaEnviada y
@@ -8,9 +10,10 @@
 // devuelven null o una lista vacía, o ignoran lo que no pueden leer.
 import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias } from './notasDigitalesCalendario.js';
 import {
-  REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada, momentoDeEnvioDeNota,
-  numeroDeNota
+  REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
+  momentoDeEnvioDeNota, numeroDeNota, unirAlta
 } from './seguimientoReglas.js';
+import { estadoDelDataset, tasaDeActualizacion } from './fechasDatasetReglas.js';
 import { normalizarRequiereNota, requiereNotaResultante } from './requiereNotaReglas.js';
 import { ORIGENES_DATOS, textoOrigen } from './registroReglas.js';
 import { TEXTO_TIPO_NOTA_DGMIT } from './notasDgmitReglas.js';
@@ -624,4 +627,268 @@ export const vistaDe = (casos, opciones) => {
     casos: medidas.filter((m) => m.enLista).sort((a, b) => porVencimiento(a.h, b.h)).map((m) => filaDe(m, ctx)),
     para_completar: paraCompletarDe(medidas, ctx)
   };
+};
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Contexto, el trabajo del RPAD y áreas y temas (spec, 2.2)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Los estados de estadoDelDataset que están al día (actualizados y próximos a vencer: la tasa de la portada) y los vencidos
+const AL_DIA = Object.freeze(['actualizado', 'proximo']);
+const VENCIDOS = Object.freeze(['atrasado', 'sin-respuesta']);
+
+// Un día no tiene índice si no se sabe el estado (un ciclo con venc null) de más de este porcentaje de los datasets que cuentan
+const PORCENTAJE_SIN_ESTADO = 10;
+
+// Los grupos de la antigüedad de los vencidos, en días corridos desde el vencimiento: menos de 90, de 90 a 365 y más de 365
+const DIAS_DE_3_MESES = 90;
+const DIAS_DE_UN_ANIO = 365;
+
+// La doble verificación se dice en minutos hasta 119 y en horas desde 120
+const MINUTOS_PARA_HORAS = 120;
+
+// Un id entero positivo, o null
+const idDe = (valor) => {
+  const id = Number(valor);
+  return valor !== null && valor !== '' && Number.isInteger(id) && id > 0 ? id : null;
+};
+
+// Las fuentes de los datasets que cuentan: los del Map de fuentesDe con un dataset, sin los destildados. Un Map que no es un Map, ninguno
+const fuentesQueCuentan = (fuentesPorDataset, ctx) => {
+  if (!(fuentesPorDataset instanceof Map)) return [];
+  return [...fuentesPorDataset.values()].flatMap((fuentes) => {
+    const dataset = objeto(fuentes).dataset;
+    if (!dataset || typeof dataset !== 'object' || Array.isArray(dataset) || ctx.sin.has(Number(dataset.id))) return [];
+    return [{ fuentes, dataset }];
+  });
+};
+
+// El momento de la baja de un dataset: la aprobación de la última baja aprobada (la misma que usa ciclosDe), o null
+const bajaDe = (fuentes) => lista(fuentes.cambios)
+  .filter((c) => c && typeof c === 'object' && c.tipo === 'eliminar' && c.estado === 'aprobado')
+  .map((c) => momentoDe(c.revisado)).filter((momento) => momento !== null).sort().at(-1) ?? null;
+
+// Los datasets que cuentan, leídos para saber en qué estado estaban cada día: el dataset, sus ciclos (ciclosDe con `al`; null si es
+// eventual o sin fecha, que no tienen), el momento del alta, el de la baja y si está activo hoy
+const datasetsDe = (fuentesPorDataset, ctx) => fuentesQueCuentan(fuentesPorDataset, ctx).map(({ fuentes, dataset }) => {
+  const ciclos = ciclosDe(fuentes, ctx.al);
+  return {
+    dataset, ciclos: Array.isArray(ciclos) && ciclos.length > 0 ? ciclos : null, alta: momentoDe(dataset.alta), baja: bajaDe(fuentes),
+    activo: dataset.activo !== false
+  };
+});
+
+// El estado de un dataset al terminar `dia` (a las 23:59:59: lo que pasó ese día ya cuenta, como en la portada de esa noche), o null
+// si ese día no contaba: todavía no se había dado de alta, ya se había dado de baja, o está inactivo sin la baja registrada (no se sabe
+// desde cuándo). Es el de estadoDelDataset con la próxima que regía en el RPAD: el vencimiento del ciclo que regía en ese momento (de
+// la aprobación que lo abrió a la que lo cerró, como en cicloDelAviso). Antes del primer ciclo (un dataset sin alta conocida), el
+// primero; después del último (uno que figura activo aunque tenga una baja: se reactivó por fuera del sistema), el último, que vence
+// en la próxima de hoy. Sin ciclos, el de la próxima del dataset ('eventual' o 'sin-fecha'). Con un ciclo sin venc (no se sabe qué
+// próxima cumplía), { estado: 'desconocido' }. `indice`: el del ciclo (null sin ciclos), para saber qué pasó después.
+const estadoEnElDia = (d, dia) => {
+  const momento = `${dia} 23:59:59`;
+  if (d.alta !== null && d.alta > momento) return null;
+  if (!d.activo && (d.baja === null || d.baja <= momento)) return null;
+  const datos = { meses: d.dataset.meses, tipoGestion: d.dataset.tipo_gestion, hoy: dia };
+  if (d.ciclos === null) return { ...estadoDelDataset({ ...datos, proxima: d.dataset.proxima }), indice: null };
+  let indice = d.ciclos.findIndex((ciclo) => ciclo.desde <= momento && (!ciclo.hasta || momento < ciclo.hasta));
+  if (indice === -1) indice = momento < d.ciclos[0].desde ? 0 : d.ciclos.length - 1;
+  const { venc } = d.ciclos[indice];
+  if (venc === null) return { estado: 'desconocido', dias: null, indice };
+  return { ...estadoDelDataset({ ...datos, proxima: venc }), indice };
+};
+
+// Los días del índice: el primero de cada mes del año hasta `al`, y `al` (una sola vez si es el primero de un mes)
+const diasDelIndice = (ctx) => {
+  const dias = Array.from({ length: 12 }, (_, i) => `${ctx.anio}-${String(i + 1).padStart(2, '0')}-01`).filter((dia) => dia <= ctx.al);
+  return dias.at(-1) === ctx.al ? dias : [...dias, ctx.al];
+};
+
+// Un punto del índice: los al día sobre la base (los que contaban ese día, sin los eventuales; los sin fecha están en la base sin
+// estar al día), con la misma cuenta que la portada (tasaDeActualizacion). Los de estado desconocido no están en ninguno de los dos:
+// si son más del 10 % de los que contaban, el día no tiene índice.
+const puntoDelIndice = (datasets, dia) => {
+  let base = 0;
+  let alDia = 0;
+  let sinEstado = 0;
+  for (const d of datasets) {
+    const { estado } = estadoEnElDia(d, dia) ?? {};
+    if (estado === undefined || estado === 'eventual') continue;
+    if (estado === 'desconocido') { sinEstado += 1; continue; }
+    base += 1;
+    if (AL_DIA.includes(estado)) alDia += 1;
+  }
+  if (sinEstado * 100 > PORCENTAJE_SIN_ESTADO * (base + sinEstado)) return { dia, tasa: null, al_dia: null, base: null };
+  return { dia, tasa: tasaDeActualizacion({ alDia, total: base, eventuales: 0 }), al_dia: alDia, base };
+};
+
+// El índice de actualización mes a mes (spec, 2.2): el mismo de la portada, al día (actualizados y próximos a vencer) sobre el total
+// sin los eventuales, reconstruido con los ciclos del Seguimiento. Un punto por el primer día de cada mes del año hasta `al`, y el
+// último es `al` (hoy, o el 31/12 en un año cerrado): las próximas son siempre fin de mes y el día del vencimiento todavía está al
+// día, así que tomado a fin de mes un vencimiento no se vería en el punto de su mes. Cada día cuenta un dataset si ya existía y seguía
+// activo y no es eventual; está al día si el ciclo que regía ese día (en el RPAD, al terminar el día) vence ese día o después; uno sin
+// ciclos (sin fecha) está en la base sin estar al día. El punto de hoy da lo mismo que tasaDeActualizacion con los datasets activos y
+// su próxima de hoy. `opciones`: { anio, al, sin } (como en vistaDe; los destildados no cuentan). [{ dia, tasa, al_dia, base }]: la
+// tasa es un entero (%), o null sin ninguno con vencimiento (con al_dia y base en 0) o si no se sabe el estado de más del 10 % de los
+// que cuentan ese día, por ciclos con venc null (con al_dia y base también en null: no se dibuja, en lugar de inventarse). [] si no
+// hay año. Nunca tira.
+export const indiceMesAMes = (fuentesPorDataset, opciones) => {
+  const ctx = contextoDe(opciones);
+  if (ctx === null) return [];
+  const datasets = datasetsDe(fuentesPorDataset, ctx);
+  return diasDelIndice(ctx).map((dia) => puntoDelIndice(datasets, dia));
+};
+
+// ¿Se actualizó desde el ciclo `indice` hasta `al`? Si ese ciclo o alguno de los siguientes cerró por una actualización cargada
+// hasta `al` (una reprogramación no es una actualización)
+const seActualizo = (ciclos, indice, al) => ciclos.slice(indice)
+  .some((ciclo) => ciclo.como === 'actualizacion' && ciclo.cierre !== null && ciclo.cierre <= al);
+
+// La antigüedad de los vencidos (spec, 2.2), con el mismo estado que el índice: los vencidos de `al` (atrasados y sin respuesta; los
+// eventuales y los sin fecha no tienen vencimiento), por los días corridos desde el vencimiento: menos de 90, de 90 a 365 y más de
+// 365. `al_inicio`: los vencidos al 1/1 del año y, de esos, cuántos se actualizaron hasta `al` (el ciclo que regía el 1/1, o uno
+// siguiente, cerró por una actualización cargada hasta `al`). `opciones`: { anio, al, sin }. { total, menos_de_3_meses, de_3_a_12,
+// mas_de_un_anio, al_inicio: { total, actualizados } }, todo en 0 si no hay año. Nunca tira.
+export const antiguedadDeVencidos = (fuentesPorDataset, opciones) => {
+  const resultado = { total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } };
+  const ctx = contextoDe(opciones);
+  if (ctx === null) return resultado;
+  for (const d of datasetsDe(fuentesPorDataset, ctx)) {
+    const hoy = estadoEnElDia(d, ctx.al);
+    if (hoy !== null && VENCIDOS.includes(hoy.estado)) {
+      const dias = -hoy.dias;
+      resultado.total += 1;
+      if (dias < DIAS_DE_3_MESES) resultado.menos_de_3_meses += 1;
+      else if (dias <= DIAS_DE_UN_ANIO) resultado.de_3_a_12 += 1;
+      else resultado.mas_de_un_anio += 1;
+    }
+    const alInicio = estadoEnElDia(d, ctx.inicio);
+    if (alInicio !== null && VENCIDOS.includes(alInicio.estado)) {
+      resultado.al_inicio.total += 1;
+      if (seActualizo(d.ciclos, alInicio.indice, ctx.al)) resultado.al_inicio.actualizados += 1;
+    }
+  }
+  return resultado;
+};
+
+// Los avisos del RPAD a la DGMIT de un dataset, los mismos que cuenta el Seguimiento: los emails a la DGMIT que se enviaron
+// (esEmailADgmit) y las Notas Digitales de aviso y de reiteración enviadas (esNotaEnviada; las de prueba, fuentesDe no las trae), con
+// una clave por aviso (un email y una nota pueden tener el mismo id: son dos avisos) y el día del envío. Uno sin id no se puede contar
+// una sola vez: no va.
+const avisosDelDataset = (fuentes) => [
+  ...lista(fuentes.emails).filter(esEmailADgmit).map((e) => ({ que: 'email', id: idDe(e.id), dia: diaDe(momentoDe(e.enviado)) })),
+  ...lista(fuentes.notas).filter(esNotaEnviada).map((n) => ({ que: 'nota', id: idDe(n.id), dia: diaDe(momentoDeEnvioDeNota(n)) }))
+].filter((aviso) => aviso.id !== null && aviso.dia !== null).map(({ que, id, dia }) => ({ clave: `${que} ${id}`, dia }));
+
+// Los cambios revisados (aprobados o rechazados) de un dataset: los suyos y su alta, unida por la hora como en el Seguimiento
+// (unirAlta: un 'crear' aprobado queda sin dataset_id). { id, creado, revisado } con los momentos; uno sin id o sin el momento de la
+// revisión no va.
+const revisadosDelDataset = (fuentes, dataset) => {
+  const alta = unirAlta(dataset, lista(fuentes.altasSinDataset));
+  return [...lista(fuentes.cambios), ...(alta ? [alta] : [])]
+    .filter((c) => c && typeof c === 'object' && (c.estado === 'aprobado' || c.estado === 'rechazado'))
+    .map((c) => ({ id: idDe(c.id), creado: momentoDe(c.creado), revisado: momentoDe(c.revisado) }))
+    .filter((c) => c.id !== null && c.revisado !== null);
+};
+
+// Cuánto tarda la doble verificación, en tiempo corrido: 'mediana de 3 minutos', 'de 1 minuto' o 'de menos de 1 minuto' hasta 119
+// minutos, y desde 120, en horas redondeadas: 'promedio de 9 horas'. '' sin valor
+const textoDeAuditoria = (minutos, estadistico) => {
+  if (minutos === null) return '';
+  if (minutos >= MINUTOS_PARA_HORAS) return `${estadistico} de ${Math.round(minutos / 60)} horas`;
+  const cuanto = minutos === 0 ? 'menos de 1 minuto' : minutos === 1 ? '1 minuto' : `${minutos} minutos`;
+  return `${estadistico} de ${cuanto}`;
+};
+
+const doceMeses = () => Array(12).fill(0);
+const mesDe = (dia) => Number(dia.slice(5, 7)) - 1;
+
+// El trabajo del RPAD en el año, del 1/1 a `al` (spec, 2.2), con los datasets que cuentan (sin los destildados):
+// - avisos: los avisos y las notas a la DGMIT (avisosDelDataset), cada uno una sola vez aunque trate de varios datasets (un email con
+//   tres datasets cuenta una vez, y no cuenta si se destildan los tres), por el día del envío;
+// - actualizaciones: los casos (casosDe) cerrados por una actualización cargada en el año, por la fecha de la carga;
+// - auditados: los cambios revisados en el año (aprobados o rechazados, también las altas), cada uno una sola vez, por la revisión;
+// - nuevos: los datasets dados de alta en el año (también los que después se dieron de baja: fueron trabajo del año);
+// - fuente_publica: de esas actualizaciones, las resueltas con datos de una fuente pública, sin las de los datasets con «Requiere nota
+//   DGMIT: No» (para ellos es lo normal);
+// - por_mes: los avisos, las actualizaciones y los auditados de cada mes, de enero a diciembre (12 números; después de `al`, 0);
+// - auditoria: cuánto tarda la doble verificación, de la propuesta a la revisión de los cambios auditados, en minutos corridos: { valor
+//   (la mediana o el promedio, según `estadistico`, redondeado), texto (textoDeAuditoria), n } ({ null, '', 0 } sin cambios).
+// `opciones`: { anio, al, sin, estadistico } (como en vistaDe). Todo en 0 si no hay año. Nunca tira.
+export const trabajoDelAnio = (fuentesPorDataset, casos, opciones) => {
+  const resultado = {
+    avisos: 0, actualizaciones: 0, auditados: 0, nuevos: 0, fuente_publica: 0,
+    por_mes: { avisos: doceMeses(), actualizaciones: doceMeses(), auditados: doceMeses() }, auditoria: { valor: null, texto: '', n: 0 }
+  };
+  const ctx = contextoDe(opciones);
+  if (ctx === null) return resultado;
+  const avisos = new Map();
+  const revisados = new Map();
+  for (const { fuentes, dataset } of fuentesQueCuentan(fuentesPorDataset, ctx)) {
+    for (const aviso of avisosDelDataset(fuentes)) if (enElAnio(aviso.dia, ctx)) avisos.set(aviso.clave, aviso.dia);
+    for (const cambio of revisadosDelDataset(fuentes, dataset)) if (enElAnio(cambio.revisado.slice(0, 10), ctx)) revisados.set(cambio.id, cambio);
+    if (enElAnio(diaDe(dataset.alta), ctx)) resultado.nuevos += 1;
+  }
+  for (const dia of avisos.values()) resultado.por_mes.avisos[mesDe(dia)] += 1;
+  for (const { revisado } of revisados.values()) resultado.por_mes.auditados[mesDe(revisado)] += 1;
+  resultado.avisos = avisos.size;
+  resultado.auditados = revisados.size;
+
+  const actualizaciones = lista(casos).filter((c) => c && typeof c === 'object' && !ctx.sin.has(Number(c.dataset_id))
+    && c.como === 'actualizacion' && enElAnio(diaDe(c.carga), ctx));
+  for (const c of actualizaciones) resultado.por_mes.actualizaciones[mesDe(diaDe(c.carga))] += 1;
+  resultado.actualizaciones = actualizaciones.length;
+  resultado.fuente_publica = actualizaciones.filter((c) => c.origen === 'fuente_publica' && c.requiere_nota !== 0).length;
+
+  const minutos = [...revisados.values()].flatMap(({ creado, revisado }) => {
+    const desde = segundosDe(creado);
+    const hasta = segundosDe(revisado);
+    return desde === null || hasta === null ? [] : [Math.max(0, (hasta - desde) / 60)];
+  });
+  const { n, ...estadisticos } = cifraDe(minutos);
+  const valor = n === 0 ? null : estadisticos[ctx.estadistico];
+  resultado.auditoria = { valor, texto: textoDeAuditoria(valor, ctx.estadistico), n };
+  return resultado;
+};
+
+// Por cantidad, de mayor a menor, y en un empate por nombre
+const porCantidad = (conteo) => [...conteo].sort(([nombreA, a], [nombreB, b]) => b - a || nombreA.localeCompare(nombreB, 'es'));
+
+// Áreas y temas (spec, 2.2: lo que estaba en la pestaña Métricas de Gestión), con los datasets que contaban en `al` (ya dados de alta y
+// todavía activos; sin los destildados):
+// - ranking: por área, con la misma regla que la tasa de cumplimiento de Gestión (cumplimientoDeGestion) y con el estado del índice
+//   en `al`: total (todos los del área, también los eventuales), al_dia (actualizados y próximos a vencer) y porcentaje
+//   (tasaDeActualizacion: al día sobre el total sin los eventuales; null si el área solo tiene eventuales). De mayor a menor
+//   porcentaje, el null al final, y en un empate por nombre. Uno de estado desconocido (un ciclo con venc null) no va;
+// - temas y frecuencias: [nombre, cantidad] de los datasets por tema principal y por frecuencia, por cantidad y en un empate por
+//   nombre (los que no tienen tema no van).
+// `opciones`: { al, sin } (el año sale de `al`). { ranking: [{ area, total, al_dia, porcentaje }], temas, frecuencias }, con listas
+// vacías si no hay `al`. Nunca tira.
+export const areasYTemas = (fuentesPorDataset, opciones) => {
+  const resultado = { ranking: [], temas: [], frecuencias: [] };
+  const ctx = contextoDe(opciones);
+  if (ctx === null) return resultado;
+  const porArea = new Map();
+  const temas = new Map();
+  const frecuencias = new Map();
+  const sumar = (conteo, nombre) => { if (tieneValor(nombre)) conteo.set(String(nombre), (conteo.get(String(nombre)) ?? 0) + 1); };
+  for (const d of datasetsDe(fuentesPorDataset, ctx)) {
+    const estado = estadoEnElDia(d, ctx.al)?.estado;
+    if (estado === undefined) continue;
+    sumar(temas, d.dataset.tema_principal);
+    sumar(frecuencias, d.dataset.frecuencia);
+    const { area } = d.dataset;
+    if (area === null || area === undefined || estado === 'desconocido') continue;
+    if (!porArea.has(area)) porArea.set(area, { total: 0, alDia: 0, eventuales: 0 });
+    const cuenta = porArea.get(area);
+    cuenta.total += 1;
+    if (AL_DIA.includes(estado)) cuenta.alDia += 1;
+    if (estado === 'eventual') cuenta.eventuales += 1;
+  }
+  resultado.ranking = [...porArea]
+    .map(([area, cuenta]) => ({ area, total: cuenta.total, al_dia: cuenta.alDia, porcentaje: tasaDeActualizacion(cuenta) }))
+    .sort((a, b) => (b.porcentaje ?? -1) - (a.porcentaje ?? -1) || String(a.area).localeCompare(String(b.area), 'es'));
+  resultado.temas = porCantidad(temas);
+  resultado.frecuencias = porCantidad(frecuencias);
+  return resultado;
 };

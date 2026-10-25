@@ -6,10 +6,12 @@ import {
   CASOS, HOY_DE_LOS_CASOS as HOY, HOY_DE_LAS_METRICAS, fuentesDelCaso, con, mapaDe, mapaDeLosCasos, cambio, email, nota, notaDgmit, solo
 } from './metricas-casos.js';
 import {
-  ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, duracion, cifraDe, unidadDe, casosDe, vistaDe
+  ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, duracion, cifraDe, unidadDe, casosDe, vistaDe,
+  indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
-import { diasEntre, diasHabilesTranscurridos } from '../services/notasDigitalesCalendario.js';
+import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
+import { diasEntre, diasHabilesTranscurridos, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 // Las claves de un caso, en el orden de la spec
 const CLAVES = [
@@ -1215,5 +1217,432 @@ describe('vistaDe', () => {
     const antes = structuredClone(casos);
     vista(casos, { sin: [52] });
     assert.deepEqual(casos, antes);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Contexto, el trabajo del RPAD y áreas y temas (spec, 2.2)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Un dataset armado a mano (sobre el del 52): un externo cada medio año dado de alta el 01/11/2025, sin cambios ni avisos
+const ds = (id, datos = {}, extra = {}) => solo({ id, titulo: `Dataset ${id}`, alta: '2025-11-01 10:00:00', ...datos }, extra);
+// Una actualización aprobada en `revisado`: pasa la carga a `carga` y la próxima de `de` a `a`
+const actualizacion = (id, datasetId, { revisado, carga, de, a }) => cambio({
+  id, dataset_id: datasetId, creado: `${revisado.slice(0, 10)} 08:00:00`, revisado,
+  anteriores: { proxima_actualizacion: de, ultima_actualizacion: '2025-10-15' },
+  nuevos: { proxima_actualizacion: a, ultima_actualizacion: carga, registro_actualizacion: true }
+});
+// Una reprogramación aprobada en `revisado`: solo mueve la próxima de `de` a `a`
+const reprogramacion = (id, datasetId, { revisado, de, a }) => cambio({
+  id, dataset_id: datasetId, creado: `${revisado.slice(0, 10)} 08:00:00`, revisado,
+  anteriores: { proxima_actualizacion: de }, nuevos: { proxima_actualizacion: a }
+});
+// Una baja aprobada en `revisado`
+const baja = (id, datasetId, revisado) => cambio({ id, tipo: 'eliminar', dataset_id: datasetId, creado: `${revisado.slice(0, 10)} 08:00:00`, revisado });
+// Lo que dicen los puntos del índice: [día, tasa] o [día, tasa, al día, base]
+const tasas = (puntos) => puntos.map((p) => [p.dia, p.tasa]);
+const conCuentas = (puntos) => puntos.map((p) => [p.dia, p.tasa, p.al_dia, p.base]);
+
+// La portada hoy: estadoDelDataset con la próxima de hoy, de los datasets activos (lo que cuentan la portada y el Estado general)
+const comoLaPortada = (mapa, hoy) => {
+  const estados = [...mapa.values()].filter((f) => f.dataset.activo)
+    .map((f) => estadoDelDataset({ proxima: f.dataset.proxima, meses: f.dataset.meses, tipoGestion: f.dataset.tipo_gestion, hoy }).estado);
+  const alDia = estados.filter((e) => e === 'actualizado' || e === 'proximo').length;
+  const eventuales = estados.filter((e) => e === 'eventual').length;
+  return {
+    tasa: tasaDeActualizacion({ alDia, total: estados.length, eventuales }), alDia, base: estados.length - eventuales,
+    vencidos: estados.filter((e) => e === 'atrasado' || e === 'sin-respuesta').length
+  };
+};
+
+describe('indiceMesAMes', () => {
+  it('el punto de hoy del índice es igual a tasaDeActualizacion con los mismos datasets', () => {
+    const hoy = HOY_DE_LAS_METRICAS;
+    const mapa = mapaDe(
+      ds(901, { proxima: '2027-03-31' }), // actualizado
+      ds(902, { proxima: '2026-11-30' }), // próximo a vencer
+      ds(903, { proxima: hoy }), // vence hoy: todavía al día
+      ds(904, { proxima: '2026-09-30' }), // vencido, externo: sin respuesta
+      ds(905, { proxima: '2026-06-30', tipo_gestion: 'interna' }), // vencido, interno: atrasado
+      ds(906, { proxima: null }), // sin fecha: en la base, no al día
+      ds(907, { proxima: null, meses: null, frecuencia: 'Eventual' }), // eventual: no cuenta
+      ds(908, { proxima: '2027-01-31', alta: `${hoy} 09:00:00` }), // dado de alta hoy
+      // Actualizado hoy: el ciclo abierto empieza hoy
+      ds(909, { proxima: '2027-04-30', ultima: hoy }, {
+        cambios: [actualizacion(70, 909, { revisado: `${hoy} 10:00:00`, carga: hoy, de: '2026-04-30', a: '2027-04-30' })]
+      }),
+      // Dado de baja en agosto: hoy no cuenta
+      ds(910, { proxima: '2027-01-31', activo: false }, { cambios: [baja(71, 910, '2026-08-03 10:00:00')] })
+    );
+    const portada = comoLaPortada(mapa, hoy);
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: hoy }).at(-1), { dia: hoy, tasa: portada.tasa, al_dia: portada.alDia, base: portada.base });
+    // 901, 902, 903, 908 y 909 al día, de 8 (los activos sin el eventual)
+    assert.deepEqual([portada.tasa, portada.alDia, portada.base], [63, 5, 8]);
+    // Con los casos reales, en el día de los casos, en el de las métricas y al 31/12
+    for (const al of [HOY, HOY_DE_LAS_METRICAS, '2026-12-31']) {
+      const reales = comoLaPortada(mapaDeLosCasos(), al);
+      assert.deepEqual(indiceMesAMes(mapaDeLosCasos(), { anio: 2026, al }).at(-1), { dia: al, tasa: reales.tasa, al_dia: reales.alDia, base: reales.base }, al);
+    }
+  });
+
+  it('el índice se toma el primer día de cada mes: un vencimiento del 31/01 aparece en el punto del 1/2', () => {
+    const mapa = mapaDe(ds(901, { proxima: '2026-01-31' }), ds(902, { proxima: '2026-12-31' }));
+    assert.deepEqual(conCuentas(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-15' })), [
+      ['2026-01-01', 100, 2, 2], ['2026-02-01', 50, 1, 2], ['2026-03-01', 50, 1, 2], ['2026-03-15', 50, 1, 2]
+    ]);
+    // El día del vencimiento todavía está al día: tomado a fin de mes, el vencimiento del 31/01 no se vería en enero
+    assert.deepEqual(tasas(indiceMesAMes(mapa, { anio: 2026, al: '2026-01-31' })), [['2026-01-01', 100], ['2026-01-31', 100]]);
+    // Con al en el primer día de un mes, ese punto va una sola vez; en un año cerrado, los doce primeros días y el 31/12
+    assert.deepEqual(tasas(indiceMesAMes(mapa, { anio: 2026, al: '2026-02-01' })), [['2026-01-01', 100], ['2026-02-01', 50]]);
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-01-01' }).map((p) => p.dia), ['2026-01-01']);
+    const anio = indiceMesAMes(mapa, { anio: 2026 });
+    assert.deepEqual(anio.map((p) => p.dia), [
+      '2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01',
+      '2026-10-01', '2026-11-01', '2026-12-01', '2026-12-31'
+    ]);
+    assert.deepEqual(anio.map((p) => p.tasa), [100, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50]);
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2027-03-01' }), anio);
+
+    // Cada día cuenta el ciclo que regía en el RPAD al terminar el día: el 901 se actualiza el 10/02 (la carga, el 09/02) hasta el
+    // 30/04, y vuelve a vencer el 1/5
+    const actualizado = mapaDe(
+      ds(901, { proxima: '2026-04-30', ultima: '2026-02-09' }, {
+        cambios: [actualizacion(70, 901, { revisado: '2026-02-10 10:00:00', carga: '2026-02-09', de: '2026-01-31', a: '2026-04-30' })]
+      }),
+      ds(902, { proxima: '2026-12-31' })
+    );
+    assert.deepEqual(tasas(indiceMesAMes(actualizado, { anio: 2026, al: '2026-06-15' })), [
+      ['2026-01-01', 100], ['2026-02-01', 50], ['2026-03-01', 100], ['2026-04-01', 100], ['2026-05-01', 50], ['2026-06-01', 50],
+      ['2026-06-15', 50]
+    ]);
+    // Aprobada el mismo día del punto, ese punto ya la ve
+    const delDia = mapaDe(ds(901, { proxima: '2026-04-30', ultima: '2026-02-01' }, {
+      cambios: [actualizacion(70, 901, { revisado: '2026-02-01 18:00:00', carga: '2026-02-01', de: '2026-01-31', a: '2026-04-30' })]
+    }));
+    assert.deepEqual(tasas(indiceMesAMes(delDia, { anio: 2026, al: '2026-02-01' })), [['2026-01-01', 100], ['2026-02-01', 100]]);
+  });
+
+  it('un dataset dado de baja no cuenta después de la baja', () => {
+    // El 901 vence el 31/01 y se da de baja el 01/04 a las 10:00: el punto del 1/4 ya no lo cuenta
+    const mapa = mapaDe(
+      ds(901, { proxima: '2026-01-31', activo: false }, { cambios: [baja(71, 901, '2026-04-01 10:00:00')] }),
+      ds(902, { proxima: '2026-12-31' })
+    );
+    assert.deepEqual(conCuentas(indiceMesAMes(mapa, { anio: 2026, al: '2026-05-10' })), [
+      ['2026-01-01', 100, 2, 2], ['2026-02-01', 50, 1, 2], ['2026-03-01', 50, 1, 2], ['2026-04-01', 100, 1, 1], ['2026-05-01', 100, 1, 1],
+      ['2026-05-10', 100, 1, 1]
+    ]);
+    // Uno sin fecha también deja de contar con la baja; uno inactivo sin la baja registrada no cuenta nunca (no se sabe desde cuándo)
+    const otros = mapaDe(
+      ds(901, { proxima: null, activo: false }, { cambios: [baja(71, 901, '2026-03-02 10:00:00')] }),
+      ds(902, { proxima: '2026-12-31' }),
+      ds(903, { proxima: '2026-12-31', activo: false })
+    );
+    assert.deepEqual(conCuentas(indiceMesAMes(otros, { anio: 2026, al: '2026-04-01' })), [
+      ['2026-01-01', 50, 1, 2], ['2026-02-01', 50, 1, 2], ['2026-03-01', 50, 1, 2], ['2026-04-01', 100, 1, 1]
+    ]);
+    // Un dataset que figura activo aunque tenga una baja (se reactivó por fuera del sistema) cuenta, con la próxima de hoy
+    const reactivado = mapaDe(ds(901, { proxima: '2026-12-31' }, { cambios: [baja(71, 901, '2026-03-02 10:00:00')] }));
+    assert.deepEqual(tasas(indiceMesAMes(reactivado, { anio: 2026, al: '2026-04-01' })).at(-1), ['2026-04-01', 100]);
+    // Ni la antigüedad de los vencidos ni el ranking lo cuentan después de la baja
+    assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-31' }).total, 1);
+    assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-04-01' }).total, 0);
+    assert.deepEqual(areasYTemas(mapa, { al: '2026-03-31' }).ranking.map((a) => a.total), [2]);
+    assert.deepEqual(areasYTemas(mapa, { al: '2026-04-01' }).ranking.map((a) => a.total), [1]);
+  });
+
+  it('un dataset entra el día de su alta; los sin fecha están en la base sin estar al día; los eventuales no cuentan', () => {
+    const mapa = mapaDe(
+      ds(901, { proxima: '2026-12-31' }),
+      ds(902, { proxima: '2026-12-31', alta: '2026-02-15 12:00:00' }),
+      ds(903, { proxima: null }),
+      ds(904, { proxima: null, meses: null, frecuencia: 'Eventual' })
+    );
+    assert.deepEqual(conCuentas(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01' })), [
+      ['2026-01-01', 50, 1, 2], ['2026-02-01', 50, 1, 2], ['2026-03-01', 67, 2, 3]
+    ]);
+    // Sin ninguno con vencimiento, no hay tasa
+    assert.deepEqual(conCuentas(indiceMesAMes(mapaDe(ds(904, { proxima: null, meses: null })), { anio: 2026, al: '2026-01-01' })),
+      [['2026-01-01', null, 0, 0]]);
+  });
+
+  it('un mes en el que no se sabe el estado de más del 10 % de la base (ciclo con venc null) no tiene tasa', () => {
+    // Una actualización simple del 10/02/2026 (sin cambio): la próxima que cumplía no quedó guardada, así que hasta ese día no se
+    // sabe si estaba al día
+    const simple = (id) => ds(id, { proxima: '2026-08-31', ultima: '2026-02-10' }, {
+      historial: [{ fecha: '2026-02-10', creado: '2026-02-10 09:00:00', usuario: null, cambio_id: null }]
+    });
+    const conocidos = (n) => Array.from({ length: n }, (_, i) => ds(910 + i, { proxima: '2026-12-31' }));
+    // 1 de 10: el 10 %, todavía se dibuja, con los que se conocen
+    assert.deepEqual(conCuentas(indiceMesAMes(mapaDe(simple(901), ...conocidos(9)), { anio: 2026, al: '2026-03-01' })), [
+      ['2026-01-01', 100, 9, 9], ['2026-02-01', 100, 9, 9], ['2026-03-01', 100, 10, 10]
+    ]);
+    // 2 de 10: más del 10 %, no se dibuja; después de la actualización, sí
+    assert.deepEqual(conCuentas(indiceMesAMes(mapaDe(simple(901), simple(902), ...conocidos(8)), { anio: 2026, al: '2026-03-01' })), [
+      ['2026-01-01', null, null, null], ['2026-02-01', null, null, null], ['2026-03-01', 100, 10, 10]
+    ]);
+  });
+
+  it('destildar saca al dataset del índice', () => {
+    const mapa = mapaDe(ds(901, { proxima: '2026-01-31' }), ds(902, { proxima: '2026-12-31' }));
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01', sin: [901] }),
+      indiceMesAMes(mapaDe(ds(902, { proxima: '2026-12-31' })), { anio: 2026, al: '2026-03-01' }));
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01', sin: new Set([901]) }).map((p) => p.tasa), [100, 100, 100]);
+  });
+});
+
+describe('antiguedadDeVencidos', () => {
+  it('antigüedad: 89, 90 y 366 días caen en los tres grupos', () => {
+    const al = HOY_DE_LAS_METRICAS;
+    const vencidoHace = (id, dias, datos = {}) => ds(id, { proxima: sumarDias(al, -dias), alta: '2024-01-01 10:00:00', ...datos });
+    const mapa = mapaDe(
+      vencidoHace(901, 89), vencidoHace(902, 90), vencidoHace(903, 365, { tipo_gestion: 'interna' }), vencidoHace(904, 366),
+      vencidoHace(905, 1),
+      ds(906, { proxima: al }), // vence hoy: al día
+      ds(907, { proxima: null }), // sin fecha: no tiene vencimiento
+      ds(908, { proxima: null, meses: null }) // eventual
+    );
+    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al }), {
+      total: 5, menos_de_3_meses: 2, de_3_a_12: 2, mas_de_un_anio: 1, al_inicio: { total: 2, actualizados: 0 }
+    });
+    // Hoy, los mismos vencidos que la portada
+    assert.equal(antiguedadDeVencidos(mapa, { anio: 2026, al }).total, comoLaPortada(mapa, al).vencidos);
+    // Destildados, no cuentan
+    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al, sin: [901, 904] }), {
+      total: 3, menos_de_3_meses: 1, de_3_a_12: 2, mas_de_un_anio: 0, al_inicio: { total: 1, actualizados: 0 }
+    });
+  });
+
+  it('al 1/1: los vencidos ese día y cuántos de esos ya se actualizaron (no una reprogramación)', () => {
+    const al = HOY_DE_LAS_METRICAS;
+    const mapa = mapaDe(
+      // Vencido desde el 30/11/2025, actualizado el 10/03 (la carga, el 09/03) hasta el 30/11/2026
+      ds(901, { proxima: '2026-11-30', ultima: '2026-03-09' }, {
+        cambios: [actualizacion(70, 901, { revisado: '2026-03-10 10:00:00', carga: '2026-03-09', de: '2025-11-30', a: '2026-11-30' })]
+      }),
+      // Vencido desde el 31/12/2025 y reprogramado el 02/02 al 31/12/2026: no se actualizó
+      ds(902, { proxima: '2026-12-31' }, { cambios: [reprogramacion(71, 902, { revisado: '2026-02-02 10:00:00', de: '2025-12-31', a: '2026-12-31' })] }),
+      // Vencido desde el 31/10/2025, una reprogramación y después la actualización: se actualizó
+      ds(903, { proxima: '2027-01-31', ultima: '2026-06-01' }, {
+        cambios: [
+          reprogramacion(72, 903, { revisado: '2026-02-02 10:00:00', de: '2025-10-31', a: '2026-03-31' }),
+          actualizacion(73, 903, { revisado: '2026-06-02 10:00:00', carga: '2026-06-01', de: '2026-03-31', a: '2027-01-31' })
+        ]
+      }),
+      // Vencido desde el 30/09/2025 y sigue así
+      ds(904, { proxima: '2025-09-30' }),
+      // Vencía el 31/01/2026: al 1/1 estaba al día
+      ds(905, { proxima: '2026-01-31' })
+    );
+    const antiguedad = antiguedadDeVencidos(mapa, { anio: 2026, al });
+    assert.deepEqual(antiguedad.al_inicio, { total: 4, actualizados: 2 });
+    assert.deepEqual([antiguedad.total, antiguedad.menos_de_3_meses, antiguedad.de_3_a_12, antiguedad.mas_de_un_anio], [2, 0, 1, 1]);
+    // Una actualización cargada después de al todavía no pasó
+    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-08' }).al_inicio, { total: 4, actualizados: 0 });
+    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-09' }).al_inicio, { total: 4, actualizados: 1 });
+  });
+});
+
+describe('trabajoDelAnio', () => {
+  const trabajo = (mapa, casos = [], opciones = {}) => trabajoDelAnio(mapa, casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, ...opciones });
+  const ceros = () => Array(12).fill(0);
+
+  it('trabajo: un email con tres datasets cuenta una vez y no cuenta si se destildan los tres', () => {
+    const delAviso = email({ id: 950, tipo: 'externo-40', enviado: '2026-03-02 08:00:00' });
+    const mapa = mapaDe(...[901, 902, 903].map((id) => ds(id, { proxima: '2026-04-30' }, { emails: [{ ...delAviso }] })));
+    assert.equal(trabajo(mapa).avisos, 1);
+    assert.deepEqual(trabajo(mapa).por_mes.avisos, [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert.equal(trabajo(mapa, [], { sin: [901, 902] }).avisos, 1);
+    assert.equal(trabajo(mapa, [], { sin: [901, 902, 903] }).avisos, 0);
+    assert.deepEqual(trabajo(mapa, [], { sin: [901, 902, 903] }).por_mes.avisos, ceros());
+  });
+
+  it('los avisos: emails a la DGMIT enviados y Notas Digitales de aviso y de reiteración enviadas, del año hasta al', () => {
+    const avisos = [
+      email({ id: 950, tipo: 'externo-vencido', enviado: '2026-01-02 08:00:00' }),
+      email({ id: 951, tipo: 'interno-60', enviado: '2026-01-20 08:00:00' }),
+      email({ id: 952, tipo: 'externo-40', enviado: '2026-02-10 08:00:00', success: false }), // no se pudo enviar
+      email({ id: 953, tipo: 'area-aviso-40', enviado: '2026-02-11 08:00:00' }), // al área, no a la DGMIT
+      email({ id: 954, tipo: 'externo-40', enviado: '2025-12-22 08:00:00' }), // del año anterior
+      email({ id: 955, tipo: 'externo-5', enviado: '2026-10-25 08:00:00' }) // después de al
+    ];
+    const notas = [
+      nota({ id: 960, tipo: 'aviso', fecha: '2026-10-15', enviada: '2026-10-15 08:15:00' }),
+      nota({ id: 961, tipo: 'reiteracion', fecha: '2026-10-20', enviada: null, seccion: 'vencido' }), // sin el momento: el día de la nota
+      nota({ id: 962, tipo: 'aviso', fecha: '2026-10-21', estado: 'fallida', enviada: null }), // no salió
+      nota({ id: 963, tipo: 'aviso', fecha: '2026-10-22', estado: 'pendiente', enviada: null })
+    ];
+    // El mismo email y la misma nota en dos datasets cuentan una vez (también con el id en texto); un email y una nota con el mismo id
+    // son dos avisos
+    const mapa = mapaDe(
+      ds(901, {}, { emails: avisos, notas }),
+      ds(902, {}, { emails: [{ ...avisos[0], id: '950' }], notas: [{ ...notas[0], id: 950 }, { ...notas[1] }] })
+    );
+    const t = trabajo(mapa);
+    assert.equal(t.avisos, 5);
+    assert.deepEqual(t.por_mes.avisos, [2, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0]);
+  });
+
+  it('las actualizaciones, los pedidos resueltos con una fuente pública, los cambios auditados y los datasets nuevos', () => {
+    const casos = [
+      cerrado({ dataset_id: 901 }), // carga el 08/04
+      cerrado({ dataset_id: 902, carga: '2026-04-20', cierre: '2026-04-20', origen: 'fuente_publica' }),
+      cerrado({ dataset_id: 903, carga: '2026-05-04', cierre: '2026-05-04', origen: 'fuente_publica', requiere_nota: 0 }), // con «No», es lo normal
+      cerrado({ dataset_id: 904, carga: '2026-05-04', cierre: '2026-05-04', origen: 'fuente_publica', requiere_nota: null }),
+      cerrado({ dataset_id: 905, carga: '2025-12-17', cierre: '2025-12-17' }), // del año anterior
+      cerrado({ dataset_id: 906, carga: '2026-10-25', cierre: '2026-10-25' }), // después de al
+      caso({ dataset_id: 907, como: 'reprogramacion', abierto: false, cierre: '2026-04-06' }), // no es una actualización
+      caso({ dataset_id: 908 }) // abierto
+    ];
+    const revisado = (id, datasetId, creado, revisadoEl, datos = {}) => cambio({ id, dataset_id: datasetId, creado, revisado: revisadoEl, ...datos });
+    const mapa = mapaDe(
+      ds(901, { alta: '2026-02-03 10:00:00' }, {
+        cambios: [
+          revisado(80, 901, '2026-03-02 10:00:00', '2026-03-02 10:03:00'),
+          revisado(81, 901, '2026-03-05 10:00:00', '2026-03-05 10:05:00', { estado: 'rechazado' }), // rechazado: también se auditó
+          revisado(82, 901, '2026-03-06 10:00:00', null, { estado: 'pendiente' }), // todavía no
+          revisado(83, 901, '2025-12-30 10:00:00', '2025-12-30 10:01:00') // del año anterior
+        ],
+        // El alta, unida al dataset por la hora de la aprobación
+        altasSinDataset: [revisado(84, null, '2026-02-03 09:58:00', '2026-02-03 10:00:02', { tipo: 'crear', nuevos: { titulo: 'Dataset 901' } })]
+      }),
+      ds(902, { alta: '2025-12-31 23:59:59' }, { cambios: [revisado(85, 902, '2026-01-31 23:00:00', '2026-02-01 00:30:00')] }),
+      ds(903, { alta: '2026-10-25 10:00:00', activo: false }) // después de al
+    );
+    const t = trabajo(mapa, casos);
+    assert.deepEqual([t.actualizaciones, t.fuente_publica, t.auditados, t.nuevos], [4, 2, 4, 1]);
+    assert.deepEqual(t.por_mes.actualizaciones, [0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(t.por_mes.auditados, [0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert.equal(t.auditoria.n, 4);
+    // Destildados, no cuentan
+    const sin = trabajo(mapa, casos, { sin: [901, 902] });
+    assert.deepEqual([sin.actualizaciones, sin.fuente_publica, sin.auditados, sin.nuevos], [2, 1, 0, 0]);
+    assert.deepEqual(sin.auditoria, { valor: null, texto: '', n: 0 });
+    // Un dataset dado de alta y de baja en el año también fue trabajo del año
+    assert.equal(trabajo(mapa, [], { al: '2026-12-31' }).nuevos, 2);
+  });
+
+  it('auditoría en minutos y en horas', () => {
+    // Cambios propuestos el 02/03/2026 a las 10:00 y revisados `m` minutos después
+    const revisadoA = (m) => {
+      const total = 600 + m;
+      const dos = (n) => String(n).padStart(2, '0');
+      return `2026-03-${dos(2 + Math.floor(total / 1440))} ${dos(Math.floor((total % 1440) / 60))}:${dos(total % 60)}:00`;
+    };
+    const conCambios = (minutos) => mapaDe(ds(901, {}, {
+      cambios: minutos.map((m, i) => cambio({ id: 80 + i, dataset_id: 901, creado: '2026-03-02 10:00:00', revisado: revisadoA(m) }))
+    }));
+    const auditoria = (minutos, estadistico) => trabajo(conCambios(minutos), [], { estadistico }).auditoria;
+    assert.deepEqual(auditoria([2, 3, 10]), { valor: 3, texto: 'mediana de 3 minutos', n: 3 });
+    assert.deepEqual(auditoria([2, 3, 10], 'promedio'), { valor: 5, texto: 'promedio de 5 minutos', n: 3 });
+    // Desde 120 minutos, en horas redondeadas: la mediana de 600 minutos son 10 horas; el promedio, 553, son 9
+    assert.deepEqual(auditoria([60, 600, 1000]), { valor: 600, texto: 'mediana de 10 horas', n: 3 });
+    assert.deepEqual(auditoria([60, 600, 1000], 'promedio'), { valor: 553, texto: 'promedio de 9 horas', n: 3 });
+    assert.equal(auditoria([119]).texto, 'mediana de 119 minutos');
+    assert.equal(auditoria([120]).texto, 'mediana de 2 horas');
+    // De un día para el otro: 24 horas
+    assert.equal(auditoria([1440]).texto, 'mediana de 24 horas');
+    // Singular y menos de un minuto
+    assert.equal(auditoria([1]).texto, 'mediana de 1 minuto');
+    assert.equal(auditoria([0]).texto, 'mediana de menos de 1 minuto');
+    // Con n par, el promedio de las dos del medio, como en el circuito
+    assert.deepEqual(auditoria([2, 3]), { valor: 3, texto: 'mediana de 3 minutos', n: 2 });
+    // Los segundos cuentan: 30 y 90 segundos dan una mediana de 1 minuto
+    const segundos = mapaDe(ds(901, {}, {
+      cambios: [
+        cambio({ id: 80, dataset_id: 901, creado: '2026-03-02 10:00:00', revisado: '2026-03-02 10:00:30' }),
+        cambio({ id: 81, dataset_id: 901, creado: '2026-03-02 10:00:00', revisado: '2026-03-02 10:01:30' })
+      ]
+    }));
+    assert.deepEqual(trabajo(segundos).auditoria, { valor: 1, texto: 'mediana de 1 minuto', n: 2 });
+    // Sin cambios auditados, sin valor
+    assert.deepEqual(trabajo(mapaDe(ds(901))).auditoria, { valor: null, texto: '', n: 0 });
+  });
+
+  it('con datos raros no tira, y no modifica las fuentes ni los casos', () => {
+    const vacio = {
+      avisos: 0, actualizaciones: 0, auditados: 0, nuevos: 0, fuente_publica: 0,
+      por_mes: { avisos: ceros(), actualizaciones: ceros(), auditados: ceros() }, auditoria: { valor: null, texto: '', n: 0 }
+    };
+    for (const mapa of [null, undefined, 'x', {}, new Map([[1, null], [2, 'x'], [3, { dataset: null }]])]) {
+      assert.deepEqual(trabajo(mapa, 'x'), vacio);
+    }
+    assert.deepEqual(trabajoDelAnio(mapaDe(ds(901)), [], {}), vacio);
+    // Lo que no se puede leer no cuenta: un email sin id, un envío sin fecha, una revisión en un mes que no existe; un cambio sin la
+    // fecha de la propuesta se auditó, pero no se sabe cuánto tardó
+    const raro = mapaDe(ds(901, { alta: 'x' }, {
+      emails: [null, 'x', email({ id: 'x' }), email({ enviado: 'mal' })], notas: [null, nota({ fecha: 'x', enviada: null })],
+      cambios: [null, cambio({ creado: 'x' }), cambio({ id: 81, revisado: '2026-13-01 10:00:00' })], altasSinDataset: 'x'
+    }));
+    const t = trabajo(raro, [null, 'x', cerrado({ carga: 'x' })]);
+    assert.deepEqual([t.avisos, t.actualizaciones, t.auditados, t.nuevos, t.auditoria.n], [0, 0, 1, 0, 0]);
+    const mapa = mapaDeLosCasos();
+    const casos = casosDe(mapa, { hoy: HOY_DE_LAS_METRICAS });
+    const antes = [structuredClone([...mapa.values()]), structuredClone(casos)];
+    trabajo(mapa, casos, { sin: [52] });
+    indiceMesAMes(mapa, { anio: 2026, al: HOY_DE_LAS_METRICAS });
+    antiguedadDeVencidos(mapa, { anio: 2026, al: HOY_DE_LAS_METRICAS });
+    areasYTemas(mapa, { al: HOY_DE_LAS_METRICAS });
+    assert.deepEqual([[...mapa.values()], casos], antes);
+  });
+});
+
+describe('areasYTemas', () => {
+  it('el ranking usa la misma regla que Gestión: al día sobre los que tienen vencimiento, por área, con el null al final', () => {
+    const al = HOY_DE_LAS_METRICAS;
+    const mapa = mapaDe(
+      ds(901, { area: 'Área Uno', proxima: '2027-03-31', tema_principal: 'Economía y Finanzas', frecuencia: 'Anualmente', meses: 12 }),
+      ds(902, { area: 'Área Uno', proxima: '2026-11-30', tema_principal: 'Economía y Finanzas' }),
+      ds(903, { area: 'Área Uno', proxima: '2026-09-30', tema_principal: 'Turismo y Deportes' }),
+      ds(904, { area: 'Área Uno', proxima: null, meses: null, frecuencia: 'Eventual', tema_principal: 'Turismo y Deportes' }),
+      ds(905, { area: 'Área Dos', proxima: null, tema_principal: null }),
+      ds(906, { area: 'Área Tres', proxima: null, meses: null, frecuencia: 'Eventual', tema_principal: 'Economía y Finanzas' }),
+      ds(907, { area: 'Área Cuatro', proxima: '2027-03-31', tema_principal: 'Economía y Finanzas' }),
+      ds(908, { area: 'Área Cinco', proxima: '2026-12-31', tema_principal: 'Geografía y Territorio', frecuencia: 'Anualmente', meses: 12 }),
+      ds(909, { area: 'Área Cinco', proxima: '2027-01-31', activo: false }), // inactivo: no cuenta
+      ds(910, { area: 'Área Seis', proxima: '2027-01-31' }) // destildado
+    );
+    assert.deepEqual(areasYTemas(mapa, { al, sin: [910] }), {
+      ranking: [
+        { area: 'Área Cinco', total: 1, al_dia: 1, porcentaje: 100 },
+        { area: 'Área Cuatro', total: 1, al_dia: 1, porcentaje: 100 },
+        { area: 'Área Uno', total: 4, al_dia: 2, porcentaje: 67 },
+        { area: 'Área Dos', total: 1, al_dia: 0, porcentaje: 0 },
+        { area: 'Área Tres', total: 1, al_dia: 0, porcentaje: null }
+      ],
+      // Por cantidad y, en un empate, por nombre; los que no tienen tema no van
+      temas: [['Economía y Finanzas', 4], ['Turismo y Deportes', 2], ['Geografía y Territorio', 1]],
+      frecuencias: [['Cada medio año', 4], ['Anualmente', 2], ['Eventual', 2]]
+    });
+    assert.deepEqual(areasYTemas(mapa, { al }).ranking.map((a) => a.area),
+      ['Área Cinco', 'Área Cuatro', 'Área Seis', 'Área Uno', 'Área Dos', 'Área Tres']);
+  });
+
+  it('con los casos reales, el ranking da lo mismo que la portada en cada área', () => {
+    const al = HOY_DE_LAS_METRICAS;
+    const mapa = mapaDeLosCasos();
+    const { ranking } = areasYTemas(mapa, { al });
+    assert.equal(ranking.length, new Set([...mapa.values()].map((f) => f.dataset.area)).size);
+    for (const fila of ranking) {
+      const delArea = new Map([...mapa].filter(([, f]) => f.dataset.area === fila.area));
+      const portada = comoLaPortada(delArea, al);
+      assert.deepEqual([fila.total, fila.al_dia, fila.porcentaje], [delArea.size, portada.alDia, portada.tasa], fila.area);
+    }
+    assert.ok(ranking.every((a, i) => i === 0 || (a.porcentaje ?? -1) <= (ranking[i - 1].porcentaje ?? -1)));
+  });
+
+  it('con datos raros no tira', () => {
+    const nada = { ranking: [], temas: [], frecuencias: [] };
+    for (const mapa of [null, undefined, 'x', {}, new Map([[1, null], [2, { dataset: 'x' }]])]) {
+      assert.deepEqual(areasYTemas(mapa, { al: HOY_DE_LAS_METRICAS }), nada);
+      assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: HOY_DE_LAS_METRICAS }).map((p) => p.base), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+    assert.deepEqual(areasYTemas(mapaDe(ds(901)), {}), nada);
+    assert.deepEqual(indiceMesAMes(mapaDe(ds(901)), {}), []);
+    assert.deepEqual(antiguedadDeVencidos(null, { anio: 2026 }),
+      { total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } });
+    // Fechas que no se pueden leer: el dataset sin alta cuenta desde siempre; uno con la próxima mal escrita es sin fecha
+    const raros = mapaDe(ds(901, { alta: null, proxima: '2026-12-31' }), ds(902, { proxima: '2026-02-30' }));
+    assert.deepEqual(conCuentas(indiceMesAMes(raros, { anio: 2026, al: '2026-01-01' })), [['2026-01-01', 50, 1, 2]]);
   });
 });
