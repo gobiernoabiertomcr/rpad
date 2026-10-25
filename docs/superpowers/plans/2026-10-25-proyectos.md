@@ -191,7 +191,7 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - las fechas de la timeline son texto `'AAAA-MM-DD'`;
   - el id `abc` da 404 en `GET /gestion/proyectos/abc`;
   - permisos: el lector y el colaborador reciben 200 en los tres GET y 403 en cada escritura; sin sesión, 401.
-- [ ] **Step 2:** Sumar a `RUTAS_SOLO_ADMIN` de `tests/permisos.test.js` las escrituras de proyectos, logros e hitos (las subidas y borrados de archivos, en la Task 4). Sumar `/gestion/timeline` a lo que pueden el lector y el colaborador.
+- [ ] **Step 2:** Sumar a `RUTAS_SOLO_ADMIN` de `tests/permisos.test.js` las escrituras de proyectos, logros e hitos (las subidas y borrados de archivos, en la Task 4). Sumar `/gestion/timeline` a los GET que puede el lector (`describe('lector')`, que ya tiene `/gestion/metricas` y `/gestion/proyectos`), y `/gestion/proyectos` y `/gestion/timeline` a los del colaborador (`describe('colaborador')`, que hoy no tiene ninguno de `/gestion`).
 - [ ] **Step 3:** Correr los dos archivos. Esperado: FAIL donde cambia el comportamiento (validaciones, fechas, transacción, 404 del dado de baja).
 - [ ] **Step 4:** Implementar `controllers/proyectosController.js`: `getProyectos`, `getProyectoById`, `createProyecto`, `updateProyecto`, `deleteProyecto`, `createLogro`, `createHito`, `updateHito`, `deleteHito` y `getTimeline`. Mover sus imports en `routes/index.js` y sacarlas de `gestionController.js`.
 - [ ] **Step 5:** Correr los dos archivos (PASS) y `npm test` completo (0 fallos; `metricas-api.test.js` del Informe anual sigue igual).
@@ -262,7 +262,7 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
 - El `<style>` con los tokens `--sg-*` y las piezas de la maqueta (`.pr-*`), sin `publico.css`.
 - La estructura de la maqueta: el `h1`, «Nuevo proyecto» `hidden`, la bajada, el aviso `#pr-aviso-metricas` `hidden`, `#message-container`, las tres pestañas y sus paneles, `#pr-vista-detalle`, los estados `#pr-cargando` (`role="status"`) y `#pr-error` (`role="alert"`), y el `<noscript>`.
 - Los modales los agrega la Task 7.
-- Los scripts: `config.js`, `auth`, `main` y `api` con `?v=VERSION`, y `proyectos.js?v=VERSION_PROYECTOS` (`'20261205'`, o el siguiente libre).
+- Los scripts: `config.js`, `auth`, `main` y `api` con `?v=VERSION` (`'20261204'`), y `proyectos.js?v=VERSION_PROYECTOS` (`'20261206'`: el siguiente al más alto de `tests/paginas.test.js`, el `'20261205'` de `VERSION_PANTALLAS` y `VERSION_AREAS`; Ruling R2).
 
 **Interfaces** (`proyectos.js`, globales del script):
 - **Constantes:** `TEXTO_ESTADO`, `TEXTO_ESTADO_PLURAL`, `ORDEN_ESTADOS`, `TEXTO_CATEGORIA`, `TEXTO_PRIORIDAD` y `ANIOS_VENTANA = 3`.
@@ -300,7 +300,8 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - el orden de la maqueta: en curso primero y, dentro, el del último hito más nuevo;
   - `htmlDeCarriles`: un link `href="?id=7"` (con el estado de la dirección) por proyecto; la píldora «3 antes» con `title="3 hitos antes de 2024"`; «Sin hitos todavía»; el renglón «Logros del área»; un nombre `<img src=x onerror=alert(1)>` sale escapado (en el texto y en el `title`); el nombre lleva la clase que hace `overflow-wrap: anywhere`;
   - el vacío por filtros con «Ver todos los proyectos»; sin ningún proyecto, para el lector «Todavía no hay proyectos.» sin la invitación, y para administración, con ella;
-  - en `paginas.test.js`, sumar `['proyectos.html', 'proyectos', VERSION_PROYECTOS]` al arreglo de los scripts «después de api.js».
+  - en `paginas.test.js`, sumar `const VERSION_PROYECTOS = '20261206'` (con su comentario, como las demás) y `['proyectos.html', 'proyectos', VERSION_PROYECTOS]` al arreglo de los scripts «después de api.js» (hoy termina en `['notas.html', 'notas', VERSION_NOTAS]`);
+  - en `paginas.test.js`, `it('hay 13 páginas con carcasa')` pasa a 14 mientras conviven `gestion.html` y `proyectos.html` (la Task 9 lo vuelve a 13). Los tests que recorren las páginas con carcasa ya cubren `proyectos.html`: la carcasa igual a la de `index.html`, `main.css` y las fuentes, los destinos del menú (todavía con `gestion.html`), sin `aria-current`, sin `publico.css`, nada de afuera y `auth`, `main` y `api` con `VERSION`.
 - [ ] **Step 2:** Correr `node --test tests/proyectos-frontend.test.js tests/paginas.test.js`. Esperado: FAIL.
 - [ ] **Step 3:** Implementar las funciones en `proyectos.js` (al cargarse solo declara) y `proyectos.html`.
 - [ ] **Step 4:** Correr (PASS) y `npm test` completo.
@@ -428,26 +429,28 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
 ### Task 9: El renombre: redirección, menú, archivos viejos y textos
 
 **Files:**
-- Modify: `app.js` (antes de `express.static`, junto a las redirecciones de Configuración: `app.get('/gestion.html', (req, res) => res.redirect(302, '/proyectos.html'))`, con un comentario que cite la spec, sección 11)
-- Modify: todas las páginas con `id="sidebar"`, incluida `proyectos.html`: en `#sidebarTools`, el link de Gestión pasa a `href="proyectos.html"`, el texto «Proyectos» y el `folder-kanban`. El `h1` de `proyectos.html` también.
+- Modify: `app.js` (antes de `express.static`, debajo de las dos redirecciones de Configuración, que están en las líneas 55 a 60 con su comentario —`app.get('/usuarios.html', (req, res) => res.redirect(302, '/configuracion.html'));` y la de `areas.html`— y antes de `app.use(express.static(…))`, línea 63: `app.get('/gestion.html', (req, res) => res.redirect(302, '/proyectos.html'));`, con un comentario que cite la spec, sección 11)
+- Modify: las 12 páginas con `id="sidebar"` que quedan (admin, calendario, configuracion, contacto, correos, dataset, datasets, index, notas, perfil, reportes y seguimiento) y `proyectos.html`; `gestion.html` se borra, así que siguen 13. En `#sidebarTools`, el tercer link (en `index.html`, línea 82: `<a href="gestion.html" class="sidebar-link">`, el ícono de barras `M3 3v18h18` y `<span>Gestión</span>`) pasa a `href="proyectos.html"`, el texto «Proyectos» y el `folder-kanban`. El `h1` de `proyectos.html` también.
 - Delete: `public/gestion.html`, `public/js/gestion.js`
-- Modify: `services/reportesInformeAnualPdf.js` («Los hitos de ${anio} cargados en Proyectos» y los comentarios), `public/js/reportes.js` (la tarjeta del Informe anual: «(los hitos de Herramientas → Proyectos)») + `public/reportes.html` (sube `?v=` de `reportes.js`), `public/js/usuarios.js` (la ayuda del lector y, si la nombra, la del colaborador: «Gestión» pasa a «Proyectos») + su página (sube su `?v=`)
-- Test: `tests/paginas.test.js`, `tests/reportes-pdf.test.js`, `tests/reportes-frontend.test.js`, `tests/usuarios-frontend.test.js` y el test de la redirección (en `tests/proyectos-api.test.js`, `describe('dirección vieja')`, o donde Configuración puso las suyas)
+- Modify: `services/reportesInformeAnualPdf.js` (`deDondeSalenLosLogros`, línea 37: «Los hitos de ${anio} cargados en Proyectos», y los comentarios de las líneas 8, 25 —que nombra `public/js/gestion.js`— y 160), `public/js/reportes.js` (la tarjeta del Informe anual, línea 1060: «(los hitos de Herramientas → Proyectos)», y el comentario de la línea 776, «vienen de gestion.js», que pasa a decir que se mudaron de Gestión) + `public/reportes.html` (línea 601, `js/reportes.js?v=20261203`: `VERSION_REPORTES` pasa a `'20261206'`), `public/js/usuarios.js` (`AYUDA_DEL_ROL.lector`, línea 13: «Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Gestión y Seguimiento). No modifica nada.» pasa a «… (Métricas y Reportes, Proyectos y Seguimiento) …»; la del colaborador no nombra Gestión y no cambia) + su página, `configuracion.html` (línea 658, `js/usuarios.js?v=20261205`: `VERSION_PANTALLAS` pasa a `'20261206'`)
+- Test: `tests/paginas.test.js`, `tests/reportes-pdf.test.js`, `tests/reportes-frontend.test.js`, `tests/usuarios-frontend.test.js` y el test de la redirección, en `tests/proyectos-api.test.js`, `describe('la dirección vieja')`, con las tres comprobaciones de `describe('las direcciones viejas')` de `tests/areas-api.test.js`, donde Configuración puso las suyas
 
 - [ ] **Step 1: Write the failing tests:**
-  - `GET /gestion.html` con `redirect: 'manual'` da 302 y `location: '/proyectos.html'`;
+  - `GET /gestion.html` con `redirect: 'manual'` da 302, `location: '/proyectos.html'` y un cuerpo sin `<!DOCTYPE html>` (no sirve la página vieja);
   - en `paginas.test.js`:
     - los destinos del menú tienen `proyectos.html` en lugar de `gestion.html`;
     - un test nuevo: `public/gestion.html` y `public/js/gestion.js` no existen;
     - se reemplazan los tres tests de `gestion.html`: versión, Chart.js y aviso de la mudanza;
     - test nuevo: `proyectos.html` tiene el aviso `#pr-aviso-metricas` con el link a `reportes.html#metricas`, `hidden`, y no carga Chart.js;
     - `VERSION_GESTION` sale;
-  - `reportes-pdf.test.js`: «Los hitos de 2026 cargados en Proyectos»;
-  - `reportes-frontend.test.js`: «(los hitos de Herramientas → Proyectos)» y la nueva `VERSION_REPORTES`;
-  - `usuarios-frontend.test.js`: la ayuda del lector con «Proyectos» y sin «Gestión».
+    - `it('hay 13 páginas con carcasa')` vuelve a 13 (la Task 5 lo pasó a 14), con su comentario al día;
+    - `VERSION_REPORTES` (`'20261203'`) y `VERSION_PANTALLAS` (`'20261205'`) pasan a `'20261206'`, con su comentario; `VERSION_PANTALLAS` la usan también el test de `usuarios.js` y la lista completa de los scripts de `configuracion.html`;
+  - `reportes-pdf.test.js` (línea 1814): «Los hitos de 2026 cargados en Proyectos»;
+  - `reportes-frontend.test.js` (línea 985): «(los hitos de Herramientas → Proyectos)»;
+  - `usuarios-frontend.test.js` (línea 648): la ayuda del lector con «Proyectos» y sin «Gestión».
 - [ ] **Step 2:** Correr. Esperado: FAIL.
 - [ ] **Step 3:** Implementar. El menú, con un script que reemplace el `<a href="gestion.html" …>…</a>` exacto de `index.html` en cada página. Después, `normalizarPieza` de `paginas.test.js` compara las páginas con `index.html`.
-- [ ] **Step 4:** Correr (PASS) y `npm test` completo. Además, `grep -rn "gestion\.html\|gestion\.js" public services controllers app.js routes` no da nada, salvo la redirección de `app.js`.
+- [ ] **Step 4:** Correr (PASS) y `npm test` completo. Además, `grep -rn "gestion\.html\|gestion\.js" public services controllers app.js routes` no da nada, salvo la redirección de `app.js` y el comentario de `public/js/api.js` (línea 536, «gestion.js tiene MESES»), que queda: `api.js` no cambia.
 - [ ] **Step 5:** Commit: `feat: Gestión pasa a llamarse Proyectos en todo el sitio (menú, redirección de gestion.html y textos)`.
 
 ### Task 10: La documentación
@@ -495,3 +498,25 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - comprobar que `C:\git\rpad\node_modules` sigue entero.
 - [ ] **Step 7:** Actualizar la memoria (`proyectos.md`) y la nota de la carpeta compartida con el hash del merge.
 - [ ] **Step 8:** Avisarle con el hash del merge, por `SendMessage`, a la sesión que va después en la cola: «Ciclo de Vida del Dato» (`local_8b509d51-747e-43e4-a743-4fcf82eb590a`, rama `claude/ciclo-de-vida-del-dato-aba0d0`). Se cruzan en `VERSION_REPORTES` y el `?v=` de `reportes.js`, `tests/permisos.test.js`, `tests/reportes-frontend.test.js`, `CLAUDE.md` y `README.md`.
+
+## Diferencias encontradas
+
+Task 1, 25/10/2026: main trae el Generador de Notas (c26e0e8) y Configuración (2e48142). Se trajo a la rama en bf6c784, sin conflictos. La base `rpad_rama_proyectos` se rehízo desde `datospublicos_mcr_rpad`: 29 tablas, con `areas.ambito`. Lo que cambió respecto de lo que daba por hecho este plan, ya corregido en las tareas:
+
+1. **Páginas con carcasa:** son 13. Configuración reemplazó a `usuarios.html` y `areas.html` por `configuracion.html`, y `tests/paginas.test.js` lo fija con `it('hay 13 páginas con carcasa')`. La Task 5 lo pasa a 14 y la Task 9 lo vuelve a 13.
+2. **Versiones** (`tests/paginas.test.js`):
+   - `VERSION` (auth, main y api), `VERSION_CORREOS` y `VERSION_NOTAS`: `20261204`;
+   - `VERSION_PANTALLAS` (`usuarios.js`, que ahora carga `configuracion.html`) y `VERSION_AREAS`: `20261205`, las más altas;
+   - `VERSION_REPORTES`: `20261203`; `VERSION_GESTION` y `VERSION_SEGUIMIENTO`: `20261129`.
+   - `VERSION_PROYECTOS` es `'20261206'` (Ruling R2). La Task 9 sube al mismo valor `VERSION_REPORTES` y `VERSION_PANTALLAS`.
+3. **La ayuda del lector** (`usuarios.js`, línea 13) nombra «Gestión»; la del colaborador no. Su página es `configuracion.html` (línea 658, `?v=20261205`).
+4. **Las redirecciones de Configuración** (`app.js`, líneas 55 a 60): `app.get('/usuarios.html', …)` y `app.get('/areas.html', …)` con `res.redirect(302, …)`, antes de `express.static` (línea 63). Su test está en `tests/areas-api.test.js`, `describe('las direcciones viejas')`.
+5. **`tests/permisos.test.js`:** `RUTAS_SOLO_ADMIN` conserva su nombre. La lista de GET del colaborador no tiene ninguna ruta de `/gestion` (Task 3).
+6. **Sin cambios:**
+   - la sección «Gestión» de `routes/index.js` (líneas 296 a 333; los imports de `gestionController.js`, 94 a 116, y el de `config/upload.js`, 120);
+   - `controllers/gestionController.js` y `config/upload.js`;
+   - `public/gestion.html`, salvo el menú de Administración y el `?v=` de los scripts compartidos;
+   - `ICON_SELECTOR_MAP` (25 claves) y el link de Gestión de `#sidebarTools`.
+7. **El grep de la Task 9** encuentra también dos comentarios que ya estaban: el de `public/js/api.js:536`, que no se toca porque `api.js` no cambia, y el de `public/js/reportes.js:776`, que la Task 9 corrige.
+
+Base: `npm test` da 4384 tests, 4379 pasan, 0 fallan y 5 se omiten (hoy no es día hábil).
