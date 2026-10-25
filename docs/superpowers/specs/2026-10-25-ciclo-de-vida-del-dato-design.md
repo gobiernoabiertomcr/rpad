@@ -98,7 +98,8 @@ Para cada etapa, con sus `n` ciclos terminados:
 | Mediana y promedio | Los de `cifraDe` (redondeados; con n par, la mediana es el promedio de los dos del medio), una vez en días hábiles y otra en corridos. Son los mismos números que muestra «El circuito» con cada combinación de los selectores. |
 | El caso más largo | El ciclo con más días hábiles en la etapa. Se muestran sus días hábiles y sus corridos, y el título de su dataset. |
 | El caso más corto | El ciclo con menos días hábiles. Ídem. |
-| Empates | Si varios ciclos empatan en días hábiles, se nombra uno (el de más días corridos y, después, el primero por título) y se suma «y N más». N es la cantidad de **ciclos** empatados: el mismo dataset puede estar más de una vez, en ciclos distintos. Ejemplo real: «Castraciones de Animales y 14 más», con 0 días. |
+| Empates | Si varios ciclos empatan en días hábiles, se nombra uno y se suma «y N más», con N la cantidad de **los otros** ciclos empatados (los empatados menos 1). El mismo dataset puede estar más de una vez, en ciclos distintos. Para el más largo se nombra el de más días corridos; para el más corto, el de menos; si siguen empatados, el primero por título. Ejemplo real: 15 ciclos con 0 días dan «Castraciones de Animales y 14 más». |
+| Un solo ciclo | Con n = 1, el más largo y el más corto son el mismo: en lugar de los dos recuadros va uno solo, a todo el ancho, «El único caso». |
 | En curso | El texto de `en_curso` del tramo, en días hábiles, como en Métricas: «3 sin datos registrados todavía, hace 206 días hábiles (mediana)». No entra en el caso más largo, que es solo de los terminados. |
 | Pendientes | Solo en el trámite de la nota: «10 notas pendientes de carga», el de Métricas. |
 | Orientativo | Con 4 ciclos o menos, «Con tan pocos casos, es orientativo.» |
@@ -120,17 +121,24 @@ Para cada etapa, con sus `n` ciclos terminados:
 
 ### 1.4 Una etapa sin ciclos
 
-Si una etapa no tiene ningún ciclo terminado en el año, el bloque no muestra cifras. Dice lo que dice el `vacio` del tramo en Métricas:
-- **Trámite de la nota**, sin ninguna nota DGMIT en el RPAD: «Todavía no hay notas DGMIT cargadas», «10 notas pendientes de carga» y, debajo, «Se empieza a contar cuando se carguen en el Seguimiento.».
-- **Respuesta del área**, sin notas DGMIT: «Sin datos todavía» y «Se empieza a contar cuando haya notas DGMIT cargadas.».
+Si una etapa no tiene ningún ciclo terminado en el año, el bloque no muestra cifras. Lleva un vacío que sigue al `vacio` del tramo en Métricas, pero con textos propios que arma `etapasDe`:
+- **Trámite de la nota**, sin ninguna nota DGMIT en el RPAD:
+  - el título de Métricas, «Todavía no hay notas DGMIT cargadas»;
+  - su texto, «10 notas pendientes de carga»;
+  - un renglón nuevo debajo, «Se empieza a contar cuando se carguen en el Seguimiento.».
+- **Respuesta del área**, sin notas DGMIT: «Sin datos todavía» y «Se empieza a contar cuando haya notas DGMIT cargadas.» (con punto final, a diferencia de Métricas).
 - **Cualquier otra:** «Sin casos en 2026».
+
+**Nada desaparece en un bloque vacío.** Debajo del vacío van, si los hay, los mismos renglones que en un bloque con cifras: los en curso, las notas pendientes y la aclaración de la etapa. También va «Año anterior: …», que en un bloque con cifras está en el recuadro del promedio. Pasa, por ejemplo:
+- en la respuesta, cuando ya haya notas DGMIT pero ninguna respuesta terminada;
+- en la producción, con solo ciclos en curso.
 
 En el índice de arriba, una etapa sin cifra lleva una raya («—») en gris y la flecha punteada, como en Métricas.
 
 ### 1.5 Las aclaraciones
 
 Las de `circuito.aclaraciones` de la vista, con sus textos, van en el bloque al que afectan:
-- **Los avisados ya vencidos**, en el aviso anticipado de cada gestión: «6 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa.».
+- **Los avisados ya vencidos**, en el aviso anticipado de cada gestión: «6 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.». Conserva la segunda parte del texto de Métricas, porque explica desde dónde se miden el trámite y la producción.
 - **Los resueltos con una fuente pública**, en la respuesta del área.
 - **Los de datasets que no requieren nota DGMIT**, debajo de los bloques de la hoja externa: «8 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.».
 
@@ -188,15 +196,21 @@ Es un recuadro con un borde fino, partido en dos columnas: la izquierda, de unos
   - las notas pendientes de carga, en violeta;
   - la aclaración de la etapa, en gris.
 
-Una etapa sin ciclos (1.4) muestra, en lugar del mosaico, el título del vacío en gris claro grande, su texto (en violeta en el trámite de la nota) y, si lo hay, el renglón de debajo.
+Una etapa sin ciclos (1.4) muestra, en lugar del mosaico:
+- el título del vacío, grande y en gris claro;
+- su texto, en violeta en el trámite de la nota;
+- el renglón de debajo, si lo hay;
+- abajo de todo, los mismos renglones chicos de un bloque con cifras y «Año anterior: …».
 
 ### 2.3 «Cómo se cuenta»
 
 Es un texto fijo, igual en las dos hojas:
 
-> **Cómo se cuenta.** Días hábiles: de lunes a viernes, sin los feriados nacionales fijos; entre paréntesis, los corridos. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; los que todavía no la terminaron van aparte, como «en curso». La comparación con el año anterior empieza en 2027.
+> **Cómo se cuenta.** Días hábiles: de lunes a viernes, sin los feriados nacionales fijos; entre paréntesis, los corridos. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; el aviso, en el año de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van aparte, como «en curso». La comparación con el año anterior empieza en 2027.
 
 En 2027 en adelante, la última oración se va.
+
+La aclaración del aviso refleja cómo cuenta `medir`: el aviso anticipado se mide del aviso al vencimiento y cuenta por el año del vencimiento, aunque sea posterior a `al`. Los en curso solo existen en la respuesta y en la producción.
 
 ### 2.4 Las descripciones
 
@@ -315,8 +329,10 @@ La forma exacta de `textos` queda para quien lo construye.
   - Un 500 dice el mensaje fijo de `ERROR_AL_GENERAR.ciclo`: «Error al generar el Ciclo de vida del dato».
 - **El dibujante:** `services/reportesCicloDeVidaPdf.js`, puro (sin pool).
   - `renderCicloDeVida(datos, { hoy, generado })`, con la base de `reportesPdfBase.js`.
-  - Las piezas de `reportesMetricasPdf.js` que reuse (por ejemplo `contorno` y los colores) se exportan en su lugar.
-  - El PDF de Métricas y el Informe anual tienen que quedar idénticos: hash por hoja, como en la tarea 19 de Métricas.
+  - Las piezas de `reportesMetricasPdf.js` que reuse (por ejemplo `contorno`, que hoy es privada, y los colores) se exportan en su lugar.
+  - El PDF de Métricas y el Informe anual tienen que quedar idénticos. Hoy ningún test lo comprueba, así que el plan suma uno:
+    - compara el contenido de cada hoja con `contenidoPorHoja` de `tests/pdf-lector.js`, que no mira la fecha de creación del PDF;
+    - la referencia se toma con main ya traído, después del merge de Proyectos, que cambia un texto del Informe anual.
   - Los textos fijos (las descripciones y «Cómo se cuenta») van en una constante exportada del dibujante.
 - **El nombre:** `nombreDelReporte('ciclo', { anio })` → `Ciclo-de-vida-del-dato-AAAA.pdf` (`services/reportesNombres.js` y su copia en `reportes.js`).
 
@@ -329,7 +345,8 @@ La forma exacta de `textos` queda para quien lo construye.
   - Es independiente de la pestaña Métricas: no lleva los selectores ni los destildados.
   - El en curso no se escribe en la ruta.
 - **Debajo del botón:** «2 hojas: la gestión externa y la interna».
-- **Lo que hay que sumar en `reportes.js`:** `GRUPOS_DE_REPORTES`, `ICONOS_DE_REPORTES`, `REPORTES_POR_DEFECTO`, `htmlDeTarjetaDeReportes`, `pedidoDeReporte`, la copia de `nombreDelReporte`, `TARJETAS_CON_ANIO` y `CONTROLES_DE_REPORTES`, y actualizar los comentarios que dicen «siete».
+- **Lo que hay que sumar en `reportes.js`:** `GRUPOS_DE_REPORTES`, `ICONOS_DE_REPORTES`, `REPORTES_POR_DEFECTO`, `htmlDeTarjetaDeReportes`, `pedidoDeReporte`, la copia de `nombreDelReporte`, `TARJETAS_CON_ANIO`, `CONTROLES_DE_REPORTES` y `conReporteElegido`. Hay que actualizar también los comentarios que dicen «siete».
+  - Sin la clave nueva en `conReporteElegido`, que hoy solo acepta un año para `metricas`, `informe` y `completar`, el selector de año de la tarjeta no haría nada.
 - **Versión:** sube `VERSION_REPORTES` (`tests/paginas.test.js` y el `?v=` de `reportes.html`). A esa altura, Proyectos ya la habrá subido: se usa la siguiente libre.
 - **Nada más:** `api.js`, `main.js` y `main.css` no cambian.
 
@@ -365,7 +382,13 @@ Los números de la base real no van en los tests versionados (Ruling 3).
 
 ## Decisiones mías (para que las revises)
 
-- **Los extremos** se eligen por días hábiles, y los corridos que se muestran son los del mismo ciclo. En el desempate gana el de más corridos y, después, el primero por título. «y N más» cuenta ciclos.
+- **Los extremos** se eligen por días hábiles, y los corridos que se muestran son los del mismo ciclo.
+  - En el desempate, el más largo nombra el de más días corridos y el más corto, el de menos; después, el primero por título.
+  - «y N más» cuenta los otros ciclos empatados.
+  - Con un solo ciclo va un recuadro, «El único caso».
+- **Un bloque sin cifras** igual muestra los en curso, las notas pendientes, la aclaración y el año anterior (1.4).
+- **«Cómo se cuenta»** aclara que el aviso cuenta por el año de su vencimiento, aunque todavía no haya llegado. Es como lo cuenta Métricas.
+- **El texto de los avisados ya vencidos** conserva «y sus etapas siguientes se cuentan desde ese primer aviso».
 - **Los en curso** no entran en el caso más largo: van en su renglón propio. Por ejemplo, en el relevamiento interno el caso más largo es de 105 días hábiles, pero hay 3 en curso hace 206.
 - **El año anterior** muestra solo la mediana en días hábiles. En 2026 dice «Año anterior: no hay», y «Cómo se cuenta» aclara que la comparación empieza en 2027.
 - **El circuito de arriba** lleva solo las siglas y la mediana, porque los nombres de las etapas no entraban.
