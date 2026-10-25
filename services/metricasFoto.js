@@ -4,12 +4,19 @@
 // INSERT IGNORE por año, así una segunda corrida (o dos a la vez) no la pisa. La API de métricas y el Informe anual la leen
 // (leerFoto, aniosConFoto) en lugar de recalcular el año con la base de hoy.
 //
-// datos (un JSON): { version, casos, contexto, trabajo, areas, generada }
+// datos (un JSON): { version, casos, vistas, cintas, contexto, trabajo, areas, generada }. Todos los números ya van calculados: quien
+// lee la foto (la API de métricas, el Informe anual) no recalcula nada, así que un cambio posterior en las reglas no reescribe un año
+// pasado. Se lee así: datos.vistas[clave], datos.cintas[clave], datos.trabajo[estadistico] y datos.contexto.
 // - version: VERSION_DE_LA_FOTO, la forma de estos datos;
-// - casos: los casos de casosDe (la forma de siempre) que tocan el año (casosQueTocanElAnio): con ellos, vistaDe del año da lo
-//   mismo que con todos, con cualquier estadístico y días, así que la pestaña Métricas arma el año con la misma vistaDe;
-// - contexto: { indice, antiguedad }, de indiceMesAMes y antiguedadDeVencidos al 31/12 (con el reloj del RPAD: el estado según las
-//   aprobaciones, como lo mostraba la portada esa noche);
+// - casos: los casos de casosDe (la forma de siempre) que tocan el año (casosQueTocanElAnio), para saber de dónde salió cada número
+//   aunque después se corrija algo (con ellos, vistaDe del año da lo mismo que con todos);
+// - vistas: vistaDe del año en las cuatro combinaciones de los selectores (spec, 1.7), por clave (claveDeLaVista: 'mediana-habiles',
+//   'mediana-corridos', 'promedio-habiles' y 'promedio-corridos'), con todos los datasets (sin = []: una foto no se destilda);
+// - cintas: la cinta del recorrido típico de cada combinación, por la misma clave: { externa, interna }, cada una la de
+//   cintaDeMetricas (services/metricasCinta.js) con el circuito de esa vista (null si no se dibuja);
+// - contexto: { indice, antiguedad, estados }, de indiceMesAMes, antiguedadDeVencidos y estadosAl al 31/12 (con el reloj del RPAD: el
+//   estado según las aprobaciones, como lo mostraba la portada esa noche); estados: cuántos había en cada estado, el total, los
+//   vencidos y la tasa (las tarjetas del Estado general de ese día);
 // - trabajo: el trabajo del RPAD (trabajoDelAnio) con cada estadístico, { mediana, promedio }: la doble verificación sigue a
 //   mediana o promedio (spec, 1.7) y un año con foto se puede ver con cualquiera de los dos;
 // - areas: areasYTemas al 31/12;
@@ -19,8 +26,10 @@
 import pool from '../config/database.js';
 import { fuentesDe } from './seguimientoDatos.js';
 import {
-  ESTADISTICOS, PRIMER_ANIO, casosDe, casosQueTocanElAnio, indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+  ESTADISTICOS, DIAS, PRIMER_ANIO, casosDe, casosQueTocanElAnio, vistaDe, indiceMesAMes, antiguedadDeVencidos, estadosAl,
+  trabajoDelAnio, areasYTemas
 } from './metricasReglas.js';
+import { cintaDeMetricas } from './metricasCinta.js';
 import { ahoraArgentina, esFechaIso, hoyArgentina } from './notasDigitalesCalendario.js';
 
 // Desde qué día del año ('MM-DD') se saca la foto del año anterior: el 10 de enero, para que entren los datos del año que se
@@ -30,17 +39,36 @@ export const DIA_DE_LA_FOTO = '01-10';
 // La forma de `datos`: una foto vieja se lee por su versión
 export const VERSION_DE_LA_FOTO = 1;
 
+// La clave de una combinación de los selectores en datos.vistas y datos.cintas: 'mediana-habiles', 'promedio-corridos'…
+export const claveDeLaVista = (estadistico, dias) => `${estadistico}-${dias}`;
+
+const GESTIONES_DE_LA_CINTA = Object.freeze(['externa', 'interna']);
+
 // Los datos de la foto de `anio` al 31/12, con las fuentes de todos los datasets (el Map de fuentesDe). No toca la base.
 // `generada`: el momento en que se saca.
 export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
   const al = `${anio}-12-31`;
   const casos = casosDe(fuentesPorDataset, { hoy: al });
+  const delAnio = casosQueTocanElAnio(casos, { anio, al });
+  const vistas = {};
+  const cintas = {};
+  for (const estadistico of ESTADISTICOS) {
+    for (const dias of DIAS) {
+      const clave = claveDeLaVista(estadistico, dias);
+      vistas[clave] = vistaDe(delAnio, { anio, al, estadistico, dias, sin: [] });
+      cintas[clave] = Object.fromEntries(GESTIONES_DE_LA_CINTA.map((gestion) =>
+        [gestion, cintaDeMetricas(vistas[clave].circuito[gestion], { gestion, dias, estadistico })]));
+    }
+  }
   return {
     version: VERSION_DE_LA_FOTO,
-    casos: casosQueTocanElAnio(casos, { anio, al }),
+    casos: delAnio,
+    vistas,
+    cintas,
     contexto: {
       indice: indiceMesAMes(fuentesPorDataset, { anio, al }),
-      antiguedad: antiguedadDeVencidos(fuentesPorDataset, { anio, al })
+      antiguedad: antiguedadDeVencidos(fuentesPorDataset, { anio, al }),
+      estados: estadosAl(fuentesPorDataset, { anio, al })
     },
     trabajo: Object.fromEntries(ESTADISTICOS.map((estadistico) =>
       [estadistico, trabajoDelAnio(fuentesPorDataset, casos, { anio, al, estadistico })])),
@@ -76,6 +104,10 @@ export const sacarFotoSiCorresponde = async ({ hoy = hoyArgentina() } = {}) => {
   return resultado.affectedRows === 1 ? { anio, sacada: true } : { anio, ya: true };
 };
 
+// Las partes de `datos` que son objetos (además de `casos`, una lista)
+const PARTES_DE_LA_FOTO = Object.freeze(['vistas', 'cintas', 'contexto', 'trabajo', 'areas']);
+const esObjeto = (valor) => Boolean(valor) && typeof valor === 'object' && !Array.isArray(valor);
+
 // `datos` leído de la base. Tira si no es una foto de esta versión (un JSON roto o de otra forma): una foto que no se puede leer no
 // puede pasar por «todavía no hay foto»
 const datosLeidos = (valor, anio) => {
@@ -86,7 +118,8 @@ const datosLeidos = (valor, anio) => {
   } catch {
     datos = null;
   }
-  if (!datos || typeof datos !== 'object' || datos.version !== VERSION_DE_LA_FOTO || !Array.isArray(datos.casos)) {
+  if (!esObjeto(datos) || datos.version !== VERSION_DE_LA_FOTO || !Array.isArray(datos.casos)
+    || !PARTES_DE_LA_FOTO.every((parte) => esObjeto(datos[parte]))) {
     throw new Error(`La foto de ${anio} no se puede leer`);
   }
   return datos;

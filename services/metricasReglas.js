@@ -1,13 +1,13 @@
 // Reglas de las métricas (spec 2026-10-24-metricas-y-reportes, secciones 1.1 a 1.7 y 2.2): cómo se cuentan los días, la cifra de un
 // tramo, un caso por ciclo de cada dataset, con sus hitos (casosDe), y lo que la pestaña Métricas muestra de esos casos: el circuito,
 // los resultados del año, la lista de casos y «Para completar» (vistaDe), y cuáles guarda la foto del 31/12 (casosQueTocanElAnio).
-// Además, el resto de la pestaña: el índice de actualización mes a mes (indiceMesAMes), la antigüedad de los vencidos
-// (antiguedadDeVencidos), el trabajo del RPAD (trabajoDelAnio) y las áreas y los temas (areasYTemas). Funciones puras, sin base de
-// datos ni Date local: las fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora argentina, como en
-// services/seguimientoReglas.js. De ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso (cicloDelAviso) y
-// cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los mismos avisos
-// (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js (fuentesDe). Ninguna
-// función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
+// Además, el resto de la pestaña: el índice de actualización mes a mes (indiceMesAMes), los estados de un día (estadosAl), la
+// antigüedad de los vencidos (antiguedadDeVencidos), el trabajo del RPAD (trabajoDelAnio) y las áreas y los temas (areasYTemas).
+// Funciones puras, sin base de datos ni Date local: las fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora
+// argentina, como en services/seguimientoReglas.js. De ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso
+// (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
+// mismos avisos (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js
+// (fuentesDe). Ninguna función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
 import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias } from './notasDigitalesCalendario.js';
 import {
   REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
@@ -725,23 +725,32 @@ const diasDelIndice = (ctx) => {
   return dias.at(-1) === ctx.al ? dias : [...dias, ctx.al];
 };
 
-// Un punto del índice: los al día sobre la base (los que contaban ese día, sin los eventuales; los sin fecha están en la base sin
-// estar al día), con la misma cuenta que la portada (tasaDeActualizacion). Los de estado desconocido no están en ninguno de los dos:
-// si son más del 10 % de los que contaban, el día no tiene índice.
-const puntoDelIndice = (datasets, dia) => {
-  let base = 0;
-  let alDia = 0;
-  let sinEstado = 0;
+// Los estados que puede tener un dataset un día (estadoEnElDia): los de estadoDelDataset y 'desconocido' (un ciclo con venc null)
+const ESTADOS_DEL_DIA = Object.freeze(['actualizado', 'proximo', 'atrasado', 'sin-respuesta', 'sin-fecha', 'eventual', 'desconocido']);
+
+// Cuántos de los datasets que contaban al terminar `dia` estaban en cada estado (los que ese día no contaban no están)
+const cuentaDelDia = (datasets, dia) => {
+  const cuenta = Object.fromEntries(ESTADOS_DEL_DIA.map((estado) => [estado, 0]));
   for (const d of datasets) {
     const { estado } = estadoEnElDia(d, dia) ?? {};
-    if (estado === undefined || estado === 'eventual') continue;
-    if (estado === 'desconocido') { sinEstado += 1; continue; }
-    base += 1;
-    if (AL_DIA.includes(estado)) alDia += 1;
+    if (Object.hasOwn(cuenta, estado)) cuenta[estado] += 1;
   }
-  if (sinEstado * 100 > PORCENTAJE_SIN_ESTADO * (base + sinEstado)) return { dia, tasa: null, al_dia: null, base: null };
-  return { dia, tasa: tasaDeActualizacion({ alDia, total: base, eventuales: 0 }), al_dia: alDia, base };
+  return cuenta;
 };
+
+// El índice de una cuenta del día: los al día sobre la base (los que contaban ese día, sin los eventuales; los sin fecha están en la
+// base sin estar al día), con la misma cuenta que la portada (tasaDeActualizacion). Los de estado desconocido no están en ninguno de
+// los dos: si son más del 10 % de los que contaban, no hay índice ({ tasa, al_dia, base } en null).
+const indiceDeLaCuenta = (cuenta) => {
+  const alDia = AL_DIA.reduce((suma, estado) => suma + cuenta[estado], 0);
+  const base = ESTADOS_DEL_DIA.filter((estado) => estado !== 'eventual' && estado !== 'desconocido')
+    .reduce((suma, estado) => suma + cuenta[estado], 0);
+  if (cuenta.desconocido * 100 > PORCENTAJE_SIN_ESTADO * (base + cuenta.desconocido)) return { tasa: null, al_dia: null, base: null };
+  return { tasa: tasaDeActualizacion({ alDia, total: base, eventuales: 0 }), al_dia: alDia, base };
+};
+
+// Un punto del índice: el índice de la cuenta de ese día
+const puntoDelIndice = (datasets, dia) => ({ dia, ...indiceDeLaCuenta(cuentaDelDia(datasets, dia)) });
 
 // El índice de actualización mes a mes (spec, 2.2): el mismo de la portada, al día (actualizados y próximos a vencer) sobre el total
 // sin los eventuales, reconstruido con los ciclos del Seguimiento. Un punto por el primer día de cada mes del año hasta `al`, y el
@@ -758,6 +767,26 @@ export const indiceMesAMes = (fuentesPorDataset, opciones) => {
   if (ctx === null) return [];
   const datasets = datasetsDe(fuentesPorDataset, ctx);
   return diasDelIndice(ctx).map((dia) => puntoDelIndice(datasets, dia));
+};
+
+// Cuántos datasets había en cada estado en `al` (spec, 3: lo que guarda la foto del 31/12, las tarjetas del Estado general de ese
+// día), con el mismo estado y los mismos datasets que el índice (los que ya existían y seguían activos, sin los destildados):
+// { dia, total, actualizado, proximo, atrasado, sin_respuesta, sin_fecha, eventual, desconocido, vencidos, al_dia, tasa }. `total`:
+// todos los que contaban (los siete estados suman el total); `desconocido`: los de un ciclo con venc null (no se sabe qué próxima
+// regía); `vencidos`: atrasados y sin respuesta; `al_dia` y `tasa`: los del punto del índice de ese día (la tasa de la portada;
+// null, con al_dia null, si no se sabe el estado de más del 10 %, y null sin ninguno con vencimiento). `opciones`: { anio, al, sin }
+// (como en vistaDe). null si no hay año. Nunca tira.
+export const estadosAl = (fuentesPorDataset, opciones) => {
+  const ctx = contextoDe(opciones);
+  if (ctx === null) return null;
+  const cuenta = cuentaDelDia(datasetsDe(fuentesPorDataset, ctx), ctx.al);
+  const { tasa, al_dia: alDia } = indiceDeLaCuenta(cuenta);
+  return {
+    dia: ctx.al, total: ESTADOS_DEL_DIA.reduce((suma, estado) => suma + cuenta[estado], 0),
+    actualizado: cuenta.actualizado, proximo: cuenta.proximo, atrasado: cuenta.atrasado, sin_respuesta: cuenta['sin-respuesta'],
+    sin_fecha: cuenta['sin-fecha'], eventual: cuenta.eventual, desconocido: cuenta.desconocido,
+    vencidos: VENCIDOS.reduce((suma, estado) => suma + cuenta[estado], 0), al_dia: alDia, tasa
+  };
 };
 
 // ¿Se actualizó desde el ciclo `indice` hasta `al`? Si ese ciclo o alguno de los siguientes cerró por una actualización aprobada

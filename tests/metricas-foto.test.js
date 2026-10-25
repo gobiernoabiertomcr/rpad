@@ -7,11 +7,14 @@ import crypto from 'crypto';
 import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas, conFallaSimulada } from './notas-fixtures.js';
 import {
-  casosDe, casosQueTocanElAnio, vistaDe, duracion, indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+  ESTADISTICOS, DIAS, casosDe, casosQueTocanElAnio, vistaDe, duracion, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio,
+  areasYTemas
 } from '../services/metricasReglas.js';
+import { cintaDeMetricas } from '../services/metricasCinta.js';
 
 const MOMENTO = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const AL = '2026-12-31';
+const CLAVES = ['mediana-habiles', 'mediana-corridos', 'promedio-habiles', 'promedio-corridos'];
 let base, dbReal, foto, controlador, seguimientoDatos, usuarioId;
 
 before(async () => {
@@ -44,6 +47,8 @@ beforeEach(async () => {
   // limpiarBase comprueba que la base es de prueba; los cambios se van con sus datasets
   await limpiarBase();
   await query('DELETE FROM metricas_fotos');
+  // Las notas DGMIT no se van con sus datasets (solo sus filas de notas_dgmit_datasets)
+  await query('DELETE FROM notas_dgmit');
   await configurarNotas();
   await mailpit.vaciar();
 });
@@ -161,18 +166,35 @@ describe('la foto del 31/12', () => {
     assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, sacada: true });
     const guardada = await foto.leerFoto(2026);
     assert.deepEqual([guardada.anio, guardada.al], [2026, AL]);
-    assert.deepEqual(Object.keys(guardada.datos), ['version', 'casos', 'contexto', 'trabajo', 'areas', 'generada']);
+    assert.deepEqual(Object.keys(guardada.datos), ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'generada']);
     assert.equal(guardada.datos.version, 1);
     assert.match(guardada.datos.generada, MOMENTO);
     assert.deepEqual(await foto.aniosConFoto(), [2026]);
 
-    // Lo que dan las reglas al 31/12 con todos los datasets de la base: los casos que tocan el año, el contexto, el trabajo con cada
-    // estadístico y las áreas
+    // Lo que dan las reglas al 31/12 con todos los datasets de la base: los casos que tocan el año, las cuatro vistas y sus cintas, el
+    // contexto, el trabajo con cada estadístico y las áreas
     const fuentes = await seguimientoDatos.fuentesDe(null);
     const casos = casosDe(fuentes, { hoy: AL });
     const opciones = { anio: 2026, al: AL };
     assert.deepEqual(guardada.datos.casos, casosQueTocanElAnio(casos, opciones));
-    assert.deepEqual(guardada.datos.contexto, { indice: indiceMesAMes(fuentes, opciones), antiguedad: antiguedadDeVencidos(fuentes, opciones) });
+    const vistasDeAhora = {};
+    for (const estadistico of ESTADISTICOS) {
+      for (const dias of DIAS) {
+        const clave = foto.claveDeLaVista(estadistico, dias);
+        const vista = vistaDe(casos, { ...opciones, estadistico, dias, sin: [] });
+        vistasDeAhora[clave] = vista;
+        assert.deepEqual(guardada.datos.vistas[clave], vista, clave);
+        assert.deepEqual(guardada.datos.cintas[clave], {
+          externa: cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias, estadistico }),
+          interna: cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias, estadistico })
+        }, clave);
+      }
+    }
+    assert.deepEqual([Object.keys(guardada.datos.vistas), Object.keys(guardada.datos.cintas)], [CLAVES, CLAVES]);
+    assert.ok(guardada.datos.cintas['mediana-habiles'].externa, 'la cinta externa se dibuja (hay aviso anticipado)');
+    assert.deepEqual(guardada.datos.contexto, {
+      indice: indiceMesAMes(fuentes, opciones), antiguedad: antiguedadDeVencidos(fuentes, opciones), estados: estadosAl(fuentes, opciones)
+    });
     assert.deepEqual(guardada.datos.trabajo, {
       mediana: trabajoDelAnio(fuentes, casos, { ...opciones, estadistico: 'mediana' }),
       promedio: trabajoDelAnio(fuentes, casos, { ...opciones, estadistico: 'promedio' })
@@ -189,12 +211,23 @@ describe('la foto del 31/12', () => {
       }
     }
 
-    // Una segunda llamada, el mismo día o meses después, no la vuelve a sacar ni la pisa, aunque la base haya cambiado
+    // Una segunda llamada, el mismo día o meses después, no la vuelve a sacar ni la pisa, aunque la base haya cambiado: A cambió de
+    // título y se le cargó una nota DGMIT recibida el 10/12/2026 (con la base de hoy, la vista de 2026 ya no es la misma)
     await query('UPDATE datasets SET titulo = ? WHERE id = ?', ['Otro título', a]);
+    const notaDgmit = (await query(
+      "INSERT INTO notas_dgmit (numero, tipo, recibida, anulada) VALUES ('45/26', 'solicitud', '2026-12-10', 0)"
+    )).insertId;
+    await query('INSERT INTO notas_dgmit_datasets (nota_id, dataset_id) VALUES (?, ?)', [notaDgmit, a]);
+    const casosDespues = casosDe(await seguimientoDatos.fuentesDe(null), { hoy: AL });
+    for (const clave of CLAVES) {
+      const [estadistico, dias] = clave.split('-');
+      assert.notDeepEqual(vistaDe(casosDespues, { ...opciones, estadistico, dias, sin: [] }), vistasDeAhora[clave], clave);
+    }
     assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, ya: true });
     assert.deepEqual(await sacar('2027-06-15'), { anio: 2026, ya: true });
     assert.deepEqual(await foto.leerFoto(2026), guardada);
     assert.equal(guardada.datos.casos[0].titulo, 'Dataset A de prueba');
+    assert.equal(guardada.datos.vistas['mediana-habiles'].circuito.externa.find((t) => t.clave === 'tramite').cifra, null);
     assert.deepEqual(await foto.aniosConFoto(), [2026]);
     // Un año sin foto, o que no es un año, no tiene foto
     for (const anio of [2027, '2026x', '', null, undefined, 2026.5]) assert.equal(await foto.leerFoto(anio), null, String(anio));
@@ -205,6 +238,10 @@ describe('la foto del 31/12', () => {
     await query("INSERT INTO metricas_fotos (anio, al, datos) VALUES (2026, '2026-12-31', '{roto')");
     await assert.rejects(foto.leerFoto(2026), { message: 'La foto de 2026 no se puede leer' });
     await query("UPDATE metricas_fotos SET datos = '{\"version\": 2, \"casos\": []}' WHERE anio = 2026");
+    await assert.rejects(foto.leerFoto(2026), { message: 'La foto de 2026 no se puede leer' });
+    // De la versión 1, pero sin las vistas ya calculadas
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026',
+      [JSON.stringify({ version: 1, casos: [], cintas: {}, contexto: {}, trabajo: {}, areas: {}, generada: '2027-01-10 08:15:00' })]);
     await assert.rejects(foto.leerFoto(2026), { message: 'La foto de 2026 no se puede leer' });
     assert.deepEqual(await foto.aniosConFoto(), [2026]);
     assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, ya: true });
@@ -223,7 +260,9 @@ describe('la foto del 31/12', () => {
     const { a, b } = await prepararElAnio();
     await sacar('2027-01-10');
     const { datos } = await foto.leerFoto(2026);
-    const v = vistaDe(datos.casos, { anio: 2026, al: AL });
+    // La vista guardada (mediana en días hábiles) es la de los casos guardados
+    const v = datos.vistas['mediana-habiles'];
+    assert.deepEqual(v, vistaDe(datos.casos, { anio: 2026, al: AL }));
     const filaDe = (id) => v.casos.find((f) => f.dataset_id === id && f.vencimiento === '2026-11-30');
     const tramoDe = (gestion, clave) => v.circuito[gestion].find((t) => t.clave === clave);
 
@@ -248,13 +287,26 @@ describe('la foto del 31/12', () => {
     // vencido, como B; C ya se había dado de baja
     assert.deepEqual(datos.contexto.antiguedad, { total: 2, menos_de_3_meses: 2, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } });
     assert.deepEqual(datos.contexto.indice.at(-1), { dia: AL, tasa: 0, al_dia: 0, base: 2 });
+    assert.deepEqual(datos.contexto.estados, {
+      dia: AL, total: 2, actualizado: 0, proximo: 0, atrasado: 1, sin_respuesta: 1, sin_fecha: 0, eventual: 0, desconocido: 0, vencidos: 2,
+      al_dia: 0, tasa: 0
+    });
     assert.deepEqual(datos.areas.ranking.map((area) => [area.total, area.al_dia, area.porcentaje]), [[1, 0, 0], [1, 0, 0]]);
   });
 
   it('un error al guardar no tira: queda en la última corrida y con_errores = 1', async () => {
     await prepararElAnio();
-    // El 10/01/2027 es domingo: las Notas Digitales no corren, pero la foto no depende de que sea día hábil
-    const res = await conFallaSimulada('INSERT', 'NEW.anio = 2026', () => corridaDiaria('2027-01-10T11:15:00Z'), 'metricas_fotos');
+    // El 10/01/2027 es domingo: las Notas Digitales no corren, pero la foto no depende de que sea día hábil. El error va al log: acá
+    // se calla y se comprueba que se registró
+    const log = mock.method(console, 'error', () => {});
+    let res;
+    try {
+      res = await conFallaSimulada('INSERT', 'NEW.anio = 2026', () => corridaDiaria('2027-01-10T11:15:00Z'), 'metricas_fotos');
+    } finally {
+      log.mock.restore();
+    }
+    assert.deepEqual(log.mock.calls.map((llamada) => llamada.arguments[0]), ['Error en la foto del año:']);
+    assert.match(String(log.mock.calls[0].arguments[1]), /Falla simulada/);
     assert.equal(res.statusCode, 207);
     assert.equal(res.body.success, false);
     assert.deepEqual(res.body.data.errores, [{ tipo: 'foto-del-anio', error: 'Falla simulada' }]);

@@ -7,7 +7,8 @@
 -- Tablas nuevas:
 --   metricas_fotos: la foto de las métricas de cada año, al 31/12 (anio es el año y al, siempre AAAA-12-31). La saca
 --   sola, una sola vez, la primera corrida de las 8:15 desde el 10/01 del año siguiente, y no se modifica nunca. datos es
---   un JSON con version, casos, contexto, trabajo, areas y generada (lo valida el código).
+--   un JSON con version, casos, vistas, cintas, contexto, trabajo, areas y generada, con los números ya calculados (lo
+--   valida el código).
 --   actualizaciones_recibido: el «Recibido el» y el origen de los datos ('area' o 'fuente_publica') de las actualizaciones
 --   aprobadas que no lo traen, por cambio_id. Se importan aparte: cambios_pendientes.datos_nuevos no se reescribe.
 -- ORDEN: correr ANTES de subir el código nuevo (phpMyAdmin > base del RPAD > pestaña SQL, pegar y Continuar).

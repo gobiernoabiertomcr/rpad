@@ -7,7 +7,7 @@ import {
 } from './metricas-casos.js';
 import {
   ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, PRIMER_ANIO, duracion, cifraDe, unidadDe, casosDe, vistaDe,
-  casosQueTocanElAnio, indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+  casosQueTocanElAnio, indiceMesAMes, estadosAl, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
@@ -1457,6 +1457,77 @@ describe('indiceMesAMes', () => {
     assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01', sin: [901] }),
       indiceMesAMes(mapaDe(ds(902, { proxima: '2026-12-31' })), { anio: 2026, al: '2026-03-01' }));
     assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-03-01', sin: new Set([901]) }).map((p) => p.tasa), [100, 100, 100]);
+  });
+});
+
+describe('estadosAl', () => {
+  // Las claves de los siete estados, que suman el total
+  const SIETE = ['actualizado', 'proximo', 'atrasado', 'sin_respuesta', 'sin_fecha', 'eventual', 'desconocido'];
+  const suma = (estados) => SIETE.reduce((total, clave) => total + estados[clave], 0);
+
+  it('cuántos hay en cada estado: suman el total, y la tasa es la de la portada y la del punto del índice de ese día', () => {
+    const hoy = HOY_DE_LAS_METRICAS;
+    const mapa = mapaDe(
+      ds(901, { proxima: '2027-03-31' }), // actualizado
+      ds(902, { proxima: '2026-11-30' }), // próximo a vencer
+      ds(903, { proxima: hoy }), // vence hoy: todavía al día
+      ds(904, { proxima: '2026-09-30' }), // vencido, externo: sin respuesta
+      ds(905, { proxima: '2026-06-30', tipo_gestion: 'interna' }), // vencido, interno: atrasado
+      ds(906, { proxima: null }), // sin fecha
+      ds(907, { proxima: null, meses: null, frecuencia: 'Eventual' }), // eventual
+      ds(908, { proxima: '2027-01-31', alta: `${hoy} 09:00:00` }), // dado de alta hoy: actualizado
+      ds(909, { proxima: '2027-01-31', alta: '2026-10-25 09:00:00' }), // dado de alta mañana: todavía no cuenta
+      ds(910, { proxima: '2027-01-31', activo: false }, { cambios: [baja(71, 910, '2026-08-03 10:00:00')] }) // dado de baja en agosto
+    );
+    const estados = estadosAl(mapa, { anio: 2026, al: hoy });
+    assert.deepEqual(estados, {
+      dia: hoy, total: 8, actualizado: 2, proximo: 2, atrasado: 1, sin_respuesta: 1, sin_fecha: 1, eventual: 1, desconocido: 0,
+      vencidos: 2, al_dia: 4, tasa: 57
+    });
+    assert.equal(suma(estados), estados.total);
+    const portada = comoLaPortada(mapaDe(...[...mapa.values()].filter((f) => f.dataset.id !== 909)), hoy);
+    assert.deepEqual([estados.tasa, estados.al_dia, estados.vencidos], [portada.tasa, portada.alDia, portada.vencidos]);
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: hoy }).at(-1), { dia: hoy, tasa: estados.tasa, al_dia: estados.al_dia, base: 7 });
+    assert.equal(estados.vencidos, antiguedadDeVencidos(mapa, { anio: 2026, al: hoy }).total);
+    // Con los casos reales, en el día de los casos, en el de las métricas y al 31/12
+    for (const al of [HOY, HOY_DE_LAS_METRICAS, '2026-12-31']) {
+      const reales = estadosAl(mapaDeLosCasos(), { anio: 2026, al });
+      const punto = indiceMesAMes(mapaDeLosCasos(), { anio: 2026, al }).at(-1);
+      assert.deepEqual([reales.tasa, reales.al_dia], [punto.tasa, punto.al_dia], al);
+      assert.deepEqual([reales.tasa, reales.al_dia, reales.vencidos], [comoLaPortada(mapaDeLosCasos(), al).tasa,
+        comoLaPortada(mapaDeLosCasos(), al).alDia, comoLaPortada(mapaDeLosCasos(), al).vencidos], al);
+      assert.equal(suma(reales), reales.total, al);
+      assert.equal(reales.vencidos, antiguedadDeVencidos(mapaDeLosCasos(), { anio: 2026, al }).total, al);
+    }
+    // Destildados, no cuentan
+    assert.deepEqual(estadosAl(mapa, { anio: 2026, al: hoy, sin: [901, 907] }),
+      { ...estados, total: 6, actualizado: 1, eventual: 0, al_dia: 3, tasa: 50 });
+  });
+
+  it('los de estado desconocido (un ciclo con venc null) cuentan en el total; con más del 10 %, sin tasa', () => {
+    // Una actualización simple del 10/02/2026 (sin cambio): hasta ese día no se sabe qué próxima regía
+    const simple = (id) => ds(id, { proxima: '2026-08-31', ultima: '2026-02-10' }, {
+      historial: [{ fecha: '2026-02-10', creado: '2026-02-10 09:00:00', usuario: null, cambio_id: null }]
+    });
+    const conocidos = (n) => Array.from({ length: n }, (_, i) => ds(910 + i, { proxima: '2026-12-31' }));
+    const uno = estadosAl(mapaDe(simple(901), ...conocidos(9)), { anio: 2026, al: '2026-02-01' });
+    assert.deepEqual([uno.total, uno.actualizado, uno.desconocido, uno.al_dia, uno.tasa], [10, 9, 1, 9, 100]);
+    const dos = estadosAl(mapaDe(simple(901), simple(902), ...conocidos(8)), { anio: 2026, al: '2026-02-01' });
+    assert.deepEqual([dos.total, dos.actualizado, dos.desconocido, dos.al_dia, dos.tasa], [10, 8, 2, null, null]);
+    assert.equal(suma(dos), dos.total);
+  });
+
+  it('sin año, null; sin datasets o con datos raros, todo en 0', () => {
+    for (const opciones of [null, undefined, {}, { anio: 'x' }, { anio: 2026, al: '2025-12-31' }]) {
+      assert.equal(estadosAl(mapaDeLosCasos(), opciones), null, JSON.stringify(opciones));
+    }
+    const vacio = {
+      dia: '2026-12-31', total: 0, actualizado: 0, proximo: 0, atrasado: 0, sin_respuesta: 0, sin_fecha: 0, eventual: 0, desconocido: 0,
+      vencidos: 0, al_dia: 0, tasa: null
+    };
+    for (const mapa of [new Map(), null, 'x', new Map([[1, null], [2, { dataset: 'x' }]])]) {
+      assert.deepEqual(estadosAl(mapa, { anio: 2026 }), vacio);
+    }
   });
 });
 

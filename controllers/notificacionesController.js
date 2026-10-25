@@ -103,14 +103,17 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
 
     // La foto del año anterior al 31/12 (spec 2026-10-24-metricas-y-reportes, 3): la saca la primera corrida desde el 10/01, sea o
     // no día hábil, y antes devuelve null sin tocar nada. Aislada: un error acá no frena la respuesta, queda en la última corrida
-    // que muestra Correos > Estado y la corrida del día siguiente la vuelve a intentar
+    // que muestra Correos > Estado y la corrida del día siguiente la vuelve a intentar. Corre fuera del bloqueo de las Notas
+    // Digitales (conBloqueo): con dos corridas a la vez, el registrarFin de la primera puede pisar la anotación de la segunda, que
+    // igual queda en la respuesta y en el log (y la foto se reintenta al día siguiente)
     try {
       resultados.foto = await sacarFotoSiCorresponde({ hoy });
     } catch (error) {
+      const mensaje = String(error?.message ?? error);
       // Solo la pila: los errores de mysql2 traen la consulta entera, con todos los datos de la foto
       console.error('Error en la foto del año:', error?.stack ?? error);
-      resultados.errores.push({ tipo: 'foto-del-anio', error: error.message });
-      await anotarEnLaUltimaCorrida(`No se pudo sacar la foto del año: ${error.message}`).catch(() => {});
+      resultados.errores.push({ tipo: 'foto-del-anio', error: mensaje });
+      await anotarEnLaUltimaCorrida(`No se pudo sacar la foto del año: ${mensaje}`).catch(() => {});
     }
 
     const success = resultados.errores.length === 0;
