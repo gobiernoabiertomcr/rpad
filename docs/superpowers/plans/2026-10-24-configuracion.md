@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **APROBADO por el usuario el 24/10/2026. EN COLA. No empezar hasta que estén en main las tres ramas:** "Métricas y Reportes" (`feat/metricas-y-reportes`), el Generador de Notas (`feat/generador-de-notas`) y "Notas Digitales en hoja oficio" (`feat/notas-hoja-oficio`). La Task 1 lo comprueba, trae main y relee el código. Si algo cambió respecto de lo que dice este plan, se ajusta el plan y se le avisa al usuario **antes** de la Task 2.
+> **APROBADO por el usuario el 24/10/2026. EN COLA. Orden del usuario (24/10 a la noche): arranca cuando termina Mejoras de Notas, sin pedir aprobación, después de escanear main y actualizar el plan si algo cambió; al terminar, kit, merge y push (autorizados; no desplegar). No empezar hasta que estén en main las tres ramas:** "Métricas y Reportes" (`feat/metricas-y-reportes`), el Generador de Notas (`feat/generador-de-notas`) y "Notas Digitales en hoja oficio" (`feat/notas-hoja-oficio`). La Task 1 lo comprueba, trae main y relee el código. Si algo cambió respecto de lo que dice este plan, se ajusta el plan y se le avisa al usuario **antes** de la Task 2.
 
 **Goal:** Fusionar `usuarios.html` y `areas.html` en `configuracion.html` (pestañas Usuarios | Licencias | Áreas), rediseñar la pestaña Áreas con el modal arreglado, actualizar el menú de las páginas y sacar los datos de contacto de las APIs públicas, sin perder nada de lo que hacen hoy.
 
@@ -481,6 +481,7 @@
   - Capturas de lo principal.
 - [ ] **Step 4: El kit** `Desktop/RPAD-deploy-configuracion/`, como los anteriores.
   - **`PASOS.txt`:**
+    - primero: antes de este kit se despliegan el de Métricas y Reportes y el de Mejoras de Notas, en ese orden (orden del usuario);
     - qué incluye;
     - comprobaciones previas: que las tres entregas anteriores estén en producción, por ejemplo con `SHOW COLUMNS FROM areas LIKE 'ambito'`;
     - **sin migración**;
@@ -502,7 +503,8 @@
   - los permisos;
   - lo que el Generador agregó a Áreas.
 - [ ] **Step 2:** Corregir los hallazgos críticos e importantes, con Opus y un commit por corrección. Volver a correr `npm test`.
-- [ ] **Step 3:** Informarle al usuario: el resumen, los totales de la suite, el recorrido y el kit. Pedir el OK para mergear y pushear. **No mergear sin ese OK.**
+- [ ] **Step 3:** Merge a main y push. El usuario los autorizó el 24/10 a la noche: «Una vez que finaliza todo, se arma el kit de despliegue, se hace merge en main y push». **No desplegar.** Si la rama trae migraciones (no debería), aplicarlas también a la base local después del merge, con un respaldo antes.
+- [ ] **Step 4:** Informar el resumen, los totales de la suite, el recorrido, el kit y el hash del merge.
 
 ## Diferencias encontradas
 
