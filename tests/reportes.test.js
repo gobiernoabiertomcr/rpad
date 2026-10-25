@@ -32,8 +32,41 @@ describe('reportes PDF', () => {
     esPdf(await api.get('/reportes/estado-general', { token: usuarios.lector.token }));
   });
 
-  it('historial de notificaciones', async () => {
-    esPdf(await api.get('/reportes/historial-notificaciones?desde=2025-01-01&hasta=2026-12-31', { token: usuarios.adminA.token }));
+  // Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5), con los emails y las Notas Digitales de la base de la rama: los
+  // destinatarios y los «para» tienen direcciones, y ninguna llega al PDF. Del período salen todos los emails registrados y las notas de
+  // aviso y de reiteración que no son de prueba (las de prueba no tienen número: no van)
+  it('avisos del RPAD, con los datos de la base: todos los del período y ninguna dirección de email', async () => {
+    const res = await api.get('/reportes/avisos?desde=2025-01-01&hasta=2026-12-31', { token: usuarios.lector.token });
+    esPdf(res);
+    const hojas = lineasPorHoja(res.body);
+    const lineas = hojas.flat();
+    assert.ok(!lineas.some(l => l.includes('@')), lineas.filter(l => l.includes('@')).join(' | '));
+    const [[{ emails }], [{ notas }]] = await Promise.all([
+      query("SELECT COUNT(*) AS emails FROM notificaciones_log WHERE enviado_at >= '2024-12-31' AND enviado_at < '2027-01-02'"),
+      query("SELECT COUNT(*) AS notas FROM notas_digitales WHERE es_prueba = 0 AND tipo IN ('aviso', 'reiteracion') AND fecha BETWEEN '2025-01-01' AND '2026-12-31'")
+    ]);
+    assert.equal(lineas[lineas.indexOf('Total de avisos') - 1], String(Number(emails) + Number(notas)));
+    assert.ok(lineas.includes('AVISOS DEL RPAD · DEL 01/01/2025 AL 31/12/2026'), lineas.join(' | '));
+    hojas.forEach((h, k) => assert.ok(h.includes(`Avisos del RPAD · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+  });
+
+  it('avisos del RPAD: desde > hasta da 400, y una fecha que no existe también', async () => {
+    for (const consulta of ['desde=2026-10-02&hasta=2026-10-01', 'desde=2026-02-30', 'hasta=2026-13-01', 'desde=01/01/2026', 'desde=2026-1-1',
+      'desde=2026-01-01&desde=2026-02-01', `desde=${hoyArgentina().slice(0, 4)}-12-31&hasta=${hoyArgentina().slice(0, 4)}-01-01`]) {
+      const res = await api.get(`/reportes/avisos?${consulta}`, { token: usuarios.lector.token });
+      assert.equal(res.status, 400, consulta);
+      assert.deepEqual(res.body, { success: false, error: 'Elegí un período válido.' }, consulta);
+    }
+  });
+
+  it('avisos del RPAD: sin período, del 1/1 a hoy; sin sesión, 401', async () => {
+    const hoy = hoyArgentina();
+    const res = await api.get('/reportes/avisos', { token: usuarios.lector.token });
+    esPdf(res);
+    assert.ok(lineasPorHoja(res.body)[0].includes(`AVISOS DEL RPAD · DEL 01/01/${hoy.slice(0, 4)} AL ${formatoCorto(hoy)}`));
+    const nombre = `Avisos-RPAD-${hoy}.pdf`;
+    assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`);
+    assert.equal((await api.get('/reportes/avisos')).status, 401);
   });
 
   it('por área', async () => {
@@ -41,8 +74,15 @@ describe('reportes PDF', () => {
     esPdf(await api.get(`/reportes/por-area/${area.id}`, { token: usuarios.adminA.token }));
   });
 
-  it('cumplimiento', async () => {
-    esPdf(await api.get('/reportes/cumplimiento?periodo=mensual', { token: usuarios.adminA.token }));
+  // Salen el Cumplimiento (spec 2026-10-24-metricas-y-reportes, 5: el ranking de áreas ya está en Métricas) y el Historial de
+  // notificaciones (lo reemplaza Avisos del RPAD)
+  it('cumplimiento e historial-notificaciones dan 404', async () => {
+    for (const ruta of ['/reportes/cumplimiento?periodo=mensual', '/reportes/cumplimiento', '/reportes/historial-notificaciones?desde=2025-01-01&hasta=2026-12-31',
+      '/reportes/historial-notificaciones']) {
+      const res = await api.get(ruta, { token: usuarios.adminA.token });
+      assert.equal(res.status, 404, ruta);
+      assert.deepEqual(res.body, { success: false, error: 'Ruta no encontrada' }, ruta);
+    }
   });
 });
 

@@ -918,13 +918,52 @@ describe('reportes.html', () => {
     assert.match(formulario, /<button type="submit" class="mt-btn mt-btn-tinta" id="mt-manual-guardar">Guardar<\/button>/);
   });
 
-  it('la pestaña Reportes conserva las cuatro tarjetas de siempre', () => {
+  // Sale el Cumplimiento y el Historial de notificaciones pasa a ser «Avisos del RPAD» (spec 2026-10-24-metricas-y-reportes, 5)
+  it('la pestaña Reportes: Estado general, Avisos del RPAD y Por área, sin Cumplimiento ni Historial', () => {
     const reportes = html.match(/<section id="vista-reportes"[\s\S]*?<\/section>/)?.[0] ?? '';
-    for (const funcion of ['generarReporteEstadoGeneral', 'generarReporteHistorial', 'generarReportePorArea', 'generarReporteCumplimiento']) {
-      assert.ok(reportes.includes(`onclick="${funcion}()"`), funcion);
+    for (const [funcion, argumentos] of [['generarReporteEstadoGeneral', ''], ['generarReporteAvisos', 'this'], ['generarReportePorArea', '']]) {
+      assert.ok(reportes.includes(`onclick="${funcion}(${argumentos})"`), funcion);
       assert.equal(typeof ctx[funcion], 'function', funcion);
     }
-    for (const id of ['historial-desde', 'historial-hasta', 'area-select', 'periodo-select']) assert.ok(reportes.includes(`id="${id}"`), id);
+    assert.ok(reportes.includes('<h3>Avisos del RPAD</h3>'), reportes);
+    for (const id of ['avisos-desde', 'avisos-hasta', 'area-select']) {
+      assert.ok(reportes.includes(`id="${id}"`), id);
+      if (id !== 'area-select') assert.ok(reportes.includes(`<label class="form-label" for="${id}">`), id);
+    }
+    for (const viejo of ['Cumplimiento', 'Historial', 'periodo-select', 'historial-desde', 'historial-hasta']) assert.ok(!reportes.includes(viejo), viejo);
+    for (const viejo of ['generarReporteHistorial', 'generarReporteCumplimiento']) assert.equal(typeof ctx[viejo], 'undefined', viejo);
+  });
+
+  it('Avisos del RPAD: la ruta con el período elegido (sin una fecha, no va: el servidor usa la de por defecto)', () => {
+    assert.equal(ctx.rutaDeAvisos('2026-01-01', '2026-10-25'), '/reportes/avisos?desde=2026-01-01&hasta=2026-10-25');
+    assert.equal(ctx.rutaDeAvisos('', '2026-10-25'), '/reportes/avisos?hasta=2026-10-25');
+    assert.equal(ctx.rutaDeAvisos('2026-01-01', ''), '/reportes/avisos?desde=2026-01-01');
+    assert.equal(ctx.rutaDeAvisos('', ''), '/reportes/avisos');
+  });
+
+  it('Avisos del RPAD: del 1/1 a hoy, y la descarga con API.pedirArchivo (el JWT en el encabezado, nunca en la URL)', async () => {
+    const pedidos = [];
+    const descargas = [];
+    const campos = { 'avisos-desde': { value: '' }, 'avisos-hasta': { value: '' }, 'area-select': { innerHTML: '', appendChild() {} } };
+    const contexto = cargar({
+      __pedidos: pedidos,
+      document: {
+        addEventListener() {}, getElementById: (id) => campos[id] ?? null,
+        createElement: () => ({ click() { descargas.push(this.download); } })
+      },
+      URL: { createObjectURL: () => 'blob:avisos', revokeObjectURL() {} },
+      setTimeout: () => {}
+    });
+    vm.runInContext('API.getAreas = async () => []; API.pedirArchivo = async (ruta) => { __pedidos.push(ruta); return "pdf"; };', contexto);
+    const hoy = vm.runInContext('Utils.hoyEnArgentina()', contexto);
+    await contexto.iniciarTarjetasDeReportes();
+    assert.deepEqual([campos['avisos-desde'].value, campos['avisos-hasta'].value], [`${hoy.slice(0, 4)}-01-01`, hoy]);
+    const boton = { disabled: false };
+    campos['avisos-desde'].value = '2026-03-01';
+    await contexto.generarReporteAvisos(boton);
+    assert.deepEqual(pedidos, [`/reportes/avisos?desde=2026-03-01&hasta=${hoy}`]);
+    assert.deepEqual(descargas, [`Avisos-RPAD-${hoy}.pdf`]);
+    assert.equal(boton.disabled, false);
   });
 
   it('sin Chart.js ni publico.css, y los tokens del Seguimiento en su <style>', () => {

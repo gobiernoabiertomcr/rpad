@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
-import { seguimientoDe, resumenParaLista, nombreDelPdf, conNotasDgmitEditables } from '../services/seguimientoReglas.js';
+import { seguimientoDe, resumenParaLista, nombreDelPdf, conNotasDgmitEditables, ESTADO_DE_NOTA } from '../services/seguimientoReglas.js';
 import { textoRequiereNota } from '../services/requiereNotaReglas.js';
 import {
   TEXTO_TIPO_NOTA_DGMIT, MENSAJES_NOTA_DGMIT, LARGO_NUMERO, LARGO_MOTIVO, FECHA_MINIMA, validarNotaDgmit, validarMotivo
@@ -425,6 +425,11 @@ describe('seguimiento.js: los movimientos', () => {
     for (const titulo of ['Directores Generales de Planta Permanente', 'Título — con "comillas" y <b>', '']) {
       assert.equal(ctx.nombreDelPdf(titulo, HOY), nombreDelPdf(titulo, HOY));
     }
+  });
+
+  // El estado de una nota en su detalle: el del servidor, que usa también el reporte «Avisos del RPAD»
+  it('ESTADOS_DE_NOTA del navegador = ESTADO_DE_NOTA del servidor', () => {
+    assert.deepEqual(plano(vm.runInContext('ESTADOS_DE_NOTA', ctx)), { ...ESTADO_DE_NOTA });
   });
 });
 

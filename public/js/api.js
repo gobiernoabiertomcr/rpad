@@ -492,25 +492,14 @@ async registrarActualizacion(id, datos = {}) {
   },
 
   // === REPORTES PDF ===
-  // El token viaja en el header Authorization (descargarPDF), nunca en la URL
+  // El token viaja en el header Authorization (descargarPDF), nunca en la URL. Avisos del RPAD se descarga con pedirArchivo
+  // (reportes.js); el Historial de notificaciones y el Cumplimiento ya no están
   getReporteEstadoGeneralUrl() {
     return `${CONFIG.API_URL}/reportes/estado-general`;
   },
 
-  getReporteHistorialUrl(desde, hasta) {
-    const params = new URLSearchParams();
-    if (desde) params.set('desde', desde);
-    if (hasta) params.set('hasta', hasta);
-    const query = params.toString();
-    return `${CONFIG.API_URL}/reportes/historial-notificaciones${query ? `?${query}` : ''}`;
-  },
-
   getReportePorAreaUrl(areaId) {
     return `${CONFIG.API_URL}/reportes/por-area/${areaId}`;
-  },
-
-  getReporteCumplimientoUrl(periodo) {
-    return `${CONFIG.API_URL}/reportes/cumplimiento?periodo=${periodo}`;
   },
 
   // === NOTAS DOCX ===

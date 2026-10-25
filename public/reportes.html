@@ -280,7 +280,7 @@
         .mt-pagina a:focus-visible, .mt-pagina button:focus-visible, .mt-pagina select:focus-visible, .mt-pagina input:focus-visible, .mt-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .mt-pagina .mt-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; }
 
-        /* La pestaña Reportes: las tarjetas de siempre */
+        /* La pestaña Reportes: sus tarjetas */
         .reportes-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -609,7 +609,7 @@
                     </div>
                 </section>
 
-                <!-- Reportes: las tarjetas de siempre -->
+                <!-- Reportes: Estado general, Avisos del RPAD y Por área -->
                 <section id="vista-reportes" role="tabpanel" aria-labelledby="pestana-reportes" hidden>
                     <div class="reportes-grid">
 
@@ -628,26 +628,26 @@
                             </div>
                         </div>
 
-                        <!-- Reporte Historial Notificaciones -->
+                        <!-- Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5): la descarga va con el JWT en el encabezado -->
                         <div class="reporte-card">
                             <div class="reporte-card-header">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                                <h3>Historial de Notificaciones</h3>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                                <h3>Avisos del RPAD</h3>
                             </div>
                             <div class="reporte-card-body">
-                                <p>Registro de todas las notificaciones enviadas por el sistema, con filtro por rango de fechas.</p>
+                                <p>La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.</p>
                                 <div class="form-row">
                                     <div class="form-group" style="margin-bottom: 0;">
-                                        <label class="form-label">Desde</label>
-                                        <input type="date" id="historial-desde" class="form-input">
+                                        <label class="form-label" for="avisos-desde">Desde</label>
+                                        <input type="date" id="avisos-desde" class="form-input">
                                     </div>
                                     <div class="form-group" style="margin-bottom: 0;">
-                                        <label class="form-label">Hasta</label>
-                                        <input type="date" id="historial-hasta" class="form-input">
+                                        <label class="form-label" for="avisos-hasta">Hasta</label>
+                                        <input type="date" id="avisos-hasta" class="form-input">
                                     </div>
                                 </div>
-                                <button onclick="generarReporteHistorial()" class="btn btn-primary btn-generar">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                                <button type="button" onclick="generarReporteAvisos(this)" class="btn btn-primary btn-generar">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                                     Generar PDF
                                 </button>
                             </div>
@@ -668,28 +668,6 @@
                                     </select>
                                 </div>
                                 <button onclick="generarReportePorArea()" class="btn btn-primary btn-generar">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                                    Generar PDF
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Reporte Cumplimiento -->
-                        <div class="reporte-card">
-                            <div class="reporte-card-header">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                                <h3>Reporte de Cumplimiento</h3>
-                            </div>
-                            <div class="reporte-card-body">
-                                <p>Análisis del porcentaje de cumplimiento de actualización por área, ordenado de mayor a menor.</p>
-                                <div class="form-group">
-                                    <label class="form-label">Período</label>
-                                    <select id="periodo-select" class="form-select">
-                                        <option value="mensual">Mensual</option>
-                                        <option value="trimestral">Trimestral</option>
-                                    </select>
-                                </div>
-                                <button onclick="generarReporteCumplimiento()" class="btn btn-primary btn-generar">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                                     Generar PDF
                                 </button>
@@ -741,9 +719,9 @@
 
     <!-- Scripts -->
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261124"></script>
-    <script src="js/main.js?v=20261124"></script>
-    <script src="js/api.js?v=20261124"></script>
-    <script src="js/reportes.js?v=20261129"></script>
+    <script src="js/auth.js?v=20261130"></script>
+    <script src="js/main.js?v=20261130"></script>
+    <script src="js/api.js?v=20261130"></script>
+    <script src="js/reportes.js?v=20261130"></script>
 </body>
 </html>

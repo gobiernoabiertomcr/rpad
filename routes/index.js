@@ -58,9 +58,8 @@ import {
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
   reporteEstadoGeneral,
-  reporteHistorialNotificaciones,
-  reportePorArea,
-  reporteCumplimiento
+  reporteAvisos,
+  reportePorArea
 } from '../controllers/reportesController.js';
 import { generarNota } from '../controllers/notasController.js';
 import {
@@ -240,12 +239,12 @@ router.get('/notificaciones/notas-digitales/:id/anexo', authMiddleware, adminOnl
 router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);
 
 // =====================================================
-// Reportes PDF (protegidas)
+// Reportes PDF (protegidas, para todos los roles con sesión: spec 2026-10-24-metricas-y-reportes, 5 y 6). Avisos del RPAD reemplaza
+// al Historial de notificaciones, y el Cumplimiento ya no está
 // =====================================================
 router.get('/reportes/estado-general', authMiddleware, reporteEstadoGeneral);
-router.get('/reportes/historial-notificaciones', authMiddleware, reporteHistorialNotificaciones);
+router.get('/reportes/avisos', authMiddleware, reporteAvisos);
 router.get('/reportes/por-area/:areaId', authMiddleware, reportePorArea);
-router.get('/reportes/cumplimiento', authMiddleware, reporteCumplimiento);
 
 // =====================================================
 // Seguimiento del dataset (protegidas, para todos los roles con sesión)

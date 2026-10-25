@@ -7,7 +7,7 @@ import {
   REGISTRO_DESDE, ASUNTOS_EMAIL, QUE_PEDIA, FALTABAN, diaDe, nombreCorto, unirAlta, movimientosDe,
   ciclosDe, cicloDelAviso, avisosDelCiclo, ultimoAviso, hitosDe, estadoDeSeguimiento, circuitoDe,
   seguimientoDe, resumenParaLista, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos, notaDgmitDelCiclo, conNotasDgmitEditables,
-  notasDgmitPorCiclo
+  notasDgmitPorCiclo, tituloDeEmail, tituloDeNotaADgmit, ESTADO_DE_NOTA, RESULTADO_DE_EMAIL
 } from '../services/seguimientoReglas.js';
 import { cintaDe } from '../services/seguimientoCinta.js';
 
@@ -39,6 +39,33 @@ describe('constantes', () => {
   });
   it('nada de los textos propios dice "sin entregar", "sin respuesta" ni "atrasado"', () => {
     for (const tipo of Object.keys(QUE_PEDIA)) assert.doesNotMatch(QUE_PEDIA[tipo], /sin entregar|sin respuesta|atrasad/i);
+  });
+});
+
+// Qué fue cada aviso y cómo terminó su envío: los textos de los movimientos, que usa también el reporte «Avisos del RPAD» (spec
+// 2026-10-24-metricas-y-reportes, 5)
+describe('qué fue cada aviso y cómo terminó su envío', () => {
+  it('tituloDeEmail y tituloDeNotaADgmit son los títulos de los movimientos', () => {
+    const base = f(52);
+    const email = base.emails.find((e) => Object.hasOwn(QUE_PEDIA, e.tipo));
+    for (const tipo of [...Object.keys(QUE_PEDIA), 'area-aviso-40']) {
+      const [movimiento] = movimientosDe({ ...base, notas: [], notasDgmit: [], emails: [{ ...email, tipo }] })
+        .filter((m) => m.tipo === 'email' || m.tipo === 'area');
+      assert.equal(tituloDeEmail(tipo), movimiento.titulo, tipo);
+    }
+    assert.equal(tituloDeEmail('externo-40'), 'Email a DGMIT: distribución de notas');
+    assert.equal(tituloDeEmail('area-aviso-40'), 'Email al área: anticipo de la nota formal');
+    // Un tipo que no se conoce no es un aviso
+    for (const tipo of ['otro-tipo', undefined, null, 'toString']) assert.equal(tituloDeEmail(tipo), null, String(tipo));
+    const nota = movimientosDe({ ...base, emails: [] }).find((m) => m.tipo === 'nota');
+    assert.equal(tituloDeNotaADgmit(base.notas[0]), nota.titulo);
+    assert.equal(tituloDeNotaADgmit({ numero: 9, anio: 2026 }), 'Nota Digital N° 9/26 a DGMIT');
+  });
+
+  it('el estado de una nota y el resultado de un email, con las palabras del Seguimiento, congelados', () => {
+    assert.deepEqual(ESTADO_DE_NOTA, { enviada: 'Enviada', pendiente: 'Pendiente de envío', fallida: 'No se pudo enviar' });
+    assert.deepEqual(RESULTADO_DE_EMAIL, { enviado: 'Enviado', fallido: 'No se pudo enviar' });
+    assert.ok(Object.isFrozen(ESTADO_DE_NOTA) && Object.isFrozen(RESULTADO_DE_EMAIL));
   });
 });
 

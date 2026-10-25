@@ -7,8 +7,10 @@ import fs from 'fs';
 // main.js cambió con la carcasa nueva (spec 2026-10-18-rediseno-publico: el año del footer, la clase header--con-sesion y
 // aria-expanded en el botón del menú); auth.js y api.js suben con él. api.js cambió después (previewNotaAnexo recibe el tipo: el
 // anexo de la reiteración en Correos, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5). auth.js cambió después (el rol
-// Colaborador en el encabezado y puedeCargarNotasDgmit, spec 2026-10-24-notas-dgmit, 1): main.js y api.js suben con él
-const VERSION = '20261124';
+// Colaborador en el encabezado y puedeCargarNotasDgmit, spec 2026-10-24-notas-dgmit, 1): main.js y api.js suben con él. api.js cambió
+// después (salen getReporteHistorialUrl y getReporteCumplimientoUrl: Avisos del RPAD reemplaza al Historial y el Cumplimiento ya no
+// está, spec 2026-10-24-metricas-y-reportes, 5): auth.js y main.js suben con él
+const VERSION = '20261130';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte; con persona autorizada, cada aviso adelantado
 // sale también en su fecha; el editor que audita sin responsabilidad, spec 2026-10-20-editor-sin-responsabilidad; el rol
 // Colaborador, con su grupo y la ayuda de cada rol, spec 2026-10-24-notas-dgmit, 1; la ayuda del lector nombra «Métricas y
@@ -46,8 +48,9 @@ const VERSION_GESTION = '20261129';
 // completar» de Métricas, spec 2026-10-24-metricas-y-reportes, 2.2): su versión es propia
 const VERSION_SEGUIMIENTO = '20261129';
 // reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
-// ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»: su versión es propia
-const VERSION_REPORTES = '20261129';
+// ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
+// del RPAD en lugar del Historial y sin la del Cumplimiento: su versión es propia
+const VERSION_REPORTES = '20261130';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

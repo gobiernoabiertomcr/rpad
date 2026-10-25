@@ -244,6 +244,22 @@ const quienDe = (...pares) => pares.flatMap(([verbo, nombre]) => {
 export const numeroDeNota = (nota) => (nota.anio === null || nota.anio === undefined
   ? String(nota.numero) : `${nota.numero}/${String(nota.anio).slice(-2)}`);
 
+// Qué fue cada aviso, con el título de su movimiento: una Nota Digital de aviso o de reiteración ("Nota Digital N° 4/26 a DGMIT"), un
+// email a la DGMIT (los siete retirados: "Email a DGMIT: <qué pedía>", nunca "recordatorio interno") y el de los 40 días al área. Un
+// email de un tipo que no se conoce no es un aviso: null. Los usa también el reporte «Avisos del RPAD» (spec 2026-10-24-metricas-y-
+// reportes, 5)
+export const tituloDeNotaADgmit = (nota) => `Nota Digital N° ${numeroDeNota(nota)} a DGMIT`;
+export const tituloDeEmail = (tipo) => {
+  if (tipo === 'area-aviso-40') return 'Email al área: anticipo de la nota formal';
+  return typeof tipo === 'string' && Object.hasOwn(QUE_PEDIA, tipo) ? `Email a DGMIT: ${QUE_PEDIA[tipo]}` : null;
+};
+
+// Cómo terminó el envío, con las palabras del Seguimiento: el estado de una Nota Digital (el detalle de una sin enviar termina en
+// "Pendiente de envío." o "No se pudo enviar."; la pantalla lo muestra en su detalle, ESTADOS_DE_NOTA de seguimiento.js, atada por un
+// test de paridad) y el resultado de un email. También los usa el reporte «Avisos del RPAD»
+export const ESTADO_DE_NOTA = Object.freeze({ enviada: 'Enviada', pendiente: 'Pendiente de envío', fallida: 'No se pudo enviar' });
+export const RESULTADO_DE_EMAIL = Object.freeze({ enviado: 'Enviado', fallido: 'No se pudo enviar' });
+
 const movimientoDeAlta = (dataset, alta) => {
   const momento = momentoDe(dataset?.alta);
   if (!momento) return null;
@@ -307,7 +323,7 @@ const movimientosDeHistorial = (historial) => {
 };
 
 // Una Nota Digital (a DGMIT o de auditoría) sin enviar lo dice al final del detalle
-const estadoDeLaNota = (nota) => (nota.estado === 'pendiente' ? ['Pendiente de envío.'] : nota.estado === 'fallida' ? ['No se pudo enviar.'] : []);
+const estadoDeLaNota = (nota) => (nota.estado === 'pendiente' || nota.estado === 'fallida' ? [`${ESTADO_DE_NOTA[nota.estado]}.`] : []);
 
 // Quién en una Nota Digital: "Generada por X" (o "Envío automático" si la generó la corrida) y "Firmó X" si hay firmante
 const quienDeLaNota = (nota) => {
@@ -328,7 +344,7 @@ const movimientoDeNota = (nota) => {
   if (!textoVacio(nota.datos_solicitados)) frases.push(`Pide: ${sinPunto(nota.datos_solicitados)}.`);
   frases.push(...estadoDeLaNota(nota));
   const enviada = momentoDe(nota.enviada);
-  return { mov: movimiento('nota', fecha, enviada ?? `${fecha} 00:00:00`, `Nota Digital N° ${numeroDeNota(nota)} a DGMIT`, frases.join(' '), quienDeLaNota(nota), {
+  return { mov: movimiento('nota', fecha, enviada ?? `${fecha} 00:00:00`, tituloDeNotaADgmit(nota), frases.join(' '), quienDeLaNota(nota), {
     nota_id: nota.id, numero: nota.numero, anio: nota.anio, vencimiento, datos_solicitados: nota.datos_solicitados ?? null,
     para: nota.para ?? null, cc: nota.cc ?? null, enviada, estado: nota.estado ?? null
   }), id: Number(nota.id) || 0 };
@@ -395,19 +411,19 @@ const movimientoDeEmail = (email) => {
   const id = Number(email.id) || 0;
   if (email.tipo === 'area-aviso-40') {
     const area = textoVacio(email.area) ? null : String(email.area).trim();
-    const detalle = fallo ? 'No se pudo enviar.' : area === null ? 'Al área.' : `${email.area_articulo === 'el' ? 'Al' : 'A la'} ${area}.`;
+    const detalle = fallo ? `${RESULTADO_DE_EMAIL.fallido}.` : area === null ? 'Al área.' : `${email.area_articulo === 'el' ? 'Al' : 'A la'} ${area}.`;
     const asunto = area === null ? ASUNTOS_EMAIL['area-aviso-40'] : `${ASUNTOS_EMAIL['area-aviso-40']} - ${area}`;
-    return { mov: movimiento('area', fecha, momento, 'Email al área: anticipo de la nota formal', detalle, ['Sistema'], extra(asunto)), id };
+    return { mov: movimiento('area', fecha, momento, tituloDeEmail(email.tipo), detalle, ['Sistema'], extra(asunto)), id };
   }
   if (!Object.hasOwn(QUE_PEDIA, email.tipo)) return null;
   const frases = [];
-  if (fallo) frases.push('No se pudo enviar.');
+  if (fallo) frases.push(`${RESULTADO_DE_EMAIL.fallido}.`);
   else {
     if (Object.hasOwn(FALTABAN, email.tipo)) frases.push(`Faltaban ${FALTABAN[email.tipo]} días.`);
     const otros = (Number(email.cantidad) || 0) - 1;
     frases.push(otros >= 2 ? `Junto con otros ${otros} datasets.` : otros === 1 ? 'Junto con otro dataset.' : 'Solo este dataset.');
   }
-  return { mov: movimiento('email', fecha, momento, `Email a DGMIT: ${QUE_PEDIA[email.tipo]}`, frases.join(' '), ['Sistema'], extra(ASUNTOS_EMAIL[email.tipo])), id };
+  return { mov: movimiento('email', fecha, momento, tituloDeEmail(email.tipo), frases.join(' '), ['Sistema'], extra(ASUNTOS_EMAIL[email.tipo])), id };
 };
 
 // Todos los movimientos de un dataset (`Fuentes` de services/seguimientoDatos.js), del más nuevo al más viejo: la fecha, después

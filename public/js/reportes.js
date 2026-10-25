@@ -13,7 +13,8 @@
  * metricasCinta.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
  * por Utils.escapeHtml, y un número se escribe con String (un 0 es «0»: Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
- * el DOM o la API va aparte, al final. La pestaña Reportes conserva, por ahora, las cuatro tarjetas de siempre (al final del archivo).
+ * el DOM o la API va aparte, al final. La pestaña Reportes tiene, por ahora, tres tarjetas (al final del archivo): Estado general,
+ * Avisos del RPAD y Por área.
  */
 
 // Todos los roles con sesión la ven; sin sesión, al login
@@ -1316,17 +1317,17 @@ async function eliminarMetricaManual(boton) {
 }
 
 // =====================================================
-// La pestaña Reportes: las cuatro tarjetas de siempre (DOM y API)
+// La pestaña Reportes: Estado general, Avisos del RPAD y Por área (DOM y API). Sale el Cumplimiento y el Historial de
+// notificaciones pasa a ser Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5)
 // =====================================================
 
-// Las áreas del selector y las fechas por defecto del historial (los últimos 30 días)
+// Las áreas del selector y el período por defecto de Avisos del RPAD: del 1/1 a hoy, en hora argentina (con toISOString, después de
+// las 21 decía mañana)
 async function iniciarTarjetasDeReportes() {
   await cargarAreas();
-  const hoy = new Date();
-  const hace30Dias = new Date();
-  hace30Dias.setDate(hoy.getDate() - 30);
-  document.getElementById('historial-hasta').value = hoy.toISOString().split('T')[0];
-  document.getElementById('historial-desde').value = hace30Dias.toISOString().split('T')[0];
+  const hoy = Utils.hoyEnArgentina();
+  document.getElementById('avisos-hasta').value = hoy;
+  document.getElementById('avisos-desde').value = `${hoy.slice(0, 4)}-01-01`;
 }
 
 /**
@@ -1362,15 +1363,27 @@ function generarReporteEstadoGeneral() {
   descargarPDF(url, 'estado-general');
 }
 
-/**
- * Generar reporte de historial de notificaciones
- */
-function generarReporteHistorial() {
-  const desde = document.getElementById('historial-desde').value;
-  const hasta = document.getElementById('historial-hasta').value;
+// La ruta del PDF «Avisos del RPAD» con el período elegido: sin una de las fechas, no va (el servidor usa la de por defecto)
+function rutaDeAvisos(desde, hasta) {
+  const params = new URLSearchParams();
+  if (desde) params.set('desde', desde);
+  if (hasta) params.set('hasta', hasta);
+  const consulta = params.toString();
+  return `/reportes/avisos${consulta ? `?${consulta}` : ''}`;
+}
 
-  const url = API.getReporteHistorialUrl(desde, hasta);
-  descargarPDF(url, 'historial-notificaciones');
+// Avisos del RPAD, con el JWT en el encabezado (API.pedirArchivo), nunca en la URL. Un período que no es válido lo dice el servidor
+// («Elegí un período válido.»)
+async function generarReporteAvisos(boton) {
+  const desde = document.getElementById('avisos-desde').value;
+  const hasta = document.getElementById('avisos-hasta').value;
+  await conBotonBloqueado(boton, async () => {
+    try {
+      descargarBlob(await API.pedirArchivo(rutaDeAvisos(desde, hasta)), `Avisos-RPAD-${Utils.hoyEnArgentina()}.pdf`);
+    } catch (error) {
+      avisarError(error.message || 'Error al generar el reporte');
+    }
+  });
 }
 
 /**
@@ -1386,15 +1399,6 @@ function generarReportePorArea() {
 
   const url = API.getReportePorAreaUrl(areaId);
   descargarPDF(url, `reporte-area-${areaId}`);
-}
-
-/**
- * Generar reporte de cumplimiento
- */
-function generarReporteCumplimiento() {
-  const periodo = document.getElementById('periodo-select').value;
-  const url = API.getReporteCumplimientoUrl(periodo);
-  descargarPDF(url, `cumplimiento-${periodo}`);
 }
 
 /**

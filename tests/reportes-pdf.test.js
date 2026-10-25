@@ -1,5 +1,5 @@
 // Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
-// Estado general de los datasets, Métricas del año y Por área. Puro: los datos se arman acá, sin base de datos (los textos del reporte
+// Estado general de los datasets, Métricas del año, Por área y Avisos del RPAD. Puro: los datos se arman acá, sin base de datos (los textos del reporte
 // servido por la API, con el set controlado, están en estados-api.test.js, reportes.test.js y metricas-api.test.js).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,11 +11,12 @@ import {
 import { renderSeguimiento, OPCIONES_CINTA_PDF, ALTO_DE_LA_CABEZA_DE_SECCION } from '../services/seguimientoPdf.js';
 import { renderMetricasDelAnio, textoDeLaPildora } from '../services/reportesMetricasPdf.js';
 import { renderPorArea } from '../services/reportesPorAreaPdf.js';
+import { renderAvisos, avisosDelPeriodo } from '../services/reportesAvisosPdf.js';
 import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
-import { formatoLargo } from '../services/notasDigitalesCalendario.js';
+import { formatoLargo, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { IZQUIERDA, CONTENIDO } from '../services/notasDigitalesAnexo.js';
 import { lineasPorHoja, textosPorHoja, contenidoPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 import { diagramacion, verificarDiagramacion, contiene } from './pdf-diagramacion.js';
@@ -905,6 +906,195 @@ describe('Por área: la portada y una hoja del Seguimiento por dataset activo', 
     it(`nada se pisa: ${titulo}`, async () => {
       const datasets = armar();
       verificarDiagramacion(await diagramacion(() => renderArea(datasets)));
+    });
+  }
+});
+
+// =====================================================
+// Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5: reemplaza al Historial de notificaciones)
+// =====================================================
+
+const PERIODO_AVISOS = { desde: '2026-01-01', hasta: '2026-03-31' };
+const HOY_AVISOS = '2026-10-25';
+const GENERADO_AVISOS = { momento: '2026-10-25 09:41:12', por: 'Usuario Ejemplo' };
+// Lo que lee el controlador de la base, con lo que nunca tiene que salir en el PDF: las direcciones (destinatarios, para, cc, cco) y
+// el texto técnico de un error
+const DIRECCIONES = { destinatarios: 'mit@ejemplo.test,da@ejemplo.test', para: 'mit@ejemplo.test', cc: 'da@ejemplo.test', cco: 'oculto@ejemplo.test' };
+const emailDePrueba = (datos) => ({ success: true, error: null, ...DIRECCIONES, ...datos });
+const notaDePrueba = (datos) => ({ numero: null, anio: 2026, gestion: 'externa', estado: 'enviada', enviada: null, ...DIRECCIONES, ...datos });
+const EMAILS_DEL_PERIODO = [
+  emailDePrueba({ id: 1, tipo: 'externo-40', enviado: '2026-03-10 08:15:04', datasets: ['Parque Automotor', 'Gasto Público'] }),
+  emailDePrueba({ id: 2, tipo: 'interno-60', enviado: '2026-03-10 08:15:06', datasets: ['Relevamiento de espacios verdes'] }),
+  emailDePrueba({ id: 3, tipo: 'area-aviso-40', enviado: '2026-03-11 08:15:10', datasets: ['Gasto Público'] }),
+  emailDePrueba({ id: 4, tipo: 'externo-5', enviado: '2026-03-26 11:00:06', success: false, error: 'connect ECONNREFUSED smtp@ejemplo.test', datasets: ['Pauta Publicitaria'] }),
+  // El primer instante del período y el último
+  emailDePrueba({ id: 5, tipo: 'externo-vencido', enviado: '2026-01-01 00:00:00', datasets: ['Parque Automotor'] }),
+  emailDePrueba({ id: 6, tipo: 'interno-vencido', enviado: '2026-03-31 23:59:59', datasets: [] }),
+  // Fuera del período, de un tipo que no se conoce o sin momento: no van
+  emailDePrueba({ id: 7, tipo: 'externo-60', enviado: '2025-12-31 23:59:59', datasets: ['Fuera del período'] }),
+  emailDePrueba({ id: 8, tipo: 'externo-60', enviado: '2026-04-01 00:00:00', datasets: ['Fuera del período'] }),
+  emailDePrueba({ id: 9, tipo: 'otro-tipo', enviado: '2026-02-01 08:00:00', datasets: ['Tipo raro'] }),
+  emailDePrueba({ id: 10, tipo: 'externo-60', enviado: null, datasets: ['Sin momento'] })
+];
+const NOTAS_DEL_PERIODO = [
+  notaDePrueba({ id: 20, numero: 4, tipo: 'aviso', fecha: '2026-03-21', enviada: '2026-03-21 08:15:00', datasets: ['Pauta Publicitaria', 'Comercios habilitados'] }),
+  notaDePrueba({ id: 21, numero: 5, tipo: 'reiteracion', gestion: 'interna', fecha: '2026-03-25', estado: 'pendiente', datasets: ['Relevamiento de espacios verdes'] }),
+  notaDePrueba({ id: 22, numero: 6, tipo: 'reiteracion', fecha: '2026-03-31', estado: 'fallida', datasets: ['Gasto Público'] }),
+  // La auditoría, la autorización, una de prueba y una fuera del período no van
+  notaDePrueba({ id: 23, numero: 7, tipo: 'auditoria', gestion: null, fecha: '2026-03-12', datasets: [] }),
+  notaDePrueba({ id: 24, numero: 8, tipo: 'autorizacion', gestion: null, fecha: '2026-03-13', datasets: [] }),
+  notaDePrueba({ id: 25, tipo: 'aviso', anio: null, es_prueba: 1, fecha: '2026-03-14', datasets: ['Nota de prueba'] }),
+  notaDePrueba({ id: 26, numero: 9, tipo: 'aviso', fecha: '2026-04-01', datasets: ['Fuera del período'] })
+];
+const avisosDePrueba = () => avisosDelPeriodo({ emails: EMAILS_DEL_PERIODO, notas: NOTAS_DEL_PERIODO }, PERIODO_AVISOS);
+const renderDeAvisos = (avisos, periodo = PERIODO_AVISOS) => renderAvisos({ ...periodo, avisos }, { hoy: HOY_AVISOS, generado: GENERADO_AVISOS });
+const ENCABEZADO_DE_AVISOS = ['Fecha', 'Qué fue', 'Gestión', 'Datasets', 'Estado'];
+// Muchos emails a DGMIT, uno por día desde el 1/1, cada uno con un dataset: la tabla ocupa varias hojas
+const muchosAvisos = (n) => avisosDelPeriodo({
+  emails: Array.from({ length: n }, (_, i) => emailDePrueba({
+    id: 100 + i, tipo: i % 2 ? 'interno-30' : 'externo-60', enviado: `${sumarDias('2026-01-01', i)} 08:15:00`,
+    datasets: [`Dataset ${String(i + 1).padStart(3, '0')}`]
+  })),
+  notas: []
+}, { desde: '2026-01-01', hasta: '2026-12-31' });
+
+describe('Avisos del RPAD: los avisos del período', () => {
+  it('cada email y cada Nota Digital de aviso o de reiteración del período, del más viejo al más nuevo, con los textos del Seguimiento', () => {
+    const enviado = { envio: 'enviado', estado: 'Enviado' };
+    assert.deepEqual(avisosDePrueba(), [
+      { fecha: '2026-01-01', clase: 'dgmit', que: 'Email a DGMIT: resumen mensual de vencidos', gestion: 'externa', datasets: ['Parque Automotor'], ...enviado },
+      { fecha: '2026-03-10', clase: 'dgmit', que: 'Email a DGMIT: distribución de notas', gestion: 'externa', datasets: ['Gasto Público', 'Parque Automotor'], ...enviado },
+      { fecha: '2026-03-10', clase: 'dgmit', que: 'Email a DGMIT: planificación (60 días)', gestion: 'interna', datasets: ['Relevamiento de espacios verdes'], ...enviado },
+      { fecha: '2026-03-11', clase: 'area', que: 'Email al área: anticipo de la nota formal', gestion: 'externa', datasets: ['Gasto Público'], ...enviado },
+      { fecha: '2026-03-21', clase: 'nota', que: 'Nota Digital N° 4/26 a DGMIT', gestion: 'externa', datasets: ['Comercios habilitados', 'Pauta Publicitaria'], envio: 'enviado', estado: 'Enviada' },
+      { fecha: '2026-03-25', clase: 'nota', que: 'Nota Digital N° 5/26 a DGMIT', gestion: 'interna', datasets: ['Relevamiento de espacios verdes'], envio: 'pendiente', estado: 'Pendiente de envío' },
+      { fecha: '2026-03-26', clase: 'dgmit', que: 'Email a DGMIT: vencimiento inminente', gestion: 'externa', datasets: ['Pauta Publicitaria'], envio: 'fallido', estado: 'No se pudo enviar' },
+      { fecha: '2026-03-31', clase: 'nota', que: 'Nota Digital N° 6/26 a DGMIT', gestion: 'externa', datasets: ['Gasto Público'], envio: 'fallido', estado: 'No se pudo enviar' },
+      { fecha: '2026-03-31', clase: 'dgmit', que: 'Email a DGMIT: resumen mensual de vencidos', gestion: 'interna', datasets: [], ...enviado }
+    ]);
+  });
+
+  it('sin emails ni notas, o con datos raros, no tira: ninguno', () => {
+    assert.deepEqual(avisosDelPeriodo({}, PERIODO_AVISOS), []);
+    assert.deepEqual(avisosDelPeriodo({ emails: null, notas: [null, 'x', 3] }, PERIODO_AVISOS), []);
+    assert.deepEqual(avisosDelPeriodo({ emails: [{ tipo: 'externo-40', enviado: 'ayer', datasets: 'x' }] }, PERIODO_AVISOS), []);
+  });
+});
+
+describe('Avisos del RPAD con el diseño del anexo', () => {
+  it('el encabezado del anexo, el período, los totales y el pie «Avisos del RPAD · Hoja k de N»', async () => {
+    const pdf = await renderDeAvisos(avisosDePrueba());
+    assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 1);
+    const [lineas] = hojas;
+    for (const t of ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Municipalidad de Comodoro Rivadavia', 'Avisos del RPAD',
+      formatoLargo(HOY_AVISOS), 'AVISOS DEL RPAD · DEL 01/01/2026 AL 31/03/2026', '9 avisos del RPAD en el período',
+      '6 de gestión externa y 3 de gestión interna', 'Generado el 25/10/2026 a las 09:41 por Usuario Ejemplo', 'Avisos del RPAD · Hoja 1 de 1']) {
+      assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    }
+    // Los totales: los nueve avisos, los emails a la DGMIT, los del área, las notas y los que no salieron (dos fallidos y uno pendiente)
+    assert.equal(valorDeTarjeta(lineas, 'Total de avisos'), '9');
+    assert.equal(valorDeTarjeta(lineas, 'Emails a DGMIT'), '5');
+    assert.equal(valorDeTarjeta(lineas, 'Emails al área'), '1');
+    assert.equal(valorDeTarjeta(lineas, 'Notas Digitales'), '3');
+    assert.equal(valorDeTarjeta(lineas, 'Sin enviar'), '3');
+  });
+
+  it('la tabla: Fecha, Qué fue, Gestión, Datasets y Estado, una fila por aviso, con los títulos separados por coma', async () => {
+    const lineas = lineasPorHoja(await renderDeAvisos(avisosDePrueba())).flat();
+    const i = lineas.indexOf('Fecha');
+    assert.deepEqual(lineas.slice(i, i + 5), ENCABEZADO_DE_AVISOS);
+    const fila = (fecha, que) => {
+      const j = lineas.findIndex((l, k) => l === fecha && lineas[k + 1] === que);
+      assert.ok(j !== -1, `falta la fila de "${que}" del ${fecha}: ${lineas.join(' | ')}`);
+      return lineas.slice(j, j + 5);
+    };
+    assert.deepEqual(fila('21/03/2026', 'Nota Digital N° 4/26 a DGMIT'),
+      ['21/03/2026', 'Nota Digital N° 4/26 a DGMIT', 'Externa', 'Comercios habilitados, Pauta Publicitaria', 'Enviada']);
+    assert.deepEqual(fila('25/03/2026', 'Nota Digital N° 5/26 a DGMIT'),
+      ['25/03/2026', 'Nota Digital N° 5/26 a DGMIT', 'Interna', 'Relevamiento de espacios verdes', 'Pendiente de envío']);
+    assert.deepEqual(fila('11/03/2026', 'Email al área: anticipo de la nota formal'),
+      ['11/03/2026', 'Email al área: anticipo de la nota formal', 'Externa', 'Gasto Público', 'Enviado']);
+    assert.deepEqual(fila('26/03/2026', 'Email a DGMIT: vencimiento inminente'),
+      ['26/03/2026', 'Email a DGMIT: vencimiento inminente', 'Externa', 'Pauta Publicitaria', 'No se pudo enviar']);
+    // Un email sin datasets que se puedan nombrar: el guion largo
+    assert.deepEqual(fila('31/03/2026', 'Email a DGMIT: resumen mensual de vencidos'),
+      ['31/03/2026', 'Email a DGMIT: resumen mensual de vencidos', 'Interna', '—', 'Enviado']);
+    // En el orden de la lista: del más viejo al más nuevo
+    const fechas = lineas.filter(l => /^\d{2}\/\d{2}\/2026$/.test(l)).map(l => l.split('/').reverse().join('-'));
+    assert.deepEqual(fechas, avisosDePrueba().map(a => a.fecha));
+  });
+
+  it('sin direcciones de email, sin el texto técnico de los errores y sin lo que no es un aviso', async () => {
+    const lineas = lineasPorHoja(await renderDeAvisos(avisosDePrueba())).flat();
+    const texto = lineas.join(' ');
+    assert.ok(!texto.includes('@'), texto);
+    for (const t of ['ECONNREFUSED', 'Fuera del período', 'Tipo raro', 'Sin momento', 'Nota de prueba', '7/26', '8/26', '9/26', 'recordatorio']) {
+      assert.ok(!texto.includes(t), `"${t}" no va: ${texto}`);
+    }
+  });
+
+  it('el estado de cada aviso va en una insignia con los colores del Seguimiento: enviado, pendiente y sin enviar', async () => {
+    const { textos, bloques } = await diagramacion(() => renderDeAvisos(avisosDePrueba()));
+    const xEstado = textos.find(t => t.texto === 'Estado').x0;
+    for (const texto of ['Enviado', 'Enviada', 'Pendiente de envío', 'No se pudo enviar']) {
+      const deLaTabla = textos.filter(t => t.texto === texto && t.x0 >= xEstado - 0.01);
+      assert.ok(deLaTabla.length > 0, `falta "${texto}"`);
+      for (const t of deLaTabla) assert.ok(bloques.some(b => b.hoja === t.hoja && contiene(b, t)), `"${texto}" no está en su insignia`);
+    }
+    const contenido = contenidoPorHoja(await renderDeAvisos(avisosDePrueba())).join('\n');
+    // Enviado como un actualizado (verde), pendiente como un próximo (amarillo) y sin enviar como un vencido (rojo)
+    for (const color of ['#DDF1E6', '#2E6B4C', '#FCE8A8', '#7A5200', '#F8E1E1', '#8A3434']) {
+      assert.ok(contenido.includes(relleno(color)), `falta el color ${color}`);
+    }
+  });
+
+  it('la tabla corta de hoja y repite el encabezado; cada aviso una sola vez y el pie en todas', async () => {
+    const avisos = muchosAvisos(150);
+    const hojas = lineasPorHoja(await renderDeAvisos(avisos, { desde: '2026-01-01', hasta: '2026-12-31' }));
+    assert.ok(hojas.length >= 3, `${hojas.length} hojas`);
+    hojas.forEach((lineas, k) => {
+      assert.equal(lineas.filter(l => l === 'Qué fue').length, 1, `hoja ${k + 1}`);
+      assert.ok(lineas.includes(`Avisos del RPAD · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+      assert.ok(lineas.includes('Generado el 25/10/2026 a las 09:41 por Usuario Ejemplo'), `hoja ${k + 1}`);
+    });
+    // El título, solo arriba de la primera hoja
+    assert.ok(hojas[0].includes('150 avisos del RPAD en el período'));
+    assert.ok(hojas.slice(1).every(lineas => !lineas.includes('150 avisos del RPAD en el período')));
+    const numeros = hojas.flat().map(l => /^Dataset (\d{3})$/.exec(l)?.[1]).filter(Boolean).map(Number);
+    assert.deepEqual(numeros, avisos.map((_, i) => i + 1));
+  });
+
+  it('muchos datasets en un aviso: la celda se corta con «…», en la misma fila', async () => {
+    const titulos = Array.from({ length: 24 }, (_, i) => `Conjunto de datos con un título bastante largo número ${String(i + 1).padStart(2, '0')}`);
+    const avisos = avisosDelPeriodo({ emails: [emailDePrueba({ id: 1, tipo: 'externo-vencido', enviado: '2026-03-01 08:15:00', datasets: titulos })] }, PERIODO_AVISOS);
+    const { textos } = await diagramacion(() => renderDeAvisos(avisos));
+    assert.ok(textos.some(t => t.texto.startsWith('Conjunto de datos con un título bastante largo número 01') && t.texto.endsWith('…')), 'la celda no se cortó');
+    assert.equal(lineasPorHoja(await renderDeAvisos(avisos)).length, 1);
+  });
+
+  it('un solo aviso: «1 aviso del RPAD en el período»; ninguno: lo dice, sin píldora ni tabla', async () => {
+    const [uno] = lineasPorHoja(await renderDeAvisos(avisosDePrueba().slice(0, 1)));
+    assert.ok(uno.includes('1 aviso del RPAD en el período') && uno.includes('1 de gestión externa y 0 de gestión interna'), uno.join(' | '));
+    const hojas = lineasPorHoja(await renderDeAvisos([]));
+    assert.equal(hojas.length, 1);
+    const [lineas] = hojas;
+    assert.ok(lineas.includes('Ningún aviso del RPAD en el período'), lineas.join(' | '));
+    assert.equal(valorDeTarjeta(lineas, 'Total de avisos'), '0');
+    assert.ok(!lineas.includes('Qué fue') && !lineas.some(l => / de gestión externa y /.test(l)), lineas.join(' | '));
+    assert.ok(lineas.includes('Avisos del RPAD · Hoja 1 de 1'));
+  });
+
+  const casos = [
+    ['los avisos de la prueba', () => avisosDePrueba()],
+    ['150 avisos, en varias hojas', () => muchosAvisos(150)],
+    ['ningún aviso', () => []]
+  ];
+  for (const [titulo, armar] of casos) {
+    it(`nada se pisa: ${titulo}`, async () => {
+      const avisos = armar();
+      verificarDiagramacion(await diagramacion(() => renderDeAvisos(avisos)));
     });
   }
 });

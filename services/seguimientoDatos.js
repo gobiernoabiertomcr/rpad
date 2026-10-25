@@ -38,8 +38,9 @@ const leerJson = (valor) => {
   return typeof texto === 'string' ? JSON.parse(texto) : texto;
 };
 
-// 'ids separados por coma', a veces con espacios (" 5, 7"): quedan los ids enteros, sin repetir
-const idsDeLaLista = (texto) => [...new Set(String(texto ?? '').replace(/ /g, '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+// 'ids separados por coma', a veces con espacios (" 5, 7"): quedan los ids enteros, sin repetir. También la usa el reporte «Avisos del
+// RPAD» (controllers/reportesController.js), con los datasets de cada email
+export const idsDeLaLista =(texto) => [...new Set(String(texto ?? '').replace(/ /g, '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0))];
 
 const agregar = (mapa, clave, valor) => {
   if (!mapa.has(clave)) mapa.set(clave, []);

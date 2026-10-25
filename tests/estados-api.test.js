@@ -1,13 +1,13 @@
 // Estados y tasa de actualización en el servidor (spec 2026-10-17-fechas-datasets, sección 11 y Ruling 22): un solo cálculo
 // de estado (estadoDelDataset) para el listado, las estadísticas y los reportes PDF; los eventuales van aparte y no entran en
-// la tasa del tablero, del Estado General ni del Cumplimiento (los tres dan el mismo número); los PDF suman "Datos al" donde
-// listan la próxima, y el Por área suma una hoja del Seguimiento por dataset activo. Contra una base de prueba propia, con un set
-// controlado.
+// la tasa de la portada, del Estado General ni de Métricas (las tres dan el mismo número: spec 2026-10-24-metricas-y-reportes, 5);
+// los PDF suman "Datos al" donde listan la próxima, y el Por área suma una hoja del Seguimiento por dataset activo. Al final, el
+// reporte Avisos del RPAD, con emails y Notas Digitales de un período fijo. Contra una base de prueba propia, con un set controlado.
 // El servidor usa siempre el hoy real (hoyArgentina): todas las fechas salen de hoy.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
-import { crearArea, crearDataset } from './notas-fixtures.js';
+import { crearArea, crearDataset, crearNota } from './notas-fixtures.js';
 import { lineasPorHoja } from './pdf-lector.js';
 import { formatoCorto, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { estadoDelDataset, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
@@ -86,8 +86,6 @@ const lineasDe = async (ruta) => {
 const valorDeTarjeta = (lineas, rotulo) => lineas[lineas.indexOf(rotulo) - 1];
 // Las celdas de la fila de un dataset en una tabla del PDF: arrancan en su título
 const filaDe = (lineas, clave, celdas) => lineas.slice(lineas.indexOf(titulo(clave)), lineas.indexOf(titulo(clave)) + celdas);
-// La fila de un área en la tabla del Cumplimiento
-const filaDeArea = (lineas, nombre) => lineas.slice(lineas.indexOf(nombre), lineas.indexOf(nombre) + 5);
 
 describe('el set controlado da el mismo estado todos los días', () => {
   // El servidor usa el hoy real: el set tiene que dar lo que dice cada fila cualquier día del año, también el 29/02 de un
@@ -354,45 +352,21 @@ describe('reporte PDF por área: un área que no existe', () => {
   });
 });
 
-describe('reporte PDF de cumplimiento (Ruling 22: los eventuales van aparte)', () => {
-  let lineas;
-  before(async () => { lineas = await lineasDe('/reportes/cumplimiento?periodo=mensual'); });
-
-  it('los eventuales no cuentan como al día ni entran en el porcentaje, y figuran aparte como Eventuales (n)', async () => {
-    // Al día: 3 actualizados + 1 próximo = 4, sobre los 10 menos los 3 eventuales: 4 / 7 = 57 %
-    assert.equal(valorDeTarjeta(lineas, 'Total Datasets'), '10');
-    assert.equal(valorDeTarjeta(lineas, 'Al día'), '4');
-    assert.equal(valorDeTarjeta(lineas, '% Cumplimiento'), '57%');
-    assert.ok(lineas.includes('Eventuales (3): no entran en el porcentaje porque no tienen fecha de vencimiento.'));
-  });
-
-  it('la tabla por área saca a los eventuales del porcentaje y los muestra en su columna', async () => {
-    assert.deepEqual(lineas.slice(lineas.indexOf('Cumplimiento') - 4, lineas.indexOf('Cumplimiento') + 1),
-      ['Área', 'Total', 'Al día', 'Eventuales', 'Cumplimiento']);
-    // Área A: 3 al día de 7 con 2 eventuales = 3 / 5. Área B: 1 al día de 2 (el sin fecha cuenta: tiene frecuencia). Área C: solo un eventual
-    assert.deepEqual(filaDeArea(lineas, 'Área A'), ['Área A', '7', '3', '2', '60%']);
-    assert.deepEqual(filaDeArea(lineas, 'Área B'), ['Área B', '2', '1', '0', '50%']);
-  });
-
-  it('un área con solo eventuales no figura cumplida al 100 %: no tiene vencimientos', async () => {
-    assert.deepEqual(filaDeArea(lineas, 'Área C'), ['Área C', '1', '0', '1', 'Sin vencimientos']);
-    assert.ok(!lineas.includes('100%'));
-  });
-
-  it('las áreas con vencimientos van primero, de mayor a menor porcentaje', async () => {
-    assert.ok(lineas.indexOf('Área A') < lineas.indexOf('Área B'));
-    assert.ok(lineas.indexOf('Área B') < lineas.indexOf('Área C'));
-  });
-});
-
-describe('la tasa es la misma en el tablero, el Estado General y el Cumplimiento', () => {
-  it('los tres dan 57 %', async () => {
-    const tablero = (await estadisticas()).tasaActualizacion;
+// El antiobjetivo: que la tasa diga una cosa en la portada, otra en el Estado general y otra en Métricas (spec
+// 2026-10-24-metricas-y-reportes, 5: el Cumplimiento ya no está; el índice de hoy de Métricas es el último punto de contexto.indice)
+describe('la tasa es la misma en la portada, el Estado general y /metricas', () => {
+  it('la tasa es la misma en la portada, el Estado general y /metricas', async () => {
+    const portada = (await estadisticas()).tasaActualizacion;
     const general = (await lineasDe('/reportes/estado-general')).find(l => l.startsWith('Tasa de actualización: '));
-    const cumplimiento = valorDeTarjeta(await lineasDe('/reportes/cumplimiento?periodo=mensual'), '% Cumplimiento');
-    assert.equal(tablero, 57);
-    assert.equal(general, `Tasa de actualización: ${tablero}%`);
-    assert.equal(cumplimiento, `${tablero}%`);
+    const res = await api.get('/metricas', admin());
+    assert.equal(res.status, 200);
+    const deHoy = res.body.data.contexto.indice.at(-1);
+    assert.equal(portada, 57);
+    assert.equal(general, `Tasa de actualización: ${portada}%`);
+    assert.equal(deHoy.dia, HOY);
+    assert.equal(deHoy.tasa, portada);
+    // Los mismos al día sobre la misma base: 3 actualizados y 1 próximo, sobre los 10 activos sin los 3 eventuales
+    assert.deepEqual([deHoy.al_dia, deHoy.base], [4, 7]);
   });
 });
 
@@ -411,7 +385,7 @@ describe('Gestión, métricas (Ruling 23): la tasa de cumplimiento y el ranking 
     assert.equal(metricas.tasa_cumplimiento, (await estadisticas()).tasaActualizacion);
   });
 
-  it('cada área: los al día sobre lo que tiene vencimiento, como en el Cumplimiento', () => {
+  it('cada área: los al día sobre lo que tiene vencimiento, como en la tasa', () => {
     // Área A: 3 al día de 7, con 2 eventuales: 3 / 5. Antes daba 5 / 7 = 71,4. Área B: 1 de 2 (el sin fecha no está al día)
     assert.deepEqual(area('Área A'), { area: 'Área A', total_datasets: 7, al_dia: 3, porcentaje: 60 });
     assert.deepEqual(area('Área B'), { area: 'Área B', total_datasets: 2, al_dia: 1, porcentaje: 50 });
@@ -431,5 +405,77 @@ describe('Gestión, métricas (Ruling 23): la tasa de cumplimiento y el ranking 
       'operador_mas_activo', 'distribucion_por_tema', 'distribucion_por_frecuencia', 'tasa_cumplimiento', 'ranking_areas']) {
       assert.ok(clave in metricas, clave);
     }
+  });
+});
+
+// Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5): la constancia de los emails y las Notas Digitales de aviso y de
+// reiteración de un período, con los textos del Seguimiento, sin direcciones de email, sin el texto técnico de los errores, sin las
+// notas de prueba y sin las de auditoría y autorización. Un período fijo, en marzo de 2026: no depende de hoy. Los emails se cargan con
+// su instante (FROM_UNIXTIME, sin la zona de la sesión) y el día que cuenta es el de Argentina (UTC-3).
+describe('reporte PDF Avisos del RPAD', () => {
+  const PERIODO = 'desde=2026-03-01&hasta=2026-03-31';
+  // Un instante en UTC, en segundos, para FROM_UNIXTIME
+  const enUtc = (momento) => Date.parse(`${momento.replace(' ', 'T')}Z`) / 1000;
+  const email = (tipo, claves, momentoUtc, extra = {}) => query(
+    `INSERT INTO notificaciones_log (tipo, area_id, destinatarios, datasets_ids, cantidad_datasets, enviado_at, success, error_message)
+     VALUES (?, ?, 'mit@rpad.test,da@rpad.test', ?, ?, FROM_UNIXTIME(?), ?, ?)`,
+    [tipo, extra.area ?? null, claves.map(c => ids[c]).join(','), claves.length, enUtc(momentoUtc), extra.success ?? 1, extra.error ?? null]
+  );
+  const nota = (datos, claves = []) => crearNota({ anio: 2026, ...datos, datasets: claves.map(c => ({ id: ids[c], vencimiento: '2026-04-30' })) });
+  let hojas, lineas;
+  before(async () => {
+    await email('externo-40', ['sinresp1', 'act1'], '2026-03-10 11:15:00');
+    await email('area-aviso-40', ['sinresp1'], '2026-03-10 11:15:05', { area: areas.A });
+    await email('externo-vencido', ['sinresp1'], '2026-03-15 11:00:00', { success: 0, error: 'Invalid login: 535 smtp@rpad.test ECONNREFUSED' });
+    // El 31/03 a las 23:30 en Argentina (el 01/04 en UTC): entra. El 28/02 a las 22:00 en Argentina (el 01/03 en UTC): no
+    await email('interno-30', ['prox1'], '2026-04-01 02:30:00');
+    await email('externo-5', ['act3'], '2026-03-01 01:00:00');
+    await nota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-03-20', numero: 3 }, ['sinresp1', 'act1']);
+    await nota({ tipo: 'reiteracion', gestion: 'interna', fecha: '2026-03-25', numero: 4, estado: 'pendiente' }, ['atras1']);
+    await nota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-03-26', numero: 5, estado: 'fallida' }, ['act3']);
+    // No van: la auditoría, la autorización, la de prueba y la de otro mes
+    await nota({ tipo: 'auditoria', gestion: null, fecha: '2026-03-12', numero: 6 });
+    await nota({ tipo: 'autorizacion', gestion: null, fecha: '2026-03-13', numero: 7 });
+    await nota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-03-14', esPrueba: 1, anio: null }, ['act1']);
+    await nota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-04-01', numero: 8 }, ['act1']);
+    const res = await api.get(`/reportes/avisos?${PERIODO}`, admin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    hojas = lineasPorHoja(res.body);
+    lineas = hojas.flat();
+  });
+
+  it('avisos: emails y notas del período, sin «@» en ninguna parte del PDF', () => {
+    assert.ok(!lineas.some(l => l.includes('@')), lineas.filter(l => l.includes('@')).join(' | '));
+    assert.ok(!lineas.some(l => /ECONNREFUSED|Invalid login|535/.test(l)), lineas.join(' | '));
+    assert.ok(lineas.includes('AVISOS DEL RPAD · DEL 01/03/2026 AL 31/03/2026'), lineas.join(' | '));
+    assert.ok(lineas.includes('7 avisos del RPAD en el período') && lineas.includes('5 de gestión externa y 2 de gestión interna'), lineas.join(' | '));
+    assert.deepEqual(['Total de avisos', 'Emails a DGMIT', 'Emails al área', 'Notas Digitales', 'Sin enviar'].map(r => valorDeTarjeta(lineas, r)),
+      ['7', '3', '1', '3', '3']);
+    // Las filas de la tabla, del más viejo al más nuevo: fecha, qué fue, gestión, datasets (por título) y estado
+    const i = lineas.indexOf('Fecha');
+    assert.deepEqual(lineas.slice(i, i + 5), ['Fecha', 'Qué fue', 'Gestión', 'Datasets', 'Estado']);
+    const fin = lineas.findIndex(l => l.startsWith('Generado el '));
+    assert.deepEqual(lineas.slice(i + 5, fin), [
+      '10/03/2026', 'Email a DGMIT: distribución de notas', 'Externa', `${titulo('act1')}, ${titulo('sinresp1')}`, 'Enviado',
+      '10/03/2026', 'Email al área: anticipo de la nota formal', 'Externa', titulo('sinresp1'), 'Enviado',
+      '15/03/2026', 'Email a DGMIT: resumen mensual de vencidos', 'Externa', titulo('sinresp1'), 'No se pudo enviar',
+      '20/03/2026', 'Nota Digital N° 3/26 a DGMIT', 'Externa', `${titulo('act1')}, ${titulo('sinresp1')}`, 'Enviada',
+      '25/03/2026', 'Nota Digital N° 4/26 a DGMIT', 'Interna', titulo('atras1'), 'Pendiente de envío',
+      '26/03/2026', 'Nota Digital N° 5/26 a DGMIT', 'Externa', titulo('act3'), 'No se pudo enviar',
+      '31/03/2026', 'Email a DGMIT: vence en 1 mes', 'Interna', titulo('prox1'), 'Enviado'
+    ]);
+  });
+
+  it('una hoja, con el pie «Avisos del RPAD · Hoja 1 de 1» y quién lo generó', () => {
+    assert.equal(hojas.length, 1);
+    assert.ok(lineas.includes('Avisos del RPAD · Hoja 1 de 1'));
+    assert.ok(lineas.some(l => /^Generado el \d{2}\/\d{2}\/\d{4} a las \d{2}:\d{2} por Test admin$/.test(l)), lineas.join(' | '));
+  });
+
+  it('desde > hasta da 400', async () => {
+    const res = await api.get('/reportes/avisos?desde=2026-03-31&hasta=2026-03-01', admin());
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, { success: false, error: 'Elegí un período válido.' });
   });
 });
