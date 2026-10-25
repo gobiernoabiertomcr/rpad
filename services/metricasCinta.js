@@ -33,8 +33,11 @@ const AIRE_ANTES = 0.4;
 const AIRE_DESPUES = 0.6;
 const MULTIPLOS_A_PROBAR = 50;
 
-// Las marcas a menos de esto se juntan en una (como en la cinta del Seguimiento)
-const SEPARACION = 11;
+// Las marcas a menos de esto se juntan en una (spec 2.2: las que se pisan se juntan). Sale de su tamaño en la maqueta 7: el borde de
+// afuera de un círculo está a 7,75 (la entrega: radio 6,5 y borde) o a 8 (la carga: radio 7 y borde) de su centro, y el rombo del
+// aviso, a 9,9 (media diagonal): un rombo al lado de un círculo necesita unos 18 para no tocarse. No es el 11 de la cinta del
+// Seguimiento, donde un día mide unos 2,6 y las marcas son más chicas
+const SEPARACION = 18;
 // La medida aproximada de un texto: 6,6 por letra, 10 sobre la línea de base y 3 debajo
 const LETRA = 6.6;
 const SOBRE_LA_BASE = 10;
@@ -150,11 +153,13 @@ const adentro = (caja) => caja.x0 >= MARGEN && caja.x1 <= ANCHO - MARGEN && caja
 //     rayado: { x0, x1 } | null,            // del vencimiento a la carga (o a lo último que se sabe), si es posterior
 //     gris: { x0, x1, texto } | null,       // la cadena se corta: de lo último que se sabe (o del vencimiento) al final
 //     vencimiento: { x },
-//     segmentos: [{ x0, x1, texto, color: 'violeta' | 'tinta' | 'verde' }],  // un tramo de 0 días tiene x0 = x1 (no se ve)
-//     marcas: [{ x, tipo: 'aviso' | 'nota' | 'datos' | 'carga' | 'datos-y-carga' }],
+//     segmentos: [{ x0, x1, texto, color: 'violeta' | 'tinta' | 'verde' }],  // solo los tramos con largo (x1 > x0)
+//     marcas: [{ x, tipo: 'aviso' | 'nota' | 'datos' | 'carga' | 'datos-y-carga',  // la que se dibuja
+//                tipos: ['aviso' | 'nota' | 'datos' | 'carga'] }],                // todo lo que junta, en el orden de la cadena
 //     rotulos: [{ x, y, texto, anclaje: 'start' | 'middle' | 'end', color: 'tinta' | 'violeta' | 'verde' }],
 //     eje: { x, y: 152, texto: 'días hábiles respecto del vencimiento', anclaje: 'start' | 'end' },
-//     aclaracion }
+//     aclaracion,
+//     alturas }                             // ALTURAS_DE_LA_CINTA: la página las recibe con la cinta, no las copia
 // Los días van respecto del vencimiento (el aviso, antes; lo que pasa después, después) y en lo que se eligió en el selector: las
 // cifras de los tramos ya vienen así. La cadena: el aviso, la anticipación antes del vencimiento; después, uno detrás del otro, los
 // tramos de la gestión (externa: trámite, respuesta y carga; interna: producción y carga). Se corta en el primero sin cifra, y no se
@@ -221,34 +226,43 @@ export const cintaDeMetricas = (tramos, opciones) => {
     gris = { x0, x1: X_FINAL, texto: entra ? textoGris : '' };
   }
 
-  const ticks = [];
-  for (let i = 0; i <= (escala.max - escala.min) / escala.paso; i++) {
-    const dia = escala.min + i * escala.paso;
-    if (dia !== 0) ticks.push({ x: x(dia), texto: dia > 0 ? `+${dia}` : `−${-dia}` });
-  }
-
-  // Las marcas: el aviso y el final de cada tramo. Las que caen a menos de 11 de la primera de su grupo se juntan en una
+  // Las marcas: el aviso y el final de cada tramo. Las que caen a menos de 18 de la primera de su grupo se juntan en una, que lleva
+  // todo lo que junta (`tipos`, en el orden de la cadena) y se dibuja como `tipo`
   const grupos = [];
   for (const hito of [{ tipo: 'aviso', x: x(aviso) }, ...cadena.map((t) => ({ tipo: t.hito, x: x(t.hasta) }))]) {
     const grupo = grupos[grupos.length - 1];
     if (grupo && hito.x - grupo.x < SEPARACION) grupo.tipos.push(hito.tipo);
     else grupos.push({ x: hito.x, tipos: [hito.tipo] });
   }
-  const marcas = grupos.map((grupo) => ({ x: grupo.x, tipo: tipoDelGrupo(grupo.tipos) }));
+  const marcas = grupos.map((grupo) => ({ x: grupo.x, tipo: tipoDelGrupo(grupo.tipos), tipos: grupo.tipos }));
 
   const textoDelTramo = (t) => {
     const nombre = nombreDe(t.tramo);
     return nombre === '' ? cuanto(t.valor, dias) : `${nombre} · ${cuanto(t.valor, dias)}`;
   };
-  const segmentos = cadena.map((t) => ({ x0: x(t.desde), x1: x(t.hasta), texto: textoDelTramo(t), color: t.color }));
+  // Un tramo de 0 días no tiene largo: no va entre los segmentos (lo dicen su marca y, si entra, su rótulo)
+  const segmentos = cadena.filter((t) => t.valor > 0)
+    .map((t) => ({ x0: x(t.desde), x1: x(t.hasta), texto: textoDelTramo(t), color: t.color }));
 
-  // Lo que ya ocupa lugar: los números del eje, «vencimiento» y la línea del vencimiento, que cruza la fila de los tramos
+  // Lo que ya ocupa lugar: «vencimiento» y la línea del vencimiento, que cruza la fila de los tramos
   const ocupado = [
-    ...ticks.map((t) => cajaDe(t.x, ALTURAS.ticks, t.texto, 'middle')),
     cajaDe(xVencimiento, ALTURAS.vencimiento.texto, 'vencimiento', 'middle'),
     { x0: xVencimiento, x1: xVencimiento, y0: ALTURAS.vencimiento.desde, y1: ALTURAS.vencimiento.hasta }
   ];
   const libre = (caja) => adentro(caja) && !ocupado.some((otra) => seTocan(caja, otra));
+
+  // Los números del eje, sin el 0. Con las cifras de siempre entran todos (con 8 o menos hay 117,5 entre uno y otro); uno que no
+  // entraría en el dibujo o se pisaría (solo con números absurdos, de muchas cifras) no va
+  const ticks = [];
+  for (let i = 0; i <= (escala.max - escala.min) / escala.paso; i++) {
+    const dia = escala.min + i * escala.paso;
+    const tick = { x: x(dia), texto: dia > 0 ? `+${dia}` : `−${-dia}` };
+    const caja = cajaDe(tick.x, ALTURAS.ticks, tick.texto, 'middle');
+    if (dia !== 0 && libre(caja)) {
+      ticks.push(tick);
+      ocupado.push(caja);
+    }
+  }
 
   // El rótulo del eje va abajo a la izquierda (a la derecha se pisaba con «vencimiento»), salvo que el vencimiento quede tan a la
   // izquierda que ahí se pise: entonces, a la derecha (los dos lados a la vez no pueden pisarse)
@@ -304,12 +318,13 @@ export const cintaDeMetricas = (tramos, opciones) => {
   colocar(textoDelAviso, 'tinta', alLadoDe(x(aviso), textoDelAviso));
   const carga = cadena.find((t) => t.clave === 'carga');
   if (carga) {
-    // Con 0 días, la carga cae donde la entrega: siempre están juntas
-    const grupo = grupos.find((g) => g.tipos.includes('carga'));
+    // El rótulo de la carga va al lado de la marca que la lleva y dice lo que esa marca junta: «Entrega y carga…» si también lleva la
+    // entrega (con 0 días, siempre), aunque se dibuje como el aviso o la nota que caen ahí mismo
+    const marca = marcas.find((m) => m.tipos.includes('carga'));
     const despues = `${carga.valor} ${unidadDe(carga.valor, dias)} después`;
-    const texto = !grupo.tipos.includes('datos') ? `Carga · ${despues}`
+    const texto = !marca.tipos.includes('datos') ? `Carga · ${despues}`
       : carga.valor === 0 ? 'Entrega y carga, el mismo día' : `Entrega y carga, ${despues}`;
-    colocar(texto, 'verde', alLadoDe(grupo.x, texto));
+    colocar(texto, 'verde', alLadoDe(marca.x, texto));
   }
   for (const t of cadena.filter((eslabon) => eslabon.clave !== 'carga')) {
     const texto = textoDelTramo(t);
@@ -328,6 +343,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
     marcas,
     rotulos,
     eje,
-    aclaracion: ACLARACION[estadistico]
+    aclaracion: ACLARACION[estadistico],
+    alturas: ALTURAS
   };
 };
