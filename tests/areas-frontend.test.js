@@ -171,11 +171,24 @@ describe('areas.js: comoSeNombra ("Así se lee en las notas")', () => {
     assert.equal(A.comoSeNombra(base), 'la Dirección General de Catastro, dependiente de la Subsec. de Coordinación Económica y Control de Gestión');
   });
 
-  it('"de" + "el" es "del", como en todo lo que arma el sistema; el artículo del área, al principio, no se contrae', () => {
-    assert.equal(A.comoSeNombra({ ...base, articulo: 'el', nombre: 'Ente Autárquico Comodoro Deportes', articulo_superior: 'la', area_superior: 'Intendencia' }),
-      'el Ente Autárquico Comodoro Deportes, dependiente de la Intendencia');
+  // El mismo armado que la nota del Generador (services/notasGeneradorContenido.js, articuloDe y deArticulo): la línea muestra
+  // cómo sale la nota real
+  it('la dependencia con "la": "dependiente de la …"', () => {
+    assert.equal(A.comoSeNombra({ ...base, articulo_superior: 'la', area_superior: 'Intendencia' }),
+      'la Dirección General de Catastro, dependiente de la Intendencia');
+  });
+
+  it('la dependencia con "el": "dependiente del …", nunca "de el"', () => {
     assert.equal(A.comoSeNombra({ ...base, articulo_superior: 'el', area_superior: 'Ministerio de Educación del Chubut' }),
       'la Dirección General de Catastro, dependiente del Ministerio de Educación del Chubut');
+  });
+
+  it('el artículo del nombre: "el" es "el" y cualquier otro valor es "la" (al principio no se contrae)', () => {
+    assert.equal(A.comoSeNombra({ ...base, articulo: 'el', nombre: 'Ente Autárquico Comodoro Deportes', articulo_superior: 'la', area_superior: 'Intendencia' }),
+      'el Ente Autárquico Comodoro Deportes, dependiente de la Intendencia');
+    for (const otro of [null, undefined, '', 'los', ' el ']) {
+      assert.equal(A.comoSeNombra({ ...base, articulo: otro, area_superior: null }), 'la Dirección General de Catastro', String(otro));
+    }
   });
 
   it('sin dependencia', () => {
@@ -184,11 +197,13 @@ describe('areas.js: comoSeNombra ("Así se lee en las notas")', () => {
     assert.equal(A.comoSeNombra({ ...base, area_superior: '   ' }), 'la Dirección General de Catastro');
   });
 
-  it('con la dependencia sin artículo', () => {
+  it('con la dependencia sin artículo (null, el "—" del selector): "dependiente de la …", como la nota del Generador', () => {
     assert.equal(A.comoSeNombra({ ...base, articulo_superior: null }),
-      'la Dirección General de Catastro, dependiente de Subsec. de Coordinación Económica y Control de Gestión');
+      'la Dirección General de Catastro, dependiente de la Subsec. de Coordinación Económica y Control de Gestión');
     assert.equal(A.comoSeNombra({ ...base, articulo_superior: '' }),
-      'la Dirección General de Catastro, dependiente de Subsec. de Coordinación Económica y Control de Gestión');
+      'la Dirección General de Catastro, dependiente de la Subsec. de Coordinación Económica y Control de Gestión');
+    assert.equal(A.comoSeNombra({ ...base, articulo_superior: undefined }),
+      'la Dirección General de Catastro, dependiente de la Subsec. de Coordinación Económica y Control de Gestión');
   });
 
   it('con el nombre vacío, «la …»; los extremos se recortan', () => {
@@ -344,9 +359,11 @@ describe('areas.js: htmlDeTablaAreas', () => {
     assert.ok(html.includes('>0<'));
   });
 
-  it('sin dependencia: "Sin dependencia cargada"; con la dependencia sin artículo: "Depende de <dependencia>"', () => {
+  it('la dependencia, como la nota del Generador: "la" o sin artículo, "Depende de la …"; "el", "Depende del …"; sin dependencia, "Sin dependencia cargada"', () => {
     assert.ok(A.htmlDeTablaAreas([area({ area_superior: null })]).includes('Sin dependencia cargada'));
-    assert.ok(A.htmlDeTablaAreas([area({ articulo_superior: null })]).includes('Depende de Subsec. de Coordinación'));
+    assert.ok(A.htmlDeTablaAreas([area({ articulo_superior: 'la' })]).includes('Depende de la Subsec. de Coordinación'));
+    assert.ok(A.htmlDeTablaAreas([area({ articulo_superior: null })]).includes('Depende de la Subsec. de Coordinación'));
+    assert.ok(!A.htmlDeTablaAreas([area({ articulo_superior: null })]).includes('Depende de Subsec.'));
     assert.ok(A.htmlDeTablaAreas([area({ articulo_superior: 'el', area_superior: 'Ministerio de Educación del Chubut' })])
       .includes('Depende del Ministerio de Educación del Chubut'));
   });

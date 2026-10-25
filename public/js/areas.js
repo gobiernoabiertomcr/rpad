@@ -73,23 +73,23 @@ const cuentaDeArea = (valor) => {
 };
 // Las áreas de una lista (lo que no es un objeto se descarta: un dato raro no rompe la pestaña)
 const listaDeAreas = (areas) => (Array.isArray(areas) ? areas.filter((a) => a !== null && typeof a === 'object') : []);
-// "de" + el artículo de la dependencia: "de" + "el" es "del", como en todo lo que arma el sistema; sin artículo, solo "de"
-const deArticuloArea = (articulo) => {
-  const texto = textoDeArea(articulo);
-  if (texto === 'el') return 'del';
-  return texto ? `de ${texto}` : 'de';
-};
+// Los artículos, como los arma la nota del Generador (articuloDe y deArticulo de services/notasGeneradorContenido.js): 'el' es
+// "el" (y "de" + "el", "del"); cualquier otro valor, también null (el "—" del selector), es "la" ("de la")
+const articuloDelArea = (articulo) => (articulo === 'el' ? 'el' : 'la');
+const deArticuloArea = (articulo) => (articulo === 'el' ? 'del' : 'de la');
 
-// Cómo se nombra el área en las notas: «la Dirección …, dependiente de la Secretaría …». Sin dependencia, solo el nombre; con la
-// dependencia sin artículo, «…, dependiente de Subsec. …»; con el nombre vacío, «la …»
+// Cómo se nombra el área en las notas, con el mismo armado que la nota del Generador: «la Dirección …, dependiente de la
+// Secretaría …» («…, dependiente del Ministerio …» con 'el'; sin artículo, "de la"). Sin dependencia, solo el nombre; con el
+// nombre vacío, «la …»
 const comoSeNombra = (area) => {
   const { articulo, nombre, articulo_superior, area_superior } = area ?? {};
-  const base = `${textoDeArea(articulo) || 'la'} ${textoDeArea(nombre) || '…'}`;
+  const base = `${articuloDelArea(articulo)} ${textoDeArea(nombre) || '…'}`;
   const superior = textoDeArea(area_superior);
   return superior ? `${base}, dependiente ${deArticuloArea(articulo_superior)} ${superior}` : base;
 };
 
-// "Depende de la Secretaría …" o "Sin dependencia cargada", debajo del nombre en la tabla
+// "Depende de la Secretaría …" ("Depende del …" con 'el', "de la" sin artículo) o "Sin dependencia cargada", debajo del nombre en
+// la tabla
 const textoDependenciaArea = (area) => {
   const superior = textoDeArea(area.area_superior);
   return superior ? `Depende ${deArticuloArea(area.articulo_superior)} ${superior}` : 'Sin dependencia cargada';
