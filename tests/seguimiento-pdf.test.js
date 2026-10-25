@@ -6,6 +6,7 @@ import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { renderSeguimiento, renderAnexoDeSeguimiento, FILAS_PDF, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
 import { seguimientosDeLaNota } from '../services/notasDigitalesSeguimiento.js';
+import { primerDiaHabilDelMes } from '../services/notasDigitalesCalendario.js';
 import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, esDelTamano, todasDelTamano } from './pdf-lector.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 
@@ -893,5 +894,157 @@ describe('renderSeguimiento: la lista de avisos que no entra se recorta del medi
     const texto = textoDeLosAvisos(hoja.textos, /^(Primera|Segunda|Tercera)/);
     assert.ok(texto.startsWith('Tercera') && texto.endsWith('…'), texto);
     verificarDiagramacion(hoja);
+  });
+});
+
+// Las etiquetas de las notas en la cinta («Nota 2/27»): si dos se pisan, van juntas en una («Nota 2/27 y Nota 6/27»). Al crecer, un
+// grupo puede alcanzar al anterior (contra el borde derecho crece hacia la izquierda): entonces también se juntan, hasta que ninguno
+// pise a otro. La reiteración que acompaña al anexo va siempre en el borde derecho (hoy), así que con reiteraciones mensuales pasaba
+// desde marzo de 2027 (el ejemplo de la revisión: el 52 con el aviso N° 3/26 del 10/10/2026 y la N° 21/27 del 03/05/2027).
+describe('renderSeguimiento: las etiquetas de las notas en la cinta no se pisan', () => {
+  // Las etiquetas de las notas son los textos de la letra de las etiquetas de la cinta (14 unidades) que empiezan con «Nota »
+  const LETRA_ETIQUETA = (14 * 180 * MM) / 1000;
+  const ETIQUETA_DE_NOTA = /^Nota \S+( y (Nota \S+|…))*$/;
+  const esEtiquetaDeNota = (t) => Math.abs(t.tamano - LETRA_ETIQUETA) < 0.01 && ETIQUETA_DE_NOTA.test(t.texto);
+  // Las de cada hoja del PDF como [texto, x] (x: donde empieza el texto, redondeada a 0,01)
+  const etiquetasDelPdf = (pdf) => textosPorHoja(pdf).map(textos => textos.filter(esEtiquetaDeNota).map(t => [t.texto, Number(t.x.toFixed(2))]));
+  // Entre dos etiquetas de la misma fila quedan al menos 2 puntos: el fondo blanco de cada una sobresale 1 punto y no tapa letras
+  const sinPisarse = (etiquetas, contexto) => {
+    for (const [i, a] of etiquetas.entries()) {
+      for (const b of etiquetas.slice(i + 1)) {
+        if (a.hoja !== b.hoja || Math.abs(a.y0 - b.y0) > 0.5) continue;
+        assert.ok(a.x1 + 2 <= b.x0 + 0.01 || b.x1 + 2 <= a.x0 + 0.01, `${contexto}: se pisan ${nombre(a)} y ${nombre(b)}`);
+      }
+    }
+  };
+
+  // El aviso N° 3/26 (el día de octubre de 2026 que se pruebe) y las reiteraciones del primer día hábil de cada mes, sumados a una
+  // copia de las fuentes del dataset (CASOS no se modifica). La última de la lista es la propia: la que acompaña al anexo
+  const MENSUALES = [['2026-11', 9, 2026], ['2026-12', 15, 2026], ['2027-01', 2, 2027], ['2027-02', 6, 2027], ['2027-03', 11, 2027],
+    ['2027-04', 16, 2027], ['2027-05', 21, 2027]];
+  const PRUEBA = ['PRUEBA', null, 'PRUEBA'];
+  const XX = ['XX', null, 'XX'];
+  const nota = (id, k, numero, anio, tipo, fecha) => ({ ...CASOS[id].notas[0], id: 900 + k, numero, anio, tipo, fecha, enviada: `${fecha} 08:15:03` });
+  // El anexo de la reiteración del mes `cual` de MENSUALES (1: noviembre de 2026; 7: mayo de 2027) de un solo dataset. `numeroDado`:
+  // [numero, anio, numeroTexto] de la propia (PRUEBA o XX); sin él, el de la lista
+  const anexoDelMes = async (id, aviso, cual, numeroDado = null, mensuales = MENSUALES) => {
+    const anteriores = mensuales.slice(0, cual - 1).map(([mes, numero, anio], k) => nota(id, k + 1, numero, anio, 'reiteracion', primerDiaHabilDelMes(mes)));
+    const [mes, numeroReal, anioReal] = mensuales[cual - 1];
+    const fecha = primerDiaHabilDelMes(mes);
+    const [numero, anio, numeroTexto] = numeroDado ?? [numeroReal, anioReal, `${numeroReal}/${String(anioReal).slice(-2)}`];
+    const fuentes = new Map([[id, { ...CASOS[id], notas: [nota(id, 0, 3, 2026, 'aviso', aviso), ...anteriores], catalogos: CATALOGOS }]]);
+    const datasets = [{ id, vencimiento: CASOS[id].dataset.proxima, pedido: { texto: 'Pedido de prueba' } }];
+    const propia = { numero, anio, gestion: 'externa', enviada: `${fecha} 08:15:03`, para: 'a@x', cc: '', creado_por: null, firmante: null };
+    const lista = await seguimientosDeLaNota(datasets, fecha, fuentes, propia);
+    const dibujar = () => renderAnexoDeSeguimiento(lista, { hoy: fecha, generado: { momento: `${fecha} 08:15:03`, por: null }, numeroTexto });
+    return { numeroTexto, dibujar };
+  };
+  // Ninguna etiqueta pisa a otra, la de la propia está (sola o en un grupo: «… y Nota 21/27») y la hoja pasa la diagramación
+  const verificarEtiquetas = async ({ numeroTexto, dibujar }, contexto) => {
+    const hoja = await diagramacion(dibujar);
+    const etiquetas = hoja.textos.filter(esEtiquetaDeNota);
+    sinPisarse(etiquetas, contexto);
+    assert.ok(etiquetas.some(e => e.texto.split(' y ').includes(`Nota ${numeroTexto}`)), `${contexto}: ${etiquetas.map(e => e.texto).join(' | ')}`);
+    verificarDiagramacion(hoja);
+    return etiquetas;
+  };
+
+  it('hasta la N° 21/27 del 03/05/2027 (el 52 y el 11, varios días del aviso, el número real, PRUEBA y XX): nada se pisa', async () => {
+    for (const id of [52, 11]) {
+      for (const aviso of ['2026-10-01', '2026-10-05', '2026-10-10', '2026-10-13', '2026-10-20', '2026-10-27']) {
+        for (const numeroDado of [null, PRUEBA, XX]) {
+          const anexo = await anexoDelMes(id, aviso, 7, numeroDado);
+          await verificarEtiquetas(anexo, `${id}, aviso del ${aviso}, N° ${anexo.numeroTexto}`);
+        }
+      }
+    }
+  });
+
+  it('los meses anteriores (el 52 con el aviso del 10/10/2026, de diciembre a abril): nada se pisa', async () => {
+    for (let cual = 2; cual <= 6; cual++) {
+      for (const numeroDado of [null, PRUEBA, XX]) {
+        const anexo = await anexoDelMes(52, '2026-10-10', cual, numeroDado);
+        await verificarEtiquetas(anexo, `mes ${cual}, N° ${anexo.numeroTexto}`);
+      }
+    }
+  });
+
+  // Un año de reiteraciones mensuales, hasta la N° 56/27 de diciembre de 2027: todas las etiquetas terminan en un solo grupo que, con
+  // la etiqueta más ancha de la prueba, no entra en la hoja: saca etiquetas del medio («Nota 2/27 y … y Nota 11/27 y … y Nota
+  // PRUEBA») y no sale de los márgenes
+  const UN_ANIO = [...MENSUALES, ['2027-06', 26, 2027], ['2027-07', 31, 2027], ['2027-08', 36, 2027], ['2027-09', 41, 2027],
+    ['2027-10', 46, 2027], ['2027-11', 51, 2027], ['2027-12', 56, 2027]];
+  it('un grupo más ancho que la hoja saca etiquetas del medio: quedan la primera y las últimas, dentro de los márgenes', async () => {
+    for (const id of [52, 11]) {
+      for (const cual of [9, 11, 12, 14]) {
+        for (const numeroDado of [null, PRUEBA, XX]) {
+          const anexo = await anexoDelMes(id, '2026-10-10', cual, numeroDado, UN_ANIO);
+          await verificarEtiquetas(anexo, `${id}, mes ${cual}, N° ${anexo.numeroTexto}`);
+        }
+      }
+    }
+    // Diciembre de 2027: la ventana empieza en enero, con la N° 2/27; la propia es la última. Con la N° 56/27 todavía entra entera;
+    // con PRUEBA se saca la N° 6/27, la segunda
+    const [entera] = await verificarEtiquetas(await anexoDelMes(52, '2026-10-10', 14, null, UN_ANIO), 'diciembre de 2027, N° 56/27');
+    assert.equal(entera.texto, UN_ANIO.slice(2).map(([, numero]) => `Nota ${numero}/27`).join(' y '));
+    const etiquetas = await verificarEtiquetas(await anexoDelMes(52, '2026-10-10', 14, PRUEBA, UN_ANIO), 'diciembre de 2027, PRUEBA');
+    assert.equal(etiquetas.length, 1, etiquetas.map(e => e.texto).join(' | '));
+    assert.equal(etiquetas[0].texto, ['Nota 2/27', '…', ...UN_ANIO.slice(4, -1).map(([, numero]) => `Nota ${numero}/27`), 'Nota PRUEBA'].join(' y '));
+  });
+
+  it('el ejemplo de la revisión: «Nota 2/27» ya no pisa al grupo de la derecha y van juntas', async () => {
+    const etiquetas = await verificarEtiquetas(await anexoDelMes(52, '2026-10-10', 7), 'el ejemplo de la revisión');
+    const conLaPropia = etiquetas.find(e => e.texto.endsWith(' y Nota 21/27'));
+    assert.ok(conLaPropia?.texto.split(' y ').includes('Nota 2/27'), etiquetas.map(e => e.texto).join(' | '));
+  });
+
+  // Sin etiquetas que se pisen, el dibujo es el de siempre: los textos y las x de antes del arreglo, en los casos reales el 20/10/2026
+  // (la descarga y el anexo con la reiteración sumada) y en las reiteraciones mensuales que no se pisaban (el 52 y el 11 dan lo mismo)
+  it('sin etiquetas que se pisen, los textos y las posiciones de siempre', async () => {
+    const una = (texto, x) => [[texto, x]];
+    const CON_LA_2_26 = [1, 9, 10, 11, 33, 52, 61];
+    const descarga = { 25: [], 38: [], 42: [], 58: [], 66: [], 26: una('Nota 1/26', 497.26), 81: una('Nota 3/26', 506.26) };
+    for (const id of CON_LA_2_26) descarga[id] = una('Nota 2/26', 497.26);
+    for (const id of Object.keys(CASOS)) {
+      assert.deepEqual(etiquetasDelPdf(await render(seguimiento(id)))[0], descarga[id], `descarga del ${id}`);
+    }
+
+    const ids = Object.keys(CASOS).map(Number);
+    const datasets = ids.map(id => ({ id, vencimiento: CASOS[id].dataset.proxima, pedido: { texto: 'Pedido de prueba' } }));
+    const fuentes = new Map(ids.map(id => [id, { ...CASOS[id], catalogos: CATALOGOS }]));
+    // x de la etiqueta junto a la 2/26 (o la 1/26), de la sola y de la del 81 (que va antes de la 3/26: es del mismo día, más temprano)
+    const ANEXO = [[2, 2027, '2/27', 480.29, 506.26, 480.29], [...PRUEBA, 464.39, 498.31, 464.39], [...XX, 484.1, 508.45, 484.67]];
+    for (const [numero, anio, numeroTexto, junta, sola, del81] of ANEXO) {
+      const propia = { numero, anio, gestion: 'externa', enviada: `${HOY} 08:15:03`, para: 'a@x', cc: '', creado_por: null, firmante: null };
+      const lista = await seguimientosDeLaNota(datasets, HOY, fuentes, propia);
+      const hojas = etiquetasDelPdf(await renderAnexoDeSeguimiento(lista, { hoy: HOY, generado: GENERADO, numeroTexto }));
+      lista.forEach((s, k) => {
+        const id = s.ficha.id;
+        const esperada = CON_LA_2_26.includes(id) ? una(`Nota 2/26 y Nota ${numeroTexto}`, junta)
+          : id === 26 ? una(`Nota 1/26 y Nota ${numeroTexto}`, junta)
+            : id === 81 ? una(`Nota ${numeroTexto} y Nota 3/26`, del81)
+              : una(`Nota ${numeroTexto}`, sola);
+        assert.deepEqual(hojas[k], esperada, `anexo N° ${numeroTexto}, hoja del ${id}`);
+      });
+    }
+
+    const GRUPO = 'Nota 3/26 y Nota 9/26 y Nota 15/26';
+    const MENSUALES_SIN_PISARSE = [
+      [1, null, una('Nota 3/26 y Nota 9/26', 449.16)],
+      [1, XX, una('Nota 3/26 y Nota XX', 451.34)],
+      [2, null, una(GRUPO, 405.64)],
+      [3, null, [[GRUPO, 364.9], ['Nota 2/27', 485.43]]],
+      [3, XX, [[GRUPO, 364.9], ['Nota XX', 487.62]]],
+      [3, PRUEBA, una(`${GRUPO} y Nota PRUEBA`, 359.44)],
+      [4, null, [[GRUPO, 328.11], ['Nota 2/27', 448.64], ['Nota 6/27', 485.43]]],
+      [4, XX, [[GRUPO, 328.11], ['Nota 2/27', 448.64], ['Nota XX', 487.62]]],
+      [5, XX, [[GRUPO, 287.38], ['Nota 2/27', 407.91], ['Nota 6/27', 444.7], ['Nota XX', 483.68]]]
+    ];
+    for (const id of [52, 11]) {
+      for (const [cual, numeroDado, esperadas] of MENSUALES_SIN_PISARSE) {
+        const { numeroTexto, dibujar } = await anexoDelMes(id, '2026-10-10', cual, numeroDado);
+        assert.deepEqual(etiquetasDelPdf(await dibujar())[0], esperadas, `${id}, mes ${cual}, N° ${numeroTexto}`);
+      }
+    }
   });
 });
