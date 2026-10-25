@@ -225,8 +225,11 @@ const dibujarNodo = (doc, x, y, ancho, piezas, { borde = COLOR.tinta } = {}) => 
   }
 };
 
-// Un tramo entre dos nodos: el título arriba, la flecha (llena o punteada) y el texto debajo
-const dibujarTramo = (doc, x, y, ancho, { titulo, texto, color, punteado }) => {
+// Un tramo entre dos nodos: el título arriba, la flecha (llena o punteada) y el texto debajo, en dos renglones de letra fija.
+// `textosCortos`: versiones cada vez más cortas del texto (la lista de los avisos recortada del medio: textosCortosDeAvisos, en
+// services/seguimientoReglas.js). Va el primero de [texto, ...textosCortos] que entra sin cortarse; si ninguno entra, el último,
+// cortado al final con «…» como siempre. Sin versiones, el texto de siempre.
+const dibujarTramo = (doc, x, y, ancho, { titulo, texto, textosCortos = [], color, punteado }) => {
   const margen = 6;
   const anchoTexto = ancho - 2 * margen;
   renglon(doc, titulo ?? '', x + margen, y + 7, { ancho: anchoTexto, tamano: LETRA.tramo, fuente: NEGRITA, color });
@@ -240,7 +243,11 @@ const dibujarTramo = (doc, x, y, ancho, { titulo, texto, color, punteado }) => {
   doc.restore();
   doc.polygon([x1, yFlecha], [x1 - 6.5, yFlecha - 3.4], [x1 - 6.5, yFlecha + 3.4]).fill(color);
   const opciones = (t) => ({ lineGap: -0.075 * t });
-  const ajuste = ajustar(doc, texto ?? '', { ancho: anchoTexto, lineas: 2, max: LETRA.nodoTexto, min: LETRA.nodoTexto, opciones });
+  let ajuste;
+  for (const candidato of [texto, ...(Array.isArray(textosCortos) ? textosCortos : [])]) {
+    ajuste = ajustar(doc, candidato ?? '', { ancho: anchoTexto, lineas: 2, max: LETRA.nodoTexto, min: LETRA.nodoTexto, opciones });
+    if (!ajuste.cortado) break;
+  }
   escribir(doc, ajuste, x0, y + 28, COLOR.gris);
 };
 
@@ -259,7 +266,9 @@ const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
     { texto: 'RPAD', tamano: LETRA.nodo, fuente: NEGRITA, lineas: 1 },
     { texto: 'Dir. de Datos Públicos y Comunicación', tamano: LETRA.nodoTexto, color: COLOR.gris, lineas: 2 }
   ]);
-  dibujarTramo(doc, xs[1], y, ANCHOS_CIRCUITO[1], { titulo: circuito.avisos?.titulo, texto: circuito.avisos?.texto, color: COLOR.acento });
+  dibujarTramo(doc, xs[1], y, ANCHOS_CIRCUITO[1], {
+    titulo: circuito.avisos?.titulo, texto: circuito.avisos?.texto, textosCortos: circuito.avisos?.textosCortos, color: COLOR.acento
+  });
   dibujarNodo(doc, xs[2], y, ANCHOS_CIRCUITO[2], [
     { texto: circuito.nodoMedio?.nombre, tamano: LETRA.nodo, fuente: NEGRITA, lineas: 3 },
     { texto: circuito.nodoMedio?.rol, tamano: LETRA.nodoTexto, color: COLOR.gris, lineas: 2 }
@@ -400,9 +409,29 @@ const intervaloCentrado = (doc, texto, cx, tamano, fuente) => {
   return [x0, x0 + ancho];
 };
 
-// Las etiquetas de las notas ("Nota 2/26"): si dos se pisan, van juntas en una ("Nota 2/26 y Nota 3/26"), centrada entre las dos
+// El texto de un grupo de etiquetas, unidas con " y ". Si no entra en el ancho de la hoja (un año de reiteraciones mensuales), se
+// sacan etiquetas del medio, de a una, y en su lugar va "…": siempre quedan la primera y las últimas ("Nota 2/27 y … y Nota 56/27")
+const textoDelGrupo = (doc, textos, tamano) => {
+  const entra = (texto) => anchoDe(doc, texto, tamano, NEGRITA) + 2 <= CONTENIDO;
+  let texto = textos.join(' y ');
+  for (let sacadas = 1; !entra(texto) && sacadas < textos.length - 1; sacadas++) {
+    texto = [textos[0], '…', ...textos.slice(sacadas + 1)].join(' y ');
+  }
+  return texto;
+};
+
+// Las etiquetas de las notas ("Nota 2/26"): si dos se pisan, van juntas en una ("Nota 2/26 y Nota 3/26"), centrada entre la primera
+// y la última. Al crecer, un grupo puede alcanzar al anterior (contra el borde derecho crece hacia la izquierda, y la reiteración del
+// anexo va siempre en hoy, el borde derecho): entonces se juntan los dos, y así hasta que ninguno pise a otro
 const dibujarEtiquetasDeNotas = (doc, marcas, y) => {
   const tamano = LETRA_CINTA.etiqueta;
+  // El centro, el texto y el intervalo de un grupo, entre su primera etiqueta (desde) y su última (hasta)
+  const medir = (grupo) => {
+    grupo.cx = (grupo.desde + grupo.hasta) / 2;
+    grupo.texto = textoDelGrupo(doc, grupo.textos, tamano);
+    grupo.intervalo = intervaloCentrado(doc, grupo.texto, grupo.cx, tamano, NEGRITA);
+    return grupo;
+  };
   const grupos = [];
   for (const marca of marcas.filter((m) => m.etiqueta).sort((a, b) => a.x - b.x)) {
     const cx = xDeCinta(Math.min(Math.max(marca.x, 60), 940));
@@ -410,10 +439,18 @@ const dibujarEtiquetasDeNotas = (doc, marcas, y) => {
     const [x0] = intervaloCentrado(doc, marca.etiqueta, cx, tamano, NEGRITA);
     if (ultimo && x0 < ultimo.intervalo[1] + AIRE_ETIQUETAS) {
       ultimo.textos.push(marca.etiqueta);
-      ultimo.cx = (ultimo.desde + cx) / 2;
-      ultimo.intervalo = intervaloCentrado(doc, ultimo.textos.join(' y '), ultimo.cx, tamano, NEGRITA);
+      ultimo.hasta = cx;
+      medir(ultimo);
+      // Si al crecer alcanzó al grupo anterior, se suma a él (con su primera etiqueta y el centro recalculado), hasta que no alcance a otro
+      while (grupos.length > 1 && grupos.at(-1).intervalo[0] < grupos.at(-2).intervalo[1] + AIRE_ETIQUETAS) {
+        const delFinal = grupos.pop();
+        const anterior = grupos.at(-1);
+        anterior.textos.push(...delFinal.textos);
+        anterior.hasta = delFinal.hasta;
+        medir(anterior);
+      }
     } else {
-      grupos.push({ textos: [marca.etiqueta], desde: cx, cx, intervalo: intervaloCentrado(doc, marca.etiqueta, cx, tamano, NEGRITA) });
+      grupos.push(medir({ textos: [marca.etiqueta], desde: cx, hasta: cx }));
     }
   }
   for (const grupo of grupos) {
@@ -421,7 +458,7 @@ const dibujarEtiquetasDeNotas = (doc, marcas, y) => {
     // hasta la línea de base de la etiqueta y, sin él, taparía el pie de las letras
     const [x0, x1] = grupo.intervalo;
     doc.rect(x0, y + FILA.etiqueta - ASCENDENTE * tamano - 0.5, x1 - x0, OJO * tamano + 1).fill(COLOR.blanco);
-    centrado(doc, grupo.textos.join(' y '), grupo.cx, y + FILA.etiqueta, { tamano, fuente: NEGRITA });
+    centrado(doc, grupo.texto, grupo.cx, y + FILA.etiqueta, { tamano, fuente: NEGRITA });
   }
 };
 
