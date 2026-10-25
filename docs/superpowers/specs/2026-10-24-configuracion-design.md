@@ -1,6 +1,6 @@
 # Configuración: Usuarios, Licencias y Áreas en una sola página
 
-Fecha: 24/10/2026. **Estado: borrador para aprobar.**
+Fecha: 24/10/2026. **Estado: aprobado por el usuario el 24/10/2026.**
 
 Maqueta navegable: `2026-10-24-configuracion-mockups/configuracion.html`. Se mira con un servidor estático; con `file://` también anda, porque no pide nada afuera salvo las fuentes. Corre el `usuarios.js` real con un servidor de mentira (`js/maqueta-servidor.js`), con usuarios y licencias inventados. Las 46 áreas son las de la base local del 24/10/2026, pero sus emails, teléfonos y personas de contacto son inventados. El recuadro oscuro de abajo a la derecha es de la maqueta, no de la página: cambia quién mira, la variante de la lista y el ícono de Gestión de Datasets. Las elegidas son la tabla y el ícono de capas. Este documento manda sobre la maqueta.
 
