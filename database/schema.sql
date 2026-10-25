@@ -38,6 +38,7 @@ CREATE TABLE `areas` (
   `articulo` enum('el','la') NOT NULL DEFAULT 'la',
   `area_superior` varchar(300) DEFAULT NULL,
   `articulo_superior` enum('el','la') DEFAULT 'la',
+  `ambito` enum('municipal','externo') NOT NULL DEFAULT 'municipal',
   `email_principal` varchar(150) DEFAULT NULL,
   `email_secundario` varchar(150) DEFAULT NULL,
   `telefono_area` varchar(50) DEFAULT NULL,
