@@ -1,13 +1,13 @@
 // Reglas de las métricas (spec 2026-10-24-metricas-y-reportes, secciones 1.1 a 1.7 y 2.2): cómo se cuentan los días, la cifra de un
 // tramo, un caso por ciclo de cada dataset, con sus hitos (casosDe), y lo que la pestaña Métricas muestra de esos casos: el circuito,
-// los resultados del año, la lista de casos y «Para completar» (vistaDe). Además, el resto de la pestaña: el índice de actualización
-// mes a mes (indiceMesAMes), la antigüedad de los vencidos (antiguedadDeVencidos), el trabajo del RPAD (trabajoDelAnio) y las áreas y
-// los temas (areasYTemas). Funciones puras, sin base de datos ni Date local: las
-// fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora argentina, como en services/seguimientoReglas.js. De
-// ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo):
-// las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los mismos avisos (esEmailADgmit, esNotaEnviada y
-// momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js (fuentesDe). Ninguna función tira error: con datos raros
-// devuelven null o una lista vacía, o ignoran lo que no pueden leer.
+// los resultados del año, la lista de casos y «Para completar» (vistaDe), y cuáles guarda la foto del 31/12 (casosQueTocanElAnio).
+// Además, el resto de la pestaña: el índice de actualización mes a mes (indiceMesAMes), la antigüedad de los vencidos
+// (antiguedadDeVencidos), el trabajo del RPAD (trabajoDelAnio) y las áreas y los temas (areasYTemas). Funciones puras, sin base de
+// datos ni Date local: las fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora argentina, como en
+// services/seguimientoReglas.js. De ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso (cicloDelAviso) y
+// cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los mismos avisos
+// (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js (fuentesDe). Ninguna
+// función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
 import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias } from './notasDigitalesCalendario.js';
 import {
   REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
@@ -28,6 +28,10 @@ export const VENTANA_DE_LA_REGLA = Object.freeze({ externa: 40, interna: 60 });
 // Desde cuándo hay registro de los envíos (el primer email registrado es del 06/12/2025): un aviso de la regla que tocaba antes no
 // se pudo registrar
 export const INICIO_DEL_REGISTRO = REGISTRO_DESDE.envios;
+
+// El primer año de las métricas (spec, 1.6): el selector empieza en 2026 y no hay foto de un año anterior (lo de diciembre de 2025
+// cuenta si terminó en 2026)
+export const PRIMER_ANIO = 2026;
 
 // Los emails viejos que eran el aviso de la regla (los demás de QUE_PEDIA también son avisos a la DGMIT, pero no el de la regla)
 const EMAILS_DE_LA_REGLA = Object.freeze(['externo-40', 'interno-60']);
@@ -629,6 +633,23 @@ export const vistaDe = (casos, opciones) => {
   };
 };
 
+// Los casos que tocan el año (los que guarda la foto del 31/12, spec 3): los que pueden cambiar algo de vistaDe en ese año, leídos
+// como los lee ella (lo de después de `al` todavía no pasó). Un ciclo que vence en el año, que está abierto en `al`, que cerró en el
+// año o que tiene un aviso, los datos recibidos o la carga en el año; y, además, uno con una nota DGMIT recibida hasta `al`, aunque
+// sea de un año anterior: vistaDe mira si hay notas DGMIT entre todos los casos. Así vistaDe da lo mismo con estos casos que con
+// todos, con cualquier estadístico, días y destildados. `opciones`: { anio, al } (como en vistaDe). En el orden de `casos`; [] si
+// no hay año. Nunca tira.
+export const casosQueTocanElAnio = (casos, opciones) => {
+  const ctx = contextoDe(opciones);
+  if (ctx === null) return [];
+  return lista(casos).filter((caso) => {
+    if (!caso || typeof caso !== 'object' || Array.isArray(caso)) return false;
+    const h = hechosDe(caso, ctx);
+    return (h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin) || h.abierto || enElAnio(h.cierre, ctx)
+      || h.avisos.some((dia) => dia >= ctx.inicio) || enElAnio(h.recibido, ctx) || enElAnio(h.carga, ctx) || h.nota !== null;
+  });
+};
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Contexto, el trabajo del RPAD y áreas y temas (spec, 2.2)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -739,15 +760,16 @@ export const indiceMesAMes = (fuentesPorDataset, opciones) => {
   return diasDelIndice(ctx).map((dia) => puntoDelIndice(datasets, dia));
 };
 
-// ¿Se actualizó desde el ciclo `indice` hasta `al`? Si ese ciclo o alguno de los siguientes cerró por una actualización cargada
-// hasta `al` (una reprogramación no es una actualización)
+// ¿Se actualizó desde el ciclo `indice` hasta `al`? Si ese ciclo o alguno de los siguientes cerró por una actualización aprobada
+// hasta `al` a las 23:59:59 (una reprogramación no es una actualización). Va con el reloj del RPAD, como el estado (Ruling 12): una
+// carga del 30/12 aprobada el 05/01, al 31/12 todavía no se actualizó, igual que en estadoEnElDia
 const seActualizo = (ciclos, indice, al) => ciclos.slice(indice)
-  .some((ciclo) => ciclo.como === 'actualizacion' && ciclo.cierre !== null && ciclo.cierre <= al);
+  .some((ciclo) => ciclo.como === 'actualizacion' && typeof ciclo.hasta === 'string' && ciclo.hasta <= `${al} 23:59:59`);
 
 // La antigüedad de los vencidos (spec, 2.2), con el mismo estado que el índice: los vencidos de `al` (atrasados y sin respuesta; los
 // eventuales y los sin fecha no tienen vencimiento), por los días corridos desde el vencimiento: menos de 90, de 90 a 365 y más de
 // 365. `al_inicio`: los vencidos al 1/1 del año y, de esos, cuántos se actualizaron hasta `al` (el ciclo que regía el 1/1, o uno
-// siguiente, cerró por una actualización cargada hasta `al`). `opciones`: { anio, al, sin }. { total, menos_de_3_meses, de_3_a_12,
+// siguiente, cerró por una actualización aprobada hasta `al`). `opciones`: { anio, al, sin }. { total, menos_de_3_meses, de_3_a_12,
 // mas_de_un_anio, al_inicio: { total, actualizados } }, todo en 0 si no hay año. Nunca tira.
 export const antiguedadDeVencidos = (fuentesPorDataset, opciones) => {
   const resultado = { total: 0, menos_de_3_meses: 0, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } };

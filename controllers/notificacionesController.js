@@ -1,6 +1,7 @@
 import { sendEmailToArea, verifyConnection, listaDeCorreos } from '../services/emailService.js';
 import * as templates from '../services/emailTemplates.js';
-import { ejecutarNotasDigitales } from '../services/notasDigitales.js';
+import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida } from '../services/notasDigitales.js';
+import { sacarFotoSiCorresponde } from '../services/metricasFoto.js';
 import { obtenerConfig, conPedido } from '../services/notasDigitalesDatos.js';
 import { hoyArgentina, proximoDiaHabil, esDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
@@ -51,13 +52,13 @@ const areaDeEjemplo = (fecha) => {
 const fechaDelProximoAviso = () => proximoDiaHabil(hoyArgentina());
 
 /**
- * Proceso diario (cron de las 8:15): aviso directo a las áreas y Notas Digitales
+ * Proceso diario (cron de las 8:15): aviso directo a las áreas, Notas Digitales y, desde el 10/01, la foto del año anterior
  */
 export const ejecutarNotificacionesDiarias = async (req, res) => {
   const hoy = hoyArgentina();
   const resultados = {
     fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null, dia_habil: null,
-    avisos_retenidos: null
+    avisos_retenidos: null, foto: null
   };
 
   try {
@@ -98,6 +99,18 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
     } catch (error) {
       console.error('Error en Notas Digitales:', error);
       resultados.errores.push({ tipo: 'notas-digitales', error: 'Error ejecutando Notas Digitales' });
+    }
+
+    // La foto del año anterior al 31/12 (spec 2026-10-24-metricas-y-reportes, 3): la saca la primera corrida desde el 10/01, sea o
+    // no día hábil, y antes devuelve null sin tocar nada. Aislada: un error acá no frena la respuesta, queda en la última corrida
+    // que muestra Correos > Estado y la corrida del día siguiente la vuelve a intentar
+    try {
+      resultados.foto = await sacarFotoSiCorresponde({ hoy });
+    } catch (error) {
+      // Solo la pila: los errores de mysql2 traen la consulta entera, con todos los datos de la foto
+      console.error('Error en la foto del año:', error?.stack ?? error);
+      resultados.errores.push({ tipo: 'foto-del-anio', error: error.message });
+      await anotarEnLaUltimaCorrida(`No se pudo sacar la foto del año: ${error.message}`).catch(() => {});
     }
 
     const success = resultados.errores.length === 0;

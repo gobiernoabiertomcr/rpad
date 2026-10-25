@@ -6,8 +6,8 @@ import {
   CASOS, HOY_DE_LOS_CASOS as HOY, HOY_DE_LAS_METRICAS, fuentesDelCaso, con, mapaDe, mapaDeLosCasos, cambio, email, nota, notaDgmit, solo
 } from './metricas-casos.js';
 import {
-  ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, duracion, cifraDe, unidadDe, casosDe, vistaDe,
-  indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+  ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, PRIMER_ANIO, duracion, cifraDe, unidadDe, casosDe, vistaDe,
+  casosQueTocanElAnio, indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
@@ -39,11 +39,12 @@ const NADA = {
 };
 
 describe('constantes', () => {
-  it('los estadísticos, los días, la ventana de la regla y el inicio del registro', () => {
+  it('los estadísticos, los días, la ventana de la regla, el inicio del registro y el primer año', () => {
     assert.deepEqual(ESTADISTICOS, ['mediana', 'promedio']);
     assert.deepEqual(DIAS, ['habiles', 'corridos']);
     assert.deepEqual(VENTANA_DE_LA_REGLA, { externa: 40, interna: 60 });
     assert.equal(INICIO_DEL_REGISTRO, '2025-12-06');
+    assert.equal(PRIMER_ANIO, 2026);
     assert.ok(Object.isFrozen(ESTADISTICOS) && Object.isFrozen(DIAS) && Object.isFrozen(VENTANA_DE_LA_REGLA));
   });
 });
@@ -1221,6 +1222,74 @@ describe('vistaDe', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Los casos que guarda la foto del 31/12 (spec, 3)
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe('casosQueTocanElAnio', () => {
+  const ANIO = Object.freeze({ anio: 2026, al: '2026-12-31' });
+  const combinaciones = (opciones) => ESTADISTICOS.flatMap((estadistico) => DIAS.map((dias) => ({ ...opciones, estadistico, dias })));
+
+  it('con los casos reales al 31/12: guarda menos que todos, en su orden, y la vista del año es la misma', () => {
+    for (const { anio, al } of [ANIO, { anio: 2025, al: '2025-12-31' }]) {
+      const todos = casosDe(mapaDeLosCasos(), { hoy: al });
+      const delAnio = casosQueTocanElAnio(todos, { anio, al });
+      assert.ok(delAnio.length > 0 && delAnio.length < todos.length, `${anio}: ${delAnio.length} de ${todos.length}`);
+      assert.deepEqual(delAnio, todos.filter((c) => delAnio.includes(c)));
+      for (const opciones of [...combinaciones({ anio, al }), { anio, al, sin: [52, 38] }]) {
+        assert.deepEqual(vistaDe(delAnio, opciones), vistaDe(todos, opciones), JSON.stringify(opciones));
+      }
+    }
+  });
+
+  it('toca el año un ciclo que vence, está abierto, cierra o tiene un aviso en el año, o una nota DGMIT hasta al', () => {
+    // Un ciclo de 2025: vencía el 31/03/2025, se avisó el 19/02/2025 y se cargó el 08/04/2025
+    const de2025 = {
+      venc: '2025-03-31', inicio: '2025-01-02', aviso_regla: '2025-02-19', primer_aviso: '2025-02-19', inicio_tramos: '2025-02-19',
+      fecha_regla: '2025-02-19', avisos_rpad: ['2025-02-19'], cierre: '2025-04-08', aprobado: '2025-04-08 10:00:00',
+      recibido: '2025-04-06', carga: '2025-04-08', alta: '2025-01-02'
+    };
+    const viejo = cerrado({ ...de2025, dataset_id: 901 });
+    const conNota = cerrado({ ...de2025, dataset_id: 902, nota_dgmit: notaDe('2025-03-10') });
+    const abierto = caso({ dataset_id: 903 });
+    const cerradoEnEnero = cerrado({ ...de2025, dataset_id: 904, cierre: '2026-01-08', aprobado: '2026-01-08 10:00:00', recibido: '2026-01-06', carga: '2026-01-08' });
+    // Actualizado en diciembre de 2025, antes de su vencimiento del 31/01/2026: cuenta en la cobertura de 2026
+    const venceEnElAnio = cerrado({
+      ...de2025, dataset_id: 905, venc: '2026-01-31', fecha_regla: '2025-12-22', aviso_regla: null, primer_aviso: null, inicio_tramos: null,
+      avisos_rpad: [], motivo_sin_aviso: 'sin-aviso', cierre: '2025-12-20', aprobado: '2025-12-20 10:00:00', recibido: '2025-12-19', carga: '2025-12-20'
+    });
+    // Abierto después de al: sin avisos en el año no toca 2026; avisado el 28/12/2026 por una nota con su vencimiento, sí
+    const posterior = { inicio: '2027-01-05', venc: '2027-02-28', fecha_regla: '2027-01-19' };
+    const despues = caso({ ...posterior, dataset_id: 906, aviso_regla: null, primer_aviso: null, inicio_tramos: null, avisos_rpad: [] });
+    const avisadoEnDiciembre = caso({ ...posterior, dataset_id: 907, aviso_regla: '2026-12-28', primer_aviso: '2026-12-28', inicio_tramos: '2026-12-28', avisos_rpad: ['2026-12-28'] });
+    // Lo de después de al todavía no pasó: una nota DGMIT de enero de 2027 en un ciclo de 2025 no lo trae
+    const notaDeEnero = cerrado({ ...de2025, dataset_id: 908, nota_dgmit: notaDe('2027-01-04') });
+    // Vencido desde el 31/12/2025 y avisado el 15/12/2025, sin nota DGMIT: abierto todo 2026 es una nota pendiente de carga, y
+    // reprogramado en enero también (cerró en el año)
+    const vencidoDe2025 = {
+      venc: '2025-12-31', inicio: '2025-01-02', fecha_regla: '2025-11-21', aviso_regla: null, primer_aviso: '2025-12-15', inicio_tramos: null,
+      avisos_rpad: ['2025-12-15'], reiteraciones_rpad: null, motivo_sin_aviso: 'sin-aviso', alta: '2025-01-02'
+    };
+    const sigueVencido = caso({ ...vencidoDe2025, dataset_id: 909 });
+    const reprogramadoEnEnero = caso({ ...vencidoDe2025, dataset_id: 910, abierto: false, como: 'reprogramacion', cierre: '2026-01-20', aprobado: '2026-01-20 10:00:00' });
+    const todos = [viejo, conNota, abierto, cerradoEnEnero, venceEnElAnio, despues, avisadoEnDiciembre, notaDeEnero, sigueVencido, reprogramadoEnEnero];
+    const delAnio = casosQueTocanElAnio(todos, ANIO);
+    assert.deepEqual(delAnio.map((c) => c.dataset_id), [902, 903, 904, 905, 907, 909, 910]);
+    assert.deepEqual(vistaDe(todos, ANIO).para_completar.notas.map((n) => n.dataset_id).sort(), [903, 904, 909, 910]);
+    for (const opciones of combinaciones(ANIO)) assert.deepEqual(vistaDe(delAnio, opciones), vistaDe(todos, opciones));
+    // La de 2025 con nota DGMIT queda porque la vista mira si hay notas DGMIT en todos los casos: sin ella, el trámite diría «Todavía
+    // no hay notas DGMIT cargadas»
+    const sinLaNota = delAnio.filter((c) => c.dataset_id !== 902);
+    assert.notDeepEqual(vistaDe(sinLaNota, ANIO), vistaDe(todos, ANIO));
+    // Lo que no es un caso no va; sin año, ninguno
+    assert.deepEqual(casosQueTocanElAnio([null, 'x', [], abierto], ANIO), [abierto]);
+    for (const opciones of [null, undefined, {}, { anio: 'x' }, { anio: 2026, al: '2025-12-31' }]) {
+      assert.deepEqual(casosQueTocanElAnio(todos, opciones), [], JSON.stringify(opciones));
+    }
+    for (const casos of [null, undefined, 'x', {}]) assert.deepEqual(casosQueTocanElAnio(casos, ANIO), []);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Contexto, el trabajo del RPAD y áreas y temas (spec, 2.2)
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -1437,9 +1506,30 @@ describe('antiguedadDeVencidos', () => {
     const antiguedad = antiguedadDeVencidos(mapa, { anio: 2026, al });
     assert.deepEqual(antiguedad.al_inicio, { total: 4, actualizados: 2 });
     assert.deepEqual([antiguedad.total, antiguedad.menos_de_3_meses, antiguedad.de_3_a_12, antiguedad.mas_de_un_anio], [2, 0, 1, 1]);
-    // Una actualización cargada después de al todavía no pasó
+    // Una actualización aprobada después de al todavía no pasó: el 901 se cargó el 09/03, pero se aprobó el 10/03 (con el reloj del
+    // RPAD, como el estado: Ruling 12)
     assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-08' }).al_inicio, { total: 4, actualizados: 0 });
-    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-09' }).al_inicio, { total: 4, actualizados: 1 });
+    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-09' }).al_inicio, { total: 4, actualizados: 0 });
+    assert.deepEqual(antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-03-10' }).al_inicio, { total: 4, actualizados: 1 });
+  });
+
+  it('al 31/12, una carga del 30/12 aprobada el 05/01 todavía no se actualizó; aprobada el 30/12, sí (Ruling 12)', () => {
+    // Los cuatro vencían el 30/11/2025 (al 1/1/2026 estaban vencidos) y se cargaron el 30/12/2026, hasta el 30/11/2027; cambia cuándo
+    // se aprobó la actualización
+    const cargadoEl3012 = (id, revisado) => ds(id, { proxima: '2027-11-30', ultima: '2026-12-30' }, {
+      cambios: [actualizacion(id - 830, id, { revisado, carga: '2026-12-30', de: '2025-11-30', a: '2027-11-30' })]
+    });
+    const mapa = mapaDe(
+      cargadoEl3012(901, '2027-01-05 10:00:00'), cargadoEl3012(902, '2026-12-30 18:00:00'), cargadoEl3012(903, '2026-12-31 23:59:59'),
+      cargadoEl3012(904, '2027-01-01 00:00:00')
+    );
+    const foto = antiguedadDeVencidos(mapa, { anio: 2026, al: '2026-12-31' });
+    assert.deepEqual(foto.al_inicio, { total: 4, actualizados: 2 });
+    // Con el mismo reloj, los de enero todavía figuraban vencidos al 31/12, desde el 30/11/2025 (más de un año)
+    assert.deepEqual([foto.total, foto.menos_de_3_meses, foto.de_3_a_12, foto.mas_de_un_anio], [2, 0, 0, 2]);
+    assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: '2026-12-31' }).at(-1), { dia: '2026-12-31', tasa: 50, al_dia: 2, base: 4 });
+    // En enero de 2027 ya se habían aprobado las cuatro
+    assert.equal(antiguedadDeVencidos(mapa, { anio: 2027, al: '2027-01-05' }).total, 0);
   });
 });
 

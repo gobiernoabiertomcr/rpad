@@ -1,0 +1,289 @@
+// La foto del 31/12 (spec 2026-10-24-metricas-y-reportes, 3; services/metricasFoto.js): la saca sola la corrida de las 8:15 desde el
+// 10/01, una sola vez y al 31/12, y un error al guardarla no frena la corrida: queda en la última corrida. Contra una base de prueba
+// propia, con datos inventados. Se llama al servicio, y a la corrida diaria (el controlador, nunca /api/cron/*), con un hoy fijo.
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'crypto';
+import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
+import { crearDataset, limpiarBase, configurarNotas, conFallaSimulada } from './notas-fixtures.js';
+import {
+  casosDe, casosQueTocanElAnio, vistaDe, duracion, indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+} from '../services/metricasReglas.js';
+
+const MOMENTO = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+const AL = '2026-12-31';
+let base, dbReal, foto, controlador, seguimientoDatos, usuarioId;
+
+before(async () => {
+  dbReal = process.env.DB_NAME;
+  base = await crearBaseDePrueba('rpad_test_metricas_foto');
+  process.env.DB_NAME = base.nombre;
+  process.env.EMAIL_SOLO_A = '';
+  // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
+  foto = await import('../services/metricasFoto.js');
+  controlador = await import('../controllers/notificacionesController.js');
+  seguimientoDatos = await import('../services/seguimientoDatos.js');
+  const username = `t_${crypto.randomBytes(4).toString('hex')}`;
+  usuarioId = (await query(
+    "INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, activo) VALUES (?, 'x', 'Persona de Prueba', ?, 'admin', 1)",
+    [username, `${username}@rpad.test`]
+  )).insertId;
+});
+
+after(async () => {
+  await (await import('../config/database.js')).default.end();
+  await cerrarDb();
+  // borrar() rechaza la base que está en DB_NAME: se restaura la real antes de borrar la de prueba
+  if (dbReal === undefined) delete process.env.DB_NAME;
+  else process.env.DB_NAME = dbReal;
+  await base?.borrar();
+});
+
+beforeEach(async () => {
+  process.env.EMAIL_SOLO_A = '';
+  // limpiarBase comprueba que la base es de prueba; los cambios se van con sus datasets
+  await limpiarBase();
+  await query('DELETE FROM metricas_fotos');
+  await configurarNotas();
+  await mailpit.vaciar();
+});
+
+// Instante de una fecha y hora de Argentina (UTC-3), en segundos: las columnas TIMESTAMP se cargan con FROM_UNIXTIME, que no
+// depende de la zona horaria de la base (en Docker es UTC)
+const instante = (texto) => Date.parse(`${texto.replace(' ', 'T')}-03:00`) / 1000;
+const fijarAlta = (datasetId, momento) => query('UPDATE datasets SET created_at = FROM_UNIXTIME(?) WHERE id = ?', [instante(momento), datasetId]);
+
+// Un cambio aprobado, como lo deja aprobarCambio (los JSON como texto)
+const aprobado = ({ tipo = 'editar', datasetId, creado, revisado, nuevos = {}, anteriores = null }) => query(
+  `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, datos_anteriores, usuario_id, estado, revisor_id, created_at,
+     revisado_at) VALUES (?, ?, ?, ?, ?, 'aprobado', ?, FROM_UNIXTIME(?), FROM_UNIXTIME(?))`,
+  [tipo, datasetId, JSON.stringify(nuevos), anteriores && JSON.stringify(anteriores), usuarioId, usuarioId, instante(creado), instante(revisado)]
+);
+
+// Una actualización registrada: la próxima pasa de `de` a `a`, la carga de `cargaAnterior` a `carga`, con su «Recibido el»
+const actualizacion = ({ datasetId, creado, revisado, de, a, cargaAnterior, carga, recibido, origen }) => aprobado({
+  datasetId, creado, revisado,
+  anteriores: { proxima_actualizacion: de, ultima_actualizacion: cargaAnterior },
+  nuevos: {
+    proxima_actualizacion: a, ultima_actualizacion: carga, registro_actualizacion: true, recibido_el: recibido,
+    ...(origen ? { origen_datos: origen } : {})
+  }
+});
+
+// Un email viejo a la DGMIT que se envió
+const emailEnviado = ({ tipo, datasetId, enviado }) => query(
+  `INSERT INTO notificaciones_log (tipo, area_id, destinatarios, datasets_ids, cantidad_datasets, enviado_at, success)
+   VALUES (?, NULL, 'mit@rpad.test', ?, 1, FROM_UNIXTIME(?), 1)`,
+  [tipo, String(datasetId), instante(enviado)]
+);
+
+// El año 2026 de tres datasets anuales, todos dados de alta el 15/01/2026 salvo el C:
+// - A, externo con «Requiere nota DGMIT» Sí: vencía el 30/11/2026 y se avisó por la regla el 21/10/2026 (el email de 40 días); los
+//   datos llegaron el 29/12/2026 y se cargaron el 30/12/2026, pero la actualización se aprobó el 05/01/2027;
+// - B, interno: vencía el 30/11/2026 y se avisó el 01/10/2026 (el email de 60 días); los datos llegaron el 02/01/2027 y se cargaron el
+//   03/01/2027 (aprobada ese día);
+// - C, externo: se actualizó el 10/06/2025 y se dio de baja el 20/11/2025, antes de vencer: no toca 2026.
+const prepararElAnio = async () => {
+  const a = await crearDataset({
+    titulo: 'Dataset A de prueba', gestion: 'externa', requiereNota: 1, vencimiento: '2027-11-30', ultima: '2026-12-30'
+  });
+  await fijarAlta(a, '2026-01-15 10:00:00');
+  await emailEnviado({ tipo: 'externo-40', datasetId: a, enviado: '2026-10-21 08:15:00' });
+  await actualizacion({
+    datasetId: a, creado: '2027-01-04 09:00:00', revisado: '2027-01-05 10:00:00', de: '2026-11-30', a: '2027-11-30',
+    cargaAnterior: '2025-12-15', carga: '2026-12-30', recibido: '2026-12-29', origen: 'area'
+  });
+
+  const b = await crearDataset({ titulo: 'Dataset B de prueba', gestion: 'interna', vencimiento: '2027-11-30', ultima: '2027-01-03' });
+  await fijarAlta(b, '2026-01-15 10:00:00');
+  await emailEnviado({ tipo: 'interno-60', datasetId: b, enviado: '2026-10-01 08:15:00' });
+  await actualizacion({
+    datasetId: b, creado: '2027-01-03 09:00:00', revisado: '2027-01-03 11:00:00', de: '2026-11-30', a: '2027-11-30',
+    cargaAnterior: '2025-12-10', carga: '2027-01-03', recibido: '2027-01-02'
+  });
+
+  const c = await crearDataset({
+    titulo: 'Dataset C de prueba', gestion: 'externa', requiereNota: 1, vencimiento: '2025-12-31', ultima: '2025-06-10', activo: 0
+  });
+  await fijarAlta(c, '2025-03-01 10:00:00');
+  await actualizacion({
+    datasetId: c, creado: '2025-06-10 09:00:00', revisado: '2025-06-10 10:00:00', de: '2025-05-31', a: '2025-12-31',
+    cargaAnterior: '2024-06-01', carga: '2025-06-10', recibido: '2025-06-05', origen: 'area'
+  });
+  await aprobado({ tipo: 'eliminar', datasetId: c, creado: '2025-11-20 09:00:00', revisado: '2025-11-20 10:00:00' });
+  return { a, b, c };
+};
+
+const sacar = (hoy) => foto.sacarFotoSiCorresponde({ hoy });
+
+// La corrida diaria de las 8:15 (el controlador del cron, sin pasar por /api/cron/*) en un momento fijo: el reloj se simula solo
+// mientras corre. Devuelve lo que respondió
+const corridaDiaria = async (momento) => {
+  const res = {
+    statusCode: null, body: null,
+    status(codigo) { this.statusCode = codigo; return this; },
+    json(cuerpo) { this.body = cuerpo; return this; }
+  };
+  mock.timers.enable({ apis: ['Date'], now: new Date(momento) });
+  try {
+    await controlador.ejecutarNotificacionesDiarias({}, res);
+  } finally {
+    mock.timers.reset();
+  }
+  return res;
+};
+
+const ultimaCorrida = async () => (await query(
+  `SELECT DATE_FORMAT(ultima_corrida_fecha, '%Y-%m-%d') fecha, ultima_corrida_resultado resultado, ultima_corrida_con_errores con_errores
+   FROM notas_digitales_config WHERE id = 1`
+))[0];
+
+describe('la foto del 31/12', () => {
+  it('el 09/01/2027 no saca la foto', async () => {
+    await prepararElAnio();
+    assert.equal(await sacar('2027-01-09'), null);
+    // Antes del primer año de las métricas tampoco: en 2026 no hay foto de 2025 que sacar (la corrida de hoy no hace nada)
+    for (const hoy of ['2026-01-10', '2026-10-24', '2026-12-31']) assert.equal(await sacar(hoy), null, hoy);
+    // Un hoy que no es una fecha, tampoco
+    for (const hoy of ['2027-13-10', '10/01/2027', null]) assert.equal(await sacar(hoy), null, String(hoy));
+    assert.deepEqual(await foto.aniosConFoto(), []);
+    assert.equal(await foto.leerFoto(2026), null);
+    assert.equal(await foto.leerFoto(2025), null);
+    // La corrida del 09/01 no la saca ni lo cuenta como error
+    const res = await corridaDiaria('2027-01-09T11:15:00Z');
+    assert.equal(res.body.data.foto, null);
+    assert.ok(!res.body.data.errores.some((e) => e.tipo === 'foto-del-anio'), JSON.stringify(res.body.data.errores));
+    assert.deepEqual(await foto.aniosConFoto(), []);
+  });
+
+  it('el 10/01/2027 la saca al 31/12/2026 y una segunda llamada devuelve ya', async () => {
+    const { a, b, c } = await prepararElAnio();
+    assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, sacada: true });
+    const guardada = await foto.leerFoto(2026);
+    assert.deepEqual([guardada.anio, guardada.al], [2026, AL]);
+    assert.deepEqual(Object.keys(guardada.datos), ['version', 'casos', 'contexto', 'trabajo', 'areas', 'generada']);
+    assert.equal(guardada.datos.version, 1);
+    assert.match(guardada.datos.generada, MOMENTO);
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+
+    // Lo que dan las reglas al 31/12 con todos los datasets de la base: los casos que tocan el año, el contexto, el trabajo con cada
+    // estadístico y las áreas
+    const fuentes = await seguimientoDatos.fuentesDe(null);
+    const casos = casosDe(fuentes, { hoy: AL });
+    const opciones = { anio: 2026, al: AL };
+    assert.deepEqual(guardada.datos.casos, casosQueTocanElAnio(casos, opciones));
+    assert.deepEqual(guardada.datos.contexto, { indice: indiceMesAMes(fuentes, opciones), antiguedad: antiguedadDeVencidos(fuentes, opciones) });
+    assert.deepEqual(guardada.datos.trabajo, {
+      mediana: trabajoDelAnio(fuentes, casos, { ...opciones, estadistico: 'mediana' }),
+      promedio: trabajoDelAnio(fuentes, casos, { ...opciones, estadistico: 'promedio' })
+    });
+    assert.deepEqual(guardada.datos.areas, areasYTemas(fuentes, opciones));
+    // Solo los casos que tocan 2026: los dos de A (el que vencía el 30/11 y el que abrió la carga del 30/12) y el de B que vencía el
+    // 30/11; ni el que abrió la carga del 03/01/2027 ni los de C, de 2025
+    assert.deepEqual(guardada.datos.casos.map((caso) => [caso.dataset_id, caso.venc]), [[a, '2026-11-30'], [a, '2027-11-30'], [b, '2026-11-30']]);
+    assert.ok(casos.some((caso) => caso.dataset_id === c) && casos.some((caso) => caso.dataset_id === b && caso.venc === '2027-11-30'));
+    // La vista de 2026 con los casos de la foto es la misma que con todos, con cualquier estadístico y días
+    for (const estadistico of ['mediana', 'promedio']) {
+      for (const dias of ['habiles', 'corridos']) {
+        assert.deepEqual(vistaDe(guardada.datos.casos, { ...opciones, estadistico, dias }), vistaDe(casos, { ...opciones, estadistico, dias }));
+      }
+    }
+
+    // Una segunda llamada, el mismo día o meses después, no la vuelve a sacar ni la pisa, aunque la base haya cambiado
+    await query('UPDATE datasets SET titulo = ? WHERE id = ?', ['Otro título', a]);
+    assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, ya: true });
+    assert.deepEqual(await sacar('2027-06-15'), { anio: 2026, ya: true });
+    assert.deepEqual(await foto.leerFoto(2026), guardada);
+    assert.equal(guardada.datos.casos[0].titulo, 'Dataset A de prueba');
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+    // Un año sin foto, o que no es un año, no tiene foto
+    for (const anio of [2027, '2026x', '', null, undefined, 2026.5]) assert.equal(await foto.leerFoto(anio), null, String(anio));
+    assert.deepEqual(await foto.leerFoto('2026'), guardada);
+  });
+
+  it('una foto que no se puede leer no pasa por «todavía no hay foto» y tampoco se vuelve a sacar', async () => {
+    await query("INSERT INTO metricas_fotos (anio, al, datos) VALUES (2026, '2026-12-31', '{roto')");
+    await assert.rejects(foto.leerFoto(2026), { message: 'La foto de 2026 no se puede leer' });
+    await query("UPDATE metricas_fotos SET datos = '{\"version\": 2, \"casos\": []}' WHERE anio = 2026");
+    await assert.rejects(foto.leerFoto(2026), { message: 'La foto de 2026 no se puede leer' });
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+    assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, ya: true });
+  });
+
+  it('dos corridas a la vez guardan una sola foto: una la saca y la otra ve que ya está', async () => {
+    await prepararElAnio();
+    const resultados = await Promise.all([sacar('2027-01-10'), sacar('2027-01-10')]);
+    assert.deepEqual(resultados.map((r) => JSON.stringify(r)).sort(), [
+      JSON.stringify({ anio: 2026, sacada: true }), JSON.stringify({ anio: 2026, ya: true })
+    ]);
+    assert.equal(Number((await query('SELECT COUNT(*) n FROM metricas_fotos'))[0].n), 1);
+  });
+
+  it('una carga del 05/01/2027 con fecha 30/12/2026 entra; una del 03/01/2027 queda en curso al 31/12', async () => {
+    const { a, b } = await prepararElAnio();
+    await sacar('2027-01-10');
+    const { datos } = await foto.leerFoto(2026);
+    const v = vistaDe(datos.casos, { anio: 2026, al: AL });
+    const filaDe = (id) => v.casos.find((f) => f.dataset_id === id && f.vencimiento === '2026-11-30');
+    const tramoDe = (gestion, clave) => v.circuito[gestion].find((t) => t.clave === clave);
+
+    // A: la carga del 30/12, aprobada el 05/01, entra en 2026: un día hábil después de los datos del 29/12, y después del vencimiento
+    assert.deepEqual([filaDe(a).recibido.fecha, filaDe(a).carga], ['2026-12-29', { fecha: '2026-12-30', texto: '1' }]);
+    assert.deepEqual([tramoDe('externa', 'carga').cifra.valor, tramoDe('externa', 'carga').cifra.ciclos], [1, 1]);
+    assert.deepEqual([v.resultados.a_tiempo.a_tiempo, v.resultados.a_tiempo.total, v.resultados.a_tiempo.externa], [0, 1, [0, 1]]);
+    assert.equal(datos.trabajo.mediana.actualizaciones, 1);
+    assert.equal(datos.trabajo.mediana.por_mes.actualizaciones[11], 1);
+
+    // B: los datos llegaron el 02/01/2027 y la carga es del 03/01/2027: al 31/12, la producción del relevamiento estaba en curso desde
+    // el aviso del 01/10, y no hay carga en 2026
+    const hace = duracion('2026-10-01', AL, 'habiles');
+    assert.deepEqual(tramoDe('interna', 'produccion').en_curso,
+      { n: 1, valor: hace, texto: `1 sin datos registrados todavía, hace ${hace} días hábiles (mediana)` });
+    assert.equal(tramoDe('interna', 'produccion').cifra, null);
+    assert.equal(tramoDe('interna', 'carga').cifra, null);
+    assert.deepEqual([filaDe(b).recibido, filaDe(b).carga], [{ fecha: null, texto: `en curso, hace ${hace}`, origen: '' }, { fecha: null, texto: '' }]);
+    assert.deepEqual([v.resultados.a_tiempo.interna], [[0, 0]]);
+
+    // El contexto va con el reloj del RPAD (Ruling 12): al 31/12 la actualización de A todavía no estaba aprobada, así que A figuraba
+    // vencido, como B; C ya se había dado de baja
+    assert.deepEqual(datos.contexto.antiguedad, { total: 2, menos_de_3_meses: 2, de_3_a_12: 0, mas_de_un_anio: 0, al_inicio: { total: 0, actualizados: 0 } });
+    assert.deepEqual(datos.contexto.indice.at(-1), { dia: AL, tasa: 0, al_dia: 0, base: 2 });
+    assert.deepEqual(datos.areas.ranking.map((area) => [area.total, area.al_dia, area.porcentaje]), [[1, 0, 0], [1, 0, 0]]);
+  });
+
+  it('un error al guardar no tira: queda en la última corrida y con_errores = 1', async () => {
+    await prepararElAnio();
+    // El 10/01/2027 es domingo: las Notas Digitales no corren, pero la foto no depende de que sea día hábil
+    const res = await conFallaSimulada('INSERT', 'NEW.anio = 2026', () => corridaDiaria('2027-01-10T11:15:00Z'), 'metricas_fotos');
+    assert.equal(res.statusCode, 207);
+    assert.equal(res.body.success, false);
+    assert.deepEqual(res.body.data.errores, [{ tipo: 'foto-del-anio', error: 'Falla simulada' }]);
+    assert.equal(res.body.data.foto, null);
+    assert.equal(res.body.data.notasDigitales.motivo, 'Día no hábil');
+    assert.deepEqual(await ultimaCorrida(), {
+      fecha: '2027-01-10', resultado: 'Día no hábil · No se pudo sacar la foto del año: Falla simulada', con_errores: 1
+    });
+    assert.deepEqual(await foto.aniosConFoto(), []);
+
+    // La corrida del día siguiente la saca
+    const otra = await corridaDiaria('2027-01-11T11:15:00Z');
+    assert.deepEqual(otra.body.data.foto, { anio: 2026, sacada: true });
+    assert.ok(!otra.body.data.errores.some((e) => e.tipo === 'foto-del-anio'));
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+    assert.equal((await ultimaCorrida()).fecha, '2027-01-11');
+  });
+
+  it('anotar en la última corrida suma el texto a lo que ya dice, sin pasar de 1000 caracteres', async () => {
+    const { anotarEnLaUltimaCorrida } = await import('../services/notasDigitales.js');
+    // Sin resultado (NULL), el texto solo
+    await anotarEnLaUltimaCorrida('Primero');
+    assert.deepEqual(await ultimaCorrida(), { fecha: null, resultado: 'Primero', con_errores: 1 });
+    await anotarEnLaUltimaCorrida('Segundo');
+    assert.equal((await ultimaCorrida()).resultado, 'Primero · Segundo');
+    // Lo largo se corta en 1000
+    await anotarEnLaUltimaCorrida('x'.repeat(1200));
+    const { resultado } = await ultimaCorrida();
+    assert.equal(resultado.length, 1000);
+    assert.ok(resultado.startsWith('Primero · Segundo · x'));
+  });
+});

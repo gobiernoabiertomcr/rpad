@@ -82,8 +82,9 @@ export const limpiarBase = async () => {
 
 // Simula una falla de la base en un paso de la corrida: mientras corre fn, un trigger de la base de prueba
 // rechaza el INSERT o UPDATE de la tabla (notas_digitales; usuarios_licencias para el registro de la nota de
-// autorización; cambios_pendientes para el primer recordatorio) que cumpla la condición (texto fijo escrito en el test)
-const TABLAS_CON_FALLA = ['notas_digitales', 'usuarios_licencias', 'cambios_pendientes'];
+// autorización; cambios_pendientes para el primer recordatorio; metricas_fotos para la foto del año) que cumpla la
+// condición (texto fijo escrito en el test)
+const TABLAS_CON_FALLA = ['notas_digitales', 'usuarios_licencias', 'cambios_pendientes', 'metricas_fotos'];
 export const conFallaSimulada = async (evento, condicion, fn, tabla = 'notas_digitales') => {
   await asegurarBaseDePrueba();
   if (!['INSERT', 'UPDATE'].includes(evento)) throw new Error(`Evento inválido: ${evento}`);
