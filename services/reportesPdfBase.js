@@ -87,6 +87,12 @@ const suma = (valores) => valores.reduce((a, b) => a + b, 0);
 // Una fecha 'AAAA-MM-DD' como dd/mm/aaaa, cortada del texto (sin zona horaria); "—" si falta o no es una fecha
 export const fechaCorta = (iso) => (esFechaIso(iso) ? formatoCorto(iso) : '—');
 
+// Los sin fecha tienen frecuencia pero no próxima: no tienen tarjeta, una línea los aclara debajo de las tarjetas (en el Estado general
+// y en el Por área)
+export const textoSinFecha = (n) => (n === 1
+  ? '1 dataset todavía no tiene fecha de próxima actualización'
+  : `${n} datasets todavía no tienen fecha de próxima actualización`);
+
 // =====================================================
 // El documento y sus hojas
 // =====================================================

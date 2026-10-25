@@ -8,7 +8,7 @@ import { COLOR, IZQUIERDA, CONTENIDO, NORMAL, NEGRITA, renglon } from './notasDi
 import { formatoCorto } from './notasDigitalesCalendario.js';
 import { tasaDeActualizacion } from './fechasDatasetReglas.js';
 import {
-  nuevoReporte, agregarHoja, cerrarReporte, dibujarTitulo, dibujarPildora, dibujarTarjetas, prepararTabla, fechaCorta, ENTRE
+  nuevoReporte, agregarHoja, cerrarReporte, dibujarTitulo, dibujarPildora, dibujarTarjetas, prepararTabla, fechaCorta, textoSinFecha, ENTRE
 } from './reportesPdfBase.js';
 
 const TITULO = 'Estado general de los datasets';
@@ -18,12 +18,6 @@ const TEXTO_ESTADO = {
   actualizado: 'Actualizado', proximo: 'Próximo a vencer', atrasado: 'Atrasado', 'sin-respuesta': 'Sin respuesta',
   'sin-fecha': 'Sin fecha', eventual: 'Eventual'
 };
-
-// Los sin fecha tienen frecuencia pero no próxima: no tienen tarjeta, una línea los aclara debajo de las tarjetas (también en el
-// reporte por área)
-export const textoSinFecha = (n) => (n === 1
-  ? '1 dataset todavía no tiene fecha de próxima actualización'
-  : `${n} datasets todavía no tienen fecha de próxima actualización`);
 
 // Las columnas de la tabla: la parte del ancho útil de cada una (la frecuencia más larga, «Cuatrimestralmente», y «Próximo a vencer»
 // en su insignia entran en una línea)

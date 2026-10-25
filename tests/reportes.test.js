@@ -53,11 +53,15 @@ describe('reportes PDF', () => {
 // que en Argentina: UTC-12 (9 horas antes; hasta las 9 de la mañana de Argentina es ayer) o UTC+14 (17 horas después; desde las 7 ya
 // es mañana)
 describe('reportes PDF: el nombre del Estado general y del Por área', () => {
-  it('lleva la fecha de hoy en Argentina, con el formato de siempre (estado-general-dd-mm-aaaa.pdf)', async () => {
+  // Un servidor de prueba en una zona horaria en la que ahora es otro día que en Argentina
+  const servidorEnOtroDia = () => {
     const hoy = hoyArgentina();
     const fechaEn = (zona) => new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const zona = ['Etc/GMT+12', 'Etc/GMT-14'].find((z) => fechaEn(z) !== hoy);
-    const otro = await iniciarServidor({ env: { TZ: zona } });
+    return iniciarServidor({ env: { TZ: ['Etc/GMT+12', 'Etc/GMT-14'].find((z) => fechaEn(z) !== hoy) } });
+  };
+
+  it('lleva la fecha de hoy en Argentina, con el formato de siempre (estado-general-dd-mm-aaaa.pdf)', async () => {
+    const otro = await servidorEnOtroDia();
     try {
       const res = await crearCliente(otro.url).get('/reportes/estado-general', { token: usuarios.lector.token });
       esPdf(res);
@@ -68,11 +72,8 @@ describe('reportes PDF: el nombre del Estado general y del Por área', () => {
   });
 
   it('el del Por área también: Reporte-area-<id>-AAAA-MM-DD.pdf, con la fecha de hoy en Argentina', async () => {
-    const hoy = hoyArgentina();
-    const fechaEn = (zona) => new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const zona = ['Etc/GMT+12', 'Etc/GMT-14'].find((z) => fechaEn(z) !== hoy);
     const [area] = await query('SELECT area_id AS id FROM datasets WHERE activo = 1 LIMIT 1');
-    const otro = await iniciarServidor({ env: { TZ: zona } });
+    const otro = await servidorEnOtroDia();
     try {
       const res = await crearCliente(otro.url).get(`/reportes/por-area/${area.id}`, { token: usuarios.lector.token });
       esPdf(res);

@@ -45,7 +45,9 @@ const JUSTIFICACION = {
   ]
 };
 
-const CAMPOS_CONTACTO = [
+// Los datos de contacto de un área (columnas de la tabla areas) y su rótulo: los de la nota (6.4) y los del anexo (sin "Depende de",
+// que ya está en su ficha). También los de la portada del reporte Por área (services/reportesPorAreaPdf.js).
+export const CAMPOS_CONTACTO = [
   ['area_superior', 'Depende de'],
   ['email_principal', 'Email'],
   ['email_secundario', 'Email alternativo'],

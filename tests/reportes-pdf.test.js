@@ -697,10 +697,17 @@ describe('Métricas del año con el diseño del anexo', () => {
 
 const HOY_AREA = HOY_DE_LOS_CASOS;
 const GENERADO_AREA = { momento: '2026-10-20 15:22:07', por: 'Usuario Ejemplo' };
+// Un área con todos sus datos de contacto cargados (los de la tabla areas; inventados)
 const AREA = {
   id: 34, nombre: 'Secretaría de Economía, Finanzas y Control de Gestión', area_superior: 'Intendencia',
-  email_principal: 'economia@ejemplo.test', nombre_contacto: 'Persona de Contacto'
+  email_principal: 'economia@ejemplo.test', email_secundario: 'mesa.economia@ejemplo.test', telefono_area: '0297 400-0001',
+  celular_area: '0297 15 400-0002', nombre_contacto: 'Persona de Contacto', telefono_contacto: '0297 400-0003',
+  email_contacto: 'persona.contacto@ejemplo.test'
 };
+// Los datos de contacto de la portada, con los rótulos de la nota y del anexo, en su orden: [rótulo, columna]
+const CONTACTOS_DEL_AREA = [['DEPENDE DE', 'area_superior'], ['EMAIL', 'email_principal'], ['EMAIL ALTERNATIVO', 'email_secundario'],
+  ['TELÉFONO', 'telefono_area'], ['CELULAR', 'celular_area'], ['PERSONA DE CONTACTO', 'nombre_contacto'],
+  ['TELÉFONO DE CONTACTO', 'telefono_contacto'], ['EMAIL DE CONTACTO', 'email_contacto']];
 // Un dataset de la portada, de un caso real (tests/seguimiento-casos.js), con su estado (estadoDelDataset, como el controlador) y su
 // Seguimiento (el de la descarga: seguimientoDe con la cinta del PDF). `cambios` cambia campos del dataset antes de calcularlos.
 const delCaso = (id, cambios = {}) => {
@@ -784,7 +791,7 @@ describe('Por área: la portada y una hoja del Seguimiento por dataset activo', 
     // El rótulo, el área y sus contactos (los de la tabla areas)
     assert.ok(portada.includes('REPORTE POR ÁREA · AL 20/10/2026'), portada.join(' | '));
     assert.ok(texto.includes('Secretaría de Economía, Finanzas y Control de Gestión'));
-    for (const t of ['Intendencia', 'economia@ejemplo.test', 'Persona de Contacto']) assert.ok(portada.includes(t), `falta "${t}"`);
+    assert.ok(portada.includes('CONTACTOS DEL ÁREA') && portada.includes('Persona de Contacto'), portada.join(' | '));
     // Las cinco tarjetas: con los sin fecha (que se aclaran debajo), suman el total
     assert.equal(valorDeTarjeta(portada, 'Total Datasets'), '9');
     assert.equal(valorDeTarjeta(portada, 'Actualizados'), '2');
@@ -837,12 +844,49 @@ describe('Por área: la portada y una hoja del Seguimiento por dataset activo', 
     assert.ok(!portada.some(l => /todavía no tiene/.test(l)));
   });
 
+  it('los contactos del área: todos los datos de contacto de la nota y del anexo, con sus rótulos y en su orden', async () => {
+    const portada = lineasPorHoja(await renderArea([delCaso(9)]))[0];
+    const recuadro = portada.indexOf('CONTACTOS DEL ÁREA');
+    assert.ok(recuadro !== -1, portada.join(' | '));
+    // Cada rótulo con su valor debajo (el rótulo se dibuja antes que su valor), en el orden de la nota, antes de las tarjetas
+    const posiciones = CONTACTOS_DEL_AREA.map(([rotulo, campo]) => {
+      const i = portada.indexOf(rotulo);
+      assert.ok(i > recuadro, `falta "${rotulo}" en ${portada.join(' | ')}`);
+      assert.equal(portada[i + 1], AREA[campo], rotulo);
+      return i;
+    });
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+    assert.ok(posiciones.at(-1) < portada.indexOf('Total Datasets'));
+    // Los rótulos de antes ya no van: «Depende de» es el del área superior, y «Contacto», «Persona de contacto»
+    assert.ok(!portada.includes('ÁREA SUPERIOR') && !portada.includes('CONTACTO'), portada.join(' | '));
+  });
+
+  it('los contactos vacíos no van, como en el anexo (sin cargar, en blanco o solo espacios), y nada se pisa', async () => {
+    const area = { ...AREA, area_superior: null, email_secundario: '', celular_area: '   ', telefono_contacto: undefined };
+    const portada = lineasPorHoja(await renderArea([delCaso(9)], area))[0];
+    for (const rotulo of ['DEPENDE DE', 'EMAIL ALTERNATIVO', 'CELULAR', 'TELÉFONO DE CONTACTO']) {
+      assert.ok(!portada.includes(rotulo), `"${rotulo}" no tendría que ir: ${portada.join(' | ')}`);
+    }
+    for (const rotulo of ['EMAIL', 'TELÉFONO', 'PERSONA DE CONTACTO', 'EMAIL DE CONTACTO']) assert.ok(portada.includes(rotulo), rotulo);
+    assert.ok(!portada.some(l => /null|undefined/.test(l)), portada.join(' | '));
+    // Larguísimos, cada uno ocupa la fila entera en dos líneas y se corta con «…»; nada sale del recuadro ni se pisa
+    const largo = (texto) => `${texto} `.repeat(12).trim();
+    const larguisima = Object.fromEntries(CONTACTOS_DEL_AREA.map(([, campo]) => [campo, largo(`${campo}@una-direccion-larguisima.ejemplo.test`)]));
+    verificarDiagramacion(await diagramacion(() => renderArea([delCaso(9)], { ...AREA, ...larguisima })));
+    verificarDiagramacion(await diagramacion(() => renderArea([delCaso(9)], area)));
+  });
+
   it('un área sin datasets activos: la portada sola, con las tarjetas en 0; sin contactos cargados, no van', async () => {
-    const hojas = lineasPorHoja(await renderArea([], { id: 7, nombre: 'Área sin datasets' }));
+    const hojas = lineasPorHoja(await renderArea([], { id: 7, nombre: 'Área sin datasets', email_principal: '  ', nombre_contacto: null }));
     assert.equal(hojas.length, 1);
     assert.ok(hojas[0].includes('Reporte por área · Hoja 1 de 1'));
     assert.equal(valorDeTarjeta(hojas[0], 'Total Datasets'), '0');
     assert.ok(!hojas[0].some(l => /null|undefined/.test(l)), hojas[0].join(' | '));
+    // Sin ningún contacto cargado, el recuadro no va (ni su rótulo ni los de los datos)
+    assert.ok(!hojas[0].includes('CONTACTOS DEL ÁREA'), hojas[0].join(' | '));
+    for (const [rotulo] of CONTACTOS_DEL_AREA) assert.ok(!hojas[0].includes(rotulo), rotulo);
+    // Sin datasets, tampoco la cabeza de la lista
+    assert.ok(!hojas[0].includes('CONJUNTOS DE DATOS DEL ÁREA'), hojas[0].join(' | '));
   });
 
   it('a un dataset activo le falta su Seguimiento: tira error, no sale un PDF con hojas de menos', async () => {
