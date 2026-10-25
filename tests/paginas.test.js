@@ -7,25 +7,29 @@ import fs from 'fs';
 // main.js cambió con la carcasa nueva (spec 2026-10-18-rediseno-publico: el año del footer, la clase header--con-sesion y
 // aria-expanded en el botón del menú); auth.js y api.js suben con él. api.js cambió después (previewNotaAnexo recibe el tipo: el
 // anexo de la reiteración en Correos, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5). auth.js cambió después (el rol
-// Colaborador en el encabezado y puedeCargarNotasDgmit, spec 2026-10-24-notas-dgmit, 1): main.js y api.js suben con él
-const VERSION = '20261124';
+// Colaborador en el encabezado y puedeCargarNotasDgmit, spec 2026-10-24-notas-dgmit, 1): main.js y api.js suben con él. api.js cambió
+// después (salen getReporteHistorialUrl y getReporteCumplimientoUrl: Avisos del RPAD reemplaza al Historial y el Cumplimiento ya no
+// está, spec 2026-10-24-metricas-y-reportes, 5): auth.js y main.js suben con él
+const VERSION = '20261130';
 // usuarios.js cambió después (persona autorizada con licencia superpuesta en parte; con persona autorizada, cada aviso adelantado
 // sale también en su fecha; el editor que audita sin responsabilidad, spec 2026-10-20-editor-sin-responsabilidad; el rol
-// Colaborador, con su grupo y la ayuda de cada rol, spec 2026-10-24-notas-dgmit, 1): su versión es propia
-const VERSION_PANTALLAS = '20261124';
+// Colaborador, con su grupo y la ayuda de cada rol, spec 2026-10-24-notas-dgmit, 1; la ayuda del lector nombra «Métricas y
+// Reportes», spec 2026-10-24-metricas-y-reportes): su versión es propia
+const VERSION_PANTALLAS = '20261128';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): su versión es propia
 const VERSION_CORREOS = '20261116';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
-// 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos): su
-// versión es propia
-const VERSION_PERFIL = '20261119';
+// 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
+// rótulo «Origen de los datos», spec 2026-10-24-metricas-y-reportes): su versión es propia
+const VERSION_PERFIL = '20261127';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"; después, el ícono "Ver
 // seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset; "Requiere nota DGMIT" en el formulario, el filtro y la vista
-// previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion): su versión es propia
-const VERSION_ADMIN = '20261113';
+// previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; «Recibido el» obligatorio, el origen de los datos y el aviso de la
+// edición que no registra actualizaciones, spec 2026-10-24-metricas-y-reportes): su versión es propia
+const VERSION_ADMIN = '20261127';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';
@@ -34,13 +38,21 @@ const VERSION_PUBLICAS = '20261109';
 const VERSION_PORTADA = '20261110';
 // main.css (la carcasa nueva y las fuentes Bricolage Grotesque y Figtree): hasta el rediseño se cargaba sin ?v=
 const VERSION_CSS = '20261109';
-// gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales): su versión es propia
-const VERSION_GESTION = '20261105';
+// gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales; después, Gestión queda solo con Proyectos: la pestaña
+// Métricas se mudó a «Métricas y Reportes», spec 2026-10-24-metricas-y-reportes, 6): su versión es propia
+const VERSION_GESTION = '20261129';
 // seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset); cambió después ("Requiere nota DGMIT" en la
 // ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
 // de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, y después cargar, corregir y anular notas
-// DGMIT desde la página, spec 2026-10-24-notas-dgmit): su versión es propia
-const VERSION_SEGUIMIENTO = '20261126';
+// DGMIT desde la página, spec 2026-10-24-notas-dgmit; después, #cargar-nota abre el formulario con el dataset, el link de «Para
+// completar» de Métricas, spec 2026-10-24-metricas-y-reportes, 2.2): su versión es propia
+const VERSION_SEGUIMIENTO = '20261129';
+// reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
+// ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
+// del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
+// después, la revisión final (el año de Datos para completar, la franja de lo destildado armada en el servidor y el foco de «Volver a
+// todos»): su versión es propia
+const VERSION_REPORTES = '20261203';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -90,7 +102,8 @@ describe('páginas', () => {
 
   // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
   for (const [pagina, script, version] of [['datasets.html', 'datasets', VERSION_PUBLICAS], ['dataset.html', 'dataset-detail', VERSION_PUBLICAS],
-    ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA], ['seguimiento.html', 'seguimiento', VERSION_SEGUIMIENTO]]) {
+    ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA], ['seguimiento.html', 'seguimiento', VERSION_SEGUIMIENTO],
+    ['reportes.html', 'reportes', VERSION_REPORTES]]) {
     it(`${pagina}: ${script}.js con la versión ${version}, después de api.js`, () => {
       const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
       assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${version}`]);
@@ -101,6 +114,79 @@ describe('páginas', () => {
 
   it(`gestion.html: gestion.js con la versión ${VERSION_GESTION}`, () => {
     assert.ok(leer('gestion.html').includes(`js/gestion.js?v=${VERSION_GESTION}"`));
+  });
+
+  // La pestaña Métricas de Gestión se mudó a «Métricas y Reportes» (spec 2026-10-24-metricas-y-reportes, 6): Gestión queda con
+  // Proyectos, sin pestañas y sin Chart.js (Proyectos no lo usa)
+  it('gestion.html ya no tiene Chart.js ni #tab-metricas', () => {
+    const html = leer('gestion.html');
+    assert.doesNotMatch(html, /chart\.js|chart\.umd/i);
+    assert.doesNotMatch(html, /id="tab-metricas"|data-tab=|switchTab|kpi-grid|ranking-container|metricas-manuales|metricas-periodo/);
+    assert.match(html, /<div id="tab-proyectos">/);
+    const gestion = fs.readFileSync(new URL('js/gestion.js', DIRECTORIO), 'utf8');
+    assert.doesNotMatch(gestion, /new Chart|cargarMetricas|htmlDelRanking|textoPorcentaje|exportarCSV|switchTab|\/gestion\/metricas/);
+  });
+
+  // Gestión avisa adónde se mudaron las métricas (revisión final, B-8), arriba de Proyectos
+  it('gestion.html avisa que las métricas están en Herramientas → Métricas y Reportes', () => {
+    const html = leer('gestion.html');
+    const aviso = html.indexOf('<p class="aviso-mudanza">Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>');
+    assert.ok(aviso !== -1, 'falta el aviso');
+    assert.ok(aviso < html.indexOf('<div id="tab-proyectos">'), 'el aviso va arriba de Proyectos');
+  });
+
+  // Con Chart.js fuera de Gestión, ninguna página carga nada de un CDN: la CSP ya no permite ningún CDN de scripts ni de hojas
+  // (tests/publico.test.js). Si una página vuelve a cargar un script o una hoja de afuera, hay que sumarlo a la CSP de app.js.
+  // Se mira cada <script> y cada <link> entero, con los atributos en cualquier orden (las páginas escriben href antes que rel)
+  describe('nada de afuera del sitio, salvo las fuentes de Google', () => {
+    const FUENTES_DE_GOOGLE = 'https://fonts.googleapis.com/';
+    const atributo = (etiqueta, nombre) => new RegExp(`\\s${nombre}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(etiqueta)?.slice(1).find(v => v !== undefined) ?? null;
+    const esDeAfuera = (url) => /^(https?:)?\/\//i.test(url ?? '');
+    // Los href de las hojas de estilo (rel con la palabra stylesheet) y los src de los scripts, en el orden de la página
+    const hojasDe = (html) => [...html.matchAll(/<link\b[^>]*>/gi)].map(([etiqueta]) => etiqueta)
+      .filter(etiqueta => (atributo(etiqueta, 'rel') ?? '').toLowerCase().split(/\s+/).includes('stylesheet'))
+      .map(etiqueta => atributo(etiqueta, 'href'));
+    const scriptsDe = (html) => [...html.matchAll(/<script\b[^>]*>/gi)].map(([etiqueta]) => atributo(etiqueta, 'src')).filter(Boolean);
+    // Lo que una página carga de afuera y no está permitido
+    const deAfuera = (html) => [
+      ...scriptsDe(html).filter(esDeAfuera).map(src => `script ${src}`),
+      ...hojasDe(html).filter(href => esDeAfuera(href) && !href.startsWith(FUENTES_DE_GOOGLE)).map(href => `hoja ${href}`)
+    ];
+
+    for (const pagina of paginas) {
+      it(`${pagina}: no carga un script ni una hoja de estilos de afuera del sitio`, () => {
+        assert.deepEqual(deAfuera(leer(pagina)), []);
+      });
+    }
+
+    it('la excepción se usa de verdad: cada página carga su hoja de las fuentes de Google (con href antes que rel), y la guarda la ve', () => {
+      for (const pagina of paginas) {
+        const deGoogle = hojasDe(leer(pagina)).filter(href => href.startsWith(FUENTES_DE_GOOGLE));
+        assert.equal(deGoogle.length, 1, pagina);
+      }
+      // Y ve también las hojas del sitio (main.css), que no son de afuera
+      assert.ok(hojasDe(leer('index.html')).some(href => href.startsWith('css/main.css')));
+    });
+
+    it('una página con un script o una hoja de un CDN no pasa, con los atributos en cualquier orden', () => {
+      const casos = [
+        '<link href="https://cdn.jsdelivr.net/npm/x@1.0.0/x.css" rel="stylesheet">',
+        '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/x@1.0.0/x.css">',
+        "<link rel='stylesheet' href='//cdnjs.cloudflare.com/ajax/libs/x/1.0.0/x.css'>",
+        '<link\n  href="https://fonts.googleapis.com.ejemplo.test/x.css"\n  rel="stylesheet preload">',
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>',
+        '<script defer src="//cdnjs.cloudflare.com/ajax/libs/x/1.0.0/x.js"></script>'
+      ];
+      for (const etiqueta of casos) {
+        const pagina = `<!DOCTYPE html><html><head>${etiqueta}</head><body></body></html>`;
+        assert.equal(deAfuera(pagina).length, 1, etiqueta);
+      }
+      // Lo del sitio, las fuentes de Google y los <link> que no son hojas (preconnect, ícono) pasan
+      const permitido = '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        + '<link href="https://fonts.googleapis.com/css2?family=Figtree&display=swap" rel="stylesheet">'
+        + '<link rel="stylesheet" href="css/main.css?v=1"><link rel="icon" href="https://ejemplo.test/x.png"><script src="js/api.js?v=1"></script>';
+      assert.deepEqual(deAfuera(permitido), []);
+    });
   });
 
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {

@@ -4,8 +4,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { renderSeguimiento, renderAnexoDeSeguimiento, FILAS_PDF, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
-import { DocumentoNota } from '../services/notasDigitalesPdf.js';
-import { lineasPorHoja, contenidoPorHoja, textosPorHoja } from './pdf-lector.js';
+import { seguimientosDeLaNota } from '../services/notasDigitalesSeguimiento.js';
+import { primerDiaHabilDelMes } from '../services/notasDigitalesCalendario.js';
+import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, esDelTamano, todasDelTamano } from './pdf-lector.js';
+import { diagramacion, verificarDiagramacion, nombre } from './pdf-diagramacion.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 
 const MM = 72 / 25.4;
@@ -26,91 +28,15 @@ const TITULO_LARGO = 'Título larguísimo de un conjunto de datos de prueba '.re
 const AREA_LARGA = 'Dirección General de un área con un nombre larguísimo de prueba '.repeat(4).slice(0, 200);
 const largo = () => seguimiento(52, { titulo: TITULO_LARGO, area: AREA_LARGA, area_superior: AREA_LARGA });
 
-// Diagramación de la hoja, tomada de las llamadas a DocumentoNota mientras se dibuja (copiada de notas-anexo.test.js, con
-// `render`, una función async que dibuja, en lugar de los datos del anexo):
-// - textos: el rectángulo de cada texto, con la fuente, el tamaño y las opciones vigentes. El alto es el del ojo de
-//   la letra (de la línea de ascendentes a la de descendentes), sin el interlineado de la última línea. Cada uno lleva
-//   también el nombre de su fuente y su tamaño.
-// - bloques: los rectángulos redondeados (tarjeta del QR, nodos del circuito, línea del email al área).
-// - lineas: las líneas finas (rectángulos de hasta 1 punto de alto y 50 o más de ancho: encabezado, ficha, tabla, pie).
-// - acentos: filetes verticales del acento en el borde izquierdo (el Seguimiento no tiene).
-// Cada uno: { hoja, texto, x0, y0, x1, y1 }, con y desde el borde superior.
-const diagramacion = async (render) => {
-  const textos = [];
-  const bloques = [];
-  const lineas = [];
-  const acentos = [];
-  const hojas = [];
-  const indice = (hoja) => {
-    if (!hojas.includes(hoja)) hojas.push(hoja);
-    return hojas.indexOf(hoja);
-  };
-  const original = DocumentoNota.prototype.text;
-  // rect y roundedRect son de PDFKit (DocumentoNota no los redefine): se tapan en DocumentoNota y después se quitan
-  const { rect, roundedRect } = DocumentoNota.prototype;
-  DocumentoNota.prototype.roundedRect = function (x, y, ancho, alto, radio) {
-    bloques.push({ hoja: indice(this.page), texto: `bloque ${bloques.length}`, x0: x, y0: y, x1: x + ancho, y1: y + alto });
-    return roundedRect.call(this, x, y, ancho, alto, radio);
-  };
-  DocumentoNota.prototype.rect = function (x, y, ancho, alto) {
-    if (alto <= 1 && ancho >= 50) lineas.push({ hoja: indice(this.page), texto: `línea ${lineas.length}`, x0: x, y0: y, x1: x + ancho, y1: y + alto });
-    // Filete vertical del acento, en el borde izquierdo del recuadro destacado
-    if (ancho <= 5 && alto >= 20 && Math.abs(x - 15 * MM) < 0.1) acentos.push({ hoja: indice(this.page), texto: 'acento', x0: x, y0: y, x1: x + ancho, y1: y + alto });
-    return rect.call(this, x, y, ancho, alto);
-  };
-  DocumentoNota.prototype.text = function (texto, x, y, opciones = {}) {
-    const conInterlineado = this.currentLineHeight(true) + (opciones.lineGap ?? 0);
-    let lineas = 1;
-    let ancho = this.widthOfString(String(texto), opciones);
-    let x0 = x;
-    if (opciones.width) {
-      lineas = Math.round(this.heightOfString(String(texto), opciones) / conInterlineado);
-      // Con alto máximo, PDFKit escribe las líneas que entran (al menos una)
-      if (opciones.height != null) lineas = Math.min(lineas, Math.max(1, Math.floor(opciones.height / conInterlineado + 1e-6)));
-      if (lineas > 1) ancho = opciones.width;
-      else if (opciones.align === 'right') x0 = x + opciones.width - ancho;
-      else if (opciones.align === 'center') x0 = x + (opciones.width - ancho) / 2;
-    }
-    textos.push({
-      hoja: indice(this.page), texto: String(texto), fuente: this._font.name, tamano: this._fontSize, x0, y0: y, x1: x0 + ancho,
-      y1: y + (lineas - 1) * conInterlineado + this.currentLineHeight(false)
-    });
-    return original.call(this, texto, x, y, opciones);
-  };
-  try {
-    await render();
-  } finally {
-    DocumentoNota.prototype.text = original;
-    delete DocumentoNota.prototype.roundedRect;
-    delete DocumentoNota.prototype.rect;
-  }
-  return { textos, bloques, lineas, acentos };
-};
-
-const seCruzan = (a, b) => a.x0 < b.x1 - 0.1 && b.x0 < a.x1 - 0.1 && a.y0 < b.y1 - 0.1 && b.y0 < a.y1 - 0.1;
-const contiene = (a, b) => b.x0 >= a.x0 - 0.01 && b.x1 <= a.x1 + 0.01 && b.y0 >= a.y0 - 0.01 && b.y1 <= a.y1 + 0.01;
-const nombre = (c) => `"${c.texto.slice(0, 40)}" (${[c.x0, c.y0, c.x1, c.y1].map(v => v.toFixed(1)).join(', ')})`;
-
-// Textos, bloques y líneas dentro de los márgenes de 15 mm; ningún texto encima de otro ni bloques encimados; cada
-// texto, dentro de un bloque o fuera de él (ninguno cruza un borde); y ninguna línea fina cruza un texto o un bloque
-const verificarDiagramacion = ({ textos, bloques, lineas }) => {
-  for (const c of [...textos, ...bloques, ...lineas]) {
-    assert.ok(c.x0 >= 15 * MM - 0.01 && c.x1 <= 195 * MM + 0.01, `${nombre(c)} sale de los márgenes laterales`);
-    assert.ok(c.y0 >= 15 * MM - 0.01 && c.y1 <= 282 * MM + 0.01, `${nombre(c)} sale de los márgenes superior o inferior`);
-  }
-  const deLaMismaHoja = (lista, otra = lista) => lista.flatMap((a, i) => otra.slice(otra === lista ? i + 1 : 0)
-    .filter(b => a.hoja === b.hoja).map(b => [a, b]));
-  for (const [a, b] of deLaMismaHoja(textos)) assert.ok(!seCruzan(a, b), `se superponen ${nombre(a)} y ${nombre(b)}`);
-  for (const [a, b] of deLaMismaHoja(bloques)) assert.ok(!seCruzan(a, b), `se superponen ${nombre(a)} y ${nombre(b)}`);
-  for (const [bloque, texto] of deLaMismaHoja(bloques, textos)) {
-    assert.ok(contiene(bloque, texto) || !seCruzan(bloque, texto), `${nombre(texto)} cruza el borde de ${nombre(bloque)}`);
-  }
-  for (const [linea, otro] of deLaMismaHoja(lineas, [...textos, ...bloques])) assert.ok(!seCruzan(linea, otro), `${nombre(linea)} cruza ${nombre(otro)}`);
-};
-
 describe('renderSeguimiento: una sola hoja, sin nada encimado', () => {
   it('FILAS_PDF es 8', () => {
     assert.equal(FILAS_PDF, 8);
+  });
+
+  it('la hoja es A4 (595,28 × 841,89), no la hoja oficio de la nota', async () => {
+    const tamanos = tamanosPorHoja(await render(seguimiento(52)));
+    assert.equal(tamanos.length, 1);
+    assert.ok(esDelTamano(tamanos[0], HOJA_A4), JSON.stringify(tamanos));
   });
 
   // Los casos de la spec (52, 10, 81 y 66), el resto de los casos reales y el 52 con título y área larguísimos (Review Focus 3)
@@ -498,6 +424,12 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
     assert.ok(hojas[2].includes('CONJUNTO DE DATOS · GESTIÓN INTERNA'));
   });
 
+  it('todas las hojas son A4, no la hoja oficio de la nota', async () => {
+    const tamanos = tamanosPorHoja(await anexo(tres()));
+    assert.equal(tamanos.length, 3);
+    assert.ok(tamanos.every(t => esDelTamano(t, HOJA_A4)), JSON.stringify(tamanos));
+  });
+
   it('arriba, la fecha larga de la nota (hoy); abajo, la hora de generación y sin «por»', async () => {
     for (const lineas of lineasPorHoja(await anexo(tres()))) {
       assert.ok(lineas.includes('20 de octubre de 2026'), lineas.join(' | '));
@@ -535,6 +467,30 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
     });
     // El 52 tiene más de 8 movimientos: su tabla se llena
     assert.equal(fechasDeLaTabla(hojas[Object.keys(CASOS).indexOf('52')]).length, FILAS_PDF);
+  });
+
+  // La reiteración en su propio anexo (spec 2026-10-24-reiteracion-en-su-anexo): con la nota sumada a cada hoja (también la de la
+  // prueba, «PRUEBA» y sin año) la diagramación no cambia. La gestión de la nota no cambia nada del dibujo: va la externa en las tres
+  it('con la reiteración sumada (N° 2/27 y PRUEBA): 3 hojas A4, nada se pisa y la nota va una sola vez en cada hoja', async () => {
+    const ids = [52, 81, 38];
+    const datasets = ids.map(id => ({ id, vencimiento: CASOS[id].dataset.proxima, pedido: { texto: seguimiento(id).ficha.pedido } }));
+    const fuentes = new Map(ids.map(id => [id, { ...CASOS[id], catalogos: CATALOGOS }]));
+    for (const [numero, anio, numeroTexto] of [[2, 2027, '2/27'], ['PRUEBA', null, 'PRUEBA']]) {
+      const propia = {
+        numero, anio, gestion: 'externa', enviada: `${HOY} 08:15:03`, para: 'a@x', cc: null, creado_por: null,
+        firmante: 'Nombre Apellido Firmante'
+      };
+      const lista = await seguimientosDeLaNota(datasets, HOY, fuentes, propia);
+      const pdf = await anexo(lista, numeroTexto);
+      assert.ok(todasDelTamano(pdf, HOJA_A4), JSON.stringify(tamanosPorHoja(pdf)));
+      const hojas = lineasPorHoja(pdf);
+      assert.equal(hojas.length, 3, numeroTexto);
+      const titulo = `Nota Digital N° ${numeroTexto} a DGMIT`;
+      hojas.forEach((lineas, k) => {
+        assert.equal(lineas.filter(l => l.includes(titulo)).length, 1, `${numeroTexto}, hoja ${k + 1}: ${lineas.join(' | ')}`);
+      });
+      verificarDiagramacion(await diagramacion(() => anexo(lista, numeroTexto)));
+    }
   });
 
   it('un número de nota largo no se pisa con la izquierda del pie ni sale de los márgenes', async () => {
@@ -770,5 +726,243 @@ describe('renderSeguimiento: la descarga de una hoja no cambió', () => {
     assert.ok(lineas.includes('Seguimiento del dataset · Hoja 1 de 1'), lineas.join(' | '));
     assert.ok(lineas.includes('Generado el 20/10/2026 a las 11:30 por Usuario Uno'), lineas.join(' | '));
     assert.ok(!lineas.some(l => l.startsWith('Anexo de la Nota Digital')), lineas.join(' | '));
+  });
+});
+
+// La lista de «Avisos del ciclo abierto» que no entra (spec 2026-10-24-reiteracion-en-su-anexo, decisión del usuario: «recortar del
+// medio»): el texto va en dos renglones de letra fija y, si no entra, se usa la primera versión más corta del servidor
+// (`textosCortos`) que entra: se sacan números del medio y siempre quedan el primero y los últimos (la reiteración que acompaña al
+// anexo va última). El título («N avisos») sigue contando todo. Con una lista que entra, el texto de siempre.
+describe('renderSeguimiento: la lista de avisos que no entra se recorta del medio', () => {
+  // El 11 (vencido desde el 31/01/2024; en el ciclo abierto, 11 emails y la Nota Digital N° 2/26 del 13/10/2026) con las
+  // reiteraciones que le seguirían cada 20 días hábiles, sumadas a una copia de sus fuentes (CASOS no se modifica). Cada
+  // Seguimiento se calcula el día de la última
+  const REITERACIONES = [[9, 2026, '2026-11-02'], [13, 2026, '2026-11-30'], [17, 2026, '2026-12-28'], [2, 2027, '2027-01-25'],
+    [5, 2027, '2027-02-22'], [8, 2027, '2027-03-22'], [11, 2027, '2027-04-19'], [14, 2027, '2027-05-17']];
+  const reiteracion = ([numero, anio, fecha], i) => ({
+    ...CASOS[11].notas[0], id: 100 + i, numero, anio, tipo: 'reiteracion', fecha, enviada: `${fecha} 08:15:03`
+  });
+  const fuentesDel11 = (cuantas) => ({ ...CASOS[11], notas: [...CASOS[11].notas, ...REITERACIONES.slice(0, cuantas).map(reiteracion)], catalogos: CATALOGOS });
+  const hoyDe = (cuantas) => REITERACIONES[cuantas - 1][2];
+  const del11 = (cuantas) => seguimientoDe(fuentesDel11(cuantas), hoyDe(cuantas), OPCIONES_CINTA);
+  const dibujar = (s, hoy) => renderSeguimiento(s, { hoy, generado: GENERADO });
+  // El texto de los avisos tal como se escribió (el que recibió PDFKit, antes de partirlo en los dos renglones)
+  const textoDeLosAvisos = (textos, buscado = /emails y las Notas Digitales/) => {
+    const avisos = textos.filter(t => buscado.test(t.texto));
+    assert.equal(avisos.length, 1, textos.map(t => t.texto).join(' | '));
+    return avisos[0].texto;
+  };
+
+  it('9 notas: no termina en «…», lleva el primer número y el último, el título cuenta todo y nada se pisa', async () => {
+    const s = del11(8);
+    assert.equal(s.circuito.avisos.titulo, '20 avisos');
+    const hoja = await diagramacion(() => dibujar(s, hoyDe(8)));
+    const texto = textoDeLosAvisos(hoja.textos);
+    assert.ok(!texto.endsWith('…'), texto);
+    assert.ok(texto.startsWith('11 emails y las Notas Digitales N° 2/26, …, ') && texto.endsWith(' y 14/27'), texto);
+    // La primera versión que entra en los dos renglones, no la más corta: se sacan del medio solo los números que hace falta
+    assert.equal(texto, '11 emails y las Notas Digitales N° 2/26, …, 5/27, 8/27, 11/27 y 14/27');
+    assert.ok(s.circuito.avisos.textosCortos.includes(texto) && s.circuito.avisos.textosCortos.at(-1) !== texto, texto);
+    const lineas = lineasPorHoja(await dibujar(s, hoyDe(8)));
+    assert.equal(lineas.length, 1);
+    assert.ok(lineas[0].includes('20 avisos'), lineas[0].join(' | '));
+    verificarDiagramacion(hoja);
+  });
+
+  it('en el anexo, con la reiteración sumada (N° 14/27 y PRUEBA), la propia es el último número y nada se pisa', async () => {
+    const fecha = hoyDe(8);
+    const datasets = [{ id: 11, vencimiento: CASOS[11].dataset.proxima, pedido: { texto: del11(7).ficha.pedido } }];
+    const fuentes = new Map([[11, fuentesDel11(7)]]);
+    for (const [numero, anio, numeroTexto] of [[14, 2027, '14/27'], ['PRUEBA', null, 'PRUEBA']]) {
+      const propia = { numero, anio, gestion: 'externa', enviada: `${fecha} 08:15:03`, para: 'a@x', cc: null, creado_por: null, firmante: null };
+      const lista = await seguimientosDeLaNota(datasets, fecha, fuentes, propia);
+      const render = () => renderAnexoDeSeguimiento(lista, { hoy: fecha, generado: { momento: `${fecha} 08:15:03`, por: null }, numeroTexto });
+      const hoja = await diagramacion(render);
+      const texto = textoDeLosAvisos(hoja.textos);
+      assert.ok(!texto.endsWith('…'), texto);
+      assert.ok(texto.startsWith('11 emails y las Notas Digitales N° 2/26, …, ') && texto.endsWith(` y ${numeroTexto}`), texto);
+      assert.equal(lista[0].circuito.avisos.titulo, '20 avisos');
+      verificarDiagramacion(hoja);
+    }
+    assert.equal(fuentes.get(11).notas.length, 8, 'no modifica las fuentes recibidas');
+  });
+
+  it('con una lista que entra, el texto de siempre aunque haya versiones más cortas (4 y 5 notas)', async () => {
+    for (const cuantas of [3, 4]) {
+      const s = del11(cuantas);
+      assert.equal(s.circuito.avisos.textosCortos.length, cuantas - 2);
+      const hoja = await diagramacion(() => dibujar(s, hoyDe(cuantas)));
+      assert.equal(textoDeLosAvisos(hoja.textos), s.circuito.avisos.texto);
+    }
+  });
+
+  it('con 3 notas (sin versiones más cortas), el texto dibujado es el de siempre', async () => {
+    const s = del11(2);
+    assert.deepEqual(s.circuito.avisos.textosCortos, []);
+    const hoja = await diagramacion(() => dibujar(s, hoyDe(2)));
+    assert.equal(textoDeLosAvisos(hoja.textos), '11 emails y las Notas Digitales N° 2/26, 9/26 y 13/26');
+    assert.equal(s.circuito.avisos.texto, '11 emails y las Notas Digitales N° 2/26, 9/26 y 13/26');
+  });
+
+  it('si ni la versión más corta entra, va la última cortada al final con «…», como siempre', async () => {
+    const s = seguimiento(52);
+    const relleno = ' 1/26,'.repeat(40);
+    const avisos = { ...s.circuito.avisos, texto: `Primera${relleno}`, textosCortos: [`Segunda${relleno}`, `Tercera${relleno}`] };
+    const hoja = await diagramacion(() => render({ ...s, circuito: { ...s.circuito, avisos } }));
+    const texto = textoDeLosAvisos(hoja.textos, /^(Primera|Segunda|Tercera)/);
+    assert.ok(texto.startsWith('Tercera') && texto.endsWith('…'), texto);
+    verificarDiagramacion(hoja);
+  });
+});
+
+// Las etiquetas de las notas en la cinta («Nota 2/27»): si dos se pisan, van juntas en una («Nota 2/27 y Nota 6/27»). Al crecer, un
+// grupo puede alcanzar al anterior (contra el borde derecho crece hacia la izquierda): entonces también se juntan, hasta que ninguno
+// pise a otro. La reiteración que acompaña al anexo va siempre en el borde derecho (hoy), así que con reiteraciones mensuales pasaba
+// desde marzo de 2027 (el ejemplo de la revisión: el 52 con el aviso N° 3/26 del 10/10/2026 y la N° 21/27 del 03/05/2027).
+describe('renderSeguimiento: las etiquetas de las notas en la cinta no se pisan', () => {
+  // Las etiquetas de las notas son los textos de la letra de las etiquetas de la cinta (14 unidades) que empiezan con «Nota »
+  const LETRA_ETIQUETA = (14 * 180 * MM) / 1000;
+  const ETIQUETA_DE_NOTA = /^Nota \S+( y (Nota \S+|…))*$/;
+  const esEtiquetaDeNota = (t) => Math.abs(t.tamano - LETRA_ETIQUETA) < 0.01 && ETIQUETA_DE_NOTA.test(t.texto);
+  // Las de cada hoja del PDF como [texto, x] (x: donde empieza el texto, redondeada a 0,01)
+  const etiquetasDelPdf = (pdf) => textosPorHoja(pdf).map(textos => textos.filter(esEtiquetaDeNota).map(t => [t.texto, Number(t.x.toFixed(2))]));
+  // Entre dos etiquetas de la misma fila quedan al menos 2 puntos: el fondo blanco de cada una sobresale 1 punto y no tapa letras
+  const sinPisarse = (etiquetas, contexto) => {
+    for (const [i, a] of etiquetas.entries()) {
+      for (const b of etiquetas.slice(i + 1)) {
+        if (a.hoja !== b.hoja || Math.abs(a.y0 - b.y0) > 0.5) continue;
+        assert.ok(a.x1 + 2 <= b.x0 + 0.01 || b.x1 + 2 <= a.x0 + 0.01, `${contexto}: se pisan ${nombre(a)} y ${nombre(b)}`);
+      }
+    }
+  };
+
+  // El aviso N° 3/26 (el día de octubre de 2026 que se pruebe) y las reiteraciones del primer día hábil de cada mes, sumados a una
+  // copia de las fuentes del dataset (CASOS no se modifica). La última de la lista es la propia: la que acompaña al anexo
+  const MENSUALES = [['2026-11', 9, 2026], ['2026-12', 15, 2026], ['2027-01', 2, 2027], ['2027-02', 6, 2027], ['2027-03', 11, 2027],
+    ['2027-04', 16, 2027], ['2027-05', 21, 2027]];
+  const PRUEBA = ['PRUEBA', null, 'PRUEBA'];
+  const XX = ['XX', null, 'XX'];
+  const nota = (id, k, numero, anio, tipo, fecha) => ({ ...CASOS[id].notas[0], id: 900 + k, numero, anio, tipo, fecha, enviada: `${fecha} 08:15:03` });
+  // El anexo de la reiteración del mes `cual` de MENSUALES (1: noviembre de 2026; 7: mayo de 2027) de un solo dataset. `numeroDado`:
+  // [numero, anio, numeroTexto] de la propia (PRUEBA o XX); sin él, el de la lista
+  const anexoDelMes = async (id, aviso, cual, numeroDado = null, mensuales = MENSUALES) => {
+    const anteriores = mensuales.slice(0, cual - 1).map(([mes, numero, anio], k) => nota(id, k + 1, numero, anio, 'reiteracion', primerDiaHabilDelMes(mes)));
+    const [mes, numeroReal, anioReal] = mensuales[cual - 1];
+    const fecha = primerDiaHabilDelMes(mes);
+    const [numero, anio, numeroTexto] = numeroDado ?? [numeroReal, anioReal, `${numeroReal}/${String(anioReal).slice(-2)}`];
+    const fuentes = new Map([[id, { ...CASOS[id], notas: [nota(id, 0, 3, 2026, 'aviso', aviso), ...anteriores], catalogos: CATALOGOS }]]);
+    const datasets = [{ id, vencimiento: CASOS[id].dataset.proxima, pedido: { texto: 'Pedido de prueba' } }];
+    const propia = { numero, anio, gestion: 'externa', enviada: `${fecha} 08:15:03`, para: 'a@x', cc: '', creado_por: null, firmante: null };
+    const lista = await seguimientosDeLaNota(datasets, fecha, fuentes, propia);
+    const dibujar = () => renderAnexoDeSeguimiento(lista, { hoy: fecha, generado: { momento: `${fecha} 08:15:03`, por: null }, numeroTexto });
+    return { numeroTexto, dibujar };
+  };
+  // Ninguna etiqueta pisa a otra, la de la propia está (sola o en un grupo: «… y Nota 21/27») y la hoja pasa la diagramación
+  const verificarEtiquetas = async ({ numeroTexto, dibujar }, contexto) => {
+    const hoja = await diagramacion(dibujar);
+    const etiquetas = hoja.textos.filter(esEtiquetaDeNota);
+    sinPisarse(etiquetas, contexto);
+    assert.ok(etiquetas.some(e => e.texto.split(' y ').includes(`Nota ${numeroTexto}`)), `${contexto}: ${etiquetas.map(e => e.texto).join(' | ')}`);
+    verificarDiagramacion(hoja);
+    return etiquetas;
+  };
+
+  it('hasta la N° 21/27 del 03/05/2027 (el 52 y el 11, varios días del aviso, el número real, PRUEBA y XX): nada se pisa', async () => {
+    for (const id of [52, 11]) {
+      for (const aviso of ['2026-10-01', '2026-10-05', '2026-10-10', '2026-10-13', '2026-10-20', '2026-10-27']) {
+        for (const numeroDado of [null, PRUEBA, XX]) {
+          const anexo = await anexoDelMes(id, aviso, 7, numeroDado);
+          await verificarEtiquetas(anexo, `${id}, aviso del ${aviso}, N° ${anexo.numeroTexto}`);
+        }
+      }
+    }
+  });
+
+  it('los meses anteriores (el 52 con el aviso del 10/10/2026, de diciembre a abril): nada se pisa', async () => {
+    for (let cual = 2; cual <= 6; cual++) {
+      for (const numeroDado of [null, PRUEBA, XX]) {
+        const anexo = await anexoDelMes(52, '2026-10-10', cual, numeroDado);
+        await verificarEtiquetas(anexo, `mes ${cual}, N° ${anexo.numeroTexto}`);
+      }
+    }
+  });
+
+  // Un año de reiteraciones mensuales, hasta la N° 56/27 de diciembre de 2027: todas las etiquetas terminan en un solo grupo que, con
+  // la etiqueta más ancha de la prueba, no entra en la hoja: saca etiquetas del medio («Nota 2/27 y … y Nota 11/27 y … y Nota
+  // PRUEBA») y no sale de los márgenes
+  const UN_ANIO = [...MENSUALES, ['2027-06', 26, 2027], ['2027-07', 31, 2027], ['2027-08', 36, 2027], ['2027-09', 41, 2027],
+    ['2027-10', 46, 2027], ['2027-11', 51, 2027], ['2027-12', 56, 2027]];
+  it('un grupo más ancho que la hoja saca etiquetas del medio: quedan la primera y las últimas, dentro de los márgenes', async () => {
+    for (const id of [52, 11]) {
+      for (const cual of [9, 11, 12, 14]) {
+        for (const numeroDado of [null, PRUEBA, XX]) {
+          const anexo = await anexoDelMes(id, '2026-10-10', cual, numeroDado, UN_ANIO);
+          await verificarEtiquetas(anexo, `${id}, mes ${cual}, N° ${anexo.numeroTexto}`);
+        }
+      }
+    }
+    // Diciembre de 2027: la ventana empieza en enero, con la N° 2/27; la propia es la última. Con la N° 56/27 todavía entra entera;
+    // con PRUEBA se saca la N° 6/27, la segunda
+    const [entera] = await verificarEtiquetas(await anexoDelMes(52, '2026-10-10', 14, null, UN_ANIO), 'diciembre de 2027, N° 56/27');
+    assert.equal(entera.texto, UN_ANIO.slice(2).map(([, numero]) => `Nota ${numero}/27`).join(' y '));
+    const etiquetas = await verificarEtiquetas(await anexoDelMes(52, '2026-10-10', 14, PRUEBA, UN_ANIO), 'diciembre de 2027, PRUEBA');
+    assert.equal(etiquetas.length, 1, etiquetas.map(e => e.texto).join(' | '));
+    assert.equal(etiquetas[0].texto, ['Nota 2/27', '…', ...UN_ANIO.slice(4, -1).map(([, numero]) => `Nota ${numero}/27`), 'Nota PRUEBA'].join(' y '));
+  });
+
+  it('el ejemplo de la revisión: «Nota 2/27» ya no pisa al grupo de la derecha y van juntas', async () => {
+    const etiquetas = await verificarEtiquetas(await anexoDelMes(52, '2026-10-10', 7), 'el ejemplo de la revisión');
+    const conLaPropia = etiquetas.find(e => e.texto.endsWith(' y Nota 21/27'));
+    assert.ok(conLaPropia?.texto.split(' y ').includes('Nota 2/27'), etiquetas.map(e => e.texto).join(' | '));
+  });
+
+  // Sin etiquetas que se pisen, el dibujo es el de siempre: los textos y las x de antes del arreglo, en los casos reales el 20/10/2026
+  // (la descarga y el anexo con la reiteración sumada) y en las reiteraciones mensuales que no se pisaban (el 52 y el 11 dan lo mismo)
+  it('sin etiquetas que se pisen, los textos y las posiciones de siempre', async () => {
+    const una = (texto, x) => [[texto, x]];
+    const CON_LA_2_26 = [1, 9, 10, 11, 33, 52, 61];
+    const descarga = { 25: [], 38: [], 42: [], 58: [], 66: [], 26: una('Nota 1/26', 497.26), 81: una('Nota 3/26', 506.26) };
+    for (const id of CON_LA_2_26) descarga[id] = una('Nota 2/26', 497.26);
+    for (const id of Object.keys(CASOS)) {
+      assert.deepEqual(etiquetasDelPdf(await render(seguimiento(id)))[0], descarga[id], `descarga del ${id}`);
+    }
+
+    const ids = Object.keys(CASOS).map(Number);
+    const datasets = ids.map(id => ({ id, vencimiento: CASOS[id].dataset.proxima, pedido: { texto: 'Pedido de prueba' } }));
+    const fuentes = new Map(ids.map(id => [id, { ...CASOS[id], catalogos: CATALOGOS }]));
+    // x de la etiqueta junto a la 2/26 (o la 1/26), de la sola y de la del 81 (que va antes de la 3/26: es del mismo día, más temprano)
+    const ANEXO = [[2, 2027, '2/27', 480.29, 506.26, 480.29], [...PRUEBA, 464.39, 498.31, 464.39], [...XX, 484.1, 508.45, 484.67]];
+    for (const [numero, anio, numeroTexto, junta, sola, del81] of ANEXO) {
+      const propia = { numero, anio, gestion: 'externa', enviada: `${HOY} 08:15:03`, para: 'a@x', cc: '', creado_por: null, firmante: null };
+      const lista = await seguimientosDeLaNota(datasets, HOY, fuentes, propia);
+      const hojas = etiquetasDelPdf(await renderAnexoDeSeguimiento(lista, { hoy: HOY, generado: GENERADO, numeroTexto }));
+      lista.forEach((s, k) => {
+        const id = s.ficha.id;
+        const esperada = CON_LA_2_26.includes(id) ? una(`Nota 2/26 y Nota ${numeroTexto}`, junta)
+          : id === 26 ? una(`Nota 1/26 y Nota ${numeroTexto}`, junta)
+            : id === 81 ? una(`Nota ${numeroTexto} y Nota 3/26`, del81)
+              : una(`Nota ${numeroTexto}`, sola);
+        assert.deepEqual(hojas[k], esperada, `anexo N° ${numeroTexto}, hoja del ${id}`);
+      });
+    }
+
+    const GRUPO = 'Nota 3/26 y Nota 9/26 y Nota 15/26';
+    const MENSUALES_SIN_PISARSE = [
+      [1, null, una('Nota 3/26 y Nota 9/26', 449.16)],
+      [1, XX, una('Nota 3/26 y Nota XX', 451.34)],
+      [2, null, una(GRUPO, 405.64)],
+      [3, null, [[GRUPO, 364.9], ['Nota 2/27', 485.43]]],
+      [3, XX, [[GRUPO, 364.9], ['Nota XX', 487.62]]],
+      [3, PRUEBA, una(`${GRUPO} y Nota PRUEBA`, 359.44)],
+      [4, null, [[GRUPO, 328.11], ['Nota 2/27', 448.64], ['Nota 6/27', 485.43]]],
+      [4, XX, [[GRUPO, 328.11], ['Nota 2/27', 448.64], ['Nota XX', 487.62]]],
+      [5, XX, [[GRUPO, 287.38], ['Nota 2/27', 407.91], ['Nota 6/27', 444.7], ['Nota XX', 483.68]]]
+    ];
+    for (const id of [52, 11]) {
+      for (const [cual, numeroDado, esperadas] of MENSUALES_SIN_PISARSE) {
+        const { numeroTexto, dibujar } = await anexoDelMes(id, '2026-10-10', cual, numeroDado);
+        assert.deepEqual(etiquetasDelPdf(await dibujar())[0], esperadas, `${id}, mes ${cual}, N° ${numeroTexto}`);
+      }
+    }
   });
 });

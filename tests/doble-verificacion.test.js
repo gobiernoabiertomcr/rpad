@@ -157,7 +157,8 @@ describe('baja y registro de actualización', () => {
   it('registrar una actualización y aprobarla mueve las fechas y escribe el historial', async () => {
     const id = await crearDatasetAprobado('actualización', { proxima_actualizacion: '2026-03-31' });
     const res = await api.post(`/datasets/${id}/actualizar`,
-      { datos_al: '2026-02-28', cargado_el: '2026-03-15', proxima_actualizacion: '2026-05-31' }, { token: usuarios.adminA.token });
+      { datos_al: '2026-02-28', cargado_el: '2026-03-15', recibido_el: '2026-03-14', proxima_actualizacion: '2026-05-31' },
+      { token: usuarios.adminA.token });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const cambioId = res.body.data.cambio_pendiente_id;
     assert.equal((await aprobar(cambioId, usuarios.adminB)).status, 200);

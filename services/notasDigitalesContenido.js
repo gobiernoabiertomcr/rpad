@@ -45,7 +45,9 @@ const JUSTIFICACION = {
   ]
 };
 
-const CAMPOS_CONTACTO = [
+// Los datos de contacto de un área (columnas de la tabla areas) y su rótulo: los de la nota (6.4) y los del anexo (sin "Depende de",
+// que ya está en su ficha). También los de la portada del reporte Por área (services/reportesPorAreaPdf.js).
+export const CAMPOS_CONTACTO = [
   ['area_superior', 'Depende de'],
   ['email_principal', 'Email'],
   ['email_secundario', 'Email alternativo'],
@@ -221,7 +223,7 @@ const COLUMNA_SITUACION_EXTERNA = 5;
 // Proporción del ancho de cada columna de la tabla externa de 7 en el PDF. Van en la sección porque la tabla interna también
 // tiene 7 columnas (y el PDF elige las de siempre por cantidad de columnas). Si alguna fila lleva la segunda parte de
 // "Informado en" (el antecedente de los emails anteriores, en letra más chica), esa columna se lleva más ancho, como en la
-// interna: probadas con la reiteración real del 02/11/2026 (10 datasets: 7 filas en la primera hoja, ningún título partido)
+// interna: probadas con la reiteración real del 02/11/2026 (10 datasets: 8 filas en la primera hoja oficio, ningún título partido)
 const PROPORCIONES_EXTERNA = { conSegunda: [18, 14, 10, 10, 13, 10, 25], sinSegunda: [24, 14, 10, 10, 15, 12, 15] };
 
 // Varios vencimientos en un aviso (spec 18): un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, un

@@ -104,6 +104,14 @@ describe('formatos', () => {
   });
 });
 
+// La ventana del aviso vive acá, una sola vez (Ruling 30): la reexportan las Notas Digitales y la usan Métricas y la Agenda de pedidos
+describe('VENTANA_DIAS', () => {
+  it('40 días corridos en gestión externa y 60 en interna, congelada', () => {
+    assert.deepEqual(cal.VENTANA_DIAS, { interna: 60, externa: 40 });
+    assert.ok(Object.isFrozen(cal.VENTANA_DIAS));
+  });
+});
+
 describe('rangoDeAviso (spec 2026-10-15-dias-habiles-licencias-auditoria, 4.2)', () => {
   it('un día hábil seguido de otro hábil avisa solo su día + 40', () => {
     // miércoles 14/10/2026

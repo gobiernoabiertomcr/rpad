@@ -241,6 +241,37 @@ export const tasaDeActualizacion = ({ alDia, total, eventuales }) => {
   return conVencimiento > 0 ? Math.round((alDia / conVencimiento) * 100) : null;
 };
 
+/**
+ * La tasa de cumplimiento y el ranking de áreas (Ruling 23 de la spec 2026-10-17-fechas-datasets): una sola regla para Gestión
+ * (/gestion/metricas) y para Métricas (areasYTemas, spec 2026-10-24-metricas-y-reportes, 2.2). `filas`: [{ area, estado }], un
+ * dataset por fila con su estado de estadoDelDataset (también 'eventual' y 'sin-fecha'). Al día son los actualizados y los
+ * próximos; la tasa es tasaDeActualizacion, de todos y de cada área. Una fila sin área cuenta en la tasa y no en el ranking. Un área
+ * con solo eventuales no tiene nada que medir: porcentaje null, al final. El ranking va de mayor a menor porcentaje y, en un empate,
+ * por nombre: [{ area, total_datasets (también los eventuales), al_dia, porcentaje }]. Lo que no es una fila no cuenta; nunca tira.
+ */
+export const cumplimientoPorArea = (filas) => {
+  const cuenta = () => ({ total: 0, alDia: 0, eventuales: 0 });
+  const general = cuenta();
+  const porArea = new Map();
+  for (const fila of Array.isArray(filas) ? filas : []) {
+    if (!fila || typeof fila !== 'object') continue;
+    const cuentas = [general];
+    if (fila.area !== null && fila.area !== undefined) {
+      if (!porArea.has(fila.area)) porArea.set(fila.area, cuenta());
+      cuentas.push(porArea.get(fila.area));
+    }
+    for (const c of cuentas) {
+      c.total++;
+      if (fila.estado === 'actualizado' || fila.estado === 'proximo') c.alDia++;
+      if (fila.estado === 'eventual') c.eventuales++;
+    }
+  }
+  const ranking = [...porArea.entries()]
+    .map(([area, c]) => ({ area, total_datasets: c.total, al_dia: c.alDia, porcentaje: tasaDeActualizacion(c) }))
+    .sort((a, b) => (b.porcentaje ?? -1) - (a.porcentaje ?? -1) || String(a.area).localeCompare(String(b.area), 'es'));
+  return { tasa: tasaDeActualizacion(general), ranking };
+};
+
 // La fecha más adelantada que puede tener "Datos al": el fin del mes actual. En ejercicio, el 31/12 del año siguiente,
 // porque el presupuesto de un año se aprueba antes de que empiece. null si hoy no es una fecha válida
 export const topeDatosAl = (tipo, hoy) => {

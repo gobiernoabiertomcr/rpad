@@ -9,7 +9,7 @@ const TEXTO_ROL = { superadmin: 'Superadmin', admin: 'Admin', editor: 'Editor', 
 // La línea debajo del selector de rol, una por rol que se puede elegir; la cuenta del superadmin no lleva (spec
 // 2026-10-24-notas-dgmit, 1)
 const AYUDA_DEL_ROL = {
-  lector: 'Ve los datos públicos y usa las Herramientas (Reportes, Notas, Gestión y Seguimiento). No modifica nada.',
+  lector: 'Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Notas, Gestión y Seguimiento). No modifica nada.',
   colaborador: 'Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula las que cargó). '
     + 'No modifica datasets ni audita cambios.',
   editor: 'Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y colaboradores.',

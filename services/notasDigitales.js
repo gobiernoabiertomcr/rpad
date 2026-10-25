@@ -10,7 +10,7 @@ import {
 } from './notasDigitalesContenido.js';
 import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
-import { seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
+import { fuentesDeLaNota, seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
 import {
   hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
   periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta, diasEntre
@@ -116,10 +116,29 @@ const opcionesPdf = (config, firma) => ({
 // La firma del titular solo (la nota de autorización la firma él, aunque ya esté de licencia)
 const soloTitular = (firma) => ({ ...firma, presentante: null, presentanteId: null, leyenda: null });
 
+// Los nombres de quien genera la reiteración (usuarioId; null en el envío automático) y de quien la firma (el firmanteId de la firma;
+// null con la firma de Correos), como los leerá fuentesDe después: usuarios.nombre_completo, o null. Solo consulta los ids que hay.
+const nombresDeLaReiteracion = async ({ usuarioId, firmanteId }) => {
+  const ids = [...new Set([usuarioId, firmanteId].filter(id => id != null).map(Number))];
+  if (ids.length === 0) return { creado_por: null, firmante: null };
+  const [filas] = await pool.query('SELECT id, nombre_completo FROM usuarios WHERE id IN (?)', [ids]);
+  const nombre = (id) => (id == null ? null : filas.find(f => Number(f.id) === Number(id))?.nombre_completo ?? null);
+  return { creado_por: nombre(usuarioId), firmante: nombre(firmanteId) };
+};
+
+// La reiteración que acompaña a su anexo (notaPropiaDe, notasDigitalesSeguimiento.js; spec 2026-10-24-reiteracion-en-su-anexo):
+// enviada el día de la nota a la hora de la generación (momento: 'AAAA-MM-DD HH:MM:SS'), con sus destinatarios como se guardan
+// (para y cc separados por coma; sin cc, la cadena vacía, como la lee fuentesDe) y los nombres de nombresDeLaReiteracion. numero: el
+// de la nota, 'PRUEBA' o 'XX' (con anio null).
+const reiteracionPropia = ({ numero, anio, gestion, fecha, momento, para, cc, nombres }) => ({
+  numero, anio, gestion, enviada: `${fecha} ${momento.slice(11)}`, para: para.join(', '), cc: cc.join(', '), ...nombres
+});
+
 /**
  * Asigna el número, renderiza HTML, texto, PDF y (en los avisos y las reiteraciones) el anexo y deja la nota registrada como
  * pendiente. El anexo de la reiteración es el Seguimiento de cada dataset (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2):
- * sus fuentes son las de preparado.fuentesPorId (las de ejemplo) o, sin ellas, las de la base.
+ * sus fuentes son las de preparado.fuentesPorId (las de ejemplo) o, sin ellas, las de la base, y cada hoja suma la propia
+ * reiteración, enviada, con su número (spec 2026-10-24-reiteracion-en-su-anexo).
  * firma: la de firmaParaFecha (sin ella, la que corresponde a la fecha). rangoVencimientos: asunto de un aviso anticipado.
  * autorizacion: { nombre, cargo, contratado, email, desde, hasta } de la persona autorizada: en un aviso suma el párrafo
  * de autorización; con tipo 'autorizacion' es la nota de autorización (sin gestión ni datasets), que firma solo el titular.
@@ -140,11 +159,13 @@ export const generarNota = async ({
     ? { datasets: [], areas: [], fichas: [] }
     : preparado ?? await prepararContenido({ tipo, gestion, datasets, fecha });
   const fichas = tipo === 'aviso' ? validarFichas(contenido) : null;
-  // El Seguimiento de cada dataset de la reiteración se lee antes de abrir la transacción: la corrida ya tiene conexiones tomadas
-  // (el bloqueo) y fuentesDe hace sus consultas en paralelo. Si falla (o le falta un dataset), la reiteración no se genera.
-  const seguimientos = tipo === 'reiteracion'
-    ? await seguimientosDeLaNota(contenido.datasets, fecha, contenido.fuentesPorId ?? null)
-    : null;
+  // Las fuentes del Seguimiento de cada dataset de la reiteración y los nombres de quien la genera y quien la firma se leen antes de
+  // abrir la transacción: la corrida ya tiene conexiones tomadas (el bloqueo) y fuentesDe hace sus consultas en paralelo. Si falla
+  // (o le falta un dataset), la reiteración no se genera. Los Seguimientos se calculan adentro, ya con el número: cada hoja suma la
+  // propia reiteración (spec 2026-10-24-reiteracion-en-su-anexo).
+  const esReiteracion = tipo === 'reiteracion';
+  const fuentes = esReiteracion ? await fuentesDeLaNota(contenido.datasets, contenido.fuentesPorId ?? null) : null;
+  const nombres = esReiteracion ? await nombresDeLaReiteracion({ usuarioId, firmanteId: firmaNota.firmanteId }) : null;
   const { para, cc, cco } = destinatarios(config, gestion, esPrueba, autorizacion?.email ?? null, tipo);
   const conexion = await pool.getConnection();
   try {
@@ -170,14 +191,16 @@ export const generarNota = async ({
     }
     const pdf = await renderPdf(nota, opcionesPdf(config, firmaNota));
     // El anexo se renderiza antes del INSERT: si falla, no queda una nota numerada sin su anexo. El de la reiteración, ya con el
-    // número de la nota en el pie y la hora de la generación
+    // número de la nota en el pie, la hora de la generación y, en cada hoja, la propia reiteración (en la prueba, «PRUEBA»)
     let anexoPdf = null;
     if (fichas) {
       anexoPdf = await renderAnexo(construirAnexo({ numero, anio, esPrueba, fecha, fichas }));
-    } else if (seguimientos) {
-      anexoPdf = await renderAnexoDeReiteracion({
-        seguimientos, fecha, numeroTexto: textoNumero({ numero, anio, esPrueba }), momento: ahoraArgentina()
-      });
+    } else if (fuentes) {
+      const momento = ahoraArgentina();
+      const seguimientos = await seguimientosDeLaNota(contenido.datasets, fecha, fuentes, reiteracionPropia({
+        numero: esPrueba ? 'PRUEBA' : numero, anio, gestion, fecha, momento, para, cc, nombres
+      }));
+      anexoPdf = await renderAnexoDeReiteracion({ seguimientos, fecha, numeroTexto: textoNumero({ numero, anio, esPrueba }), momento });
     }
     const [resultado] = await conexion.query(
       `INSERT INTO notas_digitales
@@ -342,6 +365,14 @@ const registrarInicio = (hoy) => registrarCorrida(
 const registrarFin = (resumen) => registrarCorrida(
   'ultima_corrida_fin = ?, ultima_corrida_resultado = ?, ultima_corrida_con_errores = ?',
   [ahoraArgentina(), textoResultado(resumen), resumen.errores.length ? 1 : 0]
+);
+
+// Suma un error de otro paso de la corrida de las 8:15, que va después de las Notas Digitales (la foto del año), a la última
+// corrida que muestra Correos > Estado: el texto va después de lo que ya dice, separado por « · », el total no pasa de
+// LARGO_RESULTADO y la corrida queda con errores. Como el resto del registro, si el UPDATE falla lo informa en el log y no tira.
+export const anotarEnLaUltimaCorrida = (texto) => registrarCorrida(
+  `ultima_corrida_resultado = LEFT(CONCAT_WS(' · ', ultima_corrida_resultado, ?), ${LARGO_RESULTADO}), ultima_corrida_con_errores = 1`,
+  [String(texto)]
 );
 
 // Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2); contratado: personal
@@ -866,14 +897,22 @@ const TIPOS_CON_ANEXO = ['aviso', 'reiteracion'];
 
 // Anexo de la vista previa (N° XX), del mismo día y la misma selección que la nota: no se guarda ni se envía. tipo: 'aviso' (el de
 // siempre) o 'reiteracion' (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): una hoja del Seguimiento por dataset, con las
-// fuentes de la base o, con datos de ejemplo, las de ejemplo.
+// fuentes de la base o, con datos de ejemplo, las de ejemplo. Cada hoja suma la reiteración de la vista previa, «XX», con los
+// destinatarios de la gestión y quien la firmaría (spec 2026-10-24-reiteracion-en-su-anexo); si la real de ese día ya salió, la
+// reemplaza: nunca van las dos.
 export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina() }) => {
   if (!TIPOS_CON_ANEXO.includes(tipo)) throw new ErrorDeUso(`La nota de tipo ${tipo} no lleva anexo`);
-  const { fecha, contexto } = await diaDeVistaPrevia(await obtenerConfig(), hoy);
+  const config = await obtenerConfig();
+  const { fecha, contexto, firma } = await diaDeVistaPrevia(config, hoy);
   const contenido = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   if (tipo === 'reiteracion') {
-    const seguimientos = await seguimientosDeLaNota(contenido.datasets, fecha, contenido.fuentesPorId ?? null);
-    return renderAnexoDeReiteracion({ seguimientos, fecha, numeroTexto: textoNumero({ numero: null, anio: null }), momento: ahoraArgentina() });
+    const nombres = await nombresDeLaReiteracion({ usuarioId: null, firmanteId: firma.firmanteId });
+    const { para, cc } = destinatarios(config, gestion, false, null, 'reiteracion');
+    const momento = ahoraArgentina();
+    const seguimientos = await seguimientosDeLaNota(contenido.datasets, fecha, contenido.fuentesPorId ?? null, reiteracionPropia({
+      numero: 'XX', anio: null, gestion, fecha, momento, para, cc, nombres
+    }));
+    return renderAnexoDeReiteracion({ seguimientos, fecha, numeroTexto: textoNumero({ numero: null, anio: null }), momento });
   }
   return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas: contenido.fichas }));
 };

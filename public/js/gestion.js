@@ -1,11 +1,7 @@
 /**
- * RPAD - Gestión (Métricas y Proyectos)
+ * RPAD - Gestión (Proyectos). La pestaña Métricas se mudó a «Métricas y Reportes» (reportes.js; spec 2026-10-24-metricas-y-reportes, 6)
  */
 
-let chartActualizados = null;
-let chartNotificaciones = null;
-let chartTemas = null;
-let chartFrecuencias = null;
 let editandoProyectoId = null;
 let editandoHitoId = null;
 let editandoLogroId = null;
@@ -23,14 +19,7 @@ let timelineItemsCache = [];
 const PROYECTOS_POR_PAGINA = 20;
 const ITEMS_POR_PAGINA = 20;
 
-const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MESES_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-
-const TIPO_METRICA_LABELS = {
-  notas_enviadas: 'Notas enviadas',
-  reuniones_capacitaciones: 'Reuniones/Capacitaciones',
-  consultas_atendidas: 'Consultas atendidas'
-};
 
 const ESTADO_LABELS = {
   en_curso: 'En curso',
@@ -58,8 +47,6 @@ const ESTADO_ICONS = {
   suspendido: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>'
 };
 
-const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#e11d48'];
-
 // =====================================================
 // INICIALIZACIÓN
 // =====================================================
@@ -70,19 +57,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Mostrar controles admin
-  if (Auth.isAdmin()) {
-    const metricasSection = document.getElementById('metricas-manuales-section');
-    if (metricasSection) metricasSection.style.display = '';
-  }
-
-  // Setear año/mes actuales en el form de métricas manuales
-  const now = new Date();
-  const anioInput = document.getElementById('metrica-anio');
-  const mesSelect = document.getElementById('metrica-mes');
-  if (anioInput) anioInput.value = now.getFullYear();
-  if (mesSelect) mesSelect.value = now.getMonth() + 1;
-
   // Event listeners para filtros de repositorio
   document.getElementById('repositorio-search').addEventListener('input', () => { paginaActual = 1; filtrarYRenderizar(); });
   document.getElementById('repositorio-categoria').addEventListener('change', () => { paginaActual = 1; filtrarYRenderizar(); });
@@ -91,308 +65,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await cargarProyectos();
   setVistaProyectos(vistaActual);
 });
-
-// =====================================================
-// TABS
-// =====================================================
-
-function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-  document.getElementById(`tab-${tab}`).classList.add('active');
-
-  if (tab === 'proyectos') {
-    cargarProyectos();
-  } else if (tab === 'metricas') {
-    cargarMetricas();
-  }
-}
-
-// =====================================================
-// MÉTRICAS AUTOMÁTICAS
-// =====================================================
-
-async function cargarMetricas() {
-  try {
-    const meses = document.getElementById('metricas-periodo').value;
-    const response = await fetch(`${CONFIG.API_URL}/gestion/metricas?meses=${meses}`, {
-      headers: Auth.getAuthHeaders(),
-      cache: 'no-store'
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error);
-
-    const data = result.data;
-    renderKPIs(data);
-    renderCharts(data);
-    renderRanking(data.ranking_areas);
-    await cargarMetricasManuales();
-  } catch (error) {
-    console.error('Error cargando métricas:', error);
-    Utils.showError('Error al cargar métricas');
-  }
-}
-
-function renderKPIs(data) {
-  const grid = document.getElementById('kpi-grid');
-  const totalActualizados = data.actualizados_por_mes.reduce((s, r) => s + r.cantidad, 0);
-  const totalCreados = data.creados_por_mes.reduce((s, r) => s + r.cantidad, 0);
-  const totalNotificaciones = data.notificaciones_por_mes.reduce((s, r) => s + r.cantidad, 0);
-  const tiempoAprobacion = data.tiempo_promedio_aprobacion ? Math.round(data.tiempo_promedio_aprobacion * 10) / 10 : '-';
-  const operador = data.operador_mas_activo ? data.operador_mas_activo.nombre_completo : '-';
-
-  grid.innerHTML = `
-    <div class="kpi-card">
-      <div class="kpi-value">${totalActualizados}</div>
-      <div class="kpi-label">Datasets actualizados</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-value">${totalCreados}</div>
-      <div class="kpi-label">Datasets creados</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-value">${totalNotificaciones}</div>
-      <div class="kpi-label">Notificaciones enviadas</div>
-    </div>
-    <div class="kpi-card success">
-      <div class="kpi-value">${textoPorcentaje(data.tasa_cumplimiento)}</div>
-      <div class="kpi-label">Tasa de cumplimiento</div>
-    </div>
-    <div class="kpi-card warning">
-      <div class="kpi-value">${tiempoAprobacion}</div>
-      <div class="kpi-label">Días prom. aprobación</div>
-    </div>
-  `;
-}
-
-function renderCharts(data) {
-  // Actualizados por mes
-  const actLabels = data.actualizados_por_mes.map(r => `${MESES[r.mes - 1]} ${r.anio}`);
-  const actData = data.actualizados_por_mes.map(r => r.cantidad);
-  renderBarChart('chart-actualizados', actLabels, actData, '#3b82f6', chartActualizados, c => { chartActualizados = c; });
-
-  // Notificaciones por mes
-  const notLabels = data.notificaciones_por_mes.map(r => `${MESES[r.mes - 1]} ${r.anio}`);
-  const notData = data.notificaciones_por_mes.map(r => r.cantidad);
-  renderBarChart('chart-notificaciones', notLabels, notData, '#10b981', chartNotificaciones, c => { chartNotificaciones = c; });
-
-  // Distribución por tema
-  const temaLabels = data.distribucion_por_tema.map(r => r.tema);
-  const temaData = data.distribucion_por_tema.map(r => r.cantidad);
-  renderDoughnutChart('chart-temas', temaLabels, temaData, chartTemas, c => { chartTemas = c; });
-
-  // Distribución por frecuencia
-  const freqLabels = data.distribucion_por_frecuencia.map(r => r.frecuencia);
-  const freqData = data.distribucion_por_frecuencia.map(r => r.cantidad);
-  renderDoughnutChart('chart-frecuencias', freqLabels, freqData, chartFrecuencias, c => { chartFrecuencias = c; });
-}
-
-function renderBarChart(canvasId, labels, data, color, existingChart, setter) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
-  if (existingChart) existingChart.destroy();
-
-  const chart = new Chart(ctx.getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        backgroundColor: color + '33',
-        borderColor: color,
-        borderWidth: 2,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } }
-      }
-    }
-  });
-  setter(chart);
-}
-
-function renderDoughnutChart(canvasId, labels, data, existingChart, setter) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
-  if (existingChart) existingChart.destroy();
-
-  const chart = new Chart(ctx.getContext('2d'), {
-    type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        backgroundColor: CHART_COLORS.slice(0, data.length),
-        borderColor: '#ffffff',
-        borderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '60%',
-      plugins: {
-        legend: {
-          position: 'right',
-          labels: { boxWidth: 12, padding: 8, font: { size: 11 } }
-        }
-      }
-    }
-  });
-  setter(chart);
-}
-
-function renderRanking(areas) {
-  document.getElementById('ranking-container').innerHTML = htmlDelRanking(areas);
-}
-
-// "83%", o una raya si no hay nada que medir (null: solo eventuales, que no tienen vencimiento; Ruling 23)
-function textoPorcentaje(valor) {
-  return valor === null || valor === undefined ? '—' : `${valor}%`;
-}
-
-// La tabla del ranking de áreas. Puro: al cargarse, gestion.js solo declara (tests/publico-frontend.test.js)
-function htmlDelRanking(areas) {
-  if (!areas || areas.length === 0) {
-    return '<p style="color:var(--gray-500);font-size:0.9rem;">Sin datos de áreas</p>';
-  }
-
-  let html = `<table class="ranking-table">
-    <thead><tr><th>#</th><th>Área</th><th>Datasets</th><th>Al día</th><th>Cumplimiento</th><th></th></tr></thead><tbody>`;
-
-  areas.forEach((area, i) => {
-    const porcentaje = Number.isFinite(area.porcentaje) ? area.porcentaje : null;
-    const color = porcentaje === null ? 'var(--gray-300)' : porcentaje >= 80 ? '#10b981' : porcentaje >= 50 ? '#f59e0b' : '#ef4444';
-    html += `<tr>
-      <td>${i + 1}</td>
-      <td>${Utils.escapeHtml(area.area)}</td>
-      <td>${Number(area.total_datasets) || 0}</td>
-      <td>${Number(area.al_dia) || 0}</td>
-      <td>${textoPorcentaje(porcentaje)}</td>
-      <td style="width:120px"><div class="progress-bar-container"><div class="progress-bar" style="width:${porcentaje ?? 0}%;background:${color}"></div></div></td>
-    </tr>`;
-  });
-
-  html += '</tbody></table>';
-  return html;
-}
-
-// =====================================================
-// MÉTRICAS MANUALES
-// =====================================================
-
-async function cargarMetricasManuales() {
-  try {
-    const meses = document.getElementById('metricas-periodo').value;
-    const response = await fetch(`${CONFIG.API_URL}/gestion/metricas-manuales?meses=${meses}`, {
-      headers: Auth.getAuthHeaders(),
-      cache: 'no-store'
-    });
-    const result = await response.json();
-    if (!result.success) return;
-
-    const list = document.getElementById('metricas-manuales-list');
-    if (!list) return;
-
-    if (result.data.length === 0) {
-      list.innerHTML = '<p style="color:var(--gray-500);font-size:0.85rem;margin-top:8px;">No hay métricas manuales cargadas para este período</p>';
-      return;
-    }
-
-    const isAdmin = Auth.isAdmin();
-    list.innerHTML = result.data.map(m => `
-      <div class="metrica-item">
-        <span class="metrica-tipo">${TIPO_METRICA_LABELS[m.tipo] || m.tipo}</span>
-        <span class="metrica-periodo">${MESES_FULL[m.mes - 1]} ${m.anio}</span>
-        <span class="metrica-cantidad">${m.cantidad}</span>
-        ${isAdmin ? `<button class="btn btn-secondary btn-sm" onclick="eliminarMetricaManual(${m.id})" style="margin-left:auto;padding:4px 8px;font-size:0.75rem;">&times;</button>` : ''}
-      </div>
-    `).join('');
-  } catch (error) {
-    console.error('Error cargando métricas manuales:', error);
-  }
-}
-
-async function guardarMetricaManual() {
-  try {
-    const tipo = document.getElementById('metrica-tipo').value;
-    const anio = parseInt(document.getElementById('metrica-anio').value);
-    const mes = parseInt(document.getElementById('metrica-mes').value);
-    const cantidad = parseInt(document.getElementById('metrica-cantidad').value);
-
-    if (isNaN(cantidad) || cantidad < 0) {
-      Utils.showError('La cantidad debe ser un número positivo');
-      return;
-    }
-
-    const response = await fetch(`${CONFIG.API_URL}/gestion/metricas-manuales`, {
-      method: 'POST',
-      headers: Auth.getAuthHeaders(),
-      body: JSON.stringify({ tipo, anio, mes, cantidad })
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error);
-
-    showToast(result.message || 'Métrica guardada', 'success');
-    document.getElementById('metrica-cantidad').value = '0';
-    await cargarMetricasManuales();
-  } catch (error) {
-    Utils.showError(error.message || 'Error al guardar métrica');
-  }
-}
-
-async function eliminarMetricaManual(id) {
-  if (!confirm('¿Eliminar esta métrica?')) return;
-  try {
-    const response = await fetch(`${CONFIG.API_URL}/gestion/metricas-manuales/${id}`, {
-      method: 'DELETE',
-      headers: Auth.getAuthHeaders()
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error);
-
-    showToast('Métrica eliminada', 'success');
-    await cargarMetricasManuales();
-  } catch (error) {
-    Utils.showError(error.message || 'Error al eliminar métrica');
-  }
-}
-
-// =====================================================
-// EXPORTACIÓN CSV
-// =====================================================
-
-async function exportarCSV() {
-  try {
-    const meses = document.getElementById('metricas-periodo').value;
-    const response = await fetch(`${CONFIG.API_URL}/gestion/metricas/csv?meses=${meses}`, {
-      headers: Auth.getAuthHeaders()
-    });
-
-    if (!response.ok) throw new Error('Error al exportar');
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `metricas-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-
-    showToast('CSV exportado', 'success');
-  } catch (error) {
-    Utils.showError(error.message || 'Error al exportar CSV');
-  }
-}
 
 // =====================================================
 // PROYECTOS

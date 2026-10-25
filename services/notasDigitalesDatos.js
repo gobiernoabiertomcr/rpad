@@ -3,14 +3,14 @@
 // docs/superpowers/specs/2026-10-17-fechas-datasets-design.md (sección 9, los datos solicitados)
 import pool from '../config/database.js';
 import { listaDeCorreos } from './emailService.js';
-import { esFechaIso } from './notasDigitalesCalendario.js';
+import { esFechaIso, VENTANA_DIAS } from './notasDigitalesCalendario.js';
 import { pedido, tipoEfectivo } from './fechasDatasetReglas.js';
 import { diaDelAvisoEnSuFecha } from './licenciasReglas.js';
 
 export const GESTIONES = ['interna', 'externa'];
-// Días de anticipación del aviso, por gestión. La externa pasó de 30 a 40 (pedido del usuario el 16/10/2026): el pedido
-// formal a las áreas externas lleva unos 5 días hábiles más el circuito administrativo.
-export const VENTANA_DIAS = { interna: 60, externa: 40 };
+// Días de anticipación del aviso, por gestión (40 en externa y 60 en interna): vive en el calendario, puro (Ruling 30), y se reexporta
+// acá para las Notas Digitales (notasDigitales.js); este módulo también la usa (seleccionarParaAviso)
+export { VENTANA_DIAS };
 export const DIAS_PARA_REITERAR = 20;
 export const TIPOS_EMAIL_REEMPLAZADOS = ['interno-60', 'interno-30', 'interno-vencido', 'externo-60', 'externo-40', 'externo-5', 'externo-vencido'];
 

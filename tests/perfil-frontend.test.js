@@ -1483,3 +1483,29 @@ describe('perfil.js: «Requiere nota DGMIT»', () => {
     assert.ok(html.includes('<del>Sí</del><ins>No</ins>'));
   });
 });
+
+// El origen de los datos de un registro de actualización (spec 2026-10-24-metricas-y-reportes, 4): el servidor lo manda en
+// campos_modificados con el rótulo «Origen de los datos» y el texto corto («Los entregó el área» o «Fuente pública»)
+describe('perfil.js: «Origen de los datos»', () => {
+  it('el rótulo está en ETIQUETAS_DE_CAMPO y se muestra tal cual', () => {
+    const contexto = cargarPerfil();
+    assert.ok(Object.hasOwn(vm.runInContext('ETIQUETAS_DE_CAMPO', contexto), 'Origen de los datos'));
+    assert.equal(contexto.etiquetaDeCampo('Origen de los datos'), 'Origen de los datos');
+  });
+
+  it('la comparación de una actualización registrada lo muestra junto a «Recibido el», sin tratarlo como fecha', () => {
+    const cambio = {
+      id: 40, tipo_cambio: 'editar', usuario_id: 2, usuario_nombre: 'Ana', dataset_titulo: 'Presupuesto', estado: 'pendiente',
+      created_at: '2026-10-24T13:32:00Z',
+      campos_modificados: [
+        { campo: 'Recibido el', antes: '-', despues: '2026-10-19' },
+        { campo: 'Origen de los datos', antes: '-', despues: 'Fuente pública' }
+      ],
+      datos_nuevos: { recibido_el: '2026-10-19', origen_datos: 'fuente_publica', registro_actualizacion: true }
+    };
+    const html = cargarPerfil().htmlDeFila(cambio, 'revisar', { abierto: true, esEditor: false, idUsuario: 1 });
+    assert.ok(html.includes('<dt>Origen de los datos</dt>'), html);
+    assert.ok(html.includes('<del><span class="pf-vacio">vacío</span></del><ins>Fuente pública</ins>'), html);
+    assert.ok(html.indexOf('<dt>Recibido el</dt>') < html.indexOf('<dt>Origen de los datos</dt>'));
+  });
+});

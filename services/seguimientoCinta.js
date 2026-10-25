@@ -84,10 +84,12 @@ export const textoDeVencido = (ciclo, desdeVentana) => {
   return ciclo.venc < desdeVentana ? `Vencido desde el ${formatoCorto(ciclo.venc)} (hace ${cantidad})` : `Vencido hace ${cantidad}`;
 };
 
-// "Nota 3/26", o null si la nota no trae número o año
+// "Nota 3/26"; sin año, "Nota XX" o "Nota PRUEBA" (la nota que el anexo de la reiteración suma en la vista previa y en la prueba).
+// null si la nota no trae número
 const etiquetaDeNota = (movimiento) => {
   const { numero, anio } = movimiento.extra ?? {};
-  if (numero === null || numero === undefined || anio === null || anio === undefined) return null;
+  if (numero === null || numero === undefined) return null;
+  if (anio === null || anio === undefined) return `Nota ${numero}`;
   return `Nota ${numero}/${String(anio).slice(-2)}`;
 };
 

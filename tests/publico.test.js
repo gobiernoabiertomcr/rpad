@@ -50,6 +50,25 @@ describe('consultas públicas', () => {
   }
 });
 
+// La CSP de Helmet (app.js): Chart.js salió de Gestión (spec 2026-10-24-metricas-y-reportes, 6) y ninguna página carga nada de un CDN
+// (tests/paginas.test.js), así que la CSP ya no permite ninguno
+describe('la política de seguridad de contenido', () => {
+  it('no permite scripts ni hojas de un CDN (jsDelivr ni cdnjs), y sigue permitiendo el sitio y las fuentes de Google', async () => {
+    const res = await fetch(`${servidor.url}/index.html`);
+    assert.equal(res.status, 200);
+    const csp = res.headers.get('content-security-policy') ?? '';
+    const directiva = (nombre) => csp.split(';').map(d => d.trim()).find(d => d.startsWith(`${nombre} `)) ?? '';
+    assert.match(directiva('script-src'), /'self'/);
+    assert.match(directiva('style-src'), /'self'/);
+    assert.match(directiva('style-src'), /https:\/\/fonts\.googleapis\.com/);
+    assert.match(directiva('font-src'), /https:\/\/fonts\.gstatic\.com/);
+    assert.doesNotMatch(csp, /cdn\.jsdelivr\.net/);
+    assert.doesNotMatch(csp, /cdnjs\.cloudflare\.com/);
+    // script-src: solo el sitio (y los scripts en línea de siempre)
+    assert.equal(directiva('script-src'), "script-src 'self' 'unsafe-inline'");
+  });
+});
+
 describe('formulario de contacto', () => {
   const mensajeValido = {
     nombre: 'Persona de prueba',
