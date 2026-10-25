@@ -9,6 +9,9 @@ import {
 import { listaDeCorreos } from '../services/emailService.js';
 import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
 import { firmaDeUsuario } from '../services/firmasService.js';
+import { bloquesDeNotaDigital } from '../services/notasDigitalesWord.js';
+import { renderDocx, membreteParaWord } from '../services/notasWord.js';
+import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 // El libro también filtra las notas de autorización y las de auditoría (spec 2026-10-15, 7.2 y 10.4)
@@ -37,6 +40,7 @@ const LISTAS = {
 // Textos que van al PDF: largo máximo. Se guardan en NFC y sin caracteres que Helvetica no puede escribir.
 // membrete_pie vacío = PDF sin pie del membrete; si no, tiene que entrar en una línea con letra de 7 puntos.
 const TEXTOS = { linea_cc_interna: 200, linea_cc_externa: 200, firma_nombre: 150, firma_cargo: 200, membrete_pie: 300 };
+const TIPO_WORD = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 const errorInterno = (res, mensaje, error) => {
   console.error(`${mensaje}:`, error);
@@ -191,6 +195,31 @@ export const descargarAnexo = async (req, res) => {
     res.send(nota.anexo_pdf);
   } catch (error) {
     errorInterno(res, 'Error al descargar el anexo', error);
+  }
+};
+
+// La nota en Word (spec 2026-10-24-generador-de-notas, sección 6), desde su HTML guardado: en la hoja membretada, sin la primera
+// línea del email y sin la firma, para todas las notas del libro (de cualquier tipo, estado y época, también las de prueba). Se
+// llama como el PDF en el Libro: «Nota-Digital-9-26.docx», y una prueba, «Nota-Digital-PRUEBA-<id>.docx». Si el HTML no se
+// reconoce (no tiene el remitente), 422 con el mensaje: nunca un Word roto
+export const descargarWord = async (req, res) => {
+  try {
+    const id = idDe(req.params.id);
+    const [[nota]] = await pool.query('SELECT numero, anio, es_prueba, html FROM notas_digitales WHERE id = ?', [id]);
+    if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
+    let bloques;
+    try {
+      bloques = bloquesDeNotaDigital(nota.html);
+    } catch (error) {
+      return res.status(422).json({ success: false, error: error.message });
+    }
+    const word = await renderDocx(bloques, await membreteParaWord());
+    const archivo = nota.es_prueba ? `Nota-Digital-PRUEBA-${id}.docx` : `Nota-Digital-${nota.numero}-${String(nota.anio).slice(-2)}.docx`;
+    res.setHeader('Content-Type', TIPO_WORD);
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(archivo));
+    res.send(word);
+  } catch (error) {
+    errorInterno(res, 'Error al descargar el Word', error);
   }
 };
 

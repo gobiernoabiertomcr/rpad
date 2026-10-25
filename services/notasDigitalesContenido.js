@@ -61,7 +61,7 @@ export const CAMPOS_CONTACTO = [
 // Primera línea del email (en bordó en el HTML): la nota formal es el PDF adjunto. El aviso y la reiteración suman su anexo (la
 // reiteración, el del Seguimiento: spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3); la nota de autorización y la de
 // auditoría van solas
-const AVISO_ADJUNTO = { conAnexo: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', soloNota: 'SE ADJUNTA NOTA EN PDF' };
+export const AVISO_ADJUNTO = { conAnexo: 'SE ADJUNTAN NOTA Y ANEXO EN PDF', soloNota: 'SE ADJUNTA NOTA EN PDF' };
 
 // La línea que anuncia el anexo, con una hoja por dataset: en el aviso, el reporte de cada uno (spec 6.7); en la reiteración, su
 // Seguimiento (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.3)
@@ -224,7 +224,7 @@ const COLUMNA_SITUACION_EXTERNA = 5;
 // tiene 7 columnas (y el PDF elige las de siempre por cantidad de columnas). Si alguna fila lleva la segunda parte de
 // "Informado en" (el antecedente de los emails anteriores, en letra más chica), esa columna se lleva más ancho, como en la
 // interna: probadas con la reiteración real del 02/11/2026 (10 datasets: 8 filas en la primera hoja oficio, ningún título partido)
-const PROPORCIONES_EXTERNA = { conSegunda: [18, 14, 10, 10, 13, 10, 25], sinSegunda: [24, 14, 10, 10, 15, 12, 15] };
+export const PROPORCIONES_EXTERNA = { conSegunda: [18, 14, 10, 10, 13, 10, 25], sinSegunda: [24, 14, 10, 10, 15, 12, 15] };
 
 // Varios vencimientos en un aviso (spec 18): un aviso puede juntar más de un vencimiento (la víspera de una licencia larga, un
 // aviso que se recupera tarde) y sin columna de fecha la nota no diría qué vence cuándo. Solo "Próximos a vencer" de un aviso, y

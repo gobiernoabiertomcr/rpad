@@ -27,7 +27,7 @@ import { escapeHtml, QUE_SE_SOLICITA_POR_DEFECTO } from './notasDigitalesConteni
  * @property {boolean} [subrayado]
  * @property {boolean} [cursiva]
  * @property {boolean} [salto] Un renglón nuevo antes del texto (un <br> en el HTML).
- * @property {number} [letra] La letra en medios puntos (24 = 12 pt). Sin letra, la del párrafo o la de su celda.
+ * @property {number} [letra] La letra en medios puntos (24 = 12 pt). Sin letra, la de su celda, la de su tabla o la del cuerpo.
  */
 
 /**
@@ -36,7 +36,7 @@ import { escapeHtml, QUE_SE_SOLICITA_POR_DEFECTO } from './notasDigitalesConteni
  * @property {Parte[]} partes
  * @property {number} [abarca] Cuántas columnas ocupa (colspan). Sin abarca, una.
  * @property {'gris'} [fondo] El fondo gris claro del encabezado.
- * @property {number} [letra] La letra de toda la celda, en medios puntos.
+ * @property {number} [letra] La letra de toda la celda, en medios puntos. Sin letra, la de su tabla o la del cuerpo.
  */
 
 /**
@@ -64,6 +64,16 @@ import { escapeHtml, QUE_SE_SOLICITA_POR_DEFECTO } from './notasDigitalesConteni
  * @property {'tabla'} tipo
  * @property {number[]} anchos Proporciones del ancho de cada columna, que suman 100.
  * @property {Fila[]} filas
+ * @property {number} [letra] La letra de las celdas que no traen la suya, en medios puntos. Sin letra, la del cuerpo.
+ * @property {number} [margen] El margen de cada celda a la izquierda y a la derecha, en twips (arriba y abajo, siempre 60).
+ *   Sin margen, 100.
+ * @property {boolean} [sinPartirPalabras] Las columnas se ensanchan para que ninguna palabra se parta, como en el PDF de las
+ *   Notas Digitales: cada columna mide al menos su palabra más ancha (con la letra y la negrita de cada parte; un espacio duro
+ *   no corta) más los dos márgenes y 3 pt; la primera, como mucho 55 pt de palabra (un título larguísimo se parte). Lo que
+ *   suman de más lo ceden, en proporción, las columnas con holgura; si ni así entran, la primera cede hasta su título y las
+ *   demás se reparten el resto. Las celdas que abarcan varias columnas no cuentan. Sin él, las columnas son las proporciones
+ *   tal cual. La vista previa ignora `letra`, `margen` y `sinPartirPalabras`: los usa la Nota Digital en Word, que no tiene
+ *   vista previa.
  */
 
 /**

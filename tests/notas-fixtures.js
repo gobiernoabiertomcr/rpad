@@ -48,14 +48,15 @@ export const crearDataset = async ({
   return resultado.insertId;
 };
 
+// html: el HTML guardado de la nota (el que lee la Nota Digital en Word); sin él, vacío
 export const crearNota = async ({
-  tipo = 'aviso', gestion = 'interna', fecha, numero = null, anio, estado = 'enviada', esPrueba = 0, intentos = 1, datasets = []
+  tipo = 'aviso', gestion = 'interna', fecha, numero = null, anio, estado = 'enviada', esPrueba = 0, intentos = 1, datasets = [], html = ''
 }) => {
   const resultado = await query(
     `INSERT INTO notas_digitales (numero, anio, tipo, gestion, periodo, fecha, es_prueba, asunto, para, html, texto, pdf, estado, intentos)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'Nota de prueba', 'prueba@rpad.test', '', '', '', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'Nota de prueba', 'prueba@rpad.test', ?, '', '', ?, ?)`,
     [numero, anio ?? (esPrueba ? null : Number(fecha.slice(0, 4))), tipo, gestion,
-      tipo === 'reiteracion' ? fecha.slice(0, 7) : null, fecha, esPrueba, estado, intentos]
+      tipo === 'reiteracion' ? fecha.slice(0, 7) : null, fecha, esPrueba, html, estado, intentos]
   );
   for (const d of datasets) {
     await query('INSERT INTO notas_digitales_datasets (nota_id, dataset_id, seccion, vencimiento, cuenta_desde) VALUES (?, ?, ?, ?, ?)',

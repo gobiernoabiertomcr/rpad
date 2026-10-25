@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import JSZip from 'jszip';
+import PDFDocument from 'pdfkit';
 import { HOJA, renderDocx } from '../services/notasWord.js';
 import { construirNotaDgmit, LETRA } from '../services/notasGeneradorContenido.js';
 import { validarImagenMembrete } from '../services/notasDigitalesPdf.js';
@@ -465,6 +466,94 @@ describe('renderDocx: la tabla', () => {
   });
 });
 
+// La Nota Digital en Word (spec, sección 6): sus tablas de 7 columnas, en 8,5 pt y con el relleno del PDF, y las columnas
+// ensanchadas para que ninguna palabra se parta, como en el PDF de las Notas Digitales
+describe('renderDocx: la letra, el margen y las palabras de una tabla', () => {
+  const celda = (texto, extra = {}) => ({ partes: [{ texto, ...(extra.negrita ? { negrita: true } : {}) }], ...(extra.letra ? { letra: extra.letra } : {}), ...(extra.abarca ? { abarca: extra.abarca } : {}) });
+  const columnasDe = (tabla) => [...tabla.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map(m => Number(m[1]));
+  const suma = (lista) => lista.reduce((s, n) => s + n, 0);
+  // Arial mide como la Helvetica de PDFKit: el ancho de una palabra en twips (20 por punto), en una letra en medios puntos
+  const medidor = new PDFDocument({ autoFirstPage: false });
+  const twipsDe = (palabra, letra, negrita = false) => medidor.font(negrita ? 'Helvetica-Bold' : 'Helvetica').fontSize(letra / 2).widthOfString(palabra) * 20;
+  const ENCABEZADO = ['Conjunto de datos', 'Área responsable', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Vence', 'Informado en'];
+  const FILA = ['Dataset de ejemplo', 'Área de ejemplo', 'Cuatrimestralmente', 'Sí', 'Del 01/01/2026 al 31/10/2026', '30/11/2026', 'Nota Digital N° 1/26 (03/10/2026).'];
+  const deSiete = (extra = {}) => [{
+    tipo: 'tabla', anchos: [24, 14, 10, 10, 15, 12, 15], letra: 17, margen: 60, ...extra,
+    filas: [{ encabezado: true, celdas: ENCABEZADO.map(t => celda(t, { negrita: true })) }, { celdas: FILA.map(t => celda(t)) }]
+  }];
+
+  it('las celdas sin letra van en la de la tabla; las que la traen, en la suya', async () => {
+    const bloques = [{ tipo: 'tabla', anchos: [50, 50], letra: 17, filas: [{ celdas: [celda('a'), celda('b', { letra: 14 })] }] }];
+    const celdas = tablas((await conHoja(bloques)).documento)[0].match(/<w:tc>[\s\S]*?<\/w:tc>/g);
+    assert.match(celdas[0], /<w:sz w:val="17"\/>/);
+    assert.match(celdas[1], /<w:sz w:val="14"\/>/);
+  });
+
+  it('el margen de la tabla va a los costados de cada celda (arriba y abajo, 60 como siempre); sin margen, 100', async () => {
+    const margenes = async (extra) => {
+      const bloques = [{ tipo: 'tabla', anchos: [50, 50], ...extra, filas: [{ celdas: [celda('a'), celda('b')] }] }];
+      return tablas((await conHoja(bloques)).documento)[0].match(/<w:tcMar>[\s\S]*?<\/w:tcMar>/g);
+    };
+    for (const mar of await margenes({ margen: 60 })) {
+      assert.equal(mar, '<w:tcMar><w:top w:type="dxa" w:w="60"/><w:left w:type="dxa" w:w="60"/><w:bottom w:type="dxa" w:w="60"/><w:right w:type="dxa" w:w="60"/></w:tcMar>');
+    }
+    for (const mar of await margenes({})) {
+      assert.equal(mar, '<w:tcMar><w:top w:type="dxa" w:w="60"/><w:left w:type="dxa" w:w="100"/><w:bottom w:type="dxa" w:w="60"/><w:right w:type="dxa" w:w="100"/></w:tcMar>');
+    }
+  });
+
+  it('con sinPartirPalabras, cada columna mide al menos su palabra más ancha y los márgenes; las que tienen holgura ceden', async () => {
+    const columnas = columnasDe(tablas((await conHoja(deSiete({ sinPartirPalabras: true }))).documento)[0]);
+    assert.equal(columnas.length, 7);
+    assert.equal(suma(columnas), 8838);
+    // Cada columna, salvo la primera, entra su palabra más ancha (la del encabezado va en negrita) con 60 twips a cada lado y 3 pt
+    // de holgura (LibreOffice, con 1 pt, partía "Trimestralmente" en 8,5 pt)
+    const palabras = ENCABEZADO.map((titulo, i) => Math.max(
+      ...titulo.split(' ').map(p => twipsDe(p, 17, true)),
+      ...FILA[i].split(' ').map(p => twipsDe(p, 17))
+    ));
+    for (let i = 1; i < 7; i++) assert.ok(columnas[i] >= palabras[i] + 180, `columna ${i}: ${columnas[i]} < ${palabras[i] + 180}`);
+    // "Cuatrimestralmente" no entra en el 10 % (883 twips): la Frecuencia se ensancha, y el título, con holgura, cede
+    assert.ok(columnas[2] > 884);
+    assert.ok(columnas[0] < Math.floor(8838 * 0.24));
+  });
+
+  it('sin sinPartirPalabras, las columnas son las proporciones tal cual, aunque una palabra no entre', async () => {
+    const columnas = columnasDe(tablas((await conHoja(deSiete())).documento)[0]);
+    assert.deepEqual(columnas, [2121, 1237, 883, 883, 1325, 1060, 1329]);
+  });
+
+  it('la primera columna se ensancha como mucho hasta 55 pt de palabra; una celda que abarca varias columnas no cuenta', async () => {
+    const bloques = [{
+      tipo: 'tabla', anchos: [10, 45, 45], sinPartirPalabras: true,
+      filas: [{ celdas: [celda('x'.repeat(80)), celda('a'), celda('b')] }, { celdas: [celda('y'.repeat(300), { abarca: 3 })] }]
+    }];
+    const columnas = columnasDe(tablas((await conHoja(bloques)).documento)[0]);
+    // 55 pt (1100 twips), los márgenes de siempre (100 a cada lado) y 3 pt de holgura
+    assert.equal(columnas[0], 1360);
+    assert.ok(Math.abs(columnas[1] - columnas[2]) <= 1);
+    assert.equal(suma(columnas), 8838);
+  });
+
+  it('si las palabras no entran ni así, la primera cede hasta su encabezado y las demás se reparten lo que queda', async () => {
+    const larga = 'Interjurisdiccionalidades';
+    const bloques = [{
+      tipo: 'tabla', anchos: [24, 14, 10, 10, 15, 12, 15], letra: 24, sinPartirPalabras: true,
+      filas: [
+        { encabezado: true, celdas: ['Título', ...Array(6).fill(larga)].map(t => celda(t, { negrita: true })) },
+        { celdas: Array(7).fill(larga).map(t => celda(t)) }
+      ]
+    }];
+    const columnas = columnasDe(tablas((await conHoja(bloques)).documento)[0]);
+    assert.equal(suma(columnas), 8838);
+    assert.ok(columnas.every(c => c > 0));
+    // El título queda del ancho de su encabezado, "Título" en negrita de 12 pt, con los márgenes y la holgura
+    assert.ok(Math.abs(columnas[0] - (twipsDe('Título', 24, true) + 260)) <= 1, String(columnas[0]));
+    // Las demás, iguales entre sí (la misma palabra)
+    assert.ok(columnas.slice(1, -1).every(c => Math.abs(c - columnas[1]) <= 1));
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------
 // La firma
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -502,6 +591,21 @@ describe('renderDocx: el espacio para la firma', () => {
     assert.match(remitente, /<w:keepNext\/>/);
     assert.ok(parrafos.slice(0, -2).every(p => !/<w:keepNext/.test(p)));
     assert.doesNotMatch(parrafos.at(-1), /<w:keepNext/);
+  });
+
+  // La Nota Digital en Word sigue a la firma con la leyenda y el CC: el cierre va junto, como en el PDF (dibujarCierre)
+  it('lo que sigue a la firma va con ella: la firma y la leyenda, keepNext; el último párrafo, no', async () => {
+    const remitente = { tipo: 'parrafo', alinear: 'izquierda', partes: [{ texto: 'Remitente' }] };
+    const leyenda = { tipo: 'parrafo', alinear: 'justificado', partes: [{ texto: 'Leyenda', cursiva: true }] };
+    const cc = { tipo: 'parrafo', alinear: 'izquierda', partes: [{ texto: 'CC' }] };
+    const conDos = desdeElBody((await conHoja([remitente, { tipo: 'firma', columnas: 2 }, leyenda, cc])).documento);
+    const [firmas] = tablas(conDos);
+    assert.equal(cuantas(firmas, '<w:keepNext/>'), 2);
+    const parrafos = parrafosFueraDeTablas(conDos);
+    assert.deepEqual(parrafos.map(p => [textoDe(p), /<w:keepNext\/>/.test(p)]), [['Remitente', true], ['Leyenda', true], ['CC', false]]);
+    // Con una firma, su párrafo vacío va con el CC
+    const conUna = parrafosFueraDeTablas(desdeElBody((await conHoja([remitente, { tipo: 'firma', columnas: 1 }, cc])).documento));
+    assert.deepEqual(conUna.map(p => /<w:keepNext\/>/.test(p)), [true, true, false]);
   });
 
   it('también con dos firmas, y lo que va antes de la firma puede ser una lista o una tabla', async () => {

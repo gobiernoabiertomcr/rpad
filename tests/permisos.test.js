@@ -58,6 +58,7 @@ const RUTAS_SOLO_ADMIN = [
   ['GET', '/notificaciones/notas-digitales/preview/anexo?gestion=interna'],
   ['GET', '/notificaciones/notas-digitales/1/pdf'],
   ['GET', '/notificaciones/notas-digitales/1/anexo'],
+  ['GET', '/notificaciones/notas-digitales/1/word'],
   ['POST', '/notificaciones/notas-digitales/1/reintentar'],
   ['GET', '/notificaciones/cambios-pendientes'],
   ['GET', '/notificaciones/preview-cambios-pendientes'],

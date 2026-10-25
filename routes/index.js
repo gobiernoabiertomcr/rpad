@@ -40,6 +40,7 @@ import {
   obtenerNota,
   descargarPdf,
   descargarAnexo,
+  descargarWord,
   reintentarNota,
   verEstado,
   verPreview,
@@ -241,6 +242,7 @@ router.put('/notificaciones/notas-digitales/config/firmante', authMiddleware, ad
 router.get('/notificaciones/notas-digitales/:id', authMiddleware, adminOnly, obtenerNota);
 router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly, descargarPdf);
 router.get('/notificaciones/notas-digitales/:id/anexo', authMiddleware, adminOnly, descargarAnexo);
+router.get('/notificaciones/notas-digitales/:id/word', authMiddleware, adminOnly, descargarWord);
 router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);
 
 // =====================================================
