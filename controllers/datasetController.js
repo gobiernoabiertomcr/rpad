@@ -11,6 +11,8 @@ import {
 import {
   MENSAJE_EDICION_REGISTRA, MENSAJE_FALTA_ORIGEN, MENSAJE_FALTA_RECIBIDO, normalizarOrigen
 } from '../services/registroReglas.js';
+import { esAdmin } from '../services/usuariosReglas.js';
+import { CAMPOS_DE_CONTACTO_DATASET, sinCampos } from '../services/areasReglas.js';
 
 // Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
 const responderBloqueado = (res, accion) => res.status(409).json({
@@ -313,6 +315,12 @@ const enriquecer = (fila, hoy) => {
   };
 };
 
+// Los datos de contacto del área de un dataset (CAMPOS_DE_CONTACTO_DATASET) solo los ve una sesión de administración
+// (sesionOpcional + esAdmin; spec 2026-10-24-configuracion, 5.1). El nombre del área y su dependencia siguen para todos
+const paraQuienMira = (req, dataset) => (
+  esAdmin(req.user?.rol) ? dataset : sinCampos(dataset, CAMPOS_DE_CONTACTO_DATASET)
+);
+
 // Obtener todos los datasets
 export const getDatasets = async (req, res) => {
   try {
@@ -354,7 +362,7 @@ export const getDatasets = async (req, res) => {
 
     res.json({
       success: true,
-      data: datasets
+      data: datasets.map(d => paraQuienMira(req, d))
     });
   } catch (error) {
     console.error('Error obteniendo datasets:', error);
@@ -398,7 +406,7 @@ export const getDatasetById = async (req, res) => {
 
     res.json({
       success: true,
-      data: dataset
+      data: paraQuienMira(req, dataset)
     });
   } catch (error) {
     console.error('Error obteniendo dataset:', error);

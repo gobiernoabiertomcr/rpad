@@ -1,4 +1,4 @@
-// Todas las páginas cargan las versiones nuevas de los scripts compartidos, y el menú de Administración tiene "Usuarios".
+// Todas las páginas cargan las versiones nuevas de los scripts compartidos, y el menú de Administración tiene "Configuración".
 // Al cambiar alguno de estos scripts, subir la versión en todas las páginas y en VERSION.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,8 +17,13 @@ const VERSION = '20261204';
 // sale también en su fecha; el editor que audita sin responsabilidad, spec 2026-10-20-editor-sin-responsabilidad; el rol
 // Colaborador, con su grupo y la ayuda de cada rol, spec 2026-10-24-notas-dgmit, 1; la ayuda del lector nombra «Métricas y
 // Reportes», spec 2026-10-24-metricas-y-reportes; el lector ya no tiene Notas y el colaborador arma notas con el Generador de Notas,
-// spec 2026-10-24-generador-de-notas, 1): su versión es propia (solo la usa usuarios.html)
-const VERSION_PANTALLAS = '20261204';
+// spec 2026-10-24-generador-de-notas, 1; Configuración reemplaza a Usuarios y Áreas: la tercera pestaña, Áreas, y la pestaña en la
+// dirección, spec 2026-10-24-configuracion, 1 y 6): su versión es propia (solo la usa configuracion.html)
+const VERSION_PANTALLAS = '20261205';
+// areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
+// ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
+// configuracion.html)
+const VERSION_AREAS = '20261205';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6):
@@ -77,13 +82,126 @@ describe('páginas', () => {
     });
   }
 
-  // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial y, por último, con el
-  // aviso en su fecha (el texto del efecto de la licencia en las notas, con persona autorizada)
-  for (const [pagina, script] of [['usuarios.html', 'usuarios']]) {
+  // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
+  // fecha (el texto del efecto de la licencia en las notas, con persona autorizada) y, por último, con Configuración (la tercera
+  // pestaña y la pestaña en la dirección)
+  for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
     });
   }
+
+  // Configuración (spec 2026-10-24-configuracion, 1 y 3) reemplaza a Usuarios y Áreas: las dos páginas viejas ya no están (sus
+  // direcciones las redirige app.js: tests/areas-api.test.js)
+  it('configuracion.html reemplaza a usuarios.html y areas.html', () => {
+    assert.ok(paginas.includes('configuracion.html'), 'configuracion.html');
+    assert.ok(!paginas.includes('usuarios.html'), 'usuarios.html');
+    assert.ok(!paginas.includes('areas.html'), 'areas.html');
+  });
+
+  // areas.js va después de usuarios.js: usuarios.js llama a su cargarAreas al mostrar la pestaña Áreas (spec 6)
+  it(`configuracion.html: areas.js con la versión ${VERSION_AREAS}, una sola vez, después de api.js y de usuarios.js`, () => {
+    const html = leer('configuracion.html');
+    const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+    assert.deepEqual(scripts.filter(src => src.startsWith('js/areas.js')), [`js/areas.js?v=${VERSION_AREAS}`]);
+    const posicion = (nombre) => scripts.findIndex(src => src.startsWith(`js/${nombre}.js`));
+    assert.ok(posicion('api') !== -1 && posicion('api') < posicion('areas'), 'areas.js después de api.js');
+    assert.ok(posicion('usuarios') !== -1 && posicion('usuarios') < posicion('areas'), 'areas.js después de usuarios.js');
+    // Todos, en el orden de siempre y a secas (sin defer ni otros atributos)
+    assert.deepEqual(scripts, ['js/config.js', `js/auth.js?v=${VERSION}`, `js/main.js?v=${VERSION}`, `js/api.js?v=${VERSION}`,
+      `js/usuarios.js?v=${VERSION_PANTALLAS}`, `js/areas.js?v=${VERSION_AREAS}`]);
+    assert.equal(html.match(/<script\b/g).length, scripts.length, 'ningún <script> con otros atributos');
+  });
+
+  // La página (spec 1 y 6): el título, el h1 con la ruedita, las tres pestañas y el botón de cada una, y lo de Áreas con los ids
+  // que usa areas.js (spec 4; ninguno se repite con los de Usuarios y Licencias)
+  describe('configuracion.html: la página y la pestaña Áreas', () => {
+    const html = () => leer('configuracion.html');
+    const bloque = (patron) => html().match(patron)?.[0] ?? '';
+    const IDS_DE_AREAS = ['btn-nueva-area', 'vista-areas', 'areas-aviso', 'areas-contador', 'buscar-area', 'areas-filtros', 'areas-lista',
+      'areas-vacio', 'modal-area', 'modal-area-titulo', 'area-error', 'a-nombre', 'a-articulo', 'a-nombre-error', 'a-superior',
+      'a-articulo-superior', 'a-lectura', 'a-ambito-error', 'a-email-principal', 'a-email-principal-error', 'a-email-secundario',
+      'a-email-secundario-error', 'a-emails-ayuda', 'a-telefono', 'a-celular', 'a-contacto', 'a-contacto-telefono', 'a-contacto-email',
+      'a-contacto-email-error', 'area-pie-izquierda', 'area-guardar', 'modal-borrar-area', 'modal-borrar-area-titulo', 'borrar-area-texto',
+      'borrar-area-error', 'borrar-area-confirmar'];
+
+    it('el título, la descripción y el h1 "Configuración" con la ruedita decorativa', () => {
+      assert.ok(html().includes('<title>Configuración - RPAD</title>'));
+      assert.ok(html().includes('<meta name="description" content="Usuarios, licencias y áreas responsables del RPAD">'));
+      const h1 = bloque(/<h1 class="page-title">[\s\S]*?<\/h1>/);
+      assert.match(h1, /<svg aria-hidden="true"[^>]*><path d="M12\.22 2h-\.44/);
+      assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Configuración');
+    });
+
+    it('las pestañas Usuarios, Licencias y Áreas; "Nueva área", oculta, después de "Nuevo usuario"; la vista Áreas, oculta, después de Licencias', () => {
+      const pestanas = [...bloque(/<div class="usuario-pestanas pagina-pestanas" id="pagina-pestanas" role="tablist">[\s\S]*?<\/div>/)
+        .matchAll(/<button type="button" class="usuario-pestana[^"]*" data-vista="([^"]+)" role="tab" aria-selected="(true|false)">([^<]+)<\/button>/g)]
+        .map(([, vista, elegida, texto]) => [vista, elegida, texto]);
+      assert.deepEqual(pestanas, [['usuarios', 'true', 'Usuarios'], ['licencias', 'false', 'Licencias'], ['areas', 'false', 'Áreas']]);
+      const posicion = (texto) => html().indexOf(texto);
+      assert.match(html(), /<button type="button" class="btn btn-primary" id="btn-nueva-area" hidden>\s*<svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>\s*Nueva área\s*<\/button>/);
+      assert.ok(posicion('id="btn-nuevo-usuario"') < posicion('id="btn-nueva-area"'), '"Nueva área" después de "Nuevo usuario"');
+      assert.ok(html().includes('<div id="vista-areas" hidden>'));
+      assert.ok(posicion('id="vista-licencias"') < posicion('id="vista-areas"'), 'Áreas después de Licencias');
+      assert.ok(posicion('id="vista-areas"') < posicion('<footer class="footer">'), 'dentro del contenido, antes del footer');
+    });
+
+    it('los ids de Áreas están una sola vez, y ningún id de la página se repite', () => {
+      const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), [], 'ningún id repetido');
+      for (const id of IDS_DE_AREAS) assert.ok(ids.includes(id), id);
+    });
+
+    it('los dos modales: role="dialog" con su título; el del área, sin <form> (el pie con los botones queda siempre a la vista)', () => {
+      // Cada modal, hasta lo que sigue: el de borrar y los scripts
+      const area = bloque(/<div class="modal-overlay" id="modal-area">[\s\S]*?(?=<div class="modal-overlay" id="modal-borrar-area">)/);
+      assert.ok(area, 'el modal del área');
+      assert.match(area, /<div class="modal ar-modal" role="dialog" aria-modal="true" aria-labelledby="modal-area-titulo">/);
+      assert.doesNotMatch(area, /<form\b/);
+      assert.match(area, /<div class="modal-footer">\s*<span id="area-pie-izquierda"><\/span>\s*<div class="botones">\s*<button type="button" class="ar-btn ar-btn-borde" data-cerrar-area>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-tinta" id="area-guardar">Guardar área<\/button>/);
+      assert.match(area, /<button type="button" class="modal-close" data-cerrar-area aria-label="Cerrar">&times;<\/button>/);
+      const borrar = bloque(/<div class="modal-overlay" id="modal-borrar-area">[\s\S]*?(?=<script )/);
+      // La pregunta describe el diálogo: el foco va a "Cancelar", y un lector de pantalla la anuncia antes de un borrado definitivo
+      assert.match(borrar, /<div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-borrar-area-titulo" aria-describedby="borrar-area-texto">/);
+      assert.match(borrar, /<p class="ar-modal-bajada" id="borrar-area-texto"><\/p>/);
+      assert.match(borrar, /<div class="modal-footer">[\s\S]*?<button type="button" class="ar-btn ar-btn-borde" data-cerrar-borrar>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-rojo" id="borrar-area-confirmar">Borrar área<\/button>/);
+      assert.ok(html().indexOf('id="modal-licencia"') < html().indexOf('id="modal-area"'), 'después del modal de la licencia');
+    });
+
+    it('el ámbito, los errores y "Así se lee en las notas" (sin aria-live: anunciaría cada tecla)', () => {
+      const radios = [...html().matchAll(/<input type="radio" name="a-ambito" value="([^"]+)"([^>]*)>/g)];
+      assert.deepEqual(radios.map(m => m[1]), ['municipal', 'externo']);
+      for (const [, valor, resto] of radios) assert.match(resto, /aria-describedby="a-ambito-error"/, valor);
+      assert.match(html(), /<p class="form-error" id="a-ambito-error" hidden><\/p>/);
+      for (const [campo, describe] of [['a-nombre', 'a-nombre-error'], ['a-email-principal', 'a-emails-ayuda a-email-principal-error'],
+        ['a-email-secundario', 'a-emails-ayuda a-email-secundario-error'], ['a-contacto-email', 'a-contacto-email-error']]) {
+        assert.match(html(), new RegExp(`<input [^>]*id="${campo}"[^>]*aria-describedby="${describe}"`), campo);
+        for (const id of describe.split(' ').filter(id => id.endsWith('-error'))) {
+          assert.match(html(), new RegExp(`<p class="form-error" id="${id}" hidden></p>`), id);
+        }
+      }
+      const lectura = bloque(/<p class="ar-lectura"[^>]*>[\s\S]*?<\/p>/);
+      assert.match(lectura, /<span>Así se lee en las notas<\/span><q id="a-lectura"><\/q>/);
+      assert.doesNotMatch(lectura, /aria-live/);
+      // Los selectores de artículo no tienen opciones con los valores de los roles (el test del selector de rol recorre la página)
+      assert.deepEqual([...bloque(/<select id="a-articulo-superior"[\s\S]*?<\/select>/).matchAll(/<option value="([^"]*)">/g)].map(m => m[1]), ['', 'la', 'el']);
+    });
+
+    // Lo que aparece sin mover el foco se anuncia: el aviso de las áreas sin email y la búsqueda que deja la tabla vacía
+    it('el aviso de las áreas sin email y "Ninguna área coincide con lo que buscaste." con role="status"', () => {
+      assert.match(html(), /<div class="ar-aviso" id="areas-aviso" role="status" hidden><\/div>/);
+      assert.match(html(), /<p class="ar-vacio" id="areas-vacio" role="status" hidden>Ninguna área coincide con lo que buscaste\.<\/p>/);
+    });
+
+    // El foco visible de la convención (sobre fondos claros, anillo --tinta de 3 px con halo --sol-fuerte), también fuera del
+    // modal: los filtros, el buscador, "Editar", el botón del aviso y "Nueva área", que está en el encabezado de la página
+    it('el foco visible de la vista Áreas y de "Nueva área", como el del modal del área', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const anillo = 'outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte);';
+      assert.ok(estilo.includes(`#vista-areas :focus-visible, #btn-nueva-area:focus-visible { ${anillo} }`), 'fuera del modal');
+      assert.ok(estilo.includes(`.ar-modal :focus-visible { ${anillo} }`), 'el del modal, el mismo');
+    });
+  });
 
   // Correos pasó a pestañas (spec 2026-10-17-correos-pestanas)
   it(`correos.html: correos.js con la versión ${VERSION_CORREOS}`, () => {
@@ -197,25 +315,71 @@ describe('páginas', () => {
     });
   });
 
-  for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {
-    it(`${pagina}: el menú de Administración tiene un único enlace a Usuarios`, () => {
-      assert.equal(leer(pagina).match(/href="usuarios\.html"/g)?.length, 1);
+  // El menú de Administración (spec 2026-10-24-configuracion, 2): Gestión de Datasets, con el ícono de capas (layers de Lucide),
+  // Correos, sin cambios, y Configuración, con la ruedita que tenía Gestión de Datasets. Salen Áreas y Usuarios, que ahora son
+  // pestañas de Configuración (sus direcciones viejas las redirige app.js)
+  describe('el menú de Administración', () => {
+    const CAPAS = 'm12.83 2.18';
+    const RUEDITA = 'M12.22 2h-.44';
+    const SOBRE = 'm22 7-8.97 5.7';
+
+    for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {
+      it(`${pagina}: el menú de Administración tiene un único enlace a Configuración`, () => {
+        assert.equal(leer(pagina).match(/href="configuracion\.html"/g)?.length, 1);
+      });
+    }
+
+    for (const pagina of paginas) {
+      it(`${pagina}: ningún enlace a usuarios.html ni a areas.html`, () => {
+        // También con ruta (/usuarios.html, ./areas.html) o con fragmento (usuarios.html#licencias)
+        assert.deepEqual(leer(pagina).match(/href="[^"]*(?<![\w-])(usuarios|areas)\.html[^"]*"/g) ?? [], []);
+      });
+    }
+
+    it('index.html: Gestión de Datasets con las capas, Correos y Configuración con la ruedita, en ese orden', () => {
+      const bloque = leer('index.html').match(/<div class="sidebar-section hidden" id="sidebarAdmin">[\s\S]*?(?=<div class="sidebar-section hidden" id="sidebarTools">)/)?.[0] ?? '';
+      assert.match(bloque, /<div class="sidebar-section-title">Administración<\/div>/);
+      const links = [...bloque.matchAll(/<a href="([^"]+)" class="sidebar-link">(<svg [^>]*>[\s\S]*?<\/svg>)<span>([^<]+)<\/span><\/a>/g)]
+        .map(([, href, svg, texto]) => ({ href, svg, texto }));
+      assert.deepEqual(links.map(l => l.href), ['admin.html', 'correos.html', 'configuracion.html']);
+      assert.deepEqual(links.map(l => l.texto), ['Gestión de Datasets', 'Correos', 'Configuración']);
+      assert.equal(bloque.match(/<a /g)?.length, 3, 'ningún otro link');
+      const [gestion, correos, configuracion] = links;
+      assert.ok(gestion.svg.includes(CAPAS), 'Gestión de Datasets: las capas');
+      assert.ok(!gestion.svg.includes(RUEDITA), 'Gestión de Datasets: sin la ruedita');
+      assert.ok(correos.svg.includes(SOBRE), 'Correos: el sobre de siempre');
+      assert.ok(configuracion.svg.includes(RUEDITA), 'Configuración: la ruedita');
+      for (const { href, svg } of links) assert.match(svg, /^<svg aria-hidden="true" /, href);
     });
-  }
+
+    // El h1 de Gestión de Datasets lleva el mismo ícono que su link del menú, decorativo como los del h1 de Configuración y de
+    // Seguimiento; el alta rápida de un área manda a completar los datos de contacto en la pestaña Áreas de Configuración
+    it('admin.html: el h1 con las capas, decorativas, y el alta rápida de un área manda a Configuración → Áreas', () => {
+      const html = leer('admin.html');
+      const h1 = html.match(/<h1 class="page-title">[\s\S]*?<\/h1>/)?.[0] ?? '';
+      const svg = h1.match(/<svg[^>]*>[\s\S]*?<\/svg>/)?.[0] ?? '';
+      assert.ok(svg.includes(CAPAS), 'las capas');
+      assert.ok(!svg.includes(RUEDITA), 'sin la ruedita');
+      assert.match(svg, /^<svg aria-hidden="true" /);
+      assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Gestión de Datasets');
+      assert.ok(html.includes('<p class="ad-ayuda ad-arriba">Los datos de contacto se completan después, en Configuración → Áreas.</p>'));
+      assert.ok(!html.includes('se completan después, en Áreas.'), 'sin el texto viejo');
+    });
+  });
 
   // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
-  it('usuarios.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
-    const grupo = leer('usuarios.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
+  it('configuracion.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
+    const grupo = leer('configuracion.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
     assert.match(grupo, /<select id="l-autorizado"[^>]*><\/select>\s*<p class="form-hint" id="l-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página (las 14, con la portada)
+  // copiados a mano en cada página (las 13, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas)
   const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 14 páginas con carcasa', () => {
-    assert.equal(CON_CARCASA.length, 14);
+  it('hay 13 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 13);
   });
 
   for (const pagina of CON_CARCASA) {
@@ -233,7 +397,7 @@ describe('páginas', () => {
         assert.match(html, new RegExp(`id="${id}"`), id);
       }
       assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
-      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'areas.html', 'correos.html', 'reportes.html', 'notas.html', 'gestion.html', 'seguimiento.html', 'perfil.html']) {
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'gestion.html', 'seguimiento.html', 'perfil.html']) {
         assert.ok(html.includes(`href="${destino}"`), destino);
       }
       assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');
@@ -265,7 +429,7 @@ describe('páginas', () => {
     });
   }
 
-  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 14): el encabezado, el velo, el menú lateral y el footer de cada
+  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 13): el encabezado, el velo, el menú lateral y el footer de cada
   // página son los de index.html, con sus atributos de accesibilidad. Solo cambian la marca de la página actual y la sangría
   const PIEZAS_DE_LA_CARCASA = {
     encabezado: /<header class="header">[\s\S]*?<\/header>/,
