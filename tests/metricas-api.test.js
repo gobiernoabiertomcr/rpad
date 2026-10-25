@@ -79,6 +79,13 @@ const emailEnviado = ({ tipo, datasetId, enviado }) => query(
 
 const tramoDe = (data, gestion, clave) => data.vista.circuito[gestion].find((t) => t.clave === clave);
 
+// Un año sin foto en `fotos` (lo que lee la tarjeta del Informe anual, Ruling 34): hasta el 10/01 del año siguiente, desde cuándo se
+// descarga; después, que se reintenta
+const sinFoto = (anio, hoy) => ({
+  anio, con_foto: false, aviso_informe: hoy <= `${anio + 1}-01-10` ? `Disponible desde el 10/01/${anio + 1}`
+    : `La foto de ${anio} todavía no se sacó: se reintenta en la próxima corrida.`
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 // GET /api/metricas (con el servidor, en el año en curso)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -123,8 +130,8 @@ describe('GET /metricas', () => {
       assert.deepEqual(Object.keys(data), CLAVES_DE_DATA, quien);
       // El año en curso, en vivo al día de hoy
       assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios.at(-1)], [anio, hoy, true, null, anio], quien);
-      // Cada año con su foto (sin fotos en la base, ninguno) y el día en que se saca: lo que lee la tarjeta del Informe anual
-      assert.deepEqual(data.fotos, data.anios.map((a) => ({ anio: a, con_foto: false, dia_de_la_foto: `${a + 1}-01-10` })), quien);
+      // Cada año con su foto (sin fotos en la base, ninguno) y lo que dice el botón del Informe anual
+      assert.deepEqual(data.fotos, data.anios.map((a) => sinFoto(a, hoy)), quien);
       assert.deepEqual(Object.keys(data.vista), ['circuito', 'resultados', 'casos', 'para_completar'], quien);
       assert.deepEqual(Object.keys(data.cinta), ['externa', 'interna'], quien);
       assert.deepEqual(Object.keys(data.contexto), ['indice', 'indice_vacio', 'antiguedad', 'estados'], quien);
@@ -345,7 +352,7 @@ describe('metricasDe con un hoy fijo', () => {
       const data = await metricas({ anio: '2026', estadistico, dias, sin: `${ids[0]},${ids[1]}` }, '2027-03-01');
       assert.deepEqual(Object.keys(data), CLAVES_DE_DATA, clave);
       assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos], [2026, AL, false, null, [2026, 2027], []], clave);
-      assert.deepEqual(data.fotos, [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }], clave);
+      assert.deepEqual(data.fotos, [{ anio: 2026, con_foto: true, aviso_informe: null }, sinFoto(2027, '2027-03-01')], clave);
       assert.deepEqual(data.vista, guardada.vistas[clave], clave);
       assert.deepEqual(data.cinta, guardada.cintas[clave], clave);
       assert.deepEqual(data.contexto, guardada.contexto, clave);
@@ -415,7 +422,7 @@ describe('metricasDe con un hoy fijo', () => {
         const data = await metricas({ anio: '2026', estadistico, dias }, hoy);
         assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos],
           [2026, AL, true, aviso, anios, []], clave);
-        assert.deepEqual(data.fotos, anios.map((a) => ({ anio: a, con_foto: false, dia_de_la_foto: `${a + 1}-01-10` })), clave);
+        assert.deepEqual(data.fotos, anios.map((a) => sinFoto(a, hoy)), clave);
         assert.deepEqual(data.vista, laQueSeVaASacar.vistas[foto.claveDeLaVista(estadistico, dias)], clave);
         assert.deepEqual(data.cinta, laQueSeVaASacar.cintas[foto.claveDeLaVista(estadistico, dias)], clave);
         assert.deepEqual(data.contexto, laQueSeVaASacar.contexto, clave);

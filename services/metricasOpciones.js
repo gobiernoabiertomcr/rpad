@@ -43,13 +43,19 @@ const periodoDe = (anio, hoy, conFoto) => {
 // uno cerrado sin foto se ve en vivo). [] si `hoy` no es una fecha.
 export const aniosDeMetricas = ({ hoy } = {}) => (esFechaIso(hoy) ? aniosEntre(PRIMER_ANIO, Number(hoy.slice(0, 4))) : []);
 
+// Lo que dice el botón del Informe anual de un año sin foto en `hoy` (Ruling 34): hasta el día de la foto inclusive (también el del año
+// en curso), «Disponible desde el 10/01/2027»; después (la corrida no pudo sacarla), el aviso de la pestaña Métricas (avisoDeLaFoto)
+const avisoDelInforme = (anio, hoy) => (hoy <= diaDeLaFoto(anio) ? `Disponible desde el ${formatoCorto(diaDeLaFoto(anio))}` : avisoDeLaFoto(anio, hoy));
+
 // Los años de aniosDeMetricas en `hoy` con su foto, para la tarjeta del Informe anual (spec 5, Para presentar, punto 2), que así no la
-// deduce: [{ anio, con_foto, dia_de_la_foto }], del más viejo al más nuevo. `con_foto`: si el año está en `aniosConFoto`;
-// `dia_de_la_foto`: 'AAAA-MM-DD', el 10/01 del año siguiente, desde el que se saca (la tarjeta dice «Disponible desde el 10/01/2027»
-// mientras no la tiene). [] si `hoy` no es una fecha.
+// deduce: [{ anio, con_foto, aviso_informe }], del más viejo al más nuevo. `con_foto`: si el año está en `aniosConFoto`;
+// `aviso_informe`: lo que dice el botón deshabilitado mientras no la tiene (avisoDelInforme), o null con foto. [] si `hoy` no es una
+// fecha.
 export const fotosDeMetricas = ({ hoy, aniosConFoto } = {}) => {
   const conFoto = conjuntoDeFotos(aniosConFoto);
-  return aniosDeMetricas({ hoy }).map((anio) => ({ anio, con_foto: conFoto.has(anio), dia_de_la_foto: diaDeLaFoto(anio) }));
+  return aniosDeMetricas({ hoy }).map((anio) => (conFoto.has(anio)
+    ? { anio, con_foto: true, aviso_informe: null }
+    : { anio, con_foto: false, aviso_informe: avisoDelInforme(anio, hoy) }));
 };
 
 // De qué año toca sacar la foto en `hoy` (Ruling 18), con los años que ya la tienen (`aniosConFoto`): el más viejo de los años

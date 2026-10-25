@@ -888,6 +888,11 @@ const REPORTES_POR_DEFECTO = Object.freeze({ metricas: null, informe: null, area
 // Copia del 400 de GET /reportes/avisos (MENSAJE_PERIODO_INVALIDO de services/reportesAvisosPdf.js), atada por un test de paridad
 const PERIODO_INVALIDO = 'Elegí un período válido.';
 const FALTA_EL_AREA = 'Elegí un área.';
+// Los dos grupos de la pestaña (maqueta 4): su clave, su título, su bajada, su grilla y sus tarjetas, en orden
+const GRUPOS_DE_REPORTES = [
+  ['presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.', 'rp-grilla', ['metricas', 'informe', 'estado']],
+  ['trabajar', 'Para trabajar', 'Para preparar una reunión, planificar o dejar constancia.', 'rp-grilla g4', ['area', 'avisos', 'agenda', 'completar']]
+];
 
 // Los íconos de las tarjetas de «Para presentar», los de la maqueta (las de «Para trabajar» no llevan)
 const ICONOS_DE_REPORTES = {
@@ -917,7 +922,23 @@ function mesesDeLaAgenda(valor) {
   return MESES_AGENDA.some(([meses]) => meses === valor) ? valor : REPORTES_POR_DEFECTO.meses;
 }
 
-// Los años de las tarjetas: los de `fotos` de GET /api/metricas ({ anio, con_foto, dia_de_la_foto }, del más viejo al en curso), sin lo
+// El nombre del PDF de `tipo` (el data-reporte de la tarjeta), el que pone el servidor en su Content-Disposition: API.pedirArchivo da
+// solo el Blob, así que se arma acá. Copia de nombreDelReporte (services/reportesNombres.js), atada por un test de paridad; `hoy`, el día
+// de hoy en Argentina (Utils.hoyEnArgentina(); con toISOString, después de las 21 decía mañana)
+function nombreDelReporte(tipo, { anio, area, hoy } = {}) {
+  switch (tipo) {
+    case 'metricas': return `Metricas-RPAD-${anio}.pdf`;
+    case 'informe': return `Informe-anual-RPAD-${anio}.pdf`;
+    case 'estado': return `estado-general-${fecha(hoy).replace(/\//g, '-')}.pdf`;
+    case 'area': return `Reporte-area-${area}-${hoy}.pdf`;
+    case 'avisos': return `Avisos-RPAD-${hoy}.pdf`;
+    case 'agenda': return `Agenda-de-pedidos-${hoy}.pdf`;
+    case 'completar': return `Datos-para-completar-${hoy}.pdf`;
+    default: return null;
+  }
+}
+
+// Los años de las tarjetas: los de `fotos` de GET /api/metricas ({ anio, con_foto, aviso_informe }, del más viejo al en curso), sin lo
 // que no es un año
 function aniosDeReportes(anios) {
   return comoLista(anios).filter((foto) => esObjeto(foto) && Number.isInteger(foto.anio));
@@ -971,7 +992,8 @@ function htmlDeSelectorDeAnios(id, selector, lista, actual, conEnCurso) {
   return `<select id="${id}" class="mt-select" data-selector="${selector}">${opciones}</select>`;
 }
 
-// En lugar del selector de un año, mientras llegan los años (`anios` null) o si no llegaron (la respuesta de las métricas fue un error)
+// En lugar del selector de un año, mientras llegan los años (`anios` null) o si no llegaron (ni con la pestaña Métricas ni con el pedido
+// de respaldo)
 function htmlDelEstadoDeLosAnios(anios) {
   return `<p class="rp-estado">${anios === null || anios === undefined ? 'Cargando los años…' : 'No se pudieron cargar los años.'}</p>`;
 }
@@ -988,10 +1010,10 @@ function htmlDeOpcionesDeArea(areas, elegida) {
   }).join('');
 }
 
-// El botón de una tarjeta, descripto por su título (todos dicen «Descargar PDF»); el que no se puede usar, con aria-disabled (se alcanza
-// con el teclado y se lee) y su porqué a la vista
-function htmlDelBotonDeReporte(clave) {
-  return `<button type="button" class="mt-btn mt-btn-tinta" data-reporte="${clave}" aria-describedby="rp-titulo-${clave}">${ICONO_DESCARGA}Descargar PDF</button>`;
+// El botón de una tarjeta, descripto por su título (todos dicen «Descargar PDF»), deshabilitado mientras dura su descarga (`enCurso`); el
+// que no se puede usar, con aria-disabled (se alcanza con el teclado y se lee) y su porqué a la vista (`texto`, ya escapado)
+function htmlDelBotonDeReporte(clave, enCurso = false) {
+  return `<button type="button" class="mt-btn mt-btn-tinta" data-reporte="${clave}" aria-describedby="rp-titulo-${clave}"${enCurso ? ' disabled' : ''}>${ICONO_DESCARGA}Descargar PDF</button>`;
 }
 
 function htmlDelBotonNoDisponible(clave, texto) {
@@ -999,77 +1021,88 @@ function htmlDelBotonNoDisponible(clave, texto) {
 }
 
 // Una tarjeta: una sección con su h3 (y su ícono), su texto, sus campos, su botón y, debajo, cuántas hojas tiene
-function htmlDeTarjetaDeReporte(clave, titulo, texto, { campos = '', boton = htmlDelBotonDeReporte(clave), hojas = '' } = {}) {
+function htmlDeTarjeta(clave, titulo, texto, { campos = '', boton, hojas = '' }) {
   return `<section class="rp-tarjeta" aria-labelledby="rp-titulo-${clave}"><h3 id="rp-titulo-${clave}">${ICONOS_DE_REPORTES[clave] ?? ''}${titulo}</h3>`
     + `<p class="rp-texto">${texto}</p>${campos ? `<div class="rp-campos">${campos}</div>` : ''}${boton}`
     + `${hojas ? `<p class="rp-hojas">${hojas}</p>` : ''}</section>`;
+}
+
+// La tarjeta de un reporte (`clave`, su data-reporte), con lo elegido (`datos`) y lo que llegó (`opciones`), como en htmlDeReportes. ''
+// si `clave` no es de las siete. La página redibuja de a una tarjeta: así una fecha a medio escribir en Avisos no se pierde
+function htmlDeTarjetaDeReportes(clave, datos, { anios = null, areas = null, descargando = [] } = {}) {
+  const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
+  const lista = aniosDeReportes(anios);
+  const sinAnios = lista.length === 0 ? htmlDelEstadoDeLosAnios(anios) : '';
+  const boton = htmlDelBotonDeReporte(clave, comoLista(descargando).includes(clave));
+  switch (clave) {
+    case 'metricas':
+      return htmlDeTarjeta(clave, 'Métricas del año', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', {
+        campos: sinAnios || htmlDeCampo('rp-metricas-anio', 'Año', htmlDeSelectorDeAnios('rp-metricas-anio', 'rp-metricas', lista, anioDeMetricasDelAnio(e.metricas, lista), true)),
+        boton, hojas: 'Unas 5 hojas'
+      });
+    case 'informe': {
+      // Sin foto, el botón dice lo que manda el servidor (aviso_informe: desde cuándo se puede descargar o, si la corrida no pudo sacarla,
+      // que se reintenta)
+      const anio = anioDelInforme(e.informe, lista);
+      const foto = lista.find((f) => f.anio === anio) ?? null;
+      return htmlDeTarjeta(clave, 'Informe anual', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).', {
+        campos: sinAnios || htmlDeCampo('rp-informe-anio', 'Año', htmlDeSelectorDeAnios('rp-informe-anio', 'rp-informe', lista, anio, false)),
+        boton: foto?.con_foto === true ? boton : htmlDelBotonNoDisponible(clave, escaparTexto(foto?.aviso_informe) || 'Descargar PDF'),
+        hojas: 'Se arma con la foto del 31/12'
+      });
+    }
+    case 'estado':
+      return htmlDeTarjeta(clave, 'Estado general de los datasets', 'La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.', {
+        boton, hojas: 'Unas 4 hojas'
+      });
+    case 'area':
+      return htmlDeTarjeta(clave, 'Por área', 'Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.', {
+        campos: htmlDeCampo('rp-area', 'Área', `<select id="rp-area" class="mt-select" data-selector="rp-area">${htmlDeOpcionesDeArea(areas, e.area)}</select>`),
+        boton, hojas: 'Una portada y una hoja por dataset'
+      });
+    case 'avisos':
+      return htmlDeTarjeta(clave, 'Avisos del RPAD', 'La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.', {
+        campos: htmlDeCampo('rp-desde', 'Desde', `<input type="date" id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="${escaparTexto(e.desde)}">`)
+          + htmlDeCampo('rp-hasta', 'Hasta', `<input type="date" id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="${escaparTexto(e.hasta)}">`),
+        boton
+      });
+    case 'agenda': {
+      const meses = mesesDeLaAgenda(e.meses);
+      const gestion = elegido(e.gestion, GESTIONES_AGENDA);
+      return htmlDeTarjeta(clave, 'Agenda de pedidos', 'Qué vence en los próximos meses, mes por mes, con el área y los datos que se van a pedir.', {
+        campos: '<div class="mt-campo"><span class="rp-rotulo" id="rp-meses-rotulo">Próximos</span><div class="mt-chips" role="group" aria-labelledby="rp-meses-rotulo">'
+          + `${MESES_AGENDA.map(([valor, texto]) => htmlDeChip('rp-meses', String(valor), texto, valor === meses)).join('')}</div></div>`
+          + htmlDeCampo('rp-gestion', 'Gestión', '<select id="rp-gestion" class="mt-select" data-selector="rp-gestion">'
+            + `${GESTIONES_AGENDA.map(([valor, texto]) => `<option value="${valor}"${valor === gestion ? ' selected' : ''}>${texto}</option>`).join('')}</select>`),
+        boton
+      });
+    }
+    case 'completar':
+      return htmlDeTarjeta(clave, 'Datos para completar', 'Lo que falta cargar para que las métricas estén completas: notas DGMIT pendientes de carga y actualizaciones sin «Recibido el».', {
+        boton, hojas: 'Unas 3 hojas. También en Métricas → Para completar'
+      });
+    default:
+      return '';
+  }
 }
 
 // La pestaña Reportes (spec 5, maqueta 4): siete tarjetas en dos grupos, «Para presentar» (Métricas del año, Informe anual y Estado
 // general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda de pedidos y Datos para completar), cada una con su PDF.
 // `datos`: lo elegido en las tarjetas (REPORTES_POR_DEFECTO; `metricas`, el año de la tarjeta o, si no eligió otro, el de la pestaña
 // Métricas). `anios`: los de `fotos` de GET /api/metricas (null mientras llegan; [] si no llegaron); el Informe anual de un año sin foto
-// dice desde qué día se puede descargar, con el día del servidor. `areas`: las de API.getAreas() (null mientras llegan). Las cantidades
-// de hojas son las reales con los datos del 25/10/2026 (Ruling 24); donde depende de lo que se elige, no hay un número
-function htmlDeReportes(datos, { anios = null, areas = null } = {}) {
-  const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
-  const lista = aniosDeReportes(anios);
-  const sinAnios = lista.length === 0 ? htmlDelEstadoDeLosAnios(anios) : '';
-
-  const anioInforme = anioDelInforme(e.informe, lista);
-  const foto = lista.find(({ anio }) => anio === anioInforme) ?? null;
-  const botonDelInforme = foto?.con_foto === true ? htmlDelBotonDeReporte('informe')
-    : htmlDelBotonNoDisponible('informe', foto ? `Disponible desde el ${fecha(foto.dia_de_la_foto)}` : 'Descargar PDF');
-
-  const presentar = [
-    htmlDeTarjetaDeReporte('metricas', 'Métricas del año', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', {
-      campos: sinAnios || htmlDeCampo('rp-metricas-anio', 'Año', htmlDeSelectorDeAnios('rp-metricas-anio', 'rp-metricas', lista, anioDeMetricasDelAnio(e.metricas, lista), true)),
-      hojas: 'Unas 5 hojas'
-    }),
-    htmlDeTarjetaDeReporte('informe', 'Informe anual', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).', {
-      campos: sinAnios || htmlDeCampo('rp-informe-anio', 'Año', htmlDeSelectorDeAnios('rp-informe-anio', 'rp-informe', lista, anioInforme, false)),
-      boton: botonDelInforme,
-      hojas: 'Se arma con la foto del 31/12'
-    }),
-    htmlDeTarjetaDeReporte('estado', 'Estado general de los datasets', 'La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.', {
-      hojas: 'Unas 4 hojas'
-    })
-  ];
-
-  const meses = mesesDeLaAgenda(e.meses);
-  const gestion = elegido(e.gestion, GESTIONES_AGENDA);
-  const trabajar = [
-    htmlDeTarjetaDeReporte('area', 'Por área', 'Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.', {
-      campos: htmlDeCampo('rp-area', 'Área', `<select id="rp-area" class="mt-select" data-selector="rp-area">${htmlDeOpcionesDeArea(areas, e.area)}</select>`),
-      hojas: 'Una portada y una hoja por dataset'
-    }),
-    htmlDeTarjetaDeReporte('avisos', 'Avisos del RPAD', 'La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.', {
-      campos: htmlDeCampo('rp-desde', 'Desde', `<input type="date" id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="${escaparTexto(e.desde)}">`)
-        + htmlDeCampo('rp-hasta', 'Hasta', `<input type="date" id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="${escaparTexto(e.hasta)}">`)
-    }),
-    htmlDeTarjetaDeReporte('agenda', 'Agenda de pedidos', 'Qué vence en los próximos meses, mes por mes, con el área y los datos que se van a pedir.', {
-      campos: '<div class="mt-campo"><span class="rp-rotulo" id="rp-meses-rotulo">Próximos</span><div class="mt-chips" role="group" aria-labelledby="rp-meses-rotulo">'
-        + `${MESES_AGENDA.map(([valor, texto]) => htmlDeChip('rp-meses', String(valor), texto, valor === meses)).join('')}</div></div>`
-        + htmlDeCampo('rp-gestion', 'Gestión', '<select id="rp-gestion" class="mt-select" data-selector="rp-gestion">'
-          + `${GESTIONES_AGENDA.map(([valor, texto]) => `<option value="${valor}"${valor === gestion ? ' selected' : ''}>${texto}</option>`).join('')}</select>`)
-    }),
-    htmlDeTarjetaDeReporte('completar', 'Datos para completar', 'Lo que falta cargar para que las métricas estén completas: notas DGMIT pendientes de carga y actualizaciones sin «Recibido el».', {
-      hojas: 'Unas 3 hojas. También en Métricas → Para completar'
-    })
-  ];
-
-  const grupo = (clave, titulo, bajada, clase, tarjetas) => `<div class="rp-grupo"><h2 class="mt-seccion-titulo" id="rp-grupo-${clave}">${titulo}</h2>`
-    + `<p class="mt-seccion-bajada">${bajada}</p><div class="${clase}">${tarjetas.join('')}</div></div>`;
-  return grupo('presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.', 'rp-grilla', presentar)
-    + grupo('trabajar', 'Para trabajar', 'Para preparar una reunión, planificar o dejar constancia.', 'rp-grilla g4', trabajar);
+// dice en su botón lo que manda el servidor. `areas`: las de GET /api/areas (null mientras llegan). `descargando`: los reportes que se
+// están descargando (su botón, deshabilitado). Las cantidades de hojas son las reales con los datos del 25/10/2026 (Ruling 24); donde
+// depende de lo que se elige, no hay un número
+function htmlDeReportes(datos, opciones = {}) {
+  return GRUPOS_DE_REPORTES.map(([clave, titulo, bajada, clase, tarjetas]) => `<div class="rp-grupo"><h2 class="mt-seccion-titulo" id="rp-grupo-${clave}">${titulo}</h2>`
+    + `<p class="mt-seccion-bajada">${bajada}</p><div class="${clase}">${tarjetas.map((tarjeta) => htmlDeTarjetaDeReportes(tarjeta, datos, opciones ?? {})).join('')}</div></div>`).join('');
 }
 
 // Lo que pide el botón de una tarjeta (`clave`, su data-reporte) con lo elegido (`datos`, como en htmlDeReportes): { ruta, nombre }, la
-// ruta del PDF (todas con authMiddleware) y el nombre del archivo, el que pone el servidor en su Content-Disposition (API.pedirArchivo da
-// solo el Blob: se arma acá con el mismo formato y `hoy`, el día de hoy en Argentina); { error, foco } si falta algo (el aviso, con el
-// mensaje del servidor, y el id del control que recibe el foco), sin pedir nada; null si no hay nada que pedir (el Informe anual de un
-// año sin foto, o un reporte que no es de los siete). Métricas del año lleva lo elegido en la pestaña Métricas (`estado`: la combinación
-// y los destildados, consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
+// ruta del PDF (todas con authMiddleware) y el nombre del archivo (nombreDelReporte, con `hoy`, el día de hoy en Argentina); { error,
+// foco } si falta algo (el aviso, con el mensaje del servidor, y el id del control que recibe el foco), sin pedir nada; null si no hay
+// nada que pedir (el Informe anual de un año sin foto, o un reporte que no es de los siete). Métricas del año lleva lo elegido en la
+// pestaña Métricas (`estado`: la combinación y los destildados, consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
 function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = null, hoy = Utils.hoyEnArgentina() } = {}) {
   const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
   const lista = aniosDeReportes(anios);
@@ -1078,31 +1111,30 @@ function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = nu
       const enCurso = lista.at(-1)?.anio ?? Number(hoy.slice(0, 4));
       const anio = lista.length ? anioDeMetricasDelAnio(e.metricas, lista) : (anioDe(String(e.metricas ?? '')) ?? enCurso);
       const consulta = consultaDeLaApi({ ...(esObjeto(estado) ? estado : ESTADO_POR_DEFECTO), anio: anio === enCurso ? null : anio });
-      return { ruta: `/metricas/pdf${consulta ? `?${consulta}` : ''}`, nombre: `Metricas-RPAD-${String(anio)}.pdf` };
+      return { ruta: `/metricas/pdf${consulta ? `?${consulta}` : ''}`, nombre: nombreDelReporte(clave, { anio: String(anio) }) };
     }
     case 'informe': {
       const anio = anioDelInforme(e.informe, lista);
       const foto = lista.find((f) => f.anio === anio);
-      return foto?.con_foto === true ? { ruta: `/reportes/informe-anual?anio=${String(anio)}`, nombre: `Informe-anual-RPAD-${String(anio)}.pdf` } : null;
+      return foto?.con_foto === true ? { ruta: `/reportes/informe-anual?anio=${String(anio)}`, nombre: nombreDelReporte(clave, { anio: String(anio) }) } : null;
     }
     case 'estado':
-      // El único con el día como dd-mm-aaaa (el del servidor: formatoCorto con guiones)
-      return { ruta: '/reportes/estado-general', nombre: `estado-general-${fecha(hoy).replace(/\//g, '-')}.pdf` };
+      return { ruta: '/reportes/estado-general', nombre: nombreDelReporte(clave, { hoy }) };
     case 'area': {
       const id = idDeArea(e.area);
       if (id === null) return { error: FALTA_EL_AREA, foco: 'rp-area' };
-      return { ruta: `/reportes/por-area/${String(id)}`, nombre: `Reporte-area-${String(id)}-${hoy}.pdf` };
+      return { ruta: `/reportes/por-area/${String(id)}`, nombre: nombreDelReporte(clave, { area: String(id), hoy }) };
     }
     case 'avisos':
       // Como periodoDeAvisos del servidor: dos fechas que existen, con desde <= hasta (como texto). La tarjeta pide las dos
       if (!esFechaDeTexto(e.desde)) return { error: PERIODO_INVALIDO, foco: 'rp-desde' };
       if (!esFechaDeTexto(e.hasta)) return { error: PERIODO_INVALIDO, foco: 'rp-hasta' };
       if (e.desde > e.hasta) return { error: PERIODO_INVALIDO, foco: 'rp-desde' };
-      return { ruta: `/reportes/avisos?desde=${e.desde}&hasta=${e.hasta}`, nombre: `Avisos-RPAD-${hoy}.pdf` };
+      return { ruta: `/reportes/avisos?desde=${e.desde}&hasta=${e.hasta}`, nombre: nombreDelReporte(clave, { hoy }) };
     case 'agenda':
-      return { ruta: `/reportes/agenda?meses=${String(mesesDeLaAgenda(e.meses))}&gestion=${elegido(e.gestion, GESTIONES_AGENDA)}`, nombre: `Agenda-de-pedidos-${hoy}.pdf` };
+      return { ruta: `/reportes/agenda?meses=${String(mesesDeLaAgenda(e.meses))}&gestion=${elegido(e.gestion, GESTIONES_AGENDA)}`, nombre: nombreDelReporte(clave, { hoy }) };
     case 'completar':
-      return { ruta: '/reportes/para-completar', nombre: `Datos-para-completar-${hoy}.pdf` };
+      return { ruta: '/reportes/para-completar', nombre: nombreDelReporte(clave, { hoy }) };
     default:
       return null;
   }
@@ -1115,11 +1147,11 @@ function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = nu
 // Lo elegido, las métricas que llegaron, si la lista de casos está abierta, el número de pedido (una respuesta que llega después de
 // otra más nueva se descarta), la serie del trabajo por mes, cómo se agrupan los datasets y las métricas manuales del año (con su
 // propio número de pedido). La pestaña Reportes: lo elegido en sus tarjetas, los años (los de `fotos` de GET /api/metricas; null
-// mientras llegan) y las áreas (null mientras llegan)
+// mientras llegan), las áreas (null mientras llegan), las descargas en curso y el pedido de respaldo de los años (pedirLosAniosDeReportes)
 const pagina = {
   estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0, serie: SERIES[0][0], agrupar: AGRUPAR[0][0],
   manuales: { anio: null, lista: [], pedido: 0 },
-  reportes: { elegido: { ...REPORTES_POR_DEFECTO }, anios: null, areas: null }
+  reportes: { elegido: { ...REPORTES_POR_DEFECTO }, anios: null, areas: null, descargando: [], pedidoDeAnios: null }
 };
 
 const porId = (id) => document.getElementById(id);
@@ -1329,17 +1361,22 @@ async function cargarMetricas() {
   }
 }
 
-// Dibuja `html` en `contenedor` y, si el foco estaba en un control de adentro, lo devuelve al mismo control (el mismo chip, la misma
-// casilla de la misma fila)
-function conElFoco(contenedor, html) {
+// El selector del control de `contenedor` que tiene el foco (el mismo chip, la misma casilla de la misma fila, el botón del mismo
+// reporte), para devolvérselo después de redibujar; null si el foco está afuera
+function claveDelFoco(contenedor) {
   const activo = document.activeElement;
-  let clave = null;
-  if (activo && contenedor.contains(activo)) {
-    const d = activo.dataset ?? {};
-    if (d.selector) clave = d.valor ? `[data-selector="${d.selector}"][data-valor="${d.valor}"]` : `[data-selector="${d.selector}"]`;
-    else if (d.fila) clave = `[data-fila="${d.fila}"]`;
-    else if (d.accion) clave = `[data-accion="${d.accion}"]`;
-  }
+  if (!activo || !contenedor.contains(activo)) return null;
+  const d = activo.dataset ?? {};
+  if (d.selector) return d.valor ? `[data-selector="${d.selector}"][data-valor="${d.valor}"]` : `[data-selector="${d.selector}"]`;
+  if (d.fila) return `[data-fila="${d.fila}"]`;
+  if (d.accion) return `[data-accion="${d.accion}"]`;
+  if (d.reporte) return `[data-reporte="${d.reporte}"]`;
+  return null;
+}
+
+// Dibuja `html` en `contenedor` y, si el foco estaba en un control de adentro, lo devuelve al mismo control
+function conElFoco(contenedor, html) {
+  const clave = claveDelFoco(contenedor);
   contenedor.innerHTML = html;
   if (clave) contenedor.querySelector(clave)?.focus();
 }
@@ -1446,7 +1483,7 @@ function volverATodos() {
 async function descargarPdfDeMetricas(boton) {
   if (!boton || !pagina.datos) return;
   const consulta = consultaDeLaApi(pagina.estado);
-  await conBotonBloqueado(boton, () => descargarReporte(`/metricas/pdf${consulta ? `?${consulta}` : ''}`, `Metricas-RPAD-${String(pagina.datos.anio)}.pdf`));
+  await conBotonBloqueado(boton, () => descargarReporte(`/metricas/pdf${consulta ? `?${consulta}` : ''}`, nombreDelReporte('metricas', { anio: String(pagina.datos.anio) })));
 }
 
 // El CSV de métricas de Gestión, el de siempre (/gestion/metricas/csv, los últimos 12 meses), con el JWT en el encabezado
@@ -1564,9 +1601,34 @@ function elegidoDeReportes() {
   return { ...elegido, metricas: elegido.metricas ?? pagina.estado.anio };
 }
 
-// Las tarjetas con lo elegido, los años y las áreas; si el foco estaba en un control de adentro, vuelve al mismo
+// Lo que llegó para las tarjetas: los años, las áreas y las descargas en curso
+function opcionesDeReportes() {
+  const { anios, areas, descargando } = pagina.reportes;
+  return { anios, areas, descargando };
+}
+
+// Todas las tarjetas (al entrar); si el foco estaba en un control de adentro, vuelve al mismo
 function dibujarReportes() {
-  conElFoco(porId('rp-reportes'), htmlDeReportes(elegidoDeReportes(), { anios: pagina.reportes.anios, areas: pagina.reportes.areas }));
+  conElFoco(porId('rp-reportes'), htmlDeReportes(elegidoDeReportes(), opcionesDeReportes()));
+}
+
+// Solo las tarjetas de `claves`, cada una en su lugar y con el foco donde estaba: las demás quedan como están (una fecha a medio escribir
+// en Avisos no se pierde). Si una todavía no está dibujada, se dibujan todas
+function dibujarTarjetas(claves) {
+  const contenedor = porId('rp-reportes');
+  for (const clave of claves) {
+    const actual = contenedor.querySelector(`section[aria-labelledby="rp-titulo-${clave}"]`);
+    if (!actual) {
+      dibujarReportes();
+      return;
+    }
+    const foco = claveDelFoco(actual);
+    const plantilla = document.createElement('template');
+    plantilla.innerHTML = htmlDeTarjetaDeReportes(clave, elegidoDeReportes(), opcionesDeReportes());
+    const nueva = plantilla.content.firstElementChild;
+    actual.replaceWith(nueva);
+    if (foco) nueva.querySelector(foco)?.focus();
+  }
 }
 
 // Avisos del RPAD, del 1/1 a hoy en hora argentina (con toISOString, después de las 21 decía mañana); los oyentes de las tarjetas y las
@@ -1582,32 +1644,54 @@ async function iniciarTarjetasDeReportes() {
   await cargarAreasDeReportes();
 }
 
-// Las áreas de Por área (API.getAreas, la de Áreas). Un error lo avisa y el selector queda solo con «Elegí un área»
+// Las áreas de Por área (GET /api/areas, la de Áreas, con API.pedirJson: una respuesta de error tira y se avisa; API.getAreas la
+// devolvería como una lista vacía). Con un error, el selector queda solo con «Elegí un área»
 async function cargarAreasDeReportes() {
   try {
-    pagina.reportes.areas = comoLista(await API.getAreas());
+    pagina.reportes.areas = comoLista((await API.pedirJson('GET', '/areas'))?.data);
   } catch (error) {
     console.error('Error cargando las áreas:', error);
     pagina.reportes.areas = [];
     avisarError('No se pudieron cargar las áreas.');
   }
-  dibujarReportes();
+  dibujarTarjetas(['area']);
 }
 
-// Los años de Métricas del año y del Informe anual: los de `fotos` de GET /api/metricas (los mismos en cada respuesta). Si no llegaron
-// (la respuesta fue un error), quedan los que ya había o, si no había, ninguno (las tarjetas lo dicen)
+// Los años de Métricas del año y del Informe anual: los de `fotos` de la respuesta de la pestaña Métricas (los mismos en cada una). Si
+// esa respuesta no los trajo (un 404 por un año sin métricas en la dirección, o un error) y todavía no hay años, se piden aparte
+// (pedirLosAniosDeReportes). Devuelve ese pedido, o null
 function conLosAniosDeReportes(fotos) {
   if (Array.isArray(fotos)) pagina.reportes.anios = fotos;
-  else if (pagina.reportes.anios === null) pagina.reportes.anios = [];
-  dibujarReportes();
+  else if (pagina.reportes.anios === null) return pedirLosAniosDeReportes();
+  // Métricas del año sigue al año de la pestaña mientras no se elija otro en la tarjeta
+  dibujarTarjetas(['metricas', 'informe']);
+  return null;
 }
 
-// Un chip de la Agenda cambia los meses (y se redibuja, por su aria-pressed); un botón descarga su PDF
+// GET /api/metricas sin parámetros (el año en curso), una sola vez, solo por sus `fotos`: si también falla, las tarjetas dicen que no se
+// pudieron cargar los años. Si mientras tanto llegaron los de la pestaña, quedan esos
+function pedirLosAniosDeReportes() {
+  if (!pagina.reportes.pedidoDeAnios) {
+    pagina.reportes.pedidoDeAnios = (async () => {
+      let fotos = null;
+      try {
+        fotos = (await API.pedirJson('GET', '/metricas'))?.data?.fotos;
+      } catch (error) {
+        console.error('Error cargando los años de los reportes:', error);
+      }
+      if (pagina.reportes.anios === null) pagina.reportes.anios = Array.isArray(fotos) ? fotos : [];
+      dibujarTarjetas(['metricas', 'informe']);
+    })();
+  }
+  return pagina.reportes.pedidoDeAnios;
+}
+
+// Un chip de la Agenda cambia los meses (y se redibuja su tarjeta, por su aria-pressed); un botón descarga su PDF
 function alHacerClicEnReportes(evento) {
   const chip = evento.target.closest('button[data-selector="rp-meses"]');
   if (chip) {
     pagina.reportes.elegido = conReporteElegido(pagina.reportes.elegido, 'meses', chip.dataset.valor);
-    dibujarReportes();
+    dibujarTarjetas(['agenda']);
     return;
   }
   const boton = evento.target.closest('button[data-reporte]');
@@ -1617,29 +1701,42 @@ function alHacerClicEnReportes(evento) {
 // Qué guarda cada control de las tarjetas (su data-selector)
 const CONTROLES_DE_REPORTES = { 'rp-metricas': 'metricas', 'rp-informe': 'informe', 'rp-area': 'area', 'rp-desde': 'desde', 'rp-hasta': 'hasta', 'rp-gestion': 'gestion' };
 
-// Un selector o una fecha: queda en lo elegido. Solo el año del Informe anual cambia algo a la vista (su botón)
+// Un selector o una fecha: queda en lo elegido. Solo el año del Informe anual cambia algo a la vista (su botón): se redibuja su tarjeta
 function alCambiarEnReportes(evento) {
   const control = evento.target.closest('[data-selector]');
   const clave = CONTROLES_DE_REPORTES[control?.dataset.selector];
   if (!clave) return;
   pagina.reportes.elegido = conReporteElegido(pagina.reportes.elegido, clave, control.value);
-  if (clave === 'informe' && evento.type === 'change') dibujarReportes();
+  if (clave === 'informe' && evento.type === 'change') dibujarTarjetas(['informe']);
 }
 
 // El botón de una tarjeta: lo que pide (pedidoDeReporte, con el día de hoy en Argentina). Si falta algo, el aviso y el foco en su control,
-// sin pedir nada; deshabilitado (el Informe anual sin foto) o mientras dura otra descarga, nada
+// sin pedir nada; deshabilitado (el Informe anual sin foto) o mientras dura su descarga, nada
 async function descargarDeLaTarjeta(boton) {
-  if (!boton || boton.disabled || boton.getAttribute('aria-disabled') === 'true') return;
-  const pedido = pedidoDeReporte(boton.dataset.reporte, elegidoDeReportes(), {
-    estado: pagina.estado, anios: pagina.reportes.anios, hoy: Utils.hoyEnArgentina()
-  });
+  const clave = boton?.dataset?.reporte;
+  if (!boton || boton.disabled || boton.getAttribute('aria-disabled') === 'true' || pagina.reportes.descargando.includes(clave)) return;
+  const pedido = pedidoDeReporte(clave, elegidoDeReportes(), { estado: pagina.estado, anios: pagina.reportes.anios, hoy: Utils.hoyEnArgentina() });
   if (pedido === null) return;
   if (pedido.error) {
     avisarError(pedido.error);
     porId(pedido.foco)?.focus();
     return;
   }
-  await conBotonBloqueado(boton, () => descargarReporte(pedido.ruta, pedido.nombre));
+  marcarDescarga(clave, true, boton);
+  try {
+    await descargarReporte(pedido.ruta, pedido.nombre);
+  } finally {
+    marcarDescarga(clave, false, boton);
+  }
+}
+
+// La descarga en curso de una tarjeta queda en el estado (así un redibujo no le habilita el botón: no se pide dos veces) y en su botón de
+// ahora (el que dibujó el último redibujo o, si no hay, `boton`)
+function marcarDescarga(clave, enCurso, boton) {
+  const { descargando } = pagina.reportes;
+  pagina.reportes.descargando = enCurso ? [...descargando, clave] : descargando.filter((otra) => otra !== clave);
+  const actual = porId('rp-reportes').querySelector(`button[data-reporte="${clave}"]`) ?? boton;
+  actual.disabled = enCurso;
 }
 
 // Un PDF de la página con el JWT en el encabezado (API.pedirArchivo), nunca en la URL, guardado con `nombre` (descargarBlob). Un error

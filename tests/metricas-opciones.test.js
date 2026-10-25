@@ -96,28 +96,51 @@ describe('aniosDeMetricas', () => {
   });
 });
 
-// La tarjeta del Informe anual (spec 5, Para presentar, punto 2) sabe por el servidor qué años tienen foto y desde qué día se puede
-// descargar el de los que no la tienen: el 10/01 del año siguiente, el día de la foto
+// La tarjeta del Informe anual (spec 5, Para presentar, punto 2) sabe por el servidor qué años tienen foto y qué dice su botón mientras no
+// la tienen (Ruling 34): hasta el día de la foto (el 10/01 del año siguiente, inclusive), desde cuándo se puede descargar; después (la
+// corrida no pudo sacarla), el aviso de la pestaña Métricas (Ruling 17), el mismo texto
 describe('fotosDeMetricas', () => {
-  const sinFoto = (anio) => ({ anio, con_foto: false, dia_de_la_foto: `${anio + 1}-01-10` });
+  const DISPONIBLE_2027 = 'Disponible desde el 10/01/2027';
+  const SE_REINTENTA_2026 = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
+  const conFoto = (anio) => ({ anio, con_foto: true, aviso_informe: null });
+  const sinFoto = (anio, aviso) => ({ anio, con_foto: false, aviso_informe: aviso });
 
-  it('cada año de aniosDeMetricas con su foto y el día en que se saca, del más viejo al más nuevo', () => {
-    assert.deepEqual(fotosDeMetricas({ hoy: '2026-10-24', aniosConFoto: [] }), [sinFoto(2026)]);
-    assert.deepEqual(fotosDeMetricas({ hoy: '2027-01-05', aniosConFoto: [] }), [sinFoto(2026), sinFoto(2027)]);
-    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: [2026] }), [{ ...sinFoto(2026), con_foto: true }, sinFoto(2027)]);
+  it('cada año de aniosDeMetricas con su foto, del más viejo al más nuevo', () => {
+    // El año en curso todavía no la tiene: se descarga desde el 10/01 del año siguiente
+    assert.deepEqual(fotosDeMetricas({ hoy: '2026-10-24', aniosConFoto: [] }), [sinFoto(2026, DISPONIBLE_2027)]);
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: [2026] }), [conFoto(2026), sinFoto(2027, 'Disponible desde el 10/01/2028')]);
     assert.deepEqual(fotosDeMetricas({ hoy: '2029-02-01', aniosConFoto: [2027, 2026] }).map((f) => [f.anio, f.con_foto]),
       [[2026, true], [2027, true], [2028, false], [2029, false]]);
     // Los años con foto pueden llegar como texto; una foto anterior a 2026 no es un año de Métricas
-    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: ['2026', 2025] }), [{ ...sinFoto(2026), con_foto: true }, sinFoto(2027)]);
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: ['2026', 2025] })[0], conFoto(2026));
     // Lo que no es una lista de años, ninguno con foto; sin hoy, ningún año
-    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: 'x' }), [sinFoto(2026), sinFoto(2027)]);
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: 'x' }).map((f) => f.con_foto), [false, false]);
     for (const hoy of ['2025-12-31', 'no es una fecha', null]) assert.deepEqual(fotosDeMetricas({ hoy, aniosConFoto: [2026] }), [], String(hoy));
     assert.deepEqual(fotosDeMetricas(), []);
   });
 
-  it('el día de la foto es el de DIA_DE_LA_FOTO, el que usa la corrida (fotoQueToca)', () => {
-    for (const { anio, dia_de_la_foto: dia } of fotosDeMetricas({ hoy: '2028-06-01', aniosConFoto: [] })) {
-      assert.equal(dia, `${anio + 1}-${DIA_DE_LA_FOTO}`, String(anio));
+  it('un año cerrado sin foto: hasta el 10/01, «Disponible desde el 10/01/2027»; desde el 11/01, el aviso de que se reintenta (Ruling 34)', () => {
+    for (const [hoy, aviso] of [['2027-01-01', DISPONIBLE_2027], ['2027-01-09', DISPONIBLE_2027], ['2027-01-10', DISPONIBLE_2027],
+      ['2027-01-11', SE_REINTENTA_2026], ['2028-03-01', SE_REINTENTA_2026]]) {
+      const fotos = fotosDeMetricas({ hoy, aniosConFoto: [] });
+      assert.deepEqual(fotos[0], sinFoto(2026, aviso), hoy);
+      // El año en curso, siempre desde el 10/01 del año siguiente
+      const anio = Number(hoy.slice(0, 4));
+      assert.deepEqual(fotos.at(-1), sinFoto(anio, `Disponible desde el 10/01/${anio + 1}`), hoy);
+    }
+    // Después del 10/01 el aviso es el de la pestaña Métricas para ese año (opcionesDeMetricas: aviso_foto), no una copia
+    for (const hoy of ['2027-01-11', '2028-03-01']) {
+      assert.equal(fotosDeMetricas({ hoy, aniosConFoto: [] })[0].aviso_informe, opcionesDeMetricas({ anio: '2026' }, { hoy, aniosConFoto: [] }).aviso_foto, hoy);
+    }
+    // El mismo 10/01, una vez sacada, ya está
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-01-10', aniosConFoto: [2026] })[0], conFoto(2026));
+  });
+
+  it('el día del botón es el de la foto: DIA_DE_LA_FOTO, el que usa la corrida (fotoQueToca)', () => {
+    for (const { anio, aviso_informe: aviso } of fotosDeMetricas({ hoy: '2028-06-01', aniosConFoto: [2026, 2027] })) {
+      if (aviso === null) continue;
+      const dia = `${anio + 1}-${DIA_DE_LA_FOTO}`;
+      assert.equal(aviso, `Disponible desde el ${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`, String(anio));
       // Ese día la corrida la saca (con las de los años anteriores ya sacadas)
       assert.deepEqual(fotoQueToca({ hoy: dia, aniosConFoto: Array.from({ length: anio - 2026 }, (_, i) => 2026 + i) }), { anio, falta: true }, dia);
     }

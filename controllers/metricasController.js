@@ -7,6 +7,7 @@ import { opcionesDeMetricas, aniosDeMetricas, fotosDeMetricas } from '../service
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { nombreCorto, disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { renderMetricasDelAnio } from '../services/reportesMetricasPdf.js';
+import { nombreDelReporte } from '../services/reportesNombres.js';
 
 // Métricas (spec 2026-10-24-metricas-y-reportes, 1.5 a 1.7, 2.3 y 3): GET /api/metricas devuelve todo lo que dibuja la pestaña
 // Métricas, de solo lectura y para todos los roles con sesión (authMiddleware, sin adminOnly), y GET /api/metricas/pdf, lo mismo en el
@@ -62,7 +63,7 @@ export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
 // { anio, al, en_vivo, aviso_foto, anios, fotos, vista, cinta: { externa, interna }, contexto: { indice, indice_vacio, antiguedad,
 //   estados }, trabajo, areas, sin_titulos }
 // - anio, al, en_vivo y aviso_foto: los de opcionesDeMetricas; anios: los años que se pueden elegir (aniosDeMetricas); fotos: esos
-//   años con su foto y el día en que se saca (fotosDeMetricas: lo lee la tarjeta del Informe anual de la pestaña Reportes);
+//   años con su foto y lo que dice, sin ella, el botón del Informe anual de la pestaña Reportes (fotosDeMetricas);
 // - vista: la de vistaDe con lo elegido (el circuito, los resultados, los casos y «Para completar»); cinta: la de cada gestión
 //   (cintaDeMetricas; null si no se dibuja);
 // - contexto: contextoDelAnio, el índice mes a mes (indiceMesAMes, y si no hay nada que dibujar, por qué), la antigüedad de los
@@ -131,7 +132,7 @@ export const descargarMetricasPdf = async (req, res) => {
     const resultado = await pdfDeMetricas(req.query, { momento, por: nombreCorto(usuario?.nombre_completo) });
     if (resultado === null) return res.status(404).json(SIN_METRICAS);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Metricas-RPAD-${resultado.anio}.pdf`));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('metricas', { anio: resultado.anio })));
     res.send(resultado.pdf);
   } catch (error) {
     console.error('Error al generar el PDF de las métricas:', error);

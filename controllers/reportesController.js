@@ -1,5 +1,5 @@
 import pool from '../config/database.js';
-import { ahoraArgentina, formatoCorto, esFechaIso, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { ahoraArgentina, esFechaIso, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
 import { nombreCorto, seguimientoDe, disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { fuentesDe, idsDeLaLista } from '../services/seguimientoDatos.js';
@@ -12,6 +12,7 @@ import { renderAgenda } from '../services/reportesAgendaPdf.js';
 import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
 import { renderInformeAnual, logrosPorProyecto } from '../services/reportesInformeAnualPdf.js';
 import { leerFoto } from '../services/metricasFoto.js';
+import { nombreDelReporte } from '../services/reportesNombres.js';
 import { ESTADISTICOS, DIAS } from '../services/metricasReglas.js';
 import { metricasDe, deLaFoto, SIN_METRICAS } from './metricasController.js';
 
@@ -68,7 +69,7 @@ export const reporteEstadoGeneral = async (req, res) => {
 
     res.setHeader('Content-Type', 'application/pdf');
     // La fecha de hoy en Argentina, la del PDF (con new Date(), en un servidor en UTC, después de las 21 decía mañana)
-    res.setHeader('Content-Disposition', `attachment; filename=estado-general-${formatoCorto(hoy).replace(/\//g, '-')}.pdf`);
+    res.setHeader('Content-Disposition', `attachment; filename=${nombreDelReporte('estado', { hoy })}`);
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
@@ -157,7 +158,7 @@ export const reporteAvisos = async (req, res) => {
     ]);
     const pdf = await renderAvisos({ ...periodo, avisos }, { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Avisos-RPAD-${hoy}.pdf`));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('avisos', { hoy })));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
@@ -215,7 +216,7 @@ export const reportePorArea = async (req, res) => {
 
     res.setHeader('Content-Type', 'application/pdf');
     // La fecha de hoy en Argentina, la del PDF (no la del reloj del servidor)
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Reporte-area-${area.id}-${hoy}.pdf`));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('area', { area: area.id, hoy })));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
@@ -263,7 +264,7 @@ export const reporteAgenda = async (req, res) => {
     })), { hoy, meses, gestion });
     const pdf = await renderAgenda({ meses, gestion, agenda }, { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Agenda-de-pedidos-${hoy}.pdf`));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('agenda', { hoy })));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
@@ -292,7 +293,7 @@ export const reporteParaCompletar = async (req, res) => {
     const pdf = await renderParaCompletar({ anio: metricas.anio, para_completar: metricas.vista?.para_completar },
       { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Datos-para-completar-${hoy}.pdf`));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('completar', { hoy })));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
@@ -353,7 +354,7 @@ export const reporteInformeAnual = async (req, res) => {
     const pdf = await renderInformeAnual({ foto: delInforme(foto), anterior: delInforme(anterior), logros: logrosPorProyecto(hitos) },
       { generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Informe-anual-RPAD-${anio}.pdf`));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('informe', { anio })));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);

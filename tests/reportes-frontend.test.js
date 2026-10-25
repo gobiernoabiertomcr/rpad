@@ -22,6 +22,8 @@ import {
 } from '../services/reportesParaCompletarPdf.js';
 import { MENSAJE_PERIODO_INVALIDO } from '../services/reportesAvisosPdf.js';
 import { MESES_DE_LA_AGENDA, MESES_POR_DEFECTO, GESTIONES_DE_LA_AGENDA } from '../services/reportesAgenda.js';
+import { fotosDeMetricas } from '../services/metricasOpciones.js';
+import { nombreDelReporte as nombreDelReporteDelServidor } from '../services/reportesNombres.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -871,18 +873,23 @@ describe('reportes.js: lo que llega del servidor', () => {
 });
 
 // La pestaña Reportes (spec 2026-10-24-metricas-y-reportes, 5; maquetas 3-reportes.html y 6-reportes-datos-reales.html): siete tarjetas
-// en dos grupos, cada una con su PDF, que se descarga con el JWT en el encabezado (API.pedirArchivo). Qué años tienen foto lo dice el
-// servidor (`fotos` de GET /api/metricas, fotosDeMetricas): la página no lo deduce
+// en dos grupos, cada una con su PDF, que se descarga con el JWT en el encabezado (API.pedirArchivo). Qué años tienen foto y qué dice el
+// botón del Informe anual sin ella lo dice el servidor (`fotos` de GET /api/metricas, fotosDeMetricas): la página no lo deduce
 describe('reportes.js: la pestaña Reportes', () => {
   const HOY_DE_LA_PRUEBA = '2026-10-25';
-  const FOTOS_2026 = [{ anio: 2026, con_foto: false, dia_de_la_foto: '2027-01-10' }];
-  const AREAS = [{ id: 7, nombre: 'Secretaría de Hacienda' }, { id: 3, nombre: 'Área de Ambiente' }, { id: 12, nombre: 'Dirección de Comercio' }];
+  const DISPONIBLE_2027 = 'Disponible desde el 10/01/2027';
+  const SE_REINTENTA_2026 = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
+  const conFoto = (anio) => ({ anio, con_foto: true, aviso_informe: null });
+  const sinFoto = (anio, aviso = `Disponible desde el 10/01/${anio + 1}`) => ({ anio, con_foto: false, aviso_informe: aviso });
+  const FOTOS_2026 = [sinFoto(2026)];
+  const LAS_AREAS = [{ id: 7, nombre: 'Secretaría de Hacienda' }, { id: 3, nombre: 'Área de Ambiente' }, { id: 12, nombre: 'Dirección de Comercio' }];
   const ELEGIDO = { metricas: null, informe: null, area: '', desde: '2026-01-01', hasta: HOY_DE_LA_PRUEBA, meses: 6, gestion: 'ambas' };
-  const reportes = (elegido = ELEGIDO, opciones = {}) => ctx.htmlDeReportes(elegido, { anios: FOTOS_2026, areas: AREAS, ...opciones });
+  const reportes = (elegido = ELEGIDO, opciones = {}) => ctx.htmlDeReportes(elegido, { anios: FOTOS_2026, areas: LAS_AREAS, ...opciones });
   // La tarjeta de un reporte (lo que va de su <section> a la siguiente)
   const tarjeta = (html, clave) => html.match(new RegExp(`<section class="rp-tarjeta" aria-labelledby="rp-titulo-${clave}">[\\s\\S]*?</section>`))?.[0] ?? '';
   const pedido = (clave, elegido = ELEGIDO, { estado = POR_DEFECTO, anios = FOTOS_2026, hoy = HOY_DE_LA_PRUEBA } = {}) =>
     plano(ctx.pedidoDeReporte(clave, elegido, { estado, anios, hoy }) ?? null);
+  const NO_DISPONIBLE = '<button type="button" class="mt-btn rp-no-disponible" data-reporte="informe" aria-disabled="true" aria-describedby="rp-titulo-informe">';
 
   it('siete tarjetas en dos grupos', () => {
     const html = reportes();
@@ -921,7 +928,10 @@ describe('reportes.js: la pestaña Reportes', () => {
         assert.ok(t.includes(`<button type="button" class="mt-btn mt-btn-tinta" data-reporte="${clave}" aria-describedby="rp-titulo-${clave}">${vm.runInContext('ICONO_DESCARGA', ctx)}Descargar PDF</button>`), clave);
       }
       assert.equal(cuantas(t, /<button type="button" class="mt-btn/g), 1, clave);
+      // Cada tarjeta, sola, es la misma que dentro de la pestaña (la página redibuja de a una)
+      assert.equal(ctx.htmlDeTarjetaDeReportes(clave, ELEGIDO, { anios: FOTOS_2026, areas: LAS_AREAS }), t, clave);
     }
+    assert.equal(ctx.htmlDeTarjetaDeReportes('cumplimiento', ELEGIDO, {}), '');
     // Cada selector con su label, una sola vez
     for (const [id, rotulo] of [['rp-metricas-anio', 'Año'], ['rp-informe-anio', 'Año'], ['rp-area', 'Área'], ['rp-desde', 'Desde'], ['rp-hasta', 'Hasta'], ['rp-gestion', 'Gestión']]) {
       assert.equal(cuantas(html, new RegExp(`<label for="${id}">${rotulo}</label>`, 'g')), 1, id);
@@ -932,36 +942,56 @@ describe('reportes.js: la pestaña Reportes', () => {
   });
 
   it('el Informe anual sin foto, deshabilitado con «Disponible desde el 10/01/2027»', () => {
-    const DISPONIBLE = '<button type="button" class="mt-btn rp-no-disponible" data-reporte="informe" aria-disabled="true" aria-describedby="rp-titulo-informe">';
-    const sinFoto = tarjeta(reportes(), 'informe');
-    assert.ok(sinFoto.includes(`${DISPONIBLE}Disponible desde el 10/01/2027</button>`), sinFoto);
-    assert.doesNotMatch(sinFoto, /Descargar PDF/);
-    assert.match(sinFoto, /<select id="rp-informe-anio" class="mt-select" data-selector="rp-informe"><option value="2026" selected>2026<\/option><\/select>/);
+    const sinFoto2026 = tarjeta(reportes(), 'informe');
+    assert.ok(sinFoto2026.includes(`${NO_DISPONIBLE}${DISPONIBLE_2027}</button>`), sinFoto2026);
+    assert.doesNotMatch(sinFoto2026, /Descargar PDF/);
+    assert.match(sinFoto2026, /<select id="rp-informe-anio" class="mt-select" data-selector="rp-informe"><option value="2026" selected>2026<\/option><\/select>/);
     // Sin foto no se pide nada
     assert.equal(pedido('informe'), null);
-    // El día sale del servidor (dia_de_la_foto), no de la página
-    assert.ok(tarjeta(reportes(ELEGIDO, { anios: [{ ...FOTOS_2026[0], dia_de_la_foto: '2027-01-11' }] }), 'informe').includes('Disponible desde el 11/01/2027'));
+    // El texto es el del servidor (aviso_informe), no uno de la página
+    assert.ok(tarjeta(reportes(ELEGIDO, { anios: [sinFoto(2026, 'Disponible desde el 11/01/2027')] }), 'informe').includes('Disponible desde el 11/01/2027'));
 
     // Entre el 1/1 y el 10/1 ningún año tiene foto: se propone el cerrado, el primero que la va a tener
-    const enEnero = [{ anio: 2026, con_foto: false, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }];
-    const enero = tarjeta(reportes(ELEGIDO, { anios: enEnero }), 'informe');
+    const enero = tarjeta(reportes(ELEGIDO, { anios: [sinFoto(2026), sinFoto(2027)] }), 'informe');
     assert.match(enero, /<option value="2027">2027<\/option><option value="2026" selected>2026<\/option>/);
-    assert.ok(enero.includes(`${DISPONIBLE}Disponible desde el 10/01/2027</button>`));
+    assert.ok(enero.includes(`${NO_DISPONIBLE}${DISPONIBLE_2027}</button>`));
 
     // Con foto: se propone el más nuevo que la tiene, y se descarga
-    const conFoto = [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }];
-    const disponible = tarjeta(reportes(ELEGIDO, { anios: conFoto }), 'informe');
+    const dosAnios = [conFoto(2026), sinFoto(2027)];
+    const disponible = tarjeta(reportes(ELEGIDO, { anios: dosAnios }), 'informe');
     assert.match(disponible, /<option value="2027">2027<\/option><option value="2026" selected>2026<\/option>/);
     assert.ok(disponible.includes('<button type="button" class="mt-btn mt-btn-tinta" data-reporte="informe" aria-describedby="rp-titulo-informe">'), disponible);
     assert.match(disponible, /Descargar PDF<\/button>/);
     assert.doesNotMatch(disponible, /aria-disabled|Disponible desde/);
-    assert.deepEqual(pedido('informe', ELEGIDO, { anios: conFoto }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
+    assert.deepEqual(pedido('informe', ELEGIDO, { anios: dosAnios }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
     // Elegido el en curso, que todavía no la tiene: deshabilitado, con su día
     const elegido2027 = { ...ELEGIDO, informe: 2027 };
-    assert.ok(tarjeta(reportes(elegido2027, { anios: conFoto }), 'informe').includes(`${DISPONIBLE}Disponible desde el 10/01/2028</button>`));
-    assert.equal(pedido('informe', elegido2027, { anios: conFoto }), null);
+    assert.ok(tarjeta(reportes(elegido2027, { anios: dosAnios }), 'informe').includes(`${NO_DISPONIBLE}Disponible desde el 10/01/2028</button>`));
+    assert.equal(pedido('informe', elegido2027, { anios: dosAnios }), null);
     // Un año elegido que no está entre los del servidor no vale: queda el propuesto
-    assert.equal(pedido('informe', { ...ELEGIDO, informe: 2025 }, { anios: conFoto }).ruta, '/reportes/informe-anual?anio=2026');
+    assert.equal(pedido('informe', { ...ELEGIDO, informe: 2025 }, { anios: dosAnios }).ruta, '/reportes/informe-anual?anio=2026');
+  });
+
+  // Ruling 34: el año cerrado cuya foto no se pudo sacar es el que se propone, y su botón no dice una fecha que ya pasó: dice lo que manda el
+  // servidor (fotosDeMetricas, el mismo aviso de la pestaña Métricas)
+  it('el Informe anual de un año cerrado cuya foto no se pudo sacar dice que se reintenta, con el texto del servidor', () => {
+    for (const hoy of ['2027-01-11', '2027-06-15']) {
+      const anios = plano(fotosDeMetricas({ hoy, aniosConFoto: [] }));
+      assert.deepEqual(anios, [sinFoto(2026, SE_REINTENTA_2026), sinFoto(2027)], hoy);
+      const informe = tarjeta(reportes(ELEGIDO, { anios }), 'informe');
+      assert.match(informe, /<option value="2026" selected>2026<\/option>/, hoy);
+      assert.ok(informe.includes(`${NO_DISPONIBLE}${SE_REINTENTA_2026}</button>`), informe);
+      assert.doesNotMatch(informe, /10\/01\/2027/, hoy);
+      assert.equal(pedido('informe', ELEGIDO, { anios }), null, hoy);
+    }
+    // Hasta el 10/01 inclusive, desde cuándo
+    for (const hoy of ['2027-01-01', '2027-01-10']) {
+      const anios = plano(fotosDeMetricas({ hoy, aniosConFoto: [] }));
+      assert.ok(tarjeta(reportes(ELEGIDO, { anios }), 'informe').includes(`${NO_DISPONIBLE}${DISPONIBLE_2027}</button>`), hoy);
+    }
+    // El del año en curso, también del servidor
+    assert.ok(tarjeta(reportes(ELEGIDO, { anios: plano(fotosDeMetricas({ hoy: HOY_DE_LA_PRUEBA, aniosConFoto: [] })) }), 'informe')
+      .includes(`${NO_DISPONIBLE}${DISPONIBLE_2027}</button>`));
   });
 
   it('mientras llegan los años y si no llegan, el Informe anual no se puede pedir', () => {
@@ -970,7 +1000,7 @@ describe('reportes.js: la pestaña Reportes', () => {
       const informe = tarjeta(html, 'informe');
       assert.ok(informe.includes(`<p class="rp-estado">${aviso}</p>`), informe);
       assert.doesNotMatch(informe, /<select/);
-      assert.ok(informe.includes('<button type="button" class="mt-btn rp-no-disponible" data-reporte="informe" aria-disabled="true" aria-describedby="rp-titulo-informe">'));
+      assert.ok(informe.includes(`${NO_DISPONIBLE}Descargar PDF</button>`));
       assert.equal(pedido('informe', ELEGIDO, { anios }), null, String(anios));
       // Métricas del año se descarga igual: con el año de la pestaña (el en curso, si no eligió otro)
       const metricas = tarjeta(html, 'metricas');
@@ -981,7 +1011,7 @@ describe('reportes.js: la pestaña Reportes', () => {
   });
 
   it('Métricas del año: el año de la pestaña o el de la tarjeta, con la combinación y los destildados de la pestaña', () => {
-    const dosAnios = [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }];
+    const dosAnios = [conFoto(2026), sinFoto(2027)];
     const select = (elegido) => tarjeta(reportes(elegido, { anios: dosAnios }), 'metricas').match(/<select id="rp-metricas-anio"[^>]*>[\s\S]*?<\/select>/)?.[0];
     // El en curso arriba, como en la barra de Métricas
     assert.equal(select(ELEGIDO), '<select id="rp-metricas-anio" class="mt-select" data-selector="rp-metricas"><option value="2027" selected>2027 (en curso)</option><option value="2026">2026</option></select>');
@@ -1002,10 +1032,9 @@ describe('reportes.js: la pestaña Reportes', () => {
   });
 
   it('las rutas y los nombres de los siete PDF, con el día de hoy en Argentina', () => {
-    const conFoto = [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }];
-    // El nombre, el que pone el servidor en su Content-Disposition (API.pedirArchivo da solo el Blob: se arma acá con el mismo formato)
+    // El nombre, el que pone el servidor en su Content-Disposition (API.pedirArchivo da solo el Blob: se arma acá con nombreDelReporte)
     assert.deepEqual(pedido('metricas'), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2026.pdf' });
-    assert.deepEqual(pedido('informe', ELEGIDO, { anios: conFoto }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
+    assert.deepEqual(pedido('informe', ELEGIDO, { anios: [conFoto(2026)] }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
     assert.deepEqual(pedido('estado'), { ruta: '/reportes/estado-general', nombre: 'estado-general-25-10-2026.pdf' });
     assert.deepEqual(pedido('area', { ...ELEGIDO, area: '7' }), { ruta: '/reportes/por-area/7', nombre: 'Reporte-area-7-2026-10-25.pdf' });
     assert.deepEqual(pedido('avisos'), { ruta: '/reportes/avisos?desde=2026-01-01&hasta=2026-10-25', nombre: 'Avisos-RPAD-2026-10-25.pdf' });
@@ -1017,6 +1046,24 @@ describe('reportes.js: la pestaña Reportes', () => {
     assert.equal(pedido('estado', ELEGIDO, { hoy: '2027-01-02' }).nombre, 'estado-general-02-01-2027.pdf');
     // Un reporte que no es de los siete, nada
     assert.equal(pedido('cumplimiento'), null);
+  });
+
+  // Los controladores ponen el nombre con nombreDelReporte (services/reportesNombres.js); la página guarda el Blob con su copia
+  it('nombreDelReporte es el mismo en la página y en el servidor', () => {
+    const casos = [
+      ...['metricas', 'informe'].flatMap((tipo) => [2026, 2027, '2026'].map((anio) => [tipo, { anio }])),
+      ...['estado', 'avisos', 'agenda', 'completar'].flatMap((tipo) => ['2026-10-25', '2027-01-02', '2028-02-29', '2026-12-31'].map((hoy) => [tipo, { hoy }])),
+      ...[7, '34', 145].flatMap((area) => ['2026-10-25', '2027-01-02'].map((hoy) => ['area', { area, hoy }])),
+      ['cumplimiento', { hoy: '2026-10-25' }], ['', {}]
+    ];
+    for (const [tipo, datos] of casos) assert.equal(ctx.nombreDelReporte(tipo, datos), nombreDelReporteDelServidor(tipo, datos), `${tipo} ${JSON.stringify(datos)}`);
+    // Y lo que pide cada tarjeta lleva ese nombre
+    for (const clave of ['estado', 'avisos', 'agenda', 'completar']) {
+      assert.equal(pedido(clave).nombre, nombreDelReporteDelServidor(clave, { hoy: HOY_DE_LA_PRUEBA }), clave);
+    }
+    assert.equal(pedido('area', { ...ELEGIDO, area: '7' }).nombre, nombreDelReporteDelServidor('area', { area: 7, hoy: HOY_DE_LA_PRUEBA }));
+    assert.equal(pedido('metricas').nombre, nombreDelReporteDelServidor('metricas', { anio: 2026 }));
+    assert.equal(pedido('informe', ELEGIDO, { anios: [conFoto(2026)] }).nombre, nombreDelReporteDelServidor('informe', { anio: 2026 }));
   });
 
   it('la Agenda: los chips 3, 6 y 12 meses con aria-pressed y la gestión, con los valores del servidor', () => {
@@ -1071,59 +1118,84 @@ describe('reportes.js: la pestaña Reportes', () => {
     assert.match(avisos, /<input type="date" id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="2026-10-25">/);
   });
 
+  it('el botón de un reporte que se está descargando queda deshabilitado en cada redibujo', () => {
+    const html = reportes(ELEGIDO, { descargando: ['estado', 'agenda'] });
+    for (const clave of ['estado', 'agenda']) assert.match(tarjeta(html, clave), new RegExp(`data-reporte="${clave}" aria-describedby="rp-titulo-${clave}" disabled>`), clave);
+    for (const clave of ['metricas', 'area', 'avisos', 'completar']) assert.doesNotMatch(tarjeta(html, clave), / disabled>/, clave);
+  });
+
   it('lo que llega del servidor y de los campos pasa por escapeHtml', () => {
-    const html = ctx.htmlDeReportes({ ...ELEGIDO, desde: '"><b>x</b>' }, { anios: [{ anio: 2026, con_foto: false, dia_de_la_foto: '<b>x</b>' }], areas: [{ id: 5, nombre: '<b>x</b>' }] });
+    const html = ctx.htmlDeReportes({ ...ELEGIDO, desde: '"><b>x</b>' }, { anios: [sinFoto(2026, '<b>x</b>')], areas: [{ id: 5, nombre: '<b>x</b>' }] });
     assert.doesNotMatch(html, /<b>x<\/b>/);
     assert.ok(html.includes('<option value="5">&lt;b&gt;x&lt;/b&gt;</option>'));
     assert.ok(html.includes('value="&quot;&gt;&lt;b&gt;x&lt;/b&gt;"'));
-    // Una fecha que no es una fecha no se escribe
-    assert.ok(tarjeta(html, 'informe').includes('Disponible desde el —'));
+    assert.ok(tarjeta(html, 'informe').includes(`${NO_DISPONIBLE}&lt;b&gt;x&lt;/b&gt;</button>`));
+    // Sin el texto del servidor, el botón no dice nada raro
+    assert.ok(tarjeta(ctx.htmlDeReportes(ELEGIDO, { anios: [{ anio: 2026, con_foto: false }] }), 'informe').includes(`${NO_DISPONIBLE}Descargar PDF</button>`));
     assert.doesNotMatch(ctx.htmlDeReportes({}, {}), /NaN|null|undefined/);
     assert.doesNotMatch(ctx.htmlDeReportes(undefined, undefined), /NaN|null|undefined/);
+    assert.doesNotMatch(ctx.htmlDeReportes(null, null), /NaN|null|undefined/);
   });
 
-  // Lo que toca el DOM: el document de mentira de la página, con el contenedor de las tarjetas y los controles que se enfocan
-  const conLaPagina = () => {
+  // Lo que toca el DOM: el document de mentira de la página. Cada id tiene un elemento que no hace nada (el de las tarjetas guarda su HTML
+  // y sus oyentes; los controles que reciben el foco lo anotan) y la API responde por ruta (`rutas`: la ruta exacta o, terminada en *, las
+  // que empiezan así; sin ruta, un 404; una función que tira es un error del servidor)
+  const conLaPagina = (rutas = {}) => {
     const pedidos = [];
     const descargas = [];
     const avisos = [];
     const enfocados = [];
     const oyentes = {};
-    const contenedor = { innerHTML: '', addEventListener: (tipo, oyente) => { oyentes[tipo] = oyente; }, contains: () => false, querySelector: () => null };
-    const control = (id) => ({ focus: () => enfocados.push(id) });
-    const elementos = { 'rp-reportes': contenedor, 'rp-area': control('rp-area'), 'rp-desde': control('rp-desde'), 'rp-hasta': control('rp-hasta') };
+    const elemento = (id) => ({
+      id, innerHTML: '', textContent: '', hidden: false, value: '', dataset: {}, style: {},
+      classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {}, removeAttribute() {}, getAttribute: () => null,
+      addEventListener: (tipo, oyente) => { if (id === 'rp-reportes') oyentes[tipo] = oyente; },
+      querySelector: () => null, querySelectorAll: () => [], contains: () => false, focus: () => enfocados.push(id), scrollIntoView() {}
+    });
+    const elementos = {};
     const contexto = cargar({
       __pedidos: pedidos,
+      __rutas: { '/areas': () => ({ success: true, data: LAS_AREAS }), '/gestion/metricas-manuales*': () => ({ success: true, data: [] }), ...rutas },
       document: {
-        addEventListener() {}, getElementById: (id) => elementos[id] ?? null, activeElement: null,
+        addEventListener() {}, getElementById: (id) => (elementos[id] ??= elemento(id)), activeElement: null,
         createElement: () => ({ click() { descargas.push(this.download); } })
       },
       showToast: (mensaje, tipo) => avisos.push([mensaje, tipo]),
       URL: { createObjectURL: () => 'blob:reporte', revokeObjectURL() {} },
       setTimeout: () => {}
     });
-    vm.runInContext(`API.getAreas = async () => ${JSON.stringify(AREAS)}; API.pedirArchivo = async (ruta) => { __pedidos.push(ruta); return "pdf"; };`, contexto);
+    vm.runInContext(`
+      API.pedirJson = async (metodo, ruta) => {
+        __pedidos.push(ruta);
+        const clave = Object.keys(__rutas).find((r) => (r.endsWith('*') ? ruta.startsWith(r.slice(0, -1)) : ruta === r));
+        if (!clave) throw Object.assign(new Error('Error 404'), { status: 404 });
+        return __rutas[clave]();
+      };
+      API.pedirArchivo = async (ruta) => { __pedidos.push(ruta); return "pdf"; };`, contexto);
     const hoy = vm.runInContext('Utils.hoyEnArgentina()', contexto);
+    const contenedor = () => elementos['rp-reportes'];
     // Un cambio en un control de las tarjetas, como lo manda el navegador
     const cambiar = (selector, value) => {
       const objetivo = { dataset: { selector }, value, closest: () => objetivo };
       oyentes.change({ type: 'change', target: objetivo });
     };
+    // Un click en un chip o en un botón de las tarjetas
+    const clic = (objetivo) => oyentes.click({ target: { closest: (selector) => (objetivo.coincide(selector) ? objetivo : null), ...objetivo } });
     const boton = (reporte) => ({ dataset: { reporte }, disabled: false, getAttribute: () => null });
-    return { contexto, contenedor, pedidos, descargas, avisos, enfocados, hoy, cambiar, boton };
+    return { contexto, contenedor, pedidos, descargas, avisos, enfocados, hoy, cambiar, clic, boton };
   };
 
   it('Avisos del RPAD trae del 1/1 a hoy', async () => {
     const p = conLaPagina();
     await p.contexto.iniciarTarjetasDeReportes();
     const desde = `${p.hoy.slice(0, 4)}-01-01`;
-    assert.ok(p.contenedor.innerHTML.includes(`id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="${desde}"`), 'desde');
-    assert.ok(p.contenedor.innerHTML.includes(`id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="${p.hoy}"`), 'hasta');
-    // Las áreas llegaron (API.getAreas)
-    assert.ok(p.contenedor.innerHTML.includes('<option value="7">Secretaría de Hacienda</option>'));
+    assert.ok(p.contenedor().innerHTML.includes(`id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="${desde}"`), 'desde');
+    assert.ok(p.contenedor().innerHTML.includes(`id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="${p.hoy}"`), 'hasta');
+    // Las áreas llegaron (GET /api/areas)
+    assert.ok(p.contenedor().innerHTML.includes('<option value="7">Secretaría de Hacienda</option>'));
     const boton = p.boton('avisos');
     await p.contexto.descargarDeLaTarjeta(boton);
-    assert.deepEqual(p.pedidos, [`/reportes/avisos?desde=${desde}&hasta=${p.hoy}`]);
+    assert.deepEqual(p.pedidos, ['/areas', `/reportes/avisos?desde=${desde}&hasta=${p.hoy}`]);
     assert.deepEqual(p.descargas, [`Avisos-RPAD-${p.hoy}.pdf`]);
     assert.equal(boton.disabled, false);
     // Otro período: el que se eligió (un solo día, hoy)
@@ -1133,7 +1205,7 @@ describe('reportes.js: la pestaña Reportes', () => {
     // Desde después de hasta: no se pide nada, se avisa con el mensaje del servidor y el foco va al campo
     p.cambiar('rp-desde', `${Number(p.hoy.slice(0, 4)) + 1}-01-01`);
     await p.contexto.descargarDeLaTarjeta(boton);
-    assert.equal(p.pedidos.length, 2);
+    assert.equal(p.pedidos.length, 3);
     assert.deepEqual(p.avisos, [[MENSAJE_PERIODO_INVALIDO, 'error']]);
     assert.deepEqual(p.enfocados, ['rp-desde']);
   });
@@ -1142,28 +1214,144 @@ describe('reportes.js: la pestaña Reportes', () => {
     const p = conLaPagina();
     await p.contexto.iniciarTarjetasDeReportes();
     await p.contexto.descargarDeLaTarjeta(p.boton('area'));
-    assert.deepEqual(p.pedidos, []);
+    assert.deepEqual(p.pedidos, ['/areas']);
     assert.deepEqual(p.descargas, []);
     assert.deepEqual(p.avisos, [['Elegí un área.', 'error']]);
     assert.deepEqual(p.enfocados, ['rp-area']);
     // Elegida, se descarga con su id y el día de hoy
     p.cambiar('rp-area', '7');
     await p.contexto.descargarDeLaTarjeta(p.boton('area'));
-    assert.deepEqual(p.pedidos, ['/reportes/por-area/7']);
+    assert.deepEqual(p.pedidos, ['/areas', '/reportes/por-area/7']);
     assert.deepEqual(p.descargas, [`Reporte-area-7-${p.hoy}.pdf`]);
+  });
+
+  // GET /api/areas con API.pedirJson: una respuesta de error tira (API.getAreas la devolvería como una lista vacía, sin aviso)
+  it('si las áreas no llegan, lo avisa y el selector queda con «Elegí un área»', async () => {
+    const p = conLaPagina({ '/areas': () => { throw Object.assign(new Error('Error al obtener las áreas'), { status: 500 }); } });
+    await p.contexto.iniciarTarjetasDeReportes();
+    assert.deepEqual(p.pedidos, ['/areas']);
+    assert.deepEqual(p.avisos, [['No se pudieron cargar las áreas.', 'error']]);
+    assert.match(p.contenedor().innerHTML, /<select id="rp-area" class="mt-select" data-selector="rp-area"><option value="">Elegí un área<\/option><\/select>/);
   });
 
   it('un botón deshabilitado no pide nada, y un error del servidor se avisa', async () => {
     const p = conLaPagina();
     await p.contexto.iniciarTarjetasDeReportes();
     await p.contexto.descargarDeLaTarjeta({ dataset: { reporte: 'estado' }, disabled: false, getAttribute: (nombre) => (nombre === 'aria-disabled' ? 'true' : null) });
-    assert.deepEqual(p.pedidos, []);
+    assert.deepEqual(p.pedidos, ['/areas']);
     vm.runInContext('API.pedirArchivo = async () => { throw new Error("No hay métricas de ese año"); };', p.contexto);
     const boton = p.boton('completar');
     await p.contexto.descargarDeLaTarjeta(boton);
     assert.deepEqual(p.avisos, [['No se pudo descargar el PDF: No hay métricas de ese año', 'error']]);
     assert.deepEqual(p.descargas, []);
     assert.equal(boton.disabled, false);
+  });
+
+  // Un redibujo en medio de una descarga no le habilita el botón (el estado lo sabe): no se pide dos veces
+  it('una descarga en curso sigue deshabilitada aunque se redibuje, y no se pide dos veces', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    vm.runInContext('API.pedirArchivo = (ruta) => { __pedidos.push(ruta); return new Promise((resolver) => { globalThis.__terminar = () => resolver("pdf"); }); };', p.contexto);
+    const boton = p.boton('estado');
+    const descarga = p.contexto.descargarDeLaTarjeta(boton);
+    assert.equal(boton.disabled, true);
+    // Un redibujo de todas (el de la página de mentira) la dibuja deshabilitada
+    vm.runInContext('dibujarReportes()', p.contexto);
+    assert.match(p.contenedor().innerHTML, /data-reporte="estado" aria-describedby="rp-titulo-estado" disabled>/);
+    // Otro click sobre el botón nuevo (habilitado en el DOM de mentira) no vuelve a pedir
+    await p.contexto.descargarDeLaTarjeta(p.boton('estado'));
+    assert.equal(p.pedidos.filter((ruta) => ruta === '/reportes/estado-general').length, 1);
+    vm.runInContext('__terminar()', p.contexto);
+    await descarga;
+    assert.equal(boton.disabled, false);
+    vm.runInContext('dibujarReportes()', p.contexto);
+    assert.doesNotMatch(p.contenedor().innerHTML, / disabled>/);
+    assert.deepEqual(p.descargas, [`estado-general-${p.hoy.slice(8, 10)}-${p.hoy.slice(5, 7)}-${p.hoy.slice(0, 4)}.pdf`]);
+  });
+
+  // conElFoco y el redibujo de una tarjeta devuelven el foco al botón del mismo reporte
+  it('el foco vuelve al botón del mismo reporte después de redibujar', () => {
+    const activo = { dataset: { reporte: 'estado' } };
+    const contexto = cargar({ document: { addEventListener() {}, getElementById: () => null, activeElement: activo } });
+    assert.equal(contexto.claveDelFoco({ contains: (elemento) => elemento === activo }), '[data-reporte="estado"]');
+    assert.equal(contexto.claveDelFoco({ contains: () => false }), null);
+    // Los de siempre siguen igual: el chip con su valor, el selector, la fila y la acción
+    const conDatos = (dataset) => cargar({ document: { addEventListener() {}, getElementById: () => null, activeElement: { dataset } } })
+      .claveDelFoco({ contains: () => true });
+    assert.equal(conDatos({ selector: 'rp-meses', valor: '6' }), '[data-selector="rp-meses"][data-valor="6"]');
+    assert.equal(conDatos({ selector: 'rp-informe' }), '[data-selector="rp-informe"]');
+    assert.equal(conDatos({ fila: '3' }), '[data-fila="3"]');
+    assert.equal(conDatos({ accion: 'pdf' }), '[data-accion="pdf"]');
+  });
+
+  it('un chip de la Agenda cambia los meses y se redibuja; un botón descarga', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    const chip = { dataset: { selector: 'rp-meses', valor: '12' }, coincide: (selector) => selector === 'button[data-selector="rp-meses"]' };
+    p.clic(chip);
+    assert.equal(vm.runInContext('pagina.reportes.elegido.meses', p.contexto), 12);
+    assert.match(p.contenedor().innerHTML, /data-valor="12" aria-pressed="true">12 meses</);
+    assert.match(p.contenedor().innerHTML, /data-valor="6" aria-pressed="false">6</);
+    const boton = { ...p.boton('agenda'), coincide: (selector) => selector === 'button[data-reporte]' };
+    p.clic(boton);
+    await new Promise((resolver) => setImmediate(resolver));
+    assert.equal(p.pedidos.at(-1), '/reportes/agenda?meses=12&gestion=ambas');
+  });
+
+  it('cambiar el año del Informe anual redibuja su botón', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    p.contexto.conLosAniosDeReportes([conFoto(2026), sinFoto(2027)]);
+    assert.match(p.contenedor().innerHTML, /<option value="2026" selected>2026<\/option><\/select><\/div><\/div><button type="button" class="mt-btn mt-btn-tinta" data-reporte="informe"/);
+    p.cambiar('rp-informe', '2027');
+    assert.equal(vm.runInContext('pagina.reportes.elegido.informe', p.contexto), 2027);
+    const informe = tarjeta(p.contenedor().innerHTML, 'informe');
+    assert.match(informe, /<option value="2027" selected>2027<\/option>/);
+    assert.ok(informe.includes(`${NO_DISPONIBLE}Disponible desde el 10/01/2028</button>`), informe);
+  });
+
+  // Los años llegan con la respuesta de la pestaña Métricas (cargarMetricas → conLosAniosDeReportes). Si esa respuesta es un error (un año
+  // sin métricas en la dirección), se piden una vez con GET /api/metricas sin parámetros; solo si eso también falla, «No se pudieron…»
+  describe('los años de las tarjetas', () => {
+    const METRICAS = {
+      anio: 2026, al: HOY, en_vivo: true, aviso_foto: null, anios: [2026], fotos: [conFoto(2026)], vista: VISTA,
+      cinta: { externa: CINTA_EXTERNA, interna: CINTA_INTERNA }, contexto: CONTEXTO, trabajo: TRABAJO, areas: AREAS, sin_titulos: []
+    };
+    const informe = (p) => tarjeta(p.contenedor().innerHTML, 'informe');
+
+    it('con la respuesta de la pestaña Métricas', async () => {
+      const p = conLaPagina({ '/metricas?*': () => ({ success: true, data: METRICAS }) });
+      await p.contexto.iniciarTarjetasDeReportes();
+      assert.ok(informe(p).includes('<p class="rp-estado">Cargando los años…</p>'));
+      await p.contexto.cargarMetricas();
+      assert.ok(informe(p).includes('<button type="button" class="mt-btn mt-btn-tinta" data-reporte="informe"'), informe(p));
+      assert.match(informe(p), /<option value="2026" selected>2026<\/option>/);
+      assert.equal(p.pedidos.filter((ruta) => ruta === '/metricas').length, 0, 'sin pedido de respaldo');
+    });
+
+    it('con un 404 de la pestaña, de GET /api/metricas sin parámetros, una sola vez', async () => {
+      const p = conLaPagina({ '/metricas': () => ({ success: true, data: { ...METRICAS, fotos: [sinFoto(2026)] } }) });
+      await p.contexto.iniciarTarjetasDeReportes();
+      vm.runInContext('pagina.estado = { ...pagina.estado, anio: 2030 }', p.contexto);
+      await p.contexto.cargarMetricas();
+      await vm.runInContext('pagina.reportes.pedidoDeAnios', p.contexto);
+      assert.ok(p.pedidos.includes('/metricas?anio=2030'));
+      assert.ok(informe(p).includes(`${NO_DISPONIBLE}${DISPONIBLE_2027}</button>`), informe(p));
+      // Otra respuesta de error no lo vuelve a pedir
+      await p.contexto.cargarMetricas();
+      assert.equal(p.pedidos.filter((ruta) => ruta === '/metricas').length, 1);
+      assert.ok(informe(p).includes(DISPONIBLE_2027));
+    });
+
+    it('si el respaldo también falla, «No se pudieron cargar los años.»', async () => {
+      const p = conLaPagina({ '/metricas?*': () => { throw Object.assign(new Error('Error al obtener las métricas'), { status: 500 }); } });
+      await p.contexto.iniciarTarjetasDeReportes();
+      await p.contexto.cargarMetricas();
+      await vm.runInContext('pagina.reportes.pedidoDeAnios', p.contexto);
+      assert.deepEqual(p.pedidos.filter((ruta) => ruta.startsWith('/metricas')), ['/metricas?', '/metricas']);
+      assert.ok(informe(p).includes('<p class="rp-estado">No se pudieron cargar los años.</p>'), informe(p));
+      assert.ok(tarjeta(p.contenedor().innerHTML, 'metricas').includes('<p class="rp-estado">No se pudieron cargar los años.</p>'));
+    });
   });
 });
 
