@@ -17,10 +17,10 @@ import {
 import { mesYAnio } from './notasDigitalesCalendario.js';
 import { COLORES, VIOLETA, dibujarRayado } from './seguimientoPdf.js';
 import { cintasDeLaVista } from './metricasCinta.js';
-import { ESTADISTICOS, DIAS, GESTIONES } from './metricasReglas.js';
+import { ESTADISTICOS, DIAS, GESTIONES, TOTALES_DEL_TRABAJO } from './metricasReglas.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarJuntos, prepararTitulo, prepararPildora, prepararTarjetas, prepararSeccion,
-  prepararParrafo, prepararRecuadro, prepararTabla, fechaCorta, ENTRE, ANCHO_DEL_RECUADRO
+  prepararParrafo, prepararRecuadro, prepararTabla, fechaCorta, ENTRE, ANCHO_DEL_RECUADRO, esObjeto, objeto, lista, esNumero, texto
 } from './reportesPdfBase.js';
 
 // La cinta del PDF se calcula con esta letra (la opción de cintaDeMetricas, services/metricasCinta.js): el dibujo de 1000 de ancho se
@@ -130,19 +130,15 @@ const SEPARACION_COLUMNAS = 14;
 const ANCHO_COLUMNA = (CONTENIDO - 2 * SEPARACION_COLUMNAS) / 3;
 const ALTO_MAXIMO_DE_LA_LISTA = 260;
 
-// El trabajo del RPAD: los cinco totales (las series por mes y los grupos de las reiteraciones, en T)
-const TOTALES_DEL_TRABAJO = ['avisos', 'actualizaciones', 'auditados', 'nuevos', 'fuente_publica'];
+// El trabajo del RPAD: los cinco totales, en el orden de sus textos (TOTALES_DEL_TRABAJO de las reglas; las series por mes y los grupos
+// de las reiteraciones, en T)
+const TOTALES = Object.keys(TOTALES_DEL_TRABAJO);
 
 // El gráfico del índice: el alto del área de los valores (de 0 a 100 %), el lugar de los rótulos del eje a la izquierda, el de los
 // valores arriba, el de los meses abajo (en dos renglones si dos se pisan) y el aire a los costados del primer y del último mes
 const GRAFICO = { alto: 100, izquierda: 24, arriba: 12, abajo: 20, aire: 10 };
 
-const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
-const objeto = (valor) => (esObjeto(valor) ? valor : {});
-const lista = (valor) => (Array.isArray(valor) ? valor : []);
-const esNumero = (valor) => typeof valor === 'number' && Number.isFinite(valor);
-// Un texto del servidor; lo que no es un texto ni un número, vacío (nunca «null» ni «undefined»)
-const texto = (valor) => (typeof valor === 'string' ? valor : esNumero(valor) ? String(valor) : '');
+// (esObjeto, objeto, lista, esNumero y texto son los de la base de los reportes)
 const cuenta = (valor) => (esNumero(valor) ? String(valor) : '0');
 const elegido = (valor, validos) => (validos.includes(valor) ? valor : validos[0]);
 
@@ -848,7 +844,7 @@ export const elementosDelTrabajo = (doc, trabajo, manuales, anio, { conManuales 
   return [
     [
       prepararSeccion(doc, { titulo: T.titulos.trabajo, derecha: T.bajadaDelTrabajo(anio) }),
-      prepararTarjetas(doc, TOTALES_DEL_TRABAJO.map((clave) => ({ valor: cuenta(trabajo[clave]), rotulo: texto(totales[clave]) })))
+      prepararTarjetas(doc, TOTALES.map((clave) => ({ valor: cuenta(trabajo[clave]), rotulo: texto(totales[clave]) })))
     ],
     ...(meses.length ? [[prepararSeccion(doc, { titulo: T.titulos.porMes }), tabla]] : []),
     ...(conManuales ? [[prepararSeccion(doc, { titulo: T.titulos.manuales }), elementoDeLasManuales(doc, manuales, anio)]] : []),

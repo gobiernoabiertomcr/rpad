@@ -13,7 +13,7 @@ import { mesYAnio, formatoCorto, VENTANA_DIAS } from './notasDigitalesCalendario
 import { mesesDeLaAgenda, opcionesDeAgenda } from './reportesAgenda.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, prepararTitulo, prepararPildora, prepararTarjetas, prepararParrafo, prepararSeccion,
-  prepararTabla, dibujarJuntos, fechaCorta
+  prepararTabla, dibujarJuntos, fechaCorta, lista
 } from './reportesPdfBase.js';
 
 const TITULO = 'Agenda de pedidos';
@@ -44,7 +44,6 @@ const CELDA = {
   aviso: (f) => fechaCorta(f.aviso_aprox)
 };
 
-const lista = (valor) => (Array.isArray(valor) ? valor : []);
 const nombreDelMes = (mes) => mesYAnio(`${mes}-01`).split(' ')[0];
 
 // El mes de una sección: «Noviembre de 2026»

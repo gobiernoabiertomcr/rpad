@@ -1,7 +1,6 @@
 // Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
 // Estado general de los datasets, Métricas del año, Por área, Avisos del RPAD, Agenda de pedidos, Datos para completar y el Informe
-// anual. Puro: los
-// datos se arman acá, sin base de datos (los textos del reporte servido por la API, con el set controlado, están en
+// anual. Puro: los datos se arman acá, sin base de datos (los textos del reporte servido por la API, con el set controlado, están en
 // estados-api.test.js, reportes.test.js y metricas-api.test.js; la agenda como datos, en reportes-agenda.test.js).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -457,6 +456,58 @@ describe('la base de los reportes: medidas, lugar y recuadros', () => {
       const cabeza = prepararSeccion(doc, { titulo: 'Enero de 2027', derecha: '90 datasets' });
       dibujarJuntos(doc, hojaDePrueba(doc), [cabeza, prepararTabla(doc, { columnas, filas, cabeza })]);
       await cerrar(doc);
+    }));
+  });
+
+  // La aclaración de una tabla (como la de la diferencia en la comparación del Informe anual) viaja con su última fila: nunca queda sola
+  // arriba de una hoja
+  it('la aclaración de una tabla viaja con su última fila: si no entran las dos, la última fila pasa a la hoja siguiente', async () => {
+    const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 1 }];
+    const filas = [['uno', 'dos'], ['tres', 'cuatro'], ['cinco', 'seis']];
+    const ACLARACION = 'Lo que explica la tabla.';
+    const conAclaracion = (doc, deLaTabla = filas) => prepararTabla(doc, { columnas, filas: deLaTabla, aclaracion: prepararParrafo(doc, ACLARACION) });
+    // Lo que ocupa la tabla sola (dibujada una vez para medirla)
+    const medida = nuevoReporte({ titulo: 'Reporte de prueba' });
+    const y0 = hojaDePrueba(medida);
+    const altoDeLaTabla = prepararTabla(medida, { columnas, filas }).dibujar(y0) - ENTRE - y0;
+    // Desde donde la tabla entra justo, pero la aclaración ya no: la última fila pasa a la hoja 2, con el encabezado y la aclaración debajo
+    const justo = LIMITE - altoDeLaTabla - 1;
+    const dibujar = async (tabla) => {
+      const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+      hojaDePrueba(doc);
+      const yDespues = tabla(doc).dibujar(justo);
+      return { hojas: lineasPorHoja(await cerrar(doc)), yDespues };
+    };
+    const { hojas, yDespues } = await dibujar(conAclaracion);
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[0].includes('uno') && hojas[0].includes('tres') && !hojas[0].includes('cinco') && !hojas[0].includes(ACLARACION),
+      hojas[0].join(' | '));
+    const i = hojas[1].indexOf('Columna A');
+    assert.deepEqual(hojas[1].slice(i, i + 5), ['Columna A', 'Columna B', 'cinco', 'seis', ACLARACION]);
+    // Devuelve la y de debajo de la aclaración, con el aire de la base
+    assert.ok(yDespues < LIMITE, `${yDespues}`);
+    // Sin aclaración, desde el mismo lugar la tabla entra entera en la hoja 1
+    const sin = await dibujar((doc) => prepararTabla(doc, { columnas, filas }));
+    assert.equal(sin.hojas.length, 1);
+    // Con lugar para todo, la aclaración va debajo de la última fila, en la misma hoja
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    conAclaracion(doc).dibujar(hojaDePrueba(doc));
+    const unaHoja = lineasPorHoja(await cerrar(doc));
+    assert.equal(unaHoja.length, 1);
+    assert.equal(unaHoja[0][unaHoja[0].indexOf('seis') + 1], ACLARACION);
+    // Una tabla de una fila mide también su aclaración (es lo que tiene que entrar con lo de antes); sin filas, nada
+    const otro = nuevoReporte({ titulo: 'Reporte de prueba' });
+    hojaDePrueba(otro);
+    const parrafo = prepararParrafo(otro, ACLARACION);
+    assert.equal(conAclaracion(otro, [['uno', 'dos']]).alto, prepararTabla(otro, { columnas, filas: [['uno', 'dos']] }).alto + ENTRE + parrafo.alto);
+    assert.equal(conAclaracion(otro, filas).alto, prepararTabla(otro, { columnas, filas }).alto);
+    assert.equal(conAclaracion(otro, []).alto, 0);
+    // Nada se pisa
+    verificarDiagramacion(await diagramacion(async () => {
+      const d = nuevoReporte({ titulo: 'Reporte de prueba' });
+      hojaDePrueba(d);
+      conAclaracion(d).dibujar(justo);
+      await cerrar(d);
     }));
   });
 });
@@ -1539,29 +1590,36 @@ const muchosHitos = (n) => logrosPorProyecto(Array.from({ length: n }, (_, i) =>
   descripcion: i % 2 === 0 ? DESCRIPCION_LARGA : null
 })));
 
-// Una foto armada a mano, con solo lo que compara el Informe
-const fotoAMano = ({ anio = 2026, aTiempo = [5, 33, 15], cobertura = [34, 35, 97], indice = [75, 3, 4], estados = {}, trabajo = {} } = {}) => ({
+// Una foto armada a mano, con solo lo que compara el Informe: los resultados (con el vacío de la foto, si no hubo casos), el índice al
+// 31/12 con su texto, los estados al 31/12 y el trabajo del año
+const fotoAMano = ({
+  anio = 2026, aTiempo = [5, 33, 15], cobertura = [34, 35, 97], vacios = {}, indice = [75, `Al 31/12/${anio}: 75% al día (3 de 4)`],
+  estados = {}, trabajo = {}
+} = {}) => ({
   anio, al: `${anio}-12-31`,
   vista: {
     resultados: {
       a_tiempo: { a_tiempo: aTiempo[0], total: aTiempo[1] }, cobertura: { si: cobertura[0], total: cobertura[1] },
       textos: {
-        a_tiempo: { de: `de ${aTiempo[1]} ciclos`, medidor: aTiempo[2] },
-        cobertura: { de: `de ${cobertura[1]} vencimientos`, medidor: cobertura[2] }
+        a_tiempo: { de: `de ${aTiempo[1]} ciclos`, medidor: aTiempo[2], vacio: vacios.a_tiempo ?? '' },
+        cobertura: { de: `de ${cobertura[1]} vencimientos`, medidor: cobertura[2], vacio: vacios.cobertura ?? '' }
       }
     }
   },
   contexto: {
-    indice: [{ dia: `${anio}-12-01`, tasa: 1, al_dia: 1, base: 100 }, { dia: `${anio}-12-31`, tasa: indice[0], al_dia: indice[1], base: indice[2] }],
-    estados: { total: 81, actualizado: 53, proximo: 2, vencidos: 12, eventual: 14, sin_fecha: 0, ...estados }
+    indice: [{ dia: `${anio}-12-01`, tasa: 1, texto: `Al 1/12/${anio}: 1% al día (1 de 100)` }, { dia: `${anio}-12-31`, tasa: indice[0], texto: indice[1] }],
+    estados: { total: 81, actualizado: 53, proximo: 2, vencidos: 12, eventual: 14, sin_fecha: 0, desconocido: 0, ...estados }
   },
   trabajo: { avisos: 20, actualizaciones: 32, auditados: 50, nuevos: 3, fuente_publica: 1, ...trabajo }
 });
 
-// Las celdas de una fila de una tabla, leídas en orden: la fila que empieza con `rotulo` y sus `n` celdas siguientes
-const filaDeLaTabla = (lineas, rotulo, n = 3) => {
-  const i = lineas.indexOf(rotulo);
-  return i === -1 ? null : lineas.slice(i, i + n + 1);
+// Lo que se lee en una tabla del PDF, donde una celda puede ir en más de una línea: las líneas unidas con espacios
+const unido = (lineas) => lineas.join(' ');
+// Las filas de los estados al 31/12 (sin el índice ni el total) suman «Datasets en el registro», en la columna de cada foto
+const sumanElTotal = (filas, columna) => {
+  const estados = filas.filter(f => !['Índice de actualización', 'Datasets en el registro'].includes(f[0]));
+  const total = Number(filas.find(f => f[0] === 'Datasets en el registro')[columna]);
+  assert.equal(estados.reduce((suma, f) => suma + Number(f[columna]), 0), total, JSON.stringify(filas));
 };
 // Lo que el encabezado de cada hoja escribe arriba de todo
 const DEL_ENCABEZADO = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Municipalidad de Comodoro Rivadavia', 'Informe anual 2026', formatoLargo('2027-01-12')];
@@ -1617,10 +1675,10 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
 
   it('la comparación con la foto de 2025: los números de las dos fotos, con sus textos, y la diferencia', async () => {
     const anterior = fotoAMano({
-      anio: 2025, aTiempo: [3, 30, 10], cobertura: [34, 35, 97], indice: [80, 40, 50], estados: { total: 78, vencidos: 13, sin_fecha: 2 },
-      trabajo: { avisos: 12, nuevos: 4 }
+      anio: 2025, aTiempo: [3, 30, 10], cobertura: [34, 35, 97], indice: [80, 'Al 31/12/2025: 80% al día (40 de 50)'],
+      estados: { total: 78, actualizado: 50, vencidos: 13, eventual: 11, sin_fecha: 2 }, trabajo: { avisos: 12, nuevos: 4 }
     });
-    const actual = fotoAMano({ aTiempo: [5, 33, 15], cobertura: [36, 36, 100], indice: [75, 3, 4], trabajo: { avisos: 20, nuevos: 3 } });
+    const actual = fotoAMano({ aTiempo: [5, 33, 15], cobertura: [36, 36, 100], trabajo: { avisos: 20, nuevos: 3 } });
     assert.deepEqual(comparacionDe(anterior, actual), [
       {
         titulo: 'Resultados del año',
@@ -1632,12 +1690,12 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
       {
         titulo: 'Al 31/12',
         filas: [
-          ['Índice de actualización', '80% al día (40 de 50)', '75% al día (3 de 4)', '–5 puntos'],
+          ['Índice de actualización', 'Al 31/12/2025: 80% al día (40 de 50)', 'Al 31/12/2026: 75% al día (3 de 4)', '–5 puntos'],
           ['Datasets en el registro', '78', '81', '+3'],
-          ['Actualizados', '53', '53', 'Igual'],
+          ['Actualizados', '50', '53', '+3'],
           ['Próximos a vencer', '2', '2', 'Igual'],
           ['Vencidos', '13', '12', '–1'],
-          ['Eventuales', '14', '14', 'Igual'],
+          ['Eventuales', '11', '14', '+3'],
           ['Sin fecha', '2', '0', '–2']
         ]
       },
@@ -1652,34 +1710,74 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
         ]
       }
     ]);
-    // Un punto, en singular; sin un porcentaje (o sin índice) no se resta: una raya
-    const unPunto = comparacionDe(fotoAMano({ anio: 2025, aTiempo: [0, 0, null], indice: [null, null, null] }), fotoAMano({ cobertura: [34, 35, 98] }));
-    assert.deepEqual(unPunto[0].filas, [
-      ['Actualizados a tiempo', '0 de 0 ciclos', '5 de 33 ciclos (15%)', '—'],
-      ['Cobertura del aviso', '34 de 35 vencimientos (97%)', '34 de 35 vencimientos (98%)', '+1 punto']
-    ]);
-    assert.deepEqual(unPunto[1].filas[0], ['Índice de actualización', '—', '75% al día (3 de 4)', '—']);
+    // Un punto, en singular
+    const unPunto = comparacionDe(fotoAMano({ anio: 2025 }), fotoAMano({ cobertura: [34, 35, 98] }));
+    assert.deepEqual(unPunto[0].filas[1], ['Cobertura del aviso', '34 de 35 vencimientos (97%)', '34 de 35 vencimientos (98%)', '+1 punto']);
 
-    // En el PDF: la sección, las columnas con los dos años y cada fila con sus celdas, en orden
+    // En el PDF: la sección, las columnas con los dos años y cada fila con sus celdas, en orden (una celda puede ir en dos líneas), y la
+    // aclaración de la diferencia justo debajo de la última fila de la última tabla
     const todo = lineasPorHoja(await renderInforme({ foto: { ...fotoDeLosCasos(2026), ...actual }, anterior })).flat();
     const desde = todo.indexOf('COMPARACIÓN CON 2025');
     assert.ok(desde !== -1 && todo.includes('Las fotos del 31/12/2025 y del 31/12/2026'), todo.join(' | '));
-    const comparacion = todo.slice(desde);
-    for (const encabezado of [['Resultados del año', '2025', '2026', 'Diferencia'], ['Al 31/12', '2025', '2026', 'Diferencia'],
-      ['El trabajo del RPAD', '2025', '2026', 'Diferencia']]) {
-      assert.deepEqual(filaDeLaTabla(comparacion, encabezado[0]), encabezado);
+    const comparacion = unido(todo.slice(desde));
+    for (const titulo of ['Resultados del año', 'Al 31/12', 'El trabajo del RPAD']) {
+      assert.ok(comparacion.includes(`${titulo} 2025 2026 Diferencia`), titulo);
     }
-    for (const { filas } of comparacionDe(anterior, actual)) {
-      for (const fila of filas) assert.deepEqual(filaDeLaTabla(comparacion, fila[0]), fila, fila[0]);
-    }
-    assert.ok(comparacion.includes('Diferencia: 2026 menos 2025; en los porcentajes, en puntos.'), comparacion.join(' | '));
+    const filas = comparacionDe(anterior, actual).flatMap(({ filas: deLaTabla }) => deLaTabla);
+    for (const fila of filas) assert.ok(comparacion.includes(unido(fila)), unido(fila));
+    assert.ok(comparacion.includes(`${unido(filas.at(-1))} Diferencia: 2026 menos 2025; en los porcentajes, en puntos.`), comparacion);
+  });
 
-    // Con las fotos de los casos reales, los textos de cada foto
+  // Sin casos, lo que dice la foto (no una cuenta en cero); el índice, con el texto de la foto, que sin índice dice por qué
+  it('la comparación usa los textos de la foto: sin casos, su vacío; el índice, su texto (y sin índice, por qué)', async () => {
+    const vacia = fotoAMano({
+      anio: 2025, aTiempo: [0, 0, null], cobertura: [0, 0, null],
+      vacios: { a_tiempo: 'Sin actualizaciones registradas en 2025.', cobertura: 'Sin vencimientos de 2025 con la fecha del aviso ya cumplida.' },
+      indice: [null, 'Al 31/12/2025: sin datasets con vencimiento']
+    });
+    const [resultados, alCierre] = comparacionDe(vacia, fotoAMano());
+    assert.deepEqual(resultados.filas, [
+      ['Actualizados a tiempo', 'Sin actualizaciones registradas en 2025.', '5 de 33 ciclos (15%)', '—'],
+      ['Cobertura del aviso', 'Sin vencimientos de 2025 con la fecha del aviso ya cumplida.', '34 de 35 vencimientos (97%)', '—']
+    ]);
+    assert.deepEqual(alCierre.filas[0], ['Índice de actualización', 'Al 31/12/2025: sin datasets con vencimiento', 'Al 31/12/2026: 75% al día (3 de 4)', '—']);
+    const sinDatos = comparacionDe(fotoAMano({ anio: 2025, indice: [null, 'Al 31/12/2025: sin datos suficientes para calcularlo'] }), fotoAMano());
+    assert.deepEqual(sinDatos[1].filas[0].slice(1), ['Al 31/12/2025: sin datos suficientes para calcularlo', 'Al 31/12/2026: 75% al día (3 de 4)', '—']);
+    // Con las fotos de los casos reales: la de 2025 no tiene actualizaciones ni vencimientos con el aviso ya cumplido, y lo dice
+    const de2025 = fotoDeLosCasos(2025);
     const de2026 = fotoDeLosCasos(2026);
-    const [resultados] = comparacionDe(fotoDeLosCasos(2025), de2026);
+    const [reales, realesAlCierre] = comparacionDe(de2025, de2026);
+    const textos2025 = de2025.vista.resultados.textos;
+    assert.ok(textos2025.a_tiempo.vacio && textos2025.cobertura.vacio, JSON.stringify(textos2025));
+    assert.deepEqual(reales.filas.map(f => [f[1], f[3]]), [[textos2025.a_tiempo.vacio, '—'], [textos2025.cobertura.vacio, '—']]);
     const r = de2026.vista.resultados;
-    const medidor = r.textos.a_tiempo.medidor;
-    assert.equal(resultados.filas[0][2], `${r.a_tiempo.a_tiempo} ${r.textos.a_tiempo.de}${medidor === null ? '' : ` (${medidor}%)`}`);
+    assert.equal(reales.filas[0][2], `${r.a_tiempo.a_tiempo} ${r.textos.a_tiempo.de} (${r.textos.a_tiempo.medidor}%)`);
+    assert.deepEqual(realesAlCierre.filas[0].slice(1, 3), [de2025.contexto.indice.at(-1).texto, de2026.contexto.indice.at(-1).texto]);
+    // En el PDF
+    const todo = unido(lineasPorHoja(await renderInforme({ foto: de2026, anterior: de2025 })).flat());
+    for (const fila of [...reales.filas, realesAlCierre.filas[0]]) assert.ok(todo.includes(unido(fila)), unido(fila));
+  });
+
+  // Los estados al 31/12 suman los datasets en el registro: uno de estado desconocido (un ciclo sin el vencimiento guardado) tiene su fila
+  it('los estados al 31/12 suman «Datasets en el registro»: con estado desconocido en alguna de las dos fotos, su fila', async () => {
+    const anterior = fotoAMano({ anio: 2025, estados: { total: 84, desconocido: 3 } });
+    const actual = fotoAMano();
+    const [, alCierre] = comparacionDe(anterior, actual);
+    assert.deepEqual(alCierre.filas.at(-1), ['Sin dato del vencimiento', '3', '0', '–3']);
+    sumanElTotal(alCierre.filas, 1);
+    sumanElTotal(alCierre.filas, 2);
+    // Si ninguna de las dos tiene, no va
+    const [, sinDesconocidos] = comparacionDe(fotoAMano({ anio: 2025 }), actual);
+    assert.ok(!sinDesconocidos.filas.some(f => f[0] === 'Sin dato del vencimiento'), JSON.stringify(sinDesconocidos.filas));
+    sumanElTotal(sinDesconocidos.filas, 1);
+    sumanElTotal(sinDesconocidos.filas, 2);
+    // Con los casos reales, también suman
+    const [, reales] = comparacionDe(fotoDeLosCasos(2025), fotoDeLosCasos(2026));
+    sumanElTotal(reales.filas, 1);
+    sumanElTotal(reales.filas, 2);
+    // En el PDF, después de «Sin fecha»
+    const todo = unido(lineasPorHoja(await renderInforme({ foto: { ...fotoDeLosCasos(2026), ...actual }, anterior })).flat());
+    assert.ok(todo.includes('Sin fecha 0 0 Igual Sin dato del vencimiento 3 0 –3'), todo);
   });
 
   it('los logros de 2026 por proyecto', async () => {

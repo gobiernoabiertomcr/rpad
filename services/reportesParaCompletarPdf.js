@@ -10,7 +10,8 @@
 import { COLOR, NEGRITA } from './notasDigitalesAnexo.js';
 import { formatoCorto } from './notasDigitalesCalendario.js';
 import {
-  nuevoReporte, agregarHoja, cerrarReporte, prepararTitulo, prepararParrafo, prepararTabla, dibujarJuntos, fechaCorta
+  nuevoReporte, agregarHoja, cerrarReporte, prepararTitulo, prepararParrafo, prepararTabla, dibujarJuntos, fechaCorta, esObjeto, objeto,
+  lista
 } from './reportesPdfBase.js';
 
 const TITULO = 'Datos para completar';
@@ -27,9 +28,8 @@ export const TEXTOS_DE_PARA_COMPLETAR = Object.freeze({
 
 const LETRA_DEL_GRUPO = 9;
 
-const objeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
-const lista = (valor) => (Array.isArray(valor) ? valor.filter(objeto) : []);
-// Un texto del servidor; lo que no es un texto ni un número, vacío (como escaparTexto de la pestaña)
+// Un texto del servidor; lo que no es un texto ni un número, vacío (como escaparTexto de la pestaña, que escribe cualquier número: por
+// eso no es el texto de la base)
 const texto = (valor) => (typeof valor === 'string' || typeof valor === 'number' ? String(valor) : '');
 
 // Lo de debajo de una nota DGMIT pendiente: su área y cómo está el ciclo («Secretaría … · ciclo abierto»)
@@ -82,9 +82,9 @@ const dibujarGrupo = (doc, y, grupo, { filas, textos }) => {
 // paraCompletarDe de services/metricasReglas.js). `hoy`: 'AAAA-MM-DD'; `generado`: { momento, por } (el pie). Sin «Para completar», o con
 // datos raros, no tira: no hay nada para completar.
 export const renderParaCompletar = async ({ anio, para_completar: paraCompletar }, { hoy, generado }) => {
-  const pc = objeto(paraCompletar) ? paraCompletar : {};
-  const textos = objeto(pc.textos) ? pc.textos : {};
-  const filas = { notas: lista(pc.notas), recibido: lista(pc.recibido) };
+  const pc = objeto(paraCompletar);
+  const textos = objeto(pc.textos);
+  const filas = { notas: lista(pc.notas).filter(esObjeto), recibido: lista(pc.recibido).filter(esObjeto) };
   const doc = nuevoReporte({ titulo: TITULO });
   let y = agregarHoja(doc, { derecha: TITULO, fecha: hoy });
   y = prepararTitulo(doc, {

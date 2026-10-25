@@ -552,12 +552,16 @@ describe('GET /reportes/informe-anual', () => {
     assert.ok(!todo.includes('Primer año con foto'));
     const comparacion = todo.slice(todo.indexOf('COMPARACIÓN CON 2025'));
     assert.ok(comparacion.includes('Las fotos del 31/12/2025 y del 31/12/2026'), comparacion.join(' | '));
-    const fila = (rotulo) => comparacion.slice(comparacion.indexOf(rotulo), comparacion.indexOf(rotulo) + 4);
-    assert.deepEqual(fila('El trabajo del RPAD'), ['El trabajo del RPAD', '2025', '2026', 'Diferencia']);
-    // Los tres datasets se dieron de alta y se actualizaron en 2026: en la foto de 2025 no estaban
-    assert.deepEqual(fila('Datasets nuevos'), ['Datasets nuevos', '0', '3', '+3']);
-    assert.deepEqual(fila('Actualizaciones registradas'), ['Actualizaciones registradas', '0', '3', '+3']);
-    assert.deepEqual(fila('Índice de actualización'), ['Índice de actualización', '—', '100% al día (3 de 3)', '—']);
+    // Cada fila, con sus celdas en orden (una celda puede ir en más de una línea)
+    const tabla = comparacion.join(' ');
+    const fila = (...celdas) => assert.ok(tabla.includes(celdas.join(' ')), `falta «${celdas.join(' | ')}» en ${tabla}`);
+    fila('El trabajo del RPAD', '2025', '2026', 'Diferencia');
+    // Los tres datasets se dieron de alta y se actualizaron en 2026: en la foto de 2025 no estaban, y la foto lo dice con sus textos
+    fila('Datasets nuevos', '0', '3', '+3');
+    fila('Actualizaciones registradas', '0', '3', '+3');
+    fila('Actualizados a tiempo', 'Sin actualizaciones registradas en 2025.', '2 de 3 ciclos (67%)', '—');
+    fila('Índice de actualización', 'Al 31/12/2025: sin datasets con vencimiento', 'Al 31/12/2026: 100% al día (3 de 3)', '—');
+    fila('Datasets en el registro', '0', '3', '+3');
     // El Informe de 2025 compara con 2024, que no tiene foto
     const de2025 = await pedirInforme('?anio=2025', 'lector');
     assert.equal(de2025.status, 200);

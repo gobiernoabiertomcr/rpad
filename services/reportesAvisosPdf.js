@@ -14,7 +14,7 @@ import {
 import { COLOR } from './notasDigitalesAnexo.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, prepararTitulo, prepararPildora, prepararTarjetas, prepararParrafo, prepararSeccion,
-  prepararTabla, dibujarJuntos, fechaCorta
+  prepararTabla, dibujarJuntos, fechaCorta, esObjeto, objeto, lista
 } from './reportesPdfBase.js';
 
 const TITULO = 'Avisos del RPAD';
@@ -41,8 +41,6 @@ const textoSinSalir = (n) => (n === 1 ? 'Además, 1 envío no salió: figura en 
 const textoDeDatasets = (titulos) => (titulos.length === 0 ? '—'
   : titulos.length === 1 ? titulos[0] : `${titulos.length} datasets: ${titulos.join(', ')}`);
 
-const lista = (valor) => (Array.isArray(valor) ? valor : []);
-const objeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
 const comparar = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // Los títulos de los datasets de un aviso, en orden alfabético, sin vacíos
 const titulosDe = (datasets) => lista(datasets).filter((t) => typeof t === 'string' && t.trim() !== '').map((t) => t.trim())
@@ -85,10 +83,10 @@ const avisoDeNota = (nota) => {
 // clase ('dgmit', 'area' o 'nota'), que, gestion ('externa', 'interna' o null), datasets, envio ('enviado', 'pendiente' o 'fallido'),
 // estado (su texto) }: nada más de lo leído (ni las direcciones ni el error). Nunca tira: lo que no se puede leer no va.
 export const avisosDelPeriodo = (fuentes, { desde, hasta }) => {
-  const { emails, notas } = objeto(fuentes) ? fuentes : {};
+  const { emails, notas } = objeto(fuentes);
   const avisos = [
-    ...lista(emails).filter(objeto).map(avisoDeEmail),
-    ...lista(notas).filter(objeto).map(avisoDeNota)
+    ...lista(emails).filter(esObjeto).map(avisoDeEmail),
+    ...lista(notas).filter(esObjeto).map(avisoDeNota)
   ].filter((aviso) => aviso !== null && aviso.fecha >= desde && aviso.fecha <= hasta);
   return avisos.sort((a, b) => comparar(a.fecha, b.fecha) || comparar(a.momento, b.momento))
     .map(({ momento, ...aviso }) => aviso);

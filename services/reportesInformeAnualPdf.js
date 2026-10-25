@@ -19,15 +19,18 @@ import {
 } from './reportesMetricasPdf.js';
 import {
   nuevoReporte, cerrarReporte, dibujarJuntos, prepararTitulo, prepararPildora, prepararSeccion, prepararParrafo, prepararTabla, fechaCorta,
-  LIMITE, ENTRE
+  LIMITE, ENTRE, esObjeto, objeto, lista, esNumero, texto
 } from './reportesPdfBase.js';
 
-// Los textos fijos del Informe. Los hitos sin proyecto son los «Logros del Área» de Gestión → Proyectos (public/js/gestion.js)
+// Los textos fijos del Informe. Los hitos sin proyecto son los «Logros del Área» de Gestión → Proyectos (public/js/gestion.js). Los
+// datasets de estado desconocido (un ciclo sin el vencimiento guardado: no se sabe qué próxima regía) no tienen nombre en la pantalla:
+// su fila de la comparación se llama «Sin dato del vencimiento»
 export const TEXTOS_DEL_INFORME = Object.freeze({
   primerAnio: 'Primer año con foto',
   comparacion: (anio) => `Comparación con ${anio - 1}`,
   lasFotos: (anterior, actual) => `Las fotos del ${fechaCorta(anterior)} y del ${fechaCorta(actual)}`,
   alCierre: 'Al 31/12',
+  sinDatoDelVencimiento: 'Sin dato del vencimiento',
   diferencia: 'Diferencia',
   queEsLaDiferencia: (anio) => `Diferencia: ${anio} menos ${anio - 1}; en los porcentajes, en puntos.`,
   logros: 'Logros del año',
@@ -46,12 +49,7 @@ const HITO = { fecha: 62, bajoTitulo: 2, linea: ENTRE / 2 };
 const LINEAS_DEL_TITULO = 3;
 const LINEAS_DE_LA_DESCRIPCION = 40;
 
-const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
-const objeto = (valor) => (esObjeto(valor) ? valor : {});
-const lista = (valor) => (Array.isArray(valor) ? valor : []);
-const esNumero = (valor) => typeof valor === 'number' && Number.isFinite(valor);
-// Un texto de la foto o de la base; lo que no es un texto ni un número, vacío (nunca «null» ni «undefined»)
-const texto = (valor) => (typeof valor === 'string' ? valor : esNumero(valor) ? String(valor) : '');
+// (esObjeto, objeto, lista, esNumero y texto son los de la base de los reportes)
 const conMayuscula = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 // =====================================================
@@ -69,20 +67,22 @@ const diferenciaDe = (anterior, actual, puntos) => {
 };
 
 // Lo que dice cada foto en una fila: { valor (el número que se resta, o null), texto (lo que se escribe) }
-// - un resultado del año, con el texto de la foto al lado de la cifra y el porcentaje de su medidor: «5 de 33 ciclos (15%)»;
+// - un resultado del año: sin casos, lo que dice la foto («Sin actualizaciones registradas en 2025.»); si no, la cifra con el texto de
+//   la foto al lado y el porcentaje de su medidor: «5 de 33 ciclos (15%)»;
 const delResultado = (clave, cantidad) => (foto) => {
   const resultados = objeto(objeto(foto.vista).resultados);
   const textos = objeto(objeto(resultados.textos)[clave]);
+  if (texto(textos.vacio)) return { valor: null, texto: texto(textos.vacio) };
   const n = objeto(resultados[clave])[cantidad];
   if (!esNumero(n)) return { valor: null, texto: '—' };
   const base = [String(n), texto(textos.de)].filter(Boolean).join(' ');
   return { valor: esNumero(textos.medidor) ? textos.medidor : null, texto: esNumero(textos.medidor) ? `${base} (${textos.medidor}%)` : base };
 };
-// - el índice al 31/12 (el último punto del índice mes a mes de la foto), como lo dice la foto: «75% al día (3 de 4)»;
+// - el índice al 31/12: el último punto del índice mes a mes de la foto, con su texto («Al 31/12/2026: 75% al día (3 de 4)»; sin índice,
+//   por qué: «Al 31/12/2025: sin datasets con vencimiento»);
 const delIndice = (foto) => {
   const punto = objeto(lista(objeto(foto.contexto).indice).filter(esObjeto).at(-1));
-  if (!esNumero(punto.tasa)) return { valor: null, texto: '—' };
-  return { valor: punto.tasa, texto: `${punto.tasa}% al día (${texto(punto.al_dia)} de ${texto(punto.base)})` };
+  return { valor: esNumero(punto.tasa) ? punto.tasa : null, texto: texto(punto.texto) || '—' };
 };
 // - una cuenta de la foto: cuántos había en un estado al 31/12 (contexto.estados) o un total del trabajo del año (trabajo)
 const unNumero = (deDonde) => (foto) => {
@@ -92,47 +92,62 @@ const unNumero = (deDonde) => (foto) => {
 const delEstado = (clave) => unNumero((foto) => objeto(objeto(foto.contexto).estados)[clave]);
 const delTrabajo = (clave) => unNumero((foto) => objeto(foto.trabajo)[clave]);
 
-// Las tres tablas de la comparación, con sus filas: [rótulo, de dónde sale cada foto, si la diferencia es en puntos]. Los estados al
-// 31/12 son los de las tarjetas del Estado general de ese día (los vencidos juntan a los dos estados vencidos); los totales del trabajo,
-// los de sus tarjetas, nombrados con su plural
+// Las tres tablas de la comparación, con sus filas: { rotulo, de (de dónde sale lo de cada foto), puntos (si la diferencia es de dos
+// porcentajes), siHay (la fila va solo si alguna de las dos fotos tiene más de 0) }. Los estados al 31/12 son los de estadosAl (las
+// tarjetas del Estado general de ese día; los vencidos juntan a los dos estados vencidos) y, con los de estado desconocido, suman los
+// datasets en el registro; los totales del trabajo, los de sus tarjetas, nombrados con su plural
 const TABLAS_DE_LA_COMPARACION = [
-  { titulo: T.titulos.resultados, filas: [[T.titulos.aTiempo, delResultado('a_tiempo', 'a_tiempo'), true], [T.titulos.cobertura, delResultado('cobertura', 'si'), true]] },
+  {
+    titulo: T.titulos.resultados,
+    filas: [
+      { rotulo: T.titulos.aTiempo, de: delResultado('a_tiempo', 'a_tiempo'), puntos: true },
+      { rotulo: T.titulos.cobertura, de: delResultado('cobertura', 'si'), puntos: true }
+    ]
+  },
   {
     titulo: TX.alCierre,
     filas: [
-      ['Índice de actualización', delIndice, true], ['Datasets en el registro', delEstado('total')], ['Actualizados', delEstado('actualizado')],
-      ['Próximos a vencer', delEstado('proximo')], ['Vencidos', delEstado('vencidos')], ['Eventuales', delEstado('eventual')],
-      ['Sin fecha', delEstado('sin_fecha')]
+      { rotulo: 'Índice de actualización', de: delIndice, puntos: true }, { rotulo: 'Datasets en el registro', de: delEstado('total') },
+      { rotulo: 'Actualizados', de: delEstado('actualizado') }, { rotulo: 'Próximos a vencer', de: delEstado('proximo') },
+      { rotulo: 'Vencidos', de: delEstado('vencidos') }, { rotulo: 'Eventuales', de: delEstado('eventual') },
+      { rotulo: 'Sin fecha', de: delEstado('sin_fecha') }, { rotulo: TX.sinDatoDelVencimiento, de: delEstado('desconocido'), siHay: true }
     ]
   },
-  { titulo: T.titulos.trabajo, filas: Object.entries(TOTALES_DEL_TRABAJO).map(([clave, [, plural]]) => [conMayuscula(plural), delTrabajo(clave)]) }
+  {
+    titulo: T.titulos.trabajo,
+    filas: Object.entries(TOTALES_DEL_TRABAJO).map(([clave, [, plural]]) => ({ rotulo: conMayuscula(plural), de: delTrabajo(clave) }))
+  }
 ];
 
-// La comparación de la foto del año (`actual`) con la del anterior (`anterior`), las dos como las lee el Informe (deLaFoto): los números
-// de las dos fotos, con sus textos, y la diferencia (solo se resta: no se calcula nada nuevo). Tres tablas, [{ titulo, filas: [[rótulo,
-// lo del año anterior, lo del año, la diferencia]] }]: los resultados del año, los estados al 31/12 con el índice y el trabajo del RPAD.
-// Lo que una foto no tiene, una raya. Nunca tira.
+// La comparación de la foto del año (`actual`) con la del anterior (`anterior`), las dos como las lee el Informe (deLaFoto): lo que dice
+// cada foto, con sus textos, y la diferencia (solo se resta: no se calcula nada nuevo). Tres tablas, [{ titulo, filas: [[rótulo, lo del
+// año anterior, lo del año, la diferencia]] }]: los resultados del año, los estados al 31/12 con el índice y el trabajo del RPAD. Lo que
+// una foto no tiene, una raya. Nunca tira.
 export const comparacionDe = (anterior, actual) => TABLAS_DE_LA_COMPARACION.map(({ titulo, filas }) => ({
   titulo,
-  filas: filas.map(([rotulo, deLaFoto, puntos = false]) => {
-    const antes = deLaFoto(objeto(anterior));
-    const ahora = deLaFoto(objeto(actual));
+  filas: filas.map(({ rotulo, de, puntos = false, siHay = false }) => {
+    const antes = de(objeto(anterior));
+    const ahora = de(objeto(actual));
+    if (siHay && !(antes.valor > 0) && !(ahora.valor > 0)) return null;
     return [rotulo, antes.texto, ahora.texto, diferenciaDe(antes.valor, ahora.valor, puntos)];
-  })
+  }).filter(Boolean)
 }));
 
 // Los grupos de la comparación (los de dibujarParte): la cabeza de la sección con, si hay foto del año anterior, sus tres tablas (con
-// los dos años en las columnas) y qué es la diferencia; si no, la píldora «Primer año con foto»
+// los dos años en las columnas) y qué es la diferencia, que viaja con la última fila de la última tabla (nunca queda sola arriba de una
+// hoja); si no, la píldora «Primer año con foto»
 const elementosDeLaComparacion = (doc, anterior, actual) => {
   const { anio } = actual;
   const alAnterior = esFechaIso(anterior?.al) ? anterior.al : `${anio - 1}-12-31`;
   const seccion = prepararSeccion(doc, { titulo: TX.comparacion(anio), derecha: anterior ? TX.lasFotos(alAnterior, actual.al) : '' });
   if (anterior === null) return [[seccion, prepararPildora(doc, TX.primerAnio)]];
-  const [primera, ...resto] = comparacionDe(anterior, actual).map(({ titulo, filas }) => prepararTabla(doc, {
+  const tablas = comparacionDe(anterior, actual);
+  const [primera, ...resto] = tablas.map(({ titulo, filas }, i) => prepararTabla(doc, {
     columnas: [{ titulo, ancho: 2.7 }, { titulo: String(anio - 1), ancho: 1.75 }, { titulo: String(anio), ancho: 1.75 }, { titulo: TX.diferencia, ancho: 1 }],
-    filas
+    filas,
+    aclaracion: i === tablas.length - 1 ? prepararParrafo(doc, TX.queEsLaDiferencia(anio)) : null
   }));
-  return [[seccion, primera], ...resto.map((tabla) => [tabla]), [prepararParrafo(doc, TX.queEsLaDiferencia(anio))]];
+  return [[seccion, primera], ...resto.map((tabla) => [tabla])];
 };
 
 // =====================================================

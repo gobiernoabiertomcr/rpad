@@ -21,7 +21,9 @@
 // Los elementos: prepararTitulo, prepararPildora, prepararTarjetas, prepararSeccion (la cabeza de una sección del Seguimiento),
 // prepararParrafo y prepararRecuadro (gris, o con el borde azul a la izquierda: spec 5.1), que lleva adentro cualquier otro elemento
 // preparado con el ancho ANCHO_DEL_RECUADRO (su dibujar recibe además la x: dibujar(y, x)). La tabla mide en `alto` lo que tiene que
-// entrar con lo de antes: su encabezado y su primera fila (después corta de hoja sola).
+// entrar con lo de antes: su encabezado y su primera fila (después corta de hoja sola); su aclaración, si la tiene, viaja con la última
+// fila.
+// Los dibujantes leen lo que manda el servidor con los ayudantes de la base (esObjeto, objeto, lista, esNumero y texto).
 import { DocumentoNota } from './notasDigitalesPdf.js';
 import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 import {
@@ -83,6 +85,15 @@ const LINEAS_DEL_PARRAFO = 40;
 
 const OJO = ASCENDENTE + DESCENDENTE;
 const suma = (valores) => valores.reduce((a, b) => a + b, 0);
+
+// Para leer lo que manda el servidor sin que un dato raro rompa el dibujo (los usan los dibujantes de los reportes): si es un objeto (no
+// una lista), el objeto o {}, la lista o [], si es un número finito y un texto (lo que no es un texto ni un número, vacío: nunca «null»
+// ni «undefined»)
+export const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+export const objeto = (valor) => (esObjeto(valor) ? valor : {});
+export const lista = (valor) => (Array.isArray(valor) ? valor : []);
+export const esNumero = (valor) => typeof valor === 'number' && Number.isFinite(valor);
+export const texto = (valor) => (typeof valor === 'string' ? valor : esNumero(valor) ? String(valor) : '');
 
 // Una fecha 'AAAA-MM-DD' como dd/mm/aaaa, cortada del texto (sin zona horaria); "—" si falta o no es una fecha
 export const fechaCorta = (iso) => (esFechaIso(iso) ? formatoCorto(iso) : '—');
@@ -223,12 +234,12 @@ export const dibujarPildora = (doc, texto, y, opciones) => prepararPildora(doc, 
 // Una fila de tarjetas que ocupa el ancho útil: en cada una, el valor grande en negrita y debajo su rótulo en gris (el valor se
 // dibuja antes que el rótulo). `tarjetas`: [{ valor, rotulo }]. Sin tarjetas, nada (alto 0).
 export const prepararTarjetas = (doc, tarjetas) => {
-  const lista = Array.isArray(tarjetas) ? tarjetas : [];
-  if (lista.length === 0) return { alto: 0, dibujar: (y) => y };
+  const todas = lista(tarjetas);
+  if (todas.length === 0) return { alto: 0, dibujar: (y) => y };
   const { separacion, relleno, entre, abajo, radio } = TARJETA;
-  const ancho = (CONTENIDO - separacion * (lista.length - 1)) / lista.length;
+  const ancho = (CONTENIDO - separacion * (todas.length - 1)) / todas.length;
   const anchoTexto = ancho - 2 * relleno;
-  const rotulos = lista.map(t => ajustar(doc, String(t.rotulo ?? ''), {
+  const rotulos = todas.map(t => ajustar(doc, String(t.rotulo ?? ''), {
     ancho: anchoTexto, lineas: 2, max: LETRA.rotuloTarjeta, min: LETRA.rotuloTarjeta
   }));
   const yRotulo = relleno + OJO * LETRA.valor + entre;
@@ -236,7 +247,7 @@ export const prepararTarjetas = (doc, tarjetas) => {
   return {
     alto,
     dibujar: (y) => {
-      lista.forEach((tarjeta, i) => {
+      todas.forEach((tarjeta, i) => {
         const x = IZQUIERDA + i * (ancho + separacion);
         doc.save();
         doc.lineWidth(0.8).strokeColor(COLOR.linea);
@@ -328,22 +339,26 @@ const prepararInsignia = (doc, texto, colores, ancho) => {
 // - cabeza (opcional): un elemento preparado ({ alto, dibujar(y) → y }: la cabeza de su sección o el título de su grupo) que la tabla
 //   repite arriba de su encabezado en cada hoja nueva que agrega, como el grupo de la portada del Por área. La primera vez la dibuja
 //   quien llama, junto con la tabla (dibujarJuntos).
-// Devuelve { alto, dibujar(y) → y }. El encabezado y la primera fila nunca se separan (`alto` es lo que ocupan: lo que tiene que entrar
-// junto con lo de antes, por ejemplo con dibujarJuntos); si una fila no entra en la hoja, sigue en una hoja nueva (con el encabezado de
-// la última que agregó agregarHoja) y repite la cabeza, si la hay, y el encabezado de la tabla. Sin filas no dibuja nada (alto 0).
-export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = null }) => {
+// - aclaracion (opcional): un elemento preparado (un párrafo que explica la tabla) que va debajo, con el aire de la base, y viaja con
+//   la última fila: si las dos no entran en la hoja, la última fila pasa a una hoja nueva (con la cabeza y el encabezado) y la
+//   aclaración va debajo. Así nunca queda sola arriba de una hoja.
+// Devuelve { alto, dibujar(y) → y }. El encabezado y la primera fila nunca se separan (`alto` es lo que ocupan, con la aclaración si la
+// primera es también la última: lo que tiene que entrar junto con lo de antes, por ejemplo con dibujarJuntos); si una fila no entra en
+// la hoja, sigue en una hoja nueva (con el encabezado de la última que agregó agregarHoja) y repite la cabeza, si la hay, y el
+// encabezado de la tabla. Sin filas no dibuja nada, tampoco la aclaración (alto 0).
+export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = null, aclaracion = null }) => {
   const pesos = columnas.map(c => (Number(c.ancho) > 0 ? Number(c.ancho) : 1));
   const anchos = pesos.map(p => (CONTENIDO * p) / suma(pesos));
   const xs = anchos.map((_, i) => IZQUIERDA + suma(anchos.slice(0, i)));
   const ultima = columnas.length - 1;
   const anchoTexto = (i) => anchos[i] - 2 * TABLA.relleno;
-  const texto = (valor, i, { fuente, tamano, lineas, color }) => {
+  const celdaDeTexto = (valor, i, { fuente, tamano, lineas, color }) => {
     const ajuste = ajustar(doc, String(valor ?? ''), { ancho: anchoTexto(i), lineas, max: tamano, min: tamano, fuente });
     return { alto: ajuste.alto, dibujar: (x, y) => escribir(doc, ajuste, x, y, color) };
   };
   const altoDe = (celdas) => TABLA.arriba + Math.max(...celdas.map(c => c.alto)) + TABLA.abajo;
 
-  const encabezado = columnas.map((c, i) => texto(c.titulo, i, {
+  const encabezado = columnas.map((c, i) => celdaDeTexto(c.titulo, i, {
     fuente: NEGRITA, tamano: LETRA.columna, lineas: LINEAS_DEL_ENCABEZADO, color: COLOR.acento
   }));
   const altoEncabezado = altoDe(encabezado);
@@ -352,7 +367,7 @@ export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = nul
     const colores = typeof clave === 'string' && Object.hasOwn(INSIGNIAS, clave) ? INSIGNIAS[clave] : null;
     const celdas = columnas.map((_, i) => (i === ultima && colores
       ? prepararInsignia(doc, String(fila[i] ?? ''), colores, anchoTexto(i))
-      : texto(fila[i], i, { fuente: NORMAL, tamano: LETRA.celda, lineas: LINEAS_POR_CELDA, color: COLOR.tinta })));
+      : celdaDeTexto(fila[i], i, { fuente: NORMAL, tamano: LETRA.celda, lineas: LINEAS_POR_CELDA, color: COLOR.tinta })));
     return { celdas, alto: altoDe(celdas) };
   });
 
@@ -362,8 +377,12 @@ export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = nul
     filete(doc, IZQUIERDA, y + alto, CONTENIDO, linea);
   };
 
+  // Lo que la aclaración le suma a la última fila: el aire y su alto
+  const conAclaracion = aclaracion ? ENTRE + aclaracion.alto : 0;
+  const ultimaFila = preparadas.length - 1;
+
   return {
-    alto: preparadas.length === 0 ? 0 : altoEncabezado + preparadas[0].alto,
+    alto: preparadas.length === 0 ? 0 : altoEncabezado + preparadas[0].alto + (ultimaFila === 0 ? conAclaracion : 0),
     dibujar: (y) => {
       if (preparadas.length === 0) return y;
       const { hoja } = REPORTES.get(doc);
@@ -377,17 +396,17 @@ export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = nul
         yFila = agregarHoja(doc, hoja);
         if (cabeza) yFila = cabeza.dibujar(yFila);
       };
-      if (yFila + altoEncabezado + preparadas[0].alto > LIMITE) otraHoja();
+      if (yFila + altoEncabezado + preparadas[0].alto + (ultimaFila === 0 ? conAclaracion : 0) > LIMITE) otraHoja();
       ponerEncabezado();
-      for (const fila of preparadas) {
-        if (yFila + fila.alto > LIMITE) {
+      preparadas.forEach((fila, f) => {
+        if (yFila + fila.alto + (f === ultimaFila ? conAclaracion : 0) > LIMITE) {
           otraHoja();
           ponerEncabezado();
         }
         dibujarFila(fila.celdas, yFila, fila.alto, COLOR.linea);
         yFila += fila.alto;
-      }
-      return yFila + ENTRE;
+      });
+      return aclaracion ? aclaracion.dibujar(yFila + ENTRE) : yFila + ENTRE;
     }
   };
 };
