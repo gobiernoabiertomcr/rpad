@@ -8,7 +8,7 @@ import pool from '../config/database.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 import {
-  validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir, TEXTO_TIPO_NOTA_DGMIT
+  validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir, TEXTO_TIPO_NOTA_DGMIT, sePuedeElegir
 } from '../services/notasDgmitReglas.js';
 
 const ERROR_AL_GUARDAR = 'Error al guardar la nota DGMIT';
@@ -63,10 +63,6 @@ const rechazoDeLaNota = (nota, usuario) => {
   if (nota.anulada) return rechazo(409, NOTA_ANULADA);
   return null;
 };
-
-// Se pueden elegir los datasets activos, de gestión externa y con «Requiere nota DGMIT» en Sí o sin dato (el 0 es No)
-const sePuedeElegir = (dataset) =>
-  Boolean(dataset.activo) && dataset.tipo_gestion === 'externa' && (dataset.requiere_nota === null || dataset.requiere_nota === 1);
 
 // El primer dataset (en el orden recibido) que no se puede elegir da 400; los que la nota ya tenía se aceptan aunque hoy no
 // se puedan elegir (una corrección no obliga a sacarlos). Un id que no existe da el mismo 400, con el id en lugar del título
