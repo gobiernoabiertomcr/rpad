@@ -337,4 +337,19 @@ Son los casos que la spec implica y que más pueden fallar. Cada uno tiene su te
 
 ## Diferencias encontradas
 
-(La tarea 1 las escribe acá.)
+Releído el 25/10/2026, con main en 2e48142 (el merge de Configuración) traído a la rama en 199e8e0.
+
+**Lo que cambió en main**
+- `public/reportes.html`: solo el menú de Administración (Gestión de Datasets, Correos y Configuración). Las páginas con carcasa ahora son 13.
+- `routes/index.js`: la línea 2 (`sesionOpcional`) y las rutas públicas de datasets y de áreas. El bloque `/reportes/*` no cambió.
+- `GET /api/areas`: devuelve los datos de contacto solo a administración. `reportes.js` usa nada más el `id` y el `nombre`.
+- `CLAUDE.md` y `README.md`: la sección «Configuración» y las cuentas de páginas.
+
+**Lo que no cambió**
+- `services/metricasReglas.js`, `metricasFoto.js`, `metricasCinta.js`, `reportesMetricasPdf.js` y `reportesPdfBase.js`.
+- `controllers/metricasController.js` y `reportesController.js`.
+- `public/js/reportes.js`.
+- `tests/permisos.test.js`, `reportes-frontend.test.js` y `reportes-pdf.test.js`.
+- `VERSION_REPORTES` sigue en `'20261203'`.
+
+**Conclusión:** las tareas 2 a 9 no cambian. Proyectos implementa en paralelo y va a subir `VERSION_REPORTES`. Esta rama usa `'20261206'` de forma provisoria y la ajusta al traer main después del merge de Proyectos.
