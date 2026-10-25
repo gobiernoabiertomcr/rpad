@@ -350,7 +350,9 @@ describe('notas.js: el paso 2 (los datasets y la nota)', () => {
     assert.ok(html.includes('<div class="subpanel-titulo">Nota anterior <span class="text-muted">(opcional)</span></div>'));
     assert.ok(html.includes('<span class="chip-nota">N° 88/26<button type="button" data-quitar-nota="0" aria-label="Quitar la nota N° 88/26">×</button></span>'));
     assert.ok(html.includes('data-quitar-nota="1" aria-label="Quitar la nota N° 102/26"'));
-    assert.ok(html.includes('<input class="form-input" id="nt-anterior-nuevo" type="text" maxlength="40" placeholder="Ej.: 124/25" aria-label="Número de otra nota anterior" aria-describedby="nt-anteriores-error">'));
+    // Sin maxlength: cuenta unidades de UTF-16 y cortaría un número con emoji a los 20 (el largo lo controlan numerosConOtro y el servidor)
+    assert.ok(html.includes('<input class="form-input" id="nt-anterior-nuevo" type="text" placeholder="Ej.: 124/25" aria-label="Número de otra nota anterior" aria-describedby="nt-anteriores-error">'));
+    assert.ok(!html.includes('maxlength'));
     assert.ok(html.includes('<button type="button" class="btn btn-outline btn-sm" data-agregar-nota>Agregar</button>'));
     assert.match(html, /<div class="origen"><svg aria-hidden="true"[^>]*>[\s\S]*<\/svg>Traída de las notas DGMIT cargadas en el Seguimiento\.<\/div>/);
     assert.ok(!html.includes('Editada a mano') && !html.includes('No hay notas DGMIT'));
@@ -493,6 +495,17 @@ describe('notas.js: el pedido', () => {
       ['fecha', 'numero', 'datasets']);
     assert.deepEqual(plano(ctx.erroresParaSeguir(null, '2026-10-24')),
       { fecha: 'Elegí la fecha de la nota.', datasets: 'Elegí al menos un dataset.' });
+  });
+
+  it('erroresParaSeguir: si no se pudo cargar el área, queda solo ese error (nunca "Elegí al menos un dataset."), y el de la fecha escrita', () => {
+    const estado = { fecha: '2026-10-24', numero: 'y'.repeat(41), pedido: 'solicitud', area: null, elegidos: new Set(), errorDeArea: 'Error al obtener el área' };
+    assert.deepEqual(plano(ctx.erroresParaSeguir({ ...estado, campoDeArea: 'datasets' }, '2026-10-24')), { datasets: 'Error al obtener el área' });
+    assert.deepEqual(plano(ctx.erroresParaSeguir(estado, '2026-10-24')), { datasets: 'Error al obtener el área' }, 'sin campo, en los datasets');
+    const rechazada = { ...estado, errorDeArea: 'La fecha de la nota tiene que estar entre el 01/01/2025 y 30 días después de hoy.', campoDeArea: 'fecha' };
+    assert.deepEqual(plano(ctx.erroresParaSeguir(rechazada, '2026-10-24')), { fecha: rechazada.errorDeArea });
+    assert.deepEqual(plano(ctx.erroresParaSeguir({ ...rechazada, fecha: '' }, '2026-10-24')), { fecha: 'Elegí la fecha de la nota.' });
+    assert.deepEqual(plano(ctx.erroresParaSeguir({ ...estado, fecha: '' }, '2026-10-24')),
+      { fecha: 'Elegí la fecha de la nota.', datasets: 'Error al obtener el área' });
   });
 
   it('numerosConOtro: suma un número recortado; vacío o repetido no cambia la lista; uno largo da el error', () => {
@@ -648,6 +661,14 @@ describe('notas.html', () => {
     for (const selector of ['.alert ', '.alert-error', '.alert-success', '[hidden]', '.area-texto', '.ambito.externo', '.ds-aviso', '.nota-tabla', '.nota-firma']) {
       assert.ok(estilo.includes(selector), selector);
     }
+  });
+
+  // maxlength cuenta unidades de UTF-16: un número con emoji se cortaba a los 20 caracteres, y el servidor acepta 40 (Array.from)
+  it('el número de la nota no tiene maxlength (lo controlan erroresDelPaso2 y el servidor)', () => {
+    const campo = HTML.match(/<input[^>]*id="nt-numero"[^>]*>/)?.[0] ?? '';
+    assert.ok(campo, 'está el campo');
+    assert.doesNotMatch(campo, /maxlength/);
+    assert.doesNotMatch(HTML, /maxlength/, 'ningún campo de la página');
   });
 });
 
@@ -1121,6 +1142,143 @@ describe('notas.js: la página (DOM falso)', () => {
     p.pagina.irAlPaso3();
     assert.equal(p.generador().paso, 2);
     assert.equal(p.estado.foco, 'casilla-46');
+  });
+
+  // Ronda de arreglo 1, punto 1: la respuesta del área que estaba en camino al cambiar la fecha (la de la fecha anterior o la carga
+  // inicial) llegaba durante la espera de 300 ms y dejaba los datasets de otra fecha
+  it('una respuesta del área que llega durante la espera de una fecha nueva no se aplica; la de la fecha nueva sí', async () => {
+    const p = montar();
+    await p.iniciar();
+    const enCamino = [];
+    p.estado.responder = (metodo, ruta, cuerpo) => {
+      if (ruta === '/notas/areas/41?fecha=2026-10-24') return new Promise((resolver) => { enCamino.push(() => resolver(AREA_41())); });
+      if (ruta === '/notas/areas/41?fecha=2026-11-10') {
+        // A la fecha nueva, Tarifas (70) ya está al día
+        return { ...AREA_41(), datasets: AREA_41().datasets.map((d) => (d.id === 70 ? { ...d, estado: 'actualizado', dias: 141, se_puede_pedir: false } : d)) };
+      }
+      return RESPUESTAS(metodo, ruta, cuerpo);
+    };
+    const carga = p.pagina.elegirArea(41);
+    p.pagina.cambiarFecha('2026-11-10');
+    // La de la fecha anterior contesta durante la espera
+    enCamino.forEach((soltar) => soltar());
+    await carga;
+    await p.esperar();
+    const g = () => p.generador();
+    assert.equal(g().area, null, 'los datasets de la fecha vieja no se aplican');
+    assert.equal(g().cargandoArea, true);
+    assert.equal(g().elegidos.size, 0);
+    assert.deepEqual(p.vistasPedidas(), [], 'ni se pide una vista previa con la fecha nueva y los ids viejos');
+    assert.match(p.el('nt-datasets').innerHTML, /class="spinner"/);
+    // Termina la espera: se pide y se aplica la de la fecha nueva
+    await p.correr();
+    assert.ok(p.rutas('GET').includes('/notas/areas/41?fecha=2026-11-10'));
+    assert.equal(g().cargandoArea, false);
+    assert.deepEqual([...g().elegidos].sort((a, b) => a - b), [46, 48, 69], 'Tarifas ya no viene tildada');
+    assert.deepEqual(p.vistasPedidas().map((v) => [v.cuerpo.fecha, v.cuerpo.datasets]), [['2026-11-10', [46, 48, 69]]]);
+  });
+
+  it('si la carga del área se descarta por una fecha que no sirve, "Siguiente" da el error de la fecha (no "cargando"), sin listas ni ruedas eternas', async () => {
+    const p = montar();
+    await p.iniciar();
+    let soltar;
+    p.estado.responder = (metodo, ruta, cuerpo) => (ruta.startsWith('/notas/areas/41?')
+      ? new Promise((resolver) => { soltar = () => resolver(AREA_41()); })
+      : RESPUESTAS(metodo, ruta, cuerpo));
+    const carga = p.pagina.elegirArea(41);
+    p.pagina.cambiarFecha('2027-06-01');
+    soltar();
+    await carga;
+    await p.esperar();
+    const mensaje = 'La fecha de la nota tiene que estar entre el 01/01/2025 y 30 días después de hoy.';
+    assert.equal(p.generador().area, null);
+    assert.equal(p.el('nt-datasets').innerHTML, '');
+    assert.ok(p.el('nt-mini').innerHTML.includes(`<p class="hoja-mensaje">${mensaje}</p>`));
+    p.estado.foco = null;
+    p.pagina.irAlPaso3();
+    assert.equal(p.generador().paso, 2);
+    assert.equal(p.el('nt-fecha-error').textContent, mensaje);
+    assert.equal(p.estado.foco, 'nt-fecha');
+    assert.equal(p.el('nt-aviso').innerHTML, '', 'sin el aviso de "cargando"');
+    // Con una fecha que sirve, se vuelve a pedir
+    p.pagina.cambiarFecha('2026-11-10');
+    await p.correr();
+    assert.ok(p.rutas('GET').includes('/notas/areas/41?fecha=2026-11-10'));
+  });
+
+  // Ronda de arreglo 1, punto 2: sin maxlength, el largo lo controla erroresDelPaso2 (Array.from), como el servidor
+  it('un número de 41 caracteres da el error del número al tocar "Siguiente"; uno de 40 emoji pasa', async () => {
+    const p = montar();
+    await p.conArea(41);
+    p.pagina.cambiarNumero('x'.repeat(41));
+    p.pagina.irAlPaso3();
+    assert.equal(p.generador().paso, 2);
+    assert.equal(p.el('nt-numero-error').textContent, 'El número de la nota puede tener hasta 40 caracteres.');
+    assert.equal(p.el('nt-numero-error').hidden, false);
+    assert.equal(p.el('nt-numero').getAttribute('aria-invalid'), 'true');
+    assert.equal(p.estado.foco, 'nt-numero');
+    p.pagina.cambiarNumero('😀'.repeat(40));
+    assert.equal(p.el('nt-numero-error').hidden, true);
+    p.pagina.irAlPaso3();
+    assert.equal(p.generador().paso, 3);
+    await p.esperar();
+    assert.equal(p.vistasPedidas().at(-1).cuerpo.numero, '😀'.repeat(40));
+  });
+
+  // Ronda de arreglo 1, punto 3
+  it('"Siguiente" o "Ver en grande" mientras carga el área: un aviso, sin el error de datasets; se saca al terminar', async () => {
+    const p = montar();
+    await p.iniciar();
+    let soltar;
+    p.estado.responder = (metodo, ruta, cuerpo) => (ruta.startsWith('/notas/areas/41?')
+      ? new Promise((resolver) => { soltar = () => resolver(AREA_41()); })
+      : RESPUESTAS(metodo, ruta, cuerpo));
+    const carga = p.pagina.elegirArea(41);
+    p.estado.foco = null;
+    p.el('nt-siguiente').disparar('click', {});
+    assert.equal(p.generador().paso, 2);
+    assert.equal(p.el('nt-aviso').innerHTML, '<div class="alert">Todavía se están cargando los datasets del área. Probá de nuevo en un momento.</div>');
+    assert.equal(p.el('nt-datasets-error').hidden, true);
+    assert.equal(p.el('nt-datasets-error').textContent, '');
+    assert.equal(p.estado.foco, null, 'el foco no se mueve');
+    p.el('nt-ver-grande').disparar('click', {});
+    assert.equal(p.generador().paso, 2);
+    soltar();
+    await carga;
+    await p.esperar();
+    assert.equal(p.el('nt-aviso').innerHTML, '', 'al terminar la carga el aviso se va');
+    p.pagina.irAlPaso3();
+    assert.equal(p.generador().paso, 3);
+  });
+
+  it('con un error del área, "Siguiente" deja solo ese error (no "Elegí al menos un dataset."), una sola vez', async () => {
+    const p = montar({ responder: (metodo, ruta, cuerpo) => {
+      if (ruta.startsWith('/notas/areas/41?')) throw falla(500, 'Error al obtener el área');
+      return RESPUESTAS(metodo, ruta, cuerpo);
+    } });
+    await p.conArea(41);
+    assert.equal(p.el('nt-datasets-error').textContent, 'Error al obtener el área');
+    assert.equal(p.el('nt-datasets').innerHTML, '', 'la lista no repite el error');
+    assert.ok(p.el('nt-mini').innerHTML.includes('<p class="hoja-mensaje">Error al obtener el área</p>'));
+    p.pagina.irAlPaso3();
+    assert.equal(p.generador().paso, 2);
+    assert.equal(p.el('nt-datasets-error').textContent, 'Error al obtener el área');
+    assert.equal(p.estado.foco, 'nt-datasets-grupo');
+    assert.equal(p.el('nt-aviso').innerHTML, '');
+  });
+
+  it('con un 400 del área en la fecha, el error va a la fecha y "Siguiente" no agrega el de datasets', async () => {
+    const mensaje = 'La fecha de la nota tiene que estar entre el 01/01/2025 y 30 días después de hoy.';
+    const p = montar({ responder: (metodo, ruta, cuerpo) => {
+      if (ruta.startsWith('/notas/areas/41?')) throw falla(400, mensaje, 'fecha');
+      return RESPUESTAS(metodo, ruta, cuerpo);
+    } });
+    await p.conArea(41);
+    p.pagina.irAlPaso3();
+    assert.equal(p.el('nt-fecha-error').textContent, mensaje);
+    assert.equal(p.el('nt-fecha').getAttribute('aria-invalid'), 'true');
+    assert.equal(p.el('nt-datasets-error').hidden, true);
+    assert.equal(p.estado.foco, 'nt-fecha');
   });
 
   it('un 401 en la vista previa lleva al login', async () => {

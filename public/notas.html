@@ -29,8 +29,8 @@
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
         .nt-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
 
-        /* Mensajes de la página (#nt-aviso) */
-        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--border-color); }
+        /* Mensajes de la página (#nt-aviso): .alert solo es un aviso neutro ("Todavía se están cargando…") */
+        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--border-color); background: var(--gray-50); color: var(--gray-700); }
         .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: #2E6B4C; }
         .alert-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
 
@@ -125,7 +125,6 @@
         .ds.ds-off { background: var(--gray-50); cursor: default; }
         .ds.ds-off .ds-titulo, .ds.ds-off .ds-datos { color: var(--gray-500); }
         .ds-aviso { margin: 0 0 10px; padding: 10px 14px; background: var(--gray-50); border: 1px solid var(--border-color); border-radius: var(--border-radius); color: var(--gray-600); font-size: 0.875rem; }
-        .ds-aviso.ds-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
 
         /* La vista previa chica, al lado (fija mientras se desplaza la página) */
         .lateral { position: sticky; top: calc(var(--header-height) + 16px); }
@@ -318,7 +317,7 @@
                                             </div>
                                             <div>
                                                 <label class="form-label" for="nt-numero">Número <span class="etiqueta-opcional">(opcional)</span></label>
-                                                <input class="form-input corto-num" id="nt-numero" type="text" maxlength="40" placeholder="Ej.: 156/26" autocomplete="off" aria-describedby="nt-numero-ayuda nt-numero-error">
+                                                <input class="form-input corto-num" id="nt-numero" type="text" placeholder="Ej.: 156/26" autocomplete="off" aria-describedby="nt-numero-ayuda nt-numero-error">
                                             </div>
                                         </div>
                                         <p class="form-error" id="nt-fecha-error" hidden></p>

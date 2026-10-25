@@ -76,6 +76,8 @@ const SIN_DATOS_PARA_PEDIR = 'Hoy no hay datos para pedirle a esta área';
 const TODOS_AL_DIA = `${SIN_DATOS_PARA_PEDIR}: sus datasets están al día.`;
 // Si falla la carga de las áreas (spec 3.4): el mensaje, nunca una lista vacía
 const MENSAJE_SIN_AREAS = 'No se pudieron cargar las áreas. Probá de nuevo en unos minutos.';
+// "Siguiente" o "Ver en grande" mientras se cargan los datasets del área
+const MENSAJE_CARGANDO_EL_AREA = 'Todavía se están cargando los datasets del área. Probá de nuevo en un momento.';
 
 // La marca de agua de la hoja: el isotipo aclarado, el mismo del Word (services/notasWord.js)
 const MARCA_DE_AGUA = 'img/membrete-isotipo-aclarado.png';
@@ -375,7 +377,8 @@ function numerosTraidos(datasets, elegidos) {
 
 // El recuadro "Nota anterior (opcional)" de una reiteración: los números como etiquetas con su "×", el campo para agregar otro (su
 // error va en #nt-anteriores-error, fuera del recuadro) y de dónde salieron (traídos de las notas DGMIT cargadas, editados a mano o
-// sin notas cargadas para los elegidos)
+// sin notas cargadas para los elegidos). El campo no tiene maxlength: cuenta unidades de UTF-16 y cortaría un número con emoji a los
+// 20; el largo lo controlan numerosConOtro y el servidor, con Array.from
 function htmlDeNotaAnterior({ numeros, editada, traidos } = {}) {
   const etiquetas = comoLista(numeros).map((numero, i) => {
     const texto = `N° ${escaparTexto(numero)}`;
@@ -388,7 +391,7 @@ function htmlDeNotaAnterior({ numeros, editada, traidos } = {}) {
   return '<div class="subpanel">'
     + '<div class="subpanel-titulo">Nota anterior <span class="text-muted">(opcional)</span></div>'
     + `<div class="chips">${etiquetas}<span class="chip-agregar">`
-    + `<input class="form-input" id="nt-anterior-nuevo" type="text" maxlength="${String(LARGO_NUMERO_NOTA)}" placeholder="Ej.: 124/25" aria-label="Número de otra nota anterior" aria-describedby="nt-anteriores-error">`
+    + '<input class="form-input" id="nt-anterior-nuevo" type="text" placeholder="Ej.: 124/25" aria-label="Número de otra nota anterior" aria-describedby="nt-anteriores-error">'
     + '<button type="button" class="btn btn-outline btn-sm" data-agregar-nota>Agregar</button></span></div>'
     + origen
     + '</div>';
@@ -462,10 +465,16 @@ function erroresDelPaso2({ datasets, elegidos, numero, anteriores } = {}) {
 }
 
 // Lo que falta para seguir al paso 3, a partir del estado de la página (ver `generador`): la fecha y los errores del paso 2. Las notas
-// anteriores cuentan solo en una reiteración (en una solicitud no se mandan)
+// anteriores cuentan solo en una reiteración (en una solicitud no se mandan). Si no se pudo cargar el área (`errorDeArea`), no hay
+// datasets para elegir: queda solo ese error, en su campo (`campoDeArea`: la fecha, si el servidor la rechazó; si no, los datasets),
+// y el de la fecha escrita, si no sirve
 function erroresParaSeguir(estado, hoy) {
   const e = esObjeto(estado) ? estado : {};
   const fecha = errorDeFecha(e.fecha, hoy);
+  if (e.errorDeArea) {
+    const campo = ORDEN_DE_LOS_ERRORES.includes(e.campoDeArea) ? e.campoDeArea : 'datasets';
+    return campo === 'fecha' ? { fecha: fecha ?? e.errorDeArea } : { ...(fecha ? { fecha } : {}), [campo]: e.errorDeArea };
+  }
   return {
     ...(fecha ? { fecha } : {}),
     ...erroresDelPaso2({
@@ -519,8 +528,13 @@ function vistaPreviaDe(estado, hoy) {
   const e = esObjeto(estado) ? estado : {};
   const membrete = esObjeto(e.membrete) ? e.membrete : {};
   const conMensaje = (mensaje) => ({ html: htmlDeHoja(`<p class="hoja-mensaje">${escaparTexto(mensaje)}</p>`, membrete), lista: false });
-  if (e.cargandoArea || (!e.area && !e.errorDeArea)) return { html: CARGANDO, lista: false };
+  if (e.cargandoArea) return { html: CARGANDO, lista: false };
   if (e.errorDeArea) return conMensaje(e.errorDeArea);
+  // Sin el área y sin cargarla: la fecha escrita no sirve (el pedido que estaba en camino se descartó)
+  if (!e.area) {
+    const fecha = errorDeFecha(e.fecha, hoy);
+    return fecha ? conMensaje(fecha) : { html: CARGANDO, lista: false };
+  }
   const errores = erroresParaSeguir(e, hoy);
   const primero = ORDEN_DE_LOS_ERRORES.find((campo) => errores[campo]);
   if (primero) return conMensaje(errores[primero]);
@@ -542,8 +556,9 @@ const ESPERA = 300;
  * El estado de la página:
  * - `paso` (1, 2 o 3), `filtro` ('urgentes' o 'todas') y `busqueda` del paso 1, `areas` (GET /notas/areas, con el estado de hoy) y
  *   `errorDeAreas` (si no se pudieron cargar);
- * - `areaId` y `area` (GET /notas/areas/:id?fecha=, con sus datasets a la fecha de la nota; null mientras carga), `cargandoArea` y
- *   `errorDeArea` (el mensaje del servidor, si no se pudo cargar);
+ * - `areaId` y `area` (GET /notas/areas/:id?fecha=, con sus datasets a la fecha de la nota; null mientras carga), `cargandoArea`,
+ *   `errorDeArea` (el mensaje del servidor, si no se pudo cargar), `campoDeArea` (el campo de ese error: 'fecha' o 'datasets') y
+ *   `avisoDeCarga` (si #nt-aviso dice que el área todavía está cargando);
  * - `tipo` ('interna' o 'externa'), `pedido` ('solicitud' o 'reiteracion'), `fecha` ('AAAA-MM-DD'), `numero` (el texto del campo),
  *   `anteriores` (los números de la nota anterior), `anterioresEditadas` (si se tocaron a mano), `elegidos` (un Set de ids) y
  *   `elegidosEditados` (si se tildó o destildó alguno a mano: si no, al cambiar la fecha vienen tildados los de esa fecha);
@@ -553,6 +568,7 @@ const ESPERA = 300;
  */
 const generador = {
   paso: 1, filtro: 'urgentes', busqueda: '', areas: [], errorDeAreas: null, areaId: null, area: null, cargandoArea: false, errorDeArea: null,
+  campoDeArea: null, avisoDeCarga: false,
   tipo: null, pedido: 'solicitud', fecha: null, numero: '', anteriores: [], anterioresEditadas: false, elegidos: new Set(),
   elegidosEditados: false, membrete: { imagen: null, pie: '' }, vistaPrevia: null, falloDeVista: null,
   esperaVista: null, esperaFecha: null, serieArea: 0
@@ -795,8 +811,8 @@ function elegirArea(id) {
   let carga = Promise.resolve();
   if (generador.areaId !== area.id || generador.errorDeArea) {
     Object.assign(generador, {
-      areaId: area.id, area: null, errorDeArea: null, tipo: tipoDeNotaSugerido(area.ambito), anteriores: [], anterioresEditadas: false,
-      elegidos: new Set(), elegidosEditados: false, vistaPrevia: null, falloDeVista: null
+      areaId: area.id, area: null, errorDeArea: null, campoDeArea: null, tipo: tipoDeNotaSugerido(area.ambito), anteriores: [],
+      anterioresEditadas: false, elegidos: new Set(), elegidosEditados: false, vistaPrevia: null, falloDeVista: null
     });
     for (const campo of ORDEN_DE_LOS_ERRORES) ponerError(campo, null);
     carga = cargarArea();
@@ -821,7 +837,9 @@ async function cargarArea() {
   clearTimeout(generador.esperaVista);
   const serie = ++generador.serieArea;
   generador.cargandoArea = true;
+  if (generador.campoDeArea) ponerError(generador.campoDeArea, null);
   generador.errorDeArea = null;
+  generador.campoDeArea = null;
   ponerError('datasets', null);
   dibujarDatasets();
   dibujarVistaPrevia();
@@ -838,10 +856,16 @@ async function cargarArea() {
   }
   if (serie !== generador.serieArea) return;
   generador.cargandoArea = false;
+  if (generador.avisoDeCarga) {
+    generador.avisoDeCarga = false;
+    limpiarAviso();
+  }
   if (falla) {
+    // El error queda en un solo lugar: en su campo (la fecha, si el servidor la rechazó) o junto a la lista de datasets
     generador.area = null;
     generador.errorDeArea = falla.message || 'No se pudo cargar el área.';
-    if (Object.prototype.hasOwnProperty.call(LUGARES_DE_ERROR, falla.campo)) ponerError(falla.campo, falla.message);
+    generador.campoDeArea = falla.campo === 'fecha' ? 'fecha' : 'datasets';
+    ponerError(generador.campoDeArea, generador.errorDeArea);
   } else {
     generador.area = esObjeto(respuesta?.data) ? { ...respuesta.data, datasets: datasetsDe(respuesta.data) } : { datasets: [] };
     if (!generador.elegidosEditados) generador.elegidos = new Set(elegidosIniciales(generador.area.datasets));
@@ -879,8 +903,10 @@ function dibujarPistaDelTipo() {
 
 function dibujarDatasets() {
   const contenedor = porId('nt-datasets');
-  if (generador.cargandoArea || (!generador.area && !generador.errorDeArea)) contenedor.innerHTML = CARGANDO;
-  else if (generador.errorDeArea) contenedor.innerHTML = `<p class="ds-aviso ds-error">${escaparTexto(generador.errorDeArea)}</p>`;
+  if (generador.cargandoArea) contenedor.innerHTML = CARGANDO;
+  // Sin el área, la lista queda vacía: su error está en #nt-datasets-error o en el de la fecha (también si la fecha escrita no sirve y el
+  // pedido que estaba en camino se descartó)
+  else if (generador.errorDeArea || !generador.area) contenedor.innerHTML = '';
   else contenedor.innerHTML = htmlDeListaDeDatasets(generador.area.datasets, generador.elegidos);
 }
 
@@ -968,11 +994,12 @@ function cambiarFecha(valor) {
   porId('nt-numero-ayuda').textContent = textoDeAyudaDelNumero(generador.fecha);
   clearTimeout(generador.esperaFecha);
   clearTimeout(generador.esperaVista);
+  // Un pedido del área en camino (el de la fecha anterior, o la carga inicial) ya no sirve: si contestara durante la espera, dejaría los
+  // datasets de otra fecha
+  generador.serieArea += 1;
   const error = errorDeFecha(generador.fecha, hoy());
   ponerError('fecha', error);
   if (error || !generador.areaId) {
-    // Un pedido del área en camino ya no sirve
-    generador.serieArea += 1;
     generador.cargandoArea = false;
     dibujarDatasets();
     dibujarVistaPrevia();
@@ -1140,7 +1167,13 @@ function mostrarErrores(errores) {
 // errores en sus campos y el foco al primero, sin pasar; si no, el paso 3, con la vista previa de ahora (si todavía no llegó, se pide
 // sin esperar)
 function irAlPaso3() {
-  if (generador.cargandoArea || (!generador.area && !generador.errorDeArea)) return;
+  if (generador.cargandoArea || (!generador.area && !generador.errorDeArea)) {
+    // Sin el área y sin cargarla, lo único que falta es una fecha que sirva
+    const fecha = generador.cargandoArea ? null : errorDeFecha(generador.fecha, hoy());
+    if (fecha) mostrarErrores({ fecha });
+    else avisarQueCarga();
+    return;
+  }
   const errores = erroresParaSeguir(generador, hoy());
   const fallo = generador.falloDeVista;
   if (fallo?.clave === claveActual() && Object.prototype.hasOwnProperty.call(LUGARES_DE_ERROR, fallo.campo) && !errores[fallo.campo]) {
@@ -1151,6 +1184,13 @@ function irAlPaso3() {
   irAlPaso(3);
   dibujarPaso3();
   if (generador.vistaPrevia?.clave !== claveActual()) pedirVistaPrevia();
+}
+
+// "Siguiente" o "Ver en grande" mientras se cargan los datasets del área: un aviso, sin marcar ningún campo. Se saca cuando termina la
+// carga
+function avisarQueCarga() {
+  porId('nt-aviso').innerHTML = `<div class="alert">${MENSAJE_CARGANDO_EL_AREA}</div>`;
+  generador.avisoDeCarga = true;
 }
 
 function dibujarPaso3() {
@@ -1192,8 +1232,8 @@ function armarOtraNota() {
   clearTimeout(generador.esperaFecha);
   generador.serieArea += 1;
   Object.assign(generador, {
-    areaId: null, area: null, cargandoArea: false, errorDeArea: null, tipo: null, pedido: 'solicitud', numero: '', anteriores: [],
-    anterioresEditadas: false, elegidos: new Set(), elegidosEditados: false, vistaPrevia: null, falloDeVista: null
+    areaId: null, area: null, cargandoArea: false, errorDeArea: null, campoDeArea: null, avisoDeCarga: false, tipo: null, pedido: 'solicitud',
+    numero: '', anteriores: [], anterioresEditadas: false, elegidos: new Set(), elegidosEditados: false, vistaPrevia: null, falloDeVista: null
   });
   porId('nt-numero').value = '';
   for (const campo of ORDEN_DE_LOS_ERRORES) ponerError(campo, null);
