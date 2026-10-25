@@ -41,9 +41,7 @@ const BAJADA_DE_LOS_DIAS = {
 };
 const NOMBRE_DE_LOS_DIAS = { habiles: 'días hábiles', corridos: 'días corridos' };
 
-// Los nodos del circuito (spec, 2.2): quién es, qué hace y su color (lo de la DGMIT en violeta, el Portal en verde). Entre cada dos
-// nodos va un tramo, en el orden en que los manda el servidor (externa: aviso, trámite, respuesta y carga; interna: aviso,
-// producción y carga)
+// Los nodos del circuito (spec, 2.2): quién es, qué hace y su color (lo de la DGMIT en violeta, el Portal en verde)
 const NODOS = {
   rpad: ['RPAD', 'Datos Públicos avisa', ''],
   da: ['DGMIT y Dirección Administrativa', 'Mandan la nota formal', 'dgmit'],
@@ -52,17 +50,18 @@ const NODOS = {
   ddpc: ['Datos Públicos', 'Limpia y estructura', ''],
   portal: ['Portal', 'Datos publicados', 'fin']
 };
-const NODOS_DE_LA_GESTION = { externa: ['rpad', 'da', 'area', 'ddpc', 'portal'], interna: ['rpad', 'dit', 'ddpc', 'portal'] };
+// El circuito de cada gestión: cada nodo con la clave del tramo que sale de él hacia el siguiente (la flecha se busca por esa clave
+// entre los tramos del servidor, no por su lugar en la lista); el último nodo, sin tramo
+const CIRCUITO_DE_LA_GESTION = {
+  externa: [['rpad', 'aviso'], ['da', 'tramite'], ['area', 'respuesta'], ['ddpc', 'carga'], ['portal', null]],
+  interna: [['rpad', 'aviso'], ['dit', 'produccion'], ['ddpc', 'carga'], ['portal', null]]
+};
 
 const ORIENTATIVO = 'con tan pocos casos, es orientativo';
 const SE_CUENTA_HASTA = 'Se cuenta hasta que se registra la actualización.';
-// Spec 1.3: los externos con «Requiere nota DGMIT: No» (TMDA, empleados municipales) cuentan solo en la anticipación y en la carga
-const SIN_NOTA_DGMIT = 'Los datasets que no requieren nota DGMIT (los datos se obtienen de una fuente pública) cuentan solo en el aviso anticipado y en la preparación y carga.';
 
-// La cinta: la línea del eje va de punta a punta de la línea útil del servidor (X_INICIAL y X_FINAL de services/metricasCinta.js;
-// tests/reportes-frontend.test.js comprueba que el primer y el último número del eje caen ahí). Todo lo demás llega con la cinta:
-// las x, las alturas (`alturas`), los textos y los anclajes
-const LINEA_DEL_EJE = { desde: 30, hasta: 970 };
+// La cinta: todo llega con ella (las x, la línea del eje, las alturas, los textos y los anclajes); estas listas solo dicen qué se
+// puede escribir en un atributo
 const ANCLAJES = ['start', 'middle', 'end'];
 const COLORES = ['tinta', 'violeta', 'verde'];
 const TIPOS_DE_MARCA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga'];
@@ -124,14 +123,6 @@ function conMayuscula(texto) {
   return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : '';
 }
 
-function cantidadDeCiclos(n) {
-  return `${String(n)} ${n === 1 ? 'ciclo' : 'ciclos'}`;
-}
-
-function notasPendientes(n) {
-  return `${String(n)} ${n === 1 ? 'nota pendiente' : 'notas pendientes'} de carga`;
-}
-
 // =====================================================
 // El estado de la URL (puro)
 // =====================================================
@@ -145,17 +136,22 @@ function idsDestildados(textos) {
   return [...new Set(ids)];
 }
 
+// Un año escrito con cuatro dígitos, de 1000 a 9999 (como lo lee el servidor: «0000» no es un año), o null
+function anioDe(texto) {
+  const anio = /^\d{4}$/.test(String(texto ?? '')) ? Number(texto) : null;
+  return anio !== null && anio >= 1000 ? anio : null;
+}
+
 // Lo elegido en la página a partir de la dirección (`texto`: location.search + location.hash, con o sin el «?»). Lo que no sirve cae
-// al de entrada (ESTADO_POR_DEFECTO) o se ignora. `anio`: un número de cuatro dígitos, o null (el en curso); la pestaña sale del hash
+// al de entrada (ESTADO_POR_DEFECTO) o se ignora. `anio`: un año (anioDe), o null (el en curso); la pestaña sale del hash
 function estadoDeLaUrl(texto) {
   const completo = typeof texto === 'string' ? texto : '';
   const corte = completo.indexOf('#');
   const consulta = (corte === -1 ? completo : completo.slice(0, corte)).replace(/^\?/, '');
   const hash = corte === -1 ? '' : completo.slice(corte + 1);
   const parametros = new URLSearchParams(consulta);
-  const anio = parametros.get('anio');
   return {
-    anio: anio !== null && /^\d{4}$/.test(anio) ? Number(anio) : null,
+    anio: anioDe(parametros.get('anio')),
     estadistico: elegido(parametros.get('estadistico'), ESTADISTICOS),
     dias: elegido(parametros.get('dias'), DIAS),
     gestion: elegido(parametros.get('gestion'), GESTIONES),
@@ -169,7 +165,7 @@ function estadoDeLaUrl(texto) {
 function parametrosDe(estado, conGestion) {
   const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
   const pares = [];
-  if (Number.isInteger(e.anio) && e.anio >= 1000 && e.anio <= 9999) pares.push(['anio', String(e.anio)]);
+  if (Number.isInteger(e.anio) && anioDe(String(e.anio)) !== null) pares.push(['anio', String(e.anio)]);
   for (const [clave, validos] of [['estadistico', ESTADISTICOS], ['dias', DIAS], ...(conGestion ? [['gestion', GESTIONES]] : [])]) {
     const valor = elegido(e[clave], validos);
     if (valor !== validos[0][0]) pares.push([clave, valor]);
@@ -199,7 +195,7 @@ function conSelector(estado, clave, valor, anios) {
   if (validos) return validos.some(([v]) => v === valor) ? { ...estado, [clave]: valor } : { ...estado };
   if (clave !== 'anio') return { ...estado };
   const lista = comoLista(anios);
-  const anio = /^\d{4}$/.test(String(valor ?? '')) ? Number(valor) : null;
+  const anio = anioDe(valor);
   if (anio === null || !lista.includes(anio)) return { ...estado };
   return { ...estado, anio: anio === lista.at(-1) ? null : anio };
 }
@@ -243,7 +239,7 @@ function htmlDeBarra(datos, estado) {
   const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
   const anios = comoLista(d.anios).filter(Number.isInteger);
   const enCurso = anios.at(-1);
-  const actual = Number.isInteger(e.anio) ? e.anio : d.anio;
+  const actual = Number.isInteger(e.anio) ? e.anio : (enCurso ?? d.anio);
   const opciones = [...anios].reverse()
     .map((anio) => `<option value="${String(anio)}"${anio === actual ? ' selected' : ''}>${String(anio)}${anio === enCurso ? ' (en curso)' : ''}</option>`).join('');
   const destildados = comoLista(d.sin_titulos).filter((titulo) => typeof titulo === 'string').length;
@@ -276,11 +272,12 @@ function htmlDeFranjaSin(datos, estado = ESTADO_POR_DEFECTO) {
 
 // La flecha de un tramo (un Tramo de vistaDe), con lo que manda el servidor:
 // - con cifra, el número con su unidad al lado («27» + «días hábiles»; sin «antes») y debajo el estadístico con la cantidad de ciclos
-//   («mediana de 32 ciclos»); un 0 llega como «En el día», sin unidad, con «mediana en días hábiles» debajo, y la cantidad de ciclos
-//   va en el texto de la flecha; con 4 casos o menos, «con tan pocos casos, es orientativo»;
+//   («mediana de 32 ciclos»); un 0 llega como «En el día» (`en_el_dia`), sin unidad, con «mediana en días hábiles» debajo, y la
+//   cantidad de ciclos (`ciclos_texto`) va en el texto de la flecha; con 4 casos o menos, «con tan pocos casos, es orientativo»;
 // - sin cifra, por qué (`vacio`: «Todavía no hay notas DGMIT cargadas» con los pendientes, «Sin datos todavía», «Sin casos en 2026»);
 // - el nombre, la línea, «desde → hasta», los en curso (con «Se cuenta hasta que se registra la actualización.») y los pendientes de
-//   carga de la DGMIT; al final, la insignia de quién está a cargo (nunca solo el color). Lo de la DGMIT va en violeta.
+//   carga de la DGMIT (el texto del vacío o, con cifra, `pendientes_texto`); al final, la insignia de quién está a cargo (nunca solo
+//   el color). Lo de la DGMIT va en violeta. La página no compara números ni arma textos: los escribe como llegan.
 function htmlDeFlecha(tramo) {
   if (!esObjeto(tramo)) return '<div class="mt-flecha vacia"><div class="l" aria-hidden="true"></div></div>';
   const cifra = esObjeto(tramo.cifra) ? tramo.cifra : null;
@@ -296,10 +293,10 @@ function htmlDeFlecha(tramo) {
   }
   partes.push(`<span class="t">${escaparTexto(tramo.nombre)}</span><div class="l" aria-hidden="true"></div>`);
   if (escaparTexto(tramo.desde_hasta)) partes.push(`<span class="c">${escaparTexto(tramo.desde_hasta)}</span>`);
-  if (cifra && cifra.valor === 0 && Number.isInteger(cifra.ciclos)) partes.push(`<span class="c"><b>${cantidadDeCiclos(cifra.ciclos)}</b></span>`);
+  if (cifra && cifra.en_el_dia === true && escaparTexto(cifra.ciclos_texto)) partes.push(`<span class="c"><b>${escaparTexto(cifra.ciclos_texto)}</b></span>`);
   const esDeLaDgmit = tramo.clave === 'tramite';
   if (vacio && escaparTexto(vacio.texto)) partes.push(`<span class="c${esDeLaDgmit ? ' pend' : ''}">${escaparTexto(vacio.texto)}</span>`);
-  else if (esDeLaDgmit && Number.isInteger(tramo.pendientes) && tramo.pendientes > 0) partes.push(`<span class="c pend">${notasPendientes(tramo.pendientes)}</span>`);
+  else if (escaparTexto(tramo.pendientes_texto)) partes.push(`<span class="c pend">${escaparTexto(tramo.pendientes_texto)}</span>`);
   if (esObjeto(tramo.en_curso) && escaparTexto(tramo.en_curso.texto)) {
     partes.push(`<span class="c curso">${escaparTexto(tramo.en_curso.texto)}</span><span class="c">${SE_CUENTA_HASTA}</span>`);
   }
@@ -312,25 +309,25 @@ function htmlDeNodo(clave) {
   return `<div class="mt-nodo${clase ? ` ${clase}` : ''}"><span class="q">${nombre}</span><span class="r">${rol}</span></div>`;
 }
 
-// El circuito de una gestión (spec 2.2): los nodos y, entre cada dos, la flecha de su tramo, como en «Avisos del ciclo abierto» del
-// Seguimiento. `vista`: la de GET /api/metricas; sin su circuito, nada
+// El circuito de una gestión (spec 2.2): los nodos y, entre cada dos, la flecha de su tramo (buscado por su clave entre los que manda
+// el servidor; si falta, una flecha vacía), como en «Avisos del ciclo abierto» del Seguimiento. `vista`: la de GET /api/metricas; sin
+// su circuito, nada
 function htmlDeCircuito(vista, gestion) {
   const circuito = esObjeto(vista) && esObjeto(vista.circuito) ? vista.circuito : null;
   const g = elegido(gestion, GESTIONES);
   if (!circuito || !Array.isArray(circuito[g])) return '';
-  const nodos = NODOS_DE_LA_GESTION[g];
-  const partes = nodos.map((clave, i) => htmlDeNodo(clave) + (i < nodos.length - 1 ? htmlDeFlecha(circuito[g][i]) : ''));
+  const tramoDe = (clave) => circuito[g].find((tramo) => esObjeto(tramo) && tramo.clave === clave) ?? null;
+  const partes = CIRCUITO_DE_LA_GESTION[g].map(([nodo, clave]) => htmlDeNodo(nodo) + (clave === null ? '' : htmlDeFlecha(tramoDe(clave))));
   return `<div class="mt-tramos ${g}" role="group" aria-label="El circuito de la gestión ${g}">${partes.join('')}</div>`;
 }
 
-// Las aclaraciones del circuito de la gestión: las del servidor (los avisados ya vencidos y, en la externa, los resueltos con una
-// fuente pública; las que no tienen casos llegan vacías) y, en la externa, la de «Requiere nota DGMIT: No». Sin ninguna, nada
+// Las aclaraciones del circuito de la gestión, todas del servidor: los avisados ya vencidos y, en la externa, los resueltos con una
+// fuente pública y los de datasets que no requieren nota DGMIT (las que no tienen ciclos llegan vacías y no van). Sin ninguna, nada
 function htmlDeAclaraciones(vista, gestion) {
   const g = elegido(gestion, GESTIONES);
   const aclaraciones = esObjeto(vista) && esObjeto(vista.circuito) && esObjeto(vista.circuito.aclaraciones) ? vista.circuito.aclaraciones[g] : null;
-  const delServidor = esObjeto(aclaraciones) ? [aclaraciones.ya_vencidos, aclaraciones.fuente_publica] : [];
+  const delServidor = esObjeto(aclaraciones) ? [aclaraciones.ya_vencidos, aclaraciones.fuente_publica, aclaraciones.no_requieren_nota] : [];
   const textos = delServidor.map((a) => (esObjeto(a) ? escaparTexto(a.texto) : '')).filter(Boolean);
-  if (g === 'externa' && esObjeto(aclaraciones)) textos.push(SIN_NOTA_DGMIT);
   if (textos.length === 0) return '';
   return `<div class="mt-directo"><span class="i" aria-hidden="true">i</span><div>${textos.map((texto) => `<p>${texto}</p>`).join('')}</div></div>`;
 }
@@ -367,11 +364,12 @@ function rectangulo(x0, x1, y, alto, extra) {
   return `<rect x="${coordenada(x0)}" y="${coordenada(y)}" width="${coordenada(x1 - x0)}" height="${coordenada(alto)}"${extra}`;
 }
 
-// La cinta del recorrido típico como SVG (spec 2.2), con los datos de cintaDeMetricas tal como llegan: las alturas (`alturas`), los
-// números del eje, la banda celeste, el rayado, el gris donde se corta la cadena (con su texto en el medio, el lugar que reserva el
-// servidor), el vencimiento, los segmentos (cada uno con su <title>), las marcas (dibujadas en su x: la de un grupo, en la de su
-// primera), los rótulos y el del eje con sus anclajes. Sin texto dentro de la banda. Lo que no se puede leer no se dibuja; sin cinta,
-// nada. Los colores están en el <style> de reportes.html. `gestion`: para los nombres de las marcas
+// La cinta del recorrido típico como SVG (spec 2.2), con los datos de cintaDeMetricas tal como llegan: las alturas (`alturas`), la
+// línea del eje (`linea`; sin ella, no se inventa), los números del eje, la banda celeste, el rayado, el gris donde se corta la
+// cadena (con su texto en el medio, el lugar que reserva el servidor), el vencimiento, los segmentos (cada uno con su <title>), las
+// marcas (dibujadas en su x: la de un grupo, en la de su primera), los rótulos y el del eje con sus anclajes. Sin texto dentro de la
+// banda. Lo que no se puede leer no se dibuja; sin cinta, nada. Los colores están en el <style> de reportes.html. `gestion`: para
+// los nombres de las marcas
 function svgDeCinta(cinta, gestion = 'externa') {
   if (!esObjeto(cinta) || !esObjeto(cinta.alturas) || !esNumero(cinta.ancho) || !esNumero(cinta.alto)) return '';
   const g = elegido(gestion, GESTIONES);
@@ -380,7 +378,9 @@ function svgDeCinta(cinta, gestion = 'externa') {
   const conX = (valor) => esObjeto(valor) && esNumero(valor.x0) && esNumero(valor.x1);
   const partes = [];
 
-  partes.push(`<line x1="${LINEA_DEL_EJE.desde}" y1="${coordenada(A.linea)}" x2="${LINEA_DEL_EJE.hasta}" y2="${coordenada(A.linea)}" class="l-eje"/>`);
+  if (conX(cinta.linea)) {
+    partes.push(`<line x1="${coordenada(cinta.linea.x0)}" y1="${coordenada(A.linea)}" x2="${coordenada(cinta.linea.x1)}" y2="${coordenada(A.linea)}" class="l-eje"/>`);
+  }
   for (const tick of comoLista(cinta.ticks).filter((t) => esObjeto(t) && esNumero(t.x))) {
     partes.push(`<text x="${coordenada(tick.x)}" y="${coordenada(A.ticks)}" class="tick">${escaparTexto(tick.texto)}</text>`);
   }
@@ -621,7 +621,7 @@ function conectarEventos() {
   });
   porId('mt-ver-casos').addEventListener('click', () => {
     pagina.casosAbiertos = !pagina.casosAbiertos;
-    dibujarLosCasos();
+    dibujarLosCasos(pagina.datos);
   });
   porId('mt-casos').addEventListener('change', (evento) => {
     const casilla = evento.target.closest('input.mt-contar');
@@ -629,9 +629,12 @@ function conectarEventos() {
   });
 }
 
-// Uno solo de los estados de la pestaña: cargando, el error, sin datos (un año sin métricas) o el contenido
+// Uno solo de los estados de la pestaña: cargando, el error, sin datos (un año sin métricas) o el contenido. La franja de lo
+// destildado va solo con el contenido (con el error o sin datos no hay números que aclarar); la barra, mientras haya métricas
+// dibujadas
 function mostrarEstadoDeMetricas(visible) {
   for (const id of ['mt-cargando', 'mt-error', 'mt-sin-datos', 'mt-contenido']) porId(id).hidden = id !== visible;
+  porId('mt-franja').hidden = visible !== 'mt-contenido';
   porId('mt-barra').hidden = pagina.datos === null;
 }
 
@@ -642,7 +645,7 @@ function sonMetricas(datos) {
 
 // GET /api/metricas con lo elegido. Con métricas ya dibujadas, quedan a la vista (atenuadas) hasta que llegan las nuevas. Un 404 es
 // un año sin métricas; otro error, el aviso de error. El dibujo va dentro del mismo try: si un dato raro lo rompe, queda el aviso de
-// error y no «Cargando…» para siempre
+// error y no «Cargando…» para siempre. Las métricas nuevas pasan a ser las de la página recién cuando se dibujaron enteras
 async function cargarMetricas() {
   const pedido = ++pagina.pedido;
   const contenido = porId('mt-contenido');
@@ -654,8 +657,8 @@ async function cargarMetricas() {
     const datos = (await API.pedirJson('GET', `/metricas?${consulta}`))?.data;
     if (pedido !== pagina.pedido) return;
     if (!sonMetricas(datos)) throw new TypeError('La respuesta no son las métricas');
+    dibujarMetricas(datos);
     pagina.datos = datos;
-    dibujarMetricas();
     mostrarEstadoDeMetricas('mt-contenido');
   } catch (error) {
     if (pedido !== pagina.pedido) return;
@@ -689,21 +692,22 @@ function conElFoco(contenedor, html) {
   if (clave) contenedor.querySelector(clave)?.focus();
 }
 
-function dibujarLaBarra() {
-  conElFoco(porId('mt-barra'), htmlDeBarra(pagina.datos, pagina.estado));
+function dibujarLaBarra(datos) {
+  conElFoco(porId('mt-barra'), htmlDeBarra(datos, pagina.estado));
 }
 
-function dibujarMetricas() {
+// Todo lo de la pestaña con `datos` (las métricas que llegaron)
+function dibujarMetricas(datos) {
   porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
-  dibujarLaBarra();
-  porId('mt-franja').innerHTML = htmlDeFranjaSin(pagina.datos, pagina.estado);
-  dibujarElCircuito();
-  dibujarLosCasos();
+  dibujarLaBarra(datos);
+  porId('mt-franja').innerHTML = htmlDeFranjaSin(datos, pagina.estado);
+  dibujarElCircuito(datos);
+  dibujarLosCasos(datos);
 }
 
 // El circuito, la cinta y las aclaraciones de la gestión elegida
-function dibujarElCircuito() {
-  const { datos, estado } = pagina;
+function dibujarElCircuito(datos) {
+  const { estado } = pagina;
   const cinta = esObjeto(datos.cinta) && esObjeto(datos.cinta[estado.gestion]) ? datos.cinta[estado.gestion] : null;
   conElFoco(porId('mt-gestiones'), htmlDeGestiones(estado.gestion));
   porId('mt-circuito').innerHTML = htmlDeCircuito(datos.vista, estado.gestion);
@@ -714,8 +718,8 @@ function dibujarElCircuito() {
   porId('mt-aclaraciones').innerHTML = htmlDeAclaraciones(datos.vista, estado.gestion);
 }
 
-function dibujarLosCasos() {
-  const { datos, estado } = pagina;
+function dibujarLosCasos(datos) {
+  const { estado } = pagina;
   if (!datos) return;
   const boton = porId('mt-ver-casos');
   porId('mt-titulo-casos').textContent = textoDeLosCasos(datos.vista, estado.gestion, datos.anio);
@@ -728,7 +732,7 @@ function dibujarLosCasos() {
 // El chip «Casos: …»: abre la lista de casos y la trae a la vista
 function abrirLosCasos() {
   pagina.casosAbiertos = true;
-  dibujarLosCasos();
+  dibujarLosCasos(pagina.datos);
   porId('mt-titulo-casos').scrollIntoView({ block: 'start', behavior: 'smooth' });
   porId('mt-ver-casos').focus({ preventScroll: true });
 }
@@ -742,12 +746,12 @@ function alCambiarSelector(clave, valor) {
   escribirLaUrl();
   if (!pagina.datos) return;
   if (clave === 'gestion') {
-    dibujarElCircuito();
-    dibujarLosCasos();
+    dibujarElCircuito(pagina.datos);
+    dibujarLosCasos(pagina.datos);
     return;
   }
   porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
-  dibujarLaBarra();
+  dibujarLaBarra(pagina.datos);
   cargarMetricas();
 }
 

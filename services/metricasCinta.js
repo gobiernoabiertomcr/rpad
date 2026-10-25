@@ -148,6 +148,7 @@ const adentro = (caja) => caja.x0 >= MARGEN && caja.x1 <= ANCHO - MARGEN && caja
 
 // La cinta de una gestión, con todo lo que hace falta para dibujarla igual en la pantalla y en el PDF:
 //   { ancho: 1000, alto: 156,
+//     linea: { x0: 30, x1: 970 },           // la línea del eje: la línea útil, de punta a punta (la página y el PDF no la copian)
 //     ticks: [{ x, texto }],                // los números del eje ('−40', '+10'), sin el 0: ahí va «vencimiento»
 //     banda: { x0, x1 },                    // del aviso al vencimiento (celeste)
 //     rayado: { x0, x1 } | null,            // del vencimiento a la carga (o a lo último que se sabe), si es posterior
@@ -334,6 +335,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
   return {
     ancho: ANCHO,
     alto: ALTO,
+    linea: { x0: X_INICIAL, x1: X_FINAL },
     ticks,
     banda: { x0: x(aviso), x1: xVencimiento },
     rayado: alcance > 0 ? { x0: xVencimiento, x1: x(alcance) } : null,

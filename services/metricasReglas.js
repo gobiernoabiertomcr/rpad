@@ -401,7 +401,9 @@ const cantidadDeCiclos = (n) => (n === 1 ? '1 ciclo' : `${n} ciclos`);
 
 // La cifra de un tramo con lo que se eligió en los selectores (spec, 1.4 y 1.7), o null sin casos. Un 0 es «En el día», sin unidad,
 // con «mediana en días hábiles» debajo (la cantidad de ciclos va en el texto de la flecha); si no, la cifra con su unidad y «mediana
-// de 32 ciclos». `ciclos`: la cantidad; `orientativo`: con 4 casos o menos.
+// de 32 ciclos». `ciclos`: la cantidad; `ciclos_texto`: la cantidad en palabras («23 ciclos», «1 ciclo»), que la página escribe en
+// el texto de la flecha cuando la cifra es «En el día» (`en_el_dia`): la página no compara el valor ni arma el texto; `orientativo`:
+// con 4 casos o menos.
 const cifraDelTramo = (valores, ctx) => {
   const { n, ...estadisticos } = cifraDe(valores);
   if (n === 0) return null;
@@ -410,7 +412,7 @@ const cifraDelTramo = (valores, ctx) => {
   return {
     valor, texto: cero ? 'En el día' : String(valor), unidad: cero ? '' : unidadDe(valor, ctx.dias),
     debajo: cero ? `${ctx.estadistico} en ${NOMBRE_DE_LOS_DIAS[ctx.dias]}` : `${ctx.estadistico} de ${cantidadDeCiclos(n)}`,
-    ciclos: n, orientativo: n <= 4
+    ciclos: n, ciclos_texto: cantidadDeCiclos(n), en_el_dia: cero, orientativo: n <= 4
   };
 };
 
@@ -427,7 +429,9 @@ const enCursoDelTramo = (valores, ctx) => {
 const notasPendientes = (n) => `${n} ${n === 1 ? 'nota pendiente' : 'notas pendientes'} de carga`;
 
 // Un tramo del circuito: su cifra (o, sin ella, por qué está vacío), los que están en curso (la respuesta y la producción) y los
-// pendientes de carga (la DGMIT). `medidas`: las que cuentan (sin los destildados), de su gestión
+// pendientes de carga (la DGMIT), con su texto para la página (`pendientes_texto`: «3 notas pendientes de carga», «1 nota pendiente
+// de carga»; null si no hay ninguno o si el tramo no es el de la DGMIT). `medidas`: las que cuentan (sin los destildados), de su
+// gestión
 const tramoDelCircuito = (clave, medidas, ctx, hayNotas) => {
   const de = (que) => medidas.map((m) => m[que][clave]).filter((valor) => valor !== undefined);
   const cifra = cifraDelTramo(de('terminados'), ctx);
@@ -436,7 +440,10 @@ const tramoDelCircuito = (clave, medidas, ctx, hayNotas) => {
   if (!hayNotas && clave === 'tramite') vacio = { titulo: SIN_NOTAS_DGMIT, texto: notasPendientes(pendientes) };
   else if (!hayNotas && clave === 'respuesta') vacio = { ...SIN_DATOS_DEL_AREA };
   else if (cifra === null) vacio = { titulo: `Sin casos en ${ctx.anio}`, texto: '' };
-  return { clave, ...TRAMOS[clave], cifra, vacio, en_curso: enCursoDelTramo(de('enCurso'), ctx), pendientes };
+  return {
+    clave, ...TRAMOS[clave], cifra, vacio, en_curso: enCursoDelTramo(de('enCurso'), ctx), pendientes,
+    pendientes_texto: pendientes > 0 ? notasPendientes(pendientes) : null
+  };
 };
 
 const textoYaVencidos = (n) => {
@@ -445,6 +452,15 @@ const textoYaVencidos = (n) => {
   return n === 1
     ? `1 ciclo se avisó cuando ya estaba vencido (venció antes de que existiera el aviso): no cuenta en la anticipación, y ${resto}`
     : `${n} ciclos se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y ${resto}`;
+};
+
+// Los ciclos de los externos con «Requiere nota DGMIT: No» y sin nota DGMIT (spec, 1.3: la página lo aclara): cuentan solo en la
+// anticipación y en la carga
+const textoNoRequierenNota = (n) => {
+  if (n === 0) return '';
+  return n === 1
+    ? '1 ciclo es de un dataset que no requiere nota DGMIT: cuenta solo en el aviso anticipado y en la carga.'
+    : `${n} ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.`;
 };
 
 const textoFuentePublica = (n) => {
@@ -582,13 +598,15 @@ const paraCompletarDe = (medidas, ctx) => {
 // cuando sale el aviso, así que cuenta todo el año), la nota DGMIT recibida (el trámite), los datos recibidos (la respuesta y la
 // producción) y la carga. Está en curso si empezó y no terminó en un ciclo abierto en `al` (solo la respuesta y la producción).
 // - circuito: { externa: Tramo[4] (aviso, tramite, respuesta, carga), interna: Tramo[3] (aviso, produccion, carga), aclaraciones:
-//   { externa: { ya_vencidos, fuente_publica }, interna: { ya_vencidos } } }, cada aclaración { n, texto } ('' con 0). Tramo:
-//   { clave, nombre, desde_hasta, responsable, dgmit, cifra, vacio, en_curso, pendientes }:
-//   - cifra: { valor, texto, unidad, debajo, ciclos, orientativo } (cifraDelTramo) o null; vacio: { titulo, texto } si no hay cifra
+//   { externa: { ya_vencidos, fuente_publica, no_requieren_nota }, interna: { ya_vencidos } } }, cada aclaración { n, texto } ('' con
+//   0; no_requieren_nota: los ciclos de externos con «Requiere nota» No y sin nota DGMIT). Tramo:
+//   { clave, nombre, desde_hasta, responsable, dgmit, cifra, vacio, en_curso, pendientes, pendientes_texto }:
+//   - cifra: { valor, texto, unidad, debajo, ciclos, ciclos_texto, en_el_dia, orientativo } (cifraDelTramo) o null; vacio:
+//     { titulo, texto } si no hay cifra
 //     (sin ninguna nota DGMIT vigente entre todos los casos, también destildados: «Todavía no hay notas DGMIT cargadas» con los
 //     pendientes en la DGMIT y «Sin datos todavía» en el área; si no, «Sin casos en 2026»);
 //   - en_curso: { n, valor, texto } o null (solo la respuesta y la producción); pendientes: los ciclos «pendientes de carga» (solo la
-//     DGMIT; en los demás, null).
+//     DGMIT; en los demás, null) y pendientes_texto, su texto (null sin ninguno y en los demás tramos).
 //   Los tramos de la DGMIT y del área son de los externos con «Requiere nota» Sí o sin dato, o con una nota DGMIT; un ciclo con los
 //   datos de una fuente pública no cuenta en la respuesta del área.
 // - resultados: { a_tiempo: { a_tiempo, total, externa: [a, t], interna: [a, t], despues: { valor, texto } }, cobertura: { si, total,
@@ -616,6 +634,8 @@ export const vistaDe = (casos, opciones) => {
   const yaVencidos = (gestion) => deLaGestion(gestion).filter((m) => m.enLista && m.h.heredado && m.h.inicioTramos !== null).length;
   const fuentePublica = deLaGestion('externa')
     .filter((m) => m.enLista && m.h.aplicaNota && m.h.origen === 'fuente_publica' && enElAnio(m.h.carga, ctx)).length;
+  // Sin los tramos de la DGMIT y del área: «Requiere nota» No y sin nota DGMIT (con una nota, le corresponden igual)
+  const noRequierenNota = deLaGestion('externa').filter((m) => m.enLista && !m.h.aplicaNota).length;
   const circuito = Object.fromEntries(Object.entries(TRAMOS_DE_LA_GESTION).map(([gestion, claves]) =>
     [gestion, claves.map((clave) => tramoDelCircuito(clave, deLaGestion(gestion), ctx, hayNotas))]));
   return {
@@ -624,7 +644,8 @@ export const vistaDe = (casos, opciones) => {
       aclaraciones: {
         externa: {
           ya_vencidos: { n: yaVencidos('externa'), texto: textoYaVencidos(yaVencidos('externa')) },
-          fuente_publica: { n: fuentePublica, texto: textoFuentePublica(fuentePublica) }
+          fuente_publica: { n: fuentePublica, texto: textoFuentePublica(fuentePublica) },
+          no_requieren_nota: { n: noRequierenNota, texto: textoNoRequierenNota(noRequierenNota) }
         },
         interna: { ya_vencidos: { n: yaVencidos('interna'), texto: textoYaVencidos(yaVencidos('interna')) } }
       }

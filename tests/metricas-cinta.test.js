@@ -133,6 +133,8 @@ describe('cintaDeMetricas', () => {
     assert.deepEqual(cinta.ticks.map((t) => t.texto), ['−40', '−30', '−20', '−10', '+10', '+20', '+30', '+40']);
     casi(cinta.ticks[0].x, 30, 'la primera marca del eje');
     casi(cinta.ticks[7].x, 970, 'la última marca del eje');
+    // La línea del eje viaja con la cinta, de punta a punta de la línea útil: la página y el PDF no la copian
+    assert.deepEqual(cinta.linea, { x0: 30, x1: 970 });
     casi(cinta.vencimiento.x, 500, 'el vencimiento');
     const xAviso = 30 + (13 / 80) * 940;
     assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso']);
@@ -230,6 +232,7 @@ describe('cintaDeMetricas', () => {
       }
       assert.equal(cinta.eje.texto, `${dias === 'corridos' ? 'días corridos' : 'días hábiles'} respecto del vencimiento`, cual);
       assert.ok(cinta.ticks.length <= 8, cual);
+      assert.deepEqual(cinta.linea, { x0: 30, x1: 970 }, cual);
     }
   });
 

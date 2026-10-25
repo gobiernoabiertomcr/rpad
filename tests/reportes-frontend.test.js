@@ -9,7 +9,7 @@ import fs from 'fs';
 import vm from 'vm';
 import { casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT } from '../services/metricasReglas.js';
 import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
-import { mapaDeLosCasos, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
+import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -52,16 +52,17 @@ const DE_LA_CLAVE = {
   produccion: { nombre: 'Producción del relevamiento', desde_hasta: 'Del aviso a la entrega', responsable: 'DGMIT y DIT', dgmit: true },
   carga: { nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false }
 };
-const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null, en_curso = null, pendientes } = {}) => ({
+const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null, en_curso = null, pendientes, pendientes_texto = null } = {}) => ({
   clave, ...DE_LA_CLAVE[clave],
   cifra: valor === null ? null : {
     valor, texto: valor === 0 ? 'En el día' : String(valor), unidad: valor === 0 ? '' : unidadDe(valor, dias),
     debajo: valor === 0 ? `${estadistico} en días ${dias === 'corridos' ? 'corridos' : 'hábiles'}` : `${estadistico} de ${ciclos} ${ciclos === 1 ? 'ciclo' : 'ciclos'}`,
-    ciclos, orientativo: ciclos <= 4
+    ciclos, ciclos_texto: `${ciclos} ${ciclos === 1 ? 'ciclo' : 'ciclos'}`, en_el_dia: valor === 0, orientativo: ciclos <= 4
   },
   vacio: valor === null ? (vacio ?? { titulo: 'Sin casos en 2026', texto: '' }) : null,
   en_curso,
-  pendientes: pendientes ?? (clave === 'tramite' ? 0 : null)
+  pendientes: pendientes ?? (clave === 'tramite' ? 0 : null),
+  pendientes_texto
 });
 
 // Una cinta con la cadena completa: la interna con la producción y la entrega y la carga juntas (0 días), y la externa con todos sus
@@ -76,6 +77,9 @@ describe('reportes.js: el estado de la URL', () => {
     // Lo que no sirve cae al de entrada; de los destildados quedan los enteros positivos escritos con dígitos, sin repetidos
     assert.deepEqual(plano(ctx.estadoDeLaUrl('?anio=abc&sin=x,1e3,-2,5,5,0,1.5&estadistico=foo&dias=bar&gestion=z#otra')), { ...POR_DEFECTO, sin: [5] });
     assert.deepEqual(plano(ctx.estadoDeLaUrl('?anio=20266&estadistico=Promedio')), POR_DEFECTO);
+    assert.equal(ctx.estadoDeLaUrl('?anio=0000').anio, null);
+    assert.equal(ctx.estadoDeLaUrl('?anio=0999').anio, null);
+    assert.equal(ctx.estadoDeLaUrl('?anio=1000').anio, 1000);
     const todo = '?anio=2026&estadistico=promedio&dias=corridos&gestion=interna&sin=12,45#reportes';
     const estado = { anio: 2026, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45], pestana: 'reportes' };
     assert.deepEqual(plano(ctx.estadoDeLaUrl(todo)), estado);
@@ -155,6 +159,9 @@ describe('reportes.js: la barra y la franja de lo destildado', () => {
     // Un año con foto: se calculó con todos y no se destilda
     const foto = ctx.htmlDeBarra({ ...DATOS, anio: 2026, al: '2026-12-31', en_vivo: false, anios: [2026, 2027] }, { ...POR_DEFECTO, anio: 2026 });
     assert.match(foto, /<p class="mt-aviso-foto"[^>]*>Sale de la foto del 31\/12\/2026, calculada con todos los datasets\.<\/p>/);
+    // Elegido el en curso (anio null) con los datos de 2026 todavía a la vista: el select ya marca el en curso
+    const volviendo = ctx.htmlDeBarra({ ...DATOS, anio: 2026, anios: [2026, 2027] }, POR_DEFECTO);
+    assert.match(volviendo, /<option value="2027" selected>2027 \(en curso\)<\/option><option value="2026">2026<\/option>/);
   });
 
   it('la franja dice «Calculado sin 1 dataset: Parque Automotor.» y «Volver a todos»', () => {
@@ -186,6 +193,12 @@ describe('reportes.js: el circuito', () => {
     assert.match(cero, /<span class="c"><b>23 ciclos<\/b><\/span>/);
     assert.doesNotMatch(cero, /<small>/);
     assert.match(ctx.htmlDeFlecha(tramo('carga', 0, { ciclos: 1 })), /<span class="o">con tan pocos casos, es orientativo<\/span>[\s\S]*<b>1 ciclo<\/b>/);
+    // La página no compara el valor: la cantidad de ciclos va en el texto de la flecha cuando el servidor dice que es «En el día», y
+    // con el texto del servidor
+    const conMarca = tramo('carga', 7);
+    assert.match(ctx.htmlDeFlecha({ ...conMarca, cifra: { ...conMarca.cifra, en_el_dia: true, ciclos_texto: 'Ciclos del servidor' } }), /<b>Ciclos del servidor<\/b>/);
+    const sinMarca = tramo('carga', 0);
+    assert.doesNotMatch(ctx.htmlDeFlecha({ ...sinMarca, cifra: { ...sinMarca.cifra, en_el_dia: false } }), /<b>/);
 
     // Con la cifra real: «27 días hábiles» y «mediana de 11 ciclos» (los casos de las pruebas)
     const real = tramoDe(VISTA, 'externa', 'aviso');
@@ -224,10 +237,17 @@ describe('reportes.js: el circuito', () => {
     const area = ctx.htmlDeFlecha(tramoDe(VISTA, 'externa', 'respuesta'));
     assert.match(area, /<span class="n">Sin datos todavía<\/span>/);
     assert.match(area, /Se empieza a contar cuando haya notas DGMIT cargadas/);
-    // Con notas cargadas, la cifra y los pendientes, con su singular
-    assert.match(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3 })), /12 <small>días hábiles<\/small>[\s\S]*<span class="c pend">3 notas pendientes de carga<\/span>/);
-    assert.match(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 1 })), /<span class="c pend">1 nota pendiente de carga<\/span>/);
-    assert.doesNotMatch(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 0 })), /pendiente/);
+    // Con notas cargadas, la cifra y los pendientes, con el texto del servidor (el 52 con una nota DGMIT del 05/01/2026: su ciclo
+    // abierto sigue pendiente de carga)
+    const conNota = con(fuentesDelCaso(52, { importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } } }), {
+      notasDgmit: [notaDgmit({ recibida: '2026-01-05' })]
+    });
+    const conNotas = tramoDe(vistaDe(casosDe(mapaDe(conNota), { hoy: HOY }), { anio: 2026, al: HOY }), 'externa', 'tramite');
+    assert.equal(conNotas.pendientes_texto, '1 nota pendiente de carga');
+    assert.match(ctx.htmlDeFlecha(conNotas), /8 <small>días hábiles<\/small>[\s\S]*<span class="c pend">1 nota pendiente de carga<\/span>/);
+    // La página escribe lo que manda el servidor, sin mirar la cantidad; sin texto, nada
+    assert.match(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3, pendientes_texto: 'Texto del servidor' })), /<span class="c pend">Texto del servidor<\/span>/);
+    assert.doesNotMatch(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3 })), /pendiente/);
   });
 
   it('htmlDeCircuito: los nodos de cada gestión, en orden, con las flechas entre ellos', () => {
@@ -246,6 +266,13 @@ describe('reportes.js: el circuito', () => {
       'Datos Públicos / Limpia y estructura', 'Portal / Datos publicados']);
     assert.equal(cuantas(interna, /<div class="mt-flecha/g), 3);
     assert.match(interna, /Producción del relevamiento/);
+    // Cada flecha va por la clave de su tramo, no por su lugar en la lista; la que falta queda vacía
+    const desordenada = { circuito: { externa: [...VISTA.circuito.externa].reverse() } };
+    assert.equal(ctx.htmlDeCircuito(desordenada, 'externa'), externa);
+    const sinTramite = ctx.htmlDeCircuito({ circuito: { externa: VISTA.circuito.externa.filter((t) => t.clave !== 'tramite') } }, 'externa');
+    assert.equal(cuantas(sinTramite, /<div class="mt-flecha/g), 4);
+    assert.ok(sinTramite.indexOf('Mandan la nota formal') < sinTramite.indexOf('Respuesta del área'));
+    assert.doesNotMatch(sinTramite, /Trámite y entrega de la nota/);
     assert.equal(ctx.htmlDeCircuito(null, 'externa'), '');
     assert.equal(ctx.htmlDeCircuito({}, 'externa'), '');
   });
@@ -253,18 +280,27 @@ describe('reportes.js: el circuito', () => {
   it('htmlDeAclaraciones: las del servidor, de la gestión elegida, y la de «Requiere nota DGMIT: No» en la externa', () => {
     const externa = ctx.htmlDeAclaraciones(VISTA, 'externa');
     assert.ok(externa.includes(VISTA.circuito.aclaraciones.externa.ya_vencidos.texto));
-    assert.match(externa, /Los datasets que no requieren nota DGMIT \(los datos se obtienen de una fuente pública\) cuentan solo en el aviso anticipado y en la preparación y carga\./);
+    // La de «Requiere nota DGMIT: No» también la arma el servidor (el 81 con «No» y sin nota DGMIT); sin ciclos así, no va
+    const sinNota = vistaDe(casosDe(mapaDe(fuentesDelCaso(81, { dataset: { requiere_nota: 0 } })), { hoy: HOY }), { anio: 2026, al: HOY });
+    const noRequieren = sinNota.circuito.aclaraciones.externa.no_requieren_nota;
+    assert.match(noRequieren.texto, /^1 ciclo es de un dataset que no requiere nota DGMIT: cuenta solo en el aviso anticipado y en la carga\.$/);
+    assert.ok(ctx.htmlDeAclaraciones(sinNota, 'externa').includes(`<p>${noRequieren.texto}</p>`));
+    assert.equal(VISTA.circuito.aclaraciones.externa.no_requieren_nota.n, 0);
+    assert.doesNotMatch(externa, /requiere/);
     const fuente = { ...VISTA, circuito: { ...VISTA.circuito, aclaraciones: { ...VISTA.circuito.aclaraciones,
-      externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 2, texto: '2 ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área.' } } } } };
+      externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 2, texto: '2 ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área.' },
+        no_requieren_nota: { n: 0, texto: '' } } } } };
     const conFuente = ctx.htmlDeAclaraciones(fuente, 'externa');
     assert.match(conFuente, /2 ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área\./);
     assert.doesNotMatch(conFuente, /ya estaban vencidos/);
     const interna = ctx.htmlDeAclaraciones(VISTA, 'interna');
     assert.ok(interna.includes(VISTA.circuito.aclaraciones.interna.ya_vencidos.texto));
-    assert.doesNotMatch(interna, /requieren nota/);
+    assert.doesNotMatch(interna, /requiere/);
     // Sin ninguna aclaración, no hay recuadro
     const sinNada = { circuito: { aclaraciones: { interna: { ya_vencidos: { n: 0, texto: '' } } } } };
     assert.equal(ctx.htmlDeAclaraciones(sinNada, 'interna'), '');
+    assert.equal(ctx.htmlDeAclaraciones({ circuito: { aclaraciones: { externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 0, texto: '' },
+      no_requieren_nota: { n: 0, texto: '' } } } } }, 'externa'), '');
   });
 });
 
@@ -315,13 +351,15 @@ describe('reportes.js: la cinta', () => {
     assert.doesNotMatch(ctx.svgDeCinta({ ...cinta, gris: { ...cinta.gris, texto: '' } }, 'externa'), /class="t-gris"/);
   });
 
-  it('la línea del eje va de punta a punta de la línea útil del servidor', () => {
+  it('la línea del eje es la que manda el servidor (cinta.linea), no una copia', () => {
     for (const cinta of [CINTA_INTERNA, CINTA_EXTERNA, cintasDeLaVista(VISTA, {}).interna]) {
-      // La escala va de min a max (los dos con número): el primer y el último número del eje están en las puntas de la línea útil
-      assert.equal(cinta.ticks[0].x, 30);
-      assert.equal(cinta.ticks.at(-1).x, 970);
-      assert.ok(ctx.svgDeCinta(cinta).includes(`<line x1="30" y1="${cinta.alturas.linea}" x2="970" y2="${cinta.alturas.linea}" class="l-eje"/>`));
+      const { x0, x1 } = cinta.linea;
+      assert.ok(ctx.svgDeCinta(cinta).includes(`<line x1="${coord(x0)}" y1="${cinta.alturas.linea}" x2="${coord(x1)}" y2="${cinta.alturas.linea}" class="l-eje"/>`));
     }
+    const otra = ctx.svgDeCinta({ ...CINTA_EXTERNA, linea: { x0: 50, x1: 900 } });
+    assert.ok(otra.includes(`<line x1="50" y1="${CINTA_EXTERNA.alturas.linea}" x2="900" y2="${CINTA_EXTERNA.alturas.linea}" class="l-eje"/>`));
+    // Sin la línea (una cinta vieja o rara), no se inventa
+    assert.doesNotMatch(ctx.svgDeCinta({ ...CINTA_EXTERNA, linea: undefined }), /class="l-eje"/);
   });
 
   it('las marcas: el rombo del aviso, el cuadrado violeta de la nota, el aro de los datos, el punto verde de la carga y el de los dos juntos', () => {
