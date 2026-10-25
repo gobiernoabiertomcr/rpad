@@ -4,12 +4,12 @@
 // (notasDigitales.js) y firmas inventadas; aviso-interno-viejo.html está escrito a mano con la forma de la nota 1/26 (13/10/2026):
 // sin la primera línea, una tabla de 6 columnas con "Última actualización" y la firma sin negrita.
 // La API (GET /notificaciones/notas-digitales/:id/word), contra una base de prueba propia.
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 // jszip llega con docx (lo usa para armar el .docx): acá abre el Word para leer su XML
 import JSZip from 'jszip';
-import { bloquesDeNotaDigital } from '../services/notasDigitalesWord.js';
+import { bloquesDeNotaDigital, NotaNoReconocida } from '../services/notasDigitalesWord.js';
 import { renderDocx } from '../services/notasWord.js';
 import {
   construirNota, construirNotaDeAutorizacion, renderHtml, AVISO_ADJUNTO, PROPORCIONES_EXTERNA, RENGLON_FIRMA_CONTRATADO
@@ -17,9 +17,12 @@ import {
 import { PROPORCIONES, PROPORCIONES_CON_SEGUNDA } from '../services/notasDigitalesPdf.js';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb } from './helpers.js';
 import { crearNota } from './notas-fixtures.js';
+import pool from '../config/database.js';
+import { descargarWord } from '../controllers/notasDigitalesController.js';
 
 const TIPO_WORD = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const SIN_REMITENTE = 'No se encontró el remitente de la nota.';
+const SIN_FIRMA = 'No se encontró la firma de la nota.';
 const REMITENTE = 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN';
 
 const leer = (nombre) => fs.readFileSync(new URL(`./fixtures/notas-digitales-html/${nombre}.html`, import.meta.url), 'utf8');
@@ -77,6 +80,12 @@ describe('bloquesDeNotaDigital: cada HTML de prueba', () => {
         assert.ok(bloques.every(b => !Object.values(AVISO_ADJUNTO).includes(textoDe(b))));
       });
 
+      it('todas sus tablas van en 8,5 pt y con 3 pt de margen: una sola letra de tabla en la nota', () => {
+        const tablas = tablasDe(bloques);
+        assert.ok(tablas.length > 0 || nombre === 'autorizacion');
+        for (const tabla of tablas) assert.deepEqual([tabla.letra, tabla.margen], [17, 60]);
+      });
+
       it('renderDocx lo arma en la hoja oficio: abre con JSZip y su sección mide 12240 de ancho', async () => {
         const zip = await JSZip.loadAsync(await renderDocx(bloques, { membrete: null, pie: '' }));
         const documento = await zip.file('word/document.xml').async('string');
@@ -130,6 +139,23 @@ describe('bloquesDeNotaDigital: después del remitente', () => {
     assert.deepEqual(bloques.map(textoDe), ['Texto.', `${REMITENTE}, 2 de noviembre de 2026.`, '', 'CC. Dir. Administrativa']);
   });
 
+  // Falla cerrado, como con el remitente: nunca una firma inventada ni un CC que no lo es
+  it('sin la firma justo después del remitente tira NotaNoReconocida, aunque haya una firma más abajo', () => {
+    const remitente = `<p style="margin:24px 0 0;"><b><u>${REMITENTE}</u></b>, 2 de noviembre de 2026.</p>`;
+    const firma = '<p style="margin:32px 0 0;text-align:right;">Nombre Apellido<br>Cargo</p>';
+    const cc = '<p style="margin:24px 0 0;">CC. Dir. Administrativa</p>';
+    for (const despues of [
+      cc,
+      '',
+      `<p style="margin:24px 0 0;text-align:right;">Nombre Apellido<br>Cargo</p>${cc}`,
+      `<p>Otra cosa</p>${firma}${cc}`,
+      `<ul><li>Cargo</li></ul>${firma}${cc}`
+    ]) {
+      const html = `<html><body><div><p>REF.</p>${remitente}${despues}</div></body></html>`;
+      assert.throws(() => bloquesDeNotaDigital(html), (error) => error instanceof NotaNoReconocida && error.message === SIN_FIRMA, despues);
+    }
+  });
+
   it('el remitente es el último párrafo que empieza con el de la Dirección', () => {
     const html = `<html><body><div><p>${REMITENTE} (una mención en el cuerpo)</p>
 <p style="margin:24px 0 0;"><b><u>${REMITENTE}</u></b>, 2 de noviembre de 2026.</p>
@@ -172,7 +198,7 @@ describe('bloquesDeNotaDigital: la primera línea del email y el remitente', () 
       '<html><body><div><p>REF.</p><p style="margin:24px 0 0;"><b>OTRA DIRECCIÓN</b>, 2 de noviembre de 2026.</p></div></body></html>',
       conCuerpo('').replace('<div>', '<section>').replace('</div>', '</section>')
     ]) {
-      assert.throws(() => bloquesDeNotaDigital(html), { message: SIN_REMITENTE }, String(html));
+      assert.throws(() => bloquesDeNotaDigital(html), (error) => error instanceof NotaNoReconocida && error.message === SIN_REMITENTE, String(html));
     }
   });
 });
@@ -258,13 +284,13 @@ describe('bloquesDeNotaDigital: las tablas', () => {
     assert.equal(antecedente.conLaSiguiente, undefined);
   });
 
-  it('el aviso externo: 5 columnas con PROPORCIONES[5], en 10 pt (13 px) y con el margen de siempre', () => {
+  it('el aviso externo: 5 columnas con PROPORCIONES[5], en 8,5 pt (13 px, achicado) y el antecedente (12 px) en 7,5 pt', () => {
     const [tabla] = tablasDe(bloquesDeNotaDigital(HTML.avisoExterno));
     assert.deepEqual(tabla.anchos, PROPORCIONES[5]);
     assert.equal(encabezadoDe(tabla)[3], 'Requiere nota DGMIT');
-    assert.equal(tabla.letra, 20);
-    assert.equal(tabla.margen, undefined);
-    assert.equal(tabla.filas[2].celdas[0].letra, 18);
+    assert.equal(tabla.letra, 17);
+    assert.equal(tabla.margen, 60);
+    assert.equal(tabla.filas[2].celdas[0].letra, 15);
   });
 
   it('la reiteración externa: PROPORCIONES_EXTERNA con la segunda parte de "Informado en" y sin ella, en 8,5 pt y con 3 pt de margen', () => {
@@ -285,12 +311,12 @@ describe('bloquesDeNotaDigital: las tablas', () => {
     assert.match(celdas[6].partes[1].texto, /^Anteriormente notificado DGMIT/);
   });
 
-  it('la auditoría: 5 y 6 columnas con PROPORCIONES (la de 6, en 8,5 pt); las del detalle, parejas y sin ensanchar', () => {
+  it('la auditoría: 5 y 6 columnas con PROPORCIONES, y las del detalle, parejas y sin ensanchar; todas en 8,5 pt', () => {
     const tablas = tablasDe(bloquesDeNotaDigital(HTML.auditoria));
     const porColumnas = (n) => tablas.filter(t => t.anchos.length === n);
     assert.deepEqual(porColumnas(5)[0].anchos, PROPORCIONES[5]);
     assert.deepEqual(porColumnas(6)[0].anchos, PROPORCIONES[6]);
-    assert.deepEqual([porColumnas(5)[0].letra, porColumnas(6)[0].letra], [20, 17]);
+    assert.ok(tablas.every(t => t.letra === 17 && t.margen === 60));
     for (const tabla of [...porColumnas(3), ...porColumnas(2)]) {
       assert.ok(tabla.anchos.every(a => Math.abs(a - 100 / tabla.anchos.length) < 1e-9));
       assert.equal(tabla.sinPartirPalabras, undefined);
@@ -314,6 +340,7 @@ describe('bloquesDeNotaDigital: las tablas', () => {
     assert.deepEqual(sinSegunda.anchos, PROPORCIONES[7]);
     assert.deepEqual(conSegunda.anchos, PROPORCIONES_CON_SEGUNDA[7]);
     assert.equal(sinSegunda.letra, 17);
+    assert.equal(conSegunda.letra, 17);
   });
 
   it('un vencimiento que abre un grupo (en negrita, a todo el ancho) va con la fila de su dataset', () => {
@@ -374,6 +401,10 @@ describe('GET /notificaciones/notas-digitales/:id/word', () => {
     ids.reiteracion = await crearNota({ tipo: 'reiteracion', gestion: 'externa', fecha: '2026-11-02', numero: 9, anio: 2026, html: HTML.dosFirmas });
     ids.prueba = await crearNota({ tipo: 'aviso', gestion: 'externa', fecha: '2026-11-02', esPrueba: 1, html: HTML.avisoExterno });
     ids.sinRemitente = await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-11-02', numero: 10, anio: 2026, html: '<p>Hola</p>' });
+    // La 1/26 sin el bloque de la firma: el remitente y, enseguida, el CC
+    const sinFirma = HTML.viejo.replace(/<p style="margin:32px 0 0;text-align:right;">Nombre Apellido<br>Cargo<\/p>\r?\n/, '');
+    assert.notEqual(sinFirma, HTML.viejo);
+    ids.sinFirma = await crearNota({ tipo: 'aviso', gestion: 'interna', fecha: '2026-10-13', numero: 1, anio: 2026, html: sinFirma });
   });
 
   after(async () => {
@@ -422,11 +453,48 @@ describe('GET /notificaciones/notas-digitales/:id/word', () => {
     assert.deepEqual(res.body, { success: false, error: SIN_REMITENTE });
   });
 
+  it('una nota cuyo HTML no tiene la firma da 422 con el mensaje, nunca una firma inventada', async () => {
+    const res = await api.get(`/notificaciones/notas-digitales/${ids.sinFirma}/word`, comoAdmin());
+    assert.equal(res.status, 422);
+    assert.deepEqual(res.body, { success: false, error: SIN_FIRMA });
+  });
+
   it('una nota que no existe da 404 (también un id que no es un número)', async () => {
     for (const id of [999999, 'abc']) {
       const res = await api.get(`/notificaciones/notas-digitales/${id}/word`, comoAdmin());
       assert.equal(res.status, 404, String(id));
       assert.deepEqual(res.body, { success: false, error: 'Nota no encontrada' });
+    }
+  });
+});
+
+// El controlador, sin servidor: la base se simula (mock de pool.query) para hacer fallar el conversor con un error que no es
+// NotaNoReconocida. El HTML guardado de una nota real no lo provoca (siempre es texto): acá la fila trae un HTML que al
+// convertirlo en texto tira
+describe('descargarWord: un error inesperado del conversor', () => {
+  it('es un 500 con el mensaje del controlador y se registra, nunca un 422', async () => {
+    const inesperado = new Error('Falla inesperada');
+    const html = { toString: () => { throw inesperado; } };
+    const consulta = mock.method(pool, 'query', async () => [[{ numero: 9, anio: 2026, es_prueba: 0, html }]]);
+    const registro = mock.method(console, 'error', () => {});
+    try {
+      const res = {
+        estado: null,
+        cuerpo: null,
+        status(codigo) { this.estado = codigo; return this; },
+        json(cuerpo) { this.cuerpo = cuerpo; return this; },
+        setHeader() { throw new Error('No debería armar un Word'); },
+        send() { throw new Error('No debería armar un Word'); }
+      };
+      await descargarWord({ params: { id: '9' } }, res);
+      assert.equal(res.estado, 500);
+      assert.deepEqual(res.cuerpo, { success: false, error: 'Error al descargar el Word' });
+      assert.equal(consulta.mock.callCount(), 1);
+      assert.equal(registro.mock.callCount(), 1);
+      assert.equal(registro.mock.calls[0].arguments[1], inesperado);
+    } finally {
+      consulta.mock.restore();
+      registro.mock.restore();
     }
   });
 });

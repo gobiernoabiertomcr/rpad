@@ -9,7 +9,7 @@ import {
 import { listaDeCorreos } from '../services/emailService.js';
 import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
 import { firmaDeUsuario } from '../services/firmasService.js';
-import { bloquesDeNotaDigital } from '../services/notasDigitalesWord.js';
+import { bloquesDeNotaDigital, NotaNoReconocida } from '../services/notasDigitalesWord.js';
 import { renderDocx, membreteParaWord } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 
@@ -201,7 +201,8 @@ export const descargarAnexo = async (req, res) => {
 // La nota en Word (spec 2026-10-24-generador-de-notas, sección 6), desde su HTML guardado: en la hoja membretada, sin la primera
 // línea del email y sin la firma, para todas las notas del libro (de cualquier tipo, estado y época, también las de prueba). Se
 // llama como el PDF en el Libro: «Nota-Digital-9-26.docx», y una prueba, «Nota-Digital-PRUEBA-<id>.docx». Si el HTML no se
-// reconoce (no tiene el remitente), 422 con el mensaje: nunca un Word roto
+// reconoce (sin el remitente o sin la firma: NotaNoReconocida), 422 con el mensaje: nunca un Word roto ni con una firma inventada.
+// Cualquier otro error es un 500, como en el resto del controlador
 export const descargarWord = async (req, res) => {
   try {
     const id = idDe(req.params.id);
@@ -211,6 +212,7 @@ export const descargarWord = async (req, res) => {
     try {
       bloques = bloquesDeNotaDigital(nota.html);
     } catch (error) {
+      if (!(error instanceof NotaNoReconocida)) throw error;
       return res.status(422).json({ success: false, error: error.message });
     }
     const word = await renderDocx(bloques, await membreteParaWord());

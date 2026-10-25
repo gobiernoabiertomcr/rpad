@@ -16,18 +16,25 @@ import { PROPORCIONES, PROPORCIONES_CON_SEGUNDA } from './notasDigitalesPdf.js';
 // El remitente de las notas (REMITENTE de notasDigitalesContenido.js): marca dónde termina el cuerpo y empieza la firma
 const REMITENTE = 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN';
 const SIN_REMITENTE = 'No se encontró el remitente de la nota.';
+const SIN_FIRMA = 'No se encontró la firma de la nota.';
+
+/**
+ * Un HTML que no se reconoce como una Nota Digital: sin el remitente o sin la firma justo después. La API responde 422 con su
+ * mensaje (nunca un Word con una firma inventada); cualquier otro error del conversor es un error del sistema.
+ */
+export class NotaNoReconocida extends Error {}
 
 // Las letras del HTML, en px, y las del Word, en medios puntos: el cuerpo (15 px) en 12 pt, la tabla (13) en 10, el antecedente
 // (12) en 9 y la segunda parte de "Informado en" (11) en 8
 const LETRAS = { 15: 24, 13: 20, 12: 18, 11: 16 };
-// Las tablas de 6 y 7 columnas (las reiteraciones, los vencidos de un aviso, los avisos anteriores a "Datos solicitados", con
-// "Última actualización", y los cambios ya solicitados de la nota de auditoría) van en la letra de las tablas del PDF, 8,5 pt,
-// con su relleno, 3 pt (TAMANO_TABLA y RELLENO de notasDigitalesPdf.js); las letras de adentro se achican en la misma
-// proporción (la segunda parte de "Informado en" queda en 7 pt, como en el PDF). Con 10 pt y el margen de siempre, sus palabras
-// no entran: en la nota 2/26, de 6 columnas, el título cedía hasta partir "Presupuesto"
-const COLUMNAS_DE_TABLA_ANGOSTA = 6;
-const LETRA_DE_TABLA_ANGOSTA = 17;
-const MARGEN_DE_TABLA_ANGOSTA = 60;
+// Todas las tablas de la nota van en la letra de las tablas del PDF, 8,5 pt, con su relleno, 3 pt (TAMANO_TABLA y RELLENO de
+// notasDigitalesPdf.js): una sola letra de tabla en toda la nota. Las letras de adentro se achican en la misma proporción que la
+// de la tabla, de 13 px (10 pt) a 8,5 pt: el antecedente (12 px) queda en 7,5 pt y la segunda parte de "Informado en" (11 px), en
+// 7, como en el PDF. Con 10 pt y el margen de siempre, las palabras de las tablas de 6 y 7 columnas no entran (en la nota 2/26, de
+// 6 columnas, el título cedía hasta partir "Presupuesto")
+const LETRA_DE_TABLA = 17;
+const MARGEN_DE_TABLA = 60;
+const ESCALA_DE_TABLA = LETRA_DE_TABLA / LETRAS[13];
 // Desde 4 columnas (las de los datasets y las de la nota de auditoría), ninguna palabra se parte (sinPartirPalabras), como en el
 // PDF; las tablas del detalle de un cambio (2 y 3 columnas) parten una URL larga, también como en el PDF (partirPalabras)
 const COLUMNAS_SIN_PARTIR = 4;
@@ -216,8 +223,7 @@ const tablaDe = (nodo) => {
   const filasHtml = filasHtmlDe(nodo).map(tr => hijosDe(tr, 'td', 'th')).filter(celdas => celdas.length);
   const columnas = Math.max(0, ...filasHtml.map(celdas => celdas.reduce((suma, c) => suma + abarcaDe(c), 0)));
   if (!columnas) return null;
-  const angosta = columnas >= COLUMNAS_DE_TABLA_ANGOSTA;
-  const escala = angosta ? LETRA_DE_TABLA_ANGOSTA / LETRAS[13] : 1;
+  const escala = ESCALA_DE_TABLA;
   const aTodoElAncho = (celdas, estilo) => celdas.length === 1 && columnas > 1 && abarcaDe(celdas[0]) === columnas
     && Boolean(formatoDe(celdas[0], {}, escala)[estilo]);
   const filas = filasHtml.map((celdas, i) => {
@@ -247,7 +253,7 @@ const tablaDe = (nodo) => {
     tipo: 'tabla',
     anchos: anchosDe(columnas, encabezado, tieneSegundaParte(nodo)),
     ...(letra ? { letra } : {}),
-    ...(angosta ? { margen: MARGEN_DE_TABLA_ANGOSTA } : {}),
+    margen: MARGEN_DE_TABLA,
     ...(columnas >= COLUMNAS_SIN_PARTIR ? { sinPartirPalabras: true } : {}),
     filas
   };
@@ -275,12 +281,13 @@ const esLeyenda = (nodo) => nodo?.etiqueta === 'p' && nodo.estilo['font-style'] 
  * 1. Toma los hijos del <div> del <body> y quita el primero si es la primera línea del email.
  * 2. El remitente es el último <p> que empieza con "DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN": se conserva, y lo anterior se
  *    convierte (<p> → parrafo, <table> → tabla, <ul> → lista).
- * 3. Después del remitente: la firma (el bloque con margin:32px 0 0; su contenido no se lee) pasa a ser el espacio en blanco, de
- *    una o dos columnas; la leyenda (el <p> en cursiva que la sigue) y el CC (el último <p>) se conservan si tienen texto. Lo demás
- *    no se lee.
+ * 3. Justo después del remitente va la firma (el bloque con margin:32px 0 0; su contenido no se lee), que pasa a ser el espacio
+ *    en blanco, de una o dos columnas; la leyenda (el <p> en cursiva que la sigue) y el CC (el último <p> después de ellas) se
+ *    conservan si tienen texto. Lo demás no se lee.
  * @param {string} html
  * @returns {import('./notasGeneradorContenido.js').Bloque[]}
- * @throws {Error} 'No se encontró el remitente de la nota.' si el HTML no lo tiene (un Word sin firma reconocida no sale).
+ * @throws {NotaNoReconocida} 'No se encontró el remitente de la nota.' si el HTML no lo tiene, o 'No se encontró la firma de la
+ *   nota.' si no la tiene justo después del remitente: nunca sale un Word con una firma inventada ni un CC que no lo es.
  */
 export const bloquesDeNotaDigital = (html) => {
   const body = buscar(arbolDe(String(html ?? '')), 'body');
@@ -288,20 +295,20 @@ export const bloquesDeNotaDigital = (html) => {
   const elementos = (div?.hijos ?? []).filter(hijo => hijo.etiqueta);
   if (esPrimeraLinea(elementos[0])) elementos.shift();
   const remitente = elementos.findLastIndex(e => e.etiqueta === 'p' && textoDe(e).trimStart().startsWith(REMITENTE));
-  if (remitente < 0) throw new Error(SIN_REMITENTE);
+  if (remitente < 0) throw new NotaNoReconocida(SIN_REMITENTE);
+  const [firma, ...despues] = elementos.slice(remitente + 1);
+  if (!firma || !esFirma(firma)) throw new NotaNoReconocida(SIN_FIRMA);
 
   const cuerpo = elementos.slice(0, remitente + 1).map(bloqueDe).filter(Boolean);
-  const despues = elementos.slice(remitente + 1);
-  const firma = despues.findIndex(esFirma);
-  const leyenda = firma >= 0 && esLeyenda(despues[firma + 1]) ? despues[firma + 1] : null;
-  const cc = despues.slice(firma + (leyenda ? 2 : 1)).findLast(e => e.etiqueta === 'p') ?? null;
+  const leyenda = esLeyenda(despues[0]) ? despues[0] : null;
+  const cc = despues.slice(leyenda ? 1 : 0).findLast(e => e.etiqueta === 'p') ?? null;
   const siTieneTexto = (nodo) => {
     const parrafo = nodo ? parrafoDe(nodo) : null;
     return parrafo && conTexto(parrafo.partes) ? [parrafo] : [];
   };
   return [
     ...cuerpo,
-    { tipo: 'firma', columnas: despues[firma]?.etiqueta === 'table' ? 2 : 1 },
+    { tipo: 'firma', columnas: firma.etiqueta === 'table' ? 2 : 1 },
     ...siTieneTexto(leyenda),
     ...siTieneTexto(cc)
   ];
