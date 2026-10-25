@@ -1,26 +1,800 @@
 /**
- * Reportes - RPAD
- * Lógica para generación de reportes PDF
+ * Métricas y Reportes - RPAD (spec 2026-10-24-metricas-y-reportes, 1.4 a 1.7, 2 y 6)
+ * Dos pestañas con hash, como Correos: Métricas (la inicial; #metricas) y Reportes (#reportes).
+ * Métricas dibuja lo que manda GET /api/metricas: la barra (el año, «Mediana | Promedio», «Días hábiles | Días corridos», los casos
+ * y el PDF), la franja de lo destildado, el circuito de cada gestión, la cinta del recorrido típico y la lista de casos, donde se
+ * destilda un dataset. Lo elegido viaja en la URL (?anio=&estadistico=&dias=&gestion=&sin=12,45#reportes) y no se guarda.
+ * La página no recalcula ninguna regla: las cifras, sus textos, los en curso, la cinta (con sus x, sus rótulos y sus anclajes) y los
+ * textos de los casos los manda el servidor (services/metricasReglas.js y metricasCinta.js); acá solo se dibujan. Las fechas se leen
+ * como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa por Utils.escapeHtml, y un número se escribe con String (un
+ * 0 es «0»: Utils.escapeHtml(0) da '').
+ * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
+ * el DOM o la API va aparte, al final. La pestaña Reportes conserva, por ahora, las cuatro tarjetas de siempre (al final del archivo).
  */
 
-// Verificar autenticación al cargar
-document.addEventListener('DOMContentLoaded', async () => {
+// Todos los roles con sesión la ven; sin sesión, al login
+document.addEventListener('DOMContentLoaded', () => {
   if (!Auth.isAuthenticated()) {
     window.location.href = 'login.html';
     return;
   }
+  iniciarReportes();
+});
 
-  // Cargar áreas para el select
+// =====================================================
+// Constantes
+// =====================================================
+
+// Los selectores (spec, 1.7 y 2.2): el primero de cada uno es el de entrada
+const ESTADISTICOS = [['mediana', 'Mediana'], ['promedio', 'Promedio']];
+const DIAS = [['habiles', 'Días hábiles'], ['corridos', 'Días corridos']];
+const GESTIONES = [['externa', 'Gestión externa'], ['interna', 'Gestión interna']];
+const PESTANAS = ['metricas', 'reportes'];
+// Lo que se ve al entrar, sin parámetros: el año en curso (`anio` null: el servidor sabe cuál es), mediana, días hábiles, la gestión
+// externa, todos los datasets y la pestaña Métricas
+const ESTADO_POR_DEFECTO = Object.freeze({ anio: null, estadistico: 'mediana', dias: 'habiles', gestion: 'externa', sin: Object.freeze([]), pestana: 'metricas' });
+
+const BAJADA = 'Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF.';
+const BAJADA_DE_LOS_DIAS = {
+  habiles: 'Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.',
+  corridos: 'Los días son corridos: todos los días del calendario.'
+};
+const NOMBRE_DE_LOS_DIAS = { habiles: 'días hábiles', corridos: 'días corridos' };
+
+// Los nodos del circuito (spec, 2.2): quién es, qué hace y su color (lo de la DGMIT en violeta, el Portal en verde). Entre cada dos
+// nodos va un tramo, en el orden en que los manda el servidor (externa: aviso, trámite, respuesta y carga; interna: aviso,
+// producción y carga)
+const NODOS = {
+  rpad: ['RPAD', 'Datos Públicos avisa', ''],
+  da: ['DGMIT y Dirección Administrativa', 'Mandan la nota formal', 'dgmit'],
+  dit: ['DGMIT y Dirección de Investigación Territorial', 'Hacen el relevamiento', 'dgmit'],
+  area: ['Área responsable', 'Prepara los datos', ''],
+  ddpc: ['Datos Públicos', 'Limpia y estructura', ''],
+  portal: ['Portal', 'Datos publicados', 'fin']
+};
+const NODOS_DE_LA_GESTION = { externa: ['rpad', 'da', 'area', 'ddpc', 'portal'], interna: ['rpad', 'dit', 'ddpc', 'portal'] };
+
+const ORIENTATIVO = 'con tan pocos casos, es orientativo';
+const SE_CUENTA_HASTA = 'Se cuenta hasta que se registra la actualización.';
+// Spec 1.3: los externos con «Requiere nota DGMIT: No» (TMDA, empleados municipales) cuentan solo en la anticipación y en la carga
+const SIN_NOTA_DGMIT = 'Los datasets que no requieren nota DGMIT (los datos se obtienen de una fuente pública) cuentan solo en el aviso anticipado y en la preparación y carga.';
+
+// La cinta: la línea del eje va de punta a punta de la línea útil del servidor (X_INICIAL y X_FINAL de services/metricasCinta.js;
+// tests/reportes-frontend.test.js comprueba que el primer y el último número del eje caen ahí). Todo lo demás llega con la cinta:
+// las x, las alturas (`alturas`), los textos y los anclajes
+const LINEA_DEL_EJE = { desde: 30, hasta: 970 };
+const ANCLAJES = ['start', 'middle', 'end'];
+const COLORES = ['tinta', 'violeta', 'verde'];
+const TIPOS_DE_MARCA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga'];
+// Qué es cada hito, para el <title> de su marca (en minúscula: se juntan con «y») y la leyenda
+const NOMBRES_DE_LOS_HITOS = {
+  aviso: 'aviso del RPAD',
+  nota: 'nota DGMIT recibida por el área',
+  datos: { externa: 'datos entregados', interna: 'relevamiento entregado' },
+  carga: 'carga en el portal'
+};
+const LEYENDA_DE_LA_CINTA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga', 'rayado'];
+const LEYENDA_FIJA = { 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento' };
+
+const ICONO_DESCARGA = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
+
+// =====================================================
+// Ayudantes (puros)
+// =====================================================
+
+function comoLista(valor) {
+  return Array.isArray(valor) ? valor : [];
+}
+
+function esObjeto(valor) {
+  return valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+}
+
+// Un texto del servidor, escapado; lo que no es un texto ni un número, vacío (nunca «null» ni «undefined»)
+function escaparTexto(texto) {
+  return typeof texto === 'string' || typeof texto === 'number' ? Utils.escapeHtml(String(texto)) : '';
+}
+
+// El primero de `validos` ([clave, texto]) que coincide con `valor`, o el de entrada
+function elegido(valor, validos) {
+  return validos.some(([clave]) => clave === valor) ? valor : validos[0][0];
+}
+
+// Una coordenada con dos decimales (alcanza para el dibujo y achica el SVG); lo que no es un número, 0
+function coordenada(valor) {
+  return Number.isFinite(valor) ? String(Math.round(valor * 100) / 100) : '0';
+}
+
+function esNumero(valor) {
+  return typeof valor === 'number' && Number.isFinite(valor);
+}
+
+// dd/mm/aaaa del texto 'AAAA-MM-DD' (o '—')
+function fecha(valor) {
+  return Utils.fechaCorta(typeof valor === 'string' ? valor : null);
+}
+
+// «A», «A y B», «A, B y C»
+function enumerar(textos) {
+  if (textos.length <= 1) return textos[0] ?? '';
+  return `${textos.slice(0, -1).join(', ')} y ${textos.at(-1)}`;
+}
+
+function conMayuscula(texto) {
+  return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : '';
+}
+
+function cantidadDeCiclos(n) {
+  return `${String(n)} ${n === 1 ? 'ciclo' : 'ciclos'}`;
+}
+
+function notasPendientes(n) {
+  return `${String(n)} ${n === 1 ? 'nota pendiente' : 'notas pendientes'} de carga`;
+}
+
+// =====================================================
+// El estado de la URL (puro)
+// =====================================================
+
+// Los destildados (spec 1.5, ?sin=12,45): como los lee el servidor (opcionesDeMetricas), los enteros positivos escritos solo con
+// dígitos, sin repetidos y en el orden pedido
+function idsDestildados(textos) {
+  const ids = comoLista(textos).flatMap((texto) => String(texto ?? '').split(','))
+    .map((texto) => texto.trim()).filter((texto) => /^\d+$/.test(texto)).map(Number)
+    .filter((id) => Number.isSafeInteger(id) && id > 0);
+  return [...new Set(ids)];
+}
+
+// Lo elegido en la página a partir de la dirección (`texto`: location.search + location.hash, con o sin el «?»). Lo que no sirve cae
+// al de entrada (ESTADO_POR_DEFECTO) o se ignora. `anio`: un número de cuatro dígitos, o null (el en curso); la pestaña sale del hash
+function estadoDeLaUrl(texto) {
+  const completo = typeof texto === 'string' ? texto : '';
+  const corte = completo.indexOf('#');
+  const consulta = (corte === -1 ? completo : completo.slice(0, corte)).replace(/^\?/, '');
+  const hash = corte === -1 ? '' : completo.slice(corte + 1);
+  const parametros = new URLSearchParams(consulta);
+  const anio = parametros.get('anio');
+  return {
+    anio: anio !== null && /^\d{4}$/.test(anio) ? Number(anio) : null,
+    estadistico: elegido(parametros.get('estadistico'), ESTADISTICOS),
+    dias: elegido(parametros.get('dias'), DIAS),
+    gestion: elegido(parametros.get('gestion'), GESTIONES),
+    sin: idsDestildados(parametros.getAll('sin')),
+    pestana: PESTANAS.includes(hash) ? hash : ESTADO_POR_DEFECTO.pestana
+  };
+}
+
+// Los parámetros de `estado` que no están en su valor por defecto, en este orden: [clave, valor]. `conGestion`: la gestión solo la
+// usa la página (la API manda las dos)
+function parametrosDe(estado, conGestion) {
+  const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
+  const pares = [];
+  if (Number.isInteger(e.anio) && e.anio >= 1000 && e.anio <= 9999) pares.push(['anio', String(e.anio)]);
+  for (const [clave, validos] of [['estadistico', ESTADISTICOS], ['dias', DIAS], ...(conGestion ? [['gestion', GESTIONES]] : [])]) {
+    const valor = elegido(e[clave], validos);
+    if (valor !== validos[0][0]) pares.push([clave, valor]);
+  }
+  const sin = idsDestildados(comoLista(e.sin).map(String));
+  if (sin.length) pares.push(['sin', sin.join(',')]);
+  return pares;
+}
+
+// La dirección de `estado` (lo que va después del nombre de la página): omite lo que está en su valor por defecto, también la
+// pestaña Métricas. '' si todo es el de entrada. Los valores son letras, dígitos y comas: se escriben tal cual
+function urlDeEstado(estado) {
+  const pares = parametrosDe(estado, true);
+  const consulta = pares.length ? `?${pares.map(([clave, valor]) => `${clave}=${valor}`).join('&')}` : '';
+  return `${consulta}${esObjeto(estado) && estado.pestana === 'reportes' ? '#reportes' : ''}`;
+}
+
+// La consulta de GET /api/metricas (y de su PDF), sin el «?»: el año, los selectores y los destildados
+function consultaDeLaApi(estado) {
+  return parametrosDe(estado, false).map(([clave, valor]) => `${clave}=${valor}`).join('&');
+}
+
+// El estado con un selector cambiado: `clave` 'anio', 'estadistico', 'dias' o 'gestion'; lo que no sirve no cambia nada. El año
+// tiene que estar en `anios` (los que manda el servidor, del más viejo al en curso); el en curso vuelve a ser el de entrada (null)
+function conSelector(estado, clave, valor, anios) {
+  const validos = { estadistico: ESTADISTICOS, dias: DIAS, gestion: GESTIONES }[clave];
+  if (validos) return validos.some(([v]) => v === valor) ? { ...estado, [clave]: valor } : { ...estado };
+  if (clave !== 'anio') return { ...estado };
+  const lista = comoLista(anios);
+  const anio = /^\d{4}$/.test(String(valor ?? '')) ? Number(valor) : null;
+  if (anio === null || !lista.includes(anio)) return { ...estado };
+  return { ...estado, anio: anio === lista.at(-1) ? null : anio };
+}
+
+// Los destildados con `id` cambiado: si estaba, vuelve a contar; si no, se suma al final. Lo que no es un id no cambia nada
+function conDestildado(sin, id) {
+  const lista = idsDestildados(comoLista(sin).map(String));
+  const [elegidoId] = idsDestildados([String(id ?? '')]);
+  if (elegidoId === undefined) return lista;
+  return lista.includes(elegidoId) ? lista.filter((otro) => otro !== elegidoId) : [...lista, elegidoId];
+}
+
+// La bajada de la página, con cómo se cuentan los días
+function textoDeLaBajada(dias) {
+  return `${BAJADA} ${BAJADA_DE_LOS_DIAS[elegido(dias, DIAS)]}`;
+}
+
+// =====================================================
+// La barra y la franja de lo destildado (puras)
+// =====================================================
+
+// Un chip de selector con aria-pressed
+function htmlDeChip(selector, valor, texto, pulsado) {
+  return `<button type="button" class="mt-chip" data-selector="${selector}" data-valor="${valor}" aria-pressed="${pulsado ? 'true' : 'false'}">${texto}</button>`;
+}
+
+function htmlDeChips(selector, opciones, actual, etiqueta) {
+  return `<div class="mt-chips" role="group" aria-label="${etiqueta}">${opciones.map(([valor, texto]) => htmlDeChip(selector, valor, texto, valor === actual)).join('')}</div>`;
+}
+
+// Los chips de la gestión del circuito (van adentro de su tarjeta)
+function htmlDeGestiones(gestion) {
+  return htmlDeChips('gestion', GESTIONES, elegido(gestion, GESTIONES), 'Gestión del circuito');
+}
+
+// La barra de arriba (spec 2.1): el año (el en curso arriba, «2026 (en curso)», y debajo los anteriores), los dos selectores, el chip
+// de los casos («todos» o «todos menos 1») y «Descargar PDF». Debajo, si el año no es el en curso, de dónde sale: el aviso de la foto
+// que falta (el del servidor) o la foto del 31/12. `datos`: los de GET /api/metricas; `estado`: lo elegido
+function htmlDeBarra(datos, estado) {
+  const d = esObjeto(datos) ? datos : {};
+  const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
+  const anios = comoLista(d.anios).filter(Number.isInteger);
+  const enCurso = anios.at(-1);
+  const actual = Number.isInteger(e.anio) ? e.anio : d.anio;
+  const opciones = [...anios].reverse()
+    .map((anio) => `<option value="${String(anio)}"${anio === actual ? ' selected' : ''}>${String(anio)}${anio === enCurso ? ' (en curso)' : ''}</option>`).join('');
+  const destildados = comoLista(d.sin_titulos).filter((titulo) => typeof titulo === 'string').length;
+  const casos = destildados === 0 ? 'todos' : `todos menos ${String(destildados)}`;
+  let aviso = '';
+  if (typeof d.aviso_foto === 'string' && d.aviso_foto) aviso = escaparTexto(d.aviso_foto);
+  else if (d.en_vivo === false) aviso = `Sale de la foto del ${fecha(d.al)}, calculada con todos los datasets.`;
+  return `<select id="mt-anio" class="mt-select" data-selector="anio" aria-label="Año">${opciones}</select>`
+    + htmlDeChips('estadistico', ESTADISTICOS, elegido(e.estadistico, ESTADISTICOS), 'Cómo se resume cada tramo')
+    + htmlDeChips('dias', DIAS, elegido(e.dias, DIAS), 'Cómo se cuentan los días')
+    + `<button type="button" class="mt-chip" data-accion="casos" aria-controls="mt-casos">Casos: <b>${casos}</b></button>`
+    + `<div class="mt-derecha"><button type="button" class="mt-btn mt-btn-tinta" data-accion="pdf">${ICONO_DESCARGA}Descargar PDF</button></div>`
+    + (aviso ? `<p class="mt-aviso-foto" role="note">${aviso}</p>` : '');
+}
+
+// La franja ámbar de lo destildado (spec 1.5): «Calculado sin 1 dataset: Parque Automotor.» con el link «Volver a todos», que
+// conserva lo demás elegido. Sin destildados que existan (`datos.sin_titulos`, del servidor), nada
+function htmlDeFranjaSin(datos, estado = ESTADO_POR_DEFECTO) {
+  const titulos = comoLista(esObjeto(datos) ? datos.sin_titulos : null).filter((titulo) => typeof titulo === 'string' && titulo);
+  if (titulos.length === 0) return '';
+  const cuantos = titulos.length === 1 ? '1 dataset' : `${String(titulos.length)} datasets`;
+  const todos = `reportes.html${urlDeEstado({ ...(esObjeto(estado) ? estado : ESTADO_POR_DEFECTO), sin: [] })}`;
+  return `<div class="mt-franja" role="status"><span>Calculado sin ${cuantos}: ${escaparTexto(titulos.join(', '))}.</span>`
+    + `<a href="${todos}" class="mt-franja-link" data-accion="todos">Volver a todos</a></div>`;
+}
+
+// =====================================================
+// El circuito (puro)
+// =====================================================
+
+// La flecha de un tramo (un Tramo de vistaDe), con lo que manda el servidor:
+// - con cifra, el número con su unidad al lado («27» + «días hábiles»; sin «antes») y debajo el estadístico con la cantidad de ciclos
+//   («mediana de 32 ciclos»); un 0 llega como «En el día», sin unidad, con «mediana en días hábiles» debajo, y la cantidad de ciclos
+//   va en el texto de la flecha; con 4 casos o menos, «con tan pocos casos, es orientativo»;
+// - sin cifra, por qué (`vacio`: «Todavía no hay notas DGMIT cargadas» con los pendientes, «Sin datos todavía», «Sin casos en 2026»);
+// - el nombre, la línea, «desde → hasta», los en curso (con «Se cuenta hasta que se registra la actualización.») y los pendientes de
+//   carga de la DGMIT; al final, la insignia de quién está a cargo (nunca solo el color). Lo de la DGMIT va en violeta.
+function htmlDeFlecha(tramo) {
+  if (!esObjeto(tramo)) return '<div class="mt-flecha vacia"><div class="l" aria-hidden="true"></div></div>';
+  const cifra = esObjeto(tramo.cifra) ? tramo.cifra : null;
+  const vacio = cifra === null && esObjeto(tramo.vacio) ? tramo.vacio : null;
+  const clases = ['mt-flecha', tramo.dgmit === true ? 'dgmit' : '', cifra === null ? 'vacia' : ''].filter(Boolean).join(' ');
+  const partes = [];
+  if (cifra) {
+    const unidad = escaparTexto(cifra.unidad);
+    partes.push(`<span class="n">${escaparTexto(cifra.texto)}${unidad ? ` <small>${unidad}</small>` : ''}</span><span class="u">${escaparTexto(cifra.debajo)}</span>`);
+    if (cifra.orientativo === true) partes.push(`<span class="o">${ORIENTATIVO}</span>`);
+  } else {
+    partes.push(`<span class="n">${escaparTexto(vacio?.titulo)}</span>`);
+  }
+  partes.push(`<span class="t">${escaparTexto(tramo.nombre)}</span><div class="l" aria-hidden="true"></div>`);
+  if (escaparTexto(tramo.desde_hasta)) partes.push(`<span class="c">${escaparTexto(tramo.desde_hasta)}</span>`);
+  if (cifra && cifra.valor === 0 && Number.isInteger(cifra.ciclos)) partes.push(`<span class="c"><b>${cantidadDeCiclos(cifra.ciclos)}</b></span>`);
+  const esDeLaDgmit = tramo.clave === 'tramite';
+  if (vacio && escaparTexto(vacio.texto)) partes.push(`<span class="c${esDeLaDgmit ? ' pend' : ''}">${escaparTexto(vacio.texto)}</span>`);
+  else if (esDeLaDgmit && Number.isInteger(tramo.pendientes) && tramo.pendientes > 0) partes.push(`<span class="c pend">${notasPendientes(tramo.pendientes)}</span>`);
+  if (esObjeto(tramo.en_curso) && escaparTexto(tramo.en_curso.texto)) {
+    partes.push(`<span class="c curso">${escaparTexto(tramo.en_curso.texto)}</span><span class="c">${SE_CUENTA_HASTA}</span>`);
+  }
+  if (escaparTexto(tramo.responsable)) partes.push(`<span class="mt-resp">${escaparTexto(tramo.responsable)}</span>`);
+  return `<div class="${clases}">${partes.join('')}</div>`;
+}
+
+function htmlDeNodo(clave) {
+  const [nombre, rol, clase] = NODOS[clave];
+  return `<div class="mt-nodo${clase ? ` ${clase}` : ''}"><span class="q">${nombre}</span><span class="r">${rol}</span></div>`;
+}
+
+// El circuito de una gestión (spec 2.2): los nodos y, entre cada dos, la flecha de su tramo, como en «Avisos del ciclo abierto» del
+// Seguimiento. `vista`: la de GET /api/metricas; sin su circuito, nada
+function htmlDeCircuito(vista, gestion) {
+  const circuito = esObjeto(vista) && esObjeto(vista.circuito) ? vista.circuito : null;
+  const g = elegido(gestion, GESTIONES);
+  if (!circuito || !Array.isArray(circuito[g])) return '';
+  const nodos = NODOS_DE_LA_GESTION[g];
+  const partes = nodos.map((clave, i) => htmlDeNodo(clave) + (i < nodos.length - 1 ? htmlDeFlecha(circuito[g][i]) : ''));
+  return `<div class="mt-tramos ${g}" role="group" aria-label="El circuito de la gestión ${g}">${partes.join('')}</div>`;
+}
+
+// Las aclaraciones del circuito de la gestión: las del servidor (los avisados ya vencidos y, en la externa, los resueltos con una
+// fuente pública; las que no tienen casos llegan vacías) y, en la externa, la de «Requiere nota DGMIT: No». Sin ninguna, nada
+function htmlDeAclaraciones(vista, gestion) {
+  const g = elegido(gestion, GESTIONES);
+  const aclaraciones = esObjeto(vista) && esObjeto(vista.circuito) && esObjeto(vista.circuito.aclaraciones) ? vista.circuito.aclaraciones[g] : null;
+  const delServidor = esObjeto(aclaraciones) ? [aclaraciones.ya_vencidos, aclaraciones.fuente_publica] : [];
+  const textos = delServidor.map((a) => (esObjeto(a) ? escaparTexto(a.texto) : '')).filter(Boolean);
+  if (g === 'externa' && esObjeto(aclaraciones)) textos.push(SIN_NOTA_DGMIT);
+  if (textos.length === 0) return '';
+  return `<div class="mt-directo"><span class="i" aria-hidden="true">i</span><div>${textos.map((texto) => `<p>${texto}</p>`).join('')}</div></div>`;
+}
+
+// =====================================================
+// La cinta (pura)
+// =====================================================
+
+// Lo que junta una marca, en palabras («Datos entregados y carga en el portal»)
+function nombreDeLaMarca(tipos, gestion) {
+  const nombres = comoLista(tipos).map((tipo) => {
+    const nombre = NOMBRES_DE_LOS_HITOS[tipo];
+    return esObjeto(nombre) ? nombre[gestion] : nombre;
+  }).filter((nombre) => typeof nombre === 'string');
+  return conMayuscula(enumerar(nombres));
+}
+
+// El dibujo de una marca centrada en (cx, cy), como en la maqueta 7: el rombo del aviso, el cuadrado violeta de la nota DGMIT, el
+// aro de los datos, el punto verde de la carga y, si la entrega y la carga van juntas, el punto verde con el aro azul
+function iconoDeLaMarca(tipo, cx, cy) {
+  const x = coordenada(cx);
+  const y = coordenada(cy);
+  switch (tipo) {
+    case 'aviso': return `<rect x="${coordenada(cx - 7)}" y="${coordenada(cy - 7)}" width="14" height="14" transform="rotate(45 ${x} ${y})" class="i-aviso"/>`;
+    case 'nota': return `<rect x="${coordenada(cx - 6)}" y="${coordenada(cy - 6)}" width="12" height="12" rx="3" class="i-nota"/>`;
+    case 'datos': return `<circle cx="${x}" cy="${y}" r="6.5" class="i-datos"/>`;
+    case 'carga': return `<circle cx="${x}" cy="${y}" r="7" class="i-carga"/>`;
+    default: return `<circle cx="${x}" cy="${y}" r="8.5" class="i-datos-y-carga"/>`;
+  }
+}
+
+// Un rectángulo de la cinta, de x0 a x1 (el ancho, con dos decimales)
+function rectangulo(x0, x1, y, alto, extra) {
+  return `<rect x="${coordenada(x0)}" y="${coordenada(y)}" width="${coordenada(x1 - x0)}" height="${coordenada(alto)}"${extra}`;
+}
+
+// La cinta del recorrido típico como SVG (spec 2.2), con los datos de cintaDeMetricas tal como llegan: las alturas (`alturas`), los
+// números del eje, la banda celeste, el rayado, el gris donde se corta la cadena (con su texto en el medio, el lugar que reserva el
+// servidor), el vencimiento, los segmentos (cada uno con su <title>), las marcas (dibujadas en su x: la de un grupo, en la de su
+// primera), los rótulos y el del eje con sus anclajes. Sin texto dentro de la banda. Lo que no se puede leer no se dibuja; sin cinta,
+// nada. Los colores están en el <style> de reportes.html. `gestion`: para los nombres de las marcas
+function svgDeCinta(cinta, gestion = 'externa') {
+  if (!esObjeto(cinta) || !esObjeto(cinta.alturas) || !esNumero(cinta.ancho) || !esNumero(cinta.alto)) return '';
+  const g = elegido(gestion, GESTIONES);
+  const A = cinta.alturas;
+  const banda = esObjeto(A.banda) ? A.banda : {};
+  const conX = (valor) => esObjeto(valor) && esNumero(valor.x0) && esNumero(valor.x1);
+  const partes = [];
+
+  partes.push(`<line x1="${LINEA_DEL_EJE.desde}" y1="${coordenada(A.linea)}" x2="${LINEA_DEL_EJE.hasta}" y2="${coordenada(A.linea)}" class="l-eje"/>`);
+  for (const tick of comoLista(cinta.ticks).filter((t) => esObjeto(t) && esNumero(t.x))) {
+    partes.push(`<text x="${coordenada(tick.x)}" y="${coordenada(A.ticks)}" class="tick">${escaparTexto(tick.texto)}</text>`);
+  }
+  if (conX(cinta.banda)) partes.push(`${rectangulo(cinta.banda.x0, cinta.banda.x1, banda.y, banda.alto, '')} class="banda"/>`);
+  if (conX(cinta.rayado)) partes.push(`${rectangulo(cinta.rayado.x0, cinta.rayado.x1, banda.y, banda.alto, '')} class="rayado"/>`);
+  if (conX(cinta.gris)) {
+    partes.push(`${rectangulo(cinta.gris.x0, cinta.gris.x1, banda.y, banda.alto, '')} class="gris"/>`);
+    const texto = escaparTexto(cinta.gris.texto);
+    if (texto) partes.push(`<text x="${coordenada((cinta.gris.x0 + cinta.gris.x1) / 2)}" y="${coordenada(A.textoDelGris)}" class="t-gris">${texto}</text>`);
+  }
+  const vencimiento = esObjeto(cinta.vencimiento) && esNumero(cinta.vencimiento.x) ? coordenada(cinta.vencimiento.x) : null;
+  const lineaDelVencimiento = esObjeto(A.vencimiento) ? A.vencimiento : {};
+  if (vencimiento !== null) {
+    partes.push(`<line x1="${vencimiento}" y1="${coordenada(lineaDelVencimiento.desde)}" x2="${vencimiento}" y2="${coordenada(lineaDelVencimiento.hasta)}" class="l-vence"/>`);
+    partes.push(`<text x="${vencimiento}" y="${coordenada(lineaDelVencimiento.texto)}" class="vence">vencimiento</text>`);
+  }
+  const segmentos = esObjeto(A.segmentos) ? A.segmentos : {};
+  for (const s of comoLista(cinta.segmentos).filter(conX)) {
+    partes.push(`${rectangulo(s.x0, s.x1, segmentos.y, segmentos.alto, ' rx="4"')} class="s-${elegidoDe(s.color, COLORES)}"><title>${escaparTexto(s.texto)}</title></rect>`);
+  }
+  for (const m of comoLista(cinta.marcas).filter((marca) => esObjeto(marca) && esNumero(marca.x) && TIPOS_DE_MARCA.includes(marca.tipo))) {
+    partes.push(`<g class="marca m-${m.tipo}" data-x="${coordenada(m.x)}"><title>${escaparTexto(nombreDeLaMarca(m.tipos, g))}</title>${iconoDeLaMarca(m.tipo, m.x, A.marcas)}</g>`);
+  }
+  const conTexto = (r) => esObjeto(r) && esNumero(r.x) && esNumero(r.y) && escaparTexto(r.texto);
+  for (const r of comoLista(cinta.rotulos).filter(conTexto)) {
+    partes.push(`<text x="${coordenada(r.x)}" y="${coordenada(r.y)}" text-anchor="${elegidoDe(r.anclaje, ANCLAJES)}" class="rotulo r-${elegidoDe(r.color, COLORES)}">${escaparTexto(r.texto)}</text>`);
+  }
+  if (conTexto(cinta.eje)) {
+    partes.push(`<text x="${coordenada(cinta.eje.x)}" y="${coordenada(cinta.eje.y)}" text-anchor="${elegidoDe(cinta.eje.anclaje, ANCLAJES)}" class="eje">${escaparTexto(cinta.eje.texto)}</text>`);
+  }
+
+  // El nombre del dibujo: los rótulos y los tramos, con los textos del servidor
+  const descripcion = [...comoLista(cinta.rotulos).filter(conTexto).map((r) => r.texto), ...comoLista(cinta.segmentos).filter(conX).map((s) => s.texto)]
+    .filter((texto) => typeof texto === 'string' && texto);
+  const etiqueta = `Recorrido típico de un pedido de la gestión ${g}${descripcion.length ? `: ${descripcion.join('; ')}` : ''}`;
+  return `<svg class="mt-cinta-svg" viewBox="0 0 ${coordenada(cinta.ancho)} ${coordenada(cinta.alto)}" role="img" aria-label="${escaparTexto(etiqueta)}" xmlns="http://www.w3.org/2000/svg">`
+    + '<defs><pattern id="mt-rayado" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" class="r-fondo"/><rect width="3" height="7" class="r-raya"/></pattern></defs>'
+    + `${partes.join('')}</svg>`;
+}
+
+// Uno de `validos` (una lista de textos) o el primero
+function elegidoDe(valor, validos) {
+  return validos.includes(valor) ? valor : validos[0];
+}
+
+// La leyenda de la cinta: solo lo que se dibuja (las marcas, como se dibujan, y el rayado), en un orden fijo
+function htmlDeLeyendaDeCinta(cinta, gestion) {
+  if (!esObjeto(cinta)) return '';
+  const g = elegido(gestion, GESTIONES);
+  const hay = new Set(comoLista(cinta.marcas).filter(esObjeto).map((marca) => marca.tipo));
+  if (esObjeto(cinta.rayado)) hay.add('rayado');
+  return LEYENDA_DE_LA_CINTA.filter((tipo) => hay.has(tipo))
+    .map((tipo) => `<span><i class="mk mk-${tipo}" aria-hidden="true"></i>${LEYENDA_FIJA[tipo] ?? nombreDeLaMarca([tipo], g)}</span>`).join('');
+}
+
+// =====================================================
+// Los casos (puros)
+// =====================================================
+
+function filasDeLaGestion(vista, gestion) {
+  const g = elegido(gestion, GESTIONES);
+  return comoLista(esObjeto(vista) ? vista.casos : null).filter((fila) => esObjeto(fila) && fila.gestion === g);
+}
+
+// «Los casos de 2026 (39)»: los de la gestión elegida
+function textoDeLosCasos(vista, gestion, anio) {
+  const cuantos = filasDeLaGestion(vista, gestion).length;
+  return `Los casos${Number.isInteger(anio) ? ` de ${String(anio)}` : ''} (${String(cuantos)})`;
+}
+
+// Una fecha con, debajo, lo que dice el servidor (`textos`, los que no están vacíos, con « · »). `clase`: la del renglón de abajo
+function celdaDeFecha(dia, textos, clase = '') {
+  const debajo = textos.map(escaparTexto).filter(Boolean).join(' · ');
+  return `<td>${fecha(dia)}${debajo ? `<span class="d${clase ? ` ${clase}` : ''}">${debajo}</span>` : ''}</td>`;
+}
+
+// Una fila de la lista de casos (una FilaDeCaso de vistaDe): la casilla «Contar» (destilda el dataset entero; deshabilitada en un año
+// con foto), el dataset con su área, el vencimiento, el aviso, la nota DGMIT (solo en la externa) con su número y su tipo, «Recibido
+// el» con el origen y la carga, cada fecha con los días del tramo o su estado debajo, como los manda el servidor. Un destildado
+// (`contar` false) se ve tachado y en gris
+function htmlDeFilaDeCaso(fila, i, { externa, editable }) {
+  const id = Number.isSafeInteger(fila.dataset_id) && fila.dataset_id > 0 ? fila.dataset_id : null;
+  const cuenta = fila.contar !== false;
+  const titulo = escaparTexto(fila.titulo);
+  const casilla = id === null ? ''
+    : `<input type="checkbox" class="mt-contar" data-dataset="${String(id)}" data-fila="${String(i)}"${cuenta ? ' checked' : ''}${editable ? '' : ' disabled'} aria-label="Contar ${titulo}">`;
+  const aviso = esObjeto(fila.aviso) ? fila.aviso : {};
+  const nota = esObjeto(fila.nota) ? fila.nota : {};
+  const recibido = esObjeto(fila.recibido) ? fila.recibido : {};
+  const carga = esObjeto(fila.carga) ? fila.carga : {};
+  const numero = escaparTexto(nota.numero);
+  const celdaDeNota = numero
+    ? `<td>${numero}${[nota.tipo, nota.texto].map(escaparTexto).filter(Boolean).length ? `<span class="d">${[nota.tipo, nota.texto].map(escaparTexto).filter(Boolean).join(' · ')}</span>` : ''}</td>`
+    : `<td>${Utils.SIN_DATO}${escaparTexto(nota.texto) ? `<span class="d pend">${escaparTexto(nota.texto)}</span>` : ''}</td>`;
+  const enCurso = typeof recibido.fecha !== 'string' && escaparTexto(recibido.texto) !== '';
+  return `<tr${cuenta ? '' : ' class="fuera"'}><td>${casilla}</td><td class="t">${titulo}<small>${escaparTexto(fila.area)}</small></td>`
+    + `<td>${fecha(fila.vencimiento)}</td>${celdaDeFecha(aviso.fecha, [aviso.texto, aviso.que])}${externa ? celdaDeNota : ''}`
+    + `${celdaDeFecha(recibido.fecha, [recibido.texto, recibido.origen], enCurso ? 'curso' : '')}${celdaDeFecha(carga.fecha, [carga.texto])}</tr>`;
+}
+
+// La lista de casos de la gestión elegida (spec 2.2): una fila por ciclo del año, en el orden del servidor, y la aclaración de
+// debajo (con los días elegidos y, en un año con foto, que no se destilda). `opciones`: { anio, editable } (editable: el año se
+// calcula en vivo y se puede destildar)
+function htmlDeCasos(vista, estado, { anio = null, editable = true } = {}) {
+  const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
+  const g = elegido(e.gestion, GESTIONES);
+  const filas = filasDeLaGestion(vista, g);
+  const delAnio = Number.isInteger(anio) ? ` en ${String(anio)}` : '';
+  if (filas.length === 0) return `<p class="mt-vacio">No hay casos de la gestión ${g}${delAnio}.</p>`;
+  const externa = g === 'externa';
+  const columnas = ['Contar', 'Dataset', 'Vencimiento', 'Aviso', ...(externa ? ['Nota DGMIT'] : []), 'Recibido el', 'Carga'];
+  const destildar = editable
+    ? 'Destildar un dataset lo saca de todas las cuentas de esta página y del PDF de Métricas, mientras la mirás; el link lo conserva. La foto del 31/12 siempre se saca con todos.'
+    : 'La foto del 31/12 se calculó con todos los datasets: no se puede destildar.';
+  return `<div class="mt-tabla-marco" tabindex="0" role="group" aria-label="Los casos"><table class="mt-tabla">`
+    + `<thead><tr>${columnas.map((columna) => `<th scope="col">${columna}</th>`).join('')}</tr></thead>`
+    + `<tbody>${filas.map((fila, i) => htmlDeFilaDeCaso(fila, i, { externa, editable })).join('')}</tbody></table></div>`
+    + `<p class="mt-pie">Debajo de cada fecha, los ${NOMBRE_DE_LOS_DIAS[elegido(e.dias, DIAS)]} del tramo o su estado. ${destildar}</p>`;
+}
+
+// =====================================================
+// La página (DOM y API)
+// =====================================================
+
+// Lo elegido, las métricas que llegaron, si la lista de casos está abierta y el número de pedido (una respuesta que llega después de
+// otra más nueva se descarta)
+const pagina = { estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0 };
+
+const porId = (id) => document.getElementById(id);
+
+// Deshabilita el botón mientras dura el pedido (copiado de seguimiento.js)
+const conBotonBloqueado = async (boton, tarea) => {
+  boton.disabled = true;
+  try {
+    await tarea();
+  } finally {
+    boton.disabled = false;
+  }
+};
+// Descarga un Blob con ese nombre de archivo y libera su URL (copiado de seguimiento.js)
+const descargarBlob = (blob, nombre) => {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// Los mensajes del servidor se escapan: showToast inserta HTML
+function avisarError(mensaje) {
+  if (typeof showToast === 'function') showToast(Utils.escapeHtml(mensaje), 'error');
+  else Utils.showError(mensaje);
+}
+
+function iniciarReportes() {
+  pagina.estado = estadoDeLaUrl(`${location.search}${location.hash}`);
+  pagina.casosAbiertos = pagina.estado.sin.length > 0;
+  conectarPestanas();
+  conectarEventos();
+  mostrarPestana(pagina.estado.pestana);
+  // El hash de la dirección (el botón atrás, un enlace a #reportes) cambia de pestaña
+  window.addEventListener('hashchange', () => mostrarPestana(estadoDeLaUrl(location.hash).pestana));
+  porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
+  cargarMetricas();
+  iniciarTarjetasDeReportes();
+}
+
+// Lo elegido queda en la dirección, sin sumar una entrada al historial
+function escribirLaUrl() {
+  history.replaceState(null, '', `${location.pathname}${urlDeEstado(pagina.estado)}`);
+}
+
+// ---- Pestañas (el patrón de correos.js) ----
+
+// Muestra una pestaña y su panel, oculta la otra y deja lo elegido en la dirección
+function mostrarPestana(nombre) {
+  pagina.estado.pestana = PESTANAS.includes(nombre) ? nombre : ESTADO_POR_DEFECTO.pestana;
+  for (const otra of PESTANAS) {
+    const activa = otra === pagina.estado.pestana;
+    const pestana = porId(`pestana-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    pestana.classList.toggle('activa', activa);
+    porId(`vista-${otra}`).hidden = !activa;
+  }
+  escribirLaUrl();
+}
+
+// Teclado en la barra: flechas (con vuelta), inicio y fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son atajos del
+// navegador: no se tocan
+function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const actual = PESTANAS.indexOf(evento.target.dataset?.vista);
+  if (actual === -1) return;
+  const ultima = PESTANAS.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault();
+  mostrarPestana(PESTANAS[destino]);
+  porId(`pestana-${PESTANAS[destino]}`).focus();
+}
+
+function conectarPestanas() {
+  for (const nombre of PESTANAS) porId(`pestana-${nombre}`).addEventListener('click', () => mostrarPestana(nombre));
+  porId('pestanas-reportes').addEventListener('keydown', teclaEnPestanas);
+}
+
+// ---- Métricas ----
+
+function conectarEventos() {
+  const barra = porId('mt-barra');
+  barra.addEventListener('click', (evento) => {
+    const chip = evento.target.closest('button[data-selector]');
+    if (chip) {
+      alCambiarSelector(chip.dataset.selector, chip.dataset.valor);
+      return;
+    }
+    const accion = evento.target.closest('button[data-accion]')?.dataset.accion;
+    if (accion === 'casos') abrirLosCasos();
+    else if (accion === 'pdf') descargarPdfDeMetricas(evento.target.closest('button'));
+  });
+  barra.addEventListener('change', (evento) => {
+    if (evento.target.matches('select[data-selector="anio"]')) alCambiarSelector('anio', evento.target.value);
+  });
+  porId('mt-gestiones').addEventListener('click', (evento) => {
+    const chip = evento.target.closest('button[data-selector]');
+    if (chip) alCambiarSelector(chip.dataset.selector, chip.dataset.valor);
+  });
+  porId('mt-franja').addEventListener('click', (evento) => {
+    if (!evento.target.closest('a[data-accion="todos"]')) return;
+    evento.preventDefault();
+    volverATodos();
+  });
+  porId('mt-ver-casos').addEventListener('click', () => {
+    pagina.casosAbiertos = !pagina.casosAbiertos;
+    dibujarLosCasos();
+  });
+  porId('mt-casos').addEventListener('change', (evento) => {
+    const casilla = evento.target.closest('input.mt-contar');
+    if (casilla) alDestildar(Number(casilla.dataset.dataset), casilla.checked);
+  });
+}
+
+// Uno solo de los estados de la pestaña: cargando, el error, sin datos (un año sin métricas) o el contenido
+function mostrarEstadoDeMetricas(visible) {
+  for (const id of ['mt-cargando', 'mt-error', 'mt-sin-datos', 'mt-contenido']) porId(id).hidden = id !== visible;
+  porId('mt-barra').hidden = pagina.datos === null;
+}
+
+// Lo que llega son las métricas (con su vista y sus casos), no otra respuesta
+function sonMetricas(datos) {
+  return esObjeto(datos) && esObjeto(datos.vista) && esObjeto(datos.vista.circuito) && Array.isArray(datos.vista.casos) && Array.isArray(datos.anios);
+}
+
+// GET /api/metricas con lo elegido. Con métricas ya dibujadas, quedan a la vista (atenuadas) hasta que llegan las nuevas. Un 404 es
+// un año sin métricas; otro error, el aviso de error. El dibujo va dentro del mismo try: si un dato raro lo rompe, queda el aviso de
+// error y no «Cargando…» para siempre
+async function cargarMetricas() {
+  const pedido = ++pagina.pedido;
+  const contenido = porId('mt-contenido');
+  if (pagina.datos === null) mostrarEstadoDeMetricas('mt-cargando');
+  contenido.setAttribute('aria-busy', 'true');
+  contenido.classList.add('actualizando');
+  try {
+    const consulta = consultaDeLaApi(pagina.estado);
+    const datos = (await API.pedirJson('GET', `/metricas?${consulta}`))?.data;
+    if (pedido !== pagina.pedido) return;
+    if (!sonMetricas(datos)) throw new TypeError('La respuesta no son las métricas');
+    pagina.datos = datos;
+    dibujarMetricas();
+    mostrarEstadoDeMetricas('mt-contenido');
+  } catch (error) {
+    if (pedido !== pagina.pedido) return;
+    if (error?.status === 404) {
+      pagina.datos = null;
+      mostrarEstadoDeMetricas('mt-sin-datos');
+      return;
+    }
+    console.error('Error cargando las métricas:', error);
+    mostrarEstadoDeMetricas('mt-error');
+  } finally {
+    if (pedido === pagina.pedido) {
+      contenido.removeAttribute('aria-busy');
+      contenido.classList.remove('actualizando');
+    }
+  }
+}
+
+// Dibuja `html` en `contenedor` y, si el foco estaba en un control de adentro, lo devuelve al mismo control (el mismo chip, la misma
+// casilla de la misma fila)
+function conElFoco(contenedor, html) {
+  const activo = document.activeElement;
+  let clave = null;
+  if (activo && contenedor.contains(activo)) {
+    const d = activo.dataset ?? {};
+    if (d.selector) clave = d.valor ? `[data-selector="${d.selector}"][data-valor="${d.valor}"]` : `[data-selector="${d.selector}"]`;
+    else if (d.fila) clave = `[data-fila="${d.fila}"]`;
+    else if (d.accion) clave = `[data-accion="${d.accion}"]`;
+  }
+  contenedor.innerHTML = html;
+  if (clave) contenedor.querySelector(clave)?.focus();
+}
+
+function dibujarLaBarra() {
+  conElFoco(porId('mt-barra'), htmlDeBarra(pagina.datos, pagina.estado));
+}
+
+function dibujarMetricas() {
+  porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
+  dibujarLaBarra();
+  porId('mt-franja').innerHTML = htmlDeFranjaSin(pagina.datos, pagina.estado);
+  dibujarElCircuito();
+  dibujarLosCasos();
+}
+
+// El circuito, la cinta y las aclaraciones de la gestión elegida
+function dibujarElCircuito() {
+  const { datos, estado } = pagina;
+  const cinta = esObjeto(datos.cinta) && esObjeto(datos.cinta[estado.gestion]) ? datos.cinta[estado.gestion] : null;
+  conElFoco(porId('mt-gestiones'), htmlDeGestiones(estado.gestion));
+  porId('mt-circuito').innerHTML = htmlDeCircuito(datos.vista, estado.gestion);
+  porId('mt-cinta').innerHTML = svgDeCinta(cinta, estado.gestion);
+  porId('mt-cinta').hidden = cinta === null;
+  porId('mt-leyenda').innerHTML = htmlDeLeyendaDeCinta(cinta, estado.gestion);
+  porId('mt-aclaracion-cinta').textContent = typeof cinta?.aclaracion === 'string' ? cinta.aclaracion : '';
+  porId('mt-aclaraciones').innerHTML = htmlDeAclaraciones(datos.vista, estado.gestion);
+}
+
+function dibujarLosCasos() {
+  const { datos, estado } = pagina;
+  if (!datos) return;
+  const boton = porId('mt-ver-casos');
+  porId('mt-titulo-casos').textContent = textoDeLosCasos(datos.vista, estado.gestion, datos.anio);
+  conElFoco(porId('mt-casos'), htmlDeCasos(datos.vista, estado, { anio: datos.anio, editable: datos.en_vivo === true }));
+  porId('mt-casos').hidden = !pagina.casosAbiertos;
+  boton.textContent = pagina.casosAbiertos ? 'Ocultar los casos' : 'Ver los casos';
+  boton.setAttribute('aria-expanded', String(pagina.casosAbiertos));
+}
+
+// El chip «Casos: …»: abre la lista de casos y la trae a la vista
+function abrirLosCasos() {
+  pagina.casosAbiertos = true;
+  dibujarLosCasos();
+  porId('mt-titulo-casos').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  porId('mt-ver-casos').focus({ preventScroll: true });
+}
+
+// Un selector: la gestión solo cambia el circuito y los casos (las métricas traen las dos); el resto vuelve a pedir las métricas.
+// La barra se redibuja enseguida con lo elegido y otra vez cuando llegan los números
+function alCambiarSelector(clave, valor) {
+  const nuevo = conSelector(pagina.estado, clave, valor, pagina.datos?.anios);
+  if (urlDeEstado(nuevo) === urlDeEstado(pagina.estado)) return;
+  pagina.estado = nuevo;
+  escribirLaUrl();
+  if (!pagina.datos) return;
+  if (clave === 'gestion') {
+    dibujarElCircuito();
+    dibujarLosCasos();
+    return;
+  }
+  porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
+  dibujarLaBarra();
+  cargarMetricas();
+}
+
+// La casilla «Contar» de una fila: destilda (o vuelve a contar) el dataset entero, en todas sus filas, y vuelve a pedir las métricas
+function alDestildar(datasetId, contar) {
+  const sin = conDestildado(pagina.estado.sin, datasetId);
+  if (sin.includes(datasetId) === (contar !== false)) return;
+  pagina.estado = { ...pagina.estado, sin };
+  escribirLaUrl();
+  for (const casilla of porId('mt-casos').querySelectorAll(`input.mt-contar[data-dataset="${datasetId}"]`)) casilla.checked = contar !== false;
+  cargarMetricas();
+}
+
+// «Volver a todos»: sin destildados
+function volverATodos() {
+  pagina.estado = { ...pagina.estado, sin: [] };
+  escribirLaUrl();
+  cargarMetricas();
+}
+
+// El PDF de Métricas con lo elegido, con el JWT en el encabezado (API.pedirArchivo), nunca en la URL
+async function descargarPdfDeMetricas(boton) {
+  if (!boton || !pagina.datos) return;
+  const consulta = consultaDeLaApi(pagina.estado);
+  await conBotonBloqueado(boton, async () => {
+    try {
+      const blob = await API.pedirArchivo(`/metricas/pdf${consulta ? `?${consulta}` : ''}`);
+      descargarBlob(blob, `Metricas-RPAD-${String(pagina.datos.anio)}.pdf`);
+    } catch (error) {
+      avisarError(`No se pudo descargar el PDF: ${error.message}`);
+    }
+  });
+}
+
+// =====================================================
+// La pestaña Reportes: las cuatro tarjetas de siempre (DOM y API)
+// =====================================================
+
+// Las áreas del selector y las fechas por defecto del historial (los últimos 30 días)
+async function iniciarTarjetasDeReportes() {
   await cargarAreas();
-
-  // Establecer fechas por defecto para historial
   const hoy = new Date();
   const hace30Dias = new Date();
   hace30Dias.setDate(hoy.getDate() - 30);
-  
   document.getElementById('historial-hasta').value = hoy.toISOString().split('T')[0];
   document.getElementById('historial-desde').value = hace30Dias.toISOString().split('T')[0];
-});
+}
 
 /**
  * Cargar áreas en el select
@@ -29,12 +803,12 @@ async function cargarAreas() {
   try {
     const areas = await API.getAreas();
     const select = document.getElementById('area-select');
-    
+
     select.innerHTML = '<option value="">Seleccionar área...</option>';
-    
+
     // Ordenar alfabéticamente
     areas.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    
+
     areas.forEach(area => {
       const option = document.createElement('option');
       option.value = area.id;
@@ -61,7 +835,7 @@ function generarReporteEstadoGeneral() {
 function generarReporteHistorial() {
   const desde = document.getElementById('historial-desde').value;
   const hasta = document.getElementById('historial-hasta').value;
-  
+
   const url = API.getReporteHistorialUrl(desde, hasta);
   descargarPDF(url, 'historial-notificaciones');
 }
@@ -71,12 +845,12 @@ function generarReporteHistorial() {
  */
 function generarReportePorArea() {
   const areaId = document.getElementById('area-select').value;
-  
+
   if (!areaId) {
     Utils.showError('Por favor seleccione un área');
     return;
   }
-  
+
   const url = API.getReportePorAreaUrl(areaId);
   descargarPDF(url, `reporte-area-${areaId}`);
 }
@@ -97,20 +871,20 @@ async function descargarPDF(url, nombre) {
   try {
     // Mostrar loading
     Utils.showSuccess('Generando reporte...');
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: Auth.getAuthHeaders()
     });
-    
+
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Error al generar el reporte');
     }
-    
+
     // Obtener el blob del PDF
     const blob = await response.blob();
-    
+
     // Crear link de descarga
     const downloadUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -120,9 +894,9 @@ async function descargarPDF(url, nombre) {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(downloadUrl);
-    
+
     Utils.showSuccess('Reporte generado exitosamente');
-    
+
   } catch (error) {
     console.error('Error generando reporte:', error);
     Utils.showError(error.message || 'Error al generar el reporte');
