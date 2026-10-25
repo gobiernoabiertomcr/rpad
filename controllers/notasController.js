@@ -1,925 +1,148 @@
-/**
- * Controlador para generación de notas administrativas DOCX
- */
-
+// Generador de Notas (spec 2026-10-24-generador-de-notas, secciones 1, 3, 4.6 y 7): la nota con la que la DGMIT le pide los datos
+// a un área, interna (a la Subsecretaría) o externa (al organismo), solicitud o reiteración. Las rutas exigen authMiddleware +
+// usaGeneradorDeNotas (administración y el colaborador). No se guarda nada: ni el número, ni la nota, ni quién la generó.
+// - GET /api/notas/areas: las áreas con datasets que se pueden elegir (paso 1), con el estado de hoy.
+// - GET /api/notas/areas/:id?fecha=: un área con sus datasets calculados a la fecha de la nota (paso 2).
+// - GET /api/notas/membrete: la imagen del membrete y el pie, para la hoja de la vista previa.
+// - POST /api/notas/vista-previa y POST /api/notas/generar: el HTML de la nota y su Word. Los dos salen de los mismos bloques
+//   (construirNotaDgmit), así la vista previa y el Word no pueden decir cosas distintas.
+// La validación de los campos es pura (services/notasGeneradorReglas.js) y las consultas están en services/notasGeneradorDatos.js;
+// acá se chequea lo que necesita la base: que el área exista y que cada dataset sea del área, se pueda elegir y no esté al día a
+// la fecha de la nota.
+import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  AlignmentType,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
-  BorderStyle,
-  PageBreak,
-  HeightRule,
-  VerticalAlign
-} from 'docx';
-import pool from '../config/database.js';
+  validarPedidoDeNota, ORDEN_DE_CAMPOS, MENSAJES_GENERADOR, textoAlDia, textoDeOtraArea
+} from '../services/notasGeneradorReglas.js';
+import { textoNoSePuedeElegir } from '../services/notasDgmitReglas.js';
+import { construirNotaDgmit, renderHtmlDeBloques, nombreDelWord } from '../services/notasGeneradorContenido.js';
+import { renderDocx, membreteParaWord } from '../services/notasWord.js';
+import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
+import {
+  areasParaElGenerador, areaParaElGenerador, areaDelGenerador, datasetsDeLaNota, enElOrdenDeLaTabla, membreteParaLaVistaPrevia
+} from '../services/notasGeneradorDatos.js';
+
+const TIPO_WORD = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const AREA_NO_ENCONTRADA = { success: false, error: 'Área no encontrada' };
+
+// [status, cuerpo] de un 400 de validación: { success: false, error, campo, errores }, con el primer error en el orden de los campos
+const rechazoEnCampo = (campo, error) => [400, { success: false, error, campo, errores: { [campo]: error } }];
+const rechazoDeValidacion = (errores) => {
+  const campo = ORDEN_DE_CAMPOS.find((c) => errores[c]);
+  return [400, { success: false, error: errores[campo], campo, errores }];
+};
+
+// El id de la ruta: solo dígitos y un entero positivo seguro ('abc', '0', '-3', '1.5' y '1e3' no lo son). null si no lo es (404)
+const idDelArea = (texto) => {
+  if (!/^\d+$/.test(texto ?? '')) return null;
+  const id = Number(texto);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
+// Responde 500 con el error registrado
+const errorInterno = (res, mensaje, error) => {
+  console.error(`${mensaje}:`, error);
+  res.status(500).json({ success: false, error: mensaje });
+};
 
 /**
- * Formatear fecha en español
+ * El pedido de una nota, validado y armado: [status, { datos, bloques, nombre }] o [400, cuerpo del error].
+ * Primero la validación pura (validarPedidoDeNota); después, en la base, que el área exista y que cada dataset, en el orden
+ * recibido, exista y sea del área, se pueda elegir (sePuedeElegir) y no esté al día a la fecha de la nota; el primero que no
+ * cumple da el 400 en `datasets`. Por último, la nota como bloques, con los datasets en el orden de la tabla.
+ * @param {unknown} cuerpo El cuerpo del pedido: { fecha, numero, tipo, pedido, anteriores, area_id, datasets }.
+ * @param {string} hoy 'AAAA-MM-DD'
  */
-function formatearFecha(fechaStr) {
-  const meses = [
-    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
-  ];
-  const fecha = new Date(fechaStr + 'T12:00:00');
-  const dia = fecha.getDate();
-  const mes = meses[fecha.getMonth()];
-  const anio = fecha.getFullYear();
-  return `${dia} de ${mes} de ${anio}`;
-}
+const prepararNota = async (cuerpo, hoy) => {
+  const { datos, errores } = validarPedidoDeNota(cuerpo, hoy);
+  if (Object.keys(errores).length > 0) return rechazoDeValidacion(errores);
 
-/**
- * Extraer año corto de una fecha (ej: 2026 -> 26)
- */
-function extraerAnioCorto(fechaStr) {
-  const fecha = new Date(fechaStr + 'T12:00:00');
-  const anio = fecha.getFullYear();
-  return anio.toString().slice(-2);
-}
+  const area = await areaDelGenerador(datos.area_id);
+  if (!area) return rechazoEnCampo('area', MENSAJES_GENERADOR.area);
 
-/**
- * Crear tabla sello escalera
- */
-function crearSelloEscalera(iniciales, area, fecha) {
-  const cellBorder = { style: BorderStyle.SINGLE, size: 1, color: '000000' };
-  const cellBorders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder };
-  
-  return new Table({
-    columnWidths: [900],
-    rows: [
-      new TableRow({
-        height: { value: 567, rule: HeightRule.EXACT },
-        children: [
-          new TableCell({
-            borders: cellBorders,
-            width: { size: 900, type: WidthType.DXA },
-            verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: 'MCR', font: 'Arial', size: 16 })]
-            })]
-          })
-        ]
-      }),
-      new TableRow({
-        height: { value: 567, rule: HeightRule.EXACT },
-        children: [
-          new TableCell({
-            borders: cellBorders,
-            width: { size: 900, type: WidthType.DXA },
-            verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: iniciales, font: 'Arial', size: 16 })]
-            })]
-          })
-        ]
-      }),
-      new TableRow({
-        height: { value: 567, rule: HeightRule.EXACT },
-        children: [
-          new TableCell({
-            borders: cellBorders,
-            width: { size: 900, type: WidthType.DXA },
-            verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: area, font: 'Arial', size: 16 })]
-            })]
-          })
-        ]
-      }),
-      new TableRow({
-        height: { value: 567, rule: HeightRule.EXACT },
-        children: [
-          new TableCell({
-            borders: cellBorders,
-            width: { size: 900, type: WidthType.DXA },
-            verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: fecha, font: 'Arial', size: 16 })]
-            })]
-          })
-        ]
-      })
-    ]
-  });
-}
-
-/**
- * Generar nota DOCX
- */
-export async function generarNota(req, res) {
-  try {
-    const { fecha, numero, area_id, tipo, datasets } = req.body;
-
-    // Validaciones
-    if (!fecha || !numero || !area_id || !tipo || !datasets || datasets.length === 0) {
-      return res.status(400).json({ success: false, error: 'Datos incompletos' });
-    }
-
-    // Obtener datos del área
-    const [areas] = await pool.query('SELECT * FROM areas WHERE id = ?', [area_id]);
-    if (areas.length === 0) {
-      return res.status(404).json({ success: false, error: 'Área no encontrada' });
-    }
-    const area = areas[0];
-
-    // Obtener datasets con frecuencias
-    const datasetIds = datasets.map(d => d.id);
-    const [datasetsDb] = await pool.query(`
-      SELECT d.*, f.nombre as frecuencia_nombre 
-      FROM datasets d 
-      LEFT JOIN frecuencias f ON d.frecuencia_id = f.id 
-      WHERE d.id IN (?)
-    `, [datasetIds]);
-
-    // Mapear períodos a datasets
-    const datasetsConPeriodos = datasetsDb.map(ds => {
-      const config = datasets.find(d => d.id === ds.id);
-      return {
-        ...ds,
-        periodo_inicial: config?.periodo_inicial,
-        periodo_final: config?.periodo_final
-      };
-    });
-
-    // Generar documento según tipo
-    let doc;
-    if (tipo === 'interna') {
-      doc = generarNotaInterna(fecha, numero, area, datasetsConPeriodos);
-    } else if (tipo === 'escalonada') {
-      doc = generarNotaEscalonada(fecha, numero, area, datasetsConPeriodos);
-    } else {
-      doc = generarNotaExterna(fecha, numero, area, datasetsConPeriodos);
-    }
-
-    // Convertir a buffer
-    const buffer = await Packer.toBuffer(doc);
-
-    // Enviar respuesta
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename=nota-${tipo}-${numero.replace('/', '-')}.docx`);
-    res.send(buffer);
-
-  } catch (error) {
-    console.error('Error generando nota:', error);
-    res.status(500).json({ success: false, error: 'Error al generar la nota' });
+  const porId = await datasetsDeLaNota(datos.datasets, datos.fecha);
+  for (const id of datos.datasets) {
+    const dataset = porId.get(id);
+    if (!dataset || dataset.area_id !== area.id) return rechazoEnCampo('datasets', textoDeOtraArea(dataset?.titulo ?? String(id)));
+    if (!dataset.se_puede_elegir) return rechazoEnCampo('datasets', textoNoSePuedeElegir(dataset.titulo));
+    if (!dataset.se_puede_pedir) return rechazoEnCampo('datasets', textoAlDia(dataset.titulo));
   }
-}
 
-/**
- * Generar nota interna
- */
-function generarNotaInterna(fecha, numero, area, datasets) {
-  const fechaFormateada = formatearFecha(fecha);
-  
-  // Construir lista de datasets
-  const listaDatasets = datasets.map(ds => {
-    let texto = `${ds.titulo}`;
-    if (ds.frecuencia_nombre) {
-      texto += ` (frecuencia de actualización: ${ds.frecuencia_nombre})`;
+  const elegidos = enElOrdenDeLaTabla(datos.datasets.map((id) => porId.get(id)));
+  const bloques = construirNotaDgmit({
+    tipo: datos.tipo,
+    pedido: datos.pedido,
+    fecha: datos.fecha,
+    numero: datos.numero,
+    anteriores: datos.anteriores,
+    area: { nombre: area.nombre, articulo: area.articulo, area_superior: area.area_superior, articulo_superior: area.articulo_superior },
+    datasets: elegidos.map((d) => ({
+      titulo: d.titulo, frecuencia: d.frecuencia, datosSolicitados: d.datos_solicitados, queSeSolicita: d.que_se_solicita
+    }))
+  });
+  const nombre = nombreDelWord({ tipo: datos.tipo, pedido: datos.pedido, area: area.nombre, fecha: datos.fecha });
+  return [200, { datos, bloques, nombre }];
+};
+
+// GET /api/notas/areas: las áreas con datasets que se pueden elegir, con el estado de hoy
+export const listarAreasDelGenerador = async (req, res) => {
+  try {
+    res.json({ success: true, data: await areasParaElGenerador(hoyArgentina()) });
+  } catch (error) {
+    errorInterno(res, 'Error al obtener las áreas', error);
+  }
+};
+
+// GET /api/notas/areas/:id?fecha=AAAA-MM-DD: el área con sus datasets a la fecha de la nota (sin fecha, hoy). Un id que no es un
+// entero positivo o que no existe, 404; una fecha que no sirve para una nota, el 400 de la fecha (la misma regla de la nota)
+export const verAreaDelGenerador = async (req, res) => {
+  try {
+    const id = idDelArea(req.params.id);
+    if (id === null) return res.status(404).json(AREA_NO_ENCONTRADA);
+    const hoy = hoyArgentina();
+    const fecha = req.query.fecha || hoy;
+    const errorFecha = validarPedidoDeNota({ fecha }, hoy).errores.fecha;
+    if (errorFecha) {
+      const [status, cuerpo] = rechazoEnCampo('fecha', errorFecha);
+      return res.status(status).json(cuerpo);
     }
-    if (ds.periodo_inicial || ds.periodo_final) {
-      const desde = ds.periodo_inicial ? formatearFechaCorta(ds.periodo_inicial) : '...';
-      const hasta = ds.periodo_final ? formatearFechaCorta(ds.periodo_final) : '...';
-      texto += ` - Período: ${desde} al ${hasta}`;
-    }
-    return texto;
-  });
+    const area = await areaParaElGenerador(id, fecha);
+    if (!area) return res.status(404).json(AREA_NO_ENCONTRADA);
+    res.json({ success: true, data: area });
+  } catch (error) {
+    errorInterno(res, 'Error al obtener el área', error);
+  }
+};
 
-  const children = [
+// GET /api/notas/membrete: la imagen del membrete (un data URL, o null) y el pie, los mismos que lleva el Word
+export const verMembreteDelGenerador = async (req, res) => {
+  try {
+    res.json({ success: true, data: await membreteParaLaVistaPrevia() });
+  } catch (error) {
+    errorInterno(res, 'Error al obtener el membrete', error);
+  }
+};
 
-    // REF
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'REF.: ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: '"Solicitud de datos para Portal de Datos Abiertos Municipal"', font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 100 }
-    }),
+// POST /api/notas/vista-previa: { html, nombre }, el cuerpo de la nota (sin la hoja: la pone la página) y el nombre del Word
+export const verVistaPrevia = async (req, res) => {
+  try {
+    const [status, cuerpo] = await prepararNota(req.body, hoyArgentina());
+    if (status !== 200) return res.status(status).json(cuerpo);
+    res.json({ success: true, data: { html: renderHtmlDeBloques(cuerpo.bloques), nombre: cuerpo.nombre } });
+  } catch (error) {
+    errorInterno(res, 'Error al armar la vista previa de la nota', error);
+  }
+};
 
-    // Número de nota
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'Nota N° ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: numero, font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 400 }
-    }),
-
-    // Destinatario
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'SUBSECRETARÍA DE MODERNIZACIÓN Y TRANSPARENCIA', 
-          bold: true, 
-          underline: {},
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      spacing: { after: 400 }
-    }),
-
-    // Primer párrafo
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: `Solicito a Ud. tenga a bien gestionar ante ${area.articulo} `, 
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: area.nombre, 
-          bold: true,
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: area.area_superior ? `, dependiente de ${area.articulo_superior} ${area.area_superior}, ` : ', ',
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: 'la remisión de la siguiente información, preferiblemente en formato digital editable (Excel, CSV, etc.):',
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      alignment: AlignmentType.JUSTIFIED,
-      spacing: { after: 200 }
-    })
-  ];
-
-  // Lista de datasets
-  listaDatasets.forEach(item => {
-    children.push(new Paragraph({
-      children: [
-        new TextRun({ text: '• ', font: 'Arial', size: 24 }),
-        new TextRun({ text: item, font: 'Arial', size: 24 })
-      ],
-      indent: { left: 720 },
-      spacing: { after: 100 }
-    }));
-  });
-
-  // Justificación
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ text: 'Justificación:', bold: true, font: 'Arial', size: 24 })
-    ],
-    spacing: { before: 300, after: 200 }
-  }));
-
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Dicha solicitud se enmarca en el cumplimiento de la Ordenanza N° 17.662/23, que establece la necesidad de garantizar que los datos publicados en el portal de datos abiertos, datos.comodoro.gov.ar, mantengan su valor. Motivo por el cual resulta fundamental mantener actualizada la información disponible en el mencionado sitio.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 200 }
-  }));
-
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Los datos solicitados pueden ser remitidos a los correos electrónicos ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'datospublicos@comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: ' o ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'mit@comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: '. Los mismos, una vez recibidos, serán publicados en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza, garantizando su disponibilidad en formatos abiertos y reutilizables para generar valor económico y social.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 400 }
-  }));
-
-  // Firma
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL', 
-        bold: true, 
-        underline: {},
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: `, ${fechaFormateada}.`,
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    spacing: { before: 200 }
-  }));
-
-  return new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: 'Arial', size: 24 }
-        }
-      }
-    },
-    sections: [{
-      properties: {
-        page: {
-          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
-        }
-      },
-      children
-    }]
-  });
-}
-
-/**
- * Generar nota externa
- */
-function generarNotaExterna(fecha, numero, area, datasets) {
-  const fechaFormateada = formatearFecha(fecha);
-  
-  // Construir lista de datasets
-  const listaDatasets = datasets.map(ds => {
-    let texto = `${ds.titulo}`;
-    if (ds.frecuencia_nombre) {
-      texto += ` (frecuencia de actualización: ${ds.frecuencia_nombre})`;
-    }
-    if (ds.periodo_inicial || ds.periodo_final) {
-      const desde = ds.periodo_inicial ? formatearFechaCorta(ds.periodo_inicial) : '...';
-      const hasta = ds.periodo_final ? formatearFechaCorta(ds.periodo_final) : '...';
-      texto += ` - Período: ${desde} al ${hasta}`;
-    }
-    return texto;
-  });
-
-  const children = [
-    // Fecha alineada a la derecha
-    new Paragraph({
-      children: [
-        new TextRun({ text: `Comodoro Rivadavia, ${fechaFormateada}`, font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 400 }
-    }),
-
-    // Destinatario
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'A la', font: 'Arial', size: 24 })
-      ]
-    }),
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: area.nombre, 
-          bold: true, 
-          underline: {},
-          font: 'Arial', 
-          size: 24 
-        })
-      ]
-    }),
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'PRESENTE', 
-          bold: true, 
-          underline: {},
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      spacing: { after: 400 }
-    }),
-
-    // REF
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'REF.: ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: '"Solicitud de datos para Portal de Datos Abiertos Municipal"', font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 100 }
-    }),
-
-    // Número de nota
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'Nota N° ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: numero, font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 400 }
-    }),
-
-    // Saludo
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'De nuestra consideración:', font: 'Arial', size: 24 })
-      ],
-      spacing: { after: 300 }
-    }),
-
-    // Primer párrafo
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'Nos dirigimos a Uds. a fin de solicitarles tengan a bien brindar la siguiente información, preferiblemente en formato digital editable (Excel, CSV, etc.):',
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      alignment: AlignmentType.JUSTIFIED,
-      spacing: { after: 200 }
-    })
-  ];
-
-  // Lista de datasets
-  listaDatasets.forEach(item => {
-    children.push(new Paragraph({
-      children: [
-        new TextRun({ text: '• ', font: 'Arial', size: 24 }),
-        new TextRun({ text: item, font: 'Arial', size: 24 })
-      ],
-      indent: { left: 720 },
-      spacing: { after: 100 }
-    }));
-  });
-
-  // Justificación
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Motiva dicha solicitud la necesidad de actualizar y publicar los datasets disponibles en la página oficial de Datos Abiertos de la Municipalidad de Comodoro Rivadavia (',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'datos.comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: '), en cumplimiento de la Ordenanza N° 17.662/23 y los principios de transparencia y acceso a la información pública que sustentan nuestras políticas de gobierno abierto.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { before: 300, after: 200 }
-  }));
-
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Los datos pueden ser remitidos a los correos electrónicos ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'datospublicos@comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: ' o ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'mit@comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: '.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 200 }
-  }));
-
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Quedamos a disposición para coordinar los detalles técnicos o administrativos necesarios.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 300 }
-  }));
-
-  // Despedida
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ text: 'Sin más, saludamos a Uds. atentamente.', font: 'Arial', size: 24 })
-    ],
-    spacing: { after: 600 }
-  }));
-
-  return new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: 'Arial', size: 24 }
-        }
-      }
-    },
-    sections: [{
-      properties: {
-        page: {
-          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
-        }
-      },
-      children
-    }]
-  });
-}
-
-/**
- * Generar nota escalonada (DDPC → DGMIT + DGMIT → Subsecretaría)
- */
-function generarNotaEscalonada(fecha, numero, area, datasets) {
-  const fechaFormateada = formatearFecha(fecha);
-  const anioCorto = extraerAnioCorto(fecha);
-  const fechaCorta = formatearFechaCorta(fecha);
-  
-  // Construir lista de datasets
-  const listaDatasets = datasets.map(ds => {
-    let texto = `${ds.titulo}`;
-    if (ds.frecuencia_nombre) {
-      texto += ` (frecuencia de actualización: ${ds.frecuencia_nombre})`;
-    }
-    if (ds.periodo_inicial || ds.periodo_final) {
-      const desde = ds.periodo_inicial ? formatearFechaCorta(ds.periodo_inicial) : '...';
-      const hasta = ds.periodo_final ? formatearFechaCorta(ds.periodo_final) : '...';
-      texto += ` - Período: ${desde} al ${hasta}`;
-    }
-    return texto;
-  });
-
-  // =====================================================
-  // HOJA 1: DDPC → DGMIT
-  // =====================================================
-  const childrenHoja1 = [
-    // REF
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'REF.: ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: '"Solicitud de datos para Portal de Datos Abiertos Municipal"', font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 100 }
-    }),
-
-    // Número de nota (completo)
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'Nota N° ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: `${numero}/${anioCorto}`, font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 400 }
-    }),
-
-    // Destinatario
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL', 
-          bold: true, 
-          underline: {},
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      spacing: { after: 400 }
-    }),
-
-    // Primer párrafo
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: `Solicito a Ud. gestionar, por las vías administrativas correspondientes, ante ${area.articulo} `,
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: area.nombre, 
-          bold: true,
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: area.area_superior ? `, dependiente de ${area.articulo_superior} ${area.area_superior}, ` : ', ',
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: 'la remisión de la siguiente información en formato digital editable (Excel, CSV, etc.):',
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      alignment: AlignmentType.JUSTIFIED,
-      spacing: { after: 200 }
-    })
-  ];
-
-  // Lista de datasets
-  listaDatasets.forEach(item => {
-    childrenHoja1.push(new Paragraph({
-      children: [
-        new TextRun({ text: '• ', font: 'Arial', size: 24 }),
-        new TextRun({ text: item, font: 'Arial', size: 24 })
-      ],
-      indent: { left: 720 },
-      spacing: { after: 100 }
-    }));
-  });
-
-  // Justificación
-  childrenHoja1.push(new Paragraph({
-    children: [
-      new TextRun({ text: 'Justificación:', bold: true, font: 'Arial', size: 24 })
-    ],
-    spacing: { before: 300, after: 200 }
-  }));
-
-  childrenHoja1.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Esta solicitud se enmarca en la Ordenanza N° 17.662/23, que promueve mantener actualizados los datos, tanto de áreas municipales como de organismos externos, en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar).',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 200 }
-  }));
-
-  childrenHoja1.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Los datos solicitados pueden ser remitidos a los correos electrónicos ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'datospublicos@comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: ' o ',
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: 'mit@comodoro.gov.ar',
-        font: 'Arial', 
-        size: 24,
-        underline: {}
-      }),
-      new TextRun({ 
-        text: '. Los mismos, una vez recibidos, serán publicados en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza, garantizando su disponibilidad en formatos abiertos y reutilizables para generar valor económico y social.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 200 }
-  }));
-
-  // Fojas
-  childrenHoja1.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'Consta de 2 (dos) fojas.',
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    spacing: { after: 400 }
-  }));
-
-  // Firma
-  childrenHoja1.push(new Paragraph({
-    children: [
-      new TextRun({ 
-        text: 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 
-        bold: true, 
-        underline: {},
-        font: 'Arial', 
-        size: 24 
-      }),
-      new TextRun({ 
-        text: `, ${fechaFormateada}.`,
-        font: 'Arial', 
-        size: 24 
-      })
-    ],
-    alignment: AlignmentType.JUSTIFIED,
-    spacing: { after: 400 }
-  }));
-
-  // Sello escalera DDPC
-  childrenHoja1.push(crearSelloEscalera('ANB', 'DDPC', fechaCorta));
-
-  // =====================================================
-  // HOJA 2: DGMIT → Subsecretaría
-  // =====================================================
-  const childrenHoja2 = [
-    // REF
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'REF.: ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: '"Solicitud de datos para Portal de Datos Abiertos Municipal"', font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 100 }
-    }),
-
-    // Número de nota (en blanco + año)
-    new Paragraph({
-      children: [
-        new TextRun({ text: 'Nota N° ', bold: true, font: 'Arial', size: 24 }),
-        new TextRun({ text: `         /${anioCorto}`, font: 'Arial', size: 24 })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 400 }
-    }),
-
-    // Destinatario
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'SUBSECRETARÍA DE MODERNIZACIÓN Y TRANSPARENCIA', 
-          bold: true, 
-          underline: {},
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      spacing: { after: 400 }
-    }),
-
-    // Primer párrafo
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: `Solicito a Ud. tenga a bien gestionar ante ${area.articulo} `, 
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: area.nombre, 
-          bold: true,
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: area.area_superior ? `, dependiente de ${area.articulo_superior} ${area.area_superior}, ` : ', ',
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: 'la remisión de la siguiente información requerida por la Dirección de Datos Públicos y Comunicación.',
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      alignment: AlignmentType.JUSTIFIED,
-      spacing: { after: 300 }
-    }),
-
-    // Se adjunta nota anexa
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'Se adjunta nota anexa.',
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      spacing: { after: 300 }
-    }),
-
-    // Fojas
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'Consta de 3 (tres) fojas.',
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      spacing: { after: 400 }
-    }),
-
-    // Firma
-    new Paragraph({
-      children: [
-        new TextRun({ 
-          text: 'DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL', 
-          bold: true, 
-          underline: {},
-          font: 'Arial', 
-          size: 24 
-        }),
-        new TextRun({ 
-          text: `, ${fechaFormateada}.`,
-          font: 'Arial', 
-          size: 24 
-        })
-      ],
-      alignment: AlignmentType.JUSTIFIED,
-      spacing: { after: 400 }
-    }),
-
-    // Sello escalera DGMIT
-    crearSelloEscalera('GAL', 'DGMIT', fechaCorta)
-  ];
-
-  return new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: 'Arial', size: 24 }
-        }
-      }
-    },
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
-          }
-        },
-        children: childrenHoja1
-      },
-      {
-        properties: {
-          page: {
-            margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
-          }
-        },
-        children: childrenHoja2
-      }
-    ]
-  });
-}
-
-/**
- * Formatear fecha corta
- */
-function formatearFechaCorta(fechaStr) {
-  if (!fechaStr) return '';
-  const fecha = new Date(fechaStr + 'T12:00:00');
-  return fecha.toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-}
+// POST /api/notas/generar: el Word, en la hoja membretada y sin firma ("Nota interna - <área> - <AAAA-MM-DD>.docx")
+export const generarNota = async (req, res) => {
+  try {
+    const [status, cuerpo] = await prepararNota(req.body, hoyArgentina());
+    if (status !== 200) return res.status(status).json(cuerpo);
+    const word = await renderDocx(cuerpo.bloques, await membreteParaWord());
+    res.setHeader('Content-Type', TIPO_WORD);
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(cuerpo.nombre));
+    res.send(word);
+  } catch (error) {
+    errorInterno(res, 'Error al generar la nota', error);
+  }
+};

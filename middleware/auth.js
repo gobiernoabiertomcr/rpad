@@ -89,6 +89,18 @@ export const cargaNotasDgmit = (req, res, next) => {
   next();
 };
 
+// Middleware para el generador de notas (spec 2026-10-24-generador-de-notas, sección 1): lo usan los mismos que cargan notas
+// DGMIT, administración y el colaborador (puedeCargarNotasDgmit). El lector no
+export const usaGeneradorDeNotas = (req, res, next) => {
+  if (!puedeCargarNotasDgmit(req.user?.rol)) {
+    return res.status(403).json({
+      success: false,
+      error: 'No tenés permiso para usar el generador de notas.'
+    });
+  }
+  next();
+};
+
 // Middleware para el cron externo: clave en header x-cron-secret o query ?secret=
 // Si CRON_SECRET no está configurado se rechaza todo (antes undefined === undefined dejaba pasar)
 export const cronAuth = (req, res, next) => {

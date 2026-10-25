@@ -146,6 +146,31 @@ describe('notas DGMIT', () => {
   });
 });
 
+// El generador de notas (spec 2026-10-24-generador-de-notas, sección 1): lo usan los mismos que cargan notas DGMIT,
+// administración y el colaborador, no el lector. Los IDs no importan: el rol se valida antes
+const RUTAS_GENERADOR = [
+  ['GET', '/notas/areas'],
+  ['GET', '/notas/areas/1'],
+  ['GET', '/notas/membrete'],
+  ['POST', '/notas/vista-previa'],
+  ['POST', '/notas/generar']
+];
+
+describe('generador de notas', () => {
+  for (const [metodo, ruta] of RUTAS_GENERADOR) {
+    it(`el lector recibe 403 en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, usuarios.lector.token);
+      assert.equal(res.status, 403);
+      assert.equal(res.body.error, 'No tenés permiso para usar el generador de notas.');
+    });
+
+    it(`el visitante sin sesión recibe 401 en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, undefined);
+      assert.equal(res.status, 401);
+    });
+  }
+});
+
 // El colaborador (spec 2026-10-24-notas-dgmit, sección 1): ve lo que ve un lector y carga notas DGMIT; no entra a la administración
 describe('colaborador', () => {
   for (const [metodo, ruta] of RUTAS_SOLO_ADMIN) {
@@ -190,6 +215,23 @@ describe('colaborador', () => {
     const res = await pedir('POST', '/notas-dgmit', usuarios.colaborador.token);
     assert.equal(res.status, 400);
     assert.equal(res.body.campo, 'numero');
+  });
+
+  // El generador de notas: el middleware lo deja pasar y contesta el controlador (los datos, la validación de un cuerpo vacío o un
+  // área que no existe): nunca el 403 del middleware, un 401 ni el 404 de una ruta que no existe. No se guarda nada
+  for (const [metodo, ruta] of RUTAS_GENERADOR) {
+    it(`llega al controlador en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, usuarios.colaborador.token);
+      assert.ok([200, 400, 404].includes(res.status), `${res.status} ${JSON.stringify(res.body)}`);
+      assert.notEqual(res.body.error, 'No tenés permiso para usar el generador de notas.');
+      assert.notEqual(res.body.error, 'Ruta no encontrada');
+    });
+  }
+
+  it('POST /notas/generar sin datos da el 400 de la validación, en la fecha', async () => {
+    const res = await pedir('POST', '/notas/generar', usuarios.colaborador.token);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.campo, 'fecha');
   });
 });
 

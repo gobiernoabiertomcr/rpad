@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, adminOnly, cargaNotasDgmit, cronAuth } from '../middleware/auth.js';
+import { authMiddleware, adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth } from '../middleware/auth.js';
 import { limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso } from '../middleware/rateLimit.js';
 
 // Controladores
@@ -64,7 +64,9 @@ import {
   reporteParaCompletar,
   reporteInformeAnual
 } from '../controllers/reportesController.js';
-import { generarNota } from '../controllers/notasController.js';
+import {
+  listarAreasDelGenerador, verAreaDelGenerador, verMembreteDelGenerador, verVistaPrevia, generarNota
+} from '../controllers/notasController.js';
 import {
   getContadorPendientes,
   getCambiosPendientesParaRevisar,
@@ -273,9 +275,13 @@ router.put('/notas-dgmit/:id', authMiddleware, cargaNotasDgmit, corregirNotaDgmi
 router.post('/notas-dgmit/:id/anular', authMiddleware, cargaNotasDgmit, anularNotaDgmit);
 
 // =====================================================
-// Notas DOCX (protegidas)
+// Generador de notas (protegidas: administración y el colaborador, los que cargan notas DGMIT; spec 2026-10-24-generador-de-notas)
 // =====================================================
-router.post('/notas/generar', authMiddleware, generarNota);
+router.get('/notas/areas', authMiddleware, usaGeneradorDeNotas, listarAreasDelGenerador);
+router.get('/notas/areas/:id', authMiddleware, usaGeneradorDeNotas, verAreaDelGenerador);
+router.get('/notas/membrete', authMiddleware, usaGeneradorDeNotas, verMembreteDelGenerador);
+router.post('/notas/vista-previa', authMiddleware, usaGeneradorDeNotas, verVistaPrevia);
+router.post('/notas/generar', authMiddleware, usaGeneradorDeNotas, generarNota);
 
 // =====================================================
 // Cron (protegido por clave secreta)
