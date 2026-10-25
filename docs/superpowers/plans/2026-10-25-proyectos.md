@@ -301,7 +301,7 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - `htmlDeCarriles`: un link `href="?id=7"` (con el estado de la dirección) por proyecto; la píldora «3 antes» con `title="3 hitos antes de 2024"`; «Sin hitos todavía»; el renglón «Logros del área»; un nombre `<img src=x onerror=alert(1)>` sale escapado (en el texto y en el `title`); el nombre lleva la clase que hace `overflow-wrap: anywhere`;
   - el vacío por filtros con «Ver todos los proyectos»; sin ningún proyecto, para el lector «Todavía no hay proyectos.» sin la invitación, y para administración, con ella;
   - en `paginas.test.js`, sumar `const VERSION_PROYECTOS = '20261206'` (con su comentario, como las demás) y `['proyectos.html', 'proyectos', VERSION_PROYECTOS]` al arreglo de los scripts «después de api.js» (hoy termina en `['notas.html', 'notas', VERSION_NOTAS]`);
-  - en `paginas.test.js`, `it('hay 13 páginas con carcasa')` pasa a 14 mientras conviven `gestion.html` y `proyectos.html` (la Task 9 lo vuelve a 13). Los tests que recorren las páginas con carcasa ya cubren `proyectos.html`: la carcasa igual a la de `index.html`, `main.css` y las fuentes, los destinos del menú (todavía con `gestion.html`), sin `aria-current`, sin `publico.css`, nada de afuera y `auth`, `main` y `api` con `VERSION`.
+  - en `paginas.test.js`, `it('hay 13 páginas con carcasa')` pasa a 14 mientras conviven `gestion.html` y `proyectos.html`, con su comentario al día (líneas 376-377; la Task 9 lo vuelve a 13). Los tests que recorren las páginas con carcasa ya cubren `proyectos.html`: la carcasa igual a la de `index.html`, `main.css` y las fuentes, los destinos del menú (todavía con `gestion.html`), sin `aria-current`, sin `publico.css`, nada de afuera y `auth`, `main` y `api` con `VERSION`.
 - [ ] **Step 2:** Correr `node --test tests/proyectos-frontend.test.js tests/paginas.test.js`. Esperado: FAIL.
 - [ ] **Step 3:** Implementar las funciones en `proyectos.js` (al cargarse solo declara) y `proyectos.html`.
 - [ ] **Step 4:** Correr (PASS) y `npm test` completo.
@@ -462,7 +462,7 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - la estructura (`proyectosController`, `proyectosReglas`);
   - la lista de las páginas con carcasa (`proyectos` en lugar de `gestion`);
   - la convención de `proyectos.js` («al cargarse solo declara», sus copias mínimas y sus paridades), con el estilo de las de `seguimiento.js` y `reportes.js`;
-  - el lector («… Notas, Proyectos y Seguimiento…»);
+  - el lector: solo «Gestión» pasa a «Proyectos» («Métricas y Reportes, Proyectos y Seguimiento»; sigue sin Notas, desde el Generador);
   - «hitos de Herramientas → Proyectos»;
   - el párrafo de Gestión de Métricas y Reportes;
   - una sección corta «Proyectos (spec 2026-10-25-proyectos)»: carriles de 3 años, la cinta, las descargas para todos los roles, la redirección y `UPLOADS_DIR` para los tests.
@@ -497,7 +497,7 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - `git worktree remove`;
   - comprobar que `C:\git\rpad\node_modules` sigue entero.
 - [ ] **Step 7:** Actualizar la memoria (`proyectos.md`) y la nota de la carpeta compartida con el hash del merge.
-- [ ] **Step 8:** Avisarle con el hash del merge, por `SendMessage`, a la sesión que va después en la cola: «Ciclo de Vida del Dato» (`local_8b509d51-747e-43e4-a743-4fcf82eb590a`, rama `claude/ciclo-de-vida-del-dato-aba0d0`). Se cruzan en `VERSION_REPORTES` y el `?v=` de `reportes.js`, `tests/permisos.test.js`, `tests/reportes-frontend.test.js`, `CLAUDE.md` y `README.md`.
+- [ ] **Step 8:** Avisarle con el hash del merge, por `SendMessage`, a la sesión que va después en la cola: «Ciclo de Vida del Dato» (`local_8b509d51-747e-43e4-a743-4fcf82eb590a`, rama `claude/ciclo-de-vida-del-dato-aba0d0`). Se cruzan en `VERSION_REPORTES` y el `?v=` de `reportes.js`, `tests/permisos.test.js`, `tests/reportes-frontend.test.js`, `CLAUDE.md` y `README.md`. El mensaje dice también que la sesión que mergee segunda toma para `reportes.js` (`VERSION_REPORTES`) un `?v=` más alto que cualquiera que ya esté en main: así el mismo número nunca sale dos veces con contenido distinto (Ruling R6).
 
 ## Diferencias encontradas
 
@@ -517,6 +517,6 @@ Task 1, 25/10/2026: main trae el Generador de Notas (c26e0e8) y Configuración (
    - `controllers/gestionController.js` y `config/upload.js`;
    - `public/gestion.html`, salvo el menú de Administración y el `?v=` de los scripts compartidos;
    - `ICON_SELECTOR_MAP` (25 claves) y el link de Gestión de `#sidebarTools`.
-7. **El grep de la Task 9** encuentra también dos comentarios que ya estaban: el de `public/js/api.js:536`, que no se toca porque `api.js` no cambia, y el de `public/js/reportes.js:776`, que la Task 9 corrige.
+7. **El grep de la Task 9** encuentra también tres comentarios que ya estaban: el de `public/js/api.js:536`, que no se toca porque `api.js` no cambia, y los de `public/js/reportes.js:776` y `services/reportesInformeAnualPdf.js:25`, que la Task 9 corrige.
 
 Base: `npm test` da 4384 tests, 4379 pasan, 0 fallan y 5 se omiten (hoy no es día hábil).
