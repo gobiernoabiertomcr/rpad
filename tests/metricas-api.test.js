@@ -122,7 +122,7 @@ describe('GET /metricas', () => {
       assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios.at(-1)], [anio, hoy, true, null, anio], quien);
       assert.deepEqual(Object.keys(data.vista), ['circuito', 'resultados', 'casos', 'para_completar'], quien);
       assert.deepEqual(Object.keys(data.cinta), ['externa', 'interna'], quien);
-      assert.deepEqual(Object.keys(data.contexto), ['indice', 'antiguedad', 'estados'], quien);
+      assert.deepEqual(Object.keys(data.contexto), ['indice', 'indice_vacio', 'antiguedad', 'estados'], quien);
       assert.deepEqual(data.sin_titulos, [], quien);
     }
     for (const token of [undefined, 'no-es-un-token']) {
@@ -207,7 +207,13 @@ describe('GET /metricas', () => {
     const [metricas, portada] = await Promise.all([api.get('/metricas', como('lector')), api.get('/datasets/estadisticas')]);
     assert.equal(portada.body.data.tasaActualizacion, 75);
     const { contexto } = metricas.body.data;
-    assert.deepEqual(contexto.indice.at(-1), { dia: hoy, tasa: 75, al_dia: 3, base: 4, etiqueta: contexto.indice.at(-1).etiqueta, texto: 'Hoy: 75% al día (3 de 4)' });
+    // La etiqueta del eje: el mes si hoy es el primero de un mes; si no, «hoy» (o «31/12», el último día del año, que es el del año cerrado)
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const finDeAnio = hoy.endsWith('-12-31');
+    const etiqueta = hoy.endsWith('-01') ? meses[Number(hoy.slice(5, 7)) - 1] : finDeAnio ? '31/12' : 'hoy';
+    const cuando = finDeAnio ? `Al 31/12/${hoy.slice(0, 4)}` : 'Hoy';
+    assert.deepEqual(contexto.indice.at(-1), { dia: hoy, tasa: 75, al_dia: 3, base: 4, etiqueta, texto: `${cuando}: 75% al día (3 de 4)` });
+    assert.equal(contexto.indice_vacio, null);
     assert.deepEqual([contexto.estados.tasa, contexto.estados.actualizado, contexto.estados.vencidos], [75, 3, 1]);
   });
 });
@@ -244,7 +250,8 @@ const metricasDeLasReglas = (fuentes, { estadistico, dias }) => {
   return {
     vista: vistaDe(casos, { ...opciones, estadistico, dias }),
     contexto: {
-      indice: indiceMesAMes(fuentes, opciones), antiguedad: antiguedadDeVencidos(fuentes, opciones), estados: estadosAl(fuentes, opciones)
+      indice: indiceMesAMes(fuentes, opciones), indice_vacio: null, antiguedad: antiguedadDeVencidos(fuentes, opciones),
+      estados: estadosAl(fuentes, opciones)
     },
     trabajo: trabajoDelAnio(fuentes, casos, { ...opciones, estadistico }),
     areas: areasYTemas(fuentes, opciones)

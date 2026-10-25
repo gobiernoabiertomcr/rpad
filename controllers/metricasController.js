@@ -1,7 +1,5 @@
 import { fuentesDe } from '../services/seguimientoDatos.js';
-import {
-  casosDe, vistaDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio, areasYTemas
-} from '../services/metricasReglas.js';
+import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas } from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { claveDeLaVista, leerFoto, aniosConFoto as leerAniosConFoto } from '../services/metricasFoto.js';
 import { opcionesDeMetricas, aniosDeMetricas } from '../services/metricasOpciones.js';
@@ -31,11 +29,7 @@ const enVivo = (fuentesPorDataset, { anio, al, estadistico, dias, sin }) => {
   return {
     vista,
     cinta: cintasDeLaVista(vista, { estadistico, dias }),
-    contexto: {
-      indice: indiceMesAMes(fuentesPorDataset, opciones),
-      antiguedad: antiguedadDeVencidos(fuentesPorDataset, opciones),
-      estados: estadosAl(fuentesPorDataset, opciones)
-    },
+    contexto: contextoDelAnio(fuentesPorDataset, opciones),
     trabajo: trabajoDelAnio(fuentesPorDataset, casos, { ...opciones, estadistico }),
     areas: areasYTemas(fuentesPorDataset, opciones),
     sin_titulos: titulosDe(fuentesPorDataset, sin)
@@ -58,13 +52,14 @@ const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
 // métricas (un año anterior a 2026 o futuro). `hoy`: el día de hoy (por defecto, el de Argentina). Lee la base: los años con foto y,
 // según el año, la foto o las fuentes de todos los datasets (fuentesDe). Tira si algo falla (también con una foto que no se puede
 // leer). Devuelve:
-// { anio, al, en_vivo, aviso_foto, anios, vista, cinta: { externa, interna }, contexto: { indice, antiguedad, estados }, trabajo,
-//   areas, sin_titulos }
+// { anio, al, en_vivo, aviso_foto, anios, vista, cinta: { externa, interna }, contexto: { indice, indice_vacio, antiguedad, estados },
+//   trabajo, areas, sin_titulos }
 // - anio, al, en_vivo y aviso_foto: los de opcionesDeMetricas; anios: los años que se pueden elegir (aniosDeMetricas);
 // - vista: la de vistaDe con lo elegido (el circuito, los resultados, los casos y «Para completar»); cinta: la de cada gestión
 //   (cintaDeMetricas; null si no se dibuja);
-// - contexto: el índice mes a mes (indiceMesAMes), la antigüedad de los vencidos (antiguedadDeVencidos) y los estados de `al`
-//   (estadosAl); trabajo: el del RPAD con el estadístico elegido (trabajoDelAnio); areas: areasYTemas;
+// - contexto: contextoDelAnio, el índice mes a mes (indiceMesAMes, y si no hay nada que dibujar, por qué), la antigüedad de los
+//   vencidos (antiguedadDeVencidos) y los estados de `al` (estadosAl); trabajo: el del RPAD con el estadístico elegido
+//   (trabajoDelAnio); areas: areasYTemas;
 // - sin_titulos: los títulos de los destildados que existen, en el orden pedido ([] si no hay, y siempre en un año con foto).
 export const metricasDe = async (query, { hoy = hoyArgentina() } = {}) => {
   const aniosConFoto = await leerAniosConFoto();

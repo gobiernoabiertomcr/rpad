@@ -601,12 +601,15 @@ function htmlDeCobertura(c, t) {
 }
 
 // Reiteraciones por ciclo (spec 2.2), en dos grupos de barras: del RPAD a la DGMIT (Ninguna, 1 y 2 o más) y de la DGMIT al área
-// (Ninguna y 1 o más), cada uno con su título del servidor; sin nada que mostrar, por qué (también del servidor)
+// (Ninguna y 1 o más), cada uno con su título del servidor; sin nada que mostrar, por qué (también del servidor). Debajo de las del
+// RPAD, la aclaración de los emails viejos, si el servidor la manda (Ruling 21)
 function htmlDeReiteraciones(r, t) {
   const rpad = objetoDe(r.rpad);
   const dgmit = esObjeto(r.dgmit) ? r.dgmit : null;
   const vacio = (texto) => (escaparTexto(texto) ? `<p class="mt-vacio-caja">${escaparTexto(texto)}</p>` : '');
-  const delRpad = escaparTexto(t.rpad_vacio) ? vacio(t.rpad_vacio) : htmlDeBarras(GRUPOS_DEL_RPAD.map(([clave, texto]) => [texto, rpad[clave]]));
+  const aclaracion = escaparTexto(t.aclaracion);
+  const delRpad = (escaparTexto(t.rpad_vacio) ? vacio(t.rpad_vacio) : htmlDeBarras(GRUPOS_DEL_RPAD.map(([clave, texto]) => [texto, rpad[clave]])))
+    + (aclaracion ? `<p class="mt-pie mt-aclaracion">${aclaracion}</p>` : '');
   const deLaDgmit = escaparTexto(t.dgmit_vacio) || dgmit === null ? vacio(t.dgmit_vacio)
     : htmlDeBarras(GRUPOS_DE_LA_DGMIT.map(([clave, texto]) => [texto, dgmit[clave]]));
   return abrirTarjeta('mt-res-reiteraciones', 'Reiteraciones por ciclo')
@@ -697,15 +700,16 @@ function htmlDeAntiguedad(antiguedad) {
 }
 
 // El contexto (spec 2.2): el índice mes a mes (con el valor de hoy en la cabeza y todos los valores también en una lista) y la
-// antigüedad de los vencidos. Sin contexto, nada
+// antigüedad de los vencidos. Si no hay nada que dibujar, lo que dice el servidor (contexto.indice_vacio). Sin contexto, nada
 function htmlDeContexto(contexto) {
   if (!esObjeto(contexto)) return '';
   const indice = comoLista(contexto.indice).filter(esObjeto);
-  const svg = svgDeIndice(indice);
+  const vacio = escaparTexto(contexto.indice_vacio);
+  const svg = vacio ? '' : svgDeIndice(indice);
   const hoy = escaparTexto(indice.at(-1)?.texto);
   const valores = indice.map((p) => escaparTexto(p.texto)).filter(Boolean);
   return abrirTarjeta('mt-ctx-indice', 'Índice de actualización, mes a mes', hoy ? `<span>${hoy}</span>` : '')
-    + (svg ? `<div class="mt-indice-marco">${svg}</div>` : '<p class="mt-vacio">No hay datos para dibujar el índice.</p>')
+    + (vacio ? `<p class="mt-vacio">${vacio}</p>` : '') + (svg ? `<div class="mt-indice-marco">${svg}</div>` : '')
     + (valores.length ? `<details class="mt-valores"><summary>Ver los valores</summary><ul>${valores.map((v) => `<li>${v}</li>`).join('')}</ul></details>` : '')
     + '<p class="mt-pie">Es el índice de la portada: al día (actualizados y próximos a vencer) sobre los que tienen vencimiento. Un punto por el primer día de cada mes, y el último, el de hoy (en un año cerrado, el 31/12).</p></section>'
     + htmlDeAntiguedad(contexto.antiguedad);
@@ -757,6 +761,14 @@ function htmlDeMetricasManuales(lista, { anio = null, esAdmin = false } = {}) {
   }).join('')}</ul>`;
 }
 
+// Cuántos meses pedirle a /gestion/metricas-manuales para tener las del año `anio`, con `hoy` ('AAAA-MM-DD', en Argentina): la API
+// devuelve los últimos N meses con su propio reloj (CURDATE de la base, que puede ir en UTC: después de las 21 del último día del mes
+// ya es el mes siguiente), así que se pide uno más; la página se queda con las del año (htmlDeMetricasManuales)
+function mesesDeMetricasManuales(anio, hoy) {
+  const meses = (Number(String(hoy).slice(0, 4)) - anio) * 12 + Number(String(hoy).slice(5, 7));
+  return Number.isInteger(meses) && meses > 0 ? meses : 12;
+}
+
 // =====================================================
 // Áreas y temas (puros; textoPorcentaje y htmlDelRanking vienen de gestion.js, sin cambios)
 // =====================================================
@@ -796,15 +808,16 @@ const AGRUPAR = [['temas', 'Tema'], ['frecuencias', 'Frecuencia']];
 
 // Áreas y temas (spec 2.2, lo que estaba en la pestaña Métricas de Gestión): el ranking de áreas (htmlDelRanking, con lo que manda el
 // servidor: la regla de cumplimientoPorArea) y los datasets por tema o por frecuencia (`agrupar`) en barras horizontales, con un chip
-// para cambiar entre los dos. Sin áreas, nada
+// para cambiar entre los dos; si la lista está vacía, lo que dice el servidor (areas.vacios). Sin áreas, nada
 function htmlDeAreas(areas, agrupar = 'temas') {
   if (!esObjeto(areas)) return '';
   const g = elegido(agrupar, AGRUPAR);
   const filas = comoLista(areas[g]).filter((fila) => Array.isArray(fila) && esNumero(fila[1]));
+  const vacio = escaparTexto(objetoDe(areas.vacios)[g]);
   return abrirTarjeta('mt-titulo-ranking', 'Ranking de áreas', '<span>Al día sobre los que tienen vencimiento</span>')
     + `<div class="mt-tabla-marco mt-ranking" tabindex="0" role="group" aria-label="Ranking de áreas">${htmlDelRanking(comoLista(areas.ranking).filter(esObjeto))}</div></section>`
     + abrirTarjeta('mt-titulo-temas', 'Datasets por tema y por frecuencia', htmlDeChips('agrupar', AGRUPAR, g, 'Agrupar los datasets por'))
-    + (filas.length ? htmlDeBarras(filas) : '<p class="mt-vacio">Sin datasets.</p>') + '</section>';
+    + (vacio ? `<p class="mt-vacio">${vacio}</p>` : htmlDeBarras(filas)) + '</section>';
 }
 
 // =====================================================
@@ -1244,14 +1257,13 @@ function cerrarFormularioManual() {
   abrir.focus();
 }
 
-// Las métricas manuales del año `anio`: la API de Gestión manda las de los últimos N meses, así que se piden desde enero de ese año y la
-// página se queda con las del año. Un error lo dice en su lugar (el resto de la pestaña sigue)
+// Las métricas manuales del año `anio`: la API de Gestión manda las de los últimos N meses, así que se piden desde enero de ese año
+// (mesesDeMetricasManuales) y la página se queda con las del año. Un error lo dice en su lugar (el resto de la pestaña sigue)
 async function cargarMetricasManuales(anio) {
   const pedido = ++pagina.manuales.pedido;
   pagina.manuales.anio = anio;
-  const hoy = Utils.hoyEnArgentina();
-  const meses = Math.max(1, (Number(hoy.slice(0, 4)) - anio) * 12 + Number(hoy.slice(5, 7)) - 1);
   try {
+    const meses = mesesDeMetricasManuales(anio, Utils.hoyEnArgentina());
     const lista = (await API.pedirJson('GET', `/gestion/metricas-manuales?meses=${String(meses)}`))?.data;
     if (pedido !== pagina.manuales.pedido) return;
     pagina.manuales.lista = Array.isArray(lista) ? lista : [];

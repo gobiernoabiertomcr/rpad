@@ -7,7 +7,7 @@ import {
 } from './metricas-casos.js';
 import {
   ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, PRIMER_ANIO, duracion, cifraDe, unidadDe, casosDe, vistaDe,
-  casosQueTocanElAnio, indiceMesAMes, estadosAl, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+  casosQueTocanElAnio, indiceMesAMes, estadosAl, antiguedadDeVencidos, contextoDelAnio, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from '../services/fechasDatasetReglas.js';
@@ -21,7 +21,7 @@ const CLAVES = [
   'nota_dgmit', 'reiteraciones_dgmit',
   'recibido', 'origen', 'carga', 'cambio_id',
   'avisos_rpad', 'reiteraciones_rpad',
-  'alta', 'aviso_que'
+  'alta', 'aviso_que', 'emails_rpad'
 ];
 
 // Los casos de un dataset (por defecto, el real), en el orden de sus ciclos
@@ -158,7 +158,7 @@ describe('casosDe', () => {
       recibido: '2026-02-02', origen: 'area', carga: '2026-02-04', cambio_id: 7,
       // El externo-40, el externo-5 y el de vencidos (el email al área no es un aviso a la DGMIT)
       avisos_rpad: ['2025-12-22', '2026-01-26', '2026-02-01'], reiteraciones_rpad: 2,
-      alta: '2025-12-01', aviso_que: 'email de 40 días'
+      alta: '2025-12-01', aviso_que: 'email de 40 días', emails_rpad: ['2025-12-22', '2026-01-26', '2026-02-01']
     });
     // La anticipación del aviso de la regla es justo la ventana
     assert.equal(duracion(caso.aviso_regla, caso.venc, 'corridos'), VENTANA_DE_LA_REGLA.externa);
@@ -480,6 +480,22 @@ describe('casosDe', () => {
     assert.ok(casosDel(fuentesDelCaso(52, { dataset: { tema_principal: undefined } })).every((c) => c.tema === null));
   });
 
+  it('emails_rpad: los días de los avisos del ciclo que fueron emails a la DGMIT (no las Notas Digitales)', () => {
+    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
+    const del = (id, venc) => casos.find((c) => c.dataset_id === id && c.venc === venc);
+    // Los del 52 del 31/01/2026 fueron emails (de 40 días, de 5 y el de vencidos); el ciclo del 31/10/2026 del 10 tuvo solo Notas
+    // Digitales
+    assert.deepEqual(del(52, '2026-01-31').emails_rpad, del(52, '2026-01-31').avisos_rpad);
+    assert.deepEqual(del(10, '2026-10-31').emails_rpad, []);
+    assert.ok(del(10, '2026-10-31').avisos_rpad.length > 0);
+    // Siempre un subconjunto de los avisos del ciclo, en su orden
+    for (const caso of casos) assert.ok(caso.emails_rpad.every((dia) => caso.avisos_rpad.includes(dia)), `${caso.dataset_id} ${caso.venc}`);
+    // Un email que no se pudo enviar no es un aviso
+    const [fallido] = casosDel(solo({ id: 900, alta: '2026-01-02 09:00:00', proxima: '2026-03-31', ultima: '2026-01-02' },
+      { emails: [email({ tipo: 'externo-40', enviado: '2026-02-19 08:00:00', success: false })] }));
+    assert.deepEqual([fallido.avisos_rpad, fallido.emails_rpad], [[], []]);
+  });
+
   it('alta y aviso_que: el día del alta y qué fue el aviso desde el que se cuentan los tramos (o, sin él, el primero)', () => {
     const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
     const del = (id, venc) => casos.find((c) => c.dataset_id === id && c.venc === venc);
@@ -581,6 +597,8 @@ const cerrado = (datos = {}) => caso({
 const notaDe = (recibida, datos = {}) => ({ numero: '45/26', tipo: 'solicitud', recibida, ...datos });
 // Qué dice la cobertura del aviso de los que sí lo tuvieron (con los días de la regla: 40 en externa y 60 en interna)
 const REGLA_DEL_AVISO = 'El RPAD avisó con la anticipación de la regla (40 días en externa, 60 en interna).';
+// La aclaración de las reiteraciones del RPAD, la de la maqueta 4 (Ruling 21)
+const ACLARACION_DE_LOS_EMAILS = 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.';
 
 // Los textos que muestra la vista nunca son null; ningún string dice null, undefined, NaN o Infinity, y ningún número es NaN
 const CLAVES_DE_TEXTO = new Set(['nombre', 'desde_hasta', 'responsable', 'texto', 'unidad', 'debajo', 'ciclos_texto', 'que', 'motivo']);
@@ -928,7 +946,10 @@ describe('vistaDe', () => {
       textos: {
         a_tiempo: { de: 'de 0 ciclos', medidor: null, vacio: 'Sin actualizaciones registradas en 2026.' },
         cobertura: { de: 'de 0 vencimientos', medidor: null, regla: REGLA_DEL_AVISO, faltan: '', vacio: 'Sin vencimientos de 2026 con la fecha del aviso ya cumplida.' },
-        reiteraciones: { rpad: 'Del RPAD a la DGMIT (0 ciclos)', rpad_vacio: 'Sin ciclos en 2026.', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+        reiteraciones: {
+          rpad: 'Del RPAD a la DGMIT (0 ciclos)', rpad_vacio: 'Sin ciclos en 2026.', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
+          aclaracion: null
+        }
       }
     });
     assert.deepEqual([vacia.casos, vacia.para_completar], [[], {
@@ -1113,13 +1134,19 @@ describe('vistaDe', () => {
     assert.deepEqual(vista(casosReales()).resultados.textos, {
       a_tiempo: { de: 'de 9 ciclos', medidor: 33, vacio: '' },
       cobertura: { de: 'de 15 vencimientos', medidor: 87, regla: REGLA_DEL_AVISO, faltan: 'Los 2 que faltan:', vacio: '' },
-      reiteraciones: { rpad: 'Del RPAD a la DGMIT (16 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+      reiteraciones: {
+        rpad: 'Del RPAD a la DGMIT (16 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
+        aclaracion: ACLARACION_DE_LOS_EMAILS
+      }
     });
     // En singular: uno cargado tarde (0 de 1, el medidor en 0), un vencimiento avisado y un ciclo
     assert.deepEqual(vista([cerrado()]).resultados.textos, {
       a_tiempo: { de: 'de 1 ciclo', medidor: 0, vacio: '' },
       cobertura: { de: 'de 1 vencimiento', medidor: 100, regla: REGLA_DEL_AVISO, faltan: '', vacio: '' },
-      reiteraciones: { rpad: 'Del RPAD a la DGMIT (1 ciclo)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+      reiteraciones: {
+        rpad: 'Del RPAD a la DGMIT (1 ciclo)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
+        aclaracion: null
+      }
     });
     // Uno solo que falta
     const sinAviso = caso({ aviso_regla: null, inicio_tramos: null, motivo_sin_aviso: 'sin-aviso', reiteraciones_rpad: null });
@@ -1135,6 +1162,24 @@ describe('vistaDe', () => {
     assert.deepEqual(dgmit(conNotas, { sin: [900, 901] }), ['De la DGMIT al área (0 ciclos)', 'Sin ciclos con nota DGMIT en 2026.']);
     // El año va en los textos de lo vacío
     assert.equal(vistaDe([], { anio: 2027, al: '2027-03-01' }).resultados.textos.a_tiempo.vacio, 'Sin actualizaciones registradas en 2027.');
+  });
+
+  it('la aclaración de las reiteraciones (Ruling 21): solo si algún ciclo que cuenta del RPAD a la DGMIT tuvo un email a la DGMIT', () => {
+    const aclaracion = (lista, opciones) => vista(lista, opciones).resultados.textos.reiteraciones.aclaracion;
+    // Con un email (el de 40 días, el de 5 o el de vencidos): va
+    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] })]), ACLARACION_DE_LOS_EMAILS);
+    assert.equal(aclaracion([caso(), caso({ dataset_id: 901, avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-03-26'] })]),
+      ACLARACION_DE_LOS_EMAILS);
+    // Solo con Notas Digitales (sin emails), no
+    assert.equal(aclaracion([cerrado(), caso({ dataset_id: 901 })]), null);
+    // El email es de un ciclo que no cuenta del RPAD a la DGMIT (sin inicio de los tramos, o cerrado en otro año): no
+    assert.equal(aclaracion([caso({ aviso_regla: null, inicio_tramos: null, reiteraciones_rpad: null, emails_rpad: ['2026-02-19'] })]), null);
+    assert.equal(aclaracion([cerrado({ cierre: '2025-12-16', carga: '2025-12-16', emails_rpad: ['2025-10-22'] })]), null);
+    // Un destildado no cuenta; un email posterior a al todavía no pasó
+    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] }), cerrado({ dataset_id: 901 })], { sin: [900] }), null);
+    assert.equal(aclaracion([caso({ emails_rpad: ['2026-11-02'] })], { al: '2026-10-31' }), null);
+    // Con los casos reales (los ciclos de 2026 tuvieron emails hasta el 12/10)
+    assert.equal(aclaracion(casosReales()), ACLARACION_DE_LOS_EMAILS);
   });
 
   it('los casos: los de aviso o carga en el año, por vencimiento, con los días o el estado debajo de cada fecha', () => {
@@ -1740,6 +1785,24 @@ describe('antiguedadDeVencidos', () => {
   });
 });
 
+describe('contextoDelAnio', () => {
+  it('el índice, la antigüedad y los estados juntos, y «No hay datos para dibujar el índice.» solo si ningún punto tiene tasa', () => {
+    const opciones = { anio: 2026, al: HOY_DE_LAS_METRICAS };
+    const mapa = mapaDeLosCasos();
+    assert.deepEqual(contextoDelAnio(mapa, opciones), {
+      indice: indiceMesAMes(mapa, opciones), indice_vacio: null, antiguedad: antiguedadDeVencidos(mapa, opciones), estados: estadosAl(mapa, opciones)
+    });
+    assert.deepEqual(Object.keys(contextoDelAnio(mapa, opciones)), ['indice', 'indice_vacio', 'antiguedad', 'estados']);
+    // Solo un eventual (ningún punto con tasa), o sin datasets: lo dice el servidor, y la página lo imprime (Ruling 19)
+    const vacio = 'No hay datos para dibujar el índice.';
+    assert.equal(contextoDelAnio(mapaDe(ds(904, { proxima: null, meses: null })), opciones).indice_vacio, vacio);
+    assert.equal(contextoDelAnio(new Map(), opciones).indice_vacio, vacio);
+    assert.equal(contextoDelAnio(null, {}).indice_vacio, vacio);
+    // Con un punto con tasa, aunque otro no la tenga, se dibuja
+    assert.equal(contextoDelAnio(mapaDe(ds(901, { proxima: '2026-12-31' })), opciones).indice_vacio, null);
+  });
+});
+
 describe('trabajoDelAnio', () => {
   const trabajo = (mapa, casos = [], opciones = {}) => trabajoDelAnio(mapa, casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, ...opciones });
   const ceros = () => Array(12).fill(0);
@@ -1950,8 +2013,11 @@ describe('areasYTemas', () => {
       ],
       // Por cantidad y, en un empate, por nombre; los que no tienen tema no van
       temas: [['Economía y Finanzas', 4], ['Turismo y Deportes', 2], ['Geografía y Territorio', 1]],
-      frecuencias: [['Cada medio año', 4], ['Anualmente', 2], ['Eventual', 2]]
+      frecuencias: [['Cada medio año', 4], ['Anualmente', 2], ['Eventual', 2]],
+      vacios: { temas: null, frecuencias: null }
     });
+    // Sin temas (ninguno lo tiene), lo dice el servidor; la página lo imprime (Ruling 19)
+    assert.deepEqual(areasYTemas(mapaDe(ds(905, { tema_principal: null })), { al }).vacios, { temas: 'Sin datasets.', frecuencias: null });
     assert.deepEqual(areasYTemas(mapa, { al }).ranking.map((a) => a.area),
       ['Área Cinco', 'Área Cuatro', 'Área Seis', 'Área Uno', 'Área Dos', 'Área Tres']);
     // Es la regla de Gestión (una sola: cumplimientoPorArea), con el estado de cada dataset que cuenta
@@ -1974,7 +2040,7 @@ describe('areasYTemas', () => {
   });
 
   it('con datos raros no tira', () => {
-    const nada = { ranking: [], temas: [], frecuencias: [] };
+    const nada = { ranking: [], temas: [], frecuencias: [], vacios: { temas: 'Sin datasets.', frecuencias: 'Sin datasets.' } };
     for (const mapa of [null, undefined, 'x', {}, new Map([[1, null], [2, { dataset: 'x' }]])]) {
       assert.deepEqual(areasYTemas(mapa, { al: HOY_DE_LAS_METRICAS }), nada);
       assert.deepEqual(indiceMesAMes(mapa, { anio: 2026, al: HOY_DE_LAS_METRICAS }).map((p) => p.base), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);

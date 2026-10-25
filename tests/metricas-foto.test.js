@@ -193,7 +193,8 @@ describe('la foto del 31/12', () => {
     assert.deepEqual([Object.keys(guardada.datos.vistas), Object.keys(guardada.datos.cintas)], [CLAVES, CLAVES]);
     assert.ok(guardada.datos.cintas['mediana-habiles'].externa, 'la cinta externa se dibuja (hay aviso anticipado)');
     assert.deepEqual(guardada.datos.contexto, {
-      indice: indiceMesAMes(fuentes, opciones), antiguedad: antiguedadDeVencidos(fuentes, opciones), estados: estadosAl(fuentes, opciones)
+      indice: indiceMesAMes(fuentes, opciones), indice_vacio: null, antiguedad: antiguedadDeVencidos(fuentes, opciones),
+      estados: estadosAl(fuentes, opciones)
     });
     assert.deepEqual(guardada.datos.trabajo, {
       mediana: trabajoDelAnio(fuentes, casos, { ...opciones, estadistico: 'mediana' }),

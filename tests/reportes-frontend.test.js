@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import {
-  casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, indiceMesAMes, antiguedadDeVencidos, trabajoDelAnio, areasYTemas
+  casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, contextoDelAnio, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
@@ -44,8 +44,9 @@ const CASOS = casosDe(MAPA, { hoy: HOY });
 const vistaReal = (opciones = {}) => vistaDe(CASOS, { anio: 2026, al: HOY, ...opciones });
 const VISTA = vistaReal();
 const DEL_ANIO = { anio: 2026, al: HOY };
-const INDICE = indiceMesAMes(MAPA, DEL_ANIO);
-const ANTIGUEDAD = antiguedadDeVencidos(MAPA, DEL_ANIO);
+const CONTEXTO = contextoDelAnio(MAPA, DEL_ANIO);
+const INDICE = CONTEXTO.indice;
+const ANTIGUEDAD = CONTEXTO.antiguedad;
 const TRABAJO = trabajoDelAnio(MAPA, CASOS, { ...DEL_ANIO, estadistico: 'mediana' });
 const AREAS = areasYTemas(MAPA, DEL_ANIO);
 const tramoDe = (vista, gestion, clave) => vista.circuito[gestion].find((t) => t.clave === clave);
@@ -495,7 +496,10 @@ describe('reportes.js: los resultados del año', () => {
         de: 'de 35 vencimientos', medidor: 97, regla: 'El RPAD avisó con la anticipación de la regla (40 días en externa, 60 en interna).',
         faltan: 'El que falta:', vacio: ''
       },
-      reiteraciones: { rpad: 'Del RPAD a la DGMIT (47 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.' }
+      reiteraciones: {
+        rpad: 'Del RPAD a la DGMIT (47 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
+        aclaracion: 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.'
+      }
     }
   };
 
@@ -516,6 +520,21 @@ describe('reportes.js: los resultados del año', () => {
     assert.deepEqual(barras, ['Ninguna 13 5', '1 8 3', '2 o más 100 39']);
     assert.ok(html.includes('<h4 class="mt-mini dgmit">De la DGMIT al área</h4><p class="mt-vacio-caja">Todavía no hay notas DGMIT cargadas.</p>'));
     assert.doesNotMatch(html, /null|undefined|NaN/);
+  });
+
+  it('la aclaración de las reiteraciones (Ruling 21), la del servidor, va debajo de las barras del RPAD; sin ella, nada', () => {
+    const aclaracion = 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.';
+    const html = ctx.htmlDeResultados({ resultados: RESULTADOS });
+    assert.ok(html.includes(`<b>39</b></div></div><p class="mt-pie mt-aclaracion">${aclaracion}</p><h4 class="mt-mini dgmit">`));
+    assert.equal(cuantas(html, /mt-aclaracion/g), 1);
+    // null (ningún ciclo con emails) o sin el texto: no se imprime
+    for (const valor of [null, undefined, '']) {
+      const sin = { ...RESULTADOS, textos: { ...RESULTADOS.textos, reiteraciones: { ...RESULTADOS.textos.reiteraciones, aclaracion: valor } } };
+      assert.doesNotMatch(ctx.htmlDeResultados({ resultados: sin }), /mt-aclaracion|Hasta el 12\/10/, String(valor));
+    }
+    // Con los resultados reales, la del servidor
+    assert.equal(VISTA.resultados.textos.reiteraciones.aclaracion, aclaracion);
+    assert.ok(ctx.htmlDeResultados(VISTA).includes(`<p class="mt-pie mt-aclaracion">${aclaracion}</p>`));
   });
 
   it('con notas DGMIT, los dos grupos de la DGMIT; sin cifras, los vacíos del servidor y ningún medidor', () => {
@@ -585,15 +604,23 @@ describe('reportes.js: el contexto', () => {
     const svg = ctx.svgDeIndice(INDICE);
     assert.equal(cuantas(svg, /<g class="mt-punto/g), 11);
     assert.equal(svg.match(/<polyline points="([^"]+)"/)[1].split(' ').length, 11);
-    const html = ctx.htmlDeContexto({ indice: INDICE, antiguedad: ANTIGUEDAD });
+    const html = ctx.htmlDeContexto(CONTEXTO);
     assert.ok(html.includes(`<h3 id="mt-ctx-indice">Índice de actualización, mes a mes</h3><span>${INDICE.at(-1).texto}</span>`));
     assert.equal(INDICE.at(-1).texto, 'Hoy: 54% al día (7 de 13)');
     assert.ok(html.includes(svg));
     assert.match(html, /<details class="mt-valores"><summary>Ver los valores<\/summary><ul>/);
     for (const p of INDICE) assert.ok(html.includes(`<li>${p.texto}</li>`), p.texto);
     assert.ok(html.includes(ctx.htmlDeAntiguedad(ANTIGUEDAD)));
-    // Sin puntos para dibujar, lo dice
-    assert.match(ctx.htmlDeContexto({ indice: [], antiguedad: ANTIGUEDAD }), /<p class="mt-vacio">No hay datos para dibujar el índice\.<\/p>/);
+    assert.equal(CONTEXTO.indice_vacio, null);
+    assert.doesNotMatch(html, /mt-vacio/);
+    // Sin puntos para dibujar, lo que dice el servidor (contexto.indice_vacio, Ruling 19); la página no lo decide
+    const sinPuntos = contextoDelAnio(new Map(), DEL_ANIO);
+    assert.equal(sinPuntos.indice_vacio, 'No hay datos para dibujar el índice.');
+    const vacio = ctx.htmlDeContexto(sinPuntos);
+    assert.match(vacio, /<p class="mt-vacio">No hay datos para dibujar el índice\.<\/p>/);
+    assert.doesNotMatch(vacio, /<svg/);
+    assert.doesNotMatch(ctx.htmlDeContexto({ indice: [], antiguedad: ANTIGUEDAD }), /mt-vacio|<svg/);
+    assert.ok(ctx.htmlDeContexto({ ...CONTEXTO, indice_vacio: 'Texto del servidor' }).includes('<p class="mt-vacio">Texto del servidor</p>'));
     assert.equal(ctx.htmlDeContexto(null), '');
   });
 
@@ -636,6 +663,19 @@ describe('reportes.js: el trabajo del RPAD', () => {
     assert.ok(columnas(ctx.htmlDeTrabajo(vacio)).every(([, valor, alto]) => valor === 0 && alto === 0));
     assert.equal(columnas(ctx.htmlDeTrabajo(vacio)).length, 10);
     assert.equal(ctx.htmlDeTrabajo(null), '');
+  });
+
+  it('mesesDeMetricasManuales: desde enero del año, y un mes más (la base puede ir en UTC: a las 21 del último día ya es el mes siguiente)', () => {
+    // El 24/10/2026: 10 meses. Con CURDATE() ya en noviembre, (2026 × 12 + 11) − 10 es enero de 2026: enero sigue entrando
+    assert.equal(ctx.mesesDeMetricasManuales(2026, '2026-10-24'), 10);
+    assert.equal(ctx.mesesDeMetricasManuales(2026, '2026-10-31'), 10);
+    assert.equal(ctx.mesesDeMetricasManuales(2026, '2026-01-31'), 1);
+    // Un año anterior: hasta su enero
+    assert.equal(ctx.mesesDeMetricasManuales(2026, '2027-01-15'), 13);
+    assert.equal(ctx.mesesDeMetricasManuales(2026, '2028-03-01'), 27);
+    // Lo que no sirve: los 12 de siempre de la API
+    assert.equal(ctx.mesesDeMetricasManuales(2027, '2026-10-24'), 12);
+    assert.equal(ctx.mesesDeMetricasManuales(2026, 'x'), 12);
   });
 
   it('htmlDeMetricasManuales: las del año, y el botón de eliminar solo para administración', () => {
@@ -695,8 +735,13 @@ describe('reportes.js: áreas y temas', () => {
     assert.deepEqual(barras(ctx.htmlDeAreas(AREAS, 'frecuencias')), AREAS.frecuencias);
     assert.equal(ctx.htmlDeAreas(AREAS, 'x'), html);
     assert.match(html, /<div><span>Gobierno y Gestión Pública<\/span><i aria-hidden="true" style="width:100%"><\/i><b>6<\/b><\/div>/);
-    // Sin datasets
-    assert.match(ctx.htmlDeAreas({ ranking: [], temas: [], frecuencias: [] }, 'temas'), /<p class="mt-vacio">Sin datasets\.<\/p>/);
+    // Sin datasets: lo que dice el servidor (areas.vacios, Ruling 19), del agrupado elegido; la página no lo decide
+    const sinDatasets = areasYTemas(new Map(), DEL_ANIO);
+    assert.match(ctx.htmlDeAreas(sinDatasets, 'temas'), /<p class="mt-vacio">Sin datasets\.<\/p>/);
+    assert.match(ctx.htmlDeAreas(sinDatasets, 'frecuencias'), /<p class="mt-vacio">Sin datasets\.<\/p>/);
+    assert.doesNotMatch(ctx.htmlDeAreas({ ranking: [], temas: [], frecuencias: [] }, 'temas'), /mt-vacio/);
+    assert.ok(ctx.htmlDeAreas({ ...AREAS, vacios: { temas: 'Texto del servidor', frecuencias: null } }, 'temas').includes('<p class="mt-vacio">Texto del servidor</p>'));
+    assert.doesNotMatch(html, /mt-vacio/);
     assert.equal(ctx.htmlDeAreas(null), '');
   });
 });
@@ -774,10 +819,12 @@ describe('reportes.js: lo que llega del servidor', () => {
       a_tiempo: { ...resultados.a_tiempo, despues: { valor: 1, texto: malo } },
       cobertura: { ...resultados.cobertura, faltan: [{ titulo: malo, venc: '2026-01-31', motivo: malo }] },
       textos: { a_tiempo: textosMalos(resultados.textos.a_tiempo), cobertura: textosMalos(resultados.textos.cobertura),
-        reiteraciones: { rpad: malo, rpad_vacio: '', dgmit: malo, dgmit_vacio: malo } }
+        reiteraciones: { rpad: malo, rpad_vacio: '', dgmit: malo, dgmit_vacio: malo, aclaracion: malo } }
     } }), 'resultados');
     sinMalo(ctx.svgDeIndice([{ dia: '2026-01-01', tasa: 50, al_dia: 1, base: 2, etiqueta: malo, texto: malo }]), 'índice');
     sinMalo(ctx.htmlDeContexto({ indice: [{ dia: '2026-01-01', tasa: 50, al_dia: 1, base: 2, etiqueta: 'ene', texto: malo }], antiguedad: ANTIGUEDAD }), 'contexto');
+    sinMalo(ctx.htmlDeContexto({ indice: [], indice_vacio: malo, antiguedad: ANTIGUEDAD }), 'índice vacío');
+    sinMalo(ctx.htmlDeAreas({ ranking: [], temas: [], frecuencias: [], vacios: { temas: malo } }, 'temas'), 'áreas vacías');
     sinMalo(ctx.htmlDeAntiguedad({ ...ANTIGUEDAD, textos: { titulo: malo, inicio: malo } }), 'antigüedad');
     sinMalo(ctx.htmlDeTrabajo({ ...TRABAJO, textos: { ...TRABAJO.textos, meses: [malo], totales: textosMalos(TRABAJO.textos.totales) } }), 'trabajo');
     sinMalo(ctx.htmlDeMetricasManuales([{ id: '<b>x</b>', tipo: malo, anio: 2026, mes: 3, cantidad: 1 }], { anio: 2026, esAdmin: true }), 'manuales');

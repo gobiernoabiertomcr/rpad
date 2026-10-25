@@ -2,7 +2,8 @@
 // tramo, un caso por ciclo de cada dataset, con sus hitos (casosDe), y lo que la pestaña Métricas muestra de esos casos: el circuito,
 // los resultados del año, la lista de casos y «Para completar» (vistaDe), y cuáles guarda la foto del 31/12 (casosQueTocanElAnio).
 // Además, el resto de la pestaña: el índice de actualización mes a mes (indiceMesAMes), los estados de un día (estadosAl), la
-// antigüedad de los vencidos (antiguedadDeVencidos), el trabajo del RPAD (trabajoDelAnio) y las áreas y los temas (areasYTemas).
+// antigüedad de los vencidos (antiguedadDeVencidos), los tres juntos (contextoDelAnio), el trabajo del RPAD (trabajoDelAnio) y las
+// áreas y los temas (areasYTemas).
 // Funciones puras, sin base de datos ni Date local: las fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora
 // argentina, como en services/seguimientoReglas.js. De ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso
 // (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
@@ -111,7 +112,8 @@ const queDeLaNota = (nota) => (tieneValor(nota.numero) && tieneValor(nota.anio) 
 // (`enviado` false: solo sirven para el motivo 'email-fallido'). Cada uno va al ciclo que dice cicloDelAviso, como en avisosDelCiclo:
 // el email, por el momento del envío; la nota, por su vencimiento (y, si hace falta, por cuándo se envió). `regla`: si es de la clase
 // del aviso de la regla, el email de 40 o de 60 días o la Nota Digital de aviso en la sección de próximos a vencer. `que`: qué fue
-// ('email de 40 días', 'Nota Digital 4/26'). Lo de después de `hoy` no entra: todavía no pasó (la foto del año se calcula al 31/12).
+// ('email de 40 días', 'Nota Digital 4/26'); `clase`: 'email' o 'nota'. Lo de después de `hoy` no entra: todavía no pasó (la foto del
+// año se calcula al 31/12).
 const avisosPorCiclo = (fuentes, ciclos, hoy) => {
   const porCiclo = ciclos.map(() => []);
   const sumar = (momento, vencimiento, aviso) => {
@@ -122,12 +124,12 @@ const avisosPorCiclo = (fuentes, ciclos, hoy) => {
     const enviado = esEmailADgmit(email);
     const esDeLaRegla = Boolean(email) && typeof email === 'object' && EMAILS_DE_LA_REGLA.includes(email.tipo);
     if (!enviado && !esDeLaRegla) continue;
-    sumar(momentoDe(email.enviado), null, { id: Number(email.id) || 0, enviado, regla: esDeLaRegla, que: queDelEmail(email.tipo) });
+    sumar(momentoDe(email.enviado), null, { id: Number(email.id) || 0, clase: 'email', enviado, regla: esDeLaRegla, que: queDelEmail(email.tipo) });
   }
   for (const nota of lista(fuentes.notas)) {
     if (!esNotaEnviada(nota)) continue;
     sumar(momentoDeEnvioDeNota(nota), nota.vencimiento ?? null, {
-      id: Number(nota.id) || 0, enviado: true, regla: nota.tipo === 'aviso' && nota.seccion === 'proximo', que: queDeLaNota(nota)
+      id: Number(nota.id) || 0, clase: 'nota', enviado: true, regla: nota.tipo === 'aviso' && nota.seccion === 'proximo', que: queDeLaNota(nota)
     });
   }
   for (const avisos of porCiclo) avisos.sort((a, b) => comparar(a.momento, b.momento) || a.id - b.id);
@@ -190,7 +192,7 @@ const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
     recibido: diaDe(nuevos.recibido_el), origen, carga: actualizacion ? ciclo.cierre ?? null : null, cambio_id: cerro?.id ?? null,
     avisos_rpad: avisosRpad,
     reiteraciones_rpad: inicioTramos === null ? null : avisosRpad.filter((dia) => dia > inicioTramos).length,
-    alta: altaDia, aviso_que: avisoQueSeMuestra?.que ?? null
+    alta: altaDia, aviso_que: avisoQueSeMuestra?.que ?? null, emails_rpad: enviados.filter((a) => a.clase === 'email').map((a) => a.dia)
   };
 };
 
@@ -237,8 +239,9 @@ const casosDelDataset = (fuentes, hoy) => {
 //   nueva) y reiteraciones_rpad (cuántos son de un día posterior a inicio_tramos; null, no 0, si no hay inicio_tramos: un ciclo
 //   sin aviso de la regla que no se avisó ya vencido no cuenta en las reiteraciones);
 // - para la vista (al final, para no mover las de antes): alta (el día del alta del dataset, o null: distingue «se dio de alta ya
-//   vencido» en la cobertura) y aviso_que (qué fue el aviso de la regla o, sin él, el primero del ciclo: 'email de 40 días',
-//   'email mensual de vencidos', 'Nota Digital 4/26'; null sin avisos).
+//   vencido» en la cobertura), aviso_que (qué fue el aviso de la regla o, sin él, el primero del ciclo: 'email de 40 días',
+//   'email mensual de vencidos', 'Nota Digital 4/26'; null sin avisos) y emails_rpad (los días de los avisos de avisos_rpad que fueron
+//   emails a la DGMIT, los que salían hasta el 12/10/2026: para la aclaración de las reiteraciones).
 // Con un Map que no es un Map o un `hoy` que no es una fecha, [].
 export const casosDe = (fuentesPorDataset, opciones) => {
   const hoy = objeto(opciones).hoy;
@@ -327,6 +330,7 @@ const hechosDe = (caso, ctx) => {
     inicioTramos: yaPaso(caso.inicio_tramos),
     heredado: caso.heredado === true,
     avisos: lista(caso.avisos_rpad).map(diaDe).filter((dia) => dia !== null && dia <= ctx.al),
+    emails: lista(caso.emails_rpad).map(diaDe).filter((dia) => dia !== null && dia <= ctx.al),
     nota: recibida === null ? null : { numero: nota.numero ?? null, tipo: nota.tipo, recibida },
     recibido: actualizacion ? yaPaso(caso.recibido) : null,
     carga: actualizacion ? yaPaso(caso.carga) : null,
@@ -511,14 +515,14 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
   // el circuito muestra en curso), con los avisos hasta `al`. Sin inicio de los tramos (sin aviso de la regla ni avisado ya vencido) no
   // cuentan (Ruling 6)
   const delPeriodo = cuentan.map((m) => m.h).filter((h) => h.abierto || enElAnio(h.cierre, ctx));
-  const delRpad = delPeriodo.filter((h) => h.caso.reiteraciones_rpad !== null && h.inicioTramos !== null)
-    .map((h) => h.avisos.filter((dia) => dia > h.inicioTramos).length);
+  const contadosDelRpad = delPeriodo.filter((h) => h.caso.reiteraciones_rpad !== null && h.inicioTramos !== null);
+  const delRpad = contadosDelRpad.map((h) => h.avisos.filter((dia) => dia > h.inicioTramos).length);
   const deLaDgmit = delPeriodo.filter((h) => h.externa && h.nota !== null).map((h) => Number(h.caso.reiteraciones_dgmit) || 0);
 
   const dgmit = hayNotas ? { ninguna: deLaDgmit.filter((n) => n === 0).length, una_o_mas: deLaDgmit.filter((n) => n > 0).length, total: deLaDgmit.length } : null;
   const cuentas = {
     aTiempo: aTiempo(actualizados), actualizados: actualizados.length, si: vencimientos.length - faltan.length, vencimientos: vencimientos.length,
-    faltan: faltan.length, rpad: delRpad.length, dgmit
+    faltan: faltan.length, rpad: delRpad.length, dgmit, conEmails: contadosDelRpad.some((h) => h.emails.length > 0)
   };
   return {
     a_tiempo: {
@@ -540,8 +544,9 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
 // Los textos de los resultados (Ruling 19: la página los imprime): lo que va al lado de la cifra («de 33 ciclos», «de 1 vencimiento»), el
 // medidor (el porcentaje; null sin total) y lo de cuando no hay casos; en la cobertura, qué es estar avisado (con los días de la regla) y
 // el título de los que faltan («El que falta:», «Los 2 que faltan:»); en las reiteraciones, el título de cada grupo con sus ciclos y, si
-// no hay nada que mostrar, por qué (sin notas DGMIT: «Todavía no hay notas DGMIT cargadas.»)
-const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, rpad, dgmit }, ctx) => ({
+// no hay nada que mostrar, por qué (sin notas DGMIT: «Todavía no hay notas DGMIT cargadas.»); `aclaracion`, la de los emails viejos
+// (Ruling 21), solo si alguno de los ciclos que cuentan del RPAD a la DGMIT tuvo un email a la DGMIT (si no, null)
+const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, rpad, dgmit, conEmails }, ctx) => ({
   a_tiempo: {
     de: `de ${cantidadDeCiclos(actualizados)}`, medidor: porcentajeDe(aTiempo, actualizados),
     vacio: actualizados === 0 ? `Sin actualizaciones registradas en ${ctx.anio}.` : ''
@@ -555,9 +560,14 @@ const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, r
   reiteraciones: {
     rpad: `Del RPAD a la DGMIT (${cantidadDeCiclos(rpad)})`, rpad_vacio: rpad === 0 ? `Sin ciclos en ${ctx.anio}.` : '',
     dgmit: dgmit === null ? 'De la DGMIT al área' : `De la DGMIT al área (${cantidadDeCiclos(dgmit.total)})`,
-    dgmit_vacio: dgmit === null ? `${SIN_NOTAS_DGMIT}.` : dgmit.total === 0 ? `Sin ciclos con nota DGMIT en ${ctx.anio}.` : ''
+    dgmit_vacio: dgmit === null ? `${SIN_NOTAS_DGMIT}.` : dgmit.total === 0 ? `Sin ciclos con nota DGMIT en ${ctx.anio}.` : '',
+    aclaracion: conEmails ? ACLARACION_DE_LOS_EMAILS : null
   }
 });
+
+// Hasta el 12/10/2026 el RPAD avisaba por email: además del de 40 o 60 días, el de los 5 días y el resumen mensual de vencidos, que
+// suman reiteraciones del RPAD a la DGMIT en los ciclos de entonces
+const ACLARACION_DE_LOS_EMAILS = 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.';
 
 const textoDeDias = (valor) => (valor === null ? '' : valor === 0 ? 'en el día' : String(valor));
 
@@ -684,7 +694,7 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 //   faltan: [{ titulo, venc, motivo }] }, reiteraciones: { rpad: { ninguna, una, dos_o_mas, total }, dgmit: { ninguna, una_o_mas,
 //   total } (null sin notas DGMIT) }, textos }. Las reiteraciones son las de los ciclos que terminaron en el año y las de los abiertos a
 //   `al`. textos (textosDeResultados): { a_tiempo: { de, medidor, vacio }, cobertura: { de, medidor, regla, faltan, vacio },
-//   reiteraciones: { rpad, rpad_vacio, dgmit, dgmit_vacio } }, lo que la página escribe tal cual.
+//   reiteraciones: { rpad, rpad_vacio, dgmit, dgmit_vacio, aclaracion } }, lo que la página escribe tal cual.
 // - casos: las filas de los ciclos de las dos gestiones (cada una con su `gestion`) con algún aviso o la carga en el año, o que cuentan
 //   en algún tramo, por vencimiento: { dataset_id, titulo, area, gestion, contar, vencimiento, aviso: { fecha, texto, que }, nota:
 //   { numero, tipo, texto }, recibido: { fecha, texto, origen }, carga: { fecha, texto } }. Los `texto` son lo de debajo de cada fecha:
@@ -949,6 +959,19 @@ const textosDeAntiguedad = ({ total, al_inicio: alInicio }, ctx) => {
   return { titulo, inicio };
 };
 
+// El contexto de la pestaña (spec, 2.2), el de GET /api/metricas y el de la foto del 31/12: { indice (indiceMesAMes), indice_vacio,
+// antiguedad (antiguedadDeVencidos), estados (estadosAl) }, con las mismas `opciones` ({ anio, al, sin }). `indice_vacio` (Ruling 19: la
+// página lo imprime): «No hay datos para dibujar el índice.» si ningún punto tiene tasa; si no, null. Nunca tira.
+export const contextoDelAnio = (fuentesPorDataset, opciones) => {
+  const indice = indiceMesAMes(fuentesPorDataset, opciones);
+  return {
+    indice,
+    indice_vacio: indice.some((punto) => punto.tasa !== null) ? null : 'No hay datos para dibujar el índice.',
+    antiguedad: antiguedadDeVencidos(fuentesPorDataset, opciones),
+    estados: estadosAl(fuentesPorDataset, opciones)
+  };
+};
+
 // Los avisos del RPAD a la DGMIT de un dataset, los mismos que cuenta el Seguimiento: los emails a la DGMIT que se enviaron
 // (esEmailADgmit) y las Notas Digitales de aviso y de reiteración enviadas (esNotaEnviada; las de prueba, fuentesDe no las trae), con
 // una clave por aviso (un email y una nota pueden tener el mismo id: son dos avisos) y el día del envío. Uno sin id no se puede contar
@@ -1062,11 +1085,12 @@ const porCantidad = (conteo) => [...conteo].sort(([nombreA, a], [nombreB, b]) =>
 //   (tasaDeActualizacion: al día sobre el total sin los eventuales; null si el área solo tiene eventuales). De mayor a menor
 //   porcentaje, el null al final, y en un empate por nombre. Uno de estado desconocido (un ciclo con venc null) no va;
 // - temas y frecuencias: [nombre, cantidad] de los datasets por tema principal y por frecuencia, por cantidad y en un empate por
-//   nombre (los que no tienen tema no van).
-// `opciones`: { al, sin } (el año sale de `al`). { ranking: [{ area, total_datasets, al_dia, porcentaje }], temas, frecuencias }, con
-// listas vacías si no hay `al`. Nunca tira.
+//   nombre (los que no tienen tema no van);
+// - vacios (Ruling 19: la página lo imprime): { temas, frecuencias }, «Sin datasets.» si esa lista está vacía, o null.
+// `opciones`: { al, sin } (el año sale de `al`). { ranking: [{ area, total_datasets, al_dia, porcentaje }], temas, frecuencias, vacios },
+// con listas vacías si no hay `al`. Nunca tira.
 export const areasYTemas = (fuentesPorDataset, opciones) => {
-  const resultado = { ranking: [], temas: [], frecuencias: [] };
+  const resultado = { ranking: [], temas: [], frecuencias: [], vacios: { temas: SIN_DATASETS, frecuencias: SIN_DATASETS } };
   const ctx = contextoDe(opciones);
   if (ctx === null) return resultado;
   const filas = [];
@@ -1084,5 +1108,8 @@ export const areasYTemas = (fuentesPorDataset, opciones) => {
   resultado.ranking = cumplimientoPorArea(filas).ranking;
   resultado.temas = porCantidad(temas);
   resultado.frecuencias = porCantidad(frecuencias);
+  resultado.vacios = { temas: resultado.temas.length ? null : SIN_DATASETS, frecuencias: resultado.frecuencias.length ? null : SIN_DATASETS };
   return resultado;
 };
+
+const SIN_DATASETS = 'Sin datasets.';

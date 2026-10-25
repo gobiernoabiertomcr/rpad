@@ -15,7 +15,7 @@
 //   'mediana-corridos', 'promedio-habiles' y 'promedio-corridos'), con todos los datasets (sin = []: una foto no se destilda);
 // - cintas: la cinta del recorrido típico de cada combinación, por la misma clave: { externa, interna }, cada una la de
 //   cintaDeMetricas (services/metricasCinta.js) con el circuito de esa vista (null si no se dibuja);
-// - contexto: { indice, antiguedad, estados }, de indiceMesAMes, antiguedadDeVencidos y estadosAl al 31/12 (con el reloj del RPAD: el
+// - contexto: { indice, indice_vacio, antiguedad, estados }, de contextoDelAnio al 31/12 (con el reloj del RPAD: el
 //   estado según las aprobaciones, como lo mostraba la portada esa noche); estados: cuántos había en cada estado, el total, los
 //   vencidos y la tasa (las tarjetas del Estado general de ese día);
 // - trabajo: el trabajo del RPAD (trabajoDelAnio) con cada estadístico, { mediana, promedio }: la doble verificación sigue a
@@ -27,8 +27,7 @@
 import pool from '../config/database.js';
 import { fuentesDe } from './seguimientoDatos.js';
 import {
-  ESTADISTICOS, DIAS, casosDe, casosQueTocanElAnio, vistaDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio,
-  areasYTemas
+  ESTADISTICOS, DIAS, casosDe, casosQueTocanElAnio, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas
 } from './metricasReglas.js';
 import { cintasDeLaVista } from './metricasCinta.js';
 import { DIA_DE_LA_FOTO, fotoQueToca } from './metricasOpciones.js';
@@ -63,11 +62,7 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
     casos: delAnio,
     vistas,
     cintas,
-    contexto: {
-      indice: indiceMesAMes(fuentesPorDataset, { anio, al }),
-      antiguedad: antiguedadDeVencidos(fuentesPorDataset, { anio, al }),
-      estados: estadosAl(fuentesPorDataset, { anio, al })
-    },
+    contexto: contextoDelAnio(fuentesPorDataset, { anio, al }),
     trabajo: Object.fromEntries(ESTADISTICOS.map((estadistico) =>
       [estadistico, trabajoDelAnio(fuentesPorDataset, casos, { anio, al, estadistico })])),
     areas: areasYTemas(fuentesPorDataset, { anio, al }),
