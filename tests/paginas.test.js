@@ -126,16 +126,58 @@ describe('páginas', () => {
     assert.doesNotMatch(gestion, /new Chart|cargarMetricas|htmlDelRanking|textoPorcentaje|exportarCSV|switchTab|\/gestion\/metricas/);
   });
 
-  // Con Chart.js fuera de Gestión, ninguna página carga nada de un CDN: la CSP ya no permite jsDelivr (tests/publico.test.js). Si
-  // una página vuelve a cargar un script o una hoja de afuera, hay que sumarlo a la CSP de app.js.
-  it('ninguna página carga un script ni una hoja de estilos de afuera del sitio (solo las fuentes de Google)', () => {
+  // Con Chart.js fuera de Gestión, ninguna página carga nada de un CDN: la CSP ya no permite ningún CDN de scripts ni de hojas
+  // (tests/publico.test.js). Si una página vuelve a cargar un script o una hoja de afuera, hay que sumarlo a la CSP de app.js.
+  // Se mira cada <script> y cada <link> entero, con los atributos en cualquier orden (las páginas escriben href antes que rel)
+  describe('nada de afuera del sitio, salvo las fuentes de Google', () => {
+    const FUENTES_DE_GOOGLE = 'https://fonts.googleapis.com/';
+    const atributo = (etiqueta, nombre) => new RegExp(`\\s${nombre}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(etiqueta)?.slice(1).find(v => v !== undefined) ?? null;
+    const esDeAfuera = (url) => /^(https?:)?\/\//i.test(url ?? '');
+    // Los href de las hojas de estilo (rel con la palabra stylesheet) y los src de los scripts, en el orden de la página
+    const hojasDe = (html) => [...html.matchAll(/<link\b[^>]*>/gi)].map(([etiqueta]) => etiqueta)
+      .filter(etiqueta => (atributo(etiqueta, 'rel') ?? '').toLowerCase().split(/\s+/).includes('stylesheet'))
+      .map(etiqueta => atributo(etiqueta, 'href'));
+    const scriptsDe = (html) => [...html.matchAll(/<script\b[^>]*>/gi)].map(([etiqueta]) => atributo(etiqueta, 'src')).filter(Boolean);
+    // Lo que una página carga de afuera y no está permitido
+    const deAfuera = (html) => [
+      ...scriptsDe(html).filter(esDeAfuera).map(src => `script ${src}`),
+      ...hojasDe(html).filter(href => esDeAfuera(href) && !href.startsWith(FUENTES_DE_GOOGLE)).map(href => `hoja ${href}`)
+    ];
+
     for (const pagina of paginas) {
-      const html = leer(pagina);
-      assert.doesNotMatch(html, /<script[^>]+src="(https?:)?\/\//i, `${pagina}: carga un script de afuera`);
-      for (const [, href] of html.matchAll(/<link[^>]+rel="stylesheet"[^>]*href="([^"]+)"/gi)) {
-        assert.ok(!/^(https?:)?\/\//i.test(href) || href.startsWith('https://fonts.googleapis.com/'), `${pagina}: carga una hoja de afuera (${href})`);
-      }
+      it(`${pagina}: no carga un script ni una hoja de estilos de afuera del sitio`, () => {
+        assert.deepEqual(deAfuera(leer(pagina)), []);
+      });
     }
+
+    it('la excepción se usa de verdad: cada página carga su hoja de las fuentes de Google (con href antes que rel), y la guarda la ve', () => {
+      for (const pagina of paginas) {
+        const deGoogle = hojasDe(leer(pagina)).filter(href => href.startsWith(FUENTES_DE_GOOGLE));
+        assert.equal(deGoogle.length, 1, pagina);
+      }
+      // Y ve también las hojas del sitio (main.css), que no son de afuera
+      assert.ok(hojasDe(leer('index.html')).some(href => href.startsWith('css/main.css')));
+    });
+
+    it('una página con un script o una hoja de un CDN no pasa, con los atributos en cualquier orden', () => {
+      const casos = [
+        '<link href="https://cdn.jsdelivr.net/npm/x@1.0.0/x.css" rel="stylesheet">',
+        '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/x@1.0.0/x.css">',
+        "<link rel='stylesheet' href='//cdnjs.cloudflare.com/ajax/libs/x/1.0.0/x.css'>",
+        '<link\n  href="https://fonts.googleapis.com.ejemplo.test/x.css"\n  rel="stylesheet preload">',
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>',
+        '<script defer src="//cdnjs.cloudflare.com/ajax/libs/x/1.0.0/x.js"></script>'
+      ];
+      for (const etiqueta of casos) {
+        const pagina = `<!DOCTYPE html><html><head>${etiqueta}</head><body></body></html>`;
+        assert.equal(deAfuera(pagina).length, 1, etiqueta);
+      }
+      // Lo del sitio, las fuentes de Google y los <link> que no son hojas (preconnect, ícono) pasan
+      const permitido = '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        + '<link href="https://fonts.googleapis.com/css2?family=Figtree&display=swap" rel="stylesheet">'
+        + '<link rel="stylesheet" href="css/main.css?v=1"><link rel="icon" href="https://ejemplo.test/x.png"><script src="js/api.js?v=1"></script>';
+      assert.deepEqual(deAfuera(permitido), []);
+    });
   });
 
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {

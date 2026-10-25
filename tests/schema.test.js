@@ -1048,9 +1048,12 @@ describe('migracion-metricas-recibido-datos.sql', () => {
     assert.match(cabecera, /VERIFICACIÓN/);
   });
 
-  it('un INSERT por cada fila del Excel con fecha u origen (27), sin repetir: el mismo cambio en el SELECT y en el WHERE, y una fecha válida o un origen', () => {
+  it('28 INSERT: uno por cada fila del Excel con fecha u origen (27) y, al final, el origen confirmado del cambio 51; sin repetir, el mismo cambio en el SELECT y en el WHERE, y una fecha válida o un origen', () => {
     const lista = inserts();
-    assert.equal(lista.length, 27);
+    assert.equal(lista.length, 28);
+    // El último no sale del Excel (Ruling 35): el cambio 51 ya trae su «Recibido el»; se le suma solo el origen que confirmó el usuario
+    assert.deepEqual(lista.at(-1), { cambio: 51, recibido: null, origen: 'fuente_publica', id: 51 });
+    assert.match(lineas().filter(l => l.startsWith('--')).join('\n'), /cambio 51[^]*NO sale del Excel[^]*línea 13/);
     assert.equal(new Set(lista.map(i => i.cambio)).size, lista.length, 'hay un cambio repetido');
     for (const { cambio, id, recibido, origen } of lista) {
       assert.equal(id, cambio, `el SELECT y el WHERE no dicen el mismo cambio: ${cambio} y ${id}`);
@@ -1097,8 +1100,12 @@ describe('migracion-metricas-recibido-datos.sql', () => {
     const delArchivo = inserts();
     const SIN_IMPORTAR = 9001;
     const DE_LA_EDICION = 9005;
+    // Los del archivo que solo traen el origen (el cambio 51) son, como en la base real, actualizaciones que ya tienen su «Recibido el»:
+    // no figuran ni antes ni después. Los demás, sin la fecha, la mitad registrados con el modal y la otra mitad por la edición de antes
+    const soloOrigen = new Set(delArchivo.filter(i => i.recibido === null).map(i => i.cambio));
+    assert.ok(soloOrigen.has(51), 'el cambio 51 no está en el archivo como «solo el origen»');
     await cargarCambios(usuario, [
-      ...delArchivo.map((ins, i) => actualizacion(ins.cambio, { registro: i % 2 === 0 })),
+      ...delArchivo.map((ins, i) => actualizacion(ins.cambio, { registro: i % 2 === 0, recibido: soloOrigen.has(ins.cambio) ? '2026-10-19' : null })),
       // Una actualización aprobada sin la fecha que no está en el archivo (registrada con el modal y por la edición de antes)
       actualizacion(SIN_IMPORTAR),
       actualizacion(DE_LA_EDICION, { registro: false }),
@@ -1117,9 +1124,9 @@ describe('migracion-metricas-recibido-datos.sql', () => {
       const [filas] = await root.query(consulta);
       return filas.map(f => f.cambio_id);
     };
-    assert.deepEqual(await listados(), ordenados([...delArchivo.map(i => i.cambio), SIN_IMPORTAR, DE_LA_EDICION]));
+    assert.deepEqual(await listados(), ordenados([...delArchivo.filter(i => !soloOrigen.has(i.cambio)).map(i => i.cambio), SIN_IMPORTAR, DE_LA_EDICION]));
     await correr();
-    // Después de la carga quedan los del archivo que solo traen el origen y los que no están en el archivo
-    assert.deepEqual(await listados(), ordenados([...delArchivo.filter(i => i.recibido === null).map(i => i.cambio), SIN_IMPORTAR, DE_LA_EDICION]));
+    // Después de la carga quedan solo los que no están en el archivo (el 51 tampoco figura: su fecha es la suya, no la importada)
+    assert.deepEqual(await listados(), [SIN_IMPORTAR, DE_LA_EDICION]);
   });
 });

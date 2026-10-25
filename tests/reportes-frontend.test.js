@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import {
-  casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, contextoDelAnio, trabajoDelAnio, areasYTemas
+  casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, contextoDelAnio, trabajoDelAnio, areasYTemas,
+  ESTADISTICOS as ESTADISTICOS_DEL_SERVIDOR, DIAS as DIAS_DEL_SERVIDOR, GESTIONES as GESTIONES_DEL_SERVIDOR
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
@@ -22,7 +23,7 @@ import {
 } from '../services/reportesParaCompletarPdf.js';
 import { MENSAJE_PERIODO_INVALIDO } from '../services/reportesAvisosPdf.js';
 import { MESES_DE_LA_AGENDA, MESES_POR_DEFECTO, GESTIONES_DE_LA_AGENDA } from '../services/reportesAgenda.js';
-import { fotosDeMetricas } from '../services/metricasOpciones.js';
+import { fotosDeMetricas, opcionesDeMetricas } from '../services/metricasOpciones.js';
 import { nombreDelReporte as nombreDelReporteDelServidor } from '../services/reportesNombres.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
@@ -119,6 +120,26 @@ describe('reportes.js: el estado de la URL', () => {
     // Un estado raro no se escribe tal cual: lo que no sirve no va
     assert.equal(ctx.urlDeEstado({ anio: 'x', estadistico: '<b>', dias: null, gestion: 'z', sin: ['a', -1, 7], pestana: 'otra' }), '?sin=7');
     assert.equal(ctx.urlDeEstado(undefined), '');
+  });
+
+  // Copias de los selectores del servidor (ESTADISTICOS, DIAS y GESTIONES de services/metricasReglas.js) y de sus valores de entrada
+  // (los de opcionesDeMetricas, services/metricasOpciones.js: el primero de cada lista, ningún destildado). Si cambia uno, falla
+  it('ESTADISTICOS, DIAS, GESTIONES y los de entrada de ESTADO_POR_DEFECTO son los del servidor', () => {
+    const valores = (nombre) => plano(vm.runInContext(nombre, ctx)).map(([valor]) => valor);
+    assert.deepEqual(valores('ESTADISTICOS'), [...ESTADISTICOS_DEL_SERVIDOR]);
+    assert.deepEqual(valores('DIAS'), [...DIAS_DEL_SERVIDOR]);
+    assert.deepEqual(valores('GESTIONES'), [...GESTIONES_DEL_SERVIDOR]);
+    const porDefecto = plano(vm.runInContext('ESTADO_POR_DEFECTO', ctx));
+    const delServidor = opcionesDeMetricas({}, { hoy: HOY, aniosConFoto: [] });
+    assert.deepEqual(
+      { estadistico: porDefecto.estadistico, dias: porDefecto.dias, gestion: porDefecto.gestion, sin: porDefecto.sin },
+      { estadistico: delServidor.estadistico, dias: delServidor.dias, gestion: delServidor.gestion, sin: delServidor.sin }
+    );
+    // El año de entrada es el que dice el servidor (null en la página: no se manda y el servidor usa el de hoy)
+    assert.equal(porDefecto.anio, null);
+    assert.equal(delServidor.anio, Number(HOY.slice(0, 4)));
+    // Y lo que la página entiende como de entrada es eso: sin parámetros, ESTADO_POR_DEFECTO
+    assert.deepEqual(plano(ctx.estadoDeLaUrl('')), porDefecto);
   });
 
   it('la consulta de la API lleva el año, los selectores y los destildados, pero no la gestión ni la pestaña', () => {

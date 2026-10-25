@@ -6,6 +6,10 @@
 -- 20/10/2026): las 32 actualizaciones aprobadas sin «Recibido el», de enero a octubre de 2026. Va un INSERT por cada una que
 -- trae la fecha o el origen: 27. Las otras 5 (los cambios 25, 27, 38, 39 y 41) quedaron sin completar: siguen en
 -- Métricas → Para completar.
+-- El último INSERT (el cambio 51: solo el origen, 'fuente_publica') NO sale del Excel: sale de la confirmación del usuario en
+-- el diseño (spec 2026-10-24-metricas-y-reportes, línea 13: esos datos se obtuvieron del digesto municipal). Ese cambio ya trae su
+-- «Recibido el» (por eso no estaba en el Excel) y le faltaba el origen; la fecha va NULL y no tapa la suya (lo importado solo
+-- completa lo que el cambio no trae). En total, 28 INSERT.
 -- Solo lleva el cambio, la fecha («Recibido el» u «Obtenido el») y el origen de los datos ('area' o 'fuente_publica'; NULL en
 -- gestión interna, donde no se pregunta). Las observaciones del Excel no se importan.
 -- Solo agrega: escribe en actualizaciones_recibido, por cambio_id, y no toca cambios_pendientes (datos_nuevos no se reescribe).
@@ -20,7 +24,8 @@
 -- Después de correrlo, pegarla sola en la pestaña SQL (sin el «-- » del principio): con la base del 24/10/2026 da 5 filas,
 -- los cambios 25, 27, 38, 39 y 41. Si da más, son actualizaciones aprobadas después del 24/10/2026 sin la fecha: también se ven en
 -- Métricas → Para completar.
--- Para deshacer: rollback-metricas.sql (borra la tabla con lo importado).
+-- Para deshacer: rollback-metricas.sql. Ojo: borra las DOS tablas, actualizaciones_recibido (lo importado) y también
+-- metricas_fotos (la foto de cada año, que no se puede volver a sacar tal como estaba): exportarlas antes si hace falta.
 -- =====================================================
 
 SET NAMES utf8mb4;
@@ -52,6 +57,7 @@ INSERT INTO actualizaciones_recibido (cambio_id, recibido_el, origen_datos) SELE
 INSERT INTO actualizaciones_recibido (cambio_id, recibido_el, origen_datos) SELECT 46, '2026-10-02', NULL FROM cambios_pendientes WHERE id = 46 ON DUPLICATE KEY UPDATE recibido_el = VALUES(recibido_el), origen_datos = VALUES(origen_datos);
 INSERT INTO actualizaciones_recibido (cambio_id, recibido_el, origen_datos) SELECT 47, '2026-10-09', 'area' FROM cambios_pendientes WHERE id = 47 ON DUPLICATE KEY UPDATE recibido_el = VALUES(recibido_el), origen_datos = VALUES(origen_datos);
 INSERT INTO actualizaciones_recibido (cambio_id, recibido_el, origen_datos) SELECT 48, '2026-10-13', 'fuente_publica' FROM cambios_pendientes WHERE id = 48 ON DUPLICATE KEY UPDATE recibido_el = VALUES(recibido_el), origen_datos = VALUES(origen_datos);
+INSERT INTO actualizaciones_recibido (cambio_id, recibido_el, origen_datos) SELECT 51, NULL, 'fuente_publica' FROM cambios_pendientes WHERE id = 51 ON DUPLICATE KEY UPDATE recibido_el = VALUES(recibido_el), origen_datos = VALUES(origen_datos);
 
 -- Verificación (con la base del 24/10/2026, 5 filas):
 -- SELECT c.id AS cambio_id, c.dataset_id FROM cambios_pendientes c LEFT JOIN actualizaciones_recibido r ON r.cambio_id = c.id WHERE c.tipo_cambio = 'editar' AND c.estado = 'aprobado' AND (JSON_CONTAINS(c.datos_nuevos, 'true', '$.registro_actualizacion') OR (LEFT(JSON_VALUE(c.datos_nuevos, '$.ultima_actualizacion'), 10) <> LEFT(IFNULL(JSON_VALUE(c.datos_anteriores, '$.ultima_actualizacion'), ''), 10) AND LEFT(JSON_VALUE(c.datos_nuevos, '$.proxima_actualizacion'), 10) <> LEFT(IFNULL(JSON_VALUE(c.datos_anteriores, '$.proxima_actualizacion'), ''), 10))) AND IFNULL(JSON_VALUE(c.datos_nuevos, '$.recibido_el'), '') = '' AND r.recibido_el IS NULL ORDER BY c.id;

@@ -28,8 +28,9 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      // Sin jsDelivr: ninguna página lo carga desde que Chart.js salió de Gestión (tests/paginas.test.js y publico.test.js)
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+      // Sin CDN (ni jsDelivr ni cdnjs): ninguna página carga un script ni una hoja de afuera, salvo las fuentes de Google, desde que
+      // Chart.js salió de Gestión (tests/paginas.test.js y publico.test.js)
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
