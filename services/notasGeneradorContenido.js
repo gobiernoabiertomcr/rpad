@@ -43,6 +43,8 @@ import { escapeHtml, QUE_SE_SOLICITA_POR_DEFECTO } from './notasDigitalesConteni
  * Una fila de una tabla.
  * @typedef {Object} Fila
  * @property {true} [encabezado] La fila de títulos (en el Word se repite arriba de cada hoja).
+ * @property {boolean} [conLaSiguiente] Va en la misma hoja que la fila siguiente (en el Word, keepNext en sus párrafos): la
+ *   fila de un dataset con la de su "Qué se solicita". La vista previa lo ignora.
  * @property {Celda[]} celdas
  */
 
@@ -180,7 +182,8 @@ const textoDeReiteracion = (anteriores) => {
   return `La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información ${informacion}, ${ORDENANZA}`;
 };
 
-// La tabla (4.5): el encabezado y, por cada dataset en el orden recibido, su fila y debajo la del "Qué se solicita"
+// La tabla (4.5): el encabezado y, por cada dataset en el orden recibido, su fila y debajo la del "Qué se solicita" (las dos,
+// en la misma hoja del Word)
 const tablaDeDatasets = (datasets) => {
   const celda = (valor) => ({ partes: [{ texto: valor }], letra: LETRA.tabla });
   const encabezado = {
@@ -188,7 +191,10 @@ const tablaDeDatasets = (datasets) => {
     celdas: COLUMNAS.map(c => ({ partes: [{ texto: c, negrita: true }], fondo: 'gris', letra: LETRA.tabla }))
   };
   const filas = datasets.flatMap(d => [
-    { celdas: [celda(String(d.titulo ?? '')), celda(String(d.frecuencia ?? '')), celda(texto(d.datosSolicitados) || INFORMACION_SIN_PEDIDO)] },
+    {
+      conLaSiguiente: true,
+      celdas: [celda(String(d.titulo ?? '')), celda(String(d.frecuencia ?? '')), celda(texto(d.datosSolicitados) || INFORMACION_SIN_PEDIDO)]
+    },
     {
       celdas: [{
         partes: [{ texto: QUE_SE_SOLICITA, cursiva: true }, { texto: ` ${texto(d.queSeSolicita) || QUE_SE_SOLICITA_POR_DEFECTO}` }],

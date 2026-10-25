@@ -4,6 +4,7 @@
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import JSZip from 'jszip';
 import { HOJA, renderDocx } from '../services/notasWord.js';
 import { construirNotaDgmit, LETRA } from '../services/notasGeneradorContenido.js';
@@ -13,12 +14,48 @@ import { validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 // Ayudantes
 // ---------------------------------------------------------------------------------------------------------------------------
 
-const LOGO = fs.readFileSync(new URL('../public/img/logo.png', import.meta.url));
+// Un PNG RGB de un solo color, de ancho × alto píxeles, armado en memoria: la firma, IHDR, IDAT e IEND, con su CRC
+const TABLA_CRC = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+const crc32 = (datos) => {
+  let c = 0xffffffff;
+  for (const byte of datos) c = TABLA_CRC[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+const bloquePng = (tipo, datos) => {
+  const cuerpo = Buffer.concat([Buffer.from(tipo, 'latin1'), datos]);
+  const largo = Buffer.alloc(4);
+  largo.writeUInt32BE(datos.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(cuerpo));
+  return Buffer.concat([largo, cuerpo, crc]);
+};
+const pngDePrueba = (ancho, alto) => {
+  const cabecera = Buffer.alloc(13);
+  cabecera.writeUInt32BE(ancho, 0);
+  cabecera.writeUInt32BE(alto, 4);
+  cabecera[8] = 8; // 8 bits por canal
+  cabecera[9] = 2; // RGB
+  const fila = Buffer.concat([Buffer.from([0]), Buffer.alloc(ancho * 3, 0x80)]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    bloquePng('IHDR', cabecera),
+    bloquePng('IDAT', zlib.deflateSync(Buffer.concat(Array.from({ length: alto }, () => fila)))),
+    bloquePng('IEND', Buffer.alloc(0))
+  ]);
+};
+const membreteDe = (datos) => Object.freeze({ datos, ...validarImagenMembrete(datos, 'image/png') });
+
+// El membrete de la hoja membretada mide 1241 × 178: a todo el ancho entra en el margen de arriba
+const MEMBRETE = membreteDe(pngDePrueba(1241, 178));
 const MARCA = fs.readFileSync(new URL('../public/img/membrete-isotipo-aclarado.png', import.meta.url));
-const MEMBRETE = Object.freeze({ datos: LOGO, ...validarImagenMembrete(LOGO, 'image/png') });
 const PIE = 'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.';
-// ImageRun mide en píxeles a 96 ppp; en el XML, EMU (9525 por píxel)
+// ImageRun mide en píxeles a 96 ppp; en el XML, EMU (9525 por píxel). Un twip son 635 EMU
 const EMU = (px) => px * 9525;
+const EMU_POR_TWIP = 635;
 
 const AREA = Object.freeze({ nombre: 'Secretaría de la Mujer, Género y Diversidad', articulo: 'la', area_superior: 'Intendencia', articulo_superior: 'la' });
 const DATASETS = Object.freeze([
@@ -122,6 +159,25 @@ describe('renderDocx: el encabezado', () => {
     assert.match(membrete, new RegExp(`<wp:extent cx="${EMU(816)}" cy="${EMU(alto)}"/>`));
   });
 
+  it('un membrete alto no pasa el margen de arriba: se achica con su proporción y se centra', async () => {
+    // Un PNG cuadrado del repo (225 × 225) y uno de 447 × 160: a todo el ancho medirían 816 y 292 px de alto
+    for (const datos of [fs.readFileSync(new URL('../public/img/icon.png', import.meta.url)), pngDePrueba(447, 160)]) {
+      const membrete = membreteDe(datos);
+      const { encabezados } = await conHoja(nota(), { membrete, pie: PIE });
+      const ancla = anclajes(encabezados[0]).find(a => /behindDoc="0"/.test(a));
+      const [, cx, cy] = ancla.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/).map(Number);
+      // El alto, el del margen de arriba (1985 twips) como mucho: 132 px
+      assert.ok(cy <= HOJA.arriba * EMU_POR_TWIP, `cy ${cy}`);
+      assert.equal(cy, EMU(132));
+      // El ancho, proporcional
+      assert.equal(cx, EMU(Math.round(membrete.ancho * 132 / membrete.alto)));
+      // Centrado: lo que le falta para el ancho de la hoja, repartido a los dos lados
+      const x = Number(ancla.match(/<wp:positionH relativeFrom="page"><wp:posOffset>(\d+)<\/wp:posOffset><\/wp:positionH>/)[1]);
+      assert.ok(Math.abs(x - (EMU(816) - cx) / 2) <= 1, `x ${x}`);
+      assert.match(ancla, /<wp:positionV relativeFrom="page"><wp:posOffset>0<\/wp:posOffset><\/wp:positionV>/);
+    }
+  });
+
   it('la marca de agua va centrada en la hoja, en los dos ejes, en unos 500 × 500 px', async () => {
     const { encabezados } = await conHoja(nota());
     const marca = anclajes(encabezados[0]).find(a => /behindDoc="1"/.test(a));
@@ -134,7 +190,7 @@ describe('renderDocx: el encabezado', () => {
   it('las imágenes del Word son el membrete recibido y el isotipo aclarado', async () => {
     const { imagenes } = await conHoja(nota());
     assert.equal(imagenes.length, 2);
-    assert.ok(imagenes.some(i => i.equals(LOGO)));
+    assert.ok(imagenes.some(i => i.equals(MEMBRETE.datos)));
     assert.ok(imagenes.some(i => i.equals(MARCA)));
   });
 
@@ -154,6 +210,26 @@ describe('renderDocx: el encabezado', () => {
       await renderDocx(nota(), { membrete: null, pie: PIE });
       await renderDocx(nota(), { membrete: MEMBRETE, pie: PIE });
       assert.equal(lectura.mock.callCount(), 0);
+    } finally {
+      lectura.mock.restore();
+    }
+  });
+
+  it('si la lectura de la marca de agua falla, el Word falla y el próximo la vuelve a leer', async () => {
+    // Una copia nueva del módulo, con la caché vacía (la de arriba ya leyó la marca)
+    const { renderDocx: renderNuevo } = await import('../services/notasWord.js?marca-que-falla');
+    const fallida = mock.method(fs.promises, 'readFile', () => Promise.reject(new Error('x')));
+    try {
+      await assert.rejects(renderNuevo(nota(), { membrete: null, pie: PIE }), { message: 'x' });
+      assert.equal(fallida.mock.callCount(), 1);
+    } finally {
+      fallida.mock.restore();
+    }
+    const lectura = mock.method(fs.promises, 'readFile');
+    try {
+      const { imagenes } = await abrir(await renderNuevo(nota(), { membrete: null, pie: PIE }));
+      assert.equal(lectura.mock.callCount(), 1);
+      assert.ok(imagenes[0].equals(MARCA));
     } finally {
       lectura.mock.restore();
     }
@@ -357,6 +433,19 @@ describe('renderDocx: la tabla', () => {
     assert.ok([...filas[0].matchAll(/<w:sz w:val="(\d+)"\/>/g)].every(m => Number(m[1]) === LETRA.tabla));
   });
 
+  it('la fila de cada dataset va con su "Qué se solicita": keepNext en todos sus párrafos; las demás filas, sin él', async () => {
+    const { documento } = await conHoja(nota());
+    const filas = tablas(documento)[0].match(/<w:tr>[\s\S]*?<\/w:tr>/g);
+    const parrafosDe = (fila) => fila.match(/<w:p>[\s\S]*?<\/w:p>/g);
+    // El encabezado, dataset, "Qué se solicita", dataset, "Qué se solicita"
+    assert.equal(filas.length, 5);
+    for (const i of [1, 3]) {
+      assert.equal(parrafosDe(filas[i]).length, 3);
+      assert.ok(parrafosDe(filas[i]).every(p => /<w:keepNext\/>/.test(p)), `fila ${i}`);
+    }
+    for (const i of [0, 2, 4]) assert.doesNotMatch(filas[i], /<w:keepNext/, `fila ${i}`);
+  });
+
   it('una celda que abarca columnas suma sus anchos', async () => {
     const bloques = [{
       tipo: 'tabla',
@@ -403,6 +492,32 @@ describe('renderDocx: el espacio para la firma', () => {
     assert.match(firma, /<w:tblW w:type="dxa" w:w="8838"\/>/);
     const bordes = firma.match(/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/)[0];
     assert.doesNotMatch(bordes, /w:val="single"/);
+  });
+
+  it('el remitente va con el espacio de la firma (keepNext); los otros párrafos, no', async () => {
+    const { documento } = await conHoja(nota());
+    const parrafos = parrafosFueraDeTablas(desdeElBody(documento));
+    const remitente = parrafos.at(-2);
+    assert.ok(textoDe(remitente).startsWith('DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL'));
+    assert.match(remitente, /<w:keepNext\/>/);
+    assert.ok(parrafos.slice(0, -2).every(p => !/<w:keepNext/.test(p)));
+    assert.doesNotMatch(parrafos.at(-1), /<w:keepNext/);
+  });
+
+  it('también con dos firmas, y lo que va antes de la firma puede ser una lista o una tabla', async () => {
+    const remitente = { tipo: 'parrafo', alinear: 'izquierda', partes: [{ texto: 'Remitente' }] };
+    const conDos = parrafosFueraDeTablas(desdeElBody((await conHoja([remitente, { tipo: 'firma', columnas: 2 }])).documento));
+    assert.match(conDos.find(p => textoDe(p) === 'Remitente'), /<w:keepNext\/>/);
+    // Una lista: solo su último ítem
+    const lista = { tipo: 'lista', items: [[{ texto: 'Uno' }], [{ texto: 'Dos' }]] };
+    const items = parrafosFueraDeTablas(desdeElBody((await conHoja([lista, { tipo: 'firma', columnas: 1 }])).documento)).filter(p => /<w:numPr>/.test(p));
+    assert.doesNotMatch(items[0], /<w:keepNext/);
+    assert.match(items[1], /<w:keepNext\/>/);
+    // Una tabla: los párrafos de su última fila
+    const tabla = { tipo: 'tabla', anchos: [50, 50], filas: [1, 2].map(n => ({ celdas: [{ partes: [{ texto: `a${n}` }] }, { partes: [{ texto: `b${n}` }] }] })) };
+    const filas = tablas((await conHoja([tabla, { tipo: 'firma', columnas: 1 }])).documento)[0].match(/<w:tr>[\s\S]*?<\/w:tr>/g);
+    assert.doesNotMatch(filas[0], /<w:keepNext/);
+    assert.equal(cuantas(filas[1], '<w:keepNext/>'), 2);
   });
 
   it('la nota de la DGMIT termina en el espacio de una firma', async () => {

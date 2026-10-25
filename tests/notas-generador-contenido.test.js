@@ -331,6 +331,16 @@ describe('construirNotaDgmit: la tabla (spec 4.5)', () => {
     assert.equal(textoDe(celda), `Qué se solicita: ${AREAS_ESPECIFICAS.queSeSolicita}`);
   });
 
+  // En el Word, la fila del dataset no queda al pie de una hoja con su "Qué se solicita" en la siguiente
+  it('la fila de cada dataset va con la siguiente (su "Qué se solicita"); el encabezado y las del "Qué se solicita", no', () => {
+    const [encabezado, ...filas] = tabla.filas;
+    assert.equal(encabezado.conLaSiguiente, undefined);
+    filas.forEach((fila, i) => {
+      if (i % 2 === 0) assert.equal(fila.conLaSiguiente, true, `fila ${i + 1}`);
+      else assert.equal(fila.conLaSiguiente, undefined, `fila ${i + 1}`);
+    });
+  });
+
   it('en el orden recibido: el encabezado y dos filas por dataset', () => {
     assert.equal(tabla.filas.length, 1 + 2 * 3);
     assert.deepEqual([1, 3, 5].map(i => textoDe(tabla.filas[i].celdas[0])), ['Áreas específicas de género', 'Presupuesto con perspectiva de género', 'Gimnasios Municipales']);

@@ -26,8 +26,12 @@ import { obtenerConfig } from './notasDigitalesDatos.js';
 export const HOJA = Object.freeze({ ancho: 12240, alto: 20160, arriba: 1985, costados: 1701, abajo: 1417, encabezado: 0, pie: 708 });
 // El ancho del texto: 8838 twips
 const ANCHO_UTIL = HOJA.ancho - 2 * HOJA.costados;
-// Las imágenes, en píxeles a 96 ppp: el membrete, el ancho de la hoja (8½″); la marca de agua, unos 13 cm de lado
-const ANCHO_HOJA_PX = 816;
+// Las imágenes, en píxeles a 96 ppp (15 twips o 9525 EMU por píxel): el membrete, el ancho de la hoja (8½″) y, como mucho,
+// el alto del margen de arriba (132 px); la marca de agua, unos 13 cm de lado
+const TWIPS_POR_PX = 15;
+const EMU_POR_PX = 9525;
+const ANCHO_HOJA_PX = HOJA.ancho / TWIPS_POR_PX;
+const ALTO_MAXIMO_MEMBRETE_PX = Math.floor(HOJA.arriba / TWIPS_POR_PX);
 const LADO_MARCA_PX = 500;
 // El espacio en blanco para firmar a mano: una pulgada
 const ALTO_FIRMA = 1440;
@@ -84,35 +88,39 @@ const anchosEnTwips = (anchos) => {
   return columnas;
 };
 
-const celdaDocx = (celda, ancho) => new TableCell({
+// conLaSiguiente: el párrafo va en la misma hoja que lo que sigue (keepNext; Word lo respeta, LibreOffice no en las tablas)
+const celdaDocx = (celda, ancho, conLaSiguiente) => new TableCell({
   width: { size: ancho, type: WidthType.DXA },
   columnSpan: celda.abarca > 1 ? celda.abarca : undefined,
   shading: celda.fondo === 'gris' ? GRIS : undefined,
   margins: MARGEN_CELDA,
-  children: [new Paragraph({ children: runs(celda.partes, celda.letra ?? LETRA.cuerpo) })]
+  children: [new Paragraph({ keepNext: conLaSiguiente || undefined, children: runs(celda.partes, celda.letra ?? LETRA.cuerpo) })]
 });
 
-// Una fila: cada celda, con el ancho de las columnas que abarca. La fila de títulos se repite arriba de cada hoja; ninguna
-// fila se parte entre dos hojas
-const filaDocx = (fila, columnas) => {
+// Una fila: cada celda, con el ancho de las columnas que abarca. La fila de títulos se repite arriba de cada hoja y ninguna
+// fila se parte entre dos hojas. Una fila con la siguiente (keepNext en todos sus párrafos) no queda al pie de una hoja con
+// la siguiente arriba de la otra
+const filaDocx = (fila, columnas, conLaSiguiente) => {
   let desde = 0;
   const celdas = fila.celdas.map((celda) => {
     const hasta = desde + Math.max(1, celda.abarca ?? 1);
     const ancho = columnas.slice(desde, hasta).reduce((suma, c) => suma + c, 0);
     desde = hasta;
-    return celdaDocx(celda, ancho);
+    return celdaDocx(celda, ancho, conLaSiguiente);
   });
   return new TableRow({ tableHeader: fila.encabezado === true || undefined, cantSplit: true, children: celdas });
 };
 
-const tablaDocx = (bloque) => {
+// conLaFirma: la última fila va con la firma que sigue a la tabla
+const tablaDocx = (bloque, conLaFirma) => {
   const columnas = anchosEnTwips(bloque.anchos);
+  const ultima = bloque.filas.length - 1;
   return new Table({
     width: { size: ANCHO_UTIL, type: WidthType.DXA },
     columnWidths: columnas,
     layout: TableLayoutType.FIXED,
     borders: bordes(BORDE),
-    rows: bloque.filas.map(fila => filaDocx(fila, columnas))
+    rows: bloque.filas.map((fila, i) => filaDocx(fila, columnas, fila.conLaSiguiente === true || (conLaFirma && i === ultima)))
   });
 };
 
@@ -138,20 +146,23 @@ const firmaDocx = (bloque) => {
 // del pie. El último párrafo del cuerpo termina por eso en un run vacío y sin formato, que en Word no se ve
 const runsDelFinal = (ultimo) => (ultimo ? [new TextRun('')] : []);
 
-// Cada bloque, en uno o más elementos del cuerpo del Word. `ultimo`: es el último bloque del cuerpo
+// Cada bloque, en uno o más elementos del cuerpo del Word. `ultimo`: es el último bloque del cuerpo. `conLaFirma`: el bloque
+// siguiente es la firma, y el último párrafo de este va en la misma hoja que ella (el remitente con el espacio para firmar)
 const DOCX_DE_BLOQUE = {
-  parrafo: (b, ultimo) => [new Paragraph({
+  parrafo: (b, { ultimo, conLaFirma }) => [new Paragraph({
     alignment: ALINEACION[b.alinear] ?? AlignmentType.LEFT,
     spacing: { before: b.antes ?? 0, after: b.despues ?? 0 },
+    keepNext: conLaFirma || undefined,
     children: [...runs(b.partes), ...runsDelFinal(ultimo)]
   })],
-  tabla: (b) => [tablaDocx(b)],
+  tabla: (b, { conLaFirma }) => [tablaDocx(b, conLaFirma)],
   // Un párrafo con viñeta por ítem; el último deja debajo el espacio de un párrafo del cuerpo
-  lista: (b, ultimo) => b.items.map((partes, i) => {
+  lista: (b, { ultimo, conLaFirma }) => b.items.map((partes, i) => {
     const ultimoItem = i === b.items.length - 1;
     return new Paragraph({
       bullet: { level: 0 },
       spacing: { after: ultimoItem ? ESPACIO.parrafo : 0 },
+      keepNext: (conLaFirma && ultimoItem) || undefined,
       children: [...runs(partes), ...runsDelFinal(ultimo && ultimoItem)]
     });
   }),
@@ -161,26 +172,39 @@ const DOCX_DE_BLOQUE = {
 const docxDeBloque = (bloque, i, bloques) => {
   const convertir = DOCX_DE_BLOQUE[bloque?.tipo];
   if (!convertir) throw new Error(`Bloque desconocido en el Word: ${bloque?.tipo}`);
-  return convertir(bloque, i === bloques.length - 1);
+  return convertir(bloque, { ultimo: i === bloques.length - 1, conLaFirma: bloques[i + 1]?.tipo === 'firma' });
 };
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // La hoja: encabezado y pie
 // ---------------------------------------------------------------------------------------------------------------------------
 
-// El membrete: flotante, anclado a la hoja en (0, 0), a todo el ancho y delante del texto (no lo tapa: va en el margen)
-const imagenDelMembrete = ({ datos, ancho, alto }) => new ImageRun({
-  data: datos,
-  transformation: { width: ANCHO_HOJA_PX, height: Math.round((alto * ANCHO_HOJA_PX) / ancho) },
-  floating: {
-    horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
-    verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 },
-    wrap: { type: TextWrappingType.NONE },
-    allowOverlap: true,
-    behindDocument: false
-  },
-  altText: { name: 'Membrete', title: 'Membrete', description: 'Membrete de la Municipalidad de Comodoro Rivadavia' }
-});
+// El tamaño del membrete en píxeles y su posición horizontal en EMU: a todo el ancho de la hoja si así entra en el margen de
+// arriba (el membrete de la hoja membretada, 1241 × 178, mide 117 px de alto); si no, del alto del margen, con su proporción
+// y centrado
+const medidasDelMembrete = ({ ancho, alto }) => {
+  const altoATodoElAncho = Math.round((alto * ANCHO_HOJA_PX) / ancho);
+  if (altoATodoElAncho <= ALTO_MAXIMO_MEMBRETE_PX) return { ancho: ANCHO_HOJA_PX, alto: altoATodoElAncho, x: 0 };
+  const anchoAchicado = Math.max(1, Math.round((ancho * ALTO_MAXIMO_MEMBRETE_PX) / alto));
+  return { ancho: anchoAchicado, alto: ALTO_MAXIMO_MEMBRETE_PX, x: Math.round(((ANCHO_HOJA_PX - anchoAchicado) / 2) * EMU_POR_PX) };
+};
+
+// El membrete: flotante, anclado al borde de arriba de la hoja y delante del texto, que no lo tapa: nunca pasa el margen
+const imagenDelMembrete = ({ datos, ...tamano }) => {
+  const medidas = medidasDelMembrete(tamano);
+  return new ImageRun({
+    data: datos,
+    transformation: { width: medidas.ancho, height: medidas.alto },
+    floating: {
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: medidas.x },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 },
+      wrap: { type: TextWrappingType.NONE },
+      allowOverlap: true,
+      behindDocument: false
+    },
+    altText: { name: 'Membrete', title: 'Membrete', description: 'Membrete de la Municipalidad de Comodoro Rivadavia' }
+  });
+};
 
 // La marca de agua: flotante, centrada en la hoja en los dos ejes y detrás del texto
 const imagenDeLaMarca = (datos) => new ImageRun({
