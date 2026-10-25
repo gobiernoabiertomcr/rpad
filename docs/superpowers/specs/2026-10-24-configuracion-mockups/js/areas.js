@@ -6,7 +6,7 @@ let areaAbierta = null;       // el área del modal; null = alta
 let areaDesplegada = null;    // variante filas: la fila abierta
 let botonQueAbrio = null;
 
-const VARIANTE_LISTA = new URLSearchParams(window.location.search).get('lista') === 'tabla' ? 'tabla' : 'filas';
+const VARIANTE_LISTA = new URLSearchParams(window.location.search).get('lista') === 'filas' ? 'filas' : 'tabla';
 const TEXTO_AMBITO = { municipal: 'Municipal', externo: 'Fuera del municipio' };
 
 const escA = (valor) => Utils.escapeHtml(valor ?? '');
