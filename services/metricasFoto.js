@@ -44,6 +44,12 @@ export const claveDeLaVista = (estadistico, dias) => `${estadistico}-${dias}`;
 
 const GESTIONES_DE_LA_CINTA = Object.freeze(['externa', 'interna']);
 
+// Las cintas de una vista (la de vistaDe con `estadistico` y `dias`): { externa, interna }, cada una la de cintaDeMetricas con el
+// circuito de su gestión (null si no se dibuja). Así las guarda la foto y así las arma la API de métricas en vivo
+// (controllers/metricasController.js). Nunca tira: sin vista, las dos null.
+export const cintasDeLaVista = (vista, { estadistico, dias }) => Object.fromEntries(GESTIONES_DE_LA_CINTA.map((gestion) =>
+  [gestion, cintaDeMetricas(vista?.circuito?.[gestion], { gestion, dias, estadistico })]));
+
 // Los datos de la foto de `anio` al 31/12, con las fuentes de todos los datasets (el Map de fuentesDe). No toca la base.
 // `generada`: el momento en que se saca.
 export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
@@ -56,8 +62,7 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
     for (const dias of DIAS) {
       const clave = claveDeLaVista(estadistico, dias);
       vistas[clave] = vistaDe(delAnio, { anio, al, estadistico, dias, sin: [] });
-      cintas[clave] = Object.fromEntries(GESTIONES_DE_LA_CINTA.map((gestion) =>
-        [gestion, cintaDeMetricas(vistas[clave].circuito[gestion], { gestion, dias, estadistico })]));
+      cintas[clave] = cintasDeLaVista(vistas[clave], { estadistico, dias });
     }
   }
   return {

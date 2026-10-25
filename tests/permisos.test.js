@@ -92,7 +92,7 @@ describe('lector', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/gestion/metricas', '/gestion/proyectos', '/seguimiento']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/gestion/metricas', '/gestion/proyectos', '/seguimiento', '/metricas']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -144,7 +144,7 @@ describe('colaborador', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/reportes/estado-general']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
@@ -188,6 +188,13 @@ describe('visitante sin sesión', () => {
     for (const ruta of ['/seguimiento', `/seguimiento/${id}`, `/seguimiento/${id}/pdf`]) {
       assert.equal((await api.get(ruta)).status, 401, ruta);
     }
+  });
+
+  // Las métricas (spec 2026-10-24-metricas-y-reportes, 2.3): para todos los roles con sesión, nunca sin ella
+  it('recibe 401 en GET /metricas', async () => {
+    const res = await api.get('/metricas');
+    assert.equal(res.status, 401);
+    assert.equal(res.body.success, false);
   });
 
   it('no puede usar un token firmado con la clave por defecto que tenía el código', async () => {
