@@ -3,7 +3,7 @@ import { fuentesDe } from '../services/seguimientoDatos.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas } from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { claveDeLaVista, leerFoto, aniosConFoto as leerAniosConFoto } from '../services/metricasFoto.js';
-import { opcionesDeMetricas, aniosDeMetricas } from '../services/metricasOpciones.js';
+import { opcionesDeMetricas, aniosDeMetricas, fotosDeMetricas } from '../services/metricasOpciones.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { nombreCorto, disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { renderMetricasDelAnio } from '../services/reportesMetricasPdf.js';
@@ -59,9 +59,10 @@ export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
 // métricas (un año anterior a 2026 o futuro). `hoy`: el día de hoy (por defecto, el de Argentina). Lee la base: los años con foto y,
 // según el año, la foto o las fuentes de todos los datasets (fuentesDe). Tira si algo falla (también con una foto que no se puede
 // leer). Devuelve:
-// { anio, al, en_vivo, aviso_foto, anios, vista, cinta: { externa, interna }, contexto: { indice, indice_vacio, antiguedad, estados },
-//   trabajo, areas, sin_titulos }
-// - anio, al, en_vivo y aviso_foto: los de opcionesDeMetricas; anios: los años que se pueden elegir (aniosDeMetricas);
+// { anio, al, en_vivo, aviso_foto, anios, fotos, vista, cinta: { externa, interna }, contexto: { indice, indice_vacio, antiguedad,
+//   estados }, trabajo, areas, sin_titulos }
+// - anio, al, en_vivo y aviso_foto: los de opcionesDeMetricas; anios: los años que se pueden elegir (aniosDeMetricas); fotos: esos
+//   años con su foto y el día en que se saca (fotosDeMetricas: lo lee la tarjeta del Informe anual de la pestaña Reportes);
 // - vista: la de vistaDe con lo elegido (el circuito, los resultados, los casos y «Para completar»); cinta: la de cada gestión
 //   (cintaDeMetricas; null si no se dibuja);
 // - contexto: contextoDelAnio, el índice mes a mes (indiceMesAMes, y si no hay nada que dibujar, por qué), la antigüedad de los
@@ -78,7 +79,7 @@ const metricasConOpciones = async (query, { hoy }) => {
   if (opciones === null) return null;
   const periodo = {
     anio: opciones.anio, al: opciones.al, en_vivo: opciones.en_vivo, aviso_foto: opciones.aviso_foto,
-    anios: aniosDeMetricas({ hoy })
+    anios: aniosDeMetricas({ hoy }), fotos: fotosDeMetricas({ hoy, aniosConFoto })
   };
   if (opciones.en_vivo) return { opciones, data: { ...periodo, ...enVivo(await fuentesDe(null), opciones) } };
   const foto = await leerFoto(opciones.anio);

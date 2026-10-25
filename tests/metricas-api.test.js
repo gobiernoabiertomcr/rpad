@@ -16,7 +16,7 @@ import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { lineasPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 
 const AL = '2026-12-31';
-const CLAVES_DE_DATA = ['anio', 'al', 'en_vivo', 'aviso_foto', 'anios', 'vista', 'cinta', 'contexto', 'trabajo', 'areas', 'sin_titulos'];
+const CLAVES_DE_DATA = ['anio', 'al', 'en_vivo', 'aviso_foto', 'anios', 'fotos', 'vista', 'cinta', 'contexto', 'trabajo', 'areas', 'sin_titulos'];
 const COMBINACIONES = ESTADISTICOS.flatMap((estadistico) => DIAS.map((dias) => ({ estadistico, dias })));
 let base, servidor, api, usuarios, dbReal, controlador, seguimientoDatos, foto;
 
@@ -123,6 +123,8 @@ describe('GET /metricas', () => {
       assert.deepEqual(Object.keys(data), CLAVES_DE_DATA, quien);
       // El año en curso, en vivo al día de hoy
       assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios.at(-1)], [anio, hoy, true, null, anio], quien);
+      // Cada año con su foto (sin fotos en la base, ninguno) y el día en que se saca: lo que lee la tarjeta del Informe anual
+      assert.deepEqual(data.fotos, data.anios.map((a) => ({ anio: a, con_foto: false, dia_de_la_foto: `${a + 1}-01-10` })), quien);
       assert.deepEqual(Object.keys(data.vista), ['circuito', 'resultados', 'casos', 'para_completar'], quien);
       assert.deepEqual(Object.keys(data.cinta), ['externa', 'interna'], quien);
       assert.deepEqual(Object.keys(data.contexto), ['indice', 'indice_vacio', 'antiguedad', 'estados'], quien);
@@ -343,6 +345,7 @@ describe('metricasDe con un hoy fijo', () => {
       const data = await metricas({ anio: '2026', estadistico, dias, sin: `${ids[0]},${ids[1]}` }, '2027-03-01');
       assert.deepEqual(Object.keys(data), CLAVES_DE_DATA, clave);
       assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos], [2026, AL, false, null, [2026, 2027], []], clave);
+      assert.deepEqual(data.fotos, [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }], clave);
       assert.deepEqual(data.vista, guardada.vistas[clave], clave);
       assert.deepEqual(data.cinta, guardada.cintas[clave], clave);
       assert.deepEqual(data.contexto, guardada.contexto, clave);
@@ -369,6 +372,8 @@ describe('metricasDe con un hoy fijo', () => {
     // El año en curso, en vivo con la base de hoy
     const enCurso = await metricas({}, '2027-03-01');
     assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto], [2027, '2027-03-01', true, null]);
+    // El año en curso también dice qué años tienen foto
+    assert.deepEqual(enCurso.fotos.map((f) => [f.anio, f.con_foto]), [[2026, true], [2027, false]]);
   });
 
   // Spec 5: el PDF de un año con foto sale de la foto. El servidor de los tests corre con el reloj de verdad (en 2026 no hay ningún año
@@ -410,6 +415,7 @@ describe('metricasDe con un hoy fijo', () => {
         const data = await metricas({ anio: '2026', estadistico, dias }, hoy);
         assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos],
           [2026, AL, true, aviso, anios, []], clave);
+        assert.deepEqual(data.fotos, anios.map((a) => ({ anio: a, con_foto: false, dia_de_la_foto: `${a + 1}-01-10` })), clave);
         assert.deepEqual(data.vista, laQueSeVaASacar.vistas[foto.claveDeLaVista(estadistico, dias)], clave);
         assert.deepEqual(data.cinta, laQueSeVaASacar.cintas[foto.claveDeLaVista(estadistico, dias)], clave);
         assert.deepEqual(data.contexto, laQueSeVaASacar.contexto, clave);
@@ -442,6 +448,7 @@ describe('metricasDe con un hoy fijo', () => {
     for (const hoy of ['2027-01-10', '2027-01-11']) {
       const data = await metricas({ anio: '2026', sin: String(ids[0]) }, hoy);
       assert.deepEqual([data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos], [false, null, [2026, 2027], []], hoy);
+      assert.deepEqual(data.fotos.map((f) => [f.anio, f.con_foto]), [[2026, true], [2027, false]], hoy);
       assert.deepEqual(data.vista, guardada.vistas['mediana-habiles'], hoy);
     }
   });

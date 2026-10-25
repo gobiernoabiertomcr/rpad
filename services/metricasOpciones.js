@@ -43,6 +43,15 @@ const periodoDe = (anio, hoy, conFoto) => {
 // uno cerrado sin foto se ve en vivo). [] si `hoy` no es una fecha.
 export const aniosDeMetricas = ({ hoy } = {}) => (esFechaIso(hoy) ? aniosEntre(PRIMER_ANIO, Number(hoy.slice(0, 4))) : []);
 
+// Los años de aniosDeMetricas en `hoy` con su foto, para la tarjeta del Informe anual (spec 5, Para presentar, punto 2), que así no la
+// deduce: [{ anio, con_foto, dia_de_la_foto }], del más viejo al más nuevo. `con_foto`: si el año está en `aniosConFoto`;
+// `dia_de_la_foto`: 'AAAA-MM-DD', el 10/01 del año siguiente, desde el que se saca (la tarjeta dice «Disponible desde el 10/01/2027»
+// mientras no la tiene). [] si `hoy` no es una fecha.
+export const fotosDeMetricas = ({ hoy, aniosConFoto } = {}) => {
+  const conFoto = conjuntoDeFotos(aniosConFoto);
+  return aniosDeMetricas({ hoy }).map((anio) => ({ anio, con_foto: conFoto.has(anio), dia_de_la_foto: diaDeLaFoto(anio) }));
+};
+
 // De qué año toca sacar la foto en `hoy` (Ruling 18), con los años que ya la tienen (`aniosConFoto`): el más viejo de los años
 // cerrados desde PRIMER_ANIO cuyo 10/01 ya llegó y que todavía no la tienen, { anio, falta: true }: si una corrida no pudo sacarla,
 // la siguiente la reintenta, aunque haya pasado más de un año, de a una por corrida. Si no falta ninguna, { anio, falta: false } con

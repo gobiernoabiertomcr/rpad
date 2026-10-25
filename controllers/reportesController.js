@@ -6,7 +6,7 @@ import { fuentesDe, idsDeLaLista } from '../services/seguimientoDatos.js';
 import { OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
 import { renderPorArea } from '../services/reportesPorAreaPdf.js';
-import { renderAvisos, avisosDelPeriodo } from '../services/reportesAvisosPdf.js';
+import { renderAvisos, avisosDelPeriodo, MENSAJE_PERIODO_INVALIDO } from '../services/reportesAvisosPdf.js';
 import { agendaDe, opcionesDeAgenda } from '../services/reportesAgenda.js';
 import { renderAgenda } from '../services/reportesAgendaPdf.js';
 import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
@@ -84,7 +84,7 @@ export const reporteEstadoGeneral = async (req, res) => {
 // solo instante para el pie y para "hoy"). Las consultas no leen las direcciones (destinatarios, para, cc, cco) ni el texto de los
 // errores: no hay cómo que lleguen al PDF.
 
-const PERIODO_INVALIDO = { success: false, error: 'Elegí un período válido.' };
+const PERIODO_INVALIDO = { success: false, error: MENSAJE_PERIODO_INVALIDO };
 
 // El período de GET /reportes/avisos?desde=&hasta=: dos fechas 'AAAA-MM-DD' que existen, con desde <= hasta (se comparan como texto).
 // Sin una de las dos (o vacía), la de por defecto: del 1/1 del año de hoy a hoy. null si no es válido.

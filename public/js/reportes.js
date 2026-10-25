@@ -13,8 +13,10 @@
  * metricasCinta.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
  * por Utils.escapeHtml, y un número se escribe con String (un 0 es «0»: Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
- * el DOM o la API va aparte, al final. La pestaña Reportes tiene, por ahora, tres tarjetas (al final del archivo): Estado general,
- * Avisos del RPAD y Por área.
+ * el DOM o la API va aparte, al final. La pestaña Reportes (spec 5) tiene siete tarjetas en dos grupos, «Para presentar» (Métricas del
+ * año, Informe anual y Estado general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda de pedidos y Datos para
+ * completar): htmlDeReportes las arma y pedidoDeReporte dice qué pide cada una; cada PDF se descarga con el JWT en el encabezado
+ * (API.pedirArchivo). Qué años tienen foto lo dice el servidor (`fotos` de GET /api/metricas).
  */
 
 // Todos los roles con sesión la ven; sin sesión, al login
@@ -872,15 +874,252 @@ function htmlDeParaCompletar(vista, puedeCargar) {
 }
 
 // =====================================================
+// La pestaña Reportes (pura)
+// =====================================================
+
+// Los chips de la Agenda de pedidos y sus gestiones: copia de MESES_DE_LA_AGENDA y GESTIONES_DE_LA_AGENDA (services/reportesAgenda.js),
+// atada por un test de paridad
+const MESES_AGENDA = [[3, '3'], [6, '6'], [12, '12 meses']];
+const GESTIONES_AGENDA = [['ambas', 'Las dos gestiones'], ['externa', 'Gestión externa'], ['interna', 'Gestión interna']];
+// Lo elegido en las tarjetas al entrar: Métricas del año, con el año de la pestaña Métricas (null); el Informe anual, con el que propone
+// anioDelInforme (null); ningún área; Avisos del RPAD sin período (la página pone del 1/1 a hoy); la Agenda, con los de entrada del
+// servidor (6 meses y las dos gestiones: MESES_POR_DEFECTO y opcionesDeAgenda)
+const REPORTES_POR_DEFECTO = Object.freeze({ metricas: null, informe: null, area: '', desde: '', hasta: '', meses: 6, gestion: 'ambas' });
+// Copia del 400 de GET /reportes/avisos (MENSAJE_PERIODO_INVALIDO de services/reportesAvisosPdf.js), atada por un test de paridad
+const PERIODO_INVALIDO = 'Elegí un período válido.';
+const FALTA_EL_AREA = 'Elegí un área.';
+
+// Los íconos de las tarjetas de «Para presentar», los de la maqueta (las de «Para trabajar» no llevan)
+const ICONOS_DE_REPORTES = {
+  metricas: iconoDeReporte('<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'),
+  informe: iconoDeReporte('<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>'),
+  estado: iconoDeReporte('<path d="m19 9-5 5-4-4-3 3"/><path d="M3 3v18h18"/>')
+};
+
+function iconoDeReporte(trazos) {
+  return `<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${trazos}</svg>`;
+}
+
+// Una fecha 'AAAA-MM-DD' que existe (copia de esFechaIso de services/notasDigitalesCalendario.js, como esFechaDeTexto de seguimiento.js)
+function esFechaDeTexto(valor) {
+  return typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor) && Utils.soloFecha(valor) === valor;
+}
+
+// Un id de área que puede ir en una dirección: un entero positivo, como número o como texto de solo dígitos (el valor del selector); si
+// no, null
+function idDeArea(valor) {
+  const numero = typeof valor === 'string' && /^\d+$/.test(valor) ? Number(valor) : valor;
+  return Number.isSafeInteger(numero) && numero > 0 ? numero : null;
+}
+
+// Los meses de la Agenda: 3, 6 o 12; lo demás, los de entrada
+function mesesDeLaAgenda(valor) {
+  return MESES_AGENDA.some(([meses]) => meses === valor) ? valor : REPORTES_POR_DEFECTO.meses;
+}
+
+// Los años de las tarjetas: los de `fotos` de GET /api/metricas ({ anio, con_foto, dia_de_la_foto }, del más viejo al en curso), sin lo
+// que no es un año
+function aniosDeReportes(anios) {
+  return comoLista(anios).filter((foto) => esObjeto(foto) && Number.isInteger(foto.anio));
+}
+
+// El año de Métricas del año: el elegido (el de la tarjeta o, si no eligió otro, el de la pestaña Métricas) si es de los del servidor; si
+// no, el en curso (el último). null sin años
+function anioDeMetricasDelAnio(anio, anios) {
+  const lista = aniosDeReportes(anios);
+  return lista.some((foto) => foto.anio === anio) ? anio : (lista.at(-1)?.anio ?? null);
+}
+
+// El año del Informe anual: el elegido si es de los del servidor; si no, el más nuevo con foto; si ninguno la tiene, el último cerrado
+// (el anterior al en curso, el primero que la va a tener: entre el 1/1 y el 10/01); sin años cerrados, el en curso. null sin años
+function anioDelInforme(anio, anios) {
+  const lista = aniosDeReportes(anios);
+  if (lista.some((foto) => foto.anio === anio)) return anio;
+  const conFoto = lista.filter((foto) => foto.con_foto === true);
+  if (conFoto.length) return conFoto.at(-1).anio;
+  return (lista.length > 1 ? lista.at(-2) : lista.at(-1))?.anio ?? null;
+}
+
+// Lo elegido en una tarjeta con un control cambiado (`clave`: 'metricas', 'informe', 'area', 'desde', 'hasta', 'meses' o 'gestion'; `valor`,
+// el texto del control). Los años, como números; los meses y la gestión, solo los de la lista. Lo que no sirve no cambia nada
+function conReporteElegido(datos, clave, valor) {
+  const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
+  if (clave === 'metricas' || clave === 'informe') {
+    const anio = anioDe(valor);
+    return anio === null ? e : { ...e, [clave]: anio };
+  }
+  if (clave === 'meses') {
+    const meses = /^\d+$/.test(String(valor ?? '')) ? Number(valor) : null;
+    return MESES_AGENDA.some(([m]) => m === meses) ? { ...e, meses } : e;
+  }
+  if (clave === 'gestion') return GESTIONES_AGENDA.some(([g]) => g === valor) ? { ...e, gestion: valor } : e;
+  if (clave === 'area' || clave === 'desde' || clave === 'hasta') return { ...e, [clave]: typeof valor === 'string' ? valor : '' };
+  return e;
+}
+
+// Un campo de una tarjeta: su label y su control
+function htmlDeCampo(id, rotulo, control) {
+  return `<div class="mt-campo"><label for="${id}">${rotulo}</label>${control}</div>`;
+}
+
+// El selector de un año: el en curso arriba (en Métricas del año, «2026 (en curso)», como en la barra de Métricas) y debajo los
+// anteriores
+function htmlDeSelectorDeAnios(id, selector, lista, actual, conEnCurso) {
+  const enCurso = lista.at(-1)?.anio;
+  const opciones = [...lista].reverse().map(({ anio }) => `<option value="${String(anio)}"${anio === actual ? ' selected' : ''}>`
+    + `${String(anio)}${conEnCurso && anio === enCurso ? ' (en curso)' : ''}</option>`).join('');
+  return `<select id="${id}" class="mt-select" data-selector="${selector}">${opciones}</select>`;
+}
+
+// En lugar del selector de un año, mientras llegan los años (`anios` null) o si no llegaron (la respuesta de las métricas fue un error)
+function htmlDelEstadoDeLosAnios(anios) {
+  return `<p class="rp-estado">${anios === null || anios === undefined ? 'Cargando los años…' : 'No se pudieron cargar los años.'}</p>`;
+}
+
+// Las áreas del selector de Por área, por nombre (como en Áreas), con «Elegí un área» primero; mientras llegan (`areas` null), lo dice.
+// Un área sin un id que pueda ir en la dirección no se ofrece
+function htmlDeOpcionesDeArea(areas, elegida) {
+  if (!Array.isArray(areas)) return '<option value="">Cargando las áreas…</option>';
+  const lista = areas.filter((area) => esObjeto(area) && idDeArea(area.id) !== null && typeof area.nombre === 'string')
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  return '<option value="">Elegí un área</option>' + lista.map((area) => {
+    const id = String(idDeArea(area.id));
+    return `<option value="${id}"${id === elegida ? ' selected' : ''}>${escaparTexto(area.nombre)}</option>`;
+  }).join('');
+}
+
+// El botón de una tarjeta, descripto por su título (todos dicen «Descargar PDF»); el que no se puede usar, con aria-disabled (se alcanza
+// con el teclado y se lee) y su porqué a la vista
+function htmlDelBotonDeReporte(clave) {
+  return `<button type="button" class="mt-btn mt-btn-tinta" data-reporte="${clave}" aria-describedby="rp-titulo-${clave}">${ICONO_DESCARGA}Descargar PDF</button>`;
+}
+
+function htmlDelBotonNoDisponible(clave, texto) {
+  return `<button type="button" class="mt-btn rp-no-disponible" data-reporte="${clave}" aria-disabled="true" aria-describedby="rp-titulo-${clave}">${texto}</button>`;
+}
+
+// Una tarjeta: una sección con su h3 (y su ícono), su texto, sus campos, su botón y, debajo, cuántas hojas tiene
+function htmlDeTarjetaDeReporte(clave, titulo, texto, { campos = '', boton = htmlDelBotonDeReporte(clave), hojas = '' } = {}) {
+  return `<section class="rp-tarjeta" aria-labelledby="rp-titulo-${clave}"><h3 id="rp-titulo-${clave}">${ICONOS_DE_REPORTES[clave] ?? ''}${titulo}</h3>`
+    + `<p class="rp-texto">${texto}</p>${campos ? `<div class="rp-campos">${campos}</div>` : ''}${boton}`
+    + `${hojas ? `<p class="rp-hojas">${hojas}</p>` : ''}</section>`;
+}
+
+// La pestaña Reportes (spec 5, maqueta 4): siete tarjetas en dos grupos, «Para presentar» (Métricas del año, Informe anual y Estado
+// general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda de pedidos y Datos para completar), cada una con su PDF.
+// `datos`: lo elegido en las tarjetas (REPORTES_POR_DEFECTO; `metricas`, el año de la tarjeta o, si no eligió otro, el de la pestaña
+// Métricas). `anios`: los de `fotos` de GET /api/metricas (null mientras llegan; [] si no llegaron); el Informe anual de un año sin foto
+// dice desde qué día se puede descargar, con el día del servidor. `areas`: las de API.getAreas() (null mientras llegan). Las cantidades
+// de hojas son las reales con los datos del 25/10/2026 (Ruling 24); donde depende de lo que se elige, no hay un número
+function htmlDeReportes(datos, { anios = null, areas = null } = {}) {
+  const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
+  const lista = aniosDeReportes(anios);
+  const sinAnios = lista.length === 0 ? htmlDelEstadoDeLosAnios(anios) : '';
+
+  const anioInforme = anioDelInforme(e.informe, lista);
+  const foto = lista.find(({ anio }) => anio === anioInforme) ?? null;
+  const botonDelInforme = foto?.con_foto === true ? htmlDelBotonDeReporte('informe')
+    : htmlDelBotonNoDisponible('informe', foto ? `Disponible desde el ${fecha(foto.dia_de_la_foto)}` : 'Descargar PDF');
+
+  const presentar = [
+    htmlDeTarjetaDeReporte('metricas', 'Métricas del año', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', {
+      campos: sinAnios || htmlDeCampo('rp-metricas-anio', 'Año', htmlDeSelectorDeAnios('rp-metricas-anio', 'rp-metricas', lista, anioDeMetricasDelAnio(e.metricas, lista), true)),
+      hojas: 'Unas 5 hojas'
+    }),
+    htmlDeTarjetaDeReporte('informe', 'Informe anual', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).', {
+      campos: sinAnios || htmlDeCampo('rp-informe-anio', 'Año', htmlDeSelectorDeAnios('rp-informe-anio', 'rp-informe', lista, anioInforme, false)),
+      boton: botonDelInforme,
+      hojas: 'Se arma con la foto del 31/12'
+    }),
+    htmlDeTarjetaDeReporte('estado', 'Estado general de los datasets', 'La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.', {
+      hojas: 'Unas 4 hojas'
+    })
+  ];
+
+  const meses = mesesDeLaAgenda(e.meses);
+  const gestion = elegido(e.gestion, GESTIONES_AGENDA);
+  const trabajar = [
+    htmlDeTarjetaDeReporte('area', 'Por área', 'Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.', {
+      campos: htmlDeCampo('rp-area', 'Área', `<select id="rp-area" class="mt-select" data-selector="rp-area">${htmlDeOpcionesDeArea(areas, e.area)}</select>`),
+      hojas: 'Una portada y una hoja por dataset'
+    }),
+    htmlDeTarjetaDeReporte('avisos', 'Avisos del RPAD', 'La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.', {
+      campos: htmlDeCampo('rp-desde', 'Desde', `<input type="date" id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="${escaparTexto(e.desde)}">`)
+        + htmlDeCampo('rp-hasta', 'Hasta', `<input type="date" id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="${escaparTexto(e.hasta)}">`)
+    }),
+    htmlDeTarjetaDeReporte('agenda', 'Agenda de pedidos', 'Qué vence en los próximos meses, mes por mes, con el área y los datos que se van a pedir.', {
+      campos: '<div class="mt-campo"><span class="rp-rotulo" id="rp-meses-rotulo">Próximos</span><div class="mt-chips" role="group" aria-labelledby="rp-meses-rotulo">'
+        + `${MESES_AGENDA.map(([valor, texto]) => htmlDeChip('rp-meses', String(valor), texto, valor === meses)).join('')}</div></div>`
+        + htmlDeCampo('rp-gestion', 'Gestión', '<select id="rp-gestion" class="mt-select" data-selector="rp-gestion">'
+          + `${GESTIONES_AGENDA.map(([valor, texto]) => `<option value="${valor}"${valor === gestion ? ' selected' : ''}>${texto}</option>`).join('')}</select>`)
+    }),
+    htmlDeTarjetaDeReporte('completar', 'Datos para completar', 'Lo que falta cargar para que las métricas estén completas: notas DGMIT pendientes de carga y actualizaciones sin «Recibido el».', {
+      hojas: 'Unas 3 hojas. También en Métricas → Para completar'
+    })
+  ];
+
+  const grupo = (clave, titulo, bajada, clase, tarjetas) => `<div class="rp-grupo"><h2 class="mt-seccion-titulo" id="rp-grupo-${clave}">${titulo}</h2>`
+    + `<p class="mt-seccion-bajada">${bajada}</p><div class="${clase}">${tarjetas.join('')}</div></div>`;
+  return grupo('presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.', 'rp-grilla', presentar)
+    + grupo('trabajar', 'Para trabajar', 'Para preparar una reunión, planificar o dejar constancia.', 'rp-grilla g4', trabajar);
+}
+
+// Lo que pide el botón de una tarjeta (`clave`, su data-reporte) con lo elegido (`datos`, como en htmlDeReportes): { ruta, nombre }, la
+// ruta del PDF (todas con authMiddleware) y el nombre del archivo, el que pone el servidor en su Content-Disposition (API.pedirArchivo da
+// solo el Blob: se arma acá con el mismo formato y `hoy`, el día de hoy en Argentina); { error, foco } si falta algo (el aviso, con el
+// mensaje del servidor, y el id del control que recibe el foco), sin pedir nada; null si no hay nada que pedir (el Informe anual de un
+// año sin foto, o un reporte que no es de los siete). Métricas del año lleva lo elegido en la pestaña Métricas (`estado`: la combinación
+// y los destildados, consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
+function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = null, hoy = Utils.hoyEnArgentina() } = {}) {
+  const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
+  const lista = aniosDeReportes(anios);
+  switch (clave) {
+    case 'metricas': {
+      const enCurso = lista.at(-1)?.anio ?? Number(hoy.slice(0, 4));
+      const anio = lista.length ? anioDeMetricasDelAnio(e.metricas, lista) : (anioDe(String(e.metricas ?? '')) ?? enCurso);
+      const consulta = consultaDeLaApi({ ...(esObjeto(estado) ? estado : ESTADO_POR_DEFECTO), anio: anio === enCurso ? null : anio });
+      return { ruta: `/metricas/pdf${consulta ? `?${consulta}` : ''}`, nombre: `Metricas-RPAD-${String(anio)}.pdf` };
+    }
+    case 'informe': {
+      const anio = anioDelInforme(e.informe, lista);
+      const foto = lista.find((f) => f.anio === anio);
+      return foto?.con_foto === true ? { ruta: `/reportes/informe-anual?anio=${String(anio)}`, nombre: `Informe-anual-RPAD-${String(anio)}.pdf` } : null;
+    }
+    case 'estado':
+      // El único con el día como dd-mm-aaaa (el del servidor: formatoCorto con guiones)
+      return { ruta: '/reportes/estado-general', nombre: `estado-general-${fecha(hoy).replace(/\//g, '-')}.pdf` };
+    case 'area': {
+      const id = idDeArea(e.area);
+      if (id === null) return { error: FALTA_EL_AREA, foco: 'rp-area' };
+      return { ruta: `/reportes/por-area/${String(id)}`, nombre: `Reporte-area-${String(id)}-${hoy}.pdf` };
+    }
+    case 'avisos':
+      // Como periodoDeAvisos del servidor: dos fechas que existen, con desde <= hasta (como texto). La tarjeta pide las dos
+      if (!esFechaDeTexto(e.desde)) return { error: PERIODO_INVALIDO, foco: 'rp-desde' };
+      if (!esFechaDeTexto(e.hasta)) return { error: PERIODO_INVALIDO, foco: 'rp-hasta' };
+      if (e.desde > e.hasta) return { error: PERIODO_INVALIDO, foco: 'rp-desde' };
+      return { ruta: `/reportes/avisos?desde=${e.desde}&hasta=${e.hasta}`, nombre: `Avisos-RPAD-${hoy}.pdf` };
+    case 'agenda':
+      return { ruta: `/reportes/agenda?meses=${String(mesesDeLaAgenda(e.meses))}&gestion=${elegido(e.gestion, GESTIONES_AGENDA)}`, nombre: `Agenda-de-pedidos-${hoy}.pdf` };
+    case 'completar':
+      return { ruta: '/reportes/para-completar', nombre: `Datos-para-completar-${hoy}.pdf` };
+    default:
+      return null;
+  }
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
 // Lo elegido, las métricas que llegaron, si la lista de casos está abierta, el número de pedido (una respuesta que llega después de
 // otra más nueva se descarta), la serie del trabajo por mes, cómo se agrupan los datasets y las métricas manuales del año (con su
-// propio número de pedido)
+// propio número de pedido). La pestaña Reportes: lo elegido en sus tarjetas, los años (los de `fotos` de GET /api/metricas; null
+// mientras llegan) y las áreas (null mientras llegan)
 const pagina = {
   estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0, serie: SERIES[0][0], agrupar: AGRUPAR[0][0],
-  manuales: { anio: null, lista: [], pedido: 0 }
+  manuales: { anio: null, lista: [], pedido: 0 },
+  reportes: { elegido: { ...REPORTES_POR_DEFECTO }, anios: null, areas: null }
 };
 
 const porId = (id) => document.getElementById(id);
@@ -930,8 +1169,9 @@ function iniciarReportes() {
   // El hash de la dirección (el botón atrás, un enlace a #reportes) cambia de pestaña
   window.addEventListener('hashchange', () => mostrarPestana(estadoDeLaUrl(location.hash).pestana));
   porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
-  cargarMetricas();
+  // Las tarjetas de Reportes primero: cuando llegan las métricas, traen los años de Métricas del año y del Informe anual
   iniciarTarjetasDeReportes();
+  cargarMetricas();
 }
 
 // Lo elegido queda en la dirección, sin sumar una entrada al historial
@@ -1053,10 +1293,12 @@ function sonMetricas(datos) {
 
 // GET /api/metricas con lo elegido. Con métricas ya dibujadas, quedan a la vista (atenuadas) hasta que llegan las nuevas. Un 404 es
 // un año sin métricas; otro error, el aviso de error. El dibujo va dentro del mismo try: si un dato raro lo rompe, queda el aviso de
-// error y no «Cargando…» para siempre. Las métricas nuevas pasan a ser las de la página recién cuando se dibujaron enteras
+// error y no «Cargando…» para siempre. Las métricas nuevas pasan a ser las de la página recién cuando se dibujaron enteras. Al final,
+// con la respuesta (o sin ella), las tarjetas de Reportes con los años
 async function cargarMetricas() {
   const pedido = ++pagina.pedido;
   const contenido = porId('mt-contenido');
+  let fotos = null;
   if (pagina.datos === null) mostrarEstadoDeMetricas('mt-cargando');
   contenido.setAttribute('aria-busy', 'true');
   contenido.classList.add('actualizando');
@@ -1067,6 +1309,7 @@ async function cargarMetricas() {
     if (!sonMetricas(datos)) throw new TypeError('La respuesta no son las métricas');
     dibujarMetricas(datos);
     pagina.datos = datos;
+    fotos = datos.fotos;
     mostrarEstadoDeMetricas('mt-contenido');
   } catch (error) {
     if (pedido !== pagina.pedido) return;
@@ -1081,6 +1324,7 @@ async function cargarMetricas() {
     if (pedido === pagina.pedido) {
       contenido.removeAttribute('aria-busy');
       contenido.classList.remove('actualizando');
+      conLosAniosDeReportes(fotos);
     }
   }
 }
@@ -1202,14 +1446,7 @@ function volverATodos() {
 async function descargarPdfDeMetricas(boton) {
   if (!boton || !pagina.datos) return;
   const consulta = consultaDeLaApi(pagina.estado);
-  await conBotonBloqueado(boton, async () => {
-    try {
-      const blob = await API.pedirArchivo(`/metricas/pdf${consulta ? `?${consulta}` : ''}`);
-      descargarBlob(blob, `Metricas-RPAD-${String(pagina.datos.anio)}.pdf`);
-    } catch (error) {
-      avisarError(`No se pudo descargar el PDF: ${error.message}`);
-    }
-  });
+  await conBotonBloqueado(boton, () => descargarReporte(`/metricas/pdf${consulta ? `?${consulta}` : ''}`, `Metricas-RPAD-${String(pagina.datos.anio)}.pdf`));
 }
 
 // El CSV de métricas de Gestión, el de siempre (/gestion/metricas/csv, los últimos 12 meses), con el JWT en el encabezado
@@ -1317,125 +1554,100 @@ async function eliminarMetricaManual(boton) {
 }
 
 // =====================================================
-// La pestaña Reportes: Estado general, Avisos del RPAD y Por área (DOM y API). Sale el Cumplimiento y el Historial de
-// notificaciones pasa a ser Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5)
+// La pestaña Reportes (DOM y API): siete tarjetas en dos grupos (spec 2026-10-24-metricas-y-reportes, 5). Sale el Cumplimiento y el
+// Historial de notificaciones pasa a ser Avisos del RPAD
 // =====================================================
 
-// Las áreas del selector y el período por defecto de Avisos del RPAD: del 1/1 a hoy, en hora argentina (con toISOString, después de
-// las 21 decía mañana)
+// Lo elegido en las tarjetas, con el año de Métricas del año: el de la tarjeta o, si no eligió otro, el de la pestaña Métricas
+function elegidoDeReportes() {
+  const { elegido } = pagina.reportes;
+  return { ...elegido, metricas: elegido.metricas ?? pagina.estado.anio };
+}
+
+// Las tarjetas con lo elegido, los años y las áreas; si el foco estaba en un control de adentro, vuelve al mismo
+function dibujarReportes() {
+  conElFoco(porId('rp-reportes'), htmlDeReportes(elegidoDeReportes(), { anios: pagina.reportes.anios, areas: pagina.reportes.areas }));
+}
+
+// Avisos del RPAD, del 1/1 a hoy en hora argentina (con toISOString, después de las 21 decía mañana); los oyentes de las tarjetas y las
+// áreas del selector de Por área
 async function iniciarTarjetasDeReportes() {
-  await cargarAreas();
   const hoy = Utils.hoyEnArgentina();
-  document.getElementById('avisos-hasta').value = hoy;
-  document.getElementById('avisos-desde').value = `${hoy.slice(0, 4)}-01-01`;
+  pagina.reportes.elegido = { ...pagina.reportes.elegido, desde: `${hoy.slice(0, 4)}-01-01`, hasta: hoy };
+  const contenedor = porId('rp-reportes');
+  contenedor.addEventListener('click', alHacerClicEnReportes);
+  contenedor.addEventListener('change', alCambiarEnReportes);
+  contenedor.addEventListener('input', alCambiarEnReportes);
+  dibujarReportes();
+  await cargarAreasDeReportes();
 }
 
-/**
- * Cargar áreas en el select
- */
-async function cargarAreas() {
+// Las áreas de Por área (API.getAreas, la de Áreas). Un error lo avisa y el selector queda solo con «Elegí un área»
+async function cargarAreasDeReportes() {
   try {
-    const areas = await API.getAreas();
-    const select = document.getElementById('area-select');
-
-    select.innerHTML = '<option value="">Seleccionar área...</option>';
-
-    // Ordenar alfabéticamente
-    areas.sort((a, b) => a.nombre.localeCompare(b.nombre));
-
-    areas.forEach(area => {
-      const option = document.createElement('option');
-      option.value = area.id;
-      option.textContent = area.nombre;
-      select.appendChild(option);
-    });
+    pagina.reportes.areas = comoLista(await API.getAreas());
   } catch (error) {
-    console.error('Error cargando áreas:', error);
-    Utils.showError('Error al cargar las áreas');
+    console.error('Error cargando las áreas:', error);
+    pagina.reportes.areas = [];
+    avisarError('No se pudieron cargar las áreas.');
   }
+  dibujarReportes();
 }
 
-/**
- * Generar reporte de estado general
- */
-function generarReporteEstadoGeneral() {
-  const url = API.getReporteEstadoGeneralUrl();
-  descargarPDF(url, 'estado-general');
+// Los años de Métricas del año y del Informe anual: los de `fotos` de GET /api/metricas (los mismos en cada respuesta). Si no llegaron
+// (la respuesta fue un error), quedan los que ya había o, si no había, ninguno (las tarjetas lo dicen)
+function conLosAniosDeReportes(fotos) {
+  if (Array.isArray(fotos)) pagina.reportes.anios = fotos;
+  else if (pagina.reportes.anios === null) pagina.reportes.anios = [];
+  dibujarReportes();
 }
 
-// La ruta del PDF «Avisos del RPAD» con el período elegido: sin una de las fechas, no va (el servidor usa la de por defecto)
-function rutaDeAvisos(desde, hasta) {
-  const params = new URLSearchParams();
-  if (desde) params.set('desde', desde);
-  if (hasta) params.set('hasta', hasta);
-  const consulta = params.toString();
-  return `/reportes/avisos${consulta ? `?${consulta}` : ''}`;
-}
-
-// Avisos del RPAD, con el JWT en el encabezado (API.pedirArchivo), nunca en la URL. Un período que no es válido lo dice el servidor
-// («Elegí un período válido.»)
-async function generarReporteAvisos(boton) {
-  const desde = document.getElementById('avisos-desde').value;
-  const hasta = document.getElementById('avisos-hasta').value;
-  await conBotonBloqueado(boton, async () => {
-    try {
-      descargarBlob(await API.pedirArchivo(rutaDeAvisos(desde, hasta)), `Avisos-RPAD-${Utils.hoyEnArgentina()}.pdf`);
-    } catch (error) {
-      avisarError(error.message || 'Error al generar el reporte');
-    }
-  });
-}
-
-/**
- * Generar reporte por área
- */
-function generarReportePorArea() {
-  const areaId = document.getElementById('area-select').value;
-
-  if (!areaId) {
-    Utils.showError('Por favor seleccione un área');
+// Un chip de la Agenda cambia los meses (y se redibuja, por su aria-pressed); un botón descarga su PDF
+function alHacerClicEnReportes(evento) {
+  const chip = evento.target.closest('button[data-selector="rp-meses"]');
+  if (chip) {
+    pagina.reportes.elegido = conReporteElegido(pagina.reportes.elegido, 'meses', chip.dataset.valor);
+    dibujarReportes();
     return;
   }
-
-  const url = API.getReportePorAreaUrl(areaId);
-  descargarPDF(url, `reporte-area-${areaId}`);
+  const boton = evento.target.closest('button[data-reporte]');
+  if (boton) descargarDeLaTarjeta(boton);
 }
 
-/**
- * Descargar PDF desde URL
- */
-async function descargarPDF(url, nombre) {
+// Qué guarda cada control de las tarjetas (su data-selector)
+const CONTROLES_DE_REPORTES = { 'rp-metricas': 'metricas', 'rp-informe': 'informe', 'rp-area': 'area', 'rp-desde': 'desde', 'rp-hasta': 'hasta', 'rp-gestion': 'gestion' };
+
+// Un selector o una fecha: queda en lo elegido. Solo el año del Informe anual cambia algo a la vista (su botón)
+function alCambiarEnReportes(evento) {
+  const control = evento.target.closest('[data-selector]');
+  const clave = CONTROLES_DE_REPORTES[control?.dataset.selector];
+  if (!clave) return;
+  pagina.reportes.elegido = conReporteElegido(pagina.reportes.elegido, clave, control.value);
+  if (clave === 'informe' && evento.type === 'change') dibujarReportes();
+}
+
+// El botón de una tarjeta: lo que pide (pedidoDeReporte, con el día de hoy en Argentina). Si falta algo, el aviso y el foco en su control,
+// sin pedir nada; deshabilitado (el Informe anual sin foto) o mientras dura otra descarga, nada
+async function descargarDeLaTarjeta(boton) {
+  if (!boton || boton.disabled || boton.getAttribute('aria-disabled') === 'true') return;
+  const pedido = pedidoDeReporte(boton.dataset.reporte, elegidoDeReportes(), {
+    estado: pagina.estado, anios: pagina.reportes.anios, hoy: Utils.hoyEnArgentina()
+  });
+  if (pedido === null) return;
+  if (pedido.error) {
+    avisarError(pedido.error);
+    porId(pedido.foco)?.focus();
+    return;
+  }
+  await conBotonBloqueado(boton, () => descargarReporte(pedido.ruta, pedido.nombre));
+}
+
+// Un PDF de la página con el JWT en el encabezado (API.pedirArchivo), nunca en la URL, guardado con `nombre` (descargarBlob). Un error
+// lo avisa con el mensaje del servidor
+async function descargarReporte(ruta, nombre) {
   try {
-    // Mostrar loading
-    Utils.showSuccess('Generando reporte...');
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: Auth.getAuthHeaders()
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Error al generar el reporte');
-    }
-
-    // Obtener el blob del PDF
-    const blob = await response.blob();
-
-    // Crear link de descarga
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = `${nombre}-${new Date().toISOString().split('T')[0]}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(downloadUrl);
-
-    Utils.showSuccess('Reporte generado exitosamente');
-
+    descargarBlob(await API.pedirArchivo(ruta), nombre);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    Utils.showError(error.message || 'Error al generar el reporte');
+    avisarError(`No se pudo descargar el PDF: ${error.message}`);
   }
 }

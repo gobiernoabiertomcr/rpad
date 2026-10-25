@@ -280,82 +280,28 @@
         .mt-pagina a:focus-visible, .mt-pagina button:focus-visible, .mt-pagina select:focus-visible, .mt-pagina input:focus-visible, .mt-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .mt-pagina .mt-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; }
 
-        /* La pestaña Reportes: sus tarjetas */
-        .reportes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 24px;
-            margin-bottom: 48px;
-        }
+        /* La pestaña Reportes (maqueta 4): dos grupos de tarjetas, cada una con su PDF */
+        .rp-grupo + .rp-grupo { margin-top: 30px; }
+        .rp-grilla { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .rp-grilla.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .rp-tarjeta { min-width: 0; display: flex; flex-direction: column; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 18px 20px; }
+        .rp-tarjeta h3 { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.05rem; color: var(--sg-tinta); }
+        .rp-tarjeta h3 svg { flex: none; }
+        /* El texto ocupa lo que sobra: los campos y el botón quedan abajo, a la misma altura en toda la fila */
+        .rp-texto { flex: 1; margin: 0 0 12px; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.45; }
+        .rp-campos { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 12px; }
+        .rp-campos .mt-campo { flex: 1 1 130px; min-width: 0; }
+        .rp-campos .mt-select, .rp-campos .mt-entrada { width: 100%; min-width: 0; }
+        .rp-rotulo { font-weight: 600; color: var(--sg-texto); }
+        .rp-estado { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--sg-sutil); color: var(--sg-suave); font-size: 0.86rem; }
+        .rp-tarjeta .mt-btn { width: 100%; }
+        /* Lo que todavía no se puede descargar (el Informe anual sin foto): se lee y se alcanza con el teclado, pero no se usa */
+        .rp-no-disponible { height: auto; min-height: 40px; background: #fff; color: var(--sg-suave); border-color: var(--sg-linea); cursor: not-allowed; white-space: normal; }
+        .rp-hojas { margin: 8px 0 0; font-size: 0.78rem; color: var(--sg-suave); text-align: center; }
 
-        .reporte-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .reporte-card-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .reporte-card-header svg {
-            width: 24px;
-            height: 24px;
-            color: var(--primary);
-        }
-
-        .reporte-card-header h3 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-        }
-
-        .reporte-card-body {
-            padding: 24px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .reporte-card-body p {
-            color: var(--gray-500);
-            font-size: 0.875rem;
-            line-height: 1.5;
-            margin-bottom: 20px;
-            flex: 1;
-        }
-
-        .reporte-card-body .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .reporte-card-body .form-group {
-            margin-bottom: 16px;
-        }
-
-        .btn-generar {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: auto;
-        }
-
-        .btn-generar svg {
-            width: 18px;
-            height: 18px;
+        /* Las cuatro tarjetas de «Para trabajar» van de a dos cuando no entran en una fila */
+        @media (max-width: 1100px) {
+            .rp-grilla.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
         /* En el teléfono y la tableta: el circuito en una columna (nodo, flecha hacia abajo, nodo…); la cinta y las tablas se
@@ -378,14 +324,7 @@
         }
 
         @media (max-width: 768px) {
-            .reportes-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .reporte-card-body .form-row {
-                grid-template-columns: 1fr;
-            }
-
+            .rp-grilla, .rp-grilla.g4 { grid-template-columns: minmax(0, 1fr); }
             .mt-tarjeta { padding: 16px; }
             .mt-derecha { margin-left: 0; }
             .mt-grilla.g2 { grid-template-columns: minmax(0, 1fr); }
@@ -609,72 +548,10 @@
                     </div>
                 </section>
 
-                <!-- Reportes: Estado general, Avisos del RPAD y Por área -->
+                <!-- Reportes: siete tarjetas en dos grupos, «Para presentar» y «Para trabajar» (spec 2026-10-24-metricas-y-reportes, 5). Las dibuja
+                     reportes.js (htmlDeReportes); cada una descarga su PDF con el JWT en el encabezado -->
                 <section id="vista-reportes" role="tabpanel" aria-labelledby="pestana-reportes" hidden>
-                    <div class="reportes-grid">
-
-                        <!-- Reporte Estado General -->
-                        <div class="reporte-card">
-                            <div class="reporte-card-header">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-                                <h3>Estado General de Datasets</h3>
-                            </div>
-                            <div class="reporte-card-body">
-                                <p>Resumen completo del estado de todos los datasets: actualizados, próximos a vencer y vencidos. Incluye tabla detallada con información de cada dataset.</p>
-                                <button onclick="generarReporteEstadoGeneral()" class="btn btn-primary btn-generar">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                                    Generar PDF
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5): la descarga va con el JWT en el encabezado -->
-                        <div class="reporte-card">
-                            <div class="reporte-card-header">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                                <h3>Avisos del RPAD</h3>
-                            </div>
-                            <div class="reporte-card-body">
-                                <p>La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.</p>
-                                <div class="form-row">
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label class="form-label" for="avisos-desde">Desde</label>
-                                        <input type="date" id="avisos-desde" class="form-input">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label class="form-label" for="avisos-hasta">Hasta</label>
-                                        <input type="date" id="avisos-hasta" class="form-input">
-                                    </div>
-                                </div>
-                                <button type="button" onclick="generarReporteAvisos(this)" class="btn btn-primary btn-generar">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                                    Generar PDF
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Reporte por Área -->
-                        <div class="reporte-card">
-                            <div class="reporte-card-header">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
-                                <h3>Reporte por Área</h3>
-                            </div>
-                            <div class="reporte-card-body">
-                                <p>Informe detallado de los datasets de un área específica, incluyendo datos de contacto y estado de actualización.</p>
-                                <div class="form-group">
-                                    <label class="form-label">Seleccionar Área</label>
-                                    <select id="area-select" class="form-select">
-                                        <option value="">Cargando áreas...</option>
-                                    </select>
-                                </div>
-                                <button onclick="generarReportePorArea()" class="btn btn-primary btn-generar">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                                    Generar PDF
-                                </button>
-                            </div>
-                        </div>
-
-                    </div>
+                    <div id="rp-reportes"></div>
                 </section>
             </div>
 
@@ -722,6 +599,6 @@
     <script src="js/auth.js?v=20261130"></script>
     <script src="js/main.js?v=20261130"></script>
     <script src="js/api.js?v=20261130"></script>
-    <script src="js/reportes.js?v=20261130"></script>
+    <script src="js/reportes.js?v=20261201"></script>
 </body>
 </html>

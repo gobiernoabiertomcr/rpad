@@ -3,7 +3,7 @@
 // aviso de la foto) y de qué año toca sacar la foto (Ruling 18: el más viejo que falta). Puro: sin base.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { DIA_DE_LA_FOTO, opcionesDeMetricas, aniosDeMetricas, fotoQueToca } from '../services/metricasOpciones.js';
+import { DIA_DE_LA_FOTO, opcionesDeMetricas, aniosDeMetricas, fotosDeMetricas, fotoQueToca } from '../services/metricasOpciones.js';
 
 const AL = '2026-12-31';
 const SE_SACA = 'La foto de 2026 se saca el 10/01/2027';
@@ -93,6 +93,34 @@ describe('aniosDeMetricas', () => {
     assert.deepEqual(aniosDeMetricas({ hoy: '2029-02-01' }), [2026, 2027, 2028, 2029]);
     for (const hoy of ['2025-12-31', 'no es una fecha', null]) assert.deepEqual(aniosDeMetricas({ hoy }), [], String(hoy));
     assert.deepEqual(aniosDeMetricas(), []);
+  });
+});
+
+// La tarjeta del Informe anual (spec 5, Para presentar, punto 2) sabe por el servidor qué años tienen foto y desde qué día se puede
+// descargar el de los que no la tienen: el 10/01 del año siguiente, el día de la foto
+describe('fotosDeMetricas', () => {
+  const sinFoto = (anio) => ({ anio, con_foto: false, dia_de_la_foto: `${anio + 1}-01-10` });
+
+  it('cada año de aniosDeMetricas con su foto y el día en que se saca, del más viejo al más nuevo', () => {
+    assert.deepEqual(fotosDeMetricas({ hoy: '2026-10-24', aniosConFoto: [] }), [sinFoto(2026)]);
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-01-05', aniosConFoto: [] }), [sinFoto(2026), sinFoto(2027)]);
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: [2026] }), [{ ...sinFoto(2026), con_foto: true }, sinFoto(2027)]);
+    assert.deepEqual(fotosDeMetricas({ hoy: '2029-02-01', aniosConFoto: [2027, 2026] }).map((f) => [f.anio, f.con_foto]),
+      [[2026, true], [2027, true], [2028, false], [2029, false]]);
+    // Los años con foto pueden llegar como texto; una foto anterior a 2026 no es un año de Métricas
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: ['2026', 2025] }), [{ ...sinFoto(2026), con_foto: true }, sinFoto(2027)]);
+    // Lo que no es una lista de años, ninguno con foto; sin hoy, ningún año
+    assert.deepEqual(fotosDeMetricas({ hoy: '2027-03-01', aniosConFoto: 'x' }), [sinFoto(2026), sinFoto(2027)]);
+    for (const hoy of ['2025-12-31', 'no es una fecha', null]) assert.deepEqual(fotosDeMetricas({ hoy, aniosConFoto: [2026] }), [], String(hoy));
+    assert.deepEqual(fotosDeMetricas(), []);
+  });
+
+  it('el día de la foto es el de DIA_DE_LA_FOTO, el que usa la corrida (fotoQueToca)', () => {
+    for (const { anio, dia_de_la_foto: dia } of fotosDeMetricas({ hoy: '2028-06-01', aniosConFoto: [] })) {
+      assert.equal(dia, `${anio + 1}-${DIA_DE_LA_FOTO}`, String(anio));
+      // Ese día la corrida la saca (con las de los años anteriores ya sacadas)
+      assert.deepEqual(fotoQueToca({ hoy: dia, aniosConFoto: Array.from({ length: anio - 2026 }, (_, i) => 2026 + i) }), { anio, falta: true }, dia);
+    }
   });
 });
 

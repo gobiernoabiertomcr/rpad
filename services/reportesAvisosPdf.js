@@ -20,6 +20,10 @@ import {
 const TITULO = 'Avisos del RPAD';
 const pieDe = (k, n) => `${TITULO} · Hoja ${k} de ${n}`;
 
+// El 400 de un período que no es válido (GET /reportes/avisos, periodoDeAvisos del controlador). La tarjeta de la pestaña Reportes
+// (public/js/reportes.js) lo copia para avisar sin hacer el pedido: un test de paridad los ata
+export const MENSAJE_PERIODO_INVALIDO = 'Elegí un período válido.';
+
 // Las columnas de la tabla: la parte del ancho útil de cada una («Email a DGMIT: resumen mensual de vencidos», el qué fue más largo, y
 // «Pendiente de envío» en su insignia entran en una línea; los datasets, en hasta cuatro, y si no entran se cortan con «…»)
 const COLUMNAS = [

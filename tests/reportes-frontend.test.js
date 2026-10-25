@@ -2,7 +2,8 @@
 // lo puro de public/js/reportes.js (el estado de la URL, la barra, la franja de lo destildado, el circuito, la cinta y los casos) con
 // lo que arma el servidor (services/metricasReglas.js y metricasCinta.js sobre los casos reales de tests/metricas-casos.js) y con
 // tramos y cintas armados a mano. Como seguimiento.js, el script al cargarse solo declara: se carga en un vm con un document que no
-// hace nada, junto con el api.js de verdad (Utils). La página no recalcula nada: dibuja lo que manda el servidor.
+// hace nada, junto con el api.js de verdad (Utils). La página no recalcula nada: dibuja lo que manda el servidor. También la pestaña
+// Reportes (spec 5): las siete tarjetas, lo que pide cada una y, con un document de mentira, la descarga con API.pedirArchivo.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -19,6 +20,8 @@ import {
 import {
   TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
 } from '../services/reportesParaCompletarPdf.js';
+import { MENSAJE_PERIODO_INVALIDO } from '../services/reportesAvisosPdf.js';
+import { MESES_DE_LA_AGENDA, MESES_POR_DEFECTO, GESTIONES_DE_LA_AGENDA } from '../services/reportesAgenda.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -867,6 +870,303 @@ describe('reportes.js: lo que llega del servidor', () => {
   });
 });
 
+// La pestaña Reportes (spec 2026-10-24-metricas-y-reportes, 5; maquetas 3-reportes.html y 6-reportes-datos-reales.html): siete tarjetas
+// en dos grupos, cada una con su PDF, que se descarga con el JWT en el encabezado (API.pedirArchivo). Qué años tienen foto lo dice el
+// servidor (`fotos` de GET /api/metricas, fotosDeMetricas): la página no lo deduce
+describe('reportes.js: la pestaña Reportes', () => {
+  const HOY_DE_LA_PRUEBA = '2026-10-25';
+  const FOTOS_2026 = [{ anio: 2026, con_foto: false, dia_de_la_foto: '2027-01-10' }];
+  const AREAS = [{ id: 7, nombre: 'Secretaría de Hacienda' }, { id: 3, nombre: 'Área de Ambiente' }, { id: 12, nombre: 'Dirección de Comercio' }];
+  const ELEGIDO = { metricas: null, informe: null, area: '', desde: '2026-01-01', hasta: HOY_DE_LA_PRUEBA, meses: 6, gestion: 'ambas' };
+  const reportes = (elegido = ELEGIDO, opciones = {}) => ctx.htmlDeReportes(elegido, { anios: FOTOS_2026, areas: AREAS, ...opciones });
+  // La tarjeta de un reporte (lo que va de su <section> a la siguiente)
+  const tarjeta = (html, clave) => html.match(new RegExp(`<section class="rp-tarjeta" aria-labelledby="rp-titulo-${clave}">[\\s\\S]*?</section>`))?.[0] ?? '';
+  const pedido = (clave, elegido = ELEGIDO, { estado = POR_DEFECTO, anios = FOTOS_2026, hoy = HOY_DE_LA_PRUEBA } = {}) =>
+    plano(ctx.pedidoDeReporte(clave, elegido, { estado, anios, hoy }) ?? null);
+
+  it('siete tarjetas en dos grupos', () => {
+    const html = reportes();
+    const grupos = [...html.matchAll(/<h2 class="mt-seccion-titulo" id="rp-grupo-([a-z]+)">([^<]+)<\/h2><p class="mt-seccion-bajada">([^<]+)<\/p>/g)]
+      .map((m) => [m[1], m[2], m[3]]);
+    assert.deepEqual(grupos, [
+      ['presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.'],
+      ['trabajar', 'Para trabajar', 'Para preparar una reunión, planificar o dejar constancia.']
+    ]);
+    // Cada tarjeta es una sección con su h3 (los tres de «Para presentar», con su ícono, como en la maqueta), en su grupo y en orden
+    const titulos = (parte) => [...parte.matchAll(/<section class="rp-tarjeta" aria-labelledby="rp-titulo-([a-z]+)"><h3 id="rp-titulo-\1">(<svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>)?([^<]+)<\/h3>/g)]
+      .map((m) => [m[1], m[3], Boolean(m[2])]);
+    const [presentar, trabajar] = html.split('id="rp-grupo-trabajar"');
+    assert.deepEqual(titulos(presentar), [['metricas', 'Métricas del año', true], ['informe', 'Informe anual', true], ['estado', 'Estado general de los datasets', true]]);
+    assert.deepEqual(titulos(trabajar), [['area', 'Por área', false], ['avisos', 'Avisos del RPAD', false], ['agenda', 'Agenda de pedidos', false],
+      ['completar', 'Datos para completar', false]]);
+    assert.match(presentar, /<div class="rp-grilla">/);
+    assert.match(trabajar, /<div class="rp-grilla g4">/);
+    // Los textos de la maqueta; la cantidad de hojas, la real con los datos de hoy (Ruling 24), y donde depende de lo que se elige, sin
+    // un número
+    for (const [clave, texto, hojas] of [
+      ['metricas', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', 'Unas 5 hojas'],
+      ['informe', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).', 'Se arma con la foto del 31/12'],
+      ['estado', 'La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.', 'Unas 4 hojas'],
+      ['area', 'Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.', 'Una portada y una hoja por dataset'],
+      ['avisos', 'La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.', null],
+      ['agenda', 'Qué vence en los próximos meses, mes por mes, con el área y los datos que se van a pedir.', null],
+      ['completar', 'Lo que falta cargar para que las métricas estén completas: notas DGMIT pendientes de carga y actualizaciones sin «Recibido el».', 'Unas 3 hojas. También en Métricas → Para completar']
+    ]) {
+      const t = tarjeta(html, clave);
+      assert.ok(t.includes(`<p class="rp-texto">${texto}</p>`), clave);
+      if (hojas) assert.ok(t.includes(`<p class="rp-hojas">${hojas}</p>`), `${clave}: ${hojas}`);
+      else assert.doesNotMatch(t, /rp-hojas/, clave);
+      // Un botón de descarga por tarjeta (el del Informe anual sin foto, deshabilitado: ver abajo), descripto por el título de su tarjeta
+      if (clave !== 'informe') {
+        assert.ok(t.includes(`<button type="button" class="mt-btn mt-btn-tinta" data-reporte="${clave}" aria-describedby="rp-titulo-${clave}">${vm.runInContext('ICONO_DESCARGA', ctx)}Descargar PDF</button>`), clave);
+      }
+      assert.equal(cuantas(t, /<button type="button" class="mt-btn/g), 1, clave);
+    }
+    // Cada selector con su label, una sola vez
+    for (const [id, rotulo] of [['rp-metricas-anio', 'Año'], ['rp-informe-anio', 'Año'], ['rp-area', 'Área'], ['rp-desde', 'Desde'], ['rp-hasta', 'Hasta'], ['rp-gestion', 'Gestión']]) {
+      assert.equal(cuantas(html, new RegExp(`<label for="${id}">${rotulo}</label>`, 'g')), 1, id);
+      assert.equal(cuantas(html, new RegExp(`id="${id}"`, 'g')), 1, id);
+    }
+    // Estado general y Datos para completar no eligen nada
+    for (const clave of ['estado', 'completar']) assert.doesNotMatch(tarjeta(html, clave), /<select|<input|rp-campos/, clave);
+  });
+
+  it('el Informe anual sin foto, deshabilitado con «Disponible desde el 10/01/2027»', () => {
+    const DISPONIBLE = '<button type="button" class="mt-btn rp-no-disponible" data-reporte="informe" aria-disabled="true" aria-describedby="rp-titulo-informe">';
+    const sinFoto = tarjeta(reportes(), 'informe');
+    assert.ok(sinFoto.includes(`${DISPONIBLE}Disponible desde el 10/01/2027</button>`), sinFoto);
+    assert.doesNotMatch(sinFoto, /Descargar PDF/);
+    assert.match(sinFoto, /<select id="rp-informe-anio" class="mt-select" data-selector="rp-informe"><option value="2026" selected>2026<\/option><\/select>/);
+    // Sin foto no se pide nada
+    assert.equal(pedido('informe'), null);
+    // El día sale del servidor (dia_de_la_foto), no de la página
+    assert.ok(tarjeta(reportes(ELEGIDO, { anios: [{ ...FOTOS_2026[0], dia_de_la_foto: '2027-01-11' }] }), 'informe').includes('Disponible desde el 11/01/2027'));
+
+    // Entre el 1/1 y el 10/1 ningún año tiene foto: se propone el cerrado, el primero que la va a tener
+    const enEnero = [{ anio: 2026, con_foto: false, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }];
+    const enero = tarjeta(reportes(ELEGIDO, { anios: enEnero }), 'informe');
+    assert.match(enero, /<option value="2027">2027<\/option><option value="2026" selected>2026<\/option>/);
+    assert.ok(enero.includes(`${DISPONIBLE}Disponible desde el 10/01/2027</button>`));
+
+    // Con foto: se propone el más nuevo que la tiene, y se descarga
+    const conFoto = [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }];
+    const disponible = tarjeta(reportes(ELEGIDO, { anios: conFoto }), 'informe');
+    assert.match(disponible, /<option value="2027">2027<\/option><option value="2026" selected>2026<\/option>/);
+    assert.ok(disponible.includes('<button type="button" class="mt-btn mt-btn-tinta" data-reporte="informe" aria-describedby="rp-titulo-informe">'), disponible);
+    assert.match(disponible, /Descargar PDF<\/button>/);
+    assert.doesNotMatch(disponible, /aria-disabled|Disponible desde/);
+    assert.deepEqual(pedido('informe', ELEGIDO, { anios: conFoto }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
+    // Elegido el en curso, que todavía no la tiene: deshabilitado, con su día
+    const elegido2027 = { ...ELEGIDO, informe: 2027 };
+    assert.ok(tarjeta(reportes(elegido2027, { anios: conFoto }), 'informe').includes(`${DISPONIBLE}Disponible desde el 10/01/2028</button>`));
+    assert.equal(pedido('informe', elegido2027, { anios: conFoto }), null);
+    // Un año elegido que no está entre los del servidor no vale: queda el propuesto
+    assert.equal(pedido('informe', { ...ELEGIDO, informe: 2025 }, { anios: conFoto }).ruta, '/reportes/informe-anual?anio=2026');
+  });
+
+  it('mientras llegan los años y si no llegan, el Informe anual no se puede pedir', () => {
+    for (const [anios, aviso] of [[null, 'Cargando los años…'], [[], 'No se pudieron cargar los años.']]) {
+      const html = reportes(ELEGIDO, { anios });
+      const informe = tarjeta(html, 'informe');
+      assert.ok(informe.includes(`<p class="rp-estado">${aviso}</p>`), informe);
+      assert.doesNotMatch(informe, /<select/);
+      assert.ok(informe.includes('<button type="button" class="mt-btn rp-no-disponible" data-reporte="informe" aria-disabled="true" aria-describedby="rp-titulo-informe">'));
+      assert.equal(pedido('informe', ELEGIDO, { anios }), null, String(anios));
+      // Métricas del año se descarga igual: con el año de la pestaña (el en curso, si no eligió otro)
+      const metricas = tarjeta(html, 'metricas');
+      assert.ok(metricas.includes(`<p class="rp-estado">${aviso}</p>`));
+      assert.doesNotMatch(metricas, /<select|aria-disabled/);
+      assert.deepEqual(pedido('metricas', ELEGIDO, { anios }), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2026.pdf' });
+    }
+  });
+
+  it('Métricas del año: el año de la pestaña o el de la tarjeta, con la combinación y los destildados de la pestaña', () => {
+    const dosAnios = [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }, { anio: 2027, con_foto: false, dia_de_la_foto: '2028-01-10' }];
+    const select = (elegido) => tarjeta(reportes(elegido, { anios: dosAnios }), 'metricas').match(/<select id="rp-metricas-anio"[^>]*>[\s\S]*?<\/select>/)?.[0];
+    // El en curso arriba, como en la barra de Métricas
+    assert.equal(select(ELEGIDO), '<select id="rp-metricas-anio" class="mt-select" data-selector="rp-metricas"><option value="2027" selected>2027 (en curso)</option><option value="2026">2026</option></select>');
+    assert.match(select({ ...ELEGIDO, metricas: 2026 }), /<option value="2027">2027 \(en curso\)<\/option><option value="2026" selected>2026<\/option>/);
+    // El pedido: lo de la pestaña (consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
+    const estado = { ...POR_DEFECTO, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45] };
+    assert.deepEqual(pedido('metricas', ELEGIDO, { estado, anios: dosAnios }),
+      { ruta: '/metricas/pdf?estadistico=promedio&dias=corridos&sin=12,45', nombre: 'Metricas-RPAD-2027.pdf' });
+    assert.deepEqual(pedido('metricas', { ...ELEGIDO, metricas: 2026 }, { estado, anios: dosAnios }),
+      { ruta: '/metricas/pdf?anio=2026&estadistico=promedio&dias=corridos&sin=12,45', nombre: 'Metricas-RPAD-2026.pdf' });
+    assert.deepEqual(pedido('metricas', { ...ELEGIDO, metricas: 2027 }, { anios: dosAnios }), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2027.pdf' });
+    // Un año que no es de los del servidor no vale: el en curso
+    assert.deepEqual(pedido('metricas', { ...ELEGIDO, metricas: 2020 }, { anios: dosAnios }), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2027.pdf' });
+    // Lo elegido en la tarjeta: el año como número; lo que no es un año no cambia nada
+    assert.equal(ctx.conReporteElegido(ELEGIDO, 'metricas', '2026').metricas, 2026);
+    assert.equal(ctx.conReporteElegido(ELEGIDO, 'informe', '2027').informe, 2027);
+    assert.deepEqual(plano(ctx.conReporteElegido(ELEGIDO, 'metricas', 'x')), ELEGIDO);
+  });
+
+  it('las rutas y los nombres de los siete PDF, con el día de hoy en Argentina', () => {
+    const conFoto = [{ anio: 2026, con_foto: true, dia_de_la_foto: '2027-01-10' }];
+    // El nombre, el que pone el servidor en su Content-Disposition (API.pedirArchivo da solo el Blob: se arma acá con el mismo formato)
+    assert.deepEqual(pedido('metricas'), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2026.pdf' });
+    assert.deepEqual(pedido('informe', ELEGIDO, { anios: conFoto }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
+    assert.deepEqual(pedido('estado'), { ruta: '/reportes/estado-general', nombre: 'estado-general-25-10-2026.pdf' });
+    assert.deepEqual(pedido('area', { ...ELEGIDO, area: '7' }), { ruta: '/reportes/por-area/7', nombre: 'Reporte-area-7-2026-10-25.pdf' });
+    assert.deepEqual(pedido('avisos'), { ruta: '/reportes/avisos?desde=2026-01-01&hasta=2026-10-25', nombre: 'Avisos-RPAD-2026-10-25.pdf' });
+    assert.deepEqual(pedido('agenda'), { ruta: '/reportes/agenda?meses=6&gestion=ambas', nombre: 'Agenda-de-pedidos-2026-10-25.pdf' });
+    assert.deepEqual(pedido('agenda', { ...ELEGIDO, meses: 12, gestion: 'externa' }), { ruta: '/reportes/agenda?meses=12&gestion=externa', nombre: 'Agenda-de-pedidos-2026-10-25.pdf' });
+    assert.deepEqual(pedido('completar'), { ruta: '/reportes/para-completar', nombre: 'Datos-para-completar-2026-10-25.pdf' });
+    // El día es el de `hoy` (Utils.hoyEnArgentina() en la página)
+    assert.equal(pedido('completar', ELEGIDO, { hoy: '2027-01-02' }).nombre, 'Datos-para-completar-2027-01-02.pdf');
+    assert.equal(pedido('estado', ELEGIDO, { hoy: '2027-01-02' }).nombre, 'estado-general-02-01-2027.pdf');
+    // Un reporte que no es de los siete, nada
+    assert.equal(pedido('cumplimiento'), null);
+  });
+
+  it('la Agenda: los chips 3, 6 y 12 meses con aria-pressed y la gestión, con los valores del servidor', () => {
+    const agenda = tarjeta(reportes(), 'agenda');
+    assert.match(agenda, /<span class="rp-rotulo" id="rp-meses-rotulo">Próximos<\/span><div class="mt-chips" role="group" aria-labelledby="rp-meses-rotulo">/);
+    const chips = [...agenda.matchAll(/<button type="button" class="mt-chip" data-selector="rp-meses" data-valor="(\d+)" aria-pressed="(true|false)">([^<]+)<\/button>/g)]
+      .map((m) => [Number(m[1]), m[2], m[3]]);
+    assert.deepEqual(chips, [[3, 'false', '3'], [6, 'true', '6'], [12, 'false', '12 meses']]);
+    assert.match(agenda, /<select id="rp-gestion" class="mt-select" data-selector="rp-gestion"><option value="ambas" selected>Las dos gestiones<\/option><option value="externa">Gestión externa<\/option><option value="interna">Gestión interna<\/option><\/select>/);
+    const otra = tarjeta(reportes({ ...ELEGIDO, meses: 12, gestion: 'interna' }), 'agenda');
+    assert.match(otra, /data-valor="12" aria-pressed="true"/);
+    assert.match(otra, /<option value="interna" selected>/);
+    // Los valores son los de opcionesDeAgenda (services/reportesAgenda.js), con 6 meses y las dos gestiones de entrada
+    assert.deepEqual(chips.map(([n]) => n), [...MESES_DE_LA_AGENDA]);
+    assert.deepEqual([...agenda.matchAll(/<option value="([a-z]+)"/g)].map((m) => m[1]), [...GESTIONES_DE_LA_AGENDA]);
+    const porDefecto = plano(vm.runInContext('REPORTES_POR_DEFECTO', ctx));
+    assert.deepEqual([porDefecto.meses, porDefecto.gestion], [MESES_POR_DEFECTO, GESTIONES_DE_LA_AGENDA[0]]);
+    // Lo que no es de la lista no cambia nada
+    assert.equal(ctx.conReporteElegido(ELEGIDO, 'meses', '12').meses, 12);
+    assert.equal(ctx.conReporteElegido(ELEGIDO, 'gestion', 'externa').gestion, 'externa');
+    for (const [clave, valor] of [['meses', '5'], ['meses', 'x'], ['gestion', 'todas'], ['otra', '1']]) {
+      assert.deepEqual(plano(ctx.conReporteElegido(ELEGIDO, clave, valor)), ELEGIDO, `${clave}=${valor}`);
+    }
+    // Un valor raro en lo elegido no llega a la ruta
+    assert.equal(pedido('agenda', { ...ELEGIDO, meses: 5, gestion: '"><x' }).ruta, '/reportes/agenda?meses=6&gestion=ambas');
+  });
+
+  it('Por área: las áreas por nombre, «Elegí un área» primero, y lo elegido marcado', () => {
+    const area = tarjeta(reportes({ ...ELEGIDO, area: '12' }), 'area');
+    assert.match(area, /<select id="rp-area" class="mt-select" data-selector="rp-area"><option value="">Elegí un área<\/option><option value="3">Área de Ambiente<\/option><option value="12" selected>Dirección de Comercio<\/option><option value="7">Secretaría de Hacienda<\/option><\/select>/);
+    // Mientras llegan, lo dice
+    assert.match(tarjeta(reportes(ELEGIDO, { areas: null }), 'area'), /<select id="rp-area" class="mt-select" data-selector="rp-area"><option value="">Cargando las áreas…<\/option><\/select>/);
+    // Un área sin un id que pueda ir en la dirección no se ofrece
+    assert.doesNotMatch(tarjeta(reportes(ELEGIDO, { areas: [{ id: '1#x', nombre: 'Rara' }, { id: 0, nombre: 'Cero' }, null] }), 'area'), /Rara|Cero/);
+    // Sin elegir (o con algo que no es un id), el aviso y el foco en el selector
+    for (const valor of ['', 'x', '0', '-3', '1.5', '7#x']) {
+      assert.deepEqual(pedido('area', { ...ELEGIDO, area: valor }), { error: 'Elegí un área.', foco: 'rp-area' }, valor);
+    }
+  });
+
+  it('Avisos del RPAD: un período que no es válido no se pide y se avisa con el mensaje del servidor', () => {
+    // El mensaje es una copia del de periodoDeAvisos (controllers/reportesController.js)
+    assert.equal(vm.runInContext('PERIODO_INVALIDO', ctx), MENSAJE_PERIODO_INVALIDO);
+    for (const [desde, hasta, foco] of [['', HOY_DE_LA_PRUEBA, 'rp-desde'], ['2026-02-30', HOY_DE_LA_PRUEBA, 'rp-desde'], ['2026-01-01', '', 'rp-hasta'],
+      ['2026-01-01', '2026-13-01', 'rp-hasta'], ['2026-10-26', HOY_DE_LA_PRUEBA, 'rp-desde'], ['01/01/2026', HOY_DE_LA_PRUEBA, 'rp-desde']]) {
+      assert.deepEqual(pedido('avisos', { ...ELEGIDO, desde, hasta }), { error: MENSAJE_PERIODO_INVALIDO, foco }, `${desde} → ${hasta}`);
+    }
+    // Un solo día vale
+    assert.equal(pedido('avisos', { ...ELEGIDO, desde: HOY_DE_LA_PRUEBA }).ruta, `/reportes/avisos?desde=${HOY_DE_LA_PRUEBA}&hasta=${HOY_DE_LA_PRUEBA}`);
+    const avisos = tarjeta(reportes(), 'avisos');
+    assert.match(avisos, /<input type="date" id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="2026-01-01">/);
+    assert.match(avisos, /<input type="date" id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="2026-10-25">/);
+  });
+
+  it('lo que llega del servidor y de los campos pasa por escapeHtml', () => {
+    const html = ctx.htmlDeReportes({ ...ELEGIDO, desde: '"><b>x</b>' }, { anios: [{ anio: 2026, con_foto: false, dia_de_la_foto: '<b>x</b>' }], areas: [{ id: 5, nombre: '<b>x</b>' }] });
+    assert.doesNotMatch(html, /<b>x<\/b>/);
+    assert.ok(html.includes('<option value="5">&lt;b&gt;x&lt;/b&gt;</option>'));
+    assert.ok(html.includes('value="&quot;&gt;&lt;b&gt;x&lt;/b&gt;"'));
+    // Una fecha que no es una fecha no se escribe
+    assert.ok(tarjeta(html, 'informe').includes('Disponible desde el —'));
+    assert.doesNotMatch(ctx.htmlDeReportes({}, {}), /NaN|null|undefined/);
+    assert.doesNotMatch(ctx.htmlDeReportes(undefined, undefined), /NaN|null|undefined/);
+  });
+
+  // Lo que toca el DOM: el document de mentira de la página, con el contenedor de las tarjetas y los controles que se enfocan
+  const conLaPagina = () => {
+    const pedidos = [];
+    const descargas = [];
+    const avisos = [];
+    const enfocados = [];
+    const oyentes = {};
+    const contenedor = { innerHTML: '', addEventListener: (tipo, oyente) => { oyentes[tipo] = oyente; }, contains: () => false, querySelector: () => null };
+    const control = (id) => ({ focus: () => enfocados.push(id) });
+    const elementos = { 'rp-reportes': contenedor, 'rp-area': control('rp-area'), 'rp-desde': control('rp-desde'), 'rp-hasta': control('rp-hasta') };
+    const contexto = cargar({
+      __pedidos: pedidos,
+      document: {
+        addEventListener() {}, getElementById: (id) => elementos[id] ?? null, activeElement: null,
+        createElement: () => ({ click() { descargas.push(this.download); } })
+      },
+      showToast: (mensaje, tipo) => avisos.push([mensaje, tipo]),
+      URL: { createObjectURL: () => 'blob:reporte', revokeObjectURL() {} },
+      setTimeout: () => {}
+    });
+    vm.runInContext(`API.getAreas = async () => ${JSON.stringify(AREAS)}; API.pedirArchivo = async (ruta) => { __pedidos.push(ruta); return "pdf"; };`, contexto);
+    const hoy = vm.runInContext('Utils.hoyEnArgentina()', contexto);
+    // Un cambio en un control de las tarjetas, como lo manda el navegador
+    const cambiar = (selector, value) => {
+      const objetivo = { dataset: { selector }, value, closest: () => objetivo };
+      oyentes.change({ type: 'change', target: objetivo });
+    };
+    const boton = (reporte) => ({ dataset: { reporte }, disabled: false, getAttribute: () => null });
+    return { contexto, contenedor, pedidos, descargas, avisos, enfocados, hoy, cambiar, boton };
+  };
+
+  it('Avisos del RPAD trae del 1/1 a hoy', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    const desde = `${p.hoy.slice(0, 4)}-01-01`;
+    assert.ok(p.contenedor.innerHTML.includes(`id="rp-desde" class="mt-entrada" data-selector="rp-desde" value="${desde}"`), 'desde');
+    assert.ok(p.contenedor.innerHTML.includes(`id="rp-hasta" class="mt-entrada" data-selector="rp-hasta" value="${p.hoy}"`), 'hasta');
+    // Las áreas llegaron (API.getAreas)
+    assert.ok(p.contenedor.innerHTML.includes('<option value="7">Secretaría de Hacienda</option>'));
+    const boton = p.boton('avisos');
+    await p.contexto.descargarDeLaTarjeta(boton);
+    assert.deepEqual(p.pedidos, [`/reportes/avisos?desde=${desde}&hasta=${p.hoy}`]);
+    assert.deepEqual(p.descargas, [`Avisos-RPAD-${p.hoy}.pdf`]);
+    assert.equal(boton.disabled, false);
+    // Otro período: el que se eligió (un solo día, hoy)
+    p.cambiar('rp-desde', p.hoy);
+    await p.contexto.descargarDeLaTarjeta(boton);
+    assert.equal(p.pedidos.at(-1), `/reportes/avisos?desde=${p.hoy}&hasta=${p.hoy}`);
+    // Desde después de hasta: no se pide nada, se avisa con el mensaje del servidor y el foco va al campo
+    p.cambiar('rp-desde', `${Number(p.hoy.slice(0, 4)) + 1}-01-01`);
+    await p.contexto.descargarDeLaTarjeta(boton);
+    assert.equal(p.pedidos.length, 2);
+    assert.deepEqual(p.avisos, [[MENSAJE_PERIODO_INVALIDO, 'error']]);
+    assert.deepEqual(p.enfocados, ['rp-desde']);
+  });
+
+  it('Por área sin elegir no descarga y avisa «Elegí un área.»', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    await p.contexto.descargarDeLaTarjeta(p.boton('area'));
+    assert.deepEqual(p.pedidos, []);
+    assert.deepEqual(p.descargas, []);
+    assert.deepEqual(p.avisos, [['Elegí un área.', 'error']]);
+    assert.deepEqual(p.enfocados, ['rp-area']);
+    // Elegida, se descarga con su id y el día de hoy
+    p.cambiar('rp-area', '7');
+    await p.contexto.descargarDeLaTarjeta(p.boton('area'));
+    assert.deepEqual(p.pedidos, ['/reportes/por-area/7']);
+    assert.deepEqual(p.descargas, [`Reporte-area-7-${p.hoy}.pdf`]);
+  });
+
+  it('un botón deshabilitado no pide nada, y un error del servidor se avisa', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    await p.contexto.descargarDeLaTarjeta({ dataset: { reporte: 'estado' }, disabled: false, getAttribute: (nombre) => (nombre === 'aria-disabled' ? 'true' : null) });
+    assert.deepEqual(p.pedidos, []);
+    vm.runInContext('API.pedirArchivo = async () => { throw new Error("No hay métricas de ese año"); };', p.contexto);
+    const boton = p.boton('completar');
+    await p.contexto.descargarDeLaTarjeta(boton);
+    assert.deepEqual(p.avisos, [['No se pudo descargar el PDF: No hay métricas de ese año', 'error']]);
+    assert.deepEqual(p.descargas, []);
+    assert.equal(boton.disabled, false);
+  });
+});
+
 describe('reportes.html', () => {
   const html = leer('reportes.html');
 
@@ -921,52 +1221,24 @@ describe('reportes.html', () => {
     assert.match(formulario, /<button type="submit" class="mt-btn mt-btn-tinta" id="mt-manual-guardar">Guardar<\/button>/);
   });
 
-  // Sale el Cumplimiento y el Historial de notificaciones pasa a ser «Avisos del RPAD» (spec 2026-10-24-metricas-y-reportes, 5)
-  it('la pestaña Reportes: Estado general, Avisos del RPAD y Por área, sin Cumplimiento ni Historial', () => {
+  // La pestaña Reportes la dibuja reportes.js (htmlDeReportes): el HTML tiene solo su lugar. Sale el Cumplimiento y el Historial de
+  // notificaciones pasa a ser «Avisos del RPAD» (spec 2026-10-24-metricas-y-reportes, 5)
+  it('la pestaña Reportes: el lugar de las tarjetas, sin onclick ni las tarjetas y funciones viejas', () => {
     const reportes = html.match(/<section id="vista-reportes"[\s\S]*?<\/section>/)?.[0] ?? '';
-    for (const [funcion, argumentos] of [['generarReporteEstadoGeneral', ''], ['generarReporteAvisos', 'this'], ['generarReportePorArea', '']]) {
-      assert.ok(reportes.includes(`onclick="${funcion}(${argumentos})"`), funcion);
-      assert.equal(typeof ctx[funcion], 'function', funcion);
+    assert.match(reportes, /^<section id="vista-reportes" role="tabpanel" aria-labelledby="pestana-reportes" hidden>\s*<div id="rp-reportes"><\/div>\s*<\/section>$/);
+    assert.equal(cuantas(html, /id="rp-reportes"/g), 1);
+    assert.doesNotMatch(html, /onclick|onchange/i);
+    for (const viejo of ['Cumplimiento', 'Historial', 'periodo-select', 'historial-desde', 'area-select', 'avisos-desde', 'reportes-grid', 'reporte-card', 'btn-generar']) {
+      assert.ok(!html.includes(viejo), viejo);
     }
-    assert.ok(reportes.includes('<h3>Avisos del RPAD</h3>'), reportes);
-    for (const id of ['avisos-desde', 'avisos-hasta', 'area-select']) {
-      assert.ok(reportes.includes(`id="${id}"`), id);
-      if (id !== 'area-select') assert.ok(reportes.includes(`<label class="form-label" for="${id}">`), id);
+    for (const viejo of ['generarReporteEstadoGeneral', 'generarReporteAvisos', 'generarReportePorArea', 'generarReporteHistorial', 'generarReporteCumplimiento',
+      'descargarPDF', 'rutaDeAvisos']) {
+      assert.equal(typeof ctx[viejo], 'undefined', viejo);
     }
-    for (const viejo of ['Cumplimiento', 'Historial', 'periodo-select', 'historial-desde', 'historial-hasta']) assert.ok(!reportes.includes(viejo), viejo);
-    for (const viejo of ['generarReporteHistorial', 'generarReporteCumplimiento']) assert.equal(typeof ctx[viejo], 'undefined', viejo);
-  });
-
-  it('Avisos del RPAD: la ruta con el período elegido (sin una fecha, no va: el servidor usa la de por defecto)', () => {
-    assert.equal(ctx.rutaDeAvisos('2026-01-01', '2026-10-25'), '/reportes/avisos?desde=2026-01-01&hasta=2026-10-25');
-    assert.equal(ctx.rutaDeAvisos('', '2026-10-25'), '/reportes/avisos?hasta=2026-10-25');
-    assert.equal(ctx.rutaDeAvisos('2026-01-01', ''), '/reportes/avisos?desde=2026-01-01');
-    assert.equal(ctx.rutaDeAvisos('', ''), '/reportes/avisos');
-  });
-
-  it('Avisos del RPAD: del 1/1 a hoy, y la descarga con API.pedirArchivo (el JWT en el encabezado, nunca en la URL)', async () => {
-    const pedidos = [];
-    const descargas = [];
-    const campos = { 'avisos-desde': { value: '' }, 'avisos-hasta': { value: '' }, 'area-select': { innerHTML: '', appendChild() {} } };
-    const contexto = cargar({
-      __pedidos: pedidos,
-      document: {
-        addEventListener() {}, getElementById: (id) => campos[id] ?? null,
-        createElement: () => ({ click() { descargas.push(this.download); } })
-      },
-      URL: { createObjectURL: () => 'blob:avisos', revokeObjectURL() {} },
-      setTimeout: () => {}
-    });
-    vm.runInContext('API.getAreas = async () => []; API.pedirArchivo = async (ruta) => { __pedidos.push(ruta); return "pdf"; };', contexto);
-    const hoy = vm.runInContext('Utils.hoyEnArgentina()', contexto);
-    await contexto.iniciarTarjetasDeReportes();
-    assert.deepEqual([campos['avisos-desde'].value, campos['avisos-hasta'].value], [`${hoy.slice(0, 4)}-01-01`, hoy]);
-    const boton = { disabled: false };
-    campos['avisos-desde'].value = '2026-03-01';
-    await contexto.generarReporteAvisos(boton);
-    assert.deepEqual(pedidos, [`/reportes/avisos?desde=2026-03-01&hasta=${hoy}`]);
-    assert.deepEqual(descargas, [`Avisos-RPAD-${hoy}.pdf`]);
-    assert.equal(boton.disabled, false);
+    // El nombre de cada archivo lleva el día de hoy en Argentina: toISOString, después de las 21, decía mañana
+    assert.doesNotMatch(leer('js/reportes.js'), /\.toISOString\(/);
+    // Las piezas de las tarjetas, en el <style> de la página
+    for (const clase of ['.rp-grilla', '.rp-tarjeta', '.rp-campos', '.rp-hojas', '.rp-no-disponible']) assert.ok(html.includes(`${clase} {`), clase);
   });
 
   it('sin Chart.js ni publico.css, y los tokens del Seguimiento en su <style>', () => {

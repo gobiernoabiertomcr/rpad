@@ -49,8 +49,9 @@ const VERSION_GESTION = '20261129';
 const VERSION_SEGUIMIENTO = '20261129';
 // reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
 // ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
-// del RPAD en lugar del Historial y sin la del Cumplimiento: su versión es propia
-const VERSION_REPORTES = '20261130';
+// del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos: su
+// versión es propia
+const VERSION_REPORTES = '20261201';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
