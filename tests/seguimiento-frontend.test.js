@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
-import { seguimientoDe, resumenParaLista, nombreDelPdf, conNotasDgmitEditables } from '../services/seguimientoReglas.js';
+import { seguimientoDe, resumenParaLista, nombreDelPdf, conNotasDgmitEditables, ESTADO_DE_NOTA } from '../services/seguimientoReglas.js';
 import { textoRequiereNota } from '../services/requiereNotaReglas.js';
 import {
   TEXTO_TIPO_NOTA_DGMIT, MENSAJES_NOTA_DGMIT, LARGO_NUMERO, LARGO_MOTIVO, FECHA_MINIMA, validarNotaDgmit, validarMotivo
@@ -425,6 +425,11 @@ describe('seguimiento.js: los movimientos', () => {
     for (const titulo of ['Directores Generales de Planta Permanente', 'Título — con "comillas" y <b>', '']) {
       assert.equal(ctx.nombreDelPdf(titulo, HOY), nombreDelPdf(titulo, HOY));
     }
+  });
+
+  // El estado de una nota en su detalle: el del servidor, que usa también el reporte «Avisos del RPAD»
+  it('ESTADOS_DE_NOTA del navegador = ESTADO_DE_NOTA del servidor', () => {
+    assert.deepEqual(plano(vm.runInContext('ESTADOS_DE_NOTA', ctx)), { ...ESTADO_DE_NOTA });
   });
 });
 
@@ -1137,6 +1142,50 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     const colaborador = preparar({ respuestas: { '/seguimiento': LISTA() }, puedeCargar: true });
     await colaborador.pagina.iniciarSeguimiento();
     assert.equal(colaborador.el('sg-cargar-nota').hidden, false);
+  });
+
+  // El link «Cargar nota DGMIT» de «Para completar», en Métricas (spec 2026-10-24-metricas-y-reportes, 2.2): seguimiento.html?id=N#cargar-nota
+  it('abreLaCargaPorElHash: solo #cargar-nota y solo para quien puede cargar (el true literal)', () => {
+    assert.equal(ctx.abreLaCargaPorElHash('#cargar-nota', true), true);
+    for (const [hash, puede] of [['#cargar-nota', false], ['#cargar-nota', 'true'], ['#cargar-notas', true], ['cargar-nota', true], ['', true], [undefined, true]]) {
+      assert.equal(ctx.abreLaCargaPorElHash(hash, puede), false, `${hash} ${puede}`);
+    }
+  });
+
+  it('con #cargar-nota, el formulario abre con ese dataset elegido y el hash se va de la dirección; al lector no se le abre', async () => {
+    const respuestas = { '/seguimiento/52': DE(52), '/seguimiento': LISTA() };
+    const conHash = (preparado) => {
+      const reemplazos = [];
+      Object.assign(preparado.pagina.window.location, { pathname: '/seguimiento.html', search: '?id=52', hash: '#cargar-nota' });
+      preparado.pagina.window.history = { replaceState: (_estado, _titulo, url) => reemplazos.push(url) };
+      return reemplazos;
+    };
+    const colaborador = preparar({ id: '52', respuestas, puedeCargar: true });
+    const reemplazos = conHash(colaborador);
+    await colaborador.pagina.iniciarSeguimiento();
+    assert.deepEqual(colaborador.visibles(), ['vista-dataset']);
+    assert.ok(activo(colaborador.el, 'modal-nota'));
+    assert.equal(colaborador.el('modal-nota-titulo').textContent, 'Cargar nota DGMIT');
+    assert.ok(colaborador.el('nd-elegidos').innerHTML.startsWith('<span>1 dataset elegido:</span>'));
+    assert.ok(colaborador.el('nd-elegidos').innerHTML.includes('Directores Generales de Planta Permanente'));
+    assert.deepEqual(reemplazos, ['/seguimiento.html?id=52']);
+    // El lector no ve el formulario (y la dirección no cambia)
+    const lector = preparar({ id: '52', respuestas });
+    const sinCambios = conHash(lector);
+    await lector.pagina.iniciarSeguimiento();
+    assert.deepEqual(lector.visibles(), ['vista-dataset']);
+    assert.ok(!activo(lector.el, 'modal-nota'));
+    assert.deepEqual(sinCambios, []);
+    // Sin el hash, no se abre
+    const sinHash = preparar({ id: '52', respuestas, puedeCargar: true });
+    await sinHash.pagina.iniciarSeguimiento();
+    assert.ok(!activo(sinHash.el, 'modal-nota'));
+    // Un dataset que no existe: no encontrado, sin formulario
+    const noExiste = preparar({ id: '999', errores: { '/seguimiento/999': conEstado(404) }, respuestas: { '/seguimiento': LISTA() }, puedeCargar: true });
+    conHash(noExiste);
+    await noExiste.pagina.iniciarSeguimiento();
+    assert.deepEqual(noExiste.visibles(), ['not-found']);
+    assert.ok(!activo(noExiste.el, 'modal-nota'));
   });
 
   it('cargar desde la lista: abre con los vencidos y próximos, valida en el navegador y guarda con POST', async () => {

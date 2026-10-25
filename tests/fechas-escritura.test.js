@@ -23,6 +23,11 @@ const ANIO = Number(HOY.slice(0, 4));
 const MENSAJE_APROBAR_PROXIMA = 'La próxima actualización del cambio no es el último día de un mes. Rechazalo y proponé la fecha correcta.';
 const ERROR_PROXIMA_FIN_DE_MES = 'La próxima actualización tiene que ser el último día de un mes (febrero, el 28)';
 const ERROR_DATOS_AL_FIN_DE_MES = 'Datos al tiene que ser el último día de un mes (febrero, el 28)';
+// «Recibido el» obligatorio, el origen de los datos y la edición que no registra (spec 2026-10-24-metricas-y-reportes, 4)
+const MENSAJE_FALTA_RECIBIDO = 'Indicá cuándo se recibieron los datos.';
+const MENSAJE_FALTA_ORIGEN = 'Indicá quién entregó los datos.';
+const MENSAJE_ORIGEN_INVALIDO = 'El origen de los datos no es válido.';
+const MENSAJE_EDICION_REGISTRA = 'Para registrar una actualización, usá «Registrar actualización».';
 
 before(async () => {
   servidor = await iniciarServidor();
@@ -85,9 +90,11 @@ const aprobar = (cambioId, quien = 'adminB') => api.post(`/cambios-pendientes/${
 const rechazar = (cambioId, quien = 'adminB') =>
   api.post(`/cambios-pendientes/${cambioId}/rechazar`, { comentario: 'No coincide' }, como(quien));
 
-// Un registro válido para un dataset mensual: datos al fin del mes pasado, cargado hoy, próxima dentro de dos meses
+// Un registro válido para un dataset mensual: datos al fin del mes pasado, recibidos y cargados hoy, próxima dentro de dos
+// meses. Desde la spec 2026-10-24-metricas-y-reportes (4), «Recibido el» es obligatorio y, en externa, el origen (en interna
+// se ignora)
 const registroValido = (extra = {}) => ({
-  datos_al: enMeses(-1), cargado_el: HOY, proxima_actualizacion: enMeses(2), ...extra
+  datos_al: enMeses(-1), cargado_el: HOY, recibido_el: HOY, origen_datos: 'area', proxima_actualizacion: enMeses(2), ...extra
 });
 
 const alta = (extra = {}) => ({
@@ -215,6 +222,7 @@ describe('POST /datasets/:id/actualizar: el cambio que propone', () => {
       datos_al: enMeses(-1),
       proxima_actualizacion: enMeses(5),
       recibido_el: recibido,
+      origen_datos: 'area',
       notas: 'Llegó por mail',
       registro_actualizacion: true
     });
@@ -244,12 +252,151 @@ describe('POST /datasets/:id/actualizar: el cambio que propone', () => {
     assert.equal((await cambioEnDb(res.body.data.cambio_pendiente_id)).datos_nuevos.ultima_actualizacion, HOY);
 
     const conSinonimo = await cargarDataset({ proxima: enMeses(1) });
-    const otra = await registrar(conSinonimo, registroValido({ cargado_el: undefined, fecha_actualizacion: '2026-03-15' }));
+    // La recepción no puede ser posterior a la carga (y desde la spec 2026-10-24-metricas-y-reportes es obligatoria)
+    const otra = await registrar(conSinonimo, registroValido({ cargado_el: undefined, fecha_actualizacion: '2026-03-15', recibido_el: '2026-03-14' }));
     assert.equal(otra.status, 200, JSON.stringify(otra.body));
     const nuevos = (await cambioEnDb(otra.body.data.cambio_pendiente_id)).datos_nuevos;
     assert.equal(nuevos.ultima_actualizacion, '2026-03-15');
-    assert.equal(nuevos.recibido_el, null);
+    assert.equal(nuevos.recibido_el, '2026-03-14');
     assert.equal(nuevos.notas, null);
+  });
+});
+
+// Desde el despliegue, «Registrar actualización» pide «Recibido el» y, en gestión externa, el origen de los datos (spec
+// 2026-10-24-metricas-y-reportes, 4). Los cambios pendientes de antes, sin esos datos, se aprueban como siempre
+describe('POST /datasets/:id/actualizar: «Recibido el» y el origen de los datos', () => {
+  const RECIBIDO = sumarDias(HOY, -2);
+  const detalleDelCambio = async (cambioId) => {
+    const res = await api.get(`/cambios-pendientes/${cambioId}`, como('adminB'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data;
+  };
+
+  it('registrar sin recibido_el da 400 con «Indicá cuándo se recibieron los datos.»', async () => {
+    for (const gestion of ['externa', 'interna']) {
+      const id = await cargarDataset({ gestion, proxima: enMeses(1) });
+      for (const recibido of [undefined, null, '']) {
+        await esperar400(await registrar(id, registroValido({ recibido_el: recibido, origen_datos: 'area' })), MENSAJE_FALTA_RECIBIDO, id);
+      }
+      // El orden: falta Datos al y la carga van antes; la recepción, antes del origen y de la próxima
+      await esperar400(await registrar(id, registroValido({ datos_al: undefined, recibido_el: undefined })),
+        'Falta Datos al: la fecha a la que son los datos que llegaron', id);
+      await esperar400(await registrar(id, registroValido({ cargado_el: sumarDias(HOY, 1), recibido_el: undefined })),
+        `La fecha de carga en el portal no puede ser posterior a hoy (${formatoCorto(HOY)})`, id);
+      await esperar400(await registrar(id, registroValido({ recibido_el: undefined, origen_datos: undefined, proxima_actualizacion: undefined })),
+        MENSAJE_FALTA_RECIBIDO, id);
+    }
+  });
+
+  it('registrar un externo sin origen da 400 con «Indicá quién entregó los datos.»; un interno sin origen, no', async () => {
+    const externo = await cargarDataset({ proxima: enMeses(1) });
+    for (const origen of [undefined, null, '']) {
+      await esperar400(await registrar(externo, registroValido({ recibido_el: RECIBIDO, origen_datos: origen })), MENSAJE_FALTA_ORIGEN, externo);
+    }
+    // El orden: la recepción posterior a hoy o a la carga va antes que el origen; el origen, antes que la próxima
+    await esperar400(await registrar(externo, registroValido({ recibido_el: sumarDias(HOY, 1), origen_datos: undefined })),
+      `La fecha de recepción no puede ser posterior a hoy (${formatoCorto(HOY)})`, externo);
+    const cargado = sumarDias(HOY, -10);
+    await esperar400(await registrar(externo, registroValido({ cargado_el: cargado, recibido_el: RECIBIDO, origen_datos: undefined })),
+      `La fecha de recepción (${formatoCorto(RECIBIDO)}) no puede ser posterior a la de carga en el portal (${formatoCorto(cargado)})`, externo);
+    await esperar400(await registrar(externo, registroValido({ recibido_el: RECIBIDO, origen_datos: undefined, proxima_actualizacion: undefined })),
+      MENSAJE_FALTA_ORIGEN, externo);
+
+    const interno = await cargarDataset({ gestion: 'interna', proxima: enMeses(1) });
+    const res = await registrar(interno, registroValido({ recibido_el: RECIBIDO, origen_datos: undefined }));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  });
+
+  it('registrar con origen_datos «otro» da 400', async () => {
+    for (const gestion of ['externa', 'interna']) {
+      const id = await cargarDataset({ gestion, proxima: enMeses(1) });
+      for (const origen of ['otro', 'Area', 'fuente pública', 0, 1, true, {}, []]) {
+        await esperar400(await registrar(id, registroValido({ recibido_el: RECIBIDO, origen_datos: origen })), MENSAJE_ORIGEN_INVALIDO, id);
+      }
+    }
+  });
+
+  it('el origen viaja en datos_nuevos y en interna queda null aunque llegue', async () => {
+    for (const origen of ['area', 'fuente_publica']) {
+      const externo = await cargarDataset({ proxima: enMeses(1) });
+      const res = await registrar(externo, registroValido({ recibido_el: RECIBIDO, origen_datos: origen }));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const nuevos = (await cambioEnDb(res.body.data.cambio_pendiente_id)).datos_nuevos;
+      assert.strictEqual(nuevos.origen_datos, origen);
+      assert.equal(nuevos.recibido_el, RECIBIDO);
+    }
+    for (const origen of ['area', 'fuente_publica', null, undefined]) {
+      const interno = await cargarDataset({ gestion: 'interna', proxima: enMeses(1) });
+      const res = await registrar(interno, registroValido({ recibido_el: RECIBIDO, origen_datos: origen }));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const nuevos = (await cambioEnDb(res.body.data.cambio_pendiente_id)).datos_nuevos;
+      assert.ok(Object.hasOwn(nuevos, 'origen_datos'), JSON.stringify(nuevos));
+      assert.strictEqual(nuevos.origen_datos, null);
+    }
+  });
+
+  it('un cambio pendiente creado sin recibido_el ni origen se aprueba y escribe el historial', async () => {
+    // El JSON de un registro propuesto antes del despliegue: con recibido_el en null (el formulario de antes) o sin la clave
+    const viejos = [
+      { recibido_el: null },
+      {}
+    ];
+    for (const sinRecibido of viejos) {
+      const id = await cargarDataset({ ultima: '2026-01-10', proxima: enMeses(-1), datosAl: '2025-12-31' });
+      const cargado = sumarDias(HOY, -1);
+      const cambioId = (await query(
+        `INSERT INTO cambios_pendientes (tipo_cambio, dataset_id, datos_nuevos, datos_anteriores, usuario_id)
+         VALUES ('editar', ?, ?, ?, ?)`,
+        [id,
+          JSON.stringify({ ultima_actualizacion: cargado, datos_al: enMeses(-1), proxima_actualizacion: enMeses(2), ...sinRecibido, notas: 'De antes', registro_actualizacion: true }),
+          JSON.stringify({ ultima_actualizacion: '2026-01-10', datos_al: '2025-12-31', proxima_actualizacion: enMeses(-1) }),
+          usuarios.adminA.id]
+      )).insertId;
+
+      const aprobacion = await aprobar(cambioId);
+      assert.equal(aprobacion.status, 200, JSON.stringify(aprobacion.body));
+      const dataset = await fechasEnDb(id);
+      assert.deepEqual([dataset.ultima, dataset.datos_al, dataset.proxima], [cargado, enMeses(-1), enMeses(2)]);
+      assert.deepEqual(await historialDe(id), [{
+        fecha_actualizacion: cargado,
+        usuario_id: usuarios.adminA.id,
+        notas: 'De antes',
+        cambio_id: cambioId,
+        vencimiento: enMeses(-1),
+        datos_al: enMeses(-1),
+        recibido_el: null,
+        proxima_nueva: enMeses(2)
+      }]);
+      // La comparación de un cambio viejo no lista el origen
+      assert.ok(!(await detalleDelCambio(cambioId)).campos_modificados.some(c => c.campo === 'Origen de los datos'));
+    }
+  });
+
+  it('la comparación muestra «Origen de los datos: Fuente pública»', async () => {
+    const id = await cargarDataset({ ultima: '2026-01-10', proxima: enMeses(1), datosAl: '2025-12-31' });
+    const res = await registrar(id, registroValido({ recibido_el: RECIBIDO, origen_datos: 'fuente_publica' }));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const cambio = await detalleDelCambio(res.body.data.cambio_pendiente_id);
+    assert.deepEqual(cambio.campos_modificados, [
+      { campo: 'Datos al', antes: '2025-12-31', despues: enMeses(-1) },
+      { campo: 'Cargado en el portal', antes: '2026-01-10', despues: HOY },
+      { campo: 'Recibido el', antes: '-', despues: RECIBIDO },
+      { campo: 'Origen de los datos', antes: '-', despues: 'Fuente pública' },
+      { campo: 'Proxima Actualizacion', antes: enMeses(1), despues: enMeses(2) }
+    ]);
+    assert.equal(cambio.datos_nuevos.origen_datos_texto, 'Fuente pública');
+
+    // «Los entregó el área», el otro origen
+    const otro = await cargarDataset({ proxima: enMeses(1) });
+    const conArea = await registrar(otro, registroValido({ recibido_el: RECIBIDO, origen_datos: 'area' }));
+    const fila = (await detalleDelCambio(conArea.body.data.cambio_pendiente_id)).campos_modificados.find(c => c.campo === 'Origen de los datos');
+    assert.deepEqual(fila, { campo: 'Origen de los datos', antes: '-', despues: 'Los entregó el área' });
+
+    // En gestión interna no se pregunta: el renglón no se lista
+    const interno = await cargarDataset({ gestion: 'interna', proxima: enMeses(1) });
+    const sinOrigen = await registrar(interno, registroValido({ recibido_el: RECIBIDO, origen_datos: 'area' }));
+    const campos = (await detalleDelCambio(sinOrigen.body.data.cambio_pendiente_id)).campos_modificados.map(c => c.campo);
+    assert.deepEqual(campos, ['Datos al', 'Cargado en el portal', 'Recibido el', 'Proxima Actualizacion']);
   });
 });
 
@@ -471,6 +618,34 @@ describe('PUT /datasets/:id: valida solo lo que cambia', () => {
     const cambio = await cambioEnDb(res.body.data.cambio_pendiente_id);
     assert.equal(cambio.datos_anteriores.datos_al, enMeses(-2));
     assert.equal(cambio.datos_nuevos.datos_al, enMeses(-2));
+  });
+
+  // Mover a la vez «Cargado en el portal» y la próxima es registrar una actualización: va por «Registrar actualización», que
+  // pide la recepción y el origen y escribe el historial (spec 2026-10-24-metricas-y-reportes, 4)
+  it('editar cambiando a la vez la carga y la próxima da 400 con el mensaje de la edición; cambiando una sola, no', async () => {
+    const guardado = { ultima: '2026-01-10', proxima: enMeses(1) };
+    const id = await cargarDataset(guardado);
+    await esperar400(await editar(id, { ultima_actualizacion: sumarDias(HOY, -1), proxima_actualizacion: enMeses(3) }),
+      MENSAJE_EDICION_REGISTRA, id);
+    await esperar400(await editar(id, {
+      titulo: `${PREFIJO_TEST} edita las dos fechas`, ultima_actualizacion: sumarDias(HOY, -1), proxima_actualizacion: enMeses(3)
+    }), MENSAJE_EDICION_REGISTRA, id);
+
+    // El formulario manda las dos: si llegan iguales a las guardadas, o cambia una sola, se edita
+    const sinTocarlas = await editar(id, {
+      titulo: `${PREFIJO_TEST} reenvía las dos fechas`, ultima_actualizacion: guardado.ultima, proxima_actualizacion: guardado.proxima
+    });
+    assert.equal(sinTocarlas.status, 200, JSON.stringify(sinTocarlas.body));
+
+    const soloLaCarga = await cargarDataset(guardado);
+    const carga = await editar(soloLaCarga, { ultima_actualizacion: sumarDias(HOY, -1), proxima_actualizacion: guardado.proxima });
+    assert.equal(carga.status, 200, JSON.stringify(carga.body));
+    assert.equal((await cambioEnDb(carga.body.data.cambio_pendiente_id)).datos_nuevos.ultima_actualizacion, sumarDias(HOY, -1));
+
+    const soloLaProxima = await cargarDataset(guardado);
+    const proxima = await editar(soloLaProxima, { ultima_actualizacion: guardado.ultima, proxima_actualizacion: enMeses(3) });
+    assert.equal(proxima.status, 200, JSON.stringify(proxima.body));
+    assert.equal((await cambioEnDb(proxima.body.data.cambio_pendiente_id)).datos_nuevos.proxima_actualizacion, enMeses(3));
   });
 });
 

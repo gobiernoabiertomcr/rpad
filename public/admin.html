@@ -55,7 +55,7 @@
         .ad-estado-filtro:focus-visible, .ad-btn:focus-visible, .ad-icono:focus-visible,
         .ad-barra input:focus-visible, .ad-barra select:focus-visible,
         .ad-pie-tabla .pag-btn:focus-visible, .ad-marco:focus-visible,
-        .ad-cerrar:focus-visible, .ad-mes select:focus-visible, .ad-campos input:focus-visible,
+        .ad-cerrar:focus-visible, .ad-mes select:focus-visible, .ad-campos input:focus-visible, .ad-campos select:focus-visible,
         .ad-opcion:focus-within { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
 
         .ad-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
@@ -160,11 +160,13 @@
         .ad-error { font-size: 0.8rem; color: var(--pf-rojo); margin: 6px 0 0; }
         .ad-error-envio { background: var(--pf-rojo-fondo); border: 1px solid #EFCACA; border-radius: 8px; padding: 9px 12px; margin: 0 0 14px; font-size: 0.85rem; }
         .ad-mes { display: flex; flex-wrap: wrap; gap: 8px; }
-        .ad-mes select, .ad-campos input { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; }
+        .ad-mes select, .ad-campos input, .ad-campos select { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; }
         .ad-mes select:first-child { min-width: 150px; }
         .ad-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .ad-campos label { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
-        .ad-campos input { width: 100%; }
+        .ad-campos input, .ad-campos select { width: 100%; }
+        /* «¿Quién entregó los datos?» ocupa el renglón entero, arriba de las dos fechas */
+        .ad-campos .ad-ancho { grid-column: 1 / -1; }
 
         /* Las opciones de la próxima: tarjetas de radio. Mientras llegan las nuevas, las de antes quedan apagadas (el paso no salta) */
         .ad-opciones { display: grid; gap: 8px; }
@@ -331,7 +333,7 @@
                 </div>
                 <div class="sidebar-section hidden" id="sidebarTools">
                     <div class="sidebar-section-title">Herramientas</div>
-                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Reportes</span></a>
+                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
                     <a href="notas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
                     <a href="gestion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Gestión</span></a>
                     <a href="seguimiento.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
@@ -598,6 +600,8 @@
                         <div>
                             <label for="ultima_actualizacion">Cargado en el portal el</label>
                             <input type="date" id="ultima_actualizacion">
+                            <!-- La edición no registra actualizaciones: si cambian la carga y la próxima, admin.js avisa acá -->
+                            <p class="ad-error" id="form-error-edicion" role="alert" hidden></p>
                         </div>
                     </div>
                     <div class="fila">
@@ -786,9 +790,15 @@
                     <div>
                         <h3>¿Cuándo llegó y cuándo se cargó?</h3>
                         <div class="ad-campos">
+                            <!-- Solo en gestión externa: admin.js lo muestra, le pone las opciones y lo trae con lo sugerido.
+                                 La fecha se llama «Recibido el» u «Obtenido el» según lo elegido (admin.js cambia el rótulo) -->
+                            <div class="ad-ancho" id="registrar-campo-origen" hidden>
+                                <label for="registrar-origen">¿Quién entregó los datos?</label>
+                                <select id="registrar-origen" required></select>
+                            </div>
                             <div>
-                                <label for="registrar-recibido">Recibido el (opcional)</label>
-                                <input type="date" id="registrar-recibido">
+                                <label for="registrar-recibido" id="registrar-rotulo-recibido">Recibido el</label>
+                                <input type="date" id="registrar-recibido" required>
                             </div>
                             <div>
                                 <label for="registrar-cargado">Cargado en el portal el</label>
@@ -828,10 +838,10 @@
 
     <!-- Scripts del RPAD -->
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261124"></script>
-    <script src="js/main.js?v=20261124"></script>
-    <script src="js/api.js?v=20261124"></script>
-    <script src="js/admin-fechas.js?v=20261113"></script>
-    <script src="js/admin.js?v=20261113"></script>
+    <script src="js/auth.js?v=20261130"></script>
+    <script src="js/main.js?v=20261130"></script>
+    <script src="js/api.js?v=20261130"></script>
+    <script src="js/admin-fechas.js?v=20261127"></script>
+    <script src="js/admin.js?v=20261127"></script>
 </body>
 </html>

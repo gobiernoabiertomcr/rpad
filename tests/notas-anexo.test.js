@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { construirAnexo } from '../services/notasDigitalesContenido.js';
 import { renderAnexo } from '../services/notasDigitalesAnexo.js';
-import { DocumentoNota } from '../services/notasDigitalesPdf.js';
 import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
+import { diagramacion as diagramacionDe, verificarDiagramacion, contiene, nombre } from './pdf-diagramacion.js';
 
 const MM = 72 / 25.4;
 const ficha = (cambios = {}) => ({
@@ -139,88 +139,8 @@ describe('construirAnexo', () => {
   });
 });
 
-// Diagramación de cada hoja del anexo, tomada de las llamadas a DocumentoNota mientras se dibuja:
-// - textos: el rectángulo de cada texto, con la fuente, el tamaño y las opciones vigentes. El alto es el del ojo de
-//   la letra (de la línea de ascendentes a la de descendentes), sin el interlineado de la última línea. Cada uno lleva
-//   también el nombre de su fuente y su tamaño.
-// - bloques: los rectángulos redondeados (estado, datos solicitados, tarjeta del QR, descripción, observaciones,
-//   contacto).
-// - lineas: las líneas finas (rectángulos de hasta 1 punto de alto y 50 o más de ancho: encabezado, ficha, pie).
-// - acentos: el filete vertical del acento a la izquierda del recuadro destacado (la descripción) y del de los datos
-//   solicitados.
-// Cada uno: { hoja, texto, x0, y0, x1, y1 }, con y desde el borde superior.
-const diagramacion = async (datos) => {
-  const textos = [];
-  const bloques = [];
-  const lineas = [];
-  const acentos = [];
-  const hojas = [];
-  const indice = (hoja) => {
-    if (!hojas.includes(hoja)) hojas.push(hoja);
-    return hojas.indexOf(hoja);
-  };
-  const original = DocumentoNota.prototype.text;
-  // rect y roundedRect son de PDFKit (DocumentoNota no los redefine): se tapan en DocumentoNota y después se quitan
-  const { rect, roundedRect } = DocumentoNota.prototype;
-  DocumentoNota.prototype.roundedRect = function (x, y, ancho, alto, radio) {
-    bloques.push({ hoja: indice(this.page), texto: `bloque ${bloques.length}`, x0: x, y0: y, x1: x + ancho, y1: y + alto });
-    return roundedRect.call(this, x, y, ancho, alto, radio);
-  };
-  DocumentoNota.prototype.rect = function (x, y, ancho, alto) {
-    if (alto <= 1 && ancho >= 50) lineas.push({ hoja: indice(this.page), texto: `línea ${lineas.length}`, x0: x, y0: y, x1: x + ancho, y1: y + alto });
-    // Filete vertical del acento, en el borde izquierdo del recuadro destacado
-    if (ancho <= 5 && alto >= 20 && Math.abs(x - 15 * MM) < 0.1) acentos.push({ hoja: indice(this.page), texto: 'acento', x0: x, y0: y, x1: x + ancho, y1: y + alto });
-    return rect.call(this, x, y, ancho, alto);
-  };
-  DocumentoNota.prototype.text = function (texto, x, y, opciones = {}) {
-    const conInterlineado = this.currentLineHeight(true) + (opciones.lineGap ?? 0);
-    let lineas = 1;
-    let ancho = this.widthOfString(String(texto), opciones);
-    let x0 = x;
-    if (opciones.width) {
-      lineas = Math.round(this.heightOfString(String(texto), opciones) / conInterlineado);
-      // Con alto máximo, PDFKit escribe las líneas que entran (al menos una)
-      if (opciones.height != null) lineas = Math.min(lineas, Math.max(1, Math.floor(opciones.height / conInterlineado + 1e-6)));
-      if (lineas > 1) ancho = opciones.width;
-      else if (opciones.align === 'right') x0 = x + opciones.width - ancho;
-      else if (opciones.align === 'center') x0 = x + (opciones.width - ancho) / 2;
-    }
-    textos.push({
-      hoja: indice(this.page), texto: String(texto), fuente: this._font.name, tamano: this._fontSize, x0, y0: y, x1: x0 + ancho,
-      y1: y + (lineas - 1) * conInterlineado + this.currentLineHeight(false)
-    });
-    return original.call(this, texto, x, y, opciones);
-  };
-  try {
-    await renderAnexo(datos);
-  } finally {
-    DocumentoNota.prototype.text = original;
-    delete DocumentoNota.prototype.roundedRect;
-    delete DocumentoNota.prototype.rect;
-  }
-  return { textos, bloques, lineas, acentos };
-};
-
-const seCruzan = (a, b) => a.x0 < b.x1 - 0.1 && b.x0 < a.x1 - 0.1 && a.y0 < b.y1 - 0.1 && b.y0 < a.y1 - 0.1;
-const contiene = (a, b) => b.x0 >= a.x0 - 0.01 && b.x1 <= a.x1 + 0.01 && b.y0 >= a.y0 - 0.01 && b.y1 <= a.y1 + 0.01;
-const nombre = (c) => `"${c.texto.slice(0, 40)}" (${[c.x0, c.y0, c.x1, c.y1].map(v => v.toFixed(1)).join(', ')})`;
-
-// Textos, bloques y líneas dentro de los márgenes de 15 mm; ningún texto encima de otro ni bloques encimados; cada
-// texto, dentro de un bloque o fuera de él (ninguno cruza un borde); y ninguna línea fina cruza un texto o un bloque
-const verificarDiagramacion = ({ textos, bloques, lineas }) => {
-  for (const c of [...textos, ...bloques, ...lineas]) {
-    assert.ok(c.x0 >= 15 * MM - 0.01 && c.x1 <= 195 * MM + 0.01, `${nombre(c)} sale de los márgenes laterales`);
-    assert.ok(c.y0 >= 15 * MM - 0.01 && c.y1 <= 282 * MM + 0.01, `${nombre(c)} sale de los márgenes superior o inferior`);
-  }
-  const deLaMismaHoja = (lista, otra = lista) => lista.flatMap((a, i) => otra.slice(otra === lista ? i + 1 : 0)
-    .filter(b => a.hoja === b.hoja).map(b => [a, b]));
-  for (const [a, b] of deLaMismaHoja(textos)) assert.ok(!seCruzan(a, b), `se superponen ${nombre(a)} y ${nombre(b)}`);
-  for (const [a, b] of deLaMismaHoja(bloques)) assert.ok(!seCruzan(a, b), `se superponen ${nombre(a)} y ${nombre(b)}`);
-  for (const [bloque, texto] of deLaMismaHoja(bloques, textos)) {
-    assert.ok(contiene(bloque, texto) || !seCruzan(bloque, texto), `${nombre(texto)} cruza el borde de ${nombre(bloque)}`);
-  }
-  for (const [linea, otro] of deLaMismaHoja(lineas, [...textos, ...bloques])) assert.ok(!seCruzan(linea, otro), `${nombre(linea)} cruza ${nombre(otro)}`);
-};
+// Diagramación de cada hoja del anexo (tests/pdf-diagramacion.js), dibujada con renderAnexo
+const diagramacion = (datos) => diagramacionDe(() => renderAnexo(datos));
 
 // La hoja más cargada de la base (17/10/2026): un relevamiento interno con título en dos líneas, descripción de 466
 // caracteres, "qué se solicita" de 338, link largo, dos temas y siete datos de contacto (estos, de ejemplo con el mismo

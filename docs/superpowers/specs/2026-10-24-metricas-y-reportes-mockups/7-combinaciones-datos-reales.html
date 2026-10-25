@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maqueta 7 · Las cuatro combinaciones</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --tinta:#1A365D; --tinta-honda:#142B4A; --texto:#22324A; --suave:#56677F; --linea:#DAE3ED; --sutil:#F4F7FA;
+    --borde:#76879F; --cielo:#DCEEF5; --sol:#FCE8A8; --ambar:#7A5200; --verde:#2E6B4C; --verde-f:#DDF1E6;
+    --gris:#8A97A8; --violeta:#5B4691; --violeta-f:#EFEAF8;
+    --f-titulo:'Bricolage Grotesque',system-ui,sans-serif; --f-texto:'Figtree',system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:var(--f-texto); color:var(--texto); background:#f1f5f9; font-size:15px; }
+  .guia { background:#FFF7DD; border-bottom:1px solid #EED89A; padding:12px 28px; font-size:.92rem; line-height:1.45; }
+  .guia b { color:var(--ambar); }
+  header { height:72px; background:#fff; border-bottom:1px solid var(--linea); display:flex; align-items:center; gap:14px; padding:0 28px; }
+  header img { height:40px; }
+  header .marca { display:flex; flex-direction:column; line-height:1.1; }
+  header .marca b { font-family:var(--f-titulo); font-weight:750; color:var(--tinta); font-size:1.25rem; letter-spacing:-.02em; }
+  header .marca span { color:var(--suave); font-size:.74rem; max-width:150px; }
+  header nav { margin-left:auto; display:flex; gap:28px; font-weight:600; font-size:.95rem; }
+  header .usuario { margin-left:36px; display:flex; align-items:center; gap:10px; font-size:.85rem; text-align:right; }
+  header .usuario i { font-style:normal; width:34px; height:34px; border-radius:50%; background:var(--tinta); color:#fff; display:grid; place-items:center; font-weight:700; }
+  main { max-width:1180px; margin:0 auto; padding:26px 28px 70px; }
+  h1 { font-family:var(--f-titulo); letter-spacing:-.02em; color:var(--tinta); font-size:1.6rem; margin:0 0 8px; display:flex; align-items:center; gap:10px; }
+  .bajada { color:var(--suave); margin:0 0 18px; max-width:72ch; line-height:1.5; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 14px; border-radius:999px; border:1px solid var(--borde); background:#fff; font-size:.88rem; font-weight:500; color:var(--texto); white-space:nowrap; }
+  .chip b { font-weight:700; }
+  .chip.on { background:var(--tinta); border-color:var(--tinta); color:#fff; }
+  .barra { display:flex; flex-wrap:wrap; gap:12px 14px; align-items:center; margin:0 0 14px; }
+  .sel { height:40px; border:1px solid var(--borde); border-radius:12px; background:#fff; padding:0 14px; display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:.9rem; }
+  .btn { height:40px; border-radius:999px; padding:0 18px; display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:.9rem; border:1px solid var(--borde); background:#fff; color:var(--tinta); }
+  .btn.tinta { background:var(--tinta); color:#fff; border-color:var(--tinta); }
+  .derecha { margin-left:auto; display:flex; gap:10px; }
+  .pestanas { display:flex; gap:2px; border-bottom:1px solid var(--linea); margin:0 0 18px; }
+  .pestanas span { padding:10px 18px; font-weight:600; color:var(--suave); border-bottom:3px solid transparent; margin-bottom:-1px; }
+  .pestanas span.on { color:var(--tinta); border-bottom-color:var(--tinta); }
+  .filtrado { display:flex; gap:10px; align-items:center; background:var(--sol); color:var(--ambar); border-radius:12px; padding:10px 14px; font-size:.9rem; margin-bottom:16px; }
+  .filtrado a { color:var(--ambar); font-weight:700; text-decoration:underline; text-underline-offset:3px; margin-left:auto; }
+  .indice { display:flex; gap:18px; flex-wrap:wrap; font-size:.88rem; margin:0 0 18px; color:var(--suave); }
+  .indice span { color:var(--tinta); font-weight:600; text-decoration:underline; text-underline-offset:3px; }
+
+  h2.seccion { font-family:var(--f-titulo); font-weight:700; letter-spacing:-.01em; color:var(--tinta); font-size:1.25rem; margin:30px 0 4px; }
+  p.seccion { color:var(--suave); margin:0 0 12px; font-size:.92rem; }
+  .tarjeta { background:#fff; border:1px solid var(--linea); border-radius:16px; padding:20px 24px; }
+  .tarjeta + .tarjeta { margin-top:16px; }
+  .grilla { display:grid; gap:16px; }
+  .g2 { grid-template-columns:1fr 1fr; } .g3 { grid-template-columns:1.1fr 1fr 1fr; }
+  .grilla .tarjeta + .tarjeta { margin-top:0; }
+  .cabeza { display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .cabeza h3 { margin:0; font-family:var(--f-titulo); font-weight:650; letter-spacing:-.01em; font-size:1.08rem; color:var(--tinta); }
+  .cabeza span { color:var(--suave); font-size:.85rem; }
+
+  /* Circuito */
+  .tramos { display:grid; grid-template-columns: .8fr 1.25fr 1fr 1.25fr 1fr 1.25fr .9fr 1.25fr .8fr; align-items:stretch; }
+  .nodo { border:1.5px solid var(--tinta); border-radius:14px; padding:12px; background:#fff; display:flex; flex-direction:column; justify-content:center; }
+  .nodo .q { font-weight:700; color:var(--tinta); line-height:1.2; font-size:.95rem; }
+  .nodo .r { font-size:.78rem; color:var(--suave); margin-top:3px; line-height:1.3; }
+  .nodo.dgmit { border-color:var(--violeta); } .nodo.dgmit .q { color:var(--violeta); }
+  .nodo.fin { border-color:var(--verde); background:#FAFDFB; } .nodo.fin .q { color:var(--verde); }
+  .flecha { display:flex; flex-direction:column; justify-content:center; padding:0 10px; }
+  .flecha .n { font-family:var(--f-titulo); font-weight:750; font-size:1.55rem; color:var(--tinta); line-height:1.05; letter-spacing:-.02em; }
+  .flecha .n small { white-space:nowrap; font-family:var(--f-texto); font-size:.78rem; font-weight:600; letter-spacing:0; color:var(--suave); }
+  .flecha .t { font-size:.82rem; font-weight:700; margin-top:2px; }
+  .flecha .l { position:relative; border-top:3px solid var(--tinta); margin:9px 9px 8px 0; }
+  .flecha .l::after { content:''; position:absolute; right:-8px; top:-8.5px; border:7px solid transparent; border-left:10px solid var(--tinta); }
+  .flecha .c { font-size:.78rem; color:var(--suave); line-height:1.35; }
+  .flecha .c b { color:var(--texto); font-weight:600; }
+  .flecha.dgmit .n, .flecha.dgmit .t { color:var(--violeta); }
+  .flecha.dgmit .l { border-top-color:var(--violeta); } .flecha.dgmit .l::after { border-left-color:var(--violeta); }
+  .directo { margin-top:14px; display:flex; gap:10px; align-items:center; padding:10px 14px; border:1px dashed var(--borde); border-radius:12px; font-size:.88rem; }
+  .directo .i { flex:none; width:26px; height:26px; border-radius:50%; background:var(--cielo); display:grid; place-items:center; color:var(--tinta); font-weight:700; }
+  .pie { margin-top:10px; font-size:.8rem; color:var(--suave); }
+  .cinta svg { width:100%; height:auto; display:block; margin-top:6px; }
+  .cinta text { font-family:var(--f-texto); }
+  .leyenda { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:.82rem; color:var(--suave); margin-top:6px; }
+  .leyenda span { display:inline-flex; align-items:center; gap:7px; }
+  .mk { display:inline-block; width:14px; height:14px; }
+  .mk-nota { background:var(--tinta); transform:rotate(45deg); border-radius:2px; width:12px; height:12px; }
+  .mk-dgmit { background:var(--violeta); border-radius:3px; width:12px; height:12px; }
+  .mk-datos { border:2.5px solid var(--tinta); border-radius:50%; width:13px; height:13px; }
+  .mk-act { background:var(--verde); border-radius:50%; }
+  .mk-rayado { width:22px; height:12px; border-radius:2px; background:repeating-linear-gradient(45deg,#F2CF5B 0 3px,#FCE8A8 3px 7px); }
+  .separa { border-top:1px solid var(--linea); margin:16px 0 4px; }
+
+  /* Casos */
+  .casos-cab { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:14px 0 8px; }
+  .link { font-weight:600; color:var(--tinta); text-decoration:underline; text-underline-offset:3px; }
+  table { width:100%; border-collapse:collapse; font-size:.86rem; }
+  th { text-align:left; font-size:.76rem; font-weight:600; color:var(--suave); padding:7px 8px; border-bottom:1px solid var(--linea); white-space:nowrap; }
+  td { padding:9px 8px; border-bottom:1px solid var(--linea); vertical-align:top; font-variant-numeric:tabular-nums; }
+  td.t { font-weight:600; color:var(--tinta); }
+  td.t small { display:block; font-weight:400; color:var(--suave); }
+  td .d { display:block; font-size:.76rem; color:var(--suave); }
+  tr.fuera td { color:var(--gris); background:#FAFBFC; }
+  tr.fuera td.t { color:var(--gris); text-decoration:line-through; }
+  .check { width:18px; height:18px; border:2px solid var(--borde); border-radius:4px; display:inline-grid; place-items:center; font-size:12px; color:#fff; }
+  .check.on { background:var(--tinta); border-color:var(--tinta); }
+  .curso { color:var(--ambar); font-weight:600; }
+  .pend { color:var(--violeta); }
+
+  /* Tiles */
+  .heroe { font-family:var(--f-titulo); font-weight:750; letter-spacing:-.02em; font-size:2.6rem; color:var(--tinta); line-height:1; }
+  .heroe small { font-family:var(--f-texto); font-size:1rem; font-weight:600; letter-spacing:0; color:var(--suave); }
+  .medidor { height:10px; background:var(--cielo); border-radius:999px; margin:12px 0 10px; overflow:hidden; }
+  .medidor i { display:block; height:100%; background:var(--tinta); border-radius:999px; }
+  .tile-txt { font-size:.86rem; color:var(--texto); line-height:1.45; }
+  .tile-txt .s { color:var(--suave); }
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--linea); border-radius:14px; }
+  .kpis div { padding:14px 16px; }
+  .kpis div + div { border-left:1px solid var(--linea); }
+  .kpis b { display:block; font-family:var(--f-titulo); font-size:1.8rem; color:var(--tinta); letter-spacing:-.02em; line-height:1.1; }
+  .kpis span { font-size:.82rem; color:var(--suave); }
+  .barras-h div { display:grid; grid-template-columns:130px 1fr 34px; gap:10px; align-items:center; font-size:.86rem; margin:7px 0; }
+  .barras-h i { display:block; height:14px; background:var(--tinta); border-radius:0 4px 4px 0; }
+  .barras-h i.ambar { background:#E2B23A; }
+  .barras-h b { text-align:right; font-variant-numeric:tabular-nums; }
+  svg text { font-family:var(--f-texto); }
+  .mini-cab { font-size:.82rem; font-weight:700; color:var(--texto); margin:6px 0 2px; }
+  .manuales li { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--linea); font-size:.88rem; }
+  .manuales { list-style:none; margin:0; padding:0; }
+  .rank td.p { width:45%; }
+  .rank .barra-p { height:8px; background:var(--cielo); border-radius:999px; overflow:hidden; }
+  .rank .barra-p i { display:block; height:100%; background:var(--tinta); }
+  .propuesta { margin-top:14px; border:2px dashed #C9A227; background:#FFFBEA; border-radius:12px; padding:12px 14px; font-size:.88rem; }
+  .propuesta b.t { color:var(--ambar); display:block; margin-bottom:4px; }
+  .propuesta .n { font-family:var(--f-titulo); font-weight:750; font-size:1.35rem; color:var(--tinta); }
+  .flecha.vacia .n { font-size:1rem; font-weight:650; color:var(--suave); }
+  .flecha.vacia .l { border-top-style:dashed; border-top-color:var(--gris); } .flecha.vacia .l::after { border-left-color:var(--gris); }
+  .flecha.vacia .t { color:var(--suave); }
+  .kpis.k5 { grid-template-columns:repeat(5,1fr); }
+  .vacio-caja { padding:10px 12px; border-radius:10px; background:var(--sutil); color:var(--suave); font-size:.86rem; }
+  .completar .tarea { display:grid; grid-template-columns:minmax(0,1fr) 220px 150px; gap:12px; align-items:center; padding:9px 4px; border-top:1px solid var(--linea); font-size:.9rem; }
+  .completar .tarea small { display:block; color:var(--suave); font-size:.8rem; }
+  .completar .grupo { font-size:.82rem; font-weight:700; color:var(--suave); margin:12px 0 2px; }
+  .completar .q { color:var(--suave); font-size:.85rem; }
+  .completar a { font-weight:600; color:var(--tinta); text-decoration:underline; text-underline-offset:3px; text-align:right; }
+  .flecha .u { font-size:.74rem; font-weight:600; color:var(--suave); line-height:1.2; margin-top:1px; }
+  .flecha.dgmit .u { color:var(--violeta); }
+  .chip { cursor:pointer; user-select:none; }
+  .flecha .u { font-size:.74rem; font-weight:600; color:var(--suave); line-height:1.2; margin-top:1px; }
+  .flecha.dgmit .u { color:var(--violeta); }
+  .flecha.vacia .n { font-size:1rem; font-weight:650; color:var(--suave); }
+  .flecha.vacia .l { border-top-style:dashed; border-top-color:var(--gris); } .flecha.vacia .l::after { border-left-color:var(--gris); }
+  .flecha.vacia .t { color:var(--suave); }
+  .tramos.interna { grid-template-columns: .9fr 1.4fr 1.3fr 1.4fr 1fr 1.4fr .9fr; }
+  .comparar td, .comparar th { text-align:center; }
+  .comparar td:first-child, .comparar th:first-child { text-align:left; }
+  .comparar th.on, .comparar td.on { background:#EAF1F9; color:var(--tinta); font-weight:700; }
+  .cuadro { background:#fff; border:1px solid var(--linea); border-radius:16px; padding:18px 22px; margin-top:16px; }
+</style>
+</head>
+<body>
+  <div class="guia"><b>Maqueta 7 · Las cuatro combinaciones, con datos reales al 24/10/2026.</b> Los selectores andan: tocá «Promedio» o «Días corridos», o cambiá de gestión, y mirá cómo cambian el circuito, la cinta y los textos. Abajo hay un cuadro con las cuatro combinaciones juntas para comparar.</div>
+  <header>
+    <img src="logo.png" alt="">
+    <span class="marca"><b>RPAD</b><span>Registro Permanente de Actualización de Datasets</span></span>
+    <nav><span>Inicio</span><span>Datasets</span><span>Calendario</span><span>Contacto</span></nav>
+    <span class="usuario"><span>Usuario Ejemplo<br><small style="color:var(--suave)">Admin</small></span><i>UE</i></span>
+  </header>
+  <main>
+    <h1><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg> Métricas y Reportes</h1>
+    <p class="bajada" id="bajada"></p>
+    <div class="pestanas"><span class="on">Métricas</span><span>Reportes</span></div>
+    <div class="barra">
+      <span class="sel">2026 (en curso) ▾</span>
+      <div class="chips" id="sel-est"><span class="chip on" data-v="mediana">Mediana</span><span class="chip" data-v="promedio">Promedio</span></div>
+      <div class="chips" id="sel-dias"><span class="chip on" data-v="h">Días hábiles</span><span class="chip" data-v="c">Días corridos</span></div>
+      <span class="chip">Casos: <b>todos</b> ▾</span>
+      <div class="derecha"><span class="btn tinta">⤓ Descargar PDF</span></div>
+    </div>
+
+    <section class="tarjeta">
+      <div class="cabeza"><h3>El circuito</h3><div class="chips" id="sel-gestion"><span class="chip on" data-v="externa">Gestión externa</span><span class="chip" data-v="interna">Gestión interna</span></div></div>
+      <div id="circuito"></div>
+      <div class="cinta" id="cinta"></div>
+      <div class="leyenda" id="leyenda"></div>
+      <div class="directo"><span class="i">i</span><span id="aclara"></span></div>
+      <p class="pie" id="pie"></p>
+    </section>
+
+    <h2 class="seccion">Resultados del año</h2>
+    <div class="grilla g2">
+      <section class="tarjeta">
+        <div class="cabeza"><h3>Actualizados a tiempo</h3></div>
+        <div class="heroe">5 <small>de 33 ciclos</small></div>
+        <div class="medidor"><i style="width:15%"></i></div>
+        <p class="tile-txt" id="despues"></p>
+        <p class="tile-txt s">Externa: 4 de 27 · Interna: 1 de 6</p>
+      </section>
+      <section class="tarjeta">
+        <div class="cabeza"><h3>Doble verificación</h3></div>
+        <p class="tile-txt" id="auditoria"></p>
+        <p class="pie">No cambia con «Días hábiles | Días corridos»: va en minutos u horas.</p>
+      </section>
+    </div>
+
+    <div class="cuadro">
+      <div class="cabeza"><h3>Las cuatro combinaciones, juntas (solo en esta maqueta, para comparar)</h3></div>
+      <table class="comparar" id="comparar"></table>
+      <p class="pie">Datos reales al 24/10/2026. Los tramos de la DGMIT y del área no figuran: todavía no hay notas DGMIT cargadas.</p>
+    </div>
+  </main>
+<script>
+const D = {
+ "externa": {
+  "antic": {
+   "n": 32,
+   "mediana": {
+    "h": 27,
+    "c": 40
+   },
+   "promedio": {
+    "h": 28,
+    "c": 41
+   }
+  },
+  "carga": {
+   "n": 23,
+   "mediana": {
+    "h": 0,
+    "c": 0
+   },
+   "promedio": {
+    "h": 1,
+    "c": 1
+   }
+  }
+ },
+ "interna": {
+  "antic": {
+   "n": 3,
+   "mediana": {
+    "h": 41,
+    "c": 60
+   },
+   "promedio": {
+    "h": 42,
+    "c": 60
+   }
+  },
+  "prod": {
+   "n": 5,
+   "mediana": {
+    "h": 45,
+    "c": 62
+   },
+   "promedio": {
+    "h": 56,
+    "c": 80
+   }
+  },
+  "prodCurso": {
+   "n": 3,
+   "mediana": {
+    "h": 206,
+    "c": 296
+   },
+   "promedio": {
+    "h": 206,
+    "c": 296
+   }
+  },
+  "carga": {
+   "n": 5,
+   "mediana": {
+    "h": 0,
+    "c": 0
+   },
+   "promedio": {
+    "h": 1,
+    "c": 1
+   }
+  }
+ },
+ "despues": {
+  "n": 28,
+  "mediana": {
+   "h": 61,
+   "c": 88
+  },
+  "promedio": {
+   "h": 96,
+   "c": 138
+  }
+ },
+ "auditoria": {
+  "mediana": 3,
+  "promedio": 563
+ }
+};
+const estado = { est: 'mediana', dias: 'h', gestion: 'externa' };
+const nomDias = (d) => (d === 'h' ? 'días hábiles' : 'días corridos');
+const unidad = (v) => (v === 1 ? (estado.dias === 'h' ? 'día hábil' : 'día corrido') : nomDias(estado.dias));
+const valor = (s) => s[estado.est][estado.dias];
+
+function flecha({ stats, nombre, desde, antes = false, dgmit = false, extra = '' }) {
+  const v = valor(stats);
+  let n, u, c = desde;
+  if (v === 0) { n = 'En el día'; u = `${estado.est} en ${nomDias(estado.dias)}`; c += `<br><b>${stats.n} ciclos</b>`; }
+  else { n = `${v} <small>${unidad(v)}</small>`; u = `${estado.est} de ${stats.n} ciclos`; }
+  return `<div class="flecha${dgmit ? ' dgmit' : ''}"><span class="n">${n}</span><span class="u">${u}</span><span class="t">${nombre}</span><div class="l"></div><span class="c">${c}${extra}</span></div>`;
+}
+const vacia = (n, t, c) => `<div class="flecha vacia"><span class="n">${n}</span><span class="t">${t}</span><div class="l"></div><span class="c">${c}</span></div>`;
+const nodo = (q, r, cls = '') => `<div class="nodo ${cls}"><span class="q">${q}</span><span class="r">${r}</span></div>`;
+
+function circuito() {
+  const g = estado.gestion;
+  if (g === 'externa') {
+    const e = D.externa;
+    return `<div class="tramos">${nodo('RPAD', 'Datos Públicos avisa')}${flecha({ stats: e.antic, nombre: 'Aviso anticipado', desde: 'Del aviso al vencimiento', antes: true })}`
+      + `${nodo('DGMIT y Dirección Administrativa', 'Mandan la nota formal', 'dgmit')}${vacia('Todavía no hay notas DGMIT cargadas', 'Trámite y entrega de la nota', '10 notas pendientes de carga')}`
+      + `${nodo('Área responsable', 'Prepara los datos')}${vacia('Sin datos todavía', 'Respuesta del área', 'Se empieza a contar cuando haya notas DGMIT cargadas')}`
+      + `${nodo('Datos Públicos', 'Limpia y estructura')}${flecha({ stats: e.carga, nombre: 'Preparación y carga', desde: 'De la entrega a la carga' })}${nodo('Portal', 'Datos publicados', 'fin')}</div>`;
+  }
+  const i = D.interna;
+  const curso = `<br>3 sin datos registrados todavía, hace ${valor(i.prodCurso)} (${estado.est})`;
+  return `<div class="tramos interna">${nodo('RPAD', 'Datos Públicos avisa')}${flecha({ stats: i.antic, nombre: 'Aviso anticipado', desde: 'Del aviso al vencimiento', antes: true })}`
+    + `${nodo('DGMIT y Dirección de Investigación Territorial', 'Hacen el relevamiento', 'dgmit')}${flecha({ stats: i.prod, nombre: 'Producción del relevamiento', desde: 'Del aviso a la entrega', dgmit: true, extra: curso })}`
+    + `${nodo('Datos Públicos', 'Limpia y estructura')}${flecha({ stats: i.carga, nombre: 'Preparación y carga', desde: 'De la entrega a la carga' })}${nodo('Portal', 'Datos publicados', 'fin')}</div>`;
+}
+
+function cinta() {
+  const g = estado.gestion, dias = nomDias(estado.dias);
+  const antic = valor(D[g].antic);
+  const aviso = -antic;
+  let datos = null, carga = null;
+  if (g === 'interna') { datos = aviso + valor(D.interna.prod); carga = datos + valor(D.interna.carga); }
+  const fin = g === 'interna' ? Math.max(carga, 0) : antic * 0.9;
+  const paso = [5, 10, 20, 30, 50, 100].find((p) => (fin - aviso) / p <= 8) ?? 100;
+  const min = Math.floor((aviso - paso * 0.4) / paso) * paso, max = Math.ceil((fin + paso * 0.6) / paso) * paso;
+  const x = (d) => 30 + ((d - min) / (max - min)) * 940;
+  let s = `<svg viewBox="0 0 1000 156" role="img" aria-label="Recorrido típico"><defs><pattern id="rayado" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#FCE8A8"/><rect width="3" height="7" fill="#F2CF5B"/></pattern></defs>`;
+  s += `<line x1="30" y1="118" x2="970" y2="118" stroke="#DAE3ED"/>`;
+  for (let t = min; t <= max; t += paso) if (t !== 0) s += `<text x="${x(t)}" y="136" font-size="11.5" fill="#56677F" text-anchor="middle">${t > 0 ? '+' : (t < 0 ? '−' : '')}${Math.abs(t)}</text>`;
+  s += `<rect x="${x(aviso)}" y="74" width="${x(0) - x(aviso)}" height="26" fill="#DCEEF5"/>`;
+  if (g === 'externa') {
+    s += `<rect x="${x(0)}" y="74" width="${970 - x(0)}" height="26" fill="#F4F7FA" stroke="#DAE3ED"/><text x="${(x(0) + 970) / 2}" y="91" font-size="12" font-weight="600" fill="#56677F" text-anchor="middle">La cinta se completa cuando haya notas DGMIT cargadas</text>`;
+  } else {
+    if (carga > 0) s += `<rect x="${x(0)}" y="74" width="${x(carga) - x(0)}" height="26" fill="url(#rayado)"/>`;
+    s += `<rect x="${x(aviso)}" y="50" width="${x(datos) - x(aviso)}" height="8" rx="4" fill="#5B4691"/><text x="${(x(aviso) + x(datos)) / 2}" y="42" font-size="12" font-weight="700" fill="#5B4691" text-anchor="middle">Producción del relevamiento · ${valor(D.interna.prod)}</text>`;
+    const juntas = Math.abs(x(carga) - x(datos)) < 11;
+    const vc = valor(D.interna.carga);
+    const rotulo = vc === 0 ? 'Entrega y carga, el mismo día' : `Entrega y carga, ${vc} ${unidad(vc)} después`;
+    const rot = (xm, texto) => (xm + 12 + texto.length * 6.6 > 990 ? `<text x="${xm - 12}" y="26" font-size="12" font-weight="700" fill="#2E6B4C" text-anchor="end">${texto}</text>` : `<text x="${xm + 12}" y="26" font-size="12" font-weight="700" fill="#2E6B4C">${texto}</text>`);
+    if (juntas) {
+      s += `<circle cx="${x(datos)}" cy="87" r="8.5" fill="#2E6B4C" stroke="#1A365D" stroke-width="2.5"/>` + rot(x(datos), rotulo);
+    } else {
+      s += `<circle cx="${x(datos)}" cy="87" r="6.5" fill="#fff" stroke="#1A365D" stroke-width="2.5"/><circle cx="${x(carga)}" cy="87" r="7" fill="#2E6B4C" stroke="#fff" stroke-width="2"/>` + rot(x(carga), `Carga · ${vc} ${unidad(vc)} después`);
+    }
+  }
+  s += `<line x1="${x(0)}" y1="30" x2="${x(0)}" y2="118" stroke="#1A365D" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${x(0)}" y="148" font-size="11.5" font-weight="600" fill="#1A365D" text-anchor="middle">vencimiento</text>`;
+  s += `<text x="30" y="152" font-size="11" fill="#56677F">${dias} respecto del vencimiento</text>`;
+  s += `<rect x="${x(aviso) - 7}" y="80" width="14" height="14" transform="rotate(45 ${x(aviso)} 87)" fill="#1A365D"/><text x="${Math.max(x(aviso), 90)}" y="16" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso · ${antic} ${unidad(antic)} antes</text>`;
+  return s + '</svg>';
+}
+
+function comparar() {
+  const filas = [
+    ['Externa · Aviso anticipado (antes del vencimiento)', D.externa.antic],
+    ['Externa · Preparación y carga', D.externa.carga],
+    ['Interna · Aviso anticipado (antes del vencimiento)', D.interna.antic],
+    ['Interna · Producción del relevamiento', D.interna.prod],
+    ['Interna · Preparación y carga', D.interna.carga],
+    ['Actualizados después del vencimiento: cuánto después', D.despues],
+  ];
+  const cols = [['mediana', 'h', 'Mediana · hábiles'], ['mediana', 'c', 'Mediana · corridos'], ['promedio', 'h', 'Promedio · hábiles'], ['promedio', 'c', 'Promedio · corridos']];
+  const on = (e, d) => (e === estado.est && d === estado.dias ? ' class="on"' : '');
+  let t = '<thead><tr><th>Tramo (ciclos)</th>' + cols.map(([e, d, n]) => `<th${on(e, d)}>${n}</th>`).join('') + '</tr></thead><tbody>';
+  for (const [nombre, st] of filas) t += `<tr><td>${nombre} <span style="color:var(--suave)">(${st.n})</span></td>` + cols.map(([e, d]) => `<td${on(e, d)}>${st[e][d] === 0 ? 'En el día' : st[e][d]}</td>`).join('') + '</tr>';
+  return t + '</tbody>';
+}
+
+function dibujar() {
+  const dias = nomDias(estado.dias);
+  document.getElementById('bajada').textContent = `Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF. ${estado.dias === 'h' ? 'Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.' : 'Los días son corridos: todos los días del calendario.'}`;
+  document.getElementById('circuito').innerHTML = circuito();
+  document.getElementById('cinta').innerHTML = cinta();
+  document.getElementById('leyenda').innerHTML = estado.gestion === 'externa'
+    ? '<span><i class="mk mk-nota"></i>Aviso del RPAD</span>'
+    : '<span><i class="mk mk-nota"></i>Aviso del RPAD</span><span><i class="mk mk-datos"></i>Relevamiento entregado</span><span><i class="mk mk-act"></i>Carga en el portal</span><span><i class="mk" style="background:#2E6B4C;border:2.5px solid #1A365D;border-radius:50%;width:14px;height:14px"></i>Entrega y carga juntas</span><span><i class="mk mk-rayado"></i>Después del vencimiento</span>';
+  document.getElementById('aclara').innerHTML = estado.gestion === 'externa'
+    ? '<b>6 ciclos</b> se avisaron cuando ya estaban vencidos: no cuentan en el aviso anticipado. <b>4 ciclos</b> se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área.'
+    : '<b>6 ciclos</b> se avisaron cuando ya estaban vencidos: no cuentan en el aviso anticipado, y la producción se cuenta desde ese primer aviso.';
+  document.getElementById('pie').textContent = estado.est === 'mediana'
+    ? `El número grande es la mediana: en la mitad de los casos, ese número de ${dias} o menos. La cinta es orientativa: pone las medianas una detrás de la otra.`
+    : `El número grande es el promedio, en ${dias}. Un caso extremo lo mueve mucho: para ver el caso típico, elegí «Mediana». La cinta pone los promedios uno detrás del otro.`;
+  document.getElementById('despues').innerHTML = `Se cargaron hasta el día del vencimiento. Los otros 28 se cargaron ${estado.est === 'mediana' ? 'una mediana' : 'un promedio'} de <b>${valor(D.despues)} ${unidad(valor(D.despues))}</b> después.`;
+  document.getElementById('auditoria').innerHTML = estado.est === 'mediana'
+    ? `Un cambio propuesto se audita en una mediana de <b>${D.auditoria.mediana} minutos</b> (50 cambios).`
+    : `Un cambio propuesto se audita en un promedio de <b>${Math.round(D.auditoria.promedio / 60)} horas</b> (50 cambios).`;
+  document.getElementById('comparar').innerHTML = comparar();
+}
+for (const [id, clave] of [['sel-est', 'est'], ['sel-dias', 'dias'], ['sel-gestion', 'gestion']]) {
+  document.getElementById(id).addEventListener('click', (ev) => {
+    const chip = ev.target.closest('.chip'); if (!chip) return;
+    estado[clave] = chip.dataset.v;
+    for (const c of document.getElementById(id).children) c.classList.toggle('on', c === chip);
+    dibujar();
+  });
+}
+dibujar();
+</script>
+</body>
+</html>

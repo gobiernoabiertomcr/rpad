@@ -6,6 +6,9 @@ import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba,
 
 let servidor, api, usuarios;
 
+// El 404 del Informe anual de un año sin foto (1999 nunca la tiene)
+const SIN_FOTO_DEL_ANIO = 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.';
+
 before(async () => {
   servidor = await iniciarServidor();
   api = crearCliente(servidor.url);
@@ -92,7 +95,8 @@ describe('lector', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/gestion/metricas', '/gestion/proyectos', '/seguimiento']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
+    '/gestion/metricas', '/gestion/proyectos', '/seguimiento', '/metricas', '/metricas/pdf']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -104,6 +108,13 @@ describe('lector', () => {
     const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
     const res = await api.get(`/seguimiento/${id}`, { token: usuarios.lector.token });
     assert.equal(res.status, 200);
+  });
+
+  // El Informe anual (spec 2026-10-24-metricas-y-reportes, 5): sin la foto del año, el 404 del controlador (no un 401 ni un 403)
+  it('puede usar GET /reportes/informe-anual', async () => {
+    const res = await api.get('/reportes/informe-anual?anio=1999', { token: usuarios.lector.token });
+    assert.equal(res.status, 404);
+    assert.equal(res.body.error, SIN_FOTO_DEL_ANIO);
   });
 });
 
@@ -144,7 +155,8 @@ describe('colaborador', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
+    '/reportes/agenda', '/reportes/para-completar']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
@@ -155,6 +167,12 @@ describe('colaborador', () => {
     const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
     const res = await api.get(`/seguimiento/${id}`, { token: usuarios.colaborador.token });
     assert.equal(res.status, 200);
+  });
+
+  it('puede usar GET /reportes/informe-anual', async () => {
+    const res = await api.get('/reportes/informe-anual?anio=1999', { token: usuarios.colaborador.token });
+    assert.equal(res.status, 404);
+    assert.equal(res.body.error, SIN_FOTO_DEL_ANIO);
   });
 
   // Con el cuerpo vacío, el middleware lo deja pasar y contesta el controlador (la validación, o la nota que no existe o no es suya):
@@ -187,6 +205,24 @@ describe('visitante sin sesión', () => {
     const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
     for (const ruta of ['/seguimiento', `/seguimiento/${id}`, `/seguimiento/${id}/pdf`]) {
       assert.equal((await api.get(ruta)).status, 401, ruta);
+    }
+  });
+
+  // Las métricas (spec 2026-10-24-metricas-y-reportes, 2.3): para todos los roles con sesión, nunca sin ella
+  it('recibe 401 en GET /metricas y en su PDF', async () => {
+    for (const ruta of ['/metricas', '/metricas/pdf']) {
+      const res = await api.get(ruta);
+      assert.equal(res.status, 401, ruta);
+      assert.equal(res.body.success, false, ruta);
+    }
+  });
+
+  // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5 y 6): para todos los roles con sesión, nunca sin ella
+  it('recibe 401 en los reportes PDF', async () => {
+    for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar', '/reportes/informe-anual?anio=2026']) {
+      const res = await api.get(ruta);
+      assert.equal(res.status, 401, ruta);
+      assert.equal(res.body.success, false, ruta);
     }
   });
 

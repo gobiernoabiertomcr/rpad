@@ -1,7 +1,8 @@
 // Sitio público (spec 2026-10-17-fechas-datasets, sección 11), ejecutado en Node: lo puro de dataset-detail.js (las tres
 // fechas del detalle), datasets.js (la tarjeta, el filtro, ?mes= y el CSV), dashboard.js (la portada: el índice, el mosaico, los
-// 12 meses y las listas), calendario.js (el almanaque, los filtros y el iCal) y gestion.js (la tasa y el ranking de Gestión). Las páginas usan el
-// estado que manda el servidor (d.estado) y leen las fechas por su texto, nunca con new Date.
+// 12 meses y las listas) y calendario.js (el almanaque, los filtros y el iCal). La tasa y el ranking de Gestión se mudaron con la pestaña
+// Métricas a «Métricas y Reportes» (tests/reportes-frontend.test.js). Las páginas usan el estado que manda el servidor (d.estado) y leen
+// las fechas por su texto, nunca con new Date.
 // Cada script, al cargarse, solo declara y registra su DOMContentLoaded: se carga en un vm con un document que no hace nada,
 // junto con el api.js de verdad (Utils), como perfil.js y correos.js.
 import { describe, it } from 'node:test';
@@ -1311,32 +1312,5 @@ describe('calendario.js: la carga, los filtros y el iCal', () => {
     assert.match(ical, /DESCRIPTION:Dataset: Dos\\nÁrea: Secretaría de Hacienda\\nFrecuencia: Cada medio año\\nURL: -\r\n/);
     assert.match(ical, /END:VCALENDAR$/);
     assert.doesNotMatch(ical, /dataset-3@/);
-  });
-});
-
-describe('gestion.js: la tasa de cumplimiento y el ranking', () => {
-  const gestion = cargar('gestion.js');
-
-  it('textoPorcentaje: un número con %, y null con una raya', () => {
-    assert.equal(gestion.textoPorcentaje(83), '83%');
-    assert.equal(gestion.textoPorcentaje(0), '0%');
-    assert.equal(gestion.textoPorcentaje(null), '—');
-    assert.equal(gestion.textoPorcentaje(undefined), '—');
-  });
-
-  it('un área con solo eventuales dice "—" y no 100%', () => {
-    const html = gestion.htmlDelRanking([
-      { area: 'Área A', total_datasets: 7, al_dia: 3, porcentaje: 60 },
-      { area: 'Área <C>', total_datasets: 1, al_dia: 0, porcentaje: null }
-    ]);
-    assert.match(html, /<td>60%<\/td>/);
-    assert.match(html, /<td>—<\/td>/);
-    assert.doesNotMatch(html, /null|100%/);
-    assert.ok(html.includes('Área &lt;C&gt;'));
-    assert.match(html, /width:0%/);
-  });
-
-  it('sin áreas, lo dice', () => {
-    assert.match(gestion.htmlDelRanking([]), /Sin datos de áreas/);
   });
 });

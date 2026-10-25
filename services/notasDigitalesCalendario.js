@@ -3,6 +3,11 @@
 
 const ZONA_HORARIA = 'America/Argentina/Buenos_Aires';
 export const FERIADOS_FIJOS = ['01-01', '03-24', '04-02', '05-01', '05-25', '06-20', '07-09', '12-08', '12-25'];
+// Días de anticipación del aviso, por gestión: el aviso de la regla sale tantos días corridos antes del vencimiento. La externa pasó de
+// 30 a 40 (pedido del usuario el 16/10/2026): el pedido formal a las áreas externas lleva unos 5 días hábiles más el circuito
+// administrativo. Una sola fuente (Ruling 30): la usan las Notas Digitales (notasDigitalesDatos.js la reexporta), Métricas
+// (VENTANA_DE_LA_REGLA, services/metricasReglas.js) y la Agenda de pedidos (services/reportesAgenda.js).
+export const VENTANA_DIAS = Object.freeze({ interna: 60, externa: 40 });
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 // Mediodía UTC: evita que un cambio de zona horaria mueva la fecha

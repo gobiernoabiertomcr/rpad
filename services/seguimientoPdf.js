@@ -3,9 +3,10 @@
 // (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie, DocumentoNota y el QR
 // vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
 // cinta del PDF (separación 12 y letra 8,4): no recalcula ninguna regla.
-// Hay dos PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1")
-// y el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
-// Hoja k de N"); los dos las dibujan con el mismo dibujante de N hojas.
+// Hay tres PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1"),
+// el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
+// Hoja k de N"), que la dibujan con el mismo dibujante de N hojas, y el reporte Por área (services/reportesPorAreaPdf.js: detrás de su
+// portada, una hoja por dataset activo del área, pie "Reporte por área · Hoja k de N"), que la dibuja con dibujarHoja.
 // Las secciones tienen lugar fijo y se completan solas: el título reserva dos líneas, cada valor de la ficha va en una línea, los
 // nodos del circuito tienen alto fijo, la leyenda reserva dos renglones, la tabla de movimientos tiene FILAS_PDF renglones y la
 // aclaración va siempre arriba del pie. Así la hoja nunca pasa a una segunda, con cualquier largo de título, área o movimientos.
@@ -13,7 +14,7 @@
 // cargada en el ciclo abierto, su marca (un rectángulo violeta) en la cinta, la leyenda y la tabla, y sus movimientos, sin las
 // anuladas (la pantalla las muestra tachadas; la hoja impresa, no).
 import { DocumentoNota } from './notasDigitalesPdf.js';
-import { formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
+import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { ventanaDe } from './seguimientoCinta.js';
 import { textoRequiereNota } from './requiereNotaReglas.js';
 import {
@@ -24,11 +25,12 @@ import {
 // Los movimientos que muestra la tabla (los más nuevos); el resto se cuenta debajo
 export const FILAS_PDF = 8;
 
-// Colores que el ANEXO no tiene: el vencido (rojo), las actualizaciones (verde), el texto del rayado (ámbar) y el rayado
-const COLORES = { rojo: '#9B3B36', verde: '#2E6B4C', ambar: '#7A5200', rayaFondo: '#FCEFC7', raya: '#F2CF5B' };
+// Colores que el ANEXO no tiene: el vencido (rojo), las actualizaciones (verde), el texto del rayado (ámbar) y el rayado (también los
+// usa el PDF de Métricas, services/reportesMetricasPdf.js)
+export const COLORES = Object.freeze({ rojo: '#9B3B36', verde: '#2E6B4C', ambar: '#7A5200', rayaFondo: '#FCEFC7', raya: '#F2CF5B' });
 // El violeta de las notas DGMIT al área (spec 2026-10-24-notas-dgmit, 7; el --sg-violeta de la pantalla): el tramo de la nota formal
-// cuando hay una cargada y su marca
-const VIOLETA = '#5B4691';
+// cuando hay una cargada y su marca (y lo de la DGMIT en el PDF de Métricas)
+export const VIOLETA = '#5B4691';
 
 const SIN_DATO = 'Sin dato';
 const OJO = ASCENDENTE + DESCENDENTE;
@@ -69,8 +71,11 @@ const centrado = (doc, texto, cx, base, { tamano, fuente = NORMAL, color = COLOR
   renglon(doc, texto, x, desdeBase(base, tamano), { ancho, tamano, fuente, color, align: 'center' });
 };
 
-// El rótulo de una sección (en el acento) y, a la derecha y en la misma línea de base, un texto en gris
-const dibujarCabezaDeSeccion = (doc, titulo, derecha, y) => {
+// El rótulo de una sección (en el acento) y, a la derecha y en la misma línea de base, un texto en gris. Es también la cabeza de las
+// secciones de los reportes PDF (prepararSeccion, services/reportesPdfBase.js), que ocupa ALTO_DE_LA_CABEZA_DE_SECCION: de y a los
+// descendentes del texto de la derecha
+export const ALTO_DE_LA_CABEZA_DE_SECCION = OJO * LETRA.cabeza;
+export const dibujarCabezaDeSeccion = (doc, titulo, derecha, y) => {
   const base = y + ASCENDENTE * LETRA.cabeza;
   const mitad = CONTENIDO / 2;
   rotulo(doc, titulo, IZQUIERDA, desdeBase(base, LETRA.rotulo), { ancho: mitad, tamano: LETRA.rotulo, color: COLOR.acento });
@@ -83,17 +88,18 @@ const dibujarCabezaDeSeccion = (doc, titulo, derecha, y) => {
 // Encabezado y pie (los del ANEXO, con los textos del Seguimiento)
 // =====================================================
 
-// A la izquierda la Dirección y la Municipalidad; a la derecha "Seguimiento del dataset" y la fecha larga de hoy, sobre una línea
-// fina con un tramo del acento. Devuelve la y donde termina.
-const dibujarEncabezado = (doc, hoy) => {
+// A la izquierda la Dirección y la Municipalidad; a la derecha `derecha` ("Seguimiento del dataset"; en los reportes PDF, el nombre del
+// reporte: services/reportesPdfBase.js) y la fecha larga de hoy (si `hoy` no es una fecha, sin fecha), sobre una línea fina con un tramo
+// del acento. Devuelve la y donde termina.
+export const dibujarEncabezado = (doc, hoy, derecha = 'Seguimiento del dataset') => {
   const mitad = CONTENIDO / 2;
   const base1 = MARGEN + ASCENDENTE * 9.5;
   const base2 = base1 + 11.5;
   renglon(doc, 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', IZQUIERDA, desdeBase(base1, 7.5),
     { ancho: mitad, tamano: 7.5, fuente: NEGRITA, color: COLOR.tinta, espaciado: 0.6 });
   renglon(doc, 'Municipalidad de Comodoro Rivadavia', IZQUIERDA, desdeBase(base2, 7.5), { ancho: mitad, tamano: 7.5, color: COLOR.gris });
-  renglon(doc, 'Seguimiento del dataset', IZQUIERDA + mitad, desdeBase(base1, 9.5), { ancho: mitad, tamano: 9.5, fuente: NEGRITA, align: 'right' });
-  renglon(doc, formatoLargo(hoy), IZQUIERDA + mitad, desdeBase(base2, 7.5), { ancho: mitad, tamano: 7.5, color: COLOR.gris, align: 'right' });
+  renglon(doc, derecha, IZQUIERDA + mitad, desdeBase(base1, 9.5), { ancho: mitad, tamano: 9.5, fuente: NEGRITA, align: 'right' });
+  renglon(doc, esFechaIso(hoy) ? formatoLargo(hoy) : '', IZQUIERDA + mitad, desdeBase(base2, 7.5), { ancho: mitad, tamano: 7.5, color: COLOR.gris, align: 'right' });
   const yLinea = base2 + 9;
   filete(doc, IZQUIERDA, yLinea, CONTENIDO);
   doc.rect(IZQUIERDA, yLinea - 1, 28, 2).fill(COLOR.acento);
@@ -107,12 +113,18 @@ const textoDeGenerado = (momento, por) => {
   return ['Generado', cuando, por ? `por ${por}` : ''].filter(Boolean).join(' ');
 };
 
+// El pie: la y de sus textos (el borde superior: sus descendentes quedan sobre el margen inferior) y la de su línea fina, el límite de
+// todo lo que va arriba (los reportes PDF, services/reportesPdfBase.js, no dibujan nada debajo)
+const Y_DEL_PIE = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie);
+export const LINEA_DEL_PIE = Y_DEL_PIE - 8;
+
 // Pie: línea fina, quién y cuándo lo generó a la izquierda y, a la derecha, `derecha` ("Seguimiento del dataset · Hoja 1 de 1" en la
 // descarga de una hoja; "Anexo de la Nota Digital N° … · Hoja k de N" en el anexo), con los descendentes sobre el margen inferior.
-// Si el texto no entra en su ancho, se corta con "…". Devuelve la y de la línea, el límite de todo lo que va arriba.
-const dibujarPie = (doc, generado, derecha) => {
-  const y = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie);
-  const yLinea = y - 8;
+// Si el texto no entra en su ancho, se corta con "…". Devuelve la y de la línea (LINEA_DEL_PIE), el límite de todo lo que va arriba.
+// Es también el pie de los reportes PDF (services/reportesPdfBase.js, «<Reporte> · Hoja k de N»).
+export const dibujarPie = (doc, generado, derecha) => {
+  const y = Y_DEL_PIE;
+  const yLinea = LINEA_DEL_PIE;
   const izquierda = CONTENIDO * 0.6;
   filete(doc, IZQUIERDA, yLinea, CONTENIDO);
   renglon(doc, textoDeGenerado(generado?.momento, generado?.por), IZQUIERDA, y, { ancho: izquierda, tamano: LETRA.pie, color: COLOR.gris });
@@ -336,8 +348,8 @@ const dibujarMarca = (doc, tipo, cx, cy, s) => {
   doc.restore();
 };
 
-// El rayado de lo vencido: el fondo y las diagonales, recortados al rectángulo
-const dibujarRayado = (doc, x, y, ancho, alto, paso, grosor) => {
+// El rayado de lo vencido: el fondo y las diagonales, recortados al rectángulo (también el de la cinta del PDF de Métricas)
+export const dibujarRayado = (doc, x, y, ancho, alto, paso, grosor) => {
   doc.save();
   doc.rect(x, y, ancho, alto).clip();
   doc.rect(x, y, ancho, alto).fill(COLORES.rayaFondo);
@@ -647,8 +659,9 @@ const dibujarMovimientos = (doc, movimientos, y) => {
 // La hoja
 // =====================================================
 
-// Una hoja del Seguimiento de un dataset en la página actual de `doc`. `pie`: el texto de la derecha del pie.
-const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
+// Una hoja del Seguimiento de un dataset en la página actual de `doc` (A4, con los márgenes de PDFKit en 0), con su encabezado y su
+// pie. `pie`: el texto de la derecha del pie. El QR necesita la librería cargada antes (await cargarQrcode()).
+export const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
   const { ficha, circuito, cinta } = seguimiento;
   const movimientos = movimientosDeLaHoja(seguimiento.movimientos);
   const registro = seguimiento.registro ?? {};

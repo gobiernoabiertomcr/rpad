@@ -367,6 +367,14 @@ const registrarFin = (resumen) => registrarCorrida(
   [ahoraArgentina(), textoResultado(resumen), resumen.errores.length ? 1 : 0]
 );
 
+// Suma un error de otro paso de la corrida de las 8:15, que va después de las Notas Digitales (la foto del año), a la última
+// corrida que muestra Correos > Estado: el texto va después de lo que ya dice, separado por « · », el total no pasa de
+// LARGO_RESULTADO y la corrida queda con errores. Como el resto del registro, si el UPDATE falla lo informa en el log y no tira.
+export const anotarEnLaUltimaCorrida = (texto) => registrarCorrida(
+  `ultima_corrida_resultado = LEFT(CONCAT_WS(' · ', ultima_corrida_resultado, ?), ${LARGO_RESULTADO}), ultima_corrida_con_errores = 1`,
+  [String(texto)]
+);
+
 // Datos de la persona autorizada para el párrafo o la nota de autorización (spec 2026-10-15, 7.2); contratado: personal
 // contratado, que el texto presenta así
 const datosDeAutorizacion = ({ licencia, autorizado }) => ({

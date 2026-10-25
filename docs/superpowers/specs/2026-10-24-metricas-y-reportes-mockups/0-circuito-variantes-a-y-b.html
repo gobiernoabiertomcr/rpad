@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maqueta 1 · El circuito (estilo Seguimiento)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --tinta:#1A365D; --tinta-honda:#142B4A; --texto:#22324A; --suave:#56677F; --linea:#DAE3ED; --sutil:#F4F7FA;
+    --borde:#76879F; --cielo:#DCEEF5; --sol:#FCE8A8; --ambar:#7A5200; --verde:#2E6B4C; --verde-f:#DDF1E6;
+    --gris:#8A97A8; --violeta:#5B4691; --violeta-f:#EFEAF8;
+    --f-titulo:'Bricolage Grotesque',system-ui,sans-serif; --f-texto:'Figtree',system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:var(--f-texto); color:var(--texto); background:#f1f5f9; font-size:15px; }
+  .guia { background:#FFF7DD; border-bottom:1px solid #EED89A; padding:12px 28px; font-size:.92rem; }
+  .guia b { color:var(--ambar); }
+  header { height:72px; background:#fff; border-bottom:1px solid var(--linea); display:flex; align-items:center; gap:14px; padding:0 28px; }
+  header img { height:40px; }
+  header .marca { display:flex; flex-direction:column; line-height:1.1; }
+  header .marca b { font-family:var(--f-titulo); font-weight:750; color:var(--tinta); font-size:1.25rem; letter-spacing:-.02em; }
+  header .marca span { color:var(--suave); font-size:.74rem; max-width:150px; }
+  header nav { margin-left:auto; display:flex; gap:28px; font-weight:600; color:var(--texto); font-size:.95rem; }
+  header .usuario { margin-left:36px; display:flex; align-items:center; gap:10px; font-size:.85rem; text-align:right; }
+  header .usuario i { font-style:normal; width:34px; height:34px; border-radius:50%; background:var(--tinta); color:#fff; display:grid; place-items:center; font-weight:700; }
+  main { max-width:1180px; margin:0 auto; padding:26px 28px 70px; }
+  h1 { font-family:var(--f-titulo); letter-spacing:-.02em; color:var(--tinta); font-size:1.6rem; margin:0 0 8px; display:flex; align-items:center; gap:10px; }
+  .bajada { color:var(--suave); margin:0 0 18px; max-width:72ch; line-height:1.5; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 14px; border-radius:999px; border:1px solid var(--borde); background:#fff; font-size:.88rem; font-weight:500; color:var(--texto); }
+  .chip.on { background:var(--tinta); border-color:var(--tinta); color:#fff; }
+  .barra { display:flex; flex-wrap:wrap; gap:12px 18px; align-items:center; margin:0 0 16px; }
+  .barra .sep { width:1px; height:26px; background:var(--linea); }
+  .sel { height:40px; border:1px solid var(--borde); border-radius:12px; background:#fff; padding:0 14px; display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:.9rem; }
+  .btn { height:40px; border-radius:999px; padding:0 18px; display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:.9rem; border:1px solid var(--borde); background:#fff; color:var(--tinta); }
+  .btn.tinta { background:var(--tinta); color:#fff; border-color:var(--tinta); }
+  .derecha { margin-left:auto; display:flex; gap:10px; }
+  .pestanas { display:flex; gap:2px; border-bottom:1px solid var(--linea); margin:0 0 18px; }
+  .pestanas span { padding:10px 18px; font-weight:600; color:var(--suave); border-bottom:3px solid transparent; margin-bottom:-1px; }
+  .pestanas span.on { color:var(--tinta); border-bottom-color:var(--tinta); }
+
+  .tarjeta { background:#fff; border:1px solid var(--linea); border-radius:16px; padding:20px 24px; }
+  .tarjeta + .tarjeta { margin-top:16px; }
+  .cabeza { display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .cabeza h2 { margin:0; font-family:var(--f-titulo); font-weight:650; letter-spacing:-.01em; font-size:1.12rem; color:var(--tinta); }
+  .cabeza span { color:var(--suave); font-size:.88rem; }
+
+  /* Opciones de la maqueta */
+  .opcion { border:2px dashed transparent; border-radius:22px; padding:10px; margin:0 -12px 10px; cursor:pointer; }
+  .opcion:hover { border-color:#C6D3E2; }
+  .opcion.selected { border-color:var(--tinta); border-style:solid; background:#EAF1F9; }
+  .opcion > .etq { display:inline-flex; gap:8px; align-items:center; font-weight:700; color:var(--tinta); margin:2px 0 10px 6px; font-size:.95rem; }
+  .opcion > .etq i { font-style:normal; width:26px; height:26px; border-radius:50%; background:var(--tinta); color:#fff; display:grid; place-items:center; font-size:.85rem; }
+
+  /* Circuito, como el del Seguimiento: nodos y flechas con el número encima */
+  .tramos { display:grid; grid-template-columns: .8fr 1.25fr 1fr 1.25fr 1fr 1.25fr .9fr 1.25fr .8fr; align-items:stretch; }
+  .nodo { border:1.5px solid var(--tinta); border-radius:14px; padding:12px 12px; background:#fff; display:flex; flex-direction:column; justify-content:center; }
+  .nodo .q { font-weight:700; color:var(--tinta); line-height:1.2; font-size:.95rem; }
+  .nodo .r { font-size:.78rem; color:var(--suave); margin-top:3px; line-height:1.3; }
+  .nodo.dgmit { border-color:var(--violeta); }
+  .nodo.dgmit .q { color:var(--violeta); }
+  .nodo.fin { border-color:var(--verde); background:#FAFDFB; }
+  .nodo.fin .q { color:var(--verde); }
+  .flecha { display:flex; flex-direction:column; justify-content:center; padding:0 10px; }
+  .flecha .n { font-family:var(--f-titulo); font-weight:750; font-size:1.55rem; color:var(--tinta); line-height:1.05; letter-spacing:-.02em; }
+  .flecha .n small { font-family:var(--f-texto); font-size:.78rem; font-weight:600; letter-spacing:0; color:var(--suave); }
+  .flecha .t { font-size:.82rem; font-weight:700; color:var(--texto); margin-top:2px; }
+  .flecha .l { position:relative; border-top:3px solid var(--tinta); margin:9px 9px 8px 0; }
+  .flecha .l::after { content:''; position:absolute; right:-8px; top:-8.5px; border:7px solid transparent; border-left:10px solid var(--tinta); }
+  .flecha .c { font-size:.78rem; color:var(--suave); line-height:1.35; }
+  .flecha .c b { color:var(--texto); font-weight:600; }
+  .flecha.dgmit .n, .flecha.dgmit .t { color:var(--violeta); }
+  .flecha.dgmit .l { border-top-color:var(--violeta); } .flecha.dgmit .l::after { border-left-color:var(--violeta); }
+  .flecha.vacia .n { font-size:1rem; font-weight:650; color:var(--suave); }
+  .flecha.vacia .l { border-top-style:dashed; border-top-color:var(--gris); } .flecha.vacia .l::after { border-left-color:var(--gris); }
+  .quien { display:inline-block; margin-top:6px; font-size:.7rem; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--sutil); color:var(--suave); align-self:flex-start; }
+  .flecha.dgmit .quien { background:var(--violeta-f); color:var(--violeta); }
+  .directo { margin-top:14px; display:flex; gap:10px; align-items:center; padding:10px 14px; border:1px dashed var(--borde); border-radius:12px; font-size:.88rem; }
+  .directo .i { flex:none; width:26px; height:26px; border-radius:50%; background:var(--cielo); display:grid; place-items:center; color:var(--tinta); font-weight:700; }
+  .pie { margin-top:10px; font-size:.8rem; color:var(--suave); }
+
+  /* Recorrido típico, como la cinta */
+  .cinta svg { width:100%; height:auto; display:block; }
+  .cinta text { font-family:var(--f-texto); }
+  .leyenda { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:.82rem; color:var(--suave); margin-top:8px; }
+  .leyenda span { display:inline-flex; align-items:center; gap:7px; }
+  .mk { display:inline-block; width:14px; height:14px; }
+  .mk-nota { background:var(--tinta); transform:rotate(45deg); border-radius:2px; width:12px; height:12px; }
+  .mk-dgmit { background:var(--violeta); border-radius:3px; width:12px; height:12px; }
+  .mk-datos { border:2.5px solid var(--tinta); border-radius:50%; width:13px; height:13px; }
+  .mk-act { background:var(--verde); border-radius:50%; }
+  .mk-rayado { width:22px; height:12px; border-radius:2px; background:repeating-linear-gradient(45deg,#F2CF5B 0 3px,#FCE8A8 3px 7px); }
+
+  .resumen { display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid var(--linea); margin-top:14px; padding-top:12px; }
+  .resumen div { padding:0 14px; font-size:.82rem; color:var(--suave); }
+  .resumen div + div { border-left:1px solid var(--linea); }
+  .resumen b { display:block; color:var(--texto); font-size:.95rem; }
+  .vacio { color:var(--suave); }
+</style>
+</head>
+<body>
+  <div class="guia"><b>Maqueta 1 · El circuito, con el diseño del Seguimiento.</b> Dos maneras de mostrar los tramos de la gestión externa: A con el circuito (nodos y flechas) y B con una cinta alrededor del vencimiento. Los números son de ejemplo. Hacé clic en la que te guste (o en las dos) y contame en el chat qué cambiarías.</div>
+  <header>
+    <img src="logo.png" alt="">
+    <span class="marca"><b>RPAD</b><span>Registro Permanente de Actualización de Datasets</span></span>
+    <nav><span>Inicio</span><span>Datasets</span><span>Calendario</span><span>Contacto</span></nav>
+    <span class="usuario"><span>Usuario Ejemplo<br><small style="color:var(--suave)">Admin</small></span><i>UE</i></span>
+  </header>
+  <main>
+    <h1><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg> Métricas y Reportes</h1>
+    <p class="bajada">Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF. Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.</p>
+    <div class="pestanas"><span class="on">Métricas</span><span>Reportes</span></div>
+    <div class="barra">
+      <span class="sel">2026 (en curso) ▾</span>
+      <div class="chips"><span class="chip on">Gestión externa</span><span class="chip">Gestión interna</span></div>
+      <span class="sep"></span>
+      <span class="chip">Casos: todos los datasets ▾</span>
+      <div class="derecha"><span class="btn tinta">⤓ Descargar PDF</span></div>
+    </div>
+
+    <div class="opcion" data-choice="a" onclick="toggleSelect(this)">
+      <div class="etq"><i>A</i> El circuito, como en el Seguimiento: el número va en cada flecha</div>
+      <section class="tarjeta">
+        <div class="cabeza"><h2>El circuito de la gestión externa</h2><span>Mediana de los ciclos de 2026 · en días hábiles</span></div>
+        <div class="tramos">
+          <div class="nodo"><span class="q">RPAD</span><span class="r">Datos Públicos avisa</span></div>
+          <div class="flecha">
+            <span class="n">28 <small>antes</small></span><span class="t">Anticipación del aviso</span>
+            <div class="l"></div>
+            <span class="c">Del aviso al vencimiento<br>Promedio 31 · <b>24 ciclos</b></span>
+            <span class="quien">DDPC</span>
+          </div>
+          <div class="nodo dgmit"><span class="q">DGMIT y Dirección Administrativa</span><span class="r">Mandan la nota formal</span></div>
+          <div class="flecha dgmit">
+            <span class="n">12</span><span class="t">Trámite y entrega de la nota</span>
+            <div class="l"></div>
+            <span class="c">Del aviso a la nota en el área<br>Promedio 15 · <b>9 ciclos</b><br>3 notas pendientes de carga</span>
+            <span class="quien">DGMIT y DA</span>
+          </div>
+          <div class="nodo"><span class="q">Área responsable</span><span class="r">Prepara los datos</span></div>
+          <div class="flecha">
+            <span class="n">35</span><span class="t">Respuesta del área</span>
+            <div class="l"></div>
+            <span class="c">De la nota a la entrega<br>Promedio 61 · <b>7 ciclos</b><br>5 en curso, hace 48 (mediana)</span>
+            <span class="quien">Área</span>
+          </div>
+          <div class="nodo"><span class="q">Datos Públicos</span><span class="r">Limpia y estructura</span></div>
+          <div class="flecha">
+            <span class="n">2</span><span class="t">Preparación y carga</span>
+            <div class="l"></div>
+            <span class="c">De la entrega a la carga<br>Promedio 4 · <b>7 ciclos</b><br>1 en curso, hace 3</span>
+            <span class="quien">DDPC</span>
+          </div>
+          <div class="nodo fin"><span class="q">Portal</span><span class="r">Datos publicados</span></div>
+        </div>
+        <div class="directo"><span class="i">i</span><span>Además, <b>11 ciclos</b> se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y el resto de sus tramos se cuenta desde ese primer aviso.</span></div>
+        <p class="pie">El número grande es la mediana: en la mitad de los casos, ese número de días hábiles o menos. Un tramo cuenta en el año en que terminó.</p>
+      </section>
+    </div>
+
+    <div class="opcion" data-choice="b" onclick="toggleSelect(this)">
+      <div class="etq"><i>B</i> El recorrido típico, como la cinta del Seguimiento, alrededor del vencimiento</div>
+      <section class="tarjeta">
+        <div class="cabeza"><h2>El recorrido típico de un pedido externo</h2><span>Las medianas de 2026, una detrás de la otra · en días hábiles</span></div>
+        <div class="cinta">
+          <svg viewBox="0 0 1000 170" role="img" aria-label="Recorrido típico">
+            <defs><pattern id="rayado" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#FCE8A8"/><rect width="3" height="7" fill="#F2CF5B"/></pattern></defs>
+            <!-- escala: -32 d.h. → x=30 ; +26 d.h. → x=970 (16,2 por día) -->
+            <line x1="30" y1="128" x2="970" y2="128" stroke="#DAE3ED"/>
+            <g font-size="11.5" fill="#56677F" text-anchor="middle">
+              <text x="30" y="146">−30</text><text x="192" y="146">−20</text><text x="354" y="146">−10</text>
+              <text x="710" y="146">+10</text><text x="872" y="146">+20</text>
+            </g>
+            <!-- banda del ciclo hasta el vencimiento y rayado después -->
+            <rect x="95" y="84" width="453" height="26" fill="#DCEEF5"/>
+            <rect x="548" y="84" width="341" height="26" fill="url(#rayado)"/>
+            <text x="700" y="101" font-size="12" font-weight="700" fill="#7A5200" text-anchor="middle">Carga, 21 días hábiles después</text>
+            <!-- vencimiento -->
+            <line x1="548" y1="40" x2="548" y2="128" stroke="#1A365D" stroke-width="1.5" stroke-dasharray="3 3"/>
+            <text x="548" y="160" font-size="11.5" font-weight="600" fill="#1A365D" text-anchor="middle">vencimiento</text>
+            <!-- tramos -->
+            <rect x="95" y="58" width="194" height="8" rx="4" fill="#5B4691"/>
+            <text x="192" y="50" font-size="12" font-weight="700" fill="#5B4691" text-anchor="middle">Nota al área · 12</text>
+            <rect x="289" y="58" width="567" height="8" rx="4" fill="#1A365D" opacity=".55"/>
+            <text x="572" y="50" font-size="12" font-weight="700" fill="#1A365D" text-anchor="middle">Respuesta del área · 35</text>
+            <rect x="856" y="58" width="33" height="8" rx="4" fill="#2E6B4C"/>
+            <text x="900" y="50" font-size="12" font-weight="700" fill="#2E6B4C" text-anchor="start">Carga · 2</text>
+            <!-- marcas -->
+            <rect x="88" y="90" width="14" height="14" transform="rotate(45 95 97)" fill="#1A365D"/>
+            <text x="95" y="20" font-size="11.5" font-weight="700" fill="#1A365D" text-anchor="middle">Aviso del RPAD</text>
+            <text x="95" y="34" font-size="11.5" fill="#56677F" text-anchor="middle">28 antes</text>
+            <rect x="283" y="91" width="12" height="12" rx="3" fill="#5B4691"/>
+            <circle cx="856" cy="97" r="6.5" fill="#fff" stroke="#1A365D" stroke-width="2.5"/>
+            <circle cx="889" cy="97" r="7" fill="#2E6B4C" stroke="#fff" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="leyenda">
+          <span><i class="mk mk-nota"></i>Aviso del RPAD</span><span><i class="mk mk-dgmit"></i>Nota DGMIT recibida por el área</span>
+          <span><i class="mk mk-datos"></i>Datos entregados</span><span><i class="mk mk-act"></i>Carga en el portal</span>
+          <span><i class="mk mk-rayado"></i>Después del vencimiento</span>
+        </div>
+        <div class="resumen">
+          <div>Anticipación del aviso<b>28 antes · 24 ciclos</b>11 se avisaron ya vencidos</div>
+          <div>Trámite y entrega de la nota<b>12 · 9 ciclos</b>3 pendientes de carga</div>
+          <div>Respuesta del área<b>35 · 7 ciclos</b>5 en curso</div>
+          <div>Preparación y carga<b>2 · 7 ciclos</b>1 en curso</div>
+        </div>
+        <p class="pie">Orientativo: es la suma de las medianas de cada tramo, no un ciclo real.</p>
+      </section>
+    </div>
+
+    <section class="tarjeta">
+      <div class="cabeza"><h2>Y así se vería hoy la variante A, casi sin datos</h2><span>4 avisos, ninguna nota DGMIT cargada y un solo ciclo con «Recibido el»</span></div>
+      <div class="tramos">
+        <div class="nodo"><span class="q">RPAD</span><span class="r">Datos Públicos avisa</span></div>
+        <div class="flecha">
+          <span class="n">28 <small>antes</small></span><span class="t">Anticipación del aviso</span><div class="l"></div>
+          <span class="c">1 ciclo · con tan pocos casos, es orientativo</span>
+        </div>
+        <div class="nodo dgmit"><span class="q">DGMIT y Dirección Administrativa</span><span class="r">Mandan la nota formal</span></div>
+        <div class="flecha vacia">
+          <span class="n">Todavía sin notas cargadas</span><span class="t vacio">Trámite y entrega de la nota</span><div class="l"></div>
+          <span class="c">13 notas pendientes de carga</span>
+        </div>
+        <div class="nodo"><span class="q">Área responsable</span><span class="r">Prepara los datos</span></div>
+        <div class="flecha vacia">
+          <span class="n">Sin datos todavía</span><span class="t vacio">Respuesta del área</span><div class="l"></div>
+          <span class="c">Se cuenta desde la nota DGMIT</span>
+        </div>
+        <div class="nodo"><span class="q">Datos Públicos</span><span class="r">Limpia y estructura</span></div>
+        <div class="flecha">
+          <span class="n">0</span><span class="t">Preparación y carga</span><div class="l"></div>
+          <span class="c">1 ciclo</span>
+        </div>
+        <div class="nodo fin"><span class="q">Portal</span><span class="r">Datos publicados</span></div>
+      </div>
+      <div class="directo"><span class="i">i</span><span><b>12 ciclos</b> se avisaron cuando ya estaban vencidos.</span></div>
+    </section>
+  </main>
+</body>
+</html>

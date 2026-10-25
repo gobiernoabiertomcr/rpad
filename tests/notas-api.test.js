@@ -796,7 +796,7 @@ describe('corrida diaria', () => {
   it('la respuesta conserva sus campos y suma dia_habil (spec 2026-10-15, 4.2)', async () => {
     const res = await api.get('/cron/notificaciones', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    for (const campo of ['fecha', 'enviados', 'errores', 'sinDatasets', 'notasDigitales', 'dia_habil']) {
+    for (const campo of ['fecha', 'enviados', 'errores', 'sinDatasets', 'notasDigitales', 'dia_habil', 'foto']) {
       assert.ok(campo in res.body.data, `falta ${campo}`);
     }
     assert.equal(res.body.data.dia_habil, esDiaHabil(hoy));

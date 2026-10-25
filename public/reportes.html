@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reportes - RPAD</title>
-    <meta name="description" content="Generación de reportes PDF">
+    <title>Métricas y Reportes - RPAD</title>
+    <meta name="description" content="Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF">
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,92 +12,331 @@
     <!-- CSS Global -->
     <link rel="stylesheet" href="css/main.css?v=20261109">
     <style>
-        /* Estilos específicos de reportes */
-        .reportes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 24px;
-            margin-bottom: 48px;
+        /* Métricas y Reportes (spec 2026-10-24-metricas-y-reportes, 2 y 6): los colores del Seguimiento (seguimiento.html) y las
+           piezas propias de la página, con el molde de las maquetas 4 y 7 */
+        :root {
+            --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+            --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+            --sg-sol: #FCE8A8; --sg-ambar: #7A5200;
+            --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+            --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+            --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+            --sg-gris: #8A97A8;
+            /* Lo de la DGMIT (spec 2026-10-24-notas-dgmit, 6): contraste mayor a 7:1 sobre blanco */
+            --sg-violeta: #5B4691; --sg-violeta-fondo: #EFEAF8;
         }
 
-        .reporte-card {
-            background: var(--bg-card);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
+        /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
+        [hidden] { display: none !important; }
+        .main-content { min-width: 0; background: var(--gray-100); }
+        .mt-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+        .mt-bajada { margin: -14px 0 18px; color: var(--sg-suave); max-width: 72ch; line-height: 1.5; }
+
+        /* Mensajes de la página (Utils.showSuccess / showError) */
+        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--sg-linea); }
+        .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: #2E6B4C; }
+        .alert-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
+
+        /* Pestañas (las de Correos) */
+        .mt-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--sg-linea); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+        .mt-pestanas::-webkit-scrollbar { display: none; }
+        .mt-pestana { display: inline-flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 18px; font: inherit; font-weight: 600; color: var(--sg-suave); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+        .mt-pestana:hover { color: var(--sg-tinta); }
+        .mt-pestana.activa { color: var(--sg-tinta); border-bottom-color: var(--sg-tinta); }
+
+        /* La barra: el año, los selectores, los casos y el PDF */
+        .mt-barra { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: center; margin: 0 0 14px; }
+        .mt-select { height: 40px; border: 1px solid var(--sg-borde-control); border-radius: 12px; background: #fff; padding: 0 12px; font: inherit; font-weight: 600; font-size: 0.9rem; color: var(--sg-texto); cursor: pointer; }
+        .mt-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .mt-chip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.88rem; font-weight: 500; color: var(--sg-texto); white-space: nowrap; cursor: pointer; }
+        .mt-chip b { font-weight: 700; }
+        .mt-chip[aria-pressed="true"] { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .mt-derecha { margin-left: auto; display: flex; gap: 10px; }
+        .mt-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; }
+        .mt-btn:disabled { cursor: progress; opacity: 0.7; }
+        .mt-btn-tinta { background: var(--sg-tinta); color: #fff; }
+        .mt-aviso-foto { flex-basis: 100%; margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); color: var(--sg-texto); font-size: 0.88rem; }
+
+        /* La franja de lo destildado */
+        .mt-franja { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; background: var(--sg-sol); color: var(--sg-ambar); border-radius: 12px; padding: 10px 14px; font-size: 0.9rem; font-weight: 600; margin-bottom: 16px; }
+        .mt-franja-link { color: var(--sg-ambar); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; margin-left: auto; }
+
+        /* Estados de la pestaña: cargando, el error y sin datos */
+        .mt-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+        .mt-estado h2 { margin: 0 0 6px; font-size: 1.3rem; font-weight: 700; color: var(--sg-tinta); }
+        .mt-estado p { margin: 0; }
+        .mt-estado a { font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+        .mt-error { background: #FBEEEE; border-color: #EFCACA; }
+        .mt-error p { color: var(--sg-rojo); font-weight: 600; }
+        /* Mientras llegan los números nuevos, los de antes quedan atenuados */
+        #mt-contenido.actualizando { opacity: 0.55; transition: opacity 0.15s ease; }
+
+        .mt-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
+        .mt-tarjeta + .mt-tarjeta { margin-top: 16px; }
+        .mt-tarjeta h2 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
+        .mt-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+
+        /* El circuito: nodos y flechas, como «Avisos del ciclo abierto» del Seguimiento */
+        .mt-tramos { display: grid; align-items: stretch; }
+        .mt-tramos.externa { grid-template-columns: 0.8fr 1.25fr 1fr 1.25fr 1fr 1.25fr 0.9fr 1.25fr 0.8fr; }
+        .mt-tramos.interna { grid-template-columns: 0.9fr 1.4fr 1.3fr 1.4fr 1fr 1.4fr 0.9fr; }
+        /* Un nodo no se achica más que su palabra más larga («Administrativa»): las que se achican son las flechas */
+        .mt-nodo { border: 1.5px solid var(--sg-tinta); border-radius: 14px; padding: 12px; background: #fff; display: flex; flex-direction: column; justify-content: center; }
+        .mt-nodo .q { font-weight: 700; color: var(--sg-tinta); line-height: 1.2; font-size: 0.95rem; }
+        .mt-nodo .r { font-size: 0.78rem; color: var(--sg-suave); margin-top: 3px; line-height: 1.3; }
+        .mt-nodo.dgmit { border-color: var(--sg-violeta); }
+        .mt-nodo.dgmit .q { color: var(--sg-violeta); }
+        .mt-nodo.fin { border-color: var(--sg-verde); background: #FAFDFB; }
+        .mt-nodo.fin .q { color: var(--sg-verde); }
+        .mt-flecha { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 10px; }
+        .mt-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.55rem; color: var(--sg-tinta); line-height: 1.05; letter-spacing: -0.02em; }
+        /* La unidad va al lado de la cifra y no se corta en dos renglones */
+        .mt-flecha .n small { white-space: nowrap; font-family: var(--f-texto); font-size: 0.78rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); }
+        .mt-flecha .u { font-size: 0.74rem; font-weight: 600; color: var(--sg-suave); line-height: 1.2; margin-top: 2px; }
+        .mt-flecha .o { font-size: 0.74rem; font-weight: 600; color: var(--sg-ambar); line-height: 1.25; margin-top: 2px; }
+        .mt-flecha .t { font-size: 0.82rem; font-weight: 700; color: var(--sg-texto); margin-top: 4px; line-height: 1.25; }
+        .mt-flecha .l { position: relative; border-top: 3px solid var(--sg-tinta); margin: 9px 9px 8px 0; }
+        .mt-flecha .l::after { content: ''; position: absolute; right: -8px; top: -8.5px; border: 7px solid transparent; border-left: 10px solid var(--sg-tinta); }
+        .mt-flecha .c { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.35; }
+        .mt-flecha .c + .c { margin-top: 2px; }
+        .mt-flecha .c b { color: var(--sg-texto); font-weight: 600; }
+        .mt-flecha .c.curso { color: var(--sg-ambar); font-weight: 600; }
+        .mt-flecha .c.pend { color: var(--sg-violeta); font-weight: 600; }
+        .mt-flecha.dgmit .n, .mt-flecha.dgmit .u, .mt-flecha.dgmit .t { color: var(--sg-violeta); }
+        .mt-flecha.dgmit .l { border-top-color: var(--sg-violeta); }
+        .mt-flecha.dgmit .l::after { border-left-color: var(--sg-violeta); }
+        /* Sin cifra: el porqué en lugar del número y la línea punteada gris (también en la DGMIT) */
+        .mt-flecha.vacia .n { font-size: 1rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; color: var(--sg-suave); }
+        .mt-flecha.vacia .t { color: var(--sg-suave); }
+        .mt-flecha.vacia .l { border-top-style: dashed; border-top-color: var(--sg-gris); }
+        .mt-flecha.vacia .l::after { border-left-color: var(--sg-gris); }
+        /* Quién está a cargo: nunca solo el color */
+        .mt-resp { align-self: flex-start; margin-top: 6px; padding: 1px 8px; border-radius: 999px; background: var(--sg-cielo); color: var(--sg-tinta); font-size: 0.72rem; font-weight: 700; }
+        .mt-flecha.dgmit .mt-resp { background: var(--sg-violeta-fondo); color: var(--sg-violeta); }
+        .mt-directo { margin-top: 14px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; font-size: 0.88rem; }
+        .mt-directo .i { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sg-cielo); display: grid; place-items: center; color: var(--sg-tinta); font-weight: 700; }
+        .mt-directo p { margin: 3px 0; }
+        .mt-pie { margin: 10px 0 0; font-size: 0.8rem; color: var(--sg-suave); }
+
+        /* La cinta: en pantallas angostas se desplaza hacia el costado en lugar de achicar las letras */
+        .mt-cinta-marco { margin-top: 16px; padding-bottom: 8px; overflow-x: auto; }
+        .mt-cinta-marco svg { width: 100%; height: auto; display: block; min-width: 640px; }
+        .mt-cinta-svg text { font-family: var(--f-texto); }
+        .mt-cinta-svg .marca { cursor: help; }
+        .mt-cinta-svg .l-eje { stroke: var(--sg-linea); }
+        .mt-cinta-svg .tick { font-size: 11.5px; fill: var(--sg-suave); text-anchor: middle; }
+        .mt-cinta-svg .banda { fill: var(--sg-cielo); }
+        .mt-cinta-svg .rayado { fill: url(#mt-rayado); }
+        .mt-cinta-svg .r-fondo { fill: var(--sg-sol); }
+        .mt-cinta-svg .r-raya { fill: #F2CF5B; }
+        .mt-cinta-svg .gris { fill: var(--sg-sutil); stroke: var(--sg-linea); }
+        .mt-cinta-svg .t-gris { font-size: 12px; font-weight: 600; fill: var(--sg-suave); text-anchor: middle; }
+        .mt-cinta-svg .l-vence { stroke: var(--sg-tinta); stroke-width: 1.5; stroke-dasharray: 3 3; }
+        .mt-cinta-svg .vence { font-size: 11.5px; font-weight: 600; fill: var(--sg-tinta); text-anchor: middle; }
+        .mt-cinta-svg .s-tinta { fill: var(--sg-tinta); }
+        .mt-cinta-svg .s-violeta { fill: var(--sg-violeta); }
+        .mt-cinta-svg .s-verde { fill: var(--sg-verde); }
+        .mt-cinta-svg .rotulo { font-size: 12px; font-weight: 700; }
+        .mt-cinta-svg .r-tinta { fill: var(--sg-tinta); }
+        .mt-cinta-svg .r-violeta { fill: var(--sg-violeta); }
+        .mt-cinta-svg .r-verde { fill: var(--sg-verde); }
+        .mt-cinta-svg .eje { font-size: 11px; fill: var(--sg-suave); }
+        .mt-cinta-svg .i-aviso { fill: var(--sg-tinta); }
+        .mt-cinta-svg .i-nota { fill: var(--sg-violeta); stroke: #fff; stroke-width: 1.5; }
+        .mt-cinta-svg .i-datos { fill: #fff; stroke: var(--sg-tinta); stroke-width: 2.5; }
+        .mt-cinta-svg .i-carga { fill: var(--sg-verde); stroke: #fff; stroke-width: 2; }
+        .mt-cinta-svg .i-datos-y-carga { fill: var(--sg-verde); stroke: var(--sg-tinta); stroke-width: 2.5; }
+        .mt-leyenda { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--sg-suave); margin-top: 6px; }
+        .mt-leyenda span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+        .mk { display: inline-block; width: 14px; height: 14px; flex: none; }
+        .mk-aviso { background: var(--sg-tinta); transform: rotate(45deg); border-radius: 2px; width: 12px; height: 12px; }
+        .mk-nota { background: var(--sg-violeta); border-radius: 3px; width: 12px; height: 12px; }
+        .mk-datos { border: 2.5px solid var(--sg-tinta); border-radius: 50%; width: 13px; height: 13px; }
+        .mk-carga { background: var(--sg-verde); border-radius: 50%; }
+        .mk-datos-y-carga { background: var(--sg-verde); border: 2.5px solid var(--sg-tinta); border-radius: 50%; }
+        .mk-rayado { width: 22px; height: 12px; border-radius: 2px; background: repeating-linear-gradient(45deg, #F2CF5B 0 3px, #FCE8A8 3px 7px); }
+
+        /* Los casos */
+        .mt-casos-cab { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 18px 0 8px; padding-top: 16px; border-top: 1px solid var(--sg-linea); }
+        .mt-casos-cab h3 { margin: 0; font-size: 1rem; color: var(--sg-tinta); }
+        .mt-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+        .mt-tabla-marco { overflow-x: auto; }
+        table.mt-tabla { width: 100%; min-width: 780px; border-collapse: collapse; font-size: 0.86rem; }
+        .mt-tabla th { text-align: left; font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); padding: 7px 8px; border-bottom: 1px solid var(--sg-linea); white-space: nowrap; }
+        .mt-tabla td { padding: 9px 8px; border-bottom: 1px solid var(--sg-linea); vertical-align: top; font-variant-numeric: tabular-nums; color: var(--sg-texto); }
+        .mt-tabla td.t { font-weight: 600; color: var(--sg-tinta); min-width: 200px; }
+        .mt-tabla td.t small { display: block; font-weight: 400; color: var(--sg-suave); }
+        .mt-tabla td .d { display: block; font-size: 0.76rem; color: var(--sg-suave); }
+        .mt-tabla td .d.curso { color: var(--sg-ambar); font-weight: 600; }
+        .mt-tabla td .d.pend { color: var(--sg-violeta); }
+        /* Un destildado: tachado y en gris (el gris de los textos secundarios, que se lee) */
+        .mt-tabla tr.fuera td { background: #FAFBFC; color: var(--sg-suave); }
+        .mt-tabla tr.fuera td.t { color: var(--sg-suave); text-decoration: line-through; }
+        .mt-tabla tr.fuera td .d.curso, .mt-tabla tr.fuera td .d.pend { color: var(--sg-suave); }
+        .mt-contar { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--sg-tinta); cursor: pointer; }
+        .mt-contar:disabled { cursor: not-allowed; }
+        .mt-vacio { margin: 8px 0 0; color: var(--sg-suave); }
+
+        /* El índice de la página: cada título al que lleva queda debajo del encabezado fijo */
+        .mt-indice { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.88rem; margin: 0 0 18px; color: var(--sg-suave); }
+        .mt-indice a { color: var(--sg-tinta); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+        .mt-pagina h2[tabindex="-1"] { scroll-margin-top: 92px; }
+
+        /* Las secciones de abajo del circuito: título, bajada y tarjetas en grilla */
+        .mt-seccion { margin-top: 30px; }
+        .mt-seccion-titulo { margin: 0 0 4px; font-family: var(--f-titulo); font-weight: 700; letter-spacing: -0.01em; color: var(--sg-tinta); font-size: 1.25rem; }
+        .mt-seccion-bajada { margin: 0 0 12px; color: var(--sg-suave); font-size: 0.92rem; }
+        .mt-grilla { display: grid; gap: 16px; }
+        .mt-grilla.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .mt-grilla.g3 { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); }
+        /* El ranking (la tabla de Gestión, de seis columnas) lleva más ancho que los temas */
+        .mt-grilla.g-areas { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+        .mt-grilla > .mt-tarjeta + .mt-tarjeta { margin-top: 0; }
+        .mt-cabeza h3 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.05rem; color: var(--sg-tinta); }
+        .mt-cabeza > span { color: var(--sg-suave); font-size: 0.85rem; }
+        .mt-heroe { font-family: var(--f-titulo); font-weight: 750; letter-spacing: -0.02em; font-size: 2.6rem; color: var(--sg-tinta); line-height: 1; }
+        .mt-heroe small { font-family: var(--f-texto); font-size: 1rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); }
+        .mt-medidor { height: 10px; background: var(--sg-cielo); border-radius: 999px; margin: 12px 0 10px; overflow: hidden; }
+        .mt-medidor i { display: block; height: 100%; background: var(--sg-tinta); border-radius: 999px; }
+        .mt-texto { margin: 0 0 6px; font-size: 0.86rem; color: var(--sg-texto); line-height: 1.45; }
+        .mt-texto.s { color: var(--sg-suave); }
+        .mt-faltan { margin: 0; padding-left: 18px; font-size: 0.84rem; color: var(--sg-suave); line-height: 1.4; }
+        .mt-mini { margin: 6px 0 4px; font-family: var(--f-texto); font-size: 0.84rem; font-weight: 700; color: var(--sg-texto); }
+        .mt-mini.dgmit { color: var(--sg-violeta); margin-top: 16px; }
+        .mt-vacio-caja { margin: 4px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--sg-sutil); color: var(--sg-suave); font-size: 0.86rem; }
+        /* Barras horizontales: cada fila es el texto, la barra y la cantidad, alineadas entre las filas */
+        .mt-barras { display: grid; grid-template-columns: fit-content(15em) minmax(40px, 1fr) auto; gap: 8px 10px; align-items: center; margin: 6px 0; font-size: 0.86rem; }
+        .mt-barras > div { display: contents; }
+        .mt-barras i { display: block; height: 14px; background: var(--sg-tinta); border-radius: 0 4px 4px 0; }
+        .mt-barras i.ambar { background: #E2B23A; }
+        .mt-barras b { text-align: right; font-variant-numeric: tabular-nums; }
+
+        /* El índice de actualización mes a mes: en pantallas angostas se desplaza de costado */
+        .mt-indice-marco { overflow-x: auto; }
+        .mt-indice-svg { width: 100%; height: auto; display: block; min-width: 460px; }
+        .mt-indice-svg text { font-family: var(--f-texto); }
+        .mt-indice-svg .l-grilla { stroke: #E8EEF4; }
+        .mt-indice-svg .l-base { stroke: #C9D3DE; }
+        .mt-indice-svg .eje-y { font-size: 11px; fill: var(--sg-suave); text-anchor: end; }
+        .mt-indice-svg .mes { font-size: 11px; fill: var(--sg-suave); text-anchor: middle; }
+        .mt-indice-svg .linea { fill: none; stroke: var(--sg-tinta); stroke-width: 2; }
+        .mt-punto { cursor: help; }
+        .mt-punto circle { fill: var(--sg-tinta); stroke: #fff; stroke-width: 2; }
+        .mt-punto .v { font-size: 11.5px; font-weight: 700; fill: var(--sg-texto); text-anchor: middle; opacity: 0; }
+        .mt-punto.fijo .v, .mt-punto:hover .v, .mt-punto:focus .v { opacity: 1; }
+        .mt-punto:focus { outline: none; }
+        .mt-punto:focus-visible circle { stroke: var(--sol-fuerte); stroke-width: 4; }
+        .mt-valores { margin-top: 6px; font-size: 0.84rem; }
+        .mt-valores summary { cursor: pointer; color: var(--sg-tinta); font-weight: 600; }
+        .mt-valores ul { margin: 6px 0 0; padding-left: 18px; color: var(--sg-texto); line-height: 1.5; }
+
+        /* El trabajo del RPAD: los totales, las columnas por mes, las métricas manuales y la doble verificación */
+        .mt-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--sg-linea); border-radius: 14px; }
+        .mt-kpis > div { padding: 14px 16px; }
+        .mt-kpis > div + div { border-left: 1px solid var(--sg-linea); }
+        .mt-kpis b { display: block; font-family: var(--f-titulo); font-size: 1.8rem; color: var(--sg-tinta); letter-spacing: -0.02em; line-height: 1.1; }
+        .mt-kpis span { font-size: 0.82rem; color: var(--sg-suave); }
+        .mt-cabeza-mes { margin: 18px 0 8px; }
+        /* Las columnas: el alto útil es el de adentro del relleno de arriba, donde va el valor de la más alta */
+        .mt-columnas { display: flex; align-items: stretch; gap: 8px; height: 150px; padding-top: 22px; margin-bottom: 26px; border-bottom: 1px solid #C9D3DE; box-sizing: border-box; }
+        .mt-columna { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+        .mt-columna b { font-size: 0.78rem; font-weight: 700; color: var(--sg-texto); margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+        .mt-columna i { display: block; flex: none; width: 100%; max-width: 44px; background: var(--sg-tinta); border-radius: 4px 4px 0 0; }
+        .mt-columna span { position: absolute; bottom: -22px; font-size: 0.76rem; color: var(--sg-suave); }
+        .mt-trabajo-pie { margin-top: 8px; }
+        .mt-manuales { list-style: none; margin: 4px 0 0; padding: 0; max-height: 260px; overflow-y: auto; }
+        .mt-manuales li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--sg-linea); font-size: 0.88rem; }
+        .mt-manuales .t { flex: 1 1 auto; font-weight: 600; }
+        .mt-manuales .p { color: var(--sg-suave); }
+        .mt-manuales b { min-width: 3ch; text-align: right; color: var(--sg-tinta); }
+        .mt-eliminar { width: 28px; height: 28px; border: 1px solid var(--sg-borde-control); border-radius: 8px; background: #fff; color: var(--sg-texto); font: inherit; cursor: pointer; }
+        .mt-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 10px; padding: 12px; border: 1px solid var(--sg-linea); border-radius: 12px; background: var(--sg-sutil); }
+        .mt-campo { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+        .mt-campo label { font-weight: 600; color: var(--sg-texto); }
+        .mt-entrada { height: 40px; border: 1px solid var(--sg-borde-control); border-radius: 12px; background: #fff; padding: 0 12px; font: inherit; color: var(--sg-texto); }
+        .mt-form .mt-pie, .mt-form-botones { grid-column: 1 / -1; margin: 0; }
+        .mt-form-botones { display: flex; flex-wrap: wrap; gap: 10px; }
+        .mt-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+
+        /* El ranking de áreas (la tabla de Gestión): se desplaza adentro de su tarjeta */
+        .mt-ranking { max-height: 440px; overflow: auto; }
+        .ranking-table { width: 100%; border-collapse: collapse; }
+        .ranking-table th, .ranking-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--sg-linea); font-size: 0.86rem; color: var(--sg-texto); }
+        .ranking-table th { font-weight: 600; color: var(--sg-suave); font-size: 0.76rem; white-space: nowrap; }
+        .ranking-table .progress-bar-container { width: 100%; height: 8px; background: var(--gray-200, #e5e7eb); border-radius: 4px; overflow: hidden; }
+        .ranking-table .progress-bar { height: 100%; border-radius: 4px; }
+
+        /* Para completar */
+        .mt-completar .mt-grupo { margin: 16px 0 2px; font-family: var(--f-texto); font-size: 0.88rem; font-weight: 700; color: var(--sg-suave); }
+        .mt-completar .mt-grupo:first-child { margin-top: 0; }
+        .mt-tareas { list-style: none; margin: 0; padding: 0; }
+        .mt-tarea { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 16em) 10.5em; gap: 4px 12px; align-items: center; padding: 9px 4px; border-top: 1px solid var(--sg-linea); font-size: 0.9rem; }
+        .mt-tarea b { color: var(--sg-tinta); }
+        .mt-tarea small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
+        .mt-tarea .q { color: var(--sg-suave); font-size: 0.85rem; }
+        .mt-tarea a { justify-self: end; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; text-align: right; }
+
+        /* Foco visible: anillo --tinta de 3 px con halo --sol-fuerte */
+        .mt-pagina a:focus-visible, .mt-pagina button:focus-visible, .mt-pagina select:focus-visible, .mt-pagina input:focus-visible, .mt-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .mt-pagina .mt-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; }
+
+        /* La pestaña Reportes (maqueta 4): dos grupos de tarjetas, cada una con su PDF */
+        .rp-grupo + .rp-grupo { margin-top: 30px; }
+        .rp-grilla { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .rp-grilla.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .rp-tarjeta { min-width: 0; display: flex; flex-direction: column; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 18px 20px; }
+        .rp-tarjeta h3 { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.05rem; color: var(--sg-tinta); }
+        .rp-tarjeta h3 svg { flex: none; }
+        /* El texto ocupa lo que sobra: los campos y el botón quedan abajo, a la misma altura en toda la fila */
+        .rp-texto { flex: 1; margin: 0 0 12px; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.45; }
+        .rp-campos { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 12px; }
+        .rp-campos .mt-campo { flex: 1 1 130px; min-width: 0; }
+        .rp-campos .mt-select, .rp-campos .mt-entrada { width: 100%; min-width: 0; }
+        .rp-rotulo { font-weight: 600; color: var(--sg-texto); }
+        .rp-estado { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--sg-sutil); color: var(--sg-suave); font-size: 0.86rem; }
+        .rp-tarjeta .mt-btn { width: 100%; }
+        /* Lo que todavía no se puede descargar (el Informe anual sin foto): se lee y se alcanza con el teclado, pero no se usa */
+        .rp-no-disponible { height: auto; min-height: 40px; background: #fff; color: var(--sg-suave); border-color: var(--sg-linea); cursor: not-allowed; white-space: normal; }
+        .rp-hojas { margin: 8px 0 0; font-size: 0.78rem; color: var(--sg-suave); text-align: center; }
+
+        /* Las cuatro tarjetas de «Para trabajar» van de a dos cuando no entran en una fila */
+        @media (max-width: 1100px) {
+            .rp-grilla.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
-        .reporte-card-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .reporte-card-header svg {
-            width: 24px;
-            height: 24px;
-            color: var(--primary);
-        }
-
-        .reporte-card-header h3 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-        }
-
-        .reporte-card-body {
-            padding: 24px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .reporte-card-body p {
-            color: var(--gray-500);
-            font-size: 0.875rem;
-            line-height: 1.5;
-            margin-bottom: 20px;
-            flex: 1;
-        }
-
-        .reporte-card-body .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .reporte-card-body .form-group {
-            margin-bottom: 16px;
-        }
-
-        .btn-generar {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: auto;
-        }
-
-        .btn-generar svg {
-            width: 18px;
-            height: 18px;
+        /* En el teléfono y la tableta: el circuito en una columna (nodo, flecha hacia abajo, nodo…); la cinta y las tablas se
+           desplazan de costado sin mover la página */
+        @media (max-width: 960px) {
+            .mt-tramos.externa, .mt-tramos.interna { grid-template-columns: minmax(0, 1fr); }
+            .mt-flecha { position: relative; padding: 12px 0 18px 32px; }
+            .mt-flecha .l { position: absolute; left: 12px; top: 6px; bottom: 14px; margin: 0; border-top: 0; border-left: 3px solid var(--sg-tinta); }
+            .mt-flecha .l::after { right: auto; top: auto; left: -8.5px; bottom: -12px; border: 7px solid transparent; border-top: 10px solid var(--sg-tinta); }
+            .mt-flecha.dgmit .l { border-left-color: var(--sg-violeta); }
+            .mt-flecha.dgmit .l::after { border-left-color: transparent; border-top-color: var(--sg-violeta); }
+            .mt-flecha.vacia .l { border-left-style: dashed; border-left-color: var(--sg-gris); }
+            .mt-flecha.vacia .l::after { border-left-color: transparent; border-top-color: var(--sg-gris); }
+            .mt-grilla.g3, .mt-grilla.g-areas { grid-template-columns: minmax(0, 1fr); }
+            .mt-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .mt-kpis > div + div { border-left: 0; }
+            .mt-kpis > div { border-top: 1px solid var(--sg-linea); }
+            .mt-kpis > div:nth-child(-n+3) { border-top: 0; }
+            .mt-kpis > div:not(:nth-child(3n+1)) { border-left: 1px solid var(--sg-linea); }
         }
 
         @media (max-width: 768px) {
-            .reportes-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .reporte-card-body .form-row {
-                grid-template-columns: 1fr;
-            }
+            .rp-grilla, .rp-grilla.g4 { grid-template-columns: minmax(0, 1fr); }
+            .mt-tarjeta { padding: 16px; }
+            .mt-derecha { margin-left: 0; }
+            .mt-grilla.g2 { grid-template-columns: minmax(0, 1fr); }
+            .mt-heroe { font-size: 2.2rem; }
+            .mt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .mt-kpis > div:nth-child(n) { border-left: 0; border-top: 1px solid var(--sg-linea); }
+            .mt-kpis > div:nth-child(-n+2) { border-top: 0; }
+            .mt-kpis > div:nth-child(even) { border-left: 1px solid var(--sg-linea); }
+            .mt-columnas { gap: 4px; }
+            .mt-tarea { grid-template-columns: minmax(0, 1fr); }
+            .mt-tarea a { justify-self: start; text-align: left; }
+            .mt-form { grid-template-columns: minmax(0, 1fr); }
         }
     </style>
 </head>
@@ -153,7 +392,7 @@
                 </div>
                 <div class="sidebar-section hidden" id="sidebarTools">
                     <div class="sidebar-section-title">Herramientas</div>
-                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Reportes</span></a>
+                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
                     <a href="notas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
                     <a href="gestion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Gestión</span></a>
                     <a href="seguimiento.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
@@ -164,105 +403,156 @@
                 </div>
             </nav>
         </aside>
-
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Page Header -->
-            <div class="page-header">
-                <h1 class="page-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                    Generación de Reportes
-                </h1>
-            </div>
+            <div class="mt-pagina">
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+                        Métricas y Reportes
+                    </h1>
+                </div>
+                <!-- reportes.js la cambia con «Días hábiles | Días corridos» -->
+                <p class="mt-bajada" id="mt-bajada">Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF. Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.</p>
 
-            <div id="message-container"></div>
+                <div id="message-container"></div>
 
-            <!-- Grid de reportes -->
-            <div class="reportes-grid">
-                
-                <!-- Reporte Estado General -->
-                <div class="reporte-card">
-                    <div class="reporte-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-                        <h3>Estado General de Datasets</h3>
-                    </div>
-                    <div class="reporte-card-body">
-                        <p>Resumen completo del estado de todos los datasets: actualizados, próximos a vencer y vencidos. Incluye tabla detallada con información de cada dataset.</p>
-                        <button onclick="generarReporteEstadoGeneral()" class="btn btn-primary btn-generar">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                            Generar PDF
-                        </button>
-                    </div>
+                <!-- Pestañas con hash, como Correos: #metricas (la inicial) y #reportes -->
+                <div class="mt-pestanas" id="pestanas-reportes" role="tablist" aria-label="Secciones de Métricas y Reportes">
+                    <button type="button" class="mt-pestana" role="tab" id="pestana-metricas" aria-selected="false" aria-controls="vista-metricas" data-vista="metricas" tabindex="-1">Métricas</button>
+                    <button type="button" class="mt-pestana" role="tab" id="pestana-reportes" aria-selected="false" aria-controls="vista-reportes" data-vista="reportes" tabindex="-1">Reportes</button>
                 </div>
 
-                <!-- Reporte Historial Notificaciones -->
-                <div class="reporte-card">
-                    <div class="reporte-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                        <h3>Historial de Notificaciones</h3>
+                <!-- Métricas: reportes.js dibuja lo que manda GET /api/metricas -->
+                <section id="vista-metricas" role="tabpanel" aria-labelledby="pestana-metricas" hidden>
+                    <div class="mt-barra" id="mt-barra" hidden></div>
+                    <div id="mt-franja"></div>
+
+                    <!-- Estados de la pestaña -->
+                    <p class="mt-estado" id="mt-cargando" role="status">Cargando las métricas…</p>
+                    <div class="mt-estado mt-error" id="mt-error" role="alert" hidden>
+                        <p>No se pudieron cargar las métricas. Probá de nuevo en unos minutos.</p>
                     </div>
-                    <div class="reporte-card-body">
-                        <p>Registro de todas las notificaciones enviadas por el sistema, con filtro por rango de fechas.</p>
-                        <div class="form-row">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label class="form-label">Desde</label>
-                                <input type="date" id="historial-desde" class="form-input">
+                    <div class="mt-estado" id="mt-sin-datos" hidden>
+                        <h2>No hay métricas de ese año</h2>
+                        <p>Las métricas empiezan con el primer año del registro y llegan hasta el año en curso. <a href="reportes.html">Ver el año en curso</a></p>
+                    </div>
+
+                    <div id="mt-contenido" hidden>
+                        <!-- En esta página: reportes.js pone un link a cada sección, con la cantidad de «Para completar» -->
+                        <nav class="mt-indice" id="mt-indice" aria-label="En esta página"></nav>
+
+                        <section class="mt-tarjeta" id="mt-seccion-circuito" aria-labelledby="mt-titulo-circuito">
+                            <div class="mt-cabeza"><h2 id="mt-titulo-circuito" tabindex="-1">El circuito</h2><div id="mt-gestiones"></div></div>
+                            <div id="mt-circuito"></div>
+                            <!-- En pantallas angostas la cinta se desplaza hacia el costado: el marco se alcanza con el teclado -->
+                            <div class="mt-cinta-marco" id="mt-cinta" tabindex="0" role="group" aria-label="La cinta del recorrido típico"></div>
+                            <div class="mt-leyenda" id="mt-leyenda"></div>
+                            <p class="mt-pie" id="mt-aclaracion-cinta"></p>
+                            <div id="mt-aclaraciones"></div>
+                            <p class="mt-pie">Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.</p>
+
+                            <div class="mt-casos-cab">
+                                <h3 id="mt-titulo-casos" tabindex="-1">Los casos</h3>
+                                <button type="button" class="mt-link" id="mt-ver-casos" aria-expanded="false" aria-controls="mt-casos">Ver los casos</button>
                             </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label class="form-label">Hasta</label>
-                                <input type="date" id="historial-hasta" class="form-input">
+                            <div id="mt-casos" hidden></div>
+                        </section>
+
+                        <section class="mt-seccion" id="mt-seccion-resultados" aria-labelledby="mt-titulo-resultados">
+                            <h2 class="mt-seccion-titulo" id="mt-titulo-resultados" tabindex="-1">Resultados del año</h2>
+                            <p class="mt-seccion-bajada" id="mt-bajada-resultados">Lo que dejó el circuito, con las dos gestiones juntas.</p>
+                            <div class="mt-grilla g3" id="mt-resultados"></div>
+                        </section>
+
+                        <section class="mt-seccion" id="mt-seccion-contexto" aria-labelledby="mt-titulo-contexto">
+                            <h2 class="mt-seccion-titulo" id="mt-titulo-contexto" tabindex="-1">Contexto</h2>
+                            <p class="mt-seccion-bajada">Cómo están los datasets y cómo fueron cambiando.</p>
+                            <div class="mt-grilla g2" id="mt-contexto"></div>
+                        </section>
+
+                        <section class="mt-seccion" id="mt-seccion-trabajo" aria-labelledby="mt-titulo-trabajo">
+                            <h2 class="mt-seccion-titulo" id="mt-titulo-trabajo" tabindex="-1">El trabajo del RPAD</h2>
+                            <p class="mt-seccion-bajada" id="mt-bajada-trabajo">Lo que hizo el sistema y el equipo de Datos Públicos.</p>
+                            <div class="mt-tarjeta">
+                                <div id="mt-trabajo"></div>
+                                <div class="mt-grilla g2 mt-trabajo-pie">
+                                    <div>
+                                        <h3 class="mt-mini">Métricas manuales (las carga administración)</h3>
+                                        <div id="mt-manuales"><p class="mt-vacio-caja">Cargando las métricas manuales…</p></div>
+                                        <p class="mt-pie"><button type="button" class="mt-link" id="mt-manual-abrir" aria-expanded="false" aria-controls="mt-manual-form" hidden>Cargar el mes</button></p>
+                                        <form class="mt-form" id="mt-manual-form" novalidate hidden>
+                                            <div class="mt-campo">
+                                                <label for="mt-manual-tipo">Tipo</label>
+                                                <select id="mt-manual-tipo" class="mt-select">
+                                                    <option value="reuniones_capacitaciones">Reuniones y capacitaciones</option>
+                                                    <option value="consultas_atendidas">Consultas atendidas</option>
+                                                    <option value="notas_enviadas">Notas enviadas fuera del RPAD</option>
+                                                </select>
+                                            </div>
+                                            <div class="mt-campo">
+                                                <label for="mt-manual-mes">Mes</label>
+                                                <select id="mt-manual-mes" class="mt-select">
+                                                    <option value="1">Enero</option>
+                                                    <option value="2">Febrero</option>
+                                                    <option value="3">Marzo</option>
+                                                    <option value="4">Abril</option>
+                                                    <option value="5">Mayo</option>
+                                                    <option value="6">Junio</option>
+                                                    <option value="7">Julio</option>
+                                                    <option value="8">Agosto</option>
+                                                    <option value="9">Septiembre</option>
+                                                    <option value="10">Octubre</option>
+                                                    <option value="11">Noviembre</option>
+                                                    <option value="12">Diciembre</option>
+                                                </select>
+                                            </div>
+                                            <div class="mt-campo">
+                                                <label for="mt-manual-anio">Año</label>
+                                                <input type="number" id="mt-manual-anio" class="mt-entrada" min="2020" max="2030">
+                                            </div>
+                                            <div class="mt-campo">
+                                                <label for="mt-manual-cantidad">Cantidad</label>
+                                                <input type="number" id="mt-manual-cantidad" class="mt-entrada" min="0" value="0">
+                                            </div>
+                                            <p class="mt-pie">Si ese mes ya estaba cargado, se reemplaza.</p>
+                                            <div class="mt-form-botones">
+                                                <button type="submit" class="mt-btn mt-btn-tinta" id="mt-manual-guardar">Guardar</button>
+                                                <button type="button" class="mt-btn mt-btn-borde" id="mt-manual-cancelar">Cancelar</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div>
+                                        <h3 class="mt-mini">Doble verificación</h3>
+                                        <p class="mt-texto" id="mt-auditoria"></p>
+                                        <p class="mt-pie">De la propuesta a la revisión, en tiempo corrido.</p>
+                                        <h3 class="mt-mini">Exportar</h3>
+                                        <button type="button" class="mt-btn mt-btn-borde" id="mt-csv"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>CSV de Gestión (últimos 12 meses)</button>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        <button onclick="generarReporteHistorial()" class="btn btn-primary btn-generar">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                            Generar PDF
-                        </button>
-                    </div>
-                </div>
+                        </section>
 
-                <!-- Reporte por Área -->
-                <div class="reporte-card">
-                    <div class="reporte-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
-                        <h3>Reporte por Área</h3>
-                    </div>
-                    <div class="reporte-card-body">
-                        <p>Informe detallado de los datasets de un área específica, incluyendo datos de contacto y estado de actualización.</p>
-                        <div class="form-group">
-                            <label class="form-label">Seleccionar Área</label>
-                            <select id="area-select" class="form-select">
-                                <option value="">Cargando áreas...</option>
-                            </select>
-                        </div>
-                        <button onclick="generarReportePorArea()" class="btn btn-primary btn-generar">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                            Generar PDF
-                        </button>
-                    </div>
-                </div>
+                        <section class="mt-seccion" id="mt-seccion-areas" aria-labelledby="mt-titulo-areas">
+                            <h2 class="mt-seccion-titulo" id="mt-titulo-areas" tabindex="-1">Áreas y temas</h2>
+                            <p class="mt-seccion-bajada">El ranking de áreas y los datasets por tema y por frecuencia, que estaban en Gestión.</p>
+                            <div class="mt-grilla g-areas" id="mt-areas"></div>
+                        </section>
 
-                <!-- Reporte Cumplimiento -->
-                <div class="reporte-card">
-                    <div class="reporte-card-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                        <h3>Reporte de Cumplimiento</h3>
+                        <section class="mt-seccion" id="mt-seccion-completar" aria-labelledby="mt-titulo-completar">
+                            <h2 class="mt-seccion-titulo" id="mt-titulo-completar" tabindex="-1">Para completar</h2>
+                            <p class="mt-seccion-bajada">Con estos datos, las métricas quedan completas.</p>
+                            <div id="mt-completar"></div>
+                        </section>
                     </div>
-                    <div class="reporte-card-body">
-                        <p>Análisis del porcentaje de cumplimiento de actualización por área, ordenado de mayor a menor.</p>
-                        <div class="form-group">
-                            <label class="form-label">Período</label>
-                            <select id="periodo-select" class="form-select">
-                                <option value="mensual">Mensual</option>
-                                <option value="trimestral">Trimestral</option>
-                            </select>
-                        </div>
-                        <button onclick="generarReporteCumplimiento()" class="btn btn-primary btn-generar">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                            Generar PDF
-                        </button>
-                    </div>
-                </div>
+                </section>
 
+                <!-- Reportes: siete tarjetas en dos grupos, «Para presentar» y «Para trabajar» (spec 2026-10-24-metricas-y-reportes, 5). Las dibuja
+                     reportes.js (htmlDeReportes); cada una descarga su PDF con el JWT en el encabezado -->
+                <section id="vista-reportes" role="tabpanel" aria-labelledby="pestana-reportes" hidden>
+                    <div id="rp-reportes"></div>
+                </section>
             </div>
 
             <!-- Footer -->
@@ -306,9 +596,9 @@
 
     <!-- Scripts -->
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261124"></script>
-    <script src="js/main.js?v=20261124"></script>
-    <script src="js/api.js?v=20261124"></script>
-    <script src="js/reportes.js"></script>
+    <script src="js/auth.js?v=20261130"></script>
+    <script src="js/main.js?v=20261130"></script>
+    <script src="js/api.js?v=20261130"></script>
+    <script src="js/reportes.js?v=20261203"></script>
 </body>
 </html>

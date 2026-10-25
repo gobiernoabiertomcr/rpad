@@ -3,7 +3,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, crearArea } from './notas-fixtures.js';
-import { formatoCorto, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { formatoCorto, hoyArgentina, sumarDias, VENTANA_DIAS } from '../services/notasDigitalesCalendario.js';
 import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 
 let base, datos, dbReal;
@@ -27,6 +27,11 @@ after(async () => {
 beforeEach(() => limpiarBase());
 
 const ids = (lista) => lista.map(d => d.id);
+
+// Ruling 30: las Notas Digitales reexportan la ventana del calendario (una sola fuente, la misma que usan Métricas y la Agenda)
+it('VENTANA_DIAS de las Notas Digitales es la del calendario', () => {
+  assert.equal(datos.VENTANA_DIAS, VENTANA_DIAS);
+});
 
 describe('seleccionarParaAviso', () => {
   it('toma los que vencen dentro de la ventana, ordenados por vencimiento, y deja afuera los vencidos', async () => {

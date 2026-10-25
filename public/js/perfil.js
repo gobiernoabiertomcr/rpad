@@ -854,7 +854,10 @@ const ETIQUETAS_DE_CAMPO = {
   'Cargado en el portal': 'Cargado en el portal',
   'Datos al': 'Datos al',
   'Recibido el': 'Recibido el',
-  'Tipo de pedido': 'Tipo de pedido'
+  'Tipo de pedido': 'Tipo de pedido',
+  // El origen de los datos de un registro de actualización (spec 2026-10-24-metricas-y-reportes, 4): el servidor manda el
+  // texto corto, «Los entregó el área» o «Fuente pública»
+  'Origen de los datos': 'Origen de los datos'
 };
 
 // Etiquetas del servidor de los campos de texto largo: se comparan palabra por palabra
