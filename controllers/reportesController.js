@@ -1,7 +1,10 @@
 import PDFDocument from 'pdfkit';
 import pool from '../config/database.js';
-import { esFechaIso, formatoCorto, hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { esFechaIso, hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
+import { nombreCorto } from '../services/seguimientoReglas.js';
+import { renderEstadoGeneral, textoSinFecha } from '../services/reportesEstadoGeneralPdf.js';
+import { fechaCorta } from '../services/reportesPdfBase.js';
 
 // Colores institucionales
 const COLORS = {
@@ -57,24 +60,6 @@ const estadoDeLaFila = (d, hoy) => estadoDelDataset({
 const COLUMNAS_FECHAS = `f.meses AS frecuencia_meses,
              DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima_iso,
              DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al_iso`;
-
-// Una fecha 'AAAA-MM-DD' como dd/mm/aaaa, cortada del texto (sin zona horaria); "—" si falta o no es una fecha
-const fechaCorta = (iso) => (esFechaIso(iso) ? formatoCorto(iso) : '—');
-
-/**
- * Obtiene texto del estado
- */
-const getEstadoTexto = (estado) => {
-  const textos = {
-    'actualizado': 'Actualizado',
-    'proximo': 'Próximo a vencer',
-    'atrasado': 'Atrasado',
-    'sin-respuesta': 'Sin respuesta',
-    'sin-fecha': 'Sin fecha',
-    'eventual': 'Eventual'
-  };
-  return textos[estado] || estado;
-};
 
 /**
  * Obtiene color del estado
@@ -184,11 +169,6 @@ const drawStatCards = (doc, y, tarjetas) => {
     drawStatCard(doc, 40 + i * (ancho + separacion), y, label, value, color, ancho));
 };
 
-// Los sin fecha tienen frecuencia pero no próxima: no tienen tarjeta, una línea los aclara debajo de las tarjetas
-const textoSinFecha = (n) => (n === 1
-  ? '1 dataset todavía no tiene fecha de próxima actualización'
-  : `${n} datasets todavía no tienen fecha de próxima actualización`);
-
 /**
  * Dibuja una tabla
  */
@@ -243,6 +223,8 @@ const drawTable = (doc, headers, rows, startY, colWidths) => {
 // =====================================================
 // REPORTE: Estado General de Datasets
 // =====================================================
+// El PDF lo dibuja services/reportesEstadoGeneralPdf.js con la base de los reportes (el diseño del anexo): acá van la consulta, el
+// estado de cada fila y el pie, con el nombre corto de quien lo pide y la hora argentina (un solo instante para el pie y para "hoy").
 export const reporteEstadoGeneral = async (req, res) => {
   try {
     // Obtener datos
@@ -257,95 +239,22 @@ export const reporteEstadoGeneral = async (req, res) => {
       WHERE d.activo = TRUE
       ORDER BY d.proxima_actualizacion ASC
     `);
-    
-    // Calcular estadísticas. Los eventuales van aparte: no son actualizados ni entran en la tasa. Los sin fecha entran en
-    // la tasa como no al día
-    const hoy = hoyArgentina();
-    const stats = { total: datasets.length, actualizados: 0, proximos: 0, atrasados: 0, sinRespuesta: 0, eventuales: 0, sinFecha: 0 };
-    datasets.forEach(d => {
-      const estado = estadoDeLaFila(d, hoy);
-      d.estado = estado;
-      if (estado === 'actualizado') stats.actualizados++;
-      else if (estado === 'proximo') stats.proximos++;
-      else if (estado === 'atrasado') stats.atrasados++;
-      else if (estado === 'sin-respuesta') stats.sinRespuesta++;
-      else if (estado === 'eventual') stats.eventuales++;
-      else if (estado === 'sin-fecha') stats.sinFecha++;
-    });
-    
-    // (actualizados + próximos) sobre el total sin los eventuales: la misma tasa que el tablero y el Cumplimiento
-    const tasaActualizacion = tasaDeActualizacion({
-      alDia: stats.actualizados + stats.proximos, total: stats.total, eventuales: stats.eventuales
-    }) ?? 0;
-    
-    // Crear PDF
-    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
-    
+    const momento = ahoraArgentina();
+    const hoy = momento.slice(0, 10);
+    const [[usuario]] = await pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]);
+
+    const pdf = await renderEstadoGeneral(datasets.map(d => ({
+      titulo: d.titulo,
+      area: d.area_nombre,
+      frecuencia: d.frecuencia_nombre,
+      datos_al: d.datos_al_iso,
+      proxima: d.proxima_iso,
+      estado: estadoDeLaFila(d, hoy)
+    })), { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=estado-general-${formatDate(new Date()).replace(/\//g, '-')}.pdf`);
-    
-    doc.pipe(res);
-    
-    // Header
-    drawHeader(doc, 'Estado General de Datasets', 'Registro Permanente de Actualización de Datos');
-    
-    // Estadísticas
-    doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.grayDark).text('Resumen', 40, doc.y + 10);
-    doc.y += 25;
-    
-    // Con los sin fecha (que se aclaran abajo), las tarjetas suman el total
-    const statsY = doc.y;
-    drawStatCards(doc, statsY, [
-      { label: 'Total Datasets', value: stats.total, color: COLORS.primary },
-      { label: 'Actualizados', value: stats.actualizados, color: COLORS.success },
-      { label: 'Próximos', value: stats.proximos, color: COLORS.warning },
-      { label: 'Vencidos', value: stats.atrasados + stats.sinRespuesta, color: COLORS.danger },
-      { label: 'Eventuales', value: stats.eventuales, color: COLORS.gray }
-    ]);
-    
-    doc.y = statsY + 80;
-    
-    // Tasa de actualización
-    doc.fontSize(11).font('Helvetica')
-       .text(`Tasa de actualización: ${tasaActualizacion}%`, 40, doc.y);
-    
-    if (stats.eventuales > 0) {
-      doc.fontSize(9).fillColor(COLORS.gray)
-         .text(stats.eventuales === 1
-           ? 'El dataset eventual no entra en la tasa: no tiene fecha de vencimiento.'
-           : `Los ${stats.eventuales} datasets eventuales no entran en la tasa: no tienen fecha de vencimiento.`, 40, doc.y + 2);
-    }
-    
-    if (stats.sinFecha > 0) {
-      doc.fontSize(9).fillColor(COLORS.gray)
-         .text(`${textoSinFecha(stats.sinFecha)}: ${stats.sinFecha === 1 ? 'cuenta' : 'cuentan'} en la tasa como no al día.`, 40, doc.y + 2);
-    }
-    
-    doc.y += 30;
-    
-    // Tabla de datasets
-    doc.fontSize(12).font('Helvetica-Bold').text('Detalle de Datasets', 40, doc.y);
-    doc.y += 15;
-    
-    const headers = ['Título', 'Área', 'Frecuencia', 'Datos al', 'Próx. Act.', 'Estado'];
-    const colWidths = [155, 105, 70, 55, 55, 75];
-    
-    const rows = datasets.map(d => [
-      d.titulo,
-      d.area_nombre,
-      d.frecuencia_nombre,
-      fechaCorta(d.datos_al_iso),
-      fechaCorta(d.proxima_iso),
-      getEstadoTexto(d.estado)
-    ]);
-    
-    drawTable(doc, headers, rows, doc.y, colWidths);
-    
-    // Footer
-    drawAllFooters(doc);
-    
-    doc.end();
-    
+    res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
     res.status(500).json({ success: false, error: error.message });

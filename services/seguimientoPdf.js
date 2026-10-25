@@ -110,7 +110,8 @@ const textoDeGenerado = (momento, por) => {
 // Pie: línea fina, quién y cuándo lo generó a la izquierda y, a la derecha, `derecha` ("Seguimiento del dataset · Hoja 1 de 1" en la
 // descarga de una hoja; "Anexo de la Nota Digital N° … · Hoja k de N" en el anexo), con los descendentes sobre el margen inferior.
 // Si el texto no entra en su ancho, se corta con "…". Devuelve la y de la línea, el límite de todo lo que va arriba.
-const dibujarPie = (doc, generado, derecha) => {
+// Es también el pie de los reportes PDF (services/reportesPdfBase.js, «<Reporte> · Hoja k de N»).
+export const dibujarPie = (doc, generado, derecha) => {
   const y = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie);
   const yLinea = y - 8;
   const izquierda = CONTENIDO * 0.6;
