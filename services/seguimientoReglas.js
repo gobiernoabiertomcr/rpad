@@ -684,6 +684,18 @@ export const notaDgmitDelCiclo = (fuentes, ciclos, hoy) => {
   return nota ? { numero: nota.numero, tipo: nota.tipo, recibida: nota.recibida } : null;
 };
 
+// Las notas DGMIT del ciclo abierto, todas (spec 2026-10-24-generador-de-notas, 3.2): las de notaDgmitDelCiclo, que da la última, de
+// la más vieja a la más nueva (por recibida, después por el momento de la carga y después por id). La primera es la nota original del
+// ciclo, la que el generador de notas trae a «Nota anterior». Calcula los ciclos con ciclosDe; sin ciclos (eventual o sin fecha:
+// ciclosDe da null), todas las vigentes. [{ numero, tipo, recibida }]; sin fuentes o con un hoy que no es una fecha, [].
+export const notasDgmitDelCicloAbierto = (fuentes, hoy) => {
+  if (!fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return [];
+  const ciclos = ciclosDe(fuentes, hoy);
+  const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
+  const notas = hayCiclos ? (notasDgmitPorCiclo(fuentes, ciclos, hoy).at(-1) ?? []) : notasDgmitVigentes(fuentes, hoy);
+  return notas.map(({ numero, tipo, recibida }) => ({ numero, tipo, recibida }));
+};
+
 // Un hito por ciclo que llegó a su vencimiento, del más nuevo al más viejo: { fecha, tipo, texto }. `fecha` es el vencimiento.
 export const hitosDe = (ciclos, hoy) => {
   const hitos = [];
