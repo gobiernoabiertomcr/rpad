@@ -1,4 +1,4 @@
-// Todas las páginas cargan las versiones nuevas de los scripts compartidos, y el menú de Administración tiene "Usuarios".
+// Todas las páginas cargan las versiones nuevas de los scripts compartidos, y el menú de Administración tiene "Configuración".
 // Al cambiar alguno de estos scripts, subir la versión en todas las páginas y en VERSION.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -300,11 +300,57 @@ describe('páginas', () => {
     });
   });
 
-  for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {
-    it(`${pagina}: el menú de Administración tiene un único enlace a Usuarios`, () => {
-      assert.equal(leer(pagina).match(/href="usuarios\.html"/g)?.length, 1);
+  // El menú de Administración (spec 2026-10-24-configuracion, 2): Gestión de Datasets, con el ícono de capas (layers de Lucide),
+  // Correos, sin cambios, y Configuración, con la ruedita que tenía Gestión de Datasets. Salen Áreas y Usuarios, que ahora son
+  // pestañas de Configuración (sus direcciones viejas las redirige app.js)
+  describe('el menú de Administración', () => {
+    const CAPAS = 'm12.83 2.18';
+    const RUEDITA = 'M12.22 2h-.44';
+    const SOBRE = 'm22 7-8.97 5.7';
+
+    for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {
+      it(`${pagina}: el menú de Administración tiene un único enlace a Configuración`, () => {
+        assert.equal(leer(pagina).match(/href="configuracion\.html"/g)?.length, 1);
+      });
+    }
+
+    for (const pagina of paginas) {
+      it(`${pagina}: ningún enlace a usuarios.html ni a areas.html`, () => {
+        // También con ruta (/usuarios.html, ./areas.html) o con fragmento (usuarios.html#licencias)
+        assert.deepEqual(leer(pagina).match(/href="[^"]*(?<![\w-])(usuarios|areas)\.html[^"]*"/g) ?? [], []);
+      });
+    }
+
+    it('index.html: Gestión de Datasets con las capas, Correos y Configuración con la ruedita, en ese orden', () => {
+      const bloque = leer('index.html').match(/<div class="sidebar-section hidden" id="sidebarAdmin">[\s\S]*?(?=<div class="sidebar-section hidden" id="sidebarTools">)/)?.[0] ?? '';
+      assert.match(bloque, /<div class="sidebar-section-title">Administración<\/div>/);
+      const links = [...bloque.matchAll(/<a href="([^"]+)" class="sidebar-link">(<svg [^>]*>[\s\S]*?<\/svg>)<span>([^<]+)<\/span><\/a>/g)]
+        .map(([, href, svg, texto]) => ({ href, svg, texto }));
+      assert.deepEqual(links.map(l => l.href), ['admin.html', 'correos.html', 'configuracion.html']);
+      assert.deepEqual(links.map(l => l.texto), ['Gestión de Datasets', 'Correos', 'Configuración']);
+      assert.equal(bloque.match(/<a /g)?.length, 3, 'ningún otro link');
+      const [gestion, correos, configuracion] = links;
+      assert.ok(gestion.svg.includes(CAPAS), 'Gestión de Datasets: las capas');
+      assert.ok(!gestion.svg.includes(RUEDITA), 'Gestión de Datasets: sin la ruedita');
+      assert.ok(correos.svg.includes(SOBRE), 'Correos: el sobre de siempre');
+      assert.ok(configuracion.svg.includes(RUEDITA), 'Configuración: la ruedita');
+      for (const { href, svg } of links) assert.match(svg, /^<svg aria-hidden="true" /, href);
     });
-  }
+
+    // El h1 de Gestión de Datasets lleva el mismo ícono que su link del menú, decorativo como los del h1 de Configuración y de
+    // Seguimiento; el alta rápida de un área manda a completar los datos de contacto en la pestaña Áreas de Configuración
+    it('admin.html: el h1 con las capas, decorativas, y el alta rápida de un área manda a Configuración → Áreas', () => {
+      const html = leer('admin.html');
+      const h1 = html.match(/<h1 class="page-title">[\s\S]*?<\/h1>/)?.[0] ?? '';
+      const svg = h1.match(/<svg[^>]*>[\s\S]*?<\/svg>/)?.[0] ?? '';
+      assert.ok(svg.includes(CAPAS), 'las capas');
+      assert.ok(!svg.includes(RUEDITA), 'sin la ruedita');
+      assert.match(svg, /^<svg aria-hidden="true" /);
+      assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Gestión de Datasets');
+      assert.ok(html.includes('<p class="ad-ayuda ad-arriba">Los datos de contacto se completan después, en Configuración → Áreas.</p>'));
+      assert.ok(!html.includes('se completan después, en Áreas.'), 'sin el texto viejo');
+    });
+  });
 
   // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
   it('configuracion.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
@@ -336,7 +382,7 @@ describe('páginas', () => {
         assert.match(html, new RegExp(`id="${id}"`), id);
       }
       assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
-      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'areas.html', 'correos.html', 'reportes.html', 'notas.html', 'gestion.html', 'seguimiento.html', 'perfil.html']) {
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'gestion.html', 'seguimiento.html', 'perfil.html']) {
         assert.ok(html.includes(`href="${destino}"`), destino);
       }
       assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');
