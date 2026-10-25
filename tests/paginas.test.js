@@ -21,8 +21,9 @@ const VERSION = '20261204';
 const VERSION_PANTALLAS = '20261204';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
-// reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): su versión es propia
-const VERSION_CORREOS = '20261116';
+// reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6):
+// su versión es propia
+const VERSION_CORREOS = '20261204';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
