@@ -256,6 +256,46 @@ describe('la foto del 31/12', () => {
     assert.equal(Number((await query('SELECT COUNT(*) n FROM metricas_fotos'))[0].n), 1);
   });
 
+  // Ruling 18: si una corrida no pudo sacarla, la siguiente la reintenta, aunque haya pasado el año: de a una por corrida y primero la
+  // más vieja, siempre al 31/12 de su año
+  it('el 01/03/2028 sin fotos saca primero la de 2026 y en la llamada siguiente la de 2027, cada una al 31/12 de su año', async () => {
+    await prepararElAnio();
+    assert.deepEqual(await sacar('2028-03-01'), { anio: 2026, sacada: true });
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+    assert.deepEqual(await sacar('2028-03-01'), { anio: 2027, sacada: true });
+    assert.deepEqual(await foto.aniosConFoto(), [2026, 2027]);
+    assert.deepEqual(await sacar('2028-03-01'), { anio: 2027, ya: true });
+    // Cada una da lo mismo que si se hubiera sacado a tiempo: al 31/12 de su año, con todos los datasets
+    const fuentes = await seguimientoDatos.fuentesDe(null);
+    for (const anio of [2026, 2027]) {
+      const guardada = await foto.leerFoto(anio);
+      assert.equal(guardada.al, `${anio}-12-31`);
+      const esperados = foto.datosDeLaFoto(fuentes, { anio, generada: guardada.datos.generada });
+      assert.deepEqual(guardada.datos, JSON.parse(JSON.stringify(esperados)), String(anio));
+    }
+    // La de 2026 trae el año 2026 (la carga del 30/12/2026 de A) y la de 2027, el 2027 (la del 03/01/2027 de B)
+    const [de2026, de2027] = [(await foto.leerFoto(2026)).datos, (await foto.leerFoto(2027)).datos];
+    assert.deepEqual([de2026.trabajo.mediana.actualizaciones, de2027.trabajo.mediana.actualizaciones], [1, 1]);
+    assert.equal(de2027.trabajo.mediana.por_mes.actualizaciones[0], 1);
+  });
+
+  it('con la de 2026 ya sacada, el 01/03/2028 saca la de 2027; antes del 10/01/2028, la de 2027 todavía no toca', async () => {
+    await prepararElAnio();
+    assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, sacada: true });
+    assert.deepEqual(await sacar('2028-01-09'), { anio: 2026, ya: true });
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+    assert.deepEqual(await sacar('2028-03-01'), { anio: 2027, sacada: true });
+    assert.deepEqual(await foto.aniosConFoto(), [2026, 2027]);
+  });
+
+  it('el 09/01/2028 sin fotos saca la de 2026, que no se sacó a tiempo; la de 2027 espera al 10/01', async () => {
+    await prepararElAnio();
+    assert.deepEqual(await sacar('2028-01-09'), { anio: 2026, sacada: true });
+    assert.deepEqual(await sacar('2028-01-09'), { anio: 2026, ya: true });
+    assert.deepEqual(await foto.aniosConFoto(), [2026]);
+    assert.deepEqual(await sacar('2028-01-10'), { anio: 2027, sacada: true });
+  });
+
   it('una carga del 05/01/2027 con fecha 30/12/2026 entra; una del 03/01/2027 queda en curso al 31/12', async () => {
     const { a, b } = await prepararElAnio();
     await sacar('2027-01-10');

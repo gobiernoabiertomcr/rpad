@@ -1,8 +1,9 @@
 // La foto del 31/12 (spec 2026-10-24-metricas-y-reportes, 3): las métricas de un año, calculadas una sola vez «al 31/12» y
 // guardadas en metricas_fotos, que no se modifican nunca. La saca sola la corrida de las 8:15 (ejecutarNotificacionesDiarias, un
-// paso aislado después de las Notas Digitales): la primera con hoy ≥ 10/01 del año siguiente, sea o no día hábil. Se guarda con un
-// INSERT IGNORE por año, así una segunda corrida (o dos a la vez) no la pisa. La API de métricas y el Informe anual la leen
-// (leerFoto, aniosConFoto) en lugar de recalcular el año con la base de hoy.
+// paso aislado después de las Notas Digitales): la primera con hoy ≥ 10/01 del año siguiente, sea o no día hábil, y si no pudo, la
+// siguiente (cada corrida saca la del año cerrado más viejo que falta: fotoQueToca, Ruling 18). Se guarda con un INSERT IGNORE por
+// año, así una segunda corrida (o dos a la vez) no la pisa. La API de métricas y el Informe anual la leen (leerFoto, aniosConFoto)
+// en lugar de recalcular el año con la base de hoy.
 //
 // datos (un JSON): { version, casos, vistas, cintas, contexto, trabajo, areas, generada }. Todos los números ya van calculados: quien
 // lee la foto (la API de métricas, el Informe anual) no recalcula nada, así que un cambio posterior en las reglas no reescribe un año
@@ -26,29 +27,21 @@
 import pool from '../config/database.js';
 import { fuentesDe } from './seguimientoDatos.js';
 import {
-  ESTADISTICOS, DIAS, PRIMER_ANIO, casosDe, casosQueTocanElAnio, vistaDe, indiceMesAMes, antiguedadDeVencidos, estadosAl,
-  trabajoDelAnio, areasYTemas
+  ESTADISTICOS, DIAS, casosDe, casosQueTocanElAnio, vistaDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio,
+  areasYTemas
 } from './metricasReglas.js';
-import { cintaDeMetricas } from './metricasCinta.js';
-import { ahoraArgentina, esFechaIso, hoyArgentina } from './notasDigitalesCalendario.js';
+import { cintasDeLaVista } from './metricasCinta.js';
+import { DIA_DE_LA_FOTO, fotoQueToca } from './metricasOpciones.js';
+import { ahoraArgentina, hoyArgentina } from './notasDigitalesCalendario.js';
 
-// Desde qué día del año ('MM-DD') se saca la foto del año anterior: el 10 de enero, para que entren los datos del año que se
-// registran en los primeros días de enero (lo decidió el usuario)
-export const DIA_DE_LA_FOTO = '01-10';
+// Desde qué día del año ('MM-DD') se saca la foto del año anterior (el 10 de enero): vive en services/metricasOpciones.js, que es puro
+export { DIA_DE_LA_FOTO };
 
 // La forma de `datos`: una foto vieja se lee por su versión
 export const VERSION_DE_LA_FOTO = 1;
 
 // La clave de una combinación de los selectores en datos.vistas y datos.cintas: 'mediana-habiles', 'promedio-corridos'…
 export const claveDeLaVista = (estadistico, dias) => `${estadistico}-${dias}`;
-
-const GESTIONES_DE_LA_CINTA = Object.freeze(['externa', 'interna']);
-
-// Las cintas de una vista (la de vistaDe con `estadistico` y `dias`): { externa, interna }, cada una la de cintaDeMetricas con el
-// circuito de su gestión (null si no se dibuja). Así las guarda la foto y así las arma la API de métricas en vivo
-// (controllers/metricasController.js). Nunca tira: sin vista, las dos null.
-export const cintasDeLaVista = (vista, { estadistico, dias }) => Object.fromEntries(GESTIONES_DE_LA_CINTA.map((gestion) =>
-  [gestion, cintaDeMetricas(vista?.circuito?.[gestion], { gestion, dias, estadistico })]));
 
 // Los datos de la foto de `anio` al 31/12, con las fuentes de todos los datasets (el Map de fuentesDe). No toca la base.
 // `generada`: el momento en que se saca.
@@ -82,26 +75,16 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
   };
 };
 
-// El año del que toca sacar la foto en `hoy` ('AAAA-MM-DD'), o null: el anterior, desde el 10/01, y nunca uno anterior al primer
-// año de las métricas (PRIMER_ANIO: en 2026 no hay foto de 2025 que sacar)
-const anioDeLaFoto = (hoy) => {
-  if (!esFechaIso(hoy) || hoy.slice(5) < DIA_DE_LA_FOTO) return null;
-  const anio = Number(hoy.slice(0, 4)) - 1;
-  return anio >= PRIMER_ANIO ? anio : null;
-};
-
-const hayFoto = async (anio) => {
-  const [filas] = await pool.query('SELECT 1 FROM metricas_fotos WHERE anio = ?', [anio]);
-  return filas.length > 0;
-};
-
-// Saca la foto del año anterior si corresponde: { anio, sacada: true } si la guardó; { anio, ya: true } si ya estaba (también si
-// otra corrida la guardó mientras esta la calculaba: el INSERT IGNORE no la pisa); null si hoy no toca (antes del 10/01, o un año
-// anterior a PRIMER_ANIO). Tira si algo falla (leer las fuentes o guardar): la corrida lo registra y la saca al día siguiente.
+// Saca la foto que corresponde (fotoQueToca, Ruling 18): la del año cerrado más viejo, desde PRIMER_ANIO, cuyo 10/01 ya llegó y que
+// todavía no la tiene, una por corrida y siempre al 31/12 de ese año. { anio, sacada: true } si la guardó; { anio, ya: true } si no
+// falta ninguna (con el último año que ya la tiene) o si otra corrida la guardó mientras esta la calculaba (el INSERT IGNORE no la
+// pisa); null si hoy no toca (antes del 10/01 del primer año que la tiene que tener: en 2026 no hay foto de 2025 que sacar). Tira si
+// algo falla (leer las fuentes o guardar): la corrida lo registra y la siguiente la vuelve a intentar.
 export const sacarFotoSiCorresponde = async ({ hoy = hoyArgentina() } = {}) => {
-  const anio = anioDeLaFoto(hoy);
-  if (anio === null) return null;
-  if (await hayFoto(anio)) return { anio, ya: true };
+  const toca = fotoQueToca({ hoy, aniosConFoto: await aniosConFoto() });
+  if (toca === null) return null;
+  const { anio } = toca;
+  if (!toca.falta) return { anio, ya: true };
   const datos = datosDeLaFoto(await fuentesDe(null), { anio, generada: ahoraArgentina() });
   const [resultado] = await pool.query(
     'INSERT IGNORE INTO metricas_fotos (anio, al, datos) VALUES (?, ?, ?)', [anio, `${anio}-12-31`, JSON.stringify(datos)]

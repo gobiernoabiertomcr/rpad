@@ -21,6 +21,8 @@ import { TEXTO_TIPO_NOTA_DGMIT } from './notasDgmitReglas.js';
 // Los selectores de la página (spec, 1.7): el primero de cada uno es el de entrada
 export const ESTADISTICOS = Object.freeze(['mediana', 'promedio']);
 export const DIAS = Object.freeze(['habiles', 'corridos']);
+// La gestión del circuito y de su cinta (spec, 2.2)
+export const GESTIONES = Object.freeze(['externa', 'interna']);
 
 // Cuántos días corridos antes del vencimiento sale el aviso de la regla: 40 en externa y 60 en interna (spec, 1.2)
 export const VENTANA_DE_LA_REGLA = Object.freeze({ externa: 40, interna: 60 });

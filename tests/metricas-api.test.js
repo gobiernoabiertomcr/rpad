@@ -1,8 +1,8 @@
 // API de métricas (spec 2026-10-24-metricas-y-reportes, 1.5 a 1.7, 2.3 y 3): GET /api/metricas la ven todos los roles con sesión
 // (también el lector y el colaborador); sin sesión, 401. Los parámetros raros caen a los de entrada y un año sin métricas da 404 en
 // JSON. Contra una base de prueba propia, con datos inventados. El servidor corre con el reloj de verdad: lo que depende del día (un
-// año cerrado con su foto, el año que terminó entre el 1/1 y el 10/1) se prueba con metricasDe y un hoy fijo, como la foto
-// (sacarFotoSiCorresponde). La foto se guarda con datosDeLaFoto y un INSERT: nunca /api/cron/*.
+// año cerrado con su foto o todavía sin ella) se prueba con metricasDe y un hoy fijo, como la foto (sacarFotoSiCorresponde). La foto
+// se guarda con datosDeLaFoto y un INSERT: nunca /api/cron/*. Las opciones del pedido, puras, en tests/metricas-opciones.test.js.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
@@ -77,98 +77,6 @@ const emailEnviado = ({ tipo, datasetId, enviado }) => query(
 const tramoDe = (data, gestion, clave) => data.vista.circuito[gestion].find((t) => t.clave === clave);
 
 // ---------------------------------------------------------------------------------------------------------------------
-// opcionesDeMetricas y aniosDeMetricas (puras)
-// ---------------------------------------------------------------------------------------------------------------------
-
-describe('opcionesDeMetricas', () => {
-  const opciones = (query, hoy = '2026-10-24', aniosConFoto = []) => controlador.opcionesDeMetricas(query, { hoy, aniosConFoto });
-  const DE_ENTRADA = { anio: 2026, al: '2026-10-24', en_vivo: true, aviso_foto: null, estadistico: 'mediana', dias: 'habiles', gestion: 'externa' };
-
-  // Review Focus 2
-  it('los valores inválidos caen a los de entrada y sin acepta solo enteros positivos, sin repetidos', () => {
-    assert.deepEqual(opciones({ anio: 'abc', sin: 'x,1e3,-2,5,5', estadistico: 'foo', dias: 'bar', gestion: 'z' }), { ...DE_ENTRADA, sin: [5] });
-    // Sin parámetros (o sin query), los de entrada
-    assert.deepEqual(opciones({}), { ...DE_ENTRADA, sin: [] });
-    assert.deepEqual(opciones(undefined), { ...DE_ENTRADA, sin: [] });
-    assert.deepEqual(opciones(null), { ...DE_ENTRADA, sin: [] });
-    // Un año que no son cuatro dígitos, o que no es un texto ni un número, tampoco sirve
-    for (const anio of ['', '2026x', '02026', '26', '2026.0', ['2026', '2027'], { a: 1 }, 2026.5, true]) {
-      assert.deepEqual(opciones({ anio }), { ...DE_ENTRADA, sin: [] }, JSON.stringify(anio));
-    }
-    // Un selector repetido en la URL llega como lista: no sirve
-    assert.deepEqual(opciones({ estadistico: ['promedio', 'mediana'], dias: ['corridos'], gestion: ['interna'] }), { ...DE_ENTRADA, sin: [] });
-  });
-
-  it('los valores válidos pasan, y sin conserva el orden pedido', () => {
-    assert.deepEqual(opciones({ anio: '2026', sin: '45,12,45', estadistico: 'promedio', dias: 'corridos', gestion: 'interna' }), {
-      ...DE_ENTRADA, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [45, 12]
-    });
-    assert.equal(opciones({ anio: 2026 }).anio, 2026);
-  });
-
-  it('sin: dígitos y nada más (con espacios alrededor), un número seguro y mayor que 0; también repetido en la URL', () => {
-    const sin = (valor) => opciones({ sin: valor }).sin;
-    assert.deepEqual(sin('0,00,1.5,1e3,-3,abc,,12abc, 7 ,007'), [7]);
-    assert.deepEqual(sin('99999999999999999999,9007199254740991'), [9007199254740991]);
-    assert.deepEqual(sin(['3', '1,3', '2']), [3, 1, 2]);
-    for (const valor of ['', ',', undefined, null, 5, { 1: '2' }, [1, 2]]) assert.deepEqual(sin(valor), [], JSON.stringify(valor));
-  });
-
-  it('el año en curso va en vivo, al día de hoy; un año sin métricas da null (el 404)', () => {
-    assert.deepEqual(opciones({ anio: '2026' }, '2026-01-01'), { ...DE_ENTRADA, al: '2026-01-01', sin: [] });
-    // Antes del primer año (2026), un año futuro o uno cerrado sin foto: no hay métricas
-    for (const anio of ['1999', '2025', '2027', 2025]) assert.equal(opciones({ anio }), null, String(anio));
-    assert.equal(opciones({ anio: '2026' }, '2028-03-01'), null);
-    // Un hoy que no es una fecha
-    for (const hoy of ['2026-13-01', '24/10/2026', null, undefined]) {
-      assert.equal(controlador.opcionesDeMetricas({}, { hoy, aniosConFoto: [] }), null, String(hoy));
-    }
-    assert.equal(controlador.opcionesDeMetricas({}), null);
-  });
-
-  it('entre el 1/1 y el 10/1, el año que terminó va en vivo «al 31/12» con el aviso de la foto; con foto, sale de la foto y sin destildar', () => {
-    for (const hoy of ['2027-01-01', '2027-01-05', '2027-01-10']) {
-      assert.deepEqual(opciones({ anio: '2026', sin: '4,2' }, hoy), {
-        ...DE_ENTRADA, al: AL, aviso_foto: 'La foto de 2026 se saca el 10/01/2027', sin: [4, 2]
-      }, hoy);
-      // El de entrada sigue siendo el año en curso
-      assert.deepEqual(opciones({}, hoy), { ...DE_ENTRADA, anio: 2027, al: hoy, sin: [] }, hoy);
-    }
-    // Desde el 11/01, sin foto, ese año ya no se puede ver; con foto, sale de la foto (también el 10/01, una vez sacada), y en un año con
-    // foto no se destilda
-    assert.equal(opciones({ anio: '2026' }, '2027-01-11'), null);
-    for (const hoy of ['2027-01-10', '2027-01-11', '2027-06-15', '2029-03-01']) {
-      assert.deepEqual(opciones({ anio: '2026', sin: '4,2' }, hoy, [2026]), { ...DE_ENTRADA, al: AL, en_vivo: false, sin: [] }, hoy);
-    }
-    // Los años con foto pueden llegar como texto; un año en curso con foto (no pasa: se saca el 10/01 del siguiente) sigue en vivo
-    assert.equal(opciones({ anio: '2026' }, '2027-06-15', ['2026']).en_vivo, false);
-    assert.deepEqual(opciones({ anio: '2026' }, '2026-10-24', [2026]), { ...DE_ENTRADA, sin: [] });
-    // El aviso dice el año que corresponde
-    assert.equal(opciones({ anio: '2027' }, '2028-01-03').aviso_foto, 'La foto de 2027 se saca el 10/01/2028');
-    // aniosConFoto que no es una lista: ninguno
-    assert.equal(controlador.opcionesDeMetricas({ anio: '2026' }, { hoy: '2027-06-15', aniosConFoto: 'x' }), null);
-  });
-});
-
-describe('aniosDeMetricas', () => {
-  const anios = (hoy, aniosConFoto = []) => controlador.aniosDeMetricas({ hoy, aniosConFoto });
-
-  it('desde 2026 hasta el actual: el en curso, el que terminó hasta el 10/01 y los que tienen foto', () => {
-    assert.deepEqual(anios('2026-10-24'), [2026]);
-    assert.deepEqual(anios('2026-01-05'), [2026]);
-    assert.deepEqual(anios('2027-01-05'), [2026, 2027]);
-    assert.deepEqual(anios('2027-01-10'), [2026, 2027]);
-    assert.deepEqual(anios('2027-01-11'), [2027]);
-    assert.deepEqual(anios('2027-01-11', [2026]), [2026, 2027]);
-    assert.deepEqual(anios('2029-01-05', [2026, 2027]), [2026, 2027, 2028, 2029]);
-    assert.deepEqual(anios('2029-02-01', [2027, 2026]), [2026, 2027, 2029]);
-    // Una foto anterior a 2026 o posterior al año en curso no cuenta (no puede haberla)
-    assert.deepEqual(anios('2027-03-01', [2025, 2026, 2030]), [2026, 2027]);
-    assert.deepEqual(anios('no es una fecha'), []);
-  });
-});
-
-// ---------------------------------------------------------------------------------------------------------------------
 // GET /api/metricas (con el servidor, en el año en curso)
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -236,12 +144,24 @@ describe('GET /metricas', () => {
   });
 
   // Review Focus 2: lo raro se ignora, siempre con 200 y nunca con 500
-  it('los parámetros raros caen a los de entrada, con 200', async () => {
-    await prepararHoy();
+  it('los parámetros raros caen a los de entrada, con 200: solo queda sin = [5]', async () => {
+    // El dataset 5 es el vencido: los de este test se numeran desde 100 (la base de prueba está vacía y el DELETE no vuelve a numerar),
+    // así el 5 queda libre, y el vencido no tiene nada colgado
+    await query('ALTER TABLE datasets AUTO_INCREMENT = 100');
+    const { hoy, anio, vencido } = await prepararHoy();
+    await query('UPDATE datasets SET id = 5 WHERE id = ?', [vencido]);
     const deEntrada = await api.get('/metricas', como('lector'));
-    const raro = await api.get('/metricas?anio=abc&sin=x,1e3,-2&estadistico=foo&dias=bar&gestion=z', como('lector'));
+    const raro = await api.get('/metricas?anio=abc&sin=x,1e3,-2,5,5&estadistico=foo&dias=bar&gestion=z', como('lector'));
     assert.equal(raro.status, 200);
-    assert.deepEqual(raro.body, deEntrada.body);
+    // Lo mismo que pedir solo ?sin=5: el año en curso, mediana, días hábiles y el 5 destildado una vez
+    assert.deepEqual(raro.body, (await api.get('/metricas?sin=5', como('lector'))).body);
+    const { data } = raro.body;
+    assert.deepEqual([data.anio, data.al, data.en_vivo, data.sin_titulos], [anio, hoy, true, ['Vencido']]);
+    assert.equal(tramoDe(data, 'externa', 'carga').cifra.debajo, 'mediana de 3 ciclos');
+    assert.deepEqual(tramoDe(data, 'externa', 'carga').cifra.valor, cifraEsperada(hoy, 'mediana', 'habiles'));
+    // Sin el vencido, el contexto cuenta 3 y todos al día; sin destildar, 4 y el 75 %
+    assert.deepEqual([data.contexto.estados.total, data.contexto.estados.tasa], [3, 100]);
+    assert.deepEqual([deEntrada.body.data.contexto.estados.total, deEntrada.body.data.contexto.estados.tasa], [4, 75]);
     // Repetidos en la URL (llegan como lista) y un año con otra forma, igual
     const repetidos = await api.get('/metricas?anio=2026&anio=2027&estadistico=promedio&estadistico=mediana&sin[a]=1&dias[]=corridos', como('lector'));
     assert.equal(repetidos.status, 200);
@@ -386,16 +306,21 @@ describe('metricasDe con un hoy fijo', () => {
     assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto], [2027, '2027-03-01', true, null]);
   });
 
-  it('entre el 1/1 y el 10/1, el año que terminó va en vivo «al 31/12», con el aviso de la foto, y da lo mismo que la foto', async () => {
+  // Ruling 17: un año cerrado sin foto nunca desaparece. Hasta el 10/01 del año siguiente el aviso dice cuándo se saca; después (la
+  // corrida no pudo), que se reintenta
+  it('un año cerrado sin foto va en vivo «al 31/12», con el aviso de la foto, y da lo mismo que la foto', async () => {
     const ids = await prepararElAnio();
     const fuentes = await seguimientoDatos.fuentesDe(null);
     const laQueSeVaASacar = foto.datosDeLaFoto(fuentes, { anio: 2026, generada: '2027-01-10 08:15:00' });
-    for (const hoy of ['2027-01-01', '2027-01-05', '2027-01-10']) {
+    const SE_SACA = 'La foto de 2026 se saca el 10/01/2027';
+    const SE_REINTENTA = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
+    for (const [hoy, aviso, anios] of [['2027-01-01', SE_SACA, [2026, 2027]], ['2027-01-05', SE_SACA, [2026, 2027]],
+      ['2027-01-10', SE_SACA, [2026, 2027]], ['2027-01-11', SE_REINTENTA, [2026, 2027]], ['2028-03-01', SE_REINTENTA, [2026, 2027, 2028]]]) {
       for (const { estadistico, dias } of COMBINACIONES) {
         const clave = `${hoy} ${foto.claveDeLaVista(estadistico, dias)}`;
         const data = await metricas({ anio: '2026', estadistico, dias }, hoy);
         assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos],
-          [2026, AL, true, 'La foto de 2026 se saca el 10/01/2027', [2026, 2027], []], clave);
+          [2026, AL, true, aviso, anios, []], clave);
         assert.deepEqual(data.vista, laQueSeVaASacar.vistas[foto.claveDeLaVista(estadistico, dias)], clave);
         assert.deepEqual(data.cinta, laQueSeVaASacar.cintas[foto.claveDeLaVista(estadistico, dias)], clave);
         assert.deepEqual(data.contexto, laQueSeVaASacar.contexto, clave);
@@ -403,19 +328,27 @@ describe('metricasDe con un hoy fijo', () => {
         assert.deepEqual(data.areas, laQueSeVaASacar.areas, clave);
       }
     }
-    // En vivo se puede destildar
-    const sinUno = await metricas({ anio: '2026', sin: `${ids[0]},999999,${ids[0]}` }, '2027-01-05');
-    assert.deepEqual(sinUno.sin_titulos, ['Dataset 1 de prueba']);
-    assert.deepEqual(sinUno.vista.casos.filter((fila) => fila.dataset_id === ids[0]).map((fila) => fila.contar), [false]);
-    assert.equal(tramoDe(sinUno, 'externa', 'carga').cifra.ciclos, 2);
-    assert.deepEqual(sinUno.vista, vistaDe(casosDe(fuentes, { hoy: AL }), { anio: 2026, al: AL, sin: [ids[0]] }));
+    // En vivo se puede destildar, también después del 10/01
+    for (const hoy of ['2027-01-05', '2027-03-01']) {
+      const sinUno = await metricas({ anio: '2026', sin: `${ids[0]},999999,${ids[0]}` }, hoy);
+      assert.deepEqual(sinUno.sin_titulos, ['Dataset 1 de prueba'], hoy);
+      assert.deepEqual(sinUno.vista.casos.filter((fila) => fila.dataset_id === ids[0]).map((fila) => fila.contar), [false], hoy);
+      assert.equal(tramoDe(sinUno, 'externa', 'carga').cifra.ciclos, 2, hoy);
+      assert.deepEqual(sinUno.vista, vistaDe(casosDe(fuentes, { hoy: AL }), { anio: 2026, al: AL, sin: [ids[0]] }), hoy);
+    }
     // El año en curso es el de entrada
     const enCurso = await metricas({}, '2027-01-05');
     assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto, enCurso.anios], [2027, '2027-01-05', true, null, [2026, 2027]]);
 
-    // Desde el 11/01 sin foto, ese año no tiene métricas (el 404); con la foto, sale de ella, también el mismo 10/01
-    assert.equal(await metricas({ anio: '2026' }, '2027-01-11'), null);
-    assert.deepEqual((await metricas({}, '2027-01-11')).anios, [2027]);
+    // Con dos años cerrados sin foto, cada uno en vivo al 31/12 de su año y con su aviso
+    const de2027 = await metricas({ anio: '2027' }, '2028-03-01');
+    assert.deepEqual([de2027.anio, de2027.al, de2027.en_vivo, de2027.aviso_foto],
+      [2027, '2027-12-31', true, 'La foto de 2027 todavía no se sacó: se reintenta en la próxima corrida.']);
+    // Solo un año anterior a 2026 o futuro no tiene métricas (el 404)
+    for (const [anio, hoy] of [['2025', '2027-01-11'], ['2028', '2027-01-11'], ['1999', '2028-03-01']]) {
+      assert.equal(await metricas({ anio }, hoy), null, `${anio} ${hoy}`);
+    }
+    // Con la foto, sale de ella, también el mismo 10/01
     const guardada = await guardarFoto();
     for (const hoy of ['2027-01-10', '2027-01-11']) {
       const data = await metricas({ anio: '2026', sin: String(ids[0]) }, hoy);

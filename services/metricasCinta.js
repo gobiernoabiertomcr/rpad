@@ -6,7 +6,7 @@
 // alturas fijas de ALTURAS_DE_LA_CINTA (las de la maqueta 7). Los textos se miden con 6,6 por letra, 10 sobre la línea de base y 3
 // debajo: ningún texto sale del dibujo ni se pisa con otro (pedido del usuario). Ninguna función tira error: con datos raros devuelve
 // null o corta la cadena.
-import { unidadDe, SIN_NOTAS_DGMIT } from './metricasReglas.js';
+import { unidadDe, SIN_NOTAS_DGMIT, GESTIONES } from './metricasReglas.js';
 
 const ANCHO = 1000;
 const ALTO = 156;
@@ -346,4 +346,13 @@ export const cintaDeMetricas = (tramos, opciones) => {
     aclaracion: ACLARACION[estadistico],
     alturas: ALTURAS
   };
+};
+
+// Las cintas de una vista (la de vistaDe con `estadistico` y `dias`): { externa, interna }, cada una la de cintaDeMetricas con el
+// circuito de su gestión (null si no se dibuja). Así las guarda la foto (services/metricasFoto.js) y así las arma la API de métricas en
+// vivo (controllers/metricasController.js). Nunca tira: sin vista, las dos null.
+export const cintasDeLaVista = (vista, opciones) => {
+  const { estadistico, dias } = esObjeto(opciones) ? opciones : {};
+  const circuito = esObjeto(vista) && esObjeto(vista.circuito) ? vista.circuito : {};
+  return Object.fromEntries(GESTIONES.map((gestion) => [gestion, cintaDeMetricas(circuito[gestion], { gestion, dias, estadistico })]));
 };

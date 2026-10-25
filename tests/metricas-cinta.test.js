@@ -3,7 +3,7 @@
 // importa es lo que pidió el usuario: ningún texto de la cinta sale del dibujo ni se pisa con otro.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { cintaDeMetricas, ALTURAS_DE_LA_CINTA as ALTURAS } from '../services/metricasCinta.js';
+import { cintaDeMetricas, cintasDeLaVista, ALTURAS_DE_LA_CINTA as ALTURAS } from '../services/metricasCinta.js';
 import { SIN_NOTAS_DGMIT, unidadDe, casosDe, vistaDe } from '../services/metricasReglas.js';
 import { mapaDeLosCasos, HOY_DE_LAS_METRICAS } from './metricas-casos.js';
 
@@ -414,5 +414,24 @@ describe('cintaDeMetricas', () => {
     for (const { gestion, estadistico, dias } of COMBINACIONES) assert.deepEqual(real(gestion, estadistico, dias).alturas, esperadas);
     // Lo que manda el servidor es JSON: las alturas llegan enteras a la página
     assert.deepEqual(JSON.parse(JSON.stringify(real('interna', 'mediana', 'habiles'))).alturas, esperadas);
+  });
+});
+
+describe('cintasDeLaVista', () => {
+  it('las dos cintas de una vista, cada una la de cintaDeMetricas con el circuito de su gestión; sin vista, las dos null', () => {
+    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
+    for (const { estadistico, dias } of COMBINACIONES.filter((c) => c.gestion === 'externa')) {
+      const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, estadistico, dias });
+      assert.deepEqual(cintasDeLaVista(vista, { estadistico, dias }), {
+        externa: cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias, estadistico }),
+        interna: cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias, estadistico })
+      }, `${estadistico}-${dias}`);
+    }
+    for (const vista of [null, undefined, 'x', [], {}, { circuito: null }, { circuito: { externa: 'x' } }]) {
+      assert.deepEqual(cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles' }), { externa: null, interna: null }, JSON.stringify(vista));
+    }
+    // Sin opciones, las de entrada
+    const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS });
+    assert.deepEqual(cintasDeLaVista(vista), cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles' }));
   });
 });
