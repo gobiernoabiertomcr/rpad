@@ -576,7 +576,7 @@
 **Interfaces:**
 - Consumes: de `notasDigitalesAnexo.js`: `COLOR`, `MARGEN`, `IZQUIERDA`, `DERECHA`, `ABAJO`, `CONTENIDO`, `NORMAL`, `NEGRITA`, `renglon`, `rotulo`, `filete`, `prepararGrilla`. De `notasDigitalesPdf.js`: `DocumentoNota`.
 - Produces:
-  - `nuevoReporte({ titulo }) → DocumentoNota`: A4, `autoFirstPage: false`, márgenes 0 e `info`.
+  - `nuevoReporte({ titulo }) → DocumentoNota`: `size: 'A4'` explícito (desde la hoja oficio, `DocumentoNota` no tiene tamaño y sin `size` sale en LETTER), `autoFirstPage: false`, márgenes 0 e `info`.
   - `agregarHoja(doc, { derecha, fecha }) → y`: el encabezado del anexo, con «DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN» y «Municipalidad de Comodoro Rivadavia» a la izquierda, y a la derecha `derecha` con la fecha larga y el filete con el acento.
   - `cerrarReporte(doc, { generado: { momento, por }, pieDe: (k, n) => string }) → Promise<Buffer>`: dibuja los pies en todas las hojas (`Generado el dd/mm/aaaa a las hh:mm por <nombre corto>` y `pieDe(k, n)`).
   - `dibujarTitulo(doc, { rotulo, titulo }, y) → y`, `dibujarPildora(doc, texto, y, { tono: 'azul' | 'sol' }) → y`, `dibujarTarjetas(doc, [{ valor, rotulo }], y) → y`, `prepararTabla(doc, { columnas: [{ titulo, ancho }], filas, estados }) → { dibujar(y) → y }`. La tabla corta de hoja y repite el encabezado.
@@ -624,7 +624,7 @@
 ### Task 16: PDF «Por área» con las hojas del Seguimiento
 
 **Files:**
-- Modify: `services/seguimientoPdf.js` (exportar `dibujarHoja(doc, seguimiento, { hoy, generado, pie })`, sin cambiar lo que dibuja), `controllers/reportesController.js` (`reportePorArea` :742 se reescribe)
+- Modify: `services/seguimientoPdf.js` (exportar `dibujarHoja(doc, seguimiento, { hoy, generado, pie })`, que ya existe con esa firma desde la hoja oficio: solo se le agrega `export`, sin cambiar lo que dibuja; antes de dibujar, `await cargarQrcode()`), `controllers/reportesController.js` (`reportePorArea` :742 se reescribe)
 - Test: `tests/reportes-pdf.test.js`, `tests/estados-api.test.js` (:247-295 se reescribe a propósito), `tests/reportes.test.js` (:61-66 se reescribe)
 
 **Interfaces:**
