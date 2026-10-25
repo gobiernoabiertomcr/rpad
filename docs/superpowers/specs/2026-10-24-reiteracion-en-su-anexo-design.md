@@ -56,6 +56,15 @@ En la vista previa («Ver anexo») y en la prueba de Correos pasa lo mismo, con 
 - **Vista previa y prueba.** El número es «XX» o «PRUEBA», sin año. La regla que arma «N° n/aa» (`numeroDeNota`, `services/seguimientoReglas.js`) y la de la etiqueta de la cinta (`etiquetaDeNota`, `services/seguimientoCinta.js`) aceptan un número sin año. Las notas de la base que no son de prueba siempre tienen año.
 - **Sin duplicados.** Si las fuentes de un dataset ya traen una reiteración de la misma gestión con la misma fecha (la vista previa abierta después de la real), se saca antes de sumar la propia.
 - **Efecto aceptado:** si el email de la reiteración no sale nunca, el anexo guardado (que administración puede descargar) la muestra como enviada.
+- **Una vista previa abierta otro día del mes** (decisión mía): si la reiteración real salió el 02/11 y el 10/11 alguien abre «Ver anexo» o manda una prueba, cada hoja muestra la real, enviada, y «XX» con fecha 10/11. Solo se saca la de la misma fecha. Una nota que se envió de verdad nunca desaparece de una hoja, y «XX» es la reiteración hipotética de ese día.
+
+### La lista de «Avisos del ciclo abierto» cuando no entra (decisión del usuario: «recortar del medio»)
+
+- En el PDF, el texto de los avisos del ciclo tiene dos renglones. Por ejemplo: «11 emails y las Notas Digitales N° 2/26, 7/26, 9/26 y 2/27».
+- Hoy, si no entra, se corta al final con «…». Como la propia reiteración va última, sería la primera en perderse cuando un dataset acumule unas 6 notas, hacia marzo o abril de 2027.
+- Ahora, si no entra, se sacan números del medio, de a uno, hasta que entre. Siempre quedan el primero y los últimos: «11 emails y las Notas Digitales N° 2/26, …, 9/26 y 2/27». El título («N avisos») sigue contando todo.
+- La regla pura arma las versiones cada vez más cortas y el PDF usa la primera que entra en los dos renglones. Si ni la más corta entra, la corta al final, como hoy.
+- Vale para el anexo y para el PDF de la descarga del Seguimiento, solo cuando no entra. La pantalla no cambia: no tiene ese límite.
 
 ## Pruebas
 
@@ -71,6 +80,7 @@ En la vista previa («Ver anexo») y en la prueba de Correos pasa lo mismo, con 
 - **Fallida:** el anexo la muestra sin «Pendiente de envío.» ni «No se pudo enviar.». El Seguimiento de la pantalla la muestra «No se pudo enviar.» y no la cuenta como aviso.
 - **Vista previa y prueba:** «N° XX» y «Nota XX», «N° PRUEBA» y «Nota PRUEBA», también con datos de ejemplo. La vista previa abierta después de la reiteración real no la muestra dos veces.
 - **El anexo del aviso** no cambia.
+- **La lista larga:** con 8 o más notas en el ciclo, la hoja del PDF muestra el primer número, «…» y los últimos, con la propia incluida y sin pisar nada. Con una lista que entra, el texto queda igual que hoy.
 - **El test que compara la vista previa con la corrida** (`tests/notas-motor.test.js`, el que reemplaza «N° 2/26» por «N° XX») pasa a reemplazar todas las apariciones del número.
 - `npm test` completo antes y después.
 
