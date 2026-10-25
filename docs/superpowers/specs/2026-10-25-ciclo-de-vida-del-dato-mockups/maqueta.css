@@ -1,0 +1,22 @@
+/* La barra de la maqueta (no es parte del RPAD): navegación entre las vistas y los controles */
+:root {
+  --m-tinta:#1A365D; --m-texto:#22324A; --m-suave:#56677F; --m-linea:#DAE3ED; --m-borde:#76879F; --m-guia:#FFF7DD; --m-guia-borde:#EED89A;
+  --f-titulo:'Bricolage Grotesque',system-ui,sans-serif; --f-texto:'Figtree',system-ui,sans-serif;
+}
+body { margin:0; background:#E9EEF4; font-family:var(--f-texto); color:var(--m-texto); }
+.m-barra { position:sticky; top:0; z-index:50; background:#fff; border-bottom:1px solid var(--m-linea); box-shadow:0 1px 6px rgba(15,23,42,.06); }
+.m-nav { display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; padding:10px 20px 6px; }
+.m-nav b { font-family:var(--f-titulo); letter-spacing:-.02em; color:var(--m-tinta); font-size:1.05rem; margin-right:6px; }
+.m-nav a { color:var(--m-suave); text-decoration:none; font-weight:600; font-size:.9rem; padding:4px 0; border-bottom:2px solid transparent; }
+.m-nav a[aria-current="page"] { color:var(--m-tinta); border-bottom-color:var(--m-tinta); }
+.m-nav a:focus-visible, .m-grupo button:focus-visible { outline:3px solid var(--m-tinta); outline-offset:2px; box-shadow:0 0 0 6px #F2C94C; }
+.m-controles { display:flex; flex-wrap:wrap; gap:8px 22px; padding:4px 20px 8px; }
+.m-grupo { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.m-grupo > span { font-size:.8rem; font-weight:700; color:var(--m-suave); margin-right:2px; }
+.m-grupo button { font:500 .84rem var(--f-texto); height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--m-borde); background:#fff; color:var(--m-texto); cursor:pointer; }
+.m-grupo button[aria-pressed="true"] { background:var(--m-tinta); border-color:var(--m-tinta); color:#fff; }
+.m-guia { margin:0; padding:8px 20px; background:var(--m-guia); border-top:1px solid var(--m-guia-borde); font-size:.88rem; line-height:1.45; }
+.m-main { padding:18px 16px; overflow-x:auto; }
+@media (max-width: 760px) { .m-guia { display:none; } .m-nav { padding:8px 16px 4px; } .m-controles { padding:2px 16px 8px; } }
+
+.m-grupo[hidden] { display:none; }
