@@ -128,10 +128,10 @@ const nombresDeLaReiteracion = async ({ usuarioId, firmanteId }) => {
 
 // La reiteración que acompaña a su anexo (notaPropiaDe, notasDigitalesSeguimiento.js; spec 2026-10-24-reiteracion-en-su-anexo):
 // enviada el día de la nota a la hora de la generación (momento: 'AAAA-MM-DD HH:MM:SS'), con sus destinatarios como se guardan
-// (para y cc separados por coma; sin cc, null) y los nombres de nombresDeLaReiteracion. numero: el de la nota, 'PRUEBA' o 'XX'
-// (con anio null).
+// (para y cc separados por coma; sin cc, la cadena vacía, como la lee fuentesDe) y los nombres de nombresDeLaReiteracion. numero: el
+// de la nota, 'PRUEBA' o 'XX' (con anio null).
 const reiteracionPropia = ({ numero, anio, gestion, fecha, momento, para, cc, nombres }) => ({
-  numero, anio, gestion, enviada: `${fecha} ${momento.slice(11)}`, para: para.join(', '), cc: cc.join(', ') || null, ...nombres
+  numero, anio, gestion, enviada: `${fecha} ${momento.slice(11)}`, para: para.join(', '), cc: cc.join(', '), ...nombres
 });
 
 /**

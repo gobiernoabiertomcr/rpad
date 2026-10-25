@@ -718,9 +718,9 @@ const textoDeAvisos = ({ emails, notas }, vencido) => {
 // con k notas, la versión m (m = 1 … k − 3) conserva la primera y las últimas k − 1 − m, con «…» entre las dos partes ("11 emails y
 // las Notas Digitales N° 2/26, …, 9/26 y 2/27"). Siempre quedan la primera y las dos últimas: la reiteración que acompaña al anexo
 // va última. La parte de los emails no cambia. Con 3 notas o menos no hay nada que sacar: []. La pantalla no las usa.
-const textosCortosDeAvisos = ({ emails, notas }, vencido) => {
+const textosCortosDeAvisos = ({ emails, notas }) => {
   const versiones = [];
-  for (let m = 1; m <= notas.length - 3; m++) versiones.push(textoDeAvisos({ emails, notas: [notas[0], '…', ...notas.slice(m + 1)] }, vencido));
+  for (let m = 1; m <= notas.length - 3; m++) versiones.push(textoDeAvisos({ emails, notas: [notas[0], '…', ...notas.slice(m + 1)] }));
   return versiones;
 };
 
@@ -826,7 +826,7 @@ export const circuitoDe = (fuentes, ciclos, hoy, opciones = {}) => {
     avisos: {
       titulo: tituloDeAvisos(delCiclo.total),
       texto: hayCiclos ? textoDeAvisos(delCiclo, vencido) : 'Sin vencimiento',
-      textosCortos: hayCiclos ? textosCortosDeAvisos(delCiclo, vencido) : []
+      textosCortos: hayCiclos ? textosCortosDeAvisos(delCiclo) : []
     },
     area: { nombre: dataset.area ?? null, texto: textoDelArea(estado), vencido: estado.estado === 'vencido' },
     alArea,
