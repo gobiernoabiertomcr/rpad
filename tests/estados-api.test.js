@@ -449,18 +449,21 @@ describe('reporte PDF Avisos del RPAD', () => {
     assert.ok(!lineas.some(l => l.includes('@')), lineas.filter(l => l.includes('@')).join(' | '));
     assert.ok(!lineas.some(l => /ECONNREFUSED|Invalid login|535/.test(l)), lineas.join(' | '));
     assert.ok(lineas.includes('AVISOS DEL RPAD · DEL 01/03/2026 AL 31/03/2026'), lineas.join(' | '));
-    assert.ok(lineas.includes('7 avisos del RPAD en el período') && lineas.includes('5 de gestión externa y 2 de gestión interna'), lineas.join(' | '));
-    assert.deepEqual(['Total de avisos', 'Emails a DGMIT', 'Emails al área', 'Notas Digitales', 'Sin enviar'].map(r => valorDeTarjeta(lineas, r)),
-      ['7', '3', '1', '3', '3']);
-    // Las filas de la tabla, del más viejo al más nuevo: fecha, qué fue, gestión, datasets (por título) y estado
+    // Los totales cuentan lo que se envió (como el Seguimiento): dos emails a la DGMIT, uno al área y una nota. No salieron un email, una
+    // nota fallida y una pendiente: van en la tabla con su estado y en la línea de abajo de los totales
+    assert.ok(lineas.includes('4 avisos del RPAD en el período') && lineas.includes('3 de gestión externa y 1 de gestión interna'), lineas.join(' | '));
+    assert.deepEqual(['Total de avisos', 'Emails a DGMIT', 'Emails al área', 'Notas Digitales'].map(r => valorDeTarjeta(lineas, r)), ['4', '2', '1', '1']);
+    assert.ok(lineas.includes('Además, 3 envíos no salieron: figuran en la tabla con su estado.'), lineas.join(' | '));
+    // Las filas de la tabla, del más viejo al más nuevo: fecha, qué fue, gestión, datasets (por título; con dos o más, la cantidad
+    // adelante) y estado
     const i = lineas.indexOf('Fecha');
     assert.deepEqual(lineas.slice(i, i + 5), ['Fecha', 'Qué fue', 'Gestión', 'Datasets', 'Estado']);
     const fin = lineas.findIndex(l => l.startsWith('Generado el '));
     assert.deepEqual(lineas.slice(i + 5, fin), [
-      '10/03/2026', 'Email a DGMIT: distribución de notas', 'Externa', `${titulo('act1')}, ${titulo('sinresp1')}`, 'Enviado',
+      '10/03/2026', 'Email a DGMIT: distribución de notas', 'Externa', `2 datasets: ${titulo('act1')}, ${titulo('sinresp1')}`, 'Enviado',
       '10/03/2026', 'Email al área: anticipo de la nota formal', 'Externa', titulo('sinresp1'), 'Enviado',
       '15/03/2026', 'Email a DGMIT: resumen mensual de vencidos', 'Externa', titulo('sinresp1'), 'No se pudo enviar',
-      '20/03/2026', 'Nota Digital N° 3/26 a DGMIT', 'Externa', `${titulo('act1')}, ${titulo('sinresp1')}`, 'Enviada',
+      '20/03/2026', 'Nota Digital N° 3/26 a DGMIT', 'Externa', `2 datasets: ${titulo('act1')}, ${titulo('sinresp1')}`, 'Enviada',
       '25/03/2026', 'Nota Digital N° 4/26 a DGMIT', 'Interna', titulo('atras1'), 'Pendiente de envío',
       '26/03/2026', 'Nota Digital N° 5/26 a DGMIT', 'Externa', titulo('act3'), 'No se pudo enviar',
       '31/03/2026', 'Email a DGMIT: vence en 1 mes', 'Interna', titulo('prox1'), 'Enviado'

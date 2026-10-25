@@ -599,6 +599,9 @@ export const momentoDeEnvioDeNota = (nota) => {
 const masNuevo = (a, b) => (a === null || b > a ? b : a);
 // Un email a la DGMIT (los siete retirados, QUE_PEDIA) que se pudo enviar
 export const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
+// Un email de los 40 días al área que se pudo enviar (se cuenta aparte de los avisos a la DGMIT; el reporte «Avisos del RPAD» lo suma
+// a sus totales)
+export const esEmailAlArea = (email) => Boolean(email?.success) && email.tipo === 'area-aviso-40';
 
 // Los avisos de un ciclo: los emails a DGMIT con éxito (`emails`), las Notas Digitales enviadas de aviso y reiteración (`notas`:
 // '2/26', por orden de envío) y las fechas de los emails al área (`alArea`, de la más vieja a la más nueva). `total`: emails +
@@ -609,7 +612,7 @@ export const avisosDelCiclo = (fuentes, ciclos, indice) => {
   if (!fuentes || typeof fuentes !== 'object' || !Array.isArray(ciclos)) return avisos;
   const alArea = [];
   for (const email of lista(fuentes.emails)) {
-    const delArea = Boolean(email?.success) && email.tipo === 'area-aviso-40';
+    const delArea = esEmailAlArea(email);
     const momento = delArea || esEmailADgmit(email) ? momentoDe(email.enviado) : null;
     if (momento === null || cicloDelAviso(ciclos, momento) !== indice) continue;
     if (delArea) alArea.push(momento);

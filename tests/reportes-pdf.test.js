@@ -937,7 +937,7 @@ const EMAILS_DEL_PERIODO = [
   emailDePrueba({ id: 10, tipo: 'externo-60', enviado: null, datasets: ['Sin momento'] })
 ];
 const NOTAS_DEL_PERIODO = [
-  notaDePrueba({ id: 20, numero: 4, tipo: 'aviso', fecha: '2026-03-21', enviada: '2026-03-21 08:15:00', datasets: ['Pauta Publicitaria', 'Comercios habilitados'] }),
+  notaDePrueba({ id: 20, numero: 4, tipo: 'aviso', fecha: '2026-03-21', enviada: '2026-03-21 08:15:00', datasets: ['Pauta Publicitaria', 'Gasto Público'] }),
   notaDePrueba({ id: 21, numero: 5, tipo: 'reiteracion', gestion: 'interna', fecha: '2026-03-25', estado: 'pendiente', datasets: ['Relevamiento de espacios verdes'] }),
   notaDePrueba({ id: 22, numero: 6, tipo: 'reiteracion', fecha: '2026-03-31', estado: 'fallida', datasets: ['Gasto Público'] }),
   // La auditoría, la autorización, una de prueba y una fuera del período no van
@@ -966,7 +966,7 @@ describe('Avisos del RPAD: los avisos del período', () => {
       { fecha: '2026-03-10', clase: 'dgmit', que: 'Email a DGMIT: distribución de notas', gestion: 'externa', datasets: ['Gasto Público', 'Parque Automotor'], ...enviado },
       { fecha: '2026-03-10', clase: 'dgmit', que: 'Email a DGMIT: planificación (60 días)', gestion: 'interna', datasets: ['Relevamiento de espacios verdes'], ...enviado },
       { fecha: '2026-03-11', clase: 'area', que: 'Email al área: anticipo de la nota formal', gestion: 'externa', datasets: ['Gasto Público'], ...enviado },
-      { fecha: '2026-03-21', clase: 'nota', que: 'Nota Digital N° 4/26 a DGMIT', gestion: 'externa', datasets: ['Comercios habilitados', 'Pauta Publicitaria'], envio: 'enviado', estado: 'Enviada' },
+      { fecha: '2026-03-21', clase: 'nota', que: 'Nota Digital N° 4/26 a DGMIT', gestion: 'externa', datasets: ['Gasto Público', 'Pauta Publicitaria'], envio: 'enviado', estado: 'Enviada' },
       { fecha: '2026-03-25', clase: 'nota', que: 'Nota Digital N° 5/26 a DGMIT', gestion: 'interna', datasets: ['Relevamiento de espacios verdes'], envio: 'pendiente', estado: 'Pendiente de envío' },
       { fecha: '2026-03-26', clase: 'dgmit', que: 'Email a DGMIT: vencimiento inminente', gestion: 'externa', datasets: ['Pauta Publicitaria'], envio: 'fallido', estado: 'No se pudo enviar' },
       { fecha: '2026-03-31', clase: 'nota', que: 'Nota Digital N° 6/26 a DGMIT', gestion: 'externa', datasets: ['Gasto Público'], envio: 'fallido', estado: 'No se pudo enviar' },
@@ -989,19 +989,39 @@ describe('Avisos del RPAD con el diseño del anexo', () => {
     assert.equal(hojas.length, 1);
     const [lineas] = hojas;
     for (const t of ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Municipalidad de Comodoro Rivadavia', 'Avisos del RPAD',
-      formatoLargo(HOY_AVISOS), 'AVISOS DEL RPAD · DEL 01/01/2026 AL 31/03/2026', '9 avisos del RPAD en el período',
-      '6 de gestión externa y 3 de gestión interna', 'Generado el 25/10/2026 a las 09:41 por Usuario Ejemplo', 'Avisos del RPAD · Hoja 1 de 1']) {
+      formatoLargo(HOY_AVISOS), 'AVISOS DEL RPAD · DEL 01/01/2026 AL 31/03/2026', '6 avisos del RPAD en el período',
+      '4 de gestión externa y 2 de gestión interna', 'Generado el 25/10/2026 a las 09:41 por Usuario Ejemplo', 'Avisos del RPAD · Hoja 1 de 1']) {
       assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
     }
-    // Los totales: los nueve avisos, los emails a la DGMIT, los del área, las notas y los que no salieron (dos fallidos y uno pendiente)
-    assert.equal(valorDeTarjeta(lineas, 'Total de avisos'), '9');
-    assert.equal(valorDeTarjeta(lineas, 'Emails a DGMIT'), '5');
-    assert.equal(valorDeTarjeta(lineas, 'Emails al área'), '1');
-    assert.equal(valorDeTarjeta(lineas, 'Notas Digitales'), '3');
-    assert.equal(valorDeTarjeta(lineas, 'Sin enviar'), '3');
   });
 
-  it('la tabla: Fecha, Qué fue, Gestión, Datasets y Estado, una fila por aviso, con los títulos separados por coma', async () => {
+  // Como en el Seguimiento (esEmailADgmit, esEmailAlArea y esNotaEnviada), un aviso es lo que se envió: el título, la píldora y los
+  // totales cuentan solo eso (los emails a la DGMIT, los del área y las Notas Digitales enviadas suman el total). Lo que no salió va en
+  // la tabla con su estado y en una línea aparte, que dice cuántos son
+  it('los totales cuentan solo lo enviado; lo que no salió va en una línea aparte', async () => {
+    const [lineas] = lineasPorHoja(await renderDeAvisos(avisosDePrueba()));
+    // Seis enviados: cuatro emails a la DGMIT, uno al área y una nota; no salieron dos (un email y una nota) y uno quedó pendiente
+    assert.deepEqual(['Total de avisos', 'Emails a DGMIT', 'Emails al área', 'Notas Digitales'].map(r => valorDeTarjeta(lineas, r)), ['6', '4', '1', '1']);
+    assert.ok(!lineas.includes('Sin enviar'), lineas.join(' | '));
+    assert.ok(lineas.includes('Además, 3 envíos no salieron: figuran en la tabla con su estado.'), lineas.join(' | '));
+    // Los que no salieron siguen en la tabla, con su estado
+    for (const estado of ['No se pudo enviar', 'Pendiente de envío']) assert.ok(lineas.includes(estado), estado);
+  });
+
+  it('sin envíos que no salieron no hay línea; con uno, en singular (y si ninguno salió, «Ningún aviso»)', async () => {
+    const [todos] = lineasPorHoja(await renderDeAvisos(avisosDePrueba().filter(a => a.envio === 'enviado')));
+    assert.ok(todos.includes('6 avisos del RPAD en el período'), todos.join(' | '));
+    assert.ok(!todos.some(l => l.startsWith('Además')), todos.join(' | '));
+    const fallido = avisosDePrueba().filter(a => a.envio === 'fallido' && a.clase === 'dgmit');
+    assert.equal(fallido.length, 1);
+    const [uno] = lineasPorHoja(await renderDeAvisos(fallido));
+    assert.ok(uno.includes('Ningún aviso del RPAD en el período'), uno.join(' | '));
+    assert.ok(uno.includes('Además, 1 envío no salió: figura en la tabla con su estado.'), uno.join(' | '));
+    assert.equal(valorDeTarjeta(uno, 'Total de avisos'), '0');
+    assert.ok(uno.includes('Qué fue') && uno.includes('No se pudo enviar'), uno.join(' | '));
+  });
+
+  it('la tabla: Fecha, Qué fue, Gestión, Datasets y Estado, una fila por aviso, con los títulos separados por coma (con dos o más, la cantidad adelante)', async () => {
     const lineas = lineasPorHoja(await renderDeAvisos(avisosDePrueba())).flat();
     const i = lineas.indexOf('Fecha');
     assert.deepEqual(lineas.slice(i, i + 5), ENCABEZADO_DE_AVISOS);
@@ -1011,7 +1031,7 @@ describe('Avisos del RPAD con el diseño del anexo', () => {
       return lineas.slice(j, j + 5);
     };
     assert.deepEqual(fila('21/03/2026', 'Nota Digital N° 4/26 a DGMIT'),
-      ['21/03/2026', 'Nota Digital N° 4/26 a DGMIT', 'Externa', 'Comercios habilitados, Pauta Publicitaria', 'Enviada']);
+      ['21/03/2026', 'Nota Digital N° 4/26 a DGMIT', 'Externa', '2 datasets: Gasto Público, Pauta Publicitaria', 'Enviada']);
     assert.deepEqual(fila('25/03/2026', 'Nota Digital N° 5/26 a DGMIT'),
       ['25/03/2026', 'Nota Digital N° 5/26 a DGMIT', 'Interna', 'Relevamiento de espacios verdes', 'Pendiente de envío']);
     assert.deepEqual(fila('11/03/2026', 'Email al área: anticipo de la nota formal'),
@@ -1066,11 +1086,12 @@ describe('Avisos del RPAD con el diseño del anexo', () => {
     assert.deepEqual(numeros, avisos.map((_, i) => i + 1));
   });
 
-  it('muchos datasets en un aviso: la celda se corta con «…», en la misma fila', async () => {
+  it('muchos datasets en un aviso: la cantidad adelante y la celda se corta con «…», en la misma fila', async () => {
     const titulos = Array.from({ length: 24 }, (_, i) => `Conjunto de datos con un título bastante largo número ${String(i + 1).padStart(2, '0')}`);
     const avisos = avisosDelPeriodo({ emails: [emailDePrueba({ id: 1, tipo: 'externo-vencido', enviado: '2026-03-01 08:15:00', datasets: titulos })] }, PERIODO_AVISOS);
     const { textos } = await diagramacion(() => renderDeAvisos(avisos));
-    assert.ok(textos.some(t => t.texto.startsWith('Conjunto de datos con un título bastante largo número 01') && t.texto.endsWith('…')), 'la celda no se cortó');
+    assert.ok(textos.some(t => t.texto.startsWith('24 datasets: Conjunto de datos con un título bastante largo número 01, ') && t.texto.endsWith('…')),
+      'la celda no dice la cantidad o no se cortó');
     assert.equal(lineasPorHoja(await renderDeAvisos(avisos)).length, 1);
   });
 
@@ -1082,12 +1103,13 @@ describe('Avisos del RPAD con el diseño del anexo', () => {
     const [lineas] = hojas;
     assert.ok(lineas.includes('Ningún aviso del RPAD en el período'), lineas.join(' | '));
     assert.equal(valorDeTarjeta(lineas, 'Total de avisos'), '0');
-    assert.ok(!lineas.includes('Qué fue') && !lineas.some(l => / de gestión externa y /.test(l)), lineas.join(' | '));
+    assert.ok(!lineas.includes('Qué fue') && !lineas.some(l => / de gestión externa y /.test(l) || l.startsWith('Además')), lineas.join(' | '));
     assert.ok(lineas.includes('Avisos del RPAD · Hoja 1 de 1'));
   });
 
   const casos = [
     ['los avisos de la prueba', () => avisosDePrueba()],
+    ['solo uno que no salió', () => avisosDePrueba().filter(a => a.envio === 'fallido' && a.clase === 'dgmit')],
     ['150 avisos, en varias hojas', () => muchosAvisos(150)],
     ['ningún aviso', () => []]
   ];

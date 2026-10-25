@@ -6,6 +6,7 @@ import JSZip from 'jszip';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { lineasPorHoja } from './pdf-lector.js';
 import { hoyArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
+import { ASUNTOS_EMAIL } from '../services/seguimientoReglas.js';
 
 let servidor, api, usuarios;
 
@@ -33,19 +34,29 @@ describe('reportes PDF', () => {
   });
 
   // Avisos del RPAD (spec 2026-10-24-metricas-y-reportes, 5), con los emails y las Notas Digitales de la base de la rama: los
-  // destinatarios y los «para» tienen direcciones, y ninguna llega al PDF. Del período salen todos los emails registrados y las notas de
-  // aviso y de reiteración que no son de prueba (las de prueba no tienen número: no van)
+  // destinatarios y los «para» tienen direcciones, y ninguna llega al PDF. Del período salen los emails de los ocho tipos conocidos
+  // (los siete a la DGMIT y el del área), por su día en Argentina, y las notas de aviso y de reiteración que no son de prueba (las de
+  // prueba no tienen número: no van). El total cuenta lo que se envió; lo que no salió lo dice una línea aparte
   it('avisos del RPAD, con los datos de la base: todos los del período y ninguna dirección de email', async () => {
-    const res = await api.get('/reportes/avisos?desde=2025-01-01&hasta=2026-12-31', { token: usuarios.lector.token });
+    const [desde, hasta] = ['2025-01-01', '2026-12-31'];
+    const res = await api.get(`/reportes/avisos?desde=${desde}&hasta=${hasta}`, { token: usuarios.lector.token });
     esPdf(res);
     const hojas = lineasPorHoja(res.body);
     const lineas = hojas.flat();
     assert.ok(!lineas.some(l => l.includes('@')), lineas.filter(l => l.includes('@')).join(' | '));
-    const [[{ emails }], [{ notas }]] = await Promise.all([
-      query("SELECT COUNT(*) AS emails FROM notificaciones_log WHERE enviado_at >= '2024-12-31' AND enviado_at < '2027-01-02'"),
-      query("SELECT COUNT(*) AS notas FROM notas_digitales WHERE es_prueba = 0 AND tipo IN ('aviso', 'reiteracion') AND fecha BETWEEN '2025-01-01' AND '2026-12-31'")
+    const [logs, [{ notas, notasSinSalir }]] = await Promise.all([
+      query('SELECT tipo, success, UNIX_TIMESTAMP(enviado_at) AS ts FROM notificaciones_log WHERE enviado_at IS NOT NULL'),
+      query(`SELECT SUM(estado = 'enviada') AS notas, SUM(estado <> 'enviada') AS notasSinSalir FROM notas_digitales
+        WHERE es_prueba = 0 AND tipo IN ('aviso', 'reiteracion') AND fecha BETWEEN ? AND ?`, [desde, hasta])
     ]);
-    assert.equal(lineas[lineas.indexOf('Total de avisos') - 1], String(Number(emails) + Number(notas)));
+    const delPeriodo = logs.filter(l => Object.hasOwn(ASUNTOS_EMAIL, l.tipo))
+      .filter(l => { const dia = hoyArgentina(new Date(Number(l.ts) * 1000)); return dia >= desde && dia <= hasta; });
+    const enviados = delPeriodo.filter(l => l.success).length + Number(notas ?? 0);
+    const sinSalir = delPeriodo.filter(l => !l.success).length + Number(notasSinSalir ?? 0);
+    assert.equal(lineas[lineas.indexOf('Total de avisos') - 1], String(enviados));
+    const linea = sinSalir === 0 ? undefined : sinSalir === 1 ? 'Además, 1 envío no salió: figura en la tabla con su estado.'
+      : `Además, ${sinSalir} envíos no salieron: figuran en la tabla con su estado.`;
+    assert.equal(lineas.find(l => l.startsWith('Además, ')), linea);
     assert.ok(lineas.includes('AVISOS DEL RPAD · DEL 01/01/2025 AL 31/12/2026'), lineas.join(' | '));
     hojas.forEach((h, k) => assert.ok(h.includes(`Avisos del RPAD · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
   });
