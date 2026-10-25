@@ -1453,6 +1453,35 @@ describe('seguimientoDe', () => {
   });
 });
 
+// La reiteración en su propio anexo (spec 2026-10-24-reiteracion-en-su-anexo): en la vista previa y en la prueba, la nota sumada
+// lleva el número como lo escribe la nota, «XX» o «PRUEBA», y no tiene año. Nunca «N° XX/ll» ni «N° null/ll»
+describe('seguimientoDe: una Nota Digital sin año (la vista previa y la prueba del anexo)', () => {
+  // La reiteración del 52 (vencido el 31/07/2026), con la forma que fuentesDe le da a una nota
+  const reiteracion = (numero, anio) => ({
+    id: null, numero, anio, tipo: 'reiteracion', gestion: 'externa', fecha: HOY, estado: 'enviada', enviada: `${HOY} 08:15:03`,
+    para: 'a@x', cc: null, seccion: 'vencido', vencimiento: '2026-07-31', datos_solicitados: 'Vigente al 30/06/2026',
+    creado_por: null, firmante: null
+  });
+
+  for (const numero of ['XX', 'PRUEBA']) {
+    it(`«${numero}»: el título es «Nota Digital N° ${numero} a DGMIT» y los avisos del ciclo la nombran «${numero}»`, () => {
+      const s = seguimientoDe(con(52, { notas: [reiteracion(numero, null)] }), HOY);
+      assert.equal(s.movimientos[0].titulo, `Nota Digital N° ${numero} a DGMIT`);
+      assert.deepEqual(s.circuito.avisos, { titulo: '7 avisos', texto: `5 emails y las Notas Digitales N° 2/26 y ${numero}` });
+    });
+  }
+
+  it('sin año (null o sin el campo) va el número solo; con año, «n/aa» como siempre', () => {
+    const titulo = (nota) => seguimientoDe(con(52, { notas: [nota] }), HOY).movimientos[0].titulo;
+    const sinElCampo = reiteracion('XX', null);
+    delete sinElCampo.anio;
+    assert.equal(titulo(sinElCampo), 'Nota Digital N° XX a DGMIT');
+    assert.equal(titulo(reiteracion(2, 2027)), 'Nota Digital N° 2/27 a DGMIT');
+    assert.equal(seguimientoDe(con(52, { notas: [reiteracion(2, 2027)] }), HOY).circuito.avisos.texto,
+      '5 emails y las Notas Digitales N° 2/26 y 2/27');
+  });
+});
+
 describe('resumenParaLista', () => {
   it('el caso 1: avisos del ciclo abierto, último aviso y propuesta pendiente', () => {
     const r = resumenParaLista(f(1), HOY);

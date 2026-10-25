@@ -229,7 +229,10 @@ const quienDe = (...pares) => pares.flatMap(([verbo, nombre]) => {
   return corto ? [`${verbo} ${corto}`] : [];
 });
 
-const numeroDeNota = (nota) => `${nota.numero}/${String(nota.anio).slice(-2)}`;
+// '2/26'; sin año, el número solo: la nota que el anexo de la reiteración suma en la vista previa ('XX') y en la prueba ('PRUEBA').
+// Las notas de la base que no son de prueba siempre tienen año
+const numeroDeNota = (nota) => (nota.anio === null || nota.anio === undefined
+  ? String(nota.numero) : `${nota.numero}/${String(nota.anio).slice(-2)}`);
 
 const movimientoDeAlta = (dataset, alta) => {
   const momento = momentoDe(dataset?.alta);

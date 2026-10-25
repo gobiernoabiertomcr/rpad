@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { renderSeguimiento, renderAnexoDeSeguimiento, FILAS_PDF, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
-import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, esDelTamano } from './pdf-lector.js';
+import { seguimientosDeLaNota } from '../services/notasDigitalesSeguimiento.js';
+import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, esDelTamano, todasDelTamano } from './pdf-lector.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS as HOY } from './seguimiento-casos.js';
 
 const MM = 72 / 25.4;
@@ -547,6 +548,30 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
     });
     // El 52 tiene más de 8 movimientos: su tabla se llena
     assert.equal(fechasDeLaTabla(hojas[Object.keys(CASOS).indexOf('52')]).length, FILAS_PDF);
+  });
+
+  // La reiteración en su propio anexo (spec 2026-10-24-reiteracion-en-su-anexo): con la nota sumada a cada hoja (también la de la
+  // prueba, «PRUEBA» y sin año) la diagramación no cambia. La gestión de la nota no cambia nada del dibujo: va la externa en las tres
+  it('con la reiteración sumada (N° 2/27 y PRUEBA): 3 hojas A4, nada se pisa y la nota va una sola vez en cada hoja', async () => {
+    const ids = [52, 81, 38];
+    const datasets = ids.map(id => ({ id, vencimiento: CASOS[id].dataset.proxima, pedido: { texto: seguimiento(id).ficha.pedido } }));
+    const fuentes = new Map(ids.map(id => [id, { ...CASOS[id], catalogos: CATALOGOS }]));
+    for (const [numero, anio, numeroTexto] of [[2, 2027, '2/27'], ['PRUEBA', null, 'PRUEBA']]) {
+      const propia = {
+        numero, anio, gestion: 'externa', enviada: `${HOY} 08:15:03`, para: 'a@x', cc: null, creado_por: null,
+        firmante: 'Nombre Apellido Firmante'
+      };
+      const lista = await seguimientosDeLaNota(datasets, HOY, fuentes, propia);
+      const pdf = await anexo(lista, numeroTexto);
+      assert.ok(todasDelTamano(pdf, HOJA_A4), JSON.stringify(tamanosPorHoja(pdf)));
+      const hojas = lineasPorHoja(pdf);
+      assert.equal(hojas.length, 3, numeroTexto);
+      const titulo = `Nota Digital N° ${numeroTexto} a DGMIT`;
+      hojas.forEach((lineas, k) => {
+        assert.equal(lineas.filter(l => l.includes(titulo)).length, 1, `${numeroTexto}, hoja ${k + 1}: ${lineas.join(' | ')}`);
+      });
+      verificarDiagramacion(await diagramacion(() => anexo(lista, numeroTexto)));
+    }
   });
 
   it('un número de nota largo no se pisa con la izquierda del pie ni sale de los márgenes', async () => {
