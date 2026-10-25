@@ -161,7 +161,9 @@ describe('páginas', () => {
       assert.match(area, /<div class="modal-footer">\s*<span id="area-pie-izquierda"><\/span>\s*<div class="botones">\s*<button type="button" class="ar-btn ar-btn-borde" data-cerrar-area>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-tinta" id="area-guardar">Guardar área<\/button>/);
       assert.match(area, /<button type="button" class="modal-close" data-cerrar-area aria-label="Cerrar">&times;<\/button>/);
       const borrar = bloque(/<div class="modal-overlay" id="modal-borrar-area">[\s\S]*?(?=<script )/);
-      assert.match(borrar, /<div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-borrar-area-titulo">/);
+      // La pregunta describe el diálogo: el foco va a "Cancelar", y un lector de pantalla la anuncia antes de un borrado definitivo
+      assert.match(borrar, /<div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-borrar-area-titulo" aria-describedby="borrar-area-texto">/);
+      assert.match(borrar, /<p class="ar-modal-bajada" id="borrar-area-texto"><\/p>/);
       assert.match(borrar, /<div class="modal-footer">[\s\S]*?<button type="button" class="ar-btn ar-btn-borde" data-cerrar-borrar>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-rojo" id="borrar-area-confirmar">Borrar área<\/button>/);
       assert.ok(html().indexOf('id="modal-licencia"') < html().indexOf('id="modal-area"'), 'después del modal de la licencia');
     });
