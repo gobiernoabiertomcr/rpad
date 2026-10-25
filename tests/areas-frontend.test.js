@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import { MENSAJES_AREA } from '../services/areasReglas.js';
+import { articuloDe, deArticulo } from '../services/notasGeneradorContenido.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -154,6 +155,18 @@ describe('areas.js: las constantes', () => {
 
   it('paridad: el mensaje del nombre es el del servidor', () => {
     assert.equal(A.MENSAJE_NOMBRE_AREA, MENSAJES_AREA.nombre);
+  });
+
+  // "Así se lee en las notas" y "Depende de" arman los artículos como la nota del Generador: si cambia el servidor, cambia esto
+  it('paridad: articuloDelArea y deArticuloArea son copias de articuloDe y deArticulo de services/notasGeneradorContenido.js', () => {
+    for (const articulo of ['el', 'la', null, undefined, '', 'los', ' el ']) {
+      assert.equal(A.articuloDelArea(articulo), articuloDe(articulo), String(articulo));
+      assert.equal(A.deArticuloArea(articulo), deArticulo(articulo), String(articulo));
+    }
+    assert.equal(A.articuloDelArea('el'), 'el');
+    assert.equal(A.deArticuloArea('el'), 'del');
+    assert.equal(A.articuloDelArea(null), 'la');
+    assert.equal(A.deArticuloArea(null), 'de la');
   });
 
   it('el campo de cada error del servidor va a su input; el del ámbito, a a-ambito (y su error, a a-ambito-error)', () => {

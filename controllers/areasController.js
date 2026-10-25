@@ -44,9 +44,10 @@ const DATASETS_EXTERNOS_CON_NOTA = `(SELECT COUNT(*) FROM datasets d JOIN frecue
   WHERE d.area_id = a.id AND d.activo = TRUE AND d.tipo_gestion = 'externa'
     AND (d.requiere_nota IS NULL OR d.requiere_nota = 1) AND f.dias IS NOT NULL)`;
 // Los cambios pendientes que la eligen (altas y ediciones). El area_id de datos_nuevos puede estar guardado como número o como
-// texto: JSON_UNQUOTE da '12' en los dos casos
+// texto: JSON_VALUE da '12' en los dos casos (y NULL si no está o es null), y compararlo con a.id, un entero, es una comparación
+// numérica, que no depende de colaciones (datos_nuevos es utf8mb4_bin y la conexión tiene la suya)
 const CAMBIOS_PENDIENTES_QUE_LA_USAN = `(SELECT COUNT(*) FROM cambios_pendientes cp WHERE cp.estado = 'pendiente'
-  AND JSON_UNQUOTE(JSON_EXTRACT(cp.datos_nuevos, '$.area_id')) = CAST(a.id AS CHAR))`;
+  AND JSON_VALUE(cp.datos_nuevos, '$.area_id') = a.id)`;
 
 const SELECT_PUBLICO = `SELECT a.*, ${DATASETS_ACTIVOS} AS cantidad_datasets FROM areas a`;
 const SELECT_DE_ADMINISTRACION = `SELECT a.*, ${DATASETS_ACTIVOS} AS cantidad_datasets,

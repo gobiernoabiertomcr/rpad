@@ -272,6 +272,45 @@ describe('validarArea: vacíos y recortes', () => {
   });
 });
 
+// Un opcional que llega como número (un cliente que manda el teléfono sin comillas) no borra lo guardado: un número finito se
+// pasa a texto y se valida como texto. NaN e Infinity, como lo que no es un texto, cuentan como vacío
+describe('validarArea: un opcional que llega como número', () => {
+  it('un número finito se conserva como texto, en el alta y en una edición', () => {
+    assert.equal(sinError(validarArea({ nombre: 'A', telefono_area: 2974000000 })).telefono_area, '2974000000');
+    assert.deepEqual(sinError(validarArea({ telefono_area: 2974000000 }, ANTERIOR)), { telefono_area: '2974000000' });
+    for (const campo of SIN_FORMATO) {
+      assert.equal(sinError(validarArea({ nombre: 'A', [campo]: 2974111111 }))[campo], '2974111111', campo);
+    }
+  });
+
+  it('el 0 es un valor: "0", nunca null', () => {
+    assert.equal(sinError(validarArea({ nombre: 'A', celular_area: 0 })).celular_area, '0');
+    assert.equal(sinError(validarArea({ nombre: 'A', telefono_contacto: -5 })).telefono_contacto, '-5');
+  });
+
+  it('un número en un email se valida como texto: da el error de formato', () => {
+    for (const campo of EMAILS) {
+      conError(validarArea({ nombre: 'A', [campo]: 2974000000 }), campo, MENSAJES_AREA.email);
+      conError(validarArea({ [campo]: 12 }, ANTERIOR), campo, MENSAJES_AREA.email);
+    }
+  });
+
+  it('el mismo número que ya estaba guardado como texto se conserva', () => {
+    assert.deepEqual(sinError(validarArea({ telefono_area: 51 }, { nombre: 'A', telefono_area: '51' })), { telefono_area: '51' });
+  });
+
+  it('NaN, Infinity y -Infinity no son un número finito: cuentan como vacío, como hoy', () => {
+    for (const valor of [NaN, Infinity, -Infinity]) {
+      assert.equal(sinError(validarArea({ nombre: 'A', telefono_area: valor })).telefono_area, null, String(valor));
+      assert.equal(sinError(validarArea({ nombre: 'A', email_principal: valor })).email_principal, null, String(valor));
+    }
+  });
+
+  it('el nombre no cambia: un número cuenta como vacío', () => {
+    conError(validarArea({ nombre: 2974000000 }), 'nombre', MENSAJES_AREA.nombre);
+  });
+});
+
 describe('validarArea: emails', () => {
   it('email_contacto "x@": "Revisá el email: no parece una dirección válida."', () => {
     conError(validarArea({ nombre: 'A', email_contacto: 'x@' }), 'email_contacto',
@@ -299,8 +338,8 @@ describe('validarArea: emails', () => {
   });
 
   it('el largo se controla antes que el formato (la expresión nunca corre sobre un texto largo)', () => {
-    // Largo y mal formado a la vez: da emailLargo, no email
-    const largoYMalo = `a@${'.'.repeat(200)} `;
+    // Largo y mal formado a la vez (sin @): con el formato primero daría email; con el largo primero, emailLargo
+    const largoYMalo = 'x'.repeat(151);
     conError(validarArea({ nombre: 'A', email_principal: largoYMalo }), 'email_principal', MENSAJES_AREA.emailLargo);
   });
 });
@@ -390,9 +429,10 @@ describe('validarArea: nunca tira', () => {
     assert.deepEqual(sinError(validarArea({ ambito: 'externo' }, ANTERIOR)), {});
   });
 
-  it('un opcional que no es un texto cuenta como vacío', () => {
-    for (const valor of [5, true, {}, ['x@y.co']]) {
+  it('un opcional que no es un texto ni un número finito cuenta como vacío', () => {
+    for (const valor of [true, false, {}, ['x@y.co']]) {
       assert.equal(sinError(validarArea({ nombre: 'A', email_principal: valor })).email_principal, null);
+      assert.equal(sinError(validarArea({ nombre: 'A', telefono_area: valor })).telefono_area, null);
     }
   });
 

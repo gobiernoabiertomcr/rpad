@@ -156,8 +156,8 @@ const texto = (valor) => String(valor ?? '').trim();
 
 // Los artículos de un área (enum 'el' | 'la' en la base; sin dato, "la", el valor por defecto de la columna)
 const esEl = (articulo) => articulo === 'el';
-const articuloDe = (articulo) => (esEl(articulo) ? 'el' : 'la');
-const deArticulo = (articulo) => (esEl(articulo) ? 'del' : 'de la');
+export const articuloDe = (articulo) => (esEl(articulo) ? 'el' : 'la');
+export const deArticulo = (articulo) => (esEl(articulo) ? 'del' : 'de la');
 const aArticulo = (articulo) => (esEl(articulo) ? 'Al' : 'A la');
 
 // "Nota N°" y el número tal cual o, sin número, "____/AA" con el año de la fecha de la nota

@@ -21,7 +21,7 @@ const VERSION = '20261204';
 // dirección, spec 2026-10-24-configuracion, 1 y 6): su versión es propia (solo la usa configuracion.html)
 const VERSION_PANTALLAS = '20261205';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
-// ?v=20261012: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
+// ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
 const VERSION_AREAS = '20261205';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
@@ -185,6 +185,21 @@ describe('páginas', () => {
       assert.doesNotMatch(lectura, /aria-live/);
       // Los selectores de artículo no tienen opciones con los valores de los roles (el test del selector de rol recorre la página)
       assert.deepEqual([...bloque(/<select id="a-articulo-superior"[\s\S]*?<\/select>/).matchAll(/<option value="([^"]*)">/g)].map(m => m[1]), ['', 'la', 'el']);
+    });
+
+    // Lo que aparece sin mover el foco se anuncia: el aviso de las áreas sin email y la búsqueda que deja la tabla vacía
+    it('el aviso de las áreas sin email y "Ninguna área coincide con lo que buscaste." con role="status"', () => {
+      assert.match(html(), /<div class="ar-aviso" id="areas-aviso" role="status" hidden><\/div>/);
+      assert.match(html(), /<p class="ar-vacio" id="areas-vacio" role="status" hidden>Ninguna área coincide con lo que buscaste\.<\/p>/);
+    });
+
+    // El foco visible de la convención (sobre fondos claros, anillo --tinta de 3 px con halo --sol-fuerte), también fuera del
+    // modal: los filtros, el buscador, "Editar", el botón del aviso y "Nueva área", que está en el encabezado de la página
+    it('el foco visible de la vista Áreas y de "Nueva área", como el del modal del área', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const anillo = 'outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte);';
+      assert.ok(estilo.includes(`#vista-areas :focus-visible, #btn-nueva-area:focus-visible { ${anillo} }`), 'fuera del modal');
+      assert.ok(estilo.includes(`.ar-modal :focus-visible { ${anillo} }`), 'el del modal, el mismo');
     });
   });
 

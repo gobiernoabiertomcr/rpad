@@ -64,6 +64,11 @@ const textoOpcional = (valor) => {
   return recortado === '' ? null : recortado;
 };
 
+// Un opcional del área (todo lo que no es el nombre ni los artículos): como `textoOpcional`, pero un número finito se pasa a
+// texto (`String(n)`; el 0 es "0") y se valida como texto, así un teléfono mandado sin comillas no borra lo guardado. NaN,
+// Infinity y lo que no es un texto ni un número (objeto, array, booleano) cuentan como vacío
+const opcionalComoTexto = (valor) => textoOpcional(Number.isFinite(valor) ? String(valor) : valor);
+
 // El nombre: obligatorio, recortado y hasta 200 caracteres. Lo que no es un texto cuenta como vacío
 const normalizarNombre = (valor) => {
   const recortado = textoOpcional(valor);
@@ -98,8 +103,9 @@ const rechazo = (campo, mensaje) => ({ datos: null, error: { mensaje, campo } })
  * Valida un área: el cuerpo del alta (`anterior` null) o de la edición (`anterior`, la fila guardada).
  * Devuelve `{ datos, error }`:
  * - `error`: null, o `{ mensaje, campo }` del primer campo que no sirve (en el orden de ORDEN); entonces `datos` es null.
- * - `datos`: solo las claves que vinieron (un campo en undefined no viene), normalizadas: los textos recortados y los
- *   opcionales vacíos ('', solo espacios o null) en null. En el alta trae además `articulo: 'la'` si no vino.
+ * - `datos`: solo las claves que vinieron (un campo en undefined no viene), normalizadas: los textos recortados, un opcional
+ *   que llega como número finito como texto (`opcionalComoTexto`) y los opcionales vacíos ('', solo espacios o null) en null.
+ *   En el alta trae además `articulo: 'la'` si no vino.
  * El nombre y los artículos se validan siempre que vienen (el nombre es obligatorio en el alta). El formato y el largo del
  * resto, solo en el alta o si el valor cambia contra lo guardado (normalizado igual): un dato viejo no frena una edición que
  * no lo toca. El ámbito y cualquier otra clave no van en `datos`. Una entrada que no es un objeto cuenta como `{}`.
@@ -127,8 +133,8 @@ export const validarArea = (entrada, anterior = null) => {
       continue;
     }
 
-    const normalizado = textoOpcional(valor);
-    const cambia = esAlta || normalizado !== textoOpcional(guardada[campo]);
+    const normalizado = opcionalComoTexto(valor);
+    const cambia = esAlta || normalizado !== opcionalComoTexto(guardada[campo]);
     const mensaje = cambia ? errorDeOpcional(campo, normalizado) : null;
     if (mensaje) return rechazo(campo, mensaje);
     datos[campo] = normalizado;

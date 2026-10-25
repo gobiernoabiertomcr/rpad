@@ -133,6 +133,8 @@
         .ar-vacio { margin: 14px 0 0; color: var(--suave); }
         .ar-aviso { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 16px; border-radius: 12px; background: var(--sol); color: var(--ar-ambar); font-weight: 600; font-size: 0.92rem; }
         .ar-aviso button { background: none; border: 0; padding: 0; font: inherit; color: var(--ar-ambar); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+        /* El foco visible, como en el modal: los filtros, el buscador, "Editar", el botón del aviso y "Nueva área" (en el encabezado de la página) */
+        #vista-areas :focus-visible, #btn-nueva-area:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
 
         /* La tabla, como la lista del Seguimiento: se desplaza de costado dentro de su marco, y el contenido de la página no se ensancha */
         .ar-tabla-marco { overflow-x: auto; position: relative; }
@@ -362,7 +364,7 @@
                     </div>
                     <div class="ar-chips" id="areas-filtros" role="group" aria-label="Filtrar áreas"></div>
                     <div id="areas-lista"><div class="loading"><div class="spinner"></div></div></div>
-                    <p class="ar-vacio" id="areas-vacio" hidden>Ninguna área coincide con lo que buscaste.</p>
+                    <p class="ar-vacio" id="areas-vacio" role="status" hidden>Ninguna área coincide con lo que buscaste.</p>
                 </section>
             </div>
 
