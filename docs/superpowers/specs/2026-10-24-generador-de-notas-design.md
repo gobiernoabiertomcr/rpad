@@ -39,7 +39,7 @@ Lo que pidió el usuario, en sus palabras: "automatizar un poco más la generaci
 
 ## 1. Quién lo usa
 
-- Usan el generador los mismos que cargan notas DGMIT: el **colaborador** y administración (superadmin, admin y editor). Regla única: `puedeCargarNotasDgmit(rol)` y su copia `Auth.puedeCargarNotasDgmit()`. Todas las rutas nuevas y `POST /api/notas/generar` llevan `authMiddleware` + `cargaNotasDgmit` (sin sesión, 401; lector, 403 con "No tenés permiso para usar el generador de notas.").
+- Usan el generador los mismos que cargan notas DGMIT: el **colaborador** y administración (superadmin, admin y editor). Regla única: `puedeCargarNotasDgmit(rol)` y su copia `Auth.puedeCargarNotasDgmit()`. Todas las rutas nuevas y `POST /api/notas/generar` llevan `authMiddleware` + `usaGeneradorDeNotas` (la regla de `cargaNotasDgmit`, `puedeCargarNotasDgmit`, con su propio 403; sin sesión, 401; lector, 403 con "No tenés permiso para usar el generador de notas.").
 - El **lector deja de verlo**: el enlace "Notas" del menú lateral (Herramientas) se muestra solo si `Auth.puedeCargarNotasDgmit()`. Si un lector entra a `notas.html` por la URL, la página no muestra el generador y dice "No tenés permiso para usar el generador de notas." Sin sesión, al login, como hoy.
 - El Word de una Nota Digital (sección 6) está en Correos, que ya es solo de administración (`adminOnly`).
 - Hoy el README dice que el lector puede "ver" las notas: se corrige (el lector deja de tener Notas).
@@ -205,7 +205,7 @@ Cambian tres cosas; el resto de la nota no cambia.
   - área existente;
   - datasets: lista no vacía de ids enteros positivos, sin repetidos; cada uno existente, activo, **del área elegida** (hoy acepta de otra área), pedible (externo con «Requiere nota» en Sí o sin dato) y **no al día** a la fecha de la nota (400: "«título» está al día: todavía no hay datos para pedir.").
 - Ninguna fecha se arma con `new Date` local ni `toISOString`: texto `AAAA-MM-DD` y `hoyArgentina()`, como el resto del sistema.
-- Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido, "Qué se solicita" y el número de su nota DGMIT original del ciclo abierto) los da un endpoint nuevo detrás de `cargaNotasDgmit`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos y sin el pedido para otra fecha; `GET /api/areas` trae el ámbito, porque devuelve todas las columnas del área, pero no cuáles de sus datasets se pueden pedir).
+- Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido, "Qué se solicita" y el número de su nota DGMIT original del ciclo abierto) los da un endpoint nuevo detrás de `usaGeneradorDeNotas`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos y sin el pedido para otra fecha; `GET /api/areas` trae el ámbito, porque devuelve todas las columnas del área, pero no cuáles de sus datasets se pueden pedir).
 
 ## 8. Base de datos y despliegue
 
