@@ -7,12 +7,12 @@
 // efectivo; en un vencido, el de R7, como la reiteración) y el día aproximado del aviso del RPAD según la regla
 // (fechaDeAvisoPorRegla; en un vencido, null: el de la regla ya pasó y lo que sigue es la reiteración, Ruling 27).
 // Lo usan el controlador (controllers/reportesController.js, GET /api/reportes/agenda) y el PDF (services/reportesAgendaPdf.js). Puro:
-// sin base de datos ni Date local (las fechas son 'AAAA-MM-DD' y hoy llega por parámetro); ninguna función tira. VENTANA_DIAS llega de
-// las Notas Digitales (notasDigitalesDatos.js), las que mandan el aviso: así la agenda dice el día que usa el envío.
-import { esFechaIso, sumarDias, proximoDiaHabil } from './notasDigitalesCalendario.js';
+// sin base de datos ni Date local (las fechas son 'AAAA-MM-DD' y hoy llega por parámetro), y solo importa módulos puros; ninguna
+// función tira. VENTANA_DIAS es la del calendario (Ruling 30), la misma con que las Notas Digitales mandan el aviso: así la agenda dice
+// el día que usa el envío.
+import { esFechaIso, sumarDias, proximoDiaHabil, VENTANA_DIAS } from './notasDigitalesCalendario.js';
 import { estadoDelDataset, pedido, tipoEfectivo, frecuenciaEnNota, sumarMeses, vencimientoDelMes } from './fechasDatasetReglas.js';
 import { textoRequiereNota } from './requiereNotaReglas.js';
-import { VENTANA_DIAS } from './notasDigitalesDatos.js';
 
 // Cuántos meses puede mirar la agenda (el primero, el de hoy) y cuántos mira si no se pide uno de estos
 export const MESES_DE_LA_AGENDA = Object.freeze([3, 6, 12]);

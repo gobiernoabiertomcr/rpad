@@ -10,7 +10,7 @@ import { renderAvisos, avisosDelPeriodo } from '../services/reportesAvisosPdf.js
 import { agendaDe, opcionesDeAgenda } from '../services/reportesAgenda.js';
 import { renderAgenda } from '../services/reportesAgendaPdf.js';
 import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
-import { metricasDe } from './metricasController.js';
+import { metricasDe, SIN_METRICAS } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
@@ -285,7 +285,7 @@ export const reporteParaCompletar = async (req, res) => {
       pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
       metricasDe({}, { hoy })
     ]);
-    if (metricas === null) return res.status(404).json({ success: false, error: 'No hay métricas de ese año' });
+    if (metricas === null) return res.status(404).json(SIN_METRICAS);
     const pdf = await renderParaCompletar({ anio: metricas.anio, para_completar: metricas.vista?.para_completar },
       { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');

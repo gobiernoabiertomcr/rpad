@@ -11,7 +11,7 @@ import {
 } from '../services/metricasReglas.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from '../services/fechasDatasetReglas.js';
-import { diasEntre, diasHabilesTranscurridos, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { diasEntre, diasHabilesTranscurridos, sumarDias, VENTANA_DIAS } from '../services/notasDigitalesCalendario.js';
 
 // Las claves de un caso, en el orden de la spec
 const CLAVES = [
@@ -42,7 +42,9 @@ describe('constantes', () => {
   it('los estadísticos, los días, la ventana de la regla, el inicio del registro y el primer año', () => {
     assert.deepEqual(ESTADISTICOS, ['mediana', 'promedio']);
     assert.deepEqual(DIAS, ['habiles', 'corridos']);
-    assert.deepEqual(VENTANA_DE_LA_REGLA, { externa: 40, interna: 60 });
+    // La ventana de la regla es la de las Notas Digitales, la del calendario (Ruling 30: una sola fuente; sus valores, en
+    // notas-calendario.test.js)
+    assert.equal(VENTANA_DE_LA_REGLA, VENTANA_DIAS);
     assert.equal(INICIO_DEL_REGISTRO, '2025-12-06');
     assert.equal(PRIMER_ANIO, 2026);
     assert.ok(Object.isFrozen(ESTADISTICOS) && Object.isFrozen(DIAS) && Object.isFrozen(VENTANA_DE_LA_REGLA));

@@ -4,8 +4,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { agendaDe, fechaDeAvisoPorRegla, opcionesDeAgenda, mesesDeLaAgenda } from '../services/reportesAgenda.js';
-import { VENTANA_DIAS } from '../services/notasDigitalesDatos.js';
-import { pedido, tipoEfectivo } from '../services/fechasDatasetReglas.js';
+import { VENTANA_DIAS, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { pedido, tipoEfectivo, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 
 const HOY = '2026-10-25';
 
@@ -156,16 +156,24 @@ describe('agendaDe', () => {
 });
 
 describe('fechaDeAvisoPorRegla', () => {
-  // La regla del aviso: 40 días corridos antes del vencimiento en gestión externa y 60 en interna (VENTANA_DIAS de las Notas
-  // Digitales), y si ese día no es hábil, el hábil siguiente (proximoDiaHabil: el mismo día, si es hábil)
-  it('fechaDeAvisoPorRegla del 31/01/2027 externo cae en el hábil siguiente al 22/12/2026', () => {
-    assert.deepEqual(VENTANA_DIAS, { interna: 60, externa: 40 });
+  // La regla del aviso: 40 días corridos antes del vencimiento en gestión externa y 60 en interna (VENTANA_DIAS del calendario, la de
+  // las Notas Digitales: Ruling 30), y si ese día no es hábil, el hábil siguiente (proximoDiaHabil: el mismo día, si es hábil)
+  it('fechaDeAvisoPorRegla del 31/01/2027 externo cae el 22/12/2026 (hábil: el mismo día)', () => {
     // El 22/12/2026 (31/01/2027 menos 40 días) es martes, un día hábil: es ese mismo día
     assert.equal(fechaDeAvisoPorRegla('2027-01-31', 'externa'), '2026-12-22');
     // Interna, 60 días: el 01/11/2026 es domingo y pasa al lunes 02/11
     assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'interna'), '2026-11-02');
     // Un feriado fijo: el 25/12/2026 es viernes; el hábil siguiente, el lunes 28/12
     assert.equal(fechaDeAvisoPorRegla('2027-02-03', 'externa'), '2026-12-28');
+  });
+
+  it('usa la ventana del calendario, la de las Notas Digitales: cada fin de mes de 2027, en las dos gestiones', () => {
+    for (const gestion of ['externa', 'interna']) {
+      for (let mes = 1; mes <= 12; mes += 1) {
+        const vencimiento = vencimientoDelMes(`2027-${String(mes).padStart(2, '0')}-01`);
+        assert.equal(fechaDeAvisoPorRegla(vencimiento, gestion), proximoDiaHabil(sumarDias(vencimiento, -VENTANA_DIAS[gestion])), `${gestion} ${vencimiento}`);
+      }
+    }
   });
 
   it('con una fecha o una gestión que no sirven, null', () => {

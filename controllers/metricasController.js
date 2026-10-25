@@ -17,7 +17,8 @@ import { renderMetricasDelAnio } from '../services/reportesMetricasPdf.js';
 // tiene foto (hasta el 10/01, o si una corrida no pudo sacarla) se calcula en vivo «al 31/12», como la va a sacar la corrida, con el
 // aviso de la foto.
 
-const SIN_METRICAS = { success: false, error: 'No hay métricas de ese año' };
+// (también lo usa el PDF «Datos para completar», controllers/reportesController.js)
+export const SIN_METRICAS = Object.freeze({ success: false, error: 'No hay métricas de ese año' });
 const ERROR_AL_OBTENER = { success: false, error: 'Error al obtener las métricas' };
 const ERROR_AL_GENERAR_PDF = { success: false, error: 'Error al generar el PDF de las métricas' };
 

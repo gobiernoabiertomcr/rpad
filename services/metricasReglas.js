@@ -9,7 +9,7 @@
 // (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
 // mismos avisos (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js
 // (fuentesDe). Ninguna función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
-import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias, formatoCorto } from './notasDigitalesCalendario.js';
+import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias, formatoCorto, VENTANA_DIAS } from './notasDigitalesCalendario.js';
 import {
   REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
   momentoDeEnvioDeNota, numeroDeNota, unirAlta
@@ -25,8 +25,9 @@ export const DIAS = Object.freeze(['habiles', 'corridos']);
 // La gestión del circuito y de su cinta (spec, 2.2)
 export const GESTIONES = Object.freeze(['externa', 'interna']);
 
-// Cuántos días corridos antes del vencimiento sale el aviso de la regla: 40 en externa y 60 en interna (spec, 1.2)
-export const VENTANA_DE_LA_REGLA = Object.freeze({ externa: 40, interna: 60 });
+// Cuántos días corridos antes del vencimiento sale el aviso de la regla: 40 en externa y 60 en interna (spec, 1.2). Es la ventana de
+// las Notas Digitales, VENTANA_DIAS del calendario (Ruling 30: una sola fuente, congelada)
+export const VENTANA_DE_LA_REGLA = VENTANA_DIAS;
 
 // Desde cuándo hay registro de los envíos (el primer email registrado es del 06/12/2025): un aviso de la regla que tocaba antes no
 // se pudo registrar

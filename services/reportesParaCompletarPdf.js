@@ -58,6 +58,10 @@ const GRUPOS = [
   }
 ];
 
+// Cuántos datos hay para completar: el `total` del servidor, el mismo número del índice de la pestaña («Para completar (23)»); solo
+// si no llega como un entero (datos raros), las filas que se dibujan
+const totalDe = (pc, filas) => (Number.isSafeInteger(pc.total) && pc.total >= 0 ? pc.total : filas.notas.length + filas.recibido.length);
+
 const tituloDe = (total) => (total === 0 ? 'No hay datos para completar'
   : total === 1 ? '1 dato para completar' : `${total} datos para completar`);
 
@@ -84,7 +88,7 @@ export const renderParaCompletar = async ({ anio, para_completar: paraCompletar 
   const doc = nuevoReporte({ titulo: TITULO });
   let y = agregarHoja(doc, { derecha: TITULO, fecha: hoy });
   y = prepararTitulo(doc, {
-    rotulo: `${TITULO} · métricas de ${texto(anio)}, al ${formatoCorto(hoy)}`, titulo: tituloDe(filas.notas.length + filas.recibido.length)
+    rotulo: `${TITULO} · métricas de ${texto(anio)}, al ${formatoCorto(hoy)}`, titulo: tituloDe(totalDe(pc, filas))
   }).dibujar(y);
   y = prepararParrafo(doc, TEXTOS_DE_PARA_COMPLETAR.bajada).dibujar(y);
   for (const grupo of GRUPOS) y = dibujarGrupo(doc, y, grupo, { filas: filas[grupo.filas], textos });

@@ -1243,9 +1243,12 @@ describe('Agenda de pedidos con el diseño del anexo', () => {
     // Los vencidos y lo que vence en los 6 meses (el eventual no va)
     assert.equal(valorDeTarjeta(lineas, 'Vencidos: se siguen pidiendo'), '2');
     assert.equal(valorDeTarjeta(lineas, 'Vencen en los próximos 6 meses'), '5');
-    // La aclaración, armada en el servidor con la regla de los días
+    // La aclaración, armada en el servidor con la regla de los días. El aviso del RPAD no va solo a la DGMIT (en externa, también a la
+    // Dirección Administrativa; en interna, a la Dirección de Investigación Territorial): no nombra a quién
     const texto = hojas.flat().join(' ');
-    assert.ok(texto.includes('40 días corridos antes del vencimiento en gestión externa y 60 en gestión interna'), texto);
+    assert.ok(texto.includes('«Aviso aprox.» es el día del aviso del RPAD, según la regla: 40 días corridos antes del vencimiento en '
+      + 'gestión externa y 60 en gestión interna (si ese día no es hábil, el siguiente).'), texto);
+    assert.ok(!texto.includes('avisa a la DGMIT'), texto);
   });
 
   it('los vencidos, aparte y primero; después cada mes con lo que vence, sin los meses vacíos', async () => {
@@ -1401,6 +1404,11 @@ describe('Datos para completar con el diseño del anexo', () => {
     for (const t of ['DATOS PARA COMPLETAR · MÉTRICAS DE 2026, AL 24/10/2026', '23 datos para completar', TEXTOS_DE_PARA_COMPLETAR.bajada]) {
       assert.ok(hojas[0].includes(t), `falta "${t}" en ${hojas[0].join(' | ')}`);
     }
+  });
+
+  it('el título dice el total del servidor, el del índice de la pestaña («Para completar (N)»), sin volver a contar', async () => {
+    const [lineas] = lineasPorHoja(await renderDeParaCompletar({ ...PARA_COMPLETAR, total: 99 }));
+    assert.ok(lineas.includes('99 datos para completar') && !lineas.includes('23 datos para completar'), lineas.join(' | '));
   });
 
   it('lo mismo que «Para completar» de Métricas: cada grupo con su título del servidor y una fila por tarea, sin links', async () => {
