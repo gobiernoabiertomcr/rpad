@@ -304,6 +304,14 @@ describe('database/schema.sql', () => {
     ]);
   });
 
+  // Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8): el ámbito del área decide qué nota de la DGMIT le toca
+  it('areas tiene ambito (municipal o externo, municipal por defecto) después de articulo_superior', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('areas.'));
+    const posicion = (columna) => lista.findIndex(c => c.startsWith(`areas.${columna} `));
+    assert.ok(lista.includes("areas.ambito enum('municipal','externo') null=NO default='municipal' key="), lista.join('\n'));
+    assert.equal(posicion('ambito'), posicion('articulo_superior') + 1, lista.join('\n'));
+  });
+
   it('el historial borra el vínculo al cambio (SET NULL) cuando se borra el cambio pendiente', async () => {
     const [[fk]] = await root.query(
       `SELECT k.REFERENCED_TABLE_NAME AS tabla, k.REFERENCED_COLUMN_NAME AS columna, rc.DELETE_RULE AS borrado
@@ -1128,5 +1136,168 @@ describe('migracion-metricas-recibido-datos.sql', () => {
     await correr();
     // Después de la carga quedan solo los que no están en el archivo (el 51 tampoco figura: su fecha es la suya, no la importada)
     assert.deepEqual(await listados(), [SIN_IMPORTAR, DE_LA_EDICION]);
+  });
+});
+
+// Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8, y Anexo A): el ámbito de las áreas (municipal o fuera del
+// municipio) y la clasificación inicial de las 13 de afuera. La migración y su vuelta atrás, sobre una base descartable creada
+// con schema.sql
+describe('migración del generador de notas', () => {
+  const BASE_GENERADOR = 'rpad_schema_generador_test';
+  const MIGRACION = 'migracion-generador-notas.sql';
+  const ROLLBACK = 'rollback-generador-notas.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  const lineas = (archivo) => sql(archivo).split(/\r?\n/);
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const sentencias = (archivo) => lineas(archivo).filter(l => l.trim() && !l.trim().startsWith('--'));
+  const codigo = (archivo) => sentencias(archivo).join('\n');
+  const cabecera = (archivo) => lineas(archivo).filter(l => l.startsWith('--')).join('\n');
+  const FORMA = /^UPDATE areas SET ambito = 'externo' WHERE id = (\d+) AND nombre = '([^']+)';$/;
+  const esUpdate = (linea) => /^\s*UPDATE\b/i.test(linea);
+  // Uno por UPDATE, en el orden del archivo: { id, nombre, comentario (la línea de arriba) }
+  const updates = () => {
+    const todas = lineas(MIGRACION);
+    return todas.map((linea, i) => ({ linea, i })).filter(({ linea }) => esUpdate(linea)).map(({ linea, i }) => {
+      const m = FORMA.exec(linea);
+      assert.ok(m, `UPDATE con una forma distinta de la acordada: ${linea}`);
+      return { id: Number(m[1]), nombre: m[2], comentario: todas[i - 1] };
+    });
+  };
+  // La consulta de verificación va comentada, en un solo renglón: -- SELECT … ;
+  const verificacion = () => lineas(MIGRACION).map(l => /^-- (SELECT .+;)$/.exec(l)?.[1]).filter(Boolean);
+  // Las 13 áreas fuera del municipio del Anexo A, confirmadas por el usuario el 24/10/2026
+  const IDS_EXTERNOS = [2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43, 44];
+  // Seis áreas con sus textos del dump de producción del 25/10/2026 (las 6 y 35 ya con las correcciones del usuario): cuatro
+  // de afuera (la 27 y la 35 sin dependencia) y dos municipales (la 25 con artículo «el»)
+  const AREAS = [
+    { id: 2, nombre: 'Agencia Provincial de Seguridad Vial', articulo: 'la',
+      area_superior: 'Subsecretaría de Seguridad Vial. Ministerio de Seguridad. Provincia del Chubut', articulo_superior: 'la' },
+    { id: 6, nombre: 'Dirección de Estadística y Evaluación Educativa', articulo: 'la',
+      area_superior: 'Ministerio de Educación del Chubut', articulo_superior: 'el' },
+    { id: 18, nombre: 'Dirección General de Recursos Humanos', articulo: 'la',
+      area_superior: 'Subsec. de Recursos Humanos. Sec. Gobierno, Modernización y Transparencia', articulo_superior: 'la' },
+    { id: 25, nombre: 'Ente Autárquico Comodoro Deportes', articulo: 'el', area_superior: 'Intendencia', articulo_superior: 'la' },
+    { id: 27, nombre: 'Honorable Concejo Deliberante de Comodoro Rivadavia', articulo: 'el', area_superior: null, articulo_superior: null },
+    { id: 35, nombre: 'Secretaría de Energía de Nación', articulo: 'la', area_superior: null, articulo_superior: null }
+  ];
+  const esDeLaColumna = (c) => c.startsWith('areas.ambito ');
+
+  // La estructura de schema.sql y, si no se quiere la columna nueva, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conColumna }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_GENERADOR}\``);
+    await root.query(`CREATE DATABASE \`${BASE_GENERADOR}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_GENERADOR}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conColumna) await root.query('ALTER TABLE areas DROP COLUMN ambito');
+  };
+  const cargarAreas = async (areas = AREAS) => {
+    await root.query(
+      `INSERT INTO \`${BASE_GENERADOR}\`.areas (id, nombre, articulo, area_superior, articulo_superior) VALUES ?`,
+      [areas.map(a => [a.id, a.nombre, a.articulo, a.area_superior, a.articulo_superior])]);
+  };
+  const correr = async (archivo) => {
+    await root.query(`USE \`${BASE_GENERADOR}\``);
+    await root.query(sql(archivo));
+  };
+  const textos = async () => {
+    const [filas] = await root.query(
+      `SELECT id, nombre, articulo, area_superior, articulo_superior FROM \`${BASE_GENERADOR}\`.areas ORDER BY id`);
+    return filas.map(f => ({ ...f }));
+  };
+  const ambitos = async () => {
+    const [filas] = await root.query(`SELECT id, ambito FROM \`${BASE_GENERADOR}\`.areas ORDER BY id`);
+    return Object.fromEntries(filas.map(f => [f.id, f.ambito]));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_GENERADOR}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER, USE, DROP, RENAME ni CHECK; empieza con SET NAMES utf8mb4, agrega la columna y solo marca áreas como externas', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    const [primera, ...resto] = sentencias(MIGRACION);
+    assert.equal(primera, 'SET NAMES utf8mb4;');
+    // Fuera de los UPDATE, solo la columna nueva: ningún UPDATE de nombre, area_superior ni articulo_superior
+    assert.equal(resto.filter(l => !esUpdate(l)).join(' ').replace(/\s+/g, ' ').trim(),
+      "ALTER TABLE `areas` ADD COLUMN IF NOT EXISTS `ambito` enum('municipal','externo') NOT NULL DEFAULT 'municipal' AFTER `articulo_superior`;");
+    for (const linea of resto.filter(esUpdate)) assert.match(linea, FORMA, `sentencia inesperada: ${linea}`);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir, cuándo no volver a correrla y cómo se deshace', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-24-generador-de-notas-design\.md/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código y después de migracion-metricas\.sql/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION),
+      /Si después alguien cambia en Áreas el ámbito de una de las 13, no la vuelvas a correr: la vuelve a marcar como externa/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-generador-notas\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-generador-notas\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('un UPDATE por cada una de las 13 áreas de afuera, sin repetir, con el comentario «-- <id>. <nombre>» arriba', () => {
+    const lista = updates();
+    assert.deepEqual(lista.map(u => u.id).sort((a, b) => a - b), IDS_EXTERNOS);
+    assert.equal(lista.length, IDS_EXTERNOS.length, 'hay un área repetida');
+    for (const { id, nombre, comentario } of lista) {
+      assert.equal(comentario, `-- ${id}. ${nombre}`, `área ${id}: sin el comentario con su nombre`);
+    }
+    // Las cuatro de las seis de prueba van con el nombre tal como está en la base
+    for (const area of AREAS.filter(a => IDS_EXTERNOS.includes(a.id))) {
+      assert.equal(lista.find(u => u.id === area.id)?.nombre, area.nombre, `área ${area.id}`);
+    }
+  });
+
+  it('termina con la consulta de verificación comentada: cuántas áreas quedaron fuera del municipio (13)', () => {
+    const consultas = verificacion();
+    assert.deepEqual(consultas, ["SELECT COUNT(*) AS externas FROM areas WHERE ambito = 'externo';"]);
+    const todas = lineas(MIGRACION);
+    const ultimoUpdate = todas.map((l, i) => (esUpdate(l) ? i : -1)).filter(i => i >= 0).at(-1);
+    assert.ok(todas.indexOf(`-- ${consultas[0]}`) > ultimoUpdate, 'la verificación no está al final');
+    assert.match(cabecera(MIGRACION), /\b13\b/);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir: marca las de afuera y no toca los textos', async () => {
+    await crearBase({ conColumna: false });
+    assert.ok(!(await columnas(root, BASE_GENERADOR)).some(esDeLaColumna), 'la base de partida ya tiene la columna');
+    await cargarAreas();
+    const antes = await textos();
+    await correr(MIGRACION);
+    await correr(MIGRACION);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await ambitos(), { 2: 'externo', 6: 'externo', 18: 'municipal', 25: 'municipal', 27: 'externo', 35: 'externo' });
+    // El nombre, la dependencia y los dos artículos de las seis, sin ningún cambio
+    assert.deepEqual(await textos(), antes);
+    assert.deepEqual(antes, AREAS);
+    // La consulta de verificación cuenta las cuatro de afuera de esta base
+    const [[{ externas }]] = await root.query(verificacion()[0].replace('FROM areas', `FROM \`${BASE_GENERADOR}\`.areas`));
+    assert.equal(externas, 4);
+  });
+
+  it('un área de la lista con otro nombre (un renombre hecho a mano) queda municipal: el UPDATE no la encuentra', async () => {
+    await crearBase({ conColumna: false });
+    await cargarAreas([{ ...AREAS[0], nombre: 'Agencia Provincial de Seguridad Vial del Chubut' }, AREAS[1]]);
+    await correr(MIGRACION);
+    assert.deepEqual(await ambitos(), { 2: 'municipal', 6: 'externo' });
+    assert.equal((await textos())[0].nombre, 'Agencia Provincial de Seguridad Vial del Chubut');
+  });
+
+  it('la vuelta atrás se puede repetir y solo quita la columna (las áreas quedan); la migración la vuelve a dejar en su lugar', async () => {
+    await crearBase({ conColumna: true });
+    const original = await columnas(root, BASE_GENERADOR);
+    await cargarAreas();
+    await correr(MIGRACION);
+    await correr(ROLLBACK);
+    await correr(ROLLBACK);
+    const sinColumna = original.filter(c => !esDeLaColumna(c));
+    assert.equal(sinColumna.length, original.length - 1);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), sinColumna);
+    assert.deepEqual(await textos(), AREAS);
+    await correr(MIGRACION);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), original);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await ambitos(), { 2: 'externo', 6: 'externo', 18: 'municipal', 25: 'municipal', 27: 'externo', 35: 'externo' });
   });
 });

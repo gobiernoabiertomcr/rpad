@@ -1,5 +1,17 @@
 import pool from '../config/database.js';
 
+// Ámbito del área (spec 2026-10-24-generador-de-notas, sección 2): decide qué nota de la DGMIT le corresponde.
+// 'municipal' → interna (por la Subsecretaría); 'externo' → fuera del municipio (directo al organismo).
+export const AMBITOS = ['municipal', 'externo'];
+export const MENSAJE_AMBITO = 'Elegí si el área es municipal o de fuera del municipio.';
+
+// Si el ámbito llega (no es undefined), tiene que ser uno de AMBITOS, tal cual: nunca `|| null` (la columna es NOT NULL)
+const ambitoInvalido = (ambito) => ambito !== undefined && !AMBITOS.includes(ambito);
+
+const rechazoDeAmbito = (res) => res.status(400).json({
+  success: false, error: MENSAJE_AMBITO, campo: 'ambito', errores: { ambito: MENSAJE_AMBITO }
+});
+
 // Obtener todas las áreas (ordenadas alfabéticamente)
 export const getAreas = async (req, res) => {
   try {
@@ -65,6 +77,8 @@ export const createArea = async (req, res) => {
       });
     }
 
+    if (ambitoInvalido(data.ambito)) return rechazoDeAmbito(res);
+
     // Verificar que no exista un área con el mismo nombre
     const [existing] = await pool.execute(
       'SELECT id FROM areas WHERE nombre = ?',
@@ -80,14 +94,15 @@ export const createArea = async (req, res) => {
 
     const [result] = await pool.execute(
       `INSERT INTO areas (
-        nombre, articulo, area_superior, articulo_superior, email_principal, email_secundario,
+        nombre, articulo, area_superior, articulo_superior, ambito, email_principal, email_secundario,
         telefono_area, celular_area, nombre_contacto, telefono_contacto, email_contacto
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.nombre,
         data.articulo || 'la',
         data.area_superior || null,
         data.articulo_superior || null,
+        data.ambito ?? 'municipal',
         data.email_principal || null,
         data.email_secundario || null,
         data.telefono_area || null,
@@ -137,6 +152,8 @@ export const updateArea = async (req, res) => {
       });
     }
 
+    if (ambitoInvalido(data.ambito)) return rechazoDeAmbito(res);
+
     // Si se cambia el nombre, verificar que no exista otro con ese nombre
     if (data.nombre) {
       const [duplicate] = await pool.execute(
@@ -167,6 +184,12 @@ export const updateArea = async (req, res) => {
         values.push(data[field] || null);
       }
     });
+
+    // El ámbito, ya validado, se escribe tal cual (sin `|| null`)
+    if (data.ambito !== undefined) {
+      updates.push('ambito = ?');
+      values.push(data.ambito);
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({

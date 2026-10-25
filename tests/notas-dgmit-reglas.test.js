@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LARGO_NUMERO, LARGO_MOTIVO, FECHA_MINIMA, TIPOS_NOTA_DGMIT, MENSAJES_NOTA_DGMIT, TEXTO_TIPO_NOTA_DGMIT,
-  validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir
+  validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir, sePuedeElegir, idsDeDatasets
 } from '../services/notasDgmitReglas.js';
 
 const HOY = '2026-10-24';
@@ -158,6 +158,31 @@ describe('validarMotivo', () => {
     assert.deepEqual(validarMotivo(`  ${quinientos}  `), { motivo: quinientos, error: null });
     assert.deepEqual(validarMotivo('m'.repeat(501)), { motivo: null, error: MENSAJES_NOTA_DGMIT.motivoLargo });
     assert.deepEqual(validarMotivo('  El número estaba mal  '), { motivo: 'El número estaba mal', error: null });
+  });
+});
+
+describe('sePuedeElegir', () => {
+  // Una fila de datasets como la devuelve mysql2: activo y requiere_nota son tinyint (1, 0 o null)
+  const fila = (cambio) => ({ activo: 1, tipo_gestion: 'externa', requiere_nota: 1, ...cambio });
+
+  it('solo los activos, de gestión externa y con «Requiere nota DGMIT» en Sí o sin dato', () => {
+    assert.equal(sePuedeElegir(fila({})), true, 'activo, externo, Sí');
+    assert.equal(sePuedeElegir(fila({ requiere_nota: null })), true, 'activo, externo, sin dato');
+    assert.equal(sePuedeElegir(fila({ requiere_nota: 0 })), false, 'activo, externo, No (el 0 es un valor)');
+    assert.equal(sePuedeElegir(fila({ activo: 0 })), false, 'dado de baja');
+    assert.equal(sePuedeElegir(fila({ activo: 0, requiere_nota: null })), false, 'dado de baja, sin dato');
+    assert.equal(sePuedeElegir(fila({ tipo_gestion: 'interna', requiere_nota: null })), false, 'interno');
+    assert.equal(sePuedeElegir(fila({ activo: true })), true, 'activo como booleano');
+    assert.equal(sePuedeElegir(fila({ activo: false })), false, 'inactivo como booleano');
+  });
+});
+
+describe('idsDeDatasets', () => {
+  it('los ids sin repetidos y en el orden recibido; null si la lista está vacía o trae algo que no es un id', () => {
+    assert.deepEqual(idsDeDatasets([12, '7', 12, '12', 3]), [12, 7, 3]);
+    for (const valor of [[], [7, 'x'], [0], null, undefined, '7', 7, {}]) {
+      assert.equal(idsDeDatasets(valor), null, JSON.stringify(valor));
+    }
   });
 });
 

@@ -240,3 +240,64 @@ describe('main.css: alto contraste', () => {
     assert.match(bloque, /\.footer,\s*\.sidebar\s*\{\s*forced-color-adjust:\s*none;?\s*\}/);
   });
 });
+
+// El generador de notas es de administración y del colaborador (spec 2026-10-24-generador-de-notas, 1): el lector deja de ver «Notas»
+// en Herramientas. Con el auth.js de verdad (Auth.puedeCargarNotasDgmit) y el main.js de verdad; el marcado de las páginas no cambia
+describe('menú lateral: «Notas» solo para quien usa el generador de notas', () => {
+  const conRol = (rol) => {
+    const almacen = new Map([['rpad_token', 'token-de-prueba'], ['rpad_user', JSON.stringify({ nombre_completo: 'Ana Pérez', rol })]]);
+    const localStorage = {
+      getItem: (clave) => almacen.get(clave) ?? null,
+      setItem: (clave, valor) => almacen.set(clave, String(valor)),
+      removeItem: (clave) => almacen.delete(clave)
+    };
+    const secciones = { sidebarPrincipal: elemento(), sidebarAdmin: elemento(), sidebarTools: elemento(), sidebarAccount: elemento() };
+    const enlaceNotas = elemento();
+    secciones.sidebarTools.querySelector = (selector) => (selector === 'a[href="notas.html"]' ? enlaceNotas : null);
+    const document = {
+      head: { appendChild() {} },
+      body: { appendChild() {} },
+      createElement: () => ({ textContent: '', remove() {} }),
+      addEventListener() {},
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      getElementById: (id) => secciones[id] ?? null
+    };
+    const contexto = vm.createContext({
+      CONFIG: { API_URL: '/api', TOKEN_KEY: 'rpad_token', USER_KEY: 'rpad_user' }, localStorage, document,
+      window: { location: { pathname: '/notas.html' } }, API: {}, console
+    });
+    vm.runInContext(`${fs.readFileSync(new URL('../public/js/auth.js', import.meta.url), 'utf8')}\n;globalThis.Auth = Auth;`, contexto);
+    vm.runInContext(fs.readFileSync(new URL('../public/js/main.js', import.meta.url), 'utf8'), contexto);
+    const cambiarRol = (nuevo) => almacen.set('rpad_user', JSON.stringify({ nombre_completo: 'Ana Pérez', rol: nuevo }));
+    return { contexto, enlaceNotas, secciones, cambiarRol };
+  };
+
+  it('con rol lector el enlace a notas.html queda oculto (clase hidden); Herramientas sigue visible', () => {
+    const { contexto, enlaceNotas, secciones } = conRol('lector');
+    contexto.updateSidebarAuth();
+    assert.ok(enlaceNotas.clases.has('hidden'));
+    assert.ok(!secciones.sidebarTools.clases.has('hidden'));
+  });
+
+  for (const rol of ['colaborador', 'editor', 'admin', 'superadmin']) {
+    it(`con rol ${rol} el enlace a notas.html se ve`, () => {
+      const { contexto, enlaceNotas } = conRol(rol);
+      enlaceNotas.clases.add('hidden');
+      contexto.updateSidebarAuth();
+      assert.ok(!enlaceNotas.clases.has('hidden'));
+    });
+  }
+
+  it('si el rol cambia (refrescarSesionGuardada vuelve a llamar a updateSidebarAuth), el enlace aparece o se oculta', () => {
+    const { contexto, enlaceNotas, cambiarRol } = conRol('lector');
+    contexto.updateSidebarAuth();
+    assert.ok(enlaceNotas.clases.has('hidden'));
+    cambiarRol('colaborador');
+    contexto.updateSidebarAuth();
+    assert.ok(!enlaceNotas.clases.has('hidden'));
+    cambiarRol('lector');
+    contexto.updateSidebarAuth();
+    assert.ok(enlaceNotas.clases.has('hidden'));
+  });
+});
