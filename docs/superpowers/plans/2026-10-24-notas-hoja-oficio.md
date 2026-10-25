@@ -136,7 +136,7 @@ En cada archivo, `enOficio` y `enA4` se definen arriba con tolerancia de 0,01, j
 
 Run: `node --test tests/notas-pdf.test.js`
 Expected: FAIL. Fallan el test del `MediaBox` y el nuevo de todas las hojas (miden 612,28 × 935,43), los de membrete que usan `tope` (REF. corrida unos 73 pt), «8 filas» (da 7) y el de la hoja vieja (sale en 2).
-Docker: comprobar que no corra otra suite y correr `node --test tests/notas-motor.test.js tests/notas-api.test.js`. Expected: FAIL solo en las aserciones nuevas de oficio. Las de A4 pasan.
+Docker: comprobar que no corra otra suite y correr `node --test --test-concurrency=1 tests/notas-motor.test.js tests/notas-api.test.js`. Expected: FAIL solo en las aserciones nuevas de oficio. Las de A4 pasan.
 
 - [ ] **Step 4: Implementar**
 
@@ -146,7 +146,7 @@ En `services/notasDigitalesPdf.js:8`, `PAGINA = [612, 1008]`. Es Legal exacto, 8
 
 Run: `node --test tests/notas-pdf.test.js tests/notas-anexo.test.js tests/seguimiento-pdf.test.js`
 Expected: PASS. notas-pdf: 130 de antes más los nuevos.
-Docker: `node --test tests/notas-motor.test.js tests/notas-api.test.js`. Expected: PASS.
+Docker: `node --test --test-concurrency=1 tests/notas-motor.test.js tests/notas-api.test.js`. Expected: PASS.
 
 - [ ] **Step 6: `npm test` completo**
 

@@ -5,7 +5,7 @@ import PDFDocument from 'pdfkit';
 import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria } from '../services/notasDigitalesContenido.js';
 import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
-import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas, tamanosPorHoja, HOJA_OFICIO, esDelTamano } from './pdf-lector.js';
+import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas, tamanosPorHoja, HOJA_OFICIO, todasDelTamano } from './pdf-lector.js';
 
 // PNG válido de 1x1 píxel
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -76,7 +76,7 @@ describe('renderPdf', () => {
     const pdf = await renderPdf(nota(2));
     assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
     assert.match(texto(pdf), /\/MediaBox \[0 0 612 1008\]/);
-    assert.ok(tamanosPorHoja(pdf).every(t => esDelTamano(t, HOJA_OFICIO)), JSON.stringify(tamanosPorHoja(pdf)));
+    assert.ok(todasDelTamano(pdf, HOJA_OFICIO), JSON.stringify(tamanosPorHoja(pdf)));
     assert.ok(texto(pdf).includes('(Nota Digital 12/26)'));
   });
 
@@ -734,6 +734,8 @@ describe('renderPdf: membrete', () => {
         const pagina = lineas.find(t => esPaginacion(t.texto));
         const pie = lineas.find(t => t.texto === PIE);
         assert.ok(pagina && pie, etiqueta);
+        // Con el pie del membrete, la línea de base de "Página" va a 17,5 mm del borde inferior
+        assert.ok(cerca(pagina.base, 17.5 * MM), `${etiqueta}: línea de base de "Página" a ${pagina.base / MM} mm`);
         const separacion = (pagina.base - DESCENDENTE * pagina.tamano) - (pie.base + ASCENDENTE * pie.tamano);
         assert.ok(separacion >= 2, `${etiqueta}: "Página" y el pie del membrete están a ${separacion} puntos`);
         // El contenido termina en el margen inferior de 25 mm; "Página" queda más abajo, con aire
@@ -1390,10 +1392,10 @@ describe('renderPdf: firmas a la misma altura y cierre con nombres o cargos larg
   });
 });
 
-// Para el cierre medido y la hoja oficio: alto de un renglón de Helvetica (con el interlineado de PDFKit), en fracción del
-// tamaño; dónde termina lo escrito en la última hoja (el borde inferior del renglón más bajo, con su interlineado), desde
-// arriba de esa hoja (con su alto de verdad: así también mide bien una hoja de otro tamaño); y la nota con k renglones de
-// relleno al final del primer párrafo
+// Alto de un renglón de Helvetica (con el interlineado de PDFKit), en fracción del tamaño: lo usan el cierre medido, la hoja
+// oficio y la letra de la firma. Para el cierre medido y la hoja oficio, además: dónde termina lo escrito en la última hoja (el
+// borde inferior del renglón más bajo, con su interlineado), desde arriba de esa hoja (con su alto de verdad: así también mide
+// bien una hoja de otro tamaño); y la nota con k renglones de relleno al final del primer párrafo
 const RENGLON = new PDFDocument({ autoFirstPage: false }).font('Helvetica').fontSize(1).currentLineHeight(true);
 const fin = (pdf) => {
   const alto = tamanosPorHoja(pdf).at(-1).alto;
@@ -1500,8 +1502,9 @@ describe('renderPdf: hoja oficio Legal (spec 2026-10-24-notas-hoja-oficio)', () 
     const cantidades = [];
     for (const [caso, n] of NOTAS) {
       for (const [membrete, opciones] of [['sin membrete', {}], ['con membrete', { membreteImagen: BANNER, membretePie: PIE }]]) {
-        const tamanos = tamanosPorHoja(await renderPdf(n, opciones));
-        assert.ok(tamanos.every(t => esDelTamano(t, HOJA_OFICIO)), `${caso}, ${membrete}: ${JSON.stringify(tamanos)}`);
+        const pdf = await renderPdf(n, opciones);
+        const tamanos = tamanosPorHoja(pdf);
+        assert.ok(todasDelTamano(pdf, HOJA_OFICIO), `${caso}, ${membrete}: ${JSON.stringify(tamanos)}`);
         cantidades.push(tamanos.length);
       }
     }

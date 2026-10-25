@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { construirAnexo } from '../services/notasDigitalesContenido.js';
 import { renderAnexo } from '../services/notasDigitalesAnexo.js';
 import { DocumentoNota } from '../services/notasDigitalesPdf.js';
-import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, esDelTamano } from './pdf-lector.js';
+import { lineasPorHoja, contenidoPorHoja, textosPorHoja, tamanosPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 
 const MM = 72 / 25.4;
 const ficha = (cambios = {}) => ({
@@ -268,7 +268,7 @@ describe('renderAnexo', () => {
     assert.ok(hojas[1].some(l => l.includes('Hoja 2 de 2')));
     assert.ok(hojas[0].some(l => l.includes('Anexo – Nota Digital N° 3/26')));
     // El anexo sigue en A4 aunque la nota pase a la hoja oficio
-    assert.ok(tamanosPorHoja(pdf).every(t => esDelTamano(t, HOJA_A4)), JSON.stringify(tamanosPorHoja(pdf)));
+    assert.ok(todasDelTamano(pdf, HOJA_A4), JSON.stringify(tamanosPorHoja(pdf)));
   });
 
   it('textos larguísimos: sigue siendo una sola hoja por dataset y corta con "(continúa en el portal)"', async () => {

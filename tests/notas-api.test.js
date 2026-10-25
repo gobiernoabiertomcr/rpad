@@ -6,7 +6,7 @@ import {
 } from './helpers.js';
 import { crearArea, crearDataset, crearNota, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
-import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja, tamanosPorHoja, HOJA_OFICIO, esDelTamano } from './pdf-lector.js';
+import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja, tamanosPorHoja, HOJA_OFICIO, todasDelTamano } from './pdf-lector.js';
 import { esDiaHabil, formatoCorto, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 import { textoVisible } from './emails-fixtures.js';
@@ -403,7 +403,7 @@ describe('vista previa y prueba', () => {
     assert.match(res.headers.get('content-type'), /application\/pdf/);
     assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
     // En hoja oficio, como la nota que se envía (spec 2026-10-24-notas-hoja-oficio)
-    assert.ok(tamanosPorHoja(res.body).every(t => esDelTamano(t, HOJA_OFICIO)), JSON.stringify(tamanosPorHoja(res.body)));
+    assert.ok(todasDelTamano(res.body, HOJA_OFICIO), JSON.stringify(tamanosPorHoja(res.body)));
 
     const lineas = textosPorHoja(res.body).flat().map(t => t.texto);
     assert.ok(lineas.includes('Nota Digital N° XX'), lineas.join(' | '));

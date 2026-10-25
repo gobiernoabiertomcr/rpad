@@ -48,6 +48,12 @@ export const HOJA_A4 = { ancho: 595.28, alto: 841.89 };
 export const HOJA_OFICIO = { ancho: 612, alto: 1008 };
 // Si una hoja (un tamaño de tamanosPorHoja) mide lo que la hoja dada, con 0,01 puntos de tolerancia en el ancho y en el alto
 export const esDelTamano = (tamano, hoja) => Math.abs(tamano.ancho - hoja.ancho) <= 0.01 && Math.abs(tamano.alto - hoja.alto) <= 0.01;
+// Si el PDF tiene al menos una hoja y todas miden lo que la hoja dada (con la tolerancia de esDelTamano): un PDF sin hojas no
+// pasa, como pasaría con un every sobre una lista vacía
+export const todasDelTamano = (pdf, hoja) => {
+  const tamanos = tamanosPorHoja(pdf);
+  return tamanos.length > 0 && tamanos.every(t => esDelTamano(t, hoja));
+};
 
 // Flujo de contenido (descomprimido) de cada hoja, en el orden de las hojas
 export const contenidoPorHoja = (pdf) => hojasDelPdf(pdf).map(hoja => hoja.contenido);

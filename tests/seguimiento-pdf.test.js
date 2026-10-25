@@ -113,7 +113,7 @@ describe('renderSeguimiento: una sola hoja, sin nada encimado', () => {
     assert.equal(FILAS_PDF, 8);
   });
 
-  it('renderSeguimiento: la hoja es A4 (595,28 × 841,89), no la hoja oficio de la nota', async () => {
+  it('la hoja es A4 (595,28 × 841,89), no la hoja oficio de la nota', async () => {
     const tamanos = tamanosPorHoja(await render(seguimiento(52)));
     assert.equal(tamanos.length, 1);
     assert.ok(esDelTamano(tamanos[0], HOJA_A4), JSON.stringify(tamanos));
@@ -504,7 +504,7 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
     assert.ok(hojas[2].includes('CONJUNTO DE DATOS · GESTIÓN INTERNA'));
   });
 
-  it('renderAnexoDeSeguimiento: todas las hojas son A4, no la hoja oficio de la nota', async () => {
+  it('todas las hojas son A4, no la hoja oficio de la nota', async () => {
     const tamanos = tamanosPorHoja(await anexo(tres()));
     assert.equal(tamanos.length, 3);
     assert.ok(tamanos.every(t => esDelTamano(t, HOJA_A4)), JSON.stringify(tamanos));
