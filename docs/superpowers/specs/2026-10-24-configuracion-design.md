@@ -1,6 +1,6 @@
 # Configuración: Usuarios, Licencias y Áreas en una sola página
 
-Fecha: 24/10/2026. **Estado: aprobado por el usuario el 24/10/2026.**
+Fecha: 24/10/2026. **Estado: aprobado por el usuario el 24/10/2026; implementado el 25/10/2026 en `feat/configuracion`.** Lo que cambió al construirlo está al final, en «Cambios durante la implementación».
 
 Maqueta navegable: `2026-10-24-configuracion-mockups/configuracion.html`. Se mira con un servidor estático; con `file://` también anda, porque no pide nada afuera salvo las fuentes. Corre el `usuarios.js` real con un servidor de mentira (`js/maqueta-servidor.js`), con usuarios y licencias inventados. Las 46 áreas son las de la base local del 24/10/2026, pero sus emails, teléfonos y personas de contacto son inventados. El recuadro oscuro de abajo a la derecha es de la maqueta, no de la página: cambia quién mira, la variante de la lista y el ícono de Gestión de Datasets. Las elegidas son la tabla y el ícono de capas. Este documento manda sobre la maqueta.
 
@@ -147,7 +147,7 @@ El menú es HTML copiado a mano en cada página, así que el cambio va en todas.
    - **"Así se lee en las notas"**, que se actualiza mientras se escribe:
      - «la Dirección General de Catastro, dependiente de la Subsec. de Coordinación Económica y Control de Gestión»;
      - sin dependencia, «la Dirección General de Catastro»;
-     - con la dependencia sin artículo, «…, dependiente de Subsec. …»;
+     - con la dependencia sin artículo, «…, dependiente de la Subsec. …», como la nota del Generador (ver «Cambios durante la implementación», 1);
      - con el nombre vacío, «la …».
      - Es el mismo armado que usa la nota del Generador ("…ante la X, dependiente de la Y").
    - **Ámbito:** dos opciones grandes, como el tipo de nota del Seguimiento.
@@ -399,3 +399,25 @@ Antes y después de cada tarea va la suite completa (`npm test`), como siempre.
 - **Cómo se avisan `usuarios.js` y `areas.js` el cambio de pestaña.**
 - **El CSS exacto de la pestaña.** La maqueta es la referencia: `js/areas.js` y el `<style>` de `configuracion.html` de la carpeta de maquetas.
 - **El orden de las tareas del plan.** La primera es la de la sección 8.
+
+## Cambios durante la implementación
+
+Decisiones tomadas al construirlo, el 25/10/2026. Mandan sobre lo de arriba. Lo que se encontró al traer main a la rama (versiones, la forma del error del Ámbito, el PUT con todos los campos en `null` de `tests/areas-ambito-api.test.js`, `admin.js` sin tocar, el kit) está en «Diferencias encontradas» del plan, `docs/superpowers/plans/2026-10-24-configuracion.md`.
+
+1. **Los artículos de "Así se lee en las notas" y de "Depende de"** se arman como en la nota del Generador (`articuloDe` y `deArticulo` de `services/notasGeneradorContenido.js`), así la línea muestra cómo sale la nota real:
+   - 'el' da "del": «…, dependiente del Ministerio de Educación del Chubut» y "Depende del …";
+   - 'la' o null (el "—" del selector) dan "de la".
+   - El ejemplo de 4.2 de la dependencia sin artículo, «…, dependiente de Subsec. …», queda reemplazado por «…, dependiente de la Subsec. …».
+2. **La forma de los errores:**
+   - el rechazo del Ámbito del Generador conserva la suya, `{ success: false, error, campo: 'ambito', errores: { ambito } }`: `tests/areas-ambito-api.test.js` la compara con `deepEqual` y no cambió;
+   - los errores nuevos de Áreas van `{ success: false, error, campo }` (5.2).
+3. **`GET /api/areas/:id` suma `cantidad_datasets` para todos**, como `GET /api/areas`. Antes no la traía (`SELECT * FROM areas`).
+4. **"Así se lee en las notas" va sin `aria-live`:** cambia con cada tecla, y lo anunciaría cada vez.
+5. **El modal de borrar se describe con su pregunta:** `#modal-borrar-area` tiene `aria-describedby="borrar-area-texto"`.
+6. **Las versiones:** `usuarios.js` sube a `20261205` (`VERSION_PANTALLAS`) y `areas.js` va con `20261205` (`VERSION_AREAS`, nueva en `tests/paginas.test.js`). `VERSION` y `VERSION_CSS` no cambian.
+
+Lo que quedaba para quien lo construye se resolvió así:
+- **La sesión opcional:** `verificarSesion`, en `middleware/auth.js`, lee el token y la cuenta como siempre y devuelve el resultado sin responder. `authMiddleware` responde con él, como antes, y `sesionOpcional` solo pone `req.user` cuando la sesión vale. Las cuatro rutas públicas (`/areas`, `/areas/:id`, `/datasets` y `/datasets/:id`) pasan por `sesionOpcional`; los campos que se quitan son `CAMPOS_DE_CONTACTO_AREA` y `CAMPOS_DE_CONTACTO_DATASET` (`services/areasReglas.js`, con `sinCampos`).
+- **Cómo se avisan las dos pestañas:** `mostrarVista('areas')` de `usuarios.js` llama a `cargarAreas()` de `areas.js`, si está definida. `cargarAreas` pide la lista una sola vez (un segundo pedido mientras llega la respuesta usa el mismo) y vuelve a pedirla, con `forzar`, después de guardar o borrar.
+- **El CSS de la pestaña:** en el `<style>` de `configuracion.html`, con el prefijo `ar-`.
+- **El recorrido en el navegador** de la sección 7 se hizo el 25/10/2026 con el servidor y la base de la rama: las tres pestañas y el fragmento, el aviso de las 6 áreas, editar sin cambios y con un cambio (el PUT manda solo ese campo), el nombre repetido, un alta y un borrado, el modal con 640 px de alto (el pie a la vista), el teléfono sin desplazamiento de costado, los links viejos, el editor, el lector y el colaborador, y el email al superadmin en Mailpit, con el link a `configuracion.html`.
