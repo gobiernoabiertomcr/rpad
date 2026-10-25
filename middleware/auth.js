@@ -22,26 +22,22 @@ export const verifyToken = (token) => {
   }
 };
 
-// Middleware para rutas protegidas. Además de verificar el token, lee de la base el rol, si el usuario
-// sigue activo y su versión de sesión: desactivar o cambiar el rol tiene efecto en el pedido siguiente (spec 5.1)
-export const authMiddleware = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      error: 'Token de autenticación no proporcionado'
-    });
+/**
+ * La sesión de un encabezado Authorization ('Bearer <token>'). Además de verificar el token, lee de la base el rol, si el
+ * usuario sigue activo y su versión de sesión: desactivar o cambiar el rol tiene efecto en el pedido siguiente (spec 5.1).
+ * Devuelve `{ ok: true, user }` (`user` = el payload del token con el rol de la base) o `{ ok: false, status, error }`, con el
+ * estado y el mensaje que responde authMiddleware. Nunca tira: un error de la base se registra y da 500.
+ */
+export const verificarSesion = async (authorization) => {
+  if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) {
+    return { ok: false, status: 401, error: 'Token de autenticación no proporcionado' };
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = authorization.split(' ')[1];
   const payload = verifyToken(token);
 
   if (!payload || !Number.isInteger(payload.userId)) {
-    return res.status(401).json({
-      success: false,
-      error: 'Token inválido o expirado'
-    });
+    return { ok: false, status: 401, error: 'Token inválido o expirado' };
   }
 
   let usuario;
@@ -50,18 +46,34 @@ export const authMiddleware = async (req, res, next) => {
     usuario = filas[0];
   } catch (error) {
     console.error('Error verificando la sesión:', error);
-    return res.status(500).json({ success: false, error: 'Error interno del servidor' });
+    return { ok: false, status: 500, error: 'Error interno del servidor' };
   }
 
   // Un token sin versión (emitido antes de que existiera sesion_version) cuenta como versión 0
   if (!usuario || !usuario.activo || (payload.v ?? 0) !== usuario.sesion_version) {
-    return res.status(401).json({
-      success: false,
-      error: 'La sesión ya no es válida. Iniciá sesión nuevamente.'
-    });
+    return { ok: false, status: 401, error: 'La sesión ya no es válida. Iniciá sesión nuevamente.' };
   }
 
-  req.user = { ...payload, rol: usuario.rol };
+  return { ok: true, user: { ...payload, rol: usuario.rol } };
+};
+
+// Middleware para rutas protegidas: sin una sesión válida responde el estado y el mensaje de verificarSesion
+export const authMiddleware = async (req, res, next) => {
+  const sesion = await verificarSesion(req.headers.authorization);
+  if (!sesion.ok) {
+    return res.status(sesion.status).json({ success: false, error: sesion.error });
+  }
+
+  req.user = sesion.user;
+  next();
+};
+
+// Middleware para rutas públicas que muestran más con una sesión (spec 2026-10-24-configuracion, 5.1): con una sesión válida
+// pone req.user, como authMiddleware; con cualquier otra cosa (sin token, un token inválido o vencido, una cuenta desactivada
+// o un error de la base, que verificarSesion registra) sigue sin req.user, como un visitante. Nunca responde
+export const sesionOpcional = async (req, res, next) => {
+  const sesion = await verificarSesion(req.headers.authorization);
+  if (sesion.ok) req.user = sesion.user;
   next();
 };
 

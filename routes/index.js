@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth } from '../middleware/auth.js';
+import { authMiddleware, sesionOpcional, adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth } from '../middleware/auth.js';
 import { limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso } from '../middleware/rateLimit.js';
 
 // Controladores
@@ -133,21 +133,23 @@ router.post('/auth/recuperar', limiteRecuperarPorIp, limiteRecuperarPorIdentific
 router.post('/auth/link/validar', limiteLinkDeAcceso, validarLinkDeAcceso);
 router.post('/auth/establecer-contrasena', limiteLinkDeAcceso, establecerContrasenaConLink);
 
-// Datasets (lectura)
-router.get('/datasets', getDatasets);
+// Datasets (lectura). Con una sesión de administración, con los datos de contacto del área (sesionOpcional: nunca responde
+// 401 ni 403; spec 2026-10-24-configuracion, 5.1)
+router.get('/datasets', sesionOpcional, getDatasets);
 router.get('/datasets/estadisticas', getEstadisticas);
 // Cálculo para la pantalla de admin (esta ruta no es pública). Va antes de /datasets/:id, que si no la tomaría por un id
 router.get('/datasets/calculo-pedido', authMiddleware, adminOnly, getCalculoPedido);
-router.get('/datasets/:id', getDatasetById);
+router.get('/datasets/:id', sesionOpcional, getDatasetById);
 
 // Catálogos
 router.get('/catalogos/temas', getTemas);
 router.get('/catalogos/frecuencias', getFrecuencias);
 router.get('/catalogos/formatos', getFormatos);
 
-// Áreas (lectura pública para selects)
-router.get('/areas', getAreas);
-router.get('/areas/:id', getAreaById);
+// Áreas (lectura pública para selects). Con una sesión de administración, con los datos de contacto y las cuentas de la
+// pestaña Áreas de Configuración (sesionOpcional: nunca responde 401 ni 403; spec 2026-10-24-configuracion, 5.1)
+router.get('/areas', sesionOpcional, getAreas);
+router.get('/areas/:id', sesionOpcional, getAreaById);
 
 // Andino (Portal de Datos Abiertos)
 router.get('/andino/fetch', fetchFromAndino);
