@@ -636,18 +636,18 @@ describe('editor (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.1)', () =>
   });
 
   it('el grupo Editores dice que auditan de respaldo o sin responsabilidad', () => {
-    const PAGINA = fs.readFileSync(new URL('../public/usuarios.html', import.meta.url), 'utf8');
+    const PAGINA = fs.readFileSync(new URL('../public/configuracion.html', import.meta.url), 'utf8');
     assert.ok(PAGINA.includes('<span class="grupo-contador">Proponen cambios y auditan de respaldo o sin responsabilidad</span>'));
   });
 });
 
 describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
   const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
-  const PAGINA = fs.readFileSync(new URL('../public/usuarios.html', import.meta.url), 'utf8');
+  const PAGINA = fs.readFileSync(new URL('../public/configuracion.html', import.meta.url), 'utf8');
   const AYUDAS = {
-    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Notas, Gestión y Seguimiento). No modifica nada.',
+    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Gestión y Seguimiento). No modifica nada.',
     colaborador: '<b>Colaborador:</b> Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula '
-      + 'las que cargó). No modifica datasets ni audita cambios.',
+      + 'las que cargó) y arma notas con el Generador de Notas. No modifica datasets ni audita cambios.',
     editor: '<b>Editor:</b> Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y '
       + 'colaboradores.',
     admin: '<b>Admin:</b> Propone y audita cambios en los datasets, maneja áreas, usuarios, reportes y notificaciones. También carga '
@@ -1088,5 +1088,116 @@ describe('días sin auditor (spec 2026-10-15-dias-habiles-licencias-auditoria, 9
       assert.ok(panel.pedidos.some(p => p.nombre === 'getSinAuditor'));
       assert.equal(caja(panel).hidden, false);
     });
+  });
+});
+
+// Configuración (spec 2026-10-24-configuracion, 1 y 6): la tercera pestaña, Áreas, y la pestaña en la dirección (#usuarios,
+// #licencias y #areas; Review Focus 4). En este vm window.location es {} y no hay history ni cargarAreas (areas.js no se carga):
+// nada de eso tira
+describe('Configuración: las tres pestañas y la pestaña en la dirección (spec 2026-10-24-configuracion, 1 y 6)', () => {
+  const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
+  const VISTAS = ['usuarios', 'licencias', 'areas'];
+  // Lo que se ve: las vistas y los botones del encabezado que no están ocultos (Licencias no tiene botón: "Nueva licencia" va en
+  // su tarjeta)
+  const visibles = (panel) => ({
+    vistas: VISTAS.filter((vista) => panel.elemento(`vista-${vista}`).hidden === false),
+    botones: ['btn-nuevo-usuario', 'btn-nueva-area'].filter((id) => panel.elemento(id).hidden === false)
+  });
+  const cuantas = (panel, llamada) => panel.llamadas.filter((l) => l === llamada).length;
+  const conCargarAreas = (panel) => {
+    panel.contexto.cargarAreas = () => panel.llamadas.push('cargarAreas');
+    return panel;
+  };
+
+  it('VISTAS son las tres pestañas, en el orden de la página', () => {
+    assert.deepEqual(JSON.parse(JSON.stringify(evaluar(cargarPanel().contexto, 'VISTAS'))), VISTAS);
+  });
+
+  it('vistaDeLaDireccion: #licencias y #areas abren su pestaña; #usuarios, un fragmento desconocido o ninguno, Usuarios', () => {
+    const { contexto } = cargarPanel();
+    assert.equal(contexto.vistaDeLaDireccion('#licencias'), 'licencias');
+    assert.equal(contexto.vistaDeLaDireccion('#areas'), 'areas');
+    assert.equal(contexto.vistaDeLaDireccion('#usuarios'), 'usuarios');
+    for (const hash of ['#foo', '', '#', undefined, null, '#areas/x', '#constructor', '#__proto__', '#toString']) {
+      assert.equal(contexto.vistaDeLaDireccion(hash), 'usuarios', String(hash));
+    }
+  });
+
+  it('mostrarVista("areas"): su vista y "Nueva área"; Usuarios y Licencias ocultas, sin "Nuevo usuario"; sin cargarAreas no tira', () => {
+    const panel = cargarPanel();
+    assert.doesNotThrow(() => panel.contexto.mostrarVista('areas'));
+    assert.equal(panel.elemento('vista-areas').hidden, false);
+    assert.equal(panel.elemento('vista-usuarios').hidden, true);
+    assert.equal(panel.elemento('vista-licencias').hidden, true);
+    assert.equal(panel.elemento('btn-nueva-area').hidden, false);
+    assert.equal(panel.elemento('btn-nuevo-usuario').hidden, true);
+    assert.ok(!panel.llamadas.includes('getLicencias'), 'Áreas no pide las licencias');
+  });
+
+  it('cada pestaña muestra solo su vista y su botón: Usuarios, "Nuevo usuario"; Licencias, ninguno; Áreas, "Nueva área"', () => {
+    const panel = cargarPanel();
+    const esperado = {
+      usuarios: { vistas: ['usuarios'], botones: ['btn-nuevo-usuario'] },
+      licencias: { vistas: ['licencias'], botones: [] },
+      areas: { vistas: ['areas'], botones: ['btn-nueva-area'] }
+    };
+    for (const nombre of ['areas', 'licencias', 'usuarios', 'areas', 'usuarios']) {
+      panel.contexto.mostrarVista(nombre);
+      assert.deepEqual(visibles(panel), esperado[nombre], nombre);
+    }
+  });
+
+  it('mostrarVista("areas") llama una vez a cargarAreas (de areas.js); Usuarios y Licencias no la llaman', () => {
+    const panel = conCargarAreas(cargarPanel());
+    panel.contexto.mostrarVista('areas');
+    assert.equal(cuantas(panel, 'cargarAreas'), 1);
+    panel.contexto.mostrarVista('usuarios');
+    panel.contexto.mostrarVista('licencias');
+    assert.equal(cuantas(panel, 'cargarAreas'), 1);
+  });
+
+  it('escribe la pestaña en la dirección con history.replaceState (no suma pasos al botón Atrás); sin history no tira', () => {
+    const panel = cargarPanel();
+    assert.doesNotThrow(() => panel.contexto.mostrarVista('licencias'), 'sin window.history');
+    panel.contexto.window.history = {};
+    assert.doesNotThrow(() => panel.contexto.mostrarVista('licencias'), 'sin replaceState');
+    const registro = [];
+    panel.contexto.window.history = { replaceState: (...a) => registro.push(a) };
+    panel.contexto.mostrarVista('licencias');
+    assert.deepEqual(registro, [[null, '', '#licencias']]);
+    panel.contexto.mostrarVista('areas');
+    panel.contexto.mostrarVista('usuarios');
+    assert.deepEqual(registro.slice(1), [[null, '', '#areas'], [null, '', '#usuarios']]);
+  });
+
+  it('al abrir la página lee el fragmento: #areas abre Áreas (y la pide una vez) y #licencias, Licencias', () => {
+    const areas = conCargarAreas(cargarPanel());
+    areas.contexto.window.location.hash = '#areas';
+    areas.alCargar();
+    assert.deepEqual(visibles(areas), { vistas: ['areas'], botones: ['btn-nueva-area'] });
+    assert.equal(cuantas(areas, 'cargarAreas'), 1);
+    assert.ok(areas.llamadas.includes('getUsuarios'), 'la lista de usuarios se pide igual');
+
+    const licencias = conCargarAreas(cargarPanel());
+    licencias.contexto.window.location.hash = '#licencias';
+    licencias.alCargar();
+    assert.deepEqual(visibles(licencias), { vistas: ['licencias'], botones: [] });
+    assert.ok(licencias.llamadas.includes('getLicencias'));
+    assert.equal(cuantas(licencias, 'cargarAreas'), 0);
+  });
+
+  it('sin fragmento, con #usuarios o con uno desconocido abre en Usuarios: no cambia de pestaña ni reescribe la dirección', () => {
+    for (const hash of [undefined, '', '#usuarios', '#foo']) {
+      const panel = conCargarAreas(cargarPanel());
+      const registro = [];
+      panel.contexto.window.history = { replaceState: (...a) => registro.push(a) };
+      if (hash !== undefined) panel.contexto.window.location.hash = hash;
+      panel.alCargar();
+      assert.deepEqual(registro, [], String(hash));
+      assert.ok(panel.llamadas.includes('getUsuarios'), String(hash));
+      assert.ok(!panel.llamadas.includes('getLicencias'), String(hash));
+      assert.equal(cuantas(panel, 'cargarAreas'), 0, String(hash));
+      assert.equal(panel.elemento('vista-areas').hidden, true, String(hash));
+    }
   });
 });

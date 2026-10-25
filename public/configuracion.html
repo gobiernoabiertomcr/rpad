@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuarios - RPAD</title>
-    <meta name="description" content="Gestión de usuarios del RPAD">
+    <title>Configuración - RPAD</title>
+    <meta name="description" content="Usuarios, licencias y áreas responsables del RPAD">
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -100,10 +100,100 @@
         .etiqueta-licencia { background: var(--warning-light); color: #92400e; }
         .etiqueta-licencia-proxima { background: var(--gray-100); color: var(--gray-700); }
 
+        /* ===== Áreas (spec 2026-10-24-configuracion, 4): el lenguaje del Seguimiento. Usa los tokens de main.css; define
+           --borde-control, que está en publico.css (esta página no lo carga), y sus rojos y su ámbar ===== */
+        :root { --borde-control: #76879F; --ar-rojo: #8A3434; --ar-rojo-fondo: #F8E1E1; --ar-ambar: #7A5200; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+        .ar-bajada { margin: 0 0 16px; color: var(--suave); max-width: 72ch; }
+        .ar-tarjeta { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 20px 24px; }
+        .ar-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+        .ar-cabeza h2 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--tinta); }
+        .ar-cabeza span { color: var(--suave); font-size: 0.9rem; }
+        .ar-buscar { position: relative; max-width: 640px; margin-bottom: 12px; }
+        .ar-buscar svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--suave); pointer-events: none; }
+        .ar-buscar input { width: 100%; height: 46px; border-radius: 12px; border: 1px solid var(--borde-control); padding: 0 14px 0 42px; font: inherit; font-weight: 500; color: var(--texto); background: #fff; }
+        .ar-buscar input::placeholder { color: var(--suave); font-weight: 400; }
+        .ar-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+        .ar-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--borde-control); background: #fff; font: inherit; font-size: 0.86rem; font-weight: 500; color: var(--texto); cursor: pointer; }
+        .ar-chip b { font-variant-numeric: tabular-nums; font-weight: 700; }
+        .ar-chip[aria-pressed="true"] { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+        .ar-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; }
+        .ar-btn svg { flex: none; }
+        .ar-btn:disabled { cursor: progress; opacity: 0.7; }
+        .ar-btn-tinta { background: var(--tinta); color: #fff; }
+        .ar-btn-borde { background: #fff; color: var(--tinta); border-color: var(--borde-control); }
+        .ar-btn-rojo { background: var(--ar-rojo); color: #fff; border-color: var(--ar-rojo); }
+        .ar-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
+        .ar-boton-texto { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--ar-rojo); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+        .ar-etq { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+        .ar-etq.municipal { background: var(--cielo); color: var(--tinta); }
+        .ar-etq.externo { background: #EEF0F4; color: var(--texto); box-shadow: inset 0 0 0 1px var(--linea); }
+        .ar-etq.sin-aviso { background: var(--ar-rojo-fondo); color: var(--ar-rojo); }
+        .ar-etq.sin-email { background: var(--bruma); color: var(--suave); box-shadow: inset 0 0 0 1px var(--linea); }
+        .ar-vacio { margin: 14px 0 0; color: var(--suave); }
+        .ar-aviso { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 16px; border-radius: 12px; background: var(--sol); color: var(--ar-ambar); font-weight: 600; font-size: 0.92rem; }
+        .ar-aviso button { background: none; border: 0; padding: 0; font: inherit; color: var(--ar-ambar); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+        /* El foco visible, como en el modal: los filtros, el buscador, "Editar", el botón del aviso y "Nueva área" (en el encabezado de la página) */
+        #vista-areas :focus-visible, #btn-nueva-area:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+
+        /* La tabla, como la lista del Seguimiento: se desplaza de costado dentro de su marco, y el contenido de la página no se ensancha */
+        .ar-tabla-marco { overflow-x: auto; position: relative; }
+        table.ar-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+        .ar-tabla th { text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--suave); padding: 8px 10px; border-bottom: 1px solid var(--linea); white-space: nowrap; }
+        .ar-tabla td { padding: 11px 10px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+        .ar-tabla tr:hover td { background: var(--bruma); }
+        .main-content { min-width: 0; }
+        .ar-tabla .t { min-width: 260px; }
+        .ar-tabla .t b { display: block; font-weight: 600; color: var(--tinta); }
+        .ar-tabla .t small, .ar-tabla small { display: block; color: var(--suave); font-size: 0.82rem; }
+        .ar-tabla .num { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+        .ar-tabla .accion { text-align: right; }
+
+        /* El modal del área: el cuerpo se desplaza y el pie con los botones queda siempre a la vista */
+        .modal.ar-modal { max-width: 720px; border-radius: 18px; }
+        .modal.ar-modal-chico { max-width: 520px; }
+        .ar-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .ar-modal .modal-header { padding: 18px 24px; }
+        .ar-modal .modal-title { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--tinta); }
+        .ar-modal .modal-body { padding: 18px 24px 8px; }
+        .ar-modal-bajada { margin: 0 0 18px; color: var(--suave); font-size: 0.92rem; max-width: 62ch; }
+        .ar-modal .form-group { margin-bottom: 16px; }
+        .ar-modal .form-label { font-weight: 600; color: var(--texto); }
+        .ar-modal .form-input { height: 44px; border-color: var(--borde-control); border-radius: 10px; font: inherit; font-weight: 500; color: var(--texto); }
+        .ar-modal .form-input[aria-invalid="true"] { border-color: var(--ar-rojo); box-shadow: 0 0 0 3px var(--ar-rojo-fondo); }
+        .ar-modal .form-hint { color: var(--suave); }
+        .ar-modal .form-error { color: var(--ar-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; }
+        .ar-modal .requerido { color: var(--ar-rojo); }
+        .ar-bloque { border: 0; padding: 0; margin: 0 0 8px; min-width: 0; }
+        .ar-bloque + .ar-bloque { border-top: 1px solid var(--linea); padding-top: 16px; }
+        .ar-bloque > legend { padding: 0; margin-bottom: 12px; font-family: var(--f-titulo); font-weight: 650; font-size: 1rem; color: var(--tinta); }
+        /* El artículo va delante del nombre, como se lee */
+        .ar-con-articulo { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
+        .ar-lectura { margin: -4px 0 16px; padding: 10px 14px; border-radius: 10px; background: var(--bruma); border: 1px dashed var(--borde-control); font-size: 0.9rem; color: var(--texto); }
+        .ar-lectura span { display: block; font-size: 0.78rem; color: var(--suave); margin-bottom: 2px; }
+        .ar-lectura q { font-weight: 600; quotes: '«' '»'; }
+        /* El Ámbito, dentro de "El área": su leyenda es la de un campo (.form-label), no la de un grupo */
+        .ar-ambito-grupo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .ar-ambito-grupo > legend { padding: 0; }
+        .ar-ambitos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .ar-ambito { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--borde-control); border-radius: 12px; cursor: pointer; }
+        .ar-ambito:hover { background: var(--bruma); }
+        .ar-ambito input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--tinta); flex: none; }
+        .ar-ambito b { display: block; font-weight: 700; color: var(--texto); }
+        .ar-ambito small { display: block; color: var(--suave); font-size: 0.8rem; line-height: 1.35; margin-top: 1px; }
+        .ar-ambito:has(input:checked) { border-color: var(--tinta); background: #EEF5FB; box-shadow: inset 0 0 0 1px var(--tinta); }
+        .ar-ayuda-emails { margin: -8px 0 16px; }
+        .ar-modal .modal-footer { background: #fff; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .ar-modal .modal-footer small { color: var(--suave); font-size: 0.82rem; max-width: 40ch; }
+        .ar-modal .modal-footer .botones { display: flex; gap: 10px; margin-left: auto; }
+
         @media (max-width: 768px) {
             .form-row { grid-template-columns: 1fr; }
             .grupo-encabezado { padding: 14px 16px; }
             .fila-usuario { padding: 12px 16px; align-items: flex-start; }
+            .ar-tarjeta { padding: 16px; }
+            .ar-ambitos { grid-template-columns: 1fr; }
+            .ar-modal .modal-footer .botones { width: 100%; justify-content: flex-end; }
         }
         @media (prefers-reduced-motion: reduce) {
             .grupo-desactivados summary::before { transition: none; }
@@ -155,10 +245,9 @@
                 </div>
                 <div class="sidebar-section hidden" id="sidebarAdmin">
                     <div class="sidebar-section-title">Administración</div>
-                    <a href="admin.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Gestión de Datasets</span></a>
-                    <a href="areas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg><span>Áreas</span></a>
-                    <a href="usuarios.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Usuarios</span></a>
+                    <a href="admin.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
                     <a href="correos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="configuracion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
                 </div>
                 <div class="sidebar-section hidden" id="sidebarTools">
                     <div class="sidebar-section-title">Herramientas</div>
@@ -178,18 +267,23 @@
         <main class="main-content">
             <div class="page-header">
                 <h1 class="page-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    Usuarios
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Configuración
                 </h1>
                 <button type="button" class="btn btn-primary" id="btn-nuevo-usuario">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     Nuevo usuario
+                </button>
+                <button type="button" class="btn btn-primary" id="btn-nueva-area" hidden>
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Nueva área
                 </button>
             </div>
 
             <div class="usuario-pestanas pagina-pestanas" id="pagina-pestanas" role="tablist">
                 <button type="button" class="usuario-pestana activa" data-vista="usuarios" role="tab" aria-selected="true">Usuarios</button>
                 <button type="button" class="usuario-pestana" data-vista="licencias" role="tab" aria-selected="false">Licencias</button>
+                <button type="button" class="usuario-pestana" data-vista="areas" role="tab" aria-selected="false">Áreas</button>
             </div>
 
             <div id="vista-usuarios">
@@ -256,6 +350,22 @@
                     <summary><h2>Terminadas y anuladas</h2></summary>
                     <div id="lista-licencias-pasadas"></div>
                 </details>
+            </div>
+
+            <!-- Áreas (spec 2026-10-24-configuracion, 4): areas.js arma el aviso, los filtros y la tabla -->
+            <div id="vista-areas" hidden>
+                <p class="ar-bajada">Los organismos responsables de los datasets. El nombre, el artículo y la dependencia salen así en las notas, y los emails del área reciben el aviso de los 40 días de los datasets de gestión externa.</p>
+                <div class="ar-aviso" id="areas-aviso" role="status" hidden></div>
+                <section class="ar-tarjeta" aria-labelledby="titulo-areas">
+                    <div class="ar-cabeza"><h2 id="titulo-areas">Áreas responsables</h2><span id="areas-contador"></span></div>
+                    <div class="ar-buscar">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        <input type="search" id="buscar-area" placeholder="Buscá por nombre, dependencia, email o persona de contacto" aria-label="Buscar un área por nombre, dependencia, email o persona de contacto" autocomplete="off">
+                    </div>
+                    <div class="ar-chips" id="areas-filtros" role="group" aria-label="Filtrar áreas"></div>
+                    <div id="areas-lista"><div class="loading"><div class="spinner"></div></div></div>
+                    <p class="ar-vacio" id="areas-vacio" role="status" hidden>Ninguna área coincide con lo que buscaste.</p>
+                </section>
             </div>
 
             <!-- Footer -->
@@ -421,10 +531,131 @@
         </div>
     </div>
 
+    <!-- Modal Área (spec 2026-10-24-configuracion, 4.2): sin <form> entre el .modal y su cuerpo, así el cuerpo se desplaza y el pie con
+         los botones queda siempre a la vista -->
+    <div class="modal-overlay" id="modal-area">
+        <div class="modal ar-modal" role="dialog" aria-modal="true" aria-labelledby="modal-area-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-area-titulo">Nueva área</h2>
+                <button type="button" class="modal-close" data-cerrar-area aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="area-error" class="aviso aviso-error" role="alert" hidden></div>
+                <fieldset class="ar-bloque">
+                    <legend>El área</legend>
+                    <div class="form-group">
+                        <label class="form-label" for="a-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
+                        <div class="ar-con-articulo">
+                            <select id="a-articulo" class="form-input" aria-label="Artículo del nombre">
+                                <option value="la">la</option>
+                                <option value="el">el</option>
+                            </select>
+                            <input type="text" id="a-nombre" class="form-input" maxlength="200" aria-required="true" aria-describedby="a-nombre-error" placeholder="Ej.: Dirección General de Catastro">
+                        </div>
+                        <p class="form-error" id="a-nombre-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="a-superior">Depende de</label>
+                        <div class="ar-con-articulo">
+                            <select id="a-articulo-superior" class="form-input" aria-label="Artículo de la dependencia">
+                                <option value="">—</option>
+                                <option value="la">la</option>
+                                <option value="el">el</option>
+                            </select>
+                            <input type="text" id="a-superior" class="form-input" maxlength="300" placeholder="Ej.: Secretaría de Economía, Finanzas y Control de Gestión">
+                        </div>
+                    </div>
+                    <p class="ar-lectura"><span>Así se lee en las notas</span><q id="a-lectura"></q></p>
+                    <fieldset class="ar-ambito-grupo">
+                        <legend class="form-label">Ámbito</legend>
+                        <div class="ar-ambitos">
+                            <label class="ar-ambito"><input type="radio" name="a-ambito" value="municipal" aria-describedby="a-ambito-error"><span><b>Municipal</b><small>La nota de la DGMIT va por la Subsecretaría.</small></span></label>
+                            <label class="ar-ambito"><input type="radio" name="a-ambito" value="externo" aria-describedby="a-ambito-error"><span><b>Fuera del municipio</b><small>La nota de la DGMIT va directo al organismo.</small></span></label>
+                        </div>
+                        <p class="form-error" id="a-ambito-error" hidden></p>
+                    </fieldset>
+                </fieldset>
+                <fieldset class="ar-bloque">
+                    <legend>Contacto del área</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="a-email-principal">Email principal</label>
+                            <input type="email" id="a-email-principal" class="form-input" maxlength="150" aria-describedby="a-emails-ayuda a-email-principal-error">
+                            <p class="form-error" id="a-email-principal-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="a-email-secundario">Email secundario</label>
+                            <input type="email" id="a-email-secundario" class="form-input" maxlength="150" aria-describedby="a-emails-ayuda a-email-secundario-error">
+                            <p class="form-error" id="a-email-secundario-error" hidden></p>
+                        </div>
+                    </div>
+                    <p class="form-hint ar-ayuda-emails" id="a-emails-ayuda">Los dos reciben el aviso de los 40 días de los datasets de gestión externa. Sin ninguno, no le llega.</p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="a-telefono">Teléfono</label>
+                            <input type="tel" id="a-telefono" class="form-input" maxlength="50">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="a-celular">Celular</label>
+                            <input type="tel" id="a-celular" class="form-input" maxlength="50">
+                        </div>
+                    </div>
+                </fieldset>
+                <fieldset class="ar-bloque">
+                    <legend>Persona de contacto</legend>
+                    <div class="form-group">
+                        <label class="form-label" for="a-contacto">Nombre</label>
+                        <input type="text" id="a-contacto" class="form-input" maxlength="150">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="a-contacto-telefono">Teléfono</label>
+                            <input type="tel" id="a-contacto-telefono" class="form-input" maxlength="50">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="a-contacto-email">Email</label>
+                            <input type="email" id="a-contacto-email" class="form-input" maxlength="150" aria-describedby="a-contacto-email-error">
+                            <p class="form-error" id="a-contacto-email-error" hidden></p>
+                        </div>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="modal-footer">
+                <span id="area-pie-izquierda"></span>
+                <div class="botones">
+                    <button type="button" class="ar-btn ar-btn-borde" data-cerrar-area>Cancelar</button>
+                    <button type="button" class="ar-btn ar-btn-tinta" id="area-guardar">Guardar área</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Borrar un área (spec 4.3): solo sin ningún dataset, activo o dado de baja, ni cambios pendientes que la usen -->
+    <div class="modal-overlay" id="modal-borrar-area">
+        <div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-borrar-area-titulo" aria-describedby="borrar-area-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-borrar-area-titulo">Borrar área</h2>
+                <button type="button" class="modal-close" data-cerrar-borrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="ar-modal-bajada" id="borrar-area-texto"></p>
+                <div id="borrar-area-error" class="aviso aviso-error" role="alert" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <small></small>
+                <div class="botones">
+                    <button type="button" class="ar-btn ar-btn-borde" data-cerrar-borrar>Cancelar</button>
+                    <button type="button" class="ar-btn ar-btn-rojo" id="borrar-area-confirmar">Borrar área</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="js/config.js"></script>
-    <script src="js/auth.js?v=20261130"></script>
-    <script src="js/main.js?v=20261130"></script>
-    <script src="js/api.js?v=20261130"></script>
-    <script src="js/usuarios.js?v=20261128"></script>
+    <script src="js/auth.js?v=20261204"></script>
+    <script src="js/main.js?v=20261204"></script>
+    <script src="js/api.js?v=20261204"></script>
+    <script src="js/usuarios.js?v=20261205"></script>
+    <script src="js/areas.js?v=20261205"></script>
 </body>
 </html>

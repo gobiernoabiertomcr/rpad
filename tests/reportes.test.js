@@ -1,8 +1,6 @@
-// Reportes PDF y notas DOCX
+// Reportes PDF
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-// jszip llega con docx (lo usa para armar el .docx): acá abre la nota para leer su texto
-import JSZip from 'jszip';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { lineasPorHoja } from './pdf-lector.js';
 import { hoyArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
@@ -252,35 +250,5 @@ describe('reportes PDF: "Datos al"', () => {
     // La portada (con estos datos, en una hoja) y una hoja del Seguimiento por cada dataset activo del área
     assert.equal(hojas.filter(lineas => lineas.includes('Seguimiento del dataset')).length, Number(activos));
     hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Reporte por área · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
-  });
-});
-
-describe('notas DOCX', () => {
-  for (const tipo of ['interna', 'externa', 'escalonada']) {
-    it(`genera la nota ${tipo}`, async () => {
-      const [dataset] = await query('SELECT id, area_id FROM datasets WHERE activo = 1 LIMIT 1');
-      const res = await api.post('/notas/generar', {
-        fecha: '2026-10-12', numero: '123/2026', area_id: dataset.area_id, tipo,
-        datasets: [{ id: dataset.id, periodo_inicial: '2025', periodo_final: '2026' }]
-      }, { token: usuarios.adminA.token });
-      assert.equal(res.status, 200);
-      assert.match(res.headers.get('content-type'), /wordprocessingml/);
-      assert.equal(res.body.subarray(0, 2).toString(), 'PK');
-    });
-  }
-
-  it('ninguna nota menciona el Índice Nacional de Datos Abiertos', async () => {
-    const [dataset] = await query('SELECT id, area_id FROM datasets WHERE activo = 1 LIMIT 1');
-    for (const tipo of ['interna', 'externa', 'escalonada']) {
-      const res = await api.post('/notas/generar', {
-        fecha: '2026-10-15', numero: '124/2026', area_id: dataset.area_id, tipo,
-        datasets: [{ id: dataset.id, periodo_inicial: '2025', periodo_final: '2026' }]
-      }, { token: usuarios.adminA.token });
-      assert.equal(res.status, 200, tipo);
-      const documento = await (await JSZip.loadAsync(res.body)).file('word/document.xml').async('string');
-      // El texto se lee: la Ordenanza sí está
-      assert.ok(documento.includes('Ordenanza N° 17.662/23'), tipo);
-      assert.ok(!documento.includes('Índice Nacional') && !documento.includes('Cabe destacar'), tipo);
-    }
   });
 });

@@ -4,8 +4,9 @@
  * 'AAAA-MM-DD' y se comparan como texto. Ninguna función tira error: una entrada rara da los errores de sus campos.
  *
  * La usa la API (`controllers/notasDgmitController.js`), que además chequea en la base que los datasets se puedan elegir
- * y que el número no esté repetido (con los textos de `textoNoSePuedeElegir` y `textoNumeroRepetido`). El formulario del
- * Seguimiento tiene una copia, atada por un test de paridad: si cambia una regla o un mensaje, cambia en los dos.
+ * (`sePuedeElegir`) y que el número no esté repetido (con los textos de `textoNoSePuedeElegir` y `textoNumeroRepetido`).
+ * El formulario del Seguimiento tiene una copia, atada por un test de paridad: si cambia una regla o un mensaje, cambia en
+ * los dos.
  */
 import { esFechaIso } from './notasDigitalesCalendario.js';
 
@@ -64,8 +65,8 @@ const idDeDataset = (valor) => {
 
 // Los ids de los datasets, sin repetidos y en el orden recibido. null si no es un array, si está vacío o si algún
 // elemento no es un id (no se descartan en silencio). Los vistos van en un Set: tiempo lineal, así un cuerpo grande no
-// traba el servidor
-const idsDeDatasets = (datasets) => {
+// traba el servidor. La usa también el generador de notas (services/notasGeneradorReglas.js), para el área y los datasets
+export const idsDeDatasets = (datasets) => {
   if (!Array.isArray(datasets) || datasets.length === 0) return null;
   const ids = [];
   const vistos = new Set();
@@ -128,6 +129,12 @@ export const validarMotivo = (valor) => {
 // El 409 de un número que ya tiene otra nota sin anular
 export const textoNumeroRepetido = (numero) =>
   `Ya hay una nota DGMIT N° ${numero} cargada. Para sumarle datasets o cambiar algo, corregila.`;
+
+// Se pueden elegir los datasets activos, de gestión externa y con «Requiere nota DGMIT» en Sí o sin dato (el 0 es No). Recibe
+// la fila de la base (activo, tipo_gestion, requiere_nota). La usan la carga de notas DGMIT (controllers/notasDgmitController.js)
+// y el generador de notas: son los datasets a los que la DGMIT les manda una nota formal
+export const sePuedeElegir = (dataset) =>
+  Boolean(dataset.activo) && dataset.tipo_gestion === 'externa' && (dataset.requiere_nota === null || dataset.requiere_nota === 1);
 
 // El 400 de un dataset que no se puede elegir (dado de baja, interno o con «Requiere nota DGMIT» en No)
 export const textoNoSePuedeElegir = (titulo) =>

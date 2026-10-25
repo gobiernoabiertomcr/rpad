@@ -35,18 +35,20 @@ El sistema cuenta con cinco roles de usuario:
 | Rol | Descripción | Permisos |
 |-----|-------------|----------|
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
-| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar áreas y usuarios. Configurar notificaciones SMTP. Generar reportes y notas. Cargar las métricas manuales de Métricas y Reportes. |
+| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar usuarios, licencias y áreas en Configuración. Configurar notificaciones SMTP. Generar reportes y armar notas con el Generador de Notas. Cargar las métricas manuales de Métricas y Reportes. |
 | `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros **de respaldo** (si ese día no hay ningún auditor disponible) o, los que propuso un auditor, **sin responsabilidad por la auditoría** (si hay auditores disponibles), en el panel de usuarios solo crea y modifica lectores y colaboradores (y solo pasa a alguien de lector a colaborador o al revés) y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
-| `colaborador` | Lector que carga notas DGMIT | Todo lo de `lector` y, además, carga las notas DGMIT en Herramientas → Seguimiento (y corrige o anula las que cargó). No modifica datasets, no audita cambios y no entra a la administración. Pensado para el personal de la DGMIT (ver [Notas DGMIT](#notas-dgmit)). |
-| `lector` | Solo lectura | Ver todas las secciones (portada, calendario, datasets, Métricas y Reportes, notas, Gestión, Seguimiento) sin poder modificar datos. |
+| `colaborador` | Lector que carga notas DGMIT | Todo lo de `lector` y, además, carga las notas DGMIT en Herramientas → Seguimiento (y corrige o anula las que cargó) y arma las notas de la DGMIT con el Generador de Notas (Herramientas → Notas). No modifica datasets, no audita cambios y no entra a la administración. Pensado para el personal de la DGMIT (ver [Notas DGMIT](#notas-dgmit) y [Generador de Notas](#generador-de-notas)). |
+| `lector` | Solo lectura | Ver la portada, el calendario, los datasets, Métricas y Reportes, Gestión y Seguimiento sin poder modificar datos. No usa el Generador de Notas (Herramientas → Notas). |
 
 Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins). Un editor audita **de respaldo** si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Si hay auditores disponibles, un editor puede aprobar o rechazar el cambio que propuso un auditor (por ejemplo, cuando un auditor se lo pide), y queda "aprobado o rechazado **sin responsabilidad por la auditoría**": Mi Perfil se lo avisa antes y lo muestra después. El cambio que propuso un editor, con auditores disponibles, lo auditan ellos. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
 **Días sin auditor:** un día hábil en el que ningún superadmin ni admin está disponible (activo, con contraseña y sin licencia; los editores no cuentan, se informan como respaldo). Los días hábiles seguidos forman un período (un fin de semana o un feriado en el medio no lo cortan) y cada período dice cuándo vuelve a haber un auditor. El sistema lo avisa en tres lugares: el formulario de licencias advierte los días sin auditor que dejaría esa licencia (sin bloquear el guardado); a quien propone un cambio que hoy no tiene a nadie que lo audite le llega, en el recordatorio de las 14:00, un único aviso por cambio con la fecha de vuelta; y Correos → Estado muestra cuántos cambios no tienen a quién pedirle la auditoría y los próximos períodos.
 
-### Panel de usuarios
+### Configuración: Usuarios, Licencias y Áreas
 
-En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y colaboradores, y como cambio de rol solo de lector a colaborador o al revés):
+**Administración → Configuración** (`configuracion.html`) junta en una sola página, con tres pestañas, lo que antes eran Usuarios y Áreas: **Usuarios**, **Licencias** y **Áreas**. La pestaña queda en la dirección (`configuracion.html#licencias`, `configuracion.html#areas`) y recargar la página la conserva. Entran superadmin, admin y editor. Los links viejos siguen andando: `usuarios.html` lleva a Usuarios (con `#licencias`, a Licencias) y `areas.html`, a Áreas; los emails al superadmin abren Configuración.
+
+En la pestaña **Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y colaboradores, y como cambio de rol solo de lector a colaborador o al revés):
 
 - **Crear usuarios.** El usuario nuevo recibe un email con un link para elegir su contraseña (vence en 72 h). Nadie ve ni envía contraseñas.
 - **Editar** nombre, usuario, email, cargo, vínculo (planta permanente, planta política o contrato) y rol (admin, editor, colaborador o lector). Debajo del rol, una línea explica qué puede hacer cada uno.
@@ -58,6 +60,15 @@ En **Administración → Usuarios**, admin y superadmin pueden (el editor, solo 
 Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor, colaborador o lector a un admin si quedarían menos, ni pasar a editor, colaborador o lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
 El superadmin recibe un aviso por email cuando otro usuario crea un administrador o un editor, cambia un rol, cambia el email de un administrador o un editor, reactiva a uno de ellos o desactiva a alguien. Durante su licencia esos avisos se retienen: a la vuelta le llega un solo email de resumen con todos.
+
+En la pestaña **Áreas** están los organismos responsables de los datasets:
+
+- **El aviso:** si a alguna área con datasets de gestión externa no le llega el aviso de los 40 días porque no tiene ningún email cargado, arriba se dice cuántas son, con el botón **Ver las áreas sin email**.
+- **La lista:** un buscador (nombre, dependencia, email o persona de contacto), los filtros Todas, Municipales, Fuera del municipio, Sin email y Sin datasets (este, solo si hay alguna), y una tabla con el área y su dependencia, el ámbito, los emails del área, la persona de contacto y la cantidad de datasets activos.
+- **Nueva área y Editar:** el nombre y la dependencia, cada uno con su artículo (debajo, "Así se lee en las notas", como lo escribe el Generador de Notas), el ámbito (Municipal o Fuera del municipio), los emails y teléfonos del área y la persona de contacto. Los botones quedan siempre a la vista, aunque la ventana sea baja. No se guarda un nombre vacío o repetido (sin importar mayúsculas ni tildes) ni un email que no parece una dirección.
+- **Borrar:** solo un área sin ningún dataset, activo o dado de baja, y sin cambios pendientes que la elijan. Pide confirmación y no se puede deshacer.
+- **Los datos de contacto** de las áreas (emails, teléfonos y persona de contacto) solo los ve administración: sin esa sesión, las APIs públicas de áreas y de datasets ya no los devuelven.
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-configuracion-design.md`.
 
 ## Campo "Qué se solicita" de los datasets
 
@@ -137,9 +148,9 @@ Dos cambios de las Notas Digitales que van juntos.
 
 ## Notas DGMIT
 
-En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, y ellas le mandan una **nota formal** al área por fuera del RPAD. Ese paso no quedaba registrado: no se podía saber si un dataset estaba vencido porque el área no respondió o porque la nota todavía no había salido. Ahora quien tiene los datos de la nota la carga en el RPAD y queda en el Seguimiento de cada dataset que pide. La DGMIT hace sus notas como siempre, por fuera: acá solo se registran.
+En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, y ellas le mandan una **nota formal** al área por fuera del RPAD. Ese paso no quedaba registrado: no se podía saber si un dataset estaba vencido porque el área no respondió o porque la nota todavía no había salido. Ahora quien tiene los datos de la nota la carga en el RPAD y queda en el Seguimiento de cada dataset que pide. La DGMIT manda sus notas como siempre, por sus vías (desde el [Generador de Notas](#generador-de-notas) también las puede armar en el RPAD, que no las guarda): acá solo se registran.
 
-- **Quién carga:** el rol nuevo **Colaborador** (ve lo mismo que un lector y, además, carga notas DGMIT; pensado para el personal de la DGMIT) y administración (superadmin, admin y editor). Cada uno corrige o anula las que cargó; administración, cualquiera. Ninguna cuenta es Colaborador al desplegar: se asigna desde Usuarios.
+- **Quién carga:** el rol nuevo **Colaborador** (ve lo mismo que un lector y, además, carga notas DGMIT; pensado para el personal de la DGMIT) y administración (superadmin, admin y editor). Cada uno corrige o anula las que cargó; administración, cualquiera. Ninguna cuenta es Colaborador al desplegar: se asigna desde Configuración → Usuarios.
 - **Cómo:** Herramientas → Seguimiento → **Cargar nota DGMIT**: número de la nota, fecha en que el área la recibió (desde el 01/01/2025 hasta hoy), tipo (solicitud o reiteración) y los datasets que pide (solo los externos activos que requieren nota DGMIT). Se guarda directo, sin doble verificación, y queda registrado quién la cargó y cuándo. Un número no se repite entre las notas sin anular: si la DGMIT y la Dirección cargan la misma nota, no queda dos veces.
 - **Corregir y anular:** con motivo. Una nota nunca se borra: la anulada queda tachada en los movimientos, con el motivo, y deja de contar en todo lo demás. Cada corrección guarda los datos de antes.
 - **Dónde se ve:** en el circuito ("Nota DGMIT N° 156/26 / Solicitud recibida por el área el 22/10/2026, hace 2 días", en violeta; sin nota, "Pendiente de carga" si ya hacía falta, "Todavía no hizo falta" si no, o "Ya no se pide" en un dado de baja), en los movimientos (filtro "Notas DGMIT"), en la cinta, en la columna "Última nota DGMIT al área" de la lista, en el PDF del Seguimiento y en el anexo de cada reiteración.
@@ -164,6 +175,20 @@ En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, 
 - **Dónde está la regla:** `services/metricasReglas.js` (puro), `services/metricasCinta.js`, `services/metricasFoto.js` y `services/reportes*.js`; la página y los PDF dibujan lo que calcula el servidor.
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-metricas-y-reportes-design.md`.
 
+## Generador de Notas
+
+**Herramientas → Notas** (`notas.html`) es la herramienta con la que la DGMIT arma la nota formal que le pide los datos a un área: la **interna**, a la Subsecretaría de Modernización y Transparencia para que gestione ante un área del municipio, o la **externa**, directo al organismo de fuera del municipio, como solicitud o como reiteración. La usan administración y el colaborador; el lector no la ve. Es solo un generador: no guarda el número, ni la nota, ni quién la generó (la nota DGMIT se sigue cargando aparte, en el Seguimiento, cuando el área la recibe).
+
+- **Tres pasos:** 1. **Área**: primero las que tienen datasets vencidos o próximos a vencer (60 días), con el filtro "Todas" y un buscador por área o por dataset; solo aparecen las áreas con datasets externos activos que requieren nota DGMIT. 2. **Datasets y nota**: el tipo de nota (viene elegido por el ámbito del área), solicitud o reiteración, la fecha (hoy, editable) y el número (opcional: sin número sale "Nota N° ____/26", para completarlo a mano), y los datasets del área, con los vencidos y los próximos ya tildados (los que están al día a la fecha de la nota se ven, pero no se eligen). Al lado, la vista previa de la nota, que cambia con cada cambio. 3. **Revisar y descargar**: la nota en grande y **Descargar Word**.
+- **Datos solicitados:** cada dataset sale con su frecuencia, los datos que se piden (los calcula el RPAD con la fecha de la nota, igual que en las Notas Digitales: la nota de la DGMIT y la Nota Digital nunca piden cosas distintas) y su "Qué se solicita".
+- **Reiteración:** la "Nota anterior" viene completada con las notas DGMIT cargadas en el Seguimiento (la primera del ciclo de cada dataset elegido) y se puede editar. La nota dice que "no se ha recibido la información solicitada mediante Nota N° …", sin reprochar nada al área.
+- **El Word** sale en la hoja membretada: oficio (21,6 × 35,6 cm, Legal), con el membrete de Correos en el encabezado, el isotipo de la Municipalidad como marca de agua, el pie y "Página X de Y". **Sin firma**: se imprime y se firma a mano, y se puede retocar antes de imprimir.
+- **Correos → Libro de Notas Digitales:** cada nota suma el botón **Word**: la misma nota, tal como se envió, en la hoja membretada, sin la primera línea del email y sin la firma (queda el espacio para firmar a mano; con dos firmas, los dos espacios y la leyenda). Vale para todas las notas del libro, también las anteriores y las de prueba; el PDF y el anexo no cambian. Si el sistema no reconoce una nota, lo avisa con un mensaje en lugar de bajar un Word roto.
+- **Áreas → Ámbito:** cada área es **Municipal** o **Fuera del municipio** (en Configuración → Áreas, el formulario lo elige entre las dos opciones y la tabla lo muestra en la columna Ámbito). Decide qué nota le corresponde: municipal, la interna; fuera del municipio, la externa. La migración marca 13 áreas como fuera del municipio (por ejemplo, el INDEC, la Cooperativa y el Tribunal Electoral). Los nombres y las dependencias de las áreas no cambian: salen en la nota tal como están cargados, y si alguno está mal se corrige a mano en Configuración → Áreas.
+- **Se van** la nota escalonada, el sello con las iniciales fijas, el período escrito a mano y el buscador de área por dataset (lo reemplaza el buscador del paso 1).
+- **Dónde está la regla:** `services/notasGeneradorReglas.js` (la validación, pura), `services/notasGeneradorContenido.js` (el texto de la nota, puro: de él salen la vista previa y el Word), `services/notasWord.js` (el Word) y `services/notasDigitalesWord.js` (el Word de una Nota Digital). Ver [Migración: Generador de Notas](#migración-generador-de-notas).
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-generador-de-notas-design.md`.
+
 ## Estructura del proyecto
 
 ```
@@ -179,13 +204,13 @@ rpad/
 │   ├── authController.js          # Login, verificación, cambio password
 │   ├── catalogController.js       # Temas, frecuencias, formatos
 │   ├── datasetController.js       # CRUD datasets, estadísticas
-│   ├── areasController.js         # CRUD áreas responsables
+│   ├── areasController.js         # CRUD áreas responsables (los datos de contacto, solo para administración)
 │   ├── andinoController.js        # Integración con portal de datos
 │   ├── cambiosPendientesController.js  # Sistema de doble verificación
 │   ├── contactoController.js      # Formulario de contacto público
 │   ├── notificacionesController.js  # Cron diario: aviso a áreas y Notas Digitales
 │   ├── notasDigitalesController.js  # API de Notas Digitales (libro, prueba, configuración)
-│   ├── notasController.js         # Generador de notas DOCX
+│   ├── notasController.js         # Generador de Notas: las áreas, la vista previa y el Word (administración y el colaborador)
 │   ├── seguimientoController.js   # Seguimiento del dataset: lista, ficha y PDF (solo lectura)
 │   ├── notasDgmitController.js    # Notas DGMIT: cargar, corregir y anular (administración y el colaborador)
 │   ├── metricasController.js      # Métricas: GET /api/metricas y su PDF (solo lectura, cualquier rol con sesión)
@@ -198,10 +223,13 @@ rpad/
 │   ├── requiereNotaReglas.js      # Reglas puras de "Requiere nota DGMIT": validación, normalización y texto (Sí, No o —)
 │   ├── notasDgmitReglas.js        # Reglas puras de las notas DGMIT: validación de la nota y del motivo, mensajes
 │   ├── registroReglas.js          # Reglas puras de "Registrar actualización": el origen de los datos y los mensajes de lo que falta
+│   ├── areasReglas.js             # Reglas puras de un área: validación, mensajes, los datos de contacto y por qué no se puede borrar
 │   ├── metricas*.js               # Métricas: reglas (casos, circuito, resultados, contexto, trabajo y áreas), cinta, opciones y la foto del 31/12
 │   ├── reportes*.js               # Reportes PDF: la base (diseño del anexo) y un archivo por reporte, la agenda de pedidos y los nombres de los archivos
 │   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF (de una hoja, o de N para un anexo)
-│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF, anexo del aviso y anexo de la reiteración (el Seguimiento de cada dataset)
+│   ├── notasGenerador*.js         # Generador de Notas: reglas (validación, qué se puede pedir y el orden), contenido de la nota (bloques y HTML) y consultas
+│   ├── notasWord.js               # El Word en la hoja membretada (la nota de la DGMIT y la Nota Digital en Word)
+│   └── notasDigitales*.js         # Notas Digitales: motor, calendario, consultas, contenido, PDF, anexo del aviso, anexo de la reiteración (el Seguimiento de cada dataset) y la nota en Word
 ├── database/
 │   ├── schema.sql                 # Estructura y datos iniciales de la BD
 │   └── updates/                   # Scripts de migración
@@ -223,9 +251,11 @@ rpad/
 │       ├── rollback-notas-dgmit.sql              # Deshace la anterior (después de volver a los archivos anteriores; antes que las vueltas atrás del editor)
 │       ├── migracion-metricas.sql                # Métricas y Reportes: las tablas de la foto anual y de los «Recibido el» importados (va antes del código; repetible)
 │       ├── migracion-metricas-recibido-datos.sql # Métricas y Reportes: los «Recibido el» y orígenes viejos, del Excel (después de la anterior; antes del 10/01/2027; repetible)
-│       └── rollback-metricas.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden la foto y lo importado)
+│       ├── rollback-metricas.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden la foto y lo importado)
+│       ├── migracion-generador-notas.sql         # Generador de Notas: la columna areas.ambito y las 13 áreas fuera del municipio (después de la de Métricas y antes del código; repetible)
+│       └── rollback-generador-notas.sql          # Deshace la anterior (después de volver a los archivos anteriores; se pierde el ámbito)
 ├── middleware/
-│   └── auth.js                    # JWT middleware
+│   └── auth.js                    # JWT middleware (authMiddleware y sesionOpcional, para las rutas públicas que muestran más con sesión)
 ├── routes/
 │   └── index.js                   # Definición de rutas API
 ├── scripts/
@@ -239,17 +269,16 @@ rpad/
     ├── login.html                 # Formulario de login
     ├── establecer-contrasena.html # Elegir la contraseña con un link de acceso
     ├── admin.html                 # Panel de administración de datasets
-    ├── areas.html                 # Panel de administración de áreas
-    ├── usuarios.html              # Panel de usuarios y licencias
     ├── correos.html               # Correos: Libro de Notas Digitales, Estado, Vista previa y pruebas, Configuración (pestañas)
+    ├── configuracion.html         # Configuración: pestañas Usuarios, Licencias y Áreas (reemplaza a usuarios.html y areas.html, que redirigen acá)
     ├── reportes.html              # Métricas y Reportes: pestañas Métricas (circuito, resultados, contexto, trabajo, áreas y "Para completar") y Reportes (siete PDF)
-    ├── notas.html                 # Generador de notas administrativas DOCX
+    ├── notas.html                 # Generador de Notas de la DGMIT: área, datasets y nota, revisar y descargar el Word
     ├── gestion.html               # Gestión: Proyectos (repositorio, logros y línea de tiempo)
     ├── seguimiento.html           # Seguimiento del dataset: lista "Sin elegir" o un dataset (?id=N), con su cinta, movimientos y PDF
     ├── perfil.html                # Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma
     ├── robots.txt                 # Cerrado a todos, salvo a los robots de vista previa de un link
     ├── css/
-    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 14 páginas con carcasa
+    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 13 páginas con carcasa
     │   ├── publico.css            # Solo las 5 páginas públicas (index, datasets, dataset, calendario y contacto)
     │   └── styles.css, layout.css, perfil.css   # Sin uso: no los carga ninguna página
     ├── js/
@@ -264,11 +293,11 @@ rpad/
     │   ├── contacto.js            # Formulario de contacto
     │   ├── admin-fechas.js        # Admin: lo puro de la lista y de "Registrar actualización" (se carga antes de admin.js)
     │   ├── admin.js               # Panel de administración
-    │   ├── areas.js               # Gestión de áreas responsables
-    │   ├── usuarios.js            # Panel de usuarios y licencias
+    │   ├── usuarios.js            # Configuración: las pestañas, Usuarios y Licencias
+    │   ├── areas.js               # Configuración: la pestaña Áreas (aviso, filtros, tabla y modales)
     │   ├── correos.js             # Correos: pestañas, Libro, Estado, vista previa y configuración
     │   ├── reportes.js            # Métricas y Reportes: dibuja lo que manda GET /api/metricas (SVG y HTML) y descarga los PDF
-    │   ├── notas.js               # Generador de notas administrativas
+    │   ├── notas.js               # Generador de Notas: los tres pasos, la vista previa y la descarga del Word
     │   ├── gestion.js             # Gestión: Proyectos
     │   ├── seguimiento.js         # Seguimiento del dataset: lista, ficha, circuito, cinta (SVG) y movimientos
     │   ├── perfil.js              # Mi Perfil: gestión de cambios (aprobar y rechazar en la fila), datos y firma
@@ -278,6 +307,7 @@ rpad/
         ├── logo.png               # Logo del encabezado
         ├── logo-2025.png
         ├── logo-2025-blanco.png   # Menú lateral, footer y panel de login
+        ├── membrete-isotipo-aclarado.png  # Marca de agua del Word de las notas (el isotipo, ya aclarado)
         └── compartir.png          # Vista previa al compartir un link (1200×630)
 ```
 
@@ -306,7 +336,7 @@ Desde **phpMyAdmin** en cPanel:
 | `temas` | Catálogo de temas para clasificación |
 | `frecuencias` | Catálogo de frecuencias de actualización |
 | `formatos` | Catálogo de formatos de archivo (CSV, XLSX, etc.) con distinción de habituales |
-| `areas` | Áreas responsables con contactos, emails y artículos gramaticales (el/la) |
+| `areas` | Áreas responsables con contactos, emails, artículos gramaticales (el/la) y el ámbito (`ambito`: municipal o fuera del municipio, que decide la nota del Generador de Notas) |
 | `datasets` | Registro principal de datasets (sin columnas de formato fijas), con el texto opcional "Qué se solicita" (`que_se_solicita`), "Datos al" (`datos_al`), el tipo de pedido (`tipo_pedido`) y, en los externos, si requiere nota DGMIT (`requiere_nota`: 1 Sí, 0 No, NULL sin dato) |
 | `dataset_formatos` | Tabla intermedia para la relación muchos-a-muchos entre datasets y formatos |
 | `cambios_pendientes` | Cola de cambios propuestos pendientes de aprobación (doble verificación) |
@@ -571,6 +601,24 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Notas DGMIT de 2026:** el Excel `RPAD - Notas DGMIT 2026 - para completar.xlsx` no entra en esta entrega: se importa con la importación de notas DGMIT (sección 9 de `docs/superpowers/specs/2026-10-24-notas-dgmit-design.md`), que se hace aparte y también tiene que entrar antes del 10/01/2027 para que cuente en la foto de 2026.
 
+### Migración: Generador de Notas
+
+⚠️ Requisito: las migraciones anteriores aplicadas (la de **Métricas y Reportes** incluida) y el código desplegado hasta esa entrega: los archivos de esta se armaron sobre ese código (por ejemplo, las páginas piden las versiones nuevas de `auth.js`, `main.js` y `api.js`). No hay dependencias nuevas de npm (la librería `docx` ya estaba) y no cambian las variables de entorno ni el cron. Backup de la base y de los archivos antes de empezar, y fuera del horario de los crons (8:15 y 14:00). El orden es: **SQL → subir los archivos → Restart**. La migración va **después** de `migracion-metricas.sql` y **antes** del código: sin la columna nueva, el Generador de Notas no carga las áreas y crear o editar un área da error (el resto sigue funcionando).
+
+1. **SQL:** phpMyAdmin → pestaña **SQL** (con la base del RPAD seleccionada) → pegar `database/updates/migracion-generador-notas.sql` → **Continuar**. Suma la columna `areas.ambito` (todas las áreas quedan municipales) y marca como **fuera del municipio** las 13 áreas del Anexo A de la spec (ids 2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43 y 44), cada una buscada por su id y por su nombre: si alguna se renombró, queda municipal y se corrige a mano en Áreas. No toca los nombres ni las dependencias, y el código anterior sigue funcionando con la columna nueva. Después, esta consulta tiene que dar **13**:
+   ```sql
+   SELECT COUNT(*) AS externas FROM areas WHERE ambito = 'externo';
+   ```
+   Se puede volver a correr (por ejemplo, si se cortó a mitad), **salvo que alguien ya haya cambiado a mano en Áreas el ámbito de un área**: vuelve a marcar las 13 como fuera del municipio y pisaría ese cambio.
+2. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app). Agrega cinco archivos de `services` (`notasGeneradorReglas.js`, `notasGeneradorContenido.js`, `notasGeneradorDatos.js`, `notasWord.js` y `notasDigitalesWord.js`) y la imagen `public/img/membrete-isotipo-aclarado.png` (la marca de agua del Word), y reemplaza `controllers/areasController.js`, `notasController.js`, `notasDgmitController.js` y `notasDigitalesController.js`, `middleware/auth.js`, `routes/index.js`, `services/notasDgmitReglas.js`, `notasDigitalesContenido.js`, `notasDigitalesPdf.js` y `seguimientoReglas.js`, las 15 páginas HTML de `public` (suben las versiones de `auth.js`, `main.js` y `api.js`; `notas.html` cambia entera) y `public/js/areas.js`, `correos.js`, `main.js`, `notas.js` y `usuarios.js`. Si falta cualquiera de los cinco servicios nuevos, la app no arranca; sin la imagen, los Word dan error. Enseguida, **Restart** (Setup Node.js App). No hace falta Run NPM Install.
+3. **Verificar** (Ctrl+F5; el generador no guarda nada, así que se puede probar sin dejar rastros):
+   - **Áreas:** la lista muestra "Fuera del municipio" junto a las 13 áreas (por ejemplo, la Sociedad Cooperativa Popular Limitada) y el formulario de un área tiene "Ámbito" (abrir y cancelar sin guardar).
+   - **Herramientas → Notas** (con administración): el paso 1 lista primero las áreas con datasets vencidos o próximos a vencer; al tocar una, el paso 2 trae sus datasets con los vencidos tildados y la vista previa de la nota (interna en un área municipal, externa en una de fuera del municipio). "Descargar Word" baja un .docx que abre en hoja oficio, con el membrete, la marca de agua, el pie con "Página 1 de N" y sin firma.
+   - **Correos → Libro de Notas Digitales:** cada nota tiene el botón "Word"; baja la misma nota en la hoja membretada, sin la primera línea del email ("SE ADJUNTAN NOTA Y ANEXO EN PDF" o "SE ADJUNTA NOTA EN PDF") y con el espacio en blanco en lugar de la firma.
+   - Con un **lector:** el menú lateral ya no muestra "Notas", y `notas.html` escrita en la dirección dice "No tenés permiso para usar el generador de notas.".
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart. La columna nueva puede quedar (es aditiva y el código anterior no la usa). Para sacarla, phpMyAdmin → pegar `database/updates/rollback-generador-notas.sql` **después** del Restart: borra la columna y **se pierde el ámbito de cada área**, también lo que se haya cambiado a mano en Áreas (si después se vuelve a correr la migración, las 13 quedan otra vez fuera del municipio y el resto, municipales).
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -718,7 +766,7 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 - **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
 - **Reiteración**: primer día hábil de cada mes, para los datasets avisados hace 20 días o más que siguen pendientes y para los vencidos que nunca tuvieron aviso (con "Sin aviso previo"). Se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset, la del Seguimiento de ese dataset). Si el anexo no se puede generar, la reiteración no sale y se reintenta en la próxima corrida. Las reiteraciones generadas antes del anexo siguen sin él.
 - **Nota de auditoría**: pide a la Dirección General la auditoría de los cambios pendientes que el firmante no puede auditar (los propuso él o está de licencia) y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más: recordatorio el día 1 y el día 2 a las 14:00, nota el día 3 a las 8:15). Sale una sola por día, después de avisos y reiteraciones, y se reitera cada 5 días hábiles mientras sigan pendientes. Comparte el interruptor de **envío automático** con las demás notas y necesita la configuración completa y un Para de auditoría (Correos → Configuración → Notas de auditoría): con el envío automático apagado, la configuración incompleta o sin Para de auditoría no sale ninguna nota, y esos cambios siguen con los recordatorios de las 14:00 en lugar de quedar sin aviso.
-- Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso y la reiteración, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo").
+- Cada nota se numera (`Nota Digital N° 12/26`), se envía con su PDF adjunto (el aviso y la reiteración, también con el anexo) y queda en el libro de la pantalla de Correos, donde se descargan ambos PDF (botones "PDF" y "Anexo") y la nota en Word, en la hoja membretada y sin firma (botón "Word").
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
 - El envío automático (también el de la nota de auditoría) arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 - **La foto del año** (Métricas y Reportes): desde el 10/01, la primera corrida guarda las métricas del año anterior al 31/12, sea o no día hábil, y no las vuelve a tocar nunca. Va aparte del resto: si falla, no frena las notas, queda en Correos → Estado ("Última corrida diaria") y la corrida del día siguiente la vuelve a intentar.
@@ -737,14 +785,14 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 |--------|------|-------------|
 | GET | `/api/health` | Health check |
 | POST | `/api/auth/login` | Iniciar sesión |
-| GET | `/api/datasets` | Listar datasets (con filtros) |
+| GET | `/api/datasets` | Listar datasets (con filtros); los datos de contacto del área, solo con una sesión de administración |
 | GET | `/api/datasets/estadisticas` | Estadísticas para la portada |
-| GET | `/api/datasets/:id` | Detalle de un dataset |
+| GET | `/api/datasets/:id` | Detalle de un dataset (lo mismo) |
 | GET | `/api/catalogos/temas` | Listar temas |
 | GET | `/api/catalogos/frecuencias` | Listar frecuencias |
 | GET | `/api/catalogos/formatos` | Listar formatos disponibles |
-| GET | `/api/areas` | Listar áreas activas |
-| GET | `/api/areas/:id` | Detalle de un área |
+| GET | `/api/areas` | Listar áreas; con una sesión de administración, con los datos de contacto, sus cuentas (datasets dados de baja, externos que reciben el aviso de los 40 días y cambios pendientes que la usan) y `vista: 'administracion'` |
+| GET | `/api/areas/:id` | Detalle de un área (lo mismo; 404 si no existe) |
 | GET | `/api/andino/fetch?url=...` | Obtener metadatos desde el portal |
 | POST | `/api/contacto` | Enviar formulario de contacto |
 
@@ -785,6 +833,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | POST | `/api/notas-dgmit` | Cargar una nota DGMIT (`{ numero, recibida, tipo, datasets }`; administración y el colaborador) |
 | PUT | `/api/notas-dgmit/:id` | Corregir una nota DGMIT (lo mismo más `motivo`; quien la cargó o administración) |
 | POST | `/api/notas-dgmit/:id/anular` | Anular una nota DGMIT (`{ motivo }`; quien la cargó o administración) |
+| GET | `/api/notas/areas` | Generador de Notas: las áreas con datasets que se pueden pedir, con el estado de hoy (administración y el colaborador) |
+| GET | `/api/notas/areas/:id` | Generador de Notas: un área con sus datasets a la fecha de la nota (`?fecha=AAAA-MM-DD`) |
+| GET | `/api/notas/membrete` | Generador de Notas: el membrete y el pie de la hoja de la vista previa |
+| POST | `/api/notas/vista-previa` | Generador de Notas: el HTML de la nota y el nombre del Word (`{ fecha, numero, tipo, pedido, anteriores, area_id, datasets }`) |
+| POST | `/api/notas/generar` | Generador de Notas: el Word (lo mismo que la vista previa) |
+| GET | `/api/notificaciones/notas-digitales/:id/word` | Una Nota Digital en Word, en la hoja membretada y sin firma (administración; 422 si no se reconoce la nota) |
 
 ### Cron (requiere secret)
 
@@ -834,6 +888,23 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Configuración: Usuarios, Licencias y Áreas (2026-10)
+- **Administración → Configuración** reemplaza a Usuarios y Áreas: una sola página con tres pestañas (Usuarios, Licencias y Áreas), con la pestaña en la dirección. Usuarios y Licencias quedan como estaban. El menú de Administración queda con Gestión de Datasets (con un ícono nuevo, de capas), Correos y Configuración (con la ruedita)
+- Los links viejos siguen andando: `usuarios.html` lleva a Usuarios (o a Licencias, con `#licencias`) y `areas.html`, a Áreas; los emails al superadmin abren Configuración (los ya enviados llegan por la redirección)
+- **La pestaña Áreas** se rehace: el aviso de las áreas con datasets de gestión externa a las que no les llega el aviso de los 40 días por no tener email (6, con la base del 24/10), un buscador, filtros con su cantidad, una tabla y un modal con los botones siempre a la vista (antes, en una ventana baja, quedaban cortados), con "Así se lee en las notas" y el ámbito
+- Tres arreglos de Áreas: borrar un área con datasets dados de baja daba un error (ahora dice por qué no se puede, y lo mismo si un cambio pendiente la elige); ya no se guarda un nombre vacío o de espacios; y los datos de contacto de las áreas (emails, teléfonos y persona de contacto) ya no se ven sin una sesión de administración, ni en la API de áreas ni en la de datasets
+- Requiere Métricas y Reportes y el Generador de Notas ya desplegados. Solo archivos: `services/areasReglas.js` (nuevo), `app.js`, `controllers/areasController.js` y `datasetController.js`, `middleware/auth.js`, `routes/index.js`, `services/emailTemplates.js` y `usuariosReglas.js`, `public/configuracion.html` (nueva), las otras 12 páginas con carcasa (el menú; `admin.html`, además, el ícono del `h1`, el de capas, y el texto del alta rápida de un área: "Los datos de contacto se completan después, en Configuración → Áreas.") y `public/js/areas.js` y `usuarios.js`. En el servidor se borran `public/usuarios.html` y `public/areas.html`; Restart, sin SQL ni Run NPM Install
+
+### Generador de Notas (2026-10)
+- Herramientas → **Notas** se rehace: es la herramienta con la que la DGMIT arma la nota formal a un área, en tres pasos (área, datasets y nota, revisar y descargar), con la vista previa de la nota tal como va a salir. Dos notas, interna (a la Subsecretaría) y externa (directo al organismo), según el ámbito del área, como solicitud o como reiteración
+- Cada dataset sale con los "Datos solicitados" que calcula el RPAD con la fecha de la nota (los mismos de las Notas Digitales) y con su "Qué se solicita"; en una reiteración, la "Nota anterior" viene completada con las notas DGMIT cargadas en el Seguimiento
+- La nota sale en Word, en la hoja membretada (oficio Legal, con membrete, marca de agua, pie y "Página X de Y"), sin firma, para firmar a mano. No se guarda nada
+- La usan administración y el colaborador; el lector deja de ver "Notas" (la ayuda de los roles en Usuarios lo dice)
+- Se van la nota escalonada, el sello con iniciales fijas, el período escrito a mano y el buscador de área por dataset
+- **Correos → Libro:** cada Nota Digital, también las ya enviadas y las de prueba, se puede bajar en **Word**, en la hoja membretada, sin firma y sin la primera línea del email
+- **Áreas:** cada área es Municipal o Fuera del municipio (el selector "Ámbito" y la insignia en la lista); la migración marca 13 fuera del municipio y no toca nombres ni dependencias
+- Un SQL después del de Métricas y antes del código (una columna nueva: siguen 29 tablas); Restart, sin Run NPM Install. Ver [Migración: Generador de Notas](#migración-generador-de-notas)
 
 ### Métricas y Reportes (2026-10)
 - Herramientas → "Reportes" pasa a ser **Métricas y Reportes**, con dos pestañas. **Métricas** muestra, para el año elegido, cuánto tarda cada paso del circuito de las dos gestiones (con la mediana o el promedio, en días hábiles o corridos, la cantidad de casos y los que siguen en curso), la cinta del recorrido típico, la lista de casos, los resultados del año (actualizados a tiempo, cobertura del aviso y reiteraciones), el índice de actualización mes a mes, la antigüedad de los vencidos, el trabajo del RPAD, las áreas y los temas y "Para completar". Se puede destildar un dataset para ver los números sin él (con una franja que lo avisa), y todo viaja en la dirección de la página

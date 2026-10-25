@@ -46,6 +46,8 @@ describe('consultas públicas', () => {
       const res = await api.get(ruta);
       assert.equal(res.status, 200);
       assert.ok(res.body.data.length > 0);
+      // Sin sesión, las áreas salen sin los datos de contacto (spec 2026-10-24-configuracion, 5.1)
+      if (ruta === '/areas') assert.ok(res.body.data.every((area) => !('email_principal' in area)));
     });
   }
 });

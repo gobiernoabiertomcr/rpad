@@ -7,7 +7,7 @@ export const TEXTO_ROL = {
   superadmin: 'Superadmin', admin: 'Administrador', editor: 'Editor', colaborador: 'Colaborador', lector: 'Lector'
 };
 
-const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PATRON_USERNAME = /^[A-Z0-9._-]{3,50}$/;
 
 // superadmin, admin y editor pasan todo lo de administración (spec 5.3; el editor, spec 2026-10-15, 8.1)

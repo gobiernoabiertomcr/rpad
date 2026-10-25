@@ -52,6 +52,13 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+// Las direcciones viejas de Usuarios y de Áreas llevan a Configuración (spec 2026-10-24-configuracion, 3). Van antes del
+// estático, así un usuarios.html o un areas.html que haya quedado en el servidor nunca se sirve; sin ellas, el comodín del final
+// serviría la portada sin avisar. 302 (temporal). La de usuarios.html va sin fragmento: el navegador conserva el del link original
+// (usuarios.html#licencias llega a configuracion.html#licencias)
+app.get('/usuarios.html', (req, res) => res.redirect(302, '/configuracion.html'));
+app.get('/areas.html', (req, res) => res.redirect(302, '/configuracion.html#areas'));
+
 // Servir archivos estáticos del frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
