@@ -50,6 +50,22 @@ describe('consultas públicas', () => {
   }
 });
 
+// La CSP de Helmet (app.js): Chart.js salió de Gestión (spec 2026-10-24-metricas-y-reportes, 6) y ninguna página carga nada de
+// jsDelivr (tests/paginas.test.js), así que la CSP ya no lo permite
+describe('la política de seguridad de contenido', () => {
+  it('no permite scripts ni hojas de jsDelivr, y sigue permitiendo el sitio y las fuentes de Google', async () => {
+    const res = await fetch(`${servidor.url}/index.html`);
+    assert.equal(res.status, 200);
+    const csp = res.headers.get('content-security-policy') ?? '';
+    const directiva = (nombre) => csp.split(';').map(d => d.trim()).find(d => d.startsWith(`${nombre} `)) ?? '';
+    assert.match(directiva('script-src'), /'self'/);
+    assert.match(directiva('style-src'), /'self'/);
+    assert.match(directiva('style-src'), /https:\/\/fonts\.googleapis\.com/);
+    assert.match(directiva('font-src'), /https:\/\/fonts\.gstatic\.com/);
+    assert.doesNotMatch(csp, /cdn\.jsdelivr\.net/);
+  });
+});
+
 describe('formulario de contacto', () => {
   const mensajeValido = {
     nombre: 'Persona de prueba',

@@ -126,6 +126,18 @@ describe('páginas', () => {
     assert.doesNotMatch(gestion, /new Chart|cargarMetricas|htmlDelRanking|textoPorcentaje|exportarCSV|switchTab|\/gestion\/metricas/);
   });
 
+  // Con Chart.js fuera de Gestión, ninguna página carga nada de un CDN: la CSP ya no permite jsDelivr (tests/publico.test.js). Si
+  // una página vuelve a cargar un script o una hoja de afuera, hay que sumarlo a la CSP de app.js.
+  it('ninguna página carga un script ni una hoja de estilos de afuera del sitio (solo las fuentes de Google)', () => {
+    for (const pagina of paginas) {
+      const html = leer(pagina);
+      assert.doesNotMatch(html, /<script[^>]+src="(https?:)?\/\//i, `${pagina}: carga un script de afuera`);
+      for (const [, href] of html.matchAll(/<link[^>]+rel="stylesheet"[^>]*href="([^"]+)"/gi)) {
+        assert.ok(!/^(https?:)?\/\//i.test(href) || href.startsWith('https://fonts.googleapis.com/'), `${pagina}: carga una hoja de afuera (${href})`);
+      }
+    }
+  });
+
   for (const pagina of paginas.filter(p => leer(p).includes('id="sidebarAdmin"'))) {
     it(`${pagina}: el menú de Administración tiene un único enlace a Usuarios`, () => {
       assert.equal(leer(pagina).match(/href="usuarios\.html"/g)?.length, 1);
