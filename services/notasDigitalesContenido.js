@@ -596,7 +596,7 @@ const lineaDelAnexo = (f, fecha) => {
 };
 
 // "Qué se solicita" de un dataset que no lo tiene cargado (spec 6.7.4)
-const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
+export const QUE_SE_SOLICITA_POR_DEFECTO = 'La versión actualizada del conjunto de datos publicado, con la misma estructura y el mismo nivel de detalle que el archivo disponible en el portal.';
 
 // Anexo de los avisos: una hoja por dataset con su ficha completa (spec 6.7). Las fechas no se repiten en la ficha:
 // están en la línea de tiempo. El pedido tampoco: va en el recuadro "Datos solicitados" de la cabecera.
