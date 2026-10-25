@@ -6,7 +6,7 @@ import {
 } from './helpers.js';
 import { crearArea, crearDataset, crearNota, limpiarBase, configurarNotas, asegurarBaseDePrueba, PIE_MEMBRETE } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
-import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja } from './pdf-lector.js';
+import { textosPorHoja, imagenesPorHoja, imagenesGuardadas, lineasPorHoja, tamanosPorHoja, HOJA_OFICIO, todasDelTamano } from './pdf-lector.js';
 import { esDiaHabil, formatoCorto, hoyArgentina, proximoDiaHabil, rangoDeAviso, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 import { textoVisible } from './emails-fixtures.js';
@@ -402,6 +402,8 @@ describe('vista previa y prueba', () => {
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /application\/pdf/);
     assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+    // En hoja oficio, como la nota que se envía (spec 2026-10-24-notas-hoja-oficio)
+    assert.ok(todasDelTamano(res.body, HOJA_OFICIO), JSON.stringify(tamanosPorHoja(res.body)));
 
     const lineas = textosPorHoja(res.body).flat().map(t => t.texto);
     assert.ok(lineas.includes('Nota Digital N° XX'), lineas.join(' | '));
@@ -495,6 +497,8 @@ describe('vista previa y prueba', () => {
     assert.ok(hojas[0].includes('Real avisado'), hojas[0].join(' | '));
     assert.ok(hojas[1].includes('Real vencido'), hojas[1].join(' | '));
     hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Anexo de la Nota Digital N° XX · Hoja ${k + 1} de 2`), lineas.join(' | ')));
+    // Cada hoja suma la reiteración de la vista previa, con «XX» (spec 2026-10-24-reiteracion-en-su-anexo)
+    for (const lineas of hojas) assert.equal(lineas.filter(l => l === 'Nota Digital N° XX a DGMIT').length, 1, lineas.join(' | '));
     // Los mismos datasets que la vista previa de la nota
     const vista = (await api.get('/notificaciones/notas-digitales/preview?tipo=reiteracion&gestion=externa', comoAdmin())).body.data;
     assert.equal(vista.ejemplo, false);
@@ -792,7 +796,7 @@ describe('corrida diaria', () => {
   it('la respuesta conserva sus campos y suma dia_habil (spec 2026-10-15, 4.2)', async () => {
     const res = await api.get('/cron/notificaciones', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    for (const campo of ['fecha', 'enviados', 'errores', 'sinDatasets', 'notasDigitales', 'dia_habil']) {
+    for (const campo of ['fecha', 'enviados', 'errores', 'sinDatasets', 'notasDigitales', 'dia_habil', 'foto']) {
       assert.ok(campo in res.body.data, `falta ${campo}`);
     }
     assert.equal(res.body.data.dia_habil, esDiaHabil(hoy));

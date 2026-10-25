@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Notas - RPAD (maqueta)</title>
+    <link rel="icon" type="image/png" href="icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="main.css">
+    <style>
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+        .wizard-card { background: var(--bg-card); border-radius: var(--border-radius-lg); box-shadow: var(--shadow); max-width: 1180px; margin: 0 auto 48px; }
+        .pasos { display: flex; border-bottom: 1px solid var(--border-color); }
+        .pasos li { flex: 1; list-style: none; display: flex; align-items: center; gap: 10px; padding: 16px 24px; color: var(--gray-500); font-weight: 500; font-size: 0.9rem; border-bottom: 3px solid transparent; }
+        .pasos li .num { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--gray-200); color: var(--gray-600); font-weight: 700; font-size: 0.8rem; }
+        .pasos li.actual { color: var(--primary); border-bottom-color: var(--primary); }
+        .pasos li.actual .num { background: var(--primary); color: #fff; }
+        .pasos li.hecho .num { background: var(--success-light); color: var(--success); }
+        .pasos ol { display: contents; }
+        .wizard-body { padding: 24px; }
+        .wizard-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+        .intro { color: var(--gray-600); font-size: 0.9rem; margin: 0 0 18px; }
+
+        /* Paso 1 */
+        .barra { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+        .filtros { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+        .filtro { border: 1px solid var(--border-color); background: #fff; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 0.85rem; cursor: pointer; color: var(--gray-700); }
+        .filtro[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .filtro .cant { font-weight: 700; margin-left: 4px; }
+        .buscar { flex: 1; min-width: 240px; }
+        .areas { border: 1px solid var(--border-color); border-radius: var(--border-radius); overflow: hidden; }
+        .area-opcion { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto 18px; gap: 12px; align-items: center; padding: 9px 14px; border: 0; border-top: 1px solid var(--border-color); background: #fff; font: inherit; text-align: left; cursor: pointer; }
+        .area-opcion:first-child { border-top: 0; }
+        .area-opcion:hover { background: #f1f5fb; }
+        .area-opcion:hover .ir { color: var(--primary); transform: translateX(2px); }
+        .area-opcion.elegida { background: #f1f5fb; box-shadow: inset 3px 0 0 var(--primary); }
+        .area-opcion .ir { color: var(--gray-400); transition: var(--transition); }
+        .area-nombre { font-weight: 600; color: var(--gray-800); font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .area-nombre .ambito { margin-left: 6px; vertical-align: 1px; }
+        .area-ds { font-size: 0.8rem; color: var(--gray-600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .area-ds .badge { margin-left: 4px; }
+        .area-estado { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+        .ambito { font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--gray-100); color: var(--gray-600); white-space: nowrap; }
+        .ambito.externa { background: #ede9f8; color: #5b4691; }
+        .vacio { padding: 32px; text-align: center; color: var(--gray-500); }
+
+        /* Paso 2 */
+        .resumen-area { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; background: var(--gray-50); border: 1px solid var(--border-color); border-radius: var(--border-radius); margin-bottom: 20px; }
+        .resumen-area b { color: var(--gray-800); }
+        .link { background: none; border: 0; color: var(--primary); font: inherit; font-size: 0.85rem; text-decoration: underline; cursor: pointer; }
+        .dos-col { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
+        fieldset { border: 0; padding: 0; margin: 0 0 20px; }
+        legend { font-weight: 600; color: var(--gray-800); font-size: 0.9rem; margin-bottom: 8px; padding: 0; }
+        .opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .opcion { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius); cursor: pointer; }
+        .opcion.elegida { border-color: var(--primary); background: #f1f5fb; box-shadow: inset 0 0 0 1px var(--primary); }
+        .opcion input { margin-top: 3px; }
+        .opcion strong { display: block; color: var(--gray-800); font-size: 0.9rem; }
+        .opcion span { font-size: 0.8rem; color: var(--gray-500); }
+        .pista { font-size: 0.8rem; color: var(--gray-500); margin-top: 6px; }
+        .fila-campos { display: grid; grid-template-columns: 180px 1fr; gap: 16px; }
+        .ds-lista { border: 1px solid var(--border-color); border-radius: var(--border-radius); }
+        .ds { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--border-color); cursor: pointer; }
+        .ds:first-child { border-top: 0; }
+        .ds input { width: 17px; height: 17px; margin-top: 2px; }
+        .ds-titulo { font-weight: 600; color: var(--gray-800); margin-right: 6px; }
+        .ds-datos { font-size: 0.82rem; color: var(--gray-600); margin-top: 3px; }
+        .ds-datos b { color: var(--gray-800); font-weight: 600; }
+        .badge { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; vertical-align: 1px; }
+        .lateral { position: sticky; top: calc(var(--header-height) + 16px); }
+        .lateral-titulo { font-size: 0.8rem; font-weight: 600; color: var(--gray-500); margin-bottom: 8px; display: flex; justify-content: space-between; }
+        .mini { width: 360px; height: 593px; overflow: hidden; border-radius: 4px; }
+        .mini .hoja { transform: scale(0.5625); transform-origin: 0 0; }
+
+        /* Paso 3 */
+        .revisar { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; align-items: start; }
+        .grande { display: flex; justify-content: center; background: #e9edf3; padding: 24px; border-radius: var(--border-radius); }
+        .resumen-nota dl { margin: 0; display: grid; gap: 10px; font-size: 0.875rem; }
+        .resumen-nota dt { color: var(--gray-500); font-size: 0.78rem; }
+        .resumen-nota dd { margin: 0; color: var(--gray-800); font-weight: 500; }
+        .archivo { font-size: 0.78rem; color: var(--gray-500); margin-top: 8px; word-break: break-all; }
+
+        /* La hoja (oficio 8,5 × 14 in, como la hoja membretada): 640 px de ancho */
+        .hoja { position: relative; width: 640px; min-height: 1054px; background: #fff; box-shadow: 0 2px 12px rgba(15, 30, 60, .18); font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; line-height: 1.32; color: #000; }
+        .hoja .enc { position: absolute; top: 0; left: 0; width: 640px; height: auto; }
+        .hoja .agua { position: absolute; left: 89px; right: 89px; top: 104px; bottom: 74px; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+        .hoja .agua img { width: 420px; opacity: .07; }
+        .hoja .texto { position: relative; padding: 112px 89px 90px; }
+        .hoja p { margin: 0 0 10px; text-align: justify; }
+        .hoja .der { text-align: right; margin-bottom: 4px; }
+        .hoja .sep { margin-bottom: 18px; }
+        .hoja .dest { font-weight: 700; text-decoration: underline; margin: 0; text-align: left; }
+        .hoja .dest.sep { margin-bottom: 18px; }
+        .subpanel { margin-top: 12px; padding: 14px 16px; background: var(--gray-50); border: 1px solid var(--border-color); border-left: 3px solid #5b4691; border-radius: var(--border-radius); }
+        .subpanel-titulo { font-weight: 600; color: var(--gray-800); font-size: 0.875rem; margin-bottom: 10px; }
+        .subpanel-titulo .text-muted { font-weight: 400; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .chip-nota { display: inline-flex; align-items: center; gap: 4px; background: #ede9f8; color: #4a3878; border: 1px solid #d9d1f0; border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 0.85rem; font-weight: 600; }
+        .chip-nota button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 0 4px; border-radius: 50%; }
+        .chip-nota button:hover { background: #d9d1f0; }
+        .chip-agregar { display: inline-flex; gap: 6px; align-items: center; }
+        .chip-agregar .form-input { width: 130px; padding: 6px 10px; font-size: 0.85rem; }
+        .origen { display: flex; gap: 6px; align-items: center; font-size: 0.78rem; color: #5b4691; margin-top: 8px; }
+        .origen.gris { color: var(--gray-500); }
+        .ant-fecha { margin-top: 12px; }
+        .campos-cortos { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+        .maqueta.plegada { width: auto; padding: 6px; }
+        .maqueta.plegada .plegar { float: none; margin: 0; }
+        .campos-cortos .form-label { margin-bottom: 6px; }
+        .form-input.corto { width: 170px; }
+        .form-input.corto-num { width: 190px; }
+        .ds-dgmit { font-size: 0.78rem; color: #5b4691; margin-top: 3px; }
+        .ds.ds-off { background: var(--gray-50); cursor: default; }
+        .ds.ds-off .ds-titulo, .ds.ds-off .ds-datos { color: var(--gray-500); }
+        .maqueta.plegada > :not(.plegar) { display: none; }
+        .maqueta .plegar { float: right; margin: -2px -4px 0 0; }
+        .hoja table { width: 100%; border-collapse: collapse; margin: 4px 0 14px; font-size: 11px; }
+        .hoja th, .hoja td { border: 1px solid #000; padding: 4px 6px; text-align: left; vertical-align: top; }
+        .hoja th { background: #e6e6e6; }
+        .hoja td.qss { font-size: 10.5px; color: #222; background: #fafafa; }
+        .hoja ul { margin: 0 0 12px; padding-left: 26px; }
+        .hoja li { margin-bottom: 6px; text-align: justify; }
+        .hoja .firma { height: 96px; }
+        .hoja .pie { position: absolute; left: 0; right: 0; bottom: 30px; text-align: center; font-size: 9.4px; color: #000; }
+        .hoja .pie u { color: #0645ad; }
+        .hoja .hueco { background: #fff3b0; }
+
+        /* Panel de la maqueta (no es parte de la página) */
+        .maqueta { position: fixed; right: 16px; bottom: 16px; z-index: 300; width: 270px; background: #1b1f2a; color: #e8ecf3; border-radius: 12px; padding: 12px 14px; font-size: 12.5px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+        .maqueta h2 { font-family: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #9fb3d1; margin: 0 0 8px; }
+        .maqueta p { margin: 8px 0 4px; color: #c6d0de; }
+        .maqueta button { font: inherit; font-size: 12px; background: #2c3445; color: #e8ecf3; border: 1px solid #3c4659; border-radius: 6px; padding: 4px 8px; margin: 0 4px 4px 0; cursor: pointer; }
+        .maqueta button[aria-pressed="true"] { background: #e8ecf3; color: #1b1f2a; }
+        .aviso-maqueta { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--gray-800); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 0.875rem; z-index: 400; display: none; }
+        @media (max-width: 1100px) { .dos-col, .revisar { grid-template-columns: 1fr; } .lateral { position: static; } }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="header header--con-sesion">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="#" class="header-marca">
+                    <img src="logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="#">Inicio</a>
+                <a href="#">Datasets</a>
+                <a href="#">Calendario</a>
+                <a href="#">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="#" class="header-user" title="Mi Perfil">
+                    <div class="header-user-info">
+                        <div class="header-user-name">Usuario DGMIT</div>
+                        <div class="header-user-role">Colaborador</div>
+                    </div>
+                    <div class="header-user-avatar">UD</div>
+                </a>
+                <button class="btn btn-secondary btn-sm" type="button">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    Salir
+                </button>
+            </div>
+        </header>
+
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="#" class="sidebar-link"><span>Reportes</span></a>
+                    <a href="#" class="sidebar-link active"><span>Notas</span></a>
+                    <a href="#" class="sidebar-link"><span>Gestión</span></a>
+                    <a href="#" class="sidebar-link"><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="#" class="sidebar-link"><span>Mi Perfil</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <div class="page-header">
+                <h1 class="page-title">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>
+                    Generador de Notas
+                </h1>
+            </div>
+
+            <section class="wizard-card" aria-labelledby="titulo-paso">
+                <nav aria-label="Pasos" class="pasos"><ol id="pasos"></ol></nav>
+                <div class="wizard-body" id="cuerpo"></div>
+            </section>
+
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul><li><a href="#">Inicio</a></li><li><a href="#">Datasets</a></li><li><a href="#">Calendario</a></li><li><a href="#">Contacto</a></li></ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul><li><a href="#">datos.comodoro.gov.ar</a></li><li>Licencia CC BY-SA 4.0</li></ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul><li>Ordenanza N° 17.662/23, artículo 8°</li></ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span>2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <aside class="maqueta" aria-label="Controles de la maqueta">
+        <button type="button" class="plegar" onclick="this.parentElement.classList.toggle('plegada'); this.textContent = this.parentElement.classList.contains('plegada') ? 'Maqueta ▴' : '▾'">▾</button>
+        <h2>Maqueta (no es parte de la página)</h2>
+        <p>Cómo se listan los datasets en la nota:</p>
+        <div id="m-variante">
+            <button type="button" data-v="tabla">Tabla</button>
+            <button type="button" data-v="tabla-qss">Tabla + Qué se solicita</button>
+            <button type="button" data-v="lista">Lista, como hoy</button>
+        </div>
+        <p>Ejemplos rápidos:</p>
+        <div id="m-ejemplos">
+            <button type="button" data-area="37">Interna (Mujer)</button>
+            <button type="button" data-area="2">Externa (Seg. Vial)</button>
+            <button type="button" data-area="41">7 datasets (Coop.)</button>
+        </div>
+        <p>Reiteraciones (notas DGMIT inventadas; en la Cooperativa también los vencidos):</p>
+        <div id="m-reiteraciones">
+            <button type="button" data-area="2">Una nota (Seg. Vial)</button>
+            <button type="button" data-area="41">Dos notas (Coop.)</button>
+            <button type="button" data-area="36">Sin nota cargada</button>
+        </div>
+    </aside>
+    <div class="aviso-maqueta" id="aviso-maqueta" role="status"></div>
+
+    <script src="datos-maqueta.js"></script>
+    <script>
+    (() => {
+        const D = window.DATOS;
+        const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const sinTildes = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        const largo = (iso) => { const [a, m, d] = iso.split('-').map(Number); return `${d} de ${MESES[m - 1]} de ${a}`; };
+        const corto = (iso) => { const [a, m, d] = iso.split('-'); return `${d}/${m}/${a}`; };
+
+        const st = { paso: 1, filtro: 'urgentes', busqueda: '', areaId: null, tipo: null, pedido: 'solicitud', fecha: D.hoy, numero: '', antNumeros: [], antEditado: false, antFecha: '', elegidos: new Set(), variante: 'tabla-qss' };
+
+        // Notas DGMIT INVENTADAS para la maqueta (la tabla real todavía está vacía): las vigentes del ciclo abierto de cada dataset
+        const NOTAS_DGMIT = {
+            11: [{ numero: '45/26', tipo: 'solicitud', recibida: '2026-03-05' }],
+            13: [{ numero: '97/26', tipo: 'solicitud', recibida: '2026-07-02' }, { numero: '131/26', tipo: 'reiteracion', recibida: '2026-09-10' }],
+            2: [{ numero: '118/26', tipo: 'solicitud', recibida: '2026-08-14' }],
+            61: [{ numero: '112/26', tipo: 'solicitud', recibida: '2026-08-01' }],
+            46: [{ numero: '88/26', tipo: 'solicitud', recibida: '2026-06-20' }],
+            48: [{ numero: '88/26', tipo: 'solicitud', recibida: '2026-06-20' }],
+            69: [{ numero: '102/26', tipo: 'solicitud', recibida: '2026-07-15' }]
+        };
+        // Estados INVENTADOS para la maqueta: tres datasets de la Cooperativa vencidos, para ver una reiteración con dos notas
+        D.areas.find((a) => a.id === 41).datasets.forEach((d) => { if ([46, 48, 69].includes(d.id)) { d.estado = 'vencido'; d.dias = d.id === 69 ? -52 : -118; } });
+        const originalDe = (id) => (NOTAS_DGMIT[id] || []).slice().sort((x, y) => x.recibida.localeCompare(y.recibida))[0] || null;
+        const notasTraidas = () => {
+            const orig = [...st.elegidos].map(originalDe).filter(Boolean).sort((x, y) => x.recibida.localeCompare(y.recibida));
+            return [...new Set(orig.map((n) => n.numero))];
+        };
+        const completarNotaAnterior = () => { if (!st.antEditado) { st.antNumeros = notasTraidas(); if (st.antNumeros.length !== 1) st.antFecha = ''; } };
+
+        const urgente = (d) => d.estado === 'vencido' || d.estado === 'proximo';
+        const peor = (a) => Math.min(...a.datasets.map((d) => (urgente(d) ? d.dias : 9999)));
+        const area = () => D.areas.find((a) => a.id === st.areaId);
+
+        const badge = (d) => {
+            if (d.estado === 'vencido') return `<span class="badge badge-atrasado">Vencido hace ${-d.dias} días</span>`;
+            if (d.estado === 'proximo') return `<span class="badge badge-proximo">Vence en ${d.dias} días</span>`;
+            if (d.estado === 'eventual') return `<span class="badge badge-eventual">Eventual</span>`;
+            return `<span class="badge badge-actualizado">Al día</span>`;
+        };
+        const ambitoTexto = (a) => (a.ambito === 'externa' ? 'Fuera del municipio' : 'Municipal');
+        const dependencia = (a) => (a.superior ? `dependiente de ${a.articuloSuperior || 'la'} ${a.superior}` : 'sin dependencia cargada');
+
+        // ---------- Pasos ----------
+        const NOMBRES = ['Área', 'Datasets y nota', 'Revisar y descargar'];
+        const dibujarPasos = () => {
+            document.getElementById('pasos').innerHTML = NOMBRES.map((n, i) => {
+                const k = i + 1;
+                const clase = k === st.paso ? 'actual' : (k < st.paso ? 'hecho' : '');
+                return `<li class="${clase}" ${k === st.paso ? 'aria-current="step"' : ''}><span class="num">${k < st.paso ? '✓' : k}</span>${n}</li>`;
+            }).join('');
+        };
+
+        // ---------- Paso 1 ----------
+        const listaAreas = () => {
+            let lista = D.areas.slice();
+            if (st.filtro === 'urgentes') lista = lista.filter((a) => a.datasets.some(urgente)).sort((x, y) => peor(x) - peor(y));
+            else lista.sort((x, y) => x.nombre.localeCompare(y.nombre, 'es'));
+            const q = sinTildes(st.busqueda.trim());
+            if (q) lista = lista.filter((a) => sinTildes(a.nombre).includes(q) || a.datasets.some((d) => sinTildes(d.titulo).includes(q)));
+            return lista;
+        };
+        const paso1 = () => {
+            const urgentes = D.areas.filter((a) => a.datasets.some(urgente)).length;
+            const lista = listaAreas();
+            const filas = lista.map((a) => {
+                const ds = a.datasets.filter(urgente);
+                const titulos = (ds.length ? ds : a.datasets).map((d) => esc(d.titulo)).join(', ');
+                const estado = ds.length
+                    ? ds.map(badge).join('')
+                    : `<span class="badge badge-actualizado">${a.datasets.length === 1 ? 'Al día' : `Los ${a.datasets.length} al día`}</span>`;
+                return `<button type="button" class="area-opcion ${a.id === st.areaId ? 'elegida' : ''}" data-area="${a.id}">
+                    <div style="min-width:0"><div class="area-nombre">${esc(a.nombre)}<span class="ambito ${a.ambito}">${ambitoTexto(a)}</span></div><div class="area-ds">${titulos}</div></div>
+                    <div class="area-estado">${estado}</div>
+                    <span class="ir" aria-hidden="true">›</span>
+                </button>`;
+            }).join('');
+            return `
+                <h2 class="sr-only" id="titulo-paso">Paso 1: elegir el área</h2>
+                <p class="intro">Tocá el área a la que se le piden los datos. Primero están las que tienen datasets vencidos o próximos a vencer (60 días); en "Todas", las 24 áreas con datasets que requieren nota DGMIT.</p>
+                <div class="barra">
+                    <div class="filtros" role="group" aria-label="Qué áreas mostrar">
+                        <button type="button" class="filtro" data-filtro="urgentes" aria-pressed="${st.filtro === 'urgentes'}">Con vencidos o próximos a vencer <span class="cant">${urgentes}</span></button>
+                        <button type="button" class="filtro" data-filtro="todas" aria-pressed="${st.filtro === 'todas'}">Todas <span class="cant">${D.areas.length}</span></button>
+                    </div>
+                    <input class="form-input buscar" id="buscar" type="search" placeholder="Buscar por área o por dataset" aria-label="Buscar por área o por dataset" value="${esc(st.busqueda)}">
+                </div>
+                <div class="areas">${filas || '<div class="vacio">Ninguna área coincide con la búsqueda.</div>'}</div>`;
+        };
+
+        // ---------- La nota ----------
+        const tablaDatasets = (ds) => {
+            if (st.variante === 'lista') {
+                return `<ul>${ds.map((d) => `<li>${esc(d.titulo)} (frecuencia de actualización: ${esc(d.frecuencia)}). Datos solicitados: ${esc(d.pedido || '—')}.</li>`).join('')}</ul>`;
+            }
+            const filas = ds.map((d) => {
+                let f = `<tr><td>${esc(d.titulo)}</td><td>${esc(d.frecuencia)}</td><td>${esc(d.pedido || 'Información actualizada disponible')}</td></tr>`;
+                if (st.variante === 'tabla-qss' && d.qss) f += `<tr><td class="qss" colspan="3"><i>Qué se solicita:</i> ${esc(d.qss)}</td></tr>`;
+                return f;
+            }).join('');
+            return `<table><thead><tr><th style="width:38%">Conjunto de datos</th><th style="width:24%">Frecuencia</th><th>Datos solicitados</th></tr></thead><tbody>${filas}</tbody></table>`;
+        };
+        const hoja = () => {
+            const a = area();
+            const ds = a.datasets.filter((d) => st.elegidos.has(d.id));
+            const anio = st.fecha.slice(2, 4);
+            const numero = st.numero.trim() ? esc(st.numero.trim()) : `<span class="hueco">____/${anio}</span>`;
+            const reit = st.pedido === 'reiteracion';
+            const ref = `${reit ? 'Reiteración – ' : ''}Solicitud de datos para el Portal de Datos Abiertos Municipal`;
+            const formato = 'preferiblemente en formato digital editable (Excel, CSV, etc.), con los datos del período que se indica en cada caso:';
+            const sinDs = '<p style="color:#888"><i>(Elegí al menos un dataset.)</i></p>';
+            const ns = st.antNumeros;
+            const lista = (xs) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
+            const citada = ns.length === 0 ? 'correspondiente'
+                : ns.length === 1 ? `solicitada mediante Nota N° ${esc(ns[0])}`
+                : `solicitada mediante Notas ${lista(ns.map((n) => `N° ${esc(n)}`))}`;
+            const motivo = `La presente reiteración se debe a que, al día de la fecha, no se ha recibido la información ${citada}, conforme a lo establecido en la Ordenanza N° 17.662/23.`;
+            let t;
+            if (st.tipo === 'interna') {
+                const ante = `ante ${esc(a.articulo)} <b>${esc(a.nombre)}</b>${a.superior ? `, dependiente de ${esc(a.articuloSuperior || 'la')} ${esc(a.superior)},` : ','}`;
+                t = `
+                    <p class="der"><b>REF.:</b> "${ref}"</p>
+                    <p class="der sep"><b>Nota N°</b> ${numero}</p>
+                    <p class="dest sep">SUBSECRETARÍA DE MODERNIZACIÓN Y TRANSPARENCIA</p>
+                    <p>${reit ? `Solicito a Ud. tenga a bien reiterar ${ante} el pedido de la siguiente información, ${formato}` : `Solicito a Ud. tenga a bien gestionar ${ante} la remisión de la siguiente información, ${formato}`}</p>
+                    ${ds.length ? tablaDatasets(ds) : sinDs}
+                    ${reit ? `<p>${motivo}</p>` : ''}
+                    <p><b>Justificación:</b></p>
+                    <p>Dicha solicitud se enmarca en el cumplimiento de la Ordenanza N° 17.662/23, que establece la necesidad de garantizar que los datos publicados en el portal de datos abiertos, datos.comodoro.gov.ar, mantengan su valor. Motivo por el cual resulta fundamental mantener actualizada la información disponible en el mencionado sitio.</p>
+                    <p>Los datos solicitados pueden ser remitidos a los correos electrónicos <u>datospublicos@comodoro.gov.ar</u> o <u>mit@comodoro.gov.ar</u>. Los mismos, una vez recibidos, serán publicados en el Portal de Datos Abiertos Municipal en cumplimiento del Artículo 9° de la mencionada ordenanza, garantizando su disponibilidad en formatos abiertos y reutilizables para generar valor económico y social.</p>
+                    <p style="text-align:left"><b><u>DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL</u></b>, ${largo(st.fecha)}.</p>
+                    <div class="firma"></div>`;
+            } else {
+                t = `
+                    <p class="der sep">Comodoro Rivadavia, ${largo(st.fecha)}</p>
+                    <p style="margin:0">${a.articulo === 'el' ? 'Al' : 'A la'}</p>
+                    <p class="dest">${esc(a.nombre)}</p>
+                    <p class="dest sep">PRESENTE</p>
+                    <p class="der"><b>REF.:</b> "${ref}"</p>
+                    <p class="der sep"><b>Nota N°</b> ${numero}</p>
+                    <p>De nuestra consideración:</p>
+                    <p>${reit ? `Nos dirigimos nuevamente a Uds. a fin de reiterar la solicitud de la siguiente información, ${formato}` : `Nos dirigimos a Uds. a fin de solicitarles tengan a bien brindar la siguiente información, ${formato}`}</p>
+                    ${ds.length ? tablaDatasets(ds) : sinDs}
+                    ${reit ? `<p>${motivo}</p>` : ''}
+                    <p>Motiva dicha solicitud la necesidad de actualizar y publicar los datasets disponibles en la página oficial de Datos Abiertos de la Municipalidad de Comodoro Rivadavia (<u>datos.comodoro.gov.ar</u>), en cumplimiento de la Ordenanza N° 17.662/23 y los principios de transparencia y acceso a la información pública que sustentan nuestras políticas de gobierno abierto.</p>
+                    <p>Los datos pueden ser remitidos a los correos electrónicos <u>datospublicos@comodoro.gov.ar</u> o <u>mit@comodoro.gov.ar</u>.</p>
+                    <p>Quedamos a disposición para coordinar los detalles técnicos o administrativos necesarios.</p>
+                    <p>Sin más, saludamos a Uds. atentamente.</p>
+                    <p style="text-align:left"><b><u>DIRECCIÓN GENERAL DE MODERNIZACIÓN E INVESTIGACIÓN TERRITORIAL</u></b></p>
+                    <div class="firma"></div>`;
+            }
+            return `<div class="hoja" aria-label="Vista previa de la nota">
+                <img class="enc" src="membrete-encabezado.png" alt="">
+                <div class="agua"><img src="membrete-isotipo.png" alt=""></div>
+                <div class="texto">${t}</div>
+                <div class="pie"><u>www.comodoroweb.gov.ar</u> – Moreno 815, Comodoro Rivadavia, Chubut.</div>
+            </div>`;
+        };
+
+        // ---------- Nota anterior ----------
+        const subpanelNotaAnterior = () => {
+            const chips = st.antNumeros.map((n, i) => `<span class="chip-nota">N° ${esc(n)}<button type="button" data-quitar-nota="${i}" aria-label="Quitar la nota ${esc(n)}">×</button></span>`).join('');
+            const origen = st.antEditado
+                ? `<div class="origen">Editada a mano. <button type="button" class="link" data-reponer-notas>Volver a traer las cargadas</button></div>`
+                : (st.antNumeros.length
+                    ? `<div class="origen"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>Traída de las notas DGMIT cargadas en el Seguimiento.</div>`
+                    : `<div class="origen gris">No hay notas DGMIT cargadas para estos datasets: escribila si la sabés.</div>`);
+            const fecha = st.antNumeros.length === 1
+                ? `<div class="ant-fecha"><label class="form-label" for="f-ant-fecha">Fecha de la nota ${esc(st.antNumeros[0])} <span class="text-muted" style="font-weight:400">(opcional)</span></label><input class="form-input corto" id="f-ant-fecha" type="date" value="${st.antFecha}"></div>`
+                : '';
+            return `<div class="subpanel">
+                <div class="subpanel-titulo">Nota anterior <span class="text-muted">(opcional)</span></div>
+                <div class="chips">${chips}<span class="chip-agregar"><input class="form-input" id="f-ant-nuevo" type="text" maxlength="40" placeholder="Ej.: 124/25" aria-label="Número de otra nota anterior"><button type="button" class="btn btn-outline btn-sm" data-agregar-nota>Agregar</button></span></div>
+                ${origen}
+            </div>`;
+        };
+
+        // ---------- Paso 2 ----------
+        const paso2 = () => {
+            const a = area();
+            const filas = a.datasets.map((d) => d.estado === 'actualizado' ? `
+                <div class="ds ds-off">
+                    <input type="checkbox" disabled aria-label="${esc(d.titulo)}: al día, no se puede pedir">
+                    <div><span class="ds-titulo">${esc(d.titulo)}</span>${badge(d)}
+                    <div class="ds-datos">${esc(d.frecuencia)} · Vence el ${corto(d.proxima)}. Al día: todavía no hay datos para pedir.</div></div>
+                </div>` : `
+                <label class="ds">
+                    <input type="checkbox" value="${d.id}" ${st.elegidos.has(d.id) ? 'checked' : ''}>
+                    <div><span class="ds-titulo">${esc(d.titulo)}</span>${badge(d)}
+                    <div class="ds-datos">${esc(d.frecuencia)} · Datos solicitados: <b>${esc(d.pedido || 'Información actualizada disponible')}</b></div>
+                    ${(NOTAS_DGMIT[d.id] || []).length ? `<div class="ds-dgmit">Notas DGMIT del ciclo: ${NOTAS_DGMIT[d.id].map((n) => `N° ${esc(n.numero)} (${n.tipo === 'solicitud' ? 'solicitud' : 'reiteración'}, recibida el ${corto(n.recibida)})`).join(' · ')}</div>` : ''}</div>
+                </label>`).join('');
+            const sugerido = a.ambito === 'externa' ? 'externa' : 'interna';
+            return `
+                <h2 class="sr-only" id="titulo-paso">Paso 2: datasets y datos de la nota</h2>
+                <div class="resumen-area"><div><b>${esc(a.nombre)}</b> · <span class="text-muted">${esc(dependencia(a))}</span> · <span class="ambito ${a.ambito}">${ambitoTexto(a)}</span></div><button type="button" class="link" data-ir="1">Cambiar el área</button></div>
+                <div class="dos-col">
+                    <div>
+                        <fieldset>
+                            <legend>Tipo de nota</legend>
+                            <div class="opciones">
+                                <label class="opcion ${st.tipo === 'interna' ? 'elegida' : ''}"><input type="radio" name="tipo" value="interna" ${st.tipo === 'interna' ? 'checked' : ''}><div><strong>Interna</strong><span>A la Subsecretaría de Modernización y Transparencia, para que gestione ante el área.</span></div></label>
+                                <label class="opcion ${st.tipo === 'externa' ? 'elegida' : ''}"><input type="radio" name="tipo" value="externa" ${st.tipo === 'externa' ? 'checked' : ''}><div><strong>Externa</strong><span>Directo al área u organismo, con "${a.articulo === 'el' ? 'Al' : 'A la'} … PRESENTE".</span></div></label>
+                            </div>
+                            <div class="pista">${st.tipo === sugerido ? `Viene elegida porque el área figura como <b>${ambitoTexto(a).toLowerCase()}</b> en Áreas.` : `<b>Cambiada a mano:</b> el área figura como ${ambitoTexto(a).toLowerCase()}, que lleva nota ${sugerido}.`}</div>
+                        </fieldset>
+                        <fieldset>
+                            <legend>Pedido</legend>
+                            <div class="opciones">
+                                <label class="opcion ${st.pedido === 'solicitud' ? 'elegida' : ''}"><input type="radio" name="pedido" value="solicitud" ${st.pedido === 'solicitud' ? 'checked' : ''}><div><strong>Solicitud</strong><span>La primera vez que se piden estos datos.</span></div></label>
+                                <label class="opcion ${st.pedido === 'reiteracion' ? 'elegida' : ''}"><input type="radio" name="pedido" value="reiteracion" ${st.pedido === 'reiteracion' ? 'checked' : ''}><div><strong>Reiteración</strong><span>Ya se pidieron y siguen pendientes.</span></div></label>
+                            </div>
+                            ${st.pedido === 'reiteracion' ? subpanelNotaAnterior() : ''}
+                        </fieldset>
+                        <fieldset>
+                            <legend>Datos de la nota</legend>
+                            <div class="campos-cortos">
+                                <div><label class="form-label" for="f-fecha">Fecha</label><input class="form-input corto" id="f-fecha" type="date" value="${st.fecha}"></div>
+                                <div><label class="form-label" for="f-numero">Número <span class="text-muted" style="font-weight:400">(opcional)</span></label><input class="form-input corto-num" id="f-numero" type="text" maxlength="40" placeholder="Ej.: 156/26" value="${esc(st.numero)}" aria-describedby="f-numero-ayuda"></div>
+                            </div>
+                            <div class="form-hint" id="f-numero-ayuda" style="margin-top:6px">Sin número, la nota sale con "Nota N° ____/${st.fecha.slice(2, 4)}" para completarlo después. No se guarda en ningún lado.</div>
+                        </fieldset>
+                        <fieldset>
+                            <legend>Datasets del área que requieren nota DGMIT</legend>
+                            <div class="pista" style="margin:-4px 0 8px">Vienen elegidos los vencidos y los próximos a vencer. Los "Datos solicitados" los calcula el RPAD, igual que en las Notas Digitales.</div>
+                            <div class="ds-lista">${filas}</div>
+                        </fieldset>
+                    </div>
+                    <div class="lateral">
+                        <div class="lateral-titulo"><span>Vista previa</span><button type="button" class="link" data-ir="3">Ver en grande</button></div>
+                        <div class="mini" id="mini">${hoja()}</div>
+                    </div>
+                </div>
+                <div class="wizard-footer">
+                    <button type="button" class="btn btn-secondary" data-ir="1">← Volver</button>
+                    <button type="button" class="btn btn-primary" data-ir="3" ${st.elegidos.size ? '' : 'disabled'}>Siguiente: revisar la nota →</button>
+                </div>`;
+        };
+
+        // ---------- Paso 3 ----------
+        const nombreArchivo = () => {
+            const a = area();
+            const base = `Nota ${st.tipo} - ${a.nombre} - ${st.fecha}.docx`;
+            return base;
+        };
+        const paso3 = () => {
+            const a = area();
+            const ds = a.datasets.filter((d) => st.elegidos.has(d.id));
+            return `
+                <h2 class="sr-only" id="titulo-paso">Paso 3: revisar y descargar</h2>
+                <div class="revisar">
+                    <div class="grande">${hoja()}</div>
+                    <div class="lateral resumen-nota">
+                        <dl>
+                            <div><dt>Área</dt><dd>${esc(a.nombre)}</dd></div>
+                            <div><dt>Nota</dt><dd>${st.tipo === 'interna' ? 'Interna, a la Subsecretaría' : 'Externa, directo al área'} · ${st.pedido === 'reiteracion' ? 'Reiteración' : 'Solicitud'}</dd></div>
+                            <div><dt>Fecha y número</dt><dd>${corto(st.fecha)} · ${st.numero.trim() ? esc(st.numero.trim()) : 'sin número (queda el espacio)'}</dd></div>
+                            <div><dt>Datasets</dt><dd>${ds.map((d) => esc(d.titulo)).join('<br>')}</dd></div>
+                        </dl>
+                        <button type="button" class="btn btn-primary" id="descargar" style="width:100%;margin-top:18px">
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                            Descargar Word
+                        </button>
+                        <div class="archivo">${esc(nombreArchivo())}</div>
+                        <p class="pista">Sale en la hoja membretada, sin firma: se imprime y se firma a mano. El Word se puede retocar antes de imprimir.</p>
+                    </div>
+                </div>
+                <div class="wizard-footer">
+                    <button type="button" class="btn btn-secondary" data-ir="2">← Volver a los datasets</button>
+                    <button type="button" class="btn btn-outline" data-nueva>Armar otra nota</button>
+                </div>`;
+        };
+
+        // ---------- Dibujo y eventos ----------
+        const cuerpo = document.getElementById('cuerpo');
+        const dibujar = () => {
+            dibujarPasos();
+            cuerpo.innerHTML = st.paso === 1 ? paso1() : st.paso === 2 ? paso2() : paso3();
+            document.querySelectorAll('#m-variante button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.variante)));
+        };
+        const elegirArea = (id) => {
+            if (st.areaId !== id) {
+                st.areaId = id;
+                const a = area();
+                st.tipo = a.ambito === 'externa' ? 'externa' : 'interna';
+                st.elegidos = new Set(a.datasets.filter(urgente).map((d) => d.id));
+                st.antEditado = false; st.antFecha = '';
+                completarNotaAnterior();
+            }
+        };
+        const agregarNota = () => {
+            const campo = document.getElementById('f-ant-nuevo');
+            const n = (campo?.value || '').trim();
+            if (!n) { campo?.focus(); return; }
+            if (!st.antNumeros.includes(n)) st.antNumeros.push(n);
+            st.antEditado = true; if (st.antNumeros.length !== 1) st.antFecha = '';
+            dibujar();
+            document.getElementById('f-ant-nuevo')?.focus();
+        };
+        cuerpo.addEventListener('keydown', (e) => { if (e.target.id === 'f-ant-nuevo' && e.key === 'Enter') { e.preventDefault(); agregarNota(); } });
+        const avisar = (texto) => {
+            const el = document.getElementById('aviso-maqueta');
+            el.textContent = texto; el.style.display = 'block';
+            clearTimeout(avisar.t); avisar.t = setTimeout(() => { el.style.display = 'none'; }, 2600);
+        };
+
+        cuerpo.addEventListener('click', (e) => {
+            const ir = e.target.closest('[data-ir]');
+            if (ir && !ir.disabled) { st.paso = Number(ir.dataset.ir); dibujar(); window.scrollTo({ top: 0 }); return; }
+            const f = e.target.closest('[data-filtro]');
+            if (f) { st.filtro = f.dataset.filtro; dibujar(); return; }
+            const fila = e.target.closest('.area-opcion[data-area]');
+            if (fila) { elegirArea(Number(fila.dataset.area)); st.paso = 2; dibujar(); window.scrollTo({ top: 0 }); return; }
+            const quitar = e.target.closest('[data-quitar-nota]');
+            if (quitar) { st.antNumeros.splice(Number(quitar.dataset.quitarNota), 1); st.antEditado = true; if (st.antNumeros.length !== 1) st.antFecha = ''; dibujar(); return; }
+            if (e.target.closest('[data-agregar-nota]')) { agregarNota(); return; }
+            if (e.target.closest('[data-reponer-notas]')) { st.antEditado = false; completarNotaAnterior(); dibujar(); return; }
+            if (e.target.closest('#descargar')) { avisar('En la maqueta no se descarga: en la real baja el Word.'); return; }
+            if (e.target.closest('[data-nueva]')) { st.paso = 1; st.areaId = null; st.numero = ''; st.pedido = 'solicitud'; dibujar(); }
+        });
+        cuerpo.addEventListener('change', (e) => {
+            const t = e.target;
+            if (t.name === 'area') { elegirArea(Number(t.value)); dibujar(); return; }
+            if (t.name === 'tipo') { st.tipo = t.value; dibujar(); return; }
+            if (t.name === 'pedido') { st.pedido = t.value; dibujar(); return; }
+            if (t.type === 'checkbox') { t.checked ? st.elegidos.add(Number(t.value)) : st.elegidos.delete(Number(t.value)); completarNotaAnterior(); dibujar(); return; }
+            if (t.id === 'f-fecha' && t.value) { st.fecha = t.value; dibujar(); }
+            if (t.id === 'f-ant-fecha') { st.antFecha = t.value; document.getElementById('mini').innerHTML = hoja(); }
+        });
+        cuerpo.addEventListener('input', (e) => {
+            if (e.target.id === 'buscar') {
+                st.busqueda = e.target.value;
+                const pos = e.target.selectionStart;
+                dibujar();
+                const b = document.getElementById('buscar'); b.focus(); b.setSelectionRange(pos, pos);
+            }
+            if (e.target.id === 'f-ant-num') {
+                st.antNumero = e.target.value;
+                document.getElementById('mini').innerHTML = hoja();
+            }
+            if (e.target.id === 'f-numero') {
+                st.numero = e.target.value;
+                document.getElementById('mini').innerHTML = hoja();
+            }
+        });
+
+        document.getElementById('m-variante').addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            st.variante = b.dataset.v; dibujar();
+        });
+        document.getElementById('m-ejemplos').addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            st.areaId = null; elegirArea(Number(b.dataset.area));
+            if (st.elegidos.size === 0) st.elegidos = new Set(area().datasets.filter((d) => d.estado !== 'actualizado').map((d) => d.id));
+            st.paso = 3; dibujar(); window.scrollTo({ top: 0 });
+        });
+
+        document.getElementById('m-reiteraciones').addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            st.areaId = null; elegirArea(Number(b.dataset.area));
+            if (b.dataset.area === '41') { st.elegidos = new Set([46, 48, 69]); }
+            st.antEditado = false; completarNotaAnterior();
+            st.pedido = 'reiteracion'; st.paso = 2; dibujar(); window.scrollTo({ top: 0 });
+        });
+
+        const toggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        const velo = document.getElementById('sidebarOverlay');
+        const menu = (abrir) => { sidebar.classList.toggle('open', abrir); velo.classList.toggle('visible', abrir); toggle.setAttribute('aria-expanded', String(abrir)); };
+        toggle.addEventListener('click', () => menu(!sidebar.classList.contains('open')));
+        velo.addEventListener('click', () => menu(false));
+
+        dibujar();
+    })();
+    </script>
+</body>
+</html>

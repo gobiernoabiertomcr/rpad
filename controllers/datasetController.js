@@ -8,6 +8,9 @@ import {
 import {
   MENSAJE_FALTA_REQUIERE_NOTA, normalizarRequiereNota, requiereNotaResultante
 } from '../services/requiereNotaReglas.js';
+import {
+  MENSAJE_EDICION_REGISTRA, MENSAJE_FALTA_ORIGEN, MENSAJE_FALTA_RECIBIDO, normalizarOrigen
+} from '../services/registroReglas.js';
 
 // Respuesta cuando el dataset ya tiene un cambio pendiente de aprobación
 const responderBloqueado = (res, accion) => res.status(409).json({
@@ -215,22 +218,25 @@ const errorDeFechasDelDataset = ({ cambia, final, hoy }) => {
   return null;
 };
 
+const ERROR_ORIGEN_INVALIDO = 'El origen de los datos no es válido.';
+
 /**
  * Lo que valida POST /datasets/:id/actualizar (spec 10.1): lo mismo que una edición, más la próxima obligatoria salvo en
  * Eventual (donde va vacía), Datos al obligatorio y la recepción no posterior a la carga. cargado ya trae hoy si no vino.
- * Devuelve el primer error, o null.
+ * Desde la spec 2026-10-24-metricas-y-reportes (4), la recepción es obligatoria y, en gestión externa, también el origen de
+ * los datos (origen: el ya normalizado, null si no vino). Devuelve el primer error, o null.
  */
-const errorDelRegistro = ({ datosAl, cargado, recibido, proxima, tipo, eventual, hoy }) => {
+const errorDelRegistro = ({ datosAl, cargado, recibido, origen, gestion, proxima, tipo, eventual, hoy }) => {
   if (vacio(datosAl)) return ERROR_FALTA_DATOS_AL;
   const error = errorDeDatosAl(datosAl, tipo, hoy) ?? errorDeFechaPasada('ultima_actualizacion', cargado, hoy);
   if (error) return error;
-  if (!vacio(recibido)) {
-    const errorDeRecibido = errorDeFechaPasada('recibido_el', recibido, hoy);
-    if (errorDeRecibido) return errorDeRecibido;
-    if (recibido > cargado) {
-      return `La fecha de recepción (${formatoCorto(recibido)}) no puede ser posterior a la de carga en el portal (${formatoCorto(cargado)})`;
-    }
+  if (vacio(recibido)) return MENSAJE_FALTA_RECIBIDO;
+  const errorDeRecibido = errorDeFechaPasada('recibido_el', recibido, hoy);
+  if (errorDeRecibido) return errorDeRecibido;
+  if (recibido > cargado) {
+    return `La fecha de recepción (${formatoCorto(recibido)}) no puede ser posterior a la de carga en el portal (${formatoCorto(cargado)})`;
   }
+  if (gestion === 'externa' && origen === null) return MENSAJE_FALTA_ORIGEN;
   if (eventual) return vacio(proxima) ? null : ERROR_EVENTUAL_CON_PROXIMA;
   return vacio(proxima) ? ERROR_FALTA_PROXIMA : errorDeProxima(proxima);
 };
@@ -694,6 +700,10 @@ export const updateDataset = async (req, res) => {
       });
       if (errorDeFechas) return responderInvalido(res, errorDeFechas);
     }
+    // La edición no registra actualizaciones (spec 2026-10-24-metricas-y-reportes, 4): mover a la vez «Cargado en el portal» y
+    // la próxima es registrar una, y eso va por «Registrar actualización», que pide la recepción y el origen y escribe el
+    // historial. Corregir una sola de las dos sigue siendo posible
+    if (cambia('ultima_actualizacion') && cambia('proxima_actualizacion')) return responderInvalido(res, MENSAJE_EDICION_REGISTRA);
 
     // Obtener formatos actuales
     const [formatosActuales] = await pool.execute(
@@ -909,9 +919,11 @@ export const getEstadisticas = async (req, res) => {
 
 /**
  * Registrar actualización de dataset (crea cambio pendiente para aprobación). Spec 2026-10-17-fechas-datasets, 10.1:
- * recibe { datos_al, cargado_el (o fecha_actualizacion, por compatibilidad; si falta, hoy), recibido_el?,
- * proxima_actualizacion, notas? } y respeta la próxima que eligió la persona: ya no la calcula con la frecuencia. Los
- * controles van en este orden: 404, 409 (bloqueado) y 400 (lo que llega). Al aprobarse, el cambio escribe el historial
+ * recibe { datos_al, cargado_el (o fecha_actualizacion, por compatibilidad; si falta, hoy), recibido_el,
+ * origen_datos (solo en gestión externa), proxima_actualizacion, notas? } y respeta la próxima que eligió la persona: ya no
+ * la calcula con la frecuencia. Desde la spec 2026-10-24-metricas-y-reportes (4), recibido_el es obligatorio y, en externa,
+ * también origen_datos ('area' o 'fuente_publica'); en interna el origen queda null aunque llegue. Los controles van en
+ * este orden: 404, 409 (bloqueado) y 400 (lo que llega). Al aprobarse, el cambio escribe el historial
  * (registro_actualizacion).
  */
 export const registrarActualizacion = async (req, res) => {
@@ -949,10 +961,19 @@ export const registrarActualizacion = async (req, res) => {
     const cargado = vacio(body.cargado_el) ? (vacio(body.fecha_actualizacion) ? hoy : body.fecha_actualizacion) : body.cargado_el;
     const { datos_al: datosAl, recibido_el: recibido, proxima_actualizacion: proxima, notas } = body;
     if (!esTextoOpcionalValido(notas)) return responderInvalido(res, 'Las notas tienen que ser un texto');
+    // El origen, como 'area', 'fuente_publica' o null (sin dato). Un valor que no es un origen es un error, también en
+    // gestión interna (como requiere_nota)
+    let origen;
+    try {
+      origen = normalizarOrigen(body.origen_datos);
+    } catch {
+      return responderInvalido(res, ERROR_ORIGEN_INVALIDO);
+    }
 
+    const gestion = dataset.tipo_gestion;
     const eventual = esFrecuenciaEventual(dataset.frecuencia_meses);
-    const tipo = tipoEfectivo({ tipo_pedido: dataset.tipo_pedido, tipo_gestion: dataset.tipo_gestion, meses: dataset.frecuencia_meses });
-    const error = errorDelRegistro({ datosAl, cargado, recibido, proxima, tipo, eventual, hoy });
+    const tipo = tipoEfectivo({ tipo_pedido: dataset.tipo_pedido, tipo_gestion: gestion, meses: dataset.frecuencia_meses });
+    const error = errorDelRegistro({ datosAl, cargado, recibido, origen, gestion, proxima, tipo, eventual, hoy });
     if (error) return responderInvalido(res, error);
 
     // Datos anteriores, como 'AAAA-MM-DD' (DATE_FORMAT): la próxima anterior es el vencimiento del historial, la clave
@@ -966,12 +987,14 @@ export const registrarActualizacion = async (req, res) => {
       proxima_actualizacion: fechaGuardada(dataset.proxima_iso)
     };
 
-    // Datos nuevos: la marca registro_actualizacion hace que la aprobación escriba el historial
+    // Datos nuevos: la marca registro_actualizacion hace que la aprobación escriba el historial. El origen viaja junto con
+    // la recepción; en gestión interna no se pregunta y queda null
     const datosNuevos = {
       ultima_actualizacion: cargado,
       datos_al: datosAl,
       proxima_actualizacion: vacio(proxima) ? null : proxima,
-      recibido_el: vacio(recibido) ? null : recibido,
+      recibido_el: recibido,
+      origen_datos: gestion === 'externa' ? origen : null,
       notas: notas || null,
       registro_actualizacion: true
     };

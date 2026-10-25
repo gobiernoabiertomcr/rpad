@@ -984,6 +984,12 @@ async function iniciarSeguimiento() {
     return;
   }
   await Promise.all([cargarDataset(id), cargarSugerencias()]);
+  // Desde «Para completar» de Métricas (seguimiento.html?id=N#cargar-nota): el formulario abre con este dataset elegido, como con el
+  // botón; el hash se va de la dirección, así recargar no lo vuelve a abrir
+  if (abreLaCargaPorElHash(window.location.hash, puedeCargarNotas()) && vista.seguimiento) {
+    window.history?.replaceState?.(null, '', `${window.location.pathname ?? ''}${window.location.search ?? ''}`);
+    await abrirFormularioDeNota(porId('sg-cargar-nota'));
+  }
 }
 
 function conectarEventos() {
@@ -1254,6 +1260,12 @@ const TIPOS_DEL_FORMULARIO_DE_NOTA = ['nd-tipo-solicitud', 'nd-tipo-reiteracion'
 // Quién carga notas DGMIT lo dice auth.js (administración y el colaborador); solo cuenta el true literal
 function puedeCargarNotas() {
   return typeof Auth.puedeCargarNotasDgmit === 'function' && Auth.puedeCargarNotasDgmit() === true;
+}
+
+// El link «Cargar nota DGMIT» de «Para completar», en Métricas, termina en #cargar-nota: abre el formulario solo con ese hash y solo
+// para quien puede cargar (`puede`, el true literal). Puro
+function abreLaCargaPorElHash(hash, puede) {
+  return hash === '#cargar-nota' && puede === true;
 }
 
 // Los mensajes del servidor se escapan: showToast inserta HTML

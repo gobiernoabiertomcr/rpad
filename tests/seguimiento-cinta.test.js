@@ -381,6 +381,29 @@ describe('cintaDe: marcas', () => {
     // un email junto a una nota: la etiqueta es la de la nota
     assert.equal(sinCiclos([email('2026-03-01'), nota('2026-03-02', 5)]).marcas[0].etiqueta, 'Nota 5/26');
   });
+  // La reiteración en su propio anexo (spec 2026-10-24-reiteracion-en-su-anexo): la vista previa y la prueba suman la nota con
+  // «XX» o «PRUEBA» y sin año; su marca no queda sin etiqueta
+  it('la etiqueta de una nota sin año: "Nota XX" y "Nota PRUEBA"; sin número, null', () => {
+    const sinAnio = (fecha, numero) => mov('nota', fecha, { numero, anio: null, estado: 'enviada' }, `Nota Digital N° ${numero} a DGMIT`);
+    assert.equal(sinCiclos([sinAnio('2026-03-01', 'XX')]).marcas[0].etiqueta, 'Nota XX');
+    assert.equal(sinCiclos([sinAnio('2026-03-01', 'PRUEBA')]).marcas[0].etiqueta, 'Nota PRUEBA');
+    assert.equal(sinCiclos([nota('2026-03-01', 3), sinAnio('2026-03-03', 'XX')]).marcas[0].etiqueta, 'Nota 3/26 y Nota XX');
+    assert.equal(sinCiclos([sinAnio('2026-03-01', null)]).marcas[0].etiqueta, null);
+    assert.equal(sinCiclos([mov('nota', '2026-03-01', { numero: undefined, anio: 2026, estado: 'enviada' })]).marcas[0].etiqueta, null);
+  });
+  it('52 con la reiteración de la vista previa en sus fuentes: su marca va arriba, el día de la nota, con "Nota XX"', () => {
+    const reiteracion = {
+      id: null, numero: 'XX', anio: null, tipo: 'reiteracion', gestion: 'externa', fecha: HOY, estado: 'enviada',
+      enviada: `${HOY} 08:15:03`, para: 'a@x', cc: null, seccion: 'vencido', vencimiento: '2026-07-31',
+      datos_solicitados: 'Vigente al 30/06/2026', creado_por: null, firmante: null
+    };
+    const marca = cintaDeFuentes({ ...f(52), notas: [...CASOS[52].notas, reiteracion] }).marcas.find(m => m.etiqueta === 'Nota XX');
+    assert.ok(marca, 'sin la marca de la nota XX');
+    assert.equal(marca.fila, 'arriba');
+    assert.equal(marca.tipo, 'nota');
+    assert.ok(casi(marca.x, xDe(HOY)), String(marca.x));
+    assert.deepEqual(marca.detalle, ['20/10/2026: Nota Digital N° XX a DGMIT']);
+  });
   it('52: las notas y los emails a DGMIT van arriba, los emails al área abajo y las actualizaciones en la banda', () => {
     const c = cinta(52);
     const tipos = (fila) => [...new Set(c.marcas.filter(m => m.fila === fila).map(m => m.tipo))].sort();

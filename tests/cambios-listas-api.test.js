@@ -194,6 +194,34 @@ describe('comparación de las fechas nuevas', () => {
     assert.equal((await detalle(id, 'adminB')).datos_nuevos.registro_actualizacion, true);
   });
 
+  // El origen de los datos (spec 2026-10-24-metricas-y-reportes, 4): viaja en el registro y se compara después de «Recibido el»;
+  // en gestión interna llega null y no se lista
+  it('un registro con el origen de los datos lo compara como «Origen de los datos»; con el origen en null, no', async () => {
+    const registro = async (origen) => insertarCambio({
+      tipo: 'editar', datasetId: await crearDataset({ titulo: 'X', vencimiento: '2027-06-30' }), clave: 'adminA',
+      anteriores: { ultima_actualizacion: '2026-03-13', datos_al: '2026-02-28', proxima_actualizacion: '2026-03-31' },
+      nuevos: {
+        ultima_actualizacion: '2026-04-03', datos_al: '2026-03-31', proxima_actualizacion: '2026-06-30', recibido_el: '2026-04-02',
+        origen_datos: origen, notas: null, registro_actualizacion: true
+      }
+    });
+    const FECHAS = [
+      { campo: 'Datos al', antes: '2026-02-28', despues: '2026-03-31' },
+      { campo: 'Cargado en el portal', antes: '2026-03-13', despues: '2026-04-03' },
+      { campo: 'Recibido el', antes: '-', despues: '2026-04-02' }
+    ];
+    const PROXIMA = { campo: 'Proxima Actualizacion', antes: '2026-03-31', despues: '2026-06-30' };
+
+    const conOrigen = await registro('fuente_publica');
+    const esperado = [...FECHAS, { campo: 'Origen de los datos', antes: '-', despues: 'Fuente pública' }, PROXIMA];
+    assert.deepEqual((await detalle(conOrigen, 'adminB')).campos_modificados, esperado);
+    assert.deepEqual((await lista('para-revisar', 'adminB')).find(c => c.id === conOrigen).campos_modificados, esperado);
+
+    const interno = await registro(null);
+    assert.deepEqual((await detalle(interno, 'adminB')).campos_modificados, [...FECHAS, PROXIMA]);
+    assert.deepEqual((await lista('para-revisar', 'adminB')).find(c => c.id === interno).campos_modificados, [...FECHAS, PROXIMA]);
+  });
+
   it('el tipo de pedido se compara con su nombre en pantalla', async () => {
     const datasetId = await crearDataset({ titulo: 'X', vencimiento: '2027-06-30' });
     const id = await insertarCambio({

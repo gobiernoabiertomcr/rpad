@@ -28,9 +28,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
+      // Sin CDN (ni jsDelivr ni cdnjs): ninguna página carga un script ni una hoja de afuera, salvo las fuentes de Google, desde que
+      // Chart.js salió de Gestión (tests/paginas.test.js y publico.test.js)
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       scriptSrcAttr: ["'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "blob:"],
       connectSrc: ["'self'"],
@@ -111,6 +113,8 @@ const startServer = async () => {
     console.warn('⚠️  CRON_SECRET no está configurado: /api/cron/* va a rechazar todos los pedidos.');
   }
 
+  // tests/helpers.js (arrancarEn) da por listo un servidor de prueba cuando lee "Servidor corriendo en puerto: N" en esta salida: si
+  // cambia el cartel, hay que cambiar también lo que busca ahí
   app.listen(PORT, () => {
     console.log('');
     console.log('╔═══════════════════════════════════════════════════════════╗');

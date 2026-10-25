@@ -354,6 +354,8 @@ function filaDelLibro(n) {
   const esc = (texto) => Utils.escapeHtml(texto);
   const archivo = n.es_prueba ? `Nota-Digital-PRUEBA-${n.id}.pdf` : `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
   const archivoAnexo = `Anexo-${archivo}`;
+  // El Word de la nota (spec 2026-10-24-generador-de-notas, 6): el mismo nombre que el PDF, con .docx
+  const archivoWord = archivo.replace(/\.pdf$/, '.docx');
   const detalleEstado = n.ultimo_error || n.respuesta_smtp || '';
   return `<tr>
     <td><span class="co-numero">${numeroDe(n)}</span></td>
@@ -366,6 +368,7 @@ function filaDelLibro(n) {
     <td><div class="co-acciones">
       <button type="button" class="co-btn" data-accion="ver" data-id="${n.id}">Ver</button>
       <button type="button" class="co-btn" data-accion="pdf" data-id="${n.id}" data-archivo="${esc(archivo)}">PDF</button>
+      <button type="button" class="co-btn" data-accion="word" data-id="${n.id}" data-archivo="${esc(archivoWord)}">Word</button>
       ${n.tiene_anexo ? `<button type="button" class="co-btn" data-accion="anexo" data-id="${n.id}" data-archivo="${esc(archivoAnexo)}">Anexo</button>` : ''}
       ${n.estado !== 'enviada' ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
     </div></td>
@@ -399,6 +402,8 @@ async function accionDelLibro(evento) {
       document.getElementById('modal-nota').classList.add('active');
     } else if (boton.dataset.accion === 'pdf') {
       descargarBlob(await API.getNotaPdf(id), boton.dataset.archivo);
+    } else if (boton.dataset.accion === 'word') {
+      descargarBlob(await API.pedirArchivo(`/notificaciones/notas-digitales/${id}/word`), boton.dataset.archivo);
     } else if (boton.dataset.accion === 'anexo') {
       descargarBlob(await API.getNotaAnexo(id), boton.dataset.archivo);
     } else if (boton.dataset.accion === 'reintentar') {

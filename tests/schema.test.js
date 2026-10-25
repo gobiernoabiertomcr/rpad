@@ -26,30 +26,39 @@ const columnas = async (conexion, base) => {
   return filas.map(f => `${f.tabla}.${f.columna} ${f.tipo} null=${f.nulo} default=${f.defecto} key=${f.clave}`);
 };
 
-// Claves foráneas e índices de las tres tablas de las notas DGMIT (spec 2026-10-24-notas-dgmit, 4): `columnas` no los ve
-const clavesAjenasDgmit = async (conexion, base) => {
+// Claves foráneas e índices de unas tablas: `columnas` no los ve
+const clavesAjenasDe = async (conexion, base, tablas) => {
   const [filas] = await conexion.query(
     `SELECT rc.CONSTRAINT_NAME AS nombre, rc.TABLE_NAME AS tabla, k.COLUMN_NAME AS columna,
             rc.REFERENCED_TABLE_NAME AS destino, k.REFERENCED_COLUMN_NAME AS destino_columna, rc.DELETE_RULE AS borrado
      FROM information_schema.REFERENTIAL_CONSTRAINTS rc
      JOIN information_schema.KEY_COLUMN_USAGE k USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_NAME)
-     WHERE rc.CONSTRAINT_SCHEMA = ? AND LEFT(rc.TABLE_NAME, 11) = 'notas_dgmit'
+     WHERE rc.CONSTRAINT_SCHEMA = ? AND rc.TABLE_NAME IN (?)
      ORDER BY rc.TABLE_NAME, rc.CONSTRAINT_NAME`,
-    [base]
+    [base, tablas]
   );
   return filas.map(f => `${f.tabla}.${f.columna} -> ${f.destino}.${f.destino_columna} (${f.nombre}) borrado=${f.borrado}`);
 };
 
-const indicesDgmit = async (conexion, base) => {
+const indicesDe = async (conexion, base, tablas) => {
   const [filas] = await conexion.query(
     `SELECT TABLE_NAME AS tabla, INDEX_NAME AS indice, NON_UNIQUE AS repetible,
             GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columnas
-     FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND LEFT(TABLE_NAME, 11) = 'notas_dgmit'
+     FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?)
      GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE ORDER BY TABLE_NAME, INDEX_NAME`,
-    [base]
+    [base, tablas]
   );
   return filas.map(f => `${f.tabla}.${f.indice} (${f.columnas}) repetible=${f.repetible}`);
 };
+
+// Las tres tablas de las notas DGMIT (spec 2026-10-24-notas-dgmit, 4)
+const TABLAS_DGMIT = ['notas_dgmit', 'notas_dgmit_datasets', 'notas_dgmit_historial'];
+const clavesAjenasDgmit = (conexion, base) => clavesAjenasDe(conexion, base, TABLAS_DGMIT);
+const indicesDgmit = (conexion, base) => indicesDe(conexion, base, TABLAS_DGMIT);
+
+// Las dos tablas de Métricas y Reportes (spec 2026-10-24-metricas-y-reportes, 3 y 4): la foto anual y los «Recibido el»
+// importados
+const TABLAS_METRICAS = ['metricas_fotos', 'actualizaciones_recibido'];
 
 const contar = async (tabla) => {
   const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_TEMPORAL}\`.\`${tabla}\``);
@@ -271,6 +280,38 @@ describe('database/schema.sql', () => {
     ]);
   });
 
+  it('métricas: la foto anual y los «Recibido el» importados, con sus columnas, claves y FK (spec 2026-10-24-metricas-y-reportes, 3 y 4)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_METRICAS.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      // Un «Recibido el» importado por cambio aprobado: la clave es el cambio
+      'actualizaciones_recibido.cambio_id int(11) null=NO default=null key=PRI',
+      'actualizaciones_recibido.recibido_el date null=YES default=NULL key=',
+      "actualizaciones_recibido.origen_datos enum('area','fuente_publica') null=YES default=NULL key=",
+      'actualizaciones_recibido.created_at timestamp null=YES default=current_timestamp() key=',
+      // Una foto por año, al 31/12 de ese año; datos es el JSON de la foto
+      'metricas_fotos.anio smallint(6) null=NO default=null key=PRI',
+      'metricas_fotos.al date null=NO default=null key=',
+      'metricas_fotos.datos longtext null=NO default=null key=',
+      'metricas_fotos.created_at timestamp null=YES default=current_timestamp() key='
+    ]);
+    // Borrar el cambio pendiente borra su «Recibido el» importado
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_METRICAS), [
+      'actualizaciones_recibido.cambio_id -> cambios_pendientes.id (fk_actualizaciones_recibido_cambio) borrado=CASCADE'
+    ]);
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_METRICAS), [
+      'actualizaciones_recibido.PRIMARY (cambio_id) repetible=0',
+      'metricas_fotos.PRIMARY (anio) repetible=0'
+    ]);
+  });
+
+  // Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8): el ámbito del área decide qué nota de la DGMIT le toca
+  it('areas tiene ambito (municipal o externo, municipal por defecto) después de articulo_superior', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('areas.'));
+    const posicion = (columna) => lista.findIndex(c => c.startsWith(`areas.${columna} `));
+    assert.ok(lista.includes("areas.ambito enum('municipal','externo') null=NO default='municipal' key="), lista.join('\n'));
+    assert.equal(posicion('ambito'), posicion('articulo_superior') + 1, lista.join('\n'));
+  });
+
   it('el historial borra el vínculo al cambio (SET NULL) cuando se borra el cambio pendiente', async () => {
     const [[fk]] = await root.query(
       `SELECT k.REFERENCED_TABLE_NAME AS tabla, k.REFERENCED_COLUMN_NAME AS columna, rc.DELETE_RULE AS borrado
@@ -283,7 +324,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios']) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -833,5 +874,430 @@ describe('migración de las notas DGMIT', () => {
         lista.filter(c => c.startsWith('usuarios.rol')).join('\n'));
       assert.deepEqual(await roles(), [['t_admin', 'admin'], ['t_colaborador', 'lector'], ['t_editor', 'admin']]);
     });
+  });
+});
+
+// Métricas y Reportes (spec 2026-10-24-metricas-y-reportes, 3 y 4): la foto anual de las métricas y los «Recibido el»
+// importados. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-metricas.sql', () => {
+  const BASE_METRICAS = 'rpad_schema_metricas_test';
+  const MIGRACION = 'migracion-metricas.sql';
+  const ROLLBACK = 'rollback-metricas.sql';
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_METRICAS.some(tabla => c.startsWith(`${tabla}.`));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_METRICAS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_METRICAS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_METRICAS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`
+        DROP TABLE actualizaciones_recibido;
+        DROP TABLE metricas_fotos;`);
+    }
+  };
+  // Una foto y un «Recibido el» importado: lo que la vuelta atrás tiene que poder borrar con la FK puesta
+  const cargarDatos = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO \`${BASE_METRICAS}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_editor', 'x', 't_editor', 't_editor@rpad.test', 'editor')`);
+    const [{ insertId: cambio }] = await root.query(
+      `INSERT INTO \`${BASE_METRICAS}\`.cambios_pendientes (tipo_cambio, datos_nuevos, usuario_id, estado) VALUES ('editar', '{}', ?, 'aprobado')`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_METRICAS}\`.metricas_fotos (anio, al, datos) VALUES (2026, '2026-12-31', '{"version":1}')`);
+    await root.query(`INSERT INTO \`${BASE_METRICAS}\`.actualizaciones_recibido (cambio_id, recibido_el, origen_datos) VALUES (?, '2026-03-02', 'area')`, [cambio]);
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_METRICAS}\`.\`${tabla}\``);
+    return total;
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_METRICAS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir y cómo se deshace; el rollback, que se pierden la foto y lo importado', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-24-metricas-y-reportes-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-metricas\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-metricas\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /se pierden/i);
+    assert.match(cabecera(ROLLBACK), /foto/);
+    assert.match(cabecera(ROLLBACK), /importad/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_METRICAS);
+    assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_METRICAS), await columnas(root, BASE_TEMPORAL));
+    // Y también la clave foránea y las claves primarias, que las columnas no muestran del todo
+    assert.deepEqual(await clavesAjenasDe(root, BASE_METRICAS, TABLAS_METRICAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_METRICAS));
+    assert.deepEqual(await indicesDe(root, BASE_METRICAS, TABLAS_METRICAS), await indicesDe(root, BASE_TEMPORAL, TABLAS_METRICAS));
+  });
+
+  it('el rollback deja la estructura anterior', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las dos tablas
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_METRICAS), deMain);
+    // El cambio al que apuntaba el «Recibido el» importado sigue ahí
+    assert.equal(await contarEn('cambios_pendientes'), 1);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_METRICAS), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_METRICAS, TABLAS_METRICAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_METRICAS));
+  });
+});
+
+// Los «Recibido el» y los orígenes de las actualizaciones viejas, del Excel que completó el usuario (spec
+// 2026-10-24-metricas-y-reportes, 4). Acá, sobre una base de prueba con cambios inventados: la forma, que se puede repetir, que un
+// cambio que no existe no hace nada y qué lista la consulta de verificación. La cuenta con la base real («quedan 5 sin Recibido
+// el») se verifica una vez contra la base de la rama, fuera de la suite: los datos reales no se versionan.
+describe('migracion-metricas-recibido-datos.sql', () => {
+  const BASE_RECIBIDO = 'rpad_schema_recibido_test';
+  const RUTA = new URL('../database/updates/migracion-metricas-recibido-datos.sql', import.meta.url);
+  // Se lee en cada test: si el archivo falta, falla cada uno y no el archivo de tests entero
+  const archivo = () => fs.readFileSync(RUTA, 'utf8');
+  const lineas = () => archivo().split(/\r?\n/);
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const sentencias = () => lineas().filter(l => l.trim() && !l.trim().startsWith('--'));
+  const FORMA = /^INSERT INTO actualizaciones_recibido \(cambio_id, recibido_el, origen_datos\) SELECT (\d+), (?:NULL|'(\d{4}-\d{2}-\d{2})'), (?:NULL|'(area|fuente_publica)') FROM cambios_pendientes WHERE id = (\d+) ON DUPLICATE KEY UPDATE recibido_el = VALUES\(recibido_el\), origen_datos = VALUES\(origen_datos\);$/;
+  const esInsert = (linea) => /^\s*INSERT\b/i.test(linea);
+  // Uno por INSERT, en el orden del archivo: { cambio (el del SELECT), id (el del WHERE), recibido, origen }
+  const inserts = () => sentencias().filter(esInsert).map((linea) => {
+    const m = FORMA.exec(linea);
+    assert.ok(m, `INSERT con una forma distinta de la acordada: ${linea}`);
+    return { cambio: Number(m[1]), recibido: m[2] ?? null, origen: m[3] ?? null, id: Number(m[4]) };
+  });
+  // La consulta de verificación va comentada, en un solo renglón: -- SELECT … ;
+  const verificacion = () => lineas().map(l => /^-- (SELECT .+;)$/.exec(l)?.[1]).filter(Boolean);
+  const esFecha = (texto) => {
+    const fecha = new Date(`${texto}T00:00:00Z`);
+    return !Number.isNaN(fecha.getTime()) && fecha.toISOString().slice(0, 10) === texto;
+  };
+  const ordenados = (ids) => [...ids].sort((a, b) => a - b);
+
+  // Una base con la estructura de schema.sql y un usuario que propone los cambios; devuelve su id
+  const crearBase = async () => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_RECIBIDO}\``);
+    await root.query(`CREATE DATABASE \`${BASE_RECIBIDO}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_RECIBIDO}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    const [{ insertId }] = await root.query(
+      `INSERT INTO \`${BASE_RECIBIDO}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_editor', 'x', 't_editor', 't_editor@rpad.test', 'editor')`);
+    return insertId;
+  };
+  // Una actualización como las del Excel, sin «Recibido el»: la registrada con el modal (registro_actualizacion, con
+  // recibido_el en null) o la de la edición de antes (mueve la carga y la próxima, sin la clave); la carga anterior, con la
+  // fecha vieja de datos_anteriores (2025-07-31T03:00:00.000Z). [id, tipo_cambio, datos_nuevos, datos_anteriores, estado]
+  const actualizacion = (id, { registro = true, recibido = null, estado = 'aprobado' } = {}) => [id, 'editar',
+    JSON.stringify({
+      ultima_actualizacion: '2026-03-02', proxima_actualizacion: '2027-01-31',
+      ...(registro ? { registro_actualizacion: true, recibido_el: recibido } : (recibido ? { recibido_el: recibido } : {}))
+    }),
+    JSON.stringify({ ultima_actualizacion: '2025-07-31T03:00:00.000Z', proxima_actualizacion: '2026-01-31' }), estado];
+  const cargarCambios = async (usuario, filas) => {
+    await root.query(
+      `INSERT INTO \`${BASE_RECIBIDO}\`.cambios_pendientes (id, tipo_cambio, datos_nuevos, datos_anteriores, estado, usuario_id) VALUES ?`,
+      [filas.map(f => [...f, usuario])]);
+  };
+  const correr = async () => {
+    await root.query(`USE \`${BASE_RECIBIDO}\``);
+    await root.query(archivo());
+  };
+  const importados = async () => {
+    const [filas] = await root.query(
+      `SELECT cambio_id, DATE_FORMAT(recibido_el, '%Y-%m-%d') recibido, origen_datos FROM \`${BASE_RECIBIDO}\`.actualizaciones_recibido ORDER BY cambio_id`);
+    return filas.map(f => ({ cambio: f.cambio_id, recibido: f.recibido, origen: f.origen_datos }));
+  };
+  const cambios = async () => {
+    const [filas] = await root.query(`SELECT id, tipo_cambio, datos_nuevos, datos_anteriores, estado FROM \`${BASE_RECIBIDO}\`.cambios_pendientes ORDER BY id`);
+    return filas;
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_RECIBIDO}\``);
+  });
+
+  it('existe y se pega tal cual en phpMyAdmin: empieza con SET NAMES utf8mb4 y solo escribe INSERT con la forma acordada (sin DELIMITER, USE, DROP, RENAME ni CHECK)', () => {
+    assert.ok(fs.existsSync(RUTA), 'falta database/updates/migracion-metricas-recibido-datos.sql');
+    const [primera, ...resto] = sentencias();
+    assert.equal(primera, 'SET NAMES utf8mb4;');
+    assert.ok(resto.length > 0, 'no hay ningún INSERT');
+    for (const linea of resto) assert.match(linea, FORMA, `sentencia inesperada: ${linea}`);
+    assert.doesNotMatch(sentencias().join('\n'), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+  });
+
+  it('la cabecera dice la spec, el Excel, que no lleva las observaciones, el orden (después de migracion-metricas.sql y antes del 10/01/2027), que se puede repetir y cómo se verifica', () => {
+    const cabecera = lineas().filter(l => l.startsWith('--')).join('\n');
+    assert.match(cabecera, /docs\/superpowers\/specs\/2026-10-24-metricas-y-reportes-design\.md/);
+    assert.match(cabecera, /Excel/);
+    assert.match(cabecera, /observaciones del Excel no se importan/);
+    assert.match(cabecera, /ORDEN: correr DESPUÉS de migracion-metricas\.sql/);
+    assert.match(cabecera, /ANTES del 10\/01\/2027/);
+    assert.match(cabecera, /Se puede volver a correr/);
+    assert.match(cabecera, /VERIFICACIÓN/);
+  });
+
+  it('28 INSERT: uno por cada fila del Excel con fecha u origen (27) y, al final, el origen confirmado del cambio 51; sin repetir, el mismo cambio en el SELECT y en el WHERE, y una fecha válida o un origen', () => {
+    const lista = inserts();
+    assert.equal(lista.length, 28);
+    // El último no sale del Excel (Ruling 35): el cambio 51 ya trae su «Recibido el»; se le suma solo el origen que confirmó el usuario
+    assert.deepEqual(lista.at(-1), { cambio: 51, recibido: null, origen: 'fuente_publica', id: 51 });
+    assert.match(lineas().filter(l => l.startsWith('--')).join('\n'), /cambio 51[^]*NO sale del Excel[^]*línea 13/);
+    assert.equal(new Set(lista.map(i => i.cambio)).size, lista.length, 'hay un cambio repetido');
+    for (const { cambio, id, recibido, origen } of lista) {
+      assert.equal(id, cambio, `el SELECT y el WHERE no dicen el mismo cambio: ${cambio} y ${id}`);
+      assert.ok(recibido !== null || origen !== null, `el cambio ${cambio} no trae ni la fecha ni el origen`);
+      if (recibido !== null) {
+        assert.ok(esFecha(recibido) && recibido >= '2025-01-01' && recibido <= '2026-10-24', `fecha inválida en el cambio ${cambio}: ${recibido}`);
+      }
+    }
+  });
+
+  it('solo ids, fechas y orígenes: ningún renglón entre los INSERT (ni un comentario con el título del dataset) y la verificación al final, comentada y en un solo renglón', () => {
+    const todas = lineas();
+    const posiciones = todas.map((l, i) => (esInsert(l) ? i : -1)).filter(i => i >= 0);
+    assert.ok(posiciones.length > 0, 'no hay ningún INSERT');
+    assert.deepEqual(todas.slice(posiciones[0], posiciones.at(-1) + 1).filter(l => !esInsert(l)), []);
+    const consultas = verificacion();
+    assert.equal(consultas.length, 1);
+    assert.ok(todas.findIndex(l => l === `-- ${consultas[0]}`) > posiciones.at(-1), 'la verificación no está al final');
+    assert.match(consultas[0], /FROM cambios_pendientes c LEFT JOIN actualizaciones_recibido r ON r\.cambio_id = c\.id/);
+  });
+
+  it('se puede repetir y un cambio que no existe no hace nada: dos corridas dejan una fila por cambio, con su fecha y su origen, y no tocan los cambios', async () => {
+    const usuario = await crearBase();
+    const [faltante, ...resto] = inserts();
+    // Todos los cambios del archivo menos el primero, que en esta base no existe; la mitad registrados con el modal y la otra mitad
+    // con la edición de antes
+    await cargarCambios(usuario, resto.map((ins, i) => actualizacion(ins.cambio, { registro: i % 2 === 0 })));
+    // Uno ya tenía algo importado, con otra fecha y sin origen: se vuelve a escribir con lo del archivo (no se duplica)
+    await root.query(
+      `INSERT INTO \`${BASE_RECIBIDO}\`.actualizaciones_recibido (cambio_id, recibido_el, origen_datos) VALUES (?, '2025-01-02', NULL)`, [resto[0].cambio]);
+    const antes = await cambios();
+    await correr();
+    await correr();
+    const esperado = resto.map(({ cambio, recibido, origen }) => ({ cambio, recibido, origen })).sort((a, b) => a.cambio - b.cambio);
+    assert.deepEqual(await importados(), esperado);
+    // El que no existe no dejó fila ni frenó la corrida, y no se creó
+    assert.ok(!(await importados()).some(f => f.cambio === faltante.cambio));
+    assert.deepEqual(await cambios(), antes);
+    assert.ok(!(await cambios()).some(c => c.id === faltante.cambio));
+  });
+
+  it('la consulta de verificación lista las actualizaciones aprobadas que siguen sin «Recibido el», antes y después de la carga', async () => {
+    const usuario = await crearBase();
+    const delArchivo = inserts();
+    const SIN_IMPORTAR = 9001;
+    const DE_LA_EDICION = 9005;
+    // Los del archivo que solo traen el origen (el cambio 51) son, como en la base real, actualizaciones que ya tienen su «Recibido el»:
+    // no figuran ni antes ni después. Los demás, sin la fecha, la mitad registrados con el modal y la otra mitad por la edición de antes
+    const soloOrigen = new Set(delArchivo.filter(i => i.recibido === null).map(i => i.cambio));
+    assert.ok(soloOrigen.has(51), 'el cambio 51 no está en el archivo como «solo el origen»');
+    await cargarCambios(usuario, [
+      ...delArchivo.map((ins, i) => actualizacion(ins.cambio, { registro: i % 2 === 0, recibido: soloOrigen.has(ins.cambio) ? '2026-10-19' : null })),
+      // Una actualización aprobada sin la fecha que no está en el archivo (registrada con el modal y por la edición de antes)
+      actualizacion(SIN_IMPORTAR),
+      actualizacion(DE_LA_EDICION, { registro: false }),
+      // No se listan: una con «Recibido el», una rechazada, una edición que solo mueve la próxima, una que solo mueve la carga y un alta
+      actualizacion(9002, { recibido: '2026-03-01' }),
+      actualizacion(9003, { registro: false, recibido: '2026-03-01' }),
+      actualizacion(9004, { estado: 'rechazado' }),
+      [9006, 'editar', JSON.stringify({ proxima_actualizacion: '2027-01-31' }), JSON.stringify({ proxima_actualizacion: '2026-01-31' }), 'aprobado'],
+      [9007, 'editar', JSON.stringify({ ultima_actualizacion: '2026-03-02', proxima_actualizacion: '2026-01-31' }),
+        JSON.stringify({ ultima_actualizacion: '2025-07-31T03:00:00.000Z', proxima_actualizacion: '2026-01-31' }), 'aprobado'],
+      [9008, 'crear', JSON.stringify({ titulo: 'Dataset de prueba', ultima_actualizacion: '2026-03-02', proxima_actualizacion: '2027-01-31' }), null, 'aprobado']
+    ]);
+    const [consulta] = verificacion();
+    const listados = async () => {
+      await root.query(`USE \`${BASE_RECIBIDO}\``);
+      const [filas] = await root.query(consulta);
+      return filas.map(f => f.cambio_id);
+    };
+    assert.deepEqual(await listados(), ordenados([...delArchivo.filter(i => !soloOrigen.has(i.cambio)).map(i => i.cambio), SIN_IMPORTAR, DE_LA_EDICION]));
+    await correr();
+    // Después de la carga quedan solo los que no están en el archivo (el 51 tampoco figura: su fecha es la suya, no la importada)
+    assert.deepEqual(await listados(), [SIN_IMPORTAR, DE_LA_EDICION]);
+  });
+});
+
+// Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8, y Anexo A): el ámbito de las áreas (municipal o fuera del
+// municipio) y la clasificación inicial de las 13 de afuera. La migración y su vuelta atrás, sobre una base descartable creada
+// con schema.sql
+describe('migración del generador de notas', () => {
+  const BASE_GENERADOR = 'rpad_schema_generador_test';
+  const MIGRACION = 'migracion-generador-notas.sql';
+  const ROLLBACK = 'rollback-generador-notas.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  const lineas = (archivo) => sql(archivo).split(/\r?\n/);
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const sentencias = (archivo) => lineas(archivo).filter(l => l.trim() && !l.trim().startsWith('--'));
+  const codigo = (archivo) => sentencias(archivo).join('\n');
+  const cabecera = (archivo) => lineas(archivo).filter(l => l.startsWith('--')).join('\n');
+  const FORMA = /^UPDATE areas SET ambito = 'externo' WHERE id = (\d+) AND nombre = '([^']+)';$/;
+  const esUpdate = (linea) => /^\s*UPDATE\b/i.test(linea);
+  // Uno por UPDATE, en el orden del archivo: { id, nombre, comentario (la línea de arriba) }
+  const updates = () => {
+    const todas = lineas(MIGRACION);
+    return todas.map((linea, i) => ({ linea, i })).filter(({ linea }) => esUpdate(linea)).map(({ linea, i }) => {
+      const m = FORMA.exec(linea);
+      assert.ok(m, `UPDATE con una forma distinta de la acordada: ${linea}`);
+      return { id: Number(m[1]), nombre: m[2], comentario: todas[i - 1] };
+    });
+  };
+  // La consulta de verificación va comentada, en un solo renglón: -- SELECT … ;
+  const verificacion = () => lineas(MIGRACION).map(l => /^-- (SELECT .+;)$/.exec(l)?.[1]).filter(Boolean);
+  // Las 13 áreas fuera del municipio del Anexo A, confirmadas por el usuario el 24/10/2026
+  const IDS_EXTERNOS = [2, 3, 4, 6, 24, 27, 28, 29, 30, 35, 41, 43, 44];
+  // Seis áreas con sus textos del dump de producción del 25/10/2026 (las 6 y 35 ya con las correcciones del usuario): cuatro
+  // de afuera (la 27 y la 35 sin dependencia) y dos municipales (la 25 con artículo «el»)
+  const AREAS = [
+    { id: 2, nombre: 'Agencia Provincial de Seguridad Vial', articulo: 'la',
+      area_superior: 'Subsecretaría de Seguridad Vial. Ministerio de Seguridad. Provincia del Chubut', articulo_superior: 'la' },
+    { id: 6, nombre: 'Dirección de Estadística y Evaluación Educativa', articulo: 'la',
+      area_superior: 'Ministerio de Educación del Chubut', articulo_superior: 'el' },
+    { id: 18, nombre: 'Dirección General de Recursos Humanos', articulo: 'la',
+      area_superior: 'Subsec. de Recursos Humanos. Sec. Gobierno, Modernización y Transparencia', articulo_superior: 'la' },
+    { id: 25, nombre: 'Ente Autárquico Comodoro Deportes', articulo: 'el', area_superior: 'Intendencia', articulo_superior: 'la' },
+    { id: 27, nombre: 'Honorable Concejo Deliberante de Comodoro Rivadavia', articulo: 'el', area_superior: null, articulo_superior: null },
+    { id: 35, nombre: 'Secretaría de Energía de Nación', articulo: 'la', area_superior: null, articulo_superior: null }
+  ];
+  const esDeLaColumna = (c) => c.startsWith('areas.ambito ');
+
+  // La estructura de schema.sql y, si no se quiere la columna nueva, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conColumna }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_GENERADOR}\``);
+    await root.query(`CREATE DATABASE \`${BASE_GENERADOR}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_GENERADOR}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conColumna) await root.query('ALTER TABLE areas DROP COLUMN ambito');
+  };
+  const cargarAreas = async (areas = AREAS) => {
+    await root.query(
+      `INSERT INTO \`${BASE_GENERADOR}\`.areas (id, nombre, articulo, area_superior, articulo_superior) VALUES ?`,
+      [areas.map(a => [a.id, a.nombre, a.articulo, a.area_superior, a.articulo_superior])]);
+  };
+  const correr = async (archivo) => {
+    await root.query(`USE \`${BASE_GENERADOR}\``);
+    await root.query(sql(archivo));
+  };
+  const textos = async () => {
+    const [filas] = await root.query(
+      `SELECT id, nombre, articulo, area_superior, articulo_superior FROM \`${BASE_GENERADOR}\`.areas ORDER BY id`);
+    return filas.map(f => ({ ...f }));
+  };
+  const ambitos = async () => {
+    const [filas] = await root.query(`SELECT id, ambito FROM \`${BASE_GENERADOR}\`.areas ORDER BY id`);
+    return Object.fromEntries(filas.map(f => [f.id, f.ambito]));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_GENERADOR}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER, USE, DROP, RENAME ni CHECK; empieza con SET NAMES utf8mb4, agrega la columna y solo marca áreas como externas', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    const [primera, ...resto] = sentencias(MIGRACION);
+    assert.equal(primera, 'SET NAMES utf8mb4;');
+    // Fuera de los UPDATE, solo la columna nueva: ningún UPDATE de nombre, area_superior ni articulo_superior
+    assert.equal(resto.filter(l => !esUpdate(l)).join(' ').replace(/\s+/g, ' ').trim(),
+      "ALTER TABLE `areas` ADD COLUMN IF NOT EXISTS `ambito` enum('municipal','externo') NOT NULL DEFAULT 'municipal' AFTER `articulo_superior`;");
+    for (const linea of resto.filter(esUpdate)) assert.match(linea, FORMA, `sentencia inesperada: ${linea}`);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir, cuándo no volver a correrla y cómo se deshace', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-24-generador-de-notas-design\.md/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código y después de migracion-metricas\.sql/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION),
+      /Si después alguien cambia en Áreas el ámbito de una de las 13, no la vuelvas a correr: la vuelve a marcar como externa/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-generador-notas\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-generador-notas\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('un UPDATE por cada una de las 13 áreas de afuera, sin repetir, con el comentario «-- <id>. <nombre>» arriba', () => {
+    const lista = updates();
+    assert.deepEqual(lista.map(u => u.id).sort((a, b) => a - b), IDS_EXTERNOS);
+    assert.equal(lista.length, IDS_EXTERNOS.length, 'hay un área repetida');
+    for (const { id, nombre, comentario } of lista) {
+      assert.equal(comentario, `-- ${id}. ${nombre}`, `área ${id}: sin el comentario con su nombre`);
+    }
+    // Las cuatro de las seis de prueba van con el nombre tal como está en la base
+    for (const area of AREAS.filter(a => IDS_EXTERNOS.includes(a.id))) {
+      assert.equal(lista.find(u => u.id === area.id)?.nombre, area.nombre, `área ${area.id}`);
+    }
+  });
+
+  it('termina con la consulta de verificación comentada: cuántas áreas quedaron fuera del municipio (13)', () => {
+    const consultas = verificacion();
+    assert.deepEqual(consultas, ["SELECT COUNT(*) AS externas FROM areas WHERE ambito = 'externo';"]);
+    const todas = lineas(MIGRACION);
+    const ultimoUpdate = todas.map((l, i) => (esUpdate(l) ? i : -1)).filter(i => i >= 0).at(-1);
+    assert.ok(todas.indexOf(`-- ${consultas[0]}`) > ultimoUpdate, 'la verificación no está al final');
+    assert.match(cabecera(MIGRACION), /\b13\b/);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir: marca las de afuera y no toca los textos', async () => {
+    await crearBase({ conColumna: false });
+    assert.ok(!(await columnas(root, BASE_GENERADOR)).some(esDeLaColumna), 'la base de partida ya tiene la columna');
+    await cargarAreas();
+    const antes = await textos();
+    await correr(MIGRACION);
+    await correr(MIGRACION);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await ambitos(), { 2: 'externo', 6: 'externo', 18: 'municipal', 25: 'municipal', 27: 'externo', 35: 'externo' });
+    // El nombre, la dependencia y los dos artículos de las seis, sin ningún cambio
+    assert.deepEqual(await textos(), antes);
+    assert.deepEqual(antes, AREAS);
+    // La consulta de verificación cuenta las cuatro de afuera de esta base
+    const [[{ externas }]] = await root.query(verificacion()[0].replace('FROM areas', `FROM \`${BASE_GENERADOR}\`.areas`));
+    assert.equal(externas, 4);
+  });
+
+  it('un área de la lista con otro nombre (un renombre hecho a mano) queda municipal: el UPDATE no la encuentra', async () => {
+    await crearBase({ conColumna: false });
+    await cargarAreas([{ ...AREAS[0], nombre: 'Agencia Provincial de Seguridad Vial del Chubut' }, AREAS[1]]);
+    await correr(MIGRACION);
+    assert.deepEqual(await ambitos(), { 2: 'municipal', 6: 'externo' });
+    assert.equal((await textos())[0].nombre, 'Agencia Provincial de Seguridad Vial del Chubut');
+  });
+
+  it('la vuelta atrás se puede repetir y solo quita la columna (las áreas quedan); la migración la vuelve a dejar en su lugar', async () => {
+    await crearBase({ conColumna: true });
+    const original = await columnas(root, BASE_GENERADOR);
+    await cargarAreas();
+    await correr(MIGRACION);
+    await correr(ROLLBACK);
+    await correr(ROLLBACK);
+    const sinColumna = original.filter(c => !esDeLaColumna(c));
+    assert.equal(sinColumna.length, original.length - 1);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), sinColumna);
+    assert.deepEqual(await textos(), AREAS);
+    await correr(MIGRACION);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), original);
+    assert.deepEqual(await columnas(root, BASE_GENERADOR), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await ambitos(), { 2: 'externo', 6: 'externo', 18: 'municipal', 25: 'municipal', 27: 'externo', 35: 'externo' });
   });
 });

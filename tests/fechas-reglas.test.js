@@ -4,7 +4,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TIPOS_PEDIDO, NOMBRES_TIPO_PEDIDO, finDeMes, esFinDeMes, vencimientoDelMes, sumarMeses, corteDe, ultimoVencimientoPasado,
-  tipoSugerido, tipoEfectivo, frecuenciaEnNota, pedido, cubre, opcionesDeProxima, estadoDelDataset, tasaDeActualizacion, topeDatosAl
+  tipoSugerido, tipoEfectivo, frecuenciaEnNota, pedido, cubre, opcionesDeProxima, estadoDelDataset, tasaDeActualizacion, topeDatosAl,
+  cumplimientoPorArea
 } from '../services/fechasDatasetReglas.js';
 
 const HOY = '2026-10-17';
@@ -358,6 +359,39 @@ describe('tasaDeActualizacion (Ruling 22)', () => {
     assert.equal(tasaDeActualizacion({ alDia: 4, total: 5, eventuales: 1 }), 100);
     assert.equal(tasaDeActualizacion({ alDia: 0, total: 3, eventuales: 3 }), null);
     assert.equal(tasaDeActualizacion({ alDia: 0, total: 0, eventuales: 0 }), null);
+  });
+});
+
+// La tasa de cumplimiento y el ranking de áreas, una sola regla para Gestión y Métricas (spec 2026-10-24-metricas-y-reportes, 2.2)
+describe('cumplimientoPorArea', () => {
+  it('al día sobre los que tienen vencimiento, por área; un área con solo eventuales, null y al final; en un empate, por nombre', () => {
+    const filas = [
+      { area: 'Área B', estado: 'actualizado' }, { area: 'Área B', estado: 'sin-respuesta' },
+      { area: 'Área A', estado: 'proximo' }, { area: 'Área A', estado: 'eventual' }, { area: 'Área A', estado: 'atrasado' },
+      { area: 'Área A', estado: 'actualizado' },
+      { area: 'Área C', estado: 'eventual' },
+      { area: 'Área D', estado: 'sin-fecha' },
+      { area: 'Área Á', estado: 'actualizado' }, { area: 'Área Á', estado: 'sin-respuesta' },
+      // Sin área: cuenta en la tasa, no en el ranking
+      { area: null, estado: 'actualizado' }, { area: undefined, estado: 'atrasado' }
+    ];
+    assert.deepEqual(cumplimientoPorArea(filas), {
+      // Al día: 2 de A, 1 de B, 1 de Á y 1 sin área (5), sobre 12 menos 2 eventuales
+      tasa: 50,
+      ranking: [
+        { area: 'Área A', total_datasets: 4, al_dia: 2, porcentaje: 67 },
+        { area: 'Área Á', total_datasets: 2, al_dia: 1, porcentaje: 50 },
+        { area: 'Área B', total_datasets: 2, al_dia: 1, porcentaje: 50 },
+        { area: 'Área D', total_datasets: 1, al_dia: 0, porcentaje: 0 },
+        { area: 'Área C', total_datasets: 1, al_dia: 0, porcentaje: null }
+      ]
+    });
+  });
+
+  it('sin filas, o con filas que no se pueden leer, no tira', () => {
+    for (const filas of [null, undefined, 'x', {}, []]) assert.deepEqual(cumplimientoPorArea(filas), { tasa: null, ranking: [] });
+    assert.deepEqual(cumplimientoPorArea([null, 'x', { area: 'Área A', estado: 'actualizado' }]),
+      { tasa: 100, ranking: [{ area: 'Área A', total_datasets: 1, al_dia: 1, porcentaje: 100 }] });
   });
 });
 

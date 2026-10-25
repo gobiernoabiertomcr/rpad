@@ -48,10 +48,12 @@ let formatosCatalogo = [];
 // - errorDatosAl: el error del paso 1 (de acá o del servidor), o null;
 // - cargando, enviando: se están pidiendo las opciones o se está mandando la propuesta (el botón no se puede apretar);
 // - origen: el botón que la abrió (el foco vuelve a él al cerrar);
+// - tocados: los campos del paso 2 por los que ya pasó la persona ('recibido', 'origen'): recién entonces se avisa si faltan;
 // - secuencia: cuenta los pedidos de opciones, así una respuesta que llega tarde no pisa a la última;
 // - apertura: cuenta las aperturas, así el error de un envío no cae en otra ventana.
 const registro = {
-  dataset: null, hoy: null, opciones: [], errorDatosAl: null, cargando: false, enviando: false, origen: null, secuencia: 0, apertura: 0
+  dataset: null, hoy: null, opciones: [], errorDatosAl: null, cargando: false, enviando: false, origen: null, tocados: [],
+  secuencia: 0, apertura: 0
 };
 
 // =====================================================
@@ -772,6 +774,9 @@ const DEMORA_DE_VISTA_PREVIA = 250;
 const CAMPOS_DE_DATOS_AL = ['form-datos-mes', 'form-datos-anio'];
 const CAMPOS_DE_PROXIMA = ['form-prox-mes', 'form-prox-anio'];
 const CAMPOS_DE_REQUIERE_NOTA = ['requiere_nota'];
+// El aviso de la edición que mueve la carga y la próxima marca solo la carga: los selectores de la próxima tienen su propio
+// error, y aria-invalid es uno solo por campo
+const CAMPOS_DE_EDICION = ['ultima_actualizacion'];
 
 // Los oyentes del paso 1, del formulario y de sus ventanas. En DOMContentLoaded
 function prepararFormulario() {
@@ -929,6 +934,10 @@ function alCambiarCampoDelFormulario(evento) {
   else if (CAMPOS_DE_DATOS_AL.includes(id)) alCambiarDatosAlDelFormulario();
   else if (CAMPOS_DE_PROXIMA.includes(id)) {
     mostrarError('form-error-proxima', null, { campos: CAMPOS_DE_PROXIMA });
+    mostrarError('form-error-edicion', null, { campos: CAMPOS_DE_EDICION });
+    alCambiarElFormularioDelDataset();
+  } else if (id === 'ultima_actualizacion') {
+    mostrarError('form-error-edicion', null, { campos: CAMPOS_DE_EDICION });
     alCambiarElFormularioDelDataset();
   } else if (id === 'formato-dropdown') alAgregarFormato(evento.target);
   else alCambiarElFormularioDelDataset();
@@ -957,6 +966,8 @@ function alCambiarFrecuenciaOGestion() {
   const sigueAlSugerido = !edicion.original && !edicion.tipoAMano;
   pintarTipo(tipoCoherente(sigueAlSugerido ? tipoSugeridoDe(gestion, meses) : valorDe('tipo_pedido'), meses, gestion), meses);
   mostrarError('form-error-proxima', null, { campos: CAMPOS_DE_PROXIMA });
+  // Con la frecuencia Eventual la próxima queda vacía: el aviso de la edición que la mueve puede ya no corresponder
+  mostrarError('form-error-edicion', null, { campos: CAMPOS_DE_EDICION });
   // El aviso de "Requiere nota DGMIT" es de la gestión externa: con otra gestión ya no corresponde
   mostrarError('form-error-requiere-nota', null, { campos: CAMPOS_DE_REQUIERE_NOTA });
   alCambiarElFormularioDelDataset();
@@ -1127,10 +1138,14 @@ function mostrarErrorDeFormatos(texto) {
   mostrarError('form-error-formatos', texto, { campos: ['chips-container'] });
 }
 
-// Los errores de cada campo (problemasDelFormulario), en su lugar y marcando sus campos
-function mostrarProblemas({ formatos = null, requiereNota = null, datosAl = null, proxima = null } = {}) {
+// Los errores de cada campo (problemasDelFormulario), en su lugar y marcando sus campos. `edicion` es el aviso de la edición
+// que registraría una actualización (no el estado del formulario, que también se llama edicion)
+function mostrarProblemas({
+  formatos = null, requiereNota = null, datosAl = null, proxima = null, edicion: edicionQueRegistra = null
+} = {}) {
   mostrarErrorDeFormatos(formatos);
   mostrarError('form-error-requiere-nota', requiereNota, { campos: CAMPOS_DE_REQUIERE_NOTA });
+  mostrarError('form-error-edicion', edicionQueRegistra, { campos: CAMPOS_DE_EDICION });
   mostrarError('form-error-datos', datosAl, { campos: CAMPOS_DE_DATOS_AL });
   mostrarError('form-error-proxima', proxima, { campos: CAMPOS_DE_PROXIMA });
 }
@@ -1141,20 +1156,22 @@ function limpiarErroresDelFormulario() {
   mostrarError('portal-error', null);
 }
 
-// El foco va al primer campo con error (en el orden del formulario)
-function enfocarElPrimerProblema({ formatos, requiereNota, datosAl, proxima }) {
+// El foco va al primer campo con error (en el orden del formulario: «Cargado en el portal el» está antes que "Datos al")
+function enfocarElPrimerProblema({ formatos, requiereNota, datosAl, proxima, edicion: edicionQueRegistra }) {
   let campo = null;
   if (formatos) campo = document.querySelector('#chips-container [data-formato]') ?? document.getElementById('formato-dropdown');
   else if (requiereNota) campo = document.getElementById('requiere_nota');
+  else if (edicionQueRegistra) campo = document.getElementById('ultima_actualizacion');
   else if (datosAl) campo = document.getElementById(edicion.soloAnio ? 'form-datos-anio' : 'form-datos-mes');
   else if (proxima) campo = document.getElementById(valorDe('form-prox-mes') ? 'form-prox-anio' : 'form-prox-mes');
   if (campo) campo.focus();
 }
 
 /**
- * "Proponer cambios" o "Proponer alta": revisa lo que el formulario exige (formatos, "Datos al", la próxima) y manda el
- * cuerpo armado por cuerpoDelDataset. El botón queda deshabilitado mientras tanto. Los errores, también el de "sin
- * cambios", quedan en la ventana (spec 8.6, arreglos 1 y 6). Si sale bien, avisa, cierra y vuelve a pedir la lista y los
+ * "Proponer cambios" o "Proponer alta": revisa lo que el formulario exige (formatos, "Requiere nota DGMIT", "Datos al", la
+ * próxima, y que una edición no mueva a la vez la carga y la próxima) y manda el cuerpo armado por cuerpoDelDataset. El
+ * botón queda deshabilitado mientras tanto. Los errores, también el de "sin cambios", quedan en la ventana (spec 8.6,
+ * arreglos 1 y 6). Si sale bien, avisa, cierra y vuelve a pedir la lista y los
  * pendientes: el dataset pasa a "Cambio pendiente".
  */
 async function enviarFormulario(evento) {
@@ -1164,7 +1181,7 @@ async function enviarFormulario(evento) {
   const problemas = problemasDelFormulario(f, edicion.hoy);
   mostrarProblemas(problemas);
   mostrarError('form-error', null);
-  if (problemas.formatos || problemas.requiereNota || problemas.datosAl || problemas.proxima) {
+  if (problemas.formatos || problemas.requiereNota || problemas.edicion || problemas.datosAl || problemas.proxima) {
     enfocarElPrimerProblema(problemas);
     return;
   }
@@ -1420,9 +1437,10 @@ function mostrarMensajeBloqueo() {
 // =====================================================
 // REGISTRAR ACTUALIZACIÓN (spec 2026-10-17-fechas-datasets, 8.3 y los arreglos 3 y 5 de 8.6)
 // =====================================================
-// La ventana pregunta a qué fecha son los datos que llegaron (paso 1), cuándo llegaron y cuándo se cargaron (paso 2) y
-// cuál es la próxima (paso 3, salvo en un eventual). Las opciones de la próxima las calcula el servidor con cada cambio
-// de "Datos al"; ninguna viene elegida. Lo puro (el cuerpo del POST, los textos, los errores) está en admin-fechas.js.
+// La ventana pregunta a qué fecha son los datos que llegaron (paso 1), quién los entregó (solo en gestión externa), cuándo
+// llegaron y cuándo se cargaron (paso 2) y cuál es la próxima (paso 3, salvo en un eventual). Las opciones de la próxima
+// las calcula el servidor con cada cambio de "Datos al"; ninguna viene elegida. Lo puro (el cuerpo del POST, los textos,
+// los errores) está en admin-fechas.js.
 
 // Los oyentes de la ventana. Se registran una vez, en DOMContentLoaded
 function prepararRegistro() {
@@ -1433,7 +1451,17 @@ function prepararRegistro() {
     if (esClicAfuera(evento) || evento.target.closest('[data-cerrar-registro]')) cerrarRegistro();
   });
   for (const id of ['registrar-mes', 'registrar-anio']) document.getElementById(id).addEventListener('change', alCambiarDatosAl);
+  // «¿Quién entregó los datos?» (solo en gestión externa): sus opciones son siempre las mismas
+  const origen = document.getElementById('registrar-origen');
+  origen.innerHTML = htmlDeOpcionesDeOrigen();
+  origen.addEventListener('change', alCambiarElFormulario);
   for (const id of ['registrar-recibido', 'registrar-cargado']) document.getElementById(id).addEventListener('input', alCambiarElFormulario);
+  // «Recibido el» y el origen: que falten se avisa recién cuando la persona los cambió o salió de ellos
+  for (const [id, campo] of [['registrar-recibido', 'recibido'], ['registrar-origen', 'origen']]) {
+    const elemento = document.getElementById(id);
+    elemento.addEventListener('change', () => tocarCampoDelRegistro(campo));
+    elemento.addEventListener('blur', () => tocarCampoDelRegistro(campo));
+  }
   document.getElementById('registrar-opciones').addEventListener('change', alElegirOpcion);
   for (const id of ['registrar-otra-mes', 'registrar-otra-anio']) document.getElementById(id).addEventListener('change', alCambiarElFormulario);
   document.getElementById('registrar-proponer').addEventListener('click', proponerActualizacion);
@@ -1445,8 +1473,9 @@ function registroAbierto() {
 
 /**
  * Abre la ventana para el dataset `id` (el de la lista, que ya trae el pedido, las fechas y el tipo). Arranca con "Datos
- * al" en lo que se pidió (defectoDeDatosAl), "Cargado en el portal el" en hoy, "Recibido el" vacío y ninguna próxima
- * elegida, y le pide las opciones al servidor. El foco va al mes del paso 1 (en un ejercicio, al año).
+ * al" en lo que se pidió (defectoDeDatosAl), "Cargado en el portal el" en hoy, "Recibido el" vacío, en gestión externa el
+ * origen sugerido (origenSugeridoDe) y ninguna próxima elegida, y le pide las opciones al servidor. El foco va al mes del
+ * paso 1 (en un ejercicio, al año).
  */
 function abrirRegistro(id, origen) {
   const dataset = datasets.find((d) => String(d.id) === String(id));
@@ -1457,7 +1486,7 @@ function abrirRegistro(id, origen) {
   const hoy = hoyEnArgentina();
   const anioDeHoy = Number(hoy.slice(0, 4));
   Object.assign(registro, {
-    dataset, hoy, opciones: [], errorDatosAl: null, cargando: false, enviando: false,
+    dataset, hoy, opciones: [], errorDatosAl: null, cargando: false, enviando: false, tocados: [],
     origen: origen ?? document.activeElement, apertura: registro.apertura + 1
   });
 
@@ -1482,7 +1511,12 @@ function abrirRegistro(id, origen) {
   mes.hidden = soloAnio;
   anio.innerHTML = opcionesDeAnio(PRIMER_ANIO_DE_DATOS_AL, anioDeHoy + 1, Number(defecto.slice(0, 4)));
 
-  // Paso 2: ninguna de las dos fechas puede ser posterior a hoy
+  // Paso 2: en gestión externa, quién entregó los datos, con la fuente pública elegida si el dataset no requiere nota DGMIT
+  // (spec 2026-10-24-metricas-y-reportes, 4); en la interna no se pregunta. El rótulo de la fecha lo pone revisarRegistro
+  const externa = dataset.tipo_gestion === 'externa';
+  document.getElementById('registrar-campo-origen').hidden = !externa;
+  document.getElementById('registrar-origen').value = externa ? (origenSugeridoDe(dataset) ?? '') : '';
+  // Ninguna de las dos fechas puede ser posterior a hoy
   const recibido = document.getElementById('registrar-recibido');
   const cargado = document.getElementById('registrar-cargado');
   recibido.value = '';
@@ -1497,6 +1531,8 @@ function abrirRegistro(id, origen) {
   document.getElementById('registrar-otra-anio').innerHTML = '<option value="">Año</option>' + opcionesDeAnio(anioDeHoy - 1, anioDeHoy + 10, null);
 
   mostrarError('registrar-error', null);
+  // El error del paso 2 de la apertura anterior no corresponde (y así, si vuelve, el lector de pantalla lo anuncia otra vez)
+  mostrarError('registrar-error-fechas', null, { campos: CAMPOS_DEL_PASO2 });
   document.getElementById('registrar-proponer').textContent = 'Proponer actualización';
   // En la pila de ventanas solo para el teclado: el foco al cerrar lo maneja cerrarRegistro
   apilarVentana(ID_REGISTRO, null);
@@ -1505,14 +1541,16 @@ function abrirRegistro(id, origen) {
   alCambiarDatosAl();
 }
 
-// Cierra la ventana y devuelve el foco al botón que la abrió. Una respuesta de opciones que llegue después se descarta
+// Cierra la ventana y devuelve el foco al botón que la abrió. Una respuesta de opciones que llegue después se descarta. El
+// error del paso 2 se borra: si al volver a abrir aparece el mismo texto, el lector de pantalla lo anuncia otra vez
 function cerrarRegistro() {
   if (!registroAbierto()) return;
   document.getElementById('modal-registrar-actualizacion').hidden = true;
   desapilarVentana(ID_REGISTRO);
   registro.secuencia++;
   const { origen, dataset } = registro;
-  Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null });
+  Object.assign(registro, { dataset: null, opciones: [], errorDatosAl: null, cargando: false, origen: null, tocados: [] });
+  mostrarError('registrar-error-fechas', null, { campos: CAMPOS_DEL_PASO2 });
   enfocarDespuesDeCerrar(origen, dataset?.id);
 }
 
@@ -1534,7 +1572,7 @@ function enfocarDespuesDeCerrar(origen, id) {
 
 // Los campos de cada paso, que se marcan con su error (aria-invalid y aria-describedby)
 const CAMPOS_DEL_PASO1 = ['registrar-mes', 'registrar-anio'];
-const CAMPOS_DEL_PASO2 = ['registrar-recibido', 'registrar-cargado'];
+const CAMPOS_DEL_PASO2 = ['registrar-origen', 'registrar-recibido', 'registrar-cargado'];
 
 /**
  * Un error en su lugar de la ventana (texto, nunca HTML), o ninguno con null. El mismo texto no se vuelve a escribir: el
@@ -1572,8 +1610,10 @@ function formularioDelRegistro() {
   return {
     tipo: registro.dataset?.tipo_pedido,
     eventual: esEventual(registro.dataset),
+    gestion: registro.dataset?.tipo_gestion,
     mes: valorDe('registrar-mes'),
     anio: valorDe('registrar-anio'),
+    origen: valorDe('registrar-origen'),
     recibido: valorDe('registrar-recibido'),
     cargado: valorDe('registrar-cargado'),
     opcion: elegido ? elegido.value : null,
@@ -1676,7 +1716,14 @@ function alElegirOpcion(evento) {
   revisarRegistro();
 }
 
-// La persona cambió las fechas del paso 2 o la "Otra fecha": el error de un envío anterior ya no corresponde
+// La persona cambió «Recibido el» o el origen, o salió de ellos: desde ahora, si faltan, se avisa
+function tocarCampoDelRegistro(campo) {
+  if (!registro.dataset) return;
+  if (!registro.tocados.includes(campo)) registro.tocados.push(campo);
+  revisarRegistro();
+}
+
+// La persona cambió el origen o las fechas del paso 2, o la "Otra fecha": el error de un envío anterior ya no corresponde
 function alCambiarElFormulario() {
   mostrarError('registrar-error', null);
   revisarRegistro();
@@ -1684,13 +1731,18 @@ function alCambiarElFormulario() {
 
 /**
  * Muestra el error del paso 2 (con las palabras del servidor) y habilita "Proponer actualización" solo con una próxima
- * elegida, sin errores, sin opciones por llegar y sin un envío en curso (revisionDelRegistro, en admin-fechas.js).
+ * elegida, sin errores, sin opciones por llegar y sin un envío en curso (revisionDelRegistro, en admin-fechas.js). La fecha
+ * del paso 2 se llama «Recibido el» u «Obtenido el», según el origen elegido (en gestión interna no hay: «Recibido el»).
  */
 function revisarRegistro() {
   if (!registro.dataset) return;
+  const formulario = formularioDelRegistro();
+  const rotulo = document.getElementById('registrar-rotulo-recibido');
+  const textoDelRotulo = rotuloDeLaFechaDe(formulario.gestion === 'externa' ? formulario.origen : null);
+  if (rotulo.textContent !== textoDelRotulo) rotulo.textContent = textoDelRotulo;
   const { errorFechas, campoFechas, puedeProponer: sePuede } = revisionDelRegistro({
-    formulario: formularioDelRegistro(), errorDatosAl: registro.errorDatosAl, cargando: registro.cargando,
-    enviando: registro.enviando, hoy: registro.hoy
+    formulario, errorDatosAl: registro.errorDatosAl, cargando: registro.cargando,
+    enviando: registro.enviando, hoy: registro.hoy, tocados: registro.tocados
   });
   mostrarError('registrar-error-fechas', errorFechas, {
     campos: CAMPOS_DEL_PASO2, invalidos: campoFechas ? [`registrar-${campoFechas}`] : []

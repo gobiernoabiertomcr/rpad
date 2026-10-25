@@ -64,7 +64,7 @@ function renderTable(data) {
     return `
       <tr>
         <td>
-          <div class="area-nombre">${Utils.escapeHtml(a.nombre)}</div>
+          <div class="area-nombre">${Utils.escapeHtml(a.nombre)}${a.ambito === 'externo' ? ' <span class="badge badge-secondary">Fuera del municipio</span>' : ''}</div>
         </td>
         <td class="text-small text-muted">${Utils.escapeHtml(a.area_superior || '-')}</td>
         <td>
@@ -109,6 +109,7 @@ function openAreaModal(area = null) {
     document.getElementById('articulo').value = area.articulo || 'la';
     document.getElementById('area_superior').value = area.area_superior || '';
     document.getElementById('articulo_superior').value = area.articulo_superior || '';
+    document.getElementById('ambito').value = area.ambito || 'municipal';
     document.getElementById('email_principal').value = area.email_principal || '';
     document.getElementById('email_secundario').value = area.email_secundario || '';
     document.getElementById('telefono_area').value = area.telefono_area || '';
@@ -149,6 +150,7 @@ document.getElementById('area-form').addEventListener('submit', async (e) => {
     articulo: document.getElementById('articulo').value,
     area_superior: document.getElementById('area_superior').value || null,
     articulo_superior: document.getElementById('articulo_superior').value || null,
+    ambito: document.getElementById('ambito').value,
     email_principal: document.getElementById('email_principal').value || null,
     email_secundario: document.getElementById('email_secundario').value || null,
     telefono_area: document.getElementById('telefono_area').value || null,

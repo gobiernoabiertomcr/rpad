@@ -5,7 +5,10 @@ import PDFDocument from 'pdfkit';
 import { renglonesDeFirma } from './notasDigitalesContenido.js';
 
 const MM = 72 / 25.4;
-const PAGINA = [216 * MM, 330 * MM];
+// Hoja oficio, la que usa la Municipalidad para imprimir: Legal exacto, 8½ × 14 pulgadas a 72 puntos por pulgada (spec
+// 2026-10-24-notas-hoja-oficio). Va en puntos y no en milímetros: 216 × 356 mm darían 612,28 × 1009,13 y una impresora lo
+// tomaría como un tamaño personalizado. Solo la nota: los anexos y los demás PDF fijan su A4 aparte.
+const PAGINA = [612, 1008];
 // Sin banner del membrete el margen superior es de 25 mm; con banner, el alto del banner más 9 mm (nunca menos de 25)
 const MARGENES = { top: 25 * MM, bottom: 25 * MM, left: 30 * MM, right: 30 * MM };
 // El banner ocupa el ancho de la hoja con su alto proporcional, salvo que pase de 45 mm: entonces se achica, centrado
@@ -32,11 +35,11 @@ const CURSIVA = 'Helvetica-Oblique';
 // 5 en los próximos a vencer del aviso externo, con "Requiere nota DGMIT" en la cuarta (spec 2026-10-20-requiere-nota-y-anexo-
 // reiteracion, 1.5; probadas con el aviso real del 22/12/2026): el encabezado ocupa tres renglones y "Del … al …", dos. La
 // tabla externa de 7 columnas no usa las de 7 de acá: trae las suyas (seccion.proporciones, de construirNota).
-const PROPORCIONES = { 4: [30, 26, 16, 28], 5: [28, 24, 15, 10, 23], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
+export const PROPORCIONES = { 4: [30, 26, 16, 28], 5: [28, 24, 15, 10, 23], 6: [32, 17, 12, 13, 11, 15], 7: [24, 14, 10, 15, 10, 12, 15] };
 // Si alguna fila lleva el antecedente de los emails anteriores en "Informado en" (reiteraciones, en letra más chica),
 // esa columna necesita más ancho para que la fila no crezca de más: lo cede sobre todo el título (la externa hace lo mismo con
 // las suyas, en construirNota)
-const PROPORCIONES_CON_SEGUNDA = { 7: [18, 14, 10, 13, 10, 10, 25] };
+export const PROPORCIONES_CON_SEGUNDA = { 7: [18, 14, 10, 13, 10, 10, 25] };
 const TAMANO_TABLA = 8.5;
 const RELLENO = 3;
 // La primera columna (título del dataset) puede partir palabras larguísimas; las demás no

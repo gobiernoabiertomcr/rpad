@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, adminOnly, cargaNotasDgmit, cronAuth } from '../middleware/auth.js';
+import { authMiddleware, adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth } from '../middleware/auth.js';
 import { limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso } from '../middleware/rateLimit.js';
 
 // Controladores
@@ -40,6 +40,7 @@ import {
   obtenerNota,
   descargarPdf,
   descargarAnexo,
+  descargarWord,
   reintentarNota,
   verEstado,
   verPreview,
@@ -58,11 +59,15 @@ import {
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
   reporteEstadoGeneral,
-  reporteHistorialNotificaciones,
+  reporteAvisos,
   reportePorArea,
-  reporteCumplimiento
+  reporteAgenda,
+  reporteParaCompletar,
+  reporteInformeAnual
 } from '../controllers/reportesController.js';
-import { generarNota } from '../controllers/notasController.js';
+import {
+  listarAreasDelGenerador, verAreaDelGenerador, verMembreteDelGenerador, verVistaPrevia, generarNota
+} from '../controllers/notasController.js';
 import {
   getContadorPendientes,
   getCambiosPendientesParaRevisar,
@@ -110,6 +115,7 @@ import {
   deleteHitoArchivo
 } from '../controllers/gestionController.js';
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
+import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
 import { uploadProyectoMiddleware, uploadHitoMiddleware } from '../config/upload.js';
 
@@ -236,15 +242,19 @@ router.put('/notificaciones/notas-digitales/config/firmante', authMiddleware, ad
 router.get('/notificaciones/notas-digitales/:id', authMiddleware, adminOnly, obtenerNota);
 router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly, descargarPdf);
 router.get('/notificaciones/notas-digitales/:id/anexo', authMiddleware, adminOnly, descargarAnexo);
+router.get('/notificaciones/notas-digitales/:id/word', authMiddleware, adminOnly, descargarWord);
 router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);
 
 // =====================================================
-// Reportes PDF (protegidas)
+// Reportes PDF (protegidas, para todos los roles con sesión: spec 2026-10-24-metricas-y-reportes, 5 y 6). Avisos del RPAD reemplaza
+// al Historial de notificaciones, y el Cumplimiento ya no está
 // =====================================================
 router.get('/reportes/estado-general', authMiddleware, reporteEstadoGeneral);
-router.get('/reportes/historial-notificaciones', authMiddleware, reporteHistorialNotificaciones);
+router.get('/reportes/avisos', authMiddleware, reporteAvisos);
 router.get('/reportes/por-area/:areaId', authMiddleware, reportePorArea);
-router.get('/reportes/cumplimiento', authMiddleware, reporteCumplimiento);
+router.get('/reportes/agenda', authMiddleware, reporteAgenda);
+router.get('/reportes/para-completar', authMiddleware, reporteParaCompletar);
+router.get('/reportes/informe-anual', authMiddleware, reporteInformeAnual);
 
 // =====================================================
 // Seguimiento del dataset (protegidas, para todos los roles con sesión)
@@ -254,6 +264,12 @@ router.get('/seguimiento/:id/pdf', authMiddleware, descargarSeguimientoPdf);
 router.get('/seguimiento/:id', authMiddleware, verSeguimiento);
 
 // =====================================================
+// Métricas (protegidas, para todos los roles con sesión: spec 2026-10-24-metricas-y-reportes, 2.3)
+// =====================================================
+router.get('/metricas', authMiddleware, verMetricas);
+router.get('/metricas/pdf', authMiddleware, descargarMetricasPdf);
+
+// =====================================================
 // Notas DGMIT (protegidas: administración y el colaborador; corregir y anular, quien la cargó o administración)
 // =====================================================
 router.post('/notas-dgmit', authMiddleware, cargaNotasDgmit, cargarNotaDgmit);
@@ -261,9 +277,13 @@ router.put('/notas-dgmit/:id', authMiddleware, cargaNotasDgmit, corregirNotaDgmi
 router.post('/notas-dgmit/:id/anular', authMiddleware, cargaNotasDgmit, anularNotaDgmit);
 
 // =====================================================
-// Notas DOCX (protegidas)
+// Generador de notas (protegidas: administración y el colaborador, los que cargan notas DGMIT; spec 2026-10-24-generador-de-notas)
 // =====================================================
-router.post('/notas/generar', authMiddleware, generarNota);
+router.get('/notas/areas', authMiddleware, usaGeneradorDeNotas, listarAreasDelGenerador);
+router.get('/notas/areas/:id', authMiddleware, usaGeneradorDeNotas, verAreaDelGenerador);
+router.get('/notas/membrete', authMiddleware, usaGeneradorDeNotas, verMembreteDelGenerador);
+router.post('/notas/vista-previa', authMiddleware, usaGeneradorDeNotas, verVistaPrevia);
+router.post('/notas/generar', authMiddleware, usaGeneradorDeNotas, generarNota);
 
 // =====================================================
 // Cron (protegido por clave secreta)

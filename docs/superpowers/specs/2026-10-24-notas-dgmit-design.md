@@ -21,7 +21,7 @@ Con esta entrega, quien tenga los datos de la nota (número, fecha en que el ár
 - Una nota se corrige o se anula con motivo. Nunca se borra.
 
 **No objetivos**
-- La DGMIT no hace sus notas desde el RPAD (no usa Herramientas → Notas): las sigue haciendo por fuera y acá solo se registran.
+- La DGMIT no hace sus notas desde el RPAD (no usa Herramientas → Notas): las sigue haciendo por fuera y acá solo se registran (revertido por la spec 2026-10-24-generador-de-notas: ahora lo usa).
 - No sale ningún email nuevo y no cambia ninguna Nota Digital (ni el texto de la reiteración ni sus tablas).
 - Una nota DGMIT no es un aviso del RPAD: no cuenta en "Avisos del ciclo abierto" ni en la columna de avisos de la lista, y no cambia el estado del dataset, sus ciclos ni sus hitos.
 - Las notas anteriores no se cargan en esta entrega: la tabla arranca vacía. Cuando llegue el Excel completo, se arma un SQL de importación aparte (sección 9).

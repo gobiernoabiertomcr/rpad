@@ -293,6 +293,14 @@ function updateSidebarAuth() {
         if (sidebarTools) sidebarTools.classList.remove('hidden');
         if (sidebarAccount) sidebarAccount.classList.remove('hidden');
 
+        // Notas (el Generador de Notas) solo para quien carga notas DGMIT: administración y el colaborador (spec
+        // 2026-10-24-generador-de-notas, 1). Solo cuenta el true literal: un auth.js que no sabe decirlo lo oculta
+        const enlaceNotas = sidebarTools ? sidebarTools.querySelector('a[href="notas.html"]') : null;
+        if (enlaceNotas) {
+            const usaNotas = typeof Auth.puedeCargarNotasDgmit === 'function' && Auth.puedeCargarNotasDgmit() === true;
+            enlaceNotas.classList.toggle('hidden', !usaNotas);
+        }
+
         // Administración: solo para ADMIN
         if (isAdmin) {
             if (sidebarAdmin) sidebarAdmin.classList.remove('hidden');

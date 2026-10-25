@@ -989,7 +989,7 @@ describe('correos.js: filas del Libro (spec 2026-10-17-correos-pestanas, 6)', ()
     return elemento('libro-cuerpo').innerHTML;
   };
 
-  it('aviso enviado: número, fecha, chip, gestión, cantidad, Para con CC, pastilla con la hora y las tres acciones', async () => {
+  it('aviso enviado: número, fecha, chip, gestión, cantidad, Para con CC, pastilla con la hora y las cuatro acciones', async () => {
     const html = await filas([AVISO]);
     assert.ok(html.includes('<td><span class="co-numero">3/26</span></td>'));
     assert.ok(html.includes('<td class="co-fecha">21/10/2026</td>'));
@@ -1000,6 +1000,7 @@ describe('correos.js: filas del Libro (spec 2026-10-17-correos-pestanas, 6)', ()
     assert.ok(html.includes('<span class="co-estado"><span class="co-pastilla enviada" title="">Enviada</span><small>21/10/2026 08:15</small></span>'));
     assert.ok(html.includes('data-accion="ver" data-id="7"'));
     assert.ok(html.includes('data-accion="pdf" data-id="7" data-archivo="Nota-Digital-3-26.pdf"'));
+    assert.ok(html.includes('data-accion="word" data-id="7" data-archivo="Nota-Digital-3-26.docx"'));
     assert.ok(html.includes('data-accion="anexo" data-id="7" data-archivo="Anexo-Nota-Digital-3-26.pdf"'));
     assert.ok(!html.includes('data-accion="reintentar"'), 'enviada: sin Reintentar');
     assert.ok(!html.includes('badge'), 'ya no usa .badge');
@@ -1010,8 +1011,8 @@ describe('correos.js: filas del Libro (spec 2026-10-17-correos-pestanas, 6)', ()
     const lista = html.split('</tr>').filter(f => f.includes('<tr>'));
     assert.deepEqual(lista.map(fila => fila.match(/<td\b/g).length), [8, 8, 8]);
     const botones = html.match(/<button\b[^>]*>/g);
-    assert.equal(botones.length, 3 + 3 + 2, 'aviso: ver, pdf y anexo; autorización: ver, pdf y reintentar; prueba: ver y pdf');
-    for (const b of botones) assert.match(b, /^<button type="button" class="co-btn( reintentar)?" data-accion="(ver|pdf|anexo|reintentar)" data-id="\d+"/, b);
+    assert.equal(botones.length, 4 + 4 + 3, 'aviso: ver, pdf, word y anexo; autorización: ver, pdf, word y reintentar; prueba: ver, pdf y word');
+    for (const b of botones) assert.match(b, /^<button type="button" class="co-btn( reintentar)?" data-accion="(ver|pdf|word|anexo|reintentar)" data-id="\d+"/, b);
     assert.ok(html.includes('<div class="co-acciones">'));
   });
 
@@ -1131,15 +1132,81 @@ describe('correos.js: filas del Libro (spec 2026-10-17-correos-pestanas, 6)', ()
     assert.equal(fallo.elemento('libro-limite').hidden, true, 'si falla');
   });
 
-  it('los botones traen lo que accionDelLibro lee: data-accion, data-id y, en PDF y Anexo, data-archivo', async () => {
+  it('los botones traen lo que accionDelLibro lee: data-accion, data-id y, en PDF, Word y Anexo, data-archivo', async () => {
     const html = await filas([AVISO]);
     const botones = [...html.matchAll(/<button\b([^>]*)>/g)]
       .map(m => Object.fromEntries([...m[1].matchAll(/data-(\w+)="([^"]*)"/g)].map(a => [a[1], a[2]])));
     assert.deepEqual(botones, [
       { accion: 'ver', id: '7' },
       { accion: 'pdf', id: '7', archivo: 'Nota-Digital-3-26.pdf' },
+      { accion: 'word', id: '7', archivo: 'Nota-Digital-3-26.docx' },
       { accion: 'anexo', id: '7', archivo: 'Anexo-Nota-Digital-3-26.pdf' }
     ]);
+  });
+
+  // Spec 2026-10-24-generador-de-notas, 6: cada nota del libro, de cualquier tipo y estado, suma "Word" después de "PDF"
+  describe('el botón "Word" (spec 2026-10-24-generador-de-notas, 6)', () => {
+    // Los textos de los botones de cada fila, en orden
+    const textosDeBotones = (html) => html.split('</tr>').filter(f => f.includes('<tr>'))
+      .map(fila => [...fila.matchAll(/<button\b[^>]*>([^<]*)<\/button>/g)].map(m => m[1]));
+
+    it('cada nota lo tiene, entre "PDF" y "Anexo" o "Reintentar"', async () => {
+      const html = await filas([AVISO, AUTORIZACION_FALLIDA, PRUEBA]);
+      assert.deepEqual(textosDeBotones(html), [
+        ['Ver', 'PDF', 'Word', 'Anexo'],
+        ['Ver', 'PDF', 'Word', 'Reintentar'],
+        ['Ver', 'PDF', 'Word']
+      ]);
+    });
+
+    it('el archivo es el del PDF con .docx: el de la nota de prueba, Nota-Digital-PRUEBA-11.docx', async () => {
+      const html = await filas([AVISO, AUTORIZACION_FALLIDA, PRUEBA]);
+      assert.ok(html.includes('<button type="button" class="co-btn" data-accion="word" data-id="7" data-archivo="Nota-Digital-3-26.docx">Word</button>'));
+      assert.ok(html.includes('<button type="button" class="co-btn" data-accion="word" data-id="9" data-archivo="Nota-Digital-4-26.docx">Word</button>'));
+      assert.ok(html.includes('<button type="button" class="co-btn" data-accion="word" data-id="11" data-archivo="Nota-Digital-PRUEBA-11.docx">Word</button>'));
+    });
+
+    it('el nombre del archivo sale escapado en el atributo', async () => {
+      const html = await filas([{ ...AVISO, numero: '3"<x>' }], { Utils: utilsReal() });
+      assert.ok(html.includes('data-accion="word" data-id="7" data-archivo="Nota-Digital-3&quot;&lt;x&gt;-26.docx"'));
+    });
+
+    // El botón como lo ve accionDelLibro: el clic sale del propio botón
+    const clicEn = (dataset) => {
+      const boton = { dataset, disabled: false };
+      return { target: { closest: () => boton } };
+    };
+
+    it('el clic en "Word" pide /notificaciones/notas-digitales/7/word y lo baja con el nombre del botón', async () => {
+      const rutas = [];
+      const { contexto, descargas } = cargarCorreos({
+        pedirArchivo: async (ruta) => { rutas.push(ruta); return {}; },
+        getNotaPdf: async () => { throw new Error('no es el PDF'); }
+      });
+      await contexto.accionDelLibro(clicEn({ accion: 'word', id: '7', archivo: 'Nota-Digital-3-26.docx' }));
+      assert.deepEqual(rutas, ['/notificaciones/notas-digitales/7/word']);
+      assert.deepEqual(descargas, ['Nota-Digital-3-26.docx']);
+    });
+
+    it('si el servidor no lo puede armar (422), su mensaje llega por avisar como error y no se baja nada', async () => {
+      const avisos = [];
+      // El api.js de verdad: pedirArchivo arma el error con el error del JSON
+      const contextoApi = vm.createContext({
+        CONFIG: { API_URL: '/api' },
+        console,
+        URLSearchParams,
+        Auth: { getAuthHeaders: () => ({}) },
+        fetch: async () => ({ ok: false, status: 422, json: async () => ({ success: false, error: 'No se encontró el remitente de la nota.' }) })
+      });
+      vm.runInContext(`${fs.readFileSync(new URL('../public/js/api.js', import.meta.url), 'utf8')}\n;globalThis.API = API;`, contextoApi);
+      const { contexto, descargas } = cargarCorreos({}, {
+        API: contextoApi.API,
+        showToast: (mensaje, tipo) => avisos.push([mensaje, tipo])
+      });
+      await contexto.accionDelLibro(clicEn({ accion: 'word', id: '7', archivo: 'Nota-Digital-3-26.docx' }));
+      assert.deepEqual(avisos, [['No se encontró el remitente de la nota.', 'error']]);
+      assert.deepEqual(descargas, []);
+    });
   });
 });
 

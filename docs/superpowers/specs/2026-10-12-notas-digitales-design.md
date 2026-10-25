@@ -184,6 +184,7 @@ La nota se construye una vez como estructura de datos (párrafos, secciones, tab
 - **Texto plano** (parte alternativa del mismo email).
 - **PDF** (adjunto `Nota-Digital-{n}-{aa}.pdf`) con PDFKit:
   - hoja oficio de 216 × 330 mm;
+    - desde el despliegue de la spec `2026-10-24-notas-hoja-oficio-design.md`, oficio Legal de 612 × 1008 pt; las notas anteriores conservan su PDF de 216 × 330;
   - **membrete municipal en todas las hojas**, configurable desde la pantalla de Correos (7.3 y 10):
     - **banner** (la imagen cargada): arriba de la hoja, en x = 0, y = 0, con el ancho completo de la hoja y alto proporcional. Si el alto proporcional pasara de 45 mm, se achica para entrar en 45 mm, centrado. Se usa el tamaño a la vista: un JPEG guardado girado (orientación EXIF 5 a 8) se dibuja derecho, como lo muestra la pantalla. El archivo guarda la imagen una sola vez aunque se dibuje en todas las hojas;
     - **pie del membrete** (el texto cargado, por ejemplo `www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.`): Helvetica 10, centrado, con su línea de base a 12,5 mm del borde inferior. Un texto que no entra en una línea se escribe en una sola línea con la letra achicada lo justo, nunca por debajo de 7 puntos (la configuración no guarda un pie que no entre en una línea ni así);

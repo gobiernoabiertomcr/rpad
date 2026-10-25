@@ -5,6 +5,7 @@ import 'dotenv/config';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
+import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
@@ -120,10 +121,27 @@ export const crearBaseDePrueba = async (nombre) => {
 // =====================================================
 // Servidor
 // =====================================================
-export const iniciarServidor = async ({ env = {} } = {}) => {
-  await verificarEntornoLocal();
+// Cada servidor de prueba escucha en un puerto que estaba libre y se da por listo solo cuando SU proceso dice que escucha. Antes se
+// sorteaba un puerto entre 31000 y 31999 y bastaba con que algo contestara /api/health: si el puerto ya era de otro servidor de prueba
+// (el del mismo archivo, que sigue arriba), el nuevo moría con EADDRINUSE y el test le hablaba al otro (otra base, sin su EMAIL_SOLO_A).
+const ESPERA_DEL_ARRANQUE = 20000;
+const INTENTOS_DE_ARRANQUE = 3;
 
-  const puerto = 31000 + crypto.randomInt(0, 999);
+// Un puerto libre: el sistema da uno al escuchar en el puerto 0 (en todas las interfaces, como app.listen) y se suelta enseguida
+const puertoLibre = () => new Promise((resolve, reject) => {
+  const sonda = net.createServer();
+  sonda.unref();
+  sonda.once('error', reject);
+  sonda.listen(0, () => {
+    const { port } = sonda.address();
+    sonda.close(() => resolve(port));
+  });
+});
+
+// Arranca la app en `puerto` y resuelve cuando ese proceso escribe que escucha (app.js lo escribe en el callback de app.listen:
+// "Servidor corriendo en puerto: N"). Si el proceso termina antes, rechaza enseguida con su salida (`enUso`: si fue porque el puerto
+// ya estaba tomado); si en ESPERA_DEL_ARRANQUE no escuchó, lo termina y rechaza.
+const arrancarEn = (puerto, env) => new Promise((resolve, reject) => {
   const salida = [];
   // EMAIL_SOLO_A vacío: los tests verifican los destinatarios reales en Mailpit
   const proceso = spawn(process.execPath, ['app.js'], {
@@ -131,30 +149,50 @@ export const iniciarServidor = async ({ env = {} } = {}) => {
     env: { ...process.env, PORT: String(puerto), EMAIL_SOLO_A: '', ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
-  proceso.stdout.on('data', d => salida.push(d.toString()));
+  let escucha = false;
+  const fallar = (mensaje, extra = {}) => {
+    clearTimeout(reloj);
+    reject(Object.assign(new Error(`${mensaje}:\n${salida.join('')}`), extra));
+  };
+  const reloj = setTimeout(() => {
+    proceso.kill();
+    fallar(`El servidor no escuchó en el puerto ${puerto} en ${ESPERA_DEL_ARRANQUE / 1000} s`);
+  }, ESPERA_DEL_ARRANQUE);
+  proceso.stdout.on('data', (d) => {
+    salida.push(d.toString());
+    if (escucha || !new RegExp(`puerto: ${puerto}\\b`).test(salida.join(''))) return;
+    escucha = true;
+    clearTimeout(reloj);
+    resolve({ proceso, salida });
+  });
   proceso.stderr.on('data', d => salida.push(d.toString()));
+  // 'close', no 'exit': llega cuando stdout y stderr ya se cerraron, así el EADDRINUSE de stderr ya está en la salida y el reintento lo ve
+  proceso.once('close', (codigo) => {
+    if (!escucha) fallar(`El servidor terminó (código ${codigo}) antes de escuchar en el puerto ${puerto}`, { enUso: /EADDRINUSE/.test(salida.join('')) });
+  });
+});
 
-  const url = `http://127.0.0.1:${puerto}`;
-  for (let intento = 0; intento < 100; intento++) {
-    if (proceso.exitCode !== null) break;
+export const iniciarServidor = async ({ env = {} } = {}) => {
+  await verificarEntornoLocal();
+
+  // Si entre la sonda y el arranque otro proceso tomó el puerto, se prueba con otro
+  for (let intento = 1; ; intento++) {
+    const puerto = await puertoLibre();
     try {
-      const res = await fetch(`${url}/api/health`);
-      if (res.ok) {
-        return {
-          url,
-          logs: () => salida.join(''),
-          detener: () => new Promise(resolve => {
-            if (proceso.exitCode !== null) return resolve();
-            proceso.once('exit', resolve);
-            proceso.kill();
-          })
-        };
-      }
-    } catch { /* todavía no escucha */ }
-    await new Promise(r => setTimeout(r, 100));
+      const { proceso, salida } = await arrancarEn(puerto, env);
+      return {
+        url: `http://127.0.0.1:${puerto}`,
+        logs: () => salida.join(''),
+        detener: () => new Promise(resolve => {
+          if (proceso.exitCode !== null || proceso.signalCode !== null) return resolve();
+          proceso.once('exit', resolve);
+          proceso.kill();
+        })
+      };
+    } catch (error) {
+      if (!error.enUso || intento >= INTENTOS_DE_ARRANQUE) throw error;
+    }
   }
-  proceso.kill();
-  throw new Error(`El servidor no arrancó en ${url}:\n${salida.join('')}`);
 };
 
 // =====================================================

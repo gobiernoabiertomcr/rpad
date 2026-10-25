@@ -7,6 +7,7 @@ import { NOMBRES_TIPO_PEDIDO, estadoDelDataset, tipoEfectivo, pedido as calcular
 import { cintaDe } from './seguimientoCinta.js';
 import { normalizarRequiereNota, textoRequiereNota } from './requiereNotaReglas.js';
 import { TEXTO_TIPO_NOTA_DGMIT } from './notasDgmitReglas.js';
+import { textoOrigen } from './registroReglas.js';
 
 // Desde cuándo hay registro: el primer email registrado es del 06/12/2025 y el primer cambio, del 26/01/2026
 export const REGISTRO_DESDE = Object.freeze({ envios: '2025-12-06', cambios: '2026-01-26' });
@@ -60,14 +61,16 @@ export const diaDe = (valor) => {
   return esFechaIso(dia) && (corte === undefined || corte === 'T' || corte === ' ') ? dia : null;
 };
 
-// 'AAAA-MM-DD HH:MM:SS' o null (la hora se corta como texto; acá no hay conversión de zona)
-const momentoDe = (valor) => {
+// 'AAAA-MM-DD HH:MM:SS' o null (la hora se corta como texto; acá no hay conversión de zona). Lo usan también las métricas
+export const momentoDe = (valor) => {
   if (typeof valor !== 'string') return null;
   const partes = valor.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
   return partes && esFechaIso(partes[1]) ? `${partes[1]} ${partes[2]}` : null;
 };
 
-const segundosDe = (valor) => {
+// Los segundos de un momento en hora argentina (para restar dos momentos: la zona no importa), o null. Lo usan también las métricas
+// (cuánto tarda la doble verificación)
+export const segundosDe = (valor) => {
   const momento = momentoDe(valor);
   if (!momento) return null;
   const [anio, mes, dia, hora, minuto, segundo] = momento.split(/[- :]/).map(Number);
@@ -122,11 +125,13 @@ export const unirAlta = (dataset, altasSinDataset) => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 // Los campos que cuentan, en el orden en que se dicen. `rotulo`: el nombre en la comparación. Los que tienen `frase` la dicen
-// con su valor nuevo; `otro`: no tiene frase propia y va junto en "Cambió: …" (con `enTexto`).
+// con su valor nuevo; `otro`: no tiene frase propia y va junto en "Cambió: …" (con `enTexto`). Los de tipo 'texto' dicen su valor
+// con `texto` (el origen de los datos, spec 2026-10-24-metricas-y-reportes, 4: «Fuente pública», «Los entregó el área» o —).
 const CAMPOS = [
   { campo: 'ultima_actualizacion', rotulo: 'Cargado en el portal', tipo: 'fecha', frase: (dia) => `Cargado en el portal el ${dia}.` },
   { campo: 'datos_al', rotulo: 'Datos al', tipo: 'fecha', frase: (dia) => `Datos al ${dia}.` },
   { campo: 'recibido_el', rotulo: 'Recibido el', tipo: 'fecha', frase: (dia) => `Recibido el ${dia}.` },
+  { campo: 'origen_datos', rotulo: 'Origen de los datos', tipo: 'texto', texto: textoOrigen, frase: (texto) => `Origen de los datos: ${texto}.` },
   { campo: 'proxima_actualizacion', rotulo: 'Próxima actualización', tipo: 'fecha' },
   { campo: 'frecuencia_id', rotulo: 'Frecuencia', tipo: 'catalogo', catalogo: 'frecuencias', prefijo: 'Frecuencia' },
   { campo: 'area_id', rotulo: 'Área responsable', tipo: 'catalogo', catalogo: 'areas', prefijo: 'Área' },
@@ -146,9 +151,11 @@ const CAMPOS = [
 const ordenados = (valores) => [...valores].map(String).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
 
 // El valor de un campo para compararlo: las fechas por su día, las listas ordenadas y el resto como texto recortado. Requiere
-// nota DGMIT por su texto (de la base llega 0 o 1; 1, '1' y true son lo mismo, y sin dato es vacío)
+// nota DGMIT por su texto (de la base llega 0 o 1; 1, '1' y true son lo mismo, y sin dato es vacío), y los de tipo 'texto' también
+// (un valor que no es un origen es como vacío)
 const normalizado = (k, valor) => {
   if (k.campo === 'requiere_nota') return textoRequiereNota(valor, '');
+  if (k.tipo === 'texto') return k.texto(valor, '');
   if (k.tipo === 'fecha') return diaDe(valor) ?? (textoVacio(valor) ? '' : String(valor).trim());
   if (Array.isArray(valor)) return ordenados(valor).join(',');
   return textoVacio(valor) ? '' : String(valor).trim();
@@ -165,6 +172,7 @@ const nombreEnCatalogo = (k, valor, catalogos) => {
 // de la ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 1.3 y 1.7)
 const textoDelValor = (k, valor, catalogos) => {
   if (k.campo === 'requiere_nota') return textoRequiereNota(valor);
+  if (k.tipo === 'texto') return k.texto(valor);
   if (k.tipo === 'fecha') return formatoCorto(diaDe(valor));
   if (Array.isArray(valor)) {
     if (!valor.length) return '—';
@@ -189,6 +197,7 @@ const frasesDeLosCampos = (cambio, cambiados, catalogos) => {
   const anteriores = objeto(cambio.anteriores);
   const cambiaLaCarga = cambiados.some((k) => k.campo === 'ultima_actualizacion');
   const frases = cambiados.filter((k) => !k.otro).map((k) => {
+    if (k.tipo === 'texto') return k.frase(textoDelValor(k, nuevos[k.campo], catalogos));
     if (k.tipo === 'catalogo') {
       return `${k.prefijo}: ${textoDelValor(k, anteriores[k.campo], catalogos)} a ${textoDelValor(k, nuevos[k.campo], catalogos)}.`;
     }
@@ -229,7 +238,27 @@ const quienDe = (...pares) => pares.flatMap(([verbo, nombre]) => {
   return corto ? [`${verbo} ${corto}`] : [];
 });
 
-const numeroDeNota = (nota) => `${nota.numero}/${String(nota.anio).slice(-2)}`;
+// El número de una Nota Digital como lo escribe el libro ('2/26'); sin año, el número solo: la nota que el anexo de la
+// reiteración suma en la vista previa ('XX') y en la prueba ('PRUEBA'). Las notas de la base que no son de prueba siempre tienen
+// año. Lo usan también las métricas (qué fue el aviso de un ciclo)
+export const numeroDeNota = (nota) => (nota.anio === null || nota.anio === undefined
+  ? String(nota.numero) : `${nota.numero}/${String(nota.anio).slice(-2)}`);
+
+// Qué fue cada aviso, con el título de su movimiento: una Nota Digital de aviso o de reiteración ("Nota Digital N° 4/26 a DGMIT"), un
+// email a la DGMIT (los siete retirados: "Email a DGMIT: <qué pedía>", nunca "recordatorio interno") y el de los 40 días al área. Un
+// email de un tipo que no se conoce no es un aviso: null. Los usa también el reporte «Avisos del RPAD» (spec 2026-10-24-metricas-y-
+// reportes, 5)
+export const tituloDeNotaADgmit = (nota) => `Nota Digital N° ${numeroDeNota(nota)} a DGMIT`;
+export const tituloDeEmail = (tipo) => {
+  if (tipo === 'area-aviso-40') return 'Email al área: anticipo de la nota formal';
+  return typeof tipo === 'string' && Object.hasOwn(QUE_PEDIA, tipo) ? `Email a DGMIT: ${QUE_PEDIA[tipo]}` : null;
+};
+
+// Cómo terminó el envío, con las palabras del Seguimiento: el estado de una Nota Digital (el detalle de una sin enviar termina en
+// "Pendiente de envío." o "No se pudo enviar."; la pantalla lo muestra en su detalle, ESTADOS_DE_NOTA de seguimiento.js, atada por un
+// test de paridad) y el resultado de un email. También los usa el reporte «Avisos del RPAD»
+export const ESTADO_DE_NOTA = Object.freeze({ enviada: 'Enviada', pendiente: 'Pendiente de envío', fallida: 'No se pudo enviar' });
+export const RESULTADO_DE_EMAIL = Object.freeze({ enviado: 'Enviado', fallido: 'No se pudo enviar' });
 
 const movimientoDeAlta = (dataset, alta) => {
   const momento = momentoDe(dataset?.alta);
@@ -294,7 +323,7 @@ const movimientosDeHistorial = (historial) => {
 };
 
 // Una Nota Digital (a DGMIT o de auditoría) sin enviar lo dice al final del detalle
-const estadoDeLaNota = (nota) => (nota.estado === 'pendiente' ? ['Pendiente de envío.'] : nota.estado === 'fallida' ? ['No se pudo enviar.'] : []);
+const estadoDeLaNota = (nota) => (nota.estado === 'pendiente' || nota.estado === 'fallida' ? [`${ESTADO_DE_NOTA[nota.estado]}.`] : []);
 
 // Quién en una Nota Digital: "Generada por X" (o "Envío automático" si la generó la corrida) y "Firmó X" si hay firmante
 const quienDeLaNota = (nota) => {
@@ -315,7 +344,7 @@ const movimientoDeNota = (nota) => {
   if (!textoVacio(nota.datos_solicitados)) frases.push(`Pide: ${sinPunto(nota.datos_solicitados)}.`);
   frases.push(...estadoDeLaNota(nota));
   const enviada = momentoDe(nota.enviada);
-  return { mov: movimiento('nota', fecha, enviada ?? `${fecha} 00:00:00`, `Nota Digital N° ${numeroDeNota(nota)} a DGMIT`, frases.join(' '), quienDeLaNota(nota), {
+  return { mov: movimiento('nota', fecha, enviada ?? `${fecha} 00:00:00`, tituloDeNotaADgmit(nota), frases.join(' '), quienDeLaNota(nota), {
     nota_id: nota.id, numero: nota.numero, anio: nota.anio, vencimiento, datos_solicitados: nota.datos_solicitados ?? null,
     para: nota.para ?? null, cc: nota.cc ?? null, enviada, estado: nota.estado ?? null
   }), id: Number(nota.id) || 0 };
@@ -382,19 +411,19 @@ const movimientoDeEmail = (email) => {
   const id = Number(email.id) || 0;
   if (email.tipo === 'area-aviso-40') {
     const area = textoVacio(email.area) ? null : String(email.area).trim();
-    const detalle = fallo ? 'No se pudo enviar.' : area === null ? 'Al área.' : `${email.area_articulo === 'el' ? 'Al' : 'A la'} ${area}.`;
+    const detalle = fallo ? `${RESULTADO_DE_EMAIL.fallido}.` : area === null ? 'Al área.' : `${email.area_articulo === 'el' ? 'Al' : 'A la'} ${area}.`;
     const asunto = area === null ? ASUNTOS_EMAIL['area-aviso-40'] : `${ASUNTOS_EMAIL['area-aviso-40']} - ${area}`;
-    return { mov: movimiento('area', fecha, momento, 'Email al área: anticipo de la nota formal', detalle, ['Sistema'], extra(asunto)), id };
+    return { mov: movimiento('area', fecha, momento, tituloDeEmail(email.tipo), detalle, ['Sistema'], extra(asunto)), id };
   }
   if (!Object.hasOwn(QUE_PEDIA, email.tipo)) return null;
   const frases = [];
-  if (fallo) frases.push('No se pudo enviar.');
+  if (fallo) frases.push(`${RESULTADO_DE_EMAIL.fallido}.`);
   else {
     if (Object.hasOwn(FALTABAN, email.tipo)) frases.push(`Faltaban ${FALTABAN[email.tipo]} días.`);
     const otros = (Number(email.cantidad) || 0) - 1;
     frases.push(otros >= 2 ? `Junto con otros ${otros} datasets.` : otros === 1 ? 'Junto con otro dataset.' : 'Solo este dataset.');
   }
-  return { mov: movimiento('email', fecha, momento, `Email a DGMIT: ${QUE_PEDIA[email.tipo]}`, frases.join(' '), ['Sistema'], extra(ASUNTOS_EMAIL[email.tipo])), id };
+  return { mov: movimiento('email', fecha, momento, tituloDeEmail(email.tipo), frases.join(' '), ['Sistema'], extra(ASUNTOS_EMAIL[email.tipo])), id };
 };
 
 // Todos los movimientos de un dataset (`Fuentes` de services/seguimientoDatos.js), del más nuevo al más viejo: la fecha, después
@@ -558,14 +587,21 @@ const algunCicloRige = (ciclos, momento) => {
   return cuando !== null && lista(ciclos).some((ciclo) => Boolean(ciclo) && cuando >= ciclo.desde && (!ciclo.hasta || cuando < ciclo.hasta));
 };
 
-const esNotaEnviada = (nota) => Boolean(nota) && (nota.tipo === 'aviso' || nota.tipo === 'reiteracion') && nota.estado === 'enviada';
+// Qué es un aviso del RPAD a la DGMIT y cuándo salió. Se exportan para que las métricas (services/metricasReglas.js) cuenten los
+// mismos avisos que el Seguimiento, sin una copia de la regla.
+// Una Nota Digital de aviso o de reiteración que se envió
+export const esNotaEnviada = (nota) => Boolean(nota) && (nota.tipo === 'aviso' || nota.tipo === 'reiteracion') && nota.estado === 'enviada';
 // El momento de una nota enviada: cuándo se mandó, y si no está, el día de la nota a las 00:00
-const momentoDeEnvioDeNota = (nota) => {
+export const momentoDeEnvioDeNota = (nota) => {
   const fecha = diaDe(nota.fecha);
   return momentoDe(nota.enviada) ?? (fecha === null ? null : `${fecha} 00:00:00`);
 };
 const masNuevo = (a, b) => (a === null || b > a ? b : a);
-const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
+// Un email a la DGMIT (los siete retirados, QUE_PEDIA) que se pudo enviar
+export const esEmailADgmit = (email) => Boolean(email?.success) && Object.hasOwn(QUE_PEDIA, email.tipo);
+// Un email de los 40 días al área que se pudo enviar (se cuenta aparte de los avisos a la DGMIT; el reporte «Avisos del RPAD» lo suma
+// a sus totales)
+export const esEmailAlArea = (email) => Boolean(email?.success) && email.tipo === 'area-aviso-40';
 
 // Los avisos de un ciclo: los emails a DGMIT con éxito (`emails`), las Notas Digitales enviadas de aviso y reiteración (`notas`:
 // '2/26', por orden de envío) y las fechas de los emails al área (`alArea`, de la más vieja a la más nueva). `total`: emails +
@@ -576,7 +612,7 @@ export const avisosDelCiclo = (fuentes, ciclos, indice) => {
   if (!fuentes || typeof fuentes !== 'object' || !Array.isArray(ciclos)) return avisos;
   const alArea = [];
   for (const email of lista(fuentes.emails)) {
-    const delArea = Boolean(email?.success) && email.tipo === 'area-aviso-40';
+    const delArea = esEmailAlArea(email);
     const momento = delArea || esEmailADgmit(email) ? momentoDe(email.enviado) : null;
     if (momento === null || cicloDelAviso(ciclos, momento) !== indice) continue;
     if (delArea) alArea.push(momento);
@@ -607,29 +643,63 @@ export const ultimoAviso = (fuentes) => {
   return dias.length === 0 ? null : dias.reduce((mayor, dia) => (dia > mayor ? dia : mayor));
 };
 
-// La nota DGMIT del ciclo abierto (spec 2026-10-24-notas-dgmit, 5). Una nota DGMIT no es un aviso del RPAD: no cuenta en
-// avisosDelCiclo ni en ultimoAviso, y no cambia los ciclos, los hitos ni el estado. Cuentan las vigentes (no anuladas y recibidas
-// hasta `hoy`). Con ciclos, la más reciente (por recibida, después por el momento de la carga y después por id) de las que son del
-// ciclo abierto: el que regía el día en que el área la recibió, a las 00:00, así que si ese mismo día se aprobó la actualización que
-// cerró el ciclo anterior, la nota es de ese ciclo (se mandó antes de que llegaran los datos). Si ningún ciclo regía ese día (anterior
-// al primero, o posterior a la baja), cicloDelAviso da el 0, que con un solo ciclo es el abierto: ahí la nota cuenta para el ciclo
-// abierto solo si no es anterior a la última carga en el portal (`dataset.ultima`; sin ella, o si no es una fecha, cuenta), porque
-// una nota anterior ya la respondió esa carga o una anterior (ruling R7 de la revisión final). Sin ciclos (eventual o sin fecha), la
-// vigente más reciente. { numero, tipo, recibida } o null.
+// Las notas DGMIT vigentes de un dataset (no anuladas y recibidas hasta `hoy`), leídas, de la más vieja a la más nueva: por recibida,
+// después por el momento de la carga y después por id
+const notasDgmitVigentes = (fuentes, hoy) => lista(fuentes.notasDgmit).map(notaDgmitLeida)
+  .filter((n) => n && !n.anulada && n.recibida <= hoy)
+  .sort((a, b) => comparar(a.recibida, b.recibida) || comparar(a.cargada ?? '', b.cargada ?? '') || a.id - b.id);
+
+// Las notas DGMIT de cada ciclo (spec 2026-10-24-notas-dgmit, 5; las métricas las ubican igual que el Seguimiento: spec
+// 2026-10-24-metricas-y-reportes, 1.2). Una nota DGMIT no es un aviso del RPAD: no cuenta en avisosDelCiclo ni en ultimoAviso, y no
+// cambia los ciclos, los hitos ni el estado. Cuentan las vigentes. Cada una es del ciclo que regía el día en que el área la recibió,
+// a las 00:00 (cicloDelAviso), así que si ese mismo día se aprobó la actualización que cerró un ciclo, la nota es de ese ciclo (se
+// mandó antes de que llegaran los datos). Si ningún ciclo regía ese día (anterior al primero, o posterior a la baja), cicloDelAviso
+// da el 0; si ese 0 es el abierto (un solo ciclo), la nota es suya solo si no es anterior a la última carga en el portal
+// (`dataset.ultima`; sin ella, o si no es una fecha, lo es), porque una nota anterior ya la respondió esa carga o una anterior
+// (ruling R7 de la revisión final); si no, no es de ningún ciclo. Una lista por ciclo, en el orden de `ciclos`, cada una con sus
+// notas { id, numero, tipo, recibida, anulada, cargada } de la más vieja a la más nueva (por recibida, después por el momento de
+// la carga y después por id). Sin ciclos (eventual o sin fecha), [].
+export const notasDgmitPorCiclo = (fuentes, ciclos, hoy) => {
+  if (!Array.isArray(ciclos)) return [];
+  const porCiclo = ciclos.map(() => []);
+  if (ciclos.length === 0 || !fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return porCiclo;
+  const abierto = ciclos.length - 1;
+  const ultima = diaDe(objeto(fuentes.dataset).ultima);
+  for (const nota of notasDgmitVigentes(fuentes, hoy)) {
+    const momento = `${nota.recibida} 00:00:00`;
+    const indice = cicloDelAviso(ciclos, momento);
+    // R7: el ciclo 0 de respaldo, cuando es el abierto, no se queda con una nota anterior a la última carga
+    if (indice === abierto && !algunCicloRige(ciclos, momento) && ultima !== null && nota.recibida < ultima) continue;
+    porCiclo[indice].push(nota);
+  }
+  return porCiclo;
+};
+
+// La nota DGMIT del ciclo abierto (spec 2026-10-24-notas-dgmit, 5): la más reciente de las suyas en notasDgmitPorCiclo (la última
+// de la lista del último ciclo). Sin ciclos (eventual o sin fecha), la vigente más reciente. { numero, tipo, recibida } o null.
 export const notaDgmitDelCiclo = (fuentes, ciclos, hoy) => {
   if (!fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return null;
   const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
-  const ultima = diaDe(objeto(fuentes.dataset).ultima);
-  const delCiclo = (nota) => {
-    if (!hayCiclos) return true;
-    const momento = `${nota.recibida} 00:00:00`;
-    if (cicloDelAviso(ciclos, momento) !== ciclos.length - 1) return false;
-    return algunCicloRige(ciclos, momento) || ultima === null || nota.recibida >= ultima;
-  };
-  const [nota] = lista(fuentes.notasDgmit).map(notaDgmitLeida)
-    .filter((n) => n && !n.anulada && n.recibida <= hoy && delCiclo(n))
-    .sort((a, b) => comparar(b.recibida, a.recibida) || comparar(b.cargada ?? '', a.cargada ?? '') || b.id - a.id);
+  const nota = (hayCiclos ? notasDgmitPorCiclo(fuentes, ciclos, hoy).at(-1) : notasDgmitVigentes(fuentes, hoy)).at(-1);
   return nota ? { numero: nota.numero, tipo: nota.tipo, recibida: nota.recibida } : null;
+};
+
+// Las notas DGMIT del ciclo abierto, todas (spec 2026-10-24-generador-de-notas, 3.2): las de notaDgmitDelCiclo, que da la última, de
+// la más vieja a la más nueva (por recibida, después por el momento de la carga y después por id). La primera es la nota original del
+// ciclo, la que el generador de notas trae a «Nota anterior». Calcula los ciclos con ciclosDe; sin ciclos (eventual o sin fecha:
+// ciclosDe da null), las vigentes que no son anteriores a la última carga en el portal (`dataset.ultima`; sin ella, o si no es una
+// fecha, todas): la regla R7 de notasDgmitPorCiclo, porque una nota anterior ya la respondió esa carga y la reiteración diría que
+// no se recibió la información. Ahí difiere de notaDgmitDelCiclo, que sin ciclos da la vigente más reciente aunque sea anterior (el
+// Seguimiento la muestra como un hecho). [{ numero, tipo, recibida }]; sin fuentes o con un hoy que no es una fecha, [].
+export const notasDgmitDelCicloAbierto = (fuentes, hoy) => {
+  if (!fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return [];
+  const ciclos = ciclosDe(fuentes, hoy);
+  const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
+  const ultima = diaDe(objeto(fuentes.dataset).ultima);
+  const notas = hayCiclos
+    ? (notasDgmitPorCiclo(fuentes, ciclos, hoy).at(-1) ?? [])
+    : notasDgmitVigentes(fuentes, hoy).filter((nota) => ultima === null || nota.recibida >= ultima);
+  return notas.map(({ numero, tipo, recibida }) => ({ numero, tipo, recibida }));
 };
 
 // Un hito por ciclo que llegó a su vencimiento, del más nuevo al más viejo: { fecha, tipo, texto }. `fecha` es el vencimiento.
@@ -710,6 +780,17 @@ const textoDeAvisos = ({ emails, notas }, vencido) => {
   return mayuscula(partes.join(' y '));
 };
 
+// Las versiones cada vez más cortas del texto de los avisos, para el PDF, donde el texto tiene dos renglones de letra fija (spec
+// 2026-10-24-reiteracion-en-su-anexo, decisión del usuario: «recortar del medio»). Se sacan números de notas del medio, de a uno:
+// con k notas, la versión m (m = 1 … k − 3) conserva la primera y las últimas k − 1 − m, con «…» entre las dos partes ("11 emails y
+// las Notas Digitales N° 2/26, …, 9/26 y 2/27"). Siempre quedan la primera y las dos últimas: la reiteración que acompaña al anexo
+// va última. La parte de los emails no cambia. Con 3 notas o menos no hay nada que sacar: []. La pantalla no las usa.
+const textosCortosDeAvisos = ({ emails, notas }) => {
+  const versiones = [];
+  for (let m = 1; m <= notas.length - 3; m++) versiones.push(textoDeAvisos({ emails, notas: [notas[0], '…', ...notas.slice(m + 1)] }));
+  return versiones;
+};
+
 const textoDelArea = ({ estado, dias }) => {
   if (estado === 'baja') return 'Dado de baja';
   if (dias === null) return 'Sin vencimiento';
@@ -732,7 +813,8 @@ const alAreaDe = (fechas) => {
 // (`nodoMedio`, `tramoFuera`) y el área (`area`) vence o no. `ciclos`: los de ciclosDe (si no se pasan, los arma). Sin ciclos
 // (eventual o sin fecha) no hay avisos que contar ni vencimiento. `desde`: desde cuándo se cuentan los avisos, el inicio del ciclo
 // abierto y cómo empezó ({ fecha, origen, texto }: "Desde la actualización del 16/12/2025"); null sin ciclos o si el ciclo empieza
-// en un alta que no se conoce.
+// en un alta que no se conoce. `avisos`: { titulo, texto, textosCortos }; `textosCortos` son las versiones del texto recortadas del
+// medio (textosCortosDeAvisos), solo para el PDF.
 // El tramo de afuera (`tramoFuera`): { titulo, texto, registrada, nota, tituloPdf, textoPdf }. En gestión externa, con una nota DGMIT
 // del ciclo abierto (notaDgmitDelCiclo), la nota (`registrada` true y `nota` { numero, tipo, recibida }): la pantalla dice cuándo la
 // recibió el área ("hoy", "hace 1 día", "hace N días") y el PDF no, porque el anexo queda guardado y se lee después. Sin nota, "Nota
@@ -804,10 +886,15 @@ export const circuitoDe = (fuentes, ciclos, hoy, opciones = {}) => {
   if (gestion === 'externa' && nota) alArea = { ...alAreaDe(fechasAlArea), textoPdf: textoPdfAlAreaDeLaNota(nota) };
   else if (gestion === 'externa' && !(sinNotaFormal && fechasAlArea.length === 0)) alArea = alAreaDe(fechasAlArea);
 
+  const vencido = hayCiclos && abierto.diasVencido > 0;
   return {
     nodoMedio: { ...(sinNotaFormal ? NODO_MEDIO_SIN_NOTA : NODO_MEDIO[gestion]) },
     tramoFuera,
-    avisos: { titulo: tituloDeAvisos(delCiclo.total), texto: hayCiclos ? textoDeAvisos(delCiclo, abierto.diasVencido > 0) : 'Sin vencimiento' },
+    avisos: {
+      titulo: tituloDeAvisos(delCiclo.total),
+      texto: hayCiclos ? textoDeAvisos(delCiclo, vencido) : 'Sin vencimiento',
+      textosCortos: hayCiclos ? textosCortosDeAvisos(delCiclo) : []
+    },
     area: { nombre: dataset.area ?? null, texto: textoDelArea(estado), vencido: estado.estado === 'vencido' },
     alArea,
     desde: desdeDe(abierto, dataset),

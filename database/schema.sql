@@ -38,6 +38,7 @@ CREATE TABLE `areas` (
   `articulo` enum('el','la') NOT NULL DEFAULT 'la',
   `area_superior` varchar(300) DEFAULT NULL,
   `articulo_superior` enum('el','la') DEFAULT 'la',
+  `ambito` enum('municipal','externo') NOT NULL DEFAULT 'municipal',
   `email_principal` varchar(150) DEFAULT NULL,
   `email_secundario` varchar(150) DEFAULT NULL,
   `telefono_area` varchar(50) DEFAULT NULL,
@@ -658,4 +659,25 @@ CREATE TABLE `notas_dgmit_historial` (
   KEY `fk_notas_dgmit_historial_usuario` (`usuario_id`),
   CONSTRAINT `fk_notas_dgmit_historial_nota` FOREIGN KEY (`nota_id`) REFERENCES `notas_dgmit` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_notas_dgmit_historial_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- Métricas y Reportes (database/updates/migracion-metricas.sql): la foto de cada año, al 31/12 (al es siempre
+-- AAAA-12-31; datos, el JSON de la foto), y los «Recibido el» y el origen de los datos importados, por cambio aprobado
+-- =====================================================
+CREATE TABLE `metricas_fotos` (
+  `anio` smallint(6) NOT NULL,
+  `al` date NOT NULL,
+  `datos` longtext NOT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`anio`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `actualizaciones_recibido` (
+  `cambio_id` int(11) NOT NULL,
+  `recibido_el` date DEFAULT NULL,
+  `origen_datos` enum('area','fuente_publica') DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`cambio_id`),
+  CONSTRAINT `fk_actualizaciones_recibido_cambio` FOREIGN KEY (`cambio_id`) REFERENCES `cambios_pendientes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

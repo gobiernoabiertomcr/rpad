@@ -1,4 +1,5 @@
-// Lectura de los PDF que arma PDFKit, para los tests: texto, posición y tamaño de cada línea, e imágenes de cada hoja.
+// Lectura de los PDF que arma PDFKit, para los tests: tamaño de cada hoja, texto, posición y tamaño de cada línea, e imágenes
+// de cada hoja.
 // Los flujos de contenido de PDFKit vienen comprimidos (Flate) y el texto en hexadecimal (WinAnsi).
 import zlib from 'node:zlib';
 
@@ -17,7 +18,8 @@ const fuentesDeLaHoja = (hoja, objetos) => {
     .map(([, nombre, id]) => [nombre, objetos.get(Number(id)).match(/\/BaseFont \/([\w-]+)/)[1]]));
 };
 
-// Cada hoja, en orden: su flujo de contenido (descomprimido), su alto en puntos y sus letras
+// Cada hoja, en orden: su flujo de contenido (descomprimido), su ancho y su alto en puntos (del /MediaBox [x0 y0 x1 y1]:
+// x1 - x0 y y1 - y0) y sus letras
 const hojasDelPdf = (pdf) => {
   const objetos = new Map();
   for (const m of texto(pdf).matchAll(/(\d+) 0 obj\r?\n([\s\S]*?)endobj/g)) objetos.set(Number(m[1]), m[2]);
@@ -28,12 +30,29 @@ const hojasDelPdf = (pdf) => {
     const flujo = objetos.get(Number(hoja.match(/\/Contents (\d+) 0 R/)[1]));
     const inicio = flujo.match(/stream\r?\n/);
     const datos = flujo.substr(inicio.index + inicio[0].length, Number(flujo.match(/\/Length (\d+)/)[1]));
+    const [x0, y0, x1, y1] = hoja.match(/\/MediaBox \[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]/).slice(1).map(Number);
     return {
       contenido: zlib.inflateSync(Buffer.from(datos, 'latin1')).toString('latin1'),
-      alto: Number(hoja.match(/\/MediaBox \[\s*[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s*\]/)[1]),
+      ancho: x1 - x0,
+      alto: y1 - y0,
       fuentes: fuentesDeLaHoja(hoja, objetos)
     };
   });
+};
+
+// Tamaño de cada hoja en puntos, en el orden de las hojas: { ancho, alto } (A4: 595,28 × 841,89; oficio: 612 × 1008)
+export const tamanosPorHoja = (pdf) => hojasDelPdf(pdf).map(({ ancho, alto }) => ({ ancho, alto }));
+
+// Las dos hojas de los PDF, en puntos: A4 (los anexos y el Seguimiento) y oficio (Legal, 8½ × 14 pulgadas: la Nota Digital)
+export const HOJA_A4 = { ancho: 595.28, alto: 841.89 };
+export const HOJA_OFICIO = { ancho: 612, alto: 1008 };
+// Si una hoja (un tamaño de tamanosPorHoja) mide lo que la hoja dada, con 0,01 puntos de tolerancia en el ancho y en el alto
+export const esDelTamano = (tamano, hoja) => Math.abs(tamano.ancho - hoja.ancho) <= 0.01 && Math.abs(tamano.alto - hoja.alto) <= 0.01;
+// Si el PDF tiene al menos una hoja y todas miden lo que la hoja dada (con la tolerancia de esDelTamano): un PDF sin hojas no
+// pasa, como pasaría con un every sobre una lista vacía
+export const todasDelTamano = (pdf, hoja) => {
+  const tamanos = tamanosPorHoja(pdf);
+  return tamanos.length > 0 && tamanos.every(t => esDelTamano(t, hoja));
 };
 
 // Flujo de contenido (descomprimido) de cada hoja, en el orden de las hojas
