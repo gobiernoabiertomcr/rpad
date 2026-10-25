@@ -505,6 +505,7 @@
 - [ ] **Step 2:** Corregir los hallazgos críticos e importantes, con Opus y un commit por corrección. Volver a correr `npm test`.
 - [ ] **Step 3:** Merge a main y push. El usuario los autorizó el 24/10 a la noche: «Una vez que finaliza todo, se arma el kit de despliegue, se hace merge en main y push». **No desplegar.** Si la rama trae migraciones (no debería), aplicarlas también a la base local después del merge, con un respaldo antes.
 - [ ] **Step 4:** Informar el resumen, los totales de la suite, el recorrido, el kit y el hash del merge.
+- [ ] **Step 5:** Mandarle el hash del merge por mensaje a la sesión "Proyectos" (`local_792b68d3-eedb-49fc-9e82-b34247a3837b`, rama `feat/proyectos`), que va después en la cola. Ella se adapta a main: renombra `gestion.html` → `proyectos.html` y suma su redirección junto a las de esta rama.
 
 ## Diferencias encontradas
 
