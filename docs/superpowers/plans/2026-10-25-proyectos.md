@@ -494,3 +494,4 @@ Sin consultas N+1: una consulta por tabla para todos los ids juntos.
   - `git worktree remove`;
   - comprobar que `C:\git\rpad\node_modules` sigue entero.
 - [ ] **Step 7:** Actualizar la memoria (`proyectos.md`) y la nota de la carpeta compartida con el hash del merge.
+- [ ] **Step 8:** Avisarle con el hash del merge, por `SendMessage`, a la sesión que va después en la cola: «Ciclo de Vida del Dato» (`local_8b509d51-747e-43e4-a743-4fcf82eb590a`, rama `claude/ciclo-de-vida-del-dato-aba0d0`). Se cruzan en `VERSION_REPORTES` y el `?v=` de `reportes.js`, `tests/permisos.test.js`, `tests/reportes-frontend.test.js`, `CLAUDE.md` y `README.md`.
