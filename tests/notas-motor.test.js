@@ -898,6 +898,10 @@ describe('anexo de los avisos (spec 6.7)', () => {
     assert.ok(hojas[1].includes('Segundo en vencer'), hojas[1].join(' | '));
     assert.ok(hojas[0].includes('Anexo – Nota Digital N° 1/26 · Hoja 1 de 2'), hojas[0].join(' | '));
     assert.ok(hojas[1].includes('Anexo – Nota Digital N° 1/26 · Hoja 2 de 2'), hojas[1].join(' | '));
+    // El anexo del aviso son las fichas: no suma el propio aviso, como sí hace la reiteración (spec 2026-10-24-reiteracion-en-su-anexo)
+    for (const lineas of hojas) {
+      assert.ok(!lineas.some(l => l.includes('Nota Digital N° 1/26 a DGMIT') || l.split(' y ').includes('Nota 1/26')), lineas.join(' | '));
+    }
   });
 
   it('el reintento de un aviso fallido reenvía el mismo anexo, aunque el dataset haya cambiado', async () => {
@@ -1081,6 +1085,10 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
   const laReiteracion = async () => (await query(
     "SELECT id, numero, anio, estado, es_prueba, html, texto, pdf, anexo_pdf FROM notas_digitales WHERE tipo = 'reiteracion' ORDER BY id"
   ));
+  // La reiteración en su propio anexo (spec 2026-10-24-reiteracion-en-su-anexo): en cada hoja, el título de su movimiento aparece una
+  // vez y la cinta tiene su etiqueta, sola o junto con otra que la pisa ("Nota 1/26 y Nota 2/26")
+  const vecesDelTitulo = (lineas, numero) => lineas.filter(l => l === `Nota Digital N° ${numero} a DGMIT`).length;
+  const conEtiqueta = (lineas, numero) => lineas.some(l => l.split(' y ').includes(`Nota ${numero}`));
 
   it('ordenDeLaTabla deja primero los que vencen desde la fecha de la nota y después los vencidos, sin cambiar el orden dentro de cada grupo', () => {
     const d = (id, vencimiento) => ({ id, titulo: `Dataset ${id}`, area_nombre: 'Área', frecuencia_nombre: 'Anualmente', vencimiento });
@@ -1154,6 +1162,122 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets WHERE nota_id = ?', [reiteracion.id]))[0].n, 2);
   });
 
+  // Spec 2026-10-24-reiteracion-en-su-anexo: cada hoja suma la reiteración con la que viaja
+  it('cada hoja del anexo muestra la propia reiteración: su movimiento, su marca en la cinta y los avisos del ciclo que la cuentan', async () => {
+    await reiteracionDel0211();
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    const hojas = lineasPorHoja(reiteracion.anexo_pdf);
+    assert.equal(hojas.length, 2);
+    for (const lineas of hojas) {
+      assert.equal(vecesDelTitulo(lineas, '2/26'), 1, lineas.join(' | '));
+      assert.ok(conEtiqueta(lineas, '2/26'), lineas.join(' | '));
+      // Enviada: el anexo viaja en el mismo email que la nota
+      for (const t of ['Pendiente de envío.', 'No se pudo enviar.']) assert.ok(!lineas.join(' ').includes(t), `sobra "${t}": ${lineas.join(' | ')}`);
+    }
+    // El próximo a vencer: el aviso N° 1/26 y la reiteración
+    assert.ok(hojas[0].includes('2 avisos'), hojas[0].join(' | '));
+    assert.ok(hojas[0].includes('Las Notas Digitales N° 1/26 y 2/26'), hojas[0].join(' | '));
+    // El vencido nunca tuvo aviso: solo la reiteración
+    assert.ok(hojas[1].includes('1 aviso'), hojas[1].join(' | '));
+    assert.ok(hojas[1].includes('La Nota Digital N° 2/26'), hojas[1].join(' | '));
+  });
+
+  // Una persona con su nombre completo y, si firma, su firma cargada (el titular de Correos)
+  const crearPersona = async (nombre, { firma = false } = {}) => {
+    const username = `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const { insertId } = await query(
+      "INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, activo) VALUES (?, 'x', ?, ?, 'admin', 1)",
+      [username, nombre, `${username}@rpad.test`]
+    );
+    if (firma) {
+      await query("INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, 'Firma de Prueba', 'Cargo de Prueba', ?, 'image/png')",
+        [insertId, pngRgba()]);
+    }
+    return insertId;
+  };
+
+  it('la reiteración que suma el anexo es la que queda guardada: leída con fuentesDe, la misma nota salvo el id y el momento del envío', async () => {
+    const { vencido, proximo } = await reiteracionDel0211();
+    // La genera una persona (corrida manual) y la firma el titular elegido en Correos: los dos, con su nombre completo
+    const generador = await crearPersona('Nombre Apellido Generador');
+    const titular = await crearPersona('Nombre Apellido Firmante', { firma: true });
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular]);
+    try {
+      const datasets = await datos.seleccionarParaReiteracion('interna', '2026-11-02');
+      const resumen = await motor.ejecutarNotasDigitales({ hoy: '2026-11-02', usuarioId: generador });
+      assert.deepEqual(resumen.errores, []);
+      const [reiteracion] = await laReiteracion();
+      assert.equal(reiteracion.estado, 'enviada');
+      const fuentes = await seguimientoDatos.fuentesDe([vencido, proximo]);
+      const propia = {
+        numero: 2, anio: 2026, gestion: 'interna', enviada: null, para: 'mit@rpad.test', cc: 'geo@rpad.test',
+        creado_por: 'Nombre Apellido Generador', firmante: 'Nombre Apellido Firmante'
+      };
+      for (const dataset of datasets) {
+        const guardada = fuentes.get(dataset.id).notas.find(n => n.id === reiteracion.id);
+        assert.ok(guardada, `dataset ${dataset.id}`);
+        assert.match(guardada.enviada, FECHA_HORA);
+        assert.deepEqual({ ...guardada, id: null, enviada: null }, seguimientoNotas.notaPropiaDe(dataset, '2026-11-02', propia), `dataset ${dataset.id}`);
+      }
+      // La hoja dice quién la generó (la columna lo corta: «Generada por Nombre…») y quién la firmó, como lo dirá el Seguimiento
+      for (const lineas of lineasPorHoja(reiteracion.anexo_pdf)) {
+        assert.ok(lineas.some(l => l.startsWith('Generada por Nombre')) && lineas.includes('Firmó Nombre Firmante'), lineas.join(' | '));
+      }
+    } finally {
+      await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL WHERE id = 1');
+      await query('DELETE FROM notas_digitales');
+      await query('DELETE FROM usuarios WHERE id IN (?)', [[generador, titular]]);
+    }
+  });
+
+  it('una reiteración que no se pudo enviar: su anexo la muestra como las demás; el Seguimiento dice «No se pudo enviar.» y no la cuenta', async () => {
+    const { vencido, proximo } = await reiteracionDel0211();
+    process.env.EMAIL_SOLO_A = 'nadie@rpad.test';
+    await ejecutar('2026-11-02');
+    process.env.EMAIL_SOLO_A = '';
+    const [fallida] = await laReiteracion();
+    assert.equal(fallida.estado, 'fallida');
+    // El anexo guardado: la nota sin «Pendiente de envío.» ni «No se pudo enviar.», contada en los avisos del ciclo
+    const hojas = lineasPorHoja(fallida.anexo_pdf);
+    for (const lineas of hojas) {
+      assert.equal(vecesDelTitulo(lineas, '2/26'), 1, lineas.join(' | '));
+      for (const t of ['Pendiente de envío.', 'No se pudo enviar.']) assert.ok(!lineas.join(' ').includes(t), `sobra "${t}": ${lineas.join(' | ')}`);
+    }
+    assert.ok(hojas[0].includes('2 avisos'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('1 aviso'), hojas[1].join(' | '));
+    // El Seguimiento de la pantalla: con su estado real, sin contarla como aviso
+    const fuentes = await seguimientoDatos.fuentesDe([vencido, proximo]);
+    const delProximo = seguimientoDe(fuentes.get(proximo), '2026-11-02', OPCIONES_CINTA_PDF);
+    const movimiento = delProximo.movimientos.find(m => m.titulo === 'Nota Digital N° 2/26 a DGMIT');
+    assert.equal(movimiento.extra.estado, 'fallida');
+    assert.match(movimiento.detalle, /No se pudo enviar\.$/);
+    assert.deepEqual(delProximo.circuito.avisos, { titulo: '1 aviso', texto: 'La Nota Digital N° 1/26', textosCortos: [] });
+    assert.equal(seguimientoDe(fuentes.get(vencido), '2026-11-02', OPCIONES_CINTA_PDF).circuito.avisos.titulo, 'Sin avisos');
+  });
+
+  it('el Seguimiento de la pantalla no recibe la nota del anexo: antes de generarla no está y, sin enviar, dice «Pendiente de envío.»', async () => {
+    const { proximo } = await reiteracionDel0211();
+    const config = await datos.obtenerConfig();
+    const datasets = await datos.seleccionarParaReiteracion('interna', '2026-11-02');
+    const titulos = (s) => s.movimientos.filter(m => m.tipo === 'nota').map(m => m.titulo);
+    const seguimientoDelProximo = async () => seguimientoDe((await seguimientoDatos.fuentesDe([proximo])).get(proximo), '2026-11-02', OPCIONES_CINTA_PDF);
+    const antes = await seguimientoDelProximo();
+    assert.deepEqual(titulos(antes), ['Nota Digital N° 1/26 a DGMIT']);
+    assert.equal(antes.circuito.avisos.titulo, '1 aviso');
+
+    const id = await motor.generarNota({ tipo: 'reiteracion', gestion: 'interna', fecha: '2026-11-02', datasets, config });
+    // El anexo guardado la muestra; la base, como pendiente
+    const [{ anexo_pdf: anexo }] = await query('SELECT anexo_pdf FROM notas_digitales WHERE id = ?', [id]);
+    assert.equal(vecesDelTitulo(lineasPorHoja(anexo)[0], '2/26'), 1);
+    const despues = await seguimientoDelProximo();
+    assert.deepEqual(titulos(despues), ['Nota Digital N° 2/26 a DGMIT', 'Nota Digital N° 1/26 a DGMIT']);
+    const movimiento = despues.movimientos.find(m => m.titulo === 'Nota Digital N° 2/26 a DGMIT');
+    assert.equal(movimiento.extra.estado, 'pendiente');
+    assert.match(movimiento.detalle, /Pendiente de envío\.$/);
+    assert.deepEqual(despues.circuito.avisos, antes.circuito.avisos);
+  });
+
   it('enviarNota de una reiteración adjunta Nota y Anexo', async () => {
     await reiteracionDel0211();
     await ejecutar('2026-11-02');
@@ -1223,11 +1347,16 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.ok(hojas[1].includes('Vencido sin aviso'), hojas[1].join(' | '));
     hojas.forEach((lineas, k) => {
       assert.ok(lineas.includes(`Anexo de la Nota Digital N° PRUEBA · Hoja ${k + 1} de 2`), lineas.join(' | '));
+      // La prueba se suma a su propio anexo con el número como lo escribe la nota (spec 2026-10-24-reiteracion-en-su-anexo)
+      assert.equal(vecesDelTitulo(lineas, 'PRUEBA'), 1, lineas.join(' | '));
+      assert.ok(conEtiqueta(lineas, 'PRUEBA'), lineas.join(' | '));
     });
     const [prueba] = await laReiteracion();
     assert.equal(prueba.es_prueba, 1);
     assert.deepEqual(prueba.anexo_pdf, archivos[1].contenido);
     assert.ok(prueba.html.includes('>Anexo: seguimiento de los conjuntos de datos (2 hojas).</p>'));
+    // Como siempre, la prueba no registra datasets: solo queda el aviso del 01/10
+    assert.equal((await query('SELECT COUNT(*) AS n FROM notas_digitales_datasets'))[0].n, 1);
   });
 
   // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5: vista previa y prueba del anexo en Correos
@@ -1246,6 +1375,10 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
     hojas.forEach((lineas, k) => {
       assert.ok(lineas.includes(`Anexo de la Nota Digital N° PRUEBA · Hoja ${k + 1} de 2`), lineas.join(' | '));
+      // Los datasets de ejemplo no tienen movimientos: la prueba es el único (spec 2026-10-24-reiteracion-en-su-anexo)
+      assert.equal(vecesDelTitulo(lineas, 'PRUEBA'), 1, lineas.join(' | '));
+      assert.ok(conEtiqueta(lineas, 'PRUEBA'), lineas.join(' | '));
+      assert.ok(lineas.includes('1 aviso'), lineas.join(' | '));
     });
     // La nota anuncia las dos hojas y la prueba guarda el anexo; no queda registro de datasets ni de números usados
     const [prueba] = await laReiteracion();
@@ -1301,13 +1434,34 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     hojas.forEach((lineas, k) => {
       assert.ok(lineas.includes(`Anexo de la Nota Digital N° XX · Hoja ${k + 1} de 2`), lineas.join(' | '));
       assert.ok(lineas.some(l => GENERADO.test(l)), lineas.join(' | '));
+      // La reiteración de la vista previa, en cada hoja con «XX» (spec 2026-10-24-reiteracion-en-su-anexo)
+      assert.equal(vecesDelTitulo(lineas, 'XX'), 1, lineas.join(' | '));
+      assert.ok(conEtiqueta(lineas, 'XX'), lineas.join(' | '));
     });
-    // Es el que saldría en la corrida: las mismas hojas que el anexo guardado de la reiteración del día
+    // Es el que saldría en la corrida: las mismas hojas que el anexo guardado de la reiteración del día, con el número en todos lados
+    // (el pie, el movimiento, los avisos del ciclo y la etiqueta de la cinta)
     await ejecutar('2026-11-02');
     const [reiteracion] = await laReiteracion();
-    assert.deepEqual(lineasPorHoja(reiteracion.anexo_pdf).map(h => h.map(l => l.replace('N° 2/26', 'N° XX')).filter(l => !GENERADO.test(l))),
+    assert.deepEqual(lineasPorHoja(reiteracion.anexo_pdf).map(h => h.map(l => l.replace(/\b2\/26\b/g, 'XX')).filter(l => !GENERADO.test(l))),
       hojas.map(h => h.filter(l => !GENERADO.test(l))));
     assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1, 'solo la de la corrida');
+  });
+
+  it('previewAnexo abierto después de la reiteración real del mismo día no la muestra dos veces: la «XX» en su lugar', async () => {
+    await reiteracionDel0211();
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    assert.equal(reiteracion.estado, 'enviada');
+    const hojas = lineasPorHoja(await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' }));
+    assert.equal(hojas.length, 2);
+    for (const lineas of hojas) {
+      assert.equal(vecesDelTitulo(lineas, 'XX'), 1, lineas.join(' | '));
+      assert.equal(vecesDelTitulo(lineas, '2/26'), 0, lineas.join(' | '));
+      assert.ok(conEtiqueta(lineas, 'XX') && !conEtiqueta(lineas, '2/26'), lineas.join(' | '));
+    }
+    // Los avisos del ciclo cuentan una sola reiteración del día
+    assert.ok(hojas[0].includes('2 avisos') && hojas[0].includes('Las Notas Digitales N° 1/26 y XX'), hojas[0].join(' | '));
+    assert.ok(hojas[1].includes('1 aviso') && hojas[1].includes('La Nota Digital N° XX'), hojas[1].join(' | '));
   });
 
   it('previewAnexo de una reiteración sin datasets reales usa el ejemplo: dos hojas, sin leer la base', async () => {
@@ -1318,6 +1472,12 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.ok(hojas[0].includes('Dataset de ejemplo próximo a vencer'), hojas[0].join(' | '));
     assert.ok(hojas[1].includes('Dataset de ejemplo vencido'), hojas[1].join(' | '));
     assert.ok(hojas[1].includes('Anexo de la Nota Digital N° XX · Hoja 2 de 2'), hojas[1].join(' | '));
+    // Sin movimientos de ejemplo, la reiteración de la vista previa es el único (spec 2026-10-24-reiteracion-en-su-anexo)
+    for (const lineas of hojas) {
+      assert.equal(vecesDelTitulo(lineas, 'XX'), 1, lineas.join(' | '));
+      assert.ok(conEtiqueta(lineas, 'XX'), lineas.join(' | '));
+      assert.ok(lineas.includes('1 aviso') && lineas.includes('La Nota Digital N° XX'), lineas.join(' | '));
+    }
     assert.equal((await notas()).length, 0);
     assert.equal((await mailpit.mensajes()).length, 0);
   });

@@ -497,6 +497,8 @@ describe('vista previa y prueba', () => {
     assert.ok(hojas[0].includes('Real avisado'), hojas[0].join(' | '));
     assert.ok(hojas[1].includes('Real vencido'), hojas[1].join(' | '));
     hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Anexo de la Nota Digital N° XX · Hoja ${k + 1} de 2`), lineas.join(' | ')));
+    // Cada hoja suma la reiteración de la vista previa, con «XX» (spec 2026-10-24-reiteracion-en-su-anexo)
+    for (const lineas of hojas) assert.equal(lineas.filter(l => l === 'Nota Digital N° XX a DGMIT').length, 1, lineas.join(' | '));
     // Los mismos datasets que la vista previa de la nota
     const vista = (await api.get('/notificaciones/notas-digitales/preview?tipo=reiteracion&gestion=externa', comoAdmin())).body.data;
     assert.equal(vista.ejemplo, false);
