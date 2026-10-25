@@ -4,6 +4,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { cintaDeMetricas, cintasDeLaVista, ALTURAS_DE_LA_CINTA as ALTURAS } from '../services/metricasCinta.js';
+import { OPCIONES_CINTA_PDF } from '../services/reportesMetricasPdf.js';
 import { SIN_NOTAS_DGMIT, unidadDe, casosDe, vistaDe } from '../services/metricasReglas.js';
 import { mapaDeLosCasos, HOY_DE_LAS_METRICAS } from './metricas-casos.js';
 
@@ -63,28 +64,29 @@ const real = (gestion, estadistico, dias) => cintaDeMetricas(tramosReales(gestio
 const COMBINACIONES = ['externa', 'interna'].flatMap((gestion) =>
   ['mediana', 'promedio'].flatMap((estadistico) => ['habiles', 'corridos'].map((dias) => ({ gestion, estadistico, dias }))));
 
-// Lo que ocupa un texto, con la misma aproximación que la cinta: 6,6 por letra, 10 sobre la línea de base y 3 debajo
+// Lo que ocupa un texto, con la misma aproximación que la cinta: 6,6 por letra (o la letra de las opciones, la del PDF), 10 sobre la
+// línea de base y 3 debajo
 const LETRA = 6.6;
-const caja = (x, y, texto, anclaje) => {
-  const ancho = texto.length * LETRA;
+const caja = (x, y, texto, anclaje, letra = LETRA) => {
+  const ancho = texto.length * letra;
   const x0 = anclaje === 'start' ? x : anclaje === 'end' ? x - ancho : x - ancho / 2;
   return { texto, x0, x1: x0 + ancho, y0: y - 10, y1: y + 3 };
 };
 const seTocan = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
 // Todos los textos que se escriben en la cinta: las marcas del eje, «vencimiento», el rótulo del eje, el del gris y los rótulos
-const textosDe = (cinta) => [
-  ...cinta.ticks.map((t) => caja(t.x, ALTURAS.ticks, t.texto, 'middle')),
-  caja(cinta.vencimiento.x, ALTURAS.vencimiento.texto, 'vencimiento', 'middle'),
-  caja(cinta.eje.x, cinta.eje.y, cinta.eje.texto, cinta.eje.anclaje),
-  ...(cinta.gris?.texto ? [caja((cinta.gris.x0 + cinta.gris.x1) / 2, ALTURAS.textoDelGris, cinta.gris.texto, 'middle')] : []),
-  ...cinta.rotulos.map((r) => caja(r.x, r.y, r.texto, r.anclaje))
+const textosDe = (cinta, letra = LETRA) => [
+  ...cinta.ticks.map((t) => caja(t.x, ALTURAS.ticks, t.texto, 'middle', letra)),
+  caja(cinta.vencimiento.x, ALTURAS.vencimiento.texto, 'vencimiento', 'middle', letra),
+  caja(cinta.eje.x, cinta.eje.y, cinta.eje.texto, cinta.eje.anclaje, letra),
+  ...(cinta.gris?.texto ? [caja((cinta.gris.x0 + cinta.gris.x1) / 2, ALTURAS.textoDelGris, cinta.gris.texto, 'middle', letra)] : []),
+  ...cinta.rotulos.map((r) => caja(r.x, r.y, r.texto, r.anclaje, letra))
 ];
 
 // Ningún texto sale del dibujo (0 a 1000 y 0 a 156) ni se pisa con otro; ningún rótulo lo cruza la línea del vencimiento; el texto
 // del gris queda adentro del gris, sin tocar la última marca
-const sinPisadas = (cinta, cual) => {
-  const textos = textosDe(cinta);
+const sinPisadas = (cinta, cual, letra = LETRA) => {
+  const textos = textosDe(cinta, letra);
   for (const t of textos) {
     assert.ok(t.x0 >= 0 && t.x1 <= cinta.ancho && t.y0 >= 0 && t.y1 <= cinta.alto, `${cual}: «${t.texto}» sale del dibujo (${t.x0}–${t.x1})`);
   }
@@ -94,13 +96,13 @@ const sinPisadas = (cinta, cual) => {
     }
   }
   for (const r of cinta.rotulos) {
-    const c = caja(r.x, r.y, r.texto, r.anclaje);
+    const c = caja(r.x, r.y, r.texto, r.anclaje, letra);
     if (c.y1 > ALTURAS.vencimiento.desde) {
       assert.ok(c.x1 < cinta.vencimiento.x || c.x0 > cinta.vencimiento.x, `${cual}: la línea del vencimiento cruza «${r.texto}»`);
     }
   }
   if (cinta.gris?.texto) {
-    const c = caja((cinta.gris.x0 + cinta.gris.x1) / 2, ALTURAS.textoDelGris, cinta.gris.texto, 'middle');
+    const c = caja((cinta.gris.x0 + cinta.gris.x1) / 2, ALTURAS.textoDelGris, cinta.gris.texto, 'middle', letra);
     assert.ok(c.x0 >= cinta.gris.x0 + 10 && c.x1 <= cinta.gris.x1, `${cual}: el texto del gris no entra en el gris`);
   }
 };
@@ -420,7 +422,71 @@ describe('cintaDeMetricas', () => {
   });
 });
 
+// La cinta del PDF (services/reportesMetricasPdf.js): el dibujo es el de la pantalla escalado al ancho útil de la hoja, y las letras
+// de la pantalla escaladas no se leerían. Como en el Seguimiento (OPCIONES_CINTA_PDF de seguimientoPdf.js), la cinta se calcula con la
+// letra del PDF, más ancha, y así la letra del PDF entra en lo que la cinta midió
+describe('cintaDeMetricas con la letra del PDF', () => {
+  const { letra } = OPCIONES_CINTA_PDF;
+  const delPdf = (tramos, opciones) => cintaDeMetricas(tramos, { ...opciones, ...OPCIONES_CINTA_PDF });
+
+  it('mide los textos con la letra que le dicen: la de la pantalla no alcanza para el PDF', () => {
+    assert.ok(letra > LETRA, `${letra}`);
+    // Cortada en la respuesta, con el trámite que cruza el vencimiento: en la pantalla su rótulo entra al lado de la línea; con la letra
+    // del PDF no entra en ningún lado y no va (como en la cinta del Seguimiento)
+    const tramos = [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)];
+    const pantalla = cintaDeMetricas(tramos, { gestion: 'externa' });
+    const pdf = delPdf(tramos, { gestion: 'externa' });
+    assert.deepEqual(pantalla.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes', 'Trámite y entrega de la nota · 40 días hábiles']);
+    assert.deepEqual(pdf.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes']);
+    // Con la letra del PDF, la cinta de la pantalla se pisaría o se saldría; la del PDF, no
+    assert.throws(() => sinPisadas(pantalla, 'la de la pantalla, con la letra del PDF', letra));
+    sinPisadas(pdf, 'la del PDF', letra);
+    // Una letra que no es un número positivo es la de la pantalla
+    for (const rara of [0, -3, 'x', null, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.deepEqual(cintaDeMetricas(tramos, { gestion: 'externa', letra: rara }), pantalla, String(rara));
+    }
+  });
+
+  it('en las cuatro combinaciones y las dos gestiones, ningún rótulo sale del dibujo ni se pisa con otro, con la letra del PDF', () => {
+    for (const { gestion, estadistico, dias } of COMBINACIONES) {
+      const cual = `${gestion}, ${estadistico}, ${dias}`;
+      const cinta = delPdf(tramosReales(gestion, estadistico, dias), { gestion, dias, estadistico });
+      sinPisadas(cinta, cual, letra);
+      marcasSinTocarse(cinta, cual);
+      const { aviso } = REALES[gestion][estadistico][dias];
+      assert.ok(cinta.rotulos.some((r) => r.texto === `Aviso · ${aviso} ${unidadDe(aviso, dias)} antes`), cual);
+    }
+    // También con la cadena entera, cortada en otro tramo y con números enormes
+    for (const [tramos, gestion] of [
+      [[tramo('aviso', 28), tramo('tramite', 12), tramo('respuesta', 35), tramo('carga', 2)], 'externa'],
+      [[tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)], 'externa'],
+      [[tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 0)], 'interna'],
+      [[tramo('aviso', 27), tramo('produccion', 1e9), tramo('carga', 0)], 'interna'],
+      [[tramo('aviso', 1e9), tramo('produccion', 3), tramo('carga', 1e9)], 'interna']
+    ]) {
+      const cual = tramos.map((t) => t.cifra?.valor ?? 'sin cifra').join(', ');
+      const cinta = delPdf(tramos, { gestion });
+      sinPisadas(cinta, cual, letra);
+      marcasSinTocarse(cinta, cual);
+    }
+  });
+});
+
 describe('cintasDeLaVista', () => {
+  it('pasa la letra a las dos cintas', () => {
+    const vista = { circuito: {
+      externa: [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)],
+      interna: [tramo('aviso', 42), tramo('produccion', 56), tramo('carga', 1)]
+    } };
+    const conLetra = cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles', ...OPCIONES_CINTA_PDF });
+    assert.deepEqual(conLetra, {
+      externa: cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana', ...OPCIONES_CINTA_PDF }),
+      interna: cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias: 'habiles', estadistico: 'mediana', ...OPCIONES_CINTA_PDF })
+    });
+    assert.notDeepEqual(conLetra.externa, cintasDeLaVista(vista).externa);
+    assert.notDeepEqual(conLetra.interna, cintasDeLaVista(vista).interna);
+  });
+
   it('las dos cintas de una vista, cada una la de cintaDeMetricas con el circuito de su gestión; sin vista, las dos null', () => {
     const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
     for (const { estadistico, dias } of COMBINACIONES.filter((c) => c.gestion === 'externa')) {

@@ -1,6 +1,6 @@
 import PDFDocument from 'pdfkit';
 import pool from '../config/database.js';
-import { esFechaIso, hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
+import { esFechaIso, hoyArgentina, ahoraArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
 import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
 import { nombreCorto } from '../services/seguimientoReglas.js';
 import { renderEstadoGeneral, textoSinFecha } from '../services/reportesEstadoGeneralPdf.js';
@@ -253,7 +253,8 @@ export const reporteEstadoGeneral = async (req, res) => {
     })), { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=estado-general-${formatDate(new Date()).replace(/\//g, '-')}.pdf`);
+    // La fecha de hoy en Argentina, la del PDF (con new Date(), en un servidor en UTC, después de las 21 decía mañana)
+    res.setHeader('Content-Disposition', `attachment; filename=estado-general-${formatoCorto(hoy).replace(/\//g, '-')}.pdf`);
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);

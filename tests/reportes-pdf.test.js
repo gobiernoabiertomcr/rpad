@@ -1,16 +1,24 @@
-// Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js) y el
-// Estado general de los datasets. Puro: los datasets se arman acá, sin base de datos (los textos del reporte servido por la API, con
-// el set controlado, están en estados-api.test.js y reportes.test.js).
+// Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
+// Estado general de los datasets y Métricas del año. Puro: los datos se arman acá, sin base de datos (los textos del reporte servido
+// por la API, con el set controlado, están en estados-api.test.js, reportes.test.js y metricas-api.test.js).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
-import { nuevoReporte, agregarHoja, cerrarReporte, dibujarPildora, prepararTabla, LIMITE } from '../services/reportesPdfBase.js';
+import {
+  nuevoReporte, agregarHoja, cerrarReporte, dibujarPildora, prepararTabla, LIMITE, ENTRE, lugarPara, dibujarJuntos, prepararTitulo,
+  prepararPildora, prepararTarjetas, prepararRecuadro, prepararParrafo, prepararSeccion, ANCHO_DEL_RECUADRO
+} from '../services/reportesPdfBase.js';
 import { renderSeguimiento, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
+import { renderMetricasDelAnio, textoDeLaPildora } from '../services/reportesMetricasPdf.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
+import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
+import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { formatoLargo } from '../services/notasDigitalesCalendario.js';
+import { IZQUIERDA, CONTENIDO } from '../services/notasDigitalesAnexo.js';
 import { lineasPorHoja, textosPorHoja, contenidoPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 import { diagramacion, verificarDiagramacion, contiene } from './pdf-diagramacion.js';
 import { CASOS, CATALOGOS, HOY_DE_LOS_CASOS } from './seguimiento-casos.js';
+import { mapaDeLosCasos, HOY_DE_LAS_METRICAS, notaDgmit } from './metricas-casos.js';
 
 const HOY = '2026-10-24';
 const GENERADO = { momento: '2026-10-24 15:22:07', por: 'Usuario Ejemplo' };
@@ -271,4 +279,335 @@ describe('la base de los reportes', () => {
     const contenido = contenidoPorHoja(await cerrarReporte(otro, { generado: GENERADO, pieDe: PIE }))[0];
     assert.ok(contenido.includes(relleno('#FDF1CC')) && contenido.includes(relleno('#7A5200')), 'la píldora no está en sol');
   });
+});
+
+// La base para lo que no es una tabla (Ruling 22): los elementos se miden antes de dibujarlos, lugarPara pasa a una hoja nueva lo que
+// no entra antes del pie, dibujarJuntos no deja un título solo al final de una hoja, y el recuadro gris o con borde azul (spec 5.1)
+describe('la base de los reportes: medidas, lugar y recuadros', () => {
+  const PIE = (k, n) => `Prueba · Hoja ${k} de ${n}`;
+  const hojaDePrueba = (doc) => agregarHoja(doc, { derecha: 'Reporte de prueba', fecha: HOY });
+  const cerrar = (doc) => cerrarReporte(doc, { generado: GENERADO, pieDe: PIE });
+
+  it('lugarPara deja la y si el alto entra antes del pie y, si no, pasa a una hoja nueva con el encabezado de la última', async () => {
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    const tope = hojaDePrueba(doc);
+    assert.equal(lugarPara(doc, tope, 100), tope);
+    assert.equal(lugarPara(doc, LIMITE - 100, 100), LIMITE - 100);
+    // No entra: la hoja nueva empieza donde empezó la anterior
+    const nueva = lugarPara(doc, LIMITE - 99, 100);
+    assert.equal(nueva, tope);
+    // En una hoja sin nada dibujado, algo más alto que una hoja no agrega hojas en blanco
+    assert.equal(lugarPara(doc, nueva, 10000), nueva);
+    const hojas = lineasPorHoja(await cerrar(doc));
+    assert.equal(hojas.length, 2);
+    assert.ok(hojas[1].includes('Reporte de prueba') && hojas[1].includes(formatoLargo(HOY)), hojas[1].join(' | '));
+    assert.ok(hojas[1].includes('Prueba · Hoja 2 de 2'));
+  });
+
+  it('cada elemento mide lo que dibuja: devuelve la y de abajo más el aire de la base', async () => {
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    let y = hojaDePrueba(doc);
+    const elementos = [
+      prepararTitulo(doc, { rotulo: 'Prueba · rótulo', titulo: 'Un título largo que ocupa dos líneas en la hoja A4 con la letra de veinte puntos' }),
+      prepararTitulo(doc, { titulo: 'Sin rótulo' }),
+      prepararPildora(doc, 'Mediana en días hábiles · con todos los datasets'),
+      prepararPildora(doc, 'Calculado sin 1 dataset', { tono: 'sol' }),
+      prepararTarjetas(doc, [{ valor: 40, rotulo: 'avisos y notas a la DGMIT' }, { valor: 0, rotulo: 'datasets nuevos' }]),
+      prepararSeccion(doc, { titulo: 'Una sección', derecha: 'Lo de la derecha' }),
+      prepararParrafo(doc, 'Un párrafo de texto. '.repeat(30)),
+      prepararRecuadro(doc, { rotulo: 'Gestión externa', contenido: prepararParrafo(doc, 'Adentro del recuadro. '.repeat(10), { ancho: ANCHO_DEL_RECUADRO }) }),
+      prepararRecuadro(doc, { rotulo: 'Cómo se cuenta', contenido: prepararParrafo(doc, 'Texto', { ancho: ANCHO_DEL_RECUADRO }) }, { tono: 'gris' })
+    ];
+    for (const elemento of elementos) {
+      assert.ok(elemento.alto > 0, JSON.stringify(elemento));
+      const siguiente = elemento.dibujar(y);
+      assert.ok(Math.abs(siguiente - (y + elemento.alto + ENTRE)) < 1e-9, `${siguiente} ≠ ${y} + ${elemento.alto} + ${ENTRE}`);
+      y = siguiente;
+    }
+    assert.ok(y <= LIMITE, `${y} > ${LIMITE}`);
+    await cerrar(doc);
+    // Sin tarjetas, nada (alto 0)
+    assert.equal(prepararTarjetas(nuevoReporte({ titulo: 'x' }), []).alto, 0);
+  });
+
+  it('el recuadro azul lleva el filete del acento a la izquierda; el gris, no; el contenido va adentro y la diagramación cierra', async () => {
+    let azul;
+    let gris;
+    const { textos, bloques, acentos, lineas } = await diagramacion(async () => {
+      const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+      let y = hojaDePrueba(doc);
+      azul = prepararRecuadro(doc, { rotulo: 'Gestión externa · mediana en días hábiles', contenido: prepararParrafo(doc, 'Adentro del azul. '.repeat(20), { ancho: ANCHO_DEL_RECUADRO }) });
+      gris = prepararRecuadro(doc, { rotulo: 'Cómo se cuenta', contenido: prepararParrafo(doc, 'Adentro del gris.', { ancho: ANCHO_DEL_RECUADRO }) }, { tono: 'gris' });
+      y = azul.dibujar(y);
+      gris.dibujar(y);
+      await cerrar(doc);
+    });
+    verificarDiagramacion({ textos, bloques, lineas });
+    // Los dos recuadros, del ancho útil y con el alto que midieron
+    const recuadros = bloques.filter(b => Math.abs(b.x0 - IZQUIERDA) < 0.01 && Math.abs(b.x1 - (IZQUIERDA + CONTENIDO)) < 0.01);
+    assert.equal(recuadros.length, 2, JSON.stringify(bloques));
+    assert.ok(Math.abs((recuadros[0].y1 - recuadros[0].y0) - azul.alto) < 1e-9);
+    assert.ok(Math.abs((recuadros[1].y1 - recuadros[1].y0) - gris.alto) < 1e-9);
+    // El filete del acento, solo en el azul y de su alto
+    assert.equal(acentos.length, 1, JSON.stringify(acentos));
+    assert.ok(Math.abs(acentos[0].y0 - recuadros[0].y0) < 0.01 && Math.abs(acentos[0].y1 - recuadros[0].y1) < 0.01);
+    // El rótulo en mayúsculas y el contenido, adentro de su recuadro
+    for (const [texto, recuadro] of [['GESTIÓN EXTERNA · MEDIANA EN DÍAS HÁBILES', recuadros[0]], ['CÓMO SE CUENTA', recuadros[1]], ['Adentro del gris.', recuadros[1]]]) {
+      const t = textos.find(c => c.texto === texto);
+      assert.ok(t && contiene(recuadro, t), texto);
+    }
+    assert.ok(textos.filter(c => c.texto.startsWith('Adentro del azul')).every(t => contiene(recuadros[0], t)));
+  });
+
+  it('un título viaja con lo primero que le sigue: si no entran juntos, pasan juntos a la hoja siguiente', async () => {
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    const tope = hojaDePrueba(doc);
+    const seccion = prepararSeccion(doc, { titulo: 'La sección que no queda sola' });
+    const recuadro = prepararRecuadro(doc, { rotulo: 'El recuadro', contenido: prepararParrafo(doc, 'Lo que sigue al título.', { ancho: ANCHO_DEL_RECUADRO }) });
+    // La sección entra sola al pie de la hoja, pero no con el recuadro
+    const y = LIMITE - seccion.alto - 1;
+    const fin = dibujarJuntos(doc, y, [seccion, recuadro]);
+    assert.ok(Math.abs(fin - (tope + seccion.alto + ENTRE + recuadro.alto + ENTRE)) < 1e-9);
+    // Si entran, quedan donde están
+    const otro = nuevoReporte({ titulo: 'Reporte de prueba' });
+    const arriba = hojaDePrueba(otro);
+    const sola = prepararSeccion(otro, { titulo: 'Arriba' });
+    assert.ok(Math.abs(dibujarJuntos(otro, arriba, [sola]) - (arriba + sola.alto + ENTRE)) < 1e-9);
+    await cerrar(otro);
+    const hojas = lineasPorHoja(await cerrar(doc));
+    assert.equal(hojas.length, 2);
+    assert.ok(!hojas[0].includes('LA SECCIÓN QUE NO QUEDA SOLA'), hojas[0].join(' | '));
+    const i = hojas[1].indexOf('LA SECCIÓN QUE NO QUEDA SOLA');
+    assert.ok(i !== -1 && hojas[1].indexOf('EL RECUADRO') > i, hojas[1].join(' | '));
+  });
+
+  it('la tabla mide lo que tiene que entrar junto con lo de antes: el encabezado y la primera fila', () => {
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    hojaDePrueba(doc);
+    const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 1 }];
+    const una = prepararTabla(doc, { columnas, filas: [['uno', 'dos']] });
+    const dos = prepararTabla(doc, { columnas, filas: [['uno', 'dos'], ['tres', 'cuatro']] });
+    assert.ok(una.alto > 0);
+    assert.equal(dos.alto, una.alto);
+    assert.equal(prepararTabla(doc, { columnas, filas: [] }).alto, 0);
+  });
+});
+
+// =====================================================
+// Métricas del año (spec 2026-10-24-metricas-y-reportes, 5: lo mismo que la pestaña Métricas)
+// =====================================================
+
+const GENERADO_METRICAS = { momento: '2026-10-24 15:20:41', por: 'Usuario Ejemplo' };
+const renderMetricas = (datos) => renderMetricasDelAnio(datos, { generado: GENERADO_METRICAS });
+const tituloDe = (mapa, id) => [...mapa.values()].find(f => f.dataset.id === id)?.dataset?.titulo;
+
+// Las métricas de 2026 de los casos reales (tests/metricas-casos.js), como las arma GET /api/metricas en vivo (metricasDe), más la
+// combinación de los selectores con que se pidieron (lo que el PDF dice en su píldora)
+const metricasDeLosCasos = ({ estadistico = 'mediana', dias = 'habiles', sin = [], mapa = mapaDeLosCasos(), al = HOY_DE_LAS_METRICAS, ...resto } = {}) => {
+  const casos = casosDe(mapa, { hoy: al });
+  const opciones = { anio: 2026, al, sin };
+  const vista = vistaDe(casos, { ...opciones, estadistico, dias });
+  return {
+    anio: 2026, al, en_vivo: true, aviso_foto: null, anios: [2026], vista,
+    cinta: cintasDeLaVista(vista, { estadistico, dias }),
+    contexto: contextoDelAnio(mapa, opciones),
+    trabajo: trabajoDelAnio(mapa, casos, { ...opciones, estadistico }),
+    areas: areasYTemas(mapa, opciones),
+    sin_titulos: sin.map(id => tituloDe(mapa, id)).filter(Boolean),
+    estadistico, dias, ...resto
+  };
+};
+
+// Los casos reales con una nota DGMIT recibida por el área para Comercios habilitados por rubro (el 61, avisado y vencido): el tramo
+// de la DGMIT y el del área ya se cuentan
+const conNotaDgmit = () => {
+  const mapa = mapaDeLosCasos();
+  const fuentes = [...mapa.values()].find(f => f.dataset.id === 61);
+  fuentes.notasDgmit = [notaDgmit({ recibida: '2026-02-10', datasets: [{ id: 61, titulo: fuentes.dataset.titulo }] })];
+  return mapa;
+};
+
+// Un circuito con todo lo que puede decir una flecha (cifras grandes y orientativas, en curso, pendientes), para ver que entra
+const TRAMOS_A_MANO = {
+  aviso: ['Aviso anticipado', 'Del aviso al vencimiento', 'DDPC', false],
+  tramite: ['Trámite y entrega de la nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true],
+  respuesta: ['Respuesta del área', 'De la nota a la entrega', 'Área', false],
+  produccion: ['Producción del relevamiento', 'Del aviso a la entrega', 'DGMIT y DIT', true],
+  carga: ['Preparación y carga', 'De la entrega a la carga', 'DDPC', false]
+};
+const tramoAMano = (clave, valor, dias = 'corridos') => {
+  const [nombre, desdeHasta, responsable, dgmit] = TRAMOS_A_MANO[clave];
+  return {
+    clave, nombre, desde_hasta: desdeHasta, responsable, dgmit,
+    cifra: valor === 0
+      ? { valor: 0, texto: 'En el día', unidad: '', debajo: `promedio en días ${dias}`, ciclos: 3, ciclos_texto: '3 ciclos', en_el_dia: true, orientativo: true }
+      : { valor, texto: String(valor), unidad: unidadDe(valor, dias), debajo: 'promedio de 1234 ciclos', ciclos: 1234, ciclos_texto: '1234 ciclos', en_el_dia: false, orientativo: false },
+    vacio: null,
+    en_curso: ['respuesta', 'produccion'].includes(clave) ? { n: 1234, valor: 9876, texto: `1234 sin datos registrados todavía, hace 9876 ${unidadDe(9876, dias)} (promedio)` } : null,
+    pendientes: clave === 'tramite' ? 1234 : null,
+    pendientes_texto: clave === 'tramite' ? '1234 notas pendientes de carga' : null
+  };
+};
+const conCircuitoCompleto = () => {
+  const datos = metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos' });
+  datos.vista.circuito.externa = [tramoAMano('aviso', 1234), tramoAMano('tramite', 1), tramoAMano('respuesta', 4567), tramoAMano('carga', 0)];
+  datos.vista.circuito.interna = [tramoAMano('aviso', 41), tramoAMano('produccion', 999), tramoAMano('carga', 1)];
+  return datos;
+};
+
+// Un año cerrado: con su foto, o todavía sin ella (en vivo «al 31/12», con el aviso de la foto)
+const anioCerrado = (conFoto) => metricasDeLosCasos({
+  al: '2026-12-31', anios: [2026, 2027], en_vivo: !conFoto,
+  aviso_foto: conFoto ? null : 'La foto de 2026 se saca el 10/01/2027'
+});
+
+describe('Métricas del año con el diseño del anexo', () => {
+  it('el encabezado dice «Métricas del RPAD · 2026» y la fecha larga; el pie, «Métricas del RPAD · 2026 · Hoja k de N»', async () => {
+    const pdf = await renderMetricas(metricasDeLosCasos());
+    assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+    const hojas = lineasPorHoja(pdf);
+    assert.ok(hojas.length >= 4, `${hojas.length} hojas`);
+    hojas.forEach((lineas, k) => {
+      for (const t of ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Métricas del RPAD · 2026', formatoLargo('2026-10-24'),
+        'Generado el 24/10/2026 a las 15:20 por Usuario Ejemplo', `Métricas del RPAD · 2026 · Hoja ${k + 1} de ${hojas.length}`]) {
+        assert.ok(lineas.includes(t), `hoja ${k + 1}: falta "${t}" en ${lineas.join(' | ')}`);
+      }
+    });
+    // La primera hoja: el rótulo del año en curso, el título de la maqueta, los dos circuitos, los resultados y «Cómo se cuenta»
+    for (const t of ['MÉTRICAS · AÑO 2026, EN CURSO', 'GESTIÓN EXTERNA · MEDIANA EN DÍAS HÁBILES', 'GESTIÓN INTERNA · MEDIANA EN DÍAS HÁBILES',
+      'RESULTADOS DEL AÑO', 'CÓMO SE CUENTA']) {
+      assert.ok(hojas[0].includes(t), `falta "${t}" en ${hojas[0].join(' | ')}`);
+    }
+    assert.ok(hojas[0].join(' ').includes('El circuito, del aviso del RPAD a la carga en el portal'));
+    // Las secciones, en el orden de la pestaña: las cintas, el contexto y el trabajo, y las áreas y los temas
+    const todo = hojas.flat();
+    const orden = ['GESTIÓN EXTERNA · RECORRIDO TÍPICO', 'GESTIÓN INTERNA · RECORRIDO TÍPICO', 'ÍNDICE DE ACTUALIZACIÓN, MES A MES',
+      'ANTIGÜEDAD DE LOS VENCIDOS', 'EL TRABAJO DEL RPAD', 'POR MES', 'DOBLE VERIFICACIÓN', 'RANKING DE ÁREAS', 'DATASETS POR TEMA', 'DATASETS POR FRECUENCIA'];
+    const posiciones = orden.map(t => todo.indexOf(t));
+    assert.ok(posiciones.every(p => p !== -1), JSON.stringify(Object.fromEntries(orden.map((t, i) => [t, posiciones[i]]))));
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+    // Cada parte empieza en su hoja: las cintas en la 2, el contexto en la 3 y las áreas después
+    assert.ok(hojas[1].includes('GESTIÓN EXTERNA · RECORRIDO TÍPICO'));
+    assert.ok(hojas[2].includes('ÍNDICE DE ACTUALIZACIÓN, MES A MES'));
+    assert.ok(hojas.slice(3).some(lineas => lineas.includes('RANKING DE ÁREAS')));
+  });
+
+  it('la píldora dice la combinación y los destildados', async () => {
+    assert.equal(textoDeLaPildora({ estadistico: 'mediana', dias: 'habiles', sin_titulos: [] }), 'Mediana en días hábiles · con todos los datasets');
+    assert.equal(textoDeLaPildora({ estadistico: 'promedio', dias: 'corridos', sin_titulos: [] }), 'Promedio en días corridos · con todos los datasets');
+    assert.equal(textoDeLaPildora({ estadistico: 'mediana', dias: 'corridos', sin_titulos: ['Parque Automotor'] }),
+      'Mediana en días corridos · calculado sin 1 dataset: Parque Automotor');
+    assert.equal(textoDeLaPildora({ estadistico: 'promedio', dias: 'habiles', sin_titulos: ['Parque Automotor', 'Pauta Publicitaria'] }),
+      'Promedio en días hábiles · calculado sin 2 datasets: Parque Automotor, Pauta Publicitaria');
+    // Lo raro cae a lo de entrada, como en la API
+    assert.equal(textoDeLaPildora({}), 'Mediana en días hábiles · con todos los datasets');
+
+    // En el PDF: en la primera hoja, en el azul con todos y en el sol (la franja ámbar de la pestaña) con destildados
+    const conTodos = await renderMetricas(metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos' }));
+    assert.ok(lineasPorHoja(conTodos)[0].includes('Promedio en días corridos · con todos los datasets'));
+    assert.ok(!contenidoPorHoja(conTodos)[0].includes(relleno('#FDF1CC')), 'con todos, la píldora no va en el sol');
+    const sinDos = await renderMetricas(metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos', sin: [11, 10] }));
+    const hojas = lineasPorHoja(sinDos);
+    assert.ok(hojas[0].includes('Promedio en días corridos · calculado sin 2 datasets: Parque Automotor (Patentamiento), Pauta Publicitaria'),
+      hojas[0].slice(0, 12).join(' | '));
+    assert.ok(contenidoPorHoja(sinDos)[0].includes(relleno('#FDF1CC')), 'con destildados, la píldora va en el sol');
+    // Los rótulos de los circuitos dicen la combinación
+    assert.ok(hojas[0].includes('GESTIÓN EXTERNA · PROMEDIO EN DÍAS CORRIDOS'));
+    // Los casos destildados van en la hoja de las cintas, con su área (cada ciclo del dataset, una fila); sin destildados, no va
+    const segunda = hojas[1].join(' ');
+    assert.ok(hojas[1].some(l => /^LOS CASOS DESTILDADOS \(\d+\)$/.test(l)), hojas[1].join(' | '));
+    for (const t of ['Parque Automotor (Patentamiento)', 'Pauta Publicitaria']) assert.ok(segunda.includes(t), t);
+    assert.ok(!lineasPorHoja(conTodos).flat().some(l => l.startsWith('LOS CASOS DESTILDADOS')));
+  });
+
+  it('el circuito sin notas DGMIT dice «Todavía no hay notas DGMIT cargadas»', async () => {
+    const datos = metricasDeLosCasos();
+    const hojas = lineasPorHoja(await renderMetricas(datos));
+    const primera = hojas[0].join(' ');
+    const aviso = datos.vista.circuito.externa.find(t => t.clave === 'aviso').cifra;
+    assert.deepEqual([aviso.texto, aviso.unidad], ['27', 'días hábiles']);
+    // La DGMIT sin cifra y con los pendientes de carga, y el área que todavía no se puede contar (los textos del servidor)
+    for (const t of ['Todavía no hay notas DGMIT cargadas', '7 notas pendientes de carga', 'Sin datos todavía',
+      'Se empieza a contar cuando haya notas DGMIT cargadas']) {
+      assert.ok(primera.includes(t), `falta "${t}" en ${primera}`);
+    }
+    // Las otras flechas, con su cifra, su unidad y el estadístico con los ciclos (o «En el día» con los ciclos en el texto)
+    for (const t of ['27 días hábiles', aviso.debajo, 'En el día', 'mediana en días hábiles', 'Aviso anticipado',
+      'Preparación y carga', 'Producción del relevamiento', '1 sin datos registrados todavía, hace 206 días hábiles (mediana)',
+      'Se cuenta hasta que se registra la actualización.', 'con tan pocos casos, es orientativo']) {
+      assert.ok(primera.includes(t), `falta "${t}"`);
+    }
+    // La cinta de la externa se corta en la DGMIT, con el gris que lo dice
+    assert.ok(hojas[1].includes('La cinta se completa cuando haya notas DGMIT cargadas'), hojas[1].join(' | '));
+    assert.ok(hojas[1].includes('Aviso · 27 días hábiles antes'), hojas[1].join(' | '));
+    // Con una nota DGMIT cargada, el tramo de la DGMIT ya tiene su cifra
+    const conNota = lineasPorHoja(await renderMetricas(metricasDeLosCasos({ mapa: conNotaDgmit() })));
+    assert.ok(!conNota[0].join(' ').includes('Todavía no hay notas DGMIT cargadas'), conNota[0].join(' | '));
+    assert.ok(conNota[0].join(' ').includes('Trámite y entrega de la nota'));
+  });
+
+  it('las cintas del PDF salen del circuito, con las letras del PDF: no las de la pantalla ni las de la foto', async () => {
+    const datos = metricasDeLosCasos();
+    // Una foto guarda las cintas de la pantalla: el PDF no las usa, las rehace con el circuito
+    const sinCintas = await renderMetricas({ ...datos, cinta: { externa: null, interna: null } });
+    const hojas = lineasPorHoja(sinCintas);
+    for (const t of ['Aviso · 27 días hábiles antes', 'Aviso · 42 días hábiles antes', 'días hábiles respecto del vencimiento', 'vencimiento',
+      'La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real.', 'Aviso del RPAD']) {
+      assert.ok(hojas[1].includes(t), `falta "${t}" en ${hojas[1].join(' | ')}`);
+    }
+    // Los números del eje con una raya (Helvetica no tiene el signo menos: saldría «?»)
+    assert.ok(hojas[1].includes('–40'), hojas[1].join(' | '));
+    assert.ok(!hojas.flat().some(l => l.includes('?')), hojas.flat().filter(l => l.includes('?')).join(' | '));
+    // Con días corridos, la cinta lo dice
+    const corridos = lineasPorHoja(await renderMetricas(metricasDeLosCasos({ dias: 'corridos' })))[1];
+    assert.ok(corridos.includes('días corridos respecto del vencimiento'), corridos.join(' | '));
+  });
+
+  it('un año cerrado dice de dónde sale: de su foto, o en vivo al 31/12 con el aviso de la foto', async () => {
+    const conFoto = lineasPorHoja(await renderMetricas(anioCerrado(true)))[0];
+    assert.ok(conFoto.includes('MÉTRICAS · AÑO 2026, AL 31/12/2026'), conFoto.join(' | '));
+    assert.ok(conFoto.join(' ').includes('Sale de la foto del 31/12/2026, calculada con todos los datasets.'));
+    const sinFoto = lineasPorHoja(await renderMetricas(anioCerrado(false)))[0];
+    assert.ok(sinFoto.join(' ').includes('La foto de 2026 se saca el 10/01/2027'), sinFoto.join(' | '));
+  });
+
+  it('el contexto, el trabajo del RPAD y las áreas, con los textos del servidor', async () => {
+    const datos = metricasDeLosCasos();
+    const todo = lineasPorHoja(await renderMetricas(datos)).flat();
+    const unido = todo.join(' ');
+    const { contexto, trabajo, areas } = datos;
+    for (const t of [contexto.indice.at(-1).texto, contexto.antiguedad.textos.titulo, contexto.antiguedad.textos.inicio, trabajo.textos.auditoria,
+      'De la propuesta a la revisión, en tiempo corrido.', ...Object.values(trabajo.textos.totales)]) {
+      assert.ok(unido.includes(t), `falta "${t}"`);
+    }
+    // Cada área del ranking, y los temas y las frecuencias
+    for (const { area } of areas.ranking) assert.ok(unido.includes(area), area);
+    for (const [nombre] of [...areas.temas, ...areas.frecuencias]) assert.ok(todo.includes(nombre), nombre);
+    // Los meses del trabajo, en la tabla por mes
+    for (const mes of trabajo.textos.meses) assert.ok(todo.includes(mes), mes);
+  });
+
+  const variantes = [
+    ['los casos reales, mediana y días hábiles', () => metricasDeLosCasos()],
+    ['mediana y días corridos', () => metricasDeLosCasos({ dias: 'corridos' })],
+    ['promedio y días hábiles', () => metricasDeLosCasos({ estadistico: 'promedio' })],
+    ['promedio y días corridos, con dos destildados', () => metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos', sin: [11, 10] })],
+    ['con una nota DGMIT', () => metricasDeLosCasos({ mapa: conNotaDgmit() })],
+    ['un circuito con todos los textos y cifras de cuatro cifras', conCircuitoCompleto],
+    ['un año sin ningún caso (la base vacía)', () => metricasDeLosCasos({ mapa: new Map() })],
+    ['un año cerrado con su foto', () => anioCerrado(true)],
+    ['un año cerrado sin foto todavía', () => anioCerrado(false)]
+  ];
+  for (const [titulo, armar] of variantes) {
+    it(`nada se pisa: ${titulo}`, async () => {
+      const datos = armar();
+      verificarDiagramacion(await diagramacion(() => renderMetricas(datos)));
+      const pdf = await renderMetricas(datos);
+      assert.ok(todasDelTamano(pdf, HOJA_A4));
+      const hojas = lineasPorHoja(pdf);
+      hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Métricas del RPAD · 2026 · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+      // Nada dice NaN, null ni undefined
+      assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().filter(l => /NaN|null|undefined/.test(l)).join(' | '));
+    });
+  }
 });

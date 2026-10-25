@@ -1,6 +1,7 @@
 // La base de los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5.1), con el lenguaje de los anexos de las Notas Digitales y de
 // la hoja del Seguimiento (services/notasDigitalesAnexo.js y services/seguimientoPdf.js): A4, Helvetica, márgenes de 15 mm, su
-// paleta monocromática con el acento azul, DocumentoNota (todo texto pasa por textoParaPdf) y el mismo pie que el Seguimiento.
+// paleta monocromática con el acento azul, DocumentoNota (todo texto pasa por textoParaPdf) y el encabezado y el pie del Seguimiento
+// (dibujarEncabezado y dibujarPie, con su LINEA_DEL_PIE: la base no los copia).
 // Un reporte se arma así:
 //   const doc = nuevoReporte({ titulo });
 //   let y = agregarHoja(doc, { derecha: 'Estado general de los datasets', fecha: hoy });
@@ -12,18 +13,25 @@
 // Cada dibujante recibe la y donde empieza (desde el borde superior, en puntos) y devuelve la y donde puede empezar lo que sigue, con
 // el aire de la base (ENTRE) debajo. Nada pasa de LIMITE, el aire sobre la línea del pie: el pie se dibuja al cerrar, cuando ya se
 // sabe cuántas hojas hay.
+// Lo que no es una tabla se mide antes de dibujarlo (Ruling 22: que nada pise el pie ni deje un título solo al final de una hoja):
+// cada prepararX devuelve { alto, dibujar(y) → y }, con el alto que va a ocupar (sin el aire de abajo), y
+//   y = lugarPara(doc, y, alto);                       // si no entra antes de LIMITE, una hoja nueva con el mismo encabezado
+//   y = dibujarJuntos(doc, y, [seccion, recuadro]);    // un título viaja con lo primero que le sigue
+// Los elementos: prepararTitulo, prepararPildora, prepararTarjetas, prepararSeccion (la cabeza de una sección del Seguimiento),
+// prepararParrafo y prepararRecuadro (gris, o con el borde azul a la izquierda: spec 5.1), que lleva adentro cualquier otro elemento
+// preparado con el ancho ANCHO_DEL_RECUADRO (su dibujar recibe además la x: dibujar(y, x)). La tabla mide en `alto` lo que tiene que
+// entrar con lo de antes: su encabezado y su primera fila (después corta de hoja sola).
 import { DocumentoNota } from './notasDigitalesPdf.js';
-import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
+import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 import {
-  COLOR, MARGEN, IZQUIERDA, ABAJO, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE,
-  desdeBase, ajustar, escribir, renglon, filete, etiquetaDeCabecera
+  COLOR, IZQUIERDA, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE, ajustar, escribir, renglon, rotulo, filete, etiquetaDeCabecera
 } from './notasDigitalesAnexo.js';
-import { dibujarPie } from './seguimientoPdf.js';
+import { dibujarEncabezado, dibujarPie, dibujarCabezaDeSeccion, LINEA_DEL_PIE } from './seguimientoPdf.js';
 
-// Letras (en puntos): las del encabezado, la etiqueta, el título y el pie son las del Seguimiento
+// Letras (en puntos): la etiqueta y el título son las del Seguimiento; la de una sección, la de su texto de la derecha
 const LETRA = {
-  encabezado: 7.5, reporte: 9.5, etiqueta: 7.5, titulo: 20, pildora: 8.4, valor: 16, rotuloTarjeta: 7,
-  columna: 7, celda: 8, insignia: 7, pie: 7.5
+  etiqueta: 7.5, titulo: 20, pildora: 8.4, valor: 16, rotuloTarjeta: 7, columna: 7, celda: 8, insignia: 7, seccion: 7.6, parrafo: 8,
+  rotuloRecuadro: 6.6
 };
 
 // El aire entre un elemento y el que sigue
@@ -31,8 +39,7 @@ export const ENTRE = 10;
 // Del filete del encabezado a lo primero de la hoja, y de la etiqueta al título (los del Seguimiento)
 const BAJO_ENCABEZADO = 12;
 const SOBRE_TITULO = 15;
-// La línea del pie, donde la dibuja dibujarPie (seguimientoPdf.js), y el aire que queda libre arriba de ella
-const LINEA_DEL_PIE = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie) - 8;
+// El aire que queda libre arriba de la línea del pie (LINEA_DEL_PIE, la de dibujarPie del Seguimiento)
 const SOBRE_PIE = 6;
 // Lo más abajo que llega lo que se dibuja en una hoja
 export const LIMITE = LINEA_DEL_PIE - SOBRE_PIE;
@@ -65,6 +72,13 @@ const TABLA = { relleno: 3, arriba: 5, abajo: 4.5 };
 const LINEAS_DEL_ENCABEZADO = 2;
 const LINEAS_POR_CELDA = 4;
 const INSIGNIA = { relleno: 4.5, alto: 12 };
+// El recuadro (como el «Datos solicitados» y la descripción del anexo): el fondo gris o, con el borde azul, el acento suave con el
+// filete del acento a la izquierda (`filete` de ancho); el rótulo arriba y el contenido debajo, con estos aires (en puntos)
+const RECUADRO = { izquierda: 14, derecha: 12, arriba: 8, abajo: 8, bajoRotulo: 5, radio: 6, filete: 4 };
+// El ancho de lo que va adentro de un recuadro
+export const ANCHO_DEL_RECUADRO = CONTENIDO - RECUADRO.izquierda - RECUADRO.derecha;
+// Un párrafo va en hasta tantas líneas (si no entra, se corta con "…"): ninguno es más alto que una hoja
+const LINEAS_DEL_PARRAFO = 40;
 
 const OJO = ASCENDENTE + DESCENDENTE;
 const suma = (valores) => valores.reduce((a, b) => a + b, 0);
@@ -76,8 +90,9 @@ export const fechaCorta = (iso) => (esFechaIso(iso) ? formatoCorto(iso) : '—')
 // El documento y sus hojas
 // =====================================================
 
-// Lo que la base recuerda de cada documento: el PDF que se va juntando, el encabezado de la última hoja (la tabla lo repite cuando
-// corta de hoja) y las hojas que agregó agregarHoja (las que llevan el pie al cerrar)
+// Lo que la base recuerda de cada documento: el PDF que se va juntando, el encabezado de la última hoja (la tabla y lugarPara lo
+// repiten cuando pasan a otra hoja), la y donde empieza lo de esa hoja (`tope`) y las hojas que agregó agregarHoja (las que llevan el
+// pie al cerrar)
 const REPORTES = new WeakMap();
 
 // Un reporte nuevo, sin hojas: A4 explícito (DocumentoNota no tiene tamaño, y sin él saldría en carta), márgenes de PDFKit en 0 (la
@@ -96,38 +111,20 @@ export const nuevoReporte = ({ titulo }) => {
   });
   // (si el reporte falla antes de cerrarse, nadie espera el PDF: el error ya lo recibe quien lo dibuja)
   terminado.catch(() => {});
-  REPORTES.set(doc, { terminado, hoja: null, hojas: [] });
+  REPORTES.set(doc, { terminado, hoja: null, tope: null, hojas: [] });
   return doc;
 };
 
-// El encabezado del anexo: a la izquierda la Dirección y la Municipalidad; a la derecha `derecha` (el nombre del reporte) y la fecha
-// larga, sobre una línea fina con un tramo del acento. Devuelve la y donde termina.
-const dibujarEncabezado = (doc, derecha, fecha) => {
-  const mitad = CONTENIDO / 2;
-  const base1 = MARGEN + ASCENDENTE * LETRA.reporte;
-  const base2 = base1 + 11.5;
-  renglon(doc, 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', IZQUIERDA, desdeBase(base1, LETRA.encabezado),
-    { ancho: mitad, tamano: LETRA.encabezado, fuente: NEGRITA, color: COLOR.tinta, espaciado: 0.6 });
-  renglon(doc, 'Municipalidad de Comodoro Rivadavia', IZQUIERDA, desdeBase(base2, LETRA.encabezado),
-    { ancho: mitad, tamano: LETRA.encabezado, color: COLOR.gris });
-  renglon(doc, derecha, IZQUIERDA + mitad, desdeBase(base1, LETRA.reporte), { ancho: mitad, tamano: LETRA.reporte, fuente: NEGRITA, align: 'right' });
-  renglon(doc, esFechaIso(fecha) ? formatoLargo(fecha) : '', IZQUIERDA + mitad, desdeBase(base2, LETRA.encabezado),
-    { ancho: mitad, tamano: LETRA.encabezado, color: COLOR.gris, align: 'right' });
-  const yLinea = base2 + 9;
-  filete(doc, IZQUIERDA, yLinea, CONTENIDO);
-  doc.rect(IZQUIERDA, yLinea - 1, 28, 2).fill(COLOR.acento);
-  return yLinea + 1;
-};
-
-// Una hoja nueva con el encabezado: `derecha`, el nombre del reporte; `fecha`, 'AAAA-MM-DD' (va como fecha larga). Devuelve la y donde
-// empieza lo que va en la hoja.
+// Una hoja nueva con el encabezado del Seguimiento (dibujarEncabezado): `derecha`, el nombre del reporte; `fecha`, 'AAAA-MM-DD' (va
+// como fecha larga). Devuelve la y donde empieza lo que va en la hoja.
 export const agregarHoja = (doc, { derecha, fecha }) => {
   const reporte = REPORTES.get(doc);
   doc.addPage();
   const { start, count } = doc.bufferedPageRange();
   reporte.hoja = { derecha, fecha };
   reporte.hojas.push(start + count - 1);
-  return dibujarEncabezado(doc, derecha, fecha) + BAJO_ENCABEZADO;
+  reporte.tope = dibujarEncabezado(doc, fecha, derecha) + BAJO_ENCABEZADO;
+  return reporte.tope;
 };
 
 // Cierra el reporte: el pie en cada hoja que agregó agregarHoja (el del Seguimiento: «Generado el dd/mm/aaaa a las hh:mm por <por>» a
@@ -145,46 +142,77 @@ export const cerrarReporte = async (doc, { generado, pieDe }) => {
   return reporte.terminado;
 };
 
+// La y donde va algo de `alto` puntos que empezaría en y: y, si entra antes de LIMITE; si no, la de una hoja nueva con el encabezado de
+// la última (agregarHoja). En una hoja en la que todavía no se dibujó nada (y es su tope) no agrega otra: algo más alto que una hoja no
+// deja hojas en blanco.
+export const lugarPara = (doc, y, alto) => {
+  const reporte = REPORTES.get(doc);
+  if (y + alto <= LIMITE || y <= reporte.tope) return y;
+  return agregarHoja(doc, reporte.hoja);
+};
+
+// El alto de `elementos` (preparados) dibujados uno debajo del otro, con el aire de la base entre cada dos
+export const altoJuntos = (elementos) => suma(elementos.map(e => e.alto)) + ENTRE * Math.max(0, elementos.length - 1);
+
+// Dibuja `elementos` (preparados) uno debajo del otro desde y, en la misma hoja: si juntos no entran, pasan juntos a una hoja nueva
+// (lugarPara). Así un título (o la cabeza de una sección) nunca queda solo al final de una hoja: va con lo primero que le sigue.
+// Devuelve la y de lo que sigue.
+export const dibujarJuntos = (doc, y, elementos) => {
+  let yElemento = lugarPara(doc, y, altoJuntos(elementos));
+  for (const elemento of elementos) yElemento = elemento.dibujar(yElemento);
+  return yElemento;
+};
+
 // =====================================================
 // Elementos
 // =====================================================
 
 // El rótulo chico en mayúsculas espaciadas, en el acento (como la etiqueta del anexo: «ESTADO GENERAL · AL 24/10/2026»; sin rótulo,
 // no va) y el título grande en negrita, en hasta dos líneas (si no entra, se corta con "…").
-export const dibujarTitulo = (doc, { rotulo, titulo }, y) => {
-  let yTitulo = y;
-  if (rotulo) {
-    etiquetaDeCabecera(doc, String(rotulo).toUpperCase(), IZQUIERDA, y, { ancho: CONTENIDO, tamano: LETRA.etiqueta });
-    yTitulo += SOBRE_TITULO;
-  }
+export const prepararTitulo = (doc, { rotulo: textoDelRotulo, titulo }) => {
+  const sobre = textoDelRotulo ? SOBRE_TITULO : 0;
   const opciones = (t) => ({ lineGap: -0.075 * t });
   const ajuste = ajustar(doc, titulo ?? '', { ancho: CONTENIDO, lineas: 2, max: LETRA.titulo, min: LETRA.titulo, fuente: NEGRITA, opciones });
-  escribir(doc, ajuste, IZQUIERDA, yTitulo, COLOR.tinta);
-  return yTitulo + ajuste.alto + ENTRE;
+  const alto = sobre + ajuste.alto;
+  return {
+    alto,
+    dibujar: (y) => {
+      if (textoDelRotulo) etiquetaDeCabecera(doc, String(textoDelRotulo).toUpperCase(), IZQUIERDA, y, { ancho: CONTENIDO, tamano: LETRA.etiqueta });
+      escribir(doc, ajuste, IZQUIERDA, y + sobre, COLOR.tinta);
+      return y + alto + ENTRE;
+    }
+  };
 };
+export const dibujarTitulo = (doc, datos, y) => prepararTitulo(doc, datos).dibujar(y);
 
 // La píldora (el indicador de estado del anexo): un punto y el texto en negrita, en una línea (si no entra, se corta con "…").
 // `tono`: 'azul' (el acento) o 'sol' (un aviso).
-export const dibujarPildora = (doc, texto, y, { tono = 'azul' } = {}) => {
+export const prepararPildora = (doc, texto, { tono = 'azul' } = {}) => {
   const { fondo, texto: color } = TONOS[tono] ?? TONOS.azul;
   const tamano = LETRA.pildora;
   const alto = Math.round(tamano * 2.35);
   const relleno = alto * 0.55;
   doc.font(NEGRITA).fontSize(tamano);
   const anchoTexto = Math.min(CONTENIDO - 3 * relleno, doc.widthOfString(String(texto)) + 2);
-  doc.roundedRect(IZQUIERDA, y, anchoTexto + 2.6 * relleno, alto, alto / 2).fill(fondo);
-  doc.circle(IZQUIERDA + relleno, y + alto / 2, tamano * 0.3).fill(color);
-  // Las mayúsculas, centradas en el alto de la píldora
-  renglon(doc, String(texto), IZQUIERDA + 1.75 * relleno, y + (alto - ASCENDENTE * tamano) / 2,
-    { ancho: anchoTexto, tamano, fuente: NEGRITA, color });
-  return y + alto + ENTRE;
+  return {
+    alto,
+    dibujar: (y) => {
+      doc.roundedRect(IZQUIERDA, y, anchoTexto + 2.6 * relleno, alto, alto / 2).fill(fondo);
+      doc.circle(IZQUIERDA + relleno, y + alto / 2, tamano * 0.3).fill(color);
+      // Las mayúsculas, centradas en el alto de la píldora
+      renglon(doc, String(texto), IZQUIERDA + 1.75 * relleno, y + (alto - ASCENDENTE * tamano) / 2,
+        { ancho: anchoTexto, tamano, fuente: NEGRITA, color });
+      return y + alto + ENTRE;
+    }
+  };
 };
+export const dibujarPildora = (doc, texto, y, opciones) => prepararPildora(doc, texto, opciones).dibujar(y);
 
 // Una fila de tarjetas que ocupa el ancho útil: en cada una, el valor grande en negrita y debajo su rótulo en gris (el valor se
-// dibuja antes que el rótulo). `tarjetas`: [{ valor, rotulo }].
-export const dibujarTarjetas = (doc, tarjetas, y) => {
+// dibuja antes que el rótulo). `tarjetas`: [{ valor, rotulo }]. Sin tarjetas, nada (alto 0).
+export const prepararTarjetas = (doc, tarjetas) => {
   const lista = Array.isArray(tarjetas) ? tarjetas : [];
-  if (lista.length === 0) return y;
+  if (lista.length === 0) return { alto: 0, dibujar: (y) => y };
   const { separacion, relleno, entre, abajo, radio } = TARJETA;
   const ancho = (CONTENIDO - separacion * (lista.length - 1)) / lista.length;
   const anchoTexto = ancho - 2 * relleno;
@@ -193,16 +221,73 @@ export const dibujarTarjetas = (doc, tarjetas, y) => {
   }));
   const yRotulo = relleno + OJO * LETRA.valor + entre;
   const alto = yRotulo + Math.max(...rotulos.map(r => r.alto)) + abajo;
-  lista.forEach((tarjeta, i) => {
-    const x = IZQUIERDA + i * (ancho + separacion);
-    doc.save();
-    doc.lineWidth(0.8).strokeColor(COLOR.linea);
-    doc.roundedRect(x, y, ancho, alto, radio).stroke();
-    doc.restore();
-    renglon(doc, String(tarjeta.valor ?? ''), x + relleno, y + relleno, { ancho: anchoTexto, tamano: LETRA.valor, fuente: NEGRITA });
-    escribir(doc, rotulos[i], x + relleno, y + yRotulo, COLOR.gris);
-  });
-  return y + alto + ENTRE;
+  return {
+    alto,
+    dibujar: (y) => {
+      lista.forEach((tarjeta, i) => {
+        const x = IZQUIERDA + i * (ancho + separacion);
+        doc.save();
+        doc.lineWidth(0.8).strokeColor(COLOR.linea);
+        doc.roundedRect(x, y, ancho, alto, radio).stroke();
+        doc.restore();
+        renglon(doc, String(tarjeta.valor ?? ''), x + relleno, y + relleno, { ancho: anchoTexto, tamano: LETRA.valor, fuente: NEGRITA });
+        escribir(doc, rotulos[i], x + relleno, y + yRotulo, COLOR.gris);
+      });
+      return y + alto + ENTRE;
+    }
+  };
+};
+export const dibujarTarjetas = (doc, tarjetas, y) => prepararTarjetas(doc, tarjetas).dibujar(y);
+
+// La cabeza de una sección, la del Seguimiento (dibujarCabezaDeSeccion): el título en mayúsculas en el acento y, a la derecha y en la
+// misma línea, `derecha` en gris (si no entra en su media hoja, se corta con "…").
+export const prepararSeccion = (doc, { titulo, derecha = '' }) => {
+  const alto = OJO * LETRA.seccion;
+  return {
+    alto,
+    dibujar: (y) => {
+      dibujarCabezaDeSeccion(doc, String(titulo ?? ''), derecha ? String(derecha) : '', y);
+      return y + alto + ENTRE;
+    }
+  };
+};
+
+// Un párrafo: `texto` en `ancho` (el útil, o ANCHO_DEL_RECUADRO adentro de un recuadro), con su letra, en hasta `lineas` líneas (si no
+// entra, se corta con "…"). `dibujar(y, x)`: x, por defecto, el margen izquierdo.
+export const prepararParrafo = (doc, texto, { ancho = CONTENIDO, tamano = LETRA.parrafo, fuente = NORMAL, color = COLOR.gris, lineas = LINEAS_DEL_PARRAFO } = {}) => {
+  const ajuste = ajustar(doc, String(texto ?? ''), { ancho, lineas, max: tamano, min: tamano, fuente });
+  return {
+    alto: ajuste.alto,
+    dibujar: (y, x = IZQUIERDA) => {
+      escribir(doc, ajuste, x, y, color);
+      return y + ajuste.alto + ENTRE;
+    }
+  };
+};
+
+// El recuadro (spec 5.1), del ancho útil: `tono` 'azul' (el acento suave con el filete del acento a la izquierda, como la descripción
+// del anexo) o 'gris' (el fondo gris, como «Qué se solicita»); adentro, el rótulo en mayúsculas (sin rótulo, no va) y `contenido`, un
+// elemento preparado con el ancho ANCHO_DEL_RECUADRO ({ alto, dibujar(y, x) }). No corta de hoja: va entero (lugarPara).
+export const prepararRecuadro = (doc, { rotulo: textoDelRotulo = '', contenido = null }, { tono = 'azul' } = {}) => {
+  const azul = tono !== 'gris';
+  const altoRotulo = textoDelRotulo ? OJO * LETRA.rotuloRecuadro + RECUADRO.bajoRotulo : 0;
+  const alto = RECUADRO.arriba + altoRotulo + (contenido?.alto ?? 0) + RECUADRO.abajo;
+  return {
+    alto,
+    dibujar: (y) => {
+      doc.save();
+      doc.roundedRect(IZQUIERDA, y, CONTENIDO, alto, RECUADRO.radio).clip();
+      doc.rect(IZQUIERDA, y, CONTENIDO, alto).fill(azul ? COLOR.acentoSuave : COLOR.fondo);
+      if (azul) doc.rect(IZQUIERDA, y, RECUADRO.filete, alto).fill(COLOR.acento);
+      doc.restore();
+      const x = IZQUIERDA + RECUADRO.izquierda;
+      if (textoDelRotulo) {
+        rotulo(doc, textoDelRotulo, x, y + RECUADRO.arriba, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.rotuloRecuadro, color: azul ? COLOR.acento : COLOR.gris });
+      }
+      contenido?.dibujar(y + RECUADRO.arriba + altoRotulo, x);
+      return y + alto + ENTRE;
+    }
+  };
 };
 
 // La insignia de un estado dentro de su celda: el texto en negrita sobre el fondo del estado, en una línea (si no entra, se corta
@@ -228,8 +313,9 @@ const prepararInsignia = (doc, texto, colores, ancho) => {
 // - filas: [[texto de cada celda]]; cada celda va en hasta LINEAS_POR_CELDA líneas (si no entra, se corta con "…").
 // - estados (opcional): uno por fila, la clave de INSIGNIAS de esa fila; con una, la última celda se dibuja como la insignia de ese
 //   estado (sin estado, o con uno que no está en INSIGNIAS, como texto).
-// Devuelve { dibujar(y) → y }. El encabezado y la primera fila nunca se separan; si una fila no entra en la hoja, sigue en una hoja
-// nueva (con el encabezado de la última que agregó agregarHoja) y repite el encabezado de la tabla. Sin filas no dibuja nada.
+// Devuelve { alto, dibujar(y) → y }. El encabezado y la primera fila nunca se separan (`alto` es lo que ocupan: lo que tiene que entrar
+// junto con lo de antes, por ejemplo con dibujarJuntos); si una fila no entra en la hoja, sigue en una hoja nueva (con el encabezado de
+// la última que agregó agregarHoja) y repite el encabezado de la tabla. Sin filas no dibuja nada (alto 0).
 export const prepararTabla = (doc, { columnas, filas, estados = [] }) => {
   const pesos = columnas.map(c => (Number(c.ancho) > 0 ? Number(c.ancho) : 1));
   const anchos = pesos.map(p => (CONTENIDO * p) / suma(pesos));
@@ -262,6 +348,7 @@ export const prepararTabla = (doc, { columnas, filas, estados = [] }) => {
   };
 
   return {
+    alto: preparadas.length === 0 ? 0 : altoEncabezado + preparadas[0].alto,
     dibujar: (y) => {
       if (preparadas.length === 0) return y;
       const { hoja } = REPORTES.get(doc);

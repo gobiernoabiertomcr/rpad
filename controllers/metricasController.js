@@ -1,12 +1,16 @@
+import pool from '../config/database.js';
 import { fuentesDe } from '../services/seguimientoDatos.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas } from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { claveDeLaVista, leerFoto, aniosConFoto as leerAniosConFoto } from '../services/metricasFoto.js';
 import { opcionesDeMetricas, aniosDeMetricas } from '../services/metricasOpciones.js';
-import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
+import { nombreCorto, disposicionDeAdjunto } from '../services/seguimientoReglas.js';
+import { renderMetricasDelAnio } from '../services/reportesMetricasPdf.js';
 
 // Métricas (spec 2026-10-24-metricas-y-reportes, 1.5 a 1.7, 2.3 y 3): GET /api/metricas devuelve todo lo que dibuja la pestaña
-// Métricas, de solo lectura y para todos los roles con sesión (authMiddleware, sin adminOnly). El servidor calcula y la página dibuja:
+// Métricas, de solo lectura y para todos los roles con sesión (authMiddleware, sin adminOnly), y GET /api/metricas/pdf, lo mismo en el
+// PDF «Métricas del año» (services/reportesMetricasPdf.js). El servidor calcula y la página dibuja:
 // las opciones del pedido y qué años se ven y cómo están en services/metricasOpciones.js, las reglas en services/metricasReglas.js,
 // la cinta en services/metricasCinta.js y la foto del 31/12 en services/metricasFoto.js. El año en curso se calcula en vivo, al día de
 // hoy; un año cerrado sale de su foto, que no se recalcula nunca (ni se destilda: se calculó con todos); uno cerrado que todavía no
@@ -15,6 +19,7 @@ import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 
 const SIN_METRICAS = { success: false, error: 'No hay métricas de ese año' };
 const ERROR_AL_OBTENER = { success: false, error: 'Error al obtener las métricas' };
+const ERROR_AL_GENERAR_PDF = { success: false, error: 'Error al generar el PDF de las métricas' };
 
 // Los títulos de los destildados que existen, en el orden pedido (para «Calculado sin 1 dataset: Parque Automotor.»)
 const titulosDe = (fuentesPorDataset, sin) => sin.map((id) => fuentesPorDataset.get(id)?.dataset?.titulo)
@@ -61,7 +66,11 @@ const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
 //   vencidos (antiguedadDeVencidos) y los estados de `al` (estadosAl); trabajo: el del RPAD con el estadístico elegido
 //   (trabajoDelAnio); areas: areasYTemas;
 // - sin_titulos: los títulos de los destildados que existen, en el orden pedido ([] si no hay, y siempre en un año con foto).
-export const metricasDe = async (query, { hoy = hoyArgentina() } = {}) => {
+export const metricasDe = async (query, { hoy = hoyArgentina() } = {}) => (await metricasConOpciones(query, { hoy }))?.data ?? null;
+
+// Lo de metricasDe (`data`) y las opciones con que se calculó (`opciones`, las de opcionesDeMetricas: el PDF dice en su píldora el
+// estadístico y los días), o null si ese año no tiene métricas
+const metricasConOpciones = async (query, { hoy }) => {
   const aniosConFoto = await leerAniosConFoto();
   const opciones = opcionesDeMetricas(query, { hoy, aniosConFoto });
   if (opciones === null) return null;
@@ -69,10 +78,10 @@ export const metricasDe = async (query, { hoy = hoyArgentina() } = {}) => {
     anio: opciones.anio, al: opciones.al, en_vivo: opciones.en_vivo, aviso_foto: opciones.aviso_foto,
     anios: aniosDeMetricas({ hoy })
   };
-  if (opciones.en_vivo) return { ...periodo, ...enVivo(await fuentesDe(null), opciones) };
+  if (opciones.en_vivo) return { opciones, data: { ...periodo, ...enVivo(await fuentesDe(null), opciones) } };
   const foto = await leerFoto(opciones.anio);
   if (foto === null) return null;
-  return { ...periodo, ...deLaFoto(foto, opciones) };
+  return { opciones, data: { ...periodo, ...deLaFoto(foto, opciones) } };
 };
 
 // GET /api/metricas?anio=&estadistico=&dias=&gestion=&sin=: lo de metricasDe. Un año sin métricas da 404 en JSON
@@ -84,5 +93,29 @@ export const verMetricas = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener las métricas:', error);
     res.status(500).json(ERROR_AL_OBTENER);
+  }
+};
+
+// GET /api/metricas/pdf?anio=&estadistico=&dias=&sin=: el PDF «Métricas del año» con lo mismo que GET /api/metricas para la misma
+// consulta (metricasConOpciones: un año con foto sale de la foto), la combinación elegida y lo destildado en su píldora, y el nombre
+// corto de quien lo genera y la hora (argentina) en el pie. Un año sin métricas da el mismo 404 en JSON. El archivo se llama
+// «Metricas-RPAD-AAAA.pdf» (disposicionDeAdjunto lo deja apto para el encabezado HTTP).
+export const descargarMetricasPdf = async (req, res) => {
+  try {
+    // Un solo instante para el pie y para "hoy" (que no queden en días distintos a la medianoche)
+    const momento = ahoraArgentina();
+    const calculadas = await metricasConOpciones(req.query, { hoy: momento.slice(0, 10) });
+    if (calculadas === null) return res.status(404).json(SIN_METRICAS);
+    const { opciones, data } = calculadas;
+    const [[usuario]] = await pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]);
+    const pdf = await renderMetricasDelAnio({ ...data, estadistico: opciones.estadistico, dias: opciones.dias }, {
+      generado: { momento, por: nombreCorto(usuario?.nombre_completo) }
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Metricas-RPAD-${data.anio}.pdf`));
+    res.send(pdf);
+  } catch (error) {
+    console.error('Error al generar el PDF de las métricas:', error);
+    res.status(500).json(ERROR_AL_GENERAR_PDF);
   }
 };

@@ -110,7 +110,7 @@ import {
   deleteHitoArchivo
 } from '../controllers/gestionController.js';
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
-import { verMetricas } from '../controllers/metricasController.js';
+import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
 import { uploadProyectoMiddleware, uploadHitoMiddleware } from '../config/upload.js';
 
@@ -258,6 +258,7 @@ router.get('/seguimiento/:id', authMiddleware, verSeguimiento);
 // Métricas (protegidas, para todos los roles con sesión: spec 2026-10-24-metricas-y-reportes, 2.3)
 // =====================================================
 router.get('/metricas', authMiddleware, verMetricas);
+router.get('/metricas/pdf', authMiddleware, descargarMetricasPdf);
 
 // =====================================================
 // Notas DGMIT (protegidas: administración y el colaborador; corregir y anular, quien la cargó o administración)

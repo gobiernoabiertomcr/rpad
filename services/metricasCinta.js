@@ -3,9 +3,9 @@
 // del vencimiento, con todo lo que después dibujan la pantalla (SVG) y el PDF (PDFKit) con los mismos números: el eje, la banda celeste
 // antes del vencimiento, el rayado después, el gris donde la cadena se corta, los tramos, las marcas y los rótulos. Es orientativa, no
 // un ciclo real. Función pura, como services/seguimientoCinta.js: un espacio de 1000 × 156, con la línea útil de x = 30 a x = 970 y las
-// alturas fijas de ALTURAS_DE_LA_CINTA (las de la maqueta 7). Los textos se miden con 6,6 por letra, 10 sobre la línea de base y 3
-// debajo: ningún texto sale del dibujo ni se pisa con otro (pedido del usuario). Ninguna función tira error: con datos raros devuelve
-// null o corta la cadena.
+// alturas fijas de ALTURAS_DE_LA_CINTA (las de la maqueta 7). Los textos se miden con 6,6 por letra (la pantalla; el PDF, con su letra:
+// la opción `letra`, como en la cinta del Seguimiento), 10 sobre la línea de base y 3 debajo: ningún texto sale del dibujo ni se pisa con
+// otro (pedido del usuario). Ninguna función tira error: con datos raros devuelve null o corta la cadena.
 import { unidadDe, SIN_NOTAS_DGMIT, GESTIONES } from './metricasReglas.js';
 
 const ANCHO = 1000;
@@ -38,7 +38,8 @@ const MULTIPLOS_A_PROBAR = 50;
 // aviso, a 9,9 (media diagonal): un rombo al lado de un círculo necesita unos 18 para no tocarse. No es el 11 de la cinta del
 // Seguimiento, donde un día mide unos 2,6 y las marcas son más chicas
 const SEPARACION = 18;
-// La medida aproximada de un texto: 6,6 por letra, 10 sobre la línea de base y 3 debajo
+// La medida aproximada de un texto: 6,6 por letra (la de la pantalla, si las opciones no dicen otra), 10 sobre la línea de base y 3
+// debajo
 const LETRA = 6.6;
 const SOBRE_LA_BASE = 10;
 const BAJO_LA_BASE = 3;
@@ -136,10 +137,10 @@ const tipoDelGrupo = (tipos) => {
   return tipos[0];
 };
 
-// Lo que ocupa un texto ({ x0, x1, y0, y1 }), según su anclaje
-const anchoDe = (texto) => texto.length * LETRA;
-const cajaDe = (x, y, texto, anclaje) => {
-  const ancho = anchoDe(texto);
+// Lo que ocupa un texto ({ x0, x1, y0, y1 }), según su anclaje, con `letra` por letra
+const anchoDe = (texto, letra) => texto.length * letra;
+const cajaDe = (x, y, texto, anclaje, letra) => {
+  const ancho = anchoDe(texto, letra);
   const x0 = anclaje === 'start' ? x : anclaje === 'end' ? x - ancho : x - ancho / 2;
   return { x0, x1: x0 + ancho, y0: y - SOBRE_LA_BASE, y1: y + BAJO_LA_BASE };
 };
@@ -175,14 +176,17 @@ const adentro = (caja) => caja.x0 >= MARGEN && caja.x1 <= ANCHO - MARGEN && caja
 //   (y = 26). Si no entra en ningún lado, no va.
 // Ninguno sale del dibujo ni se pisa con otro texto (los números del eje, «vencimiento», el rótulo del eje, el del gris y los otros
 // rótulos). `tramos`: los de vistaDe para la gestión (circuito.externa o circuito.interna); `opciones`: { gestion: 'externa' (la de
-// entrada) | 'interna', dias: 'habiles' (los de entrada) | 'corridos', estadistico: 'mediana' (el de entrada) | 'promedio' }. null si
-// el aviso anticipado no tiene cifra (sin casos: la cinta no se dibuja) o si `tramos` no es una lista.
+// entrada) | 'interna', dias: 'habiles' (los de entrada) | 'corridos', estadistico: 'mediana' (el de entrada) | 'promedio', letra:
+// cuánto mide una letra (6,6, la de la pantalla, si no es un número positivo; el PDF pasa la suya: OPCIONES_CINTA_PDF de
+// services/reportesMetricasPdf.js) }. null si el aviso anticipado no tiene cifra (sin casos: la cinta no se dibuja) o si `tramos` no es
+// una lista.
 export const cintaDeMetricas = (tramos, opciones) => {
   if (!Array.isArray(tramos)) return null;
   const o = esObjeto(opciones) ? opciones : {};
   const gestion = o.gestion === 'interna' ? 'interna' : 'externa';
   const dias = o.dias === 'corridos' ? 'corridos' : 'habiles';
   const estadistico = o.estadistico === 'promedio' ? 'promedio' : 'mediana';
+  const letra = Number.isFinite(o.letra) && o.letra > 0 ? o.letra : LETRA;
   const tramoDe = (clave) => tramos.find((t) => esObjeto(t) && t.clave === clave) ?? null;
   const anticipacion = valorDe(tramoDe('aviso'));
   if (anticipacion === null) return null;
@@ -212,7 +216,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
   else {
     let lugar = LUGAR_DEL_GRIS * (ultimo - aviso);
     escala = escalaDe(aviso, ultimo + lugar);
-    const haceFalta = anchoDe(textoGris) + 2 * AIRE_DEL_GRIS;
+    const haceFalta = anchoDe(textoGris, letra) + 2 * AIRE_DEL_GRIS;
     for (let vuelta = 0; vuelta < VUELTAS_DEL_GRIS && X_FINAL - escala.x(ultimo) < haceFalta; vuelta++) {
       lugar = lugar * 1.25 + 1;
       escala = escalaDe(aviso, ultimo + lugar);
@@ -223,7 +227,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
   let gris = null;
   if (corte !== null) {
     const x0 = x(ultimo);
-    const entra = X_FINAL - x0 >= anchoDe(textoGris) + 2 * AIRE_DEL_GRIS;
+    const entra = X_FINAL - x0 >= anchoDe(textoGris, letra) + 2 * AIRE_DEL_GRIS;
     gris = { x0, x1: X_FINAL, texto: entra ? textoGris : '' };
   }
 
@@ -247,7 +251,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
 
   // Lo que ya ocupa lugar: «vencimiento» y la línea del vencimiento, que cruza la fila de los tramos
   const ocupado = [
-    cajaDe(xVencimiento, ALTURAS.vencimiento.texto, 'vencimiento', 'middle'),
+    cajaDe(xVencimiento, ALTURAS.vencimiento.texto, 'vencimiento', 'middle', letra),
     { x0: xVencimiento, x1: xVencimiento, y0: ALTURAS.vencimiento.desde, y1: ALTURAS.vencimiento.hasta }
   ];
   const libre = (caja) => adentro(caja) && !ocupado.some((otra) => seTocan(caja, otra));
@@ -258,7 +262,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
   for (let i = 0; i <= (escala.max - escala.min) / escala.paso; i++) {
     const dia = escala.min + i * escala.paso;
     const tick = { x: x(dia), texto: dia > 0 ? `+${dia}` : `−${-dia}` };
-    const caja = cajaDe(tick.x, ALTURAS.ticks, tick.texto, 'middle');
+    const caja = cajaDe(tick.x, ALTURAS.ticks, tick.texto, 'middle', letra);
     if (dia !== 0 && libre(caja)) {
       ticks.push(tick);
       ocupado.push(caja);
@@ -268,17 +272,17 @@ export const cintaDeMetricas = (tramos, opciones) => {
   // El rótulo del eje va abajo a la izquierda (a la derecha se pisaba con «vencimiento»), salvo que el vencimiento quede tan a la
   // izquierda que ahí se pise: entonces, a la derecha (los dos lados a la vez no pueden pisarse)
   const textoDelEje = `${unidadDe(2, dias)} respecto del vencimiento`;
-  const eje = libre(cajaDe(X_INICIAL, ALTURAS.textoDelEje, textoDelEje, 'start'))
+  const eje = libre(cajaDe(X_INICIAL, ALTURAS.textoDelEje, textoDelEje, 'start', letra))
     ? { x: X_INICIAL, y: ALTURAS.textoDelEje, texto: textoDelEje, anclaje: 'start' }
     : { x: X_FINAL, y: ALTURAS.textoDelEje, texto: textoDelEje, anclaje: 'end' };
-  ocupado.push(cajaDe(eje.x, eje.y, eje.texto, eje.anclaje));
-  if (gris?.texto) ocupado.push(cajaDe((gris.x0 + gris.x1) / 2, ALTURAS.textoDelGris, gris.texto, 'middle'));
+  ocupado.push(cajaDe(eje.x, eje.y, eje.texto, eje.anclaje, letra));
+  if (gris?.texto) ocupado.push(cajaDe((gris.x0 + gris.x1) / 2, ALTURAS.textoDelGris, gris.texto, 'middle', letra));
 
   // Un rótulo va en el primero de sus lugares que esté libre; si no hay ninguno, no va
   const rotulos = [];
   const colocar = (texto, color, lugares) => {
     for (const lugar of lugares) {
-      const caja = cajaDe(lugar.x, lugar.y, texto, lugar.anclaje);
+      const caja = cajaDe(lugar.x, lugar.y, texto, lugar.anclaje, letra);
       if (libre(caja)) {
         ocupado.push(caja);
         rotulos.push({ x: lugar.x, y: lugar.y, texto, anclaje: lugar.anclaje, color });
@@ -289,7 +293,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
   // Al lado de una marca: a la derecha si entra en el dibujo y si no a la izquierda; en la fila de arriba y, si ahí se pisa, en la de
   // los tramos
   const alLadoDe = (xDeLaMarca, texto) => {
-    const derecha = xDeLaMarca + DESPEGUE_DE_LA_MARCA + anchoDe(texto) <= ANCHO - MARGEN;
+    const derecha = xDeLaMarca + DESPEGUE_DE_LA_MARCA + anchoDe(texto, letra) <= ANCHO - MARGEN;
     const lado = derecha
       ? { x: xDeLaMarca + DESPEGUE_DE_LA_MARCA, anclaje: 'start' }
       : { x: xDeLaMarca - DESPEGUE_DE_LA_MARCA, anclaje: 'end' };
@@ -298,7 +302,7 @@ export const cintaDeMetricas = (tramos, opciones) => {
   // Sobre un tramo: centrado en la fila de los tramos (sin salir del dibujo); a un costado de la línea del vencimiento, con el centro
   // dentro del tramo; o centrado en la fila libre de arriba
   const sobreElTramo = (x0, x1, texto) => {
-    const mitad = anchoDe(texto) / 2;
+    const mitad = anchoDe(texto, letra) / 2;
     const centro = Math.min(Math.max((x0 + x1) / 2, MARGEN + mitad), ANCHO - MARGEN - mitad);
     const enElTramo = (c) => c >= x0 && c <= x1;
     const lugares = [{ x: centro, y: ALTURAS.filaDeLosTramos, anclaje: 'middle' }];
@@ -352,9 +356,10 @@ export const cintaDeMetricas = (tramos, opciones) => {
 
 // Las cintas de una vista (la de vistaDe con `estadistico` y `dias`): { externa, interna }, cada una la de cintaDeMetricas con el
 // circuito de su gestión (null si no se dibuja). Así las guarda la foto (services/metricasFoto.js) y así las arma la API de métricas en
-// vivo (controllers/metricasController.js). Nunca tira: sin vista, las dos null.
+// vivo (controllers/metricasController.js), con la letra de la pantalla; el PDF las arma con la suya (`letra`, la de cintaDeMetricas),
+// también en un año con foto, desde el circuito guardado. Nunca tira: sin vista, las dos null.
 export const cintasDeLaVista = (vista, opciones) => {
-  const { estadistico, dias } = esObjeto(opciones) ? opciones : {};
+  const { estadistico, dias, letra } = esObjeto(opciones) ? opciones : {};
   const circuito = esObjeto(vista) && esObjeto(vista.circuito) ? vista.circuito : {};
-  return Object.fromEntries(GESTIONES.map((gestion) => [gestion, cintaDeMetricas(circuito[gestion], { gestion, dias, estadistico })]));
+  return Object.fromEntries(GESTIONES.map((gestion) => [gestion, cintaDeMetricas(circuito[gestion], { gestion, dias, estadistico, letra })]));
 };

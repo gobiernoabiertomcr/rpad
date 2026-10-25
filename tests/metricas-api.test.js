@@ -11,6 +11,8 @@ import {
   ESTADISTICOS, DIAS, casosDe, vistaDe, duracion, cifraDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio, areasYTemas
 } from '../services/metricasReglas.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
+import { lineasPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 
 const AL = '2026-12-31';
 const CLAVES_DE_DATA = ['anio', 'al', 'en_vivo', 'aviso_foto', 'anios', 'vista', 'cinta', 'contexto', 'trabajo', 'areas', 'sin_titulos'];
@@ -199,6 +201,40 @@ describe('GET /metricas', () => {
     assert.deepEqual(data.vista.casos.map((fila) => [fila.dataset_id, fila.contar]), [[ids[0], true], [ids[1], true], [ids[2], false]]);
     // El contexto tampoco los cuenta: sin el vencido, todos al día
     assert.deepEqual([data.contexto.estados.total, data.contexto.estados.tasa], [2, 100]);
+  });
+
+  // El PDF de Métricas del año (spec 5): lo mismo que GET /metricas, con la misma consulta. Para todos los roles con sesión
+  it('el lector lo descarga', async () => {
+    const { anio, vencido } = await prepararHoy();
+    const res = await api.get('/metricas/pdf', como('lector'));
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /^application\/pdf/);
+    assert.equal(res.headers.get('content-disposition'), disposicionDeAdjunto(`Metricas-RPAD-${anio}.pdf`));
+    assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+    assert.ok(todasDelTamano(res.body, HOJA_A4));
+    const hojas = lineasPorHoja(res.body);
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Métricas del RPAD · ${anio} · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+      // «Generado el … por <nombre corto>», como el Estado general
+      assert.ok(lineas.some((l) => /^Generado el \d{2}\/\d{2}\/\d{4} a las \d{2}:\d{2} por \S/.test(l)), `hoja ${k + 1}`);
+    });
+    assert.ok(hojas[0].includes('Mediana en días hábiles · con todos los datasets'), hojas[0].join(' | '));
+    assert.ok(hojas[0].includes(`MÉTRICAS · AÑO ${anio}, EN CURSO`));
+    // Con lo elegido y un destildado: lo dice la píldora y las cifras son las de GET /metricas con la misma consulta
+    const consulta = `estadistico=promedio&dias=corridos&sin=${vencido}`;
+    const [pdf, json] = await Promise.all([api.get(`/metricas/pdf?${consulta}`, como('lector')), api.get(`/metricas?${consulta}`, como('lector'))]);
+    assert.equal(pdf.status, 200);
+    const primera = lineasPorHoja(pdf.body)[0];
+    assert.ok(primera.includes('Promedio en días corridos · calculado sin 1 dataset: Vencido'), primera.join(' | '));
+    const carga = tramoDe(json.body.data, 'externa', 'carga').cifra;
+    assert.ok(primera.join(' ').includes(`${carga.texto} ${carga.unidad}`.trim()), primera.join(' | '));
+    assert.ok(primera.join(' ').includes(carga.debajo));
+    // El colaborador también; sin sesión, 401; un año sin métricas, el 404 en JSON de la API
+    assert.equal((await api.get('/metricas/pdf', como('colab'))).status, 200);
+    for (const token of [undefined, 'no-es-un-token']) assert.equal((await api.get('/metricas/pdf', { token })).status, 401);
+    const sinMetricas = await api.get('/metricas/pdf?anio=1999', como('lector'));
+    assert.equal(sinMetricas.status, 404);
+    assert.deepEqual(sinMetricas.body, { success: false, error: 'No hay métricas de ese año' });
   });
 
   // El antiobjetivo: que el índice diga una cosa en la portada y otra en Métricas
