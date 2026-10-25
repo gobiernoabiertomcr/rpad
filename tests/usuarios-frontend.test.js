@@ -645,9 +645,9 @@ describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
   const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
   const PAGINA = fs.readFileSync(new URL('../public/usuarios.html', import.meta.url), 'utf8');
   const AYUDAS = {
-    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Notas, Gestión y Seguimiento). No modifica nada.',
+    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Gestión y Seguimiento). No modifica nada.',
     colaborador: '<b>Colaborador:</b> Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula '
-      + 'las que cargó). No modifica datasets ni audita cambios.',
+      + 'las que cargó) y arma notas con el Generador de Notas. No modifica datasets ni audita cambios.',
     editor: '<b>Editor:</b> Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y '
       + 'colaboradores.',
     admin: '<b>Admin:</b> Propone y audita cambios en los datasets, maneja áreas, usuarios, reportes y notificaciones. También carga '
