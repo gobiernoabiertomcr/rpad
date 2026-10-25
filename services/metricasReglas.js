@@ -1005,8 +1005,9 @@ const textoDeAuditoria = (minutos, estadistico) => {
 const doceMeses = () => Array(12).fill(0);
 const mesDe = (dia) => Number(dia.slice(5, 7)) - 1;
 
-// Qué es cada total del trabajo del RPAD, en singular (con 1) y en plural
-const TOTALES_DEL_TRABAJO = Object.freeze({
+// Qué es cada total del trabajo del RPAD, en singular (con 1) y en plural, en el orden de las tarjetas (el Informe anual, que compara
+// los totales de dos años, nombra cada fila con el plural: services/reportesInformeAnualPdf.js)
+export const TOTALES_DEL_TRABAJO = Object.freeze({
   avisos: Object.freeze(['aviso o nota a la DGMIT', 'avisos y notas a la DGMIT']),
   actualizaciones: Object.freeze(['actualización registrada', 'actualizaciones registradas']),
   auditados: Object.freeze(['cambio auditado (doble verificación)', 'cambios auditados (doble verificación)']),

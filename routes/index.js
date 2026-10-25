@@ -61,7 +61,8 @@ import {
   reporteAvisos,
   reportePorArea,
   reporteAgenda,
-  reporteParaCompletar
+  reporteParaCompletar,
+  reporteInformeAnual
 } from '../controllers/reportesController.js';
 import { generarNota } from '../controllers/notasController.js';
 import {
@@ -249,6 +250,7 @@ router.get('/reportes/avisos', authMiddleware, reporteAvisos);
 router.get('/reportes/por-area/:areaId', authMiddleware, reportePorArea);
 router.get('/reportes/agenda', authMiddleware, reporteAgenda);
 router.get('/reportes/para-completar', authMiddleware, reporteParaCompletar);
+router.get('/reportes/informe-anual', authMiddleware, reporteInformeAnual);
 
 // =====================================================
 // Seguimiento del dataset (protegidas, para todos los roles con sesión)

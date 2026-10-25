@@ -10,7 +10,10 @@ import { renderAvisos, avisosDelPeriodo } from '../services/reportesAvisosPdf.js
 import { agendaDe, opcionesDeAgenda } from '../services/reportesAgenda.js';
 import { renderAgenda } from '../services/reportesAgendaPdf.js';
 import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
-import { metricasDe, SIN_METRICAS } from './metricasController.js';
+import { renderInformeAnual, logrosPorProyecto } from '../services/reportesInformeAnualPdf.js';
+import { leerFoto } from '../services/metricasFoto.js';
+import { ESTADISTICOS, DIAS } from '../services/metricasReglas.js';
+import { metricasDe, deLaFoto, SIN_METRICAS } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
@@ -290,6 +293,67 @@ export const reporteParaCompletar = async (req, res) => {
       { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', disposicionDeAdjunto(`Datos-para-completar-${hoy}.pdf`));
+    res.send(pdf);
+  } catch (error) {
+    console.error('Error generando reporte:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// =====================================================
+// REPORTE: Informe anual
+// =====================================================
+// Solo para un año con foto (spec 2026-10-24-metricas-y-reportes, 5, Para presentar, punto 2, y 3): la foto del 31/12 de ese año, la
+// del año anterior para la comparación (o, sin ella, «Primer año con foto») y los logros del año, los hitos de Gestión → Proyectos. Las
+// fotos se leen como las lee Métricas (leerFoto y deLaFoto: nunca se recalculan), con la combinación por defecto (mediana en días
+// hábiles) y todos los datasets. El PDF lo dibuja services/reportesInformeAnualPdf.js. Acá van las consultas y el pie, con el nombre
+// corto de quien lo pide y la hora argentina.
+
+const SIN_FOTO_DEL_ANIO = Object.freeze({ success: false, error: 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.' });
+
+// El año de GET /reportes/informe-anual?anio=: cuatro cifras, de 1000 a 9999 (como los años de Métricas); null si no es un año (falta,
+// viene repetido o con otra forma)
+const anioDelInforme = (valor) => (typeof valor === 'string' && /^\d{4}$/.test(valor) && Number(valor) >= 1000 ? Number(valor) : null);
+
+// Lo de una foto que lee el Informe: el año, el día y, con la combinación por defecto, lo de deLaFoto (la vista, el contexto y el
+// trabajo, como en Métricas). null sin foto
+const COMBINACION_DEL_INFORME = Object.freeze({ estadistico: ESTADISTICOS[0], dias: DIAS[0] });
+const delInforme = (foto) => (foto === null ? null
+  : { anio: foto.anio, al: foto.al, ...COMBINACION_DEL_INFORME, ...deLaFoto(foto, COMBINACION_DEL_INFORME) });
+
+// Los hitos con fecha en `anio`, con el nombre de su proyecto, como los lee Gestión → Proyectos (getTimeline, controllers/
+// gestionController.js): los de proyectos activos y los sin proyecto (los logros del área). Los proyectos en el orden de Gestión →
+// Proyectos (por categoría, orden y nombre; los sin proyecto al final) y cada hito por fecha; la fecha como 'AAAA-MM-DD' (es DATE: se
+// corta como texto, sin zona horaria).
+const hitosDelAnio = async (anio) => {
+  const [filas] = await pool.execute(
+    `SELECT ph.proyecto_id, p.nombre AS proyecto, DATE_FORMAT(ph.fecha, '%Y-%m-%d') AS fecha, ph.titulo, ph.descripcion
+     FROM proyecto_hitos ph
+     LEFT JOIN proyectos p ON p.id = ph.proyecto_id
+     WHERE (ph.proyecto_id IS NULL OR p.activo = TRUE) AND ph.fecha BETWEEN ? AND ?
+     ORDER BY ph.proyecto_id IS NULL, p.categoria, p.orden, p.nombre, p.id, ph.fecha, ph.id`,
+    [`${anio}-01-01`, `${anio}-12-31`]
+  );
+  return filas;
+};
+
+// GET /reportes/informe-anual?anio= (authMiddleware: todos los roles con sesión). Sin foto de ese año (o con un año que no es un año),
+// 404 en JSON. El archivo se llama «Informe-anual-RPAD-AAAA.pdf».
+export const reporteInformeAnual = async (req, res) => {
+  try {
+    const anio = anioDelInforme(req.query.anio);
+    const foto = anio === null ? null : await leerFoto(anio);
+    if (foto === null) return res.status(404).json(SIN_FOTO_DEL_ANIO);
+    const momento = ahoraArgentina();
+    const [[[usuario]], anterior, hitos] = await Promise.all([
+      pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
+      leerFoto(anio - 1),
+      hitosDelAnio(anio)
+    ]);
+    const pdf = await renderInformeAnual({ foto: delInforme(foto), anterior: delInforme(anterior), logros: logrosPorProyecto(hitos) },
+      { generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Informe-anual-RPAD-${anio}.pdf`));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);

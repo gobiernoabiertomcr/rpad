@@ -44,8 +44,9 @@ const enVivo = (fuentesPorDataset, { anio, al, estadistico, dias, sin }) => {
 
 // Las métricas de un año con foto, tal como las guardó (Ruling 16: nunca se recalculan): la vista y las cintas de la combinación de
 // los selectores, el trabajo de su estadístico, el contexto y las áreas. En un año con foto no se destilda. Tira si a la foto le falta
-// la combinación pedida: una foto que no se puede leer no pasa por «no hay métricas»
-const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
+// la combinación pedida: una foto que no se puede leer no pasa por «no hay métricas». `foto`: la de leerFoto. (También la lee así el
+// Informe anual, controllers/reportesController.js)
+export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
   const clave = claveDeLaVista(estadistico, dias);
   const vista = datos.vistas[clave];
   const cinta = datos.cintas[clave];

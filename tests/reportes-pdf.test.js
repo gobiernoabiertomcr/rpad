@@ -1,5 +1,6 @@
 // Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
-// Estado general de los datasets, Métricas del año, Por área, Avisos del RPAD, Agenda de pedidos y Datos para completar. Puro: los
+// Estado general de los datasets, Métricas del año, Por área, Avisos del RPAD, Agenda de pedidos, Datos para completar y el Informe
+// anual. Puro: los
 // datos se arman acá, sin base de datos (los textos del reporte servido por la API, con el set controlado, están en
 // estados-api.test.js, reportes.test.js y metricas-api.test.js; la agenda como datos, en reportes-agenda.test.js).
 import { describe, it } from 'node:test';
@@ -18,6 +19,7 @@ import { agendaDe } from '../services/reportesAgenda.js';
 import {
   renderParaCompletar, TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
 } from '../services/reportesParaCompletarPdf.js';
+import { renderInformeAnual, comparacionDe, logrosPorProyecto } from '../services/reportesInformeAnualPdf.js';
 import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
@@ -1490,6 +1492,260 @@ describe('Agenda de pedidos y Datos para completar: el PDF', () => {
       hojas.forEach((lineas, k) => assert.ok(lineas.includes(`${nombre} · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
       assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().filter(l => /NaN|null|undefined/.test(l)).join(' | '));
       verificarDiagramacion(await diagramacion(render));
+    });
+  }
+});
+
+// =====================================================
+// Informe anual (spec 2026-10-24-metricas-y-reportes, 3 y 5: la foto del 31/12, la comparación con la del año anterior y los logros)
+// =====================================================
+
+const GENERADO_INFORME = { momento: '2027-01-12 09:30:00', por: 'Usuario Ejemplo' };
+
+// La foto de `anio` de los casos reales como la lee el Informe (deLaFoto, con la combinación por defecto: mediana y días hábiles):
+// todo «al 31/12» y con todos los datasets
+const fotoDeLosCasos = (anio, mapa = mapaDeLosCasos()) => {
+  const al = `${anio}-12-31`;
+  const casos = casosDe(mapa, { hoy: al });
+  const opciones = { anio, al };
+  const vista = vistaDe(casos, { ...opciones, estadistico: 'mediana', dias: 'habiles' });
+  return {
+    anio, al, estadistico: 'mediana', dias: 'habiles', vista, cinta: cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles' }),
+    contexto: contextoDelAnio(mapa, opciones), trabajo: trabajoDelAnio(mapa, casos, { ...opciones, estadistico: 'mediana' }),
+    areas: areasYTemas(mapa, opciones), sin_titulos: []
+  };
+};
+const renderInforme = ({ foto = fotoDeLosCasos(2026), anterior = null, logros = [] } = {}) =>
+  renderInformeAnual({ foto, anterior, logros }, { generado: GENERADO_INFORME });
+
+// Los hitos como los lee el controlador (proyecto_hitos con su proyecto, en el orden de Gestión → Proyectos y por fecha; los logros del
+// área, sin proyecto, al final). Los proyectos son inventados
+const hito = (datos) => ({ proyecto_id: 1, proyecto: 'Portal de datos abiertos', fecha: '2026-03-10', titulo: 'Un hito', descripcion: null, ...datos });
+const HITOS = [
+  hito({ proyecto_id: 6, proyecto: 'Registro de los datasets', fecha: '2026-10-13', titulo: 'Las Notas Digitales a la DGMIT', descripcion: 'Reemplazan a los emails.' }),
+  hito({ proyecto_id: 6, proyecto: 'Registro de los datasets', fecha: '2026-01-26', titulo: 'La doble verificación de los cambios', descripcion: 'Un cambio lo propone una persona y lo aprueba otra.' }),
+  hito({ proyecto_id: null, proyecto: null, fecha: '2026-05-20', titulo: 'Capacitación en datos abiertos', descripcion: 'Con las áreas de Economía.' }),
+  hito({ proyecto_id: 1, fecha: '2026-03-10', titulo: 'Primer conjunto sellado', descripcion: '   ' })
+];
+
+// Un hito de descripción larga (como las de Gestión, de unos 450 caracteres)
+const DESCRIPCION_LARGA = 'Se publicó la nueva versión del portal con el catálogo completo, los recursos descargables en formatos abiertos, '
+  + 'la búsqueda por tema y por área, las fichas con la frecuencia de actualización y el contacto de cada área responsable, y un '
+  + 'tablero con el estado de los conjuntos de datos que se actualiza solo cada noche a partir del registro de las actualizaciones.';
+const muchosHitos = (n) => logrosPorProyecto(Array.from({ length: n }, (_, i) => hito({
+  proyecto_id: (i % 3) + 1,
+  proyecto: i % 3 === 0 ? `Proyecto con un nombre larguísimo ${'de muchas palabras '.repeat(12)}`.slice(0, 200).trim() : `Proyecto ${(i % 3) + 1}`,
+  fecha: `2026-${String((i % 12) + 1).padStart(2, '0')}-15`, titulo: `Hito ${i + 1} ${'con un título largo '.repeat(i % 4)}`.trim(),
+  descripcion: i % 2 === 0 ? DESCRIPCION_LARGA : null
+})));
+
+// Una foto armada a mano, con solo lo que compara el Informe
+const fotoAMano = ({ anio = 2026, aTiempo = [5, 33, 15], cobertura = [34, 35, 97], indice = [75, 3, 4], estados = {}, trabajo = {} } = {}) => ({
+  anio, al: `${anio}-12-31`,
+  vista: {
+    resultados: {
+      a_tiempo: { a_tiempo: aTiempo[0], total: aTiempo[1] }, cobertura: { si: cobertura[0], total: cobertura[1] },
+      textos: {
+        a_tiempo: { de: `de ${aTiempo[1]} ciclos`, medidor: aTiempo[2] },
+        cobertura: { de: `de ${cobertura[1]} vencimientos`, medidor: cobertura[2] }
+      }
+    }
+  },
+  contexto: {
+    indice: [{ dia: `${anio}-12-01`, tasa: 1, al_dia: 1, base: 100 }, { dia: `${anio}-12-31`, tasa: indice[0], al_dia: indice[1], base: indice[2] }],
+    estados: { total: 81, actualizado: 53, proximo: 2, vencidos: 12, eventual: 14, sin_fecha: 0, ...estados }
+  },
+  trabajo: { avisos: 20, actualizaciones: 32, auditados: 50, nuevos: 3, fuente_publica: 1, ...trabajo }
+});
+
+// Las celdas de una fila de una tabla, leídas en orden: la fila que empieza con `rotulo` y sus `n` celdas siguientes
+const filaDeLaTabla = (lineas, rotulo, n = 3) => {
+  const i = lineas.indexOf(rotulo);
+  return i === -1 ? null : lineas.slice(i, i + n + 1);
+};
+// Lo que el encabezado de cada hoja escribe arriba de todo
+const DEL_ENCABEZADO = ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Municipalidad de Comodoro Rivadavia', 'Informe anual 2026', formatoLargo('2027-01-12')];
+
+describe('Informe anual: la foto del 31/12, la comparación y los logros', () => {
+  it('el encabezado dice «Informe anual 2026» y el pie «Informe anual 2026 · Hoja k de N»; la foto, en el orden de la pestaña', async () => {
+    const pdf = await renderInforme();
+    assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+    const hojas = lineasPorHoja(pdf);
+    assert.equal(hojas.length, 3, hojas.map(l => l.join(' | ')).join('\n'));
+    hojas.forEach((lineas, k) => {
+      for (const t of [...DEL_ENCABEZADO, 'Generado el 12/01/2027 a las 09:30 por Usuario Ejemplo', `Informe anual 2026 · Hoja ${k + 1} de ${hojas.length}`,
+        'INFORME ANUAL · AÑO 2026, AL 31/12/2026']) {
+        assert.ok(lineas.includes(t), `hoja ${k + 1}: falta "${t}" en ${lineas.join(' | ')}`);
+      }
+    });
+    // La hoja 1: de dónde sale, la combinación y los circuitos, los resultados y «Cómo se cuenta» (los de Métricas del año)
+    const primera = hojas[0].join(' ');
+    for (const t of ['El circuito, del aviso del RPAD a la carga en el portal', 'Sale de la foto del 31/12/2026, calculada con todos los datasets.',
+      'Mediana en días hábiles · con todos los datasets', 'GESTIÓN EXTERNA · MEDIANA EN DÍAS HÁBILES', 'GESTIÓN INTERNA · MEDIANA EN DÍAS HÁBILES',
+      'RESULTADOS DEL AÑO', 'CÓMO SE CUENTA']) {
+      assert.ok(primera.includes(t), `falta "${t}" en ${primera}`);
+    }
+    // La hoja 2: el contexto y el trabajo; la 3: la comparación y los logros
+    assert.ok(hojas[1].join(' ').includes('El contexto y el trabajo del RPAD'));
+    for (const t of ['ÍNDICE DE ACTUALIZACIÓN, MES A MES', 'ANTIGÜEDAD DE LOS VENCIDOS', 'EL TRABAJO DEL RPAD', 'POR MES', 'DOBLE VERIFICACIÓN']) {
+      assert.ok(hojas[1].includes(t), `falta "${t}" en ${hojas[1].join(' | ')}`);
+    }
+    assert.ok(hojas[2].join(' ').includes('Comparación con 2025 y logros del año'), hojas[2].join(' | '));
+    const todo = hojas.flat();
+    const orden = ['RESULTADOS DEL AÑO', 'ÍNDICE DE ACTUALIZACIÓN, MES A MES', 'EL TRABAJO DEL RPAD', 'COMPARACIÓN CON 2025', 'LOGROS DEL AÑO'];
+    const posiciones = orden.map(t => todo.indexOf(t));
+    assert.ok(posiciones.every(p => p !== -1), JSON.stringify(Object.fromEntries(orden.map((t, i) => [t, posiciones[i]]))));
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+    // Lo que no está en la foto (las métricas manuales) y lo que el Informe no lleva (las cintas y las áreas) no va
+    for (const t of ['MÉTRICAS MANUALES (LAS CARGA ADMINISTRACIÓN)', 'GESTIÓN EXTERNA · RECORRIDO TÍPICO', 'RANKING DE ÁREAS', 'DATASETS POR TEMA']) {
+      assert.ok(!todo.includes(t), `"${t}" no va`);
+    }
+  });
+
+  it('con foto de 2026 y sin la de 2025: «Primer año con foto»', async () => {
+    const todo = lineasPorHoja(await renderInforme()).flat();
+    const desde = todo.indexOf('COMPARACIÓN CON 2025');
+    assert.ok(desde !== -1, todo.join(' | '));
+    assert.equal(todo[desde + 1], 'Primer año con foto', todo.slice(desde).join(' | '));
+    // Sin la tabla de la comparación
+    assert.ok(!todo.includes('Diferencia'));
+    // Con la foto de 2025, ya no
+    const conAnterior = lineasPorHoja(await renderInforme({ anterior: fotoDeLosCasos(2025) })).flat();
+    assert.ok(!conAnterior.includes('Primer año con foto'));
+    assert.ok(conAnterior.includes('Diferencia'));
+  });
+
+  it('la comparación con la foto de 2025: los números de las dos fotos, con sus textos, y la diferencia', async () => {
+    const anterior = fotoAMano({
+      anio: 2025, aTiempo: [3, 30, 10], cobertura: [34, 35, 97], indice: [80, 40, 50], estados: { total: 78, vencidos: 13, sin_fecha: 2 },
+      trabajo: { avisos: 12, nuevos: 4 }
+    });
+    const actual = fotoAMano({ aTiempo: [5, 33, 15], cobertura: [36, 36, 100], indice: [75, 3, 4], trabajo: { avisos: 20, nuevos: 3 } });
+    assert.deepEqual(comparacionDe(anterior, actual), [
+      {
+        titulo: 'Resultados del año',
+        filas: [
+          ['Actualizados a tiempo', '3 de 30 ciclos (10%)', '5 de 33 ciclos (15%)', '+5 puntos'],
+          ['Cobertura del aviso', '34 de 35 vencimientos (97%)', '36 de 36 vencimientos (100%)', '+3 puntos']
+        ]
+      },
+      {
+        titulo: 'Al 31/12',
+        filas: [
+          ['Índice de actualización', '80% al día (40 de 50)', '75% al día (3 de 4)', '–5 puntos'],
+          ['Datasets en el registro', '78', '81', '+3'],
+          ['Actualizados', '53', '53', 'Igual'],
+          ['Próximos a vencer', '2', '2', 'Igual'],
+          ['Vencidos', '13', '12', '–1'],
+          ['Eventuales', '14', '14', 'Igual'],
+          ['Sin fecha', '2', '0', '–2']
+        ]
+      },
+      {
+        titulo: 'El trabajo del RPAD',
+        filas: [
+          ['Avisos y notas a la DGMIT', '12', '20', '+8'],
+          ['Actualizaciones registradas', '32', '32', 'Igual'],
+          ['Cambios auditados (doble verificación)', '50', '50', 'Igual'],
+          ['Datasets nuevos', '4', '3', '–1'],
+          ['Pedidos resueltos con una fuente pública', '1', '1', 'Igual']
+        ]
+      }
+    ]);
+    // Un punto, en singular; sin un porcentaje (o sin índice) no se resta: una raya
+    const unPunto = comparacionDe(fotoAMano({ anio: 2025, aTiempo: [0, 0, null], indice: [null, null, null] }), fotoAMano({ cobertura: [34, 35, 98] }));
+    assert.deepEqual(unPunto[0].filas, [
+      ['Actualizados a tiempo', '0 de 0 ciclos', '5 de 33 ciclos (15%)', '—'],
+      ['Cobertura del aviso', '34 de 35 vencimientos (97%)', '34 de 35 vencimientos (98%)', '+1 punto']
+    ]);
+    assert.deepEqual(unPunto[1].filas[0], ['Índice de actualización', '—', '75% al día (3 de 4)', '—']);
+
+    // En el PDF: la sección, las columnas con los dos años y cada fila con sus celdas, en orden
+    const todo = lineasPorHoja(await renderInforme({ foto: { ...fotoDeLosCasos(2026), ...actual }, anterior })).flat();
+    const desde = todo.indexOf('COMPARACIÓN CON 2025');
+    assert.ok(desde !== -1 && todo.includes('Las fotos del 31/12/2025 y del 31/12/2026'), todo.join(' | '));
+    const comparacion = todo.slice(desde);
+    for (const encabezado of [['Resultados del año', '2025', '2026', 'Diferencia'], ['Al 31/12', '2025', '2026', 'Diferencia'],
+      ['El trabajo del RPAD', '2025', '2026', 'Diferencia']]) {
+      assert.deepEqual(filaDeLaTabla(comparacion, encabezado[0]), encabezado);
+    }
+    for (const { filas } of comparacionDe(anterior, actual)) {
+      for (const fila of filas) assert.deepEqual(filaDeLaTabla(comparacion, fila[0]), fila, fila[0]);
+    }
+    assert.ok(comparacion.includes('Diferencia: 2026 menos 2025; en los porcentajes, en puntos.'), comparacion.join(' | '));
+
+    // Con las fotos de los casos reales, los textos de cada foto
+    const de2026 = fotoDeLosCasos(2026);
+    const [resultados] = comparacionDe(fotoDeLosCasos(2025), de2026);
+    const r = de2026.vista.resultados;
+    const medidor = r.textos.a_tiempo.medidor;
+    assert.equal(resultados.filas[0][2], `${r.a_tiempo.a_tiempo} ${r.textos.a_tiempo.de}${medidor === null ? '' : ` (${medidor}%)`}`);
+  });
+
+  it('los logros de 2026 por proyecto', async () => {
+    const logros = logrosPorProyecto(HITOS);
+    // Los proyectos en el orden en que llegan, cada uno con sus hitos por fecha; los del área, sin proyecto, al final. La descripción vacía
+    // (o solo con espacios) no va
+    assert.deepEqual(logros, [
+      {
+        proyecto: 'Registro de los datasets',
+        hitos: [
+          { fecha: '2026-01-26', titulo: 'La doble verificación de los cambios', descripcion: 'Un cambio lo propone una persona y lo aprueba otra.' },
+          { fecha: '2026-10-13', titulo: 'Las Notas Digitales a la DGMIT', descripcion: 'Reemplazan a los emails.' }
+        ]
+      },
+      { proyecto: 'Portal de datos abiertos', hitos: [{ fecha: '2026-03-10', titulo: 'Primer conjunto sellado', descripcion: '' }] },
+      { proyecto: 'Logros del Área', hitos: [{ fecha: '2026-05-20', titulo: 'Capacitación en datos abiertos', descripcion: 'Con las áreas de Economía.' }] }
+    ]);
+    assert.deepEqual(logrosPorProyecto([]), []);
+    assert.deepEqual(logrosPorProyecto(null), []);
+
+    const todo = lineasPorHoja(await renderInforme({ logros })).flat();
+    const desde = todo.indexOf('LOGROS DEL AÑO');
+    assert.ok(desde !== -1 && todo.includes('Los hitos de 2026 cargados en Gestión'), todo.join(' | '));
+    const logrosEnElPdf = todo.slice(desde);
+    // Cada proyecto, y debajo cada hito con su fecha, su título y su descripción, en orden
+    const orden = ['Registro de los datasets', '26/01/2026', 'La doble verificación de los cambios', 'Un cambio lo propone una persona y lo aprueba otra.',
+      '13/10/2026', 'Las Notas Digitales a la DGMIT', 'Reemplazan a los emails.', 'Portal de datos abiertos', '10/03/2026', 'Primer conjunto sellado',
+      'Logros del Área', '20/05/2026', 'Capacitación en datos abiertos', 'Con las áreas de Economía.'];
+    const posiciones = orden.map(t => logrosEnElPdf.indexOf(t));
+    assert.ok(posiciones.every(p => p !== -1), JSON.stringify(Object.fromEntries(orden.map((t, i) => [t, posiciones[i]]))));
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+    // Sin hitos en el año, lo dice
+    const sinHitos = lineasPorHoja(await renderInforme()).flat();
+    assert.equal(sinHitos[sinHitos.indexOf('LOGROS DEL AÑO') + 2], 'Sin hitos registrados en 2026.', sinHitos.join(' | '));
+  });
+
+  it('un proyecto cuyos hitos siguen en otra hoja repite su nombre arriba', async () => {
+    const logros = muchosHitos(40);
+    const hojas = lineasPorHoja(await renderInforme({ logros }));
+    assert.ok(hojas.length >= 5, `${hojas.length} hojas`);
+    // Cada hoja después de la tercera empieza (después del encabezado) con el nombre de un proyecto
+    const nombres = logros.map(g => g.proyecto);
+    for (const lineas of hojas.slice(3)) {
+      const primera = lineas.find(l => !DEL_ENCABEZADO.includes(l));
+      assert.ok(nombres.some(n => n.startsWith(primera)), `la hoja empieza con "${primera}"`);
+    }
+    // Todos los hitos están, una sola vez
+    const todo = hojas.flat();
+    for (let i = 1; i <= 40; i++) assert.equal(todo.filter(l => l === `Hito ${i}` || l.startsWith(`Hito ${i} `)).length, 1, `Hito ${i}`);
+  });
+
+  const variantes = [
+    ['el primer año con foto, sin hitos', () => ({})],
+    ['con la foto del año anterior y los logros', () => ({ anterior: fotoDeLosCasos(2025), logros: logrosPorProyecto(HITOS) })],
+    ['con 40 hitos en varias hojas, descripciones largas y un proyecto de nombre larguísimo', () => ({ anterior: fotoDeLosCasos(2025), logros: muchosHitos(40) })],
+    ['un año sin ningún caso, con la foto del año anterior también vacía', () => ({ foto: fotoDeLosCasos(2026, new Map()), anterior: fotoDeLosCasos(2025, new Map()) })]
+  ];
+  for (const [titulo, armar] of variantes) {
+    it(`nada se pisa: ${titulo}`, async () => {
+      const datos = armar();
+      verificarDiagramacion(await diagramacion(() => renderInforme(datos)));
+      const pdf = await renderInforme(datos);
+      assert.ok(todasDelTamano(pdf, HOJA_A4));
+      const hojas = lineasPorHoja(pdf);
+      hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Informe anual 2026 · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+      assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().filter(l => /NaN|null|undefined/.test(l)).join(' | '));
     });
   }
 });

@@ -9,6 +9,8 @@
 // de metricasDe (controllers/metricasController.js, los de GET /api/metricas) con los mismos textos que imprime la pestaña
 // (public/js/reportes.js). No recalcula ninguna regla: solo arma las cintas desde el circuito de la vista, con la letra del PDF
 // (OPCIONES_CINTA_PDF), también en un año con foto (la foto guarda las de la pantalla). Puro: sin pool (los tests lo llaman sin base).
+// El Informe anual (services/reportesInformeAnualPdf.js) repite las partes 1 y 3 con los mismos dibujantes (elementosDelCircuito,
+// elementosDelContexto, elementosDelTrabajo y dibujarParte).
 import {
   COLOR, IZQUIERDA, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE, desdeBase, ajustar, escribir, renglon, filete
 } from './notasDigitalesAnexo.js';
@@ -94,6 +96,9 @@ const T = TEXTOS_DE_LA_PESTANA;
 // enteros) y desde cuándo cuenta un tramo
 const SIGLAS = 'En los circuitos, DA es la Dirección Administrativa; DIT, la Dirección de Investigación Territorial, y DDPC, la Dirección de Datos Públicos y Comunicación.';
 const EN_EL_ANIO = 'Un tramo cuenta en el año en que terminó.';
+// Los títulos de las partes 1 y 3, que el Informe anual repite (services/reportesInformeAnualPdf.js)
+export const TITULO_DEL_CIRCUITO = 'El circuito, del aviso del RPAD a la carga en el portal';
+export const TITULO_DEL_CONTEXTO = 'El contexto y el trabajo del RPAD';
 
 // Los nodos del circuito (spec 2.2), con la sigla de quien es (la maqueta de los PDF) y qué hace: lo de la DGMIT en violeta, el Portal en
 // verde y el resto en el acento
@@ -784,8 +789,9 @@ const piezaDelIndice = (doc, indice) => {
 };
 
 // El contexto (spec 2.2): el índice mes a mes (con el valor de hoy a la derecha del título; si no hay nada que dibujar, lo que dice el
-// servidor) y la antigüedad de los vencidos, en barras ámbar, con los textos del servidor
-const elementosDelContexto = (doc, contexto) => {
+// servidor) y la antigüedad de los vencidos, en barras ámbar, con los textos del servidor. Los grupos de dibujarParte (también los usa
+// el Informe anual, services/reportesInformeAnualPdf.js)
+export const elementosDelContexto = (doc, contexto) => {
   const indice = lista(contexto.indice).filter(esObjeto);
   const vacio = texto(contexto.indice_vacio);
   const grafico = vacio ? null : piezaDelIndice(doc, indice);
@@ -827,8 +833,10 @@ const elementoDeLasManuales = (doc, manuales, anio) => {
 };
 
 // Los cinco totales en tarjetas, con su texto del servidor (en singular o en plural); por mes, las tres series de la pestaña en una
-// tabla (la pestaña muestra una por vez, con chips), con los meses que manda el servidor; las métricas manuales y la doble verificación
-const elementosDelTrabajo = (doc, trabajo, manuales, anio) => {
+// tabla (la pestaña muestra una por vez, con chips), con los meses que manda el servidor; las métricas manuales y la doble verificación.
+// Los grupos de dibujarParte. El Informe anual (services/reportesInformeAnualPdf.js) los dibuja sin las métricas manuales
+// (`conManuales` false: no están en la foto del 31/12)
+export const elementosDelTrabajo = (doc, trabajo, manuales, anio, { conManuales = true } = {}) => {
   const textos = objeto(trabajo.textos);
   const totales = objeto(textos.totales);
   const meses = lista(textos.meses).map(texto);
@@ -843,7 +851,7 @@ const elementosDelTrabajo = (doc, trabajo, manuales, anio) => {
       prepararTarjetas(doc, TOTALES_DEL_TRABAJO.map((clave) => ({ valor: cuenta(trabajo[clave]), rotulo: texto(totales[clave]) })))
     ],
     ...(meses.length ? [[prepararSeccion(doc, { titulo: T.titulos.porMes }), tabla]] : []),
-    [prepararSeccion(doc, { titulo: T.titulos.manuales }), elementoDeLasManuales(doc, manuales, anio)],
+    ...(conManuales ? [[prepararSeccion(doc, { titulo: T.titulos.manuales }), elementoDeLasManuales(doc, manuales, anio)]] : []),
     [
       prepararSeccion(doc, { titulo: T.titulos.auditoria }),
       comoElemento(apilar([
@@ -888,34 +896,22 @@ const elementosDeLasAreas = (doc, areas) => {
 // =====================================================
 
 // Una parte del PDF desde una hoja nueva: el título de la parte va junto con su primer grupo, y después cada grupo de elementos, uno
-// debajo del otro y cada uno junto en una hoja (dibujarJuntos: una sección con lo primero que le sigue)
-const dibujarParte = (doc, hoja, titulo, grupos) => {
+// debajo del otro y cada uno junto en una hoja (dibujarJuntos: una sección con lo primero que le sigue). Devuelve la y de lo que sigue
+// (el Informe anual dibuja los logros debajo)
+export const dibujarParte = (doc, hoja, titulo, grupos) => {
   const [primero = [], ...resto] = grupos;
-  [[titulo, ...primero], ...resto].reduce((yGrupo, grupo) => dibujarJuntos(doc, yGrupo, grupo), agregarHoja(doc, hoja));
+  return [[titulo, ...primero], ...resto].reduce((yGrupo, grupo) => dibujarJuntos(doc, yGrupo, grupo), agregarHoja(doc, hoja));
 };
 
-// El PDF de Métricas del año. `datos`: lo de metricasDe (controllers/metricasController.js: anio, al, en_vivo, aviso_foto, anios, vista,
-// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta) y las
-// métricas manuales de Gestión del año (`manuales`: [{ tipo, anio, mes, cantidad }], que no son de metricasDe); `generado`: { momento: 'AAAA-MM-DD HH:MM:SS' (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
-// Las cintas no salen de `datos.cinta` (las de la pantalla, o las que guardó la foto): se arman con el circuito de la vista y la letra
-// del PDF.
-export const renderMetricasDelAnio = async (datos, { generado }) => {
+// Los grupos de la parte 1 (los de dibujarParte): la píldora con la combinación y lo destildado, de dónde sale un año cerrado, el
+// circuito de cada gestión en un recuadro con el borde azul y los resultados del año, con «Cómo se cuenta», que viaja con lo último de
+// antes (los resultados): nunca queda solo en una hoja. `datos`: los de renderMetricasDelAnio; `anio`, `estadistico` y `dias`, ya
+// leídos. También los usa el Informe anual (services/reportesInformeAnualPdf.js)
+export const elementosDelCircuito = (doc, datos, { anio, estadistico, dias }) => {
   const d = objeto(datos);
-  const anio = Number.isInteger(d.anio) ? d.anio : Number(texto(d.al).slice(0, 4));
-  const estadistico = elegido(d.estadistico, ESTADISTICOS);
-  const dias = elegido(d.dias, DIAS);
   const vista = objeto(d.vista);
   const circuito = objeto(vista.circuito);
-  const cintas = cintasDeLaVista(vista, { estadistico, dias, ...OPCIONES_CINTA_PDF });
   const combinacion = `${estadistico} en ${T.dias[dias]}`;
-  const nombre = `Métricas del RPAD · ${anio}`;
-  const doc = nuevoReporte({ titulo: `Métricas del RPAD ${anio}` });
-  const hoja = { derecha: nombre, fecha: texto(generado?.momento).slice(0, 10) };
-  const rotulo = rotuloDelAnio({ ...d, anio });
-  const titulo = (t) => prepararTitulo(doc, { rotulo, titulo: t });
-
-  // 1. El circuito de las dos gestiones, los resultados y «Cómo se cuenta», que viaja con lo último de antes (los resultados): nunca queda
-  // solo en una hoja
   const destildados = lista(d.sin_titulos).some((t) => typeof t === 'string' && t);
   const origen = textoDeDondeSale(d);
   const circuitos = [
@@ -934,7 +930,31 @@ export const renderMetricasDelAnio = async (datos, { generado }) => {
   const pildora = prepararPildora(doc, textoDeLaPildora({ ...d, estadistico, dias }), { tono: destildados ? 'sol' : 'azul' });
   const grupos = [[pildora], ...circuitos];
   grupos[grupos.length - 1] = [...grupos.at(-1), comoSeCuenta];
-  dibujarParte(doc, hoja, titulo('El circuito, del aviso del RPAD a la carga en el portal'), grupos);
+  return grupos;
+};
+
+// El PDF de Métricas del año. `datos`: lo de metricasDe (controllers/metricasController.js: anio, al, en_vivo, aviso_foto, anios, vista,
+// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta) y las
+// métricas manuales de Gestión del año (`manuales`: [{ tipo, anio, mes, cantidad }], que no son de metricasDe); `generado`: { momento: 'AAAA-MM-DD HH:MM:SS' (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
+// Las cintas no salen de `datos.cinta` (las de la pantalla, o las que guardó la foto): se arman con el circuito de la vista y la letra
+// del PDF.
+export const renderMetricasDelAnio = async (datos, { generado }) => {
+  const d = objeto(datos);
+  const anio = Number.isInteger(d.anio) ? d.anio : Number(texto(d.al).slice(0, 4));
+  const estadistico = elegido(d.estadistico, ESTADISTICOS);
+  const dias = elegido(d.dias, DIAS);
+  const vista = objeto(d.vista);
+  const circuito = objeto(vista.circuito);
+  const cintas = cintasDeLaVista(vista, { estadistico, dias, ...OPCIONES_CINTA_PDF });
+  const nombre = `Métricas del RPAD · ${anio}`;
+  const doc = nuevoReporte({ titulo: `Métricas del RPAD ${anio}` });
+  const hoja = { derecha: nombre, fecha: texto(generado?.momento).slice(0, 10) };
+  const rotulo = rotuloDelAnio({ ...d, anio });
+  const titulo = (t) => prepararTitulo(doc, { rotulo, titulo: t });
+
+  // 1. El circuito de las dos gestiones, los resultados y «Cómo se cuenta»
+  const grupos = elementosDelCircuito(doc, d, { anio, estadistico, dias });
+  dibujarParte(doc, hoja, titulo(TITULO_DEL_CIRCUITO), grupos);
 
   // 2. Las cintas del recorrido típico y los casos destildados
   dibujarParte(doc, hoja, titulo('El recorrido típico de un pedido'), [
@@ -948,7 +968,7 @@ export const renderMetricasDelAnio = async (datos, { generado }) => {
   ]);
 
   // 3. El contexto y el trabajo del RPAD
-  dibujarParte(doc, hoja, titulo('El contexto y el trabajo del RPAD'), [
+  dibujarParte(doc, hoja, titulo(TITULO_DEL_CONTEXTO), [
     ...elementosDelContexto(doc, objeto(d.contexto)),
     ...elementosDelTrabajo(doc, objeto(d.trabajo), d.manuales, anio)
   ]);

@@ -2,7 +2,8 @@
 // (también el lector y el colaborador); sin sesión, 401. Los parámetros raros caen a los de entrada y un año sin métricas da 404 en
 // JSON. Contra una base de prueba propia, con datos inventados. El servidor corre con el reloj de verdad: lo que depende del día (un
 // año cerrado con su foto o todavía sin ella) se prueba con metricasDe y un hoy fijo, como la foto (sacarFotoSiCorresponde). La foto
-// se guarda con datosDeLaFoto y un INSERT: nunca /api/cron/*. Las opciones del pedido, puras, en tests/metricas-opciones.test.js.
+// se guarda con datosDeLaFoto y un INSERT: nunca /api/cron/*. Las opciones del pedido, puras, en tests/metricas-opciones.test.js. Al
+// final, el Informe anual (GET /api/reportes/informe-anual), que sale solo de la foto: no depende del día.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
@@ -315,10 +316,10 @@ const metricasDeLasReglas = (fuentes, { estadistico, dias }) => {
   };
 };
 
-const guardarFoto = async () => {
-  const datos = foto.datosDeLaFoto(await seguimientoDatos.fuentesDe(null), { anio: 2026, generada: '2027-01-10 08:15:00' });
-  await query('INSERT INTO metricas_fotos (anio, al, datos) VALUES (?, ?, ?)', [2026, AL, JSON.stringify(datos)]);
-  return (await foto.leerFoto(2026)).datos;
+const guardarFoto = async (anio = 2026) => {
+  const datos = foto.datosDeLaFoto(await seguimientoDatos.fuentesDe(null), { anio, generada: `${anio + 1}-01-10 08:15:00` });
+  await query('INSERT INTO metricas_fotos (anio, al, datos) VALUES (?, ?, ?)', [anio, `${anio}-12-31`, JSON.stringify(datos)]);
+  return (await foto.leerFoto(anio)).datos;
 };
 
 describe('metricasDe con un hoy fijo', () => {
@@ -456,5 +457,141 @@ describe('metricasDe con un hoy fijo', () => {
       { message: 'La foto de 2026 no se puede leer' });
     // Las otras combinaciones sí
     assert.equal((await metricas({ anio: '2026' }, '2027-03-01')).en_vivo, false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// GET /api/reportes/informe-anual?anio= (spec 5, Para presentar, punto 2): solo para un año con foto, que lo da entero (la foto, la
+// comparación con la del año anterior y los logros del año, los hitos de Gestión → Proyectos)
+// ---------------------------------------------------------------------------------------------------------------------
+
+const SIN_FOTO = { success: false, error: 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.' };
+
+// Un proyecto de Gestión y un hito (sin proyecto, un logro del área)
+const proyecto = async ({ nombre, categoria = 'tecnologia', activo = 1 }) => (await query(
+  "INSERT INTO proyectos (nombre, estado, categoria, activo, created_by) VALUES (?, 'en_curso', ?, ?, ?)",
+  [nombre, categoria, activo, usuarios.adminA.id]
+)).insertId;
+const hitoDe = (proyectoId, fecha, titulo, descripcion = null) => query(
+  'INSERT INTO proyecto_hitos (proyecto_id, titulo, fecha, descripcion) VALUES (?, ?, ?, ?)', [proyectoId, titulo, fecha, descripcion]
+);
+
+const pedirInforme = (consulta, quien) => api.get(`/reportes/informe-anual${consulta}`, quien ? como(quien) : {});
+
+describe('GET /reportes/informe-anual', () => {
+  beforeEach(async () => {
+    await query('DELETE FROM proyecto_hitos');
+    await query('DELETE FROM proyectos');
+  });
+
+  it('sin foto, 404 con el mensaje', async () => {
+    await prepararElAnio();
+    // Sin la foto del año (ni la de 2026, que todavía no se sacó, ni la de 2025, que nunca la tiene), sin año o con uno que no es un año
+    for (const consulta of ['?anio=2026', '?anio=2025', '', '?anio=', '?anio=abc', '?anio=0', '?anio=0999', '?anio=10000', '?anio=2026.5',
+      '?anio=1e3', '?anio=-2026', '?anio=2026&anio=2027', '?anio[a]=2026']) {
+      for (const quien of ['lector', 'colab', 'adminA']) {
+        const res = await pedirInforme(consulta, quien);
+        assert.equal(res.status, 404, `${consulta} ${quien}`);
+        assert.match(res.headers.get('content-type'), /^application\/json/);
+        assert.deepEqual(res.body, SIN_FOTO, `${consulta} ${quien}`);
+      }
+    }
+    // Con la foto de otro año, tampoco
+    await guardarFoto(2026);
+    assert.deepEqual((await pedirInforme('?anio=2027', 'lector')).body, SIN_FOTO);
+    // Sin sesión, 401
+    for (const token of [undefined, 'no-es-un-token']) {
+      const res = await api.get('/reportes/informe-anual?anio=2026', { token });
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
+    }
+  });
+
+  it('con foto de 2026 y sin la de 2025: «Primer año con foto»', async () => {
+    const ids = await prepararElAnio();
+    const guardada = await guardarFoto(2026);
+    // La base cambia después de la foto: el Informe sale de la foto
+    await query('DELETE FROM datasets WHERE id = ?', [ids[2]]);
+    for (const quien of ['lector', 'colab']) {
+      const res = await pedirInforme('?anio=2026', quien);
+      assert.equal(res.status, 200, quien);
+      assert.match(res.headers.get('content-type'), /^application\/pdf/);
+      assert.equal(res.headers.get('content-disposition'), disposicionDeAdjunto('Informe-anual-RPAD-2026.pdf'));
+      assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
+      assert.ok(todasDelTamano(res.body, HOJA_A4), 'todas las hojas son A4');
+      const hojas = lineasPorHoja(res.body);
+      hojas.forEach((lineas, k) => {
+        assert.ok(lineas.includes(`Informe anual 2026 · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+        assert.ok(lineas.includes('Informe anual 2026'), `hoja ${k + 1}`);
+        // «Generado el … por <nombre corto>»
+        assert.ok(lineas.some((l) => /^Generado el \d{2}\/\d{2}\/\d{4} a las \d{2}:\d{2} por \S/.test(l)), `hoja ${k + 1}`);
+      });
+      const todo = hojas.flat();
+      assert.ok(todo.includes('Primer año con foto'), todo.join(' | '));
+      assert.ok(!todo.includes('Diferencia'));
+      // La cifra de la carga es la de la foto, con los tres datasets (con la base de hoy serían dos)
+      const primera = hojas[0].join(' ');
+      assert.ok(hojas[0].includes('INFORME ANUAL · AÑO 2026, AL 31/12/2026'), primera);
+      assert.ok(primera.includes('Sale de la foto del 31/12/2026, calculada con todos los datasets.'), primera);
+      assert.ok(primera.includes('Mediana en días hábiles · con todos los datasets'), primera);
+      const carga = guardada.vistas['mediana-habiles'].circuito.externa.find((t) => t.clave === 'carga').cifra;
+      assert.equal(carga.debajo, 'mediana de 3 ciclos');
+      assert.ok(primera.includes(`${carga.texto} ${carga.unidad}`) && primera.includes(carga.debajo), primera);
+      // Sin hitos en 2026
+      assert.ok(todo.includes('Sin hitos registrados en 2026.'));
+    }
+  });
+
+  it('con la foto de 2025, la comparación con los números de las dos fotos', async () => {
+    await prepararElAnio();
+    await guardarFoto(2025);
+    await guardarFoto(2026);
+    const res = await pedirInforme('?anio=2026', 'lector');
+    assert.equal(res.status, 200);
+    const todo = lineasPorHoja(res.body).flat();
+    assert.ok(!todo.includes('Primer año con foto'));
+    const comparacion = todo.slice(todo.indexOf('COMPARACIÓN CON 2025'));
+    assert.ok(comparacion.includes('Las fotos del 31/12/2025 y del 31/12/2026'), comparacion.join(' | '));
+    const fila = (rotulo) => comparacion.slice(comparacion.indexOf(rotulo), comparacion.indexOf(rotulo) + 4);
+    assert.deepEqual(fila('El trabajo del RPAD'), ['El trabajo del RPAD', '2025', '2026', 'Diferencia']);
+    // Los tres datasets se dieron de alta y se actualizaron en 2026: en la foto de 2025 no estaban
+    assert.deepEqual(fila('Datasets nuevos'), ['Datasets nuevos', '0', '3', '+3']);
+    assert.deepEqual(fila('Actualizaciones registradas'), ['Actualizaciones registradas', '0', '3', '+3']);
+    assert.deepEqual(fila('Índice de actualización'), ['Índice de actualización', '—', '100% al día (3 de 3)', '—']);
+    // El Informe de 2025 compara con 2024, que no tiene foto
+    const de2025 = await pedirInforme('?anio=2025', 'lector');
+    assert.equal(de2025.status, 200);
+    const lineas2025 = lineasPorHoja(de2025.body).flat();
+    assert.ok(lineas2025.includes('COMPARACIÓN CON 2024') && lineas2025.includes('Primer año con foto'), lineas2025.join(' | '));
+  });
+
+  it('los logros de 2026 por proyecto', async () => {
+    await prepararElAnio();
+    await guardarFoto(2026);
+    const portal = await proyecto({ nombre: 'Portal de prueba', categoria: 'tecnologia' });
+    const difusion = await proyecto({ nombre: 'Difusión de prueba', categoria: 'difusion' });
+    const deBaja = await proyecto({ nombre: 'Proyecto dado de baja', activo: 0 });
+    await hitoDe(difusion, '2026-08-01', 'Taller con las áreas', 'Se hizo en el salón.');
+    await hitoDe(portal, '2026-11-30', 'Segundo hito del portal');
+    await hitoDe(portal, '2026-02-03', 'Primer hito del portal', 'Con su descripción.');
+    await hitoDe(portal, '2025-12-31', 'Hito de 2025');
+    await hitoDe(portal, '2027-01-01', 'Hito de 2027');
+    await hitoDe(deBaja, '2026-05-05', 'Hito de un proyecto dado de baja');
+    await hitoDe(null, '2026-06-15', 'Logro sin proyecto');
+    const res = await pedirInforme('?anio=2026', 'lector');
+    assert.equal(res.status, 200);
+    const todo = lineasPorHoja(res.body).flat();
+    const logros = todo.slice(todo.indexOf('LOGROS DEL AÑO'));
+    // Los proyectos en el orden de Gestión → Proyectos (por categoría), cada hito por fecha, y los logros del área al final
+    const orden = ['Portal de prueba', '03/02/2026', 'Primer hito del portal', 'Con su descripción.', '30/11/2026', 'Segundo hito del portal',
+      'Difusión de prueba', '01/08/2026', 'Taller con las áreas', 'Se hizo en el salón.', 'Logros del Área', '15/06/2026', 'Logro sin proyecto'];
+    const posiciones = orden.map((t) => logros.indexOf(t));
+    assert.ok(posiciones.every((p) => p !== -1), JSON.stringify(Object.fromEntries(orden.map((t, i) => [t, posiciones[i]]))));
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+    // Los de otro año y los de un proyecto dado de baja, no
+    for (const t of ['Hito de 2025', 'Hito de 2027', 'Hito de un proyecto dado de baja', 'Proyecto dado de baja']) {
+      assert.ok(!todo.includes(t), t);
+    }
+    assert.ok(!todo.includes('Sin hitos registrados en 2026.'));
   });
 });

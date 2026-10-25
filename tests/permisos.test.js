@@ -6,6 +6,9 @@ import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba,
 
 let servidor, api, usuarios;
 
+// El 404 del Informe anual de un año sin foto (1999 nunca la tiene)
+const SIN_FOTO_DEL_ANIO = 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.';
+
 before(async () => {
   servidor = await iniciarServidor();
   api = crearCliente(servidor.url);
@@ -106,6 +109,13 @@ describe('lector', () => {
     const res = await api.get(`/seguimiento/${id}`, { token: usuarios.lector.token });
     assert.equal(res.status, 200);
   });
+
+  // El Informe anual (spec 2026-10-24-metricas-y-reportes, 5): sin la foto del año, el 404 del controlador (no un 401 ni un 403)
+  it('puede usar GET /reportes/informe-anual', async () => {
+    const res = await api.get('/reportes/informe-anual?anio=1999', { token: usuarios.lector.token });
+    assert.equal(res.status, 404);
+    assert.equal(res.body.error, SIN_FOTO_DEL_ANIO);
+  });
 });
 
 // Notas DGMIT (spec 2026-10-24-notas-dgmit, sección 8): las cargan administración y el colaborador, no el lector. Los IDs no
@@ -159,6 +169,12 @@ describe('colaborador', () => {
     assert.equal(res.status, 200);
   });
 
+  it('puede usar GET /reportes/informe-anual', async () => {
+    const res = await api.get('/reportes/informe-anual?anio=1999', { token: usuarios.colaborador.token });
+    assert.equal(res.status, 404);
+    assert.equal(res.body.error, SIN_FOTO_DEL_ANIO);
+  });
+
   // Con el cuerpo vacío, el middleware lo deja pasar y contesta el controlador (la validación, o la nota que no existe o no es suya):
   // nunca el 403 del middleware ni un 401. Nada se guarda
   for (const [metodo, ruta] of RUTAS_NOTAS_DGMIT) {
@@ -203,7 +219,7 @@ describe('visitante sin sesión', () => {
 
   // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5 y 6): para todos los roles con sesión, nunca sin ella
   it('recibe 401 en los reportes PDF', async () => {
-    for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar']) {
+    for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar', '/reportes/informe-anual?anio=2026']) {
       const res = await api.get(ruta);
       assert.equal(res.status, 401, ruta);
       assert.equal(res.body.success, false, ruta);
