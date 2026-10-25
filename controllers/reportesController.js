@@ -7,6 +7,10 @@ import { OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
 import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
 import { renderPorArea } from '../services/reportesPorAreaPdf.js';
 import { renderAvisos, avisosDelPeriodo } from '../services/reportesAvisosPdf.js';
+import { agendaDe, opcionesDeAgenda } from '../services/reportesAgenda.js';
+import { renderAgenda } from '../services/reportesAgendaPdf.js';
+import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
+import { metricasDe } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
@@ -209,6 +213,83 @@ export const reportePorArea = async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     // La fecha de hoy en Argentina, la del PDF (no la del reloj del servidor)
     res.setHeader('Content-Disposition', disposicionDeAdjunto(`Reporte-area-${area.id}-${hoy}.pdf`));
+    res.send(pdf);
+  } catch (error) {
+    console.error('Error generando reporte:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// =====================================================
+// REPORTE: Agenda de pedidos
+// =====================================================
+// Qué vence en los próximos 3, 6 o 12 meses, mes por mes, con los vencidos aparte (spec 2026-10-24-metricas-y-reportes, 5, punto 6): la
+// agenda la arma services/reportesAgenda.js (agendaDe) y el PDF lo dibuja services/reportesAgendaPdf.js. Acá van la consulta de los
+// datasets activos (el área y la frecuencia por su nombre, los meses de la frecuencia, la próxima y «Datos al» como 'AAAA-MM-DD', el tipo
+// de pedido guardado y «Requiere nota DGMIT») y el pie, con el nombre corto de quien lo pide y la hora argentina (un solo instante para
+// el pie y para "hoy").
+
+// GET /reportes/agenda?meses=&gestion= (authMiddleware: todos los roles con sesión). Los valores que no sirven caen a 6 meses y a las dos
+// gestiones (opcionesDeAgenda). El archivo se llama «Agenda-de-pedidos-AAAA-MM-DD.pdf», con la fecha de hoy en Argentina.
+export const reporteAgenda = async (req, res) => {
+  try {
+    const { meses, gestion } = opcionesDeAgenda(req.query);
+    const momento = ahoraArgentina();
+    const hoy = momento.slice(0, 10);
+    const [[[usuario]], [datasets]] = await Promise.all([
+      pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
+      pool.execute(`
+        SELECT d.titulo, d.tipo_gestion, d.tipo_pedido, d.requiere_nota, a.nombre AS area_nombre, f.nombre AS frecuencia_nombre,
+               ${COLUMNAS_FECHAS}
+        FROM datasets d
+        JOIN frecuencias f ON d.frecuencia_id = f.id
+        JOIN areas a ON d.area_id = a.id
+        WHERE d.activo = TRUE
+      `)
+    ]);
+    const agenda = agendaDe(datasets.map(d => ({
+      titulo: d.titulo,
+      area: d.area_nombre,
+      tipo_gestion: d.tipo_gestion,
+      frecuencia: d.frecuencia_nombre,
+      frecuencia_meses: d.frecuencia_meses ?? null,
+      proxima: d.proxima_iso,
+      datos_al: d.datos_al_iso,
+      tipo_pedido: d.tipo_pedido,
+      requiere_nota: d.requiere_nota
+    })), { hoy, meses, gestion });
+    const pdf = await renderAgenda({ meses, gestion, agenda }, { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Agenda-de-pedidos-${hoy}.pdf`));
+    res.send(pdf);
+  } catch (error) {
+    console.error('Error generando reporte:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// =====================================================
+// REPORTE: Datos para completar
+// =====================================================
+// Lo mismo que la sección «Para completar» de la pestaña Métricas (spec 2026-10-24-metricas-y-reportes, 5, punto 7, y 2.2): la
+// vista.para_completar del año en curso, en vivo y sin destildados, de la misma función que GET /api/metricas (metricasDe, con los
+// parámetros por defecto y el hoy del pie). El PDF lo dibuja services/reportesParaCompletarPdf.js.
+
+// GET /reportes/para-completar (authMiddleware: todos los roles con sesión). El archivo se llama «Datos-para-completar-AAAA-MM-DD.pdf»,
+// con la fecha de hoy en Argentina. Si el año de hoy no tuviera métricas (uno anterior a 2026), el 404 de Métricas.
+export const reporteParaCompletar = async (req, res) => {
+  try {
+    const momento = ahoraArgentina();
+    const hoy = momento.slice(0, 10);
+    const [[[usuario]], metricas] = await Promise.all([
+      pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
+      metricasDe({}, { hoy })
+    ]);
+    if (metricas === null) return res.status(404).json({ success: false, error: 'No hay métricas de ese año' });
+    const pdf = await renderParaCompletar({ anio: metricas.anio, para_completar: metricas.vista?.para_completar },
+      { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Datos-para-completar-${hoy}.pdf`));
     res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);

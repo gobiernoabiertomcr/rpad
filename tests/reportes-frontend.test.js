@@ -16,6 +16,9 @@ import {
   TEXTOS_DE_LA_PESTANA as T, textoDelDesglose, textoDeLoQueFalta, textoDeDondeSale, textoDelMesManual, textoSinManuales,
   textoDelPieDeLosCasos
 } from '../services/reportesMetricasPdf.js';
+import {
+  TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
+} from '../services/reportesParaCompletarPdf.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -1074,5 +1077,40 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     assert.ok(ctx.htmlDeBarra(cerrado, { ...POR_DEFECTO, anio: 2026 }).includes(`>${textoDeDondeSale(cerrado)}</p>`), textoDeDondeSale(cerrado));
     const sinFoto = { ...cerrado, en_vivo: true, aviso_foto: 'La foto de 2026 se saca el 10/01/2027' };
     assert.ok(ctx.htmlDeBarra(sinFoto, POR_DEFECTO).includes(`>${textoDeDondeSale(sinFoto)}</p>`));
+  });
+});
+
+// El PDF «Datos para completar» (services/reportesParaCompletarPdf.js) imprime lo mismo que «Para completar» de la pestaña: la bajada de
+// la sección (en public/reportes.html), su pie y, en cada tarea, lo de debajo del dataset y qué pasó (htmlDeParaCompletar). Los arma
+// con TEXTOS_DE_PARA_COMPLETAR y unas funciones que hacen lo mismo que la pestaña: si cambia uno allá, este test falla
+describe('reportes.js y el PDF de Datos para completar: los mismos textos', () => {
+  const tarea = (titulo, debajo, que) =>
+    `<span class="d"><b>${ctx.escaparTexto(titulo)}</b><small>${ctx.escaparTexto(debajo)}</small></span><span class="q">${ctx.escaparTexto(que)}</span>`;
+
+  it('la bajada de la sección y el pie', () => {
+    assert.ok(leer('reportes.html').includes(`<p class="mt-seccion-bajada">${TEXTOS_DE_PARA_COMPLETAR.bajada}</p>`));
+    assert.ok(ctx.htmlDeParaCompletar(VISTA, false).includes(`<p class="mt-pie">${TEXTOS_DE_PARA_COMPLETAR.pie}</p>`));
+  });
+
+  it('cada tarea: el área y cómo está el ciclo, el aviso del RPAD, la gestión y qué falta y la carga', () => {
+    const { notas, recibido } = VISTA.para_completar;
+    assert.ok(notas.length > 0 && recibido.length > 0);
+    // También sin qué fue el aviso, sin aviso, sin situación, sin gestión, sin qué falta y sin carga
+    const [nota] = notas;
+    const [actualizacion] = recibido;
+    const raras = { para_completar: {
+      ...VISTA.para_completar,
+      notas: [...notas, { ...nota, que: '' }, { ...nota, aviso: null }, { ...nota, situacion: null }, { ...nota, area: '' }],
+      recibido: [...recibido, { ...actualizacion, gestion: null }, { ...actualizacion, falta_texto: '' }, { ...actualizacion, carga: null }]
+    } };
+    for (const puedeCargar of [false, true]) {
+      const html = ctx.htmlDeParaCompletar(raras, puedeCargar);
+      for (const n of raras.para_completar.notas) {
+        assert.ok(html.includes(tarea(n.titulo, debajoDeLaNota(n), queDeLaNota(n))), `${n.titulo}: ${debajoDeLaNota(n)} / ${queDeLaNota(n)}`);
+      }
+      for (const r of raras.para_completar.recibido) {
+        assert.ok(html.includes(tarea(r.titulo, debajoDelRecibido(r), queDelRecibido(r))), `${r.titulo}: ${debajoDelRecibido(r)} / ${queDelRecibido(r)}`);
+      }
+    }
   });
 });

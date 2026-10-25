@@ -59,7 +59,9 @@ import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/fir
 import {
   reporteEstadoGeneral,
   reporteAvisos,
-  reportePorArea
+  reportePorArea,
+  reporteAgenda,
+  reporteParaCompletar
 } from '../controllers/reportesController.js';
 import { generarNota } from '../controllers/notasController.js';
 import {
@@ -245,6 +247,8 @@ router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, ad
 router.get('/reportes/estado-general', authMiddleware, reporteEstadoGeneral);
 router.get('/reportes/avisos', authMiddleware, reporteAvisos);
 router.get('/reportes/por-area/:areaId', authMiddleware, reportePorArea);
+router.get('/reportes/agenda', authMiddleware, reporteAgenda);
+router.get('/reportes/para-completar', authMiddleware, reporteParaCompletar);
 
 // =====================================================
 // Seguimiento del dataset (protegidas, para todos los roles con sesión)

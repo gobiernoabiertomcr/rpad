@@ -1,6 +1,7 @@
 // Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
-// Estado general de los datasets, Métricas del año, Por área y Avisos del RPAD. Puro: los datos se arman acá, sin base de datos (los textos del reporte
-// servido por la API, con el set controlado, están en estados-api.test.js, reportes.test.js y metricas-api.test.js).
+// Estado general de los datasets, Métricas del año, Por área, Avisos del RPAD, Agenda de pedidos y Datos para completar. Puro: los
+// datos se arman acá, sin base de datos (los textos del reporte servido por la API, con el set controlado, están en
+// estados-api.test.js, reportes.test.js y metricas-api.test.js; la agenda como datos, en reportes-agenda.test.js).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
@@ -12,6 +13,11 @@ import { renderSeguimiento, OPCIONES_CINTA_PDF, ALTO_DE_LA_CABEZA_DE_SECCION } f
 import { renderMetricasDelAnio, textoDeLaPildora } from '../services/reportesMetricasPdf.js';
 import { renderPorArea } from '../services/reportesPorAreaPdf.js';
 import { renderAvisos, avisosDelPeriodo } from '../services/reportesAvisosPdf.js';
+import { renderAgenda } from '../services/reportesAgendaPdf.js';
+import { agendaDe } from '../services/reportesAgenda.js';
+import {
+  renderParaCompletar, TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
+} from '../services/reportesParaCompletarPdf.js';
 import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
@@ -413,6 +419,43 @@ describe('la base de los reportes: medidas, lugar y recuadros', () => {
     assert.ok(una.alto > 0);
     assert.equal(dos.alto, una.alto);
     assert.equal(prepararTabla(doc, { columnas, filas: [] }).alto, 0);
+  });
+
+  // Como el grupo de la portada del Por área: una tabla con `cabeza` (la de su sección) la repite arriba de su encabezado en cada hoja
+  // nueva en que sigue; la primera vez la dibuja quien la llama, junto con la tabla (dibujarJuntos)
+  it('una tabla con cabeza la repite arriba de su encabezado en cada hoja nueva en que sigue', async () => {
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 1 }];
+    const filas = Array.from({ length: 90 }, (_, i) => [`Fila ${String(i + 1).padStart(2, '0')}`, 'algo']);
+    const cabeza = prepararSeccion(doc, { titulo: 'Enero de 2027', derecha: '90 datasets' });
+    dibujarJuntos(doc, hojaDePrueba(doc), [cabeza, prepararTabla(doc, { columnas, filas, cabeza })]);
+    const hojas = lineasPorHoja(await cerrar(doc));
+    assert.ok(hojas.length >= 3, `${hojas.length} hojas`);
+    hojas.forEach((lineas, k) => {
+      const i = lineas.indexOf('ENERO DE 2027');
+      // Una vez por hoja, arriba del encabezado de la tabla, que va antes de las filas
+      assert.equal(lineas.filter(l => l === 'ENERO DE 2027').length, 1, `hoja ${k + 1}: ${lineas.join(' | ')}`);
+      assert.ok(i !== -1 && lineas.indexOf('90 datasets') > i && lineas.indexOf('Columna A') > i, `hoja ${k + 1}`);
+      assert.ok(lineas.findIndex(l => l.startsWith('Fila ')) > lineas.indexOf('Columna A'), `hoja ${k + 1}`);
+    });
+    // Cada fila una sola vez, en orden
+    assert.deepEqual(hojas.flat().filter(l => l.startsWith('Fila ')), filas.map(f => f[0]));
+    // Sin cabeza, como siempre: el encabezado de la tabla solo
+    const otro = nuevoReporte({ titulo: 'Reporte de prueba' });
+    prepararTabla(otro, { columnas, filas }).dibujar(agregarHoja(otro, { derecha: 'Reporte de prueba', fecha: HOY }));
+    const sinCabeza = lineasPorHoja(await cerrar(otro));
+    assert.ok(sinCabeza.length >= 3 && sinCabeza.every(lineas => !lineas.includes('ENERO DE 2027') && lineas.includes('Columna A')));
+  });
+
+  it('una tabla con cabeza: nada se pisa', async () => {
+    const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 1 }];
+    const filas = Array.from({ length: 90 }, (_, i) => [`Fila ${i + 1}`, 'algo '.repeat(1 + (i % 9))]);
+    verificarDiagramacion(await diagramacion(async () => {
+      const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+      const cabeza = prepararSeccion(doc, { titulo: 'Enero de 2027', derecha: '90 datasets' });
+      dibujarJuntos(doc, hojaDePrueba(doc), [cabeza, prepararTabla(doc, { columnas, filas, cabeza })]);
+      await cerrar(doc);
+    }));
   });
 });
 
@@ -1117,6 +1160,328 @@ describe('Avisos del RPAD con el diseño del anexo', () => {
     it(`nada se pisa: ${titulo}`, async () => {
       const avisos = armar();
       verificarDiagramacion(await diagramacion(() => renderDeAvisos(avisos)));
+    });
+  }
+});
+
+// =====================================================
+// Agenda de pedidos (spec 2026-10-24-metricas-y-reportes, 5, punto 6): qué vence en los próximos meses, mes por mes, con los vencidos
+// aparte y al principio, para que la DGMIT y la Dirección Administrativa planifiquen
+// =====================================================
+
+const HOY_AGENDA = '2026-10-25';
+const GENERADO_AGENDA = { momento: '2026-10-25 10:05:31', por: 'Usuario Ejemplo' };
+// Un dataset activo como lo lee el controlador (los nombres son inventados)
+const deAgenda = (datos) => ({
+  titulo: 'Dataset', area: 'Área A', tipo_gestion: 'externa', frecuencia: 'Anualmente', frecuencia_meses: 12, proxima: '2027-01-31',
+  datos_al: '2025-12-31', tipo_pedido: null, requiere_nota: 1, ...datos
+});
+// Dos vencidos (uno de cada gestión), uno de octubre (su aviso ya pasó), uno de diciembre, dos de enero y uno de marzo; noviembre y
+// febrero sin vencimientos; un eventual, que no va
+const DATASETS_DE_LA_AGENDA = [
+  deAgenda({ titulo: 'Comercios por rubro', area: 'Área Uno', proxima: '2026-01-31', datos_al: '2025-06-30' }),
+  deAgenda({
+    titulo: 'Paradas de colectivos', area: 'Área Dos', tipo_gestion: 'interna', frecuencia: 'Cada dos años', frecuencia_meses: 24,
+    proxima: '2025-09-30', requiere_nota: null
+  }),
+  deAgenda({
+    titulo: 'Empleados municipales', area: 'Área Tres', frecuencia: 'Cada medio año', frecuencia_meses: 6, proxima: '2026-10-31',
+    datos_al: '2026-09-30', tipo_pedido: 'foto', requiere_nota: 0
+  }),
+  deAgenda({ titulo: 'Dependencias municipales', area: 'Área Cuatro', tipo_gestion: 'interna', proxima: '2026-12-31', requiere_nota: null }),
+  deAgenda({ titulo: 'Alfa', requiere_nota: 0 }),
+  deAgenda({
+    titulo: 'Pauta publicitaria', area: 'Área B', frecuencia: 'Trimestralmente', frecuencia_meses: 3, datos_al: '2026-07-31', requiere_nota: null
+  }),
+  deAgenda({ titulo: 'Consulados', area: 'Área Cinco', tipo_gestion: 'interna', proxima: '2027-03-31', requiere_nota: null }),
+  deAgenda({ titulo: 'Guía práctica', frecuencia: 'Eventual', frecuencia_meses: null, proxima: null, tipo_pedido: 'eventual' })
+];
+const renderDeAgenda = ({ datasets = DATASETS_DE_LA_AGENDA, meses = 6, gestion = 'ambas' } = {}) => renderAgenda(
+  { meses, gestion, agenda: agendaDe(datasets, { hoy: HOY_AGENDA, meses, gestion }) }, { hoy: HOY_AGENDA, generado: GENERADO_AGENDA }
+);
+// Muchos datasets que vencen en enero (con títulos y áreas largos, en dos y tres líneas) y unos vencidos: la tabla de enero corta de hoja
+const muchosDeEnero = (n) => [
+  ...Array.from({ length: 4 }, (_, i) => deAgenda({ titulo: `Vencido ${i + 1}`, proxima: '2026-07-31', frecuencia: 'Cada medio año', frecuencia_meses: 6 })),
+  ...Array.from({ length: n }, (_, i) => deAgenda({
+    titulo: `Dataset ${String(i + 1).padStart(2, '0')}: cantidad de usuarios del servicio de agua potable por categoría`,
+    area: `Dirección General de un área con un nombre bastante largo ${i % 5}`, requiere_nota: i % 3 === 0 ? 0 : 1
+  }))
+];
+// Las filas de las tablas, como las dibuja el PDF: los textos de cada renglón (los que empiezan a la misma altura en la misma hoja, sin
+// los vacíos), de izquierda a derecha. La cabeza de una sección (el título y lo de la derecha) también es un renglón
+const filasDe = (textos) => {
+  const porRenglon = new Map();
+  for (const t of textos.filter(t => t.texto !== '')) {
+    const clave = `${t.hoja}:${t.y0.toFixed(2)}`;
+    if (!porRenglon.has(clave)) porRenglon.set(clave, []);
+    porRenglon.get(clave).push(t);
+  }
+  return [...porRenglon.values()].map(ts => ts.sort((a, b) => a.x0 - b.x0).map(t => t.texto));
+};
+const filaQueEmpieza = (filas, texto) => {
+  const fila = filas.find(f => f[0] === texto);
+  assert.ok(fila, `falta la fila de "${texto}"`);
+  return fila;
+};
+const ENCABEZADO_DE_LA_AGENDA = ['Conjunto de datos', 'Área', 'Gestión', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Aviso aprox.'];
+
+describe('Agenda de pedidos con el diseño del anexo', () => {
+  it('el encabezado del anexo, el período, la gestión, los totales y el pie «Agenda de pedidos · Hoja k de N»', async () => {
+    const pdf = await renderDeAgenda();
+    assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+    const hojas = lineasPorHoja(pdf);
+    hojas.forEach((lineas, k) => {
+      for (const t of ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Municipalidad de Comodoro Rivadavia', 'Agenda de pedidos',
+        formatoLargo(HOY_AGENDA), 'Generado el 25/10/2026 a las 10:05 por Usuario Ejemplo', `Agenda de pedidos · Hoja ${k + 1} de ${hojas.length}`]) {
+        assert.ok(lineas.includes(t), `hoja ${k + 1}: falta "${t}" en ${lineas.join(' | ')}`);
+      }
+    });
+    const [lineas] = hojas;
+    for (const t of ['AGENDA DE PEDIDOS · PRÓXIMOS 6 MESES, AL 25/10/2026', 'Qué vence de octubre de 2026 a marzo de 2027', 'Las dos gestiones']) {
+      assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    }
+    // Los vencidos y lo que vence en los 6 meses (el eventual no va)
+    assert.equal(valorDeTarjeta(lineas, 'Vencidos: se siguen pidiendo'), '2');
+    assert.equal(valorDeTarjeta(lineas, 'Vencen en los próximos 6 meses'), '5');
+    // La aclaración, armada en el servidor con la regla de los días
+    const texto = hojas.flat().join(' ');
+    assert.ok(texto.includes('40 días corridos antes del vencimiento en gestión externa y 60 en gestión interna'), texto);
+  });
+
+  it('los vencidos, aparte y primero; después cada mes con lo que vence, sin los meses vacíos', async () => {
+    const lineas = lineasPorHoja(await renderDeAgenda()).flat();
+    const secciones = lineas.filter(l => /^(VENCIDOS|[A-ZÁÉÍÓÚ]+ DE 20\d\d)/.test(l) && !l.startsWith('AGENDA'));
+    assert.deepEqual(secciones, ['VENCIDOS: SE SIGUEN PIDIENDO', 'OCTUBRE DE 2026', 'DICIEMBRE DE 2026', 'ENERO DE 2027', 'MARZO DE 2027']);
+    // A la derecha de cada cabeza, cuántos son y, en un mes, cuándo vencen
+    for (const t of ['2 datasets', '1 dataset · vence el 31/10/2026', '1 dataset · vence el 31/12/2026', '2 datasets · vencen el 31/01/2027',
+      '1 dataset · vence el 31/03/2027']) {
+      assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    }
+  });
+
+  it('cada fila: el área, la gestión, la frecuencia de las notas, «Requiere nota DGMIT», los datos solicitados y el aviso; en los vencidos, «—»', async () => {
+    const filas = filasDe((await diagramacion(() => renderDeAgenda())).textos);
+    // El encabezado, una vez por tabla (los vencidos y cuatro meses)
+    assert.equal(filas.filter(f => f[0] === 'Conjunto de datos').length, 5);
+    assert.deepEqual(filaQueEmpieza(filas, 'Conjunto de datos'), ENCABEZADO_DE_LA_AGENDA);
+    // Los vencidos: el pedido de hoy (R7, como la reiteración) y el aviso aprox. en «—» (Ruling 27); el interno, sin «Requiere nota»
+    assert.deepEqual(filaQueEmpieza(filas, 'Comercios por rubro'),
+      ['Comercios por rubro', 'Área Uno', 'Externa', 'Anualmente', 'Sí', 'Del 01/01/2025 al 31/12/2025', '—']);
+    assert.deepEqual(filaQueEmpieza(filas, 'Paradas de colectivos'),
+      ['Paradas de colectivos', 'Área Dos', 'Interna', 'Cada dos años', 'Relevamiento actualizado', '—']);
+    // Un próximo cuyo aviso ya pasó lo muestra igual; «No» en «Requiere nota DGMIT»
+    assert.deepEqual(filaQueEmpieza(filas, 'Empleados municipales'),
+      ['Empleados municipales', 'Área Tres', 'Externa', 'Cada medio año', 'No', 'Vigente al 30/09/2026', '21/09/2026']);
+    // Un acumulado trimestral lleva «(Acumulado)», como en las notas; sin dato de «Requiere nota DGMIT», la raya
+    assert.deepEqual(filaQueEmpieza(filas, 'Pauta publicitaria'),
+      ['Pauta publicitaria', 'Área B', 'Externa', 'Trimestralmente (Acumulado)', '—', 'Del 01/01/2026 al 31/12/2026', '22/12/2026']);
+    assert.deepEqual(filaQueEmpieza(filas, 'Consulados'), ['Consulados', 'Área Cinco', 'Interna', 'Anualmente', 'Relevamiento actualizado', '01/02/2027']);
+    assert.ok(!filas.some(f => f[0] === 'Guía práctica'), 'el eventual no va');
+  });
+
+  it('con una gestión, sin la columna «Gestión»; en la interna, tampoco la de «Requiere nota DGMIT»', async () => {
+    const externa = filasDe((await diagramacion(() => renderDeAgenda({ gestion: 'externa' }))).textos);
+    assert.deepEqual(filaQueEmpieza(externa, 'Conjunto de datos'),
+      ['Conjunto de datos', 'Área', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados', 'Aviso aprox.']);
+    assert.deepEqual(filaQueEmpieza(externa, 'Alfa'), ['Alfa', 'Área A', 'Anualmente', 'No', 'Del 01/01/2026 al 31/12/2026', '22/12/2026']);
+    assert.ok(!externa.some(f => ['Paradas de colectivos', 'Consulados'].includes(f[0])), 'sin los internos');
+    const interna = filasDe((await diagramacion(() => renderDeAgenda({ gestion: 'interna' }))).textos);
+    assert.deepEqual(filaQueEmpieza(interna, 'Conjunto de datos'), ['Conjunto de datos', 'Área', 'Frecuencia', 'Datos solicitados', 'Aviso aprox.']);
+    assert.deepEqual(filaQueEmpieza(interna, 'Dependencias municipales'),
+      ['Dependencias municipales', 'Área Cuatro', 'Anualmente', 'Relevamiento actualizado', '02/11/2026']);
+    assert.ok(!interna.some(f => ['Comercios por rubro', 'Alfa'].includes(f[0])), 'sin los externos');
+    // La píldora dice la gestión, y la aclaración, sus días
+    const [lineas] = lineasPorHoja(await renderDeAgenda({ gestion: 'interna' }));
+    assert.ok(lineas.includes('Gestión interna'), lineas.join(' | '));
+    assert.ok(lineas.join(' ').includes('60 días corridos antes del vencimiento') && !lineas.join(' ').includes('gestión externa'), lineas.join(' | '));
+    assert.ok(lineasPorHoja(await renderDeAgenda({ gestion: 'externa' }))[0].includes('Gestión externa'));
+  });
+
+  it('con 3 y con 12 meses, el período y los totales lo dicen', async () => {
+    const [tres] = lineasPorHoja(await renderDeAgenda({ meses: 3 }));
+    for (const t of ['AGENDA DE PEDIDOS · PRÓXIMOS 3 MESES, AL 25/10/2026', 'Qué vence de octubre a diciembre de 2026']) assert.ok(tres.includes(t), t);
+    assert.equal(valorDeTarjeta(tres, 'Vencen en los próximos 3 meses'), '2');
+    const doce = lineasPorHoja(await renderDeAgenda({ meses: 12 }));
+    assert.ok(doce[0].includes('Qué vence de octubre de 2026 a septiembre de 2027'), doce[0].join(' | '));
+    assert.equal(valorDeTarjeta(doce[0], 'Vencen en los próximos 12 meses'), '5');
+  });
+
+  it('sin nada que mostrar, lo dice con un texto del servidor; sin vencidos, no va su sección; sin vencimientos en el período, también lo dice', async () => {
+    const hojas = lineasPorHoja(await renderDeAgenda({ datasets: [] }));
+    assert.equal(hojas.length, 1);
+    const [nada] = hojas;
+    assert.ok(nada.includes('Ningún dataset vence de octubre de 2026 a marzo de 2027 y no hay vencidos.'), nada.join(' | '));
+    assert.ok(!nada.includes('Conjunto de datos') && !nada.includes('VENCIDOS: SE SIGUEN PIDIENDO'), nada.join(' | '));
+    assert.equal(valorDeTarjeta(nada, 'Vencidos: se siguen pidiendo'), '0');
+    // Con una gestión, la nombra
+    const [externa] = lineasPorHoja(await renderDeAgenda({ datasets: [], gestion: 'externa' }));
+    assert.ok(externa.includes('Ningún dataset de gestión externa vence de octubre de 2026 a marzo de 2027 y no hay vencidos.'), externa.join(' | '));
+    // Solo vencidos: su sección y, debajo, que en el período no vence ninguno
+    const [soloVencidos] = lineasPorHoja(await renderDeAgenda({ datasets: DATASETS_DE_LA_AGENDA.slice(0, 2) }));
+    assert.ok(soloVencidos.includes('VENCIDOS: SE SIGUEN PIDIENDO'), soloVencidos.join(' | '));
+    assert.ok(soloVencidos.includes('Ningún dataset vence de octubre de 2026 a marzo de 2027.'), soloVencidos.join(' | '));
+    // Sin vencidos, su sección no va
+    const sinVencidos = lineasPorHoja(await renderDeAgenda({ datasets: DATASETS_DE_LA_AGENDA.slice(2) })).flat();
+    assert.ok(!sinVencidos.includes('VENCIDOS: SE SIGUEN PIDIENDO') && sinVencidos.includes('OCTUBRE DE 2026'), sinVencidos.join(' | '));
+    assert.ok(!sinVencidos.some(l => l.startsWith('Ningún dataset')), sinVencidos.join(' | '));
+  });
+
+  it('un mes que sigue en otra hoja repite su cabeza arriba, con el encabezado de la tabla; cada dataset una sola vez', async () => {
+    const datasets = muchosDeEnero(45);
+    const hojas = lineasPorHoja(await renderDeAgenda({ datasets }));
+    assert.ok(hojas.length >= 3, `${hojas.length} hojas`);
+    hojas.forEach((lineas, k) => {
+      assert.ok(lineas.includes(`Agenda de pedidos · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`);
+      // Desde la segunda, enero sigue: su cabeza arriba y el encabezado de la tabla, una vez
+      if (k === 0) return;
+      assert.equal(lineas.filter(l => l === 'ENERO DE 2027').length, 1, `hoja ${k + 1}: ${lineas.join(' | ')}`);
+      assert.ok(lineas.indexOf('ENERO DE 2027') < lineas.indexOf('Conjunto de datos'), `hoja ${k + 1}`);
+    });
+    // El título y los totales, solo arriba de la primera hoja
+    assert.ok(hojas.slice(1).every(lineas => !lineas.includes('Qué vence de octubre de 2026 a marzo de 2027')));
+    // Cada uno una sola vez, en el orden de la agenda: por área (la del dataset N es la «… largo (N − 1) % 5») y después por título
+    const { textos } = await diagramacion(() => renderDeAgenda({ datasets }));
+    const numeros = filasDe(textos).map(f => /^Dataset (\d{2}):/.exec(f[0])?.[1]).filter(Boolean).map(Number);
+    const porArea = Array.from({ length: 45 }, (_, i) => i + 1).sort((a, b) => ((a - 1) % 5) - ((b - 1) % 5) || a - b);
+    assert.deepEqual(numeros, porArea);
+  });
+
+  it('el tono: nada que se lea como un reproche o un control', async () => {
+    for (const opciones of [{}, { datasets: [] }, { datasets: muchosDeEnero(10), gestion: 'externa' }]) {
+      const texto = lineasPorHoja(await renderDeAgenda(opciones)).flat().join(' ').toLowerCase();
+      for (const palabra of ['tardanza', 'demora', 'atraso', 'atrasad', 'sin respuesta', 'sin entregar', 'incumpl']) {
+        assert.ok(!texto.includes(palabra), `"${palabra}" en ${texto}`);
+      }
+    }
+  });
+});
+
+// =====================================================
+// Datos para completar (spec 2026-10-24-metricas-y-reportes, 5, punto 7, y 2.2): lo mismo que «Para completar» de la pestaña Métricas
+// =====================================================
+
+const GENERADO_COMPLETAR = { momento: '2026-10-24 16:12:09', por: 'Usuario Ejemplo' };
+// «Para completar» de los casos reales al 24/10/2026, como lo manda GET /api/metricas (vista.para_completar)
+const PARA_COMPLETAR = metricasDeLosCasos().vista.para_completar;
+const renderDeParaCompletar = (paraCompletar = PARA_COMPLETAR) => renderParaCompletar(
+  { anio: 2026, para_completar: paraCompletar }, { hoy: HOY_DE_LAS_METRICAS, generado: GENERADO_COMPLETAR }
+);
+// Muchas notas pendientes y actualizaciones sin «Recibido el», con títulos y áreas largos: las dos tablas cortan de hoja
+const muchosParaCompletar = (n) => {
+  const [nota] = PARA_COMPLETAR.notas;
+  const [recibido] = PARA_COMPLETAR.recibido;
+  const notas = Array.from({ length: n }, (_, i) => ({
+    ...nota, dataset_id: 1000 + i, titulo: `Nota ${String(i + 1).padStart(2, '0')}: cantidad de usuarios del servicio de energía eléctrica`,
+    area: 'Dirección General de un área con un nombre bastante largo para la prueba'
+  }));
+  const recibidos = Array.from({ length: n }, (_, i) => ({ ...recibido, dataset_id: 2000 + i, titulo: `Actualización ${String(i + 1).padStart(2, '0')}` }));
+  return {
+    notas, recibido: recibidos, total: 2 * n,
+    textos: {
+      ...PARA_COMPLETAR.textos, notas: `Notas DGMIT pendientes de carga (${n}, de ciclos abiertos)`,
+      recibido: `Actualizaciones sin «Recibido el» o sin el origen de los datos (${n})`
+    }
+  };
+};
+const ENCABEZADO_DE_LAS_NOTAS = ['Conjunto de datos', 'Área y ciclo', 'Aviso del RPAD'];
+const ENCABEZADO_DE_LOS_RECIBIDOS = ['Conjunto de datos', 'Gestión y qué falta', 'Carga en el portal'];
+
+describe('Datos para completar con el diseño del anexo', () => {
+  it('el encabezado del anexo, el título con la cantidad y el pie «Datos para completar · Hoja k de N»', async () => {
+    const pdf = await renderDeParaCompletar();
+    assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+    const hojas = lineasPorHoja(pdf);
+    hojas.forEach((lineas, k) => {
+      for (const t of ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Municipalidad de Comodoro Rivadavia', 'Datos para completar',
+        formatoLargo(HOY_DE_LAS_METRICAS), 'Generado el 24/10/2026 a las 16:12 por Usuario Ejemplo', `Datos para completar · Hoja ${k + 1} de ${hojas.length}`]) {
+        assert.ok(lineas.includes(t), `hoja ${k + 1}: falta "${t}" en ${lineas.join(' | ')}`);
+      }
+    });
+    assert.equal(PARA_COMPLETAR.total, 23);
+    for (const t of ['DATOS PARA COMPLETAR · MÉTRICAS DE 2026, AL 24/10/2026', '23 datos para completar', TEXTOS_DE_PARA_COMPLETAR.bajada]) {
+      assert.ok(hojas[0].includes(t), `falta "${t}" en ${hojas[0].join(' | ')}`);
+    }
+  });
+
+  it('lo mismo que «Para completar» de Métricas: cada grupo con su título del servidor y una fila por tarea, sin links', async () => {
+    const pdf = await renderDeParaCompletar();
+    const lineas = lineasPorHoja(pdf).flat();
+    for (const t of [PARA_COMPLETAR.textos.notas, PARA_COMPLETAR.textos.recibido]) assert.ok(lineas.includes(t), `falta "${t}"`);
+    const filas = filasDe((await diagramacion(() => renderDeParaCompletar())).textos);
+    assert.deepEqual(filaQueEmpieza(filas, 'Conjunto de datos'), ENCABEZADO_DE_LAS_NOTAS);
+    assert.ok(filas.some(f => JSON.stringify(f) === JSON.stringify(ENCABEZADO_DE_LOS_RECIBIDOS)), 'falta el encabezado de las actualizaciones');
+    // Las filas, en el orden del servidor, con los textos de la pestaña (sin dato, la raya)
+    const deLasNotas = PARA_COMPLETAR.notas.map(n => [n.titulo, debajoDeLaNota(n) || '—', queDeLaNota(n) || '—']);
+    const deLosRecibidos = PARA_COMPLETAR.recibido.map(r => [r.titulo, debajoDelRecibido(r) || '—', queDelRecibido(r) || '—']);
+    assert.ok(deLasNotas.length > 0 && deLosRecibidos.length > 0);
+    const dibujadas = filas.filter(f => f.length === 3 && f[0] !== 'Conjunto de datos');
+    assert.deepEqual(dibujadas, [...deLasNotas, ...deLosRecibidos]);
+    // Por ejemplo: el aviso del RPAD con qué fue y, debajo del dataset, el área y cómo está el ciclo
+    const abierta = PARA_COMPLETAR.notas.find(n => n.abierto && n.que);
+    assert.equal(queDeLaNota(abierta), `Aviso del ${ddmmaaaa(abierta.aviso)} (${abierta.que})`);
+    assert.equal(debajoDeLaNota(abierta), `${abierta.area} · ciclo abierto`);
+    const [recibido] = PARA_COMPLETAR.recibido;
+    assert.equal(queDelRecibido(recibido), `Cargada en el portal el ${ddmmaaaa(recibido.carga)}`);
+    assert.equal(debajoDelRecibido(recibido), `gestión ${recibido.gestion} · ${recibido.falta_texto}`);
+    // El pie de la pestaña, y ningún link (es un PDF: no hay a dónde ir)
+    assert.ok(lineas.join(' ').includes(TEXTOS_DE_PARA_COMPLETAR.pie), lineas.join(' | '));
+    assert.ok(!pdf.toString('latin1').includes('/URI') && !lineas.some(l => /Cargar nota DGMIT|Ver en el Seguimiento/.test(l)));
+  });
+
+  it('sin nada para completar: lo dice el título y cada grupo dice su vacío del servidor', async () => {
+    const vacio = vistaDe([], { anio: 2026, al: HOY_DE_LAS_METRICAS }).para_completar;
+    const hojas = lineasPorHoja(await renderDeParaCompletar(vacio));
+    assert.equal(hojas.length, 1);
+    const [lineas] = hojas;
+    for (const t of ['No hay datos para completar', vacio.textos.notas, vacio.textos.notas_vacio, vacio.textos.recibido, vacio.textos.recibido_vacio]) {
+      assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    }
+    assert.ok(!lineas.includes('Conjunto de datos'), lineas.join(' | '));
+    // Uno solo: en singular
+    const uno = { ...vacio, recibido: PARA_COMPLETAR.recibido.slice(0, 1), total: 1 };
+    assert.ok(lineasPorHoja(await renderDeParaCompletar(uno))[0].includes('1 dato para completar'));
+    // Sin «Para completar» (o con datos raros), no tira: nada para completar
+    assert.ok(lineasPorHoja(await renderDeParaCompletar(null))[0].includes('No hay datos para completar'));
+  });
+
+  it('las dos tablas cortan de hoja y repiten arriba el título de su grupo y su encabezado; cada tarea una sola vez', async () => {
+    const datos = muchosParaCompletar(40);
+    const hojas = lineasPorHoja(await renderDeParaCompletar(datos));
+    assert.ok(hojas.length >= 3, `${hojas.length} hojas`);
+    hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Datos para completar · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+    const filas = filasDe((await diagramacion(() => renderDeParaCompletar(datos))).textos);
+    assert.deepEqual(filas.map(f => f[0]).filter(t => /^(Nota|Actualización) \d{2}/.test(t)), [...datos.notas, ...datos.recibido].map(t => t.titulo));
+    // Una hoja que empieza con filas de un grupo lleva arriba su título
+    for (const [k, lineas] of hojas.entries()) {
+      const primera = lineas.find(l => /^(Nota|Actualización) \d{2}/.test(l));
+      if (k === 0 || !primera) continue;
+      const titulo = primera.startsWith('Nota') ? datos.textos.notas : datos.textos.recibido;
+      assert.ok(lineas.indexOf(titulo) !== -1 && lineas.indexOf(titulo) < lineas.indexOf(primera), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+    }
+  });
+});
+
+// Los dos PDF de la Task 18, leídos con el lector de PDF (tests/pdf-lector.js): A4 en todas las hojas, el pie en cada una y nada dice
+// NaN, null ni undefined; y nada se pisa (tests/pdf-diagramacion.js), en los casos de borde
+describe('Agenda de pedidos y Datos para completar: el PDF', () => {
+  const casos = [
+    ['agenda, 6 meses y las dos gestiones', () => renderDeAgenda(), 'Agenda de pedidos'],
+    ['agenda, 12 meses y solo externa', () => renderDeAgenda({ meses: 12, gestion: 'externa' }), 'Agenda de pedidos'],
+    ['agenda, 3 meses y solo interna', () => renderDeAgenda({ meses: 3, gestion: 'interna' }), 'Agenda de pedidos'],
+    ['agenda sin nada que mostrar', () => renderDeAgenda({ datasets: [] }), 'Agenda de pedidos'],
+    ['agenda con un mes en varias hojas', () => renderDeAgenda({ datasets: muchosDeEnero(45) }), 'Agenda de pedidos'],
+    ['para completar, los casos reales', () => renderDeParaCompletar(), 'Datos para completar'],
+    ['para completar, sin nada', () => renderDeParaCompletar(vistaDe([], { anio: 2026, al: HOY_DE_LAS_METRICAS }).para_completar), 'Datos para completar'],
+    ['para completar, en varias hojas', () => renderDeParaCompletar(muchosParaCompletar(40)), 'Datos para completar']
+  ];
+  for (const [titulo, render, nombre] of casos) {
+    it(`los dos PDF se descargan con lector y nada se pisa: ${titulo}`, async () => {
+      const pdf = await render();
+      assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+      const hojas = lineasPorHoja(pdf);
+      hojas.forEach((lineas, k) => assert.ok(lineas.includes(`${nombre} · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+      assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().filter(l => /NaN|null|undefined/.test(l)).join(' | '));
+      verificarDiagramacion(await diagramacion(render));
     });
   }
 });

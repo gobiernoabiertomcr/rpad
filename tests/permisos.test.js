@@ -92,7 +92,8 @@ describe('lector', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/gestion/metricas', '/gestion/proyectos', '/seguimiento', '/metricas', '/metricas/pdf']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
+    '/gestion/metricas', '/gestion/proyectos', '/seguimiento', '/metricas', '/metricas/pdf']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -144,7 +145,8 @@ describe('colaborador', () => {
     });
   }
 
-  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos']) {
+  for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
+    '/reportes/agenda', '/reportes/para-completar']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
@@ -193,6 +195,15 @@ describe('visitante sin sesión', () => {
   // Las métricas (spec 2026-10-24-metricas-y-reportes, 2.3): para todos los roles con sesión, nunca sin ella
   it('recibe 401 en GET /metricas y en su PDF', async () => {
     for (const ruta of ['/metricas', '/metricas/pdf']) {
+      const res = await api.get(ruta);
+      assert.equal(res.status, 401, ruta);
+      assert.equal(res.body.success, false, ruta);
+    }
+  });
+
+  // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5 y 6): para todos los roles con sesión, nunca sin ella
+  it('recibe 401 en los reportes PDF', async () => {
+    for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar']) {
       const res = await api.get(ruta);
       assert.equal(res.status, 401, ruta);
       assert.equal(res.body.success, false, ruta);

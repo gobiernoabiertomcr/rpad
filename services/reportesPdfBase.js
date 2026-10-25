@@ -8,7 +8,7 @@
 //   y = dibujarTitulo(doc, { rotulo, titulo }, y);
 //   y = dibujarPildora(doc, texto, y);
 //   y = dibujarTarjetas(doc, [{ valor, rotulo }], y);
-//   y = prepararTabla(doc, { columnas, filas, estados }).dibujar(y);   // corta de hoja y repite su encabezado
+//   y = prepararTabla(doc, { columnas, filas, estados }).dibujar(y);   // corta de hoja y repite su encabezado (y su cabeza, si la tiene)
 //   return cerrarReporte(doc, { generado, pieDe: (k, n) => `Estado general · Hoja ${k} de ${n}` });
 // Cada dibujante recibe la y donde empieza (desde el borde superior, en puntos) y devuelve la y donde puede empezar lo que sigue, con
 // el aire de la base (ENTRE) debajo. Nada pasa de LIMITE, el aire sobre la línea del pie: el pie se dibuja al cerrar, cuando ya se
@@ -325,10 +325,13 @@ const prepararInsignia = (doc, texto, colores, ancho) => {
 // - filas: [[texto de cada celda]]; cada celda va en hasta LINEAS_POR_CELDA líneas (si no entra, se corta con "…").
 // - estados (opcional): uno por fila, la clave de INSIGNIAS de esa fila; con una, la última celda se dibuja como la insignia de ese
 //   estado (sin estado, o con uno que no está en INSIGNIAS, como texto).
+// - cabeza (opcional): un elemento preparado ({ alto, dibujar(y) → y }: la cabeza de su sección o el título de su grupo) que la tabla
+//   repite arriba de su encabezado en cada hoja nueva que agrega, como el grupo de la portada del Por área. La primera vez la dibuja
+//   quien llama, junto con la tabla (dibujarJuntos).
 // Devuelve { alto, dibujar(y) → y }. El encabezado y la primera fila nunca se separan (`alto` es lo que ocupan: lo que tiene que entrar
 // junto con lo de antes, por ejemplo con dibujarJuntos); si una fila no entra en la hoja, sigue en una hoja nueva (con el encabezado de
-// la última que agregó agregarHoja) y repite el encabezado de la tabla. Sin filas no dibuja nada (alto 0).
-export const prepararTabla = (doc, { columnas, filas, estados = [] }) => {
+// la última que agregó agregarHoja) y repite la cabeza, si la hay, y el encabezado de la tabla. Sin filas no dibuja nada (alto 0).
+export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = null }) => {
   const pesos = columnas.map(c => (Number(c.ancho) > 0 ? Number(c.ancho) : 1));
   const anchos = pesos.map(p => (CONTENIDO * p) / suma(pesos));
   const xs = anchos.map((_, i) => IZQUIERDA + suma(anchos.slice(0, i)));
@@ -369,11 +372,16 @@ export const prepararTabla = (doc, { columnas, filas, estados = [] }) => {
         dibujarFila(encabezado, yFila, altoEncabezado, COLOR.grisClaro);
         yFila += altoEncabezado;
       };
-      if (yFila + altoEncabezado + preparadas[0].alto > LIMITE) yFila = agregarHoja(doc, hoja);
+      // Una hoja nueva, con la cabeza arriba (si la hay)
+      const otraHoja = () => {
+        yFila = agregarHoja(doc, hoja);
+        if (cabeza) yFila = cabeza.dibujar(yFila);
+      };
+      if (yFila + altoEncabezado + preparadas[0].alto > LIMITE) otraHoja();
       ponerEncabezado();
       for (const fila of preparadas) {
         if (yFila + fila.alto > LIMITE) {
-          yFila = agregarHoja(doc, hoja);
+          otraHoja();
           ponerEncabezado();
         }
         dibujarFila(fila.celdas, yFila, fila.alto, COLOR.linea);

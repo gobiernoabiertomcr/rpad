@@ -7,6 +7,7 @@ import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba,
 import { lineasPorHoja } from './pdf-lector.js';
 import { hoyArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
 import { ASUNTOS_EMAIL } from '../services/seguimientoReglas.js';
+import { estadoDelDataset, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 
 let servidor, api, usuarios;
 
@@ -83,6 +84,74 @@ describe('reportes PDF', () => {
   it('por área', async () => {
     const [area] = await query('SELECT area_id AS id FROM datasets WHERE activo = 1 LIMIT 1');
     esPdf(await api.get(`/reportes/por-area/${area.id}`, { token: usuarios.adminA.token }));
+  });
+
+  // Agenda de pedidos (spec 2026-10-24-metricas-y-reportes, 5, punto 6), con los datasets de la base de la rama: los meses que no son
+  // 3, 6 ni 12 caen a 6 y una gestión que no existe, a las dos (también un parámetro repetido)
+  it('agenda de pedidos: el lector la descarga; ?meses=7 cae a 6 y una gestión que no existe, a las dos; sin sesión, 401', async () => {
+    const hoy = hoyArgentina();
+    const nombre = `Agenda-de-pedidos-${hoy}.pdf`;
+    for (const consulta of ['', '?meses=7', '?meses=6&gestion=otra', '?meses=3&meses=12&gestion=externa&gestion=interna']) {
+      const res = await api.get(`/reportes/agenda${consulta}`, { token: usuarios.lector.token });
+      esPdf(res);
+      const hojas = lineasPorHoja(res.body);
+      assert.ok(hojas[0].includes(`AGENDA DE PEDIDOS · PRÓXIMOS 6 MESES, AL ${formatoCorto(hoy)}`), `${consulta}: ${hojas[0].join(' | ')}`);
+      assert.ok(hojas[0].includes('Las dos gestiones'), consulta);
+      hojas.forEach((h, k) => assert.ok(h.includes(`Agenda de pedidos · Hoja ${k + 1} de ${hojas.length}`), `${consulta} hoja ${k + 1}`));
+      assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`);
+    }
+    const sinSesion = await api.get('/reportes/agenda');
+    assert.equal(sinSesion.status, 401);
+    assert.equal(sinSesion.body.success, false);
+  });
+
+  // Los totales de la agenda con 12 meses y solo externa, contra la base: los vencidos y lo que vence en el período, con el estado de
+  // estadoDelDataset (el de todo el sitio), sin eventuales ni sin fecha
+  it('agenda de pedidos con 12 meses y solo externa: los vencidos y lo que vence, como dice estadoDelDataset', async () => {
+    const hoy = hoyArgentina();
+    const res = await api.get('/reportes/agenda?meses=12&gestion=externa', { token: usuarios.lector.token });
+    esPdf(res);
+    const lineas = lineasPorHoja(res.body).flat();
+    assert.ok(lineas.includes(`AGENDA DE PEDIDOS · PRÓXIMOS 12 MESES, AL ${formatoCorto(hoy)}`) && lineas.includes('Gestión externa'), lineas.join(' | '));
+    const externos = await query(`SELECT f.meses, DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima FROM datasets d
+      JOIN frecuencias f ON f.id = d.frecuencia_id WHERE d.activo = 1 AND d.tipo_gestion = 'externa'`);
+    const estados = externos.map(d => ({ ...d, estado: estadoDelDataset({ proxima: d.proxima, meses: d.meses, tipoGestion: 'externa', hoy }).estado }));
+    const hasta = sumarMeses(vencimientoDelMes(hoy), 11).slice(0, 7);
+    const vencidos = estados.filter(d => d.estado === 'sin-respuesta').length;
+    const enElPeriodo = estados.filter(d => ['actualizado', 'proximo'].includes(d.estado) && d.proxima.slice(0, 7) <= hasta).length;
+    assert.equal(lineas[lineas.indexOf('Vencidos: se siguen pidiendo') - 1], String(vencidos));
+    assert.equal(lineas[lineas.indexOf('Vencen en los próximos 12 meses') - 1], String(enElPeriodo));
+    // Sin la columna de la gestión: es una sola
+    assert.ok(!lineas.includes('Gestión') && lineas.includes('Datos solicitados'), lineas.join(' | '));
+  });
+
+  // Datos para completar (spec 2026-10-24-metricas-y-reportes, 5, punto 7): lo mismo que «Para completar» de GET /api/metricas, el año
+  // de hoy en vivo y sin destildados
+  it('datos para completar: el lector lo descarga, con lo mismo que «Para completar» de GET /api/metricas; sin sesión, 401', async () => {
+    const hoy = hoyArgentina();
+    const [res, metricas] = await Promise.all([
+      api.get('/reportes/para-completar', { token: usuarios.lector.token }),
+      api.get('/metricas', { token: usuarios.lector.token })
+    ]);
+    esPdf(res);
+    assert.equal(metricas.status, 200);
+    const pc = metricas.body.data.vista.para_completar;
+    const hojas = lineasPorHoja(res.body);
+    const lineas = hojas.flat();
+    const titulo = pc.total === 0 ? 'No hay datos para completar' : pc.total === 1 ? '1 dato para completar' : `${pc.total} datos para completar`;
+    for (const t of [`DATOS PARA COMPLETAR · MÉTRICAS DE ${hoy.slice(0, 4)}, AL ${formatoCorto(hoy)}`, titulo, pc.textos.notas, pc.textos.recibido]) {
+      assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
+    }
+    // Cada tarea, con su dataset (un título largo puede ir en más de una línea)
+    const sinEspacios = (t) => t.replace(/\s+/g, '');
+    const texto = sinEspacios(lineas.join(' '));
+    for (const tarea of [...pc.notas, ...pc.recibido]) assert.ok(texto.includes(sinEspacios(tarea.titulo)), tarea.titulo);
+    hojas.forEach((h, k) => assert.ok(h.includes(`Datos para completar · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+    const nombre = `Datos-para-completar-${hoy}.pdf`;
+    assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`);
+    const sinSesion = await api.get('/reportes/para-completar');
+    assert.equal(sinSesion.status, 401);
+    assert.equal(sinSesion.body.success, false);
   });
 
   // Salen el Cumplimiento (spec 2026-10-24-metricas-y-reportes, 5: el ranking de áreas ya está en Métricas) y el Historial de
