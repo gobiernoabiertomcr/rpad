@@ -26,11 +26,11 @@ import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 import {
   COLOR, IZQUIERDA, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE, ajustar, escribir, renglon, rotulo, filete, etiquetaDeCabecera
 } from './notasDigitalesAnexo.js';
-import { dibujarEncabezado, dibujarPie, dibujarCabezaDeSeccion, LINEA_DEL_PIE } from './seguimientoPdf.js';
+import { dibujarEncabezado, dibujarPie, dibujarCabezaDeSeccion, ALTO_DE_LA_CABEZA_DE_SECCION, LINEA_DEL_PIE } from './seguimientoPdf.js';
 
-// Letras (en puntos): la etiqueta y el título son las del Seguimiento; la de una sección, la de su texto de la derecha
+// Letras (en puntos): la etiqueta y el título son las del Seguimiento
 const LETRA = {
-  etiqueta: 7.5, titulo: 20, pildora: 8.4, valor: 16, rotuloTarjeta: 7, columna: 7, celda: 8, insignia: 7, seccion: 7.6, parrafo: 8,
+  etiqueta: 7.5, titulo: 20, pildora: 8.4, valor: 16, rotuloTarjeta: 7, columna: 7, celda: 8, insignia: 7, parrafo: 8,
   rotuloRecuadro: 6.6
 };
 
@@ -240,9 +240,9 @@ export const prepararTarjetas = (doc, tarjetas) => {
 export const dibujarTarjetas = (doc, tarjetas, y) => prepararTarjetas(doc, tarjetas).dibujar(y);
 
 // La cabeza de una sección, la del Seguimiento (dibujarCabezaDeSeccion): el título en mayúsculas en el acento y, a la derecha y en la
-// misma línea, `derecha` en gris (si no entra en su media hoja, se corta con "…").
+// misma línea, `derecha` en gris (si no entra en su media hoja, se corta con "…"), con su alto.
 export const prepararSeccion = (doc, { titulo, derecha = '' }) => {
-  const alto = OJO * LETRA.seccion;
+  const alto = ALTO_DE_LA_CABEZA_DE_SECCION;
   return {
     alto,
     dibujar: (y) => {

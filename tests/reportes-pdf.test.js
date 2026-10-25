@@ -8,7 +8,7 @@ import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarPildora, prepararTabla, LIMITE, ENTRE, lugarPara, dibujarJuntos, prepararTitulo,
   prepararPildora, prepararTarjetas, prepararRecuadro, prepararParrafo, prepararSeccion, ANCHO_DEL_RECUADRO
 } from '../services/reportesPdfBase.js';
-import { renderSeguimiento, OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
+import { renderSeguimiento, OPCIONES_CINTA_PDF, ALTO_DE_LA_CABEZA_DE_SECCION } from '../services/seguimientoPdf.js';
 import { renderMetricasDelAnio, textoDeLaPildora } from '../services/reportesMetricasPdf.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
@@ -325,6 +325,8 @@ describe('la base de los reportes: medidas, lugar y recuadros', () => {
       y = siguiente;
     }
     assert.ok(y <= LIMITE, `${y} > ${LIMITE}`);
+    // La cabeza de una sección es la del Seguimiento, con su alto (la base no copia su letra)
+    assert.equal(prepararSeccion(doc, { titulo: 'Otra' }).alto, ALTO_DE_LA_CABEZA_DE_SECCION);
     await cerrar(doc);
     // Sin tarjetas, nada (alto 0)
     assert.equal(prepararTarjetas(nuevoReporte({ titulo: 'x' }), []).alto, 0);
@@ -452,6 +454,27 @@ const conCircuitoCompleto = () => {
   const datos = metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos' });
   datos.vista.circuito.externa = [tramoAMano('aviso', 1234), tramoAMano('tramite', 1), tramoAMano('respuesta', 4567), tramoAMano('carga', 0)];
   datos.vista.circuito.interna = [tramoAMano('aviso', 41), tramoAMano('produccion', 999), tramoAMano('carga', 1)];
+  return datos;
+};
+
+// Las métricas manuales de Gestión, como las lee el controlador (del mes más nuevo al más viejo y por tipo); la de 2025 no es del año
+const MANUALES = [
+  { tipo: 'reuniones_capacitaciones', anio: 2026, mes: 10, cantidad: 4 },
+  { tipo: 'consultas_atendidas', anio: 2026, mes: 10, cantidad: 0 },
+  { tipo: 'notas_enviadas', anio: 2026, mes: 3, cantidad: 12 },
+  { tipo: 'notas_enviadas', anio: 2025, mes: 12, cantidad: 2 }
+];
+// Las tres de cada mes de 2026, de octubre a enero: 30 (la tabla corta de hoja)
+const muchasManuales = () => Array.from({ length: 10 }, (_, i) => 10 - i)
+  .flatMap(mes => ['notas_enviadas', 'reuniones_capacitaciones', 'consultas_atendidas'].map((tipo, j) => ({ tipo, anio: 2026, mes, cantidad: mes * 3 + j })));
+
+// Los casos reales con `n` vencimientos sin el aviso de la regla en la cobertura (la lista de «los que faltan» crece)
+const conFaltan = (n) => {
+  const datos = metricasDeLosCasos();
+  datos.vista.resultados.cobertura.faltan = Array.from({ length: n }, (_, i) => ({
+    titulo: `Dataset ${i + 1} con un título de largo común`, venc: '2026-03-31', motivo: 'sin el aviso de la regla'
+  }));
+  datos.vista.resultados.textos.cobertura.faltan = n === 0 ? '' : n === 1 ? 'El que falta:' : `Los ${n} que faltan:`;
   return datos;
 };
 
@@ -587,8 +610,44 @@ describe('Métricas del año con el diseño del anexo', () => {
     for (const mes of trabajo.textos.meses) assert.ok(todo.includes(mes), mes);
   });
 
+  it('las métricas manuales del año van en «El trabajo del RPAD», con los nombres de la pestaña; sin ninguna, lo dice', async () => {
+    const todo = lineasPorHoja(await renderMetricas(metricasDeLosCasos({ manuales: MANUALES }))).flat();
+    const titulo = todo.indexOf('MÉTRICAS MANUALES (LAS CARGA ADMINISTRACIÓN)');
+    assert.ok(titulo > todo.indexOf('POR MES') && titulo < todo.indexOf('DOBLE VERIFICACIÓN'), todo.join(' | '));
+    // Una fila por métrica del año, en el orden que llegan (el de la pestaña): el tipo, el mes y la cantidad (también un 0)
+    const fila = (tipo, mes, cantidad) => todo.findIndex((l, i) => l === tipo && todo[i + 1] === mes && todo[i + 2] === cantidad);
+    const filas = [fila('Reuniones y capacitaciones', 'Octubre 2026', '4'), fila('Consultas atendidas', 'Octubre 2026', '0'),
+      fila('Notas enviadas fuera del RPAD', 'Marzo 2026', '12')];
+    assert.ok(filas.every(i => i > titulo), JSON.stringify(filas));
+    assert.deepEqual([...filas].sort((a, b) => a - b), filas);
+    // La de otro año no va
+    assert.ok(!todo.includes('Diciembre 2025'));
+    // Sin ninguna del año, el texto de la pestaña
+    for (const manuales of [undefined, [], MANUALES.filter(m => m.anio === 2025)]) {
+      const sin = lineasPorHoja(await renderMetricas(metricasDeLosCasos({ manuales }))).flat();
+      assert.ok(sin.includes('MÉTRICAS MANUALES (LAS CARGA ADMINISTRACIÓN)'));
+      assert.ok(sin.includes('Todavía no hay métricas manuales cargadas en 2026.'), JSON.stringify(manuales));
+    }
+  });
+
+  // Con los casos de los tests, «Cómo se cuenta» quedaba solo en la hoja 2 con 5 a 8 «faltan» en la cobertura: los resultados entraban
+  // en la hoja 1 y el recuadro no
+  it('«Cómo se cuenta» nunca queda solo en una hoja (viaja con los resultados) y cada parte empieza con su título junto a su primera sección', async () => {
+    for (let n = 0; n <= 12; n++) {
+      const hojas = lineasPorHoja(await renderMetricas(conFaltan(n)));
+      const k = hojas.findIndex(lineas => lineas.includes('CÓMO SE CUENTA'));
+      assert.ok(k !== -1 && hojas[k].includes('RESULTADOS DEL AÑO'), `${n} faltan: hoja ${k + 1}: ${hojas[k]?.join(' | ')}`);
+      for (const [titulo, seccion] of [['El recorrido típico de un pedido', 'GESTIÓN EXTERNA · RECORRIDO TÍPICO'],
+        ['El contexto y el trabajo del RPAD', 'ÍNDICE DE ACTUALIZACIÓN, MES A MES'], ['Áreas y temas', 'RANKING DE ÁREAS']]) {
+        const hoja = hojas.find(lineas => lineas.includes(titulo));
+        assert.ok(hoja && hoja.includes(seccion), `${n} faltan: «${titulo}» sin «${seccion}»`);
+      }
+    }
+  });
+
   const variantes = [
     ['los casos reales, mediana y días hábiles', () => metricasDeLosCasos()],
+    ['con 10 que faltan en la cobertura y 30 métricas manuales', () => ({ ...conFaltan(10), manuales: muchasManuales() })],
     ['mediana y días corridos', () => metricasDeLosCasos({ dias: 'corridos' })],
     ['promedio y días hábiles', () => metricasDeLosCasos({ estadistico: 'promedio' })],
     ['promedio y días corridos, con dos destildados', () => metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos', sin: [11, 10] })],

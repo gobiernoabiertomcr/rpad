@@ -237,6 +237,27 @@ describe('GET /metricas', () => {
     assert.deepEqual(sinMetricas.body, { success: false, error: 'No hay métricas de ese año' });
   });
 
+  // Las métricas manuales de Gestión (spec 2.2: van en «El trabajo del RPAD») del año del PDF; las de otro año, no
+  it('el PDF trae las métricas manuales del año, que lee de la base', async () => {
+    const { anio } = await prepararHoy();
+    const sinNinguna = lineasPorHoja((await api.get('/metricas/pdf', como('lector'))).body).flat();
+    assert.ok(sinNinguna.includes(`Todavía no hay métricas manuales cargadas en ${anio}.`));
+    const insertar = (tipo, anioDeLaMetrica, mes, cantidad) => query(
+      'INSERT INTO metricas_manuales (tipo, anio, mes, cantidad, created_by) VALUES (?, ?, ?, ?, ?)', [tipo, anioDeLaMetrica, mes, cantidad, usuarios.adminA.id]
+    );
+    try {
+      await insertar('consultas_atendidas', anio, 1, 17);
+      await insertar('notas_enviadas', anio - 1, 12, 5);
+      const todo = lineasPorHoja((await api.get('/metricas/pdf', como('lector'))).body).flat();
+      const i = todo.indexOf('Consultas atendidas');
+      assert.deepEqual(todo.slice(i, i + 3), ['Consultas atendidas', `Enero ${anio}`, '17'], todo.join(' | '));
+      assert.ok(!todo.includes('Notas enviadas fuera del RPAD'));
+      assert.ok(!todo.includes(`Todavía no hay métricas manuales cargadas en ${anio}.`));
+    } finally {
+      await query('DELETE FROM metricas_manuales');
+    }
+  });
+
   // El antiobjetivo: que el índice diga una cosa en la portada y otra en Métricas
   it('el índice de hoy da lo mismo que la portada (GET /datasets/estadisticas)', async () => {
     const { hoy } = await prepararHoy();
@@ -347,6 +368,30 @@ describe('metricasDe con un hoy fijo', () => {
     // El año en curso, en vivo con la base de hoy
     const enCurso = await metricas({}, '2027-03-01');
     assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto], [2027, '2027-03-01', true, null]);
+  });
+
+  // Spec 5: el PDF de un año con foto sale de la foto. El servidor de los tests corre con el reloj de verdad (en 2026 no hay ningún año
+  // cerrado con métricas), así que se pide con pdfDeMetricas, lo que hace GET /api/metricas/pdf, con un momento fijo
+  it('el PDF de un año con foto sale de la foto, aunque la base cambie después', async () => {
+    const ids = await prepararElAnio();
+    const guardada = await guardarFoto();
+    await query('DELETE FROM datasets WHERE id = ?', [ids[2]]);
+    const generado = { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' };
+    const resultado = await controlador.pdfDeMetricas({ anio: '2026', estadistico: 'promedio', dias: 'corridos', sin: String(ids[0]) }, generado);
+    assert.equal(resultado.anio, 2026);
+    const hojas = lineasPorHoja(resultado.pdf);
+    const primera = hojas[0].join(' ');
+    assert.ok(hojas[0].includes('MÉTRICAS · AÑO 2026, AL 31/12/2026'), primera);
+    assert.ok(primera.includes('Sale de la foto del 31/12/2026, calculada con todos los datasets.'), primera);
+    // En un año con foto no se destilda
+    assert.ok(hojas[0].includes('Promedio en días corridos · con todos los datasets'), primera);
+    // La cifra de la carga es la de la foto (13 días corridos con los tres datasets); con la base de hoy serían dos
+    const carga = guardada.vistas['promedio-corridos'].circuito.externa.find((t) => t.clave === 'carga').cifra;
+    assert.deepEqual([carga.texto, carga.unidad, carga.debajo], ['13', 'días corridos', 'promedio de 3 ciclos']);
+    assert.ok(primera.includes('13 días corridos') && primera.includes('promedio de 3 ciclos'), primera);
+    hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Métricas del RPAD · 2026 · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+    // Un año sin métricas: null (el 404 de la ruta)
+    assert.equal(await controlador.pdfDeMetricas({ anio: '1999' }, generado), null);
   });
 
   // Ruling 17: un año cerrado sin foto nunca desaparece. Hasta el 10/01 del año siguiente el aviso dice cuándo se saca; después (la

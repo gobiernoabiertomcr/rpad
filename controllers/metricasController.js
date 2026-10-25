@@ -96,24 +96,40 @@ export const verMetricas = async (req, res) => {
   }
 };
 
-// GET /api/metricas/pdf?anio=&estadistico=&dias=&sin=: el PDF «Métricas del año» con lo mismo que GET /api/metricas para la misma
-// consulta (metricasConOpciones: un año con foto sale de la foto), la combinación elegida y lo destildado en su píldora, y el nombre
-// corto de quien lo genera y la hora (argentina) en el pie. Un año sin métricas da el mismo 404 en JSON. El archivo se llama
-// «Metricas-RPAD-AAAA.pdf» (disposicionDeAdjunto lo deja apto para el encabezado HTTP).
+// Las métricas manuales de Gestión de `anio` (spec 2.2: van en «El trabajo del RPAD»; las carga administración en la tabla de siempre,
+// metricas_manuales): [{ tipo, anio, mes, cantidad }], en el orden de la pestaña (del mes más nuevo al más viejo y por tipo). Por el año
+// (no con la ventana de meses de /gestion/metricas-manuales, que depende del reloj de la base) y siempre de la base de hoy, también en un
+// año con foto, como la pestaña
+const metricasManualesDe = async (anio) => {
+  const [filas] = await pool.execute('SELECT tipo, anio, mes, cantidad FROM metricas_manuales WHERE anio = ? ORDER BY mes DESC, tipo', [anio]);
+  return filas.map((fila) => ({ tipo: fila.tipo, anio: Number(fila.anio), mes: Number(fila.mes), cantidad: Number(fila.cantidad) }));
+};
+
+// El PDF «Métricas del año» para `query` (los parámetros de GET /api/metricas: lo mismo que la API para la misma consulta, y un año con
+// foto sale de la foto), con la combinación elegida y lo destildado en su píldora y las métricas manuales del año. `generado`: { momento:
+// 'AAAA-MM-DD HH:MM:SS' (hora argentina: su día es hoy), por: nombre corto o null }. { anio, pdf }, o null si ese año no tiene métricas
+export const pdfDeMetricas = async (query, generado) => {
+  const calculadas = await metricasConOpciones(query, { hoy: generado.momento.slice(0, 10) });
+  if (calculadas === null) return null;
+  const { opciones, data } = calculadas;
+  const manuales = await metricasManualesDe(data.anio);
+  const pdf = await renderMetricasDelAnio({ ...data, estadistico: opciones.estadistico, dias: opciones.dias, manuales }, { generado });
+  return { anio: data.anio, pdf };
+};
+
+// GET /api/metricas/pdf?anio=&estadistico=&dias=&sin=: el PDF de pdfDeMetricas, con el nombre corto de quien lo genera y la hora
+// (argentina) en el pie. Un año sin métricas da el mismo 404 en JSON. El archivo se llama «Metricas-RPAD-AAAA.pdf» (disposicionDeAdjunto
+// lo deja apto para el encabezado HTTP).
 export const descargarMetricasPdf = async (req, res) => {
   try {
     // Un solo instante para el pie y para "hoy" (que no queden en días distintos a la medianoche)
     const momento = ahoraArgentina();
-    const calculadas = await metricasConOpciones(req.query, { hoy: momento.slice(0, 10) });
-    if (calculadas === null) return res.status(404).json(SIN_METRICAS);
-    const { opciones, data } = calculadas;
     const [[usuario]] = await pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]);
-    const pdf = await renderMetricasDelAnio({ ...data, estadistico: opciones.estadistico, dias: opciones.dias }, {
-      generado: { momento, por: nombreCorto(usuario?.nombre_completo) }
-    });
+    const resultado = await pdfDeMetricas(req.query, { momento, por: nombreCorto(usuario?.nombre_completo) });
+    if (resultado === null) return res.status(404).json(SIN_METRICAS);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Metricas-RPAD-${data.anio}.pdf`));
-    res.send(pdf);
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Metricas-RPAD-${resultado.anio}.pdf`));
+    res.send(resultado.pdf);
   } catch (error) {
     console.error('Error al generar el PDF de las métricas:', error);
     res.status(500).json(ERROR_AL_GENERAR_PDF);

@@ -12,6 +12,10 @@ import {
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
+import {
+  TEXTOS_DE_LA_PESTANA as T, textoDelDesglose, textoDeLoQueFalta, textoDeDondeSale, textoDelMesManual, textoSinManuales,
+  textoDelPieDeLosCasos
+} from '../services/reportesMetricasPdf.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -928,5 +932,108 @@ describe('reportes.html', () => {
     assert.doesNotMatch(html, /publico\.css/);
     assert.match(html, /--sg-tinta: #1A365D;/);
     assert.match(html, /--sg-violeta: #5B4691;/);
+  });
+});
+
+// El PDF de Métricas (services/reportesMetricasPdf.js) escribe los textos fijos de la pestaña: la página los tiene en su HTML y en
+// reportes.js, y el PDF los toma de TEXTOS_DE_LA_PESTANA (y de unas funciones que arman lo mismo que la pestaña). Si cambia uno de la
+// pestaña, este test falla: no se separan sin que nadie lo vea
+describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
+  const html = leer('reportes.html');
+  const fuente = leer('js/reportes.js');
+
+  it('la bajada, el pie del circuito, los nombres de las secciones y lo de la doble verificación', () => {
+    for (const dias of ['habiles', 'corridos']) assert.ok(ctx.textoDeLaBajada(dias).endsWith(` ${T.bajada[dias]}`), dias);
+    for (const t of [T.pieDelCircuito, T.pieDeLaAuditoria, T.titulos.manuales, T.titulos.auditoria, T.titulos.resultados, T.titulos.contexto,
+      T.titulos.trabajo, T.titulos.areas]) {
+      assert.ok(html.includes(t), t);
+    }
+    // Los selectores: los chips de la barra dicen «Mediana» y «Promedio»
+    const barra = ctx.htmlDeBarra({ anios: [2026], anio: 2026 }, POR_DEFECTO);
+    for (const t of Object.values(T.estadisticos)) assert.ok(barra.includes(`>${t}</button>`), t);
+    // Las bajadas de los resultados y del trabajo: la pestaña las arma con « en 2026» en el medio
+    assert.ok(fuente.includes('`Lo que dejó el circuito${anio}, con las dos gestiones juntas.`'));
+    assert.equal(T.bajadaDeResultados(2026), 'Lo que dejó el circuito en 2026, con las dos gestiones juntas.');
+    assert.ok(fuente.includes('`Lo que hizo el sistema y el equipo de Datos Públicos${anio}.`'));
+    assert.equal(T.bajadaDelTrabajo(2026), 'Lo que hizo el sistema y el equipo de Datos Públicos en 2026.');
+  });
+
+  it('el circuito: los roles de los nodos, «con tan pocos casos, es orientativo» y «Se cuenta hasta…»', () => {
+    const circuitos = ctx.htmlDeCircuito(VISTA, 'externa') + ctx.htmlDeCircuito(VISTA, 'interna');
+    for (const rol of Object.values(T.roles)) assert.ok(circuitos.includes(`<span class="r">${rol}</span>`), rol);
+    const flecha = ctx.htmlDeFlecha(tramo('produccion', 3, { ciclos: 2, en_curso: { n: 1, valor: 9, texto: '1 sin datos registrados todavía, hace 9 días hábiles (mediana)' } }));
+    assert.ok(flecha.includes(`<span class="o">${T.orientativo}</span>`));
+    assert.ok(flecha.includes(`<span class="c">${T.seCuentaHasta}</span>`));
+  });
+
+  it('la leyenda de la cinta', () => {
+    const conDatosYCarga = cintaDeMetricas([tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 30)], { gestion: 'interna' });
+    const vistos = new Set();
+    for (const [cinta, gestion] of [[CINTA_EXTERNA, 'externa'], [CINTA_INTERNA, 'interna'], [conDatosYCarga, 'interna']]) {
+      const leyenda = ctx.htmlDeLeyendaDeCinta(cinta, gestion);
+      const tipos = [...new Set(cinta.marcas.map((m) => m.tipo)), ...(cinta.rayado ? ['rayado'] : [])];
+      for (const tipo of tipos) {
+        const nombre = typeof T.leyenda[tipo] === 'string' ? T.leyenda[tipo] : T.leyenda[tipo][gestion];
+        assert.ok(leyenda.includes(`</i>${nombre}</span>`), `${gestion} ${tipo}: ${nombre}`);
+        vistos.add(`${tipo} ${gestion}`);
+      }
+    }
+    // Están todos los de la leyenda del PDF, menos la nota en la interna (no tiene)
+    for (const esperado of ['aviso externa', 'nota externa', 'datos externa', 'carga externa', 'rayado externa', 'datos-y-carga interna', 'datos interna']) {
+      assert.ok(vistos.has(esperado), esperado);
+    }
+  });
+
+  it('los resultados: lo de estar a tiempo, el desglose, lo que falta, las reiteraciones y sus títulos', () => {
+    const a = { a_tiempo: 5, total: 33, externa: [4, 27], interna: [1, 6], despues: { valor: 61, texto: '' } };
+    const aTiempo = ctx.htmlDeATiempo(a, { de: 'de 33 ciclos', medidor: 15, vacio: '' });
+    assert.ok(aTiempo.includes(`<p class="mt-texto">${T.aTiempo}</p>`));
+    assert.ok(aTiempo.includes(`<p class="mt-texto s">${textoDelDesglose(a)}</p>`), textoDelDesglose(a));
+    assert.ok(aTiempo.includes(`>${T.titulos.aTiempo}</h3>`));
+    const falta = { titulo: 'Listado de Proveedores', venc: '2026-01-31', motivo: 'sin el aviso de la regla' };
+    const cobertura = ctx.htmlDeCobertura({ si: 34, total: 35, faltan: [falta] }, { de: 'de 35 vencimientos', medidor: 97, regla: 'x', faltan: 'El que falta:', vacio: '' });
+    assert.ok(cobertura.includes(`<li>${textoDeLoQueFalta(falta)}</li>`), textoDeLoQueFalta(falta));
+    assert.ok(cobertura.includes(`>${T.titulos.cobertura}</h3>`));
+    const reiteraciones = ctx.htmlDeReiteraciones({ rpad: { ninguna: 1, una: 2, dos_o_mas: 3, total: 6 }, dgmit: { ninguna: 1, una_o_mas: 2, total: 3 } },
+      { rpad: 'Del RPAD a la DGMIT (6 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área (3 ciclos)', dgmit_vacio: '', aclaracion: null });
+    for (const [, nombre] of [...T.gruposDelRpad, ...T.gruposDeLaDgmit]) assert.ok(reiteraciones.includes(`<span>${nombre}</span>`), nombre);
+    assert.ok(reiteraciones.includes(T.pieDeLasReiteraciones));
+    assert.ok(reiteraciones.includes(`>${T.titulos.reiteraciones}</h3>`));
+  });
+
+  it('el contexto: el pie del índice, los grupos de la antigüedad y su pie', () => {
+    const contexto = ctx.htmlDeContexto(CONTEXTO);
+    assert.ok(contexto.includes(T.pieDelIndice));
+    assert.ok(contexto.includes(`>${T.titulos.indice}</h3>`));
+    const antiguedad = ctx.htmlDeAntiguedad(ANTIGUEDAD);
+    for (const grupo of T.antiguedad) assert.ok(antiguedad.includes(`<span>${grupo}</span>`), grupo);
+    assert.ok(antiguedad.includes(T.pieDeLaAntiguedad));
+    assert.ok(antiguedad.includes(`>${T.titulos.antiguedad}</h3>`));
+  });
+
+  it('el trabajo: las series por mes y las métricas manuales (sus tipos, el mes y lo que dice sin ninguna)', () => {
+    const trabajo = ctx.htmlDeTrabajo(TRABAJO);
+    for (const [, nombre] of T.series) assert.ok(trabajo.includes(`>${nombre}</button>`), nombre);
+    assert.ok(trabajo.includes(`>${T.titulos.porMes}</h3>`));
+    const lista = Object.keys(T.tiposManuales).map((tipo, i) => ({ id: i + 1, tipo, anio: 2026, mes: i + 3, cantidad: i }));
+    const manuales = ctx.htmlDeMetricasManuales(lista, { anio: 2026 });
+    for (const m of lista) {
+      assert.ok(manuales.includes(`<span class="t">${T.tiposManuales[m.tipo]}</span><span class="p">${textoDelMesManual(m.mes, m.anio)}</span>`), m.tipo);
+    }
+    assert.equal(ctx.htmlDeMetricasManuales([], { anio: 2026 }), `<p class="mt-vacio-caja">${textoSinManuales(2026)}</p>`);
+  });
+
+  it('las áreas, los casos y de dónde sale un año cerrado', () => {
+    assert.ok(ctx.htmlDelRanking([]).includes(T.sinAreas));
+    const areas = ctx.htmlDeAreas(AREAS);
+    assert.ok(areas.includes(`<span>${T.alDia}</span>`));
+    assert.ok(areas.includes(`>${T.titulos.ranking}</h3>`));
+    for (const dias of ['habiles', 'corridos']) {
+      assert.ok(ctx.htmlDeCasos(VISTA, { ...POR_DEFECTO, dias }).includes(`<p class="mt-pie">${textoDelPieDeLosCasos(dias)}`), dias);
+    }
+    const cerrado = { anio: 2026, anios: [2026, 2027], al: '2026-12-31', en_vivo: false, aviso_foto: null };
+    assert.ok(ctx.htmlDeBarra(cerrado, { ...POR_DEFECTO, anio: 2026 }).includes(`>${textoDeDondeSale(cerrado)}</p>`), textoDeDondeSale(cerrado));
+    const sinFoto = { ...cerrado, en_vivo: true, aviso_foto: 'La foto de 2026 se saca el 10/01/2027' };
+    assert.ok(ctx.htmlDeBarra(sinFoto, POR_DEFECTO).includes(`>${textoDeDondeSale(sinFoto)}</p>`));
   });
 });

@@ -71,7 +71,9 @@ const centrado = (doc, texto, cx, base, { tamano, fuente = NORMAL, color = COLOR
 };
 
 // El rótulo de una sección (en el acento) y, a la derecha y en la misma línea de base, un texto en gris. Es también la cabeza de las
-// secciones de los reportes PDF (prepararSeccion, services/reportesPdfBase.js)
+// secciones de los reportes PDF (prepararSeccion, services/reportesPdfBase.js), que ocupa ALTO_DE_LA_CABEZA_DE_SECCION: de y a los
+// descendentes del texto de la derecha
+export const ALTO_DE_LA_CABEZA_DE_SECCION = OJO * LETRA.cabeza;
 export const dibujarCabezaDeSeccion = (doc, titulo, derecha, y) => {
   const base = y + ASCENDENTE * LETRA.cabeza;
   const mitad = CONTENIDO / 2;

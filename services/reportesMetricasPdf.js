@@ -12,6 +12,7 @@
 import {
   COLOR, IZQUIERDA, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE, desdeBase, ajustar, escribir, renglon, filete
 } from './notasDigitalesAnexo.js';
+import { mesYAnio } from './notasDigitalesCalendario.js';
 import { COLORES, VIOLETA, dibujarRayado } from './seguimientoPdf.js';
 import { cintasDeLaVista } from './metricasCinta.js';
 import { ESTADISTICOS, DIAS, GESTIONES } from './metricasReglas.js';
@@ -40,22 +41,55 @@ const AMBAR = COLORES.ambar;
 const BARRA_AMBAR = '#E2B23A';
 const COLOR_DE_LA_CINTA = Object.freeze({ tinta: COLOR.tinta, violeta: VIOLETA, verde: VERDE });
 
-// Los textos fijos de la pestaña (public/reportes.html y public/js/reportes.js): la página los escribe en su HTML y el PDF, acá
-const ESTADISTICO_EN_TEXTO = Object.freeze({ mediana: 'Mediana', promedio: 'Promedio' });
-const NOMBRE_DE_LOS_DIAS = Object.freeze({ habiles: 'días hábiles', corridos: 'días corridos' });
-const BAJADA_DE_LOS_DIAS = Object.freeze({
-  habiles: 'Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.',
-  corridos: 'Los días son corridos: todos los días del calendario.'
+// Los textos fijos de la pestaña (public/reportes.html y public/js/reportes.js): la página los escribe en su HTML y en reportes.js, y el
+// PDF los toma de acá (también las funciones de abajo que arman lo mismo que la pestaña: textoDelDesglose, textoDeLoQueFalta,
+// textoDeDondeSale, textoDelMesManual, textoSinManuales y textoDelPieDeLosCasos). tests/reportes-frontend.test.js comprueba que son los
+// de la pestaña: si cambia uno allá, falla
+export const TEXTOS_DE_LA_PESTANA = Object.freeze({
+  estadisticos: Object.freeze({ mediana: 'Mediana', promedio: 'Promedio' }),
+  dias: Object.freeze({ habiles: 'días hábiles', corridos: 'días corridos' }),
+  bajada: Object.freeze({
+    habiles: 'Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.',
+    corridos: 'Los días son corridos: todos los días del calendario.'
+  }),
+  pieDelCircuito: 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.',
+  orientativo: 'con tan pocos casos, es orientativo',
+  seCuentaHasta: 'Se cuenta hasta que se registra la actualización.',
+  // Lo que hace cada nodo del circuito
+  roles: Object.freeze({
+    rpad: 'Datos Públicos avisa', da: 'Mandan la nota formal', dit: 'Hacen el relevamiento', area: 'Prepara los datos',
+    ddpc: 'Limpia y estructura', portal: 'Datos publicados'
+  }),
+  // Qué es cada marca de la cinta, en su leyenda
+  leyenda: Object.freeze({
+    aviso: 'Aviso del RPAD', nota: 'Nota DGMIT recibida por el área',
+    datos: Object.freeze({ externa: 'Datos entregados', interna: 'Relevamiento entregado' }),
+    carga: 'Carga en el portal', 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento'
+  }),
+  titulos: Object.freeze({
+    resultados: 'Resultados del año', aTiempo: 'Actualizados a tiempo', cobertura: 'Cobertura del aviso', reiteraciones: 'Reiteraciones por ciclo',
+    contexto: 'Contexto', indice: 'Índice de actualización, mes a mes', antiguedad: 'Antigüedad de los vencidos', trabajo: 'El trabajo del RPAD',
+    porMes: 'Por mes', manuales: 'Métricas manuales (las carga administración)', auditoria: 'Doble verificación', ranking: 'Ranking de áreas',
+    areas: 'Áreas y temas'
+  }),
+  bajadaDeResultados: (anio) => `Lo que dejó el circuito en ${anio}, con las dos gestiones juntas.`,
+  bajadaDelTrabajo: (anio) => `Lo que hizo el sistema y el equipo de Datos Públicos en ${anio}.`,
+  aTiempo: 'Cargados en el portal hasta el día del vencimiento.',
+  gruposDelRpad: Object.freeze([['ninguna', 'Ninguna'], ['una', '1'], ['dos_o_mas', '2 o más']]),
+  gruposDeLaDgmit: Object.freeze([['ninguna', 'Ninguna'], ['una_o_mas', '1 o más']]),
+  pieDeLasReiteraciones: 'Del RPAD a la DGMIT, los avisos de cada ciclo después del aviso de la regla (o del primero, si se avisó ya vencido); de la DGMIT al área, las notas DGMIT de reiteración.',
+  pieDelIndice: 'Es el índice de la portada: al día (actualizados y próximos a vencer) sobre los que tienen vencimiento. Un punto por el primer día de cada mes, y el último, el de hoy (en un año cerrado, el 31/12).',
+  antiguedad: Object.freeze(['Menos de 3 meses', 'De 3 a 12 meses', 'Más de un año']),
+  pieDeLaAntiguedad: 'Por días corridos desde el vencimiento. Los eventuales y los sin fecha no tienen vencimiento.',
+  series: Object.freeze([['avisos', 'Avisos y notas'], ['actualizaciones', 'Actualizaciones'], ['auditados', 'Cambios auditados']]),
+  tiposManuales: Object.freeze({
+    reuniones_capacitaciones: 'Reuniones y capacitaciones', consultas_atendidas: 'Consultas atendidas', notas_enviadas: 'Notas enviadas fuera del RPAD'
+  }),
+  pieDeLaAuditoria: 'De la propuesta a la revisión, en tiempo corrido.',
+  sinAreas: 'Sin datos de áreas',
+  alDia: 'Al día sobre los que tienen vencimiento'
 });
-const PIE_DEL_CIRCUITO = 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.';
-const ORIENTATIVO = 'con tan pocos casos, es orientativo';
-const SE_CUENTA_HASTA = 'Se cuenta hasta que se registra la actualización.';
-const A_TIEMPO = 'Cargados en el portal hasta el día del vencimiento.';
-const PIE_DE_LAS_REITERACIONES = 'Del RPAD a la DGMIT, los avisos de cada ciclo después del aviso de la regla (o del primero, si se avisó ya vencido); de la DGMIT al área, las notas DGMIT de reiteración.';
-const PIE_DEL_INDICE = 'Es el índice de la portada: al día (actualizados y próximos a vencer) sobre los que tienen vencimiento. Un punto por el primer día de cada mes, y el último, el de hoy (en un año cerrado, el 31/12).';
-const PIE_DE_LA_ANTIGUEDAD = 'Por días corridos desde el vencimiento. Los eventuales y los sin fecha no tienen vencimiento.';
-const PIE_DE_LA_AUDITORIA = 'De la propuesta a la revisión, en tiempo corrido.';
-const SIN_AREAS = 'Sin datos de áreas';
+const T = TEXTOS_DE_LA_PESTANA;
 // Lo que el PDF suma a la pestaña, que lo dice con su diseño: las siglas de los nodos (la hoja no tiene lugar para los nombres
 // enteros) y desde cuándo cuenta un tramo
 const SIGLAS = 'En los circuitos, DA es la Dirección Administrativa; DIT, la Dirección de Investigación Territorial, y DDPC, la Dirección de Datos Públicos y Comunicación.';
@@ -64,12 +98,12 @@ const EN_EL_ANIO = 'Un tramo cuenta en el año en que terminó.';
 // Los nodos del circuito (spec 2.2), con la sigla de quien es (la maqueta de los PDF) y qué hace: lo de la DGMIT en violeta, el Portal en
 // verde y el resto en el acento
 const NODOS = Object.freeze({
-  rpad: { nombre: 'RPAD', rol: 'Datos Públicos avisa', color: COLOR.acento },
-  da: { nombre: 'DGMIT y DA', rol: 'Mandan la nota formal', color: VIOLETA },
-  dit: { nombre: 'DGMIT y DIT', rol: 'Hacen el relevamiento', color: VIOLETA },
-  area: { nombre: 'Área', rol: 'Prepara los datos', color: COLOR.acento },
-  ddpc: { nombre: 'DDPC', rol: 'Limpia y estructura', color: COLOR.acento },
-  portal: { nombre: 'Portal', rol: 'Datos publicados', color: VERDE }
+  rpad: { nombre: 'RPAD', rol: T.roles.rpad, color: COLOR.acento },
+  da: { nombre: 'DGMIT y DA', rol: T.roles.da, color: VIOLETA },
+  dit: { nombre: 'DGMIT y DIT', rol: T.roles.dit, color: VIOLETA },
+  area: { nombre: 'Área', rol: T.roles.area, color: COLOR.acento },
+  ddpc: { nombre: 'DDPC', rol: T.roles.ddpc, color: COLOR.acento },
+  portal: { nombre: 'Portal', rol: T.roles.portal, color: VERDE }
 });
 // El circuito de cada gestión: cada nodo con la clave del tramo que sale de él (la flecha se busca por esa clave entre los tramos del
 // servidor), y la parte del ancho de cada nodo y de cada flecha (la de la maqueta)
@@ -81,12 +115,8 @@ const CIRCUITO_DE_LA_GESTION = Object.freeze({
 const NODO = { relleno: 3.5, alto: 30, radio: 5 };
 const FLECHA = { margen: 4, sobre: 3, bajo: 4 };
 
-// La cinta: la leyenda (las marcas, como se dibujan, y el rayado, en un orden fijo) y qué es cada hito
+// La cinta: la leyenda (las marcas, como se dibujan, y el rayado, en un orden fijo; qué es cada una, en T.leyenda)
 const LEYENDA_DE_LA_CINTA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga', 'rayado'];
-const NOMBRES_DE_LA_LEYENDA = {
-  aviso: 'Aviso del RPAD', nota: 'Nota DGMIT recibida por el área', datos: { externa: 'Datos entregados', interna: 'Relevamiento entregado' },
-  carga: 'Carga en el portal', 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento'
-};
 const TIPOS_DE_MARCA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga'];
 
 // Los resultados: tres columnas, con su separación; la lista de los que no tuvieron el aviso de la regla se corta en este alto (con
@@ -95,11 +125,8 @@ const SEPARACION_COLUMNAS = 14;
 const ANCHO_COLUMNA = (CONTENIDO - 2 * SEPARACION_COLUMNAS) / 3;
 const ALTO_MAXIMO_DE_LA_LISTA = 260;
 
-// El trabajo del RPAD: los cinco totales y las series por mes (las de la pestaña)
+// El trabajo del RPAD: los cinco totales (las series por mes y los grupos de las reiteraciones, en T)
 const TOTALES_DEL_TRABAJO = ['avisos', 'actualizaciones', 'auditados', 'nuevos', 'fuente_publica'];
-const SERIES = [['avisos', 'Avisos y notas'], ['actualizaciones', 'Actualizaciones'], ['auditados', 'Cambios auditados']];
-const GRUPOS_DEL_RPAD = [['ninguna', 'Ninguna'], ['una', '1'], ['dos_o_mas', '2 o más']];
-const GRUPOS_DE_LA_DGMIT = [['ninguna', 'Ninguna'], ['una_o_mas', '1 o más']];
 
 // El gráfico del índice: el alto del área de los valores (de 0 a 100 %), el lugar de los rótulos del eje a la izquierda, el de los
 // valores arriba, el de los meses abajo (en dos renglones si dos se pisan) y el aire a los costados del primer y del último mes
@@ -127,7 +154,7 @@ export const textoDeLaPildora = (datos) => {
   const titulos = lista(d.sin_titulos).filter((titulo) => typeof titulo === 'string' && titulo);
   const cuales = titulos.length === 0 ? 'con todos los datasets'
     : `calculado sin ${titulos.length === 1 ? '1 dataset' : `${titulos.length} datasets`}: ${titulos.join(', ')}`;
-  return `${ESTADISTICO_EN_TEXTO[estadistico]} en ${NOMBRE_DE_LOS_DIAS[dias]} · ${cuales}`;
+  return `${T.estadisticos[estadistico]} en ${T.dias[dias]} · ${cuales}`;
 };
 
 // El rótulo de cada parte: «Métricas · año 2026, en curso» o, en un año cerrado, «Métricas · año 2026, al 31/12/2026»
@@ -135,11 +162,40 @@ const rotuloDelAnio = (d) => (lista(d.anios).at(-1) === d.anio
   ? `Métricas · año ${d.anio}, en curso`
   : `Métricas · año ${d.anio}, al ${fechaCorta(d.al)}`);
 
-// De dónde sale un año cerrado (lo que dice la barra de la pestaña): el aviso de la foto que falta o la foto del 31/12
-const deDondeSale = (d) => {
+// De dónde sale un año cerrado (lo que dice la barra de la pestaña): el aviso de la foto que falta (del servidor) o la foto del 31/12;
+// en vivo, nada
+export const textoDeDondeSale = (datos) => {
+  const d = objeto(datos);
   if (texto(d.aviso_foto)) return texto(d.aviso_foto);
   return d.en_vivo === false ? `Sale de la foto del ${fechaCorta(d.al)}, calculada con todos los datasets.` : '';
 };
+
+// El desglose de «Actualizados a tiempo» por gestión: «Externa: 4 de 27 · Interna: 1 de 6»
+export const textoDelDesglose = (aTiempo) => {
+  const a = objeto(aTiempo);
+  return [['externa', 'Externa'], ['interna', 'Interna']]
+    .map(([clave, nombre]) => `${nombre}: ${cuenta(lista(a[clave])[0])} de ${cuenta(lista(a[clave])[1])}`).join(' · ');
+};
+
+// Un vencimiento sin el aviso de la regla, en la cobertura: «Listado de Proveedores (vencimiento 31/01/2026), se avisó ya vencido»
+export const textoDeLoQueFalta = (falta) => {
+  const f = objeto(falta);
+  return `${texto(f.titulo)} (vencimiento ${fechaCorta(f.venc)}), ${texto(f.motivo)}`;
+};
+
+// El mes de una métrica manual: «Marzo 2026»
+export const textoDelMesManual = (mes, anio) => {
+  const m = Number(mes);
+  if (!Number.isInteger(m) || m < 1 || m > 12) return String(anio);
+  const nombre = mesYAnio(`${anio}-${String(m).padStart(2, '0')}-01`);
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+};
+
+// Sin métricas manuales en el año: «Todavía no hay métricas manuales cargadas en 2026.»
+export const textoSinManuales = (anio) => `Todavía no hay métricas manuales cargadas en ${anio}.`;
+
+// Lo que va debajo de la lista de casos: «Debajo de cada fecha, los días hábiles del tramo o su estado.»
+export const textoDelPieDeLosCasos = (dias) => `Debajo de cada fecha, los ${T.dias[elegido(dias, DIAS)]} del tramo o su estado.`;
 
 // =====================================================
 // Piezas: lo que va adentro de un recuadro o de una columna ({ alto, dibujar(y, x) })
@@ -313,7 +369,7 @@ const flechaDe = (doc, tramo, ancho) => {
       })
       : pieza(doc, vacio?.titulo, { ancho: anchoTexto, tamano: LETRA.vacio, min: LETRA.vacioMin, fuente: NEGRITA, color: COLOR.gris, lineas: 3 }),
     cifra ? chico(cifra.debajo, { fuente: NEGRITA, color: dgmit ? VIOLETA : COLOR.gris, tamano: LETRA.debajo, lineas: 2 }) : null,
-    cifra?.orientativo === true ? chico(ORIENTATIVO, { fuente: NEGRITA, color: AMBAR, tamano: LETRA.orientativo }) : null,
+    cifra?.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: LETRA.orientativo }) : null,
     pieza(doc, t.nombre, { ancho: anchoTexto, tamano: LETRA.nombre, fuente: NEGRITA, color: tinta, lineas: 2 })
   ], 1);
   const deLaDgmit = t.clave === 'tramite';
@@ -324,7 +380,7 @@ const flechaDe = (doc, tramo, ancho) => {
     pendientes = chico(t.pendientes_texto, { color: VIOLETA, fuente: NEGRITA, lineas: 5 });
   }
   const enCurso = esObjeto(t.en_curso) && texto(t.en_curso.texto)
-    ? [chico(t.en_curso.texto, { color: AMBAR, fuente: NEGRITA, lineas: 6 }), chico(SE_CUENTA_HASTA)] : [];
+    ? [chico(t.en_curso.texto, { color: AMBAR, fuente: NEGRITA, lineas: 6 }), chico(T.seCuentaHasta)] : [];
   const abajo = apilar([
     chico(t.desde_hasta, { lineas: 2 }),
     cifra?.en_el_dia === true ? chico(cifra.ciclos_texto, { color: COLOR.tinta, fuente: NEGRITA, lineas: 1 }) : null,
@@ -408,27 +464,25 @@ const heroe = (doc, valor, de) => piezaDeCifra(doc, { numero: cuenta(valor), lad
 // Actualizados a tiempo: «5 de 33 ciclos» con el medidor, qué es estar a tiempo, cuánto después se cargaron los otros y el desglose por
 // gestión; sin casos, el texto del servidor
 const columnaATiempo = (doc, a, t) => {
-  const titulo = tituloDeColumna(doc, 'Actualizados a tiempo');
+  const titulo = tituloDeColumna(doc, T.titulos.aTiempo);
   if (texto(t.vacio)) return apilar([titulo, textoDeColumna(doc, t.vacio, { color: COLOR.gris })], 5);
   const despues = texto(objeto(a.despues).texto);
-  const desglose = [['externa', 'Externa'], ['interna', 'Interna']]
-    .map(([clave, nombre]) => `${nombre}: ${cuenta(lista(a[clave])[0])} de ${cuenta(lista(a[clave])[1])}`).join(' · ');
   return apilar([
     titulo, heroe(doc, a.a_tiempo, t.de), piezaDeMedidor(doc, t.medidor, ANCHO_COLUMNA),
-    textoDeColumna(doc, despues ? `${A_TIEMPO} ${despues}` : A_TIEMPO), textoDeColumna(doc, desglose, { color: COLOR.gris })
+    textoDeColumna(doc, despues ? `${T.aTiempo} ${despues}` : T.aTiempo), textoDeColumna(doc, textoDelDesglose(a), { color: COLOR.gris })
   ], 4);
 };
 
 // Cobertura del aviso: «34 de 35 vencimientos» con el medidor, qué es estar avisado y los que faltan, con su vencimiento y su motivo
 // (si son muchísimos, los que entran y «y N más.»); sin vencimientos, el texto del servidor
 const columnaDeCobertura = (doc, c, t) => {
-  const titulo = tituloDeColumna(doc, 'Cobertura del aviso');
+  const titulo = tituloDeColumna(doc, T.titulos.cobertura);
   if (texto(t.vacio)) return apilar([titulo, textoDeColumna(doc, t.vacio, { color: COLOR.gris })], 5);
   const faltan = lista(c.faltan).filter(esObjeto);
   const items = [];
   let alto = 0;
   for (const [i, f] of faltan.entries()) {
-    const item = textoDeColumna(doc, `${texto(f.titulo)} (vencimiento ${fechaCorta(f.venc)}), ${texto(f.motivo)}`, { lineas: 2 });
+    const item = textoDeColumna(doc, textoDeLoQueFalta(f), { lineas: 2 });
     if (alto + item.alto > ALTO_MAXIMO_DE_LA_LISTA && i < faltan.length - 1) {
       items.push(textoDeColumna(doc, `y ${faltan.length - i} más.`, { color: COLOR.gris }));
       break;
@@ -449,12 +503,12 @@ const columnaDeReiteraciones = (doc, r, t) => {
   const dgmit = esObjeto(r.dgmit) ? r.dgmit : null;
   const mini = (valor, color) => pieza(doc, valor, { ancho: ANCHO_COLUMNA, tamano: LETRA.mini, fuente: NEGRITA, color, lineas: 2 });
   const barras = (grupos, datos) => piezaDeBarras(doc, grupos.map(([clave, nombre]) => [nombre, datos[clave]]), { ancho: ANCHO_COLUMNA, anchoTexto: 42 });
-  const delRpad = texto(t.rpad_vacio) ? textoDeColumna(doc, t.rpad_vacio, { color: COLOR.gris }) : barras(GRUPOS_DEL_RPAD, rpad);
-  const deLaDgmit = texto(t.dgmit_vacio) || dgmit === null ? textoDeColumna(doc, t.dgmit_vacio, { color: COLOR.gris }) : barras(GRUPOS_DE_LA_DGMIT, dgmit);
+  const delRpad = texto(t.rpad_vacio) ? textoDeColumna(doc, t.rpad_vacio, { color: COLOR.gris }) : barras(T.gruposDelRpad, rpad);
+  const deLaDgmit = texto(t.dgmit_vacio) || dgmit === null ? textoDeColumna(doc, t.dgmit_vacio, { color: COLOR.gris }) : barras(T.gruposDeLaDgmit, dgmit);
   return apilar([
-    tituloDeColumna(doc, 'Reiteraciones por ciclo'),
+    tituloDeColumna(doc, T.titulos.reiteraciones),
     mini(t.rpad, COLOR.tinta), delRpad, textoDeColumna(doc, t.aclaracion, { color: COLOR.gris, tamano: LETRA.chico }),
-    mini(t.dgmit, VIOLETA), deLaDgmit, textoDeColumna(doc, PIE_DE_LAS_REITERACIONES, { color: COLOR.gris, tamano: LETRA.chico })
+    mini(t.dgmit, VIOLETA), deLaDgmit, textoDeColumna(doc, T.pieDeLasReiteraciones, { color: COLOR.gris, tamano: LETRA.chico })
   ], 4);
 };
 
@@ -573,7 +627,7 @@ const piezaDeLeyenda = (doc, cinta, gestion) => {
   const hay = new Set(lista(cinta.marcas).filter(esObjeto).map((marca) => marca.tipo));
   if (conX(cinta.rayado)) hay.add('rayado');
   const items = LEYENDA_DE_LA_CINTA.filter((tipo) => hay.has(tipo)).map((tipo) => {
-    const nombre = NOMBRES_DE_LA_LEYENDA[tipo];
+    const nombre = T.leyenda[tipo];
     const t = esObjeto(nombre) ? nombre[gestion] : nombre;
     return { tipo, texto: t, ancho: (tipo === 'rayado' ? 16 : 10) + 4 + doc.font(NORMAL).fontSize(LETRA.leyenda).widthOfString(t) + 1 };
   });
@@ -655,7 +709,7 @@ const elementosDeLosDestildados = (doc, vista, dias) => {
   });
   return [
     [prepararSeccion(doc, { titulo: `Los casos destildados (${filas.length})`, derecha: 'No cuentan en ninguna cifra de este PDF' }), tabla],
-    [prepararParrafo(doc, `Debajo de cada fecha, los ${NOMBRE_DE_LOS_DIAS[dias]} del tramo o su estado.`, { tamano: LETRA.pie })]
+    [prepararParrafo(doc, textoDelPieDeLosCasos(dias), { tamano: LETRA.pie })]
   ];
 };
 
@@ -737,20 +791,20 @@ const elementosDelContexto = (doc, contexto) => {
   const grafico = vacio ? null : piezaDelIndice(doc, indice);
   const antiguedad = objeto(contexto.antiguedad);
   const textos = objeto(antiguedad.textos);
-  const grupos = [['Menos de 3 meses', antiguedad.menos_de_3_meses], ['De 3 a 12 meses', antiguedad.de_3_a_12], ['Más de un año', antiguedad.mas_de_un_anio]];
+  const grupos = [antiguedad.menos_de_3_meses, antiguedad.de_3_a_12, antiguedad.mas_de_un_anio].map((n, i) => [T.antiguedad[i], n]);
   return [
     [
-      prepararSeccion(doc, { titulo: 'Índice de actualización, mes a mes', derecha: texto(indice.at(-1)?.texto) }),
+      prepararSeccion(doc, { titulo: T.titulos.indice, derecha: texto(indice.at(-1)?.texto) }),
       grafico ? comoElemento(grafico) : prepararParrafo(doc, vacio || 'No hay datos para dibujar el índice.', { color: COLOR.tinta })
     ],
-    [prepararParrafo(doc, PIE_DEL_INDICE, { tamano: LETRA.pie })],
+    [prepararParrafo(doc, T.pieDelIndice, { tamano: LETRA.pie })],
     [
-      prepararSeccion(doc, { titulo: 'Antigüedad de los vencidos', derecha: texto(textos.titulo) }),
+      prepararSeccion(doc, { titulo: T.titulos.antiguedad, derecha: texto(textos.titulo) }),
       comoElemento(piezaDeBarras(doc, grupos, { ancho: CONTENIDO, anchoTexto: 110, color: BARRA_AMBAR }))
     ],
     [comoElemento(apilar([
       pieza(doc, textos.inicio, { ancho: CONTENIDO, tamano: LETRA.texto + 0.8, color: COLOR.tinta, lineas: 2 }),
-      pieza(doc, PIE_DE_LA_ANTIGUEDAD, { ancho: CONTENIDO, tamano: LETRA.pie, color: COLOR.gris, lineas: 2 })
+      pieza(doc, T.pieDeLaAntiguedad, { ancho: CONTENIDO, tamano: LETRA.pie, color: COLOR.gris, lineas: 2 })
     ], 4))]
   ];
 };
@@ -759,28 +813,42 @@ const elementosDelContexto = (doc, contexto) => {
 // El trabajo del RPAD
 // =====================================================
 
+// Las métricas manuales de Gestión del año (spec 2.2; las carga administración), como la pestaña (htmlDeMetricasManuales): una fila por
+// métrica, con su tipo, su mes y su cantidad, en el orden en que llegan; las de otro año no van, y sin ninguna, lo dice
+const elementoDeLasManuales = (doc, manuales, anio) => {
+  const delAnio = lista(manuales).filter((m) => esObjeto(m) && Number(m.anio) === anio);
+  if (delAnio.length === 0) return prepararParrafo(doc, textoSinManuales(anio), { color: COLOR.tinta });
+  return prepararTabla(doc, {
+    columnas: [{ titulo: 'Tipo', ancho: 3 }, { titulo: 'Mes', ancho: 2 }, { titulo: 'Cantidad', ancho: 1 }],
+    filas: delAnio.map((m) => [
+      Object.hasOwn(T.tiposManuales, m.tipo) ? T.tiposManuales[m.tipo] : texto(m.tipo), textoDelMesManual(m.mes, anio), cuenta(Number(m.cantidad))
+    ])
+  });
+};
+
 // Los cinco totales en tarjetas, con su texto del servidor (en singular o en plural); por mes, las tres series de la pestaña en una
-// tabla (la pestaña muestra una por vez, con chips), con los meses que manda el servidor; y la doble verificación
-const elementosDelTrabajo = (doc, trabajo, anio) => {
+// tabla (la pestaña muestra una por vez, con chips), con los meses que manda el servidor; las métricas manuales y la doble verificación
+const elementosDelTrabajo = (doc, trabajo, manuales, anio) => {
   const textos = objeto(trabajo.textos);
   const totales = objeto(textos.totales);
   const meses = lista(textos.meses).map(texto);
   const porMes = objeto(trabajo.por_mes);
   const tabla = prepararTabla(doc, {
     columnas: [{ titulo: '', ancho: 3.2 }, ...meses.map((mes) => ({ titulo: mes, ancho: 1 }))],
-    filas: meses.length === 0 ? [] : SERIES.map(([clave, nombre]) => [nombre, ...meses.map((_, i) => cuenta(lista(porMes[clave])[i]))])
+    filas: meses.length === 0 ? [] : T.series.map(([clave, nombre]) => [nombre, ...meses.map((_, i) => cuenta(lista(porMes[clave])[i]))])
   });
   return [
     [
-      prepararSeccion(doc, { titulo: 'El trabajo del RPAD', derecha: `Lo que hizo el sistema y el equipo de Datos Públicos en ${anio}.` }),
+      prepararSeccion(doc, { titulo: T.titulos.trabajo, derecha: T.bajadaDelTrabajo(anio) }),
       prepararTarjetas(doc, TOTALES_DEL_TRABAJO.map((clave) => ({ valor: cuenta(trabajo[clave]), rotulo: texto(totales[clave]) })))
     ],
-    ...(meses.length ? [[prepararSeccion(doc, { titulo: 'Por mes' }), tabla]] : []),
+    ...(meses.length ? [[prepararSeccion(doc, { titulo: T.titulos.porMes }), tabla]] : []),
+    [prepararSeccion(doc, { titulo: T.titulos.manuales }), elementoDeLasManuales(doc, manuales, anio)],
     [
-      prepararSeccion(doc, { titulo: 'Doble verificación' }),
+      prepararSeccion(doc, { titulo: T.titulos.auditoria }),
       comoElemento(apilar([
         pieza(doc, textos.auditoria, { ancho: CONTENIDO, tamano: LETRA.texto + 0.8, color: COLOR.tinta, lineas: 2 }),
-        pieza(doc, PIE_DE_LA_AUDITORIA, { ancho: CONTENIDO, tamano: LETRA.pie, color: COLOR.gris, lineas: 1 })
+        pieza(doc, T.pieDeLaAuditoria, { ancho: CONTENIDO, tamano: LETRA.pie, color: COLOR.gris, lineas: 1 })
       ], 4))
     ]
   ];
@@ -804,12 +872,12 @@ const elementosDeLasAreas = (doc, areas) => {
       ? prepararParrafo(doc, texto(vacios[clave]) || 'Sin datasets.', { color: COLOR.tinta })
       : comoElemento(piezaDeBarras(doc, filas, { ancho: CONTENIDO, anchoTexto: 190 }));
   };
-  const tabla = ranking.length === 0 ? prepararParrafo(doc, SIN_AREAS, { color: COLOR.tinta }) : prepararTabla(doc, {
+  const tabla = ranking.length === 0 ? prepararParrafo(doc, T.sinAreas, { color: COLOR.tinta }) : prepararTabla(doc, {
     columnas: [{ titulo: '#', ancho: 0.5 }, { titulo: 'Área', ancho: 6 }, { titulo: 'Datasets', ancho: 1.3 }, { titulo: 'Al día', ancho: 1.1 }, { titulo: 'Cumplimiento', ancho: 1.6 }],
     filas: ranking.map((area, i) => [String(i + 1), texto(area.area), cuenta(area.total_datasets), cuenta(area.al_dia), textoPorcentaje(area.porcentaje)])
   });
   return [
-    [prepararSeccion(doc, { titulo: 'Ranking de áreas', derecha: 'Al día sobre los que tienen vencimiento' }), tabla],
+    [prepararSeccion(doc, { titulo: T.titulos.ranking, derecha: T.alDia }), tabla],
     [prepararSeccion(doc, { titulo: 'Datasets por tema' }), barras('temas')],
     [prepararSeccion(doc, { titulo: 'Datasets por frecuencia' }), barras('frecuencias')]
   ];
@@ -819,13 +887,16 @@ const elementosDeLasAreas = (doc, areas) => {
 // El PDF
 // =====================================================
 
-// Los grupos de elementos uno debajo del otro desde y, cada grupo junto en una hoja (dibujarJuntos: un título con lo primero que le
-// sigue). Devuelve la y de lo que sigue
-const dibujarGrupos = (doc, y, grupos) => grupos.reduce((yGrupo, grupo) => dibujarJuntos(doc, yGrupo, grupo), y);
+// Una parte del PDF desde una hoja nueva: el título de la parte va junto con su primer grupo, y después cada grupo de elementos, uno
+// debajo del otro y cada uno junto en una hoja (dibujarJuntos: una sección con lo primero que le sigue)
+const dibujarParte = (doc, hoja, titulo, grupos) => {
+  const [primero = [], ...resto] = grupos;
+  [[titulo, ...primero], ...resto].reduce((yGrupo, grupo) => dibujarJuntos(doc, yGrupo, grupo), agregarHoja(doc, hoja));
+};
 
 // El PDF de Métricas del año. `datos`: lo de metricasDe (controllers/metricasController.js: anio, al, en_vivo, aviso_foto, anios, vista,
-// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta);
-// `generado`: { momento: 'AAAA-MM-DD HH:MM:SS' (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
+// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta) y las
+// métricas manuales de Gestión del año (`manuales`: [{ tipo, anio, mes, cantidad }], que no son de metricasDe); `generado`: { momento: 'AAAA-MM-DD HH:MM:SS' (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
 // Las cintas no salen de `datos.cinta` (las de la pantalla, o las que guardó la foto): se arman con el circuito de la vista y la letra
 // del PDF.
 export const renderMetricasDelAnio = async (datos, { generado }) => {
@@ -836,39 +907,39 @@ export const renderMetricasDelAnio = async (datos, { generado }) => {
   const vista = objeto(d.vista);
   const circuito = objeto(vista.circuito);
   const cintas = cintasDeLaVista(vista, { estadistico, dias, ...OPCIONES_CINTA_PDF });
-  const combinacion = `${estadistico} en ${NOMBRE_DE_LOS_DIAS[dias]}`;
+  const combinacion = `${estadistico} en ${T.dias[dias]}`;
   const nombre = `Métricas del RPAD · ${anio}`;
   const doc = nuevoReporte({ titulo: `Métricas del RPAD ${anio}` });
   const hoja = { derecha: nombre, fecha: texto(generado?.momento).slice(0, 10) };
   const rotulo = rotuloDelAnio({ ...d, anio });
   const titulo = (t) => prepararTitulo(doc, { rotulo, titulo: t });
 
-  // 1. El circuito de las dos gestiones, los resultados y «Cómo se cuenta»
-  let y = agregarHoja(doc, hoja);
+  // 1. El circuito de las dos gestiones, los resultados y «Cómo se cuenta», que viaja con lo último de antes (los resultados): nunca queda
+  // solo en una hoja
   const destildados = lista(d.sin_titulos).some((t) => typeof t === 'string' && t);
-  const origen = deDondeSale(d);
-  y = dibujarGrupos(doc, y, [
-    [titulo('El circuito, del aviso del RPAD a la carga en el portal'), prepararPildora(doc, textoDeLaPildora({ ...d, estadistico, dias }), { tono: destildados ? 'sol' : 'azul' })],
+  const origen = textoDeDondeSale(d);
+  const circuitos = [
     ...(origen ? [[prepararParrafo(doc, origen, { color: COLOR.tinta })]] : []),
     ...GESTIONES.filter((gestion) => Array.isArray(circuito[gestion])).map((gestion) => [prepararRecuadro(doc, {
       rotulo: `Gestión ${gestion} · ${combinacion}`, contenido: piezaDeLaGestion(doc, circuito, gestion)
     })]),
     ...(esObjeto(vista.resultados) ? [[
-      prepararSeccion(doc, { titulo: 'Resultados del año', derecha: `Lo que dejó el circuito en ${anio}, con las dos gestiones juntas.` }),
-      comoElemento(piezaDeResultados(doc, vista.resultados))
-    ]] : []),
-    [prepararRecuadro(doc, {
-      rotulo: 'Cómo se cuenta',
-      contenido: prepararParrafo(doc, `${BAJADA_DE_LOS_DIAS[dias]} ${PIE_DEL_CIRCUITO} ${EN_EL_ANIO} ${SIGLAS}`, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion })
-    }, { tono: 'gris' })]
-  ]);
+      prepararSeccion(doc, { titulo: T.titulos.resultados, derecha: T.bajadaDeResultados(anio) }), comoElemento(piezaDeResultados(doc, vista.resultados))
+    ]] : [])
+  ];
+  const comoSeCuenta = prepararRecuadro(doc, {
+    rotulo: 'Cómo se cuenta',
+    contenido: prepararParrafo(doc, `${T.bajada[dias]} ${T.pieDelCircuito} ${EN_EL_ANIO} ${SIGLAS}`, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion })
+  }, { tono: 'gris' });
+  const pildora = prepararPildora(doc, textoDeLaPildora({ ...d, estadistico, dias }), { tono: destildados ? 'sol' : 'azul' });
+  const grupos = [[pildora], ...circuitos];
+  grupos[grupos.length - 1] = [...grupos.at(-1), comoSeCuenta];
+  dibujarParte(doc, hoja, titulo('El circuito, del aviso del RPAD a la carga en el portal'), grupos);
 
   // 2. Las cintas del recorrido típico y los casos destildados
-  y = agregarHoja(doc, hoja);
-  y = dibujarGrupos(doc, y, [
-    [titulo('El recorrido típico de un pedido')],
+  dibujarParte(doc, hoja, titulo('El recorrido típico de un pedido'), [
     ...GESTIONES.map((gestion) => {
-      const seccion = prepararSeccion(doc, { titulo: `Gestión ${gestion} · recorrido típico`, derecha: `${ESTADISTICO_EN_TEXTO[estadistico]} en ${NOMBRE_DE_LOS_DIAS[dias]}` });
+      const seccion = prepararSeccion(doc, { titulo: `Gestión ${gestion} · recorrido típico`, derecha: `${T.estadisticos[estadistico]} en ${T.dias[dias]}` });
       if (cintas[gestion]) return [seccion, elementoDeLaCinta(doc, cintas[gestion], gestion)];
       const aviso = lista(circuito[gestion]).find((t) => esObjeto(t) && t.clave === 'aviso');
       return [seccion, prepararParrafo(doc, texto(objeto(aviso?.vacio).titulo) || `Sin casos en ${anio}`, { color: COLOR.tinta })];
@@ -877,16 +948,13 @@ export const renderMetricasDelAnio = async (datos, { generado }) => {
   ]);
 
   // 3. El contexto y el trabajo del RPAD
-  y = agregarHoja(doc, hoja);
-  y = dibujarGrupos(doc, y, [
-    [titulo('El contexto y el trabajo del RPAD')],
+  dibujarParte(doc, hoja, titulo('El contexto y el trabajo del RPAD'), [
     ...elementosDelContexto(doc, objeto(d.contexto)),
-    ...elementosDelTrabajo(doc, objeto(d.trabajo), anio)
+    ...elementosDelTrabajo(doc, objeto(d.trabajo), d.manuales, anio)
   ]);
 
   // 4. Áreas y temas
-  y = agregarHoja(doc, hoja);
-  dibujarGrupos(doc, y, [[titulo('Áreas y temas')], ...elementosDeLasAreas(doc, objeto(d.areas))]);
+  dibujarParte(doc, hoja, titulo(T.titulos.areas), elementosDeLasAreas(doc, objeto(d.areas)));
 
   return cerrarReporte(doc, { generado, pieDe: (k, n) => `${nombre} · Hoja ${k} de ${n}` });
 };
