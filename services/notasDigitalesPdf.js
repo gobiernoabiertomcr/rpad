@@ -5,7 +5,10 @@ import PDFDocument from 'pdfkit';
 import { renglonesDeFirma } from './notasDigitalesContenido.js';
 
 const MM = 72 / 25.4;
-const PAGINA = [216 * MM, 330 * MM];
+// Hoja oficio, la que usa la Municipalidad para imprimir: Legal exacto, 8½ × 14 pulgadas a 72 puntos por pulgada (spec
+// 2026-10-24-notas-hoja-oficio). Va en puntos y no en milímetros: 216 × 356 mm darían 612,28 × 1009,13 y una impresora lo
+// tomaría como un tamaño personalizado. Solo la nota: los anexos y los demás PDF fijan su A4 aparte.
+const PAGINA = [612, 1008];
 // Sin banner del membrete el margen superior es de 25 mm; con banner, el alto del banner más 9 mm (nunca menos de 25)
 const MARGENES = { top: 25 * MM, bottom: 25 * MM, left: 30 * MM, right: 30 * MM };
 // El banner ocupa el ancho de la hoja con su alto proporcional, salvo que pase de 45 mm: entonces se achica, centrado

@@ -1077,7 +1077,7 @@ describe('circuitoDe', () => {
     const c = circuito(52);
     assert.deepEqual(c.nodoMedio, { nombre: 'DGMIT y Dirección Administrativa', rol: 'Mandan la nota formal al área' });
     assert.deepEqual(c.tramoFuera, { titulo: 'Nota formal', texto: 'Pendiente de carga', registrada: false, nota: null, tituloPdf: 'Nota formal', textoPdf: 'Pendiente de carga' });
-    assert.deepEqual(c.avisos, { titulo: '6 avisos', texto: '5 emails y la Nota Digital N° 2/26' });
+    assert.deepEqual(c.avisos, { titulo: '6 avisos', texto: '5 emails y la Nota Digital N° 2/26', textosCortos: [] });
     assert.deepEqual(c.area, { nombre: 'Dirección General de Relaciones Laborales', texto: 'Vencido hace 81 días', vencido: true });
     assert.deepEqual(c.alArea, {
       fechas: ['2026-06-21'],
@@ -1123,9 +1123,9 @@ describe('circuitoDe', () => {
   });
 
   it('sin avisos con el ciclo abierto ya vencido: "Todavía no se envió ningún aviso"; el día del vencimiento, todavía no hizo falta', () => {
-    assert.deepEqual(circuito(0, solo({ proxima: '2026-09-30' })).avisos, { titulo: 'Sin avisos', texto: 'Todavía no se envió ningún aviso' });
-    assert.deepEqual(circuito(0, solo({ proxima: '2026-10-19' })).avisos, { titulo: 'Sin avisos', texto: 'Todavía no se envió ningún aviso' });
-    assert.deepEqual(circuito(0, solo({ proxima: HOY })).avisos, { titulo: 'Sin avisos', texto: 'Todavía no hizo falta' });
+    assert.deepEqual(circuito(0, solo({ proxima: '2026-09-30' })).avisos, { titulo: 'Sin avisos', texto: 'Todavía no se envió ningún aviso', textosCortos: [] });
+    assert.deepEqual(circuito(0, solo({ proxima: '2026-10-19' })).avisos, { titulo: 'Sin avisos', texto: 'Todavía no se envió ningún aviso', textosCortos: [] });
+    assert.deepEqual(circuito(0, solo({ proxima: HOY })).avisos, { titulo: 'Sin avisos', texto: 'Todavía no hizo falta', textosCortos: [] });
     // Con avisos, el texto de siempre aunque esté vencido
     assert.equal(circuito(0, solo({ proxima: '2026-09-30' }, { emails: [email({ id: 1, enviado: '2026-09-25 08:00:00' })] })).avisos.texto, '1 email');
   });
@@ -1151,24 +1151,69 @@ describe('circuitoDe', () => {
 
   it('el texto de los avisos: singular, plural, solo emails, varias notas', () => {
     const avisos = (extra) => circuito(0, solo({ proxima: '2026-10-31' }, extra)).avisos;
-    assert.deepEqual(avisos({ emails: [email({ id: 1 })] }), { titulo: '1 aviso', texto: '1 email' });
-    assert.deepEqual(avisos({ emails: [email({ id: 1 }), email({ id: 2 })] }), { titulo: '2 avisos', texto: '2 emails' });
-    assert.deepEqual(avisos({ emails: [email({ id: 1 })], notas: [nota({ id: 1 })] }), { titulo: '2 avisos', texto: '1 email y la Nota Digital N° 5/26' });
+    assert.deepEqual(avisos({ emails: [email({ id: 1 })] }), { titulo: '1 aviso', texto: '1 email', textosCortos: [] });
+    assert.deepEqual(avisos({ emails: [email({ id: 1 }), email({ id: 2 })] }), { titulo: '2 avisos', texto: '2 emails', textosCortos: [] });
+    assert.deepEqual(avisos({ emails: [email({ id: 1 })], notas: [nota({ id: 1 })] }), { titulo: '2 avisos', texto: '1 email y la Nota Digital N° 5/26', textosCortos: [] });
     const dos = avisos({ notas: [nota({ id: 1, numero: 5, enviada: '2026-10-05 08:15:00' }), nota({ id: 2, numero: 6, enviada: '2026-10-10 08:15:00' })] });
-    assert.deepEqual(dos, { titulo: '2 avisos', texto: 'Las Notas Digitales N° 5/26 y 6/26' });
+    assert.deepEqual(dos, { titulo: '2 avisos', texto: 'Las Notas Digitales N° 5/26 y 6/26', textosCortos: [] });
     const tres = avisos({ emails: [email({ id: 1 })], notas: [nota({ id: 1, numero: 5, enviada: '2026-10-05 08:15:00' }),
       nota({ id: 2, numero: 6, enviada: '2026-10-10 08:15:00' }), nota({ id: 3, numero: 7, enviada: '2026-10-12 08:15:00' })] });
-    assert.deepEqual(tres, { titulo: '4 avisos', texto: '1 email y las Notas Digitales N° 5/26, 6/26 y 7/26' });
+    assert.deepEqual(tres, { titulo: '4 avisos', texto: '1 email y las Notas Digitales N° 5/26, 6/26 y 7/26', textosCortos: [] });
+  });
+
+  // La lista recortada del medio (spec 2026-10-24-reiteracion-en-su-anexo, decisión del usuario): las versiones cada vez más cortas
+  // del texto, para el PDF. La versión m conserva la primera nota y las últimas k − 1 − m, con «…» entre las dos partes
+  describe('las versiones más cortas del texto de los avisos (textosCortos)', () => {
+    const avisos = (extra) => circuito(0, solo({ proxima: '2026-10-31' }, extra)).avisos;
+    const emails = (cantidad) => Array.from({ length: cantidad }, (_, i) => email({ id: i + 1, enviado: `2026-10-0${1 + (i % 9)} 08:00:00` }));
+    // k notas enviadas en el ciclo abierto, una por día desde el 01/10/2026, con estos números
+    const notas = (numeros) => numeros.map((numero, i) => nota({ id: i + 1, numero, enviada: `2026-10-${String(i + 1).padStart(2, '0')} 08:15:00` }));
+
+    it('11 emails y 7 notas: el texto de siempre, con todos los números, y cuatro versiones que sacan números del medio de a uno', () => {
+      const a = avisos({ emails: emails(11), notas: notas([2, 3, 5, 8, 9, 12, 15]) });
+      assert.equal(a.titulo, '18 avisos');
+      assert.equal(a.texto, '11 emails y las Notas Digitales N° 2/26, 3/26, 5/26, 8/26, 9/26, 12/26 y 15/26');
+      assert.deepEqual(a.textosCortos, [
+        '11 emails y las Notas Digitales N° 2/26, …, 5/26, 8/26, 9/26, 12/26 y 15/26',
+        '11 emails y las Notas Digitales N° 2/26, …, 8/26, 9/26, 12/26 y 15/26',
+        '11 emails y las Notas Digitales N° 2/26, …, 9/26, 12/26 y 15/26',
+        '11 emails y las Notas Digitales N° 2/26, …, 12/26 y 15/26'
+      ]);
+    });
+
+    it('con 4 notas, una versión; sin emails empieza con mayúscula', () => {
+      assert.deepEqual(avisos({ notas: notas([5, 6, 7, 8]) }).textosCortos, ['Las Notas Digitales N° 5/26, …, 7/26 y 8/26']);
+      assert.deepEqual(avisos({ emails: emails(1), notas: notas([5, 6, 7, 8]) }).textosCortos, ['1 email y las Notas Digitales N° 5/26, …, 7/26 y 8/26']);
+    });
+
+    it('con 3 notas o menos, solo emails, sin avisos o sin vencimiento: la lista vacía', () => {
+      assert.deepEqual(avisos({ emails: emails(11), notas: notas([2, 3, 5]) }).textosCortos, []);
+      assert.deepEqual(avisos({ notas: notas([2]) }).textosCortos, []);
+      assert.deepEqual(avisos({ emails: emails(11) }).textosCortos, []);
+      assert.deepEqual(avisos({}).textosCortos, []);
+      assert.deepEqual(circuito(66).avisos.textosCortos, []);
+      assert.deepEqual(circuito(0, solo({ proxima: null }, { notas: notas([2, 3, 5, 8]) })).avisos.textosCortos, []);
+    });
+
+    it('cada versión es más corta que la anterior y conserva el primer número y los dos últimos', () => {
+      const a = avisos({ emails: emails(11), notas: notas([2, 3, 5, 8, 9, 12, 15, 18, 21]) });
+      assert.equal(a.textosCortos.length, 6);
+      [a.texto, ...a.textosCortos].reduce((anterior, texto) => {
+        assert.ok(texto.length < anterior.length, texto);
+        assert.ok(texto.startsWith('11 emails y las Notas Digitales N° 2/26, ') && texto.endsWith(', 18/26 y 21/26'), texto);
+        return texto;
+      });
+    });
   });
 
   it('eventual (caso 66) y sin fecha: sin vencimiento', () => {
     const eventual = circuito(66);
-    assert.deepEqual(eventual.avisos, { titulo: 'Sin avisos', texto: 'Sin vencimiento' });
+    assert.deepEqual(eventual.avisos, { titulo: 'Sin avisos', texto: 'Sin vencimiento', textosCortos: [] });
     assert.deepEqual(eventual.area, { nombre: CASOS[66].dataset.area, texto: 'Sin vencimiento', vencido: false });
     assert.equal(eventual.vencimiento, null);
     assert.equal(eventual.nodoMedio.nombre, 'DGMIT y Dirección de Investigación Territorial');
     const sinFecha = circuito(0, solo({ proxima: null }));
-    assert.deepEqual(sinFecha.avisos, { titulo: 'Sin avisos', texto: 'Sin vencimiento' });
+    assert.deepEqual(sinFecha.avisos, { titulo: 'Sin avisos', texto: 'Sin vencimiento', textosCortos: [] });
     assert.equal(sinFecha.area.texto, 'Sin vencimiento');
     assert.equal(sinFecha.area.vencido, false);
     assert.equal(sinFecha.vencimiento, null);
@@ -1450,6 +1495,35 @@ describe('seguimientoDe', () => {
     assert.doesNotThrow(() => seguimientoDe(f(52), HOY, null));
     assert.doesNotThrow(() => seguimientoDe({ ...f(52), dataset: { ...CASOS[52].dataset, ultima: null, datos_al: null, proxima: '2027-03-29' } }, HOY));
     assert.doesNotThrow(() => seguimientoDe({ ...f(52), dataset: { ...CASOS[52].dataset, alta: `${HOY} 09:00:00` } }, HOY));
+  });
+});
+
+// La reiteración en su propio anexo (spec 2026-10-24-reiteracion-en-su-anexo): en la vista previa y en la prueba, la nota sumada
+// lleva el número como lo escribe la nota, «XX» o «PRUEBA», y no tiene año. Nunca «N° XX/ll» ni «N° null/ll»
+describe('seguimientoDe: una Nota Digital sin año (la vista previa y la prueba del anexo)', () => {
+  // La reiteración del 52 (vencido el 31/07/2026), con la forma que fuentesDe le da a una nota
+  const reiteracion = (numero, anio) => ({
+    id: null, numero, anio, tipo: 'reiteracion', gestion: 'externa', fecha: HOY, estado: 'enviada', enviada: `${HOY} 08:15:03`,
+    para: 'a@x', cc: null, seccion: 'vencido', vencimiento: '2026-07-31', datos_solicitados: 'Vigente al 30/06/2026',
+    creado_por: null, firmante: null
+  });
+
+  for (const numero of ['XX', 'PRUEBA']) {
+    it(`«${numero}»: el título es «Nota Digital N° ${numero} a DGMIT» y los avisos del ciclo la nombran «${numero}»`, () => {
+      const s = seguimientoDe(con(52, { notas: [reiteracion(numero, null)] }), HOY);
+      assert.equal(s.movimientos[0].titulo, `Nota Digital N° ${numero} a DGMIT`);
+      assert.deepEqual(s.circuito.avisos, { titulo: '7 avisos', texto: `5 emails y las Notas Digitales N° 2/26 y ${numero}`, textosCortos: [] });
+    });
+  }
+
+  it('sin año (null o sin el campo) va el número solo; con año, «n/aa» como siempre', () => {
+    const titulo = (nota) => seguimientoDe(con(52, { notas: [nota] }), HOY).movimientos[0].titulo;
+    const sinElCampo = reiteracion('XX', null);
+    delete sinElCampo.anio;
+    assert.equal(titulo(sinElCampo), 'Nota Digital N° XX a DGMIT');
+    assert.equal(titulo(reiteracion(2, 2027)), 'Nota Digital N° 2/27 a DGMIT');
+    assert.equal(seguimientoDe(con(52, { notas: [reiteracion(2, 2027)] }), HOY).circuito.avisos.texto,
+      '5 emails y las Notas Digitales N° 2/26 y 2/27');
   });
 });
 
