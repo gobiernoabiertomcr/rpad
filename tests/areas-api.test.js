@@ -453,3 +453,17 @@ describe('DELETE /areas/:id', () => {
     }
   });
 });
+
+// Las direcciones viejas llevan a Configuración (spec 2026-10-24-configuracion, 3): 302, antes del estático (mientras
+// public/usuarios.html y public/areas.html existan, este test prueba también que nunca se sirven). La de usuarios.html va sin
+// fragmento: el navegador conserva el del link original (usuarios.html#licencias llega a configuracion.html#licencias)
+describe('las direcciones viejas', () => {
+  for (const [vieja, nueva] of [['/usuarios.html', '/configuracion.html'], ['/areas.html', '/configuracion.html#areas']]) {
+    it(`GET ${vieja}: 302 a ${nueva}, sin servir la página vieja`, async () => {
+      const res = await fetch(`${servidor.url}${vieja}`, { redirect: 'manual' });
+      assert.equal(res.status, 302);
+      assert.equal(res.headers.get('location'), nueva);
+      assert.ok(!(await res.text()).includes('<!DOCTYPE html>'), 'no sirve la página vieja');
+    });
+  }
+});
