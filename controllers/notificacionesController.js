@@ -102,11 +102,12 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
     }
 
     // La foto del año anterior al 31/12 (spec 2026-10-24-metricas-y-reportes, 3): la saca la primera corrida desde el 10/01, sea o
-    // no día hábil, y antes devuelve null sin tocar nada; si falta la de un año más viejo, la saca primero (una por corrida, Ruling
-    // 18). Aislada: un error acá no frena la respuesta, queda en la última corrida que muestra Correos > Estado y la corrida del día
-    // siguiente la vuelve a intentar. Corre fuera del bloqueo de las Notas
-    // Digitales (conBloqueo): con dos corridas a la vez, el registrarFin de la primera puede pisar la anotación de la segunda, que
-    // igual queda en la respuesta y en el log (y la foto se reintenta al día siguiente)
+    // no día hábil; si falta la de un año más viejo, la saca primero (una por corrida, Ruling 18). Cada corrida lee qué años ya tienen
+    // foto (una consulta a metricas_fotos) y, si no toca sacar ninguna, devuelve null sin escribir nada. Aislada: un error acá (también
+    // si falta la tabla) no frena la respuesta, queda en la última corrida que muestra Correos > Estado y la corrida del día siguiente
+    // la vuelve a intentar. Corre fuera del bloqueo de las Notas Digitales (conBloqueo): con dos corridas a la vez, el registrarFin de
+    // la primera puede pisar la anotación de la segunda, que igual queda en la respuesta y en el log (y la foto se reintenta al día
+    // siguiente)
     try {
       resultados.foto = await sacarFotoSiCorresponde({ hoy });
     } catch (error) {

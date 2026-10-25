@@ -1,6 +1,7 @@
 // El PDF «Datos para completar» (spec 2026-10-24-metricas-y-reportes, 5, Para trabajar, punto 7, y 2.2): lo mismo que la sección «Para
-// completar» de la pestaña Métricas, la vista.para_completar del año en curso, en vivo, que arma el servidor (metricasDe, la de GET
-// /api/metricas): las notas DGMIT pendientes de carga y las actualizaciones sin «Recibido el» o sin el origen de los datos, cada grupo
+// completar» de la pestaña Métricas, la vista.para_completar del año elegido (por defecto el en curso, en vivo; Ruling 39), que arma el
+// servidor (metricasDe, la de GET /api/metricas): las notas DGMIT pendientes de carga y las actualizaciones sin «Recibido el» o sin el
+// origen de los datos, cada grupo
 // con su título y, sin ninguna, su vacío, los dos del servidor (Ruling 19), y una fila por tarea con los textos que imprime la pestaña
 // (htmlDeParaCompletar, public/js/reportes.js): el dataset, lo de debajo (el área y cómo está el ciclo, o la gestión y qué falta) y qué
 // pasó (el aviso del RPAD, o la carga). Sin links, porque es un PDF: en su lugar, el pie de la pestaña dice dónde se completa cada dato.
@@ -8,7 +9,7 @@
 // Dibuja con la base de los reportes (reportesPdfBase.js) lo que le pasa el controlador (controllers/reportesController.js). Puro: sin
 // pool (los tests lo llaman sin base).
 import { COLOR, NEGRITA } from './notasDigitalesAnexo.js';
-import { formatoCorto } from './notasDigitalesCalendario.js';
+import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, prepararTitulo, prepararParrafo, prepararTabla, dibujarJuntos, fechaCorta, esObjeto, objeto,
   lista
@@ -78,17 +79,17 @@ const dibujarGrupo = (doc, y, grupo, { filas, textos }) => {
   return dibujarJuntos(doc, y, [cabeza, tabla]);
 };
 
-// El PDF. `anio`: el de las métricas (el de hoy); `para_completar`: la vista.para_completar de ese año ({ notas, recibido, total, textos },
-// paraCompletarDe de services/metricasReglas.js). `hoy`: 'AAAA-MM-DD'; `generado`: { momento, por } (el pie). Sin «Para completar», o con
-// datos raros, no tira: no hay nada para completar.
-export const renderParaCompletar = async ({ anio, para_completar: paraCompletar }, { hoy, generado }) => {
+// El PDF. `anio`: el de las métricas; `al`: el día al que se calcularon (hoy en el año en curso, el 31/12 en uno cerrado; sin él, hoy);
+// `para_completar`: la vista.para_completar de ese año ({ notas, recibido, total, textos }, paraCompletarDe de services/metricasReglas.js).
+// `hoy`: 'AAAA-MM-DD'; `generado`: { momento, por } (el pie). Sin «Para completar», o con datos raros, no tira: no hay nada para completar.
+export const renderParaCompletar = async ({ anio, al, para_completar: paraCompletar }, { hoy, generado }) => {
   const pc = objeto(paraCompletar);
   const textos = objeto(pc.textos);
   const filas = { notas: lista(pc.notas).filter(esObjeto), recibido: lista(pc.recibido).filter(esObjeto) };
   const doc = nuevoReporte({ titulo: TITULO });
   let y = agregarHoja(doc, { derecha: TITULO, fecha: hoy });
   y = prepararTitulo(doc, {
-    rotulo: `${TITULO} · métricas de ${texto(anio)}, al ${formatoCorto(hoy)}`, titulo: tituloDe(totalDe(pc, filas))
+    rotulo: `${TITULO} · métricas de ${texto(anio)}, al ${formatoCorto(esFechaIso(al) ? al : hoy)}`, titulo: tituloDe(totalDe(pc, filas))
   }).dibujar(y);
   y = prepararParrafo(doc, TEXTOS_DE_PARA_COMPLETAR.bajada).dibujar(y);
   for (const grupo of GRUPOS) y = dibujarGrupo(doc, y, grupo, { filas: filas[grupo.filas], textos });

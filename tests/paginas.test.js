@@ -49,9 +49,10 @@ const VERSION_GESTION = '20261129';
 const VERSION_SEGUIMIENTO = '20261129';
 // reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
 // ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
-// del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos: su
-// versión es propia
-const VERSION_REPORTES = '20261202';
+// del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
+// después, la revisión final (el año de Datos para completar, la franja de lo destildado armada en el servidor y el foco de «Volver a
+// todos»): su versión es propia
+const VERSION_REPORTES = '20261203';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -124,6 +125,14 @@ describe('páginas', () => {
     assert.match(html, /<div id="tab-proyectos">/);
     const gestion = fs.readFileSync(new URL('js/gestion.js', DIRECTORIO), 'utf8');
     assert.doesNotMatch(gestion, /new Chart|cargarMetricas|htmlDelRanking|textoPorcentaje|exportarCSV|switchTab|\/gestion\/metricas/);
+  });
+
+  // Gestión avisa adónde se mudaron las métricas (revisión final, B-8), arriba de Proyectos
+  it('gestion.html avisa que las métricas están en Herramientas → Métricas y Reportes', () => {
+    const html = leer('gestion.html');
+    const aviso = html.indexOf('<p class="aviso-mudanza">Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>');
+    assert.ok(aviso !== -1, 'falta el aviso');
+    assert.ok(aviso < html.indexOf('<div id="tab-proyectos">'), 'el aviso va arriba de Proyectos');
   });
 
   // Con Chart.js fuera de Gestión, ninguna página carga nada de un CDN: la CSP ya no permite ningún CDN de scripts ni de hojas

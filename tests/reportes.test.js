@@ -154,6 +154,30 @@ describe('reportes PDF', () => {
     assert.equal(sinSesion.body.success, false);
   });
 
+  // Ruling 39 (revisión final, A-3): ?anio= como GET /api/metricas: el en curso es el de entrada (también con algo que no es un año) y un
+  // año que no está da el mismo 404 en JSON que la API
+  it('datos para completar ?anio=: el en curso, y un año sin métricas da el 404 de GET /api/metricas', async () => {
+    const hoy = hoyArgentina();
+    const anio = hoy.slice(0, 4);
+    for (const consulta of [`?anio=${anio}`, '?anio=abc', `?anio=${anio}&anio=2026`]) {
+      const res = await api.get(`/reportes/para-completar${consulta}`, { token: usuarios.lector.token });
+      esPdf(res);
+      assert.ok(lineasPorHoja(res.body)[0].includes(`DATOS PARA COMPLETAR · MÉTRICAS DE ${anio}, AL ${formatoCorto(hoy)}`), consulta);
+      const nombre = `Datos-para-completar-${hoy}.pdf`;
+      assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`, consulta);
+    }
+    for (const otro of ['1999', '2025', String(Number(anio) + 1)]) {
+      const [res, metricas] = await Promise.all([
+        api.get(`/reportes/para-completar?anio=${otro}`, { token: usuarios.lector.token }),
+        api.get(`/metricas?anio=${otro}`, { token: usuarios.lector.token })
+      ]);
+      assert.equal(res.status, 404, otro);
+      assert.match(res.headers.get('content-type'), /^application\/json/);
+      assert.deepEqual(res.body, { success: false, error: 'No hay métricas de ese año' }, otro);
+      assert.deepEqual([metricas.status, metricas.body], [res.status, res.body], otro);
+    }
+  });
+
   // Salen el Cumplimiento (spec 2026-10-24-metricas-y-reportes, 5: el ranking de áreas ya está en Métricas) y el Historial de
   // notificaciones (lo reemplaza Avisos del RPAD)
   it('cumplimiento e historial-notificaciones dan 404', async () => {
@@ -180,12 +204,14 @@ describe('reportes PDF: el nombre del Estado general y del Por área', () => {
     return iniciarServidor({ env: { TZ: ['Etc/GMT+12', 'Etc/GMT-14'].find((z) => fechaEn(z) !== hoy) } });
   };
 
+  // El encabezado lo arma disposicionDeAdjunto, como el de los otros seis (revisión final, B-1); el nombre no cambió
   it('lleva la fecha de hoy en Argentina, con el formato de siempre (estado-general-dd-mm-aaaa.pdf)', async () => {
     const otro = await servidorEnOtroDia();
     try {
       const res = await crearCliente(otro.url).get('/reportes/estado-general', { token: usuarios.lector.token });
       esPdf(res);
-      assert.equal(res.headers.get('content-disposition'), `attachment; filename=estado-general-${formatoCorto(hoyArgentina()).replace(/\//g, '-')}.pdf`);
+      const nombre = `estado-general-${formatoCorto(hoyArgentina()).replace(/\//g, '-')}.pdf`;
+      assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`);
     } finally {
       await otro.detener();
     }

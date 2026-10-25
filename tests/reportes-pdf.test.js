@@ -123,7 +123,7 @@ describe('el Estado general con el diseño del anexo', () => {
   it('las tarjetas, la tasa y las aclaraciones de siempre, con la píldora del índice', async () => {
     const lineas = lineasPorHoja(await render([...ochentaYUno(), sinFecha()])).flat();
     // 82 datasets: los 81 y uno sin fecha (cuenta en la base de la tasa, como no al día): 55 de 68
-    assert.ok(lineas.includes('El 81 % de los que tienen vencimiento están al día: 55 de 68'), lineas.slice(0, 20).join(' | '));
+    assert.ok(lineas.includes('El 81% de los que tienen vencimiento están al día: 55 de 68'), lineas.slice(0, 20).join(' | '));
     assert.equal(valorDeTarjeta(lineas, 'Total Datasets'), '82');
     assert.equal(valorDeTarjeta(lineas, 'Actualizados'), '53');
     assert.equal(valorDeTarjeta(lineas, 'Próximos'), '2');
@@ -134,9 +134,11 @@ describe('el Estado general con el diseño del anexo', () => {
     assert.ok(lineas.includes('1 dataset todavía no tiene fecha de próxima actualización: cuenta en la tasa como no al día.'));
   });
 
-  it('la píldora: «El 82 % de los que tienen vencimiento están al día: 55 de 67», el número de la maqueta', async () => {
+  // Ruling 38: «82%», sin espacio, como «Tasa de actualización: 82%» del mismo PDF, la portada, Métricas y el Informe (la maqueta tenía el espacio)
+  it('la píldora: «El 82% de los que tienen vencimiento están al día: 55 de 67», el número de la maqueta', async () => {
     const lineas = lineasPorHoja(await render(ochentaYUno()))[0];
-    assert.ok(lineas.includes('El 82 % de los que tienen vencimiento están al día: 55 de 67'));
+    assert.ok(lineas.includes('El 82% de los que tienen vencimiento están al día: 55 de 67'), lineas.join(' | '));
+    assert.ok(!lineas.some(l => / %/.test(l)), 'ningún porcentaje con espacio');
     assert.ok(lineas.includes('Tasa de actualización: 82%'));
     // Sin sin fecha, no hay aclaración de los sin fecha
     assert.ok(!lineas.some(l => /fecha de próxima actualización/.test(l)));
@@ -1457,6 +1459,15 @@ describe('Datos para completar con el diseño del anexo', () => {
     for (const t of ['DATOS PARA COMPLETAR · MÉTRICAS DE 2026, AL 24/10/2026', '23 datos para completar', TEXTOS_DE_PARA_COMPLETAR.bajada]) {
       assert.ok(hojas[0].includes(t), `falta "${t}" en ${hojas[0].join(' | ')}`);
     }
+  });
+
+  // Ruling 39: un año cerrado (en vivo al 31/12 o de su foto) dice el día al que se calcularon sus métricas, no el de hoy
+  it('un año cerrado dice «al 31/12»: el `al` de las métricas', async () => {
+    const pdf = await renderParaCompletar({ anio: 2026, al: '2026-12-31', para_completar: PARA_COMPLETAR },
+      { hoy: '2027-01-05', generado: { ...GENERADO_COMPLETAR, momento: '2027-01-05 10:00:00' } });
+    const [lineas] = lineasPorHoja(pdf);
+    assert.ok(lineas.includes('DATOS PARA COMPLETAR · MÉTRICAS DE 2026, AL 31/12/2026'), lineas.join(' | '));
+    assert.ok(lineas.includes('Generado el 05/01/2027 a las 10:00 por Usuario Ejemplo'), lineas.join(' | '));
   });
 
   it('el título dice el total del servidor, el del índice de la pestaña («Para completar (N)»), sin volver a contar', async () => {

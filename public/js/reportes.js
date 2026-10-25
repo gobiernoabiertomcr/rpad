@@ -262,14 +262,14 @@ function htmlDeBarra(datos, estado) {
     + (aviso ? `<p class="mt-aviso-foto" role="note">${aviso}</p>` : '');
 }
 
-// La franja ámbar de lo destildado (spec 1.5): «Calculado sin 1 dataset: Parque Automotor.» con el link «Volver a todos», que
-// conserva lo demás elegido. Sin destildados que existan (`datos.sin_titulos`, del servidor), nada
+// La franja ámbar de lo destildado (spec 1.5): el texto que arma el servidor (`datos.sin_texto`: «Calculado sin 1 dataset: Parque
+// Automotor.», la misma leyenda que la píldora del PDF) con el link «Volver a todos», que conserva lo demás elegido. Sin ese texto (no
+// hay destildados que existan), nada
 function htmlDeFranjaSin(datos, estado = ESTADO_POR_DEFECTO) {
-  const titulos = comoLista(esObjeto(datos) ? datos.sin_titulos : null).filter((titulo) => typeof titulo === 'string' && titulo);
-  if (titulos.length === 0) return '';
-  const cuantos = titulos.length === 1 ? '1 dataset' : `${String(titulos.length)} datasets`;
+  const texto = esObjeto(datos) && typeof datos.sin_texto === 'string' ? datos.sin_texto : '';
+  if (texto === '') return '';
   const todos = `reportes.html${urlDeEstado({ ...(esObjeto(estado) ? estado : ESTADO_POR_DEFECTO), sin: [] })}`;
-  return `<div class="mt-franja" role="status"><span>Calculado sin ${cuantos}: ${escaparTexto(titulos.join(', '))}.</span>`
+  return `<div class="mt-franja" role="status"><span>${escaparTexto(texto)}</span>`
     + `<a href="${todos}" class="mt-franja-link" data-accion="todos">Volver a todos</a></div>`;
 }
 
@@ -883,8 +883,9 @@ const MESES_AGENDA = [[3, '3'], [6, '6'], [12, '12 meses']];
 const GESTIONES_AGENDA = [['ambas', 'Las dos gestiones'], ['externa', 'Gestión externa'], ['interna', 'Gestión interna']];
 // Lo elegido en las tarjetas al entrar: Métricas del año, con el año de la pestaña Métricas (null); el Informe anual, con el que propone
 // anioDelInforme (null); ningún área; Avisos del RPAD sin período (la página pone del 1/1 a hoy); la Agenda, con los de entrada del
-// servidor (6 meses y las dos gestiones: MESES_POR_DEFECTO y opcionesDeAgenda)
-const REPORTES_POR_DEFECTO = Object.freeze({ metricas: null, informe: null, area: '', desde: '', hasta: '', meses: 6, gestion: 'ambas' });
+// servidor (6 meses y las dos gestiones: MESES_POR_DEFECTO y opcionesDeAgenda); Datos para completar, con el que propone
+// anioDeParaCompletar (null)
+const REPORTES_POR_DEFECTO = Object.freeze({ metricas: null, informe: null, area: '', desde: '', hasta: '', meses: 6, gestion: 'ambas', completar: null });
 // Copia del 400 de GET /reportes/avisos (MENSAJE_PERIODO_INVALIDO de services/reportesAvisosPdf.js), atada por un test de paridad
 const PERIODO_INVALIDO = 'Elegí un período válido.';
 const FALTA_EL_AREA = 'Elegí un área.';
@@ -961,11 +962,22 @@ function anioDelInforme(anio, anios) {
   return (lista.length > 1 ? lista.at(-2) : lista.at(-1))?.anio ?? null;
 }
 
-// Lo elegido en una tarjeta con un control cambiado (`clave`: 'metricas', 'informe', 'area', 'desde', 'hasta', 'meses' o 'gestion'; `valor`,
-// el texto del control). Los años, como números; los meses y la gestión, solo los de la lista. Lo que no sirve no cambia nada
+// El año de Datos para completar (Ruling 39): el elegido si es de los del servidor; si no, el último año cerrado que todavía no tiene foto
+// (entre el 1/1 y el día de la foto, o mientras la corrida la reintenta: lo que le falta se completa antes de que la foto lo congele) o,
+// si no hay, el en curso. null sin años
+function anioDeParaCompletar(anio, anios) {
+  const lista = aniosDeReportes(anios);
+  if (lista.some((foto) => foto.anio === anio)) return anio;
+  const cerradoSinFoto = lista.slice(0, -1).filter((foto) => foto.con_foto !== true).at(-1);
+  return (cerradoSinFoto ?? lista.at(-1))?.anio ?? null;
+}
+
+// Lo elegido en una tarjeta con un control cambiado (`clave`: 'metricas', 'informe', 'completar', 'area', 'desde', 'hasta', 'meses' o
+// 'gestion'; `valor`, el texto del control). Los años, como números; los meses y la gestión, solo los de la lista. Lo que no sirve no
+// cambia nada
 function conReporteElegido(datos, clave, valor) {
   const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
-  if (clave === 'metricas' || clave === 'informe') {
+  if (clave === 'metricas' || clave === 'informe' || clave === 'completar') {
     const anio = anioDe(valor);
     return anio === null ? e : { ...e, [clave]: anio };
   }
@@ -1079,6 +1091,7 @@ function htmlDeTarjetaDeReportes(clave, datos, { anios = null, areas = null, des
     }
     case 'completar':
       return htmlDeTarjeta(clave, 'Datos para completar', 'Lo que falta cargar para que las métricas estén completas: notas DGMIT pendientes de carga y actualizaciones sin «Recibido el».', {
+        campos: sinAnios || htmlDeCampo('rp-completar-anio', 'Año', htmlDeSelectorDeAnios('rp-completar-anio', 'rp-completar', lista, anioDeParaCompletar(e.completar, lista), true)),
         boton, hojas: 'Unas 3 hojas. También en Métricas → Para completar'
       });
     default:
@@ -1133,8 +1146,12 @@ function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = nu
       return { ruta: `/reportes/avisos?desde=${e.desde}&hasta=${e.hasta}`, nombre: nombreDelReporte(clave, { hoy }) };
     case 'agenda':
       return { ruta: `/reportes/agenda?meses=${String(mesesDeLaAgenda(e.meses))}&gestion=${elegido(e.gestion, GESTIONES_AGENDA)}`, nombre: nombreDelReporte(clave, { hoy }) };
-    case 'completar':
-      return { ruta: '/reportes/para-completar', nombre: nombreDelReporte(clave, { hoy }) };
+    case 'completar': {
+      // El año de la tarjeta; el en curso (y, sin años, el del servidor) no se escribe. El nombre lleva el día de hoy, sea del año que sea
+      const anio = anioDeParaCompletar(e.completar, lista);
+      const conAnio = anio !== null && anio !== lista.at(-1)?.anio ? `?anio=${String(anio)}` : '';
+      return { ruta: `/reportes/para-completar${conAnio}`, nombre: nombreDelReporte(clave, { hoy }) };
+    }
     default:
       return null;
   }
@@ -1472,10 +1489,12 @@ function alDestildar(datasetId, contar) {
   cargarMetricas();
 }
 
-// «Volver a todos»: sin destildados
+// «Volver a todos»: sin destildados. Cuando lleguen las métricas la franja se vacía y su link desaparece: el foco pasa antes al chip
+// «Casos: …» de la barra, que conElFoco conserva al redibujarla (si no, quedaba en <body>)
 function volverATodos() {
   pagina.estado = { ...pagina.estado, sin: [] };
   escribirLaUrl();
+  porId('mt-barra').querySelector('[data-accion="casos"]')?.focus();
   cargarMetricas();
 }
 
@@ -1657,14 +1676,17 @@ async function cargarAreasDeReportes() {
   dibujarTarjetas(['area']);
 }
 
-// Los años de Métricas del año y del Informe anual: los de `fotos` de la respuesta de la pestaña Métricas (los mismos en cada una). Si
-// esa respuesta no los trajo (un 404 por un año sin métricas en la dirección, o un error) y todavía no hay años, se piden aparte
-// (pedirLosAniosDeReportes). Devuelve ese pedido, o null
+// Las tarjetas que eligen un año (se redibujan cuando llegan los años)
+const TARJETAS_CON_ANIO = ['metricas', 'informe', 'completar'];
+
+// Los años de Métricas del año, del Informe anual y de Datos para completar: los de `fotos` de la respuesta de la pestaña Métricas (los
+// mismos en cada una). Si esa respuesta no los trajo (un 404 por un año sin métricas en la dirección, o un error) y todavía no hay años,
+// se piden aparte (pedirLosAniosDeReportes). Devuelve ese pedido, o null
 function conLosAniosDeReportes(fotos) {
   if (Array.isArray(fotos)) pagina.reportes.anios = fotos;
   else if (pagina.reportes.anios === null) return pedirLosAniosDeReportes();
   // Métricas del año sigue al año de la pestaña mientras no se elija otro en la tarjeta
-  dibujarTarjetas(['metricas', 'informe']);
+  dibujarTarjetas(TARJETAS_CON_ANIO);
   return null;
 }
 
@@ -1680,7 +1702,7 @@ function pedirLosAniosDeReportes() {
         console.error('Error cargando los años de los reportes:', error);
       }
       if (pagina.reportes.anios === null) pagina.reportes.anios = Array.isArray(fotos) ? fotos : [];
-      dibujarTarjetas(['metricas', 'informe']);
+      dibujarTarjetas(TARJETAS_CON_ANIO);
     })();
   }
   return pagina.reportes.pedidoDeAnios;
@@ -1699,7 +1721,10 @@ function alHacerClicEnReportes(evento) {
 }
 
 // Qué guarda cada control de las tarjetas (su data-selector)
-const CONTROLES_DE_REPORTES = { 'rp-metricas': 'metricas', 'rp-informe': 'informe', 'rp-area': 'area', 'rp-desde': 'desde', 'rp-hasta': 'hasta', 'rp-gestion': 'gestion' };
+const CONTROLES_DE_REPORTES = {
+  'rp-metricas': 'metricas', 'rp-informe': 'informe', 'rp-completar': 'completar', 'rp-area': 'area', 'rp-desde': 'desde', 'rp-hasta': 'hasta',
+  'rp-gestion': 'gestion'
+};
 
 // Un selector o una fecha: queda en lo elegido. Solo el año del Informe anual cambia algo a la vista (su botón): se redibuja su tarjeta
 function alCambiarEnReportes(evento) {

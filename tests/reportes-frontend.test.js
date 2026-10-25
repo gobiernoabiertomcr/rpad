@@ -9,14 +9,14 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import {
-  casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, contextoDelAnio, trabajoDelAnio, areasYTemas,
+  casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, contextoDelAnio, trabajoDelAnio, areasYTemas, sinLosDestildados, textoDeLaFranja,
   ESTADISTICOS as ESTADISTICOS_DEL_SERVIDOR, DIAS as DIAS_DEL_SERVIDOR, GESTIONES as GESTIONES_DEL_SERVIDOR
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
 import {
   TEXTOS_DE_LA_PESTANA as T, textoDelDesglose, textoDeLoQueFalta, textoDeDondeSale, textoDelMesManual, textoSinManuales,
-  textoDelPieDeLosCasos
+  textoDelPieDeLosCasos, textoDeLaPildora
 } from '../services/reportesMetricasPdf.js';
 import {
   TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
@@ -207,16 +207,65 @@ describe('reportes.js: la barra y la franja de lo destildado', () => {
     assert.match(volviendo, /<option value="2027" selected>2027 \(en curso\)<\/option><option value="2026">2026<\/option>/);
   });
 
+  // La franja imprime el texto que arma el servidor (sin_texto de GET /api/metricas: textoDeLaFranja; Ruling 19, revisión final B-6)
   it('la franja dice «Calculado sin 1 dataset: Parque Automotor.» y «Volver a todos»', () => {
-    assert.equal(ctx.htmlDeFranjaSin({ sin_titulos: [] }, POR_DEFECTO), '');
+    assert.equal(ctx.htmlDeFranjaSin({ sin_texto: '' }, POR_DEFECTO), '');
     assert.equal(ctx.htmlDeFranjaSin({}, POR_DEFECTO), '');
-    const html = ctx.htmlDeFranjaSin({ sin_titulos: ['Parque Automotor'] }, { ...POR_DEFECTO, dias: 'corridos', sin: [11] });
-    assert.match(html, /Calculado sin 1 dataset: Parque Automotor\./);
+    // Sin el texto del servidor no hay franja, aunque lleguen títulos: la página no arma la leyenda
+    assert.equal(ctx.htmlDeFranjaSin({ sin_titulos: ['Parque Automotor'] }, POR_DEFECTO), '');
+    const html = ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja(['Parque Automotor']) }, { ...POR_DEFECTO, dias: 'corridos', sin: [11] });
+    assert.match(html, /<span>Calculado sin 1 dataset: Parque Automotor\.<\/span>/);
     // El link conserva todo lo demás y saca los destildados
     assert.match(html, /<a href="reportes\.html\?dias=corridos" class="mt-franja-link" data-accion="todos">Volver a todos<\/a>/);
-    const dos = ctx.htmlDeFranjaSin({ sin_titulos: ['Parque Automotor', 'Pauta Publicitaria'] }, { ...POR_DEFECTO, sin: [11, 10] });
-    assert.match(dos, /Calculado sin 2 datasets: Parque Automotor, Pauta Publicitaria\./);
+    const dos = ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja(['Parque Automotor', 'Pauta Publicitaria']) }, { ...POR_DEFECTO, sin: [11, 10] });
+    assert.match(dos, /<span>Calculado sin 2 datasets: Parque Automotor, Pauta Publicitaria\.<\/span>/);
     assert.match(dos, /href="reportes\.html"/);
+  });
+
+  // Spec 1.5: «El PDF lleva la misma leyenda en una píldora». Las dos salen del mismo armador del servidor (sinLosDestildados), con 1 y
+  // con 2 destildados
+  it('la franja y la píldora del PDF de Métricas dicen la misma leyenda', () => {
+    for (const titulos of [['Parque Automotor'], ['Parque Automotor', 'Pauta Publicitaria']]) {
+      const leyenda = sinLosDestildados(titulos);
+      assert.equal(leyenda, titulos.length === 1 ? 'sin 1 dataset: Parque Automotor' : 'sin 2 datasets: Parque Automotor, Pauta Publicitaria');
+      const franja = ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja(titulos) }, { ...POR_DEFECTO, sin: [11] });
+      assert.ok(franja.includes(`<span>Calculado ${leyenda}.</span>`), franja);
+      assert.equal(textoDeLaPildora({ estadistico: 'mediana', dias: 'habiles', sin_titulos: titulos }), `Mediana en días hábiles · calculado ${leyenda}`);
+    }
+    assert.deepEqual([sinLosDestildados([]), textoDeLaFranja([]), sinLosDestildados(['', null])], ['', '', '']);
+  });
+
+  // «Volver a todos» (revisión final, B-3): cuando llegan las métricas la franja se vacía y el link que tenía el foco desaparece; el foco
+  // va antes al chip «Casos: …» de la barra, que conElFoco conserva al redibujarla
+  it('«Volver a todos» lleva el foco al chip «Casos: …» y pide las métricas sin destildados', async () => {
+    const enfocados = [];
+    const pedidos = [];
+    const urls = [];
+    const chip = { focus: () => enfocados.push('[data-accion="casos"]'), dataset: { accion: 'casos' } };
+    const elemento = (id) => ({
+      id, innerHTML: '', textContent: '', hidden: false, dataset: {}, classList: { add() {}, remove() {}, toggle() {} },
+      setAttribute() {}, removeAttribute() {}, addEventListener() {}, querySelectorAll: () => [], contains: () => false, focus: () => enfocados.push(id),
+      querySelector: (selector) => (id === 'mt-barra' && selector === '[data-accion="casos"]' ? chip : null)
+    });
+    const elementos = {};
+    const pagina = cargar({
+      __pedidos: pedidos,
+      document: { addEventListener() {}, getElementById: (id) => (elementos[id] ??= elemento(id)), activeElement: null },
+      history: { replaceState: (estado, titulo, url) => urls.push(url) },
+      location: { pathname: '/reportes.html', search: '', hash: '' }
+    });
+    vm.runInContext(`
+      API.pedirJson = (metodo, ruta) => { __pedidos.push(ruta); return new Promise(() => {}); };
+      pagina.datos = { anio: 2026, anios: [2026], sin_titulos: ['Vencido'], sin_texto: 'Calculado sin 1 dataset: Vencido.' };
+      pagina.estado = { ...pagina.estado, dias: 'corridos', sin: [5] };`, pagina);
+    pagina.volverATodos();
+    assert.deepEqual(enfocados, ['[data-accion="casos"]']);
+    assert.deepEqual(plano(vm.runInContext('pagina.estado.sin', pagina)), []);
+    assert.deepEqual(urls, ['/reportes.html?dias=corridos']);
+    assert.deepEqual(pedidos, ['/metricas?dias=corridos']);
+    // Al redibujar la barra, el foco vuelve al mismo chip
+    assert.equal(cargar({ document: { addEventListener() {}, getElementById: () => null, activeElement: chip } })
+      .claveDelFoco({ contains: () => true }), '[data-accion="casos"]');
   });
 });
 
@@ -833,7 +882,7 @@ describe('reportes.js: lo que llega del servidor', () => {
       recibido: { fecha: null, texto: malo, origen: malo }, carga: { fecha: null, texto: malo }
     };
     sinMalo(ctx.htmlDeCasos({ casos: [caso] }, POR_DEFECTO, { anio: 2026, editable: true }), 'casos');
-    sinMalo(ctx.htmlDeFranjaSin({ sin_titulos: [malo] }, { ...POR_DEFECTO, sin: [5] }), 'franja');
+    sinMalo(ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja([malo]) }, { ...POR_DEFECTO, sin: [5] }), 'franja');
     sinMalo(ctx.htmlDeBarra({ anio: 2026, anios: [2026], en_vivo: true, aviso_foto: malo, sin_titulos: [] }, POR_DEFECTO), 'barra');
     sinMalo(ctx.htmlDeAclaraciones({ circuito: { aclaraciones: { interna: { ya_vencidos: { n: 1, texto: malo } } } } }, 'interna'), 'aclaraciones');
     const cinta = { ...CINTA_EXTERNA, ticks: [{ x: 30, texto: malo }], rotulos: [{ x: 40, y: 26, texto: malo, anclaje: 'start', color: 'tinta' }],
@@ -888,7 +937,7 @@ describe('reportes.js: lo que llega del servidor', () => {
     // Y nada dice NaN, null ni undefined con datos que faltan
     const vacio = [ctx.htmlDeCircuito({ circuito: { externa: [{}, null, { clave: 'tramite' }] } }, 'externa'),
       ctx.htmlDeCasos({ casos: [{}, null] }, POR_DEFECTO, { anio: 2026, editable: true }), ctx.svgDeCinta({ ...CINTA_EXTERNA, marcas: [{}], rotulos: [{}] }, 'externa'),
-      ctx.htmlDeBarra({}, POR_DEFECTO), ctx.htmlDeFranjaSin({ sin_titulos: [null] }, POR_DEFECTO)].join('');
+      ctx.htmlDeBarra({}, POR_DEFECTO), ctx.htmlDeFranjaSin({ sin_titulos: [null], sin_texto: null }, POR_DEFECTO)].join('');
     assert.doesNotMatch(vacio, /NaN|null|undefined/);
   });
 });
@@ -904,7 +953,7 @@ describe('reportes.js: la pestaña Reportes', () => {
   const sinFoto = (anio, aviso = `Disponible desde el 10/01/${anio + 1}`) => ({ anio, con_foto: false, aviso_informe: aviso });
   const FOTOS_2026 = [sinFoto(2026)];
   const LAS_AREAS = [{ id: 7, nombre: 'Secretaría de Hacienda' }, { id: 3, nombre: 'Área de Ambiente' }, { id: 12, nombre: 'Dirección de Comercio' }];
-  const ELEGIDO = { metricas: null, informe: null, area: '', desde: '2026-01-01', hasta: HOY_DE_LA_PRUEBA, meses: 6, gestion: 'ambas' };
+  const ELEGIDO = { metricas: null, informe: null, area: '', desde: '2026-01-01', hasta: HOY_DE_LA_PRUEBA, meses: 6, gestion: 'ambas', completar: null };
   const reportes = (elegido = ELEGIDO, opciones = {}) => ctx.htmlDeReportes(elegido, { anios: FOTOS_2026, areas: LAS_AREAS, ...opciones });
   // La tarjeta de un reporte (lo que va de su <section> a la siguiente)
   const tarjeta = (html, clave) => html.match(new RegExp(`<section class="rp-tarjeta" aria-labelledby="rp-titulo-${clave}">[\\s\\S]*?</section>`))?.[0] ?? '';
@@ -954,12 +1003,13 @@ describe('reportes.js: la pestaña Reportes', () => {
     }
     assert.equal(ctx.htmlDeTarjetaDeReportes('cumplimiento', ELEGIDO, {}), '');
     // Cada selector con su label, una sola vez
-    for (const [id, rotulo] of [['rp-metricas-anio', 'Año'], ['rp-informe-anio', 'Año'], ['rp-area', 'Área'], ['rp-desde', 'Desde'], ['rp-hasta', 'Hasta'], ['rp-gestion', 'Gestión']]) {
+    for (const [id, rotulo] of [['rp-metricas-anio', 'Año'], ['rp-informe-anio', 'Año'], ['rp-area', 'Área'], ['rp-desde', 'Desde'], ['rp-hasta', 'Hasta'],
+      ['rp-gestion', 'Gestión'], ['rp-completar-anio', 'Año']]) {
       assert.equal(cuantas(html, new RegExp(`<label for="${id}">${rotulo}</label>`, 'g')), 1, id);
       assert.equal(cuantas(html, new RegExp(`id="${id}"`, 'g')), 1, id);
     }
-    // Estado general y Datos para completar no eligen nada
-    for (const clave of ['estado', 'completar']) assert.doesNotMatch(tarjeta(html, clave), /<select|<input|rp-campos/, clave);
+    // El Estado general no elige nada (Datos para completar elige el año: Ruling 39)
+    assert.doesNotMatch(tarjeta(html, 'estado'), /<select|<input|rp-campos/);
   });
 
   it('el Informe anual sin foto, deshabilitado con «Disponible desde el 10/01/2027»', () => {
@@ -1050,6 +1100,44 @@ describe('reportes.js: la pestaña Reportes', () => {
     assert.equal(ctx.conReporteElegido(ELEGIDO, 'metricas', '2026').metricas, 2026);
     assert.equal(ctx.conReporteElegido(ELEGIDO, 'informe', '2027').informe, 2027);
     assert.deepEqual(plano(ctx.conReporteElegido(ELEGIDO, 'metricas', 'x')), ELEGIDO);
+  });
+
+  // Ruling 39 (revisión final, A-3): del 01/01 al día de la foto, lo que le falta al año cerrado se completa antes de que se congele, así
+  // que la tarjeta lo propone; si no hay un año cerrado sin foto, el en curso. El en curso no se escribe en la ruta (como Métricas del año)
+  it('Datos para completar: el año cerrado sin foto o el en curso, con ?anio= si no es el en curso', () => {
+    const select = (elegido, anios) => tarjeta(reportes(elegido, { anios }), 'completar').match(/<select id="rp-completar-anio"[^>]*>[\s\S]*?<\/select>/)?.[0];
+    // Hoy (25/10/2026): solo el en curso
+    assert.equal(select(ELEGIDO, FOTOS_2026), '<select id="rp-completar-anio" class="mt-select" data-selector="rp-completar"><option value="2026" selected>2026 (en curso)</option></select>');
+    assert.deepEqual(pedido('completar'), { ruta: '/reportes/para-completar', nombre: 'Datos-para-completar-2026-10-25.pdf' });
+    // Entre el 1/1 y el 10/1, 2026 todavía no tiene foto: se propone 2026
+    const enero = plano(fotosDeMetricas({ hoy: '2027-01-05', aniosConFoto: [] }));
+    assert.match(select(ELEGIDO, enero), /<option value="2027">2027 \(en curso\)<\/option><option value="2026" selected>2026<\/option>/);
+    assert.deepEqual(pedido('completar', ELEGIDO, { anios: enero, hoy: '2027-01-05' }),
+      { ruta: '/reportes/para-completar?anio=2026', nombre: 'Datos-para-completar-2027-01-05.pdf' });
+    // Si la foto de 2026 falló y se reintenta, 2026 sigue sin foto y se sigue proponiendo
+    const sinLaFoto = plano(fotosDeMetricas({ hoy: '2027-02-01', aniosConFoto: [] }));
+    assert.equal(pedido('completar', ELEGIDO, { anios: sinLaFoto, hoy: '2027-02-01' }).ruta, '/reportes/para-completar?anio=2026');
+    // Con la foto de 2026, el en curso
+    const conLaFoto = plano(fotosDeMetricas({ hoy: '2027-01-11', aniosConFoto: [2026] }));
+    assert.match(select(ELEGIDO, conLaFoto), /<option value="2027" selected>2027 \(en curso\)<\/option><option value="2026">2026<\/option>/);
+    assert.equal(pedido('completar', ELEGIDO, { anios: conLaFoto }).ruta, '/reportes/para-completar');
+    // Lo elegido en la tarjeta manda, si es de los del servidor; el en curso no se escribe
+    assert.equal(pedido('completar', { ...ELEGIDO, completar: 2026 }, { anios: conLaFoto }).ruta, '/reportes/para-completar?anio=2026');
+    assert.equal(pedido('completar', { ...ELEGIDO, completar: 2027 }, { anios: enero }).ruta, '/reportes/para-completar');
+    assert.equal(pedido('completar', { ...ELEGIDO, completar: 2020 }, { anios: enero }).ruta, '/reportes/para-completar?anio=2026');
+    assert.match(select({ ...ELEGIDO, completar: 2027 }, enero), /<option value="2027" selected>/);
+    // El nombre del archivo lleva siempre el día de hoy (el PDF dice de qué año es)
+    assert.equal(pedido('completar', { ...ELEGIDO, completar: 2026 }, { anios: conLaFoto }).nombre, 'Datos-para-completar-2026-10-25.pdf');
+    // Lo elegido: el año como número; lo que no es un año no cambia nada
+    assert.equal(ctx.conReporteElegido(ELEGIDO, 'completar', '2026').completar, 2026);
+    assert.deepEqual(plano(ctx.conReporteElegido(ELEGIDO, 'completar', 'x')), ELEGIDO);
+    // Sin años (mientras llegan o si no llegaron), el aviso en lugar del selector, y se pide el en curso del servidor
+    for (const [anios, aviso] of [[null, 'Cargando los años…'], [[], 'No se pudieron cargar los años.']]) {
+      const completar = tarjeta(reportes(ELEGIDO, { anios }), 'completar');
+      assert.ok(completar.includes(`<p class="rp-estado">${aviso}</p>`), completar);
+      assert.doesNotMatch(completar, /<select|aria-disabled/);
+      assert.deepEqual(pedido('completar', ELEGIDO, { anios }), { ruta: '/reportes/para-completar', nombre: 'Datos-para-completar-2026-10-25.pdf' });
+    }
   });
 
   it('las rutas y los nombres de los siete PDF, con el día de hoy en Argentina', () => {
@@ -1336,7 +1424,7 @@ describe('reportes.js: la pestaña Reportes', () => {
   describe('los años de las tarjetas', () => {
     const METRICAS = {
       anio: 2026, al: HOY, en_vivo: true, aviso_foto: null, anios: [2026], fotos: [conFoto(2026)], vista: VISTA,
-      cinta: { externa: CINTA_EXTERNA, interna: CINTA_INTERNA }, contexto: CONTEXTO, trabajo: TRABAJO, areas: AREAS, sin_titulos: []
+      cinta: { externa: CINTA_EXTERNA, interna: CINTA_INTERNA }, contexto: CONTEXTO, trabajo: TRABAJO, areas: AREAS, sin_titulos: [], sin_texto: ''
     };
     const informe = (p) => tarjeta(p.contenedor().innerHTML, 'informe');
 
@@ -1348,6 +1436,10 @@ describe('reportes.js: la pestaña Reportes', () => {
       assert.ok(informe(p).includes('<button type="button" class="mt-btn mt-btn-tinta" data-reporte="informe"'), informe(p));
       assert.match(informe(p), /<option value="2026" selected>2026<\/option>/);
       assert.equal(p.pedidos.filter((ruta) => ruta === '/metricas').length, 0, 'sin pedido de respaldo');
+      // Datos para completar también recibe los años (Ruling 39) y guarda el que se elige
+      assert.match(tarjeta(p.contenedor().innerHTML, 'completar'), /<select id="rp-completar-anio" class="mt-select" data-selector="rp-completar"><option value="2026" selected>2026 \(en curso\)<\/option><\/select>/);
+      p.cambiar('rp-completar', '2026');
+      assert.equal(vm.runInContext('pagina.reportes.elegido.completar', p.contexto), 2026);
     });
 
     it('con un 404 de la pestaña, de GET /api/metricas sin parámetros, una sola vez', async () => {

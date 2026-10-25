@@ -20,6 +20,21 @@ import { metricasDe, deLaFoto, SIN_METRICAS } from './metricasController.js';
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
 // notificaciones pasó a ser Avisos del RPAD.
 
+// Un 500 dice un mensaje fijo por reporte, como los de controllers/metricasController.js: el texto del error (el de mysql2 trae la
+// consulta) lo vería cualquier rol, también el lector. El error completo va solo a console.error
+const ERROR_AL_GENERAR = Object.freeze({
+  estado: 'Error al generar el PDF del Estado general',
+  avisos: 'Error al generar el PDF de Avisos del RPAD',
+  area: 'Error al generar el PDF del reporte por área',
+  agenda: 'Error al generar el PDF de la Agenda de pedidos',
+  completar: 'Error al generar el PDF de Datos para completar',
+  informe: 'Error al generar el PDF del Informe anual'
+});
+const responderError = (res, reporte, error) => {
+  console.error(`${ERROR_AL_GENERAR[reporte]}:`, error);
+  res.status(500).json({ success: false, error: ERROR_AL_GENERAR[reporte] });
+};
+
 /**
  * Estado de una fila de los reportes (spec 2026-10-17-fechas-datasets, 11): el mismo cálculo que el listado y el tablero,
  * estadoDelDataset, con la próxima como 'AAAA-MM-DD' (proxima_iso) y la frecuencia en meses (null es eventual).
@@ -69,11 +84,10 @@ export const reporteEstadoGeneral = async (req, res) => {
 
     res.setHeader('Content-Type', 'application/pdf');
     // La fecha de hoy en Argentina, la del PDF (con new Date(), en un servidor en UTC, después de las 21 decía mañana)
-    res.setHeader('Content-Disposition', `attachment; filename=${nombreDelReporte('estado', { hoy })}`);
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('estado', { hoy })));
     res.send(pdf);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    res.status(500).json({ success: false, error: error.message });
+    responderError(res, 'estado', error);
   }
 };
 
@@ -161,8 +175,7 @@ export const reporteAvisos = async (req, res) => {
     res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('avisos', { hoy })));
     res.send(pdf);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    res.status(500).json({ success: false, error: error.message });
+    responderError(res, 'avisos', error);
   }
 };
 
@@ -219,8 +232,7 @@ export const reportePorArea = async (req, res) => {
     res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('area', { area: area.id, hoy })));
     res.send(pdf);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    res.status(500).json({ success: false, error: error.message });
+    responderError(res, 'area', error);
   }
 };
 
@@ -267,8 +279,7 @@ export const reporteAgenda = async (req, res) => {
     res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('agenda', { hoy })));
     res.send(pdf);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    res.status(500).json({ success: false, error: error.message });
+    responderError(res, 'agenda', error);
   }
 };
 
@@ -276,28 +287,36 @@ export const reporteAgenda = async (req, res) => {
 // REPORTE: Datos para completar
 // =====================================================
 // Lo mismo que la sección «Para completar» de la pestaña Métricas (spec 2026-10-24-metricas-y-reportes, 5, punto 7, y 2.2): la
-// vista.para_completar del año en curso, en vivo y sin destildados, de la misma función que GET /api/metricas (metricasDe, con los
-// parámetros por defecto y el hoy del pie). El PDF lo dibuja services/reportesParaCompletarPdf.js.
+// vista.para_completar del año pedido, sin destildados, de la misma función que GET /api/metricas (metricasDe, con el año de la consulta y
+// el hoy del pie). El PDF lo dibuja services/reportesParaCompletarPdf.js.
 
-// GET /reportes/para-completar (authMiddleware: todos los roles con sesión). El archivo se llama «Datos-para-completar-AAAA-MM-DD.pdf»,
-// con la fecha de hoy en Argentina. Si el año de hoy no tuviera métricas (uno anterior a 2026), el 404 de Métricas.
+// El PDF «Datos para completar» para `query` (los parámetros de GET /reportes/para-completar: `anio`, leído como en GET /api/metricas, y
+// por defecto el en curso; Ruling 39): lo que dice «Para completar» de la pestaña Métricas de ese año (el en curso, en vivo; uno cerrado
+// sin foto, en vivo al 31/12, como entre el 01/01 y el día de la foto; uno con foto, de su foto). `generado`: { momento:
+// 'AAAA-MM-DD HH:MM:SS' (hora argentina: su día es hoy), por: nombre corto o null }. El PDF, o null si ese año no tiene métricas
+export const pdfDeParaCompletar = async (query, generado) => {
+  const hoy = generado.momento.slice(0, 10);
+  const anio = query !== null && typeof query === 'object' ? query.anio : undefined;
+  const metricas = await metricasDe({ anio }, { hoy });
+  if (metricas === null) return null;
+  return renderParaCompletar({ anio: metricas.anio, al: metricas.al, para_completar: metricas.vista?.para_completar }, { hoy, generado });
+};
+
+// GET /reportes/para-completar?anio= (authMiddleware: todos los roles con sesión). El archivo se llama «Datos-para-completar-AAAA-MM-DD.pdf»,
+// con la fecha de hoy en Argentina (sea del año que sea: el PDF dice de qué año es). Un año sin métricas (anterior a 2026 o futuro), el
+// 404 de Métricas.
 export const reporteParaCompletar = async (req, res) => {
   try {
+    // Un solo instante para el pie y para "hoy"
     const momento = ahoraArgentina();
-    const hoy = momento.slice(0, 10);
-    const [[[usuario]], metricas] = await Promise.all([
-      pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
-      metricasDe({}, { hoy })
-    ]);
-    if (metricas === null) return res.status(404).json(SIN_METRICAS);
-    const pdf = await renderParaCompletar({ anio: metricas.anio, para_completar: metricas.vista?.para_completar },
-      { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
+    const [[usuario]] = await pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]);
+    const pdf = await pdfDeParaCompletar(req.query, { momento, por: nombreCorto(usuario?.nombre_completo) });
+    if (pdf === null) return res.status(404).json(SIN_METRICAS);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('completar', { hoy })));
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('completar', { hoy: momento.slice(0, 10) })));
     res.send(pdf);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    res.status(500).json({ success: false, error: error.message });
+    responderError(res, 'completar', error);
   }
 };
 
@@ -357,7 +376,6 @@ export const reporteInformeAnual = async (req, res) => {
     res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('informe', { anio })));
     res.send(pdf);
   } catch (error) {
-    console.error('Error generando reporte:', error);
-    res.status(500).json({ success: false, error: error.message });
+    responderError(res, 'informe', error);
   }
 };

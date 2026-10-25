@@ -1,6 +1,6 @@
 import pool from '../config/database.js';
 import { fuentesDe } from '../services/seguimientoDatos.js';
-import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas } from '../services/metricasReglas.js';
+import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, textoDeLaFranja } from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { claveDeLaVista, leerFoto, aniosConFoto as leerAniosConFoto } from '../services/metricasFoto.js';
 import { opcionesDeMetricas, aniosDeMetricas, fotosDeMetricas } from '../services/metricasOpciones.js';
@@ -33,13 +33,15 @@ const enVivo = (fuentesPorDataset, { anio, al, estadistico, dias, sin }) => {
   const casos = casosDe(fuentesPorDataset, { hoy: al });
   const vista = vistaDe(casos, { anio, al, estadistico, dias, sin });
   const opciones = { anio, al, sin };
+  const titulos = titulosDe(fuentesPorDataset, sin);
   return {
     vista,
     cinta: cintasDeLaVista(vista, { estadistico, dias }),
     contexto: contextoDelAnio(fuentesPorDataset, opciones),
     trabajo: trabajoDelAnio(fuentesPorDataset, casos, { ...opciones, estadistico }),
     areas: areasYTemas(fuentesPorDataset, opciones),
-    sin_titulos: titulosDe(fuentesPorDataset, sin)
+    sin_titulos: titulos,
+    sin_texto: textoDeLaFranja(titulos)
   };
 };
 
@@ -53,7 +55,7 @@ export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
   const cinta = datos.cintas[clave];
   const trabajo = datos.trabajo[estadistico];
   if (!vista || !cinta || !trabajo) throw new Error(`La foto de ${anio} no se puede leer`);
-  return { vista, cinta, contexto: datos.contexto, trabajo, areas: datos.areas, sin_titulos: [] };
+  return { vista, cinta, contexto: datos.contexto, trabajo, areas: datos.areas, sin_titulos: [], sin_texto: '' };
 };
 
 // Todo lo que muestra la pestaña Métricas para `query` (los parámetros de la URL; ver opcionesDeMetricas), o null si ese año no tiene
@@ -61,7 +63,7 @@ export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
 // según el año, la foto o las fuentes de todos los datasets (fuentesDe). Tira si algo falla (también con una foto que no se puede
 // leer). Devuelve:
 // { anio, al, en_vivo, aviso_foto, anios, fotos, vista, cinta: { externa, interna }, contexto: { indice, indice_vacio, antiguedad,
-//   estados }, trabajo, areas, sin_titulos }
+//   estados }, trabajo, areas, sin_titulos, sin_texto }
 // - anio, al, en_vivo y aviso_foto: los de opcionesDeMetricas; anios: los años que se pueden elegir (aniosDeMetricas); fotos: esos
 //   años con su foto y lo que dice, sin ella, el botón del Informe anual de la pestaña Reportes (fotosDeMetricas);
 // - vista: la de vistaDe con lo elegido (el circuito, los resultados, los casos y «Para completar»); cinta: la de cada gestión
@@ -69,7 +71,9 @@ export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
 // - contexto: contextoDelAnio, el índice mes a mes (indiceMesAMes, y si no hay nada que dibujar, por qué), la antigüedad de los
 //   vencidos (antiguedadDeVencidos) y los estados de `al` (estadosAl); trabajo: el del RPAD con el estadístico elegido
 //   (trabajoDelAnio); areas: areasYTemas;
-// - sin_titulos: los títulos de los destildados que existen, en el orden pedido ([] si no hay, y siempre en un año con foto).
+// - sin_titulos: los títulos de los destildados que existen, en el orden pedido ([] si no hay, y siempre en un año con foto); sin_texto:
+//   la franja de la pestaña con esos títulos, ya armada («Calculado sin 1 dataset: Parque Automotor.», textoDeLaFranja; '' sin ninguno),
+//   la misma leyenda que la píldora del PDF.
 export const metricasDe = async (query, { hoy = hoyArgentina() } = {}) => (await metricasConOpciones(query, { hoy }))?.data ?? null;
 
 // Lo de metricasDe (`data`) y las opciones con que se calculó (`opciones`, las de opcionesDeMetricas: el PDF dice en su píldora el

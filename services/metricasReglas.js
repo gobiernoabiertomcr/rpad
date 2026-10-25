@@ -9,7 +9,9 @@
 // (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
 // mismos avisos (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js
 // (fuentesDe). Ninguna función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
-import { esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias, formatoCorto, VENTANA_DIAS } from './notasDigitalesCalendario.js';
+import {
+  esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias, proximoDiaHabil, formatoCorto, VENTANA_DIAS
+} from './notasDigitalesCalendario.js';
 import {
   REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
   momentoDeEnvioDeNota, numeroDeNota, unirAlta
@@ -50,6 +52,23 @@ const MESES_CORTOS = Object.freeze(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'j
 const fechaSinCeros = (dia) => `${Number(dia.slice(8, 10))}/${Number(dia.slice(5, 7))}/${dia.slice(0, 4)}`;
 const porcentajeDe = (parte, total) => (total > 0 ? Math.round((parte * 100) / total) : null);
 const enNumero = (n, singular, plural) => (n === 1 ? singular : plural);
+
+// Lo destildado, en palabras (spec 1.5: la franja de la pestaña y la píldora del PDF de Métricas llevan la misma leyenda; revisión
+// final, B-6): «sin 1 dataset: Parque Automotor», «sin 2 datasets: Parque Automotor, Pauta Publicitaria»; sin títulos, ''. `titulos`:
+// los de los destildados que existen, en el orden pedido (sin_titulos de GET /api/metricas). La franja dice «Calculado sin …»
+// (textoDeLaFranja) y la píldora, «Mediana en días hábiles · calculado sin …» (textoDeLaPildora, services/reportesMetricasPdf.js)
+export const sinLosDestildados = (titulos) => {
+  const cuales = lista(titulos).filter((titulo) => typeof titulo === 'string' && titulo !== '');
+  if (cuales.length === 0) return '';
+  return `sin ${cuales.length === 1 ? '1 dataset' : `${cuales.length} datasets`}: ${cuales.join(', ')}`;
+};
+
+// La franja ámbar de la pestaña (sin_texto de GET /api/metricas, que la página imprime tal cual): «Calculado sin 1 dataset: Parque
+// Automotor.»; sin destildados, ''
+export const textoDeLaFranja = (titulos) => {
+  const sin = sinLosDestildados(titulos);
+  return sin === '' ? '' : `Calculado ${sin}.`;
+};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Días y cifras
@@ -145,6 +164,22 @@ const cambioQueCerro = (ediciones, ciclo) => {
   return ediciones.find((c) => momentoDe(c.revisado) === ciclo.hasta) ?? null;
 };
 
+// El día en que sale el aviso de la regla: el de la regla (`fechaRegla`, el vencimiento menos VENTANA_DE_LA_REGLA días corridos) o, si
+// no es hábil, el hábil siguiente (proximoDiaHabil: las Notas Digitales salen solo en días hábiles). Es el día de la Agenda de pedidos
+// (fechaDeAvisoPorRegla, services/reportesAgenda.js; un test los ata) y del envío (cuenta_desde). null sin fecha de la regla
+const diaDelAvisoDe = (fechaRegla) => (esFechaIso(fechaRegla) ? proximoDiaHabil(fechaRegla) : null);
+
+// Si un ciclo ya tenía que haber tenido el aviso de la regla en `al` (revisión final, A-1 y A-2): el día del aviso (`diaDelAviso`) ya
+// pasó y el ciclo regía en el RPAD ese día. El día del aviso cuenta recién al siguiente (la corrida de las 8:15 puede no haber salido),
+// salvo que el aviso ya exista. Un ciclo que dejó de regir en el RPAD antes (`aprobado`: el día de la aprobación que lo cerró, no el de
+// la carga; también la baja) no lo esperaba: su próxima ya no era esa; si dejó de regir ese mismo día, cuenta solo si lo tuvo (pudo
+// aprobarse antes de las 8:15). Con el aviso de la regla (`avisoRegla`, también uno anticipado), siempre lo tuvo.
+const esperabaElAviso = ({ diaDelAviso, aprobado, avisoRegla }, al) => {
+  if (diaDelAviso === null || diaDelAviso > al) return false;
+  if (avisoRegla !== null) return true;
+  return diaDelAviso < (aprobado !== null && aprobado < al ? aprobado : al);
+};
+
 // El motivo por el que un ciclo no tuvo el aviso de la regla, para la lista de la cobertura (spec, 2.2: «se dio de alta con el
 // vencimiento ya cerca», «el email no se pudo enviar», «se avisó ya vencido»). En este orden: 'email-fallido' si hubo un email de la
 // regla del ciclo que no se pudo enviar; 'alta-cercana' si el dataset se dio de alta después de la fecha de la regla (por día);
@@ -173,8 +208,9 @@ const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
   // Avisado ya vencido: el RPAD no pudo avisarlo a tiempo y su primer aviso llegó después del vencimiento (spec, 1.2)
   const heredado = avisoRegla === null && primerAviso !== null && venc !== null && primerAviso > venc && !pudoAvisar;
   const inicioTramos = heredado ? primerAviso : avisoRegla;
-  // El motivo, en todo ciclo sin aviso de la regla cuya fecha ya llegó, se pudiera avisar a tiempo o no (spec, 2.2)
-  const motivo = venc !== null && fechaRegla !== null && avisoRegla === null && fechaRegla <= hoy
+  // El motivo, en todo ciclo sin aviso de la regla que ya lo esperaba (esperabaElAviso), se pudiera avisar a tiempo o no (spec, 2.2)
+  const esperaba = esperabaElAviso({ diaDelAviso: diaDelAvisoDe(fechaRegla), aprobado: diaDe(ciclo.hasta), avisoRegla }, hoy);
+  const motivo = venc !== null && avisoRegla === null && esperaba
     ? motivoSinAviso({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, venc }) : null;
   // Los datos recibidos y su origen son de la actualización que cerró el ciclo: una reprogramación no recibió nada (spec, 1.2)
   const actualizacion = ciclo.como === 'actualizacion';
@@ -229,7 +265,8 @@ const casosDelDataset = (fuentes, hoy) => {
 //   vencido: sin aviso de la regla, con el primer aviso después del venc y sin poder avisarse a tiempo), inicio_tramos (desde dónde
 //   se cuentan los tramos que empiezan en el aviso: el primer aviso si es heredado; si no, el aviso de la regla o null) y
 //   motivo_sin_aviso ('email-fallido', 'alta-cercana', 'ya-vencido' o 'sin-aviso': ver motivoSinAviso; en todo ciclo sin aviso de la
-//   regla cuya fecha_regla ya llegó, ≤ hoy, se pudiera avisar a tiempo o no; si no, null, también con venc null);
+//   regla que ya lo esperaba, se pudiera avisar a tiempo o no: el día del aviso, el hábil desde fecha_regla, es anterior a hoy y el ciclo
+//   todavía regía en el RPAD ese día, esperabaElAviso; si no, null, también con venc null);
 // - la nota DGMIT: nota_dgmit ({ numero, tipo, recibida } de la primera vigente del ciclo, o null) y reiteraciones_dgmit (cuántas
 //   del ciclo son reiteraciones);
 // - la actualización que lo cerró: recibido (su «Recibido el»), origen ('area' o 'fuente_publica'; null en interna), carga (el
@@ -310,7 +347,8 @@ const contextoDe = (opciones) => {
 // Un caso de casosDe, leído para la vista: lo que no se puede leer no está, y lo que pasó después de `al` todavía no pasó (la foto
 // al 31/12 se puede calcular con los casos de enero). `abierto`: si el ciclo estaba abierto en `al` (sigue abierto, o se cerró
 // después); `aplicaNota`: si le corresponden los tramos de la DGMIT y del área (un externo con «Requiere nota» Sí o sin dato, o uno
-// con nota DGMIT); `requiereNota`: si la nota se pide («Requiere nota» Sí o sin dato); `como` y `activo`, los del caso.
+// con nota DGMIT); `requiereNota`: si la nota se pide («Requiere nota» Sí o sin dato); `como` y `activo`, los del caso; `diaDelAviso`:
+// el día hábil en que sale el aviso de la regla (diaDelAvisoDe); `aprobado`: el día en que el ciclo dejó de regir en el RPAD (o null).
 const hechosDe = (caso, ctx) => {
   const yaPaso = (valor) => {
     const dia = diaDe(valor);
@@ -326,6 +364,8 @@ const hechosDe = (caso, ctx) => {
     caso, id: Number(caso.dataset_id), gestion: externa ? 'externa' : 'interna', externa,
     venc: esFechaIso(caso.venc) ? caso.venc : null,
     fechaRegla: diaDe(caso.fecha_regla),
+    diaDelAviso: diaDelAvisoDe(diaDe(caso.fecha_regla)),
+    aprobado: diaDe(caso.aprobado),
     avisoRegla: yaPaso(caso.aviso_regla),
     primerAviso: yaPaso(caso.primer_aviso),
     inicioTramos: yaPaso(caso.inicio_tramos),
@@ -505,10 +545,11 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
   const { n: tarde, ...despues } = cifraDe(actualizados.filter((h) => h.carga > h.venc).map((h) => duracion(h.venc, h.carga, ctx.dias)));
   const valor = tarde === 0 ? null : despues[ctx.estadistico];
 
-  // Cobertura (Ruling 5): los vencimientos del año cuya fecha del aviso por regla ya llegó, desde que hay registro de los avisos; los
-  // cubiertos tuvieron el aviso de la regla antes de vencer
+  // Cobertura (Ruling 5): los vencimientos del año que ya esperaban el aviso de la regla en `al` (esperabaElAviso: su día, el hábil
+  // desde la fecha de la regla, ya pasó y el ciclo regía en el RPAD ese día; revisión final, A-1 y A-2), desde que hay registro de los
+  // avisos; los cubiertos tuvieron el aviso de la regla antes de vencer
   const vencimientos = cuentan.map((m) => m.h).filter((h) => h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin
-    && h.fechaRegla !== null && h.fechaRegla >= INICIO_DEL_REGISTRO && h.fechaRegla <= ctx.al);
+    && h.fechaRegla !== null && h.fechaRegla >= INICIO_DEL_REGISTRO && esperabaElAviso(h, ctx.al));
   const faltan = vencimientos.filter((h) => h.avisoRegla === null).sort(porVencimiento)
     .map((h) => ({ titulo: h.caso.titulo ?? null, venc: h.venc, motivo: textoDelMotivo(h) }));
 
@@ -523,7 +564,9 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
   const dgmit = hayNotas ? { ninguna: deLaDgmit.filter((n) => n === 0).length, una_o_mas: deLaDgmit.filter((n) => n > 0).length, total: deLaDgmit.length } : null;
   const cuentas = {
     aTiempo: aTiempo(actualizados), actualizados: actualizados.length, si: vencimientos.length - faltan.length, vencimientos: vencimientos.length,
-    faltan: faltan.length, rpad: delRpad.length, dgmit, conEmails: contadosDelRpad.some((h) => h.emails.length > 0)
+    // La aclaración de los emails viejos va con una reiteración por email: uno posterior al inicio de los tramos (el de la regla, el de
+    // 40 o 60 días, no lo es; revisión final, A-4)
+    faltan: faltan.length, rpad: delRpad.length, dgmit, conEmails: contadosDelRpad.some((h) => h.emails.some((dia) => dia > h.inicioTramos))
   };
   return {
     a_tiempo: {
@@ -546,7 +589,8 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
 // medidor (el porcentaje; null sin total) y lo de cuando no hay casos; en la cobertura, qué es estar avisado (con los días de la regla) y
 // el título de los que faltan («El que falta:», «Los 2 que faltan:»); en las reiteraciones, el título de cada grupo con sus ciclos y, si
 // no hay nada que mostrar, por qué (sin notas DGMIT: «Todavía no hay notas DGMIT cargadas.»); `aclaracion`, la de los emails viejos
-// (Ruling 21), solo si alguno de los ciclos que cuentan del RPAD a la DGMIT tuvo un email a la DGMIT (si no, null)
+// (Ruling 21), solo si alguno de los ciclos que cuentan del RPAD a la DGMIT tuvo una reiteración por email, un email a la DGMIT de un
+// día posterior al inicio de sus tramos (si no, null)
 const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, rpad, dgmit, conEmails }, ctx) => ({
   a_tiempo: {
     de: `de ${cantidadDeCiclos(actualizados)}`, medidor: porcentajeDe(aTiempo, actualizados),
@@ -582,7 +626,7 @@ const filaDe = (m, ctx) => {
   else if (h.avisoRegla !== null && h.venc !== null) {
     const antes = dias(h.avisoRegla, h.venc);
     textoDelAviso = antes === null ? '' : antes === 0 ? 'el día del vencimiento' : `${antes} antes`;
-  } else if (h.caso.aviso_regla == null && h.caso.motivo_sin_aviso != null && h.fechaRegla !== null && h.fechaRegla <= ctx.al) {
+  } else if (h.caso.aviso_regla == null && h.caso.motivo_sin_aviso != null && esperabaElAviso(h, ctx.al)) {
     textoDelAviso = textoDelMotivo(h);
   }
   const nota = h.nota !== null

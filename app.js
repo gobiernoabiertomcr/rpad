@@ -113,6 +113,8 @@ const startServer = async () => {
     console.warn('⚠️  CRON_SECRET no está configurado: /api/cron/* va a rechazar todos los pedidos.');
   }
 
+  // tests/helpers.js (arrancarEn) da por listo un servidor de prueba cuando lee "Servidor corriendo en puerto: N" en esta salida: si
+  // cambia el cartel, hay que cambiar también lo que busca ahí
   app.listen(PORT, () => {
     console.log('');
     console.log('╔═══════════════════════════════════════════════════════════╗');

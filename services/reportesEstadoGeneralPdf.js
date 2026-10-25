@@ -79,8 +79,9 @@ export const renderEstadoGeneral = async (datasets, { hoy, generado }) => {
     rotulo: `Estado general · al ${formatoCorto(hoy)}`,
     titulo: r.total === 1 ? '1 conjunto de datos en el registro' : `${r.total} conjuntos de datos en el registro`
   }, y);
-  // Sin ninguno con vencimiento no hay nada que medir: no hay píldora
-  if (r.tasa !== null) y = dibujarPildora(doc, `El ${r.tasa} % de los que tienen vencimiento están al día: ${r.alDia} de ${r.conVencimiento}`, y);
+  // Sin ninguno con vencimiento no hay nada que medir: no hay píldora. «82%», sin espacio, como «Tasa de actualización: 82%» de abajo, la
+  // portada, Métricas y el Informe (Ruling 38)
+  if (r.tasa !== null) y = dibujarPildora(doc, `El ${r.tasa}% de los que tienen vencimiento están al día: ${r.alDia} de ${r.conVencimiento}`, y);
   y = dibujarTarjetas(doc, [
     { valor: r.total, rotulo: 'Total Datasets' },
     { valor: r.actualizados, rotulo: 'Actualizados' },

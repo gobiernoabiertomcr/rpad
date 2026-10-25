@@ -17,7 +17,7 @@ import {
 import { mesYAnio } from './notasDigitalesCalendario.js';
 import { COLORES, VIOLETA, dibujarRayado } from './seguimientoPdf.js';
 import { cintasDeLaVista } from './metricasCinta.js';
-import { ESTADISTICOS, DIAS, GESTIONES, TOTALES_DEL_TRABAJO } from './metricasReglas.js';
+import { ESTADISTICOS, DIAS, GESTIONES, TOTALES_DEL_TRABAJO, sinLosDestildados } from './metricasReglas.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarJuntos, prepararTitulo, prepararPildora, prepararTarjetas, prepararSeccion,
   prepararParrafo, prepararRecuadro, prepararTabla, fechaCorta, ENTRE, ANCHO_DEL_RECUADRO, esObjeto, objeto, lista, esNumero, texto
@@ -147,15 +147,14 @@ const elegido = (valor, validos) => (validos.includes(valor) ? valor : validos[0
 // =====================================================
 
 // La combinación de los selectores y lo destildado (spec 1.5 y 1.7), con lo que manda el servidor (`datos`: { estadistico, dias,
-// sin_titulos }): «Mediana en días hábiles · con todos los datasets» o «… · calculado sin 1 dataset: Parque Automotor»
+// sin_titulos }): «Mediana en días hábiles · con todos los datasets» o «… · calculado sin 1 dataset: Parque Automotor». Lo destildado,
+// con la leyenda de la franja de la pestaña (sinLosDestildados de las reglas: un solo armador del plural)
 export const textoDeLaPildora = (datos) => {
   const d = objeto(datos);
   const estadistico = elegido(d.estadistico, ESTADISTICOS);
   const dias = elegido(d.dias, DIAS);
-  const titulos = lista(d.sin_titulos).filter((titulo) => typeof titulo === 'string' && titulo);
-  const cuales = titulos.length === 0 ? 'con todos los datasets'
-    : `calculado sin ${titulos.length === 1 ? '1 dataset' : `${titulos.length} datasets`}: ${titulos.join(', ')}`;
-  return `${T.estadisticos[estadistico]} en ${T.dias[dias]} · ${cuales}`;
+  const sin = sinLosDestildados(d.sin_titulos);
+  return `${T.estadisticos[estadistico]} en ${T.dias[dias]} · ${sin === '' ? 'con todos los datasets' : `calculado ${sin}`}`;
 };
 
 // El rótulo de cada parte: «Métricas · año 2026, en curso» o, en un año cerrado, «Métricas · año 2026, al 31/12/2026»

@@ -9,16 +9,17 @@ import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { crearDataset, limpiarBase } from './notas-fixtures.js';
 import {
-  ESTADISTICOS, DIAS, casosDe, vistaDe, duracion, cifraDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio, areasYTemas
+  ESTADISTICOS, DIAS, casosDe, vistaDe, duracion, cifraDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio, areasYTemas,
+  sinLosDestildados
 } from '../services/metricasReglas.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { lineasPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 
 const AL = '2026-12-31';
-const CLAVES_DE_DATA = ['anio', 'al', 'en_vivo', 'aviso_foto', 'anios', 'fotos', 'vista', 'cinta', 'contexto', 'trabajo', 'areas', 'sin_titulos'];
+const CLAVES_DE_DATA = ['anio', 'al', 'en_vivo', 'aviso_foto', 'anios', 'fotos', 'vista', 'cinta', 'contexto', 'trabajo', 'areas', 'sin_titulos', 'sin_texto'];
 const COMBINACIONES = ESTADISTICOS.flatMap((estadistico) => DIAS.map((dias) => ({ estadistico, dias })));
-let base, servidor, api, usuarios, dbReal, controlador, seguimientoDatos, foto;
+let base, servidor, api, usuarios, dbReal, controlador, reportes, seguimientoDatos, foto;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -29,6 +30,7 @@ before(async () => {
   usuarios = await crearUsuariosPrueba(api, { adminA: 'admin', lector: 'lector', colab: 'colaborador' });
   // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
   controlador = await import('../controllers/metricasController.js');
+  reportes = await import('../controllers/reportesController.js');
   seguimientoDatos = await import('../services/seguimientoDatos.js');
   foto = await import('../services/metricasFoto.js');
 });
@@ -135,7 +137,7 @@ describe('GET /metricas', () => {
       assert.deepEqual(Object.keys(data.vista), ['circuito', 'resultados', 'casos', 'para_completar'], quien);
       assert.deepEqual(Object.keys(data.cinta), ['externa', 'interna'], quien);
       assert.deepEqual(Object.keys(data.contexto), ['indice', 'indice_vacio', 'antiguedad', 'estados'], quien);
-      assert.deepEqual(data.sin_titulos, [], quien);
+      assert.deepEqual([data.sin_titulos, data.sin_texto], [[], ''], quien);
     }
     for (const token of [undefined, 'no-es-un-token']) {
       const res = await api.get('/metricas', { token });
@@ -204,8 +206,9 @@ describe('GET /metricas', () => {
     const res = await api.get(`/metricas?sin=${ids[2]},999999,${vencido},${ids[2]}&estadistico=promedio&dias=corridos`, como('lector'));
     assert.equal(res.status, 200);
     const { data } = res.body;
-    // El que no existe no va; los demás, en el orden pedido y una sola vez
+    // El que no existe no va; los demás, en el orden pedido y una sola vez. La franja, ya armada (revisión final, B-6)
     assert.deepEqual(data.sin_titulos, ['Actualizado 3', 'Vencido']);
+    assert.equal(data.sin_texto, 'Calculado sin 2 datasets: Actualizado 3, Vencido.');
     const cifra = tramoDe(data, 'externa', 'carga').cifra;
     assert.deepEqual([cifra.valor, cifra.ciclos], [cifraEsperada(hoy, 'promedio', 'corridos', [2, 5]), 2]);
     assert.deepEqual(data.vista.casos.map((fila) => [fila.dataset_id, fila.contar]), [[ids[0], true], [ids[1], true], [ids[2], false]]);
@@ -236,6 +239,11 @@ describe('GET /metricas', () => {
     assert.equal(pdf.status, 200);
     const primera = lineasPorHoja(pdf.body)[0];
     assert.ok(primera.includes('Promedio en días corridos · calculado sin 1 dataset: Vencido'), primera.join(' | '));
+    // La misma leyenda que la franja de la pestaña (spec 1.5; revisión final, B-6): la API la manda armada y la píldora dice lo mismo
+    const leyenda = sinLosDestildados(json.body.data.sin_titulos);
+    assert.equal(leyenda, 'sin 1 dataset: Vencido');
+    assert.equal(json.body.data.sin_texto, `Calculado ${leyenda}.`);
+    assert.ok(primera.includes(`Promedio en días corridos · calculado ${leyenda}`), primera.join(' | '));
     const carga = tramoDe(json.body.data, 'externa', 'carga').cifra;
     assert.ok(primera.join(' ').includes(`${carga.texto} ${carga.unidad}`.trim()), primera.join(' | '));
     assert.ok(primera.join(' ').includes(carga.debajo));
@@ -460,6 +468,33 @@ describe('metricasDe con un hoy fijo', () => {
     }
   });
 
+  // Ruling 39 (revisión final, A-3): «Datos para completar» con el año pedido, leído como en GET /api/metricas (un año que no está, el
+  // 404; lo que no es un año, el en curso). Del 01/01 al 10/01, el año cerrado que todavía no tiene foto se ve en vivo al 31/12: lo que
+  // le falta se completa antes de que la foto lo congele
+  it('pdfDeParaCompletar: el año pedido, y uno cerrado sin foto en vivo al 31/12', async () => {
+    await prepararElAnio();
+    const generado = { momento: '2027-01-05 10:00:00', por: 'Usuario Ejemplo' };
+    const primera = async (consulta) => lineasPorHoja(await reportes.pdfDeParaCompletar(consulta, generado))[0];
+    // 2026, cerrado y sin foto: las tres notas DGMIT pendientes de carga de sus ciclos (avisados, actualizados en el año y sin nota)
+    const de2026 = await primera({ anio: '2026' });
+    const pc2026 = (await metricas({ anio: '2026' }, '2027-01-05')).vista.para_completar;
+    assert.equal(pc2026.total, 3);
+    for (const t of ['DATOS PARA COMPLETAR · MÉTRICAS DE 2026, AL 31/12/2026', '3 datos para completar', pc2026.textos.notas]) {
+      assert.ok(de2026.includes(t), `falta "${t}" en ${de2026.join(' | ')}`);
+    }
+    // Sin año (o con algo que no es un año, o repetido), el en curso: 2027, al día de hoy, todavía sin nada para completar
+    for (const consulta of [{}, { anio: 'abc' }, { anio: ['2026', '2027'] }, { anio: '2027' }]) {
+      const lineas = await primera(consulta);
+      assert.ok(lineas.includes('DATOS PARA COMPLETAR · MÉTRICAS DE 2027, AL 05/01/2027') && lineas.includes('No hay datos para completar'),
+        `${JSON.stringify(consulta)}: ${lineas.join(' | ')}`);
+    }
+    // Un año sin métricas (anterior a 2026 o futuro): null, el 404 de la API
+    for (const anio of ['2025', '2028', '1999']) assert.equal(await reportes.pdfDeParaCompletar({ anio }, generado), null, anio);
+    // Con la foto, sale de la foto, como la pestaña
+    await guardarFoto(2026);
+    assert.ok((await primera({ anio: '2026' })).includes('DATOS PARA COMPLETAR · MÉTRICAS DE 2026, AL 31/12/2026'));
+  });
+
   it('una foto que no se puede leer no pasa por «no hay métricas»: tira (el 500)', async () => {
     await query("INSERT INTO metricas_fotos (anio, al, datos) VALUES (2026, '2026-12-31', '{roto')");
     await assert.rejects(metricas({ anio: '2026' }, '2027-03-01'), { message: 'La foto de 2026 no se puede leer' });
@@ -519,6 +554,19 @@ describe('GET /reportes/informe-anual', () => {
       assert.equal(res.status, 401);
       assert.equal(res.body.success, false);
     }
+  });
+
+  // Revisión final (A-5): un 500 no le muestra a nadie el texto del error (el de mysql2 trae la consulta): cada reporte tiene su mensaje
+  // fijo, y el error completo queda solo en el registro del servidor
+  it('un error al generarlo da 500 con el mensaje fijo, sin el texto del error', async () => {
+    await query("INSERT INTO metricas_fotos (anio, al, datos) VALUES (2026, '2026-12-31', '{roto')");
+    for (const quien of ['lector', 'adminA']) {
+      const res = await pedirInforme('?anio=2026', quien);
+      assert.equal(res.status, 500, quien);
+      assert.match(res.headers.get('content-type'), /^application\/json/);
+      assert.deepEqual(res.body, { success: false, error: 'Error al generar el PDF del Informe anual' }, quien);
+    }
+    assert.ok(servidor.logs().includes('La foto de 2026 no se puede leer'), 'el error completo, en el registro del servidor');
   });
 
   it('con foto de 2026 y sin la de 2025: «Primer año con foto»', async () => {

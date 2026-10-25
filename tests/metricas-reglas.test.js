@@ -12,6 +12,7 @@ import {
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from '../services/fechasDatasetReglas.js';
 import { diasEntre, diasHabilesTranscurridos, sumarDias, VENTANA_DIAS } from '../services/notasDigitalesCalendario.js';
+import { fechaDeAvisoPorRegla } from '../services/reportesAgenda.js';
 
 // Las claves de un caso, en el orden de la spec
 const CLAVES = [
@@ -37,6 +38,21 @@ const NADA = {
   aviso_regla: null, primer_aviso: null, heredado: false, inicio_tramos: null, fecha_regla: null, pudo_avisar: false, motivo_sin_aviso: null,
   nota_dgmit: null, reiteraciones_dgmit: 0, recibido: null, origen: null, carga: null, cambio_id: null, avisos_rpad: [], reiteraciones_rpad: null
 };
+// Revisión final (A-1): un externo con la próxima del 30/06/2026 (su regla, el 21/05/2026) que dejó de regir en el RPAD antes de esa
+// fecha, sin avisos: dado de baja el 10/03/2026, o actualizado (la carga del 05/04/2026, con la aprobación en `revisado`) con la próxima
+// nueva del 31/03/2027 (su regla todavía no llegó)
+const dadoDeBaja = () => solo({ id: 900, titulo: 'Dado de baja', alta: '2026-01-05 09:00:00', proxima: '2026-06-30', ultima: '2026-01-05', activo: false },
+  { cambios: [cambio({ id: 61, tipo: 'eliminar', creado: '2026-03-10 10:00:00', revisado: '2026-03-10 11:00:00', dataset_id: 900 })] });
+const actualizadoEl = (revisado, { id = 901, titulo = 'Actualizado temprano' } = {}) => solo(
+  { id, titulo, alta: '2026-01-05 09:00:00', proxima: '2027-03-31', ultima: '2026-04-05' },
+  {
+    cambios: [cambio({
+      id: 62, creado: '2026-04-05 10:00:00', revisado, dataset_id: id,
+      nuevos: { proxima_actualizacion: '2027-03-31', ultima_actualizacion: '2026-04-05', recibido_el: '2026-04-03', origen_datos: 'area', registro_actualizacion: true },
+      anteriores: { proxima_actualizacion: '2026-06-30', ultima_actualizacion: '2026-01-05' }
+    })]
+  }
+);
 
 describe('constantes', () => {
   it('los estadísticos, los días, la ventana de la regla, el inicio del registro y el primer año', () => {
@@ -295,11 +311,13 @@ describe('casosDe', () => {
     // Un alta posterior a la fecha de la regla: no se podía avisar a tiempo, y ese es el motivo
     const despues = conAlta('2026-02-20 10:00:00');
     assert.deepEqual([despues.pudo_avisar, despues.motivo_sin_aviso], [false, 'alta-cercana']);
-    // Antes de la fecha de la regla todavía no hay motivo (el abierto del 58 vence el 30/11/2026: su regla es el 21/10)
+    // Antes de la fecha de la regla todavía no hay motivo (el abierto del 58 vence el 30/11/2026: su regla es el 21/10). El día del aviso
+    // cuenta recién al día siguiente (revisión final, A-2: la corrida de las 8:15 puede no haber salido)
     const abierto58 = casosDelCaso(58)[1];
     assert.deepEqual([abierto58.fecha_regla, abierto58.pudo_avisar, abierto58.aviso_regla, abierto58.motivo_sin_aviso, abierto58.avisos_rpad],
       ['2026-10-21', true, null, null, ['2026-10-01']]);
-    assert.equal(casosDelCaso(58, {}, '2026-10-21')[1].motivo_sin_aviso, 'sin-aviso');
+    assert.equal(casosDelCaso(58, {}, '2026-10-21')[1].motivo_sin_aviso, null);
+    assert.equal(casosDelCaso(58, {}, '2026-10-22')[1].motivo_sin_aviso, 'sin-aviso');
     // Con venc null no hay fecha de la regla ni motivo, aunque el ciclo haya tenido avisos (el que cerró la simple del 16/12/2025)
     const [simple58] = casosDelCaso(58);
     assert.deepEqual([simple58.venc, simple58.fecha_regla, simple58.avisos_rpad.length, simple58.motivo_sin_aviso], [null, null, 2, null]);
@@ -338,6 +356,32 @@ describe('casosDe', () => {
     // Un email que falló y no es de la regla no es el motivo, ni uno de la regla que falló después del vencimiento
     assert.equal(motivo('2026-02-18 09:00:00', [email({ id: 902, tipo: 'externo-5', enviado: '2026-03-26 08:00:00', success: false })]), 'ya-vencido');
     assert.equal(motivo('2026-02-18 09:00:00', [email({ id: 903, tipo: 'externo-40', enviado: '2026-04-05 08:00:00', success: false })]), 'ya-vencido');
+  });
+
+  // Revisión final (A-1 y A-2): el motivo es de un ciclo que esperaba el aviso de la regla. El aviso sale el día hábil desde la fecha de
+  // la regla (proximoDiaHabil, la regla de la Agenda) y ese día cuenta recién al siguiente (la corrida de las 8:15 puede no haber
+  // salido); un ciclo que dejó de regir en el RPAD antes del día del aviso (por su aprobación, no por la carga) no lo esperaba
+  it('sin motivo si el ciclo dejó de regir antes del día del aviso, o si ese día todavía no terminó', () => {
+    const hoy = HOY_DE_LAS_METRICAS;
+    // Dado de baja el 10/03/2026, con la próxima del 30/06/2026 (su regla, el jueves 21/05)
+    const [baja] = casosDel(dadoDeBaja(), hoy);
+    assert.deepEqual([baja.como, baja.fecha_regla, baja.aviso_regla, baja.motivo_sin_aviso], ['baja', '2026-05-21', null, null]);
+    // Actualizado el 05/04, antes del día de la regla: tampoco lo esperaba
+    const [temprano] = casosDel(actualizadoEl('2026-04-05 11:00:00'), hoy);
+    assert.deepEqual([temprano.como, temprano.carga, temprano.fecha_regla, temprano.motivo_sin_aviso], ['actualizacion', '2026-04-05', '2026-05-21', null]);
+    // Cargado el 05/04 pero aprobado el 25/05, después del día de la regla: hasta la aprobación regía la próxima del 30/06 y lo esperaba
+    const [tarde] = casosDel(actualizadoEl('2026-05-25 11:00:00'), hoy);
+    assert.deepEqual([tarde.carga, tarde.aprobado, tarde.motivo_sin_aviso], ['2026-04-05', '2026-05-25 11:00:00', 'sin-aviso']);
+    // Aprobado el mismo día del aviso, sin el aviso: no lo esperaba (pudo aprobarse antes de las 8:15)
+    assert.equal(casosDel(actualizadoEl('2026-05-21 07:00:00'), hoy)[0].motivo_sin_aviso, null);
+    assert.equal(casosDel(actualizadoEl('2026-05-22 07:00:00'), hoy)[0].motivo_sin_aviso, 'sin-aviso');
+    // El vencimiento del 30/04/2027: su regla cae el domingo 21/03/2027 y el aviso sale el lunes 22/03
+    const venceEnAbril = solo({ id: 900, alta: '2027-01-04 09:00:00', proxima: '2027-04-30', ultima: '2027-01-04' });
+    assert.deepEqual(['2027-03-21', '2027-03-22', '2027-03-23'].map((dia) => casosDel(venceEnAbril, dia)[0].motivo_sin_aviso), [null, null, 'sin-aviso']);
+    // Interna: la regla del 30/06/2026 cae el viernes 01/05/2026, feriado, y el aviso sale el lunes 04/05
+    const interna = solo({ id: 900, tipo_gestion: 'interna', alta: '2026-01-05 09:00:00', proxima: '2026-06-30', ultima: '2026-01-05' });
+    assert.equal(casosDel(interna, '2026-05-04')[0].fecha_regla, '2026-05-01');
+    assert.deepEqual(['2026-05-03', '2026-05-04', '2026-05-05'].map((dia) => casosDel(interna, dia)[0].motivo_sin_aviso), [null, null, 'sin-aviso']);
   });
 
   it('la nota DGMIT anulada no cuenta', () => {
@@ -1104,6 +1148,74 @@ describe('vistaDe', () => {
     assert.deepEqual(vista(orden).resultados.cobertura.faltan.map((f) => f.titulo), ['Á', 'B', 'A']);
   });
 
+  // Revisión final (A-1): un ciclo que dejó de regir en el RPAD antes del día del aviso (por su aprobación, no por la carga) no lo
+  // esperaba: no está en el denominador ni en «Los N que faltan». La foto lo guardaría para siempre como una falla del RPAD
+  it('cobertura: sin los ciclos que dejaron de regir antes del día del aviso, y «a tiempo» no la contradice', () => {
+    const casosDeLos = (...fuentes) => casosDe(mapaDe(...fuentes), { hoy: AL });
+    // El ejemplo de la revisión: el dado de baja el 10/03 y el actualizado el 05/04, los dos con la regla del 21/05
+    const ejemplo = vista(casosDeLos(dadoDeBaja(), actualizadoEl('2026-04-05 11:00:00')));
+    assert.deepEqual(ejemplo.resultados.cobertura, { si: 0, total: 0, faltan: [] });
+    assert.equal(ejemplo.resultados.textos.cobertura.faltan, '');
+    // El actualizado se cargó antes de vencer: a tiempo, y en la lista de casos sin motivo
+    assert.deepEqual([ejemplo.resultados.a_tiempo.a_tiempo, ejemplo.resultados.a_tiempo.total], [1, 1]);
+    assert.deepEqual(ejemplo.casos.map((f) => [f.dataset_id, f.aviso.texto]), [[901, '']]);
+    // Uno cargado el 05/04 pero aprobado el 25/05 regía en el RPAD el día del aviso: lo esperaba y falta (y se cargó a tiempo)
+    const conElTardio = vista(casosDeLos(dadoDeBaja(), actualizadoEl('2026-04-05 11:00:00'),
+      actualizadoEl('2026-05-25 11:00:00', { id: 902, titulo: 'Aprobado después' })));
+    assert.deepEqual(conElTardio.resultados.cobertura,
+      { si: 0, total: 1, faltan: [{ titulo: 'Aprobado después', venc: '2026-06-30', motivo: 'sin el aviso de la regla' }] });
+    assert.deepEqual([conElTardio.resultados.a_tiempo.a_tiempo, conElTardio.resultados.a_tiempo.total], [2, 2]);
+    assert.deepEqual(conElTardio.casos.map((f) => [f.dataset_id, f.aviso.texto]), [[901, ''], [902, 'sin el aviso de la regla']]);
+    // Con casos armados: aprobado el mismo día del aviso, cuenta solo si lo tuvo; con un aviso anticipado, cuenta y está cubierto
+    const cerroElDia = (datos = {}) => cerrado({ venc: '2026-06-30', fecha_regla: '2026-05-21', aviso_regla: null, primer_aviso: null,
+      inicio_tramos: null, avisos_rpad: [], reiteraciones_rpad: null, cierre: '2026-05-21', aprobado: '2026-05-21 07:00:00', carga: '2026-05-21', ...datos });
+    assert.deepEqual(vista([cerroElDia()]).resultados.cobertura, { si: 0, total: 0, faltan: [] });
+    assert.deepEqual(vista([cerroElDia({ aprobado: '2026-05-22 07:00:00', motivo_sin_aviso: 'sin-aviso' })]).resultados.cobertura.total, 1);
+    const anticipado = { aviso_regla: '2026-03-01', primer_aviso: '2026-03-01', inicio_tramos: '2026-03-01', avisos_rpad: ['2026-03-01'] };
+    assert.deepEqual(vista([cerroElDia({ ...anticipado, cierre: '2026-04-05', aprobado: '2026-04-05 11:00:00', carga: '2026-04-05' })]).resultados.cobertura,
+      { si: 1, total: 1, faltan: [] });
+  });
+
+  // Revisión final (A-2): el aviso de la regla sale el día hábil desde su fecha (proximoDiaHabil, el día de la Agenda de pedidos:
+  // fechaDeAvisoPorRegla), y ese día cuenta recién cuando el aviso existe (la corrida de las 8:15 puede no haber salido) o al día
+  // siguiente. Un vencimiento cuyo aviso todavía no tenía que salir no figura entre los que faltan
+  it('cobertura en fines de semana y feriados: cuenta desde el día hábil en que sale el aviso', () => {
+    // El 30/04/2027: su regla cae el domingo 21/03/2027 y el aviso sale el lunes 22/03
+    const abril = (datos = {}) => caso({
+      venc: '2027-04-30', inicio: '2027-01-04', fecha_regla: '2027-03-21', aviso_regla: null, primer_aviso: null, inicio_tramos: null,
+      avisos_rpad: [], reiteraciones_rpad: null, alta: '2027-01-04', ...datos
+    });
+    const avisado = { aviso_regla: '2027-03-22', primer_aviso: '2027-03-22', inicio_tramos: '2027-03-22', avisos_rpad: ['2027-03-22'] };
+    const cobertura = (lista, al) => vistaDe(lista, { anio: 2027, al }).resultados.cobertura;
+    assert.deepEqual(cobertura([abril()], '2027-03-21'), { si: 0, total: 0, faltan: [] });
+    // El lunes 22/03: sin el aviso todavía no falta; con el aviso, cubierto
+    assert.deepEqual(cobertura([abril({ motivo_sin_aviso: 'sin-aviso' })], '2027-03-22'), { si: 0, total: 0, faltan: [] });
+    assert.deepEqual(cobertura([abril(avisado)], '2027-03-22'), { si: 1, total: 1, faltan: [] });
+    // Desde el martes 23/03, sin el aviso, falta
+    assert.deepEqual(cobertura([abril({ motivo_sin_aviso: 'sin-aviso' })], '2027-03-23'),
+      { si: 0, total: 1, faltan: [{ titulo: 'Dataset de prueba', venc: '2027-04-30', motivo: 'sin el aviso de la regla' }] });
+    // En la lista de casos, el motivo aparece recién entonces
+    const textoDelAviso = (al) => vistaDe([abril({ motivo_sin_aviso: 'sin-aviso', avisos_rpad: ['2027-01-20'], primer_aviso: '2027-01-20' })],
+      { anio: 2027, al }).casos[0].aviso.texto;
+    assert.deepEqual([textoDelAviso('2027-03-22'), textoDelAviso('2027-03-23')], ['', 'sin el aviso de la regla']);
+    // Con los fines de mes de 2027 y las dos gestiones (los que tienen el aviso en 2027), el día que cuenta es el de la Agenda
+    // (fechaDeAvisoPorRegla): ese día, sin el aviso, todavía no; el siguiente, sí
+    for (const gestion of ['externa', 'interna']) {
+      for (let mes = 1; mes <= 12; mes++) {
+        const vencimiento = sumarDias(mes === 12 ? '2028-01-01' : `2027-${String(mes + 1).padStart(2, '0')}-01`, -1);
+        const dia = fechaDeAvisoPorRegla(vencimiento, gestion);
+        if (!dia.startsWith('2027-')) continue;
+        const delMes = caso({
+          gestion, requiere_nota: gestion === 'interna' ? null : 1, venc: vencimiento, inicio: '2026-12-01', alta: '2026-12-01',
+          fecha_regla: sumarDias(vencimiento, -VENTANA_DIAS[gestion]), aviso_regla: null, primer_aviso: null, inicio_tramos: null, avisos_rpad: [],
+          reiteraciones_rpad: null, motivo_sin_aviso: 'sin-aviso'
+        });
+        assert.equal(cobertura([delMes], dia).total, 0, `${gestion} ${vencimiento}: el día del aviso (${dia})`);
+        assert.equal(cobertura([delMes], sumarDias(dia, 1)).total, 1, `${gestion} ${vencimiento}: el día siguiente`);
+      }
+    }
+  });
+
   it('reiteraciones por ciclo: las de los ciclos que terminaron en el año y las de los abiertos a al, también al 31/12', () => {
     // Los reales: 16 ciclos (los abiertos sin aviso de la regla ni avisados ya vencidos, como el 33 o el 58, no cuentan: Ruling 6)
     assert.deepEqual(vista(casosReales()).resultados.reiteraciones, { rpad: { ninguna: 4, una: 1, dos_o_mas: 11, total: 16 }, dgmit: null });
@@ -1166,19 +1278,27 @@ describe('vistaDe', () => {
     assert.equal(vistaDe([], { anio: 2027, al: '2027-03-01' }).resultados.textos.a_tiempo.vacio, 'Sin actualizaciones registradas en 2027.');
   });
 
-  it('la aclaración de las reiteraciones (Ruling 21): solo si algún ciclo que cuenta del RPAD a la DGMIT tuvo un email a la DGMIT', () => {
+  it('la aclaración de las reiteraciones (Ruling 21): solo si algún ciclo que cuenta del RPAD a la DGMIT tuvo un email a la DGMIT después del aviso', () => {
     const aclaracion = (lista, opciones) => vista(lista, opciones).resultados.textos.reiteraciones.aclaracion;
-    // Con un email (el de 40 días, el de 5 o el de vencidos): va
-    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] })]), ACLARACION_DE_LOS_EMAILS);
+    // Con un email posterior al aviso de la regla (el de 5 días o el de vencidos: una reiteración por email), va
+    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19', '2026-03-26'] })]), ACLARACION_DE_LOS_EMAILS);
     assert.equal(aclaracion([caso(), caso({ dataset_id: 901, avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-03-26'] })]),
       ACLARACION_DE_LOS_EMAILS);
+    // Revisión final (A-4): un ciclo cuyo único email es el de la regla (el de 40 o 60 días, que no es una reiteración) no la muestra, ni
+    // uno con otro email del mismo día
+    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] })]), null);
+    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-02-19'], emails_rpad: ['2026-02-19', '2026-02-19'] })]), null);
+    // Ni uno con una reiteración por Nota Digital, que no es un email
+    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19'] })]), null);
     // Solo con Notas Digitales (sin emails), no
     assert.equal(aclaracion([cerrado(), caso({ dataset_id: 901 })]), null);
     // El email es de un ciclo que no cuenta del RPAD a la DGMIT (sin inicio de los tramos, o cerrado en otro año): no
     assert.equal(aclaracion([caso({ aviso_regla: null, inicio_tramos: null, reiteraciones_rpad: null, emails_rpad: ['2026-02-19'] })]), null);
     assert.equal(aclaracion([cerrado({ cierre: '2025-12-16', carga: '2025-12-16', emails_rpad: ['2025-10-22'] })]), null);
     // Un destildado no cuenta; un email posterior a al todavía no pasó
-    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] }), cerrado({ dataset_id: 901 })], { sin: [900] }), null);
+    const reiteradoPorEmail = cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19', '2026-03-26'] });
+    assert.equal(aclaracion([reiteradoPorEmail, cerrado({ dataset_id: 901 })]), ACLARACION_DE_LOS_EMAILS);
+    assert.equal(aclaracion([reiteradoPorEmail, cerrado({ dataset_id: 901 })], { sin: [900] }), null);
     assert.equal(aclaracion([caso({ emails_rpad: ['2026-11-02'] })], { al: '2026-10-31' }), null);
     // Con los casos reales (los ciclos de 2026 tuvieron emails hasta el 12/10)
     assert.equal(aclaracion(casosReales()), ACLARACION_DE_LOS_EMAILS);
@@ -1385,7 +1505,8 @@ describe('casosQueTocanElAnio', () => {
     const conNota = cerrado({ ...de2025, dataset_id: 902, nota_dgmit: notaDe('2025-03-10') });
     const abierto = caso({ dataset_id: 903 });
     const cerradoEnEnero = cerrado({ ...de2025, dataset_id: 904, cierre: '2026-01-08', aprobado: '2026-01-08 10:00:00', recibido: '2026-01-06', carga: '2026-01-08' });
-    // Actualizado en diciembre de 2025, antes de su vencimiento del 31/01/2026: cuenta en la cobertura de 2026
+    // Actualizado en diciembre de 2025, antes de su vencimiento del 31/01/2026: vence en 2026 (en la cobertura no cuenta: dejó de regir
+    // en el RPAD antes del día de su aviso, el 22/12/2025)
     const venceEnElAnio = cerrado({
       ...de2025, dataset_id: 905, venc: '2026-01-31', fecha_regla: '2025-12-22', aviso_regla: null, primer_aviso: null, inicio_tramos: null,
       avisos_rpad: [], motivo_sin_aviso: 'sin-aviso', cierre: '2025-12-20', aprobado: '2025-12-20 10:00:00', recibido: '2025-12-19', carga: '2025-12-20'

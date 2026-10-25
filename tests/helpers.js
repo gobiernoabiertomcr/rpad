@@ -166,7 +166,8 @@ const arrancarEn = (puerto, env) => new Promise((resolve, reject) => {
     resolve({ proceso, salida });
   });
   proceso.stderr.on('data', d => salida.push(d.toString()));
-  proceso.once('exit', (codigo) => {
+  // 'close', no 'exit': llega cuando stdout y stderr ya se cerraron, así el EADDRINUSE de stderr ya está en la salida y el reintento lo ve
+  proceso.once('close', (codigo) => {
     if (!escucha) fallar(`El servidor terminó (código ${codigo}) antes de escuchar en el puerto ${puerto}`, { enUso: /EADDRINUSE/.test(salida.join('')) });
   });
 });

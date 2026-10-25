@@ -24,6 +24,18 @@
         }
         .toolbar .spacer { flex: 1; }
 
+        /* Adónde se mudaron las métricas de Gestión */
+        .aviso-mudanza {
+            margin: 0 0 20px;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--gray-700);
+            font-size: 0.9rem;
+        }
+        .aviso-mudanza a { color: var(--primary); font-weight: 600; text-decoration: underline; }
+
         /* Proyectos */
         .proyectos-grid {
             display: grid;
@@ -847,6 +859,8 @@
             </div>
 
             <div id="message-container"></div>
+
+            <p class="aviso-mudanza">Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>
 
             <!-- Proyectos (la pestaña Métricas se mudó a «Métricas y Reportes») -->
             <div id="tab-proyectos">
