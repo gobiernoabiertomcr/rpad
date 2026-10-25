@@ -10,7 +10,7 @@ import JSZip from 'jszip';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { crearArea, crearDataset, PIE_MEMBRETE } from './notas-fixtures.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
-import { pedido, tipoEfectivo, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import { pedido, tipoEfectivo, estadoDelDataset, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 import { MENSAJES_GENERADOR, textoAlDia, textoDeOtraArea } from '../services/notasGeneradorReglas.js';
 import { textoNoSePuedeElegir } from '../services/notasDgmitReglas.js';
 
@@ -24,11 +24,14 @@ const hoy = hoyArgentina();
 // - próximo: el fin de este mes (faltan entre 0 y 30 días);
 // - al día: dentro de 75 días. No es un fin de mes a propósito: hoy está al día (más de 60 días) y a la fecha de la nota más
 //   alta que se acepta, hoy + 30, ya es próximo (45 días). Con un fin de mes, algunos días del año no hay ninguno en ese tramo.
+// Y al revés: a la fecha de la nota ANTES_DEL_PROXIMO (61 días antes del vencimiento del próximo, en el pasado y dentro del rango de
+// la nota) el próximo todavía estaba al día.
 const VENCIDO = sumarMeses(vencimientoDelMes(hoy), -2);
 const DATOS_AL_DEL_VENCIDO = sumarMeses(VENCIDO, -4);
 const PROXIMO = vencimientoDelMes(hoy);
 const AL_DIA = sumarDias(hoy, 75);
 const EN_30_DIAS = sumarDias(hoy, 30);
+const ANTES_DEL_PROXIMO = sumarDias(PROXIMO, -61);
 const RECIBIDA = sumarDias(hoy, -10);
 const QUE_SE_SOLICITA = 'Cantidad de trámites de prueba por mes.';
 
@@ -67,6 +70,11 @@ before(async () => {
   // Un eventual con una próxima vieja guardada: no se ordena por ella
   ids.eventual = await crearDataset({
     titulo: 'Dataset eventual', areaId: ids.areaA, gestion: 'externa', frecuencia: 'Eventual', vencimiento: '2020-01-31', requiereNota: 1
+  });
+  // Uno dado de baja: externo y con «Requiere nota DGMIT» en Sí, pero no se puede elegir
+  ids.deBaja = await crearDataset({
+    titulo: 'Dataset dado de baja', areaId: ids.areaA, gestion: 'externa', frecuencia: 'Anualmente', vencimiento: VENCIDO,
+    requiereNota: 1, activo: 0
   });
   // Del área B: uno que se puede elegir (de otra área para las notas del área A), uno con «No» y uno interno
   ids.deOtraArea = await crearDataset({
@@ -163,6 +171,11 @@ describe('GET /notas/areas', () => {
     assert.equal(area.area_superior, null);
   });
 
+  it('el dado de baja no aparece entre los datasets del área A', async () => {
+    const area = (await pedirAreas()).find((a) => a.id === ids.areaA);
+    assert.ok(!area.datasets.some((d) => d.id === ids.deBaja));
+  });
+
   it('ningún área con solo datasets internos', async () => {
     const areas = await pedirAreas();
     assert.ok(!areas.some((a) => a.id === ids.areaC), 'el área C no está');
@@ -185,6 +198,7 @@ describe('GET /notas/areas', () => {
     const vencido = area.datasets[0];
     assert.deepEqual(Object.keys(vencido).sort(), ['dias', 'estado', 'id', 'proxima', 'titulo']);
     assert.equal(vencido.proxima, VENCIDO);
+    assert.equal(vencido.dias, estadoDelDataset({ proxima: VENCIDO, meses: 3, tipoGestion: 'externa', hoy }).dias);
     assert.ok(vencido.dias < 0);
     assert.equal(area.datasets[3].dias, null);
   });
@@ -209,7 +223,7 @@ describe('GET /notas/areas/:id', () => {
       id: ids.vencido,
       titulo: 'Dataset vencido',
       estado: 'sin-respuesta',
-      dias: vencido.dias,
+      dias: estadoDelDataset({ proxima: VENCIDO, meses: 3, tipoGestion: 'externa', hoy }).dias,
       proxima: VENCIDO,
       frecuencia: 'Trimestralmente (Acumulado)',
       datos_solicitados: pedido({ vencimiento: VENCIDO, tipo, datosAl: DATOS_AL_DEL_VENCIDO, meses: 3, hoy }).texto,
@@ -243,12 +257,25 @@ describe('GET /notas/areas/:id', () => {
     assert.deepEqual(areaB.body.data.datasets.map((d) => d.id), [ids.deOtraArea]);
   });
 
+  it('el dado de baja no aparece entre los datasets del área', async () => {
+    const area = await pedirArea();
+    assert.ok(!area.datasets.some((d) => d.id === ids.deBaja));
+  });
+
   it('Review Focus 3: con ?fecha= 30 días después, el que hoy está al día y vence en ese plazo se puede pedir', async () => {
     const area = await pedirArea(`?fecha=${EN_30_DIAS}`);
     const alDia = delArea(area, ids.alDia);
     assert.equal(alDia.estado, 'proximo');
     assert.equal(alDia.dias, 45);
     assert.equal(alDia.se_puede_pedir, true);
+  });
+
+  it('Review Focus 3, al revés: a una fecha de la nota anterior, el que hoy está próximo todavía estaba al día y no se puede pedir', async () => {
+    assert.equal(delArea(await pedirArea(), ids.proximo).estado, 'proximo');
+    const proximo = delArea(await pedirArea(`?fecha=${ANTES_DEL_PROXIMO}`), ids.proximo);
+    assert.equal(proximo.estado, 'actualizado');
+    assert.equal(proximo.dias, 61);
+    assert.equal(proximo.se_puede_pedir, false);
   });
 
   it('un área que existe y no tiene datasets que se puedan elegir: 200, sin datasets', async () => {
@@ -330,6 +357,17 @@ describe('POST /notas/generar', () => {
   it('Review Focus 3: el al día da 400 y el mismo dataset pasa con la fecha en la que es próximo', async () => {
     esRechazo(await api.post('/notas/generar', nota({ datasets: [ids.alDia] }), como('colab')), 'datasets', textoAlDia('Dataset al día'));
     esWord(await api.post('/notas/generar', nota({ datasets: [ids.alDia], fecha: EN_30_DIAS }), como('colab')));
+  });
+
+  it('Review Focus 3, al revés: el próximo, a una fecha de la nota en la que todavía estaba al día, da 400', async () => {
+    esRechazo(await api.post('/notas/generar', nota({ datasets: [ids.proximo], fecha: ANTES_DEL_PROXIMO }), como('colab')),
+      'datasets', textoAlDia('Dataset próximo'));
+    esWord(await api.post('/notas/generar', nota({ datasets: [ids.proximo] }), como('colab')));
+  });
+
+  it('el dado de baja: 400 en los datasets', async () => {
+    esRechazo(await api.post('/notas/generar', nota({ datasets: [ids.vencido, ids.deBaja] }), como('colab')),
+      'datasets', textoNoSePuedeElegir('Dataset dado de baja'));
   });
 
   it('el interno: 400 en los datasets', async () => {
