@@ -178,6 +178,7 @@
     - `({ activos: 0, deBaja: 0, pendientes: 1 })` → `'No se puede borrar el área: un cambio pendiente la usa. Primero hay que aprobarlo o rechazarlo.'`;
     - `pendientes: 2` → `'No se puede borrar el área: 2 cambios pendientes la usan. Primero hay que aprobarlos o rechazarlos.'`.
   - **`sinCampos`:** `({ id: 1, email_principal: 'x', nombre: 'A' }, CAMPOS_DE_CONTACTO_AREA)` → `{ id: 1, nombre: 'A' }`; el original no cambia.
+  - **`null` en los opcionales** (Diferencias, 4): `validarArea({ nombre: 'A', area_superior: null, articulo_superior: null, email_principal: null, email_secundario: null, telefono_area: null, celular_area: null, nombre_contacto: null, telefono_contacto: null, email_contacto: null }, { nombre: 'A' })` → sin error, y todos esos campos en `null` en `datos`.
 - [ ] **Step 2: Run** `node --test tests/areas-reglas.test.js`. Expected: FAIL (el módulo no existe).
 - [ ] **Step 3: Implementar `services/areasReglas.js`.**
   - **Cuándo se valida:** el nombre y los artículos, siempre que vienen. Formato y largo del resto, si `anterior === null` o si el valor normalizado difiere de `anterior[campo] ?? null`.
@@ -246,6 +247,12 @@
     - **`deleteArea`:** cuenta activos, dados de baja y pendientes antes del DELETE. Un `ER_ROW_IS_REFERENCED_2` da 400 con `MENSAJES_AREA.enUso`. Un id que no es entero positivo da 404.
   - **`datasetController.js`:** aplicar `sinCampos` en `getDatasets` y `getDatasetById` cuando no hay administración, después de `enriquecer`.
   - **`routes/index.js`:** `sesionOpcional` en las cuatro rutas GET. Las de escritura no cambian.
+  - **Lo del Generador** (Diferencias, 2 a 4), que no cambia:
+    - el rechazo del ámbito queda exactamente como está (`{ success: false, error: MENSAJE_AMBITO, campo: 'ambito', errores: { ambito: MENSAJE_AMBITO } }`);
+    - el orden de los controles es, en el alta, `validarArea` → ámbito → repetido, y en la edición, 404 → `validarArea` → ámbito → repetido;
+    - `getAreaById` suma `cantidad_datasets` para todos;
+    - el INSERT sigue con `ambito ?? 'municipal'`;
+    - `tests/areas-ambito-api.test.js` tiene que pasar **sin cambios**.
 - [ ] **Step 4: Run** `node --test tests/areas-api.test.js tests/publico.test.js tests/permisos.test.js`. Expected: PASS. Si la Task 1 lo encontró, correr también `tests/areas-ambito-api.test.js`. Después, `npm test` completo. Expected: 0 fallan.
 - [ ] **Step 5: Commit:** `fix: los datos de contacto de las áreas solo para administración; validación del área y borrar sin 500`.
 
@@ -397,7 +404,7 @@
     - `#vista-areas hidden` después de `#vista-licencias`;
     - los modales `#modal-area` y `#modal-borrar-area` después de `#modal-licencia`, con el marcado de la maqueta (variante tabla), los ids de la Task 5 y `a-ambito-error`.
   - **Su `<style>`:** suma el bloque de Áreas de la maqueta (las clases `ar-`, `.sr-only`, `.main-content { min-width: 0; }` y `.ar-tabla-marco { position: relative; }`), sin las reglas de la variante filas.
-  - **Los scripts:** `usuarios.js?v=` sube a `VERSION_PANTALLAS` nueva. Sugerencia: `20261127`, o el siguiente valor libre si la Task 1 vio que ya se usa. Después va `<script src="js/areas.js?v=…"></script>` con `VERSION_AREAS`, el mismo valor. `areas.js` hoy carga `?v=20261012`.
+  - **Los scripts:** `usuarios.js?v=` sube a `VERSION_PANTALLAS` nueva. Queda en `20261205` (Diferencias, 1: `20261127` y `20261204` ya se usan). Después va `<script src="js/areas.js?v=…"></script>` con `VERSION_AREAS`, el mismo valor. `areas.js` hoy carga `?v=20261012`.
   - **El menú de esta página:** todavía el de `index.html` (Task 7).
   - **`usuarios.js`:**
     - `mostrarVista` recorre `VISTAS`, oculta o muestra los dos botones y, en `'areas'`, llama `if (typeof cargarAreas === 'function') cargarAreas();`;
@@ -481,9 +488,8 @@
   - Capturas de lo principal.
 - [ ] **Step 4: El kit** `Desktop/RPAD-deploy-configuracion/`, como los anteriores.
   - **`PASOS.txt`:**
-    - primero: antes de este kit se despliegan el de Métricas y Reportes y el de Mejoras de Notas, en ese orden (orden del usuario);
     - qué incluye;
-    - comprobaciones previas: que las tres entregas anteriores estén en producción, por ejemplo con `SHOW COLUMNS FROM areas LIKE 'ambito'`;
+    - comprobaciones previas (Diferencias, 10): Métricas y el Generador ya están en producción. `SHOW TABLES LIKE 'metricas_fotos';` y `SHOW COLUMNS FROM areas LIKE 'ambito';` dan 1 fila cada una, y la lista de Áreas muestra "Fuera del municipio" en 13 áreas. Si no dan, parar;
     - **sin migración**;
     - subir los archivos y borrar `public/usuarios.html` y `public/areas.html` del servidor;
     - Restart;
@@ -509,4 +515,35 @@
 
 ## Diferencias encontradas
 
-(La Task 1 completa esta sección.)
+Task 1, 25/10/2026: main ya trae Métricas (41fa25f), el Generador (c26e0e8, desplegado en producción) y la hoja oficio (905f030). Se trajo a la rama en 8a3a3c5, sin conflictos. Diferencias con lo que daba por hecho este plan, y cómo quedan las tareas:
+
+1. **Versiones** (Task 6): `VERSION` (auth, main y api), `VERSION_PANTALLAS` (`usuarios.js`), `VERSION_CORREOS` y `VERSION_NOTAS` están en `20261204`, y `areas.js` carga `?v=20261204`; `20261127` ya la usan `perfil.js` y `admin.js`. **`usuarios.js` sube a `20261205` (`VERSION_PANTALLAS`) y `areas.js` va con `VERSION_AREAS = '20261205'`.**
+2. **El rechazo del Ámbito** del Generador (`areasController.js`): `{ success: false, error: MENSAJE_AMBITO, campo: 'ambito', errores: { ambito: MENSAJE_AMBITO } }`, y `tests/areas-ambito-api.test.js` lo compara con `deepEqual`.
+   - Task 3: ese objeto no cambia.
+   - El orden de los controles queda así: en el alta, `validarArea` → ámbito → repetido; en la edición, 404 → `validarArea` → ámbito → repetido.
+   - `areas-ambito-api.test.js` tiene que pasar sin cambios.
+3. **`getAreaById`** no trae `cantidad_datasets` (`SELECT * FROM areas`). Task 3: la suma, para todos, como `getAreas`.
+4. **El PUT con todos los campos** de `areas-ambito-api.test.js` (:112-116) manda `area_superior`, `articulo_superior` y los siete de contacto en `null`, con su propio nombre, y espera 200.
+   - Task 2: `validarArea` acepta `null` en todos los opcionales (queda `null`) y en `articulo_superior`.
+   - Task 3: el repetido excluye a la propia área (`id <> ?`).
+   - Task 2 suma ese caso a sus tests: `validarArea({ nombre: 'A', area_superior: null, articulo_superior: null, email_principal: null, email_secundario: null, telefono_area: null, celular_area: null, nombre_contacto: null, telefono_contacto: null, email_contacto: null }, { nombre: 'A' })` → sin error, todos `null`.
+5. **Formato de los errores de hoy:** `{ success: false, error }`, sin `campo`, salvo el del Ámbito. Ningún test asserta los mensajes viejos ("El nombre del área es obligatorio", "Ya existe un área/otra área con ese nombre", "No se puede eliminar el área porque…"), así que se pueden cambiar.
+   - `public/js/admin.js:1334` tiene su propia copia de "El nombre del área es obligatorio" para el alta rápida. Recorta y la controla antes de pedir, así que el mensaje del servidor casi nunca se ve ahí.
+   - **Ruling:** `admin.js` no se toca (no sube `VERSION_ADMIN`).
+6. **El formulario del Generador** en `areas.html`:
+   - un `<select id="ambito">`, con la ayuda "Define si la nota de la DGMIT va por la Subsecretaría (municipal) o directo al organismo (fuera del municipio).";
+   - la marca `badge badge-secondary` "Fuera del municipio" en la lista.
+   - Task 5 y 6 los reemplazan, como decía la spec: las dos opciones grandes y la columna Ámbito, con los mismos valores. El error del ámbito (`campo: 'ambito'`) va a `a-ambito-error`.
+7. **`public/js/reportes.js`** (Métricas) pide `API.pedirJson('GET', '/areas')` con el token y usa solo `id` y `nombre`. Con la Task 3, el lector recibe la forma pública y administración la completa: las dos le sirven. No cambia nada.
+8. **`DATASET_SELECT_QUERY`, `getDatasets`, `getDatasetById`, `authMiddleware`, `PATRON_EMAIL`, el enum de `cambios_pendientes.estado` y `app.js`** siguen como suponía el plan. `routes/index.js` corrió de línea:
+   - `/datasets`: 137;
+   - `/datasets/:id`: 141;
+   - `/areas`: 149-150 las de lectura y 183-185 las de escritura.
+9. **El menú:**
+   - `#sidebarAdmin` sigue con Gestión de Datasets (ruedita), Áreas, Usuarios y Correos;
+   - Herramientas ya dice "Métricas y Reportes";
+   - `main.js` oculta Notas a quien no carga notas DGMIT y no nombra `usuarios.html` ni `areas.html`;
+   - siguen siendo 14 páginas con carcasa. Sin cambios para la Task 7.
+10. **Kit** (Task 8): el usuario ya desplegó Métricas y el Generador. `PASOS.txt` los **comprueba**, no pide desplegarlos:
+    - `SHOW TABLES LIKE 'metricas_fotos';` y `SHOW COLUMNS FROM areas LIKE 'ambito';` dan 1 fila cada una;
+    - la lista de Áreas muestra "Fuera del municipio" en 13 áreas.
