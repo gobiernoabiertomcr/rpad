@@ -3,9 +3,10 @@
 // (services/notasDigitalesAnexo.js): su paleta, Helvetica, los márgenes de 15 mm, el encabezado y el pie, DocumentoNota y el QR
 // vectorial. Dibuja lo que calcula seguimientoDe (services/seguimientoReglas.js) con las opciones de la
 // cinta del PDF (separación 12 y letra 8,4): no recalcula ninguna regla.
-// Hay dos PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1")
-// y el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
-// Hoja k de N"); los dos las dibujan con el mismo dibujante de N hojas.
+// Hay tres PDF con la misma hoja: la descarga de un dataset (renderSeguimiento: una hoja, pie "Seguimiento del dataset · Hoja 1 de 1"),
+// el anexo de la reiteración (renderAnexoDeSeguimiento: una hoja por dataset de la nota, pie "Anexo de la Nota Digital N° … ·
+// Hoja k de N"), que la dibujan con el mismo dibujante de N hojas, y el reporte Por área (services/reportesPorAreaPdf.js: detrás de su
+// portada, una hoja por dataset activo del área, pie "Reporte por área · Hoja k de N"), que la dibuja con dibujarHoja.
 // Las secciones tienen lugar fijo y se completan solas: el título reserva dos líneas, cada valor de la ficha va en una línea, los
 // nodos del circuito tienen alto fijo, la leyenda reserva dos renglones, la tabla de movimientos tiene FILAS_PDF renglones y la
 // aclaración va siempre arriba del pie. Así la hoja nunca pasa a una segunda, con cualquier largo de título, área o movimientos.
@@ -658,8 +659,9 @@ const dibujarMovimientos = (doc, movimientos, y) => {
 // La hoja
 // =====================================================
 
-// Una hoja del Seguimiento de un dataset en la página actual de `doc`. `pie`: el texto de la derecha del pie.
-const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
+// Una hoja del Seguimiento de un dataset en la página actual de `doc` (A4, con los márgenes de PDFKit en 0), con su encabezado y su
+// pie. `pie`: el texto de la derecha del pie. El QR necesita la librería cargada antes (await cargarQrcode()).
+export const dibujarHoja = (doc, seguimiento, { hoy, generado, pie }) => {
   const { ficha, circuito, cinta } = seguimiento;
   const movimientos = movimientosDeLaHoja(seguimiento.movimientos);
   const registro = seguimiento.registro ?? {};

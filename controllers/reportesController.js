@@ -1,10 +1,12 @@
 import PDFDocument from 'pdfkit';
 import pool from '../config/database.js';
-import { esFechaIso, hoyArgentina, ahoraArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, ahoraArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
 import { estadoDelDataset, tasaDeActualizacion } from '../services/fechasDatasetReglas.js';
-import { nombreCorto } from '../services/seguimientoReglas.js';
-import { renderEstadoGeneral, textoSinFecha } from '../services/reportesEstadoGeneralPdf.js';
-import { fechaCorta } from '../services/reportesPdfBase.js';
+import { nombreCorto, seguimientoDe, disposicionDeAdjunto } from '../services/seguimientoReglas.js';
+import { fuentesDe } from '../services/seguimientoDatos.js';
+import { OPCIONES_CINTA_PDF } from '../services/seguimientoPdf.js';
+import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
+import { renderPorArea } from '../services/reportesPorAreaPdf.js';
 
 // Colores institucionales
 const COLORS = {
@@ -13,7 +15,6 @@ const COLORS = {
   success: '#22c55e',
   warning: '#f59e0b',
   danger: '#ef4444',
-  sinRespuesta: '#ff9800',
   gray: '#6b7280',
   grayLight: '#f3f4f6',
   grayDark: '#374151',
@@ -60,21 +61,6 @@ const estadoDeLaFila = (d, hoy) => estadoDelDataset({
 const COLUMNAS_FECHAS = `f.meses AS frecuencia_meses,
              DATE_FORMAT(d.proxima_actualizacion, '%Y-%m-%d') AS proxima_iso,
              DATE_FORMAT(d.datos_al, '%Y-%m-%d') AS datos_al_iso`;
-
-/**
- * Obtiene color del estado
- */
-const getEstadoColor = (estado) => {
-  const colores = {
-    'actualizado': COLORS.success,
-    'proximo': COLORS.warning,
-    'atrasado': COLORS.danger,
-    'sin-respuesta': COLORS.sinRespuesta,
-    'sin-fecha': COLORS.gray,
-    'eventual': COLORS.gray
-  };
-  return colores[estado] || COLORS.gray;
-};
 
 /**
  * Dibuja el header del PDF
@@ -156,17 +142,6 @@ const drawStatCard = (doc, x, y, label, value, color, width = 120) => {
      .fontSize(9)
      .font('Helvetica')
      .text(label, x + 10, y + 42, { width: width - 20 });
-};
-
-/**
- * Dibuja una fila de tarjetas que ocupa el ancho útil de la hoja (márgenes de 40), con 10 entre una y otra.
- * tarjetas: [{ label, value, color }]
- */
-const drawStatCards = (doc, y, tarjetas) => {
-  const separacion = 10;
-  const ancho = (doc.page.width - 80 - separacion * (tarjetas.length - 1)) / tarjetas.length;
-  tarjetas.forEach(({ label, value, color }, i) =>
-    drawStatCard(doc, 40 + i * (ancho + separacion), y, label, value, color, ancho));
 };
 
 /**
@@ -506,251 +481,55 @@ export const reporteHistorialNotificaciones = async (req, res) => {
 // =====================================================
 // REPORTE: Por Área Específica
 // =====================================================
-
-/**
- * Dibuja una tarjeta de dataset
- */
-const drawDatasetCard = (doc, dataset, startY) => {
-  const cardX = 40;
-  const cardWidth = doc.page.width - 80;
-  const padding = 12;
-  const lineHeight = 14;
-  
-  // Calcular altura necesaria para la descripción (máximo 9 líneas según tu archivo)
-  doc.fontSize(9);
-  const descripcionCorta = dataset.descripcion ? 
-    (dataset.descripcion.length > 500 ? dataset.descripcion.substring(0, 500) + '...' : dataset.descripcion) : 
-    'Sin descripción';
-  const descripcionHeight = doc.heightOfString(descripcionCorta, { width: cardWidth - (padding * 2), lineGap: 2 });
-  const descHeight = Math.min(descripcionHeight, lineHeight * 9); 
-
-  // --- NUEVO: Calcular altura para la URL ---
-  let urlHeight = 0;
-  if (dataset.url_dataset) {
-    // Usamos fontSize 8 y Helvetica para el cálculo, igual que la línea de fechas
-    doc.fontSize(8).font('Helvetica');
-    urlHeight = doc.heightOfString(dataset.url_dataset, { width: cardWidth - (padding * 2) });
-  }
-  
-  // --- MODIFICADO: Altura total sumando la URL y un pequeño espacio (4) si existe ---
-  const extraSpace = dataset.url_dataset ? 4 : 0;
-  const cardHeight = padding + 18 + 14 + descHeight + (dataset.url_dataset ? urlHeight + extraSpace : 0) + 14 + padding;
-  
-  // Verificar salto de página
-  if (startY + cardHeight > doc.page.height - 60) {
-    doc.addPage();
-    startY = 40;
-  }
-  
-  // Fondo de la tarjeta
-  doc.rect(cardX, startY, cardWidth, cardHeight)
-     .fill(COLORS.grayLight);
-  
-  // Barra lateral de color según estado
-  const estadoColor = getEstadoColor(dataset.estado);
-  doc.rect(cardX, startY, 4, cardHeight).fill(estadoColor);
-  
-  let currentY = startY + padding;
-  
-  // Línea 1: Título
-  doc.fillColor(COLORS.grayDark)
-     .fontSize(11)
-     .font('Helvetica-Bold')
-     .text(dataset.titulo, cardX + padding, currentY, { 
-       width: cardWidth - (padding * 2), 
-       lineBreak: false,
-       ellipsis: true 
-     });
-  currentY += 18;
-  
-  // Línea 2: Temas
-  const temas = dataset.tema_secundario_nombre ? 
-    `${dataset.tema_nombre} · ${dataset.tema_secundario_nombre}` : 
-    dataset.tema_nombre;
-  doc.fillColor(COLORS.primary)
-     .fontSize(9)
-     .font('Helvetica')
-     .text(temas, cardX + padding, currentY, { 
-       width: cardWidth - (padding * 2), 
-       lineBreak: false,
-       ellipsis: true 
-     });
-  currentY += 14;
-  
-  // Línea 3: Descripción
-  doc.fillColor(COLORS.gray)
-     .fontSize(9)
-     .font('Helvetica')
-     .text(descripcionCorta, cardX + padding, currentY, { 
-       width: cardWidth - (padding * 2),
-       height: descHeight,
-       ellipsis: true,
-       lineGap: 2
-     });
-  currentY += descHeight + 4;
-
-  // Línea 4: URL
-  if (dataset.url_dataset) {
-    doc.fillColor(COLORS.grayDark) // Mismo color que la línea de fechas
-       .fontSize(8)                // Mismo tamaño que la línea de fechas
-       .font('Helvetica')          // Misma fuente que la línea de fechas
-       .text(dataset.url_dataset, cardX + padding, currentY, { 
-         width: cardWidth - (padding * 2),
-         link: dataset.url_dataset, // Mantiene el link funcional
-         lineBreak: true            // Permite que baje de línea si es larga
-       });
-    currentY += urlHeight + 4; // Añadimos la altura de la URL y el espacio extra
-  }
-  
-  // Línea 5: Fecha y frecuencia
-  const datosAlTexto = `Datos al: ${fechaCorta(dataset.datos_al_iso)}`;
-  const fechaTexto = esFechaIso(dataset.proxima_iso) ? 
-    `Proxima actualizacion: ${fechaCorta(dataset.proxima_iso)}` : 
-    'Sin fecha programada';
-  const frecuenciaTexto = `Frecuencia de actualizacion: ${dataset.frecuencia_nombre}`;
-  
-  doc.fillColor(COLORS.grayDark)
-     .fontSize(8)
-     .font('Helvetica')
-     .text(`${datosAlTexto}     ${fechaTexto}     ${frecuenciaTexto}`, cardX + padding, currentY, { 
-       width: cardWidth - (padding * 2),
-       lineBreak: false 
-     });
-  
-  return startY + cardHeight + 8; // Retorna Y para la siguiente tarjeta
-};
-
-/**
- * Dibuja un grupo de datasets con título de sección
- */
-const drawDatasetGroup = (doc, titulo, datasets, color, startY) => {
-  if (datasets.length === 0) return startY;
-  
-  // Verificar salto de página para el título
-  if (startY + 30 > doc.page.height - 60) {
-    doc.addPage();
-    startY = 40;
-  }
-  
-  // Título de la sección
-  doc.rect(40, startY, 4, 20).fill(color);
-  doc.fillColor(COLORS.grayDark)
-     .fontSize(12)
-     .font('Helvetica-Bold')
-     .text(`${titulo} (${datasets.length})`, 52, startY + 4, { lineBreak: false });
-  
-  startY += 30;
-  
-  // Dibujar cada tarjeta
-  datasets.forEach(dataset => {
-    startY = drawDatasetCard(doc, dataset, startY);
-  });
-  
-  return startY + 10; // Espacio extra entre grupos
-};
-
+// El PDF lo dibuja services/reportesPorAreaPdf.js con la base de los reportes (spec 2026-10-24-metricas-y-reportes, 5): la portada,
+// con el área, sus contactos, las tarjetas y la lista de sus datasets activos por grupo, y detrás la hoja del Seguimiento de cada uno
+// (la de la descarga: seguimientoDe con la cinta del PDF). Acá van las consultas (las fuentes del Seguimiento, en una sola llamada con
+// todos los ids), el estado de cada dataset y el pie, con el nombre corto de quien lo pide y la hora argentina (un solo instante para
+// el pie y para "hoy"). Los dados de baja no van: ni en la lista ni con una hoja.
 export const reportePorArea = async (req, res) => {
   try {
     const { areaId } = req.params;
-    
+
     // Obtener área
     const [areas] = await pool.execute('SELECT * FROM areas WHERE id = ?', [areaId]);
     if (areas.length === 0) {
       return res.status(404).json({ success: false, error: 'Área no encontrada' });
     }
     const area = areas[0];
-    
-    // Obtener datasets del área con tema secundario
+
+    // Los datasets activos del área, por próxima (y por título, los que no tienen): el orden dentro de cada grupo de la portada y
+    // de las hojas
     const [datasets] = await pool.execute(`
-      SELECT d.*, f.nombre AS frecuencia_nombre, f.dias AS frecuencia_dias,
-             ${COLUMNAS_FECHAS},
-             t1.nombre AS tema_nombre, t2.nombre AS tema_secundario_nombre
+      SELECT d.id, d.titulo, d.tipo_gestion, ${COLUMNAS_FECHAS}
       FROM datasets d
       JOIN frecuencias f ON d.frecuencia_id = f.id
-      JOIN temas t1 ON d.tema_principal_id = t1.id
-      LEFT JOIN temas t2 ON d.tema_secundario_id = t2.id
       WHERE d.area_id = ? AND d.activo = TRUE
-      ORDER BY d.proxima_actualizacion ASC
-    `, [areaId]);
-    
-    // Calcular estadísticas y agrupar por estado. Los eventuales van en su grupo, aparte de los actualizados, y los sin
-    // fecha en el suyo, aparte de los vencidos (atrasados y sin respuesta)
-    const hoy = hoyArgentina();
-    const stats = { total: datasets.length, actualizados: 0, proximos: 0, vencidos: 0, eventuales: 0, sinFecha: 0 };
-    const grupos = { actualizados: [], proximos: [], vencidos: [], eventuales: [], sinFecha: [] };
-    
-    datasets.forEach(d => {
-      const estado = estadoDeLaFila(d, hoy);
-      d.estado = estado;
-      
-      if (estado === 'actualizado') {
-        stats.actualizados++;
-        grupos.actualizados.push(d);
-      } else if (estado === 'proximo') {
-        stats.proximos++;
-        grupos.proximos.push(d);
-      } else if (estado === 'eventual') {
-        stats.eventuales++;
-        grupos.eventuales.push(d);
-      } else if (estado === 'sin-fecha') {
-        stats.sinFecha++;
-        grupos.sinFecha.push(d);
-      } else {
-        stats.vencidos++;
-        grupos.vencidos.push(d);
-      }
-    });
-    
-    // Crear PDF
-    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=reporte-area-${areaId}-${formatDate(new Date()).replace(/\//g, '-')}.pdf`);
-    
-    doc.pipe(res);
-    
-    // Header
-    drawHeader(doc, 'Reporte por Área', area.nombre);
-    
-    // Información del área
-    doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.grayDark).text('Datos del Área', 40, doc.y + 10);
-    doc.y += 20;
-    doc.fontSize(10).font('Helvetica');
-    if (area.area_superior) doc.text(`Área Superior: ${area.area_superior}`, 40, doc.y); doc.y += 15;
-    if (area.email_principal) doc.text(`Email: ${area.email_principal}`, 40, doc.y); doc.y += 15;
-    if (area.nombre_contacto) doc.text(`Contacto: ${area.nombre_contacto}`, 40, doc.y); doc.y += 15;
-    
-    doc.y += 15;
-    
-    // Estadísticas. Con los sin fecha (que se aclaran debajo), las tarjetas suman el total
-    const statsY = doc.y;
-    drawStatCards(doc, statsY, [
-      { label: 'Total Datasets', value: stats.total, color: COLORS.primary },
-      { label: 'Actualizados', value: stats.actualizados, color: COLORS.success },
-      { label: 'Próximos', value: stats.proximos, color: COLORS.warning },
-      { label: 'Vencidos', value: stats.vencidos, color: COLORS.danger },
-      { label: 'Eventuales', value: stats.eventuales, color: COLORS.gray }
+      ORDER BY d.proxima_actualizacion ASC, d.titulo ASC
+    `, [area.id]);
+    const momento = ahoraArgentina();
+    const hoy = momento.slice(0, 10);
+    const [[[usuario]], fuentes] = await Promise.all([
+      pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
+      fuentesDe(datasets.map(d => d.id))
     ]);
-    
-    if (stats.sinFecha > 0) {
-      doc.fontSize(9).font('Helvetica').fillColor(COLORS.gray)
-         .text(`${textoSinFecha(stats.sinFecha)}.`, 40, statsY + 68);
-    }
-    
-    let currentY = statsY + 90;
-    
-    // Dibujar grupos de datasets como tarjetas
-    currentY = drawDatasetGroup(doc, 'Vencidos', grupos.vencidos, COLORS.danger, currentY);
-    currentY = drawDatasetGroup(doc, 'Próximos a vencer', grupos.proximos, COLORS.warning, currentY);
-    currentY = drawDatasetGroup(doc, 'Actualizados', grupos.actualizados, COLORS.success, currentY);
-    currentY = drawDatasetGroup(doc, 'Eventuales', grupos.eventuales, COLORS.gray, currentY);
-    currentY = drawDatasetGroup(doc, 'Sin fecha', grupos.sinFecha, COLORS.gray, currentY);
-    
-    // Footer
-    drawAllFooters(doc);
-    
-    doc.end();
-    
+
+    // Un dataset sin sus fuentes queda sin Seguimiento: el dibujante no saca un reporte con hojas de menos (tira error: 500)
+    const pdf = await renderPorArea({
+      area,
+      datasets: datasets.map(d => ({
+        titulo: d.titulo,
+        datos_al: d.datos_al_iso,
+        proxima: d.proxima_iso,
+        estado: estadoDeLaFila(d, hoy),
+        activo: true,
+        seguimiento: fuentes.has(d.id) ? seguimientoDe(fuentes.get(d.id), hoy, OPCIONES_CINTA_PDF) : null
+      }))
+    }, { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    // La fecha de hoy en Argentina, la del PDF (no la del reloj del servidor)
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(`Reporte-area-${area.id}-${hoy}.pdf`));
+    res.send(pdf);
   } catch (error) {
     console.error('Error generando reporte:', error);
     res.status(500).json({ success: false, error: error.message });

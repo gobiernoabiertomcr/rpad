@@ -1,11 +1,12 @@
 // Estados y tasa de actualización en el servidor (spec 2026-10-17-fechas-datasets, sección 11 y Ruling 22): un solo cálculo
 // de estado (estadoDelDataset) para el listado, las estadísticas y los reportes PDF; los eventuales van aparte y no entran en
 // la tasa del tablero, del Estado General ni del Cumplimiento (los tres dan el mismo número); los PDF suman "Datos al" donde
-// listan la próxima. Contra una base de prueba propia, con un set controlado.
+// listan la próxima, y el Por área suma una hoja del Seguimiento por dataset activo. Contra una base de prueba propia, con un set
+// controlado.
 // El servidor usa siempre el hoy real (hoyArgentina): todas las fechas salen de hoy.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb } from './helpers.js';
+import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { crearArea, crearDataset } from './notas-fixtures.js';
 import { lineasPorHoja } from './pdf-lector.js';
 import { formatoCorto, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -244,39 +245,82 @@ describe('reporte PDF de estado general', () => {
   });
 });
 
+// El reporte por área (spec 2026-10-24-metricas-y-reportes, 5): la portada, con un renglón por dataset en su grupo («Título · Datos al:
+// dd/mm/aaaa · Próxima: dd/mm/aaaa»), y detrás una hoja del Seguimiento por cada dataset activo. El área A tiene siete activos y uno
+// dado de baja.
 describe('reporte PDF por área', () => {
-  let lineas;
-  before(async () => { lineas = await lineasDe(`/reportes/por-area/${areas.A}`); });
+  let res, hojas, portada, lineas;
+  before(async () => {
+    res = await api.get(`/reportes/por-area/${areas.A}`, admin());
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/pdf/);
+    hojas = lineasPorHoja(res.body);
+    [portada] = hojas;
+    lineas = hojas.flat();
+  });
+  // La lista de la portada, y el orden de las hojas: los vencidos, el próximo, los actualizados y los eventuales; en cada grupo, por
+  // próxima (los eventuales, sin próxima, por título)
+  const ORDEN = ['sinresp1', 'atras1', 'prox1', 'act2', 'act1', 'ev1', 'ev2'];
+  const renglonDe = (clave) => `${titulo(clave)} · Datos al: ${SET[clave].datosAl ? formatoCorto(SET[clave].datosAl) : '—'} · Próxima: ${SET[clave].vencimiento ? formatoCorto(SET[clave].vencimiento) : '—'}`;
 
-  it('cada tarjeta trae "Datos al" junto a la próxima', async () => {
-    assert.ok(lineas.includes(`Datos al: ${formatoCorto(SET.act1.datosAl)} Proxima actualizacion: ${formatoCorto(SET.act1.vencimiento)} Frecuencia de actualizacion: Anualmente`));
-    // Sin "Datos al" sale con el guion largo
-    assert.ok(lineas.includes(`Datos al: — Proxima actualizacion: ${formatoCorto(SET.sinresp1.vencimiento)} Frecuencia de actualizacion: Mensualmente`));
+  it('1 portada + N hojas, una por dataset activo; uno dado de baja no tiene hoja', () => {
+    assert.equal(hojas.length, 1 + 7);
+    // Cada hoja, la del Seguimiento de su dataset, en el orden de la lista
+    ORDEN.forEach((clave, k) => {
+      const hoja = hojas[k + 1];
+      assert.ok(hoja.includes('Seguimiento del dataset') && hoja.includes(titulo(clave)), `hoja ${k + 2}: ${hoja.join(' | ')}`);
+      assert.deepEqual(ORDEN.filter(otra => hoja.includes(titulo(otra))), [clave], `hoja ${k + 2}`);
+    });
+    // El dado de baja no está ni en la portada ni en una hoja
+    assert.ok(!lineas.some(l => l.includes(titulo('baja'))));
   });
 
-  it('los eventuales van en su grupo, no entre los vencidos ni los actualizados', async () => {
-    assert.ok(lineas.includes('Actualizados (2)'));
-    assert.ok(lineas.includes('Próximos a vencer (1)'));
-    assert.ok(lineas.includes('Vencidos (2)'));
-    assert.ok(lineas.includes('Eventuales (2)'));
-    assert.equal(valorDeTarjeta(lineas, 'Actualizados'), '2');
-    assert.equal(valorDeTarjeta(lineas, 'Vencidos'), '2');
+  it('el pie dice «Reporte por área · Hoja k de N» en todas, con quién lo generó', () => {
+    hojas.forEach((hoja, k) => {
+      assert.ok(hoja.includes(`Reporte por área · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${hoja.join(' | ')}`);
+      assert.ok(hoja.some(l => /^Generado el \d{2}\/\d{2}\/\d{4} a las \d{2}:\d{2} por Test admin$/.test(l)), `hoja ${k + 1}`);
+    });
   });
 
-  it('un eventual dice que no tiene fecha programada', async () => {
-    assert.ok(lineas.includes('Datos al: — Sin fecha programada Frecuencia de actualizacion: Eventual'));
-  });
-
-  it('los eventuales tienen su tarjeta, y sin datasets sin fecha no hay aclaración', async () => {
-    assert.equal(valorDeTarjeta(lineas, 'Eventuales'), '2');
+  it('la portada agrupa como antes: los eventuales van en su grupo, no entre los vencidos ni los actualizados', () => {
+    assert.ok(portada.includes('Actualizados (2)'));
+    assert.ok(portada.includes('Próximos a vencer (1)'));
+    assert.ok(portada.includes('Vencidos (2)'));
+    assert.ok(portada.includes('Eventuales (2)'));
+    assert.equal(valorDeTarjeta(portada, 'Total Datasets'), '7');
+    assert.equal(valorDeTarjeta(portada, 'Actualizados'), '2');
+    assert.equal(valorDeTarjeta(portada, 'Próximos'), '1');
+    assert.equal(valorDeTarjeta(portada, 'Vencidos'), '2');
+    assert.equal(valorDeTarjeta(portada, 'Eventuales'), '2');
+    // Sin datasets sin fecha no hay aclaración
     assert.ok(!lineas.some(l => /todavía no tiene/.test(l)));
+  });
+
+  it('cada renglón trae "Datos al" junto a la próxima, dd/mm/aaaa, cortadas del texto, en el orden de la lista', () => {
+    assert.ok(portada.includes(`Dataset act1 · Datos al: ${formatoCorto(SET.act1.datosAl)} · Próxima: ${formatoCorto(SET.act1.vencimiento)}`), portada.join(' | '));
+    // Sin "Datos al" sale con el guion largo, y un eventual, sin próxima
+    assert.ok(portada.includes(`Dataset sinresp1 · Datos al: — · Próxima: ${formatoCorto(SET.sinresp1.vencimiento)}`));
+    assert.ok(portada.includes('Dataset ev1 · Datos al: — · Próxima: —'));
+    const posiciones = ORDEN.map(clave => portada.indexOf(renglonDe(clave)));
+    assert.ok(posiciones.every(p => p !== -1), JSON.stringify(posiciones));
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+  });
+
+  it('el archivo se llama Reporte-area-<id>-AAAA-MM-DD.pdf, con la fecha de hoy en Argentina', () => {
+    const nombre = `Reporte-area-${areas.A}-${HOY}.pdf`;
+    assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`);
   });
 });
 
 describe('reporte PDF por área: los sin fecha van en su grupo, no entre los vencidos', () => {
   // Área B: un actualizado (act3) y un mensual sin próxima (sinfecha1)
-  let lineas;
-  before(async () => { lineas = await lineasDe(`/reportes/por-area/${areas.B}`); });
+  let hojas, lineas;
+  before(async () => {
+    const res = await api.get(`/reportes/por-area/${areas.B}`, admin());
+    assert.equal(res.status, 200);
+    hojas = lineasPorHoja(res.body);
+    [lineas] = hojas;
+  });
 
   it('no cuentan como vencidos', async () => {
     assert.equal(valorDeTarjeta(lineas, 'Total Datasets'), '2');
@@ -290,7 +334,23 @@ describe('reporte PDF por área: los sin fecha van en su grupo, no entre los ven
     assert.ok(lineas.includes('Sin fecha (1)'));
     assert.ok(lineas.indexOf('Actualizados (1)') < lineas.indexOf('Sin fecha (1)'));
     assert.ok(lineas.includes('1 dataset todavía no tiene fecha de próxima actualización.'));
-    assert.ok(lineas.includes('Datos al: — Sin fecha programada Frecuencia de actualizacion: Mensualmente'));
+    assert.ok(lineas.indexOf('Sin fecha (1)') < lineas.indexOf('Dataset sinfecha1 · Datos al: — · Próxima: —'));
+  });
+
+  it('el sin fecha también tiene su hoja del Seguimiento, la última', () => {
+    assert.equal(hojas.length, 1 + 2);
+    assert.ok(hojas[1].includes(titulo('act3')) && hojas[2].includes(titulo('sinfecha1')), hojas.slice(1).map(h => h.join(' | ')).join(' || '));
+  });
+});
+
+describe('reporte PDF por área: un área que no existe', () => {
+  it('área inexistente: 404 «Área no encontrada»', async () => {
+    const [{ maximo }] = await query('SELECT COALESCE(MAX(id), 0) AS maximo FROM areas');
+    for (const id of [maximo + 1000, 'abc']) {
+      const res = await api.get(`/reportes/por-area/${id}`, admin());
+      assert.equal(res.status, 404, String(id));
+      assert.deepEqual(res.body, { success: false, error: 'Área no encontrada' });
+    }
   });
 });
 

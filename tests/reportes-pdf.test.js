@@ -1,15 +1,17 @@
 // Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
-// Estado general de los datasets y Métricas del año. Puro: los datos se arman acá, sin base de datos (los textos del reporte servido
-// por la API, con el set controlado, están en estados-api.test.js, reportes.test.js y metricas-api.test.js).
+// Estado general de los datasets, Métricas del año y Por área. Puro: los datos se arman acá, sin base de datos (los textos del reporte
+// servido por la API, con el set controlado, están en estados-api.test.js, reportes.test.js y metricas-api.test.js).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarPildora, prepararTabla, LIMITE, ENTRE, lugarPara, dibujarJuntos, prepararTitulo,
-  prepararPildora, prepararTarjetas, prepararRecuadro, prepararParrafo, prepararSeccion, ANCHO_DEL_RECUADRO
+  prepararPildora, prepararTarjetas, prepararRecuadro, prepararParrafo, prepararSeccion, ANCHO_DEL_RECUADRO, hojasDe
 } from '../services/reportesPdfBase.js';
 import { renderSeguimiento, OPCIONES_CINTA_PDF, ALTO_DE_LA_CABEZA_DE_SECCION } from '../services/seguimientoPdf.js';
 import { renderMetricasDelAnio, textoDeLaPildora } from '../services/reportesMetricasPdf.js';
+import { renderPorArea } from '../services/reportesPorAreaPdf.js';
+import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
 import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
@@ -238,6 +240,24 @@ describe('la base de los reportes', () => {
     assert.deepEqual(hojas[1], []);
     assert.ok(hojas[2].includes('Prueba · Hoja 3 de 3'), hojas[2].join(' | '));
     assert.ok(todasDelTamano(pdf, HOJA_A4));
+  });
+
+  it('hojasDe cuenta las hojas del documento hasta ahora: las de agregarHoja y las que dibujó otro', async () => {
+    const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+    assert.equal(hojasDe(doc), 0);
+    hojaDePrueba(doc);
+    assert.equal(hojasDe(doc), 1);
+    // Una hoja que dibuja otro (como las del Seguimiento en el reporte por área)
+    doc.addPage();
+    assert.equal(hojasDe(doc), 2);
+    // lugarPara también agrega hojas, cuando lo que sigue no entra
+    lugarPara(doc, LIMITE - 1, 100);
+    assert.equal(hojasDe(doc), 3);
+    hojaDePrueba(doc);
+    assert.equal(hojasDe(doc), 4);
+    const hojas = lineasPorHoja(await cerrarReporte(doc, { generado: GENERADO, pieDe: PIE }));
+    assert.equal(hojas.length, 4);
+    assert.ok(hojas[3].includes('Prueba · Hoja 4 de 4'), hojas[3].join(' | '));
   });
 
   it('un reporte sin hojas no se cierra', async () => {
@@ -667,6 +687,180 @@ describe('Métricas del año con el diseño del anexo', () => {
       hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Métricas del RPAD · 2026 · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
       // Nada dice NaN, null ni undefined
       assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().filter(l => /NaN|null|undefined/.test(l)).join(' | '));
+    });
+  }
+});
+
+// =====================================================
+// Por área (spec 2026-10-24-metricas-y-reportes, 5: la portada y detrás una hoja del Seguimiento por cada dataset activo)
+// =====================================================
+
+const HOY_AREA = HOY_DE_LOS_CASOS;
+const GENERADO_AREA = { momento: '2026-10-20 15:22:07', por: 'Usuario Ejemplo' };
+const AREA = {
+  id: 34, nombre: 'Secretaría de Economía, Finanzas y Control de Gestión', area_superior: 'Intendencia',
+  email_principal: 'economia@ejemplo.test', nombre_contacto: 'Persona de Contacto'
+};
+// Un dataset de la portada, de un caso real (tests/seguimiento-casos.js), con su estado (estadoDelDataset, como el controlador) y su
+// Seguimiento (el de la descarga: seguimientoDe con la cinta del PDF). `cambios` cambia campos del dataset antes de calcularlos.
+const delCaso = (id, cambios = {}) => {
+  const dataset = { ...CASOS[id].dataset, ...cambios };
+  return {
+    titulo: dataset.titulo, datos_al: dataset.datos_al, proxima: dataset.proxima, activo: dataset.activo,
+    estado: estadoDelDataset({ proxima: dataset.proxima, meses: dataset.meses, tipoGestion: dataset.tipo_gestion, hoy: HOY_AREA }).estado,
+    seguimiento: seguimientoDe({ ...CASOS[id], dataset, catalogos: CATALOGOS }, HOY_AREA, OPCIONES_CINTA_PDF)
+  };
+};
+const renderArea = (datasets, area = AREA) => renderPorArea({ area, datasets }, { hoy: HOY_AREA, generado: GENERADO_AREA });
+const ddmmaaaa = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
+const renglonDe = (d) => `${d.titulo} · Datos al: ${ddmmaaaa(d.datos_al)} · Próxima: ${ddmmaaaa(d.proxima)}`;
+
+// Nueve casos, uno o más de cada estado, en el orden en que los manda el controlador (por próxima): el 52 y el 61, vencidos (sin
+// respuesta), y el 26, vencido (atrasado: gestión interna); el 58 y el 81, próximos a vencer; el 9 y el 38, actualizados; el 66,
+// eventual; y el 33 sin próxima, sin fecha
+const nueve = () => [delCaso(9), delCaso(66), delCaso(52), delCaso(33, { proxima: null }), delCaso(58), delCaso(26), delCaso(38),
+  delCaso(81), delCaso(61)];
+// El orden de la lista de la portada (y de las hojas): Vencidos, Próximos a vencer, Actualizados, Eventuales y Sin fecha; en cada grupo,
+// en el orden en que llegan
+const ORDEN_DE_NUEVE = [52, 26, 61, 58, 81, 9, 38, 66, 33];
+// La Pauta Publicitaria (10, actualizada) dada de baja
+const deBaja = () => delCaso(10, { activo: false });
+// Muchos datasets con títulos larguísimos (cada renglón de la portada, en tres líneas): la portada ocupa dos hojas
+const TITULO_LARGUISIMO = 'relevamiento de espacios reservados para estacionamiento de motos y bicicletas en la vía pública '.repeat(3).slice(0, 230).trim();
+const largos = (n) => Array.from({ length: n }, (_, i) => delCaso(ORDEN_DE_NUEVE[i % ORDEN_DE_NUEVE.length], {
+  titulo: `Dataset ${String(i + 1).padStart(2, '0')}: ${TITULO_LARGUISIMO}`
+}));
+
+describe('Por área: la portada y una hoja del Seguimiento por dataset activo', () => {
+  it('1 portada + N hojas, una por dataset activo; uno dado de baja no tiene hoja', async () => {
+    const datasets = [...nueve(), deBaja()];
+    const pdf = await renderArea(datasets);
+    assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+    const hojas = lineasPorHoja(pdf);
+    // La portada (una hoja) y las 9 de los activos: la Pauta Publicitaria va en la lista, pero no tiene hoja
+    assert.equal(hojas.length, 1 + 9);
+    assert.ok(hojas[0].includes(renglonDe(datasets[9])), hojas[0].join(' | '));
+    assert.ok(hojas.slice(1).every(lineas => !lineas.join(' ').includes('Pauta Publicitaria')));
+    // Cada hoja, la del Seguimiento de su dataset, en el orden de la lista de la portada
+    ORDEN_DE_NUEVE.forEach((id, k) => {
+      const lineas = hojas[k + 1];
+      assert.ok(lineas.join(' ').includes(CASOS[id].dataset.titulo), `la hoja ${k + 2} no es la de ${id}: ${lineas.join(' | ')}`);
+      assert.ok(lineas.includes('Seguimiento del dataset') && lineas.includes('AVISOS DEL CICLO ABIERTO'), lineas.join(' | '));
+    });
+    // La portada no es una hoja del Seguimiento
+    assert.ok(!hojas[0].includes('Seguimiento del dataset') && hojas[0].includes('Reporte por área'), hojas[0].join(' | '));
+  });
+
+  it('cada hoja es la de la descarga del Seguimiento, salvo el pie', async () => {
+    const dataset = delCaso(52);
+    const [, enElReporte] = lineasPorHoja(await renderArea([dataset]));
+    const sola = lineasPorHoja(await renderSeguimiento(dataset.seguimiento, { hoy: HOY_AREA, generado: GENERADO_AREA }))[0];
+    assert.deepEqual(sola.filter(l => !enElReporte.includes(l)), ['Seguimiento del dataset · Hoja 1 de 1']);
+    assert.deepEqual(enElReporte.filter(l => !sola.includes(l)), ['Reporte por área · Hoja 2 de 2']);
+  });
+
+  it('el pie dice «Reporte por área · Hoja k de N» en todas, con una portada de 1 hoja y con una de 2', async () => {
+    for (const [datasets, hojasDeLaPortada] of [[[...nueve(), deBaja()], 1], [largos(16), 2]]) {
+      const hojas = lineasPorHoja(await renderArea(datasets));
+      const activos = datasets.filter(d => d.activo !== false).length;
+      assert.equal(hojas.length, hojasDeLaPortada + activos);
+      hojas.forEach((lineas, k) => {
+        assert.ok(lineas.includes(`Reporte por área · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
+        assert.ok(lineas.includes('Generado el 20/10/2026 a las 15:22 por Usuario Ejemplo'), `hoja ${k + 1}`);
+        // Un solo pie por hoja
+        assert.equal(lineas.filter(l => /· Hoja \d+ de \d+$/.test(l)).length, 1, `hoja ${k + 1}: ${lineas.join(' | ')}`);
+        // Las de la portada llevan el encabezado del reporte; las demás, el del Seguimiento
+        const delSeguimiento = k >= hojasDeLaPortada;
+        assert.equal(lineas.includes('Seguimiento del dataset'), delSeguimiento, `hoja ${k + 1}: ${lineas.join(' | ')}`);
+        assert.equal(lineas.includes('Reporte por área'), !delSeguimiento, `hoja ${k + 1}`);
+      });
+    }
+  });
+
+  it('la portada agrupa como antes: el área y sus contactos, las cinco tarjetas y un renglón por dataset en su grupo', async () => {
+    const datasets = nueve();
+    const portada = lineasPorHoja(await renderArea(datasets))[0];
+    const texto = portada.join(' ');
+    // El rótulo, el área y sus contactos (los de la tabla areas)
+    assert.ok(portada.includes('REPORTE POR ÁREA · AL 20/10/2026'), portada.join(' | '));
+    assert.ok(texto.includes('Secretaría de Economía, Finanzas y Control de Gestión'));
+    for (const t of ['Intendencia', 'economia@ejemplo.test', 'Persona de Contacto']) assert.ok(portada.includes(t), `falta "${t}"`);
+    // Las cinco tarjetas: con los sin fecha (que se aclaran debajo), suman el total
+    assert.equal(valorDeTarjeta(portada, 'Total Datasets'), '9');
+    assert.equal(valorDeTarjeta(portada, 'Actualizados'), '2');
+    assert.equal(valorDeTarjeta(portada, 'Próximos'), '2');
+    assert.equal(valorDeTarjeta(portada, 'Vencidos'), '3');
+    assert.equal(valorDeTarjeta(portada, 'Eventuales'), '1');
+    assert.ok(portada.includes('1 dataset todavía no tiene fecha de próxima actualización.'), portada.join(' | '));
+    // Los grupos, en este orden, y los sin fecha al final, nunca entre los vencidos
+    const grupos = ['Vencidos (3)', 'Próximos a vencer (2)', 'Actualizados (2)', 'Eventuales (1)', 'Sin fecha (1)'];
+    const posiciones = grupos.map(g => portada.indexOf(g));
+    assert.ok(posiciones.every(p => p !== -1), JSON.stringify(Object.fromEntries(grupos.map((g, i) => [g, posiciones[i]]))));
+    assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones);
+    // Un renglón por dataset, «Título · Datos al: dd/mm/aaaa · Próxima: dd/mm/aaaa», debajo de su grupo y en el orden de la lista
+    const renglones = ORDEN_DE_NUEVE.map(id => portada.indexOf(renglonDe(datasets.find(d => d.titulo === CASOS[id].dataset.titulo))));
+    assert.ok(renglones.every(r => r !== -1), JSON.stringify(renglones));
+    assert.deepEqual([...renglones].sort((a, b) => a - b), renglones);
+    const grupoDe = (renglon) => grupos[posiciones.filter(p => p < renglon).length - 1];
+    assert.deepEqual(renglones.map(grupoDe), [grupos[0], grupos[0], grupos[0], grupos[1], grupos[1], grupos[2], grupos[2], grupos[3], grupos[4]]);
+    // Los textos exactos: sin «Datos al» o sin próxima, con el guion largo
+    for (const t of ['Directores Generales de Planta Permanente · Datos al: 31/12/2025 · Próxima: 31/07/2026',
+      'Áreas específicas de género · Datos al: 31/10/2025 · Próxima: 30/11/2026',
+      'Barrios de Comodoro Rivadavia · Datos al: 30/06/2026 · Próxima: —',
+      'Listado de Proveedores · Datos al: 30/06/2025 · Próxima: —']) {
+      assert.ok(portada.includes(t), `falta "${t}" en ${portada.join(' | ')}`);
+    }
+    const sinDatosAl = lineasPorHoja(await renderArea([delCaso(58, { datos_al: null })]))[0];
+    assert.ok(sinDatosAl.includes('Áreas específicas de género · Datos al: — · Próxima: 30/11/2026'), sinDatosAl.join(' | '));
+  });
+
+  it('un grupo que sigue en otra hoja repite su cabeza arriba; ningún renglón se parte entre dos hojas', async () => {
+    // 20 vencidos con títulos larguísimos: el grupo ocupa las dos hojas de la portada
+    const vencidos = largos(20).map(d => ({ ...d, estado: 'sin-respuesta' }));
+    const hojas = lineasPorHoja(await renderArea(vencidos));
+    assert.equal(hojas.length, 2 + 20);
+    for (const portada of hojas.slice(0, 2)) assert.ok(portada.includes('Vencidos (20)'), portada.join(' | '));
+    // Cada renglón, entero en una hoja: el título arriba y la próxima en la misma hoja (y cada uno una sola vez)
+    const enLaPortada = hojas.slice(0, 2).map(lineas => lineas.join(' '));
+    vencidos.forEach((d, i) => {
+      const enLaHoja = enLaPortada.filter(texto => texto.includes(`Dataset ${String(i + 1).padStart(2, '0')}: `));
+      assert.equal(enLaHoja.length, 1, d.titulo);
+      assert.ok(enLaHoja[0].includes(renglonDe(d).slice(-40)), d.titulo);
+    });
+  });
+
+  it('un grupo sin datasets no va, y sin sin fecha no hay aclaración', async () => {
+    const portada = lineasPorHoja(await renderArea([delCaso(9), delCaso(58)]))[0];
+    assert.ok(portada.includes('Próximos a vencer (1)') && portada.includes('Actualizados (1)'), portada.join(' | '));
+    for (const grupo of ['Vencidos (', 'Eventuales (', 'Sin fecha (']) assert.ok(!portada.some(l => l.startsWith(grupo)), grupo);
+    assert.equal(valorDeTarjeta(portada, 'Vencidos'), '0');
+    assert.ok(!portada.some(l => /todavía no tiene/.test(l)));
+  });
+
+  it('un área sin datasets activos: la portada sola, con las tarjetas en 0; sin contactos cargados, no van', async () => {
+    const hojas = lineasPorHoja(await renderArea([], { id: 7, nombre: 'Área sin datasets' }));
+    assert.equal(hojas.length, 1);
+    assert.ok(hojas[0].includes('Reporte por área · Hoja 1 de 1'));
+    assert.equal(valorDeTarjeta(hojas[0], 'Total Datasets'), '0');
+    assert.ok(!hojas[0].some(l => /null|undefined/.test(l)), hojas[0].join(' | '));
+  });
+
+  it('a un dataset activo le falta su Seguimiento: tira error, no sale un PDF con hojas de menos', async () => {
+    await assert.rejects(renderArea([delCaso(9), { ...delCaso(52), seguimiento: null }]), /Seguimiento/);
+    // Uno dado de baja no lo necesita
+    const hojas = lineasPorHoja(await renderArea([delCaso(9), { ...deBaja(), seguimiento: null }]));
+    assert.equal(hojas.length, 2);
+  });
+
+  const casos = [
+    ['nueve casos y uno dado de baja (la portada en una hoja)', () => [...nueve(), deBaja()]],
+    ['16 títulos larguísimos (la portada en dos hojas)', () => largos(16)],
+    ['un área sin datasets', () => []]
+  ];
+  for (const [titulo, armar] of casos) {
+    it(`nada se pisa: ${titulo}`, async () => {
+      const datasets = armar();
+      verificarDiagramacion(await diagramacion(() => renderArea(datasets)));
     });
   }
 });

@@ -48,10 +48,11 @@ describe('reportes PDF', () => {
 
 // Spec 2026-10-17-fechas-datasets, sección 11: donde un PDF lista la próxima, suma "Datos al" (con datos de los 80 datasets
 // reales; el set controlado con los valores exactos está en estados-api.test.js)
-// El nombre del archivo del Estado general lleva la fecha de hoy en Argentina, la misma del PDF, no la del reloj del servidor (en un
-// servidor en UTC, después de las 21 decía mañana). El servidor de prueba corre en una zona en la que ahora es otro día que en Argentina:
-// UTC-12 (9 horas antes; hasta las 9 de la mañana de Argentina es ayer) o UTC+14 (17 horas después; desde las 7 ya es mañana)
-describe('reportes PDF: el nombre del Estado general', () => {
+// El nombre del archivo del Estado general (y del Por área) lleva la fecha de hoy en Argentina, la misma del PDF, no la del reloj del
+// servidor (en un servidor en UTC, después de las 21 decía mañana). El servidor de prueba corre en una zona en la que ahora es otro día
+// que en Argentina: UTC-12 (9 horas antes; hasta las 9 de la mañana de Argentina es ayer) o UTC+14 (17 horas después; desde las 7 ya
+// es mañana)
+describe('reportes PDF: el nombre del Estado general y del Por área', () => {
   it('lleva la fecha de hoy en Argentina, con el formato de siempre (estado-general-dd-mm-aaaa.pdf)', async () => {
     const hoy = hoyArgentina();
     const fechaEn = (zona) => new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -61,6 +62,22 @@ describe('reportes PDF: el nombre del Estado general', () => {
       const res = await crearCliente(otro.url).get('/reportes/estado-general', { token: usuarios.lector.token });
       esPdf(res);
       assert.equal(res.headers.get('content-disposition'), `attachment; filename=estado-general-${formatoCorto(hoyArgentina()).replace(/\//g, '-')}.pdf`);
+    } finally {
+      await otro.detener();
+    }
+  });
+
+  it('el del Por área también: Reporte-area-<id>-AAAA-MM-DD.pdf, con la fecha de hoy en Argentina', async () => {
+    const hoy = hoyArgentina();
+    const fechaEn = (zona) => new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const zona = ['Etc/GMT+12', 'Etc/GMT-14'].find((z) => fechaEn(z) !== hoy);
+    const [area] = await query('SELECT area_id AS id FROM datasets WHERE activo = 1 LIMIT 1');
+    const otro = await iniciarServidor({ env: { TZ: zona } });
+    try {
+      const res = await crearCliente(otro.url).get(`/reportes/por-area/${area.id}`, { token: usuarios.lector.token });
+      esPdf(res);
+      const nombre = `Reporte-area-${area.id}-${hoyArgentina()}.pdf`;
+      assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`);
     } finally {
       await otro.detener();
     }
@@ -78,11 +95,16 @@ describe('reportes PDF: "Datos al"', () => {
     assert.ok(lineas.some(l => /^\d{2}\/\d{2}\/\d{4}$/.test(l)));
   });
 
-  it('el reporte por área trae "Datos al" en cada tarjeta', async () => {
+  it('el reporte por área trae "Datos al" en el renglón de cada dataset, y detrás una hoja del Seguimiento por cada activo', async () => {
     const [{ id }] = await query('SELECT area_id AS id FROM datasets WHERE activo = 1 AND datos_al IS NOT NULL LIMIT 1');
+    const [{ activos }] = await query('SELECT COUNT(*) AS activos FROM datasets WHERE activo = 1 AND area_id = ?', [id]);
     const res = await api.get(`/reportes/por-area/${id}`, { token: usuarios.adminA.token });
     esPdf(res);
-    assert.ok(lineasPorHoja(res.body).flat().some(l => /^Datos al: \d{2}\/\d{2}\/\d{4} /.test(l)));
+    const hojas = lineasPorHoja(res.body);
+    assert.ok(hojas[0].some(l => / · Datos al: \d{2}\/\d{2}\/\d{4} · Próxima: (\d{2}\/\d{2}\/\d{4}|—)$/.test(l)), hojas[0].join(' | '));
+    // La portada (con estos datos, en una hoja) y una hoja del Seguimiento por cada dataset activo del área
+    assert.equal(hojas.filter(lineas => lineas.includes('Seguimiento del dataset')).length, Number(activos));
+    hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Reporte por área · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
   });
 });
 

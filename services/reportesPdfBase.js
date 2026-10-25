@@ -12,7 +12,8 @@
 //   return cerrarReporte(doc, { generado, pieDe: (k, n) => `Estado general · Hoja ${k} de ${n}` });
 // Cada dibujante recibe la y donde empieza (desde el borde superior, en puntos) y devuelve la y donde puede empezar lo que sigue, con
 // el aire de la base (ENTRE) debajo. Nada pasa de LIMITE, el aire sobre la línea del pie: el pie se dibuja al cerrar, cuando ya se
-// sabe cuántas hojas hay.
+// sabe cuántas hojas hay. Un reporte puede sumar hojas que dibuja otro, con su propio pie (el Por área, las del Seguimiento): las
+// numera con hojasDe, que cuenta las hojas del documento hasta ahora.
 // Lo que no es una tabla se mide antes de dibujarlo (Ruling 22: que nada pise el pie ni deje un título solo al final de una hoja):
 // cada prepararX devuelve { alto, dibujar(y) → y }, con el alto que va a ocupar (sin el aire de abajo), y
 //   y = lugarPara(doc, y, alto);                       // si no entra antes de LIMITE, una hoja nueva con el mismo encabezado
@@ -126,6 +127,11 @@ export const agregarHoja = (doc, { derecha, fecha }) => {
   reporte.tope = dibujarEncabezado(doc, fecha, derecha) + BAJO_ENCABEZADO;
   return reporte.tope;
 };
+
+// Cuántas hojas tiene el documento hasta ahora: las que agregó agregarHoja (o lugarPara, o una tabla que corta de hoja) y las que dibujó
+// otro en él (las del Seguimiento en el reporte por área, que traen su propio pie). Con ella, quien dibuja esas otras hojas las numera
+// como cerrarReporte numera las suyas: la hoja k sobre todas las del documento.
+export const hojasDe = (doc) => doc.bufferedPageRange().count;
 
 // Cierra el reporte: el pie en cada hoja que agregó agregarHoja (el del Seguimiento: «Generado el dd/mm/aaaa a las hh:mm por <por>» a
 // la izquierda y `pieDe(k, n)` a la derecha, con k la hoja, de 1 a n, y n las hojas del documento) y el PDF.
