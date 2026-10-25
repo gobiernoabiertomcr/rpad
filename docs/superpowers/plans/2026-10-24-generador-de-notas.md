@@ -5,7 +5,7 @@
 **Goal:** Herramientas → Notas pasa a ser el generador de la DGMIT.
 - La nota interna va a la Subsecretaría y la externa directo al organismo; la elige el ámbito del área.
 - Los "Datos solicitados" los calcula el RPAD y cada dataset suma su "Qué se solicita".
-- Sale en Word, en hoja membretada oficio de 216 × 356 mm, sin firma.
+- Sale en Word, en hoja membretada oficio Legal de 8½ × 14″ (215,9 × 355,6 mm, la misma `PAGINA` del PDF de las Notas Digitales), sin firma.
 - Además, cada Nota Digital del Libro se puede bajar en Word, sin firma.
 
 **Architecture:** Una representación intermedia de "bloques" (párrafos, tabla, firma y lista) que dibujan dos salidas:
@@ -44,7 +44,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - Los scripts van como `<script src="js/X.js?v=…"></script>`, sin atributos.
   - `notas.js` pasa a llevar `?v=` (`VERSION_NOTAS`). `areas.js` y `correos.js` suben el suyo.
   - `main.js` cambia, así que `VERSION` sube en todas las páginas y en `tests/paginas.test.js`.
-  - Cada versión nueva es la fecha de la tarea (`AAAAMMDD`), mayor que la que dejó Métricas.
+  - Las versiones no son la fecha: Métricas dejó números por encima de la fecha (el mayor, `VERSION_REPORTES` = 20261203). Toda versión que sube en esta rama pasa a **20261204**: `VERSION` (auth, main y api), `notas.js` (`VERSION_NOTAS`), `correos.js` (`VERSION_CORREOS`), `areas.js` y `usuarios.js`.
   - `api.js` no cambia.
   - Todo texto dinámico pasa por `Utils.escapeHtml`; un 0 se escribe con `String(n)`.
 - **Texto en castellano:** "de" + "el" es "del" y "a" + "el" es "al" en todo texto que arme el sistema ("dependiente del Ministerio…", "Al Instituto…"). Es una decisión de este plan: la spec escribe "de {artículo}", y con "el" quedaría "de el".
@@ -91,13 +91,13 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
     - Al final, una consulta de verificación comentada: cuántas áreas quedaron `externo` (13).
   - **La vuelta atrás:** `ALTER TABLE areas DROP COLUMN IF EXISTS ambito`. La cabecera dice que va después de volver a los archivos anteriores.
 
-- [ ] **Step 1: Preparar la rama.**
+- [ ] **Step 1: Preparar la rama.** (Lo hizo el controlador el 25/10/2026: merge de main 5d8ed1a, el enlace, el `.env` y la base `rpad_rama_generador`, copia de la base local recargada con el dump de producción de las 10:50, que ya trae las migraciones de Métricas y las correcciones del usuario en las áreas 6 y 35. La línea de base está en el ledger. El implementador solo lo verifica.)
   - En el worktree: `git merge main`, con Métricas ya adentro (un merge, no un rebase). Volver a ubicar por nombre lo que este plan cita por número de línea.
   - Crear el enlace `node_modules`: `cmd //c mklink /J node_modules C:\git\rpad\node_modules`.
   - Crear `rpad_rama_generador` como copia de `datospublicos_mcr_rpad`, con `mariadb-dump` y `mariadb` adentro del contenedor `rpad-db`, sin tocar la original. Aplicarle las migraciones de Métricas (las de `database/updates/` que Métricas agregó, en el orden de su README).
   - Escribir el `.env` del worktree.
   - Correr `npm test` y anotar la línea de base en el ledger.
-- [ ] **Step 2: Write the failing tests** en `tests/schema.test.js`: un `describe('migración del generador de notas')`, con el molde de la migración de "auditar sin responsabilidad" (una columna) y el de "requiere nota datos" (UPDATEs por id):
+- [ ] **Step 2: Write the failing tests** en `tests/schema.test.js`: un `describe('migración del generador de notas')`, con el molde de la migración de "editor sin responsabilidad" (una columna, líneas 669-726, con su propio `crearBase`) y el de "requiere nota datos" (UPDATEs por id, líneas 519-614). La migración arranca con `SET NAMES utf8mb4;` (los nombres llevan tildes):
   - `codigo(MIGRACION)` no tiene `DELIMITER`, `USE`, `DROP`, `RENAME` ni `CHECK`;
   - la cabecera tiene la spec, "ANTES de subir el código" y `rollback-generador-notas.sql`;
   - cada `UPDATE` cumple la forma exacta y tiene el comentario `-- <id>. ` arriba;
@@ -134,7 +134,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - un `<label for="ambito">Ámbito</label>` con `<select id="ambito" class="form-input">` (`municipal` "Municipal", `externo` "Fuera del municipio") debajo de `articulo_superior`, con la ayuda de la spec, sección 2, en un `.form-hint`;
   - `openAreaModal` lo llena (`area.ambito || 'municipal'`) y el `submit` lo manda;
   - en la lista, junto al nombre, la insignia "Fuera del municipio" (`badge-secondary`) cuando es `externo`;
-  - `areas.js` sube su `?v=`.
+  - `areas.js` sube su `?v=` a 20261204 (hoy 20261012; ningún test la fija).
 - [ ] **Step 4: Run** el archivo y `npm test`. Expected: PASS.
 - [ ] **Step 5: Commit** `feat: el ámbito del área en la API y en el formulario de Áreas`.
 
@@ -167,10 +167,10 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - `validarPedidoDeNota(entrada, hoy)` → `{ datos: { fecha, numero, tipo, pedido, anteriores, area_id, datasets }, errores }`. Nunca tira.
     - `numero`: texto recortado o `null` si está vacío. Si no es texto ni null, error de `numeroLargo`.
     - `anteriores`: lista de textos recortados, sin vacíos ni repetidos; solo con reiteración (con solicitud, `[]`).
-    - `area_id` y `datasets`: enteros positivos (los ids con la regla de `idsDeDatasets`: sin repetidos, y uno malo invalida el campo).
+    - `area_id` y `datasets`: enteros positivos (los ids con `idsDeDatasets` de `services/notasDgmitReglas.js`, que hoy es privada y se exporta en esta tarea: sin repetidos, y uno malo invalida el campo).
     - Caracteres contados con `Array.from`.
   - `sePuedePedir(estado)` → `estado !== 'actualizado'`. Sirve para los estados de `estadoDelDataset`.
-  - `ordenDeLaTabla(datasets)` → copia ordenada de `[{ titulo, dias, estado, proxima }]`:
+  - `ordenDeLosDatasets(datasets)` → copia ordenada de `[{ titulo, dias, estado, proxima }]`:
     1. los vencidos (`dias < 0`), el más vencido primero;
     2. los próximos, por `dias`;
     3. el resto, por `proxima`, con `null` al final;
@@ -185,7 +185,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - `datasets: []` → `datasets`; `[5, 'x']` → `datasets`;
   - `errores` sigue `ORDEN_DE_CAMPOS`;
   - `sePuedePedir`: `actualizado` → false; `atrasado`, `sin-respuesta`, `proximo`, `eventual` y `sin-fecha` → true;
-  - `ordenDeLaTabla` con un vencido de −85, uno de −450, un próximo de 37, uno al día y un eventual → `[−450, −85, 37, al día, eventual]`;
+  - `ordenDeLosDatasets` con un vencido de −85, uno de −450, un próximo de 37, uno al día y un eventual → `[−450, −85, 37, al día, eventual]`;
   - en `tests/notas-dgmit-reglas.test.js`: `sePuedeElegir` con activo e inactivo, interno, `requiere_nota` 1, 0 y null.
 - [ ] **Step 2: Run** los dos archivos. Expected: FAIL.
 - [ ] **Step 3: Implement.**
@@ -200,8 +200,8 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 **Interfaces:**
 - Consumes: `notasDgmitPorCiclo(fuentes, ciclos, hoy)` y su ayudante `notasDgmitVigentes`, que dejó Métricas en `seguimientoReglas.js`; `ciclosDe(fuentes, hoy)`. Si al traer main tienen otros nombres, se usan los de main.
 - Produces: `export const notasDgmitDelCicloAbierto = (fuentes, hoy)` → `[{ numero, tipo, recibida }]`.
-  - Son las vigentes (sin anular y recibidas hasta `hoy`) del ciclo abierto, ordenadas por recepción, después por carga y después por id: `notasDgmitPorCiclo(fuentes, ciclosDe(fuentes, hoy), hoy).at(-1) ?? []`.
-  - Sin ciclos (eventual o sin fecha), todas las vigentes en ese orden.
+  - Con el molde de `notaDgmitDelCiclo`: primero, sin `fuentes` o con `hoy` que no es fecha, `[]`; después `const ciclos = ciclosDe(fuentes, hoy)` y, si hay ciclos (`Array.isArray(ciclos) && ciclos.length`), `notasDgmitPorCiclo(fuentes, ciclos, hoy).at(-1) ?? []`; si no (eventual o sin fecha: `ciclosDe` da `null`), `notasDgmitVigentes(fuentes, hoy)` (privada, del mismo archivo). Al final, cada una se pasa a `{ numero, tipo, recibida }`.
+  - Son las vigentes (sin anular y recibidas hasta `hoy`), ordenadas por recepción, después por carga y después por id.
   - La primera es la "nota original del ciclo" de la spec 3.2. Nunca tira: con entradas inválidas, `[]`.
 
 - [ ] **Step 1: Write the failing tests** (`describe('notasDgmitDelCicloAbierto')`, con el molde de `describe('notasDgmitPorCiclo')` y un caso de `tests/seguimiento-casos.js`):
@@ -292,12 +292,12 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 **Interfaces:**
 - Consumes: los bloques de la Task 5. `validarImagenMembrete(datos, mime)` → `{ ancho, alto }` (`services/notasDigitalesPdf.js`). `obtenerConfig()` (`services/notasDigitalesDatos.js`).
 - Produces:
-  - `HOJA = { ancho: 12240, alto: 20160, arriba: 1985, costados: 1701, abajo: 1417, encabezado: 0, pie: 708 }`, en twips: oficio de 216 × 356 mm, con los márgenes de la hoja membretada.
+  - `HOJA = { ancho: 12240, alto: 20160, arriba: 1985, costados: 1701, abajo: 1417, encabezado: 0, pie: 708 }`, en twips: oficio Legal de 8½ × 14″ (la misma `PAGINA` de 612 × 1008 pt del PDF), con los márgenes de la hoja membretada.
   - `renderDocx(bloques, { membrete, pie })` → `Promise<Buffer>`.
     - `membrete` es `{ datos: Buffer, ancho, alto }` o `null`.
     - `pie` es un texto.
     - La marca de agua se lee de `public/img/membrete-isotipo-aclarado.png` una sola vez.
-  - `membreteParaWord()` → `Promise<{ membrete, pie }>`, desde `notas_digitales_config`:
+  - `membreteParaWord()` → `Promise<{ membrete, pie }>`, desde `notas_digitales_config`. Nunca tira: si `obtenerConfig()` falla o `validarImagenMembrete` tira (`ImagenInvalida`), el membrete es `null` y el pie, el que haya (o `''`):
     - `membrete_imagen` y su mime, con el tamaño de `validarImagenMembrete`; `null` si no hay imagen;
     - `membrete_pie`.
 - **Con `docx` 8.5.0, probado:**
@@ -344,7 +344,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 
 **Files:**
 - Create: `services/notasGeneradorDatos.js`, `tests/notas-generador-api.test.js`
-- Modify: `controllers/notasController.js` (se reescribe: se van la escalonada, el sello y las fechas con `Date`), `middleware/auth.js`, `routes/index.js`, `tests/permisos.test.js`, `tests/reportes.test.js` (sale `describe('notas DOCX')`), `tests/notas-fixtures.js` (`crearDataset` suma `queSeSolicita`; `crearArea` acepta `ambito`)
+- Modify: `controllers/notasController.js` (se reescribe: se van la escalonada, el sello y las fechas con `Date`), `middleware/auth.js`, `routes/index.js`, `tests/permisos.test.js`, `tests/reportes.test.js` (sale `describe('notas DOCX')`), `tests/notas-fixtures.js` (`crearDataset` suma `queSeSolicita`; `crearArea` ya acepta `ambito`, porque esparce las columnas)
 
 **Interfaces:**
 - Consumes: Tasks 3 a 6. `estadoDelDataset`, `pedido`, `tipoEfectivo` y `frecuenciaEnNota` (`fechasDatasetReglas.js`); `fuentesDe(ids)` (`seguimientoDatos.js`); `disposicionDeAdjunto` (`seguimientoReglas.js`).
@@ -358,21 +358,21 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
     ```
     { id, titulo, estado, dias, proxima, frecuencia, datos_solicitados, que_se_solicita, se_puede_pedir, notas_dgmit }
     ```
-    - estado, pedido y frecuencia, calculados con la `fecha` de la nota;
+    - estado, pedido y frecuencia, calculados con la `fecha` de la nota; el tipo efectivo y el pedido con `conPedido(fila, fecha)` de `services/notasDigitalesDatos.js`, como las Notas Digitales (así no pueden decir cosas distintas);
     - `frecuencia` = `frecuenciaEnNota`;
     - `datos_solicitados` = `pedido(...)?.texto ?? null`;
     - `se_puede_pedir` = `sePuedePedir(estado)`;
     - `notas_dgmit` = `notasDgmitDelCicloAbierto(fuentes, fecha)`, con una sola llamada a `fuentesDe(ids del área)`;
-    - en el orden de `ordenDeLaTabla`.
+    - en el orden de `ordenDeLosDatasets`.
   - `prepararNota(cuerpo, hoy)` → `[status, { datos, bloques, nombre } | cuerpoDeError]`:
     - `validarPedidoDeNota`;
     - después, en la base: el área existe; cada dataset existe y es del área (si no, `textoDeOtraArea`), cumple `sePuedeElegir` (si no, `textoNoSePuedeElegir`) y no está al día a la fecha (si no, `textoAlDia`), todo en `datasets`;
-    - por último, `construirNotaDgmit` con los datasets en `ordenDeLaTabla`.
+    - por último, `construirNotaDgmit` con los datasets en `ordenDeLosDatasets`.
   - Rutas, todas con `authMiddleware` y `usaGeneradorDeNotas`:
     - `GET /api/notas/areas` → `{ success, data: areasParaElGenerador(hoy) }`;
     - `GET /api/notas/areas/:id?fecha=AAAA-MM-DD` → `{ success, data }`. Sin fecha, hoy; una fecha inválida, 400 `MENSAJES_GENERADOR.fecha`; un área inexistente o un id que no es entero positivo, 404 `'Área no encontrada'`;
     - `GET /api/notas/membrete` → `{ success, data: { imagen: 'data:<mime>;base64,…' | null, pie } }`, para la hoja de la vista previa;
-    - `POST /api/notas/vista-previa` → `{ success, data: { html: renderHtmlDeBloques(bloques) } }`;
+    - `POST /api/notas/vista-previa` → `{ success, data: { html: renderHtmlDeBloques(bloques), nombre } }`, con `nombre` = `nombreDelWord(...)`: la página lo muestra debajo del botón y lo usa al descargar;
     - `POST /api/notas/generar` → el `.docx`, con `Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document` y `Content-Disposition: disposicionDeAdjunto(nombreDelWord(...))`.
 
 - [ ] **Step 1: Write the failing tests** (`tests/notas-generador-api.test.js`):
@@ -404,7 +404,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - `POST /notas/vista-previa` → `data.html` tiene el área en `<b>` y `<table class="nota-tabla">`.
   - En `tests/permisos.test.js`: una lista `RUTAS_GENERADOR` con las cinco rutas, con el molde de `RUTAS_NOTAS_DGMIT`: lector 403 con el texto exacto, sin sesión 401 y colaborador "llega al controlador".
 - [ ] **Step 2: Run** los dos archivos. Expected: FAIL.
-- [ ] **Step 3: Implement.** Borrar `describe('notas DOCX')` de `tests/reportes.test.js` y su comentario en la línea 1: lo reemplaza este archivo. `API.generarNota` de `api.js` queda sin uso: `api.js` no se toca.
+- [ ] **Step 3: Implement.** Borrar `describe('notas DOCX')` de `tests/reportes.test.js`, la mención de las notas DOCX en el comentario de la línea 1 y el import de JSZip con su comentario (líneas 4-5; solo lo usa ese `describe`): lo reemplaza este archivo. `API.generarNota` de `api.js` queda sin uso: `api.js` no se toca.
 - [ ] **Step 4: Run** los archivos, `tests/reportes.test.js` y `npm test`. Expected: PASS.
 - [ ] **Step 5: Commit** `feat: la API del generador de notas (áreas, datos de un área, vista previa y Word), solo para quien carga notas DGMIT`.
 
@@ -441,6 +441,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
     - `erroresDelPaso2({ elegidos, numero, anteriores })` → `{ campo: mensaje }`, con los mensajes de `MENSAJES_GENERADOR`;
     - `cuerpoDelPedido(estado)` → `{ fecha, numero, tipo, pedido, anteriores, area_id, datasets }`.
   - **La descarga:** `async function pedirWord(cuerpo)`. Hace un `fetch` POST a `${CONFIG.API_URL}/notas/generar`, con `Auth.getAuthHeaders()`, y devuelve el blob. Si falla, tira un `Error(data.error)` con `status` y `campo`. Es local porque `API.pedirArchivo` es solo GET y `api.js` no se toca.
+  - **`descargarBlob(blob, nombre)`**, local de la página como en `correos.js`, `reportes.js` y `seguimiento.js`.
   - **El arranque:** un `DOMContentLoaded`.
     - Sin sesión, a `login.html`.
     - Sin `Auth.puedeCargarNotasDgmit()`, muestra `MENSAJE_SIN_PERMISO` y no pide nada.
@@ -467,7 +468,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 ### Task 9: La página: pasos, vista previa, descarga y menú
 
 **Files:**
-- Modify: `public/notas.html`; `public/js/notas.js` (la parte del DOM); `public/js/main.js` (`updateSidebarAuth`); las 14 páginas con carcasa más `login.html`, por `VERSION`; `tests/paginas.test.js`; `tests/main-frontend.test.js`; `tests/notas-frontend.test.js`
+- Modify: `public/notas.html`; `public/js/notas.js` (la parte del DOM); `public/js/main.js` (`updateSidebarAuth`); las 14 páginas con carcasa más `login.html`, por `VERSION`; `public/js/usuarios.js` y `public/usuarios.html` (la ayuda de los roles); `tests/paginas.test.js`; `tests/main-frontend.test.js`; `tests/notas-frontend.test.js`; `tests/usuarios-frontend.test.js`
 
 **Interfaces:**
 - Consumes: la Task 8 y las rutas de la Task 7.
@@ -490,10 +491,15 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
     - los errores van por campo, con `aria-invalid`, `aria-describedby` y el foco al primero;
     - si falla la carga de las áreas: `No se pudieron cargar las áreas. Probá de nuevo en unos minutos.` (no una lista vacía);
     - un 401 en cualquier pedido lleva a `login.html`;
-    - "Descargar Word" usa `pedirWord` y `descargarBlob`, con el nombre que manda el servidor;
+    - "Descargar Word" usa `pedirWord` y `descargarBlob`, con el `nombre` de la última vista previa;
     - "Armar otra nota".
   - **`main.js`:** `updateSidebarAuth` oculta `#sidebarTools a[href="notas.html"]`, con la clase `hidden`, si no se cumple `Auth.puedeCargarNotasDgmit()`. El marcado de las 14 páginas no cambia.
-  - **`tests/paginas.test.js`:** `VERSION` nuevo y `['notas.html', 'notas', VERSION_NOTAS]` en el arreglo de scripts con versión.
+  - **`tests/paginas.test.js`:** `VERSION` = 20261204 y `['notas.html', 'notas', VERSION_NOTAS]` (20261204) en el arreglo de scripts con versión.
+  - **La ayuda de los roles** (`AYUDA_DEL_ROL` de `public/js/usuarios.js`), porque el lector deja de tener Notas:
+    - lector: `Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Gestión y Seguimiento). No modifica nada.`;
+    - colaborador: `Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula las que cargó) y arma notas con el Generador de Notas. No modifica datasets ni audita cambios.`;
+    - `usuarios.js?v=` sube a 20261204; si su constante de `paginas.test.js` (`VERSION_PANTALLAS`) la comparten otras páginas, `usuarios` pasa a tener la suya;
+    - `tests/usuarios-frontend.test.js` (el `AYUDAS` de la línea 648) se actualiza a mano con los textos nuevos.
 
 - [ ] **Step 1: Write the failing tests:**
   - `tests/main-frontend.test.js`: con rol `lector`, el enlace a `notas.html` del menú queda `hidden`; con `colaborador` y `admin`, visible;
@@ -514,7 +520,7 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
 
 **Files:**
 - Create: `services/notasDigitalesWord.js`, `tests/notas-digitales-word.test.js`, `tests/fixtures/notas-digitales-html/` (los HTML de prueba)
-- Modify: `controllers/notasDigitalesController.js` (`descargarWord`), `routes/index.js`, `tests/permisos.test.js` (`RUTAS_SOLO_ADMIN`)
+- Modify: `controllers/notasDigitalesController.js` (`descargarWord`), `routes/index.js`, `tests/permisos.test.js` (`RUTAS_SOLO_ADMIN`), `services/notasDigitalesPdf.js` y `services/notasDigitalesContenido.js` (solo `export` de las constantes que usa el conversor), `tests/notas-fixtures.js` (`crearNota` acepta `html`)
 
 **Interfaces:**
 - Consumes: `renderDocx` y `membreteParaWord` de la Task 6; los bloques de la Task 5.
@@ -532,11 +538,15 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
        - `<br>` → `salto`;
        - `font-size` de 15, 13, 12 y 11 px → `letra` de 24, 20, 18 y 16;
        - `<a>` → su texto;
-       - `<table>` → `tabla`, con `anchos` de `PROPORCIONES` de `notasDigitalesPdf.js` según la cantidad de columnas (parejos si no está), la primera fila de `<th>` como encabezado y `colspan` como `abarca`;
+       - `<table>` → `tabla`, con la primera fila de `<th>` como encabezado y `colspan` como `abarca`. Los `anchos`, como los del PDF:
+         - 7 columnas con un encabezado "Requiere nota DGMIT" (la externa): `PROPORCIONES_EXTERNA` de `notasDigitalesContenido.js`, `conSegunda` si alguna celda trae el `<span style="font-size:11px">` de "Informado en" y `sinSegunda` si no;
+         - las demás de 7: `PROPORCIONES_CON_SEGUNDA[7]` con ese `<span>` y `PROPORCIONES[7]` sin él;
+         - 4, 5 y 6 columnas: `PROPORCIONES[n]`; otra cantidad, parejos.
+         - Se exportan `PROPORCIONES` y `PROPORCIONES_CON_SEGUNDA` (`notasDigitalesPdf.js`) y `PROPORCIONES_EXTERNA` y `AVISO_ADJUNTO` (`notasDigitalesContenido.js`), que hoy son privadas.
        - `<ul><li>` → `lista`;
        - las cinco entidades de `escapeHtml`, decodificadas.
   - **`descargarWord(req, res)`.** Lee `numero`, `anio`, `es_prueba` y `html`. Si la nota no existe, 404 `'Nota no encontrada'`.
-    - El nombre es `Nota-Digital-${numero}-${AA}.docx`. Una prueba es `Nota-Digital-PRUEBA-${id}.docx`, como sus PDF (la spec decía "prueba" en minúscula: se sigue al Libro).
+    - El nombre es `Nota-Digital-${numero}-${AA}.docx`. Una prueba es `Nota-Digital-PRUEBA-${id}.docx`, como el PDF en el Libro (`correos.js`; la spec decía "prueba" en minúscula: se sigue al Libro).
     - Responde con `disposicionDeAdjunto`.
     - Si el conversor tira, 422 con su mensaje (Review Focus 4).
   - **La ruta:** `GET /api/notificaciones/notas-digitales/:id/word`, con `authMiddleware` y `adminOnly`, junto a `/pdf` y `/anexo`.
@@ -585,8 +595,8 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - **`filaDelLibro(n)`:** después de "PDF" suma `<button type="button" class="co-btn" data-accion="word" data-id="${n.id}" data-archivo="${esc(archivoWord)}">Word</button>`. `archivoWord` es el nombre del PDF con `.docx`, para todas las notas.
   - **`accionDelLibro`:** `word` hace `descargarBlob(await API.pedirArchivo(\`/notificaciones/notas-digitales/${id}/word\`), boton.dataset.archivo)`, con los errores por `avisar`, como "PDF".
 
-- [ ] **Step 1: Write the failing tests:** en `tests/correos-frontend.test.js`, actualizar los tres asserts que cuentan los botones (líneas 1012 y 1014 y el `deepEqual` de 1134, a buscar por nombre después del merge) y sumar:
-  - una nota de prueba da `Nota-Digital-PRUEBA-7.docx`;
+- [ ] **Step 1: Write the failing tests:** en `tests/correos-frontend.test.js`, actualizar los tres asserts que cuentan los botones (líneas 1013 y 1014 —la expresión de `data-accion` suma `word`— y el `deepEqual` de 1138) y sumar:
+  - la nota de prueba del test (`PRUEBA`, `id: 11`) da `Nota-Digital-PRUEBA-11.docx`;
   - el clic en "Word" pide `/notificaciones/notas-digitales/7/word`.
 - [ ] **Step 2: Run** `node --test tests/correos-frontend.test.js`. Expected: FAIL.
 - [ ] **Step 3: Implement**; subir `?v=` de `correos.js` y `VERSION_CORREOS`.
@@ -617,6 +627,8 @@ Así la vista previa y el Word no pueden diferir, y los dos Word comparten la ho
   - Áreas → Ámbito;
   - la sección "Migración: Generador de Notas", con el orden: después de la de Métricas y antes del código;
   - el Changelog.
+- **Spec del generador:** la línea que dice que el PDF de las Notas Digitales "sigue en 21,6 × 33 cm" (sección 6) pasa a decir que es la misma hoja Legal (spec 2026-10-24-notas-hoja-oficio).
+- **CLAUDE.md:** `sePuedeElegir` vive en `services/notasDgmitReglas.js` (donde decía "como `sePuedeElegir` del controlador").
 - **Spec de las notas DGMIT:** en "No objetivos", al final de la línea que dice que la DGMIT no usa Herramientas → Notas, va "(revertido por la spec 2026-10-24-generador-de-notas: ahora lo usa)".
 - **Kit:** `Escritorio/RPAD-deploy-generador-de-notas/`, con el formato de `RPAD-deploy-notas-dgmit`:
   - `PASOS.txt`:
