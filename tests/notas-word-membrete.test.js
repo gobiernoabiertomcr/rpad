@@ -1,11 +1,12 @@
 // Generador de Notas (spec 2026-10-24-generador-de-notas, sección 4.1): el membrete y el pie del Word salen de la configuración
-// de las Notas Digitales (notas_digitales_config). membreteParaWord nunca tira: un Word sin membrete es mejor que un error.
-// Base de prueba propia.
+// de las Notas Digitales (notas_digitales_config). membreteParaWord nunca tira: un Word sin membrete es mejor que un error. La
+// vista previa usa el mismo (membreteParaLaVistaPrevia), con la imagen como data URL. Base de prueba propia.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { crearBaseDePrueba, cerrarDb, query } from './helpers.js';
 import { validarImagenMembrete } from '../services/notasDigitalesPdf.js';
+import { jpegMinimo } from './firma-fixtures.js';
 
 const LOGO = fs.readFileSync(new URL('../public/img/logo.png', import.meta.url));
 const PIE = 'www.comodoroweb.gov.ar – Moreno 815, Comodoro Rivadavia, Chubut.';
@@ -92,5 +93,27 @@ describe('membreteParaWord', () => {
     await query('UPDATE notas_digitales_config SET membrete_imagen = ?, membrete_mime = ? WHERE id = 1', [LOGO, 'image/png']);
     const buffer = await word.renderDocx([{ tipo: 'firma', columnas: 1 }], await word.membreteParaWord());
     assert.equal(buffer.subarray(0, 2).toString('latin1'), 'PK');
+  });
+});
+
+// La vista previa del generador: el mismo membrete que el Word, con la imagen como data URL (vive en notasWord.js, junto a
+// membreteParaWord: no consulta nada propio)
+describe('membreteParaLaVistaPrevia', () => {
+  it('sin imagen del membrete: imagen null y el pie de la configuración', async () => {
+    assert.deepEqual(await word.membreteParaLaVistaPrevia(), { imagen: null, pie: PIE });
+  });
+
+  it('con un PNG o un JPEG: el data URL con su tipo y sus bytes, y el pie', async () => {
+    await query('UPDATE notas_digitales_config SET membrete_imagen = ?, membrete_mime = ? WHERE id = 1', [LOGO, 'image/png']);
+    assert.deepEqual(await word.membreteParaLaVistaPrevia(), { imagen: `data:image/png;base64,${LOGO.toString('base64')}`, pie: PIE });
+    const jpeg = jpegMinimo({ ancho: 200, alto: 40 });
+    await query('UPDATE notas_digitales_config SET membrete_imagen = ?, membrete_mime = ? WHERE id = 1', [jpeg, 'image/jpeg']);
+    assert.deepEqual(await word.membreteParaLaVistaPrevia(), { imagen: `data:image/jpeg;base64,${jpeg.toString('base64')}`, pie: PIE });
+  });
+
+  it('si el Word sale sin membrete (una imagen dañada), la vista previa tampoco lo muestra', async () => {
+    await query('UPDATE notas_digitales_config SET membrete_imagen = ?, membrete_mime = ? WHERE id = 1', [LOGO.subarray(0, 100), 'image/png']);
+    const { resultado } = await conErroresCapturados(() => word.membreteParaLaVistaPrevia());
+    assert.deepEqual(resultado, { imagen: null, pie: PIE });
   });
 });

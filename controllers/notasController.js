@@ -15,10 +15,10 @@ import {
 } from '../services/notasGeneradorReglas.js';
 import { textoNoSePuedeElegir } from '../services/notasDgmitReglas.js';
 import { construirNotaDgmit, renderHtmlDeBloques, nombreDelWord } from '../services/notasGeneradorContenido.js';
-import { renderDocx, membreteParaWord } from '../services/notasWord.js';
+import { renderDocx, membreteParaWord, membreteParaLaVistaPrevia } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import {
-  areasParaElGenerador, areaParaElGenerador, areaDelGenerador, datasetsDeLaNota, enElOrdenDeLaTabla, membreteParaLaVistaPrevia
+  areasParaElGenerador, areaParaElGenerador, areaDelGenerador, datasetsDeLaNota, enElOrdenDeLaTabla
 } from '../services/notasGeneradorDatos.js';
 
 const TIPO_WORD = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';

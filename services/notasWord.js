@@ -75,9 +75,16 @@ const leerMarcaDeAgua = () => {
 // Los bloques
 // ---------------------------------------------------------------------------------------------------------------------------
 
+// El texto como lo admite el XML del Word: docx (8.5.0) escribe tal cual en <w:t> los caracteres de control, U+FFFE, U+FFFF y los
+// surrogates solos, y con ellos Word dice que el archivo está dañado. Los surrogates solos pasan a U+FFFD (el carácter de
+// reemplazo) y los demás se quitan; el tab y los saltos de línea quedan, porque el XML los admite. Pasa por acá todo texto
+// variable del Word: las partes de los bloques y el pie
+const NO_ADMITIDOS_EN_EL_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\ufffe\uffff]/g;
+const textoParaWord = (texto) => String(texto ?? '').toWellFormed().replace(NO_ADMITIDOS_EN_EL_XML, '');
+
 // Una parte, en la letra `base` (medios puntos) si no trae la suya
 const run = (parte, base) => new TextRun({
-  text: parte.texto,
+  text: textoParaWord(parte.texto),
   bold: parte.negrita ? true : undefined,
   italics: parte.cursiva ? true : undefined,
   underline: parte.subrayado ? {} : undefined,
@@ -348,7 +355,7 @@ export const renderDocx = async (bloques, { membrete = null, pie = '' } = {}) =>
         }
       },
       headers: { default: encabezado(membrete, await leerMarcaDeAgua()) },
-      footers: { default: pieDePagina(String(pie ?? '').replace(/\s+/g, ' ').trim()) },
+      footers: { default: pieDePagina(textoParaWord(String(pie ?? '').replace(/\s+/g, ' ')).trim()) },
       children: cuerpo
     }]
   });
@@ -378,4 +385,17 @@ export const membreteParaWord = async () => {
     console.error('El membrete de las Notas Digitales no sirve para el Word:', error);
     return { membrete: null, pie };
   }
+};
+
+/**
+ * El membrete para la hoja de la vista previa: el mismo que lleva el Word (membreteParaWord, que nunca tira), con la imagen como un
+ * data URL. Si el Word sale sin membrete (no hay imagen, o no sirve), la vista previa tampoco lo muestra.
+ * @returns {Promise<{ imagen: string|null, pie: string }>}
+ */
+export const membreteParaLaVistaPrevia = async () => {
+  const { membrete, pie } = await membreteParaWord();
+  if (!membrete) return { imagen: null, pie };
+  // membreteParaWord solo deja pasar un PNG o un JPEG que se pudo abrir: un PNG empieza con 0x89 y un JPEG con 0xFF
+  const tipo = membrete.datos[0] === 0x89 ? 'image/png' : 'image/jpeg';
+  return { imagen: `data:${tipo};base64,${membrete.datos.toString('base64')}`, pie };
 };

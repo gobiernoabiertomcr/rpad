@@ -18,7 +18,6 @@ import { sePuedeElegir } from './notasDgmitReglas.js';
 import { sePuedePedir, ordenDeLosDatasets } from './notasGeneradorReglas.js';
 import { notasDgmitDelCicloAbierto } from './seguimientoReglas.js';
 import { fuentesDe } from './seguimientoDatos.js';
-import { membreteParaWord } from './notasWord.js';
 
 const SELECT_AREAS = 'SELECT id, nombre, ambito, area_superior, articulo, articulo_superior FROM areas';
 
@@ -130,17 +129,4 @@ export const datasetsDeLaNota = async (ids, fecha) => {
   return new Map(filas.map((fila) => [fila.id, {
     ...datasetALaFecha(fila, fecha), area_id: fila.area_id, se_puede_elegir: sePuedeElegir(fila)
   }]));
-};
-
-/**
- * El membrete para la hoja de la vista previa: el mismo que lleva el Word (membreteParaWord, que nunca tira), con la imagen como un
- * data URL. Si el Word sale sin membrete (no hay imagen, o no sirve), la vista previa tampoco lo muestra.
- * @returns {Promise<{ imagen: string|null, pie: string }>}
- */
-export const membreteParaLaVistaPrevia = async () => {
-  const { membrete, pie } = await membreteParaWord();
-  if (!membrete) return { imagen: null, pie };
-  // membreteParaWord solo deja pasar un PNG o un JPEG que se pudo abrir: un PNG empieza con 0x89 y un JPEG con 0xFF
-  const tipo = membrete.datos[0] === 0x89 ? 'image/png' : 'image/jpeg';
-  return { imagen: `data:${tipo};base64,${membrete.datos.toString('base64')}`, pie };
 };

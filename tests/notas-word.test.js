@@ -361,6 +361,33 @@ describe('renderDocx: el cuerpo', () => {
     assert.ok(textoDe(documento).includes(`Nota N° ${numero}`));
   });
 
+  // docx escribe tal cual en <w:t> lo que el XML no admite (los caracteres de control salvo el tab y los saltos, U+FFFE, U+FFFF y
+  // los surrogates solos) y Word dice que el archivo está dañado. Pueden llegar del número y de las notas anteriores (texto libre:
+  // un U+000B pegado desde Word, un "\ud800" en el JSON), y de los títulos, el "Qué se solicita" o el pie cargados en la base
+  it('sin lo que el XML no admite: el número con U+000B, un U+0000 y un surrogate solo; el texto visible queda', async () => {
+    const datasets = [{ ...DATASETS[0], titulo: 'Áreas\u0000 específicas\u0008 de\u000B género', queSeSolicita: 'Listado \ud800completo\ufffe\uffff.' }];
+    const bloques = nota({ tipo: 'externa', pedido: 'reiteracion', numero: '12/26\u000B', anteriores: ['97/26\u001F', '131/26\u000C'], datasets });
+    const buffer = await renderDocx(bloques, { membrete: MEMBRETE, pie: 'Moreno 815\u0001, Comodoro Rivadavia' });
+    const zip = await JSZip.loadAsync(buffer);
+    const NO_ADMITIDOS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\ufffe\uffff]/g;
+    for (const nombre of ['word/document.xml', 'word/footer1.xml']) {
+      const bytes = await zip.file(nombre).async('nodebuffer');
+      // UTF-8 válido, sin surrogates solos y sin caracteres que el XML no admite (si queda alguno, se ven solo esos)
+      const xml = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      assert.ok(xml.isWellFormed(), nombre);
+      assert.deepEqual(xml.match(NO_ADMITIDOS) ?? [], [], nombre);
+    }
+    const { documento, pies } = await abrir(buffer);
+    assert.ok(documento.includes('<w:t xml:space="preserve"> 12/26</w:t>'));
+    const texto = textoDe(documento);
+    assert.ok(texto.includes('Nota N° 12/26'));
+    assert.ok(texto.includes('Áreas específicas de género'));
+    // El surrogate solo pasa a U+FFFD, el carácter de reemplazo
+    assert.ok(texto.includes('Listado \ufffdcompleto.'));
+    assert.ok(texto.includes('Notas N° 97/26 y N° 131/26'));
+    assert.ok(pies[0].includes('<w:t xml:space="preserve">Moreno 815, Comodoro Rivadavia</w:t>'));
+  });
+
   it('una lista sale con viñetas, un párrafo por ítem', async () => {
     const bloques = [{ tipo: 'lista', items: [[{ texto: 'Primero' }], [{ texto: 'Segundo', negrita: true }]] }];
     const { documento } = await conHoja(bloques);

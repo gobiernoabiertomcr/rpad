@@ -12,8 +12,10 @@ import JSZip from 'jszip';
 import { bloquesDeNotaDigital, NotaNoReconocida } from '../services/notasDigitalesWord.js';
 import { renderDocx } from '../services/notasWord.js';
 import {
-  construirNota, construirNotaDeAutorizacion, renderHtml, AVISO_ADJUNTO, PROPORCIONES_EXTERNA, RENGLON_FIRMA_CONTRATADO
+  construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria, renderHtml, textoLeyendaAutorizacion, AVISO_ADJUNTO,
+  PROPORCIONES_EXTERNA, RENGLON_FIRMA_CONTRATADO
 } from '../services/notasDigitalesContenido.js';
+import { ejemplo } from '../services/notasDigitales.js';
 import { PROPORCIONES, PROPORCIONES_CON_SEGUNDA } from '../services/notasDigitalesPdf.js';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb } from './helpers.js';
 import { crearNota } from './notas-fixtures.js';
@@ -381,6 +383,67 @@ describe('bloquesDeNotaDigital: el HTML que arma hoy renderHtml', () => {
     assert.deepEqual(bloques.map(b => b.tipo), ['parrafo', 'parrafo', 'parrafo', 'parrafo', 'parrafo', 'firma']);
     assert.ok(bloques.every(b => !textoDe(b).includes('Nombre Apellido')));
   });
+
+  // Los HTML de prueba son fotos fijas: si cambia renderHtml (la marca de la firma, la tabla de las dos firmas, la primera línea o
+  // el remitente), las notas nuevas darían 422. Acá cada nota se arma con el código de hoy y los datos de ejemplo() (notasDigitales.js)
+  const FECHA = '2026-11-02';
+  const TITULAR = Object.freeze({ nombre: 'Nombre Apellido', cargo: 'Cargo Titular' });
+  const PRESENTANTE = Object.freeze({ nombre: 'Otro Nombre Apellido', cargo: 'Cargo Presentante', contratado: true });
+  const FIRMAS = Object.freeze({
+    1: { titular: TITULAR },
+    2: {
+      titular: TITULAR,
+      presentante: PRESENTANTE,
+      leyenda: textoLeyendaAutorizacion({
+        presentante: PRESENTANTE, titular: TITULAR, nota: { numero: 8, anio: 2026 }, licencia: { desde: '2026-10-26', hasta: '2026-11-13' }
+      })
+    }
+  });
+  const DE_LA_FIRMA = [TITULAR.nombre, TITULAR.cargo, PRESENTANTE.nombre, PRESENTANTE.cargo, RENGLON_FIRMA_CONTRATADO];
+  const CONFIG = Object.freeze({ linea_cc_interna: 'CC. Dir. de Investigación Territorial', linea_cc_externa: 'CC. Dir. Administrativa' });
+  // La auditoría, con un alta nueva y una baja reiterada, propuestas por alguien que no firma
+  const PROPONE = { usuario_nombre: 'Persona Que Propone', usuario_cargo: 'Cargo de quien propone' };
+  const NUEVO = {
+    ...PROPONE, id: 1, tipo_cambio: 'crear', dataset_titulo: null, fecha_propuesta: '2026-10-28', datos_anteriores: null,
+    datos_nuevos: { titulo: 'Dataset nuevo', descripcion: 'Descripción.', tipo_gestion: 'interna', url_dataset: 'https://datos.comodoro.gov.ar/dataset/nuevo' }
+  };
+  const REITERADO = {
+    ...PROPONE, id: 2, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset a dar de baja', fecha_propuesta: '2026-10-19',
+    datos_nuevos: { eliminado: true }, datos_anteriores: { titulo: 'Dataset a dar de baja', tipo_gestion: 'externa' },
+    solicitado: { numero: 3, anio: 2026, fecha: '2026-10-26', reiteraciones: 0 }
+  };
+  const NOMBRE_DEL_TIPO = { aviso: 'el aviso', reiteracion: 'la reiteración' };
+  const NOTAS = [
+    ...['aviso', 'reiteracion'].flatMap(tipo => ['interna', 'externa'].map(gestion => [`${NOMBRE_DEL_TIPO[tipo]} de gestión ${gestion}`, (firma) => {
+      const { datasets, areas } = ejemplo(tipo, gestion, FECHA);
+      return construirNota({ tipo, gestion, numero: 9, anio: 2026, fecha: FECHA, datasets, areas, config: CONFIG, firma });
+    }])),
+    ['la auditoría', (firma) => construirNotaDeAuditoria({
+      numero: 10, anio: 2026, fecha: FECHA, nuevos: [NUEVO], reiterados: [REITERADO],
+      catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }, firma, config: CONFIG
+    })]
+  ];
+
+  for (const [nota, armar] of NOTAS) {
+    for (const columnas of [1, 2]) {
+      it(`reconoce ${nota} con ${columnas === 1 ? 'una firma' : 'dos firmas'}: la firma de ${columnas} columna${columnas === 1 ? '' : 's'}, sin nombres`, () => {
+        const html = renderHtml(armar(FIRMAS[columnas]));
+        let bloques;
+        assert.doesNotThrow(() => { bloques = bloquesDeNotaDigital(html); }, NotaNoReconocida);
+        assert.deepEqual(bloques.filter(b => b.tipo === 'firma'), [{ tipo: 'firma', columnas }]);
+        const iFirma = indiceDeLaFirma(bloques);
+        assert.equal(textoDe(bloques[iFirma - 1]), `${REMITENTE}, 2 de noviembre de 2026.`);
+        assert.ok(textoDe(bloques[0]).startsWith('REF.: "'), textoDe(bloques[0]));
+        // Con dos firmas, la leyenda se conserva: es lo único que nombra a las dos personas
+        const iLeyenda = columnas === 2 ? iFirma + 1 : -1;
+        if (columnas === 2) assert.equal(textoDe(bloques[iLeyenda]), FIRMAS[2].leyenda);
+        for (const [i, bloque] of bloques.entries()) {
+          if (i === iLeyenda) continue;
+          for (const texto of DE_LA_FIRMA) assert.ok(!textoDe(bloque).includes(texto), `${texto}: ${textoDe(bloque)}`);
+        }
+      });
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------
