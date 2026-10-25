@@ -713,6 +713,17 @@ const textoDeAvisos = ({ emails, notas }, vencido) => {
   return mayuscula(partes.join(' y '));
 };
 
+// Las versiones cada vez más cortas del texto de los avisos, para el PDF, donde el texto tiene dos renglones de letra fija (spec
+// 2026-10-24-reiteracion-en-su-anexo, decisión del usuario: «recortar del medio»). Se sacan números de notas del medio, de a uno:
+// con k notas, la versión m (m = 1 … k − 3) conserva la primera y las últimas k − 1 − m, con «…» entre las dos partes ("11 emails y
+// las Notas Digitales N° 2/26, …, 9/26 y 2/27"). Siempre quedan la primera y las dos últimas: la reiteración que acompaña al anexo
+// va última. La parte de los emails no cambia. Con 3 notas o menos no hay nada que sacar: []. La pantalla no las usa.
+const textosCortosDeAvisos = ({ emails, notas }, vencido) => {
+  const versiones = [];
+  for (let m = 1; m <= notas.length - 3; m++) versiones.push(textoDeAvisos({ emails, notas: [notas[0], '…', ...notas.slice(m + 1)] }, vencido));
+  return versiones;
+};
+
 const textoDelArea = ({ estado, dias }) => {
   if (estado === 'baja') return 'Dado de baja';
   if (dias === null) return 'Sin vencimiento';
@@ -735,7 +746,8 @@ const alAreaDe = (fechas) => {
 // (`nodoMedio`, `tramoFuera`) y el área (`area`) vence o no. `ciclos`: los de ciclosDe (si no se pasan, los arma). Sin ciclos
 // (eventual o sin fecha) no hay avisos que contar ni vencimiento. `desde`: desde cuándo se cuentan los avisos, el inicio del ciclo
 // abierto y cómo empezó ({ fecha, origen, texto }: "Desde la actualización del 16/12/2025"); null sin ciclos o si el ciclo empieza
-// en un alta que no se conoce.
+// en un alta que no se conoce. `avisos`: { titulo, texto, textosCortos }; `textosCortos` son las versiones del texto recortadas del
+// medio (textosCortosDeAvisos), solo para el PDF.
 // El tramo de afuera (`tramoFuera`): { titulo, texto, registrada, nota, tituloPdf, textoPdf }. En gestión externa, con una nota DGMIT
 // del ciclo abierto (notaDgmitDelCiclo), la nota (`registrada` true y `nota` { numero, tipo, recibida }): la pantalla dice cuándo la
 // recibió el área ("hoy", "hace 1 día", "hace N días") y el PDF no, porque el anexo queda guardado y se lee después. Sin nota, "Nota
@@ -807,10 +819,15 @@ export const circuitoDe = (fuentes, ciclos, hoy, opciones = {}) => {
   if (gestion === 'externa' && nota) alArea = { ...alAreaDe(fechasAlArea), textoPdf: textoPdfAlAreaDeLaNota(nota) };
   else if (gestion === 'externa' && !(sinNotaFormal && fechasAlArea.length === 0)) alArea = alAreaDe(fechasAlArea);
 
+  const vencido = hayCiclos && abierto.diasVencido > 0;
   return {
     nodoMedio: { ...(sinNotaFormal ? NODO_MEDIO_SIN_NOTA : NODO_MEDIO[gestion]) },
     tramoFuera,
-    avisos: { titulo: tituloDeAvisos(delCiclo.total), texto: hayCiclos ? textoDeAvisos(delCiclo, abierto.diasVencido > 0) : 'Sin vencimiento' },
+    avisos: {
+      titulo: tituloDeAvisos(delCiclo.total),
+      texto: hayCiclos ? textoDeAvisos(delCiclo, vencido) : 'Sin vencimiento',
+      textosCortos: hayCiclos ? textosCortosDeAvisos(delCiclo, vencido) : []
+    },
     area: { nombre: dataset.area ?? null, texto: textoDelArea(estado), vencido: estado.estado === 'vencido' },
     alArea,
     desde: desdeDe(abierto, dataset),

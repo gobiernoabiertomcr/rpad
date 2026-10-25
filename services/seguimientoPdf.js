@@ -225,8 +225,11 @@ const dibujarNodo = (doc, x, y, ancho, piezas, { borde = COLOR.tinta } = {}) => 
   }
 };
 
-// Un tramo entre dos nodos: el título arriba, la flecha (llena o punteada) y el texto debajo
-const dibujarTramo = (doc, x, y, ancho, { titulo, texto, color, punteado }) => {
+// Un tramo entre dos nodos: el título arriba, la flecha (llena o punteada) y el texto debajo, en dos renglones de letra fija.
+// `textosCortos`: versiones cada vez más cortas del texto (la lista de los avisos recortada del medio: textosCortosDeAvisos, en
+// services/seguimientoReglas.js). Va el primero de [texto, ...textosCortos] que entra sin cortarse; si ninguno entra, el último,
+// cortado al final con «…» como siempre. Sin versiones, el texto de siempre.
+const dibujarTramo = (doc, x, y, ancho, { titulo, texto, textosCortos = [], color, punteado }) => {
   const margen = 6;
   const anchoTexto = ancho - 2 * margen;
   renglon(doc, titulo ?? '', x + margen, y + 7, { ancho: anchoTexto, tamano: LETRA.tramo, fuente: NEGRITA, color });
@@ -240,7 +243,11 @@ const dibujarTramo = (doc, x, y, ancho, { titulo, texto, color, punteado }) => {
   doc.restore();
   doc.polygon([x1, yFlecha], [x1 - 6.5, yFlecha - 3.4], [x1 - 6.5, yFlecha + 3.4]).fill(color);
   const opciones = (t) => ({ lineGap: -0.075 * t });
-  const ajuste = ajustar(doc, texto ?? '', { ancho: anchoTexto, lineas: 2, max: LETRA.nodoTexto, min: LETRA.nodoTexto, opciones });
+  let ajuste;
+  for (const candidato of [texto, ...(Array.isArray(textosCortos) ? textosCortos : [])]) {
+    ajuste = ajustar(doc, candidato ?? '', { ancho: anchoTexto, lineas: 2, max: LETRA.nodoTexto, min: LETRA.nodoTexto, opciones });
+    if (!ajuste.cortado) break;
+  }
   escribir(doc, ajuste, x0, y + 28, COLOR.gris);
 };
 
@@ -259,7 +266,9 @@ const dibujarCircuito = (doc, circuito, y, { activo = true } = {}) => {
     { texto: 'RPAD', tamano: LETRA.nodo, fuente: NEGRITA, lineas: 1 },
     { texto: 'Dir. de Datos Públicos y Comunicación', tamano: LETRA.nodoTexto, color: COLOR.gris, lineas: 2 }
   ]);
-  dibujarTramo(doc, xs[1], y, ANCHOS_CIRCUITO[1], { titulo: circuito.avisos?.titulo, texto: circuito.avisos?.texto, color: COLOR.acento });
+  dibujarTramo(doc, xs[1], y, ANCHOS_CIRCUITO[1], {
+    titulo: circuito.avisos?.titulo, texto: circuito.avisos?.texto, textosCortos: circuito.avisos?.textosCortos, color: COLOR.acento
+  });
   dibujarNodo(doc, xs[2], y, ANCHOS_CIRCUITO[2], [
     { texto: circuito.nodoMedio?.nombre, tamano: LETRA.nodo, fuente: NEGRITA, lineas: 3 },
     { texto: circuito.nodoMedio?.rol, tamano: LETRA.nodoTexto, color: COLOR.gris, lineas: 2 }

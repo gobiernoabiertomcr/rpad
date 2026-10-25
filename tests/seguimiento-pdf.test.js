@@ -809,3 +809,89 @@ describe('renderSeguimiento: la descarga de una hoja no cambió', () => {
     assert.ok(!lineas.some(l => l.startsWith('Anexo de la Nota Digital')), lineas.join(' | '));
   });
 });
+
+// La lista de «Avisos del ciclo abierto» que no entra (spec 2026-10-24-reiteracion-en-su-anexo, decisión del usuario: «recortar del
+// medio»): el texto va en dos renglones de letra fija y, si no entra, se usa la primera versión más corta del servidor
+// (`textosCortos`) que entra: se sacan números del medio y siempre quedan el primero y los últimos (la reiteración que acompaña al
+// anexo va última). El título («N avisos») sigue contando todo. Con una lista que entra, el texto de siempre.
+describe('renderSeguimiento: la lista de avisos que no entra se recorta del medio', () => {
+  // El 11 (vencido desde el 31/01/2024; en el ciclo abierto, 11 emails y la Nota Digital N° 2/26 del 13/10/2026) con las
+  // reiteraciones que le seguirían cada 20 días hábiles, sumadas a una copia de sus fuentes (CASOS no se modifica). Cada
+  // Seguimiento se calcula el día de la última
+  const REITERACIONES = [[9, 2026, '2026-11-02'], [13, 2026, '2026-11-30'], [17, 2026, '2026-12-28'], [2, 2027, '2027-01-25'],
+    [5, 2027, '2027-02-22'], [8, 2027, '2027-03-22'], [11, 2027, '2027-04-19'], [14, 2027, '2027-05-17']];
+  const reiteracion = ([numero, anio, fecha], i) => ({
+    ...CASOS[11].notas[0], id: 100 + i, numero, anio, tipo: 'reiteracion', fecha, enviada: `${fecha} 08:15:03`
+  });
+  const fuentesDel11 = (cuantas) => ({ ...CASOS[11], notas: [...CASOS[11].notas, ...REITERACIONES.slice(0, cuantas).map(reiteracion)], catalogos: CATALOGOS });
+  const hoyDe = (cuantas) => REITERACIONES[cuantas - 1][2];
+  const del11 = (cuantas) => seguimientoDe(fuentesDel11(cuantas), hoyDe(cuantas), OPCIONES_CINTA);
+  const dibujar = (s, hoy) => renderSeguimiento(s, { hoy, generado: GENERADO });
+  // El texto de los avisos tal como se escribió (el que recibió PDFKit, antes de partirlo en los dos renglones)
+  const textoDeLosAvisos = (textos, buscado = /emails y las Notas Digitales/) => {
+    const avisos = textos.filter(t => buscado.test(t.texto));
+    assert.equal(avisos.length, 1, textos.map(t => t.texto).join(' | '));
+    return avisos[0].texto;
+  };
+
+  it('9 notas: no termina en «…», lleva el primer número y el último, el título cuenta todo y nada se pisa', async () => {
+    const s = del11(8);
+    assert.equal(s.circuito.avisos.titulo, '20 avisos');
+    const hoja = await diagramacion(() => dibujar(s, hoyDe(8)));
+    const texto = textoDeLosAvisos(hoja.textos);
+    assert.ok(!texto.endsWith('…'), texto);
+    assert.ok(texto.startsWith('11 emails y las Notas Digitales N° 2/26, …, ') && texto.endsWith(' y 14/27'), texto);
+    // La primera versión que entra en los dos renglones, no la más corta: se sacan del medio solo los números que hace falta
+    assert.equal(texto, '11 emails y las Notas Digitales N° 2/26, …, 5/27, 8/27, 11/27 y 14/27');
+    assert.ok(s.circuito.avisos.textosCortos.includes(texto) && s.circuito.avisos.textosCortos.at(-1) !== texto, texto);
+    const lineas = lineasPorHoja(await dibujar(s, hoyDe(8)));
+    assert.equal(lineas.length, 1);
+    assert.ok(lineas[0].includes('20 avisos'), lineas[0].join(' | '));
+    verificarDiagramacion(hoja);
+  });
+
+  it('en el anexo, con la reiteración sumada (N° 14/27 y PRUEBA), la propia es el último número y nada se pisa', async () => {
+    const fecha = hoyDe(8);
+    const datasets = [{ id: 11, vencimiento: CASOS[11].dataset.proxima, pedido: { texto: del11(7).ficha.pedido } }];
+    const fuentes = new Map([[11, fuentesDel11(7)]]);
+    for (const [numero, anio, numeroTexto] of [[14, 2027, '14/27'], ['PRUEBA', null, 'PRUEBA']]) {
+      const propia = { numero, anio, gestion: 'externa', enviada: `${fecha} 08:15:03`, para: 'a@x', cc: null, creado_por: null, firmante: null };
+      const lista = await seguimientosDeLaNota(datasets, fecha, fuentes, propia);
+      const render = () => renderAnexoDeSeguimiento(lista, { hoy: fecha, generado: { momento: `${fecha} 08:15:03`, por: null }, numeroTexto });
+      const hoja = await diagramacion(render);
+      const texto = textoDeLosAvisos(hoja.textos);
+      assert.ok(!texto.endsWith('…'), texto);
+      assert.ok(texto.startsWith('11 emails y las Notas Digitales N° 2/26, …, ') && texto.endsWith(` y ${numeroTexto}`), texto);
+      assert.equal(lista[0].circuito.avisos.titulo, '20 avisos');
+      verificarDiagramacion(hoja);
+    }
+    assert.equal(fuentes.get(11).notas.length, 8, 'no modifica las fuentes recibidas');
+  });
+
+  it('con una lista que entra, el texto de siempre aunque haya versiones más cortas (4 y 5 notas)', async () => {
+    for (const cuantas of [3, 4]) {
+      const s = del11(cuantas);
+      assert.equal(s.circuito.avisos.textosCortos.length, cuantas - 2);
+      const hoja = await diagramacion(() => dibujar(s, hoyDe(cuantas)));
+      assert.equal(textoDeLosAvisos(hoja.textos), s.circuito.avisos.texto);
+    }
+  });
+
+  it('con 3 notas (sin versiones más cortas), el texto dibujado es el de siempre', async () => {
+    const s = del11(2);
+    assert.deepEqual(s.circuito.avisos.textosCortos, []);
+    const hoja = await diagramacion(() => dibujar(s, hoyDe(2)));
+    assert.equal(textoDeLosAvisos(hoja.textos), '11 emails y las Notas Digitales N° 2/26, 9/26 y 13/26');
+    assert.equal(s.circuito.avisos.texto, '11 emails y las Notas Digitales N° 2/26, 9/26 y 13/26');
+  });
+
+  it('si ni la versión más corta entra, va la última cortada al final con «…», como siempre', async () => {
+    const s = seguimiento(52);
+    const relleno = ' 1/26,'.repeat(40);
+    const avisos = { ...s.circuito.avisos, texto: `Primera${relleno}`, textosCortos: [`Segunda${relleno}`, `Tercera${relleno}`] };
+    const hoja = await diagramacion(() => render({ ...s, circuito: { ...s.circuito, avisos } }));
+    const texto = textoDeLosAvisos(hoja.textos, /^(Primera|Segunda|Tercera)/);
+    assert.ok(texto.startsWith('Tercera') && texto.endsWith('…'), texto);
+    verificarDiagramacion(hoja);
+  });
+});

@@ -31,11 +31,11 @@ const PROPIA = Object.freeze({
 const ESPERADO = {
   52: {
     detalle: 'Reiteración de gestión externa: vencía el 31/07/2026. Pide: Vigente al 30/06/2026.',
-    avisos: { titulo: '7 avisos', texto: '5 emails y las Notas Digitales N° 2/26 y 2/27' }, antes: '6 avisos'
+    avisos: { titulo: '7 avisos', texto: '5 emails y las Notas Digitales N° 2/26 y 2/27', textosCortos: [] }, antes: '6 avisos'
   },
   58: {
     detalle: 'Reiteración de gestión externa: vence el 30/11/2026. Pide: Vigente al 31/10/2026.',
-    avisos: { titulo: '2 avisos', texto: '1 email y la Nota Digital N° 2/27' }, antes: '1 aviso'
+    avisos: { titulo: '2 avisos', texto: '1 email y la Nota Digital N° 2/27', textosCortos: [] }, antes: '1 aviso'
   }
 };
 const notasDigitales = (s) => s.movimientos.filter(m => m.tipo === 'nota');
@@ -162,7 +162,7 @@ describe('seguimientosDeLaNota con la reiteración que acompaña', () => {
     // La vista previa: la «XX» en lugar de la real, nunca las dos
     const [previa] = await seguimientosDeLaNota([deLaNota(52)], HOY, fuentes, { ...PROPIA, numero: 'XX', anio: null });
     assert.deepEqual(deHoy(previa).map(m => m.titulo), ['Nota Digital N° XX a DGMIT']);
-    assert.deepEqual(previa.circuito.avisos, { titulo: '7 avisos', texto: '5 emails y las Notas Digitales N° 2/26 y XX' });
+    assert.deepEqual(previa.circuito.avisos, { titulo: '7 avisos', texto: '5 emails y las Notas Digitales N° 2/26 y XX', textosCortos: [] });
     assert.equal(fuentes.get(52).notas.length, CASOS[52].notas.length + 1, 'no la saca de las fuentes recibidas');
   });
 
