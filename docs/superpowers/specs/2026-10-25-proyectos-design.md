@@ -1,6 +1,6 @@
 # Proyectos: la página Gestión pasa a llamarse Proyectos, con el estilo del Seguimiento
 
-Fecha: 25/10/2026. **Estado: borrador para revisar.**
+Fecha: 25/10/2026. **Estado: aprobado por el usuario el 25/10/2026** (con las decisiones «Mías» de la sección 13).
 
 **Maqueta navegable:** `2026-10-25-proyectos-mockups/proyectos.html`.
 - **Cómo se mira:** con un servidor estático (el preview `proyectos-maqueta`, puerto 3022). Usa la carcasa y el `main.css` reales.
@@ -269,8 +269,12 @@ Reemplaza a «Timeline».
 - **«Descargar»:** usa `API.pedirArchivo` con el JWT en el encabezado y `descargarBlob`, con el nombre original.
 
 **Confirmaciones:** un modal chico (`pr-modal-chico`), no `confirm()`:
-- **Eliminar el proyecto:** «¿Eliminar el proyecto <nombre>? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con sus N hitos y M documentos.» El proyecto se da de baja (soft delete), como hoy.
-- **Eliminar un hito:** «¿Eliminar el hito <título>? Se borran también sus N archivos.»
+- **Eliminar el proyecto:** «¿Eliminar el proyecto <nombre>? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 5 hitos y 2 documentos.» El proyecto se da de baja (soft delete), como hoy.
+  - Si falta uno de los dos, solo se nombra el otro: «…, con 1 hito.».
+  - Sin ninguno, la frase termina en «Informe anual.».
+- **Eliminar un hito:** «¿Eliminar el hito <título>? Se borran también sus 3 archivos.»
+  - Con uno solo: «Se borra también su archivo.».
+  - Sin archivos, solo la pregunta.
 - **Eliminar un logro:** el mismo texto, con «logro».
 - **Eliminar un documento o un archivo:** «¿Eliminar <nombre del archivo>?»
 
