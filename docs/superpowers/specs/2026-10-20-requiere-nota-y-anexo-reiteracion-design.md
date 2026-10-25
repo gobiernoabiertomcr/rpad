@@ -145,6 +145,8 @@ El Seguimiento se calcula con `hoy` = la fecha de la nota (`seguimientoDe(fuente
 
 La hoja no muestra la reiteración que la acompaña, porque se genera antes de que esa nota exista. Muestra todo lo anterior.
 
+Desde el despliegue de la spec `2026-10-24-reiteracion-en-su-anexo-design.md`, la hoja muestra también la reiteración que la acompaña, como las demás notas: es el movimiento más nuevo, cuenta en «Avisos del ciclo abierto» y tiene su marca en la cinta (en la vista previa, «XX»; en la prueba, «PRUEBA»). Los anexos generados antes no cambian.
+
 ### 2.2 Cuándo se genera y dónde se guarda
 
 - Igual que el anexo del aviso: en `generarNota`, después de asignar el número y en la misma transacción, guardado en `notas_digitales.anexo_pdf` (MEDIUMBLOB).
@@ -219,6 +221,7 @@ No hay nada nuevo que hacer: con `anexo_pdf` guardado, `tiene_anexo` es verdader
 5. En el texto plano de la reiteración externa, «Venció» y «Situación» siguen en dos renglones.
 6. No se agrega una columna a `notas_digitales_datasets`: la nota ya está guardada en bytes.
 7. El anexo no incluye la reiteración que acompaña, y el pie va sin «por».
+   - Desde el despliegue de la spec `2026-10-24-reiteracion-en-su-anexo-design.md`, el anexo incluye también la reiteración que acompaña; el pie sigue sin «por».
 8. Si el anexo de una reiteración no se puede generar, la nota tampoco se genera, como con el aviso.
 9. En la vista previa con datos de ejemplo, el anexo también es de ejemplo.
 10. El filtro de la lista tiene tres opciones (Todos, Sí, No). «Sí» y «No» muestran solo externos.

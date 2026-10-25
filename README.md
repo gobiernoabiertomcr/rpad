@@ -784,11 +784,12 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 
 ## Changelog
 
-### Notas Digitales en hoja oficio (2026-10)
+### Notas Digitales en hoja oficio y la reiteración en su anexo (2026-10)
 - El PDF de las Notas Digitales (aviso, reiteración, autorización y auditoría, también la prueba y la vista previa de Correos) sale en hoja oficio Legal, 8½ × 14 pulgadas (612 × 1008 pt, 215,9 × 355,6 mm), el papel en el que se imprime; antes salía en 216 × 330 mm
 - La nota se arma igual: el membrete, los márgenes, la letra, las tablas, la firma, el cierre y la paginación no cambian. Cada hoja tiene 26 mm más para el texto (unos 5 renglones, o 3 a 4 filas de tabla): una nota que salía en dos hojas puede salir en una, y la reiteración del 02/11 de la simulación pasa de 7 a 8 filas en la primera hoja
 - Los anexos (del aviso y de la reiteración), el PDF del Seguimiento y los reportes siguen en A4. Las notas ya generadas conservan su PDF de 216 × 330 (también las pendientes o fallidas generadas antes del despliegue)
-- Solo `services/notasDigitalesPdf.js`; Restart, sin SQL ni Run NPM Install
+- El anexo de la reiteración muestra también la propia reiteración que acompaña, como las demás notas: en cada hoja es el movimiento más nuevo ("Nota Digital N° 2/27 a DGMIT"), suma uno en "Avisos del ciclo abierto" y tiene su marca en la cinta. En "Ver anexo" de Correos va como "N° XX" y en la prueba como "N° PRUEBA" (con datos reales, el mismo día en que salió la reiteración real, en lugar de ella, para no repetirla). El Seguimiento de la pantalla y la descarga de su PDF no cambian, ni los anexos ya generados. En el PDF, si la lista de los avisos del ciclo no entra en sus dos renglones, se recorta del medio: siempre se ven el primer número y los últimos
+- Solo archivos (`services/notasDigitales.js`, `services/notasDigitalesContenido.js`, `services/notasDigitalesPdf.js`, `services/notasDigitalesSeguimiento.js`, `services/seguimientoCinta.js`, `services/seguimientoPdf.js` y `services/seguimientoReglas.js`); Restart, sin SQL ni Run NPM Install
 
 ### Notas DGMIT en el Seguimiento (2026-10)
 - Rol nuevo, **Colaborador**: ve lo mismo que un lector y, además, carga notas DGMIT. El editor crea y modifica lectores y colaboradores, y pasa a alguien de uno a otro; Usuarios suma el grupo "Colaboradores" y una línea de ayuda debajo del rol
