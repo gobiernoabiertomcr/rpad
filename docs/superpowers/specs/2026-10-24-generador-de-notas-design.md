@@ -189,7 +189,7 @@ Cambian tres cosas; el resto de la nota no cambia.
 - **Sin firma**: se quitan las firmas (imagen, nombre, cargo y el renglón del personal contratado) y queda solo el espacio en blanco debajo de "DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN, {fecha}." (decisión del usuario: "Solo el espacio en blanco"). Con dos firmas (licencia con persona autorizada), quedan los dos espacios y la leyenda que cita la autorización.
 - Se quita la primera línea del email ("SE ADJUNTAN NOTA Y ANEXO EN PDF" / "SE ADJUNTA NOTA EN PDF"): es del email, no de la nota.
 - Todo lo demás queda: REF, número ("Nota Digital N° 9/26"; "PRUEBA" en una prueba), destinatario, párrafos, tablas, datos de contacto, la línea "Anexo: …", la justificación y la línea CC.
-- **Hoja**: la misma de la nota de la DGMIT (4.1): oficio de 21,6 × 35,6 cm, encabezado, marca de agua, pie y "Página X de Y". Es el papel en el que se imprime para firmar (lo confirmó el usuario); el PDF de las Notas Digitales sigue en 21,6 × 33 cm, así que el Word puede cortar las hojas en otros lugares que el PDF. No importa: el contenido es el mismo.
+- **Hoja**: la misma de la nota de la DGMIT (4.1): oficio de 21,6 × 35,6 cm, encabezado, marca de agua, pie y "Página X de Y". Es el papel en el que se imprime para firmar (lo confirmó el usuario). El PDF de las Notas Digitales sale en la misma hoja oficio Legal (spec 2026-10-24-notas-hoja-oficio), pero con sus márgenes y su letra, así que el Word puede cortar las hojas en otros lugares que el PDF. No importa: el contenido es el mismo.
 - El anexo sigue en PDF (botón "Anexo"): no hay Word del anexo.
 - Nombre del archivo: "Nota-Digital-{N}-{AA}.docx" (como "Anexo-Nota-Digital-N-AA.pdf"); una prueba, "Nota-Digital-prueba-{id}.docx".
 
@@ -205,7 +205,7 @@ Cambian tres cosas; el resto de la nota no cambia.
   - área existente;
   - datasets: lista no vacía de ids enteros positivos, sin repetidos; cada uno existente, activo, **del área elegida** (hoy acepta de otra área), pedible (externo con «Requiere nota» en Sí o sin dato) y **no al día** a la fecha de la nota (400: "«título» está al día: todavía no hay datos para pedir.").
 - Ninguna fecha se arma con `new Date` local ni `toISOString`: texto `AAAA-MM-DD` y `hoyArgentina()`, como el resto del sistema.
-- Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido, "Qué se solicita" y el número de su nota DGMIT original del ciclo abierto) los da un endpoint nuevo detrás de `cargaNotasDgmit`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos, sin el ámbito ni el pedido para otra fecha).
+- Los datos de la pantalla (áreas pedibles con su ámbito, artículos, dependencia y datasets con estado, frecuencia en nota, pedido, "Qué se solicita" y el número de su nota DGMIT original del ciclo abierto) los da un endpoint nuevo detrás de `cargaNotasDgmit`; no se usan `GET /api/datasets` ni `GET /api/areas` (públicos y sin el pedido para otra fecha; `GET /api/areas` trae el ámbito, porque devuelve todas las columnas del área, pero no cuáles de sus datasets se pueden pedir).
 
 ## 8. Base de datos y despliegue
 
