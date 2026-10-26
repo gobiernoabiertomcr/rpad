@@ -66,6 +66,9 @@ const VERSION_REPORTES = '20261203';
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia
 const VERSION_NOTAS = '20261204';
+// proyectos.js (la página nueva de Proyectos, con el estilo del Seguimiento: los carriles de 3 años, la línea de tiempo y los logros
+// del área, spec 2026-10-25-proyectos, 1, 2 y 10): el número siguiente al más alto de este archivo. Su versión es propia
+const VERSION_PROYECTOS = '20261206';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -229,7 +232,7 @@ describe('páginas', () => {
   // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
   for (const [pagina, script, version] of [['datasets.html', 'datasets', VERSION_PUBLICAS], ['dataset.html', 'dataset-detail', VERSION_PUBLICAS],
     ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA], ['seguimiento.html', 'seguimiento', VERSION_SEGUIMIENTO],
-    ['reportes.html', 'reportes', VERSION_REPORTES], ['notas.html', 'notas', VERSION_NOTAS]]) {
+    ['reportes.html', 'reportes', VERSION_REPORTES], ['notas.html', 'notas', VERSION_NOTAS], ['proyectos.html', 'proyectos', VERSION_PROYECTOS]]) {
     it(`${pagina}: ${script}.js con la versión ${version}, después de api.js`, () => {
       const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
       assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${version}`]);
@@ -374,12 +377,13 @@ describe('páginas', () => {
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página (las 13, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas)
+  // copiados a mano en cada página (las 14, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, y vuelven
+  // a ser 14 mientras proyectos.html convive con gestion.html: cuando se borre gestion.html, spec 2026-10-25-proyectos, 11, quedan 13)
   const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 13 páginas con carcasa', () => {
-    assert.equal(CON_CARCASA.length, 13);
+  it('hay 14 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 14);
   });
 
   for (const pagina of CON_CARCASA) {
