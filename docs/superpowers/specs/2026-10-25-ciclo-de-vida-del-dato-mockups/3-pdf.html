@@ -38,7 +38,7 @@
     const caja = document.getElementById('paginas');
     caja.innerHTML = '';
     document.getElementById('m-descarga').href = archivo;
-    const pdf = await pdfjsLib.getDocument(archivo).promise;
+    const pdf = await pdfjsLib.getDocument({ url: archivo, standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/' }).promise;
     for (let i = 1; i <= pdf.numPages; i++) {
       const pagina = await pdf.getPage(i);
       const vista = pagina.getViewport({ scale: 2 });
