@@ -299,7 +299,7 @@
         .rp-no-disponible { height: auto; min-height: 40px; background: #fff; color: var(--sg-suave); border-color: var(--sg-linea); cursor: not-allowed; white-space: normal; }
         .rp-hojas { margin: 8px 0 0; font-size: 0.78rem; color: var(--sg-suave); text-align: center; }
 
-        /* Las cuatro tarjetas de «Para trabajar» van de a dos cuando no entran en una fila */
+        /* Las cuatro tarjetas de cada grupo van de a dos cuando no entran en una fila */
         @media (max-width: 1100px) {
             .rp-grilla.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
@@ -547,7 +547,7 @@
                     </div>
                 </section>
 
-                <!-- Reportes: siete tarjetas en dos grupos, «Para presentar» y «Para trabajar» (spec 2026-10-24-metricas-y-reportes, 5). Las dibuja
+                <!-- Reportes: ocho tarjetas en dos grupos, «Para presentar» y «Para trabajar» (spec 2026-10-24-metricas-y-reportes, 5). Las dibuja
                      reportes.js (htmlDeReportes); cada una descarga su PDF con el JWT en el encabezado -->
                 <section id="vista-reportes" role="tabpanel" aria-labelledby="pestana-reportes" hidden>
                     <div id="rp-reportes"></div>

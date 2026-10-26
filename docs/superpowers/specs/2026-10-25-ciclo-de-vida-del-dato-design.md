@@ -1,6 +1,6 @@
 # Ciclo de vida del dato
 
-Fecha: 25/10/2026. Estado: spec y maquetas aprobadas por el usuario el 25/10/2026 (sin implementar: va en la cola después de Proyectos).
+Fecha: 25/10/2026. Estado: spec y maquetas aprobadas por el usuario el 25/10/2026; implementada en la rama claude/ciclo-de-vida-del-dato-aba0d0 (pendiente del merge en main).
 
 Maquetas en `docs/superpowers/specs/2026-10-25-ciclo-de-vida-del-dato-mockups/`. Para verlas, servir la carpeta con cualquier
 servidor estático; los datos y los PDF de ahí son de prueba y este documento manda sobre ellos.
