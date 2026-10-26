@@ -4,13 +4,14 @@
 // encabezados). Puro: sin base de datos ni Date local; `hoy` es 'AAAA-MM-DD', el día de hoy en Argentina.
 import { formatoCorto } from './notasDigitalesCalendario.js';
 
-// El nombre del PDF de `tipo` (el data-reporte de cada tarjeta): 'metricas' y 'informe' con su `anio`; 'area' con el id del área
-// (`area`) y `hoy`; 'estado', 'avisos', 'agenda' y 'completar' con `hoy`. El Estado general es el único con el día como dd-mm-aaaa (el
-// formato de siempre). null si `tipo` no es de los siete
+// El nombre del PDF de `tipo` (el data-reporte de cada tarjeta): 'metricas', 'informe' y 'ciclo' con su `anio`; 'area' con el id del
+// área (`area`) y `hoy`; 'estado', 'avisos', 'agenda' y 'completar' con `hoy`. El Estado general es el único con el día como dd-mm-aaaa
+// (el formato de siempre). null si `tipo` no es de los ocho
 export const nombreDelReporte = (tipo, { anio, area, hoy } = {}) => {
   switch (tipo) {
     case 'metricas': return `Metricas-RPAD-${anio}.pdf`;
     case 'informe': return `Informe-anual-RPAD-${anio}.pdf`;
+    case 'ciclo': return `Ciclo-de-vida-del-dato-${anio}.pdf`;
     case 'estado': return `estado-general-${formatoCorto(hoy).replace(/\//g, '-')}.pdf`;
     case 'area': return `Reporte-area-${area}-${hoy}.pdf`;
     case 'avisos': return `Avisos-RPAD-${hoy}.pdf`;

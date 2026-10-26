@@ -1,9 +1,11 @@
 // Los reportes PDF con el diseño del anexo (spec 2026-10-24-metricas-y-reportes, 5.1): la base (services/reportesPdfBase.js), el
-// Estado general de los datasets, Métricas del año, Por área, Avisos del RPAD, Agenda de pedidos, Datos para completar y el Informe
-// anual. Puro: los datos se arman acá, sin base de datos (los textos del reporte servido por la API, con el set controlado, están en
+// Estado general de los datasets, Métricas del año, Por área, Avisos del RPAD, Agenda de pedidos, Datos para completar, el Informe
+// anual y el Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 2). Puro: los datos se arman acá, sin base de datos (los
+// textos del reporte servido por la API, con el set controlado, están en
 // estados-api.test.js, reportes.test.js y metricas-api.test.js; la agenda como datos, en reportes-agenda.test.js).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarPildora, prepararTabla, LIMITE, ENTRE, lugarPara, dibujarJuntos, prepararTitulo,
@@ -21,7 +23,11 @@ import {
 import { renderInformeAnual, comparacionDe, logrosPorProyecto } from '../services/reportesInformeAnualPdf.js';
 import { estadoDelDataset } from '../services/fechasDatasetReglas.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
-import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe } from '../services/metricasReglas.js';
+import {
+  casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe, etapasDe, conAnterior, VENTANA_DE_LA_REGLA
+} from '../services/metricasReglas.js';
+import { renderCicloDeVida, TEXTOS_DEL_CICLO } from '../services/reportesCicloDeVidaPdf.js';
+import { opcionesDeMetricas } from '../services/metricasOpciones.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { formatoLargo, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { IZQUIERDA, CONTENIDO } from '../services/notasDigitalesAnexo.js';
@@ -1857,4 +1863,530 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
       assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().filter(l => /NaN|null|undefined/.test(l)).join(' | '));
     });
   }
+});
+
+// =====================================================
+// El PDF de Métricas y el Informe anual no cambian (spec 2026-10-25-ciclo-de-vida-del-dato, 3.5): el Ciclo de vida del dato reusa
+// piezas de services/reportesMetricasPdf.js (exportadas en su lugar) y esos dos PDF tienen que quedar idénticos. Se compara el
+// contenido de cada hoja (contenidoPorHoja, que no mira la fecha de creación del PDF) contra la referencia tomada con el código de
+// antes de esa tarea, un hash por hoja
+// =====================================================
+
+const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHash('sha256').update(contenido, 'latin1').digest('hex'));
+
+// La referencia: los hashes de cada hoja, tomados con el código anterior al Ciclo de vida del dato. La hoja 3 de los dos Informes
+// anuales se volvió a tomar al traer Proyectos (spec 2026-10-25-proyectos): su único cambio en ese PDF es «Los hitos de AAAA cargados
+// en Gestión» → «… cargados en Proyectos» (services/reportesInformeAnualPdf.js), comprobado contra el código de antes del merge
+const REFERENCIA_DE_LOS_PDF = {
+  'Métricas: los casos, con las métricas manuales': [
+    '341d7fbf281fd972313075f0f4a2a72f51604a11d4f6ce54efd7d1ce8e02a66c',
+    '596d156d8dc0c1317dd895d1b762c2b6abae85400ac43c0e1659f89d71651e07',
+    'c4bed0f2a9f3e9e868c2e7331572bc3f1d5d23c07f979b094f8c8b477624cb5b',
+    'ba74bcbe58b1843ae77d30ec527cf3c0e4faa0a43d119ba71dfa4a99945316b3'
+  ],
+  'Métricas: con una nota DGMIT, promedio en días corridos y dos destildados': [
+    '7d082a46897413744557df1c410f5883b224cbce8d0898a3a9359e7afc8f389a',
+    'bcd0d261255a81fb983a8b5ae61823b1cec2711dededa31bb1152ac17dfd4628',
+    '0ede6c50fb9b749873e42a717a55ee232d919de3e34a2bb09314837c2a1a0afb',
+    '68ca4866667a23170de2a3f33342c6b0b25b83eb9042d0f403979173f7cfc6cf',
+    '64dfb481191d59fd35d552da99b6432ace0e31e8ee271445cf188e39ba1746ad'
+  ],
+  'Métricas: un año cerrado sin foto': [
+    '2ce2c535742a88eae8cfffc7901d94c533785cbc894776c31f2cccc8b2f52256',
+    '9ba43c0cb18799abffdbe57a60ea6a8e7d05e460d3cd9dd5dfff4090a0d22d32',
+    '644352bcf71cba6e2b853d7d5900563625fc059a88403cd946ded88b7e0370f6',
+    'b41f65872e8c92ff1ce1dfb7cbf89e4229f663ca2b9c8449b9427b852e6c4168'
+  ],
+  'Informe anual: el primer año con foto': [
+    '378207d03c6532c0951a8a60b2c1626159f16df9a1bc19ba748afa9981690ae9',
+    '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
+    'e185bd524c985140c2b6a206eea3b2a8a49e57e082d1a391b99b949c056bf53a'
+  ],
+  'Informe anual: con el año anterior y los logros': [
+    '378207d03c6532c0951a8a60b2c1626159f16df9a1bc19ba748afa9981690ae9',
+    '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
+    '7794fdd5f3bfc3011d0d06ad65ff5bcfc1ef4e89025a7de01e15609639e41c33'
+  ]
+};
+
+describe('el PDF de Métricas y el Informe anual no cambian', () => {
+  const pdfs = [
+    ['Métricas: los casos, con las métricas manuales', () => renderMetricas(metricasDeLosCasos({ manuales: MANUALES }))],
+    ['Métricas: con una nota DGMIT, promedio en días corridos y dos destildados',
+      () => renderMetricas(metricasDeLosCasos({ mapa: conNotaDgmit(), estadistico: 'promedio', dias: 'corridos', sin: [11, 10] }))],
+    ['Métricas: un año cerrado sin foto', () => renderMetricas(anioCerrado(false))],
+    ['Informe anual: el primer año con foto', () => renderInforme()],
+    ['Informe anual: con el año anterior y los logros', () => renderInforme({ anterior: fotoDeLosCasos(2025), logros: logrosPorProyecto(HITOS) })]
+  ];
+
+  it('el PDF de Métricas y el Informe anual no cambian', async () => {
+    const hashes = {};
+    for (const [nombre, armar] of pdfs) hashes[nombre] = hashesPorHoja(await armar());
+    assert.deepEqual(hashes, REFERENCIA_DE_LOS_PDF, JSON.stringify(hashes, null, 2));
+  });
+});
+
+// =====================================================
+// Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 2): dos hojas A4, la gestión externa y la interna, con un bloque
+// por etapa (el circuito de arriba, el tramo, la descripción, las cifras y los renglones de notas)
+// =====================================================
+
+const GENERADO_CICLO = { momento: '2026-10-24 15:24:10', por: 'Usuario Ejemplo' };
+const renderCiclo = (datos, hoy = HOY_DE_LAS_METRICAS) => renderCicloDeVida(datos, { hoy, generado: GENERADO_CICLO });
+
+// Los datos del reporte como los arma cicloDeVidaDe en vivo (controllers/metricasController.js), sin base: las etapas de los casos
+// reales (tests/metricas-casos.js), con el año anterior de `anteriores` (otro etapasDe, o null: «Año anterior: no hay»)
+const cicloDeLosCasos = ({ anio = 2026, al = HOY_DE_LAS_METRICAS, mapa = mapaDeLosCasos(), anteriores = null, ...resto } = {}) => ({
+  anio, al, en_vivo: true, aviso_foto: null,
+  etapas: conAnterior(etapasDe(casosDe(mapa, { hoy: al }), { anio, al }), anteriores), ...resto
+});
+
+// Un título de dataset de 250 caracteres (Foco 1)
+const TITULO_DE_250 = 'Relevamiento de los espacios reservados para el estacionamiento de motos y bicicletas en la vía pública '.repeat(3).slice(0, 250);
+// Dos renglones de notas, de los más largos que arma etapasDe (Foco 5): el en curso y la aclaración de los avisados ya vencidos (que
+// ocupa dos renglones); y el orientativo, para el bloque con tres
+const DOS_NOTAS = [
+  { tipo: 'en_curso', texto: 'En curso: 1234 sin datos registrados todavía, hace 9876 días hábiles (mediana)' },
+  { tipo: 'aclaracion', texto: '1234 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.' }
+];
+const ORIENTATIVO = { tipo: 'orientativo', texto: 'Con tan pocos casos, es orientativo.' };
+// Un extremo como lo arma etapasDe (extremoDe en services/metricasReglas.js)
+const extremoAMano = (rotulo, habiles, corridos, titulo, mas) => {
+  const masTexto = mas > 0 ? ` y ${mas} más` : '';
+  return {
+    rotulo, habiles, corridos, dataset_id: 1, titulo, mas, numero: String(habiles), unidad: unidadDe(habiles, 'habiles'),
+    corridos_texto: `${corridos} ${unidadDe(corridos, 'corridos')}`, dataset_texto: `${titulo}${masTexto}`, mas_texto: masTexto
+  };
+};
+// Una etapa de etapasDe con cifras grandes: lo de la etapa (clave, nombre, nodos…) queda
+const etapaLlena = (etapa, { notas = DOS_NOTAS, titulo = TITULO_DE_250 } = {}) => {
+  const aviso = etapa.clave === 'aviso';
+  return {
+    ...etapa, n: 1234, habiles: { mediana: 1234, promedio: 1235 }, corridos: { mediana: 1789, promedio: 1790 },
+    largo: extremoAMano(aviso ? 'Con más anticipación' : 'El caso más largo', 9876, 13579, titulo, 14),
+    corto: extremoAMano(aviso ? 'Con menos anticipación' : 'El caso más corto', 1, 1, titulo, 1233),
+    vacio: null,
+    textos: {
+      indice: '1234', mediana: { numero: '1234', unidad: 'días hábiles', corridos: '1789 días corridos' },
+      promedio: { numero: '1235', unidad: 'días hábiles', corridos: '(1790 días corridos)' }, ciclos: 'de 1234 ciclos', notas,
+      anterior: 'Año anterior: mediana de 1234 días hábiles'
+    }
+  };
+};
+// Las siete etapas llenas, con la aclaración de la hoja externa (Foco 5)
+const cicloLleno = (opciones) => {
+  const datos = cicloDeLosCasos();
+  return {
+    ...datos,
+    etapas: {
+      ...datos.etapas,
+      externa: datos.etapas.externa.map(e => etapaLlena(e, opciones)), interna: datos.etapas.interna.map(e => etapaLlena(e, opciones)),
+      aclaracion_de_la_hoja: { externa: '1234 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.', interna: '' }
+    }
+  };
+};
+// Todas vacías: ningún caso
+const cicloVacio = () => cicloDeLosCasos({ mapa: new Map() });
+
+// La hoja más apretada (Foco 3 del plan): un año cerrado sin foto, al 31/12, con uno de los dos avisos de la foto que da el servidor
+// (opcionesDeMetricas, antes del día de la foto y en el reintento), la aclaración de la hoja y las notas que da un año real, hasta tres
+// renglones por bloque: en el aviso, el orientativo y la aclaración de dos renglones de los avisados ya vencidos; en el trámite, el
+// orientativo y los pendientes; en la respuesta, el orientativo, el en curso y la aclaración de la fuente pública
+const avisoDeLaFoto = (hoy) => opcionesDeMetricas({ anio: 2026 }, { hoy, aniosConFoto: [] }).aviso_foto;
+const AVISO_ANTES_DE_LA_FOTO = avisoDeLaFoto('2027-01-05');
+const AVISO_DE_REINTENTO = avisoDeLaFoto('2027-01-12');
+const NOTAS_DE_UN_ANIO_REAL = (() => {
+  const yaVencidos = { tipo: 'aclaracion', texto: '16 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.' };
+  const enCurso = { tipo: 'en_curso', texto: 'En curso: 12 sin datos registrados todavía, hace 145 días hábiles (mediana)' };
+  const fuentePublica = { tipo: 'aclaracion', texto: '11 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.' };
+  const pendientes = { tipo: 'pendientes', texto: '13 notas pendientes de carga' };
+  return {
+    externa: { aviso: [ORIENTATIVO, yaVencidos], tramite: [ORIENTATIVO, pendientes], respuesta: [ORIENTATIVO, enCurso, fuentePublica], carga: [ORIENTATIVO] },
+    interna: { aviso: [ORIENTATIVO, yaVencidos], produccion: [ORIENTATIVO, enCurso], carga: [ORIENTATIVO] }
+  };
+})();
+const cicloApretado = (resto) => {
+  const datos = cicloDeLosCasos({ al: '2026-12-31', ...resto });
+  const titulo = 'Cantidad de habilitaciones comerciales otorgadas por rubro y por barrio de la ciudad';
+  const conNotas = (gestion) => (e) => etapaLlena(e, { notas: NOTAS_DE_UN_ANIO_REAL[gestion][e.clave], titulo });
+  return {
+    ...datos,
+    etapas: {
+      ...datos.etapas, externa: datos.etapas.externa.map(conNotas('externa')), interna: datos.etapas.interna.map(conNotas('interna')),
+      aclaracion_de_la_hoja: { externa: '18 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.', interna: '' }
+    }
+  };
+};
+// Que cada nota esté entera en las líneas de su bloque (una en dos renglones se lee unida) y que ningún renglón suyo vaya cortado
+// con «…»
+const notasEnteras = (bloque, notas, donde) => {
+  const unido = bloque.join(' ');
+  for (const nota of notas) {
+    assert.ok(unido.includes(nota.texto), `${donde}: falta "${nota.texto}" en ${unido}`);
+    const cortado = bloque.find(l => l.endsWith('…') && nota.texto.includes(l.slice(0, -1)));
+    assert.equal(cortado, undefined, `${donde}: "${cortado}" va cortada`);
+  }
+};
+
+const pieDelCiclo = (k, anio = 2026) => `Ciclo de vida del dato · ${anio} · Hoja ${k} de 2`;
+const TONO = /tardanza|demora|atraso|sin respuesta|sin entregar|no mandó/i;
+const PUNTEADA = /\[3 2\.5\] 0 d/;
+const enOrden = (lineas, textos) => {
+  const posiciones = textos.map(t => lineas.indexOf(t));
+  assert.ok(posiciones.every(p => p !== -1), `faltan ${textos.filter((_, i) => posiciones[i] === -1).join(' | ')} en ${lineas.join(' | ')}`);
+  assert.deepEqual([...posiciones].sort((a, b) => a - b), posiciones, `fuera de orden: ${textos.join(' | ')}`);
+};
+// Las líneas de un bloque: desde el nombre de su etapa hasta el de la siguiente (o hasta «Cómo se cuenta.»)
+const bloqueDe = (lineas, nombre, siguiente = 'Cómo se cuenta.') => lineas.slice(lineas.indexOf(nombre), lineas.indexOf(siguiente));
+
+// Las variantes del Foco 1, 2 y 5, para ver que nada se pise
+const VARIANTES_DEL_CICLO = [
+  ['(a) los datos de los casos', () => cicloDeLosCasos()],
+  ['(b) las cuatro etapas externas llenas, con un título de 250 caracteres y dos notas en cada bloque', () => cicloLleno()],
+  ['(c) todas vacías', () => cicloVacio()],
+  ['un año cerrado sin foto: las dos píldoras y tres notas en cada bloque lleno', () => ({
+    ...cicloLleno({ notas: [ORIENTATIVO, ...DOS_NOTAS] }), al: '2026-12-31',
+    aviso_foto: 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.'
+  })],
+  ['con una nota DGMIT: el trámite y la respuesta ya tienen cifras', () => cicloDeLosCasos({ mapa: conNotaDgmit() })],
+  ['2027, sin la última oración de «Cómo se cuenta»', () => cicloDeLosCasos({ anio: 2027, al: '2027-03-01' })]
+];
+
+describe('Ciclo de vida del dato con el diseño del anexo', () => {
+  it('dos hojas A4', async () => {
+    for (const datos of [cicloDeLosCasos(), cicloLleno(), cicloVacio()]) {
+      const pdf = await renderCiclo(datos);
+      assert.ok(todasDelTamano(pdf, HOJA_A4), 'todas las hojas son A4');
+      assert.equal(lineasPorHoja(pdf).length, 2);
+    }
+  });
+
+  it('encabezado, título, píldora y pie', async () => {
+    const hojas = lineasPorHoja(await renderCiclo(cicloDeLosCasos()));
+    const titulos = ['Gestión externa', 'Gestión interna'];
+    hojas.forEach((lineas, k) => {
+      for (const t of ['DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', 'Ciclo de vida del dato', formatoLargo('2026-10-24'),
+        'CICLO DE VIDA DEL DATO · 2026, EN CURSO', titulos[k], 'Del 01/01/2026 al 24/10/2026, con todos los ciclos',
+        'EL CIRCUITO · MEDIANA EN DÍAS HÁBILES', 'Generado el 24/10/2026 a las 15:24 por Usuario Ejemplo', pieDelCiclo(k + 1)]) {
+        assert.ok(lineas.includes(t), `hoja ${k + 1}: falta "${t}" en ${lineas.join(' | ')}`);
+      }
+      assert.ok(!lineas.includes(titulos[1 - k]), `hoja ${k + 1}: ${titulos[1 - k]}`);
+    });
+    // Un año cerrado, al 31/12 y sin «en curso»; sin foto, una segunda píldora, en el sol, con el aviso del servidor
+    const conFoto = await renderCiclo({ ...cicloDeLosCasos({ al: '2026-12-31' }), en_vivo: false }, '2027-01-12');
+    const aviso = 'La foto de 2026 se saca el 10/01/2027';
+    const sinFoto = await renderCiclo({ ...cicloDeLosCasos({ al: '2026-12-31' }), aviso_foto: aviso }, '2027-01-05');
+    for (const [pdf, hoy] of [[conFoto, '2027-01-12'], [sinFoto, '2027-01-05']]) {
+      lineasPorHoja(pdf).forEach((lineas, k) => {
+        for (const t of ['CICLO DE VIDA DEL DATO · 2026', 'Del 01/01/2026 al 31/12/2026, con todos los ciclos', formatoLargo(hoy), pieDelCiclo(k + 1)]) {
+          assert.ok(lineas.includes(t), `hoja ${k + 1}: falta "${t}" en ${lineas.join(' | ')}`);
+        }
+        assert.ok(!lineas.some(l => l.includes('EN CURSO')), lineas.join(' | '));
+      });
+    }
+    lineasPorHoja(sinFoto).forEach(lineas => assert.ok(lineas.includes(aviso), lineas.join(' | ')));
+    assert.ok(lineasPorHoja(conFoto).every(lineas => !lineas.includes(aviso)));
+    assert.ok(contenidoPorHoja(sinFoto).every(c => c.includes(relleno('#FDF1CC'))), 'el aviso de la foto va en el sol');
+    assert.ok(contenidoPorHoja(conFoto).every(c => !c.includes(relleno('#FDF1CC'))), 'con foto, ninguna píldora en el sol');
+  });
+
+  it('«en curso» lo dice el servidor, no la fecha: en vivo y sin el aviso de la foto, también el 31/12 del año en curso', async () => {
+    const rotulosDe = async (datos, hoy) => lineasPorHoja(await renderCiclo(datos, hoy)).map(l => l.find(t => t.startsWith('CICLO DE VIDA DEL DATO')));
+    // El 31/12 del año en curso: en vivo y sin aviso de la foto, como lo dice el PDF de Métricas
+    assert.deepEqual(await rotulosDe(cicloDeLosCasos({ al: '2026-12-31' }), '2026-12-31'), Array(2).fill('CICLO DE VIDA DEL DATO · 2026, EN CURSO'));
+    // Sin «en curso»: un año cerrado sin foto (en vivo, con el aviso), uno con foto (no en vivo, aunque `al` no sea el 31/12) y sin
+    // decir si va en vivo
+    for (const [datos, hoy] of [
+      [{ ...cicloDeLosCasos({ al: '2026-12-31' }), aviso_foto: 'La foto de 2026 se saca el 10/01/2027' }, '2027-01-05'],
+      [{ ...cicloDeLosCasos({ al: '2026-12-31' }), en_vivo: false }, '2027-01-12'],
+      [{ ...cicloDeLosCasos(), en_vivo: false }, HOY_DE_LAS_METRICAS],
+      [{ ...cicloDeLosCasos(), en_vivo: undefined }, HOY_DE_LAS_METRICAS]
+    ]) {
+      assert.deepEqual(await rotulosDe(datos, hoy), Array(2).fill('CICLO DE VIDA DEL DATO · 2026'), JSON.stringify([datos.en_vivo, datos.aviso_foto, datos.al]));
+    }
+  });
+
+  it('el circuito de arriba: la sigla de cada nodo y, en cada flecha, el número de la etapa y su mediana; sin cifra, punteada', async () => {
+    const pdf = await renderCiclo(cicloDeLosCasos());
+    const [externa, interna] = lineasPorHoja(pdf);
+    const indiceDe = (lineas) => lineas.slice(lineas.indexOf('EL CIRCUITO · MEDIANA EN DÍAS HÁBILES') + 1, lineas.indexOf('Aviso anticipado') - 1);
+    assert.deepEqual(indiceDe(externa), ['RPAD', '1', '27', 'DGMIT y DA', '2', '—', 'Área', '3', '—', 'DDPC', '4', 'En el día', 'Portal']);
+    assert.deepEqual(indiceDe(interna), ['RPAD', '1', '42', 'DGMIT y DIT', '2', '—', 'DDPC', '3', '—', 'Portal']);
+    // La flecha de una etapa sin cifra va punteada (en el índice y en su bloque); con todas llenas, ninguna
+    assert.ok(contenidoPorHoja(pdf).every(c => PUNTEADA.test(c)));
+    assert.ok(contenidoPorHoja(await renderCiclo(cicloLleno())).every(c => !PUNTEADA.test(c)));
+  });
+
+  it('un bloque por etapa: el nombre, las cifras, los extremos, la descripción con cómo se mide y «Cómo se cuenta.»', async () => {
+    for (const datos of [cicloDeLosCasos(), cicloLleno()]) {
+      const hojas = lineasPorHoja(await renderCiclo(datos));
+      ['externa', 'interna'].forEach((gestion, k) => {
+        const lineas = hojas[k];
+        const etapas = datos.etapas[gestion];
+        assert.equal(etapas.length, gestion === 'externa' ? 4 : 3);
+        enOrden(lineas, [...etapas.map(e => e.nombre), 'Cómo se cuenta.']);
+        etapas.forEach((etapa, i) => {
+          const bloque = bloqueDe(lineas, etapa.nombre, etapas[i + 1]?.nombre);
+          // La descripción, seguida de cómo se mide (en negrita: otro renglón del PDF)
+          const unido = bloque.join(' ');
+          const descripcion = `${TEXTOS_DEL_CICLO.descripciones[gestion][etapa.clave]} ${TEXTOS_DEL_CICLO.seMide[gestion][etapa.clave]}`;
+          assert.ok(unido.includes(descripcion), `${gestion} ${etapa.clave}: falta "${descripcion}" en ${unido}`);
+          assert.ok(unido.includes(etapa.desde_hasta), `${etapa.desde_hasta} en ${unido}`);
+          if (etapa.n === 0) {
+            assert.ok(bloque.includes('ESTADÍSTICAS DE LA ETAPA') && !bloque.includes('Mediana') && !bloque.includes('Promedio'));
+            return;
+          }
+          enOrden(bloque, ['ESTADÍSTICAS DE LA ETAPA', 'Mediana', etapa.textos.mediana.numero, etapa.textos.ciclos, 'Promedio',
+            etapa.textos.anterior, etapa.largo.rotulo, ...(etapa.corto ? [etapa.corto.rotulo] : [])]);
+          // El número del promedio, en su recuadro (puede ser igual al de la mediana)
+          const delPromedio = bloque.indexOf(etapa.textos.promedio.numero, bloque.indexOf('Promedio'));
+          assert.ok(delPromedio !== -1 && delPromedio < bloque.indexOf(etapa.largo.rotulo), bloque.join(' | '));
+          // Las notas, debajo del mosaico (una puede ir en dos renglones)
+          const despues = bloque.slice(bloque.indexOf(etapa.corto?.rotulo ?? etapa.largo.rotulo)).join(' ');
+          for (const nota of etapa.textos.notas) assert.ok(despues.includes(nota.texto), `falta "${nota.texto}" en ${despues}`);
+        });
+        // «Cómo se cuenta.», con el texto de la spec (2.3): en 2026, con la última oración
+        const desde = lineas.indexOf('Cómo se cuenta.');
+        assert.ok(lineas.slice(desde).join(' ').startsWith(`Cómo se cuenta. ${TEXTOS_DEL_CICLO.comoSeCuenta(2026)}`), lineas.slice(desde).join(' '));
+      });
+    }
+    // Los extremos de los casos: el aviso externo con sus dos rótulos, el título del dataset y su empate
+    const externa = lineasPorHoja(await renderCiclo(cicloDeLosCasos()))[0].join(' ');
+    for (const t of ['Con más anticipación', 'Con menos anticipación', 'Directores Generales de Planta Permanente y 1 más', '40 días corridos']) {
+      assert.ok(externa.includes(t), `falta "${t}"`);
+    }
+    // En 2027, «Cómo se cuenta» sin la comparación con el año anterior
+    const de2027 = lineasPorHoja(await renderCiclo(cicloDeLosCasos({ anio: 2027, al: '2027-03-01' }), '2027-03-01'));
+    de2027.forEach((lineas, k) => {
+      assert.ok(lineas.includes('CICLO DE VIDA DEL DATO · 2027, EN CURSO') && lineas.includes(pieDelCiclo(k + 1, 2027)), lineas.join(' | '));
+      const como = lineas.slice(lineas.indexOf('Cómo se cuenta.')).join(' ');
+      assert.ok(como.startsWith(`Cómo se cuenta. ${TEXTOS_DEL_CICLO.comoSeCuenta(2027)}`) && !como.includes('La comparación con el año anterior'), como);
+    });
+  });
+
+  it('TEXTOS_DEL_CICLO: las descripciones, cómo se mide y «Cómo se cuenta», al pie de la letra de la spec (2.3 y 2.4)', () => {
+    assert.ok(Object.isFrozen(TEXTOS_DEL_CICLO));
+    for (const parte of ['descripciones', 'seMide']) {
+      assert.ok(Object.isFrozen(TEXTOS_DEL_CICLO[parte]) && Object.isFrozen(TEXTOS_DEL_CICLO[parte].externa) && Object.isFrozen(TEXTOS_DEL_CICLO[parte].interna));
+      assert.deepEqual(Object.keys(TEXTOS_DEL_CICLO[parte].externa), ['aviso', 'tramite', 'respuesta', 'carga']);
+      assert.deepEqual(Object.keys(TEXTOS_DEL_CICLO[parte].interna), ['aviso', 'produccion', 'carga']);
+    }
+    // Las ventanas de la regla (40 y 60 días) salen de VENTANA_DE_LA_REGLA
+    assert.deepEqual({ ...VENTANA_DE_LA_REGLA }, { interna: 60, externa: 40 });
+    const { descripciones: d, seMide: m } = TEXTOS_DEL_CICLO;
+    assert.equal(d.externa.aviso, 'El RPAD avisa a la DGMIT y a la Dirección Administrativa qué conjuntos de datos vencen en los próximos 40 días y qué datos hay que pedir de cada uno, por Nota Digital (hasta el 12/10/2026, por email).');
+    assert.equal(m.externa.aviso, 'Se mide del aviso al vencimiento: cuanto más grande, más anticipación.');
+    assert.equal(d.externa.tramite, 'La DGMIT y la Dirección Administrativa preparan la nota formal que le pide los datos al área y se la hacen llegar.');
+    assert.equal(m.externa.tramite, 'Se mide del aviso del RPAD al día en que el área recibió la nota, con las notas DGMIT cargadas en el Seguimiento.');
+    assert.equal(d.externa.respuesta, 'El área reúne y prepara los datos pedidos y se los entrega a Datos Públicos.');
+    assert.equal(m.externa.respuesta, 'Se mide del día en que el área recibió la nota al «Recibido el». Con datos de una fuente pública, no se cuenta.');
+    assert.equal(d.externa.carga, 'Los datos llegan en PDF, en papel o desordenados: Datos Públicos los transcribe, los ordena y los normaliza (que «Palazzo», «P. Palazzo» y «Próspero Palazzo» queden como un solo nombre) y los publica en el portal en formato abierto.');
+    assert.equal(m.externa.carga, 'Se mide del «Recibido el» al día de la carga en el portal.');
+    assert.equal(d.interna.aviso, 'El RPAD avisa a la DGMIT y a la Dirección de Investigación Territorial qué conjuntos de datos vencen en los próximos 60 días y qué hay que relevar.');
+    assert.equal(m.interna.aviso, 'Se mide del aviso al vencimiento: cuanto más grande, más anticipación.');
+    assert.equal(d.interna.produccion, 'La DGMIT y la Dirección de Investigación Territorial hacen el relevamiento y le entregan los datos a Datos Públicos.');
+    assert.equal(m.interna.produccion, 'Se mide del aviso del RPAD al «Recibido el».');
+    assert.equal(d.interna.carga, 'El relevamiento ya llega ordenado: Datos Públicos lo revisa para comprobar que cumpla con los estándares de datos abiertos (estructura, normalización y formatos) y lo publica en el portal en formato abierto.');
+    assert.equal(m.interna.carga, 'Se mide del «Recibido el» al día de la carga en el portal.');
+    const sinLaUltima = 'Días hábiles: de lunes a viernes, sin los feriados nacionales fijos; entre paréntesis, los corridos. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; el aviso, en el año de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van aparte, como «en curso».';
+    assert.equal(`Cómo se cuenta. ${TEXTOS_DEL_CICLO.comoSeCuenta(2026)}`, `Cómo se cuenta. ${sinLaUltima} La comparación con el año anterior empieza en 2027.`);
+    for (const anio of [2027, 2030]) assert.equal(TEXTOS_DEL_CICLO.comoSeCuenta(anio), sinLaUltima);
+  });
+
+  it('vacío: el trámite sin notas DGMIT muestra el título, el texto y el pie del vacío; las demás, el suyo', async () => {
+    const datos = cicloDeLosCasos();
+    const tramite = datos.etapas.externa[1];
+    assert.deepEqual(tramite.vacio, {
+      titulo: 'Todavía no hay notas DGMIT cargadas', texto: '7 notas pendientes de carga', pie: 'Se empieza a contar cuando se carguen en el Seguimiento.'
+    });
+    const [externa, interna] = lineasPorHoja(await renderCiclo(datos));
+    const delTramite = bloqueDe(externa, 'Trámite y entrega de la nota', 'Respuesta del área');
+    enOrden(delTramite, ['ESTADÍSTICAS DE LA ETAPA', tramite.vacio.titulo, tramite.vacio.texto, tramite.vacio.pie, 'Año anterior: no hay']);
+    assert.ok(!delTramite.includes('Mediana') && !delTramite.includes('Promedio'), delTramite.join(' | '));
+    enOrden(bloqueDe(externa, 'Respuesta del área', 'Preparación y carga'),
+      ['Sin datos todavía', 'Se empieza a contar cuando haya notas DGMIT cargadas.', 'Año anterior: no hay']);
+    // La producción interna, sin ciclos terminados y con uno en curso: nada desaparece
+    enOrden(bloqueDe(interna, 'Producción del relevamiento', 'Preparación y carga'),
+      ['Sin casos en 2026', 'En curso: 1 sin datos registrados todavía, hace 206 días hábiles (mediana)', 'Año anterior: no hay']);
+    // Sin texto o sin pie, no quedan renglones vacíos
+    assert.ok(!externa.includes('') && !interna.includes(''));
+    // Sin notas pendientes, el trámite no dice «0 notas pendientes de carga» (el texto del vacío llega vacío)
+    const vacio = lineasPorHoja(await renderCiclo(cicloVacio()))[0];
+    enOrden(bloqueDe(vacio, 'Trámite y entrega de la nota', 'Respuesta del área'),
+      ['Todavía no hay notas DGMIT cargadas', 'Se empieza a contar cuando se carguen en el Seguimiento.', 'Año anterior: no hay']);
+    assert.ok(!vacio.some(l => l.includes('0 notas pendientes')) && !vacio.includes(''));
+  });
+
+  it('un solo ciclo: «El único caso» una sola vez, en un recuadro a lo ancho, y sin «El caso más corto»', async () => {
+    const datos = cicloDeLosCasos();
+    const carga = datos.etapas.externa[3];
+    assert.equal(carga.n, 1);
+    assert.equal(carga.largo.rotulo, 'El único caso');
+    assert.equal(carga.corto, null);
+    const textos = textosPorHoja(await renderCiclo(datos))[0];
+    const lineas = textos.map(t => t.texto);
+    const deLaCarga = lineas.slice(lineas.indexOf('Preparación y carga'));
+    assert.equal(lineas.filter(l => l === 'El único caso').length, 1);
+    assert.ok(deLaCarga.includes('El único caso'), deLaCarga.join(' | '));
+    assert.ok(!deLaCarga.includes('El caso más corto') && !deLaCarga.includes('El caso más largo'), deLaCarga.join(' | '));
+    // A lo ancho: empieza donde empieza el promedio, y el título del dataset entra entero en un renglón
+    const promedio = textos.filter(t => t.texto === 'Promedio').at(-1);
+    const unico = textos.find(t => t.texto === 'El único caso');
+    assert.ok(Math.abs(unico.x - promedio.x) < 1.5, `${unico.x} y ${promedio.x}`);
+    assert.ok(deLaCarga.includes('Directores Generales de Planta Permanente'), deLaCarga.join(' | '));
+  });
+
+  it('un bloque vacío con todo: el en curso, las notas pendientes, la aclaración y el año anterior se ven (Foco 2)', async () => {
+    const datos = cicloDeLosCasos();
+    const respuesta = datos.etapas.externa[2];
+    const notas = [
+      { tipo: 'en_curso', texto: 'En curso: 3 sin datos registrados todavía, hace 41 días hábiles (mediana)' },
+      { tipo: 'pendientes', texto: '10 notas pendientes de carga' },
+      { tipo: 'aclaracion', texto: '4 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.' }
+    ];
+    datos.etapas.externa[2] = { ...respuesta, textos: { ...respuesta.textos, notas, anterior: 'Año anterior: mediana de 29 días hábiles' } };
+    verificarDiagramacion(await diagramacion(() => renderCiclo(datos)));
+    const textos = textosPorHoja(await renderCiclo(datos))[0];
+    const lineas = textos.map(t => t.texto);
+    enOrden(bloqueDe(lineas, 'Respuesta del área', 'Preparación y carga'), ['Sin datos todavía', 'Se empieza a contar cuando haya notas DGMIT cargadas.',
+      ...notas.map(n => n.texto), 'Año anterior: mediana de 29 días hábiles']);
+    // Cada renglón con su letra (spec 2.2): el en curso y los pendientes en negrita; la aclaración, el orientativo y el año anterior, no
+    const fuenteDe = (t) => textos.find(x => x.texto === t).fuente;
+    assert.deepEqual(notas.map(n => fuenteDe(n.texto)), ['Helvetica-Bold', 'Helvetica-Bold', 'Helvetica']);
+    assert.equal(fuenteDe('Año anterior: mediana de 29 días hábiles'), 'Helvetica');
+    assert.equal(fuenteDe('Con tan pocos casos, es orientativo.'), 'Helvetica');
+  });
+
+  it('los textos largos se cortan con «…» y el empate queda entero', async () => {
+    for (const hoja of lineasPorHoja(await renderCiclo(cicloLleno()))) {
+      const unido = hoja.join(' ');
+      assert.ok(!unido.includes(TITULO_DE_250), 'el título de 250 caracteres no entra entero');
+      for (const sufijo of ['… y 14 más', '… y 1233 más']) assert.ok(unido.includes(sufijo), `falta "${sufijo}" en ${unido}`);
+    }
+  });
+
+  it('un empate conserva « y N más» aunque el título solo entre: el título se corta con «…» y el sufijo va entero', async () => {
+    // Las cuatro etapas externas llenas y sin notas (los extremos tienen lugar para dos renglones): el título entra solo en sus dos
+    // renglones, pero no con « y 1 más»
+    const datos = cicloLleno({ notas: [] });
+    const titulo = 'Escala salarial municipal (planta permanente)';
+    const conEmpate = (etapa, rotulo) => ({ ...etapa, corto: extremoAMano(rotulo, 1, 1, titulo, 1) });
+    datos.etapas.externa[0] = conEmpate(datos.etapas.externa[0], 'Con menos anticipación');
+    datos.etapas.externa[3] = conEmpate(datos.etapas.externa[3], 'El caso más corto');
+    verificarDiagramacion(await diagramacion(() => renderCiclo(datos)));
+    const externa = lineasPorHoja(await renderCiclo(datos))[0];
+    for (const [nombre, siguiente] of [['Aviso anticipado', 'Trámite y entrega de la nota'], ['Preparación y carga', 'Cómo se cuenta.']]) {
+      const bloque = bloqueDe(externa, nombre, siguiente).join(' ');
+      assert.ok(bloque.includes('… y 1 más'), `falta "… y 1 más" en ${bloque}`);
+      assert.ok(!bloque.includes(titulo), `el título va entero, sin el empate, en ${bloque}`);
+    }
+  });
+
+  it('Foco 5: con las cuatro etapas externas llenas y dos notas en cada bloque, todo entra entero en su hoja', async () => {
+    const datos = cicloLleno();
+    const [externa, interna] = lineasPorHoja(await renderCiclo(datos));
+    for (const [lineas, etapas] of [[externa, datos.etapas.externa], [interna, datos.etapas.interna]]) {
+      const unido = lineas.join(' ');
+      // Las dos notas de cada bloque, enteras (la aclaración, en sus dos renglones)
+      for (const nota of DOS_NOTAS) assert.equal(unido.split(nota.texto).length - 1, etapas.length, nota.texto);
+      // Los corridos de los dos extremos de cada bloque, el promedio con los suyos y el año anterior
+      for (const t of ['13579 días corridos', '1 día corrido', '(1790 días corridos)', 'Año anterior: mediana de 1234 días hábiles']) {
+        assert.equal(lineas.filter(l => l === t).length, etapas.length, `${t} en ${lineas.join(' | ')}`);
+      }
+    }
+    assert.ok(externa.includes('1234 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.'));
+  });
+
+  // La hoja más apretada (Foco 3 del plan: un año cerrado sin foto, entre el 01/01 y el día de la foto), con las dos píldoras y la
+  // aclaración de la hoja, y las notas que da un año real (hasta tres renglones por bloque). Ningún extremo pierde sus «N días
+  // corridos» y entran todas las notas, enteras: las píldoras van al lado si entran y, si no, el bloque usa el aire justo
+  it('Foco 3: con las dos píldoras y las notas de un año real, entran todas las notas y cada extremo conserva «N días corridos»', async () => {
+    for (const [aviso, hoy] of [[AVISO_DE_REINTENTO, '2027-01-12'], [AVISO_ANTES_DE_LA_FOTO, '2027-01-05'], [null, '2026-12-31']]) {
+      const datos = cicloApretado({ aviso_foto: aviso });
+      verificarDiagramacion(await diagramacion(() => renderCiclo(datos, hoy)));
+      const hojas = lineasPorHoja(await renderCiclo(datos, hoy));
+      ['externa', 'interna'].forEach((gestion, k) => {
+        const lineas = hojas[k];
+        const etapas = datos.etapas[gestion];
+        if (aviso) assert.ok(lineas.includes(aviso), `hoja ${k + 1}: las dos píldoras`);
+        etapas.forEach((etapa, i) => {
+          const donde = `${aviso ?? 'sin aviso'}, ${gestion} ${etapa.clave}`;
+          const bloque = bloqueDe(lineas, etapa.nombre, etapas[i + 1]?.nombre);
+          // Los corridos de los dos extremos (el más largo y el más corto)
+          for (const t of ['13579 días corridos', '1 día corrido']) assert.ok(bloque.includes(t), `${donde}: falta "${t}" en ${bloque.join(' | ')}`);
+          // Cada nota, entera y sin «…» (una nota en dos renglones se lee unida)
+          notasEnteras(bloque, etapa.textos.notas, donde);
+        });
+        // Las notas pendientes de carga siguen en el bloque del trámite
+        if (gestion === 'externa') {
+          assert.ok(bloqueDe(lineas, 'Trámite y entrega de la nota', 'Respuesta del área').includes('13 notas pendientes de carga'), lineas.join(' | '));
+        }
+      });
+    }
+  });
+
+  it('las dos píldoras van una al lado de la otra si entran en el ancho útil; si no, una debajo de la otra', async () => {
+    // Los dos avisos de la foto, los del servidor
+    assert.deepEqual([AVISO_ANTES_DE_LA_FOTO, AVISO_DE_REINTENTO],
+      ['La foto de 2026 se saca el 10/01/2027', 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.']);
+    // Las dos píldoras y los bloques de las etapas de la hoja externa (los bloques: las píldoras, el índice, las etapas y «Cómo se cuenta»)
+    const bloquesDe = async (aviso, hoy) => (await diagramacion(() => renderCiclo(cicloApretado({ aviso_foto: aviso }), hoy))).bloques.filter(b => b.hoja === 0);
+    const sinAviso = await bloquesDe(null, '2026-12-31');
+    const altosDe = (bloques) => bloques.slice(-5, -1).map(b => (b.y1 - b.y0).toFixed(2));
+    // «La foto de 2026 se saca el 10/01/2027» entra al lado: la misma altura, una después de la otra, y los bloques con el alto de la
+    // hoja de una sola píldora
+    const alLado = await bloquesDe(AVISO_ANTES_DE_LA_FOTO, '2027-01-05');
+    const [periodo, delAviso] = alLado;
+    assert.ok(Math.abs(periodo.y0 - delAviso.y0) < 0.01 && delAviso.x0 >= periodo.x1 + 5, JSON.stringify([periodo, delAviso]));
+    assert.equal(alLado.length, sinAviso.length + 1);
+    assert.deepEqual(altosDe(alLado), altosDe(sinAviso));
+    // La del reintento no entra al lado: va debajo
+    const [periodo2, delAviso2] = await bloquesDe(AVISO_DE_REINTENTO, '2027-01-12');
+    assert.ok(delAviso2.y0 >= periodo2.y1 && Math.abs(delAviso2.x0 - periodo2.x0) < 0.01, JSON.stringify([periodo2, delAviso2]));
+    // Las dos píldoras dicen lo suyo
+    const lineas = lineasPorHoja(await renderCiclo(cicloApretado({ aviso_foto: AVISO_ANTES_DE_LA_FOTO }), '2027-01-05'))[0];
+    for (const t of ['Del 01/01/2026 al 31/12/2026, con todos los ciclos', AVISO_ANTES_DE_LA_FOTO]) assert.ok(lineas.includes(t), t);
+  });
+
+  it('un año cerrado antes de la foto: la respuesta del área con tres notas las muestra enteras, sin «…», con los dos avisos de la foto', async () => {
+    for (const [aviso, hoy] of [[AVISO_ANTES_DE_LA_FOTO, '2027-01-05'], [AVISO_DE_REINTENTO, '2027-01-12']]) {
+      const datos = cicloApretado({ aviso_foto: aviso });
+      const respuesta = datos.etapas.externa.find(e => e.clave === 'respuesta');
+      assert.deepEqual(respuesta.textos.notas.map(n => n.tipo), ['orientativo', 'en_curso', 'aclaracion']);
+      verificarDiagramacion(await diagramacion(() => renderCiclo(datos, hoy)));
+      const externa = lineasPorHoja(await renderCiclo(datos, hoy))[0];
+      const bloque = bloqueDe(externa, 'Respuesta del área', 'Preparación y carga');
+      // Cada una en su renglón, entera
+      for (const nota of respuesta.textos.notas) assert.ok(bloque.includes(nota.texto), `${aviso}: falta "${nota.texto}" en ${bloque.join(' | ')}`);
+      notasEnteras(bloque, respuesta.textos.notas, aviso);
+    }
+  });
+
+  for (const [titulo, armar] of VARIANTES_DEL_CICLO) {
+    it(`nada se pisa: ${titulo}`, async () => {
+      const datos = armar();
+      const d = await diagramacion(() => renderCiclo(datos));
+      verificarDiagramacion(d);
+      // Nada pasa de LIMITE (salvo el pie, que va debajo de su línea) y ningún texto baja de 6,2 pt
+      const delPie = (t) => t.texto.startsWith('Generado el') || t.texto.startsWith('Ciclo de vida del dato · ');
+      for (const c of [...d.textos.filter(t => !delPie(t)), ...d.bloques]) assert.ok(c.y1 <= LIMITE + 0.01, `"${c.texto}" pasa de LIMITE (${c.y1})`);
+      for (const t of d.textos) assert.ok(t.tamano >= 6.2 - 1e-9, `"${t.texto}" en ${t.tamano} pt`);
+      const pdf = await renderCiclo(datos);
+      assert.ok(todasDelTamano(pdf, HOJA_A4));
+      assert.equal(lineasPorHoja(pdf).length, 2);
+    });
+  }
+
+  it('sin NaN, null ni undefined, y con el tono de la spec; con datos raros, dos hojas igual', async () => {
+    for (const [, armar] of VARIANTES_DEL_CICLO) {
+      const lineas = lineasPorHoja(await renderCiclo(armar())).flat();
+      assert.ok(!lineas.some(l => /NaN|null|undefined/.test(l)), lineas.filter(l => /NaN|null|undefined/.test(l)).join(' | '));
+      assert.ok(!lineas.some(l => TONO.test(l)), lineas.filter(l => TONO.test(l)).join(' | '));
+    }
+    for (const raro of [null, {}, { anio: 2026 }, { anio: 2026, al: '2026-10-24', etapas: { externa: [null, 7, 'x', { clave: 'aviso' }], interna: {} } }]) {
+      const hojas = lineasPorHoja(await renderCiclo(raro));
+      assert.equal(hojas.length, 2);
+      assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().join(' | '));
+    }
+  });
 });

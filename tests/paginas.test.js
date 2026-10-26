@@ -58,9 +58,10 @@ const VERSION_SEGUIMIENTO = '20261129';
 // ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
 // del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
 // después, la revisión final (el año de Datos para completar, la franja de lo destildado armada en el servidor y el foco de «Volver a
-// todos»); después, la tarjeta del Informe anual dice «(los hitos de Herramientas → Proyectos)», spec 2026-10-25-proyectos, 11): su
-// versión es propia
-const VERSION_REPORTES = '20261206';
+// todos»); después, la tarjeta del Informe anual dice «(los hitos de Herramientas → Proyectos)» (spec 2026-10-25-proyectos, 11); después, la
+// tarjeta «Ciclo de vida del dato», la octava, segunda en «Para presentar» (spec 2026-10-25-ciclo-de-vida-del-dato, 4): su versión es
+// propia (mayor que todas las de este archivo cuando se sumó)
+const VERSION_REPORTES = '20261207';
 // notas.js (el Generador de Notas de la DGMIT en tres pasos, con la vista previa en la hoja membretada y la descarga del Word, spec
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia

@@ -1,8 +1,10 @@
 import pool from '../config/database.js';
 import { fuentesDe } from '../services/seguimientoDatos.js';
-import { casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, textoDeLaFranja } from '../services/metricasReglas.js';
+import {
+  casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, textoDeLaFranja, etapasDe, conAnterior
+} from '../services/metricasReglas.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
-import { claveDeLaVista, leerFoto, aniosConFoto as leerAniosConFoto } from '../services/metricasFoto.js';
+import { claveDeLaVista, leerFoto, etapasDeLaFoto, aniosConFoto as leerAniosConFoto } from '../services/metricasFoto.js';
 import { opcionesDeMetricas, aniosDeMetricas, fotosDeMetricas } from '../services/metricasOpciones.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { nombreCorto, disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -16,7 +18,8 @@ import { nombreDelReporte } from '../services/reportesNombres.js';
 // la cinta en services/metricasCinta.js y la foto del 31/12 en services/metricasFoto.js. El año en curso se calcula en vivo, al día de
 // hoy; un año cerrado sale de su foto, que no se recalcula nunca (ni se destilda: se calculó con todos); uno cerrado que todavía no
 // tiene foto (hasta el 10/01, o si una corrida no pudo sacarla) se calcula en vivo «al 31/12», como la va a sacar la corrida, con el
-// aviso de la foto.
+// aviso de la foto. Los datos del reporte «Ciclo de vida del dato» (cicloDeVidaDe: las etapas del circuito, con el año anterior) leen el
+// año de la misma manera.
 
 // (también lo usa el PDF «Datos para completar», controllers/reportesController.js)
 export const SIN_METRICAS = Object.freeze({ success: false, error: 'No hay métricas de ese año' });
@@ -90,6 +93,46 @@ const metricasConOpciones = async (query, { hoy }) => {
   const foto = await leerFoto(opciones.anio);
   if (foto === null) return null;
   return { opciones, data: { ...periodo, ...deLaFoto(foto, opciones) } };
+};
+
+// Las etapas del Ciclo de vida del dato de un año leído como lo lee la pestaña (`periodo`: las opciones de opcionesDeMetricas). En vivo,
+// etapasDe con los casos de todos los datasets al día `al` (hoy, o el 31/12 de un año cerrado que todavía no tiene foto); con foto, las
+// de la foto, que no se recalculan (etapasDeLaFoto, que tira si no se pueden leer). null si la foto ya no está (se borró entre leer los
+// años con foto y leerla, como en metricasConOpciones). `fuentes`: la función que da las fuentes de todos los datasets (fuentesDe)
+const etapasDelPeriodo = async (periodo, fuentes) => {
+  if (periodo.en_vivo) return etapasDe(casosDe(await fuentes(), { hoy: periodo.al }), { anio: periodo.anio, al: periodo.al });
+  const foto = await leerFoto(periodo.anio);
+  return foto === null ? null : etapasDeLaFoto(foto);
+};
+
+// Los datos del reporte «Ciclo de vida del dato» (spec 2026-10-25-ciclo-de-vida-del-dato, 3.2 y 3.4) para `query` (los parámetros de la
+// URL: solo cuenta el año, leído como en metricasDe; el reporte siempre cuenta todo, así que los selectores y los destildados de la
+// pestaña no cambian nada), o null si ese año no tiene métricas (anterior a 2026 o futuro: el 404). `hoy`: el día de hoy (por defecto,
+// el de Argentina). El año se lee como en la pestaña: el en curso, en vivo al día de hoy; uno cerrado, de su foto, o en vivo al 31/12 si
+// todavía no la tiene (Ruling 17, con su aviso). El año anterior, para «Año anterior: …», se lee como se lee ese año (de su foto, o en
+// vivo al 31/12), y antes de PRIMER_ANIO no hay (opcionesDeMetricas da null). Las fuentes se piden una sola vez, y solo si algún año va
+// en vivo. Tira si algo falla (también con una foto que no se puede leer). Devuelve { anio, al, en_vivo, aviso_foto, etapas }:
+// - anio, al, en_vivo y aviso_foto: los de opcionesDeMetricas (el aviso de un año cerrado sin foto, para la píldora del PDF; si no,
+//   null);
+// - etapas: las de etapasDe del año ({ anio, al, externa, interna, aclaracion_de_la_hoja }) con conAnterior aplicado: cada etapa con
+//   textos.anterior («Año anterior: mediana de 29 días hábiles», «… mediana en el día» o «Año anterior: no hay»).
+export const cicloDeVidaDe = async (query, { hoy = hoyArgentina() } = {}) => {
+  const aniosConFoto = await leerAniosConFoto();
+  const opciones = opcionesDeMetricas(query, { hoy, aniosConFoto });
+  if (opciones === null) return null;
+  let pedidas = null;
+  const fuentes = () => {
+    pedidas ??= fuentesDe(null);
+    return pedidas;
+  };
+  const etapas = await etapasDelPeriodo(opciones, fuentes);
+  if (etapas === null) return null;
+  const previo = opcionesDeMetricas({ anio: opciones.anio - 1 }, { hoy, aniosConFoto });
+  const anteriores = previo === null ? null : await etapasDelPeriodo(previo, fuentes);
+  return {
+    anio: opciones.anio, al: opciones.al, en_vivo: opciones.en_vivo, aviso_foto: opciones.aviso_foto,
+    etapas: conAnterior(etapas, anteriores)
+  };
 };
 
 // GET /api/metricas?anio=&estadistico=&dias=&gestion=&sin=: lo de metricasDe. Un año sin métricas da 404 en JSON

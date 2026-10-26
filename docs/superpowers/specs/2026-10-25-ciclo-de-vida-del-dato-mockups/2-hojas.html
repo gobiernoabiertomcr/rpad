@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ciclo de vida del dato · maqueta de las hojas</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="maqueta.css">
+<style>
+  /* La hoja A4 en puntos, como el PDF (595 × 842 pt, márgenes de 15 mm = 42,5 pt). Colores: COLOR de notasDigitalesAnexo.js */
+  :root {
+    --tinta:#1F2933; --gris:#52606D; --rotulo:#7B8794; --gris-claro:#9AA5B1; --linea:#D9DEE3; --fondo:#F3F5F8;
+    --acento:#3E6A99; --acento-suave:#E4ECF5; --violeta:#5B4691; --violeta-suave:#ECE8F5; --verde:#2E6B4C; --verde-suave:#DDF1E6;
+    --ambar:#7A5200; --ambar-suave:#FCE8A8;
+  }
+  .hojas { display:flex; flex-wrap:wrap; gap:28px; justify-content:center; padding:8px 0 40px; }
+  .marco { display:flex; flex-direction:column; gap:6px; }
+  .marco > p { margin:0; font:600 .85rem var(--f-texto); color:var(--m-suave); }
+  .hoja { width:595pt; height:842pt; padding:42.5pt; background:#fff; box-shadow:0 2px 14px rgba(15,23,42,.14); font-family:Helvetica,Arial,sans-serif;
+    color:var(--tinta); position:relative; display:flex; flex-direction:column; font-size:8pt; line-height:1.25; overflow:hidden; zoom:var(--zoom,1); }
+  .hoja * { box-sizing:border-box; }
+  .inventado { outline:1.5pt dashed #C2410C; outline-offset:2pt; position:relative; }
+  .inventado::after { content:'inventado'; position:absolute; top:-7pt; right:4pt; background:#C2410C; color:#fff; font:700 5.5pt Helvetica,Arial; padding:1pt 3pt; border-radius:2pt; letter-spacing:.04em; }
+
+  /* Encabezado y pie (los del Seguimiento: dibujarEncabezado y dibujarPie) */
+  .cab { display:flex; justify-content:space-between; padding-bottom:7pt; border-bottom:.6pt solid var(--linea); position:relative; }
+  .cab::after { content:''; position:absolute; left:0; bottom:-1.3pt; width:28pt; height:2pt; background:var(--acento); }
+  .cab b { display:block; font-size:7.5pt; letter-spacing:.6pt; }
+  .cab small { display:block; font-size:7.5pt; color:var(--gris); margin-top:3pt; }
+  .cab .d { text-align:right; } .cab .d b { font-size:9.5pt; letter-spacing:0; }
+  .pie { margin-top:auto; padding-top:5pt; border-top:.6pt solid var(--linea); display:flex; justify-content:space-between; font-size:7pt; color:var(--gris); }
+
+  /* Título (prepararTitulo) y píldora */
+  .etiqueta { margin-top:12pt; font-size:7.5pt; font-weight:700; letter-spacing:1.2pt; color:var(--acento); text-transform:uppercase; }
+  .titulo { font-size:20pt; font-weight:700; margin:3pt 0 7pt; }
+  .pildora { align-self:flex-start; display:inline-flex; align-items:center; gap:5pt; background:var(--acento-suave); color:var(--acento); font-weight:700; font-size:8.4pt; padding:3.5pt 9pt; border-radius:99pt; }
+  .pildora::before { content:''; width:4.5pt; height:4.5pt; border-radius:50%; background:var(--acento); }
+
+  /* El circuito entero, en chico (índice de los bloques) */
+  .indice { margin-top:10pt; border:.8pt solid var(--linea); border-radius:5pt; padding:8pt 9pt 7pt; }
+  .indice .r { font-size:6.6pt; font-weight:700; letter-spacing:1pt; text-transform:uppercase; color:var(--rotulo); margin-bottom:6pt; }
+  .circ { display:flex; align-items:stretch; }
+  .nodo { border:1pt solid var(--acento); border-radius:5pt; padding:4pt 5pt; display:flex; flex-direction:column; justify-content:center; min-height:30pt; }
+  .nodo b { font-size:7.6pt; color:var(--acento); line-height:1.15; }
+  .nodo span { font-size:6.4pt; color:var(--gris); margin-top:1.5pt; line-height:1.15; }
+  .nodo.violeta { border-color:var(--violeta); } .nodo.violeta b { color:var(--violeta); }
+  .nodo.verde { border-color:var(--verde); } .nodo.verde b { color:var(--verde); }
+  .flecha { flex:1; display:flex; flex-direction:column; justify-content:center; padding:0 5pt; min-width:0; }
+  .flecha .sobre { display:flex; align-items:baseline; gap:3pt; white-space:nowrap; overflow:hidden; }
+  .flecha .sobre b { font-size:10pt; }
+  .flecha .sobre small { font-size:6.4pt; color:var(--gris); }
+  .flecha .sobre .vacio { font-size:6.6pt; color:var(--gris-claro); font-weight:700; overflow:hidden; text-overflow:ellipsis; }
+  .linea { position:relative; height:7pt; margin:2pt 0 1pt; }
+  .linea::before { content:''; position:absolute; left:0; right:5pt; top:3pt; border-top:1.3pt solid var(--tinta); }
+  .linea::after { content:''; position:absolute; right:0; top:.2pt; border-left:6pt solid var(--tinta); border-top:3.3pt solid transparent; border-bottom:3.3pt solid transparent; }
+  .linea.violeta::before { border-top-color:var(--violeta); } .linea.violeta::after { border-left-color:var(--violeta); }
+  .linea.vacia::before { border-top:1.3pt dashed var(--gris-claro); } .linea.vacia::after { border-left-color:var(--gris-claro); }
+  .flecha .bajo { font-size:6.2pt; color:var(--gris); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .num { display:inline-flex; align-items:center; justify-content:center; width:11pt; height:11pt; border-radius:50%; background:var(--tinta); color:#fff; font-size:6.6pt; font-weight:700; flex:none; }
+  .num.violeta { background:var(--violeta); }
+
+  .insignia { display:inline-block; font-size:6.6pt; font-weight:700; padding:1.5pt 5pt; border-radius:99pt; background:var(--acento-suave); color:var(--acento); white-space:nowrap; }
+  .insignia.violeta { background:var(--violeta-suave); color:var(--violeta); }
+
+  /* ---------- Variante A: tu boceto. Izquierda, el tramo (dos nodos y la flecha) y qué se hace; derecha, las estadísticas ---------- */
+  .bloques { display:flex; flex-direction:column; gap:7pt; margin-top:9pt; flex:1; min-height:0; }
+  .bloque { border:.8pt solid var(--linea); border-radius:5pt; display:grid; grid-template-columns:205pt 1fr; min-height:0; flex:1 1 0; }
+  .ficha { flex:1 1 0; }
+  .bloque .izq { padding:7pt 8pt 7pt 9pt; border-right:.8pt solid var(--linea); display:flex; flex-direction:column; gap:5pt; }
+  .bloque .cabeza { display:flex; align-items:center; gap:5pt; }
+  .bloque .cabeza b { font-size:9.6pt; }
+  .tramo { display:flex; align-items:stretch; }
+  .tramo .nodo { width:56pt; min-height:26pt; padding:3pt 4pt; }
+  .tramo .flecha { padding:0 4pt; }
+  .desc { font-size:7.2pt; color:var(--gris); line-height:1.3; }
+  .desc i { font-style:normal; color:var(--tinta); }
+  .der { padding:7pt 10pt 7pt 10pt; display:flex; flex-direction:column; min-width:0; }
+  .der .r { font-size:6.6pt; font-weight:700; letter-spacing:1pt; text-transform:uppercase; color:var(--rotulo); }
+  .stats { display:grid; grid-template-columns:1fr 1.25fr; gap:4pt 12pt; margin-top:5pt; }
+  .stat .q { font-size:7pt; font-weight:700; color:var(--gris); }
+  .stat .v { display:flex; align-items:baseline; gap:3pt; margin-top:1pt; white-space:nowrap; }
+  .stat .v b { font-size:17pt; letter-spacing:-.2pt; line-height:1; }
+  .stat .v span { font-size:7.6pt; font-weight:700; }
+  .stat .v small { font-size:7pt; color:var(--gris); }
+  .stat .ds { font-size:6.6pt; color:var(--gris); margin-top:1.5pt; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stat.chico .v b { font-size:13pt; }
+  .orientativo { font-size:6.6pt; font-weight:700; color:var(--ambar); }
+  .notas { margin-top:auto; padding-top:4pt; display:flex; flex-direction:column; gap:1.5pt; font-size:6.6pt; color:var(--gris); }
+  .notas .curso { color:var(--ambar); font-weight:700; }
+  .notas .ant { color:var(--tinta); }
+  .vacio-grande { margin:auto 0; }
+  .vacio-grande b { display:block; font-size:10.5pt; color:var(--gris-claro); }
+  .vacio-grande span { display:block; font-size:8pt; color:var(--violeta); font-weight:700; margin-top:3pt; }
+  .vacio-grande small { display:block; font-size:7pt; color:var(--gris); margin-top:2pt; }
+  .aclaracion-hoja { margin-top:7pt; font-size:6.8pt; color:var(--gris); }
+  .como { margin-top:7pt; background:var(--fondo); border-radius:5pt; padding:6pt 8pt; font-size:6.8pt; color:var(--gris); line-height:1.35; }
+  .como b { color:var(--tinta); }
+
+  /* Las cifras de A: mosaico de 3 columnas; la mediana ocupa dos filas, en el color de la etapa */
+  .tiles { display:grid; grid-template-columns:1.05fr 1fr 1fr; grid-template-rows:auto auto; gap:5pt; margin-top:5pt; flex:1; min-height:0; }
+  .tile { border-radius:5pt; padding:6pt 7pt; min-width:0; display:flex; flex-direction:column; }
+  .tile .q { font-size:6.8pt; font-weight:700; color:var(--gris); }
+  .tile.mediana { grid-row:1 / span 2; background:var(--acento-suave); }
+  .tile.mediana .q, .tile.mediana .valor b, .tile.mediana .valor span { color:var(--acento); }
+  .tile.mediana.violeta { background:var(--violeta-suave); }
+  .tile.mediana.violeta .q, .tile.mediana.violeta .valor b, .tile.mediana.violeta .valor span { color:var(--violeta); }
+  .tile.promedio { grid-column:2 / span 2; background:var(--fondo); flex-direction:row; flex-wrap:wrap; align-items:baseline; column-gap:8pt; }
+  .tile.promedio .q { flex-basis:100%; display:flex; justify-content:space-between; gap:8pt; }
+  .tile.promedio .q .ant { font-weight:400; font-size:6.4pt; margin:0; }
+  .tile.extremo { border:.8pt solid var(--linea); padding:5pt 7pt; }
+  .valor { display:flex; align-items:baseline; gap:3pt; margin-top:2pt; white-space:nowrap; }
+  .valor b { font-weight:700; line-height:.95; letter-spacing:-.4pt; }
+  .valor span { font-size:7.4pt; font-weight:700; }
+  .valor.grande b { font-size:30pt; } .valor.grande span { font-size:8.4pt; }
+  .valor.medio b { font-size:19pt; }
+  .valor.chico b { font-size:14pt; }
+  .tile.mediana .valor.grande b:only-child { font-size:22pt; }
+  .corr { font-size:6.8pt; color:var(--gris); margin-top:1.5pt; }
+  .tile .n { font-size:6.8pt; color:var(--tinta); margin-top:auto; padding-top:4pt; font-weight:700; }
+  .tile .ant { font-size:6.6pt; color:var(--gris); margin-top:2pt; }
+  .tile .ds { font-size:6.4pt; line-height:1.2; color:var(--gris); margin-top:auto; padding-top:2pt; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .notas .pend { color:var(--violeta); font-weight:700; }
+
+  /* ---------- Variante B: ficha con regla. Arriba la franja de la etapa; abajo, qué se hace, las cifras y la regla del menor al mayor ---------- */
+  .ficha { border:.8pt solid var(--linea); border-radius:5pt; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+  .ficha .franja { background:var(--acento-suave); display:flex; align-items:center; gap:6pt; padding:4pt 8pt; }
+  .ficha .franja.violeta { background:var(--violeta-suave); }
+  .ficha .franja b { font-size:9.4pt; }
+  .ficha .franja .de { font-size:7pt; color:var(--gris); }
+  .ficha .franja .insignia { margin-left:auto; background:#fff; }
+  .ficha .cuerpo { display:grid; grid-template-columns:150pt 1fr; gap:10pt; padding:6pt 8pt 6pt 8pt; flex:1; min-height:0; }
+  .ficha .cifras { display:flex; flex-direction:column; min-width:0; }
+  .ficha .par { display:flex; gap:16pt; }
+  .regla { margin-top:6pt; position:relative; height:39pt; flex:none; }
+  .regla .eje { position:absolute; left:0; right:0; top:12pt; border-top:.8pt solid var(--linea); }
+  .regla .banda { position:absolute; top:8pt; height:8pt; background:var(--acento-suave); border-radius:4pt; }
+  .regla .banda.violeta { background:var(--violeta-suave); }
+  .regla .pt { position:absolute; top:9.5pt; width:5pt; height:5pt; margin-left:-2.5pt; border-radius:50%; background:var(--gris-claro); opacity:.75; }
+  .regla .med { position:absolute; top:4pt; height:16pt; border-left:1.6pt solid var(--tinta); }
+  .regla .prom { position:absolute; top:8.5pt; width:7pt; height:7pt; margin-left:-3.5pt; transform:rotate(45deg); border:1.2pt solid var(--tinta); background:#fff; }
+  .regla .ext { position:absolute; font-size:6.4pt; color:var(--gris); white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+  .regla .ext b { color:var(--tinta); }
+  .regla .ext.izq { left:0; text-align:left; }
+  .regla .ext.fin { right:0; text-align:right; }
+  .regla .cero { position:absolute; top:0; font-size:5.8pt; color:var(--gris-claro); }
+
+  /* ---------- Variante C: tabla. El circuito grande con las cifras arriba y una fila por etapa ---------- */
+  .tabla { width:100%; border-collapse:collapse; margin-top:9pt; }
+  .tabla th { text-align:left; font-size:6.6pt; letter-spacing:.6pt; text-transform:uppercase; color:var(--rotulo); font-weight:700; padding:4pt 5pt; border-bottom:1pt solid var(--tinta); }
+  .tabla td { vertical-align:top; padding:6pt 5pt; border-bottom:.6pt solid var(--linea); font-size:7.4pt; }
+  .tabla td .n { font-size:12pt; font-weight:700; white-space:nowrap; }
+  .tabla td small { display:block; font-size:6.4pt; color:var(--gris); margin-top:1pt; }
+  .tabla td.et b { display:flex; align-items:center; gap:4pt; font-size:8.2pt; }
+  .tabla td.et .desc { margin-top:3pt; }
+  .circ.grande .nodo { min-height:38pt; }
+  .circ.grande .flecha .sobre b { font-size:13pt; }
+</style>
+</head>
+<body>
+<div class="m-barra">
+  <div class="m-nav">
+    <b>Ciclo de vida del dato · maqueta</b>
+    <a href="1-tarjeta.html">1. La tarjeta en Reportes</a>
+    <a href="2-hojas.html" aria-current="page">2. Las dos hojas</a>
+    <a href="3-pdf.html">3. El PDF de prueba</a>
+  </div>
+  <div class="m-controles">
+    <div class="m-grupo" role="group" aria-label="Variante" hidden>
+      <button type="button" data-variante="a" aria-pressed="true">A</button>
+      <button type="button" data-variante="b" aria-pressed="false">B</button>
+      <button type="button" data-variante="c" aria-pressed="false">C</button>
+    </div>
+    <div class="m-grupo" role="group" aria-label="Datos">
+      <span>Datos</span>
+      <button type="button" data-datos="real" aria-pressed="true">Reales (2026 al 25/10)</button>
+      <button type="button" data-datos="inventado" aria-pressed="false">Con notas DGMIT y año anterior inventados</button>
+    </div>
+    <div class="m-grupo" role="group" aria-label="Tamaño">
+      <span>Tamaño</span>
+      <button type="button" data-zoom="0.8" aria-pressed="false">80 %</button>
+      <button type="button" data-zoom="1" aria-pressed="true">100 %</button>
+      <button type="button" data-zoom="1.3" aria-pressed="false">130 %</button>
+    </div>
+  </div>
+  <p class="m-guia" id="m-guia"></p>
+</div>
+<main class="m-main"><div class="hojas" id="hojas"></div></main>
+
+<script src="datos.js"></script>
+<script>
+(() => {
+  const M = window.MAQUETA;
+  // Lo elegido viaja en la URL (?variante=b&datos=inventado), para poder pasar el link de una combinación
+  const url = new URLSearchParams(location.search);
+  const estado = { variante: ['a', 'b', 'c'].includes(url.get('variante')) ? url.get('variante') : 'a',
+    datos: url.get('datos') === 'inventado' ? 'inventado' : 'real', zoom: Number(url.get('zoom')) || 1 };
+  document.querySelectorAll('[data-variante],[data-datos],[data-zoom]').forEach((b) => b.setAttribute('aria-pressed',
+    String(b.dataset.variante === estado.variante || b.dataset.datos === estado.datos || Number(b.dataset.zoom) === estado.zoom)));
+  const GUIAS = {
+    a: 'La variante elegida (A, tu boceto), a todo el alto de la hoja: cada etapa en un recuadro; a la izquierda el tramo del circuito con qué se hace y a la derecha las cifras, con la mediana destacada en el color de la etapa.',
+    b: 'Variante B, ficha con regla: cada etapa con su franja de color arriba; debajo, qué se hace, las cifras y una regla del menor al mayor con un punto por ciclo, la mediana (raya) y el promedio (rombo). La regla muestra cuánto varía.',
+    c: 'Variante C, tabla: el circuito más grande con las medianas arriba y una fila por etapa con todas las cifras. Más compacta: sobra lugar abajo.'
+  };
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const unidad = (v) => (v === 1 ? 'día hábil' : 'días hábiles');
+  const corr = (v) => (v === 1 ? '1 corrido' : `${v} corridos`);
+
+  // Los datos de una etapa: los reales o, en «inventado», los inventados encima (las etapas 2 y 3 de la externa y el año anterior)
+  const datosDe = (et) => {
+    if (estado.datos === 'real') return { ...et.real, inv: false, invAnterior: false };
+    const inv = et.inventado ?? {};
+    const reemplaza = inv.n !== undefined;
+    return { ...(reemplaza ? inv : et.real), anterior: inv.anterior, inv: reemplaza, invAnterior: inv.anterior !== undefined };
+  };
+
+  const cifraTexto = (par) => (par[0] === 0 ? { b: 'En el día', u: '', c: '' } : { b: String(par[0]), u: unidad(par[0]), c: `(${corr(par[1])})` });
+  const stat = (q, par, extra = '', clase = '') => {
+    const t = cifraTexto(par);
+    return `<div class="stat ${clase}"><div class="q">${q}</div><div class="v"><b>${t.b}</b>${t.u ? `<span>${t.u}</span>` : ''}${t.c ? `<small>${t.c}</small>` : ''}</div>${extra}</div>`;
+  };
+  const extremos = (et) => (et.clave === 'aviso' ? ['Con más anticipación', 'Con menos anticipación'] : ['El caso más largo', 'El caso más corto']);
+  const dataset = (ex) => `<div class="ds" title="${esc(ex.dataset)}">${esc(ex.dataset)}${ex.mas ? ` y ${ex.mas} más` : ''}</div>`;
+  const anteriorTexto = (d) => (d.anterior ? `<span class="ant${d.invAnterior ? ' inventado' : ''}">Año anterior: mediana ${d.anterior[0] === 0 ? 'en el día' : `${d.anterior[0]} ${unidad(d.anterior[0])}`}</span>`
+    : '<span>Año anterior: 2026 es el primer año con métricas.</span>');
+  const notasDe = (d) => [
+    `<span><b style="color:var(--tinta)">${d.n} ciclos medidos</b>${d.orientativo ? ' · <span class="orientativo">con tan pocos casos, es orientativo</span>' : ''}</span>`,
+    d.en_curso ? `<span class="curso">En curso: ${esc(d.en_curso)}</span>` : '',
+    d.pendientes ? `<span style="color:var(--violeta);font-weight:700">${esc(d.pendientes)}</span>` : '',
+    d.aclaracion ? `<span>${esc(d.aclaracion)}</span>` : '',
+    anteriorTexto(d)
+  ].filter(Boolean).join('');
+
+  const nodoHtml = (n, largo = false) => `<div class="nodo ${n.tono === 'acento' ? '' : n.tono}"><b>${esc(largo ? n.nombre : n.corto)}</b>${largo ? `<span>${esc(n.rol)}</span>` : ''}</div>`;
+  const flechaHtml = (et, d, i, grande = false) => {
+    const vacia = d.n === 0;
+    const sobre = vacia ? '<span class="vacio" style="font-size:10pt">—</span>'
+      : (d.mediana[0] === 0 ? '<b>En el día</b>' : `<b>${d.mediana[0]}</b><small></small>`);
+    return `<div class="flecha${d.inv ? ' inventado' : ''}"><div class="sobre"><span class="num${et.dgmit ? ' violeta' : ''}">${i + 1}</span>${sobre}</div>`
+      + `<div class="linea${vacia ? ' vacia' : (et.dgmit ? ' violeta' : '')}"></div></div>`;
+  };
+
+  const encabezado = (g, k) => `<div class="cab"><div><b>DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN</b><small>Municipalidad de Comodoro Rivadavia</small></div>`
+    + `<div class="d"><b>Ciclo de vida del dato</b><small>25 de octubre de 2026</small></div></div>`
+    + `<div class="etiqueta">Ciclo de vida del dato · ${M.anio}, en curso</div><div class="titulo">${esc(g.titulo)}</div>`
+    + `<span class="pildora">Del 01/01/${M.anio} al ${M.al}, con todos los ciclos</span>`;
+  const pie = (k) => `<div class="pie"><span>${esc(M.generado)}</span><span>Ciclo de vida del dato · ${M.anio} · Hoja ${k} de 2</span></div>`;
+  const indice = (g, grande = false) => {
+    let h = '';
+    g.nodos.forEach((n, i) => {
+      h += `<div class="nodo ${n.tono === 'acento' ? '' : n.tono}" style="flex:none;width:${grande ? 70 : 62}pt"><b>${esc(n.corto)}</b></div>`;
+      const et = g.etapas[i];
+      if (et) h += flechaHtml(et, datosDe(et), i, grande);
+    });
+    return `<div class="indice"><div class="r">El circuito · mediana en días hábiles</div><div class="circ${grande ? ' grande' : ''}">${h}</div></div>`;
+  };
+  const textoDe = (et) => `${esc(M.descripciones[et.desc])} <i>${esc(M.seMide[et.desc])}</i>`;
+  const como = '<div class="como"><b>Cómo se cuenta.</b> Días hábiles: de lunes a viernes, sin los feriados nacionales fijos; entre paréntesis, los corridos. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; los que todavía no la terminaron van aparte, como «en curso». La comparación con el año anterior empieza en 2027.</div>';
+
+  // ---------- A: las cifras ----------
+  const valor = (par, clase) => (par[0] === 0 ? `<div class="valor ${clase}"><b>En el día</b></div>`
+    : `<div class="valor ${clase}"><b>${par[0]}</b><span>${unidad(par[0])}</span></div><div class="corr">${par[1] === 1 ? '1 día corrido' : `${par[1]} días corridos`}</div>`);
+  const cifrasA = (et, d) => {
+    const [largo, corto] = extremos(et);
+    const ant = d.anterior ? `<span class="ant${d.invAnterior ? ' inventado' : ''}">Año anterior: mediana de ${d.anterior[0] === 0 ? 'en el día' : `${d.anterior[0]} ${unidad(d.anterior[0])}`}</span>`
+      : '<span class="ant">Año anterior: no hay</span>';
+    const extremo = (rotulo, e, clase) => `<div class="tile extremo ${clase}"><div class="q">${rotulo}</div>${valor(e.v, 'chico')}<div class="ds" title="${esc(e.dataset)}">${esc(e.dataset)}${e.mas ? ` y ${e.mas} más` : ''}</div></div>`;
+    const notas = [d.orientativo ? '<span class="orientativo">Con tan pocos casos, es orientativo.</span>' : '', d.en_curso ? `<span class="curso">En curso: ${esc(d.en_curso)}</span>` : '', d.pendientes ? `<span class="pend">${esc(d.pendientes)}</span>` : '',
+      d.aclaracion ? `<span>${esc(d.aclaracion)}</span>` : ''].filter(Boolean).join('');
+    return `<div class="tiles">`
+      + `<div class="tile mediana${et.dgmit ? ' violeta' : ''}"><div class="q">Mediana</div>${valor(d.mediana, 'grande')}<div class="n">de ${d.n} ciclos</div></div>`
+      + `<div class="tile promedio"><div class="q"><span>Promedio</span>${ant}</div>${valor(d.promedio, 'medio')}</div>`
+      + extremo(largo, d.mayor, 'largo') + extremo(corto, d.menor, 'corto')
+      + `</div>${notas ? `<div class="notas">${notas}</div>` : ''}`;
+  };
+
+  // ---------- A ----------
+  const bloqueA = (g, et, i) => {
+    const d = datosDe(et);
+    const desde = g.nodos[i]; const hasta = g.nodos[i + 1];
+    const izq = `<div class="izq"><div class="cabeza"><span class="num${et.dgmit ? ' violeta' : ''}">${i + 1}</span><b>${esc(et.nombre)}</b><span class="insignia${et.dgmit ? ' violeta' : ''}">${esc(et.responsable)}</span></div>`
+      + `<div class="tramo">${nodoHtml(desde)}<div class="flecha"><div class="linea${d.n === 0 ? ' vacia' : (et.dgmit ? ' violeta' : '')}"></div><div class="bajo">${esc(et.desde_hasta)}</div></div>${nodoHtml(hasta)}</div>`
+      + `<div class="desc">${textoDe(et)}</div></div>`;
+    let der;
+    if (d.n === 0) {
+      der = `<div class="der"><div class="r">Estadísticas de la etapa</div><div class="vacio-grande"><b>${esc(d.vacio.titulo)}</b>`
+        + `${d.vacio.texto ? `<span${et.dgmit ? '' : ' style="color:var(--gris)"'}>${esc(d.vacio.texto)}</span>` : ''}${d.vacio.pie ? `<small>${esc(d.vacio.pie)}</small>` : ''}</div></div>`;
+    } else {
+      der = `<div class="der${d.inv ? ' inventado' : ''}"><div class="r">Estadísticas de la etapa</div>${cifrasA(et, d)}</div>`;
+    }
+    return `<div class="bloque">${izq}${der}</div>`;
+  };
+
+  // ---------- B ----------
+  const reglaHtml = (d, violeta, et) => {
+    const max = Math.max(...d.valores, 1);
+    const tope = max <= 5 ? 5 : Math.ceil(max / 10) * 10;
+    const x = (v) => `${(v / tope) * 100}%`;
+    const puntos = d.valores.map((v, i) => `<i class="pt" style="left:${x(v)};top:${9.5 - ((d.valores.slice(0, i).filter((w) => w === v).length % 3) * 2)}pt"></i>`).join('');
+    const menor = d.menor.v[0]; const mayor = d.mayor.v[0];
+    return `<div class="regla"><span class="cero" style="left:0">0</span><span class="cero" style="right:0">${tope} ${tope === 1 ? 'día' : 'días'}</span><div class="eje"></div>`
+      + `<div class="banda${violeta ? ' violeta' : ''}" style="left:${x(menor)};width:calc(${x(mayor)} - ${x(menor)} + 1pt)"></div>${puntos}`
+      + `<i class="med" style="left:${x(d.mediana[0])}"></i><i class="prom" style="left:${x(d.promedio[0])}"></i>`
+      + `<span class="ext izq" style="top:21pt">${et.clave === 'aviso' ? 'Menos anticipación' : 'El más corto'}: <b>${menor === 0 ? 'en el día' : menor}</b> · ${esc(d.menor.dataset)}${d.menor.mas ? ` y ${d.menor.mas} más` : ''}</span>`
+      + `<span class="ext fin" style="top:30pt">${et.clave === 'aviso' ? 'Más anticipación' : 'El más largo'}: <b>${mayor}</b> · ${esc(d.mayor.dataset)}${d.mayor.mas ? ` y ${d.mayor.mas} más` : ''}</span></div>`;
+  };
+  const bloqueB = (g, et, i) => {
+    const d = datosDe(et);
+    const desde = g.nodos[i]; const hasta = g.nodos[i + 1];
+    const franja = `<div class="franja${et.dgmit ? ' violeta' : ''}"><span class="num${et.dgmit ? ' violeta' : ''}">${i + 1}</span><b>${esc(et.nombre)}</b>`
+      + `<span class="de">${esc(desde.corto)} → ${esc(hasta.corto)} · ${esc(et.desde_hasta)}</span><span class="insignia${et.dgmit ? ' violeta' : ''}">${esc(et.responsable)}</span></div>`;
+    let cifras;
+    if (d.n === 0) {
+      cifras = `<div class="cifras"><div class="vacio-grande"><b>${esc(d.vacio.titulo)}</b>${d.vacio.texto ? `<span${et.dgmit ? '' : ' style="color:var(--gris)"'}>${esc(d.vacio.texto)}</span>` : ''}${d.vacio.pie ? `<small>${esc(d.vacio.pie)}</small>` : ''}</div></div>`;
+    } else {
+      cifras = `<div class="cifras${d.inv ? ' inventado' : ''}"><div class="par">${stat('Mediana', d.mediana)}${stat('Promedio', d.promedio)}</div>${reglaHtml(d, et.dgmit, et)}<div class="notas">${notasDe(d)}</div></div>`;
+    }
+    return `<div class="ficha">${franja}<div class="cuerpo"><div class="desc">${textoDe(et)}</div>${cifras}</div></div>`;
+  };
+
+  // ---------- C ----------
+  const tablaC = (g) => {
+    const filas = g.etapas.map((et, i) => {
+      const d = datosDe(et);
+      const desde = g.nodos[i]; const hasta = g.nodos[i + 1];
+      const et1 = `<td class="et" style="width:44%"><b><span class="num${et.dgmit ? ' violeta' : ''}">${i + 1}</span>${esc(et.nombre)}</b><small>${esc(desde.corto)} → ${esc(hasta.corto)} · ${esc(et.desde_hasta)}</small><div class="desc">${textoDe(et)}</div></td>`;
+      if (d.n === 0) return `<tr>${et1}<td colspan="4"><b style="color:var(--gris-claro);font-size:9pt">${esc(d.vacio.titulo)}</b><small style="color:${et.dgmit ? 'var(--violeta)' : 'var(--gris)'};font-weight:700">${esc(d.vacio.texto ?? '')}</small></td></tr>`;
+      const c = (par) => (par[0] === 0 ? '<span class="n">En el día</span>' : `<span class="n">${par[0]}</span><small>${unidad(par[0])} (${corr(par[1])})</small>`);
+      const ex = (e) => `${c(e.v)}<small>${esc(e.dataset)}${e.mas ? ` y ${e.mas} más` : ''}</small>`;
+      return `<tr class="${d.inv ? 'inventado' : ''}">${et1}<td>${c(d.mediana)}<small>${d.n} ciclos${d.orientativo ? ', orientativo' : ''}</small></td><td>${c(d.promedio)}</td><td>${ex(d.mayor)}</td><td>${ex(d.menor)}</td></tr>`
+        + (d.en_curso || d.aclaracion || d.anterior ? `<tr class="${d.inv ? 'inventado' : ''}"><td></td><td colspan="4" style="padding-top:0;font-size:6.6pt;color:var(--gris)">${d.en_curso ? `<span style="color:var(--ambar);font-weight:700">En curso: ${esc(d.en_curso)}.</span> ` : ''}${d.aclaracion ? `${esc(d.aclaracion)} ` : ''}${d.anterior ? `Año anterior: mediana ${d.anterior[0]} ${unidad(d.anterior[0])}.` : ''}</td></tr>` : '');
+    }).join('');
+    return `<table class="tabla"><thead><tr><th>Etapa</th><th>Mediana</th><th>Promedio</th><th>Caso más largo</th><th>Caso más corto</th></tr></thead><tbody>${filas}</tbody></table>`;
+  };
+
+  const hoja = (gestion, k) => {
+    const g = M.gestiones[gestion];
+    let cuerpo;
+    if (estado.variante === 'a') cuerpo = indice(g) + `<div class="bloques">${g.etapas.map((et, i) => bloqueA(g, et, i)).join('')}</div>`;
+    else if (estado.variante === 'b') cuerpo = indice(g) + `<div class="bloques">${g.etapas.map((et, i) => bloqueB(g, et, i)).join('')}</div>`;
+    else cuerpo = indice(g, true) + tablaC(g);
+    const aclaracion = g.aclaracionGeneral ? `<div class="aclaracion-hoja">${esc(g.aclaracionGeneral)}</div>` : '';
+    return `<div class="marco"><p>Hoja ${k} de 2 · ${esc(g.titulo)}</p><div class="hoja">${encabezado(g, k)}${cuerpo}${aclaracion}${como}${pie(k)}</div></div>`;
+  };
+
+  const dibujar = () => {
+    document.getElementById('hojas').innerHTML = hoja('externa', 1) + hoja('interna', 2);
+    document.querySelectorAll('.hoja').forEach((h) => h.style.setProperty('--zoom', estado.zoom));
+    document.getElementById('m-guia').textContent = GUIAS[estado.variante]
+      + (estado.datos === 'inventado' ? ' Lo marcado en naranja es inventado: las etapas 2 y 3 de la gestión externa (todavía no hay notas DGMIT cargadas) y la comparación con el año anterior.' : '');
+  };
+  document.querySelectorAll('[data-variante],[data-datos],[data-zoom]').forEach((b) => b.addEventListener('click', () => {
+    const [clave, valor] = b.dataset.variante ? ['variante', b.dataset.variante] : b.dataset.datos ? ['datos', b.dataset.datos] : ['zoom', Number(b.dataset.zoom)];
+    estado[clave] = valor;
+    b.parentElement.querySelectorAll('button').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    history.replaceState(null, '', `?variante=${estado.variante}&datos=${estado.datos}${estado.zoom !== 1 ? `&zoom=${estado.zoom}` : ''}`);
+    dibujar();
+  }));
+  dibujar();
+})();
+</script>
+</body>
+</html>

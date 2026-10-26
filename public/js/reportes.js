@@ -13,10 +13,10 @@
  * metricasCinta.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
  * por Utils.escapeHtml, y un número se escribe con String (un 0 es «0»: Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
- * el DOM o la API va aparte, al final. La pestaña Reportes (spec 5) tiene siete tarjetas en dos grupos, «Para presentar» (Métricas del
- * año, Informe anual y Estado general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda de pedidos y Datos para
- * completar): htmlDeReportes las arma y pedidoDeReporte dice qué pide cada una; cada PDF se descarga con el JWT en el encabezado
- * (API.pedirArchivo). Qué años tienen foto lo dice el servidor (`fotos` de GET /api/metricas).
+ * el DOM o la API va aparte, al final. La pestaña Reportes (spec 5) tiene ocho tarjetas en dos grupos, «Para presentar» (Métricas del
+ * año, Ciclo de vida del dato, Informe anual y Estado general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda
+ * de pedidos y Datos para completar): htmlDeReportes las arma y pedidoDeReporte dice qué pide cada una; cada PDF se descarga con el
+ * JWT en el encabezado (API.pedirArchivo). Qué años tienen foto lo dice el servidor (`fotos` de GET /api/metricas).
  */
 
 // Todos los roles con sesión la ven; sin sesión, al login
@@ -881,23 +881,25 @@ function htmlDeParaCompletar(vista, puedeCargar) {
 // atada por un test de paridad
 const MESES_AGENDA = [[3, '3'], [6, '6'], [12, '12 meses']];
 const GESTIONES_AGENDA = [['ambas', 'Las dos gestiones'], ['externa', 'Gestión externa'], ['interna', 'Gestión interna']];
-// Lo elegido en las tarjetas al entrar: Métricas del año, con el año de la pestaña Métricas (null); el Informe anual, con el que propone
-// anioDelInforme (null); ningún área; Avisos del RPAD sin período (la página pone del 1/1 a hoy); la Agenda, con los de entrada del
-// servidor (6 meses y las dos gestiones: MESES_POR_DEFECTO y opcionesDeAgenda); Datos para completar, con el que propone
-// anioDeParaCompletar (null)
-const REPORTES_POR_DEFECTO = Object.freeze({ metricas: null, informe: null, area: '', desde: '', hasta: '', meses: 6, gestion: 'ambas', completar: null });
+// Lo elegido en las tarjetas al entrar: Métricas del año, con el año de la pestaña Métricas (null); el Ciclo de vida del dato, con el en
+// curso (null: no sigue a la pestaña Métricas); el Informe anual, con el que propone anioDelInforme (null); ningún área; Avisos del RPAD
+// sin período (la página pone del 1/1 a hoy); la Agenda, con los de entrada del servidor (6 meses y las dos gestiones: MESES_POR_DEFECTO
+// y opcionesDeAgenda); Datos para completar, con el que propone anioDeParaCompletar (null)
+const REPORTES_POR_DEFECTO = Object.freeze({ metricas: null, ciclo: null, informe: null, area: '', desde: '', hasta: '', meses: 6, gestion: 'ambas', completar: null });
 // Copia del 400 de GET /reportes/avisos (MENSAJE_PERIODO_INVALIDO de services/reportesAvisosPdf.js), atada por un test de paridad
 const PERIODO_INVALIDO = 'Elegí un período válido.';
 const FALTA_EL_AREA = 'Elegí un área.';
 // Los dos grupos de la pestaña (maqueta 4): su clave, su título, su bajada, su grilla y sus tarjetas, en orden
 const GRUPOS_DE_REPORTES = [
-  ['presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.', 'rp-grilla', ['metricas', 'informe', 'estado']],
+  ['presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.', 'rp-grilla g4', ['metricas', 'ciclo', 'informe', 'estado']],
   ['trabajar', 'Para trabajar', 'Para preparar una reunión, planificar o dejar constancia.', 'rp-grilla g4', ['area', 'avisos', 'agenda', 'completar']]
 ];
 
-// Los íconos de las tarjetas de «Para presentar», los de la maqueta (las de «Para trabajar» no llevan)
+// Los íconos de las tarjetas de «Para presentar», los de la maqueta (las de «Para trabajar» no llevan); el del Ciclo de vida del dato,
+// «route» de Lucide
 const ICONOS_DE_REPORTES = {
   metricas: iconoDeReporte('<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'),
+  ciclo: iconoDeReporte('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>'),
   informe: iconoDeReporte('<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>'),
   estado: iconoDeReporte('<path d="m19 9-5 5-4-4-3 3"/><path d="M3 3v18h18"/>')
 };
@@ -930,6 +932,7 @@ function nombreDelReporte(tipo, { anio, area, hoy } = {}) {
   switch (tipo) {
     case 'metricas': return `Metricas-RPAD-${anio}.pdf`;
     case 'informe': return `Informe-anual-RPAD-${anio}.pdf`;
+    case 'ciclo': return `Ciclo-de-vida-del-dato-${anio}.pdf`;
     case 'estado': return `estado-general-${fecha(hoy).replace(/\//g, '-')}.pdf`;
     case 'area': return `Reporte-area-${area}-${hoy}.pdf`;
     case 'avisos': return `Avisos-RPAD-${hoy}.pdf`;
@@ -946,7 +949,8 @@ function aniosDeReportes(anios) {
 }
 
 // El año de Métricas del año: el elegido (el de la tarjeta o, si no eligió otro, el de la pestaña Métricas) si es de los del servidor; si
-// no, el en curso (el último). null sin años
+// no, el en curso (el último). null sin años. También el del Ciclo de vida del dato, que no sigue a la pestaña: sin elegir en su
+// tarjeta, el en curso (elegidoDeReportes no le pone el año de la pestaña)
 function anioDeMetricasDelAnio(anio, anios) {
   const lista = aniosDeReportes(anios);
   return lista.some((foto) => foto.anio === anio) ? anio : (lista.at(-1)?.anio ?? null);
@@ -972,12 +976,12 @@ function anioDeParaCompletar(anio, anios) {
   return (cerradoSinFoto ?? lista.at(-1))?.anio ?? null;
 }
 
-// Lo elegido en una tarjeta con un control cambiado (`clave`: 'metricas', 'informe', 'completar', 'area', 'desde', 'hasta', 'meses' o
-// 'gestion'; `valor`, el texto del control). Los años, como números; los meses y la gestión, solo los de la lista. Lo que no sirve no
-// cambia nada
+// Lo elegido en una tarjeta con un control cambiado (`clave`: 'metricas', 'ciclo', 'informe', 'completar', 'area', 'desde', 'hasta',
+// 'meses' o 'gestion'; `valor`, el texto del control). Los años, como números; los meses y la gestión, solo los de la lista. Lo que no
+// sirve no cambia nada
 function conReporteElegido(datos, clave, valor) {
   const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
-  if (clave === 'metricas' || clave === 'informe' || clave === 'completar') {
+  if (clave === 'metricas' || clave === 'ciclo' || clave === 'informe' || clave === 'completar') {
     const anio = anioDe(valor);
     return anio === null ? e : { ...e, [clave]: anio };
   }
@@ -1040,7 +1044,7 @@ function htmlDeTarjeta(clave, titulo, texto, { campos = '', boton, hojas = '' })
 }
 
 // La tarjeta de un reporte (`clave`, su data-reporte), con lo elegido (`datos`) y lo que llegó (`opciones`), como en htmlDeReportes. ''
-// si `clave` no es de las siete. La página redibuja de a una tarjeta: así una fecha a medio escribir en Avisos no se pierde
+// si `clave` no es de las ocho. La página redibuja de a una tarjeta: así una fecha a medio escribir en Avisos no se pierde
 function htmlDeTarjetaDeReportes(clave, datos, { anios = null, areas = null, descargando = [] } = {}) {
   const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
   const lista = aniosDeReportes(anios);
@@ -1051,6 +1055,12 @@ function htmlDeTarjetaDeReportes(clave, datos, { anios = null, areas = null, des
       return htmlDeTarjeta(clave, 'Métricas del año', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', {
         campos: sinAnios || htmlDeCampo('rp-metricas-anio', 'Año', htmlDeSelectorDeAnios('rp-metricas-anio', 'rp-metricas', lista, anioDeMetricasDelAnio(e.metricas, lista), true)),
         boton, hojas: 'Unas 5 hojas'
+      });
+    case 'ciclo':
+      // El año, como en Métricas del año, pero sin el de la pestaña (spec 2026-10-25-ciclo-de-vida-del-dato, 4): sin elegir, el en curso
+      return htmlDeTarjeta(clave, 'Ciclo de vida del dato', 'Cuánto tarda cada etapa del circuito, del aviso del RPAD a la carga en el portal: la mediana, el promedio y los casos más largo y más corto de cada una. Una hoja para cada gestión.', {
+        campos: sinAnios || htmlDeCampo('rp-ciclo-anio', 'Año', htmlDeSelectorDeAnios('rp-ciclo-anio', 'rp-ciclo', lista, anioDeMetricasDelAnio(e.ciclo, lista), true)),
+        boton, hojas: '2 hojas: la gestión externa y la interna'
       });
     case 'informe': {
       // Sin foto, el botón dice lo que manda el servidor (aviso_informe: desde cuándo se puede descargar o, si la corrida no pudo sacarla,
@@ -1099,8 +1109,9 @@ function htmlDeTarjetaDeReportes(clave, datos, { anios = null, areas = null, des
   }
 }
 
-// La pestaña Reportes (spec 5, maqueta 4): siete tarjetas en dos grupos, «Para presentar» (Métricas del año, Informe anual y Estado
-// general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda de pedidos y Datos para completar), cada una con su PDF.
+// La pestaña Reportes (spec 5, maqueta 4): ocho tarjetas en dos grupos, «Para presentar» (Métricas del año, Ciclo de vida del dato,
+// Informe anual y Estado general de los datasets) y «Para trabajar» (Por área, Avisos del RPAD, Agenda de pedidos y Datos para
+// completar), cada una con su PDF.
 // `datos`: lo elegido en las tarjetas (REPORTES_POR_DEFECTO; `metricas`, el año de la tarjeta o, si no eligió otro, el de la pestaña
 // Métricas). `anios`: los de `fotos` de GET /api/metricas (null mientras llegan; [] si no llegaron); el Informe anual de un año sin foto
 // dice en su botón lo que manda el servidor. `areas`: las de GET /api/areas (null mientras llegan). `descargando`: los reportes que se
@@ -1114,7 +1125,7 @@ function htmlDeReportes(datos, opciones = {}) {
 // Lo que pide el botón de una tarjeta (`clave`, su data-reporte) con lo elegido (`datos`, como en htmlDeReportes): { ruta, nombre }, la
 // ruta del PDF (todas con authMiddleware) y el nombre del archivo (nombreDelReporte, con `hoy`, el día de hoy en Argentina); { error,
 // foco } si falta algo (el aviso, con el mensaje del servidor, y el id del control que recibe el foco), sin pedir nada; null si no hay
-// nada que pedir (el Informe anual de un año sin foto, o un reporte que no es de los siete). Métricas del año lleva lo elegido en la
+// nada que pedir (el Informe anual de un año sin foto, o un reporte que no es de los ocho). Métricas del año lleva lo elegido en la
 // pestaña Métricas (`estado`: la combinación y los destildados, consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
 function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = null, hoy = Utils.hoyEnArgentina() } = {}) {
   const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
@@ -1125,6 +1136,13 @@ function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = nu
       const anio = lista.length ? anioDeMetricasDelAnio(e.metricas, lista) : (anioDe(String(e.metricas ?? '')) ?? enCurso);
       const consulta = consultaDeLaApi({ ...(esObjeto(estado) ? estado : ESTADO_POR_DEFECTO), anio: anio === enCurso ? null : anio });
       return { ruta: `/metricas/pdf${consulta ? `?${consulta}` : ''}`, nombre: nombreDelReporte(clave, { anio: String(anio) }) };
+    }
+    case 'ciclo': {
+      // Solo el año de la tarjeta: no lleva el de la pestaña Métricas, ni su combinación, ni sus destildados; el en curso no se escribe.
+      // Sin años (mientras llegan o si no llegaron), el en curso del servidor, con el año de hoy en el nombre
+      const enCurso = lista.at(-1)?.anio ?? Number(hoy.slice(0, 4));
+      const anio = lista.length ? anioDeMetricasDelAnio(e.ciclo, lista) : (anioDe(String(e.ciclo ?? '')) ?? enCurso);
+      return { ruta: `/reportes/ciclo-de-vida${anio === enCurso ? '' : `?anio=${String(anio)}`}`, nombre: nombreDelReporte(clave, { anio: String(anio) }) };
     }
     case 'informe': {
       const anio = anioDelInforme(e.informe, lista);
@@ -1610,7 +1628,7 @@ async function eliminarMetricaManual(boton) {
 }
 
 // =====================================================
-// La pestaña Reportes (DOM y API): siete tarjetas en dos grupos (spec 2026-10-24-metricas-y-reportes, 5). Sale el Cumplimiento y el
+// La pestaña Reportes (DOM y API): ocho tarjetas en dos grupos (spec 2026-10-24-metricas-y-reportes, 5). Sale el Cumplimiento y el
 // Historial de notificaciones pasa a ser Avisos del RPAD
 // =====================================================
 
@@ -1677,11 +1695,11 @@ async function cargarAreasDeReportes() {
 }
 
 // Las tarjetas que eligen un año (se redibujan cuando llegan los años)
-const TARJETAS_CON_ANIO = ['metricas', 'informe', 'completar'];
+const TARJETAS_CON_ANIO = ['metricas', 'ciclo', 'informe', 'completar'];
 
-// Los años de Métricas del año, del Informe anual y de Datos para completar: los de `fotos` de la respuesta de la pestaña Métricas (los
-// mismos en cada una). Si esa respuesta no los trajo (un 404 por un año sin métricas en la dirección, o un error) y todavía no hay años,
-// se piden aparte (pedirLosAniosDeReportes). Devuelve ese pedido, o null
+// Los años de Métricas del año, del Ciclo de vida del dato, del Informe anual y de Datos para completar: los de `fotos` de la respuesta
+// de la pestaña Métricas (los mismos en cada una). Si esa respuesta no los trajo (un 404 por un año sin métricas en la dirección, o un
+// error) y todavía no hay años, se piden aparte (pedirLosAniosDeReportes). Devuelve ese pedido, o null
 function conLosAniosDeReportes(fotos) {
   if (Array.isArray(fotos)) pagina.reportes.anios = fotos;
   else if (pagina.reportes.anios === null) return pedirLosAniosDeReportes();
@@ -1723,7 +1741,7 @@ function alHacerClicEnReportes(evento) {
 // Qué guarda cada control de las tarjetas (su data-selector)
 const CONTROLES_DE_REPORTES = {
   'rp-metricas': 'metricas', 'rp-informe': 'informe', 'rp-completar': 'completar', 'rp-area': 'area', 'rp-desde': 'desde', 'rp-hasta': 'hasta',
-  'rp-gestion': 'gestion'
+  'rp-gestion': 'gestion', 'rp-ciclo': 'ciclo'
 };
 
 // Un selector o una fecha: queda en lo elegido. Solo el año del Informe anual cambia algo a la vista (su botón): se redibuja su tarjeta

@@ -3,7 +3,7 @@
 // lo que arma el servidor (services/metricasReglas.js y metricasCinta.js sobre los casos reales de tests/metricas-casos.js) y con
 // tramos y cintas armados a mano. Como seguimiento.js, el script al cargarse solo declara: se carga en un vm con un document que no
 // hace nada, junto con el api.js de verdad (Utils). La página no recalcula nada: dibuja lo que manda el servidor. También la pestaña
-// Reportes (spec 5): las siete tarjetas, lo que pide cada una y, con un document de mentira, la descarga con API.pedirArchivo.
+// Reportes (spec 5): las ocho tarjetas, lo que pide cada una y, con un document de mentira, la descarga con API.pedirArchivo.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -942,7 +942,7 @@ describe('reportes.js: lo que llega del servidor', () => {
   });
 });
 
-// La pestaña Reportes (spec 2026-10-24-metricas-y-reportes, 5; maquetas 3-reportes.html y 6-reportes-datos-reales.html): siete tarjetas
+// La pestaña Reportes (spec 2026-10-24-metricas-y-reportes, 5; maquetas 3-reportes.html y 6-reportes-datos-reales.html): ocho tarjetas
 // en dos grupos, cada una con su PDF, que se descarga con el JWT en el encabezado (API.pedirArchivo). Qué años tienen foto y qué dice el
 // botón del Informe anual sin ella lo dice el servidor (`fotos` de GET /api/metricas, fotosDeMetricas): la página no lo deduce
 describe('reportes.js: la pestaña Reportes', () => {
@@ -953,7 +953,7 @@ describe('reportes.js: la pestaña Reportes', () => {
   const sinFoto = (anio, aviso = `Disponible desde el 10/01/${anio + 1}`) => ({ anio, con_foto: false, aviso_informe: aviso });
   const FOTOS_2026 = [sinFoto(2026)];
   const LAS_AREAS = [{ id: 7, nombre: 'Secretaría de Hacienda' }, { id: 3, nombre: 'Área de Ambiente' }, { id: 12, nombre: 'Dirección de Comercio' }];
-  const ELEGIDO = { metricas: null, informe: null, area: '', desde: '2026-01-01', hasta: HOY_DE_LA_PRUEBA, meses: 6, gestion: 'ambas', completar: null };
+  const ELEGIDO = { metricas: null, ciclo: null, informe: null, area: '', desde: '2026-01-01', hasta: HOY_DE_LA_PRUEBA, meses: 6, gestion: 'ambas', completar: null };
   const reportes = (elegido = ELEGIDO, opciones = {}) => ctx.htmlDeReportes(elegido, { anios: FOTOS_2026, areas: LAS_AREAS, ...opciones });
   // La tarjeta de un reporte (lo que va de su <section> a la siguiente)
   const tarjeta = (html, clave) => html.match(new RegExp(`<section class="rp-tarjeta" aria-labelledby="rp-titulo-${clave}">[\\s\\S]*?</section>`))?.[0] ?? '';
@@ -961,7 +961,7 @@ describe('reportes.js: la pestaña Reportes', () => {
     plano(ctx.pedidoDeReporte(clave, elegido, { estado, anios, hoy }) ?? null);
   const NO_DISPONIBLE = '<button type="button" class="mt-btn rp-no-disponible" data-reporte="informe" aria-disabled="true" aria-describedby="rp-titulo-informe">';
 
-  it('siete tarjetas en dos grupos', () => {
+  it('ocho tarjetas en dos grupos', () => {
     const html = reportes();
     const grupos = [...html.matchAll(/<h2 class="mt-seccion-titulo" id="rp-grupo-([a-z]+)">([^<]+)<\/h2><p class="mt-seccion-bajada">([^<]+)<\/p>/g)]
       .map((m) => [m[1], m[2], m[3]]);
@@ -969,19 +969,24 @@ describe('reportes.js: la pestaña Reportes', () => {
       ['presentar', 'Para presentar', 'El estado del registro y cómo funcionó el circuito.'],
       ['trabajar', 'Para trabajar', 'Para preparar una reunión, planificar o dejar constancia.']
     ]);
-    // Cada tarjeta es una sección con su h3 (los tres de «Para presentar», con su ícono, como en la maqueta), en su grupo y en orden
+    // Cada tarjeta es una sección con su h3 (los cuatro de «Para presentar», con su ícono, como en la maqueta), en su grupo y en orden;
+    // el Ciclo de vida del dato, segundo en «Para presentar», que pasa a cuatro columnas
     const titulos = (parte) => [...parte.matchAll(/<section class="rp-tarjeta" aria-labelledby="rp-titulo-([a-z]+)"><h3 id="rp-titulo-\1">(<svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>)?([^<]+)<\/h3>/g)]
       .map((m) => [m[1], m[3], Boolean(m[2])]);
     const [presentar, trabajar] = html.split('id="rp-grupo-trabajar"');
-    assert.deepEqual(titulos(presentar), [['metricas', 'Métricas del año', true], ['informe', 'Informe anual', true], ['estado', 'Estado general de los datasets', true]]);
+    assert.deepEqual(titulos(presentar), [['metricas', 'Métricas del año', true], ['ciclo', 'Ciclo de vida del dato', true], ['informe', 'Informe anual', true],
+      ['estado', 'Estado general de los datasets', true]]);
     assert.deepEqual(titulos(trabajar), [['area', 'Por área', false], ['avisos', 'Avisos del RPAD', false], ['agenda', 'Agenda de pedidos', false],
       ['completar', 'Datos para completar', false]]);
-    assert.match(presentar, /<div class="rp-grilla">/);
+    assert.match(presentar, /<div class="rp-grilla g4">/);
     assert.match(trabajar, /<div class="rp-grilla g4">/);
+    // El ícono del Ciclo de vida del dato, el «route» de Lucide (el de la maqueta)
+    assert.ok(tarjeta(html, 'ciclo').includes('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>Ciclo de vida del dato</h3>'));
     // Los textos de la maqueta; la cantidad de hojas, la real con los datos de hoy (Ruling 24), y donde depende de lo que se elige, sin
     // un número
     for (const [clave, texto, hojas] of [
       ['metricas', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', 'Unas 5 hojas'],
+      ['ciclo', 'Cuánto tarda cada etapa del circuito, del aviso del RPAD a la carga en el portal: la mediana, el promedio y los casos más largo y más corto de cada una. Una hoja para cada gestión.', '2 hojas: la gestión externa y la interna'],
       ['informe', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Herramientas → Proyectos).', 'Se arma con la foto del 31/12'],
       ['estado', 'La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.', 'Unas 4 hojas'],
       ['area', 'Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.', 'Una portada y una hoja por dataset'],
@@ -1003,7 +1008,7 @@ describe('reportes.js: la pestaña Reportes', () => {
     }
     assert.equal(ctx.htmlDeTarjetaDeReportes('cumplimiento', ELEGIDO, {}), '');
     // Cada selector con su label, una sola vez
-    for (const [id, rotulo] of [['rp-metricas-anio', 'Año'], ['rp-informe-anio', 'Año'], ['rp-area', 'Área'], ['rp-desde', 'Desde'], ['rp-hasta', 'Hasta'],
+    for (const [id, rotulo] of [['rp-metricas-anio', 'Año'], ['rp-ciclo-anio', 'Año'], ['rp-informe-anio', 'Año'], ['rp-area', 'Área'], ['rp-desde', 'Desde'], ['rp-hasta', 'Hasta'],
       ['rp-gestion', 'Gestión'], ['rp-completar-anio', 'Año']]) {
       assert.equal(cuantas(html, new RegExp(`<label for="${id}">${rotulo}</label>`, 'g')), 1, id);
       assert.equal(cuantas(html, new RegExp(`id="${id}"`, 'g')), 1, id);
@@ -1140,9 +1145,58 @@ describe('reportes.js: la pestaña Reportes', () => {
     }
   });
 
-  it('las rutas y los nombres de los siete PDF, con el día de hoy en Argentina', () => {
+  // Spec 2026-10-25-ciclo-de-vida-del-dato, 4: el selector de los años de `fotos`, con el en curso arriba y elegido de entrada, como en
+  // Métricas del año, pero independiente de la pestaña Métricas (no lleva su año, sus selectores ni sus destildados). El en curso no se
+  // escribe en la ruta
+  it('Ciclo de vida del dato: el en curso arriba y elegido, independiente de la pestaña Métricas', () => {
+    const select = (elegido, anios) => tarjeta(reportes(elegido, { anios }), 'ciclo').match(/<select id="rp-ciclo-anio"[^>]*>[\s\S]*?<\/select>/)?.[0];
+    // Hoy (25/10/2026): solo el en curso
+    assert.equal(select(ELEGIDO, FOTOS_2026), '<select id="rp-ciclo-anio" class="mt-select" data-selector="rp-ciclo"><option value="2026" selected>2026 (en curso)</option></select>');
+    assert.deepEqual(pedido('ciclo'), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2026.pdf' });
+    // Con 2026 cerrado y 2027 en curso: el en curso elegido de entrada (también entre el 1/1 y el día de la foto, sin la de 2026)
+    const dosAnios = [conFoto(2026), sinFoto(2027)];
+    for (const anios of [dosAnios, [sinFoto(2026), sinFoto(2027)]]) {
+      assert.equal(select(ELEGIDO, anios), '<select id="rp-ciclo-anio" class="mt-select" data-selector="rp-ciclo"><option value="2027" selected>2027 (en curso)</option><option value="2026">2026</option></select>');
+      assert.deepEqual(pedido('ciclo', ELEGIDO, { anios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2027.pdf' });
+    }
+    // Elegido 2026, con ?anio=2026; elegido el en curso, sin año en la ruta
+    assert.match(select({ ...ELEGIDO, ciclo: 2026 }, dosAnios), /<option value="2027">2027 \(en curso\)<\/option><option value="2026" selected>2026<\/option>/);
+    assert.deepEqual(pedido('ciclo', { ...ELEGIDO, ciclo: 2026 }, { anios: dosAnios }), { ruta: '/reportes/ciclo-de-vida?anio=2026', nombre: 'Ciclo-de-vida-del-dato-2026.pdf' });
+    assert.deepEqual(pedido('ciclo', { ...ELEGIDO, ciclo: 2027 }, { anios: dosAnios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2027.pdf' });
+    // Un año que no es de los del servidor no vale: el en curso
+    assert.deepEqual(pedido('ciclo', { ...ELEGIDO, ciclo: 2020 }, { anios: dosAnios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2027.pdf' });
+    // Lo de la pestaña Métricas no llega: ni su año (el de Métricas del año), ni la combinación, ni los destildados
+    const estado = { ...POR_DEFECTO, anio: 2026, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45] };
+    assert.deepEqual(pedido('ciclo', { ...ELEGIDO, metricas: 2026 }, { estado, anios: dosAnios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2027.pdf' });
+    assert.match(select({ ...ELEGIDO, metricas: 2026 }, dosAnios), /<option value="2027" selected>2027 \(en curso\)<\/option>/);
+    // Lo elegido en la tarjeta: el año como número; lo que no es un año no cambia nada. De entrada, ninguno (el en curso)
+    assert.equal(ctx.conReporteElegido(ELEGIDO, 'ciclo', '2026').ciclo, 2026);
+    assert.deepEqual(plano(ctx.conReporteElegido(ELEGIDO, 'ciclo', 'x')), ELEGIDO);
+    assert.equal(plano(vm.runInContext('REPORTES_POR_DEFECTO', ctx)).ciclo, null);
+    // Se redibuja cuando llegan los años, como las otras tarjetas con año
+    assert.deepEqual(plano(vm.runInContext('TARJETAS_CON_ANIO', ctx)), ['metricas', 'ciclo', 'informe', 'completar']);
+    // Sin años (mientras llegan o si no llegaron), el aviso en lugar del selector, y se pide el en curso del servidor, con el año de hoy en
+    // el nombre
+    for (const [anios, aviso] of [[null, 'Cargando los años…'], [[], 'No se pudieron cargar los años.']]) {
+      const ciclo = tarjeta(reportes(ELEGIDO, { anios }), 'ciclo');
+      assert.ok(ciclo.includes(`<p class="rp-estado">${aviso}</p>`), ciclo);
+      assert.doesNotMatch(ciclo, /<select|aria-disabled/);
+      assert.deepEqual(pedido('ciclo', ELEGIDO, { anios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2026.pdf' });
+      assert.equal(pedido('ciclo', ELEGIDO, { anios, hoy: '2027-01-02' }).nombre, 'Ciclo-de-vida-del-dato-2027.pdf');
+    }
+    // Con datos vacíos, nada dice NaN, null ni undefined
+    for (const datos of [{}, undefined, null]) {
+      for (const anios of [null, [], undefined, dosAnios]) {
+        assert.doesNotMatch(JSON.stringify(ctx.pedidoDeReporte('ciclo', datos, { anios, hoy: HOY_DE_LA_PRUEBA })), /NaN|null|undefined/);
+        assert.doesNotMatch(ctx.htmlDeTarjetaDeReportes('ciclo', datos, { anios }), /NaN|null|undefined/);
+      }
+    }
+  });
+
+  it('las rutas y los nombres de los ocho PDF, con el día de hoy en Argentina', () => {
     // El nombre, el que pone el servidor en su Content-Disposition (API.pedirArchivo da solo el Blob: se arma acá con nombreDelReporte)
     assert.deepEqual(pedido('metricas'), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2026.pdf' });
+    assert.deepEqual(pedido('ciclo'), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2026.pdf' });
     assert.deepEqual(pedido('informe', ELEGIDO, { anios: [conFoto(2026)] }), { ruta: '/reportes/informe-anual?anio=2026', nombre: 'Informe-anual-RPAD-2026.pdf' });
     assert.deepEqual(pedido('estado'), { ruta: '/reportes/estado-general', nombre: 'estado-general-25-10-2026.pdf' });
     assert.deepEqual(pedido('area', { ...ELEGIDO, area: '7' }), { ruta: '/reportes/por-area/7', nombre: 'Reporte-area-7-2026-10-25.pdf' });
@@ -1153,14 +1207,14 @@ describe('reportes.js: la pestaña Reportes', () => {
     // El día es el de `hoy` (Utils.hoyEnArgentina() en la página)
     assert.equal(pedido('completar', ELEGIDO, { hoy: '2027-01-02' }).nombre, 'Datos-para-completar-2027-01-02.pdf');
     assert.equal(pedido('estado', ELEGIDO, { hoy: '2027-01-02' }).nombre, 'estado-general-02-01-2027.pdf');
-    // Un reporte que no es de los siete, nada
+    // Un reporte que no es de los ocho, nada
     assert.equal(pedido('cumplimiento'), null);
   });
 
   // Los controladores ponen el nombre con nombreDelReporte (services/reportesNombres.js); la página guarda el Blob con su copia
   it('nombreDelReporte es el mismo en la página y en el servidor', () => {
     const casos = [
-      ...['metricas', 'informe'].flatMap((tipo) => [2026, 2027, '2026'].map((anio) => [tipo, { anio }])),
+      ...['metricas', 'ciclo', 'informe'].flatMap((tipo) => [2026, 2027, '2026'].map((anio) => [tipo, { anio }])),
       ...['estado', 'avisos', 'agenda', 'completar'].flatMap((tipo) => ['2026-10-25', '2027-01-02', '2028-02-29', '2026-12-31'].map((hoy) => [tipo, { hoy }])),
       ...[7, '34', 145].flatMap((area) => ['2026-10-25', '2027-01-02'].map((hoy) => ['area', { area, hoy }])),
       ['cumplimiento', { hoy: '2026-10-25' }], ['', {}]
@@ -1172,6 +1226,8 @@ describe('reportes.js: la pestaña Reportes', () => {
     }
     assert.equal(pedido('area', { ...ELEGIDO, area: '7' }).nombre, nombreDelReporteDelServidor('area', { area: 7, hoy: HOY_DE_LA_PRUEBA }));
     assert.equal(pedido('metricas').nombre, nombreDelReporteDelServidor('metricas', { anio: 2026 }));
+    assert.equal(pedido('ciclo').nombre, nombreDelReporteDelServidor('ciclo', { anio: 2026 }));
+    assert.equal(pedido('ciclo', { ...ELEGIDO, ciclo: 2026 }, { anios: [conFoto(2026), sinFoto(2027)] }).nombre, nombreDelReporteDelServidor('ciclo', { anio: 2026 }));
     assert.equal(pedido('informe', ELEGIDO, { anios: [conFoto(2026)] }).nombre, nombreDelReporteDelServidor('informe', { anio: 2026 }));
   });
 
@@ -1230,7 +1286,7 @@ describe('reportes.js: la pestaña Reportes', () => {
   it('el botón de un reporte que se está descargando queda deshabilitado en cada redibujo', () => {
     const html = reportes(ELEGIDO, { descargando: ['estado', 'agenda'] });
     for (const clave of ['estado', 'agenda']) assert.match(tarjeta(html, clave), new RegExp(`data-reporte="${clave}" aria-describedby="rp-titulo-${clave}" disabled>`), clave);
-    for (const clave of ['metricas', 'area', 'avisos', 'completar']) assert.doesNotMatch(tarjeta(html, clave), / disabled>/, clave);
+    for (const clave of ['metricas', 'ciclo', 'area', 'avisos', 'completar']) assert.doesNotMatch(tarjeta(html, clave), / disabled>/, clave);
   });
 
   it('lo que llega del servidor y de los campos pasa por escapeHtml', () => {
@@ -1417,6 +1473,30 @@ describe('reportes.js: la pestaña Reportes', () => {
     const informe = tarjeta(p.contenedor().innerHTML, 'informe');
     assert.match(informe, /<option value="2027" selected>2027<\/option>/);
     assert.ok(informe.includes(`${NO_DISPONIBLE}Disponible desde el 10/01/2028</button>`), informe);
+  });
+
+  // Sin la clave en conReporteElegido y en CONTROLES_DE_REPORTES, el selector de la tarjeta no haría nada (spec 4)
+  it('el año del Ciclo de vida del dato queda en lo elegido y lo pide el botón, sin el año de la pestaña Métricas', async () => {
+    const p = conLaPagina();
+    await p.contexto.iniciarTarjetasDeReportes();
+    p.contexto.conLosAniosDeReportes([conFoto(2026), sinFoto(2027)]);
+    // La pestaña Métricas en 2026: Métricas del año la sigue; el Ciclo de vida del dato, no
+    vm.runInContext('pagina.estado = { ...pagina.estado, anio: 2026, estadistico: "promedio", sin: [12] }; dibujarReportes();', p.contexto);
+    assert.match(tarjeta(p.contenedor().innerHTML, 'metricas'), /<option value="2026" selected>2026<\/option>/);
+    assert.match(tarjeta(p.contenedor().innerHTML, 'ciclo'), /<option value="2027" selected>2027 \(en curso\)<\/option><option value="2026">2026<\/option>/);
+    await p.contexto.descargarDeLaTarjeta(p.boton('ciclo'));
+    assert.equal(p.pedidos.at(-1), '/reportes/ciclo-de-vida');
+    assert.deepEqual(p.descargas, ['Ciclo-de-vida-del-dato-2027.pdf']);
+    // Elegido 2026 en la tarjeta
+    p.cambiar('rp-ciclo', '2026');
+    assert.equal(vm.runInContext('pagina.reportes.elegido.ciclo', p.contexto), 2026);
+    await p.contexto.descargarDeLaTarjeta(p.boton('ciclo'));
+    assert.equal(p.pedidos.at(-1), '/reportes/ciclo-de-vida?anio=2026');
+    assert.deepEqual(p.descargas, ['Ciclo-de-vida-del-dato-2027.pdf', 'Ciclo-de-vida-del-dato-2026.pdf']);
+    vm.runInContext('dibujarReportes()', p.contexto);
+    assert.match(tarjeta(p.contenedor().innerHTML, 'ciclo'), /<option value="2026" selected>2026<\/option>/);
+    // Y Métricas del año no cambió
+    assert.equal(vm.runInContext('pagina.reportes.elegido.metricas', p.contexto), null);
   });
 
   // Los años llegan con la respuesta de la pestaña Métricas (cargarMetricas → conLosAniosDeReportes). Si esa respuesta es un error (un año

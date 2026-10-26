@@ -111,7 +111,7 @@ describe('lector', () => {
   }
 
   for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
-    '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf']) {
+    '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/ciclo-de-vida']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -196,7 +196,7 @@ describe('colaborador', () => {
   }
 
   for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
-    '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline']) {
+    '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
@@ -276,7 +276,8 @@ describe('visitante sin sesión', () => {
 
   // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5 y 6): para todos los roles con sesión, nunca sin ella
   it('recibe 401 en los reportes PDF', async () => {
-    for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar', '/reportes/informe-anual?anio=2026']) {
+    for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar', '/reportes/informe-anual?anio=2026',
+      '/reportes/ciclo-de-vida']) {
       const res = await api.get(ruta);
       assert.equal(res.status, 401, ruta);
       assert.equal(res.body.success, false, ruta);

@@ -3,15 +3,18 @@
 // JSON. Contra una base de prueba propia, con datos inventados. El servidor corre con el reloj de verdad: lo que depende del día (un
 // año cerrado con su foto o todavía sin ella) se prueba con metricasDe y un hoy fijo, como la foto (sacarFotoSiCorresponde). La foto
 // se guarda con datosDeLaFoto y un INSERT: nunca /api/cron/*. Las opciones del pedido, puras, en tests/metricas-opciones.test.js. Al
-// final, el Informe anual (GET /api/reportes/informe-anual), que sale solo de la foto: no depende del día.
+// final, cicloDeVidaDe (los datos del reporte «Ciclo de vida del dato», spec 2026-10-25-ciclo-de-vida-del-dato: en vivo, de la foto y
+// con el año anterior, también con un hoy fijo) y el Informe anual (GET /api/reportes/informe-anual), que sale solo de la foto: no
+// depende del día.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { crearDataset, limpiarBase } from './notas-fixtures.js';
 import {
   ESTADISTICOS, DIAS, casosDe, vistaDe, duracion, cifraDe, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio, areasYTemas,
-  sinLosDestildados
+  sinLosDestildados, etapasDe, conAnterior
 } from '../services/metricasReglas.js';
+import { opcionesDeMetricas } from '../services/metricasOpciones.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { lineasPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
@@ -506,6 +509,173 @@ describe('metricasDe con un hoy fijo', () => {
       { message: 'La foto de 2026 no se puede leer' });
     // Las otras combinaciones sí
     assert.equal((await metricas({ anio: '2026' }, '2027-03-01')).en_vivo, false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// cicloDeVidaDe (spec 2026-10-25-ciclo-de-vida-del-dato, 3.2 y 3.4): los datos del reporte «Ciclo de vida del dato». El año se lee como
+// lo lee la pestaña Métricas (en vivo, de su foto, o en vivo al 31/12 si es un año cerrado sin foto) y el año anterior, como se lee
+// ese año; antes de 2026, no hay. Con un hoy fijo, como metricasDe
+// ---------------------------------------------------------------------------------------------------------------------
+
+const CLAVES_DEL_CICLO = ['anio', 'al', 'en_vivo', 'aviso_foto', 'etapas'];
+const ANTERIOR_NO_HAY = 'Año anterior: no hay';
+const SE_SACA_LA_FOTO = 'La foto de 2026 se saca el 10/01/2027';
+const SE_REINTENTA_LA_FOTO = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
+
+// Un interno anual dado de alta el 15/01/2026 que vencía el 30/06/2026, avisado por la regla el 04/05/2026 (el email de 60 días), con
+// los datos recibidos el 20/06/2026 y cargados el 26/06/2026: las etapas internas también tienen cifras
+const prepararUnInterno = async () => {
+  const id = await crearDataset({ titulo: 'Interno de prueba', gestion: 'interna', vencimiento: '2027-06-30', ultima: '2026-06-26' });
+  await fijarAlta(id, '2026-01-15 10:00:00');
+  await emailEnviado({ tipo: 'interno-60', datasetId: id, enviado: '2026-05-04 08:15:00' });
+  await actualizacion({
+    datasetId: id, creado: instante('2026-06-26 09:00:00'), revisado: instante('2026-06-26 12:00:00'), de: '2026-06-30', a: '2027-06-30',
+    cargaAnterior: '2025-06-15', carga: '2026-06-26', recibido: '2026-06-20'
+  });
+  return id;
+};
+
+// Las etapas de un año en vivo al día `al`, con las fuentes de la base (las de fuentesDe)
+const etapasEnVivo = (fuentes, anio, al) => etapasDe(casosDe(fuentes, { hoy: al }), { anio, al });
+
+// Cada etapa de las dos gestiones, con su gestión
+const todasLasEtapas = (etapas) => ['externa', 'interna'].flatMap((gestion) => etapas[gestion].map((etapa) => ({ gestion, etapa })));
+const etapaDe = (etapas, gestion, clave) => etapas[gestion].find((etapa) => etapa.clave === clave);
+
+// Ninguna etapa tiene año anterior
+const sinAnterior = (etapas, donde) => {
+  for (const { gestion, etapa } of todasLasEtapas(etapas)) {
+    assert.equal(etapa.textos.anterior, ANTERIOR_NO_HAY, `${donde}: ${gestion} ${etapa.clave}`);
+  }
+};
+
+// La mediana de la preparación y carga externa de CARGAS, en días hábiles (la de 2026 con los tres datasets de prepararElAnio)
+const MEDIANA_DE_LA_CARGA = cifraDe(CARGAS.map(([recibido, carga]) => duracion(recibido, carga, 'habiles'))).mediana;
+
+describe('cicloDeVidaDe', () => {
+  const ciclo = (consulta, hoy) => controlador.cicloDeVidaDe(consulta, { hoy });
+
+  it('en vivo, la mediana y el promedio de cada etapa son la cifra de metricasDe con la misma combinación', async () => {
+    const ids = await prepararElAnio();
+    await prepararUnInterno();
+    const hoy = '2026-11-02';
+    const data = await ciclo({ anio: '2026' }, hoy);
+    assert.deepEqual(Object.keys(data), CLAVES_DEL_CICLO);
+    assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto], [2026, hoy, true, null]);
+    // Las de etapasDe con las fuentes de la base al día de hoy; en 2026 no hay año anterior (2025 no tiene métricas)
+    assert.deepEqual(data.etapas, conAnterior(etapasEnVivo(await seguimientoDatos.fuentesDe(null), 2026, hoy), null));
+    sinAnterior(data.etapas, '2026');
+    // Hay cifras en las dos gestiones: la carga de los tres externos y la del interno
+    assert.deepEqual([etapaDe(data.etapas, 'externa', 'carga').n, etapaDe(data.etapas, 'interna', 'carga').n], [3, 1]);
+    assert.equal(etapaDe(data.etapas, 'externa', 'carga').habiles.mediana, MEDIANA_DE_LA_CARGA);
+    // La paridad con la pestaña Métricas, con cada combinación de los selectores
+    for (const { estadistico, dias } of COMBINACIONES) {
+      const metricas = await controlador.metricasDe({ anio: '2026', estadistico, dias }, { hoy });
+      for (const gestion of ['externa', 'interna']) {
+        assert.deepEqual(data.etapas[gestion].map((etapa) => etapa.clave), metricas.vista.circuito[gestion].map((t) => t.clave));
+        for (const etapa of data.etapas[gestion]) {
+          const { cifra } = tramoDe(metricas, gestion, etapa.clave);
+          const donde = `${gestion}, ${etapa.clave}, ${estadistico}, ${dias}`;
+          if (cifra === null) {
+            assert.deepEqual([etapa.n, etapa.habiles, etapa.corridos], [0, null, null], donde);
+          } else {
+            assert.equal(etapa[dias][estadistico], cifra.valor, donde);
+            assert.equal(etapa.n, cifra.ciclos, donde);
+          }
+        }
+      }
+    }
+    // Sin año, el en curso. Los selectores y los destildados de la pestaña no cambian nada: el reporte cuenta todo
+    assert.deepEqual(await ciclo({}, hoy), data);
+    assert.deepEqual(await ciclo({ anio: '2026', estadistico: 'promedio', dias: 'corridos', sin: `${ids[0]},${ids[1]}` }, hoy), data);
+    // Lo que no es un año, también el en curso
+    assert.deepEqual(await ciclo({ anio: 'abc' }, hoy), data);
+  });
+
+  it('un año anterior a 2026 o futuro no tiene métricas: null (el 404)', async () => {
+    await prepararElAnio();
+    for (const [anio, hoy] of [['2025', '2027-01-11'], ['2028', '2027-01-11'], ['1999', '2028-03-01'], ['2027', '2026-11-02']]) {
+      assert.equal(await ciclo({ anio }, hoy), null, `${anio} ${hoy}`);
+    }
+  });
+
+  it('con la foto del año anterior, «Año anterior» sale de la foto aunque la base cambie; un año con foto sale de ella', async () => {
+    const ids = await prepararElAnio();
+    await prepararUnInterno();
+    const guardada = await guardarFoto(2026);
+    // La base cambia después de la foto: un dataset menos. Con la base de hoy, 2026 ya no da lo mismo
+    await query('DELETE FROM datasets WHERE id = ?', [ids[1]]);
+    const fuentesDeHoy = await seguimientoDatos.fuentesDe(null);
+    assert.notDeepEqual(etapasEnVivo(fuentesDeHoy, 2026, AL), guardada.etapas);
+    assert.notEqual(etapaDe(etapasEnVivo(fuentesDeHoy, 2026, AL), 'externa', 'carga').habiles.mediana, MEDIANA_DE_LA_CARGA);
+
+    // 2027, el en curso, en vivo; su año anterior, de la foto de 2026
+    const hoy = '2027-03-01';
+    const data = await ciclo({}, hoy);
+    assert.deepEqual(Object.keys(data), CLAVES_DEL_CICLO);
+    assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto], [2027, hoy, true, null]);
+    assert.deepEqual(data.etapas, conAnterior(etapasEnVivo(fuentesDeHoy, 2027, hoy), guardada.etapas));
+    // La carga externa: la mediana de la foto, con los tres datasets
+    assert.equal(etapaDe(guardada.etapas, 'externa', 'carga').habiles.mediana, MEDIANA_DE_LA_CARGA);
+    assert.equal(etapaDe(data.etapas, 'externa', 'carga').textos.anterior, `Año anterior: mediana de ${MEDIANA_DE_LA_CARGA} días hábiles`);
+    // Una etapa que en 2026 no tuvo ciclos (el trámite de la nota, sin notas DGMIT): «no hay»
+    assert.equal(etapaDe(guardada.etapas, 'externa', 'tramite').n, 0);
+    assert.equal(etapaDe(data.etapas, 'externa', 'tramite').textos.anterior, ANTERIOR_NO_HAY);
+
+    // 2026, de su foto (no se recalcula), y sin año anterior: aunque haya una foto de 2025, 2025 no tiene métricas
+    await guardarFoto(2025);
+    const de2026 = await ciclo({ anio: '2026' }, hoy);
+    assert.deepEqual(Object.keys(de2026), CLAVES_DEL_CICLO);
+    assert.deepEqual([de2026.anio, de2026.al, de2026.en_vivo, de2026.aviso_foto], [2026, AL, false, null]);
+    assert.deepEqual(de2026.etapas, conAnterior(guardada.etapas, null));
+    sinAnterior(de2026.etapas, '2026 con foto');
+
+    // Una foto sacada antes de este despliegue, sin etapas: se calculan con sus casos y dan lo mismo, como año pedido y como anterior
+    const { etapas, ...sinEtapas } = guardada;
+    assert.ok(etapas);
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify(sinEtapas)]);
+    assert.deepEqual(await ciclo({ anio: '2026' }, hoy), de2026);
+    assert.deepEqual(await ciclo({}, hoy), data);
+
+    // Los dos años con foto: el pedido y el anterior salen de sus fotos
+    const de2027 = await guardarFoto(2027);
+    const conDosFotos = await ciclo({ anio: '2027' }, '2028-03-01');
+    assert.deepEqual([conDosFotos.anio, conDosFotos.al, conDosFotos.en_vivo, conDosFotos.aviso_foto], [2027, '2027-12-31', false, null]);
+    assert.deepEqual(conDosFotos.etapas, conAnterior(de2027.etapas, guardada.etapas));
+  });
+
+  // Foco 3 del plan: entre el 01/01 y el 09/01, el año cerrado todavía no tiene foto
+  it('un año cerrado sin foto va en vivo al 31/12 con el aviso de la foto; como año anterior, también en vivo al 31/12', async () => {
+    await prepararElAnio();
+    await prepararUnInterno();
+    const fuentes = await seguimientoDatos.fuentesDe(null);
+    const hoy = '2027-01-05';
+    const data = await ciclo({ anio: '2026' }, hoy);
+    assert.deepEqual(Object.keys(data), CLAVES_DEL_CICLO);
+    // El aviso, el de opcionesDeMetricas (el de la pestaña)
+    const opciones = opcionesDeMetricas({ anio: '2026' }, { hoy, aniosConFoto: [] });
+    assert.equal(opciones.aviso_foto, SE_SACA_LA_FOTO);
+    assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto], [2026, AL, true, opciones.aviso_foto]);
+    // En vivo al 31/12: lo mismo que va a guardar la foto del 10/01
+    assert.deepEqual(data.etapas, conAnterior(etapasEnVivo(fuentes, 2026, AL), null));
+    const laQueSeVaASacar = foto.datosDeLaFoto(fuentes, { anio: 2026, generada: '2027-01-10 08:15:00' });
+    assert.deepEqual(data.etapas, conAnterior(laQueSeVaASacar.etapas, null));
+    sinAnterior(data.etapas, '2026 sin foto');
+
+    // 2027, el en curso, con 2026 como año anterior: en vivo al 31/12/2026
+    const enCurso = await ciclo({}, hoy);
+    assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto], [2027, hoy, true, null]);
+    assert.deepEqual(enCurso.etapas, conAnterior(etapasEnVivo(fuentes, 2027, hoy), etapasEnVivo(fuentes, 2026, AL)));
+    assert.equal(etapaDe(enCurso.etapas, 'externa', 'carga').textos.anterior, `Año anterior: mediana de ${MEDIANA_DE_LA_CARGA} días hábiles`);
+    const cargaInterna = etapaDe(etapasEnVivo(fuentes, 2026, AL), 'interna', 'carga').habiles.mediana;
+    assert.ok(Number.isInteger(cargaInterna) && cargaInterna > 1, String(cargaInterna));
+    assert.equal(etapaDe(enCurso.etapas, 'interna', 'carga').textos.anterior, `Año anterior: mediana de ${cargaInterna} días hábiles`);
+
+    // Pasado el 10/01 sin foto (la corrida no pudo sacarla), el aviso de que se reintenta
+    const despues = await ciclo({ anio: '2026' }, '2027-01-11');
+    assert.deepEqual([despues.al, despues.en_vivo, despues.aviso_foto], [AL, true, SE_REINTENTA_LA_FOTO]);
+    assert.deepEqual(despues.etapas, data.etapas);
   });
 });
 

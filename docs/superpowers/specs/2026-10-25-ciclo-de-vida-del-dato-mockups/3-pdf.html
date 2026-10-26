@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ciclo de vida del dato · PDF de prueba</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="maqueta.css">
+<style>
+  .paginas { display:flex; flex-wrap:wrap; gap:28px; justify-content:center; padding:8px 0 40px; }
+  .paginas canvas { background:#fff; box-shadow:0 2px 14px rgba(15,23,42,.14); max-width:100%; height:auto; }
+  .m-descarga { color:var(--m-tinta); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="m-barra">
+  <div class="m-nav">
+    <b>Ciclo de vida del dato · maqueta</b>
+    <a href="1-tarjeta.html">1. La tarjeta en Reportes</a>
+    <a href="2-hojas.html">2. Las dos hojas</a>
+    <a href="3-pdf.html" aria-current="page">3. El PDF de prueba</a>
+  </div>
+  <div class="m-controles">
+    <div class="m-grupo" role="group" aria-label="Datos">
+      <span>Datos</span>
+      <button type="button" data-pdf="Ciclo-de-vida-del-dato-2026-prueba.pdf" aria-pressed="true">Reales (2026 al 25/10)</button>
+      <button type="button" data-pdf="Ciclo-de-vida-del-dato-2026-prueba-inventado.pdf" aria-pressed="false">Con notas DGMIT y año anterior inventados</button>
+    </div>
+    <a class="m-descarga" id="m-descarga" href="Ciclo-de-vida-del-dato-2026-prueba.pdf" download>Descargar este PDF</a>
+  </div>
+  <p class="m-guia">Un PDF de verdad, armado con la base de los reportes del RPAD (el encabezado, el título, la píldora y el pie son los de siempre) y la variante A. Es una prueba descartable: en la implementación lo dibuja el servidor con las reglas de Métricas.</p>
+</div>
+<main class="m-main"><div class="paginas" id="paginas"></div></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const mostrar = async (archivo) => {
+    const caja = document.getElementById('paginas');
+    caja.innerHTML = '';
+    document.getElementById('m-descarga').href = archivo;
+    const pdf = await pdfjsLib.getDocument({ url: archivo, standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/' }).promise;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const pagina = await pdf.getPage(i);
+      const vista = pagina.getViewport({ scale: 2 });
+      const lienzo = document.createElement('canvas');
+      lienzo.width = vista.width; lienzo.height = vista.height; lienzo.style.width = `${vista.width / 2 * 1.333}px`;
+      lienzo.setAttribute('aria-label', `Hoja ${i} de ${pdf.numPages}`);
+      caja.appendChild(lienzo);
+      await pagina.render({ canvasContext: lienzo.getContext('2d'), viewport: vista }).promise;
+    }
+    document.body.dataset.listo = '1';
+  };
+  document.querySelectorAll('[data-pdf]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-pdf]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    mostrar(b.dataset.pdf);
+  }));
+  const pedido = new URLSearchParams(location.search).get('datos') === 'inventado' ? 1 : 0;
+  document.querySelectorAll('[data-pdf]')[pedido].click();
+</script>
+</body>
+</html>
