@@ -209,7 +209,8 @@ export const prepararTitulo = (doc, { rotulo: textoDelRotulo, titulo }) => {
 export const dibujarTitulo = (doc, datos, y) => prepararTitulo(doc, datos).dibujar(y);
 
 // La píldora (el indicador de estado del anexo): un punto y el texto en negrita, en una línea (si no entra, se corta con "…").
-// `tono`: 'azul' (el acento) o 'sol' (un aviso).
+// `tono`: 'azul' (el acento) o 'sol' (un aviso). `ancho`: lo que ocupa a lo ancho; dibujar(y, x) la pone con su borde izquierdo en x
+// (de entrada, el margen: así dos píldoras pueden ir una al lado de la otra)
 export const prepararPildora = (doc, texto, { tono = 'azul' } = {}) => {
   const { fondo, texto: color } = TONOS[tono] ?? TONOS.azul;
   const tamano = LETRA.pildora;
@@ -219,11 +220,12 @@ export const prepararPildora = (doc, texto, { tono = 'azul' } = {}) => {
   const anchoTexto = Math.min(CONTENIDO - 3 * relleno, doc.widthOfString(String(texto)) + 2);
   return {
     alto,
-    dibujar: (y) => {
-      doc.roundedRect(IZQUIERDA, y, anchoTexto + 2.6 * relleno, alto, alto / 2).fill(fondo);
-      doc.circle(IZQUIERDA + relleno, y + alto / 2, tamano * 0.3).fill(color);
+    ancho: anchoTexto + 2.6 * relleno,
+    dibujar: (y, x = IZQUIERDA) => {
+      doc.roundedRect(x, y, anchoTexto + 2.6 * relleno, alto, alto / 2).fill(fondo);
+      doc.circle(x + relleno, y + alto / 2, tamano * 0.3).fill(color);
       // Las mayúsculas, centradas en el alto de la píldora
-      renglon(doc, String(texto), IZQUIERDA + 1.75 * relleno, y + (alto - ASCENDENTE * tamano) / 2,
+      renglon(doc, String(texto), x + 1.75 * relleno, y + (alto - ASCENDENTE * tamano) / 2,
         { ancho: anchoTexto, tamano, fuente: NEGRITA, color });
       return y + alto + ENTRE;
     }

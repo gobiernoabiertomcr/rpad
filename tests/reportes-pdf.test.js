@@ -27,6 +27,7 @@ import {
   casosDe, vistaDe, contextoDelAnio, trabajoDelAnio, areasYTemas, unidadDe, etapasDe, conAnterior, VENTANA_DE_LA_REGLA
 } from '../services/metricasReglas.js';
 import { renderCicloDeVida, TEXTOS_DEL_CICLO } from '../services/reportesCicloDeVidaPdf.js';
+import { opcionesDeMetricas } from '../services/metricasOpciones.js';
 import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { formatoLargo, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { IZQUIERDA, CONTENIDO } from '../services/notasDigitalesAnexo.js';
@@ -1985,6 +1986,46 @@ const cicloLleno = (opciones) => {
 // Todas vacías: ningún caso
 const cicloVacio = () => cicloDeLosCasos({ mapa: new Map() });
 
+// La hoja más apretada (Foco 3 del plan): un año cerrado sin foto, al 31/12, con uno de los dos avisos de la foto que da el servidor
+// (opcionesDeMetricas, antes del día de la foto y en el reintento), la aclaración de la hoja y las notas que da un año real, hasta tres
+// renglones por bloque: en el aviso, el orientativo y la aclaración de dos renglones de los avisados ya vencidos; en el trámite, el
+// orientativo y los pendientes; en la respuesta, el orientativo, el en curso y la aclaración de la fuente pública
+const avisoDeLaFoto = (hoy) => opcionesDeMetricas({ anio: 2026 }, { hoy, aniosConFoto: [] }).aviso_foto;
+const AVISO_ANTES_DE_LA_FOTO = avisoDeLaFoto('2027-01-05');
+const AVISO_DE_REINTENTO = avisoDeLaFoto('2027-01-12');
+const NOTAS_DE_UN_ANIO_REAL = (() => {
+  const yaVencidos = { tipo: 'aclaracion', texto: '16 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.' };
+  const enCurso = { tipo: 'en_curso', texto: 'En curso: 12 sin datos registrados todavía, hace 145 días hábiles (mediana)' };
+  const fuentePublica = { tipo: 'aclaracion', texto: '11 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.' };
+  const pendientes = { tipo: 'pendientes', texto: '13 notas pendientes de carga' };
+  return {
+    externa: { aviso: [ORIENTATIVO, yaVencidos], tramite: [ORIENTATIVO, pendientes], respuesta: [ORIENTATIVO, enCurso, fuentePublica], carga: [ORIENTATIVO] },
+    interna: { aviso: [ORIENTATIVO, yaVencidos], produccion: [ORIENTATIVO, enCurso], carga: [ORIENTATIVO] }
+  };
+})();
+const cicloApretado = (resto) => {
+  const datos = cicloDeLosCasos({ al: '2026-12-31', ...resto });
+  const titulo = 'Cantidad de habilitaciones comerciales otorgadas por rubro y por barrio de la ciudad';
+  const conNotas = (gestion) => (e) => etapaLlena(e, { notas: NOTAS_DE_UN_ANIO_REAL[gestion][e.clave], titulo });
+  return {
+    ...datos,
+    etapas: {
+      ...datos.etapas, externa: datos.etapas.externa.map(conNotas('externa')), interna: datos.etapas.interna.map(conNotas('interna')),
+      aclaracion_de_la_hoja: { externa: '18 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.', interna: '' }
+    }
+  };
+};
+// Que cada nota esté entera en las líneas de su bloque (una en dos renglones se lee unida) y que ningún renglón suyo vaya cortado
+// con «…»
+const notasEnteras = (bloque, notas, donde) => {
+  const unido = bloque.join(' ');
+  for (const nota of notas) {
+    assert.ok(unido.includes(nota.texto), `${donde}: falta "${nota.texto}" en ${unido}`);
+    const cortado = bloque.find(l => l.endsWith('…') && nota.texto.includes(l.slice(0, -1)));
+    assert.equal(cortado, undefined, `${donde}: "${cortado}" va cortada`);
+  }
+};
+
 const pieDelCiclo = (k, anio = 2026) => `Ciclo de vida del dato · ${anio} · Hoja ${k} de 2`;
 const TONO = /tardanza|demora|atraso|sin respuesta|sin entregar|no mandó/i;
 const PUNTEADA = /\[3 2\.5\] 0 d/;
@@ -2255,63 +2296,68 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
   });
 
   // La hoja más apretada (Foco 3 del plan: un año cerrado sin foto, entre el 01/01 y el día de la foto), con las dos píldoras y la
-  // aclaración de la hoja, y las notas que da un año real. Las notas se achican antes (pasan a un renglón, cortadas con «…», y si aun
-  // así no entran, las de más abajo no van): ningún extremo pierde sus «N días corridos»
-  it('Foco 3: con las dos píldoras y las notas de un año real, cada extremo conserva «N días corridos»', async () => {
-    const titulo = 'Cantidad de habilitaciones comerciales otorgadas por rubro y por barrio de la ciudad';
-    const yaVencidos = { tipo: 'aclaracion', texto: '16 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.' };
-    const enCurso = { tipo: 'en_curso', texto: 'En curso: 12 sin datos registrados todavía, hace 145 días hábiles (mediana)' };
-    const fuentePublica = { tipo: 'aclaracion', texto: '11 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.' };
-    const pendientes = { tipo: 'pendientes', texto: '13 notas pendientes de carga' };
-    const notas = {
-      externa: { aviso: [ORIENTATIVO, yaVencidos], tramite: [ORIENTATIVO, pendientes], respuesta: [ORIENTATIVO, enCurso, fuentePublica], carga: [ORIENTATIVO] },
-      interna: { aviso: [ORIENTATIVO, yaVencidos], produccion: [ORIENTATIVO, enCurso], carga: [ORIENTATIVO] }
-    };
-    const aviso = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
-    const armar = (resto) => {
-      const datos = cicloDeLosCasos({ al: '2026-12-31', ...resto });
-      const conNotas = (gestion) => (e) => etapaLlena(e, { notas: notas[gestion][e.clave], titulo });
-      return {
-        ...datos,
-        etapas: {
-          ...datos.etapas, externa: datos.etapas.externa.map(conNotas('externa')), interna: datos.etapas.interna.map(conNotas('interna')),
-          aclaracion_de_la_hoja: { externa: '18 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.', interna: '' }
-        }
-      };
-    };
-    const conAviso = armar({ aviso_foto: aviso });
-    verificarDiagramacion(await diagramacion(() => renderCiclo(conAviso, '2027-01-12')));
-    const hojas = lineasPorHoja(await renderCiclo(conAviso, '2027-01-12'));
-    ['externa', 'interna'].forEach((gestion, k) => {
-      const lineas = hojas[k];
-      const etapas = conAviso.etapas[gestion];
-      assert.ok(lineas.includes(aviso), `hoja ${k + 1}: las dos píldoras`);
-      etapas.forEach((etapa, i) => {
-        const bloque = bloqueDe(lineas, etapa.nombre, etapas[i + 1]?.nombre);
-        // Los corridos de los dos extremos (el más largo y el más corto)
-        for (const t of ['13579 días corridos', '1 día corrido']) assert.ok(bloque.includes(t), `${gestion} ${etapa.clave}: falta "${t}" en ${bloque.join(' | ')}`);
-        // El en curso va entero (un caso que no terminó no desaparece) y la aclaración de los avisados ya vencidos empieza (puede ir
-        // cortada con «…»)
-        if (etapa.textos.notas.includes(enCurso)) assert.ok(bloque.includes(enCurso.texto), `${gestion} ${etapa.clave}: ${bloque.join(' | ')}`);
-        if (etapa.clave === 'aviso') {
-          assert.ok(bloque.some(l => l.startsWith('16 ciclos se avisaron cuando ya estaban vencidos')), `${gestion}: ${bloque.join(' | ')}`);
+  // aclaración de la hoja, y las notas que da un año real (hasta tres renglones por bloque). Ningún extremo pierde sus «N días
+  // corridos» y entran todas las notas, enteras: las píldoras van al lado si entran y, si no, el bloque usa el aire justo
+  it('Foco 3: con las dos píldoras y las notas de un año real, entran todas las notas y cada extremo conserva «N días corridos»', async () => {
+    for (const [aviso, hoy] of [[AVISO_DE_REINTENTO, '2027-01-12'], [AVISO_ANTES_DE_LA_FOTO, '2027-01-05'], [null, '2026-12-31']]) {
+      const datos = cicloApretado({ aviso_foto: aviso });
+      verificarDiagramacion(await diagramacion(() => renderCiclo(datos, hoy)));
+      const hojas = lineasPorHoja(await renderCiclo(datos, hoy));
+      ['externa', 'interna'].forEach((gestion, k) => {
+        const lineas = hojas[k];
+        const etapas = datos.etapas[gestion];
+        if (aviso) assert.ok(lineas.includes(aviso), `hoja ${k + 1}: las dos píldoras`);
+        etapas.forEach((etapa, i) => {
+          const donde = `${aviso ?? 'sin aviso'}, ${gestion} ${etapa.clave}`;
+          const bloque = bloqueDe(lineas, etapa.nombre, etapas[i + 1]?.nombre);
+          // Los corridos de los dos extremos (el más largo y el más corto)
+          for (const t of ['13579 días corridos', '1 día corrido']) assert.ok(bloque.includes(t), `${donde}: falta "${t}" en ${bloque.join(' | ')}`);
+          // Cada nota, entera y sin «…» (una nota en dos renglones se lee unida)
+          notasEnteras(bloque, etapa.textos.notas, donde);
+        });
+        // Las notas pendientes de carga siguen en el bloque del trámite
+        if (gestion === 'externa') {
+          assert.ok(bloqueDe(lineas, 'Trámite y entrega de la nota', 'Respuesta del área').includes('13 notas pendientes de carga'), lineas.join(' | '));
         }
       });
-    });
-    // Sin la segunda píldora (el año en curso), las mismas notas van enteras, y los corridos también
-    const sinAviso = armar({});
-    verificarDiagramacion(await diagramacion(() => renderCiclo(sinAviso, '2026-12-31')));
-    const hojasSinAviso = lineasPorHoja(await renderCiclo(sinAviso, '2026-12-31'));
-    ['externa', 'interna'].forEach((gestion, k) => {
-      const etapas = sinAviso.etapas[gestion];
-      etapas.forEach((etapa, i) => {
-        const bloque = bloqueDe(hojasSinAviso[k], etapa.nombre, etapas[i + 1]?.nombre);
-        for (const t of ['13579 días corridos', '1 día corrido']) assert.ok(bloque.includes(t), `${gestion} ${etapa.clave}: falta "${t}"`);
-        // (una nota en dos renglones se lee unida)
-        const unido = bloque.join(' ');
-        for (const nota of etapa.textos.notas) assert.ok(unido.includes(nota.texto), `${gestion} ${etapa.clave}: falta "${nota.texto}" en ${unido}`);
-      });
-    });
+    }
+  });
+
+  it('las dos píldoras van una al lado de la otra si entran en el ancho útil; si no, una debajo de la otra', async () => {
+    // Los dos avisos de la foto, los del servidor
+    assert.deepEqual([AVISO_ANTES_DE_LA_FOTO, AVISO_DE_REINTENTO],
+      ['La foto de 2026 se saca el 10/01/2027', 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.']);
+    // Las dos píldoras y los bloques de las etapas de la hoja externa (los bloques: las píldoras, el índice, las etapas y «Cómo se cuenta»)
+    const bloquesDe = async (aviso, hoy) => (await diagramacion(() => renderCiclo(cicloApretado({ aviso_foto: aviso }), hoy))).bloques.filter(b => b.hoja === 0);
+    const sinAviso = await bloquesDe(null, '2026-12-31');
+    const altosDe = (bloques) => bloques.slice(-5, -1).map(b => (b.y1 - b.y0).toFixed(2));
+    // «La foto de 2026 se saca el 10/01/2027» entra al lado: la misma altura, una después de la otra, y los bloques con el alto de la
+    // hoja de una sola píldora
+    const alLado = await bloquesDe(AVISO_ANTES_DE_LA_FOTO, '2027-01-05');
+    const [periodo, delAviso] = alLado;
+    assert.ok(Math.abs(periodo.y0 - delAviso.y0) < 0.01 && delAviso.x0 >= periodo.x1 + 5, JSON.stringify([periodo, delAviso]));
+    assert.equal(alLado.length, sinAviso.length + 1);
+    assert.deepEqual(altosDe(alLado), altosDe(sinAviso));
+    // La del reintento no entra al lado: va debajo
+    const [periodo2, delAviso2] = await bloquesDe(AVISO_DE_REINTENTO, '2027-01-12');
+    assert.ok(delAviso2.y0 >= periodo2.y1 && Math.abs(delAviso2.x0 - periodo2.x0) < 0.01, JSON.stringify([periodo2, delAviso2]));
+    // Las dos píldoras dicen lo suyo
+    const lineas = lineasPorHoja(await renderCiclo(cicloApretado({ aviso_foto: AVISO_ANTES_DE_LA_FOTO }), '2027-01-05'))[0];
+    for (const t of ['Del 01/01/2026 al 31/12/2026, con todos los ciclos', AVISO_ANTES_DE_LA_FOTO]) assert.ok(lineas.includes(t), t);
+  });
+
+  it('un año cerrado antes de la foto: la respuesta del área con tres notas las muestra enteras, sin «…», con los dos avisos de la foto', async () => {
+    for (const [aviso, hoy] of [[AVISO_ANTES_DE_LA_FOTO, '2027-01-05'], [AVISO_DE_REINTENTO, '2027-01-12']]) {
+      const datos = cicloApretado({ aviso_foto: aviso });
+      const respuesta = datos.etapas.externa.find(e => e.clave === 'respuesta');
+      assert.deepEqual(respuesta.textos.notas.map(n => n.tipo), ['orientativo', 'en_curso', 'aclaracion']);
+      verificarDiagramacion(await diagramacion(() => renderCiclo(datos, hoy)));
+      const externa = lineasPorHoja(await renderCiclo(datos, hoy))[0];
+      const bloque = bloqueDe(externa, 'Respuesta del área', 'Preparación y carga');
+      // Cada una en su renglón, entera
+      for (const nota of respuesta.textos.notas) assert.ok(bloque.includes(nota.texto), `${aviso}: falta "${nota.texto}" en ${bloque.join(' | ')}`);
+      notasEnteras(bloque, respuesta.textos.notas, aviso);
+    }
   });
 
   for (const [titulo, armar] of VARIANTES_DEL_CICLO) {

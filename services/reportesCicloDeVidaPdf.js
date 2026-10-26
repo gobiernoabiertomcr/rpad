@@ -2,7 +2,7 @@
 // siempre dos hojas A4: la 1, la gestión externa, y la 2, la interna. Cada hoja, de arriba abajo:
 // - el encabezado de los reportes («Ciclo de vida del dato» y la fecha larga de hoy);
 // - el título, con el rótulo «Ciclo de vida del dato · 2026, en curso» (en un año cerrado, sin «en curso»);
-// - la píldora del período y, en un año cerrado que todavía no tiene foto, otra en el sol con el aviso de la foto;
+// - la píldora del período y, en un año cerrado que todavía no tiene foto, otra en el sol con el aviso de la foto (al lado, si entran);
 // - el circuito en chico: la sigla de cada nodo y, en cada flecha, el número de la etapa y su mediana en días hábiles;
 // - un bloque por etapa: a la izquierda el número, el nombre y la insignia, el tramo (los dos nodos y la flecha) y la descripción
 //   seguida de cómo se mide (TEXTOS_DEL_CICLO); a la derecha las estadísticas: el mosaico de la mediana, el promedio y los extremos (o el
@@ -108,16 +108,26 @@ const TRAMO = { arriba: 25, nodo: 56, altoNodo: 22, descripcion: 52, abajo: 7 };
 // La columna derecha: el aire a los costados, dónde empieza el mosaico, el aire entre sus recuadros, el alto del promedio, el aire
 // debajo de todo y sobre las notas, y el renglón de las notas
 const DERECHA = { aire: 11, mosaico: 17, entre: 4, promedio: 26, abajo: 4.5, sobreNotas: 3, renglon: 8 };
+// El aire de la columna derecha de arriba abajo (dónde empieza el mosaico, sobre las notas y debajo de todo): el de siempre y uno más
+// justo, que da 5 puntos más para las notas. El justo va solo en un bloque cuyas notas no entran enteras con el de siempre: en la hoja
+// más apretada (un año cerrado sin foto, con las dos píldoras una debajo de la otra y la aclaración de la hoja) quedan unos 18 puntos y
+// los tres renglones de notas que puede tener un bloque (el orientativo, el en curso y la aclaración de la respuesta; o el orientativo y
+// la aclaración de dos renglones del aviso) piden 22,1; con el justo quedan 23,1
+const AIRE_DE_SIEMPRE = Object.freeze({ mosaico: DERECHA.mosaico, sobreNotas: DERECHA.sobreNotas, abajo: DERECHA.abajo });
+const AIRE_JUSTO = Object.freeze({ mosaico: 15.5, sobreNotas: 1.5, abajo: 2.5 });
 // Un extremo: el aire de arriba, el de abajo, el del número y el de cada renglón chico
 const EXTREMO = { arriba: 4, abajo: 3, sobreValor: 2.6, entre: 1.6 };
 // Lo menos que mide un extremo (su rótulo, su número, los corridos y un renglón del dataset) y el mosaico: las notas no le quitan más
-// que eso (si no entran, se achican antes: pasan a un renglón, cortadas con «…», y si aun así no entran, las de más abajo no van), así
-// ningún extremo pierde «N días corridos»
+// que eso, así ningún extremo pierde «N días corridos». Si las notas no entran, primero el aire se hace más justo (AIRE_JUSTO); solo si
+// ni así entran (más de tres renglones: no pasa con los textos del servidor), pasan a un renglón, cortadas con «…», y después las de más
+// abajo no van
 const EXTREMO_MINIMO = EXTREMO.arriba + OJO * LETRA.rotuloExtremo + EXTREMO.sobreValor + OJO * LETRA.extremo
   + 2 * (EXTREMO.entre + OJO * LETRA.dataset) + EXTREMO.abajo;
 const MOSAICO_MINIMO = DERECHA.promedio + DERECHA.entre + EXTREMO_MINIMO;
-// Entre las dos píldoras (la del período y la del aviso de la foto)
+// Entre las dos píldoras (la del período y la del aviso de la foto): una debajo de la otra, o una al lado de la otra si entran juntas
+// en el ancho útil
 const ENTRE_PILDORAS = 4;
+const ENTRE_PILDORAS_AL_LADO = 6;
 
 // =====================================================
 // Ayudantes
@@ -465,7 +475,8 @@ const dibujarMosaico = (doc, etapa, x, y, ancho, alto) => {
 
 // Los renglones chicos de abajo, en `ancho`, cada uno en su letra y su color y en hasta `lineas` renglones (las notas, en dos; el año
 // anterior, en uno). Si no entran en `maximo`, las de dos renglones pasan a uno (de la última a la primera) y, si aun así no entran,
-// las de más abajo no van. `renglones`: [{ tipo, texto, lineas }]. { alto, dibujar(x, y) }
+// las de más abajo no van (el orden es su prioridad). `renglones`: [{ tipo, texto, lineas }]. { alto, enteras, dibujar(x, y) }:
+// `enteras`, si entraron todas en sus renglones, sin pasar ninguna a uno ni dejar ninguna afuera
 const prepararNotas = (doc, renglones, ancho, maximo) => {
   const paso = DERECHA.renglon;
   const conLineas = (r, lineas) => {
@@ -476,12 +487,14 @@ const prepararNotas = (doc, renglones, ancho, maximo) => {
   const lineasDe = (lista2) => lista2.reduce((total, p) => total + renglonesDe(doc, p.ajuste, paso), 0);
   const altoDe = (lista2) => altoDeRenglones(doc, lineasDe(lista2), LETRA.nota, paso);
   const preparadas = renglones.filter((r) => texto(r.texto)).map((r) => conLineas(r, r.lineas));
+  const enteras = altoDe(preparadas) <= maximo + 0.01;
   for (let i = preparadas.length - 1; i >= 0 && altoDe(preparadas) > maximo + 0.01; i -= 1) {
     if (renglonesDe(doc, preparadas[i].ajuste, paso) > 1) preparadas[i] = conLineas(preparadas[i].r, 1);
   }
   while (preparadas.length > 0 && altoDe(preparadas) > maximo + 0.01) preparadas.pop();
   return {
     alto: altoDe(preparadas),
+    enteras,
     dibujar: (x, y) => preparadas.reduce((yNota, p) => {
       escribir(doc, p.ajuste, x, yNota, p.color);
       return yNota + renglonesDe(doc, p.ajuste, paso) * paso;
@@ -513,18 +526,23 @@ const dibujarVacio = (doc, vacio, dgmit, x, y, ancho, alto) => {
 };
 
 // La columna derecha de un bloque: «Estadísticas de la etapa», el mosaico (o el vacío) y, abajo, los renglones de notas; en un bloque
-// vacío, también «Año anterior: …» (con cifras, va en el promedio). Las notas no le quitan al mosaico más que su mínimo
+// vacío, también «Año anterior: …» (con cifras, va en el promedio). Las notas no le quitan al mosaico más que su mínimo; si con el aire
+// de siempre no entran enteras, el bloque va con el aire justo (AIRE_JUSTO)
 const dibujarDerecha = (doc, etapa, x, y, ancho, alto) => {
   linea(doc, ROTULO_DE_LAS_ESTADISTICAS, x, y + 7, { ancho, tamano: LETRA.rotulo, fuente: NEGRITA, color: COLOR.rotulo, espaciado: 0.6 });
   const t = objeto(etapa.textos);
   const notas = lista(t.notas).filter(esObjeto).map((n) => ({ tipo: n.tipo, texto: n.texto, lineas: 2 }));
-  const yArriba = y + DERECHA.mosaico;
-  const fondo = y + alto - DERECHA.abajo;
   const conMosaico = conCifra(etapa) && esObjeto(etapa.largo);
   const renglones = conMosaico ? notas : [...notas, { tipo: 'anterior', texto: t.anterior, lineas: 1 }];
   const minimo = conMosaico ? MOSAICO_MINIMO : OJO * LETRA.vacioTitulo;
-  const abajo = prepararNotas(doc, renglones, ancho, fondo - yArriba - minimo - DERECHA.sobreNotas);
-  const finArriba = abajo.alto > 0 ? fondo - abajo.alto - DERECHA.sobreNotas : fondo;
+  const con = (aire) => {
+    const yArriba = y + aire.mosaico;
+    const fondo = y + alto - aire.abajo;
+    return { aire, yArriba, fondo, abajo: prepararNotas(doc, renglones, ancho, fondo - yArriba - minimo - aire.sobreNotas) };
+  };
+  const deSiempre = con(AIRE_DE_SIEMPRE);
+  const { aire, yArriba, fondo, abajo } = deSiempre.abajo.enteras ? deSiempre : con(AIRE_JUSTO);
+  const finArriba = abajo.alto > 0 ? fondo - abajo.alto - aire.sobreNotas : fondo;
   if (conMosaico) dibujarMosaico(doc, etapa, x, yArriba, ancho, finArriba - yArriba);
   else dibujarVacio(doc, objeto(etapa.vacio), etapa.dgmit === true, x, yArriba, ancho, finArriba - yArriba);
   abajo.dibujar(x, fondo - abajo.alto);
@@ -545,13 +563,26 @@ const dibujarBloque = (doc, etapa, gestion, y, alto) => {
 // El PDF
 // =====================================================
 
+// Las píldoras de arriba: la del período y, en un año cerrado sin foto, la del aviso de la foto en el sol, al lado si entran juntas en el
+// ancho útil («La foto de 2026 se saca el 10/01/2027») o debajo (la del reintento es más larga). Así la hoja con las dos píldoras le deja
+// a los bloques, casi siempre, el alto de la de una. Devuelve la y de lo que sigue
+const dibujarPildoras = (doc, pildora, aviso, y) => {
+  const periodo = prepararPildora(doc, pildora);
+  if (!aviso) return periodo.dibujar(y);
+  const delAviso = prepararPildora(doc, aviso, { tono: 'sol' });
+  if (periodo.ancho + ENTRE_PILDORAS_AL_LADO + delAviso.ancho <= CONTENIDO) {
+    periodo.dibujar(y);
+    return delAviso.dibujar(y, IZQUIERDA + periodo.ancho + ENTRE_PILDORAS_AL_LADO);
+  }
+  return delAviso.dibujar(periodo.dibujar(y) - ENTRE + ENTRE_PILDORAS);
+};
+
 // Una hoja (spec 2.1): el encabezado, el título, las píldoras y el circuito arriba; abajo, la aclaración de la hoja y «Cómo se cuenta»; y
 // los bloques se reparten todo el alto que queda entre los dos
 const dibujarHoja = (doc, gestion, { etapas, aclaracion, rotulo, pildora, aviso, comoSeCuenta, hoy }) => {
   let y = agregarHoja(doc, { derecha: TITULO, fecha: hoy });
   y = prepararTitulo(doc, { rotulo, titulo: TITULO_DE_LA_HOJA[gestion] }).dibujar(y);
-  y = prepararPildora(doc, pildora).dibujar(y);
-  if (aviso) y = prepararPildora(doc, aviso, { tono: 'sol' }).dibujar(y - ENTRE + ENTRE_PILDORAS);
+  y = dibujarPildoras(doc, pildora, aviso, y);
   y = dibujarIndice(doc, etapas, y);
 
   const como = prepararParrafo(doc, [
