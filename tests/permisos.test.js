@@ -78,7 +78,21 @@ const RUTAS_SOLO_ADMIN = [
   ['PUT', '/auth/profile/firma'],
   ['GET', '/auth/profile/firma/imagen'],
   ['GET', '/notificaciones/notas-digitales/config/firmantes'],
-  ['PUT', '/notificaciones/notas-digitales/config/firmante']
+  ['PUT', '/notificaciones/notas-digitales/config/firmante'],
+  // Proyectos (spec 2026-10-25-proyectos, 7): leen todos los roles con sesión; crean, editan y borran solo administración
+  ['POST', '/gestion/proyectos'],
+  ['PUT', '/gestion/proyectos/1'],
+  ['DELETE', '/gestion/proyectos/1'],
+  ['POST', '/gestion/logros'],
+  ['POST', '/gestion/proyectos/1/hitos'],
+  ['PUT', '/gestion/hitos/1'],
+  ['DELETE', '/gestion/hitos/1'],
+  // Subir y borrar documentos y archivos de hitos, también solo administración. Las descargas no van acá: son para todos los roles
+  // con sesión (lo prueba tests/proyectos-api.test.js)
+  ['POST', '/gestion/proyectos/1/documentos'],
+  ['DELETE', '/gestion/proyectos/1/documentos/1'],
+  ['POST', '/gestion/hitos/1/archivos'],
+  ['DELETE', '/gestion/hitos/1/archivos/1']
 ];
 
 const pedir = (metodo, ruta, token) => {
@@ -97,7 +111,7 @@ describe('lector', () => {
   }
 
   for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
-    '/gestion/metricas', '/gestion/proyectos', '/seguimiento', '/metricas', '/metricas/pdf']) {
+    '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -182,7 +196,7 @@ describe('colaborador', () => {
   }
 
   for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
-    '/reportes/agenda', '/reportes/para-completar']) {
+    '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);

@@ -1,0 +1,451 @@
+{
+  "proyectos": [
+    {
+      "id": 4,
+      "nombre": "Boletín Oficial",
+      "descripcion": "Sistema digital para la gestión y publicación del Boletín Oficial municipal. Reemplaza el proceso manual de maquetación en Word por carga directa de texto, generación automática de PDF con formato oficial, búsqueda por número o contenido, y certificación de integridad mediante Blockchain Federal Argentina (BFA).",
+      "estado": "idea",
+      "fecha_inicio": "2025-03-10",
+      "icono": "code",
+      "color": "#3b82f6",
+      "responsable": "Laura Méndez y Martín Quiroga",
+      "enlace_externo": "https://github.com/datospublicosmcr/boletin-oficial",
+      "prioridad": "media",
+      "categoria": "tecnologia",
+      "orden": 0,
+      "created_at": "2026-03-18 12:02:35",
+      "updated_at": "2026-03-18 12:16:03",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": [
+        {
+          "id": 8,
+          "proyecto_id": 4,
+          "nombre_archivo": "informe-bo-10-mar-25.pdf",
+          "tamano": 92102,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-18"
+        },
+        {
+          "id": 9,
+          "proyecto_id": 4,
+          "nombre_archivo": "presentacion-final-bo.pdf",
+          "tamano": 1486110,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-18"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Datathon 2026",
+      "descripcion": "El evento convoca a equipos multidisciplinarios (agentes municipales, comunidad universitaria, periodistas, desarrolladores, sociedad civil) a desarrollar soluciones basadas en datos abiertos del portal datos.comodoro.gov.ar durante tres jornadas de trabajo presencial. Incluye desafíos temáticos que abarcan vulnerabilidad social, planificación urbana, transparencia presupuestaria, turismo, periodismo de datos y gestión interna, entre otros. La iniciativa busca activar una comunidad de usuarios de datos abiertos, generar valor concreto con la información pública y cumplir con los principios de participación e innovación de la Ordenanza N° 17.662/23.",
+      "estado": "idea",
+      "fecha_inicio": "2026-02-05",
+      "icono": "users",
+      "color": "#0950c6",
+      "responsable": "Sofía Benítez",
+      "enlace_externo": "https://docs.google.com/document/d/EJEMPLO-2/edit",
+      "prioridad": "alta",
+      "categoria": "tecnologia",
+      "orden": 0,
+      "created_at": "2026-03-15 01:51:15",
+      "updated_at": "2026-03-22 17:43:29",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": [
+        {
+          "id": 2,
+          "proyecto_id": 2,
+          "nombre_archivo": "presentacion-datathon-2026.pdf",
+          "tamano": 2172084,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-15"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Nuevo Portal de Datos Abiertos (Andino)",
+      "descripcion": "Migración integral del Portal de Datos Abiertos Municipal desde la instancia CKAN anterior (datos.vivamoscomodoro.gob.ar) hacia Portal Andino (datos.comodoro.gov.ar), la distribución argentina de CKAN. El proyecto incluyó la implementación de infraestructura en servidor VPS con AlmaLinux 9, reorganización de 117 a 61 datasets, limpieza y estructuración del 99% de los recursos según la Guía Nacional de Datos Abiertos, y la reescritura completa de 302 descripciones (datasets y recursos) aplicando el Perfil Nacional de Metadatos con asistencia de IA. Autores: equipo de la DDPC y D. G. de Gestión Digital.",
+      "estado": "completado",
+      "fecha_inicio": null,
+      "icono": "database",
+      "color": "#f45000",
+      "responsable": "Autores varios",
+      "enlace_externo": null,
+      "prioridad": "alta",
+      "categoria": "tecnologia",
+      "orden": 0,
+      "created_at": "2026-03-22 17:34:08",
+      "updated_at": "2026-03-22 17:34:08",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": []
+    },
+    {
+      "id": 6,
+      "nombre": "Registro Permanente de Actualización de Datasets (RPAD)",
+      "descripcion": "Sistema de seguimiento y gestión de la actualización de los datasets publicados en el Portal de Datos Abiertos Municipal (datos.comodoro.gov.ar), en cumplimiento del Art. 8° de la Ordenanza N° 17.662/23. Permite asignar frecuencias de actualización, monitorear estados mediante semaforización, generar reportes de cumplimiento y notificar automáticamente a las áreas responsables. Incluye integración con la API de Andino y sistema de doble verificación de cambios.",
+      "estado": "completado",
+      "fecha_inicio": "2025-11-30",
+      "icono": "bar-chart-3",
+      "color": "#3b82f6",
+      "responsable": "Martín Quiroga",
+      "enlace_externo": "https://github.com/gobiernoabiertomcr/rpad",
+      "prioridad": "media",
+      "categoria": "tecnologia",
+      "orden": 0,
+      "created_at": "2026-03-22 02:51:59",
+      "updated_at": "2026-03-22 02:52:57",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": []
+    },
+    {
+      "id": 1,
+      "nombre": "Sellado en Blockchain (BFA)",
+      "descripcion": "Integración de RPAD y otros sistemas con la Blockchain Federal Argentina (BFA) para certificar automáticamente las actualizaciones de datasets mediante sellado criptográfico (SHA-256 + TSA2), garantizando inmutabilidad y trazabilidad pública de los datos abiertos municipales.",
+      "estado": "idea",
+      "fecha_inicio": "2026-02-03",
+      "icono": "code",
+      "color": "#3b82f6",
+      "responsable": "Martín Quiroga",
+      "enlace_externo": null,
+      "prioridad": "media",
+      "categoria": "tecnologia",
+      "orden": 0,
+      "created_at": "2026-03-15 01:40:25",
+      "updated_at": "2026-03-15 01:40:25",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": [
+        {
+          "id": 4,
+          "proyecto_id": 1,
+          "nombre_archivo": "02_Blockchain_RPAD.pdf",
+          "tamano": 1261971,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-15"
+        },
+        {
+          "id": 5,
+          "proyecto_id": 1,
+          "nombre_archivo": "01_BFA.pdf",
+          "tamano": 1928930,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-15"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Datos abiertos en acción: explorando la información pública de Comodoro Rivadavia",
+      "descripcion": "Charla introductoria para conocer el Portal de Datos Abiertos de la Municipalidad de Comodoro Rivadavia y explorar sus principales conjuntos de datos. Incluye una demostración práctica sobre cómo acceder, descargar y utilizar la información disponible, así como un espacio de intercambio para identificar intereses y propuestas de la comunidad.",
+      "estado": "idea",
+      "fecha_inicio": null,
+      "icono": "lightbulb",
+      "color": "#6ca3c6",
+      "responsable": "Sofía Benítez",
+      "enlace_externo": "https://docs.google.com/document/d/EJEMPLO-5/edit",
+      "prioridad": "media",
+      "categoria": "difusion",
+      "orden": 0,
+      "created_at": "2026-03-19 12:34:46",
+      "updated_at": "2026-03-30 15:09:34",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": []
+    },
+    {
+      "id": 7,
+      "nombre": "Índice de Datos Abiertos de Ciudades Argentinas (Open Data Index)",
+      "descripcion": "Participación anual de la Municipalidad de Comodoro Rivadavia en el Índice de Datos Abiertos de Ciudades Argentinas, elaborado por la Fundación Conocimiento Abierto. El índice evalúa varios indicadores temáticos (presupuesto, gasto público, obras, transporte, contrataciones, ambiente, género, entre otros) midiendo calidad, formato, licencia y actualización de los datasets publicados. Los resultados de cada edición permiten identificar fortalezas y brechas en la política de apertura de datos municipal, orientando las prioridades de publicación en el portal datos.comodoro.gov.ar",
+      "estado": "en_curso",
+      "fecha_inicio": "2021-08-01",
+      "icono": "globe",
+      "color": "#cc0066",
+      "responsable": "Martín Quiroga",
+      "enlace_externo": null,
+      "prioridad": "alta",
+      "categoria": "difusion",
+      "orden": 0,
+      "created_at": "2026-03-22 17:24:08",
+      "updated_at": "2026-03-22 17:24:57",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": []
+    },
+    {
+      "id": 3,
+      "nombre": "Programa de Capacitaciones y Mesas de Trabajo en Datos Abiertos",
+      "descripcion": "Iniciativa orientada a acompañar a las áreas del municipio en el cumplimiento de la Ordenanza N° 17.662/23. A través de instancias de capacitación y espacios de trabajo colaborativo, el programa busca relevar los circuitos de información de cada área y construir conjuntamente los mecanismos necesarios para la provisión y publicación de datos en formatos abiertos, sin modificar los procesos de trabajo existentes.",
+      "estado": "en_curso",
+      "fecha_inicio": "2026-03-16",
+      "icono": "lightbulb",
+      "color": "#56a2c2",
+      "responsable": "Sofía Benítez",
+      "enlace_externo": "https://docs.google.com/document/d/EJEMPLO-3/edit",
+      "prioridad": "media",
+      "categoria": "difusion",
+      "orden": 0,
+      "created_at": "2026-03-15 02:10:09",
+      "updated_at": "2026-03-19 14:33:23",
+      "areas": [
+        {
+          "id": 5,
+          "nombre": "Dirección de Datos Públicos y Comunicación"
+        }
+      ],
+      "documentos": [
+        {
+          "id": 3,
+          "proyecto_id": 3,
+          "nombre_archivo": "presentacion-estructuracion.pdf",
+          "tamano": 1672913,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-15"
+        }
+      ]
+    }
+  ],
+  "hitos": [
+    {
+      "id": 901,
+      "proyecto_id": 2,
+      "titulo": "Realización del Datathon 2026",
+      "fecha": "2026-11-20",
+      "descripcion": "Tres jornadas de trabajo presencial con equipos de la comunidad universitaria, periodistas y agentes municipales.",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": [],
+      "inventado": true
+    },
+    {
+      "id": 902,
+      "proyecto_id": null,
+      "titulo": "Mención en el Encuentro Federal de Gobierno Abierto",
+      "fecha": "2026-06-12",
+      "descripcion": "La Municipalidad presentó la experiencia del RPAD como caso de seguimiento de la actualización de datos abiertos.",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://ejemplo.gob.ar/encuentro-2026",
+      "archivos": [],
+      "inventado": true
+    },
+    {
+      "id": 10,
+      "proyecto_id": 1,
+      "titulo": "Borrador de proyecto de ordenanza sobre blockchain",
+      "fecha": "2026-04-10",
+      "descripcion": "El proyecto establece un marco normativo integral que incluye definiciones técnicas, principios rectores, usos habilitados, valor probatorio de documentos sellados en blockchain, habilitación de contratos inteligentes y adhesión a plataformas federales. Se elevó a la DGMIT mediante Nota DDPC N° 34/26",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": [
+        {
+          "id": 3,
+          "hito_id": 10,
+          "nombre_archivo": "proyecto-ord-blockchain-mcr.docx",
+          "tamano": 24074,
+          "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "created_at": "2026-04-10"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "proyecto_id": 3,
+      "titulo": "Capacitación interna para la estructuración de datos en Datos Abiertos.",
+      "fecha": "2026-03-17",
+      "descripcion": "Se realizó una charla informativa sobre la Guía de Estructuración de Datos Abiertos, con el objetivo de compartir lineamientos y buenas prácticas para la organización y estandarización de datos. Durante el encuentro se repasaron principios clave para mejorar la calidad, accesibilidad y reutilización de la información, junto con ejemplos prácticos aplicables al trabajo diario.",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": []
+    },
+    {
+      "id": 1,
+      "proyecto_id": 1,
+      "titulo": "Primer sellado en BFA",
+      "fecha": "2026-02-06",
+      "descripcion": "Primer sellado automático ejecutado por la Dirección de Datos Públicos y Comunicación en la red BFA Producción (Chain ID 200941592), confirmado en el bloque N° 46012604.",
+      "evidencia_tipo": "archivo",
+      "evidencia_url": null,
+      "archivos": [
+        {
+          "id": 1,
+          "hito_id": 1,
+          "nombre_archivo": "sellado-bfa.jpg",
+          "tamano": 242723,
+          "mime_type": "image/jpeg",
+          "created_at": "2026-03-15"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "proyecto_id": 6,
+      "titulo": "RPAD v1.5.0 - Sistema de doble verificación de cambios",
+      "fecha": "2026-01-22",
+      "descripcion": "Se implementó un mecanismo de doble verificación donde un operador propone cambios sobre datasets (creación, edición o eliminación) y un segundo operador los aprueba o rechaza antes de que se apliquen. Este mecanismo fortalece la integridad de los datos publicados y establece trazabilidad completa de las modificaciones, incluyendo registro de revisor y comentarios de rechazo.",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://github.com/gobiernoabiertomcr/rpad/releases/tag/v1.5.0",
+      "archivos": []
+    },
+    {
+      "id": 12,
+      "proyecto_id": 6,
+      "titulo": "RPAD v1.4.0 - Sistema completo con integración Andino, reportes, notificaciones y generador de notas",
+      "fecha": "2025-12-10",
+      "descripcion": "En diez días de desarrollo intensivo (v1.1.0 a v1.4.0) el RPAD incorporó: integración con la API de Andino para importación automática de metadatos, semaforización por tipo de gestión (interna/externa), notificaciones automáticas por email, gestión de áreas responsables, reportes PDF en cuatro modalidades, calendario interactivo de vencimientos, generador de notas administrativas DOCX según Resolución 2820/22 y sistema de roles (admin/lector).",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://github.com/gobiernoabiertomcr/rpad/releases/tag/v1.4.0",
+      "archivos": []
+    },
+    {
+      "id": 11,
+      "proyecto_id": 6,
+      "titulo": "RPAD v1.0.0 - Lanzamiento fundacional del sistema RPAD",
+      "fecha": "2025-11-30",
+      "descripcion": "Primera versión operativa del Registro Permanente de Actualización de Datasets, en cumplimiento del Art. 8° de la Ordenanza N° 17.662/23. Permite registrar datasets, asignar frecuencias de actualización y monitorear estados desde un tablero con estadísticas en tiempo real. Incluye autenticación JWT y CRUD completo.",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://github.com/gobiernoabiertomcr/rpad/releases/tag/v1.0.0",
+      "archivos": []
+    },
+    {
+      "id": 19,
+      "proyecto_id": 8,
+      "titulo": "Migración completada - Portal de Datos Abiertos en Andino operativo",
+      "fecha": "2025-10-02",
+      "descripcion": "Finalización de la migración integral del Portal de Datos Abiertos desde la instancia CKAN anterior hacia Portal Andino en datos.comodoro.gov.ar. El proceso incluyó reorganización de los datasets existentes, estructuración del 99% de los 241 recursos según estándares nacionales, reescritura de 302 descripciones, e implementación de infraestructura en VPS con AlmaLinux 9. Trabajo coordinado entre DDPC, DI y D. G. de Gestión Digital en 20 días.",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://datos.comodoro.gov.ar/",
+      "archivos": []
+    },
+    {
+      "id": 903,
+      "proyecto_id": null,
+      "titulo": "Convenio de colaboración con la Universidad",
+      "fecha": "2025-09-18",
+      "descripcion": "Firma del convenio marco para el uso de los datos abiertos del portal en cátedras y trabajos finales.",
+      "evidencia_tipo": "archivo",
+      "evidencia_url": null,
+      "archivos": [
+        {
+          "id": 904,
+          "hito_id": 903,
+          "nombre_archivo": "convenio-universidad.pdf",
+          "tamano": 412000,
+          "mime_type": "application/pdf",
+          "created_at": "2025-09-19"
+        }
+      ],
+      "inventado": true
+    },
+    {
+      "id": 18,
+      "proyecto_id": 7,
+      "titulo": "3º Puesto en Índice de Datos Abiertos 2025",
+      "fecha": "2025-08-14",
+      "descripcion": "85% de apertura. El Índice de Datos Abiertos de Ciudades Argentinas es un ranking que presenta el estado actual de la liberación de datos en formato abierto en los municipios del país.",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://2025.indicededatosabiertos.org/",
+      "archivos": []
+    },
+    {
+      "id": 9,
+      "proyecto_id": 4,
+      "titulo": "Elevación",
+      "fecha": "2025-03-10",
+      "descripcion": "Tras segunda instancia de trabajo con Impresiones Oficiales, DDPC/DI elevan el documento formal de optimización del sistema a la DGMIT.",
+      "evidencia_tipo": "archivo",
+      "evidencia_url": null,
+      "archivos": [
+        {
+          "id": 2,
+          "hito_id": 9,
+          "nombre_archivo": "informe-bo-10-mar-25.pdf",
+          "tamano": 92102,
+          "mime_type": "application/pdf",
+          "created_at": "2026-03-18"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "proyecto_id": 4,
+      "titulo": "Asunción del relevamiento técnico",
+      "fecha": "2025-03-07",
+      "descripcion": "A requerimiento de DGMIT, DDPC y DI asumen formalmente el relevamiento de requerimientos técnicos y operativos. Primer reunión con D.G. de Impresiones Oficiales. Anteriormente, se realizó una reunión convocada por DGMIT con Subsecretaría de Modernización, Economía, Gestión Digital, DDPC e Innovación para evaluar la actualización del sistema.",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": []
+    },
+    {
+      "id": 17,
+      "proyecto_id": 7,
+      "titulo": "4º Puesto en Índice de Datos Abiertos 2024",
+      "fecha": "2024-09-02",
+      "descripcion": "86% de apertura. El Índice de Datos Abiertos de Ciudades Argentinas es un ranking que presenta el estado actual de la liberación de datos en formato abierto en los municipios del país.",
+      "evidencia_tipo": "url",
+      "evidencia_url": "https://2024.indicededatosabiertos.org/",
+      "archivos": []
+    },
+    {
+      "id": 16,
+      "proyecto_id": 7,
+      "titulo": "4º Puesto en Índice de Datos Abiertos 2023",
+      "fecha": "2023-07-25",
+      "descripcion": "87% de apertura. El Índice de Datos Abiertos de Ciudades Argentinas es un ranking que presenta el estado actual de la liberación de datos en formato abierto en los municipios del país.",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": []
+    },
+    {
+      "id": 15,
+      "proyecto_id": 7,
+      "titulo": "7º Puesto en Índice de Datos Abiertos 2022",
+      "fecha": "2022-08-01",
+      "descripcion": "77% de apertura. El Índice de Datos Abiertos de Ciudades Argentinas es un ranking que presenta el estado actual de la liberación de datos en formato abierto en los municipios del país.",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": []
+    },
+    {
+      "id": 14,
+      "proyecto_id": 7,
+      "titulo": "16º Puesto en Índice de Datos Abiertos 2021",
+      "fecha": "2021-08-01",
+      "descripcion": "32% de apertura. El Índice de Datos Abiertos de Ciudades Argentinas es un ranking que presenta el estado actual de la liberación de datos en formato abierto en los municipios del país.",
+      "evidencia_tipo": "ninguno",
+      "evidencia_url": null,
+      "archivos": []
+    }
+  ]
+}

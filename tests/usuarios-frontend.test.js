@@ -645,7 +645,7 @@ describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
   const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
   const PAGINA = fs.readFileSync(new URL('../public/configuracion.html', import.meta.url), 'utf8');
   const AYUDAS = {
-    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Gestión y Seguimiento). No modifica nada.',
+    lector: '<b>Lector:</b> Ve los datos públicos y usa las Herramientas (Métricas y Reportes, Proyectos y Seguimiento). No modifica nada.',
     colaborador: '<b>Colaborador:</b> Ve todo lo que ve un lector y, además, carga las notas DGMIT en el Seguimiento (y corrige o anula '
       + 'las que cargó) y arma notas con el Generador de Notas. No modifica datasets ni audita cambios.',
     editor: '<b>Editor:</b> Todo lo de un administrador, pero audita cambios de respaldo y en Usuarios solo crea y modifica lectores y '
@@ -713,6 +713,8 @@ describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
     const panel = cargarPanel(null);
     assert.deepEqual(JSON.parse(JSON.stringify(evaluar(panel.contexto, 'Object.keys(AYUDA_DEL_ROL)'))), ['lector', 'colaborador', 'editor', 'admin']);
     for (const [rol, html] of Object.entries(AYUDAS)) assert.equal(evaluar(panel.contexto, `htmlDeAyudaDelRol('${rol}')`), html, rol);
+    // Gestión pasó a llamarse Proyectos (spec 2026-10-25-proyectos, 11): ninguna ayuda la nombra
+    for (const rol of Object.keys(AYUDAS)) assert.doesNotMatch(evaluar(panel.contexto, `htmlDeAyudaDelRol('${rol}')`), /Gestión/, rol);
     // La cuenta del superadmin solo la modifica su titular: no lleva línea
     assert.equal(evaluar(panel.contexto, "htmlDeAyudaDelRol('superadmin')"), '');
     assert.equal(evaluar(panel.contexto, "htmlDeAyudaDelRol('constructor')"), '');

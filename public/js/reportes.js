@@ -773,7 +773,7 @@ function mesesDeMetricasManuales(anio, hoy) {
 }
 
 // =====================================================
-// Áreas y temas (puros; textoPorcentaje y htmlDelRanking vienen de gestion.js, sin cambios)
+// Áreas y temas (puros; textoPorcentaje y htmlDelRanking se mudaron de Gestión, sin cambios)
 // =====================================================
 
 // "83%", o una raya si no hay nada que medir (null: solo eventuales, que no tienen vencimiento; Ruling 23)
@@ -1057,7 +1057,7 @@ function htmlDeTarjetaDeReportes(clave, datos, { anios = null, areas = null, des
       // que se reintenta)
       const anio = anioDelInforme(e.informe, lista);
       const foto = lista.find((f) => f.anio === anio) ?? null;
-      return htmlDeTarjeta(clave, 'Informe anual', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).', {
+      return htmlDeTarjeta(clave, 'Informe anual', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Herramientas → Proyectos).', {
         campos: sinAnios || htmlDeCampo('rp-informe-anio', 'Año', htmlDeSelectorDeAnios('rp-informe-anio', 'rp-informe', lista, anio, false)),
         boton: foto?.con_foto === true ? boton : htmlDelBotonNoDisponible(clave, escaparTexto(foto?.aviso_informe) || 'Descargar PDF'),
         hojas: 'Se arma con la foto del 31/12'

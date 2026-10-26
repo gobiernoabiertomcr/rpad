@@ -5,7 +5,7 @@
 // 2. el contexto (el índice mes a mes y la antigüedad de los vencidos) y el trabajo del RPAD, sin las métricas manuales (no están en la
 //    foto: las carga administración y se pueden cambiar después);
 // 3. la comparación con la foto del año anterior (comparacionDe: los números de las dos fotos, con sus textos, y la diferencia) o, si no
-//    la hay, «Primer año con foto»; y los logros del año, los hitos de Gestión → Proyectos con fecha en el año, por proyecto
+//    la hay, «Primer año con foto»; y los logros del año, los hitos de Herramientas → Proyectos con fecha en el año, por proyecto
 //    (logrosPorProyecto), cada uno con su fecha, su título y su descripción.
 // Las partes 1 y 2 son las de Métricas del año: se arman con sus dibujantes (services/reportesMetricasPdf.js), sin copiarlos. El pie dice
 // «Informe anual AAAA · Hoja k de N». Dibuja con la base de los reportes (reportesPdfBase.js) lo que le pasa el controlador
@@ -22,9 +22,9 @@ import {
   LIMITE, ENTRE, esObjeto, objeto, lista, esNumero, texto
 } from './reportesPdfBase.js';
 
-// Los textos fijos del Informe. Los hitos sin proyecto son los «Logros del Área» de Gestión → Proyectos (public/js/gestion.js). Los
-// datasets de estado desconocido (un ciclo sin el vencimiento guardado: no se sabe qué próxima regía) no tienen nombre en la pantalla:
-// su fila de la comparación se llama «Sin dato del vencimiento»
+// Los textos fijos del Informe. Los hitos sin proyecto («Logros del Área») son los de la pestaña «Logros del área» de Herramientas →
+// Proyectos (public/js/proyectos.js). Los datasets de estado desconocido (un ciclo sin el vencimiento guardado: no se sabe qué
+// próxima regía) no tienen nombre en la pantalla: su fila de la comparación se llama «Sin dato del vencimiento»
 export const TEXTOS_DEL_INFORME = Object.freeze({
   primerAnio: 'Primer año con foto',
   comparacion: (anio) => `Comparación con ${anio - 1}`,
@@ -34,7 +34,7 @@ export const TEXTOS_DEL_INFORME = Object.freeze({
   diferencia: 'Diferencia',
   queEsLaDiferencia: (anio) => `Diferencia: ${anio} menos ${anio - 1}; en los porcentajes, en puntos.`,
   logros: 'Logros del año',
-  deDondeSalenLosLogros: (anio) => `Los hitos de ${anio} cargados en Gestión`,
+  deDondeSalenLosLogros: (anio) => `Los hitos de ${anio} cargados en Proyectos`,
   sinProyecto: 'Logros del Área',
   sinHitos: (anio) => `Sin hitos registrados en ${anio}.`
 });
@@ -157,7 +157,7 @@ const elementosDeLaComparacion = (doc, anterior, actual) => {
 const porFecha = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
 
 // Los hitos del año agrupados por proyecto. `hitos`: los de proyecto_hitos con fecha en el año, como los lee el controlador ([{ proyecto_id,
-// proyecto (su nombre), fecha: 'AAAA-MM-DD', titulo, descripcion }], los proyectos en el orden de Gestión → Proyectos). Cada proyecto
+// proyecto (su nombre), fecha: 'AAAA-MM-DD', titulo, descripcion }], los proyectos en el orden de Herramientas → Proyectos). Cada proyecto
 // en el orden en que llegan, con sus hitos por fecha (y en el orden en que llegan los del mismo día); los hitos sin proyecto (los logros
 // del área), juntos al final. La descripción vacía, o solo con espacios, queda vacía. [{ proyecto, hitos: [{ fecha, titulo, descripcion }]
 // }], [] sin hitos. Nunca tira.
