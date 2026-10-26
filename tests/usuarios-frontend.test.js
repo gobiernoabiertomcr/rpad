@@ -1093,34 +1093,42 @@ describe('días sin auditor (spec 2026-10-15-dias-habiles-licencias-auditoria, 9
   });
 });
 
-// Configuración (spec 2026-10-24-configuracion, 1 y 6): la tercera pestaña, Áreas, y la pestaña en la dirección (#usuarios,
-// #licencias y #areas; Review Focus 4). En este vm window.location es {} y no hay history ni cargarAreas (areas.js no se carga):
-// nada de eso tira
-describe('Configuración: las tres pestañas y la pestaña en la dirección (spec 2026-10-24-configuracion, 1 y 6)', () => {
+// Configuración (spec 2026-10-24-configuracion, 1 y 6; la cuarta pestaña, spec 2026-10-26-feriados, 4): las pestañas Usuarios,
+// Licencias, Áreas y Feriados, y la pestaña en la dirección (#usuarios, #licencias, #areas y #feriados; Review Focus 4). En este vm
+// window.location es {} y no hay history, cargarAreas ni cargarFeriados (areas.js y feriados.js no se cargan): nada de eso tira
+describe('Configuración: las cuatro pestañas y la pestaña en la dirección (spec 2026-10-24-configuracion, 1 y 6; 2026-10-26-feriados, 4)', () => {
   const evaluar = (contexto, expresion) => vm.runInContext(expresion, contexto);
-  const VISTAS = ['usuarios', 'licencias', 'areas'];
+  const VISTAS = ['usuarios', 'licencias', 'areas', 'feriados'];
   // Lo que se ve: las vistas y los botones del encabezado que no están ocultos (Licencias no tiene botón: "Nueva licencia" va en
   // su tarjeta)
   const visibles = (panel) => ({
     vistas: VISTAS.filter((vista) => panel.elemento(`vista-${vista}`).hidden === false),
-    botones: ['btn-nuevo-usuario', 'btn-nueva-area'].filter((id) => panel.elemento(id).hidden === false)
+    botones: ['btn-nuevo-usuario', 'btn-nueva-area', 'btn-nuevo-feriado'].filter((id) => panel.elemento(id).hidden === false)
   });
   const cuantas = (panel, llamada) => panel.llamadas.filter((l) => l === llamada).length;
   const conCargarAreas = (panel) => {
     panel.contexto.cargarAreas = () => panel.llamadas.push('cargarAreas');
     return panel;
   };
+  // Registra cada llamada con sus argumentos: 'cargarFeriados' sin ninguno (feriados.js decide si pide)
+  const conCargarFeriados = (panel) => {
+    panel.contexto.cargarFeriados = (...argumentos) => panel.llamadas.push(['cargarFeriados', ...argumentos].join(':'));
+    return panel;
+  };
+  const conLasDos = (panel) => conCargarFeriados(conCargarAreas(panel));
 
-  it('VISTAS son las tres pestañas, en el orden de la página', () => {
+  it('VISTAS son las cuatro pestañas, en el orden de la página', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(evaluar(cargarPanel().contexto, 'VISTAS'))), VISTAS);
   });
 
-  it('vistaDeLaDireccion: #licencias y #areas abren su pestaña; #usuarios, un fragmento desconocido o ninguno, Usuarios', () => {
+  it('vistaDeLaDireccion: #licencias, #areas y #feriados abren su pestaña; #usuarios, un fragmento desconocido o ninguno, Usuarios', () => {
     const { contexto } = cargarPanel();
     assert.equal(contexto.vistaDeLaDireccion('#licencias'), 'licencias');
     assert.equal(contexto.vistaDeLaDireccion('#areas'), 'areas');
+    assert.equal(contexto.vistaDeLaDireccion('#feriados'), 'feriados');
     assert.equal(contexto.vistaDeLaDireccion('#usuarios'), 'usuarios');
-    for (const hash of ['#foo', '', '#', undefined, null, '#areas/x', '#constructor', '#__proto__', '#toString']) {
+    for (const hash of ['#foo', '', '#', undefined, null, '#areas/x', '#feriados/2027', '#Feriados', '#constructor', '#__proto__',
+      '#toString']) {
       assert.equal(contexto.vistaDeLaDireccion(hash), 'usuarios', String(hash));
     }
   });
@@ -1136,26 +1144,47 @@ describe('Configuración: las tres pestañas y la pestaña en la dirección (spe
     assert.ok(!panel.llamadas.includes('getLicencias'), 'Áreas no pide las licencias');
   });
 
-  it('cada pestaña muestra solo su vista y su botón: Usuarios, "Nuevo usuario"; Licencias, ninguno; Áreas, "Nueva área"', () => {
+  it('mostrarVista("feriados"): su vista y "Nuevo feriado"; las otras tres ocultas, sin sus botones; sin cargarFeriados no tira', () => {
+    const panel = cargarPanel();
+    assert.doesNotThrow(() => panel.contexto.mostrarVista('feriados'));
+    assert.deepEqual(visibles(panel), { vistas: ['feriados'], botones: ['btn-nuevo-feriado'] });
+    assert.ok(!panel.llamadas.includes('getLicencias'), 'Feriados no pide las licencias');
+  });
+
+  it('cada pestaña muestra solo su vista y su botón: Usuarios, "Nuevo usuario"; Licencias, ninguno; Áreas, "Nueva área"; Feriados, "Nuevo feriado"', () => {
     const panel = cargarPanel();
     const esperado = {
       usuarios: { vistas: ['usuarios'], botones: ['btn-nuevo-usuario'] },
       licencias: { vistas: ['licencias'], botones: [] },
-      areas: { vistas: ['areas'], botones: ['btn-nueva-area'] }
+      areas: { vistas: ['areas'], botones: ['btn-nueva-area'] },
+      feriados: { vistas: ['feriados'], botones: ['btn-nuevo-feriado'] }
     };
-    for (const nombre of ['areas', 'licencias', 'usuarios', 'areas', 'usuarios']) {
+    for (const nombre of ['areas', 'feriados', 'licencias', 'usuarios', 'feriados', 'areas', 'usuarios']) {
       panel.contexto.mostrarVista(nombre);
       assert.deepEqual(visibles(panel), esperado[nombre], nombre);
     }
   });
 
-  it('mostrarVista("areas") llama una vez a cargarAreas (de areas.js); Usuarios y Licencias no la llaman', () => {
-    const panel = conCargarAreas(cargarPanel());
+  it('mostrarVista("areas") llama una vez a cargarAreas (de areas.js); Usuarios, Licencias y Feriados no la llaman', () => {
+    const panel = conLasDos(cargarPanel());
     panel.contexto.mostrarVista('areas');
     assert.equal(cuantas(panel, 'cargarAreas'), 1);
     panel.contexto.mostrarVista('usuarios');
     panel.contexto.mostrarVista('licencias');
+    panel.contexto.mostrarVista('feriados');
     assert.equal(cuantas(panel, 'cargarAreas'), 1);
+  });
+
+  it('mostrarVista("feriados") llama a cargarFeriados (de feriados.js), sin forzar, una vez por apertura; las otras no la llaman', () => {
+    const panel = conLasDos(cargarPanel());
+    panel.contexto.mostrarVista('feriados');
+    assert.equal(cuantas(panel, 'cargarFeriados'), 1, 'sin argumentos: feriados.js decide si pide');
+    panel.contexto.mostrarVista('usuarios');
+    panel.contexto.mostrarVista('licencias');
+    panel.contexto.mostrarVista('areas');
+    assert.equal(cuantas(panel, 'cargarFeriados'), 1);
+    panel.contexto.mostrarVista('feriados');
+    assert.equal(cuantas(panel, 'cargarFeriados'), 2);
   });
 
   it('escribe la pestaña en la dirección con history.replaceState (no suma pasos al botón Atrás); sin history no tira', () => {
@@ -1168,29 +1197,41 @@ describe('Configuración: las tres pestañas y la pestaña en la dirección (spe
     panel.contexto.mostrarVista('licencias');
     assert.deepEqual(registro, [[null, '', '#licencias']]);
     panel.contexto.mostrarVista('areas');
+    panel.contexto.mostrarVista('feriados');
     panel.contexto.mostrarVista('usuarios');
-    assert.deepEqual(registro.slice(1), [[null, '', '#areas'], [null, '', '#usuarios']]);
+    assert.deepEqual(registro.slice(1), [[null, '', '#areas'], [null, '', '#feriados'], [null, '', '#usuarios']]);
   });
 
-  it('al abrir la página lee el fragmento: #areas abre Áreas (y la pide una vez) y #licencias, Licencias', () => {
-    const areas = conCargarAreas(cargarPanel());
+  it('al abrir la página lee el fragmento: #areas abre Áreas (y la pide una vez), #feriados abre Feriados (ídem) y #licencias, Licencias', () => {
+    const areas = conLasDos(cargarPanel());
     areas.contexto.window.location.hash = '#areas';
     areas.alCargar();
     assert.deepEqual(visibles(areas), { vistas: ['areas'], botones: ['btn-nueva-area'] });
     assert.equal(cuantas(areas, 'cargarAreas'), 1);
+    assert.equal(cuantas(areas, 'cargarFeriados'), 0);
     assert.ok(areas.llamadas.includes('getUsuarios'), 'la lista de usuarios se pide igual');
 
-    const licencias = conCargarAreas(cargarPanel());
+    const feriados = conLasDos(cargarPanel());
+    feriados.contexto.window.location.hash = '#feriados';
+    feriados.alCargar();
+    assert.deepEqual(visibles(feriados), { vistas: ['feriados'], botones: ['btn-nuevo-feriado'] });
+    assert.equal(cuantas(feriados, 'cargarFeriados'), 1);
+    assert.equal(cuantas(feriados, 'cargarAreas'), 0);
+    assert.ok(feriados.llamadas.includes('getUsuarios'), 'la lista de usuarios se pide igual');
+    assert.ok(!feriados.llamadas.includes('getLicencias'));
+
+    const licencias = conLasDos(cargarPanel());
     licencias.contexto.window.location.hash = '#licencias';
     licencias.alCargar();
     assert.deepEqual(visibles(licencias), { vistas: ['licencias'], botones: [] });
     assert.ok(licencias.llamadas.includes('getLicencias'));
     assert.equal(cuantas(licencias, 'cargarAreas'), 0);
+    assert.equal(cuantas(licencias, 'cargarFeriados'), 0);
   });
 
   it('sin fragmento, con #usuarios o con uno desconocido abre en Usuarios: no cambia de pestaña ni reescribe la dirección', () => {
     for (const hash of [undefined, '', '#usuarios', '#foo']) {
-      const panel = conCargarAreas(cargarPanel());
+      const panel = conLasDos(cargarPanel());
       const registro = [];
       panel.contexto.window.history = { replaceState: (...a) => registro.push(a) };
       if (hash !== undefined) panel.contexto.window.location.hash = hash;
@@ -1199,7 +1240,9 @@ describe('Configuración: las tres pestañas y la pestaña en la dirección (spe
       assert.ok(panel.llamadas.includes('getUsuarios'), String(hash));
       assert.ok(!panel.llamadas.includes('getLicencias'), String(hash));
       assert.equal(cuantas(panel, 'cargarAreas'), 0, String(hash));
+      assert.equal(cuantas(panel, 'cargarFeriados'), 0, String(hash));
       assert.equal(panel.elemento('vista-areas').hidden, true, String(hash));
+      assert.equal(panel.elemento('vista-feriados').hidden, true, String(hash));
     }
   });
 });

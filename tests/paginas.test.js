@@ -19,12 +19,18 @@ const VERSION = '20261204';
 // Reportes», spec 2026-10-24-metricas-y-reportes; el lector ya no tiene Notas y el colaborador arma notas con el Generador de Notas,
 // spec 2026-10-24-generador-de-notas, 1; Configuración reemplaza a Usuarios y Áreas: la tercera pestaña, Áreas, y la pestaña en la
 // dirección, spec 2026-10-24-configuracion, 1 y 6; la ayuda del lector nombra Proyectos en lugar de Gestión, spec
-// 2026-10-25-proyectos, 11): su versión es propia (solo la usa configuracion.html)
-const VERSION_PANTALLAS = '20261206';
+// 2026-10-25-proyectos, 11; la cuarta pestaña, Feriados, con su vista y «Nuevo feriado», y al mostrarla llama a cargarFeriados de
+// feriados.js, spec 2026-10-26-feriados, 4): su versión es propia (solo la usa configuracion.html; subió al mismo número que
+// VERSION_FERIADOS, y siguen siendo independientes)
+const VERSION_PANTALLAS = '20261208';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
 const VERSION_AREAS = '20261205';
+// feriados.js (la pestaña Feriados de Configuración, la cuarta: el selector del año, los filtros y la tabla, spec
+// 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Su versión es propia
+// (solo la usa configuracion.html)
+const VERSION_FERIADOS = '20261208';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6):
@@ -88,7 +94,8 @@ describe('páginas', () => {
 
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
   // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
-  // pestaña en la dirección) y, por último, con el renombre de Gestión a Proyectos (la ayuda del lector)
+  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector) y, por último, con la cuarta pestaña,
+  // Feriados
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
@@ -113,8 +120,17 @@ describe('páginas', () => {
     assert.ok(posicion('usuarios') !== -1 && posicion('usuarios') < posicion('areas'), 'areas.js después de usuarios.js');
     // Todos, en el orden de siempre y a secas (sin defer ni otros atributos)
     assert.deepEqual(scripts, ['js/config.js', `js/auth.js?v=${VERSION}`, `js/main.js?v=${VERSION}`, `js/api.js?v=${VERSION}`,
-      `js/usuarios.js?v=${VERSION_PANTALLAS}`, `js/areas.js?v=${VERSION_AREAS}`]);
+      `js/usuarios.js?v=${VERSION_PANTALLAS}`, `js/areas.js?v=${VERSION_AREAS}`, `js/feriados.js?v=${VERSION_FERIADOS}`]);
     assert.equal(html.match(/<script\b/g).length, scripts.length, 'ningún <script> con otros atributos');
+  });
+
+  // feriados.js va al final, después de areas.js: usuarios.js llama a su cargarFeriados al mostrar la pestaña Feriados (spec
+  // 2026-10-26-feriados, 4)
+  it(`configuracion.html: feriados.js con la versión ${VERSION_FERIADOS}, una sola vez, el último (después de usuarios.js y areas.js)`, () => {
+    const scripts = [...leer('configuracion.html').matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+    assert.deepEqual(scripts.filter(src => src.startsWith('js/feriados.js')), [`js/feriados.js?v=${VERSION_FERIADOS}`]);
+    assert.equal(scripts.at(-1), `js/feriados.js?v=${VERSION_FERIADOS}`);
+    assert.ok(Number(VERSION_FERIADOS) > Number(VERSION_REPORTES), 'mayor que la más alta cuando se sumó');
   });
 
   // La página (spec 1 y 6): el título, el h1 con la ruedita, las tres pestañas y el botón de cada una, y lo de Áreas con los ids
@@ -131,17 +147,18 @@ describe('páginas', () => {
 
     it('el título, la descripción y el h1 "Configuración" con la ruedita decorativa', () => {
       assert.ok(html().includes('<title>Configuración - RPAD</title>'));
-      assert.ok(html().includes('<meta name="description" content="Usuarios, licencias y áreas responsables del RPAD">'));
+      assert.ok(html().includes('<meta name="description" content="Usuarios, licencias, áreas responsables y feriados del RPAD">'));
       const h1 = bloque(/<h1 class="page-title">[\s\S]*?<\/h1>/);
       assert.match(h1, /<svg aria-hidden="true"[^>]*><path d="M12\.22 2h-\.44/);
       assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Configuración');
     });
 
-    it('las pestañas Usuarios, Licencias y Áreas; "Nueva área", oculta, después de "Nuevo usuario"; la vista Áreas, oculta, después de Licencias', () => {
+    it('las pestañas Usuarios, Licencias, Áreas y Feriados; "Nueva área", oculta, después de "Nuevo usuario"; la vista Áreas, oculta, después de Licencias', () => {
       const pestanas = [...bloque(/<div class="usuario-pestanas pagina-pestanas" id="pagina-pestanas" role="tablist">[\s\S]*?<\/div>/)
         .matchAll(/<button type="button" class="usuario-pestana[^"]*" data-vista="([^"]+)" role="tab" aria-selected="(true|false)">([^<]+)<\/button>/g)]
         .map(([, vista, elegida, texto]) => [vista, elegida, texto]);
-      assert.deepEqual(pestanas, [['usuarios', 'true', 'Usuarios'], ['licencias', 'false', 'Licencias'], ['areas', 'false', 'Áreas']]);
+      assert.deepEqual(pestanas, [['usuarios', 'true', 'Usuarios'], ['licencias', 'false', 'Licencias'], ['areas', 'false', 'Áreas'],
+        ['feriados', 'false', 'Feriados']]);
       const posicion = (texto) => html().indexOf(texto);
       assert.match(html(), /<button type="button" class="btn btn-primary" id="btn-nueva-area" hidden>\s*<svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>\s*Nueva área\s*<\/button>/);
       assert.ok(posicion('id="btn-nuevo-usuario"') < posicion('id="btn-nueva-area"'), '"Nueva área" después de "Nuevo usuario"');
@@ -204,6 +221,90 @@ describe('páginas', () => {
       const anillo = 'outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte);';
       assert.ok(estilo.includes(`#vista-areas :focus-visible, #btn-nueva-area:focus-visible { ${anillo} }`), 'fuera del modal');
       assert.ok(estilo.includes(`.ar-modal :focus-visible { ${anillo} }`), 'el del modal, el mismo');
+    });
+  });
+
+  // La cuarta pestaña (spec 2026-10-26-feriados, 4): el botón del encabezado, la vista con los ids que usa feriados.js, el aviso
+  // azul y una sola región viva (#feriados-anuncio: lo que se vuelve a dibujar no lleva aria-live ni role="status")
+  describe('configuracion.html: la pestaña Feriados', () => {
+    const html = () => leer('configuracion.html');
+    const bloque = (patron) => html().match(patron)?.[0] ?? '';
+    const vista = () => bloque(/<div id="vista-feriados" hidden>[\s\S]*?(?=\s*<!-- Footer -->)/);
+    const IDS_DE_FERIADOS = ['btn-nuevo-feriado', 'vista-feriados', 'feriados-aviso', 'titulo-feriados', 'feriados-anio',
+      'feriados-filtros', 'feriados-lista', 'feriados-vacio', 'feriados-anuncio'];
+    const posicion = (texto) => html().indexOf(texto);
+
+    it('"Nuevo feriado", oculto, con el ícono plus, después de "Nueva área"', () => {
+      assert.match(html(), /<button type="button" class="btn btn-primary" id="btn-nuevo-feriado" hidden>\s*<svg aria-hidden="true"[^>]*><path d="M5 12h14"\/><path d="M12 5v14"\/><\/svg>\s*Nuevo feriado\s*<\/button>/);
+      assert.ok(posicion('id="btn-nueva-area"') < posicion('id="btn-nuevo-feriado"'), 'después de "Nueva área"');
+      assert.ok(posicion('id="btn-nuevo-feriado"') < posicion('id="pagina-pestanas"'), 'en el encabezado, antes de las pestañas');
+    });
+
+    it('la vista, oculta, después de la de Áreas y antes del footer', () => {
+      assert.ok(html().includes('<div id="vista-feriados" hidden>'));
+      assert.ok(posicion('id="vista-areas"') < posicion('id="vista-feriados"'), 'Feriados después de Áreas');
+      assert.ok(posicion('id="vista-feriados"') < posicion('<footer class="footer">'), 'dentro del contenido, antes del footer');
+      assert.ok(vista(), 'la vista se encuentra');
+    });
+
+    it('sus ids están una sola vez, dentro de la vista (salvo "Nuevo feriado"), y ninguno se repite con los del resto de la página', () => {
+      const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), [], 'ningún id repetido');
+      for (const id of IDS_DE_FERIADOS) assert.equal(ids.filter(otro => otro === id).length, 1, id);
+      for (const id of IDS_DE_FERIADOS.filter(id => id !== 'btn-nuevo-feriado' && id !== 'vista-feriados')) {
+        assert.ok(vista().includes(`id="${id}"`), `${id} dentro de la vista`);
+      }
+    });
+
+    it('el aviso azul dice, tal cual, que estos feriados todavía no cambian los días hábiles del sistema', () => {
+      const aviso = bloque(/<p class="fe-aviso" id="feriados-aviso">[\s\S]*?<\/p>/);
+      assert.ok(aviso, 'el aviso');
+      assert.match(aviso, /<svg aria-hidden="true"/);
+      assert.equal(aviso.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(),
+        'Por ahora, estos feriados no cambian los días hábiles del sistema: las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
+    });
+
+    it('la tarjeta: el título, el selector del año y los filtros como grupos con su nombre, la lista y el vacío', () => {
+      assert.match(vista(), /<section class="ar-tarjeta" aria-labelledby="titulo-feriados">/);
+      assert.match(vista(), /<h2 id="titulo-feriados">Feriados y días no laborables<\/h2>/);
+      assert.match(vista(), /<div class="fe-anios" id="feriados-anio" role="group" aria-label="Año"><\/div>/);
+      assert.match(vista(), /<div class="ar-chips" id="feriados-filtros" role="group" aria-label="Filtrar feriados"><\/div>/);
+      assert.match(vista(), /<div id="feriados-lista"><div class="loading"><div class="spinner"><\/div><\/div><\/div>/);
+      assert.match(vista(), /<p class="ar-vacio" id="feriados-vacio" hidden><\/p>/);
+    });
+
+    it('#feriados-anuncio es la única región viva de la vista, fuera de lo que se vuelve a dibujar', () => {
+      assert.match(vista(), /<p class="sr-only" id="feriados-anuncio" role="status"><\/p>/);
+      assert.equal(vista().match(/role="(status|alert|log)"/g)?.length, 1);
+      assert.doesNotMatch(vista(), /aria-live/);
+      const tarjeta = bloque(/<section class="ar-tarjeta" aria-labelledby="titulo-feriados">[\s\S]*?<\/section>/);
+      assert.ok(tarjeta && !tarjeta.includes('feriados-anuncio'), 'fuera de la tarjeta');
+    });
+
+    // El foco visible de la convención, como en Áreas: el selector del año, los filtros, "Editar" y "Nuevo feriado", que está en el
+    // encabezado de la página
+    it('el foco visible de la vista Feriados y de "Nuevo feriado", como el de Áreas', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const anillo = 'outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte);';
+      assert.ok(estilo.includes(`#vista-feriados :focus-visible, #btn-nuevo-feriado:focus-visible { ${anillo} }`));
+    });
+
+    // Se ve como Áreas (spec 4): sus estilos van en el mismo <style>, después de los de Áreas, y toda var() que usan se define en
+    // main.css o en este <style>
+    it('los estilos .fe-* van después de los .ar-*, con los tokens que ya tiene la página', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const primeraFe = estilo.indexOf('.fe-');
+      assert.ok(primeraFe > estilo.lastIndexOf('.ar-tabla .accion'), 'después de la tabla de Áreas');
+      assert.ok(primeraFe < estilo.indexOf('@media (max-width: 768px)'), 'antes de las del teléfono');
+      const reglasFe = estilo.split('\n').filter(linea => linea.includes('.fe-') || linea.includes('#vista-feriados'));
+      assert.ok(reglasFe.length > 5, 'hay reglas .fe-*');
+      const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8') + estilo;
+      for (const linea of reglasFe) {
+        for (const [, variable] of linea.matchAll(/var\((--[\w-]+)\)/g)) {
+          assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
+        }
+      }
+      assert.doesNotMatch(reglasFe.join('\n'), /text-transform:\s*uppercase/);
     });
   });
 

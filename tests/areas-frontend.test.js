@@ -97,7 +97,7 @@ describe('areas.js: convive con los otros scripts de la página', () => {
   const nombresDe = (archivo) => [...leer(`js/${archivo}`).matchAll(/^(?:const|let|var|function|async function|class) (\w+)/gm)]
     .map(([, nombre]) => nombre);
 
-  it('api.js, usuarios.js y areas.js se cargan en el mismo vm, con los stubs del test de usuarios, sin tirar', () => {
+  it('api.js, usuarios.js, areas.js y feriados.js se cargan en el mismo vm, con los stubs del test de usuarios, sin tirar', () => {
     const elemento = (id) => ({
       id, value: '', textContent: '', hidden: true, disabled: false, oyentes: {}, setAttribute() {}, removeAttribute() {},
       classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
@@ -120,9 +120,28 @@ describe('areas.js: convive con los otros scripts de la página', () => {
     assert.doesNotThrow(() => vm.runInContext(leer('js/api.js'), contexto));
     assert.doesNotThrow(() => vm.runInContext(leer('js/usuarios.js'), contexto));
     assert.doesNotThrow(() => vm.runInContext(leer('js/areas.js'), contexto));
-    for (const nombre of ['cargarAreas', 'pintarAreas', 'abrirModalArea', 'guardarArea', 'confirmarBorradoArea', 'guardarUsuario', 'mostrarVista']) {
+    // feriados.js va después de areas.js (spec 2026-10-26-feriados, 4)
+    assert.doesNotThrow(() => vm.runInContext(leer('js/feriados.js'), contexto));
+    for (const nombre of ['cargarAreas', 'pintarAreas', 'abrirModalArea', 'guardarArea', 'confirmarBorradoArea', 'guardarUsuario', 'mostrarVista',
+      'cargarFeriados', 'dibujarFeriados', 'iniciarFeriados', 'abrirModalFeriado']) {
       assert.equal(vm.runInContext(`typeof ${nombre}`, contexto), 'function', nombre);
     }
+  });
+
+  // Los siete scripts de configuracion.html, en su orden: ningún nombre de nivel superior se repite entre dos de ellos (un let o un
+  // const repetido rompe el segundo script entero, y una function repetida pisa la otra)
+  it('ningún nombre de nivel superior se repite entre config.js, auth.js, main.js, api.js, usuarios.js, areas.js y feriados.js', () => {
+    const archivos = ['config.js', 'auth.js', 'main.js', 'api.js', 'usuarios.js', 'areas.js', 'feriados.js'];
+    const deQuien = new Map();
+    for (const archivo of archivos) {
+      const propios = nombresDe(archivo);
+      assert.ok(propios.length > 0, archivo);
+      for (const nombre of new Set(propios)) {
+        assert.equal(deQuien.get(nombre), undefined, `${nombre}: en ${deQuien.get(nombre)} y en ${archivo}`);
+        deQuien.set(nombre, archivo);
+      }
+    }
+    assert.ok(nombresDe('feriados.js').length > 20, 'el regex encuentra los nombres de feriados.js');
   });
 
   it('sus nombres de nivel superior no se repiten con los de config.js, auth.js, main.js, api.js ni usuarios.js', () => {
