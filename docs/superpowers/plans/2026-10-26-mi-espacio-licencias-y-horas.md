@@ -69,6 +69,7 @@
     - `soloHasta`: «Ya empezó: solo podés cambiar hasta cuándo.»
     - `fechasFijas`: «Ya terminó: las fechas quedan fijas.»
     - `autorizadoSoloVacaciones`: «Solo las vacaciones dejan persona a cargo.»
+    - `tipoFijo`: «Ya sale la nota que informa quién queda a cargo: el tipo no se puede cambiar.»
   - **Las funciones de texto:**
     - `textoRango(desde, hasta)`: «La fecha tiene que ser del 01/01/2024 al 31/12/2027.»
     - `textoNoEstudia(anio)`: «En 2026 elegiste «No estudio»: cambialo en «Mis vacaciones y saldos».»
@@ -665,7 +666,12 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
     - con `puedeTenerLicencia(rol)` y una fila de día entero, `enTransaccion` usa `bloquearUsuarios` en lugar de la fila propia, siempre antes de leer;
     - **solo las vacaciones dejan persona a cargo** (corrección del usuario a la spec, sección 6): un `autorizado_id` con valor (ni `null` ni `''`) en un tipo que no es `vacaciones` da 400 en `autorizado_id` con `autorizadoSoloVacaciones`, antes de abrir la transacción. Los demás tipos de día entero pasan a Configuración con `autorizadoId = null`;
     - en vacaciones, `autorizado_id` se acepta solo del titular, como en Configuración (lo controla `rechazoDeLaBase`);
-    - corregir el tipo de una `creada` de vacaciones con persona a cargo: ver «Preguntas para el usuario», 1;
+    - **corregir el tipo de unas vacaciones del titular con persona a cargo** (una `creada` cuya licencia de Configuración tiene `autorizado_id`; respuesta del usuario, 26/10/2026):
+      - se puede hasta 2 días hábiles antes de que empiecen, inclusive. Ese último día es `limiteParaCambiarTipo(desde) = diaHabilAnterior(diaHabilAnterior(desde))`, con el calendario de las Notas Digitales (`esDiaHabil`, los 9 fijos), que es el que decide qué día sale la nota de la víspera (la que adelanta los datasets e informa quién queda a cargo);
+      - hasta ese día, el cambio a otro tipo le saca la persona a cargo a la de Configuración (`cambiarLicencia` con `autorizadoPedido = null`), y el cálculo previo lo avisa con `AVISO_SIN_PERSONA_A_CARGO`;
+      - después, 400 en `tipo` con `tipoFijo`;
+      - `limiteParaCambiarTipo` es pura y va en `miEspacioReglas.js`;
+      - en cualquier otro caso (otra persona, o vacaciones sin persona a cargo), cambiar el tipo no toca Configuración, como dice la spec;
     - el `GET /licencias` pasa `vinculos` a `filasDeLicencias`: `textoDelVinculo` más `puede_borrar`, `solo_hasta` y `fechas_fijas` de una `creada`.
   - **`POST /licencias/calculo`** suma `data.paso: { pasa, avisos: [texto], firmante: { soy_titular, puede_autorizar, vispera, notas_de_hoy } | null, sin_pasar_previsto }`:
     - `avisos` lleva `AVISO_DEL_PASO`, más `AVISO_DEL_PASO_SUPERADMIN` para el superadmin y, para el titular, `AVISO_NOTAS_DE_HOY` con `desde <= hoy` y `AVISO_SIN_PERSONA_A_CARGO` en un tipo que no es vacaciones;
@@ -699,7 +705,12 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
       - **el caso del usuario:** vacaciones de `q(0)` a `q(8)` con persona a cargo y una médica de `q(9)` a `q(10)` sin persona a cargo dan dos licencias de Configuración. En el proceso, `firmaParaFecha(config, q(3)).modo` es `'autorizado'` y `firmaParaFecha(config, q(9)).modo` es `'sin_autorizado'`;
       - **«solo las vacaciones dejan persona a cargo»:** el titular carga una médica con `autorizado_id` y recibe 400 en `autorizado_id` con `autorizadoSoloVacaciones`, sin ninguna fila nueva; la misma carga sin el campo pasa a Configuración con `autorizado_id` NULL. Lo mismo con una franquicia de 7 h;
       - `POST /licencias/calculo` del titular con `desde` = hoy trae `AVISO_NOTAS_DE_HOY` y `vispera`; el de una médica trae `AVISO_SIN_PERSONA_A_CARGO` y `puede_autorizar: false`, y el de unas vacaciones, `puede_autorizar: true` sin ese aviso;
-      - el del superadmin, `AVISO_DEL_PASO_SUPERADMIN`; el del lector, `pasa: false`.
+      - el del superadmin, `AVISO_DEL_PASO_SUPERADMIN`; el del lector, `pasa: false`;
+      - **«el tipo de unas vacaciones con persona a cargo»:** vacaciones del titular desde un lunes, con persona a cargo.
+        - Con hoy el jueves anterior (2 días hábiles antes), pasarlas a médica da 200, y la de Configuración queda con `autorizado_id` NULL.
+        - Con hoy el viernes (la víspera), da 400 en `tipo` con `tipoFijo` y no cambia nada.
+        - Con un lunes de Carnaval en el medio, el límite se cuenta con los 9 fijos.
+        - Las vacaciones de otra persona, o sin persona a cargo, cambian de tipo cualquier día.
     - **«la persona autorizada que se queda sin días»:** con la licencia del titular de `q(0)` a `q(4)` autorizando a adminA, una de adminA de `q(0)` a `q(4)` da 409 en `fechas` con `textoAutorizadaSinDias` y no deja ninguna fila en ninguna de las dos tablas; una de `q(1)` a `q(2)` se guarda y pasa.
     - **«otro rechazo se guarda»:** una médica extraordinaria de 366 días corridos se guarda con `sin_pasar` «La licencia puede durar como máximo 365 días».
     - **«el doble envío» (Review Focus 3):** dos `POST` simultáneos iguales dejan una sola fila en cada tabla.
@@ -987,8 +998,4 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
    - «Cambiar el tipo, la nota o «Mostrar» no toca Configuración» (así no se borra `nota_autorizacion_id` ni sale otra nota de autorización);
    - «solo la licencia ordinaria deja persona a cargo» (la corrección del usuario).
 
-   **Propuesta:** como la médica no puede tener persona a cargo, la corrección le saca la persona autorizada a la de Configuración (`cambiarLicencia` con `autorizadoPedido = null`). Eso pone `nota_autorizacion_id` en NULL y, durante la licencia, ya no se generan notas, como en cualquier licencia sin persona a cargo. El formulario lo avisa antes de guardar con `AVISO_SIN_PERSONA_A_CARGO`.
-
-   **La otra opción:** dejarla como está en Configuración, con su persona a cargo, y avisar en la fila que la persona a cargo sigue.
-
-   Hasta la respuesta, la Task 10 no implementa este caso.
+   **Respuesta del usuario (26/10/2026):** el firmante puede cambiar el tipo hasta 2 días hábiles antes de que empiecen las vacaciones, porque el día hábil anterior sale la Nota Digital que adelanta los datasets e informa quién queda a cargo. Hasta ese día, el cambio le saca la persona a cargo (la propuesta); después, el tipo queda fijo. Está en la Task 10.

@@ -270,6 +270,7 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 - Si terminó, las fechas quedan fijas.
 - El tipo, la nota y «Mostrar» se pueden cambiar siempre, sin tocar Configuración.
 - **Si un cambio de tipo o de horas hace que deje de ser de día entero** (una franquicia de 7 horas que pasa a 3), la de Configuración se anula si todavía se puede. Si no se puede, queda, y el panel lo dice.
+- **Las vacaciones del firmante con persona a cargo** cambian de tipo solo hasta 2 días hábiles antes de empezar, inclusive (respuesta del usuario). Esos días se cuentan con el calendario de las Notas Digitales: el día hábil anterior sale la nota que adelanta los datasets e informa quién queda a cargo. Hasta ese día, pasarlas a otro tipo les saca la persona a cargo en Configuración. Después, el tipo queda fijo: «Ya sale la nota que informa quién queda a cargo: el tipo no se puede cambiar.».
 
 **Si administración la cambia en Configuración.** Configuración muestra la insignia «Cargada desde Mi espacio» y la deja editar y anular como siempre:
 - si la anula, la de Mi espacio queda como registro personal, sin unir;
