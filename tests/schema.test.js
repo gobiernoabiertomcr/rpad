@@ -60,6 +60,10 @@ const indicesDgmit = (conexion, base) => indicesDe(conexion, base, TABLAS_DGMIT)
 // importados
 const TABLAS_METRICAS = ['metricas_fotos', 'actualizaciones_recibido'];
 
+// Las dos tablas de los feriados (spec 2026-10-26-feriados, 1): los que no son los 9 fijos y los años en que uno que se
+// repite no rige
+const TABLAS_FERIADOS = ['feriados', 'feriados_no_rige'];
+
 const contar = async (tabla) => {
   const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_TEMPORAL}\`.\`${tabla}\``);
   return total;
@@ -304,6 +308,41 @@ describe('database/schema.sql', () => {
     ]);
   });
 
+  it('feriados: los que no son los 9 fijos y los años en que uno que se repite no rige, con sus columnas, claves y FK (spec 2026-10-26-feriados, 1)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_FERIADOS.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      'feriados.id int(11) null=NO default=null key=PRI',
+      // En uno que se repite, la fecha de su primer año
+      'feriados.fecha date null=NO default=null key=MUL',
+      'feriados.nombre varchar(150) null=NO default=null key=',
+      "feriados.tipo enum('nacional','provincial','municipal','no_laborable') null=NO default=null key=",
+      // La fecha original de un trasladable
+      'feriados.trasladado_de date null=YES default=NULL key=',
+      'feriados.se_repite tinyint(1) null=NO default=0 key=',
+      // En uno que se repite, el último año en que rige (NULL: sigue)
+      'feriados.hasta_anio smallint(6) null=YES default=NULL key=',
+      'feriados.activo tinyint(1) null=NO default=1 key=',
+      'feriados.creado_por int(11) null=YES default=NULL key=MUL',
+      'feriados.created_at timestamp null=YES default=current_timestamp() key=',
+      'feriados.updated_at timestamp null=YES default=current_timestamp() key=',
+      // Un año por feriado: la clave es compuesta
+      'feriados_no_rige.feriado_id int(11) null=NO default=null key=PRI',
+      'feriados_no_rige.anio smallint(6) null=NO default=null key=PRI'
+    ]);
+    // Borrar el feriado borra sus años que no rigen; borrar a la persona deja el feriado sin autor
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS), [
+      'feriados.creado_por -> usuarios.id (fk_feriados_creado_por) borrado=SET NULL',
+      'feriados_no_rige.feriado_id -> feriados.id (fk_feriados_no_rige_feriado) borrado=CASCADE'
+    ]);
+    // Sin índice único en la fecha: el mismo día puede tener dos feriados
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS), [
+      'feriados.fk_feriados_creado_por (creado_por) repetible=1',
+      'feriados.idx_feriados_fecha (fecha) repetible=1',
+      'feriados.PRIMARY (id) repetible=0',
+      'feriados_no_rige.PRIMARY (feriado_id,anio) repetible=0'
+    ]);
+  });
+
   // Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8): el ámbito del área decide qué nota de la DGMIT le toca
   it('areas tiene ambito (municipal o externo, municipal por defecto) después de articulo_superior', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('areas.'));
@@ -324,7 +363,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido']) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -1299,5 +1338,101 @@ describe('migración del generador de notas', () => {
     assert.deepEqual(await columnas(root, BASE_GENERADOR), original);
     assert.deepEqual(await columnas(root, BASE_GENERADOR), await columnas(root, BASE_TEMPORAL));
     assert.deepEqual(await ambitos(), { 2: 'externo', 6: 'externo', 18: 'municipal', 25: 'municipal', 27: 'externo', 35: 'externo' });
+  });
+});
+
+// Feriados (spec 2026-10-26-feriados, 1): los feriados que no son los 9 fijos y los años en que uno que se repite no rige.
+// La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-feriados.sql', () => {
+  const BASE_FERIADOS = 'rpad_schema_feriados_test';
+  const MIGRACION = 'migracion-feriados.sql';
+  const ROLLBACK = 'rollback-feriados.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_FERIADOS.some(tabla => c.startsWith(`${tabla}.`));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_FERIADOS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_FERIADOS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_FERIADOS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`
+        DROP TABLE feriados_no_rige;
+        DROP TABLE feriados;`);
+    }
+  };
+  // Un feriado que se repite, cargado por un usuario, y un año en que no rige: lo que la vuelta atrás tiene que poder
+  // borrar con las FK puestas
+  const cargarDatos = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO \`${BASE_FERIADOS}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_admin', 'x', 't_admin', 't_admin@rpad.test', 'admin')`);
+    const [{ insertId: feriado }] = await root.query(
+      `INSERT INTO \`${BASE_FERIADOS}\`.feriados (fecha, nombre, tipo, se_repite, creado_por) VALUES ('2026-12-13', 'Feriado de prueba', 'municipal', 1, ?)`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_FERIADOS}\`.feriados_no_rige (feriado_id, anio) VALUES (?, 2027)`, [feriado]);
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_FERIADOS}\`.\`${tabla}\``);
+    return total;
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_FERIADOS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir y cómo se deshace; el rollback, que se pierden los feriados', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-26-feriados-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-feriados\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-feriados\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /se pierden/i);
+    // Lo que se pierde, dicho con su nombre (no alcanza con el del archivo)
+    assert.match(cabecera(ROLLBACK), /los feriados cargados/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback borra primero los años que no rigen y después los feriados: así no choca con la FK', () => {
+    const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
+    assert.deepEqual(borrados, ['feriados_no_rige', 'feriados']);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_FERIADOS);
+    assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_FERIADOS), await columnas(root, BASE_TEMPORAL));
+    // Y también las claves foráneas y los índices, que las columnas no muestran del todo
+    assert.deepEqual(await clavesAjenasDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+    assert.deepEqual(await indicesDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+  });
+
+  it('el rollback se puede repetir, deja la estructura de main sin borrar al usuario que cargó el feriado, y la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las dos tablas
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_FERIADOS), deMain);
+    // El usuario que había cargado el feriado sigue ahí
+    assert.equal(await contarEn('usuarios'), 1);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_FERIADOS), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+    assert.deepEqual(await indicesDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
   });
 });
