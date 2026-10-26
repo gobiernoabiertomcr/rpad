@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración, Feriados - RPAD (maqueta)</title>
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="maqueta.css">
+</head>
+<!-- MAQUETA de la pestaña Feriados de Configuración (26/10/2026). Las fechas son de ejemplo: antes de precargar se verifican
+     contra el calendario oficial. -->
+<body data-pagina="feriados" data-persona="permanente">
+<div class="app-container">
+    <header id="m-header"></header>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Menú"></aside>
+
+    <main class="main-content">
+        <div class="me-pagina">
+            <div class="page-header">
+                <h1 class="page-title">
+                    <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Configuración
+                </h1>
+                <a class="sg-btn sg-btn-tinta" href="#nuevo"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Nuevo feriado</a>
+            </div>
+
+            <div class="me-pestanas" role="tablist" aria-label="Configuración">
+                <button type="button" class="me-pestana" role="tab" aria-selected="false" tabindex="-1">Usuarios</button>
+                <button type="button" class="me-pestana" role="tab" aria-selected="false" tabindex="-1">Licencias</button>
+                <button type="button" class="me-pestana" role="tab" aria-selected="false" tabindex="-1">Áreas</button>
+                <button type="button" class="me-pestana" role="tab" aria-selected="true">Feriados</button>
+            </div>
+
+            <div class="me-aviso me-aviso-azul">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                <span>Por ahora, estos feriados cuentan solo para <b>Mi espacio</b>: los días hábiles de las licencias y los francos. Las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos. Se van a sumar después, de a una.</span>
+            </div>
+
+            <div class="me-tarjeta">
+                <div class="me-cabeza">
+                    <h2>Feriados y días no laborables de 2026</h2>
+                    <span class="me-segmento" role="group" aria-label="Año"><button type="button" aria-pressed="true">2026</button><button type="button" aria-pressed="false">2027</button></span>
+                </div>
+                <div class="sg-chips" data-varios>
+                    <button type="button" class="sg-chip" aria-pressed="true">Todos <b>22</b></button>
+                    <button type="button" class="sg-chip" aria-pressed="false">Nacionales móviles <b>8</b></button>
+                    <button type="button" class="sg-chip" aria-pressed="false">De Chubut <b>1</b></button>
+                    <button type="button" class="sg-chip" aria-pressed="false">De Comodoro <b>2</b></button>
+                    <button type="button" class="sg-chip" aria-pressed="false">No laborables <b>2</b></button>
+                    <button type="button" class="sg-chip" aria-pressed="false">Fijos del sistema <b>9</b></button>
+                </div>
+                <div class="me-tabla-marco">
+                    <table class="me-tabla">
+                        <thead><tr><th>Fecha</th><th>Nombre</th><th>Tipo</th><th>Se repite</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+                        <tbody>
+                            <tr class="tenue"><td class="num">Jue 01/01</td><td>Año Nuevo</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr><td class="num">Lun 16/02</td><td>Carnaval</td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Mar 17/02</td><td>Carnaval</td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Lun 23/02</td><td>Aniversario de Comodoro Rivadavia</td><td><span class="me-insignia violeta">De Comodoro</span></td><td>Todos los años</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Lun 23/03</td><td>Día no laborable con fines turísticos</td><td><span class="me-insignia gris">No laborable</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr class="tenue"><td class="num">Mar 24/03</td><td>Día Nacional de la Memoria por la Verdad y la Justicia</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr class="tenue"><td class="num">Jue 02/04</td><td>Día del Veterano y de los Caídos en Malvinas</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr><td class="num">Jue 02/04</td><td>Jueves Santo<small>Cae el mismo día que un feriado fijo: no cambia nada</small></td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Vie 03/04</td><td>Viernes Santo</td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr class="tenue"><td class="num">Vie 01/05</td><td>Día del Trabajador</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr class="tenue"><td class="num">Lun 25/05</td><td>Día de la Revolución de Mayo</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr><td class="num">Lun 15/06</td><td>Paso a la Inmortalidad del General Güemes<small>Trasladado del miércoles 17/06</small></td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr class="tenue"><td class="num">Sáb 20/06</td><td>Paso a la Inmortalidad del General Belgrano</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr class="tenue"><td class="num">Jue 09/07</td><td>Día de la Independencia</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr><td class="num">Vie 10/07</td><td>Día no laborable con fines turísticos</td><td><span class="me-insignia gris">No laborable</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Mar 28/07</td><td>Aniversario del desembarco galés</td><td><span class="me-insignia verde">De Chubut</span></td><td>Todos los años</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Lun 17/08</td><td>Paso a la Inmortalidad del General San Martín</td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Lun 12/10</td><td>Día del Respeto a la Diversidad Cultural</td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Dom 08/11</td><td>Día del Empleado Municipal<small>Cae domingo: no cambia ningún día hábil</small></td><td><span class="me-insignia violeta">De Comodoro</span></td><td>Todos los años</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr><td class="num">Lun 23/11</td><td>Día de la Soberanía Nacional<small>Trasladado del viernes 20/11</small></td><td><span class="me-insignia azul">Nacional móvil</span></td><td>—</td><td><button class="sg-link" type="button">Editar</button></td></tr>
+                            <tr class="tenue"><td class="num">Mar 08/12</td><td>Inmaculada Concepción de María</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                            <tr class="tenue"><td class="num">Vie 25/12</td><td>Navidad</td><td><span class="me-insignia gris">Fijo del sistema</span></td><td>Todos los años</td><td></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="me-nota">Los 9 fijos están en el sistema y no se editan. Las fechas de esta maqueta son de ejemplo: las que se precarguen para 2026 y 2027 se verifican antes contra el calendario oficial.</p>
+            </div>
+
+            <div class="me-dialogos" style="margin-top:24px" id="nuevo">
+                <div>
+                    <p class="me-maqueta-titulo">«Nuevo feriado»</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-feriado">
+                        <div class="me-dialogo-cabeza"><h2 id="t-feriado">Nuevo feriado</h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <div class="me-fila-campos"><div class="me-campo"><label>Fecha</label><input type="text" value="07/12/2026"></div><div class="me-campo"><label>Nombre</label><input type="text" value="Día no laborable con fines turísticos"></div></div>
+                            <div class="me-campo">
+                                <span class="me-rotulo">Tipo</span>
+                                <div class="me-opciones" data-segmento="tipo-feriado">
+                                    <button type="button" class="me-opcion" data-valor="nacional"><b>Nacional móvil</b><small>Carnaval, Semana Santa, trasladables</small></button>
+                                    <button type="button" class="me-opcion" data-valor="chubut"><b>De Chubut</b><small>Feriado provincial</small></button>
+                                    <button type="button" class="me-opcion" data-valor="comodoro"><b>De Comodoro</b><small>Feriado o asueto municipal</small></button>
+                                    <button type="button" class="me-opcion" data-valor="nolaborable" aria-pressed="true"><b>No laborable</b><small>Puentes y asuetos puntuales</small></button>
+                                </div>
+                            </div>
+                            <label class="me-check"><input type="checkbox"><span>Se repite todos los años, el mismo día<small>Para los de fecha fija, como el aniversario de la ciudad. Los móviles se cargan año por año.</small></span></label>
+                            <div class="me-calculo">El lunes 07/12/2026 deja de ser hábil. En Mi espacio, <b>2 licencias cargadas</b> lo incluyen: sus días hábiles se recalculan y el saldo de esas personas sube 1 día.</div>
+                        </div>
+                        <div class="me-dialogo-pie"><span class="me-pie-texto">Siempre el día entero</span><button class="sg-btn sg-btn-borde" type="button">Cancelar</button><button class="sg-btn sg-btn-tinta" type="button">Guardar</button></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer id="m-footer"></footer>
+    </main>
+</div>
+<script src="maqueta.js"></script>
+</body>
+</html>

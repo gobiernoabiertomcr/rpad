@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi espacio, opciones del Resumen - RPAD (maqueta)</title>
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="maqueta.css">
+    <link rel="stylesheet" href="resumen.css">
+    <link rel="stylesheet" href="opciones.css">
+</head>
+<!-- MAQUETA de Mi espacio (26/10/2026): cuatro formas de dibujar «Lo que te queda» en la pestaña Resumen. «Vence pronto» y
+     «Hoy y mañana» son iguales en todas. Datos inventados. -->
+<body data-pagina="opciones" data-persona="permanente">
+<div class="app-container">
+    <header id="m-header"></header>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Menú"></aside>
+
+    <main class="main-content">
+        <div class="me-pagina">
+            <div class="page-header">
+                <h1 class="page-title">
+                    <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                    Mi espacio
+                </h1>
+                <div class="me-acciones">
+                    <a class="sg-btn sg-btn-borde" href="2-formularios.html#evento">Nuevo evento</a>
+                    <a class="sg-btn sg-btn-borde" href="2-formularios.html#horas">Cargar horas extras</a>
+                    <a class="sg-btn sg-btn-tinta" href="2-formularios.html#licencia"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</a>
+                </div>
+            </div>
+
+            <!-- Solo para decidir: no es parte del diseño -->
+            <div class="me-aviso me-aviso-gris">
+                <span><b>Para decidir:</b> ¿cómo se dibuja lo que te queda?</span>
+                <span class="me-segmento" data-segmento="opcion" role="group" aria-label="Opción del Resumen">
+                    <button type="button" data-valor="niveles" aria-pressed="true">1 · Niveles (la elegida)</button>
+                    <button type="button" data-valor="mosaico">2 · Mosaico</button>
+                    <button type="button" data-valor="anio">3 · Tu año</button>
+                    <button type="button" data-valor="fichas">Fichas (la anterior)</button>
+                </span>
+            </div>
+
+            <div class="me-pestanas" role="tablist" aria-label="Mi espacio">
+                <button type="button" class="me-pestana" role="tab" aria-selected="true">Resumen<span class="me-marca" title="Algo vence este mes"></span></button>
+                <a class="me-pestana" role="tab" aria-selected="false" tabindex="-1" href="1-mi-espacio.html#licencias">Licencias</a>
+                <a class="me-pestana" role="tab" aria-selected="false" tabindex="-1" href="1-mi-espacio.html#horas">Horas extras</a>
+                <a class="me-pestana" role="tab" aria-selected="false" tabindex="-1" href="1-mi-espacio.html#agenda">Agenda</a>
+            </div>
+            <p class="me-contexto solo-permanente"><span><b>Planta permanente</b></span><span>Año 2026</span></p>
+            <p class="me-contexto solo-contrato"><span><b>Contrato</b></span><span>Año 2026</span></p>
+
+            <div data-panel="opcion:niveles" data-opcion="niveles"></div>
+            <div data-panel="opcion:mosaico" data-opcion="mosaico" hidden></div>
+            <div data-panel="opcion:anio" data-opcion="anio" hidden></div>
+            <div data-panel="opcion:fichas" hidden><div data-resumen></div></div>
+        </div>
+
+        <footer id="m-footer"></footer>
+    </main>
+</div>
+<script src="maqueta.js"></script>
+<script src="resumen.js"></script>
+<script src="opciones.js"></script>
+</body>
+</html>

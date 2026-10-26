@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi espacio - RPAD (maqueta)</title>
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="maqueta.css">
+    <link rel="stylesheet" href="resumen.css">
+    <link rel="stylesheet" href="opciones.css">
+</head>
+<!-- MAQUETA de Mi espacio (26/10/2026). Datos inventados. «Ver como» (en la barra de abajo) cambia entre una persona de planta
+     permanente (administradora: sus licencias pasan a Configuración) y una de contrato (lectora). -->
+<body data-pagina="mi-espacio" data-persona="permanente">
+<div class="app-container">
+    <header id="m-header"></header>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Menú"></aside>
+
+    <main class="main-content">
+        <div class="me-pagina">
+            <div class="page-header">
+                <h1 class="page-title">
+                    <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                    Mi espacio
+                </h1>
+                <div class="me-acciones">
+                    <a class="sg-btn sg-btn-borde" href="2-formularios.html#evento">Nuevo evento</a>
+                    <a class="sg-btn sg-btn-borde" href="2-formularios.html#horas">Cargar horas extras</a>
+                    <a class="sg-btn sg-btn-tinta" href="2-formularios.html#licencia"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</a>
+                </div>
+            </div>
+            <p class="me-bajada">Tus licencias, tus horas extras y tu agenda. Lo que cargás acá lo ves solo vos, salvo los eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>
+
+            <!-- =========================== A · PESTAÑAS =========================== -->
+            <div>
+                <div class="me-pestanas" role="tablist" aria-label="Mi espacio" data-pestanas>
+                    <button type="button" class="me-pestana" role="tab" id="tab-resumen" aria-controls="panel-resumen" data-hash="resumen">Resumen<span class="me-marca" title="Algo vence este mes"></span></button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-licencias" aria-controls="panel-licencias" data-hash="licencias">Licencias</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-horas" aria-controls="panel-horas" data-hash="horas">Horas extras</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-agenda" aria-controls="panel-agenda" data-hash="agenda">Agenda</button>
+                </div>
+
+                <!-- ---------- Resumen ---------- -->
+                <section id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen">
+                    <p class="me-contexto solo-permanente"><span><b>Planta permanente</b></span><span>Año 2026</span></p>
+                    <p class="me-contexto solo-contrato"><span><b>Contrato</b></span><span>Año 2026</span></p>
+                    <div data-opcion="niveles"></div>
+                </section>
+
+                <!-- ---------- Licencias ---------- -->
+                <section id="panel-licencias" role="tabpanel" aria-labelledby="tab-licencias" hidden>
+                    <div class="me-tarjeta">
+                        <div class="me-cabeza">
+                            <h2>Mis licencias de 2026</h2>
+                            <span class="me-acciones"><span class="me-segmento" role="group" aria-label="Año"><button type="button" aria-pressed="false">2025</button><button type="button" aria-pressed="true">2026</button></span><a class="sg-btn sg-btn-tinta sg-btn-chico" href="2-formularios.html#licencia">Cargar licencia</a></span>
+                        </div>
+                        <div class="sg-chips solo-permanente" data-varios>
+                            <button type="button" class="sg-chip" aria-pressed="true">Todas <b>6</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Vacaciones <b>1</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Franquicias <b>2</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Estudios <b>1</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Atención médica <b>1</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Francos <b>1</b></button>
+                        </div>
+                        <ul class="me-lista solo-permanente">
+                            <li class="me-fila"><span class="me-fila-fecha">03/11 al 09/11/2026<small>7 días corridos, 5 hábiles</small></span><span class="me-fila-cuerpo"><span class="me-insignia azul">Vacaciones</span><span class="me-insignia borde">Próxima</span><span class="me-detalle">De la licencia 2024. También en Configuración → Licencias. Tus compañeros ven «Laura Gómez no está».</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Vie 23/10/2026<small>1 día</small></span><span class="me-fila-cuerpo"><span class="me-insignia verde">Franco compensatorio</span><span class="me-detalle">Por las horas extras de agosto</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Jue 15/10/2026<small>2 horas</small></span><span class="me-fila-cuerpo"><span class="me-insignia violeta">Franquicia</span><span class="me-detalle">No es el día entero: no pasa a Configuración</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">01/10 al 02/10/2026<small>2 días hábiles</small></span><span class="me-fila-cuerpo"><span class="me-insignia ambar">Estudios</span><span class="me-detalle">Un examen</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">21/09 al 23/09/2026<small>3 días hábiles</small></span><span class="me-fila-cuerpo"><span class="me-insignia rojo">Atención médica</span><span class="me-detalle">El tipo lo ves solo vos</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Lun 14/09/2026<small>7 horas, el día entero</small></span><span class="me-fila-cuerpo"><span class="me-insignia violeta">Franquicia</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila tenue"><span class="me-fila-fecha">Saldo inicial 2026<small>Cargado el 26/10/2026</small></span><span class="me-fila-cuerpo">Antes de empezar con Mi espacio: de vacaciones, quedaban 8 días de la licencia 2024 y 20 de la 2025. En 2026 ya habías usado 8 horas de franquicia, 4 días de estudios y 2 de atención del grupo familiar.</span><a class="sg-link" href="2-formularios.html#anio">Cambiar</a></li>
+                        </ul>
+
+                        <div class="sg-chips solo-contrato" data-varios>
+                            <button type="button" class="sg-chip" aria-pressed="true">Todas <b>4</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Estudios <b>1</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Grupo familiar <b>1</b></button>
+                            <button type="button" class="sg-chip" aria-pressed="false">Horas a favor <b>2</b></button>
+                        </div>
+                        <ul class="me-lista solo-contrato">
+                            <li class="me-fila"><span class="me-fila-fecha">Vie 30/10/2026<small>1 día hábil</small></span><span class="me-fila-cuerpo"><span class="me-insignia azul">Atención del grupo familiar</span><span class="me-insignia borde">Próxima</span><span class="me-detalle">Tus compañeros ven «Sofía Paz no está».</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Mar 20/10/2026<small>2 horas</small></span><span class="me-fila-cuerpo"><span class="me-insignia verde">Horas a favor</span><span class="me-detalle">De las de octubre</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">13/10 al 15/10/2026<small>3 días hábiles</small></span><span class="me-fila-cuerpo"><span class="me-insignia ambar">Estudios</span><span class="me-detalle">Un examen</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Vie 09/10/2026<small>7 horas, el día entero</small></span><span class="me-fila-cuerpo"><span class="me-insignia verde">Horas a favor</span><span class="me-detalle">De las de octubre</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila tenue"><span class="me-fila-fecha">Saldo inicial 2026<small>Cargado el 26/10/2026</small></span><span class="me-fila-cuerpo">Antes de empezar con Mi espacio: de vacaciones, quedaban 5 días de la licencia 2025. En 2026 ya habías usado 3 días de atención del grupo familiar.</span><a class="sg-link" href="2-formularios.html#anio">Cambiar</a></li>
+                        </ul>
+                        <p class="me-nota">Los días se cuentan hábiles: sin sábados, domingos ni feriados. Una licencia que ya pasó se puede cargar igual, para que el saldo dé bien.</p>
+                    </div>
+                </section>
+
+                <!-- ---------- Horas extras ---------- -->
+                <section id="panel-horas" role="tabpanel" aria-labelledby="tab-horas" hidden>
+                    <div class="me-tarjeta solo-permanente">
+                        <div class="me-cabeza"><h2>Horas extras al 100% de 2026</h2><a class="sg-btn sg-btn-tinta sg-btn-chico" href="2-formularios.html#horas">Cargar horas extras</a></div>
+                        <div class="me-tabla-marco">
+                            <table class="me-tabla">
+                                <thead><tr><th>Mes trabajado</th><th>Horas</th><th>Francos</th><th>Para usar en</th><th>Situación</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Octubre 2026</td><td class="num">10,5 h<small>3 días</small></td><td class="num">1</td><td>Diciembre 2026</td><td><span class="me-insignia gris">El mes sigue sumando</span></td></tr>
+                                    <tr><td>Septiembre 2026</td><td class="num">7,5 h<small>2 días</small></td><td class="num">1</td><td>Noviembre 2026</td><td><span class="me-insignia azul">Disponible desde el 02/11</span></td></tr>
+                                    <tr><td>Agosto 2026</td><td class="num">14 h<small>4 días</small></td><td class="num">2</td><td>Octubre 2026</td><td><span class="me-insignia verde">1 usado el 23/10</span> <span class="me-insignia ambar">1 para usar hasta el 30/10</span></td></tr>
+                                    <tr class="tenue"><td>Julio 2026</td><td class="num">5 h<small>2 días</small></td><td class="num">—</td><td>—</td><td>No llega a 7 horas: no genera franco</td></tr>
+                                    <tr class="tenue"><td>Junio 2026</td><td class="num">7 h<small>2 días</small></td><td class="num">1</td><td>Agosto 2026</td><td>No utilizado previamente</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="me-nota">Solo las horas extras al 100%. Cada 7 horas de un mes dan un franco compensatorio, que se usa dos meses después, en ese mes.</p>
+                    </div>
+                    <div class="me-tarjeta solo-permanente">
+                        <div class="me-cabeza"><h3>Octubre 2026, día por día</h3><span>10,5 horas</span></div>
+                        <ul class="me-lista">
+                            <li class="me-fila"><span class="me-fila-fecha">Jue 22/10</span><span class="me-fila-cuerpo">19:00 a 22:00<span class="me-detalle">3 horas</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Mié 14/10</span><span class="me-fila-cuerpo">17:00 a 21:00<span class="me-detalle">4 horas</span></span><button class="sg-link" type="button">Editar</button></li>
+                            <li class="me-fila"><span class="me-fila-fecha">Mar 06/10</span><span class="me-fila-cuerpo">18:00 a 21:30<span class="me-detalle">3,5 horas</span></span><button class="sg-link" type="button">Editar</button></li>
+                        </ul>
+                    </div>
+
+                    <div class="me-tarjeta solo-contrato">
+                        <div class="me-cabeza"><h2>Horas extras y horas a favor de 2026</h2><a class="sg-btn sg-btn-tinta sg-btn-chico" href="2-formularios.html#horas">Cargar horas extras</a></div>
+                        <div class="me-tabla-marco">
+                            <table class="me-tabla">
+                                <thead><tr><th>Mes trabajado</th><th>Horas extras</th><th>A favor en</th><th>Usadas</th><th>Situación</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Octubre 2026</td><td class="num">4 h<small>hasta hoy</small></td><td>Noviembre 2026</td><td class="num">—</td><td><span class="me-insignia gris">El mes sigue sumando</span></td></tr>
+                                    <tr><td>Septiembre 2026</td><td class="num">10,5 h</td><td>Octubre 2026</td><td class="num">9 h<small>09/10: 7 h · 20/10: 2 h</small></td><td><span class="me-insignia ambar">1,5 h para usar hasta el 30/10</span></td></tr>
+                                    <tr class="tenue"><td>Agosto 2026</td><td class="num">3 h</td><td>Septiembre 2026</td><td class="num">1,5 h</td><td>1,5 h no utilizadas previamente</td></tr>
+                                    <tr><td>Julio 2026</td><td class="num">2 h</td><td>Agosto 2026</td><td class="num">2 h</td><td><span class="me-insignia verde">Todas usadas</span></td></tr>
+                                    <tr class="tenue"><td>Mayo 2026</td><td class="num">3 h</td><td>Junio 2026</td><td class="num">—</td><td>3 h no utilizadas previamente</td></tr>
+                                    <tr class="tenue"><td>Enero 2026</td><td class="num">2 h</td><td>Febrero 2026</td><td class="num">—</td><td>2 h no utilizadas previamente</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="me-nota">Cada hora extra de un mes es una hora menos de trabajo el mes siguiente, de a media hora. 7 horas son el día entero.</p>
+                    </div>
+                    <div class="me-tarjeta solo-contrato">
+                        <div class="me-cabeza"><h3>Horas no utilizadas previamente</h3><span>6,5 horas en 2026</span></div>
+                        <ul class="me-lista">
+                            <li class="me-fila" style="grid-template-columns: 190px minmax(0,1fr)"><span class="me-fila-fecha">Septiembre 2026</span><span class="me-fila-cuerpo">1,5 horas<span class="me-detalle">de las extras de agosto</span></span></li>
+                            <li class="me-fila" style="grid-template-columns: 190px minmax(0,1fr)"><span class="me-fila-fecha">Junio 2026</span><span class="me-fila-cuerpo">3 horas<span class="me-detalle">de las extras de mayo</span></span></li>
+                            <li class="me-fila" style="grid-template-columns: 190px minmax(0,1fr)"><span class="me-fila-fecha">Febrero 2026</span><span class="me-fila-cuerpo">2 horas<span class="me-detalle">de las extras de enero</span></span></li>
+                        </ul>
+                        <p class="me-nota">Quedan a la vista aunque su mes ya pasó. Si te autorizan a tomarlas, registrá el uso y se descuentan de acá. Vuelven a cero el 1/1.</p>
+                        <p style="margin:12px 0 0"><a class="sg-btn sg-btn-borde sg-btn-chico" href="2-formularios.html#autorizadas">Registrar un uso autorizado</a></p>
+                    </div>
+                </section>
+
+                <!-- ---------- Agenda ---------- -->
+                <section id="panel-agenda" role="tabpanel" aria-labelledby="tab-agenda" hidden>
+                    <div class="me-agenda">
+                        <div class="me-tarjeta" data-agenda>
+                            <div class="me-mes-cabeza">
+                                <button class="me-flecha" type="button" aria-label="Mes anterior"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                                <h3 data-titulo-mes></h3>
+                                <button class="me-flecha" type="button" aria-label="Mes siguiente"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                                <button class="sg-btn sg-btn-borde sg-btn-chico" type="button">Hoy</button>
+                                <a class="sg-btn sg-btn-tinta sg-btn-chico" style="margin-left:auto" href="2-formularios.html#evento">Nuevo evento</a>
+                            </div>
+                            <div class="me-mes" data-mes="2026-10"></div>
+                            <div class="me-leyenda">
+                                <span><i style="background:var(--sg-azul-fondo);border-color:var(--sg-tinta)"></i>Solo vos</span>
+                                <span><i style="background:var(--sg-violeta-fondo);border-color:var(--sg-violeta)"></i>Compartidos</span>
+                                <span><i style="background:var(--sg-verde-fondo);border-color:var(--sg-verde)"></i>Tus licencias y francos</span>
+                                <span><i style="background:var(--sg-sol);border-color:#C98A00"></i>Feriados</span>
+                                <span><i style="background:var(--sg-gris-fondo);border-color:var(--sg-gris)"></i>Compañeros que no están</span>
+                            </div>
+                        </div>
+                        <div class="me-tarjeta">
+                            <div class="me-cabeza"><h2>Próximos</h2></div>
+                            <div class="me-proximos">
+                                <h4>Hoy, lunes 26/10</h4>
+                                <div class="me-prox"><span class="me-prox-hora">12:00</span><span class="me-prox-titulo">Llamar a Vialidad por el TMDA</span><span class="me-prox-detalle"><span class="me-insignia azul">Solo vos</span>Aviso 2 h antes</span></div>
+                                <div class="me-prox"><span class="me-prox-hora">Todo el día</span><span class="me-prox-titulo">Martín Ríos no está</span><span class="me-prox-detalle">Hasta el viernes 30/10</span></div>
+                                <h4>Mañana, martes 27/10</h4>
+                                <div class="me-prox"><span class="me-prox-hora">10:00</span><span class="me-prox-titulo">Reunión de equipo</span><span class="me-prox-detalle"><span class="me-insignia violeta">Con 4 personas</span>Aviso 2 h antes</span></div>
+                                <h4>Esta semana</h4>
+                                <div class="me-prox"><span class="me-prox-hora">Mié 28</span><span class="me-prox-titulo">15:30 Turno médico</span><span class="me-prox-detalle"><span class="me-insignia azul">Solo vos</span>Aviso 1 día antes</span></div>
+                                <div class="me-prox"><span class="me-prox-hora">Jue 29</span><span class="me-prox-titulo">09:00 Entrega del informe trimestral</span><span class="me-prox-detalle"><span class="me-insignia violeta">De Martín Ríos</span>Aviso 2 h antes</span></div>
+                                <div class="me-prox"><span class="me-prox-hora">Vie 30</span><span class="me-prox-titulo">Sofía Paz no está</span></div>
+                                <h4>Más adelante</h4>
+                                <div class="me-prox"><span class="me-prox-hora">Mar 03/11</span><span class="me-prox-titulo">Tus vacaciones, hasta el 09/11</span></div>
+                                <div class="me-prox"><span class="me-prox-hora">Lun 23/11</span><span class="me-prox-titulo">Feriado: Día de la Soberanía Nacional</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="me-nota">En el teléfono, «Próximos» va arriba y la grilla del mes queda como puntos de colores por día.</p>
+                </section>
+            </div>
+        </div>
+
+        <footer id="m-footer"></footer>
+    </main>
+</div>
+<script src="maqueta.js"></script>
+<script src="resumen.js"></script>
+<script src="opciones.js"></script>
+</body>
+</html>
