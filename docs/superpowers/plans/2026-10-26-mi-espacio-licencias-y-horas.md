@@ -153,6 +153,7 @@
 
 - [ ] **Step 1: Preparar el trabajo.**
   - Comprobar que los feriados están en main (Global Constraints). Si no, parar.
+  - **Leer el main nuevo** (pedido del usuario): `git log` y `git diff` de lo que entró desde que se escribió este plan, la entrega de feriados y cualquier otra. Ajustar este plan en la rama si algo cambió: los nombres y las firmas de `feriadosReglas.js` y `feriadosDatos.js`, las versiones, los tests, la cantidad de tablas o de páginas. Si un cambio es una decisión del usuario, preguntárselo a la sesión coordinadora, sin decidirlo.
   - El worktree, en la rama `feat/mi-espacio`, cortada de `main`. Si este plan no está en main, mergear `docs/mi-espacio-pre-plan` en la rama.
   - Junction de `node_modules` a `C:\git\rpad\node_modules`.
   - La base `rpad_rama_mi_espacio`: copia de `datospublicos_mcr_rpad`, que ya tiene los feriados (`DROP`, `CREATE`, volcado y `GRANT` a `rpad`, como en las entregas anteriores). En el `.env` del worktree, `DB_NAME=rpad_rama_mi_espacio`.
@@ -991,6 +992,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 - [ ] **Step 6: Kit `RPAD-deploy-mi-espacio` en el Escritorio:** los archivos cambiados en su ruta y los dos SQL; `PASOS.txt` (con los feriados ya desplegados: `migracion-mi-espacio.sql`, subir los archivos y Restart; sin cron nuevo); la lista contra `git diff --name-only main...feat/mi-espacio`.
 - [ ] **Step 7: Merge y push** (autorizado por el usuario si todo está bien): traer main con merge (no rebase) y volver a correr la suite; merge en main y push; comprobar que main y origin coinciden; aplicar la migración a `datospublicos_mcr_rpad`, con un respaldo antes.
 - [ ] **Step 8: Limpieza:** quitar el junction de `node_modules` antes de `git worktree remove` y borrar la base `rpad_rama_mi_espacio`.
+- [ ] **Step 9: Avisar a la sesión coordinadora** con el hash del merge, el nombre del kit, la cantidad de tests antes y después, y lo que el usuario tiene que desplegar. Con ese aviso arranca la sesión de la agenda.
 
 ## Preguntas para el usuario
 
