@@ -27,6 +27,7 @@ import {
   updateArea,
   deleteArea
 } from '../controllers/areasController.js';
+import { listarFeriados } from '../controllers/feriadosController.js';
 import {
   ejecutarNotificacionesDiarias,
   pruebaAvisoArea,
@@ -190,6 +191,9 @@ router.get('/datasets/:id/opciones-proxima', authMiddleware, adminOnly, getOpcio
 router.post('/areas', authMiddleware, adminOnly, createArea);
 router.put('/areas/:id', authMiddleware, adminOnly, updateArea);
 router.delete('/areas/:id', authMiddleware, adminOnly, deleteArea);
+
+// Feriados (spec 2026-10-26-feriados, 3): los lee cualquier rol con sesión
+router.get('/feriados', authMiddleware, listarFeriados);
 
 // =====================================================
 // Cambios Pendientes (protegidas - solo admin)
