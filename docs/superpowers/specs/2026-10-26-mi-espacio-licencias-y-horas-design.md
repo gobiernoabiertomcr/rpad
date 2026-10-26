@@ -12,7 +12,26 @@ Fecha: 26/10/2026. **Estado: pre-plan, borrador para revisar.** Salió de la cha
 - **`2-formularios.html`:** los modales.
 - **`4-resumen-opciones.html`:** las cuatro formas que se compararon para el Resumen. Quedó Niveles.
 - **La barra oscura de abajo** es de la maqueta, no de la página. Pasa de una pantalla a otra y cambia entre una persona de planta permanente (administradora) y una de contrato (lectora).
-- **La maqueta no guarda nada.** Donde no coincida con este documento, manda el documento.
+- **La maqueta no guarda nada.** Donde no coincida con este documento, manda el documento. Es anterior a las respuestas de la revisión: Sofía Paz, que es lectora, no debería aparecer en «No están» ni en la lista para invitar, y la franquicia se ve «10 a 12», pero se guardan solo las horas.
+
+**Revisión del 26/10/2026 (segunda sesión).** Cuatro agentes leyeron el código y el usuario contestó otra ronda de preguntas. Lo que cambió:
+- **La persona a cargo del firmante la elige quien carga la licencia,** sin una regla nueva. Cada licencia lleva su propia autorización, por sus fechas. Por ejemplo, la médica que sigue a las vacaciones va sin persona a cargo (sección 6).
+- **Se frena solo el rechazo peligroso de Configuración:** el de la persona autorizada que se quedaría sin días hábiles. Los demás se guardan con el motivo a la vista (sección 6).
+- **El email de vencimiento sale desde la fecha de la regla hasta el vencimiento,** una sola vez (sección 9).
+- **La franquicia guarda solo el día y las horas** (sección 3.2).
+- **«Mostrar a mis compañeros» queda como estaba,** aunque administración ya ve las fechas en Configuración (sección 7).
+- Lo que corrigió el análisis del código:
+  - el texto del aviso del formulario;
+  - lo que pasa cuando una franquicia deja de ser de día entero;
+  - «ya empezó» quiere decir antes de hoy;
+  - el aviso cuando administración cambia la licencia que cubría una «unida»;
+  - el endpoint del firmante;
+  - el paso de las 8:15, que va después de las Notas Digitales;
+  - las tablas también van en `schema.sql`;
+  - lo que llega de la base como texto;
+  - la carcasa y los tests que cambian.
+
+  Todo eso queda en las secciones 5 a 12.
 
 ## Por qué
 
@@ -81,6 +100,7 @@ Todas en un archivo puro, `services/miEspacioReglas.js`: sin pool ni `Date` loca
 - **42 horas por año calendario,** que vuelven a cero el 1/1.
 - **Se toman por hora entera,** de 1 a 7. Con 7 horas se toma el día entero, que cuenta como ausencia de día completo (sección 6).
 - **Solo en un día hábil.**
+- **Se guarda el día y cuántas horas,** sin el horario (decisión del usuario). La agenda la muestra como «Franquicia, 2 h».
 
 ### 3.3 Licencia por estudios, las dos modalidades
 
@@ -192,6 +212,10 @@ Las tablas son nuevas, con el prefijo `mi_espacio_` para no confundirse con la �
 
 **Lo que no se guarda:** los saldos, los francos, las horas a favor y lo no utilizado se calculan siempre con las reglas, a partir de lo cargado, el año, el saldo inicial y los feriados.
 
+**Las tablas van también en `database/schema.sql`.** Los tests crean sus bases solo con `schema.sql`, y `tests/schema.test.js` lo compara con la base local, así que la migración se corre también en el Docker local. Con la entrega 1 hay 31 tablas: esta suma 6 y quedan 37.
+
+**Lo que llega de la base como texto:** el pool no tiene `dateStrings` ni `decimalNumbers`, así que los `DECIMAL` llegan como texto (`"7.5"`) y los `TIME`, como `'10:00:00'`. Las fechas se leen con `DATE_FORMAT`, los números con `Number()` y las horas se cortan a `'HH:MM'`.
+
 **El tipo de licencia:** se guarda porque la persona lo carga para su propio control, pero solo lo devuelve la API a su dueño (antiobjetivo).
 
 ## 6. El paso a Configuración → Licencias
@@ -210,11 +234,21 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 - Al lector y al colaborador no les cambia nada del sistema, porque no auditan ni firman.
 - Solo pasa lo que termina hoy o después, porque `validarFechasNuevas` no acepta licencias terminadas. Lo ya pasado queda solo en Mi espacio.
 
-**Con qué reglas.** Las de siempre, sin copiarlas: `validarFechasNuevas`, `validarEdicion`, `puedeAnularse` y `rechazoDeLaBase` (superposición, persona autorizada y días hábiles libres). Conviene sacar de `licenciasController.js` una función de servicio que usen los dos lados. Cada alta, edición y anulación queda en `usuarios_auditoria`, como hoy.
+**Con qué reglas.** Las de siempre, sin copiarlas: `validarFechasNuevas`, `validarEdicion`, `puedeAnularse` y `rechazoDeLaBase` (superposición, persona autorizada y días hábiles libres).
+- **Una función de servicio para los dos lados.** Se saca de `licenciasController.js`, por ejemplo `cargarLicencia`, `cambiarLicencia` y `anularLicenciaDe`. Reciben la conexión de la transacción y al actor, nunca `req`. No abren ni cierran la transacción, y devuelven el rechazo o la licencia: Mi espacio guarda su fila aunque Configuración rechace (salvo el caso de la persona autorizada, más abajo). `rechazoDeLaBase` y `bloquearUsuarios` hoy son privados: pasan a ese servicio.
+- **La regla de `sinCambios` se conserva.** Cambiar el tipo, la nota o «Mostrar» no toca Configuración. Así no se borra `nota_autorizacion_id` y no sale otra nota de autorización.
+- **Cada alta, edición y anulación** queda en `usuarios_auditoria`, como hoy.
+- **No sale aviso al superadmin:** el actor es la misma persona de la licencia.
+- **Configuración sigue con los 9 feriados fijos** (`esDiaHabil`): los días hábiles libres de la persona autorizada y «vuelve el…» se cuentan como hoy.
 
-**El formulario avisa antes de guardar,** en azul: «Las fechas pasan a Configuración → Licencias: mientras dure, no recibís emails del sistema ni auditás cambios. El tipo no pasa.» Para quien audita, muestra también el aviso de días sin auditor de `GET /usuarios/licencias/sin-auditor`, como en Configuración.
+**El formulario avisa antes de guardar,** en azul: «Las fechas pasan a Configuración → Licencias. Mientras dure, no contás como disponible para auditar y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor. El tipo no pasa.» Al superadmin le suma: «Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.» Para quien audita, muestra también el aviso de días sin auditor de `GET /usuarios/licencias/sin-auditor`, como en Configuración.
 
-**El firmante titular.** Si la persona es el firmante titular de las Notas Digitales, el formulario suma el mismo campo de Configuración, «Autorizo a presentar las notas en mi nombre a:», con sus reglas y el aviso del efecto en las notas. Sin persona autorizada, durante la licencia no se generan notas: el formulario lo dice.
+**El firmante titular.** Si la persona es el firmante titular de las Notas Digitales, el formulario suma el mismo campo de Configuración, «Autorizo a presentar las notas en mi nombre a:», con sus reglas y el aviso del efecto en las notas.
+- **Lo elige la persona al cargar, sin una regla nueva** (decisión del usuario). El campo es opcional y viene vacío. Sin persona autorizada, durante la licencia no se generan notas y lo que vence se reitera a la vuelta: el formulario lo dice.
+- **Cada licencia lleva su propia autorización,** por sus fechas, como la nota que sale. Dos licencias seguidas quedan como dos, cada una con la suya: no se unen ni se estiran.
+- **El caso del usuario:** el firmante se toma licencia del 26/10 al 10/11 y deja a alguien a cargo. El 11/11 vuelve con boleta médica por el 11 y el 12/11, y se reincorpora el 13/11. Para dejar a alguien a cargo hay que haber ido a trabajar, y no fue: la médica va sin persona a cargo, y esos dos días no se generan notas.
+- **Si la licencia empieza hoy o antes,** el formulario avisa: «Las notas de hoy ya salieron a las 8:15 con tu firma.»
+- **Los datos del campo** (las personas que se pueden autorizar y sus licencias) hoy vienen solo en `GET /usuarios/licencias`, que es `adminOnly`. Mi espacio los pide con su propio endpoint, que responde solo al firmante titular (sección 10).
 
 **Creada o unida.** La licencia de Mi espacio guarda cómo quedó en Configuración (`oficial`: 'creada', 'unida' o NULL):
 - **Creada:** Mi espacio creó la de Configuración.
@@ -230,15 +264,20 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 
 **Corregir o borrar una creada.**
 - Si todavía no empezó, se corrige libremente y Configuración la sigue; borrarla anula la de Configuración.
-- Si ya empezó, solo se puede cambiar el hasta, como en Configuración, y no se puede borrar («Ya empezó: no se puede borrar»).
+- Si ya empezó, solo se puede cambiar el hasta, como en Configuración, y no se puede borrar («Ya empezó: no se puede borrar»). «Ya empezó» quiere decir que empezó antes de hoy: una que empieza hoy todavía se puede borrar, como en Configuración (`puedeAnularse`).
 - Si terminó, las fechas quedan fijas.
-- El tipo, la nota y «Mostrar» se pueden cambiar siempre.
+- El tipo, la nota y «Mostrar» se pueden cambiar siempre, sin tocar Configuración.
+- **Si un cambio de tipo o de horas hace que deje de ser de día entero** (una franquicia de 7 horas que pasa a 3), la de Configuración se anula si todavía se puede. Si no se puede, queda, y el panel lo dice.
 
 **Si administración la cambia en Configuración.** Configuración muestra la insignia «Cargada desde Mi espacio» y la deja editar y anular como siempre:
 - si la anula, la de Mi espacio queda como registro personal, sin unir;
 - si cambia las fechas, Mi espacio muestra «En Configuración: del … al …». Desde ahí, una corrección en Mi espacio ya no se copia a Configuración, para no pisar lo que hizo administración, y lo avisa.
+- **La insignia** se calcula con `EXISTS (SELECT 1 FROM mi_espacio_licencias m WHERE m.licencia_oficial_id = l.id AND m.oficial = 'creada' AND m.activo = 1)`. Va con `EXISTS` y no con un JOIN, porque varias «unidas» pueden apuntar a la misma licencia, y solo cuentan las «creadas»: una unida no hace de Mi espacio una licencia de administración.
+- **Si administración acorta o anula la licencia que cubría una «unida»,** el panel lo avisa: «Ya no está cubierta en Configuración del … al …: revisala con administración.». Mi espacio lee `anulada` y las fechas de la de Configuración. La FK `ON DELETE SET NULL` nunca se dispara, porque las licencias se anulan, no se borran.
 
-**Si Configuración la rechaza por otro motivo** (la persona es la autorizada del firmante y se quedaría sin días hábiles, pasa de 365 días o su rol ya no puede tener licencia): se guarda igual en Mi espacio, sin pasar, con el motivo a la vista («No pasó a Configuración: …»). Una ausencia real siempre se puede registrar en el panel propio.
+**Si Configuración la rechaza:**
+- **Si sos la persona autorizada del firmante y te quedarías sin ningún día hábil** para presentar las notas, no se guarda (decisión del usuario): las notas saldrían presentadas por alguien que no está. El formulario lo dice: «Sos la persona autorizada del firmante del … al …, y con esta licencia no te quedaría ningún día hábil para presentar las notas. Hablalo con el firmante antes de cargarla.»
+- **Por otro motivo** (se superpone en parte con una de administración, pasa de 365 días o tu rol ya no puede tener licencia): se guarda igual en Mi espacio, sin pasar, con el motivo a la vista («No pasó a Configuración: …»). Una ausencia real siempre se puede registrar en el panel propio.
 
 **Si cambia el rol.** Si pasa o no a Configuración se decide cada vez que se guarda o se corrige una licencia, con el rol de ese momento. Cambiar el rol no mueve nada solo:
 - un lector que pasa a admin ve pasar sus licencias futuras recién cuando las corrige;
@@ -247,6 +286,7 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 ## 7. Lo que ven los demás: «Hoy no están»
 
 - **La casilla «Mostrar a mis compañeros que no estoy»,** marcada de entrada, hace que las ausencias de día completo se vean como «Laura Gómez no está», sin el tipo.
+  - Controla solo lo que se ve en Mi espacio. Si la licencia pasa a Configuración, administración ve igual las fechas en Configuración → Licencias y en «De licencia hasta» de Usuarios. El usuario decidió dejarla así (26/10/2026).
 - **Dónde aparecen:** en «Hoy y mañana» del Resumen y, desde la entrega 3, en la agenda de todos.
 - **No se muestran las franquicias ni las horas a favor de menos de 7 horas.**
 - **«Los compañeros» son administración:** superadmin, admin y editor (`esAdmin`; respuesta del usuario).
@@ -260,8 +300,10 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 Las medidas, los colores y los textos están en las maquetas. Acá van las reglas.
 
 **La página** sigue el lenguaje del Seguimiento y de Proyectos: tokens `--sg-*`, tarjetas blancas sin sombra, píldoras y pestañas con hash (`#resumen`, `#licencias`, `#horas`; `#agenda` en la entrega 3).
-- **El título** es «Mi espacio», con el ícono `calendar-check` de Lucide. Debajo, una bajada y tres botones: «Nuevo evento» (desde la entrega 3), «Cargar horas extras» y «Cargar licencia».
-- **Una marca ámbar en la pestaña Resumen** cuando hay algo en «Vence pronto».
+- **Los tokens van en el `<style>` de la página,** como en Proyectos y el Seguimiento, nunca en `main.css`. Los del Resumen de la maqueta (`--rs-*` y las clases `.op-*`) pasan a `--sg-*`, y se definen en la página los que faltan (`--sg-ambar-fondo`, `--sg-gris-fondo` y `--sg-violeta-fondo`).
+- **El título** es «Mi espacio», con el ícono `calendar-check` de Lucide. Debajo, una bajada y tres botones (`<button>`, no links): «Nuevo evento» (desde la entrega 3), «Cargar horas extras» y «Cargar licencia».
+- **Una marca ámbar en la pestaña Resumen** cuando hay algo en «Vence pronto», con `role="img"` y `aria-label`, como la marca del Estado en Correos (no un `title`).
+- **Los modales** son los de administración (`.modal-overlay` y `.modal` con `.active`, `aria-modal`). Un clic en el velo no los cierra, como en Configuración: son formularios largos.
 - **Es una de las páginas con carcasa,** que pasan a ser 14 (sección 11).
 
 **Resumen, «Niveles»** (maqueta 1):
@@ -297,16 +339,21 @@ Las medidas, los colores y los textos están en las maquetas. Acá van las regla
 
 ## 9. El aviso de vencimiento por email
 
-Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDiarias`), con su propio try/catch y su `resultados.miEspacio`. Sale solo en días hábiles, con `esDiaHabilCon` y los feriados.
+Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDiarias`), con su propio try/catch y su `resultados.miEspacio`.
+- **Va después de las Notas Digitales:** `registrarInicio` borra lo anotado en la última corrida. Sus errores van a `resultados.errores` y a `anotarEnLaUltimaCorrida`, como los de la foto.
+- **Sale solo en días hábiles,** con su propio control (`esDiaHabilCon` y los feriados), no con `resultados.dia_habil`, que sigue con los 9 fijos: en Carnaval da hábil.
+- **El `Set` de feriados se pide con margen:** «el último día hábil del mes» y «5 días hábiles antes» caminan fuera del mes. Las funciones con feriados que hacen falta (el próximo día hábil y el último hábil del mes) se suman a `services/feriadosReglas.js`.
 
-**Cuándo sale:**
-- **A quien tiene un franco o unas horas a favor del mes sin usar:** 5 días hábiles antes del último día hábil del mes.
-- **A quien tiene días de una licencia ordinaria que vence el 31/12:** el primer día hábil de diciembre.
+**Cuándo sale** (decisión del usuario: desde la fecha de la regla hasta el vencimiento, una sola vez):
+- **A quien tiene un franco o unas horas a favor del mes sin usar:** desde 5 días hábiles antes del último día hábil del mes, hasta ese último día.
+- **A quien tiene días de una licencia ordinaria que vence el 31/12:** desde el primer día hábil de diciembre, hasta el 31/12.
+- Sale el primer día de ese tramo en que la persona no está de licencia y la corrida anda. Si ese día falla, sale al siguiente.
 
 **Reglas del envío:**
 - Una vez por persona y por cosa (`mi_espacio_avisos`).
-- No sale si la persona está de licencia ese día, oficial o cargada en Mi espacio.
-- Con `remitente()` y `plantillaSimple`, en el marco de siempre y sin emojis.
+- No sale si la persona está de licencia ese día, oficial o cargada en Mi espacio (una ausencia de día completo). Hoy no hay una función que junte las dos fuentes: se suma una, en lote, para todas las personas de la corrida.
+- Con `sendEmail` y `to: [email]` después de `emailValido`, nunca con `to` vacío: sin destinatario, `sendEmail` manda a las casillas por defecto de la DGMIT.
+- Con `remitente()` y `plantillaSimple`, en el marco de siempre y sin emojis. La plantilla va en `services/emailTemplates.js`, y se suma a los casos de `tests/emails-fixtures.js` y a los mapas `ASUNTOS` y `TEXTOS` de `tests/email-diseno.test.js`.
 - **El texto:** «Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.»
 - **El botón:** abre `mi-espacio.html#resumen`.
 - **El email no dice el tipo de ninguna licencia médica:** solo vacaciones, francos y horas.
@@ -328,6 +375,7 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 | `POST /api/mi-espacio/licencias/calculo` | El cálculo antes de guardar, sin guardar nada: días hábiles, reparto entre licencias, saldo que queda, errores y avisos. |
 | `GET /api/mi-espacio/horas-extras?anio=`, `POST`, `PUT /:id` y `DELETE /:id` | Las horas extras. |
 | `GET /api/mi-espacio/ausentes?desde=&hasta=` | «Hoy no están» (sección 7). |
+| `GET /api/mi-espacio/firmante` | Lo que necesita el campo «Autorizo a…» (sección 6): al firmante titular, las personas que puede autorizar y lo necesario para el aviso de sus días hábiles libres; a cualquier otra persona, `{ soy_titular: false }`. |
 
 **Fechas y momentos:** como texto `'AAAA-MM-DD'` (`DATE_FORMAT`). Hoy es `hoyArgentina()`; los momentos, `ahoraArgentina()`.
 
@@ -342,7 +390,12 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 
 **Copias mínimas** para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes, los días de vacaciones permitidos y los topes.
 
-**La carcasa.** La página nueva suma un enlace al menú «Mi cuenta» de las 13 páginas con carcasa, que pasan a 14. Hay que tocar el encabezado, el menú y el footer copiados a mano, con lo que exige `tests/paginas.test.js`: la lista de destinos, la cantidad de páginas, la versión de cada script y el orden de los scripts. Mi espacio se ve para todos los roles con sesión, así que `updateSidebarAuth` no cambia. Una página sin sesión manda al login (`PAGINAS_PUBLICAS` no la incluye).
+**La carcasa.** La página nueva suma un enlace al menú «Mi cuenta» de las 13 páginas con carcasa, que pasan a 14.
+- **Solo cambia el menú lateral:** un `<a>` más en `#sidebarAccount` de las 14 páginas, después de Mi Perfil. El encabezado y el footer no cambian.
+- **El ícono `calendar-check` va escrito en el HTML,** como los demás del menú (el de `calendar` más `<path d="m9 16 2 2 4-4"/>`). No se suma a `ICON_SELECTOR_MAP`: aparecería como ícono elegible en Proyectos y rompería sus tests. Tampoco a `Icons`: tocar `main.js` obliga a subir `VERSION` en todas las páginas.
+- **`tests/paginas.test.js`:** la lista de destinos, la cantidad de páginas (14), la versión y el orden de los scripts (`mi-espacio.js` después de `api.js`), y un test nuevo del menú «Mi cuenta» (Mi Perfil y Mi espacio, en ese orden, con sus íconos), como los de Administración y Herramientas. La carcasa se copia de `index.html`, no de la maqueta: la maqueta la arma con JavaScript y pone `aria-current`, que el test prohíbe en las páginas que no son públicas.
+- **Mi espacio se ve para todos los roles con sesión,** así que `updateSidebarAuth` no cambia.
+- **Sin sesión, `mi-espacio.js` manda al login,** con su propio control al cargar (`if (!Auth.isAuthenticated())`, como `proyectos.js` y `perfil.js`). `PAGINAS_PUBLICAS` de `main.js` no hace eso: solo actúa cuando una sesión guardada deja de valer.
 
 ## 12. Tests
 
@@ -359,8 +412,14 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
   - que el tipo no salga en `ausentes`;
   - el paso a Configuración: alta, superposición, edición antes y después de empezar, anulación, el firmante titular, el lector que no pasa y el registro en `usuarios_auditoria`.
 - **`tests/mi-espacio-frontend.test.js`:** la página en un `vm`, el Resumen con los datos de las dos maquetas, los formularios y las paridades.
-- **El aviso de vencimiento,** con un hoy fijo y Mailpit, sin llamar a `/api/cron/*`.
-- **Los tests existentes que cambian:** `permisos.test.js`, `paginas.test.js` (14 páginas), `schema.test.js` (las tablas, la migración y la vuelta atrás) y los de licencias (la insignia «Cargada desde Mi espacio»).
+- **El aviso de vencimiento,** con un hoy fijo (`mock.timers` y el paso llamado directo, como `tests/metricas-foto.test.js`) y Mailpit, sin llamar a `/api/cron/*`: el tramo de días, la persona de licencia, el que falló un día y sale al siguiente, y una sola vez.
+- **El paso a Configuración, con el firmante titular:** la licencia sin persona a cargo, el caso del usuario (vacaciones y la médica pegada), el aviso de las 8:15 y el rechazo de la persona autorizada que no se guarda.
+- **Los tests existentes que cambian:**
+  - `permisos.test.js`: las rutas nuevas, con una lista nueva de «con sesión, sin ella 401»;
+  - `paginas.test.js`: 14 páginas, el menú «Mi cuenta» y las versiones;
+  - `schema.test.js`: las tablas, la migración y la vuelta atrás;
+  - `email-diseno.test.js`: la plantilla nueva;
+  - los de licencias (`licencias-api`, `licencias-reglas`): la insignia «Cargada desde Mi espacio» y la función de servicio compartida, sin cambiar lo que hoy hace Configuración.
 
 ## 13. Documentación y despliegue
 
@@ -397,7 +456,15 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - El Resumen es «Niveles», con «Vence pronto» primero.
 - Se va a mirar sobre todo en la compu.
 
-**Mías (para revisar):**
+**Del usuario, en la segunda sesión (26/10/2026):**
+- La persona a cargo del firmante la elige quien carga la licencia, sin una regla nueva: para dejar a alguien a cargo hay que haber ido a trabajar, y eso lo sabe la persona. Cada licencia lleva su propia autorización, por sus fechas.
+- Si Configuración rechaza el paso, se frena solo el caso de la persona autorizada que se quedaría sin días hábiles; el resto se guarda con el motivo.
+- El email de vencimiento sale desde la fecha de la regla hasta el vencimiento, una sola vez.
+- La franquicia guarda solo el día y las horas.
+- «Mostrar a mis compañeros» queda como estaba.
+- Aprobó todas las decisiones mías de la primera revisión (la lista de abajo), con los ajustes del análisis del código.
+
+**Mías, aprobadas por el usuario en la segunda sesión (26/10/2026):**
 - La modalidad la carga administración; sin ella no se cargan licencias.
 - Un cambio de modalidad se aplica a todo lo cargado.
 - Lo anterior al saldo inicial no descuenta.
@@ -413,8 +480,16 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - Dos licencias de Mi espacio no comparten un día.
 - Lo que deja de cerrar por un cambio posterior se muestra como faltante, sin frenar el cambio.
 - La licencia guarda si pasó a Configuración «creada» o «unida»; una unida nunca toca la de administración, y una corrección no pisa lo que cambió administración.
-- Si Configuración la rechaza, se guarda igual en Mi espacio, con el motivo a la vista.
 - El paso a Configuración se decide con el rol del momento en que se guarda.
+- Una franquicia que deja de ser de 7 horas sale de Configuración si todavía se puede anular.
+- «Ya empezó» quiere decir antes de hoy.
+- Si administración acorta o anula la licencia que cubría una «unida», el panel lo avisa.
+- El aviso del formulario dice lo que de verdad cambia: no contás como disponible para auditar, y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor.
+
+**Mías, nuevas en la segunda sesión (para revisar):**
+- Si el firmante carga una licencia que empieza hoy o antes, el formulario avisa que las notas de hoy ya salieron a las 8:15 con su firma.
+- Los modales no se cierran con un clic en el velo, como en Configuración.
+- La función de servicio compartida con Configuración no cambia nada de lo que hoy hace Configuración.
 
 **Respuestas del usuario a la revisión (26/10/2026):**
 - «Los compañeros» son administración: superadmin, admin y editor.
