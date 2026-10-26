@@ -226,7 +226,8 @@
         .fe-casilla b { display: block; font-weight: 600; color: var(--texto); }
         .fe-casilla small { display: block; color: var(--suave); font-size: 0.8rem; line-height: 1.35; margin-top: 1px; }
         .fe-casilla input[aria-invalid="true"], .fe-modal .ar-ambito input[aria-invalid="true"] { outline: 2px solid var(--ar-rojo); outline-offset: 2px; }
-        .fe-bloque-anio { border-top: 1px solid var(--linea); padding-top: 16px; margin-top: 4px; }
+        .fe-mitad { max-width: calc(50% - 8px); }
+        .fe-bloque-anio { border-top: 1px solid var(--linea); padding-top: 16px; margin: 4px 0 16px; }
         .fe-pasa-al { margin: 12px 0 0 28px; }
         .fe-pie-izquierda { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 
@@ -236,6 +237,7 @@
             .fila-usuario { padding: 12px 16px; align-items: flex-start; }
             .ar-tarjeta { padding: 16px; }
             .ar-ambitos { grid-template-columns: 1fr; }
+            .fe-mitad { max-width: none; }
             .ar-modal .modal-footer .botones { width: 100%; justify-content: flex-end; }
         }
         @media (prefers-reduced-motion: reduce) {
@@ -736,36 +738,35 @@
                         <p class="form-error" id="fe-fecha-error" hidden></p>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">(opcional)</span></label>
-                        <input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">
-                        <p class="form-hint" id="fe-trasladado-ayuda">La fecha original de un trasladable, del mismo año.</p>
-                        <p class="form-error" id="fe-trasladado-error" hidden></p>
+                        <label class="form-label" for="fe-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
+                        <input type="text" id="fe-nombre" class="form-input" aria-required="true" aria-describedby="fe-nombre-error" autocomplete="off" placeholder="Ej.: Carnaval">
+                        <p class="form-error" id="fe-nombre-error" hidden></p>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="fe-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
-                    <input type="text" id="fe-nombre" class="form-input" aria-required="true" aria-describedby="fe-nombre-error" autocomplete="off" placeholder="Ej.: Carnaval">
-                    <p class="form-error" id="fe-nombre-error" hidden></p>
                 </div>
                 <fieldset class="ar-ambito-grupo" id="fe-tipo">
                     <legend class="form-label">Tipo <span class="requerido" aria-hidden="true">*</span></legend>
                     <div class="ar-ambitos" id="fe-tipo-opciones"></div>
                     <p class="form-error" id="fe-tipo-error" hidden></p>
                 </fieldset>
+                <div class="form-group fe-mitad">
+                    <label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">(opcional)</span></label>
+                    <input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">
+                    <p class="form-hint" id="fe-trasladado-ayuda">La fecha original de un trasladable, del mismo año.</p>
+                    <p class="form-error" id="fe-trasladado-error" hidden></p>
+                </div>
                 <div class="form-group">
                     <label class="fe-casilla"><input type="checkbox" id="fe-se-repite" aria-describedby="fe-se-repite-error"><span><b>Se repite todos los años, el mismo día</b><small>Para los de fecha fija, como el aniversario de la ciudad. Los móviles se cargan año por año.</small></span></label>
                     <p class="form-error" id="fe-se-repite-error" hidden></p>
                 </div>
-                <fieldset class="ar-bloque fe-bloque-anio" id="fe-anio" hidden>
-                    <legend id="fe-anio-titulo"></legend>
-                    <label class="fe-casilla"><input type="checkbox" id="fe-no-rige" aria-describedby="fe-no-rige-ayuda"><span><b id="fe-no-rige-texto"></b><small id="fe-no-rige-ayuda">Si ese año se corrió a otro día. Los demás años no cambian.</small></span></label>
+                <div class="fe-bloque-anio" id="fe-anio" hidden>
+                    <label class="fe-casilla"><input type="checkbox" id="fe-no-rige"><span><b id="fe-no-rige-texto"></b><small>Si ese año se corrió a otro día. Los demás años no cambian.</small></span></label>
                     <div class="form-group fe-pasa-al" id="fe-pasa-al-grupo" hidden>
                         <label class="form-label" for="fe-pasa-al">Se pasó al <span class="fe-opcional">(opcional)</span></label>
                         <input type="date" id="fe-pasa-al" class="form-input" aria-describedby="fe-pasa-al-ayuda fe-pasa-al-error">
                         <p class="form-hint" id="fe-pasa-al-ayuda">Ese día se carga como un feriado más, con el mismo nombre y tipo.</p>
                         <p class="form-error" id="fe-pasa-al-error" hidden></p>
                     </div>
-                </fieldset>
+                </div>
             </div>
             <div class="modal-footer">
                 <div class="fe-pie-izquierda">

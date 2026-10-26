@@ -312,9 +312,9 @@ describe('páginas', () => {
     const modalFeriado = () => bloque(/<div class="modal-overlay" id="modal-feriado">[\s\S]*?(?=<div class="modal-overlay" id="modal-baja-feriado">)/);
     const modalBaja = () => bloque(/<div class="modal-overlay" id="modal-baja-feriado">[\s\S]*?(?=<script )/);
     const IDS_DEL_MODAL = ['modal-feriado', 'modal-feriado-titulo', 'feriado-error', 'fe-fecha', 'fe-fecha-dia', 'fe-fecha-error',
-      'fe-trasladado', 'fe-trasladado-ayuda', 'fe-trasladado-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones',
-      'fe-tipo-error', 'fe-se-repite', 'fe-se-repite-error', 'fe-anio', 'fe-anio-titulo', 'fe-no-rige', 'fe-no-rige-texto', 'fe-no-rige-ayuda',
-      'fe-pasa-al-grupo', 'fe-pasa-al', 'fe-pasa-al-ayuda', 'fe-pasa-al-error', 'fe-baja', 'fe-guardar'];
+      'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
+      'fe-trasladado-error', 'fe-se-repite', 'fe-se-repite-error', 'fe-anio', 'fe-no-rige', 'fe-no-rige-texto', 'fe-pasa-al-grupo',
+      'fe-pasa-al', 'fe-pasa-al-ayuda', 'fe-pasa-al-error', 'fe-baja', 'fe-guardar'];
     const IDS_DE_LA_BAJA = ['modal-baja-feriado', 'modal-baja-feriado-titulo', 'baja-feriado-texto', 'baja-feriado-desde-grupo',
       'baja-feriado-desde', 'baja-feriado-error', 'baja-feriado-cancelar', 'baja-feriado-confirmar'];
 
@@ -359,6 +359,19 @@ describe('páginas', () => {
       assert.doesNotMatch(modal + modalBaja(), /data-(cerrar-area|cerrar-borrar|ver|licencia|vista)\b/);
     });
 
+    // El orden de la spec (4): la fecha (con su día) y el nombre, en una fila; el tipo; «Trasladado del»; «Se repite»; y «no rige»
+    it('los campos van en el orden de la spec: fecha y nombre (en una fila), tipo, «Trasladado del», «Se repite» y «no rige»', () => {
+      const modal = modalFeriado();
+      const lugares = ['id="fe-fecha"', 'id="fe-nombre"', 'id="fe-tipo"', 'id="fe-trasladado"', 'id="fe-se-repite"', 'id="fe-anio"']
+        .map(texto => modal.indexOf(texto));
+      assert.ok(lugares.every(lugar => lugar !== -1), JSON.stringify(lugares));
+      assert.deepEqual(lugares, [...lugares].sort((a, b) => a - b));
+      const fila = modal.match(/<div class="form-row">[\s\S]*?(?=\s*<fieldset class="ar-ambito-grupo" id="fe-tipo">)/)?.[0] ?? '';
+      assert.ok(fila.includes('id="fe-fecha"') && fila.includes('id="fe-nombre"'), 'la fecha y el nombre, en la misma fila');
+      assert.ok(!fila.includes('id="fe-trasladado"'), '«Trasladado del» no va con la fecha');
+      assert.match(modal, /<div class="form-group fe-mitad">\s*<label class="form-label" for="fe-trasladado">/);
+    });
+
     it('los campos: la fecha con su día al lado, desde el 01/01/2025; el nombre; los tipos; «Trasladado del»; «Se repite»; cada uno con su error', () => {
       const modal = modalFeriado();
       assert.match(modal, /<input type="date" id="fe-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="fe-fecha-dia fe-fecha-error">\s*<span class="fe-dia" id="fe-fecha-dia"><\/span>/);
@@ -376,10 +389,12 @@ describe('páginas', () => {
       }
     });
 
+    // Sin un título propio (la casilla ya dice «En AAAA no rige»), y su ayuda se lee una sola vez: va dentro del <label>, sin
+    // aria-describedby
     it('«no rige», oculto hasta que feriados.js lo muestra (solo al corregir uno que se repite), con «Se pasó al» opcional', () => {
       const modal = modalFeriado();
-      assert.match(modal, /<fieldset class="ar-bloque fe-bloque-anio" id="fe-anio" hidden>\s*<legend id="fe-anio-titulo"><\/legend>/);
-      assert.match(modal, /<input type="checkbox" id="fe-no-rige" aria-describedby="fe-no-rige-ayuda"><span><b id="fe-no-rige-texto"><\/b><small id="fe-no-rige-ayuda">Si ese año se corrió a otro día\. Los demás años no cambian\.<\/small><\/span>/);
+      assert.match(modal, /<div class="fe-bloque-anio" id="fe-anio" hidden>\s*<label class="fe-casilla"><input type="checkbox" id="fe-no-rige"><span><b id="fe-no-rige-texto"><\/b><small>Si ese año se corrió a otro día\. Los demás años no cambian\.<\/small><\/span><\/label>/);
+      assert.doesNotMatch(modal, /Solo en|<legend id=/);
       assert.match(modal, /<div class="form-group fe-pasa-al" id="fe-pasa-al-grupo" hidden>\s*<label class="form-label" for="fe-pasa-al">Se pasó al <span class="fe-opcional">\(opcional\)<\/span><\/label>\s*<input type="date" id="fe-pasa-al" class="form-input" aria-describedby="fe-pasa-al-ayuda fe-pasa-al-error">/);
       assert.match(modal, /<p class="form-hint" id="fe-pasa-al-ayuda">Ese día se carga como un feriado más, con el mismo nombre y tipo\.<\/p>/);
     });

@@ -578,15 +578,15 @@ describe('feriados.js: el modal, la baja', () => {
     }
   });
 
-  it('textoDeLaBajaFeriado, uno que no se repite: su día y «Deja de contar como feriado.» (desde no cuenta)', () => {
+  it('textoDeLaBajaFeriado, uno que no se repite: su día y «Deja de contar como día no hábil.» (desde no cuenta)', () => {
     for (const desde of [null, 2027]) {
-      assert.equal(F.textoDeLaBajaFeriado(CARNAVAL, desde), '¿Dar de baja «Carnaval» del lunes 16/02/2026? Deja de contar como feriado.');
+      assert.equal(F.textoDeLaBajaFeriado(CARNAVAL, desde), '¿Dar de baja «Carnaval» del lunes 16/02/2026? Deja de contar como día no hábil.');
     }
   });
 
   it('textoDeLaBajaFeriado con un nombre con HTML: texto plano, sin escapar (va con textContent)', () => {
     const malo = deLaLista([fila({ id: 21, fecha: '2026-05-04', nombre: MALO })], 2026, 21);
-    assert.equal(F.textoDeLaBajaFeriado(malo, null), `¿Dar de baja «${MALO}» del lunes 04/05/2026? Deja de contar como feriado.`);
+    assert.equal(F.textoDeLaBajaFeriado(malo, null), `¿Dar de baja «${MALO}» del lunes 04/05/2026? Deja de contar como día no hábil.`);
     const maloQueSeRepite = deLaLista([filaQueSeRepite({ nombre: `${MALO} & "x"` })], 2027, 7);
     assert.equal(F.textoDeLaBajaFeriado(maloQueSeRepite, 2027),
       `¿Dar de baja «${MALO} & "x"»? Deja de regir desde 2027. Los años anteriores no cambian.`);
@@ -636,9 +636,9 @@ describe('feriados.js: el modal, los textos y el tipo', () => {
     assert.equal(F.tituloDelModalFeriado({ ...CARNAVAL, nombre: MALO }), `Editar «${MALO}»`);
   });
 
-  it('htmlDeTiposFeriado: cuatro opciones grandes (radios fe-tipo), con su nombre y su ayuda; «Nacional», con la del usuario', () => {
+  it('htmlDeTiposFeriado: cuatro opciones grandes (radios fe-tipo, obligatorios: required), con su nombre y su ayuda; «Nacional», con la del usuario', () => {
     const html = F.htmlDeTiposFeriado();
-    const opciones = [...html.matchAll(/<label class="ar-ambito"><input type="radio" name="fe-tipo" value="([^"]+)" aria-describedby="fe-tipo-error"><span><b>([^<]+)<\/b><small>([^<]+)<\/small><\/span><\/label>/g)]
+    const opciones = [...html.matchAll(/<label class="ar-ambito"><input type="radio" name="fe-tipo" value="([^"]+)" required aria-describedby="fe-tipo-error"><span><b>([^<]+)<\/b><small>([^<]+)<\/small><\/span><\/label>/g)]
       .map(([, valor, nombre, ayuda]) => [valor, nombre, ayuda]);
     assert.deepEqual(opciones, [
       ['nacional', 'Nacional', 'Carnaval, Semana Santa, trasladables y extraordinarios'],
@@ -878,8 +878,9 @@ describe('feriados.js con un DOM: cargarFeriados', () => {
     assert.equal(filasDe(elemento('feriados-lista').innerHTML).length, 13);
   });
 
-  // Después de guardar (la Task 7) se vuelve a pedir con forzar: mientras llega, la tabla que se ve sigue andando
-  it('durante una recarga con forzar, un filtro se aplica y «Editar» encuentra su feriado; al llegar, la tabla nueva con el filtro', async () => {
+  // Después de guardar (la Task 7) se vuelve a pedir con forzar: mientras llega, la tabla que se ve sigue andando (sus filtros). Su
+  // «Editar» espera la lista nueva: la que se ve tiene los datos de antes, y abrir el modal con ellos desharía lo guardado
+  it('durante una recarga con forzar, un filtro se aplica y «Editar» espera la lista nueva y abre con su fila; al llegar, la tabla nueva con el filtro', async () => {
     const respuesta = demorada();
     let primera = true;
     const pagina = crearPagina({
@@ -894,17 +895,42 @@ describe('feriados.js con un DOM: cargarFeriados', () => {
     assert.equal(filasDe(pagina.elemento('feriados-lista').innerHTML).length, 2, 'el filtro se aplicó');
     assert.deepEqual(pagina.pagina.foco?.atributos, { 'data-filtro-feriado': 'municipal' });
     pagina.clic({ 'data-editar-feriado': '13' });
-    assert.equal(abiertos.length, 1);
-    assert.equal(abiertos[0][0].id, 13);
-    // La respuesta trae un feriado más de Comodoro: la tabla nueva, con el filtro elegido
-    const nueva = plano(feriadosDelAnio([...FILAS, fila({ id: 15, fecha: '2026-03-02', nombre: 'Asueto', tipo: 'municipal' })], 2026));
+    assert.equal(abiertos.length, 0, 'todavía no: espera la lista nueva');
+    // La respuesta trae un feriado más de Comodoro y el 13 con otro nombre: la tabla nueva, con el filtro elegido, y el modal con el 13
+    // de la lista nueva
+    const nueva = plano(feriadosDelAnio([...FILAS.map((f) => (f.id === 13 ? { ...f, nombre: 'Aniversario de Comodoro' } : f)),
+      fila({ id: 15, fecha: '2026-03-02', nombre: 'Asueto', tipo: 'municipal' })], 2026));
     respuesta.soltar(respuestaDe(2026, nueva));
     await carga;
+    await esperar();
     assert.deepEqual(filasDe(pagina.elemento('feriados-lista').innerHTML).map((f) => f.celdas[4].match(/data-editar-feriado="(\d+)"/)?.[1]),
       ['13', '15', '12']);
+    assert.equal(abiertos.length, 1);
+    assert.equal(abiertos[0][0].id, 13);
+    assert.equal(abiertos[0][0].nombre, 'Aniversario de Comodoro', 'la fila de la lista nueva');
+    assert.equal(abiertos[0][1], pagina.elemento('feriados-lista').querySelector('[data-editar-feriado="13"]'), 'su «Editar» nuevo');
+    // Sin una recarga en camino, «Editar» abre enseguida
     pagina.clic({ 'data-editar-feriado': '15' });
     assert.equal(abiertos.at(-1)[0].id, 15);
     assert.equal(pagina.pedidos.length, 2);
+  });
+
+  it('si la recarga con forzar falla, el «Editar» que esperaba no abre nada (la tabla vieja ya no está)', async () => {
+    let primera = true;
+    const respuesta = demorada();
+    const pagina = crearPagina({
+      responder: async () => { if (primera) { primera = false; return RESPUESTA_2026; } return respuesta.promesa; }
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    const abiertos = [];
+    pagina.contexto.abrirModalFeriado = (feriado, origen) => abiertos.push([feriado, origen]);
+    const carga = pagina.contexto.cargarFeriados(true);
+    pagina.clic({ 'data-editar-feriado': '13' });
+    respuesta.soltar({ success: false });
+    await carga;
+    await esperar();
+    assert.equal(abiertos.length, 0);
   });
 
   it('con forzar, los otros años se descartan; si la recarga falla, el error y el año se vuelve a pedir (nada viejo queda guardado)', async () => {
@@ -1231,7 +1257,6 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     assert.equal(el('fe-trasladado').value, '');
     assert.equal(el('fe-se-repite').checked, true);
     assert.equal(el('fe-anio').hidden, false);
-    assert.equal(el('fe-anio-titulo').textContent, 'Solo en 2027');
     assert.equal(el('fe-no-rige-texto').textContent, 'En 2027 no rige');
     assert.equal(el('fe-no-rige').checked, false);
     assert.equal(el('fe-pasa-al-grupo').hidden, true);
@@ -1263,7 +1288,7 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     assert.equal(pagina.elemento('fe-nombre').value, MALO);
     apretar(pagina, 'fe-baja');
     assert.equal(pagina.elemento('baja-feriado-texto').textContent,
-      `¿Dar de baja «${MALO}» del lunes 04/05/2026? Deja de contar como feriado.`);
+      `¿Dar de baja «${MALO}» del lunes 04/05/2026? Deja de contar como día no hábil.`);
     assert.equal(pagina.elemento('baja-feriado-texto').escrituras, 0, 'nunca como HTML');
   });
 
@@ -1496,7 +1521,11 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     assert.equal(el('feriado-error').hidden, false);
     assert.equal(el('feriado-error').textContent,
       'El feriado se guardó, pero «no rige» no: La fecha a la que se pasó tiene que ser del mismo año.');
-    assert.equal(pagina.pagina.foco, el('fe-guardar'));
+    // El 400 en pasa_al marca además «Se pasó al», con el foco ahí
+    assert.equal(el('fe-pasa-al').atributos['aria-invalid'], 'true');
+    assert.equal(el('fe-pasa-al-error').textContent, MENSAJES_FERIADO.pasaAl);
+    assert.equal(el('fe-pasa-al-error').hidden, false);
+    assert.equal(pagina.pagina.foco, el('fe-pasa-al'));
     assert.equal(el('fe-guardar').disabled, false);
     assert.deepEqual(escriturasDe(pagina), [['PUT', '/feriados/12'], ['PUT', '/feriados/12/rige']]);
     assert.deepEqual(pagina.pedidos.at(-1).cuerpo, { anio: 2026, rige: false, pasa_al: '2027-11-09' });
@@ -1507,6 +1536,7 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     await pagina.contexto.guardarFeriado();
     assert.deepEqual(escriturasDe(pagina), [['PUT', '/feriados/12'], ['PUT', '/feriados/12/rige'], ['PUT', '/feriados/12/rige']]);
     assert.equal(abierto(pagina, 'modal-feriado'), false);
+    assert.equal(el('fe-pasa-al').atributos['aria-invalid'], undefined, 'el error de antes se limpió');
     assert.deepEqual(pagina.toasts, [['Feriado corregido. En 2026 no rige: se pasó al 09/11/2026. Cae domingo: no cambia ningún día hábil.',
       'success']]);
     assert.equal(pagina.pedidos.at(-1).ruta, '/feriados?anio=2026');
@@ -1637,7 +1667,7 @@ describe('feriados.js con un DOM: la baja', () => {
     apretar(pagina, 'fe-baja');
     assert.equal(pagina.elemento('baja-feriado-desde-grupo').hidden, true);
     assert.equal(pagina.elemento('baja-feriado-texto').textContent,
-      '¿Dar de baja «Paso a la Inmortalidad de Güemes» del lunes 15/06/2026? Deja de contar como feriado.');
+      '¿Dar de baja «Paso a la Inmortalidad de Güemes» del lunes 15/06/2026? Deja de contar como día no hábil.');
     assert.equal(pagina.pagina.foco, pagina.elemento('baja-feriado-cancelar'));
     await pagina.contexto.confirmarBajaFeriado();
     assert.deepEqual(escriturasDe(pagina), [['DELETE', '/feriados/11']]);
@@ -1684,5 +1714,139 @@ describe('feriados.js con un DOM: la baja', () => {
     await baja;
     assert.deepEqual(escriturasDe(pagina), [['DELETE', '/feriados/11']]);
     assert.equal(abierto(pagina, 'modal-feriado'), false);
+  });
+});
+
+// ======================================================================
+// Lo que llega mientras tanto (revisión de la Task 7): «Editar» durante la recarga después de guardar, otro modal mientras se guarda o
+// se da de baja, el feriado del modal después de un guardado a medias y el 401 de «no rige»
+// ======================================================================
+
+describe('feriados.js: conLoGuardadoFeriado', () => {
+  it('una copia con lo guardado (la fecha, el nombre recortado, el tipo, «se repite» y el trasladado); el feriado de la lista no cambia', () => {
+    const copia = F.conLoGuardadoFeriado(EMPLEADO_2027,
+      { fecha: '2025-11-09', nombre: ' Otro ', tipo: 'provincial', trasladado_de: '2025-11-08', se_repite: false });
+    assert.deepEqual(plano(copia), {
+      ...EMPLEADO_2027, fecha_guardada: '2025-11-09', nombre: 'Otro', tipo: 'provincial', se_repite: 0, trasladado_de_guardado: '2025-11-08'
+    });
+    assert.equal(EMPLEADO_2027.nombre, 'Día del Empleado Municipal');
+    assert.equal(EMPLEADO_2027.fecha_guardada, '2026-11-08');
+    assert.equal(F.conLoGuardadoFeriado(EMPLEADO_2027, { ...F.valoresDelFeriado(EMPLEADO_2027), trasladado_de: '' }).trasladado_de_guardado, null);
+    assert.equal(F.conLoGuardadoFeriado(null, {}), null);
+  });
+});
+
+describe('feriados.js con un DOM: lo que llega mientras tanto', () => {
+  it('«Editar» del mismo feriado justo después de guardar, antes de que llegue la lista: espera y abre con lo guardado (no lo deshace)', async () => {
+    let getDemorado = null;
+    const pagina = crearPagina({
+      servidor: async (metodo) => {
+        if (metodo === 'GET') return getDemorado ? getDemorado.promesa : { status: 200, body: RESPUESTA_2026 };
+        return OK_CORREGIDO;
+      }
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    editarFeriado(pagina, 11);
+    pagina.elemento('fe-nombre').value = 'Paso a la Inmortalidad del General Güemes';
+    getDemorado = demorada();
+    const guardado = pagina.contexto.guardarFeriado();
+    await esperar();
+    assert.equal(abierto(pagina, 'modal-feriado'), false, 'se cerró; la lista se está volviendo a pedir');
+    assert.match(pagina.elemento('feriados-lista').innerHTML, /<table/, 'la tabla de antes sigue a la vista');
+    // El foco quedó en «Editar» de la tabla de antes: Enter vuelve a abrirlo
+    pagina.clic({ 'data-editar-feriado': '11' });
+    assert.equal(abierto(pagina, 'modal-feriado'), false, 'espera la lista nueva');
+    const nueva = plano(feriadosDelAnio(FILAS.map((f) => (f.id === 11 ? { ...f, nombre: 'Paso a la Inmortalidad del General Güemes' } : f)), 2026));
+    getDemorado.soltar({ status: 200, body: respuestaDe(2026, nueva) });
+    await guardado;
+    await esperar();
+    assert.equal(abierto(pagina, 'modal-feriado'), true);
+    assert.equal(pagina.elemento('fe-nombre').value, 'Paso a la Inmortalidad del General Güemes');
+    assert.equal(pagina.elemento('modal-feriado-titulo').textContent, 'Editar «Paso a la Inmortalidad del General Güemes»');
+    assert.equal(pagina.pagina.foco, pagina.elemento('fe-fecha'), 'la recarga no le saca el foco al modal');
+    // Guardar sin tocar nada no pide nada: no manda los datos de antes
+    await pagina.contexto.guardarFeriado();
+    assert.deepEqual(escriturasDe(pagina), [['PUT', '/feriados/11']]);
+  });
+
+  it('mientras se guarda, no se abre otro modal ni la baja: la respuesta queda en el modal que la pidió', async () => {
+    const respuesta = demorada();
+    const pagina = await conModal({ escribir: () => respuesta.promesa });
+    editarFeriado(pagina, 12);
+    pagina.elemento('fe-nombre').value = 'Otro';
+    const guardado = pagina.contexto.guardarFeriado();
+    const sesion = enPagina(pagina, 'modalDelFeriado');
+    apretar(pagina, 'btn-nuevo-feriado');
+    pagina.clic({ 'data-editar-feriado': '11' });
+    pagina.contexto.abrirModalFeriado(pagina.contexto.feriadoDeLaLista('13'), null);
+    pagina.contexto.abrirModalBajaFeriado(null);
+    assert.equal(enPagina(pagina, 'modalDelFeriado'), sesion);
+    assert.equal(pagina.elemento('modal-feriado-titulo').textContent, 'Editar «Día del Empleado Municipal»');
+    assert.equal(pagina.elemento('fe-nombre').value, 'Otro');
+    assert.equal(abierto(pagina, 'modal-baja-feriado'), false);
+    respuesta.soltar(error400('fecha', MENSAJES_FERIADO.fecha));
+    await guardado;
+    assert.equal(abierto(pagina, 'modal-feriado'), true);
+    assert.equal(pagina.elemento('fe-fecha').atributos['aria-invalid'], 'true', 'el error, en el formulario que lo pidió');
+    assert.equal(pagina.elemento('modal-feriado-titulo').textContent, 'Editar «Día del Empleado Municipal»');
+  });
+
+  it('mientras se da de baja, no se abre otro modal ni se vuelve a armar la confirmación', async () => {
+    const respuesta = demorada();
+    const pagina = await conModal({ escribir: () => respuesta.promesa });
+    editarFeriado(pagina, 12);
+    apretar(pagina, 'fe-baja');
+    const baja = pagina.contexto.confirmarBajaFeriado();
+    const sesion = enPagina(pagina, 'modalDelFeriado');
+    const confirmacion = enPagina(pagina, 'bajaDelFeriado');
+    apretar(pagina, 'btn-nuevo-feriado');
+    pagina.clic({ 'data-editar-feriado': '11' });
+    pagina.contexto.abrirModalBajaFeriado(null);
+    assert.equal(enPagina(pagina, 'modalDelFeriado'), sesion);
+    assert.equal(enPagina(pagina, 'bajaDelFeriado'), confirmacion);
+    assert.equal(pagina.elemento('baja-feriado-confirmar').disabled, true, 'sigue esperando');
+    respuesta.soltar({ status: 200, body: { success: true, message: 'Feriado dado de baja.' } });
+    await baja;
+    assert.equal(abierto(pagina, 'modal-feriado'), false);
+    assert.equal(abierto(pagina, 'modal-baja-feriado'), false);
+    assert.deepEqual(escriturasDe(pagina), [['DELETE', '/feriados/12?desde=2026']]);
+  });
+
+  it('después de un guardado a medias, el título, la pregunta de la baja y sus años son los de lo guardado', async () => {
+    const pagina = await conModal({
+      escribir: (metodo, ruta) => (ruta.endsWith('/rige') ? error400('pasa_al', MENSAJES_FERIADO.pasaAl) : null)
+    });
+    editarFeriado(pagina, 12);
+    const el = pagina.elemento;
+    el('fe-nombre').value = 'Día del Trabajador Municipal';
+    el('fe-fecha').value = '2025-11-08';
+    el('fe-no-rige').checked = true;
+    disparar(pagina, 'fe-no-rige', 'change');
+    el('fe-pasa-al').value = '2027-11-09';
+    await pagina.contexto.guardarFeriado();
+    assert.deepEqual(escriturasDe(pagina), [['PUT', '/feriados/12'], ['PUT', '/feriados/12/rige']]);
+    assert.equal(el('modal-feriado-titulo').textContent, 'Editar «Día del Trabajador Municipal»');
+    apretar(pagina, 'fe-baja');
+    assert.equal(el('baja-feriado-desde').innerHTML,
+      '<option value="2025">2025</option><option value="2026" selected>2026</option><option value="2027">2027</option>', 'desde su primer año nuevo');
+    assert.equal(el('baja-feriado-texto').textContent,
+      '¿Dar de baja «Día del Trabajador Municipal»? Deja de regir desde 2026. Los años anteriores no cambian.');
+  });
+
+  it('un 401 en «no rige» después de guardar los campos: el aviso a medias, con el link a login.html', async () => {
+    const pagina = await conModal({
+      escribir: (metodo, ruta) => (ruta.endsWith('/rige') ? { status: 401, body: { success: false, error: 'Token inválido' } } : null)
+    });
+    editarFeriado(pagina, 12);
+    pagina.elemento('fe-nombre').value = 'Otro';
+    pagina.elemento('fe-no-rige').checked = true;
+    await pagina.contexto.guardarFeriado();
+    const caja = pagina.elemento('feriado-error');
+    assert.equal(caja.hidden, false);
+    assert.equal(textoDe(caja.innerHTML), 'El feriado se guardó, pero «no rige» no: Tu sesión venció. Volvé a ingresar.');
+    assert.match(caja.innerHTML, /<a href="login\.html">Volvé a ingresar\.<\/a>/);
+    assert.equal(pagina.pagina.foco, pagina.elemento('fe-guardar'));
+    assert.equal(abierto(pagina, 'modal-feriado'), true);
   });
 });

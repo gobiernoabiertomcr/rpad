@@ -219,8 +219,9 @@ const datosDeFeriados = (respuesta, anioPedido = null) => {
   return { anio: datos.anio, anios: aniosDelSelectorFeriado(datos.anios, datos.anio), feriados: listaDeFeriados(datos.feriados) };
 };
 
-// El mensaje de la sesión vencida, con "Volvé a ingresar." como link a login.html
-const htmlDeSesionFeriados = () => escFeriado(MENSAJE_SESION_FERIADOS)
+// El mensaje de la sesión vencida (o un texto que lo incluye, como el de un guardado a medias), escapado y con "Volvé a ingresar."
+// como link a login.html
+const htmlDeSesionFeriados = (texto = MENSAJE_SESION_FERIADOS) => escFeriado(texto)
   .replace(escFeriado(ENLACE_SESION_FERIADOS), `<a href="login.html">${escFeriado(ENLACE_SESION_FERIADOS)}</a>`);
 
 // =====================================================
@@ -260,9 +261,10 @@ const fechaMaximaFeriado = (hoy) => (esFechaFeriado(hoy) ? `${Number(hoy.slice(0
 const MENSAJE_YA_NO_ESTA_FERIADO = 'Ese feriado ya no está cargado: se dio de baja mientras tanto.';
 const MENSAJE_SIN_CONEXION_FERIADO = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 
-// Las cuatro opciones grandes del tipo (radios name="fe-tipo", como el ámbito del área): el nombre de NOMBRES_TIPO_FERIADO y su ayuda
+// Las cuatro opciones grandes del tipo (radios name="fe-tipo", obligatorios, como el ámbito del área): el nombre de
+// NOMBRES_TIPO_FERIADO y su ayuda
 const htmlDeTiposFeriado = () => Object.entries(NOMBRES_TIPO_FERIADO)
-  .map(([valor, nombre]) => `<label class="ar-ambito"><input type="radio" name="fe-tipo" value="${valor}" aria-describedby="fe-tipo-error"><span><b>${escFeriado(nombre)}</b><small>${escFeriado(AYUDAS_TIPO_FERIADO[valor])}</small></span></label>`)
+  .map(([valor, nombre]) => `<label class="ar-ambito"><input type="radio" name="fe-tipo" value="${valor}" required aria-describedby="fe-tipo-error"><span><b>${escFeriado(nombre)}</b><small>${escFeriado(AYUDAS_TIPO_FERIADO[valor])}</small></span></label>`)
   .join('');
 
 /**
@@ -337,6 +339,18 @@ const pedidosDelGuardadoFeriado = (valores, original, anio) => {
   return pedidos;
 };
 
+// El feriado del modal después de un PUT que salió bien (un guardado a medias: los campos sí, «no rige» no): una copia con lo que
+// quedó guardado (la fecha, el nombre, el tipo, «se repite» y el trasladado), así el título, la pregunta de la baja y sus años dicen lo
+// mismo que el servidor. Lo que no es un feriado vuelve tal cual
+const conLoGuardadoFeriado = (feriado, valores) => {
+  if (!esObjetoFeriado(feriado)) return feriado;
+  const cuerpo = cuerpoDelFeriado(valores);
+  return {
+    ...feriado, fecha_guardada: cuerpo.fecha, nombre: cuerpo.nombre, tipo: cuerpo.tipo, se_repite: cuerpo.se_repite ? 1 : 0,
+    trasladado_de_guardado: cuerpo.trasladado_de
+  };
+};
+
 // El título del modal, texto plano (va con textContent): «Nuevo feriado» o «Editar «<nombre>»»
 const tituloDelModalFeriado = (feriado) => (esObjetoFeriado(feriado)
   ? `Editar «${valoresDelFeriado(feriado).nombre}»`
@@ -384,14 +398,14 @@ const htmlDeAniosDeLaBajaFeriado = (anios, elegido) => (Array.isArray(anios) ? a
 
 /**
  * La pregunta de la baja, texto plano (va con textContent). Uno que no se repite, con su día: «¿Dar de baja «Carnaval» del lunes
- * 16/02/2026? Deja de contar como feriado.» Uno que se repite, según `desde`: «… Deja de regir desde 2027. Los años anteriores no
- * cambian.» o, desde su primer año (o uno anterior), «… Se da de baja entero.»
+ * 16/02/2026? Deja de contar como día no hábil.» Uno que se repite, según `desde`: «… Deja de regir desde 2027. Los años anteriores
+ * no cambian.» o, desde su primer año (o uno anterior), «… Se da de baja entero.»
  */
 const textoDeLaBajaFeriado = (feriado, desde) => {
   const { nombre, fecha, se_repite: seRepite, primer_anio: primero } = valoresDelFeriado(feriado);
   if (!seRepite) {
     const cuando = fecha ? ` del ${diaDeLaSemanaFeriado(fecha)} ${fechaLargaFeriado(fecha)}` : '';
-    return `¿Dar de baja «${nombre}»${cuando}? Deja de contar como feriado.`;
+    return `¿Dar de baja «${nombre}»${cuando}? Deja de contar como día no hábil.`;
   }
   const anio = Number(desde);
   if (!Number.isInteger(anio) || primero === null || anio <= primero) return `¿Dar de baja «${nombre}»? Se da de baja entero.`;
@@ -589,6 +603,22 @@ function feriadoDeLaLista(id) {
     .find((f) => f.fijo !== true && esIdDeFeriado(f.id) && String(f.id) === String(id)) ?? null;
 }
 
+// «Editar»: el modal con el feriado de la lista. Mientras la lista se vuelve a pedir con forzar (después de guardar o dar de baja), la
+// tabla que se ve tiene los datos de antes: abrir el modal con ellos y guardar (el PUT manda el formulario entero) desharía la
+// corrección. Entonces espera la lista nueva y abre con su fila, con su «Editar» nuevo como origen; si no llegó, si ya no está o si
+// mientras tanto se abrió otro modal, no abre nada
+async function editarDeLaListaFeriado(id, boton) {
+  if (!esIdDeFeriado(id)) return;
+  let origen = boton;
+  if (pedidoDeFeriados && anioFeriados !== null && !feriadosPorAnio.has(anioFeriados)) {
+    await pedidoDeFeriados.promesa;
+    if (!feriadosPorAnio.has(anioFeriados) || modalDelFeriado !== null || bajaDelFeriado !== null) return;
+    origen = porIdFeriado('feriados-lista')?.querySelector?.(`[data-editar-feriado="${id}"]`) ?? boton;
+  }
+  const feriado = feriadoDeLaLista(id);
+  if (feriado) abrirModalFeriado(feriado, origen);
+}
+
 // =====================================================
 // Los modales: DOM y API
 // =====================================================
@@ -603,6 +633,8 @@ const mensajeDeFallaFeriado = (falla) => {
   if (falla?.status === 401) return MENSAJE_SESION_FERIADOS;
   return falla?.status ? textoFeriado(falla.message) : MENSAJE_SIN_CONEXION_FERIADO;
 };
+// Un guardado o una baja en camino: mientras tanto no se abre otro modal ni otra confirmación
+const seEstaEnviandoFeriado = () => modalDelFeriado?.guardando === true || bajaDelFeriado?.enviando === true;
 // Un aviso de la página: el toast (showToast inserta HTML: se escapa) y, como el toast no se anuncia, lo mismo en #feriados-anuncio
 function avisarFeriados(texto, tipo) {
   showToast(escFeriado(texto), tipo);
@@ -622,10 +654,11 @@ function valoresDelFormularioFeriado() {
 
 // «Nuevo feriado» (feriado null) y «Editar» (un feriado de la lista) abren el modal: los campos con valoresDelFeriado (la fecha
 // guardada, no la del año), «no rige» del año que se mira solo al corregir uno que se repite y «Dar de baja» solo al corregir. El foco
-// va a la fecha; al cerrarse, vuelve a `origen` (o, si la tabla se volvió a dibujar, a su «Editar» nuevo)
+// va a la fecha; al cerrarse, vuelve a `origen` (o, si la tabla se volvió a dibujar, a su «Editar» nuevo). Mientras se guarda o se da
+// de baja, no abre nada: la respuesta que llega es del modal que ya está, y no tiene que cerrar ni escribir en otro
 function abrirModalFeriado(feriado, origen) {
   const modal = porIdFeriado('modal-feriado');
-  if (!modal) return;
+  if (!modal || seEstaEnviandoFeriado()) return;
   const editado = esObjetoFeriado(feriado) && esIdDeFeriado(feriado.id) ? feriado : null;
   const valores = valoresDelFeriado(editado);
   const anio = anioFeriados;
@@ -648,7 +681,6 @@ function abrirModalFeriado(feriado, origen) {
   porIdFeriado('fe-trasladado').value = valores.trasladado_de;
   porIdFeriado('fe-se-repite').checked = valores.se_repite;
   const conAnio = editado !== null && valores.se_repite && esAnioFeriado(anio);
-  porIdFeriado('fe-anio-titulo').textContent = conAnio ? `Solo en ${anio}` : '';
   porIdFeriado('fe-no-rige-texto').textContent = conAnio ? `En ${anio} no rige` : '';
   porIdFeriado('fe-no-rige').checked = conAnio && valores.no_rige;
   const pasaAl = porIdFeriado('fe-pasa-al');
@@ -795,8 +827,8 @@ function cerrarModalFeriado() {
  * pedidosDelGuardadoFeriado, uno detrás del otro, con «Guardar» deshabilitado y el modal sin cerrarse hasta la respuesta.
  * - Todo bien: se cierra, el aviso del servidor con sus avisos y la lista otra vez (con forzar).
  * - Un 404 (se dio de baja mientras tanto): se cierra, avisa y vuelve a pedir la lista.
- * - El primero bien y el segundo no: queda abierto con «El feriado se guardó, pero «no rige» no: <motivo>.», y lo guardado pasa a ser
- *   el original (el próximo «Guardar» no lo repite).
+ * - El primero bien y el segundo no: queda abierto con «El feriado se guardó, pero «no rige» no: <motivo>.» (y, con un 400 con
+ *   campo, ese campo marcado), y lo guardado pasa a ser el original (el próximo «Guardar» no lo repite) y el feriado del modal.
  * - Otro error: con campo, en su campo; sin campo, en el aviso de arriba (con la sesión vencida, con el link a login.html).
  */
 async function guardarFeriado() {
@@ -823,9 +855,12 @@ async function guardarFeriado() {
       sesion.cambio = true;
       sesion.mensajes.push(respuesta?.message);
       if (Array.isArray(respuesta?.avisos)) sesion.avisos.push(...respuesta.avisos);
-      // Los campos ya guardados son el nuevo original: el próximo «Guardar» no los vuelve a mandar
+      // Los campos ya guardados son el nuevo original (el próximo «Guardar» no los vuelve a mandar) y el feriado del modal pasa a
+      // tenerlos (el título, la pregunta de la baja y sus años, como en el servidor)
       if (sesion.original && Object.hasOwn(pedido.cuerpo, 'fecha')) {
         sesion.original = { ...sesion.original, ...Object.fromEntries(CAMPOS_DEL_FERIADO.map((campo) => [campo, valores[campo]])) };
+        sesion.feriado = conLoGuardadoFeriado(sesion.feriado, valores);
+        if (modalDelFeriado === sesion) porIdFeriado('modal-feriado-titulo').textContent = tituloDelModalFeriado(sesion.feriado);
       }
     }
   } catch (error) {
@@ -843,8 +878,19 @@ async function guardarFeriado() {
     return;
   }
   if (falla && hechos > 0) {
-    mostrarAvisoDelModalFeriado(textoDelGuardadoAMediasFeriado(mensajeDeFallaFeriado(falla)));
-    boton.focus();
+    // Arriba, que los campos se guardaron y «no rige» no (con la sesión vencida, con el link a login.html); un 400 con campo marca
+    // además ese campo, con el foco ahí
+    const texto = textoDelGuardadoAMediasFeriado(mensajeDeFallaFeriado(falla));
+    if (falla.status === 401) {
+      const caja = porIdFeriado('feriado-error');
+      caja.innerHTML = htmlDeSesionFeriados(texto);
+      caja.hidden = false;
+    } else {
+      mostrarAvisoDelModalFeriado(texto);
+    }
+    const controles = falla.status === 400 ? ponerErrorFeriado(falla.campo, textoFeriado(falla.message)) : null;
+    if (controles) enfocarControlesFeriado(controles);
+    else boton.focus();
     return;
   }
   if (falla) {
@@ -865,11 +911,11 @@ async function guardarFeriado() {
 }
 
 // «Dar de baja» (en el pie, al corregir): la confirmación. En uno que se repite, desde qué año (de entrada, el que se mira), con el
-// foco en el selector; en uno que no, con el foco en «Cancelar»
+// foco en el selector; en uno que no, con el foco en «Cancelar». Nunca mientras se guarda o se da de baja
 function abrirModalBajaFeriado(origen) {
   const sesion = modalDelFeriado;
   const modal = porIdFeriado('modal-baja-feriado');
-  if (!modal || !sesion?.feriado || sesion.guardando) return;
+  if (!modal || !sesion?.feriado || seEstaEnviandoFeriado()) return;
   const anios = aniosDeLaBajaFeriado(sesion.feriado, Utils.hoyEnArgentina());
   const desde = anioDeLaBajaPorDefectoFeriado(anios, sesion.anio);
   const baja = { modal: sesion, feriado: sesion.feriado, origen: origen ?? document.activeElement ?? null, enviando: false };
@@ -998,10 +1044,7 @@ function alHacerClicEnFeriados(evento) {
     return;
   }
   const editar = evento.target.closest('[data-editar-feriado]');
-  if (editar) {
-    const feriado = feriadoDeLaLista(editar.dataset.editarFeriado);
-    if (feriado) abrirModalFeriado(feriado, editar);
-  }
+  if (editar) editarDeLaListaFeriado(editar.dataset.editarFeriado, editar);
 }
 
 // Solo administración (el true literal: usuarios.js ya mandó al resto a la portada); los clics, delegados en la vista y en cada
