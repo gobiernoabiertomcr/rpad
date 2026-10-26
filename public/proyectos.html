@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proyectos - RPAD</title>
+    <meta name="description" content="Los proyectos de la Dirección de Datos Públicos y Comunicación, con sus hitos y documentos, y los logros del área">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CSS Global -->
+    <link rel="stylesheet" href="css/main.css?v=20261109">
+    <style>
+        /* Proyectos (spec 2026-10-25-proyectos): los tokens y las piezas del Seguimiento y de Métricas y Reportes */
+        :root {
+            --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+            --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+            --sg-sol: #FCE8A8; --sg-ambar: #7A5200;
+            --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+            --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+            --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+            --sg-gris: #8A97A8;
+        }
+
+        /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
+        [hidden] { display: none !important; }
+        .main-content { min-width: 0; background: var(--gray-100); }
+        .pr-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+        .pr-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 72ch; line-height: 1.5; }
+        .visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+        /* Adónde se mudaron las métricas de Gestión (solo si la página abre con #metricas, el link viejo) */
+        .pr-aviso { margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--sg-linea); border-radius: 12px; background: #fff; color: var(--sg-texto); font-size: 0.9rem; }
+        .pr-aviso a { color: var(--sg-tinta); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+        /* Estados de la página: cargando, error y sin JavaScript (uno a la vez, como el Seguimiento) */
+        .pr-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+        .pr-estado h2 { margin: 0 0 6px; font-size: 1.3rem; font-weight: 700; color: var(--sg-tinta); }
+        .pr-estado p { margin: 0; }
+        .pr-error { background: #FBEEEE; border-color: #EFCACA; color: var(--sg-rojo); }
+
+        /* Mensajes (pueden nombrar un archivo o un proyecto: un nombre largo sin espacios se corta, no ensancha la página) */
+        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
+        .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: #2E6B4C; }
+        .alert-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
+
+        /* Botones */
+        .sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; text-decoration: none; }
+        .sg-btn svg { flex: none; }
+        .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
+        .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+        .sg-btn-rojo-borde { background: #fff; color: var(--sg-rojo); border-color: #C98F8F; }
+        .sg-btn-rojo { background: var(--sg-rojo); color: #fff; border-color: var(--sg-rojo); }
+        .sg-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
+        .sg-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+        .sg-link.rojo { color: var(--sg-rojo); }
+
+        /* Pestañas (las de Métricas y Reportes), cada una con su cantidad */
+        .pr-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--sg-linea); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+        .pr-pestana { padding: 10px 18px; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; font: inherit; font-weight: 600; color: var(--sg-suave); cursor: pointer; white-space: nowrap; }
+        .pr-pestana:hover { color: var(--sg-tinta); }
+        .pr-pestana.activa { color: var(--sg-tinta); border-bottom-color: var(--sg-tinta); }
+        .pr-pestana b { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+        /* Tarjetas */
+        .pr-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
+        .pr-tarjeta + .pr-tarjeta { margin-top: 16px; }
+        .pr-tarjeta h2, .pr-tarjeta h3.pr-h { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
+        .pr-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+        .pr-cabeza span { color: var(--sg-suave); font-size: 0.9rem; }
+
+        /* Filtros */
+        .pr-filtros { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 14px; }
+        .pr-campo { position: relative; flex: 1 1 320px; max-width: 420px; }
+        .pr-campo svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--sg-suave); pointer-events: none; }
+        .pr-campo input { width: 100%; height: 42px; border-radius: 12px; border: 1px solid var(--sg-borde-control); padding: 0 14px 0 42px; font: inherit; font-weight: 500; color: var(--sg-texto); background: #fff; }
+        .pr-campo input::placeholder { color: var(--sg-suave); font-weight: 400; }
+        .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .sg-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sg-texto); cursor: pointer; white-space: nowrap; }
+        .sg-chip b { font-variant-numeric: tabular-nums; font-weight: 700; }
+        .sg-chip[aria-pressed="true"] { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .pr-filtro-rotulo { font-size: 0.86rem; color: var(--sg-suave); margin-right: 2px; }
+        .pr-grupo-filtro { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+        /* La ventana de 3 años: las flechas a los costados del texto, dentro de una píldora */
+        .pr-flechas { display: inline-flex; align-items: center; gap: 4px; padding: 2px; border: 1px solid var(--sg-borde-control); border-radius: 999px; background: #fff; }
+        .pr-flecha { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: none; color: var(--sg-tinta); cursor: pointer; }
+        .pr-flecha:hover:not(:disabled) { background: var(--sg-sutil); }
+        .pr-flecha:disabled { color: #B6C1CE; cursor: default; }
+        .pr-flechas-texto { min-width: 92px; text-align: center; font-weight: 700; font-size: 0.9rem; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .pr-flechas-texto.solo { min-width: 0; }
+
+        /* Insignias de estado (con el cuadradito: el estado nunca va solo por color) */
+        .pr-insignia { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px 3px 9px; border-radius: 999px; font-weight: 600; font-size: 0.82rem; white-space: nowrap; }
+        .pr-insignia::before { content: ''; width: 8px; height: 8px; border-radius: 3px; background: currentColor; }
+        .pr-en-curso { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        .pr-idea { background: var(--sg-sol); color: var(--sg-ambar); }
+        .pr-completado { background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .pr-suspendido { background: var(--sg-linea); color: var(--sg-texto); }
+        .pr-etq { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--sg-cielo); color: var(--sg-tinta); white-space: nowrap; }
+
+        /* El cuadrado del proyecto: su color y su ícono (decorativo) */
+        .pr-tile { flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--c, var(--sg-tinta)); color: #fff; }
+        .pr-tile svg { width: 19px; height: 19px; }
+        .pr-tile.grande { width: 52px; height: 52px; border-radius: 14px; }
+        .pr-tile.grande svg { width: 26px; height: 26px; }
+        .pr-tile.chico { width: 14px; height: 14px; border-radius: 4px; }
+        .pr-tile.logro { background: #fff; border: 2px solid var(--sg-tinta); color: var(--sg-tinta); }
+
+        /* Los carriles: un renglón por proyecto sobre los 3 años de la ventana */
+        .pr-carriles { position: relative; }
+        /* 40 % para el proyecto y 60 % para los años (pedido del usuario: que los nombres no queden comprimidos) */
+        .pr-eje, .pr-carril { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 0 18px; }
+        .pr-eje { padding: 0 8px 6px; border-bottom: 1px solid var(--sg-linea); font-size: 0.8rem; color: var(--sg-suave); font-weight: 600; }
+        .pr-eje-anios { position: relative; height: 18px; }
+        .pr-eje-anios span { position: absolute; top: 0; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+        .pr-eje-anios span.hoy { color: #142B4A; font-weight: 700; }
+        .pr-lista-carriles { list-style: none; margin: 0; padding: 0; }
+        .pr-lista-carriles > li { border-bottom: 1px solid var(--sg-linea); }
+        .pr-lista-carriles > li:last-child { border-bottom: 0; }
+        .pr-carril { align-items: center; padding: 10px 8px; text-decoration: none; color: inherit; }
+        a.pr-carril:hover { background: var(--sg-sutil); }
+        .pr-carril.logros { background: #FAFBFC; }
+        .pr-carril-nombre { display: flex; gap: 12px; align-items: center; min-width: 0; }
+        .pr-carril-texto { min-width: 0; }
+        /* Un nombre largo sin espacios (200 caracteres seguidos) se corta en cualquier lugar: no rompe el carril */
+        .pr-nombre { display: block; font-weight: 600; color: var(--sg-tinta); line-height: 1.25; overflow-wrap: anywhere; }
+        a.pr-carril:hover .pr-nombre { text-decoration: underline; }
+        .pr-carril-nombre small { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; font-size: 0.78rem; color: var(--sg-suave); }
+        .pr-pista { position: relative; height: 40px; }
+        .pr-pista .anio { position: absolute; top: -10px; bottom: -10px; border-left: 1px dashed var(--sg-linea); }
+        .pr-pista .resalta { position: absolute; top: -10px; bottom: -10px; background: #FFF6D6; }
+        .pr-pista .tramo { position: absolute; top: 19px; height: 3px; border-radius: 2px; background: var(--c); opacity: 0.35; }
+        .pr-pista .punto { position: absolute; top: 13px; width: 15px; height: 15px; margin-left: -7.5px; border-radius: 50%; background: var(--c); border: 2.5px solid #fff; box-shadow: 0 0 0 1px var(--c); }
+        .pr-pista .punto.futuro { background: #fff; border: 2.5px solid var(--c); box-shadow: none; }
+        .pr-pista .punto.logro { border-radius: 3px; transform: rotate(45deg); width: 13px; height: 13px; margin-left: -6.5px; top: 14px; background: var(--sg-tinta); box-shadow: 0 0 0 1px var(--sg-tinta); }
+        /* Un logro previsto, hueco como los otros hitos previstos (si no, .punto.logro lo pinta lleno) */
+        .pr-pista .punto.logro.futuro { background: #fff; border: 2.5px solid var(--sg-tinta); box-shadow: none; }
+        /* Los puntos que se pisan (a menos de 15 px) van juntos, un poco más grandes, con la cantidad */
+        .pr-pista .punto.grupo { width: 17px; height: 17px; margin-left: -8.5px; top: 12px; }
+        .pr-pista .punto.logro.grupo { width: 15px; height: 15px; margin-left: -7.5px; top: 13px; }
+        .pr-pista .punto b { display: grid; place-items: center; width: 100%; height: 100%; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
+        .pr-pista .punto.futuro b { color: var(--c); }
+        .pr-pista .punto.logro b { transform: rotate(-45deg); }
+        .pr-pista .punto.logro.futuro b { color: var(--sg-tinta); }
+        .pr-pista .punto.apagado { opacity: 0.2; }
+        .pr-pista .linea-hoy { position: absolute; top: -10px; bottom: -10px; border-left: 2px solid #142B4A; }
+        .pr-pista .sin { position: absolute; left: 0; top: 11px; font-size: 0.82rem; color: var(--sg-suave); }
+        /* Los hitos que quedaron fuera de la ventana: una píldora en el borde con la cantidad */
+        .pr-pista .fuera { position: absolute; top: 10px; z-index: 1; padding: 1px 8px; border-radius: 999px; background: #fff; border: 1px solid var(--sg-borde-control); font-size: 0.74rem; font-weight: 700; color: var(--sg-texto); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .pr-pista .fuera.izq { left: 0; }
+        .pr-pista .fuera.der { right: 0; }
+        /* «Resaltar un año»: lo que sale en el Informe anual */
+        .pr-resumen-anio { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: #FFF6D6; color: var(--sg-ambar); font-weight: 600; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+        .pr-leyenda { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--sg-suave); margin-top: 12px; }
+        .pr-leyenda span { display: inline-flex; align-items: center; gap: 7px; }
+        .pr-mk { display: inline-block; width: 13px; height: 13px; border-radius: 50%; background: var(--sg-tinta); }
+        .pr-mk.futuro { background: #fff; border: 2.5px solid var(--sg-tinta); }
+        .pr-mk.logro { border-radius: 2px; transform: rotate(45deg); width: 11px; height: 11px; }
+        .pr-mk.hoy { width: 2px; height: 14px; border-radius: 0; background: #142B4A; }
+        .pr-mk.resalta { width: 18px; height: 12px; border-radius: 2px; background: #FFF6D6; border: 1px solid #F2CF5B; }
+        .pr-mk-fuera { border: 1px solid var(--sg-borde-control); border-radius: 999px; padding: 0 7px; background: #fff; font-size: 0.74rem; font-weight: 700; color: var(--sg-texto); }
+
+        /* La ficha de un proyecto */
+        .pr-volver { display: inline-block; margin-bottom: 14px; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+        .pr-ficha { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 28px; }
+        .pr-ficha-titulo { display: flex; gap: 16px; align-items: flex-start; }
+        .pr-ficha-titulo > div { min-width: 0; }
+        .pr-ficha h2.pr-titulo { font-family: var(--f-titulo); font-weight: 750; letter-spacing: -0.02em; font-size: 1.75rem; line-height: 1.12; margin: 0 0 10px; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .pr-ficha .etiquetas { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .pr-ficha .desc { margin: 14px 0 0; max-width: 78ch; line-height: 1.55; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
+        .pr-acciones { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+        .pr-datos { grid-column: 1 / -1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-top: 1px solid var(--sg-linea); padding-top: 14px; margin: 0; }
+        .pr-dato { padding-right: 14px; min-width: 0; }
+        .pr-dato + .pr-dato { border-left: 1px solid var(--sg-linea); padding-left: 14px; }
+        .pr-dato dt { font-size: 0.78rem; color: var(--sg-suave); margin: 0 0 2px; }
+        .pr-dato dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .pr-dos { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; align-items: start; }
+        .pr-dos .pr-tarjeta + .pr-tarjeta { margin-top: 0; }
+
+        /* Hitos y movimientos que se despliegan (los del Seguimiento) */
+        .pr-movs { list-style: none; margin: 0; padding: 0; }
+        .pr-mov { border-top: 1px solid var(--sg-linea); }
+        .pr-mov:first-child { border-top: 0; }
+        .pr-fila { width: 100%; display: grid; grid-template-columns: 96px 22px minmax(0, 1fr) 150px 20px; gap: 0 12px; align-items: start; padding: 12px 4px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+        .pr-fila:hover { background: var(--sg-sutil); }
+        .pr-fila .f { font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 1px; }
+        .pr-fila .marca { margin-top: 4px; justify-self: center; }
+        .pr-fila .q { font-weight: 600; overflow-wrap: anywhere; }
+        .pr-fila .d { display: block; font-size: 0.86rem; color: var(--sg-suave); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pr-fila .p { font-size: 0.84rem; color: var(--sg-suave); text-align: right; }
+        .pr-fila .abrir { color: var(--sg-suave); margin-top: 2px; transition: transform .15s ease; }
+        .pr-fila[aria-expanded="true"] .abrir { transform: rotate(180deg); }
+        .pr-compacta .pr-fila { grid-template-columns: 92px 18px minmax(0, 1fr) 20px; }
+        .pr-compacta .pr-fila .p { display: none; }
+        .pr-cuerpo { margin: 0 34px 14px 134px; padding: 14px 16px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 12px; font-size: 0.92rem; overflow-wrap: anywhere; }
+        .pr-compacta .pr-cuerpo { margin: 0 4px 14px 4px; }
+        .pr-cuerpo p { margin: 0 0 10px; line-height: 1.5; max-width: 76ch; }
+        .pr-cuerpo .desc { white-space: pre-line; overflow-wrap: anywhere; }
+        .pr-host { color: var(--sg-suave); overflow-wrap: anywhere; }
+        .pr-cuerpo .acciones { display: flex; gap: 6px 18px; flex-wrap: wrap; margin-top: 12px; }
+        .pr-mk-hito { display: inline-block; width: 12px; height: 12px; border-radius: 2px; transform: rotate(45deg); background: var(--sg-verde); }
+        .pr-mk-hito.futuro { background: #fff; border: 2.4px solid var(--sg-tinta); width: 11px; height: 11px; }
+        .pr-futuro-etq { display: inline-block; margin-left: 6px; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--sg-sol); color: var(--sg-ambar); }
+        .pr-anio { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 4px; padding: 14px 4px 6px; border-top: 1px solid var(--sg-linea); }
+        .pr-anio:first-child { border-top: 0; padding-top: 0; }
+        .pr-anio h2 { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: 1.3rem; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .pr-anio small { color: var(--sg-suave); font-size: 0.86rem; }
+
+        /* Archivos y documentos */
+        .pr-archivos { list-style: none; margin: 0; padding: 0; }
+        .pr-archivo { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--sg-linea); }
+        .pr-archivo:first-child { border-top: 0; }
+        .pr-cuerpo .pr-archivo { padding: 8px 0; }
+        .pr-ext { display: grid; place-items: center; width: 40px; height: 46px; border-radius: 8px; border: 1px solid var(--sg-borde-control); background: #fff; font-size: 0.68rem; font-weight: 700; color: var(--sg-tinta); letter-spacing: 0.02em; }
+        .pr-archivo .n { font-weight: 600; overflow-wrap: anywhere; }
+        .pr-archivo small { display: block; color: var(--sg-suave); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+        .pr-archivo .acc { display: flex; gap: 14px; font-size: 0.88rem; }
+        .pr-vacio { margin: 0; color: var(--sg-suave); }
+        .pr-nota { margin-top: 10px; font-size: 0.82rem; }
+        .pr-explica { margin: 4px 0 0; max-width: 70ch; font-size: 0.9rem; line-height: 1.45; color: var(--sg-suave); }
+        .pr-vacio-caja { margin: 0; padding: 18px; border-radius: 12px; background: var(--sg-sutil); color: var(--sg-suave); }
+        .pr-vacio-caja p { margin: 0 0 10px; max-width: 70ch; }
+        .pr-vacio-caja p:last-child { margin-bottom: 0; }
+
+        /* La cinta del recorrido de un proyecto (SVG, como la del Seguimiento) */
+        .pr-cinta-marco { overflow-x: auto; }
+        .pr-cinta-marco svg { width: 100%; min-width: 640px; height: auto; display: block; }
+        .pr-cinta text { font-family: var(--f-texto); }
+        .pr-cinta .eje { stroke: var(--sg-linea); }
+        .pr-cinta .anio { font-size: 12px; fill: var(--sg-suave); text-anchor: middle; font-weight: 600; }
+        .pr-cinta .vida { fill: var(--sg-cielo); }
+        .pr-cinta .porvenir { fill: #F2F8FB; stroke: var(--sg-cielo); }
+        .pr-cinta .h-hecho { fill: var(--sg-verde); stroke: #fff; stroke-width: 2; }
+        .pr-cinta .h-futuro { fill: #fff; stroke: var(--sg-tinta); stroke-width: 2.2; }
+        .pr-cinta .h-elev { fill: #fff; stroke: var(--sg-tinta); stroke-width: 2.5; }
+        .pr-cinta .etq { font-size: 11.5px; font-weight: 600; fill: var(--sg-texto); }
+        .pr-cinta .etq-f { font-size: 11px; fill: var(--sg-suave); font-variant-numeric: tabular-nums; }
+        /* Un halo blanco: la guía de una etiqueta de una fila de arriba no tacha el texto de una de abajo */
+        .pr-cinta .etq, .pr-cinta .etq-f { paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+        .pr-cinta .guia { stroke: var(--sg-borde-control); stroke-width: 1; stroke-dasharray: 2 3; }
+        .pr-cinta .l-hoy { stroke: #142B4A; stroke-width: 2.2; }
+        .pr-cinta .hoy { font-size: 11.5px; font-weight: 700; fill: #142B4A; text-anchor: middle; }
+
+        /* Modales (los del Seguimiento) */
+        .modal.pr-modal { max-width: 720px; border-radius: 18px; }
+        .modal.pr-modal-chico { max-width: 520px; }
+        /* El formulario envuelve el cuerpo y el pie: tiene que ser una columna flexible para que el cuerpo se desplace y el pie
+           (los botones) quede siempre a la vista (el problema que encontró Configuración en el modal de Áreas) */
+        .pr-form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+        .pr-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .pr-modal .modal-header { padding: 18px 24px; }
+        .pr-modal .modal-title { margin: 0; min-width: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .pr-modal .modal-close { color: var(--sg-suave); }
+        .pr-modal .modal-body { padding: 18px 24px 8px; }
+        .pr-modal .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .pr-modal .form-row.tres { grid-template-columns: 1fr 1fr 1fr; }
+        .pr-modal .form-group { margin-bottom: 16px; }
+        .pr-modal .form-label { font-weight: 600; color: var(--sg-texto); }
+        .pr-modal .form-input, .pr-modal .form-select { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; font-weight: 500; color: var(--sg-texto); }
+        .pr-modal textarea.form-input { height: auto; min-height: 92px; padding: 10px 12px; resize: vertical; line-height: 1.45; }
+        .pr-modal .form-hint { color: var(--sg-suave); font-size: 0.8rem; }
+        .pr-modal .requerido { color: var(--sg-rojo); }
+        .pr-modal .modal-footer { background: #fff; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .pr-modal .modal-footer small { color: var(--sg-suave); font-size: 0.82rem; max-width: 36ch; }
+        .pr-modal .modal-footer .botones { display: flex; gap: 10px; margin-left: auto; }
+        .pr-estados { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .pr-estados legend { padding: 0; margin-bottom: 6px; }
+        .pr-opciones { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+        .pr-opcion { display: flex; gap: 8px; align-items: center; padding: 9px 11px; border: 1px solid var(--sg-borde-control); border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+        .pr-opcion:hover { background: var(--sg-sutil); }
+        .pr-opcion input { width: 17px; height: 17px; margin: 0; accent-color: var(--sg-tinta); flex: none; }
+        .pr-opcion:has(input:checked) { border-color: var(--sg-tinta); background: #EEF5FB; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        .pr-colores, .pr-iconos { display: flex; flex-wrap: wrap; gap: 8px; }
+        .pr-color { position: relative; width: 34px; height: 34px; border-radius: 10px; background: var(--c); cursor: pointer; }
+        .pr-color input, .pr-icono input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+        .pr-color:has(input:checked) { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--sg-tinta); }
+        .pr-color:has(input:focus-visible), .pr-icono:has(input:focus-visible) { outline: 3px solid var(--tinta); outline-offset: 3px; }
+        .pr-icono { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--sg-linea); color: var(--sg-tinta); cursor: pointer; }
+        .pr-icono:hover { background: var(--sg-sutil); }
+        .pr-icono:has(input:checked) { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .pr-muestra { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--sg-sutil); margin-bottom: 16px; }
+        .pr-muestra b { color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .pr-areas { max-height: 168px; overflow-y: auto; border: 1px solid var(--sg-linea); border-radius: 12px; }
+        .pr-area { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--sg-linea); font-size: 0.9rem; cursor: pointer; overflow-wrap: anywhere; }
+        .pr-area:last-child { border-bottom: 0; }
+        .pr-area:hover { background: var(--sg-sutil); }
+        .pr-area input { width: 17px; height: 17px; margin: 0; accent-color: var(--sg-tinta); }
+        .pr-soltar { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px; border: 1.5px dashed var(--sg-borde-control); border-radius: 12px; background: var(--sg-sutil); text-align: center; color: var(--sg-suave); font-size: 0.9rem; }
+        .pr-soltar b { color: var(--sg-tinta); }
+        .pr-soltar.arrastrando { border-color: var(--sg-tinta); background: #EEF5FB; }
+        /* Los errores de cada campo (aria-invalid) y el error sin campo, dentro del modal: nunca detrás del velo */
+        .pr-modal .form-input[aria-invalid="true"], .pr-modal .form-select[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .pr-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
+        .pr-modal-aviso { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .pr-modal-de { margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; overflow-wrap: anywhere; }
+        .pr-modal .form-row.pr-titulo-fecha { grid-template-columns: minmax(0, 1fr) 180px; }
+        .pr-grupo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .pr-grupo legend { padding: 0; margin-bottom: 6px; }
+        .pr-muestra-texto { min-width: 0; }
+        .pr-muestra-texto small { display: block; color: var(--sg-suave); font-size: 0.82rem; }
+        /* Los archivos elegidos que todavía no se subieron, cada uno con su × */
+        .pr-pendientes { margin-top: 8px; }
+        .pr-quitar { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; font-size: 1.3rem; line-height: 1; color: var(--sg-suave); cursor: pointer; }
+        .pr-quitar:hover { background: var(--sg-sutil); color: var(--sg-rojo); }
+        .pr-confirmar-texto { margin: 0 0 8px; line-height: 1.5; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .modal.pr-modal-vista { max-width: 960px; }
+        .pr-vista-previa img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; }
+        .pr-vista-previa iframe { display: block; width: 100%; height: 70vh; border: 0; }
+
+        /* Foco visible (el de Métricas y Reportes: anillo --tinta de 3 px con halo --sol-fuerte) */
+        .pr-pagina a:focus-visible, .pr-pagina button:focus-visible, .pr-pagina input:focus-visible, .pr-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .pr-pagina .pr-fila:focus-visible, .pr-pagina .pr-carril:focus-visible { outline-offset: -3px; border-radius: 8px; box-shadow: none; }
+        .pr-pagina .pr-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
+
+        /* Debajo de 960 px, el reparto pasa a 50/50; debajo de 760 px, el carril se apila y la fila de los años se oculta (los años
+           siguen en el texto de las flechas) */
+        @media (max-width: 960px) {
+            .pr-ficha { grid-template-columns: 1fr; } .pr-acciones { flex-direction: row; flex-wrap: wrap; }
+            .pr-datos { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .pr-dato:nth-child(4) { border-left: 0; padding-left: 0; }
+            .pr-dos { grid-template-columns: 1fr; }
+            .pr-fila { grid-template-columns: 88px 20px minmax(0, 1fr) 20px; } .pr-fila .p { grid-column: 3; text-align: left; margin-top: 4px; }
+            /* La cantidad de archivos baja a la segunda fila, en la columna del texto; el chevron queda arriba, en la cuarta */
+            .pr-fila .abrir { grid-column: 4; grid-row: 1; }
+            .pr-cuerpo { margin-left: 4px; margin-right: 4px; }
+            .pr-eje, .pr-carril { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+        }
+        @media (max-width: 760px) {
+            .pr-tarjeta { padding: 16px; }
+            .pr-eje { display: none; }
+            .pr-carril { grid-template-columns: 1fr; gap: 10px; }
+            /* La fila de datos de la ficha, en dos columnas: con tres, una palabra larga se partía */
+            .pr-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .pr-dato:nth-child(even) { border-left: 1px solid var(--sg-linea); padding-left: 14px; }
+            .pr-dato:nth-child(odd) { border-left: 0; padding-left: 0; }
+            .pr-modal .form-row, .pr-modal .form-row.tres, .pr-opciones { grid-template-columns: 1fr 1fr; }
+            .pr-modal .form-row.pr-titulo-fecha { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="index.html" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="index.html">Inicio</a>
+                <a href="datasets.html">Datasets</a>
+                <a href="calendario.html">Calendario</a>
+                <a href="contacto.html">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="login.html" class="btn btn-primary btn-sm"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg> Ingresar</a>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section hidden" id="sidebarPrincipal">
+                    <div class="sidebar-section-title">Principal</div>
+                    <a href="index.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Inicio</span></a>
+                    <a href="datasets.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg><span>Datasets</span></a>
+                    <a href="calendario.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg><span>Calendario</span></a>
+                    <a href="contacto.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Contacto</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAdmin">
+                    <div class="sidebar-section-title">Administración</div>
+                    <a href="admin.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
+                    <a href="correos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="configuracion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="notas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+                    <a href="proyectos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="seguimiento.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="perfil.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="pr-pagina">
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg>
+                        Proyectos
+                    </h1>
+                    <!-- Solo para administración (Auth.isAdmin): proyectos.js lo muestra -->
+                    <button type="button" class="sg-btn sg-btn-tinta" id="pr-nuevo" hidden><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Nuevo proyecto</button>
+                </div>
+                <p class="pr-bajada" id="pr-bajada">Los proyectos de la Dirección de Datos Públicos y Comunicación, con sus hitos y documentos, y los logros del área. Los hitos de cada año salen en el Informe anual.</p>
+                <!-- Solo si la página abre con #metricas (el link viejo de las métricas de Gestión, que llega por la redirección de app.js) -->
+                <p class="pr-aviso" id="pr-aviso-metricas" hidden>Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>
+
+                <div id="message-container"></div>
+                <!-- La región viva de la página: proyectos.js anuncia acá la frase del año resaltado, el vacío de los filtros, los años de las
+                     flechas y los avisos (lo que se vuelve a dibujar no la toca) -->
+                <p class="visualmente-oculto" id="pr-anuncio" role="status"></p>
+
+                <!-- Estados de la página -->
+                <noscript><p class="pr-estado">Para ver los proyectos hace falta JavaScript.</p></noscript>
+                <p class="pr-estado" id="pr-cargando" role="status">Cargando los proyectos…</p>
+                <div class="pr-estado pr-error" id="pr-error" role="alert" hidden>
+                    <p>No se pudieron cargar los proyectos. Probá de nuevo en unos minutos.</p>
+                </div>
+
+                <!-- La lista: las tres pestañas (sin ?id= en la dirección) -->
+                <div id="pr-vista-lista" hidden>
+                    <div class="pr-pestanas" role="tablist" aria-label="Proyectos, línea de tiempo y logros">
+                        <button type="button" class="pr-pestana activa" role="tab" id="tab-proyectos" aria-selected="true" aria-controls="panel-proyectos" data-hash="proyectos">Proyectos <b id="cnt-proyectos"></b></button>
+                        <button type="button" class="pr-pestana" role="tab" id="tab-linea" aria-selected="false" aria-controls="panel-linea" data-hash="linea" tabindex="-1">Línea de tiempo <b id="cnt-linea"></b></button>
+                        <button type="button" class="pr-pestana" role="tab" id="tab-logros" aria-selected="false" aria-controls="panel-logros" data-hash="logros" tabindex="-1">Logros del área <b id="cnt-logros"></b></button>
+                    </div>
+                    <section id="panel-proyectos" role="tabpanel" aria-labelledby="tab-proyectos"></section>
+                    <section id="panel-linea" role="tabpanel" aria-labelledby="tab-linea" hidden></section>
+                    <section id="panel-logros" role="tabpanel" aria-labelledby="tab-logros" hidden></section>
+                </div>
+
+                <!-- El detalle de un proyecto (?id=N): reemplaza a las pestañas -->
+                <div id="pr-vista-detalle" hidden></div>
+
+                <!-- «Subir documentos» de un proyecto y «Subir archivos» de un hito abren este selector (spec 6) -->
+                <input type="file" id="pr-elegir-archivos" multiple hidden accept=".pdf,.docx,.xlsx,.csv,.odt,.ods,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z">
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="index.html">Inicio</a></li>
+                            <li><a href="datasets.html">Datasets</a></li>
+                            <li><a href="calendario.html">Calendario</a></li>
+                            <li><a href="contacto.html">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="https://datos.comodoro.gov.ar" target="_blank" rel="noopener">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span id="footer-anio">2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Nuevo proyecto / Editar un proyecto (spec 6). proyectos.js pone el título, arma las áreas, los colores, los íconos y la muestra
+         (htmlDeAreas, htmlDeColores, htmlDeIconos y htmlDeMuestra) y valida con erroresDelProyecto. Los textos no tienen maxlength:
+         cuenta unidades de UTF-16 (un emoji, dos) y el servidor cuenta caracteres -->
+    <div class="modal-overlay" id="modal-proyecto">
+        <div class="modal pr-modal" role="dialog" aria-modal="true" aria-labelledby="modal-proyecto-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-proyecto-titulo">Nuevo proyecto</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <form class="pr-form" id="form-proyecto" novalidate>
+                <div class="modal-body">
+                    <p class="pr-modal-aviso" id="modal-proyecto-aviso" role="alert" hidden></p>
+                    <div class="form-group">
+                        <label class="form-label" for="p-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
+                        <input type="text" class="form-input" id="p-nombre" autocomplete="off" aria-required="true" aria-describedby="p-nombre-error">
+                        <p class="form-error" id="p-nombre-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="p-descripcion">Descripción</label>
+                        <textarea class="form-input" id="p-descripcion" rows="3" aria-describedby="p-descripcion-error"></textarea>
+                        <p class="form-error" id="p-descripcion-error" hidden></p>
+                    </div>
+                    <fieldset class="pr-estados" id="p-estado" role="radiogroup" aria-describedby="p-estado-error">
+                        <legend class="form-label">Estado</legend>
+                        <div class="pr-opciones">
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="idea" aria-describedby="p-estado-error" checked><span class="pr-insignia pr-idea">Idea</span></label>
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="en_curso" aria-describedby="p-estado-error"><span class="pr-insignia pr-en-curso">En curso</span></label>
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="completado" aria-describedby="p-estado-error"><span class="pr-insignia pr-completado">Completado</span></label>
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="suspendido" aria-describedby="p-estado-error"><span class="pr-insignia pr-suspendido">Suspendido</span></label>
+                        </div>
+                        <p class="form-error" id="p-estado-error" hidden></p>
+                    </fieldset>
+                    <div class="form-row tres">
+                        <div class="form-group">
+                            <label class="form-label" for="p-categoria">Categoría</label>
+                            <select class="form-select" id="p-categoria" aria-describedby="p-categoria-error"><option value="tecnologia">Tecnología</option><option value="normativa">Normativa</option><option value="difusion">Difusión</option></select>
+                            <p class="form-error" id="p-categoria-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="p-prioridad">Prioridad</label>
+                            <select class="form-select" id="p-prioridad" aria-describedby="p-prioridad-error"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select>
+                            <p class="form-error" id="p-prioridad-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="p-fecha-inicio">Fecha de elevación</label>
+                            <input type="date" class="form-input" id="p-fecha-inicio" min="2000-01-01" aria-describedby="p-fecha-inicio-error">
+                            <p class="form-error" id="p-fecha-inicio-error" hidden></p>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="p-responsable">Autor o responsable</label>
+                            <input type="text" class="form-input" id="p-responsable" autocomplete="off" aria-describedby="p-responsable-error">
+                            <p class="form-error" id="p-responsable-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="p-enlace-externo">Enlace</label>
+                            <input type="url" class="form-input" id="p-enlace-externo" placeholder="https://" autocomplete="off" aria-describedby="p-enlace-externo-ayuda p-enlace-externo-error">
+                            <p class="form-hint" id="p-enlace-externo-ayuda">El repositorio, el borrador o la página del proyecto.</p>
+                            <p class="form-error" id="p-enlace-externo-error" hidden></p>
+                        </div>
+                    </div>
+                    <fieldset class="pr-grupo" id="p-areas" aria-describedby="p-areas-error">
+                        <legend class="form-label">Áreas</legend>
+                        <div class="pr-areas" id="p-areas-lista"></div>
+                        <p class="form-error" id="p-areas-error" hidden></p>
+                    </fieldset>
+                    <div class="pr-muestra" id="p-muestra" aria-hidden="true"></div>
+                    <div class="form-row">
+                        <fieldset class="pr-grupo" id="p-color" role="radiogroup" aria-describedby="p-color-error">
+                            <legend class="form-label">Color</legend>
+                            <div class="pr-colores" id="p-colores"></div>
+                            <p class="form-error" id="p-color-error" hidden></p>
+                        </fieldset>
+                        <fieldset class="pr-grupo" id="p-icono" role="radiogroup" aria-describedby="p-icono-error">
+                            <legend class="form-label">Ícono</legend>
+                            <div class="pr-iconos" id="p-iconos"></div>
+                            <p class="form-error" id="p-icono-error" hidden></p>
+                        </fieldset>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <small><span class="requerido" aria-hidden="true">*</span> Obligatorio.</small>
+                    <div class="botones">
+                        <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                        <button type="submit" class="sg-btn sg-btn-tinta" id="p-guardar">Guardar el proyecto</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Nuevo hito, Editar el hito, Registrar un logro del área o Editar el logro (spec 6). proyectos.js pone el título, de quién es y el
+         botón (textosDelModalDeHito), valida con erroresDelHito y controla cada archivo elegido con problemaDeArchivo -->
+    <div class="modal-overlay" id="modal-hito">
+        <div class="modal pr-modal" role="dialog" aria-modal="true" aria-labelledby="modal-hito-titulo" aria-describedby="h-de">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-hito-titulo">Nuevo hito</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <form class="pr-form" id="form-hito" novalidate>
+                <div class="modal-body">
+                    <p class="pr-modal-aviso" id="modal-hito-aviso" role="alert" hidden></p>
+                    <p class="pr-modal-de" id="h-de"></p>
+                    <div class="form-row pr-titulo-fecha">
+                        <div class="form-group">
+                            <label class="form-label" for="h-titulo">Título <span class="requerido" aria-hidden="true">*</span></label>
+                            <input type="text" class="form-input" id="h-titulo" autocomplete="off" aria-required="true" aria-describedby="h-titulo-error">
+                            <p class="form-error" id="h-titulo-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="h-fecha">Fecha <span class="requerido" aria-hidden="true">*</span></label>
+                            <input type="date" class="form-input" id="h-fecha" min="2000-01-01" aria-required="true" aria-describedby="h-fecha-error">
+                            <p class="form-error" id="h-fecha-error" hidden></p>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="h-descripcion">Descripción</label>
+                        <textarea class="form-input" id="h-descripcion" rows="3" aria-describedby="h-descripcion-error"></textarea>
+                        <p class="form-error" id="h-descripcion-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="h-evidencia-url">Enlace de la evidencia</label>
+                        <input type="url" class="form-input" id="h-evidencia-url" placeholder="https://" autocomplete="off" aria-describedby="h-evidencia-url-ayuda h-evidencia-url-error">
+                        <p class="form-hint" id="h-evidencia-url-ayuda">Opcional: la publicación, el repositorio o la noticia.</p>
+                        <p class="form-error" id="h-evidencia-url-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <span class="form-label" id="h-archivos-rotulo">Archivos</span>
+                        <div class="pr-soltar" id="h-soltar" role="group" aria-labelledby="h-archivos-rotulo">
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                            <span>Arrastrá los archivos acá o <button type="button" class="sg-link" id="h-elegir" aria-describedby="h-archivos-ayuda h-archivos-error">elegilos</button></span>
+                            <small id="h-archivos-ayuda">Hasta 3 archivos de 10 MB cada uno: PDF, Word, Excel, CSV, ODT, ODS, imágenes, ZIP, RAR o 7Z.</small>
+                            <input type="file" id="h-archivos" multiple hidden accept=".pdf,.docx,.xlsx,.csv,.odt,.ods,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z">
+                        </div>
+                        <div aria-live="polite">
+                            <p class="form-error" id="h-archivos-error" hidden></p>
+                            <div id="h-pendientes"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <small><span class="requerido" aria-hidden="true">*</span> Obligatorio.</small>
+                    <div class="botones">
+                        <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                        <button type="submit" class="sg-btn sg-btn-tinta" id="h-guardar">Guardar el hito</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmar una eliminación (spec 6: un modal chico, no confirm()). El texto lo arma textoDeConfirmacion -->
+    <div class="modal-overlay" id="modal-confirmar">
+        <div class="modal pr-modal pr-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-confirmar-titulo">Eliminar</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="pr-modal-aviso" id="modal-confirmar-aviso" role="alert" hidden></p>
+                <p class="pr-confirmar-texto" id="modal-confirmar-texto"></p>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-rojo" id="modal-confirmar-si">Eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- La vista previa de una imagen o un PDF (spec 6, «Ver»): proyectos.js pone el nombre del archivo en el título y el <img> o el
+         <iframe> (htmlDeVistaPrevia, desde un blob:). «Descargar» baja el mismo archivo: en el teléfono, un PDF no se ve en el <iframe> -->
+    <div class="modal-overlay" id="modal-vista-previa">
+        <div class="modal pr-modal pr-modal-vista" role="dialog" aria-modal="true" aria-labelledby="modal-vista-previa-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-vista-previa-titulo">Vista previa</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="pr-modal-aviso" id="modal-vista-previa-aviso" role="alert" hidden></p>
+                <div class="pr-vista-previa" id="modal-vista-previa-cuerpo"></div>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cerrar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="modal-vista-previa-descargar">Descargar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts del RPAD -->
+    <script src="js/config.js"></script>
+    <script src="js/auth.js?v=20261204"></script>
+    <script src="js/main.js?v=20261204"></script>
+    <script src="js/api.js?v=20261204"></script>
+    <script src="js/proyectos.js?v=20261206"></script>
+</body>
+</html>

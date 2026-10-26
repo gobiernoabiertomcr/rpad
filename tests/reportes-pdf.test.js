@@ -1586,7 +1586,7 @@ const fotoDeLosCasos = (anio, mapa = mapaDeLosCasos()) => {
 const renderInforme = ({ foto = fotoDeLosCasos(2026), anterior = null, logros = [] } = {}) =>
   renderInformeAnual({ foto, anterior, logros }, { generado: GENERADO_INFORME });
 
-// Los hitos como los lee el controlador (proyecto_hitos con su proyecto, en el orden de Gestión → Proyectos y por fecha; los logros del
+// Los hitos como los lee el controlador (proyecto_hitos con su proyecto, en el orden de Herramientas → Proyectos y por fecha; los logros del
 // área, sin proyecto, al final). Los proyectos son inventados
 const hito = (datos) => ({ proyecto_id: 1, proyecto: 'Portal de datos abiertos', fecha: '2026-03-10', titulo: 'Un hito', descripcion: null, ...datos });
 const HITOS = [
@@ -1817,7 +1817,7 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
 
     const todo = lineasPorHoja(await renderInforme({ logros })).flat();
     const desde = todo.indexOf('LOGROS DEL AÑO');
-    assert.ok(desde !== -1 && todo.includes('Los hitos de 2026 cargados en Gestión'), todo.join(' | '));
+    assert.ok(desde !== -1 && todo.includes('Los hitos de 2026 cargados en Proyectos'), todo.join(' | '));
     const logrosEnElPdf = todo.slice(desde);
     // Cada proyecto, y debajo cada hito con su fecha, su título y su descripción, en orden
     const orden = ['Registro de los datasets', '26/01/2026', 'La doble verificación de los cambios', 'Un cambio lo propone una persona y lo aprueba otra.',
@@ -1874,7 +1874,9 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
 
 const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHash('sha256').update(contenido, 'latin1').digest('hex'));
 
-// La referencia: los hashes de cada hoja, tomados con el código anterior al Ciclo de vida del dato
+// La referencia: los hashes de cada hoja, tomados con el código anterior al Ciclo de vida del dato. La hoja 3 de los dos Informes
+// anuales se volvió a tomar al traer Proyectos (spec 2026-10-25-proyectos): su único cambio en ese PDF es «Los hitos de AAAA cargados
+// en Gestión» → «… cargados en Proyectos» (services/reportesInformeAnualPdf.js), comprobado contra el código de antes del merge
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
     '341d7fbf281fd972313075f0f4a2a72f51604a11d4f6ce54efd7d1ce8e02a66c',
@@ -1898,12 +1900,12 @@ const REFERENCIA_DE_LOS_PDF = {
   'Informe anual: el primer año con foto': [
     '378207d03c6532c0951a8a60b2c1626159f16df9a1bc19ba748afa9981690ae9',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
-    '21e5c8b5e965febc2e95cbeb9dff11ce8b63c4dcdea1754f3752feb546f69998'
+    'e185bd524c985140c2b6a206eea3b2a8a49e57e082d1a391b99b949c056bf53a'
   ],
   'Informe anual: con el año anterior y los logros': [
     '378207d03c6532c0951a8a60b2c1626159f16df9a1bc19ba748afa9981690ae9',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
-    'ee82cf64a5a3a866ca88f760eafbf78df393774959ef22805e8dc1119f471810'
+    '7794fdd5f3bfc3011d0d06ad65ff5bcfc1ef4e89025a7de01e15609639e41c33'
   ]
 };
 

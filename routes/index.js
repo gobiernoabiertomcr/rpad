@@ -97,28 +97,32 @@ import {
   getMetricasManuales,
   createMetricaManual,
   deleteMetricaManual,
+  exportarMetricasCSV
+} from '../controllers/gestionController.js';
+import {
   getProyectos,
   getProyectoById,
   createProyecto,
   updateProyecto,
   deleteProyecto,
+  createLogro,
   createHito,
   updateHito,
   deleteHito,
   getTimeline,
-  createLogro,
-  exportarMetricasCSV,
+  prepararSubidaProyecto,
   uploadProyectoDocumentos,
   descargarProyectoDocumento,
   deleteProyectoDocumento,
+  prepararSubidaHito,
   uploadHitoArchivos,
   descargarHitoArchivo,
   deleteHitoArchivo
-} from '../controllers/gestionController.js';
+} from '../controllers/proyectosController.js';
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
 import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
-import { uploadProyectoMiddleware, uploadHitoMiddleware } from '../config/upload.js';
+import { subida } from '../config/upload.js';
 
 const router = Router();
 
@@ -321,14 +325,13 @@ router.post('/gestion/proyectos/:proyecto_id/hitos', authMiddleware, adminOnly, 
 router.put('/gestion/hitos/:id', authMiddleware, adminOnly, updateHito);
 router.delete('/gestion/hitos/:id', authMiddleware, adminOnly, deleteHito);
 
-// Documentos de proyecto (solo admin)
-router.post('/gestion/proyectos/:id/documentos', authMiddleware, adminOnly, uploadProyectoMiddleware, uploadProyectoDocumentos);
-router.get('/gestion/proyectos/:id/documentos/:docId/descargar', authMiddleware, adminOnly, descargarProyectoDocumento);
+// Documentos de proyecto y archivos de hitos: suben y borran solo admin; descargan todos los autenticados. Antes de que multer lea el
+// pedido, prepararSubida… valida el id, que el proyecto o el hito existan y que queden lugares (sin escribir nada si no)
+router.post('/gestion/proyectos/:id/documentos', authMiddleware, adminOnly, prepararSubidaProyecto, subida('proyecto'), uploadProyectoDocumentos);
+router.get('/gestion/proyectos/:id/documentos/:docId/descargar', authMiddleware, descargarProyectoDocumento);
 router.delete('/gestion/proyectos/:id/documentos/:docId', authMiddleware, adminOnly, deleteProyectoDocumento);
-
-// Archivos de hitos (solo admin)
-router.post('/gestion/hitos/:id/archivos', authMiddleware, adminOnly, uploadHitoMiddleware, uploadHitoArchivos);
-router.get('/gestion/hitos/:id/archivos/:archivoId/descargar', authMiddleware, adminOnly, descargarHitoArchivo);
+router.post('/gestion/hitos/:id/archivos', authMiddleware, adminOnly, prepararSubidaHito, subida('hito'), uploadHitoArchivos);
+router.get('/gestion/hitos/:id/archivos/:archivoId/descargar', authMiddleware, descargarHitoArchivo);
 router.delete('/gestion/hitos/:id/archivos/:archivoId', authMiddleware, adminOnly, deleteHitoArchivo);
 
 // Timeline (todos los autenticados)

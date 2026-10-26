@@ -58,6 +58,10 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // (usuarios.html#licencias llega a configuracion.html#licencias)
 app.get('/usuarios.html', (req, res) => res.redirect(302, '/configuracion.html'));
 app.get('/areas.html', (req, res) => res.redirect(302, '/configuracion.html#areas'));
+// La dirección vieja de Gestión lleva a Proyectos (spec 2026-10-25-proyectos, 11), por lo mismo y también 302. Va sin fragmento: el
+// navegador conserva el del link original (gestion.html#metricas llega a proyectos.html#metricas, que avisa adónde se mudaron las
+// métricas)
+app.get('/gestion.html', (req, res) => res.redirect(302, '/proyectos.html'));
 
 // Servir archivos estáticos del frontend
 app.use(express.static(path.join(__dirname, 'public')));
