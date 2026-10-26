@@ -11,10 +11,11 @@ import { agendaDe, opcionesDeAgenda } from '../services/reportesAgenda.js';
 import { renderAgenda } from '../services/reportesAgendaPdf.js';
 import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
 import { renderInformeAnual, logrosPorProyecto } from '../services/reportesInformeAnualPdf.js';
+import { renderCicloDeVida } from '../services/reportesCicloDeVidaPdf.js';
 import { leerFoto } from '../services/metricasFoto.js';
 import { nombreDelReporte } from '../services/reportesNombres.js';
 import { ESTADISTICOS, DIAS } from '../services/metricasReglas.js';
-import { metricasDe, deLaFoto, SIN_METRICAS } from './metricasController.js';
+import { metricasDe, deLaFoto, cicloDeVidaDe, SIN_METRICAS } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
@@ -28,7 +29,8 @@ const ERROR_AL_GENERAR = Object.freeze({
   area: 'Error al generar el PDF del reporte por área',
   agenda: 'Error al generar el PDF de la Agenda de pedidos',
   completar: 'Error al generar el PDF de Datos para completar',
-  informe: 'Error al generar el PDF del Informe anual'
+  informe: 'Error al generar el PDF del Informe anual',
+  ciclo: 'Error al generar el Ciclo de vida del dato'
 });
 const responderError = (res, reporte, error) => {
   console.error(`${ERROR_AL_GENERAR[reporte]}:`, error);
@@ -377,5 +379,42 @@ export const reporteInformeAnual = async (req, res) => {
     res.send(pdf);
   } catch (error) {
     responderError(res, 'informe', error);
+  }
+};
+
+// =====================================================
+// REPORTE: Ciclo de vida del dato
+// =====================================================
+// Cuánto tarda cada etapa del circuito, del aviso del RPAD a la carga en el portal (spec 2026-10-25-ciclo-de-vida-del-dato, 3.5), con el
+// patrón de «Datos para completar»: los datos los da cicloDeVidaDe (controllers/metricasController.js: el año leído como en GET
+// /api/metricas, con el año anterior para «Año anterior: …») y el PDF lo dibuja services/reportesCicloDeVidaPdf.js, siempre en dos hojas
+// (la gestión externa y la interna).
+
+// El PDF «Ciclo de vida del dato» para `query` (los parámetros de GET /reportes/ciclo-de-vida: solo cuenta `anio`, leído como en GET
+// /api/metricas, y por defecto el en curso; el reporte cuenta siempre todos los ciclos, sin destildados). `generado`: { momento:
+// 'AAAA-MM-DD HH:MM:SS' (hora argentina: su día es hoy), por: nombre corto o null }. { anio, pdf }, con el año del reporte (el del nombre
+// del archivo: sin año, o con algo que no es un año, el en curso), o null si ese año no tiene métricas
+export const pdfDeCicloDeVida = async (query, generado) => {
+  const hoy = generado.momento.slice(0, 10);
+  const anio = query !== null && typeof query === 'object' ? query.anio : undefined;
+  const datos = await cicloDeVidaDe({ anio }, { hoy });
+  if (datos === null) return null;
+  return { anio: datos.anio, pdf: await renderCicloDeVida(datos, { hoy, generado }) };
+};
+
+// GET /reportes/ciclo-de-vida?anio= (authMiddleware: todos los roles con sesión). El archivo se llama «Ciclo-de-vida-del-dato-AAAA.pdf»,
+// con el año del reporte. Un año sin métricas (anterior a 2026 o futuro), el 404 de Métricas.
+export const reporteCicloDeVida = async (req, res) => {
+  try {
+    // Un solo instante para el pie y para "hoy"
+    const momento = ahoraArgentina();
+    const [[usuario]] = await pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]);
+    const resultado = await pdfDeCicloDeVida(req.query, { momento, por: nombreCorto(usuario?.nombre_completo) });
+    if (resultado === null) return res.status(404).json(SIN_METRICAS);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('ciclo', { anio: resultado.anio })));
+    res.send(resultado.pdf);
+  } catch (error) {
+    responderError(res, 'ciclo', error);
   }
 };

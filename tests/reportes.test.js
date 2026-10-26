@@ -1,11 +1,13 @@
 // Reportes PDF
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
-import { lineasPorHoja } from './pdf-lector.js';
+import { lineasPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
 import { hoyArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
 import { ASUNTOS_EMAIL } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import pool from '../config/database.js';
+import { reporteCicloDeVida } from '../controllers/reportesController.js';
 
 let servidor, api, usuarios;
 
@@ -176,6 +178,48 @@ describe('reportes PDF', () => {
     }
   });
 
+  // Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 3.5), con los datos de la base de la rama: el año leído como en GET
+  // /api/metricas (sin año, o con algo que no es un año, el en curso), siempre en dos hojas A4, una por gestión. El archivo lleva el año
+  // del reporte, no el de la consulta, y el pie, el nombre corto de quien lo pide
+  it('ciclo de vida del dato: el lector lo descarga, «Ciclo-de-vida-del-dato-AAAA.pdf», en dos hojas; sin sesión, 401', async () => {
+    const anio = hoyArgentina().slice(0, 4);
+    for (const [consulta, delReporte] of [['', anio], ['?anio=2026', '2026'], [`?anio=${anio}`, anio], ['?anio=abc', anio],
+      [`?anio=${anio}&anio=2026`, anio]]) {
+      const res = await api.get(`/reportes/ciclo-de-vida${consulta}`, { token: usuarios.lector.token });
+      esPdf(res);
+      const nombre = `Ciclo-de-vida-del-dato-${delReporte}.pdf`;
+      assert.equal(res.headers.get('content-disposition'), `attachment; filename="${nombre}"; filename*=UTF-8''${nombre}`, consulta);
+      assert.ok(todasDelTamano(res.body, HOJA_A4), `${consulta}: todas las hojas son A4`);
+      const hojas = lineasPorHoja(res.body);
+      assert.equal(hojas.length, 2, consulta);
+      hojas.forEach((lineas, k) => {
+        assert.ok(lineas.includes(`Ciclo de vida del dato · ${delReporte} · Hoja ${k + 1} de 2`), `${consulta} hoja ${k + 1}: ${lineas.join(' | ')}`);
+        assert.ok(lineas.some((l) => /^Generado el \d{2}\/\d{2}\/\d{4} a las \d{2}:\d{2} por Test lector$/.test(l)), `${consulta} hoja ${k + 1}`);
+      });
+      assert.ok(hojas[0].includes('Gestión externa') && hojas[1].includes('Gestión interna'), consulta);
+    }
+    for (const token of [undefined, 'no-es-un-token']) {
+      const sinSesion = await api.get('/reportes/ciclo-de-vida', { token });
+      assert.equal(sinSesion.status, 401);
+      assert.equal(sinSesion.body.success, false);
+    }
+  });
+
+  // Un año sin métricas (anterior a 2026 o futuro) da el mismo 404 en JSON que GET /api/metricas
+  it('ciclo de vida del dato ?anio=: un año sin métricas da el 404 de GET /api/metricas', async () => {
+    const anio = hoyArgentina().slice(0, 4);
+    for (const otro of ['1999', '2025', String(Number(anio) + 1)]) {
+      const [res, metricas] = await Promise.all([
+        api.get(`/reportes/ciclo-de-vida?anio=${otro}`, { token: usuarios.lector.token }),
+        api.get(`/metricas?anio=${otro}`, { token: usuarios.lector.token })
+      ]);
+      assert.equal(res.status, 404, otro);
+      assert.match(res.headers.get('content-type'), /^application\/json/);
+      assert.deepEqual(res.body, { success: false, error: 'No hay métricas de ese año' }, otro);
+      assert.deepEqual([metricas.status, metricas.body], [res.status, res.body], otro);
+    }
+  });
+
   // Salen el Cumplimiento (spec 2026-10-24-metricas-y-reportes, 5: el ranking de áreas ya está en Métricas) y el Historial de
   // notificaciones (lo reemplaza Avisos del RPAD)
   it('cumplimiento e historial-notificaciones dan 404', async () => {
@@ -250,5 +294,37 @@ describe('reportes PDF: "Datos al"', () => {
     // La portada (con estos datos, en una hoja) y una hoja del Seguimiento por cada dataset activo del área
     assert.equal(hojas.filter(lineas => lineas.includes('Seguimiento del dataset')).length, Number(activos));
     hojas.forEach((lineas, k) => assert.ok(lineas.includes(`Reporte por área · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}`));
+  });
+});
+
+// Un error al generar el Ciclo de vida del dato (revisión final A-5 de Métricas y Reportes): el 500 dice el mensaje fijo del reporte y
+// nunca el texto del error (el de mysql2 trae la consulta), que queda solo en el registro del servidor. El controlador, sin servidor y
+// con la base simulada (mock de pool.execute y pool.query) para que falle la lectura de las métricas: la base de la rama no se toca
+describe('reporteCicloDeVida: un error al generarlo', () => {
+  it('es un 500 con «Error al generar el Ciclo de vida del dato», sin el texto del error, y se registra', async () => {
+    const falla = new Error("Table 'rpad.metricas_fotos' doesn't exist");
+    const usuario = mock.method(pool, 'execute', async () => [[{ nombre_completo: 'Usuario Ejemplo' }]]);
+    const consulta = mock.method(pool, 'query', async () => { throw falla; });
+    const registro = mock.method(console, 'error', () => {});
+    try {
+      const res = {
+        estado: null,
+        cuerpo: null,
+        status(codigo) { this.estado = codigo; return this; },
+        json(cuerpo) { this.cuerpo = cuerpo; return this; },
+        setHeader() { throw new Error('No debería armar un PDF'); },
+        send() { throw new Error('No debería armar un PDF'); }
+      };
+      await reporteCicloDeVida({ query: {}, user: { userId: 1 } }, res);
+      assert.equal(res.estado, 500);
+      assert.deepEqual(res.cuerpo, { success: false, error: 'Error al generar el Ciclo de vida del dato' });
+      assert.ok(consulta.mock.callCount() >= 1, 'falló al leer las métricas');
+      assert.equal(registro.mock.callCount(), 1);
+      assert.deepEqual(registro.mock.calls[0].arguments, ['Error al generar el Ciclo de vida del dato:', falla]);
+    } finally {
+      usuario.mock.restore();
+      consulta.mock.restore();
+      registro.mock.restore();
+    }
   });
 });
