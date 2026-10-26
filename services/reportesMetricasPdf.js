@@ -101,8 +101,8 @@ export const TITULO_DEL_CIRCUITO = 'El circuito, del aviso del RPAD a la carga e
 export const TITULO_DEL_CONTEXTO = 'El contexto y el trabajo del RPAD';
 
 // Los nodos del circuito (spec 2.2), con la sigla de quien es (la maqueta de los PDF) y qué hace: lo de la DGMIT en violeta, el Portal en
-// verde y el resto en el acento
-const NODOS = Object.freeze({
+// verde y el resto en el acento (también los dibuja el Ciclo de vida del dato, services/reportesCicloDeVidaPdf.js)
+export const NODOS = Object.freeze({
   rpad: { nombre: 'RPAD', rol: T.roles.rpad, color: COLOR.acento },
   da: { nombre: 'DGMIT y DA', rol: T.roles.da, color: VIOLETA },
   dit: { nombre: 'DGMIT y DIT', rol: T.roles.dit, color: VIOLETA },
@@ -236,9 +236,10 @@ const comoElemento = (p) => ({
 
 // El contorno de un rectángulo redondeado, con líneas y curvas: los nodos del circuito, las insignias y los tramos de la cinta van
 // adentro de otro dibujo, y un roundedRect sería, para el test de diagramación, un bloque encimado con su recuadro (la marca del
-// Seguimiento tampoco lo usa). Devuelve el documento, para pintarlo
+// Seguimiento tampoco lo usa). Devuelve el documento, para pintarlo. También lo usa el Ciclo de vida del dato
+// (services/reportesCicloDeVidaPdf.js)
 const KAPPA = 0.5523;
-const contorno = (doc, x, y, ancho, alto, radio) => {
+export const contorno = (doc, x, y, ancho, alto, radio) => {
   const r = Math.max(0, Math.min(radio, ancho / 2, alto / 2));
   const c = r * (1 - KAPPA);
   return doc.moveTo(x + r, y).lineTo(x + ancho - r, y).bezierCurveTo(x + ancho - c, y, x + ancho, y + c, x + ancho, y + r)
