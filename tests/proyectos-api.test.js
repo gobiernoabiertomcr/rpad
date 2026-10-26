@@ -965,7 +965,9 @@ describe('archivos', () => {
     const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
     const pdfDe = (nombre, tamano) => new File([Buffer.alloc(tamano, 0x41)], nombre, { type: 'application/pdf' });
     const exe = () => new File([Buffer.from('MZ [TEST]')], 'programa.exe', { type: 'application/x-msdownload' });
-    // Windows manda los .csv como application/vnd.ms-excel; el navegador solo mira la extensión
+    // Un .pdf con un MIME que no está permitido: pasa la extensión y lo rechaza el MIME
+    const pdfDeWindows = () => new File([Buffer.from('MZ [TEST]')], 'falso.pdf', { type: 'application/x-msdownload' });
+    // Windows con Excel instalado manda los .csv como application/vnd.ms-excel (Ruling R15: se aceptan)
     const csvDeExcel = () => new File([Buffer.from('a,b\n1,2\n')], 'tabla.csv', { type: 'application/vnd.ms-excel' });
     const MB = 1024 * 1024;
 
@@ -1013,14 +1015,26 @@ describe('archivos', () => {
       });
     });
 
-    it('un .csv con el MIME de Excel entre PDF: 400 del MIME y la carpeta como estaba', async () => {
+    it('un .pdf con un MIME no permitido entre PDF: 400 del MIME, en español, y la carpeta como estaba', async () => {
       const id = await crearProyecto();
       assert.equal((await subirDocumentos(id, [pdf('previo.pdf')])).status, 201);
       await fallaSinTocarLaCarpeta({
-        subirla: () => subirDocumentos(id, [pdfDe('a.pdf', 50_000), csvDeExcel(), pdfDe('c.pdf', 50_000), pdfDe('d.pdf', 50_000)]),
+        subirla: () => subirDocumentos(id, [pdfDe('a.pdf', 50_000), pdfDeWindows(), pdfDe('c.pdf', 50_000), pdfDe('d.pdf', 50_000)]),
         carpetaDe: () => enCarpeta('proyectos', String(id)),
-        mensaje: 'MIME type no permitido: application/vnd.ms-excel'
+        mensaje: 'El tipo de archivo de falso.pdf no está permitido.'
       });
+      assert.deepEqual((await documentosDe(id)).map((f) => f.nombre_archivo), ['previo.pdf']);
+    });
+
+    it('un .csv con el MIME de Excel (Windows) entre PDF se sube con los otros (Ruling R15)', async () => {
+      const id = await crearProyecto();
+      const res = await subirDocumentos(id, [pdfDe('a.pdf', 50_000), csvDeExcel(), pdfDe('c.pdf', 50_000)]);
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.equal(res.body.message, '3 documentos subidos');
+      const filas = await documentosDe(id);
+      assert.deepEqual(filas.map((f) => f.nombre_archivo), ['a.pdf', 'tabla.csv', 'c.pdf']);
+      assert.equal(filas[1].mime_type, 'application/vnd.ms-excel');
+      assert.equal(enCarpeta('proyectos', String(id)).length, 3);
     });
 
     it('[pdf de más de 10 MB, pdf]: 400 del tamaño y la carpeta como estaba', async () => {

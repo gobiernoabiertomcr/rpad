@@ -40,6 +40,12 @@ export const MIMES_PERMITIDOS = Object.freeze([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/csv',
+  // Los otros MIME con que llega un .csv (Ruling R15): Windows con Excel instalado lo manda como application/vnd.ms-excel; Linux y
+  // Android, como text/x-csv, application/csv o text/comma-separated-values. Se sirven como adjunto y con nosniff: el riesgo es nulo
+  'application/vnd.ms-excel',
+  'text/x-csv',
+  'application/csv',
+  'text/comma-separated-values',
   'application/vnd.oasis.opendocument.text',
   'application/vnd.oasis.opendocument.spreadsheet',
   'image/jpeg',
@@ -63,6 +69,10 @@ export const MENSAJE_MAXIMO_POR_HITO = 'Podés subir hasta 3 archivos por hito.'
 export const MENSAJE_MAXIMO_POR_PROYECTO = 'Podés subir hasta 10 documentos por proyecto.';
 export const MENSAJE_TAMANO_MAXIMO = 'El archivo excede el tamaño máximo de 10 MB';
 export const mensajeTipoNoPermitido = (extension) => `Tipo de archivo no permitido: ${extension}`;
+// El MIME no se controla en el navegador (Ruling R15): este mensaje lo muestra la página tal como lo manda el servidor
+export const mensajeMimeNoPermitido = (nombre) => `El tipo de archivo de ${nombre} no está permitido.`;
+// Un pedido que no se pudo leer (un multipart mal armado o cortado, o uno que pasa los límites de multer en las partes o los campos)
+export const MENSAJE_SUBIDA_ILEGIBLE = 'No se pudo leer la subida. Probá de nuevo.';
 export const MENSAJE_ARCHIVO_FALTANTE = 'El archivo no está en el servidor.';
 
 const EXTENSIONES = new Set(EXTENSIONES_PERMITIDAS);
@@ -132,7 +142,7 @@ const filtroDe = (estado) => (req, file, cb) => {
   if (file.fieldname !== CAMPO) return rechazar(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
   const extension = path.extname(file.originalname).toLowerCase();
   if (!EXTENSIONES.has(extension)) return rechazar(new ErrorDeSubida(mensajeTipoNoPermitido(extension)));
-  if (!MIMES.has(file.mimetype)) return rechazar(new ErrorDeSubida(`MIME type no permitido: ${file.mimetype}`));
+  if (!MIMES.has(file.mimetype)) return rechazar(new ErrorDeSubida(mensajeMimeNoPermitido(file.originalname)));
   cb(null, true);
 };
 
@@ -190,28 +200,28 @@ const borrarEscritos = (rutas) => Promise.all(rutas.map((ruta) => fs.promises.rm
   console.error(`No se pudo borrar ${ruta} del disco:`, error);
 })));
 
-// El [status, cuerpo] de un error de multer, en español
+// El [status, cuerpo] de un error de multer, en español. Un pedido que no se pudo leer es un 400 con MENSAJE_SUBIDA_ILEGIBLE (el texto de
+// multer o de busboy, en inglés, solo en la consola)
 const respuestaDeError = (error, tipo, mensaje) => {
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') return [400, { success: false, error: MENSAJE_TAMANO_MAXIMO }];
-    if (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE') return [400, { success: false, error: mensaje }];
-    return [400, { success: false, error: `Error de upload: ${error.message}` }];
+  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') return [400, { success: false, error: MENSAJE_TAMANO_MAXIMO }];
+  if (error instanceof multer.MulterError && (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE')) {
+    return [400, { success: false, error: mensaje }];
   }
   if (error instanceof ErrorDeSubida) return [400, { success: false, error: error.message }];
   if (esDelDisco(error)) {
     console.error(`Error al guardar los archivos (${tipo}) en el disco:`, error);
     return [500, { success: false, error: 'Error al subir archivos' }];
   }
-  // Un pedido que no se pudo leer (un multipart mal armado o cortado): como siempre, un 400
-  return [400, { success: false, error: `Error de upload: ${error.message}` }];
+  console.error(`Subida de ${tipo} que no se pudo leer:`, error?.message ?? error);
+  return [400, { success: false, error: MENSAJE_SUBIDA_ILEGIBLE }];
 };
 
 /**
  * El middleware de multer de una subida (`tipo`: 'proyecto' o 'hito'), armado en cada pedido con lo que dejó prepararSubida…: la
  * carpeta (ya con el id validado) y los lugares que quedan como límite de archivos (busboy no entrega los de más). Los errores salen en
- * español: los de cantidad (LIMIT_FILE_COUNT y un archivo en otro campo, LIMIT_UNEXPECTED_FILE), el del tamaño y el del tipo son 400;
- * uno del disco, 500; un pedido mal armado, el 400 «Error de upload» de siempre. Ante cualquier error: se borra todo lo que este pedido
- * empezó a escribir, se termina de leer el pedido y se responde.
+ * español: los de cantidad (LIMIT_FILE_COUNT y un archivo en otro campo, LIMIT_UNEXPECTED_FILE), el del tamaño, el de la extensión, el
+ * del MIME y un pedido que no se pudo leer son 400; uno del disco, 500. Ante cualquier error: se borra todo lo que este pedido empezó a
+ * escribir, se termina de leer el pedido y se responde.
  */
 export const subida = (tipo) => {
   const { maximo, mensaje } = SUBIDAS[tipo];

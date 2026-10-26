@@ -45,8 +45,12 @@ after(async () => {
 const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
 const pdfDe = (nombre, tamano) => new File([Buffer.alloc(tamano, 0x41)], nombre, { type: 'application/pdf' });
 const exe = () => new File([Buffer.from('MZ [TEST]')], 'programa.exe', { type: 'application/x-msdownload' });
-// Windows manda los .csv como application/vnd.ms-excel; el navegador solo mira la extensión
-const csvDeExcel = () => new File([Buffer.from('a,b\n1,2\n')], 'tabla.csv', { type: 'application/vnd.ms-excel' });
+// Un .pdf con un MIME que no está permitido: pasa la extensión y lo rechaza el MIME
+const pdfDeWindows = () => new File([Buffer.from('MZ [TEST]')], 'falso.pdf', { type: 'application/x-msdownload' });
+// Un .csv con cada MIME con que lo mandan los navegadores (Ruling R15): Windows con Excel instalado, application/vnd.ms-excel; Linux y
+// Android, text/x-csv, application/csv o text/comma-separated-values
+const MIMES_DE_CSV = ['text/csv', 'application/vnd.ms-excel', 'text/x-csv', 'application/csv', 'text/comma-separated-values'];
+const csvCon = (mime, nombre = 'tabla.csv') => new File([Buffer.from('a,b\n1,2\n')], nombre, { type: mime });
 
 // Sube [campo, File] (o File, al campo «archivos») a /<tipo>/<id>; un corte de la conexión falla el test
 const subir = async (ruta, archivos) => {
@@ -93,6 +97,38 @@ describe('subida: una que anda', () => {
     for (const f of res.body.data) assert.match(f.filename, /^[0-9a-f-]{36}\.pdf$/);
     assert.deepEqual(enCarpeta(`proyectos/${id}`), res.body.data.map((f) => f.filename).sort());
   });
+
+  it('un .csv se guarda con cualquiera de los MIME con que lo mandan Windows (Excel), Linux y Android (Ruling R15)', async () => {
+    const id = ++ultimo;
+    const archivos = MIMES_DE_CSV.map((mime, i) => csvCon(mime, `tabla-${i}.csv`));
+    const res = await subir(`/proyecto/${id}`, archivos);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.map((f) => f.nombre), archivos.map((a) => a.name));
+    assert.equal(enCarpeta(`proyectos/${id}`).length, MIMES_DE_CSV.length);
+  });
+
+  it('[pdf, csv con el MIME de Excel, pdf, pdf]: se guardan los cuatro', async () => {
+    const id = ++ultimo;
+    const res = await subir(`/proyecto/${id}`, [pdfDe('a.pdf', 50_000), csvCon('application/vnd.ms-excel'), pdfDe('c.pdf', 50_000), pdfDe('d.pdf', 50_000)]);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.map((f) => f.nombre), ['a.pdf', 'tabla.csv', 'c.pdf', 'd.pdf']);
+    assert.equal(enCarpeta(`proyectos/${id}`).length, 4);
+  });
+});
+
+describe('subida: un pedido que no se puede leer', () => {
+  it('un multipart cortado: 400 con el mensaje en español y nada escrito', async () => {
+    const id = ++ultimo;
+    const res = await fetch(`${base}/proyecto/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=----limite' },
+      body: '------limite\r\nContent-Disposition: form-data; name="archivos"; filename="a.pdf"\r\nContent-Type: application/pdf\r\n\r\n[TEST]',
+      signal: AbortSignal.timeout(20000)
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { success: false, error: 'No se pudo leer la subida. Probá de nuevo.' });
+    assert.deepEqual(enCarpeta(`proyectos/${id}`), []);
+  });
 });
 
 describe('subida: una que falla deja la carpeta como estaba y responde el 400', () => {
@@ -111,9 +147,9 @@ describe('subida: una que falla deja la carpeta como estaba y responde el 400', 
     mensaje: 'Tipo de archivo no permitido: .exe'
   }));
 
-  it('[pdf, csv con el MIME de Excel, pdf, pdf]', () => fallaSinTocarLaCarpeta({
-    archivos: () => [pdfDe('a.pdf', 50_000), csvDeExcel(), pdfDe('c.pdf', 50_000), pdfDe('d.pdf', 50_000)],
-    mensaje: 'MIME type no permitido: application/vnd.ms-excel'
+  it('[pdf, pdf con un MIME no permitido, pdf, pdf]', () => fallaSinTocarLaCarpeta({
+    archivos: () => [pdfDe('a.pdf', 50_000), pdfDeWindows(), pdfDe('c.pdf', 50_000), pdfDe('d.pdf', 50_000)],
+    mensaje: 'El tipo de archivo de falso.pdf no está permitido.'
   }));
 
   it('[pdf de más de 10 MB, pdf]', () => fallaSinTocarLaCarpeta({

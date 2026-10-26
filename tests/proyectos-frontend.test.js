@@ -3,8 +3,8 @@
 // juntan según el ancho de la pista, la frase del año resaltado y el HTML de los filtros y los carriles; y, desde la Task 6, el
 // detalle de un proyecto —la ficha, la cinta del recorrido (que nada se salga ni se pise), las filas de los hitos, los archivos y
 // los documentos—, la línea de tiempo y los logros, con lo que ve cada rol y los vacíos de la spec) con datos inventados y
-// con los 8 proyectos y los 17 hitos de la maqueta (anonimizados: docs/superpowers/specs/2026-10-25-proyectos-mockups/js/
-// maqueta-datos.js, que se lee al correr, sin copiar sus nombres acá), pasados a la forma de la API (GET /gestion/proyectos y
+// con los 8 proyectos y los 17 hitos de la maqueta (anonimizados: tests/fixtures/proyectos-maqueta.json, copiados de la maqueta del
+// diseño y leídos al correr, sin copiar sus nombres acá), pasados a la forma de la API (GET /gestion/proyectos y
 // /gestion/timeline). Como seguimiento.js y reportes.js, el script al cargarse solo declara: se carga en un vm después del
 // main.js de verdad (getIconSvg e ICON_SELECTOR_MAP) y del api.js de verdad (Utils), como en la página.
 import { describe, it } from 'node:test';
@@ -61,12 +61,10 @@ const ctx = cargar();
 const constante = (nombre) => plano(vm.runInContext(nombre, ctx));
 const cuantas = (texto, patron) => (texto.match(patron) ?? []).length;
 
-// Los datos de la maqueta, con la forma de la API: los proyectos con sus cantidades y los hitos como los manda el timeline
-const MAQUETA = (() => {
-  const contexto = vm.createContext({ window: {} });
-  vm.runInContext(fs.readFileSync(new URL('../docs/superpowers/specs/2026-10-25-proyectos-mockups/js/maqueta-datos.js', import.meta.url), 'utf8'), contexto);
-  return plano(contexto.window.DATOS);
-})();
+// Los datos de la maqueta, con la forma de la API: los proyectos con sus cantidades y los hitos como los manda el timeline. Viven en
+// tests/fixtures/proyectos-maqueta.json (los proyectos y los hitos de la maqueta del diseño, con nombres de personas inventados), así
+// la suite no depende de la carpeta de la spec
+const MAQUETA = JSON.parse(fs.readFileSync(new URL('./fixtures/proyectos-maqueta.json', import.meta.url), 'utf8'));
 const PROYECTOS = MAQUETA.proyectos.map(({ documentos, created_at: _c, updated_at: _u, ...proyecto }) => {
   const suyos = MAQUETA.hitos.filter((h) => h.proyecto_id === proyecto.id);
   return { ...proyecto, cantidad_hitos: suyos.length, hitos_completados: suyos.filter((h) => h.fecha <= HOY).length, cantidad_documentos: documentos.length };
@@ -1834,7 +1832,17 @@ describe('proyectos.html: los modales (spec 6)', () => {
     const vista = modal('modal-vista-previa');
     assert.match(vista, /class="modal pr-modal pr-modal-vista"/);
     assert.match(vista, /<div class="pr-vista-previa" id="modal-vista-previa-cuerpo"><\/div>/);
-    assert.match(vista, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cerrar<\/button>/);
+    assert.match(vista, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cerrar<\/button>\s*<button type="button" class="sg-btn sg-btn-tinta" id="modal-vista-previa-descargar">Descargar<\/button>/);
+  });
+
+  it('un texto largo sin espacios del servidor no ensancha la página: overflow-wrap: anywhere en los avisos, los errores y el cuerpo de una fila', () => {
+    for (const selector of ['.alert', '.pr-modal .form-error', '.pr-cuerpo', '.pr-area']) {
+      assert.match(estilo, new RegExp(`\\n\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*overflow-wrap: anywhere;`), selector);
+    }
+  });
+
+  it('debajo de 960 px, el chevron de una fila de hito queda en la primera fila (la cantidad de archivos baja a la segunda, en la columna del texto)', () => {
+    assert.match(estilo, /@media \(max-width: 960px\) \{[^@]*\.pr-fila \.p \{ grid-column: 3;[^}]*\}[^@]*\.pr-fila \.abrir \{ grid-column: 4; grid-row: 1; \}/);
   });
 
   it('el estilo de los errores (aria-invalid y el aviso dentro del modal) y de los pendientes', () => {
@@ -2406,6 +2414,31 @@ describe('proyectos.js: los filtros, las flechas y el resaltado escriben la dire
     assert.equal(p.el('pr-carriles').querySelectorAll('a.pr-carril').length, carrilesAntes);
   });
 
+  it('si los carriles se vuelven a dibujar mientras se escribe (una letra con tilde a medias), el buscador conserva lo escrito', async () => {
+    const p = montarPagina({ anchoDePista: 300 });
+    await p.iniciar();
+    const buscador = p.en('panel-proyectos', '#pr-buscar');
+    buscador.focus();
+    buscador.value = 'datos';
+    buscador.disparar('input');
+    // Se compone una letra con tilde: el campo ya muestra la tilde y la búsqueda sigue en «datos» (no filtra con una letra a medias)
+    buscador.value = 'datos´';
+    buscador.disparar('input', { isComposing: true });
+    // Cambia el ancho de la pista (ResizeObserver o resize): los carriles se vuelven a dibujar con lo que se buscaba
+    p.dom.anchoDePista = 640;
+    for (const funcion of p.oyentesDeLaVentana.resize ?? []) funcion();
+    p.correr();
+    assert.equal(vm.runInContext('pagina.anchoPx', p.contexto), 640);
+    assert.equal(p.en('panel-proyectos', '#pr-buscar'), buscador);
+    assert.equal(buscador.value, 'datos´', 'el redibujo no le pisa lo que se está componiendo');
+    assert.equal(p.documento.activeElement, buscador);
+    // Sin el foco en el campo, el valor sí sigue a la búsqueda (lo que cambió por otra cosa)
+    buscador.disparar('compositionend');
+    p.el('pr-nuevo').focus();
+    vm.runInContext("pagina.estado = { ...pagina.estado, busqueda: 'rpad' }; dibujarProyectos();", p.contexto);
+    assert.equal(buscador.value, 'rpad');
+  });
+
   it('las flechas corren la ventana, la anuncian y, si una queda deshabilitada, el foco pasa a la otra', async () => {
     const responder = (metodo, ruta) => {
       if (ruta === '/api/gestion/proyectos') return ok([proyecto({ id: 900 })]);
@@ -2740,6 +2773,56 @@ describe('proyectos.js: los hitos y sus archivos (DOM falso)', () => {
     assert.equal(p.documento.activeElement.isConnected, true);
   });
 
+  it('mientras se guarda el hito con sus archivos, el modal no se cierra (Escape, la ×, Cancelar ni el velo): los archivos se suben y el aviso lo dice', async () => {
+    let soltar;
+    const espera = new Promise((resolver) => { soltar = resolver; });
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: async (metodo, ruta) => {
+        if (metodo === 'POST' && ruta === `/api/gestion/proyectos/${INDICE}/hitos`) { await espera; return ok({ id: 99 }, 'Hito creado'); }
+        if (metodo === 'POST' && ruta === '/api/gestion/hitos/99/archivos') return respuesta(201, { success: true, data: [{ id: 1 }], message: '1 archivo subido' });
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-nuevo-hito="${INDICE}"]`));
+    const modal = p.el('modal-hito');
+    p.el('h-archivos').files = [archivo('informe.pdf')];
+    p.el('h-archivos').disparar('change');
+    p.el('h-titulo').value = '[TEST] Hito';
+    p.el('form-hito').disparar('submit');
+    await p.esperar();
+    // Guardando: la × y «Cancelar», deshabilitados, y ningún cierre funciona (tampoco un clic que les llegue igual)
+    const cerrar = modal.querySelector('.modal-close');
+    const cancelar = modal.querySelector('.modal-footer [data-cerrar]');
+    assert.equal(cerrar.disabled, true);
+    assert.equal(cancelar.disabled, true);
+    assert.equal(p.el('h-elegir').disabled, true);
+    p.documento.disparar('keydown', { key: 'Escape' });
+    cerrar.disparar('click');
+    cancelar.disparar('click');
+    modal.disparar('mousedown');
+    modal.disparar('click');
+    assert.ok(modal.classList.contains('active'));
+    // Ni se suman ni se quitan archivos mientras tanto
+    p.el('h-archivos').files = [archivo('otro.pdf')];
+    p.el('h-archivos').disparar('change');
+    p.en('h-pendientes', 'button[data-quitar="0"]').disparar('click');
+    assert.deepEqual(p.el('h-pendientes').querySelectorAll('button[data-quitar]').map((b) => b.getAttribute('aria-label')), ['Quitar informe.pdf']);
+    soltar();
+    await p.esperar();
+    await p.esperar();
+    assert.deepEqual(p.rutas('POST'), [`/api/gestion/proyectos/${INDICE}/hitos`, '/api/gestion/hitos/99/archivos']);
+    const envio = p.estado.pedidos.find((x) => x.ruta === '/api/gestion/hitos/99/archivos');
+    assert.deepEqual(envio.opciones.body.getAll('archivos').map((a) => a.name), ['informe.pdf']);
+    assert.equal(modal.classList.contains('active'), false);
+    assert.ok(p.el('message-container').innerHTML.includes('Hito creado. 1 archivo subido'));
+    assert.equal(cerrar.disabled, false);
+    assert.equal(cancelar.disabled, false);
+    assert.equal(p.el('h-elegir').disabled, false);
+  });
+
   it('si el hito se guardó y se cancela con la subida fallida, la vista se vuelve a pedir (el hito existe)', async () => {
     const p = montarPagina({
       admin: true,
@@ -2873,6 +2956,26 @@ describe('proyectos.js: subir, ver, descargar y borrar (DOM falso)', () => {
     assert.equal(p.documento.activeElement, ver);
   });
 
+  it('la vista previa tiene «Descargar» (en el teléfono un PDF no se ve en el <iframe>): baja el mismo archivo con su nombre, sin volver a pedirlo', async () => {
+    const p = montarPagina({ search: `?id=${INDICE}` });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', 'button[data-archivo="ver"][data-id="31"]'));
+    const pedidos = p.estado.pedidos.length;
+    const descargar = p.el('modal-vista-previa-descargar');
+    assert.equal(descargar.textContent, 'Descargar');
+    assert.equal(descargar.getAttribute('aria-label'), 'Descargar presentación final.pdf');
+    await p.tocar(descargar);
+    const enlace = p.dom.creados.find((e) => e.tagName === 'a');
+    assert.equal(enlace.download, 'presentación final.pdf');
+    assert.equal(enlace.clics, 1);
+    assert.equal(p.estado.pedidos.length, pedidos, 'usa lo que ya bajó «Ver»');
+    assert.ok(p.el('modal-vista-previa').classList.contains('active'), 'la vista previa queda abierta');
+    // Cerrada, el botón no baja nada (el archivo ya se soltó)
+    p.documento.disparar('keydown', { key: 'Escape' });
+    await p.tocar(descargar);
+    assert.equal(p.dom.creados.filter((e) => e.tagName === 'a').length, 1);
+  });
+
   it('eliminar un documento: la confirmación con su texto, el DELETE, el aviso y el detalle otra vez', async () => {
     const p = montarPagina({
       admin: true,
@@ -2889,6 +2992,82 @@ describe('proyectos.js: subir, ver, descargar y borrar (DOM falso)', () => {
     assert.equal(p.el('modal-confirmar').classList.contains('active'), false);
     assert.ok(p.el('message-container').innerHTML.includes('Documento eliminado'));
     assert.equal(p.rutas('GET').filter((r) => r === `/api/gestion/proyectos/${INDICE}`).length, 2);
+  });
+
+  it('después de eliminar un documento, el foco va al «Eliminar» del que seguía, al del anterior o a «Subir documentos» (no a «Ver todos los proyectos»)', async () => {
+    const documento = (id, nombre) => ({ id, nombre_archivo: nombre, tamano: 2048, mime_type: 'application/pdf', subido_el: '2026-03-18' });
+    let documentos = [documento(31, 'a.pdf'), documento(32, 'b.pdf'), documento(33, 'c.pdf')];
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => {
+        if (metodo === 'GET' && ruta === `/api/gestion/proyectos/${INDICE}`) return ok({ ...DETALLE_INDICE(), documentos });
+        if (metodo === 'DELETE') {
+          const id = Number(ruta.split('/').at(-1));
+          documentos = documentos.filter((d) => d.id !== id);
+          return ok(undefined, 'Documento eliminado');
+        }
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    const eliminar = async (id) => {
+      const boton = p.en('pr-vista-detalle', `button[data-archivo="eliminar"][data-id="${id}"]`);
+      boton.focus();
+      await p.tocar(boton);
+      await p.tocar(p.el('modal-confirmar-si'));
+      await p.esperar();
+    };
+    const enfocado = () => p.documento.activeElement;
+    // El del medio: al que seguía
+    await eliminar(32);
+    assert.equal(enfocado().getAttribute('data-archivo'), 'eliminar');
+    assert.equal(enfocado().getAttribute('data-id'), '33');
+    assert.equal(enfocado().isConnected, true);
+    // El último: al anterior
+    await eliminar(33);
+    assert.equal(enfocado().getAttribute('data-id'), '31');
+    // El único: a «Subir documentos»
+    await eliminar(31);
+    assert.equal(enfocado().getAttribute('data-subir-documentos'), String(INDICE));
+    assert.equal(enfocado().isConnected, true);
+  });
+
+  it('después de eliminar un archivo de un hito, el foco va al del archivo que seguía y, si no quedó ninguno, a «Subir archivos» del hito', async () => {
+    const archivoDe = (id, nombre) => ({ id, nombre_archivo: nombre, tamano: 2048, mime_type: 'application/pdf', subido_el: '2026-03-18' });
+    const base = DETALLE_INDICE();
+    const hitoId = base.hitos[0].id;
+    let archivos = [archivoDe(71, 'uno.pdf'), archivoDe(72, 'dos.pdf')];
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => {
+        if (metodo === 'GET' && ruta === `/api/gestion/proyectos/${INDICE}`) {
+          return ok({ ...base, hitos: base.hitos.map((h, i) => (i === 0 ? { ...h, archivos } : h)) });
+        }
+        if (metodo === 'DELETE') {
+          const id = Number(ruta.split('/').at(-1));
+          archivos = archivos.filter((a) => a.id !== id);
+          return ok(undefined, 'Archivo eliminado');
+        }
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button.pr-fila[aria-controls="hito-d-${hitoId}"]`));
+    const eliminar = async (id) => {
+      const boton = p.en('pr-vista-detalle', `button[data-archivo="eliminar"][data-base="/gestion/hitos/${hitoId}/archivos"][data-id="${id}"]`);
+      boton.focus();
+      await p.tocar(boton);
+      await p.tocar(p.el('modal-confirmar-si'));
+      await p.esperar();
+    };
+    await eliminar(71);
+    assert.equal(p.documento.activeElement.getAttribute('data-id'), '72');
+    assert.equal(p.el(`hito-d-${hitoId}`).hidden, false, 'la fila del hito sigue abierta');
+    await eliminar(72);
+    assert.equal(p.documento.activeElement.getAttribute('data-subir-archivos'), String(hitoId));
+    assert.equal(p.documento.activeElement.isConnected, true);
   });
 
   it('un error al eliminar queda dentro de la confirmación; un doble clic hace un solo DELETE', async () => {
@@ -2947,5 +3126,65 @@ describe('proyectos.js: subir, ver, descargar y borrar (DOM falso)', () => {
     await p.tocar(p.el('modal-confirmar-si'));
     assert.deepEqual(p.rutas('DELETE'), [`/api/gestion/hitos/${conArchivos.id}`]);
     assert.equal(p.rutas('GET').filter((r) => r === '/api/gestion/timeline').length, 2);
+  });
+
+  it('después de eliminar un archivo de un logro en su pestaña, el foco queda en esa pestaña (el logro está también en la línea de tiempo)', async () => {
+    const archivoDe = (id, nombre) => ({ id, nombre_archivo: nombre, tamano: 2048, mime_type: 'application/pdf', subido_el: '2026-03-18' });
+    let archivos = [archivoDe(81, 'uno.pdf'), archivoDe(82, 'dos.pdf')];
+    const p = montarPagina({
+      admin: true,
+      hash: '#logros',
+      responder: (metodo, ruta) => {
+        if (metodo === 'GET' && ruta === '/api/gestion/timeline') return ok([{ ...hito(40, null, '2026-05-20', '[TEST] Logro'), archivos }]);
+        if (metodo === 'DELETE') {
+          archivos = archivos.filter((a) => a.id !== Number(ruta.split('/').at(-1)));
+          return ok(undefined, 'Archivo eliminado');
+        }
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.en('panel-logros', 'button.pr-fila'));
+    const boton = p.en('panel-logros', 'button[data-archivo="eliminar"][data-id="81"]');
+    boton.focus();
+    await p.tocar(boton);
+    await p.tocar(p.el('modal-confirmar-si'));
+    await p.esperar();
+    const enfocado = p.documento.activeElement;
+    assert.equal(enfocado.getAttribute('data-id'), '82');
+    assert.ok(p.el('panel-logros').contains(enfocado), 'en la pestaña de los logros, no en la línea de tiempo (oculta)');
+  });
+
+  it('después de eliminar un hito del detalle, el foco va a la fila del hito que seguía y, sin ninguno, a «Nuevo hito»', async () => {
+    const base = DETALLE_INDICE();
+    let hitos = base.hitos.slice(0, 2);
+    const [primero, segundo] = hitos.map((h) => h.id);
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => {
+        if (metodo === 'GET' && ruta === `/api/gestion/proyectos/${INDICE}`) return ok({ ...base, hitos });
+        if (metodo === 'DELETE') {
+          const id = Number(ruta.split('/').at(-1));
+          hitos = hitos.filter((h) => h.id !== id);
+          return ok(undefined, 'Hito eliminado');
+        }
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    const eliminar = async (id) => {
+      await p.tocar(p.en('pr-vista-detalle', `button.pr-fila[aria-controls="hito-d-${id}"]`));
+      const boton = p.en('pr-vista-detalle', `button[data-eliminar-hito="${id}"]`);
+      boton.focus();
+      await p.tocar(boton);
+      await p.tocar(p.el('modal-confirmar-si'));
+      await p.esperar();
+    };
+    await eliminar(primero);
+    assert.equal(p.documento.activeElement.getAttribute('aria-controls'), `hito-d-${segundo}`);
+    await eliminar(segundo);
+    assert.equal(p.documento.activeElement.getAttribute('data-nuevo-hito'), String(INDICE));
+    assert.equal(p.documento.activeElement.isConnected, true);
   });
 });

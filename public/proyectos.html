@@ -40,8 +40,8 @@
         .pr-estado p { margin: 0; }
         .pr-error { background: #FBEEEE; border-color: #EFCACA; color: var(--sg-rojo); }
 
-        /* Mensajes */
-        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--sg-linea); }
+        /* Mensajes (pueden nombrar un archivo o un proyecto: un nombre largo sin espacios se corta, no ensancha la página) */
+        .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; border: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
         .alert-success { background: #EAF6EF; border-color: #C7E6D3; color: #2E6B4C; }
         .alert-error { background: #FBEEEE; border-color: #EFCACA; color: #8A3434; }
 
@@ -193,7 +193,7 @@
         .pr-fila[aria-expanded="true"] .abrir { transform: rotate(180deg); }
         .pr-compacta .pr-fila { grid-template-columns: 92px 18px minmax(0, 1fr) 20px; }
         .pr-compacta .pr-fila .p { display: none; }
-        .pr-cuerpo { margin: 0 34px 14px 134px; padding: 14px 16px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 12px; font-size: 0.92rem; }
+        .pr-cuerpo { margin: 0 34px 14px 134px; padding: 14px 16px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 12px; font-size: 0.92rem; overflow-wrap: anywhere; }
         .pr-compacta .pr-cuerpo { margin: 0 4px 14px 4px; }
         .pr-cuerpo p { margin: 0 0 10px; line-height: 1.5; max-width: 76ch; }
         .pr-cuerpo .desc { white-space: pre-line; overflow-wrap: anywhere; }
@@ -282,7 +282,7 @@
         .pr-muestra { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--sg-sutil); margin-bottom: 16px; }
         .pr-muestra b { color: var(--sg-tinta); overflow-wrap: anywhere; }
         .pr-areas { max-height: 168px; overflow-y: auto; border: 1px solid var(--sg-linea); border-radius: 12px; }
-        .pr-area { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--sg-linea); font-size: 0.9rem; cursor: pointer; }
+        .pr-area { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--sg-linea); font-size: 0.9rem; cursor: pointer; overflow-wrap: anywhere; }
         .pr-area:last-child { border-bottom: 0; }
         .pr-area:hover { background: var(--sg-sutil); }
         .pr-area input { width: 17px; height: 17px; margin: 0; accent-color: var(--sg-tinta); }
@@ -291,7 +291,7 @@
         .pr-soltar.arrastrando { border-color: var(--sg-tinta); background: #EEF5FB; }
         /* Los errores de cada campo (aria-invalid) y el error sin campo, dentro del modal: nunca detrás del velo */
         .pr-modal .form-input[aria-invalid="true"], .pr-modal .form-select[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
-        .pr-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; }
+        .pr-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
         .pr-modal-aviso { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
         .pr-modal-de { margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; overflow-wrap: anywhere; }
         .pr-modal .form-row.pr-titulo-fecha { grid-template-columns: minmax(0, 1fr) 180px; }
@@ -320,6 +320,8 @@
             .pr-datos { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .pr-dato:nth-child(4) { border-left: 0; padding-left: 0; }
             .pr-dos { grid-template-columns: 1fr; }
             .pr-fila { grid-template-columns: 88px 20px minmax(0, 1fr) 20px; } .pr-fila .p { grid-column: 3; text-align: left; margin-top: 4px; }
+            /* La cantidad de archivos baja a la segunda fila, en la columna del texto; el chevron queda arriba, en la cuarta */
+            .pr-fila .abrir { grid-column: 4; grid-row: 1; }
             .pr-cuerpo { margin-left: 4px; margin-right: 4px; }
             .pr-eje, .pr-carril { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
         }
@@ -658,7 +660,7 @@
     </div>
 
     <!-- La vista previa de una imagen o un PDF (spec 6, «Ver»): proyectos.js pone el nombre del archivo en el título y el <img> o el
-         <iframe> (htmlDeVistaPrevia, desde un blob:) -->
+         <iframe> (htmlDeVistaPrevia, desde un blob:). «Descargar» baja el mismo archivo: en el teléfono, un PDF no se ve en el <iframe> -->
     <div class="modal-overlay" id="modal-vista-previa">
         <div class="modal pr-modal pr-modal-vista" role="dialog" aria-modal="true" aria-labelledby="modal-vista-previa-titulo">
             <div class="modal-header">
@@ -672,6 +674,7 @@
             <div class="modal-footer">
                 <div class="botones">
                     <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cerrar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="modal-vista-previa-descargar">Descargar</button>
                 </div>
             </div>
         </div>

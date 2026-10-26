@@ -1452,6 +1452,10 @@ let subidaDirecta = null;
 let temporizadorDeMedida = null;
 // El pedido de las áreas del formulario del proyecto, mientras está en camino
 let promesaDeAreas = null;
+// Adónde va el foco que se pierde mientras se vuelve a pedir la vista después de una eliminación (respaldoDeLaEliminacion), o null
+let respaldoPendiente = null;
+// El archivo de la vista previa abierta (lo que bajó «Ver» y su nombre), para su «Descargar»; null con la vista previa cerrada
+let vistaPrevia = null;
 
 const porId = (id) => document.getElementById(id);
 const MODALES = Object.freeze(['modal-proyecto', 'modal-hito', 'modal-confirmar', 'modal-vista-previa']);
@@ -1731,9 +1735,51 @@ function redibujar(contenedor, html, opciones = {}) {
   redibujarPartes(contenedor, [[contenedor, html]], opciones);
 }
 
-// El lugar del foco cuando el control que se usó ya no está: en el detalle, «Ver todos los proyectos»; en la lista, la pestaña elegida
+// El lugar del foco cuando el control que se usó ya no está: mientras se vuelve a pedir la vista después de una eliminación, lo que
+// eligió respaldoDeLaEliminacion; si no, en el detalle, «Ver todos los proyectos», y en la lista, la pestaña elegida
 function lugarDeRespaldo() {
+  const propio = respaldoPendiente ? primeroQueEsta(respaldoPendiente) : null;
+  if (propio) return propio;
   return pagina.modo === 'detalle' ? porId('pr-vista-detalle').querySelector('a.pr-volver') : porId(`tab-${pagina.pestana}`);
+}
+
+// El primero de `selectores` que está en `contenedor` y no está deshabilitado, o null
+function primeroQueEsta({ contenedor, selectores }) {
+  for (const selector of selectores) {
+    const elemento = contenedor.querySelector(selector);
+    if (elemento && !elemento.disabled) return elemento;
+  }
+  return null;
+}
+
+// Los contenedores que se vuelven a dibujar: el detalle y los tres paneles de la lista
+const CONTENEDORES_DE_LA_VISTA = Object.freeze(['pr-vista-detalle', 'panel-proyectos', 'panel-linea', 'panel-logros']);
+
+// Adónde va el foco después de eliminar lo de `boton` (un archivo, un documento o un hito), que desaparece al volver a dibujar: en lugar
+// de saltar a «Ver todos los proyectos», a lo más cercano de la misma lista, buscado en el mismo contenedor (un logro está en dos
+// paneles). Un archivo o un documento: el «Eliminar» del que seguía o, si era el último, el del anterior; si no quedó ninguno, «Subir
+// archivos» y «Editar» de su hito, o «Subir documentos», y después «Nuevo hito». Un hito: la fila del que seguía o la del anterior, y
+// después «Nuevo hito» o «Registrar un logro». Devuelve { contenedor, selectores } (en orden de preferencia), o null
+function respaldoDeLaEliminacion(boton) {
+  const contenedor = CONTENEDORES_DE_LA_VISTA.map(porId).find((elemento) => Boolean(elemento?.contains?.(boton)));
+  if (!contenedor) return null;
+  const vecinos = (lista, actual) => {
+    const lugar = lista.indexOf(actual);
+    if (lugar === -1) return [];
+    return [lista[lugar + 1], lista[lugar - 1]].map((vecino) => descriptorDeFoco(vecino)?.selector).filter(Boolean);
+  };
+  if (boton.dataset.archivo === 'eliminar') {
+    const hermanos = Array.from(boton.closest('ul.pr-archivos')?.querySelectorAll('button[data-archivo="eliminar"]') ?? []);
+    const base = String(boton.dataset.base ?? '');
+    const hito = /^\/gestion\/hitos\/([1-9]\d*)\/archivos$/.exec(base)?.[1];
+    const proyecto = /^\/gestion\/proyectos\/([1-9]\d*)\/documentos$/.exec(base)?.[1];
+    const propios = hito ? [`button[data-subir-archivos="${hito}"]`, `button[data-editar-hito="${hito}"]`]
+      : (proyecto ? [`button[data-subir-documentos="${proyecto}"]`] : []);
+    return { contenedor, selectores: [...vecinos(hermanos, boton), ...propios, 'button[data-nuevo-hito]'] };
+  }
+  const fila = boton.closest('li.pr-mov')?.querySelector('button.pr-fila') ?? null;
+  const filas = Array.from(contenedor.querySelectorAll('button.pr-fila'));
+  return { contenedor, selectores: [...vecinos(filas, fila), 'button[data-nuevo-hito]', 'button[data-nuevo-logro]'] };
 }
 
 function dibujarLista() {
@@ -1746,7 +1792,8 @@ function dibujarLista() {
 
 // La pestaña Proyectos: los filtros (con sus cantidades y los hitos de cada año) y los carriles, en #pr-carriles. Sin ningún proyecto,
 // solo el vacío. El buscador se dibuja una vez: después se vuelven a dibujar solo los chips del estado, la segunda fila y los carriles,
-// y el campo queda como está (si la búsqueda cambió por otra cosa, «Ver todos los proyectos», se le cambia el valor)
+// y el campo queda como está. Si la búsqueda cambió por otra cosa («Ver todos los proyectos»), se le cambia el valor, pero nunca
+// mientras tiene el foco: un redibujo del ResizeObserver en medio de una letra con tilde a medias le pisaría lo que se compone
 function dibujarProyectos(opciones = {}) {
   const { proyectos, hitos, estado, extremos, hoy, anchoPx, esAdmin } = pagina;
   const panel = porId('panel-proyectos');
@@ -1766,7 +1813,7 @@ function dibujarProyectos(opciones = {}) {
     redibujar(panel, `${htmlDeFiltros(estado, cantidades, ventana)}<div id="pr-carriles">${carriles}</div>`, conRespaldo);
     return;
   }
-  if (buscador.value !== estado.busqueda) buscador.value = estado.busqueda;
+  if (document.activeElement !== buscador && buscador.value !== estado.busqueda) buscador.value = estado.busqueda;
   redibujarPartes(panel, [
     [chips, htmlDeChipsDeEstado(estado, cantidades)],
     [segunda, htmlDeSegundaFila(estado, cantidades, ventana)],
@@ -1787,7 +1834,7 @@ function dibujarLogros() {
 function dibujarDetalle() {
   const contenedor = porId('pr-vista-detalle');
   redibujar(contenedor, htmlDeDetalle(pagina.detalle, { esAdmin: pagina.esAdmin, hoy: pagina.hoy, estado: pagina.estadoDelDetalle }), {
-    respaldo: () => contenedor.querySelector('a.pr-volver')
+    respaldo: lugarDeRespaldo
   });
   document.title = tituloDelDetalle(pagina.detalle);
 }
@@ -1971,11 +2018,14 @@ function correrLaVentana(boton) {
   anunciar(`${ventana.desde} a ${ventana.hasta}`);
 }
 
-// «Ver todos los proyectos» del vacío: limpia los filtros y el foco va al buscador (el botón ya no está)
+// «Ver todos los proyectos» del vacío: limpia los filtros, también lo escrito en el buscador (aunque el campo tenga el foco: el redibujo
+// no le cambia el valor mientras lo tiene), y el foco va al buscador (el botón ya no está)
 function limpiarLosFiltros() {
   if (!pagina.estado) return;
   pagina.estado = sinFiltros(pagina.estado);
   pagina.vacio = false;
+  const buscador = porId('pr-buscar');
+  if (buscador) buscador.value = pagina.estado.busqueda;
   dibujarProyectos({ foco: '#pr-buscar' });
   escribirLaUrl();
 }
@@ -2023,6 +2073,7 @@ function conectarModales() {
   conectarZonaParaSoltar(porId('h-soltar'));
   porId('h-pendientes').addEventListener('click', quitarPendiente);
   porId('modal-confirmar-si').addEventListener('click', confirmarLaEliminacion);
+  porId('modal-vista-previa-descargar').addEventListener('click', descargarDeLaVistaPrevia);
 }
 
 // Cierran la × y «Cancelar» (data-cerrar) y el clic en el velo, solo si empezó en el velo: soltar ahí una selección de texto que
@@ -2035,7 +2086,7 @@ function conectarCierre(modal) {
   modal.addEventListener('click', (evento) => {
     const cerrar = Boolean(evento.target?.closest?.('[data-cerrar]')) || (evento.target === modal && desdeElVelo);
     desdeElVelo = false;
-    if (cerrar && modalAbierto?.id === modal.id) cerrarModal();
+    if (cerrar && modalAbierto?.id === modal.id && !seEstaGuardandoElHito()) cerrarModal();
   });
 }
 
@@ -2043,7 +2094,19 @@ function conectarCierre(modal) {
 function alApretarUnaTecla(evento) {
   if (evento.key !== 'Escape' || !modalAbierto) return;
   evento.preventDefault?.();
-  cerrarModal();
+  if (!seEstaGuardandoElHito()) cerrarModal();
+}
+
+// Mientras se guarda un hito (o un logro) con sus archivos, su modal no se cierra (ni con Escape, la ×, «Cancelar» o el velo) y sus
+// archivos no cambian: al cerrarlo se vacían los pendientes, y la subida que seguía no subía nada y avisaba solo «Hito creado.»
+function seEstaGuardandoElHito() {
+  return modalAbierto?.id === 'modal-hito' && formHito?.guardando === true;
+}
+
+// Deshabilita (o vuelve a habilitar) lo que cierra el modal del hito y lo que suma archivos, mientras se guarda
+function bloquearElModalDelHito(bloqueado) {
+  for (const boton of porId('modal-hito').querySelectorAll('[data-cerrar]')) boton.disabled = bloqueado;
+  porId('h-elegir').disabled = bloqueado;
 }
 
 // El error sin campo, dentro del modal (nunca detrás del velo). Está arriba del cuerpo, que se desplaza, y el foco va a «Guardar», en
@@ -2374,7 +2437,7 @@ function dibujarPendientes() {
 // la cantidad contando los que ya tiene el hito, y los repetidos); los que no pasan no se suman y se dice por qué
 function sumarArchivosAlHito(archivos) {
   const sesion = formHito;
-  if (!sesion || modalAbierto?.id !== 'modal-hito') return;
+  if (!sesion || modalAbierto?.id !== 'modal-hito' || sesion.guardando) return;
   const problemas = [];
   for (const archivo of archivos) {
     const problema = problemaDeArchivo(archivo, { tipo: 'hito', existentes: sesion.existentes, elegidos: sesion.pendientes.map((otro) => otro.name) });
@@ -2389,7 +2452,7 @@ function sumarArchivosAlHito(archivos) {
 function quitarPendiente(evento) {
   const boton = evento.target?.closest?.('button[data-quitar]');
   const sesion = formHito;
-  if (!boton || !sesion) return;
+  if (!boton || !sesion || sesion.guardando) return;
   const lugar = Number(boton.dataset.quitar);
   if (!Number.isInteger(lugar) || lugar < 0 || lugar >= sesion.pendientes.length) return;
   sesion.pendientes.splice(lugar, 1);
@@ -2459,8 +2522,8 @@ async function guardarElHito(sesion, valores) {
 }
 
 // Guardar: valida, guarda el hito y sube los pendientes. Si el hito se guardó y la subida falló, el modal queda abierto con el motivo
-// y deja reintentar (sin volver a crear el hito); nunca dice «guardado» si algo falló. Si sale todo bien, el aviso del servidor, se
-// cierra y se vuelve a pedir la vista
+// y deja reintentar (sin volver a crear el hito); nunca dice «guardado» si algo falló. Mientras espera, el modal no se cierra
+// (seEstaGuardandoElHito). Si sale todo bien, el aviso del servidor, se cierra y se vuelve a pedir la vista
 async function guardarHito() {
   const sesion = formHito;
   const boton = porId('h-guardar');
@@ -2473,6 +2536,7 @@ async function guardarHito() {
   const abierto = () => formHito === sesion && modalAbierto?.id === 'modal-hito';
   sesion.guardando = true;
   boton.disabled = true;
+  bloquearElModalDelHito(true);
   let falla = null;
   let fallaDeLaSubida = null;
   let subida = '';
@@ -2491,6 +2555,7 @@ async function guardarHito() {
   } finally {
     sesion.guardando = false;
     boton.disabled = false;
+    bloquearElModalDelHito(false);
   }
   if (esSesionVencida(falla) || esSesionVencida(fallaDeLaSubida)) {
     irAlLogin();
@@ -2596,7 +2661,9 @@ function usarArchivo(boton) {
   const accion = boton.dataset.archivo;
   if (accion === 'descargar') descargarArchivo(boton, ruta, nombre);
   else if (accion === 'ver') verArchivo(boton, ruta, nombre, String(boton.dataset.mime ?? ''));
-  else if (accion === 'eliminar') pedirConfirmacion({ texto: textoDeConfirmacion('archivo', { nombre }), boton, ejecutar: () => API.pedirJson('DELETE', ruta) });
+  else if (accion === 'eliminar') {
+    pedirConfirmacion({ texto: textoDeConfirmacion('archivo', { nombre }), boton, ejecutar: () => API.pedirJson('DELETE', ruta), respaldo: respaldoDeLaEliminacion(boton) });
+  }
 }
 
 // Con el JWT en el encabezado (API.pedirArchivo), nunca en la URL, y con el nombre original
@@ -2609,6 +2676,12 @@ async function descargarArchivo(boton, ruta, nombre) {
       else avisarError(`No se pudo descargar el archivo: ${error?.message ?? ''}`);
     }
   });
+}
+
+// «Descargar» de la vista previa: en el teléfono un PDF no se dibuja en el <iframe> (Android lo deja en blanco y iOS muestra solo la
+// primera hoja). Baja lo que ya bajó «Ver», con el nombre original, como «Descargar» de la lista (descargarBlob), sin volver a pedirlo
+function descargarDeLaVistaPrevia() {
+  if (vistaPrevia && modalAbierto?.id === 'modal-vista-previa') descargarBlob(vistaPrevia.blob, vistaPrevia.nombre);
 }
 
 // La vista previa, desde un blob: (la imagen en un <img> y el PDF en un <iframe>); la URL se libera al cerrar el modal
@@ -2632,12 +2705,16 @@ async function verArchivo(boton, ruta, nombre, mime) {
     }
     porId('modal-vista-previa-titulo').textContent = nombre || 'Vista previa';
     porId('modal-vista-previa-cuerpo').innerHTML = html;
+    porId('modal-vista-previa-descargar').setAttribute('aria-label', `Descargar ${nombre || 'el archivo'}`);
+    const abierta = { blob, nombre: nombre || 'archivo' };
+    vistaPrevia = abierta;
     abrirModal('modal-vista-previa', {
       volverA: boton,
       foco: () => porId('modal-vista-previa').querySelector('.modal-close'),
       alCerrar: () => {
         porId('modal-vista-previa-cuerpo').innerHTML = '';
         URL.revokeObjectURL(url);
+        if (vistaPrevia === abierta) vistaPrevia = null;
       }
     });
   });
@@ -2648,10 +2725,11 @@ async function verArchivo(boton, ruta, nombre, mime) {
 // =====================================================
 
 // Abre la confirmación con `texto`; «Eliminar» corre `ejecutar` (el pedido) y, si sale bien, el aviso del servidor, se cierra y
-// `alTerminar` (de entrada, volver a pedir la vista). El foco va a «Cancelar», que no borra nada
-function pedirConfirmacion({ texto, boton, ejecutar, alTerminar = recargarVista }) {
+// `alTerminar` (de entrada, volver a pedir la vista; mientras tanto, el foco que se pierde va a `respaldo`, el que armó
+// respaldoDeLaEliminacion). El foco va a «Cancelar», que no borra nada
+function pedirConfirmacion({ texto, boton, ejecutar, alTerminar = recargarVista, respaldo = null }) {
   if (!pagina.esAdmin) return;
-  confirmacion = { ejecutar, alTerminar, ocupado: false };
+  confirmacion = { ejecutar, alTerminar, respaldo, ocupado: false };
   porId('modal-confirmar-texto').textContent = texto;
   abrirModal('modal-confirmar', {
     volverA: boton,
@@ -2690,7 +2768,12 @@ async function confirmarLaEliminacion() {
   avisarExito(respuesta?.message || 'Eliminado');
   if (abierta) cerrarModal();
   if (confirmacion === actual) confirmacion = null;
-  await actual.alTerminar();
+  respaldoPendiente = actual.respaldo;
+  try {
+    await actual.alTerminar();
+  } finally {
+    if (respaldoPendiente === actual.respaldo) respaldoPendiente = null;
+  }
 }
 
 function confirmarEliminarProyecto(boton) {
@@ -2712,7 +2795,8 @@ function confirmarEliminarHito(boton) {
   pedirConfirmacion({
     texto: textoDeConfirmacion(esLogro(hito) ? 'logro' : 'hito', hito),
     boton,
-    ejecutar: () => API.pedirJson('DELETE', `/gestion/hitos/${id}`)
+    ejecutar: () => API.pedirJson('DELETE', `/gestion/hitos/${id}`),
+    respaldo: respaldoDeLaEliminacion(boton)
   });
 }
 
