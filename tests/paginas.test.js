@@ -181,7 +181,7 @@ describe('páginas', () => {
       assert.doesNotMatch(area, /<form\b/);
       assert.match(area, /<div class="modal-footer">\s*<span id="area-pie-izquierda"><\/span>\s*<div class="botones">\s*<button type="button" class="ar-btn ar-btn-borde" data-cerrar-area>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-tinta" id="area-guardar">Guardar área<\/button>/);
       assert.match(area, /<button type="button" class="modal-close" data-cerrar-area aria-label="Cerrar">&times;<\/button>/);
-      const borrar = bloque(/<div class="modal-overlay" id="modal-borrar-area">[\s\S]*?(?=<script )/);
+      const borrar = bloque(/<div class="modal-overlay" id="modal-borrar-area">[\s\S]*?(?=<div class="modal-overlay" id="modal-feriado">)/);
       // La pregunta describe el diálogo: el foco va a "Cancelar", y un lector de pantalla la anuncia antes de un borrado definitivo
       assert.match(borrar, /<div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-borrar-area-titulo" aria-describedby="borrar-area-texto">/);
       assert.match(borrar, /<p class="ar-modal-bajada" id="borrar-area-texto"><\/p>/);
@@ -305,6 +305,95 @@ describe('páginas', () => {
         }
       }
       assert.doesNotMatch(reglasFe.join('\n'), /text-transform:\s*uppercase/);
+    });
+
+    // Los dos modales de la pestaña (spec 4): el del feriado (cargar y corregir, y «no rige» en uno que se repite) y el de la baja,
+    // después del de borrar un área y fuera del contenido (después del footer), con los ids que usa feriados.js
+    const modalFeriado = () => bloque(/<div class="modal-overlay" id="modal-feriado">[\s\S]*?(?=<div class="modal-overlay" id="modal-baja-feriado">)/);
+    const modalBaja = () => bloque(/<div class="modal-overlay" id="modal-baja-feriado">[\s\S]*?(?=<script )/);
+    const IDS_DEL_MODAL = ['modal-feriado', 'modal-feriado-titulo', 'feriado-error', 'fe-fecha', 'fe-fecha-dia', 'fe-fecha-error',
+      'fe-trasladado', 'fe-trasladado-ayuda', 'fe-trasladado-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones',
+      'fe-tipo-error', 'fe-se-repite', 'fe-se-repite-error', 'fe-anio', 'fe-anio-titulo', 'fe-no-rige', 'fe-no-rige-texto', 'fe-no-rige-ayuda',
+      'fe-pasa-al-grupo', 'fe-pasa-al', 'fe-pasa-al-ayuda', 'fe-pasa-al-error', 'fe-baja', 'fe-guardar'];
+    const IDS_DE_LA_BAJA = ['modal-baja-feriado', 'modal-baja-feriado-titulo', 'baja-feriado-texto', 'baja-feriado-desde-grupo',
+      'baja-feriado-desde', 'baja-feriado-error', 'baja-feriado-cancelar', 'baja-feriado-confirmar'];
+
+    it('los dos modales van después del footer y del de borrar un área, y antes de los scripts', () => {
+      assert.ok(modalFeriado(), 'el modal del feriado');
+      assert.ok(modalBaja(), 'el de la baja');
+      assert.ok(posicion('</footer>') < posicion('id="modal-feriado"'), 'después del footer');
+      assert.ok(posicion('</main>') < posicion('id="modal-feriado"'), 'fuera del contenido');
+      assert.ok(posicion('id="modal-borrar-area"') < posicion('id="modal-feriado"'), 'después del de borrar un área');
+      assert.ok(posicion('id="modal-feriado"') < posicion('id="modal-baja-feriado"'), 'la baja, después');
+      assert.ok(posicion('id="modal-baja-feriado"') < posicion('<script '), 'antes de los scripts');
+    });
+
+    it('sus ids están una sola vez, cada uno en su modal, y ninguno es de Usuarios, Licencias ni Áreas', () => {
+      const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), [], 'ningún id repetido en la página');
+      for (const id of IDS_DEL_MODAL) {
+        assert.equal(ids.filter(otro => otro === id).length, 1, id);
+        assert.ok(modalFeriado().includes(` id="${id}"`), `${id} en el modal del feriado`);
+      }
+      for (const id of IDS_DE_LA_BAJA) {
+        assert.equal(ids.filter(otro => otro === id).length, 1, id);
+        assert.ok(modalBaja().includes(` id="${id}"`), `${id} en el de la baja`);
+      }
+      // Todos los ids de los dos modales son de Feriados (fe-, feriado o baja-feriado), y no hay otros
+      const deLosModales = [...(modalFeriado() + modalBaja()).matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(deLosModales.sort(), [...IDS_DEL_MODAL, ...IDS_DE_LA_BAJA].sort());
+      assert.ok(deLosModales.every(id => /^fe-|feriado/.test(id)), 'con el prefijo de Feriados');
+      for (const ajeno of ['modal-area', 'modal-borrar-area', 'modal-usuario', 'modal-licencia']) assert.ok(!deLosModales.includes(ajeno), ajeno);
+    });
+
+    it('el del feriado: role="dialog" con su título, sin <form>, el aviso de arriba y el pie «Siempre el día entero» con «Dar de baja» (oculto), «Cancelar» y «Guardar»', () => {
+      const modal = modalFeriado();
+      assert.match(modal, /<div class="modal ar-modal fe-modal" role="dialog" aria-modal="true" aria-labelledby="modal-feriado-titulo">/);
+      assert.match(modal, /<h2 class="modal-title" id="modal-feriado-titulo">Nuevo feriado<\/h2>/);
+      assert.match(modal, /<button type="button" class="modal-close" data-cerrar-feriado aria-label="Cerrar">&times;<\/button>/);
+      assert.doesNotMatch(modal, /<form\b/);
+      assert.match(modal, /<div id="feriado-error" class="aviso aviso-error" role="alert" hidden><\/div>/);
+      // «Dar de baja», como «Borrar el área»: un botón de texto a la izquierda del pie, debajo de la aclaración
+      assert.match(modal, /<div class="modal-footer">\s*<div class="fe-pie-izquierda">\s*<small>Siempre el día entero<\/small>\s*<button type="button" class="ar-boton-texto" id="fe-baja" hidden>Dar de baja<\/button>\s*<\/div>\s*<div class="botones">\s*<button type="button" class="ar-btn ar-btn-borde" data-cerrar-feriado>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-tinta" id="fe-guardar">Guardar<\/button>/);
+      // Usa los atributos propios: ninguno de los que escuchan usuarios.js y areas.js
+      assert.doesNotMatch(modal + modalBaja(), /data-(cerrar-area|cerrar-borrar|ver|licencia|vista)\b/);
+    });
+
+    it('los campos: la fecha con su día al lado, desde el 01/01/2025; el nombre; los tipos; «Trasladado del»; «Se repite»; cada uno con su error', () => {
+      const modal = modalFeriado();
+      assert.match(modal, /<input type="date" id="fe-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="fe-fecha-dia fe-fecha-error">\s*<span class="fe-dia" id="fe-fecha-dia"><\/span>/);
+      assert.match(modal, /<label class="form-label" for="fe-fecha">Fecha <span class="requerido" aria-hidden="true">\*<\/span><\/label>/);
+      assert.match(modal, /<input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">/);
+      assert.match(modal, /<label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">\(opcional\)<\/span><\/label>/);
+      // El nombre sin maxlength: cuenta unidades de UTF-16 (el servidor cuenta con Array.from)
+      assert.match(modal, /<input type="text" id="fe-nombre" class="form-input" aria-required="true" aria-describedby="fe-nombre-error" autocomplete="off" placeholder="Ej\.: Carnaval">/);
+      assert.doesNotMatch(modal, /maxlength/);
+      // Los cuatro tipos los dibuja feriados.js (htmlDeTiposFeriado), con los nombres de NOMBRES_TIPO_FERIADO
+      assert.match(modal, /<fieldset class="ar-ambito-grupo" id="fe-tipo">\s*<legend class="form-label">Tipo <span class="requerido" aria-hidden="true">\*<\/span><\/legend>\s*<div class="ar-ambitos" id="fe-tipo-opciones"><\/div>\s*<p class="form-error" id="fe-tipo-error" hidden><\/p>/);
+      assert.match(modal, /<input type="checkbox" id="fe-se-repite" aria-describedby="fe-se-repite-error"><span><b>Se repite todos los años, el mismo día<\/b><small>Para los de fecha fija, como el aniversario de la ciudad\. Los móviles se cargan año por año\.<\/small><\/span>/);
+      for (const id of ['fe-fecha', 'fe-trasladado', 'fe-nombre', 'fe-se-repite', 'fe-pasa-al']) {
+        assert.match(modal, new RegExp(`<p class="form-error" id="${id}-error" hidden></p>`), id);
+      }
+    });
+
+    it('«no rige», oculto hasta que feriados.js lo muestra (solo al corregir uno que se repite), con «Se pasó al» opcional', () => {
+      const modal = modalFeriado();
+      assert.match(modal, /<fieldset class="ar-bloque fe-bloque-anio" id="fe-anio" hidden>\s*<legend id="fe-anio-titulo"><\/legend>/);
+      assert.match(modal, /<input type="checkbox" id="fe-no-rige" aria-describedby="fe-no-rige-ayuda"><span><b id="fe-no-rige-texto"><\/b><small id="fe-no-rige-ayuda">Si ese año se corrió a otro día\. Los demás años no cambian\.<\/small><\/span>/);
+      assert.match(modal, /<div class="form-group fe-pasa-al" id="fe-pasa-al-grupo" hidden>\s*<label class="form-label" for="fe-pasa-al">Se pasó al <span class="fe-opcional">\(opcional\)<\/span><\/label>\s*<input type="date" id="fe-pasa-al" class="form-input" aria-describedby="fe-pasa-al-ayuda fe-pasa-al-error">/);
+      assert.match(modal, /<p class="form-hint" id="fe-pasa-al-ayuda">Ese día se carga como un feriado más, con el mismo nombre y tipo\.<\/p>/);
+    });
+
+    it('la baja: la pregunta describe el diálogo; desde qué año (un select vacío, oculto), el error y «Dar de baja»', () => {
+      const modal = modalBaja();
+      assert.match(modal, /<div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-baja-feriado-titulo" aria-describedby="baja-feriado-texto">/);
+      assert.match(modal, /<h2 class="modal-title" id="modal-baja-feriado-titulo">Dar de baja el feriado<\/h2>/);
+      assert.match(modal, /<button type="button" class="modal-close" data-cerrar-baja-feriado aria-label="Cerrar">&times;<\/button>/);
+      assert.match(modal, /<p class="ar-modal-bajada" id="baja-feriado-texto"><\/p>/);
+      assert.match(modal, /<div class="form-group" id="baja-feriado-desde-grupo" hidden>\s*<label class="form-label" for="baja-feriado-desde">Deja de regir desde<\/label>\s*<select id="baja-feriado-desde" class="form-input"><\/select>/);
+      assert.match(modal, /<div id="baja-feriado-error" class="aviso aviso-error" role="alert" hidden><\/div>/);
+      assert.match(modal, /<div class="modal-footer">[\s\S]*?<button type="button" class="ar-btn ar-btn-borde" id="baja-feriado-cancelar" data-cerrar-baja-feriado>Cancelar<\/button>\s*<button type="button" class="ar-btn ar-btn-rojo" id="baja-feriado-confirmar">Dar de baja<\/button>/);
+      assert.ok(modal.indexOf('id="baja-feriado-texto"') < modal.indexOf('id="baja-feriado-desde-grupo"'), 'la pregunta, arriba del año');
     });
   });
 

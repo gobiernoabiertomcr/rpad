@@ -214,6 +214,21 @@
         .ar-etq.fe-etq-fijo { background: var(--bruma); color: var(--suave); box-shadow: inset 0 0 0 1px var(--linea); }
         /* El foco visible, como en Áreas: el selector del año, los filtros, "Editar" y "Nuevo feriado" (en el encabezado de la página) */
         #vista-feriados :focus-visible, #btn-nuevo-feriado:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        /* El modal del feriado (es un .ar-modal: el foco, los campos y el tipo, como el ámbito del área, son los suyos): la fecha con su
+           día de la semana al lado, las casillas, «no rige» del año y, en el pie, «Dar de baja» debajo de la aclaración, como «Borrar
+           el área» */
+        .fe-con-dia { display: flex; align-items: center; gap: 10px; }
+        .fe-con-dia .form-input { flex: 1; min-width: 0; }
+        .fe-dia { flex: none; min-width: 8ch; color: var(--suave); font-weight: 600; }
+        .fe-opcional { color: var(--suave); font-weight: 400; }
+        .fe-casilla { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+        .fe-casilla input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--tinta); flex: none; }
+        .fe-casilla b { display: block; font-weight: 600; color: var(--texto); }
+        .fe-casilla small { display: block; color: var(--suave); font-size: 0.8rem; line-height: 1.35; margin-top: 1px; }
+        .fe-casilla input[aria-invalid="true"], .fe-modal .ar-ambito input[aria-invalid="true"] { outline: 2px solid var(--ar-rojo); outline-offset: 2px; }
+        .fe-bloque-anio { border-top: 1px solid var(--linea); padding-top: 16px; margin-top: 4px; }
+        .fe-pasa-al { margin: 12px 0 0 28px; }
+        .fe-pie-izquierda { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 
         @media (max-width: 768px) {
             .form-row { grid-template-columns: 1fr; }
@@ -695,6 +710,97 @@
                 <div class="botones">
                     <button type="button" class="ar-btn ar-btn-borde" data-cerrar-borrar>Cancelar</button>
                     <button type="button" class="ar-btn ar-btn-rojo" id="borrar-area-confirmar">Borrar área</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Feriado (spec 2026-10-26-feriados, 4): cargar y corregir un feriado y, al corregir uno que se repite, «no rige» del año
+         que se mira. Como el del área, sin <form> entre el .modal y su cuerpo: el cuerpo se desplaza y el pie queda a la vista.
+         feriados.js dibuja los cuatro tipos (#fe-tipo-opciones) y escribe los textos del año -->
+    <div class="modal-overlay" id="modal-feriado">
+        <div class="modal ar-modal fe-modal" role="dialog" aria-modal="true" aria-labelledby="modal-feriado-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-feriado-titulo">Nuevo feriado</h2>
+                <button type="button" class="modal-close" data-cerrar-feriado aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="feriado-error" class="aviso aviso-error" role="alert" hidden></div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="fe-fecha">Fecha <span class="requerido" aria-hidden="true">*</span></label>
+                        <div class="fe-con-dia">
+                            <input type="date" id="fe-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="fe-fecha-dia fe-fecha-error">
+                            <span class="fe-dia" id="fe-fecha-dia"></span>
+                        </div>
+                        <p class="form-error" id="fe-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">(opcional)</span></label>
+                        <input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">
+                        <p class="form-hint" id="fe-trasladado-ayuda">La fecha original de un trasladable, del mismo año.</p>
+                        <p class="form-error" id="fe-trasladado-error" hidden></p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="fe-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
+                    <input type="text" id="fe-nombre" class="form-input" aria-required="true" aria-describedby="fe-nombre-error" autocomplete="off" placeholder="Ej.: Carnaval">
+                    <p class="form-error" id="fe-nombre-error" hidden></p>
+                </div>
+                <fieldset class="ar-ambito-grupo" id="fe-tipo">
+                    <legend class="form-label">Tipo <span class="requerido" aria-hidden="true">*</span></legend>
+                    <div class="ar-ambitos" id="fe-tipo-opciones"></div>
+                    <p class="form-error" id="fe-tipo-error" hidden></p>
+                </fieldset>
+                <div class="form-group">
+                    <label class="fe-casilla"><input type="checkbox" id="fe-se-repite" aria-describedby="fe-se-repite-error"><span><b>Se repite todos los años, el mismo día</b><small>Para los de fecha fija, como el aniversario de la ciudad. Los móviles se cargan año por año.</small></span></label>
+                    <p class="form-error" id="fe-se-repite-error" hidden></p>
+                </div>
+                <fieldset class="ar-bloque fe-bloque-anio" id="fe-anio" hidden>
+                    <legend id="fe-anio-titulo"></legend>
+                    <label class="fe-casilla"><input type="checkbox" id="fe-no-rige" aria-describedby="fe-no-rige-ayuda"><span><b id="fe-no-rige-texto"></b><small id="fe-no-rige-ayuda">Si ese año se corrió a otro día. Los demás años no cambian.</small></span></label>
+                    <div class="form-group fe-pasa-al" id="fe-pasa-al-grupo" hidden>
+                        <label class="form-label" for="fe-pasa-al">Se pasó al <span class="fe-opcional">(opcional)</span></label>
+                        <input type="date" id="fe-pasa-al" class="form-input" aria-describedby="fe-pasa-al-ayuda fe-pasa-al-error">
+                        <p class="form-hint" id="fe-pasa-al-ayuda">Ese día se carga como un feriado más, con el mismo nombre y tipo.</p>
+                        <p class="form-error" id="fe-pasa-al-error" hidden></p>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="modal-footer">
+                <div class="fe-pie-izquierda">
+                    <small>Siempre el día entero</small>
+                    <button type="button" class="ar-boton-texto" id="fe-baja" hidden>Dar de baja</button>
+                </div>
+                <div class="botones">
+                    <button type="button" class="ar-btn ar-btn-borde" data-cerrar-feriado>Cancelar</button>
+                    <button type="button" class="ar-btn ar-btn-tinta" id="fe-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dar de baja un feriado (spec 4): la pregunta describe el diálogo; en uno que se repite, desde qué año deja de regir (de entrada,
+         el que se mira: los anteriores no cambian) -->
+    <div class="modal-overlay" id="modal-baja-feriado">
+        <div class="modal ar-modal ar-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-baja-feriado-titulo" aria-describedby="baja-feriado-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-baja-feriado-titulo">Dar de baja el feriado</h2>
+                <button type="button" class="modal-close" data-cerrar-baja-feriado aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="ar-modal-bajada" id="baja-feriado-texto"></p>
+                <div class="form-group" id="baja-feriado-desde-grupo" hidden>
+                    <label class="form-label" for="baja-feriado-desde">Deja de regir desde</label>
+                    <select id="baja-feriado-desde" class="form-input"></select>
+                </div>
+                <div id="baja-feriado-error" class="aviso aviso-error" role="alert" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <small></small>
+                <div class="botones">
+                    <button type="button" class="ar-btn ar-btn-borde" id="baja-feriado-cancelar" data-cerrar-baja-feriado>Cancelar</button>
+                    <button type="button" class="ar-btn ar-btn-rojo" id="baja-feriado-confirmar">Dar de baja</button>
                 </div>
             </div>
         </div>
