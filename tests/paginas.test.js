@@ -18,8 +18,9 @@ const VERSION = '20261204';
 // Colaborador, con su grupo y la ayuda de cada rol, spec 2026-10-24-notas-dgmit, 1; la ayuda del lector nombra «Métricas y
 // Reportes», spec 2026-10-24-metricas-y-reportes; el lector ya no tiene Notas y el colaborador arma notas con el Generador de Notas,
 // spec 2026-10-24-generador-de-notas, 1; Configuración reemplaza a Usuarios y Áreas: la tercera pestaña, Áreas, y la pestaña en la
-// dirección, spec 2026-10-24-configuracion, 1 y 6): su versión es propia (solo la usa configuracion.html)
-const VERSION_PANTALLAS = '20261205';
+// dirección, spec 2026-10-24-configuracion, 1 y 6; la ayuda del lector nombra Proyectos en lugar de Gestión, spec
+// 2026-10-25-proyectos, 11): su versión es propia (solo la usa configuracion.html)
+const VERSION_PANTALLAS = '20261206';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -47,9 +48,6 @@ const VERSION_PUBLICAS = '20261109';
 const VERSION_PORTADA = '20261110';
 // main.css (la carcasa nueva y las fuentes Bricolage Grotesque y Figtree): hasta el rediseño se cargaba sin ?v=
 const VERSION_CSS = '20261109';
-// gestion.js (la tasa de cumplimiento y el ranking de áreas sin los eventuales; después, Gestión queda solo con Proyectos: la pestaña
-// Métricas se mudó a «Métricas y Reportes», spec 2026-10-24-metricas-y-reportes, 6): su versión es propia
-const VERSION_GESTION = '20261129';
 // seguimiento.js (la página nueva de Seguimiento, spec 2026-10-20-seguimiento-dataset); cambió después ("Requiere nota DGMIT" en la
 // ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
 // de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, y después cargar, corregir y anular notas
@@ -60,14 +58,16 @@ const VERSION_SEGUIMIENTO = '20261129';
 // ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
 // del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
 // después, la revisión final (el año de Datos para completar, la franja de lo destildado armada en el servidor y el foco de «Volver a
-// todos»): su versión es propia
-const VERSION_REPORTES = '20261203';
+// todos»); después, la tarjeta del Informe anual dice «(los hitos de Herramientas → Proyectos)», spec 2026-10-25-proyectos, 11): su
+// versión es propia
+const VERSION_REPORTES = '20261206';
 // notas.js (el Generador de Notas de la DGMIT en tres pasos, con la vista previa en la hoja membretada y la descarga del Word, spec
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia
 const VERSION_NOTAS = '20261204';
 // proyectos.js (la página nueva de Proyectos, con el estilo del Seguimiento: los carriles de 3 años, la línea de tiempo y los logros
-// del área, spec 2026-10-25-proyectos, 1, 2 y 10): el número siguiente al más alto de este archivo. Su versión es propia
+// del área, spec 2026-10-25-proyectos, 1, 2 y 10): el número siguiente al más alto de este archivo cuando se creó (con el renombre,
+// VERSION_REPORTES y VERSION_PANTALLAS subieron al mismo número; siguen siendo independientes). Su versión es propia
 const VERSION_PROYECTOS = '20261206';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
@@ -86,8 +86,8 @@ describe('páginas', () => {
   }
 
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
-  // fecha (el texto del efecto de la licencia en las notas, con persona autorizada) y, por último, con Configuración (la tercera
-  // pestaña y la pestaña en la dirección)
+  // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
+  // pestaña en la dirección) y, por último, con el renombre de Gestión a Proyectos (la ayuda del lector)
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
@@ -241,27 +241,23 @@ describe('páginas', () => {
     });
   }
 
-  it(`gestion.html: gestion.js con la versión ${VERSION_GESTION}`, () => {
-    assert.ok(leer('gestion.html').includes(`js/gestion.js?v=${VERSION_GESTION}"`));
+  // Gestión pasa a llamarse Proyectos (spec 2026-10-25-proyectos, 1 y 11): la página vieja y su script ya no están (su dirección la
+  // redirige app.js a proyectos.html: tests/proyectos-api.test.js)
+  it('proyectos.html reemplaza a gestion.html: public/gestion.html y public/js/gestion.js no existen', () => {
+    assert.ok(paginas.includes('proyectos.html'), 'proyectos.html');
+    assert.ok(!fs.existsSync(new URL('gestion.html', DIRECTORIO)), 'public/gestion.html');
+    assert.ok(!fs.existsSync(new URL('js/gestion.js', DIRECTORIO)), 'public/js/gestion.js');
   });
 
-  // La pestaña Métricas de Gestión se mudó a «Métricas y Reportes» (spec 2026-10-24-metricas-y-reportes, 6): Gestión queda con
-  // Proyectos, sin pestañas y sin Chart.js (Proyectos no lo usa)
-  it('gestion.html ya no tiene Chart.js ni #tab-metricas', () => {
-    const html = leer('gestion.html');
-    assert.doesNotMatch(html, /chart\.js|chart\.umd/i);
-    assert.doesNotMatch(html, /id="tab-metricas"|data-tab=|switchTab|kpi-grid|ranking-container|metricas-manuales|metricas-periodo/);
-    assert.match(html, /<div id="tab-proyectos">/);
-    const gestion = fs.readFileSync(new URL('js/gestion.js', DIRECTORIO), 'utf8');
-    assert.doesNotMatch(gestion, /new Chart|cargarMetricas|htmlDelRanking|textoPorcentaje|exportarCSV|switchTab|\/gestion\/metricas/);
-  });
-
-  // Gestión avisa adónde se mudaron las métricas (revisión final, B-8), arriba de Proyectos
-  it('gestion.html avisa que las métricas están en Herramientas → Métricas y Reportes', () => {
-    const html = leer('gestion.html');
-    const aviso = html.indexOf('<p class="aviso-mudanza">Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>');
+  // El link viejo de las métricas (gestion.html#metricas llega por la redirección a proyectos.html#metricas, spec 1): Proyectos
+  // tiene el aviso de la mudanza, oculto hasta que proyectos.js lo muestra, arriba de las pestañas; y sin Chart.js (Proyectos no lo usa)
+  it('proyectos.html: el aviso #pr-aviso-metricas con el link a reportes.html#metricas, oculto, y sin Chart.js', () => {
+    const html = leer('proyectos.html');
+    const aviso = html.indexOf('<p class="pr-aviso" id="pr-aviso-metricas" hidden>Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>');
     assert.ok(aviso !== -1, 'falta el aviso');
-    assert.ok(aviso < html.indexOf('<div id="tab-proyectos">'), 'el aviso va arriba de Proyectos');
+    assert.equal(html.match(/id="pr-aviso-metricas"/g)?.length, 1, 'una sola vez');
+    assert.ok(aviso < html.indexOf('role="tablist"'), 'el aviso va arriba de las pestañas');
+    assert.doesNotMatch(html, /chart\.js|chart\.umd/i);
   });
 
   // Con Chart.js fuera de Gestión, ninguna página carga nada de un CDN: la CSP ya no permite ningún CDN de scripts ni de hojas
@@ -370,6 +366,35 @@ describe('páginas', () => {
     });
   });
 
+  // El menú de Herramientas (spec 2026-10-25-proyectos, 11): el tercer link, que era Gestión con el ícono de barras, pasa a
+  // Proyectos con la carpeta con tablero (folder-kanban de Lucide), el mismo ícono del h1 de proyectos.html. Las demás páginas
+  // copian el menú de index.html (la carcasa, más abajo)
+  describe('el menú de Herramientas', () => {
+    const CARPETA_CON_TABLERO = '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/>';
+    const BARRAS = 'M3 3v18h18';
+
+    for (const pagina of paginas) {
+      it(`${pagina}: ningún enlace a gestion.html`, () => {
+        // También con ruta (/gestion.html, ./gestion.html) o con fragmento (gestion.html#metricas)
+        assert.deepEqual(leer(pagina).match(/href="[^"]*(?<![\w-])gestion\.html[^"]*"/g) ?? [], []);
+      });
+    }
+
+    it('index.html: Métricas y Reportes, Notas, Proyectos con la carpeta con tablero y Seguimiento, en ese orden', () => {
+      const bloque = leer('index.html').match(/<div class="sidebar-section hidden" id="sidebarTools">[\s\S]*?(?=<div class="sidebar-section hidden" id="sidebarAccount">)/)?.[0] ?? '';
+      assert.match(bloque, /<div class="sidebar-section-title">Herramientas<\/div>/);
+      const links = [...bloque.matchAll(/<a href="([^"]+)" class="sidebar-link">(<svg [^>]*>[\s\S]*?<\/svg>)<span>([^<]+)<\/span><\/a>/g)]
+        .map(([, href, svg, texto]) => ({ href, svg, texto }));
+      assert.deepEqual(links.map(l => l.href), ['reportes.html', 'notas.html', 'proyectos.html', 'seguimiento.html']);
+      assert.deepEqual(links.map(l => l.texto), ['Métricas y Reportes', 'Notas', 'Proyectos', 'Seguimiento']);
+      assert.equal(bloque.match(/<a /g)?.length, 4, 'ningún otro link');
+      const proyectos = links[2];
+      assert.ok(proyectos.svg.includes(CARPETA_CON_TABLERO), 'Proyectos: la carpeta con tablero');
+      assert.ok(!bloque.includes(BARRAS), 'el ícono de barras ya no se usa en el menú');
+      for (const { href, svg } of links) assert.match(svg, /^<svg aria-hidden="true" xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">/, href);
+    });
+  });
+
   // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
   it('configuracion.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
     const grupo = leer('configuracion.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
@@ -377,13 +402,13 @@ describe('páginas', () => {
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página (las 14, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, y vuelven
-  // a ser 14 mientras proyectos.html convive con gestion.html: cuando se borre gestion.html, spec 2026-10-25-proyectos, 11, quedan 13)
+  // copiados a mano en cada página (las 13, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, y siguen
+  // siendo 13 con Proyectos, que reemplaza a Gestión: spec 2026-10-25-proyectos, 11)
   const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 14 páginas con carcasa', () => {
-    assert.equal(CON_CARCASA.length, 14);
+  it('hay 13 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 13);
   });
 
   for (const pagina of CON_CARCASA) {
@@ -401,7 +426,7 @@ describe('páginas', () => {
         assert.match(html, new RegExp(`id="${id}"`), id);
       }
       assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
-      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'gestion.html', 'seguimiento.html', 'perfil.html']) {
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'proyectos.html', 'seguimiento.html', 'perfil.html']) {
         assert.ok(html.includes(`href="${destino}"`), destino);
       }
       assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');

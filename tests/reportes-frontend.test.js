@@ -982,7 +982,7 @@ describe('reportes.js: la pestaña Reportes', () => {
     // un número
     for (const [clave, texto, hojas] of [
       ['metricas', 'Lo que muestra la pestaña Métricas: el circuito de las dos gestiones, los resultados, el contexto y el trabajo del RPAD. Respeta los casos destildados y lo aclara.', 'Unas 5 hojas'],
-      ['informe', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Gestión → Proyectos).', 'Se arma con la foto del 31/12'],
+      ['informe', 'Para un año cerrado: la foto del 31/12, la comparación con el año anterior y los logros del año (los hitos de Herramientas → Proyectos).', 'Se arma con la foto del 31/12'],
       ['estado', 'La foto de hoy: actualizados, próximos a vencer, vencidos, eventuales y sin fecha, el índice de actualización y la tabla de todos los datasets.', 'Unas 4 hojas'],
       ['area', 'Una portada con el área, sus contactos y el estado de sus datasets y, detrás, una hoja de Seguimiento por cada dataset.', 'Una portada y una hoja por dataset'],
       ['avisos', 'La constancia de cada aviso del período: emails y Notas Digitales, con número, fecha, gestión y datasets. Sin direcciones de email.', null],

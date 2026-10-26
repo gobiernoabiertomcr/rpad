@@ -1580,7 +1580,7 @@ const fotoDeLosCasos = (anio, mapa = mapaDeLosCasos()) => {
 const renderInforme = ({ foto = fotoDeLosCasos(2026), anterior = null, logros = [] } = {}) =>
   renderInformeAnual({ foto, anterior, logros }, { generado: GENERADO_INFORME });
 
-// Los hitos como los lee el controlador (proyecto_hitos con su proyecto, en el orden de Gestión → Proyectos y por fecha; los logros del
+// Los hitos como los lee el controlador (proyecto_hitos con su proyecto, en el orden de Herramientas → Proyectos y por fecha; los logros del
 // área, sin proyecto, al final). Los proyectos son inventados
 const hito = (datos) => ({ proyecto_id: 1, proyecto: 'Portal de datos abiertos', fecha: '2026-03-10', titulo: 'Un hito', descripcion: null, ...datos });
 const HITOS = [
@@ -1811,7 +1811,7 @@ describe('Informe anual: la foto del 31/12, la comparación y los logros', () =>
 
     const todo = lineasPorHoja(await renderInforme({ logros })).flat();
     const desde = todo.indexOf('LOGROS DEL AÑO');
-    assert.ok(desde !== -1 && todo.includes('Los hitos de 2026 cargados en Gestión'), todo.join(' | '));
+    assert.ok(desde !== -1 && todo.includes('Los hitos de 2026 cargados en Proyectos'), todo.join(' | '));
     const logrosEnElPdf = todo.slice(desde);
     // Cada proyecto, y debajo cada hito con su fecha, su título y su descripción, en orden
     const orden = ['Registro de los datasets', '26/01/2026', 'La doble verificación de los cambios', 'Un cambio lo propone una persona y lo aprueba otra.',

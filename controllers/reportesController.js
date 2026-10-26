@@ -324,10 +324,10 @@ export const reporteParaCompletar = async (req, res) => {
 // REPORTE: Informe anual
 // =====================================================
 // Solo para un año con foto (spec 2026-10-24-metricas-y-reportes, 5, Para presentar, punto 2, y 3): la foto del 31/12 de ese año, la
-// del año anterior para la comparación (o, sin ella, «Primer año con foto») y los logros del año, los hitos de Gestión → Proyectos. Las
-// fotos se leen como las lee Métricas (leerFoto y deLaFoto: nunca se recalculan), con la combinación por defecto (mediana en días
-// hábiles) y todos los datasets. El PDF lo dibuja services/reportesInformeAnualPdf.js. Acá van las consultas y el pie, con el nombre
-// corto de quien lo pide y la hora argentina.
+// del año anterior para la comparación (o, sin ella, «Primer año con foto») y los logros del año, los hitos de Herramientas →
+// Proyectos. Las fotos se leen como las lee Métricas (leerFoto y deLaFoto: nunca se recalculan), con la combinación por defecto
+// (mediana en días hábiles) y todos los datasets. El PDF lo dibuja services/reportesInformeAnualPdf.js. Acá van las consultas y el
+// pie, con el nombre corto de quien lo pide y la hora argentina.
 
 const SIN_FOTO_DEL_ANIO = Object.freeze({ success: false, error: 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.' });
 
@@ -341,8 +341,8 @@ const COMBINACION_DEL_INFORME = Object.freeze({ estadistico: ESTADISTICOS[0], di
 const delInforme = (foto) => (foto === null ? null
   : { anio: foto.anio, al: foto.al, ...COMBINACION_DEL_INFORME, ...deLaFoto(foto, COMBINACION_DEL_INFORME) });
 
-// Los hitos con fecha en `anio`, con el nombre de su proyecto, como los lee Gestión → Proyectos (getTimeline, controllers/
-// proyectosController.js): los de proyectos activos y los sin proyecto (los logros del área). Los proyectos en el orden de Gestión →
+// Los hitos con fecha en `anio`, con el nombre de su proyecto, como los lee Herramientas → Proyectos (getTimeline, controllers/
+// proyectosController.js): los de proyectos activos y los sin proyecto (los logros del área). Los proyectos en el orden de Herramientas →
 // Proyectos (por categoría, orden y nombre; los sin proyecto al final) y cada hito por fecha; la fecha como 'AAAA-MM-DD' (es DATE: se
 // corta como texto, sin zona horaria).
 const hitosDelAnio = async (anio) => {

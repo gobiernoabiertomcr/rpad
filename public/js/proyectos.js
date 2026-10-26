@@ -1543,7 +1543,7 @@ function iniciarProyectos() {
   }
   pagina.modo = 'lista';
   porId('pr-nuevo').hidden = !pagina.esAdmin;
-  // El link viejo de las métricas (gestion.html#metricas llega por la redirección): el aviso, y abre Proyectos
+  // El link viejo de las métricas (el de Gestión con #metricas llega por la redirección de app.js): el aviso, y abre Proyectos
   porId('pr-aviso-metricas').hidden = window.location.hash !== '#metricas';
   pagina.pestana = pestanaDeHash(window.location.hash);
   return cargarLista({ inicial: true });

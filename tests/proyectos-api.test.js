@@ -1079,3 +1079,15 @@ describe('archivos', () => {
     });
   });
 });
+
+// La dirección vieja de Gestión lleva a Proyectos (spec 2026-10-25-proyectos, 11): 302, antes del estático, junto a las de
+// Configuración (tests/areas-api.test.js), así un gestion.html que haya quedado en el servidor nunca se sirve. Va sin fragmento: el
+// navegador conserva el del link original (gestion.html#metricas llega a proyectos.html#metricas, que muestra el aviso de la mudanza)
+describe('la dirección vieja', () => {
+  it('GET /gestion.html: 302 a /proyectos.html, sin servir la página vieja', async () => {
+    const res = await fetch(`${servidor.url}/gestion.html`, { redirect: 'manual' });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), '/proyectos.html');
+    assert.ok(!(await res.text()).includes('<!DOCTYPE html>'), 'no sirve la página vieja');
+  });
+});
