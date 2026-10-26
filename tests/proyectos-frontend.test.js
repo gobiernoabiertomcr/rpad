@@ -11,7 +11,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
-import { ESTADOS_PROYECTO, PRIORIDADES, CATEGORIAS } from '../services/proyectosReglas.js';
+import path from 'path';
+import {
+  ESTADOS_PROYECTO, PRIORIDADES, CATEGORIAS, ICONOS_PROYECTO, LARGOS, FECHA_MINIMA, MENSAJES_PROYECTOS, fechaMaxima, validarProyecto,
+  validarHito
+} from '../services/proyectosReglas.js';
+import * as subidas from '../config/upload.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 const HOY = '2026-10-25';
@@ -663,7 +668,8 @@ describe('proyectos.js: la ficha de un proyecto (htmlDeFicha, spec 3)', () => {
 
   it('la fila de datos: Prioridad, Fecha de elevación, Autor o responsable, Áreas, Hitos y Documentos', () => {
     assert.deepEqual(datos(ctx.htmlDeFicha(detalleDe(INDICE), { esAdmin: false })), [['Prioridad', 'Alta'], ['Fecha de elevación', '01/08/2021'],
-      ['Autor o responsable', 'Martín Quiroga'], ['Áreas', 'Dirección de Datos Públicos y Comunicación'], ['Hitos', '5'], ['Documentos', '0']]);
+      ['Autor o responsable', MAQUETA.proyectos.find((p) => p.id === INDICE).responsable], ['Áreas', 'Dirección de Datos Públicos y Comunicación'],
+      ['Hitos', '5'], ['Documentos', '0']]);
     assert.deepEqual(datos(ctx.htmlDeFicha(detalleDe(BOLETIN), { esAdmin: false })).slice(4), [['Hitos', '2'], ['Documentos', '2']]);
   });
 
@@ -1193,6 +1199,409 @@ describe('proyectos.js: los logros del área (htmlDeLogros, spec 5)', () => {
   });
 });
 
+// =====================================================
+// Task 7: formularios, archivos y confirmaciones (spec 6, 9 y 10)
+// =====================================================
+
+// Un texto de n caracteres contados con Array.from, con tildes y emojis (cada emoji son dos unidades de UTF-16: un .length daría más)
+const largo = (n) => Array.from({ length: n }, (_, i) => (i % 2 ? 'é' : '😀')).join('');
+const MB = 1024 * 1024;
+
+describe('proyectos.js: las copias del servidor (paridad)', () => {
+  it('los mensajes, los largos y la fecha mínima son los de services/proyectosReglas.js', () => {
+    assert.deepEqual(constante('MENSAJES_PROYECTOS'), { ...MENSAJES_PROYECTOS });
+    assert.deepEqual(constante('LARGOS_PROYECTOS'), { ...LARGOS });
+    assert.equal(constante('FECHA_MINIMA_PROYECTOS'), FECHA_MINIMA);
+  });
+
+  it('los estados, las prioridades, las categorías y los íconos son los del servidor (y los íconos, los de ICON_SELECTOR_MAP de main.js)', () => {
+    assert.deepEqual(constante('ESTADOS'), [...ESTADOS_PROYECTO]);
+    assert.deepEqual(constante('PRIORIDADES'), [...PRIORIDADES]);
+    assert.deepEqual(constante('CATEGORIAS'), [...CATEGORIAS]);
+    assert.deepEqual(constante('ICONOS'), [...ICONOS_PROYECTO]);
+    assert.deepEqual(constante('ICONOS'), constante('Object.keys(ICON_SELECTOR_MAP)'));
+    // Cada ícono con su nombre en castellano (el rótulo de su opción)
+    assert.deepEqual(Object.keys(constante('NOMBRE_DEL_ICONO')), [...ICONOS_PROYECTO]);
+    for (const nombre of Object.values(constante('NOMBRE_DEL_ICONO'))) assert.match(nombre, /^[A-ZÁÉÍÓÚ][a-záéíóúñ ]+$/, nombre);
+  });
+
+  it('las extensiones, los 10 MB, los máximos y los mensajes de los archivos son los de config/upload.js', () => {
+    assert.deepEqual(constante('EXTENSIONES_PERMITIDAS'), [...subidas.EXTENSIONES_PERMITIDAS]);
+    assert.equal(constante('TAMANO_MAXIMO'), subidas.TAMANO_MAXIMO);
+    assert.equal(constante('MAXIMO_POR_HITO'), subidas.MAXIMO_POR_HITO);
+    assert.equal(constante('MAXIMO_POR_PROYECTO'), subidas.MAXIMO_POR_PROYECTO);
+    assert.equal(constante('MENSAJE_MAXIMO_POR_HITO'), subidas.MENSAJE_MAXIMO_POR_HITO);
+    assert.equal(constante('MENSAJE_MAXIMO_POR_PROYECTO'), subidas.MENSAJE_MAXIMO_POR_PROYECTO);
+    assert.equal(constante('MENSAJE_TAMANO_MAXIMO'), subidas.MENSAJE_TAMANO_MAXIMO);
+    for (const extension of ['.exe', '', '.', '.PDF', '.tar']) {
+      assert.equal(vm.runInContext(`mensajeTipoNoPermitido(${JSON.stringify(extension)})`, ctx), subidas.mensajeTipoNoPermitido(extension));
+    }
+  });
+
+  it('fechaMaxima: el 31/12 de cinco años después; null si hoy no es una fecha (como la del servidor)', () => {
+    for (const hoy of [HOY, '2026-01-01', '2024-02-29', '9994-06-01', '9996-01-01', '2026-02-29', '2026-10-25T10:00', ' 2026-10-25', '', null, undefined, 20261025]) {
+      assert.equal(ctx.fechaMaxima(hoy), fechaMaxima(hoy), String(hoy));
+    }
+    assert.equal(ctx.fechaMaxima(HOY), '2031-12-31');
+    assert.equal(ctx.fechaMaxima('2026-02-30'), null);
+  });
+
+  it('la paleta: los 10 colores de la spec, en su orden', () => {
+    assert.deepEqual(constante('PALETA'), [
+      { color: '#1A365D', nombre: 'Azul tinta' }, { color: '#0950C6', nombre: 'Azul oscuro' }, { color: '#3B82F6', nombre: 'Azul' },
+      { color: '#2B7AB8', nombre: 'Celeste' }, { color: '#0E7490', nombre: 'Petróleo' }, { color: '#2E6B4C', nombre: 'Verde' },
+      { color: '#F45000', nombre: 'Naranja' }, { color: '#CC0066', nombre: 'Magenta' }, { color: '#6D4BA8', nombre: 'Violeta' },
+      { color: '#56677F', nombre: 'Gris' }
+    ]);
+  });
+
+  it('los campos de cada formulario son los que valida el servidor (los mismos nombres que el campo de sus errores)', () => {
+    const campos = constante('CAMPOS_DEL_FORMULARIO');
+    assert.deepEqual(Object.keys(campos.proyecto), Object.keys(validarProyecto({}, { hoy: HOY }).datos));
+    assert.deepEqual(Object.keys(campos.hito), Object.keys(validarHito({}, { hoy: HOY }).datos));
+  });
+});
+
+describe('proyectos.js: erroresDelProyecto da lo mismo que validarProyecto (spec 9)', () => {
+  const BASE = {
+    nombre: '[TEST] Proyecto', descripcion: '', estado: 'idea', prioridad: 'media', categoria: 'tecnologia', fecha_inicio: '',
+    responsable: '', enlace_externo: '', color: '#1A365D', icono: 'folder', areas: []
+  };
+  // Sin el segundo argumento, HOY; con él, el que llega (también undefined: sin un hoy que sirva)
+  const iguales = (valores, ...otro) => {
+    const hoy = otro.length ? otro[0] : HOY;
+    const esperado = validarProyecto(valores, { hoy }).errores;
+    assert.deepEqual(plano(ctx.erroresDelProyecto(valores, hoy)), esperado, JSON.stringify(valores));
+    return esperado;
+  };
+
+  it('los casos de la spec: el nombre vacío, de 200 y de 201 caracteres (con tildes y emojis), el 29/02/2026, un ftp:// y un #ABCDEF', () => {
+    assert.deepEqual(iguales({ ...BASE, nombre: '' }), [{ campo: 'nombre', mensaje: 'Escribí el nombre del proyecto.' }]);
+    assert.deepEqual(iguales({ ...BASE, nombre: largo(200) }), []);
+    assert.ok(largo(200).length > 200, 'el texto de 200 caracteres tiene más de 200 unidades de UTF-16');
+    assert.deepEqual(iguales({ ...BASE, nombre: largo(201) }), [{ campo: 'nombre', mensaje: 'El nombre puede tener hasta 200 caracteres.' }]);
+    assert.deepEqual(iguales({ ...BASE, fecha_inicio: '2026-02-29' }), [{ campo: 'fecha_inicio', mensaje: 'La fecha de elevación no es válida.' }]);
+    assert.deepEqual(iguales({ ...BASE, enlace_externo: 'ftp://x' }), [{ campo: 'enlace_externo', mensaje: 'El enlace tiene que empezar con http:// o https://.' }]);
+    // Cualquier #RRGGBB vale, no solo los de la paleta: un proyecto conserva su color actual
+    assert.deepEqual(iguales({ ...BASE, color: '#ABCDEF' }), []);
+  });
+
+  it('los bordes: espacios, vacíos que toman el valor por defecto, listas, fechas, largos, enlaces, color, ícono y áreas', () => {
+    const casos = [
+      {}, null, 'texto', [], { ...BASE },
+      { ...BASE, nombre: '   ' }, { ...BASE, nombre: `  ${largo(200)}  ` }, { ...BASE, nombre: 123 }, { ...BASE, nombre: null },
+      { ...BASE, estado: '' }, { ...BASE, estado: null }, { ...BASE, estado: undefined }, { ...BASE, estado: 'otro' }, { ...BASE, estado: ' en_curso ' },
+      { ...BASE, prioridad: 'urgente' }, { ...BASE, prioridad: '' }, { ...BASE, categoria: 'deporte' }, { ...BASE, categoria: 7 },
+      { ...BASE, fecha_inicio: '1999-12-31' }, { ...BASE, fecha_inicio: '2000-01-01' }, { ...BASE, fecha_inicio: '2031-12-31' },
+      { ...BASE, fecha_inicio: '2032-01-01' }, { ...BASE, fecha_inicio: '2026-1-5' }, { ...BASE, fecha_inicio: 20260105 },
+      { ...BASE, fecha_inicio: ' 2026-01-05 ' }, { ...BASE, fecha_inicio: '2026-01-05T00:00' },
+      { ...BASE, responsable: largo(150) }, { ...BASE, responsable: largo(151) }, { ...BASE, responsable: 5 },
+      { ...BASE, enlace_externo: `https://${'a'.repeat(492)}` }, { ...BASE, enlace_externo: `https://${'a'.repeat(493)}` },
+      { ...BASE, enlace_externo: ' HTTPS://ejemplo.gob.ar ' }, { ...BASE, enlace_externo: 'javascript:alert(1)' }, { ...BASE, enlace_externo: 42 },
+      { ...BASE, color: '#abc' }, { ...BASE, color: 'red' }, { ...BASE, color: '' }, { ...BASE, color: '#6CA3C6' }, { ...BASE, color: ' #6ca3c6 ' },
+      { ...BASE, icono: 'x' }, { ...BASE, icono: '' }, { ...BASE, icono: 'award' },
+      { ...BASE, areas: ['1', '2'] }, { ...BASE, areas: [3, 3] }, { ...BASE, areas: ['1', 'x'] }, { ...BASE, areas: 'abc' }, { ...BASE, areas: null },
+      { ...BASE, areas: [0] }, { ...BASE, areas: ['01'] }, { ...BASE, areas: [1.5] }, { ...BASE, areas: [12345678901] },
+      { nombre: '', estado: 'x', prioridad: 'y', categoria: 'z', fecha_inicio: 'w', responsable: largo(151), enlace_externo: 'v', color: 'u', icono: 't', areas: 's' }
+    ];
+    for (const caso of casos) iguales(caso);
+  });
+
+  it('sin un hoy que sirva, una fecha cargada no pasa (sin tope no hay rango); sin fecha, no hay error', () => {
+    for (const hoy of ['2026-02-30', '', undefined, null]) {
+      assert.deepEqual(iguales({ ...BASE, fecha_inicio: '2026-01-01' }, hoy), [{ campo: 'fecha_inicio', mensaje: 'La fecha de elevación no es válida.' }]);
+      assert.deepEqual(iguales({ ...BASE }, hoy), []);
+    }
+  });
+
+  it('el orden de los errores es el del servidor', () => {
+    const todos = iguales({ nombre: '', estado: 'x', prioridad: 'y', categoria: 'z', fecha_inicio: 'w', responsable: largo(151), enlace_externo: 'v', color: 'u', icono: 't', areas: 's' });
+    assert.deepEqual(todos.map((e) => e.campo), ['nombre', 'estado', 'prioridad', 'categoria', 'fecha_inicio', 'responsable', 'enlace_externo', 'color', 'icono', 'areas']);
+  });
+});
+
+describe('proyectos.js: erroresDelHito da lo mismo que validarHito (spec 9)', () => {
+  const BASE = { titulo: '[TEST] Hito', fecha: HOY, descripcion: '', evidencia_url: '' };
+  // Sin el segundo argumento, HOY; con él, el que llega (también undefined: sin un hoy que sirva)
+  const iguales = (valores, ...otro) => {
+    const hoy = otro.length ? otro[0] : HOY;
+    const esperado = validarHito(valores, { hoy }).errores;
+    assert.deepEqual(plano(ctx.erroresDelHito(valores, hoy)), esperado, JSON.stringify(valores));
+    return esperado;
+  };
+
+  it('los casos de la spec: el título vacío, de 200 y de 201 caracteres, el 29/02/2026 y un ftp://', () => {
+    assert.deepEqual(iguales({ ...BASE, titulo: '' }), [{ campo: 'titulo', mensaje: 'Escribí el título del hito.' }]);
+    assert.deepEqual(iguales({ ...BASE, titulo: largo(200) }), []);
+    assert.deepEqual(iguales({ ...BASE, titulo: largo(201) }), [{ campo: 'titulo', mensaje: 'El título puede tener hasta 200 caracteres.' }]);
+    assert.deepEqual(iguales({ ...BASE, fecha: '2026-02-29' }), [{ campo: 'fecha', mensaje: 'La fecha del hito no es válida.' }]);
+    assert.deepEqual(iguales({ ...BASE, evidencia_url: 'ftp://x' }), [{ campo: 'evidencia_url', mensaje: 'El enlace de la evidencia tiene que empezar con http:// o https://.' }]);
+  });
+
+  it('los bordes: la fecha que falta, fuera de rango o mal escrita; un hito previsto; la evidencia larga; lo que no es un texto', () => {
+    const casos = [
+      {}, null, { ...BASE }, { ...BASE, titulo: '   ' }, { ...BASE, titulo: 9 }, { ...BASE, fecha: '' }, { ...BASE, fecha: null }, { ...BASE, fecha: '   ' },
+      { ...BASE, fecha: '1999-12-31' }, { ...BASE, fecha: '2000-01-01' }, { ...BASE, fecha: '2031-12-31' }, { ...BASE, fecha: '2032-01-01' },
+      { ...BASE, fecha: '2027-03-01' }, { ...BASE, fecha: '25/10/2026' }, { ...BASE, fecha: 20261025 },
+      { ...BASE, evidencia_url: `https://${'a'.repeat(492)}` }, { ...BASE, evidencia_url: `https://${'a'.repeat(493)}` },
+      { ...BASE, evidencia_url: 'javascript:alert(1)' }, { ...BASE, evidencia_url: '  ' }, { ...BASE, evidencia_url: 7 },
+      { titulo: '', fecha: 'x', evidencia_url: 'y' }
+    ];
+    for (const caso of casos) iguales(caso);
+    assert.deepEqual(iguales({ ...BASE, fecha: '' }), [{ campo: 'fecha', mensaje: 'Elegí la fecha del hito.' }]);
+  });
+
+  it('sin un hoy que sirva, ninguna fecha pasa', () => {
+    for (const hoy of ['2026-13-01', undefined]) {
+      assert.deepEqual(iguales({ ...BASE, fecha: '2026-01-01' }, hoy), [{ campo: 'fecha', mensaje: 'La fecha del hito no es válida.' }]);
+    }
+  });
+});
+
+describe('proyectos.js: los archivos antes de enviarlos (problemaDeArchivo, spec 6)', () => {
+  const deHito = (existentes = [], elegidos = []) => ({ tipo: 'hito', existentes, elegidos });
+  const deProyecto = (existentes = [], elegidos = []) => ({ tipo: 'proyecto', existentes, elegidos });
+  const nombres = (n, prefijo = 'doc') => Array.from({ length: n }, (_, i) => `${prefijo}-${i + 1}.pdf`);
+
+  it('un .exe no se suma, con el mensaje del servidor', () => {
+    assert.equal(ctx.problemaDeArchivo({ name: 'instalador.EXE', size: 1000 }, deHito()), 'Tipo de archivo no permitido: .exe');
+    assert.equal(ctx.problemaDeArchivo({ name: 'instalador.exe', size: 1000 }, deHito()), subidas.mensajeTipoNoPermitido('.exe'));
+  });
+
+  it('la extensión se lee como la lee el servidor (path.extname, en minúsculas)', () => {
+    for (const nombre of ['a.pdf', 'A.PDF', 'informe.final.docx', '.pdf', 'sin-extension', 'punto.', 'a..pdf', '..pdf', '...', '..', 'x.tar.gz', 'foto.JPEG', 'archivo.7Z', 'planilla.Xlsx']) {
+      const extension = path.posix.extname(nombre).toLowerCase();
+      const esperado = subidas.EXTENSIONES_PERMITIDAS.includes(extension) ? null : subidas.mensajeTipoNoPermitido(extension);
+      assert.equal(ctx.problemaDeArchivo({ name: nombre, size: 10 }, deHito()), esperado, nombre);
+    }
+  });
+
+  it('10 MB entra; 10 MB y un byte, no', () => {
+    assert.equal(ctx.problemaDeArchivo({ name: 'grande.pdf', size: 10 * MB }, deHito()), null);
+    assert.equal(ctx.problemaDeArchivo({ name: 'grande.pdf', size: 10 * MB + 1 }, deHito()), 'El archivo excede el tamaño máximo de 10 MB');
+  });
+
+  it('el cuarto archivo de un hito, contando los que ya tiene y los elegidos', () => {
+    assert.equal(ctx.problemaDeArchivo({ name: 'c.pdf', size: 10 }, deHito(['a.pdf'], ['b.pdf'])), null);
+    assert.equal(ctx.problemaDeArchivo({ name: 'd.pdf', size: 10 }, deHito(['a.pdf', 'b.pdf'], ['c.pdf'])), 'Podés subir hasta 3 archivos por hito.');
+    assert.equal(ctx.problemaDeArchivo({ name: 'd.pdf', size: 10 }, deHito(['a.pdf', 'b.pdf', 'c.pdf'])), 'Podés subir hasta 3 archivos por hito.');
+    assert.equal(ctx.problemaDeArchivo({ name: 'd.pdf', size: 10 }, deHito([], ['a.pdf', 'b.pdf', 'c.pdf'])), 'Podés subir hasta 3 archivos por hito.');
+  });
+
+  it('el undécimo documento de un proyecto', () => {
+    assert.equal(ctx.problemaDeArchivo({ name: 'nuevo.pdf', size: 10 }, deProyecto(nombres(8), ['otro.pdf'])), null);
+    assert.equal(ctx.problemaDeArchivo({ name: 'nuevo.pdf', size: 10 }, deProyecto(nombres(9), ['otro.pdf'])), 'Podés subir hasta 10 documentos por proyecto.');
+    assert.equal(ctx.problemaDeArchivo({ name: 'nuevo.pdf', size: 10 }, deProyecto(nombres(10))), 'Podés subir hasta 10 documentos por proyecto.');
+  });
+
+  it('un nombre repetido, en la misma tanda o entre los que ya tiene (con tildes y espacios, también escrito con otra normalización)', () => {
+    const nombre = 'presentación final.pdf';
+    assert.equal(ctx.problemaDeArchivo({ name: nombre, size: 10 }, deHito([], [nombre])), 'Ya hay un archivo llamado presentación final.pdf.');
+    assert.equal(ctx.problemaDeArchivo({ name: nombre, size: 10 }, deProyecto([nombre])), 'Ya hay un archivo llamado presentación final.pdf.');
+    assert.equal(ctx.problemaDeArchivo({ name: nombre.normalize('NFD'), size: 10 }, deHito([nombre])), `Ya hay un archivo llamado ${nombre.normalize('NFD')}.`);
+    assert.equal(ctx.problemaDeArchivo({ name: 'Presentación final.pdf', size: 10 }, deHito([nombre])), null);
+  });
+
+  it('el orden: la extensión, el tamaño, la cantidad y el repetido; lo que no es un archivo no pasa', () => {
+    assert.equal(ctx.problemaDeArchivo({ name: 'a.exe', size: 11 * MB }, deHito(['a.exe', 'b.pdf', 'c.pdf'])), 'Tipo de archivo no permitido: .exe');
+    assert.equal(ctx.problemaDeArchivo({ name: 'a.pdf', size: 11 * MB }, deHito(['a.pdf', 'b.pdf', 'c.pdf'])), 'El archivo excede el tamaño máximo de 10 MB');
+    assert.equal(ctx.problemaDeArchivo({ name: 'a.pdf', size: 1 }, deHito(['a.pdf', 'b.pdf', 'c.pdf'])), 'Podés subir hasta 3 archivos por hito.');
+    assert.equal(ctx.problemaDeArchivo(null, deHito()), 'Tipo de archivo no permitido: ');
+    assert.equal(ctx.problemaDeArchivo({ name: 'a.pdf' }, deHito()), 'El archivo excede el tamaño máximo de 10 MB');
+    // Un tipo desconocido cuenta como un hito (el límite más chico); sin listas, ninguno
+    assert.equal(ctx.problemaDeArchivo({ name: 'd.pdf', size: 1 }, { tipo: 'otro', existentes: ['a.pdf', 'b.pdf', 'c.pdf'] }), 'Podés subir hasta 3 archivos por hito.');
+    assert.equal(ctx.problemaDeArchivo({ name: 'd.pdf', size: 1 }, { tipo: 'proyecto', existentes: 'x', elegidos: null }), null);
+  });
+});
+
+describe('proyectos.js: el color y el ícono (htmlDeColores y htmlDeIconos, spec 6)', () => {
+  const opciones = (html) => [...html.matchAll(/<label class="pr-color" style="--c:([^"]*)" title="([^"]*)"><input type="radio" name="p-color" value="([^"]*)" aria-label="([^"]*)" aria-describedby="p-color-error"( checked)?><\/label>/g)]
+    .map(([, estilo, titulo, valor, rotulo, elegido]) => ({ estilo, titulo, valor, rotulo, elegido: Boolean(elegido) }));
+
+  it('un color que no está en la paleta va primero, como «Color actual», elegido; después, los 10 sin elegir', () => {
+    const html = ctx.htmlDeColores('#6CA3C6');
+    const lista = opciones(html);
+    assert.equal(cuantas(html, /<label /g), 11);
+    assert.equal(lista.length, 11);
+    assert.deepEqual(lista[0], { estilo: '#6CA3C6', titulo: 'Color actual', valor: '#6CA3C6', rotulo: 'Color actual', elegido: true });
+    assert.deepEqual(lista.slice(1).map((o) => [o.valor, o.titulo, o.elegido]), constante('PALETA').map(({ color, nombre }) => [color, nombre, false]));
+    assert.equal(cuantas(html, / checked/g), 1);
+  });
+
+  it('un color de la paleta no suma «Color actual» y queda elegido (Azul)', () => {
+    const html = ctx.htmlDeColores('#3B82F6');
+    assert.doesNotMatch(html, /Color actual/);
+    assert.equal(cuantas(html, /<label /g), 10);
+    assert.deepEqual(opciones(html).filter((o) => o.elegido).map((o) => o.titulo), ['Azul']);
+  });
+
+  it('el mismo color en minúsculas es el de la paleta y conserva su escritura: guardar sin tocarlo no cambia nada', () => {
+    const elegido = opciones(ctx.htmlDeColores('#cc0066')).filter((o) => o.elegido);
+    assert.deepEqual(elegido, [{ estilo: '#cc0066', titulo: 'Magenta', valor: '#cc0066', rotulo: 'Magenta', elegido: true }]);
+    assert.doesNotMatch(ctx.htmlDeColores('#cc0066'), /Color actual/);
+  });
+
+  it('lo que no es #RRGGBB nunca llega al style: queda el azul tinta, sin «Color actual»', () => {
+    for (const raro of ['red', '#abc', null, undefined, '"><img src=x onerror=alert(1)>', '#6CA3C6;background:url(x)']) {
+      const html = ctx.htmlDeColores(raro);
+      assert.doesNotMatch(html, /Color actual|onerror|url\(/, String(raro));
+      assert.deepEqual(opciones(html).filter((o) => o.elegido).map((o) => o.titulo), ['Azul tinta'], String(raro));
+    }
+  });
+
+  it('los 25 íconos de ICON_SELECTOR_MAP como opciones de radio, cada uno con su nombre y su dibujo decorativo; el actual, elegido', () => {
+    const html = ctx.htmlDeIconos('award');
+    const lista = [...html.matchAll(/<label class="pr-icono" title="([^"]+)"><input type="radio" name="p-icono" value="([^"]+)" aria-label="([^"]+)" aria-describedby="p-icono-error"( checked)?><svg aria-hidden="true" focusable="false" [^>]*>[\s\S]*?<\/svg><\/label>/g)]
+      .map(([, titulo, valor, rotulo, elegido]) => ({ titulo, valor, rotulo, elegido: Boolean(elegido) }));
+    assert.deepEqual(lista.map((o) => o.valor), [...ICONOS_PROYECTO]);
+    const nombres = constante('NOMBRE_DEL_ICONO');
+    assert.ok(lista.every((o) => o.titulo === nombres[o.valor] && o.rotulo === nombres[o.valor]));
+    assert.deepEqual(lista.filter((o) => o.elegido).map((o) => o.valor), ['award']);
+    assert.equal(nombres.award, 'Premio');
+  });
+
+  it('un ícono que no está queda en el que dibuja la lista para él (clipboard-list); nada pasa de más', () => {
+    for (const raro of [null, 'x', '"><img src=x onerror=alert(1)>']) {
+      const html = ctx.htmlDeIconos(raro);
+      assert.equal(cuantas(html, / checked/g), 1);
+      assert.match(html, /value="clipboard-list" aria-label="[^"]+" aria-describedby="p-icono-error" checked>/);
+      assert.doesNotMatch(html, /onerror/);
+    }
+  });
+});
+
+describe('proyectos.js: lo que precarga cada formulario (valoresDelProyecto y valoresDelHito, spec 6)', () => {
+  it('un proyecto nuevo: vacío, Idea, Tecnología, Media, el azul tinta y la carpeta', () => {
+    assert.deepEqual(plano(ctx.valoresDelProyecto(null)), {
+      nombre: '', descripcion: '', estado: 'idea', prioridad: 'media', categoria: 'tecnologia', fecha_inicio: '', responsable: '',
+      enlace_externo: '', color: '#1A365D', icono: 'folder', areas: []
+    });
+  });
+
+  it('un proyecto que se edita: sus datos, la fecha como texto y las áreas como ids', () => {
+    const p = proyecto({
+      nombre: '[TEST] Editado', descripcion: 'Una\nlínea', estado: 'completado', prioridad: 'alta', categoria: 'difusion', fecha_inicio: '2025-03-10',
+      responsable: '[TEST] Responsable', enlace_externo: 'https://ejemplo.gob.ar', color: '#0E7490', icono: 'award', areas: [{ id: 3, nombre: 'A' }, { id: 5, nombre: 'B' }]
+    });
+    assert.deepEqual(plano(ctx.valoresDelProyecto(p)), {
+      nombre: '[TEST] Editado', descripcion: 'Una\nlínea', estado: 'completado', prioridad: 'alta', categoria: 'difusion', fecha_inicio: '2025-03-10',
+      responsable: '[TEST] Responsable', enlace_externo: 'https://ejemplo.gob.ar', color: '#0E7490', icono: 'award', areas: ['3', '5']
+    });
+  });
+
+  it('un color fuera de la paleta se conserva: aparece «Color actual» elegido y guardar sin tocarlo no da errores ni cambia el color', () => {
+    const valores = ctx.valoresDelProyecto(proyecto({ color: '#6CA3C6' }));
+    assert.equal(valores.color, '#6CA3C6');
+    assert.match(ctx.htmlDeColores(valores.color), /^<label class="pr-color" style="--c:#6CA3C6" title="Color actual"><input type="radio" name="p-color" value="#6CA3C6" aria-label="Color actual" aria-describedby="p-color-error" checked>/);
+    assert.deepEqual(plano(ctx.erroresDelProyecto(valores, HOY)), []);
+  });
+
+  it('lo que no sirve cae a lo que se ve en la lista: el estado, la categoría y la prioridad de entrada, el azul tinta y el ícono de siempre', () => {
+    const valores = plano(ctx.valoresDelProyecto(proyecto({
+      nombre: null, estado: 'otro', prioridad: null, categoria: 'x', fecha_inicio: '2026-02-30', color: 'rojo', icono: 'x', responsable: null, areas: [{ id: 'x' }, { id: 4 }, 4, '7']
+    })));
+    assert.deepEqual(valores, {
+      nombre: '', descripcion: '', estado: 'idea', prioridad: 'media', categoria: 'tecnologia', fecha_inicio: '', responsable: '', enlace_externo: '',
+      color: '#1A365D', icono: 'clipboard-list', areas: ['4', '7']
+    });
+  });
+
+  it('un hito nuevo: vacío, con la fecha de hoy; uno que se edita, sus datos', () => {
+    assert.deepEqual(plano(ctx.valoresDelHito(null, HOY)), { titulo: '', fecha: HOY, descripcion: '', evidencia_url: '' });
+    const h = { ...hito(5, 900, '2025-06-30T00:00:00.000Z', '[TEST] Lanzamiento'), descripcion: 'Detalle', evidencia_url: 'https://ejemplo.gob.ar/nota' };
+    assert.deepEqual(plano(ctx.valoresDelHito(h, HOY)), { titulo: '[TEST] Lanzamiento', fecha: '2025-06-30', descripcion: 'Detalle', evidencia_url: 'https://ejemplo.gob.ar/nota' });
+    // Sin un hoy que sirva, el de hoy en Argentina
+    assert.equal(ctx.valoresDelHito(null, 'ayer').fecha, vm.runInContext('Utils.hoyEnArgentina()', ctx));
+  });
+
+  it('los textos de cada modal: el título, de quién es el hito y el botón', () => {
+    const p = proyecto({ nombre: '[TEST] Índice' });
+    assert.deepEqual(plano(ctx.textosDelModalDeProyecto(null)), { titulo: 'Nuevo proyecto', boton: 'Guardar el proyecto' });
+    assert.deepEqual(plano(ctx.textosDelModalDeProyecto(p)), { titulo: 'Editar [TEST] Índice', boton: 'Guardar el proyecto' });
+    assert.deepEqual(plano(ctx.textosDelModalDeHito({ proyecto: p })), {
+      titulo: 'Nuevo hito', de: 'Del proyecto [TEST] Índice. Sale en el Informe anual del año de su fecha.', boton: 'Guardar el hito', logro: false
+    });
+    assert.equal(ctx.textosDelModalDeHito({ proyecto: p, hito: hito(1, 900, HOY) }).titulo, 'Editar el hito');
+    // En la línea de tiempo, el hito trae el nombre de su proyecto
+    assert.equal(ctx.textosDelModalDeHito({ hito: { ...hito(1, 900, HOY), proyecto_nombre: '[TEST] Otro' } }).de, 'Del proyecto [TEST] Otro. Sale en el Informe anual del año de su fecha.');
+    assert.deepEqual(plano(ctx.textosDelModalDeHito({})), {
+      titulo: 'Registrar un logro del área', de: 'Un logro que no es parte de un proyecto. Sale en el Informe anual del año de su fecha.', boton: 'Guardar el logro', logro: true
+    });
+    assert.deepEqual(plano(ctx.textosDelModalDeHito({ hito: hito(2, null, HOY) })), {
+      titulo: 'Editar el logro', de: 'Un logro que no es parte de un proyecto. Sale en el Informe anual del año de su fecha.', boton: 'Guardar el logro', logro: true
+    });
+  });
+});
+
+describe('proyectos.js: las confirmaciones (textoDeConfirmacion, spec 6)', () => {
+  it('eliminar un proyecto: con hitos y documentos, con uno solo de los dos o sin ninguno', () => {
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 5, documentos: 2 }),
+      '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 5 hitos y 2 documentos.');
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 1, documentos: 0 }),
+      '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 1 hito.');
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 0, documentos: 1 }),
+      '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 1 documento.');
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 0, documentos: 0 }),
+      '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual.');
+    // El detalle de un proyecto sirve tal cual: cuenta sus listas
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { ...detalleDe(BOLETIN), nombre: '[TEST] Boletín' }),
+      '¿Eliminar el proyecto [TEST] Boletín? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 2 hitos y 2 documentos.');
+  });
+
+  it('eliminar un hito: sin archivos, solo la pregunta; con uno, «su archivo»; con más, «sus N archivos»', () => {
+    assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: [] }), '¿Eliminar el hito [TEST] Lanzamiento?');
+    assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: [{ id: 1 }] }), '¿Eliminar el hito [TEST] Lanzamiento? Se borra también su archivo.');
+    assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: 3 }), '¿Eliminar el hito [TEST] Lanzamiento? Se borran también sus 3 archivos.');
+  });
+
+  it('eliminar un logro: el mismo texto, con «logro»; eliminar un archivo, solo su nombre', () => {
+    assert.equal(ctx.textoDeConfirmacion('logro', { titulo: '[TEST] Premio', archivos: [{ id: 1 }, { id: 2 }] }), '¿Eliminar el logro [TEST] Premio? Se borran también sus 2 archivos.');
+    assert.equal(ctx.textoDeConfirmacion('logro', { titulo: '[TEST] Premio' }), '¿Eliminar el logro [TEST] Premio?');
+    assert.equal(ctx.textoDeConfirmacion('archivo', { nombre: 'presentación final.pdf' }), '¿Eliminar presentación final.pdf?');
+  });
+
+  it('es texto, no HTML: un nombre con HTML vuelve tal cual (la página lo pone con textContent); un tipo desconocido da ""', () => {
+    assert.equal(ctx.textoDeConfirmacion('archivo', { nombre: '<img src=x onerror=alert(1)>.pdf' }), '¿Eliminar <img src=x onerror=alert(1)>.pdf?');
+    assert.equal(ctx.textoDeConfirmacion('otro', { nombre: 'x' }), '');
+  });
+});
+
+describe('proyectos.js: las áreas, los pendientes, la muestra y la vista previa (spec 6)', () => {
+  it('htmlDeAreas: una casilla por área, las del proyecto marcadas; los nombres escapados; sin áreas, lo dice', () => {
+    const html = ctx.htmlDeAreas([{ id: 3, nombre: 'Dirección de <b>Datos</b>' }, { id: 5, nombre: 'Hacienda' }, { id: 'x', nombre: 'Rara' }], ['5']);
+    assert.equal(html, '<label class="pr-area"><input type="checkbox" name="p-areas" value="3" aria-describedby="p-areas-error">Dirección de &lt;b&gt;Datos&lt;/b&gt;</label>'
+      + '<label class="pr-area"><input type="checkbox" name="p-areas" value="5" aria-describedby="p-areas-error" checked>Hacienda</label>');
+    assert.match(ctx.htmlDeAreas([], []), /No hay áreas cargadas\./);
+  });
+
+  it('htmlDePendientes: cada archivo elegido con su extensión, su nombre, su tamaño y su ×, que lo nombra; los nombres escapados', () => {
+    const html = ctx.htmlDePendientes([{ name: 'presentación final.pdf', size: 2.5 * MB }, { name: '<img src=x onerror=alert(1)>.png', size: 2048 }]);
+    assert.match(html, /^<ul class="pr-archivos pr-pendientes" aria-label="Archivos para subir">/);
+    assert.ok(html.includes('<span class="pr-ext" aria-hidden="true">PDF</span><span><span class="n">presentación final.pdf</span><small>2,5 MB</small></span>'));
+    assert.ok(html.includes('<button type="button" class="pr-quitar" data-quitar="0" aria-label="Quitar presentación final.pdf">&times;</button>'));
+    assert.ok(html.includes('data-quitar="1" aria-label="Quitar &lt;img src=x onerror=alert(1)&gt;.png"'));
+    assert.doesNotMatch(html, /<img/);
+    assert.equal(ctx.htmlDePendientes([]), '');
+  });
+
+  it('htmlDeMuestra: el cuadrado grande con el color y el ícono elegidos y el nombre (o, sin nombre, «Así se ve en la lista»)', () => {
+    const html = ctx.htmlDeMuestra({ nombre: '  <b>[TEST]</b> ', color: '#6CA3C6', icono: 'award' });
+    assert.match(html, /^<span class="pr-tile grande" style="--c:#6CA3C6"><svg aria-hidden="true" focusable="false" /);
+    assert.ok(html.includes('<b>&lt;b&gt;[TEST]&lt;/b&gt;</b>'));
+    assert.ok(html.includes('El color y el ícono identifican al proyecto en la lista y en la línea de tiempo.'));
+    assert.ok(ctx.htmlDeMuestra({ nombre: '', color: 'x' }).includes('<b>Así se ve en la lista</b>'));
+    assert.match(ctx.htmlDeMuestra({ color: 'x' }), /style="--c:#1A365D"/);
+  });
+
+  it('htmlDeVistaPrevia: la imagen en un <img> y el PDF en un <iframe>, solo desde un blob:; el nombre escapado', () => {
+    assert.equal(ctx.htmlDeVistaPrevia('blob:http://localhost/abc', { nombre: 'foto "1".png', mime: 'image/png' }), '<img src="blob:http://localhost/abc" alt="foto &quot;1&quot;.png">');
+    assert.equal(ctx.htmlDeVistaPrevia('blob:http://localhost/abc', { nombre: 'informe.pdf', mime: 'application/pdf' }), '<iframe src="blob:http://localhost/abc" title="informe.pdf"></iframe>');
+    assert.equal(ctx.htmlDeVistaPrevia('javascript:alert(1)', { nombre: 'x.pdf', mime: 'application/pdf' }), '');
+    assert.equal(ctx.htmlDeVistaPrevia('https://otro.sitio/x.pdf', { nombre: 'x.pdf', mime: 'application/pdf' }), '');
+    assert.equal(ctx.htmlDeVistaPrevia('blob:http://localhost/abc', { nombre: 'x.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), '');
+  });
+});
+
 describe('proyectos.html: la página (spec 1)', () => {
   const html = leer('proyectos.html');
   const bloque = (patron) => html.match(patron)?.[0] ?? '';
@@ -1275,5 +1684,137 @@ describe('proyectos.html: la página (spec 1)', () => {
   it('ningún id se repite', () => {
     const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+  });
+});
+
+describe('proyectos.html: los modales (spec 6)', () => {
+  const html = leer('proyectos.html');
+  const estilo = html.match(/<style>[\s\S]*?<\/style>/)?.[0] ?? '';
+  // El HTML de un modal: desde su velo hasta el comentario del siguiente o los scripts
+  const modal = (id) => html.match(new RegExp(`<div class="modal-overlay" id="${id}">[\\s\\S]*?(?=\\n    <!--|\\n    <script)`))?.[0] ?? '';
+  const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  const MODALES = ['modal-proyecto', 'modal-hito', 'modal-confirmar', 'modal-vista-previa'];
+
+  it('los cuatro modales, después del contenido: role="dialog", aria-modal y aria-labelledby a su título, con la × «Cerrar»', () => {
+    for (const id of MODALES) {
+      const bloque = modal(id);
+      assert.ok(bloque, id);
+      assert.match(bloque, new RegExp(`^<div class="modal-overlay" id="${id}">\\s*<div class="modal pr-modal[^"]*" role="dialog" aria-modal="true" aria-labelledby="${id}-titulo"`), id);
+      assert.match(bloque, new RegExp(`<h2 class="modal-title" id="${id}-titulo">[^<]+</h2>`), id);
+      assert.match(bloque, /<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;<\/button>/, id);
+      // Un lugar para el error sin campo, dentro del modal (nunca detrás del velo)
+      assert.match(bloque, new RegExp(`<p class="pr-modal-aviso" id="${id}-aviso" role="alert" hidden></p>`), id);
+      assert.ok(html.indexOf(bloque) > html.indexOf('</main>'), `${id} va después del contenido`);
+    }
+    assert.match(modal('modal-confirmar'), /class="modal pr-modal pr-modal-chico"[^>]*aria-describedby="modal-confirmar-texto"/);
+  });
+
+  it('cada <label for> apunta a un id que existe (y cada aria-describedby, aria-labelledby y aria-controls)', () => {
+    const fors = [...html.matchAll(/<label\b[^>]*\sfor="([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(fors.length >= 9);
+    for (const destino of fors) assert.ok(ids.has(destino), destino);
+    // Y cada aria-describedby, aria-labelledby y aria-controls, también
+    for (const [, lista] of html.matchAll(/\saria-(?:describedby|labelledby|controls)="([^"]+)"/g)) {
+      for (const destino of lista.split(/\s+/)) assert.ok(ids.has(destino), destino);
+    }
+  });
+
+  it('el formulario envuelve el cuerpo y el pie y es una columna flexible (los botones quedan siempre a la vista)', () => {
+    assert.match(estilo, /\.pr-form \{[^}]*display: flex;[^}]*\}/);
+    assert.match(estilo, /\.pr-form \{[^}]*flex-direction: column;[^}]*\}/);
+    assert.match(estilo, /\.pr-form \{[^}]*min-height: 0;[^}]*\}/);
+    for (const [id, formulario] of [['modal-proyecto', 'form-proyecto'], ['modal-hito', 'form-hito']]) {
+      const bloque = modal(id);
+      const form = bloque.match(new RegExp(`<form class="pr-form" id="${formulario}" novalidate>[\\s\\S]*?</form>`))?.[0] ?? '';
+      assert.ok(form, formulario);
+      assert.match(form, /<div class="modal-body">[\s\S]*<div class="modal-footer">[\s\S]*<button type="submit" class="sg-btn sg-btn-tinta" id="[ph]-guardar">/, formulario);
+      assert.match(form, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar<\/button>/, formulario);
+    }
+  });
+
+  it('cada campo tiene su control, su error (aria-describedby) y, si es obligatorio, aria-required', () => {
+    const campos = constante('CAMPOS_DEL_FORMULARIO');
+    for (const grupo of ['proyecto', 'hito']) {
+      for (const [campo, id] of Object.entries(campos[grupo])) {
+        assert.ok(ids.has(id), `${grupo}.${campo}: ${id}`);
+        assert.match(html, new RegExp(`<p class="form-error" id="${id}-error" hidden></p>`), `${id}-error`);
+        // El control (o el grupo) apunta a su error
+        assert.match(html, new RegExp(`id="${id}"[^>]*aria-describedby="[^"]*\\b${id}-error\\b`), `${id} → ${id}-error`);
+      }
+    }
+    for (const id of ['p-nombre', 'h-titulo', 'h-fecha']) assert.match(html, new RegExp(`id="${id}"[^>]*aria-required="true"`), id);
+    // Ningún otro campo dice que es obligatorio
+    assert.equal(cuantas(html, /aria-required="true"/g), 3);
+    // Los textos largos no tienen maxlength (cuenta unidades de UTF-16: un emoji cuenta dos); el largo lo controla erroresDelProyecto
+    for (const id of ['p-nombre', 'p-responsable', 'p-enlace-externo', 'h-titulo', 'h-evidencia-url']) {
+      assert.doesNotMatch(html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`))?.[0] ?? 'x maxlength', /maxlength/, id);
+    }
+  });
+
+  it('el proyecto: los campos de la spec, el estado con sus insignias, las listas del servidor y la ayuda del enlace', () => {
+    const bloque = modal('modal-proyecto');
+    const rotulos = [...bloque.matchAll(/<label class="form-label" for="[^"]+">([^<]+)/g)].map((m) => m[1].trim());
+    assert.deepEqual(rotulos, ['Nombre', 'Descripción', 'Categoría', 'Prioridad', 'Fecha de elevación', 'Autor o responsable', 'Enlace']);
+    const leyendas = [...bloque.matchAll(/<legend class="form-label">([^<]+)<\/legend>/g)].map((m) => m[1]);
+    assert.deepEqual(leyendas, ['Estado', 'Áreas', 'Color', 'Ícono']);
+    const estados = [...bloque.matchAll(/<label class="pr-opcion"><input type="radio" name="p-estado" value="(\w+)" aria-describedby="p-estado-error"( checked)?><span class="pr-insignia (pr-[\w-]+)">([^<]+)<\/span><\/label>/g)]
+      .map(([, valor, elegido, clase, texto]) => [valor, Boolean(elegido), clase, texto]);
+    assert.deepEqual(estados, [['idea', true, 'pr-idea', 'Idea'], ['en_curso', false, 'pr-en-curso', 'En curso'],
+      ['completado', false, 'pr-completado', 'Completado'], ['suspendido', false, 'pr-suspendido', 'Suspendido']]);
+    const opcionesDe = (id) => [...(bloque.match(new RegExp(`<select class="form-select" id="${id}"[^>]*>[\\s\\S]*?</select>`))?.[0] ?? '')
+      .matchAll(/<option value="(\w+)"( selected)?>([^<]+)<\/option>/g)].map(([, valor, elegido, texto]) => [valor, Boolean(elegido), texto]);
+    assert.deepEqual(opcionesDe('p-categoria'), [['tecnologia', false, 'Tecnología'], ['normativa', false, 'Normativa'], ['difusion', false, 'Difusión']]);
+    assert.deepEqual(opcionesDe('p-categoria').map(([valor]) => valor), [...CATEGORIAS]);
+    assert.deepEqual(opcionesDe('p-prioridad'), [['alta', false, 'Alta'], ['media', true, 'Media'], ['baja', false, 'Baja']]);
+    assert.deepEqual(opcionesDe('p-prioridad').map(([valor]) => valor), [...PRIORIDADES]);
+    assert.match(bloque, /<input type="url" class="form-input" id="p-enlace-externo" placeholder="https:\/\/" autocomplete="off" aria-describedby="p-enlace-externo-ayuda p-enlace-externo-error">/);
+    assert.ok(bloque.includes('<p class="form-hint" id="p-enlace-externo-ayuda">El repositorio, el borrador o la página del proyecto.</p>'));
+    assert.match(bloque, /<input type="date" class="form-input" id="p-fecha-inicio" min="2000-01-01"/);
+    // Las áreas, los colores, los íconos y la muestra los arma proyectos.js
+    for (const id of ['p-areas-lista', 'p-colores', 'p-iconos', 'p-muestra']) assert.match(bloque, new RegExp(`id="${id}"`), id);
+    assert.match(bloque, /<div class="pr-muestra" id="p-muestra" aria-hidden="true"><\/div>/);
+    assert.match(bloque, /<button type="submit" class="sg-btn sg-btn-tinta" id="p-guardar">Guardar el proyecto<\/button>/);
+  });
+
+  it('el hito: de quién es, título, fecha, descripción, evidencia y los archivos con la zona para soltar (un botón y un input oculto)', () => {
+    const bloque = modal('modal-hito');
+    assert.match(bloque, /aria-labelledby="modal-hito-titulo" aria-describedby="h-de"/);
+    assert.match(bloque, /<p class="pr-modal-de" id="h-de"><\/p>/);
+    const rotulos = [...bloque.matchAll(/<label class="form-label" for="[^"]+">([^<]+)/g)].map((m) => m[1].trim());
+    assert.deepEqual(rotulos, ['Título', 'Fecha', 'Descripción', 'Enlace de la evidencia']);
+    assert.match(bloque, /<input type="date" class="form-input" id="h-fecha" min="2000-01-01" aria-required="true" aria-describedby="h-fecha-error">/);
+    assert.match(bloque, /<input type="url" class="form-input" id="h-evidencia-url" placeholder="https:\/\/" autocomplete="off" aria-describedby="h-evidencia-url-ayuda h-evidencia-url-error">/);
+    assert.match(bloque, /<button type="button" class="sg-link" id="h-elegir" aria-describedby="h-archivos-ayuda h-archivos-error">elegilos<\/button>/);
+    assert.ok(bloque.includes('<small id="h-archivos-ayuda">Hasta 3 archivos de 10 MB cada uno: PDF, Word, Excel, CSV, ODT, ODS, imágenes, ZIP, RAR o 7Z.</small>'));
+    assert.match(bloque, /<input type="file" id="h-archivos" multiple hidden accept="([^"]+)">/);
+    // El error de un archivo y la lista de los elegidos, en una región viva (se anuncian al cambiar)
+    assert.match(bloque, /<div aria-live="polite">\s*<p class="form-error" id="h-archivos-error" hidden><\/p>\s*<div id="h-pendientes"><\/div>\s*<\/div>/);
+    assert.match(bloque, /<div class="pr-soltar" id="h-soltar" role="group" aria-labelledby="h-archivos-rotulo">/);
+    assert.match(bloque, /<button type="submit" class="sg-btn sg-btn-tinta" id="h-guardar">Guardar el hito<\/button>/);
+  });
+
+  it('los selectores de archivos ofrecen solo las extensiones de config/upload.js', () => {
+    const accepts = [...html.matchAll(/<input type="file" id="([^"]+)" multiple hidden accept="([^"]+)">/g)].map(([, id, lista]) => [id, lista]);
+    assert.deepEqual(accepts.map(([id]) => id), ['pr-elegir-archivos', 'h-archivos']);
+    for (const [, lista] of accepts) assert.deepEqual(lista.split(','), [...subidas.EXTENSIONES_PERMITIDAS]);
+  });
+
+  it('la confirmación: el texto (lo arma textoDeConfirmacion) y «Eliminar» en rojo; la vista previa: su cuerpo y «Cerrar»', () => {
+    const confirmar = modal('modal-confirmar');
+    assert.match(confirmar, /<p class="pr-confirmar-texto" id="modal-confirmar-texto"><\/p>/);
+    assert.match(confirmar, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar<\/button>\s*<button type="button" class="sg-btn sg-btn-rojo" id="modal-confirmar-si">Eliminar<\/button>/);
+    assert.match(estilo, /\.sg-btn-rojo \{[^}]*background: var\(--sg-rojo\);/);
+    const vista = modal('modal-vista-previa');
+    assert.match(vista, /class="modal pr-modal pr-modal-vista"/);
+    assert.match(vista, /<div class="pr-vista-previa" id="modal-vista-previa-cuerpo"><\/div>/);
+    assert.match(vista, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cerrar<\/button>/);
+  });
+
+  it('el estilo de los errores (aria-invalid y el aviso dentro del modal) y de los pendientes', () => {
+    assert.match(estilo, /\.pr-modal \.form-input\[aria-invalid="true"\][^{]*\{[^}]*border-color: var\(--sg-rojo\);/);
+    assert.match(estilo, /\.pr-modal \.form-error \{[^}]*color: var\(--sg-rojo\);/);
+    assert.match(estilo, /\.pr-modal-aviso \{/);
+    assert.match(estilo, /\.pr-quitar \{/);
+    assert.match(estilo, /\.pr-vista-previa iframe \{/);
   });
 });

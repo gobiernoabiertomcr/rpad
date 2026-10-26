@@ -11,6 +11,11 @@
  * los años del proyecto, con las etiquetas en hasta 3 filas sin pisarse), los hitos como filas que se despliegan y los documentos; la
  * Línea de tiempo (spec 4) agrupa los hitos por año y Logros del área (spec 5) lista los hitos sin proyecto. Los botones de los
  * archivos (Ver, Descargar y, para administración, Eliminar) y de los hitos solo llevan data-*: los usa la parte del DOM.
+ * Los formularios (spec 6 y 9): lo que precarga cada uno (valoresDelProyecto, valoresDelHito), sus errores (erroresDelProyecto y
+ * erroresDelHito, los mismos que validarProyecto y validarHito del servidor, con copias de sus mensajes y sus largos atadas por tests
+ * de paridad), el color (la paleta de 10, con «Color actual» si el del proyecto no está), el ícono, las áreas y la muestra; los
+ * archivos que se eligen (problemaDeArchivo: la extensión, los 10 MB y la cantidad de config/upload.js, y los repetidos) y su lista;
+ * la vista previa y los textos de las confirmaciones. Los modales están en proyectos.html.
  * Los datos son los de GET /api/gestion/proyectos, GET /api/gestion/proyectos/:id y GET /api/gestion/timeline (los hitos de los
  * proyectos activos y los logros del área, que son los hitos sin proyecto): las fechas llegan como texto 'AAAA-MM-DD' (también el
  * `subido_el` de los archivos) y se leen como texto (nunca con new Date ni
@@ -898,4 +903,382 @@ function htmlDeLogros(hitos, opciones) {
       ? `<ul class="pr-movs">${logros.map((hito) => htmlDeHito(hito, { conProyecto: false, esAdmin: admin, hoy, prefijo: 'g' })).join('')}</ul>`
       : '<div class="pr-vacio-caja"><p>Todavía no hay logros del área.</p></div>')
     + '</div>';
+}
+
+// =====================================================
+// Formularios, archivos y confirmaciones (spec 6 y 9)
+// =====================================================
+
+// Copias de services/proyectosReglas.js, atadas por tests de paridad (tests/proyectos-frontend.test.js): si cambia una allá, cambia
+// acá. Solo avisan en el momento: el servidor valida igual
+const ESTADOS = Object.freeze(['idea', 'en_curso', 'completado', 'suspendido']);
+const PRIORIDADES = Object.freeze(['alta', 'media', 'baja']);
+const CATEGORIAS = Object.freeze(['tecnologia', 'normativa', 'difusion']);
+// Las 25 claves de ICON_SELECTOR_MAP de main.js, en su orden (ICONOS_PROYECTO del servidor)
+const ICONOS = Object.freeze([
+  'bar-chart-3', 'clipboard-list', 'database', 'file-text', 'shield', 'globe', 'users', 'building-2', 'folder', 'code',
+  'book-open', 'target', 'flag', 'award', 'briefcase', 'lock', 'eye', 'zap', 'lightbulb', 'file-search', 'pie-chart',
+  'megaphone', 'calendar', 'settings', 'mail'
+]);
+const LARGOS_PROYECTOS = Object.freeze({ nombre: 200, responsable: 150, enlace: 500, titulo: 200, evidencia: 500 });
+const FECHA_MINIMA_PROYECTOS = '2000-01-01';
+const MENSAJES_PROYECTOS = Object.freeze({
+  nombre: 'Escribí el nombre del proyecto.', nombreLargo: 'El nombre puede tener hasta 200 caracteres.',
+  estado: 'El estado no es válido.', prioridad: 'La prioridad no es válida.', categoria: 'La categoría no es válida.',
+  fechaInicio: 'La fecha de elevación no es válida.',
+  responsable: 'El autor o responsable puede tener hasta 150 caracteres.',
+  enlace: 'El enlace tiene que empezar con http:// o https://.', enlaceLargo: 'El enlace puede tener hasta 500 caracteres.',
+  color: 'El color no es válido.', icono: 'El ícono no es válido.', areas: 'Elegí áreas que existan.',
+  titulo: 'Escribí el título del hito.', tituloLargo: 'El título puede tener hasta 200 caracteres.',
+  fecha: 'Elegí la fecha del hito.', fechaInvalida: 'La fecha del hito no es válida.',
+  evidencia: 'El enlace de la evidencia tiene que empezar con http:// o https://.',
+  evidenciaLarga: 'El enlace de la evidencia puede tener hasta 500 caracteres.',
+  sinDatos: 'No hay datos para guardar.'
+});
+
+// Copias de config/upload.js, atadas por tests de paridad: las extensiones, los 10 MB, los máximos y los mismos mensajes que el servidor
+const EXTENSIONES_PERMITIDAS = Object.freeze([
+  '.pdf', '.docx', '.xlsx', '.csv', '.odt', '.ods', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.zip', '.rar', '.7z'
+]);
+const TAMANO_MAXIMO = 10 * 1024 * 1024;
+const MAXIMO_POR_HITO = 3;
+const MAXIMO_POR_PROYECTO = 10;
+const MENSAJE_MAXIMO_POR_HITO = 'Podés subir hasta 3 archivos por hito.';
+const MENSAJE_MAXIMO_POR_PROYECTO = 'Podés subir hasta 10 documentos por proyecto.';
+const MENSAJE_TAMANO_MAXIMO = 'El archivo excede el tamaño máximo de 10 MB';
+const mensajeTipoNoPermitido = (extension) => `Tipo de archivo no permitido: ${extension}`;
+// Solo del navegador (spec 6: el servidor no rechaza nombres repetidos, los guarda con un nombre único en el disco)
+const textoArchivoRepetido = (nombre) => `Ya hay un archivo llamado ${nombre}.`;
+
+// La paleta de los proyectos (spec 6): 10 colores donde el ícono blanco se lee (contraste de 3:1 o más), en este orden
+const PALETA = Object.freeze([
+  ['#1A365D', 'Azul tinta'], ['#0950C6', 'Azul oscuro'], ['#3B82F6', 'Azul'], ['#2B7AB8', 'Celeste'], ['#0E7490', 'Petróleo'],
+  ['#2E6B4C', 'Verde'], ['#F45000', 'Naranja'], ['#CC0066', 'Magenta'], ['#6D4BA8', 'Violeta'], ['#56677F', 'Gris']
+].map(([color, nombre]) => Object.freeze({ color, nombre })));
+const TEXTO_COLOR_ACTUAL = 'Color actual';
+
+// El nombre de cada ícono, en castellano: el rótulo de su opción (los lectores de pantalla no leen el dibujo)
+const NOMBRE_DEL_ICONO = Object.freeze({
+  'bar-chart-3': 'Gráfico de barras', 'clipboard-list': 'Lista de tareas', database: 'Base de datos', 'file-text': 'Documento',
+  shield: 'Escudo', globe: 'Mundo', users: 'Personas', 'building-2': 'Edificio', folder: 'Carpeta', code: 'Código',
+  'book-open': 'Libro abierto', target: 'Objetivo', flag: 'Bandera', award: 'Premio', briefcase: 'Maletín', lock: 'Candado',
+  eye: 'Ojo', zap: 'Rayo', lightbulb: 'Lamparita', 'file-search': 'Documento con lupa', 'pie-chart': 'Gráfico de torta',
+  megaphone: 'Megáfono', calendar: 'Calendario', settings: 'Engranaje', mail: 'Sobre'
+});
+// El ícono de un proyecto nuevo (el de la maqueta) y el que dibuja iconoSvg para uno que no conoce
+const ICONO_DE_UN_PROYECTO_NUEVO = 'folder';
+const ICONO_DESCONOCIDO = 'clipboard-list';
+
+// Los campos de cada formulario, con los nombres del servidor (los de `campo` en sus errores: { campo, mensaje }), y el id del
+// control que recibe el foco y aria-invalid (en un grupo de opciones, su fieldset). El de su error es `${id}-error`
+const CAMPOS_DEL_FORMULARIO = Object.freeze({
+  proyecto: Object.freeze({
+    nombre: 'p-nombre', descripcion: 'p-descripcion', estado: 'p-estado', prioridad: 'p-prioridad', categoria: 'p-categoria',
+    fecha_inicio: 'p-fecha-inicio', responsable: 'p-responsable', enlace_externo: 'p-enlace-externo', color: 'p-color', icono: 'p-icono',
+    areas: 'p-areas'
+  }),
+  hito: Object.freeze({ titulo: 'h-titulo', fecha: 'h-fecha', descripcion: 'h-descripcion', evidencia_url: 'h-evidencia-url' })
+});
+
+// --- La validación: la de validarProyecto y validarHito, campo por campo y en el mismo orden ---
+
+const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
+// Lo mismo que Utils.esUrlSegura
+const ENLACE_HTTP = /^https?:\/\//i;
+// Un id de la base, como idPositivo del servidor: un entero positivo de hasta 10 cifras sin ceros adelante, como texto o como número
+const ID_DE_LA_BASE = /^[1-9]\d{0,9}$/;
+
+// Caracteres de un texto, como los cuenta el varchar de la base (no las unidades de UTF-16 de `length`: un emoji es uno)
+const caracteresDe = (texto) => Array.from(texto).length;
+// Un texto libre recortado, o null si está vacío; lo que no es un texto cuenta como vacío
+const recortadoONulo = (valor) => {
+  if (typeof valor !== 'string') return null;
+  const texto = valor.trim();
+  return texto === '' ? null : texto;
+};
+// Vacío: no vino, null o un texto de espacios. Un campo con formato que trae otra cosa que no es un texto no está vacío: es un error
+const esCampoVacio = (valor) => valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '');
+// El texto recortado de un campo con formato, o null si no es un texto (que no va a pasar su formato)
+const textoDeCampo = (valor) => (typeof valor === 'string' ? valor.trim() : null);
+// Una fecha 'AAAA-MM-DD' que existe, exactamente así (como esFechaIso del servidor)
+const esFechaDeTexto = (valor) => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor) && Utils.soloFecha(valor) === valor;
+const esIdDeLaBase = (valor) => (typeof valor === 'string' || typeof valor === 'number') && ID_DE_LA_BASE.test(String(valor));
+
+// El 31/12 de cinco años después del de hoy ('AAAA-12-31'), el tope de las fechas (copia de fechaMaxima del servidor: va también al
+// max de los campos de fecha); null si hoy no es una fecha
+function fechaMaxima(hoy) {
+  if (!esFechaDeTexto(hoy)) return null;
+  const anio = Number(hoy.slice(0, 4)) + 5;
+  return anio > 9999 ? '9999-12-31' : `${anio}-12-31`;
+}
+// Una fecha entre el 01/01/2000 y fechaMaxima(hoy). Sin un hoy válido no pasa (no hay tope), como en el servidor
+const fechaDentroDelRango = (fecha, hoy) => {
+  const maxima = fechaMaxima(hoy);
+  return esFechaDeTexto(fecha) && maxima !== null && fecha >= FECHA_MINIMA_PROYECTOS && fecha <= maxima;
+};
+
+// Cada regla recibe el valor crudo (y hoy) y devuelve el mensaje de su error, o null
+const errorDeTextoObligatorio = (valor, largo, mensajeVacio, mensajeLargo) => {
+  const texto = recortadoONulo(valor);
+  if (texto === null) return mensajeVacio;
+  return caracteresDe(texto) > largo ? mensajeLargo : null;
+};
+const errorDeTextoOpcional = (valor, largo, mensajeLargo) => {
+  const texto = recortadoONulo(valor);
+  return texto !== null && caracteresDe(texto) > largo ? mensajeLargo : null;
+};
+const errorDeEnlace = (valor, largo, mensajeEsquema, mensajeLargo) => {
+  if (esCampoVacio(valor)) return null;
+  const texto = textoDeCampo(valor);
+  if (texto === null || !ENLACE_HTTP.test(texto)) return mensajeEsquema;
+  return caracteresDe(texto) > largo ? mensajeLargo : null;
+};
+// Un valor con formato (el color, el ícono) o de una lista (estado, prioridad, categoría): vacío no es un error (en una lista, toma el
+// valor por defecto, como en un proyecto nuevo del servidor)
+const errorDeFormato = (valor, vale, mensaje) => {
+  if (esCampoVacio(valor)) return null;
+  const texto = textoDeCampo(valor);
+  return texto !== null && vale(texto) ? null : mensaje;
+};
+const errorDeFecha = (valor, hoy, mensajeVacia, mensajeInvalida) => {
+  if (esCampoVacio(valor)) return mensajeVacia;
+  return fechaDentroDelRango(textoDeCampo(valor), hoy) ? null : mensajeInvalida;
+};
+// Las áreas: no vienen, null o una lista de ids (vacía es ninguna)
+const errorDeAreas = (valor) => (valor === undefined || valor === null || (Array.isArray(valor) && valor.every(esIdDeLaBase)) ? null : MENSAJES_PROYECTOS.areas);
+
+// Los campos que pueden dar error, en el orden de los errores del servidor (la descripción nunca da)
+const REGLAS_DEL_PROYECTO = Object.freeze([
+  ['nombre', (valor) => errorDeTextoObligatorio(valor, LARGOS_PROYECTOS.nombre, MENSAJES_PROYECTOS.nombre, MENSAJES_PROYECTOS.nombreLargo)],
+  ['estado', (valor) => errorDeFormato(valor, (texto) => ESTADOS.includes(texto), MENSAJES_PROYECTOS.estado)],
+  ['prioridad', (valor) => errorDeFormato(valor, (texto) => PRIORIDADES.includes(texto), MENSAJES_PROYECTOS.prioridad)],
+  ['categoria', (valor) => errorDeFormato(valor, (texto) => CATEGORIAS.includes(texto), MENSAJES_PROYECTOS.categoria)],
+  ['fecha_inicio', (valor, hoy) => errorDeFecha(valor, hoy, null, MENSAJES_PROYECTOS.fechaInicio)],
+  ['responsable', (valor) => errorDeTextoOpcional(valor, LARGOS_PROYECTOS.responsable, MENSAJES_PROYECTOS.responsable)],
+  ['enlace_externo', (valor) => errorDeEnlace(valor, LARGOS_PROYECTOS.enlace, MENSAJES_PROYECTOS.enlace, MENSAJES_PROYECTOS.enlaceLargo)],
+  ['color', (valor) => errorDeFormato(valor, (texto) => COLOR_HEX.test(texto), MENSAJES_PROYECTOS.color)],
+  ['icono', (valor) => errorDeFormato(valor, (texto) => ICONOS.includes(texto), MENSAJES_PROYECTOS.icono)],
+  ['areas', errorDeAreas]
+]);
+const REGLAS_DEL_HITO = Object.freeze([
+  ['titulo', (valor) => errorDeTextoObligatorio(valor, LARGOS_PROYECTOS.titulo, MENSAJES_PROYECTOS.titulo, MENSAJES_PROYECTOS.tituloLargo)],
+  ['fecha', (valor, hoy) => errorDeFecha(valor, hoy, MENSAJES_PROYECTOS.fecha, MENSAJES_PROYECTOS.fechaInvalida)],
+  ['evidencia_url', (valor) => errorDeEnlace(valor, LARGOS_PROYECTOS.evidencia, MENSAJES_PROYECTOS.evidencia, MENSAJES_PROYECTOS.evidenciaLarga)]
+]);
+
+const erroresDe = (reglas, valores, hoy) => {
+  const fuente = esObjeto(valores) ? valores : {};
+  const errores = [];
+  for (const [campo, regla] of reglas) {
+    const mensaje = regla(Object.hasOwn(fuente, campo) ? fuente[campo] : undefined, hoy);
+    if (mensaje) errores.push({ campo, mensaje });
+  }
+  return errores;
+};
+
+// Los errores de un proyecto (los valores del formulario, con los nombres del servidor: los de valoresDelProyecto) contra hoy
+// ('AAAA-MM-DD'): [{ campo, mensaje }], los mismos y en el mismo orden que validarProyecto(valores, { hoy }).errores (el alta: un
+// estado, una prioridad o una categoría vacíos toman el de entrada). Sin un hoy válido, una fecha cargada no pasa. [] si vale
+function erroresDelProyecto(valores, hoy) {
+  return erroresDe(REGLAS_DEL_PROYECTO, valores, hoy);
+}
+
+// Los errores de un hito o un logro ({ titulo, fecha, descripcion, evidencia_url }) contra hoy: los de validarHito(valores, { hoy })
+function erroresDelHito(valores, hoy) {
+  return erroresDe(REGLAS_DEL_HITO, valores, hoy);
+}
+
+// --- Los archivos ---
+
+// La extensión de un nombre, en minúsculas, como la lee el servidor (path.extname: desde el último punto del nombre; sin punto, o
+// solo con el del principio de un nombre como «.pdf», no hay extensión)
+const extensionDelNombre = (nombre) => {
+  const base = String(nombre ?? '').split('/').pop();
+  const punto = base.lastIndexOf('.');
+  return punto <= 0 || base === '..' ? '' : base.slice(punto).toLowerCase();
+};
+// Un nombre para compararlo: el mismo texto aunque llegue con otra normalización (macOS entrega «ó» como «o» + tilde)
+const nombreComparable = (nombre) => String(nombre ?? '').normalize('NFC');
+
+// El problema de un archivo elegido (`archivo`: un File, { name, size }) antes de enviarlo, o null si se puede sumar. `tipo`: 'hito'
+// (hasta 3) o 'proyecto' (hasta 10 documentos; otro valor cuenta como hito, el límite más chico); `existentes`, los nombres de los
+// que ya tiene el hito o el proyecto, y `elegidos`, los de la misma tanda. Controla, en este orden y con los mensajes del servidor, la
+// extensión, los 10 MB y la cantidad (existentes + elegidos + este); y después, solo en el navegador, los repetidos: «Ya hay un
+// archivo llamado <nombre>.». Es texto, no HTML: la página lo pone con textContent
+function problemaDeArchivo(archivo, opciones) {
+  const { name, size } = esObjeto(archivo) ? archivo : {};
+  const nombre = typeof name === 'string' ? name : '';
+  const { tipo, existentes, elegidos } = esObjeto(opciones) ? opciones : {};
+  const delProyecto = tipo === 'proyecto';
+  const extension = extensionDelNombre(nombre);
+  if (!EXTENSIONES_PERMITIDAS.includes(extension)) return mensajeTipoNoPermitido(extension);
+  if (!(typeof size === 'number' && size >= 0 && size <= TAMANO_MAXIMO)) return MENSAJE_TAMANO_MAXIMO;
+  const ya = comoLista(existentes);
+  const tanda = comoLista(elegidos);
+  if (ya.length + tanda.length + 1 > (delProyecto ? MAXIMO_POR_PROYECTO : MAXIMO_POR_HITO)) {
+    return delProyecto ? MENSAJE_MAXIMO_POR_PROYECTO : MENSAJE_MAXIMO_POR_HITO;
+  }
+  const buscado = nombreComparable(nombre);
+  return [...ya, ...tanda].some((otro) => nombreComparable(otro) === buscado) ? textoArchivoRepetido(nombre) : null;
+}
+
+// Los archivos elegidos que todavía no se subieron (spec 6), cada uno con su extensión, su nombre, su tamaño y la × que lo quita
+// (data-quitar: su lugar en `archivos`, la lista de File). '' sin ninguno
+function htmlDePendientes(archivos) {
+  const filas = comoLista(archivos).map((archivo, indice) => {
+    if (!esObjeto(archivo)) return '';
+    const nombre = String(archivo.name ?? '');
+    const tamano = tamanoDeArchivo(archivo.size);
+    return `<li class="pr-archivo"><span class="pr-ext" aria-hidden="true">${esc(extensionDe(nombre))}</span>`
+      + `<span><span class="n">${esc(nombre)}</span>${tamano ? `<small>${esc(tamano)}</small>` : ''}</span>`
+      + `<span class="acc"><button type="button" class="pr-quitar" data-quitar="${indice}" aria-label="${esc(`Quitar ${nombre}`)}">&times;</button></span></li>`;
+  }).join('');
+  return filas ? `<ul class="pr-archivos pr-pendientes" aria-label="Archivos para subir">${filas}</ul>` : '';
+}
+
+// La vista previa de un archivo (spec 6, «Ver»): la imagen en un <img> y el PDF en un <iframe>, solo desde un blob: (la CSP lo
+// permite; lo arma la parte del DOM con lo que bajó API.pedirArchivo). '' con otra dirección o con otro tipo
+function htmlDeVistaPrevia(url, archivo) {
+  if (typeof url !== 'string' || !/^blob:/i.test(url)) return '';
+  const { nombre, mime } = esObjeto(archivo) ? archivo : {};
+  if (!sePuedeVer(mime)) return '';
+  return /^image\//i.test(mime)
+    ? `<img src="${esc(url)}" alt="${esc(nombre)}">`
+    : `<iframe src="${esc(url)}" title="${esc(nombre)}"></iframe>`;
+}
+
+// --- Los formularios ---
+
+// El texto de un dato (lo que no es un texto, '')
+const textoDelDato = (valor) => (typeof valor === 'string' ? valor : '');
+
+// Lo que precarga el formulario del proyecto (spec 6), con los nombres del servidor: el de `proyecto` o, sin él (null), uno nuevo
+// (Idea, Media, Tecnología, el azul tinta y la carpeta). La fecha, como texto 'AAAA-MM-DD' (o ''); las áreas, como ids de texto. El
+// color se conserva tal cual (también uno fuera de la paleta o en minúsculas: guardar sin tocarlo no lo cambia); uno que no es
+// #RRGGBB, y el ícono que no está, son los que dibuja la lista para ellos (el azul tinta y clipboard-list)
+function valoresDelProyecto(proyecto) {
+  const p = esObjeto(proyecto) ? proyecto : null;
+  const deLaLista = (valor, lista, porDefecto) => (lista.includes(valor) ? valor : porDefecto);
+  const areas = comoLista(p?.areas).map((area) => idEntero(esObjeto(area) ? area.id : area)).filter((id) => id !== null);
+  return {
+    nombre: textoDelDato(p?.nombre),
+    descripcion: textoDelDato(p?.descripcion),
+    estado: deLaLista(p?.estado, ESTADOS, 'idea'),
+    prioridad: deLaLista(p?.prioridad, PRIORIDADES, 'media'),
+    categoria: deLaLista(p?.categoria, CATEGORIAS, 'tecnologia'),
+    fecha_inicio: Utils.soloFecha(p?.fecha_inicio) ?? '',
+    responsable: textoDelDato(p?.responsable),
+    enlace_externo: textoDelDato(p?.enlace_externo),
+    color: p ? colorDelProyecto(p) : COLOR_POR_DEFECTO,
+    icono: p ? deLaLista(p.icono, ICONOS, ICONO_DESCONOCIDO) : ICONO_DE_UN_PROYECTO_NUEVO,
+    areas: [...new Set(areas)]
+  };
+}
+
+// Lo que precarga el formulario de un hito o un logro: el de `hito` o, sin él, uno nuevo con la fecha de hoy (`hoy`; si no sirve, el
+// de hoy en Argentina). La fecha, como texto 'AAAA-MM-DD'
+function valoresDelHito(hito, hoy) {
+  const h = esObjeto(hito) ? hito : null;
+  return {
+    titulo: textoDelDato(h?.titulo),
+    fecha: h ? (Utils.soloFecha(h.fecha) ?? '') : hoyDe(hoy),
+    descripcion: textoDelDato(h?.descripcion),
+    evidencia_url: textoDelDato(h?.evidencia_url)
+  };
+}
+
+// Los textos del modal del proyecto: «Nuevo proyecto» o «Editar <nombre>», y el botón. Texto, no HTML (van con textContent)
+function textosDelModalDeProyecto(proyecto) {
+  return {
+    titulo: esObjeto(proyecto) ? `Editar ${textoLimpio(proyecto.nombre)}` : 'Nuevo proyecto',
+    boton: 'Guardar el proyecto'
+  };
+}
+
+// Los textos del modal de un hito o un logro (spec 6): el título («Nuevo hito», «Editar el hito», «Registrar un logro del área» o
+// «Editar el logro»), de quién es («Del proyecto X. …» o «Un logro que no es parte de un proyecto. …») y el botón. Es un logro el hito
+// sin proyecto o, sin hito, si no hay `proyecto`. El nombre del proyecto, el de `proyecto` o el que trae el hito de la línea de tiempo.
+// Texto, no HTML (van con textContent)
+function textosDelModalDeHito(opciones) {
+  const { proyecto, hito } = esObjeto(opciones) ? opciones : {};
+  const h = esObjeto(hito) ? hito : null;
+  const logro = h ? esLogro(h) : !esObjeto(proyecto);
+  const nombre = textoLimpio(esObjeto(proyecto) ? proyecto.nombre : h?.proyecto_nombre);
+  const sale = 'Sale en el Informe anual del año de su fecha.';
+  return {
+    titulo: logro ? (h ? 'Editar el logro' : 'Registrar un logro del área') : (h ? 'Editar el hito' : 'Nuevo hito'),
+    de: logro ? `Un logro que no es parte de un proyecto. ${sale}` : `Del proyecto${nombre ? ` ${nombre}` : ''}. ${sale}`,
+    boton: logro ? 'Guardar el logro' : 'Guardar el hito',
+    logro
+  };
+}
+
+// Los colores del proyecto (spec 6), como opciones de radio (name="p-color"): los 10 de la paleta y, si `actual` es un #RRGGBB que no
+// está en ella, primero «Color actual», elegido (nada se cambia solo). La opción elegida lleva el color tal cual llegó, también uno de
+// la paleta escrito en minúsculas. Lo que no es #RRGGBB nunca llega al style: es el azul tinta, el que dibuja la lista
+function htmlDeColores(actual) {
+  const elegido = typeof actual === 'string' && COLOR_HEX.test(actual) ? actual : COLOR_POR_DEFECTO;
+  const esElElegido = (color) => color.toLowerCase() === elegido.toLowerCase();
+  const opciones = PALETA.some(({ color }) => esElElegido(color)) ? PALETA : [{ color: elegido, nombre: TEXTO_COLOR_ACTUAL }, ...PALETA];
+  return opciones.map(({ color, nombre }) => {
+    const valor = esElElegido(color) ? elegido : color;
+    return `<label class="pr-color" style="--c:${esc(valor)}" title="${esc(nombre)}"><input type="radio" name="p-color" value="${esc(valor)}" aria-label="${esc(nombre)}" aria-describedby="p-color-error"${esElElegido(color) ? ' checked' : ''}></label>`;
+  }).join('');
+}
+
+// Los 25 íconos (spec 6), como opciones de radio (name="p-icono"), cada uno con su nombre en castellano y su dibujo (decorativo). Elige
+// `actual` o, si no está, el que dibuja la lista para un ícono que no conoce (clipboard-list)
+function htmlDeIconos(actual) {
+  const elegido = ICONOS.includes(actual) ? actual : ICONO_DESCONOCIDO;
+  return ICONOS.map((clave) => {
+    const nombre = NOMBRE_DEL_ICONO[clave];
+    return `<label class="pr-icono" title="${esc(nombre)}"><input type="radio" name="p-icono" value="${esc(clave)}" aria-label="${esc(nombre)}" aria-describedby="p-icono-error"${clave === elegido ? ' checked' : ''}>${iconoSvg(clave)}</label>`;
+  }).join('');
+}
+
+// Las áreas del proyecto (spec 6), casillas con desplazamiento (name="p-areas"): una por área de `areas` (las de GET /api/areas,
+// { id, nombre }), marcadas las de `elegidas` (ids, como los de valoresDelProyecto). Sin áreas, lo dice
+function htmlDeAreas(areas, elegidas) {
+  const marcadas = new Set(comoLista(elegidas).map(idEntero).filter((id) => id !== null));
+  const filas = comoLista(areas).filter(esObjeto).map((area) => ({ id: idEntero(area.id), nombre: area.nombre })).filter(({ id }) => id !== null);
+  if (!filas.length) return '<p class="pr-vacio">No hay áreas cargadas.</p>';
+  return filas.map(({ id, nombre }) => `<label class="pr-area"><input type="checkbox" name="p-areas" value="${id}" aria-describedby="p-areas-error"${marcadas.has(id) ? ' checked' : ''}>${esc(nombre)}</label>`).join('');
+}
+
+// La muestra de cómo se ve el cuadrado en la lista (spec 6): el cuadrado grande con el color y el ícono de `valores` y el nombre (sin
+// nombre, «Así se ve en la lista»)
+function htmlDeMuestra(valores) {
+  const v = esObjeto(valores) ? valores : {};
+  return `${htmlDelCuadrado({ color: v.color, icono: v.icono }, 'grande')}<span class="pr-muestra-texto"><b>${esc(textoLimpio(v.nombre) || 'Así se ve en la lista')}</b>`
+    + '<small>El color y el ícono identifican al proyecto en la lista y en la línea de tiempo.</small></span>';
+}
+
+// --- Las confirmaciones (spec 6) ---
+
+// Una cantidad: el largo de una lista o un número entero no negativo
+const cantidadDelDato = (valor) => (Array.isArray(valor) ? valor.length : Math.max(0, Math.trunc(Number(valor)) || 0));
+
+// El texto del modal de confirmación (spec 6), con la concordancia resuelta. `tipo` y `datos`:
+// - 'proyecto', { nombre, hitos, documentos } (cantidades o listas: el detalle de un proyecto sirve tal cual): «¿Eliminar el proyecto
+//   X? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 5 hitos y 2 documentos.» (solo lo que tiene; sin
+//   ninguno, termina en «Informe anual.»);
+// - 'hito' o 'logro', { titulo, archivos }: «¿Eliminar el hito X?», con « Se borra también su archivo.» o « Se borran también sus N
+//   archivos.» si tiene;
+// - 'archivo', { nombre }: «¿Eliminar X?».
+// Texto, no HTML: va con textContent. '' con otro tipo
+function textoDeConfirmacion(tipo, datos) {
+  const d = esObjeto(datos) ? datos : {};
+  if (tipo === 'proyecto') {
+    const hitos = cantidadDelDato(d.hitos);
+    const documentos = cantidadDelDato(d.documentos);
+    const con = [hitos ? plural(hitos, 'hito', 'hitos') : '', documentos ? plural(documentos, 'documento', 'documentos') : ''].filter(Boolean);
+    return `¿Eliminar el proyecto ${textoLimpio(d.nombre)}? Deja de verse en la lista, en la línea de tiempo y en el Informe anual${con.length ? `, con ${con.join(' y ')}` : ''}.`;
+  }
+  if (tipo === 'hito' || tipo === 'logro') {
+    const archivos = cantidadDelDato(d.archivos);
+    const tambien = archivos === 1 ? ' Se borra también su archivo.' : (archivos > 1 ? ` Se borran también sus ${archivos} archivos.` : '');
+    return `¿Eliminar el ${tipo} ${textoLimpio(d.titulo)}?${tambien}`;
+  }
+  if (tipo === 'archivo') return `¿Eliminar ${textoLimpio(d.nombre)}?`;
+  return '';
 }

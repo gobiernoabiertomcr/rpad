@@ -51,6 +51,7 @@
         .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
         .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
         .sg-btn-rojo-borde { background: #fff; color: var(--sg-rojo); border-color: #C98F8F; }
+        .sg-btn-rojo { background: var(--sg-rojo); color: #fff; border-color: var(--sg-rojo); }
         .sg-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
         .sg-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
         .sg-link.rojo { color: var(--sg-rojo); }
@@ -249,7 +250,7 @@
         .pr-form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
         .pr-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .pr-modal .modal-header { padding: 18px 24px; }
-        .pr-modal .modal-title { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .pr-modal .modal-title { margin: 0; min-width: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--sg-tinta); overflow-wrap: anywhere; }
         .pr-modal .modal-close { color: var(--sg-suave); }
         .pr-modal .modal-body { padding: 18px 24px 8px; }
         .pr-modal .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -287,6 +288,25 @@
         .pr-area input { width: 17px; height: 17px; margin: 0; accent-color: var(--sg-tinta); }
         .pr-soltar { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px; border: 1.5px dashed var(--sg-borde-control); border-radius: 12px; background: var(--sg-sutil); text-align: center; color: var(--sg-suave); font-size: 0.9rem; }
         .pr-soltar b { color: var(--sg-tinta); }
+        .pr-soltar.arrastrando { border-color: var(--sg-tinta); background: #EEF5FB; }
+        /* Los errores de cada campo (aria-invalid) y el error sin campo, dentro del modal: nunca detrás del velo */
+        .pr-modal .form-input[aria-invalid="true"], .pr-modal .form-select[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .pr-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; }
+        .pr-modal-aviso { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .pr-modal-de { margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; overflow-wrap: anywhere; }
+        .pr-modal .form-row.pr-titulo-fecha { grid-template-columns: minmax(0, 1fr) 180px; }
+        .pr-grupo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .pr-grupo legend { padding: 0; margin-bottom: 6px; }
+        .pr-muestra-texto { min-width: 0; }
+        .pr-muestra-texto small { display: block; color: var(--sg-suave); font-size: 0.82rem; }
+        /* Los archivos elegidos que todavía no se subieron, cada uno con su × */
+        .pr-pendientes { margin-top: 8px; }
+        .pr-quitar { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; font-size: 1.3rem; line-height: 1; color: var(--sg-suave); cursor: pointer; }
+        .pr-quitar:hover { background: var(--sg-sutil); color: var(--sg-rojo); }
+        .pr-confirmar-texto { margin: 0 0 8px; line-height: 1.5; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .modal.pr-modal-vista { max-width: 960px; }
+        .pr-vista-previa img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; }
+        .pr-vista-previa iframe { display: block; width: 100%; height: 70vh; border: 0; }
 
         /* Foco visible (el de Métricas y Reportes: anillo --tinta de 3 px con halo --sol-fuerte) */
         .pr-pagina a:focus-visible, .pr-pagina button:focus-visible, .pr-pagina input:focus-visible, .pr-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
@@ -312,6 +332,7 @@
             .pr-dato:nth-child(even) { border-left: 1px solid var(--sg-linea); padding-left: 14px; }
             .pr-dato:nth-child(odd) { border-left: 0; padding-left: 0; }
             .pr-modal .form-row, .pr-modal .form-row.tres, .pr-opciones { grid-template-columns: 1fr 1fr; }
+            .pr-modal .form-row.pr-titulo-fecha { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -417,6 +438,9 @@
 
                 <!-- El detalle de un proyecto (?id=N): reemplaza a las pestañas -->
                 <div id="pr-vista-detalle" hidden></div>
+
+                <!-- «Subir documentos» de un proyecto y «Subir archivos» de un hito abren este selector (spec 6) -->
+                <input type="file" id="pr-elegir-archivos" multiple hidden accept=".pdf,.docx,.xlsx,.csv,.odt,.ods,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z">
             </div>
 
             <!-- Footer -->
@@ -456,6 +480,198 @@
                 </div>
             </footer>
         </main>
+    </div>
+
+    <!-- Nuevo proyecto / Editar un proyecto (spec 6). proyectos.js pone el título, arma las áreas, los colores, los íconos y la muestra
+         (htmlDeAreas, htmlDeColores, htmlDeIconos y htmlDeMuestra) y valida con erroresDelProyecto. Los textos no tienen maxlength:
+         cuenta unidades de UTF-16 (un emoji, dos) y el servidor cuenta caracteres -->
+    <div class="modal-overlay" id="modal-proyecto">
+        <div class="modal pr-modal" role="dialog" aria-modal="true" aria-labelledby="modal-proyecto-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-proyecto-titulo">Nuevo proyecto</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <form class="pr-form" id="form-proyecto" novalidate>
+                <div class="modal-body">
+                    <p class="pr-modal-aviso" id="modal-proyecto-aviso" role="alert" hidden></p>
+                    <div class="form-group">
+                        <label class="form-label" for="p-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
+                        <input type="text" class="form-input" id="p-nombre" autocomplete="off" aria-required="true" aria-describedby="p-nombre-error">
+                        <p class="form-error" id="p-nombre-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="p-descripcion">Descripción</label>
+                        <textarea class="form-input" id="p-descripcion" rows="3" aria-describedby="p-descripcion-error"></textarea>
+                        <p class="form-error" id="p-descripcion-error" hidden></p>
+                    </div>
+                    <fieldset class="pr-estados" id="p-estado" aria-describedby="p-estado-error">
+                        <legend class="form-label">Estado</legend>
+                        <div class="pr-opciones">
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="idea" aria-describedby="p-estado-error" checked><span class="pr-insignia pr-idea">Idea</span></label>
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="en_curso" aria-describedby="p-estado-error"><span class="pr-insignia pr-en-curso">En curso</span></label>
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="completado" aria-describedby="p-estado-error"><span class="pr-insignia pr-completado">Completado</span></label>
+                            <label class="pr-opcion"><input type="radio" name="p-estado" value="suspendido" aria-describedby="p-estado-error"><span class="pr-insignia pr-suspendido">Suspendido</span></label>
+                        </div>
+                        <p class="form-error" id="p-estado-error" hidden></p>
+                    </fieldset>
+                    <div class="form-row tres">
+                        <div class="form-group">
+                            <label class="form-label" for="p-categoria">Categoría</label>
+                            <select class="form-select" id="p-categoria" aria-describedby="p-categoria-error"><option value="tecnologia">Tecnología</option><option value="normativa">Normativa</option><option value="difusion">Difusión</option></select>
+                            <p class="form-error" id="p-categoria-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="p-prioridad">Prioridad</label>
+                            <select class="form-select" id="p-prioridad" aria-describedby="p-prioridad-error"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select>
+                            <p class="form-error" id="p-prioridad-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="p-fecha-inicio">Fecha de elevación</label>
+                            <input type="date" class="form-input" id="p-fecha-inicio" min="2000-01-01" aria-describedby="p-fecha-inicio-error">
+                            <p class="form-error" id="p-fecha-inicio-error" hidden></p>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="p-responsable">Autor o responsable</label>
+                            <input type="text" class="form-input" id="p-responsable" autocomplete="off" aria-describedby="p-responsable-error">
+                            <p class="form-error" id="p-responsable-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="p-enlace-externo">Enlace</label>
+                            <input type="url" class="form-input" id="p-enlace-externo" placeholder="https://" autocomplete="off" aria-describedby="p-enlace-externo-ayuda p-enlace-externo-error">
+                            <p class="form-hint" id="p-enlace-externo-ayuda">El repositorio, el borrador o la página del proyecto.</p>
+                            <p class="form-error" id="p-enlace-externo-error" hidden></p>
+                        </div>
+                    </div>
+                    <fieldset class="pr-grupo" id="p-areas" aria-describedby="p-areas-error">
+                        <legend class="form-label">Áreas</legend>
+                        <div class="pr-areas" id="p-areas-lista"></div>
+                        <p class="form-error" id="p-areas-error" hidden></p>
+                    </fieldset>
+                    <div class="pr-muestra" id="p-muestra" aria-hidden="true"></div>
+                    <div class="form-row">
+                        <fieldset class="pr-grupo" id="p-color" aria-describedby="p-color-error">
+                            <legend class="form-label">Color</legend>
+                            <div class="pr-colores" id="p-colores"></div>
+                            <p class="form-error" id="p-color-error" hidden></p>
+                        </fieldset>
+                        <fieldset class="pr-grupo" id="p-icono" aria-describedby="p-icono-error">
+                            <legend class="form-label">Ícono</legend>
+                            <div class="pr-iconos" id="p-iconos"></div>
+                            <p class="form-error" id="p-icono-error" hidden></p>
+                        </fieldset>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <small><span class="requerido" aria-hidden="true">*</span> Obligatorio.</small>
+                    <div class="botones">
+                        <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                        <button type="submit" class="sg-btn sg-btn-tinta" id="p-guardar">Guardar el proyecto</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Nuevo hito, Editar el hito, Registrar un logro del área o Editar el logro (spec 6). proyectos.js pone el título, de quién es y el
+         botón (textosDelModalDeHito), valida con erroresDelHito y controla cada archivo elegido con problemaDeArchivo -->
+    <div class="modal-overlay" id="modal-hito">
+        <div class="modal pr-modal" role="dialog" aria-modal="true" aria-labelledby="modal-hito-titulo" aria-describedby="h-de">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-hito-titulo">Nuevo hito</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <form class="pr-form" id="form-hito" novalidate>
+                <div class="modal-body">
+                    <p class="pr-modal-aviso" id="modal-hito-aviso" role="alert" hidden></p>
+                    <p class="pr-modal-de" id="h-de"></p>
+                    <div class="form-row pr-titulo-fecha">
+                        <div class="form-group">
+                            <label class="form-label" for="h-titulo">Título <span class="requerido" aria-hidden="true">*</span></label>
+                            <input type="text" class="form-input" id="h-titulo" autocomplete="off" aria-required="true" aria-describedby="h-titulo-error">
+                            <p class="form-error" id="h-titulo-error" hidden></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="h-fecha">Fecha <span class="requerido" aria-hidden="true">*</span></label>
+                            <input type="date" class="form-input" id="h-fecha" min="2000-01-01" aria-required="true" aria-describedby="h-fecha-error">
+                            <p class="form-error" id="h-fecha-error" hidden></p>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="h-descripcion">Descripción</label>
+                        <textarea class="form-input" id="h-descripcion" rows="3" aria-describedby="h-descripcion-error"></textarea>
+                        <p class="form-error" id="h-descripcion-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="h-evidencia-url">Enlace de la evidencia</label>
+                        <input type="url" class="form-input" id="h-evidencia-url" placeholder="https://" autocomplete="off" aria-describedby="h-evidencia-url-ayuda h-evidencia-url-error">
+                        <p class="form-hint" id="h-evidencia-url-ayuda">Opcional: la publicación, el repositorio o la noticia.</p>
+                        <p class="form-error" id="h-evidencia-url-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <span class="form-label" id="h-archivos-rotulo">Archivos</span>
+                        <div class="pr-soltar" id="h-soltar" role="group" aria-labelledby="h-archivos-rotulo">
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                            <span>Arrastrá los archivos acá o <button type="button" class="sg-link" id="h-elegir" aria-describedby="h-archivos-ayuda h-archivos-error">elegilos</button></span>
+                            <small id="h-archivos-ayuda">Hasta 3 archivos de 10 MB cada uno: PDF, Word, Excel, CSV, ODT, ODS, imágenes, ZIP, RAR o 7Z.</small>
+                            <input type="file" id="h-archivos" multiple hidden accept=".pdf,.docx,.xlsx,.csv,.odt,.ods,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z">
+                        </div>
+                        <div aria-live="polite">
+                            <p class="form-error" id="h-archivos-error" hidden></p>
+                            <div id="h-pendientes"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <small><span class="requerido" aria-hidden="true">*</span> Obligatorio.</small>
+                    <div class="botones">
+                        <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                        <button type="submit" class="sg-btn sg-btn-tinta" id="h-guardar">Guardar el hito</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmar una eliminación (spec 6: un modal chico, no confirm()). El texto lo arma textoDeConfirmacion -->
+    <div class="modal-overlay" id="modal-confirmar">
+        <div class="modal pr-modal pr-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-confirmar-titulo">Eliminar</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="pr-modal-aviso" id="modal-confirmar-aviso" role="alert" hidden></p>
+                <p class="pr-confirmar-texto" id="modal-confirmar-texto"></p>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-rojo" id="modal-confirmar-si">Eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- La vista previa de una imagen o un PDF (spec 6, «Ver»): proyectos.js pone el nombre del archivo en el título y el <img> o el
+         <iframe> (htmlDeVistaPrevia, desde un blob:) -->
+    <div class="modal-overlay" id="modal-vista-previa">
+        <div class="modal pr-modal pr-modal-vista" role="dialog" aria-modal="true" aria-labelledby="modal-vista-previa-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-vista-previa-titulo">Vista previa</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="pr-modal-aviso" id="modal-vista-previa-aviso" role="alert" hidden></p>
+                <div class="pr-vista-previa" id="modal-vista-previa-cuerpo"></div>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cerrar</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Scripts del RPAD -->
