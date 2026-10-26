@@ -23,6 +23,7 @@ En `docs/superpowers/specs/`:
 | `2026-10-26-mi-espacio-licencias-y-horas-design.md` | Entrega 2: la página Mi espacio, las reglas de cada licencia, las horas extras, el saldo inicial, el paso a Configuración, «Hoy no están», el Resumen «Niveles» y el email de vencimiento. |
 | `2026-10-26-mi-espacio-agenda-design.md` | Entrega 3: la pestaña Agenda, los eventos personales y compartidos, los emails y el cron cada 15 minutos. |
 | `2026-10-26-mi-espacio-mockups/` | Las maquetas navegables (ver abajo). |
+| `2026-10-26-mi-espacio-charla.md` | Lo que dijo el usuario en la charla, con sus palabras: la idea, las correcciones y cada respuesta. Si una spec y la charla no coinciden, gana lo que dijo el usuario, y se corrige la spec. |
 | este archivo | El traspaso. |
 
 **El orden de las entregas:** feriados, después licencias y horas, después la agenda. Son tres planes y tres despliegues separados. La entrega 1 puede salir sola.
@@ -127,9 +128,19 @@ Tres agentes recorrieron el código el 26/10/2026. Lo que importa para estas ent
 
 ## Cómo seguir
 
-1. **Bajar la rama** `docs/mi-espacio-pre-plan` y abrir las maquetas.
-2. **Leer y aprobar las tres specs,** revisando las decisiones «Mías». En cada una, cambiar «Estado: pre-plan» por «aprobado» con la fecha.
-3. **Planificar cada entrega,** en orden y una a la vez, con `superpowers:writing-plans`: feriados, después licencias y horas, después la agenda.
-4. **Implementar cada una** en su rama, con `npm test` completo antes y después (regla del proyecto; las de integración necesitan `docker compose up -d`).
+1. **Bajar la rama** `docs/mi-espacio-pre-plan`. Leer este traspaso, la charla (`2026-10-26-mi-espacio-charla.md`), las tres specs y el `CLAUDE.md` del repo.
+2. **Lanzar un equipo de agentes para entender el código** (pedido del usuario), en paralelo y solo de lectura, uno por área:
+   - **Licencias y auditoría:** `usuarios_licencias`, `services/licenciasReglas.js`, `controllers/licenciasController.js`, `services/auditoriaReglas.js` y `auditoriaService.js`, `services/notasDigitalesFirmas.js` y `avisosSuperadminService.js`. Para el paso a Configuración: qué función de servicio se puede compartir y qué cambia cuando aparece una licencia.
+   - **Días hábiles:** `services/notasDigitalesCalendario.js` y todos los que usan `esDiaHabil` (Notas Digitales, auditoría, Métricas y el Ciclo de vida del dato, la foto del 31/12). Para que los feriados no rompan nada.
+   - **Páginas y carcasa:** `configuracion.html` con `usuarios.js` y `areas.js` (cómo se suma una pestaña), `perfil.js`, `proyectos.js` (la convención más nueva), el menú de `main.js` y lo que exige `tests/paginas.test.js` para una página nueva.
+   - **Emails, cron y tests:** `ejecutarNotificacionesDiarias`, `emailService.js` y `emailTemplates.js`, `cronAuth` y `conBloqueo`, `tests/helpers.js`, `tests/schema.test.js` y la convención de las migraciones.
 
-**Para retomar con Claude**, alcanza con un mensaje como este: «Seguimos con el pre-plan de Mi espacio: leé `docs/superpowers/specs/2026-10-26-mi-espacio-pre-plan.md` y las tres specs que nombra.»
+   Con lo que traigan, revisar si las specs chocan con algo del código.
+3. **Abrir las maquetas** (ver arriba).
+4. **Leer y aprobar las tres specs,** revisando las decisiones «Mías». En cada una, cambiar «Estado: pre-plan» por «aprobado» con la fecha.
+5. **Planificar cada entrega,** en orden y una a la vez, con `superpowers:writing-plans`: feriados, después licencias y horas, después la agenda.
+6. **Implementar cada una** en su rama, con `npm test` completo antes y después (regla del proyecto; las de integración necesitan `docker compose up -d`).
+
+**Para retomar con Claude**, alcanza con un mensaje como este: «Seguimos con el pre-plan de Mi espacio: leé `docs/superpowers/specs/2026-10-26-mi-espacio-pre-plan.md` y seguí sus pasos de "Cómo seguir".»
+
+**El repositorio es público.** En los documentos no van nombres reales de personas ni datos de la base: en las maquetas y en los ejemplos, nombres inventados.

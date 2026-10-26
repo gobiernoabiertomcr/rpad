@@ -16,7 +16,7 @@ Se miran con el preview `maquetas-mi-espacio` (puerto 8765). Los datos son inven
 ## Por qué
 
 La Dirección coordina reuniones, entregas y capacitaciones por mensajes sueltos, y cada uno anota sus turnos y trámites donde puede. El usuario quiere una agenda dentro del RPAD:
-- **personal:** «si Aldana sube algo personal a su agenda, lo ve ella sola»;
+- **personal:** si una compañera sube algo personal a su agenda, lo ve ella sola;
 - **compartida:** un evento para todos, o para las personas que se elijan;
 - **con un recordatorio por email antes del evento.**
 
