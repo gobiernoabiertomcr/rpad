@@ -133,12 +133,15 @@
         .pr-pista .punto { position: absolute; top: 13px; width: 15px; height: 15px; margin-left: -7.5px; border-radius: 50%; background: var(--c); border: 2.5px solid #fff; box-shadow: 0 0 0 1px var(--c); }
         .pr-pista .punto.futuro { background: #fff; border: 2.5px solid var(--c); box-shadow: none; }
         .pr-pista .punto.logro { border-radius: 3px; transform: rotate(45deg); width: 13px; height: 13px; margin-left: -6.5px; top: 14px; background: var(--sg-tinta); box-shadow: 0 0 0 1px var(--sg-tinta); }
+        /* Un logro previsto, hueco como los otros hitos previstos (si no, .punto.logro lo pinta lleno) */
+        .pr-pista .punto.logro.futuro { background: #fff; border: 2.5px solid var(--sg-tinta); box-shadow: none; }
         /* Los puntos que se pisan (a menos de 15 px) van juntos, un poco más grandes, con la cantidad */
         .pr-pista .punto.grupo { width: 17px; height: 17px; margin-left: -8.5px; top: 12px; }
         .pr-pista .punto.logro.grupo { width: 15px; height: 15px; margin-left: -7.5px; top: 13px; }
         .pr-pista .punto b { display: grid; place-items: center; width: 100%; height: 100%; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
         .pr-pista .punto.futuro b { color: var(--c); }
         .pr-pista .punto.logro b { transform: rotate(-45deg); }
+        .pr-pista .punto.logro.futuro b { color: var(--sg-tinta); }
         .pr-pista .punto.apagado { opacity: 0.2; }
         .pr-pista .linea-hoy { position: absolute; top: -10px; bottom: -10px; border-left: 2px solid #142B4A; }
         .pr-pista .sin { position: absolute; left: 0; top: 11px; font-size: 0.82rem; color: var(--sg-suave); }
@@ -161,9 +164,10 @@
         .pr-volver { display: inline-block; margin-bottom: 14px; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
         .pr-ficha { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 28px; }
         .pr-ficha-titulo { display: flex; gap: 16px; align-items: flex-start; }
+        .pr-ficha-titulo > div { min-width: 0; }
         .pr-ficha h2.pr-titulo { font-family: var(--f-titulo); font-weight: 750; letter-spacing: -0.02em; font-size: 1.75rem; line-height: 1.12; margin: 0 0 10px; color: var(--sg-tinta); overflow-wrap: anywhere; }
         .pr-ficha .etiquetas { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .pr-ficha .desc { margin: 14px 0 0; max-width: 78ch; line-height: 1.55; color: var(--sg-texto); }
+        .pr-ficha .desc { margin: 14px 0 0; max-width: 78ch; line-height: 1.55; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
         .pr-acciones { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
         .pr-datos { grid-column: 1 / -1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-top: 1px solid var(--sg-linea); padding-top: 14px; margin: 0; }
         .pr-dato { padding-right: 14px; min-width: 0; }
@@ -191,13 +195,15 @@
         .pr-cuerpo { margin: 0 34px 14px 134px; padding: 14px 16px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 12px; font-size: 0.92rem; }
         .pr-compacta .pr-cuerpo { margin: 0 4px 14px 4px; }
         .pr-cuerpo p { margin: 0 0 10px; line-height: 1.5; max-width: 76ch; }
+        .pr-cuerpo .desc { white-space: pre-line; overflow-wrap: anywhere; }
+        .pr-host { color: var(--sg-suave); overflow-wrap: anywhere; }
         .pr-cuerpo .acciones { display: flex; gap: 6px 18px; flex-wrap: wrap; margin-top: 12px; }
         .pr-mk-hito { display: inline-block; width: 12px; height: 12px; border-radius: 2px; transform: rotate(45deg); background: var(--sg-verde); }
         .pr-mk-hito.futuro { background: #fff; border: 2.4px solid var(--sg-tinta); width: 11px; height: 11px; }
         .pr-futuro-etq { display: inline-block; margin-left: 6px; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--sg-sol); color: var(--sg-ambar); }
         .pr-anio { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 4px; padding: 14px 4px 6px; border-top: 1px solid var(--sg-linea); }
         .pr-anio:first-child { border-top: 0; padding-top: 0; }
-        .pr-anio h3 { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: 1.3rem; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .pr-anio h2 { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: 1.3rem; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
         .pr-anio small { color: var(--sg-suave); font-size: 0.86rem; }
 
         /* Archivos y documentos */
@@ -210,6 +216,8 @@
         .pr-archivo small { display: block; color: var(--sg-suave); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
         .pr-archivo .acc { display: flex; gap: 14px; font-size: 0.88rem; }
         .pr-vacio { margin: 0; color: var(--sg-suave); }
+        .pr-nota { margin-top: 10px; font-size: 0.82rem; }
+        .pr-explica { margin: 4px 0 0; max-width: 70ch; font-size: 0.9rem; line-height: 1.45; color: var(--sg-suave); }
         .pr-vacio-caja { margin: 0; padding: 18px; border-radius: 12px; background: var(--sg-sutil); color: var(--sg-suave); }
         .pr-vacio-caja p { margin: 0 0 10px; max-width: 70ch; }
         .pr-vacio-caja p:last-child { margin-bottom: 0; }
@@ -227,6 +235,8 @@
         .pr-cinta .h-elev { fill: #fff; stroke: var(--sg-tinta); stroke-width: 2.5; }
         .pr-cinta .etq { font-size: 11.5px; font-weight: 600; fill: var(--sg-texto); }
         .pr-cinta .etq-f { font-size: 11px; fill: var(--sg-suave); font-variant-numeric: tabular-nums; }
+        /* Un halo blanco: la guía de una etiqueta de una fila de arriba no tacha el texto de una de abajo */
+        .pr-cinta .etq, .pr-cinta .etq-f { paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
         .pr-cinta .guia { stroke: var(--sg-borde-control); stroke-width: 1; stroke-dasharray: 2 3; }
         .pr-cinta .l-hoy { stroke: #142B4A; stroke-width: 2.2; }
         .pr-cinta .hoy { font-size: 11.5px; font-weight: 700; fill: #142B4A; text-anchor: middle; }
@@ -297,6 +307,10 @@
             .pr-tarjeta { padding: 16px; }
             .pr-eje { display: none; }
             .pr-carril { grid-template-columns: 1fr; gap: 10px; }
+            /* La fila de datos de la ficha, en dos columnas: con tres, una palabra larga se partía */
+            .pr-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .pr-dato:nth-child(even) { border-left: 1px solid var(--sg-linea); padding-left: 14px; }
+            .pr-dato:nth-child(odd) { border-left: 0; padding-left: 0; }
             .pr-modal .form-row, .pr-modal .form-row.tres, .pr-opciones { grid-template-columns: 1fr 1fr; }
         }
     </style>

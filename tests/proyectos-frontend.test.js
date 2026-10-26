@@ -1,6 +1,8 @@
 // La página de Proyectos (spec 2026-10-25-proyectos, 1, 2 y 10), ejecutada en Node: lo puro de public/js/proyectos.js (la
 // dirección, la ventana de 3 años con sus flechas, los filtros con sus cantidades, el orden, los puntos de cada carril que se
-// juntan según el ancho de la pista, la frase del año resaltado y el HTML de los filtros y los carriles) con datos inventados y
+// juntan según el ancho de la pista, la frase del año resaltado y el HTML de los filtros y los carriles; y, desde la Task 6, el
+// detalle de un proyecto —la ficha, la cinta del recorrido (que nada se salga ni se pise), las filas de los hitos, los archivos y
+// los documentos—, la línea de tiempo y los logros, con lo que ve cada rol y los vacíos de la spec) con datos inventados y
 // con los 8 proyectos y los 17 hitos de la maqueta (anonimizados: docs/superpowers/specs/2026-10-25-proyectos-mockups/js/
 // maqueta-datos.js, que se lee al correr, sin copiar sus nombres acá), pasados a la forma de la API (GET /gestion/proyectos y
 // /gestion/timeline). Como seguimiento.js y reportes.js, el script al cargarse solo declara: se carga en un vm después del
@@ -80,6 +82,21 @@ const LOGROS = HITOS.filter((h) => h.proyecto_id === null);
 const INDICE = 7;
 const RPAD = 6;
 const DATATHON = 2;
+
+const BOLETIN = 4;
+const ANDINO = 8;
+const CHARLA = 5;
+
+// Un proyecto como lo manda GET /gestion/proyectos/:id: los campos de la lista más sus hitos (los más nuevos primero, sin los
+// campos del timeline) y sus documentos (con `subido_el`)
+const detalleDe = (id) => {
+  const documentos = MAQUETA.proyectos.find((p) => p.id === id).documentos
+    .map(({ created_at, proyecto_id: _p, ...documento }) => ({ ...documento, subido_el: created_at }));
+  const hitos = hitosDe(id)
+    .map(({ proyecto_nombre: _n, proyecto_color: _c, proyecto_icono: _i, categoria: _k, ...h }) => h)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id);
+  return { ...PROYECTOS.find((p) => p.id === id), hitos, documentos };
+};
 
 const DE_ENTRADA = { busqueda: '', estado: 'todos', categoria: 'todas', anios: 2026, resaltar: null };
 const VENTANA = { desde: 2024, hasta: 2026, anterior: true, siguiente: false };
@@ -364,7 +381,7 @@ describe('proyectos.js: los puntos de un carril (spec 2.1 y 2.2)', () => {
 });
 
 describe('proyectos.js: la frase del año resaltado (spec 2.3)', () => {
-  it('2025 en la maqueta: 6 hitos de 4 proyectos y 1 logro, el texto de la spec', () => {
+  it('2025 en la maqueta: 7 hitos de 4 proyectos y 1 logro, el texto de la spec', () => {
     assert.equal(ctx.fraseDelAnio('2025', HITOS), 'En 2025: 7 hitos de 4 proyectos y 1 logro del área. Son los que salen en el Informe anual de 2025.');
   });
 
@@ -607,6 +624,575 @@ describe('proyectos.js: los vacíos (spec 2.5)', () => {
   });
 });
 
+describe('proyectos.js: el enlace del proyecto (textoDelEnlace, spec 3)', () => {
+  it('el texto sale de la dirección: GitHub, el borrador de Google o cualquier otra web', () => {
+    assert.equal(ctx.textoDelEnlace('https://github.com/datospublicosmcr/boletin-oficial'), 'Abrir en GitHub');
+    assert.equal(ctx.textoDelEnlace('HTTPS://GitHub.com/x'), 'Abrir en GitHub');
+    assert.equal(ctx.textoDelEnlace('https://www.github.com/x'), 'Abrir en GitHub');
+    assert.equal(ctx.textoDelEnlace('https://docs.google.com/document/d/EJEMPLO-2/edit'), 'Abrir el borrador');
+    assert.equal(ctx.textoDelEnlace('https://drive.google.com/file/d/EJEMPLO/view'), 'Abrir el borrador');
+    assert.equal(ctx.textoDelEnlace('https://datos.comodoro.gov.ar/'), 'Abrir el enlace');
+    assert.equal(ctx.textoDelEnlace('http://ejemplo.gob.ar'), 'Abrir el enlace');
+  });
+
+  it('mira el dominio, no el resto de la dirección', () => {
+    assert.equal(ctx.textoDelEnlace('https://ejemplo.gob.ar/?ref=github.com'), 'Abrir el enlace');
+    assert.equal(ctx.textoDelEnlace('https://github.com.ejemplo.gob.ar/x'), 'Abrir el enlace');
+    assert.equal(ctx.textoDelEnlace('https://usuario@github.com/x'), 'Abrir en GitHub');
+    assert.equal(ctx.textoDelEnlace('https://docs.google.com:443/x'), 'Abrir el borrador');
+  });
+
+  it('null si no es http o https', () => {
+    for (const url of ['javascript:alert(1)', 'ftp://github.com/x', 'data:text/html,x', '', '   ', null, undefined, 42]) {
+      assert.equal(ctx.textoDelEnlace(url), null, String(url));
+    }
+  });
+});
+
+describe('proyectos.js: la ficha de un proyecto (htmlDeFicha, spec 3)', () => {
+  const datos = (html) => [...html.matchAll(/<div class="pr-dato"><dt>([^<]+)<\/dt><dd>([^<]*)<\/dd><\/div>/g)].map((m) => [m[1], m[2]]);
+
+  it('el título: el cuadrado grande, el nombre y debajo la insignia del estado y la categoría; la descripción completa', () => {
+    const html = ctx.htmlDeFicha(detalleDe(INDICE), { esAdmin: false });
+    assert.match(html, /^<div class="pr-tarjeta"><div class="pr-ficha">/);
+    assert.match(html, /<span class="pr-tile grande" style="--c:#cc0066"><svg aria-hidden="true" focusable="false" /);
+    assert.ok(html.includes('<h2 class="pr-titulo">Índice de Datos Abiertos de Ciudades Argentinas (Open Data Index)</h2>'));
+    assert.ok(html.includes('<div class="etiquetas"><span class="pr-insignia pr-en-curso">En curso</span><span class="pr-etq">Difusión</span></div>'));
+    assert.ok(html.includes(`<p class="desc">${MAQUETA.proyectos.find((p) => p.id === INDICE).descripcion}</p>`));
+  });
+
+  it('la fila de datos: Prioridad, Fecha de elevación, Autor o responsable, Áreas, Hitos y Documentos', () => {
+    assert.deepEqual(datos(ctx.htmlDeFicha(detalleDe(INDICE), { esAdmin: false })), [['Prioridad', 'Alta'], ['Fecha de elevación', '01/08/2021'],
+      ['Autor o responsable', 'Martín Quiroga'], ['Áreas', 'Dirección de Datos Públicos y Comunicación'], ['Hitos', '5'], ['Documentos', '0']]);
+    assert.deepEqual(datos(ctx.htmlDeFicha(detalleDe(BOLETIN), { esAdmin: false })).slice(4), [['Hitos', '2'], ['Documentos', '2']]);
+  });
+
+  it('un dato vacío es «—»: sin fecha de elevación, sin autor, sin áreas o con una prioridad que no existe', () => {
+    assert.deepEqual(datos(ctx.htmlDeFicha(detalleDe(ANDINO), { esAdmin: false }))[1], ['Fecha de elevación', '—']);
+    const vacio = proyecto({ prioridad: 'urgente', responsable: '  ', areas: [], fecha_inicio: '2026-02-30', hitos: [], documentos: [] });
+    assert.deepEqual(datos(ctx.htmlDeFicha(vacio, { esAdmin: false })), [['Prioridad', '—'], ['Fecha de elevación', '—'],
+      ['Autor o responsable', '—'], ['Áreas', '—'], ['Hitos', '0'], ['Documentos', '0']]);
+    // Sin las listas, cuentan cantidad_hitos y cantidad_documentos
+    const sinListas = proyecto({ cantidad_hitos: 3, cantidad_documentos: 1 });
+    assert.deepEqual(datos(ctx.htmlDeFicha(sinListas, { esAdmin: false })).slice(4), [['Hitos', '3'], ['Documentos', '1']]);
+    // Sin descripción, no hay párrafo
+    assert.doesNotMatch(ctx.htmlDeFicha(proyecto({ descripcion: '' }), { esAdmin: false }), /class="desc"/);
+  });
+
+  it('el lector ve el enlace del proyecto y no «Editar el proyecto» ni «Eliminar»', () => {
+    const html = ctx.htmlDeFicha(detalleDe(BOLETIN), { esAdmin: false });
+    assert.match(html, /<a class="sg-btn sg-btn-borde" href="https:\/\/github\.com\/datospublicosmcr\/boletin-oficial" target="_blank" rel="noopener"><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Abrir en GitHub<\/a>/);
+    assert.ok(!html.includes('Editar el proyecto'));
+    assert.ok(!html.includes('Eliminar'));
+    assert.ok(ctx.htmlDeFicha(detalleDe(DATATHON), { esAdmin: false }).includes('Abrir el borrador</a>'));
+  });
+
+  it('administración ve el enlace, «Editar el proyecto» y «Eliminar» (con el borde rojo); solo el true literal', () => {
+    const html = ctx.htmlDeFicha(detalleDe(BOLETIN), { esAdmin: true });
+    assert.ok(html.includes('Abrir en GitHub</a>'));
+    assert.ok(html.includes('<button type="button" class="sg-btn sg-btn-borde" data-editar-proyecto="4">Editar el proyecto</button>'));
+    assert.ok(html.includes('<button type="button" class="sg-btn sg-btn-rojo-borde" data-eliminar-proyecto="4">Eliminar</button>'));
+    assert.ok(!ctx.htmlDeFicha(detalleDe(BOLETIN), { esAdmin: 'true' }).includes('Editar el proyecto'));
+  });
+
+  it('sin enlace, o con uno que no es http o https, no hay botón de enlace (y sin acciones, no hay columna)', () => {
+    assert.doesNotMatch(ctx.htmlDeFicha(detalleDe(ANDINO), { esAdmin: false }), /Abrir|pr-acciones/);
+    const malo = ctx.htmlDeFicha(proyecto({ enlace_externo: 'javascript:alert(1)' }), { esAdmin: false });
+    assert.ok(!malo.includes('javascript:') && !malo.includes('Abrir'));
+  });
+
+  it('un nombre, una descripción, un autor o un área con HTML se ven como texto; un nombre largo lleva la clase que lo corta', () => {
+    const x = '<img src=x onerror=alert(1)>';
+    const html = ctx.htmlDeFicha(proyecto({ nombre: x, descripcion: x, responsable: x, areas: [{ id: 1, nombre: x }], enlace_externo: 'https://ejemplo.gob.ar/"><script>' }), { esAdmin: true });
+    assert.ok(!html.includes('<img') && !html.includes('<script'));
+    assert.ok(html.includes('<h2 class="pr-titulo">&lt;img src=x onerror=alert(1)&gt;</h2>'));
+    assert.ok(html.includes('href="https://ejemplo.gob.ar/&quot;&gt;&lt;script&gt;"'));
+    const estilo = leer('proyectos.html').match(/<style>[\s\S]*?<\/style>/)[0];
+    assert.match(estilo, /\.pr-ficha h2\.pr-titulo \{[^}]*overflow-wrap: anywhere;/);
+  });
+});
+
+describe('proyectos.js: la cinta del recorrido (cintaDelProyecto, spec 3)', () => {
+  const dentro = (x) => typeof x === 'number' && x >= 30 && x <= 970;
+  const todasLasX = (cinta) => [...cinta.eventos.map((e) => e.x), ...cinta.anios.map((a) => a.x), cinta.hoyX, cinta.banda.x1, cinta.banda.x2, cinta.banda.x3]
+    .filter((x) => x !== null);
+  // Ninguna etiqueta con fila se pisa con otra de su fila (con 10 de aire), ni se sale del dibujo; el ancho es 6,3 por letra (10 como mínimo)
+  const sinPisarse = (cinta, nombre) => {
+    for (const evento of cinta.eventos) {
+      if (evento.fila === null) {
+        assert.equal(evento.xTexto, null, nombre);
+        continue;
+      }
+      assert.ok([0, 1, 2].includes(evento.fila), nombre);
+      assert.equal(evento.ancho, Math.round(Math.max(Array.from(evento.etiqueta).length, 10) * 6.3 * 100) / 100, nombre);
+      assert.ok(evento.xTexto >= 0 && evento.xTexto + evento.ancho <= 1000, `${nombre}: ${evento.etiqueta}`);
+    }
+    for (const fila of [0, 1, 2]) {
+      const deLaFila = cinta.eventos.filter((e) => e.fila === fila).sort((a, b) => a.xTexto - b.xTexto);
+      for (let i = 1; i < deLaFila.length; i += 1) {
+        assert.ok(deLaFila[i].xTexto >= deLaFila[i - 1].xTexto + deLaFila[i - 1].ancho + 10, `${nombre}: fila ${fila}, ${deLaFila[i - 1].etiqueta} y ${deLaFila[i].etiqueta}`);
+      }
+    }
+  };
+
+  it('el Índice: de 2021 a 2026, sin meses, con 6 eventos (los 5 hitos y la elevación) y toda x entre 30 y 970', () => {
+    const cinta = plano(ctx.cintaDelProyecto(detalleDe(INDICE), HOY));
+    assert.equal(cinta.desde, 2021);
+    assert.equal(cinta.hasta, 2026);
+    assert.equal(cinta.meses, false);
+    assert.equal(cinta.eventos.length, 6);
+    assert.deepEqual(cinta.eventos.map((e) => e.tipo).sort(), ['elev', 'hecho', 'hecho', 'hecho', 'hecho', 'hecho']);
+    assert.ok(todasLasX(cinta).every(dentro), JSON.stringify(todasLasX(cinta)));
+    assert.deepEqual(cinta.anios.map((a) => a.anio), [2021, 2022, 2023, 2024, 2025, 2026]);
+    assert.equal(cinta.anios[0].x, 30);
+    assert.ok(cinta.anios.every((a, i) => i === 0 || a.x > cinta.anios[i - 1].x));
+  });
+
+  it('los eventos van por fecha, con su fecha, su texto (la elevación dice «Elevación») y la etiqueta', () => {
+    const cinta = plano(ctx.cintaDelProyecto(detalleDe(INDICE), HOY));
+    assert.deepEqual(cinta.eventos.map((e) => e.fecha), ['2021-08-01', '2021-08-01', '2022-08-01', '2023-07-25', '2024-09-02', '2025-08-14']);
+    const elevacion = cinta.eventos.find((e) => e.tipo === 'elev');
+    assert.equal(elevacion.texto, 'Elevación');
+    assert.equal(cinta.eventos.at(-1).texto, '3º Puesto en Índice de Datos Abiertos 2025');
+    assert.ok(cinta.eventos.every((e, i) => i === 0 || e.x >= cinta.eventos[i - 1].x));
+  });
+
+  it('la banda va del primer evento al último (si ya pasó) y la línea de hoy, en su día', () => {
+    const cinta = plano(ctx.cintaDelProyecto(detalleDe(INDICE), HOY));
+    assert.equal(cinta.banda.x1, cinta.eventos[0].x);
+    assert.equal(cinta.banda.x2, cinta.eventos.at(-1).x);
+    assert.equal(cinta.banda.x3, null);
+    // El 25/10/2026 en un eje de 2021 a 2026
+    const dias = (Date.UTC(2026, 9, 25) - Date.UTC(2021, 0, 1)) / 86400000;
+    const total = (Date.UTC(2027, 0, 1) - Date.UTC(2021, 0, 1)) / 86400000;
+    assert.ok(Math.abs(cinta.hoyX - (30 + (dias / total) * 940)) < 0.01, String(cinta.hoyX));
+  });
+
+  it('un hito futuro da «futuro»; un proyecto de un solo año se dibuja en 2 años, con los meses', () => {
+    const cinta = plano(ctx.cintaDelProyecto(detalleDe(DATATHON), HOY));
+    assert.deepEqual(cinta.eventos.map((e) => [e.fecha, e.tipo]), [['2026-02-05', 'elev'], ['2026-11-20', 'futuro']]);
+    assert.equal(cinta.hasta - cinta.desde, 1);
+    assert.deepEqual([cinta.desde, cinta.hasta, cinta.meses], [2025, 2026, true]);
+    // La banda celeste llega a hoy y la clara, de hoy al último hito previsto
+    assert.equal(cinta.banda.x2, cinta.hoyX);
+    assert.equal(cinta.banda.x3, cinta.eventos.at(-1).x);
+    // Un hito de hoy ya se cumplió
+    assert.equal(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, HOY)] }), HOY).eventos[0].tipo, 'hecho');
+    // Con 3 años todavía van los meses; con 4, no
+    assert.equal(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2024-05-01')] }), HOY).meses, true);
+    assert.equal(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2023-05-01')] }), HOY).meses, false);
+  });
+
+  it('ninguna etiqueta con fila se pisa con otra de su fila ni se sale del dibujo, en todos los proyectos de la maqueta', () => {
+    for (const { id } of PROYECTOS) {
+      const cinta = ctx.cintaDelProyecto(detalleDe(id), HOY);
+      if (cinta) sinPisarse(plano(cinta), String(id));
+    }
+    // El Índice: la elevación y el primer hito, el mismo día, en dos filas
+    const indice = plano(ctx.cintaDelProyecto(detalleDe(INDICE), HOY));
+    assert.ok(indice.eventos.every((e) => e.fila !== null));
+    assert.notEqual(indice.eventos[0].fila, indice.eventos[1].fila);
+  });
+
+  it('con muchos hitos juntos, las etiquetas que no entran en 3 filas no van (fila null), y el resto no se pisa', () => {
+    const hitos = Array.from({ length: 12 }, (_, i) => hito(i + 1, 900, `2025-06-${String(i + 1).padStart(2, '0')}`, `[TEST] Hito número ${i + 1} con un título largo`));
+    const cinta = plano(ctx.cintaDelProyecto(proyecto({ hitos }), HOY));
+    assert.equal(cinta.eventos.length, 12);
+    assert.equal(cinta.eventos.filter((e) => e.fila !== null).length, 3);
+    sinPisarse(cinta, 'juntos');
+    // Al final del eje, la etiqueta va a la izquierda de su marca
+    const ultimo = plano(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2025-01-10'), hito(2, 900, '2026-12-28', '[TEST] Un hito del final del año')] }), HOY));
+    sinPisarse(ultimo, 'final');
+    assert.ok(ultimo.eventos[1].xTexto < ultimo.eventos[1].x);
+  });
+
+  it('la etiqueta se corta a 34 caracteres con «…» (contados con Array.from)', () => {
+    const largo = '[TEST] ' + 'Ñandú '.repeat(10);
+    const justo = 'x'.repeat(34);
+    const emojis = '🎉'.repeat(40);
+    const cinta = plano(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2024-01-10', largo), hito(2, 900, '2025-01-10', justo), hito(3, 900, '2026-01-10', emojis)] }), HOY));
+    const [a, b, c] = cinta.eventos;
+    assert.equal(a.etiqueta, `${Array.from(largo).slice(0, 33).join('')}…`);
+    assert.equal(Array.from(a.etiqueta).length, 34);
+    assert.equal(a.texto, largo);
+    assert.equal(b.etiqueta, justo);
+    assert.equal(Array.from(c.etiqueta).length, 34);
+    assert.ok(c.etiqueta.endsWith('🎉…'));
+  });
+
+  it('sin hitos ni fecha de elevación da null (también con fechas que no sirven)', () => {
+    assert.equal(ctx.cintaDelProyecto(detalleDe(CHARLA), HOY), null);
+    assert.equal(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2026-02-30'), hito(2, 900, null)], fecha_inicio: 'abc' }), HOY), null);
+    assert.equal(ctx.cintaDelProyecto(null, HOY), null);
+    // Solo con la fecha de elevación, hay cinta
+    const solo = plano(ctx.cintaDelProyecto(proyecto({ fecha_inicio: '2025-04-30' }), HOY));
+    assert.deepEqual(solo.eventos.map((e) => e.tipo), ['elev']);
+  });
+
+  it('un proyecto que empieza después del año que viene: el eje empieza en su año (sin hoy) y toda x sigue entre 30 y 970', () => {
+    const cinta = plano(ctx.cintaDelProyecto(proyecto({ fecha_inicio: '2029-03-31', hitos: [hito(1, 900, '2030-06-01')] }), HOY));
+    assert.deepEqual([cinta.desde, cinta.hasta], [2029, 2030]);
+    assert.equal(cinta.hoyX, null);
+    assert.ok(todasLasX(cinta).every(dentro), JSON.stringify(todasLasX(cinta)));
+    assert.ok(cinta.banda.x2 >= cinta.banda.x1);
+  });
+});
+
+describe('proyectos.js: el SVG de la cinta (svgDeCinta, spec 3)', () => {
+  const svgDe = (id, titulo = PROYECTOS.find((p) => p.id === id).nombre) => ctx.svgDeCinta(ctx.cintaDelProyecto(detalleDe(id), HOY), titulo);
+
+  it('sin hitos ni fecha de elevación, el texto de la spec', () => {
+    assert.equal(ctx.svgDeCinta(null, 'x'), '<p class="pr-vacio">Sin hitos ni fecha de elevación: la cinta se dibuja cuando haya alguno.</p>');
+  });
+
+  it('el SVG en su marco con desplazamiento, con su rótulo, los rombos de los hitos, el círculo de la elevación y la línea de hoy', () => {
+    const html = svgDe(INDICE);
+    assert.match(html, /^<div class="pr-cinta-marco"><svg class="pr-cinta" viewBox="0 0 1000 186" role="img" aria-label="Recorrido de Índice de Datos Abiertos de Ciudades Argentinas \(Open Data Index\): 5 hitos">/);
+    assert.equal(cuantas(html, /<rect class="h-hecho" /g), 5);
+    assert.equal(cuantas(html, /<circle class="h-elev" /g), 1);
+    assert.ok(html.includes('<title>01/08/2021: Elevación</title>'));
+    assert.ok(html.includes('<title>14/08/2025: 3º Puesto en Índice de Datos Abiertos 2025</title>'));
+    assert.equal(cuantas(html, /<line class="l-hoy" /g), 1);
+    assert.ok(html.includes('>Hoy</text>'));
+    assert.deepEqual([...html.matchAll(/<text class="anio" [^>]*>(\d{4})<\/text>/g)].map((m) => m[1]), ['2021', '2022', '2023', '2024', '2025', '2026']);
+    // Sin marcas de mes con 6 años
+    assert.equal(cuantas(html, /<line class="eje mes" /g), 0);
+  });
+
+  it('la leyenda: Hito cumplido, Hito previsto, Elevación y Hoy', () => {
+    const leyenda = svgDe(INDICE).match(/<div class="pr-leyenda" aria-hidden="true">[\s\S]*?<\/div>/)?.[0] ?? '';
+    assert.deepEqual([...leyenda.matchAll(/<span><i class="[^"]*"><\/i>([^<]+)<\/span>/g)].map((m) => m[1]), ['Hito cumplido', 'Hito previsto', 'Elevación', 'Hoy']);
+  });
+
+  it('un proyecto de 2 años lleva las marcas de los meses y el hito previsto, hueco; la banda clara llega al previsto', () => {
+    const html = svgDe(DATATHON);
+    assert.equal(cuantas(html, /<line class="eje mes" /g), 22);
+    assert.equal(cuantas(html, /<rect class="h-futuro" /g), 1);
+    assert.equal(cuantas(html, /<rect class="porvenir" /g), 1);
+    assert.equal(cuantas(svgDe(INDICE), /<rect class="porvenir" /g), 0);
+    assert.equal(cuantas(html, /<rect class="vida" /g), 1);
+  });
+
+  it('cada etiqueta que entra va con su fecha y su guía; la que no entra no va, pero su marca sigue con su title', () => {
+    const hitos = Array.from({ length: 12 }, (_, i) => hito(i + 1, 900, `2025-06-${String(i + 1).padStart(2, '0')}`, `[TEST] Hito ${i + 1}`));
+    const html = ctx.svgDeCinta(ctx.cintaDelProyecto(proyecto({ hitos }), HOY), '[TEST] Proyecto');
+    assert.equal(cuantas(html, /<title>/g), 12);
+    assert.equal(cuantas(html, /<text class="etq" /g), 3);
+    assert.equal(cuantas(html, /<text class="etq-f" /g), 3);
+    assert.equal(cuantas(html, /<line class="guia" /g), 3);
+    assert.ok(html.includes('>01/06/2025</text>'));
+  });
+
+  it('un título o un nombre con HTML salen escapados en la etiqueta, en el title y en el aria-label', () => {
+    const x = '<script>alert(1)</script>';
+    const html = ctx.svgDeCinta(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2025-05-01', x)] }), HOY), `"${x}`);
+    assert.ok(!html.includes('<script'));
+    assert.ok(html.includes('<title>01/05/2025: &lt;script&gt;alert(1)&lt;/script&gt;</title>'));
+    assert.ok(html.includes('>&lt;script&gt;alert(1)&lt;/script&gt;</text>'));
+    assert.ok(html.includes('aria-label="Recorrido de &quot;&lt;script&gt;alert(1)&lt;/script&gt;: 1 hito"'));
+  });
+
+  it('las guías van antes que las etiquetas (con su halo blanco) y la elevación, encima de los rombos: el mismo día que un hito se ve', () => {
+    const html = svgDe(INDICE);
+    const ultimaGuia = html.lastIndexOf('<line class="guia" ');
+    assert.ok(ultimaGuia !== -1 && ultimaGuia < html.indexOf('<text class="etq" '));
+    assert.ok(html.indexOf('<circle class="h-elev" ') > html.lastIndexOf('<rect class="h-hecho" '));
+    const estilo = leer('proyectos.html').match(/<style>[\s\S]*?<\/style>/)[0];
+    assert.match(estilo, /\.pr-cinta \.etq, \.pr-cinta \.etq-f \{[^}]*paint-order: stroke; stroke: #fff;/);
+  });
+
+  it('con muchos años, una marca por año y el número solo cada tantos: los años no se pisan', () => {
+    const html = ctx.svgDeCinta(ctx.cintaDelProyecto(proyecto({ hitos: [hito(1, 900, '2000-03-01')] }), HOY), '[TEST] Proyecto');
+    assert.equal(cuantas(html, /<line class="eje" /g), 27);
+    const anios = [...html.matchAll(/<text class="anio" x="([\d.]+)"[^>]*>(\d{4})<\/text>/g)].map((m) => [Number(m[1]), m[2]]);
+    assert.equal(anios[0][1], '2000');
+    assert.ok(anios.length < 27 && anios.length > 1, String(anios.length));
+    for (let i = 1; i < anios.length; i += 1) assert.ok(anios[i][0] - anios[i - 1][0] >= 36, `${anios[i - 1][1]} y ${anios[i][1]}`);
+    // Con pocos años, todos
+    assert.equal(cuantas(svgDe(INDICE), /<text class="anio" /g), 6);
+  });
+
+  it('toda coordenada del SVG queda dentro del dibujo', () => {
+    for (const { id } of PROYECTOS) {
+      const html = svgDe(id);
+      for (const [, valor] of html.matchAll(/\s(?:x|x1|x2|cx)="(-?[\d.]+)"/g)) assert.ok(Number(valor) >= 0 && Number(valor) <= 1000, `${id}: ${valor}`);
+    }
+  });
+});
+
+describe('proyectos.js: las filas de los hitos (htmlDeHito, spec 3, 4 y 5)', () => {
+  const del = (id) => HITOS.find((h) => h.id === id);
+  const enElDetalle = (h, opciones = {}) => ctx.htmlDeHito(h, { conProyecto: false, esAdmin: false, hoy: HOY, ...opciones });
+
+  it('la fila que se despliega: un botón con aria-expanded y aria-controls, y el cuerpo oculto con ese id', () => {
+    const html = enElDetalle(del(10));
+    assert.match(html, /^<li class="pr-mov"><button type="button" class="pr-fila" aria-expanded="false" aria-controls="hito-d-10">/);
+    assert.ok(html.includes('<div class="pr-cuerpo" id="hito-d-10" hidden>'));
+    assert.match(html, /<svg aria-hidden="true" focusable="false" class="abrir"/);
+    // En la línea de tiempo y en los logros, otro id (las dos pestañas están en la misma página)
+    assert.ok(ctx.htmlDeHito(del(10), { conProyecto: true, esAdmin: false, hoy: HOY }).includes('aria-controls="hito-l-10"'));
+    assert.ok(enElDetalle(del(902), { prefijo: 'g' }).includes('aria-controls="hito-g-902"'));
+  });
+
+  it('la fecha, la marca, el título y la primera línea de la descripción; «Previsto» con la fecha futura', () => {
+    const pasado = enElDetalle({ ...del(10), descripcion: 'Primera línea\nSegunda línea' });
+    assert.ok(pasado.includes('<span class="f">10/04/2026</span><i class="pr-mk-hito marca" aria-hidden="true"></i>'));
+    assert.ok(pasado.includes('<span class="q">Borrador de proyecto de ordenanza sobre blockchain</span><span class="d">Primera línea</span>'));
+    assert.ok(pasado.includes('<p class="desc">Primera línea\nSegunda línea</p>'));
+    assert.ok(!pasado.includes('Previsto'));
+    const futuro = enElDetalle(del(901));
+    assert.ok(futuro.includes('<i class="pr-mk-hito marca futuro" aria-hidden="true"></i>'));
+    assert.ok(futuro.includes('<span class="q">Realización del Datathon 2026</span><span class="pr-futuro-etq">Previsto</span>'));
+    // Hoy ya no es previsto
+    assert.ok(!enElDetalle(hito(1, 900, HOY)).includes('Previsto'));
+  });
+
+  it('«Ver la evidencia» solo con un enlace http o https, con su dominio; un javascript: no se dibuja', () => {
+    const conEnlace = enElDetalle(del(13));
+    assert.ok(conEnlace.includes('<p><a class="sg-link" href="https://github.com/gobiernoabiertomcr/rpad/releases/tag/v1.5.0" target="_blank" rel="noopener">Ver la evidencia</a> <small class="pr-host">(github.com)</small></p>'));
+    for (const url of ['javascript:alert(1)', 'data:text/html,<b>x</b>', 'ftp://ejemplo.gob.ar']) {
+      const html = enElDetalle({ ...hito(1, 900, '2025-01-01'), evidencia_tipo: 'url', evidencia_url: url });
+      assert.ok(!html.includes('Ver la evidencia') && !html.includes(url) && !html.includes('Enlace'), url);
+    }
+    assert.ok(enElDetalle({ ...hito(1, 900, '2025-01-01'), evidencia_url: 'https://usuario@ejemplo.gob.ar:8080/x' }).includes('(ejemplo.gob.ar:8080)'));
+  });
+
+  it('a la derecha, «Enlace» o «N archivos»', () => {
+    const p = (h) => ctx.htmlDeHito(h, { conProyecto: true, esAdmin: false, hoy: HOY }).match(/<span class="p">([^<]*)<\/span>/)?.[1];
+    assert.equal(p(del(13)), 'Enlace');
+    assert.equal(p(del(1)), '1 archivo');
+    assert.equal(p(del(7)), '');
+    const archivo = { id: 1, nombre_archivo: 'a.pdf', tamano: 10, mime_type: 'application/pdf', subido_el: '2026-01-01' };
+    assert.equal(p({ ...del(13), archivos: [archivo, { ...archivo, id: 2 }] }), 'Enlace y 2 archivos');
+  });
+
+  it('en la línea de tiempo: el cuadradito del color del proyecto, su nombre y el link al proyecto; un logro, su marca y «Logro del área»', () => {
+    const delProyecto = ctx.htmlDeHito(del(13), { conProyecto: true, esAdmin: false, hoy: HOY });
+    assert.ok(delProyecto.includes('<span class="pr-tile chico marca" style="--c:#3b82f6" aria-hidden="true"></span>'));
+    assert.ok(delProyecto.includes('<span class="d">Registro Permanente de Actualización de Datasets (RPAD)</span>'));
+    assert.ok(delProyecto.includes('<p><a class="sg-link" href="?id=6">Registro Permanente de Actualización de Datasets (RPAD)</a></p>'));
+    const logro = ctx.htmlDeHito(del(902), { conProyecto: true, esAdmin: false, hoy: HOY });
+    assert.ok(logro.includes('<span class="pr-tile chico logro marca" aria-hidden="true"></span>'));
+    assert.ok(logro.includes('<span class="d">Logro del área</span>'));
+    assert.doesNotMatch(logro, /href="\?id=/);
+    // El link conserva los filtros de la lista
+    assert.ok(ctx.htmlDeHito(del(13), { conProyecto: true, esAdmin: false, hoy: HOY, estado: { ...DE_ENTRADA, estado: 'completado' } }).includes('href="?estado=completado&amp;id=6"'));
+  });
+
+  it('las acciones de administración: «Editar el hito», «Subir archivos» y «Eliminar» (en un logro, «Editar el logro»); el lector no las ve', () => {
+    const admin = enElDetalle(del(10), { esAdmin: true });
+    assert.ok(admin.includes('<button type="button" class="sg-link" data-editar-hito="10" aria-label="Editar el hito Borrador de proyecto de ordenanza sobre blockchain">Editar el hito</button>'));
+    assert.ok(admin.includes('<button type="button" class="sg-link" data-subir-archivos="10" aria-label="Subir archivos al hito Borrador de proyecto de ordenanza sobre blockchain">Subir archivos</button>'));
+    assert.ok(admin.includes('<button type="button" class="sg-link rojo" data-eliminar-hito="10" aria-label="Eliminar el hito Borrador de proyecto de ordenanza sobre blockchain">Eliminar</button>'));
+    const logro = enElDetalle(del(902), { esAdmin: true });
+    assert.ok(logro.includes('>Editar el logro</button>') && logro.includes('aria-label="Eliminar el logro Mención en el Encuentro Federal de Gobierno Abierto"'));
+    const lector = enElDetalle(del(10));
+    assert.doesNotMatch(lector, /Editar el|Subir archivos|Eliminar|data-editar|data-eliminar/);
+    assert.ok(lector.includes('Descargar'));
+    assert.doesNotMatch(enElDetalle(del(10), { esAdmin: 'true' }), /Editar el hito/);
+  });
+
+  it('un título o una descripción con HTML salen escapados en la fila y en los aria-label', () => {
+    const x = '<script>alert(1)</script>';
+    const html = enElDetalle({ ...hito(5, 900, '2025-01-01', x), descripcion: x }, { esAdmin: true });
+    assert.ok(!html.includes('<script'));
+    assert.ok(html.includes('<span class="q">&lt;script&gt;alert(1)&lt;/script&gt;</span>'));
+    assert.ok(html.includes('aria-label="Editar el hito &lt;script&gt;alert(1)&lt;/script&gt;"'));
+  });
+});
+
+describe('proyectos.js: los archivos (htmlDeArchivos, spec 3 y 6)', () => {
+  const ARCHIVOS = [
+    { id: 8, nombre_archivo: 'informe-bo-10-mar-25.pdf', tamano: 92102, mime_type: 'application/pdf', subido_el: '2026-03-18' },
+    { id: 9, nombre_archivo: 'sellado-bfa.jpg', tamano: 1486110, mime_type: 'image/jpeg', subido_el: '2026-02-06' },
+    { id: 10, nombre_archivo: 'proyecto-ord.docx', tamano: 300, mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', subido_el: '2026-04-10' }
+  ];
+  const BASE = '/gestion/hitos/10/archivos';
+
+  it('cada archivo: el recuadro con la extensión, el nombre, el tamaño y «Subido el dd/mm/aaaa»', () => {
+    const html = ctx.htmlDeArchivos(ARCHIVOS, { esAdmin: false, base: BASE });
+    assert.match(html, /^<ul class="pr-archivos">/);
+    assert.deepEqual([...html.matchAll(/<span class="pr-ext" aria-hidden="true">([^<]*)<\/span>/g)].map((m) => m[1]), ['PDF', 'JPG', 'DOCX']);
+    assert.deepEqual([...html.matchAll(/<small>([^<]*)<\/small>/g)].map((m) => m[1]), ['90 KB. Subido el 18/03/2026', '1,4 MB. Subido el 06/02/2026', '1 KB. Subido el 10/04/2026']);
+    assert.ok(html.includes('<span class="n">informe-bo-10-mar-25.pdf</span>'));
+  });
+
+  it('el lector ve «Descargar» y no «Eliminar»; «Ver» solo en el PDF y en las imágenes', () => {
+    const html = ctx.htmlDeArchivos(ARCHIVOS, { esAdmin: false, base: BASE });
+    assert.equal(cuantas(html, />Descargar<\/button>/g), 3);
+    assert.equal(cuantas(html, />Ver<\/button>/g), 2);
+    assert.ok(!html.includes('Eliminar'));
+    const docx = html.match(/<li class="pr-archivo">(?:(?!<\/li>)[\s\S])*proyecto-ord\.docx[\s\S]*?<\/li>/)[0];
+    assert.ok(!docx.includes('>Ver<'));
+  });
+
+  it('administración ve también «Eliminar»; los botones llevan lo que necesita la parte del DOM en data-*', () => {
+    const html = ctx.htmlDeArchivos(ARCHIVOS, { esAdmin: true, base: BASE });
+    assert.equal(cuantas(html, />Eliminar<\/button>/g), 3);
+    assert.ok(html.includes('<button type="button" class="sg-link" data-archivo="ver" data-base="/gestion/hitos/10/archivos" data-id="8" data-nombre="informe-bo-10-mar-25.pdf" data-mime="application/pdf" aria-label="Ver informe-bo-10-mar-25.pdf">Ver</button>'));
+    assert.ok(html.includes('<button type="button" class="sg-link" data-archivo="descargar" data-base="/gestion/hitos/10/archivos" data-id="9" data-nombre="sellado-bfa.jpg" data-mime="image/jpeg" aria-label="Descargar sellado-bfa.jpg">Descargar</button>'));
+    assert.ok(html.includes('<button type="button" class="sg-link rojo" data-archivo="eliminar" data-base="/gestion/hitos/10/archivos" data-id="10" data-nombre="proyecto-ord.docx" data-mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-label="Eliminar proyecto-ord.docx">Eliminar</button>'));
+  });
+
+  it('un nombre con tildes, espacios o HTML se ve como texto, también en los atributos', () => {
+    const html = ctx.htmlDeArchivos([{ id: 1, nombre_archivo: 'presentación final "<img src=x>".pdf', tamano: 2048, mime_type: 'application/pdf', subido_el: '2026-10-25' }], { esAdmin: true, base: BASE });
+    assert.ok(!html.includes('<img'));
+    assert.ok(html.includes('<span class="n">presentación final &quot;&lt;img src=x&gt;&quot;.pdf</span>'));
+    assert.ok(html.includes('data-nombre="presentación final &quot;&lt;img src=x&gt;&quot;.pdf"'));
+  });
+
+  it('sin archivos, nada; sin fecha o sin tamaño, lo que haya; sin un id que sirva, sin botones', () => {
+    assert.equal(ctx.htmlDeArchivos([], { esAdmin: true, base: BASE }), '');
+    assert.equal(ctx.htmlDeArchivos(undefined, { esAdmin: true, base: BASE }), '');
+    const html = ctx.htmlDeArchivos([{ id: 'x', nombre_archivo: 'sin-extension', tamano: null, mime_type: null, subido_el: null }], { esAdmin: true, base: BASE });
+    assert.ok(html.includes('<span class="pr-ext" aria-hidden="true"></span>'));
+    assert.doesNotMatch(html, /<small>|<button/);
+  });
+});
+
+describe('proyectos.js: los documentos (htmlDeDocumentos, spec 3)', () => {
+  it('el lector: «N documentos» y la lista, sin «Subir documentos» ni el límite', () => {
+    const html = ctx.htmlDeDocumentos(detalleDe(BOLETIN), { esAdmin: false });
+    assert.match(html, /^<div class="pr-tarjeta"><div class="pr-cabeza"><h3 class="pr-h">Documentos<\/h3><span>2 documentos<\/span><\/div>/);
+    assert.equal(cuantas(html, /<li class="pr-archivo">/g), 2);
+    assert.ok(html.includes('data-base="/gestion/proyectos/4/documentos"'));
+    assert.doesNotMatch(html, /Subir documentos|Hasta 10 documentos|Eliminar/);
+    assert.ok(ctx.htmlDeDocumentos(detalleDe(DATATHON), { esAdmin: false }).includes('<span>1 documento</span>'));
+  });
+
+  it('administración: «Subir documentos» y, debajo, el límite', () => {
+    const html = ctx.htmlDeDocumentos(detalleDe(BOLETIN), { esAdmin: true });
+    assert.match(html, /<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-subir-documentos="4"><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Subir documentos<\/button>/);
+    assert.ok(html.includes('<p class="pr-vacio pr-nota">Hasta 10 documentos de 10 MB cada uno.</p>'));
+    assert.equal(cuantas(html, />Eliminar<\/button>/g), 2);
+  });
+
+  it('sin documentos: «Este proyecto no tiene documentos.»', () => {
+    assert.ok(ctx.htmlDeDocumentos(detalleDe(INDICE), { esAdmin: false }).includes('<p class="pr-vacio">Este proyecto no tiene documentos.</p>'));
+    assert.ok(ctx.htmlDeDocumentos(detalleDe(INDICE), { esAdmin: true }).includes('<p class="pr-vacio">Este proyecto no tiene documentos.</p>'));
+  });
+});
+
+describe('proyectos.js: el detalle de un proyecto (htmlDeDetalle, spec 3)', () => {
+  it('el link de vuelta, la ficha, el Recorrido con la cantidad de hitos y la cinta, y las dos columnas', () => {
+    const html = ctx.htmlDeDetalle(detalleDe(INDICE), { esAdmin: false, hoy: HOY });
+    assert.ok(html.startsWith('<a class="pr-volver" href="proyectos.html">Ver todos los proyectos</a><div class="pr-tarjeta"><div class="pr-ficha">'));
+    assert.ok(html.includes('<div class="pr-tarjeta"><div class="pr-cabeza"><h3 class="pr-h">Recorrido</h3><span>5 hitos</span></div><div class="pr-cinta-marco">'));
+    assert.match(html, /<div class="pr-dos"><div class="pr-tarjeta"><div class="pr-cabeza"><h3 class="pr-h">Hitos<\/h3><span>5 hitos<\/span><\/div><ul class="pr-movs pr-compacta">/);
+    assert.ok(html.includes('<h3 class="pr-h">Documentos</h3>'));
+  });
+
+  it('«Ver todos los proyectos» vuelve a la lista con sus filtros', () => {
+    const html = ctx.htmlDeDetalle(detalleDe(INDICE), { esAdmin: false, hoy: HOY, estado: { ...DE_ENTRADA, estado: 'en_curso', anios: 2025 } });
+    assert.ok(html.startsWith('<a class="pr-volver" href="proyectos.html?estado=en_curso&amp;anios=2025">Ver todos los proyectos</a>'));
+  });
+
+  it('los hitos, del más nuevo al más viejo', () => {
+    const html = ctx.htmlDeDetalle({ ...detalleDe(INDICE), hitos: detalleDe(INDICE).hitos.slice().reverse() }, { esAdmin: false, hoy: HOY });
+    assert.deepEqual([...html.matchAll(/aria-controls="hito-d-(\d+)"/g)].map((m) => Number(m[1])), [18, 17, 16, 15, 14]);
+  });
+
+  it('administración: «Nuevo hito» en lugar de la cantidad', () => {
+    const html = ctx.htmlDeDetalle(detalleDe(INDICE), { esAdmin: true, hoy: HOY });
+    assert.match(html, /<h3 class="pr-h">Hitos<\/h3><button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-hito="7"><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Nuevo hito<\/button>/);
+  });
+
+  it('sin hitos: la explicación de la spec y, para administración, «Cargar el primer hito»; la cinta sin eventos, su texto', () => {
+    const texto = '<p>Este proyecto todavía no tiene hitos. Un hito es un paso cumplido o previsto: una elevación, un lanzamiento, una presentación.</p>';
+    const lector = ctx.htmlDeDetalle(detalleDe(CHARLA), { esAdmin: false, hoy: HOY });
+    assert.ok(lector.includes(`<div class="pr-vacio-caja">${texto}</div>`));
+    assert.ok(lector.includes('<span>0 hitos</span>'));
+    assert.ok(lector.includes('Sin hitos ni fecha de elevación: la cinta se dibuja cuando haya alguno.'));
+    const admin = ctx.htmlDeDetalle(detalleDe(CHARLA), { esAdmin: true, hoy: HOY });
+    assert.match(admin, new RegExp(`<div class="pr-vacio-caja">${texto.replace(/[.()]/g, '\\$&')}<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-nuevo-hito="5"><svg aria-hidden="true"[^>]*>[\\s\\S]*?</svg>Cargar el primer hito</button></div>`));
+  });
+
+  it('el lector no ve ningún botón que el servidor le niega', () => {
+    const html = ctx.htmlDeDetalle(detalleDe(BOLETIN), { esAdmin: false, hoy: HOY });
+    assert.doesNotMatch(html, /Eliminar|Editar|Subir|Nuevo hito|Cargar el primer|data-eliminar|data-editar|data-subir|data-nuevo/);
+    assert.ok(html.includes('>Descargar</button>'));
+  });
+
+  it('un nombre con HTML se ve como texto en la ficha y en el rótulo de la cinta', () => {
+    const x = '<img src=x onerror=alert(1)>';
+    const html = ctx.htmlDeDetalle(proyecto({ nombre: x, hitos: [hito(1, 900, '2025-01-01', x)], documentos: [] }), { esAdmin: true, hoy: HOY });
+    assert.ok(!html.includes('<img'));
+    assert.ok(html.includes('aria-label="Recorrido de &lt;img src=x onerror=alert(1)&gt;: 1 hito"'));
+  });
+});
+
+describe('proyectos.js: la línea de tiempo (htmlDeLinea, spec 4)', () => {
+  const anios = (html) => [...html.matchAll(/<div class="pr-anio"><h2 id="linea-(\d{4})">\1<\/h2><small>([^<]*)<\/small><\/div>/g)].map((m) => [m[1], m[2]]);
+  const chipsDe = (html) => [...html.matchAll(/<button type="button" class="sg-chip" data-grupo="linea" data-valor="(\w+)" aria-pressed="(true|false)">([^<]+) <b>(\d+)<\/b><\/button>/g)]
+    .map(([, valor, pulsado, texto, cantidad]) => [valor, pulsado, texto, cantidad]);
+
+  it('los filtros: Todos, De los proyectos y Logros del área, con su cantidad', () => {
+    const html = ctx.htmlDeLinea(HITOS, { filtro: 'todos', hoy: HOY, esAdmin: false });
+    assert.deepEqual(chipsDe(html), [['todos', 'true', 'Todos', '17'], ['proyectos', 'false', 'De los proyectos', '15'], ['logros', 'false', 'Logros del área', '2']]);
+    assert.match(html, /<div class="sg-chips" role="group" aria-label="Qué hitos">/);
+    // Un filtro que no sirve es Todos
+    assert.deepEqual(chipsDe(ctx.htmlDeLinea(HITOS, { filtro: 'x', hoy: HOY, esAdmin: false })).map((c) => c[1]), ['true', 'false', 'false']);
+  });
+
+  it('los hitos agrupados por año, del más nuevo al más viejo, con «N hitos, hasta hoy y lo previsto» en el año de hoy', () => {
+    const html = ctx.htmlDeLinea(HITOS, { filtro: 'todos', hoy: HOY, esAdmin: false });
+    assert.deepEqual(anios(html), [['2026', '6 hitos, hasta hoy y lo previsto'], ['2025', '7 hitos'], ['2024', '1 hito'], ['2023', '1 hito'], ['2022', '1 hito'], ['2021', '1 hito']]);
+    assert.ok(html.includes('<ul class="pr-movs" aria-labelledby="linea-2026">'));
+    // Dentro de cada año, del más nuevo al más viejo
+    const ids = [...html.matchAll(/aria-controls="hito-l-(\d+)"/g)].map((m) => Number(m[1]));
+    assert.deepEqual(ids, HITOS.map((h) => h.id));
+    assert.equal(cuantas(html, /<li class="pr-mov">/g), 17);
+  });
+
+  it('el filtro «Logros del área» deja solo los sin proyecto; «De los proyectos», el resto', () => {
+    const logros = ctx.htmlDeLinea(HITOS, { filtro: 'logros', hoy: HOY, esAdmin: false });
+    assert.deepEqual([...logros.matchAll(/aria-controls="hito-l-(\d+)"/g)].map((m) => Number(m[1])), [902, 903]);
+    assert.deepEqual(anios(logros), [['2026', '1 hito, hasta hoy y lo previsto'], ['2025', '1 hito']]);
+    assert.equal(cuantas(logros, /<span class="d">Logro del área<\/span>/g), 2);
+    assert.deepEqual(chipsDe(logros).map((c) => c[1]), ['false', 'false', 'true']);
+    const deProyectos = ctx.htmlDeLinea(HITOS, { filtro: 'proyectos', hoy: HOY, esAdmin: false });
+    assert.equal(cuantas(deProyectos, /<li class="pr-mov">/g), 15);
+    assert.doesNotMatch(deProyectos, /Logro del área<\/span>/);
+  });
+
+  it('sin hitos con el filtro: «No hay hitos con este filtro.»', () => {
+    const html = ctx.htmlDeLinea(HITOS.filter((h) => h.proyecto_id !== null), { filtro: 'logros', hoy: HOY, esAdmin: false });
+    assert.ok(html.includes('<p class="pr-vacio">No hay hitos con este filtro.</p>'));
+    assert.doesNotMatch(html, /pr-anio|pr-mov/);
+    assert.ok(ctx.htmlDeLinea([], { filtro: 'todos', hoy: HOY, esAdmin: false }).includes('No hay hitos con este filtro.'));
+  });
+
+  it('administración ve las acciones de cada hito; el lector, no', () => {
+    assert.ok(ctx.htmlDeLinea(HITOS, { filtro: 'todos', hoy: HOY, esAdmin: true }).includes('data-editar-hito="901"'));
+    assert.doesNotMatch(ctx.htmlDeLinea(HITOS, { filtro: 'todos', hoy: HOY, esAdmin: false }), /data-editar-hito|Eliminar/);
+  });
+});
+
+describe('proyectos.js: los logros del área (htmlDeLogros, spec 5)', () => {
+  const EXPLICACION = '<p class="pr-explica">Los logros que no son parte de un proyecto: un premio, una presentación, un convenio. Salen en el Informe anual, al final de los logros del año.</p>';
+
+  it('el título, la explicación y los logros del más nuevo al más viejo; el lector, sin «Registrar un logro»', () => {
+    const html = ctx.htmlDeLogros(HITOS, { esAdmin: false, hoy: HOY });
+    assert.ok(html.startsWith(`<div class="pr-tarjeta"><div class="pr-cabeza"><div><h2 class="pr-h">Logros del área</h2>${EXPLICACION}</div></div>`));
+    assert.deepEqual([...html.matchAll(/aria-controls="hito-g-(\d+)"/g)].map((m) => Number(m[1])), [902, 903]);
+    assert.ok(!html.includes('Registrar un logro'));
+    // Filas como las de los hitos: con la descripción y la evidencia
+    assert.ok(html.includes('<span class="p">Enlace</span>') && html.includes('<span class="p">1 archivo</span>'));
+  });
+
+  it('administración: «Registrar un logro»', () => {
+    const html = ctx.htmlDeLogros(HITOS, { esAdmin: true, hoy: HOY });
+    assert.match(html, /<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-nuevo-logro><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Registrar un logro<\/button><\/div>/);
+    assert.ok(html.includes('>Editar el logro</button>'));
+  });
+
+  it('sin logros: «Todavía no hay logros del área.»', () => {
+    const html = ctx.htmlDeLogros(HITOS.filter((h) => h.proyecto_id !== null), { esAdmin: false, hoy: HOY });
+    assert.ok(html.includes('<div class="pr-vacio-caja"><p>Todavía no hay logros del área.</p></div>'));
+    assert.doesNotMatch(html, /pr-mov/);
+  });
+});
+
 describe('proyectos.html: la página (spec 1)', () => {
   const html = leer('proyectos.html');
   const bloque = (patron) => html.match(patron)?.[0] ?? '';
@@ -665,6 +1251,25 @@ describe('proyectos.html: la página (spec 1)', () => {
     // Toda var(--sg-…) que usa está definida
     const definidas = new Set([...estilo.matchAll(/(--sg-[\w-]+):/g)].map((m) => m[1]));
     for (const [, usada] of estilo.matchAll(/var\((--sg-[\w-]+)\)/g)) assert.ok(definidas.has(usada), usada);
+  });
+
+  it('un logro previsto se ve hueco, como los otros hitos previstos, y la cantidad de un grupo de logros previstos se lee', () => {
+    const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+    const logro = estilo.indexOf('.pr-pista .punto.logro {');
+    const futuro = estilo.indexOf('.pr-pista .punto.logro.futuro {');
+    assert.ok(logro !== -1 && futuro > logro, 'la regla del logro previsto va después de la del logro');
+    assert.match(estilo, /\.pr-pista \.punto\.logro\.futuro \{[^}]*background: #fff;[^}]*border: 2\.5px solid var\(--sg-tinta\);[^}]*box-shadow: none;/);
+    const numero = estilo.indexOf('.pr-pista .punto.logro.futuro b {');
+    assert.ok(numero > estilo.indexOf('.pr-pista .punto.futuro b {'));
+    assert.match(estilo, /\.pr-pista \.punto\.logro\.futuro b \{[^}]*color: var\(--sg-tinta\);/);
+  });
+
+  it('el detalle: la descripción respeta sus renglones y los títulos de los años de la línea de tiempo son h2', () => {
+    const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+    assert.match(estilo, /\.pr-ficha \.desc \{[^}]*white-space: pre-line;/);
+    assert.match(estilo, /\.pr-cuerpo \.desc \{[^}]*white-space: pre-line;/);
+    assert.match(estilo, /\.pr-anio h2 \{[^}]*font-size: 1\.3rem;/);
+    for (const clase of ['.pr-explica', '.pr-nota', '.pr-host']) assert.ok(estilo.includes(`${clase} {`), clase);
   });
 
   it('ningún id se repite', () => {
