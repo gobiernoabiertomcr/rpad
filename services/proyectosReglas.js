@@ -4,7 +4,7 @@
  * texto. Ninguna función tira error: una entrada rara da los errores de sus campos, null, '' o 'ninguno'.
  *
  * La usan el controlador (`controllers/proyectosController.js`: las validaciones, `evidenciaTipo` e `idPositivo`), que
- * además chequea en la base que las áreas existan, y las subidas (`config/upload.js`: `nombreOriginal`). La página (`public/js/proyectos.js`)
+ * además chequea en la base que las áreas existan, y las subidas (`config/upload.js`: `nombreDeArchivo`). La página (`public/js/proyectos.js`)
  * tiene copias de los mensajes, los largos y las listas, atadas por tests de paridad: si cambia uno acá, cambia allá.
  */
 import { esFechaIso } from './notasDigitalesCalendario.js';
@@ -269,6 +269,25 @@ export const nombreOriginal = (nombre) => {
   if (/[^\u0000-\u00ff]/.test(nombre)) return nombre;
   const convertido = Buffer.from(nombre, 'latin1').toString('utf8');
   return convertido.includes('\uFFFD') ? nombre : convertido;
+};
+
+// El largo m\u00E1ximo del nombre de un archivo subido, en caracteres: la columna nombre_archivo es varchar(255)
+export const LARGO_NOMBRE_ARCHIVO = 255;
+
+/**
+ * El nombre con el que se guarda un archivo subido: el de `nombreOriginal` y, si pasa de LARGO_NOMBRE_ARCHIVO caracteres
+ * (contados con Array.from, como el varchar), cortado en ese largo conservando la extensi\u00F3n (Ruling R8: rechazar un archivo
+ * por su nombre ser\u00EDa hostil, y sin cortarlo la base lo truncar\u00EDa en silencio, extensi\u00F3n incluida). La extensi\u00F3n es desde el
+ * \u00FAltimo punto (no el primer car\u00E1cter); si no deja lugar para el nombre, solo se corta. Lo que no es un texto da ''.
+ */
+export const nombreDeArchivo = (nombre) => {
+  const completo = nombreOriginal(nombre);
+  const letras = Array.from(completo);
+  if (letras.length <= LARGO_NOMBRE_ARCHIVO) return completo;
+  const punto = completo.lastIndexOf('.');
+  const extension = punto > 0 ? Array.from(completo.slice(punto)) : [];
+  if (extension.length === 0 || extension.length >= LARGO_NOMBRE_ARCHIVO) return letras.slice(0, LARGO_NOMBRE_ARCHIVO).join('');
+  return [...letras.slice(0, LARGO_NOMBRE_ARCHIVO - extension.length), ...extension].join('');
 };
 
 // El primer error de una validación, como lo responde la API (`{ error, campo }`), o null si no hay ninguno

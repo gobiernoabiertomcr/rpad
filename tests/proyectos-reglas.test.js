@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   ESTADOS_PROYECTO, PRIORIDADES, CATEGORIAS, ICONOS_PROYECTO, LARGOS, FECHA_MINIMA, MENSAJES_PROYECTOS,
-  fechaMaxima, validarProyecto, validarHito, evidenciaTipo, nombreOriginal, idPositivo, primerError
+  fechaMaxima, validarProyecto, validarHito, evidenciaTipo, nombreOriginal, idPositivo, primerError,
+  LARGO_NOMBRE_ARCHIVO, nombreDeArchivo
 } from '../services/proyectosReglas.js';
 
 const HOY = '2026-10-25';
@@ -452,6 +453,54 @@ describe('nombreOriginal', () => {
 
   it('lo que no es un texto da vacío, sin tirar', () => {
     for (const nombre of [undefined, null, 42, {}, []]) assert.equal(nombreOriginal(nombre), '');
+  });
+});
+
+// Ruling R8: la columna nombre_archivo es varchar(255); un nombre más largo se corta conservando la extensión
+describe('nombreDeArchivo', () => {
+  const comoMulter = (nombre) => Buffer.from(nombre, 'utf8').toString('latin1');
+  const largo = (texto) => Array.from(texto).length;
+
+  it('el largo es 255', () => {
+    assert.equal(LARGO_NOMBRE_ARCHIVO, 255);
+  });
+
+  it('pasa el nombre de latin1 a UTF-8, como nombreOriginal', () => {
+    assert.equal(nombreDeArchivo(comoMulter('presentación final.pdf')), 'presentación final.pdf');
+    assert.equal(nombreDeArchivo('informe.pdf'), 'informe.pdf');
+  });
+
+  it('hasta 255 caracteres queda igual', () => {
+    const justo = `${'a'.repeat(251)}.pdf`;
+    assert.equal(nombreDeArchivo(justo), justo);
+  });
+
+  it('más de 255 se corta en 255 y conserva la extensión', () => {
+    const nombre = nombreDeArchivo(`${'a'.repeat(296)}.pdf`);
+    assert.equal(largo(nombre), 255);
+    assert.equal(nombre, `${'a'.repeat(251)}.pdf`);
+    assert.equal(nombreDeArchivo(`${'b'.repeat(300)}.docx`), `${'b'.repeat(250)}.docx`);
+  });
+
+  it('cuenta caracteres, no unidades de UTF-16, y no parte uno en dos', () => {
+    const nombre = nombreDeArchivo(comoMulter(`${'ñ😀'.repeat(150)}.pdf`));
+    assert.equal(largo(nombre), 255);
+    assert.ok(nombre.endsWith('.pdf'));
+    assert.ok(!nombre.includes('�'));
+    assert.equal(nombre, `${'ñ😀'.repeat(125)}ñ.pdf`);
+  });
+
+  it('sin extensión, o con un punto al principio, solo se corta', () => {
+    assert.equal(nombreDeArchivo('x'.repeat(300)), 'x'.repeat(255));
+    assert.equal(nombreDeArchivo(`.${'y'.repeat(300)}`), `.${'y'.repeat(254)}`);
+  });
+
+  it('una «extensión» que no deja lugar para el nombre no se conserva: solo se corta', () => {
+    assert.equal(nombreDeArchivo(`a.${'z'.repeat(300)}`), `a.${'z'.repeat(253)}`);
+  });
+
+  it('lo que no es un texto da vacío, sin tirar', () => {
+    for (const nombre of [undefined, null, 42, {}, []]) assert.equal(nombreDeArchivo(nombre), '');
   });
 });
 

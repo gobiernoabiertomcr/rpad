@@ -2,19 +2,25 @@
 // tiempo. Leen todos los roles con sesión (también el lector y el colaborador); escribe solo administración. Cada error de
 // validación es un 400 con su campo, las áreas que no existen no dejan nada a medias (transacción), las fechas van como texto
 // 'AAAA-MM-DD' y un proyecto dado de baja (o un hito suyo) da 404. Contra una base de prueba propia, con datos inventados.
+// Los archivos (subidas, descargas y borrados) van a una carpeta temporal (UPLOADS_DIR), nunca a uploads/.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
 import { MENSAJES_PROYECTOS, fechaMaxima } from '../services/proyectosReglas.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
-let base, servidor, api, usuarios, dbReal;
+let base, servidor, api, usuarios, dbReal, carpeta;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
   base = await crearBaseDePrueba('rpad_test_proyectos_api');
   process.env.DB_NAME = base.nombre;
-  servidor = await iniciarServidor({ env: { DB_NAME: base.nombre } });
+  carpeta = fs.mkdtempSync(path.join(os.tmpdir(), 'rpad-proyectos-'));
+  servidor = await iniciarServidor({ env: { DB_NAME: base.nombre, UPLOADS_DIR: carpeta } });
   api = crearCliente(servidor.url);
   usuarios = await crearUsuariosPrueba(api, { admin: 'admin', editor: 'editor', colab: 'colaborador', lector: 'lector' });
 });
@@ -26,6 +32,7 @@ after(async () => {
   if (dbReal === undefined) delete process.env.DB_NAME;
   else process.env.DB_NAME = dbReal;
   await base?.borrar();
+  if (carpeta) fs.rmSync(carpeta, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
@@ -564,5 +571,389 @@ describe('permisos', () => {
       assert.equal((await pedir(metodo, ruta, cuerpo, {})).status, 401, `${metodo} ${ruta}`);
     }
     await nadaCambio();
+  });
+});
+
+// Los archivos (spec 2026-10-25-proyectos, 6 a 9, arreglos 2 a 9 y 12): antes de que multer lea el pedido se valida el id, que el
+// proyecto (activo) o el hito existan y que queden lugares; multer recibe como límite los lugares que quedan y borra lo que escribió si
+// algo falla; los nombres con tildes se guardan bien; las descargas son para todos los roles con sesión; borrar un hito borra su carpeta
+describe('archivos', () => {
+  const MENSAJE_HITO_LLENO = 'Podés subir hasta 3 archivos por hito.';
+  const MENSAJE_PROYECTO_LLENO = 'Podés subir hasta 10 documentos por proyecto.';
+  const MENSAJE_FALTANTE = 'El archivo no está en el servidor.';
+  const ALMACENADO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
+
+  beforeEach(() => {
+    for (const sub of ['proyectos', 'hitos']) fs.rmSync(path.join(carpeta, sub), { recursive: true, force: true });
+  });
+
+  const contenidoDe = (nombre) => Buffer.from(`%PDF-1.4 [TEST] ${nombre}`);
+  const pdf = (nombre) => new File([contenidoDe(nombre)], nombre, { type: 'application/pdf' });
+
+  // Una subida como la manda el navegador: FormData con el campo «archivos» y el JWT, sin Content-Type a mano
+  const subir = async (ruta, archivos, clave = 'admin') => {
+    const formulario = new FormData();
+    for (const archivo of archivos) formulario.append('archivos', archivo);
+    const res = await fetch(`${servidor.url}/api${ruta}`, {
+      method: 'POST',
+      headers: clave ? { Authorization: `Bearer ${usuarios[clave].token}` } : {},
+      body: formulario
+    });
+    const tipo = res.headers.get('content-type') || '';
+    return { status: res.status, body: tipo.includes('application/json') ? await res.json() : await res.text() };
+  };
+  const subirDocumentos = (proyectoId, archivos, clave) => subir(`/gestion/proyectos/${proyectoId}/documentos`, archivos, clave);
+  const subirArchivos = (hitoId, archivos, clave) => subir(`/gestion/hitos/${hitoId}/archivos`, archivos, clave);
+
+  // Lo que hay en una carpeta de la temporal (ordenado), o null si la carpeta no existe
+  const enCarpeta = (...partes) => {
+    const dir = path.join(carpeta, ...partes);
+    return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : null;
+  };
+
+  const documentosDe = (proyectoId) => query(
+    'SELECT id, nombre_archivo, nombre_almacenado, ruta_archivo, tamano, mime_type FROM proyecto_documentos WHERE proyecto_id = ? ORDER BY id',
+    [proyectoId]
+  );
+  const archivosDe = (hitoId) => query(
+    'SELECT id, nombre_archivo, nombre_almacenado, tamano, mime_type FROM hito_archivos WHERE hito_id = ? ORDER BY id', [hitoId]
+  );
+  const evidenciaDe = async (hitoId) => (await query('SELECT evidencia_tipo FROM proyecto_hitos WHERE id = ?', [hitoId]))[0].evidencia_tipo;
+  // El filename* de un Content-Disposition, decodificado
+  const nombreDescargado = (disposicion) => decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(disposicion ?? '')?.[1] ?? '');
+
+  it('subir 2 PDF a un proyecto da 201 y dos filas, con ruta_archivo relativa y los archivos en <tmp>/proyectos/<id>/', async () => {
+    const id = await crearProyecto();
+    const res = await subirDocumentos(id, [pdf('uno.pdf'), pdf('dos.pdf')]);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.message, '2 documentos subidos');
+    assert.equal(res.body.data.length, 2);
+    for (const archivo of res.body.data) {
+      assert.deepEqual(claves(archivo), ordenadas(CLAVES_ARCHIVO));
+      assert.match(archivo.subido_el, FECHA);
+    }
+
+    const filas = await documentosDe(id);
+    assert.deepEqual(filas.map((f) => f.nombre_archivo), ['uno.pdf', 'dos.pdf']);
+    assert.deepEqual(res.body.data.map((a) => a.id), filas.map((f) => f.id));
+    for (const fila of filas) {
+      assert.match(fila.nombre_almacenado, ALMACENADO);
+      assert.equal(fila.ruta_archivo, `proyectos/${id}/${fila.nombre_almacenado}`);
+      assert.equal(fila.tamano, contenidoDe(fila.nombre_archivo).length);
+      assert.equal(fila.mime_type, 'application/pdf');
+      assert.deepEqual(fs.readFileSync(path.join(carpeta, 'proyectos', String(id), fila.nombre_almacenado)), contenidoDe(fila.nombre_archivo));
+    }
+    assert.deepEqual(enCarpeta('proyectos', String(id)), filas.map((f) => f.nombre_almacenado).sort());
+    assert.equal((await api.get(`/gestion/proyectos/${id}`, como('admin'))).body.data.cantidad_documentos, 2);
+
+    const uno = await subirDocumentos(id, [pdf('tres.pdf')]);
+    assert.equal(uno.status, 201, JSON.stringify(uno.body));
+    assert.equal(uno.body.message, '1 documento subido');
+  });
+
+  it('«presentación final.pdf» queda con ese nombre y se descarga con ese nombre (filename*), también en un hito', async () => {
+    const id = await crearProyecto();
+    const res = await subirDocumentos(id, [pdf('presentación final.pdf')]);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data[0].nombre_archivo, 'presentación final.pdf');
+    const [fila] = await documentosDe(id);
+    assert.equal(fila.nombre_archivo, 'presentación final.pdf');
+    assert.equal((await api.get(`/gestion/proyectos/${id}`, como('lector'))).body.data.documentos[0].nombre_archivo, 'presentación final.pdf');
+
+    const bajada = await api.get(`/gestion/proyectos/${id}/documentos/${fila.id}/descargar`, como('lector'));
+    assert.equal(bajada.status, 200);
+    const disposicion = bajada.headers.get('content-disposition');
+    assert.match(disposicion, /^attachment;/);
+    assert.ok(disposicion.includes("filename*=UTF-8''presentaci%C3%B3n%20final.pdf"), disposicion);
+    assert.equal(nombreDescargado(disposicion), 'presentación final.pdf');
+
+    const hito = await crearHito(id);
+    const subida = await subirArchivos(hito, [pdf('Señal año 2026.pdf')]);
+    assert.equal(subida.status, 201, JSON.stringify(subida.body));
+    const [archivo] = await archivosDe(hito);
+    assert.equal(archivo.nombre_archivo, 'Señal año 2026.pdf');
+    const otra = await api.get(`/gestion/hitos/${hito}/archivos/${archivo.id}/descargar`, como('lector'));
+    assert.equal(otra.status, 200);
+    assert.equal(nombreDescargado(otra.headers.get('content-disposition')), 'Señal año 2026.pdf');
+  });
+
+  it('un nombre de más de 255 caracteres se guarda cortado en 255, con su extensión', async () => {
+    const id = await crearProyecto();
+    const res = await subirDocumentos(id, [pdf(`${'n'.repeat(296)}.pdf`)]);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const [fila] = await documentosDe(id);
+    assert.equal(fila.nombre_archivo, `${'n'.repeat(251)}.pdf`);
+  });
+
+  it('el lector y el colaborador descargan un documento y un archivo de hito: 200 y los mismos bytes; sin sesión, 401', async () => {
+    const id = await crearProyecto();
+    const hito = await crearHito(id);
+    assert.equal((await subirDocumentos(id, [pdf('documento.pdf')])).status, 201);
+    assert.equal((await subirArchivos(hito, [pdf('evidencia.pdf')])).status, 201);
+    const [documento] = await documentosDe(id);
+    const [archivo] = await archivosDe(hito);
+    const rutas = [
+      [`/gestion/proyectos/${id}/documentos/${documento.id}/descargar`, contenidoDe('documento.pdf')],
+      [`/gestion/hitos/${hito}/archivos/${archivo.id}/descargar`, contenidoDe('evidencia.pdf')]
+    ];
+    for (const clave of ['lector', 'colab', 'admin']) {
+      for (const [ruta, bytes] of rutas) {
+        const res = await api.get(ruta, como(clave));
+        assert.equal(res.status, 200, `${clave} ${ruta}`);
+        assert.equal(res.headers.get('content-type'), 'application/pdf');
+        assert.deepEqual(Buffer.from(res.body), bytes, `${clave} ${ruta}`);
+      }
+    }
+    for (const [ruta] of rutas) assert.equal((await api.get(ruta)).status, 401, ruta);
+  });
+
+  it('el lector y el colaborador reciben 403 al subir y al borrar, sin escribir ni borrar nada', async () => {
+    const id = await crearProyecto();
+    const hito = await crearHito(id);
+    assert.equal((await subirDocumentos(id, [pdf('documento.pdf')])).status, 201);
+    assert.equal((await subirArchivos(hito, [pdf('evidencia.pdf')])).status, 201);
+    const [documento] = await documentosDe(id);
+    const [archivo] = await archivosDe(hito);
+    for (const clave of ['lector', 'colab']) {
+      assert.equal((await subirDocumentos(id, [pdf('intruso.pdf')], clave)).status, 403, clave);
+      assert.equal((await subirArchivos(hito, [pdf('intruso.pdf')], clave)).status, 403, clave);
+      assert.equal((await api.delete(`/gestion/proyectos/${id}/documentos/${documento.id}`, como(clave))).status, 403, clave);
+      assert.equal((await api.delete(`/gestion/hitos/${hito}/archivos/${archivo.id}`, como(clave))).status, 403, clave);
+    }
+    assert.deepEqual((await documentosDe(id)).map((f) => f.nombre_archivo), ['documento.pdf']);
+    assert.deepEqual((await archivosDe(hito)).map((f) => f.nombre_archivo), ['evidencia.pdf']);
+    assert.deepEqual(enCarpeta('proyectos', String(id)), [documento.nombre_almacenado]);
+    assert.deepEqual(enCarpeta('hitos', String(hito)), [archivo.nombre_almacenado]);
+    assert.equal((await subirDocumentos(id, [pdf('anonimo.pdf')], null)).status, 401);
+    assert.deepEqual(enCarpeta('proyectos', String(id)), [documento.nombre_almacenado]);
+  });
+
+  it('subir a un proyecto o a un hito que no existe, o a un proyecto dado de baja, da 404 sin crear su carpeta', async () => {
+    const res = await subirDocumentos(999999, [pdf('perdido.pdf')]);
+    assert.equal(res.status, 404, JSON.stringify(res.body));
+    assert.equal(res.body.error, 'Proyecto no encontrado');
+    assert.equal(enCarpeta('proyectos', '999999'), null);
+
+    const hito = await subirArchivos(999999, [pdf('perdido.pdf')]);
+    assert.equal(hito.status, 404, JSON.stringify(hito.body));
+    assert.equal(hito.body.error, 'Hito no encontrado');
+    assert.equal(enCarpeta('hitos', '999999'), null);
+
+    const id = await crearProyecto();
+    const hitoDeBaja = await crearHito(id);
+    assert.equal((await api.delete(`/gestion/proyectos/${id}`, como('admin'))).status, 200);
+    assert.equal((await subirDocumentos(id, [pdf('tarde.pdf')])).status, 404);
+    assert.equal((await subirArchivos(hitoDeBaja, [pdf('tarde.pdf')])).status, 404);
+    assert.equal(enCarpeta('proyectos', String(id)), null);
+    assert.equal(enCarpeta('hitos', String(hitoDeBaja)), null);
+    assert.equal(await cantidad('SELECT COUNT(*) AS n FROM proyecto_documentos'), 0);
+    assert.equal(await cantidad('SELECT COUNT(*) AS n FROM hito_archivos'), 0);
+  });
+
+  it('subir a /gestion/proyectos/..%2F..%2Fescape/documentos (o a un hito así) da 404, sin escribir nada fuera de <tmp>', async () => {
+    const escape = `rpad-escape-${crypto.randomBytes(4).toString('hex')}`;
+    const afuera = path.resolve(carpeta, 'proyectos', '..', '..', escape);
+    assert.equal(fs.existsSync(afuera), false);
+    for (const ruta of [`/gestion/proyectos/..%2F..%2F${escape}/documentos`, `/gestion/hitos/..%2F..%2F${escape}/archivos`]) {
+      const res = await subir(ruta, [pdf('escape.pdf')]);
+      assert.equal(res.status, 404, `${ruta} ${JSON.stringify(res.body)}`);
+      assert.equal(fs.existsSync(afuera), false, ruta);
+    }
+    assert.equal(enCarpeta('proyectos'), null);
+    assert.equal(enCarpeta('hitos'), null);
+    for (const id of ['abc', '0', '-3', '1.5']) {
+      assert.equal((await subirDocumentos(id, [pdf('raro.pdf')])).status, 404, id);
+      assert.equal((await subirArchivos(id, [pdf('raro.pdf')])).status, 404, id);
+    }
+    assert.equal(enCarpeta('proyectos'), null);
+    assert.equal(enCarpeta('hitos'), null);
+  });
+
+  it('un hito con 2 archivos que recibe 2 más da 400 con el mensaje, y su carpeta sigue con 2', async () => {
+    const hito = await crearHito(await crearProyecto());
+    assert.equal((await subirArchivos(hito, [pdf('a.pdf'), pdf('b.pdf')])).status, 201);
+    const antes = enCarpeta('hitos', String(hito));
+    assert.equal(antes.length, 2);
+    const res = await subirArchivos(hito, [pdf('c.pdf'), pdf('d.pdf')]);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.error, MENSAJE_HITO_LLENO);
+    assert.deepEqual(enCarpeta('hitos', String(hito)), antes);
+    assert.deepEqual((await archivosDe(hito)).map((f) => f.nombre_archivo), ['a.pdf', 'b.pdf']);
+  });
+
+  it('un hito lleno da 400 sin escribir, y 4 archivos de una vez a un hito vacío también', async () => {
+    const hito = await crearHito(await crearProyecto());
+    const lleno = await subirArchivos(hito, [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')]);
+    assert.equal(lleno.status, 201, JSON.stringify(lleno.body));
+    assert.equal(lleno.body.message, '3 archivos subidos');
+    const antes = enCarpeta('hitos', String(hito));
+    assert.equal(antes.length, 3);
+    const res = await subirArchivos(hito, [pdf('d.pdf')]);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.error, MENSAJE_HITO_LLENO);
+    assert.deepEqual(enCarpeta('hitos', String(hito)), antes);
+    assert.equal((await archivosDe(hito)).length, 3);
+
+    const vacio = await crearHito(await crearProyecto({ nombre: '[TEST] Otro' }));
+    const cuatro = await subirArchivos(vacio, [pdf('1.pdf'), pdf('2.pdf'), pdf('3.pdf'), pdf('4.pdf')]);
+    assert.equal(cuatro.status, 400, JSON.stringify(cuatro.body));
+    assert.equal(cuatro.body.error, MENSAJE_HITO_LLENO);
+    assert.deepEqual(enCarpeta('hitos', String(vacio)) ?? [], []);
+    assert.equal((await archivosDe(vacio)).length, 0);
+  });
+
+  it('un proyecto con 9 documentos que recibe 2 más da 400 con el mensaje, y uno con 10 no recibe ninguno', async () => {
+    const id = await crearProyecto();
+    const nueve = Array.from({ length: 9 }, (_, i) => pdf(`doc-${i + 1}.pdf`));
+    assert.equal((await subirDocumentos(id, nueve)).status, 201);
+    const antes = enCarpeta('proyectos', String(id));
+    assert.equal(antes.length, 9);
+    const res = await subirDocumentos(id, [pdf('doc-10.pdf'), pdf('doc-11.pdf')]);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.error, MENSAJE_PROYECTO_LLENO);
+    assert.deepEqual(enCarpeta('proyectos', String(id)), antes);
+    assert.equal((await subirDocumentos(id, [pdf('doc-10.pdf')])).status, 201);
+    const lleno = await subirDocumentos(id, [pdf('doc-11.pdf')]);
+    assert.equal(lleno.status, 400);
+    assert.equal(lleno.body.error, MENSAJE_PROYECTO_LLENO);
+    assert.equal((await documentosDe(id)).length, 10);
+    assert.equal(enCarpeta('proyectos', String(id)).length, 10);
+  });
+
+  it('un .exe da 400 «Tipo de archivo no permitido: .exe» y no deja nada, tampoco el PDF que venía antes', async () => {
+    const id = await crearProyecto();
+    const exe = new File([Buffer.from('MZ [TEST]')], 'programa.exe', { type: 'application/x-msdownload' });
+    const res = await subirDocumentos(id, [pdf('bueno.pdf'), exe]);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.error, 'Tipo de archivo no permitido: .exe');
+    assert.deepEqual(enCarpeta('proyectos', String(id)) ?? [], []);
+    assert.equal((await documentosDe(id)).length, 0);
+    const hito = await crearHito(id);
+    const solo = await subirArchivos(hito, [exe]);
+    assert.equal(solo.status, 400);
+    assert.equal(solo.body.error, 'Tipo de archivo no permitido: .exe');
+    assert.deepEqual(enCarpeta('hitos', String(hito)) ?? [], []);
+  });
+
+  it('un archivo de más de 10 MB da 400 con el mensaje y no queda en el disco', async () => {
+    const id = await crearProyecto();
+    const grande = new File([Buffer.alloc(10 * 1024 * 1024 + 1, 0x20)], 'grande.pdf', { type: 'application/pdf' });
+    const res = await subirDocumentos(id, [grande]);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.error, 'El archivo excede el tamaño máximo de 10 MB');
+    assert.deepEqual(enCarpeta('proyectos', String(id)) ?? [], []);
+    assert.equal((await documentosDe(id)).length, 0);
+  });
+
+  it('una subida sin archivos da 400', async () => {
+    const id = await crearProyecto();
+    const res = await subirDocumentos(id, []);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.error, 'No se enviaron archivos');
+  });
+
+  it('borrar un documento borra su fila y su archivo del disco', async () => {
+    const id = await crearProyecto();
+    assert.equal((await subirDocumentos(id, [pdf('uno.pdf'), pdf('dos.pdf')])).status, 201);
+    const [uno, dos] = await documentosDe(id);
+    const res = await api.delete(`/gestion/proyectos/${id}/documentos/${uno.id}`, como('admin'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.message, 'Documento eliminado');
+    assert.deepEqual((await documentosDe(id)).map((f) => f.id), [dos.id]);
+    assert.deepEqual(enCarpeta('proyectos', String(id)), [dos.nombre_almacenado]);
+    assert.equal((await api.delete(`/gestion/proyectos/${id}/documentos/${uno.id}`, como('admin'))).status, 404);
+  });
+
+  it('borrar el hito borra su carpeta de archivos (también un logro)', async () => {
+    const hito = await crearHito(await crearProyecto());
+    assert.equal((await subirArchivos(hito, [pdf('a.pdf'), pdf('b.pdf')])).status, 201);
+    assert.equal(enCarpeta('hitos', String(hito)).length, 2);
+    const res = await api.delete(`/gestion/hitos/${hito}`, como('admin'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.message, 'Hito eliminado');
+    assert.equal(enCarpeta('hitos', String(hito)), null);
+
+    const logro = (await api.post('/gestion/logros', { titulo: '[TEST] Logro', fecha: '2026-05-20' }, como('admin'))).body.data.id;
+    assert.equal((await subirArchivos(logro, [pdf('logro.pdf')])).status, 201);
+    assert.equal(enCarpeta('hitos', String(logro)).length, 1);
+    assert.equal((await api.delete(`/gestion/hitos/${logro}`, como('admin'))).status, 200);
+    assert.equal(enCarpeta('hitos', String(logro)), null);
+  });
+
+  it('borrar el archivo del disco a mano y descargarlo da 404 «El archivo no está en el servidor.»', async () => {
+    const id = await crearProyecto();
+    const hito = await crearHito(id);
+    assert.equal((await subirDocumentos(id, [pdf('documento.pdf')])).status, 201);
+    assert.equal((await subirArchivos(hito, [pdf('evidencia.pdf')])).status, 201);
+    const [documento] = await documentosDe(id);
+    const [archivo] = await archivosDe(hito);
+    fs.rmSync(path.join(carpeta, 'proyectos', String(id), documento.nombre_almacenado));
+    fs.rmSync(path.join(carpeta, 'hitos', String(hito), archivo.nombre_almacenado));
+    for (const ruta of [`/gestion/proyectos/${id}/documentos/${documento.id}/descargar`, `/gestion/hitos/${hito}/archivos/${archivo.id}/descargar`]) {
+      const res = await api.get(ruta, como('lector'));
+      assert.equal(res.status, 404, ruta);
+      assert.deepEqual(res.body, { success: false, error: MENSAJE_FALTANTE }, ruta);
+    }
+    // Borrar la fila de un archivo que ya no está en el disco anda igual
+    assert.equal((await api.delete(`/gestion/proyectos/${id}/documentos/${documento.id}`, como('admin'))).status, 200);
+    assert.equal((await api.delete(`/gestion/hitos/${hito}/archivos/${archivo.id}`, como('admin'))).status, 200);
+  });
+
+  it('la descarga y el borrado controlan que el documento o el archivo sean del proyecto o del hito de la dirección', async () => {
+    const id = await crearProyecto();
+    const otro = await crearProyecto({ nombre: '[TEST] Otro' });
+    const hito = await crearHito(id);
+    const otroHito = await crearHito(otro);
+    assert.equal((await subirDocumentos(id, [pdf('documento.pdf')])).status, 201);
+    assert.equal((await subirArchivos(hito, [pdf('evidencia.pdf')])).status, 201);
+    const [documento] = await documentosDe(id);
+    const [archivo] = await archivosDe(hito);
+    const ajeno = await api.get(`/gestion/proyectos/${otro}/documentos/${documento.id}/descargar`, como('lector'));
+    assert.equal(ajeno.status, 404);
+    assert.equal(ajeno.body.error, 'Documento no encontrado');
+    const ajenoHito = await api.get(`/gestion/hitos/${otroHito}/archivos/${archivo.id}/descargar`, como('lector'));
+    assert.equal(ajenoHito.status, 404);
+    assert.equal(ajenoHito.body.error, 'Archivo no encontrado');
+    for (const ruta of [`/gestion/proyectos/abc/documentos/${documento.id}/descargar`, `/gestion/proyectos/${id}/documentos/1.5/descargar`,
+      `/gestion/hitos/-1/archivos/${archivo.id}/descargar`, `/gestion/hitos/${hito}/archivos/0/descargar`]) {
+      assert.equal((await api.get(ruta, como('lector'))).status, 404, ruta);
+    }
+    assert.equal((await api.delete(`/gestion/proyectos/${otro}/documentos/${documento.id}`, como('admin'))).status, 404);
+    assert.equal((await api.delete(`/gestion/hitos/${otroHito}/archivos/${archivo.id}`, como('admin'))).status, 404);
+    assert.equal((await documentosDe(id)).length, 1);
+    assert.equal((await archivosDe(hito)).length, 1);
+
+    // Los de un proyecto dado de baja ya no se ven: 404
+    assert.equal((await api.delete(`/gestion/proyectos/${id}`, como('admin'))).status, 200);
+    assert.equal((await api.get(`/gestion/proyectos/${id}/documentos/${documento.id}/descargar`, como('lector'))).status, 404);
+    assert.equal((await api.get(`/gestion/hitos/${hito}/archivos/${archivo.id}/descargar`, como('lector'))).status, 404);
+  });
+
+  it('subir un archivo a un hito sin enlace lo deja en evidencia «archivo», y borrarlo lo vuelve a «ninguno»; con enlace, sigue «url»', async () => {
+    const id = await crearProyecto();
+    const hito = await crearHito(id);
+    assert.equal(await evidenciaDe(hito), 'ninguno');
+    const res = await subirArchivos(hito, [pdf('evidencia.pdf')]);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.message, '1 archivo subido');
+    assert.equal(await evidenciaDe(hito), 'archivo');
+    const detalle = (await api.get(`/gestion/proyectos/${id}`, como('lector'))).body.data.hitos[0];
+    assert.equal(detalle.evidencia_tipo, 'archivo');
+    assert.deepEqual(detalle.archivos.map((a) => a.nombre_archivo), ['evidencia.pdf']);
+    const [archivo] = await archivosDe(hito);
+    const borrar = await api.delete(`/gestion/hitos/${hito}/archivos/${archivo.id}`, como('admin'));
+    assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+    assert.equal(borrar.body.message, 'Archivo eliminado');
+    assert.equal(await evidenciaDe(hito), 'ninguno');
+    assert.deepEqual(enCarpeta('hitos', String(hito)), []);
+
+    const conEnlace = await crearHito(id, { titulo: '[TEST] Con enlace', evidencia_url: 'https://ejemplo.test/evidencia' });
+    assert.equal((await subirArchivos(conEnlace, [pdf('extra.pdf')])).status, 201);
+    assert.equal(await evidenciaDe(conEnlace), 'url');
+    const [extra] = await archivosDe(conEnlace);
+    assert.equal((await api.delete(`/gestion/hitos/${conEnlace}/archivos/${extra.id}`, como('admin'))).status, 200);
+    assert.equal(await evidenciaDe(conEnlace), 'url');
   });
 });

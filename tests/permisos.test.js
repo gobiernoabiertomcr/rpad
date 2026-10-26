@@ -86,7 +86,13 @@ const RUTAS_SOLO_ADMIN = [
   ['POST', '/gestion/logros'],
   ['POST', '/gestion/proyectos/1/hitos'],
   ['PUT', '/gestion/hitos/1'],
-  ['DELETE', '/gestion/hitos/1']
+  ['DELETE', '/gestion/hitos/1'],
+  // Subir y borrar documentos y archivos de hitos, también solo administración. Las descargas no van acá: son para todos los roles
+  // con sesión (lo prueba tests/proyectos-api.test.js)
+  ['POST', '/gestion/proyectos/1/documentos'],
+  ['DELETE', '/gestion/proyectos/1/documentos/1'],
+  ['POST', '/gestion/hitos/1/archivos'],
+  ['DELETE', '/gestion/hitos/1/archivos/1']
 ];
 
 const pedir = (metodo, ruta, token) => {

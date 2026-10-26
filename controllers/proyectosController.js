@@ -7,9 +7,16 @@
 // Las fechas salen como texto 'AAAA-MM-DD': las DATE con DATE_FORMAT y los TIMESTAMP de los archivos con UNIX_TIMESTAMP y
 // ahoraArgentina (el día en Argentina, sea cual sea la zona de la base). Sin consultas N+1: una consulta por tabla para todos
 // los proyectos o los hitos juntos.
-// Los archivos (subidas, descargas y borrados) todavía están en gestionController.js.
+// Los archivos (al final): las subidas validan antes de que multer lea el pedido (prepararSubida…) y no dejan archivos huérfanos; las
+// descargas son para todos los roles con sesión; borrar un hito borra su carpeta del disco, después del commit.
+import fs from 'fs/promises';
+import path from 'path';
 import pool from '../config/database.js';
+import {
+  rutaSegura, MAXIMO_POR_HITO, MAXIMO_POR_PROYECTO, MENSAJE_MAXIMO_POR_HITO, MENSAJE_MAXIMO_POR_PROYECTO, MENSAJE_ARCHIVO_FALTANTE
+} from '../config/upload.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
+import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import {
   validarProyecto, validarHito, evidenciaTipo, idPositivo, primerError, MENSAJES_PROYECTOS
 } from '../services/proyectosReglas.js';
@@ -35,17 +42,18 @@ const rechazoDeValidacion = (errores) => {
 const rechazoDeAreas = () => rechazoDeValidacion([{ campo: 'areas', mensaje: MENSAJES_PROYECTOS.areas }]);
 
 /**
- * Corre trabajo(conexion) en una transacción y devuelve su [status, cuerpo]: un 2xx la confirma; cualquier otro, o un error, la
- * deshace. La conexión vuelve al pool siempre.
+ * Corre trabajo(conexion) en una transacción y devuelve lo que devolvió, [status, cuerpo] (y, si hace falta, un tercer elemento con lo
+ * que hay que hacer después del commit: el archivo que se borra del disco): un 2xx la confirma; cualquier otro, o un error, la deshace.
+ * La conexión vuelve al pool siempre.
  */
 const enTransaccion = async (trabajo) => {
   const conexion = await pool.getConnection();
   try {
     await conexion.beginTransaction();
-    const [status, cuerpo] = await trabajo(conexion);
-    if (status < 300) await conexion.commit();
+    const resultado = await trabajo(conexion);
+    if (resultado[0] < 300) await conexion.commit();
     else await conexion.rollback();
-    return [status, cuerpo];
+    return resultado;
   } catch (error) {
     await conexion.rollback().catch(() => {});
     throw error;
@@ -284,13 +292,16 @@ const insertarHito = (db, proyectoId, datos) => db.query(
     evidenciaTipo({ evidencia_url: datos.evidencia_url, cantidadArchivos: 0 }), datos.evidencia_url]
 );
 
+// Un hito vigente: un logro (sin proyecto) o el hito de un proyecto activo. Va con `proyecto_hitos ph LEFT JOIN proyectos p`
+const HITO_VIGENTE = '(ph.proyecto_id IS NULL OR p.activo = TRUE)';
+
 // El hito, si existe y es un logro o es de un proyecto activo, bloqueado hasta el fin de la transacción. null si no
 const hitoVigente = async (conexion, id) => {
   const [[hito]] = await conexion.query(
     `SELECT ph.id, ph.evidencia_url
      FROM proyecto_hitos ph
      LEFT JOIN proyectos p ON p.id = ph.proyecto_id
-     WHERE ph.id = ? AND (ph.proyecto_id IS NULL OR p.activo = TRUE)
+     WHERE ph.id = ? AND ${HITO_VIGENTE}
      FOR UPDATE`,
     [id]
   );
@@ -341,15 +352,297 @@ export const updateHito = (req, res) => responder(res, 'Error al actualizar hito
   });
 });
 
-// DELETE /gestion/hitos/:id (también un logro): borra las filas del hito y de sus archivos, en una transacción. 404 si no existe
-// o es de un proyecto dado de baja. Todavía no borra los archivos del disco
+// DELETE /gestion/hitos/:id (también un logro): borra las filas del hito y de sus archivos, en una transacción, y después del commit
+// su carpeta del disco (un error del disco se registra y no cambia la respuesta). 404 si no existe o es de un proyecto dado de baja
 export const deleteHito = (req, res) => responder(res, 'Error al eliminar hito', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return rechazo(404, HITO_NO_ENCONTRADO);
-  return enTransaccion(async (conexion) => {
+  const [status, cuerpo] = await enTransaccion(async (conexion) => {
     if (!(await hitoVigente(conexion, id))) return rechazo(404, HITO_NO_ENCONTRADO);
     await conexion.query('DELETE FROM hito_archivos WHERE hito_id = ?', [id]);
     await conexion.query('DELETE FROM proyecto_hitos WHERE id = ?', [id]);
     return [200, { success: true, message: 'Hito eliminado' }];
   });
+  if (status < 300) await borrarDelDisco(rutaSegura(carpetaDelHito(id)), { carpeta: true });
+  return [status, cuerpo];
+});
+
+// =====================================================
+// Archivos: los documentos de un proyecto y los archivos de un hito o un logro
+// =====================================================
+// Las rutas de las carpetas se arman siempre con un id ya validado (idPositivo) y pasan por rutaSegura: nada se lee, se escribe ni se
+// borra fuera de la carpeta de las subidas. Lo del disco se hace después de la base: si el disco falla, se registra y la respuesta no
+// cambia (un archivo que quedó en el disco sin su fila no se ve en ningún lado).
+
+const DOCUMENTO_NO_ENCONTRADO = 'Documento no encontrado';
+const ARCHIVO_NO_ENCONTRADO = 'Archivo no encontrado';
+const SIN_ARCHIVOS = 'No se enviaron archivos';
+
+// Las carpetas de las subidas, con el id ya validado
+const carpetaDelProyecto = (id) => `proyectos/${id}`;
+const carpetaDelHito = (id) => `hitos/${id}`;
+
+/**
+ * La ruta absoluta de un archivo guardado en la carpeta de un proyecto o un hito, o null si su nombre en el disco no es un nombre suelto
+ * (vacío, «.», «..» o con carpetas) o si queda fuera de la carpeta de las subidas (rutaSegura).
+ */
+const rutaDeArchivo = (carpeta, nombreAlmacenado) => {
+  if (typeof nombreAlmacenado !== 'string' || ['', '.', '..'].includes(nombreAlmacenado)
+    || path.basename(nombreAlmacenado) !== nombreAlmacenado) return null;
+  return rutaSegura(`${carpeta}/${nombreAlmacenado}`);
+};
+
+// Borra del disco una ruta ya validada (un archivo o, con `carpeta`, una carpeta con lo que tenga). Si no está, no pasa nada; otro error
+// se registra y no se devuelve
+const borrarDelDisco = async (ruta, { carpeta = false } = {}) => {
+  if (ruta === null) return;
+  try {
+    await fs.rm(ruta, { recursive: carpeta, force: true });
+  } catch (error) {
+    console.error(`No se pudo borrar ${ruta} del disco:`, error);
+  }
+};
+
+// «1 documento subido», «3 archivos subidos»
+const textoDeSubida = (cantidad, cosa) => (cantidad === 1 ? `1 ${cosa} subido` : `${cantidad} ${cosa}s subidos`);
+
+/**
+ * Un middleware que va antes de multer: `preparar(req)` devuelve un [status, cuerpo] para responder sin leer el pedido (nada se
+ * escribe), o null para seguir (y deja req.subida). Un error inesperado es un 500 con `mensaje`.
+ */
+const antesDeMulter = (mensaje, preparar) => async (req, res, next) => {
+  let respuesta;
+  try {
+    respuesta = await preparar(req);
+  } catch (error) {
+    console.error(`${mensaje}:`, error);
+    return res.status(500).json({ success: false, error: mensaje });
+  }
+  if (respuesta) {
+    const [status, cuerpo] = respuesta;
+    return res.status(status).json(cuerpo);
+  }
+  next();
+};
+
+// Los lugares que le quedan a un proyecto o a un hito: 400 con el mensaje de la cantidad si no queda ninguno
+const conLugares = (req, id, carpeta, cantidad, maximo, mensaje) => {
+  const lugares = maximo - Number(cantidad);
+  if (lugares <= 0) return rechazo(400, mensaje);
+  req.subida = { id, carpeta, lugares };
+  return null;
+};
+
+// Antes de subir documentos a un proyecto: el id, que el proyecto exista y esté activo (404) y que le queden lugares (400)
+export const prepararSubidaProyecto = antesDeMulter('Error al subir documentos', async (req) => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return rechazo(404, PROYECTO_NO_ENCONTRADO);
+  const [[proyecto]] = await pool.query(
+    `SELECT p.id, (SELECT COUNT(*) FROM proyecto_documentos d WHERE d.proyecto_id = p.id) AS cantidad
+     FROM proyectos p WHERE p.id = ? AND p.activo = TRUE`,
+    [id]
+  );
+  if (!proyecto) return rechazo(404, PROYECTO_NO_ENCONTRADO);
+  return conLugares(req, id, carpetaDelProyecto(id), proyecto.cantidad, MAXIMO_POR_PROYECTO, MENSAJE_MAXIMO_POR_PROYECTO);
+});
+
+// Antes de subir archivos a un hito o un logro: el id, que exista y no sea de un proyecto dado de baja (404) y que le queden lugares
+export const prepararSubidaHito = antesDeMulter('Error al subir archivos', async (req) => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return rechazo(404, HITO_NO_ENCONTRADO);
+  const [[hito]] = await pool.query(
+    `SELECT ph.id, (SELECT COUNT(*) FROM hito_archivos ha WHERE ha.hito_id = ph.id) AS cantidad
+     FROM proyecto_hitos ph
+     LEFT JOIN proyectos p ON p.id = ph.proyecto_id
+     WHERE ph.id = ? AND ${HITO_VIGENTE}`,
+    [id]
+  );
+  if (!hito) return rechazo(404, HITO_NO_ENCONTRADO);
+  return conLugares(req, id, carpetaDelHito(id), hito.cantidad, MAXIMO_POR_HITO, MENSAJE_MAXIMO_POR_HITO);
+});
+
+/**
+ * Guarda lo que escribió multer: `guardar(conexion, req.subida, archivos)` corre en una transacción, vuelve a controlar que el proyecto
+ * o el hito sigan ahí (bloqueado) y que la cantidad no pase el máximo (otra subida pudo llegar mientras tanto), y hace los INSERT. Si no
+ * se guarda (un 4xx o un error), se borran del disco los archivos escritos en este pedido.
+ */
+const guardarSubida = (mensaje, guardar) => async (req, res) => {
+  const archivos = req.files ?? [];
+  const { carpeta } = req.subida;
+  const borrarEscritos = () => Promise.all(archivos.map((archivo) => borrarDelDisco(rutaDeArchivo(carpeta, archivo.filename))));
+  try {
+    if (archivos.length === 0) return res.status(400).json({ success: false, error: SIN_ARCHIVOS });
+    const [status, cuerpo] = await enTransaccion((conexion) => guardar(conexion, req.subida, archivos));
+    if (status >= 300) await borrarEscritos();
+    res.status(status).json(cuerpo);
+  } catch (error) {
+    console.error(`${mensaje}:`, error);
+    await borrarEscritos();
+    res.status(500).json({ success: false, error: mensaje });
+  }
+};
+
+// Los archivos recién guardados, como los lee la página (con «Subido el»)
+const leerSubidos = async (conexion, tabla, ids) => {
+  const [filas] = await conexion.query(`${SQL_ARCHIVOS} FROM ${tabla} WHERE id IN (?) ORDER BY id`, [ids]);
+  return filas.map(aArchivo);
+};
+
+// POST /gestion/proyectos/:id/documentos (después de prepararSubidaProyecto y subida('proyecto')): con ruta_archivo, la relativa
+export const uploadProyectoDocumentos = guardarSubida('Error al subir documentos', async (conexion, { id, carpeta }, archivos) => {
+  if (!(await proyectoActivo(conexion, id, 'editar'))) return rechazo(404, PROYECTO_NO_ENCONTRADO);
+  const [[{ cantidad }]] = await conexion.query('SELECT COUNT(*) AS cantidad FROM proyecto_documentos WHERE proyecto_id = ?', [id]);
+  if (Number(cantidad) + archivos.length > MAXIMO_POR_PROYECTO) return rechazo(400, MENSAJE_MAXIMO_POR_PROYECTO);
+  const ids = [];
+  for (const archivo of archivos) {
+    const [resultado] = await conexion.query(
+      `INSERT INTO proyecto_documentos (proyecto_id, nombre_archivo, nombre_almacenado, ruta_archivo, tamano, mime_type)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, archivo.originalname, archivo.filename, `${carpeta}/${archivo.filename}`, archivo.size, archivo.mimetype]
+    );
+    ids.push(resultado.insertId);
+  }
+  return [201, {
+    success: true, data: await leerSubidos(conexion, 'proyecto_documentos', ids), message: textoDeSubida(ids.length, 'documento')
+  }];
+});
+
+// POST /gestion/hitos/:id/archivos (después de prepararSubidaHito y subida('hito')): los INSERT y el evidencia_tipo del hito
+export const uploadHitoArchivos = guardarSubida('Error al subir archivos', async (conexion, { id }, archivos) => {
+  const hito = await hitoVigente(conexion, id);
+  if (!hito) return rechazo(404, HITO_NO_ENCONTRADO);
+  const [[{ cantidad }]] = await conexion.query('SELECT COUNT(*) AS cantidad FROM hito_archivos WHERE hito_id = ?', [id]);
+  const total = Number(cantidad) + archivos.length;
+  if (total > MAXIMO_POR_HITO) return rechazo(400, MENSAJE_MAXIMO_POR_HITO);
+  const ids = [];
+  for (const archivo of archivos) {
+    const [resultado] = await conexion.query(
+      'INSERT INTO hito_archivos (hito_id, nombre_archivo, nombre_almacenado, tamano, mime_type) VALUES (?, ?, ?, ?, ?)',
+      [id, archivo.originalname, archivo.filename, archivo.size, archivo.mimetype]
+    );
+    ids.push(resultado.insertId);
+  }
+  await conexion.query('UPDATE proyecto_hitos SET evidencia_tipo = ? WHERE id = ?',
+    [evidenciaTipo({ evidencia_url: hito.evidencia_url, cantidadArchivos: total }), id]);
+  return [201, { success: true, data: await leerSubidos(conexion, 'hito_archivos', ids), message: textoDeSubida(ids.length, 'archivo') }];
+});
+
+// Si la ruta es un archivo en el disco (un archivo que no está, o una carpeta, no)
+const estaEnElDisco = async (ruta) => {
+  try {
+    return (await fs.stat(ruta)).isFile();
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false;
+    throw error;
+  }
+};
+
+/**
+ * Manda un archivo con su nombre original. `buscar()` devuelve un [status, cuerpo] para responder (no existe, o no es del proyecto o
+ * del hito de la dirección), o `{ ruta, nombre }`: la de rutaDeArchivo (null si no es válida: 400) y el nombre original. Si el archivo
+ * no está en el disco, 404 con MENSAJE_ARCHIVO_FALTANTE.
+ */
+const descargar = async (res, mensaje, buscar) => {
+  const faltante = () => res.status(404).json({ success: false, error: MENSAJE_ARCHIVO_FALTANTE });
+  try {
+    const encontrado = await buscar();
+    if (Array.isArray(encontrado)) {
+      const [status, cuerpo] = encontrado;
+      return res.status(status).json(cuerpo);
+    }
+    const { ruta } = encontrado;
+    if (ruta === null) return res.status(400).json({ success: false, error: 'Ruta de archivo inválida' });
+    if (!(await estaEnElDisco(ruta))) return faltante();
+    // Como res.download, pero con el Content-Disposition del Seguimiento (filename en ASCII y filename* en UTF-8): res.download no
+    // escribe filename* para un nombre con letras de latin1 (ó, ñ) y no deja cambiar el encabezado
+    res.sendFile(ruta, { headers: { 'Content-Disposition': disposicionDeAdjunto(encontrado.nombre) } }, (error) => {
+      if (!error) return;
+      if (res.headersSent) {
+        // El que descargaba cortó la conexión: no es un error del servidor
+        if (error.code !== 'ECONNABORTED') console.error(`${mensaje}:`, error);
+        return;
+      }
+      if (error.code === 'ENOENT' || error.status === 404) return faltante();
+      console.error(`${mensaje}:`, error);
+      res.status(500).json({ success: false, error: mensaje });
+    });
+  } catch (error) {
+    console.error(`${mensaje}:`, error);
+    if (!res.headersSent) res.status(500).json({ success: false, error: mensaje });
+  }
+};
+
+// GET /gestion/proyectos/:id/documentos/:docId/descargar (todos los roles con sesión): solo un documento de ese proyecto, activo
+export const descargarProyectoDocumento = (req, res) => descargar(res, 'Error al descargar documento', async () => {
+  const id = idPositivo(req.params.id);
+  const docId = idPositivo(req.params.docId);
+  if (id === null || docId === null) return rechazo(404, DOCUMENTO_NO_ENCONTRADO);
+  const [[documento]] = await pool.query(
+    `SELECT d.nombre_archivo, d.nombre_almacenado
+     FROM proyecto_documentos d
+     JOIN proyectos p ON p.id = d.proyecto_id
+     WHERE d.id = ? AND d.proyecto_id = ? AND p.activo = TRUE`,
+    [docId, id]
+  );
+  if (!documento) return rechazo(404, DOCUMENTO_NO_ENCONTRADO);
+  return { ruta: rutaDeArchivo(carpetaDelProyecto(id), documento.nombre_almacenado), nombre: documento.nombre_archivo };
+});
+
+// GET /gestion/hitos/:id/archivos/:archivoId/descargar (todos los roles con sesión): solo un archivo de ese hito, si está vigente
+export const descargarHitoArchivo = (req, res) => descargar(res, 'Error al descargar archivo', async () => {
+  const id = idPositivo(req.params.id);
+  const archivoId = idPositivo(req.params.archivoId);
+  if (id === null || archivoId === null) return rechazo(404, ARCHIVO_NO_ENCONTRADO);
+  const [[archivo]] = await pool.query(
+    `SELECT ha.nombre_archivo, ha.nombre_almacenado
+     FROM hito_archivos ha
+     JOIN proyecto_hitos ph ON ph.id = ha.hito_id
+     LEFT JOIN proyectos p ON p.id = ph.proyecto_id
+     WHERE ha.id = ? AND ha.hito_id = ? AND ${HITO_VIGENTE}`,
+    [archivoId, id]
+  );
+  if (!archivo) return rechazo(404, ARCHIVO_NO_ENCONTRADO);
+  return { ruta: rutaDeArchivo(carpetaDelHito(id), archivo.nombre_almacenado), nombre: archivo.nombre_archivo };
+});
+
+// DELETE /gestion/proyectos/:id/documentos/:docId: la fila, en una transacción con el proyecto bloqueado; después, el archivo del disco
+export const deleteProyectoDocumento = (req, res) => responder(res, 'Error al eliminar documento', async () => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return rechazo(404, PROYECTO_NO_ENCONTRADO);
+  const docId = idPositivo(req.params.docId);
+  if (docId === null) return rechazo(404, DOCUMENTO_NO_ENCONTRADO);
+  const [status, cuerpo, almacenado] = await enTransaccion(async (conexion) => {
+    if (!(await proyectoActivo(conexion, id, 'editar'))) return rechazo(404, PROYECTO_NO_ENCONTRADO);
+    const [[documento]] = await conexion.query(
+      'SELECT nombre_almacenado FROM proyecto_documentos WHERE id = ? AND proyecto_id = ? FOR UPDATE', [docId, id]
+    );
+    if (!documento) return rechazo(404, DOCUMENTO_NO_ENCONTRADO);
+    await conexion.query('DELETE FROM proyecto_documentos WHERE id = ?', [docId]);
+    return [200, { success: true, message: 'Documento eliminado' }, documento.nombre_almacenado];
+  });
+  if (status < 300) await borrarDelDisco(rutaDeArchivo(carpetaDelProyecto(id), almacenado));
+  return [status, cuerpo];
+});
+
+// DELETE /gestion/hitos/:id/archivos/:archivoId: la fila y el evidencia_tipo del hito, en una transacción; después, el archivo del disco
+export const deleteHitoArchivo = (req, res) => responder(res, 'Error al eliminar archivo', async () => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return rechazo(404, HITO_NO_ENCONTRADO);
+  const archivoId = idPositivo(req.params.archivoId);
+  if (archivoId === null) return rechazo(404, ARCHIVO_NO_ENCONTRADO);
+  const [status, cuerpo, almacenado] = await enTransaccion(async (conexion) => {
+    const hito = await hitoVigente(conexion, id);
+    if (!hito) return rechazo(404, HITO_NO_ENCONTRADO);
+    const [[archivo]] = await conexion.query(
+      'SELECT nombre_almacenado FROM hito_archivos WHERE id = ? AND hito_id = ? FOR UPDATE', [archivoId, id]
+    );
+    if (!archivo) return rechazo(404, ARCHIVO_NO_ENCONTRADO);
+    await conexion.query('DELETE FROM hito_archivos WHERE id = ?', [archivoId]);
+    const [[{ cantidad }]] = await conexion.query('SELECT COUNT(*) AS cantidad FROM hito_archivos WHERE hito_id = ?', [id]);
+    await conexion.query('UPDATE proyecto_hitos SET evidencia_tipo = ? WHERE id = ?',
+      [evidenciaTipo({ evidencia_url: hito.evidencia_url, cantidadArchivos: Number(cantidad) }), id]);
+    return [200, { success: true, message: 'Archivo eliminado' }, archivo.nombre_almacenado];
+  });
+  if (status < 300) await borrarDelDisco(rutaDeArchivo(carpetaDelHito(id), almacenado));
+  return [status, cuerpo];
 });
