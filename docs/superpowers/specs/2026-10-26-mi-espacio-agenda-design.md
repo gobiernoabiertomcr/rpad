@@ -49,7 +49,9 @@ La Dirección coordina reuniones, entregas y capacitaciones por mensajes sueltos
 - **¿Quién lo ve?**: «Solo yo» o «Compartido».
   - **Si es compartido**, se eligen las personas: los usuarios activos o «Todos».
   - **«Todos»** es una marca, no una lista: un usuario creado después también lo ve. Les llegan la invitación, el cambio, la cancelación y el recordatorio, como en cualquier evento compartido.
-  - **Quiénes son «todos»: pregunta abierta al usuario,** la misma que la de «los compañeros» de la entrega 2. Puede incluir o no a los colaboradores (personal de la DGMIT) y a los lectores. La lista de personas para elegir sigue la misma regla.
+  - **«Todos» es administración:** superadmin, admin y editor (`esAdmin`; respuesta del usuario). Es la misma regla que la de «los compañeros» de la entrega 2.
+  - Solo administración comparte eventos, aparece en la lista de personas y ve los «para todos».
+  - El lector y el colaborador tienen solo eventos personales: el formulario no les ofrece «Compartido».
 - **Recordatorio por email**: sin aviso, 15 minutos, 1 hora, 2 horas (de entrada) o 1 día antes. El formulario dice a qué hora sale («2 horas antes (a las 08:00)»).
 
 **Fechas:** del 01/01/2025 a dos años después de hoy. Un evento puede caer cualquier día, también en un fin de semana o un feriado.
@@ -189,6 +191,7 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 - Sale un email cuando te suman a un evento.
 - En la agenda aparecen también las licencias propias, los feriados y quién no está.
 - Quedan afuera los eventos que se repiten, los de todo el día y la exportación.
+- «Todos» y las personas que se pueden invitar son administración: superadmin, admin y editor (respuesta a la revisión).
 
 **Mías (para revisar):**
 - Cada persona invitada puede apagar su propio recordatorio.

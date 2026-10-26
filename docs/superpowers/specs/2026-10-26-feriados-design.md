@@ -128,11 +128,12 @@ Va en `configuracion.html`, como cuarta pestaña (`#feriados`). Con la convenci�
 
 **Lo que no está decretado.** Si a la fecha de la entrega todavía no se publicaron los puentes de 2027, no se inventan: se cargan cuando salgan, desde la pestaña.
 
-**Lo que hay que confirmar** (pregunta abierta al usuario, ver el traspaso `2026-10-26-mi-espacio-pre-plan.md`):
-- qué feriados y asuetos de Chubut y de Comodoro rigen para el personal municipal, por ejemplo el aniversario de la ciudad, el Día del Petróleo o el Día del Empleado Municipal;
-- si el municipio adhiere a los días no laborables nacionales.
+**Lo que rige para el personal municipal** (respuesta del usuario, 26/10/2026):
+- **De Chubut, con «se repite»:** la gesta galesa, el 28/7.
+- **De Comodoro, con «se repite»:** el aniversario de la ciudad (23/2), el Día del Petróleo (13/12) y el Día del Empleado Municipal (8/11).
+- **Los días no laborables nacionales con fines turísticos:** el municipio adhiere siempre, así que se precargan todos los decretados (tipo «No laborable»).
 
-Sin esa respuesta no se escribe `migracion-feriados-datos.sql`. El resto de la entrega no depende de ella.
+Las fechas fijas se verifican igual en sus fuentes antes de escribir el SQL.
 
 ## 6. Qué pasa cuando cambia un feriado
 
@@ -185,6 +186,8 @@ Cada módulo, cuando toque, lleva su propia spec.
 - Los de fecha fija se marcan «se repite todos los años»; los móviles se cargan año por año.
 - Arranca con 2026 y 2027 precargados.
 - En esta etapa cuentan solo para Mi espacio; el resto del sistema sigue igual y se suma después, de a un módulo.
+- Rigen la gesta galesa (28/7), el aniversario de Comodoro (23/2), el Día del Petróleo (13/12) y el Día del Empleado Municipal (8/11).
+- El municipio adhiere siempre a los días no laborables nacionales.
 
 **Mías (para revisar):**
 - Tabla aparte, con baja lógica y sin índice único.

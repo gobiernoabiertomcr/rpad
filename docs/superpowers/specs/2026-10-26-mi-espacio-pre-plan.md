@@ -81,16 +81,18 @@ Está completo en la sección «Decisiones» de cada spec, separado en «Del usu
   - el recordatorio se elige por evento (de entrada, 2 horas antes) y les llega a todos;
   - las vistas son el mes y los próximos.
 
-## Preguntas abiertas para el usuario
+## Las preguntas de la revisión, ya contestadas
 
-Las encontró la revisión de un «constructor» (un agente que leyó las specs como si tuviera que construirlas) y solo las puede contestar el usuario:
+Las encontró la revisión de un «constructor» (un agente que leyó las specs como si tuviera que construirlas). El usuario las contestó el 26/10/2026, y las respuestas están en las specs:
 
-1. **¿Quiénes son «los compañeros» y «todos»?** Define quién ve las ausencias de «Hoy no están», a quién se puede invitar a un evento y quién ve un evento «para todos». El borrador dice «todos los usuarios activos», pero eso incluye a los colaboradores, que son personal de la DGMIT, de fuera de la Dirección, y a los lectores.
-2. **¿Una licencia médica durante las vacaciones las interrumpe y esos días vuelven al saldo?** Mientras no se conteste, dos licencias no comparten un día: para cortar unas vacaciones, se acortan y se carga la médica.
-3. **¿Qué feriados y asuetos de Chubut y de Comodoro rigen para el personal municipal?** Por ejemplo, el aniversario de la ciudad (23/2), el Día del Petróleo (13/12) o el Día del Empleado Municipal (8/11). Sin esto no se escribe la precarga.
-4. **¿El municipio adhiere a los días no laborables nacionales (los puentes)?**
+1. **«Los compañeros» y «todos» son administración:** superadmin, admin y editor.
+   - Solo ellos se ven las ausencias entre sí, comparten eventos y ven los «para todos».
+   - El lector y el colaborador usan Mi espacio solo para lo propio.
+2. **Una enfermedad durante las vacaciones no las corta.** Al volver se presenta la boleta médica, y la licencia médica corre desde la reincorporación. Por eso dos licencias nunca comparten un día.
+3. **Feriados locales que rigen, todos con «se repite»:** la gesta galesa (28/7, Chubut), el aniversario de Comodoro (23/2), el Día del Petróleo (13/12) y el Día del Empleado Municipal (8/11).
+4. **El municipio adhiere siempre a los días no laborables nacionales:** se precargan todos los decretados.
 
-Las respuestas que lleguen se anotan en las specs, en «Decisiones», y se saca la pregunta de la lista.
+No quedan preguntas abiertas. Lo que falta es leer las specs y aprobarlas.
 
 ## Lo que la revisión preguntó y se resolvió sin el usuario
 
@@ -126,9 +128,8 @@ Tres agentes recorrieron el código el 26/10/2026. Lo que importa para estas ent
 ## Cómo seguir
 
 1. **Bajar la rama** `docs/mi-espacio-pre-plan` y abrir las maquetas.
-2. **Contestar las cuatro preguntas abiertas** y anotarlas en las specs.
-3. **Leer y aprobar las tres specs,** revisando las decisiones «Mías». En cada una, cambiar «Estado: pre-plan» por «aprobado» con la fecha.
-4. **Planificar cada entrega,** en orden y una a la vez, con `superpowers:writing-plans`: feriados, después licencias y horas, después la agenda.
-5. **Implementar cada una** en su rama, con `npm test` completo antes y después (regla del proyecto; las de integración necesitan `docker compose up -d`).
+2. **Leer y aprobar las tres specs,** revisando las decisiones «Mías». En cada una, cambiar «Estado: pre-plan» por «aprobado» con la fecha.
+3. **Planificar cada entrega,** en orden y una a la vez, con `superpowers:writing-plans`: feriados, después licencias y horas, después la agenda.
+4. **Implementar cada una** en su rama, con `npm test` completo antes y después (regla del proyecto; las de integración necesitan `docker compose up -d`).
 
 **Para retomar con Claude**, alcanza con un mensaje como este: «Seguimos con el pre-plan de Mi espacio: leé `docs/superpowers/specs/2026-10-26-mi-espacio-pre-plan.md` y las tres specs que nombra.»

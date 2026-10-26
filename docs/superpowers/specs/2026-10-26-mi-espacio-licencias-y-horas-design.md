@@ -126,7 +126,7 @@ Todas en un archivo puro, `services/miEspacioReglas.js`: sin pool ni `Date` loca
 ### 3.8 Dos licencias el mismo día
 
 - **Dos licencias de Mi espacio no pueden compartir un día.** Para tomar más horas el mismo día, se corrige la que ya está.
-- **Pregunta abierta al usuario:** si una licencia médica durante las vacaciones las interrumpe y esos días vuelven al saldo. Ver el traspaso `2026-10-26-mi-espacio-pre-plan.md`. Mientras no conteste, la regla es la de arriba: para cortar unas vacaciones, se acortan y se carga la médica.
+- **Una enfermedad durante las vacaciones no las corta** (respuesta del usuario). Al volver, se presenta la boleta médica, y la licencia médica corre desde el día de la reincorporación. En el panel, las vacaciones quedan enteras y la médica se carga a partir de ese día. Por eso dos licencias nunca comparten un día.
 
 ### 3.9 Lo que vence pronto
 
@@ -249,7 +249,10 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 - **La casilla «Mostrar a mis compañeros que no estoy»,** marcada de entrada, hace que las ausencias de día completo se vean como «Laura Gómez no está», sin el tipo.
 - **Dónde aparecen:** en «Hoy y mañana» del Resumen y, desde la entrega 3, en la agenda de todos.
 - **No se muestran las franquicias ni las horas a favor de menos de 7 horas.**
-- **Quiénes las ven: pregunta abierta al usuario** (ver el traspaso). El borrador dice «todos los usuarios activos con sesión», pero eso incluye a los colaboradores, que son personal de la DGMIT, de fuera de la Dirección, y a cualquier lector. La respuesta define los filtros de `ausentes` y de la lista de personas de la agenda.
+- **«Los compañeros» son administración:** superadmin, admin y editor (`esAdmin`; respuesta del usuario).
+  - Solo ellos ven las ausencias de los demás, y solo se muestran las ausencias de ellos.
+  - El lector y el colaborador usan Mi espacio igual, pero sin la casilla «Mostrar a mis compañeros» y sin «No están».
+  - Es la misma regla que define a quién se invita en la agenda (entrega 3).
 - **La API (`GET /api/mi-espacio/ausentes?desde=&hasta=`)** devuelve solo el nombre, las fechas y la vuelta («Vuelve el lunes 02/11», el siguiente día hábil), nunca el tipo ni la nota.
 
 ## 8. Las pantallas
@@ -413,9 +416,9 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - Si Configuración la rechaza, se guarda igual en Mi espacio, con el motivo a la vista.
 - El paso a Configuración se decide con el rol del momento en que se guarda.
 
-**Preguntas abiertas al usuario** (en el traspaso `2026-10-26-mi-espacio-pre-plan.md`):
-- quiénes son «los compañeros» que ven las ausencias;
-- si una licencia médica interrumpe las vacaciones.
+**Respuestas del usuario a la revisión (26/10/2026):**
+- «Los compañeros» son administración: superadmin, admin y editor.
+- Una enfermedad durante las vacaciones no las corta: la médica corre desde la reincorporación.
 - Las tablas con prefijo `mi_espacio_`.
 
 ## Lo que queda para quien lo construye
