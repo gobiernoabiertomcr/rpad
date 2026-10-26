@@ -3,7 +3,8 @@
 // los resultados del año, la lista de casos y «Para completar» (vistaDe), y cuáles guarda la foto del 31/12 (casosQueTocanElAnio).
 // Además, el resto de la pestaña: el índice de actualización mes a mes (indiceMesAMes), los estados de un día (estadosAl), la
 // antigüedad de los vencidos (antiguedadDeVencidos), los tres juntos (contextoDelAnio), el trabajo del RPAD (trabajoDelAnio) y las
-// áreas y los temas (areasYTemas).
+// áreas y los temas (areasYTemas). Y las cifras de cada etapa del reporte «Ciclo de vida del dato» (etapasDe, con el año anterior:
+// conAnterior; spec 2026-10-25-ciclo-de-vida-del-dato), con las mismas reglas que el circuito de vistaDe.
 // Funciones puras, sin base de datos ni Date local: las fechas son strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora
 // argentina, como en services/seguimientoReglas.js. De ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso
 // (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
@@ -506,6 +507,16 @@ const textoYaVencidos = (n) => {
     : `${n} ciclos se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y ${resto}`;
 };
 
+// La misma aclaración en el bloque del aviso anticipado del Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 1.5): dice
+// «en esta etapa» y conserva la segunda parte, que explica desde dónde se miden el trámite y la producción. '' con 0
+const textoYaVencidosDeLaEtapa = (n) => {
+  if (n === 0) return '';
+  const resto = 'y sus etapas siguientes se cuentan desde ese primer aviso.';
+  return n === 1
+    ? `1 ciclo se avisó cuando ya estaba vencido: no cuenta en esta etapa, ${resto}`
+    : `${n} ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, ${resto}`;
+};
+
 // Los ciclos de los externos con «Requiere nota DGMIT: No» y sin nota DGMIT (spec, 1.3: la página lo aclara): cuentan solo en la
 // anticipación y en la carga
 const textoNoRequierenNota = (n) => {
@@ -520,6 +531,35 @@ const textoFuentePublica = (n) => {
   return n === 1
     ? '1 ciclo se resolvió con datos de una fuente pública: no cuenta en la respuesta del área.'
     : `${n} ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área.`;
+};
+
+// La misma, en el bloque de la respuesta del área del Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 1.5). '' con 0
+const textoFuentePublicaDeLaEtapa = (n) => {
+  if (n === 0) return '';
+  return n === 1
+    ? '1 ciclo se resolvió con datos de una fuente pública: no cuenta en esta etapa.'
+    : `${n} ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.`;
+};
+
+// Las aclaraciones del circuito (spec, 1.3): los avisados ya vencidos de cada gestión, los resueltos con una fuente pública y los de
+// los externos que no requieren nota DGMIT, entre los ciclos de la lista de casos. `cuentan`: las medidas que cuentan (sin los
+// destildados), con `enLista`. { externa: { ya_vencidos, fuente_publica, no_requieren_nota }, interna: { ya_vencidos } }, cada una
+// { n, texto } ('' con 0). Es circuito.aclaraciones de vistaDe, y etapasDe usa sus cuentas para las aclaraciones de cada etapa.
+const aclaracionesDe = (cuentan, ctx) => {
+  const deLaGestion = (gestion) => cuentan.filter((m) => m.h.gestion === gestion);
+  const yaVencidos = (gestion) => deLaGestion(gestion).filter((m) => m.enLista && m.h.heredado && m.h.inicioTramos !== null).length;
+  const fuentePublica = deLaGestion('externa')
+    .filter((m) => m.enLista && m.h.aplicaNota && m.h.origen === 'fuente_publica' && enElAnio(m.h.carga, ctx)).length;
+  // Sin los tramos de la DGMIT y del área: «Requiere nota» No y sin nota DGMIT (con una nota, le corresponden igual)
+  const noRequierenNota = deLaGestion('externa').filter((m) => m.enLista && !m.h.aplicaNota).length;
+  return {
+    externa: {
+      ya_vencidos: { n: yaVencidos('externa'), texto: textoYaVencidos(yaVencidos('externa')) },
+      fuente_publica: { n: fuentePublica, texto: textoFuentePublica(fuentePublica) },
+      no_requieren_nota: { n: noRequierenNota, texto: textoNoRequierenNota(noRequierenNota) }
+    },
+    interna: { ya_vencidos: { n: yaVencidos('interna'), texto: textoYaVencidos(yaVencidos('interna')) } }
+  };
 };
 
 // «Los otros 28 se cargaron una mediana de 61 días hábiles después.» (spec, 2.2), o «El otro se cargó …» si es uno; sin ninguno a
@@ -760,25 +800,10 @@ export const vistaDe = (casos, opciones) => {
   const cuentan = medidas.filter((m) => m.contar);
   const hayNotas = medidas.some((m) => m.h.nota !== null);
   const deLaGestion = (gestion) => cuentan.filter((m) => m.h.gestion === gestion);
-  const yaVencidos = (gestion) => deLaGestion(gestion).filter((m) => m.enLista && m.h.heredado && m.h.inicioTramos !== null).length;
-  const fuentePublica = deLaGestion('externa')
-    .filter((m) => m.enLista && m.h.aplicaNota && m.h.origen === 'fuente_publica' && enElAnio(m.h.carga, ctx)).length;
-  // Sin los tramos de la DGMIT y del área: «Requiere nota» No y sin nota DGMIT (con una nota, le corresponden igual)
-  const noRequierenNota = deLaGestion('externa').filter((m) => m.enLista && !m.h.aplicaNota).length;
   const circuito = Object.fromEntries(Object.entries(TRAMOS_DE_LA_GESTION).map(([gestion, claves]) =>
     [gestion, claves.map((clave) => tramoDelCircuito(clave, deLaGestion(gestion), ctx, hayNotas))]));
   return {
-    circuito: {
-      ...circuito,
-      aclaraciones: {
-        externa: {
-          ya_vencidos: { n: yaVencidos('externa'), texto: textoYaVencidos(yaVencidos('externa')) },
-          fuente_publica: { n: fuentePublica, texto: textoFuentePublica(fuentePublica) },
-          no_requieren_nota: { n: noRequierenNota, texto: textoNoRequierenNota(noRequierenNota) }
-        },
-        interna: { ya_vencidos: { n: yaVencidos('interna'), texto: textoYaVencidos(yaVencidos('interna')) } }
-      }
-    },
+    circuito: { ...circuito, aclaraciones: aclaracionesDe(cuentan, ctx) },
     resultados: resultadosDe(cuentan, ctx, hayNotas),
     casos: medidas.filter((m) => m.enLista).sort((a, b) => porVencimiento(a.h, b.h)).map((m) => filaDe(m, ctx)),
     para_completar: paraCompletarDe(medidas, ctx)
@@ -800,6 +825,176 @@ export const casosQueTocanElAnio = (casos, opciones) => {
     return (h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin) || h.abierto || enElAnio(h.cierre, ctx)
       || h.avisos.some((dia) => dia >= ctx.inicio) || enElAnio(h.recibido, ctx) || enElAnio(h.carga, ctx) || h.nota !== null;
   });
+};
+
+// ---------------------------------------------------------------------------------------------------------------------
+// El Ciclo de vida del dato: las cifras de cada etapa (spec 2026-10-25-ciclo-de-vida-del-dato, 1 y 3.1)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Los nodos del circuito de cada gestión, en orden (las siglas del reporte): la etapa k va del nodo k al k + 1
+const NODOS_DE_LA_GESTION = Object.freeze({
+  externa: Object.freeze(['rpad', 'da', 'area', 'ddpc', 'portal']),
+  interna: Object.freeze(['rpad', 'dit', 'ddpc', 'portal'])
+});
+
+// Los nombres de los extremos (spec, 1.3; decisión del usuario): en el aviso anticipado, más días es más anticipación
+const ROTULOS_DEL_AVISO = Object.freeze({ largo: 'Con más anticipación', corto: 'Con menos anticipación' });
+const ROTULOS_DE_LOS_EXTREMOS = Object.freeze({ largo: 'El caso más largo', corto: 'El caso más corto' });
+const EL_UNICO_CASO = 'El único caso';
+const TEXTO_ORIENTATIVO = 'Con tan pocos casos, es orientativo.';
+// El renglón que el trámite de la nota suma debajo de su vacío, sin notas DGMIT (spec, 1.4)
+const PIE_SIN_NOTAS_DGMIT = 'Se empieza a contar cuando se carguen en el Seguimiento.';
+// Un extremo de un caso sin título (no pasa con los datos reales: el texto nunca dice null)
+const SIN_TITULO = 'Sin título';
+const ANTERIOR_NO_HAY = 'Año anterior: no hay';
+
+// Unos días hábiles con su unidad y sus corridos, como los escribe el reporte (spec, 1.3): { numero: '27', unidad: 'días hábiles',
+// corridos: '40 días corridos' } ('1 día hábil', '1 día corrido'); un 0 es «En el día», sin unidad ni corridos, como en Métricas
+const diasEnPalabras = (habiles, corridos) => {
+  if (habiles === 0) return { numero: 'En el día', unidad: '', corridos: '' };
+  return {
+    numero: String(habiles), unidad: unidadDe(habiles, 'habiles'),
+    corridos: Number.isFinite(corridos) ? `${corridos} ${unidadDe(corridos, 'corridos')}` : ''
+  };
+};
+
+// Un extremo de una etapa (spec, 1.3): el ciclo con más días hábiles (`largo`) o con menos. Con un empate en días hábiles, el de más
+// corridos (o el de menos) y después el primero por título; `mas`, los otros ciclos empatados en días hábiles (el mismo dataset puede
+// estar en ciclos distintos). `valores`: [{ h, habiles, corridos }], uno por ciclo terminado de la etapa (no vacío). Los corridos que se
+// muestran son los del mismo ciclo. { rotulo, habiles, corridos, dataset_id, titulo, mas, numero, unidad, corridos_texto,
+// dataset_texto: 'Castraciones de Animales y 14 más' }
+const extremoDe = (valores, largo, rotulo) => {
+  const signo = largo ? -1 : 1;
+  const tituloDe = (v) => String(v.h.caso.titulo ?? '');
+  const [elegido] = [...valores].sort((a, b) => signo * (a.habiles - b.habiles) || signo * (a.corridos - b.corridos)
+    || tituloDe(a).localeCompare(tituloDe(b), 'es') || comparar(a.h.id, b.h.id));
+  const mas = valores.filter((v) => v.habiles === elegido.habiles).length - 1;
+  const { numero, unidad, corridos } = diasEnPalabras(elegido.habiles, elegido.corridos);
+  const titulo = typeof elegido.h.caso.titulo === 'string' ? elegido.h.caso.titulo : null;
+  const nombre = titulo || SIN_TITULO;
+  return {
+    rotulo, habiles: elegido.habiles, corridos: elegido.corridos, dataset_id: elegido.h.caso.dataset_id ?? null, titulo, mas,
+    numero, unidad, corridos_texto: corridos, dataset_texto: mas > 0 ? `${nombre} y ${mas} más` : nombre
+  };
+};
+
+// El vacío de una etapa sin ciclos terminados (spec, 1.4): el del tramo de Métricas (tramoDelCircuito) con los textos del reporte. Sin
+// notas DGMIT, el trámite de la nota suma un renglón debajo y la respuesta del área lleva punto final; si no, «Sin casos en 2026».
+// { titulo, texto, pie }
+const vacioDeLaEtapa = (vacio, ctx) => {
+  const { titulo, texto } = vacio ?? { titulo: `Sin casos en ${ctx.anio}`, texto: '' };
+  if (titulo === SIN_NOTAS_DGMIT) return { titulo, texto, pie: PIE_SIN_NOTAS_DGMIT };
+  if (titulo === SIN_DATOS_DEL_AREA.titulo) return { titulo, texto: `${texto}.`, pie: '' };
+  return { titulo, texto, pie: '' };
+};
+
+// La aclaración que va en el bloque al que afecta (spec, 1.5): los avisados ya vencidos de su gestión, en el aviso anticipado; los
+// resueltos con una fuente pública, en la respuesta del área. '' en las demás o sin ninguno. `aclaraciones`: las de aclaracionesDe
+const aclaracionDeLaEtapa = (gestion, clave, aclaraciones) => {
+  if (clave === 'aviso') return textoYaVencidosDeLaEtapa(aclaraciones[gestion].ya_vencidos.n);
+  if (clave === 'respuesta') return textoFuentePublicaDeLaEtapa(aclaraciones.externa.fuente_publica.n);
+  return '';
+};
+
+// Una etapa del reporte (ver etapasDe). `medidas`: las de su gestión, cada una con `terminados`, `enCurso` y `pendiente` en días hábiles
+// (medir) y `corridos` (los terminados de medir en días corridos); `ctx`: { habiles, corridos }, los dos contextos (mediana)
+const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclaraciones }) => {
+  const { nombre, desde_hasta: desdeHasta, responsable, dgmit } = TRAMOS[clave];
+  // El tramo de Métricas en días hábiles y con mediana: el vacío, el en curso, los pendientes y si es orientativo
+  const tramo = tramoDelCircuito(clave, medidas, ctx.habiles, hayNotas);
+  const habiles = cifraDe(medidas.map((m) => m.terminados[clave]).filter((valor) => valor !== undefined));
+  const corridos = cifraDe(medidas.map((m) => m.corridos[clave]).filter((valor) => valor !== undefined));
+  const { n } = habiles;
+  // Los extremos, con los dos días de cada ciclo
+  const ciclos = medidas.map((m) => ({ h: m.h, habiles: m.terminados[clave], corridos: m.corridos[clave] }))
+    .filter((v) => Number.isFinite(v.habiles) && Number.isFinite(v.corridos));
+  const rotulos = clave === 'aviso' ? ROTULOS_DEL_AVISO : ROTULOS_DE_LOS_EXTREMOS;
+  const largo = ciclos.length === 0 ? null : extremoDe(ciclos, true, ciclos.length === 1 ? EL_UNICO_CASO : rotulos.largo);
+  const corto = ciclos.length < 2 ? null : extremoDe(ciclos, false, rotulos.corto);
+  const vacio = n === 0 ? vacioDeLaEtapa(tramo.vacio, ctx.habiles) : null;
+  const notas = [
+    ...(tramo.cifra?.orientativo === true ? [TEXTO_ORIENTATIVO] : []),
+    ...(tramo.en_curso !== null ? [`En curso: ${tramo.en_curso.texto}`] : []),
+    // Ruling 1: si el vacío ya dice los pendientes («Todavía no hay notas DGMIT cargadas»), no se repiten
+    ...(tramo.pendientes_texto !== null && vacio?.titulo !== SIN_NOTAS_DGMIT ? [tramo.pendientes_texto] : []),
+    aclaracionDeLaEtapa(gestion, clave, aclaraciones)
+  ].filter((texto) => texto !== '');
+  const enPalabras = (estadistico) => (n === 0 ? { numero: '—', unidad: '', corridos: '' }
+    : diasEnPalabras(habiles[estadistico], corridos.n === 0 ? null : corridos[estadistico]));
+  const mediana = enPalabras('mediana');
+  const promedio = enPalabras('promedio');
+  return {
+    clave, numero: indice + 1, nombre, desde_hasta: desdeHasta, responsable, dgmit,
+    nodos: [NODOS_DE_LA_GESTION[gestion][indice], NODOS_DE_LA_GESTION[gestion][indice + 1]],
+    n,
+    habiles: n === 0 ? null : { mediana: habiles.mediana, promedio: habiles.promedio },
+    corridos: n === 0 || corridos.n === 0 ? null : { mediana: corridos.mediana, promedio: corridos.promedio },
+    largo, corto, vacio,
+    textos: {
+      indice: mediana.numero, mediana,
+      promedio: { ...promedio, corridos: promedio.corridos === '' ? '' : `(${promedio.corridos})` },
+      ciclos: n === 0 ? '' : `de ${cantidadDeCiclos(n)}`,
+      notas
+    }
+  };
+};
+
+// Las cifras de cada etapa del circuito, para el reporte «Ciclo de vida del dato» (spec 2026-10-25-ciclo-de-vida-del-dato, 1 y 3.1), a
+// partir de los casos de casosDe (o los de la foto del año). Las etapas son los tramos del circuito de vistaDe, en su orden, y cuentan
+// exactamente los ciclos de la cifra de cada tramo con todos los ciclos (sin destildados): las cifras salen de hechosDe, medir y cifraDe,
+// una pasada en días hábiles y otra en corridos (hechosDe no depende de los días), y el vacío, el en curso (en días hábiles, con
+// mediana), los pendientes y el orientativo, de tramoDelCircuito. `opciones`: { anio, al }, como en vistaDe (`al`: hoy en el año en
+// curso y el 31/12 en uno cerrado). Devuelve null si no hay año o si `al` es anterior a él. Nunca tira.
+// { anio, al, externa: Etapa[4] (aviso, tramite, respuesta, carga), interna: Etapa[3] (aviso, produccion, carga),
+//   aclaracion_de_la_hoja: { externa (la de los datasets que no requieren nota DGMIT, '' sin ninguno), interna: '' } }. Etapa:
+// - clave, nombre, desde_hasta, responsable y dgmit (los del tramo); numero: su lugar en la gestión, desde 1; nodos: [desde, hasta],
+//   las claves de los nodos del circuito ('rpad', 'da', 'dit', 'area', 'ddpc' o 'portal');
+// - n: los ciclos terminados en el año; habiles y corridos: { mediana, promedio } (los de cifraDe) o null sin ciclos;
+// - largo y corto: los extremos (extremoDe), null sin ciclos; con uno solo, `largo` es «El único caso» y `corto`, null;
+// - vacio: { titulo, texto, pie } solo sin ciclos (vacioDeLaEtapa);
+// - textos (Ruling 19: el PDF los imprime): indice (la mediana en días hábiles del circuito de arriba: '27', 'En el día' o '—'), mediana
+//   y promedio ({ numero, unidad, corridos }: '27', 'días hábiles', '40 días corridos'; el promedio, con los corridos entre
+//   paréntesis; un 0 es 'En el día', '', ''; sin ciclos, '—', '', ''), ciclos ('de 32 ciclos'; '' sin ciclos) y notas (los renglones
+//   chicos, en orden y solo los que haya: el orientativo, «En curso: …», los pendientes de carga —salvo que ya los diga el vacío,
+//   Ruling 1— y la aclaración de la etapa). «Año anterior: …» lo suma conAnterior.
+export const etapasDe = (casos, opciones) => {
+  const o = objeto(opciones);
+  const contexto = (dias) => contextoDe({ anio: o.anio, al: o.al, dias, estadistico: 'mediana', sin: [] });
+  const ctx = { habiles: contexto('habiles'), corridos: contexto('corridos') };
+  if (ctx.habiles === null || ctx.corridos === null) return null;
+  const medidas = lista(casos).filter((caso) => caso && typeof caso === 'object' && !Array.isArray(caso)).map((caso) => {
+    const h = hechosDe(caso, ctx.habiles);
+    const m = medir(h, ctx.habiles);
+    return { h, ...m, corridos: medir(h, ctx.corridos).terminados, enLista: entraEnLaLista(h, m, ctx.habiles) };
+  });
+  const extra = { hayNotas: medidas.some((m) => m.h.nota !== null), aclaraciones: aclaracionesDe(medidas, ctx.habiles) };
+  const deLaGestion = (gestion) => {
+    const suyas = medidas.filter((m) => m.h.gestion === gestion);
+    return TRAMOS_DE_LA_GESTION[gestion].map((clave, indice) => etapaDelReporte(gestion, clave, indice, suyas, ctx, extra));
+  };
+  return {
+    anio: ctx.habiles.anio, al: ctx.habiles.al, externa: deLaGestion('externa'), interna: deLaGestion('interna'),
+    aclaracion_de_la_hoja: { externa: extra.aclaraciones.externa.no_requieren_nota.texto, interna: '' }
+  };
+};
+
+// «Año anterior: …» de cada etapa (spec 2026-10-25-ciclo-de-vida-del-dato, 3.4): la mediana en días hábiles de la misma etapa (por
+// gestión y clave) en `anteriores`, otro resultado de etapasDe (o null): «Año anterior: mediana de 29 días hábiles», «Año anterior:
+// mediana en el día»; sin la etapa, o si no tuvo ciclos, «Año anterior: no hay». Es un dato: no dice si es mejor o peor. Devuelve una
+// copia de `etapas` con `textos.anterior` en cada etapa (no cambia lo que recibe); con algo que no son etapas, lo que recibió (null en
+// lugar de undefined). Nunca tira.
+export const conAnterior = (etapas, anteriores) => {
+  if (!etapas || typeof etapas !== 'object' || Array.isArray(etapas)) return etapas ?? null;
+  const previas = objeto(anteriores);
+  const textoDe = (gestion, clave) => {
+    const etapa = lista(previas[gestion]).find((e) => e && typeof e === 'object' && e.clave === clave);
+    const { mediana } = objeto(etapa?.habiles);
+    if (!Number.isFinite(mediana)) return ANTERIOR_NO_HAY;
+    return mediana === 0 ? 'Año anterior: mediana en el día' : `Año anterior: mediana de ${mediana} ${unidadDe(mediana, 'habiles')}`;
+  };
+  const conTexto = (gestion) => lista(etapas[gestion]).map((etapa) => (etapa && typeof etapa === 'object' && !Array.isArray(etapa)
+    ? { ...etapa, textos: { ...objeto(etapa.textos), anterior: textoDe(gestion, etapa.clave) } } : etapa));
+  return { ...etapas, externa: conTexto('externa'), interna: conTexto('interna') };
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
