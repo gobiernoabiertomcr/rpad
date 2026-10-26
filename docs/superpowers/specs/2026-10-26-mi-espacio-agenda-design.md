@@ -209,7 +209,7 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
   - la aclaración del nombre frente a la Agenda de pedidos.
 - **`README.md`:**
   - la migración;
-  - en «Configurar Cron Job», la tarea nueva, como las otras dos: Minuto `*/30`, Hora `*`, Día `*`, Mes `*`, Día semana `*` y el comando `curl -s "https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET" > /dev/null`, con la prueba manual de la URL antes.
+  - en «Configurar Cron Job», la tarea nueva, como las otras dos (el usuario las configura desde WHM o cPanel, en «Tareas Cron»): Minuto `*/30`, Hora `*`, Día `*`, Mes `*`, Día semana `*` y el comando `curl -s "https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET" > /dev/null`, con la prueba manual de la URL antes.
 - **Despliegue:**
   - después de la entrega 2;
   - se corre `migracion-mi-espacio-agenda.sql` antes de subir el código;
@@ -251,7 +251,7 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 - La invitación, el cambio y la cancelación también llegan aunque la persona esté de licencia, como el recordatorio, y salen en el momento en que alguien guarda el evento, aunque no sea un día hábil.
 - El índice único de los envíos vale solo para los recordatorios, y se reserva antes de mandar; un envío fallido se reintenta.
 
-**Mías, con el cron nuevo (para revisar):**
+**Mías, con el cron nuevo (aprobadas por el usuario el 26/10/2026):**
 - La corrida es cada media hora (`*/30`), no cada hora: con «1 hora antes», una corrida por hora podría avisar con muy poco margen.
 - Las opciones son «1 hora antes», «2 horas antes» (de entrada, como había elegido el usuario), «El día hábil anterior» (a la misma hora) y «Sin aviso». Se va «15 minutos antes».
 - Si la hora del aviso cae en un día que no es hábil, sale el día hábil anterior a esa misma hora.
