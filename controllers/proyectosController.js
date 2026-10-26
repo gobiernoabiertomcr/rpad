@@ -13,7 +13,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import pool from '../config/database.js';
 import {
-  rutaSegura, MAXIMO_POR_HITO, MAXIMO_POR_PROYECTO, MENSAJE_MAXIMO_POR_HITO, MENSAJE_MAXIMO_POR_PROYECTO, MENSAJE_ARCHIVO_FALTANTE
+  rutaSegura, responderAlTerminarDeLeer, MAXIMO_POR_HITO, MAXIMO_POR_PROYECTO, MENSAJE_MAXIMO_POR_HITO, MENSAJE_MAXIMO_POR_PROYECTO,
+  MENSAJE_ARCHIVO_FALTANTE
 } from '../config/upload.js';
 import { hoyArgentina, ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -407,8 +408,8 @@ const borrarDelDisco = async (ruta, { carpeta = false } = {}) => {
 const textoDeSubida = (cantidad, cosa) => (cantidad === 1 ? `1 ${cosa} subido` : `${cantidad} ${cosa}s subidos`);
 
 /**
- * Un middleware que va antes de multer: `preparar(req)` devuelve un [status, cuerpo] para responder sin leer el pedido (nada se
- * escribe), o null para seguir (y deja req.subida). Un error inesperado es un 500 con `mensaje`.
+ * Un middleware que va antes de multer: `preparar(req)` devuelve un [status, cuerpo] para responder sin guardar nada del pedido (se
+ * lee y se descarta antes de responder), o null para seguir (y deja req.subida). Un error inesperado es un 500 con `mensaje`.
  */
 const antesDeMulter = (mensaje, preparar) => async (req, res, next) => {
   let respuesta;
@@ -416,13 +417,12 @@ const antesDeMulter = (mensaje, preparar) => async (req, res, next) => {
     respuesta = await preparar(req);
   } catch (error) {
     console.error(`${mensaje}:`, error);
-    return res.status(500).json({ success: false, error: mensaje });
+    respuesta = [500, { success: false, error: mensaje }];
   }
-  if (respuesta) {
-    const [status, cuerpo] = respuesta;
-    return res.status(status).json(cuerpo);
-  }
-  next();
+  if (!respuesta) return next();
+  // El pedido (con sus archivos) no se leyó: se lee y se descarta antes de responder, así quien sube recibe el motivo
+  const [status, cuerpo] = respuesta;
+  responderAlTerminarDeLeer(req, res, status, cuerpo);
 };
 
 // Los lugares que le quedan a un proyecto o a un hito: 400 con el mensaje de la cantidad si no queda ninguno

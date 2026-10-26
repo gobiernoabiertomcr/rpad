@@ -5,8 +5,13 @@
 // - antes de multer, `prepararSubidaProyecto` y `prepararSubidaHito` (controllers/proyectosController.js) validan el id, que el proyecto
 //   (activo) o el hito existan y que queden lugares, y dejan `req.subida = { id, carpeta, lugares }`, con la carpeta armada con el id
 //   ya validado;
-// - `subida(tipo)` arma multer en cada pedido con `limits.files` = los lugares que quedan: si vienen de más, multer corta y borra lo que
-//   ya escribió (multer 1.4.5, make-middleware.js), igual que con un tipo no permitido o un archivo de más de 10 MB;
+// - `subida(tipo)` arma multer en cada pedido con `limits.files` = los lugares que quedan, un filtro y un almacén propios de ese pedido.
+//   Multer solo no alcanza (multer 1.4.5, make-middleware.js): después de un error toma una sola vez la lista de lo que borra y sigue
+//   recibiendo partes hasta que termina, así que un archivo que llegaba después se escribía (entero o a medias, con el archivo abierto).
+//   Acá, después del primer error el filtro descarta todo lo que sigue sin escribirlo; el almacén anota cada archivo que empieza a
+//   escribir y, si la subida falla, se borran todos: la carpeta queda exactamente como estaba (salvo que no existiera: queda vacía);
+// - ante un error, el pedido se termina de leer antes de responder: si no, quien todavía estaba mandando recibía un corte de la conexión
+//   en lugar del 400 con el motivo (la página lo muestra: «El hito se guardó, pero los archivos no se subieron: <motivo>.»);
 // - si después falla la transacción de los INSERT, el controlador borra los archivos escritos.
 // Los límites, las extensiones y los mensajes se exportan para que la página (public/js/proyectos.js) los copie, atados por un test.
 import multer from 'multer';
@@ -87,6 +92,9 @@ export const ensureUploadDir = (subpath) => {
   return dir;
 };
 
+// El campo del formulario que trae los archivos
+const CAMPO = 'archivos';
+
 // Un error que se le muestra a quien subió: un 400 con su mensaje (el tipo de archivo)
 class ErrorDeSubida extends Error {}
 
@@ -94,21 +102,116 @@ class ErrorDeSubida extends Error {}
 class ErrorDeDisco extends Error {}
 const esDelDisco = (error) => error instanceof ErrorDeDisco || typeof error.syscall === 'string';
 
-// El nombre original se arregla acá, la primera vez que multer da el archivo (de latin1 a UTF-8 y cortado en 255: nombreDeArchivo):
-// así el mensaje de la extensión y lo que se guarda usan el mismo nombre. Después, la doble validación: la extensión y el MIME
-const fileFilter = (req, file, cb) => {
+/**
+ * Responde [status, cuerpo] cuando el pedido terminó de llegar: lo que sigue llegando se lee y se descarta. Si se responde con el cuerpo
+ * sin leer, quien todavía está mandando archivos puede recibir un corte de la conexión en lugar de la respuesta. Si quien subía cortó,
+ * no hay a quién responder. Lo usan las respuestas de error de una subida, también las de prepararSubida… (antes de leer nada).
+ */
+export const responderAlTerminarDeLeer = (req, res, status, cuerpo) => {
+  const responder = () => {
+    if (!res.headersSent) res.status(status).json(cuerpo);
+  };
+  if (req.readableEnded) return responder();
+  req.once('end', responder);
+  req.resume();
+};
+
+/**
+ * El filtro de un pedido. Después del primer error (este u otro: `estado.fallo`), descarta sin escribir todo lo que sigue llegando
+ * (`cb(null, false)`: multer lo lee y lo tira). Si no, arregla el nombre original una sola vez, la primera vez que multer da el archivo (de
+ * latin1 a UTF-8 y cortado en 255: nombreDeArchivo; así el mensaje de la extensión y lo que se guarda usan el mismo nombre), y controla
+ * el campo (otro campo es LIMIT_UNEXPECTED_FILE, como lo daría multer), la extensión y el MIME.
+ */
+const filtroDe = (estado) => (req, file, cb) => {
+  if (estado.fallo) return cb(null, false);
+  const rechazar = (error) => {
+    estado.fallo = true;
+    cb(error);
+  };
   file.originalname = nombreDeArchivo(file.originalname);
+  if (file.fieldname !== CAMPO) return rechazar(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
   const extension = path.extname(file.originalname).toLowerCase();
-  if (!EXTENSIONES.has(extension)) return cb(new ErrorDeSubida(mensajeTipoNoPermitido(extension)));
-  if (!MIMES.has(file.mimetype)) return cb(new ErrorDeSubida(`MIME type no permitido: ${file.mimetype}`));
+  if (!EXTENSIONES.has(extension)) return rechazar(new ErrorDeSubida(mensajeTipoNoPermitido(extension)));
+  if (!MIMES.has(file.mimetype)) return rechazar(new ErrorDeSubida(`MIME type no permitido: ${file.mimetype}`));
   cb(null, true);
 };
 
 /**
+ * El almacén de multer de un pedido (como diskStorage, con un nombre único: un UUID con la extensión). Anota en `estado.escritos` cada
+ * archivo antes de empezar a escribirlo, así una subida que falla los borra todos, también uno que multer no llegó a anotar. Un archivo
+ * que pasa los 10 MB o un error del disco prenden `estado.fallo` (lo que sigue se descarta). Si el archivo que llega se corta (un error del
+ * pedido), cierra lo que estaba escribiendo: multer ya cuenta ese error y no espera a este almacén.
+ */
+const almacenDe = (carpeta, estado) => ({
+  _handleFile: (req, file, cb) => {
+    let destino;
+    try {
+      destino = ensureUploadDir(carpeta);
+    } catch (error) {
+      estado.fallo = true;
+      file.stream.resume();
+      return cb(new ErrorDeDisco(error.message, { cause: error }));
+    }
+    const filename = `${randomUUID()}${path.extname(file.originalname).toLowerCase()}`;
+    const ruta = path.join(destino, filename);
+    estado.escritos.push(ruta);
+    const salida = fs.createWriteStream(ruta);
+    let respondido = false;
+    const terminar = (error, info) => {
+      if (respondido) return;
+      respondido = true;
+      cb(error, info);
+    };
+    file.stream.once('limit', () => {
+      estado.fallo = true;
+    });
+    file.stream.once('error', () => {
+      estado.fallo = true;
+      respondido = true;
+      salida.destroy();
+    });
+    salida.once('error', (error) => {
+      estado.fallo = true;
+      file.stream.unpipe(salida);
+      file.stream.resume();
+      terminar(new ErrorDeDisco(error.message, { cause: error }));
+    });
+    salida.once('finish', () => terminar(null, { destination: destino, filename, path: ruta, size: salida.bytesWritten }));
+    file.stream.pipe(salida);
+  },
+  _removeFile: (req, file, cb) => {
+    fs.rm(file.path, { force: true }, cb);
+  }
+});
+
+// Borra del disco los archivos que empezó a escribir un pedido (rutas armadas por el almacén, dentro de la carpeta de las subidas). Si no
+// están, no pasa nada; otro error se registra
+const borrarEscritos = (rutas) => Promise.all(rutas.map((ruta) => fs.promises.rm(ruta, { force: true }).catch((error) => {
+  console.error(`No se pudo borrar ${ruta} del disco:`, error);
+})));
+
+// El [status, cuerpo] de un error de multer, en español
+const respuestaDeError = (error, tipo, mensaje) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') return [400, { success: false, error: MENSAJE_TAMANO_MAXIMO }];
+    if (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE') return [400, { success: false, error: mensaje }];
+    return [400, { success: false, error: `Error de upload: ${error.message}` }];
+  }
+  if (error instanceof ErrorDeSubida) return [400, { success: false, error: error.message }];
+  if (esDelDisco(error)) {
+    console.error(`Error al guardar los archivos (${tipo}) en el disco:`, error);
+    return [500, { success: false, error: 'Error al subir archivos' }];
+  }
+  // Un pedido que no se pudo leer (un multipart mal armado o cortado): como siempre, un 400
+  return [400, { success: false, error: `Error de upload: ${error.message}` }];
+};
+
+/**
  * El middleware de multer de una subida (`tipo`: 'proyecto' o 'hito'), armado en cada pedido con lo que dejó prepararSubida…: la
- * carpeta (ya con el id validado) y los lugares que quedan como límite de archivos. Los errores salen en español: los de cantidad
- * (LIMIT_FILE_COUNT y LIMIT_UNEXPECTED_FILE), el del tamaño y el del tipo son 400; uno del disco, 500; un pedido mal armado, el 400
- * «Error de upload» de siempre. En todos, multer ya borró lo que había escrito.
+ * carpeta (ya con el id validado) y los lugares que quedan como límite de archivos (busboy no entrega los de más). Los errores salen en
+ * español: los de cantidad (LIMIT_FILE_COUNT y un archivo en otro campo, LIMIT_UNEXPECTED_FILE), el del tamaño y el del tipo son 400;
+ * uno del disco, 500; un pedido mal armado, el 400 «Error de upload» de siempre. Ante cualquier error: se borra todo lo que este pedido
+ * empezó a escribir, se termina de leer el pedido y se responde.
  */
 export const subida = (tipo) => {
   const { maximo, mensaje } = SUBIDAS[tipo];
@@ -116,35 +219,20 @@ export const subida = (tipo) => {
     const { carpeta, lugares } = req.subida ?? {};
     if (typeof carpeta !== 'string' || !Number.isInteger(lugares) || lugares < 1 || lugares > maximo) {
       console.error(`Subida de ${tipo} sin preparar:`, req.subida);
-      return res.status(500).json({ success: false, error: 'Error al subir archivos' });
+      return responderAlTerminarDeLeer(req, res, 500, { success: false, error: 'Error al subir archivos' });
     }
-    const storage = multer.diskStorage({
-      destination: (pedido, file, cb) => {
-        try {
-          cb(null, ensureUploadDir(carpeta));
-        } catch (error) {
-          cb(new ErrorDeDisco(error.message, { cause: error }));
-        }
-      },
-      filename: (pedido, file, cb) => cb(null, `${randomUUID()}${path.extname(file.originalname).toLowerCase()}`)
-    });
-    const leer = multer({ storage, fileFilter, limits: { fileSize: TAMANO_MAXIMO, files: lugares } }).array('archivos', lugares);
-    leer(req, res, (error) => {
+    const estado = { fallo: false, escritos: [] };
+    // .any(): el campo y la cantidad los controlan el filtro y limits.files (con .array, multer rechazaba un archivo de otro campo antes
+    // del filtro, y el filtro no se enteraba del error)
+    const leer = multer({
+      storage: almacenDe(carpeta, estado), fileFilter: filtroDe(estado), limits: { fileSize: TAMANO_MAXIMO, files: lugares }
+    }).any();
+    leer(req, res, async (error) => {
       if (!error) return next();
-      if (error instanceof multer.MulterError) {
-        if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ success: false, error: MENSAJE_TAMANO_MAXIMO });
-        if (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE') {
-          return res.status(400).json({ success: false, error: mensaje });
-        }
-        return res.status(400).json({ success: false, error: `Error de upload: ${error.message}` });
-      }
-      if (error instanceof ErrorDeSubida) return res.status(400).json({ success: false, error: error.message });
-      if (esDelDisco(error)) {
-        console.error(`Error al guardar los archivos (${tipo}) en el disco:`, error);
-        return res.status(500).json({ success: false, error: 'Error al subir archivos' });
-      }
-      // Un pedido que no se pudo leer (un multipart mal armado o cortado): como siempre, un 400
-      return res.status(400).json({ success: false, error: `Error de upload: ${error.message}` });
+      estado.fallo = true;
+      await borrarEscritos(estado.escritos);
+      const [status, cuerpo] = respuestaDeError(error, tipo, mensaje);
+      responderAlTerminarDeLeer(req, res, status, cuerpo);
     });
   };
 };

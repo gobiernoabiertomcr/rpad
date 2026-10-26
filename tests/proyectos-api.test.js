@@ -956,4 +956,126 @@ describe('archivos', () => {
     assert.equal((await api.delete(`/gestion/hitos/${conEnlace}/archivos/${extra.id}`, como('admin'))).status, 200);
     assert.equal(await evidenciaDe(conEnlace), 'url');
   });
+
+  // Después de cualquier error de una subida, la carpeta queda exactamente como estaba (lo que llega después del error se descarta sin
+  // escribir, y nada queda a medio escribir) y quien sube recibe el 400 con su mensaje, no un corte de la conexión (el pedido se termina
+  // de leer antes de responder). Es una carrera: cada caso se repite, y la carpeta se mira al responder y un rato después
+  describe('una subida que falla', () => {
+    const REPETICIONES = 5;
+    const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
+    const pdfDe = (nombre, tamano) => new File([Buffer.alloc(tamano, 0x41)], nombre, { type: 'application/pdf' });
+    const exe = () => new File([Buffer.from('MZ [TEST]')], 'programa.exe', { type: 'application/x-msdownload' });
+    // Windows manda los .csv como application/vnd.ms-excel; el navegador solo mira la extensión
+    const csvDeExcel = () => new File([Buffer.from('a,b\n1,2\n')], 'tabla.csv', { type: 'application/vnd.ms-excel' });
+    const MB = 1024 * 1024;
+
+    // Repite la subida y comprueba cada vez el 400 con su mensaje y que la carpeta siga igual
+    const fallaSinTocarLaCarpeta = async ({ subirla, carpetaDe, mensaje, veces = REPETICIONES }) => {
+      const antes = carpetaDe() ?? [];
+      for (let vez = 1; vez <= veces; vez++) {
+        const res = await subirla();
+        assert.equal(res.status, 400, `vez ${vez}: ${JSON.stringify(res.body)}`);
+        assert.deepEqual(res.body, { success: false, error: mensaje }, `vez ${vez}`);
+        assert.deepEqual(carpetaDe() ?? [], antes, `vez ${vez}, al responder`);
+      }
+      await esperar(300);
+      assert.deepEqual(carpetaDe() ?? [], antes, 'un rato después');
+    };
+
+    // Una subida con el nombre de campo de cada archivo: [campo, File]
+    const subirConCampos = async (ruta, pares) => {
+      const formulario = new FormData();
+      for (const [campo, archivo] of pares) formulario.append(campo, archivo);
+      const res = await fetch(`${servidor.url}/api${ruta}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${usuarios.admin.token}` }, body: formulario
+      });
+      return { status: res.status, body: await res.json() };
+    };
+
+    it('[pdf, exe, pdf] a un proyecto con un documento: 400 del tipo y la carpeta sigue con el suyo', async () => {
+      const id = await crearProyecto();
+      assert.equal((await subirDocumentos(id, [pdf('previo.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirDocumentos(id, [pdfDe('a.pdf', 200_000), exe(), pdfDe('c.pdf', 200_000)]),
+        carpetaDe: () => enCarpeta('proyectos', String(id)),
+        mensaje: 'Tipo de archivo no permitido: .exe'
+      });
+      assert.deepEqual((await documentosDe(id)).map((f) => f.nombre_archivo), ['previo.pdf']);
+    });
+
+    it('[exe, pdf grande]: 400 del tipo, sin nada escrito ni a medio escribir', async () => {
+      const id = await crearProyecto();
+      assert.equal((await subirDocumentos(id, [pdf('previo.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirDocumentos(id, [exe(), pdfDe('grande.pdf', 3 * MB)]),
+        carpetaDe: () => enCarpeta('proyectos', String(id)),
+        mensaje: 'Tipo de archivo no permitido: .exe'
+      });
+    });
+
+    it('un .csv con el MIME de Excel entre PDF: 400 del MIME y la carpeta como estaba', async () => {
+      const id = await crearProyecto();
+      assert.equal((await subirDocumentos(id, [pdf('previo.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirDocumentos(id, [pdfDe('a.pdf', 50_000), csvDeExcel(), pdfDe('c.pdf', 50_000), pdfDe('d.pdf', 50_000)]),
+        carpetaDe: () => enCarpeta('proyectos', String(id)),
+        mensaje: 'MIME type no permitido: application/vnd.ms-excel'
+      });
+    });
+
+    it('[pdf de más de 10 MB, pdf]: 400 del tamaño y la carpeta como estaba', async () => {
+      const id = await crearProyecto();
+      assert.equal((await subirDocumentos(id, [pdf('previo.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirDocumentos(id, [pdfDe('grande.pdf', 10 * MB + 1), pdfDe('c.pdf', 200_000)]),
+        carpetaDe: () => enCarpeta('proyectos', String(id)),
+        mensaje: 'El archivo excede el tamaño máximo de 10 MB',
+        veces: 3
+      });
+    });
+
+    it('[pdf, exe, pdf] a un hito vacío (también un logro): 400 del tipo y la carpeta sin archivos', async () => {
+      const hito = await crearHito(await crearProyecto());
+      const logro = (await api.post('/gestion/logros', { titulo: '[TEST] Logro', fecha: '2026-05-20' }, como('admin'))).body.data.id;
+      for (const id of [hito, logro]) {
+        await fallaSinTocarLaCarpeta({
+          subirla: () => subirArchivos(id, [pdfDe('a.pdf', 200_000), exe(), pdfDe('c.pdf', 200_000)]),
+          carpetaDe: () => enCarpeta('hitos', String(id)),
+          mensaje: 'Tipo de archivo no permitido: .exe'
+        });
+        assert.equal(await evidenciaDe(id), 'ninguno');
+      }
+    });
+
+    it('archivos grandes de más para los lugares del hito: 400 de la cantidad y la carpeta como estaba', async () => {
+      const hito = await crearHito(await crearProyecto());
+      assert.equal((await subirArchivos(hito, [pdf('a.pdf'), pdf('b.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirArchivos(hito, [pdfDe('c.pdf', 2 * MB), pdfDe('d.pdf', 2 * MB), pdfDe('e.pdf', 2 * MB)]),
+        carpetaDe: () => enCarpeta('hitos', String(hito)),
+        mensaje: MENSAJE_HITO_LLENO
+      });
+    });
+
+    it('un archivo con otro nombre de campo entre los PDF: 400 de la cantidad y la carpeta como estaba', async () => {
+      const id = await crearProyecto();
+      assert.equal((await subirDocumentos(id, [pdf('previo.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirConCampos(`/gestion/proyectos/${id}/documentos`,
+          [['archivos', pdfDe('a.pdf', 200_000)], ['otro', pdfDe('b.pdf', 1000)], ['archivos', pdfDe('c.pdf', 200_000)]]),
+        carpetaDe: () => enCarpeta('proyectos', String(id)),
+        mensaje: MENSAJE_PROYECTO_LLENO
+      });
+    });
+
+    it('rechazada antes de leerla (hito lleno), con un archivo grande: llega el 400 con el mensaje', async () => {
+      const hito = await crearHito(await crearProyecto());
+      assert.equal((await subirArchivos(hito, [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')])).status, 201);
+      await fallaSinTocarLaCarpeta({
+        subirla: () => subirArchivos(hito, [pdfDe('d.pdf', 3 * MB)]),
+        carpetaDe: () => enCarpeta('hitos', String(hito)),
+        mensaje: MENSAJE_HITO_LLENO
+      });
+    });
+  });
 });
