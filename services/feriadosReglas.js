@@ -1,15 +1,24 @@
 /**
- * Los feriados (spec 2026-10-26-feriados, secciones 1 y 2): las reglas para contar días hábiles con los feriados de la
- * tabla `feriados`, puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y se comparan como texto). Ninguna
- * función tira error: una entrada rara da null, false, 0, una lista vacía o un Set vacío.
+ * Los feriados (spec 2026-10-26-feriados, secciones 1 a 4): las reglas de la tabla `feriados`, puras (sin pool ni Date
+ * local: las fechas son texto 'AAAA-MM-DD' y se comparan como texto, y hoy llega por parámetro, `hoyArgentina()` en el
+ * servidor). Ninguna función tira error: una entrada rara da null, false, 0, una lista vacía, un Set vacío o el error de su
+ * campo.
  *
- * Envuelven a `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los feriados solo sacan días hábiles,
- * nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que con `esDiaHabil`. `FERIADOS_FIJOS` es un array
- * que se puede modificar: acá nunca se le escribe y se recorre una copia.
+ * Dos partes:
+ * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`). Envuelven
+ *   a `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los feriados solo sacan días hábiles, nunca los
+ *   agregan, y con un Set vacío se cuenta exactamente lo mismo que con `esDiaHabil`. Por ahora cuenta así solo Mi espacio:
+ *   el resto del sistema sigue con `esDiaHabil` y los 9 fijos.
+ * - La pestaña Feriados de Configuración y su API (`controllers/feriadosController.js`): los tipos y sus nombres, los
+ *   mensajes, la validación de un feriado (`validarFeriado`), de «no rige» (`validarRige`) y de la baja desde un año
+ *   (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los años del selector
+ *   (`aniosDelSelector`). Los textos son planos: los escapa la página. La página tiene copias de `MENSAJES_FERIADO` y
+ *   `diaDeLaSemana`, atadas por tests de paridad.
+ * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
  * no_rige }`, con las fechas como texto, el resto como números y `no_rige`, la lista de los años en que uno que se repite
- * no rige. Por ahora las usa solo Mi espacio: el resto del sistema sigue con `esDiaHabil` y los 9 fijos.
+ * no rige.
  */
 import { FERIADOS_FIJOS, esFechaIso, sumarDias, diasEntre, esDiaHabil } from './notasDigitalesCalendario.js';
 
@@ -33,11 +42,63 @@ export const NOMBRES_DE_LOS_FIJOS = Object.freeze({
   '12-25': 'Navidad'
 });
 
+// La fecha más vieja que se acepta (el tope es el 31/12 del año siguiente al de hoy) y el largo del nombre, el varchar(150)
+export const FECHA_MINIMA_FERIADO = '2025-01-01';
+export const LARGO_NOMBRE_FERIADO = 150;
+
+// Los mensajes de cada error, los mismos en el servidor y en la página. En el error, `campo` es el del pedido: nombreLargo
+// va en `nombre`, trasladado en `trasladado_de`, repite29 en `se_repite` y pasaAl en `pasa_al`; noSeRepite va sin campo
+export const MENSAJES_FERIADO = Object.freeze({
+  fecha: 'La fecha tiene que ser del 01/01/2025 al 31/12 del año que viene.',
+  nombre: 'Escribí el nombre del feriado.',
+  nombreLargo: 'El nombre puede tener hasta 150 caracteres.',
+  tipo: 'Elegí el tipo de feriado.',
+  trasladado: 'La fecha original tiene que ser otra fecha del mismo año.',
+  repite29: 'Un feriado del 29 de febrero no puede repetirse todos los años.',
+  anio: 'Elegí un año válido.',
+  rige: 'Indicá si ese año rige.',
+  pasaAl: 'La fecha a la que se pasó tiene que ser del mismo año.',
+  desde: 'Elegí desde qué año deja de regir.',
+  noSeRepite: 'Este feriado no se repite: se corrige o se da de baja entero.',
+  noEncontrado: 'Feriado no encontrado'
+});
+
 const DIAS_DE_LA_SEMANA = Object.freeze(['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']);
 
+// Los textos de la lista de un año y de los avisos (spec, secciones 3 y 4)
+const TIPO_NOMBRE_FIJO = 'Fijo del sistema';
+const NO_RIGE = 'Este año no rige';
+const COINCIDE_CON_UN_FIJO = 'Cae el mismo día que un feriado fijo: no cambia nada';
+const textoTrasladado = (original) =>
+  `Trasladado del ${diaDeLaSemana(original)} ${original.slice(8, 10)}/${original.slice(5, 7)}`;
+const textoFinDeSemana = (dia) => `Cae ${dia}: no cambia ningún día hábil`;
+const textoCoincide = (nombre) => `Cae el mismo día que «${nombre}»`;
+const avisoYaEsFeriado = ({ nombre, fijo }) => `Ese día ya es feriado: ${nombre}${fijo ? ' (fijo del sistema)' : ''}.`;
+
 const anioDe = (fecha) => Number(fecha.slice(0, 4));
+const PRIMER_ANIO = anioDe(FECHA_MINIMA_FERIADO);
 // 'AAAA-MM-DD' de un año y un 'MM-DD' (puede no existir: quien la usa la controla con esFechaIso)
 const fechaDe = (anio, mesYDia) => `${String(anio).padStart(4, '0')}-${mesYDia}`;
+const esFinDeSemana = (dia) => dia === 'sábado' || dia === 'domingo';
+const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+// Vacío: no vino, null o un texto de espacios
+const esVacio = (valor) => valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '');
+
+// Un año del pedido: un número entero de 1 a 9999, o un texto de cuatro cifras (el de una dirección: ?desde=2028). null si no
+const anioDeEntrada = (valor) => {
+  if (typeof valor === 'number') return Number.isInteger(valor) && valor >= 1 && valor <= 9999 ? valor : null;
+  if (typeof valor === 'string' && /^\d{4}$/.test(valor)) return Number(valor) || null;
+  return null;
+};
+
+// El año siguiente al de hoy, el último del rango de fechas; null si hoy no es una fecha
+const ultimoAnioDelRango = (hoy) => (esFechaIso(hoy) ? anioDe(hoy) + 1 : null);
+
+// Una fecha del 01/01/2025 al 31/12 del año siguiente al de hoy. Sin un hoy válido no pasa (no hay tope)
+const fechaEnElRango = (fecha, hoy) => {
+  const ultimo = ultimoAnioDelRango(hoy);
+  return ultimo !== null && esFechaIso(fecha) && fecha >= FECHA_MINIMA_FERIADO && anioDe(fecha) <= ultimo;
+};
 
 // 'lunes', …, 'domingo' (en minúscula y con tilde), o null si no es una fecha
 export const diaDeLaSemana = (fecha) => {
@@ -46,23 +107,38 @@ export const diaDeLaSemana = (fecha) => {
   return DIAS_DE_LA_SEMANA[new Date(`${fecha}T12:00:00Z`).getUTCDay()];
 };
 
+// Si una fila que se repite, con su fecha ya controlada, alcanza el año: desde el de su fecha (no hacia atrás) hasta
+// `hasta_anio` (null: sigue). Los años de `no_rige` los alcanza: ese año va en la lista, pero no rige
+const alcanzaElAnio = (fila, anio) => {
+  if (anio < anioDe(fila.fecha)) return false;
+  const hasta = fila.hasta_anio ?? null;
+  // Escrito al revés a propósito: un hasta_anio que no es un número no lo deja regir para siempre
+  return hasta === null || anio <= Number(hasta);
+};
+
+// La fila en el año `anio` (un número entero): `{ fecha, rige }` si ese año va en la lista (rige: false si es uno de su
+// `no_rige`), o null si no va: dada de baja, sin una fecha válida, fuera de su rango o un día que ese año no existe (un 29/02).
+// Sin `se_repite`, va solo en el año de su fecha y siempre rige (hasta_anio y no_rige no cuentan). La comparten
+// fechaEnElAnio, que cuenta días, y feriadosDelAnio, que lista también los años que no rigen
+const proyeccionEnElAnio = (fila, anio) => {
+  if (!esObjeto(fila) || !Number.isInteger(anio)) return null;
+  const { fecha } = fila;
+  if (Number(fila.activo) !== 1 || !esFechaIso(fecha)) return null;
+  if (Number(fila.se_repite) !== 1) return anio === anioDe(fecha) ? { fecha, rige: true } : null;
+  if (!alcanzaElAnio(fila, anio)) return null;
+  const enElAnio = fechaDe(anio, fecha.slice(5));
+  if (!esFechaIso(enElAnio)) return null;
+  const noRige = Array.isArray(fila.no_rige) && fila.no_rige.some((otro) => Number(otro) === anio);
+  return { fecha: enElAnio, rige: !noRige };
+};
+
 // La fecha de la fila en el año `anio` (un número entero), solo si ese año rige; si no, null. Una dada de baja nunca rige.
 // Sin `se_repite`, rige solo en el año de su fecha (hasta_anio y no_rige no cuentan). Con `se_repite`, desde el año de su
 // fecha (no hacia atrás) hasta `hasta_anio` (null: sigue), salvo los años de `no_rige`. Si ese día no existe ese año (un
 // 29/02), null.
 export const fechaEnElAnio = (fila, anio) => {
-  if (!fila || typeof fila !== 'object' || !Number.isInteger(anio)) return null;
-  const { fecha } = fila;
-  if (Number(fila.activo) !== 1 || !esFechaIso(fecha)) return null;
-  const primerAnio = anioDe(fecha);
-  if (Number(fila.se_repite) !== 1) return anio === primerAnio ? fecha : null;
-  if (anio < primerAnio) return null;
-  const hasta = fila.hasta_anio ?? null;
-  // Escrito al revés a propósito: un hasta_anio que no es un número no lo deja regir para siempre
-  if (hasta !== null && !(anio <= Number(hasta))) return null;
-  if (Array.isArray(fila.no_rige) && fila.no_rige.some((noRige) => Number(noRige) === anio)) return null;
-  const enElAnio = fechaDe(anio, fecha.slice(5));
-  return esFechaIso(enElAnio) ? enElAnio : null;
+  const proyeccion = proyeccionEnElAnio(fila, anio);
+  return proyeccion !== null && proyeccion.rige ? proyeccion.fecha : null;
 };
 
 // El Set de los días no hábiles por feriado del rango, los dos días incluidos: los 9 fijos de cada año del rango y las filas
@@ -103,3 +179,198 @@ export const diasHabilesDe = (desde, hasta, feriados) => {
 
 // Cuántos días hábiles hay de desde a hasta, los dos incluidos
 export const diasHabilesEntre = (desde, hasta, feriados) => diasHabilesDe(desde, hasta, feriados).length;
+
+const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
+
+/**
+ * Valida un feriado, el cuerpo de un alta o de una corrección (spec, sección 1). Devuelve `{ datos, error }`:
+ * - `error`: null, o `{ campo, mensaje }` del primero que no sirve, en el orden fecha, nombre, tipo, trasladado_de y el
+ *   29/02 que se repite (en `se_repite`); entonces `datos` es null.
+ * - `datos`: `{ fecha, nombre, tipo, trasladado_de, se_repite }`, con el nombre recortado, `trasladado_de` vacío como null y
+ *   `se_repite` en 1 (con true, 1 o '1') o 0.
+ * La fecha va del 01/01/2025 al 31/12 del año siguiente al de hoy (sin un hoy válido, no pasa); el nombre, obligatorio y de
+ * hasta 150 caracteres contados con Array.from; `trasladado_de`, otra fecha del mismo año. Una entrada que no es un objeto
+ * cuenta como `{}`.
+ */
+export const validarFeriado = (entrada, hoy) => {
+  const fuente = esObjeto(entrada) ? entrada : {};
+  const { fecha, tipo } = fuente;
+  if (!fechaEnElRango(fecha, hoy)) return rechazo('fecha', MENSAJES_FERIADO.fecha);
+
+  const nombre = typeof fuente.nombre === 'string' ? fuente.nombre.trim() : '';
+  if (nombre === '') return rechazo('nombre', MENSAJES_FERIADO.nombre);
+  if (Array.from(nombre).length > LARGO_NOMBRE_FERIADO) return rechazo('nombre', MENSAJES_FERIADO.nombreLargo);
+
+  if (!TIPOS_FERIADO.includes(tipo)) return rechazo('tipo', MENSAJES_FERIADO.tipo);
+
+  const trasladado = esVacio(fuente.trasladado_de) ? null : fuente.trasladado_de;
+  const trasladadoSirve = trasladado === null
+    || (esFechaIso(trasladado) && trasladado !== fecha && anioDe(trasladado) === anioDe(fecha));
+  if (!trasladadoSirve) return rechazo('trasladado_de', MENSAJES_FERIADO.trasladado);
+
+  const seRepite = [true, 1, '1'].includes(fuente.se_repite) ? 1 : 0;
+  if (seRepite === 1 && fecha.slice(5) === '02-29') return rechazo('se_repite', MENSAJES_FERIADO.repite29);
+
+  return { datos: { fecha, nombre, tipo, trasladado_de: trasladado, se_repite: seRepite }, error: null };
+};
+
+/**
+ * Valida «no rige» de una fila que se repite (`PUT /api/feriados/:id/rige`): `{ anio, rige, pasa_al }`. Devuelve
+ * `{ datos: { anio, rige, pasa_al }, error }`, con el error del primero que no sirve, en este orden:
+ * - una fila que no se repite: noSeRepite, sin campo;
+ * - `anio`: un entero (o un texto de cuatro cifras) desde el año de la fila, no mayor que su `hasta_anio` y del rango de
+ *   fechas (de 2025 al año siguiente al de hoy);
+ * - `rige`: true o false, nada más;
+ * - `pasa_al`: solo con `rige: false`, opcional (vacío es null): una fecha de ese mismo año, distinta de la fecha de la fila
+ *   ese año. Con `rige: true` se ignora y va null.
+ */
+export const validarRige = (entrada, fila, hoy) => {
+  if (!esObjeto(fila) || Number(fila.se_repite) !== 1) return rechazo(null, MENSAJES_FERIADO.noSeRepite);
+  const fuente = esObjeto(entrada) ? entrada : {};
+
+  const anio = anioDeEntrada(fuente.anio);
+  const ultimo = ultimoAnioDelRango(hoy);
+  const anioSirve = anio !== null && esFechaIso(fila.fecha) && alcanzaElAnio(fila, anio)
+    && ultimo !== null && anio >= PRIMER_ANIO && anio <= ultimo;
+  if (!anioSirve) return rechazo('anio', MENSAJES_FERIADO.anio);
+
+  const { rige } = fuente;
+  if (rige !== true && rige !== false) return rechazo('rige', MENSAJES_FERIADO.rige);
+
+  const pasaAl = rige === false && !esVacio(fuente.pasa_al) ? fuente.pasa_al : null;
+  const pasaAlSirve = pasaAl === null
+    || (esFechaIso(pasaAl) && anioDe(pasaAl) === anio && pasaAl !== fechaDe(anio, fila.fecha.slice(5)));
+  if (!pasaAlSirve) return rechazo('pasa_al', MENSAJES_FERIADO.pasaAl);
+
+  return { datos: { anio, rige, pasa_al: pasaAl }, error: null };
+};
+
+/**
+ * La baja de una fila (`DELETE /api/feriados/:id?desde=AAAA`): `{ cambio, error }`, con `cambio` lo que se escribe.
+ * - Sin `se_repite`, siempre la baja entera, `{ activo: 0 }` (desde no cuenta).
+ * - Con `se_repite`, `desde` es el año desde el que deja de regir (un entero, o un texto de cuatro cifras; si no, el error
+ *   en `desde`): si es el año de la fila, o uno anterior, la baja entera; si no, `{ hasta_anio: desde - 1 }` y los años
+ *   anteriores no cambian. Nunca la hace regir más años: con un `hasta_anio` guardado menor, queda ese.
+ */
+export const bajaDesde = (fila, desde) => {
+  const entera = { cambio: { activo: 0 }, error: null };
+  if (!esObjeto(fila) || Number(fila.se_repite) !== 1) return entera;
+  const anio = anioDeEntrada(desde);
+  if (anio === null) return { cambio: null, error: { campo: 'desde', mensaje: MENSAJES_FERIADO.desde } };
+  if (!esFechaIso(fila.fecha) || anio <= anioDe(fila.fecha)) return entera;
+  const guardado = fila.hasta_anio === null || fila.hasta_anio === undefined ? null : Number(fila.hasta_anio);
+  const hasta = Number.isInteger(guardado) && guardado < anio - 1 ? guardado : anio - 1;
+  return { cambio: { hasta_anio: hasta }, error: null };
+};
+
+const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// En la lista de un año: por fecha; en el mismo día, el fijo primero y después por nombre (y por id, para que el orden no
+// dependa del de la base)
+const compararDeLaLista = (a, b) => compararTexto(a.fecha, b.fecha)
+  || Number(b.fijo) - Number(a.fijo)
+  || a.nombre.localeCompare(b.nombre, 'es')
+  || (Number(a.id) || 0) - (Number(b.id) || 0);
+
+// La fecha original de un traslado en el año: la guardada, o, en una que se repite, el mismo día y mes de ese año (null si
+// no hay o ese día no existe ese año)
+const trasladadoEnElAnio = (fila, anio) => {
+  const { trasladado_de: original } = fila;
+  if (!esFechaIso(original)) return null;
+  if (Number(fila.se_repite) !== 1) return original;
+  const enElAnio = fechaDe(anio, original.slice(5));
+  return esFechaIso(enElAnio) ? enElAnio : null;
+};
+
+/**
+ * La lista de un año, para la pestaña y para `GET /api/feriados` (spec, sección 2): los 9 fijos y las filas de la tabla que
+ * van ese año (`proyeccionEnElAnio`: las que se repiten, proyectadas al año, también si ese año no rigen; ni las dadas de
+ * baja ni las de fuera de su rango), ordenadas con `compararDeLaLista`. Cada una:
+ * `{ id, fecha, dia_semana, nombre, tipo, tipo_nombre, fijo, se_repite, rige, trasladado_de, aclaraciones }`.
+ * - Un fijo: `id` null, `tipo` 'fijo', `tipo_nombre` 'Fijo del sistema', `se_repite` 1 y sin aclaraciones.
+ * - Una de la tabla, sus aclaraciones en este orden: de qué fecha se trasladó, si cae un fin de semana y con cuáles cae el
+ *   mismo día (un fijo, o «Cae el mismo día que «<nombre>»» por cada una de la tabla que también rige). Una que ese año no
+ *   rige dice solo «Este año no rige» y no cuenta para las demás.
+ * El año, un entero o un texto de cuatro cifras; si no, una lista vacía. Los textos van planos: los escapa la página.
+ */
+export const feriadosDelAnio = (filas, anio) => {
+  const elAnio = anioDeEntrada(anio);
+  if (elAnio === null) return [];
+
+  const fijos = [...FERIADOS_FIJOS].map((mesYDia) => {
+    const fecha = fechaDe(elAnio, mesYDia);
+    return {
+      id: null, fecha, dia_semana: diaDeLaSemana(fecha),
+      nombre: Object.hasOwn(NOMBRES_DE_LOS_FIJOS, mesYDia) ? NOMBRES_DE_LOS_FIJOS[mesYDia] : '',
+      tipo: 'fijo', tipo_nombre: TIPO_NOMBRE_FIJO, fijo: true, se_repite: 1, rige: true, trasladado_de: null, aclaraciones: []
+    };
+  });
+
+  const deLaTabla = [];
+  for (const fila of Array.isArray(filas) ? filas : []) {
+    const proyeccion = proyeccionEnElAnio(fila, elAnio);
+    if (proyeccion === null) continue;
+    const { fecha, rige } = proyeccion;
+    const tipo = fila.tipo ?? null;
+    deLaTabla.push({
+      id: fila.id ?? null, fecha, dia_semana: diaDeLaSemana(fecha), nombre: String(fila.nombre ?? ''), tipo,
+      tipo_nombre: Object.hasOwn(NOMBRES_TIPO_FERIADO, tipo) ? NOMBRES_TIPO_FERIADO[tipo] : String(tipo ?? ''),
+      fijo: false, se_repite: Number(fila.se_repite) === 1 ? 1 : 0, rige,
+      trasladado_de: trasladadoEnElAnio(fila, elAnio), aclaraciones: []
+    });
+  }
+
+  const lista = [...fijos, ...deLaTabla].sort(compararDeLaLista);
+  // Las aclaraciones van después de ordenar: las coincidencias salen en el orden de la lista
+  for (const item of deLaTabla) {
+    if (!item.rige) {
+      item.aclaraciones.push(NO_RIGE);
+      continue;
+    }
+    if (item.trasladado_de !== null) item.aclaraciones.push(textoTrasladado(item.trasladado_de));
+    if (esFinDeSemana(item.dia_semana)) item.aclaraciones.push(textoFinDeSemana(item.dia_semana));
+    for (const otro of lista) {
+      if (otro === item || otro.fecha !== item.fecha || !otro.rige) continue;
+      item.aclaraciones.push(otro.fijo ? COINCIDE_CON_UN_FIJO : textoCoincide(otro.nombre));
+    }
+  }
+  return lista;
+};
+
+/**
+ * Los avisos de la API al cargar o corregir un feriado (spec, sección 3), que no frenan nada: «Cae domingo: no cambia ningún
+ * día hábil.» (o sábado) y, por cada uno que ese día ya rige, «Ese día ya es feriado: <nombre> (fijo del sistema).» o «Ese
+ * día ya es feriado: <nombre>.», en el orden de la lista. Se calculan con la lista del año de la fecha (`feriadosDelAnio`:
+ * los fijos, las filas de ese año y las que se repiten), sin la fila `excluirId` (la que se corrige; null: ninguna). Una
+ * fecha que no es una fecha no da avisos.
+ */
+export const avisosDeLaFecha = (fecha, filas, excluirId) => {
+  if (!esFechaIso(fecha)) return [];
+  const avisos = [];
+  const dia = diaDeLaSemana(fecha);
+  if (esFinDeSemana(dia)) avisos.push(`${textoFinDeSemana(dia)}.`);
+  // La que se corrige: un id positivo, como número o como texto; cualquier otra cosa no excluye ninguna (nunca un fijo)
+  const idExcluido = ['number', 'string'].includes(typeof excluirId) && /^[1-9]\d*$/.test(String(excluirId))
+    ? Number(excluirId) : null;
+  for (const item of feriadosDelAnio(filas, anioDe(fecha))) {
+    if (item.fecha !== fecha || !item.rige) continue;
+    if (!item.fijo && idExcluido !== null && Number(item.id) === idExcluido) continue;
+    avisos.push(avisoYaEsFeriado(item));
+  }
+  return avisos;
+};
+
+/**
+ * Los años del selector de la pestaña, de menor a mayor: los anteriores al en curso, desde 2025, que tienen algún feriado de
+ * la tabla que rige (`fechaEnElAnio`), más el en curso y el siguiente. Sin un hoy válido, una lista vacía.
+ */
+export const aniosDelSelector = (filas, hoy) => {
+  if (!esFechaIso(hoy)) return [];
+  const enCurso = anioDe(hoy);
+  const lista = Array.isArray(filas) ? filas : [];
+  const anios = [];
+  for (let anio = PRIMER_ANIO; anio < enCurso; anio++) {
+    if (lista.some((fila) => fechaEnElAnio(fila, anio) !== null)) anios.push(anio);
+  }
+  return [...anios, enCurso, enCurso + 1];
+};
