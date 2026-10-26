@@ -468,6 +468,49 @@ describe('feriados.js: el modal, valoresDelFeriado', () => {
   });
 });
 
+// Revisión final, 1: la fecha del modal de uno que se repite es la de su primer año, y corregirla cambia todos los años (el
+// antiobjetivo de la spec: que corregir un año cambie los anteriores sin querer). La ayuda lo dice debajo de la fecha
+describe('feriados.js: el modal, la ayuda de la fecha (ayudaDeLaFechaFeriado)', () => {
+  it('uno que se repite: la fecha de su primer año y, con «no rige» a la vista, cómo correr solo el año que se mira', () => {
+    assert.equal(F.ayudaDeLaFechaFeriado(EMPLEADO_2027), 'Es la fecha de su primer año (2026): corregirla cambia todos los años.');
+    assert.equal(F.ayudaDeLaFechaFeriado(EMPLEADO_2027, 2027),
+      'Es la fecha de su primer año (2026): corregirla cambia todos los años. Si solo en 2027 se corrió, marcá «En 2027 no rige».');
+    // El primer año es el de la fecha guardada (fecha_guardada), no el de la fecha del año que se mira
+    const desde2025 = deLaLista([filaQueSeRepite({ fecha: '2025-11-08' })], 2027, 7);
+    assert.equal(desde2025.fecha, '2027-11-08');
+    assert.equal(F.ayudaDeLaFechaFeriado(desde2025, 2027),
+      'Es la fecha de su primer año (2025): corregirla cambia todos los años. Si solo en 2027 se corrió, marcá «En 2027 no rige».');
+    assert.equal(F.ayudaDeLaFechaFeriado(EMPLEADO_2027, 2026),
+      'Es la fecha de su primer año (2026): corregirla cambia todos los años. Si solo en 2026 se corrió, marcá «En 2026 no rige».');
+    // Un año que no sirve es sin «no rige»
+    for (const raro of [null, undefined, '2027', 2027.5, NaN]) {
+      assert.equal(F.ayudaDeLaFechaFeriado(EMPLEADO_2027, raro), 'Es la fecha de su primer año (2026): corregirla cambia todos los años.',
+        String(raro));
+    }
+  });
+
+  it('sin ayuda: en un alta, en uno que no se repite (lo guardado), sin una fecha guardada o sin un id', () => {
+    for (const anio of [null, 2026]) {
+      assert.equal(F.ayudaDeLaFechaFeriado(null, anio), '', 'un alta');
+      assert.equal(F.ayudaDeLaFechaFeriado(CARNAVAL, anio), '', 'uno que no se repite');
+      assert.equal(F.ayudaDeLaFechaFeriado({ ...EMPLEADO_2027, se_repite: 0 }, anio), '', 'lo guardado, no la casilla');
+      assert.equal(F.ayudaDeLaFechaFeriado({ ...EMPLEADO_2027, fecha_guardada: null }, anio), '', 'sin fecha guardada');
+      assert.equal(F.ayudaDeLaFechaFeriado({ ...EMPLEADO_2027, id: null }, anio), '', 'sin id (un fijo)');
+      for (const raro of [undefined, 'x', 3, []]) assert.equal(F.ayudaDeLaFechaFeriado(raro, anio), '', JSON.stringify(raro));
+    }
+  });
+
+  it('describedbyDeLaFechaFeriado: suma fe-fecha-ayuda antes del error (sin repetirlo) o lo saca; los demás ids quedan', () => {
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-error', true), 'fe-fecha-dia fe-fecha-ayuda fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-ayuda fe-fecha-error', true), 'fe-fecha-dia fe-fecha-ayuda fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-ayuda fe-fecha-error', false), 'fe-fecha-dia fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-error', false), 'fe-fecha-dia fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('otro', true), 'otro fe-fecha-ayuda', 'sin el error, al final');
+    assert.equal(F.describedbyDeLaFechaFeriado(null, true), 'fe-fecha-ayuda');
+    assert.equal(F.describedbyDeLaFechaFeriado(null, false), '');
+  });
+});
+
 describe('feriados.js: el modal, erroresDelFeriado (solo los obligatorios)', () => {
   const BIEN = { fecha: '2026-03-02', nombre: 'Asueto', tipo: 'municipal', trasladado_de: '', se_repite: false };
 
@@ -933,6 +976,62 @@ describe('feriados.js con un DOM: cargarFeriados', () => {
     assert.equal(abiertos.length, 0);
   });
 
+  // Revisión final, 6: el «Editar» que espera la lista nueva no abre el modal si mientras tanto se eligió otro año u otra pestaña
+  it('si mientras espera la lista nueva se elige otro año, el «Editar» que esperaba no abre nada (tampoco con la fila de ese año)', async () => {
+    let llamadas = 0;
+    const respuesta = demorada();
+    const pagina = crearPagina({
+      responder: async (metodo, ruta) => {
+        llamadas++;
+        if (llamadas === 1) return RESPUESTA_2026;
+        return ruta === '/feriados?anio=2027' ? RESPUESTA_2027 : respuesta.promesa;
+      }
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    const abiertos = [];
+    pagina.contexto.abrirModalFeriado = (feriado, origen) => abiertos.push([feriado, origen]);
+    const carga = pagina.contexto.cargarFeriados(true);
+    // El 12 se repite: también está en la lista de 2027
+    pagina.clic({ 'data-editar-feriado': '12' });
+    await pagina.contexto.elegirAnioFeriado('2027');
+    assert.equal(pagina.elemento('titulo-feriados').textContent, 'Feriados y días no laborables de 2027');
+    respuesta.soltar(RESPUESTA_2026);
+    await carga;
+    await esperar();
+    assert.equal(abiertos.length, 0);
+    // Sin una recarga en camino, «Editar» de 2027 abre enseguida, con la fila de 2027
+    pagina.clic({ 'data-editar-feriado': '12' });
+    assert.equal(abiertos.length, 1);
+    assert.equal(abiertos[0][0].fecha, '2027-11-08');
+  });
+
+  it('si mientras espera la lista nueva se pasa a otra pestaña (#vista-feriados oculta), el «Editar» que esperaba no abre nada', async () => {
+    let primera = true;
+    const respuesta = demorada();
+    const pagina = crearPagina({
+      responder: async () => { if (primera) { primera = false; return RESPUESTA_2026; } return respuesta.promesa; }
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    const abiertos = [];
+    pagina.contexto.abrirModalFeriado = (feriado, origen) => abiertos.push([feriado, origen]);
+    const carga = pagina.contexto.cargarFeriados(true);
+    pagina.clic({ 'data-editar-feriado': '13' });
+    // usuarios.js (mostrarVista) oculta la vista al elegir otra pestaña
+    pagina.elemento('vista-feriados').hidden = true;
+    respuesta.soltar(RESPUESTA_2026);
+    await carga;
+    await esperar();
+    assert.equal(abiertos.length, 0);
+    assert.equal(filasDe(pagina.elemento('feriados-lista').innerHTML).length, 13, 'la lista nueva llegó igual');
+    // De vuelta en Feriados, «Editar» abre enseguida
+    pagina.elemento('vista-feriados').hidden = false;
+    pagina.clic({ 'data-editar-feriado': '13' });
+    assert.equal(abiertos.length, 1);
+    assert.equal(abiertos[0][0].id, 13);
+  });
+
   it('con forzar, los otros años se descartan; si la recarga falla, el error y el año se vuelve a pedir (nada viejo queda guardado)', async () => {
     let fallar = false;
     const pagina = crearPagina({
@@ -1343,6 +1442,79 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     assert.equal(pagina.elemento('fe-anio').hidden, true);
   });
 
+  // Revisión final, 1: la fecha de uno que se repite es la de su primer año; la ayuda lo dice debajo, atada a la fecha por su
+  // aria-describedby (con los ids que ya tenía, los del HTML), y solo al corregir uno que se repite
+  it('la ayuda de la fecha: al corregir uno que se repite, su primer año y «no rige» del que se mira; en un alta o uno que no se repite, nada', async () => {
+    const pagina = await conModal();
+    const el = pagina.elemento;
+    const DEL_HTML = 'fe-fecha-dia fe-fecha-error';
+    el('fe-fecha').setAttribute('aria-describedby', DEL_HTML);
+    const ayuda = () => [el('fe-fecha-ayuda').hidden, el('fe-fecha-ayuda').textContent, el('fe-fecha').getAttribute('aria-describedby')];
+    const PRIMERO = 'Es la fecha de su primer año (2026): corregirla cambia todos los años.';
+    const CON_AYUDA = 'fe-fecha-dia fe-fecha-ayuda fe-fecha-error';
+
+    await pagina.contexto.elegirAnioFeriado('2027');
+    editarFeriado(pagina, 12);
+    assert.deepEqual(ayuda(), [false, `${PRIMERO} Si solo en 2027 se corrió, marcá «En 2027 no rige».`, CON_AYUDA]);
+    assert.equal(el('fe-fecha-ayuda').escrituras, 0, 'texto plano: nunca como HTML');
+    // Destildar «Se repite» esconde «no rige»: queda la primera frase (lo guardado sigue repitiéndose)
+    el('fe-se-repite').checked = false;
+    disparar(pagina, 'fe-se-repite', 'change');
+    assert.deepEqual(ayuda(), [false, PRIMERO, CON_AYUDA]);
+    el('fe-se-repite').checked = true;
+    disparar(pagina, 'fe-se-repite', 'change');
+    assert.deepEqual(ayuda(), [false, `${PRIMERO} Si solo en 2027 se corrió, marcá «En 2027 no rige».`, CON_AYUDA], 'sin repetir el id');
+    clicEnModal(pagina, 'modal-feriado', 'data-cerrar-feriado');
+
+    // Mirando 2026: el año que no rige es el que se mira
+    await pagina.contexto.elegirAnioFeriado('2026');
+    editarFeriado(pagina, 13);
+    assert.deepEqual(ayuda(), [false, `${PRIMERO} Si solo en 2026 se corrió, marcá «En 2026 no rige».`, CON_AYUDA]);
+    clicEnModal(pagina, 'modal-feriado', 'data-cerrar-feriado');
+
+    // Uno que no se repite (aunque se le tilde «Se repite»: todavía no se guardó así) y un alta: sin ayuda ni el id
+    editarFeriado(pagina, 11);
+    assert.deepEqual(ayuda(), [true, '', DEL_HTML]);
+    el('fe-se-repite').checked = true;
+    disparar(pagina, 'fe-se-repite', 'change');
+    assert.deepEqual(ayuda(), [true, '', DEL_HTML]);
+    clicEnModal(pagina, 'modal-feriado', 'data-cerrar-feriado');
+    editarFeriado(pagina, 12);
+    assert.equal(el('fe-fecha-ayuda').hidden, false);
+    clicEnModal(pagina, 'modal-feriado', 'data-cerrar-feriado');
+    apretar(pagina, 'btn-nuevo-feriado');
+    assert.deepEqual(ayuda(), [true, '', DEL_HTML]);
+  });
+
+  // Revisión final, 3 y 4: «Se pasó al» trae los avisos del día que carga, como el alta y la corrección, y se anuncian igual, en un
+  // toast de advertencia; sin avisos, el de éxito
+  it('los avisos de «Se pasó al» (PUT …/rige) se anuncian como los del alta, en un toast de advertencia', async () => {
+    let avisos = ['Cae domingo: no cambia ningún día hábil.'];
+    const pagina = await conModal({
+      escribir: (metodo, ruta) => (ruta.endsWith('/rige')
+        ? { status: 200, body: { success: true, message: 'En 2026 no rige: se pasó al 15/11/2026.', data: { nuevo_id: 30 }, avisos } }
+        : null)
+    });
+    const el = pagina.elemento;
+    editarFeriado(pagina, 12);
+    el('fe-no-rige').checked = true;
+    disparar(pagina, 'fe-no-rige', 'change');
+    el('fe-pasa-al').value = '2026-11-15';
+    await pagina.contexto.guardarFeriado();
+    assert.deepEqual(escriturasDe(pagina), [['PUT', '/feriados/12/rige']]);
+    const texto = 'En 2026 no rige: se pasó al 15/11/2026. Cae domingo: no cambia ningún día hábil.';
+    assert.deepEqual(pagina.toasts, [[texto, 'warning']]);
+    assert.equal(el('feriados-anuncio').textContent, texto);
+
+    avisos = [];
+    editarFeriado(pagina, 12);
+    el('fe-no-rige').checked = true;
+    disparar(pagina, 'fe-no-rige', 'change');
+    el('fe-pasa-al').value = '2026-11-10';
+    await pagina.contexto.guardarFeriado();
+    assert.deepEqual(pagina.toasts.at(-1), ['En 2026 no rige: se pasó al 15/11/2026.', 'success'], 'sin avisos, el de éxito');
+  });
+
   it('Guardar sin los obligatorios: cada error debajo de su campo, aria-invalid, el foco en el primero y ningún pedido', async () => {
     const pagina = await conModal();
     apretar(pagina, 'btn-nuevo-feriado');
@@ -1395,8 +1567,9 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     assert.equal(abierto(pagina, 'modal-feriado'), false);
     assert.equal(el('fe-guardar').disabled, false);
     assert.deepEqual(escriturasDe(pagina), [['POST', '/feriados']], 'un solo POST');
-    // El aviso de éxito con los avisos del servidor (sin taparlo) y, anunciado, lo mismo
-    assert.deepEqual(pagina.toasts, [['Feriado cargado. Ese día ya es feriado: Carnaval.', 'success']]);
+    // El aviso con los avisos del servidor (sin taparlo), en un toast de advertencia (en uno verde se perderían: revisión final, 4) y,
+    // anunciado, lo mismo
+    assert.deepEqual(pagina.toasts, [['Feriado cargado. Ese día ya es feriado: Carnaval.', 'warning']]);
     assert.equal(el('feriados-anuncio').textContent, 'Feriado cargado. Ese día ya es feriado: Carnaval.');
     assert.deepEqual(pagina.pedidos.map((p) => [p.metodo, p.ruta]), [['GET', '/feriados'], ['POST', '/feriados'], ['GET', '/feriados?anio=2026']]);
     assert.equal(pagina.pagina.foco, el('btn-nuevo-feriado'), 'el foco, de vuelta en «Nuevo feriado»');
@@ -1538,7 +1711,7 @@ describe('feriados.js con un DOM: el modal del feriado', () => {
     assert.equal(abierto(pagina, 'modal-feriado'), false);
     assert.equal(el('fe-pasa-al').atributos['aria-invalid'], undefined, 'el error de antes se limpió');
     assert.deepEqual(pagina.toasts, [['Feriado corregido. En 2026 no rige: se pasó al 09/11/2026. Cae domingo: no cambia ningún día hábil.',
-      'success']]);
+      'warning']]);
     assert.equal(pagina.pedidos.at(-1).ruta, '/feriados?anio=2026');
   });
 
@@ -1827,6 +2000,9 @@ describe('feriados.js con un DOM: lo que llega mientras tanto', () => {
     await pagina.contexto.guardarFeriado();
     assert.deepEqual(escriturasDe(pagina), [['PUT', '/feriados/12'], ['PUT', '/feriados/12/rige']]);
     assert.equal(el('modal-feriado-titulo').textContent, 'Editar «Día del Trabajador Municipal»');
+    assert.equal(el('fe-fecha-ayuda').textContent,
+      'Es la fecha de su primer año (2025): corregirla cambia todos los años. Si solo en 2026 se corrió, marcá «En 2026 no rige».',
+      'la ayuda de la fecha, con el primer año nuevo');
     apretar(pagina, 'fe-baja');
     assert.equal(el('baja-feriado-desde').innerHTML,
       '<option value="2025">2025</option><option value="2026" selected>2026</option><option value="2027">2027</option>', 'desde su primer año nuevo');

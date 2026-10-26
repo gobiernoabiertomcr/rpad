@@ -599,9 +599,10 @@ describe('PUT /feriados/:id/rige («no rige»)', () => {
     const id = await empleadoMunicipal();
     const res = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: false, pasa_al: '2027-11-09' }, como('admin'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(Object.keys(res.body).sort(), ['data', 'message', 'success']);
+    assert.deepEqual(Object.keys(res.body).sort(), ['avisos', 'data', 'message', 'success']);
     assert.equal(res.body.success, true);
     assert.equal(res.body.message, 'En 2027 no rige: se pasó al 09/11/2027.');
+    assert.deepEqual(res.body.avisos, [], 'el martes 9/11 no cae en fin de semana ni hay otro feriado ese día');
     assert.deepEqual(Object.keys(res.body.data), ['nuevo_id']);
     const nuevo = res.body.data.nuevo_id;
     assert.ok(Number.isInteger(nuevo) && nuevo > 0 && nuevo !== id);
@@ -651,9 +652,33 @@ describe('PUT /feriados/:id/rige («no rige»)', () => {
     const segunda = await api.put(`/feriados/${id}/rige`, pedido, como('editor'));
     assert.equal(segunda.status, 200, JSON.stringify(segunda.body));
     assert.equal(segunda.body.data.nuevo_id, primera.body.data.nuevo_id);
+    assert.deepEqual(segunda.body.avisos, [], 'el día que ya estaba no se cuenta a sí mismo');
     assert.deepEqual(await todoLoGuardado(), despues);
     assert.equal(despues.feriados.length, 2);
     assert.equal(despues.no_rige.length, 1);
+  });
+
+  // Como al cargar uno (POST): los avisos del día al que se pasó, contra la proyección completa del año y sin contarlo a él (ni
+  // cuando se carga ni cuando ya estaba), que no frenan nada
+  it('«Se pasó al» trae los avisos de ese día: el domingo, un fijo, otro de la tabla; sin contarse a sí mismo', async () => {
+    const id = await empleadoMunicipal();
+    const domingo = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: false, pasa_al: '2027-11-14' }, como('admin'));
+    assert.equal(domingo.status, 200, JSON.stringify(domingo.body));
+    assert.deepEqual(domingo.body.avisos, ['Cae domingo: no cambia ningún día hábil.']);
+    assert.equal(domingo.body.message, 'En 2027 no rige: se pasó al 14/11/2027.');
+    assert.equal((await filaGuardada(domingo.body.data.nuevo_id)).fecha, '2027-11-14', 'lo carga igual');
+    const otraVez = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: false, pasa_al: '2027-11-14' }, como('admin'));
+    assert.equal(otraVez.body.data.nuevo_id, domingo.body.data.nuevo_id);
+    assert.deepEqual(otraVez.body.avisos, ['Cae domingo: no cambia ningún día hábil.'], 'el que ya estaba no se cuenta');
+
+    const fijo = await api.put(`/feriados/${id}/rige`, { anio: 2026, rige: false, pasa_al: '2026-12-08' }, como('admin'));
+    assert.equal(fijo.status, 200, JSON.stringify(fijo.body));
+    assert.deepEqual(fijo.body.avisos, ['Ese día ya es feriado: Inmaculada Concepción de María (fijo del sistema).']);
+
+    await insertarFeriado({ fecha: '2026-11-10', nombre: 'Asueto municipal', tipo: 'municipal' });
+    const deLaTabla = await api.put(`/feriados/${id}/rige`, { anio: 2026, rige: false, pasa_al: '2026-11-10' }, como('admin'));
+    assert.equal(deLaTabla.status, 200, JSON.stringify(deLaTabla.body));
+    assert.deepEqual(deLaTabla.body.avisos, ['Ese día ya es feriado: Asueto municipal.']);
   });
 
   it('sin «se pasó al», solo marca que ese año no rige', async () => {
@@ -661,7 +686,7 @@ describe('PUT /feriados/:id/rige («no rige»)', () => {
     for (const pasaAl of [undefined, null, '']) {
       const res = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: false, pasa_al: pasaAl }, como('admin'));
       assert.equal(res.status, 200, `${pasaAl}: ${JSON.stringify(res.body)}`);
-      assert.deepEqual(res.body, { success: true, message: 'En 2027 no rige.', data: { nuevo_id: null } }, String(pasaAl));
+      assert.deepEqual(res.body, { success: true, message: 'En 2027 no rige.', data: { nuevo_id: null }, avisos: [] }, String(pasaAl));
     }
     assert.deepEqual(await todoLoGuardado(), {
       feriados: [{ id, fecha: '2026-11-08', nombre: 'Día del Empleado Municipal', tipo: 'municipal', trasladado_de: null,
@@ -670,7 +695,7 @@ describe('PUT /feriados/:id/rige («no rige»)', () => {
     });
   });
 
-  it('rige: true lo vuelve a habilitar, sin tocar el día al que se había pasado', async () => {
+  it('rige: true lo vuelve a habilitar, sin tocar el día al que se había pasado (el mensaje lo dice)', async () => {
     const id = await empleadoMunicipal();
     await noRige(id, 2028);
     const marca = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: false, pasa_al: '2027-11-09' }, como('admin'));
@@ -679,7 +704,11 @@ describe('PUT /feriados/:id/rige («no rige»)', () => {
     // pasa_al no cuenta con rige: true
     const res = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: true, pasa_al: '2027-11-10' }, como('admin'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, message: 'En 2027 vuelve a regir.', data: { nuevo_id: null } });
+    assert.deepEqual(res.body, {
+      success: true,
+      message: 'En 2027 vuelve a regir. El día al que se había pasado (09/11/2027) sigue cargado: si ya no corresponde, dalo de baja.',
+      data: { nuevo_id: null }, avisos: []
+    });
     // Solo ese año: el 2028 sigue sin regir
     assert.deepEqual(await aniosQueNoRigen(id), [2028]);
     assert.equal((await enLaLista(2027, id)).rige, true);
@@ -691,6 +720,21 @@ describe('PUT /feriados/:id/rige («no rige»)', () => {
     const otraVez = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: true }, como('admin'));
     assert.equal(otraVez.status, 200, JSON.stringify(otraVez.body));
     assert.deepEqual(await aniosQueNoRigen(id), [2028]);
+  });
+
+  it('rige: true sin un día al que se haya pasado ese año (o dado de baja, o de otro año u otro nombre): el mensaje de siempre', async () => {
+    const id = await empleadoMunicipal();
+    const sinPasar = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: false }, como('admin'));
+    assert.equal(sinPasar.status, 200, JSON.stringify(sinPasar.body));
+    // Otros que no son el día al que se pasó en 2027: de otro año, con otro nombre y uno dado de baja
+    await insertarFeriado({ fecha: '2026-11-09', nombre: 'Día del Empleado Municipal', tipo: 'municipal', trasladado_de: '2026-11-08' });
+    await insertarFeriado({ fecha: '2027-11-09', nombre: 'Otro feriado', tipo: 'municipal', trasladado_de: '2027-11-08' });
+    await insertarFeriado({ fecha: '2027-11-10', nombre: 'Día del Empleado Municipal', tipo: 'municipal', trasladado_de: '2027-11-08',
+      activo: 0 });
+    const res = await api.put(`/feriados/${id}/rige`, { anio: 2027, rige: true }, como('admin'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: true, message: 'En 2027 vuelve a regir.', data: { nuevo_id: null }, avisos: [] });
+    assert.deepEqual(await aniosQueNoRigen(id), []);
   });
 
   it('sobre uno que no se repite da 400, sin campo', async () => {

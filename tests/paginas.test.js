@@ -311,8 +311,8 @@ describe('páginas', () => {
     // después del de borrar un área y fuera del contenido (después del footer), con los ids que usa feriados.js
     const modalFeriado = () => bloque(/<div class="modal-overlay" id="modal-feriado">[\s\S]*?(?=<div class="modal-overlay" id="modal-baja-feriado">)/);
     const modalBaja = () => bloque(/<div class="modal-overlay" id="modal-baja-feriado">[\s\S]*?(?=<script )/);
-    const IDS_DEL_MODAL = ['modal-feriado', 'modal-feriado-titulo', 'feriado-error', 'fe-fecha', 'fe-fecha-dia', 'fe-fecha-error',
-      'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
+    const IDS_DEL_MODAL = ['modal-feriado', 'modal-feriado-titulo', 'feriado-error', 'fe-fecha', 'fe-fecha-dia', 'fe-fecha-ayuda',
+      'fe-fecha-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
       'fe-trasladado-error', 'fe-se-repite', 'fe-se-repite-error', 'fe-anio', 'fe-no-rige', 'fe-no-rige-texto', 'fe-pasa-al-grupo',
       'fe-pasa-al', 'fe-pasa-al-ayuda', 'fe-pasa-al-error', 'fe-baja', 'fe-guardar'];
     const IDS_DE_LA_BAJA = ['modal-baja-feriado', 'modal-baja-feriado-titulo', 'baja-feriado-texto', 'baja-feriado-desde-grupo',
@@ -375,6 +375,9 @@ describe('páginas', () => {
     it('los campos: la fecha con su día al lado, desde el 01/01/2025; el nombre; los tipos; «Trasladado del»; «Se repite»; cada uno con su error', () => {
       const modal = modalFeriado();
       assert.match(modal, /<input type="date" id="fe-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="fe-fecha-dia fe-fecha-error">\s*<span class="fe-dia" id="fe-fecha-dia"><\/span>/);
+      // La ayuda de la fecha (revisión final, 1): vacía y oculta; feriados.js la escribe al corregir uno que se repite y la suma al
+      // aria-describedby de la fecha mientras se ve
+      assert.match(modal, /<span class="fe-dia" id="fe-fecha-dia"><\/span>\s*<\/div>\s*<p class="form-hint" id="fe-fecha-ayuda" hidden><\/p>\s*<p class="form-error" id="fe-fecha-error" hidden><\/p>/);
       assert.match(modal, /<label class="form-label" for="fe-fecha">Fecha <span class="requerido" aria-hidden="true">\*<\/span><\/label>/);
       assert.match(modal, /<input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">/);
       assert.match(modal, /<label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">\(opcional\)<\/span><\/label>/);

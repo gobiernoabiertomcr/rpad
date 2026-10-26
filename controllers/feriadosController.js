@@ -133,15 +133,33 @@ const cargarElDiaAlQueSePaso = async (conexion, fila, { anio, pasa_al: pasaAl },
   return resultado.insertId;
 };
 
-const textoDeRige = ({ anio, rige, pasa_al: pasaAl }) => {
-  if (rige) return `En ${anio} vuelve a regir.`;
+// El día al que se había pasado ese año (el que cargó «Se pasó al»: activo, con el mismo nombre y trasladado del día que no
+// regía), para avisarlo al volver a regir; su fecha, o null si no hay
+const fechaDelDiaAlQueSePaso = async (conexion, fila, { anio }) => {
+  const [[pasado]] = await conexion.query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha FROM feriados
+     WHERE nombre = ? AND trasladado_de = ? AND activo = 1 ORDER BY fecha, id LIMIT 1`,
+    [fila.nombre, `${anio}-${fila.fecha.slice(5)}`]
+  );
+  return pasado ? pasado.fecha : null;
+};
+
+// `pasado`: al volver a regir, la fecha del día al que se había pasado, si sigue cargado (no se toca: lo dice el mensaje)
+const textoDeRige = ({ anio, rige, pasa_al: pasaAl }, pasado = null) => {
+  if (rige) {
+    const vuelve = `En ${anio} vuelve a regir.`;
+    return pasado === null
+      ? vuelve
+      : `${vuelve} El día al que se había pasado (${formatoCorto(pasado)}) sigue cargado: si ya no corresponde, dalo de baja.`;
+  }
   return pasaAl === null ? `En ${anio} no rige.` : `En ${anio} no rige: se pasó al ${formatoCorto(pasaAl)}.`;
 };
 
 // PUT /api/feriados/:id/rige: en uno que se repite, { anio, rige, pasa_al } marca (rige: false) o desmarca (rige: true) que ese
 // año no rige; con pasa_al, en la misma transacción carga el día al que se pasó. Una sola escritura en feriados_no_rige, la de
 // ese año (INSERT IGNORE o DELETE): repetir el pedido no cambia nada. Volver a regir no toca el día al que se había pasado (es un
-// feriado más). nuevo_id: el id del día al que se pasó, o null
+// feriado más): si sigue cargado, el mensaje lo dice. nuevo_id: el id del día al que se pasó, o null. avisos: los de ese día
+// (fin de semana, ya hay otro feriado), contra la proyección completa y sin contarlo a él, como al cargar uno; sin pasa_al, []
 export const cambiarRige = (req, res) => responder(res, 'Error al cambiar si rige el feriado', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrado();
@@ -152,11 +170,16 @@ export const cambiarRige = (req, res) => responder(res, 'Error al cambiar si rig
     if (error) return rechazoDeValidacion(error);
     if (datos.rige) {
       await conexion.query('DELETE FROM feriados_no_rige WHERE feriado_id = ? AND anio = ?', [id, datos.anio]);
-    } else {
-      await conexion.query('INSERT IGNORE INTO feriados_no_rige (feriado_id, anio) VALUES (?, ?)', [id, datos.anio]);
+      const pasado = await fechaDelDiaAlQueSePaso(conexion, fila, datos);
+      return [200, { success: true, message: textoDeRige(datos, pasado), data: { nuevo_id: null }, avisos: [] }];
     }
-    const nuevoId = datos.pasa_al === null ? null : await cargarElDiaAlQueSePaso(conexion, fila, datos, req.user.userId);
-    return [200, { success: true, message: textoDeRige(datos), data: { nuevo_id: nuevoId } }];
+    await conexion.query('INSERT IGNORE INTO feriados_no_rige (feriado_id, anio) VALUES (?, ?)', [id, datos.anio]);
+    if (datos.pasa_al === null) return [200, { success: true, message: textoDeRige(datos), data: { nuevo_id: null }, avisos: [] }];
+    const nuevoId = await cargarElDiaAlQueSePaso(conexion, fila, datos, req.user.userId);
+    // Las filas, leídas después del FOR UPDATE de filaDeFeriado (su primera lectura) y de cargar el día: el que se cargó (o el que
+    // ya estaba) no se cuenta a sí mismo
+    const avisos = avisosDeLaFecha(datos.pasa_al, await filasDeFeriados(conexion), nuevoId);
+    return [200, { success: true, message: textoDeRige(datos), data: { nuevo_id: nuevoId }, avisos }];
   });
 });
 

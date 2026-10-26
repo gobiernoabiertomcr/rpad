@@ -672,7 +672,7 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 4. **Verificar** (Ctrl+F5; solo mirar: no cargar feriados de prueba):
    - **Administración → Configuración → Feriados** (con administración; también `configuracion.html#feriados`): arriba, el aviso azul que dice que estos feriados todavía no cambian los días hábiles del sistema. La tarjeta «Feriados y días no laborables de 2026» muestra «Todos» con **28** (los 9 fijos, en gris y sin «Editar», y los 19 de la precarga), Nacionales 8, De Chubut 4, De Comodoro 2 y No laborables 5. El Jueves Santo (2/4) dice «Cae el mismo día que un feriado fijo: no cambia nada»; el 15/6, «Trasladado del miércoles 17/06», y el Día del Empleado Municipal (8/11), «Cae domingo: no cambia ningún día hábil».
    - **2027** en el selector: «Todos» con **21** (los 9 fijos, los 9 de 2027 y los tres que se repiten).
-   - «Editar» de uno y **Cancelar**, sin guardar: el modal trae su fecha con el día de la semana, el nombre, el tipo y el pie «Siempre el día entero»; en uno que se repite (por ejemplo, el aniversario), además, «En 2026 no rige».
+   - «Editar» de uno y **Cancelar**, sin guardar: el modal trae su fecha con el día de la semana, el nombre, el tipo y el pie «Siempre el día entero»; en uno que se repite (por ejemplo, el aniversario), además, «En 2026 no rige» y, debajo de la fecha, «Es la fecha de su primer año (2026): corregirla cambia todos los años. Si solo en 2026 se corrió, marcá «En 2026 no rige».»; mirando 2027, el primer año sigue siendo 2026 y lo demás dice 2027.
    - Nada más cambia: las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-feriados.sql` **después** del Restart: borra `feriados_no_rige` y después `feriados`, y **se pierden la precarga y los feriados cargados desde la pestaña** (exportar las dos tablas antes si hace falta conservarlos). Los usuarios y el resto de los datos no se tocan. Para volver a la versión nueva, se corren otra vez las dos migraciones, en su orden.
@@ -901,7 +901,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | GET | `/api/feriados` | Los feriados de un año (`?anio=AAAA`, por defecto el en curso), con los 9 fijos, y los años del selector (cualquier rol con sesión) |
 | POST | `/api/feriados` | Cargar un feriado (`{ fecha, nombre, tipo, trasladado_de, se_repite }`; administración); trae `avisos` que no frenan nada |
 | PUT | `/api/feriados/:id` | Corregir un feriado (el formulario entero; administración) |
-| PUT | `/api/feriados/:id/rige` | En uno que se repite, marcar o desmarcar que un año no rige (`{ anio, rige, pasa_al }`; con `pasa_al`, carga el día al que se pasó; administración) |
+| PUT | `/api/feriados/:id/rige` | En uno que se repite, marcar o desmarcar que un año no rige (`{ anio, rige, pasa_al }`; con `pasa_al`, carga el día al que se pasó y trae sus `avisos`; administración) |
 | DELETE | `/api/feriados/:id` | Dar de baja un feriado (en uno que se repite, `?desde=AAAA`: deja de regir desde ese año; administración) |
 
 ### Cron (requiere secret)
