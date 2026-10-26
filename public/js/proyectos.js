@@ -24,7 +24,11 @@
  * un número se escribe con String (Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro y recibe quién mira por parámetro (tests/proyectos-frontend.test.js
  * lo carga en un vm, después del main.js de verdad —getIconSvg e ICON_SELECTOR_MAP— y del api.js de verdad —Utils—, como la página);
- * lo que toca el DOM o la API va aparte, al final.
+ * lo que toca el DOM o la API va aparte, al final (iniciarProyectos, enganchado a DOMContentLoaded): las cargas (API.pedirJson), las
+ * pestañas, los filtros con la dirección (history.replaceState), el ancho de la pista (ResizeObserver), las filas, los modales, los
+ * guardados (el botón deshabilitado hasta la respuesta), las subidas (fetch + FormData, sin Content-Type), las descargas y la vista
+ * previa (API.pedirArchivo) y las confirmaciones. Los eventos van delegados en contenedores fijos: volver a dibujar no engancha nada, y
+ * el foco vuelve al control que se usó. Lo que cambia se anuncia en #pr-anuncio, la región viva que no se vuelve a dibujar.
  */
 
 // =====================================================
@@ -191,6 +195,46 @@ function estadoConVentana(estado, extremos) {
 // «Ver todos los proyectos» (spec 2.5): limpia los filtros (la búsqueda, el estado y la categoría); la ventana y el resaltado quedan
 function sinFiltros(estado) {
   return { ...estado, busqueda: ESTADO_DE_ENTRADA.busqueda, estado: ESTADO_DE_ENTRADA.estado, categoria: ESTADO_DE_ENTRADA.categoria };
+}
+
+// El año resaltado de la dirección, tal como viene (el año como texto, o null), sin mirar la ventana: estadoDeLaUrl lo deja afuera si
+// no cae en la ventana que termina en `anios`, pero esa ventana puede no ser la que se ve (la de entrada se corrige con los hitos)
+function resaltarDeLaUrl(search) {
+  const texto = typeof search === 'string' ? search : '';
+  const corte = texto.indexOf('#');
+  const anio = anioValido(new URLSearchParams((corte === -1 ? texto : texto.slice(0, corte)).replace(/^\?/, '')).get('resaltar'));
+  return anio === null ? null : String(anio);
+}
+
+// Lo elegido en la lista al abrir la página: lo de la dirección, con la ventana corregida a los años con hitos (`extremos`) y el año
+// resaltado si cae en esa ventana. Con `?resaltar=2027` y la ventana de entrada corregida a 2025-2027, el 2027 queda resaltado
+function estadoDeLaLista(search, hoy, extremos) {
+  return estadoConVentana({ ...estadoDeLaUrl(search, hoy), resaltar: resaltarDeLaUrl(search) }, extremos);
+}
+
+// Lo elegido en la lista, leído en el detalle (sin los años con hitos, que el detalle no pide): el año resaltado viaja tal cual, así
+// «Ver todos los proyectos» vuelve con él y la lista lo corrige
+function estadoDelDetalle(search, hoy) {
+  return { ...estadoDeLaUrl(search, hoy), resaltar: resaltarDeLaUrl(search) };
+}
+
+// El estado con la ventana de entrada escrita como la de entrada (el año de hoy). Si la ventana que termina hoy no se puede (los hitos
+// obligan a otra: estadoConVentana), la de entrada es la corregida, y la dirección no la escribe: nadie la eligió
+function conAniosDeEntrada(estado, extremos, hoy) {
+  const deEntrada = estadoConVentana(estadoDeLaUrl('', hoy), extremos).anios;
+  return esObjeto(estado) && Number(estado.anios) === deEntrada ? { ...estado, anios: anioDeHoy(hoy) } : { ...estado };
+}
+
+// La dirección de la lista (la de urlDeEstado), con la ventana de entrada sin escribir aunque la hayan corregido los hitos
+function urlDeLaLista(estado, extremos, hoy) {
+  return urlDeEstado(conAniosDeEntrada(estado, extremos, hoy), hoy);
+}
+
+// Las pestañas de la lista (spec 1), en su orden: el fragmento de la dirección. Otro fragmento (#metricas, el link viejo) es Proyectos
+const PESTANAS = Object.freeze(['proyectos', 'linea', 'logros']);
+function pestanaDeHash(hash) {
+  const nombre = String(hash ?? '').replace(/^#/, '');
+  return PESTANAS.includes(nombre) ? nombre : PESTANAS[0];
 }
 
 // =====================================================
@@ -509,8 +553,9 @@ function htmlDeCarriles(proyectos, hitos, opciones) {
     if (!porProyecto.has(hito.proyecto_id)) porProyecto.set(hito.proyecto_id, []);
     porProyecto.get(hito.proyecto_id).push(hito);
   }
-  const contexto = { ventana, hoy, anchoPx, resaltar, estado };
-  const carriles = elegidos.map((proyecto) => htmlDeCarril(proyecto, porProyecto.get(proyecto.id) ?? [], contexto)).join('');
+  // Los links de los carriles llevan los filtros de la lista, sin escribir la ventana de entrada aunque la hayan corregido los hitos
+  const contexto = { ventana, hoy, anchoPx, resaltar, estado: conAniosDeEntrada(estado, extremos, hoy) };
+  const carriles =elegidos.map((proyecto) => htmlDeCarril(proyecto, porProyecto.get(proyecto.id) ?? [], contexto)).join('');
   return `${frase}<div class="pr-tarjeta"><div class="pr-carriles">${htmlDelEje(ventana, hoy)}`
     + `<ul class="pr-lista-carriles" role="list" aria-label="Proyectos">${carriles}${htmlDelCarrilDeLogros(lista.filter(esLogro), contexto)}</ul>`
     + `</div>${htmlDeLeyenda(resaltar)}</div>`;
@@ -1044,8 +1089,9 @@ const errorDeFecha = (valor, hoy, mensajeVacia, mensajeInvalida) => {
   if (esCampoVacio(valor)) return mensajeVacia;
   return fechaDentroDelRango(textoDeCampo(valor), hoy) ? null : mensajeInvalida;
 };
-// Las áreas: no vienen, null o una lista de ids (vacía es ninguna)
-const errorDeAreas = (valor) => (valor === undefined || valor === null || (Array.isArray(valor) && valor.every(esIdDeLaBase)) ? null : MENSAJES_PROYECTOS.areas);
+// Las áreas: no vienen, null o una lista de ids (vacía es ninguna). Se recorre con Array.from, como el for…of del servidor: un hueco de
+// una lista rala es un undefined, y es un error (every lo saltearía)
+const errorDeAreas = (valor) => (valor === undefined || valor === null || (Array.isArray(valor) && Array.from(valor).every(esIdDeLaBase)) ? null : MENSAJES_PROYECTOS.areas);
 
 // Los campos que pueden dar error, en el orden de los errores del servidor (la descripción nunca da)
 const REGLAS_DEL_PROYECTO = Object.freeze([
@@ -1255,30 +1301,1366 @@ function htmlDeMuestra(valores) {
 
 // --- Las confirmaciones (spec 6) ---
 
-// Una cantidad: el largo de una lista o un número entero no negativo
-const cantidadDelDato = (valor) => (Array.isArray(valor) ? valor.length : Math.max(0, Math.trunc(Number(valor)) || 0));
-
 // El texto del modal de confirmación (spec 6), con la concordancia resuelta. `tipo` y `datos`:
-// - 'proyecto', { nombre, hitos, documentos } (cantidades o listas: el detalle de un proyecto sirve tal cual): «¿Eliminar el proyecto
-//   X? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 5 hitos y 2 documentos.» (solo lo que tiene; sin
-//   ninguno, termina en «Informe anual.»);
-// - 'hito' o 'logro', { titulo, archivos }: «¿Eliminar el hito X?», con « Se borra también su archivo.» o « Se borran también sus N
-//   archivos.» si tiene;
+// - 'proyecto', el proyecto como lo manda la API: el detalle (con sus listas `hitos` y `documentos`) o el de la lista (con
+//   `cantidad_hitos` y `cantidad_documentos`), contados con cantidadDe, como la ficha: «¿Eliminar el proyecto X? Deja de verse en la
+//   lista, en la línea de tiempo y en el Informe anual, con 5 hitos y 2 documentos.» (solo lo que tiene; sin ninguno, termina en
+//   «Informe anual.»);
+// - 'hito' o 'logro', el hito con su lista `archivos`: «¿Eliminar el hito X?», con « Se borra también su archivo.» o « Se borran
+//   también sus N archivos.» si tiene;
 // - 'archivo', { nombre }: «¿Eliminar X?».
 // Texto, no HTML: va con textContent. '' con otro tipo
 function textoDeConfirmacion(tipo, datos) {
   const d = esObjeto(datos) ? datos : {};
   if (tipo === 'proyecto') {
-    const hitos = cantidadDelDato(d.hitos);
-    const documentos = cantidadDelDato(d.documentos);
+    const hitos = cantidadDe(d.hitos, d.cantidad_hitos);
+    const documentos = cantidadDe(d.documentos, d.cantidad_documentos);
     const con = [hitos ? plural(hitos, 'hito', 'hitos') : '', documentos ? plural(documentos, 'documento', 'documentos') : ''].filter(Boolean);
     return `¿Eliminar el proyecto ${textoLimpio(d.nombre)}? Deja de verse en la lista, en la línea de tiempo y en el Informe anual${con.length ? `, con ${con.join(' y ')}` : ''}.`;
   }
   if (tipo === 'hito' || tipo === 'logro') {
-    const archivos = cantidadDelDato(d.archivos);
+    const archivos = cantidadDe(d.archivos);
     const tambien = archivos === 1 ? ' Se borra también su archivo.' : (archivos > 1 ? ` Se borran también sus ${archivos} archivos.` : '');
     return `¿Eliminar el ${tipo} ${textoLimpio(d.titulo)}?${tambien}`;
   }
   if (tipo === 'archivo') return `¿Eliminar ${textoLimpio(d.nombre)}?`;
   return '';
+}
+
+// =====================================================
+// Lo puro de la página: las pestañas, el detalle, los archivos y las subidas
+// =====================================================
+
+// Las cantidades de las pestañas (spec 1): los proyectos activos (los que manda la API), todos los hitos (los mismos que cuenta el chip
+// «Todos» de la línea de tiempo) y los logros del área
+function cantidadesDeLasPestanas(proyectos, hitos) {
+  return {
+    proyectos: comoLista(proyectos).filter(esObjeto).length,
+    linea: hitosConFecha(hitos).length,
+    logros: comoLista(hitos).filter(esObjeto).filter(esLogro).length
+  };
+}
+
+// El título de la ventana en el detalle (spec 3): «<nombre> - Proyectos - RPAD». Texto, no HTML (va a document.title)
+function tituloDelDetalle(proyecto) {
+  return `${textoLimpio(esObjeto(proyecto) ? proyecto.nombre : '') || 'Proyecto'} - Proyectos - RPAD`;
+}
+
+// El link a la lista desde un estado del detalle (con los filtros de la lista)
+const htmlDelLinkALaLista = (estado, hoy) =>
+  `<p><a class="pr-volver" href="${esc(`proyectos.html${urlDeEstado(estado, hoy)}`)}">Ver todos los proyectos</a></p>`;
+
+// El detalle que no se encontró (spec 3): un id que no es un entero positivo, que no existe o de un proyecto dado de baja. Con su h2 y
+// el link a la lista (la página conserva su h1 «Proyectos»)
+function htmlDeNoEncontrado(estado, hoy) {
+  return '<div class="pr-estado"><h2>Proyecto no encontrado</h2><p>No hay ningún proyecto con ese número.</p>'
+    + `${htmlDelLinkALaLista(estado, hoy)}</div>`;
+}
+
+// El detalle que no se pudo cargar (spec 3), con su h2
+function htmlDeErrorDelDetalle(estado, hoy) {
+  return '<div class="pr-estado pr-error" role="alert"><h2>No se pudo cargar el proyecto</h2><p>Probá de nuevo en unos minutos.</p>'
+    + `${htmlDelLinkALaLista(estado, hoy)}</div>`;
+}
+
+// La dirección de la API de un archivo (`base`, la de su lista, de los data-* de htmlDeArchivos, y su id): solo la de los archivos de un
+// hito o la de los documentos de un proyecto, con ids enteros positivos; null si no
+function rutaDelArchivo(base, id) {
+  const archivo = idEntero(id);
+  const valida = typeof base === 'string' && /^\/gestion\/(?:hitos\/[1-9]\d*\/archivos|proyectos\/[1-9]\d*\/documentos)$/.test(base);
+  return valida && archivo ? `${base}/${archivo}` : null;
+}
+
+// El aviso de un hito (o un logro) que se guardó con archivos que no se subieron (spec 6): «El hito se guardó, pero los archivos no se
+// subieron: <motivo>.» (el motivo, el mensaje del servidor, sin su punto final). Texto, no HTML (va con textContent)
+function textoDeSubidaFallida(logro, motivo) {
+  const razon = String(motivo ?? '').trim().replace(/[.\s]+$/, '') || 'no se pudo conectar con el servidor';
+  return `${logro === true ? 'El logro' : 'El hito'} se guardó, pero los archivos no se subieron: ${razon}.`;
+}
+
+// Los problemas de los archivos elegidos, en un solo texto: cada uno termina en punto
+function textoDeProblemas(problemas) {
+  return comoLista(problemas).map((texto) => String(texto ?? '').trim()).filter(Boolean)
+    .map((texto) => (/[.!?]$/.test(texto) ? texto : `${texto}.`)).join(' ');
+}
+
+// El aviso de un guardado que salió bien: los mensajes del servidor (el del hito y el de la subida), unidos
+function textoDeGuardado(...mensajes) {
+  return mensajes.map((texto) => String(texto ?? '').trim().replace(/\.+$/, '')).filter(Boolean).join('. ');
+}
+
+// =====================================================
+// La página (DOM y API)
+// =====================================================
+
+// Todos los roles con sesión la ven; sin sesión, al login
+document.addEventListener('DOMContentLoaded', () => {
+  if (!Auth.isAuthenticated()) {
+    window.location.href = 'login.html';
+    return;
+  }
+  iniciarProyectos();
+});
+
+// El estado de la página. `pedido` numera las cargas: una respuesta que llega después de otra más nueva se descarta
+const pagina = {
+  hoy: '', esAdmin: false, modo: 'lista', pedido: 0,
+  // La lista: los proyectos y los hitos del timeline, los años con hitos, lo elegido, la pestaña, el filtro de la línea de tiempo y si
+  // los filtros la dejaron vacía
+  proyectos: [], hitos: [], extremos: null, estado: null, pestana: PESTANAS[0], filtroLinea: 'todos', vacio: false,
+  // El ancho de una pista de los carriles, medido en el DOM
+  anchoPx: ANCHO_DE_PISTA_POR_DEFECTO,
+  // El detalle: el id, el proyecto y lo elegido en la lista (de la dirección del detalle)
+  idDetalle: null, detalle: null, estadoDelDetalle: null,
+  // Las áreas del formulario del proyecto (GET /areas, una vez): null hasta que llegan
+  areas: null
+};
+// El modal abierto (uno a la vez): su id, el botón que lo abrió (y cómo encontrarlo si se volvió a dibujar) y qué hacer al cerrarlo
+let modalAbierto = null;
+// Cada apertura de un formulario o de una confirmación es un objeto nuevo: una respuesta que llega con otro abierto no lo toca
+let formProyecto = null;
+let formHito = null;
+let confirmacion = null;
+// Adónde va lo elegido en el selector de archivos de la página («Subir documentos», «Subir archivos» de un hito)
+let subidaDirecta = null;
+let temporizadorDeMedida = null;
+// El pedido de las áreas del formulario del proyecto, mientras está en camino
+let promesaDeAreas = null;
+
+const porId = (id) => document.getElementById(id);
+const MODALES = Object.freeze(['modal-proyecto', 'modal-hito', 'modal-confirmar', 'modal-vista-previa']);
+const ESTADOS_DE_LA_PAGINA = Object.freeze({ cargando: 'pr-cargando', error: 'pr-error', lista: 'pr-vista-lista', detalle: 'pr-vista-detalle' });
+// Los grupos de opciones del formulario del proyecto: el error va al grupo (role="radiogroup") y el foco, a la opción elegida
+const GRUPOS_DE_OPCIONES = Object.freeze(['estado', 'color', 'icono']);
+const TEXTO_SIN_RESULTADOS = 'Ningún proyecto coincide con lo que buscaste.';
+
+// Deshabilita el botón mientras dura el pedido (como en seguimiento.js)
+const conBotonBloqueado = async (boton, tarea) => {
+  if (boton) boton.disabled = true;
+  try {
+    await tarea();
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+};
+
+// Descarga un Blob con ese nombre de archivo y libera su URL (copiado de seguimiento.js)
+const descargarBlob = (blob, nombre) => {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// La región viva de la página (#pr-anuncio, fuera de lo que se vuelve a dibujar): lo que se anuncia a los lectores de pantalla. Un
+// texto igual al anterior se cambia apenas (un espacio duro al final), para que se vuelva a anunciar
+function anunciar(texto) {
+  const region = porId('pr-anuncio');
+  if (!region || !texto) return;
+  region.textContent = region.textContent === texto ? `${texto}\u00A0` : texto;
+}
+
+// Los avisos de la página (Utils.showSuccess y Utils.showError escapan el texto), también anunciados
+function avisarExito(mensaje) {
+  if (!mensaje) return;
+  Utils.showSuccess(mensaje);
+  anunciar(mensaje);
+}
+function avisarError(mensaje) {
+  if (!mensaje) return;
+  Utils.showError(mensaje);
+  anunciar(mensaje);
+}
+
+// La sesión venció (401) en cualquier pedido: se cierra y al login. API.pedirArchivo no dice el estado: ahí cuenta un token vencido
+function esSesionVencida(error) {
+  return error?.status === 401;
+}
+function esSesionVencidaEnArchivo(error) {
+  return esSesionVencida(error) || (typeof Auth.isTokenExpired === 'function' && Auth.isTokenExpired() === true);
+}
+function irAlLogin() {
+  if (typeof Auth.clearSession === 'function') Auth.clearSession();
+  window.location.href = 'login.html';
+}
+
+// El mensaje de un error del servidor; sin respuesta (sin conexión), uno propio
+function mensajeDeFalla(error) {
+  if (error?.status) return error.message || `Error ${error.status}`;
+  return 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
+}
+
+// =====================================================
+// El arranque, las cargas y los estados
+// =====================================================
+
+// Sin ?id=, la lista (las tres pestañas); con ?id=N, el detalle de ese proyecto (un id que no es un entero positivo, el no encontrado,
+// sin pedirlo). Devuelve la carga, para quien quiera esperarla
+function iniciarProyectos() {
+  pagina.hoy = Utils.hoyEnArgentina();
+  pagina.esAdmin = typeof Auth.isAdmin === 'function' && Auth.isAdmin() === true;
+  conectarEventos();
+  const search = String(window.location.search ?? '');
+  const parametros = new URLSearchParams(search.replace(/^\?/, ''));
+  if (parametros.has('id')) {
+    pagina.modo = 'detalle';
+    pagina.estadoDelDetalle = estadoDelDetalle(search, pagina.hoy);
+    porId('pr-nuevo').hidden = true;
+    pagina.idDetalle = idEntero(parametros.get('id'));
+    if (pagina.idDetalle === null) {
+      mostrarNoEncontrado();
+      return Promise.resolve();
+    }
+    return cargarDetalle();
+  }
+  pagina.modo = 'lista';
+  porId('pr-nuevo').hidden = !pagina.esAdmin;
+  // El link viejo de las métricas (gestion.html#metricas llega por la redirección): el aviso, y abre Proyectos
+  porId('pr-aviso-metricas').hidden = window.location.hash !== '#metricas';
+  pagina.pestana = pestanaDeHash(window.location.hash);
+  return cargarLista({ inicial: true });
+}
+
+// Uno de los estados de la página a la vez: cargando, el error, la lista o el detalle
+function mostrarEstado(cual) {
+  for (const [nombre, id] of Object.entries(ESTADOS_DE_LA_PAGINA)) {
+    const elemento = porId(id);
+    if (elemento) elemento.hidden = nombre !== cual;
+  }
+}
+
+// GET /gestion/proyectos y /gestion/timeline, en paralelo. La primera vez, «Cargando…» y lo elegido de la dirección; después (al volver
+// a pedir la vista), sin «Cargando…» y con lo elegido de siempre. El dibujo va dentro del mismo try: si un dato raro lo rompe, queda el
+// error y no «Cargando…» para siempre
+async function cargarLista({ inicial = false } = {}) {
+  const pedido = ++pagina.pedido;
+  if (inicial) {
+    porId('pr-cargando').textContent = 'Cargando los proyectos…';
+    mostrarEstado('cargando');
+  }
+  try {
+    const [deProyectos, deHitos] = await Promise.all([API.pedirJson('GET', '/gestion/proyectos'), API.pedirJson('GET', '/gestion/timeline')]);
+    if (pedido !== pagina.pedido) return;
+    const proyectos = deProyectos?.data;
+    const hitos = deHitos?.data;
+    if (!Array.isArray(proyectos) || !Array.isArray(hitos)) throw new TypeError('La respuesta no es la lista de proyectos');
+    pagina.proyectos = proyectos;
+    pagina.hitos = hitos;
+    pagina.extremos = extremosDeAnios(proyectos, hitos, pagina.hoy);
+    pagina.estado = inicial || !pagina.estado
+      ? estadoDeLaLista(String(window.location.search ?? ''), pagina.hoy, pagina.extremos)
+      : estadoConVentana(pagina.estado, pagina.extremos);
+    pagina.vacio = proyectos.length > 0 && filtrarProyectos(proyectos, pagina.estado).length === 0;
+    pagina.modo = 'lista';
+    mostrarEstado('lista');
+    dibujarLista();
+    mostrarPestana(pagina.pestana);
+    medirLaPista();
+  } catch (error) {
+    if (pedido !== pagina.pedido) return;
+    if (esSesionVencida(error)) {
+      irAlLogin();
+      return;
+    }
+    console.error('Error cargando los proyectos:', error);
+    if (inicial) mostrarEstado('error');
+    else avisarError('No se pudieron volver a cargar los proyectos. Probá de nuevo en unos minutos.');
+  }
+}
+
+// GET /gestion/proyectos/N. Un 404 es el no encontrado; otro error, el error del detalle (al volver a pedirlo, un aviso)
+async function cargarDetalle({ recarga = false } = {}) {
+  const pedido = ++pagina.pedido;
+  if (!recarga) {
+    porId('pr-cargando').textContent = 'Cargando el proyecto…';
+    mostrarEstado('cargando');
+  }
+  try {
+    const proyecto = (await API.pedirJson('GET', `/gestion/proyectos/${pagina.idDetalle}`))?.data;
+    if (pedido !== pagina.pedido) return;
+    if (!esObjeto(proyecto) || idEntero(proyecto.id) === null) throw new TypeError('La respuesta no es un proyecto');
+    pagina.detalle = proyecto;
+    mostrarEstado('detalle');
+    dibujarDetalle();
+  } catch (error) {
+    if (pedido !== pagina.pedido) return;
+    if (esSesionVencida(error)) {
+      irAlLogin();
+      return;
+    }
+    if (error?.status === 404) {
+      mostrarNoEncontrado();
+      return;
+    }
+    console.error('Error cargando el proyecto:', error);
+    if (recarga) avisarError('No se pudo volver a cargar el proyecto. Probá de nuevo en unos minutos.');
+    else mostrarErrorDelDetalle();
+  }
+}
+
+function mostrarNoEncontrado() {
+  pagina.detalle = null;
+  porId('pr-vista-detalle').innerHTML = htmlDeNoEncontrado(pagina.estadoDelDetalle, pagina.hoy);
+  mostrarEstado('detalle');
+  document.title = 'Proyecto no encontrado - Proyectos - RPAD';
+}
+
+function mostrarErrorDelDetalle() {
+  porId('pr-vista-detalle').innerHTML = htmlDeErrorDelDetalle(pagina.estadoDelDetalle, pagina.hoy);
+  mostrarEstado('detalle');
+  document.title = 'No se pudo cargar el proyecto - Proyectos - RPAD';
+}
+
+// Después de guardar, subir o borrar: la vista otra vez, sin «Cargando…» (lo nuevo se ve sin recargar la página)
+function recargarVista() {
+  return pagina.modo === 'detalle' ? cargarDetalle({ recarga: true }) : cargarLista();
+}
+
+// =====================================================
+// El dibujo, con el foco y las filas abiertas conservados
+// =====================================================
+
+const esSeguroParaSelector = (texto) => typeof texto === 'string' && /^[\w\-/]*$/.test(texto);
+// Los botones que se reconocen por un data-* con su id (los de la ficha, los hitos, los documentos y los logros)
+const ATRIBUTOS_DE_FOCO = Object.freeze(['data-editar-proyecto', 'data-eliminar-proyecto', 'data-nuevo-hito', 'data-editar-hito',
+  'data-subir-archivos', 'data-eliminar-hito', 'data-subir-documentos', 'data-nuevo-logro', 'data-limpiar', 'data-ir-a']);
+
+// Cómo volver a encontrar `elemento` en el HTML que se vuelve a dibujar: { selector, otro (la otra flecha, si esta quedó deshabilitada),
+// inicio y fin (el cursor del buscador) }, o null
+function descriptorDeFoco(elemento) {
+  if (!elemento || typeof elemento.getAttribute !== 'function') return null;
+  const valor = (nombre) => elemento.getAttribute(nombre);
+  if (elemento.id === 'pr-buscar') {
+    return { selector: '#pr-buscar', inicio: elemento.selectionStart ?? null, fin: elemento.selectionEnd ?? null };
+  }
+  const grupo = valor('data-grupo');
+  if (grupo !== null) {
+    const opcion = valor('data-valor');
+    return esSeguroParaSelector(grupo) && esSeguroParaSelector(opcion) ? { selector: `button[data-grupo="${grupo}"][data-valor="${opcion}"]` } : null;
+  }
+  const paso = valor('data-correr');
+  if (paso === '-1' || paso === '1') return { selector: `button[data-correr="${paso}"]`, otro: `button[data-correr="${paso === '1' ? '-1' : '1'}"]` };
+  const archivo = valor('data-archivo');
+  if (archivo !== null) {
+    const base = valor('data-base');
+    const id = valor('data-id');
+    return [archivo, base, id].every(esSeguroParaSelector) ? { selector: `button[data-archivo="${archivo}"][data-base="${base}"][data-id="${id}"]` } : null;
+  }
+  for (const nombre of ATRIBUTOS_DE_FOCO) {
+    const dato = valor(nombre);
+    if (dato !== null) return esSeguroParaSelector(dato) ? { selector: `[${nombre}="${dato}"]` } : null;
+  }
+  const controla = valor('aria-controls');
+  if (controla !== null && elemento.classList?.contains('pr-fila')) {
+    return esSeguroParaSelector(controla) ? { selector: `button.pr-fila[aria-controls="${controla}"]` } : null;
+  }
+  const href = valor('href');
+  if (href !== null && elemento.classList?.contains('pr-carril') && !/["\\]/.test(href)) return { selector: `a.pr-carril[href="${href}"]` };
+  return null;
+}
+
+// Pone el foco en lo que describe `descriptor` dentro de `contenedor` (una flecha que quedó deshabilitada, en la otra; el buscador, con
+// el cursor donde estaba). true si lo encontró
+function restaurarFoco(contenedor, descriptor) {
+  if (!descriptor) return false;
+  let destino = contenedor.querySelector(descriptor.selector);
+  if (destino?.disabled && descriptor.otro) destino = contenedor.querySelector(descriptor.otro);
+  if (!destino || destino.disabled) return false;
+  destino.focus();
+  if (descriptor.inicio !== undefined && descriptor.inicio !== null && typeof destino.setSelectionRange === 'function') {
+    destino.setSelectionRange(descriptor.inicio, descriptor.fin ?? descriptor.inicio);
+  }
+  return true;
+}
+
+// Vuelve a dibujar `contenedor` con `html`: las filas que estaban abiertas siguen abiertas, y el foco vuelve al control que se usó
+// (`foco`: un elemento o un selector) o, si no, al que lo tenía adentro del contenedor; si ya no está, a `respaldo()`
+function redibujar(contenedor, html, { foco = null, respaldo = null } = {}) {
+  const activo = document.activeElement;
+  const adentro = Boolean(activo) && activo !== contenedor && typeof contenedor.contains === 'function' && contenedor.contains(activo);
+  const usado = foco ?? (adentro ? activo : null);
+  const descriptor = typeof usado === 'string' ? { selector: usado } : descriptorDeFoco(usado);
+  const abiertas = Array.from(contenedor.querySelectorAll('button.pr-fila[aria-expanded="true"]'))
+    .map((cabeza) => cabeza.getAttribute('aria-controls')).filter(esSeguroParaSelector);
+  contenedor.innerHTML = html;
+  for (const id of abiertas) {
+    const cabeza = contenedor.querySelector(`button.pr-fila[aria-controls="${id}"]`);
+    const cuerpo = cabeza ? porId(id) : null;
+    if (!cuerpo) continue;
+    cabeza.setAttribute('aria-expanded', 'true');
+    cuerpo.hidden = false;
+  }
+  if (usado && !restaurarFoco(contenedor, descriptor)) respaldo?.()?.focus?.();
+}
+
+// El lugar del foco cuando el control que se usó ya no está: en el detalle, «Ver todos los proyectos»; en la lista, la pestaña elegida
+function lugarDeRespaldo() {
+  return pagina.modo === 'detalle' ? porId('pr-vista-detalle').querySelector('a.pr-volver') : porId(`tab-${pagina.pestana}`);
+}
+
+function dibujarLista() {
+  dibujarProyectos();
+  dibujarLinea();
+  dibujarLogros();
+  const cantidades = cantidadesDeLasPestanas(pagina.proyectos, pagina.hitos);
+  for (const nombre of PESTANAS) porId(`cnt-${nombre}`).textContent = String(cantidades[nombre]);
+}
+
+// La pestaña Proyectos: los filtros (con sus cantidades y los hitos de cada año) y los carriles. Sin ningún proyecto, solo el vacío
+function dibujarProyectos(opciones = {}) {
+  const { proyectos, hitos, estado, extremos, hoy, anchoPx, esAdmin } = pagina;
+  const filtros = proyectos.length ? htmlDeFiltros(estado, cantidadesDeFiltros(proyectos, estado, hitos), ventanaDe(estado.anios, extremos)) : '';
+  redibujar(porId('panel-proyectos'), filtros + htmlDeCarriles(proyectos, hitos, { estado, hoy, anchoPx, esAdmin }), { respaldo: lugarDeRespaldo, ...opciones });
+}
+
+function dibujarLinea(opciones = {}) {
+  const { hitos, filtroLinea, hoy, esAdmin, estado, extremos } = pagina;
+  redibujar(porId('panel-linea'), htmlDeLinea(hitos, { filtro: filtroLinea, hoy, esAdmin, estado: conAniosDeEntrada(estado, extremos, hoy) }),
+    { respaldo: lugarDeRespaldo, ...opciones });
+}
+
+function dibujarLogros() {
+  redibujar(porId('panel-logros'), htmlDeLogros(pagina.hitos, { esAdmin: pagina.esAdmin, hoy: pagina.hoy }), { respaldo: lugarDeRespaldo });
+}
+
+function dibujarDetalle() {
+  const contenedor = porId('pr-vista-detalle');
+  redibujar(contenedor, htmlDeDetalle(pagina.detalle, { esAdmin: pagina.esAdmin, hoy: pagina.hoy, estado: pagina.estadoDelDetalle }), {
+    respaldo: () => contenedor.querySelector('a.pr-volver')
+  });
+  document.title = tituloDelDetalle(pagina.detalle);
+}
+
+// Lo elegido en la lista queda en la dirección, sin sumar una entrada al historial (la pestaña Proyectos va sin fragmento)
+function escribirLaUrl() {
+  if (pagina.modo !== 'lista' || !pagina.estado) return;
+  const fragmento = pagina.pestana === PESTANAS[0] ? '' : `#${pagina.pestana}`;
+  window.history?.replaceState?.(null, '', `${window.location.pathname ?? ''}${urlDeLaLista(pagina.estado, pagina.extremos, pagina.hoy)}${fragmento}`);
+}
+
+// ---- El ancho de la pista: la función que junta los puntos es pura y recibe el ancho, que se mide acá ----
+
+function medirLaPista() {
+  if (pagina.modo !== 'lista' || pagina.pestana !== PESTANAS[0] || !pagina.estado) return;
+  const pista = porId('panel-proyectos').querySelector('.pr-pista');
+  const ancho = Math.round(Number(typeof pista?.getBoundingClientRect === 'function' ? pista.getBoundingClientRect().width : 0));
+  if (!(ancho > 0) || ancho === pagina.anchoPx) return;
+  pagina.anchoPx = ancho;
+  dibujarProyectos();
+}
+
+// Con un pequeño retardo: una ventana que se arrastra no vuelve a dibujar los carriles en cada paso
+function programarMedida() {
+  clearTimeout(temporizadorDeMedida);
+  temporizadorDeMedida = setTimeout(medirLaPista, 120);
+}
+
+function observarLaPista() {
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(programarMedida).observe(porId('panel-proyectos'));
+    return;
+  }
+  window.addEventListener?.('resize', programarMedida);
+}
+
+// =====================================================
+// Los eventos (delegados en contenedores fijos: volver a dibujar no engancha nada)
+// =====================================================
+
+function conectarEventos() {
+  const nuevo = porId('pr-nuevo');
+  nuevo.addEventListener('click', () => abrirFormularioDeProyecto(null, nuevo));
+  for (const nombre of PESTANAS) {
+    const pestana = porId(`tab-${nombre}`);
+    pestana.addEventListener('click', () => mostrarPestana(nombre));
+    pestana.addEventListener('keydown', teclaEnPestanas);
+  }
+  window.addEventListener?.('hashchange', alCambiarElFragmento);
+  porId('pr-vista-lista').addEventListener('click', alTocar);
+  porId('pr-vista-detalle').addEventListener('click', alTocar);
+  const panel = porId('panel-proyectos');
+  panel.addEventListener('input', alEscribirEnElBuscador);
+  panel.addEventListener('compositionend', alEscribirEnElBuscador);
+  porId('pr-elegir-archivos').addEventListener('change', alElegirArchivosParaSubir);
+  conectarModales();
+  observarLaPista();
+}
+
+// ---- Las pestañas (las de Métricas y Reportes) ----
+
+function mostrarPestana(nombre) {
+  pagina.pestana = PESTANAS.includes(nombre) ? nombre : PESTANAS[0];
+  for (const otra of PESTANAS) {
+    const activa = otra === pagina.pestana;
+    const pestana = porId(`tab-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    pestana.classList.toggle('activa', activa);
+    porId(`panel-${otra}`).hidden = !activa;
+  }
+  escribirLaUrl();
+  if (pagina.pestana === PESTANAS[0]) programarMedida();
+}
+
+// Teclado en la barra: flechas (con vuelta), Inicio y Fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son atajos del
+// navegador: no se tocan
+function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const actual = PESTANAS.indexOf(evento.target?.dataset?.hash);
+  if (actual === -1) return;
+  const ultima = PESTANAS.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault?.();
+  mostrarPestana(PESTANAS[destino]);
+  porId(`tab-${PESTANAS[destino]}`).focus();
+}
+
+// Un fragmento escrito a mano (o el link viejo #metricas) cambia de pestaña
+function alCambiarElFragmento() {
+  if (pagina.modo !== 'lista') return;
+  if (window.location.hash === '#metricas') porId('pr-aviso-metricas').hidden = false;
+  mostrarPestana(pestanaDeHash(window.location.hash));
+}
+
+function irALaPestana(nombre) {
+  mostrarPestana(nombre);
+  porId(`tab-${pagina.pestana}`).focus();
+}
+
+// Un clic en la lista o en el detalle: los chips, las flechas, las acciones y las filas que se despliegan
+function alTocar(evento) {
+  const objetivo = evento.target;
+  if (!objetivo || typeof objetivo.closest !== 'function') return;
+  const de = (selector) => objetivo.closest(selector);
+  let boton;
+  if ((boton = de('button[data-grupo]'))) elegirChip(boton);
+  else if ((boton = de('button[data-correr]'))) correrLaVentana(boton);
+  else if ((boton = de('button[data-limpiar]'))) limpiarLosFiltros();
+  else if ((boton = de('a[data-ir-a]'))) {
+    evento.preventDefault?.();
+    irALaPestana(boton.dataset.irA);
+  } else if ((boton = de('button[data-archivo]'))) usarArchivo(boton);
+  else if ((boton = de('button[data-editar-proyecto]'))) abrirFormularioDeProyecto(pagina.detalle, boton);
+  else if ((boton = de('button[data-eliminar-proyecto]'))) confirmarEliminarProyecto(boton);
+  else if ((boton = de('button[data-nuevo-hito]'))) abrirFormularioDeHito({ proyecto: pagina.detalle, hito: null }, boton);
+  else if ((boton = de('button[data-nuevo-logro]'))) abrirFormularioDeHito({ proyecto: null, hito: null }, boton);
+  else if ((boton = de('button[data-editar-hito]'))) editarHito(boton);
+  else if ((boton = de('button[data-subir-archivos]'))) elegirArchivosDelHito(boton);
+  else if ((boton = de('button[data-eliminar-hito]'))) confirmarEliminarHito(boton);
+  else if ((boton = de('button[data-subir-documentos]'))) elegirDocumentos(boton);
+  else if ((boton = de('button.pr-fila'))) alternarFila(boton);
+}
+
+// Abre o cierra la fila de un hito
+function alternarFila(cabeza) {
+  const abrir = cabeza.getAttribute('aria-expanded') !== 'true';
+  cabeza.setAttribute('aria-expanded', String(abrir));
+  const cuerpo = porId(cabeza.getAttribute('aria-controls'));
+  if (cuerpo) cuerpo.hidden = !abrir;
+}
+
+// ---- Los filtros, las flechas y el resaltado de la pestaña Proyectos ----
+
+// Si los filtros dejaron la lista vacía, se anuncia (una vez, al quedar vacía)
+function anunciarSiQuedoVacia() {
+  const vacio = pagina.proyectos.length > 0 && filtrarProyectos(pagina.proyectos, pagina.estado).length === 0;
+  if (vacio && !pagina.vacio) anunciar(TEXTO_SIN_RESULTADOS);
+  pagina.vacio = vacio;
+}
+
+function elegirChip(boton) {
+  const grupo = boton.dataset.grupo;
+  const valor = boton.dataset.valor;
+  if (grupo === 'linea') {
+    if (!tieneClave(FILTROS_DE_LA_LINEA, valor)) return;
+    pagina.filtroLinea = valor;
+    dibujarLinea({ foco: boton });
+    return;
+  }
+  if (!pagina.estado) return;
+  if (grupo === 'estado' && (valor === 'todos' || ORDEN_ESTADOS.includes(valor))) pagina.estado = { ...pagina.estado, estado: valor };
+  else if (grupo === 'categoria' && (valor === 'todas' || tieneClave(TEXTO_CATEGORIA, valor))) pagina.estado = { ...pagina.estado, categoria: valor };
+  else if (grupo === 'resaltar') {
+    const ventana = ventanaDe(pagina.estado.anios, pagina.extremos);
+    const anio = valor === 'ninguno' ? null : anioValido(valor);
+    if (valor !== 'ninguno' && (anio === null || anio < ventana.desde || anio > ventana.hasta)) return;
+    pagina.estado = { ...pagina.estado, resaltar: anio === null ? null : String(anio) };
+  } else {
+    return;
+  }
+  dibujarProyectos({ foco: boton });
+  escribirLaUrl();
+  if (grupo !== 'resaltar') anunciarSiQuedoVacia();
+  else if (pagina.estado.resaltar) anunciar(fraseDelAnio(pagina.estado.resaltar, pagina.hitos));
+}
+
+// Una flecha corre la ventana un año; si el año resaltado queda afuera, vuelve a «Ninguno» (estadoConVentana)
+function correrLaVentana(boton) {
+  const paso = Number(boton.dataset.correr);
+  if ((paso !== 1 && paso !== -1) || boton.disabled || !pagina.estado) return;
+  pagina.estado = estadoConVentana({ ...pagina.estado, anios: pagina.estado.anios + paso }, pagina.extremos);
+  dibujarProyectos({ foco: boton });
+  escribirLaUrl();
+  const ventana = ventanaDe(pagina.estado.anios, pagina.extremos);
+  anunciar(`${ventana.desde} a ${ventana.hasta}`);
+}
+
+// «Ver todos los proyectos» del vacío: limpia los filtros y el foco va al buscador (el botón ya no está)
+function limpiarLosFiltros() {
+  if (!pagina.estado) return;
+  pagina.estado = sinFiltros(pagina.estado);
+  pagina.vacio = false;
+  dibujarProyectos({ foco: '#pr-buscar' });
+  escribirLaUrl();
+}
+
+// El buscador filtra en vivo (mientras se compone una letra con tilde, espera a que termine). El foco y el cursor quedan en el buscador
+function alEscribirEnElBuscador(evento) {
+  const campo = evento.target;
+  if (!campo || campo.id !== 'pr-buscar' || !pagina.estado) return;
+  if (evento.type === 'input' && evento.isComposing) return;
+  const busqueda = String(campo.value ?? '');
+  if (busqueda === pagina.estado.busqueda) return;
+  pagina.estado = { ...pagina.estado, busqueda };
+  dibujarProyectos({ foco: campo });
+  escribirLaUrl();
+  anunciarSiQuedoVacia();
+}
+
+// =====================================================
+// Los modales (como los del Seguimiento)
+// =====================================================
+
+function conectarModales() {
+  for (const id of MODALES) conectarCierre(porId(id));
+  document.addEventListener('keydown', alApretarUnaTecla);
+  const formularioDelProyecto = porId('form-proyecto');
+  formularioDelProyecto.addEventListener('submit', (evento) => {
+    evento.preventDefault?.();
+    guardarProyecto();
+  });
+  formularioDelProyecto.addEventListener('change', alCambiarElFormularioDeProyecto);
+  formularioDelProyecto.addEventListener('input', alEscribirEnElFormularioDeProyecto);
+  const formularioDelHito = porId('form-hito');
+  formularioDelHito.addEventListener('submit', (evento) => {
+    evento.preventDefault?.();
+    guardarHito();
+  });
+  formularioDelHito.addEventListener('input', alEscribirEnElFormularioDeHito);
+  porId('h-elegir').addEventListener('click', () => porId('h-archivos').click());
+  porId('h-archivos').addEventListener('change', () => {
+    const campo = porId('h-archivos');
+    sumarArchivosAlHito(Array.from(campo.files ?? []));
+    campo.value = '';
+  });
+  conectarZonaParaSoltar(porId('h-soltar'));
+  porId('h-pendientes').addEventListener('click', quitarPendiente);
+  porId('modal-confirmar-si').addEventListener('click', confirmarLaEliminacion);
+}
+
+// Cierran la × y «Cancelar» (data-cerrar) y el clic en el velo, solo si empezó en el velo: soltar ahí una selección de texto que
+// empezó en un campo no cierra el modal
+function conectarCierre(modal) {
+  let desdeElVelo = false;
+  modal.addEventListener('mousedown', (evento) => {
+    desdeElVelo = evento.target === modal;
+  });
+  modal.addEventListener('click', (evento) => {
+    const cerrar = Boolean(evento.target?.closest?.('[data-cerrar]')) || (evento.target === modal && desdeElVelo);
+    desdeElVelo = false;
+    if (cerrar && modalAbierto?.id === modal.id) cerrarModal();
+  });
+}
+
+// Escape cierra el modal abierto
+function alApretarUnaTecla(evento) {
+  if (evento.key !== 'Escape' || !modalAbierto) return;
+  evento.preventDefault?.();
+  cerrarModal();
+}
+
+// El error sin campo, dentro del modal (nunca detrás del velo)
+function mostrarAvisoDelModal(id, mensaje) {
+  const aviso = porId(`${id}-aviso`);
+  aviso.textContent = mensaje ?? '';
+  aviso.hidden = !mensaje;
+}
+
+// Abre el modal `id`: el foco va a `foco()` después de la transición del velo (hasta que termina, no deja enfocar, como en
+// seguimiento.js) y, al cerrarlo, vuelve a `volverA` (o, si se volvió a dibujar, al que lo reemplazó)
+function abrirModal(id, { volverA = null, foco = null, alCerrar = null } = {}) {
+  if (modalAbierto) cerrarModal({ sinFoco: true });
+  mostrarAvisoDelModal(id, '');
+  porId(id).classList.add('active');
+  const sesion = { id, volverA, descriptor: descriptorDeFoco(volverA), alCerrar };
+  modalAbierto = sesion;
+  setTimeout(() => {
+    if (modalAbierto === sesion) foco?.()?.focus?.();
+  }, 100);
+}
+
+function cerrarModal({ sinFoco = false } = {}) {
+  const sesion = modalAbierto;
+  if (!sesion) return;
+  modalAbierto = null;
+  porId(sesion.id).classList.remove('active');
+  if (!sinFoco) devolverElFoco(sesion);
+  sesion.alCerrar?.();
+}
+
+// El foco vuelve al botón que abrió el modal; si ya no está en la página (se volvió a dibujar), al que lo reemplazó; si no, al lugar de
+// respaldo
+function devolverElFoco({ volverA, descriptor }) {
+  if (volverA && volverA.isConnected !== false) {
+    volverA.focus?.();
+    return;
+  }
+  const otro = descriptor ? document.querySelector(descriptor.selector) : null;
+  (otro ?? lugarDeRespaldo())?.focus?.();
+}
+
+// ---- Los errores de los formularios ----
+
+// Muestra (o saca, con null) el error de un campo: su párrafo y aria-invalid en el control (en estado, color e ícono, en el grupo, que
+// es un radiogroup; en las áreas, en cada casilla). false si no es un campo del formulario
+function ponerError(formulario, campo, mensaje) {
+  const campos = CAMPOS_DEL_FORMULARIO[formulario];
+  if (!campos || !tieneClave(campos, campo)) return false;
+  const id = campos[campo];
+  const parrafo = porId(`${id}-error`);
+  if (parrafo) {
+    parrafo.textContent = mensaje ?? '';
+    parrafo.hidden = !mensaje;
+  }
+  const control = porId(id);
+  const marcados = campo === 'areas' ? Array.from(control.querySelectorAll('input[name="p-areas"]')) : [control];
+  for (const elemento of marcados) {
+    if (mensaje) elemento.setAttribute('aria-invalid', 'true');
+    else elemento.removeAttribute('aria-invalid');
+  }
+  return true;
+}
+
+// El foco al campo con error: en un grupo de opciones, a la elegida (o a la primera); en las áreas, a la primera casilla
+function enfocarCampo(formulario, campo) {
+  const control = porId(CAMPOS_DEL_FORMULARIO[formulario][campo]);
+  let destino = control;
+  if (GRUPOS_DE_OPCIONES.includes(campo)) destino = control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
+  else if (campo === 'areas') destino = control.querySelector('input') ?? control;
+  destino.focus?.();
+}
+
+function limpiarErrores(formulario) {
+  for (const campo of Object.keys(CAMPOS_DEL_FORMULARIO[formulario])) ponerError(formulario, campo, null);
+}
+
+// Todos los errores juntos (los campos sin error quedan limpios) y el foco al primero. true si hubo alguno
+function mostrarErrores(formulario, errores) {
+  limpiarErrores(formulario);
+  for (const { campo, mensaje } of errores) ponerError(formulario, campo, mensaje);
+  if (errores.length) enfocarCampo(formulario, errores[0].campo);
+  return errores.length > 0;
+}
+
+// Un error del servidor al guardar: con campo, en ese campo; sin campo, dentro del modal (nunca detrás del velo), con el foco en el
+// botón. Si el modal ya se cerró (o se abrió otro), un aviso de la página
+function mostrarFallaDelFormulario(formulario, idDelModal, abierto, falla, boton) {
+  const mensaje = mensajeDeFalla(falla);
+  if (!abierto()) {
+    avisarError(mensaje);
+    return;
+  }
+  if (falla?.campo && ponerError(formulario, falla.campo, mensaje)) {
+    enfocarCampo(formulario, falla.campo);
+    return;
+  }
+  mostrarAvisoDelModal(idDelModal, mensaje);
+  boton.focus?.();
+}
+
+// Una fecha a medio escribir en un <input type="date"> llega vacía: el navegador la marca como badInput
+const fechaAMedias = (id) => porId(id)?.validity?.badInput === true;
+
+// =====================================================
+// El proyecto: nuevo y editar (spec 6)
+// =====================================================
+
+function abrirFormularioDeProyecto(proyecto, boton) {
+  if (!pagina.esAdmin) return;
+  const elegido = esObjeto(proyecto) && idEntero(proyecto.id) ? proyecto : null;
+  const sesion = { proyecto: elegido, valores: valoresDelProyecto(elegido), guardando: false, cambio: false };
+  formProyecto = sesion;
+  const textos = textosDelModalDeProyecto(elegido);
+  porId('modal-proyecto-titulo').textContent = textos.titulo;
+  porId('p-guardar').textContent = textos.boton;
+  const v = sesion.valores;
+  porId('p-nombre').value = v.nombre;
+  porId('p-descripcion').value = v.descripcion;
+  porId('p-categoria').value = v.categoria;
+  porId('p-prioridad').value = v.prioridad;
+  const fecha = porId('p-fecha-inicio');
+  fecha.value = v.fecha_inicio;
+  fecha.max = fechaMaxima(pagina.hoy) ?? '';
+  porId('p-responsable').value = v.responsable;
+  porId('p-enlace-externo').value = v.enlace_externo;
+  for (const radio of porId('p-estado').querySelectorAll('input[name="p-estado"]')) radio.checked = radio.value === v.estado;
+  porId('p-colores').innerHTML = htmlDeColores(v.color);
+  porId('p-iconos').innerHTML = htmlDeIconos(v.icono);
+  porId('p-muestra').innerHTML = htmlDeMuestra(v);
+  limpiarErrores('proyecto');
+  abrirModal('modal-proyecto', {
+    volverA: boton,
+    foco: () => porId('p-nombre'),
+    alCerrar: () => {
+      if (sesion.cambio) recargarVista();
+    }
+  });
+  dibujarAreasDelFormulario(sesion);
+}
+
+// Las áreas (GET /areas, una vez por página): mientras llegan, «Cargando las áreas…»; si no llegan, lo dice. Las del proyecto viajan
+// igual al guardar (están en los valores del formulario): un error acá no se las saca
+async function dibujarAreasDelFormulario(sesion) {
+  const lista = porId('p-areas-lista');
+  if (pagina.areas === null) {
+    lista.innerHTML = '<p class="pr-vacio">Cargando las áreas…</p>';
+    // Un solo pedido aunque el formulario se abra otra vez mientras tanto; si falla, la próxima vez se vuelve a pedir
+    promesaDeAreas ??= API.pedirJson('GET', '/areas');
+    try {
+      const areas = (await promesaDeAreas)?.data;
+      pagina.areas = Array.isArray(areas) ? areas : [];
+    } catch (error) {
+      promesaDeAreas = null;
+      if (esSesionVencida(error)) {
+        irAlLogin();
+        return;
+      }
+      console.error('Error cargando las áreas:', error);
+      if (formProyecto === sesion) lista.innerHTML = '<p class="pr-vacio">No se pudieron cargar las áreas.</p>';
+      return;
+    }
+  }
+  if (formProyecto === sesion) lista.innerHTML = htmlDeAreas(pagina.areas, sesion.valores.areas);
+}
+
+// Elegir un estado, un color, un ícono o un área: queda en los valores del formulario (y la muestra se actualiza)
+function alCambiarElFormularioDeProyecto(evento) {
+  const sesion = formProyecto;
+  const campo = evento.target;
+  if (!sesion || !campo) return;
+  const v = sesion.valores;
+  if (campo.name === 'p-estado' && ESTADOS.includes(campo.value)) {
+    v.estado = campo.value;
+    ponerError('proyecto', 'estado', null);
+  } else if (campo.name === 'p-color' && COLOR_HEX.test(String(campo.value))) {
+    v.color = campo.value;
+    ponerError('proyecto', 'color', null);
+  } else if (campo.name === 'p-icono' && ICONOS.includes(campo.value)) {
+    v.icono = campo.value;
+    ponerError('proyecto', 'icono', null);
+  } else if (campo.name === 'p-areas') {
+    const id = idEntero(campo.value);
+    if (id === null) return;
+    v.areas = campo.checked ? [...v.areas.filter((otro) => otro !== id), id] : v.areas.filter((otro) => otro !== id);
+    ponerError('proyecto', 'areas', null);
+  } else {
+    return;
+  }
+  porId('p-muestra').innerHTML = htmlDeMuestra({ ...v, nombre: porId('p-nombre').value });
+}
+
+// Lo que se corrige deja de marcarse como error; el nombre se ve en la muestra
+function alEscribirEnElFormularioDeProyecto(evento) {
+  const id = evento.target?.id;
+  const campo = Object.keys(CAMPOS_DEL_FORMULARIO.proyecto).find((clave) => CAMPOS_DEL_FORMULARIO.proyecto[clave] === id);
+  if (campo) ponerError('proyecto', campo, null);
+  if (id === 'p-nombre' && formProyecto) porId('p-muestra').innerHTML = htmlDeMuestra({ ...formProyecto.valores, nombre: evento.target.value });
+}
+
+function valoresDelFormularioDeProyecto(sesion) {
+  return {
+    nombre: porId('p-nombre').value,
+    descripcion: porId('p-descripcion').value,
+    estado: sesion.valores.estado,
+    prioridad: porId('p-prioridad').value,
+    categoria: porId('p-categoria').value,
+    fecha_inicio: porId('p-fecha-inicio').value,
+    responsable: porId('p-responsable').value,
+    enlace_externo: porId('p-enlace-externo').value,
+    color: sesion.valores.color,
+    icono: sesion.valores.icono,
+    areas: [...sesion.valores.areas]
+  };
+}
+
+// Guardar: valida en el navegador (con los mensajes del servidor) y manda POST o PUT. El botón queda deshabilitado hasta la respuesta:
+// un doble clic no crea dos proyectos. Si sale bien, el aviso del servidor, se cierra y se vuelve a pedir la vista
+async function guardarProyecto() {
+  const sesion = formProyecto;
+  const boton = porId('p-guardar');
+  if (!sesion || sesion.guardando || boton.disabled) return;
+  const valores = valoresDelFormularioDeProyecto(sesion);
+  const errores = erroresDelProyecto(valores, pagina.hoy);
+  if (fechaAMedias('p-fecha-inicio') && !errores.some((e) => e.campo === 'fecha_inicio')) errores.push({ campo: 'fecha_inicio', mensaje: MENSAJES_PROYECTOS.fechaInicio });
+  if (mostrarErrores('proyecto', errores)) return;
+  mostrarAvisoDelModal('modal-proyecto', '');
+  const id = sesion.proyecto ? idEntero(sesion.proyecto.id) : null;
+  sesion.guardando = true;
+  boton.disabled = true;
+  let respuesta = null;
+  let falla = null;
+  try {
+    respuesta = id ? await API.pedirJson('PUT', `/gestion/proyectos/${id}`, valores) : await API.pedirJson('POST', '/gestion/proyectos', valores);
+  } catch (error) {
+    falla = error ?? new Error('');
+  } finally {
+    sesion.guardando = false;
+    boton.disabled = false;
+  }
+  const abierto = () => formProyecto === sesion && modalAbierto?.id === 'modal-proyecto';
+  if (falla) {
+    if (esSesionVencida(falla)) irAlLogin();
+    else mostrarFallaDelFormulario('proyecto', 'modal-proyecto', abierto, falla, boton);
+    return;
+  }
+  avisarExito(respuesta?.message || 'Proyecto guardado');
+  sesion.cambio = true;
+  if (abierto()) cerrarModal();
+  else recargarVista();
+}
+
+// =====================================================
+// El hito o el logro: nuevo y editar, con sus archivos (spec 6)
+// =====================================================
+
+// El hito de la vista con ese id: en el detalle, uno del proyecto; en la lista, uno del timeline
+function hitoDeLaVista(id) {
+  const lista = pagina.modo === 'detalle' ? comoLista(pagina.detalle?.hitos) : pagina.hitos;
+  return id === null ? null : (lista.filter(esObjeto).find((hito) => idEntero(hito.id) === id) ?? null);
+}
+
+const nombresDeArchivos = (archivos) => comoLista(archivos).filter(esObjeto).map((archivo) => String(archivo.nombre_archivo ?? ''));
+
+function editarHito(boton) {
+  const hito = hitoDeLaVista(idEntero(boton.dataset.editarHito));
+  if (hito) abrirFormularioDeHito({ proyecto: pagina.modo === 'detalle' ? pagina.detalle : null, hito }, boton);
+}
+
+function abrirFormularioDeHito({ proyecto, hito }, boton) {
+  if (!pagina.esAdmin) return;
+  const h = esObjeto(hito) ? hito : null;
+  const p = esObjeto(proyecto) && idEntero(proyecto.id) ? proyecto : null;
+  const textos = textosDelModalDeHito({ proyecto: p, hito: h });
+  const sesion = {
+    proyecto: p, hito: h, logro: textos.logro, hitoId: h ? idEntero(h.id) : null, enviados: null, mensaje: '',
+    pendientes: [], existentes: nombresDeArchivos(h?.archivos), guardando: false, cambio: false
+  };
+  formHito = sesion;
+  porId('modal-hito-titulo').textContent = textos.titulo;
+  porId('h-de').textContent = textos.de;
+  porId('h-guardar').textContent = textos.boton;
+  const v = valoresDelHito(h, pagina.hoy);
+  porId('h-titulo').value = v.titulo;
+  const fecha = porId('h-fecha');
+  fecha.value = v.fecha;
+  fecha.max = fechaMaxima(pagina.hoy) ?? '';
+  porId('h-descripcion').value = v.descripcion;
+  porId('h-evidencia-url').value = v.evidencia_url;
+  limpiarErrores('hito');
+  ponerErrorDeArchivos('');
+  dibujarPendientes();
+  abrirModal('modal-hito', {
+    volverA: boton,
+    foco: () => porId('h-titulo'),
+    alCerrar: () => {
+      // Los pendientes se vacían al cerrar; si el hito ya se guardó (aunque los archivos no), la vista se vuelve a pedir
+      sesion.pendientes = [];
+      if (formHito === sesion) {
+        dibujarPendientes();
+        ponerErrorDeArchivos('');
+        porId('h-soltar').classList.remove('arrastrando');
+      }
+      if (sesion.cambio) recargarVista();
+    }
+  });
+}
+
+function alEscribirEnElFormularioDeHito(evento) {
+  const id = evento.target?.id;
+  const campo = Object.keys(CAMPOS_DEL_FORMULARIO.hito).find((clave) => CAMPOS_DEL_FORMULARIO.hito[clave] === id);
+  if (campo) ponerError('hito', campo, null);
+}
+
+function ponerErrorDeArchivos(texto) {
+  const parrafo = porId('h-archivos-error');
+  parrafo.textContent = texto;
+  parrafo.hidden = !texto;
+}
+
+function dibujarPendientes() {
+  porId('h-pendientes').innerHTML = htmlDePendientes(formHito?.pendientes ?? []);
+}
+
+// Los archivos elegidos (con «elegilos» o soltados): cada uno se controla antes de sumarlo (problemaDeArchivo: la extensión, los 10 MB,
+// la cantidad contando los que ya tiene el hito, y los repetidos); los que no pasan no se suman y se dice por qué
+function sumarArchivosAlHito(archivos) {
+  const sesion = formHito;
+  if (!sesion || modalAbierto?.id !== 'modal-hito') return;
+  const problemas = [];
+  for (const archivo of archivos) {
+    const problema = problemaDeArchivo(archivo, { tipo: 'hito', existentes: sesion.existentes, elegidos: sesion.pendientes.map((otro) => otro.name) });
+    if (problema) problemas.push(problema);
+    else sesion.pendientes.push(archivo);
+  }
+  ponerErrorDeArchivos(textoDeProblemas(problemas));
+  dibujarPendientes();
+}
+
+// La × de un pendiente lo quita; el foco pasa a la × que quedó en su lugar (o a «elegilos» si no quedó ninguna)
+function quitarPendiente(evento) {
+  const boton = evento.target?.closest?.('button[data-quitar]');
+  const sesion = formHito;
+  if (!boton || !sesion) return;
+  const lugar = Number(boton.dataset.quitar);
+  if (!Number.isInteger(lugar) || lugar < 0 || lugar >= sesion.pendientes.length) return;
+  sesion.pendientes.splice(lugar, 1);
+  ponerErrorDeArchivos('');
+  dibujarPendientes();
+  const quedan = Array.from(porId('h-pendientes').querySelectorAll('button[data-quitar]'));
+  (quedan[Math.min(lugar, quedan.length - 1)] ?? porId('h-elegir')).focus?.();
+}
+
+// La zona para soltar archivos (con el teclado, «elegilos»)
+function conectarZonaParaSoltar(zona) {
+  zona.addEventListener('dragover', (evento) => {
+    evento.preventDefault?.();
+    zona.classList.add('arrastrando');
+  });
+  zona.addEventListener('dragleave', (evento) => {
+    if (!evento.relatedTarget || typeof zona.contains !== 'function' || !zona.contains(evento.relatedTarget)) zona.classList.remove('arrastrando');
+  });
+  zona.addEventListener('drop', (evento) => {
+    evento.preventDefault?.();
+    zona.classList.remove('arrastrando');
+    sumarArchivosAlHito(Array.from(evento.dataTransfer?.files ?? []));
+  });
+  // Un archivo soltado fuera de la zona, pero dentro del modal, no hace nada (el navegador lo abriría y se perdería el formulario)
+  const modal = porId('modal-hito');
+  for (const tipo of ['dragover', 'drop']) modal.addEventListener(tipo, (evento) => evento.preventDefault?.());
+}
+
+// Sube `archivos` a `ruta` (POST multipart, en el campo `archivos`), con el token en el encabezado y sin Content-Type: el navegador pone
+// el del FormData, con su separador. Si falla, tira un Error con el mensaje del servidor y su `status`
+async function subirArchivos(ruta, archivos) {
+  const datos = new FormData();
+  for (const archivo of archivos) datos.append('archivos', archivo, archivo.name);
+  const { 'Content-Type': _tipo, ...encabezados } = Auth.getAuthHeaders();
+  const respuesta = await fetch(`${CONFIG.API_URL}${ruta}`, { method: 'POST', headers: encabezados, body: datos });
+  const cuerpo = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) {
+    const error = new Error(cuerpo.error || `Error ${respuesta.status}`);
+    error.status = respuesta.status;
+    throw error;
+  }
+  return cuerpo;
+}
+
+const mismosValores = (a, b) => Object.keys(CAMPOS_DEL_FORMULARIO.hito).every((campo) => String(a?.[campo] ?? '') === String(b?.[campo] ?? ''));
+
+function valoresDelFormularioDeHito() {
+  return {
+    titulo: porId('h-titulo').value,
+    fecha: porId('h-fecha').value,
+    descripcion: porId('h-descripcion').value,
+    evidencia_url: porId('h-evidencia-url').value
+  };
+}
+
+// Guarda el hito (POST o PUT) y devuelve la respuesta. Si ya se guardó en este modal y no cambió nada, no lo vuelve a mandar (null)
+async function guardarElHito(sesion, valores) {
+  if (sesion.hitoId && sesion.enviados && mismosValores(sesion.enviados, valores)) return null;
+  let respuesta;
+  if (sesion.hitoId) respuesta = await API.pedirJson('PUT', `/gestion/hitos/${sesion.hitoId}`, valores);
+  else if (sesion.proyecto) respuesta = await API.pedirJson('POST', `/gestion/proyectos/${idEntero(sesion.proyecto.id)}/hitos`, valores);
+  else respuesta = await API.pedirJson('POST', '/gestion/logros', valores);
+  const id = sesion.hitoId ?? idEntero(respuesta?.data?.id);
+  if (!id) throw Object.assign(new Error('La respuesta no trae el hito guardado.'), { status: 500 });
+  Object.assign(sesion, { hitoId: id, enviados: { ...valores }, mensaje: respuesta?.message ?? '', cambio: true });
+  return respuesta;
+}
+
+// Guardar: valida, guarda el hito y sube los pendientes. Si el hito se guardó y la subida falló, el modal queda abierto con el motivo
+// y deja reintentar (sin volver a crear el hito); nunca dice «guardado» si algo falló. Si sale todo bien, el aviso del servidor, se
+// cierra y se vuelve a pedir la vista
+async function guardarHito() {
+  const sesion = formHito;
+  const boton = porId('h-guardar');
+  if (!sesion || sesion.guardando || boton.disabled) return;
+  const valores = valoresDelFormularioDeHito();
+  const errores = erroresDelHito(valores, pagina.hoy);
+  if (fechaAMedias('h-fecha') && !errores.some((e) => e.campo === 'fecha')) errores.push({ campo: 'fecha', mensaje: MENSAJES_PROYECTOS.fechaInvalida });
+  if (mostrarErrores('hito', errores)) return;
+  mostrarAvisoDelModal('modal-hito', '');
+  const abierto = () => formHito === sesion && modalAbierto?.id === 'modal-hito';
+  sesion.guardando = true;
+  boton.disabled = true;
+  let falla = null;
+  let fallaDeLaSubida = null;
+  let subida = '';
+  try {
+    await guardarElHito(sesion, valores);
+    if (sesion.pendientes.length) {
+      try {
+        subida = (await subirArchivos(`/gestion/hitos/${sesion.hitoId}/archivos`, sesion.pendientes))?.message ?? '';
+        sesion.pendientes = [];
+      } catch (error) {
+        fallaDeLaSubida = error ?? new Error('');
+      }
+    }
+  } catch (error) {
+    falla = error ?? new Error('');
+  } finally {
+    sesion.guardando = false;
+    boton.disabled = false;
+  }
+  if (esSesionVencida(falla) || esSesionVencida(fallaDeLaSubida)) {
+    irAlLogin();
+    return;
+  }
+  if (falla) {
+    mostrarFallaDelFormulario('hito', 'modal-hito', abierto, falla, boton);
+    return;
+  }
+  if (fallaDeLaSubida) {
+    const texto = textoDeSubidaFallida(sesion.logro, fallaDeLaSubida.status ? fallaDeLaSubida.message : mensajeDeFalla(fallaDeLaSubida));
+    if (abierto()) {
+      mostrarAvisoDelModal('modal-hito', texto);
+      boton.focus?.();
+    } else {
+      avisarError(texto);
+      recargarVista();
+    }
+    return;
+  }
+  avisarExito(textoDeGuardado(sesion.mensaje, subida) || 'Hito guardado');
+  sesion.cambio = true;
+  if (abierto()) cerrarModal();
+  else recargarVista();
+}
+
+// =====================================================
+// Subir, ver, descargar y borrar archivos (spec 6)
+// =====================================================
+
+// «Subir archivos» de un hito y «Subir documentos» de un proyecto abren el selector de la página
+function elegirArchivosDelHito(boton) {
+  const id = idEntero(boton.dataset.subirArchivos);
+  const hito = hitoDeLaVista(id);
+  if (!pagina.esAdmin || !hito) return;
+  abrirSelectorDeArchivos({ ruta: `/gestion/hitos/${id}/archivos`, tipo: 'hito', existentes: nombresDeArchivos(hito.archivos), boton, cosa: 'archivos' });
+}
+
+function elegirDocumentos(boton) {
+  const id = idEntero(boton.dataset.subirDocumentos);
+  if (!pagina.esAdmin || !id || idEntero(pagina.detalle?.id) !== id) return;
+  abrirSelectorDeArchivos({ ruta: `/gestion/proyectos/${id}/documentos`, tipo: 'proyecto', existentes: nombresDeArchivos(pagina.detalle.documentos), boton, cosa: 'documentos' });
+}
+
+function abrirSelectorDeArchivos(destino) {
+  subidaDirecta = destino;
+  const selector = porId('pr-elegir-archivos');
+  selector.value = '';
+  selector.click();
+}
+
+// Lo elegido en el selector: se controla todo antes de enviar (si alguno no pasa, no se sube ninguno y se dice por qué); la subida
+// muestra su estado y avisa el resultado
+async function alElegirArchivosParaSubir() {
+  const selector = porId('pr-elegir-archivos');
+  const destino = subidaDirecta;
+  subidaDirecta = null;
+  const archivos = Array.from(selector.files ?? []);
+  selector.value = '';
+  if (!destino || !archivos.length) return;
+  const elegidos = [];
+  const problemas = [];
+  for (const archivo of archivos) {
+    const problema = problemaDeArchivo(archivo, { tipo: destino.tipo, existentes: destino.existentes, elegidos: elegidos.map((otro) => otro.name) });
+    if (problema) problemas.push(problema);
+    else elegidos.push(archivo);
+  }
+  if (problemas.length) {
+    avisarError(`No se subió ningún archivo. ${textoDeProblemas(problemas)}`);
+    return;
+  }
+  const uno = destino.cosa === 'documentos' ? 'el documento' : 'el archivo';
+  const estado = elegidos.length === 1 ? `Subiendo ${uno}…` : `Subiendo ${elegidos.length} ${destino.cosa}…`;
+  const mensajes = porId('message-container');
+  if (mensajes) mensajes.innerHTML = `<div class="alert">${esc(estado)}</div>`;
+  anunciar(estado);
+  let respuesta = null;
+  let falla = null;
+  await conBotonBloqueado(destino.boton, async () => {
+    try {
+      respuesta = await subirArchivos(destino.ruta, elegidos);
+    } catch (error) {
+      falla = error ?? new Error('');
+    }
+  });
+  if (esSesionVencida(falla)) {
+    irAlLogin();
+    return;
+  }
+  if (falla) {
+    avisarError(`No se subieron los archivos: ${(falla.status ? falla.message : mensajeDeFalla(falla)).replace(/[.\s]+$/, '')}.`);
+    return;
+  }
+  avisarExito(respuesta?.message || 'Archivos subidos');
+  await recargarVista();
+}
+
+// Ver, Descargar y Eliminar de un archivo o un documento (la dirección sale de sus data-*, validada)
+function usarArchivo(boton) {
+  const ruta = rutaDelArchivo(boton.dataset.base, boton.dataset.id);
+  if (!ruta) return;
+  const nombre = String(boton.dataset.nombre ?? '');
+  const accion = boton.dataset.archivo;
+  if (accion === 'descargar') descargarArchivo(boton, ruta, nombre);
+  else if (accion === 'ver') verArchivo(boton, ruta, nombre, String(boton.dataset.mime ?? ''));
+  else if (accion === 'eliminar') pedirConfirmacion({ texto: textoDeConfirmacion('archivo', { nombre }), boton, ejecutar: () => API.pedirJson('DELETE', ruta) });
+}
+
+// Con el JWT en el encabezado (API.pedirArchivo), nunca en la URL, y con el nombre original
+async function descargarArchivo(boton, ruta, nombre) {
+  await conBotonBloqueado(boton, async () => {
+    try {
+      descargarBlob(await API.pedirArchivo(`${ruta}/descargar`), nombre || 'archivo');
+    } catch (error) {
+      if (esSesionVencidaEnArchivo(error)) irAlLogin();
+      else avisarError(`No se pudo descargar el archivo: ${error?.message ?? ''}`);
+    }
+  });
+}
+
+// La vista previa, desde un blob: (la imagen en un <img> y el PDF en un <iframe>); la URL se libera al cerrar el modal
+async function verArchivo(boton, ruta, nombre, mime) {
+  await conBotonBloqueado(boton, async () => {
+    let blob;
+    try {
+      blob = await API.pedirArchivo(`${ruta}/descargar`);
+    } catch (error) {
+      if (esSesionVencidaEnArchivo(error)) irAlLogin();
+      else avisarError(`No se pudo abrir el archivo: ${error?.message ?? ''}`);
+      return;
+    }
+    // Sin su tipo, un PDF no se dibuja en el <iframe>
+    if (!blob?.type && typeof Blob === 'function') blob = new Blob([blob], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const html = htmlDeVistaPrevia(url, { nombre, mime });
+    if (!html) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    porId('modal-vista-previa-titulo').textContent = nombre || 'Vista previa';
+    porId('modal-vista-previa-cuerpo').innerHTML = html;
+    abrirModal('modal-vista-previa', {
+      volverA: boton,
+      foco: () => porId('modal-vista-previa').querySelector('.modal-close'),
+      alCerrar: () => {
+        porId('modal-vista-previa-cuerpo').innerHTML = '';
+        URL.revokeObjectURL(url);
+      }
+    });
+  });
+}
+
+// =====================================================
+// Las confirmaciones (spec 6: un modal chico, no confirm())
+// =====================================================
+
+// Abre la confirmación con `texto`; «Eliminar» corre `ejecutar` (el pedido) y, si sale bien, el aviso del servidor, se cierra y
+// `alTerminar` (de entrada, volver a pedir la vista). El foco va a «Cancelar», que no borra nada
+function pedirConfirmacion({ texto, boton, ejecutar, alTerminar = recargarVista }) {
+  if (!pagina.esAdmin) return;
+  confirmacion = { ejecutar, alTerminar, ocupado: false };
+  porId('modal-confirmar-texto').textContent = texto;
+  abrirModal('modal-confirmar', {
+    volverA: boton,
+    foco: () => porId('modal-confirmar').querySelector('.modal-footer [data-cerrar]') ?? porId('modal-confirmar-si')
+  });
+}
+
+async function confirmarLaEliminacion() {
+  const actual = confirmacion;
+  const boton = porId('modal-confirmar-si');
+  if (!actual || actual.ocupado || boton.disabled) return;
+  mostrarAvisoDelModal('modal-confirmar', '');
+  actual.ocupado = true;
+  boton.disabled = true;
+  let respuesta = null;
+  let falla = null;
+  try {
+    respuesta = await actual.ejecutar();
+  } catch (error) {
+    falla = error ?? new Error('');
+  } finally {
+    actual.ocupado = false;
+    boton.disabled = false;
+  }
+  const abierta = confirmacion === actual && modalAbierto?.id === 'modal-confirmar';
+  if (falla) {
+    if (esSesionVencida(falla)) irAlLogin();
+    else if (abierta) {
+      mostrarAvisoDelModal('modal-confirmar', mensajeDeFalla(falla));
+      boton.focus?.();
+    } else {
+      avisarError(mensajeDeFalla(falla));
+    }
+    return;
+  }
+  avisarExito(respuesta?.message || 'Eliminado');
+  if (abierta) cerrarModal();
+  if (confirmacion === actual) confirmacion = null;
+  await actual.alTerminar();
+}
+
+function confirmarEliminarProyecto(boton) {
+  const proyecto = pagina.detalle;
+  const id = idEntero(proyecto?.id);
+  if (!id || idEntero(boton.dataset.eliminarProyecto) !== id) return;
+  pedirConfirmacion({
+    texto: textoDeConfirmacion('proyecto', proyecto),
+    boton,
+    ejecutar: () => API.pedirJson('DELETE', `/gestion/proyectos/${id}`),
+    alTerminar: volverALaLista
+  });
+}
+
+function confirmarEliminarHito(boton) {
+  const id = idEntero(boton.dataset.eliminarHito);
+  const hito = hitoDeLaVista(id);
+  if (!hito) return;
+  pedirConfirmacion({
+    texto: textoDeConfirmacion(esLogro(hito) ? 'logro' : 'hito', hito),
+    boton,
+    ejecutar: () => API.pedirJson('DELETE', `/gestion/hitos/${id}`)
+  });
+}
+
+// Un proyecto dado de baja ya no tiene detalle: la lista, con sus filtros, en la misma dirección (sin sumar una entrada al historial)
+async function volverALaLista() {
+  window.history?.replaceState?.(null, '', `${window.location.pathname ?? ''}${urlDeEstado(pagina.estadoDelDetalle, pagina.hoy)}`);
+  document.title = 'Proyectos - RPAD';
+  Object.assign(pagina, { modo: 'lista', detalle: null, idDetalle: null, pestana: PESTANAS[0], estado: null });
+  porId('pr-vista-detalle').innerHTML = '';
+  porId('pr-nuevo').hidden = !pagina.esAdmin;
+  await cargarLista({ inicial: true });
+  (pagina.esAdmin ? porId('pr-nuevo') : porId(`tab-${pagina.pestana}`))?.focus?.();
 }

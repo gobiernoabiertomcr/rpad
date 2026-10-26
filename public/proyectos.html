@@ -416,6 +416,9 @@
                 <p class="pr-aviso" id="pr-aviso-metricas" hidden>Las métricas de Gestión ahora están en <a href="reportes.html#metricas">Herramientas → Métricas y Reportes</a>.</p>
 
                 <div id="message-container"></div>
+                <!-- La región viva de la página: proyectos.js anuncia acá la frase del año resaltado, el vacío de los filtros, los años de las
+                     flechas y los avisos (lo que se vuelve a dibujar no la toca) -->
+                <p class="visualmente-oculto" id="pr-anuncio" role="status"></p>
 
                 <!-- Estados de la página -->
                 <noscript><p class="pr-estado">Para ver los proyectos hace falta JavaScript.</p></noscript>
@@ -504,7 +507,7 @@
                         <textarea class="form-input" id="p-descripcion" rows="3" aria-describedby="p-descripcion-error"></textarea>
                         <p class="form-error" id="p-descripcion-error" hidden></p>
                     </div>
-                    <fieldset class="pr-estados" id="p-estado" aria-describedby="p-estado-error">
+                    <fieldset class="pr-estados" id="p-estado" role="radiogroup" aria-describedby="p-estado-error">
                         <legend class="form-label">Estado</legend>
                         <div class="pr-opciones">
                             <label class="pr-opcion"><input type="radio" name="p-estado" value="idea" aria-describedby="p-estado-error" checked><span class="pr-insignia pr-idea">Idea</span></label>
@@ -551,12 +554,12 @@
                     </fieldset>
                     <div class="pr-muestra" id="p-muestra" aria-hidden="true"></div>
                     <div class="form-row">
-                        <fieldset class="pr-grupo" id="p-color" aria-describedby="p-color-error">
+                        <fieldset class="pr-grupo" id="p-color" role="radiogroup" aria-describedby="p-color-error">
                             <legend class="form-label">Color</legend>
                             <div class="pr-colores" id="p-colores"></div>
                             <p class="form-error" id="p-color-error" hidden></p>
                         </fieldset>
-                        <fieldset class="pr-grupo" id="p-icono" aria-describedby="p-icono-error">
+                        <fieldset class="pr-grupo" id="p-icono" role="radiogroup" aria-describedby="p-icono-error">
                             <legend class="form-label">Ícono</legend>
                             <div class="pr-iconos" id="p-iconos"></div>
                             <p class="form-error" id="p-icono-error" hidden></p>

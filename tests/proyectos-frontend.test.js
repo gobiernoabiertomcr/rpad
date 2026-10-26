@@ -1534,24 +1534,33 @@ describe('proyectos.js: lo que precarga cada formulario (valoresDelProyecto y va
 });
 
 describe('proyectos.js: las confirmaciones (textoDeConfirmacion, spec 6)', () => {
-  it('eliminar un proyecto: con hitos y documentos, con uno solo de los dos o sin ninguno', () => {
-    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 5, documentos: 2 }),
+  it('eliminar un proyecto: con hitos y documentos, con uno solo de los dos o sin ninguno (las cantidades de la lista)', () => {
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', cantidad_hitos: 5, cantidad_documentos: 2 }),
       '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 5 hitos y 2 documentos.');
-    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 1, documentos: 0 }),
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', cantidad_hitos: 1, cantidad_documentos: 0 }),
       '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 1 hito.');
-    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 0, documentos: 1 }),
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', cantidad_hitos: 0, cantidad_documentos: 1 }),
       '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 1 documento.');
-    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', hitos: 0, documentos: 0 }),
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] Índice', cantidad_hitos: 0, cantidad_documentos: 0 }),
       '¿Eliminar el proyecto [TEST] Índice? Deja de verse en la lista, en la línea de tiempo y en el Informe anual.');
-    // El detalle de un proyecto sirve tal cual: cuenta sus listas
+    // El proyecto de la lista sirve tal cual
+    const delaLista = PROYECTOS.find((p) => p.id === BOLETIN);
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { ...delaLista, nombre: '[TEST] Boletín' }),
+      '¿Eliminar el proyecto [TEST] Boletín? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 2 hitos y 2 documentos.');
+    // El detalle de un proyecto sirve tal cual: cuenta sus listas (como la ficha, cantidadDe: las listas mandan sobre las cantidades)
     assert.equal(ctx.textoDeConfirmacion('proyecto', { ...detalleDe(BOLETIN), nombre: '[TEST] Boletín' }),
       '¿Eliminar el proyecto [TEST] Boletín? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 2 hitos y 2 documentos.');
+    assert.equal(ctx.textoDeConfirmacion('proyecto', { nombre: '[TEST] X', hitos: [], documentos: [{ id: 1 }], cantidad_hitos: 9, cantidad_documentos: 9 }),
+      '¿Eliminar el proyecto [TEST] X? Deja de verse en la lista, en la línea de tiempo y en el Informe anual, con 1 documento.');
   });
 
   it('eliminar un hito: sin archivos, solo la pregunta; con uno, «su archivo»; con más, «sus N archivos»', () => {
     assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: [] }), '¿Eliminar el hito [TEST] Lanzamiento?');
     assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: [{ id: 1 }] }), '¿Eliminar el hito [TEST] Lanzamiento? Se borra también su archivo.');
-    assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: 3 }), '¿Eliminar el hito [TEST] Lanzamiento? Se borran también sus 3 archivos.');
+    assert.equal(ctx.textoDeConfirmacion('hito', { titulo: '[TEST] Lanzamiento', archivos: [{ id: 1 }, { id: 2 }, { id: 3 }] }), '¿Eliminar el hito [TEST] Lanzamiento? Se borran también sus 3 archivos.');
+    // El hito del timeline sirve tal cual
+    const conArchivos = HITOS.find((h) => h.archivos.length === 1);
+    assert.equal(ctx.textoDeConfirmacion('hito', conArchivos), `¿Eliminar el hito ${conArchivos.titulo.trim()}? Se borra también su archivo.`);
   });
 
   it('eliminar un logro: el mismo texto, con «logro»; eliminar un archivo, solo su nombre', () => {
@@ -1816,5 +1825,1075 @@ describe('proyectos.html: los modales (spec 6)', () => {
     assert.match(estilo, /\.pr-modal-aviso \{/);
     assert.match(estilo, /\.pr-quitar \{/);
     assert.match(estilo, /\.pr-vista-previa iframe \{/);
+  });
+});
+
+// =====================================================================================================================================
+// Lo puro de la página (Task 8): la dirección con la ventana corregida, las pestañas, el detalle, los archivos y las subidas
+// =====================================================================================================================================
+
+// Hitos en 2025 y 2027 (uno previsto): la ventana de entrada no puede terminar hoy (2026); la corregida es 2025-2027
+const HITOS_CORRIDOS = [hito(1, 900, '2025-03-10'), hito(2, 900, '2027-05-01')];
+const PROYECTOS_CORRIDOS = [proyecto({ id: 900 })];
+const EXTREMOS_CORRIDOS = { min: 2025, max: 2027 };
+
+describe('proyectos.js: la dirección con la ventana corregida (Task 8)', () => {
+  it('resaltarDeLaUrl: el año tal como viene, sin mirar la ventana; lo que no es un año, null', () => {
+    assert.equal(ctx.resaltarDeLaUrl('?resaltar=2027'), '2027');
+    assert.equal(ctx.resaltarDeLaUrl('?anios=2020&resaltar=2027#linea'), '2027');
+    assert.equal(ctx.resaltarDeLaUrl('?resaltar=hoy'), null);
+    assert.equal(ctx.resaltarDeLaUrl(''), null);
+    assert.equal(ctx.resaltarDeLaUrl(null), null);
+  });
+
+  it('estadoDeLaLista: con la ventana de entrada corregida a 2025-2027, ?resaltar=2027 queda resaltado', () => {
+    assert.deepEqual(plano(ctx.estadoDeLaLista('?resaltar=2027', HOY, EXTREMOS_CORRIDOS)), { ...DE_ENTRADA, anios: 2027, resaltar: '2027' });
+    // Un año que queda fuera de la ventana corregida no se resalta
+    assert.deepEqual(plano(ctx.estadoDeLaLista('?resaltar=2024', HOY, EXTREMOS_CORRIDOS)), { ...DE_ENTRADA, anios: 2027 });
+    // Con la ventana de entrada posible, lo mismo que estadoDeLaUrl
+    assert.deepEqual(plano(ctx.estadoDeLaLista('?estado=idea&resaltar=2025', HOY, { min: 2021, max: 2026 })), { ...DE_ENTRADA, estado: 'idea', resaltar: '2025' });
+  });
+
+  it('estadoDelDetalle: lo elegido en la lista, con el año resaltado tal cual (la lista lo corrige al volver)', () => {
+    assert.deepEqual(plano(ctx.estadoDelDetalle('?categoria=difusion&resaltar=2027&id=7', HOY)), { ...DE_ENTRADA, categoria: 'difusion', resaltar: '2027' });
+  });
+
+  it('urlDeLaLista: la ventana de entrada corregida no se escribe (nadie la eligió); otra ventana, sí', () => {
+    assert.equal(ctx.urlDeEstado({ ...DE_ENTRADA, anios: 2027 }, HOY), '?anios=2027');
+    assert.equal(ctx.urlDeLaLista({ ...DE_ENTRADA, anios: 2027 }, EXTREMOS_CORRIDOS, HOY), '');
+    assert.equal(ctx.urlDeLaLista({ ...DE_ENTRADA, anios: 2027, resaltar: '2027' }, EXTREMOS_CORRIDOS, HOY), '?resaltar=2027');
+    assert.equal(ctx.urlDeLaLista({ ...DE_ENTRADA, anios: 2025 }, { min: 2021, max: 2026 }, HOY), '?anios=2025');
+    assert.equal(ctx.urlDeLaLista({ ...DE_ENTRADA, anios: 2026 }, { min: 2021, max: 2026 }, HOY), '');
+    // Ida y vuelta: la dirección escrita vuelve al mismo estado
+    const estado = ctx.estadoDeLaLista('?resaltar=2027', HOY, EXTREMOS_CORRIDOS);
+    assert.deepEqual(plano(ctx.estadoDeLaLista(ctx.urlDeLaLista(estado, EXTREMOS_CORRIDOS, HOY), HOY, EXTREMOS_CORRIDOS)), plano(estado));
+  });
+
+  it('los links de los carriles tampoco escriben la ventana de entrada corregida', () => {
+    const html = carrilesDe({ estado: { ...DE_ENTRADA } }, PROYECTOS_CORRIDOS, HITOS_CORRIDOS);
+    assert.ok(html.includes('<a class="pr-carril" href="?id=900">'), html.match(/<a class="pr-carril" href="[^"]*"/)?.[0]);
+    const conFiltro = carrilesDe({ estado: { ...DE_ENTRADA, estado: 'en_curso', anios: 2027 } }, PROYECTOS_CORRIDOS, HITOS_CORRIDOS);
+    assert.ok(conFiltro.includes('href="?estado=en_curso&amp;id=900"'));
+  });
+
+  it('pestanaDeHash: #proyectos, #linea y #logros; otro fragmento (#metricas, el link viejo) es Proyectos', () => {
+    assert.deepEqual(['#linea', '#logros', '#proyectos', '#metricas', '', null, '#constructor'].map((h) => ctx.pestanaDeHash(h)),
+      ['linea', 'logros', 'proyectos', 'proyectos', 'proyectos', 'proyectos', 'proyectos']);
+    assert.deepEqual(constante('PESTANAS'), ['proyectos', 'linea', 'logros']);
+  });
+});
+
+describe('proyectos.js: lo puro de la página (Task 8)', () => {
+  it('cantidadesDeLasPestanas: los proyectos activos, todos los hitos y los logros del área', () => {
+    assert.deepEqual(plano(ctx.cantidadesDeLasPestanas(PROYECTOS, HITOS)), { proyectos: PROYECTOS.length, linea: HITOS.length, logros: LOGROS.length });
+    assert.deepEqual(plano(ctx.cantidadesDeLasPestanas(null, undefined)), { proyectos: 0, linea: 0, logros: 0 });
+  });
+
+  it('tituloDelDetalle: «<nombre> - Proyectos - RPAD» (texto, no HTML)', () => {
+    assert.equal(ctx.tituloDelDetalle({ nombre: '  <b>[TEST]</b> Índice ' }), '<b>[TEST]</b> Índice - Proyectos - RPAD');
+    assert.equal(ctx.tituloDelDetalle({ nombre: '' }), 'Proyecto - Proyectos - RPAD');
+  });
+
+  it('el detalle no encontrado y el error: su h2, el texto y el link a la lista con sus filtros', () => {
+    const estado = { ...DE_ENTRADA, categoria: 'difusion' };
+    assert.equal(ctx.htmlDeNoEncontrado(estado, HOY), '<div class="pr-estado"><h2>Proyecto no encontrado</h2><p>No hay ningún proyecto con ese número.</p>'
+      + '<p><a class="pr-volver" href="proyectos.html?categoria=difusion">Ver todos los proyectos</a></p></div>');
+    const error = ctx.htmlDeErrorDelDetalle(DE_ENTRADA, HOY);
+    assert.match(error, /^<div class="pr-estado pr-error" role="alert"><h2>No se pudo cargar el proyecto<\/h2>/);
+    assert.ok(error.includes('<a class="pr-volver" href="proyectos.html">Ver todos los proyectos</a>'));
+  });
+
+  it('rutaDelArchivo: solo los archivos de un hito y los documentos de un proyecto, con ids enteros positivos', () => {
+    assert.equal(ctx.rutaDelArchivo('/gestion/hitos/5/archivos', '12'), '/gestion/hitos/5/archivos/12');
+    assert.equal(ctx.rutaDelArchivo('/gestion/proyectos/7/documentos', 3), '/gestion/proyectos/7/documentos/3');
+    for (const [base, id] of [['/gestion/hitos/5/archivos', '0'], ['/gestion/hitos/5/archivos', '1e3'], ['/gestion/hitos/0/archivos', '1'],
+      ['/gestion/hitos/../archivos', '1'], ['/gestion/usuarios/1', '1'], ['https://otro.sitio/gestion/hitos/5/archivos', '1'], [null, '1']]) {
+      assert.equal(ctx.rutaDelArchivo(base, id), null, `${base} ${id}`);
+    }
+  });
+
+  it('textoDeSubidaFallida: «El hito se guardó, pero los archivos no se subieron: <motivo>.» (sin doble punto); con un logro, «El logro…»', () => {
+    assert.equal(ctx.textoDeSubidaFallida(false, 'Podés subir hasta 3 archivos por hito.'), 'El hito se guardó, pero los archivos no se subieron: Podés subir hasta 3 archivos por hito.');
+    assert.equal(ctx.textoDeSubidaFallida(false, 'El archivo excede el tamaño máximo de 10 MB'), 'El hito se guardó, pero los archivos no se subieron: El archivo excede el tamaño máximo de 10 MB.');
+    assert.equal(ctx.textoDeSubidaFallida(true, 'Tipo de archivo no permitido: .exe'), 'El logro se guardó, pero los archivos no se subieron: Tipo de archivo no permitido: .exe.');
+  });
+
+  it('textoDeProblemas y textoDeGuardado: cada problema termina en punto; los mensajes del servidor, unidos', () => {
+    assert.equal(ctx.textoDeProblemas(['Tipo de archivo no permitido: .exe', 'Ya hay un archivo llamado a.pdf.']), 'Tipo de archivo no permitido: .exe. Ya hay un archivo llamado a.pdf.');
+    assert.equal(ctx.textoDeProblemas([]), '');
+    assert.equal(ctx.textoDeGuardado('Hito creado', '2 archivos subidos'), 'Hito creado. 2 archivos subidos');
+    assert.equal(ctx.textoDeGuardado('Hito actualizado', ''), 'Hito actualizado');
+  });
+
+  it('las áreas: una lista rala es un error, como en el servidor (que la recorre con for…of)', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const rala = [, '3'];
+    assert.deepEqual(plano(ctx.erroresDelProyecto({ nombre: '[TEST]', areas: rala }, HOY)), plano(validarProyecto({ nombre: '[TEST]', areas: rala }, { hoy: HOY }).errores));
+    assert.deepEqual(plano(ctx.erroresDelProyecto({ nombre: '[TEST]', areas: rala }, HOY)), [{ campo: 'areas', mensaje: 'Elegí áreas que existan.' }]);
+  });
+});
+
+// =====================================================================================================================================
+// La página con un DOM falso (Task 8): un árbol de elementos armado con el HTML de proyectos.html y con lo que la página escribe en
+// innerHTML (con sus atributos, el foco y los eventos, que burbujean como en el navegador), un fetch falso que anota los pedidos (y
+// que puede tardar) y temporizadores que corren a mano
+// =====================================================================================================================================
+
+const VACIOS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
+const desescapar = (texto) => texto.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&times;/g, '×').replace(/&amp;/g, '&');
+const camello = (nombre) => nombre.replace(/-([a-z])/g, (_, letra) => letra.toUpperCase());
+const PIEZA_DE_SELECTOR = /#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]|:(checked)/g;
+const TOKEN_HTML = /<!--[\s\S]*?-->|<![^>]*>|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)((?:\s+[^\s=>/]+(?:="[^"]*")?)*)\s*(\/?)>|([^<]+)/g;
+
+const crearDom = () => {
+  const dom = { activo: null, creados: [], anchoDePista: 0 };
+  const coincideCompuesto = (el, compuesto) => {
+    const etiqueta = /^[a-zA-Z][\w-]*/.exec(compuesto)?.[0];
+    if (etiqueta && el.tagName !== etiqueta.toLowerCase()) return false;
+    const resto = etiqueta ? compuesto.slice(etiqueta.length) : compuesto;
+    let leido = 0;
+    for (const [pieza, id, clase, atributo, valor, marcado] of resto.matchAll(PIEZA_DE_SELECTOR)) {
+      leido += pieza.length;
+      if (id !== undefined && el.id !== id) return false;
+      if (clase !== undefined && !el.classList.contains(clase)) return false;
+      if (atributo !== undefined && (el.getAttribute(atributo) === null || (valor !== undefined && el.getAttribute(atributo) !== valor))) return false;
+      if (marcado !== undefined && !el.checked) return false;
+    }
+    if (leido !== resto.length) throw new Error(`Selector que el DOM falso no entiende: ${compuesto}`);
+    return true;
+  };
+  const coincide = (el, selector) => {
+    const compuestos = selector.trim().split(/\s+/);
+    if (!coincideCompuesto(el, compuestos.at(-1))) return false;
+    let actual = el.parentNode;
+    for (let i = compuestos.length - 2; i >= 0; i -= 1) {
+      while (actual?.esElemento && !coincideCompuesto(actual, compuestos[i])) actual = actual.parentNode;
+      if (!actual?.esElemento) return false;
+      actual = actual.parentNode;
+    }
+    return true;
+  };
+  const elemento = (tagName, atributos = {}) => {
+    const attrs = { ...atributos };
+    const oyentes = {};
+    const clases = () => new Set(String(attrs.class ?? '').split(/\s+/).filter(Boolean));
+    const ponerClases = (conjunto) => { attrs.class = [...conjunto].join(' '); };
+    const el = {
+      esElemento: true, tagName: tagName.toLowerCase(), parentNode: null, hijos: [], html: '', oyentes,
+      hidden: Object.hasOwn(attrs, 'hidden'), disabled: Object.hasOwn(attrs, 'disabled'), checked: Object.hasOwn(attrs, 'checked'),
+      value: attrs.value ?? '', files: [], clics: 0, seleccion: null, selectionStart: null, selectionEnd: null, tabIndex: 0, max: '',
+      href: attrs.href ?? '', download: '',
+      get id() { return attrs.id ?? ''; },
+      get name() { return attrs.name ?? ''; },
+      get dataset() {
+        return Object.fromEntries(Object.entries(attrs).filter(([nombre]) => nombre.startsWith('data-')).map(([nombre, valor]) => [camello(nombre.slice(5)), valor]));
+      },
+      classList: {
+        contains: (clase) => clases().has(clase),
+        add: (...nuevas) => { const conjunto = clases(); for (const c of nuevas) conjunto.add(c); ponerClases(conjunto); },
+        remove: (...viejas) => { const conjunto = clases(); for (const c of viejas) conjunto.delete(c); ponerClases(conjunto); },
+        toggle: (clase, forzar) => {
+          const conjunto = clases();
+          const poner = forzar === undefined ? !conjunto.has(clase) : Boolean(forzar);
+          if (poner) conjunto.add(clase); else conjunto.delete(clase);
+          ponerClases(conjunto);
+          return poner;
+        }
+      },
+      getAttribute: (nombre) => (Object.hasOwn(attrs, nombre) ? attrs[nombre] : null),
+      setAttribute: (nombre, valor) => { attrs[nombre] = String(valor); },
+      removeAttribute: (nombre) => { delete attrs[nombre]; },
+      get textContent() { return el.hijos.map((hijo) => (typeof hijo === 'string' ? hijo : hijo.textContent)).join(''); },
+      set textContent(valor) { soltar(el); el.hijos = [String(valor ?? '')]; },
+      get innerHTML() { return el.html; },
+      set innerHTML(html) { soltar(el); el.hijos = []; el.html = String(html); parsear(el.html, el); },
+      appendChild(hijo) { if (typeof hijo !== 'string') hijo.parentNode = el; el.hijos.push(hijo); return hijo; },
+      remove() { if (el.parentNode) { el.parentNode.hijos = el.parentNode.hijos.filter((h) => h !== el); el.parentNode = null; } },
+      get isConnected() { let nodo = el; while (nodo.parentNode) nodo = nodo.parentNode; return nodo === raiz; },
+      contains(otro) { for (let nodo = otro; nodo; nodo = nodo.parentNode) if (nodo === el) return true; return false; },
+      closest(selector) { for (let nodo = el; nodo?.esElemento && nodo !== raiz; nodo = nodo.parentNode) if (coincide(nodo, selector)) return nodo; return null; },
+      matches: (selector) => coincide(el, selector),
+      querySelectorAll(selector) {
+        const lista = [];
+        const recorrer = (nodo) => { for (const hijo of nodo.hijos) if (typeof hijo !== 'string') { if (coincide(hijo, selector)) lista.push(hijo); recorrer(hijo); } };
+        recorrer(el);
+        return lista;
+      },
+      querySelector(selector) { return el.querySelectorAll(selector)[0] ?? null; },
+      addEventListener: (tipo, funcion) => { (oyentes[tipo] ??= []).push(funcion); },
+      // Un evento que burbujea desde el elemento hasta el documento
+      disparar(tipo, extra = {}) {
+        const evento = { type: tipo, target: el, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
+        for (let nodo = el; nodo; nodo = nodo.parentNode) {
+          evento.currentTarget = nodo;
+          for (const funcion of nodo.oyentes?.[tipo] ?? []) funcion(evento);
+        }
+        return evento;
+      },
+      focus() { if (!el.disabled && el.isConnected) dom.activo = el; },
+      click() { el.clics += 1; el.disparar('click'); },
+      setSelectionRange(inicio, fin) { el.seleccion = [inicio, fin]; el.selectionStart = inicio; el.selectionEnd = fin; },
+      getBoundingClientRect: () => ({ width: el.classList.contains('pr-pista') ? dom.anchoDePista : 0 })
+    };
+    return el;
+  };
+  const soltar = (el) => { for (const hijo of el.hijos) if (typeof hijo !== 'string') hijo.parentNode = null; };
+  const parsear = (html, padre) => {
+    const pila = [padre];
+    for (const [, cierre, etiqueta, atributos, solo, texto] of html.matchAll(TOKEN_HTML)) {
+      if (texto !== undefined) pila.at(-1).appendChild(desescapar(texto));
+      else if (etiqueta !== undefined) {
+        const atributosLeidos = {};
+        for (const [, nombre, valor] of (atributos ?? '').matchAll(/([^\s=]+)(?:="([^"]*)")?/g)) atributosLeidos[nombre] = valor === undefined ? '' : desescapar(valor);
+        const nuevo = pila.at(-1).appendChild(elemento(etiqueta, atributosLeidos));
+        if (!solo && !VACIOS.has(etiqueta.toLowerCase())) pila.push(nuevo);
+      } else if (cierre !== undefined) {
+        const lugar = pila.map((nodo) => nodo.tagName).lastIndexOf(cierre.toLowerCase());
+        if (lugar > 0) pila.length = lugar;
+      }
+    }
+  };
+  const raiz = elemento('#document');
+  const documento = {
+    get activeElement() { return dom.activo?.isConnected ? dom.activo : null; },
+    title: '',
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+    getElementById: (id) => raiz.querySelector(`#${id}`),
+    querySelector: (selector) => raiz.querySelector(selector),
+    querySelectorAll: (selector) => raiz.querySelectorAll(selector),
+    addEventListener: (tipo, funcion) => raiz.addEventListener(tipo, funcion),
+    createElement: (etiqueta) => { const nuevo = elemento(etiqueta); dom.creados.push(nuevo); return nuevo; },
+    disparar: (tipo, extra) => raiz.disparar(tipo, extra)
+  };
+  // El cuerpo de proyectos.html, sin el <style> (no hace falta)
+  raiz.innerHTML = leer('proyectos.html').replace(/<style>[\s\S]*?<\/style>/, '');
+  return { dom, documento, raiz };
+};
+
+// Una respuesta del fetch falso: { status, body } (JSON) o { status, blob, tipo } (un archivo)
+const respuesta = (status, body) => ({ status, body });
+const ok = (data, message) => respuesta(200, { success: true, data, ...(message ? { message } : {}) });
+const DETALLE_INDICE = () => ({
+  ...detalleDe(INDICE),
+  documentos: [{ id: 31, nombre_archivo: 'presentación final.pdf', tamano: 2048, mime_type: 'application/pdf', subido_el: '2026-03-18' }]
+});
+const AREAS_DE_PRUEBA = [{ id: 3, nombre: '[TEST] Datos Públicos' }, { id: 5, nombre: '[TEST] Hacienda' }];
+// Lo que contesta el servidor falso, de entrada (la maqueta)
+const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
+  if (metodo === 'GET' && ruta === '/api/gestion/proyectos') return ok(PROYECTOS);
+  if (metodo === 'GET' && ruta === '/api/gestion/timeline') return ok(HITOS);
+  if (metodo === 'GET' && ruta === `/api/gestion/proyectos/${INDICE}`) return ok(DETALLE_INDICE());
+  if (metodo === 'GET' && ruta === '/api/areas') return ok(AREAS_DE_PRUEBA);
+  if (metodo === 'GET' && ruta.endsWith('/descargar')) return { status: 200, tipo: 'application/pdf' };
+  return respuesta(404, { success: false, error: `Sin respuesta para ${metodo} ${ruta}` });
+};
+
+const montarPagina = ({ search = '', hash = '', admin = false, responder = RESPUESTAS_DE_ENTRADA, anchoDePista = 0, tokenVencido = false } = {}) => {
+  const { dom, documento } = crearDom();
+  dom.anchoDePista = anchoDePista;
+  const estado = { pedidos: [], direcciones: [], revocadas: [], sesionCerrada: false, responder };
+  const temporizadores = [];
+  const oyentesDeLaVentana = {};
+  const ventana = {
+    location: { search, hash, pathname: '/proyectos.html', href: `/proyectos.html${search}${hash}` },
+    history: {
+      replaceState: (_estado, _titulo, url) => {
+        estado.direcciones.push(url);
+        const fragmento = url.indexOf('#');
+        const sinFragmento = fragmento === -1 ? url : url.slice(0, fragmento);
+        const consulta = sinFragmento.indexOf('?');
+        ventana.location.search = consulta === -1 ? '' : sinFragmento.slice(consulta);
+        ventana.location.hash = fragmento === -1 ? '' : url.slice(fragmento);
+      }
+    },
+    addEventListener: (tipo, funcion) => { (oyentesDeLaVentana[tipo] ??= []).push(funcion); }
+  };
+  let siguienteBlob = 0;
+  const contexto = vm.createContext({
+    CONFIG: { API_URL: '/api' },
+    console: { log() {}, warn() {}, error() {} },
+    document: documento,
+    window: ventana,
+    URLSearchParams, Intl, Date, FormData, Blob,
+    Auth: {
+      isAuthenticated: () => true, isAdmin: () => admin, isTokenExpired: () => tokenVencido,
+      getAuthHeaders: () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer token-de-prueba' }),
+      clearSession: () => { estado.sesionCerrada = true; }
+    },
+    URL: {
+      createObjectURL: () => { siguienteBlob += 1; return `blob:http://localhost/${siguienteBlob}`; },
+      revokeObjectURL: (url) => { estado.revocadas.push(url); }
+    },
+    setTimeout: (funcion, ms) => { temporizadores.push({ funcion, ms }); return temporizadores.length; },
+    clearTimeout: (id) => { if (temporizadores[id - 1]) temporizadores[id - 1].funcion = null; },
+    fetch: async (url, opciones = {}) => {
+      const metodo = opciones.method ?? 'GET';
+      estado.pedidos.push({ metodo, ruta: url, opciones });
+      const r = await estado.responder(metodo, url, opciones);
+      return {
+        ok: r.status >= 200 && r.status < 300, status: r.status,
+        json: async () => { if (r.body === undefined) throw new SyntaxError('sin JSON'); return r.body; },
+        blob: async () => r.blob ?? new Blob(['contenido'], { type: r.tipo ?? '' })
+      };
+    }
+  });
+  vm.runInContext(leer('js/main.js'), contexto);
+  vm.runInContext(`${leer('js/api.js')}\n;globalThis.Utils = Utils;`, contexto);
+  vm.runInContext(leer('js/proyectos.js'), contexto);
+  contexto.Utils.hoyEnArgentina = () => HOY;
+  // Corre los temporizadores cortos (el foco de los modales, la medida de la pista); los avisos de 5 s quedan
+  const correr = () => {
+    for (const temporizador of temporizadores.splice(0)) {
+      if (temporizador.funcion && temporizador.ms <= 200) temporizador.funcion();
+      else if (temporizador.funcion) temporizadores.push(temporizador);
+    }
+  };
+  const esperar = async () => { for (let i = 0; i < 5; i += 1) await new Promise((resolver) => setImmediate(resolver)); };
+  const el = (id) => documento.getElementById(id);
+  const en = (id, selector) => el(id).querySelector(selector);
+  const rutas = (metodo) => estado.pedidos.filter((p) => p.metodo === metodo).map((p) => p.ruta);
+  const iniciar = async () => { await contexto.iniciarProyectos(); await esperar(); correr(); };
+  // Un clic en un elemento (burbujea hasta el contenedor que lo escucha) y lo que pida después
+  const tocar = async (elemento) => { assert.ok(elemento, 'el elemento existe'); elemento.disparar('click'); await esperar(); correr(); };
+  const enviar = async (formulario) => { el(formulario).disparar('submit'); await esperar(); correr(); };
+  return { contexto, dom, documento, ventana, estado, el, en, rutas, iniciar, tocar, enviar, esperar, correr, oyentesDeLaVentana };
+};
+
+describe('proyectos.html: lo que agrega la Task 8', () => {
+  const html = leer('proyectos.html');
+  it('una región viva, oculta a la vista y fuera de lo que se vuelve a dibujar, para anunciar la frase del año, el vacío y los años', () => {
+    assert.ok(html.includes('<p class="visualmente-oculto" id="pr-anuncio" role="status"></p>'));
+    const anuncio = html.indexOf('id="pr-anuncio"');
+    assert.ok(anuncio > html.indexOf('id="message-container"') && anuncio < html.indexOf('id="pr-vista-lista"'));
+  });
+
+  it('estado, color e ícono son radiogroup (aria-invalid vale en ellos); las áreas, un grupo de casillas', () => {
+    for (const id of ['p-estado', 'p-color', 'p-icono']) assert.match(html, new RegExp(`<fieldset class="[^"]+" id="${id}" role="radiogroup" aria-describedby="${id}-error">`), id);
+    assert.match(html, /<fieldset class="pr-grupo" id="p-areas" aria-describedby="p-areas-error">/);
+  });
+});
+
+describe('proyectos.js: la página carga y muestra (DOM falso)', () => {
+  it('iniciarProyectos pide los proyectos y el timeline en paralelo y pone las cantidades en las pestañas: 8 proyectos, todos los hitos y los logros', async () => {
+    let soltar;
+    const espera = new Promise((resolver) => { soltar = resolver; });
+    const p = montarPagina({ responder: async (metodo, ruta) => { await espera; return RESPUESTAS_DE_ENTRADA(metodo, ruta); } });
+    const carga = p.contexto.iniciarProyectos();
+    await p.esperar();
+    // Los dos pedidos salieron antes de que llegue ninguna respuesta; mientras, «Cargando…»
+    assert.deepEqual(p.rutas('GET').sort(), ['/api/gestion/proyectos', '/api/gestion/timeline']);
+    assert.equal(p.el('pr-cargando').hidden, false);
+    assert.equal(p.el('pr-vista-lista').hidden, true);
+    soltar();
+    await carga;
+    await p.esperar();
+    assert.equal(p.el('cnt-proyectos').textContent, '8');
+    assert.equal(p.el('cnt-linea').textContent, String(HITOS.length));
+    assert.equal(p.el('cnt-logros').textContent, String(LOGROS.length));
+    assert.deepEqual(['pr-cargando', 'pr-error', 'pr-vista-lista', 'pr-vista-detalle'].map((id) => p.el(id).hidden), [true, true, false, true]);
+    // Los carriles y los filtros, en la pestaña Proyectos; la línea de tiempo y los logros, en las suyas (ocultas)
+    assert.equal(p.el('panel-proyectos').querySelectorAll('a.pr-carril').length, PROYECTOS.length + 1);
+    assert.ok(p.en('panel-proyectos', '#pr-buscar'));
+    assert.ok(p.el('panel-linea').innerHTML.includes('Logros del área'));
+    assert.equal(p.el('panel-linea').hidden, true);
+    // El lector no ve «Nuevo proyecto»; el título de la ventana no cambia
+    assert.equal(p.el('pr-nuevo').hidden, true);
+    assert.equal(p.el('pr-aviso-metricas').hidden, true);
+  });
+
+  it('con #metricas (el link viejo), el aviso queda visible y abre Proyectos; la dirección ya no lo lleva', async () => {
+    const p = montarPagina({ hash: '#metricas' });
+    await p.iniciar();
+    assert.equal(p.el('pr-aviso-metricas').hidden, false);
+    assert.equal(p.el('tab-proyectos').getAttribute('aria-selected'), 'true');
+    assert.equal(p.el('panel-proyectos').hidden, false);
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
+  });
+
+  it('con #linea abre la línea de tiempo; sin el fragmento, el aviso no aparece', async () => {
+    const p = montarPagina({ hash: '#linea' });
+    await p.iniciar();
+    assert.equal(p.el('tab-linea').getAttribute('aria-selected'), 'true');
+    assert.equal(p.el('panel-linea').hidden, false);
+    assert.equal(p.el('panel-proyectos').hidden, true);
+    assert.equal(p.el('pr-aviso-metricas').hidden, true);
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html#linea');
+  });
+
+  it('si falla la carga, el error de la página (y no «Cargando…» para siempre)', async () => {
+    const p = montarPagina({ responder: () => respuesta(500, { success: false, error: 'Error al obtener proyectos' }) });
+    await p.iniciar();
+    assert.deepEqual(['pr-cargando', 'pr-error', 'pr-vista-lista', 'pr-vista-detalle'].map((id) => p.el(id).hidden), [true, false, true, true]);
+  });
+
+  it('con un 401, cierra la sesión y va al login', async () => {
+    const p = montarPagina({ responder: () => respuesta(401, { success: false, error: 'Token inválido o expirado' }) });
+    await p.iniciar();
+    assert.equal(p.estado.sesionCerrada, true);
+    assert.equal(p.ventana.location.href, 'login.html');
+  });
+
+  it('la ventana de entrada corregida por los hitos no se escribe en la dirección, y ?resaltar=2027 queda resaltado', async () => {
+    const responder = (metodo, ruta) => {
+      if (ruta === '/api/gestion/proyectos') return ok(PROYECTOS_CORRIDOS);
+      if (ruta === '/api/gestion/timeline') return ok(HITOS_CORRIDOS);
+      return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+    };
+    const p = montarPagina({ responder });
+    await p.iniciar();
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
+    assert.ok(p.en('panel-proyectos', 'a.pr-carril[href="?id=900"]'));
+    const otra = montarPagina({ responder, search: '?resaltar=2027' });
+    await otra.iniciar();
+    assert.equal(otra.estado.direcciones.at(-1), '/proyectos.html?resaltar=2027');
+    assert.equal(otra.en('panel-proyectos', 'button[data-grupo="resaltar"][data-valor="2027"]').getAttribute('aria-pressed'), 'true');
+  });
+});
+
+describe('proyectos.js: el detalle (DOM falso)', () => {
+  it('con ?id=7, pide el proyecto y el título de la ventana es «<nombre> - Proyectos - RPAD»', async () => {
+    const p = montarPagina({ search: `?id=${INDICE}` });
+    await p.iniciar();
+    assert.deepEqual(p.rutas('GET'), [`/api/gestion/proyectos/${INDICE}`]);
+    assert.equal(p.documento.title, `${detalleDe(INDICE).nombre} - Proyectos - RPAD`);
+    assert.deepEqual(['pr-cargando', 'pr-error', 'pr-vista-lista', 'pr-vista-detalle'].map((id) => p.el(id).hidden), [true, true, true, false]);
+    assert.ok(p.en('pr-vista-detalle', 'h2.pr-titulo'));
+    assert.equal(p.el('pr-nuevo').hidden, true);
+    // Ninguna dirección se reescribe en el detalle
+    assert.deepEqual(p.estado.direcciones, []);
+  });
+
+  it('con ?id=abc (o 0, -3, 1.5, 1e3 o vacío), el no encontrado, sin pedir el detalle', async () => {
+    for (const search of ['?id=abc', '?id=0', '?id=-3', '?id=1.5', '?id=1e3', '?id=']) {
+      const p = montarPagina({ search });
+      await p.iniciar();
+      assert.deepEqual(p.estado.pedidos, [], search);
+      assert.ok(p.el('pr-vista-detalle').innerHTML.includes('<h2>Proyecto no encontrado</h2><p>No hay ningún proyecto con ese número.</p>'), search);
+      assert.equal(p.el('pr-vista-detalle').hidden, false);
+      assert.equal(p.el('pr-cargando').hidden, true);
+      assert.equal(p.documento.title, 'Proyecto no encontrado - Proyectos - RPAD');
+    }
+  });
+
+  it('un 404 (no existe o dado de baja) es el no encontrado; otro error, el error del detalle con su h2', async () => {
+    const p = montarPagina({ search: '?id=99&categoria=difusion' });
+    await p.iniciar();
+    assert.ok(p.el('pr-vista-detalle').innerHTML.includes('Proyecto no encontrado'));
+    assert.ok(p.en('pr-vista-detalle', 'a.pr-volver[href="proyectos.html?categoria=difusion"]'));
+    const q = montarPagina({ search: '?id=7', responder: () => respuesta(500, { success: false, error: 'Error' }) });
+    await q.iniciar();
+    assert.ok(q.el('pr-vista-detalle').innerHTML.includes('<h2>No se pudo cargar el proyecto</h2>'));
+  });
+
+  it('las filas de los hitos se despliegan y se pliegan', async () => {
+    const p = montarPagina({ search: `?id=${INDICE}` });
+    await p.iniciar();
+    const fila = p.en('pr-vista-detalle', 'button.pr-fila');
+    const cuerpo = p.el(fila.getAttribute('aria-controls'));
+    assert.equal(cuerpo.hidden, true);
+    await p.tocar(fila);
+    assert.equal(fila.getAttribute('aria-expanded'), 'true');
+    assert.equal(cuerpo.hidden, false);
+    await p.tocar(fila);
+    assert.equal(fila.getAttribute('aria-expanded'), 'false');
+    assert.equal(cuerpo.hidden, true);
+  });
+
+  it('el lector ve el detalle sin ningún botón de administración', async () => {
+    const p = montarPagina({ search: `?id=${INDICE}` });
+    await p.iniciar();
+    for (const selector of ['[data-editar-proyecto]', '[data-eliminar-proyecto]', '[data-nuevo-hito]', '[data-subir-documentos]', '[data-archivo="eliminar"]']) {
+      assert.equal(p.en('pr-vista-detalle', selector), null, selector);
+    }
+    assert.ok(p.en('pr-vista-detalle', 'button[data-archivo="descargar"]'));
+  });
+});
+
+describe('proyectos.js: los filtros, las flechas y el resaltado escriben la dirección y conservan el foco (DOM falso)', () => {
+  it('un chip del estado: redibuja, escribe la dirección y el foco queda en el chip (el nuevo)', async () => {
+    const p = montarPagina();
+    await p.iniciar();
+    const chip = p.en('panel-proyectos', 'button[data-grupo="estado"][data-valor="en_curso"]');
+    chip.focus();
+    await p.tocar(chip);
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?estado=en_curso');
+    const nuevo = p.documento.activeElement;
+    assert.notEqual(nuevo, chip, 'el chip se volvió a dibujar');
+    assert.equal(nuevo.getAttribute('data-valor'), 'en_curso');
+    assert.equal(nuevo.getAttribute('aria-pressed'), 'true');
+    // Lo mismo aunque el clic no le haya dado el foco (Safari)
+    const categoria = p.en('panel-proyectos', 'button[data-grupo="categoria"][data-valor="difusion"]');
+    await p.tocar(categoria);
+    assert.equal(p.documento.activeElement.getAttribute('data-valor'), 'difusion');
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?estado=en_curso&categoria=difusion');
+  });
+
+  it('el buscador filtra en vivo, conserva el foco y el cursor, y anuncia cuando ningún proyecto coincide', async () => {
+    const p = montarPagina();
+    await p.iniciar();
+    const buscador = p.en('panel-proyectos', '#pr-buscar');
+    buscador.focus();
+    buscador.value = 'zzz';
+    buscador.selectionStart = 2;
+    buscador.selectionEnd = 2;
+    buscador.disparar('input');
+    const nuevo = p.documento.activeElement;
+    assert.equal(nuevo.id, 'pr-buscar');
+    assert.notEqual(nuevo, buscador);
+    assert.deepEqual(nuevo.seleccion, [2, 2]);
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=zzz');
+    assert.equal(p.el('pr-anuncio').textContent, 'Ningún proyecto coincide con lo que buscaste.');
+    // Mientras se compone una letra con tilde, espera
+    nuevo.value = 'zzzá';
+    nuevo.disparar('input', { isComposing: true });
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=zzz');
+    nuevo.disparar('compositionend');
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=zzz%C3%A1');
+    // «Ver todos los proyectos» limpia los filtros y el foco va al buscador
+    await p.tocar(p.en('panel-proyectos', 'button[data-limpiar]'));
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
+    assert.equal(p.documento.activeElement.id, 'pr-buscar');
+  });
+
+  it('las flechas corren la ventana, la anuncian y, si una queda deshabilitada, el foco pasa a la otra', async () => {
+    const responder = (metodo, ruta) => {
+      if (ruta === '/api/gestion/proyectos') return ok([proyecto({ id: 900 })]);
+      if (ruta === '/api/gestion/timeline') return ok([hito(1, 900, '2023-05-01'), hito(2, 900, '2026-02-01')]);
+      return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+    };
+    const p = montarPagina({ responder, search: '?resaltar=2026' });
+    await p.iniciar();
+    const izquierda = p.en('panel-proyectos', 'button[data-correr="-1"]');
+    assert.equal(izquierda.getAttribute('aria-label'), 'Ver 2023 a 2025');
+    izquierda.focus();
+    await p.tocar(izquierda);
+    // 2023-2025: el 2026 resaltado quedó afuera (vuelve a «Ninguno») y la flecha izquierda se deshabilitó
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?anios=2025');
+    assert.equal(p.el('pr-anuncio').textContent, '2023 a 2025');
+    assert.equal(p.en('panel-proyectos', 'button[data-correr="-1"]').disabled, true);
+    assert.equal(p.documento.activeElement.getAttribute('data-correr'), '1');
+    await p.tocar(p.documento.activeElement);
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
+    assert.equal(p.documento.activeElement.getAttribute('data-correr'), '-1');
+  });
+
+  it('resaltar un año: la dirección, el chip elegido con el foco y la frase anunciada', async () => {
+    const p = montarPagina();
+    await p.iniciar();
+    await p.tocar(p.en('panel-proyectos', 'button[data-grupo="resaltar"][data-valor="2025"]'));
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?resaltar=2025');
+    assert.equal(p.el('pr-anuncio').textContent, ctx.fraseDelAnio('2025', HITOS));
+    assert.equal(p.documento.activeElement.getAttribute('data-valor'), '2025');
+    await p.tocar(p.en('panel-proyectos', 'button[data-grupo="resaltar"][data-valor="ninguno"]'));
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
+  });
+
+  it('el ancho de la pista se mide en el DOM y, si cambia, los carriles se vuelven a dibujar con él', async () => {
+    const p = montarPagina({ anchoDePista: 300 });
+    await p.iniciar();
+    assert.equal(vm.runInContext('pagina.anchoPx', p.contexto), 300);
+    // A 300 px los tres hitos de RPAD se juntan en uno (como en los tests de htmlDeCarriles)
+    assert.equal(p.el('panel-proyectos').innerHTML, ctx.htmlDeFiltros(DE_ENTRADA, ctx.cantidadesDeFiltros(PROYECTOS, DE_ENTRADA, HITOS), VENTANA)
+      + carrilesDe({ anchoPx: 300 }));
+    // Al cambiar el tamaño de la ventana (sin ResizeObserver, el evento resize con un retardo), se vuelve a medir
+    p.dom.anchoDePista = 640;
+    for (const funcion of p.oyentesDeLaVentana.resize ?? []) funcion();
+    p.correr();
+    assert.equal(vm.runInContext('pagina.anchoPx', p.contexto), 640);
+  });
+});
+
+describe('proyectos.js: las pestañas (DOM falso)', () => {
+  it('flechas, Inicio y Fin mueven el foco y activan la pestaña; la dirección lleva el fragmento', async () => {
+    const p = montarPagina();
+    await p.iniciar();
+    const pestana = p.el('tab-proyectos');
+    pestana.disparar('keydown', { key: 'ArrowRight' });
+    assert.equal(p.el('tab-linea').getAttribute('aria-selected'), 'true');
+    assert.equal(p.el('tab-linea').tabIndex, 0);
+    assert.equal(p.el('tab-proyectos').tabIndex, -1);
+    assert.equal(p.el('panel-linea').hidden, false);
+    assert.equal(p.documento.activeElement, p.el('tab-linea'));
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html#linea');
+    p.el('tab-linea').disparar('keydown', { key: 'End' });
+    assert.equal(p.documento.activeElement, p.el('tab-logros'));
+    p.el('tab-logros').disparar('keydown', { key: 'ArrowRight' });
+    assert.equal(p.documento.activeElement, p.el('tab-proyectos'));
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
+    p.el('tab-proyectos').disparar('keydown', { key: 'Home', ctrlKey: true });
+    assert.equal(p.documento.activeElement, p.el('tab-proyectos'));
+    // El renglón de los logros lleva a su pestaña
+    await p.tocar(p.en('panel-proyectos', 'a[data-ir-a="logros"]'));
+    assert.equal(p.el('panel-logros').hidden, false);
+    assert.equal(p.documento.activeElement, p.el('tab-logros'));
+  });
+
+  it('el filtro de la línea de tiempo redibuja la pestaña y el foco queda en el chip', async () => {
+    const p = montarPagina({ hash: '#linea' });
+    await p.iniciar();
+    await p.tocar(p.en('panel-linea', 'button[data-grupo="linea"][data-valor="logros"]'));
+    assert.equal(p.el('panel-linea').querySelectorAll('li.pr-mov').length, LOGROS.length);
+    assert.equal(p.documento.activeElement.getAttribute('data-valor'), 'logros');
+  });
+});
+
+describe('proyectos.js: los modales (DOM falso)', () => {
+  it('«Nuevo proyecto» abre el modal con el foco en el nombre; Escape lo cierra y el foco vuelve al botón', async () => {
+    const p = montarPagina({ admin: true });
+    await p.iniciar();
+    assert.equal(p.el('pr-nuevo').hidden, false);
+    p.el('pr-nuevo').focus();
+    await p.tocar(p.el('pr-nuevo'));
+    assert.ok(p.el('modal-proyecto').classList.contains('active'));
+    assert.equal(p.el('modal-proyecto-titulo').textContent, 'Nuevo proyecto');
+    assert.equal(p.documento.activeElement, p.el('p-nombre'));
+    assert.equal(p.el('p-fecha-inicio').max, '2031-12-31');
+    // Las áreas, de GET /areas; los colores y los íconos, elegidos los de entrada
+    assert.ok(p.rutas('GET').includes('/api/areas'));
+    assert.equal(p.el('p-areas-lista').querySelectorAll('input[name="p-areas"]').length, 2);
+    assert.equal(p.el('p-colores').querySelector('input:checked').value, '#1A365D');
+    p.documento.disparar('keydown', { key: 'Escape' });
+    assert.equal(p.el('modal-proyecto').classList.contains('active'), false);
+    assert.equal(p.documento.activeElement, p.el('pr-nuevo'));
+  });
+
+  it('el velo cierra solo si el clic empezó en él; la × y «Cancelar», siempre', async () => {
+    const p = montarPagina({ admin: true });
+    await p.iniciar();
+    const modal = p.el('modal-proyecto');
+    await p.tocar(p.el('pr-nuevo'));
+    p.el('p-nombre').disparar('mousedown');
+    modal.disparar('click');
+    assert.ok(modal.classList.contains('active'), 'un clic que empezó en un campo no cierra');
+    modal.disparar('mousedown');
+    modal.disparar('click');
+    assert.equal(modal.classList.contains('active'), false);
+    await p.tocar(p.el('pr-nuevo'));
+    await p.tocar(modal.querySelector('.modal-close'));
+    assert.equal(modal.classList.contains('active'), false);
+    await p.tocar(p.el('pr-nuevo'));
+    await p.tocar(modal.querySelector('.modal-footer [data-cerrar]'));
+    assert.equal(modal.classList.contains('active'), false);
+  });
+
+  it('guardar un proyecto dos veces seguidas, con un fetch que tarda, hace un solo POST /api/gestion/proyectos', async () => {
+    let soltar;
+    const espera = new Promise((resolver) => { soltar = resolver; });
+    const p = montarPagina({
+      admin: true,
+      responder: async (metodo, ruta, opciones) => {
+        if (metodo === 'POST' && ruta === '/api/gestion/proyectos') {
+          await espera;
+          return respuesta(201, { success: true, data: { id: 950, ...JSON.parse(opciones.body) }, message: 'Proyecto creado' });
+        }
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.el('pr-nuevo'));
+    p.el('p-nombre').value = '[TEST] Nuevo';
+    p.el('form-proyecto').disparar('submit');
+    p.el('form-proyecto').disparar('submit');
+    await p.esperar();
+    assert.equal(p.rutas('POST').length, 1);
+    assert.equal(p.el('p-guardar').disabled, true);
+    const enviado = JSON.parse(p.estado.pedidos.find((x) => x.metodo === 'POST').opciones.body);
+    assert.deepEqual(enviado, {
+      nombre: '[TEST] Nuevo', descripcion: '', estado: 'idea', prioridad: 'media', categoria: 'tecnologia', fecha_inicio: '', responsable: '',
+      enlace_externo: '', color: '#1A365D', icono: 'folder', areas: []
+    });
+    soltar();
+    await p.esperar();
+    assert.equal(p.rutas('POST').length, 1);
+    assert.equal(p.el('p-guardar').disabled, false);
+    // Se cerró, avisó con el mensaje del servidor y volvió a pedir la vista
+    assert.equal(p.el('modal-proyecto').classList.contains('active'), false);
+    assert.ok(p.el('message-container').innerHTML.includes('Proyecto creado'));
+    assert.equal(p.rutas('GET').filter((r) => r === '/api/gestion/proyectos').length, 2);
+  });
+
+  it('un 400 con campo: "nombre" pone aria-invalid="true" en #p-nombre, con su error y el foco; el modal queda abierto', async () => {
+    const p = montarPagina({
+      admin: true,
+      responder: (metodo, ruta) => (metodo === 'POST'
+        ? respuesta(400, { success: false, error: 'El nombre puede tener hasta 200 caracteres.', campo: 'nombre', errores: [{ campo: 'nombre', mensaje: 'El nombre puede tener hasta 200 caracteres.' }] })
+        : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.el('pr-nuevo'));
+    p.el('p-nombre').value = '[TEST] Nuevo';
+    await p.enviar('form-proyecto');
+    assert.equal(p.el('p-nombre').getAttribute('aria-invalid'), 'true');
+    assert.equal(p.el('p-nombre-error').textContent, 'El nombre puede tener hasta 200 caracteres.');
+    assert.equal(p.el('p-nombre-error').hidden, false);
+    assert.equal(p.documento.activeElement, p.el('p-nombre'));
+    assert.ok(p.el('modal-proyecto').classList.contains('active'));
+    assert.equal(p.el('message-container').innerHTML, '');
+    // Al corregirlo, deja de marcarse
+    p.el('p-nombre').disparar('input');
+    assert.equal(p.el('p-nombre').getAttribute('aria-invalid'), null);
+  });
+
+  it('los errores del navegador van a su campo sin mandar nada; en un grupo de opciones, al radiogroup y el foco a la elegida', async () => {
+    const p = montarPagina({
+      admin: true,
+      responder: (metodo, ruta) => (metodo === 'POST'
+        ? respuesta(400, { success: false, error: 'El color no es válido.', campo: 'color', errores: [{ campo: 'color', mensaje: 'El color no es válido.' }] })
+        : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.el('pr-nuevo'));
+    await p.enviar('form-proyecto');
+    assert.equal(p.rutas('POST').length, 0);
+    assert.equal(p.el('p-nombre').getAttribute('aria-invalid'), 'true');
+    assert.equal(p.el('p-nombre-error').textContent, 'Escribí el nombre del proyecto.');
+    p.el('p-nombre').value = '[TEST] Nuevo';
+    await p.enviar('form-proyecto');
+    assert.equal(p.el('p-color').getAttribute('role'), 'radiogroup');
+    assert.equal(p.el('p-color').getAttribute('aria-invalid'), 'true');
+    assert.equal(p.el('p-color-error').textContent, 'El color no es válido.');
+    assert.equal(p.documento.activeElement, p.el('p-colores').querySelector('input:checked'));
+  });
+
+  it('un error sin campo va dentro del modal (nunca detrás del velo), con el foco en «Guardar»', async () => {
+    const p = montarPagina({
+      admin: true,
+      responder: (metodo, ruta) => (metodo === 'POST' ? respuesta(500, { success: false, error: 'Error al crear proyecto' }) : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.el('pr-nuevo'));
+    p.el('p-nombre').value = '[TEST] Nuevo';
+    await p.enviar('form-proyecto');
+    assert.equal(p.el('modal-proyecto-aviso').textContent, 'Error al crear proyecto');
+    assert.equal(p.el('modal-proyecto-aviso').hidden, false);
+    assert.equal(p.el('message-container').innerHTML, '');
+    assert.equal(p.documento.activeElement, p.el('p-guardar'));
+  });
+
+  it('editar el proyecto: el formulario con sus datos (y su color fuera de la paleta, «Color actual»), un PUT y el detalle otra vez', async () => {
+    const detalle = { ...DETALLE_INDICE(), color: '#6CA3C6', areas: [{ id: 5, nombre: '[TEST] Hacienda' }] };
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta, opciones) => {
+        if (metodo === 'GET' && ruta === `/api/gestion/proyectos/${INDICE}`) return ok(detalle);
+        if (metodo === 'PUT') return ok({ ...detalle, ...JSON.parse(opciones.body) }, 'Proyecto actualizado');
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    const editar = p.en('pr-vista-detalle', `button[data-editar-proyecto="${INDICE}"]`);
+    editar.focus();
+    await p.tocar(editar);
+    assert.equal(p.el('modal-proyecto-titulo').textContent, `Editar ${detalle.nombre}`);
+    assert.equal(p.el('p-nombre').value, detalle.nombre);
+    assert.equal(p.el('p-colores').querySelector('input:checked').value, '#6CA3C6');
+    assert.equal(p.el('p-areas-lista').querySelector('input[value="5"]').checked, true);
+    // Marcar un área queda en lo que se manda
+    const area = p.el('p-areas-lista').querySelector('input[value="3"]');
+    area.checked = true;
+    area.disparar('change');
+    await p.enviar('form-proyecto');
+    const put = p.estado.pedidos.find((x) => x.metodo === 'PUT');
+    assert.equal(put.ruta, `/api/gestion/proyectos/${INDICE}`);
+    assert.deepEqual(JSON.parse(put.opciones.body).areas, ['5', '3']);
+    assert.equal(JSON.parse(put.opciones.body).color, '#6CA3C6');
+    assert.equal(p.el('modal-proyecto').classList.contains('active'), false);
+    assert.ok(p.el('message-container').innerHTML.includes('Proyecto actualizado'));
+    assert.equal(p.rutas('GET').filter((r) => r === `/api/gestion/proyectos/${INDICE}`).length, 2);
+    // El foco vuelve a «Editar el proyecto» (el de la ficha nueva)
+    assert.equal(p.documento.activeElement.getAttribute('data-editar-proyecto'), String(INDICE));
+    assert.equal(p.documento.activeElement.isConnected, true);
+  });
+});
+
+describe('proyectos.js: los hitos y sus archivos (DOM falso)', () => {
+  const archivo = (nombre, tamano = 1000) => new File(['x'.repeat(4)], nombre, { type: 'application/pdf' });
+
+  it('un POST de hito que responde 200 y una subida que responde 400 dejan el modal abierto con el texto exacto, sin el aviso de guardado; reintentar sube solo los archivos', async () => {
+    let subida = respuesta(400, { success: false, error: 'Podés subir hasta 3 archivos por hito.' });
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => {
+        if (metodo === 'POST' && ruta === `/api/gestion/proyectos/${INDICE}/hitos`) return ok({ id: 99, proyecto_id: INDICE, titulo: '[TEST] Hito' }, 'Hito creado');
+        if (metodo === 'POST' && ruta === '/api/gestion/hitos/99/archivos') return subida;
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-nuevo-hito="${INDICE}"]`));
+    assert.ok(p.el('modal-hito').classList.contains('active'));
+    assert.equal(p.el('modal-hito-titulo').textContent, 'Nuevo hito');
+    assert.equal(p.el('h-de').textContent, `Del proyecto ${detalleDe(INDICE).nombre}. Sale en el Informe anual del año de su fecha.`);
+    assert.equal(p.el('h-fecha').value, HOY);
+    assert.equal(p.documento.activeElement, p.el('h-titulo'));
+    p.el('h-archivos').files = [archivo('informe.pdf')];
+    p.el('h-archivos').disparar('change');
+    assert.equal(p.el('h-pendientes').querySelectorAll('button[data-quitar]').length, 1);
+    p.el('h-titulo').value = '[TEST] Hito';
+    await p.enviar('form-hito');
+    assert.ok(p.el('modal-hito').classList.contains('active'));
+    assert.equal(p.el('modal-hito-aviso').textContent, 'El hito se guardó, pero los archivos no se subieron: Podés subir hasta 3 archivos por hito.');
+    assert.equal(p.el('modal-hito-aviso').hidden, false);
+    assert.equal(p.el('message-container').innerHTML, '');
+    assert.doesNotMatch(p.el('pr-anuncio').textContent, /Hito creado/);
+    // La subida: multipart, el campo archivos, el token y sin Content-Type
+    const envio = p.estado.pedidos.find((x) => x.ruta === '/api/gestion/hitos/99/archivos');
+    assert.equal(envio.metodo, 'POST');
+    assert.ok(envio.opciones.body instanceof FormData);
+    assert.deepEqual(envio.opciones.body.getAll('archivos').map((a) => a.name), ['informe.pdf']);
+    assert.deepEqual(plano(envio.opciones.headers), { Authorization: 'Bearer token-de-prueba' });
+    // El pendiente sigue ahí; reintentar no vuelve a crear el hito: solo sube
+    assert.equal(p.el('h-pendientes').querySelectorAll('button[data-quitar]').length, 1);
+    subida = respuesta(201, { success: true, data: [{ id: 1 }], message: '1 archivo subido' });
+    await p.enviar('form-hito');
+    assert.equal(p.rutas('POST').filter((r) => r === `/api/gestion/proyectos/${INDICE}/hitos`).length, 1);
+    assert.equal(p.rutas('POST').filter((r) => r === '/api/gestion/hitos/99/archivos').length, 2);
+    assert.equal(p.el('modal-hito').classList.contains('active'), false);
+    assert.ok(p.el('message-container').innerHTML.includes('Hito creado. 1 archivo subido'));
+    assert.equal(p.rutas('GET').filter((r) => r === `/api/gestion/proyectos/${INDICE}`).length, 2);
+  });
+
+  it('editar un hito: un PUT con sus datos; al volver a dibujar el detalle, su fila sigue abierta y el foco vuelve a «Editar el hito»', async () => {
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta, opciones) => (metodo === 'PUT' ? ok({ id: 1, ...JSON.parse(opciones.body) }, 'Hito actualizado') : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    const fila = p.en('pr-vista-detalle', 'button.pr-fila');
+    const id = fila.getAttribute('aria-controls').replace('hito-d-', '');
+    const hitoOriginal = detalleDe(INDICE).hitos.find((h) => String(h.id) === id);
+    await p.tocar(fila);
+    const editar = p.en('pr-vista-detalle', `button[data-editar-hito="${id}"]`);
+    editar.focus();
+    await p.tocar(editar);
+    assert.equal(p.el('modal-hito-titulo').textContent, 'Editar el hito');
+    assert.equal(p.el('h-titulo').value, hitoOriginal.titulo);
+    assert.equal(p.el('h-fecha').value, hitoOriginal.fecha);
+    p.el('h-titulo').value = '[TEST] Otro título';
+    await p.enviar('form-hito');
+    const put = p.estado.pedidos.find((x) => x.metodo === 'PUT');
+    assert.equal(put.ruta, `/api/gestion/hitos/${id}`);
+    assert.equal(JSON.parse(put.opciones.body).titulo, '[TEST] Otro título');
+    assert.equal(p.el('modal-hito').classList.contains('active'), false);
+    const filaNueva = p.en('pr-vista-detalle', `button.pr-fila[aria-controls="hito-d-${id}"]`);
+    assert.notEqual(filaNueva, fila);
+    assert.equal(filaNueva.getAttribute('aria-expanded'), 'true');
+    assert.equal(p.el(`hito-d-${id}`).hidden, false);
+    assert.equal(p.documento.activeElement.getAttribute('data-editar-hito'), id);
+    assert.equal(p.documento.activeElement.isConnected, true);
+  });
+
+  it('si el hito se guardó y se cancela con la subida fallida, la vista se vuelve a pedir (el hito existe)', async () => {
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => {
+        if (metodo === 'POST' && ruta.endsWith('/hitos')) return ok({ id: 99 }, 'Hito creado');
+        if (metodo === 'POST' && ruta.endsWith('/archivos')) return respuesta(400, { success: false, error: 'El archivo excede el tamaño máximo de 10 MB' });
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-nuevo-hito="${INDICE}"]`));
+    p.el('h-archivos').files = [archivo('informe.pdf')];
+    p.el('h-archivos').disparar('change');
+    p.el('h-titulo').value = '[TEST] Hito';
+    await p.enviar('form-hito');
+    assert.equal(p.el('modal-hito-aviso').textContent, 'El hito se guardó, pero los archivos no se subieron: El archivo excede el tamaño máximo de 10 MB.');
+    p.documento.disparar('keydown', { key: 'Escape' });
+    await p.esperar();
+    assert.equal(p.rutas('GET').filter((r) => r === `/api/gestion/proyectos/${INDICE}`).length, 2);
+    assert.equal(p.el('h-pendientes').innerHTML, '', 'los pendientes se vacían al cerrar');
+  });
+
+  it('los archivos elegidos se controlan antes de sumarlos (la extensión y los repetidos) y la × quita el suyo', async () => {
+    const p = montarPagina({ admin: true, search: `?id=${INDICE}` });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-nuevo-hito="${INDICE}"]`));
+    p.el('h-archivos').files = [archivo('a.pdf'), archivo('virus.exe'), archivo('a.pdf'), archivo('b.pdf')];
+    p.el('h-archivos').disparar('change');
+    assert.equal(p.el('h-archivos-error').textContent, 'Tipo de archivo no permitido: .exe. Ya hay un archivo llamado a.pdf.');
+    assert.equal(p.el('h-archivos-error').hidden, false);
+    assert.deepEqual(p.el('h-pendientes').querySelectorAll('button[data-quitar]').map((b) => b.getAttribute('aria-label')), ['Quitar a.pdf', 'Quitar b.pdf']);
+    await p.tocar(p.en('h-pendientes', 'button[data-quitar="0"]'));
+    assert.deepEqual(p.el('h-pendientes').querySelectorAll('button[data-quitar]').map((b) => b.getAttribute('aria-label')), ['Quitar b.pdf']);
+    assert.equal(p.documento.activeElement.getAttribute('aria-label'), 'Quitar b.pdf');
+    await p.tocar(p.en('h-pendientes', 'button[data-quitar="0"]'));
+    assert.equal(p.documento.activeElement, p.el('h-elegir'));
+    // «elegilos» abre el selector oculto
+    await p.tocar(p.el('h-elegir'));
+    assert.equal(p.el('h-archivos').clics, 1);
+  });
+
+  it('registrar un logro: POST /gestion/logros desde la pestaña Logros del área', async () => {
+    const p = montarPagina({
+      admin: true,
+      hash: '#logros',
+      responder: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/gestion/logros' ? ok({ id: 77 }, 'Logro registrado') : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.en('panel-logros', 'button[data-nuevo-logro]'));
+    assert.equal(p.el('modal-hito-titulo').textContent, 'Registrar un logro del área');
+    assert.equal(p.el('h-guardar').textContent, 'Guardar el logro');
+    p.el('h-titulo').value = '[TEST] Premio';
+    await p.enviar('form-hito');
+    assert.deepEqual(p.rutas('POST'), ['/api/gestion/logros']);
+    assert.ok(p.el('message-container').innerHTML.includes('Logro registrado'));
+    assert.equal(p.rutas('GET').filter((r) => r === '/api/gestion/timeline').length, 2);
+  });
+});
+
+describe('proyectos.js: subir, ver, descargar y borrar (DOM falso)', () => {
+  it('«Subir documentos»: el selector, la subida con el token y sin Content-Type, el aviso y el detalle otra vez', async () => {
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => (metodo === 'POST' ? respuesta(201, { success: true, data: [], message: '2 documentos subidos' }) : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-subir-documentos="${INDICE}"]`));
+    assert.equal(p.el('pr-elegir-archivos').clics, 1);
+    p.el('pr-elegir-archivos').files = [new File(['x'], 'acta.pdf'), new File(['y'], 'anexo.docx')];
+    p.el('pr-elegir-archivos').disparar('change');
+    await p.esperar();
+    const envio = p.estado.pedidos.find((x) => x.metodo === 'POST');
+    assert.equal(envio.ruta, `/api/gestion/proyectos/${INDICE}/documentos`);
+    assert.deepEqual(envio.opciones.body.getAll('archivos').map((a) => a.name), ['acta.pdf', 'anexo.docx']);
+    assert.equal(envio.opciones.headers['Content-Type'], undefined);
+    assert.ok(p.el('message-container').innerHTML.includes('2 documentos subidos'));
+    assert.equal(p.rutas('GET').filter((r) => r === `/api/gestion/proyectos/${INDICE}`).length, 2);
+  });
+
+  it('un documento repetido no se sube: lo dice y no manda nada', async () => {
+    const p = montarPagina({ admin: true, search: `?id=${INDICE}` });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-subir-documentos="${INDICE}"]`));
+    p.el('pr-elegir-archivos').files = [new File(['x'], 'presentación final.pdf')];
+    p.el('pr-elegir-archivos').disparar('change');
+    await p.esperar();
+    assert.equal(p.rutas('POST').length, 0);
+    assert.ok(p.el('message-container').innerHTML.includes('Ya hay un archivo llamado presentación final.pdf.'));
+  });
+
+  it('«Descargar»: API.pedirArchivo con el token en el encabezado (nunca en la URL) y el nombre original', async () => {
+    const p = montarPagina({ search: `?id=${INDICE}` });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', 'button[data-archivo="descargar"][data-id="31"]'));
+    const pedido = p.estado.pedidos.at(-1);
+    assert.equal(pedido.ruta, `/api/gestion/proyectos/${INDICE}/documentos/31/descargar`);
+    assert.equal(pedido.opciones.headers.Authorization, 'Bearer token-de-prueba');
+    const enlace = p.dom.creados.find((e) => e.tagName === 'a');
+    assert.equal(enlace.download, 'presentación final.pdf');
+    assert.equal(enlace.clics, 1);
+  });
+
+  it('una descarga que falla avisa con el mensaje del servidor; con el token vencido, al login', async () => {
+    const falla = (metodo, ruta) => (ruta.endsWith('/descargar') ? respuesta(404, { success: false, error: 'El archivo no está en el servidor.' }) : RESPUESTAS_DE_ENTRADA(metodo, ruta));
+    const p = montarPagina({ search: `?id=${INDICE}`, responder: falla });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', 'button[data-archivo="descargar"][data-id="31"]'));
+    assert.ok(p.el('message-container').innerHTML.includes('No se pudo descargar el archivo: El archivo no está en el servidor.'));
+    assert.equal(p.en('pr-vista-detalle', 'button[data-archivo="descargar"][data-id="31"]').disabled, false);
+    const q = montarPagina({ search: `?id=${INDICE}`, responder: falla, tokenVencido: true });
+    await q.iniciar();
+    await q.tocar(q.en('pr-vista-detalle', 'button[data-archivo="descargar"][data-id="31"]'));
+    assert.equal(q.estado.sesionCerrada, true);
+    assert.equal(q.ventana.location.href, 'login.html');
+  });
+
+  it('«Ver»: la vista previa desde un blob:, con el nombre en el título; al cerrar, libera la URL y vacía el cuerpo', async () => {
+    const p = montarPagina({ search: `?id=${INDICE}` });
+    await p.iniciar();
+    const ver = p.en('pr-vista-detalle', 'button[data-archivo="ver"][data-id="31"]');
+    ver.focus();
+    await p.tocar(ver);
+    assert.ok(p.el('modal-vista-previa').classList.contains('active'));
+    assert.equal(p.el('modal-vista-previa-titulo').textContent, 'presentación final.pdf');
+    assert.equal(p.el('modal-vista-previa-cuerpo').innerHTML, '<iframe src="blob:http://localhost/1" title="presentación final.pdf"></iframe>');
+    p.documento.disparar('keydown', { key: 'Escape' });
+    assert.deepEqual(p.estado.revocadas, ['blob:http://localhost/1']);
+    assert.equal(p.el('modal-vista-previa-cuerpo').innerHTML, '');
+    assert.equal(p.documento.activeElement, ver);
+  });
+
+  it('eliminar un documento: la confirmación con su texto, el DELETE, el aviso y el detalle otra vez', async () => {
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: (metodo, ruta) => (metodo === 'DELETE' ? ok(undefined, 'Documento eliminado') : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', 'button[data-archivo="eliminar"][data-id="31"]'));
+    assert.ok(p.el('modal-confirmar').classList.contains('active'));
+    assert.equal(p.el('modal-confirmar-texto').textContent, '¿Eliminar presentación final.pdf?');
+    assert.equal(p.documento.activeElement.textContent, 'Cancelar');
+    await p.tocar(p.el('modal-confirmar-si'));
+    assert.deepEqual(p.rutas('DELETE'), [`/api/gestion/proyectos/${INDICE}/documentos/31`]);
+    assert.equal(p.el('modal-confirmar').classList.contains('active'), false);
+    assert.ok(p.el('message-container').innerHTML.includes('Documento eliminado'));
+    assert.equal(p.rutas('GET').filter((r) => r === `/api/gestion/proyectos/${INDICE}`).length, 2);
+  });
+
+  it('un error al eliminar queda dentro de la confirmación; un doble clic hace un solo DELETE', async () => {
+    let soltar;
+    const espera = new Promise((resolver) => { soltar = resolver; });
+    const p = montarPagina({
+      admin: true,
+      search: `?id=${INDICE}`,
+      responder: async (metodo, ruta) => {
+        if (metodo === 'DELETE') { await espera; return respuesta(404, { success: false, error: 'Documento no encontrado' }); }
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', 'button[data-archivo="eliminar"][data-id="31"]'));
+    p.el('modal-confirmar-si').disparar('click');
+    p.el('modal-confirmar-si').disparar('click');
+    soltar();
+    await p.esperar();
+    assert.equal(p.rutas('DELETE').length, 1);
+    assert.ok(p.el('modal-confirmar').classList.contains('active'));
+    assert.equal(p.el('modal-confirmar-aviso').textContent, 'Documento no encontrado');
+    assert.equal(p.el('message-container').innerHTML, '');
+  });
+
+  it('eliminar el proyecto: el texto con sus hitos y documentos, el DELETE y la lista con sus filtros', async () => {
+    const p = montarPagina({
+      admin: true,
+      search: `?categoria=difusion&id=${INDICE}`,
+      responder: (metodo, ruta) => (metodo === 'DELETE' ? ok(undefined, 'Proyecto eliminado') : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.en('pr-vista-detalle', `button[data-eliminar-proyecto="${INDICE}"]`));
+    assert.equal(p.el('modal-confirmar-texto').textContent, ctx.textoDeConfirmacion('proyecto', DETALLE_INDICE()));
+    await p.tocar(p.el('modal-confirmar-si'));
+    assert.deepEqual(p.rutas('DELETE'), [`/api/gestion/proyectos/${INDICE}`]);
+    assert.equal(p.estado.direcciones[0], '/proyectos.html?categoria=difusion');
+    assert.equal(p.el('pr-vista-lista').hidden, false);
+    assert.equal(p.el('pr-vista-detalle').hidden, true);
+    assert.equal(p.documento.title, 'Proyectos - RPAD');
+    assert.equal(p.en('panel-proyectos', 'button[data-grupo="categoria"][data-valor="difusion"]').getAttribute('aria-pressed'), 'true');
+    assert.ok(p.el('message-container').innerHTML.includes('Proyecto eliminado'));
+    assert.equal(p.documento.activeElement, p.el('pr-nuevo'));
+  });
+
+  it('eliminar un hito desde la línea de tiempo: el texto con sus archivos y la lista otra vez', async () => {
+    const conArchivos = HITOS.find((h) => h.proyecto_id !== null && h.archivos.length > 0);
+    const p = montarPagina({
+      admin: true,
+      hash: '#linea',
+      responder: (metodo, ruta) => (metodo === 'DELETE' ? ok(undefined, 'Hito eliminado') : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await p.iniciar();
+    await p.tocar(p.en('panel-linea', `button[data-eliminar-hito="${conArchivos.id}"]`));
+    assert.equal(p.el('modal-confirmar-texto').textContent, ctx.textoDeConfirmacion('hito', conArchivos));
+    await p.tocar(p.el('modal-confirmar-si'));
+    assert.deepEqual(p.rutas('DELETE'), [`/api/gestion/hitos/${conArchivos.id}`]);
+    assert.equal(p.rutas('GET').filter((r) => r === '/api/gestion/timeline').length, 2);
   });
 });
