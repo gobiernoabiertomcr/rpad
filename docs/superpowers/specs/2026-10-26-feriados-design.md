@@ -11,7 +11,9 @@ Fecha: 26/10/2026. **Estado: aprobado por el usuario el 26/10/2026.** Salió de 
 - **Un feriado que se repite puede saltear un año.** Si un año se corre, ese año no rige y se carga el día al que se pasó (sección 1 y 3).
 - **Dar de baja uno que se repite vale desde el año que se elija:** los anteriores no cambian.
 - **Los trasladables guardan de qué fecha vienen** (`trasladado_de`), y la tabla lo muestra.
-- **El Jueves Santo es «No laborable»,** como dice la ley, no «Nacional móvil».
+- **El Jueves Santo es «No laborable»,** como dice la ley, no un feriado nacional.
+- **El tipo «Nacional móvil» pasa a ser «Nacional»** (`nacional`): cubre también los feriados extraordinarios, como el del 9/11/2026.
+- **La precarga, con las respuestas a las dudas de las fuentes** (sección 5): el 13/12 es de Chubut y va año por año; rigen también el 30/4 y el 3/11 de Chubut; se suma el 2/1/2026.
 - **La pestaña se ve como Áreas:** sus estilos, no los de la maqueta.
 - Lo que corrigió el análisis del código: `validarFeriado` recibe hoy, los 9 fijos necesitan sus nombres, el aviso de «ya hay uno ese día» mira también los fijos y los que se repiten, un 29/02 no se repite, la reiteración de las Notas Digitales es a los 20 días corridos (sección 8) y los tests que también cambian (sección 7).
 
@@ -24,7 +26,7 @@ Mi espacio sí lo necesita. Las vacaciones, los días de estudio y los de atenci
 ## Objetivos, no objetivos y antiobjetivos
 
 **Objetivos**
-- **Una tabla `feriados`** para los días no hábiles que no son los 9 fijos: los nacionales móviles y trasladables, los de Chubut, los de Comodoro y los días no laborables, como los puentes, el Jueves Santo y los asuetos puntuales.
+- **Una tabla `feriados`** para los días no hábiles que no son los 9 fijos: los nacionales que cambian de fecha cada año (Carnaval, Viernes Santo, los trasladables y los extraordinarios), los de Chubut, los de Comodoro y los días no laborables, como los puentes, el Jueves Santo y los asuetos puntuales.
 - **Una pestaña Feriados en Configuración,** la cuarta, después de Usuarios, Licencias y Áreas. Lista los feriados del año, con los 9 fijos a la vista y sin editar, y permite cargar, corregir y dar de baja los demás.
 - **Arranca precargada con 2026 y 2027,** con las fechas verificadas contra las fuentes oficiales (decisión del usuario).
 - **Reglas puras para contar días hábiles con estos feriados,** que usa Mi espacio.
@@ -48,7 +50,7 @@ Mi espacio sí lo necesita. Las vacaciones, los días de estudio y los de atenci
 | `id` | |
 | `fecha` | DATE. En uno que se repite, la de su primer año. |
 | `nombre` | varchar(150) |
-| `tipo` | enum('nacional_movil','provincial','municipal','no_laborable') |
+| `tipo` | enum('nacional','provincial','municipal','no_laborable') |
 | `trasladado_de` | DATE NULL: la fecha original de un trasladable |
 | `se_repite` | tinyint(1), por defecto 0 |
 | `hasta_anio` | smallint NULL: en uno que se repite, el último año en que rige (NULL: sigue) |
@@ -58,10 +60,10 @@ Mi espacio sí lo necesita. Las vacaciones, los días de estudio y los de atenci
 
 **La tabla `feriados_no_rige`:** los años en que uno que se repite no rige. `feriado_id` (FK a `feriados`, ON DELETE CASCADE) y `anio` (smallint), con PK compuesta.
 
-- **Los tipos se muestran como:** Nacional móvil, De Chubut, De Comodoro y No laborable.
+- **Los tipos se muestran como:** Nacional, De Chubut, De Comodoro y No laborable.
 - **`se_repite`:** el feriado cae el mismo día y mes todos los años, desde el año de su `fecha` en adelante; no hacia atrás. Es para los de fecha fija que no están entre los 9 del sistema, como el aniversario de la ciudad. Los móviles se cargan año por año (decisión del usuario).
   - **Rige** un año si ese año es igual o posterior al de su `fecha`, no pasa de `hasta_anio` y no está en `feriados_no_rige`.
-  - **Si un año se corre** (por ejemplo, el municipio pasa el Día del Petróleo a un lunes), ese año se marca «no rige» y se carga el día al que se pasó, como un feriado más, con `trasladado_de` (decisión del usuario).
+  - **Si un año se corre** (por ejemplo, el municipio pasa el Día del Empleado Municipal a un lunes), ese año se marca «no rige» y se carga el día al que se pasó, como un feriado más, con `trasladado_de` (decisión del usuario).
   - **Corregir la fecha o el nombre** de uno que se repite corrige todos los años: es para los errores de carga.
   - **Un 29/02 no puede repetirse.**
 - **`trasladado_de`:** opcional. Es una fecha válida, distinta de `fecha` y del mismo año. La tabla la muestra debajo del nombre: «Trasladado del miércoles 17/06» (decisión del usuario).
@@ -123,7 +125,7 @@ Va en `configuracion.html`, como cuarta pestaña (`#feriados`). Con la convenci�
 - **Arriba, un aviso azul.** En esta entrega dice: «Por ahora, estos feriados no cambian los días hábiles del sistema: las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.» La entrega 2 lo cambia por: «Por ahora, estos feriados cuentan solo para Mi espacio: los días hábiles de las licencias y los francos. Las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.»
 - **La tarjeta «Feriados y días no laborables de AAAA»,** con dos controles:
   - el selector de año: el en curso y el siguiente, y los anteriores si tienen feriados cargados;
-  - los filtros como botones, cada uno con su cantidad: Todos, Nacionales móviles, De Chubut, De Comodoro, No laborables y Fijos del sistema.
+  - los filtros como botones, cada uno con su cantidad: Todos, Nacionales, De Chubut, De Comodoro, No laborables y Fijos del sistema.
 - **La tabla,** con Fecha (con el día de la semana), Nombre, Tipo, Se repite y «Editar»:
   - los fijos se ven en gris y sin «Editar»;
   - debajo del nombre, sus aclaraciones: «Trasladado del miércoles 17/06», «Cae domingo: no cambia ningún día hábil» o «Cae el mismo día que un feriado fijo: no cambia nada»;
@@ -146,7 +148,7 @@ Va en `configuracion.html`, como cuarta pestaña (`#feriados`). Con la convenci�
 ## 5. La precarga de 2026 y 2027
 
 **Qué se precarga.** `migracion-feriados-datos.sql` deja cargados los feriados de 2026 y 2027 que no son de los 9 fijos:
-- los nacionales móviles y trasladables: Carnaval, Viernes Santo y el 17/6, el 17/8, el 12/10 y el 20/11 con su fecha de cada año (con `trasladado_de` si se corrieron);
+- los nacionales: Carnaval, Viernes Santo, el 17/6, el 17/8, el 12/10 y el 20/11 con su fecha de cada año (con `trasladado_de` si se corrieron), y el extraordinario del 9/11/2026;
 - los días no laborables: el Jueves Santo y los días con fines turísticos ya decretados;
 - los de Chubut y los de Comodoro, con «se repite» cuando son de fecha fija.
 
@@ -162,12 +164,16 @@ Va en `configuracion.html`, como cuarta pestaña (`#feriados`). Con la convenci�
 
 **Lo que no está decretado.** Si a la fecha de la entrega todavía no se publicaron los puentes de 2027, no se inventan: se cargan cuando salgan, desde la pestaña.
 
-**Lo que rige para el personal municipal** (respuesta del usuario, 26/10/2026):
-- **De Chubut, con «se repite»:** la gesta galesa, el 28/7.
-- **De Comodoro, con «se repite»:** el aniversario de la ciudad (23/2), el Día del Petróleo (13/12) y el Día del Empleado Municipal (8/11).
-- **Los días no laborables nacionales con fines turísticos:** el municipio adhiere siempre, así que se precargan todos los decretados (tipo «No laborable»).
+**Lo que rige para el personal municipal** (respuestas del usuario, 26/10/2026, después de la investigación de las fuentes):
+- **De Chubut, con «se repite»:** la gesta galesa, el 28/7, que la Ley I N° 857 deja inamovible.
+- **De Chubut, año por año:** el Día del Petróleo Nacional (13/12), el Plebiscito de 1902 (30/4) y la Jura de fidelidad a la Bandera de los pueblos tehuelches y mapuches (3/11). Los fija la Ley I N° 85 y, desde el 22/10/2026, la Ley I N° 857 los hace trasladables: casi todos los años cambian de día.
+- **De Comodoro, con «se repite»:** el aniversario de la ciudad (23/2) y el Día del Empleado Municipal (8/11). Son asuetos que el intendente declara cada año por resolución. El año que se corre uno, se marca «no rige» y se carga «se pasó al».
+- **Nacional, extraordinario:** el 9/11/2026, por la visita del Papa (DNU 1103/2026).
+- **No laborables:** los días nacionales con fines turísticos (el municipio adhiere siempre, así que se precargan todos los decretados) y los asuetos municipales puntuales, como el 2/1/2026 (Res. 2809/25).
+- **El 12/10** se llama como en la ley: «Día del Respeto a la Diversidad Cultural».
+- **2027:** se precarga lo que la ley fija sin decreto (Carnaval, Semana Santa, los trasladables que caen de lunes a viernes, el 3/11 de Chubut y el 13/12). Lo que depende de un decreto, se carga desde la pestaña cuando salga: los días turísticos, el 20/11/2027 (cae sábado), el 30/4/2027 de Chubut, si se mueve el 13/12/2026 (cae domingo) y los asuetos municipales de fin de año.
 
-Las fechas fijas se verifican igual en sus fuentes antes de escribir el SQL.
+**La lista final, con la fuente de cada fecha,** está en `2026-10-26-feriados-fuentes.md` (sección «Respuestas del usuario y lista para la precarga»): 19 filas de 2026 y 9 de 2027.
 
 ## 6. Qué pasa cuando cambia un feriado
 
@@ -223,7 +229,7 @@ Cada módulo, cuando toque, lleva su propia spec.
 
 **Del usuario (26/10/2026):**
 - Los feriados se cargan en una pestaña de Configuración.
-- Se cargan cuatro tipos: nacionales móviles, de Chubut, de Comodoro y no laborables.
+- Se cargan cuatro tipos: nacionales, de Chubut, de Comodoro y no laborables.
 - Siempre el día entero.
 - Los de fecha fija se marcan «se repite todos los años»; los móviles se cargan año por año.
 - Arranca con 2026 y 2027 precargados.
@@ -235,6 +241,8 @@ Cada módulo, cuando toque, lleva su propia spec.
 - Uno que se repite puede saltear un año: se marca «no rige» y se carga el día al que se pasó.
 - Dar de baja uno que se repite vale desde el año que se elija; los anteriores no cambian.
 - Los trasladables guardan de qué fecha vienen, y la tabla lo muestra.
+- El tipo «Nacional móvil» pasa a ser «Nacional».
+- Las dudas de las fuentes: el 13/12 es de Chubut y va año por año; rigen el 30/4 y el 3/11 de Chubut, también año por año; el aniversario y el Día del Empleado Municipal siguen con «se repite»; el 12/10 lleva el nombre de la ley; el 2/1/2026 no se trabajó (Res. 2809/25) y se precarga; y lo de 2027 que fija la ley se precarga ya.
 - Aprobó las decisiones mías de la primera revisión: tabla aparte, con baja lógica y sin índice único; los 9 fijos fuera de la tabla; los cargan los que entran a Configuración (`adminOnly`) y los lee cualquiera con sesión; las fechas del 01/01/2025 al 31/12 del año siguiente al de hoy; `se_repite` desde el año de su fecha; la pestaña se ve como Áreas.
 
 **Mías, aprobadas por el usuario en la segunda sesión (26/10/2026):**
