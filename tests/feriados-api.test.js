@@ -460,7 +460,9 @@ describe('POST /feriados (alta)', () => {
       [carnaval({ nombre: 'x'.repeat(151) }), 'nombre', MENSAJES_FERIADO.nombreLargo],
       [carnaval({ tipo: 'otro' }), 'tipo', MENSAJES_FERIADO.tipo],
       [carnaval({ trasladado_de: '2025-02-16' }), 'trasladado_de', MENSAJES_FERIADO.trasladado],
-      [carnaval({ trasladado_de: '2026-02-16' }), 'trasladado_de', MENSAJES_FERIADO.trasladado]
+      [carnaval({ trasladado_de: '2026-02-16' }), 'trasladado_de', MENSAJES_FERIADO.trasladado],
+      [carnaval({ trasladado_de: '2026-02-30' }), 'trasladado_de', MENSAJES_FERIADO.trasladado],
+      [carnaval({ trasladado_de: 'abc' }), 'trasladado_de', MENSAJES_FERIADO.trasladado]
     ];
     for (const [entrada, campo, mensaje] of casos) {
       const res = await api.post('/feriados', entrada, como('admin'));
@@ -532,6 +534,35 @@ describe('PUT /feriados/:id (corregir)', () => {
       assert.equal(res.body.success, false);
     }
     assert.deepEqual(await todoLoGuardado(), antes);
+  });
+
+  it('uno que se repite y se dio de baja desde un año no pasa a una fecha de ese año o de después: 400 en fecha', async () => {
+    // Dado de baja desde 2027: rige solo en 2026. Corregido a 2027, no regiría ningún año y ninguna lista lo mostraría
+    const id = await insertarFeriado({ fecha: '2026-02-23', nombre: 'Aniversario de la ciudad', tipo: 'municipal', se_repite: 1,
+      hasta_anio: 2026 });
+    // Uno al que le sacaron «se repite» y conserva su hasta_anio: volver a marcarlo con una fecha de 2027 tampoco pasa
+    const sinRepetir = await insertarFeriado({ fecha: '2026-11-08', nombre: 'Día del Empleado Municipal', tipo: 'municipal',
+      se_repite: 0, hasta_anio: 2026 });
+    const antes = await todoLoGuardado();
+    const error = { success: false, error: MENSAJES_FERIADO.despuesDeLaBaja, campo: 'fecha' };
+    const aniversario = { fecha: '2027-02-23', nombre: 'Aniversario de la ciudad', tipo: 'municipal', se_repite: true };
+    const res = await api.put(`/feriados/${id}`, aniversario, como('admin'));
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.deepEqual(res.body, error);
+    const otraVez = await api.put(`/feriados/${sinRepetir}`,
+      { fecha: '2027-11-08', nombre: 'Día del Empleado Municipal', tipo: 'municipal', se_repite: true }, como('admin'));
+    assert.equal(otraVez.status, 400, JSON.stringify(otraVez.body));
+    assert.deepEqual(otraVez.body, error);
+    assert.deepEqual(await todoLoGuardado(), antes);
+
+    // En el mismo año sí, y sin «se repite» también (rige solo en su fecha)
+    const mismoAnio = await api.put(`/feriados/${id}`, { ...aniversario, fecha: '2026-02-24' }, como('admin'));
+    assert.equal(mismoAnio.status, 200, JSON.stringify(mismoAnio.body));
+    const sinRepetirEn2027 = await api.put(`/feriados/${sinRepetir}`,
+      { fecha: '2027-11-08', nombre: 'Día del Empleado Municipal', tipo: 'municipal', se_repite: false }, como('admin'));
+    assert.equal(sinRepetirEn2027.status, 200, JSON.stringify(sinRepetirEn2027.body));
+    assert.equal((await filaGuardada(id)).fecha, '2026-02-24');
+    assert.equal((await filaGuardada(sinRepetir)).fecha, '2027-11-08');
   });
 
   it('sobre un id dado de baja, que no existe, «abc» o «1e3», el PUT, el PUT …/rige y el DELETE dan 404', async () => {

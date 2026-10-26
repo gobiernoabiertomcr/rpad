@@ -10,7 +10,8 @@
 import pool from '../config/database.js';
 import { hoyArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
 import {
-  MENSAJES_FERIADO, feriadosDelAnio, aniosDelSelector, validarFeriado, validarRige, bajaDesde, avisosDeLaFecha
+  MENSAJES_FERIADO, feriadosDelAnio, aniosDelSelector, validarFeriado, errorDeLaCorreccion, validarRige, bajaDesde,
+  avisosDeLaFecha
 } from '../services/feriadosReglas.js';
 import { filasDeFeriados, filaDeFeriado } from '../services/feriadosDatos.js';
 import { idPositivo } from '../services/proyectosReglas.js';
@@ -93,14 +94,21 @@ export const crearFeriado = (req, res) => responder(res, 'Error al cargar el fer
 });
 
 // PUT /api/feriados/:id: lo corrige con el formulario entero (en uno que se repite, la fecha y el nombre corrigen todos los años).
-// Los avisos no cuentan al que se corrige
+// Uno con «se repite» dado de baja desde un año no pasa a una fecha de ese año o de después (errorDeLaCorreccion). Los avisos
+// no cuentan al que se corrige.
+// Sacarle «se repite» no borra su hasta_anio ni sus años de feriados_no_rige (sin «se repite» las reglas no los miran): si se lo
+// vuelven a marcar, vuelve lo que se había decidido. Borrarlos haría que un año que no rige contara dos veces, junto al día de
+// su «se pasó al»
 export const corregirFeriado = (req, res) => responder(res, 'Error al corregir el feriado', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrado();
   return enTransaccion(async (conexion) => {
-    if (!(await filaDeFeriado(id, conexion))) return noEncontrado();
+    const fila = await filaDeFeriado(id, conexion);
+    if (!fila) return noEncontrado();
     const { datos, error } = validarFeriado(req.body, hoyArgentina());
     if (error) return rechazoDeValidacion(error);
+    const despuesDeLaBaja = errorDeLaCorreccion(datos, fila);
+    if (despuesDeLaBaja) return rechazoDeValidacion(despuesDeLaBaja);
     await conexion.query(
       'UPDATE feriados SET fecha = ?, nombre = ?, tipo = ?, trasladado_de = ?, se_repite = ? WHERE id = ?',
       [datos.fecha, datos.nombre, datos.tipo, datos.trasladado_de, datos.se_repite, id]

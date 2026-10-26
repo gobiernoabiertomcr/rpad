@@ -6,7 +6,7 @@ import {
   TIPOS_FERIADO, NOMBRES_TIPO_FERIADO, NOMBRES_DE_LOS_FIJOS,
   diaDeLaSemana, fechaEnElAnio, feriadosDelRango, esDiaHabilCon, diasHabilesDe, diasHabilesEntre,
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
-  validarFeriado, validarRige, bajaDesde, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector
+  validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector
 } from '../services/feriadosReglas.js';
 import { FERIADOS_FIJOS, esDiaHabil } from '../services/notasDigitalesCalendario.js';
 
@@ -324,6 +324,7 @@ describe('MENSAJES_FERIADO y los límites', () => {
       tipo: 'Elegí el tipo de feriado.',
       trasladado: 'La fecha original tiene que ser otra fecha del mismo año.',
       repite29: 'Un feriado del 29 de febrero no puede repetirse todos los años.',
+      despuesDeLaBaja: 'La fecha tiene que ser anterior al año desde el que se dio de baja.',
       anio: 'Elegí un año válido.',
       rige: 'Indicá si ese año rige.',
       pasaAl: 'La fecha a la que se pasó tiene que ser del mismo año.',
@@ -550,6 +551,44 @@ describe('bajaDesde', () => {
     assert.deepEqual(bajaDesde(hasta2027, 2030), { cambio: { hasta_anio: 2027 }, error: null });
     assert.deepEqual(bajaDesde(hasta2027, 2027), { cambio: { hasta_anio: 2026 }, error: null });
     assert.deepEqual(bajaDesde(hasta2027, 2026), { cambio: { activo: 0 }, error: null });
+  });
+});
+
+describe('errorDeLaCorreccion', () => {
+  const ERROR = { campo: 'fecha', mensaje: MENSAJES_FERIADO.despuesDeLaBaja };
+  // Una que se repite desde 2026, dada de baja desde 2027 (hasta_anio 2026)
+  const BAJA_DESDE_2027 = fila({ id: 13, fecha: '2026-02-23', se_repite: 1, hasta_anio: 2026 });
+  // Los datos de validarFeriado para una corrección
+  const corregida = (cambios) => ({ fecha: '2026-02-23', nombre: 'Aniversario', tipo: 'municipal', trasladado_de: null,
+    se_repite: 1, ...cambios });
+
+  it('con «se repite», una fecha de un año posterior a su hasta_anio es un error en fecha; de ese año o de antes, no', () => {
+    assert.deepEqual(errorDeLaCorreccion(corregida({ fecha: '2027-02-23' }), BAJA_DESDE_2027), ERROR);
+    assert.deepEqual(errorDeLaCorreccion(corregida({ fecha: '2027-01-01' }), BAJA_DESDE_2027), ERROR);
+    assert.equal(errorDeLaCorreccion(corregida({ fecha: '2026-12-31' }), BAJA_DESDE_2027), null);
+    assert.equal(errorDeLaCorreccion(corregida({ fecha: '2026-02-24' }), BAJA_DESDE_2027), null);
+    assert.equal(errorDeLaCorreccion(corregida({ fecha: '2025-02-23' }), BAJA_DESDE_2027), null);
+  });
+
+  it('mira el «se repite» que queda: volver a marcarlo sobre un hasta_anio guardado también es un error; sacarlo, no', () => {
+    const yaNoSeRepite = { ...BAJA_DESDE_2027, se_repite: 0 };
+    assert.deepEqual(errorDeLaCorreccion(corregida({ fecha: '2027-02-23' }), yaNoSeRepite), ERROR);
+    assert.equal(errorDeLaCorreccion(corregida({ fecha: '2027-02-23', se_repite: 0 }), BAJA_DESDE_2027), null);
+  });
+
+  it('sin hasta_anio no hay tope', () => {
+    const sigue = { ...BAJA_DESDE_2027, hasta_anio: null };
+    assert.equal(errorDeLaCorreccion(corregida({ fecha: '2027-02-23' }), sigue), null);
+    assert.equal(errorDeLaCorreccion(corregida({ fecha: '2027-02-23' }), { ...BAJA_DESDE_2027, hasta_anio: undefined }), null);
+  });
+
+  it('con datos que no son de validarFeriado, null', () => {
+    for (const raro of [undefined, null, 'hola', 3, [], {}, { fecha: 'hola', se_repite: 1 }, { fecha: '2027-02-23', se_repite: '1' }]) {
+      assert.equal(errorDeLaCorreccion(raro, BAJA_DESDE_2027), null, JSON.stringify(raro));
+    }
+    for (const raro of [undefined, null, 'hola', 3, [], { hasta_anio: '2026' }, { hasta_anio: 2026.5 }]) {
+      assert.equal(errorDeLaCorreccion(corregida({ fecha: '2027-02-23' }), raro), null, JSON.stringify(raro));
+    }
   });
 });
 
@@ -813,6 +852,7 @@ describe('ninguna función tira', () => {
           validarRige(a, b, HOY);
           validarRige({ anio: 2026, rige: false, pasa_al: '2026-02-24' }, a, b);
           bajaDesde(a, b);
+          errorDeLaCorreccion(a, b);
           feriadosDelAnio(a, b);
           feriadosDelAnio([a, b], 2026);
           avisosDeLaFecha(a, b, a);

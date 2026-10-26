@@ -10,9 +10,9 @@
  *   feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que con
  *   `esDiaHabil`. El resto del sistema sigue con `esDiaHabil` y los 9 fijos.
  * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
- *   de un feriado (`validarFeriado`), de «no rige» (`validarRige`) y de la baja desde un año (`bajaDesde`), la lista de un
- *   año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los años del selector (`aniosDelSelector`). Los
- *   textos son planos: escaparlos le toca a quien los dibuja.
+ *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
+ *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los
+ *   años del selector (`aniosDelSelector`). Los textos son planos: escaparlos le toca a quien los dibuja.
  * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
@@ -46,7 +46,8 @@ export const FECHA_MINIMA_FERIADO = '2025-01-01';
 export const LARGO_NOMBRE_FERIADO = 150;
 
 // Los mensajes de cada error, los mismos en el servidor y en la página. En el error, `campo` es el del pedido: nombreLargo
-// va en `nombre`, trasladado en `trasladado_de`, repite29 en `se_repite` y pasaAl en `pasa_al`; noSeRepite va sin campo
+// va en `nombre`, trasladado en `trasladado_de`, repite29 en `se_repite`, despuesDeLaBaja en `fecha` y pasaAl en `pasa_al`;
+// noSeRepite va sin campo
 export const MENSAJES_FERIADO = Object.freeze({
   fecha: 'La fecha tiene que ser del 01/01/2025 al 31/12 del año que viene.',
   nombre: 'Escribí el nombre del feriado.',
@@ -54,6 +55,7 @@ export const MENSAJES_FERIADO = Object.freeze({
   tipo: 'Elegí el tipo de feriado.',
   trasladado: 'La fecha original tiene que ser otra fecha del mismo año.',
   repite29: 'Un feriado del 29 de febrero no puede repetirse todos los años.',
+  despuesDeLaBaja: 'La fecha tiene que ser anterior al año desde el que se dio de baja.',
   anio: 'Elegí un año válido.',
   rige: 'Indicá si ese año rige.',
   pasaAl: 'La fecha a la que se pasó tiene que ser del mismo año.',
@@ -211,6 +213,21 @@ export const validarFeriado = (entrada, hoy) => {
   if (seRepite === 1 && fecha.slice(5) === '02-29') return rechazo('se_repite', MENSAJES_FERIADO.repite29);
 
   return { datos: { fecha, nombre, tipo, trasladado_de: trasladado, se_repite: seRepite }, error: null };
+};
+
+/**
+ * Lo que una corrección (`PUT /api/feriados/:id`) controla además de `validarFeriado`: con el «se repite» que queda después de
+ * corregir (`datos.se_repite`, el de validarFeriado), una fila guardada con `hasta_anio` (dada de baja desde un año) no puede
+ * pasar a una fecha de un año posterior a ese: no regiría ningún año y ninguna lista la mostraría, así que tampoco se podría
+ * volver a corregir. Vale también para una a la que se le vuelve a marcar «se repite» sobre el `hasta_anio` que conservó.
+ * Devuelve `{ campo: 'fecha', mensaje }` o null: sin «se repite», sin `hasta_anio` (null) o con datos que no son de
+ * validarFeriado, null.
+ */
+export const errorDeLaCorreccion = (datos, fila) => {
+  if (!esObjeto(datos) || !esObjeto(fila) || datos.se_repite !== 1 || !esFechaIso(datos.fecha)) return null;
+  const hasta = fila.hasta_anio;
+  if (!Number.isInteger(hasta)) return null;
+  return anioDe(datos.fecha) > hasta ? { campo: 'fecha', mensaje: MENSAJES_FERIADO.despuesDeLaBaja } : null;
 };
 
 /**
