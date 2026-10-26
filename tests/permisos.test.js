@@ -92,7 +92,12 @@ const RUTAS_SOLO_ADMIN = [
   ['POST', '/gestion/proyectos/1/documentos'],
   ['DELETE', '/gestion/proyectos/1/documentos/1'],
   ['POST', '/gestion/hitos/1/archivos'],
-  ['DELETE', '/gestion/hitos/1/archivos/1']
+  ['DELETE', '/gestion/hitos/1/archivos/1'],
+  // Feriados (spec 2026-10-26-feriados, 3): los lee cualquier rol con sesión; cargan, corrigen y dan de baja solo administración
+  ['POST', '/feriados'],
+  ['PUT', '/feriados/1'],
+  ['PUT', '/feriados/1/rige'],
+  ['DELETE', '/feriados/1']
 ];
 
 const pedir = (metodo, ruta, token) => {
@@ -283,6 +288,13 @@ describe('visitante sin sesión', () => {
       assert.equal(res.status, 401, ruta);
       assert.equal(res.body.success, false, ruta);
     }
+  });
+
+  // Los feriados (spec 2026-10-26-feriados, 3): para todos los roles con sesión, nunca sin ella
+  it('recibe 401 en GET /feriados', async () => {
+    const res = await api.get('/feriados');
+    assert.equal(res.status, 401);
+    assert.equal(res.body.success, false);
   });
 
   it('no puede usar un token firmado con la clave por defecto que tenía el código', async () => {
