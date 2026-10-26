@@ -287,7 +287,7 @@ describe('feriados.js: htmlDeTablaFeriados', () => {
     const [editar] = botonesDe(trasladado.celdas[4]);
     assert.deepEqual(editar.atributos, {
       type: 'button', class: 'ar-btn ar-btn-borde ar-btn-chico', 'data-editar-feriado': '11',
-      'aria-label': 'Editar Paso a la Inmortalidad de Güemes'
+      'aria-label': 'Editar Paso a la Inmortalidad de Güemes, lunes 15/06'
     });
     assert.equal(editar.texto, 'Editar');
   });
@@ -324,12 +324,42 @@ describe('feriados.js: htmlDeTablaFeriados', () => {
     assert.match(conMalo.celdas[1], /<b class="fe-nombre">&lt;img src=x onerror=alert\(1\)&gt;<\/b>/);
     assert.equal(conMalo.textos[1].startsWith(malo), true);
     const [editar] = botonesDe(conMalo.celdas[4]);
-    assert.equal(editar.atributos['aria-label'], 'Editar &lt;img src=x onerror=alert(1)&gt;');
-    assert.equal(textoDe(editar.atributos['aria-label']), `Editar ${malo}`);
+    assert.equal(editar.atributos['aria-label'], 'Editar &lt;img src=x onerror=alert(1)&gt;, lunes 04/05');
+    assert.equal(textoDe(editar.atributos['aria-label']), `Editar ${malo}, lunes 04/05`);
     const otro = filasDe(tabla).find((f) => f.celdas[4].includes('data-editar-feriado="21"'));
     assert.match(otro.celdas[1], /<small>Cae el mismo día que «&lt;img src=x onerror=alert\(1\)&gt;»<\/small>/);
     assert.match(otro.celdas[1], /Asueto &quot;del&quot; O&#39;Brien &amp; cía\./);
-    assert.equal(botonesDe(otro.celdas[4])[0].atributos['aria-label'], 'Editar Asueto &quot;del&quot; O&#39;Brien &amp; cía.');
+    assert.equal(botonesDe(otro.celdas[4])[0].atributos['aria-label'], 'Editar Asueto &quot;del&quot; O&#39;Brien &amp; cía., lunes 04/05');
+  });
+
+  // Dos feriados pueden llamarse igual: los dos días de Carnaval, o el día al que se pasó uno que se repite (copia su nombre). El
+  // nombre accesible de cada «Editar» lleva su fecha del año, con el día de la semana en minúscula
+  it('«Editar» lleva la fecha en su nombre accesible: dos con el mismo nombre se distinguen', () => {
+    const carnaval = plano(feriadosDelAnio([
+      fila({ id: 1, fecha: '2026-02-16', nombre: 'Carnaval' }),
+      fila({ id: 2, fecha: '2026-02-17', nombre: 'Carnaval' })
+    ], 2026));
+    const rotulos = botonesDe(F.htmlDeTablaFeriados(carnaval)).map((b) => b.atributos['aria-label']);
+    assert.deepEqual(rotulos, ['Editar Carnaval, lunes 16/02', 'Editar Carnaval, martes 17/02']);
+    // El 8/11 que en 2027 no rige y el día al que se pasó: el mismo nombre, la fecha proyectada al año
+    const empleado = plano(feriadosDelAnio([
+      fila({ id: 12, fecha: '2026-11-08', nombre: 'Día del Empleado Municipal', tipo: 'municipal', se_repite: 1, no_rige: [2027] }),
+      fila({ id: 14, fecha: '2027-11-09', nombre: 'Día del Empleado Municipal', tipo: 'municipal', trasladado_de: '2027-11-08' })
+    ], 2027));
+    const deEmpleado = botonesDe(F.htmlDeTablaFeriados(empleado)).map((b) => [b.atributos['data-editar-feriado'], b.atributos['aria-label']]);
+    assert.deepEqual(deEmpleado, [['12', 'Editar Día del Empleado Municipal, lunes 08/11'],
+      ['14', 'Editar Día del Empleado Municipal, martes 09/11']]);
+    assert.equal(new Set(deEmpleado.map(([, rotulo]) => rotulo)).size, 2);
+  });
+
+  it('rotuloDeEditarFeriado: texto plano; sin un día que sirva, solo la fecha; sin una fecha, solo el nombre', () => {
+    assert.equal(F.rotuloDeEditarFeriado({ fecha: '2026-02-16', dia_semana: 'lunes', nombre: 'A & <b>' }), 'Editar A & <b>, lunes 16/02');
+    assert.equal(F.rotuloDeEditarFeriado({ fecha: '2026-02-16', dia_semana: null, nombre: 'Carnaval' }), 'Editar Carnaval, 16/02');
+    assert.equal(F.rotuloDeEditarFeriado({ fecha: '2026-02-16', dia_semana: 'Lunes', nombre: 'Carnaval' }), 'Editar Carnaval, 16/02');
+    for (const fecha of [null, '2026-02-30', 'hola']) {
+      assert.equal(F.rotuloDeEditarFeriado({ fecha, dia_semana: 'lunes', nombre: 'Carnaval' }), 'Editar Carnaval', String(fecha));
+    }
+    assert.equal(F.rotuloDeEditarFeriado({ fecha: '2026-02-16', dia_semana: 'lunes', nombre: 0 }), 'Editar 0, lunes 16/02');
   });
 
   it('lo que manda el servidor se escapa también en el tipo y en la fecha; un tipo desconocido va sin color', () => {
@@ -526,6 +556,61 @@ describe('feriados.js con un DOM: cargarFeriados', () => {
     respuesta.soltar(RESPUESTA_2026);
     await carga;
     assert.equal(filasDe(elemento('feriados-lista').innerHTML).length, 13);
+  });
+
+  // Después de guardar (la Task 7) se vuelve a pedir con forzar: mientras llega, la tabla que se ve sigue andando
+  it('durante una recarga con forzar, un filtro se aplica y «Editar» encuentra su feriado; al llegar, la tabla nueva con el filtro', async () => {
+    const respuesta = demorada();
+    let primera = true;
+    const pagina = crearPagina({
+      responder: async () => { if (primera) { primera = false; return RESPUESTA_2026; } return respuesta.promesa; }
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    const abiertos = [];
+    pagina.contexto.abrirModalFeriado = (feriado, origen) => abiertos.push([feriado, origen]);
+    const carga = pagina.contexto.cargarFeriados(true);
+    pagina.clic({ 'data-filtro-feriado': 'municipal' });
+    assert.equal(filasDe(pagina.elemento('feriados-lista').innerHTML).length, 2, 'el filtro se aplicó');
+    assert.deepEqual(pagina.pagina.foco?.atributos, { 'data-filtro-feriado': 'municipal' });
+    pagina.clic({ 'data-editar-feriado': '13' });
+    assert.equal(abiertos.length, 1);
+    assert.equal(abiertos[0][0].id, 13);
+    // La respuesta trae un feriado más de Comodoro: la tabla nueva, con el filtro elegido
+    const nueva = plano(feriadosDelAnio([...FILAS, fila({ id: 15, fecha: '2026-03-02', nombre: 'Asueto', tipo: 'municipal' })], 2026));
+    respuesta.soltar(respuestaDe(2026, nueva));
+    await carga;
+    assert.deepEqual(filasDe(pagina.elemento('feriados-lista').innerHTML).map((f) => f.celdas[4].match(/data-editar-feriado="(\d+)"/)?.[1]),
+      ['13', '15', '12']);
+    pagina.clic({ 'data-editar-feriado': '15' });
+    assert.equal(abiertos.at(-1)[0].id, 15);
+    assert.equal(pagina.pedidos.length, 2);
+  });
+
+  it('con forzar, los otros años se descartan; si la recarga falla, el error y el año se vuelve a pedir (nada viejo queda guardado)', async () => {
+    let fallar = false;
+    const pagina = crearPagina({
+      responder: async (metodo, ruta) => {
+        if (fallar) throw falla(500, 'x');
+        return porAnio(metodo, ruta);
+      }
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    await pagina.contexto.elegirAnioFeriado('2027');
+    await pagina.contexto.elegirAnioFeriado('2026');
+    assert.equal(pagina.pedidos.length, 2);
+    fallar = true;
+    await pagina.contexto.cargarFeriados(true);
+    assert.equal(textoDe(pagina.elemento('feriados-lista').innerHTML), 'No se pudieron cargar los feriados. Probá de nuevo en unos minutos.');
+    pagina.clic({ 'data-filtro-feriado': 'municipal' });
+    assert.equal(textoDe(pagina.elemento('feriados-lista').innerHTML), 'No se pudieron cargar los feriados. Probá de nuevo en unos minutos.',
+      'un filtro no vuelve a dibujar la tabla vieja');
+    fallar = false;
+    await pagina.contexto.cargarFeriados();
+    await pagina.contexto.elegirAnioFeriado('2027');
+    assert.deepEqual(pagina.pedidos.map((p) => p.ruta), ['/feriados', '/feriados?anio=2027', '/feriados?anio=2026',
+      '/feriados?anio=2026', '/feriados?anio=2027']);
   });
 
   it('si el pedido falla: el error, sin tabla ni filtros, y se anuncia', async () => {

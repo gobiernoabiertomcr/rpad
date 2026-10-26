@@ -15,7 +15,7 @@
 const feriadosPorAnio = new Map();     // año → { anio, anios, feriados } de GET /api/feriados: cada año se pide una sola vez
 let anioFeriados = null;               // el año que se mira; null = todavía ninguno (el primer pedido va sin año: el en curso del servidor)
 let aniosDeFeriados = [];              // los años del selector, de la última respuesta (para dibujarlo mientras llega otro año)
-let anioDibujadoFeriados = null;       // el año cuya tabla está en la página; null = ninguna (cargando, error o sesión vencida)
+let datosDibujadosFeriados = null;     // los datos de la tabla que está en la página; null = ninguna (cargando, error o sesión vencida)
 let pedidoDeFeriados = null;           // { anio, turno, promesa }, el pedido en curso: abrir la pestaña dos veces hace un solo pedido
 let turnoDeFeriados = 0;               // solo se dibuja la respuesta del último pedido
 let filtroFeriado = 'todos';
@@ -102,6 +102,17 @@ const fechaCortaFeriado = (feriado) => {
   return DIAS_DE_LA_SEMANA_FERIADOS.includes(dia) ? `${dia.charAt(0).toUpperCase()}${dia.slice(1, 3)} ${diaYMes}` : diaYMes;
 };
 
+// El nombre accesible de «Editar», texto plano: «Editar Carnaval, lunes 16/02», con la fecha del año que se mira (dos feriados
+// pueden llamarse igual: los dos días de Carnaval, o el día al que se pasó uno que se repite). Sin un día que sirva, «Editar
+// Carnaval, 16/02»; sin una fecha, «Editar Carnaval»
+const rotuloDeEditarFeriado = (feriado) => {
+  const { fecha, dia_semana: dia, nombre } = feriado ?? {};
+  const base = `Editar ${nombre === null || nombre === undefined ? '' : String(nombre)}`;
+  if (!esFechaFeriado(fecha)) return base;
+  const diaYMes = `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+  return `${base}, ${DIAS_DE_LA_SEMANA_FERIADOS.includes(dia) ? `${dia} ${diaYMes}` : diaYMes}`;
+};
+
 // El filtro de una clave; una desconocida es 'todos'
 const filtroFeriadoDe = (clave) => (FILTROS_FERIADO.some(([cada]) => cada === clave) ? clave : 'todos');
 
@@ -168,7 +179,7 @@ const htmlDeFilaFeriado = (feriado) => {
   const aclaraciones = (Array.isArray(feriado.aclaraciones) ? feriado.aclaraciones : [])
     .map((aclaracion) => `<small>${escFeriado(aclaracion)}</small>`).join('');
   const editar = !fijo && esIdDeFeriado(feriado.id)
-    ? `<button type="button" class="ar-btn ar-btn-borde ar-btn-chico" data-editar-feriado="${escFeriado(feriado.id)}" aria-label="Editar ${escFeriado(feriado.nombre)}">Editar</button>`
+    ? `<button type="button" class="ar-btn ar-btn-borde ar-btn-chico" data-editar-feriado="${escFeriado(feriado.id)}" aria-label="${escFeriado(rotuloDeEditarFeriado(feriado))}">Editar</button>`
     : '';
   return `
       <tr${clases ? ` class="${clases}"` : ''}>
@@ -227,9 +238,18 @@ function escribirBotonesFeriados(id, html, atributo) {
   if (typeof valor === 'string' && /^[\w-]+$/.test(valor)) contenedor.querySelector(`[${atributo}="${valor}"]`)?.focus();
 }
 
+// Los datos del año que se mira: los pedidos o, mientras se vuelven a pedir con `forzar`, los de la tabla que sigue en la página
+// (así sus filtros y sus «Editar» andan mientras llega la respuesta). undefined si no hay
+function datosALaVistaFeriados() {
+  if (anioFeriados === null) return undefined;
+  return feriadosPorAnio.get(anioFeriados)
+    ?? (datosDibujadosFeriados?.anio === anioFeriados ? datosDibujadosFeriados : undefined);
+}
+
 // Los feriados del año que se mira: se pide cada año la primera vez (usuarios.js la llama al mostrar Feriados, y elegir un año
-// también) y, con `forzar`, otra vez (después de guardar: se descartan todos los años, porque uno que se repite cambia en todos).
-// Mientras no se fuerce, volver a un año ya pedido no lo pide de nuevo
+// también) y, con `forzar`, otra vez (después de guardar: se descartan todos los años, porque uno que se repite cambia en todos;
+// la tabla que se ve queda, con sus filtros y sus «Editar», hasta que llega la nueva). Mientras no se fuerce, volver a un año ya
+// pedido no lo pide de nuevo
 async function cargarFeriados(forzar = false) {
   const anio = anioFeriados;
   if (forzar) {
@@ -243,7 +263,7 @@ async function cargarFeriados(forzar = false) {
   }
   const turno = ++turnoDeFeriados;
   // Con forzar, la tabla que se ve queda hasta que llega la nueva
-  if (anio === null || anioDibujadoFeriados !== anio) pintarCargandoFeriados(anio);
+  if (anio === null || datosDibujadosFeriados?.anio !== anio) pintarCargandoFeriados(anio);
   const promesa = pedirFeriados(turno, anio);
   pedidoDeFeriados = { anio, turno, promesa };
   try {
@@ -282,7 +302,7 @@ async function pedirFeriados(turno, anio) {
 
 // El año que se mira, ya pedido: el título, el selector, los filtros, la tabla de lo que deja el filtro (o el vacío)
 function dibujarFeriados() {
-  const datos = anioFeriados === null ? undefined : feriadosPorAnio.get(anioFeriados);
+  const datos = datosALaVistaFeriados();
   if (!datos) return;
   const visibles = feriadosVisibles(datos.feriados, filtroFeriado);
   porIdFeriado('titulo-feriados').textContent = tituloDeFeriados(datos.anio);
@@ -292,7 +312,7 @@ function dibujarFeriados() {
   const vacio = porIdFeriado('feriados-vacio');
   vacio.textContent = textoVacioFeriados(datos.anio);
   vacio.hidden = visibles.length > 0;
-  anioDibujadoFeriados = datos.anio;
+  datosDibujadosFeriados = datos;
   porIdFeriado('btn-nuevo-feriado').disabled = false;
 }
 
@@ -315,7 +335,7 @@ function pintarCargandoFeriados(anio) {
 
 // En lugar de la tabla, `html`: sin filtros ni vacío y, con `sinAnios`, tampoco el selector
 function pintarEstadoFeriados(html, sinAnios = false) {
-  anioDibujadoFeriados = null;
+  datosDibujadosFeriados = null;
   porIdFeriado('feriados-lista').innerHTML = html;
   escribirBotonesFeriados('feriados-filtros', '', 'data-filtro-feriado');
   if (sinAnios) escribirBotonesFeriados('feriados-anio', '', 'data-anio-feriado');
@@ -354,7 +374,7 @@ async function elegirAnioFeriado(valor) {
 // vacío se anuncia (con resultados no: el botón ya dice que está elegido)
 function elegirFiltroFeriado(clave) {
   filtroFeriado = filtroFeriadoDe(clave);
-  const datos = anioFeriados === null ? undefined : feriadosPorAnio.get(anioFeriados);
+  const datos = datosALaVistaFeriados();
   if (!datos) return;
   dibujarOAvisarFeriados();
   porIdFeriado('feriados-filtros')?.querySelector(`[data-filtro-feriado="${filtroFeriado}"]`)?.focus();
@@ -363,8 +383,8 @@ function elegirFiltroFeriado(clave) {
 
 // Un feriado de la tabla del año que se mira, por su id (los fijos no se editan: no tienen id); null si no está
 function feriadoDeLaLista(id) {
-  const datos = anioFeriados === null ? undefined : feriadosPorAnio.get(anioFeriados);
-  return listaDeFeriados(datos?.feriados).find((f) => f.fijo !== true && esIdDeFeriado(f.id) && String(f.id) === String(id)) ?? null;
+  return listaDeFeriados(datosALaVistaFeriados()?.feriados)
+    .find((f) => f.fijo !== true && esIdDeFeriado(f.id) && String(f.id) === String(id)) ?? null;
 }
 
 // «Nuevo feriado» (feriado null) y «Editar» (un feriado de la lista) abren el modal del feriado; al cerrarse, el foco vuelve a
