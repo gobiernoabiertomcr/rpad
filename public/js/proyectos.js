@@ -409,30 +409,50 @@ const htmlDeChip = (grupo, valor, texto, pulsado, cantidad = null) =>
   `<button type="button" class="sg-chip" data-grupo="${grupo}" data-valor="${esc(valor)}" aria-pressed="${pulsado ? 'true' : 'false'}">${esc(texto)}${cantidad === null ? '' : ` <b>${String(Number(cantidad) || 0)}</b>`}</button>`;
 
 // Las flechas de la ventana (spec 2.2): a los costados del texto «2024 a 2026», cada una con su aria-label y deshabilitada si no hay
-// años hacia su lado. Si todo entra en 3 años, sin flechas: queda el texto (en el teléfono no hay fila de años)
+// años hacia su lado. Si todo entra en 3 años, sin flechas: queda el texto (en el teléfono no hay fila de años). El texto no lleva
+// aria-live: se vuelve a dibujar, y los años los anuncia la región viva de la página (#pr-anuncio), una sola vez
 const htmlDeFlechas = (ventana) => {
   const texto = `${ventana.desde} a ${ventana.hasta}`;
   if (!ventana.anterior && !ventana.siguiente) return `<span class="pr-flechas-texto solo">${texto}</span>`;
   const flecha = (paso, habilitada, icono) => `<button type="button" class="pr-flecha" data-correr="${paso}" aria-label="Ver ${ventana.desde + paso} a ${ventana.hasta + paso}"${habilitada ? '' : ' disabled'}>${icono}</button>`;
-  return `<div class="pr-flechas" role="group" aria-label="Años que se ven">${flecha(-1, ventana.anterior, FLECHA_IZQUIERDA)}<span class="pr-flechas-texto" aria-live="polite">${texto}</span>${flecha(1, ventana.siguiente, FLECHA_DERECHA)}</div>`;
+  return `<div class="pr-flechas" role="group" aria-label="Años que se ven">${flecha(-1, ventana.anterior, FLECHA_IZQUIERDA)}<span class="pr-flechas-texto">${texto}</span>${flecha(1, ventana.siguiente, FLECHA_DERECHA)}</div>`;
 };
 
-// Los filtros de la pestaña Proyectos (spec 2): el buscador, los chips del estado y de la categoría (con su cantidad; un chip
-// aparece si hay algún proyecto en él o si está elegido), las flechas de la ventana y «Resaltar un año» («Ninguno» y los 3 años de
-// la ventana, cada uno con todos sus hitos). `cantidades`, de cantidadesDeFiltros; `ventana`, de ventanaDe
-function htmlDeFiltros(estado, cantidades, ventanaDada) {
+// Lo que necesitan las partes de los filtros: lo elegido, las cantidades, la ventana (sin una que sirva, la que termina en el año
+// elegido, sin flechas) y cómo se cuenta y se muestra cada chip
+const datosDeLosFiltros = (estado, cantidades, ventanaDada) => {
   const e = esObjeto(estado) ? estado : {};
   const c = esObjeto(cantidades) ? cantidades : {};
-  // Sin una ventana que sirva, la que termina en el año elegido, sin flechas
   const ventana = esObjeto(ventanaDada) && Number.isInteger(ventanaDada.desde) && Number.isInteger(ventanaDada.hasta)
     ? ventanaDada
     : ventanaDe(Number(e.anios), { min: Number(e.anios), max: Number(e.anios) });
-  const cuenta = (grupo, clave) => Number(c[grupo]?.[clave]) || 0;
-  const existe = (grupo, clave) => Number(c.sinFiltros?.[grupo]?.[clave]) > 0;
-  const estadoElegido = ORDEN_ESTADOS.includes(e.estado) ? e.estado : 'todos';
+  return {
+    e, c, ventana,
+    cuenta: (grupo, clave) => Number(c[grupo]?.[clave]) || 0,
+    existe: (grupo, clave) => Number(c.sinFiltros?.[grupo]?.[clave]) > 0
+  };
+};
+
+// El buscador de la pestaña Proyectos (spec 2): la página lo dibuja una sola vez y no lo vuelve a escribir mientras se usa (si no,
+// cada tecla sería un campo nuevo: el lector de pantalla lo volvería a leer entero y se perderían el deshacer y la composición)
+function htmlDelBuscador(busqueda) {
+  return `<div class="pr-campo">${ICONO_BUSCAR}<input type="search" id="pr-buscar" placeholder="Buscá un proyecto" aria-label="Buscar un proyecto por nombre, descripción o autor" value="${esc(typeof busqueda === 'string' ? busqueda : '')}" autocomplete="off"></div>`;
+}
+
+// Los chips del estado (spec 2), con su cantidad: Todos y los estados que tienen algún proyecto o están elegidos
+function htmlDeChipsDeEstado(estado, cantidades) {
+  const { e, cuenta, existe } = datosDeLosFiltros(estado, cantidades, null);
+  const elegido = ORDEN_ESTADOS.includes(e.estado) ? e.estado : 'todos';
+  const estados = ORDEN_ESTADOS.filter((valor) => existe('estado', valor) || valor === elegido)
+    .map((valor) => htmlDeChip('estado', valor, TEXTO_ESTADO_PLURAL[valor], valor === elegido, cuenta('estado', valor)));
+  return `${htmlDeChip('estado', 'todos', 'Todos', elegido === 'todos', cuenta('estado', 'todos'))}${estados.join('')}`;
+}
+
+// La segunda fila de los filtros (spec 2): la categoría (con la misma regla que el estado), las flechas de la ventana y «Resaltar un
+// año» («Ninguno» y los 3 años de la ventana, cada uno con todos sus hitos)
+function htmlDeSegundaFila(estado, cantidades, ventanaDada) {
+  const { e, c, ventana, cuenta, existe } = datosDeLosFiltros(estado, cantidades, ventanaDada);
   const categoriaElegida = tieneClave(TEXTO_CATEGORIA, e.categoria) ? e.categoria : 'todas';
-  const estados = ORDEN_ESTADOS.filter((valor) => existe('estado', valor) || valor === estadoElegido)
-    .map((valor) => htmlDeChip('estado', valor, TEXTO_ESTADO_PLURAL[valor], valor === estadoElegido, cuenta('estado', valor)));
   const categorias = Object.keys(TEXTO_CATEGORIA).filter((valor) => existe('categoria', valor) || valor === categoriaElegida)
     .map((valor) => htmlDeChip('categoria', valor, TEXTO_CATEGORIA[valor], valor === categoriaElegida, cuenta('categoria', valor)));
   const resaltado = anioResaltado(e, ventana);
@@ -440,14 +460,19 @@ function htmlDeFiltros(estado, cantidades, ventanaDada) {
   for (let anio = ventana.desde; anio <= ventana.hasta; anio += 1) {
     anios.push(htmlDeChip('resaltar', String(anio), String(anio), resaltado === String(anio), Number(c.anio?.[String(anio)]) || 0));
   }
-  return `<div class="pr-filtros">`
-    + `<div class="pr-campo">${ICONO_BUSCAR}<input type="search" id="pr-buscar" placeholder="Buscá un proyecto" aria-label="Buscar un proyecto por nombre, descripción o autor" value="${esc(e.busqueda)}" autocomplete="off"></div>`
-    + `<div class="sg-chips" role="group" aria-label="Estado">${htmlDeChip('estado', 'todos', 'Todos', estadoElegido === 'todos', cuenta('estado', 'todos'))}${estados.join('')}</div>`
-    + `</div><div class="pr-filtros">`
-    + `<div class="pr-grupo-filtro" role="group" aria-label="Categoría"><span class="pr-filtro-rotulo" aria-hidden="true">Categoría</span>${htmlDeChip('categoria', 'todas', 'Todas', categoriaElegida === 'todas', cuenta('categoria', 'todas'))}${categorias.join('')}</div>`
+  return `<div class="pr-grupo-filtro" role="group" aria-label="Categoría"><span class="pr-filtro-rotulo" aria-hidden="true">Categoría</span>${htmlDeChip('categoria', 'todas', 'Todas', categoriaElegida === 'todas', cuenta('categoria', 'todas'))}${categorias.join('')}</div>`
     + htmlDeFlechas(ventana)
-    + `<div class="pr-grupo-filtro" role="group" aria-label="Resaltar un año"><span class="pr-filtro-rotulo" aria-hidden="true">Resaltar un año</span>${htmlDeChip('resaltar', 'ninguno', 'Ninguno', resaltado === null)}${anios.join('')}</div>`
-    + `</div>`;
+    + `<div class="pr-grupo-filtro" role="group" aria-label="Resaltar un año"><span class="pr-filtro-rotulo" aria-hidden="true">Resaltar un año</span>${htmlDeChip('resaltar', 'ninguno', 'Ninguno', resaltado === null)}${anios.join('')}</div>`;
+}
+
+// Los filtros de la pestaña Proyectos (spec 2), enteros: el buscador y los chips del estado en la primera fila, y la segunda fila. Cada
+// parte que se vuelve a dibujar sola tiene su lugar (#pr-chips-estado y #pr-filtros-mas); el buscador, no. `cantidades`, de
+// cantidadesDeFiltros; `ventana`, de ventanaDe
+function htmlDeFiltros(estado, cantidades, ventanaDada) {
+  const e = esObjeto(estado) ? estado : {};
+  return `<div class="pr-filtros">${htmlDelBuscador(e.busqueda)}`
+    + `<div class="sg-chips" role="group" aria-label="Estado" id="pr-chips-estado">${htmlDeChipsDeEstado(e, cantidades)}</div></div>`
+    + `<div class="pr-filtros" id="pr-filtros-mas">${htmlDeSegundaFila(e, cantidades, ventanaDada)}</div>`;
 }
 
 // =====================================================
@@ -541,10 +566,11 @@ function htmlDeCarriles(proyectos, hitos, opciones) {
   const estado = estadoConVentana(estadoDeLaUrl(urlDeEstado(elegido, hoy), hoy), extremos);
   const ventana = ventanaDe(estado.anios, extremos);
   const resaltar = anioResaltado(estado, ventana);
-  const frase = resaltar ? `<p class="pr-resumen-anio" role="status">${esc(fraseDelAnio(resaltar, lista))}</p>` : '';
+  // Sin role="status" (ni en el vacío): se vuelve a dibujar, y lo anuncia la región viva de la página (#pr-anuncio)
+  const frase = resaltar ? `<p class="pr-resumen-anio">${esc(fraseDelAnio(resaltar, lista))}</p>` : '';
   const elegidos = ordenarProyectos(filtrarProyectos(todos, estado), lista, hoy);
   if (!elegidos.length) {
-    return `${frase}<div class="pr-vacio-caja"><p role="status">Ningún proyecto coincide con lo que buscaste.</p>`
+    return `${frase}<div class="pr-vacio-caja"><p>Ningún proyecto coincide con lo que buscaste.</p>`
       + '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-limpiar>Ver todos los proyectos</button></div>';
   }
   const porProyecto = new Map();
@@ -555,7 +581,7 @@ function htmlDeCarriles(proyectos, hitos, opciones) {
   }
   // Los links de los carriles llevan los filtros de la lista, sin escribir la ventana de entrada aunque la hayan corregido los hitos
   const contexto = { ventana, hoy, anchoPx, resaltar, estado: conAniosDeEntrada(estado, extremos, hoy) };
-  const carriles =elegidos.map((proyecto) => htmlDeCarril(proyecto, porProyecto.get(proyecto.id) ?? [], contexto)).join('');
+  const carriles = elegidos.map((proyecto) => htmlDeCarril(proyecto, porProyecto.get(proyecto.id) ?? [], contexto)).join('');
   return `${frase}<div class="pr-tarjeta"><div class="pr-carriles">${htmlDelEje(ventana, hoy)}`
     + `<ul class="pr-lista-carriles" role="list" aria-label="Proyectos">${carriles}${htmlDelCarrilDeLogros(lista.filter(esLogro), contexto)}</ul>`
     + `</div>${htmlDeLeyenda(resaltar)}</div>`;
@@ -1675,16 +1701,18 @@ function restaurarFoco(contenedor, descriptor) {
   return true;
 }
 
-// Vuelve a dibujar `contenedor` con `html`: las filas que estaban abiertas siguen abiertas, y el foco vuelve al control que se usó
-// (`foco`: un elemento o un selector) o, si no, al que lo tenía adentro del contenedor; si ya no está, a `respaldo()`
-function redibujar(contenedor, html, { foco = null, respaldo = null } = {}) {
+// Vuelve a dibujar partes de `contenedor` (`partes`: [elemento, html], cada elemento adentro de `contenedor`; lo demás no se toca): las
+// filas que estaban abiertas siguen abiertas, y el foco vuelve al control que se usó (`foco`: un elemento o un selector) o, si no, al
+// que lo tenía adentro del contenedor; si ese control no se volvió a dibujar (el buscador), queda como estaba, con su cursor; si ya no
+// está, a `respaldo()`
+function redibujarPartes(contenedor, partes, { foco = null, respaldo = null } = {}) {
   const activo = document.activeElement;
   const adentro = Boolean(activo) && activo !== contenedor && typeof contenedor.contains === 'function' && contenedor.contains(activo);
   const usado = foco ?? (adentro ? activo : null);
   const descriptor = typeof usado === 'string' ? { selector: usado } : descriptorDeFoco(usado);
   const abiertas = Array.from(contenedor.querySelectorAll('button.pr-fila[aria-expanded="true"]'))
     .map((cabeza) => cabeza.getAttribute('aria-controls')).filter(esSeguroParaSelector);
-  contenedor.innerHTML = html;
+  for (const [elemento, html] of partes) elemento.innerHTML = html;
   for (const id of abiertas) {
     const cabeza = contenedor.querySelector(`button.pr-fila[aria-controls="${id}"]`);
     const cuerpo = cabeza ? porId(id) : null;
@@ -1692,7 +1720,15 @@ function redibujar(contenedor, html, { foco = null, respaldo = null } = {}) {
     cabeza.setAttribute('aria-expanded', 'true');
     cuerpo.hidden = false;
   }
-  if (usado && !restaurarFoco(contenedor, descriptor)) respaldo?.()?.focus?.();
+  if (!usado) return;
+  // Un control que sigue en la página (no estaba en lo que se volvió a dibujar) no se toca: conserva el foco y el cursor
+  if (typeof usado !== 'string' && usado.isConnected !== false && document.activeElement === usado) return;
+  if (!restaurarFoco(contenedor, descriptor)) respaldo?.()?.focus?.();
+}
+
+// Vuelve a dibujar todo `contenedor` con `html` (redibujarPartes con una sola parte, el contenedor entero)
+function redibujar(contenedor, html, opciones = {}) {
+  redibujarPartes(contenedor, [[contenedor, html]], opciones);
 }
 
 // El lugar del foco cuando el control que se usó ya no está: en el detalle, «Ver todos los proyectos»; en la lista, la pestaña elegida
@@ -1708,11 +1744,34 @@ function dibujarLista() {
   for (const nombre of PESTANAS) porId(`cnt-${nombre}`).textContent = String(cantidades[nombre]);
 }
 
-// La pestaña Proyectos: los filtros (con sus cantidades y los hitos de cada año) y los carriles. Sin ningún proyecto, solo el vacío
+// La pestaña Proyectos: los filtros (con sus cantidades y los hitos de cada año) y los carriles, en #pr-carriles. Sin ningún proyecto,
+// solo el vacío. El buscador se dibuja una vez: después se vuelven a dibujar solo los chips del estado, la segunda fila y los carriles,
+// y el campo queda como está (si la búsqueda cambió por otra cosa, «Ver todos los proyectos», se le cambia el valor)
 function dibujarProyectos(opciones = {}) {
   const { proyectos, hitos, estado, extremos, hoy, anchoPx, esAdmin } = pagina;
-  const filtros = proyectos.length ? htmlDeFiltros(estado, cantidadesDeFiltros(proyectos, estado, hitos), ventanaDe(estado.anios, extremos)) : '';
-  redibujar(porId('panel-proyectos'), filtros + htmlDeCarriles(proyectos, hitos, { estado, hoy, anchoPx, esAdmin }), { respaldo: lugarDeRespaldo, ...opciones });
+  const panel = porId('panel-proyectos');
+  const carriles = htmlDeCarriles(proyectos, hitos, { estado, hoy, anchoPx, esAdmin });
+  const conRespaldo = { respaldo: lugarDeRespaldo, ...opciones };
+  if (!proyectos.length) {
+    redibujar(panel, carriles, conRespaldo);
+    return;
+  }
+  const cantidades = cantidadesDeFiltros(proyectos, estado, hitos);
+  const ventana = ventanaDe(estado.anios, extremos);
+  const buscador = panel.querySelector('#pr-buscar');
+  const chips = panel.querySelector('#pr-chips-estado');
+  const segunda = panel.querySelector('#pr-filtros-mas');
+  const lugarDeLosCarriles = panel.querySelector('#pr-carriles');
+  if (!buscador || !chips || !segunda || !lugarDeLosCarriles) {
+    redibujar(panel, `${htmlDeFiltros(estado, cantidades, ventana)}<div id="pr-carriles">${carriles}</div>`, conRespaldo);
+    return;
+  }
+  if (buscador.value !== estado.busqueda) buscador.value = estado.busqueda;
+  redibujarPartes(panel, [
+    [chips, htmlDeChipsDeEstado(estado, cantidades)],
+    [segunda, htmlDeSegundaFila(estado, cantidades, ventana)],
+    [lugarDeLosCarriles, carriles]
+  ], conRespaldo);
 }
 
 function dibujarLinea(opciones = {}) {
@@ -1921,7 +1980,8 @@ function limpiarLosFiltros() {
   escribirLaUrl();
 }
 
-// El buscador filtra en vivo (mientras se compone una letra con tilde, espera a que termine). El foco y el cursor quedan en el buscador
+// El buscador filtra en vivo, sin volver a dibujarse (el foco, el cursor y el deshacer quedan como están). Mientras se compone una
+// letra con tilde, espera a que termine: una letra a medias («´») no filtra ni anuncia que ningún proyecto coincide
 function alEscribirEnElBuscador(evento) {
   const campo = evento.target;
   if (!campo || campo.id !== 'pr-buscar' || !pagina.estado) return;
@@ -1986,11 +2046,13 @@ function alApretarUnaTecla(evento) {
   cerrarModal();
 }
 
-// El error sin campo, dentro del modal (nunca detrás del velo)
+// El error sin campo, dentro del modal (nunca detrás del velo). Está arriba del cuerpo, que se desplaza, y el foco va a «Guardar», en
+// el pie: se lo trae a la vista
 function mostrarAvisoDelModal(id, mensaje) {
   const aviso = porId(`${id}-aviso`);
   aviso.textContent = mensaje ?? '';
   aviso.hidden = !mensaje;
+  if (mensaje) aviso.scrollIntoView?.({ block: 'nearest' });
 }
 
 // Abre el modal `id`: el foco va a `foco()` después de la transición del velo (hasta que termina, no deja enfocar, como en

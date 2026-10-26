@@ -423,7 +423,7 @@ describe('proyectos.js: los filtros (htmlDeFiltros)', () => {
       ['completado', 'false', 'Completados', '2']]);
     const elegido = ctx.htmlDeFiltros({ ...DE_ENTRADA, estado: 'suspendido' }, cantidades({ ...DE_ENTRADA, estado: 'suspendido' }), VENTANA);
     assert.deepEqual(chips(elegido, 'estado').at(-1), ['suspendido', 'true', 'Suspendidos', '0']);
-    assert.match(html, /<div class="sg-chips" role="group" aria-label="Estado">/);
+    assert.match(html, /<div class="sg-chips" role="group" aria-label="Estado" id="pr-chips-estado">/);
   });
 
   it('las categorías, con la misma regla y su rótulo', () => {
@@ -434,12 +434,13 @@ describe('proyectos.js: los filtros (htmlDeFiltros)', () => {
     assert.match(html, /<div class="pr-grupo-filtro" role="group" aria-label="Categoría"><span class="pr-filtro-rotulo" aria-hidden="true">Categoría<\/span>/);
   });
 
-  it('las flechas de la ventana: cada una con su aria-label, la que no tiene años hacia su lado deshabilitada y el texto con aria-live', () => {
+  it('las flechas de la ventana: cada una con su aria-label, la que no tiene años hacia su lado deshabilitada y el texto (sin aria-live: los años los anuncia #pr-anuncio, que no se vuelve a dibujar)', () => {
     const html = ctx.htmlDeFiltros(DE_ENTRADA, cantidades(), VENTANA);
     assert.match(html, /<div class="pr-flechas" role="group" aria-label="Años que se ven">/);
     assert.match(html, /<button type="button" class="pr-flecha" data-correr="-1" aria-label="Ver 2023 a 2025">/);
     assert.match(html, /<button type="button" class="pr-flecha" data-correr="1" aria-label="Ver 2025 a 2027" disabled>/);
-    assert.ok(html.includes('<span class="pr-flechas-texto" aria-live="polite">2024 a 2026</span>'));
+    assert.ok(html.includes('<span class="pr-flechas-texto">2024 a 2026</span>'));
+    assert.doesNotMatch(html, /aria-live|role="status"/);
     const medio = ctx.htmlDeFiltros(DE_ENTRADA, cantidades(), { desde: 2022, hasta: 2024, anterior: true, siguiente: true });
     assert.equal(cuantas(medio, /disabled/g), 0);
     assert.ok(medio.includes('aria-label="Ver 2021 a 2023"') && medio.includes('aria-label="Ver 2023 a 2025"'));
@@ -461,6 +462,20 @@ describe('proyectos.js: los filtros (htmlDeFiltros)', () => {
     assert.deepEqual(chips(ctx.htmlDeFiltros(DE_ENTRADA, undefined, VENTANA), 'resaltar').map((c) => c[3]), [null, '0', '0', '0']);
     // Sin ventana, la que termina en el año elegido, sin flechas
     assert.ok(ctx.htmlDeFiltros(DE_ENTRADA, undefined, undefined).includes('<span class="pr-flechas-texto solo">2024 a 2026</span>'));
+  });
+
+  it('en partes: el buscador (se dibuja una vez), los chips del estado y la segunda fila (se vuelven a dibujar solos), cada parte en su lugar', () => {
+    for (const estado of [DE_ENTRADA, { ...DE_ENTRADA, busqueda: 'índice', estado: 'idea', resaltar: '2025' }]) {
+      const c = cantidades(estado);
+      assert.equal(ctx.htmlDeFiltros(estado, c, VENTANA), `<div class="pr-filtros">${ctx.htmlDelBuscador(estado.busqueda)}`
+        + `<div class="sg-chips" role="group" aria-label="Estado" id="pr-chips-estado">${ctx.htmlDeChipsDeEstado(estado, c)}</div></div>`
+        + `<div class="pr-filtros" id="pr-filtros-mas">${ctx.htmlDeSegundaFila(estado, c, VENTANA)}</div>`);
+      // Solo el buscador tiene el campo: volver a dibujar las otras partes no lo toca
+      assert.match(ctx.htmlDelBuscador(estado.busqueda), /^<div class="pr-campo"><svg [^>]*>[\s\S]*<\/svg><input type="search" id="pr-buscar" /);
+      assert.doesNotMatch(ctx.htmlDeChipsDeEstado(estado, c) + ctx.htmlDeSegundaFila(estado, c, VENTANA), /pr-buscar|<input/);
+    }
+    assert.equal(chips(ctx.htmlDeChipsDeEstado(DE_ENTRADA, cantidades()), 'estado').length, 4);
+    assert.match(ctx.htmlDeSegundaFila(DE_ENTRADA, cantidades(), VENTANA), /^<div class="pr-grupo-filtro" role="group" aria-label="Categoría">/);
   });
 });
 
@@ -559,7 +574,9 @@ describe('proyectos.js: los carriles (htmlDeCarriles)', () => {
 
   it('un año resaltado: la frase arriba, su columna amarilla en todos los renglones, los puntos de los otros años apagados y en la leyenda', () => {
     const html = carrilesDe({ estado: { ...DE_ENTRADA, resaltar: '2025' } });
-    assert.ok(html.startsWith('<p class="pr-resumen-anio" role="status">En 2025: 7 hitos de 4 proyectos y 1 logro del área. Son los que salen en el Informe anual de 2025.</p>'));
+    // Sin role="status": la frase la anuncia #pr-anuncio (un <p role="status"> recién creado no siempre se anuncia, y a veces dos veces)
+    assert.ok(html.startsWith('<p class="pr-resumen-anio">En 2025: 7 hitos de 4 proyectos y 1 logro del área. Son los que salen en el Informe anual de 2025.</p>'));
+    assert.doesNotMatch(html, /aria-live|role="status"/);
     assert.equal(cuantas(html, /<span class="resalta" style="left:[\d.]+%;width:[\d.]+%"><\/span>/g), PROYECTOS.length + 1);
     const indice = carrilDe(html, INDICE);
     assert.deepEqual([...indice.matchAll(/<span class="(punto[^"]*)"/g)].map((m) => m[1]), ['punto apagado', 'punto']);
@@ -612,7 +629,8 @@ describe('proyectos.js: los carriles (htmlDeCarriles)', () => {
 describe('proyectos.js: los vacíos (spec 2.5)', () => {
   it('ninguno coincide con los filtros: lo dice, con «Ver todos los proyectos», y sin carriles', () => {
     const html = carrilesDe({ estado: { ...DE_ENTRADA, busqueda: 'zzz' } });
-    assert.ok(html.includes('<p role="status">Ningún proyecto coincide con lo que buscaste.</p>'));
+    assert.ok(html.includes('<p>Ningún proyecto coincide con lo que buscaste.</p>'));
+    assert.doesNotMatch(html, /aria-live|role="status"/);
     assert.match(html, /<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-limpiar>Ver todos los proyectos<\/button>/);
     assert.doesNotMatch(html, /pr-carril|pr-leyenda/);
   });
@@ -2034,6 +2052,8 @@ const crearDom = () => {
       focus() { if (!el.disabled && el.isConnected) dom.activo = el; },
       click() { el.clics += 1; el.disparar('click'); },
       setSelectionRange(inicio, fin) { el.seleccion = [inicio, fin]; el.selectionStart = inicio; el.selectionEnd = fin; },
+      vistas: [],
+      scrollIntoView(opciones) { el.vistas.push(opciones); },
       getBoundingClientRect: () => ({ width: el.classList.contains('pr-pista') ? dom.anchoDePista : 0 })
     };
     return el;
@@ -2330,31 +2350,60 @@ describe('proyectos.js: los filtros, las flechas y el resaltado escriben la dire
     assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?estado=en_curso&categoria=difusion');
   });
 
-  it('el buscador filtra en vivo, conserva el foco y el cursor, y anuncia cuando ningún proyecto coincide', async () => {
+  it('los chips y las flechas no vuelven a dibujar el buscador (el mismo nodo, con lo escrito)', async () => {
     const p = montarPagina();
     await p.iniciar();
     const buscador = p.en('panel-proyectos', '#pr-buscar');
-    buscador.focus();
-    buscador.value = 'zzz';
-    buscador.selectionStart = 2;
-    buscador.selectionEnd = 2;
+    buscador.value = 'datos';
     buscador.disparar('input');
-    const nuevo = p.documento.activeElement;
-    assert.equal(nuevo.id, 'pr-buscar');
-    assert.notEqual(nuevo, buscador);
-    assert.deepEqual(nuevo.seleccion, [2, 2]);
+    await p.tocar(p.en('panel-proyectos', 'button[data-grupo="estado"][data-valor="idea"]'));
+    await p.tocar(p.en('panel-proyectos', 'button[data-correr="-1"]'));
+    await p.tocar(p.en('panel-proyectos', 'button[data-grupo="resaltar"][data-valor="2024"]'));
+    assert.equal(p.en('panel-proyectos', '#pr-buscar'), buscador);
+    assert.equal(buscador.value, 'datos');
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?estado=idea&busqueda=datos&anios=2025&resaltar=2024');
+    assert.equal(p.documento.activeElement.getAttribute('data-valor'), '2024');
+  });
+
+  it('el buscador filtra en vivo sin volver a dibujarse: el mismo campo, con su valor, su foco y su cursor; anuncia cuando ningún proyecto coincide', async () => {
+    const p = montarPagina();
+    await p.iniciar();
+    const buscador = p.en('panel-proyectos', '#pr-buscar');
+    const carrilesAntes = p.el('pr-carriles').querySelectorAll('a.pr-carril').length;
+    assert.equal(carrilesAntes, PROYECTOS.length + 1);
+    buscador.focus();
+    buscador.value = 'índice';
+    buscador.selectionStart = 3;
+    buscador.selectionEnd = 3;
+    buscador.disparar('input');
+    // Los carriles y los chips se volvieron a dibujar; el campo es el mismo nodo, con su valor, el foco y el cursor (nadie lo tocó)
+    assert.equal(p.en('panel-proyectos', '#pr-buscar'), buscador);
+    assert.equal(p.documento.activeElement, buscador);
+    assert.equal(buscador.value, 'índice');
+    assert.deepEqual([buscador.selectionStart, buscador.selectionEnd, buscador.seleccion], [3, 3, null]);
+    assert.ok(p.el('pr-carriles').querySelectorAll('a.pr-carril').length < carrilesAntes);
+    assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=%C3%ADndice');
+    buscador.value = 'zzz';
+    buscador.disparar('input');
+    assert.equal(p.en('panel-proyectos', '#pr-buscar'), buscador);
+    assert.ok(p.el('pr-carriles').innerHTML.includes('<p>Ningún proyecto coincide con lo que buscaste.</p>'));
     assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=zzz');
     assert.equal(p.el('pr-anuncio').textContent, 'Ningún proyecto coincide con lo que buscaste.');
-    // Mientras se compone una letra con tilde, espera
-    nuevo.value = 'zzzá';
-    nuevo.disparar('input', { isComposing: true });
+    // Ningún aria-live ni role="status" en lo que se vuelve a dibujar: solo anuncia #pr-anuncio
+    assert.equal(p.el('panel-proyectos').querySelectorAll('[aria-live]').length + p.el('panel-proyectos').querySelectorAll('[role="status"]').length, 0);
+    // Mientras se compone una letra con tilde, espera (una letra a medias no filtra)
+    buscador.value = 'zzzá';
+    buscador.disparar('input', { isComposing: true });
     assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=zzz');
-    nuevo.disparar('compositionend');
+    buscador.disparar('compositionend');
     assert.equal(p.estado.direcciones.at(-1), '/proyectos.html?busqueda=zzz%C3%A1');
-    // «Ver todos los proyectos» limpia los filtros y el foco va al buscador
+    // «Ver todos los proyectos» limpia los filtros: el mismo campo, vacío y con el foco
     await p.tocar(p.en('panel-proyectos', 'button[data-limpiar]'));
     assert.equal(p.estado.direcciones.at(-1), '/proyectos.html');
-    assert.equal(p.documento.activeElement.id, 'pr-buscar');
+    assert.equal(p.en('panel-proyectos', '#pr-buscar'), buscador);
+    assert.equal(buscador.value, '');
+    assert.equal(p.documento.activeElement, buscador);
+    assert.equal(p.el('pr-carriles').querySelectorAll('a.pr-carril').length, carrilesAntes);
   });
 
   it('las flechas corren la ventana, la anuncian y, si una queda deshabilitada, el foco pasa a la otra', async () => {
@@ -2395,8 +2444,8 @@ describe('proyectos.js: los filtros, las flechas y el resaltado escriben la dire
     await p.iniciar();
     assert.equal(vm.runInContext('pagina.anchoPx', p.contexto), 300);
     // A 300 px los tres hitos de RPAD se juntan en uno (como en los tests de htmlDeCarriles)
-    assert.equal(p.el('panel-proyectos').innerHTML, ctx.htmlDeFiltros(DE_ENTRADA, ctx.cantidadesDeFiltros(PROYECTOS, DE_ENTRADA, HITOS), VENTANA)
-      + carrilesDe({ anchoPx: 300 }));
+    assert.equal(p.el('pr-carriles').innerHTML, carrilesDe({ anchoPx: 300 }));
+    assert.ok(p.el('panel-proyectos').innerHTML.startsWith(ctx.htmlDeFiltros(DE_ENTRADA, ctx.cantidadesDeFiltros(PROYECTOS, DE_ENTRADA, HITOS), VENTANA)));
     // Al cambiar el tamaño de la ventana (sin ResizeObserver, el evento resize con un retardo), se vuelve a medir
     p.dom.anchoDePista = 640;
     for (const funcion of p.oyentesDeLaVentana.resize ?? []) funcion();
@@ -2568,6 +2617,7 @@ describe('proyectos.js: los modales (DOM falso)', () => {
     await p.enviar('form-proyecto');
     assert.equal(p.el('modal-proyecto-aviso').textContent, 'Error al crear proyecto');
     assert.equal(p.el('modal-proyecto-aviso').hidden, false);
+    assert.deepEqual(plano(p.el('modal-proyecto-aviso').vistas), [{ block: 'nearest' }]);
     assert.equal(p.el('message-container').innerHTML, '');
     assert.equal(p.documento.activeElement, p.el('p-guardar'));
   });
@@ -2638,6 +2688,8 @@ describe('proyectos.js: los hitos y sus archivos (DOM falso)', () => {
     assert.ok(p.el('modal-hito').classList.contains('active'));
     assert.equal(p.el('modal-hito-aviso').textContent, 'El hito se guardó, pero los archivos no se subieron: Podés subir hasta 3 archivos por hito.');
     assert.equal(p.el('modal-hito-aviso').hidden, false);
+    // El aviso está arriba del cuerpo que se desplaza y el foco va a «Guardar», abajo: se lo trae a la vista
+    assert.deepEqual(plano(p.el('modal-hito-aviso').vistas), [{ block: 'nearest' }]);
     assert.equal(p.el('message-container').innerHTML, '');
     assert.doesNotMatch(p.el('pr-anuncio').textContent, /Hito creado/);
     // La subida: multipart, el campo archivos, el token y sin Content-Type
