@@ -780,7 +780,7 @@ describe('reportes.js: el trabajo del RPAD', () => {
 });
 
 describe('reportes.js: áreas y temas', () => {
-  // Los de gestion.js, que se mudaron sin cambios
+  // Los de la pestaña Métricas de la vieja página Gestión, que se mudaron sin cambios
   it('textoPorcentaje: un número con %, y null con una raya', () => {
     assert.equal(ctx.textoPorcentaje(83), '83%');
     assert.equal(ctx.textoPorcentaje(0), '0%');
