@@ -5,15 +5,14 @@
  * campo.
  *
  * Dos partes:
- * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`). Envuelven
- *   a `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los feriados solo sacan días hábiles, nunca los
- *   agregan, y con un Set vacío se cuenta exactamente lo mismo que con `esDiaHabil`. Por ahora cuenta así solo Mi espacio:
- *   el resto del sistema sigue con `esDiaHabil` y los 9 fijos.
- * - La pestaña Feriados de Configuración y su API (`controllers/feriadosController.js`): los tipos y sus nombres, los
- *   mensajes, la validación de un feriado (`validarFeriado`), de «no rige» (`validarRige`) y de la baja desde un año
- *   (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los años del selector
- *   (`aniosDelSelector`). Los textos son planos: los escapa la página. La página tiene copias de `MENSAJES_FERIADO` y
- *   `diaDeLaSemana`, atadas por tests de paridad.
+ * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`), para
+ *   Mi espacio (la entrega 2). Envuelven a `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los
+ *   feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que con
+ *   `esDiaHabil`. El resto del sistema sigue con `esDiaHabil` y los 9 fijos.
+ * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
+ *   de un feriado (`validarFeriado`), de «no rige» (`validarRige`) y de la baja desde un año (`bajaDesde`), la lista de un
+ *   año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los años del selector (`aniosDelSelector`). Los
+ *   textos son planos: escaparlos le toca a quien los dibuja.
  * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
@@ -286,8 +285,13 @@ const trasladadoEnElAnio = (fila, anio) => {
  * La lista de un año, para la pestaña y para `GET /api/feriados` (spec, sección 2): los 9 fijos y las filas de la tabla que
  * van ese año (`proyeccionEnElAnio`: las que se repiten, proyectadas al año, también si ese año no rigen; ni las dadas de
  * baja ni las de fuera de su rango), ordenadas con `compararDeLaLista`. Cada una:
- * `{ id, fecha, dia_semana, nombre, tipo, tipo_nombre, fijo, se_repite, rige, trasladado_de, aclaraciones }`.
- * - Un fijo: `id` null, `tipo` 'fijo', `tipo_nombre` 'Fijo del sistema', `se_repite` 1 y sin aclaraciones.
+ * `{ id, fecha, dia_semana, nombre, tipo, tipo_nombre, fijo, se_repite, rige, trasladado_de, aclaraciones, fecha_guardada,
+ * trasladado_de_guardado, hasta_anio }`.
+ * - `fecha` y `trasladado_de` son las del año que se mira (en una que se repite, proyectadas); `fecha_guardada`,
+ *   `trasladado_de_guardado` y `hasta_anio` son los guardados en la fila, los que usa el modal para corregirla: corregir
+ *   con la fecha proyectada movería el primer año de una que se repite.
+ * - Un fijo: `id` null, `tipo` 'fijo', `tipo_nombre` 'Fijo del sistema', `se_repite` 1, sin aclaraciones y con los tres
+ *   guardados en null.
  * - Una de la tabla, sus aclaraciones en este orden: de qué fecha se trasladó, si cae un fin de semana y con cuáles cae el
  *   mismo día (un fijo, o «Cae el mismo día que «<nombre>»» por cada una de la tabla que también rige). Una que ese año no
  *   rige dice solo «Este año no rige» y no cuenta para las demás.
@@ -302,7 +306,8 @@ export const feriadosDelAnio = (filas, anio) => {
     return {
       id: null, fecha, dia_semana: diaDeLaSemana(fecha),
       nombre: Object.hasOwn(NOMBRES_DE_LOS_FIJOS, mesYDia) ? NOMBRES_DE_LOS_FIJOS[mesYDia] : '',
-      tipo: 'fijo', tipo_nombre: TIPO_NOMBRE_FIJO, fijo: true, se_repite: 1, rige: true, trasladado_de: null, aclaraciones: []
+      tipo: 'fijo', tipo_nombre: TIPO_NOMBRE_FIJO, fijo: true, se_repite: 1, rige: true, trasladado_de: null, aclaraciones: [],
+      fecha_guardada: null, trasladado_de_guardado: null, hasta_anio: null
     };
   });
 
@@ -312,11 +317,16 @@ export const feriadosDelAnio = (filas, anio) => {
     if (proyeccion === null) continue;
     const { fecha, rige } = proyeccion;
     const tipo = fila.tipo ?? null;
+    const hastaGuardado = fila.hasta_anio === null || fila.hasta_anio === undefined ? null : Number(fila.hasta_anio);
     deLaTabla.push({
       id: fila.id ?? null, fecha, dia_semana: diaDeLaSemana(fecha), nombre: String(fila.nombre ?? ''), tipo,
       tipo_nombre: Object.hasOwn(NOMBRES_TIPO_FERIADO, tipo) ? NOMBRES_TIPO_FERIADO[tipo] : String(tipo ?? ''),
       fijo: false, se_repite: Number(fila.se_repite) === 1 ? 1 : 0, rige,
-      trasladado_de: trasladadoEnElAnio(fila, elAnio), aclaraciones: []
+      trasladado_de: trasladadoEnElAnio(fila, elAnio), aclaraciones: [],
+      // Los guardados (proyeccionEnElAnio ya controló la fecha)
+      fecha_guardada: fila.fecha,
+      trasladado_de_guardado: esFechaIso(fila.trasladado_de) ? fila.trasladado_de : null,
+      hasta_anio: Number.isInteger(hastaGuardado) ? hastaGuardado : null
     });
   }
 

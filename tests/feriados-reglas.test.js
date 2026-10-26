@@ -577,8 +577,12 @@ describe('feriadosDelAnio', () => {
     }
     assert.deepEqual(fijos.find((item) => item.fecha === '2026-04-02'), {
       id: null, fecha: '2026-04-02', dia_semana: 'jueves', nombre: 'Día del Veterano y de los Caídos en la Guerra de Malvinas',
-      tipo: 'fijo', tipo_nombre: 'Fijo del sistema', fijo: true, se_repite: 1, rige: true, trasladado_de: null, aclaraciones: []
+      tipo: 'fijo', tipo_nombre: 'Fijo del sistema', fijo: true, se_repite: 1, rige: true, trasladado_de: null, aclaraciones: [],
+      fecha_guardada: null, trasladado_de_guardado: null, hasta_anio: null
     });
+    for (const fijo of fijos) {
+      assert.deepEqual([fijo.fecha_guardada, fijo.trasladado_de_guardado, fijo.hasta_anio], [null, null, null], fijo.fecha);
+    }
   });
 
   it('el orden es por fecha, y en el mismo día el fijo va primero', () => {
@@ -596,7 +600,8 @@ describe('feriadosDelAnio', () => {
     assert.deepEqual(segundo, {
       id: 10, fecha: '2026-04-02', dia_semana: 'jueves', nombre: 'Jueves Santo', tipo: 'no_laborable',
       tipo_nombre: 'No laborable', fijo: false, se_repite: 0, rige: true, trasladado_de: null,
-      aclaraciones: ['Cae el mismo día que un feriado fijo: no cambia nada']
+      aclaraciones: ['Cae el mismo día que un feriado fijo: no cambia nada'],
+      fecha_guardada: '2026-04-02', trasladado_de_guardado: null, hasta_anio: null
     });
   });
 
@@ -604,7 +609,8 @@ describe('feriadosDelAnio', () => {
     assert.deepEqual(elDe(11), {
       id: 11, fecha: '2026-06-15', dia_semana: 'lunes', nombre: 'Paso a la Inmortalidad de Güemes', tipo: 'nacional',
       tipo_nombre: 'Nacional', fijo: false, se_repite: 0, rige: true, trasladado_de: '2026-06-17',
-      aclaraciones: ['Trasladado del miércoles 17/06']
+      aclaraciones: ['Trasladado del miércoles 17/06'],
+      fecha_guardada: '2026-06-15', trasladado_de_guardado: '2026-06-17', hasta_anio: null
     });
   });
 
@@ -620,8 +626,27 @@ describe('feriadosDelAnio', () => {
     assert.deepEqual(elDe(13), {
       id: 13, fecha: '2026-02-23', dia_semana: 'lunes', nombre: 'Aniversario de la ciudad', tipo: 'municipal',
       tipo_nombre: 'De Comodoro', fijo: false, se_repite: 1, rige: false, trasladado_de: null,
-      aclaraciones: ['Este año no rige']
+      aclaraciones: ['Este año no rige'],
+      fecha_guardada: '2026-02-23', trasladado_de_guardado: null, hasta_anio: null
     });
+  });
+
+  it('una que se repite, mirada en otro año: la fecha proyectada y, aparte, lo guardado en la fila', () => {
+    // Para el modal: corregir con la fecha proyectada movería el primer año
+    const repite = fila({
+      id: 70, fecha: '2026-06-15', nombre: 'Repetido', se_repite: 1, hasta_anio: 2030, trasladado_de: '2026-06-17'
+    });
+    const item = feriadosDelAnio([repite], 2027).find((elemento) => elemento.id === 70);
+    assert.equal(item.fecha, '2027-06-15');
+    assert.equal(item.fecha_guardada, '2026-06-15');
+    assert.equal(item.trasladado_de, '2027-06-17');
+    assert.equal(item.trasladado_de_guardado, '2026-06-17');
+    assert.equal(item.hasta_anio, 2030);
+    // hasta_anio pasa como número; lo que no es un entero, como null
+    const conTexto = feriadosDelAnio([{ ...repite, hasta_anio: '2030' }], 2027).find((elemento) => elemento.id === 70);
+    assert.equal(conTexto.hasta_anio, 2030);
+    const conBasura = feriadosDelAnio([{ ...repite, hasta_anio: undefined }], 2027).find((elemento) => elemento.id === 70);
+    assert.equal(conBasura.hasta_anio, null);
   });
 
   it('los que se repiten se proyectan al año; los de un año, solo en el suyo', () => {
