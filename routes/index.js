@@ -96,16 +96,6 @@ import {
   getMetricasManuales,
   createMetricaManual,
   deleteMetricaManual,
-  getProyectos,
-  getProyectoById,
-  createProyecto,
-  updateProyecto,
-  deleteProyecto,
-  createHito,
-  updateHito,
-  deleteHito,
-  getTimeline,
-  createLogro,
   exportarMetricasCSV,
   uploadProyectoDocumentos,
   descargarProyectoDocumento,
@@ -114,6 +104,18 @@ import {
   descargarHitoArchivo,
   deleteHitoArchivo
 } from '../controllers/gestionController.js';
+import {
+  getProyectos,
+  getProyectoById,
+  createProyecto,
+  updateProyecto,
+  deleteProyecto,
+  createLogro,
+  createHito,
+  updateHito,
+  deleteHito,
+  getTimeline
+} from '../controllers/proyectosController.js';
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
 import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';

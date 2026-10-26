@@ -342,7 +342,7 @@ const delInforme = (foto) => (foto === null ? null
   : { anio: foto.anio, al: foto.al, ...COMBINACION_DEL_INFORME, ...deLaFoto(foto, COMBINACION_DEL_INFORME) });
 
 // Los hitos con fecha en `anio`, con el nombre de su proyecto, como los lee Gestión → Proyectos (getTimeline, controllers/
-// gestionController.js): los de proyectos activos y los sin proyecto (los logros del área). Los proyectos en el orden de Gestión →
+// proyectosController.js): los de proyectos activos y los sin proyecto (los logros del área). Los proyectos en el orden de Gestión →
 // Proyectos (por categoría, orden y nombre; los sin proyecto al final) y cada hito por fecha; la fecha como 'AAAA-MM-DD' (es DATE: se
 // corta como texto, sin zona horaria).
 const hitosDelAnio = async (anio) => {
