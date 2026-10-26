@@ -15,7 +15,7 @@ Fecha: 26/10/2026. **Estado: aprobado por el usuario el 26/10/2026.** Salió de 
 - **La maqueta no guarda nada.** Donde no coincida con este documento, manda el documento. Es anterior a las respuestas de la revisión: Sofía Paz, que es lectora, no debería aparecer en «No están» ni en la lista para invitar, y la franquicia se ve «10 a 12», pero se guardan solo las horas.
 
 **Revisión del 26/10/2026 (segunda sesión).** Cuatro agentes leyeron el código y el usuario contestó otra ronda de preguntas. Lo que cambió:
-- **La persona a cargo del firmante la elige quien carga la licencia,** sin una regla nueva. Cada licencia lleva su propia autorización, por sus fechas. Por ejemplo, la médica que sigue a las vacaciones va sin persona a cargo (sección 6).
+- **Solo las vacaciones dejan persona a cargo,** y la elige quien carga la licencia, sin una regla nueva. Las demás licencias del firmante pasan sin persona a cargo, y cada licencia lleva su propia autorización, por sus fechas. Por ejemplo, la médica que sigue a las vacaciones va sin persona a cargo (sección 6).
 - **Se frena solo el rechazo peligroso de Configuración:** el de la persona autorizada que se quedaría sin días hábiles. Los demás se guardan con el motivo a la vista (sección 6).
 - **El email de vencimiento sale desde la fecha de la regla hasta el vencimiento,** una sola vez (sección 9).
 - **La franquicia guarda solo el día y las horas** (sección 3.2).
@@ -244,9 +244,11 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 **El formulario avisa antes de guardar,** en azul: «Las fechas pasan a Configuración → Licencias. Mientras dure, no contás como disponible para auditar y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor. El tipo no pasa.» Al superadmin le suma: «Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.» Para quien audita, muestra también el aviso de días sin auditor de `GET /usuarios/licencias/sin-auditor`, como en Configuración.
 
 **El firmante titular.** Si la persona es el firmante titular de las Notas Digitales, el formulario suma el mismo campo de Configuración, «Autorizo a presentar las notas en mi nombre a:», con sus reglas y el aviso del efecto en las notas.
-- **Lo elige la persona al cargar, sin una regla nueva** (decisión del usuario). El campo es opcional y viene vacío. Sin persona autorizada, durante la licencia no se generan notas y lo que vence se reitera a la vuelta: el formulario lo dice.
+- **Solo las vacaciones dejan persona a cargo** (corrección del usuario, 26/10/2026). El campo aparece solo cuando el firmante carga vacaciones; lo elige la persona al cargar, sin una regla nueva. Es opcional y viene vacío.
+- **Las demás licencias no dejan a nadie a cargo:** médica, médica extraordinaria, grupo familiar, estudios, franco, y la franquicia o las horas a favor de 7 horas. El campo no aparece, la licencia pasa a Configuración sin persona autorizada y el formulario avisa: «Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza se reitera cuando vuelvas.» El servidor lo controla igual: un `autorizado_id` en un tipo que no es vacaciones responde 400 en ese campo.
+- **Sin persona autorizada,** durante la licencia no se generan notas y lo que vence se reitera a la vuelta: el formulario lo dice también en unas vacaciones sin persona elegida.
 - **Cada licencia lleva su propia autorización,** por sus fechas, como la nota que sale. Dos licencias seguidas quedan como dos, cada una con la suya: no se unen ni se estiran.
-- **El caso del usuario:** el firmante se toma licencia del 26/10 al 10/11 y deja a alguien a cargo. El 11/11 vuelve con boleta médica por el 11 y el 12/11, y se reincorpora el 13/11. Para dejar a alguien a cargo hay que haber ido a trabajar, y no fue: la médica va sin persona a cargo, y esos dos días no se generan notas.
+- **El caso del usuario:** el firmante se toma vacaciones del 26/10 al 10/11 y deja a alguien a cargo. El 11/11 vuelve con boleta médica por el 11 y el 12/11, y se reincorpora el 13/11. La médica no deja a nadie a cargo: va sin persona autorizada, y esos dos días no se generan notas.
 - **Si la licencia empieza hoy o antes,** el formulario avisa: «Las notas de hoy ya salieron a las 8:15 con tu firma.»
 - **Los datos del campo** (las personas que se pueden autorizar y sus licencias) hoy vienen solo en `GET /usuarios/licencias`, que es `adminOnly`. Mi espacio los pide con su propio endpoint, que responde solo al firmante titular (sección 10).
 
@@ -457,7 +459,8 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - Se va a mirar sobre todo en la compu.
 
 **Del usuario, en la segunda sesión (26/10/2026):**
-- La persona a cargo del firmante la elige quien carga la licencia, sin una regla nueva: para dejar a alguien a cargo hay que haber ido a trabajar, y eso lo sabe la persona. Cada licencia lleva su propia autorización, por sus fechas.
+- La persona a cargo del firmante la elige quien carga la licencia, sin una regla nueva. Cada licencia lleva su propia autorización, por sus fechas.
+- Solo las vacaciones dejan persona a cargo; las demás licencias, nunca (corrección del usuario, después de aprobar la spec).
 - Si Configuración rechaza el paso, se frena solo el caso de la persona autorizada que se quedaría sin días hábiles; el resto se guarda con el motivo.
 - El email de vencimiento sale desde la fecha de la regla hasta el vencimiento, una sola vez.
 - La franquicia guarda solo el día y las horas.
