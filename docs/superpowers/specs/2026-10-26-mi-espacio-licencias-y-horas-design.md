@@ -1,6 +1,6 @@
 # Mi espacio: licencias y horas extras
 
-Fecha: 26/10/2026. **Estado: pre-plan, borrador para revisar.** Salió de la charla del 26/10/2026 sobre el panel personal. Es la segunda de tres entregas:
+Fecha: 26/10/2026. **Estado: aprobado por el usuario el 26/10/2026.** Salió de la charla del 26/10/2026 sobre el panel personal. Es la segunda de tres entregas:
 1. Feriados (`2026-10-26-feriados-design.md`).
 2. Mi espacio: licencias y horas extras (este documento).
 3. Mi espacio: la agenda (`2026-10-26-mi-espacio-agenda-design.md`).
@@ -486,7 +486,7 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - Si administración acorta o anula la licencia que cubría una «unida», el panel lo avisa.
 - El aviso del formulario dice lo que de verdad cambia: no contás como disponible para auditar, y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor.
 
-**Mías, nuevas en la segunda sesión (para revisar):**
+**Mías, nuevas en la segunda sesión (aprobadas por el usuario el 26/10/2026):**
 - Si el firmante carga una licencia que empieza hoy o antes, el formulario avisa que las notas de hoy ya salieron a las 8:15 con su firma.
 - Los modales no se cierran con un clic en el velo, como en Configuración.
 - La función de servicio compartida con Configuración no cambia nada de lo que hoy hace Configuración.
