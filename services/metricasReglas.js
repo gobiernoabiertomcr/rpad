@@ -862,7 +862,8 @@ const diasEnPalabras = (habiles, corridos) => {
 // corridos (o el de menos) y después el primero por título; `mas`, los otros ciclos empatados en días hábiles (el mismo dataset puede
 // estar en ciclos distintos). `valores`: [{ h, habiles, corridos }], uno por ciclo terminado de la etapa (no vacío). Los corridos que se
 // muestran son los del mismo ciclo. { rotulo, habiles, corridos, dataset_id, titulo, mas, numero, unidad, corridos_texto,
-// dataset_texto: 'Castraciones de Animales y 14 más' }
+// dataset_texto: 'Castraciones de Animales y 14 más', mas_texto: ' y 14 más' ('' sin empate: el PDF puede cortar el título con «…» y
+// sumarle el sufijo entero) }
 const extremoDe = (valores, largo, rotulo) => {
   const signo = largo ? -1 : 1;
   const tituloDe = (v) => String(v.h.caso.titulo ?? '');
@@ -871,19 +872,20 @@ const extremoDe = (valores, largo, rotulo) => {
   const mas = valores.filter((v) => v.habiles === elegido.habiles).length - 1;
   const { numero, unidad, corridos } = diasEnPalabras(elegido.habiles, elegido.corridos);
   const titulo = typeof elegido.h.caso.titulo === 'string' ? elegido.h.caso.titulo : null;
-  const nombre = titulo || SIN_TITULO;
+  const masTexto = mas > 0 ? ` y ${mas} más` : '';
   return {
     rotulo, habiles: elegido.habiles, corridos: elegido.corridos, dataset_id: elegido.h.caso.dataset_id ?? null, titulo, mas,
-    numero, unidad, corridos_texto: corridos, dataset_texto: mas > 0 ? `${nombre} y ${mas} más` : nombre
+    numero, unidad, corridos_texto: corridos, dataset_texto: `${titulo || SIN_TITULO}${masTexto}`, mas_texto: masTexto
   };
 };
 
 // El vacío de una etapa sin ciclos terminados (spec, 1.4): el del tramo de Métricas (tramoDelCircuito) con los textos del reporte. Sin
-// notas DGMIT, el trámite de la nota suma un renglón debajo y la respuesta del área lleva punto final; si no, «Sin casos en 2026».
-// { titulo, texto, pie }
-const vacioDeLaEtapa = (vacio, ctx) => {
-  const { titulo, texto } = vacio ?? { titulo: `Sin casos en ${ctx.anio}`, texto: '' };
-  if (titulo === SIN_NOTAS_DGMIT) return { titulo, texto, pie: PIE_SIN_NOTAS_DGMIT };
+// notas DGMIT, el trámite de la nota suma un renglón debajo (y, sin ninguna nota pendiente, no dice «0 notas pendientes de carga»: el
+// texto queda vacío; Métricas no cambia) y la respuesta del área lleva punto final; si no, «Sin casos en 2026». `tramo`: el de
+// tramoDelCircuito. { titulo, texto, pie }
+const vacioDeLaEtapa = (tramo, ctx) => {
+  const { titulo, texto } = tramo.vacio ?? { titulo: `Sin casos en ${ctx.anio}`, texto: '' };
+  if (titulo === SIN_NOTAS_DGMIT) return { titulo, texto: tramo.pendientes > 0 ? texto : '', pie: PIE_SIN_NOTAS_DGMIT };
   if (titulo === SIN_DATOS_DEL_AREA.titulo) return { titulo, texto: `${texto}.`, pie: '' };
   return { titulo, texto, pie: '' };
 };
@@ -911,14 +913,16 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
   const rotulos = clave === 'aviso' ? ROTULOS_DEL_AVISO : ROTULOS_DE_LOS_EXTREMOS;
   const largo = ciclos.length === 0 ? null : extremoDe(ciclos, true, ciclos.length === 1 ? EL_UNICO_CASO : rotulos.largo);
   const corto = ciclos.length < 2 ? null : extremoDe(ciclos, false, rotulos.corto);
-  const vacio = n === 0 ? vacioDeLaEtapa(tramo.vacio, ctx.habiles) : null;
+  const vacio = n === 0 ? vacioDeLaEtapa(tramo, ctx.habiles) : null;
+  // Cada renglón con su tipo, porque el PDF pinta cada uno a su modo (spec, 2.2): el orientativo y el en curso en ámbar, los
+  // pendientes en violeta y la aclaración en gris
   const notas = [
-    ...(tramo.cifra?.orientativo === true ? [TEXTO_ORIENTATIVO] : []),
-    ...(tramo.en_curso !== null ? [`En curso: ${tramo.en_curso.texto}`] : []),
+    { tipo: 'orientativo', texto: tramo.cifra?.orientativo === true ? TEXTO_ORIENTATIVO : '' },
+    { tipo: 'en_curso', texto: tramo.en_curso !== null ? `En curso: ${tramo.en_curso.texto}` : '' },
     // Ruling 1: si el vacío ya dice los pendientes («Todavía no hay notas DGMIT cargadas»), no se repiten
-    ...(tramo.pendientes_texto !== null && vacio?.titulo !== SIN_NOTAS_DGMIT ? [tramo.pendientes_texto] : []),
-    aclaracionDeLaEtapa(gestion, clave, aclaraciones)
-  ].filter((texto) => texto !== '');
+    { tipo: 'pendientes', texto: tramo.pendientes_texto !== null && vacio?.titulo !== SIN_NOTAS_DGMIT ? tramo.pendientes_texto : '' },
+    { tipo: 'aclaracion', texto: aclaracionDeLaEtapa(gestion, clave, aclaraciones) }
+  ].filter((nota) => nota.texto !== '');
   const enPalabras = (estadistico) => (n === 0 ? { numero: '—', unidad: '', corridos: '' }
     : diasEnPalabras(habiles[estadistico], corridos.n === 0 ? null : corridos[estadistico]));
   const mediana = enPalabras('mediana');
@@ -955,8 +959,9 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
 // - textos (Ruling 19: el PDF los imprime): indice (la mediana en días hábiles del circuito de arriba: '27', 'En el día' o '—'), mediana
 //   y promedio ({ numero, unidad, corridos }: '27', 'días hábiles', '40 días corridos'; el promedio, con los corridos entre
 //   paréntesis; un 0 es 'En el día', '', ''; sin ciclos, '—', '', ''), ciclos ('de 32 ciclos'; '' sin ciclos) y notas (los renglones
-//   chicos, en orden y solo los que haya: el orientativo, «En curso: …», los pendientes de carga —salvo que ya los diga el vacío,
-//   Ruling 1— y la aclaración de la etapa). «Año anterior: …» lo suma conAnterior.
+//   chicos, [{ tipo, texto }], en orden y solo los que haya: 'orientativo', 'en_curso' («En curso: …»), 'pendientes' (las notas
+//   pendientes de carga, salvo que ya las diga el vacío: Ruling 1) y 'aclaracion', la de la etapa). «Año anterior: …» lo suma
+//   conAnterior.
 export const etapasDe = (casos, opciones) => {
   const o = objeto(opciones);
   const contexto = (dias) => contextoDe({ anio: o.anio, al: o.al, dias, estadistico: 'mediana', sin: [] });

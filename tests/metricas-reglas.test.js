@@ -2211,7 +2211,12 @@ const YA_VENCIDOS_DE_LA_ETAPA = {
   1: '1 ciclo se avisó cuando ya estaba vencido: no cuenta en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.',
   2: '2 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.'
 };
-const ORIENTATIVO = 'Con tan pocos casos, es orientativo.';
+// Los renglones de las notas de una etapa, cada uno con su tipo (el PDF pinta cada tipo a su modo)
+const renglon = (tipo, texto) => ({ tipo, texto });
+const ORIENTATIVO = renglon('orientativo', 'Con tan pocos casos, es orientativo.');
+const enCursoDe = (texto) => renglon('en_curso', `En curso: ${texto}`);
+const pendientesDe = (texto) => renglon('pendientes', texto);
+const aclaracionDe = (texto) => renglon('aclaracion', texto);
 // Ningún string dice null, undefined, NaN o Infinity, y ningún número es NaN ni infinito
 const sinTextosRaros = (valor) => {
   recorrer(valor, 'etapas', (ruta, clave, v) => {
@@ -2250,8 +2255,14 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
       assert.deepEqual(Object.keys(etapa.textos), ['indice', 'mediana', 'promedio', 'ciclos', 'notas'], etapa.clave);
       if (etapa.largo !== null) {
         assert.deepEqual(Object.keys(etapa.largo), [
-          'rotulo', 'habiles', 'corridos', 'dataset_id', 'titulo', 'mas', 'numero', 'unidad', 'corridos_texto', 'dataset_texto'
+          'rotulo', 'habiles', 'corridos', 'dataset_id', 'titulo', 'mas', 'numero', 'unidad', 'corridos_texto', 'dataset_texto', 'mas_texto'
         ], etapa.clave);
+      }
+      // Cada renglón de las notas, con su tipo
+      for (const nota of etapa.textos.notas) {
+        assert.deepEqual(Object.keys(nota), ['tipo', 'texto'], etapa.clave);
+        assert.ok(['orientativo', 'en_curso', 'pendientes', 'aclaracion'].includes(nota.tipo), etapa.clave);
+        assert.notEqual(nota.texto, '', etapa.clave);
       }
     }
     // Con cifras: el aviso de las dos gestiones y la carga de la externa (la mediana de la carga es 0: «En el día», sin unidad ni corridos)
@@ -2310,14 +2321,16 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     assert.deepEqual(carga.corridos, { mediana: 2, promedio: 4 }); // [0, 0, 2, 7, 11]
     assert.deepEqual(carga.largo, {
       rotulo: 'El caso más largo', habiles: 9, corridos: 11, dataset_id: 905, titulo: 'Delta', mas: 0, numero: '9', unidad: 'días hábiles',
-      corridos_texto: '11 días corridos', dataset_texto: 'Delta'
+      corridos_texto: '11 días corridos', dataset_texto: 'Delta', mas_texto: ''
     });
     // Tres empatan en 0 días hábiles: se nombra el de menos corridos (Zeta y Beta, con 0) y, con empate, el primero por título (Beta)
     assert.deepEqual(carga.corto, {
       rotulo: 'El caso más corto', habiles: 0, corridos: 0, dataset_id: 903, titulo: 'Beta', mas: 2, numero: 'En el día', unidad: '',
-      corridos_texto: '', dataset_texto: 'Beta y 2 más'
+      corridos_texto: '', dataset_texto: 'Beta y 2 más', mas_texto: ' y 2 más'
     });
     assert.ok(carga.corto.dataset_texto.endsWith(' y 2 más'));
+    // El sufijo, aparte: el título y el sufijo son el texto del dataset (el PDF corta el título con «…» sin perder el sufijo)
+    for (const extremo of [carga.largo, carga.corto]) assert.equal(`${extremo.titulo}${extremo.mas_texto}`, extremo.dataset_texto);
     assert.deepEqual(carga.textos.mediana, { numero: 'En el día', unidad: '', corridos: '' });
     assert.deepEqual(carga.textos.promedio, { numero: '3', unidad: 'días hábiles', corridos: '(4 días corridos)' });
     assert.equal(carga.textos.indice, 'En el día');
@@ -2326,11 +2339,27 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     const conEmpate = etapaDe(etapas([...CINCO(), conCarga('Épsilon', 906, '2026-04-04', '2026-04-16')]), 'externa', 'carga');
     assert.deepEqual([conEmpate.largo.habiles, conEmpate.largo.corridos, conEmpate.largo.titulo, conEmpate.largo.mas, conEmpate.largo.dataset_texto],
       [9, 12, 'Épsilon', 1, 'Épsilon y 1 más']);
+    assert.equal(conEmpate.largo.mas_texto, ' y 1 más');
     // Con los mismos días hábiles y corridos, el primero por título; el mismo dataset puede estar en dos ciclos
     const iguales = etapaDe(etapas([conCarga('Uno', 907, '2026-04-06', '2026-04-13'), conCarga('Dos', 908, '2026-04-06', '2026-04-13'),
       conCarga('Dos', 908, '2026-05-04', '2026-05-11')]), 'externa', 'carga');
-    assert.deepEqual([iguales.largo.titulo, iguales.largo.mas, iguales.largo.dataset_texto], ['Dos', 2, 'Dos y 2 más']);
-    assert.deepEqual([iguales.corto.titulo, iguales.corto.mas, iguales.corto.dataset_texto], ['Dos', 2, 'Dos y 2 más']);
+    assert.deepEqual([iguales.largo.titulo, iguales.largo.mas, iguales.largo.dataset_texto, iguales.largo.mas_texto], ['Dos', 2, 'Dos y 2 más', ' y 2 más']);
+    assert.deepEqual([iguales.corto.titulo, iguales.corto.mas, iguales.corto.dataset_texto, iguales.corto.mas_texto], ['Dos', 2, 'Dos y 2 más', ' y 2 más']);
+  });
+
+  it('el sufijo de los empates va aparte: « y N más» con un empate, vacío sin empate', () => {
+    // Con un empate: los 15 ciclos de 0 días hábiles del ejemplo de la spec dan « y 14 más»
+    const quince = Array.from({ length: 15 }, (_, i) => conCarga(`Dataset ${String(i + 1).padStart(2, '0')}`, 901 + i, '2026-04-08', '2026-04-08'));
+    const corto = etapaDe(etapas([...quince, conCarga('Largo', 950, '2026-04-06', '2026-04-17')]), 'externa', 'carga').corto;
+    assert.deepEqual([corto.titulo, corto.mas, corto.mas_texto, corto.dataset_texto], ['Dataset 01', 14, ' y 14 más', 'Dataset 01 y 14 más']);
+    // Sin empate: vacío, y el texto del dataset es el título solo
+    const largo = etapaDe(etapas([...quince, conCarga('Largo', 950, '2026-04-06', '2026-04-17')]), 'externa', 'carga').largo;
+    assert.deepEqual([largo.titulo, largo.mas, largo.mas_texto, largo.dataset_texto], ['Largo', 0, '', 'Largo']);
+    // El único caso, sin empate
+    assert.equal(etapaDe(etapas([conCarga('Solo', 901, '2026-04-06', '2026-04-07')]), 'externa', 'carga').largo.mas_texto, '');
+    // Un caso sin título: el sufijo no cambia
+    const sinTitulo = etapaDe(etapas([conCarga(null, 901, '2026-04-08', '2026-04-08'), conCarga(null, 902, '2026-04-08', '2026-04-08')]), 'externa', 'carga');
+    assert.deepEqual([sinTitulo.largo.titulo, sinTitulo.largo.mas_texto, sinTitulo.largo.dataset_texto], [null, ' y 1 más', 'Sin título y 1 más']);
   });
 
   it('nombres de los extremos: en el aviso, la anticipación; en las demás, el caso más largo y el más corto; con uno solo, «El único caso»', () => {
@@ -2346,13 +2375,13 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     const uno = etapas([conCarga('Solo', 901, '2026-04-06', '2026-04-07')]);
     assert.deepEqual(etapaDe(uno, 'externa', 'aviso').largo, {
       rotulo: 'El único caso', habiles: 27, corridos: 40, dataset_id: 901, titulo: 'Solo', mas: 0, numero: '27', unidad: 'días hábiles',
-      corridos_texto: '40 días corridos', dataset_texto: 'Solo'
+      corridos_texto: '40 días corridos', dataset_texto: 'Solo', mas_texto: ''
     });
     assert.equal(etapaDe(uno, 'externa', 'aviso').corto, null);
     const unaCarga = etapaDe(uno, 'externa', 'carga');
     assert.deepEqual(unaCarga.largo, {
       rotulo: 'El único caso', habiles: 1, corridos: 1, dataset_id: 901, titulo: 'Solo', mas: 0, numero: '1', unidad: 'día hábil',
-      corridos_texto: '1 día corrido', dataset_texto: 'Solo'
+      corridos_texto: '1 día corrido', dataset_texto: 'Solo', mas_texto: ''
     });
     assert.equal(unaCarga.corto, null);
     assert.deepEqual(unaCarga.textos.mediana, { numero: '1', unidad: 'día hábil', corridos: '1 día corrido' });
@@ -2388,19 +2417,34 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     assert.deepEqual(etapaDe(etapasDe([], { anio: 2027, al: '2027-03-01' }), 'interna', 'aviso').vacio, { titulo: 'Sin casos en 2027', texto: '', pie: '' });
   });
 
+  it('vacío: sin ninguna nota pendiente, el trámite no dice «0 notas pendientes de carga» (Métricas sí, y no cambia)', () => {
+    const sinNotasPendientes = { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '', pie: 'Se empieza a contar cuando se carguen en el Seguimiento.' };
+    const tramite = etapaDe(etapasDe([], { anio: 2026, al: AL }), 'externa', 'tramite');
+    assert.deepEqual(tramite.vacio, sinNotasPendientes);
+    assert.deepEqual(tramite.textos.notas, []);
+    // Con casos que no son pendientes (un cerrado y uno con «Requiere nota» No): lo mismo
+    assert.deepEqual(etapaDe(etapas([cerrado(), caso({ dataset_id: 901, requiere_nota: 0 })]), 'externa', 'tramite').vacio, sinNotasPendientes);
+    // El circuito de Métricas sigue diciendo «0 notas pendientes de carga»
+    assert.deepEqual(tramoDe(vista([]), 'externa', 'tramite').vacio, { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '0 notas pendientes de carga' });
+    // Con una, en singular
+    assert.deepEqual(etapaDe(etapas([caso()]), 'externa', 'tramite').vacio,
+      { ...sinNotasPendientes, texto: '1 nota pendiente de carga' });
+  });
+
   it('nada desaparece: un bloque sin cifras lleva los en curso y las notas pendientes', () => {
     const casos = [caso({ nota_dgmit: notaDe('2026-03-10') })];
     const respuesta = etapaDe(etapas(casos), 'externa', 'respuesta');
     assert.equal(respuesta.n, 0);
     const enCurso = tramoDe(vista(casos), 'externa', 'respuesta').en_curso.texto;
     assert.match(enCurso, /^1 sin datos registrados todavía, hace \d+ días hábiles \(mediana\)$/);
-    assert.deepEqual(respuesta.textos.notas, [`En curso: ${enCurso}`]);
+    assert.deepEqual(respuesta.textos.notas, [enCursoDe(enCurso)]);
+    assert.deepEqual(respuesta.textos.notas, [{ tipo: 'en_curso', texto: `En curso: ${enCurso}` }]);
     // El en curso es siempre el de días hábiles y mediana, el de tramoDelCircuito
     assert.equal(enCurso, `1 sin datos registrados todavía, hace ${duracion('2026-03-10', AL, 'habiles')} días hábiles (mediana)`);
     // La producción de la interna, con solo ciclos en curso (la de los casos reales)
     const produccion = etapaDe(etapas(casosReales()), 'interna', 'produccion');
     assert.deepEqual([produccion.n, produccion.textos.notas],
-      [0, ['En curso: 1 sin datos registrados todavía, hace 206 días hábiles (mediana)']]);
+      [0, [{ tipo: 'en_curso', texto: 'En curso: 1 sin datos registrados todavía, hace 206 días hábiles (mediana)' }]]);
     // Con notas DGMIT cargadas, un trámite sin casos terminados en el año igual dice sus pendientes: uno con nota y sin el aviso que
     // empieza el tramo, y otro avisado y sin nota
     const sinCasos = etapas([
@@ -2409,14 +2453,19 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     ]);
     const tramite = etapaDe(sinCasos, 'externa', 'tramite');
     assert.deepEqual([tramite.n, tramite.vacio, tramite.textos.notas],
-      [0, { titulo: 'Sin casos en 2026', texto: '', pie: '' }, ['1 nota pendiente de carga']]);
+      [0, { titulo: 'Sin casos en 2026', texto: '', pie: '' }, [{ tipo: 'pendientes', texto: '1 nota pendiente de carga' }]]);
   });
 
   it('notas en orden: el orientativo, el en curso, los pendientes y la aclaración de la etapa', () => {
     const e = etapas(casosReales());
     // Los avisados ya vencidos van en el aviso anticipado de cada gestión (en la externa son 11 ciclos: no es orientativo)
-    assert.deepEqual(etapaDe(e, 'externa', 'aviso').textos.notas, [YA_VENCIDOS_DE_LA_ETAPA[2]]);
-    assert.deepEqual(etapaDe(e, 'interna', 'aviso').textos.notas, [ORIENTATIVO, YA_VENCIDOS_DE_LA_ETAPA[1]]);
+    assert.deepEqual(etapaDe(e, 'externa', 'aviso').textos.notas, [aclaracionDe(YA_VENCIDOS_DE_LA_ETAPA[2])]);
+    assert.deepEqual(etapaDe(e, 'interna', 'aviso').textos.notas, [ORIENTATIVO, aclaracionDe(YA_VENCIDOS_DE_LA_ETAPA[1])]);
+    // Con su tipo, escrito a mano
+    assert.deepEqual(etapaDe(e, 'interna', 'aviso').textos.notas, [
+      { tipo: 'orientativo', texto: 'Con tan pocos casos, es orientativo.' },
+      { tipo: 'aclaracion', texto: '1 ciclo se avisó cuando ya estaba vencido: no cuenta en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.' }
+    ]);
     // La misma cuenta que la aclaración de Métricas
     const v = vista(casosReales());
     assert.equal(v.circuito.aclaraciones.externa.ya_vencidos.n, 2);
@@ -2434,18 +2483,21 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     ];
     const enCurso = tramoDe(vista(conTodo), 'externa', 'respuesta').en_curso.texto;
     assert.deepEqual(respuesta(conTodo).textos.notas, [
-      ORIENTATIVO, `En curso: ${enCurso}`, '1 ciclo se resolvió con datos de una fuente pública: no cuenta en esta etapa.'
+      ORIENTATIVO, enCursoDe(enCurso), aclaracionDe('1 ciclo se resolvió con datos de una fuente pública: no cuenta en esta etapa.')
     ]);
     const dos = [...conTodo, cerrado({ dataset_id: 904, nota_dgmit: notaDe('2026-03-11'), origen: 'fuente_publica' })];
     assert.deepEqual(respuesta(dos).textos.notas, [
-      ORIENTATIVO, `En curso: ${enCurso}`, '2 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.'
+      ORIENTATIVO, enCursoDe(enCurso), aclaracionDe('2 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.')
     ]);
+    assert.deepEqual(respuesta(dos).textos.notas.map((nota) => nota.tipo), ['orientativo', 'en_curso', 'aclaracion']);
     assert.equal(vista(dos).circuito.aclaraciones.externa.fuente_publica.n, 2);
     // Los pendientes van en el trámite con cifras, después del orientativo
     const conNotas = etapas(casosConNotas());
     const pendientes = tramoDe(vista(casosConNotas()), 'externa', 'tramite').pendientes_texto;
     assert.equal(pendientes, '6 notas pendientes de carga');
-    assert.deepEqual(etapaDe(conNotas, 'externa', 'tramite').textos.notas, [ORIENTATIVO, pendientes]);
+    assert.deepEqual(etapaDe(conNotas, 'externa', 'tramite').textos.notas, [ORIENTATIVO, pendientesDe(pendientes)]);
+    assert.deepEqual(etapaDe(conNotas, 'externa', 'tramite').textos.notas,
+      [{ tipo: 'orientativo', texto: 'Con tan pocos casos, es orientativo.' }, { tipo: 'pendientes', texto: '6 notas pendientes de carga' }]);
     // Con 5 ciclos o más, sin el orientativo
     assert.deepEqual(etapaDe(etapas(CINCO()), 'externa', 'carga').textos.notas, []);
   });
