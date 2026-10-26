@@ -8,7 +8,7 @@ import { crearBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas, conFallaSimulada } from './notas-fixtures.js';
 import {
   ESTADISTICOS, DIAS, casosDe, casosQueTocanElAnio, vistaDe, duracion, indiceMesAMes, antiguedadDeVencidos, estadosAl, trabajoDelAnio,
-  areasYTemas
+  areasYTemas, etapasDe
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas } from '../services/metricasCinta.js';
 
@@ -166,7 +166,9 @@ describe('la foto del 31/12', () => {
     assert.deepEqual(await sacar('2027-01-10'), { anio: 2026, sacada: true });
     const guardada = await foto.leerFoto(2026);
     assert.deepEqual([guardada.anio, guardada.al], [2026, AL]);
-    assert.deepEqual(Object.keys(guardada.datos), ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'generada']);
+    assert.deepEqual(Object.keys(guardada.datos), [
+      'version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'etapas', 'generada'
+    ]);
     assert.equal(guardada.datos.version, 1);
     assert.match(guardada.datos.generada, MOMENTO);
     assert.deepEqual(await foto.aniosConFoto(), [2026]);
@@ -336,6 +338,85 @@ describe('la foto del 31/12', () => {
       al_dia: 0, tasa: 0
     });
     assert.deepEqual(datos.areas.ranking.map((area) => [area.total_datasets, area.al_dia, area.porcentaje]), [[1, 0, 0], [1, 0, 0]]);
+  });
+
+  // El Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 3.3): la foto guarda las etapas, calculadas una sola vez con los
+  // casos del año (ya traen los días hábiles y los corridos, la mediana y el promedio)
+  it('la foto guarda etapas y son las de etapasDe con sus casos', async () => {
+    const { a } = await prepararElAnio();
+    await sacar('2027-01-10');
+    const { datos } = await foto.leerFoto(2026);
+    const opciones = { anio: 2026, al: AL };
+    // Las de etapasDe con los casos guardados, que son las mismas que con todos los casos de la base al 31/12 (las del año en vivo)
+    const casos = casosDe(await seguimientoDatos.fuentesDe(null), { hoy: AL });
+    assert.deepEqual(datos.etapas, JSON.parse(JSON.stringify(etapasDe(datos.casos, opciones))));
+    assert.deepEqual(datos.etapas, JSON.parse(JSON.stringify(etapasDe(casos, opciones))));
+    assert.deepEqual([datos.etapas.anio, datos.etapas.al], [2026, AL]);
+    assert.deepEqual(datos.etapas.externa.map((etapa) => etapa.clave), ['aviso', 'tramite', 'respuesta', 'carga']);
+    assert.deepEqual(datos.etapas.interna.map((etapa) => etapa.clave), ['aviso', 'produccion', 'carga']);
+
+    // Cada etapa coincide con su tramo en las cuatro vistas guardadas: la mediana y el promedio, en días hábiles y en corridos, de los
+    // mismos ciclos
+    for (const gestion of ['externa', 'interna']) {
+      for (const etapa of datos.etapas[gestion]) {
+        for (const estadistico of ESTADISTICOS) {
+          for (const dias of DIAS) {
+            const donde = `${gestion} ${etapa.clave} ${estadistico} ${dias}`;
+            const tramo = datos.vistas[foto.claveDeLaVista(estadistico, dias)].circuito[gestion].find((t) => t.clave === etapa.clave);
+            const cifras = dias === 'habiles' ? etapa.habiles : etapa.corridos;
+            assert.equal(cifras?.[estadistico] ?? null, tramo.cifra?.valor ?? null, donde);
+            if (dias === 'habiles') assert.equal(etapa.n, tramo.cifra?.ciclos ?? 0, donde);
+          }
+        }
+      }
+    }
+
+    // A: la carga del 30/12 de los datos del 29/12 es el único caso de la carga externa, un día hábil (y uno corrido) después
+    const carga = datos.etapas.externa.find((etapa) => etapa.clave === 'carga');
+    assert.deepEqual([carga.n, carga.habiles, carga.corridos, carga.corto],
+      [1, { mediana: 1, promedio: 1 }, { mediana: 1, promedio: 1 }, null]);
+    assert.deepEqual([carga.largo.rotulo, carga.largo.dataset_id, carga.largo.dataset_texto], ['El único caso', a, 'Dataset A de prueba']);
+    // B: al 31/12, la producción del relevamiento estaba en curso desde el aviso del 01/10: sin ciclos terminados, con su renglón
+    const produccion = datos.etapas.interna.find((etapa) => etapa.clave === 'produccion');
+    const hace = duracion('2026-10-01', AL, 'habiles');
+    assert.deepEqual([produccion.n, produccion.habiles, produccion.largo], [0, null, null]);
+    assert.deepEqual(produccion.textos.notas.filter((nota) => nota.tipo === 'en_curso'),
+      [{ tipo: 'en_curso', texto: `En curso: 1 sin datos registrados todavía, hace ${hace} días hábiles (mediana)` }]);
+  });
+
+  // Foco 4 (spec 2026-10-25-ciclo-de-vida-del-dato, 3.3): una foto sacada antes de este despliegue no tiene etapas. Se calculan con los
+  // casos que guardó (la única excepción a Ruling 16) y dan lo mismo que las que habría guardado
+  it('una foto sin etapas se lee igual', async () => {
+    const { a } = await prepararElAnio();
+    await sacar('2027-01-10');
+    const nueva = await foto.leerFoto(2026);
+    // Con la clave, son las guardadas, tal cual: no se recalculan
+    assert.equal(foto.etapasDeLaFoto(nueva), nueva.datos.etapas);
+
+    // La misma foto como la dejaba el código anterior: sin etapas. Se sigue leyendo (la versión es la misma)
+    const { etapas, ...sinEtapas } = nueva.datos;
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify(sinEtapas)]);
+    const vieja = await foto.leerFoto(2026);
+    assert.deepEqual(Object.keys(vieja.datos), ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'generada']);
+    assert.deepEqual(foto.etapasDeLaFoto(vieja), etapas);
+
+    // Con los casos guardados, no con la base de hoy: A cambió de título y se le cargó una nota DGMIT recibida el 10/12/2026 (en
+    // vivo, las etapas de 2026 ya no son las mismas)
+    await query('UPDATE datasets SET titulo = ? WHERE id = ?', ['Otro título', a]);
+    const notaDgmit = (await query(
+      "INSERT INTO notas_dgmit (numero, tipo, recibida, anulada) VALUES ('45/26', 'solicitud', '2026-12-10', 0)"
+    )).insertId;
+    await query('INSERT INTO notas_dgmit_datasets (nota_id, dataset_id) VALUES (?, ?)', [notaDgmit, a]);
+    const enVivo = etapasDe(casosDe(await seguimientoDatos.fuentesDe(null), { hoy: AL }), { anio: 2026, al: AL });
+    assert.notDeepEqual(JSON.parse(JSON.stringify(enVivo)), etapas);
+    assert.deepEqual(foto.etapasDeLaFoto(await foto.leerFoto(2026)), etapas);
+
+    // Si no se pueden calcular (un año que no es un año) o lo guardado no son etapas, tira, como una foto que no se puede leer
+    assert.throws(() => foto.etapasDeLaFoto({ anio: 'x', datos: sinEtapas }), { message: 'La foto de x no se puede leer' });
+    for (const roto of [null, 'etapas', []]) {
+      assert.throws(() => foto.etapasDeLaFoto({ anio: 2026, datos: { ...sinEtapas, etapas: roto } }),
+        { message: 'La foto de 2026 no se puede leer' }, JSON.stringify(roto));
+    }
   });
 
   it('un error al guardar no tira: queda en la última corrida y con_errores = 1', async () => {
