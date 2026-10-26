@@ -1,6 +1,6 @@
 # Mi espacio: la agenda personal y compartida
 
-Fecha: 26/10/2026. **Estado: pre-plan, borrador para revisar.** Salió de la charla del 26/10/2026 sobre el panel personal. Es la tercera de tres entregas:
+Fecha: 26/10/2026. **Estado: aprobado por el usuario el 26/10/2026.** Salió de la charla del 26/10/2026 sobre el panel personal. Es la tercera de tres entregas:
 1. Feriados (`2026-10-26-feriados-design.md`).
 2. Mi espacio: licencias y horas extras (`2026-10-26-mi-espacio-licencias-y-horas-design.md`).
 3. La agenda (este documento).
@@ -15,8 +15,8 @@ Se miran con el preview `maquetas-mi-espacio` (puerto 8765). Los datos son inven
 
 **Revisión del 26/10/2026 (segunda sesión).** Cuatro agentes leyeron el código y el usuario contestó otra ronda de preguntas. Lo que cambió:
 - **Ningún email del RPAD sale en un día que no es hábil** (pedido del usuario). «1 día antes» es el día hábil anterior.
-- **Sin cron nuevo:** los recordatorios salen con las dos corridas que ya existen, a las 8:15 y a las 14:00. El usuario dejó la decisión en mis manos (sección 5).
-- **Las opciones de recordatorio** pasan a ser «El día hábil anterior» (de entrada), «El mismo día» y «Sin aviso». Se van «15 minutos», «1 hora» y «2 horas antes».
+- **Una Tarea Cron nueva cada media hora** para los recordatorios (decisión del usuario), con su propio candado (sección 5).
+- **Las opciones de recordatorio** pasan a ser «1 hora antes», «2 horas antes» (de entrada), «El día hábil anterior» y «Sin aviso». Se va «15 minutos antes»: con una corrida cada media hora no se puede cumplir.
 - **Los emails de la agenda llegan aunque la persona esté de licencia:** van al mail laboral (respuesta del usuario sobre el recordatorio, extendida por mí a los otros tres).
 - Lo que corrigió el análisis del código: el índice único de los envíos y los reintentos, los emails de un evento después de guardar, la plantilla en `emailTemplates.js` y los tests que cambian.
 
@@ -33,7 +33,7 @@ La Dirección coordina reuniones, entregas y capacitaciones por mensajes sueltos
 - **La pestaña Agenda de Mi espacio** (`#agenda`), con dos vistas: el mes y la lista de próximos (decisión del usuario).
 - **Eventos personales,** que ve solo quien los crea.
 - **Eventos compartidos** con personas elegidas o con todos. Solo quien lo creó lo cambia o lo borra (decisión del usuario).
-- **Un recordatorio por email** que cada evento elige (decisión del usuario): el día hábil anterior (de entrada), el mismo día o sin aviso. En un evento compartido les llega a todos (decisión del usuario).
+- **Un recordatorio por email** que cada evento elige (decisión del usuario): 1 hora antes, 2 horas antes (de entrada), el día hábil anterior o sin aviso. En un evento compartido les llega a todos (decisión del usuario).
 - **Un email cuando alguien te suma a un evento** (decisión del usuario), y otro cuando ese evento cambia o se borra.
 - **En la agenda de cada uno** aparecen también sus licencias y francos, los feriados y los compañeros que no están (decisión del usuario: «Lo mío en mi agenda» y «Hoy no están»).
 
@@ -41,7 +41,7 @@ La Dirección coordina reuniones, entregas y capacitaciones por mensajes sueltos
 - No hay eventos que se repiten ni eventos de todo el día, ni exportación al celular ni a Google Calendar: el usuario no los eligió. Quedan como posibles extensiones.
 - No hay vista de semana ni de día: el usuario eligió mes y próximos.
 - No hay confirmación de asistencia, salas, adjuntos ni comentarios.
-- No hay recordatorios con minutos u horas de anticipación: no hay una corrida cada pocos minutos.
+- No hay recordatorios de 15 minutos: la corrida es cada media hora.
 - No se toca la «Agenda de pedidos» de Reportes, que es otra cosa. En el código, todo lo de esta agenda lleva el prefijo `mi_espacio_` o `evento`, nunca `agenda` a secas, para que no se confundan.
 
 **Antiobjetivos**
@@ -61,12 +61,9 @@ La Dirección coordina reuniones, entregas y capacitaciones por mensajes sueltos
   - **«Todos» y las personas que se pueden elegir son administración:** superadmin, admin y editor (`esAdmin`; respuesta del usuario). Es la misma regla que la de «los compañeros» de la entrega 2.
   - Solo administración comparte eventos, aparece en la lista de personas y ve los «para todos».
   - El lector y el colaborador tienen solo eventos personales: el formulario no les ofrece «Compartido».
-- **Recordatorio por email:**
-  - **«El día hábil anterior»** es la opción de entrada. Sale en la corrida de las 14:00 del día hábil anterior al del evento.
-  - **«El mismo día»** sale en la corrida de las 8:15 del día del evento. Si el evento cae en un día que no es hábil, sale el día hábil anterior a las 14:00, y el formulario lo dice.
-  - **«Sin aviso».**
-  - **El formulario dice cuándo sale:** «El día hábil anterior (el viernes 30/10, a las 14:00)» o «El mismo día (a las 8:15)».
-  - **Si el evento empieza antes de las 8:15,** «El mismo día» no llega a tiempo, y el formulario lo avisa.
+- **Recordatorio por email:** «1 hora antes», «2 horas antes» (de entrada), «El día hábil anterior» (a la misma hora del evento) o «Sin aviso».
+  - **Nunca sale en un día que no es hábil.** Si la hora del aviso cae en un sábado, un domingo o un feriado, sale el día hábil anterior a esa misma hora. Por ejemplo, un evento del lunes a las 10:00 con «El día hábil anterior» avisa el viernes a las 10:00, o el jueves si el viernes es feriado.
+  - **El formulario dice cuándo sale,** con lo que calcula el servidor: «2 horas antes (hoy a las 08:00)» o «El día hábil anterior (el viernes 30/10 a las 10:00)».
 
 **Fechas:** del 01/01/2025 a dos años después de hoy. Un evento puede caer cualquier día, también en un fin de semana o un feriado.
 
@@ -82,18 +79,19 @@ La Dirección coordina reuniones, entregas y capacitaciones por mensajes sueltos
 
 ## 3. Lo que se guarda
 
-Tablas nuevas, en `migracion-mi-espacio-agenda.sql` (aditiva y repetible) con su `rollback-mi-espacio-agenda.sql`, y también en `database/schema.sql` (los tests crean sus bases solo con `schema.sql`). Con las dos entregas anteriores hay 37 tablas: esta suma 3 y quedan 40. Los nombres finales quedan para quien lo construye.
+Tablas nuevas, en `migracion-mi-espacio-agenda.sql` (aditiva y repetible) con su `rollback-mi-espacio-agenda.sql`, y también en `database/schema.sql` (los tests crean sus bases solo con `schema.sql`). Con las dos entregas anteriores hay 37 tablas: esta suma 4 y quedan 41. Los nombres finales quedan para quien lo construye.
 
 - **`mi_espacio_eventos`:**
   - `id`, `creado_por` (FK a `usuarios`, ON DELETE SET NULL), `titulo` varchar(150) y `detalle` text NULL;
   - `fecha` DATE, `desde` TIME y `hasta` TIME NULL;
-  - `para_todos` y `compartido` (tinyint) y `recordatorio` (enum: 'ninguno', 'dia_anterior' y 'mismo_dia'; de entrada, 'dia_anterior');
+  - `para_todos` y `compartido` (tinyint) y `recordatorio` (enum: 'ninguno', '1h', '2h' y 'dia_anterior'; de entrada, '2h');
   - `activo`, `created_at` y `updated_at`.
 - **`mi_espacio_evento_personas`:** `evento_id` y `usuario_id` (PK compuesta, las dos FK ON DELETE CASCADE) y `sin_recordatorio` (tinyint).
 - **`mi_espacio_evento_envios`:** qué email salió a quién.
   - `id`, `evento_id`, `usuario_id`, `tipo` ('recordatorio', 'invitacion', 'cambio' o 'cancelacion'), `para` (DATETIME: el momento del evento al que se refiere), `enviado_at` (DATETIME, escrito con `ahoraArgentina()`) y `success`.
   - **Un recordatorio no se repite:** antes de mandarlo, la corrida lo reserva con un `INSERT IGNORE` sobre una clave única (`evento_id`, `usuario_id`, `para`) que vale solo para los recordatorios (por ejemplo, una columna generada que es NULL en los otros tipos). Si el envío falla, queda con `success = 0` y la corrida siguiente lo vuelve a intentar mientras el evento no haya empezado. Si el evento cambia de hora, cambia `para` y el recordatorio vuelve a salir.
   - **Las invitaciones, los cambios y las cancelaciones** no tienen clave única: una persona que se saca y se vuelve a sumar recibe otra invitación.
+- **`mi_espacio_eventos_corridas`:** una sola fila, con la última corrida de los recordatorios (`inicio_at`, `fin_at` y `resultado`), para Correos → Estado (sección 5).
 
 ## 4. Los emails
 
@@ -102,22 +100,25 @@ Tablas nuevas, en `migracion-mi-espacio-agenda.sql` (aditiva y repetible) con su
 - **Invitación**, al sumar a alguien: «Laura Gómez te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00.» Lleva el detalle.
 - **Cambio**, si quien lo creó cambia la fecha, la hora o el título: «Cambió un evento: …», con lo de antes tachado (`<s>` dentro de un párrafo). Si solo cambia el detalle o el recordatorio, no sale.
 - **Cancelación**: «Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00.»
-- **Recordatorio**: «Hoy a las 10:00: Reunión de equipo» (el mismo día), «Mañana a las 10:00: …» (si el evento es al día siguiente) o «El lunes 02/11 a las 10:00: …» (si en el medio hay días que no son hábiles). El texto se arma con la fecha real del envío. Le llega a quien lo creó y a cada invitado, salvo a quien lo apagó. Un evento personal solo se lo manda a quien lo creó.
+- **Recordatorio**: «Hoy a las 10:00: Reunión de equipo», «Mañana a las 10:00: …» o «El lunes 02/11 a las 10:00: …», según cuándo sale. El texto se arma con la fecha real del envío. Le llega a quien lo creó y a cada invitado, salvo a quien lo apagó. Un evento personal solo se lo manda a quien lo creó.
 - **Llegan aunque la persona esté de licencia:** van al mail laboral y los ve a la vuelta (respuesta del usuario, 26/10/2026). La agenda no sigue la regla del RPAD de no mandar emails durante la licencia.
 - **Los emails que no salieron** quedan en `mi_espacio_evento_envios` con `success = 0`.
 
 ## 5. El envío de los recordatorios
 
-**Sin cron nuevo:** los recordatorios salen con las dos corridas que ya existen. Lo decidí yo, por pedido del usuario. Así no hay que configurar nada en cPanel, no hay riesgo de chocar con el candado de las Notas Digitales y los emails salen solo en días hábiles, como las demás corridas.
-- **A las 8:15** (`ejecutarNotificacionesDiarias`): un paso nuevo y aislado, con su try/catch y su `resultados.eventos`. Va después de las Notas Digitales, porque `registrarInicio` borra lo anotado, y sus errores van a `resultados.errores` y a `anotarEnLaUltimaCorrida`.
-- **A las 14:00** (`/api/cron/cambios-pendientes`): un paso nuevo y aislado después del recordatorio de cambios pendientes, que no lo frena.
-- **Solo en días hábiles,** con `esDiaHabilCon` y los feriados (entrega 1), no con `esDiaHabil`.
+**Una ruta nueva para el cron, `GET /api/cron/eventos`,** con `cronAuth`, como las otras (sin la clave, o con una que no es, responde 403).
+- **En cPanel, una Tarea Cron nueva cada media hora** (decisión del usuario), además de las de las 8:15 y las 14:00. Corre todos los días: cPanel no conoce los feriados y decide el sistema. Se configura una vez (sección 9).
+- **Solo manda en días hábiles,** con `esDiaHabilCon` y los feriados (entrega 1). En un día que no es hábil, la corrida no hace nada.
 
-**Cada corrida manda los recordatorios que ya tocaban y cuyo evento todavía no empezó.**
-- **Le toca** el día hábil anterior al evento, desde las 14:00 («El día hábil anterior»), o el día del evento, desde las 8:15 («El mismo día», en un día hábil).
-- **Si una corrida no lo mandó** (el evento se creó después, la corrida falló o el envío falló), sale en la siguiente, mientras el evento no haya empezado. Por ejemplo, un evento creado a las 16:00 para mañana a las 10:00 avisa mañana a las 8:15.
-- **Sin repetidos:** el `INSERT IGNORE` de la reserva (sección 3) hace que una corrida manual repetida no mande dos veces. No hace falta un candado propio.
-- **Las funciones reciben el momento** (`{ ahora }`) para que los tests usen un hoy fijo.
+**Cada corrida manda los recordatorios cuya hora de aviso ya pasó y cuyo evento todavía no empezó.**
+- **La hora de aviso** es la del evento menos su anticipación (1 o 2 horas), o la misma hora del día hábil anterior. Si cae en un día que no es hábil, pasa al día hábil anterior, a esa misma hora (sección 1). La calcula `momentoDelAviso`, con los feriados.
+- **La precisión es de media hora:** el aviso sale en la primera corrida desde su hora.
+- **Si una corrida no lo mandó** (el evento se creó después, la corrida falló o el envío falló), sale en la siguiente de un día hábil, mientras el evento no haya empezado.
+- **Sin repetidos:** el `INSERT IGNORE` de la reserva (sección 3) hace que dos corridas no manden dos veces.
+- **Su propio candado:** `GET_LOCK` con otro nombre (`rpad_mi_espacio_eventos`), nunca el de las Notas Digitales. La de las 8:30 puede coincidir con la de las 8:15, que tarda unos minutos, y si tomara el candado de las Notas, las Notas de ese día no saldrían. `conBloqueo` (`services/notasDigitales.js`) hoy es privado y tiene el nombre fijo: se le pasa el nombre y se exporta, sin cambiar lo que hace para las Notas. Si el candado está tomado, la corrida termina como «ocupada», que no es un error.
+- **Las funciones reciben el momento** (`{ ahora }`), así los tests usan un hoy fijo.
+
+**Correos → Estado suma una línea:** «Recordatorios de la agenda: última corrida hoy a las 10:30», con un aviso si en un día hábil no corrió en la última hora, o si terminó con errores. Así se nota si la Tarea Cron no quedó configurada. La última corrida se guarda en `mi_espacio_eventos_corridas`.
 
 **Las invitaciones, los cambios y las cancelaciones** salen en el momento, cuando alguien guarda el evento, también en un día que no es hábil: responden a lo que hizo una persona. Se mandan después de responder el guardado, fuera de la transacción, así un evento «para todos» no hace esperar a quien lo guarda. Si el email falla, el evento se guarda igual y la falla queda registrada.
 
@@ -144,7 +145,7 @@ Las medidas, los colores y los textos están en la maqueta 1.
 - la semana empieza el lunes;
 - «hoy» es `Utils.hoyEnArgentina()`;
 - todo texto pasa por `Utils.escapeHtml`;
-- cuándo sale el recordatorio («el viernes 30/10, a las 14:00») lo calcula el servidor, con los feriados: el navegador no recalcula días hábiles.
+- cuándo sale el recordatorio («el viernes 30/10 a las 10:00») lo calcula el servidor, con los feriados: el navegador no recalcula días hábiles.
 
 ## 7. La API
 
@@ -158,7 +159,8 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 | `DELETE /api/mi-espacio/eventos/:id` | Lo da de baja; solo quien lo creó. |
 | `PUT /api/mi-espacio/eventos/:id/mi-recordatorio` | Una persona invitada apaga o prende el suyo. |
 | `GET /api/mi-espacio/eventos/aviso?fecha=&desde=&recordatorio=` | Cuándo saldría el recordatorio, para el texto del formulario, sin guardar nada. |
-| `GET /api/mi-espacio/personas` | La administración activa para elegir, con id, nombre e iniciales. Nada más: ni email, ni rol. Al lector y al colaborador, 403. |
+| `GET /api/mi-espacio/personas` | La administración activa para elegir, con id, nombre e iniciales. Nada más: ni email, ni rol. Al lector y al colaborador, 403 con «No tenés permiso para compartir eventos.». |
+| `GET /api/cron/eventos` | La corrida de los recordatorios (sección 5), con `cronAuth`. |
 
 **Errores:** un error de validación es 400 `{ success: false, error, campo }`; un id ajeno o que no existe, 404.
 
@@ -169,9 +171,9 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 - **`tests/mi-espacio-eventos-reglas.test.js` (puro):**
   - la validación en sus bordes;
   - `momentoDelAviso`:
-    - «El día hábil anterior» de un lunes es el viernes a las 14:00, y el jueves si el viernes es feriado;
-    - de un sábado, el viernes;
-    - «El mismo día» de un día hábil es a las 8:15, y de un domingo, el viernes a las 14:00;
+    - «El día hábil anterior» de un lunes a las 10:00 es el viernes a las 10:00, y el jueves si el viernes es feriado;
+    - «2 horas antes» de un martes a las 10:00 es ese martes a las 08:00, y de un sábado a las 10:00, el viernes a las 08:00;
+    - «1 hora antes» de un lunes a las 00:30 cae el domingo: pasa al viernes a las 23:30;
     - el cambio de mes y de año;
   - qué recordatorios tocan en una corrida:
     - el que ya tocaba y no salió;
@@ -187,27 +189,33 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
   - los emails en Mailpit: invitación, cambio, cancelación y recordatorio, y que llegan aunque la persona esté de licencia;
   - un solo recordatorio aunque la corrida se repita;
   - ningún recordatorio en un día que no es hábil;
-  - los pasos de las dos corridas, con un hoy fijo (`mock.timers` y el paso llamado directo, como `tests/metricas-foto.test.js`), sin llamar a `/api/cron/*`.
+  - la corrida con un hoy fijo (`mock.timers` y la función llamada directo, como `tests/metricas-foto.test.js`), sin llamar a `/api/cron/*`;
+  - con el candado tomado por otra conexión, la corrida termina «ocupada» y no manda nada;
+  - la última corrida en Correos → Estado y su aviso.
 - **`tests/mi-espacio-frontend.test.js`:** el mes (con la semana desde el lunes, el cambio de año y «y N más»), los próximos, los colores y el formulario.
 - **Los tests existentes que cambian:**
-  - `permisos.test.js`: las rutas nuevas;
+  - `permisos.test.js`: las rutas nuevas y la del cron (403 sin la clave o con una que no es, 200 con la clave);
   - `schema.test.js`: las tablas, la migración y la vuelta atrás;
   - `email-diseno.test.js`: las cuatro plantillas;
-  - los de la corrida de las 8:15 y del recordatorio de las 14:00 (`notificaciones`, `avisos-diarios`): los pasos nuevos no cambian lo que ya hacen.
+  - `notas-motor.test.js`: las Notas Digitales siguen con su candado y su nombre después de exportar `conBloqueo`;
+  - `correos-frontend.test.js`: la línea nueva del Estado.
 
 ## 9. Documentación y despliegue
 
 - **`CLAUDE.md`:**
   - la agenda dentro de Mi espacio;
   - las tablas nuevas;
-  - los pasos nuevos de las corridas de las 8:15 y de las 14:00 en «Recordatorios automáticos»;
+  - la ruta del cron, su frecuencia y su candado en «Recordatorios automáticos»;
   - la aclaración del nombre frente a la Agenda de pedidos.
-- **`README.md`:** la migración.
+- **`README.md`:**
+  - la migración;
+  - en «Configurar Cron Job», la tarea nueva, como las otras dos: Minuto `*/30`, Hora `*`, Día `*`, Mes `*`, Día semana `*` y el comando `curl -s "https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET" > /dev/null`, con la prueba manual de la URL antes.
 - **Despliegue:**
   - después de la entrega 2;
   - se corre `migracion-mi-espacio-agenda.sql` antes de subir el código;
   - se suben los archivos y se reinicia la aplicación;
-  - no hace falta ninguna Tarea Cron nueva.
+  - se prueba la URL del cron a mano y se crea la Tarea Cron;
+  - en Correos → Estado se mira que aparezca la línea de los recordatorios con la hora de la última corrida.
 
 ## Decisiones
 
@@ -225,8 +233,9 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 **Del usuario, en la segunda sesión (26/10/2026):**
 - Ningún email del RPAD sale en un día que no es hábil: «1 día antes» es el día hábil anterior.
 - El recordatorio llega aunque la persona esté de licencia, porque va al mail laboral.
-- Reusar las corridas de las 8:15 y de las 14:00 o sumar una nueva: lo dejó en mis manos.
-- Aprobó todas las decisiones mías de la primera revisión.
+- Una Tarea Cron nueva, cada media hora o cada hora, para los recordatorios.
+- La lista de personas responde al lector y al colaborador con un 403 y un mensaje.
+- Aprobó todas las decisiones mías de la primera revisión y las de la segunda, salvo la de no sumar un cron.
 
 **Mías, aprobadas por el usuario en la segunda sesión (26/10/2026):**
 - Cada persona invitada puede apagar su propio recordatorio.
@@ -238,12 +247,16 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 - El prefijo `mi_espacio_` y la palabra «evento» en el código, para no confundir con la Agenda de pedidos.
 - Las franquicias de menos de 7 horas no cuentan como ausencia.
 
-**Mías, nuevas en la segunda sesión (para revisar):**
-- Los recordatorios salen con las corridas de las 8:15 y de las 14:00, sin cron nuevo. Las opciones son «El día hábil anterior» (de entrada, a las 14:00), «El mismo día» (a las 8:15) y «Sin aviso».
+**Mías, nuevas en la segunda sesión (aprobadas por el usuario el 26/10/2026):**
 - La invitación, el cambio y la cancelación también llegan aunque la persona esté de licencia, como el recordatorio, y salen en el momento en que alguien guarda el evento, aunque no sea un día hábil.
-- Sin una línea propia en Correos → Estado: los errores de la corrida de las 8:15 se anotan en su última corrida, y cada envío fallido queda en `mi_espacio_evento_envios` y se reintenta.
-- El índice único de los envíos vale solo para los recordatorios, y se reserva antes de mandar.
-- La lista de personas responde 403 al lector y al colaborador.
+- El índice único de los envíos vale solo para los recordatorios, y se reserva antes de mandar; un envío fallido se reintenta.
+
+**Mías, con el cron nuevo (para revisar):**
+- La corrida es cada media hora (`*/30`), no cada hora: con «1 hora antes», una corrida por hora podría avisar con muy poco margen.
+- Las opciones son «1 hora antes», «2 horas antes» (de entrada, como había elegido el usuario), «El día hábil anterior» (a la misma hora) y «Sin aviso». Se va «15 minutos antes».
+- Si la hora del aviso cae en un día que no es hábil, sale el día hábil anterior a esa misma hora.
+- Con el cron nuevo vuelve la línea de Correos → Estado, con un aviso si en un día hábil no corrió en la última hora: es la forma de notar que la Tarea Cron no quedó configurada.
+- El cron tiene su propio candado, y `conBloqueo` se exporta con el nombre como parámetro, sin cambiar las Notas Digitales.
 
 ## Lo que queda para quien lo construye
 
