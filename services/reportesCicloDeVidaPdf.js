@@ -230,16 +230,35 @@ const prepararParrafo = (doc, partes, { ancho, tamano, min = tamano, interlinead
   };
 };
 
+// El mayor n entre 0 y tope que cumple la condición (que vale para todos los menores), o 0
+const mayorQueCumple = (tope, cumple) => {
+  let desde = 0;
+  let hasta = tope;
+  while (desde < hasta) {
+    const medio = Math.ceil((desde + hasta) / 2);
+    if (cumple(medio)) desde = medio;
+    else hasta = medio - 1;
+  }
+  return desde;
+};
+
 // El nombre del dataset de un extremo: `dataset_texto`; si no entra en `lineas`, el título (sin el sufijo del empate, `mas_texto`) se
-// corta con «…» y el sufijo va entero después («Castraciones de… y 14 más»)
+// corta con «…» y el sufijo va siempre entero después («Castraciones de… y 14 más»), también cuando el título solo entraría: se
+// sacan palabras del final hasta que entren con «…» y el sufijo y, si ni la primera entra, letras
 const ajusteDelNombre = (doc, extremo, { ancho, lineas }) => {
   const completo = texto(extremo.dataset_texto);
   const sufijo = texto(extremo.mas_texto);
-  const titulo = sufijo && completo.endsWith(sufijo) ? completo.slice(0, -sufijo.length) : completo;
   const opciones = { ancho, lineas, max: LETRA.dataset, min: LETRA.dataset };
   const entero = ajustar(doc, completo, opciones);
-  if (!entero.cortado || !sufijo) return entero;
-  return ajustar(doc, titulo, { ...opciones, corte: `…${sufijo}` });
+  if (!entero.cortado || !sufijo || !completo.endsWith(sufijo)) return entero;
+  const titulo = completo.slice(0, -sufijo.length).trim();
+  const conCorte = (hasta) => `${titulo.slice(0, hasta).replace(/[\s.,;:–-]+$/u, '')}…${sufijo}`;
+  const entra = (hasta) => !ajustar(doc, conCorte(hasta), opciones).cortado;
+  // Los fines de palabra del título (sin el último: el título entero ya no entra con el sufijo)
+  const finesDePalabra = [...titulo.matchAll(/\S(?=\s)/gu)].map((m) => m.index + 1);
+  const palabras = mayorQueCumple(finesDePalabra.length, (k) => entra(finesDePalabra[k - 1]));
+  const hasta = palabras > 0 ? finesDePalabra[palabras - 1] : mayorQueCumple(titulo.length - 1, entra);
+  return ajustar(doc, conCorte(hasta), opciones);
 };
 
 // =====================================================

@@ -2206,6 +2206,23 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     }
   });
 
+  it('un empate conserva « y N más» aunque el título solo entre: el título se corta con «…» y el sufijo va entero', async () => {
+    // Las cuatro etapas externas llenas y sin notas (los extremos tienen lugar para dos renglones): el título entra solo en sus dos
+    // renglones, pero no con « y 1 más»
+    const datos = cicloLleno({ notas: [] });
+    const titulo = 'Escala salarial municipal (planta permanente)';
+    const conEmpate = (etapa, rotulo) => ({ ...etapa, corto: extremoAMano(rotulo, 1, 1, titulo, 1) });
+    datos.etapas.externa[0] = conEmpate(datos.etapas.externa[0], 'Con menos anticipación');
+    datos.etapas.externa[3] = conEmpate(datos.etapas.externa[3], 'El caso más corto');
+    verificarDiagramacion(await diagramacion(() => renderCiclo(datos)));
+    const externa = lineasPorHoja(await renderCiclo(datos))[0];
+    for (const [nombre, siguiente] of [['Aviso anticipado', 'Trámite y entrega de la nota'], ['Preparación y carga', 'Cómo se cuenta.']]) {
+      const bloque = bloqueDe(externa, nombre, siguiente).join(' ');
+      assert.ok(bloque.includes('… y 1 más'), `falta "… y 1 más" en ${bloque}`);
+      assert.ok(!bloque.includes(titulo), `el título va entero, sin el empate, en ${bloque}`);
+    }
+  });
+
   it('Foco 5: con las cuatro etapas externas llenas y dos notas en cada bloque, todo entra entero en su hoja', async () => {
     const datos = cicloLleno();
     const [externa, interna] = lineasPorHoja(await renderCiclo(datos));
