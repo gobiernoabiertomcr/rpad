@@ -110,9 +110,11 @@ const TRAMO = { arriba: 25, nodo: 56, altoNodo: 22, descripcion: 52, abajo: 7 };
 const DERECHA = { aire: 11, mosaico: 17, entre: 4, promedio: 26, abajo: 4.5, sobreNotas: 3, renglon: 8 };
 // Un extremo: el aire de arriba, el de abajo, el del número y el de cada renglón chico
 const EXTREMO = { arriba: 4, abajo: 3, sobreValor: 2.6, entre: 1.6 };
-// Lo menos que mide un extremo (su rótulo, su número y un renglón chico) y el mosaico: las notas no le quitan más que eso
-const EXTREMO_MINIMO = EXTREMO.arriba + OJO * LETRA.rotuloExtremo + EXTREMO.sobreValor + OJO * LETRA.extremo + EXTREMO.entre
-  + OJO * LETRA.dataset + EXTREMO.abajo;
+// Lo menos que mide un extremo (su rótulo, su número, los corridos y un renglón del dataset) y el mosaico: las notas no le quitan más
+// que eso (si no entran, se achican antes: pasan a un renglón, cortadas con «…», y si aun así no entran, las de más abajo no van), así
+// ningún extremo pierde «N días corridos»
+const EXTREMO_MINIMO = EXTREMO.arriba + OJO * LETRA.rotuloExtremo + EXTREMO.sobreValor + OJO * LETRA.extremo
+  + 2 * (EXTREMO.entre + OJO * LETRA.dataset) + EXTREMO.abajo;
 const MOSAICO_MINIMO = DERECHA.promedio + DERECHA.entre + EXTREMO_MINIMO;
 // Entre las dos píldoras (la del período y la del aviso de la foto)
 const ENTRE_PILDORAS = 4;
@@ -576,7 +578,9 @@ export const renderCicloDeVida = async (datos, { hoy, generado }) => {
   const etapas = objeto(d.etapas);
   const anio = [d.anio, etapas.anio].find((valor) => Number.isInteger(valor)) ?? null;
   const al = [d.al, etapas.al].find((valor) => esFechaIso(valor)) ?? null;
-  const enCurso = anio !== null && al !== null && al < `${anio}-12-31`;
+  // En curso, lo que dice el servidor (opcionesDeMetricas): en vivo y sin el aviso de la foto. Un año cerrado sin foto también va en
+  // vivo, pero con su aviso; uno con foto no va en vivo. No por la fecha: el 31/12 del año en curso todavía es en curso
+  const enCurso = anio !== null && d.en_vivo === true && !texto(d.aviso_foto);
   const comun = {
     rotulo: [TITULO, anio === null ? '' : `${anio}${enCurso ? ', en curso' : ''}`].filter(Boolean).join(' · '),
     pildora: `Del ${anio === null ? '—' : fechaCorta(`${anio}-01-01`)} al ${fechaCorta(al)}, con todos los ciclos`,

@@ -1986,7 +1986,7 @@ const cicloLleno = (opciones) => {
 const cicloVacio = () => cicloDeLosCasos({ mapa: new Map() });
 
 const pieDelCiclo = (k, anio = 2026) => `Ciclo de vida del dato · ${anio} · Hoja ${k} de 2`;
-const TONO = /tardanza|demora|atraso|sin respuesta|sin entregar/i;
+const TONO = /tardanza|demora|atraso|sin respuesta|sin entregar|no mandó/i;
 const PUNTEADA = /\[3 2\.5\] 0 d/;
 const enOrden = (lineas, textos) => {
   const posiciones = textos.map(t => lineas.indexOf(t));
@@ -2045,6 +2045,22 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     assert.ok(lineasPorHoja(conFoto).every(lineas => !lineas.includes(aviso)));
     assert.ok(contenidoPorHoja(sinFoto).every(c => c.includes(relleno('#FDF1CC'))), 'el aviso de la foto va en el sol');
     assert.ok(contenidoPorHoja(conFoto).every(c => !c.includes(relleno('#FDF1CC'))), 'con foto, ninguna píldora en el sol');
+  });
+
+  it('«en curso» lo dice el servidor, no la fecha: en vivo y sin el aviso de la foto, también el 31/12 del año en curso', async () => {
+    const rotulosDe = async (datos, hoy) => lineasPorHoja(await renderCiclo(datos, hoy)).map(l => l.find(t => t.startsWith('CICLO DE VIDA DEL DATO')));
+    // El 31/12 del año en curso: en vivo y sin aviso de la foto, como lo dice el PDF de Métricas
+    assert.deepEqual(await rotulosDe(cicloDeLosCasos({ al: '2026-12-31' }), '2026-12-31'), Array(2).fill('CICLO DE VIDA DEL DATO · 2026, EN CURSO'));
+    // Sin «en curso»: un año cerrado sin foto (en vivo, con el aviso), uno con foto (no en vivo, aunque `al` no sea el 31/12) y sin
+    // decir si va en vivo
+    for (const [datos, hoy] of [
+      [{ ...cicloDeLosCasos({ al: '2026-12-31' }), aviso_foto: 'La foto de 2026 se saca el 10/01/2027' }, '2027-01-05'],
+      [{ ...cicloDeLosCasos({ al: '2026-12-31' }), en_vivo: false }, '2027-01-12'],
+      [{ ...cicloDeLosCasos(), en_vivo: false }, HOY_DE_LAS_METRICAS],
+      [{ ...cicloDeLosCasos(), en_vivo: undefined }, HOY_DE_LAS_METRICAS]
+    ]) {
+      assert.deepEqual(await rotulosDe(datos, hoy), Array(2).fill('CICLO DE VIDA DEL DATO · 2026'), JSON.stringify([datos.en_vivo, datos.aviso_foto, datos.al]));
+    }
   });
 
   it('el circuito de arriba: la sigla de cada nodo y, en cada flecha, el número de la etapa y su mediana; sin cifra, punteada', async () => {
@@ -2236,6 +2252,66 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
       }
     }
     assert.ok(externa.includes('1234 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.'));
+  });
+
+  // La hoja más apretada (Foco 3 del plan: un año cerrado sin foto, entre el 01/01 y el día de la foto), con las dos píldoras y la
+  // aclaración de la hoja, y las notas que da un año real. Las notas se achican antes (pasan a un renglón, cortadas con «…», y si aun
+  // así no entran, las de más abajo no van): ningún extremo pierde sus «N días corridos»
+  it('Foco 3: con las dos píldoras y las notas de un año real, cada extremo conserva «N días corridos»', async () => {
+    const titulo = 'Cantidad de habilitaciones comerciales otorgadas por rubro y por barrio de la ciudad';
+    const yaVencidos = { tipo: 'aclaracion', texto: '16 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.' };
+    const enCurso = { tipo: 'en_curso', texto: 'En curso: 12 sin datos registrados todavía, hace 145 días hábiles (mediana)' };
+    const fuentePublica = { tipo: 'aclaracion', texto: '11 ciclos se resolvieron con datos de una fuente pública: no cuentan en esta etapa.' };
+    const pendientes = { tipo: 'pendientes', texto: '13 notas pendientes de carga' };
+    const notas = {
+      externa: { aviso: [ORIENTATIVO, yaVencidos], tramite: [ORIENTATIVO, pendientes], respuesta: [ORIENTATIVO, enCurso, fuentePublica], carga: [ORIENTATIVO] },
+      interna: { aviso: [ORIENTATIVO, yaVencidos], produccion: [ORIENTATIVO, enCurso], carga: [ORIENTATIVO] }
+    };
+    const aviso = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
+    const armar = (resto) => {
+      const datos = cicloDeLosCasos({ al: '2026-12-31', ...resto });
+      const conNotas = (gestion) => (e) => etapaLlena(e, { notas: notas[gestion][e.clave], titulo });
+      return {
+        ...datos,
+        etapas: {
+          ...datos.etapas, externa: datos.etapas.externa.map(conNotas('externa')), interna: datos.etapas.interna.map(conNotas('interna')),
+          aclaracion_de_la_hoja: { externa: '18 ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.', interna: '' }
+        }
+      };
+    };
+    const conAviso = armar({ aviso_foto: aviso });
+    verificarDiagramacion(await diagramacion(() => renderCiclo(conAviso, '2027-01-12')));
+    const hojas = lineasPorHoja(await renderCiclo(conAviso, '2027-01-12'));
+    ['externa', 'interna'].forEach((gestion, k) => {
+      const lineas = hojas[k];
+      const etapas = conAviso.etapas[gestion];
+      assert.ok(lineas.includes(aviso), `hoja ${k + 1}: las dos píldoras`);
+      etapas.forEach((etapa, i) => {
+        const bloque = bloqueDe(lineas, etapa.nombre, etapas[i + 1]?.nombre);
+        // Los corridos de los dos extremos (el más largo y el más corto)
+        for (const t of ['13579 días corridos', '1 día corrido']) assert.ok(bloque.includes(t), `${gestion} ${etapa.clave}: falta "${t}" en ${bloque.join(' | ')}`);
+        // El en curso va entero (un caso que no terminó no desaparece) y la aclaración de los avisados ya vencidos empieza (puede ir
+        // cortada con «…»)
+        if (etapa.textos.notas.includes(enCurso)) assert.ok(bloque.includes(enCurso.texto), `${gestion} ${etapa.clave}: ${bloque.join(' | ')}`);
+        if (etapa.clave === 'aviso') {
+          assert.ok(bloque.some(l => l.startsWith('16 ciclos se avisaron cuando ya estaban vencidos')), `${gestion}: ${bloque.join(' | ')}`);
+        }
+      });
+    });
+    // Sin la segunda píldora (el año en curso), las mismas notas van enteras, y los corridos también
+    const sinAviso = armar({});
+    verificarDiagramacion(await diagramacion(() => renderCiclo(sinAviso, '2026-12-31')));
+    const hojasSinAviso = lineasPorHoja(await renderCiclo(sinAviso, '2026-12-31'));
+    ['externa', 'interna'].forEach((gestion, k) => {
+      const etapas = sinAviso.etapas[gestion];
+      etapas.forEach((etapa, i) => {
+        const bloque = bloqueDe(hojasSinAviso[k], etapa.nombre, etapas[i + 1]?.nombre);
+        for (const t of ['13579 días corridos', '1 día corrido']) assert.ok(bloque.includes(t), `${gestion} ${etapa.clave}: falta "${t}"`);
+        // (una nota en dos renglones se lee unida)
+        const unido = bloque.join(' ');
+        for (const nota of etapa.textos.notas) assert.ok(unido.includes(nota.texto), `${gestion} ${etapa.clave}: falta "${nota.texto}" en ${unido}`);
+      });
+    });
   });
 
   for (const [titulo, armar] of VARIANTES_DEL_CICLO) {

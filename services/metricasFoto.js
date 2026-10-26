@@ -24,7 +24,8 @@
 // - areas: areasYTemas al 31/12;
 // - etapas: las del Ciclo de vida del dato (etapasDe, spec 2026-10-25-ciclo-de-vida-del-dato, 3.3) con los casos del año, calculadas
 //   una sola vez (ya traen los días hábiles y los corridos, la mediana y el promedio). Es opcional: VERSION_DE_LA_FOTO sigue en 1 y
-//   PARTES_DE_LA_FOTO no la exige, porque una foto sacada antes no la tiene (etapasDeLaFoto la calcula con sus casos);
+//   PARTES_DE_LA_FOTO no la exige, porque una foto sacada antes no la tiene (etapasDeLaFoto la calcula con sus casos). Si calcularlas
+//   falla, la foto sale igual, sin ellas (etapasParaLaFoto): el reporte nuevo nunca frena la foto;
 // - generada: cuándo se sacó, 'AAAA-MM-DD HH:MM:SS' en hora argentina.
 // Todo se calcula con hoy = 31/12 y con todos los datasets (nunca destildados): cuenta lo que tiene fecha del año aunque se haya
 // registrado entre el 1/1 y el 10/1 (por ejemplo, una carga del 30/12 aprobada el 05/01), y nada de lo que pasó después del 31/12.
@@ -45,6 +46,19 @@ export const VERSION_DE_LA_FOTO = 1;
 
 // La clave de una combinación de los selectores en datos.vistas y datos.cintas: 'mediana-habiles', 'promedio-corridos'…
 export const claveDeLaVista = (estadistico, dias) => `${estadistico}-${dias}`;
+
+// Las etapas del Ciclo de vida del dato para la foto, como una parte que se suma a sus datos: { etapas } con las de `calcular`
+// (etapasDe, que nunca tira; se recibe para poder probar la falla) o, si calcularlas tira, {} y el error a console.error. Así un error
+// del reporte nuevo nunca frena la foto del 31/12, que no se vuelve a sacar: sale sin `etapas` y etapasDeLaFoto las calcula con sus
+// `casos` al leerla. `opciones`: { anio, al }, las de etapasDe
+export const etapasParaLaFoto = (casos, opciones, calcular = etapasDe) => {
+  try {
+    return { etapas: calcular(casos, opciones) };
+  } catch (error) {
+    console.error(`No se pudieron calcular las etapas del Ciclo de vida del dato para la foto de ${opciones?.anio}:`, error);
+    return {};
+  }
+};
 
 // Los datos de la foto de `anio` al 31/12, con las fuentes de todos los datasets (el Map de fuentesDe). No toca la base.
 // `generada`: el momento en que se saca.
@@ -70,7 +84,7 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
     trabajo: Object.fromEntries(ESTADISTICOS.map((estadistico) =>
       [estadistico, trabajoDelAnio(fuentesPorDataset, casos, { anio, al, estadistico })])),
     areas: areasYTemas(fuentesPorDataset, { anio, al }),
-    etapas: etapasDe(delAnio, { anio, al }),
+    ...etapasParaLaFoto(delAnio, { anio, al }),
     generada
   };
 };

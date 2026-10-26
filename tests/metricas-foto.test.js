@@ -419,6 +419,41 @@ describe('la foto del 31/12', () => {
     }
   });
 
+  // El reporte nuevo nunca frena la foto del 31/12, que no se vuelve a sacar: si calcular las etapas tira, la parte de las etapas
+  // queda vacía (la foto sale sin la clave) y el error va a console.error; al leerla, etapasDeLaFoto las calcula con sus casos
+  it('si calcular las etapas tira, la foto sale igual, sin etapas', async () => {
+    await prepararElAnio();
+    const opciones = { anio: 2026, al: AL };
+    const datos = foto.datosDeLaFoto(await seguimientoDatos.fuentesDe(null), { anio: 2026, generada: '2027-01-10 08:15:00' });
+    // Sin falla, la parte trae las de etapasDe, que son las que guarda la foto
+    assert.deepEqual(foto.etapasParaLaFoto(datos.casos, opciones), { etapas: etapasDe(datos.casos, opciones) });
+    assert.deepEqual(datos.etapas, foto.etapasParaLaFoto(datos.casos, opciones).etapas);
+
+    // Con una falla, la parte queda vacía y el error se registra una vez, con el año y el error
+    const falla = new Error('falla simulada de etapasDe');
+    const errores = mock.method(console, 'error', () => {});
+    let parte;
+    try {
+      parte = foto.etapasParaLaFoto(datos.casos, opciones, () => { throw falla; });
+    } finally {
+      errores.mock.restore();
+    }
+    assert.deepEqual(parte, {});
+    assert.equal(errores.mock.callCount(), 1);
+    assert.match(String(errores.mock.calls[0].arguments[0]), /foto de 2026/);
+    assert.equal(errores.mock.calls[0].arguments[1], falla);
+
+    // La foto armada con esa parte (como la arma datosDeLaFoto) tiene todo lo demás, sin la clave, y se guarda y se lee igual: las
+    // etapas salen de sus casos y son las que habría guardado
+    const { etapas, generada, ...resto } = datos;
+    const sinEtapas = { ...resto, ...parte, generada };
+    assert.deepEqual(Object.keys(sinEtapas), ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'generada']);
+    await query('INSERT INTO metricas_fotos (anio, al, datos) VALUES (2026, ?, ?)', [AL, JSON.stringify(sinEtapas)]);
+    const leida = await foto.leerFoto(2026);
+    assert.deepEqual(leida.datos, JSON.parse(JSON.stringify(sinEtapas)));
+    assert.deepEqual(foto.etapasDeLaFoto(leida), JSON.parse(JSON.stringify(etapas)));
+  });
+
   it('un error al guardar no tira: queda en la última corrida y con_errores = 1', async () => {
     await prepararElAnio();
     // El 10/01/2027 es domingo: las Notas Digitales no corren, pero la foto no depende de que sea día hábil. El error va al log: acá

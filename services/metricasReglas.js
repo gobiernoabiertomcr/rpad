@@ -919,7 +919,7 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
   const notas = [
     { tipo: 'orientativo', texto: tramo.cifra?.orientativo === true ? TEXTO_ORIENTATIVO : '' },
     { tipo: 'en_curso', texto: tramo.en_curso !== null ? `En curso: ${tramo.en_curso.texto}` : '' },
-    // Ruling 1: si el vacío ya dice los pendientes («Todavía no hay notas DGMIT cargadas»), no se repiten
+    // Decisión del Ciclo de vida del dato: si el vacío ya dice los pendientes («Todavía no hay notas DGMIT cargadas»), no se repiten
     { tipo: 'pendientes', texto: tramo.pendientes_texto !== null && vacio?.titulo !== SIN_NOTAS_DGMIT ? tramo.pendientes_texto : '' },
     { tipo: 'aclaracion', texto: aclaracionDeLaEtapa(gestion, clave, aclaraciones) }
   ].filter((nota) => nota.texto !== '');
@@ -960,8 +960,8 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
 //   y promedio ({ numero, unidad, corridos }: '27', 'días hábiles', '40 días corridos'; el promedio, con los corridos entre
 //   paréntesis; un 0 es 'En el día', '', ''; sin ciclos, '—', '', ''), ciclos ('de 32 ciclos'; '' sin ciclos) y notas (los renglones
 //   chicos, [{ tipo, texto }], en orden y solo los que haya: 'orientativo', 'en_curso' («En curso: …»), 'pendientes' (las notas
-//   pendientes de carga, salvo que ya las diga el vacío: Ruling 1) y 'aclaracion', la de la etapa). «Año anterior: …» lo suma
-//   conAnterior.
+//   pendientes de carga, salvo que ya las diga el vacío: decisión del Ciclo de vida del dato) y 'aclaracion', la de la etapa). «Año
+//   anterior: …» lo suma conAnterior.
 export const etapasDe = (casos, opciones) => {
   const o = objeto(opciones);
   const contexto = (dias) => contextoDe({ anio: o.anio, al: o.al, dias, estadistico: 'mediana', sin: [] });

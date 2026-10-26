@@ -3,7 +3,9 @@
 // JSON. Contra una base de prueba propia, con datos inventados. El servidor corre con el reloj de verdad: lo que depende del día (un
 // año cerrado con su foto o todavía sin ella) se prueba con metricasDe y un hoy fijo, como la foto (sacarFotoSiCorresponde). La foto
 // se guarda con datosDeLaFoto y un INSERT: nunca /api/cron/*. Las opciones del pedido, puras, en tests/metricas-opciones.test.js. Al
-// final, el Informe anual (GET /api/reportes/informe-anual), que sale solo de la foto: no depende del día.
+// final, cicloDeVidaDe (los datos del reporte «Ciclo de vida del dato», spec 2026-10-25-ciclo-de-vida-del-dato: en vivo, de la foto y
+// con el año anterior, también con un hoy fijo) y el Informe anual (GET /api/reportes/informe-anual), que sale solo de la foto: no
+// depende del día.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';

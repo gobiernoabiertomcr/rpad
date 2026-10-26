@@ -2399,7 +2399,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
       titulo: 'Todavía no hay notas DGMIT cargadas', texto: `${pendientes} notas pendientes de carga`,
       pie: 'Se empieza a contar cuando se carguen en el Seguimiento.'
     });
-    // Ruling 1: el vacío ya dice los pendientes, las notas no los repiten
+    // Decisión del Ciclo de vida del dato: el vacío ya dice los pendientes, las notas no los repiten
     assert.deepEqual(tramite.textos.notas, []);
     assert.deepEqual(etapaDe(e, 'externa', 'respuesta').vacio, {
       titulo: 'Sin datos todavía', texto: 'Se empieza a contar cuando haya notas DGMIT cargadas.', pie: ''
