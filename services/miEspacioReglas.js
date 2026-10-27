@@ -18,11 +18,13 @@
  * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
  * la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la validación de una carga
  * (`validarHorasExtras`), los francos compensatorios de planta (`francosDe`), las horas a favor de contrato
- * (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Los textos son planos: escaparlos le toca
- * a quien los dibuja.
+ * (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los
+ * campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que dejó de cerrar
+ * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Los
+ * textos son planos: escaparlos le toca a quien los dibuja.
  */
 import { diasHabilesDe, ultimoDiaHabilDelMesCon } from './feriadosReglas.js';
-import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
+import { diasEntre, esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 
 // La modalidad sale del vínculo de la persona (spec, sección 1): las dos plantas tienen las mismas licencias
 export const MODALIDADES = Object.freeze(['planta', 'contrato']);
@@ -48,6 +50,9 @@ export const TIPOS_POR_MODALIDAD = Object.freeze({
     'vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor', 'uso_autorizado'
   ])
 });
+// Los tipos de una modalidad; sin una modalidad válida, ninguno
+const tiposDeLaModalidad = (modalidad) =>
+  (typeof modalidad === 'string' && Object.hasOwn(TIPOS_POR_MODALIDAD, modalidad) ? TIPOS_POR_MODALIDAD[modalidad] : []);
 export const NOMBRES_TIPO = Object.freeze({
   vacaciones: 'Vacaciones', franquicia: 'Franquicia', estudios: 'Estudios', medica: 'Atención médica',
   medica_extraordinaria: 'Médica extraordinaria', familiar: 'Atención del grupo familiar', franco: 'Franco compensatorio',
@@ -115,14 +120,15 @@ const anioValido = (valor) => {
   return Number.isInteger(anio) && anio >= 1 && anio <= 9997 ? anio : null;
 };
 const fechaDe = (anio, mesYDia) => `${String(anio).padStart(4, '0')}-${mesYDia}`;
+// Un mes 'AAAA-MM'
+const esMes = (mes) => typeof mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes);
 
-// Lo que va en un texto (la raya si no sirve): '05/11/2026', '05/11', 'febrero de 2027', '2026' y los números con coma ('10,5')
+// Lo que va en un texto (la raya si no sirve): '05/11/2026', '05/11', 'octubre', 'febrero de 2027', '2026' y los números con
+// coma ('10,5')
 const fechaCorta = (fecha) => (esFechaIso(fecha) ? formatoCorto(fecha) : '—');
 const diaYMes = (fecha) => (esFechaIso(fecha) ? `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}` : '—');
-const mesEnFrase = (mes) => {
-  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return '—';
-  return `${MESES[Number(mes.slice(5, 7)) - 1]} de ${mes.slice(0, 4)}`;
-};
+const nombreDelMes = (mes) => (esMes(mes) ? MESES[Number(mes.slice(5, 7)) - 1] : '—');
+const mesEnFrase = (mes) => (esMes(mes) ? `${nombreDelMes(mes)} de ${mes.slice(0, 4)}` : '—');
 const anioTexto = (anio) => {
   const valido = anioValido(anio);
   return valido === null ? '—' : String(valido);
@@ -136,6 +142,8 @@ const horaTexto = (hora) => (typeof hora === 'string' && /^\d{2}:\d{2}$/.test(ho
 const esUna = (cantidad) => Number(cantidad) === 1;
 const ninguna = (cantidad) => !(Number(cantidad) > 0);
 const diasTexto = (dias) => `${numeroTexto(dias)} ${Number(dias) === 1 ? 'día' : 'días'}`;
+// Una cantidad de horas: '1 hora', '1,5 horas'
+const textoDeHoras = (horas) => `${numeroTexto(horas)} ${esUna(horas) ? 'hora' : 'horas'}`;
 // 'a', 'a y b' o 'a, b y c'
 const enLista = (partes) => (partes.length <= 1 ? partes.join('') : `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}`);
 
@@ -146,6 +154,8 @@ export const textoNoEstudia = (anio) =>
 export const textoSuperpuesta = (fecha) => `Ya tenés una licencia cargada el ${fechaCorta(fecha)}: corregí la que ya está.`;
 export const textoSinHabilitados = (fecha) =>
   `No te alcanzan los días habilitados: para el ${fechaCorta(fecha)} no te queda ninguno.`;
+// El cálculo de una carga con fechas anteriores al arranque, en un tipo con saldo inicial (spec, sección 4)
+export const TEXTO_ANTES_DEL_ARRANQUE = 'Es anterior al saldo inicial: queda como historia y no descuenta.';
 
 const TOPE_EN_TEXTO = Object.freeze({
   medica: (tope) => `los ${tope} días de atención médica`,
@@ -538,6 +548,8 @@ const primeraFechaEnComun = (licencias, desde, hasta, editadaId) => {
  *    estudia (`textoNoEstudia`, en `tipo`): lo anterior al arranque queda como historia y no se controla.
  * `mostrar` es 1 salvo con false, 0 o '0'. Los topes no se controlan acá: los compara `problemaDeLaCarga` con lo cargado.
  * Sin un hoy válido no pasa ninguna fecha; una entrada o un contexto que no son objetos cuentan como `{}`.
+ * La modalidad y el arranque los controla antes quien la llama (`evaluarLicencia`): sin arranque, el control de «No estudio»
+ * del paso 7 no mira ningún día.
  */
 export const validarLicencia = (entrada, contexto) => {
   const fuente = esObjeto(entrada) ? entrada : {};
@@ -546,9 +558,7 @@ export const validarLicencia = (entrada, contexto) => {
   const { modalidad } = datos;
   const { tipo, desde } = fuente;
 
-  const tipos = typeof modalidad === 'string' && Object.hasOwn(TIPOS_POR_MODALIDAD, modalidad)
-    ? TIPOS_POR_MODALIDAD[modalidad] : [];
-  if (!tipos.includes(tipo) || (tipo === 'uso_autorizado' && desdeSuFormulario !== true)) {
+  if (!tiposDeLaModalidad(modalidad).includes(tipo) || (tipo === 'uso_autorizado' && desdeSuFormulario !== true)) {
     return rechazo('tipo', MENSAJES_MI_ESPACIO.tipo);
   }
 
@@ -621,7 +631,7 @@ export const horasDe = (desde, hasta) => {
 // 'AAAA-MM' más n meses (un entero, también negativo), sobre el índice año × 12 + mes. null si no es un mes, si n no es un
 // entero o si el año queda fuera de 0001 a 9999
 export const mesMas = (mes, n) => {
-  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !Number.isInteger(n)) return null;
+  if (!esMes(mes) || !Number.isInteger(n)) return null;
   const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
   const anio = Math.floor(indice / 12);
   if (anio < 1 || anio > 9999) return null;
@@ -811,7 +821,8 @@ const saldoDeHorasNoUtilizadas = (estado, anio) => {
  * saldo: { cantidad, quedan }, meses: [{ mes_de_uso, mes_trabajado, cantidad, quedan, antes_del_arranque }], usos: [{ id,
  * fecha, cantidad }], quedan }`:
  * - `unidad`: 'horas' en contrato y 'francos' en planta.
- * - `saldo`: el saldo inicial de horas no utilizadas, solo en contrato y en el año del arranque (si no, 0).
+ * - `saldo`: el saldo inicial de horas no utilizadas, solo en contrato y en el año del arranque (si no,
+ *   `{ cantidad: 0, quedan: 0 }`).
  * - `meses`: los meses de uso del año con algo sin usar (`cantidad`), de los más viejos a los más nuevos. Uno que terminó
  *   antes del arranque va con `antes_del_arranque` y `quedan` 0: lo suyo ya está en el saldo.
  * - `usos`: los usos autorizados del año, por fecha, uno por día que descuenta (en contrato, desde el arranque: lo anterior
@@ -857,4 +868,450 @@ export const noUtilizadasDe = (estado, anio, opciones) => {
   }
   resultado.quedan = [resultado.saldo, ...resultado.meses].reduce((suma, bolsa) => suma + bolsa.quedan, 0);
   return resultado;
+};
+
+// «Mis vacaciones y saldos» (spec, sección 4): los días de cada año y el saldo inicial, cómo estaban las cuentas el día del
+// arranque. En los tipos con saldo inicial, lo anterior al arranque ya está ahí y no descuenta.
+
+// Los días de una licencia de un año del que no se eligieron (ni de antes): el máximo de DIAS_VACACIONES
+const DIAS_SIN_ELEGIR = 30;
+// Lo más que se carga de horas no utilizadas previamente en el saldo inicial
+const MAXIMO_NO_UTILIZADAS = 200;
+
+/**
+ * Los campos de «Para arrancar»: `[{ clave, concepto, anio, rotulo, maximo, paso }]`, en el orden del modal. `arranque` es
+ * la fecha del arranque o, si todavía no hay, hoy; su año es A. `anio` es el de la licencia en las vacaciones y A en el
+ * resto.
+ * - Lo que quedaba sin usar de las licencias ordinarias no vencidas: `vacaciones-<A−2>` y `vacaciones-<A−1>`, hasta los
+ *   días vigentes de ese año (`anioVigente`) o, si no hay, 30; y solo con el arranque desde el 1/7, cuando ya se habilitó
+ *   la primera mitad, `vacaciones-<A>`, hasta esa mitad.
+ * - Lo que ya se usó en el año: en planta, las horas de franquicia (42); los días de estudios, hasta el tope del año (no va
+ *   con «No estudio»); y los de atención médica y de grupo familiar (25).
+ * - En contrato, las horas no utilizadas previamente, hasta 200 y de a media hora (`paso` 0,5; el resto, 1).
+ * Sin una modalidad o un arranque válidos, [].
+ */
+export const camposDelSaldoInicial = (datos) => {
+  const { modalidad, arranque, anios } = esObjeto(datos) ? datos : {};
+  if (!MODALIDADES.includes(modalidad) || !esFechaIso(arranque)) return [];
+  const anio = anioDe(arranque);
+  const campo = (clave, concepto, delAnio, rotulo, maximo, paso = 1) =>
+    ({ clave, concepto, anio: delAnio, rotulo, maximo, paso });
+  const deVacaciones = (delAnio, rotulo, maximo) => campo(`vacaciones-${delAnio}`, 'vacaciones', delAnio, rotulo, maximo);
+  const diasDe = (delAnio) => {
+    const dias = anioVigente(anios, delAnio)?.dias_vacaciones;
+    return DIAS_VACACIONES.includes(dias) ? dias : DIAS_SIN_ELEGIR;
+  };
+
+  const campos = [
+    deVacaciones(anio - 2, `Sin usar de la licencia ${anio - 2}`, diasDe(anio - 2)),
+    deVacaciones(anio - 1, `De la ${anio - 1}`, diasDe(anio - 1))
+  ];
+  if (arranque >= fechaDe(anio, '07-01')) campos.push(deVacaciones(anio, `De la ${anio}`, mitadesDe(diasDe(anio))[0]));
+  if (modalidad === 'planta') campos.push(campo('franquicias', 'franquicias', anio, 'Horas de franquicia', TOPES.franquicia));
+  const estudios = topeDe('estudios', anio, anios);
+  if (estudios !== null) campos.push(campo('estudios', 'estudios', anio, 'Días de estudios', estudios));
+  campos.push(
+    campo('medica', 'medica', anio, 'Días de atención médica', TOPES.medica),
+    campo('familiar', 'familiar', anio, 'Días de grupo familiar', TOPES.familiar)
+  );
+  if (modalidad === 'contrato') {
+    campos.push(campo('horas_no_utilizadas', 'horas_no_utilizadas', anio, 'Horas no utilizadas previamente',
+      MAXIMO_NO_UTILIZADAS, 0.5));
+  }
+  return campos;
+};
+
+/**
+ * Valida el saldo inicial (`PUT /saldo-inicial`): `entrada.saldos` trae un número por cada clave de `campos` (los de
+ * `camposDelSaldoInicial`), de 0 a su máximo, entero o, con `paso` 0,5, de a media hora (un número como texto sirve:
+ * '6.5'). Devuelve `{ datos, error }`: `datos` es `[{ concepto, anio, cantidad }]`, en el orden de los campos; `error`, null
+ * o `{ campo: <la clave>, mensaje }` del primero que no sirve (`textoSaldo` con su máximo si falta, no es un número o se
+ * pasa; `saldoMedias` si no es de a media hora), y entonces `datos` es null. Lo que no es un campo no se guarda.
+ */
+export const validarSaldoInicial = (entrada, campos) => {
+  const saldos = esObjeto(entrada) && esObjeto(entrada.saldos) ? entrada.saldos : {};
+  const datos = [];
+  for (const campo of listaDe(campos)) {
+    const maximo = esObjeto(campo) ? numeroDe(campo.maximo) : NaN;
+    if (typeof campo?.clave !== 'string' || !Number.isFinite(maximo)) continue;
+    const { clave, concepto, anio, paso } = campo;
+    const cantidad = Object.hasOwn(saldos, clave) ? numeroDe(saldos[clave]) : NaN;
+    if (!(cantidad >= 0 && cantidad <= maximo)) return rechazo(clave, textoSaldo(maximo));
+    const enMedias = paso === 0.5;
+    if (!Number.isInteger(enMedias ? cantidad * 2 : cantidad)) {
+      return rechazo(clave, enMedias ? MENSAJES_MI_ESPACIO.saldoMedias : textoSaldo(maximo));
+    }
+    datos.push({ concepto, anio, cantidad });
+  }
+  return { datos, error: null };
+};
+
+/**
+ * Valida los días y los estudios de un año (`PUT /anio/:anio`; el año, de la dirección: un entero o un texto de cuatro
+ * cifras). Devuelve `{ datos: { anio, dias_vacaciones, estudios }, error }`, con los controles en este orden: el año, de dos
+ * años antes al siguiente del de hoy (`anio`; sin un hoy válido, ninguno); los días, uno de `DIAS_VACACIONES`
+ * (`diasVacaciones`, en `dias_vacaciones`); y los estudios, 'universitario', 'secundario' o null por «No estudio»
+ * (`estudios`; que no lleguen también es un error).
+ */
+export const validarAnio = (anio, entrada, hoy) => {
+  const fuente = esObjeto(entrada) ? entrada : {};
+  const elAnio = anioValido(anio);
+  const deHoy = esFechaIso(hoy) ? anioDe(hoy) : null;
+  if (elAnio === null || deHoy === null || elAnio < deHoy - 2 || elAnio > deHoy + 1) {
+    return rechazo('anio', MENSAJES_MI_ESPACIO.anio);
+  }
+  const dias = numeroDe(fuente.dias_vacaciones);
+  if (!DIAS_VACACIONES.includes(dias)) return rechazo('dias_vacaciones', MENSAJES_MI_ESPACIO.diasVacaciones);
+  const { estudios } = fuente;
+  if (estudios !== null && !(typeof estudios === 'string' && Object.hasOwn(DIAS_ESTUDIOS, estudios))) {
+    return rechazo('estudios', MENSAJES_MI_ESPACIO.estudios);
+  }
+  return { datos: { anio: elAnio, dias_vacaciones: dias, estudios }, error: null };
+};
+
+// El cálculo completo (spec, sección 3) y lo que deja de cerrar (3.10). Un cambio de modalidad se aplica a todo lo cargado
+// (sección 1): lo que no corresponde a la de hoy se lista, pero no cuenta en nada.
+
+/**
+ * Si una fila no corresponde a la modalidad de hoy: su tipo no es de esa modalidad (la franquicia y el franco en contrato,
+ * las horas a favor en planta) o, en planta, es un uso autorizado que no es de 7 horas (viene de contrato: en planta un uso
+ * autorizado es siempre un franco entero). Sin una modalidad, ninguna corresponde; una fila que no es un objeto, tampoco.
+ */
+export const fueraDeLaModalidad = (fila, modalidad) => {
+  if (!esObjeto(fila) || !tiposDeLaModalidad(modalidad).includes(fila.tipo)) return true;
+  return modalidad === 'planta' && fila.tipo === 'uso_autorizado' && numeroDe(fila.horas) !== JORNADA;
+};
+
+/**
+ * Todo lo que sale de lo cargado, sin las filas que no corresponden a la modalidad (`fueraDeLaModalidad`): el `Calculo`,
+ * `{ reparto, topes, francos, horasAFavor, noUtilizadas, faltantes }`.
+ * - `reparto`: el de `repartoDeVacaciones`.
+ * - `topes`: el de `usoDeLosTopes`, solo con los tipos de la modalidad (el saldo de franquicias no cuenta en contrato).
+ * - `francos` y `horasAFavor`: los de `francosDe` y `horasAFavorDe` (cada uno, [] en la otra modalidad).
+ * - `noUtilizadas`: `{ [anio]: noUtilizadasDe }` de cada año con algo que mirar: el de hoy, el del arranque, el de cada mes
+ *   de uso y el de cada uso autorizado. Sin modalidad, {}.
+ * - `faltantes`: los de `faltantesDe`.
+ * Sin un hoy válido, todo vacío: sin hoy no hay ninguna licencia habilitada, y todas las vacaciones quedarían sin cubrir.
+ */
+export const calcular = (estado, opciones) => {
+  const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
+  if (!esFechaIso(hoy)) {
+    return { reparto: repartoDeVacaciones(null), topes: [], francos: [], horasAFavor: [], noUtilizadas: {}, faltantes: [] };
+  }
+  const datos = esObjeto(estado) ? estado : {};
+  const { modalidad } = datos;
+  const tipos = tiposDeLaModalidad(modalidad);
+  const deLaModalidad = {
+    ...datos, licencias: listaDe(datos.licencias).filter((fila) => !fueraDeLaModalidad(fila, modalidad))
+  };
+  const conHoy = { hoy, feriados };
+  const francos = francosDe(deLaModalidad, conHoy);
+  const horasAFavor = horasAFavorDe(deLaModalidad, conHoy);
+
+  const anios = new Set();
+  if (tipos.length > 0) {
+    anios.add(anioDe(hoy));
+    if (esFechaIso(datos.arranque)) anios.add(anioDe(datos.arranque));
+    for (const mes of [...francos, ...horasAFavor]) anios.add(Number(mes.mes_de_uso.slice(0, 4)));
+    for (const fila of deLaModalidad.licencias) {
+      if (fila.tipo !== 'uso_autorizado') continue;
+      for (const dia of diasQueDescuentan(fila, deLaModalidad, feriados)) anios.add(anioDe(dia));
+    }
+  }
+
+  const calculo = {
+    reparto: repartoDeVacaciones(deLaModalidad, conHoy),
+    topes: usoDeLosTopes(deLaModalidad, { feriados }).filter((uso) => tipos.includes(uso.tipo)),
+    francos,
+    horasAFavor,
+    noUtilizadas: Object.fromEntries([...anios].sort((a, b) => a - b)
+      .map((anio) => [anio, noUtilizadasDe(deLaModalidad, anio, conHoy)]))
+  };
+  return { ...calculo, faltantes: faltantesDe(calculo) };
+};
+
+// Los textos de los faltantes del Resumen, neutros: «Revisá …»
+const QUE_SE_REVISA = Object.freeze({
+  franquicia: 'tus franquicias', estudios: 'tu licencia por estudios', medica: 'tu atención médica',
+  familiar: 'tu atención del grupo familiar'
+});
+// 'corresponde 1', 'corresponden 7,5' o 'no corresponde ninguno'
+const textoCorresponde = (cantidad, ninguno) => {
+  if (ninguna(cantidad)) return `no corresponde ${ninguno}`;
+  return `${esUna(cantidad) ? 'corresponde' : 'corresponden'} ${numeroTexto(cantidad)}`;
+};
+const textoFaltanteDeVacaciones = (fecha, dias) => `Revisá tus vacaciones: para el ${fechaCorta(fecha)} `
+  + `${esUna(dias) ? 'falta 1 día habilitado' : `faltan ${numeroTexto(dias)} días habilitados`}.`;
+const textoFaltanteDelTope = (tipo, anio, usados, tope) => `Revisá ${QUE_SE_REVISA[tipo]} de ${anioTexto(anio)}: suman `
+  + `${numeroTexto(usados)} ${tipo === 'franquicia' ? 'horas' : 'días'} y el tope es ${numeroTexto(tope)}.`;
+const textoFaltanteDeFrancos = (mes, cargados, francos) =>
+  `Revisá tus francos de ${mesEnFrase(mes)}: cargaste ${numeroTexto(cargados)} y ${textoCorresponde(francos, 'ninguno')}.`;
+const textoFaltanteDeHoras = (mes, usadas, aFavor) => `Revisá tus horas a favor de ${mesEnFrase(mes)}: cargaste `
+  + `${textoDeHoras(usadas)} y ${textoCorresponde(aFavor, 'ninguna')}.`;
+// En planta, con francos
+const textoFaltanteDeUsos = (unidad, anio, cargado, habia) => {
+  const enFrancos = unidad === 'francos';
+  const cargaste = enFrancos ? `${numeroTexto(cargado)} ${esUna(cargado) ? 'franco' : 'francos'}` : textoDeHoras(cargado);
+  const queHabia = ninguna(habia) ? `no había ${enFrancos ? 'ninguno' : 'ninguna'}` : `había ${numeroTexto(habia)}`;
+  return `Revisá tus usos autorizados de ${anioTexto(anio)}: cargaste ${cargaste} y ${queHabia}.`;
+};
+
+// La modalidad de cada unidad de lo no utilizado (al revés de UNIDAD_NO_UTILIZADA)
+const MODALIDAD_DE_LA_UNIDAD = Object.freeze({ francos: 'planta', horas: 'contrato' });
+const unidadValida = (unidad) => typeof unidad === 'string' && Object.hasOwn(MODALIDAD_DE_LA_UNIDAD, unidad);
+// Un número de un cálculo; lo que no es un número, 0
+const cantidadDe = (valor) => {
+  const numero = numeroDe(valor);
+  return Number.isFinite(numero) ? numero : 0;
+};
+// Lo no utilizado de un año (un `noUtilizadasDe`): lo que había (el saldo y los meses que ya terminaron, sin los de antes del
+// arranque, que ya están en el saldo) y lo que se cargó en usos autorizados
+const habiaDe = (delAnio) => cantidadDe(esObjeto(delAnio.saldo) ? delAnio.saldo.cantidad : 0)
+  + listaDe(delAnio.meses).reduce((suma, mes) =>
+    suma + (esObjeto(mes) && !mes.antes_del_arranque ? cantidadDe(mes.cantidad) : 0), 0);
+const cargadoDe = (delAnio) =>
+  listaDe(delAnio.usos).reduce((suma, uso) => suma + (esObjeto(uso) ? cantidadDe(uso.cantidad) : 0), 0);
+// Lo que suman los usos de la fila que se corrige (`valor`: 'horas' o 'cantidad'); sin una fila, 0
+const propiosDe = (usos, filaId, valor) => {
+  const id = idDe(filaId);
+  return listaDe(usos).reduce((suma, uso) => suma + (esObjeto(uso) && idDe(uso.id) === id ? cantidadDe(uso[valor]) : 0), 0);
+};
+// Lo que queda para una carga, de las horas a favor de un mes y de lo no utilizado de un año: lo que había menos lo que usan
+// las otras filas (la que se corrige, `filaId`, no cuenta); nunca menos de 0
+const quedanDeLasHoras = (mes, filaId) =>
+  Math.max(0, cantidadDe(mes.a_favor) - cantidadDe(mes.usadas) + propiosDe(mes.usos, filaId, 'horas'));
+const quedanDeLoNoUtilizado = (delAnio, filaId) =>
+  Math.max(0, habiaDe(delAnio) - cargadoDe(delAnio) + propiosDe(delAnio.usos, filaId, 'cantidad'));
+
+/**
+ * Lo guardado que dejó de cerrar (spec, 3.10): `[{ clave, campo, medida, texto, mensaje }]`. Los cambios posteriores (dar de
+ * baja un feriado, bajar los días de un año, corregir el saldo inicial) no se frenan: lo que dejan sin cubrir queda como
+ * faltante, con un texto neutro para el Resumen (`texto`) y el error que daría una carga (`mensaje`; `campo` es `desde` en
+ * días y francos, y `horas` en horas). `medida` es lo que compara `problemaDeLaCarga`. En este orden:
+ * - `vacaciones:<id>`: sus días sin cubrir, con el primero («para el 15/06/2027 faltan 2 días habilitados»), por fecha;
+ * - `tope:<tipo>:<anio>`: lo que suma, si pasa el tope (sin tope, como con «No estudio», no hay faltante);
+ * - `franco:<mes>`: los francos de más en ese mes de uso;
+ * - `horas:<mes>`: las horas a favor de más en ese mes de uso;
+ * - `uso:<anio>`: lo que suman los usos autorizados del año por encima de lo que había (el saldo y los meses que ya
+ *   terminaron, sin los de antes del arranque, que ya están en el saldo).
+ * En los dos últimos, `mensaje` dice lo que queda en ese cálculo (nada, si hay faltante): `problemaDeLaCarga` lo cambia por
+ * lo que quedaba antes de la carga. Sin un cálculo, [].
+ */
+export const faltantesDe = (calculo) => {
+  if (!esObjeto(calculo)) return [];
+  const faltantes = [];
+
+  const { reparto } = calculo;
+  const sinCubrir = esObjeto(reparto) && reparto.sinCubrir instanceof Map ? reparto.sinCubrir : new Map();
+  const vacaciones = [...sinCubrir].map(([id, dias]) => ({ id, dias: listaDe(dias).filter(esFechaIso) }))
+    .filter(({ id, dias }) => typeof id === 'number' && dias.length > 0)
+    .sort((a, b) => compararTexto(a.dias[0], b.dias[0]) || (a.id || 0) - (b.id || 0));
+  for (const { id, dias } of vacaciones) {
+    faltantes.push({
+      clave: `vacaciones:${id}`, campo: 'desde', medida: dias.length,
+      texto: textoFaltanteDeVacaciones(dias[0], dias.length), mensaje: textoSinHabilitados(dias[0])
+    });
+  }
+
+  for (const uso of listaDe(calculo.topes)) {
+    if (!esObjeto(uso) || typeof uso.tipo !== 'string' || !Object.hasOwn(QUE_SE_REVISA, uso.tipo)) continue;
+    const usados = numeroDe(uso.usados);
+    const tope = numeroDe(uso.tope);
+    if (!(tope > 0) || !(usados > tope)) continue;
+    faltantes.push({
+      clave: `tope:${uso.tipo}:${anioTexto(uso.anio)}`, campo: uso.tipo === 'franquicia' ? 'horas' : 'desde',
+      medida: usados, texto: textoFaltanteDelTope(uso.tipo, uso.anio, usados, tope),
+      mensaje: textoTope(uso.tipo, uso.anio, tope)
+    });
+  }
+
+  for (const mes of listaDe(calculo.francos)) {
+    if (!esObjeto(mes) || !esMes(mes.mes_de_uso)) continue;
+    const cargados = listaDe(mes.usos).length;
+    const francos = cantidadDe(mes.francos);
+    if (cargados <= francos) continue;
+    faltantes.push({
+      clave: `franco:${mes.mes_de_uso}`, campo: 'desde', medida: cargados - francos,
+      texto: textoFaltanteDeFrancos(mes.mes_de_uso, cargados, francos), mensaje: textoSinFranco(mes.mes_de_uso)
+    });
+  }
+
+  for (const mes of listaDe(calculo.horasAFavor)) {
+    if (!esObjeto(mes) || !esMes(mes.mes_de_uso)) continue;
+    const usadas = cantidadDe(mes.usadas);
+    const aFavor = cantidadDe(mes.a_favor);
+    if (usadas <= aFavor) continue;
+    faltantes.push({
+      clave: `horas:${mes.mes_de_uso}`, campo: 'horas', medida: usadas - aFavor,
+      texto: textoFaltanteDeHoras(mes.mes_de_uso, usadas, aFavor),
+      mensaje: textoSinHorasAFavor(mes.mes_de_uso, quedanDeLasHoras(mes))
+    });
+  }
+
+  for (const delAnio of esObjeto(calculo.noUtilizadas) ? Object.values(calculo.noUtilizadas) : []) {
+    if (!esObjeto(delAnio) || !unidadValida(delAnio.unidad)) continue;
+    const anio = anioValido(delAnio.anio);
+    const habia = habiaDe(delAnio);
+    const cargado = cargadoDe(delAnio);
+    if (anio === null || cargado <= habia) continue;
+    faltantes.push({
+      clave: `uso:${anio}`, campo: delAnio.unidad === 'horas' ? 'horas' : 'desde', medida: cargado - habia,
+      texto: textoFaltanteDeUsos(delAnio.unidad, anio, cargado, habia),
+      mensaje: textoSinNoUtilizadas(MODALIDAD_DE_LA_UNIDAD[delAnio.unidad], anio, quedanDeLoNoUtilizado(delAnio))
+    });
+  }
+  return faltantes;
+};
+
+// Los faltantes de un cálculo que se pueden comparar, con la medida como número
+const faltantesComparables = (calculo) => (esObjeto(calculo) ? listaDe(calculo.faltantes) : [])
+  .filter((faltante) => esObjeto(faltante) && typeof faltante.clave === 'string')
+  .map((faltante) => ({ ...faltante, medida: numeroDe(faltante.medida) }))
+  .filter((faltante) => Number.isFinite(faltante.medida));
+
+// El mensaje de un faltante como error de una carga: en las horas a favor y en los usos autorizados dice lo que quedaba
+// antes de la carga (`antes`), con lo que ya usaba la fila que se corrige; el resto no depende de lo que había
+const mensajeDeLaCarga = (faltante, antes, filaId) => {
+  const separador = faltante.clave.indexOf(':');
+  const tipo = faltante.clave.slice(0, separador);
+  const cual = faltante.clave.slice(separador + 1);
+  const calculo = esObjeto(antes) ? antes : {};
+  if (tipo === 'horas') {
+    const delMes = listaDe(calculo.horasAFavor).find((mes) => esObjeto(mes) && mes.mes_de_uso === cual);
+    return textoSinHorasAFavor(cual, delMes === undefined ? 0 : quedanDeLasHoras(delMes, filaId));
+  }
+  if (tipo === 'uso' && esObjeto(calculo.noUtilizadas)) {
+    const delAnio = Object.values(calculo.noUtilizadas)
+      .find((otro) => esObjeto(otro) && unidadValida(otro.unidad) && otro.anio === Number(cual));
+    if (delAnio !== undefined) {
+      return textoSinNoUtilizadas(MODALIDAD_DE_LA_UNIDAD[delAnio.unidad], delAnio.anio,
+        quedanDeLoNoUtilizado(delAnio, filaId));
+    }
+  }
+  return faltante.mensaje;
+};
+
+/**
+ * Lo que frena una carga (spec, 3.10): el primer faltante de `despues` que no está en `antes` o que mide más que en `antes`.
+ * Un faltante que ya estaba no frena una carga que no lo agranda: se puede corregir otra cosa de una fila en faltante.
+ * `antes` y `despues` son dos `Calculo` (`calcular`): el de lo cargado y el de lo cargado con la licencia nueva o corregida.
+ * Devuelve `{ campo, mensaje }` (`campo` es `desde` en días y francos, y `horas` en horas), o null. En las horas a favor y
+ * los usos autorizados, el mensaje dice lo que quedaba antes de la carga; con `filaId`, el id de la licencia que se
+ * corrige, cuenta también lo que esa fila ya usaba.
+ */
+export const problemaDeLaCarga = (antes, despues, filaId) => {
+  const previos = new Map(faltantesComparables(antes).map(({ clave, medida }) => [clave, medida]));
+  const nuevo = faltantesComparables(despues).find(({ clave, medida }) => !previos.has(clave) || medida > previos.get(clave));
+  return nuevo === undefined ? null : { campo: nuevo.campo ?? null, mensaje: mensajeDeLaCarga(nuevo, antes, filaId) };
+};
+
+// Las cargas que se cuentan en horas: la franquicia, las horas a favor y el uso autorizado de contrato (el de planta es un
+// franco, el día entero)
+const seCuentaEnHoras = (tipo, modalidad) =>
+  tipo === 'franquicia' || tipo === 'horas_a_favor' || (tipo === 'uso_autorizado' && modalidad === 'contrato');
+
+// «5 días hábiles», «5 días hábiles de 7 corridos» o, en horas, «2 horas»
+const textoDeLosDias = (fila, modalidad, habiles) => {
+  if (seCuentaEnHoras(fila.tipo, modalidad)) return textoDeHoras(fila.horas);
+  const enHabiles = esUna(habiles) ? '1 día hábil' : `${numeroTexto(habiles)} días hábiles`;
+  const corridos = diasEntre(fila.desde, fila.hasta) + 1;
+  return corridos === habiles ? enHabiles : `${enHabiles} de ${numeroTexto(corridos)} corridos`;
+};
+
+// Lo que queda de lo no utilizado previamente después de un uso autorizado
+const textoQuedanNoUtilizadas = (modalidad, quedan) => {
+  const [una, varias, lasMasViejas] = modalidad === 'planta'
+    ? ['franco no utilizado', 'francos no utilizados', 'los más viejos']
+    : ['hora no utilizada', 'horas no utilizadas', 'las más viejas'];
+  let queda = `Quedan ${numeroTexto(quedan)} ${varias} previamente.`;
+  if (ninguna(quedan)) queda = `No quedan ${varias} previamente.`;
+  else if (esUna(quedan)) queda = `Queda 1 ${una} previamente.`;
+  return `${queda} Se descuentan primero ${lasMasViejas}.`;
+};
+
+// Lo que queda después de una carga, del tipo de la fila: con tope, el del año de su primer día que descuenta; las horas a
+// favor y el franco, los de su mes; el uso autorizado, lo no utilizado de su año. Las vacaciones lo dicen en el reparto y
+// la extraordinaria no tiene tope: ''
+const textoDeLoQueQueda = (fila, modalidad, calculo, descuentan) => {
+  const { tipo } = fila;
+  const mes = fila.desde.slice(0, 7);
+  if (Object.hasOwn(QUE_SE_REVISA, tipo)) {
+    if (descuentan.length === 0) return '';
+    const anio = anioDe(descuentan[0]);
+    const uso = calculo.topes.find((otro) => otro.tipo === tipo && otro.anio === anio);
+    if (uso === undefined || !(uso.tope > 0)) return '';
+    const quedan = `Te quedan ${numeroTexto(Math.max(0, uso.tope - uso.usados))} de ${numeroTexto(uso.tope)}`;
+    return tipo === 'franquicia' ? `${quedan} horas de franquicia.` : `${quedan}.`;
+  }
+  if (tipo === 'horas_a_favor') {
+    const delMes = calculo.horasAFavor.find((otro) => otro.mes_de_uso === mes);
+    const quedan = delMes === undefined ? 0 : quedanDeLasHoras(delMes);
+    return `Usás ${textoDeHoras(fila.horas)} a favor de ${nombreDelMes(mes)}. Te quedan ${numeroTexto(quedan)}.`;
+  }
+  if (tipo === 'franco') {
+    const delMes = calculo.francos.find((otro) => otro.mes_de_uso === mes);
+    if (delMes === undefined || delMes.usos.length > delMes.francos) return '';
+    return `Usás el franco de ${nombreDelMes(mes)}, por las horas extras de ${nombreDelMes(delMes.mes_trabajado)}. `
+      + 'Es el día entero.';
+  }
+  if (tipo === 'uso_autorizado') {
+    return textoQuedanNoUtilizadas(modalidad, calculo.noUtilizadas[anioDe(fila.desde)]?.quedan ?? 0);
+  }
+  return '';
+};
+
+// Lo que muestra el cálculo de «Cargar licencia» de una fila ya validada, con el `Calculo` de lo cargado con ella
+const vistaDe = (fila, estado, calculo, feriados) => {
+  const habiles = diasHabilesDe(fila.desde, fila.hasta, feriados).length;
+  const descuentan = diasQueDescuentan(fila, estado, feriados);
+  const antesDelArranque = tieneSaldoInicial(fila.tipo, estado.modalidad) && descuentan.length === 0;
+  return {
+    dias_habiles: habiles,
+    texto_dias: textoDeLosDias(fila, estado.modalidad, habiles),
+    texto_reparto: fila.tipo === 'vacaciones' ? textoDelReparto(calculo.reparto, fila.id) : '',
+    queda_texto: antesDelArranque ? '' : textoDeLoQueQueda(fila, estado.modalidad, calculo, descuentan),
+    antes_del_arranque: antesDelArranque,
+    texto_antes_del_arranque: antesDelArranque ? TEXTO_ANTES_DEL_ARRANQUE : ''
+  };
+};
+
+/**
+ * Evalúa una licencia antes de guardarla (el alta, la corrección y el cálculo previo de «Cargar licencia»): `{ datos, error,
+ * vista }`. Las opciones son las de `validarLicencia`: `{ hoy, feriados, editadaId, uso_autorizado }`. Los controles, en
+ * este orden:
+ * 1. la modalidad (`sinModalidad`) y el arranque (`sinArranque`), los dos con `campo: null` (sin arranque, `validarLicencia`
+ *    no puede controlar «No estudio»);
+ * 2. `validarLicencia`;
+ * 3. `problemaDeLaCarga`, entre el `Calculo` de lo cargado y el de lo cargado con esta licencia (la corregida, `editadaId`,
+ *    reemplaza a la guardada): un faltante nuevo, o más grande, frena la carga.
+ * Con un error, `datos` es null. `vista` es null en los pasos 1 y 2; si no, `{ dias_habiles, texto_dias, texto_reparto,
+ * queda_texto, antes_del_arranque, texto_antes_del_arranque }`, con lo cargado con esta licencia:
+ * - `texto_dias`: «5 días hábiles» o «5 días hábiles de 7 corridos»; en horas, «2 horas»;
+ * - `texto_reparto`: en las vacaciones, el de `textoDelReparto`; si no, '';
+ * - `queda_texto`: «Te quedan 22 de 25.», «Te quedan 23 de 42 horas de franquicia.», «Usás 1,5 horas a favor de octubre.
+ *   Te quedan 0.», la del franco de su mes o lo no utilizado que queda; '' en las vacaciones, la extraordinaria y lo
+ *   anterior al arranque;
+ * - `antes_del_arranque`: un tipo con saldo inicial cuyos días son todos anteriores al arranque, con
+ *   `texto_antes_del_arranque` (`TEXTO_ANTES_DEL_ARRANQUE`; si no, '').
+ */
+export const evaluarLicencia = (estado, entrada, opciones) => {
+  const datosDelEstado = esObjeto(estado) ? estado : {};
+  const { hoy, feriados, editadaId, uso_autorizado: usoAutorizado } = esObjeto(opciones) ? opciones : {};
+  const frenada = (mensaje) => ({ datos: null, error: { campo: null, mensaje }, vista: null });
+  if (!MODALIDADES.includes(datosDelEstado.modalidad)) return frenada(MENSAJES_MI_ESPACIO.sinModalidad);
+  if (!esFechaIso(datosDelEstado.arranque)) return frenada(MENSAJES_MI_ESPACIO.sinArranque);
+
+  const { datos, error } = validarLicencia(entrada,
+    { hoy, estado: datosDelEstado, feriados, editadaId, uso_autorizado: usoAutorizado });
+  if (error) return { datos: null, error, vista: null };
+
+  const editada = idDe(editadaId);
+  const fila = { id: editadaId, ...datos };
+  const conLaFila = {
+    ...datosDelEstado,
+    licencias: [...listaDe(datosDelEstado.licencias).filter((otra) => !esObjeto(otra) || idDe(otra.id) !== editada), fila]
+  };
+  const despues = calcular(conLaFila, { hoy, feriados });
+  const problema = problemaDeLaCarga(calcular(datosDelEstado, { hoy, feriados }), despues, editadaId);
+  return { datos: problema === null ? datos : null, error: problema, vista: vistaDe(fila, conLaFila, despues, feriados) };
 };
