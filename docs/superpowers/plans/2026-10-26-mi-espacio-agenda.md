@@ -364,9 +364,9 @@ Las dos las contestó el usuario el 26/10/2026, y el plan ya las tiene:
 1. **A una persona que se saca de un evento compartido** (o a todas, si pasa a «Solo yo») no le llega ningún email: «No es necesario, sin notificación. Estamos todos en el mismo espacio físico.» Sin quinta plantilla ni tipo `'salida'` (Task 3).
 2. **Un recordatorio atrasado sale solo entre las 07:00 y las 20:00 de un día hábil,** siempre antes de que empiece el evento (`MINUTOS_A_TIEMPO`, `HORA_DE_LOS_ATRASADOS` y `HORA_DE_CIERRE_DE_LOS_ATRASADOS`, Tasks 3 y 7). La hora de cierre la sumó la sesión coordinadora, porque «desde las 07:00» solo no frenaba los de la noche. Los que salen a tiempo no cambian.
 
-## Decisiones pendientes del usuario (Task 1)
+## Decisiones del usuario del 27/10/2026 (Task 1)
 
-El preflight contra main encontró cinco cosas que la spec no define. Se le preguntaron a la sesión coordinadora el 27/10/2026; **hasta que conteste, el plan sigue la recomendación de cada una** (si contesta otra cosa, se ajusta la tarea que corresponda):
+El preflight contra main encontró cinco cosas que la spec no define. Se le preguntaron al usuario por la sesión coordinadora y **aceptó las cinco recomendaciones** (27/10/2026):
 1. **Sin modalidad cargada, la agenda funciona igual:** la pestaña Agenda y «Nuevo evento» (`#btn-nuevo-evento`) se ven siempre, aunque «Cargar licencia» y «Cargar horas extras» estén ocultos. El Resumen sin modalidad queda como hoy (solo el mensaje), sin «Hoy y mañana» (Tasks 9 y 10).
 2. **La descripción de la página** (`<meta name="description">`) pasa a «Tus licencias, tus horas extras, tu agenda y lo que te queda» (Task 9).
 3. **La leyenda del mes** no muestra «Compañeros que no están» a quien no ve a los compañeros (sin `esAdmin`: el lector y el colaborador); las otras cuatro entradas quedan (Task 9).

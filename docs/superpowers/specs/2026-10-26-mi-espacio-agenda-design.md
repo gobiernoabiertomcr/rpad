@@ -241,6 +241,13 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 - Un recordatorio atrasado sale solo entre las 7:00 y las 20:00 de un día hábil, siempre antes del evento (la hora de cierre la agregué yo, porque «desde las 7:00» solo no frenaba los de la noche).
 - Aprobó todas las decisiones mías de la primera revisión y las de la segunda, salvo la de no sumar un cron.
 
+**Del usuario, al ajustar el plan contra main (27/10/2026):**
+- Sin modalidad cargada, la pestaña Agenda y «Nuevo evento» se ven igual. El Resumen sin modalidad queda como estaba: solo el mensaje para que administración la cargue, sin «Hoy y mañana».
+- La descripción de la página pasa a «Tus licencias, tus horas extras, tu agenda y lo que te queda».
+- La leyenda del mes no muestra «Compañeros que no están» a quien no ve a los compañeros (el lector y el colaborador).
+- La nota del email de vencimiento («Lo que cargás en Mi espacio lo ves solo vos.») no cambia.
+- La agenda no toca la corrida de las 8:15: el texto de Correos → Estado que la entrega 2 dejó pendiente queda afuera.
+
 **Mías, aprobadas por el usuario en la segunda sesión (26/10/2026):**
 - Cada persona invitada puede apagar su propio recordatorio.
 - «Todos» es una marca que incluye a quienes se suman después.
