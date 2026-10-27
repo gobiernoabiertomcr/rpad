@@ -61,6 +61,9 @@ import {
 } from '../controllers/notasDigitalesController.js';
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
+  verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial
+} from '../controllers/miEspacioController.js';
+import {
   reporteEstadoGeneral,
   reporteAvisos,
   reportePorArea,
@@ -181,6 +184,14 @@ router.put('/auth/profile', authMiddleware, updateProfile);
 router.get('/auth/profile/firma', authMiddleware, adminOnly, verMiFirma);
 router.put('/auth/profile/firma', authMiddleware, adminOnly, guardarMiFirma);
 router.get('/auth/profile/firma/imagen', authMiddleware, adminOnly, verImagenMiFirma);
+
+// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, sección 10): cada persona con sesión, cualquiera sea su rol, ve
+// solo lo suyo (req.user.userId)
+router.get('/mi-espacio/resumen', authMiddleware, verResumen);
+router.get('/mi-espacio/licencias', authMiddleware, listarLicenciasMias);
+router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
+router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
+router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);
 
 // Datasets (escritura - solo admin)
 router.post('/datasets', authMiddleware, adminOnly, createDataset);

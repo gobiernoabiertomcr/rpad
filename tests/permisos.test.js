@@ -117,7 +117,8 @@ describe('lector', () => {
 
   for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
     '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/ciclo-de-vida',
-    '/feriados']) {
+    '/feriados', '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial',
+    '/mi-espacio/anio/2026']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -192,6 +193,27 @@ describe('generador de notas', () => {
   }
 });
 
+// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, sección 10): cada persona con sesión usa el suyo, cualquiera sea su
+// rol (el lector y el colaborador las usan en sus listas de arriba y de abajo); sin sesión, 401. Los IDs no importan: la sesión
+// se valida antes
+const RUTAS_MI_ESPACIO = [
+  ['GET', '/mi-espacio/resumen'],
+  ['GET', '/mi-espacio/licencias'],
+  ['GET', '/mi-espacio/horas-extras'],
+  ['GET', '/mi-espacio/anio/2026'],
+  ['GET', '/mi-espacio/saldo-inicial']
+];
+
+describe('Mi espacio', () => {
+  for (const [metodo, ruta] of RUTAS_MI_ESPACIO) {
+    it(`el visitante sin sesión recibe 401 en ${metodo} ${ruta}`, async () => {
+      const res = await pedir(metodo, ruta, undefined);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
+    });
+  }
+});
+
 // El colaborador (spec 2026-10-24-notas-dgmit, sección 1): ve lo que ve un lector y carga notas DGMIT; no entra a la administración
 describe('colaborador', () => {
   for (const [metodo, ruta] of RUTAS_SOLO_ADMIN) {
@@ -202,7 +224,8 @@ describe('colaborador', () => {
   }
 
   for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
-    '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida', '/feriados']) {
+    '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida', '/feriados',
+    '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
