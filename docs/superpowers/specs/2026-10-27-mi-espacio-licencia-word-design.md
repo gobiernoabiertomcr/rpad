@@ -85,7 +85,9 @@ ordinaria, a partir del día martes 3 de noviembre de 2026.
 **Las reglas de esos textos:**
 - **Los días** son los días hábiles de la licencia, con los feriados: la misma cuenta que la lista («12 días corridos, 9 hábiles» da «nueve (9) días hábiles»). Van en letras y en números, con «un (1) día hábil» en singular.
 - **Vacaciones dice solo cuántos días y desde cuándo,** sin el hasta ni de qué año salen (pedido del usuario).
-- **Con un solo día,** en cualquier tipo de días, va «…por un (1) día hábil, el día martes 3 de noviembre de 2026.» en lugar de «a partir del día». En vacaciones: «…el usufructo de un (1) día hábil correspondiente a mi licencia anual ordinaria, el día…».
+- **«A partir del día» es el primer día hábil de la licencia,** no `desde`: una licencia cargada del sábado 31/10 al viernes 6/11 dice «a partir del día lunes 2 de noviembre» (mi decisión: `validarLicencia` deja empezar en un día que no es hábil, y nadie pide arrancar un sábado). Vale para los tipos que cuentan días: vacaciones, estudios, atención médica, grupo familiar y médica extraordinaria. Los de un día (franquicia, franco y horas a favor) dicen su día, `desde`.
+- **Con un solo día hábil,** en cualquier tipo de días, va «…por un (1) día hábil, el día martes 3 de noviembre de 2026.» en lugar de «a partir del día», con ese día hábil (aunque `desde` y `hasta` sean distintos). En vacaciones: «…el usufructo de un (1) día hábil correspondiente a mi licencia anual ordinaria, el día…».
+- **Sin ningún día hábil** (un feriado cargado después en Configuración → Feriados cae sobre una licencia de días ya guardada): no hay nota. Las dos rutas responden 409 «Entre esas fechas ya no hay ningún día hábil: corregí la licencia para bajar la nota.» (mi decisión). No puede pasar en el segundo paso: el guardado no deja una licencia sin días hábiles.
 - **Las horas:**
   - van en letras y en números: «una (1) hora», «tres (3) horas»;
   - las medias, «una hora y media (1,5)», «dos horas y media (2,5)» y «media hora (0,5)»;
@@ -95,7 +97,7 @@ ordinaria, a partir del día martes 3 de noviembre de 2026.
   - en las horas a favor, el del mes anterior (las de octubre salen de las de septiembre).
   - En los dos se cruza el año: un franco de enero de 2027 sale de noviembre de 2026.
 - **Las fechas:** el día de la semana, el día, el mes en letras y el año («martes 3 de noviembre de 2026»).
-- **«correspondientes»** concuerda con lo que cuenta: «un (1) día hábil correspondiente», «una (1) hora a favor, correspondiente».
+- **«correspondientes»** concuerda con lo que cuenta: «un (1) día hábil correspondiente», «una (1) hora a favor, correspondiente». Con las medias manda la palabra: «media hora (0,5) a favor, correspondiente» y «una hora y media (1,5) a favor, correspondiente» (dicen «hora»), «dos horas y media (2,5) a favor, correspondientes» (dice «horas»; mi decisión).
 
 **La fecha de la nota** es el día de la última vez que se guardó la licencia, en hora argentina (decisiones del usuario: la de la carga y, si se corrigió, la de la última corrección). Es `mi_espacio_licencias.updated_at`, que la base pone al día solo cuando un guardado cambia algo. Una corrección sin cambios no la mueve (mi decisión: no es una corrección).
 
@@ -139,6 +141,8 @@ Aprobado por el usuario sobre la maqueta (`index.html`, «Así se ve el Word»):
   - la licencia activa de la persona, con su `updated_at` pasado a fecha argentina (`UNIX_TIMESTAMP` y `ahoraArgentina`, como `subido_el` de Proyectos: la base guarda los TIMESTAMP en UTC, y un guardado a las 22:00 no puede salir con la fecha del día siguiente);
   - los feriados, para contar los días hábiles;
   - el nombre, el cargo y el vínculo de la persona (`personaDe` hoy no lee el cargo).
+- **La fila de `GET …/nota`** sale del mismo armado que la lista: `filaDeLicencia` (`services/miEspacioResumen.js`) es privada y necesita el contexto entero (`contextoDe`, el cálculo del estado y `vinculosDe`). Hace falta exportar un envoltorio que arme la fila de una sola licencia con ese contexto; `licenciaDe` sola no alcanza.
+- **Una persona sin modalidad** (le sacaron el vínculo en Configuración → Usuarios): la lista no muestra sus licencias, pero las dos rutas arman la nota igual, porque el texto no depende de la modalidad (mi decisión). Sin vínculo, la firma no lleva el renglón del contratado.
 
 ## 5. La API
 
@@ -146,20 +150,19 @@ Con `authMiddleware`, como todas las rutas de Mi espacio (`tests/permisos.test.j
 
 - **`GET /api/mi-espacio/licencias/:id/nota`:** lo que necesita el segundo paso, en una sola respuesta:
   ```
-  { success, data: { fila, html, nombre, fecha, aclaracion } }
+  { success, data: { fila, html, fecha, aclaracion } }
   ```
   - `fila`: la licencia como la arma `filaDeLicencia` para la lista. Así el segundo paso no depende del año que muestra la lista: una licencia de 2027 no está en la lista de 2026.
   - `html`: la nota, armada y escapada por el servidor.
-  - `nombre`: el nombre del archivo.
   - `fecha`: la fecha de la nota, `'AAAA-MM-DD'`.
   - `aclaracion`: el renglón que va arriba de la nota, «Lleva la fecha del 27/10/2026, la última vez que guardaste un cambio en la licencia. Se baja en Word, para imprimir y firmar.».
 - **`GET /api/mi-espacio/licencias/:id/word`:** el .docx, con el `Content-Type` de Word y `Content-Disposition` armado por `disposicionDeAdjunto(nombre)`.
 - **Los errores, en las dos:**
   - **404 «Licencia no encontrada»:** un id que no pasa `idPositivo`, una licencia de otra persona o una dada de baja.
   - **404 «Esta licencia no tiene nota.»:** un uso autorizado.
+  - **409 «Entre esas fechas ya no hay ningún día hábil: corregí la licencia para bajar la nota.»:** una licencia de días sin ningún día hábil (sección 2).
   - **500, con un mensaje fijo** («Error al armar la nota»): cualquier otra falla. El detalle va solo a `console.error`.
-- **La lista suma `word_nombre`:** cada fila de `GET /api/mi-espacio/licencias` (`filaDeLicencia`) trae el nombre del archivo de su nota, o null en un uso autorizado. Hace falta porque `API.pedirArchivo` no da el `Content-Disposition`.
-  - Lo que la lista ya devolvía no cambia.
+- **La lista no cambia.** El nombre del archivo lo da el `Content-Disposition` del Word, que la página lee (sección 6).
 
 Sin tablas, columnas ni migraciones.
 
@@ -167,7 +170,7 @@ Sin tablas, columnas ni migraciones.
 
 **El segundo paso** (versión C de la maqueta, la que eligió el usuario):
 
-1. **Al guardar con éxito** (POST o PUT, 2xx), el modal no se cierra:
+1. **Al guardar con éxito** (POST o PUT, 2xx) el formulario de licencia (no el de «Registrar un uso autorizado», que también pasa por `guardarLicencia` y se sigue cerrando como hoy), el modal no se cierra:
    - el título pasa a «Licencia cargada» o «Licencia corregida»;
    - el cuerpo y el pie del formulario se reemplazan por los del segundo paso;
    - la página vuelve a pedir todo de fondo (`volverAPedirTodo`), así la lista de atrás ya muestra la licencia;
@@ -176,25 +179,29 @@ Sin tablas, columnas ni migraciones.
    - arriba, la licencia guardada: la tilde verde, la insignia del tipo, las fechas y la cantidad, y debajo, en gris, de qué licencias salen, lo de Configuración y «Tus compañeros ven…» (los textos de `fila`, como en la lista);
    - después, «Así sale la nota», con `aclaracion` debajo;
    - después, la hoja: el `html` sobre un fondo gris, a escala del ancho del modal (A4, Arial, interlineado 1,15).
-3. **Los avisos de la respuesta del guardado** (`avisos`, por ejemplo los del paso a Configuración) van en un recuadro ámbar arriba de la licencia, en lugar del aviso flotante de hoy.
+3. **Los avisos de la respuesta** van en un recuadro ámbar arriba de la licencia, en lugar del aviso flotante de hoy. Solo los trae la corrección (`PUT`, por ejemplo `TEXTO_NO_SE_COPIA`): el alta responde sin `avisos`.
    - En el segundo paso no sale el aviso flotante de «Licencia cargada»: lo dice el título.
    - `#me-anuncio` anuncia «Licencia cargada. Podés descargar la nota en Word.» (o «corregida»), con los avisos.
 4. **El pie:** «Listo» (borde), que cierra, y «Descargar Word» (tinta).
-5. **El foco** va a «Descargar Word» al mostrarse el segundo paso. Escape, la × y «Listo» cierran, y el foco vuelve a lo que abrió el modal. Al volver a abrirlo, es otra vez el formulario.
+5. **El foco** va a «Descargar Word» al mostrarse el segundo paso. Escape, la × y «Listo» cierran. Al volver a abrirlo, es otra vez el formulario.
+   - **Al cerrar, el foco va donde va hoy después de guardar:** el «Editar» de la licencia guardada si la lista la muestra y, si no, el respaldo de siempre.
+   - Hoy eso no sale solo: `volverAPedirTodo` calcula el respaldo con el elemento enfocado, que en el segundo paso está dentro del modal; `devolverElFoco` no hace nada con un modal abierto, y el botón que abrió el modal ya lo reemplazó la recarga de la lista (`cerrarModal` dejaría el foco en `<body>`). Hay que guardar el respaldo antes de recargar y aplicarlo al cerrar.
 6. **Si `GET …/nota` falla:**
    - lo que se ve: «La licencia quedó guardada, pero no se pudo armar la vista de la nota. Probá «Descargar Word» o bajala después con «Word» en la lista.»;
    - «Descargar Word» sigue andando;
    - con un 401, al login.
 
-**«Descargar Word»** (en el segundo paso y en la lista) pide `GET …/word` con `API.pedirArchivo` y lo baja con un `descargarBlob` local, copiado de `correos.js`, con el nombre de `nombre` o `word_nombre` (JWT en el encabezado, nunca en la URL; `api.js` no cambia).
+**«Descargar Word»** (en el segundo paso y en la lista) pide `GET …/word` con un `fetch` propio de la página, con `Auth.getAuthHeaders()` (JWT en el encabezado, nunca en la URL; `api.js` no cambia), como `pedirWord` del Generador de Notas, y lo baja con un `descargarBlob` local, copiado de `correos.js`.
+- Mi decisión: el `fetch` propio, y no `API.pedirArchivo`, porque `API.pedirArchivo` no da el estado ni el `Content-Disposition`.
+- **El nombre del archivo** sale del `Content-Disposition` de la respuesta (el `filename*` en UTF-8 de `disposicionDeAdjunto`). Así la página no copia los nombres de los tipos y el nombre llega también cuando falló `GET …/nota`. Sin el encabezado, «Nota de licencia.docx».
 - Mientras baja, el botón queda deshabilitado.
-- Si falla: un aviso «No se pudo descargar la nota. Probá de nuevo en unos minutos.».
-- Con la sesión vencida (`Auth.isTokenExpired()`, como `proyectos.js`, porque `API.pedirArchivo` no da el estado), al login.
+- Si falla: el mensaje del servidor (por ejemplo, el 409 de la sección 2) o, sin mensaje, «No se pudo descargar la nota. Probá de nuevo en unos minutos.».
+- Con un 401, al login.
 
 **«Word» en la lista** (decisión del usuario: «Word», como el botón de Correos → Libro):
 - va al lado de «Editar», en un grupo de acciones a la derecha de la fila;
 - se escribe con `aria-label` «Descargar en Word la nota de la licencia del 16/11 al 27/11/2026»;
-- no aparece en el uso autorizado (sin `word_nombre`);
+- no aparece en el uso autorizado (por su `tipo`);
 - en el teléfono queda arriba a la derecha, con «Editar», como en la maqueta.
 
 **Las convenciones de `mi-espacio.js`** siguen:
@@ -215,7 +222,8 @@ Sin tablas, columnas ni migraciones.
 
 - **`tests/mi-espacio-nota.test.js`, puro:**
   - los ocho tipos con los textos de la sección 2, al pie de la letra;
-  - el singular y el plural; los números en letras (1, 21 —«veintiún»—, 30 y 45) y las horas (0,5, 1, 1,5, 2,5 y 7);
+  - el singular y el plural; los números en letras (1, 21 —«veintiún»—, 30 y 45) y las horas (0,5, 1, 1,5, 2,5 y 7), con su «correspondiente» o «correspondientes»;
+  - el primer día hábil (una licencia que arranca un sábado o un feriado), un solo día hábil entre fechas distintas y ningún día hábil;
   - el día de la semana; el mes de las horas extras, también cruzando el año;
   - la firma de un contratado y la de alguien sin cargo;
   - el uso autorizado, que da null;
@@ -227,18 +235,19 @@ Sin tablas, columnas ni migraciones.
   - un nombre con caracteres que el XML no admite, que da un Word sano.
 - **En `tests/mi-espacio-api.test.js`, con Docker:**
   - las dos rutas;
-  - la licencia de otra persona y la dada de baja (404), y el uso autorizado (404 con su mensaje);
-  - la fecha: la de la carga, la de una corrección y la de un guardado a las 22:00 de Argentina;
+  - la licencia de otra persona y la dada de baja (404), el uso autorizado (404 con su mensaje) y la licencia sin días hábiles (409);
+  - la fecha: la de la carga, la de una corrección, la de una corrección sin cambios y la de un guardado a las 22:00 de Argentina;
   - el `Content-Disposition`;
-  - `word_nombre` en la lista;
+  - una persona sin modalidad, que también arma la nota;
   - un lector, que también baja la suya.
 - **`tests/mi-espacio-frontend.test.js`:**
-  - el guardado ya no cierra el modal: hoy el test dice que cierra y lo cambia;
-  - el segundo paso con lo del servidor, el foco, «Listo» y Escape;
+  - el guardado de una licencia ya no cierra el modal. Cambian los tests que hoy esperan que se cierre (alrededor de las líneas 2092, 2146, 2474 y 3158 de main 780e39b: el aviso después de guardar y el foco en el «Editar» nuevo);
+  - el de «Registrar un uso autorizado» se sigue cerrando como hoy;
+  - el segundo paso con lo del servidor, el recuadro de los avisos de una corrección, el foco, «Listo» y Escape, y el foco al cerrar;
   - el formulario de nuevo al reabrir;
-  - la falla de `…/nota` y la de la descarga;
+  - la falla de `…/nota` y la de la descarga, con el mensaje del servidor;
   - «Word» en las filas, menos en el uso autorizado;
-  - la descarga con `API.pedirArchivo` y `descargarBlob`: el contexto del `vm` necesita `Blob` y `URL.createObjectURL` falsos.
+  - la descarga con el `fetch` propio y `descargarBlob`, con el nombre del `Content-Disposition` y el 401: el contexto del `vm` necesita `Blob` y `URL.createObjectURL` falsos.
 - **`tests/permisos.test.js`** (las dos rutas) **y `tests/paginas.test.js`** (`VERSION_MI_ESPACIO`).
 - **La regla del proyecto:** `npm test` completo antes y después; el Word del Generador y el de las Notas Digitales no cambian (sus tests siguen verdes sin tocarlos).
 
@@ -262,12 +271,16 @@ Sin SQL ni Tarea Cron: subir los archivos y Restart. El kit va después del del 
 
 ## Mis decisiones (para revisar)
 
+- «A partir del día» es el primer día hábil de la licencia, y el singular sale con un solo día hábil (sección 2).
+- Una licencia de días sin ningún día hábil (por un feriado cargado después) no tiene nota: 409 con un mensaje que dice qué hacer (secciones 2 y 5).
+- «media hora» y «una hora y media» concuerdan en singular («correspondiente») (sección 2).
 - Un armado propio y chico del Word, en lugar de extender `renderDocx` (sección 4).
 - Una corrección que no cambia nada no mueve la fecha de la nota (sección 2).
 - Sin cargo cargado, la firma lleva solo el nombre (sección 2).
+- Una persona sin modalidad también arma la nota (sección 4).
 - `GET …/nota` trae la fila, así el segundo paso no depende de la lista (sección 5).
-- `word_nombre` en la lista, para el nombre del archivo de «Word» (sección 5).
-- En el segundo paso, los avisos del guardado van en el modal, no en el aviso flotante; el foco, a «Descargar Word» (sección 6).
+- La descarga usa un `fetch` propio y toma el nombre del `Content-Disposition`; la lista no cambia (secciones 5 y 6).
+- En el segundo paso, los avisos de una corrección van en el modal, no en el aviso flotante; el foco, a «Descargar Word», y al cerrar, adonde va hoy después de guardar (sección 6).
 - El uso autorizado responde 404 «Esta licencia no tiene nota.» (sección 5).
 
 ## Lo que queda para quien lo construya
