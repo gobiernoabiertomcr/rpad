@@ -142,7 +142,7 @@ Todas en un archivo puro, `services/miEspacioReglas.js`: sin pool ni `Date` loca
 - **Se cargan con el día y el horario,** de qué hora a qué hora (decisión del usuario), en pasos de media hora. El panel calcula la cantidad.
 - **Si el horario pasa la medianoche,** cuenta entero en el día en que empezó.
 - **Una nota opcional,** de hasta 200 caracteres.
-- **No pueden superponerse** dos horarios del mismo día.
+- **No pueden superponerse** dos horarios del mismo día. Tampoco uno con el del día anterior que pasa la medianoche (sus horas después de las 00:00 caen en este día), ni uno que pasa la medianoche con el comienzo del día siguiente (decisión del usuario, 27/10/2026): con una carga del lunes de 22:00 a 02:00, la del martes de 01:00 a 03:00 dice «Se superpone con las horas extras de 22:00 a 02:00 del día anterior.», y al revés, «… de 01:00 a 03:00 del día siguiente.». Pegadas (una termina a las 02:00 y la otra empieza a las 02:00) no se superponen.
 
 ### 3.8 Dos licencias el mismo día
 
@@ -500,6 +500,7 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 **Del usuario, después de aprobar el plan (27/10/2026):**
 - «Hoy y mañana» separa a los que no están hoy («Hoy no están») de los que empiezan mañana («Mañana no están»), cada uno con su vuelta (sección 7).
 - El modal del feriado cuenta solo las licencias en las que el feriado cambia de verdad un día hábil: no los sábados, los domingos, los 9 fijos ni un día en que ya rige otro feriado; con uno que se repite, cada año por separado (sección 2).
+- Unas horas extras que pasan la medianoche no se superponen con las del día siguiente, ni las de un día con las del anterior que pasan la medianoche: la misma hora no se cuenta dos veces (sección 3.7).
 
 **Respuestas del usuario a la revisión (26/10/2026):**
 - «Los compañeros» son administración: superadmin, admin y editor.

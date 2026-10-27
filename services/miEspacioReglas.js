@@ -203,8 +203,12 @@ export const textoSinNoUtilizadas = (modalidad, anio, quedan) => {
   if (esUna(quedan)) return `${enElAnio} te queda 1 hora no utilizada previamente.`;
   return `${enElAnio} te quedan ${numeroTexto(quedan)} horas no utilizadas previamente.`;
 };
-export const textoHorarioSuperpuesto = (desde, hasta) =>
-  `Se superpone con las horas extras de ${horaTexto(desde)} a ${horaTexto(hasta)} de ese día.`;
+// De qué día es la que se superpone (decisión del usuario, 27/10/2026): la del día anterior que pasa la medianoche o la del
+// día siguiente con la que se pisa una que la pasa. Otro valor es el mismo día
+const DIA_DEL_HORARIO = Object.freeze({ anterior: 'del día anterior', siguiente: 'del día siguiente' });
+export const textoHorarioSuperpuesto = (desde, hasta, dia) =>
+  `Se superpone con las horas extras de ${horaTexto(desde)} a ${horaTexto(hasta)} `
+  + `${typeof dia === 'string' && Object.hasOwn(DIA_DEL_HORARIO, dia) ? DIA_DEL_HORARIO[dia] : 'de ese día'}.`;
 export const textoSaldo = (maximo) => `Escribí un número de 0 a ${numeroTexto(maximo)}.`;
 export const textoAutorizadaSinDias = (desde, hasta) =>
   `Sos la persona autorizada del firmante del ${fechaCorta(desde)} al ${fechaCorta(hasta)}, y con esta licencia no te `
@@ -461,11 +465,12 @@ export const rangoDeFechas = (hoy) => {
   return esFechaIso(rango.desde) && esFechaIso(rango.hasta) ? rango : null;
 };
 
-// Las ausencias de día completo (spec, sección 6): las licencias de días enteros, y las de horas con la jornada entera
+// Las ausencias de día completo (spec, sección 6): las licencias de días enteros, y las de horas con la jornada entera (de
+// TIPOS_POR_HORAS, public/js/mi-espacio.js tiene una copia, TIPOS_CON_HORAS, atada por un test de paridad)
 const TIPOS_DE_DIA_ENTERO = Object.freeze([
   'vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco'
 ]);
-const TIPOS_POR_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
+export const TIPOS_POR_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
 export const esDiaEntero = (fila) => esObjeto(fila) && (TIPOS_DE_DIA_ENTERO.includes(fila.tipo)
   || (TIPOS_POR_HORAS.includes(fila.tipo) && numeroDe(fila.horas) === JORNADA));
 
@@ -528,8 +533,8 @@ export const usoDeLosTopes = (estado, opciones) => {
     .map(([anio, cantidad]) => ({ tipo, anio, usados: cantidad, tope: topeDe(tipo, anio, estado.anios) })));
 };
 
-// Los tipos de un solo día: desde y hasta son el mismo
-const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
+// Los tipos de un solo día: desde y hasta son el mismo (public/js/mi-espacio.js tiene una copia, atada por un test de paridad)
+export const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
 // Vacío: no vino, null o un texto de espacios
 const esVacio = (valor) => valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '');
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
@@ -669,21 +674,26 @@ export const mesMas = (mes, n) => {
   return `${String(anio).padStart(4, '0')}-${String((indice % 12) + 1).padStart(2, '0')}`;
 };
 
-// Las horas extras del mismo día que se superponen con las que empiezan en `inicio` (minutos desde las 00:00 de la fecha) y
-// duran `horas`, sin las que se corrigen: `{ inicio, desde, hasta }` de la que empieza primero, o null. Una que pasa la
-// medianoche ocupa hasta esa hora del día siguiente; dos pegadas no se superponen
+// Las horas extras que se superponen con las que empiezan en `inicio` (minutos desde las 00:00 de la fecha) y duran
+// `horas`, sin las que se corrigen: `{ inicio, desde, hasta, dia }` de la que empieza primero, o null. Una que pasa la
+// medianoche ocupa hasta esa hora del día siguiente, así que se miran también la del día anterior y la del siguiente
+// (decisión del usuario, 27/10/2026; `dia`: 'anterior', 'mismo' o 'siguiente'; un horario dura menos de 24 horas, así que
+// no hace falta mirar más lejos); dos pegadas no se superponen
 const primeraSuperpuesta = (horasExtras, fecha, inicio, horas, editadaId) => {
   const editada = idDe(editadaId);
   const fin = inicio + horas * 60;
+  const dias = new Map([[sumarDias(fecha, -1), ['anterior', -24 * 60]], [fecha, ['mismo', 0]],
+    [sumarDias(fecha, 1), ['siguiente', 24 * 60]]]);
   let primera = null;
   for (const fila of listaDe(horasExtras)) {
-    if (!esObjeto(fila) || fila.fecha !== fecha || idDe(fila.id) === editada) continue;
+    if (!esObjeto(fila) || !dias.has(fila.fecha) || idDe(fila.id) === editada) continue;
     const suyas = horasDe(fila.desde, fila.hasta);
     if (suyas === null) continue;
-    const suyoInicio = minutosDe(fila.desde);
+    const [dia, corrimiento] = dias.get(fila.fecha);
+    const suyoInicio = minutosDe(fila.desde) + corrimiento;
     if (suyoInicio >= fin || inicio >= suyoInicio + suyas * 60) continue;
     if (primera === null || suyoInicio < primera.inicio) {
-      primera = { inicio: suyoInicio, desde: fila.desde, hasta: fila.hasta };
+      primera = { inicio: suyoInicio, desde: fila.desde, hasta: fila.hasta, dia };
     }
   }
   return primera;
@@ -697,8 +707,9 @@ const primeraSuperpuesta = (horasExtras, fecha, inicio, horas, editadaId) => {
  *    sábado o un feriado;
  * 2. el horario, de a media hora (`horasDe`; si no, `horario`, en `desde`);
  * 3. la nota: recortada, de hasta 200 caracteres contados con Array.from (vacía, o lo que no es un texto, es null);
- * 4. que no se superponga con otras del mismo día (`primeraSuperpuesta`): `textoHorarioSuperpuesto` con la que empieza
- *    primero, en `desde`.
+ * 4. que no se superponga con otras del mismo día, con la del día anterior que pasa la medianoche ni, si esta la pasa, con
+ *    el comienzo de la del día siguiente (`primeraSuperpuesta`): `textoHorarioSuperpuesto` con la que empieza primero y su
+ *    día, en `desde`.
  * Sin un hoy válido no pasa ninguna fecha; una entrada o un contexto que no son objetos cuentan como `{}`. La modalidad y el
  * arranque los controla quien la llama.
  */
@@ -719,7 +730,7 @@ export const validarHorasExtras = (entrada, contexto) => {
   if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
 
   const otra = primeraSuperpuesta(esObjeto(estado) ? estado.horasExtras : [], fecha, minutosDe(desde), horas, editadaId);
-  if (otra !== null) return rechazo('desde', textoHorarioSuperpuesto(otra.desde, otra.hasta));
+  if (otra !== null) return rechazo('desde', textoHorarioSuperpuesto(otra.desde, otra.hasta, otra.dia));
 
   return { datos: { fecha, desde, hasta, nota: nota === '' ? null : nota }, error: null };
 };

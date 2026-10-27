@@ -132,6 +132,13 @@ describe('los textos', () => {
       'No te alcanzan los días habilitados: para el 15/06/2026 no te queda ninguno.');
     assert.equal(textoSinFranco('2027-02'), 'En febrero de 2027 no tenés francos para usar.');
     assert.equal(textoHorarioSuperpuesto('19:00', '22:00'), 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.');
+    assert.equal(textoHorarioSuperpuesto('22:00', '02:00', 'anterior'),
+      'Se superpone con las horas extras de 22:00 a 02:00 del día anterior.');
+    assert.equal(textoHorarioSuperpuesto('01:00', '03:00', 'siguiente'),
+      'Se superpone con las horas extras de 01:00 a 03:00 del día siguiente.');
+    // Otro valor es el mismo día
+    assert.equal(textoHorarioSuperpuesto('19:00', '22:00', 'x'), textoHorarioSuperpuesto('19:00', '22:00'));
+    assert.equal(textoHorarioSuperpuesto('19:00', '22:00', 'toString'), textoHorarioSuperpuesto('19:00', '22:00'));
     assert.equal(textoSaldo(30), 'Escribí un número de 0 a 30.');
     assert.equal(textoAutorizadaSinDias('2026-10-26', '2026-11-10'),
       'Sos la persona autorizada del firmante del 26/10/2026 al 10/11/2026, y con esta licencia no te quedaría ningún día '
@@ -833,6 +840,53 @@ describe('validarHorasExtras', () => {
     const estado = conHoras('planta', [extra(101, '2026-10-23', '20:00', '22:00'), extra(100, '2026-10-23', '18:00', '19:00')]);
     assert.deepEqual(errorDe(validar({ fecha: '2026-10-23', desde: '18:30', hasta: '21:00' }, { estado })),
       { campo: 'desde', mensaje: textoHorarioSuperpuesto('18:00', '19:00') });
+  });
+
+  // Decisión del usuario (27/10/2026): la hora de 01:00 a 02:00 no se cuenta dos veces
+  it('se superpone con la del día anterior que pasa la medianoche', () => {
+    const estado = conHoras('planta', [extra(100, '2026-10-26', '22:00', '02:00')]);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-27', desde: '01:00', hasta: '03:00' }, { estado })),
+      { campo: 'desde', mensaje: 'Se superpone con las horas extras de 22:00 a 02:00 del día anterior.' });
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-27', desde: '00:00', hasta: '00:30' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('22:00', '02:00', 'anterior') });
+    // El borde: la del día anterior termina a las 02:00 y esta empieza a las 02:00
+    assert.equal(errorDe(validar({ fecha: '2026-10-27', desde: '02:00', hasta: '03:00' }, { estado })), null);
+    // La que se corrige no cuenta (con el id como número o como texto)
+    assert.equal(errorDe(validar({ fecha: '2026-10-27', desde: '01:00', hasta: '03:00' }, { estado, editadaId: 100 })), null);
+    assert.equal(errorDe(validar({ fecha: '2026-10-27', desde: '01:00', hasta: '03:00' }, { estado, editadaId: '100' })),
+      null);
+    // Una del día anterior que no pasa la medianoche, o de dos días antes, no cuenta
+    const sinPasar = conHoras('planta', [extra(100, '2026-10-26', '20:00', '23:30'), extra(101, '2026-10-25', '22:00', '06:00')]);
+    assert.equal(errorDe(validar({ fecha: '2026-10-27', desde: '00:00', hasta: '03:00' }, { estado: sinPasar })), null);
+  });
+
+  it('una que pasa la medianoche se superpone con el comienzo de la del día siguiente', () => {
+    const estado = conHoras('planta', [extra(100, '2026-10-27', '01:00', '03:00')]);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-26', desde: '22:00', hasta: '02:00' }, { estado })),
+      { campo: 'desde', mensaje: 'Se superpone con las horas extras de 01:00 a 03:00 del día siguiente.' });
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-26', desde: '22:00', hasta: '02:00' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('01:00', '03:00', 'siguiente') });
+    // El borde: esta termina a las 02:00 y la del día siguiente empieza a las 02:00
+    const alBorde = conHoras('planta', [extra(100, '2026-10-27', '02:00', '03:00')]);
+    assert.equal(errorDe(validar({ fecha: '2026-10-26', desde: '22:00', hasta: '02:00' }, { estado: alBorde })), null);
+    // La que se corrige no cuenta
+    assert.equal(errorDe(validar({ fecha: '2026-10-26', desde: '22:00', hasta: '02:00' }, { estado, editadaId: 100 })), null);
+    // Sin pasar la medianoche, la del día siguiente no cuenta
+    assert.equal(errorDe(validar({ fecha: '2026-10-26', desde: '20:00', hasta: '23:30' }, { estado })), null);
+  });
+
+  it('entre el día anterior, el mismo día y el siguiente, la que empieza primero', () => {
+    const estado = conHoras('planta', [
+      extra(102, '2026-10-28', '00:00', '01:00'), extra(101, '2026-10-27', '01:30', '02:30'),
+      extra(100, '2026-10-26', '23:00', '02:00')
+    ]);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-27', desde: '01:00', hasta: '03:00' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('23:00', '02:00', 'anterior') });
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-27', desde: '22:00', hasta: '04:00' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('00:00', '01:00', 'siguiente') });
+    // Y la del mismo día gana a la del siguiente
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-27', desde: '02:00', hasta: '00:30' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('01:30', '02:30') });
   });
 
   it('el orden: la fecha, el horario, la nota y la superposición', () => {
@@ -1765,7 +1819,7 @@ describe('nada tira', () => {
         textoSinFranco(valor);
         textoSinHorasAFavor(valor, valor);
         textoSinNoUtilizadas(valor, valor, valor);
-        textoHorarioSuperpuesto(valor, valor);
+        textoHorarioSuperpuesto(valor, valor, valor);
         textoSaldo(valor);
         textoAutorizadaSinDias(valor, valor);
         textoSuperpuestaConConfiguracion(valor, valor);
