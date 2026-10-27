@@ -18,6 +18,7 @@ import {
   RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe
 } from '../services/miEspacioEventosReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
+import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import {
   calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
   DIAS_ESTUDIOS,
@@ -665,6 +666,46 @@ describe('el Resumen «Titular»', () => {
   });
 });
 
+// spec 2026-10-27-mi-espacio-licencia-word, 6: el nombre del Word lo da el Content-Disposition de GET …/word
+describe('nombreDelAdjunto: el nombre del archivo del Content-Disposition', () => {
+  const CON_TILDES = 'Nota de licencia - Atención médica - 2026-11-05.docx';
+
+  it('el filename* en UTF-8, decodificado: con sus tildes', () => {
+    assert.equal(M.nombreDelAdjunto('attachment; filename="Nota de licencia - Atencion medica - 2026-11-05.docx"; '
+      + "filename*=UTF-8''Nota%20de%20licencia%20-%20Atenci%C3%B3n%20m%C3%A9dica%20-%202026-11-05.docx"), CON_TILDES);
+    // El charset sin distinguir mayúsculas, y el filename* solo
+    assert.equal(M.nombreDelAdjunto("attachment; filename*=utf-8''a%C3%B1o.docx"), 'año.docx');
+  });
+
+  it('el que arma el servidor (disposicionDeAdjunto) vuelve tal cual: tildes, apóstrofos, paréntesis, comillas y emojis', () => {
+    for (const nombre of [CON_TILDES, "Nota de licencia - Franco compensatorio (octubre) - 2026-12-14.docx",
+      'Lo de \'aquí\' y "allá" con \\barra*.docx', 'Nota 😀 ñandú.docx']) {
+      assert.equal(M.nombreDelAdjunto(disposicionDeAdjunto(nombre)), nombre, nombre);
+    }
+  });
+
+  it('sin filename*, el filename entre comillas', () => {
+    assert.equal(M.nombreDelAdjunto('attachment; filename="a.docx"'), 'a.docx');
+    assert.equal(M.nombreDelAdjunto('attachment;filename="Nota de licencia.docx"'), 'Nota de licencia.docx');
+  });
+
+  it('sin nombre: null', () => {
+    for (const vacio of [null, undefined, '', 'attachment', 'attachment; filename=""', "attachment; filename*=UTF-8''", 42]) {
+      assert.equal(M.nombreDelAdjunto(vacio), null, String(vacio));
+    }
+  });
+
+  it('un filename* con un % roto: el filename, o null, sin tirar', () => {
+    assert.equal(M.nombreDelAdjunto("attachment; filename=\"a.docx\"; filename*=UTF-8''a%E9%.docx"), 'a.docx');
+    assert.equal(M.nombreDelAdjunto("attachment; filename*=UTF-8''%E0%A4%A"), null);
+  });
+
+  it('el nombre de reserva y el mensaje de una descarga que falló', () => {
+    assert.equal(M.NOMBRE_DEL_WORD_POR_DEFECTO, 'Nota de licencia.docx');
+    assert.equal(M.MENSAJE_SIN_DESCARGA, 'No se pudo descargar la nota. Probá de nuevo en unos minutos.');
+  });
+});
+
 describe('la lista de licencias', () => {
   const datos = licenciasDe(PLANTA);
   const html = M.htmlDeListaDeLicencias(datos, 'todas');
@@ -713,6 +754,48 @@ describe('la lista de licencias', () => {
     assert.ok(editar.every(({ texto }) => texto === 'Editar'));
     assert.equal(editar[0].atributos['aria-label'], 'Editar la licencia del 03/11 al 09/11/2026');
     assert.equal(editar[1].atributos['aria-label'], 'Editar la licencia del Vie 23/10/2026');
+  });
+
+  // spec 2026-10-27-mi-espacio-licencia-word, 6: «Word» al lado de «Editar», en un grupo a la derecha de la fila
+  it('«Word» antes de «Editar», en el grupo de acciones que cierra la fila: su id y el aria-label con sus fechas', () => {
+    const conLaSiete = licenciasDe(PLANTA, { estado: conLicencias(PLANTA.estado, licencia(7, 'vacaciones', '2026-11-16', '2026-11-27')) });
+    assert.equal(conLaSiete.licencias[0].id, 7);
+    const fila = M.htmlDeFilaDeLicencia(conLaSiete.licencias[0]);
+    const acciones = fila.match(/<span class="me-fila-acciones">([\s\S]*?)<\/span><\/li>$/);
+    assert.ok(acciones, 'el grupo de acciones cierra la fila');
+    assert.deepEqual(botonesDe(acciones[1]).map(({ atributos, texto }) => [texto, atributos]), [
+      ['Word', { type: 'button', class: 'sg-link', 'data-word-licencia': '7',
+        'aria-label': 'Descargar en Word la nota de la licencia del 16/11 al 27/11/2026' }],
+      ['Editar', { type: 'button', class: 'sg-link', 'data-editar-licencia': '7', 'aria-label': 'Editar la licencia del 16/11 al 27/11/2026' }]
+    ]);
+    // Todas las de la lista, también las que ya pasaron y las que van en gris
+    const word = botonesDe(html).filter(({ atributos }) => atributos['data-word-licencia']);
+    assert.deepEqual(word.map(({ atributos }) => atributos['data-word-licencia']), ['6', '5', '4', '3', '2', '1']);
+    assert.equal(word[1].atributos['aria-label'], 'Descargar en Word la nota de la licencia del Vie 23/10/2026');
+    // El saldo inicial sigue con su «Cambiar» suelto
+    assert.doesNotMatch(filasDe(html).at(-1).html, /data-word-licencia|me-fila-acciones/);
+  });
+
+  it('el uso autorizado no lleva «Word»: solo «Editar», en su grupo', () => {
+    const conUso = licenciasDe(CONTRATO, { estado: conLicencias(CONTRATO.estado, licencia(8, 'uso_autorizado', '2026-11-30', '2026-11-30', 3)) });
+    const uso = conUso.licencias.find((fila) => fila.tipo === 'uso_autorizado');
+    const fila = M.htmlDeFilaDeLicencia(uso);
+    assert.doesNotMatch(fila, /data-word-licencia/);
+    assert.ok(fila.endsWith('<span class="me-fila-acciones"><button type="button" class="sg-link" data-editar-licencia="8" '
+      + 'aria-label="Editar la licencia del Lun 30/11/2026">Editar</button></span></li>'));
+    // Las demás licencias de la misma lista sí lo llevan
+    const lista = M.htmlDeListaDeLicencias(conUso, 'todas');
+    assert.deepEqual(botonesDe(lista).filter(({ atributos }) => atributos['data-word-licencia']).map(({ atributos }) => atributos['data-word-licencia']),
+      conUso.licencias.filter((una) => una.tipo !== 'uso_autorizado').map((una) => String(una.id)));
+  });
+
+  it('«Word»: un id y unas fechas con HTML o comillas no salen de su atributo', () => {
+    const fila = M.htmlDeFilaDeLicencia({ ...datos.licencias[0], id: CON_COMILLAS, fechas_texto: MALICIOSO });
+    assert.ok(!fila.includes('<img'));
+    const [word] = botonesDe(fila);
+    assert.deepEqual(Object.keys(word.atributos), ['type', 'class', 'data-word-licencia', 'aria-label']);
+    assert.equal(word.atributos['data-word-licencia'], CON_COMILLAS_ESCAPADO);
+    assert.equal(word.atributos['aria-label'], `Descargar en Word la nota de la licencia del ${ESCAPADO}`);
   });
 
   it('«Próxima» solo en la de noviembre, que dice de qué licencia salen y que los compañeros ven que no está', () => {
@@ -806,7 +889,9 @@ describe('la lista de licencias', () => {
     assert.ok(fila.html.includes(`<span class="me-detalle me-fila-nota">${ESCAPADO}</span>`), 'la nota');
     assert.ok(fila.html.includes(`No pasó a Configuración: ${ESCAPADO}`), 'el motivo');
     assert.ok(fila.html.includes(`aria-label="Editar la licencia del ${ESCAPADO}"`), 'el aria-label');
-    assert.equal(botonesDe(fila.html)[0].atributos['aria-label'], `Editar la licencia del ${ESCAPADO}`);
+    // «Word» va antes que «Editar» (spec 2026-10-27-mi-espacio-licencia-word, 6)
+    assert.deepEqual(botonesDe(fila.html).map(({ atributos }) => atributos['aria-label']),
+      [`Descargar en Word la nota de la licencia del ${ESCAPADO}`, `Editar la licencia del ${ESCAPADO}`]);
   });
 
   it('un saldo inicial y unos filtros con HTML se ven escapados', () => {
@@ -1397,6 +1482,8 @@ const crearDom = () => {
   const raiz = elemento('#document');
   const documento = {
     get activeElement() { return dom.activo?.isConnected ? dom.activo : null; },
+    // Un elemento suelto, fuera del árbol (el <a download> de descargarBlob)
+    createElement: (etiqueta) => elemento(etiqueta),
     getElementById: (id) => raiz.querySelector(`#${id}`),
     querySelector: (selector) => raiz.querySelector(selector),
     querySelectorAll: (selector) => raiz.querySelectorAll(selector),
@@ -1411,6 +1498,15 @@ const crearDom = () => {
 // Una respuesta del fetch falso
 const respuesta = (status, body) => ({ status, body });
 const ok = (data, message) => respuesta(200, { success: true, data, ...(message ? { message } : {}) });
+// Un archivo del fetch falso (el Word de una licencia): el Blob y sus encabezados, en minúsculas (sin `disposicion`, sin
+// Content-Disposition)
+const archivo = (blob, disposicion) => ({
+  status: 200, body: undefined, blob, headers: disposicion === undefined ? {} : { 'content-disposition': disposicion }
+});
+// El Blob del navegador, falso: guarda sus partes y su tipo
+class BlobFalso {
+  constructor(partes = [], opciones = {}) { this.partes = partes; this.type = opciones.type ?? ''; }
+}
 // El Resumen de la persona de planta, el de verdad (resumenDe), con un compañero que no está
 const RESUMEN_DE_PLANTA = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_MARTIN] });
 // Lo que contesta el servidor falso, de entrada (la persona de planta)
@@ -1428,10 +1524,18 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 // (prefers-reduced-motion: reduce); sin él, no hay matchMedia. Los temporizadores no corren solos: `correr` corre los que hay (el
 // foco de los modales y la espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo
 // pregunta solo al abrir el formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el
-// de main.js), [mensaje, tipo]
+// de main.js), [mensaje, tipo]. Cada pedido anota sus encabezados (`encabezados`). Las descargas: `estado.urls`, cada
+// URL.createObjectURL (['crear', blob]) y revokeObjectURL (['soltar', url]), y `estado.descargas`, cada clic en un elemento creado
+// con document.createElement (el <a download> de descargarBlob): { etiqueta, href, download }
 const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, auditor = false, admin = false } = {}) => {
   const { dom, documento } = crearDom();
-  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [] };
+  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [], urls: [], descargas: [] };
+  const crearElemento = documento.createElement;
+  documento.createElement = (etiqueta) => {
+    const nuevo = crearElemento(etiqueta);
+    nuevo.click = () => { estado.descargas.push({ etiqueta: nuevo.tagName, href: nuevo.href, download: nuevo.download }); };
+    return nuevo;
+  };
   // Los temporizadores pendientes, por su id: un número que solo crece (un clearTimeout viejo nunca anula uno nuevo)
   const temporizadores = new Map();
   let ultimoTemporizador = 0;
@@ -1462,6 +1566,14 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
     },
     showToast: (mensaje, tipo) => { estado.toasts.push([mensaje, tipo]); },
     URLSearchParams,
+    Blob: BlobFalso,
+    URL: {
+      createObjectURL: (blob) => {
+        estado.urls.push(['crear', blob]);
+        return `blob:falso/${String(estado.urls.filter(([accion]) => accion === 'crear').length)}`;
+      },
+      revokeObjectURL: (url) => { estado.urls.push(['soltar', url]); }
+    },
     setTimeout: (funcion, ms) => {
       ultimoTemporizador += 1;
       temporizadores.set(ultimoTemporizador, { funcion, ms });
@@ -1471,9 +1583,12 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
     fetch: async (url, opciones = {}) => {
       const metodo = opciones.method ?? 'GET';
       const cuerpo = opciones.body === undefined ? undefined : JSON.parse(opciones.body);
-      estado.pedidos.push({ metodo, ruta: url, cuerpo });
+      estado.pedidos.push({ metodo, ruta: url, cuerpo, encabezados: opciones.headers });
       const r = await estado.responder(metodo, url, cuerpo);
-      return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+      return {
+        ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body,
+        headers: { get: (nombre) => r.headers?.[String(nombre).toLowerCase()] ?? null }, blob: async () => r.blob
+      };
     }
   });
   vm.runInContext(`${leer('js/api.js')}\n;globalThis.Utils = Utils;`, contexto);
@@ -4601,5 +4716,115 @@ describe('el foco después de guardar un evento (DOM falso)', () => {
     pagina.el('ag-mes').querySelector('[data-evento="12"]').focus = () => {};
     pagina.contexto.devolverElFoco(respaldo);
     assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos-titulo'));
+  });
+});
+
+// spec 2026-10-27-mi-espacio-licencia-word, 6: «Word» en la lista baja el Word con un fetch propio (el token en el encabezado) y
+// descargarBlob, con el nombre del Content-Disposition
+describe('«Word» en la lista de licencias (DOM falso)', () => {
+  const DISPOSICION = 'attachment; filename="Nota de licencia - Atencion medica - 2026-11-05.docx"; '
+    + "filename*=UTF-8''Nota%20de%20licencia%20-%20Atenci%C3%B3n%20m%C3%A9dica%20-%202026-11-05.docx";
+  const CON_LA_SIETE = licenciasDe(PLANTA, { estado: conLicencias(PLANTA.estado, licencia(7, 'vacaciones', '2026-11-16', '2026-11-27')) });
+  const RUTA_DEL_WORD = '/api/mi-espacio/licencias/7/word';
+  // Lo que contesta el servidor falso con la licencia 7 en la lista; `word`, lo que contesta GET …/7/word (una función: puede
+  // devolver una promesa que el test resuelve después)
+  const conElWord = (word) => (metodo, ruta) => {
+    if (metodo === 'GET' && ruta === '/api/mi-espacio/licencias') return ok(CON_LA_SIETE);
+    if (metodo === 'GET' && ruta === RUTA_DEL_WORD) return word();
+    return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+  };
+  const botonWord = (pagina) => pagina.el('vista-licencias').querySelector('[data-word-licencia="7"]');
+  // Monta la página en Licencias y toca «Word» de la licencia 7
+  const tocarWord = async (word) => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conElWord(word) });
+    await pagina.iniciar();
+    const toastsAntes = pagina.estado.toasts.length;
+    await pagina.tocar(botonWord(pagina));
+    return { pagina, toasts: () => pagina.estado.toasts.slice(toastsAntes) };
+  };
+
+  it('pide GET …/7/word con el token en el encabezado, deshabilita el botón mientras baja y lo baja con el nombre con tildes', async () => {
+    let soltar = null;
+    const pagina = montarPagina({ hash: '#licencias', responder: conElWord(() => new Promise((resolver) => { soltar = resolver; })) });
+    await pagina.iniciar();
+    const boton = botonWord(pagina);
+    boton.focus();
+    await pagina.tocar(boton);
+    const pedidos = pagina.pedidosA('GET', RUTA_DEL_WORD);
+    assert.equal(pedidos.length, 1);
+    assert.equal(pedidos[0].encabezados.Authorization, 'Bearer token-de-prueba');
+    assert.equal(pedidos[0].cuerpo, undefined);
+    assert.equal(boton.disabled, true);
+    assert.deepEqual(pagina.estado.descargas, []);
+
+    // Un segundo clic mientras baja no pide nada
+    await pagina.tocar(boton);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_WORD).length, 1);
+
+    const blob = new BlobFalso(['el .docx'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    soltar(archivo(blob, DISPOSICION));
+    await pagina.esperar();
+    assert.equal(boton.disabled, false);
+    assert.equal(pagina.documento.activeElement, boton);
+    assert.deepEqual(pagina.estado.urls, [['crear', blob]]);
+    assert.deepEqual(pagina.estado.descargas,
+      [{ etiqueta: 'a', href: 'blob:falso/1', download: 'Nota de licencia - Atención médica - 2026-11-05.docx' }]);
+    // La URL se suelta después (un temporizador)
+    await pagina.correr();
+    assert.deepEqual(pagina.estado.urls.at(-1), ['soltar', 'blob:falso/1']);
+    assert.equal(pagina.estado.sesionCerrada, false);
+    // Nada que avisar: el nombre de la lista no cambia y no hay aviso
+    assert.ok(!pagina.estado.toasts.some(([, tipo]) => tipo === 'error'));
+  });
+
+  it('sin Content-Disposition, «Nota de licencia.docx»', async () => {
+    const { pagina } = await tocarWord(() => archivo(new BlobFalso(['x'])));
+    assert.deepEqual(pagina.estado.descargas.map(({ download }) => download), ['Nota de licencia.docx']);
+  });
+
+  it('con un 401, al login, sin bajar nada ni avisar', async () => {
+    const { pagina, toasts } = await tocarWord(() => respuesta(401, { success: false, error: 'Token expirado' }));
+    assert.equal(pagina.estado.sesionCerrada, true);
+    assert.equal(pagina.ventana.location.href, 'login.html');
+    assert.deepEqual(pagina.estado.descargas, []);
+    assert.deepEqual(toasts(), []);
+  });
+
+  it('un 409 avisa su mensaje (escapado en el aviso, tal cual en #me-anuncio) y el botón vuelve a andar', async () => {
+    const mensaje = 'Entre esas fechas ya no hay ningún día hábil: corregí la licencia para bajar la nota.';
+    const { pagina, toasts } = await tocarWord(() => respuesta(409, { success: false, error: mensaje }));
+    assert.deepEqual(toasts(), [[mensaje, 'error']]);
+    assert.equal(pagina.el('me-anuncio').textContent, mensaje);
+    assert.equal(botonWord(pagina).disabled, false);
+    assert.deepEqual(pagina.estado.descargas, []);
+    assert.equal(pagina.estado.sesionCerrada, false);
+
+    const conHtml = await tocarWord(() => respuesta(404, { success: false, error: MALICIOSO }));
+    assert.deepEqual(conHtml.toasts(), [[ESCAPADO, 'error']]);
+  });
+
+  it('un error sin mensaje, una respuesta que no es JSON o un pedido que no llega: el mensaje de la página', async () => {
+    const fallas = [
+      () => respuesta(500, { success: false }),
+      () => respuesta(500, undefined),
+      () => respuesta(502, { success: false, error: '' }),
+      () => { throw new TypeError('Failed to fetch'); }
+    ];
+    for (const falla of fallas) {
+      const { pagina, toasts } = await tocarWord(falla);
+      assert.deepEqual(toasts(), [[M.MENSAJE_SIN_DESCARGA, 'error']], String(falla));
+      assert.equal(botonWord(pagina).disabled, false);
+      assert.deepEqual(pagina.estado.descargas, []);
+    }
+  });
+
+  it('bajarWordDeLicencia también anda con un botón fuera de la lista (el del segundo paso)', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conElWord(() => archivo(new BlobFalso(['x']), DISPOSICION)) });
+    await pagina.iniciar();
+    const boton = pagina.documento.createElement('button');
+    await pagina.contexto.bajarWordDeLicencia(7, boton);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_WORD).length, 1);
+    assert.equal(boton.disabled, false);
+    assert.deepEqual(pagina.estado.descargas.map(({ download }) => download), ['Nota de licencia - Atención médica - 2026-11-05.docx']);
   });
 });

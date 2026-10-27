@@ -81,9 +81,9 @@ const VERSION_PROYECTOS = '20261206';
 // mi-espacio.js (la página nueva de Mi espacio, con las pestañas Resumen, Licencias y Horas extras, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
 // entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
-// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; y el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6). Su versión
-// es propia
-const VERSION_MI_ESPACIO = '20261211';
+// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
+// cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6). Su versión es propia
+const VERSION_MI_ESPACIO = '20261212';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

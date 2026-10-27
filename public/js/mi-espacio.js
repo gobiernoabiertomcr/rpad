@@ -13,7 +13,10 @@
  *   y la médica extraordinaria); y «Hoy y mañana» en columnas (los eventos de hoy y de mañana, quién no está —solo para
  *   administración— y el próximo feriado). La pestaña lleva una marca ámbar si algo vence pronto.
  * - Licencias: la lista del año, con el selector del año y los filtros por tipo (con su cantidad); al final, el saldo inicial con
- *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo.
+ *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo. Cada
+ *   licencia, menos el uso autorizado, tiene «Word» al lado de «Editar» (spec 2026-10-27-mi-espacio-licencia-word, 6): la nota de
+ *   licencia, de GET /mi-espacio/licencias/:id/word con un fetch propio (el token en el encabezado; API.pedirArchivo no da los
+ *   encabezados), con el nombre del Content-Disposition (nombreDelAdjunto) y bajada con descargarBlob (bajarWordDeLicencia).
  * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
  *   la tabla es un botón; de entrada, el en curso) y, en contrato, las horas no utilizadas previamente.
  * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
@@ -70,6 +73,11 @@ const CLASE_DEL_TIPO = Object.freeze({
 // usado. Lo que ya no se usa (no genera franco, no utilizado previamente, ya está en el saldo inicial) va en gris, sin insignia
 const CLASE_DE_LA_SITUACION = Object.freeze({ sumando: 'gris', proximo: 'azul', en_uso: 'ambar', usados: 'verde', usadas: 'verde' });
 const SITUACIONES_EN_GRIS = Object.freeze(['sin_franco', 'no_utilizado', 'no_utilizadas', 'antes_del_arranque']);
+
+// La nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6): el nombre del archivo si la respuesta no trae
+// Content-Disposition, y lo que se dice si la descarga falla sin un mensaje del servidor
+const NOMBRE_DEL_WORD_POR_DEFECTO = 'Nota de licencia.docx';
+const MENSAJE_SIN_DESCARGA = 'No se pudo descargar la nota. Probá de nuevo en unos minutos.';
 
 const NOTA_DE_LAS_LICENCIAS = 'Los días se cuentan hábiles: sin sábados, domingos ni feriados.';
 const NOTA_DE_LOS_FRANCOS = 'Solo las horas extras al 100%. Cada 7 horas de un mes dan un franco compensatorio, que se usa dos meses '
@@ -407,7 +415,7 @@ function htmlDeFiltrosDeLicencias(filtros, elegido) {
 
 // Una licencia: las fechas con lo que suman, la insignia del tipo, «Próxima» si no empezó, por qué no cuenta (en gris), de qué
 // licencia salen las vacaciones, cómo está en Configuración (en ámbar si hay algo para revisar), si la ven los compañeros, la nota
-// y «Editar»
+// y, a la derecha, «Word» (la nota de licencia; todas menos el uso autorizado, también las que ya pasaron) y «Editar»
 function htmlDeFilaDeLicencia(fila) {
   const gris = conTexto(fila.no_cuenta_texto);
   const cantidad = conTexto(fila.cantidad_texto) ? `<small>${esc(fila.cantidad_texto)}</small>` : '';
@@ -421,10 +429,33 @@ function htmlDeFilaDeLicencia(fila) {
   }
   detalle(fila.mostrar_texto);
   detalle(fila.nota, 'me-detalle me-fila-nota');
+  const word = fila.tipo === 'uso_autorizado' ? ''
+    : `<button type="button" class="sg-link" data-word-licencia="${esc(fila.id)}" `
+      + `aria-label="Descargar en Word la nota de la licencia del ${esc(fila.fechas_texto)}">Word</button>`;
   return `<li class="me-fila${gris ? ' tenue' : ''}"><span class="me-fila-fecha">${esc(fila.fechas_texto)}${cantidad}</span>`
     + `<span class="me-fila-cuerpo">${partes.join('')}</span>`
+    + `<span class="me-fila-acciones">${word}`
     + `<button type="button" class="sg-link" data-editar-licencia="${esc(fila.id)}" aria-label="Editar la licencia del ${esc(fila.fechas_texto)}">`
-    + 'Editar</button></li>';
+    + 'Editar</button></span></li>';
+}
+
+/**
+ * El nombre del archivo de un Content-Disposition (el que arma disposicionDeAdjunto de services/seguimientoReglas.js): el
+ * `filename*` en UTF-8 (RFC 5987), decodificado; si no hay, o no se puede decodificar (un % roto), el `filename` entre comillas;
+ * si no, null. Nunca tira
+ */
+function nombreDelAdjunto(cabecera) {
+  if (!conTexto(cabecera)) return null;
+  const extendido = /(?:^|;)\s*filename\*\s*=\s*([^;]*)/i.exec(cabecera)?.[1].trim() ?? '';
+  const enUtf8 = /^utf-8'[^']*'(.*)$/i.exec(extendido)?.[1] ?? '';
+  try {
+    const decodificado = decodeURIComponent(enUtf8);
+    if (decodificado !== '') return decodificado;
+  } catch {
+    // Un % roto: sigue con el filename
+  }
+  const comun = /(?:^|;)\s*filename\s*=\s*"((?:[^"\\]|\\.)*)"/i.exec(cabecera)?.[1].replace(/\\(.)/g, '$1') ?? '';
+  return comun === '' ? null : comun;
 }
 
 // El saldo inicial, al final de la lista del año del arranque
@@ -1815,12 +1846,73 @@ function pintarLicencias() {
   porId('vista-licencias').innerHTML = htmlDeListaDeLicencias(pagina.licencias, pagina.filtro);
 }
 
-// Un clic en la pestaña: «Cargar licencia», «Editar» de una fila, «Cambiar» el saldo inicial, un año del selector (el elegido no
-// pide nada) o un filtro (dibuja sin pedir nada)
+// ---- La nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6) ----
+
+// Descarga un Blob con ese nombre de archivo y libera su URL (copiado de correos.js)
+const descargarBlob = (blob, nombre) => {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// El Word de una licencia (GET /mi-espacio/licencias/:id/word), con el token en el encabezado: `{ blob, nombre }`, con el nombre
+// del Content-Disposition (null si no viene). Es local, como pedirWord de notas.js, porque API.pedirArchivo no da el estado ni los
+// encabezados (api.js no cambia). Si el servidor responde un error, tira un Error con su `status` (401: la sesión venció) y su
+// mensaje ('' si no trae uno)
+async function pedirWordDeLicencia(id) {
+  const response = await fetch(`${CONFIG.API_URL}/mi-espacio/licencias/${encodeURIComponent(id)}/word`, {
+    method: 'GET',
+    headers: Auth.getAuthHeaders()
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    const error = new Error(esObjeto(data) && conTexto(data.error) ? data.error : '');
+    error.status = response.status;
+    throw error;
+  }
+  return { blob: await response.blob(), nombre: nombreDelAdjunto(response.headers?.get?.('content-disposition') ?? null) };
+}
+
+/**
+ * «Word» de una fila de la lista (y «Descargar Word» del segundo paso del modal): baja la nota de la licencia `id` con el nombre que
+ * da el servidor (o NOMBRE_DEL_WORD_POR_DEFECTO). Mientras baja, `boton` queda deshabilitado (un segundo clic no pide nada) y, si
+ * tenía el foco, lo recupera al terminar (deshabilitado, lo suelta). Con un 401, al login; con otro error, el aviso con el mensaje
+ * del servidor (el 409 de una licencia sin días hábiles) o, sin mensaje (o sin respuesta), MENSAJE_SIN_DESCARGA
+ */
+async function bajarWordDeLicencia(id, boton) {
+  if (boton?.disabled) return;
+  const teniaElFoco = Boolean(boton) && document.activeElement === boton;
+  if (boton) boton.disabled = true;
+  let falla = null;
+  try {
+    const { blob, nombre } = await pedirWordDeLicencia(id);
+    descargarBlob(blob, conTexto(nombre) ? nombre : NOMBRE_DEL_WORD_POR_DEFECTO);
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (boton) boton.disabled = false;
+  if (falla?.status === 401) {
+    irAlLogin();
+    return;
+  }
+  if (teniaElFoco) boton.focus?.();
+  if (falla) avisarMiEspacio(Number.isInteger(falla.status) && conTexto(falla.message) ? falla.message : MENSAJE_SIN_DESCARGA, 'error');
+}
+
+// Un clic en la pestaña: «Cargar licencia», «Word» o «Editar» de una fila, «Cambiar» el saldo inicial, un año del selector (el
+// elegido no pide nada) o un filtro (dibuja sin pedir nada)
 async function alTocarLicencias(evento) {
   const objetivo = evento.target;
   if (objetivo?.closest?.('[data-cargar="licencia"]')) {
     abrirLicencia({ volverA: objetivo.closest('[data-cargar="licencia"]') });
+    return;
+  }
+  const word = objetivo?.closest?.('[data-word-licencia]');
+  if (word) {
+    await bajarWordDeLicencia(word.dataset.wordLicencia, word);
     return;
   }
   const editar = objetivo?.closest?.('[data-editar-licencia]');
