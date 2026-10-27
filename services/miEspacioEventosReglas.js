@@ -1,5 +1,5 @@
 /**
- * La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, secciones 1, 5 y 7): las reglas de los eventos, puras (sin
+ * La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, secciones 1, 2, 5 y 7): las reglas de los eventos, puras (sin
  * pool ni Date local: las fechas son texto 'AAAA-MM-DD' y las horas 'HH:MM', y hoy y ahora llegan por parámetro,
  * `hoyArgentina()` y `ahoraArgentina()` en el servidor). Un momento es 'AAAA-MM-DD HH:MM' y se compara como texto (de
  * `ahoraArgentina()`, que trae los segundos, cuentan los 16 primeros caracteres). Ninguna función tira error: una entrada
@@ -9,7 +9,9 @@
  * los de la corrida de los recordatorios (la ventana, el candado y los atrasados). Después, la validación de un evento
  * (`validarEvento`), el momento en que sale su recordatorio, con los feriados (`momentoDelAviso`: nunca en un día que no es
  * hábil), los textos de cuándo es un evento y cuándo sale su aviso, y quién recibe qué: los recordatorios de una corrida
- * (`recordatoriosQueTocan`, con los atrasados) y los emails de un guardado (`emailsDelGuardado` y `cambioQueAvisa`). Los
+ * (`recordatoriosQueTocan`, con los atrasados) y los emails de un guardado (`emailsDelGuardado` y `cambioQueAvisa`). Al
+ * final, lo que dice la API: el pedido de cuándo sale un aviso (`validarAvisoDelEvento`), las personas de un guardado
+ * (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento como lo ve quien lo pide (`itemDeEvento`). Los
  * textos son planos: escaparlos le toca a quien los dibuja.
  *
  * La usan la API de los eventos, sus emails, la corrida de los recordatorios y Correos → Estado. La página
@@ -117,6 +119,21 @@ export const textoRangoEvento = (hasta) => textoRango(FECHA_MINIMA_EVENTO, hasta
 
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
 
+// Cuándo empieza (los pasos 2 y 3 de validarEvento): el rechazo de la fecha o de la hora de inicio, o null si las dos sirven
+const rechazoDelInicio = ({ fecha, desde }, hoy) => {
+  const maxima = fechaMaximaEvento(hoy);
+  if (!esFechaIso(fecha) || maxima === null || fecha < FECHA_MINIMA_EVENTO || fecha > maxima) {
+    return rechazo('fecha', textoRangoEvento(maxima));
+  }
+  return esHora(desde) ? null : rechazo('desde', MENSAJES_EVENTO.desde);
+};
+
+// El recordatorio pedido (el paso 7 de validarEvento): sin él (o null), el de entrada; fuera de RECORDATORIOS, null
+const recordatorioPedido = (valor) => {
+  const recordatorio = valor ?? RECORDATORIO_POR_DEFECTO;
+  return esRecordatorio(recordatorio) ? recordatorio : null;
+};
+
 /**
  * Valida un evento, el cuerpo de un alta o de un cambio (el formulario entero), contra hoy ('AAAA-MM-DD'). Devuelve
  * `{ datos, error }`: `error` es null, o `{ campo, mensaje }` del primero que no sirve, y entonces `datos` es null; si no,
@@ -144,12 +161,8 @@ export const validarEvento = (entrada, hoy) => {
   if (caracteres(titulo) > LARGO_TITULO_EVENTO) return rechazo('titulo', MENSAJES_EVENTO.tituloLargo);
 
   const { fecha, desde } = fuente;
-  const maxima = fechaMaximaEvento(hoy);
-  if (!esFechaIso(fecha) || maxima === null || fecha < FECHA_MINIMA_EVENTO || fecha > maxima) {
-    return rechazo('fecha', textoRangoEvento(maxima));
-  }
-
-  if (!esHora(desde)) return rechazo('desde', MENSAJES_EVENTO.desde);
+  const delInicio = rechazoDelInicio(fuente, hoy);
+  if (delInicio !== null) return delInicio;
 
   const hasta = SIN_HASTA.includes(fuente.hasta) ? null : fuente.hasta;
   if (hasta !== null && (!esHora(hasta) || hasta <= desde)) return rechazo('hasta', MENSAJES_EVENTO.hasta);
@@ -169,8 +182,8 @@ export const validarEvento = (entrada, hoy) => {
     if (personas === null) return rechazo('personas', MENSAJES_EVENTO.personasInvalidas);
   }
 
-  const recordatorio = fuente.recordatorio ?? RECORDATORIO_POR_DEFECTO;
-  if (!esRecordatorio(recordatorio)) return rechazo('recordatorio', MENSAJES_EVENTO.recordatorio);
+  const recordatorio = recordatorioPedido(fuente.recordatorio);
+  if (recordatorio === null) return rechazo('recordatorio', MENSAJES_EVENTO.recordatorio);
 
   return {
     datos: {
@@ -179,6 +192,21 @@ export const validarEvento = (entrada, hoy) => {
     },
     error: null
   };
+};
+
+/**
+ * Valida el pedido de cuándo saldría el recordatorio (`GET /api/mi-espacio/eventos/aviso`, el texto del formulario): solo la
+ * fecha, la hora de inicio y el recordatorio, con los controles y los mensajes de validarEvento, en su orden (la fecha, la
+ * hora y el recordatorio; sin él, o null, '2h'). Devuelve `{ datos: { fecha, desde, recordatorio }, error }`, como
+ * validarEvento. Una entrada que no es un objeto cuenta como `{}`.
+ */
+export const validarAvisoDelEvento = (entrada, hoy) => {
+  const fuente = esObjeto(entrada) ? entrada : {};
+  const delInicio = rechazoDelInicio(fuente, hoy);
+  if (delInicio !== null) return delInicio;
+  const recordatorio = recordatorioPedido(fuente.recordatorio);
+  if (recordatorio === null) return rechazo('recordatorio', MENSAJES_EVENTO.recordatorio);
+  return { datos: { fecha: fuente.fecha, desde: fuente.desde, recordatorio }, error: null };
 };
 
 /**
@@ -451,4 +479,112 @@ export const emailsDelGuardado = (entrada) => {
     cambio: cambioQueAvisa(anterior, nuevo) ? estan.filter((id) => yaEstaban.has(id)) : [],
     cancelacion: []
   };
+};
+
+// Lo que dice la API de los eventos (spec, secciones 2 y 7): las personas de un guardado, cuándo sale un aviso y cada evento
+// como lo ve quien lo pide
+
+/**
+ * Las personas de un evento compartido sin «Todos», al guardarlo (las de `validarEvento`, ya ids sin repetidos), contra las
+ * que se pueden elegir (`permitidas`: una lista o un Set de ids, las de `personasParaCompartir` más las que ya estaban en el
+ * evento). Devuelve `{ personas, error }`: el id de quien lo guarda (`usuarioId`) se saca sin error; si no queda ninguna
+ * (también sin una lista), el error `personas`; si alguna no es un id o no está entre las permitidas, `personasInvalidas`
+ * (los dos en `personas`). Si no, `personas` son las que quedan, en su orden, y `error` es null.
+ */
+export const personasDelPedido = (pedidas, { usuarioId, permitidas } = {}) => {
+  const yo = idPositivo(usuarioId);
+  const ids = listaDe(pedidas).map(idPositivo);
+  const sinMi = [...new Set(ids)].filter((id) => id !== yo);
+  const invalidas = { personas: null, error: { campo: 'personas', mensaje: MENSAJES_EVENTO.personasInvalidas } };
+  if (ids.includes(null)) return invalidas;
+  if (sinMi.length === 0) return { personas: null, error: { campo: 'personas', mensaje: MENSAJES_EVENTO.personas } };
+  const validas = permitidas instanceof Set ? permitidas : new Set(listaDe(permitidas).map(idPositivo));
+  return sinMi.every((id) => validas.has(id)) ? { personas: sinMi, error: null } : invalidas;
+};
+
+/**
+ * Cuándo sale el recordatorio de un evento (`{ fecha, desde, recordatorio }`), con el contexto `{ ahora, feriados }` de
+ * textoDelAviso: `{ momento, texto, corto }` (`momento`, el de momentoDelAviso, o null; `texto`, el de textoDelAviso; `corto`,
+ * el de AVISO_CORTO). Con un recordatorio que no es de la lista, momento null y los textos vacíos.
+ */
+export const avisoDe = (evento, contexto) => {
+  const { fecha, desde, recordatorio } = esObjeto(evento) ? evento : {};
+  const { feriados } = esObjeto(contexto) ? contexto : {};
+  return {
+    momento: momentoDelAviso({ fecha, desde, recordatorio }, feriados),
+    texto: textoDelAviso({ fecha, desde, recordatorio }, contexto),
+    corto: esRecordatorio(recordatorio) ? AVISO_CORTO[recordatorio] : ''
+  };
+};
+
+// «Con 1 persona», «Con 4 personas»
+const conPersonas = (cantidad) => `Con ${cantidad} ${cantidad === 1 ? 'persona' : 'personas'}`;
+
+/**
+ * Un evento como lo ve quien lo pide (`GET /api/mi-espacio/eventos`), del `Evento` de services/miEspacioEventosDatos.js, con
+ * el contexto `{ usuarioId, ahora, feriados }` (`ahora`, el de `ahoraArgentina()`; `feriados`, el Set de `feriadosEntre`):
+ * `{ id, titulo, detalle, fecha, desde, hasta, es_mio, compartido, para_todos, creador, personas, personas_ids, recordatorio,
+ * recordatorio_texto, mi_recordatorio, aviso, quien_texto, quien_largo }`, donde:
+ * - `es_mio`: lo creó quien lo pide;
+ * - `personas`: los nombres de las elegidas, en el orden de los datos (por nombre); con «Todos» o sin compartir, [] (con
+ *   «Todos», las filas son solo las de quienes apagaron su recordatorio). `personas_ids`, sus ids, solo si es suyo (el
+ *   formulario);
+ * - `recordatorio` y `recordatorio_texto`: los del evento, los que eligió quien lo creó; `mi_recordatorio`: 'ninguno' si quien
+ *   lo pide (y no lo creó) lo apagó en su fila, y si no, el del evento; `aviso` (`avisoDe`) va sobre `mi_recordatorio`;
+ * - `quien_texto`: «Solo vos», «Con todos», «Con 1 persona» o «Con 4 personas» si es suyo, y «De <creador>» si no;
+ *   `quien_largo`, solo si no es suyo: «Lo creó <creador>. Están: vos, Sofía Paz y Carla Benítez.» (vos primero, si está) o
+ *   «Lo creó <creador>. Es para todos.». Sin quien lo creó (un creado_por en NULL), la raya en su lugar.
+ * Nada tira: lo que no es un objeto cuenta como `{}`, y una persona sin un id que sirva no cuenta.
+ */
+export const itemDeEvento = (evento, contexto) => {
+  const fuente = esObjeto(evento) ? evento : {};
+  const { usuarioId, ahora, feriados } = esObjeto(contexto) ? contexto : {};
+  const yo = idPositivo(usuarioId);
+  const esMio = yo !== null && idPositivo(fuente.creado_por) === yo;
+  const compartido = esSi(fuente.compartido);
+  const paraTodos = compartido && esSi(fuente.para_todos);
+  const filas = listaDe(fuente.personas).filter((persona) => esObjeto(persona) && idPositivo(persona.id) !== null);
+  const elegidas = compartido && !paraTodos ? filas : [];
+  const creador = typeof fuente.creador === 'string' && fuente.creador.trim() !== '' ? fuente.creador : null;
+  const nombreDelCreador = creador ?? '—';
+  const nombre = (persona) => (typeof persona.nombre === 'string' ? persona.nombre : '');
+  const esYo = (persona) => idPositivo(persona.id) === yo;
+
+  const recordatorio = esRecordatorio(fuente.recordatorio) ? fuente.recordatorio : null;
+  const miFila = esMio ? undefined : filas.find(esYo);
+  const miRecordatorio = miFila !== undefined && esSi(miFila.sin_recordatorio) ? 'ninguno' : recordatorio;
+
+  let quienTexto = `De ${nombreDelCreador}`;
+  if (esMio && !compartido) quienTexto = 'Solo vos';
+  else if (esMio && paraTodos) quienTexto = 'Con todos';
+  else if (esMio) quienTexto = conPersonas(elegidas.length);
+
+  const item = {
+    id: idPositivo(fuente.id),
+    titulo: typeof fuente.titulo === 'string' ? fuente.titulo : '',
+    detalle: typeof fuente.detalle === 'string' ? fuente.detalle : null,
+    fecha: fuente.fecha ?? null,
+    desde: fuente.desde ?? null,
+    hasta: fuente.hasta ?? null,
+    es_mio: esMio,
+    compartido,
+    para_todos: paraTodos,
+    creador,
+    personas: elegidas.map(nombre)
+  };
+  if (esMio) item.personas_ids = elegidas.map((persona) => idPositivo(persona.id));
+  Object.assign(item, {
+    recordatorio,
+    recordatorio_texto: recordatorio === null ? '' : TEXTO_RECORDATORIO[recordatorio],
+    mi_recordatorio: miRecordatorio,
+    aviso: avisoDe({ fecha: fuente.fecha, desde: fuente.desde, recordatorio: miRecordatorio }, { ahora, feriados }),
+    quien_texto: quienTexto
+  });
+  if (!esMio) {
+    const nombres = [...(elegidas.some(esYo) ? ['vos'] : []), ...elegidas.filter((persona) => !esYo(persona)).map(nombre)];
+    if (paraTodos) item.quien_largo = `Lo creó ${nombreDelCreador}. Es para todos.`;
+    else if (nombres.length > 0) item.quien_largo = `Lo creó ${nombreDelCreador}. Están: ${listaConY(nombres)}.`;
+    else item.quien_largo = `Lo creó ${nombreDelCreador}.`;
+  }
+  return item;
 };

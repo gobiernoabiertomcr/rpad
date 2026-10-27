@@ -456,21 +456,36 @@ export const guardarSaldoInicial = (req, res) => responder(res, 'Error al guarda
 // «Hoy no están» (spec, sección 7): los compañeros que no están en un rango, sin el tipo ni la nota. «Los compañeros» son
 // administración (`esAdmin`): solo ellos ven a los demás, y solo se ven ellos
 
-// El rango más largo que se puede pedir, los dos días incluidos
-const DIAS_DE_AUSENTES = 93;
-const MENSAJE_RANGO_DE_AUSENTES = `Elegí un rango de hasta ${DIAS_DE_AUSENTES} días.`;
+// El rango más largo que se puede pedir, los dos días incluidos (también el de la agenda: GET /api/mi-espacio/eventos, en
+// controllers/miEspacioEventosController.js, con rangoDelPedido)
+export const DIAS_DE_AUSENTES = 93;
+export const MENSAJE_RANGO_DE_AUSENTES = `Elegí un rango de hasta ${DIAS_DE_AUSENTES} días.`;
 // Cuánto antes y después del rango se leen las ausencias: una se une con las seguidas (separadas solo por días no hábiles),
 // así la que empezó antes o sigue después se ve entera, con su desde y su vuelta. Una cadena de más de un año se corta ahí
 const MARGEN_DE_LAS_AUSENCIAS = 366;
 
 // Una fecha del pedido: 'AAAA-MM-DD' de un año de ANIO_MINIMO a ANIO_MAXIMO; cualquier otra cosa (una repetida, que Express
 // da como lista), null
-const fechaDelPedido = (valor) => {
+export const fechaDelPedido = (valor) => {
   if (!esFechaIso(valor)) return null;
   const anio = Number(valor.slice(0, 4));
   return anio >= ANIO_MINIMO && anio <= ANIO_MAXIMO ? valor : null;
 };
-const rechazoDeLasFechas = (mensaje) => [400, { success: false, error: mensaje, campo: 'fechas' }];
+export const rechazoDeLasFechas = (mensaje) => [400, { success: false, error: mensaje, campo: 'fechas' }];
+
+/**
+ * El rango de un pedido (`?desde=AAAA-MM-DD&hasta=AAAA-MM-DD`, en `query`): `{ desde, hasta }`, o `{ rechazo }` con el
+ * [status, cuerpo] del 400 en `fechas`: una fecha que falta o no sirve (fechaDelPedido) o un hasta anterior al desde,
+ * MENSAJES_MI_ESPACIO.fecha; más de DIAS_DE_AUSENTES días contando los dos, MENSAJE_RANGO_DE_AUSENTES. Lo usan «Hoy no
+ * están» y la agenda
+ */
+export const rangoDelPedido = (query) => {
+  const desde = fechaDelPedido(query?.desde);
+  const hasta = fechaDelPedido(query?.hasta);
+  if (desde === null || hasta === null || hasta < desde) return { rechazo: rechazoDeLasFechas(MENSAJES_MI_ESPACIO.fecha) };
+  if (diasEntre(desde, hasta) + 1 > DIAS_DE_AUSENTES) return { rechazo: rechazoDeLasFechas(MENSAJE_RANGO_DE_AUSENTES) };
+  return { desde, hasta };
+};
 
 /**
  * Los compañeros que no están entre desde y hasta, como los ve `persona` (`{ id, rol }`): `{ puede_ver, ausentes }`. Sin
@@ -491,10 +506,8 @@ const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }
 // GET /api/mi-espacio/ausentes?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: «Hoy no están» de un rango de hasta 93 días. Las fechas se
 // validan antes que nada, también para quien no puede ver (400 en `fechas`)
 export const listarAusentes = (req, res) => responder(res, 'Error al obtener quiénes no están', async () => {
-  const desde = fechaDelPedido(req.query.desde);
-  const hasta = fechaDelPedido(req.query.hasta);
-  if (desde === null || hasta === null || hasta < desde) return rechazoDeLasFechas(MENSAJES_MI_ESPACIO.fecha);
-  if (diasEntre(desde, hasta) + 1 > DIAS_DE_AUSENTES) return rechazoDeLasFechas(MENSAJE_RANGO_DE_AUSENTES);
+  const { desde, hasta, rechazo } = rangoDelPedido(req.query);
+  if (rechazo) return rechazo;
   return conDatos(await ausentesPara({ id: req.user.userId, rol: req.user.rol }, { desde, hasta, hoy: hoyArgentina() }));
 });
 

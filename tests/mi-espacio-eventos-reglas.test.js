@@ -10,7 +10,7 @@ import {
   MINUTOS_A_TIEMPO, HORA_DE_LOS_ATRASADOS, HORA_DE_CIERRE_DE_LOS_ATRASADOS, MENSAJES_EVENTO,
   fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso, textoDelAviso, cuandoDelEvento,
   cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
-  recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado
+  recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -809,5 +809,210 @@ describe('emailsDelGuardado', () => {
     assert.deepEqual(guardado({ antes: null, audienciaDespues: null }), NINGUNO);
     assert.deepEqual(guardado({ antes: null, audienciaDespues: [0, 'abc', null, {}, { id: -2 }, 1.5, 5] }),
       { invitacion: [5], cambio: [], cancelacion: [] });
+  });
+});
+
+describe('validarAvisoDelEvento', () => {
+  const aviso = (datos) => validarAvisoDelEvento({ fecha: '2026-11-02', desde: '10:00', recordatorio: 'dia_anterior', ...datos },
+    HOY);
+
+  it('la fecha, la hora y el recordatorio del pedido; sin recordatorio (o null), el de entrada', () => {
+    assert.deepEqual(aviso({}), { datos: { fecha: '2026-11-02', desde: '10:00', recordatorio: 'dia_anterior' }, error: null });
+    assert.equal(aviso({ recordatorio: undefined }).datos.recordatorio, '2h');
+    assert.equal(aviso({ recordatorio: null }).datos.recordatorio, '2h');
+    // El título y lo demás del evento no se piden ni se devuelven
+    assert.deepEqual(Object.keys(aviso({ titulo: '', hasta: '09:00' }).datos), ['fecha', 'desde', 'recordatorio']);
+  });
+
+  it('cada dato que no sirve da el error de su campo, con los mensajes de validarEvento y en su orden', () => {
+    for (const fecha of ['abc', '2026-02-30', '2024-12-31', '2028-10-27', undefined, ['2026-11-02']]) {
+      assert.deepEqual(aviso({ fecha }), { datos: null, error: { campo: 'fecha', mensaje: RANGO } }, String(fecha));
+    }
+    for (const desde of ['9:00', '10:00:00', '24:00', '', undefined, 1000]) {
+      assert.deepEqual(aviso({ desde }), { datos: null, error: { campo: 'desde', mensaje: MENSAJES_EVENTO.desde } },
+        String(desde));
+    }
+    for (const recordatorio of ['otro', '', '1H', ['2h']]) {
+      assert.deepEqual(aviso({ recordatorio }),
+        { datos: null, error: { campo: 'recordatorio', mensaje: MENSAJES_EVENTO.recordatorio } }, String(recordatorio));
+    }
+    // La fecha va antes que la hora, y la hora antes que el recordatorio
+    assert.equal(aviso({ fecha: 'abc', desde: '9:00', recordatorio: 'otro' }).error.campo, 'fecha');
+    assert.equal(aviso({ desde: '9:00', recordatorio: 'otro' }).error.campo, 'desde');
+  });
+
+  it('nada tira: lo que no es un objeto cuenta como {} (y sin un hoy válido no pasa ninguna fecha)', () => {
+    for (const entrada of [null, undefined, 42, 'aviso', []]) {
+      assert.equal(validarAvisoDelEvento(entrada, HOY).error.campo, 'fecha');
+    }
+    assert.equal(validarAvisoDelEvento({ fecha: '2026-11-02', desde: '10:00' }, 'hoy').error.campo, 'fecha');
+  });
+});
+
+describe('avisoDe', () => {
+  const AHORA = '2026-10-26 09:00:00';
+
+  it('el momento, el texto y el corto del recordatorio, con los feriados', () => {
+    const evento = { fecha: '2026-11-02', desde: '10:00', recordatorio: 'dia_anterior' };
+    assert.deepEqual(avisoDe(evento, { ahora: AHORA, feriados: new Set() }), {
+      momento: '2026-10-30 10:00', texto: 'El día hábil anterior (el viernes 30/10 a las 10:00)',
+      corto: 'Aviso el día hábil anterior'
+    });
+    assert.deepEqual(avisoDe(evento, { ahora: AHORA, feriados: new Set(['2026-10-30']) }), {
+      momento: '2026-10-29 10:00', texto: 'El día hábil anterior (el jueves 29/10 a las 10:00)',
+      corto: 'Aviso el día hábil anterior'
+    });
+  });
+
+  it('sin aviso, momento null', () => {
+    assert.deepEqual(avisoDe({ fecha: '2026-10-27', desde: '10:00', recordatorio: 'ninguno' }, { ahora: AHORA }),
+      { momento: null, texto: 'Sin aviso', corto: 'Sin aviso' });
+  });
+
+  it('nada tira: con algo que no sirve, momento null y los textos vacíos', () => {
+    for (const evento of [null, undefined, 42, {}, { fecha: '2026-10-27', desde: '10:00', recordatorio: 'otro' }]) {
+      assert.deepEqual(avisoDe(evento, { ahora: AHORA }), { momento: null, texto: '', corto: '' }, JSON.stringify(evento));
+    }
+    assert.deepEqual(avisoDe({ fecha: '2026-10-27', desde: '10:00', recordatorio: '2h' }),
+      { momento: '2026-10-27 08:00', texto: '2 horas antes', corto: 'Aviso 2 h antes' });
+  });
+});
+
+describe('personasDelPedido', () => {
+  const pedido = (pedidas, permitidas = [2, 3, 4]) => personasDelPedido(pedidas, { usuarioId: 1, permitidas });
+
+  it('las elegidas, en su orden, si todas se pueden elegir; el id propio se saca sin error', () => {
+    assert.deepEqual(pedido([3, 2]), { personas: [3, 2], error: null });
+    assert.deepEqual(pedido([1, 4]), { personas: [4], error: null });
+    assert.deepEqual(pedido([2, 2, 3]), { personas: [2, 3], error: null });
+    assert.deepEqual(pedido([3], new Set([3])), { personas: [3], error: null });
+  });
+
+  it('una que no se puede elegir, personasInvalidas; sin ninguna (o solo con la propia), personas', () => {
+    const invalidas = { personas: null, error: { campo: 'personas', mensaje: MENSAJES_EVENTO.personasInvalidas } };
+    const ninguna = { personas: null, error: { campo: 'personas', mensaje: MENSAJES_EVENTO.personas } };
+    assert.deepEqual(pedido([2, 9]), invalidas);
+    assert.deepEqual(pedido([2, 'x']), invalidas);
+    assert.deepEqual(pedido([2], []), invalidas);
+    assert.deepEqual(pedido([1]), ninguna);
+    assert.deepEqual(pedido([]), ninguna);
+  });
+
+  it('nada tira: sin una lista, ninguna; sin permitidas, ninguna se puede elegir', () => {
+    for (const pedidas of [null, undefined, 42, 'personas']) {
+      assert.equal(personasDelPedido(pedidas, { usuarioId: 1, permitidas: [2] }).error.mensaje, MENSAJES_EVENTO.personas);
+    }
+    assert.equal(personasDelPedido([2]).error.mensaje, MENSAJES_EVENTO.personasInvalidas);
+    assert.equal(personasDelPedido([2], { usuarioId: 1, permitidas: 'todos' }).error.mensaje,
+      MENSAJES_EVENTO.personasInvalidas);
+  });
+});
+
+describe('itemDeEvento', () => {
+  const AHORA = '2026-10-26 09:00:00';
+  // Un evento de Laura (id 1), como lo devuelven los datos (services/miEspacioEventosDatos.js)
+  const evento = (datos) => ({
+    id: 5, creado_por: 1, creador: 'Laura Gómez', titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27',
+    desde: '10:00', hasta: '11:00', compartido: false, para_todos: false, recordatorio: '2h', personas: [], ...datos
+  });
+  const item = (datos, usuarioId = 1, feriados = new Set()) =>
+    itemDeEvento(evento(datos), { usuarioId, ahora: AHORA, feriados });
+  const persona = (id, nombre, sinRecordatorio = false) => ({ id, nombre, sin_recordatorio: sinRecordatorio });
+  const CUATRO = [persona(2, 'Martín Ríos'), persona(3, 'Sofía Paz'), persona(4, 'Carla Benítez'),
+    persona(6, 'Diego Fernández', true)];
+  const CLAVES_DEL_MIO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
+    'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
+  const CLAVES_DEL_AJENO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
+    'personas', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto', 'quien_largo'];
+
+  it('uno personal: «Solo vos», con su recordatorio y cuándo sale', () => {
+    assert.deepEqual(item({}), {
+      id: 5, titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00', es_mio: true,
+      compartido: false, para_todos: false, creador: 'Laura Gómez', personas: [], personas_ids: [], recordatorio: '2h',
+      recordatorio_texto: '2 horas antes', mi_recordatorio: '2h',
+      aviso: { momento: '2026-10-27 08:00', texto: '2 horas antes (mañana a las 08:00)', corto: 'Aviso 2 h antes' },
+      quien_texto: 'Solo vos'
+    });
+    assert.deepEqual(Object.keys(item({})), CLAVES_DEL_MIO);
+  });
+
+  it('uno propio compartido: «Con 1 persona», «Con 4 personas» o «Con todos», con los nombres y los ids', () => {
+    const uno = item({ compartido: true, personas: [persona(2, 'Martín Ríos')] });
+    assert.equal(uno.quien_texto, 'Con 1 persona');
+    assert.deepEqual(uno.personas, ['Martín Ríos']);
+    assert.deepEqual(uno.personas_ids, [2]);
+    const cuatro = item({ compartido: true, personas: CUATRO });
+    assert.equal(cuatro.quien_texto, 'Con 4 personas');
+    assert.deepEqual(cuatro.personas, ['Martín Ríos', 'Sofía Paz', 'Carla Benítez', 'Diego Fernández']);
+    assert.deepEqual(cuatro.personas_ids, [2, 3, 4, 6]);
+    // El recordatorio que apagó una invitada no cambia el de quien lo creó
+    assert.equal(cuatro.mi_recordatorio, '2h');
+    // Con «Todos», las filas son solo las de quienes apagaron su recordatorio: no son personas elegidas
+    const todos = item({ compartido: true, para_todos: true, personas: [persona(6, 'Diego Fernández', true)] });
+    assert.equal(todos.quien_texto, 'Con todos');
+    assert.deepEqual(todos.personas, []);
+    assert.deepEqual(todos.personas_ids, []);
+    assert.equal(todos.para_todos, true);
+    assert.deepEqual(Object.keys(todos), CLAVES_DEL_MIO);
+  });
+
+  it('uno ajeno: «De <creador>» y quién está, con vos primero; sin los ids', () => {
+    const ajeno = item({ compartido: true, personas: [persona(3, 'Sofía Paz'), persona(2, 'Martín Ríos'),
+      persona(4, 'Carla Benítez')] }, 2);
+    assert.equal(ajeno.es_mio, false);
+    assert.equal(ajeno.quien_texto, 'De Laura Gómez');
+    assert.equal(ajeno.quien_largo, 'Lo creó Laura Gómez. Están: vos, Sofía Paz y Carla Benítez.');
+    assert.deepEqual(ajeno.personas, ['Sofía Paz', 'Martín Ríos', 'Carla Benítez']);
+    assert.deepEqual(Object.keys(ajeno), CLAVES_DEL_AJENO);
+    assert.equal(item({ compartido: true, personas: [persona(2, 'Martín Ríos')] }, 2).quien_largo,
+      'Lo creó Laura Gómez. Están: vos.');
+    // Para todos
+    const todos = item({ compartido: true, para_todos: true, personas: [persona(6, 'Diego Fernández', true)] }, 2);
+    assert.equal(todos.quien_largo, 'Lo creó Laura Gómez. Es para todos.');
+    assert.equal(todos.quien_texto, 'De Laura Gómez');
+    assert.deepEqual(todos.personas, []);
+  });
+
+  it('mi recordatorio: ninguno si lo apagué, y el aviso va sobre él; el recordatorio del evento no cambia', () => {
+    const apagado = item({ compartido: true, personas: [persona(2, 'Martín Ríos', true)] }, 2);
+    assert.equal(apagado.recordatorio, '2h');
+    assert.equal(apagado.recordatorio_texto, '2 horas antes');
+    assert.equal(apagado.mi_recordatorio, 'ninguno');
+    assert.deepEqual(apagado.aviso, { momento: null, texto: 'Sin aviso', corto: 'Sin aviso' });
+    // Con una fila que dice 1 (como llega de un tinyint), también
+    assert.equal(item({ compartido: true, personas: [persona(2, 'Martín Ríos', 1)] }, 2).mi_recordatorio, 'ninguno');
+    // En uno para todos, con la fila de quien lo apagó
+    assert.equal(item({ compartido: true, para_todos: true, personas: [persona(2, 'Martín Ríos', true)] }, 2).mi_recordatorio,
+      'ninguno');
+    // Sin la fila (para todos, sin apagarlo) o prendido, el del evento
+    assert.equal(item({ compartido: true, para_todos: true, recordatorio: '1h' }, 2).mi_recordatorio, '1h');
+    assert.equal(item({ compartido: true, personas: [persona(2, 'Martín Ríos')], recordatorio: 'dia_anterior' }, 2)
+      .aviso.momento, '2026-10-26 10:00');
+  });
+
+  it('el aviso con los feriados: el día hábil anterior de un lunes con el viernes feriado es el jueves', () => {
+    const lunes = item({ fecha: '2026-11-02', recordatorio: 'dia_anterior' }, 1, new Set(['2026-10-30']));
+    assert.deepEqual(lunes.aviso, {
+      momento: '2026-10-29 10:00', texto: 'El día hábil anterior (el jueves 29/10 a las 10:00)',
+      corto: 'Aviso el día hábil anterior'
+    });
+  });
+
+  it('nada tira: con algo que no sirve, lo que se pueda y la raya donde iba quien lo creó', () => {
+    for (const entrada of [null, undefined, 42, 'evento', []]) {
+      const resultado = itemDeEvento(entrada, { usuarioId: 1, ahora: AHORA });
+      assert.equal(resultado.id, null);
+      assert.equal(resultado.es_mio, false);
+      assert.equal(resultado.quien_texto, 'De —');
+      assert.deepEqual(resultado.personas, []);
+    }
+    assert.equal(itemDeEvento(evento({})).es_mio, false);
+    assert.equal(itemDeEvento(evento({}), null).quien_texto, 'De Laura Gómez');
+    // Sin quien lo creó (un creado_por en NULL): la raya
+    assert.equal(item({ creado_por: null, creador: null, compartido: true, personas: [persona(2, 'Martín Ríos')] }, 2)
+      .quien_largo, 'Lo creó —. Están: vos.');
+    // Personas raras no cuentan
+    assert.deepEqual(item({ compartido: true, personas: [null, 'x', { id: 'abc' }, persona(3, 'Sofía Paz')] }).personas_ids,
+      [3]);
   });
 });
