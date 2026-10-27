@@ -8,8 +8,9 @@
  * Acá están los valores y los textos de la agenda: los recordatorios, los largos, las fechas, los mensajes, quién comparte y
  * los de la corrida de los recordatorios (la ventana, el candado y los atrasados). Después, la validación de un evento
  * (`validarEvento`), el momento en que sale su recordatorio, con los feriados (`momentoDelAviso`: nunca en un día que no es
- * hábil) y los textos de cuándo es un evento y cuándo sale su aviso. Los textos son planos: escaparlos le toca a quien los
- * dibuja.
+ * hábil), los textos de cuándo es un evento y cuándo sale su aviso, y quién recibe qué: los recordatorios de una corrida
+ * (`recordatoriosQueTocan`, con los atrasados) y los emails de un guardado (`emailsDelGuardado` y `cambioQueAvisa`). Los
+ * textos son planos: escaparlos le toca a quien los dibuja.
  *
  * La usan la API de los eventos, sus emails, la corrida de los recordatorios y Correos → Estado. La página
  * (`public/js/mi-espacio.js`) tiene copias de los mensajes, los largos, las fechas y los recordatorios, atadas por tests de
@@ -17,10 +18,11 @@
  * En el código, la agenda es `evento` o `mi_espacio_`, nunca «agenda» a secas: la Agenda de pedidos de Reportes es otra cosa.
  */
 import { esDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana } from './feriadosReglas.js';
-import { esFechaIso, sumarDias, formatoCorto } from './notasDigitalesCalendario.js';
+import { esFechaIso, sumarDias, diasEntre, formatoCorto } from './notasDigitalesCalendario.js';
 import { diaLargo } from './miEspacioResumen.js';
 import { textoRango, enLista } from './miEspacioReglas.js';
-import { idsPositivos } from './proyectosReglas.js';
+import { idPositivo, idsPositivos } from './proyectosReglas.js';
+import { emailValido } from './usuariosReglas.js';
 
 // Los recordatorios, en el orden del formulario (el enum de mi_espacio_eventos.recordatorio), y el de entrada. Sin «15
 // minutos antes»: la corrida es cada media hora
@@ -311,4 +313,142 @@ export const inicialesDe = (nombre) => {
   if (palabras.length === 0) return '';
   const inicial = (palabra) => Array.from(palabra)[0].toUpperCase();
   return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
+};
+
+// Quién recibe qué (spec, secciones 4 y 5): los recordatorios de una corrida y los emails de un guardado
+
+const listaDe = (valor) => (Array.isArray(valor) ? valor : []);
+// Un tinyint de la base (con Number()) o un booleano: sí es 1, '1' o true; no, 0, '0' o false. Otro valor no es ni sí ni no
+const esSi = (valor) => valor === true || valor === 1 || valor === '1';
+const esNo = (valor) => valor === false || valor === 0 || valor === '0';
+
+// El momento en que empieza un evento, 'AAAA-MM-DD HH:MM' (el `para` de sus envíos), si la fecha y la hora sirven; si no,
+// null. Como todo momento, se compara como texto con los 16 primeros caracteres de ahora
+const inicioDe = (evento) => {
+  const horario = horarioDe(evento);
+  return horario === null ? null : `${horario.fecha} ${horario.desde}`;
+};
+
+// Los minutos de un momento 'AAAA-MM-DD HH:MM' a otro, contando los días que cruzan (diasEntre, sobre las fechas de texto:
+// nunca un Date local)
+const minutosEntre = (desde, hasta) => diasEntre(desde.slice(0, 10), hasta.slice(0, 10)) * MINUTOS_DEL_DIA
+  + minutosDe(hasta.slice(11, 16)) - minutosDe(desde.slice(11, 16));
+
+// Si el recordatorio sale ahora (los tres, 'AAAA-MM-DD HH:MM'; `aviso`, el de momentoDelAviso, o null): el aviso ya llegó y
+// el evento todavía no empezó. Hasta MINUTOS_A_TIEMPO después del aviso (30 justos, también), a tiempo, a cualquier hora; uno
+// atrasado, solo de HORA_DE_LOS_ATRASADOS (inclusive) a HORA_DE_CIERRE_DE_LOS_ATRASADOS (exclusive). Que el día sea hábil lo
+// mira recordatoriosQueTocan
+const avisoQueSale = (aviso, inicio, ahoraCorto) => {
+  if (aviso === null || aviso > ahoraCorto || ahoraCorto >= inicio) return false;
+  if (minutosEntre(aviso, ahoraCorto) <= MINUTOS_A_TIEMPO) return true;
+  const hora = ahoraCorto.slice(11, 16);
+  return hora >= HORA_DE_LOS_ATRASADOS && hora < HORA_DE_CIERRE_DE_LOS_ATRASADOS;
+};
+
+/**
+ * Los recordatorios que salen en una corrida (spec, sección 5), con el contexto `{ ahora, feriados }` (`ahora`,
+ * 'AAAA-MM-DD HH:MM:SS' de `ahoraArgentina()`, o sin los segundos; `feriados`, el Set de `feriadosDelRango`). Cada evento es
+ * `{ id, fecha, desde, recordatorio, destinatarios, envios }`, el de `eventosParaLaCorrida`:
+ * - `destinatarios`: `[{ usuario_id, email, sin_recordatorio }]`, quien lo creó y su audiencia;
+ * - `envios`: sus recordatorios, `[{ usuario_id, para, success, terminado }]` (`para`, 'AAAA-MM-DD HH:MM'; `terminado`, que
+ *   `enviado_at` no es NULL). Uno con un `tipo` que no es 'recordatorio' no cuenta: una invitación tiene el mismo `para`.
+ * Devuelve `[{ evento_id, usuario_id, email, para, reintento }]`, por evento y por persona, con `para` = 'fecha desde', el
+ * inicio del evento (si cambia de hora, el recordatorio vuelve a salir). A una persona le toca si:
+ * 1. hoy es hábil (`esDiaHabilCon`, con los feriados): en un día que no es hábil no sale ninguno;
+ * 2. el aviso (`momentoDelAviso`) ya llegó y el evento todavía no empezó: aviso <= ahora < inicio;
+ * 3. si pasaron más de MINUTOS_A_TIEMPO desde el aviso (un atrasado), ahora es de las 07:00 (inclusive) a las 20:00
+ *    (exclusive): fuera de esa franja espera a las 07:00 del día hábil siguiente (o de hoy, si todavía no son las 07:00),
+ *    siempre antes del inicio. Uno a tiempo sale a su hora, aunque sea antes de las 07:00 («2 horas antes» de un evento a las
+ *    08:00, a las 06:00). Los minutos cruzan días: un aviso del viernes, el lunes está atrasado;
+ * 4. no lo apagó (`sin_recordatorio` 1 o true) y su email pasa `emailValido` (nunca un envío sin destinatario);
+ * 5. no tiene un envío con ese `para`, o el que tiene falló y terminó (`success` 0 o false y `terminado`): `reintento: true`.
+ *    Uno que salió, o una reserva sin terminar (pudo haber salido), no se repite; un `success` raro tampoco.
+ * Una persona repetida en un evento cuenta una vez. Nada tira: lo que no sirve no toca (sin una lista o un ahora, []).
+ */
+export const recordatoriosQueTocan = (eventos, contexto) => {
+  const { ahora, feriados } = esObjeto(contexto) ? contexto : {};
+  if (!Array.isArray(eventos) || !esMomento(ahora)) return [];
+  const ahoraCorto = ahora.slice(0, 16);
+  if (!esDiaHabilCon(ahoraCorto.slice(0, 10), feriados)) return [];
+
+  const tocan = [];
+  for (const evento of eventos) {
+    const eventoId = esObjeto(evento) ? idPositivo(evento.id) : null;
+    const para = inicioDe(evento);
+    if (eventoId === null || para === null || !avisoQueSale(momentoDelAviso(evento, feriados), para, ahoraCorto)) continue;
+
+    const envios = listaDe(evento.envios).filter((envio) => esObjeto(envio) && envio.para === para
+      && (envio.tipo ?? 'recordatorio') === 'recordatorio');
+    const vistos = new Set();
+    for (const destinatario of listaDe(evento.destinatarios)) {
+      const usuarioId = esObjeto(destinatario) ? idPositivo(destinatario.usuario_id) : null;
+      if (usuarioId === null || vistos.has(usuarioId)) continue;
+      vistos.add(usuarioId);
+      if (esSi(destinatario.sin_recordatorio) || !emailValido(destinatario.email)) continue;
+
+      const previos = envios.filter((envio) => idPositivo(envio.usuario_id) === usuarioId);
+      const reintento = previos.length > 0;
+      if (reintento && !previos.every((envio) => esNo(envio.success) && esSi(envio.terminado))) continue;
+      tocan.push({ evento_id: eventoId, usuario_id: usuarioId, email: destinatario.email, para, reintento });
+    }
+  }
+  return tocan.sort((a, b) => a.evento_id - b.evento_id || a.usuario_id - b.usuario_id);
+};
+
+/**
+ * Si un cambio les avisa a los que siguen en el evento (spec, sección 4): cambió el título, la fecha, la hora de inicio o la
+ * de fin (sin hora de fin —'', null o que no venga— es lo mismo). Si cambió solo el detalle, el recordatorio o las personas,
+ * no. Si alguno no es un objeto, false.
+ */
+export const cambioQueAvisa = (antes, despues) => {
+  if (!esObjeto(antes) || !esObjeto(despues)) return false;
+  const hastaDe = (evento) => (SIN_HASTA.includes(evento.hasta) ? null : evento.hasta);
+  return ['titulo', 'fecha', 'desde'].some((campo) => antes[campo] !== despues[campo]) || hastaDe(antes) !== hastaDe(despues);
+};
+
+// Los ids de una audiencia: una lista de ids o de personas con su `id` (las de audienciaDe), sin repetidos y de menor a
+// mayor. Lo que no es un id no cuenta; lo que no es una lista es nadie
+const idsDeLaAudiencia = (audiencia) => {
+  const ids = listaDe(audiencia).map((persona) => idPositivo(esObjeto(persona) ? persona.id : persona));
+  return [...new Set(ids.filter((id) => id !== null))].sort((a, b) => a - b);
+};
+
+const sinEmails = () => ({ invitacion: [], cambio: [], cancelacion: [] });
+
+/**
+ * Quién recibe qué email cuando quien creó un evento lo guarda (spec, sección 4): `{ invitacion, cambio, cancelacion }`,
+ * cada uno una lista de ids de menor a mayor. Recibe `{ antes, despues, audienciaAntes, audienciaDespues, ahora }`: el
+ * evento antes y después de guardar (`antes` null en un alta, `despues` null en una baja), su audiencia antes y después (una
+ * lista de ids o de personas con su `id`, las de `audienciaDe`) y `ahora` ('AAAA-MM-DD HH:MM:SS' de `ahoraArgentina()`, o
+ * sin los segundos):
+ * - el alta invita a la audiencia;
+ * - la baja le avisa a la audiencia que se canceló;
+ * - un cambio invita a los que entran y, solo si cambió el título, la fecha o la hora (`cambioQueAvisa`), les avisa a los
+ *   que siguen. A los que salen, también si pasa a «Solo yo», no les llega nada (decisión del usuario, Pregunta 1:
+ *   «Estamos todos en el mismo espacio físico.»).
+ * Si el evento ya empezó (el de después; en una baja, el de antes), nadie recibe nada. Quien lo creó (`creado_por`) nunca
+ * está. Salen también en un día que no es hábil: responden a lo que hizo una persona. Nada tira: sin un ahora, o con un
+ * evento sin una fecha o una hora que sirvan, nadie (no se sabe si empezó).
+ */
+export const emailsDelGuardado = (entrada) => {
+  const { antes, despues, audienciaAntes, audienciaDespues, ahora } = esObjeto(entrada) ? entrada : {};
+  const anterior = esObjeto(antes) ? antes : null;
+  const nuevo = esObjeto(despues) ? despues : null;
+  const evento = nuevo ?? anterior;
+  const inicio = inicioDe(evento);
+  if (inicio === null || !esMomento(ahora) || ahora.slice(0, 16) >= inicio) return sinEmails();
+
+  const creador = idPositivo(evento.creado_por);
+  const sinCreador = (audiencia) => idsDeLaAudiencia(audiencia).filter((id) => id !== creador);
+  const estaban = anterior === null ? [] : sinCreador(audienciaAntes);
+  const estan = nuevo === null ? [] : sinCreador(audienciaDespues);
+  if (anterior === null) return { invitacion: estan, cambio: [], cancelacion: [] };
+  if (nuevo === null) return { invitacion: [], cambio: [], cancelacion: estaban };
+
+  const yaEstaban = new Set(estaban);
+  return {
+    invitacion: estan.filter((id) => !yaEstaban.has(id)),
+    cambio: cambioQueAvisa(anterior, nuevo) ? estan.filter((id) => yaEstaban.has(id)) : [],
+    cancelacion: []
+  };
 };

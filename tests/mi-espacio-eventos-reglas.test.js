@@ -1,6 +1,7 @@
-// La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, secciones 1, 5 y 7): la validación de un evento, el momento
-// en que sale su recordatorio con los feriados (nunca en un día que no es hábil) y los textos de cuándo es y cuándo sale.
-// Puras, sin base. Hoy es el lunes 26/10/2026.
+// La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, secciones 1, 4, 5 y 7): la validación de un evento, el
+// momento en que sale su recordatorio con los feriados (nunca en un día que no es hábil), los textos de cuándo es y cuándo
+// sale, y quién recibe qué: los recordatorios de una corrida (con los atrasados) y los emails de un guardado. Puras, sin
+// base. Hoy es el lunes 26/10/2026.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -8,7 +9,8 @@ import {
   FECHA_MINIMA_EVENTO, ROLES_QUE_COMPARTEN, DIAS_DE_PROXIMOS, VENTANA_DE_LA_CORRIDA, MINUTOS_SIN_CORRER, BLOQUEO_EVENTOS,
   MINUTOS_A_TIEMPO, HORA_DE_LOS_ATRASADOS, HORA_DE_CIERRE_DE_LOS_ATRASADOS, MENSAJES_EVENTO,
   fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso, textoDelAviso, cuandoDelEvento,
-  cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe
+  cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
+  recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -446,5 +448,366 @@ describe('listaConY e inicialesDe', () => {
       assert.equal(inicialesDe(valor), '', String(valor));
     }
     assert.equal(inicialesDe('   '), '');
+  });
+});
+
+describe('recordatoriosQueTocan', () => {
+  // El martes 03/11/2026 a las 10:00, con «2 horas antes» (aviso a las 08:00): la persona 1 lo creó y la 2 está invitada
+  const PARA = '2026-11-03 10:00';
+  const CREADOR = Object.freeze({ usuario_id: 1, email: 'creador@rpad.test', sin_recordatorio: 0 });
+  const INVITADA = Object.freeze({ usuario_id: 2, email: 'invitada@rpad.test', sin_recordatorio: 0 });
+  const eventoDePrueba = (datos) => ({
+    id: 7, fecha: '2026-11-03', desde: '10:00', recordatorio: '2h', destinatarios: [CREADOR, INVITADA], envios: [], ...datos
+  });
+  const tocan = (eventos, ahora, feriados = new Set()) => recordatoriosQueTocan(eventos, { ahora, feriados });
+  // Los ids de las personas a las que les toca un evento armado con eventoDePrueba(datos), a las `ahora`
+  const quienes = (datos, ahora, feriados) => tocan([eventoDePrueba(datos)], ahora, feriados).map((uno) => uno.usuario_id);
+  const envio = (usuarioId, datos) => ({ usuario_id: usuarioId, para: PARA, success: 1, terminado: true, ...datos });
+
+  it('a las 07:59, nadie; a las 08:00 y a las 09:30, las dos, con el inicio del evento; a las 10:00, nadie', () => {
+    const LAS_DOS = [
+      { evento_id: 7, usuario_id: 1, email: 'creador@rpad.test', para: PARA, reintento: false },
+      { evento_id: 7, usuario_id: 2, email: 'invitada@rpad.test', para: PARA, reintento: false }
+    ];
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 07:59:59'), []);
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 08:00:00'), LAS_DOS);
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 09:30:00'), LAS_DOS);
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 09:59:59'), LAS_DOS);
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 10:00:00'), []);
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 15:00:00'), []);
+    // ahora puede venir sin los segundos
+    assert.deepEqual(tocan([eventoDePrueba()], '2026-11-03 08:00'), LAS_DOS);
+  });
+
+  it('a quien apagó su recordatorio no le toca', () => {
+    for (const apagado of [1, true, '1']) {
+      assert.deepEqual(quienes({ destinatarios: [CREADOR, { ...INVITADA, sin_recordatorio: apagado }] }, '2026-11-03 08:00'),
+        [1], String(apagado));
+    }
+    for (const prendido of [0, false, null, undefined]) {
+      assert.deepEqual(quienes({ destinatarios: [CREADOR, { ...INVITADA, sin_recordatorio: prendido }] }, '2026-11-03 08:00'),
+        [1, 2], String(prendido));
+    }
+  });
+
+  it('un evento sin aviso no le toca a nadie', () => {
+    assert.deepEqual(quienes({ recordatorio: 'ninguno' }, '2026-11-03 09:00'), []);
+  });
+
+  it('cambiado de hora: con el recordatorio de las 10:00 ya enviado y el evento a las 15:00, sale otra vez a las 13:00', () => {
+    const enviados = [envio(1), envio(2)];
+    assert.deepEqual(quienes({ envios: enviados }, '2026-11-03 09:00'), []);
+    assert.deepEqual(tocan([eventoDePrueba({ desde: '15:00', envios: enviados })], '2026-11-03 13:00:00'), [
+      { evento_id: 7, usuario_id: 1, email: 'creador@rpad.test', para: '2026-11-03 15:00', reintento: false },
+      { evento_id: 7, usuario_id: 2, email: 'invitada@rpad.test', para: '2026-11-03 15:00', reintento: false }
+    ]);
+    // Con un solo envío de antes, a la otra también: lo de antes no cuenta para la hora nueva
+    assert.deepEqual(quienes({ desde: '15:00', envios: [envio(1)] }, '2026-11-03 13:00'), [1, 2]);
+  });
+
+  it('uno que falló y terminó vuelve, con reintento; uno que salió o una reserva sin terminar, no', () => {
+    assert.deepEqual(tocan([eventoDePrueba({ envios: [envio(2, { success: 0 })] })], '2026-11-03 08:30:00'), [
+      { evento_id: 7, usuario_id: 1, email: 'creador@rpad.test', para: PARA, reintento: false },
+      { evento_id: 7, usuario_id: 2, email: 'invitada@rpad.test', para: PARA, reintento: true }
+    ]);
+    assert.deepEqual(quienes({ envios: [envio(2, { success: false, terminado: 1 })] }, '2026-11-03 08:30'), [1, 2]);
+    // Sin terminar (enviado_at NULL: la reserva de otra corrida, que pudo haber salido), no
+    for (const terminado of [false, 0, null, undefined]) {
+      assert.deepEqual(quienes({ envios: [envio(2, { success: 0, terminado })] }, '2026-11-03 08:30'), [1], String(terminado));
+    }
+    // Uno que salió, no; y con un success que no es ni sí ni no, tampoco (no se repite)
+    for (const success of [1, true, null, undefined, 'raro']) {
+      assert.deepEqual(quienes({ envios: [envio(2, { success })] }, '2026-11-03 08:30'), [1], String(success));
+    }
+    // Un fallido del evento en otra hora no es un reintento: es la hora nueva
+    assert.equal(tocan([eventoDePrueba({ envios: [envio(2, { success: 0, para: '2026-11-03 09:00' })] })],
+      '2026-11-03 08:30')[1].reintento, false);
+    // El reintento también espera la franja de los atrasados, y nunca después del inicio
+    assert.deepEqual(quienes({ envios: [envio(2, { success: 0 })] }, '2026-11-03 09:30'), [1, 2]);
+    assert.deepEqual(quienes({ envios: [envio(2, { success: 0 })] }, '2026-11-03 10:00'), []);
+  });
+
+  it('solo cuentan los envíos de recordatorio: una invitación con el mismo para no lo frena', () => {
+    assert.deepEqual(quienes({ envios: [envio(2, { tipo: 'invitacion' }), envio(1, { tipo: 'cambio' })] },
+      '2026-11-03 08:00'), [1, 2]);
+    assert.deepEqual(quienes({ envios: [envio(2, { tipo: 'recordatorio' })] }, '2026-11-03 08:00'), [1]);
+    assert.deepEqual(quienes({ envios: [envio(2, { tipo: null })] }, '2026-11-03 08:00'), [1]);
+  });
+
+  it('un día no hábil: el sábado, nada; con un feriado el día del aviso, nada, y el aviso pasa al día hábil anterior', () => {
+    // El sábado 31/10 a las 12:00 con «1 hora antes»: el aviso es el viernes 30/10 a las 11:00
+    const sabado = { fecha: '2026-10-31', desde: '12:00', recordatorio: '1h' };
+    assert.deepEqual(quienes(sabado, '2026-10-31 11:00'), []);
+    assert.deepEqual(quienes(sabado, '2026-10-30 11:00'), [1, 2]);
+    // Con un feriado el 03/11, ese día nada, y el aviso de las 08:00 sale el lunes 02/11 a las 08:00
+    const feriado = new Set(['2026-11-03']);
+    assert.deepEqual(quienes({}, '2026-11-03 08:00', feriado), []);
+    assert.deepEqual(quienes({}, '2026-11-03 09:30', feriado), []);
+    assert.deepEqual(quienes({}, '2026-11-02 07:59', feriado), []);
+    assert.deepEqual(quienes({}, '2026-11-02 08:00', feriado), [1, 2]);
+    // Un domingo, aunque el aviso ya haya pasado y el evento no haya empezado
+    assert.deepEqual(quienes({ fecha: '2026-11-02', recordatorio: 'dia_anterior' }, '2026-11-01 12:00'), []);
+  });
+
+  it('a quien no tiene un email que sirva no le toca', () => {
+    for (const email of [null, undefined, '', 'sin-arroba', 'con espacio@rpad.test', `${'a'.repeat(92)}@rpad.test`, 42]) {
+      assert.deepEqual(quienes({ destinatarios: [CREADOR, { ...INVITADA, email }] }, '2026-11-03 08:00'), [1], String(email));
+    }
+  });
+
+  describe('los atrasados: más de 30 minutos desde su aviso, solo de 07:00 a 20:00 de un día hábil', () => {
+    it('el lunes 02/11 a las 10:00 con el día hábil anterior (aviso el viernes 30/10 a las 10:00)', () => {
+      const lunes = { fecha: '2026-11-02', desde: '10:00', recordatorio: 'dia_anterior' };
+      assert.deepEqual(quienes(lunes, '2026-10-30 09:59'), []);
+      assert.deepEqual(quienes(lunes, '2026-10-30 10:00'), [1, 2]);
+      // El fin de semana no es hábil
+      assert.deepEqual(quienes(lunes, '2026-10-31 10:00'), []);
+      assert.deepEqual(quienes(lunes, '2026-11-01 10:00'), []);
+      // El lunes, atrasado: a las 00:00 y a las 06:30 nada; a las 07:00, sí
+      assert.deepEqual(quienes(lunes, '2026-11-02 00:00:00'), []);
+      assert.deepEqual(quienes(lunes, '2026-11-02 06:30:00'), []);
+      assert.deepEqual(quienes(lunes, '2026-11-02 06:59:59'), []);
+      assert.deepEqual(quienes(lunes, '2026-11-02 07:00:00'), [1, 2]);
+      assert.deepEqual(quienes(lunes, '2026-11-02 09:30:00'), [1, 2]);
+      assert.deepEqual(quienes(lunes, '2026-11-02 10:00:00'), []);
+    });
+
+    it('el martes 03/11 a las 08:00 con «2 horas antes» sale a las 06:00: está a tiempo', () => {
+      const temprano = { desde: '08:00', recordatorio: '2h' };
+      assert.deepEqual(quienes(temprano, '2026-11-03 05:59'), []);
+      assert.deepEqual(quienes(temprano, '2026-11-03 06:00'), [1, 2]);
+    });
+
+    it('el martes 03/11 a las 08:00 con el día hábil anterior (aviso el lunes 02/11 a las 08:00)', () => {
+      const martes = { desde: '08:00', recordatorio: 'dia_anterior' };
+      // Atrasado y fuera de la franja: el lunes a las 22:30, nada; el martes a las 07:00, sí
+      assert.deepEqual(quienes(martes, '2026-11-02 22:30'), []);
+      assert.deepEqual(quienes(martes, '2026-11-03 00:00'), []);
+      assert.deepEqual(quienes(martes, '2026-11-03 06:30'), []);
+      assert.deepEqual(quienes(martes, '2026-11-03 07:00'), [1, 2]);
+      assert.deepEqual(quienes(martes, '2026-11-03 07:30'), [1, 2]);
+      assert.deepEqual(quienes(martes, '2026-11-03 08:00'), []);
+    });
+
+    it('el miércoles 04/11 a las 10:00 con el día hábil anterior (aviso el martes 03/11 a las 10:00)', () => {
+      const miercoles = { fecha: '2026-11-04', desde: '10:00', recordatorio: 'dia_anterior' };
+      assert.deepEqual(quienes(miercoles, '2026-11-03 15:30'), [1, 2]);
+      assert.deepEqual(quienes(miercoles, '2026-11-03 19:30'), [1, 2]);
+      assert.deepEqual(quienes(miercoles, '2026-11-03 19:59:59'), [1, 2]);
+      assert.deepEqual(quienes(miercoles, '2026-11-03 20:00'), []);
+      assert.deepEqual(quienes(miercoles, '2026-11-03 23:30'), []);
+      assert.deepEqual(quienes(miercoles, '2026-11-04 06:30'), []);
+      assert.deepEqual(quienes(miercoles, '2026-11-04 07:00'), [1, 2]);
+    });
+
+    it('a los 30 minutos justos todavía está a tiempo; a los 31, es atrasado', () => {
+      // Aviso a las 06:00, antes de la franja
+      const temprano = { desde: '08:00', recordatorio: '2h' };
+      assert.deepEqual(quienes(temprano, '2026-11-03 06:30'), [1, 2]);
+      assert.deepEqual(quienes(temprano, '2026-11-03 06:30:59'), [1, 2]);
+      assert.deepEqual(quienes(temprano, '2026-11-03 06:31'), []);
+      assert.deepEqual(quienes(temprano, '2026-11-03 07:00'), [1, 2]);
+      // Aviso a las 20:00, al cierre de la franja
+      const tarde = { desde: '22:00', recordatorio: '2h' };
+      assert.deepEqual(quienes(tarde, '2026-11-03 19:59'), []);
+      assert.deepEqual(quienes(tarde, '2026-11-03 20:00'), [1, 2]);
+      assert.deepEqual(quienes(tarde, '2026-11-03 20:30'), [1, 2]);
+      assert.deepEqual(quienes(tarde, '2026-11-03 20:31'), []);
+      assert.deepEqual(quienes(tarde, '2026-11-03 21:30'), []);
+    });
+
+    it('los minutos cruzan días: el aviso del lunes a las 23:30 está a tiempo hasta el martes a las 00:00', () => {
+      // El martes 03/11 a las 00:30 con «1 hora antes»: el aviso es el lunes 02/11 a las 23:30
+      const medianoche = { desde: '00:30', recordatorio: '1h' };
+      assert.deepEqual(quienes(medianoche, '2026-11-02 23:29'), []);
+      assert.deepEqual(quienes(medianoche, '2026-11-02 23:30'), [1, 2]);
+      assert.deepEqual(quienes(medianoche, '2026-11-03 00:00'), [1, 2]);
+      assert.deepEqual(quienes(medianoche, '2026-11-03 00:01'), []);
+      assert.deepEqual(quienes(medianoche, '2026-11-03 00:29'), []);
+      // Cruzan meses: el martes 01/12 a las 00:30 con «1 hora antes» avisa el lunes 30/11 a las 23:30
+      const mes = { fecha: '2026-12-01', desde: '00:30', recordatorio: '1h' };
+      assert.deepEqual(quienes(mes, '2026-12-01 00:00'), [1, 2]);
+      assert.deepEqual(quienes(mes, '2026-12-01 00:01'), []);
+      // Y años: el lunes 04/01/2027 a las 10:00 con el día hábil anterior avisa el jueves 31/12/2026 a las 10:00 (el 01/01
+      // es feriado): el lunes, atrasado, a las 06:30 nada y a las 07:00 sí
+      const anio = { fecha: '2027-01-04', desde: '10:00', recordatorio: 'dia_anterior' };
+      assert.deepEqual(quienes(anio, '2026-12-31 10:00'), [1, 2]);
+      assert.deepEqual(quienes(anio, '2027-01-01 10:00'), []);
+      assert.deepEqual(quienes(anio, '2027-01-04 06:30'), []);
+      assert.deepEqual(quienes(anio, '2027-01-04 07:00'), [1, 2]);
+    });
+  });
+
+  it('por evento y por persona, cada una una vez', () => {
+    const otro = (id, destinatarios) => eventoDePrueba({ id, destinatarios });
+    const uno = (usuarioId) => ({ usuario_id: usuarioId, email: `persona${usuarioId}@rpad.test`, sin_recordatorio: 0 });
+    const resultado = tocan([otro(9, [uno(5), uno(2)]), otro(4, [uno(8), uno(3), uno(8)])], '2026-11-03 08:00');
+    assert.deepEqual(resultado.map(({ evento_id: e, usuario_id: u }) => [e, u]), [[4, 3], [4, 8], [9, 2], [9, 5]]);
+    // Un id que llega como texto se da como número
+    assert.deepEqual(tocan([eventoDePrueba({ id: '7', destinatarios: [{ ...INVITADA, usuario_id: '2' }] })],
+      '2026-11-03 08:00'), [{ evento_id: 7, usuario_id: 2, email: 'invitada@rpad.test', para: PARA, reintento: false }]);
+  });
+
+  it('nada tira: lo que no sirve no toca', () => {
+    for (const eventos of [null, undefined, 'eventos', 42, {}]) assert.deepEqual(tocan(eventos, '2026-11-03 08:00'), []);
+    for (const ahora of [null, undefined, '', '2026-11-03', '2026-11-03T08:00:00', '03/11/2026 08:00', '2026-11-03 25:00']) {
+      assert.deepEqual(tocan([eventoDePrueba()], ahora), [], String(ahora));
+    }
+    for (const contexto of [null, undefined, 'contexto', 42]) {
+      assert.deepEqual(recordatoriosQueTocan([eventoDePrueba()], contexto), []);
+    }
+    // Sin feriados (o con algo que no es un Set), no saca ningún día
+    assert.equal(recordatoriosQueTocan([eventoDePrueba()], { ahora: '2026-11-03 08:00' }).length, 2);
+    assert.equal(tocan([eventoDePrueba()], '2026-11-03 08:00', ['2026-11-03']).length, 2);
+    const raros = [
+      null, 42, 'evento', eventoDePrueba({ id: 0 }), eventoDePrueba({ id: 'abc' }), eventoDePrueba({ fecha: '2026-02-30' }),
+      eventoDePrueba({ desde: '10:00:00' }), eventoDePrueba({ recordatorio: 'otro' }),
+      eventoDePrueba({ destinatarios: null }),
+      eventoDePrueba({ destinatarios: [null, 42, { usuario_id: 0, email: 'cero@rpad.test' }] })
+    ];
+    assert.deepEqual(tocan(raros, '2026-11-03 08:00'), []);
+    // Los envíos raros no frenan a nadie
+    assert.deepEqual(quienes({ envios: null }, '2026-11-03 08:00'), [1, 2]);
+    const enviosRaros = [null, 42, 'envio', { usuario_id: 'abc', para: PARA, success: 1 }];
+    assert.deepEqual(quienes({ envios: enviosRaros }, '2026-11-03 08:00'), [1, 2]);
+  });
+});
+
+describe('cambioQueAvisa', () => {
+  const ANTES = Object.freeze({
+    titulo: 'Reunión de equipo', detalle: 'Sala 1.', fecha: '2026-11-03', desde: '10:00', hasta: '11:00', recordatorio: '2h',
+    compartido: true, para_todos: false, personas: [2, 3]
+  });
+
+  it('avisa si cambió el título, la fecha, la hora de inicio o la de fin', () => {
+    for (const cambio of [
+      { titulo: 'Reunión de área' }, { fecha: '2026-11-04' }, { desde: '10:30' }, { hasta: '12:00' }, { hasta: null },
+      { hasta: '' }
+    ]) {
+      assert.equal(cambioQueAvisa(ANTES, { ...ANTES, ...cambio }), true, JSON.stringify(cambio));
+    }
+    assert.equal(cambioQueAvisa({ ...ANTES, hasta: null }, { ...ANTES, hasta: '11:00' }), true);
+  });
+
+  it('no avisa si cambió solo el detalle, el recordatorio o las personas', () => {
+    assert.equal(cambioQueAvisa(ANTES, { ...ANTES }), false);
+    for (const cambio of [
+      { detalle: 'Sala 2.' }, { detalle: null }, { recordatorio: 'ninguno' }, { personas: [4] }, { para_todos: true },
+      { compartido: false }
+    ]) {
+      assert.equal(cambioQueAvisa(ANTES, { ...ANTES, ...cambio }), false, JSON.stringify(cambio));
+    }
+  });
+
+  it('sin hora de fin: null, vacía o que no venga son lo mismo', () => {
+    const sinHasta = { ...ANTES };
+    delete sinHasta.hasta;
+    for (const hasta of [null, '', undefined]) {
+      assert.equal(cambioQueAvisa({ ...ANTES, hasta: null }, { ...ANTES, hasta }), false, String(hasta));
+      assert.equal(cambioQueAvisa(sinHasta, { ...ANTES, hasta }), false, String(hasta));
+    }
+  });
+
+  it('nada tira: si alguno no es un objeto, false', () => {
+    for (const valor of [null, undefined, 42, 'evento', []]) {
+      assert.equal(cambioQueAvisa(valor, ANTES), false);
+      assert.equal(cambioQueAvisa(ANTES, valor), false);
+    }
+  });
+});
+
+describe('emailsDelGuardado', () => {
+  // El martes 03/11/2026 de 10:00 a 11:00, de la persona 1; hoy es el martes 27/10/2026
+  const AHORA = '2026-10-27 10:00:00';
+  const EVENTO = Object.freeze({
+    id: 7, creado_por: 1, titulo: 'Reunión de equipo', detalle: null, fecha: '2026-11-03', desde: '10:00', hasta: '11:00',
+    recordatorio: '2h'
+  });
+  const NINGUNO = Object.freeze({ invitacion: [], cambio: [], cancelacion: [] });
+  const guardado = (datos) => emailsDelGuardado({
+    antes: EVENTO, despues: EVENTO, audienciaAntes: [], audienciaDespues: [], ahora: AHORA, ...datos
+  });
+
+  it('el alta invita a la audiencia', () => {
+    assert.deepEqual(guardado({ antes: null, audienciaDespues: [2, 3] }), { invitacion: [2, 3], cambio: [], cancelacion: [] });
+    // Un evento personal no le manda nada a nadie
+    assert.deepEqual(guardado({ antes: null, audienciaDespues: [] }), NINGUNO);
+  });
+
+  it('un cambio de hora invita a los que entran y les avisa a los que siguen; a los que salen, nada', () => {
+    const otraHora = { ...EVENTO, desde: '11:00', hasta: '12:00' };
+    assert.deepEqual(guardado({ despues: otraHora, audienciaAntes: [2, 3], audienciaDespues: [3, 4] }),
+      { invitacion: [4], cambio: [3], cancelacion: [] });
+    // Otro título, otra fecha o sin hora de fin, lo mismo
+    for (const cambio of [{ titulo: 'Reunión de área' }, { fecha: '2026-11-04' }, { hasta: null }]) {
+      assert.deepEqual(guardado({ despues: { ...EVENTO, ...cambio }, audienciaAntes: [2, 3], audienciaDespues: [3, 4] }),
+        { invitacion: [4], cambio: [3], cancelacion: [] }, JSON.stringify(cambio));
+    }
+  });
+
+  it('un cambio que no toca la fecha, la hora ni el título no les avisa a los que siguen', () => {
+    for (const cambio of [{ detalle: 'Sala 2.' }, { recordatorio: 'ninguno' }, {}]) {
+      const despues = { ...EVENTO, ...cambio };
+      assert.deepEqual(guardado({ despues, audienciaAntes: [2, 3], audienciaDespues: [2, 3] }), NINGUNO,
+        JSON.stringify(cambio));
+      // Los que entran se invitan igual
+      assert.deepEqual(guardado({ despues, audienciaAntes: [2, 3], audienciaDespues: [3, 4] }),
+        { invitacion: [4], cambio: [], cancelacion: [] }, JSON.stringify(cambio));
+    }
+  });
+
+  it('a quien se saca, nada: también si pasa a «Solo yo»', () => {
+    const otraHora = { ...EVENTO, desde: '11:00' };
+    assert.deepEqual(guardado({ despues: otraHora, audienciaAntes: [2, 3], audienciaDespues: [] }), NINGUNO);
+    assert.deepEqual(guardado({ despues: otraHora, audienciaAntes: [2, 3], audienciaDespues: [3] }),
+      { invitacion: [], cambio: [3], cancelacion: [] });
+  });
+
+  it('la baja le avisa a la audiencia que se canceló', () => {
+    assert.deepEqual(guardado({ despues: null, audienciaAntes: [2, 3], audienciaDespues: [4] }),
+      { invitacion: [], cambio: [], cancelacion: [2, 3] });
+    assert.deepEqual(guardado({ despues: null, audienciaAntes: [] }), NINGUNO);
+  });
+
+  it('uno que ya empezó: nada (el de después; en una baja, el de antes)', () => {
+    const ayer = { ...EVENTO, fecha: '2026-10-26' };
+    assert.deepEqual(guardado({ antes: null, despues: ayer, audienciaDespues: [2, 3] }), NINGUNO);
+    assert.deepEqual(guardado({ antes: ayer, despues: { ...ayer, desde: '11:00' }, audienciaAntes: [2, 3],
+      audienciaDespues: [3, 4] }), NINGUNO);
+    assert.deepEqual(guardado({ antes: ayer, despues: null, audienciaAntes: [2, 3] }), NINGUNO);
+    // Justo a la hora de inicio ya empezó; un segundo antes, todavía no
+    const hoy = { ...EVENTO, fecha: '2026-10-27' };
+    assert.deepEqual(guardado({ antes: null, despues: hoy, audienciaDespues: [2], ahora: '2026-10-27 10:00:00' }), NINGUNO);
+    assert.deepEqual(guardado({ antes: null, despues: hoy, audienciaDespues: [2], ahora: '2026-10-27 09:59:59' }),
+      { invitacion: [2], cambio: [], cancelacion: [] });
+    // Pasado a una fecha que todavía no llegó, cuenta el de después; pasado al de ayer, nada
+    assert.deepEqual(guardado({ antes: ayer, despues: EVENTO, audienciaAntes: [2, 3], audienciaDespues: [3, 4] }),
+      { invitacion: [4], cambio: [3], cancelacion: [] });
+    assert.deepEqual(guardado({ antes: EVENTO, despues: ayer, audienciaAntes: [2, 3], audienciaDespues: [3, 4] }), NINGUNO);
+  });
+
+  it('quien lo creó nunca está; los ids, sin repetidos y de menor a mayor', () => {
+    assert.deepEqual(guardado({ antes: null, audienciaDespues: [3, 1, 2, 3] }),
+      { invitacion: [2, 3], cambio: [], cancelacion: [] });
+    assert.deepEqual(guardado({ despues: null, audienciaAntes: [1, 2] }), { invitacion: [], cambio: [], cancelacion: [2] });
+    // La audiencia puede venir como las personas de audienciaDe, con su id (también como texto)
+    const personas = [{ id: 12, nombre: 'Persona de Prueba', email: 'p@rpad.test' }, { id: '4', nombre: 'Test adminB' }];
+    assert.deepEqual(guardado({ antes: null, audienciaDespues: personas }),
+      { invitacion: [4, 12], cambio: [], cancelacion: [] });
+  });
+
+  it('nada tira: sin un ahora o un evento que sirvan, nadie', () => {
+    for (const entrada of [null, undefined, 42, 'guardado', []]) assert.deepEqual(emailsDelGuardado(entrada), NINGUNO);
+    for (const ahora of [null, undefined, '', '2026-10-27', '2026-10-27T10:00:00']) {
+      assert.deepEqual(guardado({ antes: null, audienciaDespues: [2], ahora }), NINGUNO, String(ahora));
+    }
+    assert.deepEqual(guardado({ antes: null, despues: null, audienciaDespues: [2] }), NINGUNO);
+    for (const despues of [{ ...EVENTO, fecha: '2026-02-30' }, { ...EVENTO, desde: '9:00' }, 42, 'evento']) {
+      assert.deepEqual(guardado({ antes: null, despues, audienciaDespues: [2] }), NINGUNO, JSON.stringify(despues));
+    }
+    // Una audiencia que no es una lista es nadie, y lo que no es un id no cuenta
+    assert.deepEqual(guardado({ antes: null, audienciaDespues: null }), NINGUNO);
+    assert.deepEqual(guardado({ antes: null, audienciaDespues: [0, 'abc', null, {}, { id: -2 }, 1.5, 5] }),
+      { invitacion: [5], cambio: [], cancelacion: [] });
   });
 });
