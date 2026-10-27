@@ -61,7 +61,8 @@ import {
 } from '../controllers/notasDigitalesController.js';
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
-  verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial
+  verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
+  corregirLicenciaMia, borrarLicenciaMia
 } from '../controllers/miEspacioController.js';
 import {
   reporteEstadoGeneral,
@@ -189,6 +190,11 @@ router.get('/auth/profile/firma/imagen', authMiddleware, adminOnly, verImagenMiF
 // solo lo suyo (req.user.userId)
 router.get('/mi-espacio/resumen', authMiddleware, verResumen);
 router.get('/mi-espacio/licencias', authMiddleware, listarLicenciasMias);
+// El cálculo va antes que las rutas con :id
+router.post('/mi-espacio/licencias/calculo', authMiddleware, calcularLicencia);
+router.post('/mi-espacio/licencias', authMiddleware, cargarLicenciaMia);
+router.put('/mi-espacio/licencias/:id', authMiddleware, corregirLicenciaMia);
+router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
 router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
 router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
 router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);

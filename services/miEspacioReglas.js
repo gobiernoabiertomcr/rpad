@@ -241,6 +241,24 @@ export const venceLaLicencia = (anio) => {
   return valido === null ? null : fechaDe(valido + 2, '12-31');
 };
 
+// '1/7/2026': el día de una habilitación, sin ceros
+const fechaSinCeros = (fecha) => `${Number(fecha.slice(8, 10))}/${Number(fecha.slice(5, 7))}/${Number(fecha.slice(0, 4))}`;
+
+/**
+ * Cómo se habilita la licencia de un año con unos días de `DIAS_VACACIONES`, para «Mis vacaciones y saldos»: «Se habilitan
+ * en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; con 25, 13 y 12). Cada licencia vence el 31/12 de dos años
+ * después.» Las fechas son las de `habilitaciones` y las mitades, las de `mitadesDe` (con un número impar, la primera es la
+ * mayor). Unos días que no son de `DIAS_VACACIONES`, o un año que no sirve, null.
+ */
+export const textoDeLasMitades = (anio, dias) => {
+  const fechas = habilitaciones(anio);
+  const total = numeroDe(dias);
+  if (fechas === null || !DIAS_VACACIONES.includes(total)) return null;
+  const [primera, segunda] = mitadesDe(total);
+  return `Se habilitan en dos mitades: ${primera} el ${fechaSinCeros(fechas[0])} y ${segunda} el ${fechaSinCeros(fechas[1])} `
+    + '(con 15, 8 y 7; con 25, 13 y 12). Cada licencia vence el 31/12 de dos años después.';
+};
+
 /**
  * Los días de vacaciones y los estudios que valen para un año: la fila de ese año o, si no los eligió, la del año anterior
  * más cercano (spec, 3.1). `{ anio, dias_vacaciones, estudios }` (estudios es 'universitario', 'secundario' o null), o null

@@ -201,7 +201,11 @@ const RUTAS_MI_ESPACIO = [
   ['GET', '/mi-espacio/licencias'],
   ['GET', '/mi-espacio/horas-extras'],
   ['GET', '/mi-espacio/anio/2026'],
-  ['GET', '/mi-espacio/saldo-inicial']
+  ['GET', '/mi-espacio/saldo-inicial'],
+  ['POST', '/mi-espacio/licencias'],
+  ['POST', '/mi-espacio/licencias/calculo'],
+  ['PUT', '/mi-espacio/licencias/1'],
+  ['DELETE', '/mi-espacio/licencias/1']
 ];
 
 describe('Mi espacio', () => {

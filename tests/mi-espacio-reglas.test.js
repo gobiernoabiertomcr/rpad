@@ -15,7 +15,7 @@ import {
   textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion, textoUnida,
   textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
   TEXTO_NO_DIA_ENTERO,
-  mitadesDe, habilitaciones, venceLaLicencia, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
+  mitadesDe, habilitaciones, venceLaLicencia, textoDeLasMitades, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
   textoDelReparto, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
   horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe,
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
@@ -198,6 +198,25 @@ describe('las mitades y el vencimiento', () => {
   it('venceLaLicencia: el 31/12 de dos años después', () => {
     assert.equal(venceLaLicencia(2024), '2026-12-31');
     assert.equal(venceLaLicencia(2025), '2027-12-31');
+  });
+
+  it('textoDeLasMitades: las mitades de los días con las fechas de las habilitaciones, sin ceros', () => {
+    assert.equal(textoDeLasMitades(2026, 20), 'Se habilitan en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; '
+      + 'con 25, 13 y 12). Cada licencia vence el 31/12 de dos años después.');
+    const comienzo = (anio, dias) => textoDeLasMitades(anio, dias).split(' (')[0];
+    assert.equal(comienzo(2024, 15), 'Se habilitan en dos mitades: 8 el 1/7/2024 y 7 el 1/1/2025');
+    assert.equal(comienzo(2027, 25), 'Se habilitan en dos mitades: 13 el 1/7/2027 y 12 el 1/1/2028');
+    assert.equal(comienzo(2026, 10), 'Se habilitan en dos mitades: 5 el 1/7/2026 y 5 el 1/1/2027');
+    assert.equal(comienzo(2026, 30), 'Se habilitan en dos mitades: 15 el 1/7/2026 y 15 el 1/1/2027');
+    // El de la base o el de un pedido, como texto, también
+    assert.equal(textoDeLasMitades('2026', '20'), textoDeLasMitades(2026, 20));
+  });
+
+  it('textoDeLasMitades: sin unos días de DIAS_VACACIONES o sin un año, null', () => {
+    for (const dias of [undefined, null, 0, 12, 20.5, '', 'veinte', [20]]) {
+      assert.equal(textoDeLasMitades(2026, dias), null, String(dias));
+    }
+    for (const anio of [undefined, null, 'abc', 2026.5, 0]) assert.equal(textoDeLasMitades(anio, 20), null, String(anio));
   });
 
   it('anioVigente: la fila del año o la del anterior más cercano', () => {
