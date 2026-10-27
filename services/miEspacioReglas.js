@@ -22,10 +22,11 @@
  * campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que dejó de cerrar
  * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el
  * paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir y borrar, y
- * lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Los
+ * lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por
+ * último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo). Los
  * textos son planos: escaparlos le toca a quien los dibuja.
  */
-import { diasHabilesDe, ultimoDiaHabilDelMesCon } from './feriadosReglas.js';
+import { diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, diaDeLaSemana } from './feriadosReglas.js';
 import { diasEntre, esFechaIso, formatoCorto, sumarDias, diaHabilAnterior } from './notasDigitalesCalendario.js';
 import { puedeTenerLicencia, puedeAnularse } from './licenciasReglas.js';
 
@@ -1599,4 +1600,63 @@ export const pasoPrevistoDe = (entrada) => {
     soy_titular: true, puede_autorizar: fila.tipo === 'vacaciones', vispera: diaHabilAnterior(fila.desde), notas_de_hoy: deHoy
   } : null;
   return { pasa: true, avisos, firmante, sin_pasar_previsto: sinPasarPrevisto };
+};
+
+// «Hoy no están» (spec, sección 7): lo que ven los compañeros de las ausencias de día entero de cada uno, sin el tipo ni la
+// nota: «Laura Gómez no está» y «Vuelve el lunes 02/11»
+export const textoNoEsta = (nombre) => `${typeof nombre === 'string' ? nombre : ''} no está`;
+export const textoDeLaVuelta = (fecha) => (esFechaIso(fecha) ? `Vuelve el ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}` : null);
+
+/**
+ * Las ausencias de cada persona (`filas`: `[{ usuario_id, nombre, desde, hasta }]`), con las seguidas o separadas solo por
+ * días no hábiles (los 9 fijos y los feriados del Set) unidas en una, como `unirAusencias` de Configuración:
+ * `[{ usuario_id, nombre, desde, hasta, vuelve }]`, por desde, nombre y usuario_id. `vuelve` es el primer día hábil después
+ * del hasta (`proximoDiaHabilCon`), o null si no hay. Solo esas claves: aunque las filas traigan el tipo o la nota, no
+ * pasan. Las filas sin un usuario_id o sin unas fechas en orden no cuentan.
+ */
+export const ausenciasUnidas = (filas, feriados) => {
+  const porPersona = new Map();
+  for (const fila of listaDe(filas)) {
+    const usuarioId = esObjeto(fila) ? idDe(fila.usuario_id) : NaN;
+    if (!Number.isInteger(usuarioId) || !conFechas(fila)) continue;
+    if (!porPersona.has(usuarioId)) porPersona.set(usuarioId, []);
+    porPersona.get(usuarioId).push(fila);
+  }
+  const vueltaDe = (hasta) => proximoDiaHabilCon(sumarDias(hasta, 1), feriados);
+  const unidas = [];
+  for (const [usuarioId, propias] of porPersona) {
+    const nombre = typeof propias[0].nombre === 'string' ? propias[0].nombre : '';
+    let actual = null;
+    for (const { desde, hasta } of [...propias].sort((a, b) => compararTexto(a.desde, b.desde))) {
+      // Se une si empieza, a más tardar, el día en que volvería de la anterior: no queda ningún día hábil libre en el medio
+      if (actual !== null && desde <= (vueltaDe(actual.hasta) ?? actual.hasta)) {
+        if (hasta > actual.hasta) actual.hasta = hasta;
+      } else {
+        actual = { usuario_id: usuarioId, nombre, desde, hasta };
+        unidas.push(actual);
+      }
+    }
+  }
+  return unidas
+    .map((ausencia) => ({ ...ausencia, vuelve: vueltaDe(ausencia.hasta) }))
+    .sort((a, b) => compararTexto(a.desde, b.desde) || a.nombre.localeCompare(b.nombre, 'es') || a.usuario_id - b.usuario_id);
+};
+
+/**
+ * Las ausencias unidas (`ausenciasUnidas`) que tocan [desde, hasta], como las ve la API (`GET /api/mi-espacio/ausentes` y
+ * «Hoy y mañana» del Resumen): `[{ nombre, desde, hasta, vuelve, texto, vuelve_texto }]`, en el orden recibido, enteras
+ * (con su desde y su hasta aunque pasen del rango). Nunca el tipo, la nota ni un id. Con un rango que no es un rango, [].
+ */
+export const ausentesDelRango = (unidas, desde, hasta) => {
+  if (!esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return [];
+  return listaDe(unidas)
+    .filter((ausencia) => conFechas(ausencia) && ausencia.desde <= hasta && ausencia.hasta >= desde)
+    .map((ausencia) => {
+      const vuelve = esFechaIso(ausencia.vuelve) ? ausencia.vuelve : null;
+      const nombre = typeof ausencia.nombre === 'string' ? ausencia.nombre : '';
+      return {
+        nombre, desde: ausencia.desde, hasta: ausencia.hasta, vuelve, texto: textoNoEsta(nombre),
+        vuelve_texto: textoDeLaVuelta(vuelve)
+      };
+    });
 };

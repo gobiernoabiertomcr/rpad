@@ -1,5 +1,6 @@
 // Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5, 10 y 11): la API, contra una base de prueba propia.
-// Todas las rutas trabajan sobre la persona de la sesión: lo de otra nunca se ve. Sin modalidad (sin vínculo cargado), las
+// Todas las rutas trabajan sobre la persona de la sesión: lo de otra nunca se ve, salvo «Hoy no están» (sección 7: quién no
+// está, sin el tipo) y lo que necesita el campo del firmante titular (sección 6). Sin modalidad (sin vínculo cargado), las
 // lecturas responden 200 con `modalidad: null` y el mensaje que lo dice. Lo que llega de la base como texto (los DECIMAL, los
 // TIME y las fechas) sale como número, 'HH:MM' y 'AAAA-MM-DD' (Review Focus 2). La lectura (services/miEspacioDatos.js) se
 // prueba también directo. La API usa la fecha real: las fechas de los tests se arman desde hoy.
@@ -104,10 +105,12 @@ const conSaldo = (clave, concepto, anio, cantidad) => query(
   'INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES (?, ?, ?, ?)',
   [usuarios[clave].id, concepto, anio, cantidad]
 );
-const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, nota = null, activo = 1 }) => (await query(
-  'INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, nota, activo) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  [usuarios[clave].id, tipo, desde, hasta, horas, nota, activo]
-)).insertId;
+const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, nota = null, activo = 1, mostrar = 1 }) =>
+  (await query(
+    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, nota, activo, mostrar)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [usuarios[clave].id, tipo, desde, hasta, horas, nota, activo, mostrar]
+  )).insertId;
 const conHorasExtras = async (clave, { fecha, desde, hasta, nota = null, activo = 1 }) => (await query(
   'INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
   [usuarios[clave].id, fecha, desde, hasta, nota, activo]
@@ -697,22 +700,22 @@ describe('corregir y borrar una licencia', () => {
 
 // El paso a Configuración → Licencias (spec, sección 6): las ausencias de día entero de quien puede tener licencia pasan a
 // usuarios_licencias en la misma transacción, solo con las fechas, con la persona como actor y sin el aviso al superadmin
-describe('el paso a Configuración', () => {
-  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-    'base64');
+// La firma con imagen (sin ella no se puede autorizar a nadie: autorizables) y el firmante titular de las Notas Digitales
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64');
+const conFirma = (clave) => query(
+  "INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, 'Firma', 'Cargo', ?, 'image/png')",
+  [usuarios[clave].id, PNG]
+);
+const comoTitular = (clave) => query('UPDATE notas_digitales_config SET firmante_usuario_id = ?', [usuarios[clave].id]);
 
+describe('el paso a Configuración', () => {
   beforeEach(async () => {
     await query("DELETE FROM usuarios_auditoria WHERE accion IN ('licencia_cargada', 'licencia_editada', 'licencia_anulada')");
     await query('DELETE FROM usuarios_firmas');
     await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
   });
 
-  // La firma con imagen (sin ella no se puede autorizar a nadie: autorizables) y el firmante titular de las Notas Digitales
-  const conFirma = (clave) => query(
-    "INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, 'Firma', 'Cargo', ?, 'image/png')",
-    [usuarios[clave].id, PNG]
-  );
-  const comoTitular = (clave) => query('UPDATE notas_digitales_config SET firmante_usuario_id = ?', [usuarios[clave].id]);
   // Para cargar vacaciones: el arranque, el año y 20 días de la licencia del año anterior
   const listoParaVacaciones = async (clave) => {
     await listoParaCargar(clave);
@@ -1474,6 +1477,24 @@ describe('las horas extras', () => {
     assert.deepEqual(tabla.body.data.dias_por_mes, {});
     assert.equal((await api.delete(`/mi-espacio/horas-extras/${id}`, como('adminA'))).status, 404);
   });
+
+  it('el doble envío: dos POST simultáneos que se superponen guardan uno solo (Review Focus 3)', async () => {
+    await listoParaCargar('adminA');
+    const cuerpos = [{ fecha: q(5), desde: '19:00', hasta: '22:00' }, { fecha: q(5), desde: '20:00', hasta: '23:00' }];
+    for (let vuelta = 0; vuelta < 3; vuelta++) {
+      await query('DELETE FROM mi_espacio_horas_extras');
+      const respuestas = await Promise.all(cuerpos.map(cuerpo => api.post('/mi-espacio/horas-extras', cuerpo, como('adminA'))));
+      assert.deepEqual(respuestas.map(res => res.status).sort(), [201, 400], JSON.stringify(respuestas.map(res => res.body)));
+      const guardadas = await horasGuardadasDe('adminA');
+      assert.equal(guardadas.length, 1, `vuelta ${vuelta}`);
+      // La que quedó es la del 201, y la otra choca con ella
+      const [guardada] = guardadas;
+      const ganadora = respuestas.findIndex(res => res.status === 201);
+      assert.deepEqual([guardada.id, guardada.desde, guardada.hasta],
+        [respuestas[ganadora].body.data.id, cuerpos[ganadora].desde, cuerpos[ganadora].hasta]);
+      assert.deepEqual(respuestas[1 - ganadora].body, rechazo(textoHorarioSuperpuesto(guardada.desde, guardada.hasta), 'desde'));
+    }
+  });
 });
 
 describe('guardar el año', () => {
@@ -1640,6 +1661,202 @@ describe('guardar el saldo inicial', () => {
     assert.deepEqual(res.body, rechazo(MENSAJES_MI_ESPACIO.sinModalidad, null));
     assert.deepEqual([await arranqueDe('lector'), await saldosDe('lector')], [[], []]);
   });
+
+  it('el doble envío: dos PUT simultáneos dan 200 y dejan un solo arranque y un saldo por campo (Review Focus 3)', async () => {
+    await conAnio('adminA', ANIO, 20);
+    const campos = camposDePlanta();
+    const saldos = Object.fromEntries(campos.map(campo => [campo.clave, 1]));
+    for (let vuelta = 0; vuelta < 3; vuelta++) {
+      await query('DELETE FROM mi_espacio_saldos');
+      await query('DELETE FROM mi_espacio_arranque');
+      const respuestas = await Promise.all([0, 1].map(() => api.put('/mi-espacio/saldo-inicial', { saldos }, como('adminA'))));
+      assert.deepEqual(respuestas.map(res => res.status), [200, 200], JSON.stringify(respuestas.map(res => res.body)));
+      for (const res of respuestas) assert.deepEqual(res.body.data, { arranque: hoy });
+      assert.deepEqual(await arranqueDe('adminA'), [hoy], `vuelta ${vuelta}`);
+      assert.deepEqual(await saldosDe('adminA'), ordenados(campos.map(campo => [campo.concepto, campo.anio, 1])), `vuelta ${vuelta}`);
+    }
+  });
+});
+
+// «Hoy no están» (spec, sección 7): lo que ven los compañeros (administración) de las ausencias de día entero de los demás,
+// sin el tipo, la nota ni un id
+const DIAS_DE_LA_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const diaYMes = (fecha) => `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+const vueltaTexto = (fecha) => `Vuelve el ${DIAS_DE_LA_SEMANA[new Date(`${fecha}T12:00:00Z`).getUTCDay()]} ${diaYMes(fecha)}`;
+const ausente = (nombre, desde, hasta, vuelve) =>
+  ({ nombre, desde, hasta, vuelve, texto: `${nombre} no está`, vuelve_texto: vueltaTexto(vuelve) });
+const CLAVES_DEL_AUSENTE = ['nombre', 'desde', 'hasta', 'vuelve', 'texto', 'vuelve_texto'];
+
+describe('«Hoy no están»', () => {
+  const ausentes = (clave, desde, hasta) => api.get(`/mi-espacio/ausentes?desde=${desde}&hasta=${hasta}`, como(clave));
+
+  it('el tipo no sale: cada ausente trae solo el nombre, las fechas, la vuelta y sus textos (antiobjetivo)', async () => {
+    assert.equal(vueltaTexto(q(7)), `Vuelve el lunes ${diaYMes(q(7))}`);
+    // Unas vacaciones y una médica seguidas (separadas solo por el fin de semana): una sola ausencia
+    await conLicencia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4), nota: 'Viaje a la costa' });
+    await conLicencia('adminB', { tipo: 'medica', desde: q(7), hasta: q(8), nota: 'Turno con la doctora' });
+    const res = await ausentes('adminA', q(0), q(4));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, {
+      success: true, data: { puede_ver: true, ausentes: [ausente('Martín Ríos', q(0), q(8), q(9))] }
+    });
+    for (const cada of res.body.data.ausentes) assert.deepEqual(Object.keys(cada), CLAVES_DEL_AUSENTE);
+    const texto = JSON.stringify(res.body);
+    for (const nada of ['vacaciones', 'Vacaciones', 'medica', 'médica', 'Viaje', 'Turno']) assert.ok(!texto.includes(nada), nada);
+
+    // Pedida solo por el último día, se ve entera: desde el primer día y con su vuelta
+    const delFinal = await ausentes('adminA', q(8), q(8));
+    assert.deepEqual(delFinal.body.data.ausentes, [ausente('Martín Ríos', q(0), q(8), q(9))]);
+    // Y fuera de ella, nadie
+    const despues = await ausentes('adminA', q(9), q(11));
+    assert.deepEqual(despues.body.data, { puede_ver: true, ausentes: [] });
+  });
+
+  it('solo administración: el lector y el colaborador no ven a nadie; de los demás, lo de día entero que se muestra',
+    async () => {
+      // Lo que se ve: una médica de adminB y la franquicia de 7 horas del superadmin (el '7.0' del DECIMAL)
+      await conLicencia('adminB', { tipo: 'medica', desde: q(1) });
+      await conLicencia('superadmin', { tipo: 'franquicia', desde: q(2), horas: '7.0' });
+      // Lo que no: las del lector y el colaborador (aunque digan mostrar = 1), la de adminB con mostrar = 0, la franquicia
+      // de 3 horas del editor, una dada de baja y una fuera del rango
+      await conLicencia('lector', { tipo: 'medica', desde: q(1) });
+      await conLicencia('colab', { tipo: 'medica', desde: q(1) });
+      await conLicencia('adminB', { tipo: 'familiar', desde: q(3), mostrar: 0 });
+      await conLicencia('editor', { tipo: 'franquicia', desde: q(2), horas: '3.0' });
+      await conLicencia('editor', { tipo: 'medica', desde: q(3), activo: 0 });
+      await conLicencia('editor', { tipo: 'medica', desde: q(9) });
+      // La de quien mira no la ve él; la ven los demás
+      await conLicencia('adminA', { tipo: 'medica', desde: q(1) });
+
+      const deA = await ausentes('adminA', q(0), q(4));
+      assert.equal(deA.status, 200, JSON.stringify(deA.body));
+      assert.deepEqual(deA.body.data, { puede_ver: true, ausentes: [
+        ausente('Martín Ríos', q(1), q(1), q(2)), ausente('Diego Fernández', q(2), q(2), q(3))
+      ] });
+      const delEditor = await ausentes('editor', q(0), q(4));
+      assert.deepEqual(delEditor.body.data.ausentes, [
+        ausente('Laura Gómez', q(1), q(1), q(2)), ausente('Martín Ríos', q(1), q(1), q(2)),
+        ausente('Diego Fernández', q(2), q(2), q(3))
+      ]);
+      for (const clave of ['lector', 'colab']) {
+        const res = await ausentes(clave, q(0), q(4));
+        assert.equal(res.status, 200, clave);
+        assert.deepEqual(res.body, { success: true, data: { puede_ver: false, ausentes: [] } }, clave);
+      }
+
+      // Una persona dada de baja, o que dejó de ser de administración, no se ve
+      try {
+        await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [usuarios.superadmin.id]);
+        await query("UPDATE usuarios SET rol = 'lector' WHERE id = ?", [usuarios.adminB.id]);
+        const sinEllos = await ausentes('adminA', q(0), q(4));
+        assert.deepEqual(sinEllos.body.data, { puede_ver: true, ausentes: [] });
+      } finally {
+        await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [usuarios.superadmin.id]);
+        await query("UPDATE usuarios SET rol = 'admin' WHERE id = ?", [usuarios.adminB.id]);
+      }
+    });
+
+  it('la vuelta saltea un feriado de la tabla, y dos ausencias separadas solo por él son una', async () => {
+    await conLicencia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
+    const sinFeriado = await ausentes('adminA', q(0), q(1));
+    assert.deepEqual(sinFeriado.body.data.ausentes, [ausente('Martín Ríos', q(0), q(1), q(2))]);
+
+    await conFeriado({ fecha: q(2), nombre: 'Feriado de prueba' });
+    const conElFeriado = await ausentes('adminA', q(0), q(1));
+    assert.deepEqual(conElFeriado.body.data.ausentes, [ausente('Martín Ríos', q(0), q(1), q(3))]);
+    assert.equal(conElFeriado.body.data.ausentes[0].vuelve_texto, `Vuelve el jueves ${diaYMes(q(3))}`);
+
+    await conLicencia('adminB', { tipo: 'familiar', desde: q(3) });
+    const unidas = await ausentes('adminA', q(0), q(1));
+    assert.deepEqual(unidas.body.data.ausentes, [ausente('Martín Ríos', q(0), q(3), q(4))]);
+  });
+
+  it('el rango: hasta 93 días; con más, o con fechas que no sirven, 400 en fechas, también para el lector', async () => {
+    const justo = await ausentes('adminA', q(0), sumarDias(q(0), 92));
+    assert.equal(justo.status, 200, JSON.stringify(justo.body));
+    const RANGO = rechazo('Elegí un rango de hasta 93 días.', 'fechas');
+    const FECHA = rechazo(MENSAJES_MI_ESPACIO.fecha, 'fechas');
+    const casos = [
+      [`desde=${q(0)}&hasta=${sumarDias(q(0), 93)}`, RANGO],
+      [`desde=${q(1)}&hasta=${q(0)}`, FECHA],
+      [`desde=abc&hasta=${q(0)}`, FECHA],
+      [`desde=${q(0)}&hasta=2026-02-30`, FECHA],
+      [`desde=${q(0)}`, FECHA],
+      ['', FECHA],
+      [`desde=${q(0)}&desde=${q(1)}&hasta=${q(2)}`, FECHA],
+      ['desde=1999-12-30&hasta=1999-12-31', FECHA]
+    ];
+    for (const clave of ['adminA', 'lector']) {
+      for (const [consulta, esperado] of casos) {
+        const res = await api.get(`/mi-espacio/ausentes?${consulta}`, como(clave));
+        assert.equal(res.status, 400, `${clave} ${consulta}`);
+        assert.deepEqual(res.body, esperado, `${clave} ${consulta}`);
+      }
+    }
+  });
+
+  it('el Resumen: «Hoy y mañana» trae a los que no están hoy o mañana, para quien puede verlos', async () => {
+    await conLicencia('adminB', { tipo: 'medica', desde: dia(-2), hasta: hoy });
+    await conLicencia('superadmin', { tipo: 'familiar', desde: dia(1) });
+    // Ya volvió: no está
+    await conLicencia('editor', { tipo: 'medica', desde: dia(-3), hasta: dia(-1) });
+    const res = await api.get('/mi-espacio/resumen', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.hoy_y_manana.ausentes, [
+      ausente('Martín Ríos', dia(-2), hoy, proximoDiaHabil(dia(1))),
+      ausente('Diego Fernández', dia(1), dia(1), proximoDiaHabil(dia(2)))
+    ]);
+    const delLector = await api.get('/mi-espacio/resumen', como('lector'));
+    assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
+    assert.deepEqual(delLector.body.data.hoy_y_manana.ausentes, []);
+  });
+});
+
+// Lo que necesita el campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6): al firmante titular, lo mismo
+// que le da GET /usuarios/licencias a Configuración
+describe('los datos del campo del firmante', () => {
+  beforeEach(async () => {
+    await query('DELETE FROM usuarios_firmas');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
+  });
+
+  it('el titular recibe las personas que puede autorizar con sus licencias, como en Configuración; los demás, soy_titular false',
+    async () => {
+      await comoTitular('adminA');
+      for (const clave of ['adminA', 'adminB', 'editor']) await conFirma(clave);
+      // Una licencia de Configuración de adminB: el formulario avisa si se superpone con la del titular
+      await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta, creado_por) VALUES (?, ?, ?, ?)',
+        [usuarios.adminB.id, q(0), q(4), usuarios.adminB.id]);
+
+      const res = await api.get('/mi-espacio/firmante', como('adminA'));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const { data } = res.body;
+      assert.deepEqual(Object.keys(data), ['soy_titular', 'hoy', 'autorizables']);
+      assert.deepEqual([data.soy_titular, data.hoy], [true, hoy]);
+      // Por nombre: Carla Benítez (el editor, sin licencias) y Martín Ríos
+      assert.deepEqual(data.autorizables.map(persona => persona.id), [usuarios.editor.id, usuarios.adminB.id]);
+      assert.deepEqual(data.autorizables[0].ausencias, []);
+      assert.deepEqual(data.autorizables[1], {
+        id: usuarios.adminB.id, nombre_completo: 'Martín Ríos', licencias: [{ desde: q(0), hasta: q(4) }],
+        ausencias: [{ desde: q(0), hasta: q(4), vuelve: q(7) }]
+      });
+      const deConfiguracion = await api.get('/usuarios/licencias', como('adminA'));
+      assert.equal(deConfiguracion.status, 200, JSON.stringify(deConfiguracion.body));
+      assert.deepEqual(data.autorizables, deConfiguracion.body.data.autorizables);
+
+      for (const clave of ['adminB', 'superadmin', 'lector', 'colab']) {
+        const otro = await api.get('/mi-espacio/firmante', como(clave));
+        assert.equal(otro.status, 200, clave);
+        assert.deepEqual(otro.body, { success: true, data: { soy_titular: false } }, clave);
+      }
+    });
+
+  it('sin firmante titular elegido, nadie lo es', async () => {
+    await conFirma('adminB');
+    const res = await api.get('/mi-espacio/firmante', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data, { soy_titular: false });
+  });
 });
 
 describe('la lectura (services/miEspacioDatos.js)', () => {
@@ -1724,6 +1941,24 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     const sinLaTabla = await datos.feriadosPara([], hoy, []);
     assert.ok(sinLaTabla.has(`${ANIO}-12-25`) && !sinLaTabla.has(enElAnio(ANIO)));
   });
+
+  it('ausenciasVisibles: las filas de día entero que se muestran, de administración activa, sin quien mira y sin el tipo',
+    async () => {
+      await conLicencia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4), nota: 'Viaje' });
+      await conLicencia('superadmin', { tipo: 'uso_autorizado', desde: q(1), horas: '7.0' });
+      await conLicencia('superadmin', { tipo: 'horas_a_favor', desde: q(2), horas: '6.5' });
+      await conLicencia('adminA', { tipo: 'medica', desde: q(1) });
+      await conLicencia('lector', { tipo: 'medica', desde: q(1) });
+      await conLicencia('editor', { tipo: 'medica', desde: q(7) });
+      const filas = await datos.ausenciasVisibles(q(1), q(4), { excluir: usuarios.adminA.id });
+      assert.deepEqual(filas, [
+        { usuario_id: usuarios.adminB.id, nombre: 'Martín Ríos', desde: q(0), hasta: q(4) },
+        { usuario_id: usuarios.superadmin.id, nombre: 'Diego Fernández', desde: q(1), hasta: q(1) }
+      ]);
+      // Sin excluir a nadie, también la de adminA
+      const todas = await datos.ausenciasVisibles(q(1), q(1));
+      assert.deepEqual(todas.map(fila => fila.nombre), ['Martín Ríos', 'Diego Fernández', 'Laura Gómez']);
+    });
 
   it('contextoDe: la persona, lo que cargó, los feriados (con sus filas) y el cálculo', async () => {
     await conArranque('adminA', hoy);

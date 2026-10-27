@@ -1,18 +1,20 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
- * activas, y lo que el paso a Configuración (sección 6) lee de las licencias de Configuración. Lo que llega de la base como
- * texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT
- * ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los
- * TIME ('19:00:00') se cortan a 'HH:MM'.
+ * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración y las ausencias que ven los
+ * compañeros («Hoy no están», sección 7). Lo que llega de la base como texto se convierte acá (el pool no tiene
+ * `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint
+ * pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME ('19:00:00') se cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve).
  */
 import pool from '../config/database.js';
-import { calcular, modalidadDe } from './miEspacioReglas.js';
+import { calcular, modalidadDe, esDiaEntero } from './miEspacioReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
 import { feriadosDelRango } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
+import { esAdmin } from './usuariosReglas.js';
+import { esFechaIso } from './notasDigitalesCalendario.js';
 
 // Un número de la base que puede faltar (las horas de una licencia que no es por horas): NULL sigue siendo null, no 0
 const numeroONulo = (valor) => (valor === null || valor === undefined ? null : Number(valor));
@@ -240,4 +242,27 @@ export const oficialesQueSeCruzan = async (conexion, usuarioId, desde, hasta) =>
     [usuarioId, hasta, desde]
   );
   return filas.map(aOficial);
+};
+
+/**
+ * «Hoy no están» (spec, sección 7): las ausencias que se muestran a los compañeros y tocan [desde, hasta] ('AAAA-MM-DD'):
+ * las filas activas, de día entero (`esDiaEntero`: una franquicia o unas horas a favor de menos de 7 horas no) y con
+ * `mostrar = 1`, de las personas activas de administración (`esAdmin`: «los compañeros»), sin las de `excluir` (quien
+ * mira): `[{ usuario_id, nombre, desde, hasta }]`, por fecha y nombre. El tipo y las horas se leen solo para filtrar: nunca
+ * salen, y la nota no se lee. Con un rango que no es un rango, [] (sin consultar).
+ * @returns {Promise<object[]>}
+ */
+export const ausenciasVisibles = async (desde, hasta, { excluir = null } = {}, conexion = pool) => {
+  if (!esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return [];
+  const [filas] = await conexion.query(
+    `SELECT m.usuario_id, u.nombre_completo, u.rol, m.tipo, m.horas, DATE_FORMAT(m.desde, '%Y-%m-%d') AS desde,
+       DATE_FORMAT(m.hasta, '%Y-%m-%d') AS hasta
+     FROM mi_espacio_licencias m JOIN usuarios u ON u.id = m.usuario_id
+     WHERE m.activo = 1 AND m.mostrar = 1 AND u.activo = 1 AND m.desde <= ? AND m.hasta >= ? AND m.usuario_id <> ?
+     ORDER BY m.desde, u.nombre_completo, m.usuario_id, m.hasta, m.id`,
+    [hasta, desde, idPositivo(excluir) ?? 0]
+  );
+  return filas
+    .filter((fila) => esAdmin(fila.rol) && esDiaEntero(fila))
+    .map((fila) => ({ usuario_id: Number(fila.usuario_id), nombre: fila.nombre_completo, desde: fila.desde, hasta: fila.hasta }));
 };

@@ -63,7 +63,7 @@ import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/fir
 import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
   corregirLicenciaMia, borrarLicenciaMia, cargarHorasExtras, corregirHorasExtras, borrarHorasExtras, guardarAnio,
-  guardarSaldoInicial
+  guardarSaldoInicial, listarAusentes, verFirmante
 } from '../controllers/miEspacioController.js';
 import {
   reporteEstadoGeneral,
@@ -204,6 +204,9 @@ router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
 router.put('/mi-espacio/anio/:anio', authMiddleware, guardarAnio);
 router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);
 router.put('/mi-espacio/saldo-inicial', authMiddleware, guardarSaldoInicial);
+// «Hoy no están» (sección 7: sin esAdmin, nadie) y los datos del campo del firmante titular (sección 6: a los demás, nada)
+router.get('/mi-espacio/ausentes', authMiddleware, listarAusentes);
+router.get('/mi-espacio/firmante', authMiddleware, verFirmante);
 
 // Datasets (escritura - solo admin)
 router.post('/datasets', authMiddleware, adminOnly, createDataset);

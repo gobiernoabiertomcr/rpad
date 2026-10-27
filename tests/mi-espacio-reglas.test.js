@@ -3,7 +3,8 @@
 // contra su tope del año, la validación de una carga, y las horas extras con los francos compensatorios (planta), las horas
 // a favor (contrato) y lo no utilizado previamente, contadas en días hábiles con los feriados y desde el arranque. Después,
 // «Mis vacaciones y saldos» (los campos del saldo inicial y el año), el cálculo completo, los faltantes y lo que frena una
-// carga. Puras, sin base, sobre los casos de tests/fixtures/mi-espacio-casos.js.
+// carga. Al final, el paso a Configuración y «Hoy no están» (sección 7). Puras, sin base, sobre los casos de
+// tests/fixtures/mi-espacio-casos.js.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -21,7 +22,7 @@ import {
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
   vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
-  pasoPrevistoDe
+  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -2360,5 +2361,106 @@ describe('el paso a Configuración', () => {
     assert.deepEqual(pasoDeLaCarga(null), { accion: 'nada' });
     assert.deepEqual(pasoDeLaBaja(null), { accion: 'nada' });
     assert.equal(vinculosDeLaLista(null).size, 0);
+  });
+});
+
+describe('«Hoy no están»', () => {
+  const fila = (usuarioId, nombre, desde, hasta, extra = {}) => ({ usuario_id: usuarioId, nombre, desde, hasta, ...extra });
+  const unida = (usuarioId, nombre, desde, hasta, vuelve) => ({ usuario_id: usuarioId, nombre, desde, hasta, vuelve });
+
+  it('junta unas vacaciones del 26/10 al 30/10/2026 con una médica del 02/11 al 03/11: vuelve el 04/11, o el 05/11 si el 04 es feriado',
+    () => {
+      // Desordenadas y con el tipo y la nota, que no pasan
+      const filas = [
+        fila(7, 'Laura Gómez', '2026-11-02', '2026-11-03', { tipo: 'medica', nota: 'Turno' }),
+        fila(7, 'Laura Gómez', '2026-10-26', '2026-10-30', { tipo: 'vacaciones', horas: null })
+      ];
+      assert.deepEqual(ausenciasUnidas(filas, SIN_FERIADOS),
+        [unida(7, 'Laura Gómez', '2026-10-26', '2026-11-03', '2026-11-04')]);
+      assert.deepEqual(ausenciasUnidas(filas, new Set(['2026-11-04'])),
+        [unida(7, 'Laura Gómez', '2026-10-26', '2026-11-03', '2026-11-05')]);
+    });
+
+  it('un día hábil libre en el medio las deja separadas; un feriado del Set, no; una dentro de otra no la alarga', () => {
+    const separadas = [fila(7, 'Laura Gómez', '2026-10-26', '2026-10-29'), fila(7, 'Laura Gómez', '2026-11-02', '2026-11-03')];
+    assert.deepEqual(ausenciasUnidas(separadas, SIN_FERIADOS), [
+      unida(7, 'Laura Gómez', '2026-10-26', '2026-10-29', '2026-10-30'),
+      unida(7, 'Laura Gómez', '2026-11-02', '2026-11-03', '2026-11-04')
+    ]);
+    // El viernes 30/10 feriado: ya no queda ningún día hábil entre las dos
+    assert.deepEqual(ausenciasUnidas(separadas, new Set(['2026-10-30'])),
+      [unida(7, 'Laura Gómez', '2026-10-26', '2026-11-03', '2026-11-04')]);
+    const adentro = [fila(7, 'Laura Gómez', '2026-10-26', '2026-10-30'), fila(7, 'Laura Gómez', '2026-10-27', '2026-10-28')];
+    assert.deepEqual(ausenciasUnidas(adentro, SIN_FERIADOS), [unida(7, 'Laura Gómez', '2026-10-26', '2026-10-30', '2026-11-02')]);
+  });
+
+  it('la vuelta saltea los 9 fijos aunque el Set no los traiga: del jueves 24/12/2026 vuelve el lunes 28/12', () => {
+    assert.deepEqual(ausenciasUnidas([fila(7, 'Laura Gómez', '2026-12-21', '2026-12-24')], SIN_FERIADOS),
+      [unida(7, 'Laura Gómez', '2026-12-21', '2026-12-24', '2026-12-28')]);
+  });
+
+  it('cada persona por su lado, por desde y después por nombre; las filas que no sirven no cuentan', () => {
+    const filas = [
+      fila(9, 'Martín Ríos', '2026-10-27', '2026-10-27'),
+      fila(3, 'Sofía Paz', '2026-10-28', '2026-10-28'),
+      // El id como texto es la misma persona
+      fila('7', 'Laura Gómez', '2026-10-28', '2026-10-28'),
+      fila(7, 'Laura Gómez', '2026-10-27', '2026-10-27'),
+      fila(null, 'Sin id', '2026-10-27', '2026-10-27'),
+      fila(4, 'Al revés', '2026-10-28', '2026-10-27'),
+      fila(5, 'Sin fecha', '2026-02-30', '2026-03-02'),
+      null,
+      'x'
+    ];
+    assert.deepEqual(ausenciasUnidas(filas, SIN_FERIADOS), [
+      unida(7, 'Laura Gómez', '2026-10-27', '2026-10-28', '2026-10-29'),
+      unida(9, 'Martín Ríos', '2026-10-27', '2026-10-27', '2026-10-28'),
+      unida(3, 'Sofía Paz', '2026-10-28', '2026-10-28', '2026-10-29')
+    ]);
+  });
+
+  it('los textos: «Martín Ríos no está» y «Vuelve el lunes 02/11»', () => {
+    assert.equal(textoNoEsta('Martín Ríos'), 'Martín Ríos no está');
+    assert.equal(textoDeLaVuelta('2026-11-02'), 'Vuelve el lunes 02/11');
+    assert.equal(textoDeLaVuelta('2026-11-04'), 'Vuelve el miércoles 04/11');
+    assert.equal(textoDeLaVuelta(null), null);
+    assert.equal(textoDeLaVuelta('2026-02-30'), null);
+  });
+
+  it('ausentesDelRango: las que tocan el rango, con sus textos y nada más (ni el id)', () => {
+    const unidas = [
+      unida(7, 'Laura Gómez', '2026-10-26', '2026-10-27', '2026-10-28'),
+      unida(9, 'Martín Ríos', '2026-10-26', '2026-11-03', '2026-11-04'),
+      unida(3, 'Sofía Paz', '2026-10-30', '2026-10-30', '2026-11-02')
+    ];
+    const ausentes = ausentesDelRango(unidas, '2026-10-28', '2026-10-29');
+    assert.deepEqual(ausentes, [{
+      nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-11-03', vuelve: '2026-11-04', texto: 'Martín Ríos no está',
+      vuelve_texto: 'Vuelve el miércoles 04/11'
+    }]);
+    assert.deepEqual(Object.keys(ausentes[0]), ['nombre', 'desde', 'hasta', 'vuelve', 'texto', 'vuelve_texto']);
+    // Los bordes cuentan
+    assert.deepEqual(ausentesDelRango(unidas, '2026-10-27', '2026-10-30').map((ausente) => ausente.nombre),
+      ['Laura Gómez', 'Martín Ríos', 'Sofía Paz']);
+    assert.deepEqual(ausentesDelRango(unidas, '2026-10-30', '2026-10-28'), []);
+  });
+
+  it('nada tira', () => {
+    const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        ausenciasUnidas(valor, valor);
+        ausenciasUnidas([valor, fila(7, valor, '2026-10-26', '2026-10-26')], valor);
+        ausenciasUnidas([fila(7, 'Laura Gómez', '9999-12-30', '9999-12-31')], valor);
+        textoNoEsta(valor);
+        textoDeLaVuelta(valor);
+        ausentesDelRango(valor, valor, valor);
+        ausentesDelRango([valor, unida(7, valor, '2026-10-26', '2026-10-26', valor)], '2026-10-26', '2026-10-26');
+      }, String(valor));
+    }
+    assert.deepEqual(ausenciasUnidas(null, null), []);
+    // Sin un día hábil después (el fin del calendario), la vuelta es null
+    assert.deepEqual(ausenciasUnidas([fila(7, 'Laura Gómez', '9999-12-30', '9999-12-31')], SIN_FERIADOS),
+      [unida(7, 'Laura Gómez', '9999-12-30', '9999-12-31', null)]);
   });
 });

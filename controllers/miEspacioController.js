@@ -10,17 +10,22 @@
 // Licencias en la misma transacción (sección 6, services/miEspacioPaso.js). Las horas extras, los días de cada año y el saldo
 // inicial («Mis vacaciones y saldos», sección 4) se guardan también cada uno en una transacción, sin tocar Configuración, y
 // ningún faltante los frena (3.10). Un id de otra persona responde 404, como uno que no existe: no se revela que existe
-// (sección 10).
+// (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración no está, nunca de
+// qué) y, solo el firmante titular, las personas que puede autorizar con sus licencias (sección 6), como en Configuración.
 import pool from '../config/database.js';
-import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia,
-  validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe
+  validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe, ausenciasUnidas, ausentesDelRango
 } from '../services/miEspacioReglas.js';
 import { resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe } from '../services/miEspacioResumen.js';
-import { estadoDe, contextoDe, personaDe, licenciaDe } from '../services/miEspacioDatos.js';
+import {
+  estadoDe, contextoDe, personaDe, licenciaDe, ausenciasVisibles, feriadosPara
+} from '../services/miEspacioDatos.js';
 import { aplicarCarga, aplicarCorreccion, aplicarBaja, pasoPrevisto, vinculosDe } from '../services/miEspacioPaso.js';
-import { bloquearUsuarios } from '../services/licenciasOficialesService.js';
+import {
+  bloquearUsuarios, firmanteTitular, autorizables, conSusLicencias
+} from '../services/licenciasOficialesService.js';
 import { puedeTenerLicencia } from '../services/licenciasReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
@@ -54,12 +59,14 @@ const responder = async (res, mensaje, operacion) => {
   }
 };
 
-// GET /api/mi-espacio/resumen: el Resumen «Niveles», ya calculado. «Hoy y mañana» lleva el próximo feriado, con las mismas
-// filas de los feriados del cálculo (sin leerlas otra vez)
+// GET /api/mi-espacio/resumen: el Resumen «Niveles», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy o
+// mañana (`ausentesPara`: a quien no es de administración, ninguno) y el próximo feriado, con las mismas filas de los
+// feriados del cálculo (sin leerlas otra vez)
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
   const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
-  const hoyYManana = { ausentes: [], proximo_feriado: proximoFeriadoDe(filasFeriados, hoy) };
+  const { ausentes } = await ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados });
+  const hoyYManana = { ausentes, proximo_feriado: proximoFeriadoDe(filasFeriados, hoy) };
   return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana }));
 });
 
@@ -401,6 +408,7 @@ const sinModalidadParaGuardar = () => rechazoDeLaCarga({ campo: null, mensaje: M
 export const guardarAnio = (req, res) => responder(res, 'Error al guardar el año', async () => {
   const usuarioId = req.user.userId;
   const { datos, error } = validarAnio(req.params.anio, cuerpoDe(req), hoyArgentina());
+  // El error se parte siguiendo el orden de validarAnio: el año va primero (antes que la modalidad) y el resto, después
   if (error?.campo === 'anio') return rechazoDeLaCarga(error);
   return enTransaccion(usuarioId, false, async (conexion) => {
     if (modalidadDe((await personaDe(usuarioId, conexion))?.vinculo) === null) return sinModalidadParaGuardar();
@@ -441,4 +449,60 @@ export const guardarSaldoInicial = (req, res) => responder(res, 'Error al guarda
     }
     return [200, { success: true, data: { arranque }, message: 'Saldo inicial guardado.' }];
   });
+});
+
+// «Hoy no están» (spec, sección 7): los compañeros que no están en un rango, sin el tipo ni la nota. «Los compañeros» son
+// administración (`esAdmin`): solo ellos ven a los demás, y solo se ven ellos
+
+// El rango más largo que se puede pedir, los dos días incluidos
+const DIAS_DE_AUSENTES = 93;
+const MENSAJE_RANGO_DE_AUSENTES = `Elegí un rango de hasta ${DIAS_DE_AUSENTES} días.`;
+// Cuánto antes y después del rango se leen las ausencias: una se une con las seguidas (separadas solo por días no hábiles),
+// así la que empezó antes o sigue después se ve entera, con su desde y su vuelta. Una cadena de más de un año se corta ahí
+const MARGEN_DE_LAS_AUSENCIAS = 366;
+
+// Una fecha del pedido: 'AAAA-MM-DD' de un año de ANIO_MINIMO a ANIO_MAXIMO; cualquier otra cosa (una repetida, que Express
+// da como lista), null
+const fechaDelPedido = (valor) => {
+  if (!esFechaIso(valor)) return null;
+  const anio = Number(valor.slice(0, 4));
+  return anio >= ANIO_MINIMO && anio <= ANIO_MAXIMO ? valor : null;
+};
+const rechazoDeLasFechas = (mensaje) => [400, { success: false, error: mensaje, campo: 'fechas' }];
+
+/**
+ * Los compañeros que no están entre desde y hasta, como los ve `persona` (`{ id, rol }`): `{ puede_ver, ausentes }`. Sin
+ * `esAdmin`, `{ puede_ver: false, ausentes: [] }`, sin consultar. Si no, las ausencias que se muestran de los demás
+ * (`ausenciasVisibles`, sin las de la persona), leídas con margen, unidas con los feriados que necesitan (`feriadosPara` con
+ * hoy: cubre los años de las filas, que se cargan hasta el año que viene, y la vuelta que pasa al siguiente) y cortadas al
+ * rango (`ausentesDelRango`: `{ nombre, desde, hasta, vuelve, texto, vuelve_texto }`). `filasFeriados`: las filas de los
+ * feriados, si ya se leyeron.
+ */
+const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }) => {
+  if (!esAdmin(persona?.rol)) return { puede_ver: false, ausentes: [] };
+  const filas = await ausenciasVisibles(sumarDias(desde, -MARGEN_DE_LAS_AUSENCIAS), sumarDias(hasta, MARGEN_DE_LAS_AUSENCIAS),
+    { excluir: persona.id });
+  const feriados = await feriadosPara([{ licencias: filas }], hoy, filasFeriados);
+  return { puede_ver: true, ausentes: ausentesDelRango(ausenciasUnidas(filas, feriados), desde, hasta) };
+};
+
+// GET /api/mi-espacio/ausentes?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: «Hoy no están» de un rango de hasta 93 días. Las fechas se
+// validan antes que nada, también para quien no puede ver (400 en `fechas`)
+export const listarAusentes = (req, res) => responder(res, 'Error al obtener quiénes no están', async () => {
+  const desde = fechaDelPedido(req.query.desde);
+  const hasta = fechaDelPedido(req.query.hasta);
+  if (desde === null || hasta === null || hasta < desde) return rechazoDeLasFechas(MENSAJES_MI_ESPACIO.fecha);
+  if (diasEntre(desde, hasta) + 1 > DIAS_DE_AUSENTES) return rechazoDeLasFechas(MENSAJE_RANGO_DE_AUSENTES);
+  return conDatos(await ausentesPara({ id: req.user.userId, rol: req.user.rol }, { desde, hasta, hoy: hoyArgentina() }));
+});
+
+// GET /api/mi-espacio/firmante: lo que necesita el campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6).
+// Al firmante titular de las Notas Digitales, `{ soy_titular: true, hoy, autorizables }`: las personas que puede autorizar,
+// cada una con sus licencias en curso y futuras y sus ausencias unidas con la vuelta, lo mismo que GET /usuarios/licencias
+// le da a Configuración (el mismo servicio). A cualquier otra persona, `{ soy_titular: false }`
+export const verFirmante = (req, res) => responder(res, 'Error al obtener los datos del firmante', async () => {
+  const titular = await firmanteTitular();
+  if (titular === null || titular !== req.user.userId) return conDatos({ soy_titular: false });
+  const hoy = hoyArgentina();
+  return conDatos({ soy_titular: true, hoy, autorizables: await conSusLicencias(await autorizables(pool, titular), hoy) });
 });

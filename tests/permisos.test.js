@@ -118,7 +118,7 @@ describe('lector', () => {
   for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
     '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/ciclo-de-vida',
     '/feriados', '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial',
-    '/mi-espacio/anio/2026']) {
+    '/mi-espacio/anio/2026', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -210,7 +210,9 @@ const RUTAS_MI_ESPACIO = [
   ['PUT', '/mi-espacio/horas-extras/1'],
   ['DELETE', '/mi-espacio/horas-extras/1'],
   ['PUT', '/mi-espacio/anio/2026'],
-  ['PUT', '/mi-espacio/saldo-inicial']
+  ['PUT', '/mi-espacio/saldo-inicial'],
+  ['GET', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27'],
+  ['GET', '/mi-espacio/firmante']
 ];
 
 describe('Mi espacio', () => {
@@ -234,7 +236,8 @@ describe('colaborador', () => {
 
   for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
     '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida', '/feriados',
-    '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026']) {
+    '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026',
+    '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
