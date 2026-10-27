@@ -221,6 +221,23 @@
         .me-meses .me-mes.previo strong { color: var(--sg-suave); }
         .me-extra { margin: 10px 0 0; padding: 0 4px; font-size: 0.82rem; color: var(--sg-suave); overflow-wrap: anywhere; }
 
+        /* El movimiento (spec 2026-10-27-mi-espacio-resumen, 3), una sola vez por carga de la página: mi-espacio.js le pone
+           data-animar a #vista-resumen la primera vez que se ve la banda y se lo saca dos cuadros después. Con data-animar, los tramos
+           de la regla, sus números y las líneas del resto, vacíos y sin transición (si ya se habían dibujado llenos, se vacían de
+           golpe); al sacarlo se llenan de izquierda a derecha, cada uno con su --demora y su --duracion (las del style que escribe
+           mi-espacio.js): los tramos, uno detrás del otro; el número de cada tramo, cuando su tramo casi terminó; las líneas, de 700
+           ms (DURACION_DE_LA_LINEA de mi-espacio.js, con la que sube su número). Los números que suben los cuenta mi-espacio.js. Con
+           prefers-reduced-motion, nada se mueve: todo está lleno desde el principio, también con data-animar */
+        .me-tramo { transition: transform var(--duracion) cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }
+        .me-tramo > span { transition: opacity 200ms ease calc(var(--demora) + var(--duracion) * 0.7); }
+        .me-linea i { transition: transform 700ms cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }
+        #vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-linea i { transform: scaleX(0); transition: none; }
+        #vista-resumen[data-animar] .me-tramo > span { opacity: 0; transition: none; }
+        @media (prefers-reduced-motion: reduce) {
+            .me-tramo, .me-tramo > span, .me-linea i, #vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-tramo > span,
+            #vista-resumen[data-animar] .me-linea i { transition: none; transform: none; opacity: 1; }
+        }
+
         /* Hoy y mañana: al final, después de una línea, en columnas separadas por una línea vertical y sin tarjetas (Hoy, Mañana y
            Próximo feriado; una vacía no va). En el teléfono, una debajo de la otra, sin la línea */
         .me-hoy { margin: 28px 0 0; padding: 22px 4px 0; border-top: 1px solid var(--sg-linea); }

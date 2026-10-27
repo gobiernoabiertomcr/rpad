@@ -87,12 +87,14 @@ const CLASE_DE_LA_CAPA = Object.freeze({
 const CLASE_DE_LA_PASTILLA = Object.freeze({ vence: 'vence', pendiente: 'pendiente' });
 // El movimiento del Resumen (spec 2026-10-27-mi-espacio-resumen, 3), en milisegundos: los tramos de la regla empiezan a los 250 y
 // duran en total unos 1300, cada uno max(160, n / capacidad × 1300), uno detrás del otro; las líneas del resto, a los 900 y 90
-// más por línea. Acá solo se escriben en el style de cada tramo y de cada línea (--demora y --duracion)
+// más por línea, de 700 cada una. Se escriben en el style de cada tramo y de cada línea (--demora y --duracion; la duración de
+// las líneas, en el <style>), y con los mismos tiempos suben los números (animarLaBanda)
 const DEMORA_DE_LA_REGLA = 250;
 const DURACION_DE_LA_REGLA = 1300;
 const TRAMO_MINIMO = 160;
 const DEMORA_DEL_RESTO = 900;
 const ENTRE_LINEAS = 90;
+const DURACION_DE_LA_LINEA = 700;
 // La ola de abajo de la banda: el dibujo de las páginas públicas, en el celeste de la banda (currentColor), que cae sobre el fondo
 // de la página. Decorativa
 const OLA_DE_LA_BANDA = '<svg class="me-ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
@@ -304,6 +306,19 @@ function htmlDelResto(resumen) {
     + htmlDeLosMeses(resumen.pastillas)
     + `${conTexto(resumen.extraordinaria) ? `<p class="me-extra">${esc(resumen.extraordinaria)}</p>` : ''}</section>`;
 }
+
+// Para el movimiento: el valor de un número del Resumen como lo escribe el servidor ('33'; con decimales, con coma: '1,5'); lo que
+// no es un número así (vacío, negativo, con otra cosa), null
+const numeroDelTexto = (texto) => {
+  const limpio = typeof texto === 'string' ? texto.trim() : '';
+  return /^\d+(?:,\d+)?$/.test(limpio) ? Number(limpio.replace(',', '.')) : null;
+};
+
+// …y la demora de una línea del resto, en ms, del style que escribe htmlDelResto ('--p:59.5%;--demora:900ms'). Sin ella, 0
+const demoraDelEstilo = (estilo) => {
+  const ms = /--demora:\s*(\d+(?:\.\d+)?)ms/.exec(typeof estilo === 'string' ? estilo : '')?.[1];
+  return ms === undefined ? 0 : Number(ms);
+};
 
 // Las iniciales de un nombre, decorativas: la primera letra del primero y del último. Lo que no es un texto, '' (copia de inicialesDe
 // de services/miEspacioEventosReglas.js, atada por un test de paridad)
@@ -1497,7 +1512,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // mes que se ve (`mesDeEventos`, 'AAAA-MM': de entrada, el de hoy; no va en la dirección), lo de su grilla (`delMes`) y los próximos
 // (`proximos`) (null hasta que llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña (en la agenda,
 // las del mes y las de los próximos): una respuesta que llega después de otra más nueva se descarta. `cargandoResumen`: hay un
-// pedido del Resumen en vuelo. `tanquesLlenos`: los tanques del Resumen ya se llenaron (pasa una sola vez). Los formularios:
+// pedido del Resumen en vuelo. `bandaAnimada`: la banda del Resumen ya se movió (pasa una sola vez). Los formularios:
 // `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
 // licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
 // (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
@@ -1505,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`, el detalle de un evento de otra persona; y
 // `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para administración)
 const pagina = {
-  pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, tanquesLlenos: false,
+  pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
   mesDeEventos: null, delMes: null, proximos: null,
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
@@ -1602,7 +1617,7 @@ function mostrarPestana(nombre) {
   window.history?.replaceState?.(null, '', `#${pagina.pestana}`);
   if (pagina.pestana === 'resumen') {
     if (pagina.resumen === null && !pagina.cargandoResumen) return cargarResumen();
-    llenarTanques();
+    animarLaBanda();
   }
   if (pagina.pestana === 'licencias' && pagina.licencias === null) return cargarLicencias(null);
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
@@ -1670,14 +1685,13 @@ function pintarResumen() {
   porId('btn-cargar-horas').hidden = !conModalidad;
   porId('btn-cargar-licencia').hidden = !conModalidad;
   const vista = porId('vista-resumen');
+  // Un Resumen que se vuelve a dibujar (por ejemplo, al guardar una licencia) llega quieto, aunque la banda vieja todavía se
+  // estuviera moviendo: sin data-animar, sus tramos y sus líneas se dibujan llenos
+  vista.removeAttribute('data-animar');
   vista.innerHTML = htmlDelResumen(resumen);
   porId('me-marca').innerHTML = htmlDeMarca(resumen.marca);
-  // Hasta que se llenan (una sola vez), los tanques se dibujan vacíos
-  const fila = vista.querySelector('.me-niveles-fila');
-  if (fila && !pagina.tanquesLlenos) {
-    fila.setAttribute('data-llenar', '');
-    llenarTanques();
-  }
+  // La primera vez que la banda se dibuja y se ve, se mueve (una sola vez)
+  animarLaBanda();
   // La primera vez, sin el saldo inicial, «Mis vacaciones y saldos» se abre solo (el foco vuelve a su botón del Resumen)
   if (conModalidad && resumen.abrir_saldos === true && !pagina.saldosAbiertosSolos && pagina.modales.length === 0) {
     pagina.saldosAbiertosSolos = true;
@@ -1685,18 +1699,64 @@ function pintarResumen() {
   }
 }
 
-// El único movimiento de la página: la primera vez que se ve el Resumen con sus tanques, se llenan desde abajo (la transición de
-// .me-tanque-nivel en el <style>, quieta con prefers-reduced-motion). Se les saca data-llenar dos cuadros después: en el primero
-// el navegador los dibuja vacíos y en el segundo empieza la transición. Con el Resumen oculto (se abrió otra pestaña), esperan a
-// que se vea (mostrarPestana); sin requestAnimationFrame, se llenan enseguida
-function llenarTanques() {
+// El único movimiento de la página (spec 2026-10-27-mi-espacio-resumen, 3), una sola vez por carga: la primera vez que la banda
+// está dibujada y se ve (también si aparece recién al guardar «Mis vacaciones y saldos», desde la invitación). Le pone data-animar
+// a #vista-resumen, que en el <style> deja vacíos los tramos de la regla y las líneas del resto, y se lo saca dos cuadros después:
+// en el primero el navegador los dibuja vacíos y en el segundo empiezan las transiciones, cada una con su --demora y su --duracion
+// (quietas con prefers-reduced-motion). Al mismo tiempo suben los números: el de la frase con la regla y cada uno del resto con su
+// línea. Con el Resumen oculto (se abrió otra pestaña), espera a que se vea (mostrarPestana); sin requestAnimationFrame no hace
+// nada: todo queda en su valor final
+function animarLaBanda() {
   const vista = porId('vista-resumen');
-  const fila = vista.querySelector('[data-llenar]');
-  if (!fila || vista.hidden) return;
-  pagina.tanquesLlenos = true;
-  const enElProximoCuadro = typeof window.requestAnimationFrame === 'function'
-    ? (funcion) => window.requestAnimationFrame(funcion) : (funcion) => funcion();
-  enElProximoCuadro(() => enElProximoCuadro(() => fila.removeAttribute('data-llenar')));
+  if (pagina.bandaAnimada || vista.hidden || !vista.querySelector('.me-banda')) return;
+  if (typeof window.requestAnimationFrame !== 'function') return;
+  pagina.bandaAnimada = true;
+  vista.setAttribute('data-animar', '');
+  const cifra = vista.querySelector('.me-cifra [data-contar]');
+  if (cifra) contarHasta(cifra, DEMORA_DE_LA_REGLA, DURACION_DE_LA_REGLA);
+  for (const numero of vista.querySelectorAll('.me-resto .me-numero')) {
+    const contador = numero.querySelector('[data-contar]');
+    if (contador) contarHasta(contador, demoraDelEstilo(numero.querySelector('.me-linea i')?.getAttribute('style')), DURACION_DE_LA_LINEA);
+  }
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => vista.removeAttribute('data-animar')));
+}
+
+// La persona pidió menos movimiento (prefers-reduced-motion: reduce). Sin matchMedia, no
+const menosMovimiento = () => typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-reduced-motion: reduce)')?.matches === true;
+
+// Un número que sube al abrir (data-contar). Lee el valor final del texto que dejó el HTML ('33'; con coma: '1,5'), escribe 0 y lo
+// sube con los tiempos de requestAnimationFrame: espera `demoraMs` desde el primer cuadro y dura `duracionMs`, rápido al principio
+// y despacio al final, en enteros (nunca más que el final) hasta el último cuadro, que deja el texto final tal cual. Un cuadro sin
+// tiempo escribe el final. Si el número ya no está en el documento (el Resumen se volvió a dibujar), se detiene sin escribir nada.
+// No cuenta lo que no es un número mayor que 0 (un 0 queda en 0), ni sin requestAnimationFrame, ni con prefers-reduced-motion:
+// reduce (spec, 3: nada se mueve). Lo que lee un lector de pantalla no cambia: el número que sube va con aria-hidden
+function contarHasta(elemento, demoraMs, duracionMs) {
+  const final = elemento.textContent;
+  const hasta = numeroDelTexto(final);
+  if (hasta === null || hasta <= 0 || typeof window.requestAnimationFrame !== 'function' || menosMovimiento()) return;
+  const demora = Number.isFinite(demoraMs) && demoraMs > 0 ? demoraMs : 0;
+  const duracion = Number.isFinite(duracionMs) && duracionMs > 0 ? duracionMs : 0;
+  let inicio = null;
+  const paso = (tiempo) => {
+    if (!elemento.isConnected) return;
+    if (typeof tiempo !== 'number' || !Number.isFinite(tiempo)) {
+      elemento.textContent = final;
+      return;
+    }
+    inicio ??= tiempo;
+    const transcurrido = tiempo - inicio - demora;
+    let avance = 0;
+    if (transcurrido > 0) avance = duracion > 0 ? Math.min(1, transcurrido / duracion) : 1;
+    if (avance >= 1) {
+      elemento.textContent = final;
+      return;
+    }
+    elemento.textContent = String(Math.floor(hasta * (1 - (1 - avance) ** 3)));
+    window.requestAnimationFrame(paso);
+  };
+  elemento.textContent = '0';
+  window.requestAnimationFrame(paso);
 }
 
 // Un clic en el Resumen: «Mis vacaciones y saldos» y los botones de «Vence pronto» abren su formulario (el de licencia, con su

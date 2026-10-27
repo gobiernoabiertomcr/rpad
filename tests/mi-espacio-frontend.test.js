@@ -1382,10 +1382,12 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 };
 
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
-// sin él, la página no anima. Los temporizadores no corren solos: `correr` corre los que hay (el foco de los modales y la
-// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo pregunta solo al abrir el
-// formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el de main.js), [mensaje, tipo]
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false, admin = false } = {}) => {
+// sin él, la página no anima. `reducido`: con true, la ventana tiene un matchMedia que dice que la persona pidió menos movimiento
+// (prefers-reduced-motion: reduce); sin él, no hay matchMedia. Los temporizadores no corren solos: `correr` corre los que hay (el
+// foco de los modales y la espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo
+// pregunta solo al abrir el formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el
+// de main.js), [mensaje, tipo]
+const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, auditor = false, admin = false } = {}) => {
   const { dom, documento } = crearDom();
   const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [] };
   // Los temporizadores pendientes, por su id: un número que solo crece (un clearTimeout viejo nunca anula uno nuevo)
@@ -1400,7 +1402,8 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
       }
     },
     addEventListener() {},
-    ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {})
+    ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {}),
+    ...(reducido ? { matchMedia: (consulta) => ({ matches: consulta === '(prefers-reduced-motion: reduce)' }) } : {})
   };
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
@@ -1472,8 +1475,9 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
   };
   // Una tecla en el elemento con el foco (sin foco, en el documento)
   const tecla = async (key) => { (documento.activeElement ?? documento).disparar('keydown', { key }); await esperar(); };
-  // Un cuadro del navegador: corre lo que se pidió con requestAnimationFrame hasta ahora (lo que se pida adentro, en el próximo)
-  const cuadro = () => { for (const funcion of estado.cuadros.splice(0)) funcion(0); };
+  // Un cuadro del navegador: corre lo que se pidió con requestAnimationFrame hasta ahora (lo que se pida adentro, en el próximo),
+  // con `tiempo`, el momento del cuadro en ms (el que da requestAnimationFrame); sin él, un cuadro sin tiempo
+  const cuadro = (tiempo) => { for (const funcion of estado.cuadros.splice(0)) funcion(tiempo); };
   const abierto = (id) => el(id).classList.contains('active');
   return {
     contexto, dom, documento, ventana, estado, el, rutas, pedidosA, iniciar, tocar, esperar, correr, escribir, elegir, tecla,
@@ -1708,6 +1712,294 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
     // Y la vieja no se lleva el foco
     assert.equal(pagina.documento.activeElement, vista.querySelector('[data-anio="2027"]'));
+  });
+});
+
+// =====================================================================================================================================
+// El movimiento del Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 3 y 5), con el DOM falso: una sola vez por carga de la
+// página, la primera vez que la banda se dibuja y se ve. La regla y las líneas del resto se mueven en el <style> (data-animar en
+// #vista-resumen, que se saca dos cuadros después); los números (data-contar) los cuenta mi-espacio.js con requestAnimationFrame.
+// Reemplazan los tres de los tanques de «Niveles»
+// =====================================================================================================================================
+
+// El número de la frase que sube (el que se ve, decorativo) y el oculto a la vista, y los números del resto, en su orden
+const cifraDe = (pagina) => pagina.el('me-frase')?.querySelector('[data-contar]') ?? null;
+const cifraOcultaDe = (pagina) => pagina.el('me-frase')?.querySelector('.visualmente-oculto') ?? null;
+const numerosDelRestoDe = (pagina) => pagina.el('vista-resumen').querySelectorAll('.me-numero [data-contar]');
+const textosDe = (elementos) => elementos.map((elemento) => elemento.textContent);
+// Los números del resto de PLANTA, como los manda el servidor
+const PLANTA_EN_SU_VALOR = Object.freeze(['25', '9', '22', '23']);
+// Lo que lee un lector de pantalla de un elemento del DOM falso: su texto, sin lo que va con aria-hidden
+const textoParaLectores = (elemento) => elemento.hijos
+  .map((hijo) => (typeof hijo === 'string' ? hijo : (hijo.getAttribute('aria-hidden') === 'true' ? '' : textoParaLectores(hijo))))
+  .join('').replace(/\s+/g, ' ').trim();
+// Corre cuadros con tiempo (el de requestAnimationFrame, en ms), de a 16 desde `desde`, mientras se pida alguno, y anota después de
+// cada uno el texto de cada elemento: por elemento, [[ms desde el primer cuadro, texto]]
+const cuadrosConTiempo = (pagina, elementos, desde = 1000) => {
+  const vistos = elementos.map(() => []);
+  for (let tiempo = desde; pagina.estado.cuadros.length > 0; tiempo += 16) {
+    assert.ok(tiempo < desde + 10000, 'los cuadros se terminan');
+    pagina.cuadro(tiempo);
+    elementos.forEach((elemento, i) => vistos[i].push([tiempo - desde, elemento.textContent]));
+  }
+  return vistos;
+};
+// Un número que sube (lo anotado por cuadrosConTiempo): en 0 hasta su demora, en enteros que no bajan y no llegan al final mientras
+// cuenta (pasa por alguno más que 0), y desde su demora más su duración, el texto final tal cual, que ya no cambia
+const comprobarConteo = (vistos, { final, demora, duracion }, nombre) => {
+  const hasta = Number(final.replace(',', '.'));
+  const llega = vistos.findIndex(([, texto]) => texto === final);
+  assert.ok(llega > 0, `${nombre}: llega a ${final}`);
+  assert.ok(vistos.slice(llega).every(([, texto]) => texto === final), `${nombre}: termina en ${final} y ahí queda`);
+  assert.ok(vistos[llega][0] >= demora + duracion, `${nombre}: llega a los ${vistos[llega][0]} ms`);
+  assert.ok(vistos[llega - 1][0] < demora + duracion, `${nombre}: no llega tarde`);
+  const contando = vistos.slice(0, llega);
+  assert.ok(contando.filter(([ms]) => ms < demora).every(([, texto]) => texto === '0'), `${nombre}: espera su demora en 0`);
+  assert.ok(contando.every(([, texto]) => /^\d+$/.test(texto) && Number(texto) < hasta), `${nombre}: en enteros, sin pasarse`);
+  const numeros = contando.map(([, texto]) => Number(texto));
+  assert.ok(numeros.every((numero, i) => i === 0 || numero >= numeros[i - 1]), `${nombre}: no baja`);
+  assert.ok(numeros.some((numero) => numero > 0), `${nombre}: sube`);
+};
+const conResumen = (resumen) => (metodo, ruta) => (ruta === '/api/mi-espacio/resumen' ? ok(resumen) : RESPUESTAS_DE_ENTRADA(metodo, ruta));
+
+describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
+  it('se mueve una sola vez: data-animar en el primer cuadro y no en el segundo; un Resumen que se vuelve a dibujar llega quieto y en su valor', async () => {
+    const pagina = montarPagina({ cuadros: true });
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    assert.ok(vista.querySelector('.me-banda'), 'la banda');
+    // Al verse, la regla y las líneas, vacías (data-animar), y los números, en 0
+    assert.equal(vista.getAttribute('data-animar'), '');
+    assert.equal(cifraDe(pagina).textContent, '0');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), ['0', '0', '0', '0']);
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), '', 'el primer cuadro las dibuja vacías');
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), null, 'en el segundo empiezan las transiciones');
+    // Un cuadro sin tiempo (el DOM falso) deja cada número en su valor
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    assert.equal(vm.runInContext('pagina.bandaAnimada', pagina.contexto), true);
+    // Se vuelve a dibujar (por ejemplo, después de guardar una licencia): ya no se mueve
+    const vieja = cifraDe(pagina);
+    await pagina.contexto.cargarResumen();
+    assert.equal(vieja.isConnected, false);
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  it('con el Resumen oculto (#licencias), la banda espera quieta a que se vea; volver a la pestaña no la vuelve a mover', async () => {
+    const pagina = montarPagina({ hash: '#licencias', cuadros: true });
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    assert.ok(vista.querySelector('.me-banda'), 'la banda, dibujada en la pestaña oculta');
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(vista.getAttribute('data-animar'), '');
+    assert.equal(cifraDe(pagina).textContent, '0');
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  it('sin requestAnimationFrame, nada se mueve: ni data-animar, y los números en su valor desde el principio', async () => {
+    const pagina = montarPagina();
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    for (const momento of ['al abrir', 'al volver a la pestaña']) {
+      assert.ok(vista.querySelector('.me-banda'), momento);
+      assert.equal(vista.getAttribute('data-animar'), null, momento);
+      assert.equal(cifraDe(pagina).textContent, '33', momento);
+      assert.equal(cifraOcultaDe(pagina).textContent, '33', momento);
+      assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR, momento);
+      await pagina.tocar(pagina.el('tab-horas'));
+      await pagina.tocar(pagina.el('tab-resumen'));
+    }
+  });
+
+  it('sin el saldo inicial, el primer Resumen es la invitación: la banda aparece al guardar «Mis vacaciones y saldos» y se mueve (es la primera vez)', async () => {
+    let guardado = false;
+    const pagina = montarPagina({
+      cuadros: true,
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+            guardado = true;
+            return ok({ arranque: HOY }, 'Saldo inicial guardado.');
+          }
+          return guardado && ruta === '/api/mi-espacio/resumen' ? ok(RESUMEN_DE_PLANTA) : undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    const vista = pagina.el('vista-resumen');
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(vista.querySelector('.me-banda'), null, 'la invitación, sin la banda');
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.elegir('ms-dia', '20');
+    await pagina.elegir('ms-estudio', 'universitario');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.ok(vista.querySelector('.me-banda'), 'la banda, al guardar');
+    assert.equal(vista.getAttribute('data-animar'), '');
+    assert.equal(cifraDe(pagina).textContent, '0');
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+  });
+
+  // Review Focus 2
+  it('un lector de pantalla nunca lee un número a medio contar: el que sube va con aria-hidden y el oculto dice 33 desde el primer cuadro', async () => {
+    const pagina = montarPagina({ cuadros: true });
+    await pagina.iniciar();
+    const visible = cifraDe(pagina);
+    const oculto = cifraOcultaDe(pagina);
+    assert.equal(visible.getAttribute('aria-hidden'), 'true');
+    assert.ok(oculto.classList.contains('visualmente-oculto'));
+    assert.equal(oculto.getAttribute('aria-hidden'), null);
+    assert.equal(visible.textContent, '0');
+    assert.equal(oculto.textContent, '33');
+    // El título de la pestaña, como lo lee un lector de pantalla, en cada cuadro
+    const frase = pagina.el('me-frase');
+    assert.equal(textoParaLectores(frase), 'Te quedan 33 días de vacaciones');
+    const titulo = { get textContent() { return textoParaLectores(frase); } };
+    const [vistos, ocultos, leidos] = cuadrosConTiempo(pagina, [visible, oculto, titulo]);
+    assert.ok(vistos.some(([, texto]) => texto !== '0' && texto !== '33'), 'el que se ve pasa por números intermedios');
+    assert.ok(ocultos.every(([, texto]) => texto === '33'), 'el oculto dice siempre 33');
+    assert.ok(leidos.every(([, texto]) => texto === 'Te quedan 33 días de vacaciones'), 'el título se lee siempre entero');
+  });
+
+  // Review Focus 3
+  it('con cuadros con tiempo, cada número sube en enteros, con su demora y su duración, y termina en el texto del servidor: 33, 1,5 y 0', async () => {
+    // PLANTA: la frase, con la regla (250 ms de demora y 1300 de duración), y las franquicias, con su línea (900 ms y 700)
+    const planta = montarPagina({ cuadros: true });
+    await planta.iniciar();
+    const resto = numerosDelRestoDe(planta);
+    const [frase, franquicias, medica] = cuadrosConTiempo(planta, [cifraDe(planta), resto[0], resto[2]]);
+    comprobarConteo(frase, { final: '33', demora: 250, duracion: 1300 }, 'la frase');
+    comprobarConteo(franquicias, { final: '25', demora: 900, duracion: 700 }, 'las franquicias');
+    // La tercera línea empieza 180 ms después de la primera
+    comprobarConteo(medica, { final: '22', demora: 1080, duracion: 700 }, 'la atención médica');
+    // CONTRATO: las horas a favor, con decimales, terminan en «1,5» tal cual (antes, solo 0 y 1)
+    const contrato = montarPagina({ cuadros: true, responder: conResumen(resumenDel(CONTRATO)) });
+    await contrato.iniciar();
+    const [horas] = cuadrosConTiempo(contrato, [numerosDelRestoDe(contrato)[0]]);
+    comprobarConteo(horas, { final: '1,5', demora: 900, duracion: 700 }, 'las horas a favor');
+    assert.deepEqual([...new Set(horas.map(([, texto]) => texto))], ['0', '1', '1,5']);
+    // Uno en 0 (CONTRATO sin horas extras: las horas a favor) sigue en 0 en todos los cuadros
+    const sinHorasExtras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
+    const sinHoras = montarPagina({ cuadros: true, responder: conResumen(sinHorasExtras) });
+    await sinHoras.iniciar();
+    const [cero] = numerosDelRestoDe(sinHoras);
+    assert.equal(cero.textContent, '0');
+    const [vistosDelCero] = cuadrosConTiempo(sinHoras, [cero]);
+    assert.ok(vistosDelCero.length > 0);
+    assert.ok(vistosDelCero.every(([, texto]) => texto === '0'));
+  });
+
+  // Review Focus 5
+  it('un Resumen que se vuelve a dibujar mientras la banda se mueve llega quieto y completo, y los cuadros que quedan del conteo viejo no lo tocan', async () => {
+    // Después del primer cuadro (con data-animar todavía puesto) y a mitad del conteo (la frase va por la mitad)
+    for (const tiempos of [[1000], [1000, 1016, 1900]]) {
+      const pagina = montarPagina({ cuadros: true });
+      await pagina.iniciar();
+      const vista = pagina.el('vista-resumen');
+      const vieja = cifraDe(pagina);
+      for (const tiempo of tiempos) pagina.cuadro(tiempo);
+      if (tiempos.length === 1) assert.equal(vista.getAttribute('data-animar'), '', 'todavía no empezaron las transiciones');
+      else assert.ok(!['0', '33'].includes(vieja.textContent), `a medio contar: ${vieja.textContent}`);
+      // Se guarda una licencia: el Resumen se vuelve a dibujar
+      await pagina.contexto.cargarResumen();
+      assert.equal(vieja.isConnected, false);
+      const textoViejo = vieja.textContent;
+      const nueva = cifraDe(pagina);
+      const quieto = (momento) => {
+        assert.equal(vista.getAttribute('data-animar'), null, momento);
+        assert.equal(cifraDe(pagina), nueva, momento);
+        assert.equal(nueva.textContent, '33', momento);
+        assert.equal(cifraOcultaDe(pagina).textContent, '33', momento);
+        assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR, momento);
+      };
+      quieto(`${String(tiempos)}: recién dibujado`);
+      // Los cuadros que quedan (el conteo viejo y el que sacaba data-animar) no tocan el nuevo, y se terminan
+      for (let tiempo = tiempos.at(-1) + 16; pagina.estado.cuadros.length > 0; tiempo += 16) {
+        assert.ok(tiempo < 20000, 'los cuadros se terminan');
+        pagina.cuadro(tiempo);
+        quieto(`${String(tiempos)}: a los ${String(tiempo)} ms`);
+      }
+      // El conteo viejo se detuvo: no escribió más en el número que ya no está
+      assert.equal(vieja.textContent, textoViejo);
+    }
+  });
+
+  it('lo puro del movimiento: el valor de un número como lo escribe el servidor (con coma) y la demora de una línea del resto', () => {
+    assert.equal(M.numeroDelTexto('33'), 33);
+    assert.equal(M.numeroDelTexto('1,5'), 1.5);
+    assert.equal(M.numeroDelTexto('0'), 0);
+    assert.equal(M.numeroDelTexto(' 10,5 '), 10.5);
+    for (const raro of ['', '-3', '1.5', '1,', ',5', 'x', MALICIOSO, null, undefined, 12]) assert.equal(M.numeroDelTexto(raro), null, String(raro));
+    // La de cada línea, del style que escribe htmlDelResto: 900 ms y 90 más por línea
+    const demoras = [...M.htmlDelResto(resumenDel(PLANTA)).matchAll(/<i style="([^"]*)">/g)].map(([, estilo]) => M.demoraDelEstilo(estilo));
+    assert.deepEqual(demoras, [900, 990, 1080, 1170]);
+    for (const raro of ['', '--p:10%', null, undefined, '--demora:abc']) assert.equal(M.demoraDelEstilo(raro), 0, String(raro));
+  });
+
+  // La spec (3): con prefers-reduced-motion, nada se mueve y todo está en su valor desde el principio. La regla y las líneas, en el
+  // <style> (el test de abajo); los números no cuentan
+  it('con prefers-reduced-motion: reduce, los números no cuentan: están en su valor desde el principio, sin pasar por 0', async () => {
+    const pagina = montarPagina({ cuadros: true, reducido: true });
+    await pagina.iniciar();
+    const elementos = [cifraDe(pagina), ...numerosDelRestoDe(pagina)];
+    const finales = ['33', ...PLANTA_EN_SU_VALOR];
+    assert.deepEqual(textosDe(elementos), finales);
+    const vistos = cuadrosConTiempo(pagina, elementos);
+    vistos.forEach((deUno, i) => assert.ok(deUno.every(([, texto]) => texto === finales[i]), finales[i]));
+    assert.deepEqual(textosDe(elementos), finales);
+  });
+
+  it('el <style>: la regla y las líneas, vacías y sin transición con data-animar; después, cada una con su --demora y su --duracion; quietas con prefers-reduced-motion', () => {
+    const estilo = leer('mi-espacio.html').match(/<style>([\s\S]*?)<\/style>/)[1];
+    // Los tramos, uno detrás del otro con su demora y su duración (las del style que escribe mi-espacio.js); el número de cada
+    // uno, cuando su tramo casi terminó; las líneas, de 700 ms (los mismos que cuenta el número de cada una)
+    assert.ok(estilo.includes('.me-tramo { transition: transform var(--duracion) cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }'));
+    assert.ok(estilo.includes('.me-tramo > span { transition: opacity 200ms ease calc(var(--demora) + var(--duracion) * 0.7); }'));
+    assert.ok(estilo.includes(`.me-linea i { transition: transform ${String(M.DURACION_DE_LA_LINEA)}ms cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }`));
+    assert.equal(M.DURACION_DE_LA_LINEA, 700);
+    // Con data-animar, vacías y sin transición: si ya se habían dibujado llenas, se vacían de golpe
+    assert.ok(estilo.includes('#vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-linea i { transform: scaleX(0); transition: none; }'));
+    assert.ok(estilo.includes('#vista-resumen[data-animar] .me-tramo > span { opacity: 0; transition: none; }'));
+    // Con prefers-reduced-motion, sin transiciones ni transformaciones, y el número de cada tramo a la vista, también con data-animar
+    const inicio = estilo.indexOf('@media (prefers-reduced-motion: reduce) {');
+    assert.ok(inicio > estilo.indexOf('#vista-resumen[data-animar] .me-tramo > span {'), 'después de las reglas que anula');
+    const reducido = estilo.slice(inicio, estilo.indexOf('}', inicio) + 1);
+    for (const selector of ['.me-tramo', '.me-tramo > span', '.me-linea i', '#vista-resumen[data-animar] .me-tramo',
+      '#vista-resumen[data-animar] .me-tramo > span', '#vista-resumen[data-animar] .me-linea i']) {
+      assert.ok(reducido.split('{')[1].split(',').map((parte) => parte.trim()).includes(selector), selector);
+    }
+    assert.match(reducido, /\{ transition: none; transform: none; opacity: 1; \}/);
+    // Sin restos de los tanques de «Niveles»
+    assert.doesNotMatch(leer('js/mi-espacio.js'), /llenarTanques|tanquesLlenos|data-llenar|me-niveles|me-tanque/);
+    assert.doesNotMatch(estilo, /data-llenar|me-tanque/);
   });
 });
 
