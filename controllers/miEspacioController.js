@@ -7,12 +7,15 @@
 // responden { modalidad: null, mensaje } y no muestran nada; el Resumen lo dice en su `mensaje` (sección 1).
 // Las licencias se cargan, se corrigen y se borran (baja lógica) acá, cada una en una transacción; una carga que no cierra
 // (`evaluarLicencia`) no se guarda. Las ausencias de día entero de quien puede tener licencia pasan a Configuración →
-// Licencias en la misma transacción (sección 6, services/miEspacioPaso.js). Un id de otra persona responde 404, como uno que
-// no existe: no se revela que existe (sección 10).
+// Licencias en la misma transacción (sección 6, services/miEspacioPaso.js). Las horas extras, los días de cada año y el saldo
+// inicial («Mis vacaciones y saldos», sección 4) se guardan también cada uno en una transacción, sin tocar Configuración, y
+// ningún faltante los frena (3.10). Un id de otra persona responde 404, como uno que no existe: no se revela que existe
+// (sección 10).
 import pool from '../config/database.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import {
-  MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia
+  MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia,
+  validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe
 } from '../services/miEspacioReglas.js';
 import { resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe } from '../services/miEspacioResumen.js';
 import { estadoDe, contextoDe, personaDe, licenciaDe } from '../services/miEspacioDatos.js';
@@ -310,5 +313,132 @@ export const borrarLicenciaMia = (req, res) => responder(res, 'Error al borrar l
       'UPDATE mi_espacio_licencias SET activo = 0 WHERE id = ? AND usuario_id = ? AND activo = 1', [id, usuarioId]
     );
     return [200, { success: true, message: 'Licencia borrada.' }];
+  });
+});
+
+// Las horas extras: cargar, corregir y borrar (spec, 3.7 y sección 10). Nunca tocan Configuración: la transacción bloquea
+// solo la fila de la persona, así dos cargas a la vez se ordenan y la segunda ve lo que guardó la primera
+
+// Un id que no es un entero positivo, de otra persona, que no existe o dado de baja: el mismo 404
+const noEncontradas = () => [404, { success: false, error: MENSAJES_MI_ESPACIO.noEncontradas }];
+
+// Lo que frena cargar o corregir unas horas extras antes de validarlas, como a una licencia (`evaluarLicencia`): sin
+// modalidad o sin arranque, con campo null. Ningún faltante las frena: lo que deja de cerrar al corregirlas o borrarlas (un
+// franco ya usado, unas horas a favor ya usadas) lo avisa el Resumen (spec, 3.10)
+const frenoDeLasHorasExtras = (estado) => {
+  if (estado.modalidad === null) return { campo: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad };
+  if (estado.arranque === null) return { campo: null, mensaje: MENSAJES_MI_ESPACIO.sinArranque };
+  return null;
+};
+
+// POST /api/mi-espacio/horas-extras: carga unas horas extras de la persona (`{ fecha, desde, hasta, nota }`, las horas
+// 'HH:MM'; un horario que pasa la medianoche cuenta entero en `fecha`)
+export const cargarHorasExtras = (req, res) => responder(res, 'Error al cargar las horas extras', async () => {
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  const entrada = cuerpoDe(req);
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const estado = await estadoDe(usuarioId, conexion);
+    const freno = frenoDeLasHorasExtras(estado);
+    if (freno) return rechazoDeLaCarga(freno);
+    const { datos, error } = validarHorasExtras(entrada, { hoy, estado });
+    if (error) return rechazoDeLaCarga(error);
+    const [resultado] = await conexion.query(
+      'INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta, nota) VALUES (?, ?, ?, ?, ?)',
+      [usuarioId, datos.fecha, datos.desde, datos.hasta, datos.nota]
+    );
+    return [201, { success: true, data: { id: resultado.insertId }, message: 'Horas extras cargadas.' }];
+  });
+});
+
+// PUT /api/mi-espacio/horas-extras/:id: corrige unas horas extras activas de la persona (las corregidas no chocan consigo
+// mismas)
+export const corregirHorasExtras = (req, res) => responder(res, 'Error al corregir las horas extras', async () => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return noEncontradas();
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  const entrada = cuerpoDe(req);
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const estado = await estadoDe(usuarioId, conexion);
+    if (!estado.horasExtras.some((fila) => fila.id === id)) return noEncontradas();
+    const freno = frenoDeLasHorasExtras(estado);
+    if (freno) return rechazoDeLaCarga(freno);
+    const { datos, error } = validarHorasExtras(entrada, { hoy, estado, editadaId: id });
+    if (error) return rechazoDeLaCarga(error);
+    await conexion.query(
+      `UPDATE mi_espacio_horas_extras SET fecha = ?, desde = ?, hasta = ?, nota = ?
+       WHERE id = ? AND usuario_id = ? AND activo = 1`,
+      [datos.fecha, datos.desde, datos.hasta, datos.nota, id, usuarioId]
+    );
+    return [200, { success: true, data: { id }, message: 'Horas extras corregidas.' }];
+  });
+});
+
+// DELETE /api/mi-espacio/horas-extras/:id: baja lógica de unas horas extras activas de la persona. Nunca se frena, tampoco
+// sin modalidad o sin arranque
+export const borrarHorasExtras = (req, res) => responder(res, 'Error al borrar las horas extras', async () => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return noEncontradas();
+  const usuarioId = req.user.userId;
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const [resultado] = await conexion.query(
+      'UPDATE mi_espacio_horas_extras SET activo = 0 WHERE id = ? AND usuario_id = ? AND activo = 1', [id, usuarioId]
+    );
+    if (resultado.affectedRows === 0) return noEncontradas();
+    return [200, { success: true, message: 'Horas extras borradas.' }];
+  });
+});
+
+// «Mis vacaciones y saldos» (spec, sección 4): los días de cada año y el saldo inicial, cada uno en una transacción que
+// bloquea solo la fila de la persona. Piden la modalidad (sin ella, 400 con campo null). Bajar los días de un año o corregir
+// el saldo inicial no se frena, aunque deje algo sin cubrir: es un faltante del Resumen (3.10)
+const sinModalidadParaGuardar = () => rechazoDeLaCarga({ campo: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad });
+
+// PUT /api/mi-espacio/anio/:anio: los días de vacaciones y los estudios de ese año (`{ dias_vacaciones, estudios }`, con
+// null por «No estudio»), con un upsert. Un año que no sirve (`validarAnio`: de dos años antes al siguiente del de hoy) da
+// 400 en `anio` antes que nada
+export const guardarAnio = (req, res) => responder(res, 'Error al guardar el año', async () => {
+  const usuarioId = req.user.userId;
+  const { datos, error } = validarAnio(req.params.anio, cuerpoDe(req), hoyArgentina());
+  if (error?.campo === 'anio') return rechazoDeLaCarga(error);
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    if (modalidadDe((await personaDe(usuarioId, conexion))?.vinculo) === null) return sinModalidadParaGuardar();
+    if (error) return rechazoDeLaCarga(error);
+    await conexion.query(
+      `INSERT INTO mi_espacio_anios (usuario_id, anio, dias_vacaciones, estudios) VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE dias_vacaciones = VALUES(dias_vacaciones), estudios = VALUES(estudios)`,
+      [usuarioId, datos.anio, datos.dias_vacaciones, datos.estudios]
+    );
+    return [200, { success: true, data: datos, message: 'Días del año guardados.' }];
+  });
+});
+
+// PUT /api/mi-espacio/saldo-inicial: el saldo inicial (`{ saldos: { <clave>: número } }`, uno por campo de
+// `camposDelSaldoInicial`; lo que no es un campo no se guarda). La primera vez crea el arranque con hoy; después su fecha no
+// cambia. Los campos se arman con el arranque que va a quedar, y piden los días de su año cargados (los de un año anterior,
+// que valdrían heredados, no alcanzan: si no, 400 en `dias_vacaciones`). Reemplaza todas las filas del saldo de la persona
+export const guardarSaldoInicial = (req, res) => responder(res, 'Error al guardar el saldo inicial', async () => {
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  const entrada = cuerpoDe(req);
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const { modalidad, arranque: guardado, anios } = await estadoDe(usuarioId, conexion);
+    if (modalidad === null) return sinModalidadParaGuardar();
+    const arranque = guardado ?? hoy;
+    if (!anios.some((delAnio) => delAnio.anio === Number(arranque.slice(0, 4)))) {
+      return rechazoDeLaCarga({ campo: 'dias_vacaciones', mensaje: MENSAJES_MI_ESPACIO.diasVacaciones });
+    }
+    const { datos, error } = validarSaldoInicial(entrada, camposDelSaldoInicial({ modalidad, arranque, anios }));
+    if (error) return rechazoDeLaCarga(error);
+    if (guardado === null) {
+      await conexion.query('INSERT INTO mi_espacio_arranque (usuario_id, fecha) VALUES (?, ?)', [usuarioId, arranque]);
+    }
+    await conexion.query('DELETE FROM mi_espacio_saldos WHERE usuario_id = ?', [usuarioId]);
+    if (datos.length > 0) {
+      await conexion.query('INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES ?',
+        [datos.map((saldo) => [usuarioId, saldo.concepto, saldo.anio, saldo.cantidad])]);
+    }
+    return [200, { success: true, data: { arranque }, message: 'Saldo inicial guardado.' }];
   });
 });

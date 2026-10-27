@@ -62,7 +62,8 @@ import {
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
-  corregirLicenciaMia, borrarLicenciaMia
+  corregirLicenciaMia, borrarLicenciaMia, cargarHorasExtras, corregirHorasExtras, borrarHorasExtras, guardarAnio,
+  guardarSaldoInicial
 } from '../controllers/miEspacioController.js';
 import {
   reporteEstadoGeneral,
@@ -196,8 +197,13 @@ router.post('/mi-espacio/licencias', authMiddleware, cargarLicenciaMia);
 router.put('/mi-espacio/licencias/:id', authMiddleware, corregirLicenciaMia);
 router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
 router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
+router.post('/mi-espacio/horas-extras', authMiddleware, cargarHorasExtras);
+router.put('/mi-espacio/horas-extras/:id', authMiddleware, corregirHorasExtras);
+router.delete('/mi-espacio/horas-extras/:id', authMiddleware, borrarHorasExtras);
 router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
+router.put('/mi-espacio/anio/:anio', authMiddleware, guardarAnio);
 router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);
+router.put('/mi-espacio/saldo-inicial', authMiddleware, guardarSaldoInicial);
 
 // Datasets (escritura - solo admin)
 router.post('/datasets', authMiddleware, adminOnly, createDataset);

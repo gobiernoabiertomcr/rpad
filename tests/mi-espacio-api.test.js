@@ -10,10 +10,11 @@ import {
 } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
 import {
-  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior
+  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior, formatoCorto
 } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, camposDelSaldoInicial, textoDeLasMitades, textoSuperpuesta, textoTope,
+  textoHorarioSuperpuesto, textoSaldo, mesMas, mesEnFrase,
   textoSinNoUtilizadas, textoAutorizadaSinDias, AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY,
   AVISO_SIN_PERSONA_A_CARGO, textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion,
   textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
@@ -1316,6 +1317,328 @@ describe('el paso a Configuración', () => {
       assert.deepEqual([mias.length, oficiales.length], [1, 1], `vuelta ${vuelta}`);
       assert.equal(mias[0].licencia_oficial_id, oficiales[0].id);
     }
+  });
+});
+
+// Las horas extras (spec, 3.7 y 3.10) y «Mis vacaciones y saldos» (sección 4): nunca tocan Configuración
+const NO_ENCONTRADAS = { success: false, error: MENSAJES_MI_ESPACIO.noEncontradas };
+// Las horas extras de una persona como quedaron en la base, también las dadas de baja (los TIME, cortados a 'HH:MM')
+const horasGuardadasDe = async (clave) => (await query(
+  `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(desde, '%H:%i') AS desde,
+     TIME_FORMAT(hasta, '%H:%i') AS hasta, nota, activo
+   FROM mi_espacio_horas_extras WHERE usuario_id = ? ORDER BY id`,
+  [usuarios[clave].id]
+)).map(fila => ({ ...fila, activo: Number(fila.activo) }));
+// Los faltantes del Resumen (los textos)
+const faltantesDe = async (clave) => {
+  const res = await api.get('/mi-espacio/resumen', como(clave));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return res.body.data.faltantes;
+};
+
+describe('las horas extras', () => {
+  it('un POST el sábado de 22:00 a 01:30 da 201 y GET /horas-extras lo cuenta en su mes con 3,5 horas; corregirlas da 200',
+    async () => {
+      await listoParaCargar('adminA');
+      const res = await api.post('/mi-espacio/horas-extras', { fecha: q(5), desde: '22:00', hasta: '01:30', nota: '  Evento  ' },
+        como('adminA'));
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.deepEqual(Object.keys(res.body).sort(), ['data', 'message', 'success']);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.message, 'Horas extras cargadas.');
+      const { id } = res.body.data;
+      assert.ok(Number.isInteger(id) && id > 0);
+      assert.deepEqual(await horasGuardadasDe('adminA'),
+        [{ id, fecha: q(5), desde: '22:00', hasta: '01:30', nota: 'Evento', activo: 1 }]);
+
+      // Pasa la medianoche: cuenta entera en el mes del día en que empezó
+      const mes = q(5).slice(0, 7);
+      const tabla = await api.get(`/mi-espacio/horas-extras?anio=${mes.slice(0, 4)}`, como('adminA'));
+      assert.equal(tabla.status, 200, JSON.stringify(tabla.body));
+      assert.equal(tabla.body.data.totales_por_mes[mes], '3,5 horas');
+      const [fila] = tabla.body.data.dias_por_mes[mes];
+      assert.deepEqual([fila.id, fila.fecha, fila.horario, fila.horas_texto, fila.nota],
+        [id, q(5), '22:00 a 01:30', '3,5 horas', 'Evento']);
+
+      // Corregirlas: no chocan consigo mismas, y sin nota queda null
+      const corregida = await api.put(`/mi-espacio/horas-extras/${id}`, { fecha: q(5), desde: '21:00', hasta: '01:30' },
+        como('adminA'));
+      assert.equal(corregida.status, 200, JSON.stringify(corregida.body));
+      assert.deepEqual(corregida.body, { success: true, data: { id }, message: 'Horas extras corregidas.' });
+      assert.deepEqual(await horasGuardadasDe('adminA'),
+        [{ id, fecha: q(5), desde: '21:00', hasta: '01:30', nota: null, activo: 1 }]);
+    });
+
+  it('una superpuesta y un horario que no es de a media hora dan 400 en desde; cada 400 con su campo y nada guardado',
+    async () => {
+      await listoParaCargar('adminA');
+      const primera = await conHorasExtras('adminA', { fecha: q(5), desde: '22:00:00', hasta: '01:30:00' });
+      const casos = [
+        [{ fecha: q(5), desde: '21:00', hasta: '22:30' }, rechazo(textoHorarioSuperpuesto('22:00', '01:30'), 'desde')],
+        [{ fecha: q(5), desde: '10:15', hasta: '11:00' }, rechazo(MENSAJES_MI_ESPACIO.horario, 'desde')],
+        [{ fecha: '2026-02-30', desde: '10:00', hasta: '11:00' }, rechazo(MENSAJES_MI_ESPACIO.fecha, 'fecha')],
+        [{ fecha: q(5), desde: '10:00', hasta: '11:00', nota: 'x'.repeat(201) }, rechazo(MENSAJES_MI_ESPACIO.nota, 'nota')]
+      ];
+      assert.equal(casos[0][1].error, 'Se superpone con las horas extras de 22:00 a 01:30 de ese día.');
+      for (const [cuerpo, esperado] of casos) {
+        const res = await api.post('/mi-espacio/horas-extras', cuerpo, como('adminA'));
+        assert.equal(res.status, 400, JSON.stringify(cuerpo));
+        assert.deepEqual(res.body, esperado, JSON.stringify(cuerpo));
+      }
+      // La corrección de otras del mismo día también choca
+      const otra = await conHorasExtras('adminA', { fecha: q(5), desde: '10:00:00', hasta: '12:00:00' });
+      const corregida = await api.put(`/mi-espacio/horas-extras/${otra}`, { fecha: q(5), desde: '20:00', hasta: '23:00' },
+        como('adminA'));
+      assert.equal(corregida.status, 400);
+      assert.deepEqual(corregida.body, rechazo(textoHorarioSuperpuesto('22:00', '01:30'), 'desde'));
+      assert.deepEqual((await horasGuardadasDe('adminA')).map(fila => [fila.id, fila.desde, fila.hasta]),
+        [[primera, '22:00', '01:30'], [otra, '10:00', '12:00']]);
+      // Las de otra persona no chocan
+      await listoParaCargar('adminB');
+      const deB = await api.post('/mi-espacio/horas-extras', { fecha: q(5), desde: '22:00', hasta: '01:30' }, como('adminB'));
+      assert.equal(deB.status, 201, JSON.stringify(deB.body));
+    });
+
+  it('cargar y corregir piden la modalidad y el arranque (campo null); borrar no los pide', async () => {
+    await conAnio('adminA', ANIO, 20);
+    const cuerpo = { fecha: q(5), desde: '10:00', hasta: '12:00' };
+    const sinArranque = await api.post('/mi-espacio/horas-extras', cuerpo, como('adminA'));
+    assert.equal(sinArranque.status, 400);
+    assert.deepEqual(sinArranque.body, rechazo(MENSAJES_MI_ESPACIO.sinArranque, null));
+    const sinVinculo = await api.post('/mi-espacio/horas-extras', cuerpo, como('lector'));
+    assert.equal(sinVinculo.status, 400);
+    assert.deepEqual(sinVinculo.body, rechazo(MENSAJES_MI_ESPACIO.sinModalidad, null));
+    assert.equal((await horasGuardadasDe('adminA')).length + (await horasGuardadasDe('lector')).length, 0);
+
+    const deA = await conHorasExtras('adminA', { fecha: q(5), desde: '19:00:00', hasta: '22:00:00' });
+    const delLector = await conHorasExtras('lector', { fecha: q(5), desde: '19:00:00', hasta: '22:00:00' });
+    for (const [clave, id, mensaje] of [['adminA', deA, MENSAJES_MI_ESPACIO.sinArranque],
+      ['lector', delLector, MENSAJES_MI_ESPACIO.sinModalidad]]) {
+      const corregir = await api.put(`/mi-espacio/horas-extras/${id}`, cuerpo, como(clave));
+      assert.equal(corregir.status, 400, clave);
+      assert.deepEqual(corregir.body, rechazo(mensaje, null), clave);
+      const borrar = await api.delete(`/mi-espacio/horas-extras/${id}`, como(clave));
+      assert.equal(borrar.status, 200, `${clave} ${JSON.stringify(borrar.body)}`);
+      assert.deepEqual((await horasGuardadasDe(clave)).map(fila => [fila.desde, fila.activo]), [['19:00', 0]], clave);
+    }
+  });
+
+  it('lo ajeno es 404: el PUT y el DELETE sobre unas de adminB, un id que no sirve, uno que no existe y unas dadas de baja',
+    async () => {
+      await listoParaCargar('adminA');
+      const ajenas = await conHorasExtras('adminB', { fecha: q(5), desde: '10:00:00', hasta: '12:00:00' });
+      const dadasDeBaja = await conHorasExtras('adminA', { fecha: q(6), desde: '10:00:00', hasta: '12:00:00', activo: 0 });
+      const cuerpo = { fecha: q(5), desde: '14:00', hasta: '15:00' };
+      for (const id of [ajenas, 'abc', '1e3', '0', '-1', '1.5', 999999, dadasDeBaja]) {
+        const corregir = await api.put(`/mi-espacio/horas-extras/${id}`, cuerpo, como('adminA'));
+        assert.equal(corregir.status, 404, `PUT ${id}`);
+        assert.deepEqual(corregir.body, NO_ENCONTRADAS, `PUT ${id}`);
+        const borrar = await api.delete(`/mi-espacio/horas-extras/${id}`, como('adminA'));
+        assert.equal(borrar.status, 404, `DELETE ${id}`);
+        assert.deepEqual(borrar.body, NO_ENCONTRADAS, `DELETE ${id}`);
+      }
+      // El 404 va antes que la validación: con un cuerpo que no sirve, también
+      const invalida = await api.put(`/mi-espacio/horas-extras/${ajenas}`, { fecha: 'x' }, como('adminA'));
+      assert.equal(invalida.status, 404);
+      assert.deepEqual((await horasGuardadasDe('adminB')).map(fila => [fila.fecha, fila.desde, fila.hasta, fila.activo]),
+        [[q(5), '10:00', '12:00', 1]]);
+      assert.deepEqual((await horasGuardadasDe('adminA')).map(fila => [fila.id, fila.activo]), [[dadasDeBaja, 0]]);
+    });
+
+  it('borrar unas horas extras deja un faltante, sin frenar (corregirlas, tampoco)', async () => {
+    await listoParaCargar('adminA');
+    // El franco del lunes q(0) sale de las 7 horas extras de dos meses antes
+    const mesDeUso = q(0).slice(0, 7);
+    const trabajado = `${mesMas(mesDeUso, -2)}-10`;
+    const id = await conHorasExtras('adminA', { fecha: trabajado, desde: '14:00:00', hasta: '21:00:00' });
+    await conLicencia('adminA', { tipo: 'franco', desde: q(0) });
+    assert.deepEqual(await faltantesDe('adminA'), []);
+    const faltante = `Revisá tus francos de ${mesEnFrase(mesDeUso)}: cargaste 1 y no corresponde ninguno.`;
+
+    const corregida = await api.put(`/mi-espacio/horas-extras/${id}`, { fecha: trabajado, desde: '14:00', hasta: '20:00' },
+      como('adminA'));
+    assert.equal(corregida.status, 200, JSON.stringify(corregida.body));
+    assert.deepEqual(await faltantesDe('adminA'), [faltante]);
+    const devuelta = await api.put(`/mi-espacio/horas-extras/${id}`, { fecha: trabajado, desde: '14:00', hasta: '21:00' },
+      como('adminA'));
+    assert.equal(devuelta.status, 200, JSON.stringify(devuelta.body));
+    assert.deepEqual(await faltantesDe('adminA'), []);
+
+    const res = await api.delete(`/mi-espacio/horas-extras/${id}`, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: true, message: 'Horas extras borradas.' });
+    assert.deepEqual(await faltantesDe('adminA'), [faltante]);
+    // Baja lógica: la fila queda con activo = 0 y deja de verse; ya dada de baja, 404
+    assert.deepEqual((await horasGuardadasDe('adminA')).map(fila => [fila.id, fila.activo]), [[id, 0]]);
+    const tabla = await api.get(`/mi-espacio/horas-extras?anio=${trabajado.slice(0, 4)}`, como('adminA'));
+    assert.deepEqual(tabla.body.data.dias_por_mes, {});
+    assert.equal((await api.delete(`/mi-espacio/horas-extras/${id}`, como('adminA'))).status, 404);
+  });
+});
+
+describe('guardar el año', () => {
+  const anioGuardadoDe = async (clave) => (await query(
+    'SELECT anio, dias_vacaciones, estudios FROM mi_espacio_anios WHERE usuario_id = ? ORDER BY anio', [usuarios[clave].id]
+  )).map(fila => [Number(fila.anio), Number(fila.dias_vacaciones), fila.estudios]);
+
+  it('PUT /anio con 15 y secundario, y después GET; guardarlo de nuevo cambia la misma fila', async () => {
+    const res = await api.put(`/mi-espacio/anio/${ANIO}`, { dias_vacaciones: 15, estudios: 'secundario' }, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, {
+      success: true, data: { anio: ANIO, dias_vacaciones: 15, estudios: 'secundario' }, message: 'Días del año guardados.'
+    });
+    const leido = await api.get(`/mi-espacio/anio/${ANIO}`, como('adminA'));
+    assert.equal(leido.status, 200, JSON.stringify(leido.body));
+    assert.deepEqual([leido.body.data.dias_vacaciones, leido.body.data.estudios, leido.body.data.heredado],
+      [15, 'secundario', false]);
+
+    // Un número como texto y «No estudio» (null): la misma fila
+    const otra = await api.put(`/mi-espacio/anio/${ANIO}`, { dias_vacaciones: '25', estudios: null }, como('adminA'));
+    assert.equal(otra.status, 200, JSON.stringify(otra.body));
+    assert.deepEqual(otra.body.data, { anio: ANIO, dias_vacaciones: 25, estudios: null });
+    assert.deepEqual(await anioGuardadoDe('adminA'), [[ANIO, 25, null]]);
+  });
+
+  it('cada 400 con su campo y nada guardado; el año va antes que nada, también sin vínculo', async () => {
+    const casos = [
+      [ANIO, { dias_vacaciones: 12, estudios: null }, rechazo(MENSAJES_MI_ESPACIO.diasVacaciones, 'dias_vacaciones')],
+      [ANIO, { dias_vacaciones: 15, estudios: 'otro' }, rechazo(MENSAJES_MI_ESPACIO.estudios, 'estudios')],
+      [ANIO, { dias_vacaciones: 15 }, rechazo(MENSAJES_MI_ESPACIO.estudios, 'estudios')],
+      [ANIO + 2, { dias_vacaciones: 15, estudios: null }, rechazo(MENSAJES_MI_ESPACIO.anio, 'anio')],
+      ['abc', { dias_vacaciones: 15, estudios: null }, rechazo(MENSAJES_MI_ESPACIO.anio, 'anio')]
+    ];
+    for (const [anio, cuerpo, esperado] of casos) {
+      const res = await api.put(`/mi-espacio/anio/${anio}`, cuerpo, como('adminA'));
+      assert.equal(res.status, 400, `${anio} ${JSON.stringify(cuerpo)}`);
+      assert.deepEqual(res.body, esperado, `${anio} ${JSON.stringify(cuerpo)}`);
+    }
+    const sinVinculo = await api.put(`/mi-espacio/anio/${ANIO}`, { dias_vacaciones: 15, estudios: null }, como('lector'));
+    assert.equal(sinVinculo.status, 400);
+    assert.deepEqual(sinVinculo.body, rechazo(MENSAJES_MI_ESPACIO.sinModalidad, null));
+    const anioSinVinculo = await api.put('/mi-espacio/anio/abc', { dias_vacaciones: 15, estudios: null }, como('lector'));
+    assert.deepEqual(anioSinVinculo.body, rechazo(MENSAJES_MI_ESPACIO.anio, 'anio'));
+    assert.deepEqual([...await anioGuardadoDe('adminA'), ...await anioGuardadoDe('lector')], []);
+  });
+
+  it('bajar los días no se frena: deja un faltante en el Resumen', async () => {
+    await listoParaCargar('adminA', `${ANIO}-01-15`);
+    // Diez días hábiles de agosto, cubiertos por la primera mitad de la licencia del año (10 de 20, el 1/7)
+    const habiles = [];
+    for (let fecha = `${ANIO}-08-01`; habiles.length < 10; fecha = sumarDias(fecha, 1)) {
+      if (esDiaHabil(fecha)) habiles.push(fecha);
+    }
+    await conLicencia('adminA', { tipo: 'vacaciones', desde: habiles[0], hasta: habiles[9] });
+    assert.deepEqual(await faltantesDe('adminA'), []);
+
+    // Con 10 días, la primera mitad es de 5: los otros 5 quedan sin cubrir
+    const res = await api.put(`/mi-espacio/anio/${ANIO}`, { dias_vacaciones: 10, estudios: null }, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(await faltantesDe('adminA'),
+      [`Revisá tus vacaciones: para el ${formatoCorto(habiles[5])} faltan 5 días habilitados.`]);
+  });
+});
+
+describe('guardar el saldo inicial', () => {
+  const arranqueDe = async (clave) => (await query(
+    "SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha FROM mi_espacio_arranque WHERE usuario_id = ?", [usuarios[clave].id]
+  )).map(fila => fila.fecha);
+  // [concepto, anio, cantidad], por concepto y año
+  const ordenados = (filas) => [...filas].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
+  const saldosDe = async (clave) => ordenados((await query(
+    'SELECT concepto, anio, cantidad FROM mi_espacio_saldos WHERE usuario_id = ?', [usuarios[clave].id]
+  )).map(fila => [fila.concepto, Number(fila.anio), Number(fila.cantidad)]));
+  // Los campos de planta con 20 días en el año de hoy y el arranque de hoy
+  const camposDePlanta = () => camposDelSaldoInicial({
+    modalidad: 'planta', arranque: hoy, anios: [{ anio: ANIO, dias_vacaciones: 20, estudios: null }]
+  });
+
+  it('el primer PUT crea el arranque con hoy y guarda un saldo por campo', async () => {
+    await conAnio('adminA', ANIO, 20);
+    const campos = camposDePlanta();
+    const saldos = Object.fromEntries(campos.map((campo, i) => [campo.clave, Math.min(campo.maximo, i + 1)]));
+    const res = await api.put('/mi-espacio/saldo-inicial', { saldos }, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: true, data: { arranque: hoy }, message: 'Saldo inicial guardado.' });
+    assert.deepEqual(await arranqueDe('adminA'), [hoy]);
+    assert.deepEqual(await saldosDe('adminA'),
+      ordenados(campos.map(campo => [campo.concepto, campo.anio, saldos[campo.clave]])));
+
+    const leido = await api.get('/mi-espacio/saldo-inicial', como('adminA'));
+    assert.equal(leido.body.data.arranque, hoy);
+    assert.deepEqual(Object.fromEntries(leido.body.data.campos.map(campo => [campo.clave, campo.valor])), saldos);
+  });
+
+  it('una corrección cambia los valores y no la fecha: reemplaza todas las filas', async () => {
+    const arranque = `${ANIO}-01-15`;
+    await conArranque('editor', arranque);
+    await conAnio('editor', ANIO, 20);
+    await conSaldo('editor', 'vacaciones', ANIO - 1, '12.0');
+    // Una fila que ya no es un campo: se borra
+    await conSaldo('editor', 'vacaciones', ANIO - 5, '3.0');
+    const campos = camposDelSaldoInicial({
+      modalidad: 'contrato', arranque, anios: [{ anio: ANIO, dias_vacaciones: 20, estudios: null }]
+    });
+    assert.ok(campos.some(campo => campo.clave === 'horas_no_utilizadas'));
+    // Lo que no es un campo no se guarda
+    const saldos = { ...Object.fromEntries(campos.map(campo => [campo.clave, 0])), horas_no_utilizadas: '6.5', otra: 9 };
+    const res = await api.put('/mi-espacio/saldo-inicial', { saldos }, como('editor'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data, { arranque });
+    assert.deepEqual(await arranqueDe('editor'), [arranque]);
+    assert.deepEqual(await saldosDe('editor'), ordenados(campos.map(campo =>
+      [campo.concepto, campo.anio, campo.clave === 'horas_no_utilizadas' ? 6.5 : 0])));
+  });
+
+  it('una clave que falta o que no sirve da 400 con su clave, y no guarda nada', async () => {
+    await conAnio('adminA', ANIO, 20);
+    const campos = camposDePlanta();
+    const completos = Object.fromEntries(campos.map(campo => [campo.clave, 0]));
+    const { medica, ...sinMedica } = completos;
+    assert.equal(medica, 0);
+    const casos = [
+      [{ saldos: sinMedica }, rechazo(textoSaldo(25), 'medica')],
+      [{ saldos: { ...completos, franquicias: 43 } }, rechazo(textoSaldo(42), 'franquicias')],
+      [{}, rechazo(textoSaldo(campos[0].maximo), campos[0].clave)]
+    ];
+    assert.equal(casos[0][1].error, 'Escribí un número de 0 a 25.');
+    for (const [cuerpo, esperado] of casos) {
+      const res = await api.put('/mi-espacio/saldo-inicial', cuerpo, como('adminA'));
+      assert.equal(res.status, 400, JSON.stringify(cuerpo));
+      assert.deepEqual(res.body, esperado, JSON.stringify(cuerpo));
+    }
+    assert.deepEqual([await arranqueDe('adminA'), await saldosDe('adminA')], [[], []]);
+  });
+
+  it('sin el año del arranque cargado da 400 en dias_vacaciones; con el arranque guardado, cuenta el de su año', async () => {
+    const saldos = Object.fromEntries(camposDePlanta().map(campo => [campo.clave, 0]));
+    const esperado = rechazo(MENSAJES_MI_ESPACIO.diasVacaciones, 'dias_vacaciones');
+    const sinNinguno = await api.put('/mi-espacio/saldo-inicial', { saldos }, como('adminA'));
+    assert.equal(sinNinguno.status, 400);
+    assert.deepEqual(sinNinguno.body, esperado);
+    // El de un año anterior, que valdría heredado, no alcanza: tiene que estar el del arranque
+    await conAnio('adminA', ANIO - 1, 20);
+    const conElAnterior = await api.put('/mi-espacio/saldo-inicial', { saldos }, como('adminA'));
+    assert.deepEqual(conElAnterior.body, esperado);
+    assert.deepEqual([await arranqueDe('adminA'), await saldosDe('adminA')], [[], []]);
+
+    // Con el arranque guardado en el año anterior, alcanza con ese año (los campos, con ese arranque)
+    const arranque = `${ANIO - 1}-03-10`;
+    await conArranque('adminA', arranque);
+    const campos = camposDelSaldoInicial({
+      modalidad: 'planta', arranque, anios: [{ anio: ANIO - 1, dias_vacaciones: 20, estudios: null }]
+    });
+    const res = await api.put('/mi-espacio/saldo-inicial',
+      { saldos: Object.fromEntries(campos.map(campo => [campo.clave, 1])) }, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data, { arranque });
+    assert.deepEqual(await saldosDe('adminA'), ordenados(campos.map(campo => [campo.concepto, campo.anio, 1])));
+  });
+
+  it('el lector sin vínculo recibe 400 sinModalidad, y no se guarda nada', async () => {
+    const res = await api.put('/mi-espacio/saldo-inicial', { saldos: {} }, como('lector'));
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, rechazo(MENSAJES_MI_ESPACIO.sinModalidad, null));
+    assert.deepEqual([await arranqueDe('lector'), await saldosDe('lector')], [[], []]);
   });
 });
 
