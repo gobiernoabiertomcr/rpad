@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="css/main.css?v=20261109">
     <style>
         /* Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): los tokens y las piezas del Seguimiento y de Proyectos, con
-           los tres fondos que faltaban (ámbar, gris y violeta) */
+           los tres fondos que faltaban (ámbar, gris y violeta) y, desde el Resumen «Titular», el azul medio de la regla */
         :root {
             --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
             --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
@@ -23,6 +23,7 @@
             --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
             --sg-violeta: #5B4691; --sg-violeta-fondo: #ECE7F6;
             --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
+            --sg-medio: #4C7AB0;
         }
 
         /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
@@ -118,126 +119,123 @@
         .me-uso { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
         .me-uso .me-nota { margin: 0; }
 
-        /* El Resumen «Niveles» (maqueta 1, con sus tokens y sus clases pasados a --sg-* y .me-*): la modalidad y el año, «Vence
-           pronto», los faltantes, «Lo que te queda» (los tanques y las pastillas) y, al costado, «Hoy y mañana». El sol marca solo lo
-           que vence */
-        .me-contexto { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; }
-        .me-contexto b { color: var(--sg-texto); }
-        .me-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.02em; color: var(--sg-tinta); }
-        .me-subtitulo { margin: 20px 0 8px; font-family: var(--f-titulo); font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        /* El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2; la opción 2 de la maqueta, con sus clases pasadas a .me-*): los
+           faltantes, la banda (la frase, «Vence pronto» y la regla), «El resto de 2026» y «Hoy y mañana» en columnas. El
+           sol marca solo lo que vence */
         .me-aviso-ambar { background: var(--sg-ambar-fondo); border-color: #F0D78C; color: var(--sg-ambar); }
         .me-faltantes { margin: 0; padding-left: 18px; }
 
-        /* Vence pronto: la fecha en un bloque amarillo, qué vence y el botón que lo resuelve */
-        .me-vence { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 18px 24px 8px; margin: 0 0 20px; }
-        .me-vence-lista { list-style: none; margin: 10px 0 0; padding: 0; }
-        .me-vence-item { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sg-linea); }
-        .me-vence-item:first-child { border-top: 0; }
-        .me-fecha { width: 58px; height: 62px; border-radius: 14px; background: var(--sg-sol); border: 1px solid var(--sg-sol-borde); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--sg-ambar); font-size: 0.8rem; font-weight: 600; line-height: 1.1; }
-        .me-fecha b { font-family: var(--f-titulo); font-size: 1.65rem; font-weight: 750; color: var(--sg-tinta); letter-spacing: -0.03em; }
-        .me-vence-texto { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
-        .me-vence-cuando { font-size: 0.8rem; font-weight: 600; color: var(--sg-ambar); }
-        .me-vence-texto b { font-size: 1.02rem; color: var(--sg-texto); }
-        .me-vence-texto > span:last-child { font-size: 0.88rem; color: var(--sg-suave); }
+        /* La banda: el celeste de las páginas públicas, con las esquinas de arriba redondeadas y, abajo, la ola en el mismo celeste, que
+           cae sobre el fondo de la página. En la compu, la frase con la regla debajo y, a la derecha, «Vence pronto»; sin nada que venza,
+           la frase y la regla a todo el ancho */
+        .me-banda { position: relative; background: var(--sg-cielo); border-radius: 28px 28px 0 0; margin: 0 0 30px; }
+        .me-banda-cuerpo { --me-ancho-vence: 340px; display: grid; grid-template-columns: minmax(0, 1fr) var(--me-ancho-vence); grid-template-areas: 'frase vence' 'regla vence'; gap: 0 40px; padding: 30px 34px 18px; align-items: start; }
+        .me-banda-cuerpo.sin-vence { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'frase' 'regla'; }
+        .me-titular { grid-area: frase; min-width: 0; }
+        .me-vence { grid-area: vence; min-width: 0; }
+        .me-regla { grid-area: regla; min-width: 0; margin: 26px 0 0; }
+        .me-ola { position: absolute; left: 0; right: 0; bottom: -27px; width: 100%; height: 28px; color: var(--sg-cielo); display: block; pointer-events: none; }
+        /* En alto contraste, la ola (fill="currentColor") saldría como una franja del color del texto: es solo un adorno */
+        @media (forced-colors: active) { .me-ola { display: none; } }
 
-        /* La grilla: «Lo que te queda» y, al costado, «Hoy y mañana» (en una pantalla angosta, debajo). Sin «Hoy y mañana» (sin
-           nadie que no esté y sin próximo feriado), el otro ocupa todo el ancho */
-        .me-resumen-grilla { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); gap: 20px; align-items: start; }
-        .me-resumen-grilla > :only-child { grid-column: 1 / -1; }
-        .me-panel { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 22px 28px 20px; min-width: 0; }
-        .me-panel-cabeza { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin-bottom: 16px; }
-        .me-panel-cabeza .me-titulo { margin-right: auto; }
-        .me-panel-al, .me-panel-cabeza .sg-link { font-size: 0.88rem; }
-        .me-panel-al { color: var(--sg-suave); }
+        /* La frase: el día y la modalidad, el título de la pestaña en grande (el número más grueso, no de otro color) y la bajada, con
+           lo que vence en ámbar */
+        .me-banda-dia { margin: 0 0 6px; color: var(--sg-azul); font-size: 0.92rem; font-weight: 600; }
+        .me-frase { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: clamp(2rem, 4.4vw, 3.4rem); line-height: 1.02; letter-spacing: -0.035em; color: var(--sg-tinta); text-wrap: balance; overflow-wrap: anywhere; }
+        .me-cifra { font-weight: 800; font-variant-numeric: tabular-nums; display: inline-block; min-width: 1.15ch; text-align: right; }
+        .me-frase-bajada { margin: 12px 0 0; font-size: 1.05rem; line-height: 1.5; color: var(--sg-texto); max-width: 52ch; overflow-wrap: anywhere; }
+        .me-frase-bajada b { font-weight: 700; }
+        .me-frase-bajada .vence { color: var(--sg-ambar); }
 
-        /* Los tanques apoyan sobre la misma línea: el número arriba, el tanque y el nombre con su total debajo. Cada uno es un link a
-           su pestaña (con el foco visible de la página) */
-        .me-niveles-fila { display: flex; gap: 20px 26px; align-items: flex-end; flex-wrap: wrap; }
-        .me-nivel-vac { display: flex; gap: 14px; align-items: flex-end; min-width: 0; }
-        .me-nivel-vac .me-leyenda-vac { width: 184px; padding-bottom: 46px; }
-        .me-niveles-resto { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-        .me-nivel { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 100px; padding: 8px 4px 6px; border-radius: 14px; color: inherit; text-decoration: none; }
-        .me-nivel-vac > .me-nivel { min-width: 104px; }
-        .me-nivel:hover { background: var(--sg-sutil); }
-        .me-nivel-num { display: flex; align-items: baseline; gap: 5px; color: var(--sg-suave); font-size: 0.84rem; }
-        .me-nivel-num b { font-family: var(--f-titulo); font-size: 2.9rem; font-weight: 750; letter-spacing: -0.04em; color: var(--sg-tinta); line-height: 1; font-variant-numeric: tabular-nums; }
-        .me-nivel-num.chico { flex-direction: column; align-items: center; gap: 0; }
-        .me-nivel-num.chico b { font-size: 1.9rem; }
-        .me-nivel-pie { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.3; }
-        .me-nivel-pie b { font-size: 0.86rem; color: var(--sg-texto); font-weight: 600; white-space: nowrap; }
-        .me-nivel-pie span { font-size: 0.76rem; color: var(--sg-suave); white-space: nowrap; }
-        .me-nivel.vence .me-nivel-num b, .me-nivel.vence .me-nivel-pie b { color: var(--sg-ambar); }
-        .me-tanque { display: block; flex: none; }
-        .me-tanque .t-fondo { fill: #F1F5F9; }
-        .me-tanque .t-borde { fill: none; stroke: #C6D2E0; stroke-width: 2; }
+        /* La regla: la barra (decorativa) partida en un tramo por capa, cada uno con un casillero por día (--n, que escribe
+           mi-espacio.js: una línea blanca entre día y día) y su número, si entra; debajo, la lista de cada licencia. Los colores: la
+           licencia que vence en el sol, las otras en tinta y en azul medio, lo cargado a futuro rayado y lo que todavía no se habilita,
+           punteado sobre blanco translúcido. El margen de un tramo se achica con su columna (un tramo de 1 día entre 40 no se sale de
+           la suya) */
+        .me-barra { display: grid; column-gap: 4px; height: 46px; }
+        .me-tramo { container-type: inline-size; position: relative; border-radius: 10px; transform-origin: 0 50%; display: flex; align-items: center; padding: 0 min(10px, 20%); font-family: var(--f-titulo); font-weight: 800; font-size: 1.2rem; font-variant-numeric: tabular-nums; overflow: hidden;
+            background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / max(var(--n), 1) - 1.5px), rgba(255, 255, 255, 0.4) calc(100% / max(var(--n), 1) - 1.5px) calc(100% / max(var(--n), 1))); }
+        .me-tramo.vence { background-color: var(--sg-sol-borde); color: var(--sg-tinta); }
+        .me-tramo.tinta { background-color: var(--sg-tinta); color: #fff; }
+        .me-tramo.medio { background-color: var(--sg-medio); color: #fff; }
+        .me-tramo.cargadas { background-color: #fff; color: var(--sg-tinta); background-image: repeating-linear-gradient(135deg, rgba(26, 54, 93, 0.85) 0 3px, transparent 3px 7px); box-shadow: inset 0 0 0 2px var(--sg-tinta); }
+        .me-tramo.cargadas span { background: #fff; border-radius: 6px; padding: 0 5px; }
+        .me-tramo.por_habilitar { background-color: rgba(255, 255, 255, 0.55); color: var(--sg-suave); box-shadow: inset 0 0 0 2px #8FA3BA; background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / max(var(--n), 1) - 1.5px), rgba(143, 163, 186, 0.55) calc(100% / max(var(--n), 1) - 1.5px) calc(100% / max(var(--n), 1))); }
+        /* Un tramo angosto no muestra su número (está en la lista de debajo) */
+        @container (max-width: 26px) { .me-tramo > span { visibility: hidden; } }
+        .me-regla-lista { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 26px; }
+        .me-regla-lista li { display: flex; gap: 9px; min-width: 0; font-size: 0.8rem; line-height: 1.3; color: var(--sg-suave); overflow-wrap: anywhere; }
+        .me-regla-lista li b { display: block; font-size: 0.88rem; color: var(--sg-texto); }
+        .me-regla-lista li.vence, .me-regla-lista li.vence b { color: var(--sg-ambar); }
+        .me-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: none; margin-top: 2px; box-sizing: border-box; }
+        .me-muestra.vence { background: var(--sg-sol-borde); }
+        .me-muestra.tinta { background: var(--sg-tinta); }
+        .me-muestra.medio { background: var(--sg-medio); }
+        .me-muestra.cargadas { background: repeating-linear-gradient(135deg, var(--sg-tinta) 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
+        .me-muestra.por_habilitar { background: #fff; box-shadow: inset 0 0 0 2px #8FA3BA; }
 
-        /* Las capas, en el tanque y en su lista: la licencia que vence en el sol, las demás en tinta y en azul medio, lo cargado a
-           futuro rayado (el patrón del SVG) y lo que todavía no se habilita, punteado */
-        .me-tanque .c-tinta { fill: var(--sg-tinta); }
-        .me-tanque .c-medio { fill: #4C7AB0; }
-        .me-tanque .c-vence { fill: var(--sg-sol-borde); }
-        .me-tanque .c-por-habilitar { fill: #fff; stroke: #9AA8BA; stroke-width: 2; stroke-dasharray: 4 3; }
-        .me-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; box-sizing: border-box; }
-        .me-muestra.c-tinta { background: var(--sg-tinta); }
-        .me-muestra.c-medio { background: #4C7AB0; }
-        .me-muestra.c-vence { background: var(--sg-sol-borde); }
-        .me-muestra.c-cargadas { background: repeating-linear-gradient(135deg, var(--sg-tinta) 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
-        .me-muestra.c-por-habilitar { background: #fff; border: 2px dashed #9AA8BA; }
-        .me-leyenda-vac { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-        .me-leyenda-vac li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--sg-suave); line-height: 1.3; overflow-wrap: anywhere; }
-        .me-leyenda-vac li b { display: block; font-size: 0.9rem; color: var(--sg-texto); font-weight: 600; }
-        .me-leyenda-vac .me-n { font-family: var(--f-titulo); font-size: 1.25rem; font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
-        .me-leyenda-vac li.vence, .me-leyenda-vac li.vence b { color: var(--sg-ambar); }
-        .me-leyenda-vac li.tenue b, .me-leyenda-vac li.tenue .me-n { color: var(--sg-suave); }
+        /* Vence pronto: entradas amarillas con el talón de la fecha (decorativo), separado por una línea de puntos y con dos muescas
+           (un navegador que no dibuja la máscara deja la entrada sin muescas); a la derecha, el título, su línea y el botón */
+        .me-vence h2 { margin: 0 0 12px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-entradas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+        .me-entrada { --muesca: 9px; position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr); background: var(--sg-sol); border-radius: 16px; color: var(--sg-ambar);
+            -webkit-mask: radial-gradient(circle var(--muesca) at 72px 0, #0000 98%, #000) top / 100% 51% no-repeat, radial-gradient(circle var(--muesca) at 72px 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+            mask: radial-gradient(circle var(--muesca) at 72px 0, #0000 98%, #000) top / 100% 51% no-repeat, radial-gradient(circle var(--muesca) at 72px 100%, #0000 98%, #000) bottom / 100% 51% no-repeat; }
+        .me-talon { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 0; border-right: 2px dashed rgba(122, 82, 0, 0.35); font-size: 0.8rem; font-weight: 700; line-height: 1.1; }
+        .me-talon b { font-family: var(--f-titulo); font-size: 1.9rem; font-weight: 800; letter-spacing: -0.04em; color: var(--sg-tinta); }
+        .me-entrada-cuerpo { padding: 12px 14px 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+        .me-entrada-cuerpo b { font-size: 1rem; color: var(--sg-tinta); line-height: 1.3; }
+        .me-entrada-texto { font-size: 0.9rem; font-weight: 600; color: var(--sg-ambar); line-height: 1.35; }
+        .me-entrada-cuerpo .sg-btn { align-self: flex-start; margin-top: 8px; background: #fff; border-color: rgba(122, 82, 0, 0.45); color: var(--sg-tinta); }
 
-        /* El único movimiento de la página: al abrir, los tanques se llenan desde abajo una sola vez (mi-espacio.js les saca
-           data-llenar dos cuadros después de que se ven), uno detrás del otro */
-        .me-tanque-nivel { transition: transform 0.85s cubic-bezier(0.2, 0.75, 0.25, 1); }
-        [data-llenar] .me-tanque-nivel { transform: translateY(var(--alto)); }
-        .me-niveles-resto .me-nivel:nth-child(1) .me-tanque-nivel { transition-delay: 0.12s; }
-        .me-niveles-resto .me-nivel:nth-child(2) .me-tanque-nivel { transition-delay: 0.18s; }
-        .me-niveles-resto .me-nivel:nth-child(3) .me-tanque-nivel { transition-delay: 0.24s; }
-        .me-niveles-resto .me-nivel:nth-child(4) .me-tanque-nivel { transition-delay: 0.3s; }
-        /* Quietos y llenos desde el principio (sin el parpadeo de los dos cuadros vacíos) */
-        @media (prefers-reduced-motion: reduce) { .me-tanque-nivel, [data-llenar] .me-tanque-nivel { transition: none; transform: none; } }
+        /* El resto de 2026: sin tarjeta, sobre el fondo de la página. La cabeza; los números en fila, separados por una línea vertical,
+           cada uno un link a su pestaña con su línea, que se llena en la proporción valor / total (--p, que escribe mi-espacio.js); el
+           que vence, en ámbar; los meses y la médica extraordinaria. (.me-numeros y .me-numero también son los días de vacaciones de
+           «Mis vacaciones y saldos», en el modal: cada una va con lo que la contiene) */
+        .me-resto-cabeza { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: baseline; margin: 0 0 6px; padding: 0 4px; }
+        .me-resto h2, .me-hoy h2 { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-resto-al { color: var(--sg-suave); font-size: 0.88rem; display: flex; gap: 4px 16px; flex-wrap: wrap; align-items: baseline; }
+        .me-resto-al .sg-link { font-size: 0.88rem; }
+        .me-resto .me-numeros { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px 0; }
+        .me-resto .me-numeros li + li { border-left: 1px solid var(--sg-linea); }
+        .me-resto .me-numero { display: flex; flex-direction: column; gap: 3px; padding: 4px 22px 6px; margin: 0 6px; border-radius: 14px; color: inherit; text-decoration: none; min-width: 0; }
+        .me-resto .me-numeros li:first-child .me-numero { padding-left: 4px; margin-left: 0; }
+        .me-resto .me-numero:hover .nombre { text-decoration: underline; text-underline-offset: 3px; }
+        .me-resto .me-numero .grande { font-family: var(--f-titulo); font-weight: 800; font-size: 2.6rem; letter-spacing: -0.045em; line-height: 1; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .me-resto .me-numero .grande small { font-family: var(--f-texto); font-size: 0.9rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); margin-left: 5px; }
+        .me-resto .me-numero .nombre { font-weight: 700; color: var(--sg-texto); font-size: 0.95rem; margin-top: 4px; overflow-wrap: anywhere; }
+        .me-resto .me-numero .de { font-size: 0.82rem; color: var(--sg-suave); overflow-wrap: anywhere; }
+        .me-resto .me-numero.vence .grande, .me-resto .me-numero.vence .nombre { color: var(--sg-ambar); }
+        .me-linea { position: relative; height: 6px; border-radius: 999px; background: #DFE6EE; margin-top: 10px; overflow: hidden; }
+        .me-linea i { position: absolute; inset: 0 auto 0 0; width: var(--p); border-radius: 999px; background: var(--sg-tinta); transform-origin: 0 50%; }
+        .me-resto .me-numero.vence .me-linea i { background: var(--sg-sol-borde); }
+        .me-meses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 16px 0 0; padding: 0 4px; font-size: 0.9rem; color: var(--sg-texto); }
+        .me-meses > b { font-weight: 700; margin-right: 4px; }
+        .me-meses .me-mes { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; max-width: 100%; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--sg-linea); background: #fff; font-size: 0.86rem; overflow-wrap: anywhere; }
+        .me-meses .me-mes strong { font-family: var(--f-titulo); font-size: 1.05rem; color: var(--sg-tinta); }
+        .me-meses .me-mes span { color: var(--sg-suave); }
+        .me-meses .me-mes.vence { background: var(--sg-sol); border-color: var(--sg-sol-borde); }
+        .me-meses .me-mes.vence span { color: var(--sg-ambar); }
+        .me-meses .me-mes.pendiente { border-style: dashed; border-color: #9AA8BA; }
+        .me-meses .me-mes.previo { background: var(--sg-gris-fondo); }
+        .me-meses .me-mes.previo strong { color: var(--sg-suave); }
+        .me-extra { margin: 10px 0 0; padding: 0 4px; font-size: 0.82rem; color: var(--sg-suave); overflow-wrap: anywhere; }
 
-        /* Debajo de los tanques, los francos o las horas a favor mes por mes: el que vence en el sol, el que todavía suma punteado y lo
-           no utilizado previamente en gris */
-        .me-niveles-pie { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--sg-linea); }
-        .me-pastillas { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap; }
-        .me-pastilla { display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 12px; border-radius: 14px; border: 1px solid var(--sg-linea); background: #fff; }
-        .me-pastilla > b { font-family: var(--f-titulo); font-size: 1.6rem; font-weight: 750; color: var(--sg-tinta); line-height: 1; min-width: 26px; text-align: center; }
-        .me-pastilla span { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.3; }
-        .me-pastilla span b { display: block; font-size: 0.88rem; color: var(--sg-texto); }
-        .me-pastilla.vence { background: var(--sg-sol); border-color: var(--sg-sol-borde); }
-        .me-pastilla.vence span, .me-pastilla.vence span b { color: var(--sg-ambar); }
-        .me-pastilla.pendiente { border-style: dashed; border-color: #9AA8BA; }
-        .me-pastilla.pendiente > b { color: var(--sg-suave); }
-        .me-pastilla.previo { background: var(--sg-gris-fondo); border-color: #D3DBE5; }
-        .me-pastilla.previo > b, .me-pastilla.previo span b { color: var(--sg-suave); }
-        .me-previos { margin: 12px 0 0; font-size: 0.82rem; color: var(--sg-suave); max-width: 75ch; }
-
-        /* Hoy y mañana: quién no está y el próximo feriado */
-        .me-hoy { background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 20px; padding: 20px 22px; min-width: 0; }
-        .me-hoy .me-vacio { font-size: 0.9rem; }
-        .me-ausentes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-        .me-ausente { display: flex; gap: 10px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
-        .me-ausente b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--sg-texto); line-height: 1.3; }
-        .me-ausente small { display: block; font-size: 0.8rem; color: var(--sg-suave); }
-        .me-inicial { width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 1px solid var(--sg-linea); display: inline-flex; align-items: center; justify-content: center; font-size: 0.74rem; font-weight: 700; color: var(--sg-suave); flex: none; }
-        .me-feriado { margin: 0; font-size: 0.9rem; color: var(--sg-texto); display: flex; flex-direction: column; }
-        .me-feriado b { font-weight: 600; }
-        /* Hoy y mañana, desde la agenda: los eventos de hoy y de mañana (la hora en tinta; la de un compartido, en violeta) y «Ver
-           la agenda» */
-        .me-eventos-hoy { list-style: none; margin: 12px 0 10px; padding: 0; }
-        .me-eventos-hoy li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
-        .me-eventos-hoy li:first-child { border-top: 0; padding-top: 0; }
-        .me-evento-hora { font-family: var(--f-titulo); font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
-        .me-eventos-hoy li.compartido .me-evento-hora { color: var(--sg-violeta); }
-        .me-eventos-hoy b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--sg-texto); line-height: 1.3; }
-        .me-eventos-hoy small { display: block; font-size: 0.8rem; color: var(--sg-suave); }
-        .me-hoy > .me-vacio { margin: 12px 0 10px; }
-        .me-hoy > .sg-link { font-size: 0.9rem; }
+        /* Hoy y mañana: al final, después de una línea, en columnas separadas por una línea vertical y sin tarjetas (Hoy, Mañana y
+           Próximo feriado; una vacía no va). En el teléfono, una debajo de la otra, sin la línea */
+        .me-hoy { margin: 28px 0 0; padding: 22px 4px 0; border-top: 1px solid var(--sg-linea); }
+        .me-hoy > .me-vacio { margin: 10px 0 0; font-size: 0.92rem; }
+        .me-hoy > .sg-link { display: inline-block; margin-top: 10px; font-size: 0.86rem; }
+        .me-columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px 0; margin-top: 14px; }
+        .me-columna { padding: 0 22px; border-left: 1px solid var(--sg-linea); min-width: 0; }
+        .me-columna:first-child { padding-left: 0; border-left: 0; }
+        .me-columna h3 { margin: 0 0 10px; font-size: 0.86rem; font-weight: 700; letter-spacing: 0; color: var(--sg-suave); }
+        .me-columna ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+        .me-columna li { font-size: 0.92rem; line-height: 1.35; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .me-columna li small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
+        .me-columna time { font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 6px; color: var(--sg-tinta); }
+        .me-columna .ausente::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9AA8BA; margin-right: 8px; vertical-align: 1px; }
+        .me-columna .sg-link { display: inline-block; margin-top: 10px; font-size: 0.86rem; }
 
         /* La agenda (spec 2026-10-26-mi-espacio-agenda, 6; maqueta 1, #agenda): el mes y, al costado, los próximos. El mes es una tabla
            de lunes a domingo (la cabeza dice cada día), con hasta 3 cosas por día y «y N más». Los colores: lo tuyo en tinta, lo
@@ -248,10 +246,12 @@
         .me-tarjeta .me-mes-cabeza h2 { margin: 0 8px; min-width: 150px; text-align: center; }
         .me-mes-cabeza #ag-nuevo-evento { margin-left: auto; }
         .me-flecha { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--sg-borde-control); background: #fff; color: var(--sg-tinta); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-        .me-mes { width: 100%; table-layout: fixed; border-collapse: collapse; }
+        /* (.me-mes y .me-resto también son del Resumen «Titular»: los meses de los francos y «El resto de 2026». Acá van con lo que
+           los contiene: la tabla del mes y la celda de un día) */
+        table.me-mes { width: 100%; table-layout: fixed; border-collapse: collapse; }
         .me-mes th { padding: 6px 8px; border: 1px solid var(--sg-linea); background: var(--sg-sutil); font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); text-align: left; }
         .me-celda { height: 98px; padding: 4px 4px 6px; border: 1px solid var(--sg-linea); vertical-align: top; background: #fff; }
-        .me-celda-cuerpo, .me-resto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .me-celda-cuerpo, .me-celda .me-resto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
         .me-celda.otro-mes { background: var(--sg-sutil); }
         .me-celda.otro-mes .me-num { color: var(--sg-gris); }
         .me-celda.finde { background: #FAFBFC; }
@@ -297,7 +297,7 @@
         .me-modal .form-hint { color: var(--sg-suave); font-size: 0.84rem; line-height: 1.4; }
         .me-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
         .me-modal .form-textarea { min-height: 76px; padding: 10px 12px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); line-height: 1.45; }
-        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-modal .form-textarea[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-modal .form-textarea[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-modal .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
         .me-modal-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
         .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
         .me-opcional { font-weight: 400; color: var(--sg-suave); }
@@ -314,13 +314,14 @@
         .me-opcion b { font-size: 0.9rem; }
         .me-opcion small { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.3; }
         .me-opcion:has(input:checked) { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
-        /* Los días de vacaciones: radios con forma de número */
-        .me-numeros { display: flex; gap: 6px; flex-wrap: wrap; }
-        .me-numero { position: relative; display: inline-flex; }
-        .me-numero input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-        .me-numero span { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--sg-borde-control); background: #fff; font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
-        .me-numero input:checked + span { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
-        .me-numero input:focus-visible + span { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        /* Los días de vacaciones: radios con forma de número (.me-numeros y .me-numero también son los números de «El resto de 2026»,
+           en el Resumen: acá van dentro del modal) */
+        .me-modal .me-numeros { display: flex; gap: 6px; flex-wrap: wrap; }
+        .me-modal .me-numero { position: relative; display: inline-flex; }
+        .me-modal .me-numero input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+        .me-modal .me-numero span { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--sg-borde-control); background: #fff; font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-modal .me-numero input:checked + span { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .me-modal .me-numero input:focus-visible + span { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         /* El cálculo del servidor, el aviso del paso a Configuración y el de los días sin auditor */
         .me-recuadro { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
         .me-recuadro p { margin: 0; }
@@ -361,8 +362,11 @@
         .me-pagina a:focus-visible, .me-pagina button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .me-pagina .me-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
 
-        @media (max-width: 1100px) {
-            .me-resumen-grilla { grid-template-columns: minmax(0, 1fr); }
+        /* En una columna, la banda en el orden del HTML: la frase, «Vence pronto» (lo que vence se ve primero, como pidió el usuario el
+           26/10) y la regla */
+        @media (max-width: 1000px) {
+            .me-banda-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'frase' 'vence' 'regla'; }
+            .me-vence { margin-top: 22px; }
         }
         @media (max-width: 980px) {
             .me-fila { grid-template-columns: 1fr auto; }
@@ -370,16 +374,11 @@
             .me-fila.me-fila-dos { grid-template-columns: 1fr; }
             .me-mes-y-proximos { grid-template-columns: minmax(0, 1fr); }
         }
-        @media (max-width: 760px) {
-            .me-vence, .me-panel { padding-left: 16px; padding-right: 16px; }
-            .me-vence-item { grid-template-columns: 58px minmax(0, 1fr); }
-            .me-vence-item .sg-btn { grid-column: 2; justify-self: start; }
-            .me-nivel-vac { flex-wrap: wrap; }
-            .me-nivel-vac .me-leyenda-vac { padding-bottom: 0; }
-        }
         /* En el teléfono, los próximos primero y el mes como puntos de colores por día (maqueta 1), en el color fuerte de cada clase (el
            de su texto: el fondo pastel casi no se ve sobre el blanco de la celda); en el evento, «Solo yo» y «Compartido», una debajo
-           de la otra */
+           de la otra. El Resumen: la banda con márgenes de 16 px, la barra de 38 px y la lista de la regla en una columna (el número
+           de un tramo sigue en 1,2 rem: el blanco sobre el azul medio llega a 4,45:1 y solo alcanza como texto grande), los números del
+           resto de a dos por fila y las columnas de «Hoy y mañana» una debajo de la otra, sin la línea */
         @media (max-width: 640px) {
             .me-tarjeta { padding: 16px; }
             .me-proximos-tarjeta { order: -1; }
@@ -387,6 +386,18 @@
             .me-celda { height: 64px; }
             .me-mes .me-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: currentColor; }
             .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
+            .me-banda { border-radius: 22px 22px 0 0; }
+            .me-banda-cuerpo { padding: 22px 16px 14px; }
+            .me-barra { height: 38px; }
+            .me-tramo { padding: 0 min(6px, 20%); }
+            .me-regla-lista { flex-direction: column; gap: 8px; }
+            .me-resto-cabeza { grid-template-columns: minmax(0, 1fr); }
+            .me-resto .me-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .me-resto .me-numero { padding: 4px 12px; }
+            .me-resto .me-numeros li:nth-child(odd) { border-left: 0; }
+            .me-resto .me-numeros li:nth-child(odd) .me-numero { padding-left: 4px; margin-left: 0; }
+            .me-resto .me-numero .grande { font-size: 2.1rem; }
+            .me-columna { padding: 0; border-left: 0; }
         }
     </style>
 </head>
@@ -885,6 +896,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261210"></script>
+    <script src="js/mi-espacio.js?v=20261211"></script>
 </body>
 </html>

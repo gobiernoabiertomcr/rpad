@@ -81,8 +81,9 @@ const VERSION_PROYECTOS = '20261206';
 // mi-espacio.js (la página nueva de Mi espacio, con las pestañas Resumen, Licencias y Horas extras, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
 // entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
-// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6). Su versión es propia
-const VERSION_MI_ESPACIO = '20261210';
+// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; y el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6). Su versión
+// es propia
+const VERSION_MI_ESPACIO = '20261211';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -892,38 +893,48 @@ describe('páginas', () => {
       assert.equal(html().match(/<script\b/g).length, scripts.length, 'ningún <script> con otros atributos');
     });
 
-    // Los tokens del Seguimiento van en el <style> de la página, con los tres que faltaban (spec 8), y toda var() que usa se define
-    // en main.css o en este <style>, salvo --alto: el alto de cada tanque, que mi-espacio.js escribe en el nivel de su SVG
-    it('el <style> define los tokens --sg-* con --sg-ambar-fondo, --sg-gris-fondo y --sg-violeta-fondo, y toda var() que usa', () => {
+    // Los tokens del Seguimiento van en el <style> de la página, con los tres que faltaban (spec 8) y, desde el Resumen «Titular», el
+    // azul medio de la regla (spec 2026-10-27-mi-espacio-resumen, 6), y toda var() que usa se define en main.css o en este <style>,
+    // salvo las que mi-espacio.js escribe en el style de cada tramo de la regla y de cada línea del resto: --n (los días del tramo),
+    // --p (lo que se llena la línea), --demora y --duracion (el movimiento)
+    it('el <style> define los tokens --sg-* con --sg-ambar-fondo, --sg-gris-fondo, --sg-violeta-fondo y --sg-medio, y toda var() que usa', () => {
       const estilo = bloque(/<style>[\s\S]*?<\/style>/);
       for (const token of ['--sg-tinta', '--sg-suave', '--sg-linea', '--sg-ambar-fondo', '--sg-gris-fondo', '--sg-violeta-fondo']) {
         assert.match(estilo, new RegExp(`${token}:`), token);
       }
+      assert.match(estilo, /--sg-medio: #4C7AB0;/);
+      const EN_EL_STYLE = ['--n', '--p', '--demora', '--duracion'];
       const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8') + estilo;
       for (const [, variable] of estilo.matchAll(/var\((--[\w-]+)\)/g)) {
-        if (variable !== '--alto') assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
+        if (!EN_EL_STYLE.includes(variable)) assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
       }
-      assert.ok(leer('js/mi-espacio.js').includes('<g class="me-tanque-nivel" style="--alto:${alto}px">'), '--alto, en el SVG de cada tanque');
+      const js = leer('js/mi-espacio.js');
+      for (const variable of EN_EL_STYLE) assert.ok(js.includes(`${variable}:\${`), `${variable}, en el style que escribe mi-espacio.js`);
       assert.doesNotMatch(estilo, /text-transform:\s*uppercase/);
     });
 
-    // El Resumen «Niveles» (spec 8): el único movimiento de la página es el de los tanques, que se llenan una vez con una transición
-    // de transform (mientras tienen data-llenar, vacíos) y no se mueven con prefers-reduced-motion; los tokens del Resumen de la
-    // maqueta (--rs-* y .op-*) pasaron a --sg-* y .me-*, en el <style> de la página y nunca en main.css
-    it('el Resumen: la transición de los tanques, quieta con prefers-reduced-motion, y sin los tokens de la maqueta', () => {
+    // El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2 y 6): los estilos de la banda (con su ola, que no se dibuja en alto
+    // contraste, como en las páginas públicas), la regla (un color por capa, y el número de un tramo angosto oculto: está en la lista
+    // de debajo), el resto y las columnas, pasados de .o2-* (la maqueta) a .me-*, en el <style> de la página y nunca en main.css; los
+    // de los tanques y las pastillas de «Niveles» se fueron
+    it('el Resumen «Titular»: la banda, la regla, el resto y las columnas, sin los tanques de «Niveles» ni las clases de la maqueta', () => {
       const estilo = bloque(/<style>[\s\S]*?<\/style>/);
-      assert.match(estilo, /\.me-tanque-nivel \{ transition: transform [^}]+\}/);
-      assert.match(estilo, /\[data-llenar\] \.me-tanque-nivel \{ transform: translateY\(var\(--alto\)\); \}/);
-      // Quietos y llenos desde el principio (sin el parpadeo de los dos cuadros vacíos)
-      assert.ok(estilo.includes('@media (prefers-reduced-motion: reduce) { .me-tanque-nivel, [data-llenar] .me-tanque-nivel { transition: none; transform: none; } }'));
-      // Ninguna otra animación ni transición
+      for (const clase of ['.me-banda', '.me-banda-cuerpo', '.me-ola', '.me-frase', '.me-cifra', '.me-frase-bajada', '.me-regla', '.me-barra',
+        '.me-regla-lista', '.me-entradas', '.me-entrada', '.me-talon', '.me-entrada-texto', '.me-resto-cabeza', '.me-linea', '.me-meses',
+        '.me-extra', '.me-columnas', '.me-columna']) {
+        assert.ok(estilo.includes(`${clase} {`), clase);
+      }
+      for (const capa of ['vence', 'tinta', 'medio', 'cargadas', 'por_habilitar']) {
+        assert.ok(estilo.includes(`.me-tramo.${capa} {`), `tramo ${capa}`);
+        assert.ok(estilo.includes(`.me-muestra.${capa} {`), `muestra ${capa}`);
+      }
+      assert.ok(estilo.includes('@container (max-width: 26px) { .me-tramo > span { visibility: hidden; } }'));
+      assert.ok(estilo.includes('@media (forced-colors: active) { .me-ola { display: none; } }'));
+      assert.doesNotMatch(estilo, /\.me-tanque|\.me-nivel|\.me-pastilla|\.me-leyenda-vac|\.me-contexto|data-llenar|\.c-(vence|tinta|medio|cargadas|por-habilitar)\b/);
       assert.doesNotMatch(estilo, /animation|@keyframes/);
-      assert.equal(estilo.match(/transition: transform/g).length, 1);
-      assert.doesNotMatch(estilo, /--rs-|\.op-|\.rs-/);
+      assert.doesNotMatch(estilo, /--rs-|\.op-|\.rs-|\.o2-|--o2-/);
       const main = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8');
-      assert.doesNotMatch(main, /--sg-|\.me-tanque/);
-      // Las clases de las capas de los tanques que dibuja mi-espacio.js
-      for (const clase of ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']) assert.ok(estilo.includes(`.${clase}`), clase);
+      assert.doesNotMatch(main, /--sg-|\.me-banda|\.me-tramo|\.me-tanque/);
     });
   });
 

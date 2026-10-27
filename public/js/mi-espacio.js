@@ -6,11 +6,12 @@
  * y /mi-espacio/eventos?desde=&hasta=, con services/miEspacioResumen.js y services/miEspacioEventosReglas.js) y la página los imprime
  * tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, las tres primeras pestañas muestran el mensaje del servidor y no
  * dejan cargar nada; la agenda se ve igual (decisión del usuario, 27/10/2026).
- * - Resumen «Niveles»: la modalidad y el año; «Vence pronto» (cada cosa con su fecha en un bloque amarillo y el botón que la
- *   resuelve), los faltantes en un aviso ámbar, «Lo que te queda» (un tanque SVG por saldo, cada uno un link a su pestaña, y debajo
- *   las pastillas de los francos o de las horas a favor) y, al costado, «Hoy y mañana» (quién no está, solo para administración, y
- *   el próximo feriado). La pestaña lleva una marca ámbar si algo vence pronto. Los tanques se llenan una sola vez, la primera vez
- *   que se ve el Resumen: el único movimiento de la página (quieto con prefers-reduced-motion).
+ * - Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen): los faltantes en un aviso ámbar; la banda celeste, con la frase («Te
+ *   quedan 33 días de vacaciones», con el día y la modalidad arriba y la bajada debajo), «Vence pronto» (cada cosa como una entrada
+ *   amarilla con su talón, su línea y el botón que la resuelve) y la regla (los días por licencia, un tramo por capa, con su lista);
+ *   «El resto de 2026» (un número con su línea por saldo, cada uno un link a su pestaña, los francos o las horas a favor mes por mes
+ *   y la médica extraordinaria); y «Hoy y mañana» en columnas (los eventos de hoy y de mañana, quién no está —solo para
+ *   administración— y el próximo feriado). La pestaña lleva una marca ámbar si algo vence pronto.
  * - Licencias: la lista del año, con el selector del año y los filtros por tipo (con su cantidad); al final, el saldo inicial con
  *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo.
  * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
@@ -77,17 +78,25 @@ const NOTA_DE_LAS_HORAS_A_FAVOR = 'Cada hora extra de un mes es una hora menos d
   + 'son el día entero.';
 const NOTA_DE_LAS_NO_UTILIZADAS = 'Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.';
 
-// El Resumen: la clase de cada capa de un tanque (la `clase` del servidor; una desconocida, en tinta), las que van en gris en la
-// lista del tanque de vacaciones (lo cargado a futuro y lo que todavía no se habilita) y la de cada pastilla (el `estado`; la
-// disponible, sin clase)
+// El Resumen «Titular»: la clase de cada capa del tanque de vacaciones, en un tramo de la regla y en su muestra (la `clase` del
+// servidor; una desconocida, en tinta), y la de cada mes de los francos o de las horas a favor (el `estado`; el disponible, sin
+// clase)
 const CLASE_DE_LA_CAPA = Object.freeze({
-  vence: 'c-vence', tinta: 'c-tinta', medio: 'c-medio', cargadas: 'c-cargadas', por_habilitar: 'c-por-habilitar'
+  vence: 'vence', tinta: 'tinta', medio: 'medio', cargadas: 'cargadas', por_habilitar: 'por_habilitar'
 });
-const CAPAS_EN_GRIS = Object.freeze(['cargadas', 'por_habilitar']);
 const CLASE_DE_LA_PASTILLA = Object.freeze({ vence: 'vence', pendiente: 'pendiente' });
-// Las medidas de los tanques (las de la maqueta): el de vacaciones y los demás
-const TANQUE_GRANDE = Object.freeze({ ancho: 88, alto: 176 });
-const TANQUE_CHICO = Object.freeze({ ancho: 52, alto: 112 });
+// El movimiento del Resumen (spec 2026-10-27-mi-espacio-resumen, 3), en milisegundos: los tramos de la regla empiezan a los 250 y
+// duran en total unos 1300, cada uno max(160, n / capacidad × 1300), uno detrás del otro; las líneas del resto, a los 900 y 90
+// más por línea. Acá solo se escriben en el style de cada tramo y de cada línea (--demora y --duracion)
+const DEMORA_DE_LA_REGLA = 250;
+const DURACION_DE_LA_REGLA = 1300;
+const TRAMO_MINIMO = 160;
+const DEMORA_DEL_RESTO = 900;
+const ENTRE_LINEAS = 90;
+// La ola de abajo de la banda: el dibujo de las páginas públicas, en el celeste de la banda (currentColor), que cae sobre el fondo
+// de la página. Decorativa
+const OLA_DE_LA_BANDA = '<svg class="me-ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+  + '<path d="M0 0 H1200 V14 C 1100 26, 1000 26, 900 14 S 700 2, 600 12 S 400 28, 300 16 S 100 4, 0 18 Z" fill="currentColor"/></svg>';
 const TEXTO_DE_LA_MARCA = 'Hay algo que vence pronto';
 
 // =====================================================
@@ -126,7 +135,7 @@ function htmlDeError(texto) {
   return `<p class="me-aviso me-aviso-error">${esc(texto)}</p>`;
 }
 
-// ---- El Resumen «Niveles» ----
+// ---- El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2 y 5) ----
 
 // La marca ámbar de la pestaña Resumen cuando algo vence pronto (como la del Estado en Correos: una imagen con su nombre, no un
 // title). Solo con el true literal
@@ -134,25 +143,7 @@ function htmlDeMarca(marca) {
   return marca === true ? `<span class="me-marca" role="img" aria-label="${TEXTO_DE_LA_MARCA}"></span>` : '';
 }
 
-// «Vence pronto»: cada cosa con su fecha en un bloque amarillo (decorativo: «Viernes 30/10» ya la dice), qué vence y el botón que
-// la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se describe con lo que vence. Sin nada, ''
-function htmlDeVencePronto(lista) {
-  const cosas = listaDe(lista);
-  if (cosas.length === 0) return '';
-  const filas = cosas.map((cosa, i) => {
-    const accion = esObjeto(cosa.accion) ? cosa.accion : {};
-    return `<li class="me-vence-item"><span class="me-fecha" aria-hidden="true"><b>${esc(cosa.dia)}</b>${esc(cosa.mes)}</span>`
-      + `<span class="me-vence-texto"><span class="me-vence-cuando">${esc(cosa.cuando)}</span><b id="me-vence-${i}">${esc(cosa.titulo)}</b>`
-      + `<span>${esc(cosa.detalle)}</span></span>`
-      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="${esc(accion.tipo)}" `
-      + `aria-describedby="me-vence-${i}">${esc(accion.texto)}</button></li>`;
-  });
-  return '<section class="me-vence" aria-labelledby="me-vence-titulo"><h2 class="me-titulo" id="me-vence-titulo">Vence pronto</h2>'
-    + `<ol class="me-vence-lista">${filas.join('')}</ol></section>`;
-}
-
-// Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de «Lo que te queda». Sin
-// ninguno, ''
+// Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de todo. Sin ninguno, ''
 function htmlDeFaltantes(faltantes) {
   const textos = (Array.isArray(faltantes) ? faltantes : []).filter(conTexto);
   if (textos.length === 0) return '';
@@ -160,112 +151,158 @@ function htmlDeFaltantes(faltantes) {
   return `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${textos.map((texto) => `<li>${esc(texto)}</li>`).join('')}</ul></div>`;
 }
 
+// El número de la frase como texto: el del servidor ('33'; uno que es un número, con String). Sin él, ''
+const textoDeLaCifra = (cifra) => {
+  if (typeof cifra === 'number' && Number.isFinite(cifra)) return String(cifra);
+  return conTexto(cifra) ? cifra : '';
+};
+
+/**
+ * La frase de la banda (el `titular` del Resumen: `{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`): arriba, el día
+ * y la modalidad; el título de la pestaña, «Te quedan 33 días de vacaciones», con el número dos veces: el que se ve, decorativo
+ * (aria-hidden, y data-contar: el que sube al abrir), y el oculto a la vista, que un lector de pantalla lee siempre con su valor
+ * final; y la bajada, las oraciones unidas con un espacio, la que vence en negrita. Sin `cifra` (con 0 días), la frase sin el número;
+ * sin oraciones, sin bajada. Sin titular, ''
+ */
+function htmlDeLaFrase(titular) {
+  if (!esObjeto(titular)) return '';
+  const cifra = textoDeLaCifra(titular.cifra);
+  const numero = cifra === '' ? ''
+    : `<span class="me-cifra"><span aria-hidden="true" data-contar>${esc(cifra)}</span><span class="visualmente-oculto">${esc(cifra)}</span></span>`;
+  const frase = [conTexto(titular.antes) ? esc(titular.antes) : '', numero, conTexto(titular.despues) ? esc(titular.despues) : '']
+    .filter((parte) => parte !== '').join(' ');
+  const oraciones = listaDe(titular.bajada).filter((oracion) => conTexto(oracion.texto))
+    .map((oracion) => (oracion.vence === true ? `<b class="vence">${esc(oracion.texto)}</b>` : esc(oracion.texto)));
+  return '<div class="me-titular">'
+    + `${conTexto(titular.encabezado) ? `<p class="me-banda-dia">${esc(titular.encabezado)}</p>` : ''}`
+    + `<h2 class="me-frase" id="me-frase">${frase}</h2>`
+    + `${oraciones.length > 0 ? `<p class="me-frase-bajada">${oraciones.join(' ')}</p>` : ''}</div>`;
+}
+
+/**
+ * «Vence pronto» (los `vence_pronto` del Resumen, `{ fecha, dia, mes, titulo, texto, accion }`), al lado de la frase: cada cosa es
+ * una entrada amarilla con el talón de la fecha (decorativo: la línea ya la dice), el título, su línea («Vence el viernes 30/10, en 4
+ * días.») y el botón que la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se describe con el título.
+ * Sin nada, ''
+ */
+function htmlDeVencePronto(lista) {
+  const cosas = listaDe(lista);
+  if (cosas.length === 0) return '';
+  const entradas = cosas.map((cosa, i) => {
+    const accion = esObjeto(cosa.accion) ? cosa.accion : {};
+    return `<li class="me-entrada"><span class="me-talon" aria-hidden="true"><b>${esc(cosa.dia)}</b>${esc(cosa.mes)}</span>`
+      + `<span class="me-entrada-cuerpo"><b id="me-vence-${i}">${esc(cosa.titulo)}</b><span class="me-entrada-texto">${esc(cosa.texto)}</span>`
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="${esc(accion.tipo)}" `
+      + `aria-describedby="me-vence-${i}">${esc(accion.texto)}</button></span></li>`;
+  });
+  return '<aside class="me-vence" aria-labelledby="me-vence-titulo"><h2 id="me-vence-titulo">Vence pronto</h2>'
+    + `<ol class="me-entradas">${entradas.join('')}</ol></aside>`;
+}
+
 // Una cantidad de una capa: un número positivo; lo demás, 0
 const cantidadDeLaCapa = (capa) => (typeof capa.n === 'number' && Number.isFinite(capa.n) && capa.n > 0 ? capa.n : 0);
 
-/**
- * El SVG de un tanque (decorativo: el link que lo envuelve dice lo que muestra). Las capas van de abajo hacia arriba, cada una de
- * n / capacidad × alto, en el color de su clase; las cargadas, rayadas (el patrón del tanque), y las por habilitar, punteadas (el
- * <style>). Lo que pasa la capacidad se corta en el borde de arriba, y una capacidad que no es un número positivo deja el tanque
- * vacío: nunca un NaN. `id` nombra el recorte y el patrón (uno por tanque; solo letras, números y guiones). El nivel
- * (.me-tanque-nivel, con su alto en --alto) es lo que se llena al abrir.
- */
-function svgDeTanque({ capas, capacidad, ancho = TANQUE_CHICO.ancho, alto = TANQUE_CHICO.alto, id } = {}) {
-  const tope = typeof capacidad === 'number' && Number.isFinite(capacidad) && capacidad > 0 ? capacidad : 0;
-  const nombre = String(id ?? '').replace(/[^\w-]/g, '') || 'me-tanque';
-  // La altura (y) a la que llega lo acumulado, redondeada a un decimal: cada capa va de la de la anterior a la suya, así que
-  // ninguna se pisa ni deja un hueco
-  const nivel = (acumulado) => (tope === 0 ? alto : Math.round((alto - (Math.min(acumulado, tope) / tope) * alto) * 10) / 10);
-  let acumulado = 0;
-  const rects = listaDe(capas).map((capa) => {
-    const abajo = nivel(acumulado);
-    acumulado += cantidadDeLaCapa(capa);
-    const arriba = nivel(acumulado);
-    const clase = deMapa(CLASE_DE_LA_CAPA, capa.clase, 'c-tinta');
-    const relleno = clase === 'c-cargadas' ? ` fill="url(#${nombre}-rayas)"` : '';
-    return `<rect class="${clase}"${relleno} x="0" y="${arriba.toFixed(1)}" width="${ancho}" height="${(abajo - arriba).toFixed(1)}"/>`;
+// Cuándo empieza y cuánto dura cada tramo de la regla, en ms (spec, 3): el primero a los 250 y cada uno max(160, n / capacidad ×
+// 1300), redondeado, y el que sigue empieza donde termina el anterior. Con una capacidad que no es un número positivo, todos en 0
+// (quietos). Recibe las cantidades ya leídas (cantidadDeLaCapa) y devuelve [{ demora, duracion }]
+function tiemposDeLaRegla(cantidades, capacidad) {
+  if (!(typeof capacidad === 'number' && Number.isFinite(capacidad) && capacidad > 0)) return cantidades.map(() => ({ demora: 0, duracion: 0 }));
+  let demora = DEMORA_DE_LA_REGLA;
+  return cantidades.map((n) => {
+    const tiempo = { demora, duracion: Math.round(Math.max(TRAMO_MINIMO, (n / capacidad) * DURACION_DE_LA_REGLA)) };
+    demora += tiempo.duracion;
+    return tiempo;
   });
-  return `<svg class="me-tanque" viewBox="0 0 ${ancho} ${alto}" width="${ancho}" height="${alto}" aria-hidden="true" focusable="false">`
-    + `<defs><clipPath id="${nombre}"><rect width="${ancho}" height="${alto}" rx="16"/></clipPath>`
-    + `<pattern id="${nombre}-rayas" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">`
-    + '<rect width="6" height="6" fill="#fff"/><rect width="3" height="6" fill="#1A365D"/></pattern></defs>'
-    + `<rect class="t-fondo" width="${ancho}" height="${alto}" rx="16"/>`
-    + `<g clip-path="url(#${nombre})"><g class="me-tanque-nivel" style="--alto:${alto}px">${rects.join('')}</g></g>`
-    + `<rect class="t-borde" x="1" y="1" width="${ancho - 2}" height="${alto - 2}" rx="15"/></svg>`;
 }
 
-// Un tanque: un link a su pestaña (Horas extras o, si no, Licencias) con el aria-label del servidor; el número arriba, el tanque
-// y, debajo, el nombre con su total
-const htmlDeNivel = (tanque, { nombre, pie, svg, vence = false, chico = false }) => {
-  const pestana = tanque.pestana === 'horas' ? 'horas' : 'licencias';
-  return `<a class="me-nivel${vence ? ' vence' : ''}" href="#${pestana}" data-pestana="${pestana}" aria-label="${esc(tanque.aria)}">`
-    + `<span class="me-nivel-num${chico ? ' chico' : ''}"><b>${esc(tanque.numero)}</b><span>${esc(tanque.unidad)}</span></span>${svg}`
-    + `<span class="me-nivel-pie"><b>${esc(nombre)}</b><span>${esc(pie)}</span></span></a>`;
+/**
+ * La regla (el tanque de vacaciones: `{ capacidad, capas: [{ clase, n, nombre, nota }] }`): la barra, decorativa (la lista de debajo
+ * dice lo mismo en texto), partida en un tramo por capa, cada uno en su columna de n fracciones (minmax(0, nfr): uno de 1 día entre
+ * 40 se ve igual, y su número, si no entra, lo oculta el <style>), en el color de su clase, con un casillero por día (--n) y lo que
+ * necesita el movimiento (--demora y --duracion); debajo, cada capa con su muestra, «Licencia 2024: 3» y su nota, la que vence en
+ * ámbar. Una n que no es un número positivo cuenta 0. Sin capas, ''
+ */
+function htmlDeLaRegla(vacaciones) {
+  if (!esObjeto(vacaciones)) return '';
+  const capas = listaDe(vacaciones.capas);
+  if (capas.length === 0) return '';
+  const cantidades = capas.map(cantidadDeLaCapa);
+  const tiempos = tiemposDeLaRegla(cantidades, vacaciones.capacidad);
+  const columnas = cantidades.map((n) => `minmax(0, ${String(n)}fr)`).join(' ');
+  const tramos = capas.map((capa, i) => {
+    const n = String(cantidades[i]);
+    const { demora, duracion } = tiempos[i];
+    return `<span class="me-tramo ${deMapa(CLASE_DE_LA_CAPA, capa.clase, 'tinta')}" `
+      + `style="--n:${n};--demora:${String(demora)}ms;--duracion:${String(duracion)}ms"><span>${n}</span></span>`;
+  });
+  const lista = capas.map((capa, i) => {
+    const clase = deMapa(CLASE_DE_LA_CAPA, capa.clase, 'tinta');
+    return `<li${clase === 'vence' ? ' class="vence"' : ''}><i class="me-muestra ${clase}" aria-hidden="true"></i>`
+      + `<span><b>${esc(capa.nombre)}: ${String(cantidades[i])}</b>${esc(capa.nota)}</span></li>`;
+  });
+  return `<div class="me-regla"><div class="me-barra" aria-hidden="true" style="grid-template-columns: ${columnas}">${tramos.join('')}</div>`
+    + `<ul class="me-regla-lista">${lista.join('')}</ul></div>`;
+}
+
+/**
+ * La banda celeste, arriba del Resumen: una section que se nombra con la frase; adentro, la frase, «Vence pronto» (a la derecha en la
+ * compu; sin nada por vencer, la frase y la regla a todo el ancho: sin-vence) y la regla, y debajo la ola. Sin la frase o sin los
+ * tanques (sin un hoy válido), ''
+ */
+function htmlDeLaBanda(resumen) {
+  if (!esObjeto(resumen.titular) || !esObjeto(resumen.tanques)) return '';
+  const vence = htmlDeVencePronto(resumen.vence_pronto);
+  return `<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo${vence === '' ? ' sin-vence' : ''}">`
+    + `${htmlDeLaFrase(resumen.titular)}${vence}${htmlDeLaRegla(resumen.tanques.vacaciones)}</div>${OLA_DE_LA_BANDA}</section>`;
+}
+
+// Lo que se llena la línea de un número del resto, en %: valor / total × 100, redondeado a un decimal y entre 0 y 100. Con un total
+// que no es un número positivo, o un valor que no es un número, 0
+const llenoDe = (valor, total) => {
+  if (!(typeof total === 'number' && Number.isFinite(total) && total > 0) || !(typeof valor === 'number' && Number.isFinite(valor))) return 0;
+  return Math.min(100, Math.max(0, Math.round((valor / total) * 1000) / 10));
 };
 
-// Al lado del tanque de vacaciones, cada capa con su número: la licencia que vence en el año, en ámbar; lo cargado a futuro y lo
-// que todavía no se habilita, en gris
-function htmlDeLeyendaDeVacaciones(capas) {
-  if (capas.length === 0) return '';
-  const filas = capas.map((capa) => {
-    let extra = '';
-    if (capa.clase === 'vence') extra = ' vence';
-    else if (CAPAS_EN_GRIS.includes(capa.clase)) extra = ' tenue';
-    return `<li class="me-capa${extra}"><i class="me-muestra ${deMapa(CLASE_DE_LA_CAPA, capa.clase, 'c-tinta')}" aria-hidden="true"></i>`
-      + `<span><b>${esc(capa.nombre)}</b>${esc(capa.nota)}</span><b class="me-n">${esc(capa.n)}</b></li>`;
-  });
-  return `<ul class="me-leyenda-vac">${filas.join('')}</ul>`;
+/**
+ * Los francos compensatorios o las horas a favor, mes por mes, en una línea (las `pastillas` del Resumen): el título y una etiqueta
+ * por mes, «1 Diciembre Octubre sigue sumando», la del mes que vence en amarillo, la que todavía suma punteada y lo no utilizado
+ * previamente en gris. Sin ningún mes ni nada no utilizado, ''
+ */
+function htmlDeLosMeses(pastillas) {
+  if (!esObjeto(pastillas)) return '';
+  const mes = (clase, numero, titulo, nota) => `<span class="me-mes${clase ? ` ${clase}` : ''}"><strong>${esc(numero)}</strong> `
+    + `${esc(titulo)} <span>${esc(nota)}</span></span>`;
+  const meses = listaDe(pastillas.meses).map((uno) => mes(deMapa(CLASE_DE_LA_PASTILLA, uno.estado, ''), uno.numero, uno.mes, uno.nota));
+  const { previo } = pastillas;
+  if (esObjeto(previo)) meses.push(mes('previo', previo.numero, previo.titulo, previo.nota));
+  if (meses.length === 0) return '';
+  return `<p class="me-meses"><b>${esc(pastillas.titulo)}:</b>${meses.join('')}</p>`;
 }
 
 /**
- * «Lo que te queda» (los `tanques` del Resumen): el de vacaciones, por capas y con su lista al lado, y los demás (franquicias u
- * horas a favor, estudios, atención médica y grupo familiar), uno que vence este mes en ámbar. Todos apoyan sobre la misma línea.
+ * «El resto de 2026», debajo de la banda: la cabeza (el título con el año, el día y «Mis vacaciones y saldos»), un número por cada
+ * uno de los demás tanques (franquicias u horas a favor, estudios, atención médica y grupo familiar), cada uno un link a su pestaña
+ * (Horas extras o, si no, Licencias) con el aria-label del servidor, con el número que sube al abrir (data-contar) y su unidad, el
+ * nombre, su total y una línea decorativa que se llena en la proporción valor / total (--p, con su --demora: 900 ms y 90 más por
+ * línea); el que vence, en ámbar. Después, los meses y la médica extraordinaria. Sin tanques (sin un hoy válido), ''
  */
-function htmlDeTanques(tanques) {
-  if (!esObjeto(tanques)) return '';
-  const partes = [];
-  if (esObjeto(tanques.vacaciones)) {
-    const { vacaciones } = tanques;
-    const capas = listaDe(vacaciones.capas);
-    const svg = svgDeTanque({ capas, capacidad: vacaciones.capacidad, ...TANQUE_GRANDE, id: 'me-tanque-0' });
-    partes.push(`<div class="me-nivel-vac">${htmlDeNivel(vacaciones, { nombre: 'Vacaciones', pie: vacaciones.pie, svg })}`
-      + `${htmlDeLeyendaDeVacaciones(capas)}</div>`);
-  }
-  const otros = listaDe(tanques.otros).map((tanque, i) => {
-    const vence = tanque.vence === true;
-    const svg = svgDeTanque({
-      capas: [{ clase: vence ? 'vence' : 'tinta', n: tanque.valor }], capacidad: tanque.total, ...TANQUE_CHICO, id: `me-tanque-${i + 1}`
-    });
-    return htmlDeNivel(tanque, { nombre: tanque.nombre, pie: tanque.de, svg, vence, chico: true });
-  });
-  if (otros.length > 0) partes.push(`<div class="me-niveles-resto">${otros.join('')}</div>`);
-  return `<div class="me-niveles-fila">${partes.join('')}</div>`;
-}
-
-// Debajo de los tanques, los francos (o las horas a favor) mes por mes: el del mes que vence en amarillo, el que todavía suma
-// punteado y lo no utilizado previamente en gris. Sin ningún mes ni nada no utilizado, ''
-function htmlDePastillas(pastillas) {
-  if (!esObjeto(pastillas)) return '';
-  const pastilla = (clase, numero, titulo, nota) => `<li class="me-pastilla${clase ? ` ${clase}` : ''}"><b>${esc(numero)}</b>`
-    + `<span><b>${esc(titulo)}</b>${esc(nota)}</span></li>`;
-  const filas = listaDe(pastillas.meses).map((mes) => pastilla(deMapa(CLASE_DE_LA_PASTILLA, mes.estado, ''), mes.numero, mes.mes, mes.nota));
-  const { previo } = pastillas;
-  if (esObjeto(previo)) filas.push(pastilla('previo', previo.numero, previo.titulo, previo.nota));
-  if (filas.length === 0) return '';
-  return `<h3 class="me-subtitulo">${esc(pastillas.titulo)}</h3><ol class="me-pastillas">${filas.join('')}</ol>`;
-}
-
-// «Lo que te queda»: el día, «Mis vacaciones y saldos», los tanques, las pastillas y la médica extraordinaria. Sin tanques (sin un
-// hoy válido), nada
-function htmlDeLoQueTeQueda(resumen) {
+function htmlDelResto(resumen) {
   if (!esObjeto(resumen.tanques)) return '';
-  return '<section class="me-panel me-niveles" aria-labelledby="me-niveles-titulo"><div class="me-panel-cabeza">'
-    + '<h2 class="me-titulo" id="me-niveles-titulo">Lo que te queda</h2>'
-    + `<span class="me-panel-al">${esc(resumen.al_texto)}</span>`
-    + '<button type="button" class="sg-link" data-abrir="saldos">Mis vacaciones y saldos</button></div>'
-    + htmlDeTanques(resumen.tanques)
-    + `<div class="me-niveles-pie">${htmlDePastillas(resumen.pastillas)}`
-    + `${conTexto(resumen.extraordinaria) ? `<p class="me-previos">${esc(resumen.extraordinaria)}</p>` : ''}</div></section>`;
+  const numeros = listaDe(resumen.tanques.otros).map((tanque, i) => {
+    const pestana = tanque.pestana === 'horas' ? 'horas' : 'licencias';
+    const linea = `--p:${String(llenoDe(tanque.valor, tanque.total))}%;--demora:${String(DEMORA_DEL_RESTO + ENTRE_LINEAS * i)}ms`;
+    return `<li><a class="me-numero${tanque.vence === true ? ' vence' : ''}" href="#${pestana}" data-pestana="${pestana}" aria-label="${esc(tanque.aria)}">`
+      + `<span class="grande"><b data-contar>${esc(tanque.numero)}</b><small>${esc(tanque.unidad)}</small></span>`
+      + `<span class="nombre">${esc(tanque.nombre)}</span><span class="de">${esc(tanque.de)}</span>`
+      + `<span class="me-linea" aria-hidden="true"><i style="${linea}"></i></span></a></li>`;
+  });
+  return '<section class="me-resto" aria-labelledby="me-resto-titulo"><div class="me-resto-cabeza">'
+    + `<h2 id="me-resto-titulo">El resto${delAnio(resumen.anio)}</h2><span class="me-resto-al">`
+    + `${conTexto(resumen.al_texto) ? `<span>${esc(resumen.al_texto)}</span>` : ''}`
+    + '<button type="button" class="sg-link" data-abrir="saldos">Mis vacaciones y saldos</button></span></div>'
+    + `${numeros.length > 0 ? `<ul class="me-numeros">${numeros.join('')}</ul>` : ''}`
+    + htmlDeLosMeses(resumen.pastillas)
+    + `${conTexto(resumen.extraordinaria) ? `<p class="me-extra">${esc(resumen.extraordinaria)}</p>` : ''}</section>`;
 }
 
 // Las iniciales de un nombre, decorativas: la primera letra del primero y del último. Lo que no es un texto, '' (copia de inicialesDe
@@ -277,60 +314,55 @@ const iniciales = (nombre) => {
   return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
 };
 
-// Un compañero que no está: sus iniciales, «Laura Gómez no está» y la vuelta, con los textos del servidor
-const htmlDeAusente = (ausente) => '<li class="me-ausente">'
-  + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
-  + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`;
-
-// Los eventos de hoy y de mañana (los `eventos` de «Hoy y mañana»: `{ id, hora, titulo, compartido, detalle }`, con «Hoy · solo vos»
-// o «Mañana · con 4 personas» del servidor): la hora (en violeta, la de un compartido), el título y quién; sin ninguno, «No tenés
-// eventos hoy ni mañana.». Después, «Ver la agenda», que abre su pestaña (data-pestana, como los tanques)
-function htmlDeEventosDeHoy(eventos) {
-  const filas = listaDe(eventos).map((evento) => `<li${evento.compartido === true ? ' class="compartido"' : ''}>`
-    + `<span class="me-evento-hora">${esc(evento.hora)}</span><span><b>${esc(evento.titulo)}</b><small>${esc(evento.detalle)}</small></span></li>`);
-  return (filas.length > 0 ? `<ol class="me-eventos-hoy">${filas.join('')}</ol>` : '<p class="me-vacio">No tenés eventos hoy ni mañana.</p>')
-    + '<a class="sg-link" href="#agenda" data-pestana="agenda">Ver la agenda</a>';
-}
-
 /**
- * «Hoy y mañana» (el `hoy_y_manana` del Resumen): desde la agenda, los eventos de hoy y de mañana con «Ver la agenda» (solo si
- * `eventos` es una lista: un Resumen sin la clave se dibuja como antes); «Hoy no están» y, aparte, «Mañana no están» (los que
- * empiezan mañana: decisión del usuario, 27/10/2026), solo para quien ve a sus compañeros (`veCompaneros`, el true literal:
- * administración), con el texto y la vuelta que manda el servidor, y el próximo feriado. Un grupo vacío no va (como «Vence
- * pronto»): solo se ven los de administración que eligieron mostrarse, así que «están todos» podría no ser cierto. Con los eventos,
- * la sección está siempre (sin ninguno, lo dice); sin ellos y sin ninguno de los otros tres, no hay sección.
+ * «Hoy y mañana» (el `hoy_y_manana` del Resumen), al final y en columnas: «Hoy», con los eventos de hoy (`dia: 'hoy'`: la hora, el
+ * título y debajo `quien`, «solo vos», «con 4 personas»…) y, para quien ve a sus compañeros (`veCompaneros`, el true literal:
+ * administración), los que hoy no están, con el texto y la vuelta que manda el servidor (nunca el tipo); «Mañana», lo mismo de
+ * mañana; y «Próximo feriado». Una columna sin nada no va: solo se ven los de administración que eligieron mostrarse, así que «están
+ * todos» podría no ser cierto. Con la agenda (`eventos` es una lista, aunque vacía), la sección va siempre (decisión del usuario,
+ * 27/10/2026): sin ningún evento, «No tenés eventos hoy ni mañana.» debajo del título, y «Ver la agenda», que abre su pestaña
+ * (data-pestana, como los números del resto), al final de la última columna o, sin columnas, después de esa frase. Sin la lista (un
+ * Resumen anterior a la agenda), sin «Ver la agenda», y sin ninguna columna no hay sección
  */
 function htmlDeHoyYManana(datos, veCompaneros) {
   const hoy = esObjeto(datos) ? datos : {};
-  const grupo = (titulo, ausentes) => {
-    const filas = veCompaneros === true ? listaDe(ausentes).map(htmlDeAusente) : [];
-    return filas.length > 0 ? `<h3 class="me-subtitulo">${titulo}</h3><ul class="me-ausentes">${filas.join('')}</ul>` : '';
-  };
-  const feriado = hoy.proximo_feriado;
   const conEventos = Array.isArray(hoy.eventos);
-  const cuerpo = grupo('Hoy no están', hoy.ausentes_hoy) + grupo('Mañana no están', hoy.ausentes_manana)
-    + (esObjeto(feriado)
-      ? `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`
-      : '');
-  if (cuerpo === '' && !conEventos) return '';
-  return '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>'
-    + `${conEventos ? htmlDeEventosDeHoy(hoy.eventos) : ''}${cuerpo}</section>`;
+  const eventos = listaDe(hoy.eventos);
+  const filaDeEvento = (evento) => `<li>${conTexto(evento.hora) ? `<time>${esc(evento.hora)}</time>` : ''}${esc(evento.titulo)}`
+    + `${conTexto(evento.quien) ? `<small>${esc(evento.quien)}</small>` : ''}</li>`;
+  const filaDeAusente = (ausente) => `<li class="ausente">${esc(ausente.texto)}`
+    + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</li>`;
+  const delDia = (dia, ausentes) => [
+    ...eventos.filter((evento) => evento.dia === dia).map(filaDeEvento),
+    ...(veCompaneros === true ? listaDe(ausentes).map(filaDeAusente) : [])
+  ];
+  const { proximo_feriado: feriado } = hoy;
+  const columnas = [
+    ['Hoy', delDia('hoy', hoy.ausentes_hoy)],
+    ['Mañana', delDia('manana', hoy.ausentes_manana)],
+    ['Próximo feriado', esObjeto(feriado) ? [`<li><b>${esc(feriado.cuando)}</b><small>${esc(feriado.nombre)}</small></li>`] : []]
+  ].filter(([, filas]) => filas.length > 0);
+  if (!conEventos && columnas.length === 0) return '';
+  const verLaAgenda = conEventos ? '<a class="sg-link" href="#agenda" data-pestana="agenda">Ver la agenda</a>' : '';
+  const sinEventos = conEventos && !eventos.some((evento) => evento.dia === 'hoy' || evento.dia === 'manana');
+  const html = columnas.map(([titulo, filas], i) => `<div class="me-columna"><h3>${titulo}</h3><ul>${filas.join('')}</ul>`
+    + `${i === columnas.length - 1 ? verLaAgenda : ''}</div>`);
+  return '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 id="me-hoy-titulo">Hoy y mañana</h2>'
+    + `${sinEventos ? '<p class="me-vacio">No tenés eventos hoy ni mañana.</p>' : ''}`
+    + `${html.length > 0 ? `<div class="me-columnas">${html.join('')}</div>` : verLaAgenda}</section>`;
 }
 
 /**
  * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
- * la invitación a «Mis vacaciones y saldos»; si no, la modalidad y el año, «Vence pronto» (si hay algo), los faltantes y, en la
- * grilla, «Lo que te queda» y «Hoy y mañana».
+ * la invitación a «Mis vacaciones y saldos»; si no, los faltantes, la banda (la frase, «Vence pronto» y la regla), «El resto de
+ * 2026» y «Hoy y mañana».
  */
 function htmlDelResumen(resumen) {
   if (!esObjeto(resumen)) return '';
   if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
   if (resumen.abrir_saldos === true) return htmlSinArranque();
-  const contexto = `<p class="me-contexto"><span><b>${esc(resumen.modalidad.texto)}</b></span>`
-    + `${Number.isInteger(resumen.anio) ? `<span>Año ${String(resumen.anio)}</span>` : ''}</p>`;
-  return contexto + htmlDeVencePronto(resumen.vence_pronto) + htmlDeFaltantes(resumen.faltantes)
-    + `<div class="me-resumen-grilla">${htmlDeLoQueTeQueda(resumen)}`
-    + `${htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false)}</div>`;
+  return htmlDeFaltantes(resumen.faltantes) + htmlDeLaBanda(resumen) + htmlDelResto(resumen)
+    + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
 }
 
 // Los años del selector (los que manda el servidor), con aria-pressed en el elegido
@@ -1611,7 +1643,7 @@ function teclaEnPestanas(evento) {
 
 // El Resumen dice la modalidad: sin ella, no se carga nada (los botones del encabezado quedan ocultos) y la pestaña muestra el
 // mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos» y lo abre solo (una vez); si no,
-// «Niveles», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez
+// «Titular», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez
 async function cargarResumen() {
   const pedido = ++pagina.pedidos.resumen;
   pagina.cargandoResumen = true;
@@ -1668,8 +1700,8 @@ function llenarTanques() {
 }
 
 // Un clic en el Resumen: «Mis vacaciones y saldos» y los botones de «Vence pronto» abren su formulario (el de licencia, con su
-// tipo); un tanque abre su pestaña y el foco va a la pestaña (con Ctrl, Cmd, Mayúsculas, Alt o un botón que no es el principal, el
-// link hace lo suyo: otra pestaña del navegador)
+// tipo); un número del resto (y «Ver la agenda») abre su pestaña y el foco va a la pestaña (con Ctrl, Cmd, Mayúsculas, Alt o un
+// botón que no es el principal, el link hace lo suyo: otra pestaña del navegador)
 function alTocarResumen(evento) {
   const saldos = evento.target?.closest?.('[data-abrir="saldos"]');
   if (saldos) {
@@ -1681,10 +1713,10 @@ function alTocarResumen(evento) {
     abrirLicencia({ tipo: accion.dataset.tipo, volverA: accion });
     return;
   }
-  const tanque = evento.target?.closest?.('[data-pestana]');
-  if (!tanque || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
+  const destino = evento.target?.closest?.('[data-pestana]');
+  if (!destino || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
   evento.preventDefault?.();
-  mostrarPestana(tanque.dataset.pestana);
+  mostrarPestana(destino.dataset.pestana);
   porId(`tab-${pagina.pestana}`).focus();
 }
 
