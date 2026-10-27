@@ -436,9 +436,11 @@ const textoDeLasLicencias = (reparto, id) => {
 
 /**
  * Una fila de la lista. Lo de Configuración sale del vínculo de la fila (Task 10: `{ configuracion: { texto, insignia } |
- * null, puede_borrar, solo_hasta, fechas_fijas }`); sin vínculo, null, true, false y false. «Tus compañeros ven…» va solo
- * para administración (`esAdmin`: los únicos que tienen la casilla), con «Mostrar», en una ausencia de día entero que todavía
- * no terminó.
+ * null, puede_borrar, solo_hasta, fechas_fijas, en_configuracion }`); sin vínculo, null, true, false, false y null.
+ * `en_configuracion` (`{ licencia_id, autorizado_id }`, solo de una creada) es lo que necesita el formulario para corregirla:
+ * la persona a cargo que ya tiene y el id de su licencia de Configuración (la lista es siempre la de su dueño). «Tus
+ * compañeros ven…» va solo para administración (`esAdmin`: los únicos que tienen la casilla), con «Mostrar», en una ausencia
+ * de día entero que todavía no terminó.
  */
 const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados }) => {
   const { tipo, desde, hasta } = fila;
@@ -475,7 +477,10 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     },
     puede_borrar: !conVinculo || vinculo.puede_borrar !== false,
     solo_hasta: conVinculo && vinculo.solo_hasta === true,
-    fechas_fijas: conVinculo && vinculo.fechas_fijas === true
+    fechas_fijas: conVinculo && vinculo.fechas_fijas === true,
+    en_configuracion: conVinculo && esObjeto(vinculo.en_configuracion) ? {
+      licencia_id: vinculo.en_configuracion.licencia_id ?? null, autorizado_id: vinculo.en_configuracion.autorizado_id ?? null
+    } : null
   };
 };
 
@@ -649,8 +654,8 @@ const noUtilizadasDeLaTabla = (anio, cuenta) => {
  * mes_en_curso }`: `meses` son los meses trabajados del año con horas (uno sin horas, que está en el cálculo solo porque su
  * mes de uso tiene usos, no va: ese uso de más ya es un faltante), del más nuevo al más viejo, cada uno con `estado` (para
  * el color de su situación) y `situacion`; `dias_por_mes`, las horas extras de cada mes, de la más nueva a la más vieja
- * (`{ id, fecha, fecha_texto, horario, horas_texto, nota }`); `totales_por_mes`, las horas de cada mes ('10,5 horas'); y
- * `mes_en_curso`, el de hoy si es de ese año (si no, null).
+ * (`{ id, fecha, fecha_texto, desde, hasta, horario, horas_texto, nota }`: desde y hasta, para corregirlas);
+ * `totales_por_mes`, las horas de cada mes ('10,5 horas'); y `mes_en_curso`, el de hoy si es de ese año (si no, null).
  * - En planta, cada mes es `{ mes, mes_texto, horas_texto, dias_texto, francos, uso_texto, estado, situacion }`, más
  *   `uso_autorizado: { puede, texto }`.
  * - En contrato, `{ mes, mes_texto, horas_texto, a_favor_texto, usadas_texto, usadas_detalle, estado, situacion }`, más
@@ -687,7 +692,7 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
     const horas = horasDe(fila.desde, fila.hasta);
     if (!Object.hasOwn(tabla.dias_por_mes, mes)) tabla.dias_por_mes[mes] = [];
     tabla.dias_por_mes[mes].push({
-      id: fila.id ?? null, fecha: fila.fecha, fecha_texto: diaCortoSinAnio(fila.fecha),
+      id: fila.id ?? null, fecha: fila.fecha, fecha_texto: diaCortoSinAnio(fila.fecha), desde: fila.desde, hasta: fila.hasta,
       horario: `${fila.desde} a ${fila.hasta}`, horas_texto: conUnidad(horas, 'hora', 'horas'),
       nota: typeof fila.nota === 'string' && fila.nota.trim() !== '' ? fila.nota : null
     });

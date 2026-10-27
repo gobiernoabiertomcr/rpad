@@ -673,16 +673,101 @@ describe('páginas', () => {
       }
     });
 
-    it('#me-anuncio es la única región viva, fuera de las pestañas y de sus paneles', () => {
+    // Fuera de los modales, #me-anuncio es la única región viva; dentro de cada modal, solo su error sin campo (role="alert", como en
+    // Configuración y Proyectos: el formulario está detrás del velo de los demás). Lo que se vuelve a dibujar (el cálculo, el paso,
+    // la suma) no es una región viva
+    it('#me-anuncio es la única región viva de la página, fuera de las pestañas y de sus paneles; en los modales, solo su error', () => {
       assert.match(html(), /<p class="visualmente-oculto" id="me-anuncio" role="status"><\/p>/);
-      assert.equal(html().match(/role="(status|alert|log)"/g)?.length, 1);
+      const pagina = html().slice(0, html().indexOf('<div class="modal-overlay"'));
+      assert.equal(pagina.match(/role="(status|alert|log)"/g)?.length, 1);
       assert.doesNotMatch(html(), /aria-live/);
       assert.ok(html().indexOf('id="me-anuncio"') < html().indexOf('role="tablist"'), 'antes de las pestañas');
+      const enLosModales = [...html().slice(pagina.length).matchAll(/<[^>]*role="(status|alert|log)"[^>]*>/g)].map(([etiqueta]) => etiqueta);
+      assert.deepEqual(enLosModales.map((etiqueta) => etiqueta.match(/id="([^"]+)"/)[1]), ['ml-error', 'mh-error', 'ms-error', 'mu-error', 'mc-error']);
+      assert.ok(enLosModales.every((etiqueta) => etiqueta.includes('role="alert"') && etiqueta.includes(' hidden')));
     });
 
     it('ningún id se repite', () => {
       const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
       assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+    });
+
+    // Los formularios (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): cinco modales de administración después del footer y fuera
+    // del contenido, con los ids que usa mi-espacio.js, una sola vez y ninguno de la carcasa
+    describe('los modales', () => {
+      const MODALES = {
+        'modal-licencia': ['modal-licencia-titulo', 'ml-error', 'ml-tipos', 'ml-tipos-opciones', 'ml-tipos-error', 'ml-desde-rotulo',
+          'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-error', 'ml-grupo-horas', 'ml-horas', 'ml-horas-error',
+          'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar', 'ml-mostrar-ayuda',
+          'ml-grupo-autorizado', 'ml-autorizado', 'ml-autorizado-ayuda', 'ml-autorizado-error', 'ml-paso', 'ml-sin-auditor', 'ml-borrar',
+          'ml-pie', 'ml-guardar'],
+        'modal-horas': ['modal-horas-titulo', 'mh-error', 'mh-fecha', 'mh-fecha-error', 'mh-desde', 'mh-desde-error', 'mh-hasta',
+          'mh-hasta-error', 'mh-suma', 'mh-nota', 'mh-nota-error', 'mh-borrar', 'mh-guardar'],
+        'modal-saldos': ['modal-saldos-titulo', 'ms-error', 'ms-modalidad', 'ms-dias', 'ms-dias-rotulo', 'ms-dias-opciones', 'ms-dias-ayuda',
+          'ms-dias-mitades', 'ms-dias-error', 'ms-estudios', 'ms-estudios-opciones', 'ms-estudios-error', 'ms-campos', 'ms-guardar'],
+        'modal-uso': ['modal-uso-titulo', 'mu-error', 'mu-fecha', 'mu-fecha-error', 'mu-grupo-horas', 'mu-horas', 'mu-horas-error',
+          'mu-calculo', 'mu-nota', 'mu-nota-error', 'mu-grupo-mostrar', 'mu-mostrar', 'mu-mostrar-ayuda', 'mu-paso', 'mu-sin-auditor',
+          'mu-borrar', 'mu-pie', 'mu-guardar'],
+        'modal-confirmar': ['modal-confirmar-titulo', 'mc-error', 'modal-confirmar-texto', 'modal-confirmar-si']
+      };
+      const nombres = Object.keys(MODALES);
+      // Cada modal, hasta el siguiente (el último, hasta los scripts)
+      const modal = (id) => {
+        const siguiente = nombres[nombres.indexOf(id) + 1];
+        const fin = siguiente ? `(?=<div class="modal-overlay" id="${siguiente}">)` : '(?=\\s*<!-- Scripts del RPAD -->)';
+        return bloque(new RegExp(`<div class="modal-overlay" id="${id}">[\\s\\S]*?${fin}`));
+      };
+      const posicion = (texto) => html().indexOf(texto);
+
+      it('van después del footer, fuera del contenido, en su orden y antes de los scripts', () => {
+        let anterior = posicion('</main>');
+        assert.ok(posicion('</footer>') < anterior, 'el footer, dentro del contenido');
+        for (const id of nombres) {
+          assert.ok(modal(id), id);
+          assert.ok(posicion(`id="${id}"`) > anterior, `${id}, después`);
+          anterior = posicion(`id="${id}"`);
+        }
+        assert.ok(anterior < posicion('<script '), 'antes de los scripts');
+      });
+
+      it('cada id está una sola vez, en su modal, y ninguno es de la carcasa', () => {
+        const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+        const carcasa = [...html().slice(0, posicion('<div class="modal-overlay"')).matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+        for (const [id, propios] of Object.entries(MODALES)) {
+          const deEste = [...modal(id).matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+          // Todos los ids del modal son los suyos, y no hay otros
+          assert.deepEqual(deEste.sort(), [id, ...propios].sort(), id);
+          for (const propio of [id, ...propios]) {
+            assert.equal(ids.filter(otro => otro === propio).length, 1, propio);
+            assert.ok(!carcasa.includes(propio), `${propio} no es de la carcasa`);
+          }
+        }
+      });
+
+      it('los de administración: role="dialog", aria-modal y su título; la × y «Cancelar» con data-cerrar, y sin <form>', () => {
+        for (const id of nombres) {
+          const html = modal(id);
+          assert.match(html, new RegExp(`<div class="modal me-modal(?: me-modal-chico)?" role="dialog" aria-modal="true" aria-labelledby="${id}-titulo"`), id);
+          assert.match(html, /<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;<\/button>/, id);
+          assert.match(html, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar<\/button>/, id);
+          assert.doesNotMatch(html, /<form\b|maxlength|onclick=/, id);
+        }
+        assert.match(modal('modal-confirmar'), /aria-describedby="modal-confirmar-texto"/);
+      });
+
+      it('cada campo dice su error en aria-describedby, y el campo del firmante es el de Configuración', () => {
+        for (const control of ['ml-desde', 'ml-hasta', 'ml-horas', 'ml-nota', 'ml-autorizado', 'mh-fecha', 'mh-desde', 'mh-hasta', 'mh-nota',
+          'mu-fecha', 'mu-horas', 'mu-nota']) {
+          assert.match(html(), new RegExp(`id="${control}"[^>]*aria-describedby="[^"]*${control}-error[^"]*"`), control);
+        }
+        for (const grupo of ['ml-tipos', 'ms-dias', 'ms-estudios']) {
+          assert.match(html(), new RegExp(`<fieldset class="me-grupo" id="${grupo}" aria-describedby="[^"]*${grupo}-error"`), grupo);
+        }
+        assert.match(modal('modal-licencia'), /<label class="form-label" for="ml-autorizado">Autorizo a presentar las notas en mi nombre a:<\/label>/);
+        assert.match(modal('modal-licencia'), /<p class="form-hint" id="ml-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
+        // Las horas extras, de a media hora
+        for (const control of ['mh-desde', 'mh-hasta']) assert.match(html(), new RegExp(`<input type="time" class="form-input" id="${control}" step="1800"`), control);
+      });
     });
 
     it('los scripts, a secas y en su orden: config, auth, main, api y mi-espacio.js', () => {

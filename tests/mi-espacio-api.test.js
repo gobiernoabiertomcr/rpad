@@ -1112,6 +1112,32 @@ describe('el paso a Configuración', () => {
     assert.equal((await historialDe('adminB', 'licencia_editada')).length, 1);
   });
 
+  // El formulario precarga la persona a cargo y manda autorizado_id solo si se cambió (Ruling de la Task 17): sin la clave, la
+  // corrección conserva la de Configuración
+  it('el titular corrige el hasta de sus vacaciones sin mandar autorizado_id: la persona a cargo sigue', async () => {
+    await comoTitular('adminB');
+    await conFirma('adminA');
+    await listoParaVacaciones('adminB');
+    const { body } = await cargarMia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id });
+    assert.ok(body.success, JSON.stringify(body));
+    const [antes] = await deConfiguracion('adminB');
+    // La lista le da al formulario la persona a cargo y el id de la licencia de Configuración
+    assert.deepEqual((await filaDeLaLista('adminB', body.data.id)).en_configuracion,
+      { licencia_id: antes.id, autorizado_id: usuarios.adminA.id });
+
+    const res = await corregirMia('adminB', body.data.id, { tipo: 'vacaciones', desde: q(0), hasta: q(8) });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const [despues] = await deConfiguracion('adminB');
+    assert.deepEqual([despues.id, despues.desde, despues.hasta, despues.autorizado_id], [antes.id, q(0), q(8), usuarios.adminA.id]);
+    assert.deepEqual(despues.autorizado_at, antes.autorizado_at);
+    // Una creada sin persona a cargo: el id de Configuración, sin nadie
+    await listoParaCargar('adminA');
+    const medica = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(1) });
+    const [deAdminA] = await deConfiguracion('adminA');
+    assert.deepEqual((await filaDeLaLista('adminA', medica.body.data.id)).en_configuracion,
+      { licencia_id: deAdminA.id, autorizado_id: null });
+  });
+
   it('las vacaciones del titular con persona a cargo que empiezan el próximo día hábil: el tipo queda fijo', async () => {
     await comoTitular('adminB');
     await conFirma('adminA');

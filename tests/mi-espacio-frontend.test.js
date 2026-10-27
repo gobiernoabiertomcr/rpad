@@ -2,15 +2,20 @@
 // (las pestañas; el Resumen «Niveles», con Vence pronto, los faltantes, los tanques, las pastillas y Hoy y mañana; la lista de
 // licencias con su selector del año y sus filtros, las tablas de horas extras, el día por día y las horas no utilizadas previamente)
 // con los datos que arma el servidor (services/miEspacioResumen.js) sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados
-// por JSON como los manda la API; y, con un DOM falso y un fetch falso, la carga de las pestañas. Como proyectos.js, el script al
-// cargarse solo declara: se carga en un vm después del api.js de verdad (Utils.escapeHtml). Las personas son las inventadas de la
-// maqueta.
+// por JSON como los manda la API; y, con un DOM falso y un fetch falso, la carga de las pestañas. Los formularios (Task 17): lo puro,
+// las copias atadas por tests de paridad (con services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso,
+// los modales. Como proyectos.js, el script al cargarse solo declara: se carga en un vm después del api.js de verdad
+// (Utils.escapeHtml). Las personas son las inventadas de la maqueta.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import { filasDeLicencias, tablaDeHorasExtras, resumenDe, proximoFeriadoDe } from '../services/miEspacioResumen.js';
-import { calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango } from '../services/miEspacioReglas.js';
+import {
+  calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, DIAS_VACACIONES, DIAS_ESTUDIOS,
+  DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
+  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaSinDias
+} from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
@@ -329,6 +334,7 @@ describe('el Resumen «Niveles»', () => {
     assert.deepEqual(resumen.faltantes, [texto]);
     const html = M.htmlDelResumen(resumen);
     assert.ok(html.includes(`<p class="me-aviso me-aviso-ambar">${texto}</p>`));
+    assert.ok(html.indexOf('Vence pronto') >= 0, 'con «Vence pronto»');
     assert.ok(html.indexOf('Vence pronto') < html.indexOf('me-aviso-ambar'));
     assert.ok(html.indexOf('me-aviso-ambar') < html.indexOf('Lo que te queda'));
     // Varios, en una lista; ninguno, nada
@@ -358,13 +364,16 @@ describe('el Resumen «Niveles»', () => {
     assert.ok(M.htmlDelResumen(resumen).includes('&lt;b&gt;x&lt;/b&gt; no está'));
   });
 
-  it('Hoy y mañana: quien no ve a sus compañeros no tiene «No están»; sin ausentes, lo dice; sin feriado, no va', () => {
+  it('Hoy y mañana: quien no ve a sus compañeros no tiene «No están»; sin ausentes, tampoco; sin feriado, no va', () => {
     const lectora = M.htmlDeHoyYManana(contrato.hoy_y_manana, contrato.persona.ve_companeros);
     assert.equal(textoDe(lectora), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
     // Solo el true literal
     assert.ok(!M.htmlDeHoyYManana(planta.hoy_y_manana, 'true').includes('No están'));
+    // Sin nadie que no esté, el bloque «No están» no aparece (como «Vence pronto» vacío): solo se ven los de administración que
+    // eligieron mostrarse, así que «están todos» podría no ser cierto
     const sinAusentes = M.htmlDeHoyYManana({ ausentes: [], proximo_feriado: null }, true);
-    assert.equal(textoDe(sinAusentes), 'Hoy y mañana No están Hoy y mañana están todos.');
+    assert.equal(textoDe(sinAusentes), 'Hoy y mañana');
+    assert.ok(!M.htmlDeHoyYManana({ ausentes: [], proximo_feriado: planta.hoy_y_manana.proximo_feriado }, true).includes('No están'));
     assert.doesNotThrow(() => M.htmlDeHoyYManana(undefined, true));
   });
 
@@ -739,7 +748,7 @@ const VACIOS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'inpu
 const desescapar = (texto) => texto.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/&times;/g, '×').replace(/&amp;/g, '&');
 const camello = (nombre) => nombre.replace(/-([a-z])/g, (_, letra) => letra.toUpperCase());
-const PIEZA_DE_SELECTOR = /#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]/g;
+const PIEZA_DE_SELECTOR = /#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]|:(checked)/g;
 const TOKEN_HTML = /<!--[\s\S]*?-->|<![^>]*>|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)((?:\s+[^\s=>/]+(?:="[^"]*")?)*)\s*(\/?)>|([^<]+)/g;
 
 const crearDom = () => {
@@ -749,11 +758,12 @@ const crearDom = () => {
     if (etiqueta && el.tagName !== etiqueta.toLowerCase()) return false;
     const resto = etiqueta ? compuesto.slice(etiqueta.length) : compuesto;
     let leido = 0;
-    for (const [pieza, id, clase, atributo, valor] of resto.matchAll(PIEZA_DE_SELECTOR)) {
+    for (const [pieza, id, clase, atributo, valor, marcado] of resto.matchAll(PIEZA_DE_SELECTOR)) {
       leido += pieza.length;
       if (id !== undefined && el.id !== id) return false;
       if (clase !== undefined && !el.classList.contains(clase)) return false;
       if (atributo !== undefined && (el.getAttribute(atributo) === null || (valor !== undefined && el.getAttribute(atributo) !== valor))) return false;
+      if (marcado !== undefined && !el.checked) return false;
     }
     if (leido !== resto.length) throw new Error(`Selector que el DOM falso no entiende: ${compuesto}`);
     return true;
@@ -773,14 +783,28 @@ const crearDom = () => {
     const attrs = { ...atributos };
     const oyentes = {};
     const clases = () => new Set(String(attrs.class ?? '').split(/\s+/).filter(Boolean));
+    const ponerClases = (conjunto) => { attrs.class = [...conjunto].join(' '); };
     const el = {
       esElemento: true, tagName: tagName.toLowerCase(), parentNode: null, hijos: [], html: '', oyentes,
-      hidden: Object.hasOwn(attrs, 'hidden'), disabled: Object.hasOwn(attrs, 'disabled'), tabIndex: 0,
+      hidden: Object.hasOwn(attrs, 'hidden'), disabled: Object.hasOwn(attrs, 'disabled'), checked: Object.hasOwn(attrs, 'checked'),
+      value: attrs.value ?? '', tabIndex: 0,
       get id() { return attrs.id ?? ''; },
+      get name() { return attrs.name ?? ''; },
       get dataset() {
         return Object.fromEntries(Object.entries(attrs).filter(([nombre]) => nombre.startsWith('data-')).map(([nombre, valor]) => [camello(nombre.slice(5)), valor]));
       },
-      classList: { contains: (clase) => clases().has(clase) },
+      classList: {
+        contains: (clase) => clases().has(clase),
+        add: (...nuevas) => { const conjunto = clases(); for (const c of nuevas) conjunto.add(c); ponerClases(conjunto); },
+        remove: (...viejas) => { const conjunto = clases(); for (const c of viejas) conjunto.delete(c); ponerClases(conjunto); },
+        toggle: (clase, forzar) => {
+          const conjunto = clases();
+          const poner = forzar === undefined ? !conjunto.has(clase) : Boolean(forzar);
+          if (poner) conjunto.add(clase); else conjunto.delete(clase);
+          ponerClases(conjunto);
+          return poner;
+        }
+      },
       getAttribute: (nombre) => (Object.hasOwn(attrs, nombre) ? attrs[nombre] : null),
       setAttribute: (nombre, valor) => { attrs[nombre] = String(valor); },
       removeAttribute: (nombre) => { delete attrs[nombre]; },
@@ -808,6 +832,8 @@ const crearDom = () => {
         }
         return evento;
       },
+      contains(otro) { for (let nodo = otro; nodo; nodo = nodo.parentNode) if (nodo === el) return true; return false; },
+      scrollIntoView() {},
       focus() { if (!el.disabled && el.isConnected) dom.activo = el; }
     };
     return el;
@@ -834,7 +860,8 @@ const crearDom = () => {
     getElementById: (id) => raiz.querySelector(`#${id}`),
     querySelector: (selector) => raiz.querySelector(selector),
     querySelectorAll: (selector) => raiz.querySelectorAll(selector),
-    addEventListener: (tipo, funcion) => raiz.addEventListener(tipo, funcion)
+    addEventListener: (tipo, funcion) => raiz.addEventListener(tipo, funcion),
+    disparar: (tipo, extra) => raiz.disparar(tipo, extra)
   };
   // El cuerpo de mi-espacio.html, sin el <style> (no hace falta)
   raiz.innerHTML = leer('mi-espacio.html').replace(/<style>[\s\S]*?<\/style>/, '');
@@ -843,7 +870,7 @@ const crearDom = () => {
 
 // Una respuesta del fetch falso
 const respuesta = (status, body) => ({ status, body });
-const ok = (data) => respuesta(200, { success: true, data });
+const ok = (data, message) => respuesta(200, { success: true, data, ...(message ? { message } : {}) });
 // El Resumen de la persona de planta, el de verdad (resumenDe), con un compañero que no está
 const RESUMEN_DE_PLANTA = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_MARTIN] });
 // Lo que contesta el servidor falso, de entrada (la persona de planta)
@@ -857,10 +884,12 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 };
 
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
-// sin él, la página no anima
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false } = {}) => {
+// sin él, la página no anima. Los temporizadores no corren solos: `correr` corre los que hay (el foco de los modales y la
+// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(). Hoy es HOY
+const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false } = {}) => {
   const { dom, documento } = crearDom();
   const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [] };
+  const temporizadores = [];
   const ventana = {
     location: { search: '', hash, pathname: '/mi-espacio.html', href: `/mi-espacio.html${hash}` },
     history: {
@@ -879,27 +908,64 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
     window: ventana,
     Auth: {
       isAuthenticated: () => true,
+      isAuditor: () => auditor,
+      getUser: () => ({ id: 1 }),
       getAuthHeaders: () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer token-de-prueba' }),
       clearSession: () => { estado.sesionCerrada = true; }
     },
+    URLSearchParams,
+    setTimeout: (funcion, ms) => { temporizadores.push({ funcion, ms }); return temporizadores.length; },
+    clearTimeout: (id) => { if (temporizadores[id - 1]) temporizadores[id - 1].funcion = null; },
     fetch: async (url, opciones = {}) => {
       const metodo = opciones.method ?? 'GET';
-      estado.pedidos.push({ metodo, ruta: url });
-      const r = await estado.responder(metodo, url, opciones);
+      const cuerpo = opciones.body === undefined ? undefined : JSON.parse(opciones.body);
+      estado.pedidos.push({ metodo, ruta: url, cuerpo });
+      const r = await estado.responder(metodo, url, cuerpo);
       return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
     }
   });
   vm.runInContext(`${leer('js/api.js')}\n;globalThis.Utils = Utils;`, contexto);
   vm.runInContext(leer('js/mi-espacio.js'), contexto);
+  contexto.Utils.hoyEnArgentina = () => HOY;
   const esperar = async () => { for (let i = 0; i < 5; i += 1) await new Promise((resolver) => setImmediate(resolver)); };
   const el = (id) => documento.getElementById(id);
   const rutas = () => estado.pedidos.map((p) => p.ruta);
+  // Los pedidos de un método y una ruta, con sus cuerpos
+  const pedidosA = (metodo, ruta) => estado.pedidos.filter((p) => p.metodo === metodo && p.ruta === ruta);
+  // Corre los temporizadores que hay (los que se programan mientras, en la próxima vuelta) y espera lo que pidan
+  const correr = async () => {
+    for (const temporizador of temporizadores.splice(0)) temporizador.funcion?.();
+    await esperar();
+  };
   const iniciar = async () => { await contexto.iniciarMiEspacio(); await esperar(); };
   // Un clic en un elemento (burbujea hasta el contenedor que lo escucha) y lo que pida después
   const tocar = async (elemento) => { assert.ok(elemento, 'el elemento existe'); elemento.disparar('click'); await esperar(); };
+  // Escribir en un campo (o elegir en una lista): el valor y el evento, como en el navegador
+  const escribir = async (id, valor, evento = 'input') => {
+    const campo = el(id);
+    assert.ok(campo, id);
+    campo.value = valor;
+    campo.disparar(evento);
+    await esperar();
+  };
+  // Elegir una opción de un grupo de radios (las demás quedan sin marcar), con su change
+  const elegir = async (nombre, valor) => {
+    const radios = documento.querySelectorAll(`input[name="${nombre}"]`);
+    const radio = radios.find((uno) => uno.getAttribute('value') === valor);
+    assert.ok(radio, `${nombre}=${valor}`);
+    for (const uno of radios) uno.checked = uno === radio;
+    radio.disparar('change');
+    await esperar();
+  };
+  // Una tecla en el elemento con el foco (sin foco, en el documento)
+  const tecla = async (key) => { (documento.activeElement ?? documento).disparar('keydown', { key }); await esperar(); };
   // Un cuadro del navegador: corre lo que se pidió con requestAnimationFrame hasta ahora (lo que se pida adentro, en el próximo)
   const cuadro = () => { for (const funcion of estado.cuadros.splice(0)) funcion(0); };
-  return { contexto, dom, documento, ventana, estado, el, rutas, iniciar, tocar, esperar, cuadro };
+  const abierto = (id) => el(id).classList.contains('active');
+  return {
+    contexto, dom, documento, ventana, estado, el, rutas, pedidosA, iniciar, tocar, esperar, correr, escribir, elegir, tecla,
+    cuadro, abierto
+  };
 };
 
 describe('mi-espacio.js: la página (DOM falso)', () => {
@@ -1159,5 +1225,785 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
     // Y la vieja no se lleva el foco
     assert.equal(pagina.documento.activeElement, vista.querySelector('[data-anio="2027"]'));
+  });
+});
+
+// =====================================================================================================================================
+// Los formularios (spec 2026-10-26-mi-espacio-licencias-y-horas, 4, 6 y 8; Task 17): «Cargar licencia» (con el cálculo previo,
+// el aviso del paso a Configuración, el campo del firmante y el aviso de los días sin auditor), «Cargar horas extras», «Mis
+// vacaciones y saldos», «Registrar un uso autorizado» y la confirmación
+// =====================================================================================================================================
+
+// usuarios.js en su propio vm (el armado de tests/usuarios-frontend.test.js: importar ese archivo registraría sus tests), para
+// comparar las copias de mi-espacio.js. filaLicencia pide getInitials (de main.js)
+const usuariosJs = (() => {
+  const elemento = () => ({
+    value: '', textContent: '', hidden: true, disabled: false, setAttribute() {}, removeAttribute() {}, addEventListener() {},
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false }
+  });
+  const contexto = vm.createContext({
+    document: { addEventListener() {}, getElementById: elemento, querySelectorAll: () => [], querySelector: elemento },
+    window: { location: {} },
+    Utils: { escapeHtml: (texto) => texto },
+    Auth: { getUser: () => ({ id: 1 }), getRole: () => 'admin', isAuthenticated: () => true, isAdmin: () => true },
+    API: new Proxy({}, { get: () => async () => ({ message: '', data: {} }) }),
+    getInitials: () => '',
+    showToast() {},
+    confirm: () => true,
+    setTimeout: () => 0,
+    clearTimeout() {},
+    console
+  });
+  vm.runInContext(leer('js/usuarios.js'), contexto);
+  return (expresion) => vm.runInContext(expresion, contexto);
+})();
+
+// El cálculo previo como lo arma el servidor (calcularLicencia): la vista de evaluarLicencia y el paso de pasoPrevistoDe, para
+// una carga nueva de la persona de planta (admin) que pasa a Configuración. `soyTitular`: es el firmante titular
+const respuestaDelCalculo = (entrada, { soyTitular = false, estado = PLANTA.estado, rol = 'admin', editadaId = null } = {}) => {
+  const { datos, error, vista } = evaluarLicencia(estado, entrada, { hoy: HOY, feriados: SIN_FERIADOS, editadaId });
+  if (datos === null) return comoLlega({ error, vista, paso: null });
+  const paso = pasoPrevistoDe({ paso: { accion: 'crear' }, vinculo: null, fila: datos, rol, hoy: HOY, soyTitular });
+  return comoLlega({ error: null, vista, paso });
+};
+const VACACIONES = Object.freeze({ tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-20' });
+const MEDICA = Object.freeze({ tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-17' });
+const FIRMANTE = Object.freeze({
+  soy_titular: true, hoy: HOY,
+  autorizables: [{ id: 3, nombre_completo: 'Martín Ríos', licencias: [{ desde: '2026-11-18', hasta: '2026-11-18' }],
+    ausencias: [{ desde: '2026-11-18', hasta: '2026-11-18', vuelve: '2026-11-19' }] }]
+});
+
+describe('los formularios: las paridades', () => {
+  it('cada mensaje copiado de MENSAJES_MI_ESPACIO es el del servidor, y las constantes también', () => {
+    const copiados = plano(M.MENSAJES_FORMULARIOS);
+    assert.ok(Object.keys(copiados).length >= 10);
+    for (const [clave, texto] of Object.entries(copiados)) assert.equal(texto, MENSAJES_MI_ESPACIO[clave], clave);
+    assert.deepEqual(plano(M.DIAS_VACACIONES), [...DIAS_VACACIONES]);
+    assert.deepEqual(plano(M.DIAS_ESTUDIOS), { ...DIAS_ESTUDIOS });
+    assert.equal(M.DIAS_POR_EXAMEN, DIAS_POR_EXAMEN);
+    assert.equal(M.JORNADA, JORNADA);
+    assert.equal(M.LARGO_NOTA, LARGO_NOTA);
+    for (const maximo of [0, 7, 15, 25, 30, 42, 200]) assert.equal(M.textoSaldo(maximo), textoSaldo(maximo), String(maximo));
+    assert.equal(M.TEXTO_SIN_ARRANQUE, MENSAJES_MI_ESPACIO.sinArranque);
+  });
+
+  it('horasDelHorario es horasDe: diez horarios, con la medianoche y los que no sirven', () => {
+    const horarios = [['18:00', '21:30'], ['19:00', '22:00'], ['09:30', '10:00'], ['22:00', '01:30'], ['23:30', '00:00'],
+      ['00:00', '23:30'], ['10:00', '10:00'], ['10:15', '11:00'], ['24:00', '01:00'], ['', '10:00'], [undefined, null],
+      ['7:00', '9:00'], ['19:00:00', '22:00']];
+    for (const [desde, hasta] of horarios) assert.equal(M.horasDelHorario(desde, hasta), horasDelServidor(desde, hasta), `${desde} a ${hasta}`);
+  });
+
+  it('efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor dan lo mismo que las de usuarios.js', () => {
+    const licencia = { desde: '2026-11-26', vispera: '2026-11-25' };
+    for (const [lic, nombre, hoy] of [[{ vispera: '2026-11-25' }, 'Persona Autorizada', ''], [{ vispera: '2026-11-25' }, null, ''],
+      [null, null, ''], [licencia, 'Persona Autorizada', '2026-12-02'], [licencia, null, '2026-12-02'], [licencia, null, '2026-11-26'],
+      [licencia, null, '2026-11-10'], [licencia, 'Persona Autorizada', '2026-11-10']]) {
+      const argumentos = `${JSON.stringify(lic)}, ${JSON.stringify(nombre)}, ${JSON.stringify(hoy)}`;
+      assert.equal(en(`efectoEnNotas(${argumentos})`), usuariosJs(`efectoEnNotas(${argumentos})`), argumentos);
+    }
+    const periodo = { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11', respaldo: [] };
+    for (const uno of [periodo, { ...periodo, hasta: '2026-12-28', vuelve: '2026-12-29' }, { ...periodo, vuelve: null },
+      { ...periodo, respaldo: ['Persona A', 'Persona B', 'Persona C'] }, { desde: '2026-12-28', hasta: '2027-01-08', vuelve: '2027-01-11' }]) {
+      assert.equal(en(`textoSinAuditor(${JSON.stringify(uno)})`), usuariosJs(`textoSinAuditor(${JSON.stringify(uno)})`));
+    }
+    const ausencia = (desde, hasta, vuelve) => ({ desde, hasta, vuelve });
+    for (const [ausencias, desde, hasta] of [[[ausencia('2027-03-08', '2027-03-12', '2027-03-15')], '2027-03-01', '2027-03-31'],
+      [[ausencia('2027-02-22', '2027-03-03', '2027-03-04')], '2027-03-01', '2027-03-31'],
+      [[ausencia('2027-03-25', '2027-04-10', '2027-04-12')], '2027-03-01', '2027-03-31'],
+      [[ausencia('2027-03-10', '2027-03-10', '2027-03-11')], '2027-03-01', '2027-03-31'],
+      [[ausencia('2027-03-22', '2027-03-24', '2027-03-25'), ausencia('2027-03-03', '2027-03-05', '2027-03-08')], '2027-03-01', '2027-03-31'],
+      [[ausencia('2027-03-01', '2027-03-05', '2027-03-08')], '2027-03-01', '2027-03-07'], [[], '2027-03-01', '2027-03-31'],
+      [[ausencia('2027-03-08', '2027-03-12', '2027-03-15')], '', '2027-03-31']]) {
+      const argumentos = `'Persona Autorizada', ${JSON.stringify(ausencias)}, ${JSON.stringify(desde)}, ${JSON.stringify(hasta)}`;
+      assert.deepEqual(plano(en(`textoAusenciasAutorizado(${argumentos})`)), plano(usuariosJs(`textoAusenciasAutorizado(${argumentos})`)));
+    }
+    const completo = { usuarioId: 7, desde: '2026-12-09', hasta: '2027-01-08' };
+    for (const cambio of [{}, { excluir: 9 }, { desde: '' }, { desde: '2026-02-30' }, { usuarioId: 0 }, { desde: '2026-01-01', hasta: '2027-01-02' },
+      { desde: '2026-01-01', hasta: '2027-01-01' }, { desde: '2026-12-01', hoy: '2026-12-09' }, { desde: '2026-12-01', hasta: '2026-12-08', hoy: '2026-12-09' }]) {
+      const pedido = JSON.stringify({ ...completo, ...cambio });
+      assert.deepEqual(plano(en(`parametrosSinAuditor(${pedido})`)), plano(usuariosJs(`parametrosSinAuditor(${pedido})`)), pedido);
+    }
+  });
+
+  // «Mis vacaciones y saldos» muestra los campos de «Para arrancar» con lo que se elige en el modal, antes de guardarlo: el máximo
+  // de las vacaciones del año (la primera mitad) y el campo de los estudios dependen de los días y de la carrera del año
+  it('camposConLoElegido da los campos de camposDelSaldoInicial con los días y los estudios que se eligen', () => {
+    const sinValor = (campos) => plano(campos).map(({ valor, ...campo }) => campo);
+    for (const modalidad of ['planta', 'contrato']) {
+      for (const arranque of ['2026-10-26', '2026-05-04']) {
+        for (const inicial of [[], [{ anio: 2026, dias_vacaciones: 20, estudios: 'universitario' }]]) {
+          const delServidor = camposDelSaldoInicial({ modalidad, arranque, anios: inicial }).map((campo) => ({ ...campo, valor: null }));
+          for (const dias of DIAS_VACACIONES) {
+            for (const estudios of ['universitario', 'secundario', null]) {
+              const esperados = camposDelSaldoInicial({ modalidad, arranque, anios: [{ anio: 2026, dias_vacaciones: dias, estudios }] });
+              const caso = `${modalidad} ${arranque} ${dias} ${estudios} ${inicial.length}`;
+              assert.deepEqual(sinValor(M.camposConLoElegido(comoLlega(delServidor), { anio: 2026, dias, estudios })), plano(esperados), caso);
+            }
+          }
+        }
+      }
+    }
+    // Sin días elegidos, como llegaron; un saldo de otro año (el arranque fue el año pasado), tampoco cambia
+    const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [] }));
+    assert.deepEqual(plano(M.camposConLoElegido(campos, { anio: 2026, dias: null, estudios: null })), campos);
+    assert.deepEqual(plano(M.camposConLoElegido(campos, { anio: 2027, dias: 30, estudios: 'universitario' })), campos);
+  });
+
+  it('erroresDelSaldo: el primer error es el de validarSaldoInicial, en los casos de borde', () => {
+    const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26',
+      anios: [{ anio: 2026, dias_vacaciones: 20, estudios: 'secundario' }] }));
+    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
+    for (const [clave, texto] of [['vacaciones-2024', '31'], ['vacaciones-2024', '-1'], ['vacaciones-2025', '2,5'], ['vacaciones-2026', '11'],
+      ['estudios', '10'], ['estudios', '11'], ['medica', ''], ['medica', 'x'], ['familiar', '25'], ['horas_no_utilizadas', '6,5'],
+      ['horas_no_utilizadas', '6,25'], ['horas_no_utilizadas', '200.5'], ['vacaciones-2024', ' 8 ']]) {
+      const valores = { ...llenos, [clave]: texto };
+      const errores = plano(M.erroresDelSaldo(valores, campos));
+      const { saldos } = plano(M.cuerpoDelSaldo(valores, campos));
+      const delServidor = validarSaldoInicial({ saldos: Object.fromEntries(Object.entries(saldos).filter(([, n]) => n !== null)) }, campos).error;
+      const [primero] = Object.entries(errores);
+      assert.deepEqual(primero ? { campo: primero[0], mensaje: primero[1] } : null, delServidor, `${clave}: ${texto}`);
+    }
+    assert.deepEqual(plano(M.erroresDelSaldo(llenos, campos)), {});
+    // Lo guardado, con coma; lo que no hay, vacío
+    assert.deepEqual(plano(M.valoresDelSaldo([{ clave: 'a', valor: 6.5 }, { clave: 'b', valor: 0 }, { clave: 'c', valor: null }])),
+      { a: '6,5', b: '0', c: '' });
+  });
+});
+
+describe('los formularios: lo puro', () => {
+  const tiposDePlanta = resumenDel(PLANTA).tipos;
+
+  it('los tipos: radios grandes con lo que queda de cada uno, sin el uso autorizado', () => {
+    const html = M.htmlDeTiposDeLicencia(tiposDePlanta, 'franquicia');
+    assert.ok(textoDe(html).includes('Franquicia Quedan 25 h de 42'));
+    assert.ok(!html.includes('Uso autorizado'));
+    const radios = [...html.matchAll(/<input ([^>]*)>/g)]
+      .map(([, atributos]) => ({ ...atributosDe(atributos), checked: /(^|\s)checked(\s|$)/.test(atributos) }));
+    assert.deepEqual(radios.map((radio) => radio.value), tiposDePlanta.map(({ tipo }) => tipo));
+    assert.ok(radios.every((radio) => radio.type === 'radio' && radio.name === 'ml-tipo'));
+    assert.deepEqual(radios.filter((radio) => radio.checked).map((radio) => radio.value), ['franquicia']);
+    // Uno que llega con el uso autorizado no lo ofrece; un nombre con HTML se ve escapado
+    const conHtml = M.htmlDeTiposDeLicencia([...tiposDePlanta, { tipo: 'uso_autorizado', nombre: 'Uso autorizado', queda_texto: '' },
+      { tipo: 'medica', nombre: MALICIOSO, queda_texto: MALICIOSO }], null);
+    assert.ok(!conHtml.includes('Uso autorizado') && !conHtml.includes('<img'));
+    assert.ok(conHtml.includes(ESCAPADO));
+  });
+
+  it('valoresDeLicencia: los de una fila de la lista, o los de una nueva con su tipo', () => {
+    const fila = { ...licenciasDe(PLANTA).licencias[0], nota: 'Viaje', en_configuracion: { licencia_id: 40, autorizado_id: 3 } };
+    assert.deepEqual(plano(M.valoresDeLicencia(fila)), {
+      id: 6, tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-09', horas: '', nota: 'Viaje', mostrar: true,
+      autorizado: '3', autorizado_inicial: '3', licencia_oficial: 40
+    });
+    assert.deepEqual(plano(M.valoresDeLicencia(null, 'franco')), {
+      id: null, tipo: 'franco', desde: '', hasta: '', horas: '', nota: '', mostrar: true, autorizado: '', autorizado_inicial: '',
+      licencia_oficial: null
+    });
+    assert.equal(M.valoresDeLicencia(null).tipo, '');
+    assert.equal(M.valoresDeLicencia({ ...fila, tipo: 'franquicia', horas: 2 }).horas, '2');
+  });
+
+  it('erroresDeLicencia: los obligatorios, los formatos y la nota, con los mensajes del servidor', () => {
+    const errores = (valores, opciones) => plano(M.erroresDeLicencia({ ...M.valoresDeLicencia(null), ...valores }, opciones));
+    assert.deepEqual(errores({}), { tipo: MENSAJES_MI_ESPACIO.tipo, desde: MENSAJES_MI_ESPACIO.fecha });
+    assert.deepEqual(errores({ ...VACACIONES }), {});
+    assert.deepEqual(errores({ ...VACACIONES, hasta: '' }), { hasta: MENSAJES_MI_ESPACIO.fecha });
+    assert.deepEqual(errores({ ...VACACIONES, hasta: '2026-11-13' }), { hasta: MENSAJES_MI_ESPACIO.hastaAntes });
+    assert.deepEqual(errores({ ...VACACIONES, desde: '2026-02-30' }), { desde: MENSAJES_MI_ESPACIO.fecha });
+    // Los de un día no miran el hasta
+    assert.deepEqual(errores({ tipo: 'franco', desde: '2026-10-30', hasta: '' }), {});
+    // Las horas: la franquicia, enteras de 1 a 7; las horas a favor y el uso autorizado de contrato, de a media hora
+    for (const horas of ['', '0', '8', '2.5']) {
+      assert.deepEqual(errores({ tipo: 'franquicia', desde: '2026-11-10', horas }), { horas: MENSAJES_MI_ESPACIO.horasEnteras }, horas);
+    }
+    assert.deepEqual(errores({ tipo: 'franquicia', desde: '2026-11-10', horas: '7' }), {});
+    for (const horas of ['', '0', '7.5', '1.25']) {
+      assert.deepEqual(errores({ tipo: 'horas_a_favor', desde: '2026-11-10', horas }), { horas: MENSAJES_MI_ESPACIO.horasMedias }, horas);
+    }
+    assert.deepEqual(errores({ tipo: 'horas_a_favor', desde: '2026-11-10', horas: '0.5' }), {});
+    assert.deepEqual(errores({ tipo: 'uso_autorizado', desde: '2026-11-10', horas: '' }, { modalidad: 'contrato' }), { horas: MENSAJES_MI_ESPACIO.horasMedias });
+    assert.deepEqual(errores({ tipo: 'uso_autorizado', desde: '2026-11-10', horas: '' }, { modalidad: 'planta' }), {});
+    // La nota: hasta 200 caracteres contados con Array.from (un emoji es uno)
+    assert.deepEqual(errores({ ...VACACIONES, nota: '😀'.repeat(200) }), {});
+    assert.deepEqual(errores({ ...VACACIONES, nota: '😀'.repeat(201) }), { nota: MENSAJES_MI_ESPACIO.nota });
+  });
+
+  it('la persona a cargo, solo en vacaciones: cuerpoDeLicencia manda autorizado_id solo en las vacaciones del titular', () => {
+    const medica = M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), ...MEDICA, autorizado: '3' }, { soyTitular: true });
+    assert.ok(!Object.hasOwn(medica, 'autorizado_id'));
+    assert.deepEqual(plano(medica), { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-17', mostrar: true, nota: '' });
+    const vacaciones = M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), ...VACACIONES, autorizado: '3' }, { soyTitular: true });
+    assert.equal(vacaciones.autorizado_id, 3);
+    // Nueva y sin nadie elegido: null (nadie); sin ser el titular, nunca
+    assert.equal(M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), ...VACACIONES }, { soyTitular: true }).autorizado_id, null);
+    assert.ok(!Object.hasOwn(M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), ...VACACIONES, autorizado: '3' }, { soyTitular: false }), 'autorizado_id'));
+    // Al corregir, solo si se cambió el campo: si no, el servidor conserva la de Configuración
+    const guardada = { ...M.valoresDeLicencia(null), ...VACACIONES, id: 6, autorizado: '3', autorizado_inicial: '3' };
+    assert.ok(!Object.hasOwn(M.cuerpoDeLicencia(guardada, { soyTitular: true }), 'autorizado_id'));
+    assert.equal(M.cuerpoDeLicencia({ ...guardada, autorizado: '' }, { soyTitular: true }).autorizado_id, null);
+    assert.equal(M.cuerpoDeLicencia({ ...guardada, autorizado: '5' }, { soyTitular: true }).autorizado_id, 5);
+    // Los de un día van con el hasta igual al desde; las horas, como número y solo en los tipos de horas; la nota, recortada
+    assert.deepEqual(plano(M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), tipo: 'franquicia', desde: '2026-11-10', horas: '3', nota: ' x ', mostrar: false }, {})),
+      { tipo: 'franquicia', desde: '2026-11-10', hasta: '2026-11-10', horas: 3, mostrar: false, nota: 'x' });
+    assert.ok(!Object.hasOwn(M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), tipo: 'uso_autorizado', desde: '2026-11-10' }, {}), 'horas'));
+  });
+
+  it('el cálculo: los días, de qué licencia salen y lo que queda, escapados', () => {
+    const { vista } = respuestaDelCalculo(VACACIONES);
+    const html = M.htmlDelCalculo({ error: null, vista, paso: null }, 'vacaciones');
+    assert.ok(textoDe(html).startsWith(`${vista.texto_dias}. ${vista.texto_reparto}`));
+    assert.match(html, /^<b>/);
+    // El máximo por examen, en los estudios
+    const estudios = respuestaDelCalculo({ tipo: 'estudios', desde: '2026-11-16', hasta: '2026-11-18' }).vista;
+    assert.ok(textoDe(M.htmlDelCalculo({ vista: estudios }, 'estudios')).startsWith('3 días hábiles, el máximo por examen.'));
+    assert.equal(M.htmlDelCalculo({ error: { campo: 'desde', mensaje: 'x' }, vista: null, paso: null }, 'vacaciones'), '');
+    assert.equal(M.htmlDelCalculo(null, 'vacaciones'), '');
+    assert.ok(!M.htmlDelCalculo({ vista: { ...vista, texto_reparto: MALICIOSO } }, 'vacaciones').includes('<img'));
+  });
+
+  it('el paso: los avisos del servidor; al titular, en unas vacaciones, el efecto en las notas y las ausencias de quien elige', () => {
+    const { paso } = respuestaDelCalculo(VACACIONES, { soyTitular: true });
+    assert.equal(paso.pasa, true);
+    const opciones = { autorizado: 'Martín Ríos', ausencias: FIRMANTE.autorizables[0].ausencias, hoy: HOY, desde: VACACIONES.desde, hasta: VACACIONES.hasta };
+    const textos = [...M.htmlDelPaso(paso, opciones).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(([, texto]) => textoDe(texto));
+    assert.deepEqual(textos, [
+      AVISO_DEL_PASO,
+      en(`efectoEnNotas(${JSON.stringify({ desde: VACACIONES.desde, vispera: paso.firmante.vispera })}, 'Martín Ríos', '${HOY}')`),
+      'Martín Ríos va a estar de licencia el 18/11/2026: ese día no se generan notas. Desde el 19/11/2026 las presenta en tu nombre.'
+    ]);
+    // Sin nadie elegido, el efecto sin persona autorizada; una médica, solo los avisos del servidor (con el de sin persona a cargo)
+    assert.ok(textoDe(M.htmlDelPaso(paso, { ...opciones, autorizado: null })).includes('Sin persona autorizada'));
+    const medica = respuestaDelCalculo(MEDICA, { soyTitular: true }).paso;
+    assert.deepEqual([...M.htmlDelPaso(medica, opciones).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(([, texto]) => texto),
+      [AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO]);
+    // Lo que no pasa: lo que dice el servidor de por qué; sin nada, ''
+    const unida = { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: 'Ya estaba en Configuración → Licencias, del 02/11 al 13/11.' };
+    assert.equal(M.htmlDelPaso(unida, {}), '<p>Ya estaba en Configuración → Licencias, del 02/11 al 13/11.</p>');
+    assert.equal(M.htmlDelPaso({ pasa: false, avisos: [], firmante: null, sin_pasar_previsto: null }, {}), '');
+    assert.equal(M.htmlDelPaso(null, {}), '');
+    assert.ok(!M.htmlDelPaso({ ...paso, avisos: [MALICIOSO] }, { ...opciones, autorizado: MALICIOSO }).includes('<img'));
+  });
+
+  it('la suma de las horas extras: lo del día y lo que lleva el mes, con lo que da', () => {
+    const planta = horasDe(PLANTA);
+    const valores = { id: null, fecha: '2026-10-28', desde: '19:00', hasta: '22:30' };
+    assert.equal(M.textoDeLaSuma(valores, planta, 'planta'),
+      '3,5 horas. En octubre llevás 14 horas: 2 francos compensatorios para usar en diciembre.');
+    // Al corregir, la que se corrige no cuenta dos veces
+    assert.equal(M.textoDeLaSuma({ ...valores, id: 13 }, planta, 'planta'),
+      '3,5 horas. En octubre llevás 11 horas: 1 franco compensatorio para usar en diciembre.');
+    // Sin llegar a 7 horas, sin francos
+    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-07-20', desde: '18:00', hasta: '19:00' }, planta, 'planta'),
+      '1 hora. En julio llevás 6 horas.');
+    // Contrato: las horas a favor del mes siguiente
+    const contrato = horasDe(CONTRATO);
+    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-10-28', desde: '19:00', hasta: '22:30' }, contrato, 'contrato'),
+      '3,5 horas. En octubre llevás 7,5 horas: en noviembre vas a tener 7,5 horas a favor.');
+    // Un mes que no está en la tabla cargada, o sin tabla: solo las horas; un horario que no sirve, nada
+    assert.equal(M.textoDeLaSuma({ ...valores, fecha: '2026-11-03' }, planta, 'planta'), '3,5 horas.');
+    assert.equal(M.textoDeLaSuma(valores, null, 'planta'), '3,5 horas.');
+    assert.equal(M.textoDeLaSuma({ ...valores, hasta: '19:00' }, planta, 'planta'), '');
+    // Pasa la medianoche: cuenta en el día en que empezó
+    assert.equal(M.textoDeLaSuma({ ...valores, desde: '22:00', hasta: '01:30' }, planta, 'planta'),
+      '3,5 horas. En octubre llevás 14 horas: 2 francos compensatorios para usar en diciembre.');
+  });
+
+  it('las horas extras: los valores de un día de la tabla, los errores y el cuerpo', () => {
+    const [dia] = horasDe(PLANTA).dias_por_mes['2026-10'];
+    assert.deepEqual(plano(M.valoresDeHoras(dia)), { id: 13, fecha: '2026-10-22', desde: '19:00', hasta: '22:00', nota: '' });
+    assert.deepEqual(plano(M.valoresDeHoras(null)), { id: null, fecha: '', desde: '', hasta: '', nota: '' });
+    assert.deepEqual(plano(M.erroresDeHoras(M.valoresDeHoras(null))), { fecha: MENSAJES_MI_ESPACIO.fecha, desde: MENSAJES_MI_ESPACIO.horario });
+    assert.deepEqual(plano(M.erroresDeHoras({ ...M.valoresDeHoras(dia), hasta: '22:15' })), { desde: MENSAJES_MI_ESPACIO.horario });
+    assert.deepEqual(plano(M.erroresDeHoras({ ...M.valoresDeHoras(dia), nota: 'a'.repeat(201) })), { nota: MENSAJES_MI_ESPACIO.nota });
+    assert.deepEqual(plano(M.cuerpoDeHoras({ ...M.valoresDeHoras(dia), nota: ' Cierre ' })),
+      { fecha: '2026-10-22', desde: '19:00', hasta: '22:00', nota: 'Cierre' });
+  });
+
+  it('la confirmación, en texto plano: qué se borra y, una creada, que se anula en Configuración', () => {
+    const [fila] = licenciasDe(PLANTA).licencias;
+    assert.equal(M.textoDeConfirmacion(fila), 'Vacaciones del 03/11 al 09/11/2026.');
+    assert.equal(M.textoDeConfirmacion({ ...fila, nota: MALICIOSO, en_configuracion: { licencia_id: 40, autorizado_id: null } }),
+      `Vacaciones del 03/11 al 09/11/2026 («${MALICIOSO}»). También se anula en Configuración → Licencias.`);
+    const [dia] = horasDe(PLANTA).dias_por_mes['2026-10'];
+    assert.equal(M.textoDeConfirmacion({ ...dia, nota: 'Cierre' }), 'Horas extras del Jue 22/10, de 19:00 a 22:00 («Cierre»).');
+  });
+});
+
+// La página con los formularios (DOM falso)
+
+// Lo que contesta el servidor falso en los formularios, además de lo de entrada: el cálculo (de la persona de planta, con
+// `soyTitular`), el firmante y lo que se pase en `extra` (que gana)
+const conFormularios = ({ soyTitular = false, extra = () => undefined } = {}) => (metodo, ruta, cuerpo) => {
+  const propia = extra(metodo, ruta, cuerpo);
+  if (propia !== undefined) return propia;
+  if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias/calculo') {
+    const { id, ...entrada } = cuerpo;
+    return ok(respuestaDelCalculo(entrada, { soyTitular, editadaId: id ?? null }));
+  }
+  if (ruta === '/api/mi-espacio/firmante') return ok(soyTitular ? FIRMANTE : { soy_titular: false });
+  return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+};
+// Abre «Cargar licencia» desde el encabezado, elige el tipo, escribe las fechas y deja que salga el cálculo
+const cargarLicencia = async (pagina, { tipo = 'vacaciones', desde = VACACIONES.desde, hasta = VACACIONES.hasta, horas } = {}) => {
+  await pagina.tocar(pagina.el('btn-cargar-licencia'));
+  await pagina.correr();
+  await pagina.elegir('ml-tipo', tipo);
+  await pagina.escribir('ml-desde', desde);
+  if (!pagina.el('ml-grupo-hasta').hidden) await pagina.escribir('ml-hasta', hasta);
+  if (horas !== undefined) await pagina.escribir('ml-horas', horas, 'change');
+  await pagina.correr();
+};
+const calculos = (pagina) => pagina.pedidosA('POST', '/api/mi-espacio/licencias/calculo');
+
+describe('los formularios en la página (DOM falso)', () => {
+  it('«Cargar licencia»: los tipos del Resumen, el foco al tipo y, al cerrar, de vuelta al botón', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    const boton = pagina.el('btn-cargar-licencia');
+    boton.focus();
+    await pagina.tocar(boton);
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Cargar licencia');
+    assert.equal(pagina.el('ml-tipos-opciones').innerHTML, M.htmlDeTiposDeLicencia(RESUMEN_DE_PLANTA.tipos, ''));
+    await pagina.correr();
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-tipos').querySelector('input'));
+    await pagina.tocar(pagina.el('modal-licencia').querySelector('.modal-footer [data-cerrar]'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.documento.activeElement, boton);
+  });
+
+  it('el cálculo se pide 300 ms después del último cambio: dos cambios seguidos, un solo cálculo, y «Guardar» espera la respuesta', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina);
+    assert.equal(calculos(pagina).length, 1);
+    await pagina.escribir('ml-desde', '2026-11-17');
+    await pagina.escribir('ml-desde', '2026-11-18');
+    assert.equal(pagina.el('ml-guardar').disabled, true, 'mientras espera');
+    await pagina.correr();
+    assert.equal(calculos(pagina).length, 2);
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo, { tipo: 'vacaciones', desde: '2026-11-18', hasta: '2026-11-20', mostrar: true, nota: '' });
+    assert.equal(pagina.el('ml-guardar').disabled, false);
+    const { vista } = respuestaDelCalculo({ ...VACACIONES, desde: '2026-11-18' });
+    assert.equal(pagina.el('ml-calculo').innerHTML, M.htmlDelCalculo({ vista }, 'vacaciones'));
+    assert.equal(pagina.el('ml-calculo').hidden, false);
+  });
+
+  it('una respuesta vieja del cálculo que llega tarde no pisa la nueva', async () => {
+    let soltar;
+    const demorada = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      responder: conFormularios({
+        extra: (metodo, ruta, cuerpo) => {
+          if (metodo === 'POST' && ruta.endsWith('/calculo') && cuerpo.hasta === '2026-11-19') {
+            return demorada.then(() => ok(respuestaDelCalculo({ ...VACACIONES, hasta: '2026-11-19' })));
+          }
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { hasta: '2026-11-19' });
+    await pagina.escribir('ml-hasta', '2026-11-20');
+    await pagina.correr();
+    const nueva = M.htmlDelCalculo({ vista: respuestaDelCalculo(VACACIONES).vista }, 'vacaciones');
+    assert.equal(pagina.el('ml-calculo').innerHTML, nueva);
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.el('ml-calculo').innerHTML, nueva);
+    assert.equal(pagina.el('ml-guardar').disabled, false);
+  });
+
+  it('un guardado con un fetch que tarda deja «Guardar» deshabilitado y manda un solo POST; después, el Resumen y el aviso', async () => {
+    let soltar;
+    const demorado = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? demorado.then(() => respuesta(201, { success: true, data: { id: 9 }, message: 'Licencia cargada.' })) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina);
+    const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-guardar').disabled, true);
+    await pagina.tocar(pagina.el('ml-guardar'));
+    pagina.el('ml-guardar').disabled = false;
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/licencias')[0].cuerpo,
+      { tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-20', mostrar: true, nota: '' });
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia cargada.');
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes + 1);
+  });
+
+  it('un 400 en horas pone aria-invalid y el mensaje en #ml-horas, con el foco; uno sin campo va a #ml-error', async () => {
+    let contestar = respuesta(400, { success: false, error: MENSAJES_MI_ESPACIO.horasEnteras, campo: 'horas' });
+    const pagina = montarPagina({
+      responder: conFormularios({ extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias' ? contestar : undefined) })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { tipo: 'franquicia', desde: '2026-11-16', horas: '3' });
+    assert.equal(pagina.el('ml-grupo-horas').hidden, false);
+    assert.equal(pagina.el('ml-grupo-hasta').hidden, true);
+    assert.equal(pagina.el('ml-desde-rotulo').textContent, 'Fecha');
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-horas').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-horas-error').textContent, MENSAJES_MI_ESPACIO.horasEnteras);
+    assert.equal(pagina.el('ml-horas-error').hidden, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-horas'));
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    contestar = respuesta(400, { success: false, error: MENSAJES_MI_ESPACIO.sinArranque, campo: null });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-error').textContent, MENSAJES_MI_ESPACIO.sinArranque);
+    assert.equal(pagina.el('ml-error').hidden, false);
+    assert.equal(pagina.el('ml-horas').getAttribute('aria-invalid'), null);
+  });
+
+  it('el 409 de la persona autorizada (en fechas) se ve debajo de ml-desde', async () => {
+    const mensaje = textoAutorizadaSinDias('2026-10-26', '2026-11-10');
+    const pagina = montarPagina({
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? respuesta(409, { success: false, error: mensaje, campo: 'fechas' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { tipo: 'medica', desde: MEDICA.desde, hasta: MEDICA.hasta });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-desde-error').textContent, mensaje);
+    assert.equal(pagina.el('ml-desde').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-desde'));
+  });
+
+  it('los errores del formulario, antes de pedir nada: todos juntos y el foco al primero', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-cargar-licencia'));
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 0);
+    assert.equal(calculos(pagina).length, 0);
+    assert.equal(pagina.el('ml-tipos').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-tipos-error').textContent, MENSAJES_MI_ESPACIO.tipo);
+    assert.equal(pagina.el('ml-desde-error').textContent, MENSAJES_MI_ESPACIO.fecha);
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-tipos').querySelector('input'));
+  });
+
+  it('la persona a cargo, solo en vacaciones: #ml-grupo-autorizado oculto en una médica y visible en unas vacaciones del titular', async () => {
+    const pagina = montarPagina({ responder: conFormularios({ soyTitular: true }) });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { tipo: 'medica', desde: MEDICA.desde, hasta: MEDICA.hasta });
+    assert.equal(pagina.el('ml-grupo-autorizado').hidden, true);
+    assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_SIN_PERSONA_A_CARGO));
+    assert.equal(pagina.el('ml-paso').hidden, false);
+    await pagina.elegir('ml-tipo', 'vacaciones');
+    await pagina.escribir('ml-hasta', VACACIONES.hasta);
+    await pagina.correr();
+    assert.equal(pagina.el('ml-grupo-autorizado').hidden, false);
+    assert.deepEqual(pagina.el('ml-autorizado').querySelectorAll('option').map((opcion) => [opcion.getAttribute('value'), opcion.textContent]),
+      [['', 'Nadie: se anticipan los avisos'], ['3', 'Martín Ríos']]);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/firmante').length, 1);
+    // Elegir a alguien cambia el efecto en las notas sin pedir otro cálculo
+    const antes = calculos(pagina).length;
+    await pagina.escribir('ml-autorizado', '3', 'change');
+    assert.equal(calculos(pagina).length, antes);
+    assert.ok(pagina.el('ml-paso').textContent.includes('Martín Ríos va a estar de licencia el 18/11/2026'));
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias')[0].cuerpo.autorizado_id, 3);
+  });
+
+  it('el aviso de los días sin auditor: solo a quien audita y solo si pasa, con el id de Configuración al corregir', async () => {
+    const periodos = [{ desde: '2026-11-16', hasta: '2026-11-20', vuelve: '2026-11-23', respaldo: [] }];
+    const responder = conFormularios({
+      extra: (metodo, ruta) => (ruta.startsWith('/api/usuarios/licencias/sin-auditor') ? ok({ periodos }) : undefined)
+    });
+    const sinAuditor = (pagina) => pagina.rutas().filter((ruta) => ruta.startsWith('/api/usuarios/licencias/sin-auditor'));
+    const editor = montarPagina({ responder });
+    await editor.iniciar();
+    await cargarLicencia(editor);
+    assert.deepEqual(sinAuditor(editor), []);
+    assert.equal(editor.el('ml-sin-auditor').hidden, true);
+
+    const auditora = montarPagina({ responder, auditor: true });
+    await auditora.iniciar();
+    await cargarLicencia(auditora);
+    assert.deepEqual(sinAuditor(auditora), ['/api/usuarios/licencias/sin-auditor?desde=2026-11-16&hasta=2026-11-20&usuario_id=1']);
+    assert.equal(auditora.el('ml-sin-auditor').hidden, false);
+    assert.equal(auditora.el('ml-sin-auditor').innerHTML, `<p>${en(`textoSinAuditor(${JSON.stringify(periodos[0])})`)}</p>`);
+    // Una franquicia de 3 horas, que no pasa: sin aviso
+    await auditora.elegir('ml-tipo', 'franquicia');
+    await auditora.escribir('ml-horas', '3', 'change');
+    await auditora.correr();
+    assert.equal(auditora.el('ml-sin-auditor').hidden, true);
+  });
+
+  it('al corregir una creada: la fila, la persona a cargo precargada, el excluir de Configuración y autorizado_id solo si cambió', async () => {
+    const lista = licenciasDe(PLANTA);
+    lista.licencias[0] = { ...lista.licencias[0], desde: '2026-11-16', hasta: '2026-11-20', fechas_texto: '16/11 al 20/11/2026',
+      en_configuracion: { licencia_id: 40, autorizado_id: 3 } };
+    const periodos = [];
+    const pagina = montarPagina({
+      hash: '#licencias', auditor: true,
+      responder: conFormularios({
+        soyTitular: true,
+        extra: (metodo, ruta) => {
+          if (ruta === '/api/mi-espacio/licencias') return ok(lista);
+          if (ruta.startsWith('/api/usuarios/licencias/sin-auditor')) return ok({ periodos });
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/licencias/6') return ok({ id: 6 }, 'Licencia corregida.');
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    const editar = pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
+    await pagina.tocar(editar);
+    await pagina.correr();
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Corregir la licencia del 16/11 al 20/11/2026');
+    assert.equal(pagina.el('ml-desde').value, '2026-11-16');
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo.id, 6);
+    assert.equal(pagina.el('ml-autorizado').value, '3');
+    assert.ok(pagina.rutas().some((ruta) => ruta.includes('sin-auditor') && ruta.includes('excluir=40')));
+    assert.equal(pagina.el('ml-borrar').hidden, false);
+    await pagina.escribir('ml-hasta', '2026-11-19');
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    const [put] = pagina.pedidosA('PUT', '/api/mi-espacio/licencias/6');
+    assert.ok(!Object.hasOwn(put.cuerpo, 'autorizado_id'), 'sin cambiar la persona, no la manda');
+    assert.equal(put.cuerpo.hasta, '2026-11-19');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia corregida.');
+  });
+
+  it('un 404 al guardar cierra el modal, lo avisa y vuelve a pedir la pestaña', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'PUT' ? respuesta(404, { success: false, error: MENSAJES_MI_ESPACIO.noEncontrada }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.correr();
+    const antes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/licencias').length;
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.el('me-anuncio').textContent, MENSAJES_MI_ESPACIO.noEncontrada);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/licencias').length, antes + 1);
+  });
+
+  it('un clic en el velo no cierra; Escape cierra primero la confirmación y después el modal, y el foco vuelve a «Editar»', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conFormularios() });
+    await pagina.iniciar();
+    const editar = () => pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
+    editar().focus();
+    await pagina.tocar(editar());
+    await pagina.correr();
+    pagina.el('modal-licencia').disparar('click');
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    await pagina.tocar(pagina.el('ml-borrar'));
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-confirmar'), true);
+    assert.equal(pagina.documento.activeElement, pagina.el('modal-confirmar').querySelector('.modal-footer [data-cerrar]'));
+    pagina.el('modal-confirmar').disparar('click');
+    assert.equal(pagina.abierto('modal-confirmar'), true);
+    await pagina.tecla('Escape');
+    assert.equal(pagina.abierto('modal-confirmar'), false);
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-borrar'));
+    await pagina.tecla('Escape');
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.documento.activeElement, editar());
+  });
+
+  it('borrar: la confirmación y el DELETE; después cierra los dos modales y avisa', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo) => (metodo === 'DELETE' ? ok(undefined, 'Licencia borrada.') : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.tocar(pagina.el('ml-borrar'));
+    assert.equal(pagina.el('modal-confirmar-texto').textContent, 'Vacaciones del 03/11 al 09/11/2026.');
+    await pagina.tocar(pagina.el('modal-confirmar-si'));
+    assert.deepEqual(pagina.pedidosA('DELETE', '/api/mi-espacio/licencias/6').length, 1);
+    assert.equal(pagina.abierto('modal-confirmar'), false);
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia borrada.');
+  });
+
+  // Review Focus 5
+  it('un título de modal y una confirmación con una nota <img src=x onerror=alert(1)> se ven como texto', async () => {
+    const lista = licenciasDe(PLANTA);
+    lista.licencias[0] = { ...lista.licencias[0], fechas_texto: MALICIOSO, nota: MALICIOSO };
+    const pagina = montarPagina({ hash: '#licencias', responder: conFormularios({ extra: (m, ruta) => (ruta === '/api/mi-espacio/licencias' ? ok(lista) : undefined) }) });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, `Corregir la licencia del ${MALICIOSO}`);
+    assert.equal(pagina.el('ml-nota').value, MALICIOSO);
+    await pagina.tocar(pagina.el('ml-borrar'));
+    assert.ok(pagina.el('modal-confirmar-texto').textContent.includes(`(«${MALICIOSO}»)`));
+    for (const id of ['modal-licencia', 'modal-confirmar']) assert.equal(pagina.el(id).querySelector('img'), null, id);
+  });
+
+  it('«Cargar horas extras»: la suma mientras se escribe, el POST y, al guardar, la pestaña y el Resumen', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/horas-extras'
+          ? respuesta(201, { success: true, data: { id: 20 }, message: 'Horas extras cargadas.' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-cargar="horas"]'));
+    assert.equal(pagina.abierto('modal-horas'), true);
+    assert.equal(pagina.el('modal-horas-titulo').textContent, 'Cargar horas extras al 100%');
+    await pagina.correr();
+    assert.equal(pagina.documento.activeElement, pagina.el('mh-fecha'));
+    await pagina.escribir('mh-fecha', '2026-10-28');
+    await pagina.escribir('mh-desde', '19:00');
+    await pagina.escribir('mh-hasta', '22:30');
+    assert.equal(pagina.el('mh-suma').textContent, '3,5 horas. En octubre llevás 14 horas: 2 francos compensatorios para usar en diciembre.');
+    const horas = pagina.pedidosA('GET', '/api/mi-espacio/horas-extras').length;
+    await pagina.tocar(pagina.el('mh-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/horas-extras')[0].cuerpo,
+      { fecha: '2026-10-28', desde: '19:00', hasta: '22:30', nota: '' });
+    assert.equal(pagina.abierto('modal-horas'), false);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Horas extras cargadas.');
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/horas-extras').length, horas + 1);
+  });
+
+  it('corregir unas horas extras: los valores del día, un error del servidor en su campo y «Borrar»', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFormularios({
+        extra: (metodo) => (metodo === 'PUT'
+          ? respuesta(400, { success: false, error: 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.', campo: 'desde' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-editar-horas="12"]'));
+    assert.equal(pagina.el('modal-horas-titulo').textContent, 'Corregir las horas extras del Mié 14/10');
+    assert.deepEqual(['mh-fecha', 'mh-desde', 'mh-hasta'].map((id) => pagina.el(id).value), ['2026-10-14', '17:00', '21:00']);
+    assert.equal(pagina.el('mh-borrar').hidden, false);
+    await pagina.tocar(pagina.el('mh-guardar'));
+    assert.equal(pagina.el('mh-desde').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('mh-desde-error').textContent, 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.');
+  });
+
+  it('«Mis vacaciones y saldos»: se abre solo sin el saldo inicial, guarda el año y después el saldo; si el saldo falla, queda abierto', async () => {
+    const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null, anios: [], saldos: [] } });
+    const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] }).map((campo) => ({ ...campo, valor: null }));
+    const anio = {
+      anio: 2026, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
+      textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias)]))
+    };
+    let saldo = respuesta(400, { success: false, error: 'Escribí un número de 0 a 30.', campo: 'vacaciones-2024' });
+    const pagina = montarPagina({
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (ruta === '/api/mi-espacio/resumen') return ok(resumen);
+          if (metodo === 'GET' && ruta === '/api/mi-espacio/anio/2026') return ok(anio);
+          if (metodo === 'GET' && ruta === '/api/mi-espacio/saldo-inicial') return ok({ arranque: null, modalidad: 'planta', campos });
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') return saldo;
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(pagina.el('ms-modalidad').textContent, 'Modalidad: Planta permanente (la carga administración en Configuración → Usuarios)');
+    assert.equal(pagina.documento.activeElement, pagina.el('ms-dias').querySelector('input'));
+    // Sin estudios elegidos, sin el campo; al elegir la carrera, aparece, y la ayuda dice las mitades de los días elegidos
+    assert.equal(pagina.el('ms-campos').querySelector('#ms-campo-estudios'), null);
+    await pagina.elegir('ms-dia', '20');
+    assert.equal(pagina.el('ms-dias-mitades').textContent, textoDeLasMitades(2026, 20));
+    await pagina.elegir('ms-estudio', 'universitario');
+    assert.ok(pagina.el('ms-campo-estudios'), 'el campo de los estudios');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    pagina.el('ms-campo-vacaciones-2024').value = '8';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/anio/2026')[0].cuerpo, { dias_vacaciones: 20, estudios: 'universitario' });
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/saldo-inicial')[0].cuerpo.saldos,
+      { 'vacaciones-2024': 8, 'vacaciones-2025': 0, 'vacaciones-2026': 0, franquicias: 0, estudios: 0, medica: 0, familiar: 0 });
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(pagina.el('ms-error').textContent, 'Los días del año se guardaron, pero el saldo inicial no: Escribí un número de 0 a 30.');
+    assert.equal(pagina.el('ms-campo-vacaciones-2024').getAttribute('aria-invalid'), 'true');
+    // Al reintentar, sale
+    saldo = ok({ arranque: HOY }, 'Saldo inicial guardado.');
+    await pagina.tocar(pagina.el('ms-guardar'));
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Saldo inicial guardado.');
+  });
+
+  it('«Registrar un uso autorizado» en contrato: con las horas, de a media hora', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: (metodo, ruta) => {
+        if (ruta === '/api/mi-espacio/resumen') return ok(resumenDel(CONTRATO));
+        if (ruta === '/api/mi-espacio/horas-extras') return ok(horasDe(CONTRATO));
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    assert.equal(pagina.abierto('modal-uso'), true);
+    assert.equal(pagina.el('mu-grupo-horas').hidden, false);
+    assert.equal(pagina.el('mu-horas').innerHTML, M.htmlDeOpcionesDeHoras('medias', ''));
+    assert.deepEqual(pagina.el('mu-horas').querySelectorAll('option').map((opcion) => opcion.textContent).slice(0, 3), ['—', '0,5', '1']);
+    assert.equal(pagina.el('mu-horas').querySelectorAll('option').at(-1).textContent, '7, el día entero');
+    // Una lectora no tiene «Mostrar a mis compañeros»
+    assert.equal(pagina.el('mu-grupo-mostrar').hidden, true);
+    await pagina.tocar(pagina.el('mu-guardar'));
+    assert.equal(pagina.el('mu-horas-error').textContent, MENSAJES_MI_ESPACIO.horasMedias);
+    assert.equal(pagina.documento.activeElement, pagina.el('mu-fecha'));
+  });
+
+  it('«Registrar un uso autorizado» abre su modal: en planta, sin horas', async () => {
+    const pagina = montarPagina({ hash: '#horas', responder: conFormularios() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    assert.equal(pagina.abierto('modal-uso'), true);
+    assert.equal(pagina.el('mu-grupo-horas').hidden, true);
+    await pagina.escribir('mu-fecha', '2026-11-16');
+    await pagina.correr();
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo, { tipo: 'uso_autorizado', desde: '2026-11-16', hasta: '2026-11-16', mostrar: true, nota: '' });
+  });
+
+  it('después de una carga del Resumen que falló, volver a la pestaña la pide otra vez', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      responder: (metodo, ruta) => (falla && ruta === '/api/mi-espacio/resumen'
+        ? respuesta(500, { success: false, error: 'Error' }) : RESPUESTAS_DE_ENTRADA(metodo, ruta))
+    });
+    await pagina.iniciar();
+    assert.equal(textoDe(pagina.el('vista-resumen').innerHTML), 'No se pudo cargar el resumen. Probá de nuevo en unos minutos.');
+    falla = false;
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, 2);
+    assert.equal(pagina.el('vista-resumen').innerHTML, M.htmlDelResumen(RESUMEN_DE_PLANTA));
+    // Ya cargado, volver no lo pide de nuevo
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, 2);
+  });
+
+  it('«Vence pronto» abre «Cargar licencia» con su tipo elegido', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-accion="cargar-licencia"]'));
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(pagina.el('ml-tipos').querySelector('input:checked').getAttribute('value'), 'franco');
+    assert.equal(pagina.el('ml-grupo-hasta').hidden, true);
   });
 });

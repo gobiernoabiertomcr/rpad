@@ -412,7 +412,7 @@ describe('la lista de licencias', () => {
       fechas_texto: '03/11 al 09/11/2026', cantidad_texto: '7 días corridos, 5 hábiles', proxima: true,
       de_licencias_texto: 'De la licencia 2024.', antes_del_arranque: false, fuera_de_la_modalidad: false,
       no_cuenta_texto: '', nota: null, mostrar: true, mostrar_texto: 'Tus compañeros ven «Laura Gómez no está».',
-      configuracion: null, puede_borrar: true, solo_hasta: false, fechas_fijas: false
+      configuracion: null, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null
     });
   });
 
@@ -499,6 +499,19 @@ describe('la lista de licencias', () => {
       [{ texto: 'También en Configuración → Licencias.', insignia: 'Creada' }, false, true, false]);
     assert.deepEqual([segunda.configuracion, segunda.puede_borrar, segunda.solo_hasta, segunda.fechas_fijas],
       [null, true, false, false]);
+  });
+
+  // Lo que necesita el formulario para corregir una creada: la persona a cargo que ya tiene y el id de su licencia de
+  // Configuración (el excluir del aviso de los días sin auditor)
+  it('la persona a cargo y el id de Configuración de una creada salen de los vínculos', () => {
+    const vinculos = new Map([
+      [6, { configuracion: null, puede_borrar: true, en_configuracion: { licencia_id: 40, autorizado_id: 3 } }],
+      [5, { configuracion: null, puede_borrar: true, en_configuracion: { licencia_id: 41, autorizado_id: null } }],
+      [4, { configuracion: null, puede_borrar: true, en_configuracion: null }]
+    ]);
+    const filas = filasDel(PLANTA, { vinculos }).licencias;
+    assert.deepEqual(filas.slice(0, 4).map((fila) => fila.en_configuracion),
+      [{ licencia_id: 40, autorizado_id: 3 }, { licencia_id: 41, autorizado_id: null }, null, null]);
   });
 
   it('el saldo inicial, en el año del arranque', () => {
@@ -613,11 +626,17 @@ describe('la tabla de horas extras de planta', () => {
     const tabla = tablaDel(PLANTA);
     assert.deepEqual(Object.keys(tabla.dias_por_mes), ['2026-10', '2026-09', '2026-08', '2026-07', '2026-06']);
     assert.deepEqual(tabla.dias_por_mes['2026-10'], [
-      { id: 13, fecha: '2026-10-22', fecha_texto: 'Jue 22/10', horario: '19:00 a 22:00', horas_texto: '3 horas', nota: null },
-      { id: 12, fecha: '2026-10-14', fecha_texto: 'Mié 14/10', horario: '17:00 a 21:00', horas_texto: '4 horas', nota: null },
       {
-        id: 11, fecha: '2026-10-06', fecha_texto: 'Mar 06/10', horario: '18:00 a 21:30', horas_texto: '3,5 horas',
-        nota: null
+        id: 13, fecha: '2026-10-22', fecha_texto: 'Jue 22/10', desde: '19:00', hasta: '22:00', horario: '19:00 a 22:00',
+        horas_texto: '3 horas', nota: null
+      },
+      {
+        id: 12, fecha: '2026-10-14', fecha_texto: 'Mié 14/10', desde: '17:00', hasta: '21:00', horario: '17:00 a 21:00',
+        horas_texto: '4 horas', nota: null
+      },
+      {
+        id: 11, fecha: '2026-10-06', fecha_texto: 'Mar 06/10', desde: '18:00', hasta: '21:30', horario: '18:00 a 21:30',
+        horas_texto: '3,5 horas', nota: null
       }
     ]);
     assert.equal(tabla.totales_por_mes['2026-10'], '10,5 horas');

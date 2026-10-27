@@ -120,6 +120,11 @@ const numeroDe = (valor) => {
 };
 // Un id como número (el de la base llega como número; el de un pedido, como texto): lo que no es ninguno de los dos, NaN
 const idDe = (valor) => (typeof valor === 'number' || typeof valor === 'string' ? Number(valor) : NaN);
+// Un id que es un entero positivo, como número; lo demás (null, 0, lo que no es un id), null
+const idPositivoONulo = (valor) => {
+  const id = idDe(valor);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
 const anioDe = (fecha) => Number(fecha.slice(0, 4));
 // Un año con el que se puede armar una fecha de dos años después: un entero de 1 a 9997, o un texto de cuatro cifras
 const anioValido = (valor) => {
@@ -1544,7 +1549,9 @@ export const pasoDeLaBaja = (entrada) => {
  * fechas de Configuración, como `pasoDeLaBaja` y `pasoDeLaCorreccion`: se borra si empieza hoy o después, el desde queda
  * fijo si empieza hoy o antes y las fechas, si terminó antes de hoy. Las demás se borran y se corrigen libres. Las
  * opciones son `{ oficiales, tocadas, hoy, puedeTener }`: las licencias de Configuración por id (Map), los ids que otra
- * persona editó o anuló (Set) y si la persona puede tener licencia hoy.
+ * persona editó o anuló (Set) y si la persona puede tener licencia hoy. `en_configuracion` es, de una creada, lo que necesita
+ * el formulario para corregirla: `{ licencia_id, autorizado_id }`, el id de su licencia de Configuración (el `excluir` del
+ * aviso de los días sin auditor) y su persona a cargo (o null); de las demás, null.
  */
 export const vinculosDeLaLista = (licencias, opciones) => {
   const { oficiales, tocadas, hoy, puedeTener } = esObjeto(opciones) ? opciones : {};
@@ -1562,7 +1569,9 @@ export const vinculosDeLaLista = (licencias, opciones) => {
       configuracion,
       puede_borrar: pasoDeLaBaja({ vinculo, hoy }).error === undefined,
       solo_hasta: fechasDeLaCreada && vinculo.oficial.desde <= hoy && vinculo.oficial.hasta >= hoy,
-      fechas_fijas: fechasDeLaCreada && vinculo.oficial.hasta < hoy
+      fechas_fijas: fechasDeLaCreada && vinculo.oficial.hasta < hoy,
+      en_configuracion: creada
+        ? { licencia_id: idDe(vinculo.oficial.id), autorizado_id: idPositivoONulo(vinculo.oficial.autorizado_id) } : null
     });
   }
   return vinculos;

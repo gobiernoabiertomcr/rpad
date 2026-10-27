@@ -2109,7 +2109,7 @@ describe('el paso a Configuración', () => {
           texto: `${textoEnConfiguracion('2026-10-19', '2026-10-23')} ${textoNoPaso('La fecha de fin tiene que ser ayer o posterior')}`,
           insignia: 'aviso'
         },
-        puede_borrar: false, solo_hasta: false, fechas_fijas: true
+        puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: { licencia_id: 7, autorizado_id: null }
       });
 
       // En curso en Configuración desde el 23/10; la fila quedó desde el 21/10
@@ -2272,22 +2272,44 @@ describe('el paso a Configuración', () => {
         [11, oficialDe(11, HOY, '2026-10-28')]]);
       const vinculos = vinculosDeLaLista(filas, { oficiales, tocadas: new Set([10]), hoy: HOY, puedeTener: true });
       const creada = { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
-      assert.deepEqual(vinculos.get(1), { configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false });
-      assert.deepEqual(vinculos.get(2), { configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false });
-      assert.deepEqual(vinculos.get(3), { configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true });
+      const enConfiguracion = (licenciaId) => ({ licencia_id: licenciaId, autorizado_id: null });
+      assert.deepEqual(vinculos.get(1), {
+        configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: enConfiguracion(7)
+      });
+      assert.deepEqual(vinculos.get(2), {
+        configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(8)
+      });
+      assert.deepEqual(vinculos.get(3), {
+        configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: enConfiguracion(9)
+      });
       assert.deepEqual(vinculos.get(4), {
         configuracion: { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' }, puede_borrar: true, solo_hasta: false,
-        fechas_fijas: false
+        fechas_fijas: false, en_configuracion: null
       });
       // Sin nada para decir, no está
       assert.equal(vinculos.has(5), false);
+      // Una que administración cambió: ya no se corrige en Configuración desde acá, sin en_configuracion
       assert.deepEqual(vinculos.get(6), {
         configuracion: { texto: `${textoEnConfiguracion('2026-11-23', '2026-11-25')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' },
-        puede_borrar: true, solo_hasta: false, fechas_fijas: false
+        puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null
       });
       // La que empieza hoy: el desde queda fijo, pero todavía se borra
-      assert.deepEqual(vinculos.get(7), { configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false });
+      assert.deepEqual(vinculos.get(7), {
+        configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(11)
+      });
       assert.deepEqual([...vinculos.keys()].sort(), [1, 2, 3, 4, 6, 7]);
+    });
+
+    // El formulario precarga la persona a cargo y manda autorizado_id solo si se cambió (Ruling de la Task 17)
+    it('una creada con persona a cargo dice quién es; una unida no da su id de Configuración', () => {
+      const conPersona = oficialDe(7, '2026-11-02', '2026-11-06', { autorizado_id: 3 });
+      const deAdministracion = oficialDe(12, '2026-11-09', '2026-11-20', { autorizado_id: 4 });
+      const vinculos = vinculosDeLaLista(
+        [creadaDe(conPersona, { id: 1 }), unidaDe(deAdministracion, { id: 2, desde: '2026-11-10', hasta: '2026-11-11' })],
+        { oficiales: new Map([[7, conPersona], [12, deAdministracion]]), tocadas: new Set(), hoy: HOY, puedeTener: true }
+      );
+      assert.deepEqual(vinculos.get(1).en_configuracion, { licencia_id: 7, autorizado_id: 3 });
+      assert.equal(vinculos.get(2).en_configuracion, null);
     });
   });
 

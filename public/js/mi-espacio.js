@@ -14,13 +14,22 @@
  *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo.
  * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
  *   la tabla es un botón; de entrada, el en curso) y, en contrato, las horas no utilizadas previamente.
- * Los botones de carga y de edición solo llevan data-* (data-cargar, data-abrir, data-editar-licencia, data-editar-horas, y en
- * «Vence pronto» data-accion="cargar-licencia" con su data-tipo): los conectan los formularios.
+ * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
+ * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
+ * el aviso del paso a Configuración, la persona a cargo del firmante en sus vacaciones y los días sin auditor), «Cargar horas
+ * extras» (con lo que suman en el mes), «Mis vacaciones y saldos» (se abre solo sin el saldo inicial), «Registrar un uso
+ * autorizado» y la confirmación de un borrado, que se abre sobre el formulario. Los abren los botones del encabezado y los data-*
+ * de las pestañas (data-cargar, data-abrir, data-editar-licencia, data-editar-horas y, en «Vence pronto», data-accion con su
+ * data-tipo). Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
+ * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial) y las de
+ * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js).
  * Al cargarse el archivo solo declara (tests/mi-espacio-frontend.test.js lo carga en un vm después del api.js de verdad): lo que
  * arma HTML es puro y va primero; lo que toca el DOM o la API va aparte, al final (iniciarMiEspacio, enganchado a
  * DOMContentLoaded), con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada, y el foco vuelve al control
  * que se usó. Pide los datos con API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un
- * número se escribe con String (Utils.escapeHtml(0) da ''). Lo que cambia se anuncia en #me-anuncio, la única región viva.
+ * número se escribe con String (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la
+ * confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
+ * campo es role="alert").
  */
 
 // =====================================================
@@ -62,7 +71,6 @@ const CLASE_DE_LA_PASTILLA = Object.freeze({ vence: 'vence', pendiente: 'pendien
 const TANQUE_GRANDE = Object.freeze({ ancho: 88, alto: 176 });
 const TANQUE_CHICO = Object.freeze({ ancho: 52, alto: 112 });
 const TEXTO_DE_LA_MARCA = 'Hay algo que vence pronto';
-const TEXTO_SIN_AUSENTES = 'Hoy y mañana están todos.';
 
 // =====================================================
 // Lo puro: lo que arma el HTML
@@ -252,18 +260,17 @@ const iniciales = (nombre) => {
 
 /**
  * «Hoy y mañana» (el `hoy_y_manana` del Resumen): «No están», solo para quien ve a sus compañeros (`veCompaneros`, el true
- * literal: administración), con el texto y la vuelta que manda el servidor, y el próximo feriado.
+ * literal: administración), con el texto y la vuelta que manda el servidor, y el próximo feriado. Sin nadie que no esté, el
+ * bloque no va (como «Vence pronto»): solo se ven los de administración que eligieron mostrarse, así que «están todos» podría
+ * no ser cierto.
  */
 function htmlDeHoyYManana(datos, veCompaneros) {
   const hoy = esObjeto(datos) ? datos : {};
   let html = '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>';
-  if (veCompaneros === true) {
-    const ausentes = listaDe(hoy.ausentes).map((ausente) => '<li class="me-ausente">'
-      + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
-      + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`);
-    html += '<h3 class="me-subtitulo">No están</h3>'
-      + (ausentes.length > 0 ? `<ul class="me-ausentes">${ausentes.join('')}</ul>` : `<p class="me-vacio">${TEXTO_SIN_AUSENTES}</p>`);
-  }
+  const ausentes = veCompaneros === true ? listaDe(hoy.ausentes).map((ausente) => '<li class="me-ausente">'
+    + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
+    + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`) : [];
+  if (ausentes.length > 0) html += `<h3 class="me-subtitulo">No están</h3><ul class="me-ausentes">${ausentes.join('')}</ul>`;
   const feriado = hoy.proximo_feriado;
   if (esObjeto(feriado)) {
     html += `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`;
@@ -469,6 +476,435 @@ function htmlDeHorasExtras(tabla, mes) {
 }
 
 // =====================================================
+// Lo puro: los formularios
+// =====================================================
+
+// ---- Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad ----
+
+// Las claves de MENSAJES_MI_ESPACIO (services/miEspacioReglas.js) que usan los formularios
+const MENSAJES_FORMULARIOS = Object.freeze({
+  tipo: 'Elegí el tipo de licencia.',
+  fecha: 'Elegí una fecha válida.',
+  hastaAntes: 'La licencia no puede terminar antes de empezar.',
+  horasEnteras: 'Las franquicias se toman por hora entera, de 1 a 7.',
+  horasMedias: 'Las horas van de a media hora, de 0,5 a 7.',
+  nota: 'La nota puede tener hasta 200 caracteres.',
+  horario: 'Elegí de qué hora a qué hora, de a media hora.',
+  diasVacaciones: 'Elegí 10, 15, 20, 25 o 30 días.',
+  estudios: 'Elegí universitaria, secundaria o «No estudio».',
+  saldoMedias: 'Escribí las horas de a media hora.',
+  yaEmpezo: 'Ya empezó: no se puede borrar',
+  soloHasta: 'Ya empezó: solo podés cambiar hasta cuándo.',
+  fechasFijas: 'Ya terminó: las fechas quedan fijas.'
+});
+// Los días de vacaciones que se eligen por año, los de estudios según la carrera y los de cada examen, las horas de un día entero y
+// el largo de una nota (en caracteres contados con Array.from): los de services/miEspacioReglas.js
+const DIAS_VACACIONES = Object.freeze([10, 15, 20, 25, 30]);
+const DIAS_ESTUDIOS = Object.freeze({ universitario: 15, secundario: 10 });
+const DIAS_POR_EXAMEN = 3;
+const JORNADA = 7;
+const LARGO_NOTA = 200;
+
+// Un número con coma y a lo sumo un decimal, como numeroTexto del servidor: '10,5'
+const numeroConComa = (valor) => {
+  const numero = Math.round(Number(valor) * 10) / 10;
+  return Number.isFinite(numero) ? String(numero).replace('.', ',') : '—';
+};
+// Copia de textoSaldo: «Escribí un número de 0 a 30.»
+const textoSaldo = (maximo) => `Escribí un número de 0 a ${numeroConComa(maximo)}.`;
+
+// Copia de horasDe: las horas de un horario 'HH:MM' de a media hora; con hasta antes que desde, pasa la medianoche (+24 h). null
+// si son iguales o alguna no es una hora en punto o y media
+const minutosDelDia = (hora) => {
+  if (typeof hora !== 'string' || !/^([01]\d|2[0-3]):(00|30)$/.test(hora)) return null;
+  return Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3));
+};
+const horasDelHorario = (desde, hasta) => {
+  const inicio = minutosDelDia(desde);
+  const fin = minutosDelDia(hasta);
+  if (inicio === null || fin === null || inicio === fin) return null;
+  return ((fin > inicio ? fin : fin + 24 * 60) - inicio) / 60;
+};
+
+// Copias de usuarios.js (Configuración → Licencias): el efecto de la licencia del firmante en las notas, los días sin auditor y
+// las ausencias de la persona autorizada, con los mismos textos. efectoEnNotas recibe «hoy» por parámetro
+
+// 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date
+const fechaCorta = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+const efectoEnNotas = (licencia, autorizadoNombre, hoy) => {
+  if (hoy && licencia?.desde && licencia.desde <= hoy) {
+    return autorizadoNombre
+      ? `Licencia en curso: ${autorizadoNombre} presenta las notas con las dos firmas, citando la nota que comunica la autorización (si todavía no salió, la próxima corrida la genera primero), y vuelve a presentar en su fecha cada aviso que se adelantó.`
+      : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
+  }
+  const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
+  return autorizadoNombre
+    ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota, y vuelve a presentar cada aviso en su fecha.`
+    : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15) y las reiteraciones se postergan a la vuelta. Cargá la licencia antes de ese día.`;
+};
+const listaConY = (nombres) => (nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres.at(-1)}` : nombres.join(''));
+const textoSinAuditor = ({ desde, hasta, vuelve, respaldo }) => {
+  const unDia = desde === hasta;
+  const cuando = unDia ? `El ${fechaCorta(desde)}` : `Del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
+  const hastaCuando = vuelve ? `el ${fechaCorta(vuelve)}` : 'que haya un auditor disponible';
+  const texto = `${cuando} no va a haber ningún auditor disponible: los cambios que se propongan ${unDia ? 'ese día' : 'en esos días'} van a quedar pendientes hasta ${hastaCuando}.`;
+  return respaldo?.length
+    ? `${texto} En ${unDia ? 'ese día' : 'esos días'} solo pueden auditar de respaldo: ${listaConY(respaldo)} (nunca un cambio propio).`
+    : texto;
+};
+const MAXIMO_DIAS_SIN_AUDITOR = 366;
+const diaUtc = (iso) => {
+  const [a, m, d] = iso.split('-').map(Number);
+  return Date.UTC(a, m - 1, d);
+};
+const esFechaValida = (iso) => /^\d{4}-\d{2}-\d{2}$/.test(iso ?? '') && new Date(diaUtc(iso)).toISOString().slice(0, 10) === iso;
+const diasDelRango = (desde, hasta) => (diaUtc(hasta) - diaUtc(desde)) / 86400000 + 1;
+const textoAusenciasAutorizado = (nombre, ausencias, desde, hasta) => {
+  if (!nombre || !esFechaValida(desde) || !esFechaValida(hasta)) return [];
+  return [...(ausencias ?? [])]
+    .sort((x, y) => x.desde.localeCompare(y.desde))
+    .map(({ desde: d, hasta: h, vuelve }) => ({ a: d > desde ? d : desde, b: h < hasta ? h : hasta, vuelve }))
+    .filter(({ a, b }) => a <= b)
+    .map(({ a, b, vuelve }) => {
+      const cuando = a === b ? `el ${fechaCorta(a)}: ese día` : `del ${fechaCorta(a)} al ${fechaCorta(b)}: esos días`;
+      const presenta = vuelve && vuelve <= hasta ? ` Desde el ${fechaCorta(vuelve)} las presenta en tu nombre.` : '';
+      return `${nombre} va a estar de licencia ${cuando} no se generan notas.${presenta}`;
+    });
+};
+const parametrosSinAuditor = ({ usuarioId, desde, hasta, excluir = null, hoy = '' }) => {
+  if (!usuarioId || !esFechaValida(desde) || !esFechaValida(hasta)) return null;
+  const inicio = hoy && desde < hoy ? hoy : desde;
+  if (inicio > hasta || diasDelRango(inicio, hasta) > MAXIMO_DIAS_SIN_AUDITOR) return null;
+  return { desde: inicio, hasta, usuario_id: usuarioId, ...(excluir ? { excluir } : {}) };
+};
+
+// ---- Lo de cada formulario ----
+
+const comoTexto = (valor) => (typeof valor === 'string' ? valor : '');
+// 'AAAA-MM-DD' de un día que existe (como esFechaIso del servidor, sobre el texto: sin Date local)
+const esFechaDeTexto = (valor) => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor) && Utils.soloFecha(valor) === valor;
+// Un número escrito en un campo, con coma o con punto: '' es null; lo que no es un número, NaN
+const numeroDelCampo = (texto) => {
+  const limpio = String(texto ?? '').trim().replace(',', '.');
+  return limpio === '' ? null : Number(limpio);
+};
+const largoDeLaNota = (nota) => Array.from(comoTexto(nota).trim()).length;
+
+// Los tipos de un solo día (el campo es «Fecha»: desde y hasta son el mismo) y los que se cargan en horas, como en
+// services/miEspacioReglas.js
+const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
+const TIPOS_CON_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
+const deUnDia = (tipo) => TIPOS_DE_UN_DIA.includes(tipo);
+// Cómo se cargan las horas de un tipo: 'enteras' (la franquicia, de 1 a 7), 'medias' (las horas a favor y el uso autorizado de
+// contrato, de 0,5 a 7) o null (sin horas; el uso autorizado de planta es un franco, el día entero)
+const horasDelTipo = (tipo, modalidad) => {
+  if (tipo === 'franquicia') return 'enteras';
+  if (tipo === 'horas_a_favor' || (tipo === 'uso_autorizado' && modalidad !== 'planta')) return 'medias';
+  return null;
+};
+
+/**
+ * Los valores de «Cargar licencia» (o del uso autorizado): los de una fila de la lista que se corrige o, sin fila, los de una
+ * nueva con `tipo` (el de «Vence pronto»; sin él, ninguno). Las horas, como texto. `autorizado` es la persona a cargo elegida y
+ * `autorizado_inicial`, la que ya tenía (de `en_configuracion`, solo de una creada): autorizado_id viaja solo si cambian.
+ * `licencia_oficial` es el id de su licencia de Configuración (el excluir del aviso de los días sin auditor), o null.
+ */
+function valoresDeLicencia(fila, tipo) {
+  const datos = esObjeto(fila) ? fila : {};
+  const enConfiguracion = esObjeto(datos.en_configuracion) ? datos.en_configuracion : {};
+  const autorizado = Number.isInteger(enConfiguracion.autorizado_id) ? String(enConfiguracion.autorizado_id) : '';
+  let elTipo = '';
+  if (conTexto(datos.tipo)) elTipo = datos.tipo;
+  else if (conTexto(tipo)) elTipo = tipo;
+  return {
+    id: datos.id ?? null,
+    tipo: elTipo,
+    desde: comoTexto(datos.desde),
+    hasta: comoTexto(datos.hasta),
+    horas: typeof datos.horas === 'number' && Number.isFinite(datos.horas) ? String(datos.horas) : '',
+    nota: comoTexto(datos.nota),
+    mostrar: datos.mostrar !== false,
+    autorizado,
+    autorizado_inicial: autorizado,
+    licencia_oficial: Number.isInteger(enConfiguracion.licencia_id) ? enConfiguracion.licencia_id : null
+  };
+}
+
+/**
+ * Los errores de una licencia antes de pedir nada (`{ campo: mensaje }`, en el orden del formulario; sin ninguno, {}): el tipo,
+ * las fechas (el formato y que el hasta no sea anterior; en los de un día, solo la fecha), las horas de los tipos que se cargan
+ * en horas (con `modalidad`: en planta, el uso autorizado no lleva) y el largo de la nota. Los mensajes son los del servidor, que
+ * controla además el rango, los días hábiles, los topes y lo que se superpone.
+ */
+function erroresDeLicencia(valores, { modalidad = null } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  if (!conTexto(datos.tipo)) errores.tipo = MENSAJES_FORMULARIOS.tipo;
+  if (!esFechaDeTexto(datos.desde)) errores.desde = MENSAJES_FORMULARIOS.fecha;
+  else if (!deUnDia(datos.tipo)) {
+    if (!esFechaDeTexto(datos.hasta)) errores.hasta = MENSAJES_FORMULARIOS.fecha;
+    else if (datos.hasta < datos.desde) errores.hasta = MENSAJES_FORMULARIOS.hastaAntes;
+  }
+  const enHoras = horasDelTipo(datos.tipo, modalidad);
+  const horas = numeroDelCampo(datos.horas);
+  if (enHoras === 'enteras' && !(Number.isInteger(horas) && horas >= 1 && horas <= JORNADA)) {
+    errores.horas = MENSAJES_FORMULARIOS.horasEnteras;
+  }
+  if (enHoras === 'medias' && !(horas !== null && Number.isInteger(horas * 2) && horas >= 0.5 && horas <= JORNADA)) {
+    errores.horas = MENSAJES_FORMULARIOS.horasMedias;
+  }
+  if (largoDeLaNota(datos.nota) > LARGO_NOTA) errores.nota = MENSAJES_FORMULARIOS.nota;
+  return errores;
+}
+
+/**
+ * El cuerpo de POST /licencias y PUT /licencias/:id (y del cálculo previo): el tipo, las fechas (en los de un día, el hasta es
+ * el desde), las horas (solo en los tipos de horas que las llevan, como número), «Mostrar» y la nota recortada. `autorizado_id`
+ * va solo en las vacaciones del firmante titular (`soyTitular`: el campo «Autorizo a…» está a la vista) y, al corregir, solo si
+ * se cambió la persona: si no, el servidor conserva la de Configuración. Vacío es null (nadie).
+ */
+function cuerpoDeLicencia(valores, { soyTitular = false } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const cuerpo = {
+    tipo: datos.tipo, desde: datos.desde, hasta: deUnDia(datos.tipo) ? datos.desde : datos.hasta, mostrar: datos.mostrar !== false,
+    nota: comoTexto(datos.nota).trim()
+  };
+  const horas = numeroDelCampo(datos.horas);
+  if (TIPOS_CON_HORAS.includes(datos.tipo) && horas !== null) cuerpo.horas = horas;
+  const nueva = datos.id === null || datos.id === undefined;
+  if (soyTitular === true && datos.tipo === 'vacaciones'
+    && (nueva || comoTexto(datos.autorizado) !== comoTexto(datos.autorizado_inicial))) {
+    cuerpo.autorizado_id = conTexto(datos.autorizado) ? Number(datos.autorizado) : null;
+  }
+  return cuerpo;
+}
+
+// Los tipos de «Cargar licencia» (los `tipos` del Resumen): radios grandes, cada uno con lo que queda. El uso autorizado no va:
+// tiene su propio formulario
+function htmlDeTiposDeLicencia(tipos, elegido) {
+  return listaDe(tipos).filter((opcion) => opcion.tipo !== 'uso_autorizado').map((opcion) => '<label class="me-opcion">'
+    + `<input type="radio" name="ml-tipo" value="${esc(opcion.tipo)}"${opcion.tipo === elegido ? ' checked' : ''} `
+    + 'aria-describedby="ml-tipos-error">'
+    + `<span><b>${esc(opcion.nombre)}</b>${conTexto(opcion.queda_texto) ? `<small>${esc(opcion.queda_texto)}</small>` : ''}`
+    + '</span></label>')
+    .join('');
+}
+
+// Las horas que se pueden elegir: enteras, de 1 a 7, o de a media hora, de 0,5 a 7 (7 es el día entero), con la elegida
+function htmlDeOpcionesDeHoras(enHoras, elegida) {
+  const paso = enHoras === 'enteras' ? 1 : 0.5;
+  const opciones = ['<option value="">—</option>'];
+  for (let horas = paso; horas <= JORNADA; horas += paso) {
+    opciones.push(`<option value="${String(horas)}"${String(horas) === elegida ? ' selected' : ''}>`
+      + `${numeroConComa(horas)}${horas === JORNADA ? ', el día entero' : ''}</option>`);
+  }
+  return opciones.join('');
+}
+
+// El cálculo del servidor (la `vista` de POST /licencias/calculo): los días hábiles (en los estudios, si es el máximo por
+// examen), de qué licencia salen y lo que queda. Sin vista (la licencia no se puede guardar como está), ''
+function htmlDelCalculo(data, tipo) {
+  const vista = esObjeto(data) && esObjeto(data.vista) ? data.vista : null;
+  if (vista === null || !conTexto(vista.texto_dias)) return '';
+  const examen = tipo === 'estudios' && vista.dias_habiles === DIAS_POR_EXAMEN ? ', el máximo por examen' : '';
+  const resto = [vista.texto_reparto, vista.queda_texto, vista.texto_antes_del_arranque].filter(conTexto).map(esc);
+  return [`<b>${esc(vista.texto_dias)}${examen}.</b>`, ...resto].join(' ');
+}
+
+/**
+ * Lo que dice el formulario del paso a Configuración (el `paso` del cálculo), un párrafo por texto. Si pasa, los avisos del
+ * servidor y, en las vacaciones del firmante titular, el efecto en las notas con la persona a cargo elegida (`autorizado`, su
+ * nombre, o null) y los días en que ella está de licencia (`ausencias`, las de GET /mi-espacio/firmante), con las fechas del
+ * formulario (`desde` y `hasta`) y `hoy`. Si no pasa, por qué (una de administración que la cubre o con la que se superpone);
+ * sin nada que decir, ''.
+ */
+function htmlDelPaso(paso, { autorizado = null, ausencias = [], hoy = '', desde = '', hasta = '' } = {}) {
+  if (!esObjeto(paso)) return '';
+  const parrafos = [];
+  if (paso.pasa === true) {
+    parrafos.push(...(Array.isArray(paso.avisos) ? paso.avisos : []).filter(conTexto));
+    if (esObjeto(paso.firmante) && paso.firmante.puede_autorizar === true) {
+      const nombre = conTexto(autorizado) ? autorizado : null;
+      parrafos.push(efectoEnNotas({ desde, vispera: paso.firmante.vispera }, nombre, hoy));
+      if (nombre !== null) parrafos.push(...textoAusenciasAutorizado(nombre, listaDe(ausencias), desde, hasta));
+    }
+  } else if (conTexto(paso.sin_pasar_previsto)) parrafos.push(paso.sin_pasar_previsto);
+  return parrafos.map((texto) => `<p>${esc(texto)}</p>`).join('');
+}
+
+// Las personas que el firmante puede dejar a cargo (`[{ id, nombre }]`), después de «Nadie»
+function htmlDeAutorizables(personas) {
+  return ['<option value="">Nadie: se anticipan los avisos</option>',
+    ...listaDe(personas).map((persona) => `<option value="${esc(persona.id)}">${esc(persona.nombre)}</option>`)].join('');
+}
+
+// La confirmación de un borrado, en texto plano (va con textContent): qué se borra y, de una licencia creada en Configuración, que
+// también se anula allá. Una fila de horas extras (la del día por día) tiene su horario
+function textoDeConfirmacion(fila) {
+  const datos = esObjeto(fila) ? fila : {};
+  const nota = conTexto(datos.nota) ? ` («${datos.nota}»)` : '';
+  if (typeof datos.horario === 'string') return `Horas extras del ${comoTexto(datos.fecha_texto)}, de ${datos.horario}${nota}.`;
+  const enConfiguracion = esObjeto(datos.en_configuracion) ? ' También se anula en Configuración → Licencias.' : '';
+  return `${comoTexto(datos.tipo_nombre)} del ${comoTexto(datos.fechas_texto)}${nota}.${enConfiguracion}`;
+}
+
+// ---- Las horas extras ----
+
+const NOMBRES_DE_LOS_MESES = Object.freeze([
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+]);
+// El nombre del mes de 'AAAA-MM', o del que viene `mas` meses después
+const nombreDelMes = (mes, mas = 0) => NOMBRES_DE_LOS_MESES[(Number(mes.slice(5, 7)) - 1 + mas) % 12];
+const textoDeHoras = (horas) => `${numeroConComa(horas)} ${horas === 1 ? 'hora' : 'horas'}`;
+
+/**
+ * Lo que suman unas horas extras mientras se cargan: «3,5 horas.» y, si el mes está en la tabla cargada (la de la pestaña),
+ * lo que lleva con ellas (sin contar dos veces las que se corrigen, `valores.id`) y lo que da: en planta, los francos
+ * compensatorios para usar dos meses después («… En octubre llevás 14 horas: 2 francos compensatorios para usar en
+ * diciembre.»; sin llegar a 7 horas, solo lo que lleva); en contrato, las horas a favor del mes siguiente. Un horario que no
+ * sirve, ''.
+ */
+function textoDeLaSuma(valores, tabla, modalidad) {
+  const datos = esObjeto(valores) ? valores : {};
+  const horas = horasDelHorario(datos.desde, datos.hasta);
+  if (horas === null) return '';
+  const base = `${textoDeHoras(horas)}.`;
+  const mes = esFechaDeTexto(datos.fecha) ? datos.fecha.slice(0, 7) : null;
+  if (mes === null || !listaDe(tabla?.meses).some((fila) => fila.mes === mes)) return base;
+  const otras = listaDe(deMapa(tabla.dias_por_mes, mes, []))
+    .filter((dia) => datos.id === null || datos.id === undefined || String(dia.id) !== String(datos.id))
+    .reduce((suma, dia) => suma + (horasDelHorario(dia.desde, dia.hasta) ?? 0), 0);
+  const total = otras + horas;
+  const lleva = `En ${nombreDelMes(mes)} llevás ${textoDeHoras(total)}`;
+  if (modalidad === 'planta') {
+    const francos = Math.floor(total / JORNADA);
+    if (francos === 0) return `${base} ${lleva}.`;
+    return `${base} ${lleva}: ${francos} ${francos === 1 ? 'franco compensatorio' : 'francos compensatorios'} para usar en `
+      + `${nombreDelMes(mes, 2)}.`;
+  }
+  if (modalidad === 'contrato') return `${base} ${lleva}: en ${nombreDelMes(mes, 1)} vas a tener ${textoDeHoras(total)} a favor.`;
+  return base;
+}
+
+// Los valores de «Cargar horas extras»: los de un día del día por día que se corrige, o vacíos
+function valoresDeHoras(dia) {
+  const datos = esObjeto(dia) ? dia : {};
+  return {
+    id: datos.id ?? null, fecha: comoTexto(datos.fecha), desde: comoTexto(datos.desde), hasta: comoTexto(datos.hasta),
+    nota: comoTexto(datos.nota)
+  };
+}
+
+// Los errores de unas horas extras antes de pedir nada, con los mensajes y los campos del servidor (el horario va en `desde`)
+function erroresDeHoras(valores) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  if (!esFechaDeTexto(datos.fecha)) errores.fecha = MENSAJES_FORMULARIOS.fecha;
+  if (horasDelHorario(datos.desde, datos.hasta) === null) errores.desde = MENSAJES_FORMULARIOS.horario;
+  if (largoDeLaNota(datos.nota) > LARGO_NOTA) errores.nota = MENSAJES_FORMULARIOS.nota;
+  return errores;
+}
+
+// El cuerpo de POST /horas-extras y PUT /horas-extras/:id
+const cuerpoDeHoras = (valores) => ({
+  fecha: valores.fecha, desde: valores.desde, hasta: valores.hasta, nota: comoTexto(valores.nota).trim()
+});
+
+// ---- «Mis vacaciones y saldos» ----
+
+/**
+ * Los campos de «Para arrancar» (los de GET /saldo-inicial, que arma camposDelSaldoInicial con lo guardado) con lo que se elige
+ * en el modal antes de guardarlo, si el saldo es del año del modal (`anio`; el de los campos es el de su `medica`): el máximo de
+ * las vacaciones del año es la primera mitad de los días elegidos (con un número impar, la mayor), y el campo de los estudios
+ * está solo si estudia, hasta los días de su carrera, antes de la atención médica. Cada campo conserva su `valor`.
+ */
+function camposConLoElegido(campos, { anio, dias, estudios } = {}) {
+  const lista = listaDe(campos);
+  if (!Number.isInteger(anio) || lista.find((campo) => campo.concepto === 'medica')?.anio !== anio) return lista;
+  const conDias = DIAS_VACACIONES.includes(dias)
+    ? lista.map((campo) => (campo.clave === `vacaciones-${anio}` ? { ...campo, maximo: Math.ceil(dias / 2) } : campo))
+    : lista;
+  const sinEstudios = conDias.filter((campo) => campo.clave !== 'estudios');
+  if (typeof estudios !== 'string' || !Object.hasOwn(DIAS_ESTUDIOS, estudios)) return sinEstudios;
+  const antes = conDias.find((campo) => campo.clave === 'estudios');
+  const delCampo = {
+    clave: 'estudios', concepto: 'estudios', anio, rotulo: 'Días de estudios', maximo: DIAS_ESTUDIOS[estudios], paso: 1,
+    valor: antes?.valor ?? null
+  };
+  const medica = sinEstudios.findIndex((campo) => campo.concepto === 'medica');
+  return [...sinEstudios.slice(0, medica), delCampo, ...sinEstudios.slice(medica)];
+}
+
+// Lo que muestra cada campo al abrir: lo guardado, con coma; sin nada guardado, vacío
+const valoresDelSaldo = (campos) => Object.fromEntries(listaDe(campos)
+  .map((campo) => [campo.clave, campo.valor === null || campo.valor === undefined ? '' : numeroConComa(campo.valor)]));
+
+// Los errores del saldo inicial (`{ clave: mensaje }`), como validarSaldoInicial: de 0 a su máximo, entero o, con paso 0,5, de a
+// media hora
+function erroresDelSaldo(valores, campos) {
+  const errores = {};
+  for (const campo of listaDe(campos)) {
+    const maximo = Number(campo.maximo);
+    if (typeof campo.clave !== 'string' || !Number.isFinite(maximo)) continue;
+    const cantidad = numeroDelCampo(deMapa(valores, campo.clave, ''));
+    const enMedias = campo.paso === 0.5;
+    if (cantidad === null || !(cantidad >= 0 && cantidad <= maximo)) errores[campo.clave] = textoSaldo(maximo);
+    else if (!Number.isInteger(enMedias ? cantidad * 2 : cantidad)) {
+      errores[campo.clave] = enMedias ? MENSAJES_FORMULARIOS.saldoMedias : textoSaldo(maximo);
+    }
+  }
+  return errores;
+}
+
+// El cuerpo de PUT /saldo-inicial: un número por campo
+const cuerpoDelSaldo = (valores, campos) => ({
+  saldos: Object.fromEntries(listaDe(campos).map((campo) => [campo.clave, numeroDelCampo(deMapa(valores, campo.clave, ''))]))
+});
+
+// Los días de vacaciones del año, como números para elegir
+const htmlDeDiasDeVacaciones = (elegidos) => DIAS_VACACIONES.map((dias) => '<label class="me-numero">'
+  + `<input type="radio" name="ms-dia" value="${String(dias)}"${dias === elegidos ? ' checked' : ''}><span>${String(dias)}</span></label>`)
+  .join('');
+
+// La licencia por estudios: universitaria, secundaria o «No estudio» (el valor vacío). `elegidos`: la carrera, '' por «No
+// estudio» o undefined (todavía no eligió)
+function htmlDeEstudios(elegidos) {
+  const opciones = [
+    ['universitario', 'Universitaria', `${String(DIAS_ESTUDIOS.universitario)} días por año`],
+    ['secundario', 'Secundaria', `${String(DIAS_ESTUDIOS.secundario)} días por año`],
+    ['', 'No estudio', 'Sin licencia por estudios']
+  ];
+  return opciones.map(([valor, nombre, detalle]) => '<label class="me-opcion">'
+    + `<input type="radio" name="ms-estudio" value="${valor}"${valor === elegidos ? ' checked' : ''}>`
+    + `<span><b>${nombre}</b><small>${detalle}</small></span></label>`).join('');
+}
+
+// Un campo de «Para arrancar», con su error
+const htmlDeCampoDelSaldo = (campo, valores) => {
+  const id = `ms-campo-${String(campo.clave)}`;
+  return `<div class="form-group"><label class="form-label" for="${esc(id)}">${esc(campo.rotulo)}</label>`
+    + `<input type="text" inputmode="decimal" class="form-input" id="${esc(id)}" data-saldo="${esc(campo.clave)}" `
+    + `value="${esc(deMapa(valores, campo.clave, ''))}" autocomplete="off" aria-describedby="${esc(id)}-error">`
+    + `<p class="form-error" id="${esc(id)}-error" hidden></p></div>`;
+};
+
+// «Para arrancar»: lo que quedaba de cada licencia ordinaria; después, «Y lo que ya usaste en 2026:» y, en contrato, las horas no
+// utilizadas previamente
+function htmlDeCamposDelSaldo(campos, valores) {
+  const lista = listaDe(campos).filter((campo) => typeof campo.clave === 'string');
+  const grupo = (filtro) => {
+    const delGrupo = lista.filter(filtro);
+    if (delGrupo.length === 0) return '';
+    return `<div class="me-campos-saldo">${delGrupo.map((campo) => htmlDeCampoDelSaldo(campo, valores)).join('')}</div>`;
+  };
+  const anio = lista.find((campo) => campo.concepto === 'medica')?.anio;
+  return grupo((campo) => campo.concepto === 'vacaciones')
+    + (Number.isInteger(anio) ? `<p class="form-hint">Y lo que ya usaste en ${String(anio)}:</p>` : '')
+    + grupo((campo) => !['vacaciones', 'horas_no_utilizadas'].includes(campo.concepto))
+    + grupo((campo) => campo.concepto === 'horas_no_utilizadas');
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
@@ -483,10 +919,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // El estado de la página: el Resumen, la lista de licencias con su filtro y la tabla de horas extras con su mes (null hasta que
 // llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña: una respuesta que llega después de otra
-// más nueva se descarta. `tanquesLlenos`: los tanques del Resumen ya se llenaron (pasa una sola vez)
+// más nueva se descarta. `cargandoResumen`: hay un pedido del Resumen en vuelo. `tanquesLlenos`: los tanques del Resumen ya se
+// llenaron (pasa una sola vez). Los formularios: `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre
+// sobre el formulario); `formulario`, el de «Cargar licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras;
+// `saldos`, el de «Mis vacaciones y saldos» (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se
+// confirma; y `firmante`, el pedido de GET /mi-espacio/firmante (una sola vez)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, tanquesLlenos: false,
-  pedidos: { resumen: 0, licencias: 0, horas: 0 }
+  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0 },
+  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null
 };
 
 const porId = (id) => document.getElementById(id);
@@ -496,7 +937,7 @@ const porId = (id) => document.getElementById(id);
 function anunciar(texto) {
   const region = porId('me-anuncio');
   if (!region || !texto) return;
-  region.textContent = region.textContent === texto ? `${texto} ` : texto;
+  region.textContent = region.textContent === texto ? `${texto} ` : texto;
 }
 
 // La sesión venció (401): se cierra y al login
@@ -505,10 +946,10 @@ function irAlLogin() {
   window.location.href = 'login.html';
 }
 
-// Lo que no se pudo cargar, en su pestaña y anunciado
-function mostrarFalla(vista, texto) {
+// Lo que no se pudo cargar, en su pestaña y, si se pide, anunciado
+function mostrarFalla(vista, texto, conAnuncio = true) {
   porId(vista).innerHTML = htmlDeError(texto);
-  anunciar(texto);
+  if (conAnuncio) anunciar(texto);
 }
 
 // Después de volver a dibujar una pestaña, el foco va al control equivalente al que se usó (el botón viejo ya no está)
@@ -517,10 +958,12 @@ function enfocar(vista, atributo, valor) {
   control?.focus();
 }
 
-// Abre la pestaña de la dirección y pide el Resumen. Devuelve las cargas, para quien quiera esperarlas
+// Abre la pestaña de la dirección y pide el Resumen (primero: la pestaña Resumen no lo pide dos veces). Devuelve las cargas, para
+// quien quiera esperarlas
 function iniciarMiEspacio() {
   conectarEventos();
-  return Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), cargarResumen()]);
+  const resumen = cargarResumen();
+  return Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
 }
 
 function conectarEventos() {
@@ -533,6 +976,9 @@ function conectarEventos() {
   porId('vista-resumen').addEventListener('click', alTocarResumen);
   porId('vista-licencias').addEventListener('click', alTocarLicencias);
   porId('vista-horas').addEventListener('click', alTocarHoras);
+  porId('btn-cargar-licencia').addEventListener('click', (evento) => abrirLicencia({ volverA: evento.currentTarget }));
+  porId('btn-cargar-horas').addEventListener('click', (evento) => abrirHorasExtras({ volverA: evento.currentTarget }));
+  conectarFormularios();
 }
 
 // ---- Las pestañas ----
@@ -549,7 +995,10 @@ function mostrarPestana(nombre) {
     porId(`vista-${otra}`).hidden = !activa;
   }
   window.history?.replaceState?.(null, '', `#${pagina.pestana}`);
-  if (pagina.pestana === 'resumen') llenarTanques();
+  if (pagina.pestana === 'resumen') {
+    if (pagina.resumen === null && !pagina.cargandoResumen) return cargarResumen();
+    llenarTanques();
+  }
   if (pagina.pestana === 'licencias' && pagina.licencias === null) return cargarLicencias(null);
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
   return Promise.resolve();
@@ -576,10 +1025,11 @@ function teclaEnPestanas(evento) {
 // ---- El Resumen ----
 
 // El Resumen dice la modalidad: sin ella, no se carga nada (los botones del encabezado quedan ocultos) y la pestaña muestra el
-// mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos»; si no, «Niveles», con la marca en la
-// pestaña si algo vence pronto
+// mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos» y lo abre solo (una vez); si no,
+// «Niveles», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez
 async function cargarResumen() {
   const pedido = ++pagina.pedidos.resumen;
+  pagina.cargandoResumen = true;
   try {
     const { data } = await API.pedirJson('GET', '/mi-espacio/resumen');
     if (pedido !== pagina.pedidos.resumen) return;
@@ -588,7 +1038,12 @@ async function cargarResumen() {
   } catch (error) {
     if (pedido !== pagina.pedidos.resumen) return;
     if (error?.status === 401) irAlLogin();
-    else mostrarFalla('vista-resumen', 'No se pudo cargar el resumen. Probá de nuevo en unos minutos.');
+    else {
+      pagina.resumen = null;
+      mostrarFalla('vista-resumen', 'No se pudo cargar el resumen. Probá de nuevo en unos minutos.');
+    }
+  } finally {
+    if (pedido === pagina.pedidos.resumen) pagina.cargandoResumen = false;
   }
 }
 
@@ -606,6 +1061,11 @@ function pintarResumen() {
     fila.setAttribute('data-llenar', '');
     llenarTanques();
   }
+  // La primera vez, sin el saldo inicial, «Mis vacaciones y saldos» se abre solo (el foco vuelve a su botón del Resumen)
+  if (conModalidad && resumen.abrir_saldos === true && !pagina.saldosAbiertosSolos && pagina.modales.length === 0) {
+    pagina.saldosAbiertosSolos = true;
+    abrirSaldos(vista.querySelector('[data-abrir="saldos"]'));
+  }
 }
 
 // El único movimiento de la página: la primera vez que se ve el Resumen con sus tanques, se llenan desde abajo (la transición de
@@ -622,10 +1082,20 @@ function llenarTanques() {
   enElProximoCuadro(() => enElProximoCuadro(() => fila.removeAttribute('data-llenar')));
 }
 
-// Un clic en el Resumen: un tanque abre su pestaña y el foco va a la pestaña (con Ctrl, Cmd, Mayúsculas, Alt o un botón que no
-// es el principal, el link hace lo suyo: otra pestaña del navegador). Los botones de «Vence pronto» (data-accion) y «Mis
-// vacaciones y saldos» (data-abrir) los conectan los formularios
+// Un clic en el Resumen: «Mis vacaciones y saldos» y los botones de «Vence pronto» abren su formulario (el de licencia, con su
+// tipo); un tanque abre su pestaña y el foco va a la pestaña (con Ctrl, Cmd, Mayúsculas, Alt o un botón que no es el principal, el
+// link hace lo suyo: otra pestaña del navegador)
 function alTocarResumen(evento) {
+  const saldos = evento.target?.closest?.('[data-abrir="saldos"]');
+  if (saldos) {
+    abrirSaldos(saldos);
+    return;
+  }
+  const accion = evento.target?.closest?.('[data-accion="cargar-licencia"]');
+  if (accion) {
+    abrirLicencia({ tipo: accion.dataset.tipo, volverA: accion });
+    return;
+  }
   const tanque = evento.target?.closest?.('[data-pestana]');
   if (!tanque || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
   evento.preventDefault?.();
@@ -635,24 +1105,24 @@ function alTocarResumen(evento) {
 
 // ---- Licencias ----
 
-// Pide las licencias de un año (null: el en curso). Al elegir un año, se anuncia el título de la tarjeta. Si falla, la pestaña lo
-// dice y queda sin lista: volver a ella la pide otra vez (la del año en curso). Devuelve si dibujó la lista (una respuesta vieja o
-// una falla, no)
-async function cargarLicencias(anio) {
+// Pide las licencias de un año (null: el en curso). Al elegir un año, se anuncia el título de la tarjeta (`conAnuncio`: después de
+// guardar, no; ahí se anuncia lo que se guardó). Si falla, la pestaña lo dice y queda sin lista: volver a ella la pide otra vez (la
+// del año en curso). Devuelve si dibujó la lista (una respuesta vieja o una falla, no)
+async function cargarLicencias(anio, { conAnuncio = true } = {}) {
   const pedido = ++pagina.pedidos.licencias;
   try {
     const { data } = await API.pedirJson('GET', Number.isInteger(anio) ? `/mi-espacio/licencias?anio=${anio}` : '/mi-espacio/licencias');
     if (pedido !== pagina.pedidos.licencias) return false;
     pagina.licencias = esObjeto(data) ? data : {};
     pintarLicencias();
-    if (Number.isInteger(anio) && Number.isInteger(pagina.licencias.anio)) anunciar(`Mis licencias de ${pagina.licencias.anio}`);
+    if (conAnuncio && Number.isInteger(anio) && Number.isInteger(pagina.licencias.anio)) anunciar(`Mis licencias de ${pagina.licencias.anio}`);
     return true;
   } catch (error) {
     if (pedido !== pagina.pedidos.licencias) return false;
     if (error?.status === 401) irAlLogin();
     else {
       pagina.licencias = null;
-      mostrarFalla('vista-licencias', 'No se pudieron cargar tus licencias. Probá de nuevo en unos minutos.');
+      mostrarFalla('vista-licencias', 'No se pudieron cargar tus licencias. Probá de nuevo en unos minutos.', conAnuncio);
     }
     return false;
   }
@@ -662,15 +1132,32 @@ function pintarLicencias() {
   porId('vista-licencias').innerHTML = htmlDeListaDeLicencias(pagina.licencias, pagina.filtro);
 }
 
-// Un clic en la pestaña: un año del selector (el elegido no pide nada) o un filtro (dibuja sin pedir nada)
+// Un clic en la pestaña: «Cargar licencia», «Editar» de una fila, «Cambiar» el saldo inicial, un año del selector (el elegido no
+// pide nada) o un filtro (dibuja sin pedir nada)
 async function alTocarLicencias(evento) {
-  const anio = evento.target?.closest?.('[data-anio]');
+  const objetivo = evento.target;
+  if (objetivo?.closest?.('[data-cargar="licencia"]')) {
+    abrirLicencia({ volverA: objetivo.closest('[data-cargar="licencia"]') });
+    return;
+  }
+  const editar = objetivo?.closest?.('[data-editar-licencia]');
+  if (editar) {
+    const fila = listaDe(pagina.licencias?.licencias).find((una) => String(una.id) === editar.dataset.editarLicencia);
+    if (fila) abrirLicencia({ fila, volverA: editar });
+    return;
+  }
+  const saldos = objetivo?.closest?.('[data-abrir="saldos"]');
+  if (saldos) {
+    abrirSaldos(saldos);
+    return;
+  }
+  const anio = objetivo?.closest?.('[data-anio]');
   if (anio) {
     if (anio.getAttribute('aria-pressed') === 'true') return;
     if (await cargarLicencias(Number(anio.dataset.anio))) enfocar('vista-licencias', 'data-anio', anio.dataset.anio);
     return;
   }
-  const filtro = evento.target?.closest?.('[data-filtro-licencia]');
+  const filtro = objetivo?.closest?.('[data-filtro-licencia]');
   if (filtro) {
     pagina.filtro = filtro.dataset.filtroLicencia;
     pintarLicencias();
@@ -682,7 +1169,7 @@ async function alTocarLicencias(evento) {
 
 // Pide las horas extras de un año (null: el en curso); el día por día vuelve al mes de entrada. Si falla, como las licencias:
 // volver a la pestaña la pide otra vez. Devuelve si dibujó la pestaña
-async function cargarHorasExtras(anio) {
+async function cargarHorasExtras(anio, { conAnuncio = true } = {}) {
   const pedido = ++pagina.pedidos.horas;
   try {
     const { data } = await API.pedirJson('GET', Number.isInteger(anio) ? `/mi-espacio/horas-extras?anio=${anio}` : '/mi-espacio/horas-extras');
@@ -690,7 +1177,7 @@ async function cargarHorasExtras(anio) {
     pagina.horas = esObjeto(data) ? data : {};
     pagina.mes = mesInicialDe(pagina.horas);
     pintarHoras();
-    if (Number.isInteger(anio) && Number.isInteger(pagina.horas.anio)) anunciar(`Horas extras de ${pagina.horas.anio}`);
+    if (conAnuncio && Number.isInteger(anio) && Number.isInteger(pagina.horas.anio)) anunciar(`Horas extras de ${pagina.horas.anio}`);
     return true;
   } catch (error) {
     if (pedido !== pagina.pedidos.horas) return false;
@@ -698,7 +1185,7 @@ async function cargarHorasExtras(anio) {
     else {
       pagina.horas = null;
       pagina.mes = null;
-      mostrarFalla('vista-horas', 'No se pudieron cargar tus horas extras. Probá de nuevo en unos minutos.');
+      mostrarFalla('vista-horas', 'No se pudieron cargar tus horas extras. Probá de nuevo en unos minutos.', conAnuncio);
     }
     return false;
   }
@@ -708,18 +1195,778 @@ function pintarHoras() {
   porId('vista-horas').innerHTML = htmlDeHorasExtras(pagina.horas, pagina.mes);
 }
 
-// Un clic en la pestaña: un año del selector o un mes de la tabla (cambia el día por día sin pedir nada)
+// Un clic en la pestaña: «Cargar horas extras», «Editar» de un día, «Registrar un uso autorizado», un año del selector o un mes de
+// la tabla (cambia el día por día sin pedir nada)
 async function alTocarHoras(evento) {
-  const anio = evento.target?.closest?.('[data-anio]');
+  const objetivo = evento.target;
+  if (objetivo?.closest?.('[data-cargar="horas"]')) {
+    abrirHorasExtras({ volverA: objetivo.closest('[data-cargar="horas"]') });
+    return;
+  }
+  const editar = objetivo?.closest?.('[data-editar-horas]');
+  if (editar) {
+    const dia = Object.values(esObjeto(pagina.horas?.dias_por_mes) ? pagina.horas.dias_por_mes : {}).flatMap(listaDe)
+      .find((uno) => String(uno.id) === editar.dataset.editarHoras);
+    if (dia) abrirHorasExtras({ dia, volverA: editar });
+    return;
+  }
+  const uso = objetivo?.closest?.('[data-abrir="uso"]');
+  if (uso) {
+    abrirUso({ volverA: uso });
+    return;
+  }
+  const anio = objetivo?.closest?.('[data-anio]');
   if (anio) {
     if (anio.getAttribute('aria-pressed') === 'true') return;
     if (await cargarHorasExtras(Number(anio.dataset.anio))) enfocar('vista-horas', 'data-anio', anio.dataset.anio);
     return;
   }
-  const mes = evento.target?.closest?.('[data-mes]');
+  const mes = objetivo?.closest?.('[data-mes]');
   if (mes) {
     pagina.mes = mes.dataset.mes;
     pintarHoras();
     enfocar('vista-horas', 'data-mes', pagina.mes);
+  }
+}
+
+// =====================================================
+// Los formularios (DOM y API)
+// =====================================================
+
+// La espera entre el último cambio y el pedido del cálculo, y la del velo antes de poner el foco (hasta que termina su transición,
+// no deja enfocar)
+const ESPERA_DEL_CALCULO = 300;
+const ESPERA_DEL_VELO = 100;
+
+// Cada formulario: su modal, el prefijo de sus ids (el error sin campo es <prefijo>-error) y el control de cada campo de los errores
+// del servidor. `fechas` (el 409 de la persona autorizada que se queda sin días) no es un campo: va a la fecha de inicio
+const FORMULARIOS = Object.freeze({
+  licencia: {
+    modal: 'modal-licencia', prefijo: 'ml',
+    campos: {
+      tipo: 'ml-tipos', desde: 'ml-desde', hasta: 'ml-hasta', horas: 'ml-horas', nota: 'ml-nota', fechas: 'ml-desde',
+      autorizado_id: 'ml-autorizado'
+    }
+  },
+  uso: {
+    modal: 'modal-uso', prefijo: 'mu',
+    campos: { desde: 'mu-fecha', hasta: 'mu-fecha', horas: 'mu-horas', nota: 'mu-nota', fechas: 'mu-fecha' }
+  },
+  horasExtras: {
+    modal: 'modal-horas', prefijo: 'mh', campos: { fecha: 'mh-fecha', desde: 'mh-desde', hasta: 'mh-hasta', nota: 'mh-nota' }
+  },
+  saldos: { modal: 'modal-saldos', prefijo: 'ms', campos: { dias_vacaciones: 'ms-dias', estudios: 'ms-estudios' } },
+  confirmar: { modal: 'modal-confirmar', prefijo: 'mc', campos: {} }
+});
+
+// La modalidad de la persona ('planta', 'contrato' o null), la del Resumen
+const modalidadActual = () => pagina.resumen?.modalidad?.clave ?? pagina.horas?.modalidad ?? null;
+const anioDeHoy = () => Number(Utils.hoyEnArgentina().slice(0, 4));
+
+function conectarFormularios() {
+  for (const { modal } of Object.values(FORMULARIOS)) {
+    // Cierran la × y «Cancelar» (data-cerrar), si es el de arriba y no está guardando; un clic en el velo, nunca
+    porId(modal).addEventListener('click', (evento) => {
+      if (evento.target?.closest?.('[data-cerrar]') && pagina.modales.at(-1)?.id === modal && !estaOcupado(modal)) cerrarModal(modal);
+    });
+  }
+  document.addEventListener('keydown', alApretarUnaTecla);
+
+  porId('ml-tipos').addEventListener('change', (evento) => {
+    if (evento.target?.name !== 'ml-tipo' || !pagina.formulario) return;
+    pagina.formulario.tipo = evento.target.value;
+    pintarCamposDelTipo();
+    programarCalculo();
+  });
+  for (const id of ['ml-desde', 'ml-hasta', 'mu-fecha']) {
+    porId(id).addEventListener('input', programarCalculo);
+    porId(id).addEventListener('change', programarCalculo);
+  }
+  for (const id of ['ml-horas', 'mu-horas']) porId(id).addEventListener('change', programarCalculo);
+  porId('ml-autorizado').addEventListener('change', () => { if (pagina.formulario) pintarPaso(pagina.formulario); });
+  for (const nombre of ['licencia', 'uso']) {
+    const { prefijo } = FORMULARIOS[nombre];
+    porId(`${prefijo}-guardar`).addEventListener('click', () => guardarLicencia(nombre));
+    porId(`${prefijo}-borrar`).addEventListener('click', () => pedirBorrarLicencia(nombre));
+  }
+
+  for (const id of ['mh-fecha', 'mh-desde', 'mh-hasta']) {
+    porId(id).addEventListener('input', actualizarLaSuma);
+    porId(id).addEventListener('change', actualizarLaSuma);
+  }
+  porId('mh-guardar').addEventListener('click', guardarHorasExtras);
+  porId('mh-borrar').addEventListener('click', pedirBorrarHorasExtras);
+
+  porId('ms-dias').addEventListener('change', alElegirEnLosSaldos);
+  porId('ms-estudios').addEventListener('change', alElegirEnLosSaldos);
+  porId('ms-guardar').addEventListener('click', guardarSaldos);
+
+  porId('modal-confirmar-si').addEventListener('click', confirmarElBorrado);
+}
+
+// ---- Los modales ----
+
+// Abre un modal sobre los que ya están: el foco va a `foco()` después de la transición del velo y, al cerrarlo, vuelve a `volverA`
+// (el botón que lo abrió); `alCerrar` limpia lo del formulario
+function abrirModal(id, { volverA = null, foco = null, alCerrar = null } = {}) {
+  const sesion = { id, volverA, alCerrar };
+  pagina.modales.push(sesion);
+  porId(id).classList.add('active');
+  setTimeout(() => {
+    if (pagina.modales.at(-1) === sesion) foco?.()?.focus?.();
+  }, ESPERA_DEL_VELO);
+}
+
+function cerrarModal(id) {
+  const lugar = pagina.modales.findIndex((sesion) => sesion.id === id);
+  if (lugar === -1) return;
+  const [sesion] = pagina.modales.splice(lugar, 1);
+  porId(id).classList.remove('active');
+  sesion.alCerrar?.();
+  if (sesion.volverA && sesion.volverA.isConnected !== false) sesion.volverA.focus?.();
+}
+
+// Mientras se guarda o se borra, su modal no se cierra (ni con Escape, ni con la ×, ni con «Cancelar»)
+function estaOcupado(modal) {
+  if (modal === 'modal-confirmar') return pagina.confirmacion?.ocupado === true;
+  if (modal === 'modal-horas') return pagina.horasExtras?.guardando === true;
+  if (modal === 'modal-saldos') return pagina.saldos?.guardando === true;
+  return pagina.formulario?.guardando === true && FORMULARIOS[pagina.formulario.nombre].modal === modal;
+}
+
+// Escape cierra el modal de arriba: primero la confirmación, después el formulario
+function alApretarUnaTecla(evento) {
+  if (evento.key !== 'Escape' || pagina.modales.length === 0) return;
+  const arriba = pagina.modales.at(-1).id;
+  evento.preventDefault?.();
+  if (!estaOcupado(arriba)) cerrarModal(arriba);
+}
+
+// ---- Los errores ----
+
+// Muestra (o saca, con null) el error de un campo: su párrafo (<id>-error) y aria-invalid en el control (en un grupo de opciones,
+// en su fieldset). false si el control no está
+function ponerError(id, mensaje) {
+  const control = id ? porId(id) : null;
+  if (!control) return false;
+  const parrafo = porId(`${id}-error`);
+  if (parrafo) {
+    parrafo.textContent = mensaje ?? '';
+    parrafo.hidden = !mensaje;
+  }
+  if (mensaje) control.setAttribute('aria-invalid', 'true');
+  else control.removeAttribute('aria-invalid');
+  return true;
+}
+
+// El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera
+function controlDeFoco(id) {
+  const control = porId(id);
+  if (String(control?.tagName).toLowerCase() === 'fieldset') {
+    return control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
+  }
+  return control;
+}
+
+// El error sin campo, arriba del cuerpo del modal (nunca detrás del velo)
+function avisoDelModal(nombre, mensaje) {
+  const aviso = porId(`${FORMULARIOS[nombre].prefijo}-error`);
+  aviso.textContent = mensaje ?? '';
+  aviso.hidden = !mensaje;
+  if (mensaje) aviso.scrollIntoView?.({ block: 'nearest' });
+}
+
+// Los controles con error de un formulario: los de sus campos y, en «Mis vacaciones y saldos», los de «Para arrancar»
+const controlesDe = (nombre) => [...new Set(Object.values(FORMULARIOS[nombre].campos)),
+  ...(nombre === 'saldos' ? [...porId('ms-campos').querySelectorAll('[data-saldo]')].map((campo) => campo.id) : [])];
+
+function limpiarErrores(nombre) {
+  for (const id of controlesDe(nombre)) ponerError(id, null);
+  avisoDelModal(nombre, '');
+}
+
+// Los errores (`[[id del control, mensaje]]`), todos juntos (los demás campos quedan limpios), y el foco al primero. true si hubo
+function mostrarErrores(nombre, errores) {
+  limpiarErrores(nombre);
+  const conControl = errores.filter(([id, mensaje]) => ponerError(id, mensaje));
+  if (conControl.length > 0) controlDeFoco(conControl[0][0])?.focus?.();
+  return conControl.length > 0;
+}
+
+// Los errores de un formulario por campo (`{ campo: mensaje }`) con su control
+const conSusControles = (nombre, errores) => Object.entries(errores)
+  .map(([campo, mensaje]) => [deMapa(FORMULARIOS[nombre].campos, campo, null), mensaje]);
+
+// Un error del servidor al guardar: con un campo del formulario, en ese campo y con el foco ahí; sin campo (o uno que no es del
+// formulario), arriba del modal, con el foco en el botón
+function mostrarFallaDelServidor(nombre, falla, boton) {
+  limpiarErrores(nombre);
+  const mensaje = falla?.message || 'No se pudo guardar. Probá de nuevo en unos minutos.';
+  const id = deMapa(FORMULARIOS[nombre].campos, falla?.campo, null);
+  if (ponerError(id, mensaje)) {
+    controlDeFoco(id)?.focus?.();
+    return;
+  }
+  avisoDelModal(nombre, mensaje);
+  boton.focus?.();
+}
+
+// Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía,
+// sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir)
+function volverAPedirTodo() {
+  cargarResumen();
+  const delAnio = (datos) => (Number.isInteger(datos.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
+  if (pagina.licencias !== null) {
+    if (pagina.pestana === 'licencias') cargarLicencias(delAnio(pagina.licencias), { conAnuncio: false });
+    else pagina.licencias = null;
+  }
+  if (pagina.horas !== null) {
+    if (pagina.pestana === 'horas') cargarHorasExtras(delAnio(pagina.horas), { conAnuncio: false });
+    else pagina.horas = null;
+  }
+}
+
+// Lo que dice el servidor al guardar: el mensaje y sus avisos (por ejemplo, que una corrección ya no se copia a Configuración)
+const textoDeLaRespuesta = (respuesta) => [respuesta?.message, ...(Array.isArray(respuesta?.avisos) ? respuesta.avisos : [])]
+  .filter(conTexto).join(' ');
+
+// Un 404 (lo que se corregía o se borraba ya no está): se cierra el formulario, se avisa y se vuelve a pedir todo
+function noEstaMas(modal, falla) {
+  cerrarModal(modal);
+  anunciar(falla?.message);
+  volverAPedirTodo();
+}
+
+// ---- «Cargar licencia» y «Registrar un uso autorizado» ----
+
+// Abre «Cargar licencia»: nueva (con el `tipo` de «Vence pronto») o la corrección de una fila de la lista. El uso autorizado tiene su
+// formulario. Sin el saldo inicial no se puede cargar nada: abre «Mis vacaciones y saldos»
+function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) {
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  if (fila?.tipo === 'uso_autorizado') {
+    abrirUso({ fila, volverA });
+    return;
+  }
+  const valores = valoresDeLicencia(fila, tipo);
+  // El tipo de la fila, aunque ya no esté entre los de la modalidad (o con «No estudio»): se ve elegido
+  const tipos = listaDe(pagina.resumen?.tipos);
+  const opciones = fila && !tipos.some((opcion) => opcion.tipo === valores.tipo)
+    ? [...tipos, { tipo: valores.tipo, nombre: fila.tipo_nombre, queda_texto: '' }] : tipos;
+  porId('modal-licencia-titulo').textContent = fila ? `Corregir la licencia del ${comoTexto(fila.fechas_texto)}` : 'Cargar licencia';
+  porId('ml-tipos-opciones').innerHTML = htmlDeTiposDeLicencia(opciones, valores.tipo);
+  porId('ml-desde').value = valores.desde;
+  porId('ml-hasta').value = valores.hasta;
+  porId('ml-horas').value = valores.horas;
+  porId('ml-grupo-autorizado').hidden = true;
+  // Una creada que ya empezó o que ya terminó: lo que se puede cambiar de sus fechas (lo controla el servidor; el desde no se
+  // bloquea, así se puede volver a las fechas de Configuración)
+  const fechas = porId('ml-fechas-ayuda');
+  fechas.textContent = fila?.fechas_fijas === true ? MENSAJES_FORMULARIOS.fechasFijas
+    : (fila?.solo_hasta === true ? MENSAJES_FORMULARIOS.soloHasta : '');
+  fechas.hidden = fechas.textContent === '';
+  iniciarFormulario('licencia', { fila, valores });
+  pintarCamposDelTipo();
+  abrirModal('modal-licencia', { volverA, foco: () => controlDeFoco('ml-tipos'), alCerrar: cerrarFormulario });
+  if (Object.keys(erroresDeLicencia(valores, { modalidad: modalidadActual() })).length === 0) programarCalculo();
+}
+
+// Abre «Registrar un uso autorizado» (nuevo, o la corrección de una fila): la fecha y, en contrato, las horas
+function abrirUso({ fila = null, volverA = null } = {}) {
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  const valores = valoresDeLicencia(fila, 'uso_autorizado');
+  porId('modal-uso-titulo').textContent = fila ? `Corregir el uso autorizado del ${comoTexto(fila.fechas_texto)}`
+    : 'Registrar un uso autorizado';
+  porId('mu-fecha').value = valores.desde;
+  const enHoras = horasDelTipo('uso_autorizado', modalidadActual());
+  porId('mu-grupo-horas').hidden = enHoras === null;
+  porId('mu-horas').innerHTML = enHoras === null ? '' : htmlDeOpcionesDeHoras(enHoras, valores.horas);
+  porId('mu-horas').value = enHoras === null ? '' : valores.horas;
+  iniciarFormulario('uso', { fila, valores });
+  abrirModal('modal-uso', { volverA, foco: () => porId('mu-fecha'), alCerrar: cerrarFormulario });
+  if (Object.keys(erroresDeLicencia(valores, { modalidad: modalidadActual() })).length === 0) programarCalculo();
+}
+
+// Lo común de los dos: el estado del formulario (el pedido del cálculo numera cada uno: una respuesta vieja se descarta;
+// `esperando`, hay uno programado o en vuelo, y «Guardar» espera su respuesta), la nota, «Mostrar a mis compañeros» (solo
+// administración), «Borrar» (o por qué no se puede) y lo que dice el cálculo, vacío hasta que llega
+function iniciarFormulario(nombre, { fila, valores }) {
+  const { prefijo } = FORMULARIOS[nombre];
+  cerrarFormulario();
+  pagina.formulario = {
+    nombre, fila, valores, tipo: valores.tipo, paso: null, pedido: 0, esperando: false, temporizador: null, guardando: false,
+    pedidoSinAuditor: 0, firmante: null, autorizadoListo: false
+  };
+  limpiarErrores(nombre);
+  porId(`${prefijo}-nota`).value = valores.nota;
+  porId(`${prefijo}-mostrar`).checked = valores.mostrar;
+  porId(`${prefijo}-grupo-mostrar`).hidden = pagina.resumen?.persona?.ve_companeros !== true;
+  const quien = comoTexto(pagina.resumen?.persona?.nombre);
+  porId(`${prefijo}-mostrar-ayuda`).textContent = `Ven «${quien} no está», sin el tipo de licencia.`;
+  porId(`${prefijo}-borrar`).hidden = !(fila && fila.puede_borrar !== false);
+  const pie = porId(`${prefijo}-pie`);
+  pie.textContent = fila && fila.puede_borrar === false ? MENSAJES_FORMULARIOS.yaEmpezo : '';
+  pie.hidden = pie.textContent === '';
+  for (const caja of [`${prefijo}-calculo`, `${prefijo}-paso`, `${prefijo}-sin-auditor`]) {
+    porId(caja).innerHTML = '';
+    porId(caja).hidden = true;
+  }
+  porId(`${prefijo}-guardar`).disabled = false;
+}
+
+// Al cerrar el formulario, lo que esperaba se descarta
+function cerrarFormulario() {
+  clearTimeout(pagina.formulario?.temporizador);
+  pagina.formulario = null;
+}
+
+// Los campos del tipo elegido: «Desde» y «Hasta, inclusive», o «Fecha» en los de un día, y las horas en los que van por horas
+function pintarCamposDelTipo() {
+  const { tipo, valores } = pagina.formulario;
+  const unDia = deUnDia(tipo);
+  porId('ml-desde-rotulo').textContent = unDia ? 'Fecha' : 'Desde';
+  porId('ml-grupo-hasta').hidden = unDia;
+  const enHoras = horasDelTipo(tipo, modalidadActual());
+  porId('ml-grupo-horas').hidden = enHoras === null;
+  if (enHoras !== null) {
+    const elegidas = porId('ml-horas').value || valores.horas;
+    porId('ml-horas').innerHTML = htmlDeOpcionesDeHoras(enHoras, elegidas);
+    porId('ml-horas').value = elegidas;
+  }
+}
+
+// Lo que dice el formulario abierto, como lo lee valoresDeLicencia
+function valoresDelFormulario(formulario) {
+  const { nombre, valores, tipo } = formulario;
+  const { prefijo } = FORMULARIOS[nombre];
+  const desde = porId(nombre === 'licencia' ? 'ml-desde' : 'mu-fecha').value;
+  const grupoDeHoras = porId(`${prefijo}-grupo-horas`);
+  const leidos = {
+    ...valores, tipo, desde,
+    hasta: nombre === 'licencia' && !deUnDia(tipo) ? porId('ml-hasta').value : desde,
+    horas: grupoDeHoras.hidden ? '' : porId(`${prefijo}-horas`).value,
+    nota: porId(`${prefijo}-nota`).value
+  };
+  if (!porId(`${prefijo}-grupo-mostrar`).hidden) leidos.mostrar = porId(`${prefijo}-mostrar`).checked;
+  if (nombre === 'licencia' && !porId('ml-grupo-autorizado').hidden) leidos.autorizado = porId('ml-autorizado').value;
+  return leidos;
+}
+
+// Si el campo «Autorizo a…» está a la vista: el firmante titular, en unas vacaciones que pasan a Configuración
+const conPersonaACargo = (formulario) => formulario.nombre === 'licencia' && !porId('ml-grupo-autorizado').hidden;
+
+// Cada cambio pide el cálculo 300 ms después del último; mientras, «Guardar» espera
+function programarCalculo() {
+  const formulario = pagina.formulario;
+  if (!formulario) return;
+  clearTimeout(formulario.temporizador);
+  formulario.pedido += 1;
+  formulario.esperando = true;
+  porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = true;
+  formulario.temporizador = setTimeout(() => pedirCalculo(formulario), ESPERA_DEL_CALCULO);
+}
+
+// El cálculo del servidor (POST /licencias/calculo, sin guardar nada): los días, de qué licencia salen, lo que queda, el error si
+// no se puede guardar (en su campo, sin llevarse el foco) y el paso a Configuración. Sin el tipo y las fechas (o las horas) no hay
+// nada que pedir. Una respuesta vieja (el formulario cambió o se cerró mientras) se descarta
+async function pedirCalculo(formulario) {
+  if (pagina.formulario !== formulario) return;
+  const pedido = ++formulario.pedido;
+  const valores = valoresDelFormulario(formulario);
+  const { tipo, desde, hasta, horas } = erroresDeLicencia(valores, { modalidad: modalidadActual() });
+  let data = null;
+  if (!tipo && !desde && !hasta && !horas) {
+    const cuerpo = cuerpoDeLicencia(valores);
+    if (valores.id !== null) cuerpo.id = valores.id;
+    try {
+      ({ data } = await API.pedirJson('POST', '/mi-espacio/licencias/calculo', cuerpo));
+    } catch (error) {
+      if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
+      if (error?.status === 401) {
+        irAlLogin();
+        return;
+      }
+    }
+    if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
+  }
+  await pintarCalculo(formulario, esObjeto(data) ? data : null, valores);
+  if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
+  formulario.esperando = false;
+  porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = formulario.guardando;
+}
+
+async function pintarCalculo(formulario, data, valores) {
+  const { nombre } = formulario;
+  const { prefijo } = FORMULARIOS[nombre];
+  formulario.paso = esObjeto(data?.paso) ? data.paso : null;
+  limpiarErrores(nombre);
+  if (esObjeto(data?.error) && conTexto(data.error.mensaje)) {
+    if (!ponerError(deMapa(FORMULARIOS[nombre].campos, data.error.campo, null), data.error.mensaje)) {
+      avisoDelModal(nombre, data.error.mensaje);
+    }
+  }
+  const calculo = porId(`${prefijo}-calculo`);
+  calculo.innerHTML = htmlDelCalculo(data, valores.tipo);
+  calculo.hidden = calculo.innerHTML === '';
+  if (nombre === 'licencia') await prepararPersonaACargo(formulario);
+  if (pagina.formulario !== formulario) return;
+  pintarPaso(formulario);
+  actualizarSinAuditor(formulario, valores);
+}
+
+// El campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6): solo cuando el paso pasa y el firmante titular
+// carga vacaciones, con las personas de GET /mi-espacio/firmante. Viene vacío; al corregir, con la persona a cargo que ya tiene
+// (y, si ya no cumple las condiciones, igual elegida: si no, guardar otro cambio la quitaría)
+async function prepararPersonaACargo(formulario) {
+  const grupo = porId('ml-grupo-autorizado');
+  const paso = formulario.paso;
+  if (!(paso?.pasa === true && paso.firmante?.puede_autorizar === true)) {
+    grupo.hidden = true;
+    return;
+  }
+  const firmante = await datosDelFirmante();
+  if (pagina.formulario !== formulario) return;
+  if (firmante.soy_titular !== true) {
+    grupo.hidden = true;
+    return;
+  }
+  formulario.firmante = firmante;
+  if (!formulario.autorizadoListo) {
+    const actual = formulario.valores.autorizado;
+    const personas = listaDe(firmante.autorizables).map((persona) => ({ id: String(persona.id), nombre: persona.nombre_completo }));
+    if (conTexto(actual) && !personas.some((persona) => persona.id === actual)) {
+      personas.push({ id: actual, nombre: 'Otro usuario (ya no cumple las condiciones)' });
+    }
+    porId('ml-autorizado').innerHTML = htmlDeAutorizables(personas);
+    porId('ml-autorizado').value = actual;
+    formulario.autorizadoListo = true;
+  }
+  grupo.hidden = false;
+}
+
+// GET /mi-espacio/firmante, una sola vez (si falla, se vuelve a pedir la próxima)
+function datosDelFirmante() {
+  pagina.firmante ??= API.pedirJson('GET', '/mi-espacio/firmante').then(
+    ({ data }) => (esObjeto(data) ? data : {}),
+    (error) => {
+      pagina.firmante = null;
+      if (error?.status === 401) irAlLogin();
+      return {};
+    }
+  );
+  return pagina.firmante;
+}
+
+// El aviso del paso a Configuración: azul si pasa; si no, en ámbar, por qué. En las vacaciones del titular, con el efecto en las
+// notas de la persona elegida y sus días de licencia
+function pintarPaso(formulario) {
+  const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-paso`);
+  const valores = valoresDelFormulario(formulario);
+  const elegida = conPersonaACargo(formulario)
+    ? listaDe(formulario.firmante?.autorizables).find((persona) => String(persona.id) === valores.autorizado) : undefined;
+  caja.innerHTML = htmlDelPaso(formulario.paso, {
+    autorizado: elegida?.nombre_completo ?? null, ausencias: elegida?.ausencias ?? [],
+    hoy: formulario.firmante?.hoy ?? Utils.hoyEnArgentina(), desde: valores.desde, hasta: valores.hasta
+  });
+  caja.hidden = caja.innerHTML === '';
+  caja.classList.toggle('azul', formulario.paso?.pasa === true);
+  caja.classList.toggle('ambar', formulario.paso?.pasa !== true);
+}
+
+// Los días sin auditor de las fechas del formulario (GET /usuarios/licencias/sin-auditor, como en Configuración): solo para quien
+// audita y solo si el paso pasa. Al corregir una creada, sin contar su licencia de Configuración (excluir). Solo avisa
+async function actualizarSinAuditor(formulario, valores) {
+  const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-sin-auditor`);
+  const pedido = ++formulario.pedidoSinAuditor;
+  const parametros = formulario.paso?.pasa === true && Auth.isAuditor?.() === true ? parametrosSinAuditor({
+    usuarioId: Auth.getUser?.()?.id, desde: valores.desde, hasta: valores.hasta, excluir: valores.licencia_oficial,
+    hoy: Utils.hoyEnArgentina()
+  }) : null;
+  if (parametros === null) {
+    caja.hidden = true;
+    return;
+  }
+  let periodos = [];
+  try {
+    periodos = listaDe(await API.getSinAuditor(parametros));
+  } catch { /* sin el dato no hay aviso */ }
+  if (pagina.formulario !== formulario || pedido !== formulario.pedidoSinAuditor) return;
+  caja.innerHTML = periodos.map((periodo) => `<p>${esc(textoSinAuditor(periodo))}</p>`).join('');
+  caja.hidden = periodos.length === 0;
+}
+
+// «Guardar»: los errores del formulario antes de pedir nada; si no hay, POST o PUT. Mientras, «Guardar» queda deshabilitado (un
+// doble clic manda un solo pedido). Al guardar, se cierra, se anuncia lo que dijo el servidor y se vuelve a pedir todo
+async function guardarLicencia(nombre) {
+  const formulario = pagina.formulario;
+  const boton = porId(`${FORMULARIOS[nombre].prefijo}-guardar`);
+  if (formulario?.nombre !== nombre || formulario.guardando || formulario.esperando) return;
+  const valores = valoresDelFormulario(formulario);
+  if (mostrarErrores(nombre, conSusControles(nombre, erroresDeLicencia(valores, { modalidad: modalidadActual() })))) return;
+  const cuerpo = cuerpoDeLicencia(valores, { soyTitular: conPersonaACargo(formulario) });
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.fila
+      ? await API.pedirJson('PUT', `/mi-espacio/licencias/${encodeURIComponent(formulario.fila.id)}`, cuerpo)
+      : await API.pedirJson('POST', '/mi-espacio/licencias', cuerpo);
+    formulario.guardando = false;
+    cerrarModal(FORMULARIOS[nombre].modal);
+    anunciar(textoDeLaRespuesta(respuesta));
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas(FORMULARIOS[nombre].modal, error);
+    else if (pagina.formulario === formulario) mostrarFallaDelServidor(nombre, error, boton);
+  } finally {
+    if (pagina.formulario === formulario) boton.disabled = formulario.esperando;
+  }
+}
+
+// «Borrar»: la confirmación, sobre el formulario
+function pedirBorrarLicencia(nombre) {
+  const formulario = pagina.formulario;
+  if (formulario?.nombre !== nombre || !formulario.fila || formulario.guardando) return;
+  const { id } = formulario.fila;
+  pedirConfirmacion({
+    titulo: nombre === 'uso' ? '¿Borrar el uso autorizado?' : '¿Borrar la licencia?', texto: textoDeConfirmacion(formulario.fila),
+    volverA: porId(`${FORMULARIOS[nombre].prefijo}-borrar`), formulario: FORMULARIOS[nombre].modal,
+    borrar: () => API.pedirJson('DELETE', `/mi-espacio/licencias/${encodeURIComponent(id)}`)
+  });
+}
+
+// ---- «Cargar horas extras» ----
+
+// Abre «Cargar horas extras» (nuevas, o la corrección de un día del día por día), con lo que suman en el mes: si la tabla de la
+// pestaña todavía no llegó, la pide, sin mostrar la pestaña
+function abrirHorasExtras({ dia = null, volverA = null } = {}) {
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  const valores = valoresDeHoras(dia);
+  let titulo = modalidadActual() === 'planta' ? 'Cargar horas extras al 100%' : 'Cargar horas extras';
+  if (dia) titulo = `Corregir las horas extras del ${comoTexto(dia.fecha_texto)}`;
+  porId('modal-horas-titulo').textContent = titulo;
+  for (const campo of ['fecha', 'desde', 'hasta', 'nota']) porId(`mh-${campo}`).value = valores[campo];
+  pagina.horasExtras = { dia, valores, guardando: false };
+  limpiarErrores('horasExtras');
+  porId('mh-borrar').hidden = !dia;
+  porId('mh-guardar').disabled = false;
+  actualizarLaSuma();
+  if (pagina.horas === null) cargarHorasExtras(null, { conAnuncio: false }).then(actualizarLaSuma);
+  abrirModal('modal-horas', { volverA, foco: () => porId('mh-fecha'), alCerrar: () => { pagina.horasExtras = null; } });
+}
+
+const valoresDeLasHorasExtras = () => ({
+  ...pagina.horasExtras.valores, fecha: porId('mh-fecha').value, desde: porId('mh-desde').value, hasta: porId('mh-hasta').value,
+  nota: porId('mh-nota').value
+});
+
+function actualizarLaSuma() {
+  if (!pagina.horasExtras) return;
+  const suma = porId('mh-suma');
+  suma.textContent = textoDeLaSuma(valoresDeLasHorasExtras(), pagina.horas, modalidadActual());
+  suma.hidden = suma.textContent === '';
+}
+
+async function guardarHorasExtras() {
+  const formulario = pagina.horasExtras;
+  const boton = porId('mh-guardar');
+  if (!formulario || formulario.guardando) return;
+  const valores = valoresDeLasHorasExtras();
+  if (mostrarErrores('horasExtras', conSusControles('horasExtras', erroresDeHoras(valores)))) return;
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.dia
+      ? await API.pedirJson('PUT', `/mi-espacio/horas-extras/${encodeURIComponent(formulario.dia.id)}`, cuerpoDeHoras(valores))
+      : await API.pedirJson('POST', '/mi-espacio/horas-extras', cuerpoDeHoras(valores));
+    formulario.guardando = false;
+    cerrarModal('modal-horas');
+    anunciar(textoDeLaRespuesta(respuesta));
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas('modal-horas', error);
+    else if (pagina.horasExtras === formulario) mostrarFallaDelServidor('horasExtras', error, boton);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+function pedirBorrarHorasExtras() {
+  const formulario = pagina.horasExtras;
+  if (!formulario?.dia || formulario.guardando) return;
+  const { id } = formulario.dia;
+  pedirConfirmacion({
+    titulo: '¿Borrar las horas extras?', texto: textoDeConfirmacion(formulario.dia), volverA: porId('mh-borrar'),
+    formulario: 'modal-horas', borrar: () => API.pedirJson('DELETE', `/mi-espacio/horas-extras/${encodeURIComponent(id)}`)
+  });
+}
+
+// ---- «Mis vacaciones y saldos» ----
+
+// Abre «Mis vacaciones y saldos» (spec, sección 4) con lo que vale para el año en curso (GET /anio/:anio) y los campos de «Para
+// arrancar» (GET /saldo-inicial). Si no se puede, lo anuncia
+async function abrirSaldos(volverA = null) {
+  if (pagina.saldos !== null) return;
+  const anio = anioDeHoy();
+  pagina.saldos = { cargando: true };
+  let delAnio;
+  let saldo;
+  try {
+    [{ data: delAnio }, { data: saldo }] = await Promise.all([
+      API.pedirJson('GET', `/mi-espacio/anio/${anio}`), API.pedirJson('GET', '/mi-espacio/saldo-inicial')
+    ]);
+  } catch (error) {
+    pagina.saldos = null;
+    if (error?.status === 401) irAlLogin();
+    else anunciar('No se pudo abrir «Mis vacaciones y saldos». Probá de nuevo en unos minutos.');
+    return;
+  }
+  if (!esObjeto(delAnio) || !esObjeto(saldo) || !Array.isArray(saldo.campos)) {
+    pagina.saldos = null;
+    anunciar(comoTexto(saldo?.mensaje) || comoTexto(delAnio?.mensaje));
+    return;
+  }
+  const dias = DIAS_VACACIONES.includes(delAnio.dias_vacaciones) ? delAnio.dias_vacaciones : null;
+  pagina.saldos = { anio, campos: saldo.campos, camposDelModal: saldo.campos, textos: delAnio.textos_mitades, guardando: false };
+  const modalidad = pagina.resumen?.modalidad?.texto;
+  porId('ms-modalidad').innerHTML = conTexto(modalidad)
+    ? `Modalidad: <b>${esc(modalidad)}</b> <span class="me-opcional">(la carga administración en Configuración → Usuarios)</span>` : '';
+  porId('ms-modalidad').hidden = !conTexto(modalidad);
+  porId('ms-dias-rotulo').textContent = `Días de la licencia ${String(anio)}`;
+  porId('ms-dias-opciones').innerHTML = htmlDeDiasDeVacaciones(dias);
+  // Sin días elegidos todavía (la primera vez), los estudios tampoco; si no, null es «No estudio»
+  porId('ms-estudios-opciones').innerHTML = htmlDeEstudios(dias === null ? undefined : (delAnio.estudios ?? ''));
+  pintarCamposDelSaldo(valoresDelSaldo(saldo.campos));
+  limpiarErrores('saldos');
+  porId('ms-guardar').disabled = false;
+  abrirModal('modal-saldos', { volverA, foco: () => controlDeFoco('ms-dias'), alCerrar: () => { pagina.saldos = null; } });
+}
+
+// Lo elegido en el modal: los días (o null) y los estudios (la carrera, null por «No estudio» o undefined si no eligió)
+const diasElegidos = () => {
+  const dias = Number(porId('ms-dias').querySelector('input:checked')?.value);
+  return DIAS_VACACIONES.includes(dias) ? dias : null;
+};
+const estudiosElegidos = () => {
+  const elegido = porId('ms-estudios').querySelector('input:checked');
+  if (!elegido) return undefined;
+  return conTexto(elegido.value) ? elegido.value : null;
+};
+const valoresEscritosDelSaldo = () => Object.fromEntries([...porId('ms-campos').querySelectorAll('[data-saldo]')]
+  .map((campo) => [campo.dataset.saldo, campo.value]));
+
+// «Para arrancar» con lo elegido arriba (camposConLoElegido) y lo escrito, y la ayuda de los días: cómo se habilitan los elegidos
+function pintarCamposDelSaldo(valores) {
+  const saldos = pagina.saldos;
+  const dias = diasElegidos();
+  saldos.camposDelModal = camposConLoElegido(saldos.campos, { anio: saldos.anio, dias, estudios: estudiosElegidos() });
+  porId('ms-campos').innerHTML = htmlDeCamposDelSaldo(saldos.camposDelModal, valores);
+  porId('ms-dias-mitades').textContent = dias === null ? '' : comoTexto(deMapa(saldos.textos, String(dias), ''));
+}
+
+function alElegirEnLosSaldos() {
+  if (pagina.saldos?.campos) pintarCamposDelSaldo(valoresEscritosDelSaldo());
+}
+
+// «Guardar»: primero los días y los estudios del año (PUT /anio/:anio) y después el saldo inicial (PUT /saldo-inicial). Si el
+// segundo falla, el modal queda abierto: el año ya se guardó
+async function guardarSaldos() {
+  const saldos = pagina.saldos;
+  const boton = porId('ms-guardar');
+  if (!saldos?.campos || saldos.guardando) return;
+  const dias = diasElegidos();
+  const estudios = estudiosElegidos();
+  const valores = valoresEscritosDelSaldo();
+  const errores = [];
+  if (dias === null) errores.push(['ms-dias', MENSAJES_FORMULARIOS.diasVacaciones]);
+  if (estudios === undefined) errores.push(['ms-estudios', MENSAJES_FORMULARIOS.estudios]);
+  for (const [clave, mensaje] of Object.entries(erroresDelSaldo(valores, saldos.camposDelModal))) {
+    errores.push([`ms-campo-${clave}`, mensaje]);
+  }
+  if (mostrarErrores('saldos', errores)) return;
+  saldos.guardando = true;
+  boton.disabled = true;
+  let anioGuardado = false;
+  try {
+    await API.pedirJson('PUT', `/mi-espacio/anio/${saldos.anio}`, { dias_vacaciones: dias, estudios });
+    anioGuardado = true;
+    const respuesta = await API.pedirJson('PUT', '/mi-espacio/saldo-inicial', cuerpoDelSaldo(valores, saldos.camposDelModal));
+    saldos.guardando = false;
+    cerrarModal('modal-saldos');
+    anunciar(textoDeLaRespuesta(respuesta));
+    volverAPedirTodo();
+  } catch (error) {
+    saldos.guardando = false;
+    if (error?.status === 401) irAlLogin();
+    else if (pagina.saldos === saldos && !anioGuardado) mostrarFallaDelServidor('saldos', error, boton);
+    else if (pagina.saldos === saldos) {
+      // El año ya se guardó: el motivo del saldo, en su campo (si es de «Para arrancar» o de los días) y arriba del modal
+      limpiarErrores('saldos');
+      const id = porId(`ms-campo-${error?.campo}`) ? `ms-campo-${error.campo}` : deMapa(FORMULARIOS.saldos.campos, error?.campo, null);
+      ponerError(id, error?.message);
+      const motivo = comoTexto(error?.message).replace(/\.$/, '');
+      avisoDelModal('saldos', `Los días del año se guardaron, pero el saldo inicial no: ${motivo}.`);
+      (id ? controlDeFoco(id) : boton)?.focus?.();
+    }
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// ---- La confirmación de un borrado ----
+
+// Abre la confirmación sobre el formulario (`formulario`, su modal): `texto`, en texto plano; «Borrar» corre `borrar`. El foco va
+// a «Cancelar», que no borra nada, y vuelve a `volverA`
+function pedirConfirmacion({ titulo, texto, volverA, formulario, borrar }) {
+  pagina.confirmacion = { formulario, borrar, ocupado: false };
+  porId('modal-confirmar-titulo').textContent = titulo;
+  porId('modal-confirmar-texto').textContent = texto;
+  avisoDelModal('confirmar', '');
+  porId('modal-confirmar-si').disabled = false;
+  abrirModal('modal-confirmar', {
+    volverA, foco: () => porId('modal-confirmar').querySelector('.modal-footer [data-cerrar]'),
+    alCerrar: () => { pagina.confirmacion = null; }
+  });
+}
+
+// «Borrar»: si sale bien, se cierran la confirmación y el formulario, se anuncia y se vuelve a pedir todo; si no, el error queda en
+// la confirmación (un 404, como al guardar)
+async function confirmarElBorrado() {
+  const actual = pagina.confirmacion;
+  const boton = porId('modal-confirmar-si');
+  if (!actual || actual.ocupado) return;
+  actual.ocupado = true;
+  boton.disabled = true;
+  avisoDelModal('confirmar', '');
+  try {
+    const respuesta = await actual.borrar();
+    actual.ocupado = false;
+    cerrarModal('modal-confirmar');
+    cerrarModal(actual.formulario);
+    anunciar(textoDeLaRespuesta(respuesta));
+    volverAPedirTodo();
+  } catch (error) {
+    actual.ocupado = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) {
+      cerrarModal('modal-confirmar');
+      noEstaMas(actual.formulario, error);
+    } else if (pagina.confirmacion === actual) {
+      avisoDelModal('confirmar', error?.message || 'No se pudo borrar. Probá de nuevo en unos minutos.');
+      boton.focus?.();
+    }
+  } finally {
+    boton.disabled = false;
   }
 }
