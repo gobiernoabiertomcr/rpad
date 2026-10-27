@@ -1,6 +1,7 @@
-// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 2, 3.1 a 3.4, 3.8 y 4): las constantes, los textos,
+// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 2, 3.1 a 3.8 y 4): las constantes, los textos,
 // las reglas de las vacaciones (las dos mitades, el vencimiento y la licencia más vieja primero), lo que suma cada licencia
-// contra su tope del año y la validación de una carga, contadas en días hábiles con los feriados y desde el arranque.
+// contra su tope del año, la validación de una carga, y las horas extras con los francos compensatorios (planta), las horas
+// a favor (contrato) y lo no utilizado previamente, contadas en días hábiles con los feriados y desde el arranque.
 // Puras, sin base, sobre los casos de tests/fixtures/mi-espacio-casos.js.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,8 @@ import {
   textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
   TEXTO_NO_DIA_ENTERO,
   mitadesDe, habilitaciones, venceLaLicencia, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
-  textoDelReparto, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia
+  textoDelReparto, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
+  horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -673,6 +675,409 @@ describe('validarLicencia', () => {
   });
 });
 
+// Unas horas extras y un uso (las de los casos tienen ids del 1 al 13: las de los tests, desde el 100)
+const extra = (id, fecha, desde, hasta) => ({ id, fecha, desde, hasta });
+const uso = (id, tipo, fecha, horas = null) => ({ id, tipo, desde: fecha, hasta: fecha, horas });
+
+// Un estado solo con horas extras y sus usos, con el arranque de los casos
+const conHoras = (modalidad, horasExtras, licencias = [], cambios = {}) => ({
+  modalidad, arranque: HOY, anios: [], saldos: [], licencias, horasExtras, ...cambios
+});
+
+// Las horas extras de los ejemplos del usuario: 10,5 en octubre, 7,5 en noviembre y 6,5 en diciembre de 2026
+const EJEMPLOS_DEL_USUARIO = [
+  extra(100, '2026-10-06', '18:00', '21:30'), extra(101, '2026-10-14', '17:00', '21:00'),
+  extra(102, '2026-10-22', '19:00', '22:00'),
+  extra(103, '2026-11-05', '18:00', '22:00'), extra(104, '2026-11-12', '18:00', '21:30'),
+  extra(105, '2026-12-03', '18:00', '22:00'), extra(106, '2026-12-10', '18:00', '20:30')
+];
+
+const delMes = (meses, mesTrabajado) => meses.find((mes) => mes.mes_trabajado === mesTrabajado);
+const A_HOY = { hoy: HOY, feriados: SIN_FERIADOS };
+
+describe('las horas extras', () => {
+  it('horasDe: de a media hora; si pasa la medianoche, +24 h', () => {
+    assert.equal(horasDe('19:00', '22:00'), 3);
+    assert.equal(horasDe('18:00', '21:30'), 3.5);
+    assert.equal(horasDe('22:00', '01:30'), 3.5);
+    assert.equal(horasDe('23:30', '00:00'), 0.5);
+    assert.equal(horasDe('00:00', '23:30'), 23.5);
+    assert.equal(horasDe('10:15', '11:00'), null);
+    assert.equal(horasDe('10:00', '10:15'), null);
+    assert.equal(horasDe('10:00', '10:00'), null);
+    // Lo que no es 'HH:MM' de un día: el TIME de la base se corta antes
+    for (const [desde, hasta] of [['9:00', '10:00'], ['24:00', '01:00'], ['19:00:00', '22:00:00'], [null, '10:00'],
+      ['10:00', undefined], [1900, 2200]]) {
+      assert.equal(horasDe(desde, hasta), null, `${desde} ${hasta}`);
+    }
+  });
+
+  it('mesMas: suma meses sobre el índice año × 12 + mes', () => {
+    assert.equal(mesMas('2026-10', 2), '2026-12');
+    assert.equal(mesMas('2026-11', 2), '2027-01');
+    assert.equal(mesMas('2026-12', 1), '2027-01');
+    assert.equal(mesMas('2027-01', -2), '2026-11');
+    assert.equal(mesMas('2026-10', 0), '2026-10');
+    assert.equal(mesMas('2026-10', 24), '2028-10');
+    for (const [mes, n] of [['2026-13', 1], ['2026-1', 1], ['2026-10-01', 1], [null, 1], ['2026-10', 1.5], ['2026-10', '1'],
+      ['2026-10', NaN], ['9999-12', 1], ['0001-01', -1]]) {
+      assert.equal(mesMas(mes, n), null, `${mes} ${n}`);
+    }
+  });
+
+  it('horasPorMes: cada fila en el mes de su fecha, también si pasa la medianoche', () => {
+    assert.deepEqual([...horasPorMes(PLANTA.estado.horasExtras)],
+      [['2026-06', 7], ['2026-07', 5], ['2026-08', 14], ['2026-09', 7.5], ['2026-10', 10.5]]);
+    // El 31/10 de 22:00 a 01:30 cuenta entero en octubre
+    assert.deepEqual([...horasPorMes([extra(100, '2026-10-31', '22:00', '01:30'), extra(101, '2026-11-02', '18:00', '19:00')])],
+      [['2026-10', 3.5], ['2026-11', 1]]);
+    // Las filas que no sirven no suman
+    assert.deepEqual([...horasPorMes([null, 3, {}, extra(100, '2026-02-30', '18:00', '19:00'),
+      extra(101, '2026-10-05', '10:15', '11:00'), extra(102, '2026-10-06', '18:00', '19:00')])], [['2026-10', 1]]);
+    assert.deepEqual([...horasPorMes(null)], []);
+  });
+});
+
+describe('validarHorasExtras', () => {
+  const validar = (entrada, contexto = {}) => validarHorasExtras(entrada, { hoy: HOY, estado: PLANTA.estado, ...contexto });
+  const errorDe = (resultado) => resultado.error;
+
+  it('cualquier día vale: un sábado y un feriado', () => {
+    assert.deepEqual(validar({ fecha: '2026-10-31', desde: '19:00', hasta: '22:00' }),
+      { datos: { fecha: '2026-10-31', desde: '19:00', hasta: '22:00', nota: null }, error: null });
+    assert.equal(errorDe(validar({ fecha: '2026-12-25', desde: '09:00', hasta: '13:00' })), null);
+    // Y pasar la medianoche
+    assert.equal(errorDe(validar({ fecha: '2026-10-31', desde: '22:00', hasta: '01:30' })), null);
+  });
+
+  it('la fecha: el formato y el rango', () => {
+    const fecha = { campo: 'fecha', mensaje: MENSAJES_MI_ESPACIO.fecha };
+    for (const mala of [undefined, '', '2026-02-30', '31/10/2026']) {
+      assert.deepEqual(errorDe(validar({ fecha: mala, desde: '19:00', hasta: '22:00' })), fecha);
+    }
+    assert.deepEqual(errorDe(validar({ fecha: '2023-12-31', desde: '19:00', hasta: '22:00' })),
+      { campo: 'fecha', mensaje: textoRango('2024-01-01', '2027-12-31') });
+    assert.deepEqual(errorDe(validar({ fecha: '2028-01-01', desde: '19:00', hasta: '22:00' })),
+      { campo: 'fecha', mensaje: textoRango('2024-01-01', '2027-12-31') });
+    // Sin un hoy válido no pasa ninguna fecha
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-31', desde: '19:00', hasta: '22:00' }, { hoy: null })), fecha);
+  });
+
+  it('el horario, de a media hora, en desde', () => {
+    const horario = { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.horario };
+    assert.deepEqual(errorDe(validar({ fecha: '2026-11-03', desde: '10:15', hasta: '11:00' })), horario);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-11-03', desde: '10:00', hasta: '10:00' })), horario);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-11-03', desde: '10:00' })), horario);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-11-03', desde: '10:00:00', hasta: '11:00:00' })), horario);
+  });
+
+  it('la nota: recortada, de hasta 200 caracteres contados con Array.from', () => {
+    const nota = { campo: 'nota', mensaje: MENSAJES_MI_ESPACIO.nota };
+    assert.deepEqual(errorDe(validar({ fecha: '2026-11-03', desde: '18:00', hasta: '20:00', nota: 'x'.repeat(201) })), nota);
+    assert.equal(validar({ fecha: '2026-11-03', desde: '18:00', hasta: '20:00', nota: '\u{1F600}'.repeat(200) }).datos.nota,
+      '\u{1F600}'.repeat(200));
+    assert.equal(validar({ fecha: '2026-11-03', desde: '18:00', hasta: '20:00', nota: '  Cierre de mes  ' }).datos.nota,
+      'Cierre de mes');
+    assert.equal(validar({ fecha: '2026-11-03', desde: '18:00', hasta: '20:00', nota: '   ' }).datos.nota, null);
+  });
+
+  it('no se superpone con otra del mismo día', () => {
+    // PLANTA tiene el 22/10 de 19:00 a 22:00
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-22', desde: '20:00', hasta: '21:00' })),
+      { campo: 'desde', mensaje: 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.' });
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-22', desde: '21:30', hasta: '01:00' })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('19:00', '22:00') });
+    // Pegadas no se superponen, y la que se corrige no cuenta (con el id como número o como texto)
+    assert.equal(errorDe(validar({ fecha: '2026-10-22', desde: '22:00', hasta: '23:00' })), null);
+    assert.equal(errorDe(validar({ fecha: '2026-10-22', desde: '17:00', hasta: '19:00' })), null);
+    assert.equal(errorDe(validar({ fecha: '2026-10-22', desde: '20:00', hasta: '21:00' }, { editadaId: 13 })), null);
+    assert.equal(errorDe(validar({ fecha: '2026-10-22', desde: '20:00', hasta: '21:00' }, { editadaId: '13' })), null);
+    // Otro día no cuenta
+    assert.equal(errorDe(validar({ fecha: '2026-10-23', desde: '20:00', hasta: '21:00' })), null);
+  });
+
+  it('una que pasa la medianoche ocupa hasta el día siguiente de su fecha', () => {
+    const estado = conHoras('planta', [extra(100, '2026-10-23', '22:00', '01:30')]);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-23', desde: '23:00', hasta: '23:30' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('22:00', '01:30') });
+    // A la 01:00 del mismo día todavía no empezó
+    assert.equal(errorDe(validar({ fecha: '2026-10-23', desde: '01:00', hasta: '02:00' }, { estado })), null);
+  });
+
+  it('con dos que se superponen, la que empieza primero', () => {
+    const estado = conHoras('planta', [extra(101, '2026-10-23', '20:00', '22:00'), extra(100, '2026-10-23', '18:00', '19:00')]);
+    assert.deepEqual(errorDe(validar({ fecha: '2026-10-23', desde: '18:30', hasta: '21:00' }, { estado })),
+      { campo: 'desde', mensaje: textoHorarioSuperpuesto('18:00', '19:00') });
+  });
+
+  it('el orden: la fecha, el horario, la nota y la superposición', () => {
+    assert.equal(errorDe(validar({ fecha: 'x', desde: '10:15', nota: 'x'.repeat(201) })).campo, 'fecha');
+    assert.equal(errorDe(validar({ fecha: '2026-10-22', desde: '10:15', nota: 'x'.repeat(201) })).campo, 'desde');
+    assert.equal(errorDe(validar({ fecha: '2026-10-22', desde: '20:00', hasta: '21:00', nota: 'x'.repeat(201) })).campo,
+      'nota');
+  });
+});
+
+describe('los francos compensatorios (planta)', () => {
+  it('los ejemplos del usuario', () => {
+    const francos = francosDe(conHoras('planta', EJEMPLOS_DEL_USUARIO), A_HOY);
+    assert.deepEqual(francos.map(({ mes_trabajado, horas, francos: cuantos, mes_de_uso }) =>
+      ({ mes_trabajado, horas, francos: cuantos, mes_de_uso })), [
+      { mes_trabajado: '2026-10', horas: 10.5, francos: 1, mes_de_uso: '2026-12' },
+      { mes_trabajado: '2026-11', horas: 7.5, francos: 1, mes_de_uso: '2027-01' },
+      { mes_trabajado: '2026-12', horas: 6.5, francos: 0, mes_de_uso: '2027-02' }
+    ]);
+  });
+
+  it('PLANTA a hoy', () => {
+    const francos = francosDe(PLANTA.estado, A_HOY);
+    assert.deepEqual(francos.map((mes) => mes.mes_trabajado), ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+    // El franco del 23/10 es anterior al arranque y cuenta igual: los francos no tienen saldo inicial
+    assert.deepEqual(delMes(francos, '2026-08'), {
+      mes_trabajado: '2026-08', horas: 14, francos: 2, mes_de_uso: '2026-10', usos: [{ id: 5, fecha: '2026-10-23' }],
+      disponibles: 1, no_utilizados: 0, ultimo_dia_habil: '2026-10-30', termino: false
+    });
+    assert.deepEqual(delMes(francos, '2026-06'), {
+      mes_trabajado: '2026-06', horas: 7, francos: 1, mes_de_uso: '2026-08', usos: [], disponibles: 0, no_utilizados: 1,
+      ultimo_dia_habil: '2026-08-31', termino: true
+    });
+    assert.equal(delMes(francos, '2026-07').francos, 0);
+    assert.equal(delMes(francos, '2026-07').no_utilizados, 0);
+    // Los que todavía no empezaron: disponibles para su mes
+    assert.deepEqual(delMes(francos, '2026-09'), {
+      mes_trabajado: '2026-09', horas: 7.5, francos: 1, mes_de_uso: '2026-11', usos: [], disponibles: 1, no_utilizados: 0,
+      ultimo_dia_habil: '2026-11-30', termino: false
+    });
+    assert.equal(delMes(francos, '2026-10').ultimo_dia_habil, '2026-12-31');
+  });
+
+  it('con los feriados: el último día hábil, y un franco que cae en un feriado nuevo no se usó', () => {
+    const conFeriado = francosDe(PLANTA.estado, { hoy: HOY, feriados: new Set(['2026-10-30']) });
+    assert.equal(delMes(conFeriado, '2026-08').ultimo_dia_habil, '2026-10-29');
+    const sobreElFranco = francosDe(PLANTA.estado, { hoy: HOY, feriados: new Set(['2026-10-23']) });
+    assert.deepEqual(delMes(sobreElFranco, '2026-08').usos, []);
+    assert.equal(delMes(sobreElFranco, '2026-08').disponibles, 2);
+  });
+
+  it('un franco en un mes sin francos también va, para que se vea que sobra', () => {
+    const francos = francosDe(conLicencias(PLANTA.estado, uso(100, 'franco', '2027-02-01')), A_HOY);
+    assert.deepEqual(delMes(francos, '2026-12'), {
+      mes_trabajado: '2026-12', horas: 0, francos: 0, mes_de_uso: '2027-02', usos: [{ id: 100, fecha: '2027-02-01' }],
+      disponibles: 0, no_utilizados: 0, ultimo_dia_habil: '2027-02-26', termino: false
+    });
+  });
+
+  it('más usos que francos: ninguno disponible', () => {
+    const estado = conLicencias(PLANTA.estado, uso(101, 'franco', '2026-10-28'), uso(100, 'franco', '2026-10-27'));
+    const agosto = delMes(francosDe(estado, A_HOY), '2026-08');
+    assert.deepEqual(agosto.usos, [
+      { id: 5, fecha: '2026-10-23' }, { id: 100, fecha: '2026-10-27' }, { id: 101, fecha: '2026-10-28' }
+    ]);
+    assert.equal(agosto.disponibles, 0);
+  });
+
+  it('solo en planta, y solo las filas franco', () => {
+    assert.deepEqual(francosDe(CONTRATO.estado, A_HOY), []);
+    assert.deepEqual(francosDe({ ...PLANTA.estado, modalidad: null }, A_HOY), []);
+    // Unas horas a favor (de cuando era de contrato) no son francos
+    const estado = conLicencias(PLANTA.estado, uso(100, 'horas_a_favor', '2026-10-27', 7));
+    assert.deepEqual(francosDe(estado, A_HOY), francosDe(PLANTA.estado, A_HOY));
+    // Sin un hoy válido no se sabe qué mes terminó
+    assert.deepEqual(francosDe(PLANTA.estado, { feriados: SIN_FERIADOS }), []);
+  });
+});
+
+describe('las horas a favor (contrato)', () => {
+  it('los ejemplos del usuario', () => {
+    const usos = [uso(100, 'horas_a_favor', '2026-11-03', 7), uso(101, 'horas_a_favor', '2026-11-10', 2),
+      uso(102, 'horas_a_favor', '2026-11-17', 1.5)];
+    const horas = horasAFavorDe(conHoras('contrato', EJEMPLOS_DEL_USUARIO, usos), A_HOY);
+    assert.deepEqual(horas.map(({ mes_trabajado, horas: extras, mes_de_uso, a_favor, usadas, disponibles }) =>
+      ({ mes_trabajado, horas: extras, mes_de_uso, a_favor, usadas, disponibles })), [
+      { mes_trabajado: '2026-10', horas: 10.5, mes_de_uso: '2026-11', a_favor: 10.5, usadas: 10.5, disponibles: 0 },
+      { mes_trabajado: '2026-11', horas: 7.5, mes_de_uso: '2026-12', a_favor: 7.5, usadas: 0, disponibles: 7.5 },
+      { mes_trabajado: '2026-12', horas: 6.5, mes_de_uso: '2027-01', a_favor: 6.5, usadas: 0, disponibles: 6.5 }
+    ]);
+    assert.deepEqual(horas[0].usos, [
+      { id: 100, fecha: '2026-11-03', horas: 7 }, { id: 101, fecha: '2026-11-10', horas: 2 },
+      { id: 102, fecha: '2026-11-17', horas: 1.5 }
+    ]);
+  });
+
+  it('CONTRATO a hoy', () => {
+    assert.deepEqual(horasAFavorDe(CONTRATO.estado, A_HOY), [
+      {
+        mes_trabajado: '2026-09', horas: 10.5, mes_de_uso: '2026-10', a_favor: 10.5,
+        usos: [{ id: 1, fecha: '2026-10-09', horas: 7 }, { id: 3, fecha: '2026-10-20', horas: 2 }], usadas: 9,
+        disponibles: 1.5, no_utilizadas: 0, antes_del_arranque: false, ultimo_dia_habil: '2026-10-30', termino: false
+      },
+      {
+        mes_trabajado: '2026-10', horas: 4, mes_de_uso: '2026-11', a_favor: 4, usos: [], usadas: 0, disponibles: 4,
+        no_utilizadas: 0, antes_del_arranque: false, ultimo_dia_habil: '2026-11-30', termino: false
+      }
+    ]);
+  });
+
+  it('las horas del DECIMAL llegan como texto', () => {
+    const estado = {
+      ...CONTRATO.estado,
+      licencias: CONTRATO.estado.licencias.map((fila) => (fila.horas === null ? fila : { ...fila, horas: fila.horas.toFixed(1) }))
+    };
+    assert.equal(delMes(horasAFavorDe(estado, A_HOY), '2026-09').usadas, 9);
+  });
+
+  it('cuando termina el mes, lo que queda pasa a no utilizado', () => {
+    const septiembre = delMes(horasAFavorDe(CONTRATO.estado, { hoy: '2026-11-02', feriados: SIN_FERIADOS }), '2026-09');
+    assert.equal(septiembre.termino, true);
+    assert.equal(septiembre.disponibles, 0);
+    assert.equal(septiembre.no_utilizadas, 1.5);
+  });
+
+  it('antes del arranque: el mes de uso terminó antes, y lo que quedó ya está en el saldo inicial', () => {
+    const estado = conLicencias({
+      ...CONTRATO.estado, horasExtras: [...CONTRATO.estado.horasExtras, extra(100, '2026-08-20', '18:00', '21:00')]
+    }, uso(100, 'horas_a_favor', '2026-09-15', 1.5));
+    const horas = horasAFavorDe(estado, A_HOY);
+    assert.deepEqual(delMes(horas, '2026-08'), {
+      mes_trabajado: '2026-08', horas: 3, mes_de_uso: '2026-09', a_favor: 3, usos: [{ id: 100, fecha: '2026-09-15', horas: 1.5 }],
+      usadas: 1.5, disponibles: 0, no_utilizadas: 1.5, antes_del_arranque: true, ultimo_dia_habil: '2026-09-30', termino: true
+    });
+    // Octubre, el mes del arranque, no
+    assert.equal(delMes(horas, '2026-09').antes_del_arranque, false);
+  });
+
+  it('solo en contrato, y solo las filas horas_a_favor', () => {
+    assert.deepEqual(horasAFavorDe(PLANTA.estado, A_HOY), []);
+    const estado = conLicencias(CONTRATO.estado, uso(100, 'franco', '2026-10-27'));
+    assert.deepEqual(horasAFavorDe(estado, A_HOY), horasAFavorDe(CONTRATO.estado, A_HOY));
+    assert.deepEqual(horasAFavorDe(CONTRATO.estado, { feriados: SIN_FERIADOS }), []);
+  });
+});
+
+describe('lo no utilizado previamente', () => {
+  // Un estado de contrato con el arranque del 02/03/2026 y el saldo de horas no utilizadas de 2026
+  const contratoDesdeMarzo = (saldo, horasExtras, licencias = []) => conHoras('contrato', horasExtras, licencias, {
+    arranque: '2026-03-02', saldos: [{ concepto: 'horas_no_utilizadas', anio: 2026, cantidad: saldo }]
+  });
+  // 3 horas extras en mayo: 3 a favor en junio, que nadie usó
+  const MAYO = extra(100, '2026-05-12', '18:00', '21:00');
+
+  it('PLANTA: el franco de junio, sin usar en agosto', () => {
+    assert.deepEqual(noUtilizadasDe(PLANTA.estado, 2026, A_HOY), {
+      anio: 2026, unidad: 'francos', saldo: { cantidad: 0, quedan: 0 },
+      meses: [{ mes_de_uso: '2026-08', mes_trabajado: '2026-06', cantidad: 1, quedan: 1, antes_del_arranque: false }],
+      usos: [], quedan: 1
+    });
+  });
+
+  it('CONTRATO: el saldo inicial, solo en el año del arranque', () => {
+    assert.deepEqual(noUtilizadasDe(CONTRATO.estado, 2026, A_HOY), {
+      anio: 2026, unidad: 'horas', saldo: { cantidad: 6.5, quedan: 6.5 }, meses: [], usos: [], quedan: 6.5
+    });
+    assert.deepEqual(noUtilizadasDe(CONTRATO.estado, 2027, A_HOY).saldo, { cantidad: 0, quedan: 0 });
+  });
+
+  it('vuelve a cero el 1/1: lo de diciembre sin usar en enero es de 2027', () => {
+    const estado = conHoras('contrato', [extra(100, '2026-12-10', '18:00', '21:00')]);
+    const enFebrero = { hoy: '2027-02-15', feriados: SIN_FERIADOS };
+    assert.deepEqual(noUtilizadasDe(estado, 2026, enFebrero).meses, []);
+    assert.equal(noUtilizadasDe(estado, 2026, enFebrero).quedan, 0);
+    assert.deepEqual(noUtilizadasDe(estado, 2027, enFebrero).meses,
+      [{ mes_de_uso: '2027-01', mes_trabajado: '2026-12', cantidad: 3, quedan: 3, antes_del_arranque: false }]);
+    assert.equal(noUtilizadasDe(estado, 2027, enFebrero).quedan, 3);
+    // Mientras enero no termina, todavía no es no utilizado
+    assert.deepEqual(noUtilizadasDe(estado, 2027, { hoy: '2027-01-29', feriados: SIN_FERIADOS }).meses, []);
+  });
+
+  it('antes del arranque: septiembre no suma, el saldo sí', () => {
+    const estado = conLicencias({
+      ...CONTRATO.estado, horasExtras: [...CONTRATO.estado.horasExtras, extra(100, '2026-08-20', '18:00', '21:00')]
+    }, uso(100, 'horas_a_favor', '2026-09-15', 1.5));
+    const resultado = noUtilizadasDe(estado, 2026, A_HOY);
+    assert.deepEqual(resultado.meses,
+      [{ mes_de_uso: '2026-09', mes_trabajado: '2026-08', cantidad: 1.5, quedan: 0, antes_del_arranque: true }]);
+    assert.deepEqual(resultado.saldo, { cantidad: 6.5, quedan: 6.5 });
+    assert.equal(resultado.quedan, 6.5);
+    assert.equal(noUtilizadasDe(CONTRATO.estado, 2026, A_HOY).quedan, 6.5);
+  });
+
+  it('el uso autorizado, más viejas primero: primero el saldo y después los meses', () => {
+    assert.deepEqual(noUtilizadasDe(contratoDesdeMarzo(1, [MAYO]), 2026, A_HOY), {
+      anio: 2026, unidad: 'horas', saldo: { cantidad: 1, quedan: 1 },
+      meses: [{ mes_de_uso: '2026-06', mes_trabajado: '2026-05', cantidad: 3, quedan: 3, antes_del_arranque: false }],
+      usos: [], quedan: 4
+    });
+    const conUso = contratoDesdeMarzo(1, [MAYO], [uso(200, 'uso_autorizado', '2026-10-27', 2)]);
+    assert.deepEqual(noUtilizadasDe(conUso, 2026, A_HOY), {
+      anio: 2026, unidad: 'horas', saldo: { cantidad: 1, quedan: 0 },
+      meses: [{ mes_de_uso: '2026-06', mes_trabajado: '2026-05', cantidad: 3, quedan: 2, antes_del_arranque: false }],
+      usos: [{ id: 200, fecha: '2026-10-27', cantidad: 2 }], quedan: 2
+    });
+  });
+
+  it('de los meses, también el más viejo primero', () => {
+    const estado = contratoDesdeMarzo(1, [extra(101, '2026-03-10', '18:00', '20:00'), MAYO],
+      [uso(200, 'uso_autorizado', '2026-10-27', 4)]);
+    const resultado = noUtilizadasDe(estado, 2026, A_HOY);
+    assert.deepEqual(resultado.meses.map(({ mes_de_uso, cantidad, quedan }) => ({ mes_de_uso, cantidad, quedan })),
+      [{ mes_de_uso: '2026-04', cantidad: 2, quedan: 0 }, { mes_de_uso: '2026-06', cantidad: 3, quedan: 2 }]);
+    assert.equal(resultado.saldo.quedan, 0);
+    assert.equal(resultado.quedan, 2);
+  });
+
+  it('con más usos que lo que había, no queda nada (nunca negativo); el DECIMAL llega como texto', () => {
+    const estado = contratoDesdeMarzo('1.0', [MAYO], [uso(200, 'uso_autorizado', '2026-10-27', '5.0')]);
+    const resultado = noUtilizadasDe(estado, 2026, A_HOY);
+    assert.deepEqual(resultado.saldo, { cantidad: 1, quedan: 0 });
+    assert.equal(resultado.meses[0].quedan, 0);
+    assert.deepEqual(resultado.usos, [{ id: 200, fecha: '2026-10-27', cantidad: 5 }]);
+    assert.equal(resultado.quedan, 0);
+  });
+
+  it('en contrato, un uso anterior al arranque no descuenta (ya está en el saldo); uno de otro año, tampoco', () => {
+    const antes = contratoDesdeMarzo(1, [MAYO], [uso(200, 'uso_autorizado', '2026-02-10', 2)]);
+    assert.deepEqual(noUtilizadasDe(antes, 2026, A_HOY).usos, []);
+    assert.equal(noUtilizadasDe(antes, 2026, A_HOY).quedan, 4);
+    const otroAnio = contratoDesdeMarzo(1, [MAYO], [uso(200, 'uso_autorizado', '2027-01-05', 2)]);
+    assert.equal(noUtilizadasDe(otroAnio, 2026, A_HOY).quedan, 4);
+    assert.deepEqual(noUtilizadasDe(otroAnio, 2027, A_HOY).usos, [{ id: 200, fecha: '2027-01-05', cantidad: 2 }]);
+  });
+
+  it('uso autorizado en planta: un franco, también antes del arranque', () => {
+    const conUso = conLicencias(PLANTA.estado, uso(100, 'uso_autorizado', '2026-10-26', 7));
+    assert.deepEqual(noUtilizadasDe(conUso, 2026, A_HOY), {
+      anio: 2026, unidad: 'francos', saldo: { cantidad: 0, quedan: 0 },
+      meses: [{ mes_de_uso: '2026-08', mes_trabajado: '2026-06', cantidad: 1, quedan: 0, antes_del_arranque: false }],
+      usos: [{ id: 100, fecha: '2026-10-26', cantidad: 1 }], quedan: 0
+    });
+    // Planta no tiene saldo de francos: un uso de antes del arranque también descuenta
+    const antes = conLicencias(PLANTA.estado, uso(100, 'uso_autorizado', '2026-09-01', 7));
+    assert.equal(noUtilizadasDe(antes, 2026, A_HOY).quedan, 0);
+  });
+
+  it('las filas de otra modalidad no cuentan', () => {
+    // CONTRATO que pasó a planta: sus horas a favor y su saldo de horas no cuentan; sus horas extras dan francos
+    const aPlanta = { ...CONTRATO.estado, modalidad: 'planta' };
+    assert.deepEqual(noUtilizadasDe(aPlanta, 2026, A_HOY), {
+      anio: 2026, unidad: 'francos', saldo: { cantidad: 0, quedan: 0 }, meses: [], usos: [], quedan: 0
+    });
+    assert.deepEqual(francosDe(aPlanta, A_HOY).map((mes) => [mes.mes_trabajado, mes.francos, mes.usos.length]),
+      [['2026-09', 1, 0], ['2026-10', 0, 0]]);
+    // PLANTA que pasó a contrato: su franco no es un uso de horas a favor
+    const aContrato = { ...PLANTA.estado, modalidad: 'contrato' };
+    assert.deepEqual(horasAFavorDe(aContrato, A_HOY).flatMap((mes) => mes.usos), []);
+  });
+
+  it('sin modalidad, sin un año o sin un hoy válidos, nada', () => {
+    const vacio = (anio, unidad) => ({ anio, unidad, saldo: { cantidad: 0, quedan: 0 }, meses: [], usos: [], quedan: 0 });
+    assert.deepEqual(noUtilizadasDe({ ...CONTRATO.estado, modalidad: null }, 2026, A_HOY), vacio(2026, null));
+    assert.deepEqual(noUtilizadasDe(CONTRATO.estado, 'x', A_HOY), vacio(null, 'horas'));
+    assert.deepEqual(noUtilizadasDe(CONTRATO.estado, 2026, { feriados: SIN_FERIADOS }), vacio(2026, 'horas'));
+    // Un año como texto de cuatro cifras sirve
+    assert.equal(noUtilizadasDe(CONTRATO.estado, '2026', A_HOY).quedan, 6.5);
+  });
+});
+
 describe('nada tira', () => {
   const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
 
@@ -779,5 +1184,74 @@ describe('nada tira', () => {
       });
     }
     assert.equal(textoSuperpuesta(null), 'Ya tenés una licencia cargada el —: corregí la que ya está.');
+  });
+
+  it('el año vigente y el saldo de vacaciones, con un objeto sin prototipo o un Symbol', () => {
+    for (const valor of [Object.create(null), Symbol('x')]) {
+      assert.doesNotThrow(() => {
+        anioVigente([{ anio: valor, dias_vacaciones: valor, estudios: valor }], 2026);
+        anioVigente([{ anio: 2026, dias_vacaciones: valor }], 2026);
+        ordinariasDe({
+          ...PLANTA.estado, anios: [{ anio: 2026, dias_vacaciones: valor }],
+          saldos: [{ concepto: 'vacaciones', anio: valor, cantidad: 3 }, { concepto: 'vacaciones', anio: 2024, cantidad: valor }]
+        }, HOY);
+      }, typeof valor);
+    }
+    // Un año que no es un número no cuenta, y unos días que no son un número son 0
+    assert.equal(anioVigente([{ anio: Object.create(null), dias_vacaciones: 20 }], 2026), null);
+    assert.deepEqual(anioVigente([{ anio: 2026, dias_vacaciones: Object.create(null), estudios: null }], 2026),
+      { anio: 2026, dias_vacaciones: 0, estudios: null });
+    // Los de la base pueden llegar como texto
+    assert.deepEqual(anioVigente([{ anio: '2025', dias_vacaciones: '15', estudios: 'secundario' }], 2026),
+      { anio: 2025, dias_vacaciones: 15, estudios: 'secundario' });
+    assert.equal(ordinariasDe({ ...PLANTA.estado, saldos: [{ concepto: 'vacaciones', anio: '2024', cantidad: '8.0' }] }, HOY)
+      .find((o) => o.anio === 2024).total, 8);
+  });
+
+  it('las horas extras, los francos, las horas a favor y lo no utilizado con entradas raras', () => {
+    for (const valor of [...raros, Object.create(null), Symbol('x')]) {
+      assert.doesNotThrow(() => {
+        horasDe(valor, valor);
+        horasDe('19:00', valor);
+        mesMas(valor, valor);
+        mesMas('2026-10', valor);
+        horasPorMes(valor);
+        horasPorMes([valor, { fecha: valor, desde: valor, hasta: valor }, { fecha: '2026-10-22', desde: valor, hasta: '22:00' }]);
+        validarHorasExtras(valor, valor);
+        validarHorasExtras({ fecha: '2026-10-22', desde: '20:00', hasta: '21:00', nota: valor },
+          { hoy: HOY, estado: valor, editadaId: valor });
+        validarHorasExtras({ fecha: '2026-10-22', desde: '20:00', hasta: '21:00' }, {
+          hoy: HOY,
+          estado: { horasExtras: [valor, { id: valor, fecha: '2026-10-22', desde: valor, hasta: valor }] }
+        });
+        for (const modalidad of ['planta', 'contrato']) {
+          for (const arranque of [HOY, valor]) {
+            const estado = {
+              modalidad, arranque,
+              saldos: [valor, { concepto: 'horas_no_utilizadas', anio: valor, cantidad: 1 },
+                { concepto: 'horas_no_utilizadas', anio: 2026, cantidad: valor }],
+              licencias: [
+                valor, { id: valor, tipo: 'franco', desde: valor, hasta: valor },
+                { id: valor, tipo: 'franco', desde: '2026-10-27', hasta: '2026-10-27' },
+                { id: 1, tipo: 'horas_a_favor', desde: '2026-10-27', hasta: '2026-10-27', horas: valor },
+                { id: 2, tipo: 'uso_autorizado', desde: '2026-10-28', hasta: '2026-10-28', horas: valor }
+              ],
+              horasExtras: [valor, { id: valor, fecha: '2026-08-04', desde: '18:00', hasta: '22:00' }]
+            };
+            francosDe(estado, { hoy: HOY, feriados: valor });
+            horasAFavorDe(estado, { hoy: HOY, feriados: valor });
+            noUtilizadasDe(estado, 2026, { hoy: HOY, feriados: valor });
+            noUtilizadasDe(estado, valor, valor);
+            francosDe({ ...estado, horasExtras: valor }, { hoy: valor });
+          }
+        }
+        francosDe(valor, valor);
+        horasAFavorDe(valor, valor);
+        noUtilizadasDe(valor, valor, valor);
+      }, typeof valor);
+    }
+    assert.deepEqual(francosDe(null), []);
+    assert.deepEqual(horasAFavorDe(undefined), []);
+    assert.equal(validarHorasExtras(null, null).error.campo, 'fecha');
   });
 });

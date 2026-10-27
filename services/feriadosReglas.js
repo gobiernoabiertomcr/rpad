@@ -5,10 +5,11 @@
  * campo.
  *
  * Dos partes:
- * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`), para
- *   Mi espacio (la entrega 2). Envuelven a `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los
- *   feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que con
- *   `esDiaHabil`. El resto del sistema sigue con `esDiaHabil` y los 9 fijos.
+ * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`,
+ *   `proximoDiaHabilCon`, `restarDiasHabilesCon`, `ultimoDiaHabilDelMesCon`), para Mi espacio (la entrega 2). Envuelven a
+ *   `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los feriados solo sacan días hábiles, nunca los
+ *   agregan, y con un Set vacío se cuenta exactamente lo mismo que con `esDiaHabil`. El resto del sistema sigue con
+ *   `esDiaHabil` y los 9 fijos.
  * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
  *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
  *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los
@@ -180,6 +181,44 @@ export const diasHabilesDe = (desde, hasta, feriados) => {
 
 // Cuántos días hábiles hay de desde a hasta, los dos incluidos
 export const diasHabilesEntre = (desde, hasta, feriados) => diasHabilesDe(desde, hasta, feriados).length;
+
+// Lo más lejos que se busca un día hábil, en días: un año bisiesto entero
+const TOPE_DE_VUELTAS = 366;
+
+// La fecha, si es un día hábil con los feriados, o el primero que la sigue. null si no es una fecha o si en 366 días (la
+// fecha y los 365 que siguen) no hay ninguno, y nunca pasa del 31/12/9999
+export const proximoDiaHabilCon = (fecha, feriados) => {
+  let dia = fecha;
+  for (let vuelta = 0; vuelta < TOPE_DE_VUELTAS && esFechaIso(dia); vuelta++, dia = sumarDias(dia, 1)) {
+    if (esDiaHabilCon(dia, feriados)) return dia;
+  }
+  return null;
+};
+
+// El n-ésimo día hábil anterior a la fecha, sin contarla (con n = 0, la fecha misma), con los feriados. null si no es una
+// fecha, si n no es un entero de 0 en adelante o si en los 366 días anteriores no se juntan n
+export const restarDiasHabilesCon = (fecha, n, feriados) => {
+  if (!esFechaIso(fecha) || !Number.isInteger(n) || n < 0) return null;
+  let dia = fecha;
+  for (let vuelta = 0, contados = 0; contados < n; vuelta++) {
+    if (vuelta === TOPE_DE_VUELTAS) return null;
+    dia = sumarDias(dia, -1);
+    if (!esFechaIso(dia)) return null;
+    if (esDiaHabilCon(dia, feriados)) contados++;
+  }
+  return dia;
+};
+
+// El último día hábil del mes 'AAAA-MM', con los feriados. null si no es un mes o si ningún día del mes es hábil: nunca da
+// un día de otro mes
+export const ultimoDiaHabilDelMesCon = (mes, feriados) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return null;
+  for (let dia = 31; dia >= 1; dia--) {
+    const fecha = `${mes}-${String(dia).padStart(2, '0')}`;
+    if (esFechaIso(fecha) && esDiaHabilCon(fecha, feriados)) return fecha;
+  }
+  return null;
+};
 
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
 

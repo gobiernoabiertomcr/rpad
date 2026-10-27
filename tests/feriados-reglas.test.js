@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   TIPOS_FERIADO, NOMBRES_TIPO_FERIADO, NOMBRES_DE_LOS_FIJOS,
   diaDeLaSemana, fechaEnElAnio, feriadosDelRango, esDiaHabilCon, diasHabilesDe, diasHabilesEntre,
+  proximoDiaHabilCon, restarDiasHabilesCon, ultimoDiaHabilDelMesCon,
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
   validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector
 } from '../services/feriadosReglas.js';
@@ -885,6 +886,90 @@ describe('FERIADOS_FIJOS', () => {
     validarFeriado(PEDIDO, HOY);
     assert.equal(feriadosDelAnio([], 2026).every((item) => item.aclaraciones.length === 0), true);
     assert.deepEqual(FERIADOS_FIJOS, ['01-01', '03-24', '04-02', '05-01', '05-25', '06-20', '07-09', '12-08', '12-25']);
+    assert.deepEqual(FERIADOS_FIJOS, FIJOS_LITERALES);
+  });
+});
+
+describe('proximoDiaHabilCon, restarDiasHabilesCon y ultimoDiaHabilDelMesCon', () => {
+  // Todos los días de 2026, como feriados: ningún día hábil en todo el año
+  const TODO_2026 = new Set(DIAS_DE_2026_Y_2027.filter((dia) => dia.anio === 2026).map((dia) => dia.fecha));
+
+  it('ultimoDiaHabilDelMesCon: el último día hábil del mes, con los feriados', () => {
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', new Set()), '2026-10-30');
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', new Set(['2026-10-30'])), '2026-10-29');
+    // Diciembre de 2026 termina un jueves; febrero de 2027, un domingo; el 29/02/2028 es martes
+    assert.equal(ultimoDiaHabilDelMesCon('2026-12', new Set()), '2026-12-31');
+    assert.equal(ultimoDiaHabilDelMesCon('2027-02', new Set()), '2027-02-26');
+    assert.equal(ultimoDiaHabilDelMesCon('2028-02', new Set()), '2028-02-29');
+    // Sin un Set, solo los fijos
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', undefined), '2026-10-30');
+  });
+
+  it('ultimoDiaHabilDelMesCon: un mes sin ningún día hábil da null, nunca un día de otro mes', () => {
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', TODO_2026), null);
+  });
+
+  it('restarDiasHabilesCon: el n-ésimo día hábil anterior, sin contar la fecha', () => {
+    assert.equal(restarDiasHabilesCon('2026-10-30', 5, new Set()), '2026-10-23');
+    assert.equal(restarDiasHabilesCon('2026-10-30', 5, new Set(['2026-10-26'])), '2026-10-22');
+    // El 01/01 es fijo y el 02 y el 03 de enero de 2027, fin de semana
+    assert.equal(restarDiasHabilesCon('2027-01-04', 1, new Set()), '2026-12-31');
+    // Desde un sábado, el anterior es el viernes; con 0, la fecha misma
+    assert.equal(restarDiasHabilesCon('2026-10-31', 1, new Set()), '2026-10-30');
+    assert.equal(restarDiasHabilesCon('2026-10-31', 0, new Set()), '2026-10-31');
+  });
+
+  it('restarDiasHabilesCon: un tope de 366 vueltas', () => {
+    // 2026 tiene 253 días hábiles: el 253° antes del 01/01/2027 es el primero del año, el 02/01/2026
+    assert.equal(restarDiasHabilesCon('2027-01-01', 253, new Set()), '2026-01-02');
+    // El 254° es el 31/12/2025, a 366 días; el 255°, el 30/12/2025, ya no se busca
+    assert.equal(restarDiasHabilesCon('2027-01-01', 254, new Set()), '2025-12-31');
+    assert.equal(restarDiasHabilesCon('2027-01-01', 255, new Set()), null);
+  });
+
+  it('proximoDiaHabilCon: la fecha, si es hábil, o la siguiente que lo es', () => {
+    assert.equal(proximoDiaHabilCon('2026-10-31', new Set()), '2026-11-02');
+    assert.equal(proximoDiaHabilCon('2026-10-31', new Set(['2026-11-02'])), '2026-11-03');
+    assert.equal(proximoDiaHabilCon('2026-10-30', new Set()), '2026-10-30');
+    assert.equal(proximoDiaHabilCon('2026-10-30', new Set(['2026-10-30'])), '2026-11-02');
+    assert.equal(proximoDiaHabilCon('2027-01-01', new Set()), '2027-01-04');
+  });
+
+  it('proximoDiaHabilCon: un tope de 366 vueltas', () => {
+    // Desde el domingo 04/01/2026, con todo 2026 feriado: el lunes 04/01/2027 está a 365 días
+    assert.equal(proximoDiaHabilCon('2026-01-04', TODO_2026), '2027-01-04');
+    // Desde el sábado 03/01/2026, el 04/01/2027 queda a 366: ya no se busca
+    assert.equal(proximoDiaHabilCon('2026-01-03', TODO_2026), null);
+  });
+
+  it('null con una entrada inválida, y nunca pasan del 31/12/9999', () => {
+    const malas = ['hola', '2026-02-30', '2026-2-3', 20260203, null, undefined, '', {}, [], Object.create(null), Symbol('x')];
+    for (const mala of malas) {
+      assert.doesNotThrow(() => {
+        assert.equal(proximoDiaHabilCon(mala, new Set()), null);
+        assert.equal(restarDiasHabilesCon(mala, 1, new Set()), null);
+        assert.equal(restarDiasHabilesCon('2026-10-30', mala, new Set()), null);
+        assert.equal(ultimoDiaHabilDelMesCon(mala, new Set()), null);
+        proximoDiaHabilCon('2026-10-31', mala);
+        restarDiasHabilesCon('2026-10-30', 5, mala);
+        ultimoDiaHabilDelMesCon('2026-10', mala);
+      });
+    }
+    for (const n of [-1, 1.5, NaN, Infinity, '5']) assert.equal(restarDiasHabilesCon('2026-10-30', n, new Set()), null);
+    for (const mes of ['2026-13', '2026-00', '2026-1', '202610', '2026-10-01']) {
+      assert.equal(ultimoDiaHabilDelMesCon(mes, new Set()), null, mes);
+    }
+    assert.equal(proximoDiaHabilCon('9999-12-31', new Set()), '9999-12-31');
+    assert.equal(proximoDiaHabilCon('9999-12-31', new Set(['9999-12-31'])), null);
+    assert.equal(ultimoDiaHabilDelMesCon('9999-12', new Set()), '9999-12-31');
+  });
+
+  it('no cambian el Set ni FERIADOS_FIJOS', () => {
+    const feriados = new Set(['2026-10-30']);
+    proximoDiaHabilCon('2026-10-30', feriados);
+    restarDiasHabilesCon('2026-11-02', 3, feriados);
+    ultimoDiaHabilDelMesCon('2026-10', feriados);
+    assert.deepEqual([...feriados], ['2026-10-30']);
     assert.deepEqual(FERIADOS_FIJOS, FIJOS_LITERALES);
   });
 });

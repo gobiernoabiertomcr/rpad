@@ -16,9 +16,12 @@
  * del año siguiente) y vence el 31/12 de dos años después; cada día hábil de unas vacaciones sale de la licencia más vieja
  * que ese día esté habilitada, no vencida y con días libres (`repartoDeVacaciones`). Después, las demás licencias (3.2 a
  * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
- * la regla de 3.8: dos licencias no comparten un día). Los textos son planos: escaparlos le toca a quien los dibuja.
+ * la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la validación de una carga
+ * (`validarHorasExtras`), los francos compensatorios de planta (`francosDe`), las horas a favor de contrato
+ * (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Los textos son planos: escaparlos le toca
+ * a quien los dibuja.
  */
-import { diasHabilesDe } from './feriadosReglas.js';
+import { diasHabilesDe, ultimoDiaHabilDelMesCon } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 
 // La modalidad sale del vínculo de la persona (spec, sección 1): las dos plantas tienen las mismas licencias
@@ -238,9 +241,9 @@ export const anioVigente = (anios, anio) => {
   let elegida = null;
   for (const fila of listaDe(anios)) {
     if (!esObjeto(fila)) continue;
-    const suyo = Number(fila.anio);
+    const suyo = numeroDe(fila.anio);
     if (!Number.isInteger(suyo) || suyo > buscado || (elegida !== null && suyo <= elegida.anio)) continue;
-    const dias = Number(fila.dias_vacaciones);
+    const dias = numeroDe(fila.dias_vacaciones);
     elegida = {
       anio: suyo,
       dias_vacaciones: Number.isFinite(dias) ? dias : 0,
@@ -253,8 +256,8 @@ export const anioVigente = (anios, anio) => {
 // El saldo inicial de vacaciones de un año, en días enteros (sin la fila, 0)
 const saldoDeVacaciones = (estado, anio) => {
   const fila = listaDe(estado.saldos).find((saldo) =>
-    esObjeto(saldo) && saldo.concepto === 'vacaciones' && Number(saldo.anio) === anio);
-  const cantidad = Math.floor(Number(fila?.cantidad));
+    esObjeto(saldo) && saldo.concepto === 'vacaciones' && numeroDe(saldo.anio) === anio);
+  const cantidad = Math.floor(numeroDe(fila?.cantidad));
   return Number.isFinite(cantidad) && cantidad > 0 ? cantidad : 0;
 };
 
@@ -585,4 +588,273 @@ export const validarLicencia = (entrada, contexto) => {
 
   const mostrar = [false, 0, '0'].includes(fuente.mostrar) ? 0 : 1;
   return { datos: { tipo, desde, hasta, horas, mostrar, nota: nota === '' ? null : nota }, error: null };
+};
+
+// Las horas extras (spec, 3.5 a 3.7): se cargan con el día y el horario, de a media hora, y cuentan enteras en el día en que
+// empezaron, también si pasan la medianoche. En planta, cada 7 horas de un mes dan un franco compensatorio para usar dos
+// meses después, solo en ese mes; en contrato, cada hora es una hora a favor del mes siguiente. Lo que no se usó en su mes
+// pasa a «no utilizado previamente», un acumulado del año del mes de uso que vuelve a cero el 1/1 y del que solo descuenta un
+// uso autorizado. Las horas extras, los francos y las horas a favor no tienen saldo inicial (spec, sección 4): todo
+// descuenta, con cualquier fecha.
+
+// Cuántos meses después se usa lo de un mes trabajado: el franco, dos; las horas a favor, el siguiente
+const MESES_HASTA_EL_FRANCO = 2;
+const MESES_HASTA_LAS_HORAS = 1;
+// En qué se cuenta lo no utilizado de cada modalidad
+const UNIDAD_NO_UTILIZADA = Object.freeze({ planta: 'francos', contrato: 'horas' });
+
+// Una hora 'HH:MM' de un día, en punto o y media, en minutos desde las 00:00 (null si no)
+const minutosDe = (hora) => {
+  if (typeof hora !== 'string' || !/^([01]\d|2[0-3]):(00|30)$/.test(hora)) return null;
+  return Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3));
+};
+
+// Las horas de un horario 'HH:MM' de a media hora; con hasta antes que desde, pasa la medianoche (+24 h). null si son
+// iguales o alguna no es una hora en punto o y media (el TIME de la base, '19:00:00', se corta antes)
+export const horasDe = (desde, hasta) => {
+  const inicio = minutosDe(desde);
+  const fin = minutosDe(hasta);
+  if (inicio === null || fin === null || inicio === fin) return null;
+  return ((fin > inicio ? fin : fin + 24 * 60) - inicio) / 60;
+};
+
+// 'AAAA-MM' más n meses (un entero, también negativo), sobre el índice año × 12 + mes. null si no es un mes, si n no es un
+// entero o si el año queda fuera de 0001 a 9999
+export const mesMas = (mes, n) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !Number.isInteger(n)) return null;
+  const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  const anio = Math.floor(indice / 12);
+  if (anio < 1 || anio > 9999) return null;
+  return `${String(anio).padStart(4, '0')}-${String((indice % 12) + 1).padStart(2, '0')}`;
+};
+
+// Las horas extras del mismo día que se superponen con las que empiezan en `inicio` (minutos desde las 00:00 de la fecha) y
+// duran `horas`, sin las que se corrigen: `{ inicio, desde, hasta }` de la que empieza primero, o null. Una que pasa la
+// medianoche ocupa hasta esa hora del día siguiente; dos pegadas no se superponen
+const primeraSuperpuesta = (horasExtras, fecha, inicio, horas, editadaId) => {
+  const editada = idDe(editadaId);
+  const fin = inicio + horas * 60;
+  let primera = null;
+  for (const fila of listaDe(horasExtras)) {
+    if (!esObjeto(fila) || fila.fecha !== fecha || idDe(fila.id) === editada) continue;
+    const suyas = horasDe(fila.desde, fila.hasta);
+    if (suyas === null) continue;
+    const suyoInicio = minutosDe(fila.desde);
+    if (suyoInicio >= fin || inicio >= suyoInicio + suyas * 60) continue;
+    if (primera === null || suyoInicio < primera.inicio) {
+      primera = { inicio: suyoInicio, desde: fila.desde, hasta: fila.hasta };
+    }
+  }
+  return primera;
+};
+
+/**
+ * Valida unas horas extras, el cuerpo de un alta o de una corrección. El contexto es `{ hoy, estado, editadaId }`
+ * (`editadaId`, el id de las que se corrigen, como número o como texto). Devuelve `{ datos, error }`, como
+ * `validarLicencia`: `datos` es `{ fecha, desde, hasta, nota }`. Los controles, en este orden:
+ * 1. la fecha: el formato (`fecha`) y el rango de `rangoDeFechas` (`textoRango`), en `fecha`. Cualquier día vale, también un
+ *    sábado o un feriado;
+ * 2. el horario, de a media hora (`horasDe`; si no, `horario`, en `desde`);
+ * 3. la nota: recortada, de hasta 200 caracteres contados con Array.from (vacía, o lo que no es un texto, es null);
+ * 4. que no se superponga con otras del mismo día (`primeraSuperpuesta`): `textoHorarioSuperpuesto` con la que empieza
+ *    primero, en `desde`.
+ * Sin un hoy válido no pasa ninguna fecha; una entrada o un contexto que no son objetos cuentan como `{}`. La modalidad y el
+ * arranque los controla quien la llama.
+ */
+export const validarHorasExtras = (entrada, contexto) => {
+  const fuente = esObjeto(entrada) ? entrada : {};
+  const { hoy, estado, editadaId } = esObjeto(contexto) ? contexto : {};
+  const { fecha, desde, hasta } = fuente;
+
+  if (!esFechaIso(fecha)) return rechazo('fecha', MENSAJES_MI_ESPACIO.fecha);
+  const rango = rangoDeFechas(hoy);
+  if (rango === null) return rechazo('fecha', MENSAJES_MI_ESPACIO.fecha);
+  if (fecha < rango.desde || fecha > rango.hasta) return rechazo('fecha', textoRango(rango.desde, rango.hasta));
+
+  const horas = horasDe(desde, hasta);
+  if (horas === null) return rechazo('desde', MENSAJES_MI_ESPACIO.horario);
+
+  const nota = typeof fuente.nota === 'string' ? fuente.nota.trim() : '';
+  if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
+
+  const otra = primeraSuperpuesta(esObjeto(estado) ? estado.horasExtras : [], fecha, minutosDe(desde), horas, editadaId);
+  if (otra !== null) return rechazo('desde', textoHorarioSuperpuesto(otra.desde, otra.hasta));
+
+  return { datos: { fecha, desde, hasta, nota: nota === '' ? null : nota }, error: null };
+};
+
+// Las horas extras de cada mes ('AAAA-MM' → horas), de los meses más viejos a los más nuevos: cada fila cuenta entera en el
+// mes de su fecha, también si pasa la medianoche. Las que no tienen una fecha y un horario válidos no suman
+export const horasPorMes = (horasExtras) => {
+  const porMes = new Map();
+  for (const fila of listaDe(horasExtras)) {
+    const horas = esObjeto(fila) && esFechaIso(fila.fecha) ? horasDe(fila.desde, fila.hasta) : null;
+    if (horas === null) continue;
+    const mes = fila.fecha.slice(0, 7);
+    porMes.set(mes, (porMes.get(mes) ?? 0) + horas);
+  }
+  return new Map([...porMes].sort(([a], [b]) => compararTexto(a, b)));
+};
+
+// Si el mes 'AAAA-MM' ya terminó: hoy es posterior a su último día
+const terminoElMes = (mes, hoy) => hoy.slice(0, 7) > mes;
+const compararUsos = (a, b) => compararTexto(a.fecha, b.fecha) || (idDe(a.id) || 0) - (idDe(b.id) || 0);
+
+// Los usos de un tipo ('franco', 'horas_a_favor' o 'uso_autorizado'), por mes ('AAAA-MM' → usos, por fecha): cada día que
+// descuenta (`diasQueDescuentan`) va en su mes, con lo que arma `uso(fila, fecha)`; si da null, no cuenta
+const usosPorMes = (estado, tipo, feriados, uso) => {
+  const porMes = new Map();
+  for (const fila of listaDe(estado.licencias)) {
+    if (!esObjeto(fila) || fila.tipo !== tipo) continue;
+    for (const fecha of diasQueDescuentan(fila, estado, feriados)) {
+      const suyo = uso(fila, fecha);
+      if (suyo === null) continue;
+      const mes = fecha.slice(0, 7);
+      if (!porMes.has(mes)) porMes.set(mes, []);
+      porMes.get(mes).push(suyo);
+    }
+  }
+  for (const usos of porMes.values()) usos.sort(compararUsos);
+  return porMes;
+};
+
+// Los meses trabajados, de los más viejos a los más nuevos: los que tienen horas extras y los que corresponden a un mes de
+// uso con usos (así se ve también un uso de más), cada uno con sus horas, su mes de uso (`distancia` meses después) y los
+// usos de ese mes
+const mesesTrabajados = (horasExtras, usos, distancia) => {
+  const horas = horasPorMes(horasExtras);
+  const meses = new Set(horas.keys());
+  for (const mesDeUso of usos.keys()) {
+    const trabajado = mesMas(mesDeUso, -distancia);
+    if (trabajado !== null) meses.add(trabajado);
+  }
+  return [...meses].sort(compararTexto).flatMap((mesTrabajado) => {
+    const mesDeUso = mesMas(mesTrabajado, distancia);
+    if (mesDeUso === null) return [];
+    return [{
+      mes_trabajado: mesTrabajado, horas: horas.get(mesTrabajado) ?? 0, mes_de_uso: mesDeUso, usos: usos.get(mesDeUso) ?? []
+    }];
+  });
+};
+
+/**
+ * Los francos compensatorios de planta (spec, 3.5), uno por mes trabajado (`mesesTrabajados`): `[{ mes_trabajado, horas,
+ * francos, mes_de_uso, usos: [{ id, fecha }], disponibles, no_utilizados, ultimo_dia_habil, termino }]`.
+ * - `francos`: uno cada 7 horas (`JORNADA`) del mes trabajado; las que no llegan no dan ninguno.
+ * - `mes_de_uso`: dos meses después, el único en que se usan. `usos`: las filas `franco` de ese mes, una por día que
+ *   descuenta, con cualquier fecha (no tienen saldo inicial).
+ * - `termino`: si hoy ya pasó el mes de uso; `ultimo_dia_habil`: su último día hábil con los feriados.
+ * - `disponibles`: los que quedan sin usar mientras el mes de uso no terminó; cuando termina, pasan a `no_utilizados`. Con
+ *   más usos que francos, 0: lo de más lo mide quien lo usa.
+ * Fuera de planta, sin un estado o sin un hoy válido, []. Las filas de contrato (unas horas a favor) no cuentan.
+ */
+export const francosDe = (estado, opciones) => {
+  const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
+  if (!esObjeto(estado) || estado.modalidad !== 'planta' || !esFechaIso(hoy)) return [];
+  const usos = usosPorMes(estado, 'franco', feriados, (fila, fecha) => ({ id: fila.id, fecha }));
+  return mesesTrabajados(estado.horasExtras, usos, MESES_HASTA_EL_FRANCO).map((mes) => {
+    const francos = Math.floor(mes.horas / JORNADA);
+    const termino = terminoElMes(mes.mes_de_uso, hoy);
+    const quedan = Math.max(0, francos - mes.usos.length);
+    return {
+      mes_trabajado: mes.mes_trabajado, horas: mes.horas, francos, mes_de_uso: mes.mes_de_uso, usos: mes.usos,
+      disponibles: termino ? 0 : quedan, no_utilizados: termino ? quedan : 0,
+      ultimo_dia_habil: ultimoDiaHabilDelMesCon(mes.mes_de_uso, feriados), termino
+    };
+  });
+};
+
+/**
+ * Las horas a favor de contrato (spec, 3.6), una fila por mes trabajado (`mesesTrabajados`): `[{ mes_trabajado, horas,
+ * mes_de_uso, a_favor, usos: [{ id, fecha, horas }], usadas, disponibles, no_utilizadas, antes_del_arranque,
+ * ultimo_dia_habil, termino }]`.
+ * - `a_favor`: las horas extras del mes trabajado, para usar el mes siguiente (`mes_de_uso`). `usos`: las filas
+ *   `horas_a_favor` de ese mes, con cualquier fecha (no tienen saldo inicial), y `usadas`, su suma.
+ * - `termino`, `ultimo_dia_habil`, `disponibles` y `no_utilizadas`, como en los francos.
+ * - `antes_del_arranque`: el mes de uso terminó antes del arranque, así que lo que quedó sin usar ya está en el saldo
+ *   inicial de horas no utilizadas (`noUtilizadasDe` no lo suma).
+ * Fuera de contrato, sin un estado o sin un hoy válido, []. Las filas de planta (los francos) no cuentan.
+ */
+export const horasAFavorDe = (estado, opciones) => {
+  const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
+  if (!esObjeto(estado) || estado.modalidad !== 'contrato' || !esFechaIso(hoy)) return [];
+  const mesDelArranque = esFechaIso(estado.arranque) ? estado.arranque.slice(0, 7) : null;
+  const usos = usosPorMes(estado, 'horas_a_favor', feriados, (fila, fecha) => {
+    const horas = numeroDe(fila.horas);
+    return Number.isFinite(horas) && horas > 0 ? { id: fila.id, fecha, horas } : null;
+  });
+  return mesesTrabajados(estado.horasExtras, usos, MESES_HASTA_LAS_HORAS).map((mes) => {
+    const usadas = mes.usos.reduce((suma, uso) => suma + uso.horas, 0);
+    const termino = terminoElMes(mes.mes_de_uso, hoy);
+    const quedan = Math.max(0, mes.horas - usadas);
+    return {
+      mes_trabajado: mes.mes_trabajado, horas: mes.horas, mes_de_uso: mes.mes_de_uso, a_favor: mes.horas, usos: mes.usos,
+      usadas, disponibles: termino ? 0 : quedan, no_utilizadas: termino ? quedan : 0,
+      antes_del_arranque: mesDelArranque !== null && mes.mes_de_uso < mesDelArranque,
+      ultimo_dia_habil: ultimoDiaHabilDelMesCon(mes.mes_de_uso, feriados), termino
+    };
+  });
+};
+
+// El saldo inicial de horas no utilizadas de un año: solo el del año del arranque (sin la fila o sin un número positivo, 0)
+const saldoDeHorasNoUtilizadas = (estado, anio) => {
+  if (!esFechaIso(estado.arranque) || anioDe(estado.arranque) !== anio) return 0;
+  const fila = listaDe(estado.saldos).find((saldo) =>
+    esObjeto(saldo) && saldo.concepto === 'horas_no_utilizadas' && numeroDe(saldo.anio) === anio);
+  const cantidad = numeroDe(fila?.cantidad);
+  return Number.isFinite(cantidad) && cantidad > 0 ? cantidad : 0;
+};
+
+/**
+ * Lo no utilizado previamente de un año (spec, 3.5 y 3.6): lo que quedó sin usar en los meses de uso de ese año que ya
+ * terminaron (vuelve a cero el 1/1) y lo que le descuentan los usos autorizados del año. Devuelve `{ anio, unidad,
+ * saldo: { cantidad, quedan }, meses: [{ mes_de_uso, mes_trabajado, cantidad, quedan, antes_del_arranque }], usos: [{ id,
+ * fecha, cantidad }], quedan }`:
+ * - `unidad`: 'horas' en contrato y 'francos' en planta.
+ * - `saldo`: el saldo inicial de horas no utilizadas, solo en contrato y en el año del arranque (si no, 0).
+ * - `meses`: los meses de uso del año con algo sin usar (`cantidad`), de los más viejos a los más nuevos. Uno que terminó
+ *   antes del arranque va con `antes_del_arranque` y `quedan` 0: lo suyo ya está en el saldo.
+ * - `usos`: los usos autorizados del año, por fecha, uno por día que descuenta (en contrato, desde el arranque: lo anterior
+ *   ya está en el saldo; en planta, todos), con sus horas o, en planta, un franco. Descuentan primero el saldo y después
+ *   los meses, de los más viejos a los más nuevos; lo que no alcanza no deja nada en negativo (lo de más lo mide quien lo
+ *   usa, con la `cantidad` del saldo y de los meses).
+ * - `quedan`: lo que queda del saldo y de los meses.
+ * Sin modalidad (`unidad` null), sin un año o sin un hoy válidos, todo en cero.
+ */
+export const noUtilizadasDe = (estado, anio, opciones) => {
+  const datos = esObjeto(estado) ? estado : {};
+  const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
+  const { modalidad } = datos;
+  const elAnio = anioValido(anio);
+  const unidad = typeof modalidad === 'string' && Object.hasOwn(UNIDAD_NO_UTILIZADA, modalidad)
+    ? UNIDAD_NO_UTILIZADA[modalidad] : null;
+  const resultado = { anio: elAnio, unidad, saldo: { cantidad: 0, quedan: 0 }, meses: [], usos: [], quedan: 0 };
+  if (elAnio === null || unidad === null || !esFechaIso(hoy)) return resultado;
+
+  const delAnio = (mes) => Number(mes.slice(0, 4)) === elAnio;
+  const sinUsar = unidad === 'francos'
+    ? francosDe(datos, { hoy, feriados }).map((mes) => ({ ...mes, cantidad: mes.no_utilizados, antes_del_arranque: false }))
+    : horasAFavorDe(datos, { hoy, feriados }).map((mes) => ({ ...mes, cantidad: mes.no_utilizadas }));
+  resultado.meses = sinUsar.filter((mes) => mes.cantidad > 0 && delAnio(mes.mes_de_uso))
+    .map(({ mes_de_uso, mes_trabajado, cantidad, antes_del_arranque }) =>
+      ({ mes_de_uso, mes_trabajado, cantidad, quedan: antes_del_arranque ? 0 : cantidad, antes_del_arranque }));
+  if (unidad === 'horas') {
+    const cantidad = saldoDeHorasNoUtilizadas(datos, elAnio);
+    resultado.saldo = { cantidad, quedan: cantidad };
+  }
+
+  const usos = usosPorMes(datos, 'uso_autorizado', feriados, (fila, fecha) => {
+    const cantidad = unidad === 'francos' ? 1 : numeroDe(fila.horas);
+    return Number.isFinite(cantidad) && cantidad > 0 ? { id: fila.id, fecha, cantidad } : null;
+  });
+  resultado.usos = [...usos].filter(([mes]) => delAnio(mes)).flatMap(([, delMes]) => delMes).sort(compararUsos);
+
+  let falta = resultado.usos.reduce((suma, uso) => suma + uso.cantidad, 0);
+  for (const bolsa of [resultado.saldo, ...resultado.meses]) {
+    const toma = Math.min(falta, bolsa.quedan);
+    bolsa.quedan -= toma;
+    falta -= toma;
+  }
+  resultado.quedan = [resultado.saldo, ...resultado.meses].reduce((suma, bolsa) => suma + bolsa.quedan, 0);
+  return resultado;
 };
