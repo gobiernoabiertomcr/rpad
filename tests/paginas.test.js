@@ -735,6 +735,8 @@ describe('páginas', () => {
       assert.match(media(640), /\.me-proximos-tarjeta \{ order: -1; \}/);
       assert.match(media(640), /\.me-ev \{ font-size: 0;[^}]*\}/);
       assert.doesNotMatch(estilo.replace(media(640), ''), /\.me-ev \{ font-size: 0/);
+      // Los puntos, en el color fuerte de cada clase (el de su texto): el fondo pastel casi no se ve sobre el blanco de la celda
+      assert.match(media(640), /\.me-ev \{ font-size: 0;[^}]*background: currentColor;[^}]*\}/);
       // Los cinco colores, en el mes y en la leyenda
       for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
         assert.ok(estilo.includes(`.me-ev.${clase}, .me-leyenda .${clase} {`), clase);
@@ -751,7 +753,8 @@ describe('páginas', () => {
       assert.doesNotMatch(html(), /aria-live/);
       assert.ok(html().indexOf('id="me-anuncio"') < html().indexOf('role="tablist"'), 'antes de las pestañas');
       const enLosModales = [...html().slice(pagina.length).matchAll(/<[^>]*role="(status|alert|log)"[^>]*>/g)].map(([etiqueta]) => etiqueta);
-      assert.deepEqual(enLosModales.map((etiqueta) => etiqueta.match(/id="([^"]+)"/)[1]), ['ml-error', 'mh-error', 'ms-error', 'mu-error', 'mc-error']);
+      assert.deepEqual(enLosModales.map((etiqueta) => etiqueta.match(/id="([^"]+)"/)[1]),
+        ['ml-error', 'mh-error', 'ms-error', 'mu-error', 'ev-error', 'mea-error', 'mc-error']);
       assert.ok(enLosModales.every((etiqueta) => etiqueta.includes('role="alert"') && etiqueta.includes(' hidden')));
     });
 
@@ -776,6 +779,14 @@ describe('páginas', () => {
         'modal-uso': ['modal-uso-titulo', 'mu-error', 'mu-fecha', 'mu-fecha-error', 'mu-grupo-horas', 'mu-horas', 'mu-horas-error',
           'mu-calculo', 'mu-nota', 'mu-nota-error', 'mu-grupo-mostrar', 'mu-mostrar', 'mu-mostrar-ayuda', 'mu-paso', 'mu-sin-auditor',
           'mu-borrar', 'mu-pie', 'mu-guardar'],
+        // La agenda (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2, #evento y #evento-ajeno), antes de la confirmación: todos
+        // los velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba
+        'modal-evento': ['modal-evento-titulo', 'ev-error', 'ev-titulo', 'ev-titulo-error', 'ev-fecha', 'ev-fecha-error', 'ev-desde',
+          'ev-desde-error', 'ev-hasta', 'ev-hasta-error', 'ev-detalle', 'ev-detalle-error', 'ev-grupo-quien', 'ev-quien-rotulo', 'ev-solo',
+          'ev-compartido', 'ev-grupo-personas', 'ev-personas-cuantas', 'ev-personas', 'ev-personas-ayuda', 'ev-personas-error',
+          'ev-recordatorio', 'ev-aviso', 'ev-recordatorio-ayuda', 'ev-recordatorio-error', 'ev-borrar', 'ev-guardar'],
+        'modal-evento-ajeno': ['modal-evento-ajeno-titulo', 'mea-error', 'mea-cuando', 'mea-detalle', 'mea-quien', 'mea-recordatorio',
+          'mea-aviso', 'mea-ayuda', 'mea-cerrar'],
         'modal-confirmar': ['modal-confirmar-titulo', 'mc-error', 'modal-confirmar-texto', 'modal-confirmar-si']
       };
       const nombres = Object.keys(MODALES);
@@ -817,15 +828,49 @@ describe('páginas', () => {
           const html = modal(id);
           assert.match(html, new RegExp(`<div class="modal me-modal(?: me-modal-chico)?" role="dialog" aria-modal="true" aria-labelledby="${id}-titulo"`), id);
           assert.match(html, /<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;<\/button>/, id);
-          assert.match(html, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar<\/button>/, id);
+          // El detalle de un evento ajeno no tiene nada que cancelar: se cierra con «Cerrar»
+          if (id === 'modal-evento-ajeno') {
+            assert.match(html, /<button type="button" class="sg-btn sg-btn-tinta" id="mea-cerrar" data-cerrar>Cerrar<\/button>/);
+            assert.doesNotMatch(html, />Cancelar</);
+          } else assert.match(html, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar<\/button>/, id);
           assert.doesNotMatch(html, /<form\b|maxlength|onclick=/, id);
         }
         assert.match(modal('modal-confirmar'), /aria-describedby="modal-confirmar-texto"/);
       });
 
+      // La agenda (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento y #evento-ajeno)
+      it('el formulario del evento: «¿Quién lo ve?» (oculto hasta saber que comparte) con dos botones con aria-pressed, y las personas', () => {
+        const html = modal('modal-evento');
+        assert.match(html, /<h2 class="modal-title" id="modal-evento-titulo">Nuevo evento<\/h2>/);
+        assert.match(html, /<label class="form-label" for="ev-titulo">Qué<\/label>\s*<input type="text" class="form-input" id="ev-titulo" autocomplete="off" aria-describedby="ev-titulo-error">/);
+        assert.match(html, /<input type="date" class="form-input" id="ev-fecha" aria-describedby="ev-fecha-error">/);
+        for (const control of ['ev-desde', 'ev-hasta']) assert.match(html, new RegExp(`<input type="time" class="form-input" id="${control}" aria-describedby="${control}-error">`), control);
+        assert.match(html, /<textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"><\/textarea>/);
+        assert.match(html, /<div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>/);
+        assert.match(html, /<button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo<\/b><small>Nadie más lo ve<\/small><\/span><\/button>/);
+        assert.match(html, /<button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido<\/b><small>Con las personas que elijas<\/small><\/span><\/button>/);
+        assert.match(html, /<fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>/);
+        assert.match(html, /<p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento\. Solo vos lo podés cambiar\.<\/p>/);
+        // El recordatorio: las opciones las pone mi-espacio.js; cuándo sale (#ev-aviso) no es una región viva: lo describe el select
+        assert.match(html, /<select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"><\/select>/);
+        assert.match(html, /<p class="form-hint" id="ev-aviso" hidden><\/p>/);
+        assert.match(html, /<p class="form-hint" id="ev-recordatorio-ayuda" hidden>Les llega a todas las personas del evento\.<\/p>/);
+        assert.match(html, /<button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento<\/button>/);
+        assert.match(html, /<button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar<\/button>/);
+      });
+
+      it('el detalle de un evento ajeno: cuándo, el detalle, quién, «Mi recordatorio» y quién lo puede cambiar', () => {
+        const html = modal('modal-evento-ajeno');
+        assert.match(html, /<div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-evento-ajeno-titulo">/);
+        assert.match(html, /<label class="form-label" for="mea-recordatorio">Mi recordatorio<\/label>\s*<select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"><\/select>/);
+        assert.match(html, /<p class="form-hint" id="mea-ayuda">Solo quien lo creó puede cambiar el evento\.<\/p>/);
+        const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+        assert.ok(ids.indexOf('mea-cuando') < ids.indexOf('mea-detalle') && ids.indexOf('mea-detalle') < ids.indexOf('mea-quien'));
+      });
+
       it('cada campo dice su error en aria-describedby, y el campo del firmante es el de Configuración', () => {
         for (const control of ['ml-desde', 'ml-hasta', 'ml-horas', 'ml-nota', 'ml-autorizado', 'mh-fecha', 'mh-desde', 'mh-hasta', 'mh-nota',
-          'mu-fecha', 'mu-horas', 'mu-nota']) {
+          'mu-fecha', 'mu-horas', 'mu-nota', 'ev-titulo', 'ev-fecha', 'ev-desde', 'ev-hasta', 'ev-detalle', 'ev-recordatorio']) {
           assert.match(html(), new RegExp(`id="${control}"[^>]*aria-describedby="[^"]*${control}-error[^"]*"`), control);
         }
         for (const grupo of ['ml-tipos', 'ms-dias', 'ms-estudios']) {

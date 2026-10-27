@@ -18,7 +18,12 @@
  * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
  *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
  *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
- *   dirección. «Hoy y mañana» del Resumen suma los eventos de hoy y de mañana.
+ *   dirección. «Hoy y mañana» del Resumen suma los eventos de hoy y de mañana. Un evento propio (de la grilla o de los próximos) abre
+ *   su formulario; uno de otra persona, su detalle con «Mi recordatorio» (que se guarda al elegirlo); los dos «Nuevo evento», el
+ *   formulario vacío (hoy y «2 horas antes»), también sin modalidad. Compartir («¿Quién lo ve?», con las personas de
+ *   GET /mi-espacio/personas, pedidas una vez, o «Todos») es solo de administración (Auth.isAdmin(), el true literal): el lector y
+ *   el colaborador tienen solo eventos personales. Cuándo sale el recordatorio lo dice el servidor (GET /mi-espacio/eventos/aviso,
+ *   300 ms después del último cambio; una respuesta vieja se descarta).
  * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
  * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
  * el aviso del paso a Configuración, la persona a cargo del firmante en sus vacaciones y los días sin auditor), «Cargar horas
@@ -29,14 +34,18 @@
  * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial), las de
  * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
  * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
- * services/miEspacioResumen.js). La agenda no recalcula días hábiles ni textos: los días que pinta una licencia o un compañero, el
- * aviso, quién está y «Hasta el …» los manda el servidor; acá solo se cuentan los días de la grilla, con Date.UTC.
+ * services/miEspacioResumen.js), y en el evento, las de services/miEspacioEventosReglas.js: MENSAJES_EVENTO, LARGO_TITULO_EVENTO,
+ * LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoDelEvento (textoRangoEvento), RECORDATORIOS,
+ * RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, erroresDelEvento (validarEvento, en sus bordes), cuandoDelEventoDe
+ * (cuandoDelEvento) e iniciales (inicialesDe), e idDeLaPersona (idPositivo de services/proyectosReglas.js). La agenda no recalcula
+ * días hábiles ni textos: los días que pinta una licencia o un compañero, el aviso, quién está y «Hasta el …» los manda el
+ * servidor; acá solo se cuentan los días de la grilla, con Date.UTC.
  * Al cargarse el archivo solo declara (tests/mi-espacio-frontend.test.js lo carga en un vm después del api.js de verdad): lo que
  * arma HTML es puro y va primero; lo que toca el DOM o la API va aparte, al final (iniciarMiEspacio, enganchado a
  * DOMContentLoaded), con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada, y el foco vuelve al control
- * que se usó. Pide los datos con API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un
- * número se escribe con String (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la
- * confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
+ * que se usó (en la agenda, al del mismo lugar —la grilla o los próximos—, saltando los ocultos). Pide los datos con
+ * API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un número se escribe con String
+ * (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
  * campo es role="alert"); lo que dice el servidor al guardar o borrar, y un formulario que no se pudo abrir, se ve además en un
  * aviso (avisarMiEspacio: el showToast de main.js, como en Áreas, Feriados y Proyectos).
  */
@@ -259,9 +268,10 @@ function htmlDeLoQueTeQueda(resumen) {
     + `${conTexto(resumen.extraordinaria) ? `<p class="me-previos">${esc(resumen.extraordinaria)}</p>` : ''}</div></section>`;
 }
 
-// Las iniciales de un nombre, decorativas: la primera letra del primero y del último
+// Las iniciales de un nombre, decorativas: la primera letra del primero y del último. Lo que no es un texto, '' (copia de inicialesDe
+// de services/miEspacioEventosReglas.js, atada por un test de paridad)
 const iniciales = (nombre) => {
-  const palabras = String(nombre ?? '').trim().split(/\s+/).filter(Boolean);
+  const palabras = typeof nombre === 'string' ? nombre.trim().split(/\s+/).filter(Boolean) : [];
   const inicial = (palabra) => Array.from(palabra)[0].toUpperCase();
   if (palabras.length === 0) return '';
   return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
@@ -1163,6 +1173,281 @@ function htmlDeProximos(grupos) {
 }
 
 // =====================================================
+// Lo puro: el formulario del evento y el detalle de uno ajeno (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2)
+// =====================================================
+
+// ---- Copias mínimas de services/miEspacioEventosReglas.js, para avisar en el momento (el servidor valida igual), atadas por tests
+// de paridad ----
+
+const MENSAJES_EVENTO = Object.freeze({
+  titulo: 'Escribí qué es el evento.',
+  tituloLargo: 'El título puede tener hasta 150 caracteres.',
+  desde: 'Elegí a qué hora empieza.',
+  hasta: 'La hora de fin tiene que ser después de la de inicio, el mismo día.',
+  detalle: 'El detalle puede tener hasta 1000 caracteres.',
+  personas: 'Elegí con quién lo compartís, o «Todos».',
+  personasInvalidas: 'Solo podés compartirlo con las personas de la lista.',
+  recordatorio: 'Elegí cuándo te llega el recordatorio.',
+  sinPermiso: 'No tenés permiso para compartir eventos.',
+  noEncontrado: 'Evento no encontrado',
+  miRecordatorio: 'Elegí si querés el recordatorio.',
+  esTuyo: 'El recordatorio de tu evento se cambia en el evento.'
+});
+// El largo del título y del detalle (en caracteres contados con Array.from) y la fecha más vieja; la más nueva, fechaMaximaEvento
+const LARGO_TITULO_EVENTO = 150;
+const LARGO_DETALLE_EVENTO = 1000;
+const FECHA_MINIMA_EVENTO = '2025-01-01';
+// Los recordatorios, en el orden del formulario, el de entrada y cómo se muestra cada uno
+const RECORDATORIOS = Object.freeze(['1h', '2h', 'dia_anterior', 'ninguno']);
+const RECORDATORIO_POR_DEFECTO = '2h';
+const TEXTO_RECORDATORIO = Object.freeze({
+  '1h': '1 hora antes', '2h': '2 horas antes', dia_anterior: 'El día hábil anterior', ninguno: 'Sin aviso'
+});
+
+// La fecha más nueva de un evento: el mismo día dos años después de hoy (un 29/02 da el 28/02); null si hoy no es una fecha; después
+// del año 9999, el 31/12/9999
+const fechaMaximaEvento = (hoy) => {
+  if (!esFechaDeTexto(hoy)) return null;
+  const anio = Number(hoy.slice(0, 4)) + 2;
+  if (anio > 9999) return '9999-12-31';
+  const mesYDia = hoy.slice(5) === '02-29' ? '02-28' : hoy.slice(5);
+  return `${String(anio).padStart(4, '0')}-${mesYDia}`;
+};
+// El error de una fecha fuera del rango, como textoRangoEvento: «La fecha tiene que ser del 01/01/2025 al 26/10/2028.» (sin un
+// tope, la raya)
+const textoRangoDelEvento = (hasta) => `La fecha tiene que ser del ${Utils.fechaCorta(FECHA_MINIMA_EVENTO)} al ${Utils.fechaCorta(hasta)}.`;
+// Un id de una persona, como idPositivo de services/proyectosReglas.js: un entero positivo de hasta 10 cifras, en número o en texto;
+// si no, null
+const idDeLaPersona = (valor) => {
+  if (typeof valor !== 'string' && typeof valor !== 'number') return null;
+  const texto = String(valor);
+  return /^[1-9]\d{0,9}$/.test(texto) ? Number(texto) : null;
+};
+// 'HH:MM' de 00:00 a 23:59 (ni '9:00' ni '10:00:00')
+const esHoraDeTexto = (valor) => typeof valor === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(valor);
+// 'martes 27/10/2026', de una fecha ya controlada
+const diaConFechaDe = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}/${fecha.slice(0, 4)}`;
+// Cuándo es un evento, como cuandoDelEvento: «martes 27/10/2026 de 10:00 a 11:00», o «… a las 10:00» sin hora de fin; si no sirve,
+// la raya
+const cuandoDelEventoDe = (evento) => {
+  if (!esObjeto(evento) || !esFechaDeTexto(evento.fecha) || !esHoraDeTexto(evento.desde)) return '—';
+  const dia = diaConFechaDe(evento.fecha);
+  return esHoraDeTexto(evento.hasta) ? `${dia} de ${evento.desde} a ${evento.hasta}` : `${dia} a las ${evento.desde}`;
+};
+const conMayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+
+/**
+ * Los errores de un evento antes de pedir nada (`{ campo: mensaje }`, todos, en el orden del formulario; sin ninguno, {}), con los
+ * controles y los mensajes de validarEvento (el primero es el suyo: test de paridad en sus bordes). `valores` tiene las claves del
+ * cuerpo (titulo, fecha, desde, hasta, detalle, compartido, para_todos, personas y recordatorio): el título y el detalle recortados
+ * y contados con Array.from; la fecha de FECHA_MINIMA_EVENTO a fechaMaximaEvento(hoy); las horas 'HH:MM' y la de fin, si viene,
+ * después de la de inicio; compartido sin «Todos» (solo el true literal), con personas que sean ids (una lista que falta o vacía,
+ * `personas`; un id que no sirve, `personasInvalidas`; los dos en `personas`); con «Todos», las personas no cuentan; y el
+ * recordatorio (sin él, o null, 2 horas antes) de la lista. Quién puede compartir y que las personas sean de la lista, el servidor.
+ */
+function erroresDelEvento(valores, hoy) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  const titulo = comoTexto(datos.titulo).trim();
+  if (titulo === '') errores.titulo = MENSAJES_EVENTO.titulo;
+  else if (Array.from(titulo).length > LARGO_TITULO_EVENTO) errores.titulo = MENSAJES_EVENTO.tituloLargo;
+  const maxima = fechaMaximaEvento(hoy);
+  if (!esFechaDeTexto(datos.fecha) || maxima === null || datos.fecha < FECHA_MINIMA_EVENTO || datos.fecha > maxima) {
+    errores.fecha = textoRangoDelEvento(maxima);
+  }
+  if (!esHoraDeTexto(datos.desde)) errores.desde = MENSAJES_EVENTO.desde;
+  const sinHasta = datos.hasta === undefined || datos.hasta === null || datos.hasta === '';
+  if (!sinHasta && (!esHoraDeTexto(datos.hasta) || (esHoraDeTexto(datos.desde) && datos.hasta <= datos.desde))) {
+    errores.hasta = MENSAJES_EVENTO.hasta;
+  }
+  if (Array.from(comoTexto(datos.detalle).trim()).length > LARGO_DETALLE_EVENTO) errores.detalle = MENSAJES_EVENTO.detalle;
+  if (datos.compartido === true && datos.para_todos !== true) {
+    if (!Array.isArray(datos.personas) || datos.personas.length === 0) errores.personas = MENSAJES_EVENTO.personas;
+    else if (datos.personas.some((id) => idDeLaPersona(id) === null)) errores.personas = MENSAJES_EVENTO.personasInvalidas;
+  }
+  if (!RECORDATORIOS.includes(datos.recordatorio ?? RECORDATORIO_POR_DEFECTO)) errores.recordatorio = MENSAJES_EVENTO.recordatorio;
+  return errores;
+}
+
+// ---- Lo de cada formulario ----
+
+/**
+ * Los valores del formulario del evento: los de un evento propio (un ítem de GET /mi-espacio/eventos, con `personas_ids`) o, sin él,
+ * los de uno nuevo, con la `fecha` que se le pasa (hoy) y «2 horas antes». Las horas y el detalle, como texto ('' sin ellos);
+ * `personas`, los ids elegidos ([] con «Todos»); `conocidas`, las personas del evento con su nombre (`{ id, nombre }`), así una
+ * que ya no está en la lista para compartir (dejó de ser administración) se ve y no se saca sin querer.
+ */
+function valoresDelEvento(item, { fecha = '' } = {}) {
+  if (!esObjeto(item)) {
+    return {
+      id: null, titulo: '', fecha: comoTexto(fecha), desde: '', hasta: '', detalle: '', compartido: false, para_todos: false,
+      personas: [], conocidas: [], recordatorio: RECORDATORIO_POR_DEFECTO
+    };
+  }
+  const nombres = Array.isArray(item.personas) ? item.personas : [];
+  const conocidas = (Array.isArray(item.personas_ids) ? item.personas_ids : [])
+    .map((id, i) => ({ id: idDeLaPersona(id), nombre: comoTexto(nombres[i]) })).filter((persona) => persona.id !== null);
+  const compartido = item.compartido === true;
+  const paraTodos = compartido && item.para_todos === true;
+  return {
+    id: item.id ?? null, titulo: comoTexto(item.titulo), fecha: comoTexto(item.fecha), desde: comoTexto(item.desde),
+    hasta: comoTexto(item.hasta), detalle: comoTexto(item.detalle), compartido, para_todos: paraTodos,
+    personas: paraTodos ? [] : conocidas.map((persona) => persona.id), conocidas,
+    recordatorio: RECORDATORIOS.includes(item.recordatorio) ? item.recordatorio : RECORDATORIO_POR_DEFECTO
+  };
+}
+
+/**
+ * El cuerpo de POST /mi-espacio/eventos y PUT /mi-espacio/eventos/:id (el formulario entero): el título y el detalle recortados, la
+ * fecha, las horas (sin hora de fin, null) y el recordatorio. Solo con `puedeCompartir` (administración; el true literal), además
+ * `compartido`, `para_todos` (solo si es compartido) y `personas` (con «Todos» o sin compartir, []): el lector y el colaborador
+ * tienen solo eventos personales, y su cuerpo no trae nada de eso.
+ */
+function cuerpoDelEvento(valores, { puedeCompartir = false } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const cuerpo = {
+    titulo: comoTexto(datos.titulo).trim(), fecha: comoTexto(datos.fecha), desde: comoTexto(datos.desde),
+    hasta: conTexto(datos.hasta) ? datos.hasta : null, detalle: comoTexto(datos.detalle).trim(), recordatorio: datos.recordatorio
+  };
+  if (puedeCompartir !== true) return cuerpo;
+  const compartido = datos.compartido === true;
+  const paraTodos = compartido && datos.para_todos === true;
+  return {
+    ...cuerpo, compartido, para_todos: paraTodos,
+    personas: compartido && !paraTodos && Array.isArray(datos.personas) ? [...datos.personas] : []
+  };
+}
+
+// Las personas para elegir: las de la lista para compartir (GET /mi-espacio/personas; null mientras llega o si no llegó) y, al
+// final, las del evento que no están en ella (`valores.conocidas`)
+function personasParaElegir(lista, valores) {
+  const delServidor = listaDe(lista);
+  const enLaLista = new Set(delServidor.map((persona) => idDeLaPersona(persona.id)));
+  const delEvento = listaDe(esObjeto(valores) ? valores.conocidas : null)
+    .filter((persona) => idDeLaPersona(persona.id) !== null && !enLaLista.has(idDeLaPersona(persona.id)));
+  return [...delServidor, ...delEvento];
+}
+
+// El ícono de «Todos» (Lucide «users»), decorativo
+const ICONO_DE_TODOS = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+  + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const MENSAJE_SIN_PERSONAS = 'No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.';
+
+/**
+ * Con quién se comparte: «Todos» primero (`data-persona="todos"`) y cada persona (`data-persona="<id>"`, con sus iniciales,
+ * decorativas, y su nombre), botones con aria-pressed. Con «Todos» elegido, las demás van deshabilitadas (todos ya están). `sinLista`:
+ * 'cargando' o 'fallo' dice por qué todavía no está la lista (las del evento y «Todos» se pueden elegir igual).
+ */
+function htmlDePersonasDelEvento(personas, valores, { sinLista = null } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const paraTodos = datos.para_todos === true;
+  const elegidas = Array.isArray(datos.personas) ? datos.personas : [];
+  const botones = [`<button type="button" class="me-persona" data-persona="todos" aria-pressed="${String(paraTodos)}">`
+    + `<i aria-hidden="true">${ICONO_DE_TODOS}</i>Todos</button>`];
+  for (const persona of listaDe(personas)) {
+    const id = idDeLaPersona(persona.id);
+    if (id === null) continue;
+    const sigla = conTexto(persona.iniciales) ? persona.iniciales : iniciales(persona.nombre);
+    botones.push(`<button type="button" class="me-persona" data-persona="${String(id)}" `
+      + `aria-pressed="${String(!paraTodos && elegidas.includes(id))}"${paraTodos ? ' disabled' : ''}>`
+      + `<i aria-hidden="true">${esc(sigla)}</i>${esc(persona.nombre)}</button>`);
+  }
+  let estado = '';
+  if (sinLista === 'cargando') estado = 'Cargando las personas…';
+  else if (sinLista === 'fallo') estado = MENSAJE_SIN_PERSONAS;
+  return botones.join('') + (estado ? `<span class="me-personas-estado">${estado}</span>` : '');
+}
+
+// Un clic en una persona (`valor`: 'todos' o su id): «Todos» se prende o se apaga y saca a las elegidas (con «Todos» están todos);
+// una persona se suma o se saca, salvo con «Todos». Devuelve los valores nuevos
+function elegirPersona(valores, valor) {
+  const datos = esObjeto(valores) ? valores : {};
+  const personas = Array.isArray(datos.personas) ? datos.personas : [];
+  if (valor === 'todos') return { ...datos, para_todos: datos.para_todos !== true, personas: [] };
+  const id = idDeLaPersona(valor);
+  if (id === null || datos.para_todos === true) return { ...datos, personas: [...personas] };
+  return { ...datos, personas: personas.includes(id) ? personas.filter((otra) => otra !== id) : [...personas, id] };
+}
+
+// Cuántas personas eligió, al lado de «Con quién»: «(1 persona)», «(4 personas)»; sin ninguna o con «Todos», nada
+function textoDeCuantasPersonas(valores) {
+  const datos = esObjeto(valores) ? valores : {};
+  const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
+  if (datos.para_todos === true || cuantas === 0) return '';
+  return `(${String(cuantas)} ${cuantas === 1 ? 'persona' : 'personas'})`;
+}
+
+// Los recordatorios, en el orden de RECORDATORIOS, con el elegido (uno que no es de la lista, el de entrada)
+function htmlDeOpcionesDeRecordatorio(elegido) {
+  const actual = RECORDATORIOS.includes(elegido) ? elegido : RECORDATORIO_POR_DEFECTO;
+  return RECORDATORIOS.map((clave) => `<option value="${clave}"${clave === actual ? ' selected' : ''}>${esc(TEXTO_RECORDATORIO[clave])}</option>`)
+    .join('');
+}
+
+// La ruta de GET /mi-espacio/eventos/aviso (cuándo sale el recordatorio, que calcula el servidor con los feriados) para la fecha, la
+// hora y el recordatorio del formulario; sin una fecha o una hora que sirvan, o con «Sin aviso» (no hay nada que decir), null
+function pedidoDelAviso(valores) {
+  const { fecha, desde, recordatorio } = esObjeto(valores) ? valores : {};
+  if (!esFechaDeTexto(fecha) || !esHoraDeTexto(desde) || !RECORDATORIOS.includes(recordatorio) || recordatorio === 'ninguno') return null;
+  return `/mi-espacio/eventos/aviso?fecha=${encodeURIComponent(fecha)}&desde=${encodeURIComponent(desde)}`
+    + `&recordatorio=${encodeURIComponent(recordatorio)}`;
+}
+
+// «Mi recordatorio» de un evento ajeno: 'evento' (el que eligió quien lo creó) o 'ninguno' (lo apagó, o quien lo creó eligió «Sin
+// aviso»)
+function miRecordatorioDe(item) {
+  const datos = esObjeto(item) ? item : {};
+  const conAviso = RECORDATORIOS.includes(datos.recordatorio) && datos.recordatorio !== 'ninguno';
+  return conAviso && datos.mi_recordatorio !== 'ninguno' ? 'evento' : 'ninguno';
+}
+
+/**
+ * El detalle de un evento ajeno (un ítem de GET /mi-espacio/eventos con `es_mio` false), cada parte en HTML escapado (el título va
+ * con textContent): `cuando` («Jueves 29/10/2026 de 09:00 a 10:00»), `detalle` (el texto; los renglones los respeta el <style>),
+ * `quien` (la insignia «Compartido» y el «Lo creó … Están: vos, …» del servidor) y `opciones`, las de «Mi recordatorio»: el que
+ * eligió quien lo creó («2 horas antes (el que eligió Martín Ríos)») y «Sin aviso», con la elegida; si quien lo creó eligió «Sin
+ * aviso», solo ese texto.
+ */
+function htmlDelEventoAjeno(item) {
+  const datos = esObjeto(item) ? item : {};
+  const cuando = cuandoDelEventoDe(datos);
+  const elegido = miRecordatorioDe(datos);
+  const conAviso = RECORDATORIOS.includes(datos.recordatorio) && datos.recordatorio !== 'ninguno';
+  const textoDelEvento = conTexto(datos.recordatorio_texto) ? datos.recordatorio_texto : TEXTO_RECORDATORIO[datos.recordatorio] ?? '';
+  const opcion = (valor, texto) => `<option value="${valor}"${valor === elegido ? ' selected' : ''}>${esc(texto)}</option>`;
+  const opciones = conAviso
+    ? opcion('evento', `${textoDelEvento}${conTexto(datos.creador) ? ` (el que eligió ${datos.creador})` : ''}`)
+      + opcion('ninguno', TEXTO_RECORDATORIO.ninguno)
+    : opcion('ninguno', conTexto(datos.recordatorio_texto) ? datos.recordatorio_texto : TEXTO_RECORDATORIO.ninguno);
+  return {
+    cuando: esc(cuando === '—' ? cuando : conMayuscula(cuando)),
+    detalle: esc(comoTexto(datos.detalle)),
+    quien: `<span class="me-insignia violeta">Compartido</span>${conTexto(datos.quien_largo) ? `<span>${esc(datos.quien_largo)}</span>` : ''}`,
+    opciones
+  };
+}
+
+/**
+ * La confirmación del borrado de un evento propio, en texto plano (va con textContent): «¿Borrar «Reunión de equipo» del martes
+ * 27/10/2026?» y, si es compartido, a quiénes les llega la cancelación: « A las 4 personas les llega un email que dice que se
+ * canceló.», «A la persona…» o «A toda la administración…». Uno de antes de hoy (`hoy`) no la manda: el servidor no avisa de un
+ * evento que ya empezó.
+ */
+function textoDeConfirmacionDeEvento(item, { hoy = '' } = {}) {
+  const datos = esObjeto(item) ? item : {};
+  const cuando = esFechaDeTexto(datos.fecha) ? ` del ${diaConFechaDe(datos.fecha)}` : '';
+  const pregunta = `¿Borrar «${comoTexto(datos.titulo).trim()}»${cuando}?`;
+  const yaPaso = esFechaDeTexto(hoy) && esFechaDeTexto(datos.fecha) && datos.fecha < hoy;
+  if (datos.compartido !== true || yaPaso) return pregunta;
+  const cancelacion = 'un email que dice que se canceló.';
+  if (datos.para_todos === true) return `${pregunta} A toda la administración le llega ${cancelacion}`;
+  const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
+  if (cuantas === 0) return pregunta;
+  return cuantas === 1 ? `${pregunta} A la persona le llega ${cancelacion}` : `${pregunta} A las ${String(cuantas)} personas les llega ${cancelacion}`;
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
@@ -1183,12 +1468,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
 // licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
 // (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
-// GET /mi-espacio/firmante (una sola vez)
+// GET /mi-espacio/firmante (una sola vez). La agenda: `evento`, el formulario del evento abierto (su propio estado: el cálculo de
+// las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`, el detalle de un evento de otra persona; y
+// `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para administración)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, tanquesLlenos: false,
   mesDeEventos: null, delMes: null, proximos: null,
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0 },
-  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null
+  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
+  evento: null, eventoAjeno: null, personas: null
 };
 
 const porId = (id) => document.getElementById(id);
@@ -1225,9 +1513,11 @@ function mostrarFalla(vista, texto, conAnuncio = true) {
   if (conAnuncio) anunciar(texto);
 }
 
-// El control de una pestaña con ese atributo y ese valor, o null
-const controlCon = (vista, atributo, valor) =>
-  [...porId(vista).querySelectorAll(`[${atributo}]`)].find((uno) => uno.getAttribute(atributo) === valor) ?? null;
+// Los controles de una pestaña con ese atributo y ese valor (en la agenda, un evento está en la grilla y en los próximos), y el
+// primero, o null
+const controlesCon = (vista, atributo, valor) =>
+  [...porId(vista).querySelectorAll(`[${atributo}]`)].filter((uno) => uno.getAttribute(atributo) === valor);
+const controlCon = (vista, atributo, valor) => controlesCon(vista, atributo, valor)[0] ?? null;
 
 // Después de volver a dibujar una pestaña, el foco va al control equivalente al que se usó (el botón viejo ya no está)
 function enfocar(vista, atributo, valor) {
@@ -1258,6 +1548,7 @@ function conectarEventos() {
   porId('vista-agenda').addEventListener('click', alTocarEventos);
   porId('btn-cargar-licencia').addEventListener('click', (evento) => abrirLicencia({ volverA: evento.currentTarget }));
   porId('btn-cargar-horas').addEventListener('click', (evento) => abrirHorasExtras({ volverA: evento.currentTarget }));
+  porId('btn-nuevo-evento').addEventListener('click', (evento) => abrirEvento({ volverA: evento.currentTarget }));
   conectarFormularios();
 }
 
@@ -1618,10 +1909,32 @@ function verElResto(boton) {
   boton.hidden = true;
 }
 
-// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, nada) y «y N más».
-// Un evento y «Nuevo evento» abren su formulario desde la Task 10: todavía no hacen nada
+// Un evento de la grilla o de los próximos (el botón con su data-evento): el ítem de lo que llegó, buscado primero en lo del mismo
+// lugar (los próximos o el mes), o null
+function eventoDelBoton(boton) {
+  const id = boton.getAttribute('data-evento');
+  const delMes = listaDe(pagina.delMes?.eventos);
+  const proximos = listaDe(pagina.proximos?.eventos);
+  const enOrden = porId('ag-proximos')?.contains?.(boton) ? [...proximos, ...delMes] : [...delMes, ...proximos];
+  return enOrden.find((item) => String(item.id) === id) ?? null;
+}
+
+// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, nada), «Nuevo
+// evento», un evento (el propio abre su formulario; el de otra persona, su detalle) y «y N más»
 function alTocarEventos(evento) {
   const objetivo = evento.target;
+  const nuevo = objetivo?.closest?.('#ag-nuevo-evento');
+  if (nuevo) {
+    abrirEvento({ volverA: nuevo });
+    return;
+  }
+  const deUnEvento = objetivo?.closest?.('[data-evento]');
+  if (deUnEvento) {
+    const item = eventoDelBoton(deUnEvento);
+    if (item?.es_mio === true) abrirEvento({ item, volverA: deUnEvento });
+    else if (item) abrirEventoAjeno({ item, volverA: deUnEvento });
+    return;
+  }
   if (objetivo?.closest?.('#ag-anterior')) {
     mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, -1));
     return;
@@ -1665,6 +1978,16 @@ const FORMULARIOS = Object.freeze({
     modal: 'modal-horas', prefijo: 'mh', campos: { fecha: 'mh-fecha', desde: 'mh-desde', hasta: 'mh-hasta', nota: 'mh-nota' }
   },
   saldos: { modal: 'modal-saldos', prefijo: 'ms', campos: { dias_vacaciones: 'ms-dias', estudios: 'ms-estudios' } },
+  // La agenda: el formulario del evento (`compartido`, el permiso, no tiene control: va arriba del modal) y el detalle de uno ajeno
+  // (todo lo que falla, en #mea-error)
+  evento: {
+    modal: 'modal-evento', prefijo: 'ev',
+    campos: {
+      titulo: 'ev-titulo', fecha: 'ev-fecha', desde: 'ev-desde', hasta: 'ev-hasta', detalle: 'ev-detalle', personas: 'ev-personas',
+      recordatorio: 'ev-recordatorio'
+    }
+  },
+  eventoAjeno: { modal: 'modal-evento-ajeno', prefijo: 'mea', campos: {} },
   confirmar: { modal: 'modal-confirmar', prefijo: 'mc', campos: {} }
 });
 
@@ -1715,6 +2038,19 @@ function conectarFormularios() {
   porId('ms-estudios').addEventListener('change', alElegirEnLosSaldos);
   porId('ms-guardar').addEventListener('click', guardarSaldos);
 
+  // El evento: la fecha, la hora y el recordatorio piden cuándo sale el aviso; «Solo yo» y «Compartido»; cada persona (delegado en
+  // la lista, que se vuelve a dibujar); «Guardar» y «Borrar». El detalle de uno ajeno: «Mi recordatorio» se guarda enseguida
+  for (const id of ['ev-fecha', 'ev-desde', 'ev-recordatorio']) {
+    porId(id).addEventListener('input', alCambiarElCuando);
+    porId(id).addEventListener('change', alCambiarElCuando);
+  }
+  porId('ev-solo').addEventListener('click', () => elegirQuienLoVe(false));
+  porId('ev-compartido').addEventListener('click', () => elegirQuienLoVe(true));
+  porId('ev-personas').addEventListener('click', alTocarUnaPersona);
+  porId('ev-guardar').addEventListener('click', guardarEvento);
+  porId('ev-borrar').addEventListener('click', pedirBorrarEvento);
+  porId('mea-recordatorio').addEventListener('change', guardarMiRecordatorio);
+
   porId('modal-confirmar-si').addEventListener('click', confirmarElBorrado);
 }
 
@@ -1745,6 +2081,8 @@ function estaOcupado(modal) {
   if (modal === 'modal-confirmar') return pagina.confirmacion?.ocupado === true;
   if (modal === 'modal-horas') return pagina.horasExtras?.guardando === true;
   if (modal === 'modal-saldos') return pagina.saldos?.guardando === true;
+  if (modal === 'modal-evento') return pagina.evento?.guardando === true;
+  if (modal === 'modal-evento-ajeno') return pagina.eventoAjeno?.guardando === true;
   return pagina.formulario?.guardando === true && FORMULARIOS[pagina.formulario.nombre].modal === modal;
 }
 
@@ -1785,10 +2123,14 @@ function ponerError(id, mensaje) {
   return true;
 }
 
-// El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera
+// El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera; en una lista de botones (las
+// personas de un evento), el primero que se puede tocar
 function controlDeFoco(id) {
   const control = porId(id);
   if (esGrupoDeOpciones(control)) return control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
+  if (String(control?.tagName).toLowerCase() === 'div') {
+    return [...control.querySelectorAll('button')].find((boton) => !boton.disabled) ?? control;
+  }
   return control;
 }
 
@@ -1857,9 +2199,20 @@ const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias',
 const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-abrir', 'data-cargar', 'data-tipo',
   'data-evento']);
 
+// El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
+// 'ag-proximos'), o null
+const lugarDe = (control) => {
+  for (let nodo = control?.parentNode; typeof nodo?.getAttribute === 'function'; nodo = nodo.parentNode) {
+    const id = nodo.getAttribute('id');
+    if (id) return VISTAS_QUE_SE_DIBUJAN.includes(id) ? null : id;
+  }
+  return null;
+};
+
+// Lo que identifica a un control: su atributo, su valor y su lugar (`dentro`: un evento está en la grilla y en los próximos)
 const identidadDe = (control) => {
   const atributo = IDENTIDADES_DEL_FOCO.find((uno) => typeof control?.getAttribute?.(uno) === 'string');
-  return atributo ? { atributo, valor: control.getAttribute(atributo) } : null;
+  return atributo ? { atributo, valor: control.getAttribute(atributo), dentro: lugarDe(control) } : null;
 };
 
 /**
@@ -1886,30 +2239,35 @@ function respaldoDelFoco(control) {
   };
 }
 
-// El control de la pestaña que corresponde a un candidato de respaldoDelFoco, o null
-function controlDelCandidato(vista, candidato) {
+// Los controles de la pestaña que corresponden a un candidato de respaldoDelFoco, del preferido al último ([] si no hay): de un
+// control, los que están a la vista y habilitados (uno dentro de un «y N más» oculto, no), primero el del mismo lugar que el que
+// se usó (los próximos o la grilla); de un título, el que dice ese texto, el primero de la pestaña o la pestaña misma
+function controlesDelCandidato(vista, candidato) {
   if (candidato.atributo) {
-    const control = controlCon(vista, candidato.atributo, candidato.valor);
-    return control && !control.disabled ? control : null;
+    const controles = controlesCon(vista, candidato.atributo, candidato.valor).filter((uno) => !uno.disabled && !estaOculto(uno));
+    const lugar = candidato.dentro ? porId(candidato.dentro) : null;
+    return lugar ? [...controles.filter((uno) => lugar.contains(uno)), ...controles.filter((uno) => !lugar.contains(uno))] : controles;
   }
   const titulos = [...porId(vista).querySelectorAll('h2'), ...porId(vista).querySelectorAll('h3')];
-  if (candidato.titulo !== undefined) return titulos.find((uno) => uno.textContent === candidato.titulo) ?? null;
-  if (candidato.primerTitulo) return titulos[0] ?? null;
-  return porId(`tab-${vista.slice('vista-'.length)}`);
+  let control = porId(`tab-${vista.slice('vista-'.length)}`);
+  if (candidato.titulo !== undefined) control = titulos.find((uno) => uno.textContent === candidato.titulo) ?? null;
+  else if (candidato.primerTitulo) control = titulos[0] ?? null;
+  return control ? [control] : [];
 }
 
-// Si el foco se perdió (el control que lo tenía ya no está: quedó en <body>), va al primer candidato que está. Un título recibe el
-// foco con tabindex="-1". Con un modal abierto, o si el foco ya está en otro lado, no se toca
+// Si el foco se perdió (el control que lo tenía ya no está: quedó en <body>), va al primer candidato que está y que lo toma (si uno
+// no lo toma, el siguiente). Un título recibe el foco con tabindex="-1". Con un modal abierto, o si el foco ya está en otro lado, no
+// se toca
 function devolverElFoco(respaldo) {
   if (respaldo === null || pagina.modales.length > 0) return;
   const activo = document.activeElement;
   if (activo && activo !== document.body && activo.isConnected !== false) return;
   for (const candidato of respaldo.candidatos) {
-    const control = controlDelCandidato(respaldo.vista, candidato);
-    if (!control) continue;
-    if (/^h[23]$/.test(String(control.tagName).toLowerCase())) control.setAttribute('tabindex', '-1');
-    control.focus?.();
-    return;
+    for (const control of controlesDelCandidato(respaldo.vista, candidato)) {
+      if (/^h[23]$/.test(String(control.tagName).toLowerCase())) control.setAttribute('tabindex', '-1');
+      control.focus?.();
+      if (document.activeElement === control) return;
+    }
   }
 }
 
@@ -2560,5 +2918,267 @@ async function confirmarElBorrado() {
     }
   } finally {
     boton.disabled = false;
+  }
+}
+
+// ---- El evento (la agenda: spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6) ----
+
+// GET /mi-espacio/personas, una sola vez (si falla, se vuelve a pedir la próxima): con quiénes se puede compartir, o null
+function personasParaCompartir() {
+  pagina.personas ??= API.pedirJson('GET', '/mi-espacio/personas').then(
+    ({ data }) => listaDe(data),
+    (error) => {
+      pagina.personas = null;
+      if (error?.status === 401) irAlLogin();
+      return null;
+    }
+  );
+  return pagina.personas;
+}
+
+/**
+ * Abre el formulario del evento: «Nuevo evento» (hoy y «2 horas antes») o «Editar evento» con uno propio (`item`, de lo que llegó de
+ * GET /mi-espacio/eventos). Sin modalidad se abre igual (decisión del usuario, 27/10/2026). «¿Quién lo ve?» y las personas, solo
+ * con Auth.isAdmin() (el true literal): el lector y el colaborador tienen solo eventos personales, y no piden la lista. El foco va
+ * a «Qué» y, al cerrar, vuelve a `volverA`
+ */
+function abrirEvento({ item = null, volverA = null } = {}) {
+  if (pagina.evento !== null) return;
+  const puedeCompartir = Auth.isAdmin?.() === true;
+  const valores = valoresDelEvento(item, { fecha: Utils.hoyEnArgentina() });
+  const formulario = {
+    item, valores, puedeCompartir, guardando: false, temporizador: null, pedidoDelAviso: 0, lista: null,
+    sinLista: puedeCompartir ? 'cargando' : null
+  };
+  pagina.evento = formulario;
+  porId('modal-evento-titulo').textContent = item ? 'Editar evento' : 'Nuevo evento';
+  for (const campo of ['titulo', 'fecha', 'desde', 'hasta', 'detalle']) porId(`ev-${campo}`).value = valores[campo];
+  porId('ev-recordatorio').innerHTML = htmlDeOpcionesDeRecordatorio(valores.recordatorio);
+  porId('ev-recordatorio').value = valores.recordatorio;
+  porId('ev-grupo-quien').hidden = !puedeCompartir;
+  porId('ev-borrar').hidden = item === null;
+  porId('ev-guardar').disabled = false;
+  limpiarErrores('evento');
+  pintarQuienLoVe();
+  // Cuándo sale su aviso: el que llegó con el evento, mientras se pide de nuevo (pudo pasar el día)
+  mostrarAvisoDelEvento(item && valores.recordatorio !== 'ninguno' ? item.aviso?.texto : '');
+  programarAvisoDelEvento();
+  abrirModal('modal-evento', { volverA, foco: () => porId('ev-titulo'), alCerrar: cerrarFormularioDeEvento });
+  if (puedeCompartir) {
+    personasParaCompartir().then((lista) => {
+      if (pagina.evento !== formulario) return;
+      formulario.lista = lista;
+      formulario.sinLista = lista === null ? 'fallo' : null;
+      pintarPersonas();
+    });
+  }
+}
+
+// Al cerrar el formulario, lo que esperaba se descarta
+function cerrarFormularioDeEvento() {
+  clearTimeout(pagina.evento?.temporizador);
+  pagina.evento = null;
+}
+
+// Lo que dice el formulario abierto: lo escrito y lo elegido con los botones
+const valoresDelFormularioDeEvento = (formulario) => ({
+  ...formulario.valores, titulo: porId('ev-titulo').value, fecha: porId('ev-fecha').value, desde: porId('ev-desde').value,
+  hasta: porId('ev-hasta').value, detalle: porId('ev-detalle').value, recordatorio: porId('ev-recordatorio').value
+});
+
+// «Solo yo» o «Compartido» (aria-pressed) y, si es compartido, con quién y que el recordatorio les llega a todos
+function pintarQuienLoVe() {
+  const { valores, puedeCompartir } = pagina.evento;
+  const compartido = puedeCompartir && valores.compartido;
+  porId('ev-solo').setAttribute('aria-pressed', String(!valores.compartido));
+  porId('ev-compartido').setAttribute('aria-pressed', String(valores.compartido));
+  porId('ev-grupo-personas').hidden = !compartido;
+  porId('ev-recordatorio-ayuda').hidden = !compartido;
+  pintarPersonas();
+}
+
+function pintarPersonas() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  porId('ev-personas').innerHTML = htmlDePersonasDelEvento(personasParaElegir(formulario.lista, formulario.valores), formulario.valores,
+    { sinLista: formulario.sinLista });
+  porId('ev-personas-cuantas').textContent = textoDeCuantasPersonas(formulario.valores);
+}
+
+function elegirQuienLoVe(compartido) {
+  const formulario = pagina.evento;
+  if (!formulario || formulario.guardando) return;
+  formulario.valores = { ...formulario.valores, compartido };
+  ponerError('ev-personas', null);
+  pintarQuienLoVe();
+}
+
+// Un clic en una persona (o en «Todos»): la lista se vuelve a dibujar y el foco queda en la que se tocó
+function alTocarUnaPersona(evento) {
+  const formulario = pagina.evento;
+  const boton = evento.target?.closest?.('[data-persona]');
+  if (!formulario || formulario.guardando || !boton || boton.disabled) return;
+  const valor = boton.getAttribute('data-persona');
+  formulario.valores = elegirPersona(formulario.valores, valor);
+  ponerError('ev-personas', null);
+  pintarPersonas();
+  porId('ev-personas').querySelector(`[data-persona="${valor}"]`)?.focus?.();
+}
+
+// Cuándo sale el recordatorio, debajo del select (lo describe: no es una región viva); sin nada que decir, oculto
+function mostrarAvisoDelEvento(texto) {
+  const aviso = porId('ev-aviso');
+  aviso.textContent = comoTexto(texto);
+  aviso.hidden = aviso.textContent === '';
+}
+
+// Cambió la fecha, la hora o el recordatorio: el aviso que se veía ya no vale, y se vuelve a pedir
+function alCambiarElCuando() {
+  if (!pagina.evento) return;
+  mostrarAvisoDelEvento('');
+  programarAvisoDelEvento();
+}
+
+// El aviso se pide 300 ms después del último cambio (sin una fecha y una hora que sirvan, o con «Sin aviso», no se pide); lo que
+// estaba en vuelo queda viejo
+function programarAvisoDelEvento() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  clearTimeout(formulario.temporizador);
+  formulario.pedidoDelAviso += 1;
+  const ruta = pedidoDelAviso(valoresDelFormularioDeEvento(formulario));
+  if (ruta === null) return;
+  formulario.temporizador = setTimeout(() => pedirAvisoDelEvento(formulario, ruta), ESPERA_DEL_CALCULO);
+}
+
+// GET /mi-espacio/eventos/aviso: el texto del servidor (con los feriados). Una respuesta vieja (el formulario cambió o se cerró
+// mientras) se descarta; si falla, no se dice nada (el error, si lo hay, sale al guardar)
+async function pedirAvisoDelEvento(formulario, ruta) {
+  if (pagina.evento !== formulario) return;
+  const pedido = formulario.pedidoDelAviso;
+  const vigente = () => pagina.evento === formulario && pedido === formulario.pedidoDelAviso;
+  try {
+    const { data } = await API.pedirJson('GET', ruta);
+    if (vigente()) mostrarAvisoDelEvento(esObjeto(data) ? data.texto : '');
+  } catch (error) {
+    if (!vigente()) return;
+    if (error?.status === 401) irAlLogin();
+    else mostrarAvisoDelEvento('');
+  }
+}
+
+// «Guardar»: los errores antes de pedir nada; si no, POST o PUT. Mientras, «Guardar» queda deshabilitado y el modal no se cierra: un
+// doble clic manda un solo pedido (dos eventos compartidos mandarían dos invitaciones). Al guardar, se cierra, se avisa lo que dijo el
+// servidor y se vuelve a pedir todo (la agenda y el Resumen)
+async function guardarEvento() {
+  const formulario = pagina.evento;
+  const boton = porId('ev-guardar');
+  if (!formulario || formulario.guardando) return;
+  const valores = valoresDelFormularioDeEvento(formulario);
+  if (mostrarErrores('evento', conSusControles('evento', erroresDelEvento(valores, Utils.hoyEnArgentina())))) return;
+  const cuerpo = cuerpoDelEvento(valores, { puedeCompartir: formulario.puedeCompartir });
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.item
+      ? await API.pedirJson('PUT', `/mi-espacio/eventos/${encodeURIComponent(formulario.item.id)}`, cuerpo)
+      : await API.pedirJson('POST', '/mi-espacio/eventos', cuerpo);
+    formulario.guardando = false;
+    cerrarModal('modal-evento');
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas('modal-evento', error);
+    else if (pagina.evento === formulario) mostrarFallaDelServidor('evento', error, boton);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// «Borrar el evento»: la confirmación, sobre el formulario, con lo guardado (no lo que se está escribiendo)
+function pedirBorrarEvento() {
+  const formulario = pagina.evento;
+  if (!formulario?.item || formulario.guardando) return;
+  const { item } = formulario;
+  pedirConfirmacion({
+    titulo: 'Borrar el evento', texto: textoDeConfirmacionDeEvento(item, { hoy: Utils.hoyEnArgentina() }), volverA: porId('ev-borrar'),
+    formulario: 'modal-evento', borrar: () => API.pedirJson('DELETE', `/mi-espacio/eventos/${encodeURIComponent(item.id)}`)
+  });
+}
+
+// ---- El detalle de un evento ajeno ----
+
+/**
+ * Abre el detalle de un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título (con textContent),
+ * cuándo es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», con el foco. Solo quien lo creó puede cambiarlo.
+ * `recargarAlCerrar`: «Mi recordatorio» cambió; la agenda se vuelve a pedir al cerrar, después de que el foco vuelva al evento
+ * (mientras está abierto, volver a dibujar la agenda dejaría a `volverA` fuera de la página)
+ */
+function abrirEventoAjeno({ item, volverA = null }) {
+  if (pagina.eventoAjeno !== null) return;
+  const partes = htmlDelEventoAjeno(item);
+  const elegido = miRecordatorioDe(item);
+  pagina.eventoAjeno = { item, elegido, guardando: false, recargarAlCerrar: false };
+  porId('modal-evento-ajeno-titulo').textContent = comoTexto(item.titulo);
+  porId('mea-cuando').innerHTML = partes.cuando;
+  porId('mea-detalle').innerHTML = partes.detalle;
+  porId('mea-detalle').hidden = partes.detalle === '';
+  porId('mea-quien').innerHTML = partes.quien;
+  const select = porId('mea-recordatorio');
+  select.innerHTML = partes.opciones;
+  select.value = elegido;
+  select.disabled = false;
+  mostrarAvisoAjeno(item.aviso?.texto, elegido);
+  avisoDelModal('eventoAjeno', '');
+  abrirModal('modal-evento-ajeno', { volverA, foco: () => porId('mea-recordatorio'), alCerrar: cerrarEventoAjeno });
+}
+
+function cerrarEventoAjeno() {
+  const recargar = pagina.eventoAjeno?.recargarAlCerrar === true;
+  pagina.eventoAjeno = null;
+  if (recargar) Promise.resolve().then(volverAPedirTodo);
+}
+
+// Cuándo sale «Mi recordatorio» (el texto del servidor); apagado, nada
+function mostrarAvisoAjeno(texto, elegido) {
+  const aviso = porId('mea-aviso');
+  aviso.textContent = elegido === 'evento' ? comoTexto(texto) : '';
+  aviso.hidden = aviso.textContent === '';
+}
+
+// «Mi recordatorio»: el PUT enseguida (el evento no cambia). Mientras, el select queda deshabilitado y el detalle no se cierra; si
+// sale bien, se anuncia y se dice cuándo sale; si falla, el select vuelve a lo de antes y el error va arriba del detalle (un 404,
+// como al guardar). El foco vuelve al select
+async function guardarMiRecordatorio() {
+  const ajeno = pagina.eventoAjeno;
+  const select = porId('mea-recordatorio');
+  if (!ajeno || ajeno.guardando || select.value === ajeno.elegido) return;
+  const elegido = select.value;
+  ajeno.guardando = true;
+  select.disabled = true;
+  avisoDelModal('eventoAjeno', '');
+  try {
+    const respuesta = await API.pedirJson('PUT', `/mi-espacio/eventos/${encodeURIComponent(ajeno.item.id)}/mi-recordatorio`,
+      { sin_aviso: elegido === 'ninguno' });
+    ajeno.guardando = false;
+    ajeno.elegido = elegido;
+    ajeno.recargarAlCerrar = true;
+    select.disabled = false;
+    mostrarAvisoAjeno(respuesta?.data?.aviso?.texto, elegido);
+    avisarLaRespuesta(respuesta);
+    select.focus?.();
+  } catch (error) {
+    ajeno.guardando = false;
+    select.disabled = false;
+    select.value = ajeno.elegido;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas('modal-evento-ajeno', error);
+    else if (pagina.eventoAjeno === ajeno) {
+      avisoDelModal('eventoAjeno', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
+      select.focus?.();
+    }
   }
 }

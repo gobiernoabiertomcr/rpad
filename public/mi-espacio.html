@@ -296,7 +296,8 @@
         .me-modal .form-input, .me-modal .form-select { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); }
         .me-modal .form-hint { color: var(--sg-suave); font-size: 0.84rem; line-height: 1.4; }
         .me-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
-        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .me-modal .form-textarea { min-height: 76px; padding: 10px 12px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); line-height: 1.45; }
+        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-modal .form-textarea[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
         .me-modal-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
         .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
         .me-opcional { font-weight: 400; color: var(--sg-suave); }
@@ -331,6 +332,23 @@
         .me-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
         .me-check small { display: block; color: var(--sg-suave); font-size: 0.84rem; }
         .me-campos-saldo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; }
+        /* El evento (maqueta 2, #evento): «¿Quién lo ve?» con dos opciones grandes (botones con aria-pressed) y, si es compartido, las
+           personas, cada una con sus iniciales (en violeta la elegida; con «Todos», las demás deshabilitadas) */
+        .me-opciones.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        button.me-opcion { width: 100%; font: inherit; text-align: left; }
+        .me-opcion[aria-pressed="true"] { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        .me-personas { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .me-persona { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; color: var(--sg-texto); cursor: pointer; }
+        .me-persona i { width: 28px; height: 28px; border-radius: 50%; background: var(--sg-gris-fondo); color: var(--sg-suave); font-style: normal; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+        .me-persona[aria-pressed="true"] { border-color: var(--sg-violeta); background: var(--sg-violeta-fondo); color: var(--sg-violeta); font-weight: 600; }
+        .me-persona[aria-pressed="true"] i { background: var(--sg-violeta); color: #fff; }
+        .me-persona:disabled { opacity: 0.55; cursor: default; }
+        .me-personas[aria-invalid="true"] .me-persona { border-color: var(--sg-rojo); }
+        .me-personas-estado { font-size: 0.84rem; color: var(--sg-suave); }
+        /* Un evento ajeno (maqueta 2, #evento-ajeno): cuándo, el detalle (con sus renglones) y quién lo creó y quiénes están */
+        .me-ajeno-cuando { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--sg-texto); }
+        .me-ajeno-detalle { margin: 0 0 10px; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
+        .me-ajeno-quien { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 0 0 16px; font-size: 0.88rem; color: var(--sg-suave); overflow-wrap: anywhere; }
         .me-pie-izquierda { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
         .me-pie-izquierda small { color: var(--sg-suave); font-size: 0.82rem; }
         .sg-link.me-link-rojo { color: var(--sg-rojo); }
@@ -359,13 +377,16 @@
             .me-nivel-vac { flex-wrap: wrap; }
             .me-nivel-vac .me-leyenda-vac { padding-bottom: 0; }
         }
-        /* En el teléfono, los próximos primero y el mes como puntos de colores por día (maqueta 1) */
+        /* En el teléfono, los próximos primero y el mes como puntos de colores por día (maqueta 1), en el color fuerte de cada clase (el
+           de su texto: el fondo pastel casi no se ve sobre el blanco de la celda); en el evento, «Solo yo» y «Compartido», una debajo
+           de la otra */
         @media (max-width: 640px) {
             .me-tarjeta { padding: 16px; }
             .me-proximos-tarjeta { order: -1; }
             .me-mes th { padding: 6px 2px; text-align: center; }
             .me-celda { height: 64px; }
-            .me-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; }
+            .me-mes .me-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: currentColor; }
+            .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
         }
     </style>
 </head>
@@ -730,6 +751,108 @@
                 <div class="botones">
                     <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
                     <button type="button" class="sg-btn sg-btn-tinta" id="mu-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento): qué, la fecha y las
+         horas (la de fin, opcional), el detalle, quién lo ve (solo administración comparte: mi-espacio.js muestra «¿Quién lo ve?»
+         con Auth.isAdmin()), con quién (las personas o «Todos») y el recordatorio, con cuándo sale (#ev-aviso, que calcula el
+         servidor; lo describe el select, no es una región viva). Va antes de la confirmación: todos los velos tienen el mismo z-index
+         y el que va más abajo en el HTML queda arriba -->
+    <div class="modal-overlay" id="modal-evento">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-evento-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-titulo">Nuevo evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="ev-error" role="alert" hidden></p>
+                <div class="form-group">
+                    <label class="form-label" for="ev-titulo">Qué</label>
+                    <input type="text" class="form-input" id="ev-titulo" autocomplete="off" aria-describedby="ev-titulo-error">
+                    <p class="form-error" id="ev-titulo-error" hidden></p>
+                </div>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="ev-fecha">Fecha</label>
+                        <input type="date" class="form-input" id="ev-fecha" aria-describedby="ev-fecha-error">
+                        <p class="form-error" id="ev-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-desde">De</label>
+                        <input type="time" class="form-input" id="ev-desde" aria-describedby="ev-desde-error">
+                        <p class="form-error" id="ev-desde-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-hasta">A <span class="me-opcional">(opcional)</span></label>
+                        <input type="time" class="form-input" id="ev-hasta" aria-describedby="ev-hasta-error">
+                        <p class="form-error" id="ev-hasta-error" hidden></p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ev-detalle">Detalle <span class="me-opcional">(opcional)</span></label>
+                    <textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"></textarea>
+                    <p class="form-error" id="ev-detalle-error" hidden></p>
+                </div>
+                <div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>
+                    <span class="form-label" id="ev-quien-rotulo">¿Quién lo ve?</span>
+                    <div class="me-opciones dos">
+                        <button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo</b><small>Nadie más lo ve</small></span></button>
+                        <button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido</b><small>Con las personas que elijas</small></span></button>
+                    </div>
+                </div>
+                <fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>
+                    <legend class="form-label">Con quién <span class="me-opcional" id="ev-personas-cuantas"></span></legend>
+                    <div class="me-personas" id="ev-personas"></div>
+                    <p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.</p>
+                    <p class="form-error" id="ev-personas-error" hidden></p>
+                </fieldset>
+                <div class="form-group">
+                    <label class="form-label" for="ev-recordatorio">Recordatorio por email</label>
+                    <select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"></select>
+                    <p class="form-hint" id="ev-aviso" hidden></p>
+                    <p class="form-hint" id="ev-recordatorio-ayuda" hidden>Les llega a todas las personas del evento.</p>
+                    <p class="form-error" id="ev-recordatorio-error" hidden></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento</button>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título del evento es el del modal, cuándo
+         es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», que se guarda al elegirlo (el evento no cambia). No tiene
+         nada que cancelar: se cierra con «Cerrar» -->
+    <div class="modal-overlay" id="modal-evento-ajeno">
+        <div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-evento-ajeno-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-ajeno-titulo">Evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mea-error" role="alert" hidden></p>
+                <p class="me-ajeno-cuando" id="mea-cuando"></p>
+                <p class="me-ajeno-detalle" id="mea-detalle" hidden></p>
+                <p class="me-ajeno-quien" id="mea-quien"></p>
+                <div class="form-group">
+                    <label class="form-label" for="mea-recordatorio">Mi recordatorio</label>
+                    <select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"></select>
+                    <p class="form-hint" id="mea-aviso" hidden></p>
+                    <p class="form-hint" id="mea-ayuda">Solo quien lo creó puede cambiar el evento.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mea-cerrar" data-cerrar>Cerrar</button>
                 </div>
             </div>
         </div>

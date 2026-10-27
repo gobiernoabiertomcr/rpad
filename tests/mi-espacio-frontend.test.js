@@ -12,8 +12,11 @@ import fs from 'fs';
 import vm from 'vm';
 import { filasDeLicencias, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo } from '../services/miEspacioResumen.js';
 import {
-  DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana
+  DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
+  LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
+  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe
 } from '../services/miEspacioEventosReglas.js';
+import { idPositivo } from '../services/proyectosReglas.js';
 import {
   calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
   DIAS_ESTUDIOS,
@@ -1293,9 +1296,9 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
 // sin él, la página no anima. Los temporizadores no corren solos: `correr` corre los que hay (el foco de los modales y la
-// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(). Hoy es HOY. `estado.toasts`: cada showToast (el de main.js),
-// [mensaje, tipo]
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false } = {}) => {
+// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo pregunta solo al abrir el
+// formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el de main.js), [mensaje, tipo]
+const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false, admin = false } = {}) => {
   const { dom, documento } = crearDom();
   const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [] };
   // Los temporizadores pendientes, por su id: un número que solo crece (un clearTimeout viejo nunca anula uno nuevo)
@@ -1320,6 +1323,7 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
     Auth: {
       isAuthenticated: () => true,
       isAuditor: () => auditor,
+      isAdmin: () => admin,
       getUser: () => ({ id: 1 }),
       getAuthHeaders: () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer token-de-prueba' }),
       clearSession: () => { estado.sesionCerrada = true; }
@@ -3190,16 +3194,900 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(barra.scrollLeft, 0, 'el Resumen, de vuelta al principio');
   });
 
-  // Riesgo 11 del preflight: el formulario del evento llega con la Task 10
-  it('un clic en un evento, en un próximo o en «Nuevo evento» todavía no abre nada ni pide nada', async () => {
+  // Desde la Task 10: un evento propio abre el formulario; uno ajeno, su detalle; los dos «Nuevo evento», el formulario vacío
+  it('un evento propio de la grilla abre el formulario; uno ajeno de los próximos, su detalle; «Nuevo evento», el formulario vacío', async () => {
     const pagina = montarPagina({ hash: '#agenda', responder: conEventos() });
     await pagina.iniciar();
-    const antes = pagina.rutas().length;
+    const abiertos = () => pagina.documento.querySelectorAll('.modal-overlay').filter((modal) => modal.classList.contains('active'))
+      .map((modal) => modal.id);
     await pagina.tocar(pagina.el('ag-mes').querySelector('[data-evento="11"]'));
-    await pagina.tocar(pagina.el('ag-proximos').querySelector('[data-evento="12"]'));
-    await pagina.tocar(pagina.el('ag-nuevo-evento'));
+    assert.deepEqual(abiertos(), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Editar evento');
+    await pagina.tecla('Escape');
+    await pagina.tocar(pagina.el('ag-proximos').querySelector('[data-evento="14"]'));
+    assert.deepEqual(abiertos(), ['modal-evento-ajeno']);
+    await pagina.tecla('Escape');
+    for (const id of ['ag-nuevo-evento', 'btn-nuevo-evento']) {
+      await pagina.tocar(pagina.el(id));
+      assert.deepEqual(abiertos(), ['modal-evento'], id);
+      assert.equal(pagina.el('modal-evento-titulo').textContent, 'Nuevo evento', id);
+      await pagina.tecla('Escape');
+    }
+    assert.deepEqual(abiertos(), []);
+  });
+});
+
+// =====================================================================================================================================
+// El formulario del evento y el detalle de un evento ajeno (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2, #evento y
+// #evento-ajeno; Task 10): las copias atadas al servidor (services/miEspacioEventosReglas.js), lo puro y, con el DOM y el fetch
+// falsos, crear, cambiar, compartir, el aviso del recordatorio, borrar, «Mi recordatorio» y el foco. Hoy es el lunes 26/10/2026 a las
+// 09:00 y quien mira es Laura Gómez (1); las personas son las inventadas de la maqueta
+// =====================================================================================================================================
+
+// Los textos de 150 y 151 emojis: cada uno es un caracter (Array.from) y dos unidades de UTF-16
+const emojis = (n) => '😀'.repeat(n);
+// Un evento válido para la validación (el martes 27/10/2026 de 10:00 a 11:00), con lo que cambia cada caso
+const entradaDe = (cambios) => ({ titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', ...cambios });
+// El primer error de erroresDelEvento, como el error de validarEvento ({ campo, mensaje } o null)
+const primerError = (entrada, hoy) => {
+  const [primero] = Object.entries(plano(M.erroresDelEvento(entrada, hoy)));
+  return primero ? { campo: primero[0], mensaje: primero[1] } : null;
+};
+// Cada evento de EVENTOS_DE_PRUEBA como lo manda GET /api/mi-espacio/eventos
+const itemDe = (id) => comoLlega(itemDeEvento(EVENTOS_DE_PRUEBA.find((evento) => evento.id === id),
+  { usuarioId: 1, ahora: AHORA, feriados: SIN_FERIADOS }));
+
+describe('el formulario del evento: las paridades', () => {
+  it('los mensajes, los largos, la fecha mínima y los recordatorios son los del servidor', () => {
+    assert.deepEqual(plano(M.MENSAJES_EVENTO), { ...MENSAJES_EVENTO });
+    assert.equal(M.LARGO_TITULO_EVENTO, LARGO_TITULO_EVENTO);
+    assert.equal(M.LARGO_DETALLE_EVENTO, LARGO_DETALLE_EVENTO);
+    assert.equal(M.FECHA_MINIMA_EVENTO, FECHA_MINIMA_EVENTO);
+    assert.deepEqual(plano(M.RECORDATORIOS), [...RECORDATORIOS]);
+    assert.equal(M.RECORDATORIO_POR_DEFECTO, RECORDATORIO_POR_DEFECTO);
+    assert.deepEqual(plano(M.TEXTO_RECORDATORIO), { ...TEXTO_RECORDATORIO });
+  });
+
+  it('fechaMaximaEvento: el mismo día dos años después (un 29/02 da el 28/02), con el tope del año 9999', () => {
+    for (const hoy of ['2026-10-26', '2028-02-29', '2026-12-31', '2025-01-01', '9997-06-01', '9998-01-01', '9999-12-31', null,
+      undefined, '', '2026-02-30', 20261026, '26/10/2026']) {
+      assert.equal(M.fechaMaximaEvento(hoy), fechaMaximaEvento(hoy), String(hoy));
+    }
+    assert.equal(M.fechaMaximaEvento('2028-02-29'), '2030-02-28');
+    assert.equal(M.fechaMaximaEvento('9998-01-01'), '9999-12-31');
+  });
+
+  it('el error de la fecha es textoRangoEvento, también sin un tope', () => {
+    for (const hasta of ['2028-10-26', '2030-02-28', '9999-12-31', null]) {
+      assert.equal(M.textoRangoDelEvento(hasta), textoRangoEvento(hasta), String(hasta));
+    }
+  });
+
+  // Los bordes de la Task 2 (tests/mi-espacio-eventos-reglas.test.js): el primer error de erroresDelEvento es el de validarEvento
+  it('erroresDelEvento: el primer error es el de validarEvento, en los bordes de cada campo', () => {
+    const casos = [{}, { titulo: '  Turno médico  ' }];
+    for (const titulo of ['', '   ', '\n\t ', undefined, null, 42, ['Reunión'], { texto: 'Reunión' }, emojis(150), `  ${emojis(150)}  `,
+      emojis(151), 'a'.repeat(150), 'a'.repeat(151)]) casos.push({ titulo });
+    for (const fecha of ['2024-12-31', '2026-02-30', '2028-10-27', null, undefined, '', '27/10/2026', 20261027, '2026-10-27 10:00',
+      '2025-01-01', '2028-10-26', '2026-10-31', '2026-11-01', '2026-12-25', '2026-10-26']) casos.push({ fecha });
+    for (const desde of ['24:00', '9:00', '10:00:00', '10:60', '', null, undefined, 1000, ['10:00'], '10h00', ' 10:00', '00:00', '23:59']) {
+      casos.push({ desde, hasta: null });
+    }
+    for (const hasta of ['', null, undefined, '10:01', '10:00', '09:59', '00:00', '24:00', '9:30', '11:00:00', '   ', 1100, ['11:00']]) {
+      casos.push({ hasta });
+    }
+    casos.push({ desde: '00:00', hasta: '23:59' });
+    for (const detalle of ['  Sala del 2.º piso.\n', '', '   \n ', null, undefined, 42, ['texto'], emojis(1000), emojis(1001),
+      'a'.repeat(1001)]) casos.push({ detalle });
+    for (const personas of [[3, 3, 5], ['7', 2, '7'], [], undefined, null, 'todos', 3, [0], ['abc'], [3, -1], [1.5], ['1e3'], ['03'],
+      [null], [true], [3, {}]]) {
+      casos.push({ compartido: true, personas });
+    }
+    // «Todos»: las personas se descartan; sin compartido, para_todos no cuenta; compartido y para_todos, solo el true literal
+    casos.push({ compartido: true, para_todos: true }, { compartido: true, para_todos: true, personas: [3, 5] },
+      { compartido: true, para_todos: true, personas: ['abc'] }, { para_todos: true, personas: [3] },
+      { compartido: true, para_todos: true, personas: [] });
+    for (const compartido of ['true', 1, '1', 'si', {}, false, null]) casos.push({ compartido, para_todos: true, personas: [] });
+    for (const paraTodos of ['true', 1, '1']) casos.push({ compartido: true, para_todos: paraTodos, personas: [] });
+    for (const recordatorio of [undefined, null, ...RECORDATORIOS, 'otro', '15m', '', '1H', 2, ['2h'], {}]) casos.push({ recordatorio });
+    for (const caso of casos) {
+      const entrada = entradaDe(caso);
+      assert.deepEqual(primerError(entrada, HOY), validarEvento(entrada, HOY).error, JSON.stringify(caso) ?? String(caso));
+    }
+    // Lo que no es un objeto, y sin un hoy válido
+    for (const entrada of [null, undefined, 'evento', 42, [], true]) {
+      assert.deepEqual(primerError(entrada, HOY), validarEvento(entrada, HOY).error, String(entrada));
+    }
+    for (const hoy of [null, undefined, '2026-02-30']) {
+      assert.deepEqual(primerError(entradaDe({}), hoy), validarEvento(entradaDe({}), hoy).error, String(hoy));
+    }
+  });
+
+  // Con la hora de inicio mal, la de fin se controla solo en su forma (no se sabe si es después)
+  it('erroresDelEvento da todos los errores juntos, en el orden del formulario', () => {
+    const malo = {
+      titulo: ' ', fecha: '2024-12-31', desde: '24:00', hasta: '25:00', detalle: emojis(1001), compartido: true, personas: [],
+      recordatorio: 'otro'
+    };
+    assert.equal(plano(M.erroresDelEvento({ ...malo, hasta: '09:00' }, HOY)).hasta, undefined);
+    const errores = plano(M.erroresDelEvento(malo, HOY));
+    assert.deepEqual(Object.keys(errores), ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'personas', 'recordatorio']);
+    assert.equal(errores.fecha, 'La fecha tiene que ser del 01/01/2025 al 26/10/2028.');
+    assert.equal(errores.personas, MENSAJES_EVENTO.personas);
+    assert.equal(plano(M.erroresDelEvento({ ...malo, compartido: true, personas: ['abc'] }, HOY)).personas, MENSAJES_EVENTO.personasInvalidas);
+    assert.deepEqual(plano(M.erroresDelEvento(entradaDe({}), HOY)), {});
+  });
+
+  it('idDeLaPersona es idPositivo', () => {
+    for (const valor of [1, 7, '7', 0, -1, 1.5, '1e3', '03', null, undefined, true, {}, [3], '9999999999', '12345678901', NaN,
+      Infinity, ' 3', '3 ', '', 'abc']) {
+      assert.equal(M.idDeLaPersona(valor), idPositivo(valor), String(valor));
+    }
+  });
+
+  // Faltaba atarla: con un valor que no es un texto, la del navegador daba la primera cifra de un número
+  it('iniciales es inicialesDe', () => {
+    for (const nombre of ['Persona de Prueba', 'Martín Ríos', 'laura', '  Sofía   Paz  ', 'Ñandú Álvarez', '', '   ', null, undefined,
+      123, 0, ['Ana Paz'], { nombre: 'Ana' }, true]) {
+      assert.equal(M.iniciales(nombre), inicialesDe(nombre), String(nombre));
+    }
+  });
+
+  it('cuandoDelEventoDe es cuandoDelEvento: los siete días, con y sin la hora de fin, y lo que no sirve', () => {
+    const casos = [];
+    for (const fecha of ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']) {
+      casos.push({ fecha, desde: '10:00', hasta: '11:00' }, { fecha, desde: '09:30', hasta: null });
+    }
+    casos.push({ fecha: '2026-10-27', desde: '10:00', hasta: '' }, { fecha: '2026-10-27', desde: '10:00', hasta: '25:00' },
+      { fecha: '2026-10-27', desde: '9:00' }, { fecha: '2026-02-30', desde: '10:00' }, {}, null, 'evento', []);
+    for (const caso of casos) assert.equal(M.cuandoDelEventoDe(caso), cuandoDelEvento(caso), JSON.stringify(caso));
+  });
+});
+
+// Las personas con las que se puede compartir (GET /api/mi-espacio/personas): administración, sin quien pide, con sus iniciales
+const PERSONAS_PARA_COMPARTIR = Object.freeze([
+  { id: 4, nombre: 'Diego Fernández' }, { id: 6, nombre: 'Carla Benítez' }, { id: 7, nombre: 'Julián Ortiz' },
+  { id: 3, nombre: 'Martín Ríos' }, { id: 5, nombre: 'Sofía Paz' }
+].map((persona) => ({ ...persona, iniciales: inicialesDe(persona.nombre) })));
+
+describe('el formulario del evento: lo puro', () => {
+  it('valoresDelEvento: uno nuevo, con la fecha que se le pasa y «2 horas antes»', () => {
+    assert.deepEqual(plano(M.valoresDelEvento(null, { fecha: HOY })), {
+      id: null, titulo: '', fecha: HOY, desde: '', hasta: '', detalle: '', compartido: false, para_todos: false, personas: [],
+      conocidas: [], recordatorio: '2h'
+    });
+  });
+
+  it('valoresDelEvento: uno propio, con sus personas (los ids y los nombres) y su recordatorio', () => {
+    assert.deepEqual(plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })), {
+      id: 12, titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', compartido: true,
+      para_todos: false, personas: [3, 4, 5, 6], recordatorio: '2h',
+      conocidas: [{ id: 3, nombre: 'Martín Ríos' }, { id: 4, nombre: 'Diego Fernández' }, { id: 5, nombre: 'Sofía Paz' },
+        { id: 6, nombre: 'Carla Benítez' }]
+    });
+    const turno = plano(M.valoresDelEvento(itemDe(13), { fecha: HOY }));
+    assert.equal(turno.recordatorio, 'dia_anterior');
+    assert.equal(turno.hasta, '');
+    assert.equal(turno.compartido, false);
+    const paraTodos = plano(M.valoresDelEvento(itemDe(15), { fecha: HOY }));
+    assert.equal(paraTodos.para_todos, true);
+    assert.deepEqual(paraTodos.personas, []);
+  });
+
+  it('cuerpoDelEvento: sin poder compartir (el lector y el colaborador), sin compartido, para_todos ni personas', () => {
+    const valores = { ...plano(M.valoresDelEvento(null, { fecha: HOY })), titulo: '  Turno médico ', desde: '15:30', detalle: ' Llevar estudios. ' };
+    assert.deepEqual(plano(M.cuerpoDelEvento(valores, {})), {
+      titulo: 'Turno médico', fecha: HOY, desde: '15:30', hasta: null, detalle: 'Llevar estudios.', recordatorio: '2h'
+    });
+    // Aunque el evento estuviera compartido (lo creó cuando era de administración)
+    assert.deepEqual(Object.keys(plano(M.cuerpoDelEvento({ ...valores, compartido: true, personas: [3] }, { puedeCompartir: false }))),
+      ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'recordatorio']);
+  });
+
+  it('cuerpoDelEvento: con «Todos», para_todos y ninguna persona; con personas, ellas; «Solo yo», ninguna', () => {
+    const base = { ...plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })) };
+    assert.deepEqual(plano(M.cuerpoDelEvento({ ...base, para_todos: true }, { puedeCompartir: true })), {
+      titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', recordatorio: '2h',
+      compartido: true, para_todos: true, personas: []
+    });
+    assert.deepEqual(plano(M.cuerpoDelEvento(base, { puedeCompartir: true })).personas, [3, 4, 5, 6]);
+    const soloYo = plano(M.cuerpoDelEvento({ ...base, compartido: false }, { puedeCompartir: true }));
+    assert.deepEqual([soloYo.compartido, soloYo.para_todos, soloYo.personas], [false, false, []]);
+  });
+
+  it('htmlDePersonasDelEvento: «Todos» primero; cada persona con sus iniciales y aria-pressed; con «Todos», las demás deshabilitadas', () => {
+    const valores = { ...plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })) };
+    const botones = botonesDe(M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, valores));
+    assert.deepEqual(botones.map(({ atributos, texto }) => [atributos['data-persona'], atributos['aria-pressed'], texto]), [
+      ['todos', 'false', 'Todos'], ['4', 'true', 'DF Diego Fernández'], ['6', 'true', 'CB Carla Benítez'], ['7', 'false', 'JO Julián Ortiz'],
+      ['3', 'true', 'MR Martín Ríos'], ['5', 'true', 'SP Sofía Paz']
+    ]);
+    assert.ok(botones.every(({ atributos }) => atributos.type === 'button'));
+    assert.ok(!M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, valores).includes(' disabled'));
+    const html = M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { ...valores, para_todos: true, personas: [] });
+    const conTodos = [...html.matchAll(/<button([^>]*)>/g)].map(([, atributos]) => atributos);
+    assert.match(conTodos[0], /data-persona="todos" aria-pressed="true"$/);
+    assert.ok(conTodos.slice(1).every((atributos) => / aria-pressed="false" disabled$/.test(atributos)));
+    // Las iniciales, decorativas
+    assert.ok(M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, valores).includes('<i aria-hidden="true">DF</i>'));
+  });
+
+  it('htmlDePersonasDelEvento: un nombre con HTML, escapado; mientras llega la lista o si no llegó, lo dice', () => {
+    const html = M.htmlDePersonasDelEvento([{ id: 9, nombre: MALICIOSO, iniciales: '<b>' }], { personas: [9] });
+    assert.ok(html.includes(ESCAPADO));
+    assert.ok(!html.includes('<img') && !html.includes('<b>'));
+    assert.ok(textoDe(M.htmlDePersonasDelEvento([], { personas: [] }, { sinLista: 'cargando' })).endsWith('Cargando las personas…'));
+    assert.ok(textoDe(M.htmlDePersonasDelEvento([], { personas: [] }, { sinLista: 'fallo' }))
+      .endsWith('No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.'));
+  });
+
+  it('personasParaElegir: las de la lista y, al final, las del evento que ya no están en ella (no se sacan sin querer)', () => {
+    const valores = { conocidas: [{ id: 3, nombre: 'Martín Ríos' }, { id: 8, nombre: 'Persona de Prueba' }] };
+    assert.deepEqual(plano(M.personasParaElegir(PERSONAS_PARA_COMPARTIR, valores)).map((persona) => persona.id), [4, 6, 7, 3, 5, 8]);
+    assert.deepEqual(plano(M.personasParaElegir(null, valores)), [{ id: 3, nombre: 'Martín Ríos' }, { id: 8, nombre: 'Persona de Prueba' }]);
+    assert.ok(M.htmlDePersonasDelEvento(M.personasParaElegir(null, valores), { personas: [8] }).includes('<i aria-hidden="true">PP</i>'));
+  });
+
+  it('elegirPersona: «Todos» se prende y se apaga (y saca a las elegidas); una persona se suma o se saca', () => {
+    const valores = { compartido: true, para_todos: false, personas: [3, 4] };
+    assert.deepEqual(plano(M.elegirPersona(valores, '5')), { ...valores, personas: [3, 4, 5] });
+    assert.deepEqual(plano(M.elegirPersona(valores, '3')), { ...valores, personas: [4] });
+    const conTodos = plano(M.elegirPersona(valores, 'todos'));
+    assert.deepEqual(conTodos, { ...valores, para_todos: true, personas: [] });
+    // Con «Todos», las demás no se tocan; un valor que no es un id, tampoco
+    assert.deepEqual(plano(M.elegirPersona(conTodos, '5')), conTodos);
+    assert.deepEqual(plano(M.elegirPersona(valores, 'abc')), valores);
+    assert.deepEqual(plano(M.elegirPersona(conTodos, 'todos')), { ...valores, personas: [] });
+  });
+
+  it('textoDeCuantasPersonas: «(1 persona)», «(4 personas)»; sin ninguna o con «Todos», nada', () => {
+    assert.equal(M.textoDeCuantasPersonas({ personas: [3] }), '(1 persona)');
+    assert.equal(M.textoDeCuantasPersonas({ personas: [3, 4, 5, 6] }), '(4 personas)');
+    assert.equal(M.textoDeCuantasPersonas({ personas: [] }), '');
+    assert.equal(M.textoDeCuantasPersonas({ personas: [3], para_todos: true }), '');
+  });
+
+  it('htmlDeOpcionesDeRecordatorio: en el orden de RECORDATORIOS, con sus textos y el elegido (uno que no es de la lista, 2 horas)', () => {
+    const opciones = (html) => [...html.matchAll(/<option value="([^"]+)"( selected)?>([^<]+)<\/option>/g)]
+      .map(([, valor, elegido, texto]) => [valor, Boolean(elegido), texto]);
+    assert.deepEqual(opciones(M.htmlDeOpcionesDeRecordatorio('dia_anterior')), [
+      ['1h', false, '1 hora antes'], ['2h', false, '2 horas antes'], ['dia_anterior', true, 'El día hábil anterior'],
+      ['ninguno', false, 'Sin aviso']
+    ]);
+    assert.deepEqual(opciones(M.htmlDeOpcionesDeRecordatorio('otro')).filter(([, elegido]) => elegido).map(([valor]) => valor), ['2h']);
+  });
+
+  it('pedidoDelAviso: la ruta del aviso con la fecha, la hora y el recordatorio; sin una fecha o una hora que sirvan, o sin aviso, null', () => {
+    const valores = { fecha: '2026-10-27', desde: '10:00', recordatorio: '2h' };
+    assert.equal(M.pedidoDelAviso(valores), '/mi-espacio/eventos/aviso?fecha=2026-10-27&desde=10%3A00&recordatorio=2h');
+    assert.equal(M.pedidoDelAviso({ ...valores, recordatorio: 'dia_anterior' }),
+      '/mi-espacio/eventos/aviso?fecha=2026-10-27&desde=10%3A00&recordatorio=dia_anterior');
+    for (const cambio of [{ desde: '' }, { desde: '9:00' }, { desde: '24:00' }, { fecha: '' }, { fecha: '2026-02-30' },
+      { recordatorio: 'ninguno' }, { recordatorio: 'otro' }]) {
+      assert.equal(M.pedidoDelAviso({ ...valores, ...cambio }), null, JSON.stringify(cambio));
+    }
+    assert.equal(M.pedidoDelAviso(null), null);
+  });
+
+  it('htmlDelEventoAjeno: cuándo es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio» con el que eligió quien lo creó', () => {
+    const item = itemDe(14);
+    const partes = plano(M.htmlDelEventoAjeno({ ...item, detalle: 'Revisamos el informe.\nAntes de mandarlo.' }));
+    assert.equal(textoDe(partes.cuando), 'Jueves 29/10/2026 a las 09:00');
+    assert.equal(partes.detalle, 'Revisamos el informe.\nAntes de mandarlo.');
+    assert.equal(textoDe(partes.quien), 'Compartido Lo creó Martín Ríos. Están: vos.');
+    assert.ok(partes.quien.includes('<span class="me-insignia violeta">Compartido</span>'));
+    assert.deepEqual([...partes.opciones.matchAll(/<option value="(\w+)"( selected)?>([^<]+)<\/option>/g)].map(([, valor, elegido, texto]) =>
+      [valor, Boolean(elegido), texto]), [['evento', true, '2 horas antes (el que eligió Martín Ríos)'], ['ninguno', false, 'Sin aviso']]);
+    assert.equal(M.miRecordatorioDe(item), 'evento');
+    assert.equal(M.miRecordatorioDe({ ...item, mi_recordatorio: 'ninguno' }), 'ninguno');
+    // Con el recordatorio apagado, «Sin aviso» elegido; si quien lo creó eligió «Sin aviso», solo ese texto
+    assert.ok(M.htmlDelEventoAjeno({ ...item, mi_recordatorio: 'ninguno' }).opciones.includes('<option value="ninguno" selected>Sin aviso</option>'));
+    const sinRecordatorio = { ...item, recordatorio: 'ninguno', recordatorio_texto: 'Sin aviso', mi_recordatorio: 'ninguno' };
+    assert.equal(M.htmlDelEventoAjeno(sinRecordatorio).opciones, '<option value="ninguno" selected>Sin aviso</option>');
+    assert.equal(M.miRecordatorioDe(sinRecordatorio), 'ninguno');
+    // Para todos: «Es para todos»; con la hora de fin, «de … a …»
+    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00', quien_largo: 'Lo creó Martín Ríos. Es para todos.' };
+    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).cuando), 'Lunes 02/11/2026 de 10:00 a 11:00');
+    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Compartido Lo creó Martín Ríos. Es para todos.');
+  });
+
+  // Review Focus 2
+  it('htmlDelEventoAjeno: el detalle, el creador y quiénes están con HTML, escapados', () => {
+    const item = { ...itemDe(14), detalle: MALICIOSO, creador: MALICIOSO, quien_largo: `Lo creó ${MALICIOSO}. Están: vos.` };
+    const partes = plano(M.htmlDelEventoAjeno(item));
+    for (const [parte, html] of Object.entries(partes)) assert.ok(!html.includes('<img'), parte);
+    assert.equal(partes.detalle, ESCAPADO);
+    assert.ok(partes.quien.includes(ESCAPADO));
+    assert.ok(partes.opciones.includes(`(el que eligió ${ESCAPADO})`));
+  });
+
+  it('textoDeConfirmacionDeEvento: qué se borra y cuándo; si es compartido, a quiénes les llega la cancelación', () => {
+    const conHoy = { hoy: HOY };
+    assert.equal(M.textoDeConfirmacionDeEvento(itemDe(13), conHoy), '¿Borrar «Turno médico» del miércoles 28/10/2026?');
+    assert.equal(M.textoDeConfirmacionDeEvento(itemDe(12), conHoy),
+      '¿Borrar «Reunión de equipo» del martes 27/10/2026? A las 4 personas les llega un email que dice que se canceló.');
+    assert.equal(M.textoDeConfirmacionDeEvento({ ...itemDe(12), personas: ['Sofía Paz'], personas_ids: [5] }, conHoy),
+      '¿Borrar «Reunión de equipo» del martes 27/10/2026? A la persona le llega un email que dice que se canceló.');
+    assert.equal(M.textoDeConfirmacionDeEvento(itemDe(15), conHoy),
+      '¿Borrar «Reunión de equipo» del lunes 02/11/2026? A toda la administración le llega un email que dice que se canceló.');
+    // Uno que ya pasó no manda la cancelación (el servidor no avisa de un evento empezado)
+    assert.equal(M.textoDeConfirmacionDeEvento({ ...itemDe(12), fecha: '2026-10-23' }, conHoy), '¿Borrar «Reunión de equipo» del viernes 23/10/2026?');
+    // Texto plano (va con textContent): sin escapar
+    assert.equal(M.textoDeConfirmacionDeEvento({ ...itemDe(13), titulo: MALICIOSO }, conHoy), `¿Borrar «${MALICIOSO}» del miércoles 28/10/2026?`);
+  });
+});
+
+// El servidor falso con la agenda y el formulario del evento: las personas, el aviso (el de avisoDe, con hoy a las 09:00) y lo que se
+// guarda; `extra`, primero (una respuesta, una promesa que la da o undefined), y `eventos`, los cambios de conEventos
+const RUTA_DE_PERSONAS = '/api/mi-espacio/personas';
+const RUTA_DEL_AVISO = '/api/mi-espacio/eventos/aviso?';
+const rutaDelAviso = (fecha, desde, recordatorio = '2h') =>
+  `/api/mi-espacio/eventos/aviso?fecha=${fecha}&desde=${encodeURIComponent(desde)}&recordatorio=${recordatorio}`;
+const textoDelAvisoDe = (fecha, desde, recordatorio = '2h') =>
+  avisoDe({ fecha, desde, recordatorio }, { ahora: AHORA, feriados: SIN_FERIADOS }).texto;
+const conElFormulario = ({ extra = () => undefined, eventos = {} } = {}) => async (metodo, ruta, cuerpo) => {
+  const propia = await extra(metodo, ruta, cuerpo);
+  if (propia !== undefined) return propia;
+  if (ruta === RUTA_DE_PERSONAS) return ok(PERSONAS_PARA_COMPARTIR);
+  if (ruta.startsWith(RUTA_DEL_AVISO)) {
+    const parametros = new URL(ruta, 'http://rpad.test').searchParams;
+    const { momento, texto } = avisoDe({ fecha: parametros.get('fecha'), desde: parametros.get('desde'),
+      recordatorio: parametros.get('recordatorio') }, { ahora: AHORA, feriados: SIN_FERIADOS });
+    return ok({ momento, texto });
+  }
+  if (metodo === 'POST' && ruta === '/api/mi-espacio/eventos') return respuesta(201, { success: true, data: { id: 99 }, message: 'Evento guardado.' });
+  if (metodo === 'PUT' && /^\/api\/mi-espacio\/eventos\/\d+$/.test(ruta)) return ok({ id: Number(ruta.split('/').at(-1)) }, 'Evento cambiado.');
+  if (metodo === 'DELETE' && /^\/api\/mi-espacio\/eventos\/\d+$/.test(ruta)) return ok(undefined, 'Evento borrado.');
+  return conEventos(eventos)(metodo, ruta, cuerpo);
+};
+// Los GET de la agenda (el mes y los próximos), sin el aviso ni lo que se guarda
+const rangosPedidos = (pagina) => pagina.estado.pedidos.filter((p) => p.metodo === 'GET' && p.ruta.startsWith('/api/mi-espacio/eventos?'))
+  .map((p) => p.ruta);
+const avisosPedidos = (pagina) => pagina.rutas().filter((ruta) => ruta.startsWith(RUTA_DEL_AVISO));
+const abiertos = (pagina) => pagina.documento.querySelectorAll('.modal-overlay').filter((modal) => modal.classList.contains('active'))
+  .map((modal) => modal.id);
+// Abre un evento de la grilla o de los próximos (el botón recibe el foco antes, como con un clic) y espera el foco del modal
+const abrirElEvento = async (pagina, id, donde = 'ag-mes') => {
+  const boton = pagina.el(donde).querySelector(`[data-evento="${id}"]`);
+  boton.focus();
+  await pagina.tocar(boton);
+  await pagina.correr();
+  return boton;
+};
+const personaDel = (pagina, valor) => pagina.el('ev-personas').querySelector(`[data-persona="${valor}"]`);
+
+describe('el formulario del evento en la página (DOM falso)', () => {
+  it('«Nuevo evento»: hoy y «2 horas antes», el foco en «Qué» y, al cerrar, de vuelta al botón', async () => {
+    const pagina = montarPagina({ responder: conElFormulario() });
+    await pagina.iniciar();
+    const boton = pagina.el('btn-nuevo-evento');
+    boton.focus();
+    await pagina.tocar(boton);
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Nuevo evento');
+    assert.deepEqual(['ev-titulo', 'ev-fecha', 'ev-desde', 'ev-hasta', 'ev-detalle'].map((id) => pagina.el(id).value), ['', HOY, '', '', '']);
+    assert.equal(pagina.el('ev-recordatorio').value, '2h');
+    assert.equal(pagina.el('ev-recordatorio').innerHTML, M.htmlDeOpcionesDeRecordatorio('2h'));
+    assert.equal(pagina.el('ev-borrar').hidden, true);
+    assert.equal(pagina.el('ev-aviso').hidden, true);
+    await pagina.correr();
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-titulo'));
+    await pagina.tocar(pagina.el('modal-evento').querySelector('.modal-footer [data-cerrar]'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.documento.activeElement, boton);
+  });
+
+  // Decisión del usuario (27/10/2026): el lector y el colaborador tienen solo eventos personales
+  it('el lector no ve «¿Quién lo ve?» ni pide las personas, y lo que guarda no trae compartido', async () => {
+    const pagina = montarPagina({ responder: conElFormulario() });
+    await pagina.iniciar();
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    assert.equal(pagina.el('ev-grupo-quien').hidden, true);
+    assert.equal(pagina.el('ev-grupo-personas').hidden, true);
+    await pagina.escribir('ev-titulo', 'Turno médico');
+    await pagina.escribir('ev-desde', '15:30');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo), [
+      { titulo: 'Turno médico', fecha: HOY, desde: '15:30', hasta: null, detalle: '', recordatorio: '2h' }
+    ]);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 0);
+  });
+
+  it('administración: «Solo yo» de entrada; «Compartido» muestra las personas, pedidas una sola vez', async () => {
+    const pagina = montarPagina({ admin: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    assert.equal(pagina.el('ev-grupo-quien').hidden, false);
+    assert.equal(pagina.el('ev-solo').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-compartido').getAttribute('aria-pressed'), 'false');
+    assert.equal(pagina.el('ev-grupo-personas').hidden, true);
+    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, true);
+    pagina.el('ev-compartido').focus();
+    await pagina.tocar(pagina.el('ev-compartido'));
+    assert.equal(pagina.el('ev-compartido').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-solo').getAttribute('aria-pressed'), 'false');
+    assert.equal(pagina.el('ev-grupo-personas').hidden, false);
+    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-compartido'));
+    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { personas: [] }));
+    // Una persona se suma (el foco queda en ella) y la cantidad se ve; «Todos» deshabilita a las demás
+    const martin = personaDel(pagina, '3');
+    martin.focus();
+    await pagina.tocar(martin);
+    assert.equal(personaDel(pagina, '3').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.documento.activeElement, personaDel(pagina, '3'));
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '(1 persona)');
+    await pagina.tocar(personaDel(pagina, 'todos'));
+    assert.equal(personaDel(pagina, 'todos').getAttribute('aria-pressed'), 'true');
+    assert.ok(PERSONAS_PARA_COMPARTIR.every(({ id }) => personaDel(pagina, String(id)).disabled === true));
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '');
+    // «Solo yo» vuelve a ocultarlas
+    await pagina.tocar(pagina.el('ev-solo'));
+    assert.equal(pagina.el('ev-grupo-personas').hidden, true);
+    // Cerrar y volver a abrir no vuelve a pedir las personas, y un formulario nuevo vuelve a «Solo yo»
+    await pagina.tecla('Escape');
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 1);
+    assert.equal(pagina.el('ev-solo').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-grupo-personas').hidden, true);
+  });
+
+  it('si las personas no llegan, lo dice y se vuelven a pedir la próxima vez', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      admin: true,
+      responder: conElFormulario({ extra: (metodo, ruta) => (ruta === RUTA_DE_PERSONAS && falla ? respuesta(500, { success: false, error: 'Error' }) : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(pagina.el('ev-compartido'));
+    assert.ok(textoDe(pagina.el('ev-personas').innerHTML).endsWith('No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.'));
+    assert.ok(personaDel(pagina, 'todos'), '«Todos» se puede elegir igual');
+    await pagina.tecla('Escape');
+    falla = false;
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(pagina.el('ev-compartido'));
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 2);
+    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { personas: [] }));
+  });
+
+  // Review Focus 5: dos eventos compartidos mandarían dos invitaciones
+  it('dos clics en «Guardar» con un fetch que tarda mandan un solo POST; después se cierra, se anuncia y se vuelven a pedir la agenda y el Resumen',
+    async () => {
+      let soltar;
+      const demorado = new Promise((resolver) => { soltar = resolver; });
+      const pagina = montarPagina({
+        hash: '#agenda', admin: true,
+        responder: conElFormulario({
+          extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/eventos'
+            ? demorado.then(() => respuesta(201, { success: true, data: { id: 99 }, message: 'Evento guardado.' })) : undefined)
+        })
+      });
+      await pagina.iniciar();
+      await pagina.tocar(pagina.el('ag-nuevo-evento'));
+      await pagina.correr();
+      await pagina.escribir('ev-titulo', 'Reunión de equipo');
+      await pagina.escribir('ev-desde', '10:00');
+      await pagina.escribir('ev-hasta', '11:00');
+      await pagina.escribir('ev-detalle', 'Sala de reuniones del 2.º piso.');
+      await pagina.tocar(pagina.el('ev-compartido'));
+      await pagina.tocar(personaDel(pagina, 'todos'));
+      const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+      const rangos = rangosPedidos(pagina).length;
+      await pagina.tocar(pagina.el('ev-guardar'));
+      assert.equal(pagina.el('ev-guardar').disabled, true);
+      await pagina.tocar(pagina.el('ev-guardar'));
+      pagina.el('ev-guardar').disabled = false;
+      await pagina.tocar(pagina.el('ev-guardar'));
+      // Mientras guarda, el modal no se cierra
+      await pagina.tecla('Escape');
+      assert.deepEqual(abiertos(pagina), ['modal-evento']);
+      assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 1);
+      assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos')[0].cuerpo, {
+        titulo: 'Reunión de equipo', fecha: HOY, desde: '10:00', hasta: '11:00', detalle: 'Sala de reuniones del 2.º piso.', recordatorio: '2h',
+        compartido: true, para_todos: true, personas: []
+      });
+      soltar();
+      await pagina.esperar();
+      assert.deepEqual(abiertos(pagina), []);
+      assert.equal(pagina.el('me-anuncio').textContent, 'Evento guardado.');
+      assert.deepEqual(pagina.estado.toasts, [['Evento guardado.', 'success']]);
+      assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes + 1);
+      assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+      assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 1);
+    });
+
+  it('los errores del formulario, antes de pedir nada: todos juntos, con aria-invalid, y el foco al primero', async () => {
+    const pagina = montarPagina({ admin: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.escribir('ev-titulo', '   ');
+    await pagina.escribir('ev-fecha', '2024-12-31');
+    await pagina.escribir('ev-hasta', '09:00');
+    await pagina.tocar(pagina.el('ev-compartido'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 0);
+    for (const [id, mensaje] of [['ev-titulo', MENSAJES_EVENTO.titulo], ['ev-fecha', 'La fecha tiene que ser del 01/01/2025 al 26/10/2028.'],
+      ['ev-desde', MENSAJES_EVENTO.desde], ['ev-personas', MENSAJES_EVENTO.personas]]) {
+      assert.equal(pagina.el(`${id}-error`).textContent, mensaje, id);
+      assert.equal(pagina.el(`${id}-error`).hidden, false, id);
+      assert.equal(pagina.el(id).getAttribute('aria-invalid'), 'true', id);
+    }
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-titulo'));
+    // Sin el título ni la fecha mal, el primero es el de las personas: el foco va a «Todos»
+    await pagina.escribir('ev-titulo', 'Reunión de equipo');
+    await pagina.escribir('ev-fecha', '2026-10-27');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.escribir('ev-hasta', '11:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-titulo').getAttribute('aria-invalid'), null);
+    assert.equal(pagina.el('ev-titulo-error').hidden, true);
+    assert.equal(pagina.documento.activeElement, personaDel(pagina, 'todos'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 0);
+  });
+
+  it('un 400 en titulo pone aria-invalid y el foco en #ev-titulo; uno sin campo de la página (compartido) va a #ev-error', async () => {
+    let contestar = respuesta(400, { success: false, error: MENSAJES_EVENTO.tituloLargo, campo: 'titulo' });
+    const pagina = montarPagina({
+      admin: true, responder: conElFormulario({ extra: (metodo) => (metodo === 'POST' ? contestar : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.escribir('ev-titulo', 'Reunión de equipo');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('ev-titulo').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ev-titulo-error').textContent, MENSAJES_EVENTO.tituloLargo);
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-titulo'));
+    assert.equal(pagina.el('ev-guardar').disabled, false);
+    contestar = respuesta(400, { success: false, error: MENSAJES_EVENTO.sinPermiso, campo: 'compartido' });
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-titulo').getAttribute('aria-invalid'), null);
+    assert.equal(pagina.el('ev-error').textContent, MENSAJES_EVENTO.sinPermiso);
+    assert.equal(pagina.el('ev-error').hidden, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-guardar'));
+    // Sin conexión, en castellano
+    contestar = Promise.reject(new TypeError('Failed to fetch'));
+    contestar.catch(() => {});
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-error').textContent, MENSAJE_SIN_CONEXION);
+  });
+
+  it('el aviso del recordatorio: 300 ms después del último cambio, un solo pedido; una respuesta vieja no pisa la nueva', async () => {
+    let soltarViejo;
+    const viejo = new Promise((resolver) => { soltarViejo = resolver; });
+    const pagina = montarPagina({
+      responder: conElFormulario({
+        extra: (metodo, ruta) => (ruta === rutaDelAviso(HOY, '10:00')
+          ? viejo.then(() => ok({ momento: null, texto: 'una respuesta vieja' })) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.correr();
+    // Sin hora no hay nada que pedir
+    assert.deepEqual(avisosPedidos(pagina), []);
+    await pagina.escribir('ev-desde', '11:30');
+    await pagina.escribir('ev-desde', '11:00');
+    assert.deepEqual(avisosPedidos(pagina), [], 'espera los 300 ms');
+    await pagina.correr();
+    assert.deepEqual(avisosPedidos(pagina), [rutaDelAviso(HOY, '11:00')]);
+    assert.equal(pagina.el('ev-aviso').textContent, textoDelAvisoDe(HOY, '11:00'));
+    assert.equal(pagina.el('ev-aviso').textContent, '2 horas antes (hoy a las 09:00)');
+    assert.equal(pagina.el('ev-aviso').hidden, false);
+    // El que tarda (las 10:00) y después otro (el día hábil anterior): gana el último, aunque el viejo llegue después
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.correr();
+    assert.equal(pagina.el('ev-aviso').hidden, true, 'mientras espera, sin un aviso viejo');
+    await pagina.escribir('ev-recordatorio', 'dia_anterior', 'change');
+    await pagina.correr();
+    assert.equal(pagina.el('ev-aviso').textContent, textoDelAvisoDe(HOY, '10:00', 'dia_anterior'));
+    soltarViejo();
+    await pagina.esperar();
+    assert.equal(pagina.el('ev-aviso').textContent, textoDelAvisoDe(HOY, '10:00', 'dia_anterior'));
+    // «Sin aviso» no pide nada y no dice nada
+    const antes = avisosPedidos(pagina).length;
+    await pagina.escribir('ev-recordatorio', 'ninguno', 'change');
+    await pagina.correr();
+    assert.equal(avisosPedidos(pagina).length, antes);
+    assert.equal(pagina.el('ev-aviso').hidden, true);
+    // Una fecha nueva lo vuelve a pedir
+    await pagina.escribir('ev-recordatorio', '1h', 'change');
+    await pagina.escribir('ev-fecha', '2026-10-31');
+    await pagina.correr();
+    assert.equal(avisosPedidos(pagina).at(-1), rutaDelAviso('2026-10-31', '10:00', '1h'));
+    assert.equal(pagina.el('ev-aviso').textContent, '1 hora antes (el viernes 30/10 a las 09:00)');
+  });
+
+  it('un evento propio de la grilla: «Editar evento» con sus datos, sus personas y su aviso; el PUT con lo cambiado', async () => {
+    const pagina = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '12');
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Editar evento');
+    assert.deepEqual(['ev-titulo', 'ev-fecha', 'ev-desde', 'ev-hasta', 'ev-detalle', 'ev-recordatorio'].map((id) => pagina.el(id).value),
+      ['Reunión de equipo', '2026-10-27', '10:00', '11:00', '', '2h']);
+    assert.equal(pagina.el('ev-borrar').hidden, false);
+    assert.equal(pagina.el('ev-compartido').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-grupo-personas').hidden, false);
+    assert.deepEqual(PERSONAS_PARA_COMPARTIR.map(({ id }) => [id, personaDel(pagina, String(id)).getAttribute('aria-pressed')]),
+      [[4, 'true'], [6, 'true'], [7, 'false'], [3, 'true'], [5, 'true']]);
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '(4 personas)');
+    assert.equal(pagina.el('ev-aviso').textContent, itemDe(12).aviso.texto);
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-titulo'));
+    await pagina.tocar(personaDel(pagina, '7'));
+    await pagina.tocar(personaDel(pagina, '3'));
+    await pagina.escribir('ev-desde', '10:30');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/12').map((p) => p.cuerpo), [{
+      titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:30', hasta: '11:00', detalle: '', recordatorio: '2h',
+      compartido: true, para_todos: false, personas: [4, 5, 6, 7]
+    }]);
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Evento cambiado.');
+  });
+
+  // Review Focus 4: una invitada que dejó de ser administración no está en la lista, pero sigue en el evento: no se la saca sin querer
+  it('una persona del evento que ya no está en la lista se ve y se guarda igual', async () => {
+    const conOtra = [...EVENTOS_DE_PRUEBA.filter((evento) => evento.id !== 12), eventoDe(12, 'Reunión de equipo', '2026-10-27', '10:00',
+      { hasta: '11:00', compartido: 1, personas: [...CUATRO_PERSONAS, { id: 8, nombre: 'Persona de Prueba', sin_recordatorio: 0 }] })];
+    const pagina = montarPagina({
+      hash: '#agenda', admin: true,
+      responder: conElFormulario({ eventos: { [RUTA_DEL_MES]: ok(respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { eventos: conOtra })) } })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '12');
+    assert.equal(personaDel(pagina, '8').getAttribute('aria-pressed'), 'true');
+    assert.equal(personaDel(pagina, '8').textContent, 'PPPersona de Prueba');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/12')[0].cuerpo.personas, [3, 4, 5, 6, 8]);
+  });
+
+  it('un 404 al guardar cierra el modal, lo avisa y vuelve a pedir la agenda', async () => {
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        extra: (metodo) => (metodo === 'PUT' ? respuesta(404, { success: false, error: MENSAJES_EVENTO.noEncontrado }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '11');
+    const rangos = rangosPedidos(pagina).length;
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/11').length, 1);
+    assert.deepEqual(abiertos(pagina), []);
+    assert.deepEqual(pagina.estado.toasts, [[MENSAJES_EVENTO.noEncontrado, 'error']]);
+    assert.equal(pagina.el('me-anuncio').textContent, MENSAJES_EVENTO.noEncontrado);
+    assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+  });
+
+  it('un clic en el velo no cierra; Escape cierra primero la confirmación y después el formulario, y el foco vuelve al evento', async () => {
+    const pagina = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    const boton = await abrirElEvento(pagina, '12');
+    pagina.el('modal-evento').disparar('click');
+    await pagina.esperar();
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    pagina.el('ev-borrar').focus();
+    await pagina.tocar(pagina.el('ev-borrar'));
+    await pagina.correr();
+    assert.deepEqual(abiertos(pagina), ['modal-evento', 'modal-confirmar']);
+    assert.equal(pagina.el('modal-confirmar-titulo').textContent, 'Borrar el evento');
+    assert.equal(pagina.el('modal-confirmar-texto').textContent,
+      '¿Borrar «Reunión de equipo» del martes 27/10/2026? A las 4 personas les llega un email que dice que se canceló.');
+    assert.equal(pagina.documento.activeElement, pagina.el('modal-confirmar').querySelector('.modal-footer [data-cerrar]'));
+    pagina.el('modal-confirmar').disparar('click');
+    await pagina.esperar();
+    assert.deepEqual(abiertos(pagina), ['modal-evento', 'modal-confirmar']);
+    await pagina.tecla('Escape');
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-borrar'));
+    await pagina.tecla('Escape');
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.documento.activeElement, boton);
+    assert.equal(pagina.pedidosA('DELETE', '/api/mi-espacio/eventos/12').length, 0);
+  });
+
+  it('borrar: la confirmación y el DELETE; después cierra los dos modales, avisa y vuelve a pedir la agenda', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '13');
+    await pagina.tocar(pagina.el('ev-borrar'));
+    assert.equal(pagina.el('modal-confirmar-texto').textContent, '¿Borrar «Turno médico» del miércoles 28/10/2026?');
+    const rangos = rangosPedidos(pagina).length;
+    await pagina.tocar(pagina.el('modal-confirmar-si'));
+    assert.equal(pagina.pedidosA('DELETE', '/api/mi-espacio/eventos/13').length, 1);
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Evento borrado.');
+    assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+  });
+
+  // Review Focus 2
+  it('un título con HTML se ve como texto en el formulario, en el detalle de uno ajeno y en la confirmación', async () => {
+    const eventos = [eventoDe(11, MALICIOSO, '2026-10-26', '12:00'), eventoDe(14, MALICIOSO, '2026-10-29', '09:00', DE_MARTIN)];
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: {
+          [RUTA_DEL_MES]: ok(respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { eventos })),
+          [RUTA_DE_PROXIMOS]: ok(respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' }, { eventos }))
+        }
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '14', 'ag-proximos');
+    assert.equal(pagina.el('modal-evento-ajeno-titulo').textContent, MALICIOSO);
+    assert.equal(pagina.el('modal-evento-ajeno').querySelector('img'), null);
+    await pagina.tecla('Escape');
+    await abrirElEvento(pagina, '11');
+    assert.equal(pagina.el('ev-titulo').value, MALICIOSO);
+    await pagina.tocar(pagina.el('ev-borrar'));
+    assert.equal(pagina.el('modal-confirmar-texto').textContent, `¿Borrar «${MALICIOSO}» del lunes 26/10/2026?`);
+    for (const id of ['modal-evento', 'modal-confirmar']) assert.equal(pagina.el(id).querySelector('img'), null, id);
+  });
+
+  it('sin modalidad, «Nuevo evento» abre el formulario igual (decisión del usuario)', async () => {
+    const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, modalidad: null } });
+    const pagina = montarPagina({ responder: conElFormulario({ extra: (metodo, ruta) => (ruta === '/api/mi-espacio/resumen' ? ok(resumen) : undefined) }) });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+  });
+});
+
+describe('el detalle de un evento ajeno en la página (DOM falso)', () => {
+  it('cuándo es, quién lo creó, «Mi recordatorio» con el foco y «Solo quien lo creó puede cambiar el evento.»', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '14', 'ag-proximos');
+    assert.deepEqual(abiertos(pagina), ['modal-evento-ajeno']);
+    const item = itemDe(14);
+    const partes = M.htmlDelEventoAjeno(item);
+    assert.equal(pagina.el('modal-evento-ajeno-titulo').textContent, 'Entrega del informe trimestral');
+    assert.equal(pagina.el('mea-cuando').innerHTML, partes.cuando);
+    assert.equal(pagina.el('mea-quien').innerHTML, partes.quien);
+    assert.equal(pagina.el('mea-detalle').hidden, true, 'sin detalle');
+    assert.equal(pagina.el('mea-recordatorio').innerHTML, partes.opciones);
+    assert.equal(pagina.el('mea-recordatorio').value, 'evento');
+    assert.equal(pagina.el('mea-aviso').textContent, item.aviso.texto);
+    assert.equal(pagina.el('mea-aviso').hidden, false);
+    assert.equal(pagina.el('mea-ayuda').textContent, 'Solo quien lo creó puede cambiar el evento.');
+    assert.equal(pagina.documento.activeElement, pagina.el('mea-recordatorio'));
+    // «Cerrar» lo cierra, con el foco de vuelta, sin pedir nada
+    const antes = pagina.rutas().length;
+    await pagina.tocar(pagina.el('mea-cerrar'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos').querySelector('[data-evento="14"]'));
     assert.equal(pagina.rutas().length, antes);
-    assert.equal(pagina.documento.querySelectorAll('.modal-overlay').filter((modal) => modal.classList.contains('active')).length, 0);
+  });
+
+  it('«Mi recordatorio» manda el PUT enseguida; al cerrar, se vuelve a pedir la agenda y el foco vuelve al evento', async () => {
+    const respuestaDelPut = (sinAviso) => {
+      const miRecordatorio = sinAviso ? 'ninguno' : '2h';
+      return ok({ mi_recordatorio: miRecordatorio, aviso: avisoDe({ fecha: '2026-10-29', desde: '09:00', recordatorio: miRecordatorio },
+        { ahora: AHORA, feriados: SIN_FERIADOS }) }, sinAviso ? 'Recordatorio apagado.' : 'Recordatorio prendido.');
+    };
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        extra: (metodo, ruta, cuerpo) => (metodo === 'PUT' && ruta === '/api/mi-espacio/eventos/14/mi-recordatorio'
+          ? respuestaDelPut(cuerpo.sin_aviso) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '14', 'ag-proximos');
+    await pagina.escribir('mea-recordatorio', 'ninguno', 'change');
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/14/mi-recordatorio').map((p) => p.cuerpo), [{ sin_aviso: true }]);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Recordatorio apagado.');
+    assert.deepEqual(pagina.estado.toasts, [['Recordatorio apagado.', 'success']]);
+    assert.equal(pagina.el('mea-aviso').hidden, true);
+    assert.equal(pagina.el('mea-recordatorio').disabled, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('mea-recordatorio'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento-ajeno']);
+    await pagina.escribir('mea-recordatorio', 'evento', 'change');
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/14/mi-recordatorio').at(-1).cuerpo, { sin_aviso: false });
+    assert.equal(pagina.el('mea-aviso').textContent, textoDelAvisoDe('2026-10-29', '09:00'));
+    // Mientras está abierto no se vuelve a dibujar nada; al cerrarlo, sí, y el foco va al evento nuevo de los próximos
+    const rangos = rangosPedidos(pagina).length;
+    await pagina.tocar(pagina.el('mea-cerrar'));
+    await pagina.esperar();
+    assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos').querySelector('[data-evento="14"]'));
+  });
+
+  it('si el PUT falla, el select vuelve a lo de antes y el error va a #mea-error', async () => {
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        extra: (metodo, ruta) => (metodo === 'PUT' && ruta.endsWith('/mi-recordatorio')
+          ? respuesta(500, { success: false, error: 'Error al cambiar tu recordatorio' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '14');
+    await pagina.escribir('mea-recordatorio', 'ninguno', 'change');
+    assert.equal(pagina.el('mea-recordatorio').value, 'evento');
+    assert.equal(pagina.el('mea-error').textContent, 'Error al cambiar tu recordatorio');
+    assert.equal(pagina.el('mea-error').hidden, false);
+    assert.equal(pagina.el('mea-aviso').hidden, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('mea-recordatorio'));
+    assert.deepEqual(pagina.estado.toasts, []);
+    // Al cerrar, como no cambió nada, no se vuelve a pedir la agenda
+    const rangos = rangosPedidos(pagina).length;
+    await pagina.tocar(pagina.el('mea-cerrar'));
+    await pagina.esperar();
+    assert.equal(rangosPedidos(pagina).length, rangos);
+  });
+
+  it('un 404 en «Mi recordatorio» cierra el detalle, lo avisa y vuelve a pedir la agenda', async () => {
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        extra: (metodo, ruta) => (metodo === 'PUT' && ruta.endsWith('/mi-recordatorio')
+          ? respuesta(404, { success: false, error: MENSAJES_EVENTO.noEncontrado }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '14');
+    const rangos = rangosPedidos(pagina).length;
+    await pagina.escribir('mea-recordatorio', 'ninguno', 'change');
+    assert.deepEqual(abiertos(pagina), []);
+    assert.deepEqual(pagina.estado.toasts, [[MENSAJES_EVENTO.noEncontrado, 'error']]);
+    assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+  });
+});
+
+// La revisión de la Task 9: el mismo data-evento está en la grilla y en los próximos, y el de la grilla puede estar dentro de un
+// «y N más» oculto. Después de guardar, el foco vuelve al del mismo lugar, salta los ocultos y, si uno no lo toma, prueba el siguiente
+describe('el foco después de guardar un evento (DOM falso)', () => {
+  it('guardado desde los próximos, el foco vuelve al de los próximos, no al de la grilla; desde la grilla, al de la grilla', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '12', 'ag-proximos');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos').querySelector('[data-evento="12"]'));
+    await abrirElEvento(pagina, '12');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-mes').querySelector('[data-evento="12"]'));
+  });
+
+  it('guardado desde un «y N más» de la grilla, que se vuelve a dibujar oculto, el foco va al mismo evento en los próximos', async () => {
+    const cuatro = [eventoDe(41, 'Primera', '2026-10-28', '08:00'), eventoDe(42, 'Segunda', '2026-10-28', '09:00'),
+      eventoDe(43, 'Tercera', '2026-10-28', '10:00'), eventoDe(44, 'Cuarta', '2026-10-28', '11:00')];
+    const datos = (rango) => ok(respuestaDeEventos(rango, { eventos: cuatro, licencias: [], ausencias: [] }));
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: { [RUTA_DEL_MES]: datos({ desde: '2026-09-28', hasta: '2026-11-01' }), [RUTA_DE_PROXIMOS]: datos({ desde: '2026-10-26', hasta: '2026-11-25' }) }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('ag-mes').querySelector('[data-ver-mas="2026-10-28"]'));
+    const cuarta = pagina.el('ag-mes').querySelector('[data-evento="44"]');
+    assert.equal(pagina.documento.activeElement, cuarta);
+    await pagina.tocar(cuarta);
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.ok(M.estaOculto(pagina.el('ag-mes').querySelector('[data-evento="44"]')), 'el de la grilla quedó oculto');
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos').querySelector('[data-evento="44"]'));
+  });
+
+  it('devolverElFoco: si un control no toma el foco, prueba el siguiente (el otro lugar y después el siguiente candidato)', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    const respaldo = {
+      vista: 'vista-agenda', candidatos: [{ atributo: 'data-evento', valor: '12', dentro: 'ag-proximos' }, { titulo: 'Próximos' }]
+    };
+    pagina.el('ag-proximos').querySelector('[data-evento="12"]').focus = () => {};
+    pagina.contexto.devolverElFoco(respaldo);
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-mes').querySelector('[data-evento="12"]'));
+    pagina.dom.activo = null;
+    pagina.el('ag-mes').querySelector('[data-evento="12"]').focus = () => {};
+    pagina.contexto.devolverElFoco(respaldo);
+    assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos-titulo'));
   });
 });
