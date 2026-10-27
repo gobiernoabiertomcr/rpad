@@ -3632,6 +3632,48 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     assert.equal(pagina.el('ev-grupo-personas').hidden, true);
   });
 
+  // El select la tiene en aria-describedby, y un texto oculto con hidden igual entra en la descripción (accname 1.2, paso 2A): en un
+  // evento personal tiene que estar vacía, no solo oculta
+  const AYUDA_COMPARTIDO = 'Les llega a todas las personas del evento.';
+  it('en un evento personal, la ayuda del recordatorio compartido queda vacía (el lector, «Solo yo» y uno propio sin compartir)',
+    async () => {
+      const lector = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+      await lector.iniciar();
+      await lector.tocar(lector.el('btn-nuevo-evento'));
+      assert.equal(lector.el('ev-recordatorio-ayuda').textContent, '');
+      assert.equal(lector.el('ev-recordatorio-ayuda').hidden, true);
+      // Aunque abra uno que estaba compartido (lo compartió cuando era de administración): no puede compartir
+      await lector.tecla('Escape');
+      await abrirElEvento(lector, '12');
+      assert.equal(lector.el('ev-recordatorio-ayuda').textContent, '');
+      const admin = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
+      await admin.iniciar();
+      await admin.tocar(admin.el('btn-nuevo-evento'));
+      assert.equal(admin.el('ev-recordatorio-ayuda').textContent, '');
+      assert.equal(admin.el('ev-recordatorio-ayuda').hidden, true);
+      await admin.tecla('Escape');
+      await abrirElEvento(admin, '13');
+      assert.equal(admin.el('ev-recordatorio-ayuda').textContent, '');
+      // Compartido y de vuelta a «Solo yo»: se vacía otra vez
+      await admin.tocar(admin.el('ev-compartido'));
+      await admin.tocar(admin.el('ev-solo'));
+      assert.equal(admin.el('ev-recordatorio-ayuda').textContent, '');
+      assert.equal(admin.el('ev-recordatorio-ayuda').hidden, true);
+    });
+
+  it('en un evento compartido, la ayuda del recordatorio dice que les llega a todos (uno nuevo y uno propio con personas)', async () => {
+    const pagina = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(pagina.el('ev-compartido'));
+    assert.equal(pagina.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
+    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
+    await pagina.tecla('Escape');
+    await abrirElEvento(pagina, '12');
+    assert.equal(pagina.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
+    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
+  });
+
   it('si las personas no llegan, lo dice y se vuelven a pedir la próxima vez', async () => {
     let falla = true;
     const pagina = montarPagina({

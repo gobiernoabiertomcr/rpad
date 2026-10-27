@@ -759,8 +759,9 @@
     <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento): qué, la fecha y las
          horas (la de fin, opcional), el detalle, quién lo ve (solo administración comparte: mi-espacio.js muestra «¿Quién lo ve?»
          con Auth.isAdmin()), con quién (las personas o «Todos») y el recordatorio, con cuándo sale (#ev-aviso, que calcula el
-         servidor; lo describe el select, no es una región viva). Va antes de la confirmación: todos los velos tienen el mismo z-index
-         y el que va más abajo en el HTML queda arriba -->
+         servidor; lo describe el select, no es una región viva). #ev-recordatorio-ayuda arranca vacía: mi-espacio.js la escribe solo
+         en un evento compartido (lo que apunta aria-describedby se lee aunque esté oculto). Va antes de la confirmación: todos los
+         velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba -->
     <div class="modal-overlay" id="modal-evento">
         <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-evento-titulo">
             <div class="modal-header">
@@ -813,7 +814,7 @@
                     <label class="form-label" for="ev-recordatorio">Recordatorio por email</label>
                     <select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"></select>
                     <p class="form-hint" id="ev-aviso" hidden></p>
-                    <p class="form-hint" id="ev-recordatorio-ayuda" hidden>Les llega a todas las personas del evento.</p>
+                    <p class="form-hint" id="ev-recordatorio-ayuda" hidden></p>
                     <p class="form-error" id="ev-recordatorio-error" hidden></p>
                 </div>
             </div>

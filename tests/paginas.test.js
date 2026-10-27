@@ -854,7 +854,9 @@ describe('páginas', () => {
         // El recordatorio: las opciones las pone mi-espacio.js; cuándo sale (#ev-aviso) no es una región viva: lo describe el select
         assert.match(html, /<select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"><\/select>/);
         assert.match(html, /<p class="form-hint" id="ev-aviso" hidden><\/p>/);
-        assert.match(html, /<p class="form-hint" id="ev-recordatorio-ayuda" hidden>Les llega a todas las personas del evento\.<\/p>/);
+        // La ayuda del recordatorio compartido arranca vacía: la describe el select, y un texto oculto con hidden igual entraría en la
+        // descripción (accname 1.2, paso 2A). mi-espacio.js la escribe solo en un evento compartido
+        assert.match(html, /<p class="form-hint" id="ev-recordatorio-ayuda" hidden><\/p>/);
         assert.match(html, /<button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento<\/button>/);
         assert.match(html, /<button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar<\/button>/);
       });

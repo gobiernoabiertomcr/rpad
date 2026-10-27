@@ -2986,14 +2986,20 @@ const valoresDelFormularioDeEvento = (formulario) => ({
   hasta: porId('ev-hasta').value, detalle: porId('ev-detalle').value, recordatorio: porId('ev-recordatorio').value
 });
 
-// «Solo yo» o «Compartido» (aria-pressed) y, si es compartido, con quién y que el recordatorio les llega a todos
+// Debajo del recordatorio de un evento compartido
+const AYUDA_DEL_RECORDATORIO_COMPARTIDO = 'Les llega a todas las personas del evento.';
+
+// «Solo yo» o «Compartido» (aria-pressed) y, si es compartido, con quién y que el recordatorio les llega a todos. Esa ayuda la
+// describe el select (aria-describedby), que la lee aunque esté oculta: en uno personal, además de ocultarse, se vacía
 function pintarQuienLoVe() {
   const { valores, puedeCompartir } = pagina.evento;
   const compartido = puedeCompartir && valores.compartido;
   porId('ev-solo').setAttribute('aria-pressed', String(!valores.compartido));
   porId('ev-compartido').setAttribute('aria-pressed', String(valores.compartido));
   porId('ev-grupo-personas').hidden = !compartido;
-  porId('ev-recordatorio-ayuda').hidden = !compartido;
+  const ayuda = porId('ev-recordatorio-ayuda');
+  ayuda.textContent = compartido ? AYUDA_DEL_RECORDATORIO_COMPARTIDO : '';
+  ayuda.hidden = !compartido;
   pintarPersonas();
 }
 
