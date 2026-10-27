@@ -17,10 +17,8 @@
         const vence = capas.find((c) => c.clase === 'vence');
         const cargadas = capas.find((c) => c.clase === 'cargadas');
         const por = capas.find((c) => c.clase === 'por_habilitar');
-        const primera = [];
-        if (vence) primera.push(`<b class="vence">${vence.n} vencen el jueves 31/12</b>`);
-        if (cargadas) primera.push(`${cargadas.n} ya están cargados para noviembre`);
-        if (primera.length) partes.push(`${primera.join(', y ')}.`);
+        if (vence) partes.push(`<b class="vence">${vence.n === 1 ? '1 vence' : `${vence.n} vencen`} el jueves 31/12.</b>`);
+        if (cargadas) partes.push(`${cargadas.n} ya están cargados para noviembre.`);
         if (por) partes.push(`Otros ${por.n} se habilitan el 1/1/2027.`);
         return partes.length ? `<p class="o2-bajada">${partes.join(' ')}</p>` : '';
     }
@@ -52,8 +50,8 @@
         }).join('');
         const p = r.pastillas;
         const mes = (clase, numero, titulo, nota) => `<span class="o2-mes ${clase}"><strong>${esc(numero)}</strong> ${esc(titulo)} <span>${esc(nota)}</span></span>`;
-        const meses = p.meses.map((m) => mes(m.estado, m.numero, m.mes.toLowerCase(), m.nota));
-        if (p.previo) meses.push(mes('previo', p.previo.numero, p.previo.titulo.toLowerCase(), p.previo.nota));
+        const meses = p.meses.map((m) => mes(m.estado, m.numero, m.mes, m.nota));
+        if (p.previo) meses.push(mes('previo', p.previo.numero, p.previo.titulo, p.previo.nota));
         return `<section aria-labelledby="o2-resto-titulo"><div class="o2-resto"><h2 id="o2-resto-titulo">El resto de ${esc(r.anio)}</h2>`
             + `<span class="o2-resto-al"><span>${esc(r.al_texto)}</span><button type="button" class="sg-link" data-maqueta-accion="Mis vacaciones y saldos">Mis vacaciones y saldos</button></span></div>`
             + `<ul class="o2-numeros">${numeros}</ul>`
@@ -101,7 +99,7 @@
         dibujar: (r) => {
             const vence = vencePronto(r.vence_pronto);
             return Maqueta.faltantes(r) + `<section class="o2-banda" aria-labelledby="o2-frase"><div class="o2-banda-cuerpo${vence ? '' : ' sin-vence'}">`
-                + `<div><p class="o2-dia"><span>${esc(r.hoy_texto)}</span>, <span>${esc(r.modalidad.texto.toLowerCase())}</span></p>${frase(r)}${bajada(r)}${regla(r)}</div>${vence}</div>`
+                + `<div class="o2-titular"><p class="o2-dia">${esc(r.hoy_texto)}, ${esc(r.modalidad.texto.toLowerCase())}</p>${frase(r)}${bajada(r)}</div>${vence}${regla(r)}</div>`
                 + '<svg class="o2-ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 0 H1200 V14 C 1100 26, 1000 26, 900 14 S 700 2, 600 12 S 400 28, 300 16 S 100 4, 0 18 Z" fill="currentColor"/></svg></section>'
                 + resto(r) + hoy(r);
         },

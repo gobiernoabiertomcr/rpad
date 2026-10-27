@@ -4,8 +4,13 @@
 .o2 { --o2-ancho-vence: 340px; }
 
 .o2-banda { position: relative; background: var(--sg-cielo); border-radius: 28px 28px 0 0; margin: 0 0 30px; }
-.o2-banda-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) var(--o2-ancho-vence); gap: 28px 40px; padding: 30px 34px 18px; align-items: start; }
-.o2-banda-cuerpo.sin-vence { grid-template-columns: minmax(0, 1fr); }
+/* La frase, lo que vence y la regla: en la compu, lo que vence a la derecha; en una columna, lo que vence va entre la frase y la
+   regla (se ve primero, como hoy) */
+.o2-banda-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) var(--o2-ancho-vence); grid-template-areas: 'frase vence' 'regla vence'; gap: 0 40px; padding: 30px 34px 18px; align-items: start; }
+.o2-banda-cuerpo.sin-vence { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'frase' 'regla'; }
+.o2-titular { grid-area: frase; }
+.o2-vence { grid-area: vence; }
+.o2-regla { grid-area: regla; }
 .o2-ola { position: absolute; left: 0; right: 0; bottom: -27px; width: 100%; height: 28px; color: var(--sg-cielo); display: block; }
 
 /* La frase */
@@ -21,7 +26,7 @@
 .o2-regla { margin: 26px 0 0; }
 .o2-barra { display: grid; grid-template-columns: var(--o2-columnas); column-gap: 4px; }
 .o2-barra { height: 46px; }
-.o2-tramo { container-type: inline-size; position: relative; border-radius: 10px; transform-origin: 0 50%; display: flex; align-items: center; padding: 0 10px; font-family: var(--f-titulo); font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; overflow: hidden;
+.o2-tramo { container-type: inline-size; position: relative; border-radius: 10px; transform-origin: 0 50%; display: flex; align-items: center; padding: 0 10px; font-family: var(--f-titulo); font-weight: 800; font-size: 1.2rem; font-variant-numeric: tabular-nums; overflow: hidden;
     background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n) - 1.5px), rgba(255, 255, 255, 0.4) calc(100% / var(--n) - 1.5px) calc(100% / var(--n))); }
 .o2-tramo.vence { background-color: var(--sg-sol-borde); color: var(--sg-tinta); }
 .o2-tramo.tinta { background-color: var(--sg-tinta); color: #fff; }
@@ -94,7 +99,8 @@
 .o2-columna .sg-link { font-size: 0.86rem; display: inline-block; margin-top: 10px; }
 
 @media (max-width: 1000px) {
-    .o2-banda-cuerpo { grid-template-columns: minmax(0, 1fr); }
+    .o2-banda-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'frase' 'vence' 'regla'; }
+    .o2-vence { margin-top: 22px; }
 }
 @media (max-width: 640px) {
     .o2-banda { border-radius: 22px 22px 0 0; }
