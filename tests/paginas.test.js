@@ -35,9 +35,9 @@ const VERSION_AREAS = '20261205';
 const VERSION_FERIADOS = '20261209';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
-// reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6):
-// su versión es propia
-const VERSION_CORREOS = '20261204';
+// reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
+// la línea de los recordatorios de la agenda en el Estado, spec 2026-10-26-mi-espacio-agenda, 5): su versión es propia
+const VERSION_CORREOS = '20261210';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
@@ -426,6 +426,14 @@ describe('páginas', () => {
   // Correos pasó a pestañas (spec 2026-10-17-correos-pestanas)
   it(`correos.html: correos.js con la versión ${VERSION_CORREOS}`, () => {
     assert.ok(leer('correos.html').includes(`js/correos.js?v=${VERSION_CORREOS}"`));
+  });
+
+  // La línea de los recordatorios de la agenda (spec 2026-10-26-mi-espacio-agenda, 5): oculta hasta que llega el estado, justo
+  // después de la de la corrida diaria de las Notas Digitales
+  it('correos.html: #nd-eventos, oculto, va justo después de #nd-ultima-corrida', () => {
+    const html = leer('correos.html');
+    assert.match(html, /<p id="nd-ultima-corrida"><\/p>\s*<p id="nd-eventos" hidden><\/p>/);
+    assert.equal(html.split('id="nd-eventos"').length, 2, 'una sola vez');
   });
 
   // Mi Perfil pasó a pestañas (spec 2026-10-16-perfil-pestanas-gestion-cambios)

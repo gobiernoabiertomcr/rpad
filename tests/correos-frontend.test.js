@@ -847,6 +847,76 @@ describe('correos.js: cargarEstado no reescribe las alertas si no cambiaron', ()
   });
 });
 
+// La línea de los recordatorios de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 5): el servidor manda
+// estado.eventos = { texto, corrida } (null si no la pudo leer) y sus alertas al final de estado.alertas
+describe('correos.js: la línea de los recordatorios de la agenda en el Estado', () => {
+  const ESTADO = {
+    envio_activo: true, configuracion_faltante: [], fallidas: 0, alertas: [], ultima_corrida: null, licencia_firmante: null,
+    proximas: {}, auditoria: { canal_nota: 0, proxima: null, sin_quien_audite: 0, periodos_sin_auditor: [] }
+  };
+  const TEXTO = 'Recordatorios de la agenda: última corrida hoy a las 10:30. Recordatorios enviados: 2.';
+  const EVENTOS = {
+    texto: TEXTO,
+    corrida: { inicio: '2026-10-26 10:30', fin: '2026-10-26 10:30', resultado: 'Recordatorios enviados: 2.', con_errores: false, en_curso: false }
+  };
+  const SIN_CORRIDA = {
+    tipo: 'eventos-sin-corrida', nivel: 'error',
+    mensaje: 'Los recordatorios de la agenda no corren desde hoy a las 08:30: revisá la Tarea Cron de /api/cron/eventos.'
+  };
+  const SIN_ESTADO = {
+    tipo: 'eventos-sin-estado', nivel: 'advertencia', mensaje: 'No se pudo leer la última corrida de los recordatorios de la agenda.'
+  };
+  const cargarCon = async (cambios) => {
+    const panel = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, ...cambios }) });
+    await panel.contexto.cargarEstado();
+    return panel;
+  };
+
+  it('con estado.eventos, #nd-eventos se ve con su texto', async () => {
+    const { elemento } = await cargarCon({ eventos: EVENTOS });
+    assert.equal(elemento('nd-eventos').hidden, false);
+    assert.equal(elemento('nd-eventos').textContent, TEXTO);
+  });
+
+  it('sin estado.eventos (una respuesta de antes) o con null (no se pudo leer), queda oculta y vacía', async () => {
+    for (const cambios of [{}, { eventos: null }, { eventos: undefined }]) {
+      const { elemento } = await cargarCon(cambios);
+      assert.equal(elemento('nd-eventos').hidden, true, JSON.stringify(cambios));
+      assert.equal(elemento('nd-eventos').textContent, '', JSON.stringify(cambios));
+    }
+  });
+
+  it('al volver a cargar sin eventos, la línea que se veía se oculta; y vuelve', async () => {
+    let cambios = { eventos: EVENTOS };
+    const { contexto, elemento } = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, ...cambios }) });
+    await contexto.cargarEstado();
+    assert.equal(elemento('nd-eventos').hidden, false);
+    cambios = { eventos: null };
+    await contexto.cargarEstado();
+    assert.equal(elemento('nd-eventos').hidden, true);
+    assert.equal(elemento('nd-eventos').textContent, '');
+    cambios = { eventos: EVENTOS };
+    await contexto.cargarEstado();
+    assert.equal(elemento('nd-eventos').hidden, false);
+    assert.equal(elemento('nd-eventos').textContent, TEXTO);
+  });
+
+  it('la alerta eventos-sin-corrida se dibuja como las demás (<div class="nd-alerta">) y prende el punto rojo', async () => {
+    const { elemento } = await cargarCon({ eventos: EVENTOS, alertas: [SIN_CORRIDA] });
+    assert.equal(elemento('nd-alertas').innerHTML, `<div class="nd-alerta">${SIN_CORRIDA.mensaje}</div>`);
+    assert.equal(elemento('marca-estado-error').hidden, false);
+    assert.equal(elemento('marca-estado-advertencia').hidden, true);
+  });
+
+  it('la advertencia de que no se pudo leer la corrida se dibuja ámbar y prende el punto ámbar', async () => {
+    const { elemento } = await cargarCon({ eventos: null, alertas: [SIN_ESTADO] });
+    assert.equal(elemento('nd-alertas').innerHTML, `<div class="nd-alerta nd-advertencia">${SIN_ESTADO.mensaje}</div>`);
+    assert.equal(elemento('marca-estado-error').hidden, true);
+    assert.equal(elemento('marca-estado-advertencia').hidden, false);
+    assert.equal(elemento('nd-eventos').hidden, true);
+  });
+});
+
 // Correos en pestañas (spec 2026-10-17-correos-pestanas, 6): el Libro de Notas Digitales como tabla renovada
 describe('correos.html: el Libro (spec 2026-10-17-correos-pestanas, 6)', () => {
   const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
@@ -1270,9 +1340,11 @@ describe('correos.html: la pestaña Estado (spec 2026-10-17-correos-pestanas, 7)
     const lineas = ESTADO.match(/<div class="co-lineas">([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
     assert.ok(lineas, 'hay un .co-lineas dentro de la primera tarjeta');
     assert.deepEqual([...lineas.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]),
-      ['nd-ultima-corrida', 'nd-licencia', 'nd-auditoria', 'nd-sin-quien-audite', 'nd-periodos-sin-auditor']);
+      ['nd-ultima-corrida', 'nd-eventos', 'nd-licencia', 'nd-auditoria', 'nd-sin-quien-audite', 'nd-periodos-sin-auditor']);
     assert.match(etiqueta('nd-ultima-corrida'), /^<p\b/);
     assert.doesNotMatch(etiqueta('nd-ultima-corrida'), /\bhidden\b/);
+    // La de los recordatorios de la agenda (spec 2026-10-26-mi-espacio-agenda, 5): oculta hasta que llega el estado
+    assert.match(etiqueta('nd-eventos'), /^<p id="nd-eventos" hidden>$/);
     assert.match(etiqueta('nd-licencia'), /^<p\b[^>]*\bhidden\b/);
     assert.match(etiqueta('nd-auditoria'), /^<p\b/);
     assert.doesNotMatch(etiqueta('nd-auditoria'), /\bhidden\b/);

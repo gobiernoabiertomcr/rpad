@@ -4,7 +4,8 @@
  * - Con su propio candado (`conBloqueo` de services/notasDigitales.js con BLOQUEO_EVENTOS, nunca el de las Notas Digitales:
  *   la de las 8:30 puede coincidir con la de las 8:15). Si otra corrida lo tiene, termina «ocupada» sin escribir nada.
  * - Anota cada corrida en mi_espacio_eventos_corridas (una sola fila, id = 1), también en un día que no es hábil: así
- *   Correos → Estado sabe que la Tarea Cron llama. Si anotar falla, va a la consola y la corrida sigue.
+ *   Correos → Estado sabe que la Tarea Cron llama (lo lee `estadoDeLosRecordatorios`, al final: la línea y sus alertas). Si
+ *   anotar falla, va a la consola y la corrida sigue.
  * - Solo manda en un día hábil, con los feriados de la tabla leídos en cada corrida (un feriado cargado después mueve el
  *   aviso: nunca se guarda). Qué sale lo decide `recordatoriosQueTocan` (services/miEspacioEventosReglas.js), con los
  *   atrasados solo de 07:00 a 20:00.
@@ -27,7 +28,8 @@ import { eventosParaLaCorrida } from './miEspacioEventosDatos.js';
 import { feriadosEntre } from './feriadosDatos.js';
 import { esDiaHabilCon } from './feriadosReglas.js';
 import {
-  recordatoriosQueTocan, textoDelResultadoDeEventos, BLOQUEO_EVENTOS, VENTANA_DE_LA_CORRIDA
+  recordatoriosQueTocan, textoDelResultadoDeEventos, textoDeLaCorridaDeEventos, alertasDeLaCorridaDeEventos, BLOQUEO_EVENTOS,
+  VENTANA_DE_LA_CORRIDA
 } from './miEspacioEventosReglas.js';
 import { ahoraArgentina, sumarDias } from './notasDigitalesCalendario.js';
 
@@ -207,5 +209,23 @@ export const leerCorridaDeEventos = async (conexion = pool) => {
     resultado: fila.resultado ?? null,
     con_errores: Number(fila.con_errores) === 1,
     en_curso: fin === null && Number(fila.bloqueo_libre) !== 1
+  };
+};
+
+/**
+ * Lo que muestra Correos → Estado de los recordatorios, en el momento `ahora` ('AAAA-MM-DD HH:MM:SS' de Argentina; de entrada,
+ * `ahoraArgentina()`): `{ texto, corrida, alertas }`, con la última corrida (`leerCorridaDeEventos`, o null), su línea
+ * (`textoDeLaCorridaDeEventos`) y sus alertas (`alertasDeLaCorridaDeEventos`, con los feriados de hoy leídos de la tabla en
+ * cada pedido: un feriado cargado hoy saca la de «no corren»). Tira si la base falla: el controlador de Correos lo convierte
+ * en la advertencia `eventos-sin-estado`.
+ * @returns {Promise<{ texto: string, corrida: object | null, alertas: { tipo: string, nivel: string, mensaje: string }[] }>}
+ */
+export const estadoDeLosRecordatorios = async ({ ahora = ahoraArgentina() } = {}) => {
+  const hoy = String(ahora).slice(0, 10);
+  const [corrida, feriados] = await Promise.all([leerCorridaDeEventos(), feriadosEntre(hoy, hoy)]);
+  return {
+    texto: textoDeLaCorridaDeEventos(corrida, ahora),
+    corrida,
+    alertas: alertasDeLaCorridaDeEventos(corrida, { ahora, feriados })
   };
 };

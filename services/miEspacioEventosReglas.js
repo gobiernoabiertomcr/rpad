@@ -9,13 +9,13 @@
  * los de la corrida de los recordatorios (la ventana, el candado y los atrasados). Después, la validación de un evento
  * (`validarEvento`), el momento en que sale su recordatorio, con los feriados (`momentoDelAviso`: nunca en un día que no es
  * hábil), los textos de cuándo es un evento y cuándo sale su aviso, y quién recibe qué: los recordatorios de una corrida
- * (`recordatoriosQueTocan`, con los atrasados, y lo que dice la corrida: `textoDelResultadoDeEventos`) y los emails de un
- * guardado (`emailsDelGuardado` y `cambioQueAvisa`). Al
- * final, lo que dice la API: el pedido de cuándo sale un aviso (`validarAvisoDelEvento`), las personas de un guardado
- * (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento como lo ve quien lo pide (`itemDeEvento`); lo demás
- * de la agenda (tus licencias, los compañeros que no están y los feriados: `itemDeLicencia`, `itemDeAusencia` e
- * `itemsDeFeriados`) y los eventos de «Hoy y mañana» del Resumen (`eventosDeHoyYManana`). Los textos son planos: escaparlos
- * le toca a quien los dibuja.
+ * (`recordatoriosQueTocan`, con los atrasados; lo que dice la corrida, `textoDelResultadoDeEventos`, y la línea y las alertas
+ * de la última en Correos → Estado: `textoDeLaCorridaDeEventos` y `alertasDeLaCorridaDeEventos`) y los emails de un guardado
+ * (`emailsDelGuardado` y `cambioQueAvisa`). Al final, lo que dice la API: el pedido de cuándo sale un aviso
+ * (`validarAvisoDelEvento`), las personas de un guardado (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento
+ * como lo ve quien lo pide (`itemDeEvento`); lo demás de la agenda (tus licencias, los compañeros que no están y los feriados:
+ * `itemDeLicencia`, `itemDeAusencia` e `itemsDeFeriados`) y los eventos de «Hoy y mañana» del Resumen
+ * (`eventosDeHoyYManana`). Los textos son planos: escaparlos le toca a quien los dibuja.
  *
  * La usan la API de los eventos, sus emails, la corrida de los recordatorios y Correos → Estado. La página
  * (`public/js/mi-espacio.js`) tiene copias de los mensajes, los largos, las fechas y los recordatorios, atadas por tests de
@@ -464,6 +464,92 @@ export const textoDelResultadoDeEventos = (resultado) => {
   if (lineas.length > 0) texto += ` Errores: ${lineas.join('; ')}`;
   return Array.from(texto).slice(0, LARGO_DEL_RESULTADO).join('');
 };
+
+// Correos → Estado (spec, sección 5): la línea de la última corrida de los recordatorios y sus alertas. La corrida es la de
+// leerCorridaDeEventos (services/miEspacioEventosCorrida.js): `{ inicio, fin, resultado, con_errores, en_curso }`, con los
+// momentos 'AAAA-MM-DD HH:MM'. Todo se cuenta desde su inicio, el momento en que la llamó la Tarea Cron
+
+const REVISA_LA_TAREA_CRON = 'revisá la Tarea Cron de /api/cron/eventos.';
+
+// La corrida, si tiene un inicio que sirve; si no, null (como si nunca hubiera corrido)
+const corridaLeida = (corrida) => (esObjeto(corrida) && esMomento(corrida.inicio) ? corrida : null);
+// Un texto que dice algo, sin los espacios de los extremos; si no, null
+const textoQueDice = (valor) => (typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null);
+
+/**
+ * La línea de los recordatorios en Correos → Estado, contada desde ahora ('AAAA-MM-DD HH:MM', con los segundos o sin ellos):
+ * - sin corrida: «Recordatorios de la agenda: sin registro todavía.»;
+ * - en curso: «Recordatorios de la agenda: corrida en curso, desde hoy a las 10:30.»;
+ * - si no: «Recordatorios de la agenda: última corrida hoy a las 10:30.» («ayer a las …», «el 23/10/2026 a las …»: cuandoFue)
+ *   y, si lo tiene, lo que dijo (textoDelResultadoDeEventos): «… 10:30. Recordatorios enviados: 2.». Una que no terminó no
+ *   tiene resultado: la alerta eventos-interrumpida dice lo demás.
+ * Nada tira: una corrida sin un inicio que sirva es «sin registro»; sin un ahora válido, la fecha.
+ */
+export const textoDeLaCorridaDeEventos = (corrida, ahora) => {
+  const leida = corridaLeida(corrida);
+  if (leida === null) return 'Recordatorios de la agenda: sin registro todavía.';
+  const cuando = cuandoFue(leida.inicio, ahora);
+  if (esSi(leida.en_curso)) return `Recordatorios de la agenda: corrida en curso, desde ${cuando}.`;
+  const linea = `Recordatorios de la agenda: última corrida ${cuando}.`;
+  const resultado = textoQueDice(leida.resultado);
+  return resultado === null ? linea : `${linea} ${resultado}`;
+};
+
+/**
+ * Las alertas de la corrida de los recordatorios para Correos → Estado, con el contexto `{ ahora, feriados }` (`ahora`,
+ * 'AAAA-MM-DD HH:MM:SS' de `ahoraArgentina()`, o sin los segundos; `feriados`, el Set de `feriadosEntre` que incluya hoy).
+ * Devuelve `[{ tipo, nivel, mensaje }]`, todas `error`, en este orden:
+ * 1. `eventos-con-errores`, si terminó con errores (fallidos o errores): «La última corrida de los recordatorios de la agenda
+ *    (hoy a las 10:30) terminó con errores: <resultado>», cualquier día;
+ * 2. `eventos-interrumpida`, si no terminó y no está en curso: «La corrida de los recordatorios de la agenda que empezó hoy a
+ *    las 10:30 no terminó.», cualquier día;
+ * 3. `eventos-sin-corrida`, solo en un día hábil (`esDiaHabilCon`, con los feriados), si no hay ninguna corrida («No hay
+ *    registro de ninguna corrida …») o si pasaron más de MINUTOS_SIN_CORRER desde el inicio de la última («Los recordatorios de
+ *    la agenda no corren desde hoy a las 08:30: …»; 60 justos, todavía no). Es la manera de notar que la Tarea Cron no quedó
+ *    configurada: la corrida se anota todos los días, también los que no son hábiles. Una corrida en curso desde hace más de
+ *    una hora también cuenta (las que siguen terminan «ocupadas», sin anotar nada).
+ * Nada tira: sin un ahora válido no se sabe si hoy es hábil y no va la tercera; unos feriados que no son un Set no sacan días.
+ */
+export const alertasDeLaCorridaDeEventos = (corrida, contexto) => {
+  const { ahora, feriados } = esObjeto(contexto) ? contexto : {};
+  const leida = corridaLeida(corrida);
+  const alertas = [];
+  if (leida !== null) {
+    const cuando = cuandoFue(leida.inicio, ahora);
+    if (esSi(leida.con_errores)) {
+      alertas.push({
+        tipo: 'eventos-con-errores', nivel: 'error',
+        mensaje: `La última corrida de los recordatorios de la agenda (${cuando}) terminó con errores: `
+          + (textoQueDice(leida.resultado) ?? 'sin detalle')
+      });
+    }
+    if (!esMomento(leida.fin) && !esSi(leida.en_curso)) {
+      alertas.push({
+        tipo: 'eventos-interrumpida', nivel: 'error',
+        mensaje: `La corrida de los recordatorios de la agenda que empezó ${cuando} no terminó.`
+      });
+    }
+  }
+  if (esMomento(ahora) && esDiaHabilCon(ahora.slice(0, 10), feriados)) {
+    if (leida === null) {
+      alertas.push({
+        tipo: 'eventos-sin-corrida', nivel: 'error',
+        mensaje: `No hay registro de ninguna corrida de los recordatorios de la agenda: ${REVISA_LA_TAREA_CRON}`
+      });
+    } else if (minutosEntre(leida.inicio, ahora) > MINUTOS_SIN_CORRER) {
+      alertas.push({
+        tipo: 'eventos-sin-corrida', nivel: 'error',
+        mensaje: `Los recordatorios de la agenda no corren desde ${cuandoFue(leida.inicio, ahora)}: ${REVISA_LA_TAREA_CRON}`
+      });
+    }
+  }
+  return alertas;
+};
+
+// La advertencia de Correos → Estado cuando no se pudo leer la última corrida (la base falló): una nueva en cada llamada
+export const alertaSinEstadoDeEventos = () => ({
+  tipo: 'eventos-sin-estado', nivel: 'advertencia', mensaje: 'No se pudo leer la última corrida de los recordatorios de la agenda.'
+});
 
 /**
  * Si un cambio les avisa a los que siguen en el evento (spec, sección 4): cambió el título, la fecha, la hora de inicio o la

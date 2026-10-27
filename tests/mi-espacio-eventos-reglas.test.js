@@ -12,7 +12,8 @@ import {
   fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso, textoDelAviso, cuandoDelEvento,
   cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
   recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento,
-  itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, textoDelResultadoDeEventos
+  itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, textoDelResultadoDeEventos,
+  textoDeLaCorridaDeEventos, alertasDeLaCorridaDeEventos, alertaSinEstadoDeEventos
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -723,6 +724,162 @@ describe('textoDelResultadoDeEventos', () => {
     for (const raro of [undefined, null, 42, 'x', []]) assert.equal(textoDelResultadoDeEventos(raro), 'Recordatorios enviados: 0.');
     assert.equal(textoDelResultadoDeEventos(resultado({ enviados: -1, fallidos: 'dos', errores: [null, 42, 'x'] })),
       'Recordatorios enviados: 0.');
+  });
+});
+
+// Correos → Estado (spec, sección 5): la línea de la última corrida y sus alertas. La corrida es la de leerCorridaDeEventos
+// ({ inicio, fin, resultado, con_errores, en_curso }, los momentos sin los segundos). Ahora es el lunes 26/10/2026 a las 10:45
+describe('la última corrida de los recordatorios en Correos → Estado', () => {
+  const AHORA = '2026-10-26 10:45:12';
+  const SABADO = '2026-10-31 10:45:00';
+  const NO_HABIL = 'Día no hábil: no se mandan recordatorios.';
+  const CON_ERRORES = 'Recordatorios enviados: 1. Fallidos: 1. Errores: evento 12, persona 4: Falla simulada';
+  // Una corrida que terminó hoy a las 10:30 sin errores, con lo que cambia cada caso
+  const corrida = (datos) => ({
+    inicio: '2026-10-26 10:30', fin: '2026-10-26 10:30', resultado: 'Recordatorios enviados: 2.', con_errores: false,
+    en_curso: false, ...datos
+  });
+  const desde = (inicio, datos) => corrida({ inicio, fin: inicio, ...datos });
+  const alertas = (deLaCorrida, ahora = AHORA, feriados = new Set()) =>
+    alertasDeLaCorridaDeEventos(deLaCorrida, { ahora, feriados });
+  const sinCorrida = (cuando) => ({
+    tipo: 'eventos-sin-corrida', nivel: 'error',
+    mensaje: `Los recordatorios de la agenda no corren desde ${cuando}: revisá la Tarea Cron de /api/cron/eventos.`
+  });
+  const NINGUNA = Object.freeze({
+    tipo: 'eventos-sin-corrida', nivel: 'error',
+    mensaje: 'No hay registro de ninguna corrida de los recordatorios de la agenda: revisá la Tarea Cron de /api/cron/eventos.'
+  });
+  const interrumpida = (cuando) => ({
+    tipo: 'eventos-interrumpida', nivel: 'error',
+    mensaje: `La corrida de los recordatorios de la agenda que empezó ${cuando} no terminó.`
+  });
+
+  describe('textoDeLaCorridaDeEventos: la línea', () => {
+    it('la última corrida, hoy, ayer o el 23/10/2026, con lo que dijo', () => {
+      assert.equal(textoDeLaCorridaDeEventos(corrida(), AHORA),
+        'Recordatorios de la agenda: última corrida hoy a las 10:30. Recordatorios enviados: 2.');
+      assert.equal(textoDeLaCorridaDeEventos(desde('2026-10-25 23:30', { resultado: NO_HABIL }), AHORA),
+        'Recordatorios de la agenda: última corrida ayer a las 23:30. Día no hábil: no se mandan recordatorios.');
+      assert.equal(textoDeLaCorridaDeEventos(desde('2026-10-23 10:30'), AHORA),
+        'Recordatorios de la agenda: última corrida el 23/10/2026 a las 10:30. Recordatorios enviados: 2.');
+      assert.equal(textoDeLaCorridaDeEventos(corrida({ con_errores: true, resultado: CON_ERRORES }), AHORA),
+        `Recordatorios de la agenda: última corrida hoy a las 10:30. ${CON_ERRORES}`);
+    });
+
+    it('en curso: «corrida en curso, desde hoy a las 10:30.»', () => {
+      assert.equal(textoDeLaCorridaDeEventos(corrida({ fin: null, resultado: null, en_curso: true }), AHORA),
+        'Recordatorios de la agenda: corrida en curso, desde hoy a las 10:30.');
+      assert.equal(textoDeLaCorridaDeEventos(desde('2026-10-25 23:30', { fin: null, resultado: null, en_curso: true }), AHORA),
+        'Recordatorios de la agenda: corrida en curso, desde ayer a las 23:30.');
+    });
+
+    it('sin corrida: «sin registro todavía.»', () => {
+      for (const nada of [null, undefined, 42, 'x', [], {}, { inicio: null }, corrida({ inicio: '2026-02-30 10:30' })]) {
+        assert.equal(textoDeLaCorridaDeEventos(nada, AHORA), 'Recordatorios de la agenda: sin registro todavía.',
+          JSON.stringify(nada));
+      }
+    });
+
+    it('una que no terminó y no está en curso (se interrumpió) dice solo cuándo empezó: la alerta dice lo demás', () => {
+      assert.equal(textoDeLaCorridaDeEventos(corrida({ fin: null, resultado: null }), AHORA),
+        'Recordatorios de la agenda: última corrida hoy a las 10:30.');
+    });
+
+    it('sin un ahora válido, la fecha', () => {
+      for (const ahora of [undefined, null, 'ahora', '2026-02-30 10:45']) {
+        assert.equal(textoDeLaCorridaDeEventos(corrida(), ahora),
+          'Recordatorios de la agenda: última corrida el 26/10/2026 a las 10:30. Recordatorios enviados: 2.', String(ahora));
+      }
+    });
+  });
+
+  describe('alertasDeLaCorridaDeEventos', () => {
+    it('el lunes 26/10/2026 a las 10:45: con la última a las 10:30, ninguna; a las 09:30, eventos-sin-corrida', () => {
+      assert.deepEqual(alertas(corrida()), []);
+      assert.deepEqual(alertas(desde('2026-10-26 09:30')), [sinCorrida('hoy a las 09:30')]);
+    });
+
+    it('«más de 60 minutos» desde el inicio: 60 justos todavía no; 61, sí. Los minutos cruzan días', () => {
+      assert.equal(MINUTOS_SIN_CORRER, 60);
+      assert.deepEqual(alertas(desde('2026-10-26 09:45')), []);
+      assert.deepEqual(alertas(desde('2026-10-26 09:44')), [sinCorrida('hoy a las 09:44')]);
+      // El lunes a las 00:20, la del domingo a las 23:30 (la Tarea Cron llama todos los días) está a tiempo
+      assert.deepEqual(alertas(desde('2026-10-25 23:30', { resultado: NO_HABIL }), '2026-10-26 00:20:00'), []);
+      assert.deepEqual(alertas(desde('2026-10-25 23:00', { resultado: NO_HABIL }), '2026-10-26 00:20:00'),
+        [sinCorrida('ayer a las 23:00')]);
+      assert.deepEqual(alertas(desde('2026-10-23 10:30')), [sinCorrida('el 23/10/2026 a las 10:30')]);
+    });
+
+    it('el sábado 31/10/2026 y un feriado, ninguna: aunque no corra desde hace días o no haya ninguna', () => {
+      assert.deepEqual(alertas(desde('2026-10-23 10:30'), SABADO), []);
+      assert.deepEqual(alertas(null, SABADO), []);
+      assert.deepEqual(alertas(desde('2026-10-23 10:30'), AHORA, new Set(['2026-10-26'])), []);
+      assert.deepEqual(alertas(null, AHORA, new Set(['2026-10-26'])), []);
+      // Un feriado de otro día no cambia nada
+      assert.deepEqual(alertas(null, AHORA, new Set(['2026-10-27'])), [NINGUNA]);
+    });
+
+    it('sin corrida en un día hábil: «No hay registro de ninguna corrida …»', () => {
+      for (const nada of [null, undefined, {}, corrida({ inicio: 'x' })]) assert.deepEqual(alertas(nada), [NINGUNA]);
+    });
+
+    it('con errores: eventos-con-errores, con lo que dijo la corrida (también un sábado)', () => {
+      const conErrores = corrida({ con_errores: true, resultado: CON_ERRORES });
+      const alerta = {
+        tipo: 'eventos-con-errores', nivel: 'error',
+        mensaje: `La última corrida de los recordatorios de la agenda (hoy a las 10:30) terminó con errores: ${CON_ERRORES}`
+      };
+      assert.deepEqual(alertas(conErrores), [alerta]);
+      assert.deepEqual(alertas(desde('2026-10-31 10:30', { con_errores: true, resultado: CON_ERRORES }), SABADO), [alerta]);
+      // Y vieja, en un día hábil: las dos, primero la de los errores
+      assert.deepEqual(alertas(desde('2026-10-26 09:30', { con_errores: true, resultado: CON_ERRORES })), [
+        { ...alerta, mensaje: alerta.mensaje.replace('10:30', '09:30') }, sinCorrida('hoy a las 09:30')
+      ]);
+      // Sin un resultado que diga algo, «sin detalle»
+      assert.deepEqual(alertas(corrida({ con_errores: true, resultado: null })), [{
+        ...alerta, mensaje: 'La última corrida de los recordatorios de la agenda (hoy a las 10:30) terminó con errores: sin detalle'
+      }]);
+    });
+
+    it('sin fin ni en_curso: eventos-interrumpida; en curso, ninguna mientras no pase la hora', () => {
+      assert.deepEqual(alertas(corrida({ fin: null, resultado: null })), [interrumpida('hoy a las 10:30')]);
+      assert.deepEqual(alertas(corrida({ fin: null, resultado: null, en_curso: true })), []);
+      // Vieja: interrumpida y sin corrida; en curso desde hace más de una hora (las que siguen terminan «ocupadas» sin anotar
+      // nada), sin corrida
+      assert.deepEqual(alertas(desde('2026-10-26 09:30', { fin: null, resultado: null })),
+        [interrumpida('hoy a las 09:30'), sinCorrida('hoy a las 09:30')]);
+      assert.deepEqual(alertas(desde('2026-10-26 09:30', { fin: null, resultado: null, en_curso: true })),
+        [sinCorrida('hoy a las 09:30')]);
+      // Un sábado, solo la interrumpida
+      assert.deepEqual(alertas(desde('2026-10-23 10:30', { fin: null, resultado: null }), SABADO),
+        [interrumpida('el 23/10/2026 a las 10:30')]);
+    });
+
+    it('nada tira: sin un ahora no se sabe si el día es hábil (sin eventos-sin-corrida); los feriados raros no sacan días', () => {
+      for (const contexto of [undefined, null, 42, {}, { ahora: 'x' }, { ahora: '2026-02-30 10:45' }]) {
+        assert.deepEqual(alertasDeLaCorridaDeEventos(null, contexto), [], JSON.stringify(contexto));
+        assert.deepEqual(alertasDeLaCorridaDeEventos(desde('2026-10-23 10:30'), contexto), [], JSON.stringify(contexto));
+      }
+      assert.deepEqual(alertasDeLaCorridaDeEventos(corrida({ con_errores: true, resultado: CON_ERRORES }), {}), [{
+        tipo: 'eventos-con-errores', nivel: 'error',
+        mensaje: `La última corrida de los recordatorios de la agenda (el 26/10/2026 a las 10:30) terminó con errores: ${CON_ERRORES}`
+      }]);
+      for (const feriados of [undefined, null, ['2026-10-26'], '2026-10-26']) {
+        assert.deepEqual(alertasDeLaCorridaDeEventos(null, { ahora: AHORA, feriados }), [NINGUNA], String(feriados));
+      }
+      // Un inicio después de ahora (otro reloj) no es «más de 60 minutos»
+      assert.deepEqual(alertas(desde('2026-10-26 12:00')), []);
+    });
+  });
+
+  it('alertaSinEstadoDeEventos: la advertencia cuando no se pudo leer la corrida, una nueva cada vez', () => {
+    const alerta = alertaSinEstadoDeEventos();
+    assert.deepEqual(alerta, {
+      tipo: 'eventos-sin-estado', nivel: 'advertencia', mensaje: 'No se pudo leer la última corrida de los recordatorios de la agenda.'
+    });
+    alerta.mensaje = 'otra cosa';
+    assert.equal(alertaSinEstadoDeEventos().mensaje, 'No se pudo leer la última corrida de los recordatorios de la agenda.');
   });
 });
 

@@ -5,8 +5,8 @@
 // ese momento (Review Focus 3). Las lecturas de services/miEspacioEventosDatos.js se prueban también directo (audienciaDe, la de
 // los emails). También lo demás de la agenda (tus licencias de Mi espacio, los feriados y los compañeros que no están, sin el
 // tipo), los eventos de «Hoy y mañana» del Resumen y los emails que salen al guardar (la invitación, el cambio y la
-// cancelación, en Mailpit, después de responder). La API usa la fecha real: las fechas de los tests se arman desde hoy. Las
-// personas son «Test <clave>».
+// cancelación, en Mailpit, después de responder) y, en Correos → Estado, la línea de la última corrida de los recordatorios con
+// sus alertas. La API usa la fecha real: las fechas de los tests se arman desde hoy. Las personas son «Test <clave>».
 import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
@@ -17,10 +17,10 @@ import {
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
 import { textoVisible } from './emails-fixtures.js';
 import { hoyArgentina, ahoraArgentina, sumarDias, esDiaHabil } from '../services/notasDigitalesCalendario.js';
-import { MENSAJES_EVENTO, textoRangoEvento, fechaMaximaEvento } from '../services/miEspacioEventosReglas.js';
+import { MENSAJES_EVENTO, textoRangoEvento, fechaMaximaEvento, BLOQUEO_EVENTOS } from '../services/miEspacioEventosReglas.js';
 import { MENSAJES_MI_ESPACIO } from '../services/miEspacioReglas.js';
 
-let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool;
+let base, servidor, api, usuarios, dbReal, emailSoloA, datos, corrida, pool;
 const hoy = hoyArgentina();
 const dia = (n) => sumarDias(hoy, n);
 // Los eventos se arman sobre dos semanas sin feriados (el primer lunes desde dentro de 7 días cuyos diez días de semana son
@@ -56,6 +56,7 @@ before(async () => {
   emailSoloA = process.env.EMAIL_SOLO_A;
   process.env.EMAIL_SOLO_A = '';
   datos = await import('../services/miEspacioEventosDatos.js');
+  corrida = await import('../services/miEspacioEventosCorrida.js');
   pool = (await import('../config/database.js')).default;
 });
 
@@ -1102,5 +1103,150 @@ describe('los emails del guardado', () => {
       avisos.mock.restore();
       errores.mock.restore();
     }
+  });
+});
+
+// Correos → Estado (spec, sección 5): la línea de la última corrida de los recordatorios y sus alertas, que avisan si en un
+// día hábil la corrida no pasó en la última hora (así se nota que la Tarea Cron no quedó configurada). La corrida es la fila
+// 1 de mi_espacio_eventos_corridas, escrita por SQL; los feriados se leen de la tabla en cada pedido
+describe('Correos → Estado: la última corrida de los recordatorios', () => {
+  // El lunes 26/10/2026 a las 10:45; el sábado 31/10/2026
+  const LUNES_10_45 = '2026-10-26 10:45:00';
+  const SABADO = '2026-10-31 10:45:00';
+  const ENVIADOS = 'Recordatorios enviados: 2.';
+  const CON_ERRORES = 'Recordatorios enviados: 0. Fallidos: 1.';
+  const SIN_REGISTRO = 'Recordatorios de la agenda: sin registro todavía.';
+  const NINGUNA = Object.freeze({
+    tipo: 'eventos-sin-corrida', nivel: 'error',
+    mensaje: 'No hay registro de ninguna corrida de los recordatorios de la agenda: revisá la Tarea Cron de /api/cron/eventos.'
+  });
+  const SIN_ESTADO = Object.freeze({
+    tipo: 'eventos-sin-estado', nivel: 'advertencia', mensaje: 'No se pudo leer la última corrida de los recordatorios de la agenda.'
+  });
+  // Los campos de siempre del estado de las Notas Digitales (estadoNotas de services/notasDigitales.js)
+  const CAMPOS_DE_SIEMPRE = ['envio_activo', 'configuracion_faltante', 'fallidas', 'proximas', 'licencia_firmante', 'auditoria',
+    'ultima_corrida', 'alertas'];
+
+  // La fila de la última corrida: empezó en `inicio` ('AAAA-MM-DD HH:MM:SS') y, salvo que diga otra cosa, terminó a los 4
+  // segundos
+  const anotarCorrida = ({ inicio, fin = `${inicio.slice(0, 17)}04`, resultado = ENVIADOS, conErrores = 0 }) => query(
+    'INSERT INTO mi_espacio_eventos_corridas (id, inicio_at, fin_at, resultado, con_errores) VALUES (1, ?, ?, ?, ?)',
+    [inicio, fin, resultado, conErrores]
+  );
+  const pedirEstado = async () => {
+    const res = await api.get('/notificaciones/notas-digitales/estado', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+    for (const campo of CAMPOS_DE_SIEMPRE) assert.ok(campo in res.body.data, `falta ${campo}`);
+    assert.ok(Array.isArray(res.body.data.alertas));
+    return res.body.data;
+  };
+  const esDeEventos = (alerta) => alerta.tipo.startsWith('eventos-');
+  const escaparRegex = (texto) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  describe('estadoDeLosRecordatorios, en el proceso', () => {
+    it('la línea, la corrida y ninguna alerta con la última a las 10:30; a las 11:45, eventos-sin-corrida', async () => {
+      await anotarCorrida({ inicio: '2026-10-26 10:30:00' });
+      const leida = { inicio: '2026-10-26 10:30', fin: '2026-10-26 10:30', resultado: ENVIADOS, con_errores: false, en_curso: false };
+      const texto = 'Recordatorios de la agenda: última corrida hoy a las 10:30. Recordatorios enviados: 2.';
+      assert.deepEqual(await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 }), { texto, corrida: leida, alertas: [] });
+      assert.deepEqual(await corrida.estadoDeLosRecordatorios({ ahora: '2026-10-26 11:45:00' }), {
+        texto, corrida: leida,
+        alertas: [{
+          tipo: 'eventos-sin-corrida', nivel: 'error',
+          mensaje: 'Los recordatorios de la agenda no corren desde hoy a las 10:30: revisá la Tarea Cron de /api/cron/eventos.'
+        }]
+      });
+    });
+
+    it('un feriado cargado en la tabla saca la alerta de ese día: se lee en cada pedido', async () => {
+      await anotarCorrida({ inicio: '2026-10-23 10:30:00' });
+      assert.equal((await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 })).alertas.length, 1);
+      await conFeriado('2026-10-26');
+      assert.deepEqual((await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 })).alertas, []);
+    });
+
+    it('sin ninguna corrida: «sin registro todavía.» y, en un día hábil, la alerta de que no hay registro; un sábado, ninguna', async () => {
+      assert.deepEqual(await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 }),
+        { texto: SIN_REGISTRO, corrida: null, alertas: [NINGUNA] });
+      assert.deepEqual(await corrida.estadoDeLosRecordatorios({ ahora: SABADO }), { texto: SIN_REGISTRO, corrida: null, alertas: [] });
+    });
+
+    it('con errores, eventos-con-errores; sin fin, interrumpida o, con el candado tomado, en curso', async () => {
+      await anotarCorrida({ inicio: '2026-10-26 10:30:00', resultado: CON_ERRORES, conErrores: 1 });
+      assert.deepEqual((await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 })).alertas, [{
+        tipo: 'eventos-con-errores', nivel: 'error',
+        mensaje: `La última corrida de los recordatorios de la agenda (hoy a las 10:30) terminó con errores: ${CON_ERRORES}`
+      }]);
+
+      await query('DELETE FROM mi_espacio_eventos_corridas');
+      await anotarCorrida({ inicio: '2026-10-26 10:30:00', fin: null, resultado: null });
+      const interrumpida = await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 });
+      assert.equal(interrumpida.texto, 'Recordatorios de la agenda: última corrida hoy a las 10:30.');
+      assert.deepEqual(interrumpida.alertas, [{
+        tipo: 'eventos-interrumpida', nivel: 'error',
+        mensaje: 'La corrida de los recordatorios de la agenda que empezó hoy a las 10:30 no terminó.'
+      }]);
+
+      // Otra corrida (otra conexión) tiene el candado: está en curso
+      const otra = await pool.getConnection();
+      try {
+        const [[{ tomado }]] = await otra.query('SELECT GET_LOCK(?, 0) AS tomado', [BLOQUEO_EVENTOS]);
+        assert.equal(Number(tomado), 1);
+        const enCurso = await corrida.estadoDeLosRecordatorios({ ahora: LUNES_10_45 });
+        assert.equal(enCurso.texto, 'Recordatorios de la agenda: corrida en curso, desde hoy a las 10:30.');
+        assert.equal(enCurso.corrida.en_curso, true);
+        assert.deepEqual(enCurso.alertas, []);
+      } finally {
+        await otra.query('SELECT RELEASE_LOCK(?)', [BLOQUEO_EVENTOS]);
+        otra.release();
+      }
+    });
+  });
+
+  describe('GET /notificaciones/notas-digitales/estado', () => {
+    // La API usa el momento real: sin corrida, la alerta va solo si hoy es hábil (la tabla de feriados está vacía)
+    it('trae data.eventos con la línea y la corrida, y los campos de siempre; sin corrida, la alerta va al final si hoy es hábil', async () => {
+      const data = await pedirEstado();
+      assert.deepEqual(data.eventos, { texto: SIN_REGISTRO, corrida: null });
+      const deEventos = data.alertas.filter(esDeEventos);
+      assert.deepEqual(deEventos, esDiaHabil(hoyArgentina()) ? [NINGUNA] : []);
+      if (deEventos.length > 0) assert.deepEqual(data.alertas.at(-1), NINGUNA);
+    });
+
+    it('las alertas de la agenda van al final, después de las de las Notas Digitales', async () => {
+      // Una corrida de recién, que terminó con errores: la alerta de los errores sale cualquier día
+      const ahora = ahoraArgentina();
+      const hora = ahora.slice(11, 16);
+      await anotarCorrida({ inicio: ahora, fin: ahora, resultado: CON_ERRORES, conErrores: 1 });
+      const data = await pedirEstado();
+      // «hoy», salvo que el pedido cruce la medianoche
+      assert.match(data.eventos.texto, new RegExp(
+        `^Recordatorios de la agenda: última corrida (hoy|ayer) a las ${hora}\\. ${escaparRegex(CON_ERRORES)}$`));
+      assert.deepEqual(data.eventos.corrida, {
+        inicio: ahora.slice(0, 16), fin: ahora.slice(0, 16), resultado: CON_ERRORES, con_errores: true, en_curso: false
+      });
+      const ultima = data.alertas.at(-1);
+      assert.equal(ultima.tipo, 'eventos-con-errores');
+      assert.equal(ultima.nivel, 'error');
+      assert.match(ultima.mensaje, new RegExp(
+        `^La última corrida de los recordatorios de la agenda \\((hoy|ayer) a las ${hora}\\) terminó con errores: ${escaparRegex(CON_ERRORES)}$`));
+      // Hay alertas de las Notas Digitales (la base de prueba no tiene firma ni membrete) y todas van antes
+      const primeraDeEventos = data.alertas.findIndex(esDeEventos);
+      assert.ok(primeraDeEventos > 0, JSON.stringify(data.alertas));
+      assert.ok(data.alertas.slice(primeraDeEventos).every(esDeEventos), JSON.stringify(data.alertas));
+    });
+
+    it('si no se puede leer la corrida, data.eventos es null, la advertencia va al final y lo demás responde igual', async () => {
+      await query('ALTER TABLE mi_espacio_eventos_corridas RENAME TO mi_espacio_eventos_corridas_oculta');
+      try {
+        const data = await pedirEstado();
+        assert.equal(data.eventos, null);
+        assert.deepEqual(data.alertas.at(-1), SIN_ESTADO);
+        assert.deepEqual(data.alertas.filter(esDeEventos), [SIN_ESTADO]);
+      } finally {
+        await query('ALTER TABLE mi_espacio_eventos_corridas_oculta RENAME TO mi_espacio_eventos_corridas');
+      }
+    });
   });
 });
