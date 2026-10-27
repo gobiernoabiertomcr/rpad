@@ -1415,6 +1415,7 @@ const conSusControles = (nombre, errores) => Object.entries(errores)
 // Un pedido que no llegó al servidor: API.pedirJson tira el error del navegador («Failed to fetch»), sin status y en inglés
 const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 const MENSAJE_NO_SE_GUARDO = 'No se pudo guardar. Probá de nuevo en unos minutos.';
+const MENSAJE_NO_SE_BORRO = 'No se pudo borrar. Probá de nuevo en unos minutos.';
 
 // Lo que se dice de una falla: el mensaje del servidor; sin respuesta (sin status), MENSAJE_SIN_CONEXION; sin mensaje, `sinMensaje`
 const motivoDeLaFalla = (falla, sinMensaje) => {
@@ -2058,7 +2059,7 @@ async function confirmarElBorrado() {
       cerrarModal('modal-confirmar');
       noEstaMas(actual.formulario, error);
     } else if (pagina.confirmacion === actual) {
-      avisoDelModal('confirmar', motivoDeLaFalla(error, 'No se pudo borrar. Probá de nuevo en unos minutos.'));
+      avisoDelModal('confirmar', motivoDeLaFalla(error, MENSAJE_NO_SE_BORRO));
       boton.focus?.();
     }
   } finally {

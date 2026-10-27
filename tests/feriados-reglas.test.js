@@ -248,6 +248,15 @@ describe('fechasQueCambianDiasHabiles', () => {
     }
   });
 
+  it('uno que se repite en dos años hábiles (el 15/12 es martes en 2026 y miércoles en 2027): las dos fechas', () => {
+    const delQuince = fila({ fecha: '2026-12-15', se_repite: 1 });
+    assert.deepEqual(fechasQueCambianDiasHabiles(delQuince, 2026, 2027, []), ['2026-12-15', '2027-12-15']);
+    // Otro feriado el 16/12 no le saca nada; uno que no se repite, solo su año
+    assert.deepEqual(fechasQueCambianDiasHabiles(delQuince, 2025, 2028, [fila({ id: 2, fecha: '2026-12-16', se_repite: 1 })]),
+      ['2026-12-15', '2027-12-15', '2028-12-15']);
+    assert.deepEqual(fechasQueCambianDiasHabiles({ ...delQuince, se_repite: 0 }, 2026, 2027, []), ['2026-12-15']);
+  });
+
   it('uno que se repite, cada año por separado: el 13/12 es domingo en 2026 y lunes en 2027', () => {
     const petroleo = fila({ fecha: '2026-12-13', se_repite: 1 });
     assert.deepEqual(fechasDelFeriado(petroleo, 2026, 2027), ['2026-12-13', '2027-12-13']);

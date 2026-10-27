@@ -147,10 +147,10 @@ export const fechaEnElAnio = (fila, anio) => {
 
 /**
  * Las fechas en que rige la fila de desdeAnio a hastaAnio (los dos incluidos, enteros), de la más vieja a la más nueva:
- * `fechaEnElAnio` de cada año del rango, sin los null. Para contar las licencias de Mi espacio que incluye un feriado: uno que
- * se repite cuenta todos los años en que rige (decisión del usuario, 26/10/2026), y de ellas solo las que cambian un día hábil
- * (`fechasQueCambianDiasHabiles`). Uno que no se repite da solo su fecha, si cae en el rango. Con una fila o un rango que no
- * sirven, []. Solo recorre los años que existen (de 1 a 9999).
+ * `fechaEnElAnio` de cada año del rango, sin los null. Todas, caigan o no en un día hábil: esta función no filtra nada más. Uno
+ * que se repite da las de todos los años en que rige (decisión del usuario, 26/10/2026); uno que no se repite, solo su fecha, si
+ * cae en el rango. Con una fila o un rango que no sirven, []. Solo recorre los años que existen (de 1 a 9999). Las licencias de
+ * Mi espacio que incluye un feriado no se cuentan con estas, sino con las que deja `fechasQueCambianDiasHabiles`.
  */
 export const fechasDelFeriado = (fila, desdeAnio, hastaAnio) => {
   if (!Number.isInteger(desdeAnio) || !Number.isInteger(hastaAnio)) return [];
