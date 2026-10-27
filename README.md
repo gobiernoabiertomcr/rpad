@@ -38,7 +38,7 @@ El sistema cuenta con cinco roles de usuario:
 | `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar usuarios, licencias, áreas y feriados en Configuración. Configurar notificaciones SMTP. Generar reportes y armar notas con el Generador de Notas. Cargar las métricas manuales de Métricas y Reportes. Cargar, editar y borrar proyectos, hitos, logros y sus archivos en Herramientas → Proyectos. |
 | `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros **de respaldo** (si ese día no hay ningún auditor disponible) o, los que propuso un auditor, **sin responsabilidad por la auditoría** (si hay auditores disponibles), en el panel de usuarios solo crea y modifica lectores y colaboradores (y solo pasa a alguien de lector a colaborador o al revés) y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
 | `colaborador` | Lector que carga notas DGMIT | Todo lo de `lector` y, además, carga las notas DGMIT en Herramientas → Seguimiento (y corrige o anula las que cargó) y arma las notas de la DGMIT con el Generador de Notas (Herramientas → Notas). No modifica datasets, no audita cambios y no entra a la administración. Pensado para el personal de la DGMIT (ver [Notas DGMIT](#notas-dgmit) y [Generador de Notas](#generador-de-notas)). |
-| `lector` | Solo lectura | Ver la portada, el calendario, los datasets, Métricas y Reportes, Proyectos (también bajar y previsualizar sus documentos y archivos) y Seguimiento sin poder modificar datos. No usa el Generador de Notas (Herramientas → Notas). |
+| `lector` | Solo lectura | Ver la portada, el calendario, los datasets, Métricas y Reportes, Proyectos (también bajar y previsualizar sus documentos y archivos) y Seguimiento sin poder modificar datos. No usa el Generador de Notas (Herramientas → Notas). Usa su propio [Mi espacio](#mi-espacio), como todos los roles. |
 
 Los cambios sobre datasets requieren doble verificación: alguien propone y otra persona aprueba o rechaza. Auditan los **auditores** (superadmin y admins). Un editor audita **de respaldo** si ese día no hay ningún auditor disponible que no lo haya propuesto, y el cambio queda "aprobado o rechazado de respaldo". Si hay auditores disponibles, un editor puede aprobar o rechazar el cambio que propuso un auditor (por ejemplo, cuando un auditor se lo pide), y queda "aprobado o rechazado **sin responsabilidad por la auditoría**": Mi Perfil se lo avisa antes y lo muestra después. El cambio que propuso un editor, con auditores disponibles, lo auditan ellos. Los usuarios con rol `lector` ven el mensaje "Solo lectura" en lugar de los botones de acción.
 
@@ -55,7 +55,7 @@ En la pestaña **Usuarios**, admin y superadmin pueden (el editor, solo sobre le
 - **Desactivar y reactivar.** Desactivar cierra las sesiones de esa persona en el acto. Los usuarios nunca se borran.
 - **Enviar un link para restablecer la contraseña** (vence en 2 h), o reenviar la invitación. Cambiar el email de un usuario o desactivarlo anula sus links pendientes: hay que reenviarle el link.
 - **Ver el historial** de cambios de cada usuario.
-- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número, y vuelve a presentar cada aviso adelantado en su fecha. Si no autoriza a nadie, las reiteraciones salen a la vuelta. Si la persona autorizada también va a faltar algunos días, el formulario lo advierte (esos días no se generan notas). El formulario avisa, debajo de las fechas, los días en que no habría ningún auditor disponible (cuenta las demás licencias y la que se está cargando), y arriba de la lista se muestran los próximos 60 días sin auditores.
+- **Licencias** (pestaña Licencias): fechas de licencia de admins, editores y del superadmin. Durante la licencia esa persona no recibe emails del sistema. En la licencia de quien firma las notas, los avisos se anticipan al último día hábil anterior. El titular puede autorizar a otra persona: la autorización se comunica en esa nota (o en una nota de autorización) y la persona autorizada presenta las demás notas con las dos firmas, citando su número, y vuelve a presentar cada aviso adelantado en su fecha. Si no autoriza a nadie, las reiteraciones salen a la vuelta. Si la persona autorizada también va a faltar algunos días, el formulario lo advierte (esos días no se generan notas). Las licencias que pasan solas desde [Mi espacio](#mi-espacio) llevan la insignia **Cargada desde Mi espacio** y se editan y anulan como cualquier otra. El formulario avisa, debajo de las fechas, los días en que no habría ningún auditor disponible (cuenta las demás licencias y la que se está cargando), y arriba de la lista se muestran los próximos 60 días sin auditores.
 
 Siempre tiene que haber al menos **2 auditores** (superadmin o admins activos): el panel no deja desactivar ni pasar a editor, colaborador o lector a un admin si quedarían menos, ni pasar a editor, colaborador o lector a quien firma las Notas Digitales. Cualquier usuario puede pedir un link nuevo desde **"¿Olvidaste tu contraseña?"** en la pantalla de ingreso.
 
@@ -72,9 +72,9 @@ En la pestaña **Áreas** están los organismos responsables de los datasets:
 
 En la pestaña **Feriados** están los días no hábiles que no son los 9 feriados nacionales fijos: los nacionales que cambian de fecha (Carnaval, Semana Santa, los trasladables y los extraordinarios), los de Chubut, los de Comodoro y los días no laborables (el Jueves Santo, los días con fines turísticos y los asuetos):
 
-- **Por ahora no cambian ningún día hábil del sistema:** las Notas Digitales, la auditoría, los recordatorios, las licencias, Métricas y el Ciclo de vida del dato siguen con los 9 fijos, como lo dice el aviso azul de arriba. Los va a usar Mi espacio, para contar en días hábiles las licencias y los francos.
+- **Por ahora cuentan solo para [Mi espacio](#mi-espacio):** los días hábiles de las licencias y los francos, y su aviso de vencimiento. Las Notas Digitales, la auditoría, los recordatorios, las licencias de Configuración, Métricas y el Ciclo de vida del dato siguen con los 9 fijos, como lo dice el aviso azul de arriba.
 - **La lista de un año:** el selector del año (el en curso, el siguiente y los anteriores con feriados cargados), los filtros Todos, Nacionales, De Chubut, De Comodoro, No laborables y Fijos del sistema, con su cantidad, y una tabla con la fecha y su día de la semana, el nombre, el tipo y si se repite. Los 9 fijos se ven en gris y no se editan. Debajo del nombre, las aclaraciones: de qué fecha se trasladó, si cae en fin de semana o si cae el mismo día que otro feriado.
-- **Nuevo feriado y Editar:** la fecha (con su día de la semana), el nombre, el tipo (Nacional, De Chubut, De Comodoro o No laborable), "Trasladado del" (opcional) y "Se repite todos los años, el mismo día", para los de fecha fija, como el aniversario de la ciudad; los móviles se cargan año por año. Siempre el día entero. Al guardar, avisa si ese día cae en fin de semana o ya es feriado, sin frenar el guardado.
+- **Nuevo feriado y Editar:** la fecha (con su día de la semana), el nombre, el tipo (Nacional, De Chubut, De Comodoro o No laborable), "Trasladado del" (opcional) y "Se repite todos los años, el mismo día", para los de fecha fija, como el aniversario de la ciudad; los móviles se cargan año por año. Siempre el día entero. Al guardar, avisa si ese día cae en fin de semana o ya es feriado, sin frenar el guardado. Debajo de la fecha dice cuántas licencias cargadas en Mi espacio lo incluyen ("sus días hábiles se recalculan"), solo si el feriado cambia de verdad un día hábil (no un sábado, un domingo, uno de los 9 fijos ni un día que ya es feriado) y, en uno que se repite, en todos los años en que rige.
 - **Uno que se repite:** si un año se corre, ese año se marca "no rige" y se carga el día al que se pasó ("Se pasó al"); los demás años no cambian. Darlo de baja vale desde el año que se elija: los anteriores tampoco cambian. Corregir su fecha o su nombre corrige todos los años (es para los errores de carga).
 - **Arranca precargada** con los de 2026 y 2027, cada uno con su fuente (ver [Migración: Feriados](#migración-feriados)). Lo que todavía no está decretado se carga desde la pestaña cuando salga.
 - **Quién:** cargan, corrigen y dan de baja los que entran a Configuración; cualquier usuario con sesión puede leerlos por la API (`GET /api/feriados`).
@@ -212,6 +212,21 @@ En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, 
 - **Dónde está la regla:** `services/proyectosReglas.js` (la validación, pura), `controllers/proyectosController.js` (la API, que conserva sus direcciones `/api/gestion/…`) y `config/upload.js` (las subidas).
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-25-proyectos-design.md`.
 
+## Mi espacio
+
+**Mi cuenta → Mi espacio** (`mi-espacio.html`) es el panel personal de cada usuario, para cualquier rol con sesión: ahí carga sus licencias y sus horas extras y ve lo que le queda y lo que vence pronto. Lo que carga lo ve solo esa persona (ni administración ni el superadmin), salvo, si quiere, que no está. No es un sistema de Recursos Humanos: no hay aprobaciones ni certificados, es un registro para llevar la cuenta.
+
+- **La modalidad** sale del vínculo que carga administración en Configuración → Usuarios: planta permanente y planta política tienen las mismas licencias, y contrato, las suyas. Sin vínculo cargado, Mi espacio lo dice y no deja cargar nada.
+- **Todo se cuenta en días hábiles,** de lunes a viernes, sin los 9 feriados fijos ni los de la pestaña Feriados de Configuración. No se guardan: un feriado nuevo corrige lo ya cargado.
+- **Las licencias:** vacaciones (los días de cada año, de 10 a 30, se habilitan en dos mitades, el 1/7 y el 1/1 siguiente, vencen el 31/12 de dos años después y se descuenta siempre la más vieja), franquicias (solo planta: 42 horas por año, por hora entera), estudios (15 o 10 días por año, de 1 a 3 por examen), atención médica y del grupo familiar (25 días por año cada una), médica extraordinaria (sin tope), francos compensatorios (planta) y horas a favor (contrato). Dos licencias no comparten un día.
+- **Las horas extras,** con el día y el horario, de a media hora. En planta, solo las del 100%: cada 7 horas de un mes dan un franco que se usa dos meses después, en ese mes. En contrato, cada hora es una hora a favor del mes siguiente. Lo que no se usó a tiempo queda como "no utilizado previamente" y se puede usar con un "uso autorizado".
+- **Para arrancar,** la primera vez se abre solo "Mis vacaciones y saldos": los días de vacaciones y los estudios del año, y lo que quedaba de cada licencia y lo ya usado en el año. Lo cargado con fechas anteriores a ese día queda como historia y no descuenta (ya está en el saldo).
+- **Tres pestañas:** **Resumen** ("Vence pronto", "Lo que te queda" con un tanque por saldo, y "Hoy y mañana"), **Licencias** (la lista del año, con filtros por tipo y el saldo inicial) y **Horas extras** (la tabla por mes y el día por día).
+- **Pasan solas a Configuración → Licencias** las ausencias de día entero de quien puede tener licencia (superadmin, admin y editor): solo las fechas, nunca el tipo, y el formulario avisa antes qué efecto tiene (mientras dura, esa persona no cuenta como disponible para auditar). Si es el firmante de las Notas Digitales, solo sus vacaciones dejan a alguien a cargo de presentar las notas. En Configuración llevan la insignia **Cargada desde Mi espacio**. Al lector y al colaborador no les cambia nada del sistema.
+- **"Hoy no están":** los de administración que eligen "Mostrar a mis compañeros" se ven en el Resumen de los demás de administración como "(nombre) no está" y cuándo vuelven, sin decir de qué es la ausencia ("Hoy no están" y "Mañana no están").
+- **El aviso de vencimiento:** un email, una sola vez por cosa, cuando un franco o unas horas a favor del mes están por vencer (desde 5 días hábiles antes del último día hábil del mes) o quedan días de la licencia que vence el 31/12 (desde el primer día hábil de diciembre). Sale en la corrida de las 8:15, solo en días hábiles y nunca a quien está de licencia ese día.
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-26-mi-espacio-licencias-y-horas-design.md` (las maquetas, en `docs/superpowers/specs/2026-10-26-mi-espacio-mockups/`).
+
 ## Estructura del proyecto
 
 ```
@@ -241,6 +256,7 @@ rpad/
 │   ├── proyectosController.js     # Proyectos: proyectos, hitos, logros, línea de tiempo y archivos (leen y bajan todos; escribe administración)
 │   ├── gestionController.js       # Las métricas de /api/gestion/metricas, su CSV y las métricas manuales (las usa Métricas y Reportes)
 │   ├── feriadosController.js      # Feriados: los de un año (cualquier rol con sesión) y cargar, corregir, «no rige» y dar de baja (administración)
+│   ├── miEspacioController.js     # Mi espacio: el Resumen, las licencias (con el paso a Configuración), las horas extras, los saldos y «Hoy no están» (cada uno, lo suyo)
 │   └── reportesController.js      # Los reportes PDF de la pestaña Reportes (las consultas; los dibuja services/reportes*.js)
 ├── services/
 │   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
@@ -254,6 +270,8 @@ rpad/
 │   ├── proyectosReglas.js         # Reglas puras de Proyectos: validación de un proyecto, un hito y un logro, mensajes, evidencia y nombres de archivo
 │   ├── feriadosReglas.js          # Reglas puras de los feriados: contar días hábiles con ellos, la validación, «no rige», la baja desde un año y la lista de un año
 │   ├── feriadosDatos.js           # Las consultas de los feriados (solo lectura)
+│   ├── licenciasOficialesService.js  # Alta, edición y anulación de una licencia de Configuración → Licencias (las comparten Configuración y Mi espacio)
+│   ├── miEspacio*.js              # Mi espacio: reglas (licencias, horas extras, saldo inicial, el paso a Configuración), el panel como datos, consultas, el paso y el email de vencimiento
 │   ├── metricas*.js               # Métricas: reglas (casos, circuito, resultados, contexto, trabajo, áreas y las etapas del Ciclo de vida del dato), cinta, opciones y la foto del 31/12
 │   ├── reportes*.js               # Reportes PDF: la base (diseño del anexo) y un archivo por reporte, la agenda de pedidos y los nombres de los archivos
 │   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF (de una hoja, o de N para un anexo)
@@ -286,7 +304,9 @@ rpad/
 │       ├── rollback-generador-notas.sql          # Deshace la anterior (después de volver a los archivos anteriores; se pierde el ámbito)
 │       ├── migracion-feriados.sql                # Feriados: las tablas feriados y feriados_no_rige (va antes del código; repetible)
 │       ├── migracion-feriados-datos.sql          # Feriados: la precarga de 2026 y 2027, 28 filas con su fuente (después de la anterior y antes del código; repetible)
-│       └── rollback-feriados.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden los feriados cargados)
+│       ├── rollback-feriados.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden los feriados cargados)
+│       ├── migracion-mi-espacio.sql              # Mi espacio: las seis tablas mi_espacio_* (después de las de feriados y antes del código, obligatoria; repetible)
+│       └── rollback-mi-espacio.sql               # Deshace la anterior (después de volver a los archivos anteriores; se pierde lo cargado en Mi espacio)
 ├── middleware/
 │   └── auth.js                    # JWT middleware (authMiddleware y sesionOpcional, para las rutas públicas que muestran más con sesión)
 ├── routes/
@@ -309,9 +329,10 @@ rpad/
     ├── proyectos.html             # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y Logros del área, y un proyecto (?id=N) con su cinta (reemplaza a gestion.html, que redirige acá)
     ├── seguimiento.html           # Seguimiento del dataset: lista "Sin elegir" o un dataset (?id=N), con su cinta, movimientos y PDF
     ├── perfil.html                # Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma
+    ├── mi-espacio.html            # Mi espacio: pestañas Resumen, Licencias y Horas extras (el panel personal de cada usuario)
     ├── robots.txt                 # Cerrado a todos, salvo a los robots de vista previa de un link
     ├── css/
-    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 13 páginas con carcasa
+    │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 14 páginas con carcasa
     │   ├── publico.css            # Solo las 5 páginas públicas (index, datasets, dataset, calendario y contacto)
     │   └── styles.css, layout.css, perfil.css   # Sin uso: no los carga ninguna página
     ├── js/
@@ -335,6 +356,7 @@ rpad/
     │   ├── proyectos.js           # Proyectos: carriles, detalle con la cinta (SVG), formularios, subidas y descargas
     │   ├── seguimiento.js         # Seguimiento del dataset: lista, ficha, circuito, cinta (SVG) y movimientos
     │   ├── perfil.js              # Mi Perfil: gestión de cambios (aprobar y rechazar en la fila), datos y firma
+    │   ├── mi-espacio.js          # Mi espacio: el Resumen (tanques en SVG), las licencias, las horas extras y los formularios
     │   └── establecer-contrasena.js  # Elegir la contraseña, o pedir un link nuevo
     └── img/
         ├── icon.png
@@ -383,6 +405,12 @@ Desde **phpMyAdmin** en cPanel:
 | `actualizaciones_recibido` | El "Recibido el" y el origen de los datos de las actualizaciones aprobadas que no los traían, importados una vez por cambio |
 | `feriados` | Los feriados y días no laborables que no son los 9 nacionales fijos (esos salen del código): fecha, nombre, tipo (nacional, de Chubut, de Comodoro o no laborable), de qué fecha se trasladó, si se repite todos los años y hasta qué año, y la baja lógica (`activo`) |
 | `feriados_no_rige` | Los años en que un feriado que se repite no rige (por ejemplo, porque ese año se pasó a otro día) |
+| `mi_espacio_anios` | Mi espacio: los días de vacaciones (10 a 30) y los estudios de cada persona, por año |
+| `mi_espacio_arranque` | Mi espacio: el día en que cada persona cargó su saldo inicial (lo anterior no descuenta) |
+| `mi_espacio_saldos` | Mi espacio: el saldo inicial de cada persona, por concepto y año |
+| `mi_espacio_licencias` | Mi espacio: las licencias y los usos de horas de cada persona, con su tipo, «Mostrar a mis compañeros», una nota y, si pasó a Configuración → Licencias, a cuál (`creada` o `unida`) o por qué no pasó; baja lógica (`activo`) |
+| `mi_espacio_horas_extras` | Mi espacio: las horas extras de cada persona, por día, de qué hora a qué hora; baja lógica (`activo`) |
+| `mi_espacio_avisos` | Mi espacio: los emails de vencimiento ya enviados (una vez por persona y por cosa) |
 
 ### Migración: Usuarios (superadmin y panel de usuarios)
 
@@ -677,6 +705,23 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-feriados.sql` **después** del Restart: borra `feriados_no_rige` y después `feriados`, y **se pierden la precarga y los feriados cargados desde la pestaña** (exportar las dos tablas antes si hace falta conservarlos). Los usuarios y el resto de los datos no se tocan. Para volver a la versión nueva, se corren otra vez las dos migraciones, en su orden.
 
+### Migración: Mi espacio
+
+⚠️ Requisito: las migraciones anteriores aplicadas y el código desplegado hasta los **Feriados** (con `migracion-feriados.sql` y `migracion-feriados-datos.sql` ya corridas): los archivos de esta entrega se armaron sobre ese código y Mi espacio cuenta los días hábiles con la tabla `feriados`. No hay dependencias nuevas de npm, no cambian las variables de entorno y no hace falta ninguna Tarea Cron nueva: el email de vencimiento sale en la corrida de las 8:15. Backup de la base y de los archivos antes de empezar, y fuera del horario de los crons (8:15 y 14:00). El SQL se corre en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada). El orden es: **SQL → subir los archivos → Restart**. La migración va **antes** del código y es obligatoria: Configuración → Licencias pasa a leer `mi_espacio_licencias` (para la insignia "Cargada desde Mi espacio"), y sin la tabla la pestaña Licencias no carga (`GET /api/usuarios/licencias` da error 500).
+
+1. **SQL:** pegar `database/updates/migracion-mi-espacio.sql` → **Continuar**. Crea las seis tablas de Mi espacio, vacías: `mi_espacio_anios`, `mi_espacio_arranque`, `mi_espacio_saldos`, `mi_espacio_licencias`, `mi_espacio_horas_extras` y `mi_espacio_avisos`. No cambia datos ni `usuarios_licencias`, el código anterior sigue funcionando con la estructura nueva (no las lee) y se puede volver a correr. Después, esta consulta tiene que dar **6**:
+   ```sql
+   SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('mi_espacio_anios', 'mi_espacio_arranque', 'mi_espacio_saldos', 'mi_espacio_licencias', 'mi_espacio_horas_extras', 'mi_espacio_avisos');
+   ```
+2. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app): los nuevos (`controllers/miEspacioController.js`, `services/licenciasOficialesService.js`, `services/miEspacioReglas.js`, `services/miEspacioResumen.js`, `services/miEspacioDatos.js`, `services/miEspacioPaso.js`, `services/miEspacioAvisos.js`, `public/mi-espacio.html` y `public/js/mi-espacio.js`) y los que cambian (`routes/index.js`, `controllers/licenciasController.js`, `controllers/feriadosController.js`, `controllers/notificacionesController.js`, `services/feriadosReglas.js`, `services/emailTemplates.js`, `public/js/usuarios.js`, `public/js/feriados.js` y las 13 páginas que ya tenían carcasa, que suman "Mi espacio" al menú; `configuracion.html`, además, con la insignia, el aviso azul nuevo y el modal del feriado). Si falta cualquiera de los archivos nuevos del servidor, la app no arranca. Enseguida, **Restart** (Setup Node.js App). No hace falta Run NPM Install.
+3. **Verificar** (Ctrl+F5; solo mirar: no cargar licencias ni horas de prueba en la base real):
+   - El menú lateral, en **Mi cuenta**, muestra **Mi Perfil** y **Mi espacio**. Mi espacio abre con las pestañas Resumen, Licencias y Horas extras y, a quien tiene el vínculo cargado, le abre "Mis vacaciones y saldos" (se puede cerrar sin guardar); a quien no lo tiene, le dice que lo pida a administración.
+   - **Configuración → Licencias** carga como siempre (ninguna lleva todavía la insignia "Cargada desde Mi espacio").
+   - **Configuración → Feriados:** el aviso azul dice que estos feriados cuentan solo para Mi espacio.
+   - Correos → Estado, después de la corrida de las 8:15 del día siguiente: sin errores de Mi espacio.
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-mi-espacio.sql` **después** del Restart: borra las seis tablas y **se pierde todo lo cargado en Mi espacio** (exportarlas antes si hace falta conservarlo); las licencias que ya pasaron a Configuración → Licencias quedan allí, sin la insignia (si alguna no tiene que seguir, se anula desde Configuración). Los usuarios y el resto de los datos no se tocan. Si también se deshacen las licencias y las firmas, `rollback-mi-espacio.sql` va **antes** que `rollback-licencias-firmas.sql`. Para volver a la versión nueva, se corre otra vez la migración.
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -828,6 +873,7 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 - La salida del cron se descarta (`> /dev/null`): el resultado de cada corrida queda en Correos → Estado ("Última corrida diaria"), con una alerta si terminó con errores, si se interrumpió o si el cron dejó de llamar.
 - El envío automático (también el de la nota de auditoría) arranca **desactivado**: se activa desde Correos cuando la configuración (destinatarios y firma) está completa.
 - **La foto del año** (Métricas y Reportes): desde el 10/01, la primera corrida guarda las métricas del año anterior al 31/12, sea o no día hábil, y no las vuelve a tocar nunca. Va aparte del resto: si falla, no frena las notas, queda en Correos → Estado ("Última corrida diaria") y la corrida del día siguiente la vuelve a intentar.
+- **El aviso de vencimiento de Mi espacio**: al final, a cada persona con algo por vencer en su Mi espacio (un franco o unas horas a favor del mes, o días de la licencia que vence el 31/12), un solo email, una sola vez por cosa y nunca a quien está de licencia ese día. Sale solo en días hábiles contando también los feriados de la pestaña Feriados (en Carnaval, por ejemplo, no sale). Va aparte del resto: si falla, no frena nada, queda en Correos → Estado ("Última corrida diaria") y lo que no salió sale en una corrida siguiente.
 
 El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
 
@@ -903,6 +949,23 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | PUT | `/api/feriados/:id` | Corregir un feriado (el formulario entero; administración) |
 | PUT | `/api/feriados/:id/rige` | En uno que se repite, marcar o desmarcar que un año no rige (`{ anio, rige, pasa_al }`; con `pasa_al`, carga el día al que se pasó y trae sus `avisos`; administración) |
 | DELETE | `/api/feriados/:id` | Dar de baja un feriado (en uno que se repite, `?desde=AAAA`: deja de regir desde ese año; administración) |
+| GET | `/api/feriados/afectadas` | Cuántas licencias de Mi espacio incluye un feriado, solo por las fechas en que cambia un día hábil (`?fecha=AAAA-MM-DD&se_repite=0\|1&id=`; administración) |
+| GET | `/api/mi-espacio/resumen` | Mi espacio: el Resumen, ya calculado (cualquier rol con sesión; todas las de Mi espacio trabajan sobre la persona de la sesión, y un id ajeno da 404) |
+| GET | `/api/mi-espacio/licencias` | Mi espacio: las licencias de un año (`?anio=AAAA`, por defecto el en curso) |
+| POST | `/api/mi-espacio/licencias/calculo` | Mi espacio: el cálculo de una licencia antes de guardarla (días hábiles, de qué licencia salen, lo que queda y qué pasa con Configuración), sin guardar nada |
+| POST | `/api/mi-espacio/licencias` | Mi espacio: cargar una licencia (las de día entero pasan a Configuración → Licencias, si corresponde) |
+| PUT | `/api/mi-espacio/licencias/:id` | Mi espacio: corregir una licencia |
+| DELETE | `/api/mi-espacio/licencias/:id` | Mi espacio: borrar una licencia (baja lógica) |
+| GET | `/api/mi-espacio/horas-extras` | Mi espacio: las horas extras de un año (`?anio=AAAA`) |
+| POST | `/api/mi-espacio/horas-extras` | Mi espacio: cargar horas extras (`{ fecha, desde, hasta, nota }`) |
+| PUT | `/api/mi-espacio/horas-extras/:id` | Mi espacio: corregir horas extras |
+| DELETE | `/api/mi-espacio/horas-extras/:id` | Mi espacio: borrar horas extras (baja lógica) |
+| GET | `/api/mi-espacio/anio/:anio` | Mi espacio: los días de vacaciones y los estudios de un año |
+| PUT | `/api/mi-espacio/anio/:anio` | Mi espacio: guardar los días de vacaciones y los estudios de un año (`{ dias_vacaciones, estudios }`) |
+| GET | `/api/mi-espacio/saldo-inicial` | Mi espacio: los campos del saldo inicial, con lo guardado |
+| PUT | `/api/mi-espacio/saldo-inicial` | Mi espacio: guardar el saldo inicial (`{ saldos }`; la primera vez fija el día de arranque) |
+| GET | `/api/mi-espacio/ausentes` | Mi espacio: «Hoy no están» de un rango de hasta 93 días (`?desde=&hasta=`; solo administración ve a los demás, y nunca el tipo) |
+| GET | `/api/mi-espacio/firmante` | Mi espacio: lo que necesita el campo de la persona a cargo del firmante titular (a cualquier otra persona, `{ soy_titular: false }`) |
 
 ### Cron (requiere secret)
 
@@ -952,6 +1015,15 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Mi espacio: licencias y horas extras (2026-10)
+- **Mi cuenta → Mi espacio** (`mi-espacio.html`), para todos los roles con sesión: el panel personal en el que cada usuario carga sus licencias (vacaciones, franquicias, estudios, atención médica y del grupo familiar, médica extraordinaria, francos y horas a favor) y sus horas extras, con las reglas de su modalidad (planta permanente y política, o contrato) y en días hábiles con los feriados. Lo cargado lo ve solo esa persona
+- Tres pestañas: **Resumen** ("Vence pronto", "Lo que te queda" con un tanque por saldo y "Hoy y mañana"), **Licencias** y **Horas extras**. La primera vez se abre solo "Mis vacaciones y saldos", el saldo inicial: lo anterior a ese día no descuenta
+- Las ausencias de día entero de superadmin, admins y editores pasan solas a **Configuración → Licencias**, solo con las fechas y con la insignia "Cargada desde Mi espacio"; el firmante deja a alguien a cargo solo en sus vacaciones. El alta, la edición y la anulación de Configuración pasaron a un servicio compartido, sin cambiar lo que hace la pestaña
+- "Hoy no están": quien es de administración puede mostrar a los demás de administración que no está, sin decir de qué
+- Un email de aviso cuando un franco, unas horas a favor o los días de una licencia están por vencer, en la corrida de las 8:15
+- **Configuración → Feriados:** el aviso azul dice que los feriados cuentan para Mi espacio, y el modal dice cuántas licencias de Mi espacio incluye la fecha (solo si cambia un día hábil)
+- Seis tablas nuevas (`mi_espacio_*`: pasan a 37). Requiere los Feriados ya desplegados. Un SQL **antes** del código (obligatorio: sin él, Configuración → Licencias no carga), los archivos y Restart, sin Run NPM Install ni Tarea Cron nueva. Ver [Migración: Mi espacio](#migración-mi-espacio)
 
 ### Feriados (2026-10)
 - **Administración → Configuración** suma una cuarta pestaña, **Feriados** (`configuracion.html#feriados`): los feriados y días no laborables que no son los 9 nacionales fijos, los nacionales que cambian de fecha (Carnaval, Semana Santa, los trasladables y los extraordinarios, como el del 9/11/2026), los de Chubut, los de Comodoro y los no laborables (el Jueves Santo, los días con fines turísticos y los asuetos municipales). Los 9 fijos se ven en la lista, en gris y sin editar
